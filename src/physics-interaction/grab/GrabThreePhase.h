@@ -284,6 +284,7 @@ namespace rock::grab_three_phase
         RE::NiPoint3 gripSeedWorld{};
         bool hasFreshTouchContact = false;
         bool isFarSelection = false;
+        bool programmaticArrival = false;
         bool requireEvidenceForTouchHeld = false;
         bool hasTouchHeldAuthorityEvidence = false;
         float touchAcquireDistanceGameUnits = 4.0f;
@@ -326,6 +327,17 @@ namespace rock::grab_three_phase
         result.frontHemisphere = result.signedPalmDistanceGameUnits >= -behindTolerance;
 
         if (!result.frontHemisphere) {
+            /*
+             * A force-grab has already passed explicit target, distance, body,
+             * and hand-ownership validation. Bypass only this organic spatial
+             * rejection; front-side arrivals retain the normal phase classifier.
+             */
+            if (input.programmaticArrival) {
+                result.accepted = true;
+                result.phase = AcquisitionPhase::NearConverging;
+                result.reason = "programmaticArrivalBehindPalm";
+                return result;
+            }
             result.reason = "behindPalm";
             return result;
         }

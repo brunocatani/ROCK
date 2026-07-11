@@ -45,7 +45,6 @@ namespace rock::loose_grenade_runtime
             bool);
 
         constexpr std::uintptr_t kFuncActorEquipManagerEquipObject = 0x0E6FEA0;
-        constexpr std::size_t kPendingEquipCapacity = 4;
         constexpr std::uint32_t kInvalidStackId = 0xFFFF'FFFFu;
         constexpr std::array<std::uint8_t, 17> kActorEquipManagerEquipObjectExpectedPrefix{
             0x4C, 0x8B, 0xDC,
@@ -69,7 +68,7 @@ namespace rock::loose_grenade_runtime
         EquipObject_t s_originalEquipObject = nullptr;
         std::atomic<bool> s_equipHookInstalled{ false };
         std::mutex s_pendingEquipMutex;
-        std::array<PendingEquipRequest, kPendingEquipCapacity> s_pendingEquipRequests{};
+        PendingEquipRequest s_pendingEquipRequest{};
         std::uint64_t s_nextRequestId{ 1 };
         thread_local bool t_insideEquipHook = false;
 
@@ -368,22 +367,19 @@ namespace rock::loose_grenade_runtime
             const GrenadeRuntimeData& runtime)
         {
             std::scoped_lock lock(s_pendingEquipMutex);
-            for (auto& request : s_pendingEquipRequests) {
-                if (request.active) {
-                    continue;
-                }
-
-                request = PendingEquipRequest{
-                    .active = true,
-                    .requestId = s_nextRequestId++,
-                    .weapon = weapon,
-                    .instanceData = instanceData,
-                    .stackId = stackId,
-                    .runtime = runtime,
-                };
-                return true;
+            if (s_pendingEquipRequest.active) {
+                return false;
             }
-            return false;
+
+            s_pendingEquipRequest = PendingEquipRequest{
+                .active = true,
+                .requestId = s_nextRequestId++,
+                .weapon = weapon,
+                .instanceData = instanceData,
+                .stackId = stackId,
+                .runtime = runtime,
+            };
+            return true;
         }
 
         [[nodiscard]] bool shouldInterceptEquip(
@@ -452,11 +448,16 @@ namespace rock::loose_grenade_runtime
                     return true;
                 }
 
-                ROCK_LOG_WARN(Hand,
-                    "Blocked grenade equip because pending loose-grenade queue is full: weapon={:08X} stack={}",
+                /*
+                 * The first request remains authoritative through its attach
+                 * terminal state. Report duplicate menu presses as handled so
+                 * native equip cannot run, but never preserve them for replay.
+                 */
+                ROCK_LOG_INFO(Hand,
+                    "Ignored duplicate loose grenade equip while one transaction is active: weapon={:08X} stack={}",
                     weapon ? weapon->GetFormID() : 0,
                     stackId);
-                return false;
+                return true;
             }
 
             if (!s_originalEquipObject) {
@@ -531,36 +532,36 @@ namespace rock::loose_grenade_runtime
         return resolveGrenadeRuntimeDataForSources(weapon, instanceData.get(), objectInstanceExtra, outRuntime);
     }
 
-    bool copyOldestPendingEquipRequest(PendingEquipRequest& outRequest)
+    bool copyPendingEquipRequest(PendingEquipRequest& outRequest)
     {
         std::scoped_lock lock(s_pendingEquipMutex);
-        PendingEquipRequest* oldest = nullptr;
-        for (auto& request : s_pendingEquipRequests) {
-            if (!request.active) {
-                continue;
-            }
-            if (!oldest || request.requestId < oldest->requestId) {
-                oldest = &request;
-            }
-        }
-        if (!oldest) {
+        if (!s_pendingEquipRequest.active) {
             outRequest = {};
             return false;
         }
 
-        outRequest = *oldest;
+        outRequest = s_pendingEquipRequest;
         return true;
+    }
+
+    bool hasPendingEquipRequest()
+    {
+        std::scoped_lock lock(s_pendingEquipMutex);
+        return s_pendingEquipRequest.active;
     }
 
     void discardPendingEquipRequest(std::uint64_t requestId)
     {
         std::scoped_lock lock(s_pendingEquipMutex);
-        for (auto& request : s_pendingEquipRequests) {
-            if (request.active && request.requestId == requestId) {
-                request = {};
-                return;
-            }
+        if (s_pendingEquipRequest.active && s_pendingEquipRequest.requestId == requestId) {
+            s_pendingEquipRequest = {};
         }
+    }
+
+    void clearPendingEquipRequest()
+    {
+        std::scoped_lock lock(s_pendingEquipMutex);
+        s_pendingEquipRequest = {};
     }
 
     DropResult dropPendingEquipRequestToWorld(
@@ -604,7 +605,13 @@ namespace rock::loose_grenade_runtime
         const auto droppedRef = result.handle.get();
         result.droppedRef = droppedRef.get();
         if (!result.droppedRef) {
-            result.reason = "dropped-reference-unavailable";
+            /*
+             * RemoveItem already committed the inventory-to-world transfer.
+             * The reference/3D can resolve asynchronously, so retain the
+             * handle and let the force-grab transaction wait for it.
+             */
+            result.success = true;
+            result.reason = "dropped-reference-pending";
             return result;
         }
 
@@ -653,6 +660,21 @@ namespace rock::loose_grenade_runtime
     bool playPinPulledFeedbackAtReference(RE::TESObjectREFR* ref)
     {
         return playObjectPickupSoundAtReference(ref);
+    }
+
+    bool returnDroppedReferenceToInventory(RE::TESObjectREFR* ref)
+    {
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        if (!player || !ref || ref->IsDeleted() || ref->IsDisabled()) {
+            return false;
+        }
+
+        /*
+         * Native activation is the same locally established loose-weapon
+         * pickup transfer used by ROCK's equip path. It moves this exact
+         * reference (including its instance data) back into player inventory.
+         */
+        return ref->ActivateRef(player, nullptr, 1, false, false, false);
     }
 
     void disableAndDeleteReference(RE::TESObjectREFR* ref)

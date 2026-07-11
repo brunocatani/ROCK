@@ -123,6 +123,14 @@
             ROCK_LOG_SAMPLE_DEBUG(Hand, g_rockConfig.rockLogSampleMilliseconds, "{} dynamic push skipped: target body {} has no valid ref", sourceName, targetBodyId);
             return;
         }
+        if (isPendingForceGrabTarget(targetRef)) {
+            ROCK_LOG_SAMPLE_DEBUG(Hand,
+                g_rockConfig.rockLogSampleMilliseconds,
+                "{} dynamic push skipped: target body {} belongs to an in-flight force-grab transaction",
+                sourceName,
+                targetBodyId);
+            return;
+        }
 
         object_physics_body_set::BodySetScanOptions scanOptions{};
         scanOptions.mode = physics_body_classifier::InteractionMode::PassivePush;

@@ -246,6 +246,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKCalibratedGrenadeOffsetPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKCalibratedGrenadeOffsetPolicyTests)
 
+  add_executable(ROCKInteractionSafetyPolicyTests
+    "${ROOT_DIR}/tests/InteractionSafetyPolicyTests.cpp"
+  )
+  target_compile_features(ROCKInteractionSafetyPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKInteractionSafetyPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKInteractionSafetyPolicyTests)
+
   add_executable(ROCKGrabFingerLocalTransformPolicyTests
     "${ROOT_DIR}/tests/GrabFingerLocalTransformPolicyTests.cpp"
   )
@@ -526,6 +533,7 @@ if(BUILD_ROCK_TESTS)
     ROCKInputRemapPolicyTests
     ROCKWeaponInteractionPolicyTests
     ROCKCalibratedGrenadeOffsetPolicyTests
+    ROCKInteractionSafetyPolicyTests
     ROCKGrabFingerLocalTransformPolicyTests
     ROCKGrabHapticPolicyTests
     ROCKGrabContactEvidencePolicyTests

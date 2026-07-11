@@ -70,8 +70,10 @@ namespace rock::loose_grenade_runtime
         RE::TESObjectREFR* ref,
         GrenadeRuntimeData& outRuntime) noexcept;
 
-    [[nodiscard]] bool copyOldestPendingEquipRequest(PendingEquipRequest& outRequest);
+    [[nodiscard]] bool copyPendingEquipRequest(PendingEquipRequest& outRequest);
+    [[nodiscard]] bool hasPendingEquipRequest();
     void discardPendingEquipRequest(std::uint64_t requestId);
+    void clearPendingEquipRequest();
 
     [[nodiscard]] DropResult dropPendingEquipRequestToWorld(
         const PendingEquipRequest& request,
@@ -80,5 +82,6 @@ namespace rock::loose_grenade_runtime
     [[nodiscard]] bool createExplosionAtReference(RE::TESObjectREFR* ref, RE::BGSExplosion* explosion);
     [[nodiscard]] const char* detonationModeName(GrenadeDetonationMode mode) noexcept;
     [[nodiscard]] bool playPinPulledFeedbackAtReference(RE::TESObjectREFR* ref);
+    [[nodiscard]] bool returnDroppedReferenceToInventory(RE::TESObjectREFR* ref);
     void disableAndDeleteReference(RE::TESObjectREFR* ref);
 }

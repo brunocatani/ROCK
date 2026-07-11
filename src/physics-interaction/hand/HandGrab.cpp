@@ -9165,6 +9165,7 @@ namespace rock
                     .gripSeedWorld = phaseGripSeed,
                     .hasFreshTouchContact = hasStablePocketTouchContact,
                     .isFarSelection = sel.isFarSelection,
+                    .programmaticArrival = sel.forcedArrival,
                     .requireEvidenceForTouchHeld = grabbedFromPullCatch,
                     .hasTouchHeldAuthorityEvidence = pullArrivalTouchHeldAuthorityEvidence,
                     .touchAcquireDistanceGameUnits = g_rockConfig.rockGrabTouchAcquireDistanceGameUnits,

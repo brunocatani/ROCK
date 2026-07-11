@@ -18,8 +18,9 @@ namespace rock
 
     enum class PendingForceGrabCommitPhase : std::uint8_t
     {
-        WaitingForSettle = 0,
-        ReadyToCommit = 1,
+        WaitingForReference = 0,
+        WaitingForSettle = 1,
+        AcquireAndCommitExactTarget = 2,
     };
 
     /*
@@ -42,6 +43,7 @@ namespace rock
         PendingForceGrabCommitPhase phase{ PendingForceGrabCommitPhase::WaitingForSettle };
 
         RE::ObjectRefHandle targetHandle{};
+        bool targetIsLooseGrenade{ false };
         std::uint32_t preferredBodyId{ 0x7FFF'FFFF };
         float maxDistanceGame{ 0.0f };
         bool hasSourcePointOverride{ false };

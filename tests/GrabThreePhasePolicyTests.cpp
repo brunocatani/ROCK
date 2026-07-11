@@ -182,6 +182,29 @@ int main()
     ok &= expectFalse("behind palm remains rejected even with authority evidence", behindPalm.accepted);
     ok &= expectReason("behind palm reason", behindPalm.reason, "behindPalm");
 
+    const auto programmaticBehindPalm = classifyAcquisitionPhase(PhaseClassificationInput{
+        .pocket = makePocket(),
+        .gripSeedWorld = RE::NiPoint3{ 0.0f, 0.0f, -30.0f },
+        .programmaticArrival = true,
+        .behindPalmToleranceGameUnits = 1.0f,
+    });
+    ok &= expectTrue("programmatic behind-palm arrival remains accepted", programmaticBehindPalm.accepted);
+    ok &= expectFalse("programmatic arrival retains behind-palm telemetry", programmaticBehindPalm.frontHemisphere);
+    ok &= expectPhase("programmatic arrival converges dynamically", programmaticBehindPalm.phase, AcquisitionPhase::NearConverging);
+    ok &= expectReason("programmatic arrival reason", programmaticBehindPalm.reason, "programmaticArrivalBehindPalm");
+
+    const auto programmaticFrontTouch = classifyAcquisitionPhase(PhaseClassificationInput{
+        .pocket = makePocket(),
+        .gripSeedWorld = RE::NiPoint3{ 1.0f, 0.0f, 1.0f },
+        .programmaticArrival = true,
+        .touchAcquireDistanceGameUnits = 4.0f,
+        .nearConvergeDistanceGameUnits = 28.0f,
+    });
+    ok &= expectTrue("front-side programmatic arrival remains accepted", programmaticFrontTouch.accepted);
+    ok &= expectTrue("front-side programmatic arrival retains hemisphere telemetry", programmaticFrontTouch.frontHemisphere);
+    ok &= expectPhase("front-side programmatic arrival retains normal touch phase", programmaticFrontTouch.phase, AcquisitionPhase::TouchHeld);
+    ok &= expectReason("front-side programmatic arrival retains normal reason", programmaticFrontTouch.reason, "insideTouchEnvelope");
+
     const auto normalCloseSeat = evaluatePullCatchSeatSafety(PullCatchSeatSafetyInput{
         .grabbedFromPullCatch = false,
         .usingPinchPocket = false,

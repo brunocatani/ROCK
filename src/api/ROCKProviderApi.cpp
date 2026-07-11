@@ -11,6 +11,7 @@
 
 #include "physics-interaction/object/ExternalBodyRegistry.h"
 #include "physics-interaction/api/InteractionCommandQueue.h"
+#include "physics-interaction/api/InteractionCommandPolicy.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/input/InputRemapPolicy.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
@@ -195,8 +196,12 @@ namespace
     std::mutex s_interactionCommandMutex;
     std::array<InteractionCommandSlot, ROCK_PROVIDER_MAX_INTERACTION_COMMANDS_V1> s_interactionCommands{};
     std::array<InteractionCommandResultSlot, ROCK_PROVIDER_MAX_COMPLETED_INTERACTION_COMMANDS_V1> s_interactionResults{};
+    static_assert(
+        ROCK_PROVIDER_MAX_COMPLETED_INTERACTION_COMMANDS_V1 >= ROCK_PROVIDER_MAX_INTERACTION_COMMANDS_V1 + 3,
+        "Result history must retain the full queue, both deferred force-grab slots, and one dequeued command.");
     std::size_t s_nextInteractionResultSlot{ 0 };
     std::atomic<std::uint64_t> s_nextInteractionCommandId{ 1 };
+    interaction_command_policy::ForceGrabReservations s_forceGrabReservations{};
 
     struct HandInputSuppressionSlot
     {
@@ -891,11 +896,25 @@ namespace
             }
         }
 
-        s_interactionResults[s_nextInteractionResultSlot] = InteractionCommandResultSlot{
-            .active = true,
-            .result = result,
-        };
-        s_nextInteractionResultSlot = (s_nextInteractionResultSlot + 1) % s_interactionResults.size();
+        /*
+         * Queued results are live command state, not disposable polling
+         * history. The bounded queue cannot produce more live commands than
+         * this result table can hold, so rotate only through empty/terminal
+         * slots and never make an in-flight command disappear from polling.
+         */
+        for (std::size_t offset = 0; offset < s_interactionResults.size(); ++offset) {
+            const std::size_t index = (s_nextInteractionResultSlot + offset) % s_interactionResults.size();
+            auto& slot = s_interactionResults[index];
+            if (slot.active && !interaction_command_policy::isTerminal(slot.result.state)) {
+                continue;
+            }
+            slot = InteractionCommandResultSlot{
+                .active = true,
+                .result = result,
+            };
+            s_nextInteractionResultSlot = (index + 1) % s_interactionResults.size();
+            return;
+        }
     }
 
     void completeInteractionCommandLocked(
@@ -903,7 +922,11 @@ namespace
         RockProviderInteractionCommandStateV1 state,
         RockProviderInteractionFailureV1 failure)
     {
-        storeInteractionResultLocked(makeCommandResult(command, state, failure));
+        const auto result = makeCommandResult(command, state, failure);
+        storeInteractionResultLocked(result);
+        if (interaction_command_policy::isTerminal(result.state)) {
+            s_forceGrabReservations.release(result.ownerToken, result.commandId);
+        }
     }
 
     void clearInteractionCommandsForOwnerLocked(std::uint64_t ownerToken, RockProviderInteractionFailureV1 failure)
@@ -924,6 +947,7 @@ namespace
                 slot = {};
             }
         }
+        s_forceGrabReservations.clearOwner(ownerToken);
     }
 
     RockProviderResultV1 ROCK_PROVIDER_CALL apiRegisterConsumerV1(
@@ -1069,6 +1093,7 @@ namespace
         if (!outCommandId) {
             return RockProviderResultV1::InvalidArgument;
         }
+        *outCommandId = 0;
 
         const auto providerReadyResult = validateInteractionCommandProviderReady();
         if (providerReadyResult != RockProviderResultV1::Ok) {
@@ -1081,9 +1106,18 @@ namespace
             return ownerResult;
         }
 
+        if (command.kind == RockProviderInteractionCommandKindV1::ForceGrab &&
+            s_forceGrabReservations.isReserved(command.forceGrab.hand)) {
+            return RockProviderResultV1::HandBusy;
+        }
+
         for (auto& slot : s_interactionCommands) {
             if (!slot.active) {
                 command.commandId = nextInteractionCommandId();
+                if (command.kind == RockProviderInteractionCommandKindV1::ForceGrab &&
+                    !s_forceGrabReservations.reserve(command.forceGrab.hand, command.ownerToken, command.commandId)) {
+                    return RockProviderResultV1::HandBusy;
+                }
                 slot = InteractionCommandSlot{
                     .active = true,
                     .command = command,
@@ -1780,21 +1814,49 @@ namespace rock::provider
         return false;
     }
 
-    void completeInteractionCommandV1(const RockProviderInteractionCommandResultV1& result)
+    bool isInteractionCommandActiveV1(std::uint64_t ownerToken, std::uint64_t commandId)
+    {
+        if (ownerToken == 0 || commandId == 0) {
+            return false;
+        }
+
+        std::scoped_lock lock(s_interactionCommandMutex);
+        // The reservation is the durable ownership record. Result slots are a
+        // bounded polling history and may legitimately wrap while a deferred
+        // physics commit is still alive.
+        return s_forceGrabReservations.matches(ownerToken, commandId);
+    }
+
+    bool completeInteractionCommandV1(const RockProviderInteractionCommandResultV1& result)
     {
         std::scoped_lock lock(s_interactionCommandMutex);
+        if (result.kind == RockProviderInteractionCommandKindV1::ForceGrab &&
+            !s_forceGrabReservations.matches(result.ownerToken, result.commandId)) {
+            return false;
+        }
         storeInteractionResultLocked(result);
+        if (interaction_command_policy::isTerminal(result.state)) {
+            s_forceGrabReservations.release(result.ownerToken, result.commandId);
+        }
+        return true;
     }
 
     void clearInteractionCommandsForProviderLossV1(RockProviderInteractionFailureV1 failure)
     {
         std::scoped_lock lock(s_interactionCommandMutex);
-        for (auto& slot : s_interactionCommands) {
-            if (slot.active) {
-                completeInteractionCommandLocked(slot.command, RockProviderInteractionCommandStateV1::Cancelled, failure);
-                slot = {};
+        /*
+         * Results remain Queued after dequeue while PhysicsInteraction owns the
+         * deferred commit. Cancel those as well as slots still in the bounded
+         * queue so consumers never observe an immortal command.
+         */
+        for (auto& slot : s_interactionResults) {
+            if (slot.active && slot.result.state == RockProviderInteractionCommandStateV1::Queued) {
+                slot.result.state = RockProviderInteractionCommandStateV1::Cancelled;
+                slot.result.failure = failure;
             }
         }
+        s_interactionCommands = {};
+        s_forceGrabReservations.clear();
     }
 
     bool isExternalBodyId(std::uint32_t bodyId)

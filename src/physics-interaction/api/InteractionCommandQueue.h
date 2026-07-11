@@ -15,6 +15,7 @@ namespace rock::provider
     };
 
     [[nodiscard]] bool dequeueInteractionCommandV1(QueuedInteractionCommandV1& outCommand);
-    void completeInteractionCommandV1(const RockProviderInteractionCommandResultV1& result);
+    [[nodiscard]] bool isInteractionCommandActiveV1(std::uint64_t ownerToken, std::uint64_t commandId);
+    bool completeInteractionCommandV1(const RockProviderInteractionCommandResultV1& result);
     void clearInteractionCommandsForProviderLossV1(RockProviderInteractionFailureV1 failure);
 }

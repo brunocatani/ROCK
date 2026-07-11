@@ -23,6 +23,7 @@
 #include "physics-interaction/consume/MouthConsumeDetector.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/core/PendingForceGrabCommit.h"
+#include "physics-interaction/core/ForceGrabPolicy.h"
 #include "physics-interaction/core/PhysicsFrameContext.h"
 #include "physics-interaction/core/PhysicsLifecycleState.h"
 #include "physics-interaction/feedback/FeedbackHaptics.h"
@@ -35,6 +36,7 @@
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 #include "physics-interaction/weapon/WeaponCollision.h"
 #include "physics-interaction/weapon/WeaponDebug.h"
+#include "physics-interaction/weapon/BareFistGuardPolicy.h"
 #include "api/ROCKProviderApi.h"
 
 namespace RE
@@ -202,7 +204,12 @@ namespace rock
 
         void updateGrabInput(const PhysicsFrameContext& frame);
         void processProviderInteractionCommands(const PhysicsFrameContext& frame);
+        std::uint32_t forceGrabHandBlockerMask(const Hand& hand, bool isLeft, bool handDisabled, bool includePendingCommit) const;
         bool canHandAcceptForceGrab(const Hand& hand, bool isLeft, bool handDisabled) const;
+        bool handHoldsLooseGrenade(const Hand& hand) const;
+        bool hasActiveLooseGrenadeCommit() const;
+        bool isPendingForceGrabTarget(RE::TESObjectREFR* ref) const;
+        void pruneInactiveProviderForceGrabCommits();
         void servicePendingLooseGrenadeEquip(const PhysicsFrameContext& frame);
         void servicePendingForceGrabCommits(const PhysicsFrameContext& frame);
         void clearPendingForceGrabCommitsForOrigin(PendingForceGrabCommitOrigin origin);
@@ -217,7 +224,8 @@ namespace rock
         bool armHeldLooseGrenade(Hand& hand, const PhysicsFrameContext& frame);
         void updateLooseGrenadeFuses(const PhysicsFrameContext& frame);
         void clearLooseGrenadeImpactWatches();
-        void clearLooseGrenadeRuntimeState();
+        void clearLooseGrenadeRuntimeState(bool clearPendingEquipRequest);
+        void enforceNoBareFistState(bool forceRecheck);
 
         std::size_t applyProviderWeaponPartDrives(
             RE::NiNode* weaponNode,
@@ -412,6 +420,8 @@ namespace rock
         };
         static constexpr std::size_t kArmedLooseGrenadeFuseCapacity = 4;
         std::array<PendingForceGrabCommit, 2> _pendingForceGrabCommits{};
+        std::array<bool, 2> _forceGrabCommittedThisFrame{};
+        bare_fist_guard_policy::RecheckState _bareFistGuardState{};
         std::array<ArmedLooseGrenadeFuseState, kArmedLooseGrenadeFuseCapacity> _armedLooseGrenadeFuses{};
         std::array<std::atomic<std::uint32_t>, kArmedLooseGrenadeFuseCapacity> _armedLooseGrenadeImpactBodyIds{};
         std::atomic<std::uint64_t> _pendingLooseGrenadeImpactPair{ INVALID_HELD_IMPACT_PAIR };
