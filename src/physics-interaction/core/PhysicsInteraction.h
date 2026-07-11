@@ -142,6 +142,8 @@ namespace rock
             std::array<::rock::provider::RockProviderWeaponPartGripStateV1, 2>& outStates) const;
 
     private:
+        struct EquippedWeaponDropMomentumHandoff;
+
         bool validateCriticalOffsets() const;
 
         bool refreshHandBoneCache();
@@ -219,8 +221,13 @@ namespace rock
         void armEquippedWeaponDropMomentumHandoff(
             const RE::ObjectRefHandle& handle,
             std::uint32_t droppedFormId,
-            equipped_weapon_drop_policy::SourceHand sourceHand);
+            equipped_weapon_drop_policy::SourceHand sourceHand,
+            const WeaponCollision::ReleaseGeometrySnapshot& releaseGeometry);
+        bool hasAvailableEquippedWeaponDropHandoff() const;
         void serviceEquippedWeaponDropMomentumHandoff(const PhysicsFrameContext& frame);
+        void serviceEquippedWeaponDropMomentumTransaction(
+            EquippedWeaponDropMomentumHandoff& handoff,
+            const PhysicsFrameContext& frame);
         bool armHeldLooseGrenade(Hand& hand, const PhysicsFrameContext& frame);
         void updateLooseGrenadeFuses(const PhysicsFrameContext& frame);
         void clearLooseGrenadeImpactWatches();
@@ -328,6 +335,11 @@ namespace rock
         EquipVisualBridge _equipVisualBridge;
 
         PhysicsStepDriveCoordinator _generatedBodyStepDrive;
+        // Written only by the post-solve callback and sampled by the main-frame
+        // equipped-drop service. This explicit atomic is the cross-thread
+        // settle barrier; PhysicsStepDriveCoordinator's internal counter is not
+        // read across threads.
+        std::atomic<std::uint64_t> _completedPhysicsSolveSequence{ 0 };
 
         TwoHandedGrip _twoHandedGrip;
         SoftContactRuntime _softContactRuntime;
@@ -440,23 +452,50 @@ namespace rock
             std::array<bool, 2> hasPreviousHandWorld{};
             std::array<RE::NiTransform, 2> previousHandWorld{};
         };
+        enum class EquippedWeaponDropHandoffStage : std::uint8_t
+        {
+            ResolvingBodies,
+            WaitingForSettleStep,
+        };
+
+        static constexpr std::size_t kEquippedWeaponDropBodySnapshotCapacity = 32;
+        struct EquippedWeaponDropBodySnapshot
+        {
+            bool valid{ false };
+            equipped_weapon_drop_momentum::BodyIdentityKey identity{};
+        };
+
         /*
-         * Deferred momentum application for a dropped equipped weapon: the
-         * spawned ref's 3D and physics bodies load asynchronously, so the
-         * captured release velocity is applied on the first frame the body
-         * set resolves and abandoned fail-closed on timeout.
+         * Deferred native-drop transaction. RemoveItem can publish the ref and
+         * body tree asynchronously, so ROCK first resolves exact-ref bodies,
+         * enables collision, places every native motion at the frozen visual
+         * release pose with zero velocity, and waits for one completed native
+         * solve before applying captured release momentum exactly once. After
+         * that atomic handoff, Bethesda owns the weapon's normal flight.
          */
         struct EquippedWeaponDropMomentumHandoff
         {
             bool active{ false };
+            bool hasReleaseVelocity{ false };
+            bool referenceResolvedOnce{ false };
+            bool threeDResolvedOnce{ false };
             RE::ObjectRefHandle handle{};
             std::uint32_t droppedFormId{ 0 };
             float elapsedSeconds{ 0.0f };
+            std::uint32_t identityRestartCount{ 0 };
             RE::NiPoint3 linearVelocityHavok{};
             RE::NiPoint3 angularVelocityRadiansPerSecond{};
+            bool hasReleaseWeaponWorld{ false };
+            RE::NiTransform releaseWeaponWorld{};
+            EquippedWeaponDropHandoffStage stage{ EquippedWeaponDropHandoffStage::ResolvingBodies };
+            std::uint64_t progressSolveSequence{ 0 };
+            std::uint64_t bodyDiscoverySolveSequence{ 0 };
+            std::array<EquippedWeaponDropBodySnapshot, kEquippedWeaponDropBodySnapshotCapacity> bodySnapshots{};
+            std::size_t bodySnapshotCount{ 0 };
         };
         EquippedWeaponReleaseCapture _equippedWeaponReleaseCapture{};
-        EquippedWeaponDropMomentumHandoff _equippedWeaponDropMomentumHandoff{};
+        static constexpr std::size_t kEquippedWeaponDropHandoffCapacity = 4;
+        std::array<EquippedWeaponDropMomentumHandoff, kEquippedWeaponDropHandoffCapacity> _equippedWeaponDropMomentumHandoffs{};
         std::atomic<std::uint32_t> _leftWeaponContactBodyId{ INVALID_CONTACT_BODY_ID };
         std::atomic<std::uint32_t> _leftWeaponContactPartKind{ static_cast<std::uint32_t>(WeaponPartKind::Other) };
         std::atomic<std::uint32_t> _leftWeaponContactReloadRole{ static_cast<std::uint32_t>(WeaponReloadRole::None) };

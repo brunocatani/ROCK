@@ -26,6 +26,32 @@ function Require-Text {
     }
 }
 
+function Require-OrderedText {
+    param(
+        [string]$Path,
+        [string[]]$Patterns,
+        [string]$Message
+    )
+
+    $fullPath = Join-Path $Root $Path
+    if (-not (Test-Path -LiteralPath $fullPath)) {
+        $failures.Add($Message)
+        return
+    }
+
+    $text = Get-Content -Raw -LiteralPath $fullPath
+    $offset = 0
+    foreach ($pattern in $Patterns) {
+        $remaining = $text.Substring($offset)
+        $match = [regex]::Match($remaining, $pattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
+        if (-not $match.Success) {
+            $failures.Add($Message)
+            return
+        }
+        $offset += $match.Index + $match.Length
+    }
+}
+
 function Reject-Text {
     param(
         [string]$Path,
@@ -128,7 +154,19 @@ Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'retireWeaponB
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'serviceRetiredWeaponBodies[\s\S]*BethesdaPhysicsBody::releaseRetiredPayload' 'Retired generated weapon bodies must be reclaimed from an explicit service point.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'observeCustomGrabAuthorityAfterSolve[\s\S]*_weaponCollision\.serviceRetiredWeaponBodies\(\);' 'The physics after-solve callback must service retired generated weapon bodies after native readers advance.'
 Reject-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'destroyWeaponBodyBank[\s\S]{0,260}instance\.body\.destroy\(_cachedBhkWorld\)' 'Generated weapon body bank teardown must not immediately destroy native wrapper bodies in the rebuild path.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'dropCommitted\s*=\s*equipped_weapon_drop_policy::physicalDropCommitted\([\s\S]{0,420}if\s*\(dropCommitted\)\s*\{[\s\S]{0,700}_weaponCollision\.destroyWeaponBody\(hknp\);[\s\S]{0,220}if\s*\(dropResult\.success\)\s*\{[\s\S]{0,180}armEquippedWeaponDropMomentumHandoff' 'A committed equipped-weapon drop must retire the coincident generated collider set before arming native drop momentum.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'getCurrentWeaponReleaseGeometry\(releaseGripWorld,\s*releaseWeaponWorld\)[\s\S]{0,2600}_weaponCollision\.destroyWeaponBody\(hknp\);[\s\S]{0,500}dropCommitted\s*&&\s*dropResult\.handle[\s\S]{0,300}armEquippedWeaponDropMomentumHandoff' 'A committed equipped-weapon drop must capture its frozen release pose and lever, retire coincident generated colliders, then arm the native handoff even when the reference resolves asynchronously.'
+Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @('enableCollisionRecursive\(droppedRoot', 'scanObjectPhysicsBodySet\(', 'completedSettleStep\(', 'currentBodySetMatches\(', 'setBodyVelocityDeferred') 'Equipped drop momentum must enable collision, rescan native bodies, cross a completed solve barrier, revalidate full body identity, and only then write velocity.'
+Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'serviceEquippedWeaponDropMomentumTransaction[\s\S]*?uniqueAcceptedMotionRecords\([\s\S]*?bool PhysicsInteraction::armHeldLooseGrenade' 'Equipped drop handoff must collect unique motions into fixed-capacity transaction state without per-frame unique-set allocation.'
+Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'hasCapturedWeaponWorld\s*=\s*true[\s\S]{0,120}capturedWeaponWorld\s*=\s*capturedWeaponWorld[\s\S]{0,220}gripWorldPoint' 'Release-pose capture must remain available even when grip evidence cannot provide a lever.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'hasAvailableEquippedWeaponDropHandoff[\s\S]*physicalDropRequested\s*&&\s*!dropHandoffAvailable[\s\S]*Cannot drop weapon - drop handoff queue is full' 'Drop handoff capacity must be reserved before inventory removal instead of silently creating an unmanaged weapon.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'releaseGeometry\.hasCapturedWeaponWorld[\s\S]{0,500}Cannot drop weapon - release pose is not ready[\s\S]{0,900}dropEquippedWeaponFromPlayer' 'Inventory removal must be blocked until a finite frozen release pose is available.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'currentRootInverse[\s\S]*rootToBody[\s\S]*handoff\.releaseWeaponWorld[\s\S]*setBodyTransformDeferred[\s\S]*zeroVelocity[\s\S]*WaitingForSettleStep' 'The exact native body set must be placed at the frozen release pose with zero velocity before crossing the solve barrier.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'completedSettleStep\([\s\S]{0,300}currentBodySetMatches\(\)[\s\S]{0,1800}handoff\.hasReleaseVelocity[\s\S]*setBodyVelocityDeferred[\s\S]*handoff\s*=\s*\{\};' 'Release momentum must be written exactly once only after one solve and full native-generation revalidation.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'originalMotionTransforms[\s\S]*queued writes were rolled back[\s\S]*partial writes were zeroed' 'Multipart drop writes must compensate partial placement and momentum commands instead of exposing a half-applied transaction.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'kPublicationStallSolveSteps\s*=\s*180[\s\S]*publicationProgressStalled\([\s\S]{0,240}handoff\.progressSolveSequence[\s\S]{0,240}completedSolveSequence' 'Async publication cleanup must use completed physics progress rather than a wall-clock timeout.'
+Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'GuardingWorldCrossing|WaitingForGuard|PreparingGuardRebind|detectAndCorrectWorldCrossings|makeCoveringSphereGridLayout|runWitnessSweep' 'The rejected full-flight sphere-grid guard must not remain as a dormant production path.'
+Reject-Text 'src/physics-interaction/native/PhysicsShapeCast.cpp' 'FixedFilteredClosestCollector|prewarmConservativeSphereCastShapes|g_conservativeSphereShapes' 'The rejected drop-only sphere cache and collector must be removed.'
+Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'serviceEquippedWeaponDropMomentumHandoff[\s\S]*?setMotionRecursive[\s\S]*?bool PhysicsInteraction::armHeldLooseGrenade' 'Equipped drop handoff must preserve native weapon motion properties instead of coercing them to a generic preset.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'sourceHandKnown\s*&&\s*dropCommitted' 'Dropped-reference-unavailable commits must share the post-drop hand-collision path with immediately resolved drops.'
 
 # Hand/body bone colliders and the grab-authority proxy share the same

@@ -24,6 +24,8 @@
 #include "RE/Havok/hknpBodyCinfo.h"
 #include "RE/Havok/hknpBodyId.h"
 #include "RE/Havok/hknpWorld.h"
+#include "RE/NetImmerse/NiPoint.h"
+#include "RE/NetImmerse/NiTransform.h"
 
 namespace RE
 {
@@ -61,6 +63,13 @@ namespace rock
             std::array<std::uint32_t, MAX_WEAPON_COLLISION_BODIES> bodyIds{};
         };
 
+        struct ReleaseGeometrySnapshot
+        {
+            float leverGameUnits{ 0.0f };
+            bool hasCapturedWeaponWorld{ false };
+            RE::NiTransform capturedWeaponWorld{};
+        };
+
         void init(RE::hknpWorld* world, void* bhkWorld);
 
         void shutdown();
@@ -82,6 +91,12 @@ namespace rock
         bool hasWeaponBody() const;
 
         std::uint32_t getWeaponBodyCount() const;
+
+        // One-frame, read-only release geometry query. The caller must consume
+        // this before destroyWeaponBody retires the equipped body bank.
+        ReleaseGeometrySnapshot getCurrentWeaponReleaseGeometry(
+            const RE::NiPoint3& gripWorldPoint,
+            const RE::NiTransform& capturedWeaponWorld) const;
 
         RE::hknpBodyId getWeaponBodyId() const;
 

@@ -1974,6 +1974,84 @@ namespace rock
         return _weaponBodyCountAtomic.load(std::memory_order_acquire);
     }
 
+    WeaponCollision::ReleaseGeometrySnapshot WeaponCollision::getCurrentWeaponReleaseGeometry(
+        const RE::NiPoint3& gripWorldPoint,
+        const RE::NiTransform& capturedWeaponWorld) const
+    {
+        ReleaseGeometrySnapshot result{};
+        bool capturedTransformFinite =
+            std::isfinite(capturedWeaponWorld.translate.x) &&
+            std::isfinite(capturedWeaponWorld.translate.y) &&
+            std::isfinite(capturedWeaponWorld.translate.z) &&
+            std::isfinite(capturedWeaponWorld.scale) &&
+            std::abs(capturedWeaponWorld.scale) > 0.0001f;
+        for (int row = 0; capturedTransformFinite && row < 3; ++row) {
+            for (int column = 0; capturedTransformFinite && column < 3; ++column) {
+                capturedTransformFinite = std::isfinite(capturedWeaponWorld.rotate.entry[row][column]);
+            }
+        }
+        if (!capturedTransformFinite) {
+            return result;
+        }
+        result.hasCapturedWeaponWorld = true;
+        result.capturedWeaponWorld = capturedWeaponWorld;
+        if (!std::isfinite(gripWorldPoint.x) || !std::isfinite(gripWorldPoint.y) || !std::isfinite(gripWorldPoint.z)) {
+            return result;
+        }
+
+        const auto& bank = activeWeaponBodies();
+        float maxDistanceSquared = 0.0f;
+        bool sampledPoint = false;
+        auto sampleLocalPoint = [&](const RE::NiPoint3& localPoint) {
+            if (!std::isfinite(localPoint.x) || !std::isfinite(localPoint.y) || !std::isfinite(localPoint.z)) {
+                return;
+            }
+            const auto worldPoint = weapon_collision_geometry_math::localPointToWorld(
+                capturedWeaponWorld.rotate,
+                capturedWeaponWorld.translate,
+                capturedWeaponWorld.scale,
+                localPoint);
+            const float dx = worldPoint.x - gripWorldPoint.x;
+            const float dy = worldPoint.y - gripWorldPoint.y;
+            const float dz = worldPoint.z - gripWorldPoint.z;
+            const float distanceSquared = dx * dx + dy * dy + dz * dz;
+            if (!std::isfinite(distanceSquared) || distanceSquared < 0.0f) {
+                return;
+            }
+            maxDistanceSquared = (std::max)(maxDistanceSquared, distanceSquared);
+            sampledPoint = true;
+        };
+
+        for (const auto& instance : bank) {
+            if (!instance.body.isValid()) {
+                continue;
+            }
+            if (!instance.generatedLocalPointsGame.empty()) {
+                for (const auto& point : instance.generatedLocalPointsGame) {
+                    sampleLocalPoint(point);
+                }
+                continue;
+            }
+
+            // Bounds remain a safe release-only fallback for a generated body
+            // whose reduced hull point cache is unexpectedly empty.
+            for (int x = 0; x < 2; ++x) {
+                for (int y = 0; y < 2; ++y) {
+                    for (int z = 0; z < 2; ++z) {
+                        sampleLocalPoint(RE::NiPoint3{
+                            x == 0 ? instance.generatedLocalMinGame.x : instance.generatedLocalMaxGame.x,
+                            y == 0 ? instance.generatedLocalMinGame.y : instance.generatedLocalMaxGame.y,
+                            z == 0 ? instance.generatedLocalMinGame.z : instance.generatedLocalMaxGame.z,
+                        });
+                    }
+                }
+            }
+        }
+
+        result.leverGameUnits = sampledPoint ? std::sqrt(maxDistanceSquared) : 0.0f;
+        return result;
+    }
+
     RE::hknpBodyId WeaponCollision::getWeaponBodyId() const
     {
         for (const auto& instance : activeWeaponBodies()) {
