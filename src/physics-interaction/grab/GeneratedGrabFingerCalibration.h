@@ -6,7 +6,7 @@
 // - hFRIK/src/skeleton/HandPoseData.cpp
 // - original frik deps/F4VR-CommonFramework/src/common/Quaternion.h
 // - original frik deps/F4VR-CommonFramework/src/common/MatrixUtils.cpp
-// Source SHA-256: 7397d5bf255d612df76aa0cd0f7eed3506030b2c3322e4558573f41eaf92d9e2
+// Source SHA-256: b3d5a0bbfd48a5cf1fff4f1c0437aebfbb879c43dde77ce7a74277ecc766ece4
 
 #include <array>
 #include <cstddef>
@@ -16,7 +16,7 @@ namespace rock::grab_finger_calibration_data
 {
     inline constexpr std::uint32_t kGrabFingerCalibrationGeneratorVersion = 3;
     inline constexpr std::size_t kGrabFingerCalibrationSampleCount = 201;
-    inline constexpr const char* kGrabFingerCalibrationSourceHash = "7397d5bf255d612df76aa0cd0f7eed3506030b2c3322e4558573f41eaf92d9e2";
+    inline constexpr const char* kGrabFingerCalibrationSourceHash = "b3d5a0bbfd48a5cf1fff4f1c0437aebfbb879c43dde77ce7a74277ecc766ece4";
 
     enum class BakedGrabFingerProbe : std::uint8_t
     {
