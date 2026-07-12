@@ -880,6 +880,32 @@ namespace rock
         }
 
         /*
+         * Left-firing feed-forward pre-write: while ROCK owns the weapon node
+         * (left-firing topology), FRIK's earlier skeleton pass has already
+         * rewritten the node to its OFFHAND GLUE pose, so at this point
+         * weaponNode->world is glue space, not the real carried pose. Every
+         * world<->weapon-local conversion below (part-grip captures, mesh
+         * grab points, promotion distances, the two-hand solver base) would
+         * silently mix real-space palm/contact points with that glue frame -
+         * the round-4 corrupted captures. Publishing the canonical
+         * feed-forward pose FIRST makes the node a real-space basis for all
+         * existing math with no per-call-site special cases; the state
+         * handlers below re-publish their final solved pose as before.
+         * Right-firing reads FRIK's authored carry and is untouched.
+         */
+        if ((_state == TwoHandedState::Gripping || _state == TwoHandedState::PrimaryOnly) &&
+            _firingHandIsLeft && _hasFiringHandWeaponLocal) {
+            RE::NiTransform leftFiringHandTransform{};
+            if (tryGetSolverHandTransform(true, leftFiringHandTransform)) {
+                const RE::NiTransform feedForwardWeaponWorld = transform_math::composeTransforms(
+                    leftFiringHandTransform, transform_math::invertTransform(_primaryHandWeaponLocal));
+                if (isFiniteTransform(feedForwardWeaponWorld)) {
+                    applyWeaponVisualAuthority(weaponNode, feedForwardWeaponWorld);
+                }
+            }
+        }
+
+        /*
          * Support-side routing follows the CURRENT firing hand: the support
          * hand is whichever physical hand does not own the firing grip. All
          * grip math below is weapon-relative; the hands only choose roles.
@@ -927,6 +953,9 @@ namespace rock
             break;
 
         case TwoHandedState::Gripping:
+            if (_supportGripAgeFrames < (std::numeric_limits<std::uint32_t>::max)()) {
+                ++_supportGripAgeFrames;
+            }
             if (!_activeWeaponNode) {
                 ROCK_LOG_INFO(Weapon, "TwoHandedGrip: clearing authority because active weapon source root is unavailable");
                 transitionToInactive(false);
@@ -960,6 +989,28 @@ namespace rock
                 } else {
                     transitionToInactive(ownsWeaponTransform());
                 }
+            } else if (primaryDetachEnabled && !primaryGripInput.held &&
+                       equipped_weapon_manual_ownership_policy::shouldDeferPrimaryReleaseActionForFreshSupportGrip(_supportGripAgeFrames)) {
+                /*
+                 * The firing-grip release confirmed while the support grab is
+                 * only a few frames old: same physical gesture or a
+                 * grab-synchronized grip flicker, never an independent
+                 * release. Hold the two-handed grip unchanged; a re-pressed
+                 * grip resumes normally, and promotion/detach run below once
+                 * the grab has aged. leftGripHeld/rightGripHeld in the log
+                 * discriminate a physical flicker (both pipelines open) from
+                 * an input-path divergence (normal pipeline still held).
+                 */
+                if (!_freshSupportGripDeferLogged) {
+                    _freshSupportGripDeferLogged = true;
+                    ROCK_LOG_INFO(Weapon,
+                        "TwoHandedGrip: deferring firing-grip release action while support grip is fresh age={} firingHand={} leftGripHeld={} rightGripHeld={}",
+                        _supportGripAgeFrames,
+                        _firingHandIsLeft ? "left" : "right",
+                        stableFrameInput.leftGripHeld ? "yes" : "no",
+                        stableFrameInput.rightGripHeld ? "yes" : "no");
+                }
+                updateGripping(_activeWeaponNode, dt);
             } else if (primaryDetachEnabled && !primaryGripInput.held && tryPromoteSupportGripToFiringGrip(_activeWeaponNode)) {
                 // The support hand was wrapped over the firing grip when the
                 // firing hand opened: it takes over the SAME weapon-relative
@@ -1065,6 +1116,8 @@ namespace rock
         _partCarryGripSeparationWorld = 0.0f;
         _primaryGripLocal = {};
         _lockedGripSeparationWorld = 0.0f;
+        _supportGripAgeFrames = 0;
+        _freshSupportGripDeferLogged = false;
         _authorityMode = weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver;
         _hasSolvedWeaponTransform = false;
         _activeWeaponNode = nullptr;
@@ -1455,14 +1508,28 @@ namespace rock
         const bool supportHandIsLeft = !_firingHandIsLeft;
         const bool primaryHandIsLeft = _firingHandIsLeft;
 
+        /*
+         * A LEFT firing hand entering a two-handed grip KEEPS its captured
+         * firing-grip frames: they hold the mirrored canonical hold
+         * (takeover-committed), and recapturing from the live hand both
+         * replaced that authored hold with the momentary squeeze orientation
+         * (round-2 arm break) and rebased the promotion grip point onto
+         * whatever pose the node carried at grab time (round-4 role theft).
+         * The right hand recaptures as before - its frames deliberately ride
+         * FRIK's authored carry and feed the canonical snapshot.
+         */
+        const bool keepLeftFiringHold = _firingHandIsLeft && _hasFiringHandWeaponLocal;
+
         _authorityMode = supportAuthorityMode;
         _activeWeaponNode = weaponNode;
         _activeWeaponGenerationKey = decision.weaponGenerationKey;
         _activeEquippedWeaponOwnershipKey = currentEquippedWeaponOwnershipKey;
         _weaponNodeLocalBaseline = weaponNode->local;
         _hasWeaponNodeLocalBaseline = true;
-        _primaryGripConfidence = 0.0f;
-        _hasFiringHandWeaponLocal = false;
+        if (!keepLeftFiringHold) {
+            _primaryGripConfidence = 0.0f;
+            _hasFiringHandWeaponLocal = false;
+        }
         resetLockedHandVisualLerp();
         clearPrimaryGripPose(primaryHandIsLeft);
         clearSupportGripPose(supportHandIsLeft);
@@ -1477,14 +1544,16 @@ namespace rock
         }
 
         const RE::NiPoint3 primaryPalmPos = computeGrabLegacyPalmPivotAWorldFromHandBasis(primaryTransform, primaryHandIsLeft);
-        _primaryGripLocal = worldToWeaponLocal(primaryPalmPos, weaponNode);
-        _primaryGripConfidence = 1.0f;
-        _primaryHandWeaponLocal = transform_math::composeTransforms(transform_math::invertTransform(weaponNode->world), primaryTransform);
-        _hasFiringHandWeaponLocal = true;
-        _firingGripSequence = ++_gripCaptureSequence;
-        // A right-hand capture here rides FRIK's authored carry: snapshot it
-        // as the canonical hold that left takeovers apply mirrored.
-        rememberRightFiringHandCanonicalFrame();
+        if (!keepLeftFiringHold) {
+            _primaryGripLocal = worldToWeaponLocal(primaryPalmPos, weaponNode);
+            _primaryGripConfidence = 1.0f;
+            _primaryHandWeaponLocal = transform_math::composeTransforms(transform_math::invertTransform(weaponNode->world), primaryTransform);
+            _hasFiringHandWeaponLocal = true;
+            _firingGripSequence = ++_gripCaptureSequence;
+            // A right-hand capture here rides FRIK's authored carry: snapshot it
+            // as the canonical hold that left takeovers apply mirrored.
+            rememberRightFiringHandCanonicalFrame();
+        }
 
         /*
          * Sidearm hybrid: at capture the firing grip point is the primary palm,
@@ -1528,6 +1597,8 @@ namespace rock
         _state = TwoHandedState::Gripping;
         _rotationBlend = 0.0f;
         _gripLogCounter = 0;
+        _supportGripAgeFrames = 0;
+        _freshSupportGripDeferLogged = false;
 
         if (_firingHandIsLeft) {
             // clearPrimaryGripPose above dropped the left firing pose; the
@@ -1586,6 +1657,8 @@ namespace rock
         _partCarryGripSeparationWorld = 0.0f;
         _primaryGripLocal = {};
         _lockedGripSeparationWorld = 0.0f;
+        _supportGripAgeFrames = 0;
+        _freshSupportGripDeferLogged = false;
         _authorityMode = weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver;
         _hasSolvedWeaponTransform = publishRestoredWeaponTransform && restoredWeaponTransformAvailable;
         if (_hasSolvedWeaponTransform) {
@@ -2443,6 +2516,10 @@ namespace rock
                         _rotationBlend = 0.0f;
                     }
                     _state = TwoHandedState::Gripping;
+                    // Fresh two-hand configuration: the just-taken firing grip
+                    // gets the same release-defer window as a fresh support grab.
+                    _supportGripAgeFrames = 0;
+                    _freshSupportGripDeferLogged = false;
                     updateFullWeaponAuthorityGrip(weaponNode, dt);
                 } else {
                     transitionToPrimaryOnly(

@@ -391,6 +391,15 @@ int main()
     ok &= expectFalse("stable open primary samples release firing grip", primaryReleaseDecision.retained);
     ok &= expectTrue("stable open primary samples confirm release", primaryReleaseDecision.releaseConfirmed);
 
+    ok &= expectTrue("release confirmed on a just-captured support grip is deferred",
+        shouldDeferPrimaryReleaseActionForFreshSupportGrip(0));
+    ok &= expectTrue("release confirmed on the earliest confirmable frame after a grab is deferred",
+        shouldDeferPrimaryReleaseActionForFreshSupportGrip(kPrimaryReleaseConfirmFrames));
+    ok &= expectTrue("release confirmed at the defer window edge is still deferred",
+        shouldDeferPrimaryReleaseActionForFreshSupportGrip(kFreshSupportGripPrimaryReleaseDeferFrames));
+    ok &= expectFalse("release confirmed on an aged support grip acts normally",
+        shouldDeferPrimaryReleaseActionForFreshSupportGrip(kFreshSupportGripPrimaryReleaseDeferFrames + 1));
+
     RuntimeState manualState{};
     auto manualDecision = update(manualState,
         Input{

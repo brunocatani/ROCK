@@ -416,6 +416,26 @@ namespace rock::equipped_weapon_manual_ownership_policy
                (!collisionGenerationRequired || currentCollisionGenerationKey != 0);
     }
 
+    /*
+     * A firing-grip release that confirms while the support grab is only a
+     * few frames old is part of the SAME physical gesture (reach-over
+     * takeover) or a grab-synchronized grip flicker - never an independent,
+     * deliberate release. Acting on it immediately let a fresh offhand grab
+     * steal the firing role one frame after capture (left-firing round-4
+     * break, 2026-07-12). The window must exceed the release-confirm
+     * debounce so the earliest confirm reachable after a grab is always
+     * deferred; ~5 frames (about 110ms at 45Hz) also outlasts short grip
+     * click flickers while staying imperceptible for deliberate takeovers.
+     */
+    inline constexpr std::uint32_t kFreshSupportGripPrimaryReleaseDeferFrames = 5;
+    static_assert(kFreshSupportGripPrimaryReleaseDeferFrames > kPrimaryReleaseConfirmFrames,
+        "defer window must outlast the release-confirm debounce or a grab-synchronized release acts on its first confirmable frame");
+
+    [[nodiscard]] inline constexpr bool shouldDeferPrimaryReleaseActionForFreshSupportGrip(std::uint32_t supportGripAgeFrames) noexcept
+    {
+        return supportGripAgeFrames <= kFreshSupportGripPrimaryReleaseDeferFrames;
+    }
+
     [[nodiscard]] inline constexpr GripReleaseDebounceDecision debouncePrimaryGripRelease(
         GripReleaseDebounceState& state,
         bool physicallyHeld,

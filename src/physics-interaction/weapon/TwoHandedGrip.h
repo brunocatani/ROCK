@@ -612,6 +612,16 @@ namespace rock
         std::uint64_t _activeWeaponGenerationKey{ 0 };
         std::uint64_t _activeEquippedWeaponOwnershipKey{ 0 };
         equipped_weapon_manual_ownership_policy::GripReleaseDebounceState _primaryReleaseDebounce{};
+
+        /*
+         * Whole frames spent in Gripping since the support grab was captured.
+         * Gates promotion/detach on a confirmed firing-grip release: a
+         * release that confirms while this is still fresh is the same
+         * gesture (or a grab-synchronized grip flicker) and is deferred.
+         */
+        std::uint32_t _supportGripAgeFrames{ 0 };
+        bool _freshSupportGripDeferLogged{ false };
+
         RE::NiTransform _weaponNodeLocalBaseline{};
         bool _hasWeaponNodeLocalBaseline{ false };
 
