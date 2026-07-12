@@ -116,46 +116,6 @@ namespace rock
                 frik_visual_authority::canBlockPrimaryWeaponNodeOwnership();
         }
 
-        RE::NiMatrix3 makeMatrixFromRows(const RE::NiPoint3& row0, const RE::NiPoint3& row1, const RE::NiPoint3& row2)
-        {
-            RE::NiMatrix3 result{};
-            result.entry[0][0] = row0.x;
-            result.entry[0][1] = row0.y;
-            result.entry[0][2] = row0.z;
-            result.entry[1][0] = row1.x;
-            result.entry[1][1] = row1.y;
-            result.entry[1][2] = row1.z;
-            result.entry[2][0] = row2.x;
-            result.entry[2][1] = row2.y;
-            result.entry[2][2] = row2.z;
-            return result;
-        }
-
-        RE::NiMatrix3 transposeMatrix(const RE::NiMatrix3& m)
-        {
-            RE::NiMatrix3 result{};
-            for (int row = 0; row < 3; ++row) {
-                for (int col = 0; col < 3; ++col) {
-                    result.entry[row][col] = m.entry[col][row];
-                }
-            }
-            return result;
-        }
-
-        RE::NiMatrix3 mulRowMatrices(const RE::NiMatrix3& a, const RE::NiMatrix3& b)
-        {
-            RE::NiMatrix3 result{};
-            for (int row = 0; row < 3; ++row) {
-                for (int col = 0; col < 3; ++col) {
-                    result.entry[row][col] =
-                        a.entry[row][0] * b.entry[0][col] +
-                        a.entry[row][1] * b.entry[1][col] +
-                        a.entry[row][2] * b.entry[2][col];
-                }
-            }
-            return result;
-        }
-
         RE::NiNode* sourceRootNodeOrFallback(RE::NiAVObject* sourceRoot, RE::NiNode* fallback)
         {
             if (sourceRoot) {
@@ -3146,90 +3106,105 @@ namespace rock
         }
 
         /*
-         * Semantic mirror built from ROCK's own handed palm math, NOT from
-         * bone-basis algebra: the skeleton's left/right hand bone conventions
-         * are not mirror images (a row-negation recipe derived from hFRIK's
-         * left-handed-mode constants pointed the barrel backward in-game).
-         * The canonical right hold is decomposed into weapon-space palm
-         * semantics (palm pivot, palm normal, wrist-to-palm direction),
-         * mirrored across the weapon's side symmetry plane (weapon +Y =
-         * barrel, +X = side; FRIK's own gripping code relies on Y-forward),
-         * then re-solved into a LEFT hand rotation through the left hand's
-         * own palm-basis mapping. Every handed constant comes from the same
-         * palm helpers the grip captures already trust in production.
+         * WAND-CONJUGATION MIRROR. The aim requirement is controller-
+         * relative: the tuned right-hand offsets align the barrel with the
+         * RIGHT controller's forward, so the mirrored hold must align it
+         * with the LEFT controller's forward with the lateral components
+         * negated ("2 degrees left of the right wand" becomes "2 degrees
+         * right of the left wand"). Left/right WAND device frames are the
+         * physically exact mirror pair; the hand BONE conventions are not
+         * mirrors (previous semantic-palm and bone-anchor mirrors both left
+         * a residual yaw/side bias in-game). Conjugating the canonical hold
+         * through the wand pair cancels every per-hand bone convention
+         * inside the live-sampled bone-in-wand transforms:
+         *
+         *   weaponInLeftWand = Msag o weaponInRightWand o Mside
+         *
+         * with two reflections keeping the result a proper rotation: Msag
+         * mirrors across the wand's sagittal plane (wand-local X lateral -
+         * same axis family as the weapon frame the wand chain parents) and
+         * Mside across the weapon's own side plane (+Y barrel, +X side),
+         * which maps the grip from the weapon's right flank to its left.
+         * Effect on the tuned offsets: yaw and roll negate, pitch and
+         * fore/aft/vertical placement are preserved.
+         *
+         * The native first-person arm sync drags each hand bone to its wand
+         * with a fixed per-hand map, so bone-in-wand is constant and
+         * sampling it at takeover time is exact.
          */
-        const RE::NiTransform& rightHandWeaponLocal = _rightFiringHandCanonicalWeaponLocal;
-
-        RE::NiTransform identityTransform{};
-        identityTransform.MakeIdentity();
-
-        // Hand-local palm semantics (helpers applied to identity => local).
-        const RE::NiPoint3 leftPalmNormalLocal = computePalmNormalFromHandBasis(identityTransform, true);
-        const RE::NiPoint3 leftPalmPivotLocal = computeGrabLegacyPalmPivotAWorldFromHandBasis(identityTransform, true);
-
-        // Canonical right hold as weapon-space palm semantics.
-        const RE::NiPoint3 rightPalmNormalWeapon = computePalmNormalFromHandBasis(rightHandWeaponLocal, false);
-        const RE::NiPoint3 rightPalmPivotWeapon = computeGrabLegacyPalmPivotAWorldFromHandBasis(rightHandWeaponLocal, false);
-        const RE::NiPoint3 rightWristToPalmWeapon = sub(rightPalmPivotWeapon, rightHandWeaponLocal.translate);
-
-        const auto mirrorAcrossWeaponSidePlane = [](const RE::NiPoint3& v) {
-            return RE::NiPoint3{ -v.x, v.y, v.z };
-        };
-        const RE::NiPoint3 mirroredPalmNormal = mirrorAcrossWeaponSidePlane(rightPalmNormalWeapon);
-        const RE::NiPoint3 mirroredWristToPalm = mirrorAcrossWeaponSidePlane(rightWristToPalmWeapon);
-
-        constexpr float kMinAxisSeparation = 0.05f;
-        const auto orthonormalPair = [](const RE::NiPoint3& primary, const RE::NiPoint3& secondary, RE::NiPoint3& outPrimary, RE::NiPoint3& outSecondary) {
-            outPrimary = weaponSolverNormalize(primary);
-            const RE::NiPoint3 secondaryUnit = weaponSolverNormalize(secondary);
-            const float alignment = dot(secondaryUnit, outPrimary);
-            const RE::NiPoint3 rejected = sub(secondaryUnit, RE::NiPoint3{ outPrimary.x * alignment, outPrimary.y * alignment, outPrimary.z * alignment });
-            const float rejectedLength = std::sqrt(dot(rejected, rejected));
-            if (!std::isfinite(rejectedLength) || rejectedLength < kMinAxisSeparation) {
-                return false;
-            }
-            outSecondary = weaponSolverNormalize(rejected);
-            return true;
-        };
-
-        RE::NiPoint3 nLocal{};
-        RE::NiPoint3 pLocal{};
-        RE::NiPoint3 nTarget{};
-        RE::NiPoint3 pTarget{};
-        if (!orthonormalPair(leftPalmNormalLocal, leftPalmPivotLocal, nLocal, pLocal) ||
-            !orthonormalPair(mirroredPalmNormal, mirroredWristToPalm, nTarget, pTarget)) {
+        auto* playerNodes = f4vr::getPlayerNodes();
+        if (!playerNodes) {
             return false;
         }
-        const RE::NiPoint3 tLocal = weaponSolverCross(nLocal, pLocal);
-        const RE::NiPoint3 tTarget = weaponSolverCross(nTarget, pTarget);
+        // Ambidextrous stands down in game-left-handed mode, so primary is
+        // always the physical RIGHT wand here.
+        RE::NiNode* rightWand = playerNodes->primaryWandNode;
+        RE::NiNode* leftWand = playerNodes->SecondaryWandNode;
+        if (!rightWand || !leftWand ||
+            !isFiniteTransform(rightWand->world) || !isFiniteTransform(leftWand->world)) {
+            return false;
+        }
 
-        /*
-         * Rows-as-axes: the hand rotation's rows are the hand basis images in
-         * weapon space, so the rotation mapping each left-local semantic axis
-         * onto its mirrored weapon-space image is A^T * B (A rows = local
-         * semantic frame, B rows = target semantic frame; both right-handed
-         * orthonormal triples, so the product is a proper rotation).
-         */
-        const RE::NiMatrix3 localFrame = makeMatrixFromRows(nLocal, pLocal, tLocal);
-        const RE::NiMatrix3 targetFrame = makeMatrixFromRows(nTarget, pTarget, tTarget);
+        RE::NiTransform rightHandWorld{};
+        RE::NiTransform leftHandWorld{};
+        if (!tryGetSolverHandTransform(false, rightHandWorld) || !tryGetSolverHandTransform(true, leftHandWorld)) {
+            return false;
+        }
 
-        RE::NiTransform mirroredHandWeaponLocal{};
-        mirroredHandWeaponLocal.rotate = mulRowMatrices(transposeMatrix(localFrame), targetFrame);
-        /*
-         * Anchor the LEFT hand BONE at the mirrored right bone position. The
-         * wrist origins are anatomically symmetric in the rig even though the
-         * bone BASES are not, so this flips the tuned lateral weapon offset by
-         * construction ("a bit left of the right wrist" becomes "a bit right
-         * of the left wrist"). The previous palm-pivot anchoring trusted the
-         * per-hand palm-pivot locals to be semantic mirrors laterally - they
-         * are not, and the weapon kept the right hand's side bias in-game.
-         */
-        mirroredHandWeaponLocal.translate = mirrorAcrossWeaponSidePlane(rightHandWeaponLocal.translate);
-        mirroredHandWeaponLocal.scale = rightHandWeaponLocal.scale;
+        const RE::NiTransform boneInRightWand =
+            transform_math::composeTransforms(transform_math::invertTransform(rightWand->world), rightHandWorld);
+        const RE::NiTransform boneInLeftWand =
+            transform_math::composeTransforms(transform_math::invertTransform(leftWand->world), leftHandWorld);
+        // A hand bone rides its wand at wrist range; a large offset means a
+        // stale or foreign frame - fail closed to the live-capture fallback.
+        constexpr float kMaxBoneToWandDistance = 30.0f;
+        const auto transformOffsetLength = [](const RE::NiTransform& transform) {
+            return std::sqrt(dot(transform.translate, transform.translate));
+        };
+        if (!isFiniteTransform(boneInRightWand) || !isFiniteTransform(boneInLeftWand) ||
+            transformOffsetLength(boneInRightWand) > kMaxBoneToWandDistance ||
+            transformOffsetLength(boneInLeftWand) > kMaxBoneToWandDistance) {
+            return false;
+        }
+
+        // Reflections are involutions with symmetric matrices, so the
+        // diagonal form is convention-proof; composed in pairs they keep
+        // every final rotation proper.
+        RE::NiTransform lateralMirror{};
+        lateralMirror.MakeIdentity();
+        lateralMirror.rotate.entry[0][0] = -1.0f;
+
+        const RE::NiTransform weaponInRightWand = transform_math::composeTransforms(
+            boneInRightWand, transform_math::invertTransform(_rightFiringHandCanonicalWeaponLocal));
+        const RE::NiTransform weaponInLeftWand = transform_math::composeTransforms(
+            lateralMirror, transform_math::composeTransforms(weaponInRightWand, lateralMirror));
+        const RE::NiTransform weaponInLeftHand = transform_math::composeTransforms(
+            transform_math::invertTransform(boneInLeftWand), weaponInLeftWand);
+        const RE::NiTransform mirroredHandWeaponLocal = transform_math::invertTransform(weaponInLeftHand);
 
         if (!isFiniteTransform(mirroredHandWeaponLocal)) {
             return false;
         }
+
+        // Takeover-event diagnostic: barrel (+Y weapon) direction in each
+        // wand frame. A correct mirror negates x and preserves y/z; a wand
+        // axis-convention mismatch shows up here as a different component
+        // flipping.
+        const RE::NiPoint3 barrelInRightWand =
+            sub(transform_math::localPointToWorld(weaponInRightWand, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }), weaponInRightWand.translate);
+        const RE::NiPoint3 barrelInLeftWand =
+            sub(transform_math::localPointToWorld(weaponInLeftWand, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }), weaponInLeftWand.translate);
+        ROCK_LOG_INFO(Weapon,
+            "TwoHandedGrip: wand-conjugated left hold barrelInRightWand=({:.3f},{:.3f},{:.3f}) barrelInLeftWand=({:.3f},{:.3f},{:.3f}) boneWandDist=({:.2f},{:.2f})",
+            barrelInRightWand.x,
+            barrelInRightWand.y,
+            barrelInRightWand.z,
+            barrelInLeftWand.x,
+            barrelInLeftWand.y,
+            barrelInLeftWand.z,
+            transformOffsetLength(boneInRightWand),
+            transformOffsetLength(boneInLeftWand));
+
         outHandWeaponLocal = mirroredHandWeaponLocal;
         return true;
     }
