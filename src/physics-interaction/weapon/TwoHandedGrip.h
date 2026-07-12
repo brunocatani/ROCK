@@ -437,6 +437,7 @@ namespace rock
          * left bone basis, instead of freezing the live squeeze orientation.
          */
         void rememberRightFiringHandCanonicalFrame();
+        void refreshRightNativeCanonicalFrame(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
 
         bool tryComputeMirroredLeftFiringHandWeaponLocal(RE::NiTransform& outHandWeaponLocal) const;
 

@@ -1021,6 +1021,8 @@ namespace rock
             break;
         }
 
+        refreshRightNativeCanonicalFrame(weaponNode, currentWeaponGenerationKey);
+
         // Enforce the left-firing weapon-node ownership contract after every
         // state/role transition this frame (idempotent; also the parent
         // watchdog for engine-side re-attach).
@@ -3109,6 +3111,54 @@ namespace rock
         _hasRightFiringHandCanonicalWeaponLocal = true;
     }
 
+    void TwoHandedGrip::refreshRightNativeCanonicalFrame(RE::NiNode* weaponNode, const std::uint64_t currentWeaponGenerationKey)
+    {
+        /*
+         * Passive canonical capture: whenever the equipped weapon rides the
+         * native RIGHT hand (no ROCK transform ownership), the live weapon
+         * pose already carries FRIK's authored per-weapon offsets, so the
+         * canonical right hold and its weapon-in-wand frame can refresh
+         * continuously. Without this, a weapon that was never
+         * right-firing-gripped in the session had no canonical, and a LEFT
+         * takeover fell back to the raw squeeze capture - the per-weapon
+         * offsets (e.g. the UMP's large forward offset) silently missing
+         * from the mirrored left hold ("worked before by coincidence").
+         */
+        if (isManualOwnershipActive() || _weaponNodeOwnershipBlockEngaged ||
+            !weaponNode || currentWeaponGenerationKey == 0 ||
+            !isFiniteTransform(weaponNode->world)) {
+            return;
+        }
+        auto* playerNodes = f4vr::getPlayerNodes();
+        RE::NiTransform rightHandWorld{};
+        if (!playerNodes || !playerNodes->primaryWandNode ||
+            !isFiniteTransform(playerNodes->primaryWandNode->world) ||
+            !tryGetSolverHandTransform(false, rightHandWorld)) {
+            return;
+        }
+        const RE::NiTransform boneInRightWand = transform_math::composeTransforms(
+            transform_math::invertTransform(playerNodes->primaryWandNode->world), rightHandWorld);
+        // Same wrist-range gate as the mirror's wand-map sampling, plus a
+        // loose weapon-to-hand bound so a mid-equip/mid-teleport frame never
+        // poisons the canonical.
+        constexpr float kMaxBoneToWandDistance = 30.0f;
+        constexpr float kMaxWeaponToHandDistance = 100.0f;
+        const RE::NiPoint3 weaponToHand = sub(weaponNode->world.translate, rightHandWorld.translate);
+        if (!isFiniteTransform(boneInRightWand) ||
+            std::sqrt(dot(boneInRightWand.translate, boneInRightWand.translate)) > kMaxBoneToWandDistance ||
+            std::sqrt(dot(weaponToHand, weaponToHand)) > kMaxWeaponToHandDistance) {
+            return;
+        }
+        const RE::NiTransform canonicalHold = transform_math::composeTransforms(
+            transform_math::invertTransform(weaponNode->world), rightHandWorld);
+        if (!isFiniteTransform(canonicalHold)) {
+            return;
+        }
+        _rightFiringHandCanonicalWeaponLocal = canonicalHold;
+        _rightFiringHandCanonicalGenerationKey = currentWeaponGenerationKey;
+        _hasRightFiringHandCanonicalWeaponLocal = true;
+    }
+
     bool TwoHandedGrip::tryComputeMirroredLeftFiringHandWeaponLocal(RE::NiTransform& outHandWeaponLocal) const
     {
         if (!_hasRightFiringHandCanonicalWeaponLocal ||
@@ -3192,62 +3242,62 @@ namespace rock
             lateralMirror, transform_math::composeTransforms(weaponInRightWand, lateralMirror));
 
         /*
-         * Global aim trim: the left arm is driven through the melee offset
-         * pipeline, which is not an exact mirror of the right weapon
-         * pipeline, so a small fixed cant can survive the wand conjugation.
-         * The trim rotates the weapon about its own origin (yaw about
-         * weapon +Z up, pitch about weapon +X side) - weapon-frame
-         * semantics, one calibration for every weapon. If a value moves
-         * the aim opposite to its documented direction on a given engine
-         * matrix convention, the user flips its sign once.
+         * Global left-hold trim, applied on the WAND side of the conjugation
+         * (PRE-composed in the LEFT WAND frame), never on the weapon side.
+         * The error it corrects is the fixed frame-convention delta between
+         * the two wand device frames, which sits to the LEFT of the
+         * conjugated hold. A weapon-side (post-composed) trim conjugates
+         * through each weapon's own hold and therefore acts along different
+         * axes per weapon: only the calibration weapon looked right, and
+         * weapons with large authored holds (UMP forward offset, hunting
+         * rifle) showed the trim rotated into unrelated directions
+         * (2026-07-12 regression). Pre-composing makes one calibration exact
+         * for every weapon, and if the mirror is fully correct these trims
+         * converge to zero.
+         *
+         * Axes are the left wand's hand-anatomical basis (user-calibrated
+         * in-game): X = palm normal, Y = fingers forward, Z = thumb up.
+         * Yaw rotates about Z (thumb), pitch about X (palm normal), offsets
+         * translate along the same axes; if a value moves the hold opposite
+         * to its documented direction, the user flips its sign once.
          */
         constexpr float kDegreesToRadiansLocal = 0.017453292519943295769f;
         const float aimYawRadians = g_rockConfig.rockLeftFiringAimYawDegrees * kDegreesToRadiansLocal;
         const float aimPitchRadians = g_rockConfig.rockLeftFiringAimPitchDegrees * kDegreesToRadiansLocal;
-        if (aimYawRadians != 0.0f) {
-            const float yawCos = std::cos(aimYawRadians);
-            const float yawSin = std::sin(aimYawRadians);
-            // yaw about weapon +Z (up): barrel +Y swings toward +X.
-            RE::NiTransform yawTrim{};
-            yawTrim.MakeIdentity();
-            yawTrim.rotate.entry[0][0] = yawCos;
-            yawTrim.rotate.entry[0][1] = -yawSin;
-            yawTrim.rotate.entry[1][0] = yawSin;
-            yawTrim.rotate.entry[1][1] = yawCos;
-            weaponInLeftWand = transform_math::composeTransforms(weaponInLeftWand, yawTrim);
-        }
-        if (aimPitchRadians != 0.0f) {
-            const float pitchCos = std::cos(aimPitchRadians);
-            const float pitchSin = std::sin(aimPitchRadians);
-            // pitch about weapon +X (side): barrel +Y swings toward -Z.
-            RE::NiTransform pitchTrim{};
-            pitchTrim.MakeIdentity();
-            pitchTrim.rotate.entry[1][1] = pitchCos;
-            pitchTrim.rotate.entry[1][2] = pitchSin;
-            pitchTrim.rotate.entry[2][1] = -pitchSin;
-            pitchTrim.rotate.entry[2][2] = pitchCos;
-            weaponInLeftWand = transform_math::composeTransforms(weaponInLeftWand, pitchTrim);
-        }
-
-        /*
-         * Translation trim, weapon-frame game units (+X weapon right side,
-         * +Y along the barrel, +Z up): compensates the fixed placement bias
-         * of the left arm chain the same way the rotation trims compensate
-         * its cant. Applied AFTER the rotation trims so the offset axes
-         * match the final aimed weapon frame; sign semantics carry the same
-         * caveat as the rotation trims (flip once if an axis moves the
-         * weapon the opposite way).
-         */
         const RE::NiPoint3 aimOffset{
             g_rockConfig.rockLeftFiringAimOffsetXGameUnits,
             g_rockConfig.rockLeftFiringAimOffsetYGameUnits,
             g_rockConfig.rockLeftFiringAimOffsetZGameUnits
         };
-        if (aimOffset.x != 0.0f || aimOffset.y != 0.0f || aimOffset.z != 0.0f) {
-            RE::NiTransform offsetTrim{};
-            offsetTrim.MakeIdentity();
-            offsetTrim.translate = aimOffset;
-            weaponInLeftWand = transform_math::composeTransforms(weaponInLeftWand, offsetTrim);
+        if (aimYawRadians != 0.0f || aimPitchRadians != 0.0f ||
+            aimOffset.x != 0.0f || aimOffset.y != 0.0f || aimOffset.z != 0.0f) {
+            RE::NiTransform yawTrim{};
+            yawTrim.MakeIdentity();
+            if (aimYawRadians != 0.0f) {
+                const float yawCos = std::cos(aimYawRadians);
+                const float yawSin = std::sin(aimYawRadians);
+                // yaw about wand +Z (thumb axis)
+                yawTrim.rotate.entry[0][0] = yawCos;
+                yawTrim.rotate.entry[0][1] = -yawSin;
+                yawTrim.rotate.entry[1][0] = yawSin;
+                yawTrim.rotate.entry[1][1] = yawCos;
+            }
+            RE::NiTransform pitchTrim{};
+            pitchTrim.MakeIdentity();
+            if (aimPitchRadians != 0.0f) {
+                const float pitchCos = std::cos(aimPitchRadians);
+                const float pitchSin = std::sin(aimPitchRadians);
+                // pitch about wand +X (palm-normal axis)
+                pitchTrim.rotate.entry[1][1] = pitchCos;
+                pitchTrim.rotate.entry[1][2] = pitchSin;
+                pitchTrim.rotate.entry[2][1] = -pitchSin;
+                pitchTrim.rotate.entry[2][2] = pitchCos;
+            }
+            RE::NiTransform wandTrim = transform_math::composeTransforms(yawTrim, pitchTrim);
+            // Translation assigned after the rotation compose so the offsets
+            // stay in raw wand axes instead of being rotated by the trim.
+            wandTrim.translate = aimOffset;
+            weaponInLeftWand = transform_math::composeTransforms(wandTrim, weaponInLeftWand);
         }
 
         const RE::NiTransform weaponInLeftHand = transform_math::composeTransforms(
