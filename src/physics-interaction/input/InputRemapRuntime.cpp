@@ -38,6 +38,10 @@ namespace rock::input_remap_runtime
     {
         constexpr std::size_t kGetControllerStateVTableIndex = 34;
         constexpr std::size_t kGetControllerStateWithPoseVTableIndex = 35;
+        // TriggerHapticPulse has immediately followed GetControllerStateWithPose
+        // in every IVRSystem revision that has the state getters; the two
+        // adjacent indices above are proven live in-game.
+        constexpr std::size_t kTriggerHapticPulseVTableIndex = 36;
         constexpr DWORD kPageExecuteReadWrite = 0x00000040u;
         constexpr std::uintptr_t kReadyWeaponHandlerHandleEventFunctionOffset = 0x0FC9220;
         constexpr std::uintptr_t kReadyWeaponHandlerHandleEventVTableSlotOffset = 0x2D8A4D0;
@@ -135,6 +139,7 @@ namespace rock::input_remap_runtime
         using GetControllerState_t = bool (*)(vr::IVRSystem*, vr::TrackedDeviceIndex_t, vr::VRControllerState_t*, std::uint32_t);
         using GetControllerStateWithPose_t =
             bool (*)(vr::IVRSystem*, vr::ETrackingUniverseOrigin, vr::TrackedDeviceIndex_t, vr::VRControllerState_t*, std::uint32_t, vr::TrackedDevicePose_t*);
+        using TriggerHapticPulse_t = void (*)(vr::IVRSystem*, vr::TrackedDeviceIndex_t, std::uint32_t, unsigned short);
         using NativeInputEventHandler_t = void (*)(void*, RE::InputEvent*, void*, void*);
         using NativeActionDispatcher_t = bool (*)(void*, int, std::uint32_t);
         using NativeInputDeviceToControllerId_t = std::int32_t (*)(std::int32_t);
@@ -182,6 +187,7 @@ namespace rock::input_remap_runtime
         void** s_vrSystemVTable = nullptr;
         GetControllerState_t s_originalGetControllerState = nullptr;
         GetControllerStateWithPose_t s_originalGetControllerStateWithPose = nullptr;
+        TriggerHapticPulse_t s_originalTriggerHapticPulse = nullptr;
         NativeInputEventHandler_t s_originalReadyWeaponEventHandler = nullptr;
         NativeInputEventHandler_t s_originalActivateEventHandler = nullptr;
         NativeInputEventHandler_t s_originalMeleeThrowEventHandler = nullptr;
@@ -431,8 +437,16 @@ namespace rock::input_remap_runtime
              * The configurator consumes raw controller input through ROCK while its lease masks game-facing state.
              * Some helper paths call through framework/static-library frames before reaching OpenVR, so the immediate
              * return address is not always enough to identify the configurator as the consumer.
+             *
+             * hFRIK models the PHYSICAL hands: its dynamic finger curls and
+             * gesture reads must follow the real controller state, never the
+             * game-facing remap (the left-fire trigger cross-map was curling
+             * the free RIGHT index with the left trigger pull). FRIK's poll
+             * sites live inside FRIK.dll (statically linked framework), so
+             * the cheap caller check suffices - no stack walk needed.
              */
             return isCallerModule(callerAddress, L"ROCKConfigurator.dll") ||
+                   isCallerModule(callerAddress, L"FRIK.dll") ||
                    isModuleOnCurrentStack(L"ROCKConfigurator.dll");
         }
 
@@ -847,6 +861,37 @@ namespace rock::input_remap_runtime
                 }
             }
             return result;
+        }
+
+        /*
+         * While the LEFT hand fires, the game believes the RIGHT wand fired
+         * and sends its haptic pulses (weapon fire rumble) there. Retarget
+         * game-originated pulses aimed at the RIGHT wand to the LEFT wand so
+         * the rumble lands in the hand actually holding the weapon. ROCK,
+         * FRIK and the configurator address PHYSICAL hands with their own
+         * pulses and pass through untouched.
+         */
+        void hookedTriggerHapticPulse(vr::IVRSystem* system, vr::TrackedDeviceIndex_t controllerDeviceIndex, std::uint32_t axisId, unsigned short durationMicroSec)
+        {
+            const void* callerAddress = _ReturnAddress();
+            vr::TrackedDeviceIndex_t targetDeviceIndex = controllerDeviceIndex;
+            if (shouldRemapLeftHandFireTriggerForGame() &&
+                !isCallerModule(callerAddress, L"ROCK.dll") &&
+                !isCallerModule(callerAddress, L"FRIK.dll") &&
+                !shouldBypassProviderOpenVrGameInputSuppression(callerAddress)) {
+                input_remap_policy::Hand hand{};
+                if (resolveControllerHand(controllerDeviceIndex, hand) && hand == input_remap_policy::Hand::Right) {
+                    const auto leftIndex = system ?
+                        system->GetTrackedDeviceIndexForControllerRole(vr::TrackedControllerRole_LeftHand) :
+                        vr::k_unTrackedDeviceIndexInvalid;
+                    if (leftIndex != vr::k_unTrackedDeviceIndexInvalid) {
+                        targetDeviceIndex = leftIndex;
+                    }
+                }
+            }
+            if (s_originalTriggerHapticPulse) {
+                s_originalTriggerHapticPulse(system, targetDeviceIndex, axisId, durationMicroSec);
+            }
         }
 
         bool patchPointerSlot(void** slot, void* hook, void*& original, const char* label)
@@ -1730,6 +1775,7 @@ namespace rock::input_remap_runtime
 
         void* originalState = reinterpret_cast<void*>(s_originalGetControllerState);
         void* originalStateWithPose = reinterpret_cast<void*>(s_originalGetControllerStateWithPose);
+        void* originalTriggerHapticPulse = reinterpret_cast<void*>(s_originalTriggerHapticPulse);
 
         const bool stateHooked = patchVTableSlot(
             s_vrSystemVTable, kGetControllerStateVTableIndex, reinterpret_cast<void*>(&hookedGetControllerState), originalState, "IVRSystem::GetControllerState");
@@ -1738,9 +1784,19 @@ namespace rock::input_remap_runtime
             reinterpret_cast<void*>(&hookedGetControllerStateWithPose),
             originalStateWithPose,
             "IVRSystem::GetControllerStateWithPose");
+        // Haptic reroute degrades gracefully: a failed install only means
+        // fire rumble stays on the right wand during left-firing.
+        if (!patchVTableSlot(s_vrSystemVTable,
+                kTriggerHapticPulseVTableIndex,
+                reinterpret_cast<void*>(&hookedTriggerHapticPulse),
+                originalTriggerHapticPulse,
+                "IVRSystem::TriggerHapticPulse")) {
+            ROCK_LOG_WARN(Input, "TriggerHapticPulse hook unavailable; left-firing haptics stay on the right wand");
+        }
 
         s_originalGetControllerState = reinterpret_cast<GetControllerState_t>(originalState);
         s_originalGetControllerStateWithPose = reinterpret_cast<GetControllerStateWithPose_t>(originalStateWithPose);
+        s_originalTriggerHapticPulse = reinterpret_cast<TriggerHapticPulse_t>(originalTriggerHapticPulse);
 
         const bool installed = stateHooked && stateWithPoseHooked;
         s_hooksInstalled.store(installed, std::memory_order_release);
@@ -1785,16 +1841,6 @@ namespace rock::input_remap_runtime
     void setEquippedWeaponPrimaryDetached(bool detached)
     {
         s_equippedWeaponPrimaryDetached.store(detached, std::memory_order_release);
-    }
-
-    float peekRawTriggerAxis(bool isLeft)
-    {
-        const auto& tracker = s_controllers[isLeft ? 0u : 1u];
-        if (!tracker.valid.load(std::memory_order_acquire)) {
-            return 0.0f;
-        }
-        const float axis = tracker.triggerAxisX.load(std::memory_order_acquire);
-        return std::isfinite(axis) ? std::clamp(axis, 0.0f, 1.0f) : 0.0f;
     }
 
     void setEquippedWeaponLeftHandFiringActive(bool active)

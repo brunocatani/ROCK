@@ -65,9 +65,6 @@ namespace rock
         bool leftReattachEligible{ false };
         bool rightReattachEligible{ false };
         bool scopeMenuOpen{ false };
-        // Raw left analog trigger (0..1, pre-remap) driving the left firing
-        // hand's trigger-articulated finger pose.
-        float leftTriggerAxis{ 0.0f };
         EquippedWeaponScopeHandDriverFrame leftHandDriverFrame{};
         EquippedWeaponScopeHandDriverFrame rightHandDriverFrame{};
         // Grab state of the CURRENT firing hand (debounced release), read by
@@ -478,10 +475,6 @@ namespace rock
          */
         void syncFiringHandWeaponNodeOwnership(RE::NiNode* weaponNode);
 
-        // Publish/clear ROCK's firing pose for a LEFT firing hand (FRIK's own
-        // primary weapon pose only ever targets the game-primary right hand).
-        void publishLeftFiringHandPose();
-
         static RE::NiNode* resolveFirstPersonHandNode(bool isLeft);
 
         bool capturePartGrip(
@@ -647,9 +640,6 @@ namespace rock
         // Per-frame hover state; only ever true in PartCarry (see getter).
         bool _firingGripReattachHoverInsideRadius{ false };
         bool _firingGripReattachHoverHandIsLeft{ false };
-
-        // Raw left trigger sample for the articulated left firing pose.
-        float _leftFiringTriggerAxis{ 0.0f };
 
         // Rate limiter for the left-firing carry aim diagnostic.
         int _leftFiringAimLogCounter{ 0 };

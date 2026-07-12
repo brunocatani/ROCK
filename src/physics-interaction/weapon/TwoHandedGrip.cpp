@@ -796,7 +796,6 @@ namespace rock
         _hasSolvedWeaponTransform = false;
         _firingGripReattachHoverInsideRadius = false;
         _firingGripReattachHoverHandIsLeft = _firingHandIsLeft;
-        _leftFiringTriggerAxis = std::isfinite(frameInput.leftTriggerAxis) ? std::clamp(frameInput.leftTriggerAxis, 0.0f, 1.0f) : 0.0f;
 
         refreshScopeSafeHandFrames(weaponNode, frameInput, dt);
 
@@ -1541,12 +1540,6 @@ namespace rock
         _supportGripAgeFrames = 0;
         _freshSupportGripDeferLogged = false;
 
-        if (_firingHandIsLeft) {
-            // clearPrimaryGripPose above dropped the left firing pose; the
-            // left hand still occupies the firing grip in Gripping.
-            publishLeftFiringHandPose();
-        }
-
         const WeaponPartGrip& supportGrip = partGrip(supportHandIsLeft);
         ROCK_LOG_INFO(Weapon,
             "TwoHandedGrip: grip active weapon='{}', "
@@ -1928,9 +1921,6 @@ namespace rock
         static_assert(weapon_visual_authority_math::handPosePrecedesLockedHandAuthority());
         static_assert(weapon_visual_authority_math::weaponVisualPrecedesLockedHandAuthority());
         publishGripHandPoses(supportHandIsLeft);
-        if (_firingHandIsLeft) {
-            publishLeftFiringHandPose();
-        }
 
         const bool applyPrimaryHandAuthority = weapon_support_authority_policy::supportGripAppliesPrimaryHandAuthority(_authorityMode);
         if (!applyLockedHandVisualAuthority(weaponNode, applyPrimaryHandAuthority, true, dt, &primaryTransform, &supportTransform)) {
@@ -2150,12 +2140,11 @@ namespace rock
         clearSupportGripPose(primaryHandIsLeft);
         clearPrimaryDetachVisualAuthority(primaryHandIsLeft);
         restoreFrikOffhandGrip();
-        if (_firingHandIsLeft) {
-            // FRIK's primary weapon pose targets the game-primary RIGHT hand;
-            // while the LEFT hand fires it must stay blocked and ROCK poses
-            // the left hand itself.
-            publishLeftFiringHandPose();
-        } else {
+        if (!_firingHandIsLeft) {
+            // FRIK's primary weapon pose targets the game-primary RIGHT hand.
+            // While the LEFT hand fires it stays blocked; hFRIK poses the
+            // left hand itself from the weapon-node ownership block state
+            // (mirrored copy of the animated right weapon hand).
             restoreFrikPrimaryWeaponPose();
         }
         _partGrips = {};
@@ -2242,9 +2231,9 @@ namespace rock
         // Left firing hand: FRIK cannot carry (its weapon glue targets the
         // right hand and is blocked); ROCK drives the weapon rigidly from the
         // left hand through the captured weapon-relative firing-grip frame.
-        if (solveLeftFiringWeaponCarry(weaponNode)) {
-            publishLeftFiringHandPose();
-        }
+        // The left hand's finger pose is hFRIK's mirrored weapon-hand copy,
+        // driven by the same ownership block.
+        (void)solveLeftFiringWeaponCarry(weaponNode);
     }
 
     bool TwoHandedGrip::solveLeftFiringWeaponCarry(RE::NiNode* weaponNode)
@@ -2400,9 +2389,7 @@ namespace rock
         _firingGripSequence = ++_gripCaptureSequence;
         _primaryHandVisualLerp = {};
         clearPrimaryDetachVisualAuthority(handIsLeft);
-        if (_firingHandIsLeft) {
-            publishLeftFiringHandPose();
-        } else {
+        if (!_firingHandIsLeft) {
             restoreFrikPrimaryWeaponPose();
         }
         _hapticEvents.firingGripAttached = true;
@@ -2855,7 +2842,6 @@ namespace rock
             if (!solveLeftFiringWeaponCarry(weaponNode)) {
                 return;
             }
-            publishLeftFiringHandPose();
         }
 
         static_assert(weapon_visual_authority_math::handPosePrecedesLockedHandAuthority());
@@ -3378,37 +3364,6 @@ namespace rock
             return nullptr;
         }
         return f4vr::findNode(firstPersonSkeleton, isLeft ? "LArm_Hand" : "RArm_Hand");
-    }
-
-    void TwoHandedGrip::publishLeftFiringHandPose()
-    {
-        /*
-         * Trigger-articulated firing pose for the LEFT hand: the game's own
-         * fire animation only ever plays on the game-primary right hand, so
-         * ROCK poses the left hand itself and drives the index finger from
-         * the physical trigger pull. Published every left-firing frame;
-         * quantizing the trigger keeps the bridge's pose cache effective
-         * between changes. Curl scale: 0 = bent, 1 = straight.
-         */
-        constexpr float kIndexRelaxed = 0.60f;
-        constexpr float kIndexPulled = 0.16f;
-        const float quantizedTrigger = std::round(std::clamp(_leftFiringTriggerAxis, 0.0f, 1.0f) * 20.0f) / 20.0f;
-        const float index = kIndexRelaxed + (kIndexPulled - kIndexRelaxed) * quantizedTrigger;
-
-        const std::array<float, 15> firingCurls = {
-            0.42f, 0.38f, 0.34f, // thumb wrapped over the grip back
-            index, index, index * 0.9f, // index rides the trigger
-            0.30f, 0.26f, 0.22f, // middle wrapped on the grip
-            0.30f, 0.26f, 0.22f, // ring
-            0.32f, 0.28f, 0.24f, // pinky
-        };
-        if (!frik_visual_authority::setHandPoseCustomWithPriority(
-                PRIMARY_GRIP_TAG,
-                frik_visual_authority::Hand::Left,
-                frik_visual_authority::makeHandPoseDataFromJointValues(firingCurls),
-                GRIP_HAND_POSE_PRIORITY)) {
-            ROCK_LOG_WARN(Weapon, "TwoHandedGrip: left firing-hand pose publish failed");
-        }
     }
 
     void TwoHandedGrip::syncFiringHandWeaponNodeOwnership(RE::NiNode* weaponNode)
