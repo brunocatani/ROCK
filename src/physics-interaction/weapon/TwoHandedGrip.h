@@ -414,6 +414,17 @@ namespace rock
         void releaseFiringHandWeaponNodeOwnership(RE::NiNode* weaponNode);
 
         /*
+         * Canonical right-hand firing hold. Snapshotted whenever the RIGHT
+         * hand captures the firing grip (it then carries FRIK's authored
+         * per-weapon offsets); a LEFT takeover applies this frame MIRRORED so
+         * the left hand holds the weapon with the same offsets adapted to the
+         * left bone basis, instead of freezing the live squeeze orientation.
+         */
+        void rememberRightFiringHandCanonicalFrame();
+
+        bool tryComputeMirroredLeftFiringHandWeaponLocal(RE::NiTransform& outHandWeaponLocal) const;
+
+        /*
          * Reattach validates the hand first and only then commits; a takeover
          * by the non-firing hand flips the firing-hand role inside the commit
          * (setFiringHand), reusing the SAME captured weapon-relative grip
@@ -541,6 +552,12 @@ namespace rock
         // left-firing carry; see syncFiringHandWeaponNodeOwnership().
         bool _weaponNodeOwnershipBlockEngaged{ false };
         bool _weaponNodeReparentedToLeftHand{ false };
+
+        // Canonical right-hand firing hold (weapon-generation-keyed); see
+        // rememberRightFiringHandCanonicalFrame().
+        RE::NiTransform _rightFiringHandCanonicalWeaponLocal{};
+        std::uint64_t _rightFiringHandCanonicalGenerationKey{ 0 };
+        bool _hasRightFiringHandCanonicalWeaponLocal{ false };
 
         std::array<ScopeSafeHandFrameState, 2> _scopeSafeHandFrames{};
         bool _scopeMenuOpenThisFrame{ false };

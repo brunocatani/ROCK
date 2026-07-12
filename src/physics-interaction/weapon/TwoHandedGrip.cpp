@@ -992,6 +992,9 @@ namespace rock
         clearSupportGripPose(true);
         clearSupportGripPose(false);
         restoreFrikPrimaryWeaponPose();
+        _hasRightFiringHandCanonicalWeaponLocal = false;
+        _rightFiringHandCanonicalGenerationKey = 0;
+        _rightFiringHandCanonicalWeaponLocal = {};
         if (_state != TwoHandedState::Inactive) {
             transitionToInactive(false);
             _scopeMenuOpenThisFrame = false;
@@ -1423,6 +1426,9 @@ namespace rock
         _primaryHandWeaponLocal = transform_math::composeTransforms(transform_math::invertTransform(weaponNode->world), primaryTransform);
         _hasFiringHandWeaponLocal = true;
         _firingGripSequence = ++_gripCaptureSequence;
+        // A right-hand capture here rides FRIK's authored carry: snapshot it
+        // as the canonical hold that left takeovers apply mirrored.
+        rememberRightFiringHandCanonicalFrame();
 
         /*
          * Sidearm hybrid: at capture the firing grip point is the primary palm,
@@ -2062,8 +2068,17 @@ namespace rock
         _partCarryPivotIsLeft = true;
         _partCarryGripSeparationWorld = 0.0f;
         _hasSolvedWeaponTransform = false;
-        _primaryHandWeaponLocal = {};
-        _hasFiringHandWeaponLocal = false;
+        if (!_firingHandIsLeft) {
+            /*
+             * Right firing hand: PrimaryOnly is FRIK-native carry, so ROCK
+             * deliberately holds no hand-to-weapon frame. A LEFT firing hand
+             * has no native carry - its captured frame IS the carry solve and
+             * must survive this transition (wiping it here was the "weapon
+             * snaps back to the right hand" takeover regression).
+             */
+            _primaryHandWeaponLocal = {};
+            _hasFiringHandWeaponLocal = false;
+        }
         _primaryHandVisualLerp = {};
         _state = TwoHandedState::PrimaryOnly;
 
@@ -2236,12 +2251,30 @@ namespace rock
             setFiringHand(handIsLeft, "firing-grip-reattach-other-hand");
         }
 
-        const RE::NiPoint3 palm = computeGrabLegacyPalmPivotAWorldFromHandBasis(handTransform, handIsLeft);
-        const RE::NiPoint3 firingGripWorld = weaponLocalToWorld(_primaryGripLocal, weaponNode);
-        const RE::NiTransform adjustedHandTransform =
-            weapon_two_handed_grip_math::alignHandFrameToGripPoint(handTransform, palm, firingGripWorld);
-        _primaryHandWeaponLocal = transform_math::composeTransforms(transform_math::invertTransform(weaponNode->world), adjustedHandTransform);
+        /*
+         * The LEFT firing hand takes the canonical right-hand hold MIRRORED
+         * (same authored offsets, adapted to the left bone basis) instead of
+         * freezing the live squeeze orientation, which contorted the arm.
+         * Fallback to the live capture only when no canonical exists for the
+         * current weapon generation.
+         */
+        bool usedMirroredCanonicalHold = false;
+        if (handIsLeft) {
+            RE::NiTransform mirroredHandWeaponLocal{};
+            if (tryComputeMirroredLeftFiringHandWeaponLocal(mirroredHandWeaponLocal)) {
+                _primaryHandWeaponLocal = mirroredHandWeaponLocal;
+                usedMirroredCanonicalHold = true;
+            }
+        }
+        if (!usedMirroredCanonicalHold) {
+            const RE::NiPoint3 palm = computeGrabLegacyPalmPivotAWorldFromHandBasis(handTransform, handIsLeft);
+            const RE::NiPoint3 firingGripWorld = weaponLocalToWorld(_primaryGripLocal, weaponNode);
+            const RE::NiTransform adjustedHandTransform =
+                weapon_two_handed_grip_math::alignHandFrameToGripPoint(handTransform, palm, firingGripWorld);
+            _primaryHandWeaponLocal = transform_math::composeTransforms(transform_math::invertTransform(weaponNode->world), adjustedHandTransform);
+        }
         _hasFiringHandWeaponLocal = true;
+        rememberRightFiringHandCanonicalFrame();
         _firingGripSequence = ++_gripCaptureSequence;
         _primaryHandVisualLerp = {};
         clearPrimaryDetachVisualAuthority(handIsLeft);
@@ -2252,7 +2285,10 @@ namespace rock
         }
         _hapticEvents.firingGripAttached = true;
         _hapticEvents.firingGripAttachedHandIsLeft = handIsLeft;
-        ROCK_LOG_INFO(Weapon, "TwoHandedGrip: firing hand reattached at configured grip hand={}", handIsLeft ? "left" : "right");
+        ROCK_LOG_INFO(Weapon,
+            "TwoHandedGrip: firing hand reattached at configured grip hand={} hold={}",
+            handIsLeft ? "left" : "right",
+            usedMirroredCanonicalHold ? "mirrored-canonical" : "live-capture");
         return true;
     }
 
@@ -2950,6 +2986,49 @@ namespace rock
         }
     }
 
+    void TwoHandedGrip::rememberRightFiringHandCanonicalFrame()
+    {
+        if (_firingHandIsLeft || !_hasFiringHandWeaponLocal || _activeWeaponGenerationKey == 0) {
+            return;
+        }
+        _rightFiringHandCanonicalWeaponLocal = _primaryHandWeaponLocal;
+        _rightFiringHandCanonicalGenerationKey = _activeWeaponGenerationKey;
+        _hasRightFiringHandCanonicalWeaponLocal = true;
+    }
+
+    bool TwoHandedGrip::tryComputeMirroredLeftFiringHandWeaponLocal(RE::NiTransform& outHandWeaponLocal) const
+    {
+        if (!_hasRightFiringHandCanonicalWeaponLocal ||
+            _rightFiringHandCanonicalGenerationKey == 0 ||
+            _rightFiringHandCanonicalGenerationKey != _activeWeaponGenerationKey) {
+            return false;
+        }
+
+        /*
+         * Weapon-in-hand mirror. Recipe taken from hFRIK's own production
+         * left-handed-mode baseline pair in Skeleton::setArms (the same
+         * physical hold authored for both hand bones): rotation rows 1 and 2
+         * negated, hand-local Z translation negated. Applying it to the
+         * captured right-hand canonical (which carries FRIK's per-weapon
+         * offsets) yields the identical hold adapted to the left hand bone
+         * basis - the same right-hand offsets, mirrored, no left tuning.
+         */
+        const RE::NiTransform weaponInRightHand = transform_math::invertTransform(_rightFiringHandCanonicalWeaponLocal);
+        RE::NiTransform weaponInLeftHand = weaponInRightHand;
+        for (int col = 0; col < 3; ++col) {
+            weaponInLeftHand.rotate.entry[1][col] = -weaponInRightHand.rotate.entry[1][col];
+            weaponInLeftHand.rotate.entry[2][col] = -weaponInRightHand.rotate.entry[2][col];
+        }
+        weaponInLeftHand.translate.z = -weaponInRightHand.translate.z;
+
+        const RE::NiTransform mirroredHandWeaponLocal = transform_math::invertTransform(weaponInLeftHand);
+        if (!isFiniteTransform(mirroredHandWeaponLocal)) {
+            return false;
+        }
+        outHandWeaponLocal = mirroredHandWeaponLocal;
+        return true;
+    }
+
     void TwoHandedGrip::setFiringHand(const bool isLeft, const char* reason)
     {
         if (_firingHandIsLeft == isLeft) {
@@ -2980,9 +3059,19 @@ namespace rock
             return false;
         }
 
-        float palmToGripDistance = 0.0f;
-        if (!tryComputePalmToGripDistanceForHand(weaponNode, supportHandIsLeft, palmToGripDistance) ||
-            palmToGripDistance > g_rockConfig.rockWeaponFiringGripReattachRadius) {
+        /*
+         * Promotion distance uses the support GRIP POINT (where the hand
+         * actually grabbed the weapon), not the palm pivot: a shooting-cup
+         * palm sits a hand-width away from the grip center and the tight
+         * reattach radius silently declined every takeover. The dedicated
+         * promotion radius keeps handguard/foregrip support grips out.
+         */
+        const RE::NiPoint3 supportGripWorld = resolvePartGripWorld(supportGrip, weaponNode);
+        const RE::NiPoint3 firingGripWorld = weaponLocalToWorld(_primaryGripLocal, weaponNode);
+        const RE::NiPoint3 gripDelta = sub(supportGripWorld, firingGripWorld);
+        const float supportGripToFiringGripDistance = std::sqrt(dot(gripDelta, gripDelta));
+        if (!std::isfinite(supportGripToFiringGripDistance) ||
+            supportGripToFiringGripDistance > g_rockConfig.rockFiringGripPromotionRadius) {
             return false;
         }
 
@@ -2997,14 +3086,23 @@ namespace rock
             return false;
         }
 
-        // Commit: the support hand takes over the SAME weapon-relative firing
-        // grip in place; the weapon does not move at the switch instant.
-        const RE::NiPoint3 palm = computeGrabLegacyPalmPivotAWorldFromHandBasis(handTransform, supportHandIsLeft);
-        const RE::NiPoint3 firingGripWorld = weaponLocalToWorld(_primaryGripLocal, weaponNode);
-        const RE::NiTransform adjustedHandTransform =
-            weapon_two_handed_grip_math::alignHandFrameToGripPoint(handTransform, palm, firingGripWorld);
-        const RE::NiTransform capturedHandWeaponLocal =
-            transform_math::composeTransforms(transform_math::invertTransform(weaponNode->world), adjustedHandTransform);
+        /*
+         * Commit: the support hand takes over the SAME weapon-relative firing
+         * grip in place. A LEFT takeover applies the canonical right-hand
+         * hold mirrored (authored offsets adapted to the left bone basis);
+         * the live squeeze orientation is only the no-canonical fallback.
+         */
+        RE::NiTransform newFiringHandWeaponLocal{};
+        bool usedMirroredCanonicalHold = false;
+        if (supportHandIsLeft && tryComputeMirroredLeftFiringHandWeaponLocal(newFiringHandWeaponLocal)) {
+            usedMirroredCanonicalHold = true;
+        } else {
+            const RE::NiPoint3 palm = computeGrabLegacyPalmPivotAWorldFromHandBasis(handTransform, supportHandIsLeft);
+            const RE::NiTransform adjustedHandTransform =
+                weapon_two_handed_grip_math::alignHandFrameToGripPoint(handTransform, palm, firingGripWorld);
+            newFiringHandWeaponLocal =
+                transform_math::composeTransforms(transform_math::invertTransform(weaponNode->world), adjustedHandTransform);
+        }
 
         setFiringHand(supportHandIsLeft, "support-grip-promotion");
         if (!transitionToPrimaryOnly(weaponNode, _activeWeaponGenerationKey, _activeEquippedWeaponOwnershipKey, "firing-grip-hand-promotion")) {
@@ -3013,16 +3111,18 @@ namespace rock
             return true;
         }
 
-        _primaryHandWeaponLocal = capturedHandWeaponLocal;
+        _primaryHandWeaponLocal = newFiringHandWeaponLocal;
         _hasFiringHandWeaponLocal = true;
+        rememberRightFiringHandCanonicalFrame();
         _firingGripSequence = ++_gripCaptureSequence;
         _primaryHandVisualLerp = {};
         _hapticEvents.firingGripAttached = true;
         _hapticEvents.firingGripAttachedHandIsLeft = _firingHandIsLeft;
         ROCK_LOG_INFO(Weapon,
-            "TwoHandedGrip: support hand promoted to firing grip hand={} palmToGrip={:.2f}",
+            "TwoHandedGrip: support hand promoted to firing grip hand={} gripToGrip={:.2f} hold={}",
             _firingHandIsLeft ? "left" : "right",
-            palmToGripDistance);
+            supportGripToFiringGripDistance,
+            usedMirroredCanonicalHold ? "mirrored-canonical" : "live-capture");
         return true;
     }
 

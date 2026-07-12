@@ -125,6 +125,11 @@ namespace rock
         // Ambidextrous firing grip: either free hand may take the firing grip
         // (left-hand fire); requires the hFRIK weapon-node ownership blocker.
         bool rockAmbidextrousFiringGripEnabled = true;
+        // Support-grip-point to firing-grip distance within which a support
+        // hand wrapped over the grip is promoted in place when the firing
+        // hand opens (seamless hand switch). Wider than the reattach radius
+        // because a wrapped hand's grip point sits off the grip center.
+        float rockFiringGripPromotionRadius = 8.0f;
         bool rockCalibratedGrenadeOffsetsEnabled = true;
         float rockRealisticGrenadeFuseSeconds = 5.0f;
         bool rockGrabbedWeaponAutoEquipEnabled = false;
