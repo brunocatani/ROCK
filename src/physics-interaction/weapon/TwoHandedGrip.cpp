@@ -3257,20 +3257,15 @@ namespace rock
          *
          * Axes are the left wand's hand-anatomical basis (user-calibrated
          * in-game): X = palm normal, Y = fingers forward, Z = thumb up.
-         * Yaw rotates about Z (thumb), pitch about X (palm normal), offsets
-         * translate along the same axes; if a value moves the hold opposite
-         * to its documented direction, the user flips its sign once.
+         * Yaw rotates about Z (thumb), pitch about X (palm normal); if a
+         * value moves the aim opposite to its documented direction, the
+         * user flips its sign once. The trim is ROTATION-ONLY: position is
+         * anchored per weapon below, so a translation here would fight it.
          */
         constexpr float kDegreesToRadiansLocal = 0.017453292519943295769f;
         const float aimYawRadians = g_rockConfig.rockLeftFiringAimYawDegrees * kDegreesToRadiansLocal;
         const float aimPitchRadians = g_rockConfig.rockLeftFiringAimPitchDegrees * kDegreesToRadiansLocal;
-        const RE::NiPoint3 aimOffset{
-            g_rockConfig.rockLeftFiringAimOffsetXGameUnits,
-            g_rockConfig.rockLeftFiringAimOffsetYGameUnits,
-            g_rockConfig.rockLeftFiringAimOffsetZGameUnits
-        };
-        if (aimYawRadians != 0.0f || aimPitchRadians != 0.0f ||
-            aimOffset.x != 0.0f || aimOffset.y != 0.0f || aimOffset.z != 0.0f) {
+        if (aimYawRadians != 0.0f || aimPitchRadians != 0.0f) {
             RE::NiTransform yawTrim{};
             yawTrim.MakeIdentity();
             if (aimYawRadians != 0.0f) {
@@ -3293,19 +3288,51 @@ namespace rock
                 pitchTrim.rotate.entry[2][1] = -pitchSin;
                 pitchTrim.rotate.entry[2][2] = pitchCos;
             }
-            RE::NiTransform wandTrim = transform_math::composeTransforms(yawTrim, pitchTrim);
-            // Translation assigned after the rotation compose so the offsets
-            // stay in raw wand axes instead of being rotated by the trim.
-            wandTrim.translate = aimOffset;
+            const RE::NiTransform wandTrim = transform_math::composeTransforms(yawTrim, pitchTrim);
             weaponInLeftWand = transform_math::composeTransforms(wandTrim, weaponInLeftWand);
         }
 
         const RE::NiTransform weaponInLeftHand = transform_math::composeTransforms(
             transform_math::invertTransform(boneInLeftWand), weaponInLeftWand);
-        const RE::NiTransform mirroredHandWeaponLocal = transform_math::invertTransform(weaponInLeftHand);
+        RE::NiTransform mirroredHandWeaponLocal = transform_math::invertTransform(weaponInLeftHand);
 
         if (!isFiniteTransform(mirroredHandWeaponLocal)) {
             return false;
+        }
+
+        /*
+         * PALM-ANCHORED POSITION: the wand conjugation is the ORIENTATION
+         * authority only. Deriving the translation through frame mirroring
+         * left per-weapon height errors that no global knob can fix (UMP
+         * too low while the P226 sits too high - weapons with authored
+         * FRIK rotations/offsets each landed differently, because any
+         * residual rotation-convention error displaces a hold by an amount
+         * proportional to that weapon's own offsets). Instead the FIRING
+         * GRIP POINT is pinned per weapon: it must sit at the same place in
+         * the left palm as it does in the right palm. ROCK's hand bases
+         * correspond anatomically with only Z flipped - empirical, from the
+         * user-tuned palm pivots R(6.0,-2.0,+0.2) / L(6.0,-2.0,-0.2) - so
+         * the target is simply (x, y, -z) of the grip's right-hand-local
+         * position, plus the global offset knobs as palm-space nudges.
+         * Per-weapon exact by construction; residuals are global-only.
+         */
+        const RE::NiPoint3 gripInRightHand = transform_math::localPointToWorld(
+            transform_math::invertTransform(_rightFiringHandCanonicalWeaponLocal), _primaryGripLocal);
+        const RE::NiPoint3 gripTargetInLeftHand{
+            gripInRightHand.x + g_rockConfig.rockLeftFiringAimOffsetXGameUnits,
+            gripInRightHand.y + g_rockConfig.rockLeftFiringAimOffsetYGameUnits,
+            -gripInRightHand.z + g_rockConfig.rockLeftFiringAimOffsetZGameUnits
+        };
+        if (std::isfinite(gripTargetInLeftHand.x) && std::isfinite(gripTargetInLeftHand.y) && std::isfinite(gripTargetInLeftHand.z)) {
+            RE::NiTransform anchoredWeaponInLeftHand = transform_math::invertTransform(mirroredHandWeaponLocal);
+            const RE::NiPoint3 gripRotatedOnly = sub(
+                transform_math::localPointToWorld(anchoredWeaponInLeftHand, _primaryGripLocal),
+                anchoredWeaponInLeftHand.translate);
+            anchoredWeaponInLeftHand.translate = sub(gripTargetInLeftHand, gripRotatedOnly);
+            const RE::NiTransform anchoredHold = transform_math::invertTransform(anchoredWeaponInLeftHand);
+            if (isFiniteTransform(anchoredHold)) {
+                mirroredHandWeaponLocal = anchoredHold;
+            }
         }
 
         // Takeover-event diagnostic: barrel (+Y weapon) direction in each
