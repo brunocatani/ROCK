@@ -148,6 +148,10 @@ namespace rock::input_remap_runtime
             std::atomic<std::uint64_t> pressedEdges{ 0 };
             std::atomic<std::uint64_t> releasedEdges{ 0 };
             std::atomic<std::uint64_t> rearmPressedMask{ 0 };
+            // Last raw analog trigger (Axis1) sample; feeds the left-hand
+            // fire remap which presents it on the other wand's state.
+            std::atomic<float> triggerAxisX{ 0.0f };
+            std::atomic<float> triggerAxisY{ 0.0f };
             std::atomic<bool> valid{ false };
         };
 
@@ -160,6 +164,7 @@ namespace rock::input_remap_runtime
         std::array<std::atomic<bool>, 2> s_pendingSavedGrabOffsetRequest{};
         std::atomic<bool> s_equippedWeaponPrimaryDetachInputActive{ false };
         std::atomic<bool> s_equippedWeaponPrimaryDetached{ false };
+        std::atomic<bool> s_equippedWeaponLeftHandFiringActive{ false };
         std::atomic<bool> s_hooksInstalled{ false };
         std::atomic<bool> s_readyWeaponEventHookInstalled{ false };
         std::atomic<bool> s_activateEventHookInstalled{ false };
@@ -444,6 +449,53 @@ namespace rock::input_remap_runtime
             }
         }
 
+        [[nodiscard]] bool isInputBlockingMenuActive();
+
+        /*
+         * Left-hand fire: while the LEFT hand occupies the equipped weapon's
+         * firing grip, the game must fire from the LEFT physical trigger. The
+         * game reads fire from the primary (right) wand's trigger button bit
+         * and analog Axis1, so ROCK presents the left trigger there and blanks
+         * the trigger on both physical identities: the right physical trigger
+         * goes inert (support hand) and the left wand's own trigger reads
+         * empty (no Pip-Boy/flashlight side effects). ROCK's internal reads
+         * are captured pre-remap and stay physical.
+         */
+        [[nodiscard]] bool shouldRemapLeftHandFireTriggerForGame()
+        {
+            return s_equippedWeaponLeftHandFiringActive.load(std::memory_order_acquire) &&
+                g_rockConfig.rockInputRemapEnabled &&
+                s_gameplayInputAllowed.load(std::memory_order_acquire) &&
+                !isInputBlockingMenuActive();
+        }
+
+        void applyLeftHandFireTriggerRemapForGame(input_remap_policy::Hand hand, vr::VRControllerState_t* state, std::uint32_t stateSize)
+        {
+            if (!state || stateSize < sizeof(vr::VRControllerState_t)) {
+                return;
+            }
+
+            constexpr std::uint64_t triggerButtonMask = 1ull << input_remap_policy::kOpenVrSteamVrTriggerButtonId;
+            constexpr std::size_t triggerAxisIndex =
+                static_cast<std::size_t>(input_remap_policy::kOpenVrSteamVrTriggerButtonId - input_remap_policy::kOpenVrAxisButtonBase);
+
+            if (hand == input_remap_policy::Hand::Right) {
+                const auto& leftTracker = s_controllers[controllerIndex(input_remap_policy::Hand::Left)];
+                const bool leftValid = leftTracker.valid.load(std::memory_order_acquire);
+                const std::uint64_t leftPressed = leftValid ? leftTracker.rawPressed.load(std::memory_order_acquire) : 0;
+                const std::uint64_t leftTouched = leftValid ? leftTracker.rawTouched.load(std::memory_order_acquire) : 0;
+                state->ulButtonPressed = (state->ulButtonPressed & ~triggerButtonMask) | (leftPressed & triggerButtonMask);
+                state->ulButtonTouched = (state->ulButtonTouched & ~triggerButtonMask) | (leftTouched & triggerButtonMask);
+                state->rAxis[triggerAxisIndex].x = leftValid ? leftTracker.triggerAxisX.load(std::memory_order_acquire) : 0.0f;
+                state->rAxis[triggerAxisIndex].y = leftValid ? leftTracker.triggerAxisY.load(std::memory_order_acquire) : 0.0f;
+            } else {
+                state->ulButtonPressed &= ~triggerButtonMask;
+                state->ulButtonTouched &= ~triggerButtonMask;
+                state->rAxis[triggerAxisIndex].x = 0.0f;
+                state->rAxis[triggerAxisIndex].y = 0.0f;
+            }
+        }
+
         [[nodiscard]] input_remap_policy::Settings makeSettings()
         {
             return input_remap_policy::Settings{
@@ -704,6 +756,10 @@ namespace rock::input_remap_runtime
             auto& tracker = s_controllers[controllerIndex(hand)];
             const std::uint64_t rawPressed = state->ulButtonPressed;
             const std::uint64_t rawTouched = state->ulButtonTouched;
+            constexpr std::size_t triggerAxisIndex =
+                static_cast<std::size_t>(input_remap_policy::kOpenVrSteamVrTriggerButtonId - input_remap_policy::kOpenVrAxisButtonBase);
+            tracker.triggerAxisX.store(state->rAxis[triggerAxisIndex].x, std::memory_order_release);
+            tracker.triggerAxisY.store(state->rAxis[triggerAxisIndex].y, std::memory_order_release);
 
             const bool hadPrevious = tracker.valid.exchange(true, std::memory_order_acq_rel);
             const std::uint64_t previousRawPressed = tracker.rawPressed.exchange(rawPressed, std::memory_order_acq_rel);
@@ -754,6 +810,10 @@ namespace rock::input_remap_runtime
                         clearOpenVrControllerStateForGame(controllerState, controllerStateSize);
                         return result;
                     }
+                    if (shouldRemapLeftHandFireTriggerForGame() &&
+                        !shouldBypassProviderOpenVrGameInputSuppression(callerAddress)) {
+                        applyLeftHandFireTriggerRemapForGame(hand, controllerState, controllerStateSize);
+                    }
                 }
             }
             return result;
@@ -778,6 +838,10 @@ namespace rock::input_remap_runtime
                         !shouldBypassProviderOpenVrGameInputSuppression(callerAddress)) {
                         clearOpenVrControllerStateForGame(controllerState, controllerStateSize);
                         return result;
+                    }
+                    if (shouldRemapLeftHandFireTriggerForGame() &&
+                        !shouldBypassProviderOpenVrGameInputSuppression(callerAddress)) {
+                        applyLeftHandFireTriggerRemapForGame(hand, controllerState, controllerStateSize);
                     }
                 }
             }
@@ -1720,6 +1784,14 @@ namespace rock::input_remap_runtime
     void setEquippedWeaponPrimaryDetached(bool detached)
     {
         s_equippedWeaponPrimaryDetached.store(detached, std::memory_order_release);
+    }
+
+    void setEquippedWeaponLeftHandFiringActive(bool active)
+    {
+        const bool previous = s_equippedWeaponLeftHandFiringActive.exchange(active, std::memory_order_acq_rel);
+        if (previous != active) {
+            ROCK_LOG_INFO(Input, "Left-hand fire trigger remap {}", active ? "ENGAGED" : "released");
+        }
     }
 
     void setProviderOpenVrGameInputSuppressed(bool isLeft, bool suppressed)

@@ -108,6 +108,10 @@ namespace
         static_cast<std::uint32_t>(RockProviderOffhandReservation::Normal)
     };
 
+    // ROCK's runtime firing hand (left-hand fire); published each frame by
+    // PhysicsInteraction so primary/offhand resolution tracks who fires.
+    std::atomic<bool> s_equippedWeaponFiringHandIsLeft{ false };
+
     constexpr std::uint64_t kRockIssuedOwnerTokenNamespace = 0xA000'0000'0000'0000ull;
     constexpr std::uint64_t kRockIssuedOwnerTokenSequenceMask = 0x0FFF'FFFF'FFFF'FFFFull;
     constexpr std::uint32_t kImplementedConsumerCapabilitiesV1 =
@@ -338,12 +342,16 @@ namespace
 
     RockProviderHand ROCK_PROVIDER_CALL apiGetPrimaryHandV1()
     {
-        return f4vr::isLeftHandedMode() ? RockProviderHand::Left : RockProviderHand::Right;
+        // The primary hand is whichever hand currently owns weapon firing:
+        // ROCK's runtime firing hand (left-hand fire) or the game handedness.
+        const bool primaryIsLeft = f4vr::isLeftHandedMode() ||
+            s_equippedWeaponFiringHandIsLeft.load(std::memory_order_acquire);
+        return primaryIsLeft ? RockProviderHand::Left : RockProviderHand::Right;
     }
 
     RockProviderHand ROCK_PROVIDER_CALL apiGetOffhandHandV1()
     {
-        return f4vr::isLeftHandedMode() ? RockProviderHand::Right : RockProviderHand::Left;
+        return apiGetPrimaryHandV1() == RockProviderHand::Left ? RockProviderHand::Right : RockProviderHand::Left;
     }
 
     bool ROCK_PROVIDER_CALL apiGetHandFrameV1(RockProviderHand hand, RockProviderHandFrameV1* outFrame)
@@ -1890,6 +1898,11 @@ namespace rock::provider
     RockProviderOffhandReservation currentOffhandReservation()
     {
         return static_cast<RockProviderOffhandReservation>(s_offhandReservation.load(std::memory_order_acquire));
+    }
+
+    void setEquippedWeaponFiringHandIsLeft(const bool isLeft)
+    {
+        s_equippedWeaponFiringHandIsLeft.store(isLeft, std::memory_order_release);
     }
 
     std::uint32_t currentHandInputSuppressionFlagsV1(RockProviderHand hand)

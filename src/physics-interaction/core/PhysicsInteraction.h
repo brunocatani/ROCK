@@ -539,11 +539,14 @@ namespace rock
         struct SharedGrabButtonFrameState
         {
             bool valid{ false };
+            // Physical hand the snapshot was consumed from (the CURRENT
+            // firing hand); the normal grab pipeline matches on it.
+            bool isLeft{ false };
             bool held{ false };
             bool pressed{ false };
             bool released{ false };
         };
-        SharedGrabButtonFrameState _rightGrabButtonFrameState{};
+        SharedGrabButtonFrameState _firingHandGrabButtonFrameState{};
         struct ProviderWeaponPartDriveNodeState
         {
             RE::NiAVObject* node{ nullptr };

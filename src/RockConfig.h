@@ -122,6 +122,9 @@ namespace rock
         float rockWeaponSupportGripHapticIntensity = 0.50f;
         bool rockEquippedWeaponShoulderStashEnabled = true;
         bool rockRealisticWeaponHandlingEnabled = false;
+        // Ambidextrous firing grip: either free hand may take the firing grip
+        // (left-hand fire); requires the hFRIK weapon-node ownership blocker.
+        bool rockAmbidextrousFiringGripEnabled = true;
         bool rockCalibratedGrenadeOffsetsEnabled = true;
         float rockRealisticGrenadeFuseSeconds = 5.0f;
         bool rockGrabbedWeaponAutoEquipEnabled = false;

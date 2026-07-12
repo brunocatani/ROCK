@@ -59,12 +59,16 @@ namespace rock
     struct EquippedWeaponGripFrameInput
     {
         bool leftGripHeld{ false };
+        bool rightGripHeld{ false };
         bool leftHandHoldingObject{ false };
         bool rightHandHoldingObject{ false };
-        bool reattachEligible{ false };
+        bool leftReattachEligible{ false };
+        bool rightReattachEligible{ false };
         bool scopeMenuOpen{ false };
         EquippedWeaponScopeHandDriverFrame leftHandDriverFrame{};
         EquippedWeaponScopeHandDriverFrame rightHandDriverFrame{};
+        // Grab state of the CURRENT firing hand (debounced release), read by
+        // the caller from whichever physical hand isFiringHandLeft() reports.
         EquippedWeaponPrimaryGripInput primaryGripInput{};
     };
 
@@ -188,6 +192,10 @@ namespace rock
          * it each frame to drive continuous hover haptics on the firing hand.
          */
         bool isFiringGripReattachHoverInsideRadius() const { return _firingGripReattachHoverInsideRadius; }
+
+        // Which physical hand the hover above refers to (either free hand can
+        // hover the firing grip when ambidextrous takeover is available).
+        bool isFiringGripReattachHoverHandLeft() const { return _firingGripReattachHoverHandIsLeft; }
 
         bool canUsePrimaryDetachInput() const
         {
@@ -395,14 +403,56 @@ namespace rock
             std::uint64_t currentEquippedWeaponOwnershipKey,
             const EquippedWeaponPrimaryGripInput& primaryGripInput);
 
-        bool tryReattachFiringGrip(RE::NiNode* weaponNode, const WeaponInteractionContact& firingHandWeaponContact);
+        // Rigid left-firing weapon carry: weapon = firing hand ∘ inverse of the
+        // captured weapon-relative grip frame. Used by PrimaryOnly and
+        // VisualOnlySupport while the LEFT hand occupies the firing grip
+        // (right-firing keeps FRIK-native carry in those states).
+        bool solveLeftFiringWeaponCarry(RE::NiNode* weaponNode);
+
+        bool tryPromoteSupportGripToFiringGrip(RE::NiNode* weaponNode);
+
+        void releaseFiringHandWeaponNodeOwnership(RE::NiNode* weaponNode);
+
+        /*
+         * Reattach validates the hand first and only then commits; a takeover
+         * by the non-firing hand flips the firing-hand role inside the commit
+         * (setFiringHand), reusing the SAME captured weapon-relative grip
+         * frames - the hands only choose who fires, the grip stays
+         * weapon-relative.
+         */
+        bool tryReattachFiringGrip(bool handIsLeft, RE::NiNode* weaponNode, const WeaponInteractionContact& handWeaponContact);
 
         bool firingGripContactMatchesCapturedGrip(
             RE::NiNode* weaponNode,
-            const WeaponInteractionContact& firingHandWeaponContact,
-            const RE::NiTransform& firingHandTransform) const;
+            const WeaponInteractionContact& handWeaponContact,
+            const RE::NiTransform& handTransform,
+            bool handIsLeft) const;
 
-        bool tryComputeFiringPalmToGripDistance(RE::NiNode* weaponNode, float& outDistance) const;
+        bool tryComputePalmToGripDistanceForHand(RE::NiNode* weaponNode, bool handIsLeft, float& outDistance) const;
+
+        /*
+         * Firing-hand role transition. Clears role-tagged FRIK publications of
+         * the old hand and resets firing-hand transient state; callers own the
+         * grip-frame capture for the new hand.
+         */
+        void setFiringHand(bool isLeft, const char* reason);
+
+        /*
+         * While the LEFT hand occupies the firing grip, ROCK owns the equipped
+         * weapon node end to end: FRIK's per-frame weapon glue is blocked
+         * (blockPrimaryWeaponNodeOwnership) and the node is re-parented under
+         * LArm_Hand so the scene graph keeps the weapon riding the firing hand
+         * at every point in the frame (native fire/aim sampling included).
+         * Right-firing states keep today's FRIK-native ownership exactly.
+         * Idempotent; call after every state/role transition.
+         */
+        void syncFiringHandWeaponNodeOwnership(RE::NiNode* weaponNode);
+
+        // Publish/clear ROCK's firing pose for a LEFT firing hand (FRIK's own
+        // primary weapon pose only ever targets the game-primary right hand).
+        void publishLeftFiringHandPose();
+
+        static RE::NiNode* resolveFirstPersonHandNode(bool isLeft);
 
         bool capturePartGrip(
             bool isLeft,
@@ -478,11 +528,19 @@ namespace rock
 
         /*
          * Physical hand that owns the firing grip when occupied. Seeded right
-         * (false); flipping this is the designed entry point for left-handed
-         * mode once PhysicsInteraction's per-hand suppression and input reads
-         * are role-driven as well. Do not flip it in isolation.
+         * (false) and reset to right whenever authority clears (weapon change,
+         * holster, drop, teardown). Flipped only through setFiringHand() from
+         * the two takeover paths (free-hand firing-grip squeeze in PartCarry,
+         * support-grip promotion on firing-hand release); PhysicsInteraction
+         * and InputRemap read isFiringHandLeft() each frame to route grab
+         * input, collision suppression, and native fire per role.
          */
         bool _firingHandIsLeft{ false };
+
+        // FRIK weapon-node ownership block + reparent bookkeeping for
+        // left-firing carry; see syncFiringHandWeaponNodeOwnership().
+        bool _weaponNodeOwnershipBlockEngaged{ false };
+        bool _weaponNodeReparentedToLeftHand{ false };
 
         std::array<ScopeSafeHandFrameState, 2> _scopeSafeHandFrames{};
         bool _scopeMenuOpenThisFrame{ false };
@@ -542,6 +600,7 @@ namespace rock
 
         // Per-frame hover state; only ever true in PartCarry (see getter).
         bool _firingGripReattachHoverInsideRadius{ false };
+        bool _firingGripReattachHoverHandIsLeft{ false };
     };
 
 }

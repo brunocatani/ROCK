@@ -344,6 +344,20 @@ namespace rock::frik_visual_authority
         return detail::blockPrimaryHandWeaponPoseExport() != nullptr;
     }
 
+    // Appended v5 table member - null on older FRIK builds, so availability gates the
+    // ambidextrous firing-grip feature instead of failing at call time.
+    [[nodiscard]] inline bool blockPrimaryWeaponNodeOwnership(const char* tag, bool block)
+    {
+        auto* frikApi = api();
+        return frikApi && frikApi->blockPrimaryWeaponNodeOwnership && frikApi->blockPrimaryWeaponNodeOwnership(tag, block);
+    }
+
+    [[nodiscard]] inline bool canBlockPrimaryWeaponNodeOwnership()
+    {
+        auto* frikApi = api();
+        return frikApi && frikApi->blockPrimaryWeaponNodeOwnership != nullptr;
+    }
+
     [[nodiscard]] inline RE::NiTransform getHandWorldTransform(Hand hand)
     {
         auto* frikApi = api();

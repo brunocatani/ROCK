@@ -1412,6 +1412,9 @@ namespace rock::provider
     bool recordExternalHandContact(bool isLeft, std::uint32_t handBodyId, std::uint32_t externalBodyId, std::uint64_t frameIndex);
     bool recordExternalContact(const RockProviderExternalContactV1& contact);
     RockProviderOffhandReservation currentOffhandReservation();
+    // Published each frame by PhysicsInteraction; feeds primary/offhand
+    // resolution so consumers track ROCK's runtime firing hand.
+    void setEquippedWeaponFiringHandIsLeft(bool isLeft);
     std::uint32_t currentHandInputSuppressionFlagsV1(RockProviderHand hand);
     bool resolveWeaponPartTargetV1(
         const RockProviderWeaponPartTargetQueryV1& query,

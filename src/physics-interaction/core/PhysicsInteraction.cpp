@@ -2627,6 +2627,14 @@ namespace rock
         if (rightHandWeaponEquipped && _twoHandedGrip.isPartCarryActive()) {
             rightHandWeaponAuthorityActive = false;
         }
+        /*
+         * Left-firing carry frees the right hand the same way: the LEFT hand
+         * owns the firing grip and the weapon transform, so the right hand has
+         * support/free parity (its own part grip is leased separately below).
+         */
+        if (rightHandWeaponEquipped && _twoHandedGrip.isFiringHandLeft() && _twoHandedGrip.isFiringGripOccupied()) {
+            rightHandWeaponAuthorityActive = false;
+        }
         const bool rightHandWeaponAuthorityActiveBeforeGrip = rightHandWeaponAuthorityActive;
         bool leftSupportGripActive = false;
         bool rightPartGripActive = _twoHandedGrip.isHandPartGripping(false);
@@ -2778,21 +2786,24 @@ namespace rock
                 return source;
             };
 
+            const bool firingHandIsLeft = _twoHandedGrip.isFiringHandLeft();
+            const bool supportHandIsLeft = !firingHandIsLeft;
+
             leftWeaponContactSource = consumeWeaponContactForHand(true, frame.left, weaponNode != nullptr, leftWeaponContact);
             // The free firing hand needs weapon-part probes for part grips and
-            // for the reattach chord's proximity check, exactly like the offhand.
-            const bool rightWeaponContactProbeAllowed = weaponNode != nullptr && _twoHandedGrip.isPartCarryActive();
+            // for the reattach squeeze's proximity check, exactly like the
+            // offhand; while the LEFT hand fires, the right hand is the
+            // support/free hand and probes unconditionally.
+            const bool rightWeaponContactProbeAllowed = weaponNode != nullptr &&
+                (_twoHandedGrip.isPartCarryActive() || firingHandIsLeft);
             (void)consumeWeaponContactForHand(false, frame.right, rightWeaponContactProbeAllowed, rightWeaponContact);
 
             const bool gripPressed = readGrabButtonHeld(true, g_rockConfig.rockGrabButtonID);
+            const bool rightGripHeld = readGrabButtonHeld(false, g_rockConfig.rockGrabButtonID);
             const bool gripConfirmPressed = readGrabButtonPressedEdge(true, g_rockConfig.rockGrabButtonID);
             (void)gripConfirmPressed;
 
             WeaponInteractionRuntimeState providerInteractionState{};
-            const auto offhandReservation = offhand_interaction_reservation::fromProvider(::rock::provider::currentOffhandReservation());
-            if (!offhand_interaction_reservation::allowsSupportGrip(offhandReservation)) {
-                providerInteractionState.supportGripAllowed = false;
-            }
 
             ::rock::provider::RockProviderWeaponPartTargetResolutionV1 weaponPartResolution{};
             const auto weaponPartQuery = makeProviderWeaponPartTargetQuery(leftWeaponContact, _weaponCollision);
@@ -2806,12 +2817,6 @@ namespace rock
                 providerInteractionState.providerPartAuthority = makeWeaponProviderPartAuthority(weaponPartQuery, weaponPartResolution);
             }
 
-            /*
-             * The offhand reservation applies to the offhand only. Part grips by
-             * the free firing hand are gated by the provider part whitelist
-             * alone so PAPER reload sessions still constrain which parts the
-             * free hand may take.
-             */
             WeaponInteractionRuntimeState rightHandInteractionState{};
             ::rock::provider::RockProviderWeaponPartTargetResolutionV1 rightWeaponPartResolution{};
             const auto rightWeaponPartQuery = makeProviderWeaponPartTargetQuery(rightWeaponContact, _weaponCollision);
@@ -2825,6 +2830,18 @@ namespace rock
                 rightHandInteractionState.providerPartAuthority = makeWeaponProviderPartAuthority(rightWeaponPartQuery, rightWeaponPartResolution);
             }
 
+            /*
+             * The offhand reservation is a SUPPORT-ROLE gate, not a physical
+             * left-hand gate: it constrains whichever hand currently plays the
+             * support role. Part grips by the free firing hand stay gated by
+             * the provider part whitelist alone so PAPER reload sessions still
+             * constrain which parts the free hand may take.
+             */
+            const auto offhandReservation = offhand_interaction_reservation::fromProvider(::rock::provider::currentOffhandReservation());
+            if (!offhand_interaction_reservation::allowsSupportGrip(offhandReservation)) {
+                (supportHandIsLeft ? providerInteractionState : rightHandInteractionState).supportGripAllowed = false;
+            }
+
             const WeaponInteractionDecision leftWeaponDecision = routeWeaponInteraction(leftWeaponContact, providerInteractionState);
             const std::uint64_t currentWeaponGenerationKey = _weaponCollision.getCurrentWeaponGenerationKey();
             const std::uint64_t currentEquippedWeaponOwnershipKey = _weaponCollision.getCurrentEquippedWeaponOwnershipKey();
@@ -2836,11 +2853,15 @@ namespace rock
             const bool leftHandHoldingObject = _leftHand.isHolding();
             auto supportAuthorityMode = resolveEquippedWeaponSupportAuthorityMode(weaponNode);
             bool supportAuthorityProviderOverride = false;
-            if (weaponPartMatched) {
-                if (weaponPartResolution.grabMode == ::rock::provider::RockProviderWeaponPartGrabModeV1::FullTwoHandAuthority) {
+            // The grab-mode override follows the SUPPORT-ROLE hand's provider
+            // resolution: that is the hand whose grip the mode describes.
+            const bool supportWeaponPartMatched = supportHandIsLeft ? weaponPartMatched : rightWeaponPartMatched;
+            const auto& supportWeaponPartResolution = supportHandIsLeft ? weaponPartResolution : rightWeaponPartResolution;
+            if (supportWeaponPartMatched) {
+                if (supportWeaponPartResolution.grabMode == ::rock::provider::RockProviderWeaponPartGrabModeV1::FullTwoHandAuthority) {
                     supportAuthorityMode = weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver;
                     supportAuthorityProviderOverride = true;
-                } else if (weaponPartResolution.grabMode == ::rock::provider::RockProviderWeaponPartGrabModeV1::AttachOnly) {
+                } else if (supportWeaponPartResolution.grabMode == ::rock::provider::RockProviderWeaponPartGrabModeV1::AttachOnly) {
                     supportAuthorityMode = weapon_support_authority_policy::WeaponSupportAuthorityMode::VisualOnlySupport;
                     supportAuthorityProviderOverride = true;
                 }
@@ -2851,19 +2872,20 @@ namespace rock
             EquippedWeaponPrimaryGripInput primaryGripInput{};
             GrabButtonState primaryGrabState{};
             bool primaryGrabStateRead = false;
-            _rightGrabButtonFrameState = {};
+            _firingHandGrabButtonFrameState = {};
             auto readPrimaryGrabState = [&]() -> const GrabButtonState& {
                 if (!primaryGrabStateRead) {
-                    primaryGrabState = readGrabButtonState(false, g_rockConfig.rockGrabButtonID);
+                    primaryGrabState = readGrabButtonState(firingHandIsLeft, g_rockConfig.rockGrabButtonID);
                     // Menu rearm intentionally masks gameplay edges, but
                     // realistic weapon ownership still follows the physical
                     // hand state after the menu closes.
-                    primaryGrabState.held = input_remap_runtime::isRawButtonPhysicallyHeld(false, g_rockConfig.rockGrabButtonID);
+                    primaryGrabState.held = input_remap_runtime::isRawButtonPhysicallyHeld(firingHandIsLeft, g_rockConfig.rockGrabButtonID);
                     primaryGrabStateRead = true;
                     // Publish the consumed snapshot so the normal grab pipeline
                     // sees the same edges instead of re-consuming cleared ones.
-                    _rightGrabButtonFrameState = SharedGrabButtonFrameState{
+                    _firingHandGrabButtonFrameState = SharedGrabButtonFrameState{
                         .valid = true,
+                        .isLeft = firingHandIsLeft,
                         .held = primaryGrabState.held,
                         .pressed = primaryGrabState.pressed,
                         .released = primaryGrabState.released,
@@ -2878,14 +2900,14 @@ namespace rock
                 weaponNode != nullptr,
                 currentEquippedWeaponOwnershipKey);
             const bool inputBlockingMenuActive = input_remap_runtime::isMenuInputActive();
-            const bool primaryGrabDeferredForVirtualHolsters = input_remap_runtime::shouldDeferGrabInputForVirtualHolsters(false, g_rockConfig.rockGrabButtonID);
+            const bool primaryGrabDeferredForVirtualHolsters = input_remap_runtime::shouldDeferGrabInputForVirtualHolsters(firingHandIsLeft, g_rockConfig.rockGrabButtonID);
             if (inputBlockingMenuActive) {
                 _pendingEquippedWeaponPrimaryOnlyGripStart = false;
             } else if (_pendingEquippedWeaponPrimaryOnlyGripStart &&
                 !equipped_weapon_manual_ownership_policy::shouldKeepPendingPrimaryOnlyStart(
                     equipped_weapon_manual_ownership_policy::PendingPrimaryOnlyStartInput{
                         .pending = _pendingEquippedWeaponPrimaryOnlyGripStart,
-                        .gripHeld = input_remap_runtime::isRawButtonPhysicallyHeld(false, g_rockConfig.rockGrabButtonID),
+                        .gripHeld = input_remap_runtime::isRawButtonPhysicallyHeld(firingHandIsLeft, g_rockConfig.rockGrabButtonID),
                         .configEnabled = g_rockConfig.rockRealisticWeaponHandlingEnabled,
                         .primaryPoseBlockerAvailable = primaryPoseBlockerAvailable,
                         .virtualHolstersOwnsInput = primaryGrabDeferredForVirtualHolsters,
@@ -2955,11 +2977,20 @@ namespace rock
             /*
              * Firing-grip reattach is the squeeze gesture (grab held with the
              * palm on the grip); distance is evaluated by TwoHandedGrip. This
-             * only gates whether the free firing hand may be captured at all.
+             * only gates whether each free hand may be captured at all -
+             * either hand can take the firing grip when ambidextrous takeover
+             * is available.
              */
-            bool reattachEligible = false;
+            bool leftReattachEligible = false;
+            bool rightReattachEligible = false;
             if (_twoHandedGrip.isPartCarryActive() && primaryDetachFeatureAvailable) {
-                reattachEligible = weapon_two_handed_grip_math::canAttemptFiringGripReattach(
+                leftReattachEligible = weapon_two_handed_grip_math::canAttemptFiringGripReattach(
+                    weapon_two_handed_grip_math::FiringGripReattachInput{
+                        .partCarryActive = true,
+                        .menuInputActive = inputBlockingMenuActive,
+                        .handHoldingObject = _leftHand.isHolding(),
+                    });
+                rightReattachEligible = weapon_two_handed_grip_math::canAttemptFiringGripReattach(
                     weapon_two_handed_grip_math::FiringGripReattachInput{
                         .partCarryActive = true,
                         .menuInputActive = inputBlockingMenuActive,
@@ -3118,9 +3149,11 @@ namespace rock
 
             const EquippedWeaponGripFrameInput gripFrameInput{
                 .leftGripHeld = gripPressed,
+                .rightGripHeld = rightGripHeld,
                 .leftHandHoldingObject = leftHandHoldingObject,
                 .rightHandHoldingObject = _rightHand.isHolding(),
-                .reattachEligible = reattachEligible,
+                .leftReattachEligible = leftReattachEligible,
+                .rightReattachEligible = rightReattachEligible,
                 .scopeMenuOpen = runtime.localScopeMenuOpen,
                 .leftHandDriverFrame = leftHandDriverFrame,
                 .rightHandDriverFrame = rightHandDriverFrame,
@@ -3172,7 +3205,7 @@ namespace rock
              */
             if (g_rockConfig.rockGripZoneHoverHapticsEnabled && _twoHandedGrip.isFiringGripReattachHoverInsideRadius()) {
                 (void)_feedbackHaptics.queue(
-                    _twoHandedGrip.isFiringHandLeft() ? feedback_haptics::FeedbackHand::Left : feedback_haptics::FeedbackHand::Right,
+                    _twoHandedGrip.isFiringGripReattachHoverHandLeft() ? feedback_haptics::FeedbackHand::Left : feedback_haptics::FeedbackHand::Right,
                     grip_zone_hover_haptic_policy::kContinuousQueueSeconds,
                     g_rockConfig.rockGripZoneHoverHapticIntensity);
             }
@@ -3362,10 +3395,22 @@ namespace rock
             input_remap_runtime::setEquippedWeaponPrimaryDetachInputActive(
                 input_remap_policy::shouldUseEquippedWeaponPrimaryDetachInput(updatedPrimaryDetachInputGate));
             input_remap_runtime::setEquippedWeaponPrimaryDetached(_twoHandedGrip.isPartCarryActive());
+            /*
+             * Left-hand fire publication: while the LEFT hand occupies the
+             * firing grip, the OpenVR-level trigger remap presents the left
+             * trigger to the game as the primary (right) wand's trigger.
+             */
+            const bool leftHandFiringActiveAfterGrip = _twoHandedGrip.isFiringHandLeft() && _twoHandedGrip.isFiringGripOccupied();
+            input_remap_runtime::setEquippedWeaponLeftHandFiringActive(leftHandFiringActiveAfterGrip);
+            ::rock::provider::setEquippedWeaponFiringHandIsLeft(_twoHandedGrip.isFiringHandLeft());
 
             bool rightHandWeaponAuthorityActiveAfterGrip = rightHandWeaponEquipped || retainedWeaponCollisionActive;
             // A visible part-carry frees the right hand even while weapon bodies exist (see the pre-grip gate).
             if (rightHandWeaponEquipped && _twoHandedGrip.isPartCarryActive()) {
+                rightHandWeaponAuthorityActiveAfterGrip = false;
+            }
+            // Left-firing carry frees the right hand the same way (see the pre-grip gate).
+            if (rightHandWeaponEquipped && leftHandFiringActiveAfterGrip) {
                 rightHandWeaponAuthorityActiveAfterGrip = false;
             }
             if (rightHandWeaponAuthorityActiveAfterGrip != rightHandWeaponAuthorityActiveBeforeGrip) {
@@ -3416,7 +3461,13 @@ namespace rock
             }
             leftSupportGripActive = weaponSupportGripActive;
 
-            if (weaponSupportGripActive) {
+            /*
+             * A LEFT hand occupying the firing grip is weapon-engaged exactly
+             * like a support hand from the collision standpoint: its generated
+             * colliders must not become a second physical owner while the
+             * weapon rides the hand. Reuses the per-hand support lease.
+             */
+            if (weaponSupportGripActive || leftHandFiringActiveAfterGrip) {
                 suppressHandCollisionForWeaponSupport(hknp, true);
             } else {
                 restoreHandCollisionAfterWeaponSupport(hknp, true);
@@ -7659,7 +7710,6 @@ namespace rock
         auto* hknp = frame.hknpWorld;
         int grabButton = g_rockConfig.rockGrabButtonID;
         const bool rightHandWeaponEquipped = resolveEquippedWeaponInteractionNode() != nullptr;
-        const bool equippedWeaponSupportGripActive = _twoHandedGrip.isHandPartGripping(true);
         const auto farHmdConeGate = makeFarSelectionHmdConeGate(frame);
         input_remap_runtime::setRightHandHeldWeapon(_rightHand.isHoldingLooseWeapon());
         // Engaged = holding a ROCK object or gripping the equipped weapon (support/two-hand, part carry while primary detached, attach-only glue).
@@ -7743,8 +7793,8 @@ namespace rock
                  * release from the Pip-Boy/API frame can drop the object in
                  * the same update that reported a successful force-grab.
                  */
-                if (!isLeft && _rightGrabButtonFrameState.valid) {
-                    _rightGrabButtonFrameState.valid = false;
+                if (_firingHandGrabButtonFrameState.valid && _firingHandGrabButtonFrameState.isLeft == isLeft) {
+                    _firingHandGrabButtonFrameState.valid = false;
                 } else {
                     static_cast<void>(readGrabButtonState(isLeft, grabButton));
                 }
@@ -7805,19 +7855,20 @@ namespace rock
 
             const bool heldWeaponEquipTriggerPressed =
                 !providerSuppressesHeldWeaponTriggerEquip && readHeldWeaponEquipTriggerPressedEdge(isLeft);
+            const bool handIsFiringHand = isLeft == _twoHandedGrip.isFiringHandLeft();
             if (!weapon_two_handed_grip_math::canProcessNormalGrabInput(
-                    isLeft,
-                    equippedWeaponSupportGripActive,
+                    handIsFiringHand,
                     rightHandWeaponEquipped,
-                    _twoHandedGrip.isPartCarryActive() && !_twoHandedGrip.isHandPartGripping(false))) {
+                    _twoHandedGrip.isHandPartGripping(isLeft),
+                    _twoHandedGrip.isPartCarryActive() && !_twoHandedGrip.isHandPartGripping(isLeft))) {
                 grab_input_intent_policy::reset(inputIntentState);
                 cancelPeerHeldJoinRetry("normal-grab-suppressed", true);
                 clearGameplayCandidatesForHand(hand, isLeft);
                 _softContactRuntime.clearHandForStrongerOwner(
                     isLeft,
-                    isLeft ? "equipped-weapon-support-grip" : "right-hand-equipped-weapon");
+                    handIsFiringHand ? "firing-hand-equipped-weapon" : "equipped-weapon-support-grip");
                 if (hand.isHolding()) {
-                    releaseSuppressedHeldObject(hand, isLeft, isLeft ? "equipped weapon support grip active" : "right-hand weapon equipped");
+                    releaseSuppressedHeldObject(hand, isLeft, handIsFiringHand ? "firing-hand weapon equipped" : "equipped weapon support grip active");
                 } else if (hand.hasActivePullCatchIntent()) {
                     auto* pullCatchRef = hand.getPullCatchIntentRef();
                     hand.finishPullPrepAsPhysicalDropIfActive("pull-catch-normal-grab-suppressed");
@@ -7844,17 +7895,18 @@ namespace rock
             /*
              * The equipped-weapon manual ownership path consumes the firing
              * hand's grab edges earlier this frame. Reuse that single consumed
-             * snapshot for the right hand; re-reading would see cleared edges
-             * and starve free-hand world grabs of press/release input.
+             * snapshot for the same physical hand; re-reading would see
+             * cleared edges and starve free-hand world grabs of press/release
+             * input.
              */
             GrabButtonState grabInput{};
-            if (!isLeft && _rightGrabButtonFrameState.valid) {
+            if (_firingHandGrabButtonFrameState.valid && _firingHandGrabButtonFrameState.isLeft == isLeft) {
                 grabInput = GrabButtonState{
-                    .held = _rightGrabButtonFrameState.held,
-                    .pressed = _rightGrabButtonFrameState.pressed,
-                    .released = _rightGrabButtonFrameState.released,
+                    .held = _firingHandGrabButtonFrameState.held,
+                    .pressed = _firingHandGrabButtonFrameState.pressed,
+                    .released = _firingHandGrabButtonFrameState.released,
                 };
-                _rightGrabButtonFrameState.valid = false;
+                _firingHandGrabButtonFrameState.valid = false;
             } else {
                 grabInput = readGrabButtonState(isLeft, grabButton);
             }

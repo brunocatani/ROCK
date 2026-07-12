@@ -881,6 +881,10 @@ namespace rock
             REALISTIC_WEAPONS_SECTION,
             "bRealisticWeaponHandlingEnabled",
             legacyRealisticPrimaryDetachEnabled);
+        rockAmbidextrousFiringGripEnabled = ini.GetBoolValue(
+            REALISTIC_WEAPONS_SECTION,
+            "bAmbidextrousFiringGripEnabled",
+            rockAmbidextrousFiringGripEnabled);
         rockCalibratedGrenadeOffsetsEnabled = ini.GetBoolValue(
             REALISTIC_WEAPONS_SECTION,
             "bCalibratedGrenadeOffsetsEnabled",

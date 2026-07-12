@@ -219,6 +219,12 @@ namespace frik::api
 
         bool(FRIK_CALL* blockPrimaryHandWeaponPose)(const char* tag, bool block);
 
+        // Appended v5 member - may be null on older FRIK builds; callers must null-check.
+        // While at least one tag blocks, FRIK yields equipped primary-weapon-node ownership
+        // (no weapon local glue, no native arm-to-weapon coupling, no weapon-node
+        // re-parenting); the external caller owns the weapon node transform and parenting.
+        bool(FRIK_CALL* blockPrimaryWeaponNodeOwnership)(const char* tag, bool block);
+
         [[nodiscard]] static int initialize(const uint32_t minVersion = FRIK_API_VERSION)
         {
             if (inst) {

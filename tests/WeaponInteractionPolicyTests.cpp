@@ -220,10 +220,11 @@ int main()
     using rock::weapon_two_handed_grip_math::canProcessNormalGrabInput;
     using rock::weapon_two_handed_grip_math::resolveSupportReleaseManualAction;
     using rock::weapon_two_handed_grip_math::SupportReleaseManualAction;
-    ok &= expectFalse("left normal grab is blocked while support grip owns weapon", canProcessNormalGrabInput(true, true, true, false));
-    ok &= expectFalse("right normal grab is blocked while firing hand owns equipped weapon", canProcessNormalGrabInput(false, false, true, false));
-    ok &= expectTrue("right normal grab is restored while primary hand is detached", canProcessNormalGrabInput(false, false, true, true));
-    ok &= expectTrue("right normal grab stays available without equipped weapon", canProcessNormalGrabInput(false, false, false, false));
+    ok &= expectFalse("support-hand normal grab is blocked while its part grip is active", canProcessNormalGrabInput(false, true, true, false));
+    ok &= expectTrue("support-hand normal grab stays available without a part grip", canProcessNormalGrabInput(false, true, false, false));
+    ok &= expectFalse("firing-hand normal grab is blocked while a weapon is equipped", canProcessNormalGrabInput(true, true, false, false));
+    ok &= expectTrue("firing-hand normal grab is restored while detached and free", canProcessNormalGrabInput(true, true, false, true));
+    ok &= expectTrue("firing-hand normal grab stays available without equipped weapon", canProcessNormalGrabInput(true, false, false, false));
     ok &= expectTrue("full two-handed support still owns weapon transform",
         rock::weapon_support_authority_policy::supportGripOwnsWeaponTransform(rock::weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver));
     ok &= expectTrue("full two-handed support applies primary hand authority while active",
