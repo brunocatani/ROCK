@@ -134,6 +134,14 @@ namespace rock
         // detaches to part carry on a real release instead of stealing the
         // firing role.
         float rockFiringGripPromotionRadius = 5.0f;
+        // Global aim trim for the mirrored LEFT firing hold, weapon-
+        // independent: compensates the engine's left arm chain cant (the
+        // left hand is driven through the melee offset pipeline, which is
+        // not an exact mirror of the right weapon pipeline). Degrees,
+        // applied about the weapon's own up/side axes. Positive yaw aims
+        // right, positive pitch aims down.
+        float rockLeftFiringAimYawDegrees = 0.0f;
+        float rockLeftFiringAimPitchDegrees = 0.0f;
         bool rockCalibratedGrenadeOffsetsEnabled = true;
         float rockRealisticGrenadeFuseSeconds = 5.0f;
         bool rockGrabbedWeaponAutoEquipEnabled = false;

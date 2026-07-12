@@ -650,6 +650,9 @@ namespace rock
 
         // Raw left trigger sample for the articulated left firing pose.
         float _leftFiringTriggerAxis{ 0.0f };
+
+        // Rate limiter for the left-firing carry aim diagnostic.
+        int _leftFiringAimLogCounter{ 0 };
     };
 
 }

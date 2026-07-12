@@ -2282,6 +2282,32 @@ namespace rock
 
         _lastSolvedWeaponTransform = weaponNode->world;
         _hasSolvedWeaponTransform = true;
+
+        /*
+         * Carry-time aim diagnostic (~3s cadence): the barrel direction in
+         * LEFT-wand coordinates during the live carry. Matching the
+         * takeover's barrelInLeftWand proves the carry chain is faithful to
+         * the committed hold (residual cant then lives in the left wand /
+         * melee driver chain and the aim trim is the right knob); a drift
+         * from the takeover value means the left bone-in-wand relationship
+         * changed after the topology swap and the hold must be resampled.
+         */
+        if (++_leftFiringAimLogCounter >= 270) {
+            _leftFiringAimLogCounter = 0;
+            auto* playerNodes = f4vr::getPlayerNodes();
+            if (playerNodes && playerNodes->SecondaryWandNode && isFiniteTransform(playerNodes->SecondaryWandNode->world)) {
+                const RE::NiTransform weaponInLeftWandNow = transform_math::composeTransforms(
+                    transform_math::invertTransform(playerNodes->SecondaryWandNode->world), weaponNode->world);
+                const RE::NiPoint3 barrelNow = sub(
+                    transform_math::localPointToWorld(weaponInLeftWandNow, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }),
+                    weaponInLeftWandNow.translate);
+                ROCK_LOG_INFO(Weapon,
+                    "TwoHandedGrip: left-firing carry aim barrelInLeftWand=({:.3f},{:.3f},{:.3f})",
+                    barrelNow.x,
+                    barrelNow.y,
+                    barrelNow.z);
+            }
+        }
         return true;
     }
 
@@ -3176,8 +3202,47 @@ namespace rock
 
         const RE::NiTransform weaponInRightWand = transform_math::composeTransforms(
             boneInRightWand, transform_math::invertTransform(_rightFiringHandCanonicalWeaponLocal));
-        const RE::NiTransform weaponInLeftWand = transform_math::composeTransforms(
+        RE::NiTransform weaponInLeftWand = transform_math::composeTransforms(
             lateralMirror, transform_math::composeTransforms(weaponInRightWand, lateralMirror));
+
+        /*
+         * Global aim trim: the left arm is driven through the melee offset
+         * pipeline, which is not an exact mirror of the right weapon
+         * pipeline, so a small fixed cant can survive the wand conjugation.
+         * The trim rotates the weapon about its own origin (yaw about
+         * weapon +Z up, pitch about weapon +X side) - weapon-frame
+         * semantics, one calibration for every weapon. If a value moves
+         * the aim opposite to its documented direction on a given engine
+         * matrix convention, the user flips its sign once.
+         */
+        constexpr float kDegreesToRadiansLocal = 0.017453292519943295769f;
+        const float aimYawRadians = g_rockConfig.rockLeftFiringAimYawDegrees * kDegreesToRadiansLocal;
+        const float aimPitchRadians = g_rockConfig.rockLeftFiringAimPitchDegrees * kDegreesToRadiansLocal;
+        if (aimYawRadians != 0.0f) {
+            const float yawCos = std::cos(aimYawRadians);
+            const float yawSin = std::sin(aimYawRadians);
+            // yaw about weapon +Z (up): barrel +Y swings toward +X.
+            RE::NiTransform yawTrim{};
+            yawTrim.MakeIdentity();
+            yawTrim.rotate.entry[0][0] = yawCos;
+            yawTrim.rotate.entry[0][1] = -yawSin;
+            yawTrim.rotate.entry[1][0] = yawSin;
+            yawTrim.rotate.entry[1][1] = yawCos;
+            weaponInLeftWand = transform_math::composeTransforms(weaponInLeftWand, yawTrim);
+        }
+        if (aimPitchRadians != 0.0f) {
+            const float pitchCos = std::cos(aimPitchRadians);
+            const float pitchSin = std::sin(aimPitchRadians);
+            // pitch about weapon +X (side): barrel +Y swings toward -Z.
+            RE::NiTransform pitchTrim{};
+            pitchTrim.MakeIdentity();
+            pitchTrim.rotate.entry[1][1] = pitchCos;
+            pitchTrim.rotate.entry[1][2] = pitchSin;
+            pitchTrim.rotate.entry[2][1] = -pitchSin;
+            pitchTrim.rotate.entry[2][2] = pitchCos;
+            weaponInLeftWand = transform_math::composeTransforms(weaponInLeftWand, pitchTrim);
+        }
+
         const RE::NiTransform weaponInLeftHand = transform_math::composeTransforms(
             transform_math::invertTransform(boneInLeftWand), weaponInLeftWand);
         const RE::NiTransform mirroredHandWeaponLocal = transform_math::invertTransform(weaponInLeftHand);

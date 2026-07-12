@@ -889,8 +889,22 @@ namespace rock
             REALISTIC_WEAPONS_SECTION,
             "fFiringGripPromotionRadius",
             rockFiringGripPromotionRadius,
-            8.0f,
+            5.0f,
             0.25f,
+            30.0f);
+        rockLeftFiringAimYawDegrees = readClampedFloat(ini,
+            REALISTIC_WEAPONS_SECTION,
+            "fLeftFiringAimYawDegrees",
+            rockLeftFiringAimYawDegrees,
+            0.0f,
+            -30.0f,
+            30.0f);
+        rockLeftFiringAimPitchDegrees = readClampedFloat(ini,
+            REALISTIC_WEAPONS_SECTION,
+            "fLeftFiringAimPitchDegrees",
+            rockLeftFiringAimPitchDegrees,
+            0.0f,
+            -30.0f,
             30.0f);
         rockCalibratedGrenadeOffsetsEnabled = ini.GetBoolValue(
             REALISTIC_WEAPONS_SECTION,
