@@ -2789,6 +2789,16 @@ namespace rock
             const bool firingHandIsLeft = _twoHandedGrip.isFiringHandLeft();
             const bool supportHandIsLeft = !firingHandIsLeft;
 
+            /*
+             * While the LEFT hand carries the weapon, the node still sits at
+             * FRIK's offhand glue pose here; the ranked part probes below
+             * convert real palm points into node-local space, so glue space
+             * made a forend grab select the scope's sight body ~10gu away
+             * (fallback wrap pose, grab churn). Publish the canonical carry
+             * pose first so both hands probe the weapon where it actually is.
+             */
+            (void)_twoHandedGrip.publishLeftFiringFeedForwardWeaponPose(weaponNode);
+
             leftWeaponContactSource = consumeWeaponContactForHand(true, frame.left, weaponNode != nullptr, leftWeaponContact);
             // The free firing hand needs weapon-part probes for part grips and
             // for the reattach squeeze's proximity check, exactly like the

@@ -227,6 +227,22 @@ namespace rock
             std::uint64_t currentEquippedWeaponOwnershipKey);
 
         /*
+         * Publishes the left-firing canonical carry pose (firing hand o
+         * inverse(captured hold)) onto the weapon node. While ROCK owns the
+         * node, FRIK's earlier pass leaves it at its OFFHAND GLUE pose, so
+         * any world<->node-local math run before this publish operates in
+         * glue space. update() calls it internally before its grip math;
+         * PhysicsInteraction MUST also call it before the frame's weapon
+         * interaction probes (ranked part selection converts the real palm
+         * point into node-local space - glue space made a forend grab pick
+         * the scope's sight body ~10gu away). Safe pre-update: it reads the
+         * previous frame's scope-safe hand frame, a millimeter-scale error
+         * against the ~10gu glue displacement it removes. No-op unless
+         * left-firing with a valid captured hold on the current weapon.
+         */
+        bool publishLeftFiringFeedForwardWeaponPose(RE::NiNode* weaponNode);
+
+        /*
          * FRIK re-attaches the weapon node to the firing hand every frame
          * before ROCK runs, even while the firing hand is detached. Callers
          * must republish ROCK's solved part-carry transform before reading the

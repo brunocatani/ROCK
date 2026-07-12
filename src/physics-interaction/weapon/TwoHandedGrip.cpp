@@ -156,17 +156,6 @@ namespace rock
             return result;
         }
 
-        // Rows-as-axes convention: a hand-local vector maps to parent space
-        // as u.x*row0 + u.y*row1 + u.z*row2.
-        RE::NiPoint3 rotateLocalVectorThroughRows(const RE::NiMatrix3& m, const RE::NiPoint3& v)
-        {
-            return RE::NiPoint3{
-                v.x * m.entry[0][0] + v.y * m.entry[1][0] + v.z * m.entry[2][0],
-                v.x * m.entry[0][1] + v.y * m.entry[1][1] + v.z * m.entry[2][1],
-                v.x * m.entry[0][2] + v.y * m.entry[1][2] + v.z * m.entry[2][2],
-            };
-        }
-
         RE::NiNode* sourceRootNodeOrFallback(RE::NiAVObject* sourceRoot, RE::NiNode* fallback)
         {
             if (sourceRoot) {
@@ -892,18 +881,10 @@ namespace rock
          * existing math with no per-call-site special cases; the state
          * handlers below re-publish their final solved pose as before.
          * Right-firing reads FRIK's authored carry and is untouched.
+         * (PhysicsInteraction additionally publishes this before the frame's
+         * weapon interaction probes - see the header note.)
          */
-        if ((_state == TwoHandedState::Gripping || _state == TwoHandedState::PrimaryOnly) &&
-            _firingHandIsLeft && _hasFiringHandWeaponLocal) {
-            RE::NiTransform leftFiringHandTransform{};
-            if (tryGetSolverHandTransform(true, leftFiringHandTransform)) {
-                const RE::NiTransform feedForwardWeaponWorld = transform_math::composeTransforms(
-                    leftFiringHandTransform, transform_math::invertTransform(_primaryHandWeaponLocal));
-                if (isFiniteTransform(feedForwardWeaponWorld)) {
-                    applyWeaponVisualAuthority(weaponNode, feedForwardWeaponWorld);
-                }
-            }
-        }
+        (void)publishLeftFiringFeedForwardWeaponPose(weaponNode);
 
         /*
          * Support-side routing follows the CURRENT firing hand: the support
@@ -2082,6 +2063,27 @@ namespace rock
         return true;
     }
 
+    bool TwoHandedGrip::publishLeftFiringFeedForwardWeaponPose(RE::NiNode* weaponNode)
+    {
+        if (!weaponNode || weaponNode != _activeWeaponNode ||
+            (_state != TwoHandedState::Gripping && _state != TwoHandedState::PrimaryOnly) ||
+            !_firingHandIsLeft || !_hasFiringHandWeaponLocal) {
+            return false;
+        }
+
+        RE::NiTransform leftFiringHandTransform{};
+        if (!tryGetSolverHandTransform(true, leftFiringHandTransform)) {
+            return false;
+        }
+
+        const RE::NiTransform feedForwardWeaponWorld = transform_math::composeTransforms(
+            leftFiringHandTransform, transform_math::invertTransform(_primaryHandWeaponLocal));
+        if (!isFiniteTransform(feedForwardWeaponWorld)) {
+            return false;
+        }
+        return applyWeaponVisualAuthority(weaponNode, feedForwardWeaponWorld);
+    }
+
     EquippedWeaponManualDropRequest TwoHandedGrip::consumeEquippedWeaponDropRequest()
     {
         const EquippedWeaponManualDropRequest request = _equippedWeaponDropRequest;
@@ -3175,7 +3177,6 @@ namespace rock
         };
         const RE::NiPoint3 mirroredPalmNormal = mirrorAcrossWeaponSidePlane(rightPalmNormalWeapon);
         const RE::NiPoint3 mirroredWristToPalm = mirrorAcrossWeaponSidePlane(rightWristToPalmWeapon);
-        const RE::NiPoint3 mirroredPalmPivot = mirrorAcrossWeaponSidePlane(rightPalmPivotWeapon);
 
         constexpr float kMinAxisSeparation = 0.05f;
         const auto orthonormalPair = [](const RE::NiPoint3& primary, const RE::NiPoint3& secondary, RE::NiPoint3& outPrimary, RE::NiPoint3& outSecondary) {
@@ -3214,8 +3215,16 @@ namespace rock
 
         RE::NiTransform mirroredHandWeaponLocal{};
         mirroredHandWeaponLocal.rotate = mulRowMatrices(transposeMatrix(localFrame), targetFrame);
-        // The left palm pivot lands on the mirrored right palm pivot.
-        mirroredHandWeaponLocal.translate = sub(mirroredPalmPivot, rotateLocalVectorThroughRows(mirroredHandWeaponLocal.rotate, leftPalmPivotLocal));
+        /*
+         * Anchor the LEFT hand BONE at the mirrored right bone position. The
+         * wrist origins are anatomically symmetric in the rig even though the
+         * bone BASES are not, so this flips the tuned lateral weapon offset by
+         * construction ("a bit left of the right wrist" becomes "a bit right
+         * of the left wrist"). The previous palm-pivot anchoring trusted the
+         * per-hand palm-pivot locals to be semantic mirrors laterally - they
+         * are not, and the weapon kept the right hand's side bias in-game.
+         */
+        mirroredHandWeaponLocal.translate = mirrorAcrossWeaponSidePlane(rightHandWeaponLocal.translate);
         mirroredHandWeaponLocal.scale = rightHandWeaponLocal.scale;
 
         if (!isFiniteTransform(mirroredHandWeaponLocal)) {
