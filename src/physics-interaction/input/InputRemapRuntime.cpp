@@ -438,15 +438,13 @@ namespace rock::input_remap_runtime
              * Some helper paths call through framework/static-library frames before reaching OpenVR, so the immediate
              * return address is not always enough to identify the configurator as the consumer.
              *
-             * hFRIK models the PHYSICAL hands: its dynamic finger curls and
-             * gesture reads must follow the real controller state, never the
-             * game-facing remap (the left-fire trigger cross-map was curling
-             * the free RIGHT index with the left trigger pull). FRIK's poll
-             * sites live inside FRIK.dll (statically linked framework), so
-             * the cheap caller check suffices - no stack walk needed.
+             * hFRIK is deliberately NOT in this list: it must keep seeing the
+             * left-wand trigger blanking (its own Pip-Boy/gesture logic acts
+             * on the left trigger, which fires the weapon while left-firing).
+             * hFRIK only gets the cross-map skipped - see the includeCrossMap
+             * flavor of applyLeftHandFireTriggerRemapForGame.
              */
             return isCallerModule(callerAddress, L"ROCKConfigurator.dll") ||
-                   isCallerModule(callerAddress, L"FRIK.dll") ||
                    isModuleOnCurrentStack(L"ROCKConfigurator.dll");
         }
 
@@ -484,7 +482,15 @@ namespace rock::input_remap_runtime
                 !isInputBlockingMenuActive();
         }
 
-        void applyLeftHandFireTriggerRemapForGame(input_remap_policy::Hand hand, vr::VRControllerState_t* state, std::uint32_t stateSize)
+        /*
+         * includeCrossMap=false is the hFRIK flavor: hFRIK poses hand VISUALS
+         * from what it reads here, so the RIGHT wand must keep its REAL
+         * trigger (the cross-mapped left trigger was curling the free right
+         * index), while the LEFT wand blanking still applies - hFRIK's own
+         * Pip-Boy/gesture logic must not act on the left trigger while it
+         * fires the weapon, exactly like the game.
+         */
+        void applyLeftHandFireTriggerRemapForGame(input_remap_policy::Hand hand, vr::VRControllerState_t* state, std::uint32_t stateSize, bool includeCrossMap)
         {
             if (!state || stateSize < sizeof(vr::VRControllerState_t)) {
                 return;
@@ -495,6 +501,9 @@ namespace rock::input_remap_runtime
                 static_cast<std::size_t>(input_remap_policy::kOpenVrSteamVrTriggerButtonId - input_remap_policy::kOpenVrAxisButtonBase);
 
             if (hand == input_remap_policy::Hand::Right) {
+                if (!includeCrossMap) {
+                    return;
+                }
                 const auto& leftTracker = s_controllers[controllerIndex(input_remap_policy::Hand::Left)];
                 const bool leftValid = leftTracker.valid.load(std::memory_order_acquire);
                 const std::uint64_t leftPressed = leftValid ? leftTracker.rawPressed.load(std::memory_order_acquire) : 0;
@@ -827,7 +836,8 @@ namespace rock::input_remap_runtime
                     }
                     if (shouldRemapLeftHandFireTriggerForGame() &&
                         !shouldBypassProviderOpenVrGameInputSuppression(callerAddress)) {
-                        applyLeftHandFireTriggerRemapForGame(hand, controllerState, controllerStateSize);
+                        applyLeftHandFireTriggerRemapForGame(hand, controllerState, controllerStateSize,
+                            !isCallerModule(callerAddress, L"FRIK.dll"));
                     }
                 }
             }
@@ -856,7 +866,8 @@ namespace rock::input_remap_runtime
                     }
                     if (shouldRemapLeftHandFireTriggerForGame() &&
                         !shouldBypassProviderOpenVrGameInputSuppression(callerAddress)) {
-                        applyLeftHandFireTriggerRemapForGame(hand, controllerState, controllerStateSize);
+                        applyLeftHandFireTriggerRemapForGame(hand, controllerState, controllerStateSize,
+                            !isCallerModule(callerAddress, L"FRIK.dll"));
                     }
                 }
             }
