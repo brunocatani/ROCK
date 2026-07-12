@@ -107,9 +107,64 @@ namespace rock
          */
         bool ambidextrousFiringGripTakeoverAvailable()
         {
+            // The hFRIK cooperation reuses the native left-handed node
+            // topology; combining it with the game's own left-handed setting
+            // is untested/undefined, so the feature stands down there.
             return g_rockConfig.rockAmbidextrousFiringGripEnabled &&
+                !f4vr::isLeftHandedMode() &&
                 frik_visual_authority::canBlockPrimaryHandWeaponPose() &&
                 frik_visual_authority::canBlockPrimaryWeaponNodeOwnership();
+        }
+
+        RE::NiMatrix3 makeMatrixFromRows(const RE::NiPoint3& row0, const RE::NiPoint3& row1, const RE::NiPoint3& row2)
+        {
+            RE::NiMatrix3 result{};
+            result.entry[0][0] = row0.x;
+            result.entry[0][1] = row0.y;
+            result.entry[0][2] = row0.z;
+            result.entry[1][0] = row1.x;
+            result.entry[1][1] = row1.y;
+            result.entry[1][2] = row1.z;
+            result.entry[2][0] = row2.x;
+            result.entry[2][1] = row2.y;
+            result.entry[2][2] = row2.z;
+            return result;
+        }
+
+        RE::NiMatrix3 transposeMatrix(const RE::NiMatrix3& m)
+        {
+            RE::NiMatrix3 result{};
+            for (int row = 0; row < 3; ++row) {
+                for (int col = 0; col < 3; ++col) {
+                    result.entry[row][col] = m.entry[col][row];
+                }
+            }
+            return result;
+        }
+
+        RE::NiMatrix3 mulRowMatrices(const RE::NiMatrix3& a, const RE::NiMatrix3& b)
+        {
+            RE::NiMatrix3 result{};
+            for (int row = 0; row < 3; ++row) {
+                for (int col = 0; col < 3; ++col) {
+                    result.entry[row][col] =
+                        a.entry[row][0] * b.entry[0][col] +
+                        a.entry[row][1] * b.entry[1][col] +
+                        a.entry[row][2] * b.entry[2][col];
+                }
+            }
+            return result;
+        }
+
+        // Rows-as-axes convention: a hand-local vector maps to parent space
+        // as u.x*row0 + u.y*row1 + u.z*row2.
+        RE::NiPoint3 rotateLocalVectorThroughRows(const RE::NiMatrix3& m, const RE::NiPoint3& v)
+        {
+            return RE::NiPoint3{
+                v.x * m.entry[0][0] + v.y * m.entry[1][0] + v.z * m.entry[2][0],
+                v.x * m.entry[0][1] + v.y * m.entry[1][1] + v.z * m.entry[2][1],
+                v.x * m.entry[0][2] + v.y * m.entry[1][2] + v.z * m.entry[2][2],
+            };
         }
 
         RE::NiNode* sourceRootNodeOrFallback(RE::NiAVObject* sourceRoot, RE::NiNode* fallback)
@@ -792,6 +847,7 @@ namespace rock
         _hasSolvedWeaponTransform = false;
         _firingGripReattachHoverInsideRadius = false;
         _firingGripReattachHoverHandIsLeft = _firingHandIsLeft;
+        _leftFiringTriggerAxis = std::isfinite(frameInput.leftTriggerAxis) ? std::clamp(frameInput.leftTriggerAxis, 0.0f, 1.0f) : 0.0f;
 
         refreshScopeSafeHandFrames(weaponNode, frameInput, dt);
 
@@ -1858,6 +1914,9 @@ namespace rock
         static_assert(weapon_visual_authority_math::handPosePrecedesLockedHandAuthority());
         static_assert(weapon_visual_authority_math::weaponVisualPrecedesLockedHandAuthority());
         publishGripHandPoses(supportHandIsLeft);
+        if (_firingHandIsLeft) {
+            publishLeftFiringHandPose();
+        }
 
         const bool applyPrimaryHandAuthority = weapon_support_authority_policy::supportGripAppliesPrimaryHandAuthority(_authorityMode);
         if (!applyLockedHandVisualAuthority(weaponNode, applyPrimaryHandAuthority, true, dt, &primaryTransform, &supportTransform)) {
@@ -2148,7 +2207,9 @@ namespace rock
         // Left firing hand: FRIK cannot carry (its weapon glue targets the
         // right hand and is blocked); ROCK drives the weapon rigidly from the
         // left hand through the captured weapon-relative firing-grip frame.
-        (void)solveLeftFiringWeaponCarry(weaponNode);
+        if (solveLeftFiringWeaponCarry(weaponNode)) {
+            publishLeftFiringHandPose();
+        }
     }
 
     bool TwoHandedGrip::solveLeftFiringWeaponCarry(RE::NiNode* weaponNode)
@@ -2729,6 +2790,7 @@ namespace rock
             if (!solveLeftFiringWeaponCarry(weaponNode)) {
                 return;
             }
+            publishLeftFiringHandPose();
         }
 
         static_assert(weapon_visual_authority_math::handPosePrecedesLockedHandAuthority());
@@ -3005,23 +3067,80 @@ namespace rock
         }
 
         /*
-         * Weapon-in-hand mirror. Recipe taken from hFRIK's own production
-         * left-handed-mode baseline pair in Skeleton::setArms (the same
-         * physical hold authored for both hand bones): rotation rows 1 and 2
-         * negated, hand-local Z translation negated. Applying it to the
-         * captured right-hand canonical (which carries FRIK's per-weapon
-         * offsets) yields the identical hold adapted to the left hand bone
-         * basis - the same right-hand offsets, mirrored, no left tuning.
+         * Semantic mirror built from ROCK's own handed palm math, NOT from
+         * bone-basis algebra: the skeleton's left/right hand bone conventions
+         * are not mirror images (a row-negation recipe derived from hFRIK's
+         * left-handed-mode constants pointed the barrel backward in-game).
+         * The canonical right hold is decomposed into weapon-space palm
+         * semantics (palm pivot, palm normal, wrist-to-palm direction),
+         * mirrored across the weapon's side symmetry plane (weapon +Y =
+         * barrel, +X = side; FRIK's own gripping code relies on Y-forward),
+         * then re-solved into a LEFT hand rotation through the left hand's
+         * own palm-basis mapping. Every handed constant comes from the same
+         * palm helpers the grip captures already trust in production.
          */
-        const RE::NiTransform weaponInRightHand = transform_math::invertTransform(_rightFiringHandCanonicalWeaponLocal);
-        RE::NiTransform weaponInLeftHand = weaponInRightHand;
-        for (int col = 0; col < 3; ++col) {
-            weaponInLeftHand.rotate.entry[1][col] = -weaponInRightHand.rotate.entry[1][col];
-            weaponInLeftHand.rotate.entry[2][col] = -weaponInRightHand.rotate.entry[2][col];
-        }
-        weaponInLeftHand.translate.z = -weaponInRightHand.translate.z;
+        const RE::NiTransform& rightHandWeaponLocal = _rightFiringHandCanonicalWeaponLocal;
 
-        const RE::NiTransform mirroredHandWeaponLocal = transform_math::invertTransform(weaponInLeftHand);
+        RE::NiTransform identityTransform{};
+        identityTransform.MakeIdentity();
+
+        // Hand-local palm semantics (helpers applied to identity => local).
+        const RE::NiPoint3 leftPalmNormalLocal = computePalmNormalFromHandBasis(identityTransform, true);
+        const RE::NiPoint3 leftPalmPivotLocal = computeGrabLegacyPalmPivotAWorldFromHandBasis(identityTransform, true);
+
+        // Canonical right hold as weapon-space palm semantics.
+        const RE::NiPoint3 rightPalmNormalWeapon = computePalmNormalFromHandBasis(rightHandWeaponLocal, false);
+        const RE::NiPoint3 rightPalmPivotWeapon = computeGrabLegacyPalmPivotAWorldFromHandBasis(rightHandWeaponLocal, false);
+        const RE::NiPoint3 rightWristToPalmWeapon = sub(rightPalmPivotWeapon, rightHandWeaponLocal.translate);
+
+        const auto mirrorAcrossWeaponSidePlane = [](const RE::NiPoint3& v) {
+            return RE::NiPoint3{ -v.x, v.y, v.z };
+        };
+        const RE::NiPoint3 mirroredPalmNormal = mirrorAcrossWeaponSidePlane(rightPalmNormalWeapon);
+        const RE::NiPoint3 mirroredWristToPalm = mirrorAcrossWeaponSidePlane(rightWristToPalmWeapon);
+        const RE::NiPoint3 mirroredPalmPivot = mirrorAcrossWeaponSidePlane(rightPalmPivotWeapon);
+
+        constexpr float kMinAxisSeparation = 0.05f;
+        const auto orthonormalPair = [](const RE::NiPoint3& primary, const RE::NiPoint3& secondary, RE::NiPoint3& outPrimary, RE::NiPoint3& outSecondary) {
+            outPrimary = weaponSolverNormalize(primary);
+            const RE::NiPoint3 secondaryUnit = weaponSolverNormalize(secondary);
+            const float alignment = dot(secondaryUnit, outPrimary);
+            const RE::NiPoint3 rejected = sub(secondaryUnit, RE::NiPoint3{ outPrimary.x * alignment, outPrimary.y * alignment, outPrimary.z * alignment });
+            const float rejectedLength = std::sqrt(dot(rejected, rejected));
+            if (!std::isfinite(rejectedLength) || rejectedLength < kMinAxisSeparation) {
+                return false;
+            }
+            outSecondary = weaponSolverNormalize(rejected);
+            return true;
+        };
+
+        RE::NiPoint3 nLocal{};
+        RE::NiPoint3 pLocal{};
+        RE::NiPoint3 nTarget{};
+        RE::NiPoint3 pTarget{};
+        if (!orthonormalPair(leftPalmNormalLocal, leftPalmPivotLocal, nLocal, pLocal) ||
+            !orthonormalPair(mirroredPalmNormal, mirroredWristToPalm, nTarget, pTarget)) {
+            return false;
+        }
+        const RE::NiPoint3 tLocal = weaponSolverCross(nLocal, pLocal);
+        const RE::NiPoint3 tTarget = weaponSolverCross(nTarget, pTarget);
+
+        /*
+         * Rows-as-axes: the hand rotation's rows are the hand basis images in
+         * weapon space, so the rotation mapping each left-local semantic axis
+         * onto its mirrored weapon-space image is A^T * B (A rows = local
+         * semantic frame, B rows = target semantic frame; both right-handed
+         * orthonormal triples, so the product is a proper rotation).
+         */
+        const RE::NiMatrix3 localFrame = makeMatrixFromRows(nLocal, pLocal, tLocal);
+        const RE::NiMatrix3 targetFrame = makeMatrixFromRows(nTarget, pTarget, tTarget);
+
+        RE::NiTransform mirroredHandWeaponLocal{};
+        mirroredHandWeaponLocal.rotate = mulRowMatrices(transposeMatrix(localFrame), targetFrame);
+        // The left palm pivot lands on the mirrored right palm pivot.
+        mirroredHandWeaponLocal.translate = sub(mirroredPalmPivot, rotateLocalVectorThroughRows(mirroredHandWeaponLocal.rotate, leftPalmPivotLocal));
+        mirroredHandWeaponLocal.scale = rightHandWeaponLocal.scale;
+
         if (!isFiniteTransform(mirroredHandWeaponLocal)) {
             return false;
         }
@@ -3137,10 +3256,30 @@ namespace rock
 
     void TwoHandedGrip::publishLeftFiringHandPose()
     {
-        if (!frik_visual_authority::setHandPoseWithPriority(
+        /*
+         * Trigger-articulated firing pose for the LEFT hand: the game's own
+         * fire animation only ever plays on the game-primary right hand, so
+         * ROCK poses the left hand itself and drives the index finger from
+         * the physical trigger pull. Published every left-firing frame;
+         * quantizing the trigger keeps the bridge's pose cache effective
+         * between changes. Curl scale: 0 = bent, 1 = straight.
+         */
+        constexpr float kIndexRelaxed = 0.60f;
+        constexpr float kIndexPulled = 0.16f;
+        const float quantizedTrigger = std::round(std::clamp(_leftFiringTriggerAxis, 0.0f, 1.0f) * 20.0f) / 20.0f;
+        const float index = kIndexRelaxed + (kIndexPulled - kIndexRelaxed) * quantizedTrigger;
+
+        const std::array<float, 15> firingCurls = {
+            0.42f, 0.38f, 0.34f, // thumb wrapped over the grip back
+            index, index, index * 0.9f, // index rides the trigger
+            0.30f, 0.26f, 0.22f, // middle wrapped on the grip
+            0.30f, 0.26f, 0.22f, // ring
+            0.32f, 0.28f, 0.24f, // pinky
+        };
+        if (!frik_visual_authority::setHandPoseCustomWithPriority(
                 PRIMARY_GRIP_TAG,
                 frik_visual_authority::Hand::Left,
-                frik_visual_authority::HandPoseKind::HoldingGun,
+                frik_visual_authority::makeHandPoseDataFromJointValues(firingCurls),
                 GRIP_HAND_POSE_PRIORITY)) {
             ROCK_LOG_WARN(Weapon, "TwoHandedGrip: left firing-hand pose publish failed");
         }

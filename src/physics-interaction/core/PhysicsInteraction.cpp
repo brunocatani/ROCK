@@ -3155,6 +3155,7 @@ namespace rock
                 .leftReattachEligible = leftReattachEligible,
                 .rightReattachEligible = rightReattachEligible,
                 .scopeMenuOpen = runtime.localScopeMenuOpen,
+                .leftTriggerAxis = input_remap_runtime::peekRawTriggerAxis(true),
                 .leftHandDriverFrame = leftHandDriverFrame,
                 .rightHandDriverFrame = rightHandDriverFrame,
                 .primaryGripInput = primaryGripInput,

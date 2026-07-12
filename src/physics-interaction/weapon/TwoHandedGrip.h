@@ -65,6 +65,9 @@ namespace rock
         bool leftReattachEligible{ false };
         bool rightReattachEligible{ false };
         bool scopeMenuOpen{ false };
+        // Raw left analog trigger (0..1, pre-remap) driving the left firing
+        // hand's trigger-articulated finger pose.
+        float leftTriggerAxis{ 0.0f };
         EquippedWeaponScopeHandDriverFrame leftHandDriverFrame{};
         EquippedWeaponScopeHandDriverFrame rightHandDriverFrame{};
         // Grab state of the CURRENT firing hand (debounced release), read by
@@ -618,6 +621,9 @@ namespace rock
         // Per-frame hover state; only ever true in PartCarry (see getter).
         bool _firingGripReattachHoverInsideRadius{ false };
         bool _firingGripReattachHoverHandIsLeft{ false };
+
+        // Raw left trigger sample for the articulated left firing pose.
+        float _leftFiringTriggerAxis{ 0.0f };
     };
 
 }

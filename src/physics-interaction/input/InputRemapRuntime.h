@@ -44,6 +44,9 @@ namespace rock::input_remap_runtime
 
     RawButtonState peekRawButtonState(bool isLeft, int buttonId);
     RawButtonState consumeRawButtonState(bool isLeft, int buttonId);
+    // Last raw analog trigger sample (Axis1.x, 0..1) captured pre-remap;
+    // feeds the left firing hand's trigger-articulated finger pose.
+    float peekRawTriggerAxis(bool isLeft);
     // Physical level only: bypasses menu edge rearming so equipped-weapon
     // ownership can reconcile the player's actual hand state after menu exit.
     bool isRawButtonPhysicallyHeld(bool isLeft, int buttonId);

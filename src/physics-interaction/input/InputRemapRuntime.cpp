@@ -24,6 +24,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -1784,6 +1785,16 @@ namespace rock::input_remap_runtime
     void setEquippedWeaponPrimaryDetached(bool detached)
     {
         s_equippedWeaponPrimaryDetached.store(detached, std::memory_order_release);
+    }
+
+    float peekRawTriggerAxis(bool isLeft)
+    {
+        const auto& tracker = s_controllers[isLeft ? 0u : 1u];
+        if (!tracker.valid.load(std::memory_order_acquire)) {
+            return 0.0f;
+        }
+        const float axis = tracker.triggerAxisX.load(std::memory_order_acquire);
+        return std::isfinite(axis) ? std::clamp(axis, 0.0f, 1.0f) : 0.0f;
     }
 
     void setEquippedWeaponLeftHandFiringActive(bool active)
