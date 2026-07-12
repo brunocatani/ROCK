@@ -1042,10 +1042,6 @@ namespace rock
         _hasRightFiringHandCanonicalWeaponLocal = false;
         _rightFiringHandCanonicalGenerationKey = 0;
         _rightFiringHandCanonicalWeaponLocal = {};
-        _hasRightFiringHandCanonicalWeaponInWand = false;
-        _rightFiringHandCanonicalWeaponInWandGenerationKey = 0;
-        _rightFiringHandCanonicalWeaponInWand = {};
-        _leftFiringHoldRefreshCallsRemaining = 0;
         if (_state != TwoHandedState::Inactive) {
             transitionToInactive(false);
             _scopeMenuOpenThisFrame = false;
@@ -2249,15 +2245,6 @@ namespace rock
             return false;
         }
 
-        // Early-carry hold refresh; see kLeftFiringHoldRefreshWindowCalls.
-        if (_leftFiringHoldRefreshCallsRemaining > 0) {
-            --_leftFiringHoldRefreshCallsRemaining;
-            RE::NiTransform refreshedHold{};
-            if (tryComputeMirroredLeftFiringHandWeaponLocal(refreshedHold)) {
-                _primaryHandWeaponLocal = refreshedHold;
-            }
-        }
-
         RE::NiTransform firingHandTransform{};
         if (!tryGetSolverHandTransform(true, firingHandTransform)) {
             _hasSolvedWeaponTransform = false;
@@ -2398,7 +2385,6 @@ namespace rock
             _primaryHandWeaponLocal = transform_math::composeTransforms(transform_math::invertTransform(weaponNode->world), adjustedHandTransform);
         }
         _hasFiringHandWeaponLocal = true;
-        _leftFiringHoldRefreshCallsRemaining = handIsLeft ? kLeftFiringHoldRefreshWindowCalls : 0;
         rememberRightFiringHandCanonicalFrame();
         _firingGripSequence = ++_gripCaptureSequence;
         _primaryHandVisualLerp = {};
@@ -3113,10 +3099,6 @@ namespace rock
         }
     }
 
-    // A hand bone rides its wand at wrist range; a larger offset means a
-    // stale or foreign frame and every wand-map consumer fails closed on it.
-    static constexpr float kMaxHandBoneToWandDistance = 30.0f;
-
     void TwoHandedGrip::rememberRightFiringHandCanonicalFrame()
     {
         if (_firingHandIsLeft || !_hasFiringHandWeaponLocal || _activeWeaponGenerationKey == 0) {
@@ -3125,45 +3107,13 @@ namespace rock
         _rightFiringHandCanonicalWeaponLocal = _primaryHandWeaponLocal;
         _rightFiringHandCanonicalGenerationKey = _activeWeaponGenerationKey;
         _hasRightFiringHandCanonicalWeaponLocal = true;
-
-        /*
-         * Also store the weapon-in-right-wand frame NOW, while the right hand
-         * bone is live on the weapon map (this function only runs for a RIGHT
-         * firing hand). The left mirror conjugates this stored frame; see the
-         * header note for why the live right bone must never be resampled. A
-         * transient sampling miss keeps the previous same-generation capture;
-         * a stale-generation frame is never served (checked at the mirror).
-         */
-        auto* playerNodes = f4vr::getPlayerNodes();
-        RE::NiTransform rightHandWorld{};
-        if (!playerNodes || !playerNodes->primaryWandNode ||
-            !isFiniteTransform(playerNodes->primaryWandNode->world) ||
-            !tryGetSolverHandTransform(false, rightHandWorld)) {
-            return;
-        }
-        const RE::NiTransform boneInRightWand = transform_math::composeTransforms(
-            transform_math::invertTransform(playerNodes->primaryWandNode->world), rightHandWorld);
-        if (!isFiniteTransform(boneInRightWand) ||
-            std::sqrt(dot(boneInRightWand.translate, boneInRightWand.translate)) > kMaxHandBoneToWandDistance) {
-            return;
-        }
-        const RE::NiTransform weaponInRightWand = transform_math::composeTransforms(
-            boneInRightWand, transform_math::invertTransform(_rightFiringHandCanonicalWeaponLocal));
-        if (!isFiniteTransform(weaponInRightWand)) {
-            return;
-        }
-        _rightFiringHandCanonicalWeaponInWand = weaponInRightWand;
-        _rightFiringHandCanonicalWeaponInWandGenerationKey = _activeWeaponGenerationKey;
-        _hasRightFiringHandCanonicalWeaponInWand = true;
     }
 
     bool TwoHandedGrip::tryComputeMirroredLeftFiringHandWeaponLocal(RE::NiTransform& outHandWeaponLocal) const
     {
         if (!_hasRightFiringHandCanonicalWeaponLocal ||
             _rightFiringHandCanonicalGenerationKey == 0 ||
-            _rightFiringHandCanonicalGenerationKey != _activeWeaponGenerationKey ||
-            !_hasRightFiringHandCanonicalWeaponInWand ||
-            _rightFiringHandCanonicalWeaponInWandGenerationKey != _activeWeaponGenerationKey) {
+            _rightFiringHandCanonicalGenerationKey != _activeWeaponGenerationKey) {
             return false;
         }
 
@@ -3177,7 +3127,8 @@ namespace rock
          * physically exact mirror pair; the hand BONE conventions are not
          * mirrors (previous semantic-palm and bone-anchor mirrors both left
          * a residual yaw/side bias in-game). Conjugating the canonical hold
-         * through the wand pair cancels every per-hand bone convention:
+         * through the wand pair cancels every per-hand bone convention
+         * inside the live-sampled bone-in-wand transforms:
          *
          *   weaponInLeftWand = Msag o weaponInRightWand o Mside
          *
@@ -3189,39 +3140,42 @@ namespace rock
          * Effect on the tuned offsets: yaw and roll negate, pitch and
          * fore/aft/vertical placement are preserved.
          *
-         * weaponInRightWand is the STORED canonical capture, not a live
-         * resample: while the ownership block is engaged, hFRIK's arm-map
-         * exchange re-targets the visible right arm onto an offhand map, so
-         * the live right bone no longer carries the weapon hold. The LEFT
-         * bone-in-wand is sampled live on purpose - it expresses the mirrored
-         * wand-frame target in whatever map the left bone currently rides
-         * (melee before the exchange lands, mirrored weapon map after), which
-         * is what keeps the weapon's wand-relative pose continuous across the
-         * exchange when the early-carry hold refresh recomputes it.
+         * The native first-person arm sync drags each hand bone to its wand
+         * with a fixed per-hand map, so bone-in-wand is constant and
+         * sampling it at takeover time is exact.
          */
         auto* playerNodes = f4vr::getPlayerNodes();
         if (!playerNodes) {
             return false;
         }
-        // Ambidextrous stands down in game-left-handed mode, so the left hand
-        // always rides the secondary wand here.
+        // Ambidextrous stands down in game-left-handed mode, so primary is
+        // always the physical RIGHT wand here.
+        RE::NiNode* rightWand = playerNodes->primaryWandNode;
         RE::NiNode* leftWand = playerNodes->SecondaryWandNode;
-        if (!leftWand || !isFiniteTransform(leftWand->world)) {
+        if (!rightWand || !leftWand ||
+            !isFiniteTransform(rightWand->world) || !isFiniteTransform(leftWand->world)) {
             return false;
         }
 
+        RE::NiTransform rightHandWorld{};
         RE::NiTransform leftHandWorld{};
-        if (!tryGetSolverHandTransform(true, leftHandWorld)) {
+        if (!tryGetSolverHandTransform(false, rightHandWorld) || !tryGetSolverHandTransform(true, leftHandWorld)) {
             return false;
         }
 
+        const RE::NiTransform boneInRightWand =
+            transform_math::composeTransforms(transform_math::invertTransform(rightWand->world), rightHandWorld);
         const RE::NiTransform boneInLeftWand =
             transform_math::composeTransforms(transform_math::invertTransform(leftWand->world), leftHandWorld);
+        // A hand bone rides its wand at wrist range; a large offset means a
+        // stale or foreign frame - fail closed to the live-capture fallback.
+        constexpr float kMaxBoneToWandDistance = 30.0f;
         const auto transformOffsetLength = [](const RE::NiTransform& transform) {
             return std::sqrt(dot(transform.translate, transform.translate));
         };
-        if (!isFiniteTransform(boneInLeftWand) ||
-            transformOffsetLength(boneInLeftWand) > kMaxHandBoneToWandDistance) {
+        if (!isFiniteTransform(boneInRightWand) || !isFiniteTransform(boneInLeftWand) ||
+            transformOffsetLength(boneInRightWand) > kMaxBoneToWandDistance ||
+            transformOffsetLength(boneInLeftWand) > kMaxBoneToWandDistance) {
             return false;
         }
 
@@ -3232,7 +3186,8 @@ namespace rock
         lateralMirror.MakeIdentity();
         lateralMirror.rotate.entry[0][0] = -1.0f;
 
-        const RE::NiTransform& weaponInRightWand = _rightFiringHandCanonicalWeaponInWand;
+        const RE::NiTransform weaponInRightWand = transform_math::composeTransforms(
+            boneInRightWand, transform_math::invertTransform(_rightFiringHandCanonicalWeaponLocal));
         RE::NiTransform weaponInLeftWand = transform_math::composeTransforms(
             lateralMirror, transform_math::composeTransforms(weaponInRightWand, lateralMirror));
 
@@ -3291,15 +3246,15 @@ namespace rock
         const RE::NiPoint3 barrelInLeftWand =
             sub(transform_math::localPointToWorld(weaponInLeftWand, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }), weaponInLeftWand.translate);
         ROCK_LOG_INFO(Weapon,
-            "TwoHandedGrip: wand-conjugated left hold barrelInRightWand=({:.3f},{:.3f},{:.3f}) barrelInLeftWand=({:.3f},{:.3f},{:.3f}) leftBoneWandDist={:.2f} canonicalWandDist={:.2f}",
+            "TwoHandedGrip: wand-conjugated left hold barrelInRightWand=({:.3f},{:.3f},{:.3f}) barrelInLeftWand=({:.3f},{:.3f},{:.3f}) boneWandDist=({:.2f},{:.2f})",
             barrelInRightWand.x,
             barrelInRightWand.y,
             barrelInRightWand.z,
             barrelInLeftWand.x,
             barrelInLeftWand.y,
             barrelInLeftWand.z,
-            transformOffsetLength(boneInLeftWand),
-            transformOffsetLength(weaponInRightWand));
+            transformOffsetLength(boneInRightWand),
+            transformOffsetLength(boneInLeftWand));
 
         outHandWeaponLocal = mirroredHandWeaponLocal;
         return true;
@@ -3389,7 +3344,6 @@ namespace rock
 
         _primaryHandWeaponLocal = newFiringHandWeaponLocal;
         _hasFiringHandWeaponLocal = true;
-        _leftFiringHoldRefreshCallsRemaining = _firingHandIsLeft ? kLeftFiringHoldRefreshWindowCalls : 0;
         rememberRightFiringHandCanonicalFrame();
         _firingGripSequence = ++_gripCaptureSequence;
         _primaryHandVisualLerp = {};

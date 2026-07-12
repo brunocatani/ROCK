@@ -571,32 +571,6 @@ namespace rock
         std::uint64_t _rightFiringHandCanonicalGenerationKey{ 0 };
         bool _hasRightFiringHandCanonicalWeaponLocal{ false };
 
-        /*
-         * Weapon pose in the RIGHT wand frame, stored at canonical capture
-         * time while the right hand bone is guaranteed to ride the weapon
-         * map. The left-firing mirror conjugates THIS stored frame: the live
-         * visible right bone must never be resampled for it, because hFRIK's
-         * left-firing arm-map exchange re-targets the visible right arm onto
-         * an offhand map for the whole ownership-block tenure.
-         */
-        RE::NiTransform _rightFiringHandCanonicalWeaponInWand{};
-        std::uint64_t _rightFiringHandCanonicalWeaponInWandGenerationKey{ 0 };
-        bool _hasRightFiringHandCanonicalWeaponInWand{ false };
-
-        /*
-         * Early left-carry hold refresh window (call-counted; the carry solve
-         * can run twice per frame via the feed-forward publish and the state
-         * tick). Covers the 1-2 FRIK frames between the ownership-block
-         * engage and hFRIK's arm-map exchange moving the visible left bone
-         * onto the mirrored weapon-hand map: recomputing the hold against the
-         * live bone keeps the weapon's wand-relative pose continuous (the
-         * hand adjusts under the weapon instead of the weapon popping).
-         * Frozen afterwards so fire recoil expresses through bone motion,
-         * never through hold drift.
-         */
-        static constexpr std::uint8_t kLeftFiringHoldRefreshWindowCalls{ 10 };
-        std::uint8_t _leftFiringHoldRefreshCallsRemaining{ 0 };
-
         std::array<ScopeSafeHandFrameState, 2> _scopeSafeHandFrames{};
         bool _scopeMenuOpenThisFrame{ false };
         bool _scopeHandAuthorityCleanupPending{ false };
