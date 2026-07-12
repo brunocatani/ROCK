@@ -142,6 +142,15 @@ namespace rock
         // right, positive pitch aims down.
         float rockLeftFiringAimYawDegrees = 0.0f;
         float rockLeftFiringAimPitchDegrees = 0.0f;
+        // Translation trim for the mirrored LEFT firing hold, weapon-frame
+        // game units, same one-calibration semantics as the aim trims:
+        // compensates the fixed lateral/vertical placement bias of the left
+        // arm chain. +X toward the weapon's right side, +Y forward along
+        // the barrel, +Z up; if an axis moves the weapon the opposite way
+        // on a given engine matrix convention, flip its sign once.
+        float rockLeftFiringAimOffsetXGameUnits = 0.0f;
+        float rockLeftFiringAimOffsetYGameUnits = 0.0f;
+        float rockLeftFiringAimOffsetZGameUnits = 0.0f;
         bool rockCalibratedGrenadeOffsetsEnabled = true;
         float rockRealisticGrenadeFuseSeconds = 5.0f;
         bool rockGrabbedWeaponAutoEquipEnabled = false;

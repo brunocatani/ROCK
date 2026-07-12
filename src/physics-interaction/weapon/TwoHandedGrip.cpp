@@ -3229,6 +3229,27 @@ namespace rock
             weaponInLeftWand = transform_math::composeTransforms(weaponInLeftWand, pitchTrim);
         }
 
+        /*
+         * Translation trim, weapon-frame game units (+X weapon right side,
+         * +Y along the barrel, +Z up): compensates the fixed placement bias
+         * of the left arm chain the same way the rotation trims compensate
+         * its cant. Applied AFTER the rotation trims so the offset axes
+         * match the final aimed weapon frame; sign semantics carry the same
+         * caveat as the rotation trims (flip once if an axis moves the
+         * weapon the opposite way).
+         */
+        const RE::NiPoint3 aimOffset{
+            g_rockConfig.rockLeftFiringAimOffsetXGameUnits,
+            g_rockConfig.rockLeftFiringAimOffsetYGameUnits,
+            g_rockConfig.rockLeftFiringAimOffsetZGameUnits
+        };
+        if (aimOffset.x != 0.0f || aimOffset.y != 0.0f || aimOffset.z != 0.0f) {
+            RE::NiTransform offsetTrim{};
+            offsetTrim.MakeIdentity();
+            offsetTrim.translate = aimOffset;
+            weaponInLeftWand = transform_math::composeTransforms(weaponInLeftWand, offsetTrim);
+        }
+
         const RE::NiTransform weaponInLeftHand = transform_math::composeTransforms(
             transform_math::invertTransform(boneInLeftWand), weaponInLeftWand);
         const RE::NiTransform mirroredHandWeaponLocal = transform_math::invertTransform(weaponInLeftHand);

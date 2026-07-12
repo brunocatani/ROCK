@@ -906,6 +906,27 @@ namespace rock
             0.0f,
             -30.0f,
             30.0f);
+        rockLeftFiringAimOffsetXGameUnits = readClampedFloat(ini,
+            REALISTIC_WEAPONS_SECTION,
+            "fLeftFiringAimOffsetXGameUnits",
+            rockLeftFiringAimOffsetXGameUnits,
+            0.0f,
+            -15.0f,
+            15.0f);
+        rockLeftFiringAimOffsetYGameUnits = readClampedFloat(ini,
+            REALISTIC_WEAPONS_SECTION,
+            "fLeftFiringAimOffsetYGameUnits",
+            rockLeftFiringAimOffsetYGameUnits,
+            0.0f,
+            -15.0f,
+            15.0f);
+        rockLeftFiringAimOffsetZGameUnits = readClampedFloat(ini,
+            REALISTIC_WEAPONS_SECTION,
+            "fLeftFiringAimOffsetZGameUnits",
+            rockLeftFiringAimOffsetZGameUnits,
+            0.0f,
+            -15.0f,
+            15.0f);
         rockCalibratedGrenadeOffsetsEnabled = ini.GetBoolValue(
             REALISTIC_WEAPONS_SECTION,
             "bCalibratedGrenadeOffsetsEnabled",
