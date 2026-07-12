@@ -483,14 +483,16 @@ namespace rock::input_remap_runtime
         }
 
         /*
-         * includeCrossMap=false is the hFRIK flavor: hFRIK poses hand VISUALS
-         * from what it reads here, so the RIGHT wand must keep its REAL
-         * trigger (the cross-mapped left trigger was curling the free right
-         * index), while the LEFT wand blanking still applies - hFRIK's own
-         * Pip-Boy/gesture logic must not act on the left trigger while it
-         * fires the weapon, exactly like the game.
+         * Applied uniformly to every non-configurator caller: a caller-module
+         * split (skip the cross-map for FRIK.dll polls) broke firing in-game
+         * - the game's effective fire input is fed through polls the
+         * return-address heuristic attributed to FRIK, so input flow must
+         * never fork by caller. The free right hand's phantom trigger curl is
+         * instead fixed at its consumer: hFRIK's dynamic hand pose ignores
+         * the trigger-tracked finger bones on the free right hand while the
+         * weapon-node ownership block (left-firing) is active.
          */
-        void applyLeftHandFireTriggerRemapForGame(input_remap_policy::Hand hand, vr::VRControllerState_t* state, std::uint32_t stateSize, bool includeCrossMap)
+        void applyLeftHandFireTriggerRemapForGame(input_remap_policy::Hand hand, vr::VRControllerState_t* state, std::uint32_t stateSize)
         {
             if (!state || stateSize < sizeof(vr::VRControllerState_t)) {
                 return;
@@ -501,9 +503,6 @@ namespace rock::input_remap_runtime
                 static_cast<std::size_t>(input_remap_policy::kOpenVrSteamVrTriggerButtonId - input_remap_policy::kOpenVrAxisButtonBase);
 
             if (hand == input_remap_policy::Hand::Right) {
-                if (!includeCrossMap) {
-                    return;
-                }
                 const auto& leftTracker = s_controllers[controllerIndex(input_remap_policy::Hand::Left)];
                 const bool leftValid = leftTracker.valid.load(std::memory_order_acquire);
                 const std::uint64_t leftPressed = leftValid ? leftTracker.rawPressed.load(std::memory_order_acquire) : 0;
@@ -836,8 +835,7 @@ namespace rock::input_remap_runtime
                     }
                     if (shouldRemapLeftHandFireTriggerForGame() &&
                         !shouldBypassProviderOpenVrGameInputSuppression(callerAddress)) {
-                        applyLeftHandFireTriggerRemapForGame(hand, controllerState, controllerStateSize,
-                            !isCallerModule(callerAddress, L"FRIK.dll"));
+                        applyLeftHandFireTriggerRemapForGame(hand, controllerState, controllerStateSize);
                     }
                 }
             }
@@ -866,8 +864,7 @@ namespace rock::input_remap_runtime
                     }
                     if (shouldRemapLeftHandFireTriggerForGame() &&
                         !shouldBypassProviderOpenVrGameInputSuppression(callerAddress)) {
-                        applyLeftHandFireTriggerRemapForGame(hand, controllerState, controllerStateSize,
-                            !isCallerModule(callerAddress, L"FRIK.dll"));
+                        applyLeftHandFireTriggerRemapForGame(hand, controllerState, controllerStateSize);
                     }
                 }
             }
