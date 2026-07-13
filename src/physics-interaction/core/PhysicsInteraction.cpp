@@ -8357,6 +8357,9 @@ namespace rock
                             .worldModel = equipResult.detachedWorldModel,
                             .weaponFormID = equipResult.formID,
                             .isLeftHand = isLeft,
+                            .weapon = equipResult.weapon,
+                            .hasFiringHandWeaponLocal = pendingGripStart.hasFiringHandWeaponLocal,
+                            .firingHandWeaponLocal = pendingGripStart.firingHandWeaponLocal,
                         });
                     }
                     if (heldFormID == 0 && equipResult.formID != 0) {

@@ -7,6 +7,8 @@
 
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/grab/FrikWeaponOffsetCache.h"
+#include "physics-interaction/weapon/TwoHandedGrip.h"
 #include "RockConfig.h"
 
 #include "f4vr/F4VRUtils.h"
@@ -169,6 +171,24 @@ namespace rock
         }
 
         _modelInHandLocal = transform_math::composeTransforms(transform_math::invertTransform(handNode->world), model->world);
+
+        _hasFiringHandWeaponLocal = input.hasFiringHandWeaponLocal && isFiniteTransform(input.firingHandWeaponLocal);
+        _firingHandWeaponLocal = _hasFiringHandWeaponLocal ? input.firingHandWeaponLocal : RE::NiTransform{};
+
+        // One-shot lookup: file/resource I/O is acceptable here (equip event,
+        // not per-frame); update() only composes the cached value.
+        _hasPredictedAttachLocal = false;
+        _predictedAttachLocal = {};
+        const char* predictedAttachReason = "offhandHold";
+        if (!_hasFiringHandWeaponLocal) {
+            const auto lookup = frik_weapon_offset_cache::findPrimaryWeaponOffset(input.weapon, model);
+            predictedAttachReason = lookup.reason;
+            if (lookup.found && isFiniteTransform(lookup.offset)) {
+                _predictedAttachLocal = lookup.offset;
+                _hasPredictedAttachLocal = true;
+            }
+        }
+
         _model = input.worldModel;
         _weaponFormID = input.weaponFormID;
         std::snprintf(_instanceNameToken, sizeof(_instanceNameToken), "(%08X)", input.weaponFormID);
@@ -187,8 +207,9 @@ namespace rock
          * live scene node.
          */
         const bool attachedNow = !model->parent && tryAttachToWorldRoot();
-        ROCK_LOG_INFO(Weapon, "EquipVisualBridge begin formID={:08X} hand={} attachedNow={} blend={:.2f}s timeout={:.2f}s",
-            _weaponFormID, _isLeftHand ? "left" : "right", attachedNow ? "yes" : "no", _blendSeconds, _timeoutSeconds);
+        ROCK_LOG_INFO(Weapon, "EquipVisualBridge begin formID={:08X} hand={} attachedNow={} blend={:.2f}s timeout={:.2f}s target={}",
+            _weaponFormID, _isLeftHand ? "left" : "right", attachedNow ? "yes" : "no", _blendSeconds, _timeoutSeconds,
+            predictedAttachReason);
         return true;
     }
 
@@ -271,9 +292,36 @@ namespace rock
         }
 
         RE::NiTransform desiredWorld = transform_math::composeTransforms(handNode->world, _modelInHandLocal);
-        if (weaponBone && _blendSeconds > 0.0001f && isFiniteTransform(weaponBone->world)) {
+        /*
+         * Blend toward where the weapon will actually stabilize (see the
+         * class comment): the raw Weapon bone mid-draw still carries the
+         * vanilla local because FRIK only stamps configured offsets on
+         * visible weapon nodes. No valid target -> hold the hand glue.
+         */
+        RE::NiTransform blendTarget{};
+        bool haveBlendTarget = false;
+        if (_hasFiringHandWeaponLocal) {
+            RE::NiPoint3 palmWorld{};
+            RE::NiTransform rootFlattenedHandWorld{};
+            if (TwoHandedGrip::tryCaptureRootFlattenedPalmWorld(_isLeftHand, palmWorld, rootFlattenedHandWorld) &&
+                isFiniteTransform(rootFlattenedHandWorld)) {
+                blendTarget = transform_math::composeTransforms(rootFlattenedHandWorld, transform_math::invertTransform(_firingHandWeaponLocal));
+                haveBlendTarget = isFiniteTransform(blendTarget);
+            }
+        } else if (weaponBone) {
+            if (_hasPredictedAttachLocal && weaponBone->parent && isFiniteTransform(weaponBone->parent->world)) {
+                blendTarget = transform_math::composeTransforms(weaponBone->parent->world, _predictedAttachLocal);
+                haveBlendTarget = isFiniteTransform(blendTarget);
+            }
+            if (!haveBlendTarget && isFiniteTransform(weaponBone->world)) {
+                // No offset prediction available: legacy raw-bone target.
+                blendTarget = weaponBone->world;
+                haveBlendTarget = true;
+            }
+        }
+        if (haveBlendTarget && _blendSeconds > 0.0001f) {
             const float t = (std::min)(1.0f, _elapsedSeconds / _blendSeconds);
-            desiredWorld = blendWorldTransforms(desiredWorld, weaponBone->world, t);
+            desiredWorld = blendWorldTransforms(desiredWorld, blendTarget, t);
         }
         if (!isFiniteTransform(desiredWorld)) {
             clear("non-finite-pose", true);
@@ -310,6 +358,10 @@ namespace rock
         _model.reset();
         _parent = nullptr;
         _modelInHandLocal = {};
+        _predictedAttachLocal = {};
+        _hasPredictedAttachLocal = false;
+        _firingHandWeaponLocal = {};
+        _hasFiringHandWeaponLocal = false;
         _elapsedSeconds = 0.0f;
         _weaponFormID = 0;
         _instanceNameToken[0] = '\0';

@@ -6,6 +6,11 @@
 
 #include <cstdint>
 
+namespace RE
+{
+    class TESObjectWEAP;
+}
+
 namespace rock
 {
     /*
@@ -22,10 +27,26 @@ namespace rock
      * (node named "Weapon %s (%08X)").
      *
      * The bridge re-attaches that orphaned model under the world root, glues
-     * it to the equipping hand's wand transform, blends it toward the
-     * first-person Weapon bone pose, and removes it the moment the engine's
-     * equipped instance node exists and is visible. Every exit is
+     * it to the equipping hand's wand transform, blends it toward the pose
+     * the weapon will actually stabilize at, and removes it the moment the
+     * engine's equipped instance node exists and is visible. Every exit is
      * deterministic: swap detection, equip failure, node loss, or timeout.
+     *
+     * Blend target. The raw first-person Weapon bone is NOT a valid target
+     * during the draw gap: FRIK's WeaponPositionAdjuster only stamps the
+     * player's configured weapon offset while the weapon node is visible,
+     * which happens at WeaponAttach — so mid-draw the bone carries the
+     * vanilla local and the phantom would visibly park at the unconfigured
+     * pose, then jump when FRIK stamps (the reported equip flash). Instead:
+     * - primary-hand equips predict the stamped pose as
+     *   weaponBoneParent->world o frik_weapon_offset_cache offset — the same
+     *   cache + composition LooseWeaponGripZone uses to seat loose grabs;
+     * - offhand carries converge on the captured canonical firing hold
+     *   against the live root-flattened hand frame (the frame the hold was
+     *   captured in), because their final pose is ROCK's mirrored carry, not
+     *   FRIK's primary stamp.
+     * Every prediction failure falls back to the hand glue, which is the
+     * last pose the player already accepted as correct.
      *
      * Lifetime/threading: main-thread only, driven by PhysicsInteraction's
      * per-frame update. The bridge owns exactly one NiPointer; the scene
@@ -42,6 +63,15 @@ namespace rock
             RE::NiPointer<RE::NiAVObject> worldModel;
             std::uint32_t weaponFormID = 0;
             bool isLeftHand = false;
+            // Weapon base form for the FRIK offset-cache blend-target lookup;
+            // the captured worldModel doubles as the name-extension root.
+            RE::TESObjectWEAP* weapon = nullptr;
+            // Canonical firing-hand hold for offhand carries (hand transform
+            // in weapon-root-local space, valid against the root-flattened
+            // hand frame; weapon world = hand world o inverse(hold)). Same
+            // capture the pending primary-only grip start consumes.
+            bool hasFiringHandWeaponLocal = false;
+            RE::NiTransform firingHandWeaponLocal{};
         };
 
         EquipVisualBridge() = default;
@@ -79,6 +109,14 @@ namespace rock
         // Non-owning; validated each frame against _model->parent before use.
         RE::NiNode* _parent = nullptr;
         RE::NiTransform _modelInHandLocal{};
+        // Predicted equipped Weapon-node local (FRIK offset cache), resolved
+        // once at begin(); the per-frame target composes it with the live
+        // Weapon-bone parent world.
+        RE::NiTransform _predictedAttachLocal{};
+        bool _hasPredictedAttachLocal = false;
+        // Offhand-carry hold (see BeginInput.firingHandWeaponLocal).
+        RE::NiTransform _firingHandWeaponLocal{};
+        bool _hasFiringHandWeaponLocal = false;
         float _elapsedSeconds = 0.0f;
         float _blendSeconds = 0.15f;
         float _timeoutSeconds = 2.0f;
