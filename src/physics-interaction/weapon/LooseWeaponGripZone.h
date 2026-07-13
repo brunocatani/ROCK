@@ -47,8 +47,8 @@ namespace rock::loose_weapon_grip_zone
 
     /*
      * True when the hand's palm has stayed inside the configured grip radius
-     * for the configured settle time while the grab is settled. Hand-role
-     * (primary vs offhand) and the feature toggle are enforced by the caller's
+     * for the configured settle time while the grab is settled. The feature
+     * toggle and same-hand ownership contract are enforced by the caller's
      * input policy, not here.
      */
     bool isGripZoneEquipSettled(bool isLeft);
@@ -59,9 +59,9 @@ namespace rock::loose_weapon_grip_zone
      * player can feel, before grabbing, that a grab right now would land on
      * the firing grip and equip. Call once per frame per hand with the
      * selection ref while the hand is not holding; pass nullptr to clear.
-     * Hand-role (primary only -- the projection runs through the primary
-     * weapon attach node), grenade exclusion, feature toggles, and menu
-     * gating are enforced by the caller.
+     * The projection uses the canonical primary weapon attach surface for
+     * both physical hands; grenade exclusion, feature toggles, and menu gating
+     * are enforced by the caller.
      */
     void updateHoverCandidateWeapon(bool isLeft, RE::TESObjectREFR* candidateRef);
 

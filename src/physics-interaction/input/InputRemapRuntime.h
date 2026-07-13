@@ -22,7 +22,7 @@ namespace rock::input_remap_runtime
 
     void setGameplayInputAllowed(bool allowed);
     void setWeaponDrawn(bool weaponDrawn);
-    void setRightHandHeldWeapon(bool heldWeapon);
+    void setHandHeldWeapon(bool isLeft, bool heldWeapon);
     void setHandInteractionEngaged(bool isLeft, bool engaged);
     void setHeldObjectFormId(bool isLeft, std::uint32_t formId);
     void setEquippedWeaponPrimaryDetachInputActive(bool active);

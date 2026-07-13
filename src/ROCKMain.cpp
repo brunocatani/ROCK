@@ -256,7 +256,8 @@ namespace
         if (!s_pluginLoaded || !s_frikAvailable) {
             input_remap_runtime::setGameplayInputAllowed(false);
             input_remap_runtime::setWeaponDrawn(false);
-            input_remap_runtime::setRightHandHeldWeapon(false);
+            input_remap_runtime::setHandHeldWeapon(false, false);
+            input_remap_runtime::setHandHeldWeapon(true, false);
             input_remap_runtime::setEquippedWeaponPrimaryDetachInputActive(false);
             input_remap_runtime::setEquippedWeaponPrimaryDetached(false);
             return;

@@ -421,6 +421,19 @@ namespace rock
             std::uint32_t bodyId{ INVALID_CONTACT_BODY_ID };
             float settledSeconds{ 0.0f };
         };
+
+        /*
+         * Loose-to-equipped handoff state. The loose root disappears during
+         * inventory transfer, so the physical hand and its weapon-local frame
+         * are retained by value until the equipped node becomes observable.
+         */
+        struct PendingEquippedWeaponPrimaryOnlyGripStart
+        {
+            bool pending{ false };
+            bool isLeft{ false };
+            bool hasFiringHandWeaponLocal{ false };
+            RE::NiTransform firingHandWeaponLocal{};
+        };
         struct ArmedLooseGrenadeFuseState
         {
             bool active{ false };
@@ -528,7 +541,7 @@ namespace rock
         hand_collision_suppression_math::DelayedRestoreState _rightEquippedWeaponDropDelayedRestore{};
         hand_collision_suppression_math::DelayedRestoreState _leftEquippedWeaponDropDelayedRestore{};
         weapon_debug_notification_policy::WeaponNotificationState _weaponDebugNotificationState{};
-        bool _pendingEquippedWeaponPrimaryOnlyGripStart = false;
+        PendingEquippedWeaponPrimaryOnlyGripStart _pendingEquippedWeaponPrimaryOnlyGripStart{};
         bool _equippedWeaponMenuReconcilePending = false;
         /*
          * Single-consumption snapshot of the firing hand's grab button. The

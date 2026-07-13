@@ -221,7 +221,23 @@ namespace rock
         bool beginPrimaryOnlyGrip(
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey,
-            std::uint64_t currentEquippedWeaponOwnershipKey);
+            std::uint64_t currentEquippedWeaponOwnershipKey,
+            bool firingHandIsLeft,
+            const RE::NiTransform* capturedFiringHandWeaponLocal);
+
+        // Left-hand primary ownership requires the hFRIK ambidextrous weapon-
+        // node blockers; right-hand native ownership is always eligible.
+        static bool canBeginPrimaryOnlyGripForHand(bool isLeft);
+
+        /*
+         * Captures the authoritative hand frame in a loose weapon root before
+         * inventory transfer detaches that root. The result is value-owned by
+         * PhysicsInteraction until the equipped weapon node becomes available.
+         */
+        static bool tryCaptureFiringHandWeaponLocal(
+            bool isLeft,
+            const RE::NiTransform& looseWeaponWorld,
+            RE::NiTransform& outHandWeaponLocal);
 
         /*
          * Publishes the left-firing canonical carry pose (firing hand o
@@ -554,10 +570,10 @@ namespace rock
          * Physical hand that owns the firing grip when occupied. Seeded right
          * (false) and reset to right whenever authority clears (weapon change,
          * holster, drop, teardown). Flipped only through setFiringHand() from
-         * the two takeover paths (free-hand firing-grip squeeze in PartCarry,
-         * support-grip promotion on firing-hand release); PhysicsInteraction
-         * and InputRemap read isFiringHandLeft() each frame to route grab
-         * input, collision suppression, and native fire per role.
+         * a hand-specific loose-weapon equip or the two takeover paths
+         * (free-hand firing-grip squeeze in PartCarry, support-grip promotion
+         * on firing-hand release); PhysicsInteraction and InputRemap read
+         * isFiringHandLeft() each frame to route input and ownership per role.
          */
         bool _firingHandIsLeft{ false };
 

@@ -75,8 +75,8 @@ int main()
     drawnTrigger.weaponDrawn = true;
     ok &= expectFalse("drawn weapon allows native trigger attack gate", shouldSuppressNativeTriggerAction(drawnTrigger));
     auto heldWeaponTrigger = drawnTrigger;
-    heldWeaponTrigger.rightHandHeldWeapon = true;
-    ok &= expectTrue("right held ROCK weapon suppresses native trigger even if weapon drawn", shouldSuppressNativeTriggerAction(heldWeaponTrigger));
+    heldWeaponTrigger.eventHandHeldWeapon = true;
+    ok &= expectTrue("trigger event from a hand holding a ROCK weapon suppresses native trigger even if weapon drawn", shouldSuppressNativeTriggerAction(heldWeaponTrigger));
     auto primaryDetachedTrigger = drawnTrigger;
     primaryDetachedTrigger.equippedWeaponPrimaryDetached = true;
     ok &= expectTrue("primary-detached equipped weapon suppresses drawn native trigger", shouldSuppressNativeTriggerAction(primaryDetachedTrigger));
@@ -204,9 +204,18 @@ int main()
         .menuInputActive = false,
         .heldWeaponAtFrameStart = true,
         .heldWeaponNow = true,
-        .sameHandTriggerPressedEdge = true,
+        .heldWeaponHand = Hand::Right,
+        .triggerInputHand = Hand::Right,
+        .triggerPressedEdge = true,
     };
     ok &= expectTrue("same-hand trigger edge equips already held ROCK weapon", shouldRequestHeldWeaponEquip(equipInput));
+    auto oppositeHandTriggerEquipInput = equipInput;
+    oppositeHandTriggerEquipInput.triggerInputHand = Hand::Left;
+    ok &= expectFalse("opposite-hand trigger edge cannot equip the held weapon", shouldRequestHeldWeaponEquip(oppositeHandTriggerEquipInput));
+    auto leftHandTriggerEquipInput = equipInput;
+    leftHandTriggerEquipInput.heldWeaponHand = Hand::Left;
+    leftHandTriggerEquipInput.triggerInputHand = Hand::Left;
+    ok &= expectTrue("left trigger edge equips a left-hand-held ROCK weapon", shouldRequestHeldWeaponEquip(leftHandTriggerEquipInput));
     auto newGrabEquipInput = equipInput;
     newGrabEquipInput.heldWeaponAtFrameStart = false;
     ok &= expectFalse("trigger edge during new grab does not equip weapon", shouldRequestHeldWeaponEquip(newGrabEquipInput));
@@ -217,7 +226,7 @@ int main()
     menuEquipInput.menuInputActive = true;
     ok &= expectFalse("menu input blocks held weapon equip request", shouldRequestHeldWeaponEquip(menuEquipInput));
     auto heldEquipInput = equipInput;
-    heldEquipInput.sameHandTriggerPressedEdge = false;
+    heldEquipInput.triggerPressedEdge = false;
     ok &= expectFalse("held trigger does not repeat held weapon equip request", shouldRequestHeldWeaponEquip(heldEquipInput));
     auto autoEquipInput = heldEquipInput;
     autoEquipInput.autoEquipEnabled = true;
@@ -227,7 +236,7 @@ int main()
     disabledAutoEquipInput.autoEquipEnabled = false;
     ok &= expectFalse("settled held weapon does not auto-equip when disabled", shouldRequestHeldWeaponEquip(disabledAutoEquipInput));
     auto offhandAutoEquipInput = autoEquipInput;
-    offhandAutoEquipInput.primaryHand = false;
+    offhandAutoEquipInput.legacyAutoEquipPrimaryHand = false;
     ok &= expectFalse("settled offhand held weapon does not auto-equip", shouldRequestHeldWeaponEquip(offhandAutoEquipInput));
     auto unsettledAutoEquipInput = autoEquipInput;
     unsettledAutoEquipInput.autoEquipSettled = false;
@@ -240,8 +249,9 @@ int main()
     disabledGripZoneEquipInput.gripZoneEquipEnabled = false;
     ok &= expectFalse("grip zone equip disabled does not equip held weapon", shouldRequestHeldWeaponEquip(disabledGripZoneEquipInput));
     auto offhandGripZoneEquipInput = gripZoneEquipInput;
-    offhandGripZoneEquipInput.primaryHand = false;
-    ok &= expectFalse("offhand palm in grip zone does not equip held weapon", shouldRequestHeldWeaponEquip(offhandGripZoneEquipInput));
+    offhandGripZoneEquipInput.legacyAutoEquipPrimaryHand = false;
+    offhandGripZoneEquipInput.heldWeaponHand = Hand::Left;
+    ok &= expectTrue("left palm settled in grip zone equips its held weapon", shouldRequestHeldWeaponEquip(offhandGripZoneEquipInput));
     auto outsideGripZoneEquipInput = gripZoneEquipInput;
     outsideGripZoneEquipInput.gripZoneEquipSettled = false;
     ok &= expectFalse("palm outside grip zone does not equip held weapon", shouldRequestHeldWeaponEquip(outsideGripZoneEquipInput));

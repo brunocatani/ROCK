@@ -1991,13 +1991,62 @@ namespace rock
         return applyWeaponVisualAuthority(weaponNode, _lastSolvedWeaponTransform);
     }
 
+    bool TwoHandedGrip::canBeginPrimaryOnlyGripForHand(const bool isLeft)
+    {
+        return !isLeft || ambidextrousFiringGripTakeoverAvailable();
+    }
+
+    bool TwoHandedGrip::tryCaptureFiringHandWeaponLocal(
+        const bool isLeft,
+        const RE::NiTransform& looseWeaponWorld,
+        RE::NiTransform& outHandWeaponLocal)
+    {
+        if (!isFiniteTransform(looseWeaponWorld)) {
+            return false;
+        }
+
+        RE::NiPoint3 palmWorld{};
+        RE::NiTransform handWorld{};
+        if (!tryCaptureRootFlattenedPalmWorld(isLeft, palmWorld, handWorld) || !isFiniteTransform(handWorld)) {
+            return false;
+        }
+
+        const RE::NiTransform captured = transform_math::composeTransforms(
+            transform_math::invertTransform(looseWeaponWorld), handWorld);
+        if (!isFiniteTransform(captured)) {
+            return false;
+        }
+        outHandWeaponLocal = captured;
+        return true;
+    }
+
     bool TwoHandedGrip::beginPrimaryOnlyGrip(
         RE::NiNode* weaponNode,
         std::uint64_t currentWeaponGenerationKey,
-        std::uint64_t currentEquippedWeaponOwnershipKey)
+        std::uint64_t currentEquippedWeaponOwnershipKey,
+        const bool firingHandIsLeft,
+        const RE::NiTransform* capturedFiringHandWeaponLocal)
     {
-        if (!weaponNode || currentEquippedWeaponOwnershipKey == 0 || _state != TwoHandedState::Inactive) {
+        if (!weaponNode || currentEquippedWeaponOwnershipKey == 0 || _state != TwoHandedState::Inactive ||
+            !canBeginPrimaryOnlyGripForHand(firingHandIsLeft)) {
             return false;
+        }
+        if (firingHandIsLeft &&
+            (!capturedFiringHandWeaponLocal || !isFiniteTransform(*capturedFiringHandWeaponLocal))) {
+            return false;
+        }
+        if (firingHandIsLeft && !blockFrikPrimaryWeaponPose()) {
+            ROCK_LOG_SAMPLE_WARN(
+                Weapon,
+                g_rockConfig.rockLogSampleMilliseconds,
+                "TwoHandedGrip: left primary-grip start skipped because the hFRIK primary weapon-pose blocker is unavailable");
+            return false;
+        }
+
+        setFiringHand(firingHandIsLeft, "primary-grip-start-hand");
+        if (firingHandIsLeft) {
+            _primaryHandWeaponLocal = *capturedFiringHandWeaponLocal;
+            _hasFiringHandWeaponLocal = true;
         }
 
         if (!transitionToPrimaryOnly(
@@ -2005,6 +2054,10 @@ namespace rock
                 currentWeaponGenerationKey,
                 currentEquippedWeaponOwnershipKey,
                 "primary-grip-start")) {
+            _primaryHandWeaponLocal = {};
+            _hasFiringHandWeaponLocal = false;
+            setFiringHand(false, "primary-grip-start-failed");
+            restoreFrikPrimaryWeaponPose();
             return false;
         }
         // Only a fresh grab pulses; transitionToPrimaryOnly is also reached

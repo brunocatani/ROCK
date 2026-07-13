@@ -51,7 +51,7 @@ namespace rock::input_remap_policy
         bool gameplayInputAllowed{ true };
         bool menuInputActive{ false };
         bool weaponDrawn{ false };
-        bool rightHandHeldWeapon{ false };
+        bool eventHandHeldWeapon{ false };
         bool primaryHandEvent{ false };
         bool equippedWeaponPrimaryDetachInputActive{ false };
         bool equippedWeaponPrimaryDetached{ false };
@@ -88,8 +88,10 @@ namespace rock::input_remap_policy
         bool menuInputActive{ false };
         bool heldWeaponAtFrameStart{ false };
         bool heldWeaponNow{ false };
-        bool sameHandTriggerPressedEdge{ false };
-        bool primaryHand{ true };
+        Hand heldWeaponHand{ Hand::Right };
+        Hand triggerInputHand{ Hand::Right };
+        bool triggerPressedEdge{ false };
+        bool legacyAutoEquipPrimaryHand{ true };
         bool autoEquipEnabled{ false };
         bool autoEquipSettled{ false };
         bool gripZoneEquipEnabled{ false };
@@ -166,7 +168,7 @@ namespace rock::input_remap_policy
     [[nodiscard]] constexpr bool shouldSuppressNativeTriggerAction(const NativeActionSuppressionInput& input)
     {
         return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched &&
-               (!input.weaponDrawn || input.rightHandHeldWeapon || input.equippedWeaponPrimaryDetached);
+               (!input.weaponDrawn || input.eventHandHeldWeapon || input.equippedWeaponPrimaryDetached);
     }
 
     [[nodiscard]] constexpr bool shouldSuppressNativeGripReloadAction(const NativeActionSuppressionInput& input)
@@ -192,18 +194,17 @@ namespace rock::input_remap_policy
     }
 
     /*
-     * Loose-weapon equip fires on an explicit same-hand trigger edge, or on a
-     * primary-hand automatic path: the legacy settle timer (position-blind) or
-     * the firing-grip zone (palm settled inside the grip radius). The grip
-     * zone is the position-aware replacement; the timer remains a config
-     * choice for players who want equip-anywhere behavior.
+     * Loose-weapon equip fires on an explicit trigger edge from the SAME hand
+     * that owns the held weapon. The legacy position-blind settle timer stays
+     * primary-hand-only, while the firing-grip zone applies to either hand so
+     * the physical hand at the grip becomes the equipped firing hand.
      */
     [[nodiscard]] constexpr bool shouldRequestHeldWeaponEquip(const HeldWeaponEquipInput& input)
     {
         return input.remapEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.heldWeaponAtFrameStart && input.heldWeaponNow &&
-               (input.sameHandTriggerPressedEdge ||
-                   (input.primaryHand && input.autoEquipEnabled && input.autoEquipSettled) ||
-                   (input.primaryHand && input.gripZoneEquipEnabled && input.gripZoneEquipSettled));
+               ((input.triggerPressedEdge && input.triggerInputHand == input.heldWeaponHand) ||
+                   (input.legacyAutoEquipPrimaryHand && input.autoEquipEnabled && input.autoEquipSettled) ||
+                   (input.gripZoneEquipEnabled && input.gripZoneEquipSettled));
     }
 
     [[nodiscard]] constexpr bool shouldSuppressNativeFavoritesAction(const NativeActionSuppressionInput& input)

@@ -164,7 +164,7 @@ namespace rock::input_remap_runtime
         std::array<ControllerTracker, 2> s_controllers;
         std::atomic<bool> s_gameplayInputAllowed{ false };
         std::atomic<bool> s_weaponDrawn{ false };
-        std::atomic<bool> s_rightHandHeldWeapon{ false };
+        std::array<std::atomic<bool>, 2> s_handHeldWeapon{};
         std::array<std::atomic<bool>, 2> s_handInteractionEngaged{};
         std::array<std::atomic<std::uint32_t>, 2> s_heldObjectFormId{};
         std::array<std::atomic<bool>, 2> s_pendingSavedGrabOffsetRequest{};
@@ -1007,7 +1007,7 @@ namespace rock::input_remap_runtime
                 .gameplayInputAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire),
                 .menuInputActive = isInputBlockingMenuActive(),
                 .weaponDrawn = s_weaponDrawn.load(std::memory_order_acquire),
-                .rightHandHeldWeapon = s_rightHandHeldWeapon.load(std::memory_order_acquire),
+                .eventHandHeldWeapon = false,
                 .primaryHandEvent = false,
                 .equippedWeaponPrimaryDetachInputActive = s_equippedWeaponPrimaryDetachInputActive.load(std::memory_order_acquire),
                 .equippedWeaponPrimaryDetached = s_equippedWeaponPrimaryDetached.load(std::memory_order_acquire),
@@ -1020,6 +1020,9 @@ namespace rock::input_remap_runtime
         {
             auto input = makeNativeActionSuppressionInput(suppressionEnabled, eventMatched);
             input.primaryHandEvent = isPrimaryWandInputEvent(event);
+            const bool primaryHandIsLeft = f4vr::isLeftHandedMode();
+            const bool eventHandIsLeft = input.primaryHandEvent ? primaryHandIsLeft : !primaryHandIsLeft;
+            input.eventHandHeldWeapon = s_handHeldWeapon[eventHandIsLeft ? 0u : 1u].load(std::memory_order_acquire);
             return input;
         }
 
@@ -1051,7 +1054,10 @@ namespace rock::input_remap_runtime
         [[nodiscard]] bool shouldSuppressNativeTriggerActionEvent(const RE::InputEvent* event)
         {
             return input_remap_policy::shouldSuppressNativeTriggerAction(
-                makeNativeActionSuppressionInput(g_rockConfig.rockSuppressNativeReadyWeaponAutoReady, eventNameMatches(event, kNativeEventWandTrigger)));
+                makeNativeActionSuppressionInput(
+                    g_rockConfig.rockSuppressNativeReadyWeaponAutoReady,
+                    event,
+                    eventNameMatches(event, kNativeEventWandTrigger)));
         }
 
         /*
@@ -1826,9 +1832,9 @@ namespace rock::input_remap_runtime
         s_weaponDrawn.store(weaponDrawn, std::memory_order_release);
     }
 
-    void setRightHandHeldWeapon(bool heldWeapon)
+    void setHandHeldWeapon(const bool isLeft, const bool heldWeapon)
     {
-        s_rightHandHeldWeapon.store(heldWeapon, std::memory_order_release);
+        s_handHeldWeapon[isLeft ? 0u : 1u].store(heldWeapon, std::memory_order_release);
     }
 
     void setHandInteractionEngaged(bool isLeft, bool engaged)
