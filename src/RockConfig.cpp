@@ -221,6 +221,13 @@ namespace rock
         rockWeaponSupportGripHandLerpMinDistance = 1.0f;
         rockWeaponSupportGripHandLerpMaxDistance = 14.0f;
 
+        rockHandCollisionDynamicDrive = false;
+        rockHandCollisionDynamicProxyRadiusGameUnits = 3.2f;
+        rockHandCollisionDynamicMaxLinearVelocityHavok = 15.0f;
+        rockHandCollisionDynamicDivergenceTeleportGameUnits = 40.0f;
+        rockHandCollisionDynamicRenderFollowMinDeviationGameUnits = 0.05f;
+        rockHandCollisionDynamicVisualPriority = 80;
+
         rockSoftContactWorldEnabled = true;
         rockSoftContactVisualPriority = 80;
         rockSoftContactWorldRadiusPaddingGameUnits = 1.5f;
@@ -1025,6 +1032,38 @@ namespace rock
             14.0f,
             rockWeaponSupportGripHandLerpMinDistance,
             120.0f);
+
+        rockHandCollisionDynamicDrive = ini.GetBoolValue(SECTION, "bHandCollisionDynamicDrive", rockHandCollisionDynamicDrive);
+        rockHandCollisionDynamicProxyRadiusGameUnits = readClampedFloat(ini,
+            SECTION,
+            "fHandCollisionDynamicProxyRadiusGameUnits",
+            rockHandCollisionDynamicProxyRadiusGameUnits,
+            3.2f,
+            0.5f,
+            12.0f);
+        rockHandCollisionDynamicMaxLinearVelocityHavok = readClampedFloat(ini,
+            SECTION,
+            "fHandCollisionDynamicMaxLinearVelocityHavok",
+            rockHandCollisionDynamicMaxLinearVelocityHavok,
+            15.0f,
+            0.0f,
+            200.0f);
+        rockHandCollisionDynamicDivergenceTeleportGameUnits = readClampedFloat(ini,
+            SECTION,
+            "fHandCollisionDynamicDivergenceTeleportGameUnits",
+            rockHandCollisionDynamicDivergenceTeleportGameUnits,
+            40.0f,
+            0.0f,
+            500.0f);
+        rockHandCollisionDynamicRenderFollowMinDeviationGameUnits = readClampedFloat(ini,
+            SECTION,
+            "fHandCollisionDynamicRenderFollowMinDeviationGameUnits",
+            rockHandCollisionDynamicRenderFollowMinDeviationGameUnits,
+            0.05f,
+            0.0f,
+            5.0f);
+        rockHandCollisionDynamicVisualPriority = static_cast<int>(ini.GetLongValue(SECTION, "iHandCollisionDynamicVisualPriority", rockHandCollisionDynamicVisualPriority));
+        rockHandCollisionDynamicVisualPriority = std::clamp(rockHandCollisionDynamicVisualPriority, 0, 99);
 
         rockSoftContactWorldEnabled = ini.GetBoolValue(SECTION, "bSoftContactWorldEnabled", rockSoftContactWorldEnabled);
         rockSoftContactVisualPriority = static_cast<int>(ini.GetLongValue(SECTION, "iSoftContactVisualPriority", rockSoftContactVisualPriority));

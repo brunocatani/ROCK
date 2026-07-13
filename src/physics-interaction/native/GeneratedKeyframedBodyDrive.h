@@ -500,6 +500,22 @@ namespace rock
         std::scoped_lock lock(state.mutex);
         markGeneratedKeyframedBodyDrivePlacedUnlocked(state, driveDeltaSeconds, finalizeTargetForNextSource);
     }
+    struct GeneratedBodyDriveMode
+    {
+        /*
+         * Default = keyframe placement (driveToKeyFrame), the behavior every
+         * existing generated collider uses. dynamicVelocity switches only the
+         * final native call to the engine hard-keyframe velocity pair
+         * (ComputeHardKeyFrame + SetVelocity) so a DYNAMIC body chases the same
+         * target through the solver: real contacts clip its velocity instead of
+         * the body tunneling. divergenceTeleportGameUnits > 0 snaps the body to
+         * the target when the live body-to-target distance exceeds it (body
+         * parked behind geometry while the target moved on); 0 disables.
+         */
+        bool dynamicVelocity = false;
+        float divergenceTeleportGameUnits = 0.0f;
+    };
+
     GeneratedKeyframedBodyDriveResult driveGeneratedKeyframedBody(
         RE::hknpWorld* world,
         BethesdaPhysicsBody& body,
@@ -508,5 +524,6 @@ namespace rock
         const char* ownerName,
         std::uint32_t bodyIndex,
         float maxLinearVelocityHavok = 0.0f,
-        float maxAngularVelocityRadians = 0.0f);
+        float maxAngularVelocityRadians = 0.0f,
+        const GeneratedBodyDriveMode& mode = {});
 }

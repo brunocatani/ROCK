@@ -169,6 +169,19 @@ namespace rock
         float rockWeaponSupportGripHandLerpMinDistance = 1.0f;
         float rockWeaponSupportGripHandLerpMaxDistance = 14.0f;
 
+        /*
+         * Soft-collision overhaul stage A: dynamic velocity-driven hand proxy
+         * bodies replace the probe/cast visual stop while enabled. Mutually
+         * exclusive with soft contact — when this flag is on, the soft-contact
+         * runtime is reset and skipped (single visual authority).
+         */
+        bool rockHandCollisionDynamicDrive = false;
+        float rockHandCollisionDynamicProxyRadiusGameUnits = 3.2f;
+        float rockHandCollisionDynamicMaxLinearVelocityHavok = 15.0f;
+        float rockHandCollisionDynamicDivergenceTeleportGameUnits = 40.0f;
+        float rockHandCollisionDynamicRenderFollowMinDeviationGameUnits = 0.05f;
+        int rockHandCollisionDynamicVisualPriority = 80;
+
         bool rockSoftContactWorldEnabled = true;
         int rockSoftContactVisualPriority = 80;
         float rockSoftContactWorldRadiusPaddingGameUnits = 1.5f;

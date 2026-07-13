@@ -17,6 +17,7 @@
 #include "physics-interaction/grab/SavedGrabOffsetStore.h"
 #include "physics-interaction/grenade/LooseGrenadeRuntime.h"
 #include "physics-interaction/contact/SoftContactRuntime.h"
+#include "physics-interaction/hand/DynamicHandCollision.h"
 #include "physics-interaction/contact/GeneratedBodyContactRegistry.h"
 #include "physics-interaction/contact/NativeContactEvidence.h"
 #include "physics-interaction/collision/ContactActivityTracker.h"
@@ -343,6 +344,8 @@ namespace rock
 
         TwoHandedGrip _twoHandedGrip;
         SoftContactRuntime _softContactRuntime;
+        DynamicHandCollisionRuntime _dynamicHandCollision;
+        bool _softContactSuppressedByDynamicDrive = false;
         contact_evidence::NativeContactEvidenceCache _nativeContactEvidence;
 
         mutable std::mutex _ownedObjectsMutex;

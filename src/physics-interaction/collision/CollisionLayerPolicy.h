@@ -66,6 +66,14 @@ namespace rock::collision_layer_policy
      * metadata distinguishes reload contacts from real hands and weapon hulls.
      */
     inline constexpr std::uint32_t ROCK_LAYER_RELOAD = ROCK_LAYER_HAND;
+    /*
+     * Dynamic hand proxy bodies (soft-collision overhaul stage A) live on their
+     * own extended row so they collide ONLY with static world-surface layers:
+     * no clutter, actors, projectiles, or other ROCK layers, and never each
+     * other. The proxy is a solver-side visual-stop driver, not gameplay
+     * contact evidence.
+     */
+    inline constexpr std::uint32_t ROCK_LAYER_DYNAMIC_HAND_PROXY = 48;
 
     inline constexpr std::uint32_t FO4_LAYER_VANILLA_CONFIGURED_COUNT = 47;
     inline constexpr std::uint32_t FO4_LAYER_LAST_VANILLA_CONFIGURED = FO4_LAYER_DROPPINGPICK;
@@ -524,6 +532,22 @@ namespace rock::collision_layer_policy
         applyLayerExpectedMask(matrix, ROCK_LAYER_BODY, buildRockBodyExpectedMask(includeStaticWorld));
     }
 
+    inline constexpr std::uint64_t buildRockDynamicHandProxyExpectedMask()
+    {
+        std::uint64_t mask = 0;
+        for (std::uint32_t layer = 0; layer < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++layer) {
+            if (isWorldSurfaceLayer(layer)) {
+                mask = withLayer(mask, layer);
+            }
+        }
+        return mask;
+    }
+
+    inline void applyRockDynamicHandProxyLayerPolicy(std::uint64_t* matrix)
+    {
+        applyLayerExpectedMask(matrix, ROCK_LAYER_DYNAMIC_HAND_PROXY, buildRockDynamicHandProxyExpectedMask());
+    }
+
     inline void applyNativeCharacterControllerObjectSuppressionPolicy(std::uint64_t* matrix, bool suppressDynamicObjects, std::uint64_t originalCharacterControllerMask)
     {
         if (!matrix) {
@@ -559,5 +583,6 @@ namespace rock::collision_layer_policy
             buildRockWeaponExpectedMask(weaponBlocksProjectiles, weaponBlocksSpells, weaponStaticWorld, true));
         applyRockReloadLayerPolicy(matrix, weaponBlocksProjectiles, weaponBlocksSpells, handStaticWorld);
         applyRockBodyLayerPolicy(matrix, bodyStaticWorld);
+        applyRockDynamicHandProxyLayerPolicy(matrix);
     }
 }

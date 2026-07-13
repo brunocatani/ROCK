@@ -1532,6 +1532,7 @@ namespace rock
     void PhysicsInteraction::markGeneratedBodiesInvalidated()
     {
         clearGeneratedBodyContactRegistry();
+        _dynamicHandCollision.retireAll(_generatedBodiesBhkWorld);
         _generatedBodiesBhkWorld = nullptr;
         _generatedBodiesHknpWorld = nullptr;
         _generatedBodiesWorldGeneration = 0;
@@ -3365,13 +3366,34 @@ namespace rock
          */
         contact_evidence::NativeContactEvidenceSnapshot nativeContactEvidence{};
         _nativeContactEvidence.snapshot(nativeContactEvidence, _handContactActivity.currentFrame());
-        _softContactRuntime.update(
+        /*
+         * Dynamic hand collision (stage A) and soft contact are mutually
+         * exclusive visual authorities over the free hand. While the dynamic
+         * drive is enabled the soft-contact runtime is reset once and skipped,
+         * so exactly one system publishes external hand transforms.
+         */
+        _dynamicHandCollision.updateFrame(
             frame,
+            physicsWritesAllowedForWorld(frame.hknpWorld),
             _rightHand,
             _leftHand,
             rightHandWeaponAuthorityActive,
-            leftSupportGripActive,
-            nativeContactEvidence);
+            leftSupportGripActive);
+        if (g_rockConfig.rockHandCollisionDynamicDrive) {
+            if (!_softContactSuppressedByDynamicDrive) {
+                _softContactRuntime.reset();
+                _softContactSuppressedByDynamicDrive = true;
+            }
+        } else {
+            _softContactSuppressedByDynamicDrive = false;
+            _softContactRuntime.update(
+                frame,
+                _rightHand,
+                _leftHand,
+                rightHandWeaponAuthorityActive,
+                leftSupportGripActive,
+                nativeContactEvidence);
+        }
 
         publishDebugBodyOverlay(frame);
 
@@ -4943,6 +4965,7 @@ namespace rock
         _leftHand.flushPendingCollisionPhysicsDrive(world, timing);
         _bodyBoneColliders.flushPendingPhysicsDrive(world, timing);
         _weaponCollision.flushPendingPhysicsDrive(world, timing);
+        _dynamicHandCollision.flushPendingPhysicsDrive(world, timing);
         const auto gameFrameIndex = _palmClockGameFrameIndex.load(std::memory_order_acquire);
         const auto gameDeltaSeconds = _palmClockGameDeltaSeconds.load(std::memory_order_acquire);
         logPalmClockSampleForHand("physics-after-collider-drive", _rightHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);

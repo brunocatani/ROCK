@@ -1,5 +1,6 @@
 #include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
 
+#include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/PhysicsUtils.h"
@@ -403,6 +404,43 @@ namespace rock
         return snapshot;
     }
 
+    namespace
+    {
+        bool driveDynamicBodyVelocityTowardTarget(
+            RE::hknpWorld* world,
+            BethesdaPhysicsBody& body,
+            const RE::NiTransform& target,
+            float driveDeltaSeconds)
+        {
+            if (!world || !body.isValid() || !havok_physics_timing::isUsableDelta(driveDeltaSeconds)) {
+                return false;
+            }
+
+            alignas(16) float targetPositionHavok[4]{
+                target.translate.x * gameToHavokScale(),
+                target.translate.y * gameToHavokScale(),
+                target.translate.z * gameToHavokScale(),
+                0.0f,
+            };
+            alignas(16) float targetRotationHavok[4]{};
+            transform_math::niRowsToHavokQuaternion(target.rotate, targetRotationHavok);
+
+            alignas(16) float linearVelocityHavok[4]{};
+            alignas(16) float angularVelocityRadians[4]{};
+            using ComputeHardKeyFrame_t = void (*)(RE::hknpWorld*, RE::hknpBodyId, float*, float*, float, float*, float*);
+            static REL::Relocation<ComputeHardKeyFrame_t> compute{ REL::Offset(offsets::kFunc_ComputeHardKeyFrame) };
+            compute(world, body.getBodyId(), targetPositionHavok, targetRotationHavok, driveDeltaSeconds, linearVelocityHavok, angularVelocityRadians);
+
+            if (!havok_runtime::isFinite3(linearVelocityHavok) || !havok_runtime::isFinite3(angularVelocityRadians)) {
+                return false;
+            }
+
+            linearVelocityHavok[3] = 0.0f;
+            angularVelocityRadians[3] = 0.0f;
+            return body.setVelocity(linearVelocityHavok, angularVelocityRadians);
+        }
+    }
+
     bool placeGeneratedKeyframedBodyImmediately(BethesdaPhysicsBody& body, const RE::NiTransform& target)
     {
         if (!body.isValid()) {
@@ -424,7 +462,8 @@ namespace rock
         const char* ownerName,
         std::uint32_t bodyIndex,
         float maxLinearVelocityHavok,
-        float maxAngularVelocityRadians)
+        float maxAngularVelocityRadians,
+        const GeneratedBodyDriveMode& mode)
     {
         GeneratedKeyframedBodyDriveResult result{};
         result.driveDeltaSeconds = havok_physics_timing::driveDeltaSeconds(timing);
@@ -534,6 +573,38 @@ namespace rock
                     result.targetHavokPosition.x,
                     result.targetHavokPosition.y,
                     result.targetHavokPosition.z);
+            }
+        } else if (mode.dynamicVelocity) {
+            const float driveDelta = result.driveDeltaSeconds;
+            /*
+             * Divergence recovery: a dynamic body blocked by geometry while the
+             * target kept moving must snap back instead of chasing at the
+             * velocity cap through the world. bodyDeltaGameUnits is the live
+             * body-to-target distance sampled above.
+             */
+            const bool divergenceTeleport =
+                mode.divergenceTeleportGameUnits > 0.0f &&
+                result.hasLiveBodyTransform &&
+                std::isfinite(result.bodyDeltaGameUnits) &&
+                result.bodyDeltaGameUnits > mode.divergenceTeleportGameUnits;
+            if (divergenceTeleport) {
+                result.teleported = placeGeneratedKeyframedBodyImmediately(body, target);
+                result.driven = result.teleported;
+                result.placementFailed = !result.teleported;
+            } else {
+                result.driven = driveDynamicBodyVelocityTowardTarget(world, body, target, driveDelta);
+                result.nativeDriveFailed = !result.driven;
+            }
+            if (!result.driven) {
+                ROCK_LOG_SAMPLE_WARN(Physics,
+                    1000,
+                    "Generated dynamic velocity drive failed owner={} bodyIndex={} bodyId={} physicsDt={:.6f} divergenceTeleport={} bodyDeltaGame={:.2f}",
+                    ownerName ? ownerName : "unknown",
+                    bodyIndex,
+                    body.getBodyId().value,
+                    driveDelta,
+                    divergenceTeleport ? "yes" : "no",
+                    result.hasLiveBodyTransform ? result.bodyDeltaGameUnits : -1.0f);
             }
         } else {
             const float driveDelta = result.driveDeltaSeconds;
