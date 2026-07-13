@@ -5634,6 +5634,19 @@ namespace rock
             return;
         }
 
+        const auto* weaponForm = baseForm->As<RE::TESObjectWEAP>();
+        const bool throwableWeapon = weaponForm &&
+            (weaponForm->weaponData.type == RE::WEAPON_TYPE::kGrenade ||
+                weaponForm->weaponData.type == RE::WEAPON_TYPE::kMine);
+        if (!saved_grab_offset::participatesInSavedGrabOffsets(weaponForm != nullptr, throwableWeapon)) {
+            ROCK_LOG_INFO(Hand,
+                "Saved grab offset: skipped for {} hand, '{}' ({:08X}) is a weapon and weapons seat through FRIK weapon offsets only",
+                isLeft ? "left" : "right",
+                heldRef->GetDisplayFullName() ? heldRef->GetDisplayFullName() : "",
+                baseForm->GetFormID());
+            return;
+        }
+
         const auto formRef = saved_grab_offset::formRefFromRuntimeId(baseForm->GetFormID());
         if (formRef.empty()) {
             ROCK_LOG_WARN(Hand, "Saved grab offset: aborted, could not resolve load-order-independent identity for base form {:08X}",

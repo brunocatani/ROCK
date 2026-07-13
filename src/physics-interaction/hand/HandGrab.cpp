@@ -9499,7 +9499,17 @@ namespace rock
                         grabGripPoint);
                     desiredObjectWorld = deriveNodeWorldFromBodyWorld(desiredBodyWorld, objectToBodyAtGrab);
                     const bool programmaticArrival = grabbedFromPullCatch || sel.forcedArrival;
-                    if (programmaticArrival) {
+                    /*
+                     * Guns and melee never seat from saved offsets: the FRIK
+                     * weapon-offset attach below is the only weapon authority
+                     * (saved_grab_offset::participatesInSavedGrabOffsets).
+                     * Leaving the source empty here also keeps a saved finger
+                     * pose from overriding the FRIK weapon hand pose.
+                     */
+                    if (programmaticArrival &&
+                        saved_grab_offset::participatesInSavedGrabOffsets(
+                            looseWeaponGrab,
+                            isThrowableLooseWeapon(selectedLooseWeaponForm(sel)))) {
                         resolvedGrabOffsetSource = resolveGrabOffsetSource(_isLeft, sel.refr);
                     }
                     RE::NiTransform grabProxyWorldForOffset{};

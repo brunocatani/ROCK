@@ -32,6 +32,21 @@
  */
 namespace rock::saved_grab_offset
 {
+    /*
+     * Non-throwable weapons never participate in saved grab offsets, on
+     * either side (dev-mode save gesture and pull-catch/force-grab apply):
+     * guns and melee seat through the FRIK weapon-offset pipeline alone
+     * (canonical primary attach / mirrored firing hold), and a saved hold
+     * captured outside that pipeline seats the weapon away from the firing
+     * grip the grip-zone equip snaps it to (stale left-only Service Rifle
+     * save, 2026-07-13). Grenades and mines are hand-thrown refs with no
+     * FRIK attach; they keep the saved/calibrated offset path.
+     */
+    [[nodiscard]] constexpr bool participatesInSavedGrabOffsets(bool isWeaponForm, bool isThrowableWeapon)
+    {
+        return !isWeaponForm || isThrowableWeapon;
+    }
+
     // Runtime formId -> load-order-independent ref (empty on failure /
     // formId 0). Engine lookup; frame thread only.
     [[nodiscard]] FormRef formRefFromRuntimeId(std::uint32_t runtimeFormId);

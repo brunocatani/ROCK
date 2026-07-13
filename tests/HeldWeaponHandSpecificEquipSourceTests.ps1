@@ -99,6 +99,20 @@ Require-Text 'src/physics-interaction/weapon/LooseWeaponGripZone.cpp' `
     'tryResolveLooseWeaponFiringHandHold\([\s\S]{0,700}tryResolveGripWorld\(isLeft,\s*weaponRef,\s*scratch,\s*&testedHandWorld\)' `
     'The one-shot firing-hold resolver must share the grip-zone projection core so both paths seat identical holds.'
 
+# Non-throwable weapons never participate in saved grab offsets, on either
+# side: the FRIK weapon-offset pipeline is the only weapon seat authority.
+Require-Text 'src/physics-interaction/grab/SavedGrabOffsetStore.h' `
+    'constexpr\s+bool\s+participatesInSavedGrabOffsets\(' `
+    'Saved-grab-offset weapon eligibility must be one shared policy for the save and apply sides.'
+
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
+    'programmaticArrival\s*&&[\s\S]{0,200}participatesInSavedGrabOffsets\(\s*looseWeaponGrab,' `
+    'Pull-catch/force-grab must not resolve saved grab offsets for non-throwable weapons.'
+
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'participatesInSavedGrabOffsets\(weaponForm\s*!=\s*nullptr,\s*throwableWeapon\)' `
+    'The dev-mode save gesture must refuse to record grab offsets for non-throwable weapons.'
+
 if ($failures.Count -gt 0) {
     Write-Host 'Held weapon hand-specific equip source boundary failed:'
     foreach ($failure in $failures) {
