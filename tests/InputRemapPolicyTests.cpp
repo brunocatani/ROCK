@@ -48,6 +48,30 @@ int main()
     ok &= expectFalse("SteamVR trigger does not act as ROCK grab input", triggerGrabDecision.grabPressed);
     settings.grabButtonId = 2;
 
+    PhysicalButtonHandInput physicalButtonHand{
+        .leftAvailable = true,
+        .leftHeld = true,
+        .rightAvailable = true,
+        .rightHeld = false,
+    };
+    ok &= expectTrue("exclusive physical left button resolves to left",
+        resolvePhysicalButtonHand(physicalButtonHand) == PhysicalButtonHandResolution::Left);
+    physicalButtonHand.leftHeld = false;
+    physicalButtonHand.rightHeld = true;
+    ok &= expectTrue("exclusive physical right button resolves to right",
+        resolvePhysicalButtonHand(physicalButtonHand) == PhysicalButtonHandResolution::Right);
+    physicalButtonHand.leftHeld = true;
+    ok &= expectTrue("simultaneous physical buttons fail closed",
+        resolvePhysicalButtonHand(physicalButtonHand) == PhysicalButtonHandResolution::Unresolved);
+    physicalButtonHand.leftHeld = false;
+    physicalButtonHand.rightHeld = false;
+    ok &= expectTrue("no held physical button fails closed",
+        resolvePhysicalButtonHand(physicalButtonHand) == PhysicalButtonHandResolution::Unresolved);
+    physicalButtonHand.leftAvailable = false;
+    physicalButtonHand.rightHeld = true;
+    ok &= expectTrue("missing controller snapshot fails closed",
+        resolvePhysicalButtonHand(physicalButtonHand) == PhysicalButtonHandResolution::Unresolved);
+
     NativeActionSuppressionInput base{
         .remapEnabled = true,
         .suppressionEnabled = true,
@@ -156,6 +180,7 @@ int main()
         .gameplayInputAllowed = true,
         .menuInputActive = false,
         .weaponDrawn = true,
+        .eventHandResolved = true,
         .eventHand = Hand::Right,
         .firingHand = Hand::Right,
         .buttonJustPressed = true,
@@ -172,6 +197,9 @@ int main()
     leftFiringActivateReload.eventHand = Hand::Left;
     leftFiringActivateReload.firingHand = Hand::Left;
     ok &= expectTrue("left X routes reload while the left hand owns the firing grip", shouldRouteFiringHandActivateReload(leftFiringActivateReload));
+    auto unresolvedLeftFiringActivateReload = leftFiringActivateReload;
+    unresolvedLeftFiringActivateReload.eventHandResolved = false;
+    ok &= expectFalse("unresolved physical controller cannot reload left firing grip", shouldRouteFiringHandActivateReload(unresolvedLeftFiringActivateReload));
     auto rightAWhileLeftFiring = leftFiringActivateReload;
     rightAWhileLeftFiring.eventHand = Hand::Right;
     ok &= expectFalse("right A cannot reload while the left hand owns the firing grip", shouldRouteFiringHandActivateReload(rightAWhileLeftFiring));

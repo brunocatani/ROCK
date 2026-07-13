@@ -10,6 +10,21 @@ namespace rock::input_remap_policy
         Right,
     };
 
+    enum class PhysicalButtonHandResolution : std::uint8_t
+    {
+        Unresolved,
+        Left,
+        Right,
+    };
+
+    struct PhysicalButtonHandInput
+    {
+        bool leftAvailable{ false };
+        bool leftHeld{ false };
+        bool rightAvailable{ false };
+        bool rightHeld{ false };
+    };
+
     struct Settings
     {
         bool enabled{ true };
@@ -67,6 +82,7 @@ namespace rock::input_remap_policy
         bool gameplayInputAllowed{ true };
         bool menuInputActive{ false };
         bool weaponDrawn{ false };
+        bool eventHandResolved{ false };
         Hand eventHand{ Hand::Right };
         Hand firingHand{ Hand::Right };
         bool buttonJustPressed{ false };
@@ -160,6 +176,21 @@ namespace rock::input_remap_policy
         return mask != 0 && (pressedMask & mask) != 0;
     }
 
+    /*
+     * FO4VR's primary/secondary wand labels do not identify the physical
+     * controller that produced Activate/WandAccept. Resolve A/X from ROCK's
+     * pre-remap OpenVR snapshots instead. Both controllers must be sampled,
+     * and exactly one may hold the native event's button; ambiguity fails
+     * closed so one hand can never reload the other hand's weapon.
+     */
+    [[nodiscard]] constexpr PhysicalButtonHandResolution resolvePhysicalButtonHand(const PhysicalButtonHandInput& input)
+    {
+        if (!input.leftAvailable || !input.rightAvailable || input.leftHeld == input.rightHeld) {
+            return PhysicalButtonHandResolution::Unresolved;
+        }
+        return input.leftHeld ? PhysicalButtonHandResolution::Left : PhysicalButtonHandResolution::Right;
+    }
+
     [[nodiscard]] constexpr bool shouldSuppressNativeGripReadyAction(const NativeActionSuppressionInput& input)
     {
         return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched &&
@@ -186,7 +217,8 @@ namespace rock::input_remap_policy
      */
     [[nodiscard]] constexpr bool shouldRouteFiringHandActivateReload(const NativeActivateReloadInput& input)
     {
-        return input.remapEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.weaponDrawn && input.eventHand == input.firingHand &&
+        return input.remapEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.weaponDrawn && input.eventHandResolved &&
+               input.eventHand == input.firingHand &&
                input.buttonJustPressed && !input.virtualHolstersOwnsInput && input.eventMatched;
     }
 

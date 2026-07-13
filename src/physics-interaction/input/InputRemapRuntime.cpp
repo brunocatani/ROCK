@@ -988,7 +988,7 @@ namespace rock::input_remap_runtime
             return eventNameMatches(event, kNativeEventActivate) || eventNameMatches(event, kNativeEventWandAccept);
         }
 
-        [[nodiscard]] int nativeEventButtonIdForVirtualHolsters(const RE::InputEvent* event)
+        [[nodiscard]] int nativeEventButtonId(const RE::InputEvent* event)
         {
             const auto* idEvent = event ? event->As<RE::IDEvent>() : nullptr;
             if (!idEvent) {
@@ -1101,27 +1101,56 @@ namespace rock::input_remap_runtime
         {
             const auto* button = event ? event->As<RE::ButtonEvent>() : nullptr;
             const bool eventMatched = isActivateReloadEvent(event);
-            const bool primaryHandEvent = eventMatched && isPrimaryWandInputEvent(event);
-            const bool primaryHandIsLeft = f4vr::isLeftHandedMode();
-            const bool eventHandIsLeft = primaryHandEvent ? primaryHandIsLeft : !primaryHandIsLeft;
+            const int buttonId = nativeEventButtonId(event);
+            const auto buttonMask = input_remap_policy::buttonMask(buttonId);
+            const bool leftAvailable = s_controllers[controllerIndex(input_remap_policy::Hand::Left)].valid.load(std::memory_order_acquire);
+            const bool rightAvailable = s_controllers[controllerIndex(input_remap_policy::Hand::Right)].valid.load(std::memory_order_acquire);
+            const bool leftHeld = leftAvailable && buttonMask != 0 &&
+                                  (s_controllers[controllerIndex(input_remap_policy::Hand::Left)].rawPressed.load(std::memory_order_acquire) & buttonMask) != 0;
+            const bool rightHeld = rightAvailable && buttonMask != 0 &&
+                                   (s_controllers[controllerIndex(input_remap_policy::Hand::Right)].rawPressed.load(std::memory_order_acquire) & buttonMask) != 0;
+            const auto eventHandResolution = input_remap_policy::resolvePhysicalButtonHand(input_remap_policy::PhysicalButtonHandInput{
+                .leftAvailable = leftAvailable,
+                .leftHeld = leftHeld,
+                .rightAvailable = rightAvailable,
+                .rightHeld = rightHeld,
+            });
+            const bool eventHandResolved = eventHandResolution != input_remap_policy::PhysicalButtonHandResolution::Unresolved;
+            const bool eventHandIsLeft = eventHandResolution == input_remap_policy::PhysicalButtonHandResolution::Left;
             const bool firingHandIsLeft = s_equippedWeaponLeftHandFiringActive.load(std::memory_order_acquire);
-            const bool eventMatchesFiringHand = eventHandIsLeft == firingHandIsLeft;
+            const bool eventMatchesFiringHand = eventHandResolved && eventHandIsLeft == firingHandIsLeft;
             const bool virtualHolstersOwnsInput = eventMatched && eventMatchesFiringHand &&
                                                   shouldDeferVirtualHolstersInput(eventHandIsLeft,
-                                                      nativeEventButtonIdForVirtualHolsters(event),
+                                                      buttonId,
                                                       g_rockConfig.rockVirtualHolstersDeferWeaponToggleInZone,
                                                       "firing-hand activate reload");
-            return input_remap_policy::shouldRouteFiringHandActivateReload(input_remap_policy::NativeActivateReloadInput{
+            const bool route = input_remap_policy::shouldRouteFiringHandActivateReload(input_remap_policy::NativeActivateReloadInput{
                 .remapEnabled = g_rockConfig.rockInputRemapEnabled,
                 .gameplayInputAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire),
                 .menuInputActive = isInputBlockingMenuActive(),
                 .weaponDrawn = s_weaponDrawn.load(std::memory_order_acquire),
+                .eventHandResolved = eventHandResolved,
                 .eventHand = eventHandIsLeft ? input_remap_policy::Hand::Left : input_remap_policy::Hand::Right,
                 .firingHand = firingHandIsLeft ? input_remap_policy::Hand::Left : input_remap_policy::Hand::Right,
                 .buttonJustPressed = button && button->QJustPressed(),
                 .virtualHolstersOwnsInput = virtualHolstersOwnsInput,
                 .eventMatched = eventMatched,
             });
+
+            if (eventMatched && button && button->QJustPressed()) {
+                ROCK_LOG_SAMPLE_DEBUG(Input,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "Reload hand gate: buttonId={} rawLeft(available={},held={}) rawRight(available={},held={}) resolved={} firing={} -> {}",
+                    buttonId,
+                    leftAvailable ? "yes" : "no",
+                    leftHeld ? "yes" : "no",
+                    rightAvailable ? "yes" : "no",
+                    rightHeld ? "yes" : "no",
+                    eventHandResolved ? (eventHandIsLeft ? "left" : "right") : "unresolved",
+                    firingHandIsLeft ? "left" : "right",
+                    route ? "route" : "reject");
+            }
+            return route;
         }
 
         [[nodiscard]] bool dispatchNativeReloadAction()
