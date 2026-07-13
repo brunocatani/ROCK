@@ -790,7 +790,7 @@ namespace rock
         const WeaponInteractionRuntimeState& leftRuntimeState,
         const WeaponInteractionRuntimeState& rightRuntimeState,
         weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode,
-        bool sidearmHybridEligible,
+        bool firingGripProximityAuthorityEnabled,
         bool primaryDetachEnabled)
     {
         _hasSolvedWeaponTransform = false;
@@ -886,7 +886,7 @@ namespace rock
                     decision,
                     weaponCollision,
                     supportAuthorityMode,
-                    sidearmHybridEligible,
+                    firingGripProximityAuthorityEnabled,
                     currentEquippedWeaponOwnershipKey,
                     supportRuntimeState.providerPartAuthority);
             }
@@ -1012,7 +1012,7 @@ namespace rock
                     decision,
                     weaponCollision,
                     supportAuthorityMode,
-                    sidearmHybridEligible,
+                    firingGripProximityAuthorityEnabled,
                     currentEquippedWeaponOwnershipKey,
                     supportRuntimeState.providerPartAuthority);
             } else {
@@ -1436,7 +1436,7 @@ namespace rock
         const WeaponInteractionDecision& decision,
         const WeaponCollision& weaponCollision,
         weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode,
-        bool sidearmHybridEligible,
+        bool firingGripProximityAuthorityEnabled,
         std::uint64_t currentEquippedWeaponOwnershipKey,
         const WeaponProviderPartAuthority& providerPartAuthority)
     {
@@ -1498,27 +1498,27 @@ namespace rock
         }
 
         /*
-         * Sidearm hybrid: at capture the firing grip point is the primary palm,
-         * so support-palm-to-firing-grip distance decides whether this grab is
-         * a shooting cup (visual-only) or a manipulation grip (full two-handed
-         * authority). Missing support hand transforms fail closed to
-         * visual-only, the pre-hybrid sidearm behavior.
+         * At capture the firing grip point is the primary palm, so the support
+         * palm distance selects visual-only attachment near the firing grip or
+         * full two-handed manipulation farther out. This applies uniformly to
+         * equipped weapons and is bypassed by explicit provider grab modes.
+         * If the distance cannot be measured, retain full authority rather
+         * than assuming the hand is inside the proximity radius.
          */
-        if (sidearmHybridEligible &&
-            _authorityMode == weapon_support_authority_policy::WeaponSupportAuthorityMode::VisualOnlySupport) {
+        if (firingGripProximityAuthorityEnabled) {
             RE::NiTransform supportTransform{};
             if (tryGetSolverHandTransform(supportHandIsLeft, supportTransform)) {
                 const RE::NiPoint3 supportPalmPos = computeGrabLegacyPalmPivotAWorldFromHandBasis(supportTransform, supportHandIsLeft);
                 const RE::NiPoint3 supportToGrip = sub(primaryPalmPos, supportPalmPos);
                 const float supportPalmToGripDistance = std::sqrt(dot(supportToGrip, supportToGrip));
                 if (std::isfinite(supportPalmToGripDistance)) {
-                    _authorityMode = weapon_support_authority_policy::resolveSidearmHybridSupportAuthorityMode(
+                    _authorityMode = weapon_support_authority_policy::resolveFiringGripProximityAuthorityMode(
                         supportPalmToGripDistance,
-                        g_rockConfig.rockSidearmVisualOnlySupportGripRadius);
+                        g_rockConfig.rockFiringGripProximitySupportRadius);
                     ROCK_LOG_INFO(Weapon,
-                        "TwoHandedGrip: sidearm hybrid support grip distance={:.2f} radius={:.2f} mode={}",
+                        "TwoHandedGrip: firing-grip proximity support distance={:.2f} radius={:.2f} mode={}",
                         supportPalmToGripDistance,
-                        g_rockConfig.rockSidearmVisualOnlySupportGripRadius,
+                        g_rockConfig.rockFiringGripProximitySupportRadius,
                         _authorityMode == weapon_support_authority_policy::WeaponSupportAuthorityMode::VisualOnlySupport ?
                             "visual-only" :
                             "full-authority");

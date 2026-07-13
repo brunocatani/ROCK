@@ -152,7 +152,7 @@ namespace rock
             const WeaponInteractionRuntimeState& leftRuntimeState,
             const WeaponInteractionRuntimeState& rightRuntimeState,
             weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode,
-            bool sidearmHybridEligible,
+            bool firingGripProximityAuthorityEnabled,
             bool primaryDetachEnabled);
 
         void reset();
@@ -359,7 +359,7 @@ namespace rock
             const WeaponInteractionDecision& decision,
             const WeaponCollision& weaponCollision,
             weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode,
-            bool sidearmHybridEligible,
+            bool firingGripProximityAuthorityEnabled,
             std::uint64_t currentEquippedWeaponOwnershipKey,
             const WeaponProviderPartAuthority& providerPartAuthority);
         void transitionToInactive(bool publishRestoredWeaponTransform);

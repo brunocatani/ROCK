@@ -8,27 +8,17 @@
 // ---- WeaponSupportAuthorityPolicy.h ----
 
 /*
- * Equipped sidearm support grip is split from full two-handed weapon authority
- * because pistols need the visual stability of a left-hand mesh grab without
- * turning the left controller into a weapon steering input. Long guns use
- * full two-hand solving, while sidearms draw the support wrist from the stored
- * weapon-local grab frame. Runtime classification uses
- * the weapon animation grip keywords because Fallout 4 VR only exposes "gun" at
- * the weapon-type enum level, while actual vanilla and modded pistol records
- * carry `AnimsGripPistol`. Long-gun grip keywords are checked before the
- * sidearm signal so rifle-like weapons keep the solver that owns weapon
- * transform authority. Base WEAP keywords and instance keyword data are read
- * through separate guarded paths: FO4VR can crash inside
- * `BGSKeywordForm::HasKeyword` when a modded `TBO_InstanceData*` lacks the
- * keyword component the engine expects. Name fallback tokens only cover vanilla
- * sidearms whose records do not expose a stronger semantic signal.
+ * Equipped-weapon support authority is selected by distance from the firing
+ * grip. A support grab close to that grip follows the weapon visually without
+ * steering it, leaving one transform owner and allowing the support hand to be
+ * promoted cleanly when it takes the firing grip. A grab farther out retains
+ * full two-handed manipulation authority. Explicit provider grab modes remain
+ * authoritative and bypass this proximity contract.
  */
 
 #include "physics-interaction/TransformMath.h"
 
-#include <array>
 #include <cstdint>
-#include <string_view>
 
 namespace rock::weapon_support_authority_policy
 {
@@ -38,63 +28,21 @@ namespace rock::weapon_support_authority_policy
         VisualOnlySupport = 1,
     };
 
-    enum class WeaponSupportWeaponClass
-    {
-        Unknown = 0,
-        Sidearm = 1,
-        LongGun = 2,
-    };
-
-    struct EquippedWeaponIdentity
-    {
-        std::uint32_t formID{ 0 };
-        std::string_view displayName{};
-        std::string_view nodeName{};
-        bool hasPistolGripKeyword{ false };
-        bool hasInstancePistolGripKeyword{ false };
-        bool hasLongGunGripKeyword{ false };
-        bool hasInstanceLongGunGripKeyword{ false };
-    };
-
-    inline constexpr bool hasPistolGripSemantic(const EquippedWeaponIdentity& identity)
-    {
-        return identity.hasPistolGripKeyword || identity.hasInstancePistolGripKeyword;
-    }
-
-    inline constexpr bool hasLongGunGripSemantic(const EquippedWeaponIdentity& identity)
-    {
-        return identity.hasLongGunGripKeyword || identity.hasInstanceLongGunGripKeyword;
-    }
-
-    inline constexpr WeaponSupportAuthorityMode resolveSupportAuthorityMode(
-        bool visualOnlySidearmSupportEnabled,
-        WeaponSupportWeaponClass weaponClass)
-    {
-        return visualOnlySidearmSupportEnabled && weaponClass == WeaponSupportWeaponClass::Sidearm ?
-                   WeaponSupportAuthorityMode::VisualOnlySupport :
-                   WeaponSupportAuthorityMode::FullTwoHandedSolver;
-    }
-
     /*
-     * Sidearm hybrid support grip: a sidearm support grab that lands close to
-     * the firing grip is a shooting cup and stays visual-only so the two
-     * authorities do not fight over the short pistol frame, while a grab
-     * farther out is a manipulation grip and takes the same full two-handed
-     * authority long guns use (enabling detach/part-carry when realistic
-     * handling is on, and plain two-handed manipulation when it is off).
-     * Provider-mandated grab modes are exempt: a part whitelisted as
-     * AttachOnly must never be upgraded to full authority by proximity.
+     * The proximity contract applies uniformly to equipped weapons. Provider-
+     * mandated grab modes are exempt: AttachOnly must never be upgraded and
+     * FullTwoHandAuthority must never be downgraded by local proximity.
      * The decision is made once at grip capture; changing modes requires
      * releasing and re-grabbing.
      */
-    inline constexpr bool canApplySidearmHybridAuthority(
-        WeaponSupportAuthorityMode resolvedMode,
+    inline constexpr bool canApplyFiringGripProximityAuthority(
+        bool proximityAuthorityEnabled,
         bool providerGrabModeOverride)
     {
-        return resolvedMode == WeaponSupportAuthorityMode::VisualOnlySupport && !providerGrabModeOverride;
+        return proximityAuthorityEnabled && !providerGrabModeOverride;
     }
 
-    inline constexpr WeaponSupportAuthorityMode resolveSidearmHybridSupportAuthorityMode(
+    inline constexpr WeaponSupportAuthorityMode resolveFiringGripProximityAuthorityMode(
         float supportPalmToFiringGripDistance,
         float visualOnlyRadius)
     {
@@ -124,96 +72,6 @@ namespace rock::weapon_support_authority_policy
         return transform_math::composeTransforms(weaponWorld, supportHandWeaponLocal);
     }
 
-    inline char lowerAscii(char value)
-    {
-        return value >= 'A' && value <= 'Z' ? static_cast<char>(value - 'A' + 'a') : value;
-    }
-
-    inline std::string_view trimAscii(std::string_view value)
-    {
-        while (!value.empty() && (value.front() == ' ' || value.front() == '\t' || value.front() == '\r' || value.front() == '\n')) {
-            value.remove_prefix(1);
-        }
-        while (!value.empty() && (value.back() == ' ' || value.back() == '\t' || value.back() == '\r' || value.back() == '\n')) {
-            value.remove_suffix(1);
-        }
-        return value;
-    }
-
-    inline bool containsIgnoreCase(std::string_view haystack, std::string_view needle)
-    {
-        needle = trimAscii(needle);
-        if (needle.empty() || needle.size() > haystack.size()) {
-            return false;
-        }
-
-        for (std::size_t start = 0; start + needle.size() <= haystack.size(); ++start) {
-            bool matched = true;
-            for (std::size_t index = 0; index < needle.size(); ++index) {
-                if (lowerAscii(haystack[start + index]) != lowerAscii(needle[index])) {
-                    matched = false;
-                    break;
-                }
-            }
-            if (matched) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    inline bool identityNameMatchesAny(const EquippedWeaponIdentity& identity, const std::string_view* tokens, std::size_t tokenCount)
-    {
-        for (std::size_t index = 0; index < tokenCount; ++index) {
-            if (containsIgnoreCase(identity.displayName, tokens[index]) || containsIgnoreCase(identity.nodeName, tokens[index])) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    inline WeaponSupportWeaponClass classifyEquippedWeaponForSupportGrip(const EquippedWeaponIdentity& identity)
-    {
-        if (hasLongGunGripSemantic(identity)) {
-            return WeaponSupportWeaponClass::LongGun;
-        }
-        if (hasPistolGripSemantic(identity)) {
-            return WeaponSupportWeaponClass::Sidearm;
-        }
-
-        static constexpr std::array<std::string_view, 8> kSidearmNameFallbackTokens{
-            "pistol",
-            "revolver",
-            "deliverer",
-            "alien blaster",
-            "gamma gun",
-            "flare gun",
-            "the gainer",
-            "western revolver",
-        };
-        if (identityNameMatchesAny(identity, kSidearmNameFallbackTokens.data(), kSidearmNameFallbackTokens.size())) {
-            return WeaponSupportWeaponClass::Sidearm;
-        }
-
-        static constexpr std::array<std::string_view, 11> kLongGunTokens{
-            "rifle",
-            "shotgun",
-            "musket",
-            "launcher",
-            "minigun",
-            "fat man",
-            "flamer",
-            "gatling",
-            "harpoon",
-            "submachine",
-            "machine gun",
-        };
-        if (identityNameMatchesAny(identity, kLongGunTokens.data(), kLongGunTokens.size())) {
-            return WeaponSupportWeaponClass::LongGun;
-        }
-
-        return WeaponSupportWeaponClass::Unknown;
-    }
 }
 
 // ---- WeaponSupportGripPolicy.h ----

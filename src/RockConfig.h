@@ -113,8 +113,8 @@ namespace rock
         float rockWeaponSizeClassRifleMaxWeight = 20.0f;
         float rockWeaponInteractionProbeRadius = 12.0f;
         float rockWeaponFiringGripReattachRadius = 3.0f;
-        bool rockVisualOnlySidearmSupportGripEnabled = true;
-        float rockSidearmVisualOnlySupportGripRadius = 6.0f;
+        bool rockFiringGripProximitySupportEnabled = true;
+        float rockFiringGripProximitySupportRadius = 6.0f;
         bool rockWeaponGripHapticsEnabled = true;
         float rockWeaponGripHapticDurationSeconds = 0.10f;
         float rockWeaponFiringGripAttachHapticIntensity = 0.85f;

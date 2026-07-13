@@ -232,20 +232,23 @@ int main()
     ok &= expectTrue("support grip continues to apply offhand visual authority",
         rock::weapon_support_authority_policy::supportGripAppliesSupportHandAuthority(rock::weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver));
 
-    using rock::weapon_support_authority_policy::canApplySidearmHybridAuthority;
-    using rock::weapon_support_authority_policy::resolveSidearmHybridSupportAuthorityMode;
+    using rock::weapon_support_authority_policy::canApplyFiringGripProximityAuthority;
+    using rock::weapon_support_authority_policy::resolveFiringGripProximityAuthorityMode;
     using rock::weapon_support_authority_policy::WeaponSupportAuthorityMode;
-    ok &= expectTrue("sidearm hybrid applies to class-resolved visual-only support",
-        canApplySidearmHybridAuthority(WeaponSupportAuthorityMode::VisualOnlySupport, false));
-    ok &= expectFalse("sidearm hybrid never applies to full-authority resolution",
-        canApplySidearmHybridAuthority(WeaponSupportAuthorityMode::FullTwoHandedSolver, false));
-    ok &= expectFalse("sidearm hybrid never upgrades a provider-mandated grab mode",
-        canApplySidearmHybridAuthority(WeaponSupportAuthorityMode::VisualOnlySupport, true));
-    ok &= expectEqual("sidearm grab near the firing grip stays visual-only",
-        resolveSidearmHybridSupportAuthorityMode(5.5f, 6.0f),
+    ok &= expectTrue("firing-grip proximity contract applies to any equipped weapon when enabled",
+        canApplyFiringGripProximityAuthority(true, false));
+    ok &= expectFalse("disabled firing-grip proximity contract preserves full authority",
+        canApplyFiringGripProximityAuthority(false, false));
+    ok &= expectFalse("firing-grip proximity never changes a provider-mandated grab mode",
+        canApplyFiringGripProximityAuthority(true, true));
+    ok &= expectEqual("any weapon grab near the firing grip stays visual-only",
+        resolveFiringGripProximityAuthorityMode(5.5f, 6.0f),
         WeaponSupportAuthorityMode::VisualOnlySupport);
-    ok &= expectEqual("sidearm grab away from the firing grip takes full authority",
-        resolveSidearmHybridSupportAuthorityMode(6.5f, 6.0f),
+    ok &= expectEqual("any weapon grab at the firing-grip radius stays visual-only",
+        resolveFiringGripProximityAuthorityMode(6.0f, 6.0f),
+        WeaponSupportAuthorityMode::VisualOnlySupport);
+    ok &= expectEqual("any weapon grab away from the firing grip takes full authority",
+        resolveFiringGripProximityAuthorityMode(6.5f, 6.0f),
         WeaponSupportAuthorityMode::FullTwoHandedSolver);
 
     using rock::weapon_interaction_probe_math::isBetterProbeCandidate;

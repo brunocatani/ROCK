@@ -1284,195 +1284,6 @@ namespace rock
             return name ? name : "";
         }
 
-        const char* weaponSupportClassName(weapon_support_authority_policy::WeaponSupportWeaponClass weaponClass)
-        {
-            using weapon_support_authority_policy::WeaponSupportWeaponClass;
-
-            switch (weaponClass) {
-            case WeaponSupportWeaponClass::Unknown:
-                return "Unknown";
-            case WeaponSupportWeaponClass::Sidearm:
-                return "Sidearm";
-            case WeaponSupportWeaponClass::LongGun:
-                return "LongGun";
-            }
-            return "Unknown";
-        }
-
-        const char* weaponSupportAuthorityModeName(weapon_support_authority_policy::WeaponSupportAuthorityMode mode)
-        {
-            using weapon_support_authority_policy::WeaponSupportAuthorityMode;
-
-            switch (mode) {
-            case WeaponSupportAuthorityMode::FullTwoHandedSolver:
-                return "FullTwoHandedSolver";
-            case WeaponSupportAuthorityMode::VisualOnlySupport:
-                return "VisualOnlySupport";
-            }
-            return "Unknown";
-        }
-
-        struct WeaponSupportKeywordCache
-        {
-            bool initialized{ false };
-            RE::BGSKeyword* pistolGrip{ nullptr };
-            RE::BGSKeyword* rifleAssaultGrip{ nullptr };
-            RE::BGSKeyword* rifleStraightGrip{ nullptr };
-            RE::BGSKeyword* shoulderFiredGrip{ nullptr };
-        };
-
-        RE::BGSKeyword* resolveWeaponSupportKeyword(const char* editorID)
-        {
-            return editorID ? RE::TESForm::GetFormByEditorID<RE::BGSKeyword>(RE::BSFixedString(editorID)) : nullptr;
-        }
-
-        const WeaponSupportKeywordCache& weaponSupportKeywordCache()
-        {
-            static WeaponSupportKeywordCache cache{};
-            if (!cache.initialized) {
-                cache.initialized = true;
-                cache.pistolGrip = resolveWeaponSupportKeyword("AnimsGripPistol");
-                cache.rifleAssaultGrip = resolveWeaponSupportKeyword("AnimsGripRifleAssault");
-                cache.rifleStraightGrip = resolveWeaponSupportKeyword("AnimsGripRifleStraight");
-                cache.shoulderFiredGrip = resolveWeaponSupportKeyword("AnimsGripShoulderFired");
-                if (!cache.pistolGrip || !cache.rifleAssaultGrip || !cache.rifleStraightGrip || !cache.shoulderFiredGrip) {
-                    ROCK_LOG_WARN(
-                        Weapon,
-                        "Weapon support grip keyword lookup incomplete: AnimsGripPistol={} AnimsGripRifleAssault={} AnimsGripRifleStraight={} AnimsGripShoulderFired={}",
-                        static_cast<const void*>(cache.pistolGrip),
-                        static_cast<const void*>(cache.rifleAssaultGrip),
-                        static_cast<const void*>(cache.rifleStraightGrip),
-                        static_cast<const void*>(cache.shoulderFiredGrip));
-                }
-            }
-            return cache;
-        }
-
-        bool keywordFormHasKeyword(const RE::BGSKeywordForm* keywordForm, const RE::BGSKeyword* keyword)
-        {
-            return keywordForm && keyword && keywordForm->HasKeyword(keyword, nullptr);
-        }
-
-        bool equippedWeaponHasKeyword(const RE::TESObjectWEAP* weapon, const RE::BGSKeyword* keyword)
-        {
-            /*
-             * Base WEAP keyword checks must not hand modded instance data back
-             * into BGSKeywordForm::HasKeyword. FO4VR can dereference a missing
-             * instance keyword component inside the engine path; instance
-             * keywords are read separately through TBO_InstanceData::GetKeywordData.
-             */
-            return weapon && keyword && weapon->HasKeyword(keyword, nullptr);
-        }
-
-        bool equippedInstanceHasKeyword(const RE::TBO_InstanceData* instanceData, const RE::BGSKeyword* keyword)
-        {
-            const auto* keywordData = instanceData ? instanceData->GetKeywordData() : nullptr;
-            return keywordFormHasKeyword(keywordData, keyword);
-        }
-
-        bool equippedWeaponHasAnyKeyword(
-            const RE::TESObjectWEAP* weapon,
-            const RE::BGSKeyword* keywordA,
-            const RE::BGSKeyword* keywordB,
-            const RE::BGSKeyword* keywordC)
-        {
-            return equippedWeaponHasKeyword(weapon, keywordA) ||
-                   equippedWeaponHasKeyword(weapon, keywordB) ||
-                   equippedWeaponHasKeyword(weapon, keywordC);
-        }
-
-        bool equippedInstanceHasAnyKeyword(
-            const RE::TBO_InstanceData* instanceData,
-            const RE::BGSKeyword* keywordA,
-            const RE::BGSKeyword* keywordB,
-            const RE::BGSKeyword* keywordC)
-        {
-            return equippedInstanceHasKeyword(instanceData, keywordA) ||
-                   equippedInstanceHasKeyword(instanceData, keywordB) ||
-                   equippedInstanceHasKeyword(instanceData, keywordC);
-        }
-
-        void populateEquippedWeaponKeywordIdentity(
-            weapon_support_authority_policy::EquippedWeaponIdentity& identity,
-            const RE::TESObjectWEAP* weapon,
-            const RE::TBO_InstanceData* instanceData)
-        {
-            const auto& keywords = weaponSupportKeywordCache();
-            identity.hasPistolGripKeyword = equippedWeaponHasKeyword(weapon, keywords.pistolGrip);
-            identity.hasInstancePistolGripKeyword = equippedInstanceHasKeyword(instanceData, keywords.pistolGrip);
-            identity.hasLongGunGripKeyword = equippedWeaponHasAnyKeyword(
-                weapon,
-                keywords.rifleAssaultGrip,
-                keywords.rifleStraightGrip,
-                keywords.shoulderFiredGrip);
-            identity.hasInstanceLongGunGripKeyword = equippedInstanceHasAnyKeyword(
-                instanceData,
-                keywords.rifleAssaultGrip,
-                keywords.rifleStraightGrip,
-                keywords.shoulderFiredGrip);
-        }
-
-        const RE::TESObjectWEAP* asEquippedWeaponForm(const F4SEVR::TESForm* form)
-        {
-            if (!form || form->formType != static_cast<std::uint8_t>(RE::ENUM_FORM_ID::kWEAP)) {
-                return nullptr;
-            }
-
-            const auto* reForm = reinterpret_cast<const RE::TESForm*>(form);
-            return reForm->As<RE::TESObjectWEAP>();
-        }
-
-        weapon_support_authority_policy::EquippedWeaponIdentity makeEquippedWeaponSupportIdentity(RE::NiNode* weaponNode)
-        {
-            weapon_support_authority_policy::EquippedWeaponIdentity identity{};
-            identity.nodeName = weaponDiagnosticNodeName(weaponNode);
-
-            auto* player = f4vr::getPlayer();
-            auto* processData = player && player->middleProcess ? player->middleProcess->unk08 : nullptr;
-            auto* equipData = processData ? processData->equipData : nullptr;
-            auto* weaponForm = equipData ? equipData->item : nullptr;
-            if (weaponForm) {
-                identity.formID = weaponForm->formID;
-                if (const char* fullName = weaponForm->GetFullName()) {
-                    identity.displayName = fullName;
-                }
-                populateEquippedWeaponKeywordIdentity(identity, asEquippedWeaponForm(weaponForm), equipData ? equipData->instanceData : nullptr);
-            }
-
-            return identity;
-        }
-
-        weapon_support_authority_policy::WeaponSupportAuthorityMode resolveEquippedWeaponSupportAuthorityMode(RE::NiNode* weaponNode)
-        {
-            using namespace weapon_support_authority_policy;
-
-            if (!g_rockConfig.rockVisualOnlySidearmSupportGripEnabled) {
-                return WeaponSupportAuthorityMode::FullTwoHandedSolver;
-            }
-
-            if (!weaponNode) {
-                return WeaponSupportAuthorityMode::FullTwoHandedSolver;
-            }
-
-            const auto identity = makeEquippedWeaponSupportIdentity(weaponNode);
-            const auto weaponClass = classifyEquippedWeaponForSupportGrip(identity);
-            const auto authorityMode = resolveSupportAuthorityMode(true, weaponClass);
-            ROCK_LOG_SAMPLE_DEBUG(
-                Weapon,
-                g_rockConfig.rockLogSampleMilliseconds,
-                "Weapon support classification: formID={:08X} name='{}' node='{}' pistolGrip={} instancePistolGrip={} longGunGrip={} instanceLongGunGrip={} class={} mode={}",
-                identity.formID,
-                identity.displayName,
-                identity.nodeName,
-                identity.hasPistolGripKeyword,
-                identity.hasInstancePistolGripKeyword,
-                identity.hasLongGunGripKeyword,
-                identity.hasInstanceLongGunGripKeyword,
-                weaponSupportClassName(weaponClass),
-                weaponSupportAuthorityModeName(authorityMode));
-            return authorityMode;
-        }
-
         const char* pushAssistSkipReasonName(push_assist::PushAssistSkipReason reason)
         {
             switch (reason) {
@@ -2861,7 +2672,7 @@ namespace rock
                 leftWeaponContactSource);
 
             const bool leftHandHoldingObject = _leftHand.isHolding();
-            auto supportAuthorityMode = resolveEquippedWeaponSupportAuthorityMode(weaponNode);
+            auto supportAuthorityMode = weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver;
             bool supportAuthorityProviderOverride = false;
             // The grab-mode override follows the SUPPORT-ROLE hand's provider
             // resolution: that is the hand whose grip the mode describes.
@@ -2876,8 +2687,8 @@ namespace rock
                     supportAuthorityProviderOverride = true;
                 }
             }
-            const bool sidearmHybridEligible = weapon_support_authority_policy::canApplySidearmHybridAuthority(
-                supportAuthorityMode,
+            const bool firingGripProximityAuthorityEnabled = weapon_support_authority_policy::canApplyFiringGripProximityAuthority(
+                g_rockConfig.rockFiringGripProximitySupportEnabled,
                 supportAuthorityProviderOverride);
             EquippedWeaponPrimaryGripInput primaryGripInput{};
             GrabButtonState primaryGrabState{};
@@ -3181,7 +2992,7 @@ namespace rock
                 providerInteractionState,
                 rightHandInteractionState,
                 supportAuthorityMode,
-                sidearmHybridEligible,
+                firingGripProximityAuthorityEnabled,
                 primaryDetachFeatureAvailable);
             if (primaryOnlyGripStartedThisFrame) {
                 ROCK_LOG_DEBUG(Weapon, "Equipped weapon primary-only manual ownership started from primary grip input");

@@ -194,8 +194,8 @@ namespace rock
         rockWeaponSizeClassRifleMaxWeight = 20.0f;
         rockWeaponInteractionProbeRadius = 12.0f;
         rockWeaponFiringGripReattachRadius = 3.0f;
-        rockVisualOnlySidearmSupportGripEnabled = true;
-        rockSidearmVisualOnlySupportGripRadius = 6.0f;
+        rockFiringGripProximitySupportEnabled = true;
+        rockFiringGripProximitySupportRadius = 6.0f;
         rockWeaponGripHapticsEnabled = true;
         rockWeaponGripHapticDurationSeconds = 0.10f;
         rockWeaponFiringGripAttachHapticIntensity = 0.85f;
@@ -830,12 +830,12 @@ namespace rock
             3.0f,
             0.25f,
             30.0f);
-        rockVisualOnlySidearmSupportGripEnabled =
-            ini.GetBoolValue(REALISTIC_WEAPONS_SECTION, "bVisualOnlySidearmSupportGripEnabled", rockVisualOnlySidearmSupportGripEnabled);
-        rockSidearmVisualOnlySupportGripRadius = readClampedFloat(ini,
+        rockFiringGripProximitySupportEnabled =
+            ini.GetBoolValue(REALISTIC_WEAPONS_SECTION, "bFiringGripProximitySupportEnabled", rockFiringGripProximitySupportEnabled);
+        rockFiringGripProximitySupportRadius = readClampedFloat(ini,
             REALISTIC_WEAPONS_SECTION,
-            "fSidearmVisualOnlySupportGripRadius",
-            rockSidearmVisualOnlySupportGripRadius,
+            "fFiringGripProximitySupportRadius",
+            rockFiringGripProximitySupportRadius,
             6.0f,
             0.25f,
             30.0f);
