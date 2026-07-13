@@ -1332,6 +1332,44 @@ namespace rock::grab_finger_pose_runtime
         return hints;
     }
 
+    /*
+     * Held re-solve rule: a thumb WITHOUT an exact arc-anchor hint (its last
+     * adoption was an alternate lane, a miss, or a floored value) must keep
+     * its previous pose instead of re-solving from the raw live chord. The
+     * raw-chord anchor rotates with the thumb's own curl (opposition/twist,
+     * out of the palm plane), so an unhinted re-solve maps pose A to pose B
+     * and pose B back to pose A - a period-2 open/close cycle the adoption
+     * deadband cannot break. The previous pose (capture, or the last hinted
+     * adoption) is authoritative until a hinted re-solve exists. Surface-aim
+     * entries are not carried: the thumb's are cleared at adoption by
+     * useThumbIndexCurveOnlyPose anyway.
+     */
+    inline void keepThumbPoseFromPrevious(SolvedGrabFingerPose& pose, const SolvedGrabFingerPose& previous)
+    {
+        pose.values[0] = previous.values[0];
+        for (std::size_t segment = 0; segment < 3; ++segment) {
+            pose.jointValues[segment] = previous.jointValues[segment];
+        }
+        pose.hitKind[0] = previous.hitKind[0];
+        pose.contactArcRotationRadians[0] = previous.contactArcRotationRadians[0];
+        pose.contactArcRotationValid[0] = previous.contactArcRotationValid[0];
+        pose.thumbSurfaceFollowAllowed = previous.thumbSurfaceFollowAllowed;
+        pose.usedAlternateThumbCurve = previous.usedAlternateThumbCurve;
+        pose.usedAlternateThumbSurfaceHit = previous.usedAlternateThumbSurfaceHit;
+        pose.selectedThumbLane = previous.selectedThumbLane;
+        pose.selectedThumbLaneNormalBlend = previous.selectedThumbLaneNormalBlend;
+        pose.selectedThumbLaneLocalCorrectionStrength = previous.selectedThumbLaneLocalCorrectionStrength;
+        pose.hasThumbAlternateCurveFrame = previous.hasThumbAlternateCurveFrame;
+        pose.thumbAlternateCurveBaseWorld = previous.thumbAlternateCurveBaseWorld;
+        pose.thumbAlternateCurveOpenDirectionWorld = previous.thumbAlternateCurveOpenDirectionWorld;
+        pose.thumbAlternateCurveNormalWorld = previous.thumbAlternateCurveNormalWorld;
+        pose.thumbAlternateCurveMaxCurlAngleRadians = previous.thumbAlternateCurveMaxCurlAngleRadians;
+        pose.hasThumbCurveDiagnostics = previous.hasThumbCurveDiagnostics;
+        pose.thumbPrimaryCurve = previous.thumbPrimaryCurve;
+        pose.thumbAlternateCurve = previous.thumbAlternateCurve;
+        pose.thumbSidePadCurve = previous.thumbSidePadCurve;
+    }
+
     struct GrabFingerPoseTargetSet
     {
         std::array<RE::NiPoint3, 5> targets{};

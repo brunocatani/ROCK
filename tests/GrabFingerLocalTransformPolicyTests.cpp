@@ -494,6 +494,39 @@ int main()
         evidenceOnlyPose.surfaceAimTargetValid[1] == 0,
         true);
 
+    {
+        /*
+         * Unhinted held thumb rule: without an exact arc-anchor hint the
+         * thumb must keep its previous pose wholesale - value, joints, arc
+         * rotation, and lane selection - while the other fingers keep the
+         * fresh solve.
+         */
+        SolvedGrabFingerPose previousThumbPose{};
+        previousThumbPose.values = { 1.6f, 0.4f, 0.5f, 0.6f, 0.7f };
+        previousThumbPose.jointValues = rock::grab_finger_pose_math::expandFingerCurlsToJointValues(previousThumbPose.values);
+        previousThumbPose.contactArcRotationRadians[0] = 0.35f;
+        previousThumbPose.contactArcRotationValid[0] = 1;
+        previousThumbPose.usedAlternateThumbCurve = true;
+        previousThumbPose.selectedThumbLane = rock::grab_finger_calibration_data::BakedGrabThumbLane::Opposition;
+
+        SolvedGrabFingerPose freshPose{};
+        freshPose.solved = true;
+        freshPose.values = { 0.9f, 0.3f, 0.5f, 0.6f, 0.7f };
+        freshPose.jointValues = rock::grab_finger_pose_math::expandFingerCurlsToJointValues(freshPose.values);
+        keepThumbPoseFromPrevious(freshPose, previousThumbPose);
+        ok &= expectFloat("unhinted thumb keeps its previous value", freshPose.values[0], 1.6f);
+        ok &= expectFloat("unhinted thumb keeps its previous middle joint",
+            freshPose.jointValues[1],
+            previousThumbPose.jointValues[1]);
+        ok &= expectFloat("kept thumb carries the previous arc rotation", freshPose.contactArcRotationRadians[0], 0.35f);
+        ok &= expectBool("kept thumb carries the previous hint validity", freshPose.contactArcRotationValid[0] == 1, true);
+        ok &= expectBool("kept thumb carries the previous lane selection",
+            freshPose.selectedThumbLane == rock::grab_finger_calibration_data::BakedGrabThumbLane::Opposition &&
+                freshPose.usedAlternateThumbCurve,
+            true);
+        ok &= expectFloat("kept thumb leaves the index value alone", freshPose.values[1], 0.3f);
+    }
+
     SolvedGrabFingerPose invalidPadPose{};
     invalidPadPose.solved = true;
     invalidPadPose.surfaceAimTarget[2] = RE::NiPoint3{ 9.0f, 0.0f, 0.0f };

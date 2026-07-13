@@ -34,6 +34,7 @@
 #include "physics-interaction/core/PhysicsHooks.h"
 #include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
+#include "physics-interaction/native/CharacterControllerRuntime.h"
 #include "physics-interaction/native/PhysicsShapeCast.h"
 #include "physics-interaction/native/PhysicsRecursiveWrappers.h"
 #include "physics-interaction/native/PhysicsUtils.h"
@@ -12067,117 +12068,144 @@ namespace rock
                 if (tryGetGrabDriveObjectWorldTransform(world, _savedObjectState.bodyId, currentGrabBodyWorld)) {
                     const RE::NiTransform currentNodeWorld = deriveNodeWorldFromBodyWorld(currentGrabBodyWorld, _grabFrame.bodyLocal);
                     publishFingerPose = grab_finger_pose_runtime::resolveSurfaceAimObjectLocal(_grabFingerPose, currentNodeWorld);
-                    const auto currentWorldTriangles = rebuildFingerPoseWorldTrianglesFromGrabFrame(_grabFrame, currentNodeWorld);
-                    const auto currentFingerPoseTargets = rebuildFingerPoseTargetsFromGrabFrame(_grabFrame, currentNodeWorld);
-                    root_flattened_finger_skeleton_runtime::Snapshot liveFingerSnapshot{};
-                    const bool liveFingerSnapshotValid =
-                        root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(_isLeft, liveFingerSnapshot);
                     /*
-                     * Held-seat curl re-solve (settle timing fix): the seat can
-                     * keep moving after TouchHeld (seated pivot reacquire,
-                     * settled visual relation, saved-offset retargets), so the
-                     * curls are swept again at the throttled update interval
-                     * against the live hand-object relation instead of wearing
-                     * the promotion-instant snapshot for the whole hold. Pinch
-                     * pockets keep their frozen at-grab pose.
+                     * Settle gate: a re-solve while the joints are still
+                     * blending toward the last adopted target reads a LAGGING
+                     * chord - the anchor de-rotation is off by exactly the
+                     * lag, the solve lands on the far side, and successive
+                     * adoptions ping-pong (the visible open/close twitch).
+                     * Solve only when the applied joints have reached the
+                     * commanded pose; the publish below keeps advancing the
+                     * smoothing every interval regardless.
                      */
-                    const bool heldPinchFingerPose = _grabFrame.seatMode == GrabSeatMode::PinchPocket;
-                    if (!heldPinchFingerPose && liveFingerSnapshotValid && !currentWorldTriangles.empty()) {
-                        RE::NiPoint3 fingerPosePivotWorld = computeGrabPivotAWorld(world, handWorldTransform);
-                        RE::NiPoint3 livePivotAWorld{};
-                        if (tryComputeGrabProxyLocalPalmPocketPivotAWorld(world, livePivotAWorld)) {
-                            fingerPosePivotWorld = livePivotAWorld;
+                    bool heldPoseSmoothingSettled = true;
+                    if (_hasGrabFingerJointPose) {
+                        const auto settledTargetJointPose = _grabFingerPose.hasJointValues ?
+                            _grabFingerPose.jointValues :
+                            grab_finger_pose_math::expandFingerCurlsToJointValues(_grabFingerPose.values);
+                        for (std::size_t joint = 0; joint < settledTargetJointPose.size(); ++joint) {
+                            if (std::fabs(_grabFingerJointPose[joint] - settledTargetJointPose[joint]) > 0.01f) {
+                                heldPoseSmoothingSettled = false;
+                                break;
+                            }
                         }
+                    }
+                    if (heldPoseSmoothingSettled) {
+                        const auto currentWorldTriangles = rebuildFingerPoseWorldTrianglesFromGrabFrame(_grabFrame, currentNodeWorld);
+                        const auto currentFingerPoseTargets = rebuildFingerPoseTargetsFromGrabFrame(_grabFrame, currentNodeWorld);
+                        root_flattened_finger_skeleton_runtime::Snapshot liveFingerSnapshot{};
+                        const bool liveFingerSnapshotValid =
+                            root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(_isLeft, liveFingerSnapshot);
                         /*
-                         * The pose currently driving the hand carries the
-                         * contact-row rotations its fingers were adopted at;
-                         * feeding them back de-rotates each live chord by the
-                         * KNOWN commanded rotation instead of re-estimating
-                         * it from live geometry. This is what makes held
-                         * re-solves feedback-free: a static hand-object
-                         * relation solves to the same values every interval,
-                         * so the adoption deadband actually holds.
+                         * Held-seat curl re-solve (settle timing fix): the seat can
+                         * keep moving after TouchHeld (seated pivot reacquire,
+                         * settled visual relation, saved-offset retargets), so the
+                         * curls are swept again at the throttled update interval
+                         * against the live hand-object relation instead of wearing
+                         * the promotion-instant snapshot for the whole hold. Pinch
+                         * pockets keep their frozen at-grab pose.
                          */
-                        const auto heldArcAnchorHints =
-                            grab_finger_pose_runtime::makeArcAnchorHintsFromPose(_grabFingerPose);
-                        auto liveFingerPose = grab_finger_pose_runtime::solveGrabFingerPoseFromTriangles(
-                            currentWorldTriangles,
-                            handWorldTransform,
-                            _isLeft,
-                            fingerPosePivotWorld,
-                            currentFingerPoseTargets,
-                            g_rockConfig.rockGrabFingerMinValue,
-                            g_rockConfig.rockGrabMaxTriangleDistance,
-                            true,
-                            &liveFingerSnapshot,
-                            g_rockConfig.rockGrabFingerRejectBacksideHits,
-                            g_rockConfig.rockGrabFingerSurfacePlaneToleranceGameUnits,
-                            _grabFrame.fingerPoseAimValid,
-                            g_rockConfig.rockGrabFingerSweepContactRadiusGameUnits,
-                            -1.0f,
-                            g_rockConfig.rockGrabThumbSweepMaxOpenValue,
-                            g_rockConfig.rockGrabFingerSweepMaxOpenValue,
-                            &heldArcAnchorHints);
-                        /*
-                         * Deadband: a held re-solve that lands within noise of
-                         * the current pose must not churn new FRIK targets every
-                         * interval - visible as finger micro-twitch. Only adopt
-                         * a re-solve that actually moved a finger.
-                         */
-                        float heldResolveMaxValueDelta = 0.0f;
-                        for (std::size_t fingerIndex = 0; fingerIndex < liveFingerPose.values.size(); ++fingerIndex) {
-                            heldResolveMaxValueDelta = (std::max)(heldResolveMaxValueDelta,
-                                std::fabs(liveFingerPose.values[fingerIndex] - _grabFingerPose.values[fingerIndex]));
-                        }
-                        if (liveFingerPose.solved && heldResolveMaxValueDelta > 0.02f) {
-                            grab_finger_pose_runtime::useThumbIndexCurveOnlyPose(liveFingerPose);
-                            grab_finger_pose_runtime::captureSurfaceAimObjectLocal(liveFingerPose, currentNodeWorld);
-                            _grabFingerPose = liveFingerPose;
-                            publishFingerPose = liveFingerPose;
-                            heldResolveAdopted = true;
-                        } else if (liveFingerPose.solved) {
+                        const bool heldPinchFingerPose = _grabFrame.seatMode == GrabSeatMode::PinchPocket;
+                        if (!heldPinchFingerPose && liveFingerSnapshotValid && !currentWorldTriangles.empty()) {
+                            RE::NiPoint3 fingerPosePivotWorld = computeGrabPivotAWorld(world, handWorldTransform);
+                            RE::NiPoint3 livePivotAWorld{};
+                            if (tryComputeGrabProxyLocalPalmPocketPivotAWorld(world, livePivotAWorld)) {
+                                fingerPosePivotWorld = livePivotAWorld;
+                            }
+                            /*
+                             * The pose currently driving the hand carries the
+                             * contact-row rotations its fingers were adopted at;
+                             * feeding them back de-rotates each live chord by the
+                             * KNOWN commanded rotation instead of re-estimating
+                             * it from live geometry. This is what makes held
+                             * re-solves feedback-free: a static hand-object
+                             * relation solves to the same values every interval,
+                             * so the adoption deadband actually holds.
+                             */
+                            const auto heldArcAnchorHints =
+                                grab_finger_pose_runtime::makeArcAnchorHintsFromPose(_grabFingerPose);
+                            auto liveFingerPose = grab_finger_pose_runtime::solveGrabFingerPoseFromTriangles(
+                                currentWorldTriangles,
+                                handWorldTransform,
+                                _isLeft,
+                                fingerPosePivotWorld,
+                                currentFingerPoseTargets,
+                                g_rockConfig.rockGrabFingerMinValue,
+                                g_rockConfig.rockGrabMaxTriangleDistance,
+                                true,
+                                &liveFingerSnapshot,
+                                g_rockConfig.rockGrabFingerRejectBacksideHits,
+                                g_rockConfig.rockGrabFingerSurfacePlaneToleranceGameUnits,
+                                _grabFrame.fingerPoseAimValid,
+                                g_rockConfig.rockGrabFingerSweepContactRadiusGameUnits,
+                                -1.0f,
+                                g_rockConfig.rockGrabThumbSweepMaxOpenValue,
+                                g_rockConfig.rockGrabFingerSweepMaxOpenValue,
+                                &heldArcAnchorHints);
+                            if (heldArcAnchorHints.valid[0] == 0) {
+                                grab_finger_pose_runtime::keepThumbPoseFromPrevious(liveFingerPose, _grabFingerPose);
+                            }
+                            /*
+                             * Deadband: a held re-solve that lands within noise of
+                             * the current pose must not churn new FRIK targets every
+                             * interval - visible as finger micro-twitch. Only adopt
+                             * a re-solve that actually moved a finger.
+                             */
+                            float heldResolveMaxValueDelta = 0.0f;
+                            for (std::size_t fingerIndex = 0; fingerIndex < liveFingerPose.values.size(); ++fingerIndex) {
+                                heldResolveMaxValueDelta = (std::max)(heldResolveMaxValueDelta,
+                                    std::fabs(liveFingerPose.values[fingerIndex] - _grabFingerPose.values[fingerIndex]));
+                            }
+                            if (liveFingerPose.solved && heldResolveMaxValueDelta > 0.02f) {
+                                grab_finger_pose_runtime::useThumbIndexCurveOnlyPose(liveFingerPose);
+                                grab_finger_pose_runtime::captureSurfaceAimObjectLocal(liveFingerPose, currentNodeWorld);
+                                _grabFingerPose = liveFingerPose;
+                                publishFingerPose = liveFingerPose;
+                                heldResolveAdopted = true;
+                            } else if (liveFingerPose.solved) {
+                                heldResolveQuiet = true;
+                            }
+                        } else if (heldPinchFingerPose) {
+                            // Pinch holds its frozen at-grab pose by design: every
+                            // interval is quiet, so pinch freezes immediately after
+                            // the smoothing settles.
                             heldResolveQuiet = true;
                         }
-                    } else if (heldPinchFingerPose) {
-                        // Pinch holds its frozen at-grab pose by design: every
-                        // interval is quiet, so pinch freezes immediately after
-                        // the smoothing settles.
-                        heldResolveQuiet = true;
-                    }
-                    /*
-                     * Pad probes no longer refine anything on the held path
-                     * (values belong to the sweep; target refinement is
-                     * capture-only) - they exist purely for the debug
-                     * overlay. They iterate every world triangle per finger,
-                     * which is real per-interval cost on high-poly weapon
-                     * and part meshes, so they run only while the overlay
-                     * actually consumes them.
-                     */
-                    if (g_rockConfig.rockDebugShowGrabFingerProbes) {
-                        std::array<grab_finger_pose_runtime::FingerPadSurfaceEvidence, 5> padEvidence{};
-                        (void)grab_finger_pose_runtime::refineGrabFingerPoseWithPadProbes(
-                            publishFingerPose,
-                            currentWorldTriangles,
-                            currentFingerPoseTargets,
-                            liveFingerSnapshot,
-                            currentNodeWorld,
-                            g_rockConfig.rockGrabMeshFingerPoseEnabled,
-                            _grabFingerPosePublished,
-                            padEvidence,
-                            false);
-                        const auto padDebug = makeFingerPadPublishDebug(publishFingerPose, padEvidence);
-                        _grabFingerPadProbeStart = padDebug.padProbeStart;
-                        _grabFingerPadProbeEnd = padDebug.padProbeEnd;
-                        _grabFingerPadProbeHit = padDebug.padProbeHit;
-                        _grabFingerPadProbeHitValid = padDebug.padProbeHitValid;
-                        _hasGrabFingerPadProbeDebug = padDebug.hasPadProbeDebug;
-                        _grabFingerSurfaceTarget = padDebug.surfaceTarget;
-                        _grabFingerSurfaceTargetValid = padDebug.surfaceTargetValid;
-                        _hasGrabFingerSurfaceTargetDebug = padDebug.hasSurfaceTargetDebug;
-                    } else {
-                        _hasGrabFingerPadProbeDebug = false;
-                        _hasGrabFingerSurfaceTargetDebug = false;
-                    }
+                        /*
+                         * Pad probes no longer refine anything on the held path
+                         * (values belong to the sweep; target refinement is
+                         * capture-only) - they exist purely for the debug
+                         * overlay. They iterate every world triangle per finger,
+                         * which is real per-interval cost on high-poly weapon
+                         * and part meshes, so they run only while the overlay
+                         * actually consumes them.
+                         */
+                        if (g_rockConfig.rockDebugShowGrabFingerProbes) {
+                            std::array<grab_finger_pose_runtime::FingerPadSurfaceEvidence, 5> padEvidence{};
+                            (void)grab_finger_pose_runtime::refineGrabFingerPoseWithPadProbes(
+                                publishFingerPose,
+                                currentWorldTriangles,
+                                currentFingerPoseTargets,
+                                liveFingerSnapshot,
+                                currentNodeWorld,
+                                g_rockConfig.rockGrabMeshFingerPoseEnabled,
+                                _grabFingerPosePublished,
+                                padEvidence,
+                                false);
+                            const auto padDebug = makeFingerPadPublishDebug(publishFingerPose, padEvidence);
+                            _grabFingerPadProbeStart = padDebug.padProbeStart;
+                            _grabFingerPadProbeEnd = padDebug.padProbeEnd;
+                            _grabFingerPadProbeHit = padDebug.padProbeHit;
+                            _grabFingerPadProbeHitValid = padDebug.padProbeHitValid;
+                            _hasGrabFingerPadProbeDebug = padDebug.hasPadProbeDebug;
+                            _grabFingerSurfaceTarget = padDebug.surfaceTarget;
+                            _grabFingerSurfaceTargetValid = padDebug.surfaceTargetValid;
+                            _hasGrabFingerSurfaceTargetDebug = padDebug.hasSurfaceTargetDebug;
+                        } else {
+                            _hasGrabFingerPadProbeDebug = false;
+                            _hasGrabFingerSurfaceTargetDebug = false;
+                        }
+                    } // heldPoseSmoothingSettled
                 } else {
                     _grabFingerPadProbeStart = {};
                     _grabFingerPadProbeEnd = {};
@@ -12199,49 +12227,34 @@ namespace rock
 
                 /*
                  * Freeze accounting. Quiet = a VALID re-solve landed inside
-                 * the adoption deadband (a failed transform read or unsolved
-                 * pose is evidence of nothing and leaves the counter alone).
-                 * The smoothing gate guarantees the last publish already
-                 * reached its target, so freezing stops republishes without
-                 * stranding a mid-blend pose.
+                 * the adoption deadband (a failed transform read, an unsolved
+                 * pose, or an interval skipped by the settle gate is evidence
+                 * of nothing and leaves the counter alone). Quiet re-solves
+                 * only happen with the smoothing already settled, so freezing
+                 * never strands a mid-blend pose.
                  */
                 constexpr int kGrabFingerPoseFreezeQuietResolves = 3;
-                constexpr float kGrabFingerPoseFreezeMaxJointDelta = 0.01f;
                 if (heldResolveAdopted) {
                     _grabFingerPoseQuietResolves = 0;
                 } else if (heldResolveQuiet) {
                     ++_grabFingerPoseQuietResolves;
                 }
                 if (_grabFingerPoseQuietResolves >= kGrabFingerPoseFreezeQuietResolves) {
-                    bool smoothingConverged = true;
-                    if (_hasGrabFingerJointPose) {
-                        const auto targetJointPose = _grabFingerPose.hasJointValues ?
-                            _grabFingerPose.jointValues :
-                            grab_finger_pose_math::expandFingerCurlsToJointValues(_grabFingerPose.values);
-                        for (std::size_t joint = 0; joint < targetJointPose.size(); ++joint) {
-                            if (std::fabs(_grabFingerJointPose[joint] - targetJointPose[joint]) > kGrabFingerPoseFreezeMaxJointDelta) {
-                                smoothingConverged = false;
-                                break;
-                            }
-                        }
-                    }
-                    if (smoothingConverged) {
-                        _grabFingerPoseFrozen = true;
-                        _grabFingerPadProbeStart = {};
-                        _grabFingerPadProbeEnd = {};
-                        _grabFingerPadProbeHit = {};
-                        _grabFingerPadProbeHitValid = {};
-                        _hasGrabFingerPadProbeDebug = false;
-                        ROCK_LOG_INFO(Hand,
-                            "{} hand FINGER POSE FROZEN: {} quiet re-solves, values=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f})",
-                            handName(),
-                            _grabFingerPoseQuietResolves,
-                            _grabFingerPose.values[0],
-                            _grabFingerPose.values[1],
-                            _grabFingerPose.values[2],
-                            _grabFingerPose.values[3],
-                            _grabFingerPose.values[4]);
-                    }
+                    _grabFingerPoseFrozen = true;
+                    _grabFingerPadProbeStart = {};
+                    _grabFingerPadProbeEnd = {};
+                    _grabFingerPadProbeHit = {};
+                    _grabFingerPadProbeHitValid = {};
+                    _hasGrabFingerPadProbeDebug = false;
+                    ROCK_LOG_INFO(Hand,
+                        "{} hand FINGER POSE FROZEN: {} quiet re-solves, values=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f})",
+                        handName(),
+                        _grabFingerPoseQuietResolves,
+                        _grabFingerPose.values[0],
+                        _grabFingerPose.values[1],
+                        _grabFingerPose.values[2],
+                        _grabFingerPose.values[3],
+                        _grabFingerPose.values[4]);
                 }
             }
         }
@@ -12512,6 +12525,7 @@ namespace rock
         std::uint64_t flushSequence = 0;
         grab_authority_source_clock::ResampleAction resampleAction = grab_authority_source_clock::ResampleAction::Hold;
         std::uint32_t resampleRebaseCount = 0;
+        bool roomFeedForwardApplied = false;
         GrabAngularAuthority angularAuthority = GrabAngularAuthority::HknpRagdollMotorAtom;
         {
             std::scoped_lock lock(_grabAuthorityProxyMutex);
@@ -12561,6 +12575,30 @@ namespace rock
             // sample. Rotation deliberately stays on the sampled path.
             pending.proxyWorld.translate = _grabAuthoritySourceClock.evaluate(driveDelta, resampleAction);
             resampleRebaseCount = _grabAuthoritySourceClock.rebaseCount;
+            /*
+             * Room-velocity feed-forward (one-substep prediction): the room
+             * origin is a physics-clock signal but the target was sampled on
+             * the game clock one frame earlier, so the resampled position
+             * replays room motion one substep late and the replay lag
+             * oscillates with the quantized substep delta (the residual
+             * stick-locomotion shimmer). Predict the room component to this
+             * substep's END using the LIVE character-controller velocity --
+             * the smoothest signal in the chain (2026-07-13 telemetry:
+             * std 2.89 vs 13.69 gu/s for game-clock room sampling). Applied
+             * to the same flush-local copy as the resample so every consumer
+             * stays consistent; fail-closed on read failure or implausible
+             * speed; identically zero when standing.
+             */
+            if (g_rockConfig.rockGrabRoomVelocityFeedForward) {
+                RE::NiPoint3 liveLocomotionVelocity{};
+                if (character_controller_runtime::tryGetPlayerLocomotionVelocityRawGameUnits(liveLocomotionVelocity)) {
+                    pending.proxyWorld.translate = grab_authority_source_clock::applyRoomVelocityFeedForward(
+                        pending.proxyWorld.translate,
+                        liveLocomotionVelocity,
+                        driveDelta,
+                        roomFeedForwardApplied);
+                }
+            }
             float linearVelocityHavok[4]{};
             float angularVelocityHavok[4]{};
             float nativeLinearVelocityIgnored[4]{};
@@ -13127,7 +13165,7 @@ namespace rock
             std::uint32_t filterInfo = 0;
             const bool filterReadOk = havok_runtime::tryReadFilterInfo(world, proxyBodyId, filterInfo);
             ROCK_LOG_DEBUG(Hand,
-                "{} PROXY GRAB AUTHORITY: seq={}/{} diag=bodyFrameConstraint+queuedTarget+generatedKeyframedProxy proxyBody={} constraint={} substep={}/{} dt={:.6f} resample={} rebases={} targetSrc={} target=({:.1f},{:.1f},{:.1f}) desiredBody=({:.1f},{:.1f},{:.1f}) angularAuthority={} angularRef={} solverAngular=ragdollAtom angularBudget={:.3f} pivotB=({:.2f},{:.2f},{:.2f}) err={:.2f}gu rotErr={:.2f}deg proxyDrive=driveToKeyFrame palmRef={} palmSrc={} palmMotion={} proxyVelSource={} proxyVel={:.3f}hk proxyAngVel={:.3f}rad/s longLever={:.1f}gu proxyRead={} proxySrc={} proxyMotion={} proxyErr={:.3f}gu/{:.2f}deg forceBudget={:.2f} colliding={} filterRead={} filter=0x{:08X} noContact={}",
+                "{} PROXY GRAB AUTHORITY: seq={}/{} diag=bodyFrameConstraint+queuedTarget+generatedKeyframedProxy proxyBody={} constraint={} substep={}/{} dt={:.6f} resample={} rebases={} ffwd={} targetSrc={} target=({:.1f},{:.1f},{:.1f}) desiredBody=({:.1f},{:.1f},{:.1f}) angularAuthority={} angularRef={} solverAngular=ragdollAtom angularBudget={:.3f} pivotB=({:.2f},{:.2f},{:.2f}) err={:.2f}gu rotErr={:.2f}deg proxyDrive=driveToKeyFrame palmRef={} palmSrc={} palmMotion={} proxyVelSource={} proxyVel={:.3f}hk proxyAngVel={:.3f}rad/s longLever={:.1f}gu proxyRead={} proxySrc={} proxyMotion={} proxyErr={:.3f}gu/{:.2f}deg forceBudget={:.2f} colliding={} filterRead={} filter=0x{:08X} noContact={}",
                 handName(),
                 flushSequence,
                 queuedSequence,
@@ -13138,6 +13176,7 @@ namespace rock
                 havok_physics_timing::driveDeltaSeconds(timing),
                 grab_authority_source_clock::resampleActionName(resampleAction),
                 resampleRebaseCount,
+                roomFeedForwardApplied ? "on" : "off",
                 pending.proxyFrameSource ? pending.proxyFrameSource : "unknown",
                 pending.proxyWorld.translate.x,
                 pending.proxyWorld.translate.y,

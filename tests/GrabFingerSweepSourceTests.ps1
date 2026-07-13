@@ -188,6 +188,29 @@ Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
     '_grabFingerPoseFrozen = false;'
 ) 'Pose re-captures must unfreeze the held finger pose.'
 
+# Solving against a chain still blending toward the last adopted target reads
+# a LAGGING chord: the anchor de-rotation is off by the lag and successive
+# adoptions ping-pong (open/close twitch). The held re-solve must be gated on
+# the applied joints having reached the commanded pose; the publish keeps
+# advancing the smoothing every interval regardless.
+Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
+    'bool heldPoseSmoothingSettled = true;',
+    'if \(heldPoseSmoothingSettled\) \{',
+    'rebuildFingerPoseWorldTrianglesFromGrabFrame\(_grabFrame, currentNodeWorld\)',
+    'solveGrabFingerPoseFromTriangles\(',
+    '\} // heldPoseSmoothingSettled',
+    'applyRockGrabHandPose\('
+) 'Held re-solves must wait for the pose smoothing to settle; publishes continue regardless.'
+
+# A thumb without an exact arc-anchor hint must keep its previous pose: the
+# raw-chord anchor rotates with the thumb's own curl, so an unhinted re-solve
+# period-2 cycles between two poses (the thumb open/close twitch).
+Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
+    '&heldArcAnchorHints\);',
+    'heldArcAnchorHints\.valid\[0\] == 0',
+    'keepThumbPoseFromPrevious\(liveFingerPose, _grabFingerPose\);'
+) 'Unhinted held thumb re-solves must keep the previous thumb pose.'
+
 # Pad probes on the publish paths are debug-overlay-only work (target
 # refinement is capture-only, open bias is deleted) and iterate every world
 # triangle per finger - they must not run when the overlay is off.
