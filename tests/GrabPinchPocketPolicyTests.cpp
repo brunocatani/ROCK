@@ -89,6 +89,27 @@ int main()
     ok &= expectFalse("can-sized object above compact limit rejected", canSizedObject.accept);
     ok &= expectReason("can-sized object reason", canSizedObject.reason, "objectTooLarge");
 
+    auto mugSizedObject = evaluateObject(validInput(bounds(7.0f, 7.0f, 5.6f)));
+    ok &= expectFalse("mug-sized compact object too thick to pinch", mugSizedObject.accept);
+    ok &= expectFalse("mug-sized compact flag rejected", mugSizedObject.compactObject);
+    ok &= expectReason("mug-sized compact reason", mugSizedObject.reason, "compactTooThickToPinch");
+
+    auto shortCanObject = evaluateObject(validInput(bounds(6.0f, 4.7f, 4.7f)));
+    ok &= expectFalse("short can too thick to pinch", shortCanObject.accept);
+    ok &= expectReason("short can reason", shortCanObject.reason, "compactTooThickToPinch");
+
+    auto coinObject = evaluateObject(validInput(bounds(2.0f, 2.0f, 0.3f)));
+    ok &= expectTrue("coin accepted", coinObject.accept);
+    ok &= expectReason("coin reason", coinObject.reason, "pinchCompact");
+
+    auto cigarObject = evaluateObject(validInput(bounds(7.5f, 1.3f, 1.3f)));
+    ok &= expectTrue("cigar accepted", cigarObject.accept);
+    ok &= expectReason("cigar reason", cigarObject.reason, "pinchCompact");
+
+    auto thicknessLimitObject = evaluateObject(validInput(bounds(6.0f, 5.0f, 4.0f)));
+    ok &= expectTrue("compact object accepts the configured 4gu thickness limit", thicknessLimitObject.accept);
+    ok &= expectReason("thickness limit reason", thicknessLimitObject.reason, "pinchCompact");
+
     auto thinRod = evaluateObject(validInput(bounds(17.5f, 3.5f, 2.0f)));
     ok &= expectTrue("short thin rod accepted", thinRod.accept);
     ok &= expectTrue("short thin rod flag", thinRod.thinRod);

@@ -267,13 +267,23 @@ namespace rock::grab_pinch_pocket_policy
             return decision;
         }
 
-        decision.compactObject = input.mesh.maxExtentGameUnits <= config.compactMaxExtentGameUnits;
+        /*
+         * Pinchability is about the THINNEST span, not overall size: the thumb
+         * and index pads oppose across the object's smallest extent. A mug or
+         * a can fits the compact max-extent budget but is too thick to hold
+         * between two pads - those must fall through to the palm machinery.
+         * The thin-rod cross-section limit doubles as the pinchable-thickness
+         * bound so coins, cigars, pens, and cards keep passing.
+         */
+        const bool compactBySize = input.mesh.maxExtentGameUnits <= config.compactMaxExtentGameUnits;
+        const bool pinchableThickness = input.mesh.minExtentGameUnits <= config.thinRodMaxCrossSectionGameUnits;
+        decision.compactObject = compactBySize && pinchableThickness;
         decision.thinRod =
             input.mesh.maxExtentGameUnits <= config.thinRodMaxLengthGameUnits &&
             input.mesh.middleExtentGameUnits <= config.thinRodMaxCrossSectionGameUnits &&
             input.mesh.minExtentGameUnits <= config.thinRodMaxCrossSectionGameUnits;
         if (!decision.compactObject && !decision.thinRod) {
-            decision.reason = "objectTooLarge";
+            decision.reason = compactBySize && !pinchableThickness ? "compactTooThickToPinch" : "objectTooLarge";
             return decision;
         }
 

@@ -101,6 +101,10 @@ Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' '
     'Debug overlay must expose per-hand palm and pinch pocket markers.'
 Require-Text 'CMakeLists.txt' 'ROCKGrabPinchPocketPolicyTests' `
     'Pinch-pocket policy tests must be part of ROCKPolicyTestBinaries.'
+Require-Text 'src/physics-interaction/grab/GrabPinchPocket.h' 'compactBySize && pinchableThickness[\s\S]*compactTooThickToPinch' `
+    'Compact pinch classification must also bound the thinnest extent - mugs and cans are compact by size but too thick to hold between two finger pads.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'if \(usingPinchPocket && !looseWeaponPrimaryAttachApplied\) \{[\s\S]*pinchPocketCandidate\.pinchAxisWorld[\s\S]*computeGrabSeatDepthStop\([\s\S]*computeGrabSeatDepthStop\([\s\S]*extentTowardIndex\.depthGameUnits - extentTowardThumb\.depthGameUnits\) \* 0\.5f[\s\S]*grabPivotAWorld = grabPivotAWorld - pinchAxisWorld \* pinchCenterOffsetGameUnits' `
+    'Pinch capture must center the object mid-thickness at the pocket by measuring mesh support extents both ways along the pinch axis and offsetting pivot A.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'Grab pinch-pocket source boundary failed:'

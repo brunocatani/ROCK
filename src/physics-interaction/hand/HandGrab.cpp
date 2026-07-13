@@ -10034,6 +10034,53 @@ namespace rock
                         }
                     }
 
+                    /*
+                     * Pinch seat centering: the freeze puts the pinch SURFACE hit
+                     * on the pocket point, which parks the object's near face at
+                     * the pocket and shifts its body toward one finger pad by its
+                     * full local thickness. Measure the mesh extents both ways
+                     * along the pinch axis from the grip point (small footprint -
+                     * only the material actually between the pads matters) and
+                     * offset pivot A so the object's MID-THICKNESS sits exactly at
+                     * the pocket middle. Same pivot-A mechanism as the depth stop;
+                     * the correction is zero for a surface hit already centered.
+                     */
+                    float pinchCenterOffsetGameUnits = 0.0f;
+                    if (usingPinchPocket && !looseWeaponPrimaryAttachApplied) {
+                        const RE::NiPoint3 pinchAxisWorld = normalizeOrZero(pinchPocketCandidate.pinchAxisWorld);
+                        if (lengthSquared(pinchAxisWorld) > 0.000001f) {
+                            // Finger-pad scale; pinch objects are small by classification.
+                            constexpr float kPinchCenterFootprintRadiusGameUnits = 2.5f;
+                            constexpr float kPinchCenterMaxExtentGameUnits = 8.0f;
+                            const auto extentTowardIndex = computeGrabSeatDepthStop(
+                                grabLocalMeshTriangles,
+                                objectWorldTransform,
+                                grabGripPoint,
+                                RE::NiPoint3{ -pinchAxisWorld.x, -pinchAxisWorld.y, -pinchAxisWorld.z },
+                                kPinchCenterFootprintRadiusGameUnits,
+                                kPinchCenterMaxExtentGameUnits);
+                            const auto extentTowardThumb = computeGrabSeatDepthStop(
+                                grabLocalMeshTriangles,
+                                objectWorldTransform,
+                                grabGripPoint,
+                                pinchAxisWorld,
+                                kPinchCenterFootprintRadiusGameUnits,
+                                kPinchCenterMaxExtentGameUnits);
+                            if (extentTowardIndex.valid && extentTowardThumb.valid) {
+                                pinchCenterOffsetGameUnits =
+                                    (extentTowardIndex.depthGameUnits - extentTowardThumb.depthGameUnits) * 0.5f;
+                                if (std::fabs(pinchCenterOffsetGameUnits) > 0.05f) {
+                                    grabPivotAWorld = grabPivotAWorld - pinchAxisWorld * pinchCenterOffsetGameUnits;
+                                    desiredBodyWorld = grab_frame_math::shiftObjectToAlignGripWithPocket(
+                                        grabBodyWorldAtGrab,
+                                        grabPivotAWorld,
+                                        grabGripPoint);
+                                    desiredObjectWorld = deriveNodeWorldFromBodyWorld(desiredBodyWorld, objectToBodyAtGrab);
+                                }
+                            }
+                        }
+                    }
+
                     selectedGripPointLocal = transform_math::worldPointToLocal(objectWorldTransform, grabGripPoint);
                     selectedPivotBBodyLocalGame = transform_math::worldPointToLocal(grabBodyWorldAtGrab, grabGripPoint);
                     const bool effectivePinchPocket = usingPinchPocket && !looseWeaponPrimaryAttachApplied;
@@ -10171,7 +10218,7 @@ namespace rock
                         "{} THREE-PHASE GRAB CAPTURE: relation={} seat={} rotation={} phase={} reason={} touchContact={} stableTouch={} pocket=({:.1f},{:.1f},{:.1f}) "
                         "palm=({:.1f},{:.1f},{:.1f}) normal=({:.3f},{:.3f},{:.3f}) seed=({:.1f},{:.1f},{:.1f}) "
                         "grip=({:.1f},{:.1f},{:.1f}) gripLocal=({:.2f},{:.2f},{:.2f}) pivotB=({:.2f},{:.2f},{:.2f}) dist={:.1f} signedPalm={:.1f} "
-                        "fullHeldAuthority={} pivotAuthoritySource={} positionOnlyPatch={} normalTrusted={} support={} supportPivot={} supportConfidence={:.2f} supportSpan={:.2f} supportShift={:.2f} supportReason={} supportSamples={} supportMeshHits={} supportRejectOwner={} supportRejectDistance={} settledVisualRequired={} pullSeatSafety={} pullSeatDot={:.3f} pullSeatSigned={:.1f} pullSeatDist={:.1f} seatDepth={:.2f} seatDepthOffset={:.2f} seatDepthSamples={} seatDepthReason={} seatAlignDeg={:.1f} seatAlignReason={} inset={:.2f} insetSource={} looseWeaponPrimaryAttach={} attachReason={} attachVisible={}",
+                        "fullHeldAuthority={} pivotAuthoritySource={} positionOnlyPatch={} normalTrusted={} support={} supportPivot={} supportConfidence={:.2f} supportSpan={:.2f} supportShift={:.2f} supportReason={} supportSamples={} supportMeshHits={} supportRejectOwner={} supportRejectDistance={} settledVisualRequired={} pullSeatSafety={} pullSeatDot={:.3f} pullSeatSigned={:.1f} pullSeatDist={:.1f} seatDepth={:.2f} seatDepthOffset={:.2f} seatDepthSamples={} seatDepthReason={} seatAlignDeg={:.1f} seatAlignReason={} pinchCenter={:.2f} inset={:.2f} insetSource={} looseWeaponPrimaryAttach={} attachReason={} attachVisible={}",
                         handName(),
                         relationMode,
                         grabSeatModeName(_grabFrame.seatMode),
@@ -10228,6 +10275,7 @@ namespace rock
                         seatDepthStop.reason,
                         seatAlignmentAngleDegrees,
                         seatAlignmentReason,
+                        pinchCenterOffsetGameUnits,
                         gripArea.seedInsetGameUnits,
                         gripArea.fallbackReason,
                         looseWeaponPrimaryAttachApplied ? "yes" : "no",
