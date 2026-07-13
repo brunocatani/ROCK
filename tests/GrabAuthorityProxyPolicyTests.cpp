@@ -205,10 +205,11 @@ int main()
                 ok = false;
             }
 
-            const int decompositionModes[3]{
+            const int decompositionModes[4]{
                 autoDecompositionMode,
                 rock::grab_constraint_math::kGrabRagdollDecompositionModeRelationTransformB,
                 rock::grab_constraint_math::kGrabRagdollDecompositionModeNeutralTransformB,
+                rock::grab_constraint_math::kGrabRagdollDecompositionModeAlignedTransformB,
             };
             for (const int decompositionMode : decompositionModes) {
                 float transformBRotation[12]{};
@@ -225,10 +226,17 @@ int main()
 
                 const bool relationTransformB =
                     decompositionMode == rock::grab_constraint_math::kGrabRagdollDecompositionModeRelationTransformB;
+                const bool alignedTransformB =
+                    decompositionMode == rock::grab_constraint_math::kGrabRagdollDecompositionModeAlignedTransformB;
+                // Aligned mode writes rows, so a column read recovers the transpose.
                 const RE::NiMatrix3 expectedCreationTransformB =
-                    relationTransformB ? expectedInitialProxyInBody.rotate : identityTransform().rotate;
+                    alignedTransformB ? rock::transform_math::transposeRotation(expectedInitialProxyInBody.rotate) :
+                    relationTransformB ? expectedInitialProxyInBody.rotate :
+                                         identityTransform().rotate;
                 const RE::NiMatrix3 expectedHeldTransformB =
-                    relationTransformB ? expectedHeldProxyInBody.rotate : identityTransform().rotate;
+                    alignedTransformB ? rock::transform_math::transposeRotation(expectedHeldProxyInBody.rotate) :
+                    relationTransformB ? expectedHeldProxyInBody.rotate :
+                                         identityTransform().rotate;
 
                 ok &= expectNear(
                     (std::string("creation transformB decomposition mode ") + std::to_string(decompositionMode)).c_str(),
@@ -243,6 +251,16 @@ int main()
                 ok &= expectNear("creation transformB relation pivot x", transformBTranslation[0], expectedInitialPivotB.x * gameToHavokScale, 0.001f);
                 ok &= expectNear("creation transformB relation pivot y", transformBTranslation[1], expectedInitialPivotB.y * gameToHavokScale, 0.001f);
                 ok &= expectNear("creation transformB relation pivot z", transformBTranslation[2], expectedInitialPivotB.z * gameToHavokScale, 0.001f);
+
+                if (alignedTransformB) {
+                    for (int i = 0; i < 12; ++i) {
+                        if (transformBRotation[i] != targetBRca[i]) {
+                            std::printf("aligned creation transformB[%d]=%.6f must equal targetBRca[%d]=%.6f\n",
+                                i, transformBRotation[i], i, targetBRca[i]);
+                            ok = false;
+                        }
+                    }
+                }
 
                 rock::grab_constraint_math::writeGrabConstraintHeldTargetAtoms(
                     transformBRotation,
@@ -266,6 +284,16 @@ int main()
                 ok &= expectNear("held transformB relation pivot x", transformBTranslation[0], expectedHeldPivotB.x * gameToHavokScale, 0.001f);
                 ok &= expectNear("held transformB relation pivot y", transformBTranslation[1], expectedHeldPivotB.y * gameToHavokScale, 0.001f);
                 ok &= expectNear("held transformB relation pivot z", transformBTranslation[2], expectedHeldPivotB.z * gameToHavokScale, 0.001f);
+
+                if (alignedTransformB) {
+                    for (int i = 0; i < 12; ++i) {
+                        if (transformBRotation[i] != targetBRca[i]) {
+                            std::printf("aligned held transformB[%d]=%.6f must equal targetBRca[%d]=%.6f\n",
+                                i, transformBRotation[i], i, targetBRca[i]);
+                            ok = false;
+                        }
+                    }
+                }
             }
         }
     }
