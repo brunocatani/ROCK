@@ -561,6 +561,14 @@ namespace rock
                 input.start = lookup.fingers[fingerIndex][2];
                 input.end = makeIdentityTransform();
                 input.extrapolateFromPrevious = true;
+                /*
+                 * The distal phalanx has its own flexion angle (FRIK writes
+                 * prox/mid/dist joint rotations); extrapolating straight along
+                 * the middle→distal segment left the tip collider unbent while
+                 * the rendered fingertip curled. Follow the distal bone's own
+                 * long axis instead.
+                 */
+                input.extrapolateAlongStartBoneAxis = true;
                 input.extrapolatedLengthScale = 0.65f;
             }
         } else {

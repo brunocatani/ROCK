@@ -314,5 +314,67 @@ int main()
         }
     }
 
+    {
+        /*
+         * Tip-segment extrapolation must follow the distal bone's own long
+         * axis (the rendered phalanx flexion), not continue the middle→distal
+         * segment straight. Convention detection happens on the previous bone.
+         */
+        RE::NiTransform middle = identityTransform();
+        RE::NiTransform distal = identityTransform();
+        middle.translate = RE::NiPoint3{ 0.0f, 0.0f, 0.0f };
+        distal.translate = RE::NiPoint3{ 4.0f, 0.0f, 0.0f };
+
+        // Distal joint curled 60 degrees: with the stored-rotation row
+        // convention the builder's local→world helper uses, this matrix maps
+        // local +X to (cos60, +sin60, 0) in world — the bent phalanx axis.
+        const float curl = 60.0f * 3.14159265f / 180.0f;
+        const RE::NiPoint3 curledX{ std::cos(curl), -std::sin(curl), 0.0f };
+        const RE::NiPoint3 curledY{ std::sin(curl), std::cos(curl), 0.0f };
+        const RE::NiPoint3 bentAxisWorld{ std::cos(curl), std::sin(curl), 0.0f };
+        distal.rotate = rock::hand_bone_collider_geometry_math::matrixFromAxes<RE::NiMatrix3>(
+            curledX, curledY, RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
+
+        rock::hand_bone_collider_geometry_math::BoneColliderFrameInput<RE::NiTransform, RE::NiPoint3> input{};
+        input.previous = middle;
+        input.start = distal;
+        input.end = identityTransform();
+        input.radius = 0.5f;
+        input.convexRadius = 0.1f;
+        input.extrapolateFromPrevious = true;
+        input.extrapolateAlongStartBoneAxis = true;
+        input.extrapolatedLengthScale = 0.65f;
+
+        const auto bent = rock::hand_bone_collider_geometry_math::buildSegmentColliderFrame(input);
+        if (!bent.valid) {
+            std::printf("bone-axis tip extrapolation frame was not valid\n");
+            ok = false;
+        } else {
+            ok &= expectNear("bone-axis tip length keeps parent scale", bent.length, 4.0f * 0.65f);
+            ok &= expectVectorNear("bone-axis tip follows distal flexion", bent.xAxis, bentAxisWorld);
+            const RE::NiPoint3 expectedCenter{
+                4.0f + bentAxisWorld.x * 4.0f * 0.65f * 0.5f,
+                bentAxisWorld.y * 4.0f * 0.65f * 0.5f,
+                0.0f,
+            };
+            ok &= expectVectorNear("bone-axis tip center sits on the bent segment", bent.transform.translate, expectedCenter);
+        }
+
+        // A straight distal joint must reproduce the legacy straight
+        // continuation exactly.
+        input.start.rotate = identityTransform().rotate;
+        const auto straight = rock::hand_bone_collider_geometry_math::buildSegmentColliderFrame(input);
+        input.extrapolateAlongStartBoneAxis = false;
+        const auto legacy = rock::hand_bone_collider_geometry_math::buildSegmentColliderFrame(input);
+        if (!straight.valid || !legacy.valid) {
+            std::printf("straight tip extrapolation frames were not valid\n");
+            ok = false;
+        } else {
+            ok &= expectNear("straight tip length matches legacy", straight.length, legacy.length);
+            ok &= expectVectorNear("straight tip axis matches legacy", straight.xAxis, legacy.xAxis);
+            ok &= expectVectorNear("straight tip center matches legacy", straight.transform.translate, legacy.transform.translate);
+        }
+    }
+
     return ok ? 0 : 1;
 }

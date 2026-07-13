@@ -505,6 +505,16 @@ namespace rock::hand_bone_collider_geometry_math
         float radius = 0.5f;
         float convexRadius = 0.1f;
         bool extrapolateFromPrevious = false;
+        /*
+         * With extrapolateFromPrevious: aim the extrapolated end along the
+         * START bone's own long axis instead of continuing the previous→start
+         * segment straight. The rig's long-axis convention is detected on the
+         * PREVIOUS bone (a bone's child sits on its long axis at any curl) and
+         * applied to the start bone's rotation, so a flexed distal joint bends
+         * the tip collider the way the rendered phalanx bends. Falls back to
+         * the straight continuation when the detected axis is implausible.
+         */
+        bool extrapolateAlongStartBoneAxis = false;
         float extrapolatedLengthScale = 0.65f;
     };
 
@@ -544,7 +554,35 @@ namespace rock::hand_bone_collider_geometry_math
             if (!std::isfinite(parentLength) || parentLength <= 1.0e-5f || !std::isfinite(input.extrapolatedLengthScale)) {
                 return result;
             }
-            end = add(input.start.translate, mul(parentToTip, input.extrapolatedLengthScale));
+            Vector extrapolationDirection = mul(parentToTip, 1.0f / parentLength);
+            if (input.extrapolateAlongStartBoneAxis) {
+                const Vector localAxes[3] = {
+                    makeVector<Vector>(1.0f, 0.0f, 0.0f),
+                    makeVector<Vector>(0.0f, 1.0f, 0.0f),
+                    makeVector<Vector>(0.0f, 0.0f, 1.0f),
+                };
+                float bestAbsDot = 0.0f;
+                Vector bestLocalAxis{};
+                for (const auto& localAxis : localAxes) {
+                    const Vector previousAxisWorld = debug_axis_math::rotateNiLocalToWorld(input.previous.rotate, localAxis);
+                    const float axisDot = dot(previousAxisWorld, extrapolationDirection);
+                    if (std::isfinite(axisDot) && std::fabs(axisDot) > bestAbsDot) {
+                        bestAbsDot = std::fabs(axisDot);
+                        bestLocalAxis = axisDot >= 0.0f ? localAxis : mul(localAxis, -1.0f);
+                    }
+                }
+                // Plausibility gate: the rig long axis must roughly match the
+                // observed segment or the bone data is not trustworthy this
+                // frame — keep the straight continuation instead.
+                if (bestAbsDot > 0.5f) {
+                    const Vector startAxisWorld = debug_axis_math::rotateNiLocalToWorld(input.start.rotate, bestLocalAxis);
+                    const float startAxisLength = length(startAxisWorld);
+                    if (std::isfinite(startAxisLength) && startAxisLength > 1.0e-5f) {
+                        extrapolationDirection = mul(startAxisWorld, 1.0f / startAxisLength);
+                    }
+                }
+            }
+            end = add(input.start.translate, mul(extrapolationDirection, parentLength * input.extrapolatedLengthScale));
         }
 
         const Vector segment = sub(end, start);
