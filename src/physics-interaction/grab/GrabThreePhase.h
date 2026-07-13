@@ -382,7 +382,6 @@ namespace rock::grab_three_phase
         float behindPalmToleranceGameUnits = 1.5f;
         float touchAcquireDistanceGameUnits = 4.0f;
         float pocketRadiusGameUnits = 9.0f;
-        float pulledAdjustDistanceGameUnits = 0.0f;
         RE::NiPoint3 palmNormalWorld{};
         RE::NiPoint3 gripNormalWorld{};
     };
@@ -391,8 +390,6 @@ namespace rock::grab_three_phase
     {
         bool allowImmediateTouchHeld = true;
         bool requireSettledVisualRelation = false;
-        bool allowPulledAdjust = false;
-        float adjustDistanceGameUnits = 0.0f;
         float normalDotPalm = 0.0f;
         const char* reason = "notPullCatch";
     };
@@ -472,10 +469,6 @@ namespace rock::grab_three_phase
 
         decision.allowImmediateTouchHeld = true;
         decision.requireSettledVisualRelation = false;
-        decision.allowPulledAdjust =
-            std::isfinite(input.pulledAdjustDistanceGameUnits) && input.pulledAdjustDistanceGameUnits > 0.0f;
-        decision.adjustDistanceGameUnits =
-            decision.allowPulledAdjust ? (std::max)(0.0f, input.pulledAdjustDistanceGameUnits) : 0.0f;
         decision.reason = "pullCatchSeatSafe";
         return decision;
     }

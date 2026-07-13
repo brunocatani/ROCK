@@ -516,6 +516,9 @@ namespace rock
         rockGrabNearConvergeDistanceGameUnits = 28.0f;
         rockGrabPocketDepthGameUnits = 7.0f;
         rockGrabPocketRadiusGameUnits = 9.0f;
+        rockGrabSeatDepthMaxGameUnits = 30.0f;
+        rockGrabSeatDepthFootprintRadiusGameUnits = 10.0f;
+        rockGrabSeatDepthSkinGameUnits = 0.5f;
         rockGrabGripInsetGameUnits = 2.0f;
         rockGrabGripMaxInsetGameUnits = 6.0f;
         rockGrabConvergeMaxTimeSeconds = 0.35f;
@@ -587,7 +590,6 @@ namespace rock
         rockSelectedCloseFingerAnimMaxHandSpeed = 0.9f;
         rockSelectedCloseFingerAnimValue = 0.9f;
         rockPulledAngularDamping = 8.0f;
-        rockPulledGrabHandAdjustDistanceGameUnits = 10.5f;
 
         rockRightGrabLegacyPalmPivotAHandspace = RE::NiPoint3(6.0f, -2.0f, 0.2f);
         rockLeftGrabLegacyPalmPivotAHandspace = RE::NiPoint3(6.0f, -2.0f, -0.2f);
@@ -1896,6 +1898,25 @@ namespace rock
             ROCK_LOG_WARN(Config, "Invalid fGrabPocketRadiusGameUnits={} -- using 9.0", rockGrabPocketRadiusGameUnits);
             rockGrabPocketRadiusGameUnits = 9.0f;
         }
+        // Seat depth stop: 0 disables the correction entirely.
+        rockGrabSeatDepthMaxGameUnits = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabSeatDepthMaxGameUnits", rockGrabSeatDepthMaxGameUnits));
+        if (!std::isfinite(rockGrabSeatDepthMaxGameUnits) || rockGrabSeatDepthMaxGameUnits < 0.0f || rockGrabSeatDepthMaxGameUnits > 100.0f) {
+            ROCK_LOG_WARN(Config, "Invalid fGrabSeatDepthMaxGameUnits={} -- using 30.0", rockGrabSeatDepthMaxGameUnits);
+            rockGrabSeatDepthMaxGameUnits = 30.0f;
+        }
+        rockGrabSeatDepthFootprintRadiusGameUnits =
+            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabSeatDepthFootprintRadiusGameUnits", rockGrabSeatDepthFootprintRadiusGameUnits));
+        if (!std::isfinite(rockGrabSeatDepthFootprintRadiusGameUnits) ||
+            rockGrabSeatDepthFootprintRadiusGameUnits < 1.0f ||
+            rockGrabSeatDepthFootprintRadiusGameUnits > 30.0f) {
+            ROCK_LOG_WARN(Config, "Invalid fGrabSeatDepthFootprintRadiusGameUnits={} -- using 10.0", rockGrabSeatDepthFootprintRadiusGameUnits);
+            rockGrabSeatDepthFootprintRadiusGameUnits = 10.0f;
+        }
+        rockGrabSeatDepthSkinGameUnits = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabSeatDepthSkinGameUnits", rockGrabSeatDepthSkinGameUnits));
+        if (!std::isfinite(rockGrabSeatDepthSkinGameUnits) || rockGrabSeatDepthSkinGameUnits < 0.0f || rockGrabSeatDepthSkinGameUnits > 5.0f) {
+            ROCK_LOG_WARN(Config, "Invalid fGrabSeatDepthSkinGameUnits={} -- using 0.5", rockGrabSeatDepthSkinGameUnits);
+            rockGrabSeatDepthSkinGameUnits = 0.5f;
+        }
         rockGrabGripInsetGameUnits = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabGripInsetGameUnits", rockGrabGripInsetGameUnits));
         if (!std::isfinite(rockGrabGripInsetGameUnits) || rockGrabGripInsetGameUnits < 0.0f) {
             ROCK_LOG_WARN(Config, "Invalid fGrabGripInsetGameUnits={} -- using 2.0", rockGrabGripInsetGameUnits);
@@ -2192,12 +2213,6 @@ namespace rock
         }
         rockSelectedCloseFingerAnimValue = std::clamp(rockSelectedCloseFingerAnimValue, 0.0f, 1.0f);
         rockPulledAngularDamping = static_cast<float>(ini.GetDoubleValue(SECTION, "fPulledAngularDamping", rockPulledAngularDamping));
-        rockPulledGrabHandAdjustDistanceGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fPulledGrabHandAdjustDistanceGameUnits", rockPulledGrabHandAdjustDistanceGameUnits));
-        if (!std::isfinite(rockPulledGrabHandAdjustDistanceGameUnits) || rockPulledGrabHandAdjustDistanceGameUnits < 0.0f) {
-            ROCK_LOG_WARN(Config, "Invalid fPulledGrabHandAdjustDistanceGameUnits={} -- using 10.5", rockPulledGrabHandAdjustDistanceGameUnits);
-            rockPulledGrabHandAdjustDistanceGameUnits = 10.5f;
-        }
 
         readOptionalVec3("fRightGrabLegacyPalmPivotAHandspaceX", "fRightGrabLegacyPalmPivotAHandspaceY", "fRightGrabLegacyPalmPivotAHandspaceZ", rockRightGrabLegacyPalmPivotAHandspace);
         readOptionalVec3("fLeftGrabLegacyPalmPivotAHandspaceX", "fLeftGrabLegacyPalmPivotAHandspaceY", "fLeftGrabLegacyPalmPivotAHandspaceZ", rockLeftGrabLegacyPalmPivotAHandspace);

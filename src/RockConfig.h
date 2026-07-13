@@ -478,6 +478,9 @@ namespace rock
         float rockGrabNearConvergeDistanceGameUnits = 28.0f;
         float rockGrabPocketDepthGameUnits = 7.0f;
         float rockGrabPocketRadiusGameUnits = 9.0f;
+        float rockGrabSeatDepthMaxGameUnits = 30.0f;
+        float rockGrabSeatDepthFootprintRadiusGameUnits = 10.0f;
+        float rockGrabSeatDepthSkinGameUnits = 0.5f;
         float rockGrabGripInsetGameUnits = 2.0f;
         float rockGrabGripMaxInsetGameUnits = 6.0f;
         float rockGrabConvergeMaxTimeSeconds = 0.35f;
@@ -547,7 +550,6 @@ namespace rock
         float rockSelectedCloseFingerAnimMaxHandSpeed = 0.9f;
         float rockSelectedCloseFingerAnimValue = 0.9f;
         float rockPulledAngularDamping = 8.0f;
-        float rockPulledGrabHandAdjustDistanceGameUnits = 10.5f;
 
         RE::NiPoint3 rockRightGrabLegacyPalmPivotAHandspace = RE::NiPoint3(6.0f, -2.0f, 0.2f);
         RE::NiPoint3 rockLeftGrabLegacyPalmPivotAHandspace = RE::NiPoint3(6.0f, -2.0f, -0.2f);

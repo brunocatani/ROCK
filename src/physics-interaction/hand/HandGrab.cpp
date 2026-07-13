@@ -3871,6 +3871,104 @@ namespace rock
             return result;
         }
 
+        struct GrabSeatDepthStopResult
+        {
+            float depthGameUnits = 0.0f;
+            std::uint32_t footprintSampleCount = 0;
+            const char* reason = "notEvaluated";
+            bool valid = false;
+        };
+
+        /*
+         * Seat depth stop: the frozen authority frame seats pivot B exactly onto
+         * pivot A, so any mesh that extends past the grip point toward the palm
+         * ends up inside the hand. Measure that extent as a support distance:
+         * the farthest the cached object-local mesh reaches along -palmNormal
+         * from the grip point, counting only geometry inside a lateral footprint
+         * around the palm axis (mesh far to the side clears the palm and must
+         * not push the seat out). Pushing pivot A out by this distance seats the
+         * object's SURFACE on the palm. Triangle vertices alone under-sample
+         * coarse meshes (a crate face keeps its vertices at corners, outside the
+         * footprint), so each triangle is also probed with closest-point queries
+         * against samples along the palm axis.
+         */
+        GrabSeatDepthStopResult computeGrabSeatDepthStop(
+            const std::vector<GrabLocalTriangle>& localTriangles,
+            const RE::NiTransform& objectNodeWorld,
+            const RE::NiPoint3& gripPointWorld,
+            const RE::NiPoint3& palmNormalWorld,
+            float footprintRadiusGameUnits,
+            float maxDepthGameUnits)
+        {
+            GrabSeatDepthStopResult result{};
+            if (!std::isfinite(maxDepthGameUnits) || maxDepthGameUnits <= 0.0f) {
+                result.reason = "seatDepthDisabled";
+                return result;
+            }
+            if (localTriangles.empty()) {
+                result.reason = "noLocalTriangles";
+                return result;
+            }
+            if (!grab_three_phase::isFinite(objectNodeWorld) ||
+                !grab_three_phase::isFinite(gripPointWorld) ||
+                !grab_three_phase::isFinite(palmNormalWorld)) {
+                result.reason = "nonFiniteSeatFrame";
+                return result;
+            }
+            const RE::NiPoint3 inwardLocal = normalizeOrZero(transform_math::worldVectorToLocal(
+                objectNodeWorld,
+                RE::NiPoint3{ -palmNormalWorld.x, -palmNormalWorld.y, -palmNormalWorld.z }));
+            if (lengthSquared(inwardLocal) <= 0.000001f) {
+                result.reason = "degeneratePalmNormal";
+                return result;
+            }
+
+            const float objectScale = finitePositiveOr(objectNodeWorld.scale, 1.0f);
+            const float footprintRadiusLocal = (std::max)(0.1f, finitePositiveOr(footprintRadiusGameUnits, 10.0f)) / objectScale;
+            const float footprintRadiusLocalSquared = footprintRadiusLocal * footprintRadiusLocal;
+            const float maxDepthLocal = maxDepthGameUnits / objectScale;
+            const RE::NiPoint3 gripLocal = transform_math::worldPointToLocal(objectNodeWorld, gripPointWorld);
+            if (!grab_three_phase::isFinite(gripLocal)) {
+                result.reason = "nonFiniteGripLocal";
+                return result;
+            }
+
+            float bestDepthLocal = 0.0f;
+            std::uint32_t footprintSampleCount = 0;
+            auto considerLocalPoint = [&](const RE::NiPoint3& pointLocal) {
+                const RE::NiPoint3 delta = pointLocal - gripLocal;
+                const float depthLocal = dotProduct(delta, inwardLocal);
+                if (!std::isfinite(depthLocal) || depthLocal <= 0.0f) {
+                    return;
+                }
+                const RE::NiPoint3 lateral = delta - inwardLocal * depthLocal;
+                const float lateralSquared = lengthSquared(lateral);
+                if (!std::isfinite(lateralSquared) || lateralSquared > footprintRadiusLocalSquared) {
+                    return;
+                }
+                ++footprintSampleCount;
+                bestDepthLocal = (std::max)(bestDepthLocal, (std::min)(depthLocal, maxDepthLocal));
+            };
+            const std::array<float, 3> axisProbeDepthsLocal{ 0.0f, maxDepthLocal * 0.5f, maxDepthLocal };
+            for (const auto& localTriangle : localTriangles) {
+                considerLocalPoint(localTriangle.v0);
+                considerLocalPoint(localTriangle.v1);
+                considerLocalPoint(localTriangle.v2);
+                const TriangleData triangle{ localTriangle.v0, localTriangle.v1, localTriangle.v2 };
+                for (const float axisDepthLocal : axisProbeDepthsLocal) {
+                    const RE::NiPoint3 axisPointLocal = gripLocal + inwardLocal * axisDepthLocal;
+                    float distanceSquared = 0.0f;
+                    considerLocalPoint(closestPointOnTriangleToPoint(axisPointLocal, triangle, distanceSquared));
+                }
+            }
+
+            result.depthGameUnits = bestDepthLocal * objectScale;
+            result.footprintSampleCount = footprintSampleCount;
+            result.reason = footprintSampleCount > 0 ? "meshSupportDepth" : "noMeshInsideFootprint";
+            result.valid = true;
+            return result;
+        }
+
         struct SeatedPalmPocketSupportPatch
         {
             grab_contact_patch_math::GrabContactPatchResult<RE::NiPoint3> patch{};
@@ -9479,7 +9577,6 @@ namespace rock
                             .behindPalmToleranceGameUnits = g_rockConfig.rockGrabSurfaceBehindPalmToleranceGameUnits,
                             .touchAcquireDistanceGameUnits = g_rockConfig.rockGrabTouchAcquireDistanceGameUnits,
                             .pocketRadiusGameUnits = pocket.valid ? pocket.pocketRadiusGameUnits : g_rockConfig.rockGrabPocketRadiusGameUnits,
-                            .pulledAdjustDistanceGameUnits = g_rockConfig.rockPulledGrabHandAdjustDistanceGameUnits,
                             .palmNormalWorld = pocket.valid ? pocket.palmNormalWorld : RE::NiPoint3{},
                             .gripNormalWorld = gripNormalWorld,
                         });
@@ -9566,10 +9663,38 @@ namespace rock
                         looseWeaponPrimaryAttachApplied = true;
                         looseWeaponPrimaryAttachSourceVisible = looseWeaponPrimaryAttachFrame.sourceVisible;
                     }
-                    const float pulledGrabAdjust = pullCatchSeatSafety.adjustDistanceGameUnits;
-                    if (pulledGrabAdjust > 0.0f) {
-                        desiredObjectWorld.translate = desiredObjectWorld.translate + gripNormalWorld * pulledGrabAdjust;
-                        desiredBodyWorld.translate = desiredBodyWorld.translate + gripNormalWorld * pulledGrabAdjust;
+                    /*
+                     * Seat depth stop: the freeze below re-aligns the selected grip
+                     * point exactly onto pivot A, which pulls any mesh behind the
+                     * grip point through the palm. Push pivot A out along the palm
+                     * normal by the mesh support depth so the object's surface rests
+                     * ON the palm instead of its interior. This supersedes the old
+                     * fixed-distance pulled-grab adjust, whose desired-world
+                     * translation was erased by that same pivot re-alignment
+                     * (alignLocalPointInTransformToLocalTarget) on every successful
+                     * grab. Weapon attach frames and pinch pockets keep their own
+                     * seat authority and are excluded.
+                     */
+                    GrabSeatDepthStopResult seatDepthStop{};
+                    float seatDepthOffsetGameUnits = 0.0f;
+                    if (!looseWeaponPrimaryAttachApplied && !usingPinchPocket && pocket.valid) {
+                        seatDepthStop = computeGrabSeatDepthStop(
+                            grabLocalMeshTriangles,
+                            objectWorldTransform,
+                            grabGripPoint,
+                            pocket.palmNormalWorld,
+                            g_rockConfig.rockGrabSeatDepthFootprintRadiusGameUnits,
+                            g_rockConfig.rockGrabSeatDepthMaxGameUnits);
+                        if (seatDepthStop.valid && seatDepthStop.depthGameUnits > 0.01f) {
+                            seatDepthOffsetGameUnits =
+                                seatDepthStop.depthGameUnits + (std::max)(0.0f, g_rockConfig.rockGrabSeatDepthSkinGameUnits);
+                            grabPivotAWorld = grabPivotAWorld + pocket.palmNormalWorld * seatDepthOffsetGameUnits;
+                            desiredBodyWorld = grab_frame_math::shiftObjectToAlignGripWithPocket(
+                                grabBodyWorldAtGrab,
+                                grabPivotAWorld,
+                                grabGripPoint);
+                            desiredObjectWorld = deriveNodeWorldFromBodyWorld(desiredBodyWorld, objectToBodyAtGrab);
+                        }
                     }
 
                     selectedGripPointLocal = transform_math::worldPointToLocal(objectWorldTransform, grabGripPoint);
@@ -9709,7 +9834,7 @@ namespace rock
                         "{} THREE-PHASE GRAB CAPTURE: relation={} seat={} rotation={} phase={} reason={} touchContact={} stableTouch={} pocket=({:.1f},{:.1f},{:.1f}) "
                         "palm=({:.1f},{:.1f},{:.1f}) normal=({:.3f},{:.3f},{:.3f}) seed=({:.1f},{:.1f},{:.1f}) "
                         "grip=({:.1f},{:.1f},{:.1f}) gripLocal=({:.2f},{:.2f},{:.2f}) pivotB=({:.2f},{:.2f},{:.2f}) dist={:.1f} signedPalm={:.1f} "
-                        "fullHeldAuthority={} pivotAuthoritySource={} positionOnlyPatch={} normalTrusted={} support={} supportPivot={} supportConfidence={:.2f} supportSpan={:.2f} supportShift={:.2f} supportReason={} supportSamples={} supportMeshHits={} supportRejectOwner={} supportRejectDistance={} settledVisualRequired={} pullSeatSafety={} pullSeatDot={:.3f} pullSeatSigned={:.1f} pullSeatDist={:.1f} pulledAdjustAllowed={} pulledAdjust={:.1f} inset={:.2f} insetSource={} looseWeaponPrimaryAttach={} attachReason={} attachVisible={}",
+                        "fullHeldAuthority={} pivotAuthoritySource={} positionOnlyPatch={} normalTrusted={} support={} supportPivot={} supportConfidence={:.2f} supportSpan={:.2f} supportShift={:.2f} supportReason={} supportSamples={} supportMeshHits={} supportRejectOwner={} supportRejectDistance={} settledVisualRequired={} pullSeatSafety={} pullSeatDot={:.3f} pullSeatSigned={:.1f} pullSeatDist={:.1f} seatDepth={:.2f} seatDepthOffset={:.2f} seatDepthSamples={} seatDepthReason={} inset={:.2f} insetSource={} looseWeaponPrimaryAttach={} attachReason={} attachVisible={}",
                         handName(),
                         relationMode,
                         grabSeatModeName(_grabFrame.seatMode),
@@ -9760,8 +9885,10 @@ namespace rock
                         pullCatchSeatSafety.normalDotPalm,
                         finalSignedPalmDistance,
                         finalGripToPocketDistance,
-                        pullCatchSeatSafety.allowPulledAdjust ? "yes" : "no",
-                        pulledGrabAdjust,
+                        seatDepthStop.depthGameUnits,
+                        seatDepthOffsetGameUnits,
+                        seatDepthStop.footprintSampleCount,
+                        seatDepthStop.reason,
                         gripArea.seedInsetGameUnits,
                         gripArea.fallbackReason,
                         looseWeaponPrimaryAttachApplied ? "yes" : "no",
@@ -11510,7 +11637,6 @@ namespace rock
                             const float pivotBlend = 1.0f;
                             const RE::NiPoint3 promotedPointNodeLocal = seatedPivot.pointNodeLocal;
                             const RE::NiPoint3 promotedPointWorld = transform_math::localPointToWorld(currentNodeWorld, promotedPointNodeLocal);
-                            const float promotedPocketDistanceGameUnits = pointDistanceGameUnits(promotedPointWorld, livePivotAWorld);
                             const bool promotedNormalTrusted =
                                 seatedSupportPatch.valid ? seatedSupportPatch.normalTrusted : seatedPivot.normalTrusted;
                             const RE::NiPoint3 promotedNormalWorld =
@@ -11519,8 +11645,29 @@ namespace rock
                                 promotedNormalTrusted && seatedSupportPatch.valid ?
                                     transform_math::worldVectorToLocal(currentNodeWorld, promotedNormalWorld) :
                                     seatedPivot.normalNodeLocal;
+                            /*
+                             * Seat depth stop, reacquire flavor: the promoted point is
+                             * the mesh point nearest the palm pocket, but seating it on
+                             * the palm center still ignores mesh extending past it
+                             * toward the palm. Same pivot-A push as the capture path so
+                             * a reacquire can never undo the capture-time correction.
+                             */
+                            const auto seatDepthStop = computeGrabSeatDepthStop(
+                                _grabFrame.localMeshTriangles,
+                                currentNodeWorld,
+                                promotedPointWorld,
+                                palmNormalWorld,
+                                g_rockConfig.rockGrabSeatDepthFootprintRadiusGameUnits,
+                                g_rockConfig.rockGrabSeatDepthMaxGameUnits);
+                            RE::NiPoint3 seatPivotAWorld = livePivotAWorld;
+                            if (seatDepthStop.valid && seatDepthStop.depthGameUnits > 0.01f) {
+                                seatPivotAWorld = livePivotAWorld +
+                                                  palmNormalWorld * (seatDepthStop.depthGameUnits +
+                                                                        (std::max)(0.0f, g_rockConfig.rockGrabSeatDepthSkinGameUnits));
+                            }
+                            const float promotedPocketDistanceGameUnits = pointDistanceGameUnits(promotedPointWorld, seatPivotAWorld);
                             const RE::NiTransform desiredBodyWorldAtSeat =
-                                grab_frame_math::shiftObjectToAlignGripWithPocket(grabBodyWorld, livePivotAWorld, promotedPointWorld);
+                                grab_frame_math::shiftObjectToAlignGripWithPocket(grabBodyWorld, seatPivotAWorld, promotedPointWorld);
                             const RE::NiTransform desiredObjectWorldAtSeat =
                                 deriveNodeWorldFromBodyWorld(desiredBodyWorldAtSeat, _grabFrame.bodyLocal);
                             const RE::NiTransform proxyAuthorityFrameWorld =
@@ -11537,7 +11684,7 @@ namespace rock
                                     .ownerBodyLocal = _grabFrame.ownerBodyLocal,
                                     .desiredObjectWorld = desiredObjectWorldAtSeat,
                                     .desiredBodyWorld = desiredBodyWorldAtSeat,
-                                    .pivotAWorld = livePivotAWorld,
+                                    .pivotAWorld = seatPivotAWorld,
                                     .gripPointWorld = promotedPointWorld,
                                     .visualNormalWorld = promotedNormalWorld,
                                     .source = grab_authority_frame_math::GrabAuthorityPivotSource::GripSupportModel,
