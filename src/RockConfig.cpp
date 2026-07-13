@@ -560,6 +560,7 @@ namespace rock
         rockGrabFingerSurfaceAimStrength = 0.75f;
         rockGrabFingerRejectBacksideHits = true;
         rockGrabFingerSurfacePlaneToleranceGameUnits = 1.5f;
+        rockGrabFingerSweepContactRadiusGameUnits = 1.0f;
         rockGrabThumbOppositionStrength = 1.0f;
         rockGrabThumbAlternateCurveStrength = 0.65f;
         rockGrabThumbSurfaceSafetyEnabled = true;
@@ -2120,6 +2121,13 @@ namespace rock
             ROCK_LOG_WARN(Config, "Invalid fGrabFingerSurfacePlaneToleranceGameUnits={} -- using 1.5", rockGrabFingerSurfacePlaneToleranceGameUnits);
             rockGrabFingerSurfacePlaneToleranceGameUnits = 1.5f;
         }
+        rockGrabFingerSweepContactRadiusGameUnits =
+            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabFingerSweepContactRadiusGameUnits", rockGrabFingerSweepContactRadiusGameUnits));
+        if (!std::isfinite(rockGrabFingerSweepContactRadiusGameUnits) || rockGrabFingerSweepContactRadiusGameUnits <= 0.0f) {
+            ROCK_LOG_WARN(Config, "Invalid fGrabFingerSweepContactRadiusGameUnits={} -- using 1.0", rockGrabFingerSweepContactRadiusGameUnits);
+            rockGrabFingerSweepContactRadiusGameUnits = 1.0f;
+        }
+        rockGrabFingerSweepContactRadiusGameUnits = std::clamp(rockGrabFingerSweepContactRadiusGameUnits, 0.05f, 4.0f);
         rockGrabThumbOppositionStrength = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabThumbOppositionStrength", rockGrabThumbOppositionStrength));
         rockGrabThumbOppositionStrength = std::clamp(std::isfinite(rockGrabThumbOppositionStrength) ? rockGrabThumbOppositionStrength : 1.0f, 0.0f, 1.0f);
         rockGrabThumbAlternateCurveStrength =

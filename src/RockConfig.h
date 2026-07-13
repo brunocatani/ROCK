@@ -520,6 +520,7 @@ namespace rock
         float rockGrabFingerSurfaceAimStrength = 0.75f;
         bool rockGrabFingerRejectBacksideHits = true;
         float rockGrabFingerSurfacePlaneToleranceGameUnits = 1.5f;
+        float rockGrabFingerSweepContactRadiusGameUnits = 1.0f;
         float rockGrabThumbOppositionStrength = 1.0f;
         float rockGrabThumbAlternateCurveStrength = 0.65f;
         bool rockGrabThumbSurfaceSafetyEnabled = true;

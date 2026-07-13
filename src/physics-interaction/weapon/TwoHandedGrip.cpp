@@ -1304,7 +1304,8 @@ namespace rock
             const auto solvedFingerPose = grab_finger_pose_runtime::solveGrabFingerPoseFromTriangles(
                 triangles, handTransform, isLeft, palmPos, fingerPoseTargets, g_rockConfig.rockGrabFingerMinValue,
                 g_rockConfig.rockGrabMaxTriangleDistance, true, liveFingerSnapshotPtr,
-                g_rockConfig.rockGrabFingerRejectBacksideHits, g_rockConfig.rockGrabFingerSurfacePlaneToleranceGameUnits);
+                g_rockConfig.rockGrabFingerRejectBacksideHits, g_rockConfig.rockGrabFingerSurfacePlaneToleranceGameUnits,
+                true, g_rockConfig.rockGrabFingerSweepContactRadiusGameUnits);
             if (solvedFingerPose.solved) {
                 meshFingerPose = solvedFingerPose;
                 meshFingerPosePtr = &meshFingerPose;
