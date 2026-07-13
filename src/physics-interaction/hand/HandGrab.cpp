@@ -10395,6 +10395,8 @@ namespace rock
             }
             _grabFingerPoseFrameCounter = 0;
             _grabFingerPoseAccumulatedDeltaTime = 0.0f;
+            _grabFingerPoseQuietResolves = 0;
+            _grabFingerPoseFrozen = false;
             _heldLocalLinearVelocityHistory = {};
             _heldLocalLinearVelocityHistoryCount = 0;
             _heldLocalLinearVelocityHistoryNext = 0;
@@ -10916,31 +10918,38 @@ namespace rock
                 true);
             grab_finger_pose_runtime::captureSurfaceAimObjectLocal(fingerPose, objectWorldTransform);
             _grabFingerPose = fingerPose;
+            _grabFingerPoseQuietResolves = 0;
+            _grabFingerPoseFrozen = false;
             _grabFingerProbeStart = fingerPose.probeStart;
             _grabFingerProbeEnd = fingerPose.probeEnd;
             _hasGrabFingerProbeDebug = fingerPose.candidateTriangleCount > 0;
             auto publishFingerPose =
                 grab_finger_pose_runtime::resolveSurfaceAimObjectLocal(_grabFingerPose, objectWorldTransform);
-            std::array<grab_finger_pose_runtime::FingerPadSurfaceEvidence, 5> padEvidence{};
-            (void)grab_finger_pose_runtime::refineGrabFingerPoseWithPadProbes(
-                publishFingerPose,
-                grabFingerPoseMeshTriangles,
-                initialFingerPoseTargets,
-                liveFingerSnapshotAtGrab,
-                objectWorldTransform,
-                g_rockConfig.rockGrabMeshFingerPoseEnabled,
-                _grabFingerPosePublished,
-                padEvidence,
-                false);
-            const auto padDebug = makeFingerPadPublishDebug(publishFingerPose, padEvidence);
-            _grabFingerPadProbeStart = padDebug.padProbeStart;
-            _grabFingerPadProbeEnd = padDebug.padProbeEnd;
-            _grabFingerPadProbeHit = padDebug.padProbeHit;
-            _grabFingerPadProbeHitValid = padDebug.padProbeHitValid;
-            _hasGrabFingerPadProbeDebug = padDebug.hasPadProbeDebug;
-            _grabFingerSurfaceTarget = padDebug.surfaceTarget;
-            _grabFingerSurfaceTargetValid = padDebug.surfaceTargetValid;
-            _hasGrabFingerSurfaceTargetDebug = padDebug.hasSurfaceTargetDebug;
+            if (g_rockConfig.rockDebugShowGrabFingerProbes) {
+                std::array<grab_finger_pose_runtime::FingerPadSurfaceEvidence, 5> padEvidence{};
+                (void)grab_finger_pose_runtime::refineGrabFingerPoseWithPadProbes(
+                    publishFingerPose,
+                    grabFingerPoseMeshTriangles,
+                    initialFingerPoseTargets,
+                    liveFingerSnapshotAtGrab,
+                    objectWorldTransform,
+                    g_rockConfig.rockGrabMeshFingerPoseEnabled,
+                    _grabFingerPosePublished,
+                    padEvidence,
+                    false);
+                const auto padDebug = makeFingerPadPublishDebug(publishFingerPose, padEvidence);
+                _grabFingerPadProbeStart = padDebug.padProbeStart;
+                _grabFingerPadProbeEnd = padDebug.padProbeEnd;
+                _grabFingerPadProbeHit = padDebug.padProbeHit;
+                _grabFingerPadProbeHitValid = padDebug.padProbeHitValid;
+                _hasGrabFingerPadProbeDebug = padDebug.hasPadProbeDebug;
+                _grabFingerSurfaceTarget = padDebug.surfaceTarget;
+                _grabFingerSurfaceTargetValid = padDebug.surfaceTargetValid;
+                _hasGrabFingerSurfaceTargetDebug = padDebug.hasSurfaceTargetDebug;
+            } else {
+                _hasGrabFingerPadProbeDebug = false;
+                _hasGrabFingerSurfaceTargetDebug = false;
+            }
             applyRockGrabHandPose(_isLeft,
                 publishFingerPose,
                 _grabFingerJointPose,
@@ -11975,28 +11984,35 @@ namespace rock
                     _hasGrabFingerProbeDebug = _grabFingerPose.candidateTriangleCount > 0;
                     _grabFingerPoseFrameCounter = 0;
                     _grabFingerPoseAccumulatedDeltaTime = 0.0f;
+                    _grabFingerPoseQuietResolves = 0;
+                    _grabFingerPoseFrozen = false;
                     auto publishFingerPose =
                         grab_finger_pose_runtime::resolveSurfaceAimObjectLocal(_grabFingerPose, currentNodeWorld);
-                    std::array<grab_finger_pose_runtime::FingerPadSurfaceEvidence, 5> padEvidence{};
-                    (void)grab_finger_pose_runtime::refineGrabFingerPoseWithPadProbes(
-                        publishFingerPose,
-                        touchHeldWorldTriangles,
-                        touchHeldFingerPoseTargets,
-                        liveFingerSnapshot,
-                        currentNodeWorld,
-                        g_rockConfig.rockGrabMeshFingerPoseEnabled,
-                        true,
-                        padEvidence,
-                        false);
-                    const auto padDebug = makeFingerPadPublishDebug(publishFingerPose, padEvidence);
-                    _grabFingerPadProbeStart = padDebug.padProbeStart;
-                    _grabFingerPadProbeEnd = padDebug.padProbeEnd;
-                    _grabFingerPadProbeHit = padDebug.padProbeHit;
-                    _grabFingerPadProbeHitValid = padDebug.padProbeHitValid;
-                    _hasGrabFingerPadProbeDebug = padDebug.hasPadProbeDebug;
-                    _grabFingerSurfaceTarget = padDebug.surfaceTarget;
-                    _grabFingerSurfaceTargetValid = padDebug.surfaceTargetValid;
-                    _hasGrabFingerSurfaceTargetDebug = padDebug.hasSurfaceTargetDebug;
+                    if (g_rockConfig.rockDebugShowGrabFingerProbes) {
+                        std::array<grab_finger_pose_runtime::FingerPadSurfaceEvidence, 5> padEvidence{};
+                        (void)grab_finger_pose_runtime::refineGrabFingerPoseWithPadProbes(
+                            publishFingerPose,
+                            touchHeldWorldTriangles,
+                            touchHeldFingerPoseTargets,
+                            liveFingerSnapshot,
+                            currentNodeWorld,
+                            g_rockConfig.rockGrabMeshFingerPoseEnabled,
+                            true,
+                            padEvidence,
+                            false);
+                        const auto padDebug = makeFingerPadPublishDebug(publishFingerPose, padEvidence);
+                        _grabFingerPadProbeStart = padDebug.padProbeStart;
+                        _grabFingerPadProbeEnd = padDebug.padProbeEnd;
+                        _grabFingerPadProbeHit = padDebug.padProbeHit;
+                        _grabFingerPadProbeHitValid = padDebug.padProbeHitValid;
+                        _hasGrabFingerPadProbeDebug = padDebug.hasPadProbeDebug;
+                        _grabFingerSurfaceTarget = padDebug.surfaceTarget;
+                        _grabFingerSurfaceTargetValid = padDebug.surfaceTargetValid;
+                        _hasGrabFingerSurfaceTargetDebug = padDebug.hasSurfaceTargetDebug;
+                    } else {
+                        _hasGrabFingerPadProbeDebug = false;
+                        _hasGrabFingerSurfaceTargetDebug = false;
+                    }
                     applyRockGrabHandPose(_isLeft,
                         publishFingerPose,
                         _grabFingerJointPose,
@@ -12026,7 +12042,16 @@ namespace rock
 
         recordHeldObjectVelocitySample(world);
 
-        if (!_grabFrame.syntheticLooseWeaponPrimaryAttach && g_rockConfig.rockGrabMeshFingerPoseEnabled && _hasGrabFingerPose && _grabFingerPosePublished) {
+        /*
+         * Converge-then-freeze: the interval re-solve exists ONLY to track
+         * the seat while it is still settling after TouchHeld. Once the pose
+         * is frozen the whole block is skipped - a held grip must never
+         * re-pose because the object was pushed, bumped, or otherwise
+         * physically deviated from its commanded seat; the published FRIK
+         * overrides are bone-local and ride the hand rigidly.
+         */
+        if (!_grabFrame.syntheticLooseWeaponPrimaryAttach && g_rockConfig.rockGrabMeshFingerPoseEnabled && _hasGrabFingerPose && _grabFingerPosePublished &&
+            !_grabFingerPoseFrozen) {
             const int updateInterval = (std::max)(1, g_rockConfig.rockGrabFingerPoseUpdateInterval);
             _grabFingerPoseAccumulatedDeltaTime += (std::max)(0.0f, std::isfinite(deltaTime) ? deltaTime : 0.0f);
             ++_grabFingerPoseFrameCounter;
@@ -12035,6 +12060,8 @@ namespace rock
                 const float sanitizedDeltaTime = std::isfinite(deltaTime) ? (std::max)(0.0f, deltaTime) : 0.0f;
                 const float fingerPoseDeltaTime = _grabFingerPoseAccumulatedDeltaTime > 0.0f ? _grabFingerPoseAccumulatedDeltaTime : sanitizedDeltaTime;
                 _grabFingerPoseAccumulatedDeltaTime = 0.0f;
+                bool heldResolveAdopted = false;
+                bool heldResolveQuiet = false;
                 auto publishFingerPose = _grabFingerPose;
                 RE::NiTransform currentGrabBodyWorld{};
                 if (tryGetGrabDriveObjectWorldTransform(world, _savedObjectState.bodyId, currentGrabBodyWorld)) {
@@ -12107,28 +12134,50 @@ namespace rock
                             grab_finger_pose_runtime::captureSurfaceAimObjectLocal(liveFingerPose, currentNodeWorld);
                             _grabFingerPose = liveFingerPose;
                             publishFingerPose = liveFingerPose;
+                            heldResolveAdopted = true;
+                        } else if (liveFingerPose.solved) {
+                            heldResolveQuiet = true;
                         }
+                    } else if (heldPinchFingerPose) {
+                        // Pinch holds its frozen at-grab pose by design: every
+                        // interval is quiet, so pinch freezes immediately after
+                        // the smoothing settles.
+                        heldResolveQuiet = true;
                     }
-                    std::array<grab_finger_pose_runtime::FingerPadSurfaceEvidence, 5> padEvidence{};
-                    (void)grab_finger_pose_runtime::refineGrabFingerPoseWithPadProbes(
-                        publishFingerPose,
-                        currentWorldTriangles,
-                        currentFingerPoseTargets,
-                        liveFingerSnapshot,
-                        currentNodeWorld,
-                        g_rockConfig.rockGrabMeshFingerPoseEnabled,
-                        _grabFingerPosePublished,
-                        padEvidence,
-                        false);
-                    const auto padDebug = makeFingerPadPublishDebug(publishFingerPose, padEvidence);
-                    _grabFingerPadProbeStart = padDebug.padProbeStart;
-                    _grabFingerPadProbeEnd = padDebug.padProbeEnd;
-                    _grabFingerPadProbeHit = padDebug.padProbeHit;
-                    _grabFingerPadProbeHitValid = padDebug.padProbeHitValid;
-                    _hasGrabFingerPadProbeDebug = padDebug.hasPadProbeDebug;
-                    _grabFingerSurfaceTarget = padDebug.surfaceTarget;
-                    _grabFingerSurfaceTargetValid = padDebug.surfaceTargetValid;
-                    _hasGrabFingerSurfaceTargetDebug = padDebug.hasSurfaceTargetDebug;
+                    /*
+                     * Pad probes no longer refine anything on the held path
+                     * (values belong to the sweep; target refinement is
+                     * capture-only) - they exist purely for the debug
+                     * overlay. They iterate every world triangle per finger,
+                     * which is real per-interval cost on high-poly weapon
+                     * and part meshes, so they run only while the overlay
+                     * actually consumes them.
+                     */
+                    if (g_rockConfig.rockDebugShowGrabFingerProbes) {
+                        std::array<grab_finger_pose_runtime::FingerPadSurfaceEvidence, 5> padEvidence{};
+                        (void)grab_finger_pose_runtime::refineGrabFingerPoseWithPadProbes(
+                            publishFingerPose,
+                            currentWorldTriangles,
+                            currentFingerPoseTargets,
+                            liveFingerSnapshot,
+                            currentNodeWorld,
+                            g_rockConfig.rockGrabMeshFingerPoseEnabled,
+                            _grabFingerPosePublished,
+                            padEvidence,
+                            false);
+                        const auto padDebug = makeFingerPadPublishDebug(publishFingerPose, padEvidence);
+                        _grabFingerPadProbeStart = padDebug.padProbeStart;
+                        _grabFingerPadProbeEnd = padDebug.padProbeEnd;
+                        _grabFingerPadProbeHit = padDebug.padProbeHit;
+                        _grabFingerPadProbeHitValid = padDebug.padProbeHitValid;
+                        _hasGrabFingerPadProbeDebug = padDebug.hasPadProbeDebug;
+                        _grabFingerSurfaceTarget = padDebug.surfaceTarget;
+                        _grabFingerSurfaceTargetValid = padDebug.surfaceTargetValid;
+                        _hasGrabFingerSurfaceTargetDebug = padDebug.hasSurfaceTargetDebug;
+                    } else {
+                        _hasGrabFingerPadProbeDebug = false;
+                        _hasGrabFingerSurfaceTargetDebug = false;
+                    }
                 } else {
                     _grabFingerPadProbeStart = {};
                     _grabFingerPadProbeEnd = {};
@@ -12147,6 +12196,53 @@ namespace rock
                     _grabFingerLocalTransformMask,
                     _hasGrabFingerLocalTransforms,
                     fingerPoseDeltaTime);
+
+                /*
+                 * Freeze accounting. Quiet = a VALID re-solve landed inside
+                 * the adoption deadband (a failed transform read or unsolved
+                 * pose is evidence of nothing and leaves the counter alone).
+                 * The smoothing gate guarantees the last publish already
+                 * reached its target, so freezing stops republishes without
+                 * stranding a mid-blend pose.
+                 */
+                constexpr int kGrabFingerPoseFreezeQuietResolves = 3;
+                constexpr float kGrabFingerPoseFreezeMaxJointDelta = 0.01f;
+                if (heldResolveAdopted) {
+                    _grabFingerPoseQuietResolves = 0;
+                } else if (heldResolveQuiet) {
+                    ++_grabFingerPoseQuietResolves;
+                }
+                if (_grabFingerPoseQuietResolves >= kGrabFingerPoseFreezeQuietResolves) {
+                    bool smoothingConverged = true;
+                    if (_hasGrabFingerJointPose) {
+                        const auto targetJointPose = _grabFingerPose.hasJointValues ?
+                            _grabFingerPose.jointValues :
+                            grab_finger_pose_math::expandFingerCurlsToJointValues(_grabFingerPose.values);
+                        for (std::size_t joint = 0; joint < targetJointPose.size(); ++joint) {
+                            if (std::fabs(_grabFingerJointPose[joint] - targetJointPose[joint]) > kGrabFingerPoseFreezeMaxJointDelta) {
+                                smoothingConverged = false;
+                                break;
+                            }
+                        }
+                    }
+                    if (smoothingConverged) {
+                        _grabFingerPoseFrozen = true;
+                        _grabFingerPadProbeStart = {};
+                        _grabFingerPadProbeEnd = {};
+                        _grabFingerPadProbeHit = {};
+                        _grabFingerPadProbeHitValid = {};
+                        _hasGrabFingerPadProbeDebug = false;
+                        ROCK_LOG_INFO(Hand,
+                            "{} hand FINGER POSE FROZEN: {} quiet re-solves, values=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f})",
+                            handName(),
+                            _grabFingerPoseQuietResolves,
+                            _grabFingerPose.values[0],
+                            _grabFingerPose.values[1],
+                            _grabFingerPose.values[2],
+                            _grabFingerPose.values[3],
+                            _grabFingerPose.values[4]);
+                    }
+                }
             }
         }
 
@@ -14042,6 +14138,8 @@ namespace rock
         _hasGrabFingerPose = false;
         _grabFingerPoseFrameCounter = 0;
         _grabFingerPoseAccumulatedDeltaTime = 0.0f;
+        _grabFingerPoseQuietResolves = 0;
+        _grabFingerPoseFrozen = false;
         _heldLocalLinearVelocityHistory = {};
         _heldLocalLinearVelocityHistoryCount = 0;
         _heldLocalLinearVelocityHistoryNext = 0;

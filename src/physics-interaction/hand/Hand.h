@@ -1081,6 +1081,18 @@ namespace rock
         float _selectedCloseHandSpeedMetersPerSecond = 0.0f;
         int _grabFingerPoseFrameCounter = 0;
         float _grabFingerPoseAccumulatedDeltaTime = 0.0f;
+        /*
+         * Converge-then-freeze for the held finger pose: interval re-solves
+         * exist only to track the settling seat after TouchHeld. Once
+         * consecutive re-solves land inside the adoption deadband and the
+         * published smoothing has reached its target, the pose is FROZEN -
+         * no further solves, pad probes, or publishes for the rest of the
+         * hold (the FRIK overrides are bone-local and ride the hand). This
+         * is what keeps external pushes on the held object from re-posing
+         * the fingers. Any pose re-capture resets it.
+         */
+        int _grabFingerPoseQuietResolves = 0;
+        bool _grabFingerPoseFrozen = false;
 
         static constexpr std::size_t GRAB_RELEASE_VELOCITY_HISTORY = 5;
         std::array<RE::NiPoint3, GRAB_RELEASE_VELOCITY_HISTORY> _heldLocalLinearVelocityHistory{};

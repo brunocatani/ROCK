@@ -168,6 +168,34 @@ Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
     'liveFingerPose\.solved && heldResolveMaxValueDelta > 0\.02f'
 ) 'Held finger re-solve must apply a publish deadband.'
 
+# The interval re-solve exists ONLY to track the settling seat. Once
+# consecutive re-solves land inside the deadband and smoothing has reached
+# its target, the pose FREEZES: no more mesh rebuilds, solves, pad probes,
+# or publishes for the rest of the hold. A converged grip must never re-pose
+# because the held object was pushed or physically deviated - and the
+# per-interval O(triangles) work must stop (FPS on high-poly weapon/part
+# meshes).
+Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
+    '!_grabFingerPoseFrozen\) \{',
+    'heldResolveAdopted',
+    'kGrabFingerPoseFreezeQuietResolves = 3;',
+    '_grabFingerPoseFrozen = true;',
+    'FINGER POSE FROZEN'
+) 'Held finger pose must converge-then-freeze; a converged grip never re-poses or re-scans the mesh.'
+Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
+    'captureSurfaceAimObjectLocal\(_grabFingerPose, currentNodeWorld\);',
+    '_grabFingerPoseQuietResolves = 0;',
+    '_grabFingerPoseFrozen = false;'
+) 'Pose re-captures must unfreeze the held finger pose.'
+
+# Pad probes on the publish paths are debug-overlay-only work (target
+# refinement is capture-only, open bias is deleted) and iterate every world
+# triangle per finger - they must not run when the overlay is off.
+Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
+    'rockDebugShowGrabFingerProbes\) \{',
+    'refineGrabFingerPoseWithPadProbes\('
+) 'Publish-path pad probes must be gated behind the finger-probe overlay flag.'
+
 # The proximity-scaled pad open bias mutated PUBLISHED values from live pad
 # distance AFTER the deadband - the finger-twitch feedback loop. It must not
 # come back in any form; over-open is a swept-arc result now.
