@@ -1,6 +1,7 @@
 #pragma once
 
 #include "RE/NetImmerse/NiPoint.h"
+#include "RE/NetImmerse/NiTransform.h"
 
 namespace RE
 {
@@ -52,6 +53,16 @@ namespace rock::loose_weapon_grip_zone
      * input policy, not here.
      */
     bool isGripZoneEquipSettled(bool isLeft);
+
+    /*
+     * Returns the canonical firing-hand frame already resolved for the held
+     * weapon this frame. The frame is weapon-root-local and therefore remains
+     * valid across the loose-reference to equipped-node inventory transfer.
+     */
+    bool tryGetFiringHandWeaponLocal(
+        bool isLeft,
+        RE::NiTransform& outHandWeaponLocal,
+        RE::NiPoint3& outFiringGripWeaponLocal);
 
     /*
      * Hover probe for the OPEN hand: projects the same firing-grip point onto

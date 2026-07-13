@@ -421,6 +421,12 @@ namespace rock
             std::uint32_t bodyId{ INVALID_CONTACT_BODY_ID };
             float settledSeconds{ 0.0f };
         };
+        struct HeldWeaponTriggerEquipIntent
+        {
+            bool pending{ false };
+            std::uint32_t formID{ 0 };
+            float remainingSeconds{ 0.0f };
+        };
 
         /*
          * Loose-to-equipped handoff state. The loose root disappears during
@@ -433,6 +439,8 @@ namespace rock
             bool isLeft{ false };
             bool hasFiringHandWeaponLocal{ false };
             RE::NiTransform firingHandWeaponLocal{};
+            bool hasFiringGripWeaponLocal{ false };
+            RE::NiPoint3 firingGripWeaponLocal{};
         };
         struct ArmedLooseGrenadeFuseState
         {
@@ -445,6 +453,7 @@ namespace rock
         };
         static constexpr std::size_t kArmedLooseGrenadeFuseCapacity = 4;
         std::array<PendingForceGrabCommit, 2> _pendingForceGrabCommits{};
+        std::array<HeldWeaponTriggerEquipIntent, 2> _heldWeaponTriggerEquipIntents{};
         std::array<bool, 2> _forceGrabCommittedThisFrame{};
         bare_fist_guard_policy::RecheckState _bareFistGuardState{};
         std::array<ArmedLooseGrenadeFuseState, kArmedLooseGrenadeFuseCapacity> _armedLooseGrenadeFuses{};

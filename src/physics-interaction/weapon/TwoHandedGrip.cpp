@@ -1996,43 +1996,24 @@ namespace rock
         return !isLeft || ambidextrousFiringGripTakeoverAvailable();
     }
 
-    bool TwoHandedGrip::tryCaptureFiringHandWeaponLocal(
-        const bool isLeft,
-        const RE::NiTransform& looseWeaponWorld,
-        RE::NiTransform& outHandWeaponLocal)
-    {
-        if (!isFiniteTransform(looseWeaponWorld)) {
-            return false;
-        }
-
-        RE::NiPoint3 palmWorld{};
-        RE::NiTransform handWorld{};
-        if (!tryCaptureRootFlattenedPalmWorld(isLeft, palmWorld, handWorld) || !isFiniteTransform(handWorld)) {
-            return false;
-        }
-
-        const RE::NiTransform captured = transform_math::composeTransforms(
-            transform_math::invertTransform(looseWeaponWorld), handWorld);
-        if (!isFiniteTransform(captured)) {
-            return false;
-        }
-        outHandWeaponLocal = captured;
-        return true;
-    }
-
     bool TwoHandedGrip::beginPrimaryOnlyGrip(
         RE::NiNode* weaponNode,
         std::uint64_t currentWeaponGenerationKey,
         std::uint64_t currentEquippedWeaponOwnershipKey,
         const bool firingHandIsLeft,
-        const RE::NiTransform* capturedFiringHandWeaponLocal)
+        const RE::NiTransform* capturedFiringHandWeaponLocal,
+        const RE::NiPoint3* capturedFiringGripWeaponLocal)
     {
         if (!weaponNode || currentEquippedWeaponOwnershipKey == 0 || _state != TwoHandedState::Inactive ||
             !canBeginPrimaryOnlyGripForHand(firingHandIsLeft)) {
             return false;
         }
         if (firingHandIsLeft &&
-            (!capturedFiringHandWeaponLocal || !isFiniteTransform(*capturedFiringHandWeaponLocal))) {
+            (!capturedFiringHandWeaponLocal || !isFiniteTransform(*capturedFiringHandWeaponLocal) ||
+                !capturedFiringGripWeaponLocal ||
+                !std::isfinite(capturedFiringGripWeaponLocal->x) ||
+                !std::isfinite(capturedFiringGripWeaponLocal->y) ||
+                !std::isfinite(capturedFiringGripWeaponLocal->z))) {
             return false;
         }
         if (firingHandIsLeft && !blockFrikPrimaryWeaponPose()) {
@@ -2059,6 +2040,13 @@ namespace rock
             setFiringHand(false, "primary-grip-start-failed");
             restoreFrikPrimaryWeaponPose();
             return false;
+        }
+        if (firingHandIsLeft) {
+            // The newly equipped node inherits the exact loose-model firing
+            // grip; transitionToPrimaryOnly must not recapture it from the
+            // left palm against FRIK's still-right-native first frame.
+            _primaryGripLocal = *capturedFiringGripWeaponLocal;
+            _primaryGripConfidence = 1.0f;
         }
         // Only a fresh grab pulses; transitionToPrimaryOnly is also reached
         // from support-release paths where the firing grip never changed.
@@ -3220,6 +3208,36 @@ namespace rock
             return false;
         }
 
+        RE::NiTransform rightHandWorld{};
+        RE::NiTransform leftHandWorld{};
+        if (!tryGetSolverHandTransform(false, rightHandWorld) || !tryGetSolverHandTransform(true, leftHandWorld)) {
+            return false;
+        }
+
+        return tryBuildMirroredLeftFiringHandWeaponLocal(
+            _rightFiringHandCanonicalWeaponLocal,
+            _primaryGripLocal,
+            rightHandWorld,
+            leftHandWorld,
+            outHandWeaponLocal,
+            true);
+    }
+
+    bool TwoHandedGrip::tryBuildMirroredLeftFiringHandWeaponLocal(
+        const RE::NiTransform& canonicalRightHandWeaponLocal,
+        const RE::NiPoint3& firingGripWeaponLocal,
+        const RE::NiTransform& rightHandWorld,
+        const RE::NiTransform& leftHandWorld,
+        RE::NiTransform& outHandWeaponLocal,
+        const bool logDiagnostic)
+    {
+        if (!isFiniteTransform(canonicalRightHandWeaponLocal) ||
+            !std::isfinite(firingGripWeaponLocal.x) ||
+            !std::isfinite(firingGripWeaponLocal.y) ||
+            !std::isfinite(firingGripWeaponLocal.z)) {
+            return false;
+        }
+
         /*
          * WAND-CONJUGATION MIRROR. The aim requirement is controller-
          * relative: the tuned right-hand offsets align the barrel with the
@@ -3260,12 +3278,6 @@ namespace rock
             return false;
         }
 
-        RE::NiTransform rightHandWorld{};
-        RE::NiTransform leftHandWorld{};
-        if (!tryGetSolverHandTransform(false, rightHandWorld) || !tryGetSolverHandTransform(true, leftHandWorld)) {
-            return false;
-        }
-
         const RE::NiTransform boneInRightWand =
             transform_math::composeTransforms(transform_math::invertTransform(rightWand->world), rightHandWorld);
         const RE::NiTransform boneInLeftWand =
@@ -3290,7 +3302,7 @@ namespace rock
         lateralMirror.rotate.entry[0][0] = -1.0f;
 
         const RE::NiTransform weaponInRightWand = transform_math::composeTransforms(
-            boneInRightWand, transform_math::invertTransform(_rightFiringHandCanonicalWeaponLocal));
+            boneInRightWand, transform_math::invertTransform(canonicalRightHandWeaponLocal));
         RE::NiTransform weaponInLeftWand = transform_math::composeTransforms(
             lateralMirror, transform_math::composeTransforms(weaponInRightWand, lateralMirror));
 
@@ -3370,7 +3382,7 @@ namespace rock
          * Per-weapon exact by construction; residuals are global-only.
          */
         const RE::NiPoint3 gripInRightHand = transform_math::localPointToWorld(
-            transform_math::invertTransform(_rightFiringHandCanonicalWeaponLocal), _primaryGripLocal);
+            transform_math::invertTransform(canonicalRightHandWeaponLocal), firingGripWeaponLocal);
         const RE::NiPoint3 gripTargetInLeftHand{
             gripInRightHand.x + g_rockConfig.rockLeftFiringAimOffsetXGameUnits,
             gripInRightHand.y + g_rockConfig.rockLeftFiringAimOffsetYGameUnits,
@@ -3379,7 +3391,7 @@ namespace rock
         if (std::isfinite(gripTargetInLeftHand.x) && std::isfinite(gripTargetInLeftHand.y) && std::isfinite(gripTargetInLeftHand.z)) {
             RE::NiTransform anchoredWeaponInLeftHand = transform_math::invertTransform(mirroredHandWeaponLocal);
             const RE::NiPoint3 gripRotatedOnly = sub(
-                transform_math::localPointToWorld(anchoredWeaponInLeftHand, _primaryGripLocal),
+                transform_math::localPointToWorld(anchoredWeaponInLeftHand, firingGripWeaponLocal),
                 anchoredWeaponInLeftHand.translate);
             anchoredWeaponInLeftHand.translate = sub(gripTargetInLeftHand, gripRotatedOnly);
             const RE::NiTransform anchoredHold = transform_math::invertTransform(anchoredWeaponInLeftHand);
@@ -3392,20 +3404,22 @@ namespace rock
         // wand frame. A correct mirror negates x and preserves y/z; a wand
         // axis-convention mismatch shows up here as a different component
         // flipping.
-        const RE::NiPoint3 barrelInRightWand =
-            sub(transform_math::localPointToWorld(weaponInRightWand, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }), weaponInRightWand.translate);
-        const RE::NiPoint3 barrelInLeftWand =
-            sub(transform_math::localPointToWorld(weaponInLeftWand, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }), weaponInLeftWand.translate);
-        ROCK_LOG_INFO(Weapon,
-            "TwoHandedGrip: wand-conjugated left hold barrelInRightWand=({:.3f},{:.3f},{:.3f}) barrelInLeftWand=({:.3f},{:.3f},{:.3f}) boneWandDist=({:.2f},{:.2f})",
-            barrelInRightWand.x,
-            barrelInRightWand.y,
-            barrelInRightWand.z,
-            barrelInLeftWand.x,
-            barrelInLeftWand.y,
-            barrelInLeftWand.z,
-            transformOffsetLength(boneInRightWand),
-            transformOffsetLength(boneInLeftWand));
+        if (logDiagnostic) {
+            const RE::NiPoint3 barrelInRightWand =
+                sub(transform_math::localPointToWorld(weaponInRightWand, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }), weaponInRightWand.translate);
+            const RE::NiPoint3 barrelInLeftWand =
+                sub(transform_math::localPointToWorld(weaponInLeftWand, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }), weaponInLeftWand.translate);
+            ROCK_LOG_INFO(Weapon,
+                "TwoHandedGrip: wand-conjugated left hold barrelInRightWand=({:.3f},{:.3f},{:.3f}) barrelInLeftWand=({:.3f},{:.3f},{:.3f}) boneWandDist=({:.2f},{:.2f})",
+                barrelInRightWand.x,
+                barrelInRightWand.y,
+                barrelInRightWand.z,
+                barrelInLeftWand.x,
+                barrelInLeftWand.y,
+                barrelInLeftWand.z,
+                transformOffsetLength(boneInRightWand),
+                transformOffsetLength(boneInLeftWand));
+        }
 
         outHandWeaponLocal = mirroredHandWeaponLocal;
         return true;

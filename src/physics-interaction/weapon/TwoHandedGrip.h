@@ -223,21 +223,26 @@ namespace rock
             std::uint64_t currentWeaponGenerationKey,
             std::uint64_t currentEquippedWeaponOwnershipKey,
             bool firingHandIsLeft,
-            const RE::NiTransform* capturedFiringHandWeaponLocal);
+            const RE::NiTransform* capturedFiringHandWeaponLocal,
+            const RE::NiPoint3* capturedFiringGripWeaponLocal);
 
         // Left-hand primary ownership requires the hFRIK ambidextrous weapon-
         // node blockers; right-hand native ownership is always eligible.
         static bool canBeginPrimaryOnlyGripForHand(bool isLeft);
 
         /*
-         * Captures the authoritative hand frame in a loose weapon root before
-         * inventory transfer detaches that root. The result is value-owned by
-         * PhysicsInteraction until the equipped weapon node becomes available.
+         * Mirrors FRIK's canonical right-hand per-weapon hold into the left
+         * controller/hand basis. Both inputs are weapon-root-local, so the
+         * result is independent of whichever hand is currently probing or
+         * loosely holding the world model.
          */
-        static bool tryCaptureFiringHandWeaponLocal(
-            bool isLeft,
-            const RE::NiTransform& looseWeaponWorld,
-            RE::NiTransform& outHandWeaponLocal);
+        static bool tryBuildMirroredLeftFiringHandWeaponLocal(
+            const RE::NiTransform& canonicalRightHandWeaponLocal,
+            const RE::NiPoint3& firingGripWeaponLocal,
+            const RE::NiTransform& rightHandWorld,
+            const RE::NiTransform& leftHandWorld,
+            RE::NiTransform& outHandWeaponLocal,
+            bool logDiagnostic = false);
 
         /*
          * Publishes the left-firing canonical carry pose (firing hand o

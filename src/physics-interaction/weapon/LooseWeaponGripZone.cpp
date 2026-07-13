@@ -30,6 +30,9 @@ namespace rock::loose_weapon_grip_zone
             float palmToGripDistance{ 0.0f };
             RE::NiPoint3 gripWorld{};
             RE::NiPoint3 palmWorld{};
+            RE::NiPoint3 gripWeaponLocal{};
+            RE::NiTransform firingHandWeaponLocal{};
+            bool hasFiringHandWeaponLocal{ false };
             const char* reason{ "notEvaluated" };
         };
 
@@ -61,15 +64,15 @@ namespace rock::loose_weapon_grip_zone
         }
 
         /*
-         * Project the FRIK offset onto the held world model: build the root
-         * world the weapon would have if attached to the hand at the offset
-         * (same math as the loose-weapon primary attach frame, including the
-         * root-scale override), express the live palm in that hypothetical
-         * weapon space, then map the point onto the actual held root. Hand-
-         * thrown refs are filtered before this lookup so the FRIK primary
-         * offset remains only a gun/melee loose-weapon attach surface.
+         * Resolve one fixed firing grip in WEAPON space. FRIK's offset builds
+         * the canonical attached weapon root; the game-primary palm is then
+         * projected into that root exactly once. The tested hand is used only
+         * for the final palm-to-world-grip distance. Using the tested palm to
+         * derive the grip made the point follow the left hand and was only
+         * accidentally correct for the native right hand, whose palm shares
+         * the FRIK attach-parent chain.
          */
-        bool tryResolveGripWorld(RE::TESObjectREFR* heldRef, const RE::NiPoint3& palmWorld, HandZoneState& state)
+        bool tryResolveGripWorld(const bool isLeft, RE::TESObjectREFR* heldRef, HandZoneState& state)
         {
             auto* baseForm = heldRef->GetObjectReference();
             const auto* weapon = baseForm ? baseForm->As<RE::TESObjectWEAP>() : nullptr;
@@ -114,11 +117,43 @@ namespace rock::loose_weapon_grip_zone
                 return false;
             }
 
-            const RE::NiPoint3 palmInWeaponLocal = transform_math::worldPointToLocal(attachedRootWorld, palmWorld);
-            state.gripWorld = transform_math::localPointToWorld(looseRoot->world, palmInWeaponLocal);
+            const bool canonicalHandIsLeft = f4vr::isLeftHandedMode();
+            RE::NiPoint3 canonicalPalmWorld{};
+            RE::NiTransform canonicalHandWorld{};
+            if (!TwoHandedGrip::tryCaptureRootFlattenedPalmWorld(
+                    canonicalHandIsLeft,
+                    canonicalPalmWorld,
+                    canonicalHandWorld) ||
+                !isFinitePoint(canonicalPalmWorld) ||
+                !isUsableWorldTransform(canonicalHandWorld)) {
+                state.reason = "missingCanonicalPrimaryPalm";
+                return false;
+            }
+
+            state.gripWeaponLocal = transform_math::worldPointToLocal(attachedRootWorld, canonicalPalmWorld);
+            state.gripWorld = transform_math::localPointToWorld(looseRoot->world, state.gripWeaponLocal);
             if (!isFinitePoint(state.gripWorld)) {
                 state.reason = "nonFiniteGripPoint";
                 return false;
+            }
+
+            const RE::NiTransform canonicalHandWeaponLocal = transform_math::composeTransforms(
+                transform_math::invertTransform(attachedRootWorld),
+                canonicalHandWorld);
+            if (isLeft == canonicalHandIsLeft) {
+                state.firingHandWeaponLocal = canonicalHandWeaponLocal;
+                state.hasFiringHandWeaponLocal = isUsableWorldTransform(state.firingHandWeaponLocal);
+            } else if (isLeft && !canonicalHandIsLeft) {
+                RE::NiPoint3 leftPalmWorld{};
+                RE::NiTransform leftHandWorld{};
+                if (TwoHandedGrip::tryCaptureRootFlattenedPalmWorld(true, leftPalmWorld, leftHandWorld)) {
+                    state.hasFiringHandWeaponLocal = TwoHandedGrip::tryBuildMirroredLeftFiringHandWeaponLocal(
+                        canonicalHandWeaponLocal,
+                        state.gripWeaponLocal,
+                        canonicalHandWorld,
+                        leftHandWorld,
+                        state.firingHandWeaponLocal);
+                }
             }
 
             state.reason = lookup.reason;
@@ -146,7 +181,7 @@ namespace rock::loose_weapon_grip_zone
             return;
         }
 
-        next.valid = tryResolveGripWorld(heldRef, next.palmWorld, next);
+        next.valid = tryResolveGripWorld(isLeft, heldRef, next);
         if (!next.valid) {
             next.insideSettledSeconds = 0.0f;
             if (state.valid || state.reason != next.reason) {
@@ -211,7 +246,7 @@ namespace rock::loose_weapon_grip_zone
             return;
         }
 
-        next.valid = tryResolveGripWorld(candidateRef, next.palmWorld, next);
+        next.valid = tryResolveGripWorld(isLeft, candidateRef, next);
         if (!next.valid) {
             if (state.reason != next.reason) {
                 ROCK_LOG_DEBUG(Hand,
@@ -253,6 +288,20 @@ namespace rock::loose_weapon_grip_zone
         return state.valid &&
                state.insideRadius &&
                state.insideSettledSeconds >= g_rockConfig.rockGrabbedWeaponGripZoneEquipSettleSeconds;
+    }
+
+    bool tryGetFiringHandWeaponLocal(
+        const bool isLeft,
+        RE::NiTransform& outHandWeaponLocal,
+        RE::NiPoint3& outFiringGripWeaponLocal)
+    {
+        const auto& state = s_handStates[handIndex(isLeft)];
+        if (!state.valid || !state.hasFiringHandWeaponLocal) {
+            return false;
+        }
+        outHandWeaponLocal = state.firingHandWeaponLocal;
+        outFiringGripWeaponLocal = state.gripWeaponLocal;
+        return true;
     }
 
     bool tryGetGripZoneDebug(const bool isLeft, GripZoneDebug& out)

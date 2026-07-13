@@ -1070,7 +1070,15 @@ namespace rock::input_remap_runtime
         [[nodiscard]] bool isPipboyHandEngaged()
         {
             const bool pipboyHandIsLeft = !f4vr::isLeftHandedMode();
-            return s_handInteractionEngaged[pipboyHandIsLeft ? 0u : 1u].load(std::memory_order_acquire);
+            const auto index = pipboyHandIsLeft ? 0u : 1u;
+            // All three publications describe the same ownership boundary but
+            // are refreshed by different transition paths. Treat any durable
+            // witness as engaged so a just-committed left grab cannot expose a
+            // one-frame Pip-Boy-open window before the aggregate flag catches
+            // up.
+            return s_handInteractionEngaged[index].load(std::memory_order_acquire) ||
+                   s_handHeldWeapon[index].load(std::memory_order_acquire) ||
+                   s_heldObjectFormId[index].load(std::memory_order_acquire) != 0u;
         }
 
         [[nodiscard]] bool shouldSuppressNativePipboyActionEvent(const RE::InputEvent* event)
