@@ -79,86 +79,15 @@ namespace
         return true;
     }
 
-    rock::grab_finger_pose_math::CalibratedFingerProbeCurve<TestVector> makeTwoSampleProbeCurve(
-        rock::grab_finger_pose_math::CalibratedFingerProbe probe,
-        float openValueAtMaxAngle,
-        float reachLength)
-    {
-        constexpr float kHalfPi = 1.57079632679489661923f;
-        rock::grab_finger_pose_math::CalibratedFingerProbeCurve<TestVector> curve{};
-        curve.probe = probe;
-        curve.sampleCount = 2;
-        curve.samples[0] = {
-            .openValue = 1.0f,
-            .angleRadians = 0.0f,
-            .reachLength = reachLength,
-        };
-        curve.samples[1] = {
-            .openValue = openValueAtMaxAngle,
-            .angleRadians = kHalfPi,
-            .reachLength = reachLength,
-        };
-        return curve;
-    }
-
-    rock::grab_finger_pose_math::CalibratedFingerCurve<TestVector> makeThreeProbeCurve(
-        float tipOpenAtMaxAngle,
-        float outerOpenAtMaxAngle,
-        float innerOpenAtMaxAngle,
-        float tipReach,
-        float outerReach,
-        float innerReach)
-    {
-        using namespace rock::grab_finger_pose_math;
-        CalibratedFingerCurve<TestVector> curve{};
-        curve.center = TestVector{ 0.0f, 0.0f, 0.0f };
-        curve.normal = TestVector{ 0.0f, 0.0f, 1.0f };
-        curve.zeroAngleVector = TestVector{ 1.0f, 0.0f, 0.0f };
-        curve.surfaceThickness = 0.0f;
-        curve.probeCount = 3;
-        curve.probes[0] = makeTwoSampleProbeCurve(CalibratedFingerProbe::Tip, tipOpenAtMaxAngle, tipReach);
-        curve.probes[1] = makeTwoSampleProbeCurve(CalibratedFingerProbe::Outer, outerOpenAtMaxAngle, outerReach);
-        curve.probes[2] = makeTwoSampleProbeCurve(CalibratedFingerProbe::Inner, innerOpenAtMaxAngle, innerReach);
-        return curve;
-    }
-
-    std::vector<rock::grab_finger_pose_math::Triangle<TestVector>> makeTriangleThroughZPlanePoint(const TestVector& point)
+    // A tiny sliver triangle containing the point works with any solver that
+    // measures closest-point distance; orientation is irrelevant.
+    std::vector<rock::grab_finger_pose_math::Triangle<TestVector>> makeSliverTriangleAtPoint(const TestVector& point)
     {
         return {
             rock::grab_finger_pose_math::Triangle<TestVector>{
-                TestVector{ point.x, point.y, point.z - 0.05f },
-                TestVector{ point.x, point.y, point.z + 0.05f },
+                TestVector{ point.x - 0.05f, point.y, point.z },
+                TestVector{ point.x + 0.05f, point.y, point.z },
                 TestVector{ point.x + 0.01f, point.y + 0.01f, point.z + 0.02f },
-            },
-        };
-    }
-
-    std::vector<rock::grab_finger_pose_math::Triangle<TestVector>> makeTriangleThroughYPlanePoint(const TestVector& point)
-    {
-        return {
-            rock::grab_finger_pose_math::Triangle<TestVector>{
-                TestVector{ point.x, point.y - 0.05f, point.z },
-                TestVector{ point.x, point.y + 0.05f, point.z },
-                TestVector{ point.x + 0.01f, point.y + 0.02f, point.z - 0.01f },
-            },
-        };
-    }
-
-    std::vector<rock::grab_finger_pose_math::Triangle<TestVector>> makeTriangleThroughThumbSidePadPlanePoint(const TestVector& point)
-    {
-        constexpr float kSidePadNormalY = 0.48f;
-        constexpr float kSidePadNormalZ = 1.0f - kSidePadNormalY;
-        const auto sidePadPlaneZForY = [](float y) {
-            return -(kSidePadNormalY / kSidePadNormalZ) * y;
-        };
-        const TestVector onPlanePoint{ point.x, point.y, sidePadPlaneZForY(point.y) };
-        constexpr float kTangentY = 0.0367f;
-        const TestVector sidePadTangent{ 0.0f, kTangentY, sidePadPlaneZForY(kTangentY) };
-        return {
-            rock::grab_finger_pose_math::Triangle<TestVector>{
-                TestVector{ onPlanePoint.x - 0.05f, onPlanePoint.y, onPlanePoint.z },
-                TestVector{ onPlanePoint.x + 0.05f, onPlanePoint.y, onPlanePoint.z },
-                TestVector{ onPlanePoint.x + sidePadTangent.x, onPlanePoint.y + sidePadTangent.y, onPlanePoint.z + sidePadTangent.z },
             },
         };
     }
@@ -701,19 +630,6 @@ int main()
     using namespace rock::grab_finger_pose_math;
     namespace grab_data = rock::grab_finger_calibration_data;
     constexpr float kHalfPi = 1.57079632679489661923f;
-    CalibratedFingerCurveSample<TestVector> interpolatedSample{};
-    ok &= expectBool("calibrated curve lookup accepts midpoint",
-        lookupCalibratedFingerCurveSample(
-            makeTwoSampleProbeCurve(CalibratedFingerProbe::Tip, 0.0f, 2.0f),
-            kHalfPi * 0.5f,
-            interpolatedSample),
-        true);
-    ok &= expectFloat("calibrated curve lookup interpolates open value",
-        interpolatedSample.openValue,
-        0.5f);
-    ok &= expectFloat("calibrated curve lookup interpolates reach length",
-        interpolatedSample.reachLength,
-        2.0f);
 
     const auto bakedIndexCurve = makeBakedCalibratedFingerCurve<TestVector>(
         1,
@@ -791,100 +707,159 @@ int main()
         bakedThumbSidePadCurve.normal.y > 0.60f && bakedThumbSidePadCurve.normal.z > 0.70f,
         true);
 
-    const TestVector fortyFiveDegreeContact{ 0.70710678f, 0.70710678f, 0.0f };
-    const auto leastClosingCurve = makeThreeProbeCurve(
-        0.0f,
-        0.5f,
-        0.25f,
-        2.0f,
-        2.0f,
-        2.0f);
-    const auto leastClosingSolved = solveCalibratedFingerCurveCurlValue(
-        makeTriangleThroughZPlanePoint(fortyFiveDegreeContact),
-        leastClosingCurve,
-        0.2f);
-    ok &= expectBool("calibrated probes hit triangle slice",
-        leastClosingSolved.hit,
-        true);
-    ok &= expectFloat("calibrated probes choose least-closing valid probe",
-        leastClosingSolved.value,
-        0.75f);
+    // ---- swept-arc solver (replaces the retired plane-slice solver tests) ----
 
-    const auto unreachableOuterCurve = makeThreeProbeCurve(
-        0.0f,
-        0.75f,
-        0.75f,
-        2.0f,
-        0.5f,
-        0.5f);
-    const auto unreachableOuterSolved = solveCalibratedFingerCurveCurlValue(
-        makeTriangleThroughZPlanePoint(fortyFiveDegreeContact),
-        unreachableOuterCurve,
-        0.2f);
-    ok &= expectFloat("calibrated probes ignore unreachable less-closing probes",
-        unreachableOuterSolved.value,
-        0.5f);
+    const auto makeDenseProbeCurve = [](CalibratedFingerProbe probe, float reach) {
+        CalibratedFingerProbeCurve<TestVector> curve{};
+        curve.probe = probe;
+        curve.sampleCount = kCalibratedFingerCurveSampleCount;
+        for (std::size_t i = 0; i < kCalibratedFingerCurveSampleCount; ++i) {
+            const float t = static_cast<float>(i) / static_cast<float>(kCalibratedFingerCurveSampleCount - 1);
+            curve.samples[i] = {
+                .openValue = 1.0f - t,
+                .angleRadians = t * kHalfPi,
+                .reachLength = reach,
+            };
+        }
+        return curve;
+    };
+    const auto makeDenseCurve = [&](float tipReach, float outerReach, float innerReach, std::size_t probeCount) {
+        CalibratedFingerCurve<TestVector> curve{};
+        curve.center = TestVector{ 0.0f, 0.0f, 0.0f };
+        curve.normal = TestVector{ 0.0f, 0.0f, 1.0f };
+        curve.zeroAngleVector = TestVector{ 1.0f, 0.0f, 0.0f };
+        curve.surfaceThickness = 0.0f;
+        curve.probeCount = probeCount;
+        curve.probes[0] = makeDenseProbeCurve(CalibratedFingerProbe::Tip, tipReach);
+        curve.probes[1] = makeDenseProbeCurve(CalibratedFingerProbe::Outer, outerReach);
+        curve.probes[2] = makeDenseProbeCurve(CalibratedFingerProbe::Inner, innerReach);
+        return curve;
+    };
+    const auto arcPoint = [](float reach, float angleRadians) {
+        // Same rotation convention as the sweep: zeroAngle (+X) rotated around
+        // the curl normal (+Z) by a positive angle lands in +Y.
+        return TestVector{ reach * std::cos(angleRadians), reach * std::sin(angleRadians), 0.0f };
+    };
 
-    const TestVector behindFingerContact{ 0.70710678f, -0.70710678f, 0.0f };
-    const auto behindSolved = solveCalibratedFingerCurveCurlValue(
-        makeTriangleThroughZPlanePoint(behindFingerContact),
-        leastClosingCurve,
-        0.2f);
-    ok &= expectBool("calibrated behind-contact opens finger",
-        behindSolved.openedByBehindContact,
-        true);
-    ok &= expectFloat("calibrated behind-contact value is open",
-        behindSolved.value,
-        1.0f);
-
-    const TestVector alternateThumbContact{ 0.86602540f, 0.0f, -0.50000000f };
-    const auto alternateThumbSolved = solveThumbAwareCalibratedFingerCurveCurlValue(
-        makeTriangleThroughYPlanePoint(alternateThumbContact),
-        0,
-        false,
-        false,
-        TestVector{ 0.0f, 0.0f, 0.0f },
-        TestVector{ 0.0f, 0.0f, 1.0f },
-        TestVector{ 0.0f, 1.0f, 0.0f },
-        TestVector{ 1.0f, 0.0f, 0.0f },
-        2.0f,
+    // First contact along the closing arc stops the finger near the surface's
+    // arc angle (a pad-radius of early contact is physical, never late).
+    const auto midArcSolved = sweepCalibratedFingerCurveCurlValue(
+        makeSliverTriangleAtPoint(arcPoint(2.0f, kHalfPi * 0.5f)),
+        makeDenseCurve(2.0f, 2.0f, 2.0f, 1),
         0.2f,
-        true);
-    ok &= expectBool("calibrated alternate thumb retries when primary plane misses",
-        alternateThumbSolved.usedAlternateThumbCurve,
-        true);
-    ok &= expectBool("calibrated alternate thumb records opposition lane",
-        alternateThumbSolved.selectedThumbLane == grab_data::BakedGrabThumbLane::Opposition,
-        true);
-    ok &= expectFloat("calibrated alternate thumb carries opposition correction strength",
-        alternateThumbSolved.selectedThumbLaneLocalCorrectionStrength,
-        1.0f);
-    ok &= expectBool("calibrated alternate thumb returns a valid hit",
-        alternateThumbSolved.value.hit,
+        0.15f);
+    ok &= expectBool("sweep hits a surface on the closing arc", midArcSolved.hit, true);
+    ok &= expectBool("sweep stops at first contact, never past the surface",
+        midArcSolved.value >= 0.49f && midArcSolved.value <= 0.58f,
         true);
 
-    const TestVector sidePadThumbContact{ 1.3164f, 0.5285f, -0.4876f };
-    const auto sidePadThumbSolved = solveThumbAwareCalibratedFingerCurveCurlValue(
-        makeTriangleThroughThumbSidePadPlanePoint(sidePadThumbContact),
-        0,
-        false,
-        false,
-        TestVector{ 0.0f, 0.0f, 0.0f },
-        TestVector{ 0.0f, 0.0f, 1.0f },
-        TestVector{ 0.0f, 1.0f, 0.0f },
-        TestVector{ 1.0f, 0.0f, 0.0f },
-        2.0f,
+    // The most-open first contact across probes wins: the outer probe touches
+    // its surface at 30 degrees before the tip reaches its own at 60.
+    {
+        auto twoContactTriangles = makeSliverTriangleAtPoint(arcPoint(1.2f, kHalfPi / 3.0f));
+        const auto tipTriangle = makeSliverTriangleAtPoint(arcPoint(2.0f, kHalfPi * 2.0f / 3.0f));
+        twoContactTriangles.insert(twoContactTriangles.end(), tipTriangle.begin(), tipTriangle.end());
+        const auto mostOpenSolved = sweepCalibratedFingerCurveCurlValue(
+            twoContactTriangles,
+            makeDenseCurve(2.0f, 1.2f, 0.6f, 3),
+            0.2f,
+            0.15f);
+        ok &= expectBool("sweep most-open probe contact wins",
+            mostOpenSolved.hit && mostOpenSolved.value >= 0.64f && mostOpenSolved.value <= 0.78f,
+            true);
+    }
+
+    // A surface already touching the fully open pose keeps the finger open.
+    const auto openContactSolved = sweepCalibratedFingerCurveCurlValue(
+        makeSliverTriangleAtPoint(arcPoint(2.0f, 0.0f)),
+        makeDenseCurve(2.0f, 2.0f, 2.0f, 1),
         0.2f,
+        0.15f);
+    ok &= expectBool("sweep contact at fully open stays open",
+        openContactSolved.hit && openContactSolved.value >= 0.97f,
         true);
-    ok &= expectBool("calibrated thumb can select baked side-pad lane",
-        sidePadThumbSolved.selectedThumbLane == grab_data::BakedGrabThumbLane::SidePad,
-        true);
-    ok &= expectBool("calibrated side-pad thumb returns selected hit",
-        sidePadThumbSolved.selectedThumbCurve.hit && sidePadThumbSolved.value.hit,
-        true);
-    ok &= expectFloat("calibrated side-pad thumb carries lane correction strength",
-        sidePadThumbSolved.selectedThumbLaneLocalCorrectionStrength,
-        0.82f);
+
+    // Nothing within the whole arc: out of reach (callers hold anticipation).
+    const auto outOfReachSolved = sweepCalibratedFingerCurveCurlValue(
+        makeSliverTriangleAtPoint(TestVector{ 10.0f, 10.0f, 0.0f }),
+        makeDenseCurve(2.0f, 2.0f, 2.0f, 3),
+        0.2f,
+        0.15f);
+    ok &= expectBool("sweep out-of-reach reports no hit", outOfReachSolved.hit, false);
+    ok &= expectBool("sweep out-of-reach flags anticipation", outOfReachSolved.outOfReach, true);
+    ok &= expectFloat("sweep out-of-reach keeps min value", outOfReachSolved.value, 0.2f);
+
+    // Thumb lanes: a contact reachable only in the opposition plane must
+    // select the opposition lane with its baked correction strength.
+    {
+        const auto& thumbProfile = grab_data::bakedGrabThumbProfile(false, false);
+        const auto& thumbHandProfile = grab_data::bakedGrabFingerHandProfile(false, false);
+        const TestVector primaryNormal{ 0.0f, 0.0f, 1.0f };
+        const TestVector alternateNormal{ 0.0f, 1.0f, 0.0f };
+        const TestVector zeroAngle{ 1.0f, 0.0f, 0.0f };
+        constexpr float kThumbLength = 2.0f;
+
+        const auto reconstructLaneTipRow = [&](const grab_data::BakedGrabThumbLaneCurve& lane,
+                                               const grab_data::BakedGrabFingerCurve& bakedCurve,
+                                               std::size_t sampleIndex) {
+            const TestVector laneNormal = blendedThumbLaneNormal(primaryNormal, alternateNormal, lane.normalBlend);
+            const auto laneCurve = makeBakedCalibratedThumbLaneCurve<TestVector>(
+                lane, bakedCurve, TestVector{}, laneNormal, zeroAngle, kThumbLength);
+            const auto& sample = laneCurve.probes[0].samples[sampleIndex];
+            const TestVector arm = rotateAroundUnitAxis(
+                normalize(laneCurve.zeroAngleVector), normalize(laneCurve.normal), sample.angleRadians);
+            return TestVector{ arm.x * sample.reachLength, arm.y * sample.reachLength, arm.z * sample.reachLength };
+        };
+
+        const auto oppositionSolved = sweepThumbAwareCalibratedFingerCurveCurlValue(
+            makeSliverTriangleAtPoint(reconstructLaneTipRow(thumbProfile.lanes[1], thumbHandProfile.fingers[0], 120)),
+            0,
+            false,
+            false,
+            TestVector{ 0.0f, 0.0f, 0.0f },
+            primaryNormal,
+            alternateNormal,
+            zeroAngle,
+            kThumbLength,
+            0.2f,
+            true,
+            0.2f);
+        ok &= expectBool("sweep thumb retries when primary lane misses",
+            oppositionSolved.usedAlternateThumbCurve,
+            true);
+        ok &= expectBool("sweep thumb records opposition lane",
+            oppositionSolved.selectedThumbLane == grab_data::BakedGrabThumbLane::Opposition,
+            true);
+        ok &= expectFloat("sweep thumb carries opposition correction strength",
+            oppositionSolved.selectedThumbLaneLocalCorrectionStrength,
+            1.0f);
+        ok &= expectBool("sweep opposition thumb returns a valid hit",
+            oppositionSolved.value.hit,
+            true);
+
+        const auto sidePadSolved = sweepThumbAwareCalibratedFingerCurveCurlValue(
+            makeSliverTriangleAtPoint(reconstructLaneTipRow(thumbProfile.lanes[2], thumbProfile.sidePadCurve, 120)),
+            0,
+            false,
+            false,
+            TestVector{ 0.0f, 0.0f, 0.0f },
+            primaryNormal,
+            alternateNormal,
+            zeroAngle,
+            kThumbLength,
+            0.2f,
+            true,
+            0.2f);
+        ok &= expectBool("sweep thumb can select baked side-pad lane",
+            sidePadSolved.selectedThumbLane == grab_data::BakedGrabThumbLane::SidePad,
+            true);
+        ok &= expectBool("sweep side-pad thumb returns selected hit",
+            sidePadSolved.selectedThumbCurve.hit && sidePadSolved.value.hit,
+            true);
+        ok &= expectFloat("sweep side-pad thumb carries lane correction strength",
+            sidePadSolved.selectedThumbLaneLocalCorrectionStrength,
+            0.82f);
+    }
 
     return ok ? 0 : 1;
 }
