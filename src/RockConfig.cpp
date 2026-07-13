@@ -546,6 +546,8 @@ namespace rock
         rockGrabFingerRejectBacksideHits = true;
         rockGrabFingerSurfacePlaneToleranceGameUnits = 1.5f;
         rockGrabFingerSweepContactRadiusGameUnits = 1.0f;
+        rockGrabFingerSweepMaxOpenValue = 1.4f;
+        rockGrabThumbSweepMaxOpenValue = 2.0f;
         rockGrabThumbOppositionStrength = 1.0f;
         rockGrabThumbAlternateCurveStrength = 0.65f;
         rockGrabThumbSurfaceSafetyEnabled = true;
@@ -2083,6 +2085,18 @@ namespace rock
             rockGrabFingerSweepContactRadiusGameUnits = 1.0f;
         }
         rockGrabFingerSweepContactRadiusGameUnits = std::clamp(rockGrabFingerSweepContactRadiusGameUnits, 0.05f, 4.0f);
+        rockGrabFingerSweepMaxOpenValue =
+            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabFingerSweepMaxOpenValue", rockGrabFingerSweepMaxOpenValue));
+        if (!std::isfinite(rockGrabFingerSweepMaxOpenValue) || rockGrabFingerSweepMaxOpenValue < 1.0f || rockGrabFingerSweepMaxOpenValue > 2.0f) {
+            ROCK_LOG_WARN(Config, "Invalid fGrabFingerSweepMaxOpenValue={} -- using 1.4 (valid range 1.0-2.0)", rockGrabFingerSweepMaxOpenValue);
+            rockGrabFingerSweepMaxOpenValue = 1.4f;
+        }
+        rockGrabThumbSweepMaxOpenValue =
+            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabThumbSweepMaxOpenValue", rockGrabThumbSweepMaxOpenValue));
+        if (!std::isfinite(rockGrabThumbSweepMaxOpenValue) || rockGrabThumbSweepMaxOpenValue < 1.0f || rockGrabThumbSweepMaxOpenValue > 2.0f) {
+            ROCK_LOG_WARN(Config, "Invalid fGrabThumbSweepMaxOpenValue={} -- using 2.0 (valid range 1.0-2.0)", rockGrabThumbSweepMaxOpenValue);
+            rockGrabThumbSweepMaxOpenValue = 2.0f;
+        }
         rockGrabThumbOppositionStrength = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabThumbOppositionStrength", rockGrabThumbOppositionStrength));
         rockGrabThumbOppositionStrength = std::clamp(std::isfinite(rockGrabThumbOppositionStrength) ? rockGrabThumbOppositionStrength : 1.0f, 0.0f, 1.0f);
         rockGrabThumbAlternateCurveStrength =

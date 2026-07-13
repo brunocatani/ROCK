@@ -22,7 +22,14 @@ from typing import Iterable
 
 
 SAMPLE_COUNT = 201
-GENERATOR_VERSION = 3
+GENERATOR_VERSION = 4
+# hFRIK slerps joint flex in [-1, 2]: t in (1, 2] extrapolates past the
+# authored open pose (hyper-extension). The bake samples the full over-open
+# range so the runtime sweep can plant fingers on surfaces thicker than the
+# default open span; the zero-angle reference stays the value-1.0 pose, so
+# over-open rows carry NEGATIVE angles and every [0, 1] row is unchanged
+# in meaning.
+OVER_OPEN_MAX = 2.0
 OUTPUT_RELATIVE = pathlib.Path("src/physics-interaction/grab/GeneratedGrabFingerCalibration.h")
 THUMB_LANES = (
     {
@@ -302,15 +309,18 @@ def bone_to_flat_index(name: str) -> int:
 
 
 def expand_rock_grab_open_value(open_value: float, finger: int) -> tuple[float, float, float]:
-    value = max(0.0, min(open_value, 2.0 if finger == 0 else 1.0))
+    # Mirrors ROCK's expandFingerCurlsToJointValues: every finger may
+    # hyper-extend to OVER_OPEN_MAX (hFRIK slerp accepts flex up to 2); the
+    # proximal/distal biases vanish past 1.0, so over-open joints move
+    # uniformly.
+    value = max(0.0, min(open_value, OVER_OPEN_MAX))
     closed = 1.0 - min(value, 1.0)
     proximal_open_bias = 0.15 if finger == 0 else 0.25
     distal_close_bias = 0.10 if finger == 0 else 0.15
-    max_open = 2.0 if finger == 0 else 1.0
     return (
-        max(0.0, min(max_open, value + closed * proximal_open_bias)),
+        max(0.0, min(OVER_OPEN_MAX, value + closed * proximal_open_bias)),
         value,
-        max(0.0, min(max_open, value - closed * distal_close_bias)),
+        max(0.0, min(OVER_OPEN_MAX, value - closed * distal_close_bias)),
     )
 
 
@@ -419,14 +429,19 @@ def sample_raw_probe_curve(
 
     raw: list[RawSample] = []
     for index in range(SAMPLE_COUNT):
-        open_value = 1.0 - (index / (SAMPLE_COUNT - 1))
+        open_value = OVER_OPEN_MAX * (1.0 - (index / (SAMPLE_COUNT - 1)))
         world = build_world_transforms(bones, is_left, in_power_armor, open_value)
         base = world[finger * 3].translate
         point = transformed_probe_point(world[finger * 3 + 2], probe_offset(probe, distal_length, finger, is_left, thumb_lane))
         angle = signed_angle(point - base, zero, canonical_normal) * normal_sign
         if not math.isfinite(angle):
             raise ValueError(f"non-finite angle for finger={finger} probe={probe} thumb_lane={thumb_lane}")
-        raw.append(RawSample(open_value, max(0.0, angle), length(point - base) / reference_length))
+        # Over-open rows rotate away from the closing direction: their angle
+        # relative to the value-1.0 zero is legitimately negative. Only rows
+        # inside [0, 1] are floored at zero to absorb numeric noise around
+        # the reference pose.
+        clamped_angle = angle if open_value > 1.0 else max(0.0, angle)
+        raw.append(RawSample(open_value, clamped_angle, length(point - base) / reference_length))
     return normal_sign, raw
 
 
@@ -447,11 +462,14 @@ def resample_curve(raw: list[RawSample]) -> list[RawSample]:
     max_angle = max(sample.angle for sample in deduped)
     if max_angle <= 0.0001:
         raise ValueError("calibration curve has no usable curl angle")
+    # Over-open rows extend the arc on the negative-angle side of the
+    # value-1.0 zero; the resample grid spans the full baked arc.
+    min_angle = min(sample.angle for sample in deduped)
 
     resampled: list[RawSample] = []
     cursor = 0
     for index in range(SAMPLE_COUNT):
-        target_angle = max_angle * (index / (SAMPLE_COUNT - 1))
+        target_angle = min_angle + (max_angle - min_angle) * (index / (SAMPLE_COUNT - 1))
         while cursor + 1 < len(deduped) and deduped[cursor + 1].angle < target_angle:
             cursor += 1
         if cursor + 1 >= len(deduped):
@@ -464,10 +482,10 @@ def resample_curve(raw: list[RawSample]) -> list[RawSample]:
         t = 0.0 if abs(denom) <= 0.000001 else max(0.0, min(1.0, (target_angle - a.angle) / denom))
         open_value = a.open_value + (b.open_value - a.open_value) * t
         reach_scale = a.reach_scale + (b.reach_scale - a.reach_scale) * t
-        resampled.append(RawSample(max(0.0, min(1.0, open_value)), target_angle, max(0.0001, reach_scale)))
+        resampled.append(RawSample(max(0.0, min(OVER_OPEN_MAX, open_value)), target_angle, max(0.0001, reach_scale)))
 
     # ROCK lookup expects increasing angles and generally decreasing open values.
-    last_open = 1.0
+    last_open = OVER_OPEN_MAX
     monotonic: list[RawSample] = []
     for sample in resampled:
         open_value = min(last_open, sample.open_value)

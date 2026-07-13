@@ -1305,7 +1305,8 @@ namespace rock
                 triangles, handTransform, isLeft, palmPos, fingerPoseTargets, g_rockConfig.rockGrabFingerMinValue,
                 g_rockConfig.rockGrabMaxTriangleDistance, true, liveFingerSnapshotPtr,
                 g_rockConfig.rockGrabFingerRejectBacksideHits, g_rockConfig.rockGrabFingerSurfacePlaneToleranceGameUnits,
-                true, g_rockConfig.rockGrabFingerSweepContactRadiusGameUnits);
+                true, g_rockConfig.rockGrabFingerSweepContactRadiusGameUnits, -1.0f,
+                g_rockConfig.rockGrabThumbSweepMaxOpenValue, g_rockConfig.rockGrabFingerSweepMaxOpenValue);
             if (solvedFingerPose.solved) {
                 meshFingerPose = solvedFingerPose;
                 meshFingerPosePtr = &meshFingerPose;

@@ -159,20 +159,28 @@ int main()
         std::array<float, 5>{ 2.5f, 2.5f, 1.0f, 1.0f, 1.0f });
     ok &= expectFloat("thumb curl can over-open through FRIK flex range",
         overOpenJoints[1],
-        rock::grab_finger_pose_math::kMaxThumbOverOpenValue);
-    ok &= expectFloat("non-thumb curl remains capped at authored open",
+        rock::grab_finger_pose_math::kMaxOverOpenValue);
+    ok &= expectFloat("non-thumb curl can over-open through FRIK flex range",
         overOpenJoints[4],
-        rock::grab_finger_pose_math::kMaxFingerOpenValue);
+        rock::grab_finger_pose_math::kMaxOverOpenValue);
+    const auto overOpenUniformJoints = rock::grab_finger_pose_math::expandFingerCurlsToJointValues(
+        std::array<float, 5>{ 1.0f, 1.5f, 1.0f, 1.0f, 1.0f });
+    ok &= expectFloat("over-open joints hyper-extend uniformly (no proximal bias)",
+        overOpenUniformJoints[3],
+        1.5f);
+    ok &= expectFloat("over-open joints hyper-extend uniformly (no distal bias)",
+        overOpenUniformJoints[5],
+        1.5f);
     std::array<float, 15> overOpenTarget{};
-    overOpenTarget[1] = rock::grab_finger_pose_math::kMaxThumbOverOpenValue;
+    overOpenTarget[1] = rock::grab_finger_pose_math::kMaxOverOpenValue;
     overOpenTarget[4] = 2.5f;
     const auto snappedOverOpenJoints = rock::grab_finger_pose_math::advanceJointValues({}, overOpenTarget, 0.0f, 1.0f / 90.0f);
     ok &= expectFloat("thumb over-open survives snap sanitization",
         snappedOverOpenJoints[1],
-        rock::grab_finger_pose_math::kMaxThumbOverOpenValue);
-    ok &= expectFloat("non-thumb snap sanitization rejects over-open",
+        rock::grab_finger_pose_math::kMaxOverOpenValue);
+    ok &= expectFloat("non-thumb over-open snaps to the FRIK flex ceiling",
         snappedOverOpenJoints[4],
-        rock::grab_finger_pose_math::kMaxFingerOpenValue);
+        rock::grab_finger_pose_math::kMaxOverOpenValue);
 
     TestTransform hiddenScaleTransform{};
     hiddenScaleTransform.rotate.entry[0][0] = 1.0f;
@@ -421,13 +429,20 @@ int main()
     closePadTargets.useSeatPointForMissingTargets = false;
     closePadTargets.useWholeMeshForMissingTargets = true;
 
+    /*
+     * The pad refinement must never mutate finger VALUES: the proximity-scaled
+     * open bias (and thumb over-open) formed a publish->pad-moves->bias-changes
+     * feedback loop that bypassed the held-re-solve deadband (the in-game
+     * finger twitch). Values are the swept-arc solver's alone; pads only
+     * refine surface-aim targets and report evidence.
+     */
     SolvedGrabFingerPose padPose{};
     padPose.solved = true;
     padPose.hasJointValues = true;
     padPose.values = { 1.0f, 0.2f, 1.0f, 1.0f, 1.0f };
     padPose.jointValues = rock::grab_finger_pose_math::expandFingerCurlsToJointValues(padPose.values);
-    const float previousIndexOpenValue = padPose.values[1];
-    const float previousIndexMiddleJoint = padPose.jointValues[4];
+    const auto padPoseValuesBefore = padPose.values;
+    const auto padPoseJointsBefore = padPose.jointValues;
     std::array<FingerPadSurfaceEvidence, 5> closePadEvidence{};
     ok &= expectBool("pad refinement runs with complete held inputs",
         refineGrabFingerPoseWithPadProbes(
@@ -443,18 +458,12 @@ int main()
     ok &= expectBool("pad evidence records index hit",
         closePadEvidence[1].hit,
         true);
-    ok &= expectBool("pad evidence opens but never closes finger value",
-        padPose.values[1] >= previousIndexOpenValue && padPose.values[1] <= 1.0f,
+    ok &= expectBool("pad refinement never mutates finger values",
+        padPose.values == padPoseValuesBefore,
         true);
-    ok &= expectBool("pad open bias feeds joint pose by max only",
-        padPose.jointValues[4] >= previousIndexMiddleJoint && padPose.jointValues[4] <= 1.0f,
+    ok &= expectBool("pad refinement never mutates joint values",
+        padPose.jointValues == padPoseJointsBefore,
         true);
-    ok &= expectBool("pad evidence can over-open thumb only",
-        padPose.values[0] > 1.0f && padPose.values[0] <= rock::grab_finger_pose_math::kMaxThumbOverOpenValue,
-        true);
-    ok &= expectFloat("thumb over-open feeds thumb joint pose",
-        padPose.jointValues[1],
-        padPose.values[0]);
     ok &= expectBool("pad evidence can create surface target",
         padPose.surfaceAimTargetValid[1] != 0,
         true);
@@ -462,45 +471,28 @@ int main()
         padPose.surfaceAimTarget[1],
         RE::NiPoint3{ 3.0f, 0.0f, 0.5f });
 
-    SolvedGrabFingerPose targetCaptureOnlyPose{};
-    targetCaptureOnlyPose.solved = true;
-    targetCaptureOnlyPose.hasJointValues = true;
-    targetCaptureOnlyPose.values = { 1.0f, 0.2f, 1.0f, 1.0f, 1.0f };
-    targetCaptureOnlyPose.jointValues = rock::grab_finger_pose_math::expandFingerCurlsToJointValues(targetCaptureOnlyPose.values);
-    const float captureOnlyOpenValue = targetCaptureOnlyPose.values[1];
-    std::array<FingerPadSurfaceEvidence, 5> targetCaptureOnlyEvidence{};
+    SolvedGrabFingerPose evidenceOnlyPose{};
+    evidenceOnlyPose.solved = true;
+    evidenceOnlyPose.hasJointValues = true;
+    evidenceOnlyPose.values = { 1.0f, 0.2f, 1.0f, 1.0f, 1.0f };
+    evidenceOnlyPose.jointValues = rock::grab_finger_pose_math::expandFingerCurlsToJointValues(evidenceOnlyPose.values);
+    std::array<FingerPadSurfaceEvidence, 5> evidenceOnlyEvidence{};
     (void)refineGrabFingerPoseWithPadProbes(
-        targetCaptureOnlyPose,
+        evidenceOnlyPose,
         closePadTriangles,
         closePadTargets,
         padProbeSnapshot,
         padObjectWorld,
         true,
         true,
-        targetCaptureOnlyEvidence,
-        true,
+        evidenceOnlyEvidence,
         false);
-    ok &= expectPointClose("pad target capture can create stable target without opening",
-        targetCaptureOnlyPose.surfaceAimTarget[1],
-        RE::NiPoint3{ 3.0f, 0.0f, 0.5f });
-    ok &= expectFloat("pad target capture leaves curl unchanged when open bias is disabled",
-        targetCaptureOnlyPose.values[1],
-        captureOnlyOpenValue);
-
-    FingerPadSurfaceEvidence directBiasEvidence{};
-    directBiasEvidence.hit = true;
-    directBiasEvidence.distanceGameUnits = 0.25f;
-    directBiasEvidence.quality = 1.0f;
-    directBiasEvidence.padMayBeInsideSurface = true;
-    ok &= expectBool("direct pad open bias cannot reduce openness",
-        fingerPadOpenBiasValue(0.8f, directBiasEvidence) >= 0.8f,
+    ok &= expectBool("evidence-only pad refinement still reports evidence",
+        evidenceOnlyEvidence[1].hit,
         true);
-    ok &= expectFloat("direct thumb pad over-open reaches full hFRIK flex cap",
-        fingerPadThumbOverOpenValue(1.0f, directBiasEvidence),
-        rock::grab_finger_pose_math::kMaxThumbOverOpenValue);
-    ok &= expectFloat("direct thumb pad over-open waits for open thumb",
-        fingerPadThumbOverOpenValue(0.5f, directBiasEvidence),
-        0.5f);
+    ok &= expectBool("evidence-only pad refinement leaves surface targets alone",
+        evidenceOnlyPose.surfaceAimTargetValid[1] == 0,
+        true);
 
     SolvedGrabFingerPose invalidPadPose{};
     invalidPadPose.solved = true;
@@ -561,14 +553,13 @@ int main()
         true,
         true,
         heldUpdateEvidence,
-        false,
-        true);
+        false);
     ok &= expectPointClose("held pad update preserves captured surface target",
         heldUpdatePose.surfaceAimTarget[1],
         RE::NiPoint3{ 3.0f, 0.0f, 5.0f });
-    ok &= expectBool("held pad update can still open finger",
-        heldUpdatePose.values[1] >= heldUpdateOpenValue,
-        true);
+    ok &= expectFloat("held pad update leaves finger values alone",
+        heldUpdatePose.values[1],
+        heldUpdateOpenValue);
 
     std::vector<TriangleData> farPadTriangles{
         TriangleData{
@@ -645,9 +636,25 @@ int main()
             bakedIndexCurve.probes[1].sampleCount == kCalibratedFingerCurveSampleCount &&
             bakedIndexCurve.probes[2].sampleCount == kCalibratedFingerCurveSampleCount,
         true);
-    ok &= expectBool("baked tip reach is scaled from runtime landmark length to authored fingertip reach",
-        bakedIndexCurve.probes[0].samples[0].reachLength > 12.0f,
-        true);
+    {
+        // samples[0] is now an over-open row (hyper-extension folds the tip
+        // back, shortening reach); the authored-open scaling contract lives
+        // at the first sub-open row.
+        std::size_t authoredOpenRow = 0;
+        while (authoredOpenRow < bakedIndexCurve.probes[0].sampleCount &&
+               bakedIndexCurve.probes[0].samples[authoredOpenRow].openValue > 1.0f + 0.0001f) {
+            ++authoredOpenRow;
+        }
+        ok &= expectBool("baked tip curve carries over-open rows ahead of the authored open row",
+            authoredOpenRow > 0 && authoredOpenRow < bakedIndexCurve.probes[0].sampleCount,
+            true);
+        ok &= expectBool("baked tip reach is scaled from runtime landmark length to authored fingertip reach",
+            bakedIndexCurve.probes[0].samples[authoredOpenRow].reachLength > 12.0f,
+            true);
+        ok &= expectBool("baked over-open rows carry negative arc angles",
+            bakedIndexCurve.probes[0].samples[0].angleRadians < 0.0f,
+            true);
+    }
     ok &= expectBool("baked standard index has usable max curl angle",
         bakedCalibratedFingerMaxAngleRadians(1, false, false) > 1.0f,
         true);
@@ -789,6 +796,73 @@ int main()
     ok &= expectBool("sweep out-of-reach flags anticipation", outOfReachSolved.outOfReach, true);
     ok &= expectFloat("sweep out-of-reach keeps min value", outOfReachSolved.value, 0.2f);
 
+    // ---- over-open sweep rows (values past the authored open pose) ----
+    {
+        /*
+         * Synthetic curve spanning openValue [0, 2]: value 1.0 sits at angle
+         * 0 (the zero reference), over-open rows carry negative angles, the
+         * closed end reaches +kHalfPi - the same shape the generator bakes.
+         */
+        const auto makeOverOpenProbeCurve = [](CalibratedFingerProbe probe, float reach) {
+            CalibratedFingerProbeCurve<TestVector> curve{};
+            curve.probe = probe;
+            curve.sampleCount = kCalibratedFingerCurveSampleCount;
+            for (std::size_t i = 0; i < kCalibratedFingerCurveSampleCount; ++i) {
+                const float t = static_cast<float>(i) / static_cast<float>(kCalibratedFingerCurveSampleCount - 1);
+                curve.samples[i] = {
+                    .openValue = 2.0f * (1.0f - t),
+                    .angleRadians = (t - 0.5f) * 2.0f * kHalfPi,
+                    .reachLength = reach,
+                };
+            }
+            return curve;
+        };
+        CalibratedFingerCurve<TestVector> overOpenCurve{};
+        overOpenCurve.center = TestVector{ 0.0f, 0.0f, 0.0f };
+        overOpenCurve.normal = TestVector{ 0.0f, 0.0f, 1.0f };
+        overOpenCurve.zeroAngleVector = TestVector{ 1.0f, 0.0f, 0.0f };
+        overOpenCurve.surfaceThickness = 0.0f;
+        overOpenCurve.probeCount = 1;
+        overOpenCurve.probes[0] = makeOverOpenProbeCurve(CalibratedFingerProbe::Tip, 2.0f);
+
+        // A surface only reachable over-open (negative arc angle).
+        const auto overOpenOnlyTriangles = makeSliverTriangleAtPoint(arcPoint(2.0f, -kHalfPi * 0.5f));
+
+        // Default cap (1.0): over-open rows are skipped entirely - the
+        // surface is invisible to the walked arc and the sweep misses (same
+        // miss semantics as any off-arc geometry inside the filter radius).
+        const auto cappedSolved = sweepCalibratedFingerCurveCurlValue(
+            overOpenOnlyTriangles, overOpenCurve, 0.2f, 0.15f);
+        ok &= expectBool("default cap never contacts over-open rows", cappedSolved.hit, false);
+
+        // Cap 2.0: the walk starts hyper-open and stops at the over-open row.
+        const auto overOpenSolved = sweepCalibratedFingerCurveCurlValue(
+            overOpenOnlyTriangles, overOpenCurve, 0.2f, 0.15f, 2.0f);
+        ok &= expectBool("over-open sweep contacts past the authored open pose",
+            overOpenSolved.hit && overOpenSolved.value > 1.0f,
+            true);
+        ok &= expectBool("over-open sweep lands near the contact row",
+            overOpenSolved.value >= 1.42f && overOpenSolved.value <= 1.58f,
+            true);
+        ok &= expectBool("over-open contact row reports its negative arc angle",
+            overOpenSolved.distance < 0.0f,
+            true);
+
+        // A cap below the contact row hides it again (row skipping honors
+        // the cap, not just the result clamp).
+        const auto partialCapSolved = sweepCalibratedFingerCurveCurlValue(
+            overOpenOnlyTriangles, overOpenCurve, 0.2f, 0.15f, 1.25f);
+        ok &= expectBool("partial cap skips rows above it", partialCapSolved.hit, false);
+
+        // The classic sub-open region is unchanged under a raised cap.
+        const auto subOpenSolved = sweepCalibratedFingerCurveCurlValue(
+            makeSliverTriangleAtPoint(arcPoint(2.0f, kHalfPi * 0.5f)),
+            overOpenCurve, 0.2f, 0.15f, 2.0f);
+        ok &= expectBool("raised cap leaves sub-open contacts where they were",
+            subOpenSolved.hit && subOpenSolved.value >= 0.44f && subOpenSolved.value <= 0.56f,
+            true);
+    }
+
     // Thumb lanes: a contact reachable only in the opposition plane must
     // select the opposition lane with its baked correction strength.
     {
@@ -881,7 +955,22 @@ int main()
         ok &= expectBool("baked index finger exposes a tip probe", indexTip != nullptr, true);
         if (indexTip) {
             constexpr float kFingerLength = 7.5f;
-            for (const std::size_t sampleIndex : { std::size_t{ 0 }, std::size_t{ 60 }, std::size_t{ 120 }, std::size_t{ 190 } }) {
+            /*
+             * The inversion is restricted to the openValue <= 1 region: past
+             * the authored open pose the chord shortens again, so reach is
+             * ambiguous across the over-open rows. Self-consistency is only
+             * a contract inside the restricted region.
+             */
+            std::size_t scanStart = 0;
+            while (scanStart < indexTip->samples.size() && indexTip->samples[scanStart].openValue > 1.0f + 0.0001f) {
+                ++scanStart;
+            }
+            ok &= expectBool("baked index finger has over-open rows before the scan region", scanStart > 0, true);
+            ok &= expectBool("baked index finger keeps a usable sub-open scan region",
+                scanStart + 60 < indexTip->samples.size(),
+                true);
+            const std::size_t lastSample = indexTip->samples.size() - 11;
+            for (const std::size_t sampleIndex : { scanStart, scanStart + 30, scanStart + 60, lastSample }) {
                 const auto& sample = indexTip->samples[sampleIndex];
                 const auto estimate = estimateCalibratedChainCurlFromChord(
                     1, false, false, kFingerLength, sample.reachScale * kFingerLength);
@@ -891,9 +980,12 @@ int main()
                     true);
             }
             const auto openEstimate = estimateCalibratedChainCurlFromChord(1, false, false, kFingerLength, kFingerLength * 2.0f);
-            ok &= expectBool("over-open chord clamps to the open end", openEstimate.valid, true);
-            ok &= expectBool("over-open chord reports the open-end angle",
-                std::fabs(openEstimate.chordAngleRadians - indexTip->samples.front().angleRadians) <= 0.0001f,
+            ok &= expectBool("over-long chord clamps to the sub-open scan start", openEstimate.valid, true);
+            ok &= expectBool("over-long chord reports the scan-start angle",
+                std::fabs(openEstimate.chordAngleRadians - indexTip->samples[scanStart].angleRadians) <= 0.0001f,
+                true);
+            ok &= expectBool("chord estimate never reports an over-open value",
+                openEstimate.openValue <= 1.0f + 0.001f,
                 true);
             const auto closedEstimate = estimateCalibratedChainCurlFromChord(1, false, false, kFingerLength, 0.01f);
             ok &= expectBool("under-reach chord clamps to the closed end", closedEstimate.valid, true);

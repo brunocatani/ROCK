@@ -10895,7 +10895,10 @@ namespace rock
                 g_rockConfig.rockGrabFingerMinValue, g_rockConfig.rockGrabMaxTriangleDistance, !pinchFingerPose, liveFingerSnapshotAtGrabPtr,
                 g_rockConfig.rockGrabFingerRejectBacksideHits, g_rockConfig.rockGrabFingerSurfacePlaneToleranceGameUnits,
                 _grabFrame.fingerPoseAimValid,
-                g_rockConfig.rockGrabFingerSweepContactRadiusGameUnits);
+                g_rockConfig.rockGrabFingerSweepContactRadiusGameUnits,
+                -1.0f,
+                g_rockConfig.rockGrabThumbSweepMaxOpenValue,
+                g_rockConfig.rockGrabFingerSweepMaxOpenValue);
             if (pinchFingerPose) {
                 applyPinchFingerPosePolicy(fingerPose, _grabFrame, g_rockConfig.rockGrabFingerMinValue);
             }
@@ -10910,8 +10913,7 @@ namespace rock
                 g_rockConfig.rockGrabMeshFingerPoseEnabled,
                 _grabFingerPosePublished,
                 padCaptureEvidence,
-                true,
-                false);
+                true);
             grab_finger_pose_runtime::captureSurfaceAimObjectLocal(fingerPose, objectWorldTransform);
             _grabFingerPose = fingerPose;
             _grabFingerProbeStart = fingerPose.probeStart;
@@ -10929,8 +10931,7 @@ namespace rock
                 g_rockConfig.rockGrabMeshFingerPoseEnabled,
                 _grabFingerPosePublished,
                 padEvidence,
-                false,
-                true);
+                false);
             const auto padDebug = makeFingerPadPublishDebug(publishFingerPose, padEvidence);
             _grabFingerPadProbeStart = padDebug.padProbeStart;
             _grabFingerPadProbeEnd = padDebug.padProbeEnd;
@@ -11566,7 +11567,9 @@ namespace rock
                         g_rockConfig.rockGrabFingerSurfacePlaneToleranceGameUnits,
                         _grabFrame.fingerPoseAimValid,
                         g_rockConfig.rockGrabFingerSweepContactRadiusGameUnits,
-                        anticipationOpenValue);
+                        anticipationOpenValue,
+                        g_rockConfig.rockGrabThumbSweepMaxOpenValue,
+                        g_rockConfig.rockGrabFingerSweepMaxOpenValue);
                     grab_finger_pose_runtime::useThumbIndexCurveOnlyPose(liveFingerPose);
                     applyRockGrabHandPose(_isLeft,
                         liveFingerPose,
@@ -11947,7 +11950,10 @@ namespace rock
                         g_rockConfig.rockGrabFingerRejectBacksideHits,
                         g_rockConfig.rockGrabFingerSurfacePlaneToleranceGameUnits,
                         _grabFrame.fingerPoseAimValid,
-                        g_rockConfig.rockGrabFingerSweepContactRadiusGameUnits);
+                        g_rockConfig.rockGrabFingerSweepContactRadiusGameUnits,
+                        -1.0f,
+                        g_rockConfig.rockGrabThumbSweepMaxOpenValue,
+                        g_rockConfig.rockGrabFingerSweepMaxOpenValue);
                     if (pinchFingerPose) {
                         applyPinchFingerPosePolicy(_grabFingerPose, _grabFrame, g_rockConfig.rockGrabFingerMinValue);
                     }
@@ -11962,8 +11968,7 @@ namespace rock
                         g_rockConfig.rockGrabMeshFingerPoseEnabled,
                         true,
                         padCaptureEvidence,
-                        true,
-                        false);
+                        true);
                     grab_finger_pose_runtime::captureSurfaceAimObjectLocal(_grabFingerPose, currentNodeWorld);
                     _grabFingerProbeStart = _grabFingerPose.probeStart;
                     _grabFingerProbeEnd = _grabFingerPose.probeEnd;
@@ -11982,8 +11987,7 @@ namespace rock
                         g_rockConfig.rockGrabMeshFingerPoseEnabled,
                         true,
                         padEvidence,
-                        false,
-                        true);
+                        false);
                     const auto padDebug = makeFingerPadPublishDebug(publishFingerPose, padEvidence);
                     _grabFingerPadProbeStart = padDebug.padProbeStart;
                     _grabFingerPadProbeEnd = padDebug.padProbeEnd;
@@ -12057,6 +12061,18 @@ namespace rock
                         if (tryComputeGrabProxyLocalPalmPocketPivotAWorld(world, livePivotAWorld)) {
                             fingerPosePivotWorld = livePivotAWorld;
                         }
+                        /*
+                         * The pose currently driving the hand carries the
+                         * contact-row rotations its fingers were adopted at;
+                         * feeding them back de-rotates each live chord by the
+                         * KNOWN commanded rotation instead of re-estimating
+                         * it from live geometry. This is what makes held
+                         * re-solves feedback-free: a static hand-object
+                         * relation solves to the same values every interval,
+                         * so the adoption deadband actually holds.
+                         */
+                        const auto heldArcAnchorHints =
+                            grab_finger_pose_runtime::makeArcAnchorHintsFromPose(_grabFingerPose);
                         auto liveFingerPose = grab_finger_pose_runtime::solveGrabFingerPoseFromTriangles(
                             currentWorldTriangles,
                             handWorldTransform,
@@ -12070,7 +12086,11 @@ namespace rock
                             g_rockConfig.rockGrabFingerRejectBacksideHits,
                             g_rockConfig.rockGrabFingerSurfacePlaneToleranceGameUnits,
                             _grabFrame.fingerPoseAimValid,
-                            g_rockConfig.rockGrabFingerSweepContactRadiusGameUnits);
+                            g_rockConfig.rockGrabFingerSweepContactRadiusGameUnits,
+                            -1.0f,
+                            g_rockConfig.rockGrabThumbSweepMaxOpenValue,
+                            g_rockConfig.rockGrabFingerSweepMaxOpenValue,
+                            &heldArcAnchorHints);
                         /*
                          * Deadband: a held re-solve that lands within noise of
                          * the current pose must not churn new FRIK targets every
@@ -12099,8 +12119,7 @@ namespace rock
                         g_rockConfig.rockGrabMeshFingerPoseEnabled,
                         _grabFingerPosePublished,
                         padEvidence,
-                        false,
-                        true);
+                        false);
                     const auto padDebug = makeFingerPadPublishDebug(publishFingerPose, padEvidence);
                     _grabFingerPadProbeStart = padDebug.padProbeStart;
                     _grabFingerPadProbeEnd = padDebug.padProbeEnd;

@@ -111,36 +111,55 @@ Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
     'GrabSeatMode::PinchPocket;',
     'buildAcquisitionFingerPose\(',
     'rebuildFingerPoseWorldTrianglesFromGrabFrame\(_grabFrame, currentNodeWorld\)',
-    'anticipationOpenValue\);',
+    'anticipationOpenValue,',
     'useThumbIndexCurveOnlyPose\(liveFingerPose\)'
 ) 'Grab acquisition must live re-solve wrap fingers against the converging object (pinch keeps the blend).'
 
 # The held update interval must re-solve the curls against the live seat, not
-# republish the promotion-instant snapshot for the whole hold.
+# republish the promotion-instant snapshot for the whole hold - anchored on
+# the KNOWN adopted contact rotations, never on live-geometry estimation.
 Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
     'rockGrabFingerPoseUpdateInterval',
     'tryGetGrabDriveObjectWorldTransform\(',
     'heldPinchFingerPose',
+    'makeArcAnchorHintsFromPose\(_grabFingerPose\)',
     'solveGrabFingerPoseFromTriangles\(',
-    'rockGrabFingerSweepContactRadiusGameUnits\);'
-) 'Held finger pose must re-solve curls at the update interval against the live seat.'
+    '&heldArcAnchorHints\);'
+) 'Held finger pose must re-solve curls at the update interval against the live seat, anchored by the adopted-pose arc hints.'
 
 # The live chain chord is rotated by the CURRENT curl; anchoring the arc zero
 # on it directly stopped every finger short by that curl (air gap) and made
 # held re-solves oscillate. The runtime must de-rotate the chord to the true
 # open reference via the baked Tip reach-table inversion, in the baked
-# arc-plane sign convention.
+# arc-plane sign convention - and the inversion must skip the ambiguous
+# over-open rows (the chord shortens again past the authored open pose).
 Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
     'estimateCalibratedChainCurlFromChord\(',
     'BakedGrabFingerProbe::Tip',
+    'samples\[scanStart\]\.openValue > kMaxFingerOpenValue',
     'chordScale <= reachA && chordScale >= reachB'
-) 'Chord curl estimation must invert the baked Tip probe reach table.'
+) 'Chord curl estimation must invert the baked Tip probe reach table, restricted to the sub-open region.'
+
+# Anchor priority in the solve: a caller-provided arc-anchor hint (the
+# rotation the finger was ADOPTED at) de-rotates exactly and covers the thumb
+# and over-open poses; without a hint the inversion covers the four fingers
+# only (the thumb chord shortens from opposition/twist and the inversion
+# misreads it).
 Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
     'RE::NiPoint3 openDirectionWorld = live\.openDirection;',
-    'if \(finger != 0\) \{',
+    'if \(hasArcAnchorHint\) \{',
+    '-arcAnchorHints->rotationRadians\[finger\]',
+    '\} else if \(finger != 0\) \{',
     'estimateCalibratedChainCurlFromChord\(',
     '-chordCurl\.chordAngleRadians \* chordCurl\.normalSign'
-) 'The runtime solve must de-rotate the live chord to the open reference for the four fingers only: the thumb chord shortens from opposition/twist and the inversion misreads it.'
+) 'The runtime solve must prefer adopted arc-anchor hints and fall back to the chord inversion for the four fingers only.'
+
+# Adopted poses must record the contact rotation the hint mechanism feeds
+# back (palm-plane sweep contacts only).
+Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
+    'contactArcRotationRadians\[finger\] = solved\.distance \* bakedAnchorNormalSign',
+    'contactArcRotationValid\[finger\] = 1'
+) 'Sweep solves must record the adopted contact-row rotation for held re-solve anchoring.'
 
 # Held re-solves within noise of the current pose must not churn new FRIK
 # targets every interval (finger micro-twitch).
@@ -148,6 +167,34 @@ Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
     'heldResolveMaxValueDelta',
     'liveFingerPose\.solved && heldResolveMaxValueDelta > 0\.02f'
 ) 'Held finger re-solve must apply a publish deadband.'
+
+# The proximity-scaled pad open bias mutated PUBLISHED values from live pad
+# distance AFTER the deadband - the finger-twitch feedback loop. It must not
+# come back in any form; over-open is a swept-arc result now.
+Reject-Text 'src/physics-interaction/grab/GrabFinger.h' `
+    'fingerPadOpenBiasValue|fingerPadThumbOverOpenValue|kThumbOverOpenStartValue|openBiasStrength' `
+    'The pad open-bias feedback loop must stay deleted; the sweep owns finger values.'
+
+# Over-open (past the authored open pose) is a first-class sweep capability:
+# the caps are config-driven and passed at every solve site.
+Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
+    'inline constexpr float kMaxFingerOpenValue = 1\.0f;',
+    'inline constexpr float kMaxOverOpenValue = 2\.0f;'
+) 'Open-value ceilings must model the authored open pose and the hFRIK flex ceiling.'
+Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
+    'float maxOpenValue = kMaxFingerOpenValue\)',
+    'samples\[startRow\]\.openValue > clampedMaxOpen',
+    'std::clamp\(probe\.samples\[row\]\.openValue, 0\.0f, clampedMaxOpen\)'
+) 'The sweep must honor a per-call max-open cap by skipping rows above it.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
+    'rockGrabThumbSweepMaxOpenValue,\s*g_rockConfig\.rockGrabFingerSweepMaxOpenValue' `
+    'Grab solve sites must pass the config-driven thumb/finger sweep max-open caps.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'rockGrabThumbSweepMaxOpenValue, g_rockConfig\.rockGrabFingerSweepMaxOpenValue' `
+    'The two-handed support-hand solve must pass the same sweep max-open caps.'
+Require-Text 'tools/generate_grab_finger_calibration.py' `
+    'OVER_OPEN_MAX = 2\.0' `
+    'The calibration bake must sample the full over-open range for every finger.'
 
 # The presentation grip axis is not pure cross-palm Z (the thumb occupies that
 # line): both alignment sites must apply the configurable tilt toward X.
