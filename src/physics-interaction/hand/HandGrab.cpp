@@ -7,7 +7,6 @@
 #include "physics-interaction/grab/GrabCore.h"
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
 #include "physics-interaction/debug/DebugMath.h"
-#include "physics-interaction/grenade/CalibratedGrenadeOffsetPolicy.h"
 #include "physics-interaction/grenade/LooseGrenadeRuntime.h"
 #include "physics-interaction/grab/GrabAuthorityProxy.h"
 #include "physics-interaction/grab/GrabConstraint.h"
@@ -855,9 +854,7 @@ namespace rock
         enum class GrabOffsetSourceKind : std::uint8_t
         {
             None,
-            SavedObject,
-            CalibratedGrenade,
-            CalibratedMolotov
+            SavedObject
         };
 
         [[nodiscard]] const char* grabOffsetSourceReason(GrabOffsetSourceKind kind) noexcept
@@ -865,10 +862,6 @@ namespace rock
             switch (kind) {
             case GrabOffsetSourceKind::SavedObject:
                 return "savedGrabOffset";
-            case GrabOffsetSourceKind::CalibratedGrenade:
-                return "calibratedGrenadeOffset";
-            case GrabOffsetSourceKind::CalibratedMolotov:
-                return "calibratedMolotovOffset";
             case GrabOffsetSourceKind::None:
             default:
                 return "noGrabOffset";
@@ -911,33 +904,17 @@ namespace rock
 
         ResolvedGrabOffsetSource resolveGrabOffsetSource(bool isLeft, RE::TESObjectREFR* refr)
         {
+            /*
+             * Per-object SavedGrabOffsets are the only explicit hand-placement
+             * authority. The built-in calibrated grenade/Molotov presets were
+             * retired (2026-07-13) so throwables run the generic seat machinery
+             * (center seed, seat depth stop, forced-arrival long-axis
+             * alignment, swept finger poses); re-add hardcoded presets from
+             * fresh captures if that flow returns.
+             */
             ResolvedGrabOffsetSource source{};
             if (!refr) {
                 return source;
-            }
-
-            /*
-             * Built-in grenade calibrations deliberately win over per-form
-             * SavedGrabOffsets while enabled: the requested invariant is one
-             * Molotov pose for every Molotov variant and one generic pose for
-             * every other grenade. Disabling the flag falls through to the
-             * unchanged per-object lookup below.
-             */
-            if (g_rockConfig.rockCalibratedGrenadeOffsetsEnabled) {
-                const auto grenadeKind = loose_grenade_runtime::classifyGrenadeRef(refr);
-                const auto preset = calibrated_grenade_offset::selectPreset({
-                    .enabled = true,
-                    .isGrenade = grenadeKind != loose_grenade_runtime::GrenadeKind::NotGrenade,
-                    .isMolotov = grenadeKind == loose_grenade_runtime::GrenadeKind::Molotov,
-                });
-                if (const auto* handOffset = calibrated_grenade_offset::handOffsetForPreset(preset, isLeft)) {
-                    source.valid = true;
-                    source.kind = preset == calibrated_grenade_offset::Preset::Molotov ?
-                                      GrabOffsetSourceKind::CalibratedMolotov :
-                                      GrabOffsetSourceKind::CalibratedGrenade;
-                    source.handOffset = *handOffset;
-                    return source;
-                }
             }
 
             if (tryLoadSavedGrabOffsetHandOffset(refr, isLeft, source.handOffset)) {
@@ -4120,6 +4097,39 @@ namespace rock
             result.reason = "meshPrincipalAxis";
             result.valid = true;
             return result;
+        }
+
+        /*
+         * World-side rigid rotation of an NiTransform about a world pivot
+         * point. Stored NiMatrix3 rows are the world images of the local axes
+         * (hand_frame::transformHandspaceLocalToWorld documents the engine
+         * convention), so a world rotation applies vector Rodrigues to each
+         * stored row and to the pivot-relative translation. The pivot point
+         * itself is the fixed point: worldPointToLocal(rotated, pivotWorld)
+         * equals worldPointToLocal(original, pivotWorld).
+         */
+        RE::NiTransform rotateTransformWorldAboutPoint(
+            const RE::NiTransform& transform,
+            const RE::NiPoint3& unitAxisWorld,
+            float angleRadians,
+            const RE::NiPoint3& pivotWorld)
+        {
+            RE::NiTransform rotated = transform;
+            for (int row = 0; row < 3; ++row) {
+                const RE::NiPoint3 rowWorld{
+                    transform.rotate.entry[row][0],
+                    transform.rotate.entry[row][1],
+                    transform.rotate.entry[row][2],
+                };
+                const RE::NiPoint3 rotatedRow = grab_finger_pose_math::rotateAroundUnitAxis(rowWorld, unitAxisWorld, angleRadians);
+                rotated.rotate.entry[row][0] = rotatedRow.x;
+                rotated.rotate.entry[row][1] = rotatedRow.y;
+                rotated.rotate.entry[row][2] = rotatedRow.z;
+            }
+            const RE::NiPoint3 pivotOffset = transform.translate - pivotWorld;
+            const RE::NiPoint3 rotatedOffset = grab_finger_pose_math::rotateAroundUnitAxis(pivotOffset, unitAxisWorld, angleRadians);
+            rotated.translate = pivotWorld + rotatedOffset;
+            return rotated;
         }
 
         struct SeatedPalmPocketSupportPatch
@@ -9925,23 +9935,86 @@ namespace rock
                         looseWeaponPrimaryAttachSourceVisible = looseWeaponPrimaryAttachFrame.sourceVisible;
                     }
                     /*
+                     * Seat-time self-alignment for forced arrivals: force grabs
+                     * (grenade menu, provider API) commit without a pull flight, so
+                     * the long-axis presentation servo never gets to run. Rotate the
+                     * SEAT pose instead - the minimal rotation taking the mesh
+                     * principal axis onto the pocket's cross-palm (thumb->pinky)
+                     * line, about the grip point so the pivot pair is untouched.
+                     * Rotation survives the freeze (pivot alignment only rewrites
+                     * translation). Compact objects skip via the same elongation
+                     * gate as pull presentation; pull-catch arrivals already
+                     * aligned in flight and keep their arrival pose.
+                     */
+                    RE::NiTransform seatBodyWorld = grabBodyWorldAtGrab;
+                    RE::NiTransform seatObjectWorld = objectWorldTransform;
+                    float seatAlignmentAngleDegrees = 0.0f;
+                    const char* seatAlignmentReason = "inactive";
+                    bool seatPoseChanged = false;
+                    if (sel.forcedArrival &&
+                        !looseWeaponPrimaryAttachApplied &&
+                        !usingPinchPocket &&
+                        pocket.valid &&
+                        g_rockConfig.rockForceGrabSeatAlignmentEnabled &&
+                        !grabMeshTriangles.empty()) {
+                        const auto seatLongAxis = computeGrabMeshLongAxis(grabMeshTriangles);
+                        seatAlignmentReason = seatLongAxis.reason;
+                        if (seatLongAxis.valid &&
+                            seatLongAxis.elongationRatio >= g_rockConfig.rockPullPresentationMinElongationRatio) {
+                            const RE::NiPoint3 currentAxisWorld = normalizeOrZero(seatLongAxis.axisWorld);
+                            RE::NiPoint3 targetAxisWorld = normalizeOrZero(pocket.crossPalmWorld);
+                            if (lengthSquared(currentAxisWorld) > 0.000001f && lengthSquared(targetAxisWorld) > 0.000001f) {
+                                if (dotProduct(currentAxisWorld, targetAxisWorld) < 0.0f) {
+                                    targetAxisWorld = RE::NiPoint3{ -targetAxisWorld.x, -targetAxisWorld.y, -targetAxisWorld.z };
+                                }
+                                const RE::NiPoint3 rotationAxisRaw = crossProduct(currentAxisWorld, targetAxisWorld);
+                                const float sinAngle = std::sqrt((std::max)(0.0f, lengthSquared(rotationAxisRaw)));
+                                const float cosAngle = std::clamp(dotProduct(currentAxisWorld, targetAxisWorld), -1.0f, 1.0f);
+                                const float angleRadians = std::atan2(sinAngle, cosAngle);
+                                if (sinAngle > 0.000001f && angleRadians > 0.01f) {
+                                    const float invSin = 1.0f / sinAngle;
+                                    const RE::NiPoint3 rotationAxis{
+                                        rotationAxisRaw.x * invSin,
+                                        rotationAxisRaw.y * invSin,
+                                        rotationAxisRaw.z * invSin,
+                                    };
+                                    seatBodyWorld = rotateTransformWorldAboutPoint(
+                                        grabBodyWorldAtGrab, rotationAxis, angleRadians, grabGripPoint);
+                                    seatObjectWorld = rotateTransformWorldAboutPoint(
+                                        objectWorldTransform, rotationAxis, angleRadians, grabGripPoint);
+                                    seatAlignmentAngleDegrees = angleRadians * 57.29577951308232f;
+                                    seatAlignmentReason = "longAxisSeatAligned";
+                                    seatPoseChanged = true;
+                                } else {
+                                    seatAlignmentReason = "alreadyAligned";
+                                }
+                            } else {
+                                seatAlignmentReason = "degenerateAxes";
+                            }
+                        } else if (seatLongAxis.valid) {
+                            seatAlignmentReason = "belowElongationGate";
+                        }
+                    }
+
+                    /*
                      * Seat depth stop: the freeze below re-aligns the selected grip
                      * point exactly onto pivot A, which pulls any mesh behind the
                      * grip point through the palm. Push pivot A out along the palm
                      * normal by the mesh support depth so the object's surface rests
-                     * ON the palm instead of its interior. This supersedes the old
-                     * fixed-distance pulled-grab adjust, whose desired-world
-                     * translation was erased by that same pivot re-alignment
-                     * (alignLocalPointInTransformToLocalTarget) on every successful
-                     * grab. Weapon attach frames and pinch pockets keep their own
-                     * seat authority and are excluded.
+                     * ON the palm instead of its interior. Measured against the SEAT
+                     * orientation (post-alignment), not the capture pose. This
+                     * supersedes the old fixed-distance pulled-grab adjust, whose
+                     * desired-world translation was erased by that same pivot
+                     * re-alignment (alignLocalPointInTransformToLocalTarget) on
+                     * every successful grab. Weapon attach frames and pinch pockets
+                     * keep their own seat authority and are excluded.
                      */
                     GrabSeatDepthStopResult seatDepthStop{};
                     float seatDepthOffsetGameUnits = 0.0f;
                     if (!looseWeaponPrimaryAttachApplied && !usingPinchPocket && pocket.valid) {
                         seatDepthStop = computeGrabSeatDepthStop(
                             grabLocalMeshTriangles,
-                            objectWorldTransform,
+                            seatObjectWorld,
                             grabGripPoint,
                             pocket.palmNormalWorld,
                             g_rockConfig.rockGrabSeatDepthFootprintRadiusGameUnits,
@@ -9950,8 +10023,11 @@ namespace rock
                             seatDepthOffsetGameUnits =
                                 seatDepthStop.depthGameUnits + (std::max)(0.0f, g_rockConfig.rockGrabSeatDepthSkinGameUnits);
                             grabPivotAWorld = grabPivotAWorld + pocket.palmNormalWorld * seatDepthOffsetGameUnits;
+                            seatPoseChanged = true;
+                        }
+                        if (seatPoseChanged) {
                             desiredBodyWorld = grab_frame_math::shiftObjectToAlignGripWithPocket(
-                                grabBodyWorldAtGrab,
+                                seatBodyWorld,
                                 grabPivotAWorld,
                                 grabGripPoint);
                             desiredObjectWorld = deriveNodeWorldFromBodyWorld(desiredBodyWorld, objectToBodyAtGrab);
@@ -10095,7 +10171,7 @@ namespace rock
                         "{} THREE-PHASE GRAB CAPTURE: relation={} seat={} rotation={} phase={} reason={} touchContact={} stableTouch={} pocket=({:.1f},{:.1f},{:.1f}) "
                         "palm=({:.1f},{:.1f},{:.1f}) normal=({:.3f},{:.3f},{:.3f}) seed=({:.1f},{:.1f},{:.1f}) "
                         "grip=({:.1f},{:.1f},{:.1f}) gripLocal=({:.2f},{:.2f},{:.2f}) pivotB=({:.2f},{:.2f},{:.2f}) dist={:.1f} signedPalm={:.1f} "
-                        "fullHeldAuthority={} pivotAuthoritySource={} positionOnlyPatch={} normalTrusted={} support={} supportPivot={} supportConfidence={:.2f} supportSpan={:.2f} supportShift={:.2f} supportReason={} supportSamples={} supportMeshHits={} supportRejectOwner={} supportRejectDistance={} settledVisualRequired={} pullSeatSafety={} pullSeatDot={:.3f} pullSeatSigned={:.1f} pullSeatDist={:.1f} seatDepth={:.2f} seatDepthOffset={:.2f} seatDepthSamples={} seatDepthReason={} inset={:.2f} insetSource={} looseWeaponPrimaryAttach={} attachReason={} attachVisible={}",
+                        "fullHeldAuthority={} pivotAuthoritySource={} positionOnlyPatch={} normalTrusted={} support={} supportPivot={} supportConfidence={:.2f} supportSpan={:.2f} supportShift={:.2f} supportReason={} supportSamples={} supportMeshHits={} supportRejectOwner={} supportRejectDistance={} settledVisualRequired={} pullSeatSafety={} pullSeatDot={:.3f} pullSeatSigned={:.1f} pullSeatDist={:.1f} seatDepth={:.2f} seatDepthOffset={:.2f} seatDepthSamples={} seatDepthReason={} seatAlignDeg={:.1f} seatAlignReason={} inset={:.2f} insetSource={} looseWeaponPrimaryAttach={} attachReason={} attachVisible={}",
                         handName(),
                         relationMode,
                         grabSeatModeName(_grabFrame.seatMode),
@@ -10150,6 +10226,8 @@ namespace rock
                         seatDepthOffsetGameUnits,
                         seatDepthStop.footprintSampleCount,
                         seatDepthStop.reason,
+                        seatAlignmentAngleDegrees,
+                        seatAlignmentReason,
                         gripArea.seedInsetGameUnits,
                         gripArea.fallbackReason,
                         looseWeaponPrimaryAttachApplied ? "yes" : "no",

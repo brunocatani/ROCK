@@ -151,7 +151,6 @@ namespace rock
         float rockLeftFiringAimOffsetXGameUnits = 0.0f;
         float rockLeftFiringAimOffsetYGameUnits = 0.0f;
         float rockLeftFiringAimOffsetZGameUnits = 0.0f;
-        bool rockCalibratedGrenadeOffsetsEnabled = true;
         float rockRealisticGrenadeFuseSeconds = 5.0f;
         bool rockGrabbedWeaponAutoEquipEnabled = false;
         float rockGrabbedWeaponAutoEquipSettleSeconds = 0.75f;
@@ -552,6 +551,7 @@ namespace rock
         float rockPulledAngularDamping = 8.0f;
         bool rockPullToObjectCenterEnabled = true;
         bool rockPullLongAxisPresentationEnabled = true;
+        bool rockForceGrabSeatAlignmentEnabled = true;
         float rockPullPresentationMinElongationRatio = 2.0f;
         float rockPullPresentationAngularGainPerSecond = 6.0f;
         float rockPullPresentationMaxAngularSpeedRadiansPerSecond = 8.0f;

@@ -203,7 +203,6 @@ namespace rock
         rockWeaponSupportGripHapticIntensity = 0.50f;
         rockEquippedWeaponShoulderStashEnabled = true;
         rockRealisticWeaponHandlingEnabled = false;
-        rockCalibratedGrenadeOffsetsEnabled = true;
         rockRealisticGrenadeFuseSeconds = 5.0f;
         rockGrabbedWeaponAutoEquipEnabled = false;
         rockGrabbedWeaponAutoEquipSettleSeconds = 0.75f;
@@ -592,6 +591,7 @@ namespace rock
         rockPulledAngularDamping = 8.0f;
         rockPullToObjectCenterEnabled = true;
         rockPullLongAxisPresentationEnabled = true;
+        rockForceGrabSeatAlignmentEnabled = true;
         rockPullPresentationMinElongationRatio = 2.0f;
         rockPullPresentationAngularGainPerSecond = 6.0f;
         rockPullPresentationMaxAngularSpeedRadiansPerSecond = 8.0f;
@@ -946,10 +946,6 @@ namespace rock
             0.0f,
             -15.0f,
             15.0f);
-        rockCalibratedGrenadeOffsetsEnabled = ini.GetBoolValue(
-            REALISTIC_WEAPONS_SECTION,
-            "bCalibratedGrenadeOffsetsEnabled",
-            rockCalibratedGrenadeOffsetsEnabled);
         rockRealisticGrenadeFuseSeconds = readClampedFloat(ini,
             REALISTIC_WEAPONS_SECTION,
             "fRealisticGrenadeFuseSeconds",
@@ -2220,6 +2216,7 @@ namespace rock
         rockPulledAngularDamping = static_cast<float>(ini.GetDoubleValue(SECTION, "fPulledAngularDamping", rockPulledAngularDamping));
         rockPullToObjectCenterEnabled = ini.GetBoolValue(SECTION, "bPullToObjectCenterEnabled", rockPullToObjectCenterEnabled);
         rockPullLongAxisPresentationEnabled = ini.GetBoolValue(SECTION, "bPullLongAxisPresentationEnabled", rockPullLongAxisPresentationEnabled);
+        rockForceGrabSeatAlignmentEnabled = ini.GetBoolValue(SECTION, "bForceGrabSeatAlignmentEnabled", rockForceGrabSeatAlignmentEnabled);
         rockPullPresentationMinElongationRatio =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fPullPresentationMinElongationRatio", rockPullPresentationMinElongationRatio));
         if (!std::isfinite(rockPullPresentationMinElongationRatio) || rockPullPresentationMinElongationRatio < 1.0f) {
