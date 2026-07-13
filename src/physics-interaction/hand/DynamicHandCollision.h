@@ -49,6 +49,16 @@ namespace rock
         void retireAll(void* bhkWorld);
         void reset();
 
+        /*
+         * Debug-overlay accessor; main thread only (creation/retire happen on
+         * the same thread as the overlay publish).
+         */
+        [[nodiscard]] RE::hknpBodyId proxyBodyIdForDebug(bool isLeft) const
+        {
+            const auto& slot = _hands[isLeft ? 1u : 0u];
+            return slot.created ? slot.proxyBody.getBodyId() : RE::hknpBodyId{ 0x7FFF'FFFF };
+        }
+
     private:
         struct HandSlot
         {

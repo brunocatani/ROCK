@@ -1867,6 +1867,20 @@
                 addBody(_leftHand.getCollisionBodyId(), debug::BodyOverlayRole::LeftHand);
             }
 
+            /*
+             * The stage A dynamic hand proxies are not part of any collider
+             * set, so the overlay enumerates them explicitly whenever hand
+             * collider drawing is on. Watching the sphere stop while the raw
+             * hand axes keep moving is the primary in-game validation view.
+             */
+            if (g_rockConfig.rockHandCollisionDynamicDrive &&
+                debug_overlay_policy::shouldDrawHandBody(
+                    drawRockColliderBodies,
+                    g_rockConfig.rockDebugDrawHandColliders || g_rockConfig.rockDebugDrawHandBoneColliders)) {
+                addBody(_dynamicHandCollision.proxyBodyIdForDebug(false), debug::BodyOverlayRole::RightHand);
+                addBody(_dynamicHandCollision.proxyBodyIdForDebug(true), debug::BodyOverlayRole::LeftHand);
+            }
+
             if (debug_overlay_policy::shouldDrawHandBody(drawRockColliderBodies, g_rockConfig.rockDebugDrawHandBoneColliders)) {
                 const std::uint32_t cap = static_cast<std::uint32_t>((std::clamp)(g_rockConfig.rockDebugMaxHandBoneBodiesDrawn, 0, 48));
                 std::uint32_t drawn = 0;
