@@ -2406,21 +2406,30 @@ namespace rock
         }
 
         /*
-         * The LEFT firing hand takes the canonical right-hand hold MIRRORED
-         * (same authored offsets, adapted to the left bone basis) instead of
-         * freezing the live squeeze orientation, which contorted the arm.
-         * Fallback to the live capture only when no canonical exists for the
-         * current weapon generation.
+         * Reattach forces the CANONICAL per-hand hold instead of freezing the
+         * live squeeze orientation: the LEFT hand takes the canonical
+         * right-hand hold MIRRORED (authored offsets adapted to the left bone
+         * basis), the RIGHT hand re-takes its canonical native hold directly.
+         * A live squeeze capture both fired with the weapon crooked and, for
+         * the right hand, poisoned the canonical itself through the snapshot
+         * below. The live capture remains only as the no-canonical fallback.
          */
-        bool usedMirroredCanonicalHold = false;
+        bool usedCanonicalHold = false;
+        const char* holdSource = "live-capture";
         if (handIsLeft) {
             RE::NiTransform mirroredHandWeaponLocal{};
             if (tryComputeMirroredLeftFiringHandWeaponLocal(mirroredHandWeaponLocal)) {
                 _primaryHandWeaponLocal = mirroredHandWeaponLocal;
-                usedMirroredCanonicalHold = true;
+                usedCanonicalHold = true;
+                holdSource = "mirrored-canonical";
             }
+        } else if (_hasRightFiringHandCanonicalWeaponLocal &&
+            _rightFiringHandCanonicalGenerationKey == _activeWeaponGenerationKey) {
+            _primaryHandWeaponLocal = _rightFiringHandCanonicalWeaponLocal;
+            usedCanonicalHold = true;
+            holdSource = "native-canonical";
         }
-        if (!usedMirroredCanonicalHold) {
+        if (!usedCanonicalHold) {
             const RE::NiPoint3 palm = computeGrabLegacyPalmPivotAWorldFromHandBasis(handTransform, handIsLeft);
             const RE::NiPoint3 firingGripWorld = weaponLocalToWorld(_primaryGripLocal, weaponNode);
             const RE::NiTransform adjustedHandTransform =
@@ -2440,7 +2449,7 @@ namespace rock
         ROCK_LOG_INFO(Weapon,
             "TwoHandedGrip: firing hand reattached at configured grip hand={} hold={}",
             handIsLeft ? "left" : "right",
-            usedMirroredCanonicalHold ? "mirrored-canonical" : "live-capture");
+            holdSource);
         return true;
     }
 
@@ -3198,6 +3207,11 @@ namespace rock
         _rightFiringHandCanonicalWeaponLocal = canonicalHold;
         _rightFiringHandCanonicalGenerationKey = currentWeaponGenerationKey;
         _hasRightFiringHandCanonicalWeaponLocal = true;
+        // Native carry is the only state where the right bone is guaranteed
+        // to ride the wand naturally; snapshot the relation for the mirror's
+        // locked-right-hand substitution (see _rightNaturalBoneInWand).
+        _rightNaturalBoneInWand = boneInRightWand;
+        _hasRightNaturalBoneInWand = true;
     }
 
     bool TwoHandedGrip::tryComputeMirroredLeftFiringHandWeaponLocal(RE::NiTransform& outHandWeaponLocal) const
@@ -3208,9 +3222,28 @@ namespace rock
             return false;
         }
 
-        RE::NiTransform rightHandWorld{};
         RE::NiTransform leftHandWorld{};
-        if (!tryGetSolverHandTransform(false, rightHandWorld) || !tryGetSolverHandTransform(true, leftHandWorld)) {
+        if (!tryGetSolverHandTransform(true, leftHandWorld)) {
+            return false;
+        }
+
+        /*
+         * A part-gripping right hand is visually locked to the weapon part,
+         * so its live bone no longer expresses the natural bone-in-wand
+         * relation the wand conjugation depends on - a left reattach from a
+         * right offhand carry came out at whatever angle the lock left the
+         * bone. Replay the natural relation (snapshotted during native right
+         * carry) onto the live right wand instead; every unlocked case keeps
+         * the live sample the confirmed takeover path uses.
+         */
+        RE::NiTransform rightHandWorld{};
+        if (partGrip(false).active && _hasRightNaturalBoneInWand) {
+            auto* playerNodes = f4vr::getPlayerNodes();
+            if (!playerNodes || !playerNodes->primaryWandNode || !isFiniteTransform(playerNodes->primaryWandNode->world)) {
+                return false;
+            }
+            rightHandWorld = transform_math::composeTransforms(playerNodes->primaryWandNode->world, _rightNaturalBoneInWand);
+        } else if (!tryGetSolverHandTransform(false, rightHandWorld)) {
             return false;
         }
 
@@ -3484,15 +3517,29 @@ namespace rock
 
         /*
          * Commit: the support hand takes over the SAME weapon-relative firing
-         * grip in place. A LEFT takeover applies the canonical right-hand
-         * hold mirrored (authored offsets adapted to the left bone basis);
-         * the live squeeze orientation is only the no-canonical fallback.
+         * grip in place, forcing the CANONICAL per-hand hold: a LEFT takeover
+         * applies the canonical right-hand hold mirrored (authored offsets
+         * adapted to the left bone basis), a RIGHT takeover re-takes its
+         * canonical native hold directly - the promoted hand's live bone is
+         * still part-grip-locked here, so a live capture froze that locked
+         * angle and (for the right) poisoned the canonical snapshot below.
+         * The live capture remains only as the no-canonical fallback.
          */
         RE::NiTransform newFiringHandWeaponLocal{};
-        bool usedMirroredCanonicalHold = false;
-        if (supportHandIsLeft && tryComputeMirroredLeftFiringHandWeaponLocal(newFiringHandWeaponLocal)) {
-            usedMirroredCanonicalHold = true;
-        } else {
+        bool usedCanonicalHold = false;
+        const char* holdSource = "live-capture";
+        if (supportHandIsLeft) {
+            if (tryComputeMirroredLeftFiringHandWeaponLocal(newFiringHandWeaponLocal)) {
+                usedCanonicalHold = true;
+                holdSource = "mirrored-canonical";
+            }
+        } else if (_hasRightFiringHandCanonicalWeaponLocal &&
+            _rightFiringHandCanonicalGenerationKey == _activeWeaponGenerationKey) {
+            newFiringHandWeaponLocal = _rightFiringHandCanonicalWeaponLocal;
+            usedCanonicalHold = true;
+            holdSource = "native-canonical";
+        }
+        if (!usedCanonicalHold) {
             const RE::NiPoint3 palm = computeGrabLegacyPalmPivotAWorldFromHandBasis(handTransform, supportHandIsLeft);
             const RE::NiTransform adjustedHandTransform =
                 weapon_two_handed_grip_math::alignHandFrameToGripPoint(handTransform, palm, firingGripWorld);
@@ -3518,7 +3565,7 @@ namespace rock
             "TwoHandedGrip: support hand promoted to firing grip hand={} gripToGrip={:.2f} hold={}",
             _firingHandIsLeft ? "left" : "right",
             supportGripToFiringGripDistance,
-            usedMirroredCanonicalHold ? "mirrored-canonical" : "live-capture");
+            holdSource);
         return true;
     }
 

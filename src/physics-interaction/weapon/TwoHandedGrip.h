@@ -593,6 +593,17 @@ namespace rock
         std::uint64_t _rightFiringHandCanonicalGenerationKey{ 0 };
         bool _hasRightFiringHandCanonicalWeaponLocal{ false };
 
+        /*
+         * Natural right hand-bone-in-wand relation, snapshotted only while
+         * the weapon rides the native right carry (hand guaranteed unlocked,
+         * same gates as the canonical refresh). Weapon-independent anatomy,
+         * so it is deliberately NOT generation-keyed. Consumed by the left
+         * mirror when the live right bone is part-grip-locked and therefore
+         * not expressing the wand-riding relation the conjugation needs.
+         */
+        RE::NiTransform _rightNaturalBoneInWand{};
+        bool _hasRightNaturalBoneInWand{ false };
+
         std::array<ScopeSafeHandFrameState, 2> _scopeSafeHandFrames{};
         bool _scopeMenuOpenThisFrame{ false };
         bool _scopeHandAuthorityCleanupPending{ false };
