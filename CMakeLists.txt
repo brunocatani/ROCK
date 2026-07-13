@@ -421,6 +421,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKGrabAuthorityProxyPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKGrabAuthorityProxyPolicyTests)
 
+  add_executable(ROCKGrabAuthoritySourceClockPolicyTests
+    "${ROOT_DIR}/tests/GrabAuthoritySourceClockPolicyTests.cpp"
+  )
+  target_compile_features(ROCKGrabAuthoritySourceClockPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKGrabAuthoritySourceClockPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKGrabAuthoritySourceClockPolicyTests)
+
   add_executable(ROCKHandColliderFramePolicyTests
     "${ROOT_DIR}/tests/HandColliderFramePolicyTests.cpp"
   )
@@ -551,6 +558,7 @@ if(BUILD_ROCK_TESTS)
     ROCKMechanicalConnectedBodySetPolicyTests
     ROCKArticulatedAcquisitionPolicyTests
     ROCKGrabAuthorityProxyPolicyTests
+    ROCKGrabAuthoritySourceClockPolicyTests
     ROCKHandColliderFramePolicyTests
     ROCKHknpBodyFramePolicyTests
     ROCKGrabNodeNamePolicyTests
