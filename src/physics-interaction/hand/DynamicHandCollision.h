@@ -94,10 +94,21 @@ namespace rock
             // the after-solve deviation sample of the same substep.
             bool droveThisSubstep = false;
             RE::NiPoint3 commandedTargetGame{};
+            /*
+             * Divergence must PERSIST before a recovery teleport fires
+             * (physics thread only). Without the dwell, a hand fighting a wall
+             * near the divergence threshold limit-cycles: teleport into the
+             * geometry, solver ejection, divergence again — the harsh
+             * position-reset stutter of the third in-game session. The dwell
+             * resets after each teleport, so it doubles as the re-fire
+             * cooldown.
+             */
+            float divergenceDwellSeconds = 0.0f;
             std::atomic<bool> deviationValidAtomic{ false };
             std::atomic<float> deviationXAtomic{ 0.0f };
             std::atomic<float> deviationYAtomic{ 0.0f };
             std::atomic<float> deviationZAtomic{ 0.0f };
+            std::atomic<bool> teleportedAtomic{ false };
             std::atomic<bool> rebuildRequestedAtomic{ false };
         };
 
@@ -106,6 +117,13 @@ namespace rock
             std::array<ProxySlot, kBodiesPerHand> bodies{};
             RE::NiPoint3 appliedDeviation{};
             bool visualActive = false;
+            /*
+             * Post-teleport visual recovery: while this window is open the
+             * render-side filter uses a slow eased glide instead of the snappy
+             * contact smoothing, so a divergence recovery reads as the hand
+             * smoothly rejoining the controller instead of a position snap.
+             */
+            float teleportRecoverySecondsRemaining = 0.0f;
         };
 
         bool ensureSlotCreated(ProxySlot& slot,

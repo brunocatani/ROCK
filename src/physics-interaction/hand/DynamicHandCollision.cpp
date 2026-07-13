@@ -272,7 +272,10 @@ namespace rock
         slot.createdBhkWorld = nullptr;
         slot.createdLength = 0.0f;
         slot.createdRadius = 0.0f;
+        slot.droveThisSubstep = false;
+        slot.divergenceDwellSeconds = 0.0f;
         slot.deviationValidAtomic.store(false, std::memory_order_release);
+        slot.teleportedAtomic.store(false, std::memory_order_release);
         slot.rebuildRequestedAtomic.store(false, std::memory_order_release);
     }
 
@@ -287,6 +290,7 @@ namespace rock
     void DynamicHandCollisionRuntime::clearVisual(HandSlots& handSlots, bool isLeft)
     {
         handSlots.appliedDeviation = {};
+        handSlots.teleportRecoverySecondsRemaining = 0.0f;
         if (!handSlots.visualActive) {
             return;
         }
@@ -400,10 +404,35 @@ namespace rock
             }
 
             const RE::NiPoint3 combined = anyDeviation ? combineTwinDeviations(deviations, deviationValid) : RE::NiPoint3{};
+
+            /*
+             * A divergence teleport opens the recovery window: the applied
+             * deviation glides home over the configured duration (speed ~3/T
+             * reaches ~95% by the window's end) instead of snapping at the
+             * contact-smoothing rate.
+             */
+            bool teleportedThisFrame = false;
+            for (auto& slot : handSlots.bodies) {
+                if (slot.teleportedAtomic.exchange(false, std::memory_order_acq_rel)) {
+                    teleportedThisFrame = true;
+                }
+            }
+            const float recoveryDuration = g_rockConfig.rockHandCollisionDynamicTeleportRecoverySeconds;
+            if (teleportedThisFrame && recoveryDuration > 0.0f) {
+                handSlots.teleportRecoverySecondsRemaining = recoveryDuration;
+            }
+            const float frameDt = std::clamp(std::isfinite(frame.deltaSeconds) ? frame.deltaSeconds : (1.0f / 90.0f), 0.0f, 0.1f);
+            float smoothingSpeed = g_rockConfig.rockHandCollisionDynamicRenderFollowSmoothingSpeed;
+            if (handSlots.teleportRecoverySecondsRemaining > 0.0f) {
+                handSlots.teleportRecoverySecondsRemaining = std::max(0.0f, handSlots.teleportRecoverySecondsRemaining - frameDt);
+                const float recoverySpeed = 3.0f / std::max(recoveryDuration, 0.05f);
+                smoothingSpeed = smoothingSpeed > 0.0f ? std::min(smoothingSpeed, recoverySpeed) : recoverySpeed;
+            }
+
             handSlots.appliedDeviation = smoothAppliedDeviation(
                 handSlots.appliedDeviation,
                 combined,
-                g_rockConfig.rockHandCollisionDynamicRenderFollowSmoothingSpeed,
+                smoothingSpeed,
                 frame.deltaSeconds);
 
             const auto& applied = handSlots.appliedDeviation;
@@ -453,9 +482,12 @@ namespace rock
                     continue;
                 }
 
+                const float divergenceThreshold = g_rockConfig.rockHandCollisionDynamicDivergenceTeleportGameUnits;
+                const bool teleportArmed =
+                    slot.divergenceDwellSeconds >= g_rockConfig.rockHandCollisionDynamicDivergenceTeleportDwellSeconds;
                 const GeneratedBodyDriveMode mode{
                     .dynamicVelocity = true,
-                    .divergenceTeleportGameUnits = g_rockConfig.rockHandCollisionDynamicDivergenceTeleportGameUnits,
+                    .divergenceTeleportGameUnits = teleportArmed ? divergenceThreshold : 0.0f,
                 };
                 const auto result = driveGeneratedKeyframedBody(
                     world,
@@ -478,21 +510,29 @@ namespace rock
                 /*
                  * The deviation itself is sampled POST-SOLVE against this exact
                  * commanded target (samplePostSolveDeviations); here we only
-                 * record what was commanded. A teleport is already "arrived":
-                 * deviation resets to zero so the rendered hand snaps home with
-                 * the body.
+                 * record what was commanded. Teleports sample the same way: the
+                 * body was placed at the target pre-collide, so the post-solve
+                 * read reports the solver's ejection (if any) and the rendered
+                 * hand glides through the recovery instead of snapping to zero.
                  */
-                if (result.teleported) {
-                    slot.droveThisSubstep = false;
-                    slot.deviationXAtomic.store(0.0f, std::memory_order_release);
-                    slot.deviationYAtomic.store(0.0f, std::memory_order_release);
-                    slot.deviationZAtomic.store(0.0f, std::memory_order_release);
-                    slot.deviationValidAtomic.store(true, std::memory_order_release);
-                } else if (result.driven) {
+                if (result.driven) {
                     slot.commandedTargetGame = result.targetGamePosition;
                     slot.droveThisSubstep = true;
                 } else {
                     slot.droveThisSubstep = false;
+                }
+
+                if (result.teleported) {
+                    slot.divergenceDwellSeconds = 0.0f;
+                    slot.teleportedAtomic.store(true, std::memory_order_release);
+                } else if (result.attempted &&
+                           result.hasLiveBodyTransform &&
+                           std::isfinite(result.bodyDeltaGameUnits) &&
+                           divergenceThreshold > 0.0f &&
+                           result.bodyDeltaGameUnits > divergenceThreshold) {
+                    slot.divergenceDwellSeconds += std::clamp(result.driveDeltaSeconds, 0.0f, 0.1f);
+                } else {
+                    slot.divergenceDwellSeconds = 0.0f;
                 }
             }
         }
