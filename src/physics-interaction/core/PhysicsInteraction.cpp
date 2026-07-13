@@ -2057,6 +2057,10 @@ namespace rock
 
         vrcf::VRControllers.update(f4vr::isLeftHandedMode());
 
+        // Before any early return below: a skipped consume would let a stale
+        // accept-button press replay as a reload frames later (see the API doc).
+        input_remap_runtime::updateFiringHandReloadInput();
+
         _deltaTime = runtime.deltaSeconds;
 
         if (_deltaTime <= 0.0f || _deltaTime > 0.1f) {

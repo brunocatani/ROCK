@@ -1101,27 +1101,19 @@ namespace rock::input_remap_runtime
         {
             const auto* button = event ? event->As<RE::ButtonEvent>() : nullptr;
             const bool eventMatched = isActivateReloadEvent(event);
-            const int buttonId = nativeEventButtonId(event);
-            const auto buttonMask = input_remap_policy::buttonMask(buttonId);
-            const bool leftAvailable = s_controllers[controllerIndex(input_remap_policy::Hand::Left)].valid.load(std::memory_order_acquire);
-            const bool rightAvailable = s_controllers[controllerIndex(input_remap_policy::Hand::Right)].valid.load(std::memory_order_acquire);
-            const bool leftHeld = leftAvailable && buttonMask != 0 &&
-                                  (s_controllers[controllerIndex(input_remap_policy::Hand::Left)].rawPressed.load(std::memory_order_acquire) & buttonMask) != 0;
-            const bool rightHeld = rightAvailable && buttonMask != 0 &&
-                                   (s_controllers[controllerIndex(input_remap_policy::Hand::Right)].rawPressed.load(std::memory_order_acquire) & buttonMask) != 0;
-            const auto eventHandResolution = input_remap_policy::resolvePhysicalButtonHand(input_remap_policy::PhysicalButtonHandInput{
-                .leftAvailable = leftAvailable,
-                .leftHeld = leftHeld,
-                .rightAvailable = rightAvailable,
-                .rightHeld = rightHeld,
-            });
-            const bool eventHandResolved = eventHandResolution != input_remap_policy::PhysicalButtonHandResolution::Unresolved;
-            const bool eventHandIsLeft = eventHandResolution == input_remap_policy::PhysicalButtonHandResolution::Left;
+            /*
+             * This handler only ever receives PRIMARY-wand Activate/WandAccept
+             * (live-verified 2026-07-12; the secondary wand's accept button
+             * never produces an event here), so the event's physical hand is
+             * the primary-wand hand by identity.
+             */
+            const bool primaryHandEvent = eventMatched && isPrimaryWandInputEvent(event);
+            const bool primaryHandIsLeft = f4vr::isLeftHandedMode();
             const bool firingHandIsLeft = s_equippedWeaponLeftHandFiringActive.load(std::memory_order_acquire);
-            const bool eventMatchesFiringHand = eventHandResolved && eventHandIsLeft == firingHandIsLeft;
-            const bool virtualHolstersOwnsInput = eventMatched && eventMatchesFiringHand &&
-                                                  shouldDeferVirtualHolstersInput(eventHandIsLeft,
-                                                      buttonId,
+            const bool firingHandIsPrimaryHand = firingHandIsLeft == primaryHandIsLeft;
+            const bool virtualHolstersOwnsInput = primaryHandEvent && firingHandIsPrimaryHand &&
+                                                  shouldDeferVirtualHolstersInput(primaryHandIsLeft,
+                                                      nativeEventButtonId(event),
                                                       g_rockConfig.rockVirtualHolstersDeferWeaponToggleInZone,
                                                       "firing-hand activate reload");
             const bool route = input_remap_policy::shouldRouteFiringHandActivateReload(input_remap_policy::NativeActivateReloadInput{
@@ -1129,9 +1121,8 @@ namespace rock::input_remap_runtime
                 .gameplayInputAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire),
                 .menuInputActive = isInputBlockingMenuActive(),
                 .weaponDrawn = s_weaponDrawn.load(std::memory_order_acquire),
-                .eventHandResolved = eventHandResolved,
-                .eventHand = eventHandIsLeft ? input_remap_policy::Hand::Left : input_remap_policy::Hand::Right,
-                .firingHand = firingHandIsLeft ? input_remap_policy::Hand::Left : input_remap_policy::Hand::Right,
+                .primaryHandEvent = primaryHandEvent,
+                .firingHandIsPrimaryHand = firingHandIsPrimaryHand,
                 .buttonJustPressed = button && button->QJustPressed(),
                 .virtualHolstersOwnsInput = virtualHolstersOwnsInput,
                 .eventMatched = eventMatched,
@@ -1140,13 +1131,9 @@ namespace rock::input_remap_runtime
             if (eventMatched && button && button->QJustPressed()) {
                 ROCK_LOG_SAMPLE_DEBUG(Input,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "Reload hand gate: buttonId={} rawLeft(available={},held={}) rawRight(available={},held={}) resolved={} firing={} -> {}",
-                    buttonId,
-                    leftAvailable ? "yes" : "no",
-                    leftHeld ? "yes" : "no",
-                    rightAvailable ? "yes" : "no",
-                    rightHeld ? "yes" : "no",
-                    eventHandResolved ? (eventHandIsLeft ? "left" : "right") : "unresolved",
+                    "Reload hand gate: primaryHandEvent={} primaryHandIsLeft={} firing={} -> {}",
+                    primaryHandEvent ? "yes" : "no",
+                    primaryHandIsLeft ? "yes" : "no",
                     firingHandIsLeft ? "left" : "right",
                     route ? "route" : "reject");
             }
@@ -1911,6 +1898,60 @@ namespace rock::input_remap_runtime
     void setProviderOpenVrGameInputSuppressed(bool isLeft, bool suppressed)
     {
         s_providerOpenVrGameInputSuppressed[isLeft ? 0u : 1u].store(suppressed, std::memory_order_release);
+    }
+
+    void updateFiringHandReloadInput()
+    {
+        /*
+         * X-side reload: the secondary wand's accept button (left X in the
+         * default layout) never reaches the hooked ActivateHandler, so its
+         * reload intent is polled here once per frame from ROCK's raw OpenVR
+         * edge accumulator. consumeRawButtonState is deliberately called
+         * every frame, gated or not: the accumulator latches presses until
+         * consumed, and an unconsumed press made while the OTHER hand owned
+         * the firing grip must never fire a stale reload after a takeover.
+         * The accumulator's menu rearm also guarantees a menu-accept press
+         * (X confirms UI selections) cannot replay as a reload on menu exit.
+         * Provider API consumers are unaffected: apiGetRawWandButtonStateV1
+         * exposes level state only, by design. Frame-thread only.
+         */
+        const bool secondaryHandIsLeft = !f4vr::isLeftHandedMode();
+        const auto acceptState = consumeRawButtonState(secondaryHandIsLeft, input_remap_policy::kOpenVrAcceptButtonId);
+        if (!acceptState.available || !acceptState.pressed) {
+            return;
+        }
+
+        const bool firingHandIsLeft = s_equippedWeaponLeftHandFiringActive.load(std::memory_order_acquire);
+        const bool firingHandIsSecondaryHand = firingHandIsLeft == secondaryHandIsLeft;
+        const bool virtualHolstersOwnsInput = firingHandIsSecondaryHand &&
+            shouldDeferVirtualHolstersInput(secondaryHandIsLeft,
+                input_remap_policy::kOpenVrAcceptButtonId,
+                g_rockConfig.rockVirtualHolstersDeferWeaponToggleInZone,
+                "firing-hand reload press");
+        const bool dispatch = input_remap_policy::shouldDispatchSecondaryHandReloadPress(input_remap_policy::SecondaryHandReloadInput{
+            .remapEnabled = g_rockConfig.rockInputRemapEnabled,
+            .gameplayInputAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire),
+            .menuInputActive = isInputBlockingMenuActive(),
+            .weaponDrawn = s_weaponDrawn.load(std::memory_order_acquire),
+            .firingHandIsSecondaryHand = firingHandIsSecondaryHand,
+            .acceptButtonPressedEdge = acceptState.pressed,
+            .virtualHolstersOwnsInput = virtualHolstersOwnsInput,
+        });
+
+        ROCK_LOG_SAMPLE_DEBUG(Input,
+            g_rockConfig.rockLogSampleMilliseconds,
+            "Reload press gate: hand={} firing={} weaponDrawn={} -> {}",
+            secondaryHandIsLeft ? "left-X" : "right-A",
+            firingHandIsLeft ? "left" : "right",
+            s_weaponDrawn.load(std::memory_order_acquire) ? "yes" : "no",
+            dispatch ? "dispatch" : "drop");
+
+        if (dispatch && dispatchNativeReloadAction()) {
+            ROCK_LOG_SAMPLE_DEBUG(Input,
+                g_rockConfig.rockLogSampleMilliseconds,
+                "Dispatched secondary-hand accept press to equipped weapon reload hand={}",
+                secondaryHandIsLeft ? "left-X" : "right-A");
+        }
     }
 
     bool isMenuInputActive()

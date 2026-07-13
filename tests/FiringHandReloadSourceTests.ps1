@@ -25,25 +25,42 @@ function Reject-Text {
     }
 }
 
+# A-side: the hooked ActivateHandler only ever receives PRIMARY-wand events
+# (live-verified 2026-07-12), so the route must gate on primary-wand identity
+# matching the firing grip, never on a raw-snapshot guess of the event hand.
 Require-Text 'src/physics-interaction/input/InputRemapPolicy.h' `
-    'input\.eventHandResolved[\s\S]{0,100}input\.eventHand\s*==\s*input\.firingHand' `
-    'Reload policy must require an unambiguous physical event hand that matches the firing grip.'
+    'input\.primaryHandEvent\s*&&\s*input\.firingHandIsPrimaryHand' `
+    'A-side reload policy must require a primary-wand event whose physical hand owns the firing grip.'
+
+Reject-Text 'src/physics-interaction/input/InputRemapPolicy.h' `
+    'resolvePhysicalButtonHand' `
+    'The raw-snapshot event-hand resolver is retired: it assumed secondary-wand events reach the ActivateHandler (they never do) and rejected legitimate presses on shared-button co-press.'
 
 Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
-    'shouldRouteFiringHandActivateReload[\s\S]{0,1800}s_controllers[\s\S]{0,800}resolvePhysicalButtonHand[\s\S]{0,600}firingHandIsLeft\s*=\s*s_equippedWeaponLeftHandFiringActive' `
-    'Runtime reload routing must resolve the physical controller from ROCK raw button snapshots and compare it with live firing-hand ownership.'
+    'shouldRouteFiringHandActivateReload[\s\S]{0,1400}isPrimaryWandInputEvent\(event\)[\s\S]{0,600}firingHandIsLeft\s*=\s*s_equippedWeaponLeftHandFiringActive' `
+    'Runtime A-side reload routing must derive the event hand from primary-wand identity and compare it with live firing-hand ownership.'
 
-Reject-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
-    'shouldRouteFiringHandActivateReload[\s\S]{0,1200}primaryHandIsLeft' `
-    'Reload routing must not infer physical hand from FO4VR primary/secondary wand identity.'
+# X-side: the secondary wand accept button never produces an engine event, so
+# the reload must be dispatched from ROCK''s own raw press edge each frame.
+Require-Text 'src/physics-interaction/input/InputRemapPolicy.h' `
+    'shouldDispatchSecondaryHandReloadPress[\s\S]{0,600}firingHandIsSecondaryHand\s*&&\s*input\.acceptButtonPressedEdge' `
+    'X-side reload policy must gate the raw accept-button press edge on secondary-hand firing-grip ownership.'
+
+Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
+    'updateFiringHandReloadInput[\s\S]{0,2400}consumeRawButtonState\(secondaryHandIsLeft,\s*input_remap_policy::kOpenVrAcceptButtonId\)[\s\S]{0,2400}dispatchNativeReloadAction' `
+    'Runtime X-side reload must consume the secondary wand''s raw accept press edge every frame and dispatch the native reload action.'
+
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'input_remap_runtime::updateFiringHandReloadInput\(\)' `
+    'PhysicsInteraction must drive the per-frame X-side reload poll so press edges are consumed before any early return.'
 
 Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
     'shouldRouteFiringHandActivateReload\(inputEvent\)[\s\S]{0,700}shouldSuppressNativeTakeEquipActionEvent\(inputEvent\)' `
     'A firing-hand reload press must dispatch before same-button take/equip classification can consume it.'
 
 Require-Text 'tests/InputRemapPolicyTests.cpp' `
-    'exclusive physical left button resolves to left[\s\S]{0,1800}missing controller snapshot fails closed[\s\S]{0,10000}left X routes reload while the left hand owns the firing grip[\s\S]{0,1200}right A cannot reload while the left hand owns the firing grip' `
-    'Policy tests must cover physical hand resolution, left-X acceptance, ambiguity rejection, and opposite right-A rejection during left firing.'
+    'right A cannot reload while the left hand owns the firing grip[\s\S]{0,3000}left X routes reload while the left hand owns the firing grip[\s\S]{0,600}left X cannot reload while the right hand owns the firing grip' `
+    'Policy tests must cover left-X acceptance during left firing plus both opposite-hand rejections.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'Firing-hand reload source boundary failed:'

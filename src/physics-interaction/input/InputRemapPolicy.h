@@ -10,21 +10,6 @@ namespace rock::input_remap_policy
         Right,
     };
 
-    enum class PhysicalButtonHandResolution : std::uint8_t
-    {
-        Unresolved,
-        Left,
-        Right,
-    };
-
-    struct PhysicalButtonHandInput
-    {
-        bool leftAvailable{ false };
-        bool leftHeld{ false };
-        bool rightAvailable{ false };
-        bool rightHeld{ false };
-    };
-
     struct Settings
     {
         bool enabled{ true };
@@ -82,12 +67,28 @@ namespace rock::input_remap_policy
         bool gameplayInputAllowed{ true };
         bool menuInputActive{ false };
         bool weaponDrawn{ false };
-        bool eventHandResolved{ false };
-        Hand eventHand{ Hand::Right };
-        Hand firingHand{ Hand::Right };
+        bool primaryHandEvent{ false };
+        bool firingHandIsPrimaryHand{ false };
         bool buttonJustPressed{ false };
         bool virtualHolstersOwnsInput{ false };
         bool eventMatched{ false };
+    };
+
+    /*
+     * X-side reload input: the secondary wand's accept button never produces
+     * an engine event ROCK can hook (see shouldRouteFiringHandActivateReload),
+     * so the runtime polls ROCK's own raw OpenVR press edge for it once per
+     * frame and dispatches the native reload action directly.
+     */
+    struct SecondaryHandReloadInput
+    {
+        bool remapEnabled{ true };
+        bool gameplayInputAllowed{ true };
+        bool menuInputActive{ false };
+        bool weaponDrawn{ false };
+        bool firingHandIsSecondaryHand{ false };
+        bool acceptButtonPressedEdge{ false };
+        bool virtualHolstersOwnsInput{ false };
     };
 
     struct EquippedWeaponPrimaryDetachInputGate
@@ -150,6 +151,15 @@ namespace rock::input_remap_policy
     inline constexpr int kOpenVrAxisCount = 5;
     inline constexpr int kOpenVrSteamVrTriggerButtonId = kOpenVrAxisButtonBase + 1;
 
+    /*
+     * OpenVR k_EButton_A: the lower face button on BOTH controllers (right A,
+     * left X) sets bit 7 of its own controller's ulButtonPressed mask.
+     * Live-verified 2026-07-12 via the reload-gate trace: a right-A Activate
+     * event reports idCode 7 while the right tracker holds bit 7, and a held
+     * left X raises the same bit on the left tracker only.
+     */
+    inline constexpr int kOpenVrAcceptButtonId = 7;
+
     [[nodiscard]] constexpr bool isAllowedGrabButtonId(int buttonId)
     {
         return isValidButtonId(buttonId) && buttonId != kOpenVrSteamVrTriggerButtonId;
@@ -176,21 +186,6 @@ namespace rock::input_remap_policy
         return mask != 0 && (pressedMask & mask) != 0;
     }
 
-    /*
-     * FO4VR's primary/secondary wand labels do not identify the physical
-     * controller that produced Activate/WandAccept. Resolve A/X from ROCK's
-     * pre-remap OpenVR snapshots instead. Both controllers must be sampled,
-     * and exactly one may hold the native event's button; ambiguity fails
-     * closed so one hand can never reload the other hand's weapon.
-     */
-    [[nodiscard]] constexpr PhysicalButtonHandResolution resolvePhysicalButtonHand(const PhysicalButtonHandInput& input)
-    {
-        if (!input.leftAvailable || !input.rightAvailable || input.leftHeld == input.rightHeld) {
-            return PhysicalButtonHandResolution::Unresolved;
-        }
-        return input.leftHeld ? PhysicalButtonHandResolution::Left : PhysicalButtonHandResolution::Right;
-    }
-
     [[nodiscard]] constexpr bool shouldSuppressNativeGripReadyAction(const NativeActionSuppressionInput& input)
     {
         return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched &&
@@ -212,14 +207,33 @@ namespace rock::input_remap_policy
     /*
      * Reload belongs to the physical hand currently occupying the firing
      * grip: right A for a right firing grip, left X for a left firing grip.
-     * Activate/WandAccept naming is shared by both controllers; physical hand
-     * identity, not the game's fixed primary-wand role, selects the route.
+     *
+     * A-side route. The hooked ActivateHandler only ever receives Activate/
+     * WandAccept from the PRIMARY wand — live-verified 2026-07-12: every gate
+     * trace across sessions reports a primary-wand device and left-X presses
+     * never produce an event here (an earlier raw-snapshot resolution built
+     * on the opposite assumption also rejected legitimate presses whenever
+     * both controllers held their shared accept-button bit). The event's
+     * physical hand therefore IS the primary-wand hand; reload routes only
+     * while that same hand occupies the firing grip. A secondary-hand firing
+     * grip is fed by shouldDispatchSecondaryHandReloadPress instead.
      */
     [[nodiscard]] constexpr bool shouldRouteFiringHandActivateReload(const NativeActivateReloadInput& input)
     {
-        return input.remapEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.weaponDrawn && input.eventHandResolved &&
-               input.eventHand == input.firingHand &&
+        return input.remapEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.weaponDrawn &&
+               input.primaryHandEvent && input.firingHandIsPrimaryHand &&
                input.buttonJustPressed && !input.virtualHolstersOwnsInput && input.eventMatched;
+    }
+
+    /*
+     * X-side route twin of the gate above, evaluated per frame from the raw
+     * press edge of the SECONDARY wand's accept button while that physical
+     * hand occupies the firing grip.
+     */
+    [[nodiscard]] constexpr bool shouldDispatchSecondaryHandReloadPress(const SecondaryHandReloadInput& input)
+    {
+        return input.remapEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.weaponDrawn &&
+               input.firingHandIsSecondaryHand && input.acceptButtonPressedEdge && !input.virtualHolstersOwnsInput;
     }
 
     [[nodiscard]] constexpr bool shouldConsumeEquippedWeaponPrimaryDetachInput(const EquippedWeaponPrimaryDetachInputGate& input)

@@ -32,6 +32,16 @@ namespace rock::input_remap_runtime
     // primary wand's trigger and blank both physical trigger identities.
     void setEquippedWeaponLeftHandFiringActive(bool active);
     void setProviderOpenVrGameInputSuppressed(bool isLeft, bool suppressed);
+    /*
+     * Once-per-frame reload input for the firing hand on the SECONDARY wand
+     * (left X in the default layout): that button never produces an engine
+     * event ROCK can hook, so PhysicsInteraction drives this poll, which
+     * consumes the raw accept-button press edge and dispatches the native
+     * reload action while that physical hand occupies the firing grip.
+     * Call every frame regardless of weapon state so stale press edges can
+     * never latch across a firing-hand change. Frame thread only.
+     */
+    void updateFiringHandReloadInput();
     bool isMenuInputActive();
     bool shouldDeferGrabInputForVirtualHolsters(bool isLeft, int buttonId);
     bool shouldSuppressNativeTriggerAction(const RE::InputEvent* event);

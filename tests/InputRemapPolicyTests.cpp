@@ -48,30 +48,6 @@ int main()
     ok &= expectFalse("SteamVR trigger does not act as ROCK grab input", triggerGrabDecision.grabPressed);
     settings.grabButtonId = 2;
 
-    PhysicalButtonHandInput physicalButtonHand{
-        .leftAvailable = true,
-        .leftHeld = true,
-        .rightAvailable = true,
-        .rightHeld = false,
-    };
-    ok &= expectTrue("exclusive physical left button resolves to left",
-        resolvePhysicalButtonHand(physicalButtonHand) == PhysicalButtonHandResolution::Left);
-    physicalButtonHand.leftHeld = false;
-    physicalButtonHand.rightHeld = true;
-    ok &= expectTrue("exclusive physical right button resolves to right",
-        resolvePhysicalButtonHand(physicalButtonHand) == PhysicalButtonHandResolution::Right);
-    physicalButtonHand.leftHeld = true;
-    ok &= expectTrue("simultaneous physical buttons fail closed",
-        resolvePhysicalButtonHand(physicalButtonHand) == PhysicalButtonHandResolution::Unresolved);
-    physicalButtonHand.leftHeld = false;
-    physicalButtonHand.rightHeld = false;
-    ok &= expectTrue("no held physical button fails closed",
-        resolvePhysicalButtonHand(physicalButtonHand) == PhysicalButtonHandResolution::Unresolved);
-    physicalButtonHand.leftAvailable = false;
-    physicalButtonHand.rightHeld = true;
-    ok &= expectTrue("missing controller snapshot fails closed",
-        resolvePhysicalButtonHand(physicalButtonHand) == PhysicalButtonHandResolution::Unresolved);
-
     NativeActionSuppressionInput base{
         .remapEnabled = true,
         .suppressionEnabled = true,
@@ -180,9 +156,8 @@ int main()
         .gameplayInputAllowed = true,
         .menuInputActive = false,
         .weaponDrawn = true,
-        .eventHandResolved = true,
-        .eventHand = Hand::Right,
-        .firingHand = Hand::Right,
+        .primaryHandEvent = true,
+        .firingHandIsPrimaryHand = true,
         .buttonJustPressed = true,
         .eventMatched = true,
     };
@@ -190,19 +165,12 @@ int main()
     auto heldActivateReload = activateReload;
     heldActivateReload.buttonJustPressed = false;
     ok &= expectFalse("held firing-hand activate does not repeat reload", shouldRouteFiringHandActivateReload(heldActivateReload));
-    auto leftXWhileRightFiring = activateReload;
-    leftXWhileRightFiring.eventHand = Hand::Left;
-    ok &= expectFalse("left X cannot reload while the right hand owns the firing grip", shouldRouteFiringHandActivateReload(leftXWhileRightFiring));
-    auto leftFiringActivateReload = activateReload;
-    leftFiringActivateReload.eventHand = Hand::Left;
-    leftFiringActivateReload.firingHand = Hand::Left;
-    ok &= expectTrue("left X routes reload while the left hand owns the firing grip", shouldRouteFiringHandActivateReload(leftFiringActivateReload));
-    auto unresolvedLeftFiringActivateReload = leftFiringActivateReload;
-    unresolvedLeftFiringActivateReload.eventHandResolved = false;
-    ok &= expectFalse("unresolved physical controller cannot reload left firing grip", shouldRouteFiringHandActivateReload(unresolvedLeftFiringActivateReload));
-    auto rightAWhileLeftFiring = leftFiringActivateReload;
-    rightAWhileLeftFiring.eventHand = Hand::Right;
+    auto rightAWhileLeftFiring = activateReload;
+    rightAWhileLeftFiring.firingHandIsPrimaryHand = false;
     ok &= expectFalse("right A cannot reload while the left hand owns the firing grip", shouldRouteFiringHandActivateReload(rightAWhileLeftFiring));
+    auto secondaryWandActivateReload = activateReload;
+    secondaryWandActivateReload.primaryHandEvent = false;
+    ok &= expectFalse("non-primary-wand activate never routes reload through the event hook", shouldRouteFiringHandActivateReload(secondaryWandActivateReload));
     auto holsteredActivateReload = activateReload;
     holsteredActivateReload.weaponDrawn = false;
     ok &= expectFalse("holstered firing-hand activate does not route reload", shouldRouteFiringHandActivateReload(holsteredActivateReload));
@@ -215,6 +183,32 @@ int main()
     auto virtualHolstersActivateReload = activateReload;
     virtualHolstersActivateReload.virtualHolstersOwnsInput = true;
     ok &= expectFalse("VirtualHolsters zone ownership blocks firing-hand activate reload", shouldRouteFiringHandActivateReload(virtualHolstersActivateReload));
+
+    SecondaryHandReloadInput secondaryReload{
+        .remapEnabled = true,
+        .gameplayInputAllowed = true,
+        .menuInputActive = false,
+        .weaponDrawn = true,
+        .firingHandIsSecondaryHand = true,
+        .acceptButtonPressedEdge = true,
+        .virtualHolstersOwnsInput = false,
+    };
+    ok &= expectTrue("left X routes reload while the left hand owns the firing grip", shouldDispatchSecondaryHandReloadPress(secondaryReload));
+    auto leftXWhileRightFiring = secondaryReload;
+    leftXWhileRightFiring.firingHandIsSecondaryHand = false;
+    ok &= expectFalse("left X cannot reload while the right hand owns the firing grip", shouldDispatchSecondaryHandReloadPress(leftXWhileRightFiring));
+    auto secondaryReloadNoEdge = secondaryReload;
+    secondaryReloadNoEdge.acceptButtonPressedEdge = false;
+    ok &= expectFalse("held left X does not repeat reload without a fresh press edge", shouldDispatchSecondaryHandReloadPress(secondaryReloadNoEdge));
+    auto secondaryReloadHolstered = secondaryReload;
+    secondaryReloadHolstered.weaponDrawn = false;
+    ok &= expectFalse("holstered weapon blocks secondary-hand reload press", shouldDispatchSecondaryHandReloadPress(secondaryReloadHolstered));
+    auto secondaryReloadMenu = secondaryReload;
+    secondaryReloadMenu.menuInputActive = true;
+    ok &= expectFalse("menu input blocks secondary-hand reload press", shouldDispatchSecondaryHandReloadPress(secondaryReloadMenu));
+    auto secondaryReloadVirtualHolsters = secondaryReload;
+    secondaryReloadVirtualHolsters.virtualHolstersOwnsInput = true;
+    ok &= expectFalse("VirtualHolsters zone ownership blocks secondary-hand reload press", shouldDispatchSecondaryHandReloadPress(secondaryReloadVirtualHolsters));
 
     EquippedWeaponPrimaryDetachInputGate primaryDetachGate{
         .featureAvailable = true,
