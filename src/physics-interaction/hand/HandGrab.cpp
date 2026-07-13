@@ -5130,6 +5130,7 @@ namespace rock
         _grabAuthorityPivotBConstraintLocalGame = {};
         _grabAuthorityProxyFrameValid = false;
         _grabAuthorityPendingTarget = {};
+        _grabAuthoritySourceClock.reset();
         _lastAppliedGrabAuthorityProxyWorld = {};
         _hasLastAppliedGrabAuthorityProxyWorld = false;
         clearGeneratedKeyframedBodyDriveState(_grabAuthorityProxyDriveState);
@@ -6335,6 +6336,7 @@ namespace rock
             _lastAppliedGrabAuthorityProxyWorld = proxyWorldTransform;
             _lastAppliedGrabAuthorityRawHandWorld = rawHandWorldTransform;
             _hasLastAppliedGrabAuthorityProxyWorld = true;
+            _grabAuthoritySourceClock.reset();
             _grabAuthorityProxyQueuedSequence = 1;
             _grabAuthorityProxyFlushSequence = 0;
             _grabAuthorityProxyFailedFlushes = 0;
@@ -12429,6 +12431,8 @@ namespace rock
         float angularMotorBudget = 0.0f;
         std::uint64_t queuedSequence = 0;
         std::uint64_t flushSequence = 0;
+        grab_authority_source_clock::ResampleAction resampleAction = grab_authority_source_clock::ResampleAction::Hold;
+        std::uint32_t resampleRebaseCount = 0;
         GrabAngularAuthority angularAuthority = GrabAngularAuthority::HknpRagdollMotorAtom;
         {
             std::scoped_lock lock(_grabAuthorityProxyMutex);
@@ -12454,6 +12458,16 @@ namespace rock
                 pending.proxyWorld.translate.y += roomCorrection.y;
                 pending.proxyWorld.translate.z += roomCorrection.z;
             }
+            // Accept the game-frame sample exactly once on its own source-clock
+            // delta; the queued-sequence identity keeps multi-substep re-flushes
+            // of the same pending target from advancing the source timeline. The
+            // drive target is then evaluated per substep on the physics clock
+            // below. See GrabAuthoritySourceClockResampler.h for the contract.
+            _grabAuthoritySourceClock.advanceSource(
+                pending.proxyWorld.translate,
+                pending.proxyWorld.rotate,
+                pending.deltaTime,
+                _grabAuthorityProxyQueuedSequence);
             livePalmReferenceOk = tryResolveLivePalmAnchorReference(world, livePalmReference);
             if (!livePalmReferenceOk) {
                 ++_grabAuthorityProxyFailedFlushes;
@@ -12470,6 +12484,16 @@ namespace rock
             angularAuthority = _activeConstraint.angularAuthority;
 
             const float driveDelta = havok_physics_timing::driveDeltaSeconds(timing);
+            // Resample the sampled translation trajectory to this substep's end
+            // time so the native drive (velocity = error / driveDelta, verified
+            // contract) commands the source segment velocity instead of the
+            // quantization-modulated one. Local copy only: every downstream use
+            // in this flush -- keyframe drive, constraint target, motors,
+            // readback diagnostics, last-applied tracking -- sees the resampled
+            // target consistently, while the stored pending target stays the raw
+            // sample. Rotation deliberately stays on the sampled path.
+            pending.proxyWorld.translate = _grabAuthoritySourceClock.evaluate(driveDelta, resampleAction);
+            resampleRebaseCount = _grabAuthoritySourceClock.rebaseCount;
             float linearVelocityHavok[4]{};
             float angularVelocityHavok[4]{};
             float nativeLinearVelocityIgnored[4]{};
@@ -12987,6 +13011,7 @@ namespace rock
                     if (flushSequence <= 16 || _grabAuthorityProxyLogCounter >= 45 ||
                         !proxyReadbackBetweenOk ||
                         !angularDriveOk ||
+                        resampleAction == grab_authority_source_clock::ResampleAction::Rebase ||
                         proxyReadbackBetweenPositionErrorGameUnits > 1.0f ||
                         proxyReadbackBetweenRotationErrorDegrees > 1.0f) {
                         _grabAuthorityProxyLogCounter = 0;
@@ -13039,7 +13064,7 @@ namespace rock
             std::uint32_t filterInfo = 0;
             const bool filterReadOk = havok_runtime::tryReadFilterInfo(world, proxyBodyId, filterInfo);
             ROCK_LOG_DEBUG(Hand,
-                "{} PROXY GRAB AUTHORITY: seq={}/{} diag=bodyFrameConstraint+queuedTarget+generatedKeyframedProxy proxyBody={} constraint={} substep={}/{} dt={:.6f} targetSrc={} target=({:.1f},{:.1f},{:.1f}) desiredBody=({:.1f},{:.1f},{:.1f}) angularAuthority={} angularRef={} solverAngular=ragdollAtom angularBudget={:.3f} pivotB=({:.2f},{:.2f},{:.2f}) err={:.2f}gu rotErr={:.2f}deg proxyDrive=driveToKeyFrame palmRef={} palmSrc={} palmMotion={} proxyVelSource={} proxyVel={:.3f}hk proxyAngVel={:.3f}rad/s longLever={:.1f}gu proxyRead={} proxySrc={} proxyMotion={} proxyErr={:.3f}gu/{:.2f}deg forceBudget={:.2f} colliding={} filterRead={} filter=0x{:08X} noContact={}",
+                "{} PROXY GRAB AUTHORITY: seq={}/{} diag=bodyFrameConstraint+queuedTarget+generatedKeyframedProxy proxyBody={} constraint={} substep={}/{} dt={:.6f} resample={} rebases={} targetSrc={} target=({:.1f},{:.1f},{:.1f}) desiredBody=({:.1f},{:.1f},{:.1f}) angularAuthority={} angularRef={} solverAngular=ragdollAtom angularBudget={:.3f} pivotB=({:.2f},{:.2f},{:.2f}) err={:.2f}gu rotErr={:.2f}deg proxyDrive=driveToKeyFrame palmRef={} palmSrc={} palmMotion={} proxyVelSource={} proxyVel={:.3f}hk proxyAngVel={:.3f}rad/s longLever={:.1f}gu proxyRead={} proxySrc={} proxyMotion={} proxyErr={:.3f}gu/{:.2f}deg forceBudget={:.2f} colliding={} filterRead={} filter=0x{:08X} noContact={}",
                 handName(),
                 flushSequence,
                 queuedSequence,
@@ -13048,6 +13073,8 @@ namespace rock
                 timing.substepIndex,
                 timing.substepCount,
                 havok_physics_timing::driveDeltaSeconds(timing),
+                grab_authority_source_clock::resampleActionName(resampleAction),
+                resampleRebaseCount,
                 pending.proxyFrameSource ? pending.proxyFrameSource : "unknown",
                 pending.proxyWorld.translate.x,
                 pending.proxyWorld.translate.y,

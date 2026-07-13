@@ -7,6 +7,7 @@
 #include "physics-interaction/grab/GrabFinger.h"
 #include "physics-interaction/grab/GrabTelemetry.h"
 #include "physics-interaction/grab/GrabThreePhase.h"
+#include "physics-interaction/grab/GrabAuthoritySourceClockResampler.h"
 #include "physics-interaction/grab/GrabConstraint.h"
 #include "physics-interaction/grab/GrabHeldObject.h"
 #include "physics-interaction/grab/GrabMotionController.h"
@@ -956,6 +957,9 @@ namespace rock
             bool valid = false;
         };
         GrabAuthorityProxyPendingTarget _grabAuthorityPendingTarget{};
+        // Maps the game-frame-sampled proxy target trajectory onto physics-substep
+        // time; guarded by _grabAuthorityProxyMutex like the pending target.
+        grab_authority_source_clock::Resampler _grabAuthoritySourceClock{};
         RE::NiTransform _lastAppliedGrabAuthorityProxyWorld{};
         std::atomic<float> _lastProxyTargetSpeedGameUnits{ -1.0f };
         RE::NiTransform _lastAppliedGrabAuthorityRawHandWorld{};
