@@ -1,6 +1,7 @@
 #include "physics-interaction/native/PhysicsShapeCast.h"
 
 #include "physics-interaction/native/HavokOffsets.h"
+#include "physics-interaction/native/HavokWorldLock.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/PhysicsUtils.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
@@ -144,7 +145,17 @@ namespace rock::physics_shape_cast
         auto query = physics_shape_cast_math::buildRuntimeShapeCastQuery(filterRef, shape, input.collisionFilterInfo, start, displacement);
         auto transform = identityTransform();
         prepareAllHitsCollector(collector);
-        world->CastShape(&query, &transform, &collector, &collector);
+        {
+            /*
+             * The engine's broadphase cast reads candidate body shapes with no
+             * null check, so the cast must never observe world mutation
+             * mid-flight. Hold the world read lock exactly across the native
+             * cast; the collector stores hit copies, so consumers do not need
+             * the lock afterwards.
+             */
+            havok_world_lock::ScopedWorldReadLock worldReadLock(world);
+            world->CastShape(&query, &transform, &collector, &collector);
+        }
 
         if (diagnostics) {
             diagnostics->castRan = true;
