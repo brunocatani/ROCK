@@ -74,6 +74,12 @@ namespace rock::grab_authority_source_clock
     constexpr float kMaxExtrapolationSourceIntervals = 1.0f;
     // Anchor interval used before any usable source delta has been seen.
     constexpr float kFallbackSourceIntervalSeconds = 1.0f / 90.0f;
+    // Room-velocity feed-forward speed gates. Below the floor the player is
+    // standing (controller noise); above the cap the velocity is not
+    // locomotion (launch, script teleport, corrupted read) and must not be
+    // predicted into the target.
+    constexpr float kFeedForwardMinSpeedGameUnitsPerSecond = 1.0f;
+    constexpr float kFeedForwardMaxSpeedGameUnitsPerSecond = 2000.0f;
 
     // angle(a^T * b) via trace(a^T * b) = element-wise dot product; identical for
     // row-major and column-major storage because both operands share it.
@@ -93,6 +99,57 @@ namespace rock::grab_authority_source_clock
     inline bool isFiniteVector(const RE::NiPoint3& value) noexcept
     {
         return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+    }
+
+    /*
+     * Room-velocity feed-forward: one-substep prediction of the room-origin
+     * component of the grab target.
+     *
+     * The room origin advances on the physics clock (the engine integrates the
+     * player character controller inside the world step), but the grab target
+     * is sampled on the game clock one frame earlier. The resampler makes the
+     * commanded velocity smooth, yet the commanded POSITION still replays the
+     * sampled room trajectory one substep late; with quantized substep deltas
+     * the replay lag oscillates and the held object shimmers against the world
+     * in proportion to locomotion speed (2026-07-13 telemetry: ~0.7 gu at
+     * 400 gu/s).
+     *
+     * Adding liveCharControllerVelocity * physicsDelta to the resampled target
+     * predicts where the room will be at the END of the upcoming substep, so
+     * the object advances in lockstep with the world it lives in. This is NOT
+     * the removed compensation class: there is no position accumulator (the
+     * base is the resampled actual trajectory every substep, so error cannot
+     * build up), no commanded-vs-actual comparison, and no second behavior
+     * path -- standing still the velocity is zero and the result is
+     * byte-identical to the unpredicted target.
+     */
+    inline RE::NiPoint3 applyRoomVelocityFeedForward(const RE::NiPoint3& resampledTranslation,
+        const RE::NiPoint3& liveVelocityGameUnitsPerSecond,
+        float physicsDeltaSeconds,
+        bool& outApplied) noexcept
+    {
+        outApplied = false;
+        if (!isFiniteVector(resampledTranslation)) {
+            return resampledTranslation;
+        }
+        if (!isFiniteVector(liveVelocityGameUnitsPerSecond) ||
+            !havok_physics_timing::isUsableDelta(physicsDeltaSeconds)) {
+            return resampledTranslation;
+        }
+        const float speedSquared =
+            liveVelocityGameUnitsPerSecond.x * liveVelocityGameUnitsPerSecond.x +
+            liveVelocityGameUnitsPerSecond.y * liveVelocityGameUnitsPerSecond.y +
+            liveVelocityGameUnitsPerSecond.z * liveVelocityGameUnitsPerSecond.z;
+        if (!(speedSquared >= kFeedForwardMinSpeedGameUnitsPerSecond * kFeedForwardMinSpeedGameUnitsPerSecond) ||
+            speedSquared > kFeedForwardMaxSpeedGameUnitsPerSecond * kFeedForwardMaxSpeedGameUnitsPerSecond) {
+            return resampledTranslation;
+        }
+        outApplied = true;
+        return RE::NiPoint3{
+            resampledTranslation.x + liveVelocityGameUnitsPerSecond.x * physicsDeltaSeconds,
+            resampledTranslation.y + liveVelocityGameUnitsPerSecond.y * physicsDeltaSeconds,
+            resampledTranslation.z + liveVelocityGameUnitsPerSecond.z * physicsDeltaSeconds,
+        };
     }
 
     struct Resampler

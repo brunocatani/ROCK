@@ -418,6 +418,7 @@ namespace rock
         rockGrabPhysicsRateForceScaleExponent = kDefaultGrabPhysicsRateForceScaleExponent;
         rockGrabPhysicsRateMinForceScale = kDefaultGrabPhysicsRateMinForceScale;
         rockGrabPhysicsRateMaxForceScale = kDefaultGrabPhysicsRateMaxForceScale;
+        rockGrabRoomVelocityFeedForward = false;
 
         rockGrabForceFadeInTime = 0.1f;
         rockRightGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.0f, -2.0f, 0.0f);
@@ -1541,6 +1542,8 @@ namespace rock
             100.0f);
         rockGrabPhysicsRateForceScalingEnabled =
             ini.GetBoolValue(SECTION, "bGrabPhysicsRateForceScalingEnabled", rockGrabPhysicsRateForceScalingEnabled);
+        rockGrabRoomVelocityFeedForward =
+            ini.GetBoolValue(SECTION, "bGrabRoomVelocityFeedForward", rockGrabRoomVelocityFeedForward);
         rockGrabPhysicsRateReferenceHz = readClampedFloat(ini,
             SECTION,
             "fGrabPhysicsRateReferenceHz",
