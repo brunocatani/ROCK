@@ -223,6 +223,7 @@ namespace rock
 
         rockHandCollisionDynamicDrive = false;
         rockHandCollisionDynamicMaxLinearVelocityHavok = 15.0f;
+        rockHandCollisionDynamicContactPressMaxVelocityHavok = 1.0f;
         rockHandCollisionDynamicDivergenceTeleportGameUnits = 40.0f;
         rockHandCollisionDynamicDivergenceTeleportDwellSeconds = 0.3f;
         rockHandCollisionDynamicTeleportRecoverySeconds = 0.25f;
@@ -1044,6 +1045,13 @@ namespace rock
             15.0f,
             0.0f,
             200.0f);
+        rockHandCollisionDynamicContactPressMaxVelocityHavok = readClampedFloat(ini,
+            SECTION,
+            "fHandCollisionDynamicContactPressMaxVelocityHavok",
+            rockHandCollisionDynamicContactPressMaxVelocityHavok,
+            1.0f,
+            0.0f,
+            50.0f);
         rockHandCollisionDynamicDivergenceTeleportGameUnits = readClampedFloat(ini,
             SECTION,
             "fHandCollisionDynamicDivergenceTeleportGameUnits",

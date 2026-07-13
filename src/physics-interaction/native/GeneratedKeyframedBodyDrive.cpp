@@ -410,7 +410,8 @@ namespace rock
             RE::hknpWorld* world,
             BethesdaPhysicsBody& body,
             const RE::NiTransform& target,
-            float driveDeltaSeconds)
+            float driveDeltaSeconds,
+            const GeneratedBodyDriveMode& mode)
         {
             if (!world || !body.isValid() || !havok_physics_timing::isUsableDelta(driveDeltaSeconds)) {
                 return false;
@@ -433,6 +434,25 @@ namespace rock
 
             if (!havok_runtime::isFinite3(linearVelocityHavok) || !havok_runtime::isFinite3(angularVelocityRadians)) {
                 return false;
+            }
+
+            if (mode.hasContactPressDirection && mode.contactPressMaxVelocityHavok > 0.0f) {
+                const float dirLengthSq =
+                    mode.contactPressDirection[0] * mode.contactPressDirection[0] +
+                    mode.contactPressDirection[1] * mode.contactPressDirection[1] +
+                    mode.contactPressDirection[2] * mode.contactPressDirection[2];
+                if (std::isfinite(dirLengthSq) && dirLengthSq > 0.5f && dirLengthSq < 2.0f) {
+                    const float along =
+                        linearVelocityHavok[0] * mode.contactPressDirection[0] +
+                        linearVelocityHavok[1] * mode.contactPressDirection[1] +
+                        linearVelocityHavok[2] * mode.contactPressDirection[2];
+                    const float excess = along - mode.contactPressMaxVelocityHavok;
+                    if (std::isfinite(excess) && excess > 0.0f) {
+                        linearVelocityHavok[0] -= mode.contactPressDirection[0] * excess;
+                        linearVelocityHavok[1] -= mode.contactPressDirection[1] * excess;
+                        linearVelocityHavok[2] -= mode.contactPressDirection[2] * excess;
+                    }
+                }
             }
 
             linearVelocityHavok[3] = 0.0f;
@@ -592,7 +612,7 @@ namespace rock
                 result.driven = result.teleported;
                 result.placementFailed = !result.teleported;
             } else {
-                result.driven = driveDynamicBodyVelocityTowardTarget(world, body, target, driveDelta);
+                result.driven = driveDynamicBodyVelocityTowardTarget(world, body, target, driveDelta, mode);
                 result.nativeDriveFailed = !result.driven;
             }
             if (!result.driven) {

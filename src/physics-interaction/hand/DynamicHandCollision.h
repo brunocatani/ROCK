@@ -94,6 +94,11 @@ namespace rock
             // the after-solve deviation sample of the same substep.
             bool droveThisSubstep = false;
             RE::NiPoint3 commandedTargetGame{};
+            // Physics-thread copy of the last post-solve deviation; feeds the
+            // next substep's contact press cap (drive must lean on an
+            // established contact, not slam the full deficit into it).
+            RE::NiPoint3 lastPostSolveDeviationGame{};
+            bool lastPostSolveDeviationValid = false;
             /*
              * Divergence must PERSIST before a recovery teleport fires
              * (physics thread only). Without the dwell, a hand fighting a wall

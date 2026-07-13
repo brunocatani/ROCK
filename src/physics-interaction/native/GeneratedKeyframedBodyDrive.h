@@ -514,6 +514,19 @@ namespace rock
          */
         bool dynamicVelocity = false;
         float divergenceTeleportGameUnits = 0.0f;
+        /*
+         * Contact press cap: with an established contact (caller-known
+         * deviation), the hard-keyframe velocity component ALONG the press
+         * direction (unit vector from body toward the target, i.e. into the
+         * contact) is clamped to contactPressMaxVelocityHavok. Without it the
+         * drive slams the full deficit into the surface every substep and the
+         * solver ejection reads as rapid micro-punching. Tangential sliding
+         * and retreat keep full velocity. Zero cap or no direction = full
+         * drive (free space unchanged).
+         */
+        bool hasContactPressDirection = false;
+        float contactPressDirection[3] = { 0.0f, 0.0f, 0.0f };
+        float contactPressMaxVelocityHavok = 0.0f;
     };
 
     GeneratedKeyframedBodyDriveResult driveGeneratedKeyframedBody(

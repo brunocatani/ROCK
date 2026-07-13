@@ -177,6 +177,7 @@ namespace rock
          */
         bool rockHandCollisionDynamicDrive = false;
         float rockHandCollisionDynamicMaxLinearVelocityHavok = 15.0f;
+        float rockHandCollisionDynamicContactPressMaxVelocityHavok = 1.0f;
         float rockHandCollisionDynamicDivergenceTeleportGameUnits = 40.0f;
         float rockHandCollisionDynamicDivergenceTeleportDwellSeconds = 0.3f;
         float rockHandCollisionDynamicTeleportRecoverySeconds = 0.25f;

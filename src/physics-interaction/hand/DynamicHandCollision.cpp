@@ -274,6 +274,8 @@ namespace rock
         slot.createdRadius = 0.0f;
         slot.droveThisSubstep = false;
         slot.divergenceDwellSeconds = 0.0f;
+        slot.lastPostSolveDeviationGame = {};
+        slot.lastPostSolveDeviationValid = false;
         slot.deviationValidAtomic.store(false, std::memory_order_release);
         slot.teleportedAtomic.store(false, std::memory_order_release);
         slot.rebuildRequestedAtomic.store(false, std::memory_order_release);
@@ -485,10 +487,32 @@ namespace rock
                 const float divergenceThreshold = g_rockConfig.rockHandCollisionDynamicDivergenceTeleportGameUnits;
                 const bool teleportArmed =
                     slot.divergenceDwellSeconds >= g_rockConfig.rockHandCollisionDynamicDivergenceTeleportDwellSeconds;
-                const GeneratedBodyDriveMode mode{
+                GeneratedBodyDriveMode mode{
                     .dynamicVelocity = true,
                     .divergenceTeleportGameUnits = teleportArmed ? divergenceThreshold : 0.0f,
                 };
+
+                /*
+                 * Established contact -> lean, don't slam: cap the commanded
+                 * velocity component pressing INTO the contact (press direction
+                 * = from body toward target = minus the deviation direction).
+                 * Tangential slide and retreat keep full drive speed.
+                 */
+                constexpr float kPressCapActivationDeviationGameUnits = 0.25f;
+                const float pressCapHavok = g_rockConfig.rockHandCollisionDynamicContactPressMaxVelocityHavok;
+                if (pressCapHavok > 0.0f && slot.lastPostSolveDeviationValid) {
+                    const auto& deviation = slot.lastPostSolveDeviationGame;
+                    const float deviationLength = std::sqrt(
+                        deviation.x * deviation.x + deviation.y * deviation.y + deviation.z * deviation.z);
+                    if (std::isfinite(deviationLength) && deviationLength > kPressCapActivationDeviationGameUnits) {
+                        mode.hasContactPressDirection = true;
+                        mode.contactPressDirection[0] = -deviation.x / deviationLength;
+                        mode.contactPressDirection[1] = -deviation.y / deviationLength;
+                        mode.contactPressDirection[2] = -deviation.z / deviationLength;
+                        mode.contactPressMaxVelocityHavok = pressCapHavok;
+                    }
+                }
+
                 const auto result = driveGeneratedKeyframedBody(
                     world,
                     slot.body,
@@ -555,12 +579,20 @@ namespace rock
                 if (!havok_runtime::tryResolveLiveBodyWorldTransform(world, slot.body.getBodyId(), liveWorld) ||
                     !isFinitePoint(liveWorld.translate)) {
                     slot.deviationValidAtomic.store(false, std::memory_order_release);
+                    slot.lastPostSolveDeviationValid = false;
                     continue;
                 }
 
-                slot.deviationXAtomic.store(liveWorld.translate.x - slot.commandedTargetGame.x, std::memory_order_release);
-                slot.deviationYAtomic.store(liveWorld.translate.y - slot.commandedTargetGame.y, std::memory_order_release);
-                slot.deviationZAtomic.store(liveWorld.translate.z - slot.commandedTargetGame.z, std::memory_order_release);
+                const RE::NiPoint3 deviation{
+                    liveWorld.translate.x - slot.commandedTargetGame.x,
+                    liveWorld.translate.y - slot.commandedTargetGame.y,
+                    liveWorld.translate.z - slot.commandedTargetGame.z,
+                };
+                slot.lastPostSolveDeviationGame = deviation;
+                slot.lastPostSolveDeviationValid = true;
+                slot.deviationXAtomic.store(deviation.x, std::memory_order_release);
+                slot.deviationYAtomic.store(deviation.y, std::memory_order_release);
+                slot.deviationZAtomic.store(deviation.z, std::memory_order_release);
                 slot.deviationValidAtomic.store(true, std::memory_order_release);
             }
         }

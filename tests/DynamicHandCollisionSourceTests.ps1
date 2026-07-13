@@ -118,6 +118,22 @@ Reject-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
     'liveBodyGamePosition\.x - result\.targetGamePosition' `
     'Dynamic hand deviation must not be derived from the pre-collide drive telemetry.'
 
+# Contact press cap: an established contact must lean, not slam. The drive
+# clamps only the velocity component along the press direction, after the
+# hard-keyframe computation; the caller feeds the direction from the last
+# post-solve deviation.
+Require-OrderedText 'src/physics-interaction/native/GeneratedKeyframedBodyDrive.cpp' @(
+    'kFunc_ComputeHardKeyFrame',
+    'hasContactPressDirection',
+    'contactPressMaxVelocityHavok',
+    'setVelocity\('
+) 'Dynamic drive must clamp the contact press velocity after the hard-keyframe computation.'
+Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
+    'lastPostSolveDeviationValid',
+    'mode\.hasContactPressDirection = true;',
+    'driveGeneratedKeyframedBody\('
+) 'Dynamic hand flush must arm the press cap from the last post-solve deviation.'
+
 # The twins get their own visualization flag, independent of the keyframed
 # collider debug draws.
 Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
