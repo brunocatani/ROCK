@@ -320,7 +320,6 @@ namespace rock
         _lastHeldHandPositionHavok = {};
         _hasPreviousHeldRawHandWorld = false;
         _hasLastHeldHandPositionHavok = false;
-        _lastPlayerSpaceVelocityHavok = {};
         clearGrabHandCollisionSuppressionState();
         clearHeldLooseWeaponBodyCollisionSuppressionState();
     }
@@ -2383,13 +2382,12 @@ namespace rock
     void Hand::updateCollisionTransform(
         RE::hknpWorld* world,
         const RE::NiTransform& rollAuthorityWorld,
-        float deltaTime,
-        const RE::NiPoint3& authorityTranslationOffsetGame)
+        float deltaTime)
     {
         if (!hasCollisionBody() || !world)
             return;
 
-        _boneColliders.update(world, _isLeft, rollAuthorityWorld, _handBody, deltaTime, authorityTranslationOffsetGame);
+        _boneColliders.update(world, _isLeft, rollAuthorityWorld, _handBody, deltaTime);
     }
 
     void Hand::flushPendingCollisionPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)

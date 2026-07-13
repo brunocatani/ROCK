@@ -44,7 +44,6 @@
 #include "physics-interaction/grab/GrabPinchPocket.h"
 #include "physics-interaction/grab/GrabThreePhase.h"
 #include "physics-interaction/grab/HeldMassMovement.h"
-#include "physics-interaction/grab/HeldPlayerSpaceRegistry.h"
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/native/CharacterControllerRuntime.h"
@@ -184,20 +183,6 @@ namespace rock
         constexpr PhysicsObjectClaimOwner claimOwnerForHand(bool isLeft)
         {
             return isLeft ? PhysicsObjectClaimOwner::LeftHand : PhysicsObjectClaimOwner::RightHand;
-        }
-
-        [[nodiscard]] grab_locomotion_authority_bridge::Vec3 toGrabLocomotionAuthorityVec(const RE::NiPoint3& value)
-        {
-            return grab_locomotion_authority_bridge::Vec3{
-                .x = value.x,
-                .y = value.y,
-                .z = value.z,
-            };
-        }
-
-        [[nodiscard]] RE::NiPoint3 fromGrabLocomotionAuthorityVec(const grab_locomotion_authority_bridge::Vec3& value)
-        {
-            return RE::NiPoint3(value.x, value.y, value.z);
         }
 
         void clearEquippedWeaponPrimaryInputState()
@@ -694,9 +679,7 @@ namespace rock
             const RE::NiTransform* rawHandWorld,
             std::uint64_t gameFrameIndex,
             float gameDeltaSeconds,
-            const havok_physics_timing::PhysicsTimingSample* timing,
-            const RE::NiTransform* unbridgedRawHandWorld = nullptr,
-            const RE::NiPoint3* locomotionAuthorityOffsetGame = nullptr)
+            const havok_physics_timing::PhysicsTimingSample* timing)
         {
             const PalmClockLogMode mode = palmClockLogMode();
             if (mode == PalmClockLogMode::Disabled) {
@@ -721,8 +704,6 @@ namespace rock
             const TransformDelta rawToTarget = (rawOk && targetOk) ? measureTransformDelta(*rawHandWorld, palmTargetWorld) : TransformDelta{ -1.0f, -1.0f };
             const TransformDelta rawToLive = (rawOk && liveOk) ? measureTransformDelta(*rawHandWorld, livePalm.world) : TransformDelta{ -1.0f, -1.0f };
             const TransformDelta targetToLive = (targetOk && liveOk) ? measureTransformDelta(palmTargetWorld, livePalm.world) : TransformDelta{ -1.0f, -1.0f };
-            const bool unbridgedOk = rawOk && unbridgedRawHandWorld != nullptr;
-            const TransformDelta rawToBridged = unbridgedOk ? measureTransformDelta(*unbridgedRawHandWorld, *rawHandWorld) : TransformDelta{ -1.0f, -1.0f };
 
             const float rawDt = timing ? timing->rawDeltaSeconds : -1.0f;
             const float subDt = timing ? timing->substepDeltaSeconds : -1.0f;
@@ -741,13 +722,10 @@ namespace rock
                 const RE::NiPoint3 rawPosition = rawOk ? rawHandWorld->translate : RE::NiPoint3{};
                 const RE::NiPoint3 targetPosition = targetOk ? palmTargetWorld.translate : RE::NiPoint3{};
                 const RE::NiPoint3 livePosition = liveOk ? livePalm.world.translate : RE::NiPoint3{};
-                const RE::NiPoint3 bridgeOffset = locomotionAuthorityOffsetGame ?
-                                                      *locomotionAuthorityOffsetGame :
-                                                      (unbridgedOk ? rawHandWorld->translate - unbridgedRawHandWorld->translate : RE::NiPoint3{});
 
                 if (mode == PalmClockLogMode::Trace) {
                     ROCK_LOG_INFO(Hand,
-                        "PALM_CLOCK stage={} hand={} frame={} holding={} raw={} target={} live={} body={} proxyBody={} gameDt={:.6f} physicsPhase={} rawDt={:.6f} subDt={:.6f} driveDt={:.6f} substep={}/{} progress={:.3f} rawToTarget={:.3f}gu/{:.3f}deg rawToLive={:.3f}gu/{:.3f}deg targetToLive={:.3f}gu/{:.3f}deg rawToBridged={:.3f}gu/{:.3f}deg bridgeOffset=({:.2f},{:.2f},{:.2f}) rawPos=({:.2f},{:.2f},{:.2f}) targetPos=({:.2f},{:.2f},{:.2f}) livePos=({:.2f},{:.2f},{:.2f}) liveSource={} liveMotion={}",
+                        "PALM_CLOCK stage={} hand={} frame={} holding={} raw={} target={} live={} body={} proxyBody={} gameDt={:.6f} physicsPhase={} rawDt={:.6f} subDt={:.6f} driveDt={:.6f} substep={}/{} progress={:.3f} rawToTarget={:.3f}gu/{:.3f}deg rawToLive={:.3f}gu/{:.3f}deg targetToLive={:.3f}gu/{:.3f}deg rawPos=({:.2f},{:.2f},{:.2f}) targetPos=({:.2f},{:.2f},{:.2f}) livePos=({:.2f},{:.2f},{:.2f}) liveSource={} liveMotion={}",
                         stage ? stage : "unknown",
                         hand.handName(),
                         gameFrameIndex,
@@ -771,11 +749,6 @@ namespace rock
                         rawToLive.rotationDegrees,
                         targetToLive.position,
                         targetToLive.rotationDegrees,
-                        rawToBridged.position,
-                        rawToBridged.rotationDegrees,
-                        bridgeOffset.x,
-                        bridgeOffset.y,
-                        bridgeOffset.z,
                         rawPosition.x,
                         rawPosition.y,
                         rawPosition.z,
@@ -790,7 +763,7 @@ namespace rock
                 } else {
                     ROCK_LOG_SAMPLE_DEBUG(Hand,
                         g_rockConfig.rockLogSampleMilliseconds,
-                        "PALM_CLOCK stage={} hand={} frame={} holding={} raw={} target={} live={} body={} proxyBody={} gameDt={:.6f} physicsPhase={} rawDt={:.6f} subDt={:.6f} driveDt={:.6f} substep={}/{} progress={:.3f} rawToTarget={:.3f}gu/{:.3f}deg rawToLive={:.3f}gu/{:.3f}deg targetToLive={:.3f}gu/{:.3f}deg rawToBridged={:.3f}gu/{:.3f}deg bridgeOffset=({:.2f},{:.2f},{:.2f}) rawPos=({:.2f},{:.2f},{:.2f}) targetPos=({:.2f},{:.2f},{:.2f}) livePos=({:.2f},{:.2f},{:.2f}) liveSource={} liveMotion={}",
+                        "PALM_CLOCK stage={} hand={} frame={} holding={} raw={} target={} live={} body={} proxyBody={} gameDt={:.6f} physicsPhase={} rawDt={:.6f} subDt={:.6f} driveDt={:.6f} substep={}/{} progress={:.3f} rawToTarget={:.3f}gu/{:.3f}deg rawToLive={:.3f}gu/{:.3f}deg targetToLive={:.3f}gu/{:.3f}deg rawPos=({:.2f},{:.2f},{:.2f}) targetPos=({:.2f},{:.2f},{:.2f}) livePos=({:.2f},{:.2f},{:.2f}) liveSource={} liveMotion={}",
                         stage ? stage : "unknown",
                         hand.handName(),
                         gameFrameIndex,
@@ -814,11 +787,6 @@ namespace rock
                         rawToLive.rotationDegrees,
                         targetToLive.position,
                         targetToLive.rotationDegrees,
-                        rawToBridged.position,
-                        rawToBridged.rotationDegrees,
-                        bridgeOffset.x,
-                        bridgeOffset.y,
-                        bridgeOffset.z,
                         rawPosition.x,
                         rawPosition.y,
                         rawPosition.z,
@@ -834,157 +802,6 @@ namespace rock
             };
 
             emit();
-        }
-
-        // Player locomotion speed (game units/sec), stashed from the game frame (main thread, player
-        // reachable) because the after-solve callback that runs the probe cannot safely reach the player.
-        // Two independent reads so the trace self-verifies the CC field/offset (see the game-frame block):
-        //  - g_probeCcSpeedGameUnits: raw cachedLinearVelocity @ 0x250 via Ghidra-verified pointer chain.
-        //  - g_probeCcAccessorSpeedGameUnits: the game's own GetLinearVelocity (ground-truth cross-check).
-        // -1 when unavailable. Diagnostic only.
-        std::atomic<float> g_probeCcSpeedGameUnits{ -1.0f };
-        std::atomic<float> g_probeCcAccessorSpeedGameUnits{ -1.0f };
-
-        /*
-         * Locomotion stutter probe (diagnostic; gated by rockDebugLocomotionStutterProbe, default off).
-         * The held-object shake during stick locomotion is a timing/aliasing issue: object B is dragged by
-         * the grab motor to follow keyframed proxy A, and A's target (the hand-world) picks up the game-driven
-         * room-origin translation only during stick-walk -- read per frame it is aliased by our sampling rate.
-         * This logs, per held hand while moving: the object's actual velocity, the room-node delta velocity,
-         * and the CHARACTER CONTROLLER's own stored velocity (cachedLinearVelocity @ 0x250, game units -- a
-         * stored velocity immune to our sampling aliasing). If ccVelGu stays smooth while roomVelGu/objVelGu
-         * jitter, the alias is confirmed and the fix is to drive locomotion from the CC velocity. Fires while
-         * a hand is holding and either the
-         * object or the play space is moving, so one session captures both the smooth hand-move baseline
-         * (roomVelGu ~ 0) and the stick-walk stutter (roomVelGu > 0). Remove with its config flag once fixed.
-         */
-        void logLocomotionStutterProbe(
-            RE::hknpWorld* world,
-            const Hand& hand,
-            const RE::NiPoint3& roomVelocityHavok,
-            float gameDeltaSeconds,
-            std::uint64_t gameFrameIndex,
-            const havok_physics_timing::PhysicsTimingSample& timing)
-        {
-            if (!g_rockConfig.rockDebugLocomotionStutterProbe || !world || !hand.isHoldingAtomic()) {
-                return;
-            }
-
-            const auto readLinearVelocityHavok = [&](RE::hknpBodyId bodyId, RE::NiPoint3& outVelocity) -> bool {
-                if (bodyId.value == INVALID_BODY_ID) {
-                    return false;
-                }
-                auto* body = havok_runtime::getBody(world, bodyId);
-                if (!body) {
-                    return false;
-                }
-                auto* motion = havok_runtime::getMotion(world, body->motionIndex);
-                if (!motion) {
-                    return false;
-                }
-                outVelocity = RE::NiPoint3{ motion->linearVelocity.x, motion->linearVelocity.y, motion->linearVelocity.z };
-                return true;
-            };
-
-            const RE::hknpBodyId objectBodyId{ hand.getSavedObjectState().bodyId.value };  // constraint body B (held object)
-            const RE::hknpBodyId proxyBodyId{ hand.getGrabAuthorityProxyBodyId().value };  // constraint body A (hand anchor)
-
-            RE::NiPoint3 objectVelocityHavok{};
-            RE::NiPoint3 proxyVelocityHavok{};
-            const bool objectOk = readLinearVelocityHavok(objectBodyId, objectVelocityHavok);
-            const bool proxyOk = readLinearVelocityHavok(proxyBodyId, proxyVelocityHavok);
-            if (!objectOk) {
-                return;
-            }
-
-            const float havokToGame = physics_scale::havokToGame();
-            const auto lengthGameUnits = [&](const RE::NiPoint3& v) {
-                return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z) * havokToGame;
-            };
-
-            // Fire whenever something is actually moving: the object being dragged by the hand (smooth
-            // baseline; roomVelGu ~ 0) OR the play space translating under stick locomotion (the stutter
-            // case; roomVelGu > 0). Idle-holding is skipped so one session captures both regimes.
-            const float objectSpeedGameUnits = lengthGameUnits(objectVelocityHavok);
-            const float roomSpeedGameUnits = lengthGameUnits(roomVelocityHavok);
-            if (objectSpeedGameUnits < 5.0f && roomSpeedGameUnits < 5.0f) {
-                return;
-            }
-
-            // Player locomotion speed (game units/sec), stashed from the game frame. Unlike roomVelGu -- a
-            // per-frame room-node POSITION delta aliased by our sampling rate -- this is a stored VELOCITY,
-            // immune to that aliasing. Smooth ccVelGu + jittery roomVelGu/objVelGu == the alias confirmed.
-            // ccVelGu = raw cachedLinearVelocity @ 0x250 (verified pointer chain); ccAccGu = the game's own
-            // GetLinearVelocity. They should agree during a walk; if ccVelGu is valid but the CommonLib-based
-            // read was -1, the CommonLib charController offset (0x3E0 vs verified 0x3E8) is confirmed wrong.
-            const float ccSpeedGameUnits = g_probeCcSpeedGameUnits.load(std::memory_order_relaxed);
-            const float ccAccessorSpeedGameUnits = g_probeCcAccessorSpeedGameUnits.load(std::memory_order_relaxed);
-            // Aligned-timing ACTUAL room speed from the ApplyMovementDelta hook (game units/sec). This is the
-            // stage-2 fix source: phase-locked to movement application, so it should track the walk smoothly
-            // (like ccVelGu) but WITHOUT ccVel's commanded transient lead. Compare against roomVelGu (aliased).
-            const float alignRoomSpeedGameUnits = getAlignedRoomSpeedGameUnits();
-            // World-space aligned room velocity (|worldDelta|/dt) validates the player+0xD0 position read: it
-            // must match alignRoomVelGu (|localDelta|/dt) during a walk. corrOffGu = current bounded room-
-            // correction offset magnitude (nonzero only when bGrabAlignedRoomCompensationEnabled is on).
-            float alignWorldSpeedGameUnits = -1.0f;
-            {
-                RE::NiPoint3 alignWorldDelta{};
-                float alignDt = 0.0f;
-                float alignSpd = -1.0f;
-                if (getAlignedRoomWorldDelta(alignWorldDelta, alignDt, alignSpd) && std::isfinite(alignDt) && alignDt > 1.0e-6f) {
-                    const float d = std::sqrt(alignWorldDelta.x * alignWorldDelta.x + alignWorldDelta.y * alignWorldDelta.y + alignWorldDelta.z * alignWorldDelta.z);
-                    if (std::isfinite(d)) {
-                        alignWorldSpeedGameUnits = d / alignDt;
-                    }
-                }
-            }
-            const RE::NiPoint3 roomCorrectionOffset = getAlignedRoomCorrectionOffset();
-            const float corrOffsetGameUnits = std::sqrt(roomCorrectionOffset.x * roomCorrectionOffset.x +
-                roomCorrectionOffset.y * roomCorrectionOffset.y + roomCorrectionOffset.z * roomCorrectionOffset.z);
-            // Proxy A's TARGET velocity (game units/sec): how fast the keyframe target itself moves. The
-            // shake localizer -- if this jitters in lockstep with objVelGu, A's target is the source; if it
-            // is smooth while objVelGu jitters, the motor is ringing.
-            const float proxyTargetSpeedGameUnits = hand.getLastProxyTargetSpeedGameUnits();
-
-            // Endpoint divergence: what stretches the grab constraint each step (proxyVel unreliable for a
-            // keyframed body, but kept for completeness).
-            const RE::NiPoint3 endpointDivergenceHavok = proxyOk ?
-                RE::NiPoint3{
-                    objectVelocityHavok.x - proxyVelocityHavok.x,
-                    objectVelocityHavok.y - proxyVelocityHavok.y,
-                    objectVelocityHavok.z - proxyVelocityHavok.z } :
-                RE::NiPoint3{};
-            // Object velocity minus room velocity: the object's residual motion. ~0 during a clean steady
-            // walk; its frame-to-frame swing IS the shake.
-            const RE::NiPoint3 objectResidualHavok{
-                objectVelocityHavok.x - roomVelocityHavok.x,
-                objectVelocityHavok.y - roomVelocityHavok.y,
-                objectVelocityHavok.z - roomVelocityHavok.z,
-            };
-
-            ROCK_LOG_INFO(Hand,
-                "LOCO_STUTTER hand={} frame={} substep={}/{} subDt={:.6f} driveDt={:.6f} gameDt={:.6f} roomVelGu={:.2f} "
-                "objBody={} proxyBody={} objVelGu={:.2f} proxyVelGu={:.2f} divergenceGu={:.2f} objResidualGu={:.2f} ccVelGu={:.2f} ccAccGu={:.2f} alignRoomVelGu={:.2f} alignWorldVelGu={:.2f} corrOffGu={:.2f} proxyTargetVelGu={:.2f}",
-                hand.handName(),
-                gameFrameIndex,
-                timing.substepIndex + 1,
-                timing.substepCount,
-                timing.substepDeltaSeconds,
-                havok_physics_timing::driveDeltaSeconds(timing),
-                gameDeltaSeconds,
-                lengthGameUnits(roomVelocityHavok),
-                objectBodyId.value,
-                proxyBodyId.value,
-                lengthGameUnits(objectVelocityHavok),
-                proxyOk ? lengthGameUnits(proxyVelocityHavok) : -1.0f,
-                proxyOk ? lengthGameUnits(endpointDivergenceHavok) : -1.0f,
-                lengthGameUnits(objectResidualHavok),
-                ccSpeedGameUnits,
-                ccAccessorSpeedGameUnits,
-                alignRoomSpeedGameUnits,
-                alignWorldSpeedGameUnits,
-                corrOffsetGameUnits,
-                proxyTargetSpeedGameUnits);
         }
 
         float measureDirectionDeltaDegrees(const RE::NiPoint3& a, const RE::NiPoint3& b)
@@ -1926,12 +1743,6 @@ namespace rock
             enforceNativeMeleeRuntimeSuppression(true);
         }
 
-        // Aligned-timing room-motion capture for held-object stick-locomotion compensation. Passthrough
-        // hook (always calls the original); currently only feeds the locomotion-stutter probe.
-        if (!installLocomotionAuthorityHook()) {
-            ROCK_LOG_WARN(Init, "Locomotion authority hook (ApplyMovementDelta) not installed; aligned room velocity unavailable");
-        }
-
         ROCK_LOG_INFO(Init, "Initializing ROCK physics module...");
 
         auto* bhk = getPlayerBhkWorld();
@@ -1994,9 +1805,6 @@ namespace rock
         _leftHand.preloadSelectionBeam();
 
         _hasPrevPositions = false;
-        _hasHeldPlayerSpacePosition = false;
-        _heldObjectPlayerSpaceFrame = {};
-        _heldPlayerSpaceLogCounter = 0;
         _deltaLogCounter = 0;
         _contactLogCounter = 0;
         _softContactRuntime.reset();
@@ -2260,31 +2068,6 @@ namespace rock
         const auto frame = buildFrameContext(bhk, hknp, _deltaTime);
         _palmClockGameFrameIndex.store(runtime.frameIndex, std::memory_order_release);
         _palmClockGameDeltaSeconds.store(frame.deltaSeconds, std::memory_order_release);
-        if (g_rockConfig.rockDebugLocomotionStutterProbe) {
-            // Read the player's locomotion velocity here on the game frame (main thread), where the player
-            // is reachable, and stash it for the after-solve stutter probe. Two independent GAME-UNIT reads
-            // so tonight's trace self-verifies the CC field/offset (both from character_controller_runtime):
-            //  - raw (ccVelGu): cachedLinearVelocity @ 0x250 via the Ghidra-verified pointer chain
-            //    Actor+0x300 -> +0x08 -> +0x3E8. Independent of CommonLibF4VR, whose charController member
-            //    (0x3E0) is wrong for VR -- that bad pointer is why the earlier read logged ccVelGu=-1.
-            //  - accessor (ccAccGu): the game's own PlayerCharacter::GetLinearVelocity (vtbl 0xAC). Ground
-            //    truth. ccVelGu ~ ccAccGu during a walk confirms both 0x3E8 and 0x250.
-            const auto speedGameUnits = [](const RE::NiPoint3& v) {
-                const float s = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
-                return (std::isfinite(s) && s < 1.0e6f) ? s : -1.0f;
-            };
-
-            RE::NiPoint3 ccVelocityRaw{};
-            const float ccSpeedRaw =
-                character_controller_runtime::tryGetPlayerLocomotionVelocityRawGameUnits(ccVelocityRaw) ? speedGameUnits(ccVelocityRaw) : -1.0f;
-            g_probeCcSpeedGameUnits.store(ccSpeedRaw, std::memory_order_relaxed);
-
-            RE::NiPoint3 ccVelocityAccessor{};
-            const float ccSpeedAccessor =
-                character_controller_runtime::tryGetPlayerLocomotionVelocityAccessorGameUnits(ccVelocityAccessor) ? speedGameUnits(ccVelocityAccessor) : -1.0f;
-            g_probeCcAccessorSpeedGameUnits.store(ccSpeedAccessor, std::memory_order_relaxed);
-        }
-
         observeLifecycleFrame(bhk, hknp, ::rock::provider::RockProviderLifecycleReason::None);
         if (!generatedBodiesMatchLifecycle(bhk, hknp)) {
             if (rebuildGeneratedBodiesForLifecycle(bhk, hknp, "epoch-mismatch")) {
@@ -2477,18 +2260,14 @@ namespace rock
             frame.right.disabled ? nullptr : &frame.right.rawHandWorld,
             runtime.frameIndex,
             frame.deltaSeconds,
-            nullptr,
-            frame.right.disabled ? nullptr : &frame.right.unbridgedRawHandWorld,
-            frame.right.disabled ? nullptr : &frame.right.locomotionAuthorityOffsetGame);
+            nullptr);
         logPalmClockSampleForHand("game-after-hand-collider-queue",
             _leftHand,
             hknp,
             frame.left.disabled ? nullptr : &frame.left.rawHandWorld,
             runtime.frameIndex,
             frame.deltaSeconds,
-            nullptr,
-            frame.left.disabled ? nullptr : &frame.left.unbridgedRawHandWorld,
-            frame.left.disabled ? nullptr : &frame.left.locomotionAuthorityOffsetGame);
+            nullptr);
         updateBodyBoneCollisions(frame);
         updateNativePlayerCollisionSuppression(bhk, hknp);
 
@@ -3338,7 +3117,6 @@ namespace rock
 
         updateSelection(frame);
 
-        _heldObjectPlayerSpaceFrame = sampleHeldObjectPlayerSpaceFrame(frame.deltaSeconds);
         /*
          * ROCK applies player/room-space compensation before held-object grab
          * constraints are updated. That keeps the constraint target from solving
@@ -3346,7 +3124,6 @@ namespace rock
          * teleport/stutter caused by compensating after the grab loop has already
          * written the frame target.
          */
-        applyHeldPlayerSpaceVelocity(hknp);
 
         updateGrabInput(frame);
         // After grab input so a bridge started by this frame's equip gets its
@@ -4057,9 +3834,6 @@ namespace rock
         _initialized = false;
         observeLifecycleFrame(nullptr, nullptr, reason);
         _hasPrevPositions = false;
-        _hasHeldPlayerSpacePosition = false;
-        _heldObjectPlayerSpaceFrame = {};
-        _heldPlayerSpaceLogCounter = 0;
         _heldMassMovementLogCounter = 0;
         _handBoneCache.reset();
         _handCacheResolveLogCounter = 0;
@@ -4599,10 +4373,10 @@ namespace rock
         updateEquippedWeaponPostDropCollisionSuppression(world, frame.deltaSeconds);
 
         if (!frame.right.disabled) {
-            _rightHand.updateCollisionTransform(world, frame.right.rawHandWorld, frame.deltaSeconds, frame.right.locomotionAuthorityOffsetGame);
+            _rightHand.updateCollisionTransform(world, frame.right.rawHandWorld, frame.deltaSeconds);
         }
         if (!frame.left.disabled) {
-            _leftHand.updateCollisionTransform(world, frame.left.rawHandWorld, frame.deltaSeconds, frame.left.locomotionAuthorityOffsetGame);
+            _leftHand.updateCollisionTransform(world, frame.left.rawHandWorld, frame.deltaSeconds);
         }
     }
 
@@ -5000,22 +4774,6 @@ namespace rock
         const auto gameDeltaSeconds = _palmClockGameDeltaSeconds.load(std::memory_order_acquire);
         logPalmClockSampleForHand("physics-after-solve", _rightHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
         logPalmClockSampleForHand("physics-after-solve", _leftHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
-        // Room/player-space velocity for the stutter probe, sampled independently of
-        // bGrabPlayerSpaceCompensation (off in prod): the player-space frame is always sampled.
-        RE::NiPoint3 probeRoomVelocityHavok{};
-        if (g_rockConfig.rockDebugLocomotionStutterProbe) {
-            const auto& probePlayerSpace = runtime_state::currentFrame().playerSpace;
-            if (probePlayerSpace.valid && probePlayerSpace.moving && gameDeltaSeconds > 1.0e-6f) {
-                const float gameToHavokPerSecond = physics_scale::gameToHavok() / gameDeltaSeconds;
-                probeRoomVelocityHavok = RE::NiPoint3{
-                    probePlayerSpace.deltaGameUnits.x * gameToHavokPerSecond,
-                    probePlayerSpace.deltaGameUnits.y * gameToHavokPerSecond,
-                    probePlayerSpace.deltaGameUnits.z * gameToHavokPerSecond,
-                };
-            }
-        }
-        logLocomotionStutterProbe(world, _rightHand, probeRoomVelocityHavok, gameDeltaSeconds, gameFrameIndex, timing);
-        logLocomotionStutterProbe(world, _leftHand, probeRoomVelocityHavok, gameDeltaSeconds, gameFrameIndex, timing);
         serviceRetiredGrabConstraintPayloads();
         _weaponCollision.serviceRetiredWeaponBodies();
         // Frees hand/body bone-collider and grab-authority-proxy collision objects
@@ -5780,14 +5538,6 @@ namespace rock
             capture.hasWeaponWorld = true;
         }
 
-        /*
-         * _heldObjectPlayerSpaceFrame is sampled later in the frame, so this
-         * reads the previous frame's player velocity -- consistent with the
-         * one-frame-old hand deltas it compensates.
-         */
-        const bool playerSpaceWarp = _heldObjectPlayerSpaceFrame.enabled && _heldObjectPlayerSpaceFrame.warp;
-        const RE::NiPoint3 playerVelocityHavok =
-            (_heldObjectPlayerSpaceFrame.enabled && !playerSpaceWarp) ? _heldObjectPlayerSpaceFrame.velocityHavok : RE::NiPoint3{};
         const bool usableDeltaTime = std::isfinite(frame.deltaSeconds) && frame.deltaSeconds > 0.000001f;
 
         for (std::size_t handIndex = 0; handIndex < 2; ++handIndex) {
@@ -5796,9 +5546,7 @@ namespace rock
             if (!finiteNiTransform(handInput.rawHandWorld)) {
                 continue;
             }
-            if (playerSpaceWarp) {
-                history.reset();
-            } else if (capture.hasPreviousHandWorld[handIndex] && usableDeltaTime) {
+            if (capture.hasPreviousHandWorld[handIndex] && usableDeltaTime) {
                 const RE::NiPoint3 deltaGameUnits = handInput.rawHandWorld.translate - capture.previousHandWorld[handIndex].translate;
                 const RE::NiPoint3 rawHandVelocityHavok = held_object_physics_math::gameUnitsDeltaToHavokVelocity(
                     deltaGameUnits,
@@ -5808,7 +5556,7 @@ namespace rock
                     capture.previousHandWorld[handIndex].rotate,
                     handInput.rawHandWorld.rotate,
                     frame.deltaSeconds);
-                history.push(rawHandVelocityHavok - playerVelocityHavok, angularVelocity);
+                history.push(rawHandVelocityHavok, angularVelocity);
             }
             capture.previousHandWorld[handIndex] = handInput.rawHandWorld;
             capture.hasPreviousHandWorld[handIndex] = true;
@@ -5855,11 +5603,10 @@ namespace rock
 
         // Unknown source (SourceHand::None) falls back to the right hand.
         const auto& history = _equippedWeaponReleaseCapture.handHistories[equipped_weapon_drop_policy::isLeft(sourceHand) ? 1u : 0u];
-        const RE::NiPoint3 playerVelocityHavok =
-            (_heldObjectPlayerSpaceFrame.enabled && !_heldObjectPlayerSpaceFrame.warp) ? _heldObjectPlayerSpaceFrame.velocityHavok : RE::NiPoint3{};
+        // Histories are world-space hand velocities; no player-space addend exists anymore.
         const auto release = equipped_weapon_drop_momentum::composeReleaseVelocity(
             history,
-            playerVelocityHavok,
+            RE::NiPoint3{},
             equipped_weapon_drop_momentum::ReleaseVelocitySettings{
                 .controllerDerivedEnabled = g_rockConfig.rockGrabControllerDerivedThrowVelocityEnabled,
                 .throwMultiplier = g_rockConfig.rockThrowVelocityMultiplier,
@@ -6870,7 +6617,7 @@ namespace rock
                 }
 
                 if (isThrownDropCommand && !applyRequestedVelocity) {
-                    hand.captureHeldReleaseMotion(frame.hknpWorld, handInput.rawHandWorld, _heldObjectPlayerSpaceFrame, frame.deltaSeconds);
+                    hand.captureHeldReleaseMotion(frame.hknpWorld, handInput.rawHandWorld, frame.deltaSeconds);
                 }
 
                 const std::uint32_t flags = isThrownDropCommand ? command.thrownDrop.flags : command.forceRelease.flags;
@@ -7199,210 +6946,6 @@ namespace rock
         }
         if (!anyActive) {
             _providerWeaponPartDriveGenerationKey = 0;
-        }
-    }
-
-    grab_locomotion_authority_bridge::Output PhysicsInteraction::updateGrabLocomotionAuthorityBridge(float deltaSeconds, bool worldReady)
-    {
-        const auto& runtime = runtime_state::currentFrame();
-        const auto& playerSpace = runtime.playerSpace;
-        const bool rightHolding = _rightHand.isHoldingAtomic();
-        const bool leftHolding = _leftHand.isHoldingAtomic();
-        const bool anyHandHolding = rightHolding || leftHolding;
-
-        const auto output = grab_locomotion_authority_bridge::update(
-            _grabLocomotionAuthorityBridge,
-            grab_locomotion_authority_bridge::Input{
-                .config = grab_locomotion_authority_bridge::Config{
-                    .enabled = g_rockConfig.rockGrabLocomotionAuthorityBridgeEnabled,
-                    .maxLeadSeconds = g_rockConfig.rockGrabLocomotionAuthorityMaxLeadSeconds,
-                    .smoothingHz = g_rockConfig.rockGrabLocomotionAuthoritySmoothingHz,
-                    .maxOffsetGameUnits = g_rockConfig.rockGrabLocomotionAuthorityMaxOffsetGameUnits,
-                    .resetDistanceGameUnits = g_rockConfig.rockGrabLocomotionAuthorityResetDistanceGameUnits,
-                },
-                .playerSpaceValid = playerSpace.valid,
-                .playerMoving = playerSpace.moving,
-                .heldObjectActive = anyHandHolding,
-                .worldOrMenuReset = !worldReady || runtime.localMenuBlocking || runtime.localLoadingMenuOpen || runtime.localGameStopped || runtime.compatibilityConfigBlocking,
-                .playerPositionGame = toGrabLocomotionAuthorityVec(playerSpace.world.translate),
-                .playerDeltaGameUnits = toGrabLocomotionAuthorityVec(playerSpace.deltaGameUnits),
-                .deltaSeconds = deltaSeconds,
-            });
-
-        if (g_rockConfig.rockDebugGrabFrameLogging || g_rockConfig.rockDebugVerboseLogging) {
-            auto logHand = [&](const char* handLabel, bool holding) {
-                if (!holding && !g_rockConfig.rockDebugVerboseLogging) {
-                    return;
-                }
-
-                ROCK_LOG_SAMPLE_DEBUG(Hand,
-                    g_rockConfig.rockLogSampleMilliseconds,
-                    "LOCOMOTION_AUTH hand={} holding={} moving={} rawDelta=({:.2f},{:.2f},{:.2f}) velocity=({:.2f},{:.2f},{:.2f}) offset=({:.2f},{:.2f},{:.2f}) reset={} reason={} active={} source={}",
-                    handLabel,
-                    holding ? "yes" : "no",
-                    playerSpace.moving ? "yes" : "no",
-                    playerSpace.deltaGameUnits.x,
-                    playerSpace.deltaGameUnits.y,
-                    playerSpace.deltaGameUnits.z,
-                    output.velocityGameUnitsPerSecond.x,
-                    output.velocityGameUnitsPerSecond.y,
-                    output.velocityGameUnitsPerSecond.z,
-                    output.offsetGameUnits.x,
-                    output.offsetGameUnits.y,
-                    output.offsetGameUnits.z,
-                    output.reset ? "yes" : "no",
-                    output.resetReason,
-                    output.active ? "yes" : "no",
-                    playerSpace.source ? playerSpace.source : "none");
-            };
-
-            logHand("Right", rightHolding);
-            logHand("Left", leftHolding);
-        }
-
-        return output;
-    }
-
-    HeldObjectPlayerSpaceFrame PhysicsInteraction::sampleHeldObjectPlayerSpaceFrame(float deltaSeconds)
-    {
-        HeldObjectPlayerSpaceFrame frame{};
-        const auto& playerSpace = runtime_state::currentFrame().playerSpace;
-        if (!playerSpace.valid) {
-            _hasHeldPlayerSpacePosition = false;
-            _hasHeldPlayerSpaceTransform = false;
-            return frame;
-        }
-
-        const RE::NiPoint3 smoothPos = playerSpace.world.translate;
-        const RE::NiTransform playerSpaceWorld = playerSpace.world;
-        const char* playerSpaceSource = playerSpace.source;
-
-        if (!g_rockConfig.rockGrabPlayerSpaceCompensation) {
-            _prevHeldPlayerSpacePosition = smoothPos;
-            _prevHeldPlayerSpaceTransform = playerSpaceWorld;
-            _hasHeldPlayerSpacePosition = true;
-            _hasHeldPlayerSpaceTransform = true;
-            return frame;
-        }
-
-        frame.enabled = true;
-        frame.currentPlayerSpaceWorld = playerSpaceWorld;
-        frame.source = playerSpaceSource;
-        if (_hasHeldPlayerSpacePosition) {
-            frame.deltaGameUnits = smoothPos - _prevHeldPlayerSpacePosition;
-            frame.velocityHavok = held_object_physics_math::gameUnitsDeltaToHavokVelocity(frame.deltaGameUnits, deltaSeconds, physics_scale::havokToGame());
-            frame.warpByDistance = held_object_physics_math::shouldWarpPlayerSpaceDelta(frame.deltaGameUnits, g_rockConfig.rockGrabPlayerSpaceWarpDistance);
-        }
-        if (_hasHeldPlayerSpaceTransform) {
-            frame.previousPlayerSpaceWorld = _prevHeldPlayerSpaceTransform;
-            frame.hasWarpTransforms = true;
-            frame.rotationDeltaDegrees =
-                held_player_space_math::rotationDeltaDegrees(_prevHeldPlayerSpaceTransform.rotate, playerSpaceWorld.rotate);
-            frame.warpByRotation = held_player_space_math::shouldWarpPlayerSpaceRotation(
-                _prevHeldPlayerSpaceTransform.rotate,
-                playerSpaceWorld.rotate,
-                g_rockConfig.rockGrabPlayerSpaceWarpMinRotationDegrees);
-        }
-        frame.warp = frame.warpByDistance || frame.warpByRotation;
-
-        _prevHeldPlayerSpacePosition = smoothPos;
-        _prevHeldPlayerSpaceTransform = playerSpaceWorld;
-        _hasHeldPlayerSpacePosition = true;
-        _hasHeldPlayerSpaceTransform = true;
-
-        if (g_rockConfig.rockDebugGrabFrameLogging && (_rightHand.isHolding() || _leftHand.isHolding())) {
-            ++_heldPlayerSpaceLogCounter;
-            if (_heldPlayerSpaceLogCounter >= 45 || frame.warp) {
-                _heldPlayerSpaceLogCounter = 0;
-                ROCK_LOG_DEBUG(Hand,
-                    "Held player-space: source={} enabled={} beforeHeld=yes warp={} distWarp={} rotWarp={} rotDelta={:.2f}deg "
-                    "delta=({:.2f},{:.2f},{:.2f}) velHk=({:.3f},{:.3f},{:.3f})",
-                    frame.source, frame.enabled ? "yes" : "no", frame.warp ? "yes" : "no", frame.warpByDistance ? "yes" : "no",
-                    frame.warpByRotation ? "yes" : "no", frame.rotationDeltaDegrees, frame.deltaGameUnits.x, frame.deltaGameUnits.y, frame.deltaGameUnits.z,
-                    frame.velocityHavok.x, frame.velocityHavok.y, frame.velocityHavok.z);
-            }
-        }
-
-        return frame;
-    }
-
-    void PhysicsInteraction::applyHeldPlayerSpaceVelocity(RE::hknpWorld* hknp)
-    {
-        /*
-         * Held object motion has one velocity authority while the grab is active:
-         * the grab constraint targets plus this single player-space compensation
-         * pass. Per-hand held loops only sample local velocity for throw history,
-         * avoiding two hands or connected bodies writing the same Havok motion
-         * more than once.
-         */
-        if (!hknp) {
-            _lastCentralHeldPlayerSpaceVelocityHavok = {};
-            return;
-        }
-
-        std::vector<std::uint32_t> bodyIds;
-        bodyIds.reserve(_rightHand.getHeldBodyIds().size() + _leftHand.getHeldBodyIds().size() + 2);
-        auto appendHandBodies = [&](const Hand& hand) {
-            if (!hand.isHolding()) {
-                return;
-            }
-
-            const auto& savedState = hand.getSavedObjectState();
-            if (savedState.bodyId.value != INVALID_BODY_ID) {
-                bodyIds.push_back(savedState.bodyId.value);
-            }
-            for (const auto bodyId : hand.getHeldBodyIds()) {
-                if (bodyId != INVALID_BODY_ID) {
-                    bodyIds.push_back(bodyId);
-                }
-            }
-        };
-
-        appendHandBodies(_rightHand);
-        appendHandBodies(_leftHand);
-
-        const float keep = g_rockConfig.rockGrabResidualVelocityDamping ?
-                               held_object_damping_math::velocityKeepFactor(g_rockConfig.rockGrabVelocityDamping) :
-                               1.0f;
-        const bool runtimeTransformWarp = held_player_space_math::shouldApplyRuntimeTransformWarp(
-            g_rockConfig.rockGrabPlayerSpaceTransformWarpEnabled,
-            _heldObjectPlayerSpaceFrame.warp,
-            _heldObjectPlayerSpaceFrame.hasWarpTransforms);
-
-        const auto result = held_player_space_registry::applyCentralPlayerSpaceVelocity(
-            hknp,
-            bodyIds,
-            _heldObjectPlayerSpaceFrame.velocityHavok,
-            _lastCentralHeldPlayerSpaceVelocityHavok,
-            keep,
-            _heldObjectPlayerSpaceFrame.enabled,
-            runtimeTransformWarp,
-            runtimeTransformWarp ? &_heldObjectPlayerSpaceFrame.previousPlayerSpaceWorld : nullptr,
-            runtimeTransformWarp ? &_heldObjectPlayerSpaceFrame.currentPlayerSpaceWorld : nullptr);
-
-        if (held_player_space_registry::shouldCarryPreviousPlayerVelocity(
-                _heldObjectPlayerSpaceFrame.enabled,
-                runtimeTransformWarp,
-                result.motionsWritten)) {
-            _lastCentralHeldPlayerSpaceVelocityHavok = _heldObjectPlayerSpaceFrame.velocityHavok;
-        } else {
-            _lastCentralHeldPlayerSpaceVelocityHavok = {};
-        }
-
-        if (g_rockConfig.rockDebugGrabFrameLogging && !bodyIds.empty()) {
-            ROCK_LOG_SAMPLE_DEBUG(Hand,
-                g_rockConfig.rockLogSampleMilliseconds,
-                "Held player-space central writer: beforeHeld=yes diagWarp={} runtimeWarp={} distWarp={} rotWarp={} bodies={} registered={} motionsWritten={} transformsWarped={} duplicateMotions={} writerMask=0x{:02X}",
-                _heldObjectPlayerSpaceFrame.warp ? "yes" : "no",
-                runtimeTransformWarp ? "yes" : "no",
-                _heldObjectPlayerSpaceFrame.warpByDistance ? "yes" : "no",
-                _heldObjectPlayerSpaceFrame.warpByRotation ? "yes" : "no",
-                bodyIds.size(),
-                result.registeredBodies,
-                result.motionsWritten,
-                result.transformsWarped,
-                result.duplicateMotionSkips,
-                result.writerMask);
         }
     }
 
@@ -8365,7 +7908,7 @@ namespace rock
                         }
                     }
 
-                    hand.captureHeldReleaseMotion(hknp, handInput.rawHandWorld, _heldObjectPlayerSpaceFrame, frame.deltaSeconds);
+                    hand.captureHeldReleaseMotion(hknp, handInput.rawHandWorld, frame.deltaSeconds);
                     auto* heldRef = hand.getHeldRef();
                     hand.stopSelectionHighlight();
                     Hand& peerHandForVisualState = isLeft ? _rightHand : _leftHand;
@@ -8560,7 +8103,7 @@ namespace rock
                 }
 
                 if (grabInput.released) {
-                    hand.captureHeldReleaseMotion(hknp, handInput.rawHandWorld, _heldObjectPlayerSpaceFrame, frame.deltaSeconds);
+                    hand.captureHeldReleaseMotion(hknp, handInput.rawHandWorld, frame.deltaSeconds);
                     auto* heldRef = hand.getHeldRef();
                     std::uint32_t heldFormID = heldRef ? heldRef->GetFormID() : 0u;
                     if (consumeEligibility.eligible && consumeDecision.confirmedForCommit && hand.getState() == HandState::ConsumeCandidate) {
@@ -8674,12 +8217,9 @@ namespace rock
                         &transform,
                         _palmClockGameFrameIndex.load(std::memory_order_acquire),
                         _palmClockGameDeltaSeconds.load(std::memory_order_acquire),
-                        nullptr,
-                        &handInput.unbridgedRawHandWorld,
-                        &handInput.locomotionAuthorityOffsetGame);
+                        nullptr);
                     hand.updateHeldObject(hknp,
                         transform,
-                        _heldObjectPlayerSpaceFrame,
                         frame.deltaSeconds,
                         g_rockConfig.rockGrabForceFadeInTime,
                         g_rockConfig.rockGrabTauMin,

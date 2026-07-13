@@ -202,21 +202,6 @@ namespace rock
         bool normalTrusted = false;
     };
 
-    struct HeldObjectPlayerSpaceFrame
-    {
-        RE::NiPoint3 deltaGameUnits{};
-        RE::NiPoint3 velocityHavok{};
-        RE::NiTransform previousPlayerSpaceWorld{};
-        RE::NiTransform currentPlayerSpaceWorld{};
-        float rotationDeltaDegrees = 0.0f;
-        const char* source = "none";
-        bool enabled = false;
-        bool warp = false;
-        bool warpByDistance = false;
-        bool warpByRotation = false;
-        bool hasWarpTransforms = false;
-    };
-
     enum class GrabReleaseCollisionRestoreMode : std::uint8_t
     {
         Delayed,
@@ -449,13 +434,12 @@ namespace rock
 
         void updateHeldObject(RE::hknpWorld* world,
             const RE::NiTransform& handWorldTransform,
-            const HeldObjectPlayerSpaceFrame& playerSpaceFrame,
             float deltaTime,
             float forceFadeInTime,
             float tauMin,
             const BodyBoneColliderSet* bodyBoneColliders,
             const GrabReleaseContext& releaseContext = {});
-        void captureHeldReleaseMotion(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform, const HeldObjectPlayerSpaceFrame& playerSpaceFrame, float deltaTime);
+        void captureHeldReleaseMotion(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform, float deltaTime);
         void applyReleaseVelocitySnapshot(RE::hknpWorld* world, const GrabReleaseOutcome::VelocitySnapshot& snapshot) const;
 
         GrabReleaseOutcome releaseGrabbedObject(
@@ -529,7 +513,6 @@ namespace rock
         // Diagnostic: magnitude of proxy A's per-frame TARGET velocity (game units/sec) from the last flush,
         // i.e. how fast A's keyframe target itself moves. Localizes the held-object shake -- target jitter
         // (=> smooth the sampled hand/room target) vs motor jitter (=> motor tuning). -1 when unavailable.
-        float getLastProxyTargetSpeedGameUnits() const { return _lastProxyTargetSpeedGameUnits.load(std::memory_order_relaxed); }
         bool hasCollisionBody() const { return _handBody.isValid(); }
         BethesdaPhysicsBody& getHandBody() { return _handBody; }
         const BethesdaPhysicsBody& getHandBody() const { return _handBody; }
@@ -589,8 +572,7 @@ namespace rock
         void updateCollisionTransform(
             RE::hknpWorld* world,
             const RE::NiTransform& rollAuthorityWorld,
-            float deltaTime,
-            const RE::NiPoint3& authorityTranslationOffsetGame = RE::NiPoint3{});
+            float deltaTime);
 
         void flushPendingCollisionPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         void flushPendingCustomGrabAuthority(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
@@ -930,8 +912,8 @@ namespace rock
             bool hasAngularVelocity = false;
         };
 
-        HeldHandMotionSample recordHeldControllerMotionSample(const RE::NiTransform& handWorldTransform, const HeldObjectPlayerSpaceFrame& playerSpaceFrame, float deltaTime);
-        void recordHeldObjectVelocitySample(RE::hknpWorld* world, const HeldObjectPlayerSpaceFrame& playerSpaceFrame);
+        HeldHandMotionSample recordHeldControllerMotionSample(const RE::NiTransform& handWorldTransform, float deltaTime);
+        void recordHeldObjectVelocitySample(RE::hknpWorld* world);
 
         ActiveConstraint _activeConstraint;
         std::atomic<float> _lastGrabPhysicsHz{ 90.0f };
@@ -961,7 +943,6 @@ namespace rock
         // time; guarded by _grabAuthorityProxyMutex like the pending target.
         grab_authority_source_clock::Resampler _grabAuthoritySourceClock{};
         RE::NiTransform _lastAppliedGrabAuthorityProxyWorld{};
-        std::atomic<float> _lastProxyTargetSpeedGameUnits{ -1.0f };
         RE::NiTransform _lastAppliedGrabAuthorityRawHandWorld{};
         bool _hasLastAppliedGrabAuthorityProxyWorld = false;
         struct RagdollAngularProbePreSolve
@@ -1116,7 +1097,6 @@ namespace rock
         RE::NiPoint3 _lastHeldHandPositionHavok{};
         bool _hasPreviousHeldRawHandWorld = false;
         bool _hasLastHeldHandPositionHavok = false;
-        RE::NiPoint3 _lastPlayerSpaceVelocityHavok{};
 
         std::vector<std::uint32_t> _heldBodyIds;
         std::vector<std::uint32_t> _pulledBodyIds;

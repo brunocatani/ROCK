@@ -13,7 +13,6 @@
 #include "physics-interaction/hand/HandSkeleton.h"
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/grab/GrabEvent.h"
-#include "physics-interaction/grab/GrabLocomotionAuthorityBridge.h"
 #include "physics-interaction/grab/SavedGrabOffsetStore.h"
 #include "physics-interaction/grenade/LooseGrenadeRuntime.h"
 #include "physics-interaction/contact/SoftContactRuntime.h"
@@ -243,11 +242,6 @@ namespace rock
 
         void restoreExpiredProviderWeaponPartDriveNodes(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
 
-        grab_locomotion_authority_bridge::Output updateGrabLocomotionAuthorityBridge(float deltaSeconds, bool worldReady);
-
-        HeldObjectPlayerSpaceFrame sampleHeldObjectPlayerSpaceFrame(float deltaSeconds);
-
-        void applyHeldPlayerSpaceVelocity(RE::hknpWorld* hknp);
         void updateHeldMassMovementSlowdown(RE::hknpWorld* hknp, float deltaSeconds);
         void restoreHeldMassMovementSlowdown(const char* reason);
 
@@ -642,15 +636,6 @@ namespace rock
         RE::NiPoint3 _prevSmoothedPos;
         int _deltaLogCounter = 0;
         bool _hasPrevPositions = false;
-        RE::NiPoint3 _prevHeldPlayerSpacePosition{};
-        RE::NiTransform _prevHeldPlayerSpaceTransform{};
-        HeldObjectPlayerSpaceFrame _heldObjectPlayerSpaceFrame{};
-        bool _hasHeldPlayerSpacePosition = false;
-        bool _hasHeldPlayerSpaceTransform = false;
-        RE::NiPoint3 _lastCentralHeldPlayerSpaceVelocityHavok{};
-        int _heldPlayerSpaceLogCounter = 0;
-        grab_locomotion_authority_bridge::State _grabLocomotionAuthorityBridge{};
-        int _grabLocomotionAuthorityLogCounter = 0;
         float _heldMassMovementSpeedReduction = 0.0f;
         float _heldMassMovementFadeStartReduction = 0.0f;
         float _heldMassMovementFadeElapsedSeconds = 0.0f;

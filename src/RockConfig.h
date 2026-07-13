@@ -27,7 +27,6 @@
 
 #include "physics-interaction/hand/HandSelection.h"
 #include "physics-interaction/hand/SelectionBeamPolicy.h"
-#include "physics-interaction/grab/GrabLocomotionAuthorityBridge.h"
 #include "physics-interaction/native/HavokTimingFixPolicy.h"
 #include "physics-interaction/weapon/WeaponSemantics.h"
 
@@ -257,10 +256,6 @@ namespace rock
         bool rockDebugGrabFrameLogging = false;
         bool rockDebugGrabTimelineTrace = false;
         bool rockDebugGrabAfterSolveAnomalySampling = false;
-        // Diagnostic (default off): while a hand is holding AND the player is locomoting, logs held object
-        // vs room-node vs character-controller velocity to localize the stick-walk held-object shake.
-        // Remove once the stutter root cause is fixed.
-        bool rockDebugLocomotionStutterProbe = false;
         bool rockDebugGrabTransformTelemetry = false;
         bool rockDebugGrabTransformTelemetryText = false;
         bool rockDebugGrabTransformTelemetryAxes = false;
@@ -443,25 +438,6 @@ namespace rock
         float rockMouthConsumeExitPaddingGameUnits = 1.0f;
         float rockMouthConsumeMinDwellSeconds = 0.08f;
         float rockMouthConsumeMaxSpeedGameUnitsPerSecond = 120.0f;
-        float rockGrabVelocityDamping = 0.25f;
-        bool rockGrabPlayerSpaceCompensation = true;
-        float rockGrabPlayerSpaceWarpDistance = 35.0f;
-        float rockGrabPlayerSpaceWarpMinRotationDegrees = 0.6f;
-        bool rockGrabPlayerSpaceTransformWarpEnabled = true;
-        bool rockGrabLocomotionAuthorityBridgeEnabled = true;
-        float rockGrabLocomotionAuthorityMaxLeadSeconds = grab_locomotion_authority_bridge::kDefaultMaxLeadSeconds;
-        float rockGrabLocomotionAuthoritySmoothingHz = grab_locomotion_authority_bridge::kDefaultSmoothingHz;
-        float rockGrabLocomotionAuthorityMaxOffsetGameUnits = grab_locomotion_authority_bridge::kDefaultMaxOffsetGameUnits;
-        float rockGrabLocomotionAuthorityResetDistanceGameUnits = grab_locomotion_authority_bridge::kDefaultResetDistanceGameUnits;
-        // Aligned-timing room compensation (held-object stick-locomotion stutter fix, stage 2). When enabled,
-        // the grab proxy target is de-aliased using the ApplyMovementDelta hook's world-space room delta: a
-        // bounded correction offset (accumulated aligned-minus-render room delta, leaked toward zero and
-        // clamped) is added to the proxy body target inside the physics flush. Default OFF (A/B against the
-        // aliased baseline); the correction is clamped small so it cannot fling or trip the deviation release.
-        bool rockGrabAlignedRoomCompensationEnabled = false;
-        float rockGrabAlignedRoomCorrectionMaxGameUnits = 2.0f;
-        float rockGrabAlignedRoomCorrectionLeak = 0.9f;
-        bool rockGrabResidualVelocityDamping = true;
         bool rockGrabNearbyDampingEnabled = true;
         float rockGrabNearbyDampingRadius = 90.0f;
         float rockGrabNearbyDampingSeconds = 0.35f;

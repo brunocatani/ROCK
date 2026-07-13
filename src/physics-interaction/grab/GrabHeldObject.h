@@ -340,43 +340,6 @@ namespace rock::held_object_contact_policy
     }
 }
 
-// ---- HeldObjectDampingMath.h ----
-
-#include <algorithm>
-#include <cmath>
-
-namespace rock::held_object_damping_math
-{
-    // Held-object smoothing is applied as a velocity attenuation on the already constrained
-    // body instead of changing hand/body frames. The grab frame math and pivots remain the
-    // source of truth; this only removes carried solver velocity that makes held objects
-    // visually chase or snap around the target from one physics update to the next.
-    inline float clampVelocityDamping(float damping)
-    {
-        if (!std::isfinite(damping)) {
-            return 0.0f;
-        }
-
-        return std::clamp(damping, 0.0f, 1.0f);
-    }
-
-    inline float velocityKeepFactor(float damping)
-    {
-        return 1.0f - clampVelocityDamping(damping);
-    }
-
-    template <class Vec3>
-    inline Vec3 applyVelocityDamping(const Vec3& velocity, float damping)
-    {
-        const float keep = velocityKeepFactor(damping);
-        Vec3 result = velocity;
-        result.x *= keep;
-        result.y *= keep;
-        result.z *= keep;
-        return result;
-    }
-}
-
 // ---- HeldObjectPhysicsMath.h ----
 
 #include "physics-interaction/native/PhysicsScale.h"
@@ -391,11 +354,8 @@ namespace rock::held_object_physics_math
     inline constexpr float kMaxGrabAuthorityTargetDeltaSeconds = 0.05f;
 
     /*
-     * Held-object motion needs to preserve player-space movement separately from
-     * solver residuals. ROCK adds the room/player velocity to carried bodies and
-     * damps only the motion left over from hand/object correction. Keeping these
-     * formulas in a pure helper makes the constraint code and the release path
-     * use one convention instead of accumulating one-off scale and damping rules.
+     * Pure held-object motion formulas shared by the constraint code and the
+     * release path so both use one velocity convention.
      */
     template <class Vec3>
     inline Vec3 makeVector(float x, float y, float z)
@@ -454,36 +414,6 @@ namespace rock::held_object_physics_math
         const float unitsPerHavok = physics_scale::isUsableScale(havokToGameScale) ? havokToGameScale : physics_scale::kFallbackHavokToGame;
         const float scale = 1.0f / (unitsPerHavok * safeDeltaTime(deltaTime));
         return makeVector<Vec3>(deltaGameUnits.x * scale, deltaGameUnits.y * scale, deltaGameUnits.z * scale);
-    }
-
-    template <class Vec3>
-    inline bool shouldWarpPlayerSpaceDelta(const Vec3& deltaGameUnits, float warpDistanceGameUnits)
-    {
-        if (!std::isfinite(warpDistanceGameUnits) || warpDistanceGameUnits <= 0.0f) {
-            return false;
-        }
-
-        return lengthSquared(deltaGameUnits) > (warpDistanceGameUnits * warpDistanceGameUnits);
-    }
-
-    template <class Vec3>
-    inline Vec3 applyResidualVelocityDamping(const Vec3& currentVelocity, const Vec3& playerSpaceVelocity, float damping)
-    {
-        const float keep = held_object_damping_math::velocityKeepFactor(damping);
-        return makeVector<Vec3>(
-            playerSpaceVelocity.x + (currentVelocity.x - playerSpaceVelocity.x) * keep,
-            playerSpaceVelocity.y + (currentVelocity.y - playerSpaceVelocity.y) * keep,
-            playerSpaceVelocity.z + (currentVelocity.z - playerSpaceVelocity.z) * keep);
-    }
-
-    template <class Vec3>
-    inline Vec3 composeReleaseVelocity(const Vec3& localVelocity, const Vec3& playerSpaceVelocity, float throwMultiplier)
-    {
-        const float multiplier = (std::isfinite(throwMultiplier) && throwMultiplier > 0.0f) ? throwMultiplier : 1.0f;
-        return makeVector<Vec3>(
-            playerSpaceVelocity.x + localVelocity.x * multiplier,
-            playerSpaceVelocity.y + localVelocity.y * multiplier,
-            playerSpaceVelocity.z + localVelocity.z * multiplier);
     }
 
     template <class Vec3, std::size_t Count>
@@ -863,59 +793,6 @@ namespace rock::grab_held_response
         }
 
         return scale(cross(axis, radial), angularSpeed);
-    }
-}
-
-// ---- HeldPlayerSpaceMath.h ----
-
-#include "physics-interaction/TransformMath.h"
-
-#include <algorithm>
-#include <cmath>
-
-namespace rock::held_player_space_math
-{
-    /*
-     * ROCK treats smooth/snap turning as a room-space warp instead of a large
-     * velocity. The runtime can either write the verified FO4VR body transform or
-     * only log the warp decision, but the math for preserving the held body's
-     * room-local pose stays independent of native Havok calls.
-     */
-
-    template <class Matrix>
-    inline float rotationDeltaDegrees(const Matrix& previous, const Matrix& current)
-    {
-        const float trace =
-            previous.entry[0][0] * current.entry[0][0] + previous.entry[0][1] * current.entry[0][1] + previous.entry[0][2] * current.entry[0][2] +
-            previous.entry[1][0] * current.entry[1][0] + previous.entry[1][1] * current.entry[1][1] + previous.entry[1][2] * current.entry[1][2] +
-            previous.entry[2][0] * current.entry[2][0] + previous.entry[2][1] * current.entry[2][1] + previous.entry[2][2] * current.entry[2][2];
-        const float cosAngle = std::clamp((trace - 1.0f) * 0.5f, -1.0f, 1.0f);
-        return std::acos(cosAngle) * (180.0f / 3.14159265358979323846f);
-    }
-
-    template <class Matrix>
-    inline bool shouldWarpPlayerSpaceRotation(const Matrix& previous, const Matrix& current, float minRotationDegrees)
-    {
-        if (!std::isfinite(minRotationDegrees) || minRotationDegrees <= 0.0f) {
-            return false;
-        }
-        return rotationDeltaDegrees(previous, current) > minRotationDegrees;
-    }
-
-    inline constexpr bool shouldApplyRuntimeTransformWarp(bool enabled, bool diagnosticWarp, bool hasWarpTransforms)
-    {
-        return enabled && diagnosticWarp && hasWarpTransforms;
-    }
-
-    template <class Transform>
-    inline Transform warpBodyWorldThroughPlayerSpace(
-        const Transform& previousPlayerSpaceWorld,
-        const Transform& currentPlayerSpaceWorld,
-        const Transform& bodyWorld)
-    {
-        const Transform bodyInPreviousPlayerSpace =
-            transform_math::composeTransforms(transform_math::invertTransform(previousPlayerSpaceWorld), bodyWorld);
-        return transform_math::composeTransforms(currentPlayerSpaceWorld, bodyInPreviousPlayerSpace);
     }
 }
 

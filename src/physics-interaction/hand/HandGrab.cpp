@@ -4169,17 +4169,12 @@ namespace rock
         HeldMotionCompensationResult applyHeldMotionCompensation(RE::hknpWorld* world,
             RE::hknpBodyId primaryBodyId,
             const std::vector<std::uint32_t>& heldBodyIds,
-            const HeldObjectPlayerSpaceFrame& playerSpaceFrame,
-            const RE::NiPoint3& previousPlayerSpaceVelocityHavok,
             bool includeConnectedBodies = true)
         {
             HeldMotionCompensationResult result{};
             if (!world) {
                 return result;
             }
-
-            const bool applyPlayerSpaceVelocity = playerSpaceFrame.enabled && !playerSpaceFrame.warp;
-            const RE::NiPoint3 previousPlayerVelocity = applyPlayerSpaceVelocity ? previousPlayerSpaceVelocityHavok : RE::NiPoint3{};
 
             constexpr std::size_t kMaxSampledMotionSlots = 96;
             std::array<std::uint32_t, kMaxSampledMotionSlots> sampledMotionSlots{};
@@ -4220,12 +4215,7 @@ namespace rock
 
                 sampledMotionSlots[sampledMotionSlotCount++] = motionIndex;
 
-                const RE::NiPoint3 currentLinearVelocity{ motion->linearVelocity.x, motion->linearVelocity.y, motion->linearVelocity.z };
-                const RE::NiPoint3 localLinearVelocity{
-                    currentLinearVelocity.x - previousPlayerVelocity.x,
-                    currentLinearVelocity.y - previousPlayerVelocity.y,
-                    currentLinearVelocity.z - previousPlayerVelocity.z,
-                };
+                const RE::NiPoint3 localLinearVelocity{ motion->linearVelocity.x, motion->linearVelocity.y, motion->linearVelocity.z };
 
                 if (bodyId == primaryBodyId.value) {
                     result.primaryLocalLinearVelocity = localLinearVelocity;
@@ -10419,7 +10409,6 @@ namespace rock
             _lastHeldHandPositionHavok = {};
             _hasPreviousHeldRawHandWorld = false;
             _hasLastHeldHandPositionHavok = false;
-            _lastPlayerSpaceVelocityHavok = {};
             _grabAuthorityProxyReleasePending.store(false, std::memory_order_release);
 
             if (g_rockConfig.rockDebugGrabFrameLogging) {
@@ -10978,21 +10967,16 @@ namespace rock
 
     Hand::HeldHandMotionSample Hand::recordHeldControllerMotionSample(
         const RE::NiTransform& handWorldTransform,
-        const HeldObjectPlayerSpaceFrame& playerSpaceFrame,
         float deltaTime)
     {
         HeldHandMotionSample handMotion{};
-        const bool warpedPlayerSpace = playerSpaceFrame.enabled && playerSpaceFrame.warp;
         const bool usableDeltaTime = std::isfinite(deltaTime) && deltaTime > 0.000001f;
         const RE::NiPoint3 currentHandPositionHavok = gamePointToHavokPoint(handWorldTransform.translate);
         _lastHeldHandPositionHavok = currentHandPositionHavok;
         _hasLastHeldHandPositionHavok = true;
 
-        if (_hasPreviousHeldRawHandWorld && usableDeltaTime && !warpedPlayerSpace) {
-            const RE::NiPoint3 rawHandVelocityHavok = scalePoint(currentHandPositionHavok - _previousHeldHandPositionHavok, 1.0f / deltaTime);
-            const RE::NiPoint3 playerVelocityHavok =
-                (playerSpaceFrame.enabled && !playerSpaceFrame.warp) ? playerSpaceFrame.velocityHavok : RE::NiPoint3{};
-            handMotion.localLinearVelocityHavok = rawHandVelocityHavok - playerVelocityHavok;
+        if (_hasPreviousHeldRawHandWorld && usableDeltaTime) {
+            handMotion.localLinearVelocityHavok = scalePoint(currentHandPositionHavok - _previousHeldHandPositionHavok, 1.0f / deltaTime);
             handMotion.hasLocalLinearVelocity = true;
 
             handMotion.angularVelocityRadiansPerSecond =
@@ -11005,11 +10989,6 @@ namespace rock
             if (_heldHandVelocityHistoryCount < _heldLocalHandVelocityHistory.size()) {
                 ++_heldHandVelocityHistoryCount;
             }
-        } else if (warpedPlayerSpace) {
-            _heldLocalHandVelocityHistory = {};
-            _heldHandAngularVelocityHistory = {};
-            _heldHandVelocityHistoryCount = 0;
-            _heldHandVelocityHistoryNext = 0;
         }
 
         _previousHeldRawHandWorld = handWorldTransform;
@@ -11018,14 +10997,12 @@ namespace rock
         return handMotion;
     }
 
-    void Hand::recordHeldObjectVelocitySample(RE::hknpWorld* world, const HeldObjectPlayerSpaceFrame& playerSpaceFrame)
+    void Hand::recordHeldObjectVelocitySample(RE::hknpWorld* world)
     {
         const auto compensationResult = applyHeldMotionCompensation(
             world,
             _savedObjectState.bodyId,
             _heldBodyIds,
-            playerSpaceFrame,
-            _lastPlayerSpaceVelocityHavok,
             _heldDriveDecision.includeConnectedLinearVelocity);
         if (compensationResult.hasPrimaryVelocity) {
             _heldLocalLinearVelocityHistory[_heldLocalLinearVelocityHistoryNext] = compensationResult.primaryLocalLinearVelocity;
@@ -11036,21 +11013,19 @@ namespace rock
             _lastHeldObjectLocalLinearVelocityHavok = compensationResult.primaryLocalLinearVelocity;
             _hasLastHeldObjectLocalLinearVelocityHavok = true;
         }
-        _lastPlayerSpaceVelocityHavok = (playerSpaceFrame.enabled && !playerSpaceFrame.warp) ? playerSpaceFrame.velocityHavok : RE::NiPoint3{};
     }
 
     void Hand::captureHeldReleaseMotion(
         RE::hknpWorld* world,
         const RE::NiTransform& handWorldTransform,
-        const HeldObjectPlayerSpaceFrame& playerSpaceFrame,
         float deltaTime)
     {
         if (!isHolding() || !world) {
             return;
         }
 
-        recordHeldControllerMotionSample(handWorldTransform, playerSpaceFrame, deltaTime);
-        recordHeldObjectVelocitySample(world, playerSpaceFrame);
+        recordHeldControllerMotionSample(handWorldTransform, deltaTime);
+        recordHeldObjectVelocitySample(world);
     }
 
     void Hand::applyReleaseVelocitySnapshot(RE::hknpWorld* world, const GrabReleaseOutcome::VelocitySnapshot& snapshot) const
@@ -11087,7 +11062,6 @@ namespace rock
 
     void Hand::updateHeldObject(RE::hknpWorld* world,
         const RE::NiTransform& handWorldTransform,
-        const HeldObjectPlayerSpaceFrame& playerSpaceFrame,
         float deltaTime,
         float forceFadeInTime,
         float tauMin,
@@ -11132,18 +11106,8 @@ namespace rock
 
         _grabStartTime += held_object_physics_math::finitePositiveOrZero(deltaTime);
 
-        const HeldHandMotionSample handMotion = recordHeldControllerMotionSample(handWorldTransform, playerSpaceFrame, deltaTime);
+        const HeldHandMotionSample handMotion = recordHeldControllerMotionSample(handWorldTransform, deltaTime);
         (void)handMotion;
-
-        // Stage 2 stick-locomotion fix: advance the drift-free room-correction offset once per frame from the
-        // aligned ApplyMovementDelta hook vs ROCK's render-sampled room delta. The offset is applied to the
-        // proxy target inside the physics flush (below). Idempotent within a frame, so calling it per holding
-        // hand is safe. Default off.
-        if (g_rockConfig.rockGrabAlignedRoomCompensationEnabled) {
-            const auto& frameSnapshot = runtime_state::currentFrame();
-            updateAlignedRoomCorrectionForFrame(
-                frameSnapshot.frameIndex, frameSnapshot.playerSpace.deltaGameUnits, frameSnapshot.playerSpace.valid);
-        }
 
         /*
          * ROCK freezes the visible object/node relation in generated/proxy
@@ -12056,7 +12020,7 @@ namespace rock
             }
         }
 
-        recordHeldObjectVelocitySample(world, playerSpaceFrame);
+        recordHeldObjectVelocitySample(world);
 
         if (!_grabFrame.syntheticLooseWeaponPrimaryAttach && g_rockConfig.rockGrabMeshFingerPoseEnabled && _hasGrabFingerPose && _grabFingerPosePublished) {
             const int updateInterval = (std::max)(1, g_rockConfig.rockGrabFingerPoseUpdateInterval);
@@ -12446,18 +12410,6 @@ namespace rock
             performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GrabAuthorityFlush);
 
             pending = _grabAuthorityPendingTarget;
-            // Stage 2 stick-locomotion fix: de-alias the proxy target's room component with the bounded
-            // aligned-room correction offset. Applied to the local copy only (the stored pending target stays
-            // un-offset, so resolveGrabAuthorityProxyFrame cannot double-count next frame); every downstream
-            // use of pending.proxyWorld in this flush -- keyframe drive, constraint motor target, last-applied
-            // tracking -- then sees the corrected target consistently. Position-only, clamped small -> no
-            // fling, and the game-frame deviation check only ever sees the small residual. Default off.
-            if (g_rockConfig.rockGrabAlignedRoomCompensationEnabled) {
-                const RE::NiPoint3 roomCorrection = getAlignedRoomCorrectionOffset();
-                pending.proxyWorld.translate.x += roomCorrection.x;
-                pending.proxyWorld.translate.y += roomCorrection.y;
-                pending.proxyWorld.translate.z += roomCorrection.z;
-            }
             // Accept the game-frame sample exactly once on its own source-clock
             // delta; the queued-sequence identity keeps multi-substep re-flushes
             // of the same pending target from advancing the source timeline. The
@@ -12515,10 +12467,6 @@ namespace rock
             proxyLinearVelocityHavokMagnitude = std::sqrt(
                 linearVelocityHavok[0] * linearVelocityHavok[0] + linearVelocityHavok[1] * linearVelocityHavok[1] +
                 linearVelocityHavok[2] * linearVelocityHavok[2]);
-            // Diagnostic (stutter localization): publish proxy A's TARGET velocity (game units/sec) -- how
-            // fast the keyframe target itself moves this frame -- so the probe can tell target jitter from
-            // motor jitter. With the aligned-room flag off this reflects the un-corrected target.
-            _lastProxyTargetSpeedGameUnits.store(proxyLinearVelocityHavokMagnitude * physics_scale::havokToGame(), std::memory_order_relaxed);
             proxyAngularVelocityRadiansPerSecond = std::sqrt(
                 angularVelocityHavok[0] * angularVelocityHavok[0] + angularVelocityHavok[1] * angularVelocityHavok[1] +
                 angularVelocityHavok[2] * angularVelocityHavok[2]);
@@ -13800,7 +13748,6 @@ namespace rock
                     .hasTangentialVelocity = hasTangentialVelocity,
                     .handLocalVelocityHavok = handLocalReleaseVelocity,
                     .objectLocalVelocityHavok = objectLocalReleaseVelocity,
-                    .playerVelocityHavok = _lastPlayerSpaceVelocityHavok,
                     .tangentialVelocityHavok = tangentialVelocityHavok,
                     .objectVelocityBlend = g_rockConfig.rockGrabThrowObjectVelocityBlend,
                     .tangentialVelocityScale = g_rockConfig.rockGrabThrowTangentialVelocityScale,
@@ -13888,7 +13835,7 @@ namespace rock
                     _heldDriveDecision.includeConnectedAngularVelocity);
             }
             ROCK_LOG_DEBUG(Hand,
-                "{} hand RELEASE VELOCITY: applied={} driveMode={} linearScope={} angularScope={} authority={} shape={} angularScale={:.2f} angularCap={:.3f} longScale={:.2f} handLocal=({:.3f},{:.3f},{:.3f}) objectLocal=({:.3f},{:.3f},{:.3f}) tangent=({:.3f},{:.3f},{:.3f}) angularRaw=({:.3f},{:.3f},{:.3f}) angularFinal=({:.3f},{:.3f},{:.3f}) player=({:.3f},{:.3f},{:.3f}) final=({:.3f},{:.3f},{:.3f}) lever=({:.3f},{:.3f},{:.3f}) objectHistory={} handHistory={} multiplier={:.2f}",
+                "{} hand RELEASE VELOCITY: applied={} driveMode={} linearScope={} angularScope={} authority={} shape={} angularScale={:.2f} angularCap={:.3f} longScale={:.2f} handLocal=({:.3f},{:.3f},{:.3f}) objectLocal=({:.3f},{:.3f},{:.3f}) tangent=({:.3f},{:.3f},{:.3f}) angularRaw=({:.3f},{:.3f},{:.3f}) angularFinal=({:.3f},{:.3f},{:.3f}) final=({:.3f},{:.3f},{:.3f}) lever=({:.3f},{:.3f},{:.3f}) objectHistory={} handHistory={} multiplier={:.2f}",
                 handName(),
                 applyReleaseVelocity ? "yes" : "no",
                 held_object_drive_policy::modeName(_heldDriveDecision.mode),
@@ -13914,9 +13861,6 @@ namespace rock
                 releaseAngularVelocity.x,
                 releaseAngularVelocity.y,
                 releaseAngularVelocity.z,
-                _lastPlayerSpaceVelocityHavok.x,
-                _lastPlayerSpaceVelocityHavok.y,
-                _lastPlayerSpaceVelocityHavok.z,
                 releaseVelocity.x,
                 releaseVelocity.y,
                 releaseVelocity.z,
@@ -14093,7 +14037,6 @@ namespace rock
         _lastHeldHandPositionHavok = {};
         _hasPreviousHeldRawHandWorld = false;
         _hasLastHeldHandPositionHavok = false;
-        _lastPlayerSpaceVelocityHavok = {};
         _currentSelection.clear();
         clearGrabAcquisitionCache("release-cleared-selection");
         HandInteractionEvent releaseEvent = HandInteractionEvent::ReleaseRequested;
