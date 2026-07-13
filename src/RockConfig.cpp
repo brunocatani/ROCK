@@ -590,6 +590,10 @@ namespace rock
         rockSelectedCloseFingerAnimMaxHandSpeed = 0.9f;
         rockSelectedCloseFingerAnimValue = 0.9f;
         rockPulledAngularDamping = 8.0f;
+        rockPullLongAxisPresentationEnabled = true;
+        rockPullPresentationMinElongationRatio = 2.0f;
+        rockPullPresentationAngularGainPerSecond = 6.0f;
+        rockPullPresentationMaxAngularSpeedRadiansPerSecond = 8.0f;
 
         rockRightGrabLegacyPalmPivotAHandspace = RE::NiPoint3(6.0f, -2.0f, 0.2f);
         rockLeftGrabLegacyPalmPivotAHandspace = RE::NiPoint3(6.0f, -2.0f, -0.2f);
@@ -2213,6 +2217,27 @@ namespace rock
         }
         rockSelectedCloseFingerAnimValue = std::clamp(rockSelectedCloseFingerAnimValue, 0.0f, 1.0f);
         rockPulledAngularDamping = static_cast<float>(ini.GetDoubleValue(SECTION, "fPulledAngularDamping", rockPulledAngularDamping));
+        rockPullLongAxisPresentationEnabled = ini.GetBoolValue(SECTION, "bPullLongAxisPresentationEnabled", rockPullLongAxisPresentationEnabled);
+        rockPullPresentationMinElongationRatio =
+            static_cast<float>(ini.GetDoubleValue(SECTION, "fPullPresentationMinElongationRatio", rockPullPresentationMinElongationRatio));
+        if (!std::isfinite(rockPullPresentationMinElongationRatio) || rockPullPresentationMinElongationRatio < 1.0f) {
+            ROCK_LOG_WARN(Config, "Invalid fPullPresentationMinElongationRatio={} -- using 2.0", rockPullPresentationMinElongationRatio);
+            rockPullPresentationMinElongationRatio = 2.0f;
+        }
+        rockPullPresentationAngularGainPerSecond =
+            static_cast<float>(ini.GetDoubleValue(SECTION, "fPullPresentationAngularGainPerSecond", rockPullPresentationAngularGainPerSecond));
+        if (!std::isfinite(rockPullPresentationAngularGainPerSecond) || rockPullPresentationAngularGainPerSecond < 0.0f ||
+            rockPullPresentationAngularGainPerSecond > 30.0f) {
+            ROCK_LOG_WARN(Config, "Invalid fPullPresentationAngularGainPerSecond={} -- using 6.0", rockPullPresentationAngularGainPerSecond);
+            rockPullPresentationAngularGainPerSecond = 6.0f;
+        }
+        rockPullPresentationMaxAngularSpeedRadiansPerSecond = static_cast<float>(
+            ini.GetDoubleValue(SECTION, "fPullPresentationMaxAngularSpeedRadiansPerSecond", rockPullPresentationMaxAngularSpeedRadiansPerSecond));
+        if (!std::isfinite(rockPullPresentationMaxAngularSpeedRadiansPerSecond) || rockPullPresentationMaxAngularSpeedRadiansPerSecond < 0.0f ||
+            rockPullPresentationMaxAngularSpeedRadiansPerSecond > 40.0f) {
+            ROCK_LOG_WARN(Config, "Invalid fPullPresentationMaxAngularSpeedRadiansPerSecond={} -- using 8.0", rockPullPresentationMaxAngularSpeedRadiansPerSecond);
+            rockPullPresentationMaxAngularSpeedRadiansPerSecond = 8.0f;
+        }
 
         readOptionalVec3("fRightGrabLegacyPalmPivotAHandspaceX", "fRightGrabLegacyPalmPivotAHandspaceY", "fRightGrabLegacyPalmPivotAHandspaceZ", rockRightGrabLegacyPalmPivotAHandspace);
         readOptionalVec3("fLeftGrabLegacyPalmPivotAHandspaceX", "fLeftGrabLegacyPalmPivotAHandspaceY", "fLeftGrabLegacyPalmPivotAHandspaceZ", rockLeftGrabLegacyPalmPivotAHandspace);

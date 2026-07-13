@@ -1156,6 +1156,12 @@ namespace rock
         float _pullElapsedSeconds = 0.0f;
         float _pullDurationSeconds = 0.0f;
         bool _pullHasTarget = false;
+        // Long-object presentation during pull flight: mesh principal axis in
+        // primary-body local space, captured once at pull start. Flight-only;
+        // held objects keep the no-rotate rule.
+        RE::NiPoint3 _pullPresentationAxisBodyLocal{};
+        float _pullPresentationElongationRatio = 0.0f;
+        bool _pullPresentationValid = false;
         PullCatchIntent _pullCatchIntent{};
         ActorEquipmentDropHandoff _actorEquipmentDropHandoff{};
 

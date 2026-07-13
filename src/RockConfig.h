@@ -550,6 +550,10 @@ namespace rock
         float rockSelectedCloseFingerAnimMaxHandSpeed = 0.9f;
         float rockSelectedCloseFingerAnimValue = 0.9f;
         float rockPulledAngularDamping = 8.0f;
+        bool rockPullLongAxisPresentationEnabled = true;
+        float rockPullPresentationMinElongationRatio = 2.0f;
+        float rockPullPresentationAngularGainPerSecond = 6.0f;
+        float rockPullPresentationMaxAngularSpeedRadiansPerSecond = 8.0f;
 
         RE::NiPoint3 rockRightGrabLegacyPalmPivotAHandspace = RE::NiPoint3(6.0f, -2.0f, 0.2f);
         RE::NiPoint3 rockLeftGrabLegacyPalmPivotAHandspace = RE::NiPoint3(6.0f, -2.0f, -0.2f);

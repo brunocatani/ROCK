@@ -3969,6 +3969,159 @@ namespace rock
             return result;
         }
 
+        struct GrabMeshLongAxisResult
+        {
+            RE::NiPoint3 axisWorld{};
+            float elongationRatio = 0.0f;
+            std::uint32_t triangleCount = 0;
+            const char* reason = "notEvaluated";
+            bool valid = false;
+        };
+
+        /*
+         * Principal axis of the rendered mesh via area-weighted PCA over the
+         * extracted world-space triangles. NIF axes are not authored
+         * consistently across props, so long-object orientation must come from
+         * the geometry itself. elongationRatio = sqrt(lambda1/lambda2), the RMS
+         * extent ratio between the dominant and second axis: ~1 for compact
+         * objects, >2 for bottle/broom shapes. The axis sign is arbitrary;
+         * callers must align to the nearest hemisphere of their target axis.
+         * Double accumulators because world coordinates are large; covariance
+         * is built about the area-weighted mean.
+         */
+        GrabMeshLongAxisResult computeGrabMeshLongAxis(const std::vector<TriangleData>& worldTriangles)
+        {
+            GrabMeshLongAxisResult result{};
+            result.triangleCount = static_cast<std::uint32_t>(worldTriangles.size());
+            if (worldTriangles.empty()) {
+                result.reason = "noTriangles";
+                return result;
+            }
+
+            double weightSum = 0.0;
+            double meanAccum[3] = {};
+            auto isFinitePoint = [](const RE::NiPoint3& p) {
+                return std::isfinite(p.x) && std::isfinite(p.y) && std::isfinite(p.z);
+            };
+            auto triangleArea = [](const TriangleData& tri) {
+                const RE::NiPoint3 e0 = tri.v1 - tri.v0;
+                const RE::NiPoint3 e1 = tri.v2 - tri.v0;
+                const RE::NiPoint3 n{
+                    e0.y * e1.z - e0.z * e1.y,
+                    e0.z * e1.x - e0.x * e1.z,
+                    e0.x * e1.y - e0.y * e1.x,
+                };
+                return 0.5f * std::sqrt((std::max)(0.0f, n.x * n.x + n.y * n.y + n.z * n.z));
+            };
+            for (const auto& tri : worldTriangles) {
+                if (!isFinitePoint(tri.v0) || !isFinitePoint(tri.v1) || !isFinitePoint(tri.v2)) {
+                    continue;
+                }
+                const float area = triangleArea(tri);
+                if (!std::isfinite(area) || area <= 0.000001f) {
+                    continue;
+                }
+                weightSum += area;
+                meanAccum[0] += static_cast<double>(area) * (tri.v0.x + tri.v1.x + tri.v2.x) / 3.0;
+                meanAccum[1] += static_cast<double>(area) * (tri.v0.y + tri.v1.y + tri.v2.y) / 3.0;
+                meanAccum[2] += static_cast<double>(area) * (tri.v0.z + tri.v1.z + tri.v2.z) / 3.0;
+            }
+            if (weightSum <= 0.000001) {
+                result.reason = "degenerateMeshArea";
+                return result;
+            }
+            const double mean[3] = { meanAccum[0] / weightSum, meanAccum[1] / weightSum, meanAccum[2] / weightSum };
+
+            // Symmetric covariance: [xx, xy, xz, yy, yz, zz]
+            double cov[6] = {};
+            for (const auto& tri : worldTriangles) {
+                if (!isFinitePoint(tri.v0) || !isFinitePoint(tri.v1) || !isFinitePoint(tri.v2)) {
+                    continue;
+                }
+                const float area = triangleArea(tri);
+                if (!std::isfinite(area) || area <= 0.000001f) {
+                    continue;
+                }
+                const double vertexWeight = static_cast<double>(area) / 3.0;
+                const RE::NiPoint3* vertices[3] = { &tri.v0, &tri.v1, &tri.v2 };
+                for (const auto* vertex : vertices) {
+                    const double d[3] = { vertex->x - mean[0], vertex->y - mean[1], vertex->z - mean[2] };
+                    cov[0] += vertexWeight * d[0] * d[0];
+                    cov[1] += vertexWeight * d[0] * d[1];
+                    cov[2] += vertexWeight * d[0] * d[2];
+                    cov[3] += vertexWeight * d[1] * d[1];
+                    cov[4] += vertexWeight * d[1] * d[2];
+                    cov[5] += vertexWeight * d[2] * d[2];
+                }
+            }
+            for (double& entry : cov) {
+                entry /= weightSum;
+            }
+
+            auto covMultiply = [](const double m[6], const double v[3], double out[3]) {
+                out[0] = m[0] * v[0] + m[1] * v[1] + m[2] * v[2];
+                out[1] = m[1] * v[0] + m[3] * v[1] + m[4] * v[2];
+                out[2] = m[2] * v[0] + m[4] * v[1] + m[5] * v[2];
+            };
+            auto dominantEigen = [&covMultiply](const double m[6], double outAxis[3]) {
+                // Deterministic start: the coordinate axis with the largest diagonal.
+                double v[3] = {};
+                if (m[0] >= m[3] && m[0] >= m[5]) {
+                    v[0] = 1.0;
+                } else if (m[3] >= m[5]) {
+                    v[1] = 1.0;
+                } else {
+                    v[2] = 1.0;
+                }
+                for (int iteration = 0; iteration < 48; ++iteration) {
+                    double next[3];
+                    covMultiply(m, v, next);
+                    const double lenSq = next[0] * next[0] + next[1] * next[1] + next[2] * next[2];
+                    if (!(lenSq > 1e-18)) {
+                        break;
+                    }
+                    const double invLen = 1.0 / std::sqrt(lenSq);
+                    v[0] = next[0] * invLen;
+                    v[1] = next[1] * invLen;
+                    v[2] = next[2] * invLen;
+                }
+                double mv[3];
+                covMultiply(m, v, mv);
+                const double eigenvalue = mv[0] * v[0] + mv[1] * v[1] + mv[2] * v[2];
+                outAxis[0] = v[0];
+                outAxis[1] = v[1];
+                outAxis[2] = v[2];
+                return eigenvalue;
+            };
+
+            double axis1[3];
+            const double lambda1 = dominantEigen(cov, axis1);
+            if (!(lambda1 > 1e-9)) {
+                result.reason = "degenerateCovariance";
+                return result;
+            }
+            double deflated[6] = {
+                cov[0] - lambda1 * axis1[0] * axis1[0],
+                cov[1] - lambda1 * axis1[0] * axis1[1],
+                cov[2] - lambda1 * axis1[0] * axis1[2],
+                cov[3] - lambda1 * axis1[1] * axis1[1],
+                cov[4] - lambda1 * axis1[1] * axis1[2],
+                cov[5] - lambda1 * axis1[2] * axis1[2],
+            };
+            double axis2[3];
+            const double lambda2 = (std::max)(0.0, dominantEigen(deflated, axis2));
+
+            result.axisWorld = RE::NiPoint3{
+                static_cast<float>(axis1[0]),
+                static_cast<float>(axis1[1]),
+                static_cast<float>(axis1[2]),
+            };
+            result.elongationRatio = static_cast<float>((std::min)(100.0, std::sqrt(lambda1 / (std::max)(lambda2, lambda1 * 1e-4))));
+            result.reason = "meshPrincipalAxis";
+            result.valid = true;
+            return result;
+        }
+
         struct SeatedPalmPocketSupportPatch
         {
             grab_contact_patch_math::GrabContactPatchResult<RE::NiPoint3> patch{};
@@ -7139,6 +7292,51 @@ namespace rock
             selectedPointHavok.z - motion->position.z,
         };
 
+        /*
+         * Long-object presentation capture: one mesh extraction + PCA at pull
+         * start. The axis is frozen in primary-body local space so the flight
+         * servo in updateDynamicPull can re-derive it from the live body pose
+         * without touching nodes per frame.
+         */
+        _pullPresentationAxisBodyLocal = {};
+        _pullPresentationElongationRatio = 0.0f;
+        _pullPresentationValid = false;
+        if (g_rockConfig.rockPullLongAxisPresentationEnabled && hasPrimaryBodyWorld) {
+            RE::NiAVObject* presentationMeshNode = _currentSelection.visualNode ? _currentSelection.visualNode : rootNode;
+            if (presentationMeshNode) {
+                std::vector<TriangleData> presentationTriangles;
+                std::vector<GrabSurfaceTriangleData> presentationSurfaceTriangles;
+                MeshExtractionStats presentationMeshStats;
+                extractAllSurfaceTriangles(presentationMeshNode,
+                    presentationTriangles,
+                    presentationSurfaceTriangles,
+                    (std::max)(1, g_rockConfig.rockObjectPhysicsTreeMaxDepth),
+                    &presentationMeshStats,
+                    g_rockConfig.rockGrabNodeNameBlacklist,
+                    false);
+                const auto longAxis = computeGrabMeshLongAxis(presentationTriangles);
+                if (longAxis.valid && longAxis.elongationRatio >= g_rockConfig.rockPullPresentationMinElongationRatio) {
+                    const RE::NiPoint3 axisBodyLocal = normalizeOrZero(
+                        transform_math::worldVectorToLocal(primaryBodyWorld, longAxis.axisWorld));
+                    if (lengthSquared(axisBodyLocal) > 0.000001f) {
+                        _pullPresentationAxisBodyLocal = axisBodyLocal;
+                        _pullPresentationElongationRatio = longAxis.elongationRatio;
+                        _pullPresentationValid = true;
+                    }
+                }
+                ROCK_LOG_DEBUG(Hand,
+                    "{} hand PULL presentation axis: valid={} elongation={:.2f} tris={} reason={} axisLocal=({:.3f},{:.3f},{:.3f})",
+                    handName(),
+                    _pullPresentationValid ? "yes" : "no",
+                    longAxis.elongationRatio,
+                    longAxis.triangleCount,
+                    longAxis.reason,
+                    _pullPresentationAxisBodyLocal.x,
+                    _pullPresentationAxisBodyLocal.y,
+                    _pullPresentationAxisBodyLocal.z);
+            }
+        }
+
         const RE::NiPoint3 objectPointHavok{
             motion->position.x + _pullPointOffsetHavok.x,
             motion->position.y + _pullPointOffsetHavok.y,
@@ -7304,9 +7502,60 @@ namespace rock
             return false;
         }
 
-        setHeldLinearVelocity(world, RE::hknpBodyId{ _pulledPrimaryBodyId }, _pulledBodyIds, motionResult.velocityHavok,
-            pull_motion_math::angularVelocityKeepForDamping(g_rockConfig.rockPulledAngularDamping, deltaTime),
-            _pullDriveDecision.includeConnectedLinearVelocity);
+        /*
+         * Long-object presentation (flight only): servo the mesh principal
+         * axis toward the hand's cross-palm (thumb->pinky) line while the pull
+         * drive owns the object, so long props arrive oriented for the grab.
+         * The angular velocity is SET each frame from the remaining angle
+         * (kinematic servo with exponential decay), so it cannot overshoot.
+         * This path ends at pull arrival, before capture freezes the relation;
+         * held objects keep the no-rotate rule.
+         */
+        RE::NiPoint3 presentationAngularVelocity{};
+        bool presentationActive = false;
+        if (_pullPresentationValid && g_rockConfig.rockPullLongAxisPresentationEnabled) {
+            RE::NiTransform pulledBodyWorld{};
+            if (tryGetBodyWorldTransform(world, RE::hknpBodyId{ _pulledPrimaryBodyId }, pulledBodyWorld)) {
+                const RE::NiPoint3 currentAxisWorld =
+                    normalizeOrZero(transform_math::localVectorToWorld(pulledBodyWorld, _pullPresentationAxisBodyLocal));
+                RE::NiPoint3 targetAxisWorld = normalizeOrZero(
+                    transformHandspaceDirection(handWorldTransform, RE::NiPoint3{ 0.0f, 0.0f, 1.0f }, _isLeft));
+                if (lengthSquared(currentAxisWorld) > 0.000001f && lengthSquared(targetAxisWorld) > 0.000001f) {
+                    // The mesh axis has no sign: always rotate toward the nearest hemisphere.
+                    if (dotProduct(currentAxisWorld, targetAxisWorld) < 0.0f) {
+                        targetAxisWorld = RE::NiPoint3{ -targetAxisWorld.x, -targetAxisWorld.y, -targetAxisWorld.z };
+                    }
+                    const RE::NiPoint3 rotationAxis = crossProduct(currentAxisWorld, targetAxisWorld);
+                    const float sinAngle = std::sqrt((std::max)(0.0f, lengthSquared(rotationAxis)));
+                    const float cosAngle = std::clamp(dotProduct(currentAxisWorld, targetAxisWorld), -1.0f, 1.0f);
+                    const float angleRadians = std::atan2(sinAngle, cosAngle);
+                    if (sinAngle > 0.000001f && angleRadians > 0.005f) {
+                        const float angularSpeed = (std::min)(
+                            angleRadians * (std::max)(0.0f, g_rockConfig.rockPullPresentationAngularGainPerSecond),
+                            (std::max)(0.0f, g_rockConfig.rockPullPresentationMaxAngularSpeedRadiansPerSecond));
+                        const float invSin = 1.0f / sinAngle;
+                        presentationAngularVelocity = RE::NiPoint3{
+                            rotationAxis.x * invSin * angularSpeed,
+                            rotationAxis.y * invSin * angularSpeed,
+                            rotationAxis.z * invSin * angularSpeed,
+                        };
+                        presentationActive = angularSpeed > 0.0f;
+                    }
+                }
+            }
+        }
+        if (presentationActive) {
+            setHeldVelocity(world, RE::hknpBodyId{ _pulledPrimaryBodyId }, _pulledBodyIds, motionResult.velocityHavok,
+                presentationAngularVelocity,
+                true,
+                1.0f,
+                _pullDriveDecision.includeConnectedLinearVelocity,
+                _pullDriveDecision.includeConnectedAngularVelocity);
+        } else {
+            setHeldLinearVelocity(world, RE::hknpBodyId{ _pulledPrimaryBodyId }, _pulledBodyIds, motionResult.velocityHavok,
+                pull_motion_math::angularVelocityKeepForDamping(g_rockConfig.rockPulledAngularDamping, deltaTime),
+                _pullDriveDecision.includeConnectedLinearVelocity);
+        }
         for (const auto bodyId : _pulledBodyIds) {
             physics_recursive_wrappers::activateBody(world, bodyId);
         }

@@ -487,6 +487,9 @@ namespace rock
         _pullElapsedSeconds = 0.0f;
         _pullDurationSeconds = 0.0f;
         _pullHasTarget = false;
+        _pullPresentationAxisBodyLocal = {};
+        _pullPresentationElongationRatio = 0.0f;
+        _pullPresentationValid = false;
     }
 
     object_physics_body_set::BodySetScanOptions Hand::makeActiveGrabBodyScanOptions(const SelectedObject& selection) const
