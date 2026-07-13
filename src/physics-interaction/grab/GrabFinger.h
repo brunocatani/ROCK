@@ -2224,19 +2224,29 @@ namespace rock::grab_finger_pose_runtime
              * current curl from the chord length via the baked Tip reach
              * table and de-rotate the chord back to the true open reference,
              * in the baked arc-plane sign convention.
+             *
+             * THE THUMB IS EXCLUDED: its chord shortens from opposition and
+             * twist - motion outside the arc plane - and its rendered rest
+             * pose is already partially opposed, so the reach inversion reads
+             * a large spurious curl and the de-rotation anchors every lane
+             * behind the real thumb (renders inside the mesh). Session
+             * evidence: the thumb never showed the air-gap symptom the
+             * de-rotation fixes, and went inside on every grab with it.
              */
             RE::NiPoint3 openDirectionWorld = live.openDirection;
-            const auto& liveChain = liveFingerSnapshot->fingers[finger];
-            const float liveChordLength = std::sqrt(distanceSquared(liveChain.points[2], liveChain.points[0]));
-            const auto chordCurl = grab_finger_pose_math::estimateCalibratedChainCurlFromChord(
-                finger, isLeft, inPowerArmor, fingerOpenLengthWorld, liveChordLength);
-            if (chordCurl.valid && std::fabs(chordCurl.chordAngleRadians) > 0.0035f) {
-                openDirectionWorld = normalizedOrFallback(
-                    grab_finger_pose_math::rotateAroundUnitAxis(
-                        openDirectionWorld,
-                        curlNormalWorld,
-                        -chordCurl.chordAngleRadians * chordCurl.normalSign),
-                    openDirectionWorld);
+            if (finger != 0) {
+                const auto& liveChain = liveFingerSnapshot->fingers[finger];
+                const float liveChordLength = std::sqrt(distanceSquared(liveChain.points[2], liveChain.points[0]));
+                const auto chordCurl = grab_finger_pose_math::estimateCalibratedChainCurlFromChord(
+                    finger, isLeft, inPowerArmor, fingerOpenLengthWorld, liveChordLength);
+                if (chordCurl.valid && std::fabs(chordCurl.chordAngleRadians) > 0.0035f) {
+                    openDirectionWorld = normalizedOrFallback(
+                        grab_finger_pose_math::rotateAroundUnitAxis(
+                            openDirectionWorld,
+                            curlNormalWorld,
+                            -chordCurl.chordAngleRadians * chordCurl.normalSign),
+                        openDirectionWorld);
+                }
             }
             const RE::NiPoint3 thumbAlternateCurlNormalWorld = liveThumbAlternateCurlNormalWorld(openDirectionWorld, curlNormalWorld, baseWorld, grabAnchorWorld, isLeft);
             const RE::NiPoint3 toContact = useTarget ? fingerTargetWorld - baseWorld : openDirectionWorld;

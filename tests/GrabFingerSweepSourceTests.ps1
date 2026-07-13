@@ -137,9 +137,10 @@ Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
 ) 'Chord curl estimation must invert the baked Tip probe reach table.'
 Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
     'RE::NiPoint3 openDirectionWorld = live\.openDirection;',
+    'if \(finger != 0\) \{',
     'estimateCalibratedChainCurlFromChord\(',
     '-chordCurl\.chordAngleRadians \* chordCurl\.normalSign'
-) 'The runtime solve must de-rotate the live chord to the open reference before anchoring arcs on it.'
+) 'The runtime solve must de-rotate the live chord to the open reference for the four fingers only: the thumb chord shortens from opposition/twist and the inversion misreads it.'
 
 # Held re-solves within noise of the current pose must not churn new FRIK
 # targets every interval (finger micro-twitch).
