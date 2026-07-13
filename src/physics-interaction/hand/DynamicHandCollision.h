@@ -51,6 +51,18 @@ namespace rock
             bool rightHandWeaponEquipped,
             bool leftSupportGripActive);
         void flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
+        /*
+         * Post-solve deviation sampling (physics step thread, after-solve
+         * phase). Deviation MUST be post-solve body position minus the SAME
+         * substep's commanded target: an unobstructed hard-keyframe drive lands
+         * exactly on its target, so tracking motion (hand, locomotion, room
+         * scale) produces exactly zero and only real contact survives.
+         * Comparing the pre-collide pose against the next substep's target
+         * instead leaks one substep of tracking lag into the rendered hand —
+         * the "player movement compensation" artifact and the at-rest refresh
+         * twitch of the first two in-game sessions.
+         */
+        void samplePostSolveDeviations(RE::hknpWorld* world);
         void retireAll(void* bhkWorld);
         void reset();
 
@@ -78,6 +90,10 @@ namespace rock
             float createdLength = 0.0f;
             float createdRadius = 0.0f;
             bool created = false;
+            // Physics-thread-only handshake between the pre-collide drive and
+            // the after-solve deviation sample of the same substep.
+            bool droveThisSubstep = false;
+            RE::NiPoint3 commandedTargetGame{};
             std::atomic<bool> deviationValidAtomic{ false };
             std::atomic<float> deviationXAtomic{ 0.0f };
             std::atomic<float> deviationYAtomic{ 0.0f };

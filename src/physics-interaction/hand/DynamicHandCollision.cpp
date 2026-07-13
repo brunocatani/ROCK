@@ -20,7 +20,11 @@ namespace rock
         constexpr const char* RIGHT_DYNAMIC_HAND_TAG = "ROCK_DynamicHand_Right";
         constexpr const char* LEFT_DYNAMIC_HAND_TAG = "ROCK_DynamicHand_Left";
         constexpr std::uint32_t kDynamicHandProxyCollisionGroup = 0x000C;
-        constexpr float kTwinDimensionRebuildToleranceGameUnits = 0.05f;
+        /*
+         * Published palm dimensions breathe slightly with live finger bases;
+         * only a real tuning/power-armor change should rebuild the twin bodies.
+         */
+        constexpr float kTwinDimensionRebuildToleranceGameUnits = 0.25f;
 
         constexpr std::array<const char*, DynamicHandCollisionRuntime::kBodiesPerHand> kRightTwinNames{
             "ROCK_DynHandTwin_R_Palm",
@@ -467,26 +471,57 @@ namespace rock
                 if (result.shouldRequestRebuild()) {
                     slot.rebuildRequestedAtomic.store(true, std::memory_order_release);
                     slot.deviationValidAtomic.store(false, std::memory_order_release);
+                    slot.droveThisSubstep = false;
                     continue;
                 }
 
                 /*
-                 * Pre-collide live pose == previous substep's post-solve pose,
-                 * so body-minus-target here is the solver's resolved deviation
-                 * with one substep of latency. A teleport resets it to zero so
-                 * the rendered hand snaps home with the body.
+                 * The deviation itself is sampled POST-SOLVE against this exact
+                 * commanded target (samplePostSolveDeviations); here we only
+                 * record what was commanded. A teleport is already "arrived":
+                 * deviation resets to zero so the rendered hand snaps home with
+                 * the body.
                  */
-                if (result.attempted && result.hasLiveBodyTransform && !result.teleported) {
-                    slot.deviationXAtomic.store(result.liveBodyGamePosition.x - result.targetGamePosition.x, std::memory_order_release);
-                    slot.deviationYAtomic.store(result.liveBodyGamePosition.y - result.targetGamePosition.y, std::memory_order_release);
-                    slot.deviationZAtomic.store(result.liveBodyGamePosition.z - result.targetGamePosition.z, std::memory_order_release);
-                    slot.deviationValidAtomic.store(true, std::memory_order_release);
-                } else if (result.teleported) {
+                if (result.teleported) {
+                    slot.droveThisSubstep = false;
                     slot.deviationXAtomic.store(0.0f, std::memory_order_release);
                     slot.deviationYAtomic.store(0.0f, std::memory_order_release);
                     slot.deviationZAtomic.store(0.0f, std::memory_order_release);
                     slot.deviationValidAtomic.store(true, std::memory_order_release);
+                } else if (result.driven) {
+                    slot.commandedTargetGame = result.targetGamePosition;
+                    slot.droveThisSubstep = true;
+                } else {
+                    slot.droveThisSubstep = false;
                 }
+            }
+        }
+    }
+
+    void DynamicHandCollisionRuntime::samplePostSolveDeviations(RE::hknpWorld* world)
+    {
+        if (!g_rockConfig.rockHandCollisionDynamicDrive || !world) {
+            return;
+        }
+
+        for (auto& handSlots : _hands) {
+            for (auto& slot : handSlots.bodies) {
+                if (!slot.created || slot.createdWorld != world || !slot.droveThisSubstep) {
+                    continue;
+                }
+                slot.droveThisSubstep = false;
+
+                RE::NiTransform liveWorld{};
+                if (!havok_runtime::tryResolveLiveBodyWorldTransform(world, slot.body.getBodyId(), liveWorld) ||
+                    !isFinitePoint(liveWorld.translate)) {
+                    slot.deviationValidAtomic.store(false, std::memory_order_release);
+                    continue;
+                }
+
+                slot.deviationXAtomic.store(liveWorld.translate.x - slot.commandedTargetGame.x, std::memory_order_release);
+                slot.deviationYAtomic.store(liveWorld.translate.y - slot.commandedTargetGame.y, std::memory_order_release);
+                slot.deviationZAtomic.store(liveWorld.translate.z - slot.commandedTargetGame.z, std::memory_order_release);
+                slot.deviationValidAtomic.store(true, std::memory_order_release);
             }
         }
     }

@@ -102,6 +102,22 @@ Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'applyExternalHandWorldTransform\('
 ) 'Dynamic hand render-follow must combine, smooth, then apply the deviation.'
 
+# Deviation must be sampled POST-SOLVE against the same substep's commanded
+# target: pre-collide sampling leaks one substep of tracking lag into the
+# rendered hand (locomotion drag + at-rest refresh twitch).
+Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
+    'void DynamicHandCollisionRuntime::samplePostSolveDeviations\(',
+    'tryResolveLiveBodyWorldTransform\(',
+    'commandedTargetGame'
+) 'Dynamic hand deviation must be sampled post-solve against the commanded target.'
+Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @(
+    'void PhysicsInteraction::observeCustomGrabAuthorityAfterSolve\(',
+    '_dynamicHandCollision\.samplePostSolveDeviations\(world\);'
+) 'Dynamic hand post-solve sampling must run in the after-solve physics phase.'
+Reject-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
+    'liveBodyGamePosition\.x - result\.targetGamePosition' `
+    'Dynamic hand deviation must not be derived from the pre-collide drive telemetry.'
+
 # The twins get their own visualization flag, independent of the keyframed
 # collider debug draws.
 Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `

@@ -4995,6 +4995,7 @@ namespace rock
         _completedPhysicsSolveSequence.fetch_add(1, std::memory_order_release);
         _rightHand.observeCustomGrabAuthorityAfterSolve(world, timing);
         _leftHand.observeCustomGrabAuthorityAfterSolve(world, timing);
+        _dynamicHandCollision.samplePostSolveDeviations(world);
         const auto gameFrameIndex = _palmClockGameFrameIndex.load(std::memory_order_acquire);
         const auto gameDeltaSeconds = _palmClockGameDeltaSeconds.load(std::memory_order_acquire);
         logPalmClockSampleForHand("physics-after-solve", _rightHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
