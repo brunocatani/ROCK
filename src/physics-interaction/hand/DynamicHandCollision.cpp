@@ -25,6 +25,16 @@ namespace rock
          * only a real tuning/power-armor change should rebuild the twin bodies.
          */
         constexpr float kTwinDimensionRebuildToleranceGameUnits = 0.25f;
+        /*
+         * Post-solve solver-residual thresholds separating "tracking freely"
+         * (residual is integration noise, well under the 0.05 gu render
+         * epsilon — proven by the twitch-free at-rest sessions) from "blocked
+         * by the solver" (at least the press-cap penetration step, 1 Havok m/s
+         * over the shortest substep ≈ 0.26 gu). Enter sits between the two;
+         * stay is lower so a grazing contact does not flap per substep.
+         */
+        constexpr float kContactResidualEnterGameUnits = 0.15f;
+        constexpr float kContactResidualStayGameUnits = 0.05f;
 
         constexpr std::array<const char*, DynamicHandCollisionRuntime::kBodiesPerHand> kRightTwinNames{
             "ROCK_DynHandTwin_R_Palm",
@@ -274,8 +284,11 @@ namespace rock
         slot.createdRadius = 0.0f;
         slot.droveThisSubstep = false;
         slot.divergenceDwellSeconds = 0.0f;
+        slot.commandedTargetGame = {};
+        slot.requestedTargetGame = {};
         slot.lastPostSolveDeviationGame = {};
         slot.lastPostSolveDeviationValid = false;
+        slot.lastPostSolveContact = false;
         slot.deviationValidAtomic.store(false, std::memory_order_release);
         slot.teleportedAtomic.store(false, std::memory_order_release);
         slot.rebuildRequestedAtomic.store(false, std::memory_order_release);
@@ -532,28 +545,43 @@ namespace rock
                 }
 
                 /*
-                 * The deviation itself is sampled POST-SOLVE against this exact
-                 * commanded target (samplePostSolveDeviations); here we only
-                 * record what was commanded. Teleports sample the same way: the
-                 * body was placed at the target pre-collide, so the post-solve
-                 * read reports the solver's ejection (if any) and the rendered
-                 * hand glides through the recovery instead of snapping to zero.
+                 * The deviation itself is sampled POST-SOLVE against these
+                 * exact targets (samplePostSolveDeviations); here we only
+                 * record what was commanded and what was requested. Teleports
+                 * sample the same way: the body was placed at the target
+                 * pre-collide, so the post-solve read reports the solver's
+                 * ejection (if any) and the rendered hand glides through the
+                 * recovery instead of snapping to zero.
                  */
                 if (result.driven) {
                     slot.commandedTargetGame = result.targetGamePosition;
+                    slot.requestedTargetGame = result.requestedTargetGamePosition;
                     slot.droveThisSubstep = true;
                 } else {
                     slot.droveThisSubstep = false;
                 }
 
+                /*
+                 * Dwell accounting runs on the REQUESTED-target gap. The
+                 * commanded-target delta (bodyDeltaGameUnits) saturates at the
+                 * velocity-limit distance, far below any useful divergence
+                 * threshold, which silently turned the recovery teleport into
+                 * dead code in earlier revisions.
+                 */
+                const float requestedGapGameUnits = result.hasLiveBodyTransform
+                    ? std::sqrt(
+                          (result.liveBodyGamePosition.x - result.requestedTargetGamePosition.x) * (result.liveBodyGamePosition.x - result.requestedTargetGamePosition.x) +
+                          (result.liveBodyGamePosition.y - result.requestedTargetGamePosition.y) * (result.liveBodyGamePosition.y - result.requestedTargetGamePosition.y) +
+                          (result.liveBodyGamePosition.z - result.requestedTargetGamePosition.z) * (result.liveBodyGamePosition.z - result.requestedTargetGamePosition.z))
+                    : 0.0f;
                 if (result.teleported) {
                     slot.divergenceDwellSeconds = 0.0f;
                     slot.teleportedAtomic.store(true, std::memory_order_release);
                 } else if (result.attempted &&
                            result.hasLiveBodyTransform &&
-                           std::isfinite(result.bodyDeltaGameUnits) &&
+                           std::isfinite(requestedGapGameUnits) &&
                            divergenceThreshold > 0.0f &&
-                           result.bodyDeltaGameUnits > divergenceThreshold) {
+                           requestedGapGameUnits > divergenceThreshold) {
                     slot.divergenceDwellSeconds += std::clamp(result.driveDeltaSeconds, 0.0f, 0.1f);
                 } else {
                     slot.divergenceDwellSeconds = 0.0f;
@@ -580,16 +608,45 @@ namespace rock
                     !isFinitePoint(liveWorld.translate)) {
                     slot.deviationValidAtomic.store(false, std::memory_order_release);
                     slot.lastPostSolveDeviationValid = false;
+                    slot.lastPostSolveContact = false;
                     continue;
                 }
 
-                const RE::NiPoint3 deviation{
+                /*
+                 * Contact discriminator: an unobstructed hard-keyframe drive
+                 * lands exactly on the COMMANDED (velocity-limited) target, so
+                 * the solver residual against it is integration noise in free
+                 * space and at least the press-cap penetration step (~0.26 gu
+                 * at 270 Hz) when the solver blocked the body. Only in contact
+                 * does the render deviation get published — measured against
+                 * the REQUESTED target so it equals the true blocked depth
+                 * instead of saturating at the dt-dependent limiter distance.
+                 */
+                const RE::NiPoint3 solverResidual{
                     liveWorld.translate.x - slot.commandedTargetGame.x,
                     liveWorld.translate.y - slot.commandedTargetGame.y,
                     liveWorld.translate.z - slot.commandedTargetGame.z,
                 };
+                const float residualLength = std::sqrt(
+                    solverResidual.x * solverResidual.x +
+                    solverResidual.y * solverResidual.y +
+                    solverResidual.z * solverResidual.z);
+                const float contactThreshold = slot.lastPostSolveContact
+                    ? kContactResidualStayGameUnits
+                    : kContactResidualEnterGameUnits;
+                const bool contact = std::isfinite(residualLength) && residualLength > contactThreshold;
+                slot.lastPostSolveContact = contact;
+
+                RE::NiPoint3 deviation{};
+                if (contact) {
+                    deviation = RE::NiPoint3{
+                        liveWorld.translate.x - slot.requestedTargetGame.x,
+                        liveWorld.translate.y - slot.requestedTargetGame.y,
+                        liveWorld.translate.z - slot.requestedTargetGame.z,
+                    };
+                }
                 slot.lastPostSolveDeviationGame = deviation;
-                slot.lastPostSolveDeviationValid = true;
+                slot.lastPostSolveDeviationValid = contact;
                 slot.deviationXAtomic.store(deviation.x, std::memory_order_release);
                 slot.deviationYAtomic.store(deviation.y, std::memory_order_release);
                 slot.deviationZAtomic.store(deviation.z, std::memory_order_release);

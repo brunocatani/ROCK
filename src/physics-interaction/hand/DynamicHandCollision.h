@@ -53,14 +53,16 @@ namespace rock
         void flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         /*
          * Post-solve deviation sampling (physics step thread, after-solve
-         * phase). Deviation MUST be post-solve body position minus the SAME
-         * substep's commanded target: an unobstructed hard-keyframe drive lands
-         * exactly on its target, so tracking motion (hand, locomotion, room
-         * scale) produces exactly zero and only real contact survives.
-         * Comparing the pre-collide pose against the next substep's target
-         * instead leaks one substep of tracking lag into the rendered hand —
-         * the "player movement compensation" artifact and the at-rest refresh
-         * twitch of the first two in-game sessions.
+         * phase). Two-stage measurement against the SAME substep's targets:
+         * the residual vs the COMMANDED (velocity-limited) target detects
+         * contact — an unobstructed hard-keyframe drive lands exactly on it,
+         * so tracking motion (hand, locomotion, room scale) produces exactly
+         * zero — and only in contact is the render deviation published,
+         * measured vs the REQUESTED (pre-limit) target so it equals the true
+         * blocked depth. Sampling pre-collide leaks one substep of tracking
+         * lag (sessions 1-2 twitch/drag); rendering the commanded residual
+         * saturates at the dt-dependent limiter distance (sessions 3-5
+         * milli-punch pulsing).
          */
         void samplePostSolveDeviations(RE::hknpWorld* world);
         void retireAll(void* bhkWorld);
@@ -90,15 +92,29 @@ namespace rock
             float createdLength = 0.0f;
             float createdRadius = 0.0f;
             bool created = false;
-            // Physics-thread-only handshake between the pre-collide drive and
-            // the after-solve deviation sample of the same substep.
+            /*
+             * Physics-thread-only handshake between the pre-collide drive and
+             * the after-solve deviation sample of the same substep. Two targets
+             * with different jobs: the COMMANDED (velocity-limited) target
+             * detects contact — an unobstructed drive lands exactly on it, so
+             * any residual means the solver blocked the body — while the
+             * REQUESTED (pre-limit wand intent) target measures how deep the
+             * blocked intent is. Rendering the commanded residual instead
+             * saturates the deviation at maxLinearVelocity * driveDt, a value
+             * that steps with every substep-count/framerate change: the
+             * in-and-out "milli-punch" pulsing of in-game sessions 3-5.
+             */
             bool droveThisSubstep = false;
             RE::NiPoint3 commandedTargetGame{};
-            // Physics-thread copy of the last post-solve deviation; feeds the
-            // next substep's contact press cap (drive must lean on an
-            // established contact, not slam the full deficit into it).
+            RE::NiPoint3 requestedTargetGame{};
+            // Physics-thread copy of the last post-solve CONTACT deviation
+            // (zero while tracking freely); feeds the next substep's contact
+            // press cap (drive must lean on an established contact, not slam
+            // the full deficit into it). The hysteresis flag keeps a grazing
+            // contact from flapping around the enter threshold.
             RE::NiPoint3 lastPostSolveDeviationGame{};
             bool lastPostSolveDeviationValid = false;
+            bool lastPostSolveContact = false;
             /*
              * Divergence must PERSIST before a recovery teleport fires
              * (physics thread only). Without the dwell, a hand fighting a wall

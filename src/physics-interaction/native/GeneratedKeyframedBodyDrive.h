@@ -413,7 +413,17 @@ namespace rock
         bool linearLimitExceeded = false;
         bool angularLimitExceeded = false;
         bool hasLiveBodyTransform = false;
+        /*
+         * targetGamePosition is the COMMANDED target: velocity-limited toward
+         * the live body when the raw gap exceeds maxLinearVelocity * driveDt.
+         * requestedTargetGamePosition is the substep target BEFORE that limit
+         * (the caller's real intent). Contact and divergence must be measured
+         * against the requested target — the commanded gap saturates at the
+         * limiter distance, which scales with driveDt, so it can never exceed a
+         * divergence threshold and it pulses with substep-count changes.
+         */
         RE::NiPoint3 targetGamePosition{};
+        RE::NiPoint3 requestedTargetGamePosition{};
         RE::NiPoint3 targetHavokPosition{};
         RE::NiPoint3 liveBodyGamePosition{};
         RE::NiPoint3 targetAxisXWorld{};

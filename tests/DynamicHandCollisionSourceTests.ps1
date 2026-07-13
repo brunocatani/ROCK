@@ -102,14 +102,18 @@ Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'applyExternalHandWorldTransform\('
 ) 'Dynamic hand render-follow must combine, smooth, then apply the deviation.'
 
-# Deviation must be sampled POST-SOLVE against the same substep's commanded
-# target: pre-collide sampling leaks one substep of tracking lag into the
-# rendered hand (locomotion drag + at-rest refresh twitch).
+# Deviation is a two-stage POST-SOLVE measurement against the same substep's
+# targets: the residual vs the COMMANDED (velocity-limited) target detects
+# contact, and only in contact is the render deviation published, measured vs
+# the REQUESTED (pre-limit) target. Pre-collide sampling leaks tracking lag;
+# rendering the commanded residual saturates at the dt-dependent limiter
+# distance (framerate-modulated milli-punch pulsing).
 Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'void DynamicHandCollisionRuntime::samplePostSolveDeviations\(',
     'tryResolveLiveBodyWorldTransform\(',
-    'commandedTargetGame'
-) 'Dynamic hand deviation must be sampled post-solve against the commanded target.'
+    'commandedTargetGame',
+    'requestedTargetGame'
+) 'Dynamic hand deviation must detect contact vs the commanded target and measure vs the requested target.'
 Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @(
     'void PhysicsInteraction::observeCustomGrabAuthorityAfterSolve\(',
     '_dynamicHandCollision\.samplePostSolveDeviations\(world\);'
@@ -117,6 +121,19 @@ Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @(
 Reject-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
     'liveBodyGamePosition\.x - result\.targetGamePosition' `
     'Dynamic hand deviation must not be derived from the pre-collide drive telemetry.'
+
+# The divergence dwell and the drive-side recovery teleport must run on the
+# REQUESTED-target gap: the commanded-target delta (bodyDeltaGameUnits)
+# saturates at maxLinearVelocity * driveDt and can never cross a divergence
+# threshold, which silently makes the recovery teleport dead code.
+Reject-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
+    'bodyDeltaGameUnits > divergenceThreshold' `
+    'Dynamic hand divergence dwell must not gate on the saturating commanded-target delta.'
+Require-OrderedText 'src/physics-interaction/native/GeneratedKeyframedBodyDrive.cpp' @(
+    'result\.requestedTargetGamePosition = requestedTarget\.translate;',
+    'requestedGapGameUnits > mode\.divergenceTeleportGameUnits',
+    'target = requestedTarget;'
+) 'Dynamic drive divergence teleport must measure against and place at the requested target.'
 
 # Contact press cap: an established contact must lean, not slam. The drive
 # clamps only the velocity component along the press direction, after the

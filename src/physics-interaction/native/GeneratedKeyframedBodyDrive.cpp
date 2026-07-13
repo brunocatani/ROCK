@@ -542,6 +542,7 @@ namespace rock
         const bool hardSyncForVelocity = false;
         const bool immediatePlacement = state.pendingTeleport || hardSyncForVelocity;
         const RE::NiTransform requestedTarget = immediatePlacement ? selectGeneratedImmediatePlacementTarget(state) : selectGeneratedDriveTarget(state, timing);
+        result.requestedTargetGamePosition = requestedTarget.translate;
         RE::NiTransform target = requestedTarget;
         RE::hkTransformf targetHavok = makeHavokTransform(target);
         RE::NiTransform liveTransform{};
@@ -599,15 +600,27 @@ namespace rock
             /*
              * Divergence recovery: a dynamic body blocked by geometry while the
              * target kept moving must snap back instead of chasing at the
-             * velocity cap through the world. bodyDeltaGameUnits is the live
-             * body-to-target distance sampled above.
+             * velocity cap through the world. Measured against the REQUESTED
+             * target and teleporting TO it: the velocity-limited commanded gap
+             * (bodyDeltaGameUnits) saturates at maxLinearVelocity * driveDt, so
+             * it can never exceed the threshold, and the limited target is not
+             * where the caller wants the body recovered to.
              */
+            const float requestedGapGameUnits = result.hasLiveBodyTransform
+                ? body_frame::distance(liveTransform.translate, requestedTarget.translate)
+                : 0.0f;
             const bool divergenceTeleport =
                 mode.divergenceTeleportGameUnits > 0.0f &&
                 result.hasLiveBodyTransform &&
-                std::isfinite(result.bodyDeltaGameUnits) &&
-                result.bodyDeltaGameUnits > mode.divergenceTeleportGameUnits;
+                std::isfinite(requestedGapGameUnits) &&
+                requestedGapGameUnits > mode.divergenceTeleportGameUnits;
             if (divergenceTeleport) {
+                // The requested target becomes the commanded one: post-solve
+                // consumers measure the solver's ejection against what was
+                // actually placed.
+                target = requestedTarget;
+                targetHavok = makeHavokTransform(target);
+                fillTargetTelemetry(target, targetHavok, result);
                 result.teleported = placeGeneratedKeyframedBodyImmediately(body, target);
                 result.driven = result.teleported;
                 result.placementFailed = !result.teleported;
