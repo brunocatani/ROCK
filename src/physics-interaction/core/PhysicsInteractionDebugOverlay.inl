@@ -636,7 +636,6 @@
                 const float labelTargetColor[4]{ 1.0f, 0.90f, 0.18f, 0.92f };
                 const float labelRelationColor[4]{ 0.55f, 0.92f, 1.0f, 0.86f };
                 const float labelSolverColor[4]{ 1.0f, 0.36f, 0.18f, 0.96f };
-                const float labelAltColor[4]{ 0.95f, 0.72f, 1.0f, 0.78f };
                 const RE::NiPoint3 labelLift{ 0.0f, 0.0f, 3.2f };
                 auto addTriadLabel = [&](const RE::NiTransform& transform, const float color[4], const char* label) {
                     addTextLineSized(transform.translate + labelLift, 1.85f, color, "%s", label);
@@ -691,14 +690,6 @@
                             snapshot.motorAnchorAWorld,
                             true);
                         addTriadLabel(snapshot.motorRelationInverseBodyWorld, labelRelationColor, "REL INV");
-                    }
-                    if (snapshot.hasMotorColumnTargetBody &&
-                        std::fabs(snapshot.motorColumnTargetBodyDeltaDegrees - snapshot.motorTargetBodyDeltaDegrees) > 1.0f) {
-                        addAxisTransform(snapshot.motorColumnTargetBodyWorld,
-                            isLeft ? debug::AxisOverlayRole::LeftGrabMotorColumnTargetBody : debug::AxisOverlayRole::RightGrabMotorColumnTargetBody,
-                            snapshot.motorAnchorAWorld,
-                            true);
-                        addTriadLabel(snapshot.motorColumnTargetBodyWorld, labelAltColor, "COL ALT");
                     }
                 }
 
@@ -845,11 +836,10 @@
                     if (snapshot.hasMotorConstraintFrames) {
                         addTextLine(labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -10.5f },
                             detailColor,
-                            "atom %.2fgu %.1fdeg Aerr %.2fgu col %.1fdeg",
+                            "atom %.2fgu %.1fdeg Aerr %.2fgu",
                             snapshot.motorTargetBodyDeltaGameUnits,
                             snapshot.motorTargetBodyDeltaDegrees,
-                            snapshot.motorTransformBPivotToAnchorAGameUnits,
-                            snapshot.motorColumnTargetBodyDeltaDegrees);
+                            snapshot.motorTransformBPivotToAnchorAGameUnits);
                         if (snapshot.hasMotorRelationFrames) {
                             addTextLine(labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -14.0f },
                                 detailColor,

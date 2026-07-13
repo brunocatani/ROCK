@@ -105,21 +105,6 @@ namespace
         return result;
     }
 
-    RE::NiMatrix3 matrixFromRawColumns(const float* raw)
-    {
-        RE::NiMatrix3 result{};
-        result.entry[0][0] = raw[0];
-        result.entry[1][0] = raw[1];
-        result.entry[2][0] = raw[2];
-        result.entry[0][1] = raw[4];
-        result.entry[1][1] = raw[5];
-        result.entry[2][1] = raw[6];
-        result.entry[0][2] = raw[8];
-        result.entry[1][2] = raw[9];
-        result.entry[2][2] = raw[10];
-        return result;
-    }
-
     bool expectTransformClose(const char* label, const RE::NiTransform& actual, const RE::NiTransform& expected)
     {
         bool ok = true;
@@ -188,30 +173,7 @@ int main()
             const RE::NiPoint3 expectedHeldPivotB =
                 rock::grab_constraint_math::computeHiggsTransformBTranslationGame(bodyInProxyHeld, frozenPivotAProxyLocal);
 
-            float autoColumnDeltaDegrees = -1.0f;
-            const int autoDecompositionMode = rock::grab_constraint_math::resolveGrabRagdollDecompositionMode(
-                rock::grab_constraint_math::kGrabRagdollDecompositionModeAuto,
-                bodyInProxyAtCreation,
-                &autoColumnDeltaDegrees);
-            const int expectedAutoDecompositionMode =
-                autoColumnDeltaDegrees > rock::grab_constraint_math::kGrabRagdollDecompositionAutoThresholdDegrees ?
-                    rock::grab_constraint_math::kGrabRagdollDecompositionModeNeutralTransformB :
-                    rock::grab_constraint_math::kGrabRagdollDecompositionModeRelationTransformB;
-            if (autoDecompositionMode != expectedAutoDecompositionMode) {
-                std::printf("auto decomposition expected %d got %d at col %.3f\n",
-                    expectedAutoDecompositionMode,
-                    autoDecompositionMode,
-                    autoColumnDeltaDegrees);
-                ok = false;
-            }
-
-            const int decompositionModes[4]{
-                autoDecompositionMode,
-                rock::grab_constraint_math::kGrabRagdollDecompositionModeRelationTransformB,
-                rock::grab_constraint_math::kGrabRagdollDecompositionModeNeutralTransformB,
-                rock::grab_constraint_math::kGrabRagdollDecompositionModeAlignedTransformB,
-            };
-            for (const int decompositionMode : decompositionModes) {
+            {
                 float transformBRotation[12]{};
                 float transformBTranslation[4]{};
                 float targetBRca[12]{};
@@ -221,26 +183,13 @@ int main()
                     targetBRca,
                     bodyInProxyAtCreation,
                     frozenPivotAProxyLocal,
-                    gameToHavokScale,
-                    decompositionMode);
+                    gameToHavokScale);
 
-                const bool relationTransformB =
-                    decompositionMode == rock::grab_constraint_math::kGrabRagdollDecompositionModeRelationTransformB;
-                const bool alignedTransformB =
-                    decompositionMode == rock::grab_constraint_math::kGrabRagdollDecompositionModeAlignedTransformB;
-                // Aligned mode writes rows, so a column read recovers the transpose.
-                const RE::NiMatrix3 expectedCreationTransformB =
-                    alignedTransformB ? rock::transform_math::transposeRotation(expectedInitialProxyInBody.rotate) :
-                    relationTransformB ? expectedInitialProxyInBody.rotate :
-                                         identityTransform().rotate;
-                const RE::NiMatrix3 expectedHeldTransformB =
-                    alignedTransformB ? rock::transform_math::transposeRotation(expectedHeldProxyInBody.rotate) :
-                    relationTransformB ? expectedHeldProxyInBody.rotate :
-                                         identityTransform().rotate;
-
+                // The zero-separation contract: transform-B carries the same
+                // solver-row proxy-in-BODY rotation bytes as target_bRca.
                 ok &= expectNear(
-                    (std::string("creation transformB decomposition mode ") + std::to_string(decompositionMode)).c_str(),
-                    rotationDeltaDegrees(matrixFromRawColumns(transformBRotation), expectedCreationTransformB),
+                    "creation transformB rows carry initial proxy-in-BODY rotation",
+                    rotationDeltaDegrees(matrixFromRawRows(transformBRotation), expectedInitialProxyInBody.rotate),
                     0.0f,
                     0.01f);
                 ok &= expectNear(
@@ -252,13 +201,11 @@ int main()
                 ok &= expectNear("creation transformB relation pivot y", transformBTranslation[1], expectedInitialPivotB.y * gameToHavokScale, 0.001f);
                 ok &= expectNear("creation transformB relation pivot z", transformBTranslation[2], expectedInitialPivotB.z * gameToHavokScale, 0.001f);
 
-                if (alignedTransformB) {
-                    for (int i = 0; i < 12; ++i) {
-                        if (transformBRotation[i] != targetBRca[i]) {
-                            std::printf("aligned creation transformB[%d]=%.6f must equal targetBRca[%d]=%.6f\n",
-                                i, transformBRotation[i], i, targetBRca[i]);
-                            ok = false;
-                        }
+                for (int i = 0; i < 12; ++i) {
+                    if (transformBRotation[i] != targetBRca[i]) {
+                        std::printf("creation transformB[%d]=%.6f must equal targetBRca[%d]=%.6f\n",
+                            i, transformBRotation[i], i, targetBRca[i]);
+                        ok = false;
                     }
                 }
 
@@ -268,12 +215,11 @@ int main()
                     targetBRca,
                     bodyInProxyHeld,
                     frozenPivotAProxyLocal,
-                    gameToHavokScale,
-                    decompositionMode);
+                    gameToHavokScale);
 
                 ok &= expectNear(
-                    (std::string("held transformB decomposition mode ") + std::to_string(decompositionMode)).c_str(),
-                    rotationDeltaDegrees(matrixFromRawColumns(transformBRotation), expectedHeldTransformB),
+                    "held transformB rows carry current proxy-in-BODY rotation",
+                    rotationDeltaDegrees(matrixFromRawRows(transformBRotation), expectedHeldProxyInBody.rotate),
                     0.0f,
                     0.01f);
                 ok &= expectNear(
@@ -285,13 +231,11 @@ int main()
                 ok &= expectNear("held transformB relation pivot y", transformBTranslation[1], expectedHeldPivotB.y * gameToHavokScale, 0.001f);
                 ok &= expectNear("held transformB relation pivot z", transformBTranslation[2], expectedHeldPivotB.z * gameToHavokScale, 0.001f);
 
-                if (alignedTransformB) {
-                    for (int i = 0; i < 12; ++i) {
-                        if (transformBRotation[i] != targetBRca[i]) {
-                            std::printf("aligned held transformB[%d]=%.6f must equal targetBRca[%d]=%.6f\n",
-                                i, transformBRotation[i], i, targetBRca[i]);
-                            ok = false;
-                        }
+                for (int i = 0; i < 12; ++i) {
+                    if (transformBRotation[i] != targetBRca[i]) {
+                        std::printf("held transformB[%d]=%.6f must equal targetBRca[%d]=%.6f\n",
+                            i, transformBRotation[i], i, targetBRca[i]);
+                        ok = false;
                     }
                 }
             }

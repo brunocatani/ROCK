@@ -20,16 +20,12 @@ namespace rock::grab_constraint_math
      * The solver equilibrium is wRa*tA = wRb*target_bRca; transform-B rotation
      * cancels out of that fixed point and only places the reference frame the
      * per-axis angle decomposition (and linear motor axes) are measured from.
-     * The rows-write of proxyInBody into target_bRca is therefore the correct
-     * relation in every mode; the legacy mode split (0/1) exists because both
-     * legacy transform-B choices park that reference frame away from the target
-     * frame (mode 0 by the COL angle, mode 1 by the grab's relative angle) and
-     * the solver's mean-axis construction degrades toward 180 degrees of
-     * separation. Mode 2 writes the same rows into transform-B so the reference
-     * coincides with the target frame by construction (zero separation at any
-     * grab orientation). Auto mode still resolves the legacy 0/1 split once
-     * from the frozen proxy-in-BODY column delta until mode 2 is validated
-     * in-game.
+     * Both fields therefore receive the identical solver-row proxy-in-BODY
+     * write: the reference frame coincides with the motor target frame by
+     * construction (zero separation at any grab orientation). This replaced
+     * the retired empirical COL-90 mode selector after in-game validation on
+     * 2026-07-13; ROCK NiMatrix3 storage is row-axes, so the rows write is the
+     * correct transposition into Havok's column-major read.
      */
 
     /*
@@ -40,81 +36,6 @@ namespace rock::grab_constraint_math
      */
     inline constexpr std::uint32_t kHavokRealMaxBits = 0x7f7fffeeu;
     inline constexpr std::uint32_t kHavokRealHighBits = 0x5f7ffff0u;
-
-    inline constexpr int kGrabRagdollDecompositionModeAuto = -1;
-    inline constexpr int kGrabRagdollDecompositionModeRelationTransformB = 0;
-    inline constexpr int kGrabRagdollDecompositionModeNeutralTransformB = 1;
-    inline constexpr int kGrabRagdollDecompositionModeAlignedTransformB = 2;
-    inline constexpr int kDefaultGrabRagdollDecompositionConfigMode = kGrabRagdollDecompositionModeAuto;
-    inline constexpr int kDefaultGrabRagdollDecompositionResolvedMode = kGrabRagdollDecompositionModeNeutralTransformB;
-
-    /*
-     * This threshold is an empirical guardrail, not a permanent model of Havok's
-     * ragdoll motor math. The in-game failure is born at capture and is
-     * hand-independent: the same object face swaps between the two working
-     * decompositions around a 90 degree COL split. Keep this capture-time
-     * selector until the missing FO4VR atom composition step is proven and can
-     * replace both decomposition modes with one correct write path.
-     */
-    inline constexpr float kGrabRagdollDecompositionAutoThresholdDegrees = 90.0f;
-
-    inline int sanitizeGrabRagdollDecompositionConfigMode(int mode) noexcept
-    {
-        switch (mode) {
-        case kGrabRagdollDecompositionModeAuto:
-        case kGrabRagdollDecompositionModeRelationTransformB:
-        case kGrabRagdollDecompositionModeNeutralTransformB:
-        case kGrabRagdollDecompositionModeAlignedTransformB:
-            return mode;
-        default:
-            return kDefaultGrabRagdollDecompositionConfigMode;
-        }
-    }
-
-    inline int sanitizeGrabRagdollDecompositionMode(int mode) noexcept
-    {
-        switch (mode) {
-        case kGrabRagdollDecompositionModeRelationTransformB:
-        case kGrabRagdollDecompositionModeNeutralTransformB:
-        case kGrabRagdollDecompositionModeAlignedTransformB:
-            return mode;
-        default:
-            return kDefaultGrabRagdollDecompositionResolvedMode;
-        }
-    }
-
-    inline const char* grabRagdollDecompositionModeName(int mode) noexcept
-    {
-        switch (mode) {
-        case kGrabRagdollDecompositionModeAuto:
-            return "auto";
-        case kGrabRagdollDecompositionModeRelationTransformB:
-            return "relationTransformB";
-        case kGrabRagdollDecompositionModeNeutralTransformB:
-            return "neutralTransformB";
-        case kGrabRagdollDecompositionModeAlignedTransformB:
-            return "alignedTransformB";
-        default:
-            return "invalid";
-        }
-    }
-
-    template <class Matrix>
-    inline float rotationDeltaDegrees(const Matrix& a, const Matrix& b)
-    {
-        const float trace =
-            (a.entry[0][0] * b.entry[0][0] + a.entry[1][0] * b.entry[1][0] + a.entry[2][0] * b.entry[2][0]) +
-            (a.entry[0][1] * b.entry[0][1] + a.entry[1][1] * b.entry[1][1] + a.entry[2][1] * b.entry[2][1]) +
-            (a.entry[0][2] * b.entry[0][2] + a.entry[1][2] * b.entry[1][2] + a.entry[2][2] * b.entry[2][2]);
-        const float cosTheta = std::clamp((trace - 1.0f) * 0.5f, -1.0f, 1.0f);
-        return std::acos(cosTheta) * (180.0f / 3.14159265358979323846f);
-    }
-
-    template <class Matrix>
-    inline float computeGrabRagdollDecompositionColumnDeltaDegrees(const Matrix& proxyInBodyRotation)
-    {
-        return rotationDeltaDegrees(proxyInBodyRotation, transform_math::transposeRotation(proxyInBodyRotation));
-    }
 
     inline void writeSetupStabilizationDefaults(void* setupAtom)
     {
@@ -140,29 +61,6 @@ namespace rock::grab_constraint_math
     inline Matrix desiredBodyToHandRotation(const Matrix& desiredBodyTransformHandSpaceRotation)
     {
         return proxyInBodyRotationFromBodyInProxyRotation(desiredBodyTransformHandSpaceRotation);
-    }
-
-    template <class Matrix>
-    inline void writeHavokRotationColumns(float* target, const Matrix& rotation)
-    {
-        if (!target) {
-            return;
-        }
-
-        target[0] = rotation.entry[0][0];
-        target[1] = rotation.entry[1][0];
-        target[2] = rotation.entry[2][0];
-        target[3] = 0.0f;
-
-        target[4] = rotation.entry[0][1];
-        target[5] = rotation.entry[1][1];
-        target[6] = rotation.entry[2][1];
-        target[7] = 0.0f;
-
-        target[8] = rotation.entry[0][2];
-        target[9] = rotation.entry[1][2];
-        target[10] = rotation.entry[2][2];
-        target[11] = 0.0f;
     }
 
     template <class Matrix>
@@ -211,28 +109,6 @@ namespace rock::grab_constraint_math
     }
 
     template <class Transform>
-    inline int resolveGrabRagdollDecompositionMode(int configMode, const Transform& bodyInProxy, float* outColumnDeltaDegrees = nullptr)
-    {
-        const Transform proxyInBody = proxyInBodyFromBodyInProxy(bodyInProxy);
-        const float columnDeltaDegrees = computeGrabRagdollDecompositionColumnDeltaDegrees(proxyInBody.rotate);
-        if (outColumnDeltaDegrees) {
-            *outColumnDeltaDegrees = columnDeltaDegrees;
-        }
-
-        const int sanitizedConfigMode = sanitizeGrabRagdollDecompositionConfigMode(configMode);
-        if (sanitizedConfigMode != kGrabRagdollDecompositionModeAuto) {
-            return sanitizeGrabRagdollDecompositionMode(sanitizedConfigMode);
-        }
-
-        // The mode must be chosen from the frozen grab relation, not from live
-        // held-update telemetry. A good grab stays good and a bad grab starts bad,
-        // so per-frame mode changes would just move the solver target while held.
-        return columnDeltaDegrees > kGrabRagdollDecompositionAutoThresholdDegrees ?
-                   kGrabRagdollDecompositionModeNeutralTransformB :
-                   kGrabRagdollDecompositionModeRelationTransformB;
-    }
-
-    template <class Transform>
     inline auto proxyInBodyRotationFromBodyInProxy(const Transform& bodyInProxy)
     {
         return proxyInBodyRotationFromBodyInProxyRotation(bodyInProxy.rotate);
@@ -253,28 +129,16 @@ namespace rock::grab_constraint_math
     template <class Transform>
     inline void writeGrabConstraintAngularDecomposition(float* transformBRotation,
         float* targetBRca,
-        const Transform& proxyInBody,
-        int decompositionMode)
+        const Transform& proxyInBody)
     {
-        const int mode = sanitizeGrabRagdollDecompositionMode(decompositionMode);
-        if (mode == kGrabRagdollDecompositionModeAlignedTransformB) {
-            /*
-             * Zero-separation write: transform-B carries the same solver-visible
-             * rotation bytes as target_bRca, so the constraint-B reference frame
-             * coincides with the motor target frame on every write regardless of
-             * grab orientation. See the file header note and the 2026-07-13
-             * binary-semantics doc for the disassembly this rests on.
-             */
-            writeHavokRotationRows(transformBRotation, proxyInBody.rotate);
-            writeHavokRotationRows(targetBRca, proxyInBody.rotate);
-            return;
-        }
-
-        const auto identityRotation = transform_math::makeIdentityRotation<decltype(proxyInBody.rotate)>();
-        const auto& transformBRelation =
-            mode == kGrabRagdollDecompositionModeRelationTransformB ? proxyInBody.rotate : identityRotation;
-
-        writeHavokRotationColumns(transformBRotation, transformBRelation);
+        /*
+         * Zero-separation write: transform-B carries the same solver-visible
+         * rotation bytes as target_bRca, so the constraint-B reference frame
+         * coincides with the motor target frame on every write regardless of
+         * grab orientation. See the file header note and the 2026-07-13
+         * binary-semantics doc for the disassembly this rests on.
+         */
+        writeHavokRotationRows(transformBRotation, proxyInBody.rotate);
         writeHavokRotationRows(targetBRca, proxyInBody.rotate);
     }
 
@@ -284,11 +148,10 @@ namespace rock::grab_constraint_math
         float* targetBRca,
         const Transform& bodyInProxy,
         const Vector& frozenPivotAProxyLocalGame,
-        float gameToHavokScale,
-        int decompositionMode)
+        float gameToHavokScale)
     {
         const Transform proxyInBody = proxyInBodyFromBodyInProxy(bodyInProxy);
-        writeGrabConstraintAngularDecomposition(transformBRotation, targetBRca, proxyInBody, decompositionMode);
+        writeGrabConstraintAngularDecomposition(transformBRotation, targetBRca, proxyInBody);
 
         if (transformBTranslation) {
             const Vector transformBTranslationGame =
@@ -306,11 +169,10 @@ namespace rock::grab_constraint_math
         float* targetBRca,
         const Transform& bodyInProxyAtCreation,
         const Vector& frozenPivotAProxyLocalGame,
-        float gameToHavokScale,
-        int decompositionMode)
+        float gameToHavokScale)
     {
         const Transform proxyInBody = proxyInBodyFromBodyInProxy(bodyInProxyAtCreation);
-        writeGrabConstraintAngularDecomposition(transformBRotation, targetBRca, proxyInBody, decompositionMode);
+        writeGrabConstraintAngularDecomposition(transformBRotation, targetBRca, proxyInBody);
 
         if (transformBTranslation) {
             const Vector transformBTranslationGame =

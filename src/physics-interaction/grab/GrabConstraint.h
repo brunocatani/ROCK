@@ -130,9 +130,6 @@ namespace rock
         HkPositionMotor* angularMotor = nullptr;
         HkPositionMotor* linearMotor = nullptr;
         GrabAngularAuthority angularAuthority = GrabAngularAuthority::HknpRagdollMotorAtom;
-        int ragdollDecompositionConfigMode = -1;
-        int ragdollDecompositionMode = 1;
-        float ragdollDecompositionColumnDeltaDegrees = -1.0f;
         float currentTau = 0.0f;
         float currentMaxForce = 0.0f;
         float targetMaxForce = 0.0f;
@@ -147,9 +144,6 @@ namespace rock
             angularMotor = nullptr;
             linearMotor = nullptr;
             angularAuthority = GrabAngularAuthority::HknpRagdollMotorAtom;
-            ragdollDecompositionConfigMode = -1;
-            ragdollDecompositionMode = 1;
-            ragdollDecompositionColumnDeltaDegrees = -1.0f;
             currentTau = 0.0f;
             currentMaxForce = 0.0f;
             targetMaxForce = 0.0f;
@@ -170,7 +164,6 @@ namespace rock
         float angularConstantRecovery = 1.0f;
         float angularMaxForce = 2000.0f;
         GrabAngularAuthority angularAuthority = GrabAngularAuthority::HknpRagdollMotorAtom;
-        int ragdollDecompositionConfigMode = -1;
     };
 
     inline constexpr int MOTION_PACKED_INERTIA_OFFSET = 0x20;
