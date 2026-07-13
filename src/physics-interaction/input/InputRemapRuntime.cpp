@@ -1097,22 +1097,27 @@ namespace rock::input_remap_runtime
                 makeNativeActionSuppressionInput(g_rockConfig.rockSuppressNativeMeleeThrowGameInput, eventNameMatches(event, kNativeEventWandGrip)));
         }
 
-        [[nodiscard]] bool shouldRoutePrimaryActivateReload(const RE::InputEvent* event)
+        [[nodiscard]] bool shouldRouteFiringHandActivateReload(const RE::InputEvent* event)
         {
             const auto* button = event ? event->As<RE::ButtonEvent>() : nullptr;
             const bool eventMatched = isActivateReloadEvent(event);
             const bool primaryHandEvent = eventMatched && isPrimaryWandInputEvent(event);
-            const bool virtualHolstersOwnsInput = primaryHandEvent &&
-                                                  shouldDeferVirtualHolstersInput(f4vr::isLeftHandedMode(),
+            const bool primaryHandIsLeft = f4vr::isLeftHandedMode();
+            const bool eventHandIsLeft = primaryHandEvent ? primaryHandIsLeft : !primaryHandIsLeft;
+            const bool firingHandIsLeft = s_equippedWeaponLeftHandFiringActive.load(std::memory_order_acquire);
+            const bool eventMatchesFiringHand = eventHandIsLeft == firingHandIsLeft;
+            const bool virtualHolstersOwnsInput = eventMatched && eventMatchesFiringHand &&
+                                                  shouldDeferVirtualHolstersInput(eventHandIsLeft,
                                                       nativeEventButtonIdForVirtualHolsters(event),
                                                       g_rockConfig.rockVirtualHolstersDeferWeaponToggleInZone,
-                                                      "primary activate reload");
-            return input_remap_policy::shouldRoutePrimaryActivateReload(input_remap_policy::NativeActivateReloadInput{
+                                                      "firing-hand activate reload");
+            return input_remap_policy::shouldRouteFiringHandActivateReload(input_remap_policy::NativeActivateReloadInput{
                 .remapEnabled = g_rockConfig.rockInputRemapEnabled,
                 .gameplayInputAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire),
                 .menuInputActive = isInputBlockingMenuActive(),
                 .weaponDrawn = s_weaponDrawn.load(std::memory_order_acquire),
-                .primaryHandEvent = primaryHandEvent,
+                .eventHand = eventHandIsLeft ? input_remap_policy::Hand::Left : input_remap_policy::Hand::Right,
+                .firingHand = firingHandIsLeft ? input_remap_policy::Hand::Left : input_remap_policy::Hand::Right,
                 .buttonJustPressed = button && button->QJustPressed(),
                 .virtualHolstersOwnsInput = virtualHolstersOwnsInput,
                 .eventMatched = eventMatched,
@@ -1126,7 +1131,7 @@ namespace rock::input_remap_runtime
 
             auto* dispatcherObject = *nativeActionDispatcherObject;
             if (!dispatcherObject) {
-                ROCK_LOG_SAMPLE_WARN(Input, g_rockConfig.rockLogSampleMilliseconds, "Cannot route primary activate to reload: native action dispatcher unavailable");
+                ROCK_LOG_SAMPLE_WARN(Input, g_rockConfig.rockLogSampleMilliseconds, "Cannot route firing-hand activate to reload: native action dispatcher unavailable");
                 return false;
             }
 
@@ -1400,21 +1405,22 @@ namespace rock::input_remap_runtime
                     "Recorded a pending saved-grab-offset request from an Activate/WandAccept press");
             }
 
+            if (shouldRouteFiringHandActivateReload(inputEvent)) {
+                markInputEventStopped(inputEvent);
+                if (dispatchNativeReloadAction()) {
+                    ROCK_LOG_SAMPLE_DEBUG(Input,
+                        g_rockConfig.rockLogSampleMilliseconds,
+                        "Routed native firing-hand activate/use input to equipped weapon reload hand={}",
+                        s_equippedWeaponLeftHandFiringActive.load(std::memory_order_acquire) ? "left-X" : "right-A");
+                }
+                return;
+            }
+
             if (shouldSuppressNativeTakeEquipActionEvent(inputEvent)) {
                 markInputEventStopped(inputEvent);
                 ROCK_LOG_SAMPLE_DEBUG(Input,
                     g_rockConfig.rockLogSampleMilliseconds,
                     "Suppressed native Activate/WandAccept take/equip outcome while ROCK holds an object in the same hand");
-                return;
-            }
-
-            if (shouldRoutePrimaryActivateReload(inputEvent)) {
-                markInputEventStopped(inputEvent);
-                if (dispatchNativeReloadAction()) {
-                    ROCK_LOG_SAMPLE_DEBUG(Input,
-                        g_rockConfig.rockLogSampleMilliseconds,
-                        "Routed native primary activate/use input to equipped weapon reload");
-                }
                 return;
             }
 

@@ -67,7 +67,8 @@ namespace rock::input_remap_policy
         bool gameplayInputAllowed{ true };
         bool menuInputActive{ false };
         bool weaponDrawn{ false };
-        bool primaryHandEvent{ false };
+        Hand eventHand{ Hand::Right };
+        Hand firingHand{ Hand::Right };
         bool buttonJustPressed{ false };
         bool virtualHolstersOwnsInput{ false };
         bool eventMatched{ false };
@@ -177,9 +178,15 @@ namespace rock::input_remap_policy
                input.weaponDrawn && input.primaryHandEvent;
     }
 
-    [[nodiscard]] constexpr bool shouldRoutePrimaryActivateReload(const NativeActivateReloadInput& input)
+    /*
+     * Reload belongs to the physical hand currently occupying the firing
+     * grip: right A for a right firing grip, left X for a left firing grip.
+     * Activate/WandAccept naming is shared by both controllers; physical hand
+     * identity, not the game's fixed primary-wand role, selects the route.
+     */
+    [[nodiscard]] constexpr bool shouldRouteFiringHandActivateReload(const NativeActivateReloadInput& input)
     {
-        return input.remapEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.weaponDrawn && input.primaryHandEvent &&
+        return input.remapEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.weaponDrawn && input.eventHand == input.firingHand &&
                input.buttonJustPressed && !input.virtualHolstersOwnsInput && input.eventMatched;
     }
 

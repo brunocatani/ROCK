@@ -156,29 +156,37 @@ int main()
         .gameplayInputAllowed = true,
         .menuInputActive = false,
         .weaponDrawn = true,
-        .primaryHandEvent = true,
+        .eventHand = Hand::Right,
+        .firingHand = Hand::Right,
         .buttonJustPressed = true,
         .eventMatched = true,
     };
-    ok &= expectTrue("primary activate edge routes to reload while weapon drawn", shouldRoutePrimaryActivateReload(activateReload));
+    ok &= expectTrue("right A routes reload while the right hand owns the firing grip", shouldRouteFiringHandActivateReload(activateReload));
     auto heldActivateReload = activateReload;
     heldActivateReload.buttonJustPressed = false;
-    ok &= expectFalse("held primary activate does not repeat reload", shouldRoutePrimaryActivateReload(heldActivateReload));
-    auto offhandActivateReload = activateReload;
-    offhandActivateReload.primaryHandEvent = false;
-    ok &= expectFalse("offhand activate is left for normal use", shouldRoutePrimaryActivateReload(offhandActivateReload));
+    ok &= expectFalse("held firing-hand activate does not repeat reload", shouldRouteFiringHandActivateReload(heldActivateReload));
+    auto leftXWhileRightFiring = activateReload;
+    leftXWhileRightFiring.eventHand = Hand::Left;
+    ok &= expectFalse("left X cannot reload while the right hand owns the firing grip", shouldRouteFiringHandActivateReload(leftXWhileRightFiring));
+    auto leftFiringActivateReload = activateReload;
+    leftFiringActivateReload.eventHand = Hand::Left;
+    leftFiringActivateReload.firingHand = Hand::Left;
+    ok &= expectTrue("left X routes reload while the left hand owns the firing grip", shouldRouteFiringHandActivateReload(leftFiringActivateReload));
+    auto rightAWhileLeftFiring = leftFiringActivateReload;
+    rightAWhileLeftFiring.eventHand = Hand::Right;
+    ok &= expectFalse("right A cannot reload while the left hand owns the firing grip", shouldRouteFiringHandActivateReload(rightAWhileLeftFiring));
     auto holsteredActivateReload = activateReload;
     holsteredActivateReload.weaponDrawn = false;
-    ok &= expectFalse("holstered primary activate does not route reload", shouldRoutePrimaryActivateReload(holsteredActivateReload));
+    ok &= expectFalse("holstered firing-hand activate does not route reload", shouldRouteFiringHandActivateReload(holsteredActivateReload));
     auto menuActivateReload = activateReload;
     menuActivateReload.menuInputActive = true;
-    ok &= expectFalse("menu input blocks primary activate reload", shouldRoutePrimaryActivateReload(menuActivateReload));
+    ok &= expectFalse("menu input blocks firing-hand activate reload", shouldRouteFiringHandActivateReload(menuActivateReload));
     auto unmatchedActivateReload = activateReload;
     unmatchedActivateReload.eventMatched = false;
-    ok &= expectFalse("unmatched activate event does not route reload", shouldRoutePrimaryActivateReload(unmatchedActivateReload));
+    ok &= expectFalse("unmatched activate event does not route reload", shouldRouteFiringHandActivateReload(unmatchedActivateReload));
     auto virtualHolstersActivateReload = activateReload;
     virtualHolstersActivateReload.virtualHolstersOwnsInput = true;
-    ok &= expectFalse("VirtualHolsters zone ownership blocks primary activate reload", shouldRoutePrimaryActivateReload(virtualHolstersActivateReload));
+    ok &= expectFalse("VirtualHolsters zone ownership blocks firing-hand activate reload", shouldRouteFiringHandActivateReload(virtualHolstersActivateReload));
 
     EquippedWeaponPrimaryDetachInputGate primaryDetachGate{
         .featureAvailable = true,
