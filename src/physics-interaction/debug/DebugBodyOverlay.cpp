@@ -4,9 +4,12 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <mutex>
 #include <tuple>
 #include <unordered_map>
@@ -1002,26 +1005,205 @@ float4 main(PS_INPUT input) : SV_Target {
             std::memset(&s_saved, 0, sizeof(s_saved));
         }
 
+        // FO4VR stereo state layout. The +0x2590/+0x25A0 pair is the CURRENT-frame left/right
+        // eye-origin adjustment; the engine's own per-frame stereo constant-buffer upload copies
+        // +0x2590/+0x25A0/+0x25B0/+0x25C0 as one four-slot family, with +0x25B0/+0x25C0 holding
+        // the PREVIOUS-frame origins for temporal reprojection. Reading +0x25C0 as the right-eye
+        // origin lags one frame of room translation and stutters under stick locomotion.
+        constexpr std::uintptr_t kVrRuntimeRootRva = 0x6235AC8;
+        constexpr std::uintptr_t kRootStereoSlot0OriginOffset = 0x2590;
+        constexpr std::uintptr_t kRootStereoSlot1OriginOffset = 0x25A0;
+        constexpr std::uintptr_t kRootStereoRecordsDataOffset = 0x25D0;
+        constexpr std::uintptr_t kStereoRecordStride = 0x210;
+        constexpr std::uintptr_t kStereoRecordCompositeOffset = 0xD0;
+        constexpr std::uintptr_t kStereoSlot0CompositeOffset = kStereoRecordCompositeOffset;
+        constexpr std::uintptr_t kStereoSlot1CompositeOffset = kStereoRecordStride + kStereoRecordCompositeOffset;
+        constexpr std::size_t kStereoRecordsReadSize = kStereoSlot1CompositeOffset + sizeof(DirectX::XMFLOAT4X4);
+        constexpr float kStereoMaximumReasonableMagnitude = 1.0e8f;
+
+        static_assert(kRootStereoSlot1OriginOffset - kRootStereoSlot0OriginOffset == 0x10);
+        static_assert(kRootStereoRecordsDataOffset - kRootStereoSlot0OriginOffset == 0x40);
+        static_assert(kStereoSlot1CompositeOffset == 0x2E0);
+
+        // One contiguous read of the root stereo fields starting at +0x2590.
+        struct RootStereoFields
+        {
+            float slot0Origin[4]{};
+            float slot1Origin[4]{};
+            std::byte reserved[0x20]{};
+            std::uintptr_t recordsData = 0;
+        };
+
+        static_assert(offsetof(RootStereoFields, slot1Origin) == 0x10);
+        static_assert(offsetof(RootStereoFields, recordsData) == 0x40);
+        static_assert(sizeof(RootStereoFields) == 0x48);
+
+        enum class StereoCaptureStage : std::uint8_t
+        {
+            None,
+            RelocationResolved,
+            RuntimeRootRead,
+            RootStereoStateRead,
+            StereoRecordsRead,
+            Validated,
+        };
+
+        constexpr const char* stereoStageName(StereoCaptureStage stage) noexcept
+        {
+            switch (stage) {
+            case StereoCaptureStage::None:
+                return "none";
+            case StereoCaptureStage::RelocationResolved:
+                return "relocation-resolved";
+            case StereoCaptureStage::RuntimeRootRead:
+                return "runtime-root-read";
+            case StereoCaptureStage::RootStereoStateRead:
+                return "root-stereo-state-read";
+            case StereoCaptureStage::StereoRecordsRead:
+                return "stereo-records-read";
+            case StereoCaptureStage::Validated:
+                return "validated";
+            }
+            return "unknown";
+        }
+
+        std::atomic<StereoCaptureStage> s_stereoLastStage{ StereoCaptureStage::None };
+        std::atomic<bool> s_stereoLastCaptureSucceeded{ true };
+        std::atomic<std::int64_t> s_stereoLastFailureLogMilliseconds{ 0 };
+
+        [[nodiscard]] bool isStereoPlausiblePointer(std::uintptr_t address) noexcept
+        {
+            constexpr std::uintptr_t kMinimumUserAddress = 0x10000;
+            constexpr std::uintptr_t kMaximumUserAddress = 0x00007FFFFFFFFFFF;
+            return address >= kMinimumUserAddress && address <= kMaximumUserAddress && (address % alignof(void*)) == 0;
+        }
+
+        // ReadProcessMemory instead of raw dereference: the engine owns these pointers and can
+        // retire them between frames; a stale pointer must degrade into a skipped overlay frame,
+        // never a crash inside the compositor submit hook.
+        [[nodiscard]] bool readStereoMemory(std::uintptr_t address, void* destination, std::size_t size, DWORD& error) noexcept
+        {
+            if (!isStereoPlausiblePointer(address) || !destination || size == 0 || address > (std::numeric_limits<std::uintptr_t>::max)() - size) {
+                error = ERROR_INVALID_ADDRESS;
+                return false;
+            }
+
+            SIZE_T bytesRead = 0;
+            if (!ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<const void*>(address), destination, size, &bytesRead) || bytesRead != size) {
+                error = GetLastError();
+                if (error == ERROR_SUCCESS) {
+                    error = ERROR_PARTIAL_COPY;
+                }
+                return false;
+            }
+            error = ERROR_SUCCESS;
+            return true;
+        }
+
+        [[nodiscard]] bool validateStereoVector3(const float* value) noexcept
+        {
+            if (!value) {
+                return false;
+            }
+            for (std::size_t index = 0; index < 3; ++index) {
+                if (!std::isfinite(value[index]) || std::fabs(value[index]) > kStereoMaximumReasonableMagnitude) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        [[nodiscard]] bool validateStereoMatrix(const DirectX::XMFLOAT4X4& matrix) noexcept
+        {
+            const auto* values = reinterpret_cast<const float*>(&matrix);
+            bool hasNonZeroElement = false;
+            for (std::size_t index = 0; index < 16; ++index) {
+                if (!std::isfinite(values[index]) || std::fabs(values[index]) > kStereoMaximumReasonableMagnitude) {
+                    return false;
+                }
+                hasNonZeroElement = hasNonZeroElement || std::fabs(values[index]) > 1.0e-7f;
+            }
+            return hasNonZeroElement;
+        }
+
+        void reportStereoCaptureFailure(StereoCaptureStage deepestStage, DWORD error) noexcept
+        {
+            const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+            const auto previousStage = s_stereoLastStage.exchange(deepestStage, std::memory_order_relaxed);
+            const auto previousLog = s_stereoLastFailureLogMilliseconds.load(std::memory_order_relaxed);
+            const bool stageChanged = previousStage != deepestStage;
+            const bool intervalElapsed = now - previousLog >= 5000;
+            s_stereoLastCaptureSucceeded.store(false, std::memory_order_relaxed);
+            if (stageChanged || intervalElapsed) {
+                s_stereoLastFailureLogMilliseconds.store(now, std::memory_order_relaxed);
+                ROCK_LOG_WARN(Hand, "Debug overlay stereo snapshot unavailable; deepest stage='{}', Win32 error={}. Overlay frame skipped.",
+                    stereoStageName(deepestStage), error);
+            }
+        }
+
+        void reportStereoCaptureSuccess() noexcept
+        {
+            const bool previouslySucceeded = s_stereoLastCaptureSucceeded.exchange(true, std::memory_order_relaxed);
+            s_stereoLastStage.store(StereoCaptureStage::Validated, std::memory_order_relaxed);
+            if (!previouslySucceeded) {
+                ROCK_LOG_INFO(Hand, "Debug overlay stereo snapshot recovered and validated.");
+            }
+        }
+
         bool getEyeViewProjMatrices(DirectX::XMMATRIX& outEye0, DirectX::XMMATRIX& outEye1, DirectX::XMFLOAT4& outAdjust0, DirectX::XMFLOAT4& outAdjust1)
         {
-            static REL::Relocation<std::uintptr_t*> skyVRPtr{ REL::Offset(0x6235AC8) };
-            const std::uintptr_t skyVR = *skyVRPtr;
-            if (!skyVR) {
+            StereoCaptureStage deepestStage = StereoCaptureStage::None;
+            DWORD readError = ERROR_SUCCESS;
+
+            static REL::Relocation<std::uintptr_t> rootAddress{ REL::Offset(kVrRuntimeRootRva) };
+            const std::uintptr_t relocationAddress = rootAddress.address();
+            if (!isStereoPlausiblePointer(relocationAddress)) {
+                reportStereoCaptureFailure(deepestStage, ERROR_INVALID_ADDRESS);
+                return false;
+            }
+            deepestStage = StereoCaptureStage::RelocationResolved;
+
+            std::uintptr_t runtimeRoot = 0;
+            if (!readStereoMemory(relocationAddress, &runtimeRoot, sizeof(runtimeRoot), readError) || !isStereoPlausiblePointer(runtimeRoot)) {
+                reportStereoCaptureFailure(deepestStage, readError == ERROR_SUCCESS ? ERROR_INVALID_ADDRESS : readError);
+                return false;
+            }
+            deepestStage = StereoCaptureStage::RuntimeRootRead;
+
+            RootStereoFields rootFields{};
+            if (!readStereoMemory(runtimeRoot + kRootStereoSlot0OriginOffset, &rootFields, sizeof(rootFields), readError)) {
+                reportStereoCaptureFailure(deepestStage, readError);
+                return false;
+            }
+            deepestStage = StereoCaptureStage::RootStereoStateRead;
+            if (!isStereoPlausiblePointer(rootFields.recordsData)) {
+                reportStereoCaptureFailure(deepestStage, ERROR_INVALID_ADDRESS);
                 return false;
             }
 
-            const auto cameraData = *reinterpret_cast<std::uintptr_t*>(skyVR + 0x25D0);
-            if (!cameraData) {
+            std::array<std::byte, kStereoRecordsReadSize> records{};
+            if (!readStereoMemory(rootFields.recordsData, records.data(), records.size(), readError)) {
+                reportStereoCaptureFailure(deepestStage, readError);
+                return false;
+            }
+            deepestStage = StereoCaptureStage::StereoRecordsRead;
+
+            DirectX::XMFLOAT4X4 composite0{};
+            DirectX::XMFLOAT4X4 composite1{};
+            std::memcpy(&composite0, records.data() + kStereoSlot0CompositeOffset, sizeof(composite0));
+            std::memcpy(&composite1, records.data() + kStereoSlot1CompositeOffset, sizeof(composite1));
+
+            if (!validateStereoVector3(rootFields.slot0Origin) || !validateStereoVector3(rootFields.slot1Origin) ||
+                !validateStereoMatrix(composite0) || !validateStereoMatrix(composite1)) {
+                reportStereoCaptureFailure(deepestStage, ERROR_INVALID_DATA);
                 return false;
             }
 
-            outEye0 = DirectX::XMLoadFloat4x4(reinterpret_cast<const DirectX::XMFLOAT4X4*>(cameraData + 0xD0));
-            outEye1 = DirectX::XMLoadFloat4x4(reinterpret_cast<const DirectX::XMFLOAT4X4*>(cameraData + 0x2E0));
-
-            const float* adjust0 = reinterpret_cast<const float*>(skyVR + 0x2590);
-            const float* adjust1 = reinterpret_cast<const float*>(skyVR + 0x25C0);
-            outAdjust0 = DirectX::XMFLOAT4(adjust0[0], adjust0[1], adjust0[2], 0.0f);
-            outAdjust1 = DirectX::XMFLOAT4(adjust1[0], adjust1[1], adjust1[2], 0.0f);
+            outEye0 = DirectX::XMLoadFloat4x4(&composite0);
+            outEye1 = DirectX::XMLoadFloat4x4(&composite1);
+            outAdjust0 = DirectX::XMFLOAT4(rootFields.slot0Origin[0], rootFields.slot0Origin[1], rootFields.slot0Origin[2], 0.0f);
+            outAdjust1 = DirectX::XMFLOAT4(rootFields.slot1Origin[0], rootFields.slot1Origin[1], rootFields.slot1Origin[2], 0.0f);
+            reportStereoCaptureSuccess();
             return true;
         }
 
