@@ -861,5 +861,46 @@ int main()
             0.82f);
     }
 
+    {
+        /*
+         * Chord curl estimation must be self-consistent with the baked Tip
+         * reach table: feeding back a baked sample's own reach must recover
+         * that sample's arc angle. This is the contract the runtime
+         * de-rotation relies on (the live chord IS the Tip probe point
+         * relative to the base).
+         */
+        using rock::grab_finger_pose_math::estimateCalibratedChainCurlFromChord;
+        const auto& indexBaked = grab_data::bakedGrabFingerHandProfile(false, false).fingers[1];
+        const grab_data::BakedGrabFingerProbeCurve* indexTip = nullptr;
+        for (const auto& probe : indexBaked.probes) {
+            if (probe.probe == grab_data::BakedGrabFingerProbe::Tip) {
+                indexTip = &probe;
+                break;
+            }
+        }
+        ok &= expectBool("baked index finger exposes a tip probe", indexTip != nullptr, true);
+        if (indexTip) {
+            constexpr float kFingerLength = 7.5f;
+            for (const std::size_t sampleIndex : { std::size_t{ 0 }, std::size_t{ 60 }, std::size_t{ 120 }, std::size_t{ 190 } }) {
+                const auto& sample = indexTip->samples[sampleIndex];
+                const auto estimate = estimateCalibratedChainCurlFromChord(
+                    1, false, false, kFingerLength, sample.reachScale * kFingerLength);
+                ok &= expectBool("chord curl estimate valid at baked sample", estimate.valid, true);
+                ok &= expectBool("chord curl estimate recovers the baked arc angle",
+                    std::fabs(estimate.chordAngleRadians - sample.angleRadians) <= 0.02f,
+                    true);
+            }
+            const auto openEstimate = estimateCalibratedChainCurlFromChord(1, false, false, kFingerLength, kFingerLength * 2.0f);
+            ok &= expectBool("over-open chord clamps to the open end", openEstimate.valid, true);
+            ok &= expectBool("over-open chord reports the open-end angle",
+                std::fabs(openEstimate.chordAngleRadians - indexTip->samples.front().angleRadians) <= 0.0001f,
+                true);
+            const auto closedEstimate = estimateCalibratedChainCurlFromChord(1, false, false, kFingerLength, 0.01f);
+            ok &= expectBool("under-reach chord clamps to the closed end", closedEstimate.valid, true);
+            const auto invalidEstimate = estimateCalibratedChainCurlFromChord(1, false, false, 0.0f, 3.0f);
+            ok &= expectBool("degenerate finger length rejects the estimate", invalidEstimate.valid, false);
+        }
+    }
+
     return ok ? 0 : 1;
 }

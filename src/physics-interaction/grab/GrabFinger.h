@@ -717,6 +717,83 @@ namespace rock::grab_finger_pose_math
         return result;
     }
 
+    struct CalibratedChainCurlEstimate
+    {
+        float chordAngleRadians = 0.0f;
+        float openValue = 1.0f;
+        float normalSign = 1.0f;
+        bool valid = false;
+    };
+
+    /*
+     * The runtime anchors every arc reconstruction on the live chain CHORD
+     * (pad - base), which is the true zero reference only while the chain is
+     * fully open. The calibration's Tip probe tracks the pad point relative to
+     * the base, so at any curl the chord direction is rotated by exactly the
+     * Tip probe's baked angle and the chord length equals the Tip probe's
+     * baked reach. Inverting the reach table therefore recovers the current
+     * curl - and the chord's rotation - from live geometry alone: no
+     * published-value bookkeeping, exact even mid-smoothing. normalSign is the
+     * baked arc-plane sign the reconstruction applies to the caller's curl
+     * normal; de-rotation must rotate by -chordAngle * normalSign around the
+     * unsigned curl normal to stay in the same plane convention.
+     * Reach decreases toward closed; the scan takes the first bracketing pair
+     * from the open end so non-monotonic wiggles fail toward LESS de-rotation.
+     */
+    [[nodiscard]] inline CalibratedChainCurlEstimate estimateCalibratedChainCurlFromChord(
+        std::size_t fingerIndex,
+        bool isLeft,
+        bool inPowerArmor,
+        float fingerLength,
+        float liveChordLength)
+    {
+        CalibratedChainCurlEstimate result{};
+        if (fingerIndex >= 5 ||
+            !std::isfinite(fingerLength) || fingerLength <= 0.0001f ||
+            !std::isfinite(liveChordLength) || liveChordLength <= 0.0001f) {
+            return result;
+        }
+
+        const auto& profile = grab_finger_calibration_data::bakedGrabFingerHandProfile(isLeft, inPowerArmor);
+        const auto& baked = profile.fingers[fingerIndex];
+        const grab_finger_calibration_data::BakedGrabFingerProbeCurve* tipProbe = nullptr;
+        for (const auto& probe : baked.probes) {
+            if (probe.probe == grab_finger_calibration_data::BakedGrabFingerProbe::Tip) {
+                tipProbe = &probe;
+                break;
+            }
+        }
+        if (!tipProbe || tipProbe->samples.empty()) {
+            return result;
+        }
+
+        result.normalSign = baked.normalSign < 0.0f ? -1.0f : 1.0f;
+        const auto& samples = tipProbe->samples;
+        const float chordScale = liveChordLength / fingerLength;
+        if (chordScale >= samples.front().reachScale) {
+            result.chordAngleRadians = samples.front().angleRadians;
+            result.openValue = samples.front().openValue;
+            result.valid = true;
+            return result;
+        }
+        for (std::size_t i = 0; i + 1 < samples.size(); ++i) {
+            const float reachA = samples[i].reachScale;
+            const float reachB = samples[i + 1].reachScale;
+            if (chordScale <= reachA && chordScale >= reachB) {
+                const float span = reachA - reachB;
+                const float t = span > 0.000001f ? std::clamp((reachA - chordScale) / span, 0.0f, 1.0f) : 0.0f;
+                result.chordAngleRadians = samples[i].angleRadians + (samples[i + 1].angleRadians - samples[i].angleRadians) * t;
+                result.openValue = samples[i].openValue + (samples[i + 1].openValue - samples[i].openValue) * t;
+                result.valid = true;
+                return result;
+            }
+        }
+        result.chordAngleRadians = samples.back().angleRadians;
+        result.openValue = samples.back().openValue;
+        result.valid = true;
+        return result;
+    }
+
     [[nodiscard]] inline float bakedCalibratedFingerMaxAngleRadians(std::size_t fingerIndex, bool isLeft, bool inPowerArmor)
     {
         if (fingerIndex >= 5) {
@@ -2136,8 +2213,31 @@ namespace rock::grab_finger_pose_runtime
             const bool hasFingerTargetNormal = hasFingerTarget && poseTargets.targetNormalValid[finger] != 0;
             const bool useTargetNormal = hasFingerTargetNormal || poseTargets.seatNormalValid;
             const RE::NiPoint3 fingerTargetNormalWorld = hasFingerTargetNormal ? poseTargets.targetNormals[finger] : poseTargets.seatNormalWorld;
-            const RE::NiPoint3 openDirectionWorld = live.openDirection;
             const float fingerOpenLengthWorld = live.length;
+            /*
+             * The live chord (pad - base) is rotated by the chain's CURRENT
+             * curl, but the arc reconstruction treats it as the fully-open
+             * zero reference. Solving from a curled chain therefore stopped
+             * every finger short by exactly the current curl angle (the
+             * "finger-width air gap") and made held re-solves oscillate: each
+             * result re-rotated the next solve's reference. Estimate the
+             * current curl from the chord length via the baked Tip reach
+             * table and de-rotate the chord back to the true open reference,
+             * in the baked arc-plane sign convention.
+             */
+            RE::NiPoint3 openDirectionWorld = live.openDirection;
+            const auto& liveChain = liveFingerSnapshot->fingers[finger];
+            const float liveChordLength = std::sqrt(distanceSquared(liveChain.points[2], liveChain.points[0]));
+            const auto chordCurl = grab_finger_pose_math::estimateCalibratedChainCurlFromChord(
+                finger, isLeft, inPowerArmor, fingerOpenLengthWorld, liveChordLength);
+            if (chordCurl.valid && std::fabs(chordCurl.chordAngleRadians) > 0.0035f) {
+                openDirectionWorld = normalizedOrFallback(
+                    grab_finger_pose_math::rotateAroundUnitAxis(
+                        openDirectionWorld,
+                        curlNormalWorld,
+                        -chordCurl.chordAngleRadians * chordCurl.normalSign),
+                    openDirectionWorld);
+            }
             const RE::NiPoint3 thumbAlternateCurlNormalWorld = liveThumbAlternateCurlNormalWorld(openDirectionWorld, curlNormalWorld, baseWorld, grabAnchorWorld, isLeft);
             const RE::NiPoint3 toContact = useTarget ? fingerTargetWorld - baseWorld : openDirectionWorld;
             const float distanceToContact = useTarget ? std::sqrt(distanceSquared(fingerTargetWorld, baseWorld)) : fingerOpenLengthWorld;

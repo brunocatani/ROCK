@@ -595,6 +595,7 @@ namespace rock
         rockPullPresentationMinElongationRatio = 2.0f;
         rockPullPresentationAngularGainPerSecond = 6.0f;
         rockPullPresentationMaxAngularSpeedRadiansPerSecond = 8.0f;
+        rockPullPresentationGripAxisTiltDegrees = 10.0f;
 
         rockRightGrabLegacyPalmPivotAHandspace = RE::NiPoint3(6.0f, -2.0f, 0.2f);
         rockLeftGrabLegacyPalmPivotAHandspace = RE::NiPoint3(6.0f, -2.0f, -0.2f);
@@ -2236,6 +2237,13 @@ namespace rock
             rockPullPresentationMaxAngularSpeedRadiansPerSecond > 40.0f) {
             ROCK_LOG_WARN(Config, "Invalid fPullPresentationMaxAngularSpeedRadiansPerSecond={} -- using 8.0", rockPullPresentationMaxAngularSpeedRadiansPerSecond);
             rockPullPresentationMaxAngularSpeedRadiansPerSecond = 8.0f;
+        }
+        rockPullPresentationGripAxisTiltDegrees = static_cast<float>(
+            ini.GetDoubleValue(SECTION, "fPullPresentationGripAxisTiltDegrees", rockPullPresentationGripAxisTiltDegrees));
+        if (!std::isfinite(rockPullPresentationGripAxisTiltDegrees) || rockPullPresentationGripAxisTiltDegrees < -45.0f ||
+            rockPullPresentationGripAxisTiltDegrees > 45.0f) {
+            ROCK_LOG_WARN(Config, "Invalid fPullPresentationGripAxisTiltDegrees={} -- using 10.0", rockPullPresentationGripAxisTiltDegrees);
+            rockPullPresentationGripAxisTiltDegrees = 10.0f;
         }
 
         readOptionalVec3("fRightGrabLegacyPalmPivotAHandspaceX", "fRightGrabLegacyPalmPivotAHandspaceY", "fRightGrabLegacyPalmPivotAHandspaceZ", rockRightGrabLegacyPalmPivotAHandspace);

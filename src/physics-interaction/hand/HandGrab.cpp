@@ -7540,8 +7540,17 @@ namespace rock
             if (tryGetBodyWorldTransform(world, RE::hknpBodyId{ _pulledPrimaryBodyId }, pulledBodyWorld)) {
                 const RE::NiPoint3 currentAxisWorld =
                     normalizeOrZero(transform_math::localVectorToWorld(pulledBodyWorld, _pullPresentationAxisBodyLocal));
+                /*
+                 * The grip line is not pure cross-palm Z: the thumb sits in the
+                 * way, so the natural long-object hold tilts a few degrees
+                 * toward the fingers-forward X axis (Bruno-tuned via INI).
+                 */
+                const float gripAxisTiltRadians =
+                    g_rockConfig.rockPullPresentationGripAxisTiltDegrees * 0.01745329252f;
                 RE::NiPoint3 targetAxisWorld = normalizeOrZero(
-                    transformHandspaceDirection(handWorldTransform, RE::NiPoint3{ 0.0f, 0.0f, 1.0f }, _isLeft));
+                    transformHandspaceDirection(handWorldTransform,
+                        RE::NiPoint3{ std::sin(gripAxisTiltRadians), 0.0f, std::cos(gripAxisTiltRadians) },
+                        _isLeft));
                 if (lengthSquared(currentAxisWorld) > 0.000001f && lengthSquared(targetAxisWorld) > 0.000001f) {
                     // The mesh axis has no sign: always rotate toward the nearest hemisphere.
                     if (dotProduct(currentAxisWorld, targetAxisWorld) < 0.0f) {
@@ -9962,7 +9971,12 @@ namespace rock
                         if (seatLongAxis.valid &&
                             seatLongAxis.elongationRatio >= g_rockConfig.rockPullPresentationMinElongationRatio) {
                             const RE::NiPoint3 currentAxisWorld = normalizeOrZero(seatLongAxis.axisWorld);
-                            RE::NiPoint3 targetAxisWorld = normalizeOrZero(pocket.crossPalmWorld);
+                            // Same thumb-clearance tilt toward fingers-forward as the flight servo.
+                            const float gripAxisTiltRadians =
+                                g_rockConfig.rockPullPresentationGripAxisTiltDegrees * 0.01745329252f;
+                            RE::NiPoint3 targetAxisWorld = normalizeOrZero(
+                                pocket.crossPalmWorld * std::cos(gripAxisTiltRadians) +
+                                pocket.fingerForwardWorld * std::sin(gripAxisTiltRadians));
                             if (lengthSquared(currentAxisWorld) > 0.000001f && lengthSquared(targetAxisWorld) > 0.000001f) {
                                 if (dotProduct(currentAxisWorld, targetAxisWorld) < 0.0f) {
                                     targetAxisWorld = RE::NiPoint3{ -targetAxisWorld.x, -targetAxisWorld.y, -targetAxisWorld.z };
@@ -12409,7 +12423,18 @@ namespace rock
                             g_rockConfig.rockGrabFingerSurfacePlaneToleranceGameUnits,
                             _grabFrame.fingerPoseAimValid,
                             g_rockConfig.rockGrabFingerSweepContactRadiusGameUnits);
-                        if (liveFingerPose.solved) {
+                        /*
+                         * Deadband: a held re-solve that lands within noise of
+                         * the current pose must not churn new FRIK targets every
+                         * interval - visible as finger micro-twitch. Only adopt
+                         * a re-solve that actually moved a finger.
+                         */
+                        float heldResolveMaxValueDelta = 0.0f;
+                        for (std::size_t fingerIndex = 0; fingerIndex < liveFingerPose.values.size(); ++fingerIndex) {
+                            heldResolveMaxValueDelta = (std::max)(heldResolveMaxValueDelta,
+                                std::fabs(liveFingerPose.values[fingerIndex] - _grabFingerPose.values[fingerIndex]));
+                        }
+                        if (liveFingerPose.solved && heldResolveMaxValueDelta > 0.02f) {
                             grab_finger_pose_runtime::useThumbIndexCurveOnlyPose(liveFingerPose);
                             grab_finger_pose_runtime::captureSurfaceAimObjectLocal(liveFingerPose, currentNodeWorld);
                             _grabFingerPose = liveFingerPose;

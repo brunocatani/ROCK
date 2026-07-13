@@ -125,6 +125,38 @@ Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
     'rockGrabFingerSweepContactRadiusGameUnits\);'
 ) 'Held finger pose must re-solve curls at the update interval against the live seat.'
 
+# The live chain chord is rotated by the CURRENT curl; anchoring the arc zero
+# on it directly stopped every finger short by that curl (air gap) and made
+# held re-solves oscillate. The runtime must de-rotate the chord to the true
+# open reference via the baked Tip reach-table inversion, in the baked
+# arc-plane sign convention.
+Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
+    'estimateCalibratedChainCurlFromChord\(',
+    'BakedGrabFingerProbe::Tip',
+    'chordScale <= reachA && chordScale >= reachB'
+) 'Chord curl estimation must invert the baked Tip probe reach table.'
+Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
+    'RE::NiPoint3 openDirectionWorld = live\.openDirection;',
+    'estimateCalibratedChainCurlFromChord\(',
+    '-chordCurl\.chordAngleRadians \* chordCurl\.normalSign'
+) 'The runtime solve must de-rotate the live chord to the open reference before anchoring arcs on it.'
+
+# Held re-solves within noise of the current pose must not churn new FRIK
+# targets every interval (finger micro-twitch).
+Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
+    'heldResolveMaxValueDelta',
+    'liveFingerPose\.solved && heldResolveMaxValueDelta > 0\.02f'
+) 'Held finger re-solve must apply a publish deadband.'
+
+# The presentation grip axis is not pure cross-palm Z (the thumb occupies that
+# line): both alignment sites must apply the configurable tilt toward X.
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
+    'std::sin\(gripAxisTiltRadians\), 0\.0f, std::cos\(gripAxisTiltRadians\)' `
+    'The pull-flight presentation servo must use the tilted grip axis.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
+    'pocket\.crossPalmWorld \* std::cos\(gripAxisTiltRadians\) \+\s*pocket\.fingerForwardWorld \* std::sin\(gripAxisTiltRadians\)' `
+    'The force-grab seat alignment must use the same tilted grip axis.'
+
 if ($failures.Count -gt 0) {
     Write-Host 'Grab finger sweep source boundary failed:'
     foreach ($failure in $failures) {
