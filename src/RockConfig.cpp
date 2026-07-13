@@ -222,10 +222,10 @@ namespace rock
         rockWeaponSupportGripHandLerpMaxDistance = 14.0f;
 
         rockHandCollisionDynamicDrive = false;
-        rockHandCollisionDynamicProxyRadiusGameUnits = 3.2f;
         rockHandCollisionDynamicMaxLinearVelocityHavok = 15.0f;
         rockHandCollisionDynamicDivergenceTeleportGameUnits = 40.0f;
         rockHandCollisionDynamicRenderFollowMinDeviationGameUnits = 0.05f;
+        rockHandCollisionDynamicRenderFollowSmoothingSpeed = 45.0f;
         rockHandCollisionDynamicVisualPriority = 80;
 
         rockSoftContactWorldEnabled = true;
@@ -282,6 +282,7 @@ namespace rock
         rockDebugShowPalmVectors = false;
         rockDebugDrawHandColliders = false;
         rockDebugDrawHandBoneColliders = false;
+        rockDebugDrawDynamicHandColliders = false;
         rockDebugDrawHandBoneContacts = false;
         rockDebugDrawSoftContacts = false;
         rockDebugDrawGrabAuthorityProxy = false;
@@ -1034,13 +1035,6 @@ namespace rock
             120.0f);
 
         rockHandCollisionDynamicDrive = ini.GetBoolValue(SECTION, "bHandCollisionDynamicDrive", rockHandCollisionDynamicDrive);
-        rockHandCollisionDynamicProxyRadiusGameUnits = readClampedFloat(ini,
-            SECTION,
-            "fHandCollisionDynamicProxyRadiusGameUnits",
-            rockHandCollisionDynamicProxyRadiusGameUnits,
-            3.2f,
-            0.5f,
-            12.0f);
         rockHandCollisionDynamicMaxLinearVelocityHavok = readClampedFloat(ini,
             SECTION,
             "fHandCollisionDynamicMaxLinearVelocityHavok",
@@ -1062,6 +1056,13 @@ namespace rock
             0.05f,
             0.0f,
             5.0f);
+        rockHandCollisionDynamicRenderFollowSmoothingSpeed = readClampedFloat(ini,
+            SECTION,
+            "fHandCollisionDynamicRenderFollowSmoothingSpeed",
+            rockHandCollisionDynamicRenderFollowSmoothingSpeed,
+            45.0f,
+            0.0f,
+            240.0f);
         rockHandCollisionDynamicVisualPriority = static_cast<int>(ini.GetLongValue(SECTION, "iHandCollisionDynamicVisualPriority", rockHandCollisionDynamicVisualPriority));
         rockHandCollisionDynamicVisualPriority = std::clamp(rockHandCollisionDynamicVisualPriority, 0, 99);
 
@@ -1228,6 +1229,7 @@ namespace rock
         rockDebugShowPalmVectors = ini.GetBoolValue(SECTION, "bDebugShowPalmVectors", rockDebugShowPalmVectors);
         rockDebugDrawHandColliders = ini.GetBoolValue(SECTION, "bDebugDrawHandColliders", rockDebugDrawHandColliders);
         rockDebugDrawHandBoneColliders = ini.GetBoolValue(SECTION, "bDebugDrawHandBoneColliders", rockDebugDrawHandBoneColliders);
+        rockDebugDrawDynamicHandColliders = ini.GetBoolValue(SECTION, "bDebugDrawDynamicHandColliders", rockDebugDrawDynamicHandColliders);
         rockDebugDrawHandBoneContacts = ini.GetBoolValue(SECTION, "bDebugDrawHandBoneContacts", rockDebugDrawHandBoneContacts);
         rockDebugDrawSoftContacts = ini.GetBoolValue(SECTION, "bDebugDrawSoftContacts", rockDebugDrawSoftContacts);
         rockDebugDrawGrabAuthorityProxy = ini.GetBoolValue(SECTION, "bDebugDrawGrabAuthorityProxy", rockDebugDrawGrabAuthorityProxy);

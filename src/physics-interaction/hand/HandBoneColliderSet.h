@@ -4,6 +4,7 @@
 #include "physics-interaction/hand/HandSkeleton.h"
 #include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
 #include "physics-interaction/hand/HandColliderTypes.h"
+#include "physics-interaction/hand/DynamicHandTwinTargets.h"
 #include "physics-interaction/native/HavokPhysicsTiming.h"
 
 #include "RE/Havok/hknpShape.h"
@@ -60,6 +61,15 @@ namespace rock
         bool tryGetBodyMetadataAtomic(std::uint32_t bodyId, HandColliderBodyMetadata& outMetadata) const;
         bool tryGetBodyRoleAtomic(std::uint32_t bodyId, hand_collider_semantics::HandColliderRole& outRole) const;
         bool tryGetPalmAnchorTarget(RE::NiTransform& outTarget) const;
+
+        /*
+         * Stage A dynamic-twin publication (main thread only): the exact palm
+         * anchor and fingertip role frames this set drives its keyframed bodies
+         * with, refreshed every update. buildDynamicTwinShape builds the same
+         * hull the keyframed twin uses for those dimensions.
+         */
+        const dynamic_hand_twin::TwinTargets& dynamicTwinTargets() const { return _dynamicTwinTargets; }
+        RE::hknpShape* buildDynamicTwinShape(const dynamic_hand_twin::TwinSlotFrame& slotFrame, bool isPalm) const;
 
     private:
         static constexpr std::size_t MAX_SEGMENT_BODIES = hand_collider_semantics::kHandSegmentColliderBodyCountPerHand;
@@ -120,6 +130,7 @@ namespace rock
         GeneratedKeyframedBodyDriveState _palmAnchorDriveState{};
         RE::NiTransform _latestPalmAnchorTarget{};
         bool _hasLatestPalmAnchorTarget = false;
+        dynamic_hand_twin::TwinTargets _dynamicTwinTargets{};
         const void* _cachedSkeleton = nullptr;
         const void* _cachedBoneTree = nullptr;
         bool _cachedPowerArmor = false;

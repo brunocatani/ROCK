@@ -176,10 +176,10 @@ namespace rock
          * runtime is reset and skipped (single visual authority).
          */
         bool rockHandCollisionDynamicDrive = false;
-        float rockHandCollisionDynamicProxyRadiusGameUnits = 3.2f;
         float rockHandCollisionDynamicMaxLinearVelocityHavok = 15.0f;
         float rockHandCollisionDynamicDivergenceTeleportGameUnits = 40.0f;
         float rockHandCollisionDynamicRenderFollowMinDeviationGameUnits = 0.05f;
+        float rockHandCollisionDynamicRenderFollowSmoothingSpeed = 45.0f;
         int rockHandCollisionDynamicVisualPriority = 80;
 
         bool rockSoftContactWorldEnabled = true;
@@ -236,6 +236,7 @@ namespace rock
         bool rockDebugShowPalmVectors = false;
         bool rockDebugDrawHandColliders = false;
         bool rockDebugDrawHandBoneColliders = false;
+        bool rockDebugDrawDynamicHandColliders = false;
         bool rockDebugDrawHandBoneContacts = false;
         bool rockDebugDrawSoftContacts = false;
         bool rockDebugDrawGrabAuthorityProxy = false;

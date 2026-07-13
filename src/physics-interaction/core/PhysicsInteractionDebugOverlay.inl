@@ -26,6 +26,7 @@
         const bool drawHandBoneContacts = g_rockConfig.rockDebugDrawHandBoneContacts;
         const bool drawSoftContacts = g_rockConfig.rockDebugDrawSoftContacts;
         const bool drawGrabAuthorityProxy = g_rockConfig.rockDebugDrawGrabAuthorityProxy;
+        const bool drawDynamicHandColliders = g_rockConfig.rockDebugDrawDynamicHandColliders;
         const bool drawGrabTransformTelemetry = g_rockConfig.rockDebugGrabTransformTelemetry;
         const bool drawGrabTransformTelemetryAxes = drawGrabTransformTelemetry && g_rockConfig.rockDebugGrabTransformTelemetryAxes;
         const bool drawGrabTransformTelemetryText = drawGrabTransformTelemetry && g_rockConfig.rockDebugGrabTransformTelemetryText;
@@ -45,7 +46,7 @@
         if (!drawRockColliderBodies && !g_rockConfig.rockDebugShowTargetColliders && !g_rockConfig.rockDebugShowHandAxes && !drawGrabPivots && !drawFingerProbes &&
             !drawPalmVectors && !drawGrabPockets && !drawRootFlattenedFingerSkeleton && !drawSkeletonBones && !drawGrabPocketNormal && !drawGrabContactPatch && !drawHandBoneContacts &&
             !drawSoftContacts && !drawGrabAuthorityProxy && !drawGrabForceTorque && !drawGrabTransformTelemetry && !drawPerformanceProfilerOverlay && !drawWeaponAuthorityDebug &&
-            !drawGrabSupportFrame && !drawWorldOriginDiagnostics && !drawCustomCalibrationOffset) {
+            !drawGrabSupportFrame && !drawWorldOriginDiagnostics && !drawCustomCalibrationOffset && !drawDynamicHandColliders) {
             debug::ClearFrame();
             return;
         }
@@ -54,7 +55,7 @@
 
         debug::BodyOverlayFrame frame{};
         frame.world = hknp;
-        frame.drawRockBodies = drawRockColliderBodies || drawGrabAuthorityProxy || drawGrabPivotSourceCollider;
+        frame.drawRockBodies = drawRockColliderBodies || drawGrabAuthorityProxy || drawGrabPivotSourceCollider || drawDynamicHandColliders;
         frame.drawTargetBodies = g_rockConfig.rockDebugShowTargetColliders;
         frame.drawAxes = g_rockConfig.rockDebugShowHandAxes || drawGrabTransformTelemetryAxes || drawGrabAuthorityProxy || drawGrabForceTorque ||
             drawCustomCalibrationOffset;
@@ -1868,17 +1869,17 @@
             }
 
             /*
-             * The stage A dynamic hand proxies are not part of any collider
-             * set, so the overlay enumerates them explicitly whenever hand
-             * collider drawing is on. Watching the sphere stop while the raw
+             * The stage A dynamic hand twins are not part of any collider set,
+             * so the overlay enumerates them explicitly behind their OWN flag:
+             * bDebugDrawDynamicHandColliders shows just the twins without the
+             * full keyframed collider soup. Watching a twin stop while the raw
              * hand axes keep moving is the primary in-game validation view.
              */
-            if (g_rockConfig.rockHandCollisionDynamicDrive &&
-                debug_overlay_policy::shouldDrawHandBody(
-                    drawRockColliderBodies,
-                    g_rockConfig.rockDebugDrawHandColliders || g_rockConfig.rockDebugDrawHandBoneColliders)) {
-                addBody(_dynamicHandCollision.proxyBodyIdForDebug(false), debug::BodyOverlayRole::RightHand);
-                addBody(_dynamicHandCollision.proxyBodyIdForDebug(true), debug::BodyOverlayRole::LeftHand);
+            if (drawDynamicHandColliders) {
+                for (std::size_t twinIndex = 0; twinIndex < DynamicHandCollisionRuntime::kBodiesPerHand; ++twinIndex) {
+                    addBody(_dynamicHandCollision.proxyBodyIdForDebug(false, twinIndex), debug::BodyOverlayRole::RightHand);
+                    addBody(_dynamicHandCollision.proxyBodyIdForDebug(true, twinIndex), debug::BodyOverlayRole::LeftHand);
+                }
             }
 
             if (debug_overlay_policy::shouldDrawHandBody(drawRockColliderBodies, g_rockConfig.rockDebugDrawHandBoneColliders)) {

@@ -563,6 +563,11 @@ namespace rock
         bool isHandColliderBodyId(std::uint32_t bodyId) const { return _boneColliders.isColliderBodyIdAtomic(bodyId); }
         bool tryGetHandColliderMetadata(std::uint32_t bodyId, HandColliderBodyMetadata& outMetadata) const { return _boneColliders.tryGetBodyMetadataAtomic(bodyId, outMetadata); }
         bool tryGetPalmAnchorTarget(RE::NiTransform& outTarget) const { return _boneColliders.tryGetPalmAnchorTarget(outTarget); }
+        const dynamic_hand_twin::TwinTargets& dynamicTwinTargets() const { return _boneColliders.dynamicTwinTargets(); }
+        RE::hknpShape* buildDynamicTwinShape(const dynamic_hand_twin::TwinSlotFrame& slotFrame, bool isPalm) const
+        {
+            return _boneColliders.buildDynamicTwinShape(slotFrame, isPalm);
+        }
         void recordSemanticContact(const HandColliderBodyMetadata& metadata,
             std::uint32_t otherBodyId,
             const hand_semantic_contact_state::SemanticContactVector* contactPointGame = nullptr,

@@ -75,11 +75,38 @@ function Reject-Text {
 
 # Live-world teardown must use deferred retirement (2026-07-08 UAF lesson).
 Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'proxyBody\.retireDeferred\(' `
-    'Dynamic hand proxy teardown must go through retireDeferred.'
+    'body\.retireDeferred\(' `
+    'Dynamic hand twin teardown must go through retireDeferred.'
 Reject-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'proxyBody\.destroy\(' `
-    'Dynamic hand proxy must never destroy() a live-world body immediately.'
+    'body\.destroy\(' `
+    'Dynamic hand twins must never destroy() a live-world body immediately.'
+
+# The twins must mirror the production collider conventions: frames and shapes
+# come from the HandBoneColliderSet publication, never re-derived geometry.
+Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
+    'hand\.dynamicTwinTargets\(\)' `
+    'Dynamic hand twins must consume the HandBoneColliderSet role-frame publication.'
+Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
+    'hand\.buildDynamicTwinShape\(' `
+    'Dynamic hand twins must build shapes through the shared collider hull construction.'
+Require-OrderedText 'src/physics-interaction/hand/HandBoneColliderSet.cpp' @(
+    'publishTwinSlot\(twinTargets\.palm',
+    'HandFingerSegment::Tip',
+    '_dynamicTwinTargets = twinTargets;'
+) 'HandBoneColliderSet must publish palm anchor and fingertip twin frames every update.'
+
+# Render-follow pipeline: combine per-body deviations, smooth (rest twitch), gate.
+Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
+    'combineTwinDeviations\(',
+    'smoothAppliedDeviation\(',
+    'applyExternalHandWorldTransform\('
+) 'Dynamic hand render-follow must combine, smooth, then apply the deviation.'
+
+# The twins get their own visualization flag, independent of the keyframed
+# collider debug draws.
+Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
+    'if \(drawDynamicHandColliders\)' `
+    'Dynamic hand twins must draw behind their own bDebugDrawDynamicHandColliders flag.'
 
 # The drive keeps chasing the wand while another system owns the hand pose:
 # target queueing must happen BEFORE the ownership gate.

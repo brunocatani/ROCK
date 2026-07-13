@@ -635,6 +635,28 @@ namespace rock
         return havok_convex_shape_builder::buildConvexShapeFromLocalHavokPoints(toHavokPointCloud(gamePoints), frame.convexRadius * gameToHavokScale());
     }
 
+    RE::hknpShape* HandBoneColliderSet::buildDynamicTwinShape(const dynamic_hand_twin::TwinSlotFrame& slotFrame, bool isPalm) const
+    {
+        if (!slotFrame.valid) {
+            return nullptr;
+        }
+
+        /*
+         * The dynamic twins reuse the exact hull construction of their
+         * keyframed counterparts: the palm-anchor box hull or the fingertip
+         * capsule hull for the published dimensions. buildShapeForRole only
+         * branches on palm-vs-segment, so any Tip role selects the segment
+         * path.
+         */
+        RoleFrameResult frame{};
+        frame.valid = true;
+        frame.transform = slotFrame.target;
+        frame.length = slotFrame.length;
+        frame.radius = slotFrame.radius;
+        frame.convexRadius = slotFrame.convexRadius;
+        return buildShapeForRole(frame, isPalm ? HandColliderRole::PalmAnchor : HandColliderRole::IndexTip);
+    }
+
     bool HandBoneColliderSet::createBodyForRole(RE::hknpWorld* world, void* bhkWorld, bool isLeft, HandColliderRole role, const RoleFrameResult& frame, BodyInstance& instance)
     {
         auto* shape = buildShapeForRole(frame, role);
@@ -796,6 +818,7 @@ namespace rock
         clearGeneratedKeyframedBodyDriveState(_palmAnchorDriveState);
         _latestPalmAnchorTarget = {};
         _hasLatestPalmAnchorTarget = false;
+        _dynamicTwinTargets = {};
         _cachedSkeleton = nullptr;
         _cachedBoneTree = nullptr;
         _cachedPowerArmor = false;
@@ -818,6 +841,7 @@ namespace rock
         clearGeneratedKeyframedBodyDriveState(_palmAnchorDriveState);
         _latestPalmAnchorTarget = {};
         _hasLatestPalmAnchorTarget = false;
+        _dynamicTwinTargets = {};
         _cachedSkeleton = nullptr;
         _cachedBoneTree = nullptr;
         _cachedPowerArmor = false;
@@ -886,10 +910,20 @@ namespace rock
             }
         }
 
+        dynamic_hand_twin::TwinTargets twinTargets{};
+        auto publishTwinSlot = [](dynamic_hand_twin::TwinSlotFrame& slot, const RoleFrameResult& frame) {
+            slot.valid = true;
+            slot.target = frame.transform;
+            slot.length = frame.length;
+            slot.radius = frame.radius;
+            slot.convexRadius = frame.convexRadius;
+        };
+
         RoleFrameResult anchorFrame{};
         if (makeRoleFrame(lookup, isLeft, HandColliderRole::PalmAnchor, anchorFrame)) {
             _latestPalmAnchorTarget = anchorFrame.transform;
             _hasLatestPalmAnchorTarget = true;
+            publishTwinSlot(twinTargets.palm, anchorFrame);
             queueBodyTarget(palmAnchorBody, anchorFrame.transform, deltaTime, _palmAnchorDriveState, _palmAnchorPublicationIndex);
         }
 
@@ -899,9 +933,19 @@ namespace rock
             }
             RoleFrameResult frame{};
             if (makeRoleFrame(lookup, isLeft, instance.role, frame)) {
+                if (hand_collider_semantics::isFingerRole(instance.role) &&
+                    hand_collider_semantics::segmentForRole(instance.role) == HandFingerSegment::Tip) {
+                    const auto fingerIndex = static_cast<std::size_t>(hand_collider_semantics::fingerForRole(instance.role));
+                    if (fingerIndex < twinTargets.fingertips.size()) {
+                        publishTwinSlot(twinTargets.fingertips[fingerIndex], frame);
+                    }
+                }
                 queueBodyTarget(instance.body, frame.transform, deltaTime, instance.driveState, instance.publicationIndex);
             }
         }
+
+        twinTargets.updateCounter = _dynamicTwinTargets.updateCounter + 1;
+        _dynamicTwinTargets = twinTargets;
     }
 
     void HandBoneColliderSet::flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing, BethesdaPhysicsBody& palmAnchorBody)
