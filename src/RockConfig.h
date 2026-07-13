@@ -550,6 +550,7 @@ namespace rock
         float rockSelectedCloseFingerAnimMaxHandSpeed = 0.9f;
         float rockSelectedCloseFingerAnimValue = 0.9f;
         float rockPulledAngularDamping = 8.0f;
+        bool rockPullToObjectCenterEnabled = true;
         bool rockPullLongAxisPresentationEnabled = true;
         float rockPullPresentationMinElongationRatio = 2.0f;
         float rockPullPresentationAngularGainPerSecond = 6.0f;

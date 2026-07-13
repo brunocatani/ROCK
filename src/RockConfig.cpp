@@ -590,6 +590,7 @@ namespace rock
         rockSelectedCloseFingerAnimMaxHandSpeed = 0.9f;
         rockSelectedCloseFingerAnimValue = 0.9f;
         rockPulledAngularDamping = 8.0f;
+        rockPullToObjectCenterEnabled = true;
         rockPullLongAxisPresentationEnabled = true;
         rockPullPresentationMinElongationRatio = 2.0f;
         rockPullPresentationAngularGainPerSecond = 6.0f;
@@ -2217,6 +2218,7 @@ namespace rock
         }
         rockSelectedCloseFingerAnimValue = std::clamp(rockSelectedCloseFingerAnimValue, 0.0f, 1.0f);
         rockPulledAngularDamping = static_cast<float>(ini.GetDoubleValue(SECTION, "fPulledAngularDamping", rockPulledAngularDamping));
+        rockPullToObjectCenterEnabled = ini.GetBoolValue(SECTION, "bPullToObjectCenterEnabled", rockPullToObjectCenterEnabled);
         rockPullLongAxisPresentationEnabled = ini.GetBoolValue(SECTION, "bPullLongAxisPresentationEnabled", rockPullLongAxisPresentationEnabled);
         rockPullPresentationMinElongationRatio =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fPullPresentationMinElongationRatio", rockPullPresentationMinElongationRatio));

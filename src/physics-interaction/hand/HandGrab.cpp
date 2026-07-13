@@ -7291,6 +7291,18 @@ namespace rock
             selectedPointHavok.y - motion->position.y,
             selectedPointHavok.z - motion->position.z,
         };
+        /*
+         * Far grabs pull the object CENTER: a ray hit at selection range is aim
+         * noise, not grip intent, and a fixed world offset cannot rotate with
+         * the presentation servo anyway. Tracking the COM (zero offset) drifts
+         * with nothing. Arrival then overwrites the selection hit point with
+         * the tracked center, so capture seeds from the middle of the object
+         * and the seat machinery (support model, seated reacquire, seat depth
+         * stop) settles the surface onto the palm.
+         */
+        if (g_rockConfig.rockPullToObjectCenterEnabled) {
+            _pullPointOffsetHavok = {};
+        }
 
         /*
          * Long-object presentation capture: one mesh extraction + PCA at pull
