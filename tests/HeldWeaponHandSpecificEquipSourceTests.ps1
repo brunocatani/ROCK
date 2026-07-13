@@ -85,6 +85,20 @@ Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'RE::TESObjectREFR\* gripZoneHoverCandidate\s*=\s*nullptr;\s*if\s*\(\s*!isLeft\s*&&' `
     'Grip-zone hover/equip discovery must not remain right-hand-only.'
 
+# Pull-catch/force-grab FRIK auto-align must cover the secondary hand through
+# the shared mirrored firing hold instead of returning notPrimaryHand.
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
+    'loose_weapon_grip_zone::tryResolveLooseWeaponFiringHandHold\(isLeft,\s*selection\.refr,[\s\S]{0,200}multiplyTransforms\(handWorld,\s*transform_math::invertTransform\(handWeaponLocal\)\)' `
+    'Secondary-hand pull-catch/force-grab must seat the loose weapon from the mirrored firing hold (weapon = hand world o inverse(hold)).'
+
+Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' `
+    '"notPrimaryHand"' `
+    'The secondary hand must no longer be excluded from the loose-weapon FRIK-offset attach.'
+
+Require-Text 'src/physics-interaction/weapon/LooseWeaponGripZone.cpp' `
+    'tryResolveLooseWeaponFiringHandHold\([\s\S]{0,700}tryResolveGripWorld\(isLeft,\s*weaponRef,\s*scratch,\s*&testedHandWorld\)' `
+    'The one-shot firing-hold resolver must share the grip-zone projection core so both paths seat identical holds.'
+
 if ($failures.Count -gt 0) {
     Write-Host 'Held weapon hand-specific equip source boundary failed:'
     foreach ($failure in $failures) {

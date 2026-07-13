@@ -27,6 +27,7 @@
 #include "physics-interaction/grab/MeshGrab.h"
 #include "physics-interaction/object/MechanicalConnectedBodySet.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
+#include "physics-interaction/weapon/LooseWeaponGripZone.h"
 #include "physics-interaction/object/SkinnedBodyResolver.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/hand/HandFrame.h"
@@ -1098,9 +1099,30 @@ namespace rock
                                                                           attachSource.nonFiniteParentReason;
                         return frame;
                     }
-                } else if (!selection.forcedArrival) {
-                    frame.reason = "notPrimaryHand";
-                    return frame;
+                } else {
+                    /*
+                     * Secondary-hand pull-catch/force-grab gets the same
+                     * FRIK-offset auto-align as the primary hand, expressed
+                     * through ROCK's mirrored firing hold shared with the
+                     * grip-zone runtimes: weapon = live hand world composed
+                     * with the inverse of the mirrored hold. Seating the far
+                     * grabbed weapon directly on its firing grip lets the
+                     * grip-zone equip settle hand it off to secondary-hand
+                     * firing ownership without manual re-seating. Close grabs
+                     * never reach here (free mesh hold gate above).
+                     */
+                    RE::NiTransform handWorld{};
+                    RE::NiTransform handWeaponLocal{};
+                    const char* holdReason = "mirroredHoldUnavailable";
+                    if (loose_weapon_grip_zone::tryResolveLooseWeaponFiringHandHold(isLeft, selection.refr, handWorld, handWeaponLocal, &holdReason)) {
+                        frame.desiredRootWorld = multiplyTransforms(handWorld, transform_math::invertTransform(handWeaponLocal));
+                        frame.sourceVisible = false;
+                        frame.reason = holdReason;
+                        haveDesiredRoot = true;
+                    } else if (!selection.forcedArrival) {
+                        frame.reason = holdReason;
+                        return frame;
+                    }
                 }
 
                 if (!haveDesiredRoot) {
