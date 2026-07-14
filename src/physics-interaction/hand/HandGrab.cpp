@@ -5141,6 +5141,8 @@ namespace rock
         _grabTransportLastQueuedSequence = 0;
         _grabTransportReadFailures = 0;
         _grabTransportActive = false;
+        _grabSmoothCommandedTranslation = {};
+        _grabSmoothCommandedInitialized = false;
         _grabAuthorityProxyReleasePending.store(false, std::memory_order_release);
     }
 
@@ -12858,6 +12860,30 @@ namespace rock
                     liveLocomotionVelocity,
                     grab_authority_source_clock::kFeedForwardLeadSeconds,
                     roomFeedForwardApplied);
+            }
+            /*
+             * Bounded velocity smoother (opt-in). The phase lock hands the
+             * motors a commanded velocity of (game-frame delta / substep dt),
+             * which quantizes on the 11/11/12 ms substep cycle -- its own
+             * accepted tradeoff, and the measured along-track stick-locomotion
+             * stutter (2026-07-14 OVERLAY_POINT data: +ahead-short/-behind-long
+             * drift to +-0.6-1.0 gu at a run, cross-track flat). Replace the
+             * commanded target with one advanced by the SMOOTH game-clock
+             * segment velocity and re-anchored toward the locked sample, so the
+             * motors see a constant velocity while the position stays on the
+             * game path. Applied to the same flush-local copy every downstream
+             * consumer reads. Off by default; gain 1.0 reproduces the raw lock.
+             */
+            if (g_rockConfig.rockGrabSmoothVelocityDrive) {
+                _grabSmoothCommandedTranslation = grab_authority_source_clock::applyBoundedVelocitySmoothing(
+                    _grabSmoothCommandedTranslation,
+                    pending.proxyWorld.translate,
+                    _grabAuthoritySourceClock.segmentVelocity(),
+                    driveDelta,
+                    g_rockConfig.rockGrabSmoothVelocityCorrectorGain,
+                    _grabSmoothCommandedInitialized);
+                _grabSmoothCommandedInitialized = true;
+                pending.proxyWorld.translate = _grabSmoothCommandedTranslation;
             }
             /*
              * Locomotion transport is the FORCE-channel sibling of the

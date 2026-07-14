@@ -977,6 +977,15 @@ namespace rock
         std::uint64_t _grabTransportLastQueuedSequence = 0;
         std::uint32_t _grabTransportReadFailures = 0;
         bool _grabTransportActive = false;
+        /*
+         * Bounded velocity-smoother state (opt-in rockGrabSmoothVelocityDrive):
+         * the persistent commanded target the predictor-corrector advances by
+         * the smooth game-clock segment velocity and re-anchors toward the
+         * phase-locked sample. Guarded by _grabAuthorityProxyMutex; written only
+         * by the physics flush, reset with the proxy runtime.
+         */
+        RE::NiPoint3 _grabSmoothCommandedTranslation{};
+        bool _grabSmoothCommandedInitialized = false;
         struct RagdollAngularProbePreSolve
         {
             RE::hknpBodyId objectBodyId{ INVALID_BODY_ID };
