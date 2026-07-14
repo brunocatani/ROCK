@@ -88,6 +88,9 @@ namespace rock
         RE::hknpBodyId proxyBodyId{ INVALID_BODY_ID };
         RE::hknpBodyId objectBodyId{ INVALID_BODY_ID };
         std::uint64_t flushSequence = 0;
+        // Standing locomotion-transport contribution carried by the held body,
+        // game units/s; -1 while transport is inactive.
+        float transportVelocityGameUnitsPerSecond = -1.0f;
     };
 
     struct GrabContactPatchDebugSnapshot
@@ -657,6 +660,7 @@ namespace rock
         void destroyGrabAuthorityProxyLocked(RE::bhkWorld* bhkWorld);
         void abandonGrabAuthorityProxyLocked();
         void clearGrabAuthorityProxyRuntimeLocked();
+        void applyHeldLocomotionTransportLocked(RE::hknpWorld* world, bool roomVelocityOk, const RE::NiPoint3& roomVelocityGameUnitsPerSecond);
         bool tryGetGrabDriveObjectWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::NiTransform& outTransform) const;
         RE::NiPoint3 activeProxyConstraintPivotBLocalGame() const;
 
@@ -961,6 +965,18 @@ namespace rock
         RE::NiTransform _lastAppliedGrabAuthorityProxyWorld{};
         RE::NiTransform _lastAppliedGrabAuthorityRawHandWorld{};
         bool _hasLastAppliedGrabAuthorityProxyWorld = false;
+        /*
+         * Locomotion transport (HIGGS SimulatePlayerSpace parity): the standing
+         * room-velocity contribution currently carried by the held body set, in
+         * game units/s. Guarded by _grabAuthorityProxyMutex like the pending
+         * target: written only by the physics flush, reset with the proxy
+         * runtime. The contribution is REAL world-space velocity (the object
+         * genuinely travels with the player), so release deliberately keeps it.
+         */
+        RE::NiPoint3 _grabTransportRoomVelocityGame{};
+        std::uint64_t _grabTransportLastQueuedSequence = 0;
+        std::uint32_t _grabTransportReadFailures = 0;
+        bool _grabTransportActive = false;
         struct RagdollAngularProbePreSolve
         {
             RE::hknpBodyId objectBodyId{ INVALID_BODY_ID };

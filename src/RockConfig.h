@@ -374,6 +374,7 @@ namespace rock
         float rockGrabPhysicsRateMinForceScale = 0.75f;
         float rockGrabPhysicsRateMaxForceScale = 1.35f;
         bool rockGrabRoomVelocityFeedForward = false;
+        bool rockGrabLocomotionTransport = false;
 
         float rockGrabForceFadeInTime = 0.1f;
         RE::NiPoint3 rockRightGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.0f, 0.0f, 0.0f);

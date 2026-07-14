@@ -5132,6 +5132,15 @@ namespace rock
         _grabAuthorityProxyLogCounter = 0;
         _grabAuthorityProxyAfterSolveLogCounter = 0;
         _ragdollAngularProbePreSolve = {};
+        /*
+         * Transport bookkeeping resets WITHOUT removing the contribution from
+         * the object: the standing contribution is real world-space velocity
+         * the released object legitimately keeps (throws inherit locomotion).
+         */
+        _grabTransportRoomVelocityGame = {};
+        _grabTransportLastQueuedSequence = 0;
+        _grabTransportReadFailures = 0;
+        _grabTransportActive = false;
         _grabAuthorityProxyReleasePending.store(false, std::memory_order_release);
     }
 
@@ -12592,6 +12601,155 @@ namespace rock
         }
     }
 
+    /*
+     * Locomotion transport: keep the held body's velocity carrying the live
+     * room velocity so the constraint motors only solve hand-relative residual
+     * motion (HIGGS SimulatePlayerSpace parity, velocity-add form).
+     *
+     * Delta form (vRoom_now - vRoom_last) is algebraically identical to
+     * HIGGS's subtract-last-add-new bookkeeping: a collision that consumes the
+     * body's velocity is respected (the delta stays ~0, we never fight the
+     * wall), and stopping removes the standing contribution exactly. The
+     * contribution is REAL world-space velocity -- an object carried by a
+     * running player genuinely moves at room speed -- so release keeps it
+     * (throws inherit locomotion, which is physical). Single-owner grabs
+     * (transfer, never co-hold) mean the two hands can never transport the
+     * same body twice.
+     */
+    void Hand::applyHeldLocomotionTransportLocked(RE::hknpWorld* world,
+        bool roomVelocityOk,
+        const RE::NiPoint3& roomVelocityGameUnitsPerSecond)
+    {
+        constexpr std::uint32_t kReadFailureTripCount = 30;
+
+        const auto applyDeltaToHeldBodies = [&](const RE::NiPoint3& deltaGameUnitsPerSecond) -> bool {
+            const float scale = physics_scale::gameToHavok();
+            const RE::NiPoint3 deltaHavok{
+                deltaGameUnitsPerSecond.x * scale,
+                deltaGameUnitsPerSecond.y * scale,
+                deltaGameUnitsPerSecond.z * scale,
+            };
+            const std::uint32_t primaryBodyId = _savedObjectState.bodyId.value;
+            if (primaryBodyId == INVALID_BODY_ID) {
+                return false;
+            }
+            auto* primaryBody = havok_runtime::getBody(world, RE::hknpBodyId{ primaryBodyId });
+            if (!primaryBody || !body_frame::hasUsableMotionIndex(primaryBody->motionIndex)) {
+                return false;
+            }
+            if (!havok_runtime::applyLinearVelocityDeltaDeferred(world, primaryBodyId, deltaHavok)) {
+                return false;
+            }
+            // Connected bodies ride along so the object's internal constraints
+            // don't turn locomotion into internal forces. Motion-slot dedup:
+            // two body ids sharing one motion must not receive the delta twice.
+            std::array<std::uint32_t, MAX_HELD_BODIES + 1> transportedMotionSlots{};
+            std::size_t transportedMotionSlotCount = 0;
+            transportedMotionSlots[transportedMotionSlotCount++] = primaryBody->motionIndex;
+            const int connectedCount = _heldBodyIdsCount.load(std::memory_order_acquire);
+            for (int i = 0; i < connectedCount && i < MAX_HELD_BODIES; ++i) {
+                const std::uint32_t bodyId = _heldBodyIdsSnapshot[i];
+                if (bodyId == INVALID_BODY_ID || bodyId == primaryBodyId) {
+                    continue;
+                }
+                auto* body = havok_runtime::getBody(world, RE::hknpBodyId{ bodyId });
+                if (!body || !body_frame::hasUsableMotionIndex(body->motionIndex)) {
+                    continue;
+                }
+                bool alreadyTransported = false;
+                for (std::size_t slot = 0; slot < transportedMotionSlotCount; ++slot) {
+                    if (transportedMotionSlots[slot] == body->motionIndex) {
+                        alreadyTransported = true;
+                        break;
+                    }
+                }
+                if (alreadyTransported || transportedMotionSlotCount >= transportedMotionSlots.size()) {
+                    continue;
+                }
+                transportedMotionSlots[transportedMotionSlotCount++] = body->motionIndex;
+                (void)havok_runtime::applyLinearVelocityDeltaDeferred(world, bodyId, deltaHavok);
+            }
+            return true;
+        };
+
+        if (!g_rockConfig.rockGrabLocomotionTransport) {
+            // Mid-hold INI toggle: remove the standing contribution once.
+            if (_grabTransportActive) {
+                (void)applyDeltaToHeldBodies(RE::NiPoint3{
+                    -_grabTransportRoomVelocityGame.x,
+                    -_grabTransportRoomVelocityGame.y,
+                    -_grabTransportRoomVelocityGame.z });
+                _grabTransportRoomVelocityGame = {};
+                _grabTransportActive = false;
+            }
+            _grabTransportReadFailures = 0;
+            return;
+        }
+
+        // Once per queued game-frame sample, never per substep: the deferred
+        // velocity write is read-modify-write against the live motion, so a
+        // second application before the engine consumed the previous command
+        // would re-read stale velocity and drop the first increment.
+        if (_grabAuthorityProxyQueuedSequence == _grabTransportLastQueuedSequence) {
+            return;
+        }
+        _grabTransportLastQueuedSequence = _grabAuthorityProxyQueuedSequence;
+
+        constexpr float kMinSpeed = grab_authority_source_clock::kFeedForwardMinSpeedGameUnitsPerSecond;
+        constexpr float kMaxSpeed = grab_authority_source_clock::kFeedForwardMaxSpeedGameUnitsPerSecond;
+        const float speedSquared = roomVelocityOk ? lengthSquared(roomVelocityGameUnitsPerSecond) : 0.0f;
+        const bool readUsable = roomVelocityOk && std::isfinite(speedSquared) && speedSquared <= kMaxSpeed * kMaxSpeed;
+
+        if (!readUsable) {
+            // Fail closed but not abruptly: keep the standing contribution for
+            // a short grace window, then remove it and disengage loudly. A
+            // stale contribution is only a constant bias the motors already
+            // know how to cancel; silent permanence would be the bug.
+            if (_grabTransportActive && ++_grabTransportReadFailures >= kReadFailureTripCount) {
+                ROCK_LOG_WARN(Hand,
+                    "{} hand LOCOMOTION TRANSPORT disengaged: room velocity unreadable/implausible for {} frames, removing standing contribution {:.1f} gu/s",
+                    handName(),
+                    _grabTransportReadFailures,
+                    vectorMagnitude(_grabTransportRoomVelocityGame));
+                (void)applyDeltaToHeldBodies(RE::NiPoint3{
+                    -_grabTransportRoomVelocityGame.x,
+                    -_grabTransportRoomVelocityGame.y,
+                    -_grabTransportRoomVelocityGame.z });
+                _grabTransportRoomVelocityGame = {};
+                _grabTransportActive = false;
+                _grabTransportReadFailures = 0;
+            }
+            return;
+        }
+        _grabTransportReadFailures = 0;
+
+        // Below the standing floor: controller-noise velocity, not locomotion.
+        // Never ENGAGE from noise; once engaged, target exactly zero so the
+        // contribution is removed cleanly when the player stops.
+        if (!_grabTransportActive && speedSquared < kMinSpeed * kMinSpeed) {
+            return;
+        }
+        const RE::NiPoint3 targetVelocity =
+            speedSquared < kMinSpeed * kMinSpeed ? RE::NiPoint3{} : roomVelocityGameUnitsPerSecond;
+
+        const RE::NiPoint3 delta{
+            targetVelocity.x - _grabTransportRoomVelocityGame.x,
+            targetVelocity.y - _grabTransportRoomVelocityGame.y,
+            targetVelocity.z - _grabTransportRoomVelocityGame.z,
+        };
+        constexpr float kDeltaEpsilonSquared = 0.000001f;
+        if (lengthSquared(delta) > kDeltaEpsilonSquared) {
+            if (!applyDeltaToHeldBodies(delta)) {
+                // Held body unreadable this substep (release imminent): leave
+                // the bookkeeping untouched so a transient failure does not
+                // double-apply on the next frame.
+                return;
+            }
+            _grabTransportRoomVelocityGame = targetVelocity;
+        }
+        _grabTransportActive = lengthSquared(_grabTransportRoomVelocityGame) > 0.0f;
+    }
+
     void Hand::flushPendingCustomGrabAuthority(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
     {
         GrabAuthorityProxyPendingTarget pending{};
@@ -12690,16 +12848,27 @@ namespace rock
              * consumer stays consistent; fail-closed on read failure or
              * implausible speed; identically zero when standing.
              */
-            if (g_rockConfig.rockGrabRoomVelocityFeedForward) {
-                RE::NiPoint3 liveLocomotionVelocity{};
-                if (character_controller_runtime::tryGetPlayerLocomotionVelocityRawGameUnits(liveLocomotionVelocity)) {
-                    pending.proxyWorld.translate = grab_authority_source_clock::applyRoomVelocityFeedForward(
-                        pending.proxyWorld.translate,
-                        liveLocomotionVelocity,
-                        grab_authority_source_clock::kFeedForwardLeadSeconds,
-                        roomFeedForwardApplied);
-                }
+            RE::NiPoint3 liveLocomotionVelocity{};
+            const bool liveLocomotionVelocityOk =
+                (g_rockConfig.rockGrabRoomVelocityFeedForward || g_rockConfig.rockGrabLocomotionTransport) &&
+                character_controller_runtime::tryGetPlayerLocomotionVelocityRawGameUnits(liveLocomotionVelocity);
+            if (g_rockConfig.rockGrabRoomVelocityFeedForward && liveLocomotionVelocityOk) {
+                pending.proxyWorld.translate = grab_authority_source_clock::applyRoomVelocityFeedForward(
+                    pending.proxyWorld.translate,
+                    liveLocomotionVelocity,
+                    grab_authority_source_clock::kFeedForwardLeadSeconds,
+                    roomFeedForwardApplied);
             }
+            /*
+             * Locomotion transport is the FORCE-channel sibling of the
+             * feed-forward above: feed-forward phase-aligns the commanded
+             * TARGET, transport gives the held BODY the room velocity directly
+             * so the linear motors never generate locomotion catch-up force.
+             * That catch-up force acts on the off-COM grip lever and is the
+             * measured source of the uncommanded held rotation (stutter plan
+             * doc 13h/13i). Complementary channels; both may be enabled.
+             */
+            applyHeldLocomotionTransportLocked(world, liveLocomotionVelocityOk, liveLocomotionVelocity);
             float linearVelocityHavok[4]{};
             float angularVelocityHavok[4]{};
             float nativeLinearVelocityIgnored[4]{};
@@ -13330,6 +13499,8 @@ namespace rock
         out.proxyBodyId = _grabAuthorityProxy.getBodyId();
         out.objectBodyId = _savedObjectState.bodyId;
         out.flushSequence = _grabAuthorityProxyFlushSequence;
+        out.transportVelocityGameUnitsPerSecond =
+            _grabTransportActive ? vectorMagnitude(_grabTransportRoomVelocityGame) : -1.0f;
         return true;
     }
 
