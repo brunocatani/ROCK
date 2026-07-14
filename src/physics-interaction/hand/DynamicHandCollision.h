@@ -1,5 +1,7 @@
 #pragma once
 
+#include "physics-interaction/hand/DynamicHandCollisionFeedbackPolicy.h"
+#include "physics-interaction/hand/DynamicHandCollisionTelemetry.h"
 #include "physics-interaction/hand/DynamicHandTwinTargets.h"
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
@@ -35,14 +37,14 @@ namespace rock
      * evidence and collide only with static world-surface layers.
      *
      * Threading: updateFrame runs on the main game thread; the drive flush runs
-     * on the physics step thread and publishes per-body deviations through
+     * on the physics step thread and publishes fixed per-body telemetry through
      * atomics that updateFrame consumes one substep later (~1/270 s).
      */
     class DynamicHandCollisionRuntime
     {
     public:
-        static constexpr std::size_t kPalmSlot = 0;
-        static constexpr std::size_t kBodiesPerHand = 1 + hand_collider_semantics::kHandFingerCount;
+        static constexpr std::size_t kPalmSlot = dynamic_hand_collision_telemetry::kPalmSlot;
+        static constexpr std::size_t kBodiesPerHand = dynamic_hand_collision_telemetry::kBodiesPerHand;
 
         void updateFrame(const PhysicsFrameContext& frame,
             bool physicsWritesAllowed,
@@ -67,6 +69,10 @@ namespace rock
         void samplePostSolveDeviations(RE::hknpWorld* world);
         void retireAll(void* bhkWorld);
         void reset();
+        // Main-thread snapshot/event access. Future provider adapters must copy
+        // from here on the main thread rather than retain runtime-owned state.
+        [[nodiscard]] bool getTelemetrySnapshot(dynamic_hand_collision_telemetry::Snapshot& outSnapshot) const;
+        [[nodiscard]] dynamic_hand_collision_telemetry::HapticEvents consumeHapticEvents();
 
         /*
          * Debug-overlay accessor; main thread only (creation/retire happen on
@@ -82,6 +88,48 @@ namespace rock
         }
 
     private:
+        struct PhysicsTelemetrySample
+        {
+            RE::NiPoint3 requestedTargetWorldGame{};
+            RE::NiPoint3 commandedTargetWorldGame{};
+            RE::NiPoint3 liveBodyWorldGame{};
+            RE::NiPoint3 targetVelocityWorldGameUnitsPerSecond{};
+            float approachSpeedGameUnitsPerSecond = 0.0f;
+            float physicsDeltaSeconds = 0.0f;
+            bool valid = false;
+            bool targetVelocityValid = false;
+            bool contactActive = false;
+            bool recoveryTeleport = false;
+        };
+
+        /*
+         * Physics writes and the main thread reads these fields. Components
+         * stay atomic to avoid a C++ data race; the odd/even sequence is a
+         * bounded seqlock that prevents accepting a mixed-substep sample.
+         */
+        struct AtomicPhysicsTelemetry
+        {
+            std::atomic<std::uint64_t> sequence{ 0 };
+            std::atomic<float> requestedX{ 0.0f };
+            std::atomic<float> requestedY{ 0.0f };
+            std::atomic<float> requestedZ{ 0.0f };
+            std::atomic<float> commandedX{ 0.0f };
+            std::atomic<float> commandedY{ 0.0f };
+            std::atomic<float> commandedZ{ 0.0f };
+            std::atomic<float> liveX{ 0.0f };
+            std::atomic<float> liveY{ 0.0f };
+            std::atomic<float> liveZ{ 0.0f };
+            std::atomic<float> targetVelocityX{ 0.0f };
+            std::atomic<float> targetVelocityY{ 0.0f };
+            std::atomic<float> targetVelocityZ{ 0.0f };
+            std::atomic<float> approachSpeed{ 0.0f };
+            std::atomic<float> physicsDeltaSeconds{ 0.0f };
+            std::atomic<bool> valid{ false };
+            std::atomic<bool> targetVelocityValid{ false };
+            std::atomic<bool> contactActive{ false };
+            std::atomic<bool> recoveryTeleport{ false };
+        };
+
         struct ProxySlot
         {
             BethesdaPhysicsBody body{};
@@ -115,6 +163,10 @@ namespace rock
             RE::NiPoint3 lastPostSolveDeviationGame{};
             bool lastPostSolveDeviationValid = false;
             bool lastPostSolveContact = false;
+            RE::NiPoint3 droveTargetVelocityGameUnitsPerSecond{};
+            float drovePhysicsDeltaSeconds = 0.0f;
+            bool droveTargetVelocityValid = false;
+            bool droveRecoveryTeleport = false;
             /*
              * Divergence must PERSIST before a recovery teleport fires
              * (physics thread only). Without the dwell, a hand fighting a wall
@@ -123,14 +175,11 @@ namespace rock
              * position-reset stutter of the third in-game session. The dwell
              * resets after each teleport, so it doubles as the re-fire
              * cooldown.
-             */
+            */
             float divergenceDwellSeconds = 0.0f;
-            std::atomic<bool> deviationValidAtomic{ false };
-            std::atomic<float> deviationXAtomic{ 0.0f };
-            std::atomic<float> deviationYAtomic{ 0.0f };
-            std::atomic<float> deviationZAtomic{ 0.0f };
             std::atomic<bool> teleportedAtomic{ false };
             std::atomic<bool> rebuildRequestedAtomic{ false };
+            AtomicPhysicsTelemetry physicsTelemetry{};
         };
 
         struct HandSlots
@@ -145,6 +194,11 @@ namespace rock
              * smoothly rejoining the controller instead of a position snap.
              */
             float teleportRecoverySecondsRemaining = 0.0f;
+            bool physicsContactActive = false;
+            std::atomic<std::uint64_t> contactEntrySequenceAtomic{ 0 };
+            std::atomic<float> contactEntryApproachSpeedAtomic{ 0.0f };
+            std::atomic<std::uint32_t> contactEntryMaskAtomic{ 0 };
+            dynamic_hand_collision_feedback::ContactPulseState hapticState{};
         };
 
         bool ensureSlotCreated(ProxySlot& slot,
@@ -156,8 +210,19 @@ namespace rock
         void retireSlot(ProxySlot& slot, void* bhkWorld);
         void retireHand(HandSlots& handSlots, void* bhkWorld, bool isLeft);
         void clearVisual(HandSlots& handSlots, bool isLeft);
+        static void publishPhysicsTelemetry(ProxySlot& slot, const PhysicsTelemetrySample& sample);
+        [[nodiscard]] static bool readPhysicsTelemetry(const ProxySlot& slot, PhysicsTelemetrySample& outSample, std::uint64_t& outSequence);
+        static void clearPhysicsContactState(ProxySlot& slot);
+        void updateHandHaptic(
+            HandSlots& handSlots,
+            dynamic_hand_collision_telemetry::HandSample& handTelemetry,
+            bool authorityAllowsFeedback,
+            float deltaSeconds);
 
         std::array<HandSlots, 2> _hands{};
+        dynamic_hand_collision_telemetry::Snapshot _telemetrySnapshot{};
+        dynamic_hand_collision_telemetry::HapticEvents _pendingHapticEvents{};
+        std::uint64_t _telemetryUpdateSequence = 0;
         std::uint32_t _logCounter = 0;
     };
 }

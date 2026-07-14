@@ -413,6 +413,7 @@ namespace rock
         bool linearLimitExceeded = false;
         bool angularLimitExceeded = false;
         bool hasLiveBodyTransform = false;
+        bool hasSampledTargetLinearVelocityHavok = false;
         /*
          * targetGamePosition is the COMMANDED target: velocity-limited toward
          * the live body when the raw gap exceeds maxLinearVelocity * driveDt.
@@ -426,6 +427,7 @@ namespace rock
         RE::NiPoint3 requestedTargetGamePosition{};
         RE::NiPoint3 targetHavokPosition{};
         RE::NiPoint3 liveBodyGamePosition{};
+        RE::NiPoint3 sampledTargetLinearVelocityHavok{};
         RE::NiPoint3 targetAxisXWorld{};
         RE::NiPoint3 targetAxisYWorld{};
         RE::NiPoint3 targetAxisZWorld{};

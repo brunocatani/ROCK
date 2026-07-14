@@ -182,6 +182,13 @@ namespace rock
         float rockHandCollisionDynamicRenderFollowMinDeviationGameUnits = 0.05f;
         float rockHandCollisionDynamicRenderFollowSmoothingSpeed = 45.0f;
         int rockHandCollisionDynamicVisualPriority = 80;
+        bool rockHandCollisionDynamicHapticsEnabled = true;
+        float rockHandCollisionDynamicHapticDurationSeconds = 0.035f;
+        float rockHandCollisionDynamicHapticBaseIntensity = 0.18f;
+        float rockHandCollisionDynamicHapticMaxIntensity = 0.55f;
+        float rockHandCollisionDynamicHapticSpeedScale = 0.006f;
+        float rockHandCollisionDynamicHapticMinApproachSpeedGameUnitsPerSecond = 3.0f;
+        float rockHandCollisionDynamicHapticCooldownSeconds = 0.12f;
 
         bool rockSoftContactWorldEnabled = true;
         int rockSoftContactVisualPriority = 80;

@@ -103,6 +103,12 @@ namespace rock::performance_profiler
                 return "selectionCasts";
             case Scope::SoftContact:
                 return "softContact";
+            case Scope::DynamicHandCollisionFrame:
+                return "dynamicHandFrame";
+            case Scope::DynamicHandCollisionPhysicsDrive:
+                return "dynamicHandDrive";
+            case Scope::DynamicHandCollisionPostSolve:
+                return "dynamicHandPostSolve";
             case Scope::DebugOverlayPublish:
                 return "debugOverlayPublish";
             case Scope::DebugOverlayRender:

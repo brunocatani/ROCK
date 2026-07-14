@@ -2181,6 +2181,20 @@ float4 main(PS_INPUT input) : SV_Target {
                 color[2] = 0.18f;
                 color[3] = 0.98f;
                 break;
+            case MarkerOverlayRole::RightDynamicHandRequestedDeviation:
+            case MarkerOverlayRole::LeftDynamicHandRequestedDeviation:
+                color[0] = 1.0f;
+                color[1] = 0.82f;
+                color[2] = 0.12f;
+                color[3] = 0.98f;
+                break;
+            case MarkerOverlayRole::RightDynamicHandSolverResidual:
+            case MarkerOverlayRole::LeftDynamicHandSolverResidual:
+                color[0] = 1.0f;
+                color[1] = 0.24f;
+                color[2] = 0.16f;
+                color[3] = 0.98f;
+                break;
             }
         }
 

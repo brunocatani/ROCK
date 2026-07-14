@@ -102,6 +102,78 @@ Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'applyExternalHandWorldTransform\('
 ) 'Dynamic hand render-follow must combine, smooth, then apply the deviation.'
 
+# Physics-owned telemetry must cross to the main frame through atomics and
+# expose requested/commanded/live positions without changing provider API V1.
+Require-Text 'src/physics-interaction/hand/DynamicHandCollision.h' `
+    'struct AtomicPhysicsTelemetry' `
+    'Dynamic hand telemetry must have an explicit physics-to-main atomic publication boundary.'
+Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
+    'publishPhysicsTelemetry\(',
+    'requestedTargetWorldGame',
+    'commandedTargetWorldGame',
+    'liveBodyWorldGame',
+    'getTelemetrySnapshot\('
+) 'Dynamic hand telemetry must publish requested, commanded, and live proxy state to a main-frame snapshot.'
+Require-Text 'src/physics-interaction/hand/DynamicHandCollisionTelemetry.h' `
+    'struct TwinSample' `
+    'Dynamic hand telemetry must keep a fixed per-twin sample contract for future API adaptation.'
+Require-Text 'src/physics-interaction/hand/DynamicHandCollisionTelemetry.h' `
+    'struct HandSample' `
+    'Dynamic hand telemetry must keep aggregate per-hand contact and visual state.'
+Require-Text 'src/physics-interaction/hand/DynamicHandCollisionTelemetry.h' `
+    'bool targetVelocityValid' `
+    'Dynamic hand telemetry must distinguish a stationary target from an unavailable velocity sample.'
+
+# Haptics are generated from real post-solve contact entry, consumed under
+# stronger ownership, and delivered through the shared main-thread mixer.
+Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
+    'samplePostSolveDeviations\(',
+    'contactEntrySequenceAtomic\.fetch_add'
+) 'Dynamic hand contact entry must be published by the post-solve physics phase.'
+Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
+    'updateHandHaptic\(' `
+    'Dynamic hand contact entry must be consumed by the main-frame haptic policy.'
+Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @(
+    '_dynamicHandCollision\.updateFrame\(',
+    '_dynamicHandCollision\.consumeHapticEvents\(\)',
+    '_feedbackHaptics\.queue\(',
+    'updateFeedbackHaptics\(frame\.deltaSeconds\);'
+) 'Dynamic hand haptics must flow through the shared main-thread FeedbackHaptics queue.'
+Reject-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
+    'VRControllers\.triggerHaptic' `
+    'Dynamic hand collision must never trigger controller haptics from its runtime or physics callbacks.'
+
+# Debug visualization must consume the same telemetry snapshot intended for a
+# later API adapter, rather than re-reading live bodies through a second path.
+Require-OrderedText 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' @(
+    'if \(drawDynamicHandColliders\)',
+    'getTelemetrySnapshot\(telemetry\)',
+    'requestedGapGameUnits',
+    'approachSpeedGameUnitsPerSecond'
+) 'Dynamic hand overlay must visualize the canonical collision telemetry snapshot.'
+
+# Profiling distinguishes frame work, pre-collide drive, and post-solve reads.
+Require-Text 'src/physics-interaction/performance/PerformanceProfiler.h' `
+    'DynamicHandCollisionFrame' `
+    'Dynamic hand main-frame work must have a dedicated profiler scope.'
+Require-Text 'src/physics-interaction/performance/PerformanceProfiler.h' `
+    'DynamicHandCollisionPhysicsDrive' `
+    'Dynamic hand physics drive must have a dedicated profiler scope.'
+Require-Text 'src/physics-interaction/performance/PerformanceProfiler.h' `
+    'DynamicHandCollisionPostSolve' `
+    'Dynamic hand post-solve sampling must have a dedicated profiler scope.'
+
+# Every shipped/current config carries the new-mode haptic controls; legacy
+# soft-contact haptic keys remain until the subsequent cleanup task.
+foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
+    Require-Text $configPath `
+        'bHandCollisionDynamicHapticsEnabled\s*=\s*true' `
+        "$configPath must ship the dynamic hand haptic enable key."
+    Require-Text $configPath `
+        'fHandCollisionDynamicHapticMinApproachSpeedGameUnitsPerSecond' `
+        "$configPath must document the dynamic hand haptic speed units."
+}
+
 # Deviation is a two-stage POST-SOLVE measurement against the same substep's
 # targets: the residual vs the COMMANDED (velocity-limited) target detects
 # contact, and only in contact is the render deviation published, measured vs

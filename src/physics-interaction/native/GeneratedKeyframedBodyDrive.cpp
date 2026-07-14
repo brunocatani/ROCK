@@ -499,6 +499,8 @@ namespace rock
         result.sourceAgeSeconds = state.secondsSinceSourceSample;
         result.sourceStale = generated_keyframed_body_drive_math::sourceIsStale(state.secondsSinceSourceSample);
         result.stepsWithoutSource = state.stepsWithoutSource;
+        result.hasSampledTargetLinearVelocityHavok = state.hasSampledLinearVelocityHavok;
+        result.sampledTargetLinearVelocityHavok = state.sampledLinearVelocityHavok;
 
         if (result.sourceStale) {
             result.skippedStale = true;

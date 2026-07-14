@@ -228,6 +228,13 @@ namespace rock
         rockHandCollisionDynamicRenderFollowMinDeviationGameUnits = 0.05f;
         rockHandCollisionDynamicRenderFollowSmoothingSpeed = 45.0f;
         rockHandCollisionDynamicVisualPriority = 80;
+        rockHandCollisionDynamicHapticsEnabled = true;
+        rockHandCollisionDynamicHapticDurationSeconds = 0.035f;
+        rockHandCollisionDynamicHapticBaseIntensity = 0.18f;
+        rockHandCollisionDynamicHapticMaxIntensity = 0.55f;
+        rockHandCollisionDynamicHapticSpeedScale = 0.006f;
+        rockHandCollisionDynamicHapticMinApproachSpeedGameUnitsPerSecond = 3.0f;
+        rockHandCollisionDynamicHapticCooldownSeconds = 0.12f;
 
         rockSoftContactWorldEnabled = true;
         rockSoftContactVisualPriority = 80;
@@ -1083,6 +1090,50 @@ namespace rock
             240.0f);
         rockHandCollisionDynamicVisualPriority = static_cast<int>(ini.GetLongValue(SECTION, "iHandCollisionDynamicVisualPriority", rockHandCollisionDynamicVisualPriority));
         rockHandCollisionDynamicVisualPriority = std::clamp(rockHandCollisionDynamicVisualPriority, 0, 99);
+        rockHandCollisionDynamicHapticsEnabled =
+            ini.GetBoolValue(SECTION, "bHandCollisionDynamicHapticsEnabled", rockHandCollisionDynamicHapticsEnabled);
+        rockHandCollisionDynamicHapticDurationSeconds = readClampedFloat(ini,
+            SECTION,
+            "fHandCollisionDynamicHapticDurationSeconds",
+            rockHandCollisionDynamicHapticDurationSeconds,
+            0.035f,
+            0.0f,
+            0.2f);
+        rockHandCollisionDynamicHapticBaseIntensity = readClampedFloat(ini,
+            SECTION,
+            "fHandCollisionDynamicHapticBaseIntensity",
+            rockHandCollisionDynamicHapticBaseIntensity,
+            0.18f,
+            0.0f,
+            1.0f);
+        rockHandCollisionDynamicHapticMaxIntensity = readClampedFloat(ini,
+            SECTION,
+            "fHandCollisionDynamicHapticMaxIntensity",
+            rockHandCollisionDynamicHapticMaxIntensity,
+            0.55f,
+            rockHandCollisionDynamicHapticBaseIntensity,
+            1.0f);
+        rockHandCollisionDynamicHapticSpeedScale = readClampedFloat(ini,
+            SECTION,
+            "fHandCollisionDynamicHapticSpeedScale",
+            rockHandCollisionDynamicHapticSpeedScale,
+            0.006f,
+            0.0f,
+            1.0f);
+        rockHandCollisionDynamicHapticMinApproachSpeedGameUnitsPerSecond = readClampedFloat(ini,
+            SECTION,
+            "fHandCollisionDynamicHapticMinApproachSpeedGameUnitsPerSecond",
+            rockHandCollisionDynamicHapticMinApproachSpeedGameUnitsPerSecond,
+            3.0f,
+            0.0f,
+            5000.0f);
+        rockHandCollisionDynamicHapticCooldownSeconds = readClampedFloat(ini,
+            SECTION,
+            "fHandCollisionDynamicHapticCooldownSeconds",
+            rockHandCollisionDynamicHapticCooldownSeconds,
+            0.12f,
+            0.0f,
+            5.0f);
 
         rockSoftContactWorldEnabled = ini.GetBoolValue(SECTION, "bSoftContactWorldEnabled", rockSoftContactWorldEnabled);
         rockSoftContactVisualPriority = static_cast<int>(ini.GetLongValue(SECTION, "iSoftContactVisualPriority", rockSoftContactVisualPriority));

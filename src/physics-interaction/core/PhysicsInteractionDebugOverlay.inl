@@ -197,9 +197,9 @@
         frame.drawMarkers =
             drawGrabPivots || drawFingerProbes || drawPalmVectors || drawGrabPockets || drawRootFlattenedFingerSkeleton || drawGrabPocketNormal || drawGrabContactPatch ||
             drawGrabForceTorque || drawHandBoneContacts || drawSoftContacts || drawGrabAuthorityProxy || drawGrabTransformTelemetryAxes || drawWeaponAuthorityDebug ||
-            drawGrabSupportFrame || drawWorldOriginDiagnostics;
+            drawGrabSupportFrame || drawWorldOriginDiagnostics || drawDynamicHandColliders;
         frame.drawSkeleton = drawSkeletonBones;
-        frame.drawText = drawGrabTransformTelemetryText || drawGrabForceTorqueText || drawPerformanceProfilerOverlay || drawSoftContacts;
+        frame.drawText = drawGrabTransformTelemetryText || drawGrabForceTorqueText || drawPerformanceProfilerOverlay || drawSoftContacts || drawDynamicHandColliders;
         RE::bhkWorld* originDiagnosticBhk = drawWorldOriginDiagnostics ? context.bhkWorld : nullptr;
         const bool rightDisabled = context.right.disabled;
         const bool leftDisabled = context.left.disabled;
@@ -2004,6 +2004,64 @@
                 for (std::size_t twinIndex = 0; twinIndex < DynamicHandCollisionRuntime::kBodiesPerHand; ++twinIndex) {
                     addBody(_dynamicHandCollision.proxyBodyIdForDebug(false, twinIndex), debug::BodyOverlayRole::RightHand);
                     addBody(_dynamicHandCollision.proxyBodyIdForDebug(true, twinIndex), debug::BodyOverlayRole::LeftHand);
+                }
+
+                dynamic_hand_collision_telemetry::Snapshot telemetry{};
+                if (_dynamicHandCollision.getTelemetrySnapshot(telemetry)) {
+                    for (const auto& handSample : telemetry.hands) {
+                        const auto& handInput = handSample.isLeft ? context.left : context.right;
+                        const float handColor[4]{
+                            handSample.isLeft ? 0.35f : 0.95f,
+                            handSample.isLeft ? 0.82f : 0.52f,
+                            1.0f,
+                            0.96f,
+                        };
+                        RE::NiPoint3 labelAnchor = handInput.rawHandWorld.translate;
+                        labelAnchor.z += 7.0f;
+                        addTextLineSized(labelAnchor,
+                            2.0f,
+                            handColor,
+                            "DHC %s C=%02X N=%u DEV=%.2f VIS=%.2f %s%s",
+                            handSample.isLeft ? "L" : "R",
+                            static_cast<unsigned int>(handSample.contactMask),
+                            handSample.contactCount,
+                            handSample.combinedContactDeviationGameUnits,
+                            handSample.appliedVisualDeviationGameUnits,
+                            handSample.visualActive ? "ACTIVE" : "IDLE",
+                            handSample.ownedByStrongerSystem ? " OWNED" : "");
+                        labelAnchor.z -= 3.0f;
+                        addTextLineSized(labelAnchor,
+                            1.7f,
+                            handColor,
+                            "ENTRY=%llu MASK=%02X SPEED=%.1f REC=%.3f",
+                            static_cast<unsigned long long>(handSample.contactEntrySequence),
+                            static_cast<unsigned int>(handSample.entryContactMask),
+                            handSample.contactEntryApproachSpeedGameUnitsPerSecond,
+                            handSample.teleportRecoverySecondsRemaining);
+
+                        const auto requestedRole = handSample.isLeft ?
+                            debug::MarkerOverlayRole::LeftDynamicHandRequestedDeviation :
+                            debug::MarkerOverlayRole::RightDynamicHandRequestedDeviation;
+                        const auto residualRole = handSample.isLeft ?
+                            debug::MarkerOverlayRole::LeftDynamicHandSolverResidual :
+                            debug::MarkerOverlayRole::RightDynamicHandSolverResidual;
+                        for (const auto& twin : handSample.twins) {
+                            if (!twin.physicsSampleValid || !twin.contactActive) {
+                                continue;
+                            }
+                            addMarkerLine(requestedRole, twin.requestedTargetWorldGame, twin.liveBodyWorldGame);
+                            addMarkerLine(residualRole, twin.commandedTargetWorldGame, twin.liveBodyWorldGame);
+                            addTextLineSized(twin.liveBodyWorldGame,
+                                1.45f,
+                                handColor,
+                                "%s %s RES=%.2f GAP=%.2f V=%.1f",
+                                handSample.isLeft ? "L" : "R",
+                                dynamic_hand_collision_telemetry::roleCode(twin.role),
+                                twin.solverResidualGameUnits,
+                                twin.requestedGapGameUnits,
+                                twin.approachSpeedGameUnitsPerSecond);
+                        }
+                    }
                 }
             }
 

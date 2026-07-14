@@ -3130,7 +3130,6 @@ namespace rock
         // After grab input so a bridge started by this frame's equip gets its
         // first pose write before rendering instead of one frame late.
         _equipVisualBridge.update(frame.deltaSeconds);
-        updateFeedbackHaptics(frame.deltaSeconds);
         updateHeldMassMovementSlowdown(hknp, frame.deltaSeconds);
         synchronizeContactEvidenceOwnership(rightHandWeaponAuthorityActive, leftSupportGripActive, rightPartGripActive);
 
@@ -3157,6 +3156,16 @@ namespace rock
             _leftHand,
             rightHandWeaponAuthorityActive,
             leftSupportGripActive);
+        const auto dynamicHandHapticEvents = _dynamicHandCollision.consumeHapticEvents();
+        for (const auto& pulse : dynamicHandHapticEvents.hands) {
+            if (!pulse.fire) {
+                continue;
+            }
+            (void)_feedbackHaptics.queue(
+                pulse.isLeft ? feedback_haptics::FeedbackHand::Left : feedback_haptics::FeedbackHand::Right,
+                g_rockConfig.rockHandCollisionDynamicHapticDurationSeconds,
+                pulse.intensity);
+        }
         if (g_rockConfig.rockHandCollisionDynamicDrive) {
             if (!_softContactSuppressedByDynamicDrive) {
                 _softContactRuntime.reset();
@@ -3172,6 +3181,7 @@ namespace rock
                 leftSupportGripActive,
                 nativeContactEvidence);
         }
+        updateFeedbackHaptics(frame.deltaSeconds);
 
         publishDebugBodyOverlay(frame);
 

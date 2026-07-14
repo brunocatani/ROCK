@@ -219,7 +219,11 @@ namespace rock::debug
         RightWorldSoftContact,
         LeftWorldSoftContact,
         RightWorldSoftContactCorrection,
-        LeftWorldSoftContactCorrection
+        LeftWorldSoftContactCorrection,
+        RightDynamicHandRequestedDeviation,
+        LeftDynamicHandRequestedDeviation,
+        RightDynamicHandSolverResidual,
+        LeftDynamicHandSolverResidual
     };
 
     enum class SkeletonOverlayRole : std::uint8_t
