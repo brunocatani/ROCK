@@ -159,7 +159,6 @@
         const bool drawGrabPivotSourceEvidence = drawGrabForceTorque && g_rockConfig.rockDebugDrawGrabPivotSourceEvidence;
         const bool drawGrabSupportFrame = g_rockConfig.rockDebugDrawGrabSupportFrame;
         const bool drawHandBoneContacts = g_rockConfig.rockDebugDrawHandBoneContacts;
-        const bool drawSoftContacts = g_rockConfig.rockDebugDrawSoftContacts;
         const bool drawGrabAuthorityProxy = g_rockConfig.rockDebugDrawGrabAuthorityProxy;
         const bool drawDynamicHandColliders = g_rockConfig.rockDebugDrawDynamicHandColliders;
         const bool drawGrabTransformTelemetry = g_rockConfig.rockDebugGrabTransformTelemetry;
@@ -180,7 +179,7 @@
         }
         if (!drawRockColliderBodies && !g_rockConfig.rockDebugShowTargetColliders && !g_rockConfig.rockDebugShowHandAxes && !drawGrabPivots && !drawFingerProbes &&
             !drawPalmVectors && !drawGrabPockets && !drawRootFlattenedFingerSkeleton && !drawSkeletonBones && !drawGrabPocketNormal && !drawGrabContactPatch && !drawHandBoneContacts &&
-            !drawSoftContacts && !drawGrabAuthorityProxy && !drawGrabForceTorque && !drawGrabTransformTelemetry && !drawPerformanceProfilerOverlay && !drawWeaponAuthorityDebug &&
+            !drawGrabAuthorityProxy && !drawGrabForceTorque && !drawGrabTransformTelemetry && !drawPerformanceProfilerOverlay && !drawWeaponAuthorityDebug &&
             !drawGrabSupportFrame && !drawWorldOriginDiagnostics && !drawCustomCalibrationOffset && !drawDynamicHandColliders) {
             debug::ClearFrame();
             return;
@@ -196,10 +195,10 @@
             drawCustomCalibrationOffset;
         frame.drawMarkers =
             drawGrabPivots || drawFingerProbes || drawPalmVectors || drawGrabPockets || drawRootFlattenedFingerSkeleton || drawGrabPocketNormal || drawGrabContactPatch ||
-            drawGrabForceTorque || drawHandBoneContacts || drawSoftContacts || drawGrabAuthorityProxy || drawGrabTransformTelemetryAxes || drawWeaponAuthorityDebug ||
+            drawGrabForceTorque || drawHandBoneContacts || drawGrabAuthorityProxy || drawGrabTransformTelemetryAxes || drawWeaponAuthorityDebug ||
             drawGrabSupportFrame || drawWorldOriginDiagnostics || drawDynamicHandColliders;
         frame.drawSkeleton = drawSkeletonBones;
-        frame.drawText = drawGrabTransformTelemetryText || drawGrabForceTorqueText || drawPerformanceProfilerOverlay || drawSoftContacts || drawDynamicHandColliders;
+        frame.drawText = drawGrabTransformTelemetryText || drawGrabForceTorqueText || drawPerformanceProfilerOverlay || drawDynamicHandColliders;
         RE::bhkWorld* originDiagnosticBhk = drawWorldOriginDiagnostics ? context.bhkWorld : nullptr;
         const bool rightDisabled = context.right.disabled;
         const bool leftDisabled = context.left.disabled;
@@ -1121,46 +1120,6 @@
 
             addSemanticContactDebug(_rightHand);
             addSemanticContactDebug(_leftHand);
-        }
-
-        if (drawSoftContacts) {
-            const float softContactLabelColor[4]{ 0.82f, 0.96f, 1.0f, 0.88f };
-            auto softContactSourceName = [](SoftContactDebugSource source) {
-                switch (source) {
-                case SoftContactDebugSource::NativeWorld:
-                    return "native";
-                case SoftContactDebugSource::CachedWorldPlane:
-                    return "cached";
-                case SoftContactDebugSource::QueryWorld:
-                    return "query";
-                default:
-                    return "unknown";
-                }
-            };
-
-            SoftContactDebugSnapshot snapshot{};
-            if (_softContactRuntime.getDebugSnapshot(snapshot)) {
-                for (std::uint32_t i = 0; i < snapshot.contactCount && i < snapshot.contacts.size(); ++i) {
-                    const auto& contact = snapshot.contacts[i];
-                    if (!contact.valid) {
-                        continue;
-                    }
-
-                    const auto contactRole = contact.isLeft ? debug::MarkerOverlayRole::LeftWorldSoftContact : debug::MarkerOverlayRole::RightWorldSoftContact;
-                    const auto correctionRole =
-                        contact.isLeft ? debug::MarkerOverlayRole::LeftWorldSoftContactCorrection : debug::MarkerOverlayRole::RightWorldSoftContactCorrection;
-                    addMarkerRay(contactRole, contact.point, contact.normalEnd, contact.suppressed ? 1.6f : 2.4f);
-                    if (!contact.suppressed) {
-                        addMarkerLine(correctionRole, contact.point, contact.correctionEnd);
-                    }
-                    addTextLineSized(contact.point, 2.0f, softContactLabelColor,
-                        "soft world %s layer=%u pen=%.2f corr=%.2f",
-                        softContactSourceName(contact.source),
-                        contact.targetLayer,
-                        contact.penetration,
-                        contact.correctionLength);
-                }
-            }
         }
 
         if (drawWeaponAuthorityDebug) {

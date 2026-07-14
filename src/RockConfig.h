@@ -168,12 +168,11 @@ namespace rock
         float rockWeaponSupportGripHandLerpMaxDistance = 14.0f;
 
         /*
-         * Soft-collision overhaul stage A: dynamic velocity-driven hand proxy
-         * bodies replace the probe/cast visual stop while enabled. Mutually
-         * exclusive with soft contact — when this flag is on, the soft-contact
-         * runtime is reset and skipped (single visual authority).
+         * Canonical free-hand world collision: dynamic palm/fingertip proxy
+         * bodies are solver-clipped by static world surfaces and drive the
+         * rendered hand through one-way visual authority.
          */
-        bool rockHandCollisionDynamicDrive = false;
+        bool rockHandCollisionDynamicDrive = true;
         float rockHandCollisionDynamicMaxLinearVelocityHavok = 15.0f;
         float rockHandCollisionDynamicContactPressMaxVelocityHavok = 1.0f;
         float rockHandCollisionDynamicDivergenceTeleportGameUnits = 40.0f;
@@ -189,29 +188,6 @@ namespace rock
         float rockHandCollisionDynamicHapticSpeedScale = 0.006f;
         float rockHandCollisionDynamicHapticMinApproachSpeedGameUnitsPerSecond = 3.0f;
         float rockHandCollisionDynamicHapticCooldownSeconds = 0.12f;
-
-        bool rockSoftContactWorldEnabled = true;
-        int rockSoftContactVisualPriority = 80;
-        float rockSoftContactWorldRadiusPaddingGameUnits = 1.5f;
-        float rockSoftContactWorldContactPaddingGameUnits = 0.35f;
-        float rockSoftContactWorldSkinGameUnits = 0.5f;
-        float rockSoftContactWorldPostReleaseReentryMinApproachDistanceGameUnits = 0.025f;
-        float rockSoftContactWorldCachedPlaneMaxTangentDriftGameUnits = 10.0f;
-        float rockSoftContactWorldCachedPlaneMaxClearDistanceGameUnits = 18.0f;
-        float rockSoftContactWorldMaxCorrectionGameUnits = 18.0f;
-        bool rockSoftContactWorldReleaseLerpEnabled = true;
-        float rockSoftContactWorldReleaseLerpTimeMin = 0.06f;
-        float rockSoftContactWorldReleaseLerpTimeMax = 0.12f;
-        float rockSoftContactWorldReleaseLerpMinDistance = 0.5f;
-        float rockSoftContactWorldReleaseLerpMaxDistance = 18.0f;
-        std::uint32_t rockSoftContactWorldShapeCastFilterInfo = selection_query_policy::kDefaultShapeCastFilterInfo;
-        bool rockSoftContactWorldHapticsEnabled = true;
-        float rockSoftContactWorldHapticDurationSeconds = 0.035f;
-        float rockSoftContactWorldHapticBaseIntensity = 0.18f;
-        float rockSoftContactWorldHapticMaxIntensity = 0.55f;
-        float rockSoftContactWorldHapticSpeedScale = 0.006f;
-        float rockSoftContactWorldHapticMinApproachSpeedGameUnits = 3.0f;
-        float rockSoftContactWorldHapticCooldownSeconds = 0.12f;
 
         bool rockNativeMeleeSuppressionEnabled = true;
         bool rockNativeMeleeFullSuppression = true;
@@ -246,7 +222,6 @@ namespace rock
         bool rockDebugDrawHandBoneColliders = false;
         bool rockDebugDrawDynamicHandColliders = false;
         bool rockDebugDrawHandBoneContacts = false;
-        bool rockDebugDrawSoftContacts = false;
         bool rockDebugDrawGrabAuthorityProxy = false;
         int rockDebugMaxHandBoneBodiesDrawn = 48;
         int rockDebugMaxBodyBoneBodiesDrawn = 32;
@@ -257,8 +232,6 @@ namespace rock
         int rockDebugMaxShapeGenerationsPerFrame = 100;
         int rockDebugMaxConvexSupportVertices = 6;
         bool rockDebugUseBoundsForHeavyConvex = true;
-        bool rockDebugContactTargetIdentityLogging = false;
-        int rockDebugContactTargetIdentitySampleMilliseconds = 500;
         bool rockDebugVerboseLogging = false;
         bool rockDebugGrabFrameLogging = false;
         bool rockDebugGrabFingerPoseLogging = false;

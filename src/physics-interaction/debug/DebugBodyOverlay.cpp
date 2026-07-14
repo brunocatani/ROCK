@@ -2167,20 +2167,6 @@ float4 main(PS_INPUT input) : SV_Target {
                 color[2] = 0.20f;
                 color[3] = 0.95f;
                 break;
-            case MarkerOverlayRole::RightWorldSoftContact:
-            case MarkerOverlayRole::LeftWorldSoftContact:
-                color[0] = 0.35f;
-                color[1] = 0.75f;
-                color[2] = 1.0f;
-                color[3] = 0.98f;
-                break;
-            case MarkerOverlayRole::RightWorldSoftContactCorrection:
-            case MarkerOverlayRole::LeftWorldSoftContactCorrection:
-                color[0] = 1.0f;
-                color[1] = 0.96f;
-                color[2] = 0.18f;
-                color[3] = 0.98f;
-                break;
             case MarkerOverlayRole::RightDynamicHandRequestedDeviation:
             case MarkerOverlayRole::LeftDynamicHandRequestedDeviation:
                 color[0] = 1.0f;

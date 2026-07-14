@@ -70,8 +70,7 @@ function Reject-Text {
     }
 }
 
-# Stage A of the soft-collision overhaul: dynamic velocity-driven hand proxies.
-# See Docs/ROCK/docs/2026-07-13-soft-collision-overhaul-roadmap.md §8.
+# Canonical free-hand world collision uses dynamic velocity-driven proxies.
 
 # Live-world teardown must use deferred retirement (2026-07-08 UAF lesson).
 Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
@@ -163,15 +162,20 @@ Require-Text 'src/physics-interaction/performance/PerformanceProfiler.h' `
     'DynamicHandCollisionPostSolve' `
     'Dynamic hand post-solve sampling must have a dedicated profiler scope.'
 
-# Every shipped/current config carries the new-mode haptic controls; legacy
-# soft-contact haptic keys remain until the subsequent cleanup task.
+# Every shipped config enables the canonical runtime and carries its haptics.
 foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
+    Require-Text $configPath `
+        'bHandCollisionDynamicDrive\s*=\s*true' `
+        "$configPath must enable canonical dynamic world collision by default."
     Require-Text $configPath `
         'bHandCollisionDynamicHapticsEnabled\s*=\s*true' `
         "$configPath must ship the dynamic hand haptic enable key."
     Require-Text $configPath `
         'fHandCollisionDynamicHapticMinApproachSpeedGameUnitsPerSecond' `
         "$configPath must document the dynamic hand haptic speed units."
+    Reject-Text $configPath `
+        'SoftContact|ContactTargetIdentity' `
+        "$configPath must not retain legacy soft-contact or target-identity keys."
 }
 
 # Deviation is a two-stage POST-SOLVE measurement against the same substep's
@@ -236,14 +240,27 @@ Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'ownedByStrongerSystem'
 ) 'Dynamic hand drive must queue the wand target before evaluating visual ownership gates.'
 
-# Mutual exclusion: while the dynamic drive is enabled, the soft-contact
-# runtime is reset once and skipped so exactly one system owns hand visuals.
-Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @(
-    '_dynamicHandCollision\.updateFrame\(',
-    'if \(g_rockConfig\.rockHandCollisionDynamicDrive\)',
-    '_softContactRuntime\.reset\(\);',
-    '_softContactRuntime\.update\('
-) 'Dynamic hand drive and soft contact must stay mutually exclusive visual authorities.'
+# Dynamic collision is the only free-hand world-collision implementation.
+Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'SoftContactRuntime|_softContactRuntime|NativeContactEvidence' `
+    'PhysicsInteraction must not retain a legacy soft-contact fallback or evidence cache.'
+Reject-Text 'CMakeLists.txt' `
+    'ROCKSoftContact|SoftContactWorld' `
+    'The build must not register legacy soft-contact tests or targets.'
+foreach ($legacyPath in @(
+        'src/physics-interaction/contact/SoftContactMath.h',
+        'src/physics-interaction/contact/SoftContactRuntime.cpp',
+        'src/physics-interaction/contact/SoftContactRuntime.h',
+        'src/physics-interaction/contact/SoftContactWorldPolicy.h',
+        'src/physics-interaction/contact/NativeContactEvidence.h',
+        'src/physics-interaction/contact/ContactTargetIdentity.cpp',
+        'src/physics-interaction/contact/ContactTargetIdentity.h',
+        'tests/SoftContactWorldOnlySourceTests.ps1',
+        'tests/SoftContactWorldPolicyTests.cpp')) {
+    if (Test-Path -LiteralPath (Join-Path $Root $legacyPath)) {
+        $failures.Add("Legacy soft-contact file must be deleted: $legacyPath")
+    }
+}
 
 # Existing keyframed callers must keep their behavior: the drive-mode parameter
 # stays defaulted to keyframe placement.

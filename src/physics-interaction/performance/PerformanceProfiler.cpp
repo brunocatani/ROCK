@@ -101,8 +101,6 @@ namespace rock::performance_profiler
                 return "supportGripSuppression";
             case Scope::SelectionCasts:
                 return "selectionCasts";
-            case Scope::SoftContact:
-                return "softContact";
             case Scope::DynamicHandCollisionFrame:
                 return "dynamicHandFrame";
             case Scope::DynamicHandCollisionPhysicsDrive:

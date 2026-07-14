@@ -22,9 +22,8 @@ namespace rock
     struct HandFrameInput;
 
     /*
-     * Soft-collision overhaul stage A (Docs/ROCK/docs/2026-07-13-soft-collision-
-     * overhaul-roadmap.md §8): DYNAMIC twins of the palm anchor and the five
-     * fingertip colliders chase their published role frames with engine
+     * Dynamic world collision uses DYNAMIC twins of the palm anchor and the
+     * five fingertip colliders. They chase their published role frames with engine
      * hard-keyframe velocities every physics substep, on the world-only
      * extended layer. Static world clips their velocity inside the solver
      * (true multi-plane contact); the rendered FRIK hand follows the COMBINED

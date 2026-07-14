@@ -1808,8 +1808,6 @@ namespace rock
         _hasPrevPositions = false;
         _deltaLogCounter = 0;
         _contactLogCounter = 0;
-        _softContactRuntime.reset();
-        _nativeContactEvidence.reset();
         _bodyContactRuntime.reset();
         _dynamicPushElapsedSeconds = 0.0f;
         _dynamicPushCooldownUntil.clear();
@@ -1917,8 +1915,6 @@ namespace rock
                         restoreHandCollisionAfterWeaponSupport(hknpMenu, false);
                         restoreHandCollisionAfterEquippedWeaponDrop(hknpMenu, false);
                         restoreHandCollisionAfterEquippedWeaponDrop(hknpMenu, true);
-                        _softContactRuntime.reset();
-                        _nativeContactEvidence.reset();
                         if (_rightHand.isHolding()) {
                             auto* r = _rightHand.getHeldRef();
                             _rightHand.releaseGrabbedObject(hknpMenu, GrabReleaseCollisionRestoreMode::Delayed, makeGrabReleaseContext(_rightHand, false));
@@ -1940,8 +1936,6 @@ namespace rock
                     hand_collision_suppression_math::clear(_leftWeaponSupportCollisionSuppression);
                     hand_collision_suppression_math::clear(_rightWeaponSupportCollisionSuppression);
                     clearEquippedWeaponPostDropCollisionSuppressionState();
-                    _softContactRuntime.reset();
-                    _nativeContactEvidence.reset();
                 }
             }
             debug::ClearFrame();
@@ -2000,8 +1994,6 @@ namespace rock
             _twoHandedGrip.reset();
             _pendingEquippedWeaponPrimaryOnlyGripStart = {};
             clearEquippedWeaponPrimaryInputState();
-            _softContactRuntime.reset();
-            _nativeContactEvidence.reset();
             debug::ClearFrame();
             restoreHeldMassMovementSlowdown("world-unavailable");
             _shoulderStashStates = {};
@@ -2042,8 +2034,6 @@ namespace rock
             _twoHandedGrip.reset();
             _pendingEquippedWeaponPrimaryOnlyGripStart = {};
             clearEquippedWeaponPrimaryInputState();
-            _softContactRuntime.reset();
-            _nativeContactEvidence.reset();
             _bodyContactRuntime.reset();
             clearLeftWeaponContact();
             clearRightWeaponContact();
@@ -3134,20 +3124,9 @@ namespace rock
         synchronizeContactEvidenceOwnership(rightHandWeaponAuthorityActive, leftSupportGripActive, rightPartGripActive);
 
         /*
-         * Soft contact is intentionally evaluated after normal grab input. A
-         * free-hand touch is visual-only; a grab, pull, support grip, or weapon
-         * owner is transform authority. Running this after updateGrabInput lets
-         * the solver see the final owner state for the frame, while explicit
-         * pre-grab clears below prevent stale lower-priority FRIK hand targets
-         * from surviving into grab-frame capture.
-         */
-        contact_evidence::NativeContactEvidenceSnapshot nativeContactEvidence{};
-        _nativeContactEvidence.snapshot(nativeContactEvidence, _handContactActivity.currentFrame());
-        /*
-         * Dynamic hand collision (stage A) and soft contact are mutually
-         * exclusive visual authorities over the free hand. While the dynamic
-         * drive is enabled the soft-contact runtime is reset once and skipped,
-         * so exactly one system publishes external hand transforms.
+         * Dynamic hand collision runs after normal grab input so the final
+         * grab, pull, support-grip, or weapon owner for this frame can gate its
+         * lower-priority visual authority without delaying proxy tracking.
          */
         _dynamicHandCollision.updateFrame(
             frame,
@@ -3165,21 +3144,6 @@ namespace rock
                 pulse.isLeft ? feedback_haptics::FeedbackHand::Left : feedback_haptics::FeedbackHand::Right,
                 g_rockConfig.rockHandCollisionDynamicHapticDurationSeconds,
                 pulse.intensity);
-        }
-        if (g_rockConfig.rockHandCollisionDynamicDrive) {
-            if (!_softContactSuppressedByDynamicDrive) {
-                _softContactRuntime.reset();
-                _softContactSuppressedByDynamicDrive = true;
-            }
-        } else {
-            _softContactSuppressedByDynamicDrive = false;
-            _softContactRuntime.update(
-                frame,
-                _rightHand,
-                _leftHand,
-                rightHandWeaponAuthorityActive,
-                leftSupportGripActive,
-                nativeContactEvidence);
         }
         updateFeedbackHaptics(frame.deltaSeconds);
 
@@ -3263,22 +3227,12 @@ namespace rock
                (isLeft && _leftWeaponSupportCollisionSuppressed.load(std::memory_order_acquire));
     }
 
-    void PhysicsInteraction::clearContactEvidenceForHand(bool isLeft, const char* reason)
+    void PhysicsInteraction::clearContactEvidenceForHand(bool isLeft)
     {
         if (isLeft) {
             _leftHand.clearSemanticContactEvidence();
         } else {
             _rightHand.clearSemanticContactEvidence();
-        }
-
-        const std::uint32_t invalidatedNative = _nativeContactEvidence.invalidateHand(isLeft);
-        if (invalidatedNative > 0) {
-            ROCK_LOG_SAMPLE_DEBUG(Hand,
-                g_rockConfig.rockLogSampleMilliseconds,
-                "{} hand contact evidence invalidated for stronger owner ({}) nativeRecords={}",
-                isLeft ? "Left" : "Right",
-                reason ? reason : "unknown",
-                invalidatedNative);
         }
     }
 
@@ -3286,19 +3240,18 @@ namespace rock
     {
         /*
          * ROCK disables generated hand collision when a grab or two-hand/tool
-         * owner has the hand. Callback records can still arrive from the hknp
-         * step boundary, so producer caches must be invalidated at the same
-         * authority transition before the visual solver snapshots them.
+         * owner has the hand. Clear semantic contact state at the same
+         * authority transition so callbacks cannot leave a stale touch owner.
          */
         if (_rightHand.hasContactEvidenceSuppressedAtomic() || rightHandWeaponAuthorityActive || rightPartGripActive ||
             _rightDominantWeaponCollisionSuppressed.load(std::memory_order_acquire) ||
             _rightWeaponSupportCollisionSuppressed.load(std::memory_order_acquire)) {
-            clearContactEvidenceForHand(false, rightHandWeaponAuthorityActive ? "right-hand-weapon-authority" : "right-hand-grab-owner");
+            clearContactEvidenceForHand(false);
         }
 
         if (_leftHand.hasContactEvidenceSuppressedAtomic() || leftSupportGripActive ||
             _leftWeaponSupportCollisionSuppressed.load(std::memory_order_acquire)) {
-            clearContactEvidenceForHand(true, leftSupportGripActive ? "equipped-weapon-support-grip" : "left-hand-grab-owner");
+            clearContactEvidenceForHand(true);
         }
     }
 
@@ -3308,10 +3261,9 @@ namespace rock
          * The equipped gun already owns the dominant-hand pose and weapon aim.
          * Letting the generated right-hand bodies keep colliding while that
          * authority is active creates a second physical owner: stale hand
-         * contacts can push props, feed semantic touch, or leak native evidence
-         * even though visual soft contact is suppressed. ROCK treats owned tool
-         * states as collision-filter ownership, so it uses the shared suppression
-         * lease here instead of a visual-only gate.
+         * contacts can push props or feed semantic touch. ROCK treats owned
+         * tool states as collision-filter ownership, so it uses the shared
+         * suppression lease here instead of a visual-only gate.
          */
         _rightDominantWeaponCollisionSuppressed.store(true, std::memory_order_release);
 
@@ -3810,7 +3762,6 @@ namespace rock
         clearPendingForceGrabCommitsForOrigin(PendingForceGrabCommitOrigin::ProviderForceGrabCommand);
         clearLooseGrenadeRuntimeState(true);
         clearEquippedWeaponPrimaryInputState();
-        _softContactRuntime.reset();
         _bodyContactRuntime.reset();
         _shoulderStashStates = {};
         _mouthConsumeStates = {};
@@ -3874,7 +3825,6 @@ namespace rock
         _lastHeldImpactPairRight.store(INVALID_HELD_IMPACT_PAIR, std::memory_order_release);
         _lastHeldImpactPairLeft.store(INVALID_HELD_IMPACT_PAIR, std::memory_order_release);
         _handContactActivity.reset();
-        _nativeContactEvidence.reset();
         _bodyContactRuntime.reset();
         hand_collision_suppression_math::clear(_rightDominantWeaponCollisionSuppression);
         hand_collision_suppression_math::clear(_leftWeaponSupportCollisionSuppression);
@@ -5333,8 +5283,6 @@ namespace rock
             commit.phase = PendingForceGrabCommitPhase::AcquireAndCommitExactTarget;
 
             const auto sharedContext = makeGrabSharedObjectContext(hand, commit.isLeft);
-            _softContactRuntime.clearHandForStrongerOwner(commit.isLeft,
-                commit.origin == PendingForceGrabCommitOrigin::LooseGrenadeMenuEquip ? "loose-grenade-menu-force-grab" : "provider-force-grab");
             const bool grabbed = hand.grabSelectedObject(frame.hknpWorld,
                 handInput.rawHandWorld,
                 g_rockConfig.rockGrabLinearTau,
@@ -7247,7 +7195,6 @@ namespace rock
                 cancelPeerHeldJoinRetry("force-grab-committed-this-frame", true);
                 autoEquipState = {};
                 clearGameplayCandidatesForHand(hand, isLeft);
-                _softContactRuntime.clearHandForStrongerOwner(isLeft, "force-grab-committed-this-frame");
                 return;
             }
             if (_pendingForceGrabCommits[handIndex].active) {
@@ -7255,7 +7202,6 @@ namespace rock
                 cancelPeerHeldJoinRetry("pending-force-grab-reservation", true);
                 autoEquipState = {};
                 clearGameplayCandidatesForHand(hand, isLeft);
-                _softContactRuntime.clearHandForStrongerOwner(isLeft, "pending-force-grab-reservation");
                 if (hand.hasSelection()) {
                     hand.clearSelectionState(false);
                 }
@@ -7293,7 +7239,6 @@ namespace rock
                     !readGrabButtonHeld(isLeft, grabButton)) {
                     inputSuppressionState.deferredGrabRelease = true;
                 }
-                _softContactRuntime.clearHandForStrongerOwner(isLeft, "provider-hand-input-suppressed");
                 return;
             }
 
@@ -7308,9 +7253,6 @@ namespace rock
                 grab_input_intent_policy::reset(inputIntentState);
                 cancelPeerHeldJoinRetry("normal-grab-suppressed", true);
                 clearGameplayCandidatesForHand(hand, isLeft);
-                _softContactRuntime.clearHandForStrongerOwner(
-                    isLeft,
-                    handIsFiringHand ? "firing-hand-equipped-weapon" : "equipped-weapon-support-grip");
                 if (hand.isHolding()) {
                     releaseSuppressedHeldObject(hand, isLeft, handIsFiringHand ? "firing-hand weapon equipped" : "equipped weapon support grip active");
                 } else if (hand.hasActivePullCatchIntent()) {
@@ -7821,7 +7763,6 @@ namespace rock
             }
 
             if (hand.isHolding()) {
-                _softContactRuntime.clearHandForStrongerOwner(isLeft, "held-object");
                 const Hand& peer = isLeft ? _rightHand : _leftHand;
                 auto* heldRefForGameplay = hand.getHeldRef();
                 const bool heldLooseGrenade = loose_grenade_runtime::isGrenadeRef(heldRefForGameplay);
@@ -8416,7 +8357,6 @@ namespace rock
                         auto* selectedRef = hand.getSelection().refr;
                         const auto selectedBodyId = hand.getSelection().bodyId.value;
                         const auto& transform = handInput.rawHandWorld;
-                        _softContactRuntime.clearHandForStrongerOwner(isLeft, "dynamic-pull-start");
                         /*
                          * Far-pull startup publishes the lock before dynamic body conversion because
                          * startDynamicPull owns failure cleanup and may clear selection internally.
@@ -8446,11 +8386,6 @@ namespace rock
                         return;
                     }
 
-                    if (pullCatchCommitPending) {
-                        _softContactRuntime.clearHandForStrongerOwner(isLeft, "dynamic-pull-grab-capture-retry");
-                    } else {
-                        _softContactRuntime.clearHandForStrongerOwner(isLeft, "normal-grab-capture");
-                    }
                     if (pullCatchCommitPending) {
                         dispatchSimpleGrabEvent(GrabEventType::PullCatchAttempt, isLeft, pullCatchRef, hand.getSelection().bodyId.value);
                     }
@@ -8520,7 +8455,6 @@ namespace rock
                         return;
                     }
 
-                    _softContactRuntime.clearHandForStrongerOwner(isLeft, "dynamic-pull-grab-capture");
                     dispatchSimpleGrabEvent(GrabEventType::PullCatchAttempt, isLeft, pulledRef, hand.getSelection().bodyId.value);
                     const bool grabbed = attemptSelectedGrab();
                     if (!grabbed && (!hand.hasSelection() || !hand.hasPendingPullCatchCommit())) {

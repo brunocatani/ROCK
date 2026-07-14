@@ -69,7 +69,6 @@ namespace rock::contact_pipeline_policy
         std::uint32_t targetBodyId = kInvalidContactBodyId;
         bool publishExternalContact = false;
         bool recordHandSemanticContact = false;
-        bool recordWorldSurfaceEvidence = false;
         bool recordBodyContact = false;
         bool drivesWeaponSupportContact = false;
         bool driveHandDynamicPush = false;
@@ -324,13 +323,10 @@ namespace rock::contact_pipeline_policy
             if (isHand(rock.kind)) {
                 auto result = makeClassification(ContactRoute::HandWorldSurface, rock, other);
                 result.recordHandSemanticContact = true;
-                result.recordWorldSurfaceEvidence = true;
                 return result;
             }
             if (rock.kind == ContactEndpointKind::Weapon) {
-                auto result = makeClassification(ContactRoute::WeaponWorldSurface, rock, other);
-                result.recordWorldSurfaceEvidence = true;
-                return result;
+                return makeClassification(ContactRoute::WeaponWorldSurface, rock, other);
             }
         }
 

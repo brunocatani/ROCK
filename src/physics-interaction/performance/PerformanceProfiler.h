@@ -28,7 +28,6 @@ namespace rock::performance_profiler
         TwoHandedGripStart,
         SupportGripSuppression,
         SelectionCasts,
-        SoftContact,
         DynamicHandCollisionFrame,
         DynamicHandCollisionPhysicsDrive,
         DynamicHandCollisionPostSolve,

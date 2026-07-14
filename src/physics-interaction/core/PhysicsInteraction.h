@@ -15,10 +15,8 @@
 #include "physics-interaction/grab/GrabEvent.h"
 #include "physics-interaction/grab/SavedGrabOffsetStore.h"
 #include "physics-interaction/grenade/LooseGrenadeRuntime.h"
-#include "physics-interaction/contact/SoftContactRuntime.h"
 #include "physics-interaction/hand/DynamicHandCollision.h"
 #include "physics-interaction/contact/GeneratedBodyContactRegistry.h"
-#include "physics-interaction/contact/NativeContactEvidence.h"
 #include "physics-interaction/collision/ContactActivityTracker.h"
 #include "physics-interaction/consume/MouthConsumeDetector.h"
 #include "physics-interaction/PhysicsLog.h"
@@ -305,7 +303,7 @@ namespace rock
 
         void handleContactEvent(RE::hknpWorld* world, void* contactEventData);
         bool isHandContactEvidenceSuppressed(bool isLeft) const;
-        void clearContactEvidenceForHand(bool isLeft, const char* reason);
+        void clearContactEvidenceForHand(bool isLeft);
         void synchronizeContactEvidenceOwnership(bool rightHandWeaponAuthorityActive, bool leftSupportGripActive, bool rightPartGripActive);
 
         std::atomic<bool> _initialized{ false };
@@ -338,10 +336,7 @@ namespace rock
         std::atomic<std::uint64_t> _completedPhysicsSolveSequence{ 0 };
 
         TwoHandedGrip _twoHandedGrip;
-        SoftContactRuntime _softContactRuntime;
         DynamicHandCollisionRuntime _dynamicHandCollision;
-        bool _softContactSuppressedByDynamicDrive = false;
-        contact_evidence::NativeContactEvidenceCache _nativeContactEvidence;
 
         mutable std::mutex _ownedObjectsMutex;
         std::unordered_map<std::uint32_t, std::uint32_t> _ownedObjects;

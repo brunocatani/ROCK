@@ -689,11 +689,11 @@
             if (world && havok_runtime::tryReadFilterInfo(world, RE::hknpBodyId{ bodyId }, filterInfo)) {
                 return filterInfo;
             }
-            return contact_evidence::kUnknownFilterInfo;
+            return contact_pipeline_policy::kUnknownLayer;
         };
 
         auto filterInfoToLayer = [](std::uint32_t filterInfo) {
-            return filterInfo == contact_evidence::kUnknownFilterInfo ? contact_pipeline_policy::kUnknownLayer : (filterInfo & 0x7Fu);
+            return filterInfo == contact_pipeline_policy::kUnknownLayer ? contact_pipeline_policy::kUnknownLayer : (filterInfo & 0x7Fu);
         };
 
         const std::uint32_t bodyAFilterInfo = readBodyFilterInfo(bodyIdA);
@@ -883,109 +883,6 @@
             ::rock::provider::recordExternalContact(contact);
         };
 
-        auto endpointKindForEvidence = [](contact_pipeline_policy::ContactEndpointKind kind) {
-            using SourceKind = contact_pipeline_policy::ContactEndpointKind;
-            using EvidenceKind = contact_evidence::NativeContactEndpointKind;
-            switch (kind) {
-            case SourceKind::RightHand:
-                return EvidenceKind::RightHand;
-            case SourceKind::LeftHand:
-                return EvidenceKind::LeftHand;
-            case SourceKind::Weapon:
-                return EvidenceKind::Weapon;
-            case SourceKind::RightHeldObject:
-                return EvidenceKind::RightHeldObject;
-            case SourceKind::LeftHeldObject:
-                return EvidenceKind::LeftHeldObject;
-            case SourceKind::External:
-                return EvidenceKind::External;
-            case SourceKind::WorldSurface:
-                return EvidenceKind::WorldSurface;
-            case SourceKind::DynamicProp:
-                return EvidenceKind::DynamicProp;
-            case SourceKind::Actor:
-                return EvidenceKind::Actor;
-            case SourceKind::QueryOnly:
-                return EvidenceKind::QueryOnly;
-            default:
-                return EvidenceKind::Unknown;
-            }
-        };
-
-        auto fillNativeSourceVelocity = [world](std::uint32_t sourceBodyId, contact_evidence::NativeContactEvidenceRecord& evidence) {
-            if (!world || !contact_evidence::isValidBodyId(sourceBodyId)) {
-                return;
-            }
-
-            auto* motion = havok_runtime::getBodyMotion(world, RE::hknpBodyId{ sourceBodyId });
-            if (!motion) {
-                return;
-            }
-
-            const float scale = havokToGameScale();
-            evidence.sourceVelocityGame = RE::NiPoint3{
-                motion->linearVelocity.x * scale,
-                motion->linearVelocity.y * scale,
-                motion->linearVelocity.z * scale,
-            };
-        };
-
-        auto publishNativeContactEvidence = [&](const HandColliderBodyMetadata* handMetadata = nullptr) {
-            if (!contactRoute.recordWorldSurfaceEvidence ||
-                !contact_pipeline_policy::isHand(contactRoute.source.kind) ||
-                !contact_evidence::isValidBodyId(contactRoute.sourceBodyId) ||
-                !contact_evidence::isValidBodyId(contactRoute.targetBodyId) ||
-                contactRoute.sourceBodyId == contactRoute.targetBodyId) {
-                return;
-            }
-
-            if (!ensureRawContactPoint()) {
-                return;
-            }
-
-            contact_evidence::NativeContactEvidenceRecord evidence{};
-            evidence.frame = _handContactActivity.currentFrame();
-            evidence.sourceBodyId = contactRoute.sourceBodyId;
-            evidence.targetBodyId = contactRoute.targetBodyId;
-            evidence.sourceLayer = contactRoute.source.layer;
-            evidence.targetLayer = contactRoute.target.layer;
-            evidence.sourceFilterInfo = contactRoute.sourceBodyId == bodyIdA ? bodyAFilterInfo : bodyBFilterInfo;
-            evidence.targetFilterInfo = contactRoute.targetBodyId == bodyIdA ? bodyAFilterInfo : bodyBFilterInfo;
-            evidence.sourceKind = endpointKindForEvidence(contactRoute.source.kind);
-            evidence.targetKind = endpointKindForEvidence(contactRoute.target.kind);
-            evidence.sourceIsLeft = contact_pipeline_policy::isLeftOwned(contactRoute.source.kind);
-            evidence.targetIsLeft = contact_pipeline_policy::isLeftOwned(contactRoute.target.kind);
-            fillNativeSourceVelocity(contactRoute.sourceBodyId, evidence);
-
-            const float scale = havokToGameScale();
-            evidence.quality = contact_evidence::NativeContactQuality::RawPoint;
-            evidence.contactPointWeightSum = rawContactPoint.contactPointWeightSum;
-            evidence.contactPointGame = RE::NiPoint3{
-                rawContactPoint.contactPointHavok[0] * scale,
-                rawContactPoint.contactPointHavok[1] * scale,
-                rawContactPoint.contactPointHavok[2] * scale,
-            };
-            evidence.contactNormalGame = RE::NiPoint3{
-                rawContactPoint.contactNormalHavok[0],
-                rawContactPoint.contactNormalHavok[1],
-                rawContactPoint.contactNormalHavok[2],
-            };
-
-            if (handMetadata && handMetadata->valid) {
-                evidence.sourceRole = static_cast<std::uint32_t>(handMetadata->role);
-                evidence.sourcePartKind = static_cast<std::uint32_t>(handMetadata->finger);
-                evidence.sourceSubRole = static_cast<std::uint32_t>(handMetadata->segment);
-            } else if (contactRoute.source.kind == contact_pipeline_policy::ContactEndpointKind::Weapon) {
-                if (const auto* weaponSource = weaponSourceFor(contactRoute.sourceBodyId); weaponSource && weaponSource->valid) {
-                    evidence.sourcePartKind = static_cast<std::uint32_t>(weaponSource->contact.partKind);
-                    evidence.sourceRole = static_cast<std::uint32_t>(weaponSource->contact.reloadRole);
-                    evidence.sourceSubRole = static_cast<std::uint32_t>(weaponSource->contact.supportGripRole);
-                }
-            }
-
-            _nativeContactEvidence.record(evidence);
-        };
-
         auto recordBodyContactEvidence = [&]() {
             if (!contactRoute.recordBodyContact || !contact_pipeline_policy::isBody(contactRoute.source.kind)) {
                 return;
@@ -1149,8 +1046,6 @@
             routeHandMetadata = handSource && handSource->valid ? &handSource->metadata : nullptr;
         }
 
-        publishNativeContactEvidence(routeHandMetadata);
-
         if (contactRoute.publishExternalContact) {
             publishExternalContact(contactRoute.sourceBodyId, contactRoute.targetBodyId, contactRoute.providerSourceKind, contactRoute.providerSourceHand, routeHandMetadata);
         }
@@ -1158,18 +1053,6 @@
         if (contactRoute.driveWeaponDynamicPush) {
             _lastContactSourceWeapon.store(contactRoute.sourceBodyId, std::memory_order_release);
             _lastContactBodyWeapon.store(contactRoute.targetBodyId, std::memory_order_release);
-        }
-
-        if (contactRoute.recordWorldSurfaceEvidence) {
-            int logCount = _contactLogCounter.fetch_add(1, std::memory_order_relaxed);
-            if (logCount % 60 == 0) {
-                ROCK_LOG_DEBUG(Hand,
-                    "Surface contact evidence: route={} sourceBody={} targetBody={} targetLayer={}",
-                    contact_pipeline_policy::routeName(contactRoute.route),
-                    contactRoute.sourceBodyId,
-                    contactRoute.targetBodyId,
-                    contactRoute.target.layer == contact_pipeline_policy::kUnknownLayer ? 0xFFFFFFFFu : contactRoute.target.layer);
-            }
         }
 
         auto publishWeaponContactFromPhysics = [&](bool isLeft, const WeaponInteractionContact& weaponContact, std::uint32_t bodyId) {

@@ -67,8 +67,8 @@ namespace rock::collision_layer_policy
      */
     inline constexpr std::uint32_t ROCK_LAYER_RELOAD = ROCK_LAYER_HAND;
     /*
-     * Dynamic hand proxy bodies (soft-collision overhaul stage A) live on their
-     * own extended row so they collide ONLY with static world-surface layers:
+     * Dynamic hand proxy bodies live on their own extended row so they collide
+     * ONLY with static world-surface layers:
      * no clutter, actors, projectiles, or other ROCK layers, and never each
      * other. The proxy is a solver-side visual-stop driver, not gameplay
      * contact evidence.

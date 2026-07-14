@@ -219,7 +219,7 @@ namespace rock
         rockWeaponSupportGripHandLerpMinDistance = 1.0f;
         rockWeaponSupportGripHandLerpMaxDistance = 14.0f;
 
-        rockHandCollisionDynamicDrive = false;
+        rockHandCollisionDynamicDrive = true;
         rockHandCollisionDynamicMaxLinearVelocityHavok = 15.0f;
         rockHandCollisionDynamicContactPressMaxVelocityHavok = 1.0f;
         rockHandCollisionDynamicDivergenceTeleportGameUnits = 40.0f;
@@ -235,29 +235,6 @@ namespace rock
         rockHandCollisionDynamicHapticSpeedScale = 0.006f;
         rockHandCollisionDynamicHapticMinApproachSpeedGameUnitsPerSecond = 3.0f;
         rockHandCollisionDynamicHapticCooldownSeconds = 0.12f;
-
-        rockSoftContactWorldEnabled = true;
-        rockSoftContactVisualPriority = 80;
-        rockSoftContactWorldRadiusPaddingGameUnits = 1.5f;
-        rockSoftContactWorldContactPaddingGameUnits = 0.35f;
-        rockSoftContactWorldSkinGameUnits = 0.5f;
-        rockSoftContactWorldPostReleaseReentryMinApproachDistanceGameUnits = 0.025f;
-        rockSoftContactWorldCachedPlaneMaxTangentDriftGameUnits = 10.0f;
-        rockSoftContactWorldCachedPlaneMaxClearDistanceGameUnits = 18.0f;
-        rockSoftContactWorldMaxCorrectionGameUnits = 18.0f;
-        rockSoftContactWorldReleaseLerpEnabled = true;
-        rockSoftContactWorldReleaseLerpTimeMin = 0.06f;
-        rockSoftContactWorldReleaseLerpTimeMax = 0.12f;
-        rockSoftContactWorldReleaseLerpMinDistance = 0.5f;
-        rockSoftContactWorldReleaseLerpMaxDistance = 18.0f;
-        rockSoftContactWorldShapeCastFilterInfo = selection_query_policy::kDefaultShapeCastFilterInfo;
-        rockSoftContactWorldHapticsEnabled = true;
-        rockSoftContactWorldHapticDurationSeconds = 0.035f;
-        rockSoftContactWorldHapticBaseIntensity = 0.18f;
-        rockSoftContactWorldHapticMaxIntensity = 0.55f;
-        rockSoftContactWorldHapticSpeedScale = 0.006f;
-        rockSoftContactWorldHapticMinApproachSpeedGameUnits = 3.0f;
-        rockSoftContactWorldHapticCooldownSeconds = 0.12f;
 
         rockNativeMeleeSuppressionEnabled = true;
         rockNativeMeleeFullSuppression = true;
@@ -292,7 +269,6 @@ namespace rock
         rockDebugDrawHandBoneColliders = false;
         rockDebugDrawDynamicHandColliders = false;
         rockDebugDrawHandBoneContacts = false;
-        rockDebugDrawSoftContacts = false;
         rockDebugDrawGrabAuthorityProxy = false;
         rockDebugMaxHandBoneBodiesDrawn = 48;
         rockDebugMaxBodyBoneBodiesDrawn = 32;
@@ -303,8 +279,6 @@ namespace rock
         rockDebugMaxShapeGenerationsPerFrame = 100;
         rockDebugMaxConvexSupportVertices = 6;
         rockDebugUseBoundsForHeavyConvex = true;
-        rockDebugContactTargetIdentityLogging = false;
-        rockDebugContactTargetIdentitySampleMilliseconds = 500;
         rockDebugVerboseLogging = false;
         rockDebugGrabFrameLogging = false;
         rockDebugGrabFingerPoseLogging = false;
@@ -1135,117 +1109,6 @@ namespace rock
             0.0f,
             5.0f);
 
-        rockSoftContactWorldEnabled = ini.GetBoolValue(SECTION, "bSoftContactWorldEnabled", rockSoftContactWorldEnabled);
-        rockSoftContactVisualPriority = static_cast<int>(ini.GetLongValue(SECTION, "iSoftContactVisualPriority", rockSoftContactVisualPriority));
-        rockSoftContactVisualPriority = std::clamp(rockSoftContactVisualPriority, 0, 99);
-        rockSoftContactWorldRadiusPaddingGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fSoftContactWorldRadiusPaddingGameUnits", rockSoftContactWorldRadiusPaddingGameUnits));
-        if (!std::isfinite(rockSoftContactWorldRadiusPaddingGameUnits) || rockSoftContactWorldRadiusPaddingGameUnits < 0.0f) {
-            rockSoftContactWorldRadiusPaddingGameUnits = 1.5f;
-        }
-        rockSoftContactWorldContactPaddingGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fSoftContactWorldContactPaddingGameUnits", rockSoftContactWorldContactPaddingGameUnits));
-        if (!std::isfinite(rockSoftContactWorldContactPaddingGameUnits) || rockSoftContactWorldContactPaddingGameUnits < 0.0f) {
-            rockSoftContactWorldContactPaddingGameUnits = 0.35f;
-        }
-        rockSoftContactWorldSkinGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fSoftContactWorldSkinGameUnits", rockSoftContactWorldSkinGameUnits));
-        if (!std::isfinite(rockSoftContactWorldSkinGameUnits) || rockSoftContactWorldSkinGameUnits < 0.0f) {
-            rockSoftContactWorldSkinGameUnits = 0.5f;
-        }
-        rockSoftContactWorldPostReleaseReentryMinApproachDistanceGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION,
-                "fSoftContactWorldPostReleaseReentryMinApproachDistanceGameUnits",
-                rockSoftContactWorldPostReleaseReentryMinApproachDistanceGameUnits));
-        if (!std::isfinite(rockSoftContactWorldPostReleaseReentryMinApproachDistanceGameUnits) ||
-            rockSoftContactWorldPostReleaseReentryMinApproachDistanceGameUnits < 0.0f) {
-            rockSoftContactWorldPostReleaseReentryMinApproachDistanceGameUnits = 0.025f;
-        }
-        rockSoftContactWorldCachedPlaneMaxTangentDriftGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION,
-                "fSoftContactWorldCachedPlaneMaxTangentDriftGameUnits",
-                rockSoftContactWorldCachedPlaneMaxTangentDriftGameUnits));
-        if (!std::isfinite(rockSoftContactWorldCachedPlaneMaxTangentDriftGameUnits) || rockSoftContactWorldCachedPlaneMaxTangentDriftGameUnits <= 0.0f) {
-            rockSoftContactWorldCachedPlaneMaxTangentDriftGameUnits = 10.0f;
-        }
-        rockSoftContactWorldCachedPlaneMaxClearDistanceGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION,
-                "fSoftContactWorldCachedPlaneMaxClearDistanceGameUnits",
-                rockSoftContactWorldCachedPlaneMaxClearDistanceGameUnits));
-        if (!std::isfinite(rockSoftContactWorldCachedPlaneMaxClearDistanceGameUnits) || rockSoftContactWorldCachedPlaneMaxClearDistanceGameUnits <= 0.0f) {
-            rockSoftContactWorldCachedPlaneMaxClearDistanceGameUnits = 18.0f;
-        }
-        rockSoftContactWorldMaxCorrectionGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fSoftContactWorldMaxCorrectionGameUnits", rockSoftContactWorldMaxCorrectionGameUnits));
-        if (!std::isfinite(rockSoftContactWorldMaxCorrectionGameUnits) || rockSoftContactWorldMaxCorrectionGameUnits <= 0.0f) {
-            rockSoftContactWorldMaxCorrectionGameUnits = 18.0f;
-        }
-        rockSoftContactWorldReleaseLerpEnabled = ini.GetBoolValue(SECTION, "bSoftContactWorldReleaseLerpEnabled", rockSoftContactWorldReleaseLerpEnabled);
-        rockSoftContactWorldReleaseLerpTimeMin = readClampedFloat(ini,
-            SECTION,
-            "fSoftContactWorldReleaseLerpTimeMin",
-            rockSoftContactWorldReleaseLerpTimeMin,
-            0.06f,
-            0.0f,
-            0.5f);
-        rockSoftContactWorldReleaseLerpTimeMax = readClampedFloat(ini,
-            SECTION,
-            "fSoftContactWorldReleaseLerpTimeMax",
-            rockSoftContactWorldReleaseLerpTimeMax,
-            0.12f,
-            rockSoftContactWorldReleaseLerpTimeMin,
-            0.5f);
-        rockSoftContactWorldReleaseLerpMinDistance = readClampedFloat(ini,
-            SECTION,
-            "fSoftContactWorldReleaseLerpMinDistance",
-            rockSoftContactWorldReleaseLerpMinDistance,
-            0.5f,
-            0.0f,
-            100.0f);
-        rockSoftContactWorldReleaseLerpMaxDistance = readClampedFloat(ini,
-            SECTION,
-            "fSoftContactWorldReleaseLerpMaxDistance",
-            rockSoftContactWorldReleaseLerpMaxDistance,
-            18.0f,
-            rockSoftContactWorldReleaseLerpMinDistance,
-            200.0f);
-        rockSoftContactWorldShapeCastFilterInfo = readHexFilter(
-            "sSoftContactWorldShapeCastFilterInfo",
-            rockSoftContactWorldShapeCastFilterInfo,
-            selection_query_policy::kDefaultShapeCastFilterInfo);
-        rockSoftContactWorldHapticsEnabled = ini.GetBoolValue(SECTION, "bSoftContactWorldHapticsEnabled", rockSoftContactWorldHapticsEnabled);
-        rockSoftContactWorldHapticDurationSeconds =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fSoftContactWorldHapticDurationSeconds", rockSoftContactWorldHapticDurationSeconds));
-        if (!std::isfinite(rockSoftContactWorldHapticDurationSeconds) || rockSoftContactWorldHapticDurationSeconds < 0.0f) {
-            rockSoftContactWorldHapticDurationSeconds = 0.035f;
-        }
-        rockSoftContactWorldHapticDurationSeconds = std::clamp(rockSoftContactWorldHapticDurationSeconds, 0.0f, 0.2f);
-        rockSoftContactWorldHapticBaseIntensity =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fSoftContactWorldHapticBaseIntensity", rockSoftContactWorldHapticBaseIntensity));
-        rockSoftContactWorldHapticBaseIntensity =
-            std::clamp(std::isfinite(rockSoftContactWorldHapticBaseIntensity) ? rockSoftContactWorldHapticBaseIntensity : 0.18f, 0.0f, 1.0f);
-        rockSoftContactWorldHapticMaxIntensity =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fSoftContactWorldHapticMaxIntensity", rockSoftContactWorldHapticMaxIntensity));
-        rockSoftContactWorldHapticMaxIntensity =
-            std::clamp(std::isfinite(rockSoftContactWorldHapticMaxIntensity) ? rockSoftContactWorldHapticMaxIntensity : 0.55f,
-                rockSoftContactWorldHapticBaseIntensity,
-                1.0f);
-        rockSoftContactWorldHapticSpeedScale =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fSoftContactWorldHapticSpeedScale", rockSoftContactWorldHapticSpeedScale));
-        if (!std::isfinite(rockSoftContactWorldHapticSpeedScale) || rockSoftContactWorldHapticSpeedScale < 0.0f) {
-            rockSoftContactWorldHapticSpeedScale = 0.006f;
-        }
-        rockSoftContactWorldHapticMinApproachSpeedGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fSoftContactWorldHapticMinApproachSpeedGameUnits", rockSoftContactWorldHapticMinApproachSpeedGameUnits));
-        if (!std::isfinite(rockSoftContactWorldHapticMinApproachSpeedGameUnits) || rockSoftContactWorldHapticMinApproachSpeedGameUnits < 0.0f) {
-            rockSoftContactWorldHapticMinApproachSpeedGameUnits = 3.0f;
-        }
-        rockSoftContactWorldHapticCooldownSeconds =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fSoftContactWorldHapticCooldownSeconds", rockSoftContactWorldHapticCooldownSeconds));
-        if (!std::isfinite(rockSoftContactWorldHapticCooldownSeconds) || rockSoftContactWorldHapticCooldownSeconds < 0.0f) {
-            rockSoftContactWorldHapticCooldownSeconds = 0.12f;
-        }
-
         rockNativeMeleeSuppressionEnabled = ini.GetBoolValue(SECTION, "bNativeMeleeSuppressionEnabled", rockNativeMeleeSuppressionEnabled);
         rockNativeMeleeFullSuppression = ini.GetBoolValue(SECTION, "bNativeMeleeFullSuppression", rockNativeMeleeFullSuppression);
         rockNativeMeleeSuppressWeaponSwing = ini.GetBoolValue(SECTION, "bNativeMeleeSuppressWeaponSwing", rockNativeMeleeSuppressWeaponSwing);
@@ -1300,7 +1163,6 @@ namespace rock
         rockDebugDrawHandBoneColliders = ini.GetBoolValue(SECTION, "bDebugDrawHandBoneColliders", rockDebugDrawHandBoneColliders);
         rockDebugDrawDynamicHandColliders = ini.GetBoolValue(SECTION, "bDebugDrawDynamicHandColliders", rockDebugDrawDynamicHandColliders);
         rockDebugDrawHandBoneContacts = ini.GetBoolValue(SECTION, "bDebugDrawHandBoneContacts", rockDebugDrawHandBoneContacts);
-        rockDebugDrawSoftContacts = ini.GetBoolValue(SECTION, "bDebugDrawSoftContacts", rockDebugDrawSoftContacts);
         rockDebugDrawGrabAuthorityProxy = ini.GetBoolValue(SECTION, "bDebugDrawGrabAuthorityProxy", rockDebugDrawGrabAuthorityProxy);
         rockDebugMaxHandBoneBodiesDrawn = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxHandBoneBodiesDrawn", rockDebugMaxHandBoneBodiesDrawn));
         if (rockDebugMaxHandBoneBodiesDrawn < 0) {
@@ -1325,10 +1187,6 @@ namespace rock
         rockDebugMaxShapeGenerationsPerFrame = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxShapeGenerationsPerFrame", rockDebugMaxShapeGenerationsPerFrame));
         rockDebugMaxConvexSupportVertices = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxConvexSupportVertices", rockDebugMaxConvexSupportVertices));
         rockDebugUseBoundsForHeavyConvex = ini.GetBoolValue(SECTION, "bDebugUseBoundsForHeavyConvex", rockDebugUseBoundsForHeavyConvex);
-        rockDebugContactTargetIdentityLogging =
-            ini.GetBoolValue(SECTION, "bDebugContactTargetIdentityLogging", rockDebugContactTargetIdentityLogging);
-        rockDebugContactTargetIdentitySampleMilliseconds = logging_policy::sanitizeSampleMilliseconds(static_cast<int>(
-            ini.GetLongValue(SECTION, "iDebugContactTargetIdentitySampleMilliseconds", rockDebugContactTargetIdentitySampleMilliseconds)));
         rockDebugVerboseLogging = ini.GetBoolValue(SECTION, "bDebugVerboseLogging", rockDebugVerboseLogging);
         rockDebugGrabFrameLogging = ini.GetBoolValue(SECTION, "bDebugGrabFrameLogging", rockDebugGrabFrameLogging);
         rockDebugGrabFingerPoseLogging = ini.GetBoolValue(SECTION, "bDebugGrabFingerPoseLogging", rockDebugGrabFingerPoseLogging);
