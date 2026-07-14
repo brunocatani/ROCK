@@ -974,26 +974,49 @@ namespace rock::grab_finger_pose_math
             /*
              * Rows are ordered most-open first; over-open rows above the cap
              * are skipped so the walk starts at the most-open ALLOWED pose.
+             *
+             * Over-open participates ONLY when the authored-open row itself
+             * is blocked (the mesh interpenetrates the finger at 1.0, so it
+             * physically cannot rest there - a crate thicker than the open
+             * span). A FREE authored-open row means the finger closes
+             * normally and the over-open rows are ignored: fingers must
+             * never hyper-extend backward onto a surface that merely grazes
+             * the dorsal side of the arc while a closing wrap exists
+             * (in-game 2026-07-13: skull grabs froze at 1.1-1.2 resting ON
+             * the dome instead of wrapping down around it).
              */
-            std::size_t startRow = 0;
-            while (startRow < probe.sampleCount && probe.samples[startRow].openValue > clampedMaxOpen + 0.0001f) {
-                ++startRow;
+            std::size_t overOpenStartRow = 0;
+            while (overOpenStartRow < probe.sampleCount && probe.samples[overOpenStartRow].openValue > clampedMaxOpen + 0.0001f) {
+                ++overOpenStartRow;
             }
-            if (startRow >= probe.sampleCount) {
+            if (overOpenStartRow >= probe.sampleCount) {
+                continue;
+            }
+            std::size_t authoredOpenRow = overOpenStartRow;
+            while (authoredOpenRow < probe.sampleCount && probe.samples[authoredOpenRow].openValue > kMaxFingerOpenValue + 0.0001f) {
+                ++authoredOpenRow;
+            }
+            if (authoredOpenRow >= probe.sampleCount) {
                 continue;
             }
 
             std::array<Vector, kCalibratedFingerCurveSampleCount> rowPositions{};
             float maxRowGap = 0.0f;
-            for (std::size_t i = startRow; i < probe.sampleCount; ++i) {
+            for (std::size_t i = overOpenStartRow; i < probe.sampleCount; ++i) {
                 const auto& sample = probe.samples[i];
                 const Vector arm = rotateAroundUnitAxis(zero, planeNormal, sample.angleRadians);
                 rowPositions[i] = add(curve.center, scale(arm, sample.reachLength));
-                if (i > startRow) {
+                if (i > overOpenStartRow) {
                     maxRowGap = (std::max)(maxRowGap, length(sub(rowPositions[i], rowPositions[i - 1])));
                 }
             }
             const float coarseRadius = radius + maxRowGap * static_cast<float>(kCoarseRowStep);
+
+            bool authoredOpenBlocked = false;
+            if (overOpenStartRow < authoredOpenRow) {
+                authoredOpenBlocked = sphereContact(rowPositions[authoredOpenRow], radius, nullptr, nullptr);
+            }
+            const std::size_t startRow = authoredOpenBlocked ? overOpenStartRow : authoredOpenRow;
 
             bool probeContact = false;
             for (std::size_t coarse = startRow; coarse < probe.sampleCount && !probeContact; coarse += kCoarseRowStep) {

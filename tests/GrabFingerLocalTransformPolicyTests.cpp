@@ -870,10 +870,27 @@ int main()
             overOpenOnlyTriangles, overOpenCurve, 0.2f, 0.15f);
         ok &= expectBool("default cap never contacts over-open rows", cappedSolved.hit, false);
 
-        // Cap 2.0: the walk starts hyper-open and stops at the over-open row.
-        const auto overOpenSolved = sweepCalibratedFingerCurveCurlValue(
+        /*
+         * Over-open engages ONLY when the authored-open row is blocked. A
+         * surface that merely grazes the dorsal (over-open) side of the arc
+         * while the finger can rest freely at 1.0 must be ignored - the
+         * skull case: fingers must wrap down the closing side, never rest
+         * hyper-extended on top.
+         */
+        const auto dorsalGrazeSolved = sweepCalibratedFingerCurveCurlValue(
             overOpenOnlyTriangles, overOpenCurve, 0.2f, 0.15f, 2.0f);
-        ok &= expectBool("over-open sweep contacts past the authored open pose",
+        ok &= expectBool("free authored-open row ignores dorsal-only over-open contact",
+            dorsalGrazeSolved.hit, false);
+
+        // With the authored-open row BLOCKED (mesh interpenetrating the open
+        // finger), the walk starts hyper-open and rests at the first
+        // over-open contact.
+        auto blockedOpenTriangles = overOpenOnlyTriangles;
+        const auto openRowBlocker = makeSliverTriangleAtPoint(arcPoint(2.0f, 0.0f));
+        blockedOpenTriangles.insert(blockedOpenTriangles.end(), openRowBlocker.begin(), openRowBlocker.end());
+        const auto overOpenSolved = sweepCalibratedFingerCurveCurlValue(
+            blockedOpenTriangles, overOpenCurve, 0.2f, 0.15f, 2.0f);
+        ok &= expectBool("blocked authored-open row engages the over-open walk",
             overOpenSolved.hit && overOpenSolved.value > 1.0f,
             true);
         ok &= expectBool("over-open sweep lands near the contact row",
@@ -883,11 +900,15 @@ int main()
             overOpenSolved.distance < 0.0f,
             true);
 
-        // A cap below the contact row hides it again (row skipping honors
-        // the cap, not just the result clamp).
+        // A cap below the contact row hides it even when the open row is
+        // blocked (row skipping honors the cap, not just the result clamp);
+        // the walk then starts at the cap and first contacts the blocker at
+        // the authored-open row.
         const auto partialCapSolved = sweepCalibratedFingerCurveCurlValue(
-            overOpenOnlyTriangles, overOpenCurve, 0.2f, 0.15f, 1.25f);
-        ok &= expectBool("partial cap skips rows above it", partialCapSolved.hit, false);
+            blockedOpenTriangles, overOpenCurve, 0.2f, 0.15f, 1.25f);
+        ok &= expectBool("partial cap skips rows above it",
+            partialCapSolved.hit && partialCapSolved.value >= 1.0f && partialCapSolved.value <= 1.1f,
+            true);
 
         // The classic sub-open region is unchanged under a raised cap.
         const auto subOpenSolved = sweepCalibratedFingerCurveCurlValue(

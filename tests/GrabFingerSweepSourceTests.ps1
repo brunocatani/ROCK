@@ -259,9 +259,20 @@ Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
 ) 'Open-value ceilings must model the authored open pose and the hFRIK flex ceiling.'
 Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
     'float maxOpenValue = kMaxFingerOpenValue\)',
-    'samples\[startRow\]\.openValue > clampedMaxOpen',
+    'samples\[overOpenStartRow\]\.openValue > clampedMaxOpen',
     'std::clamp\(probe\.samples\[row\]\.openValue, 0\.0f, clampedMaxOpen\)'
 ) 'The sweep must honor a per-call max-open cap by skipping rows above it.'
+
+# Over-open engages ONLY when the authored-open row is blocked (the mesh
+# interpenetrates the finger at 1.0). A free authored-open row closes
+# normally - fingers must never hyper-extend onto a surface that merely
+# grazes the dorsal side of the arc while a closing wrap exists (the skull
+# case, 2026-07-13).
+Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
+    'bool authoredOpenBlocked = false;',
+    'sphereContact\(rowPositions\[authoredOpenRow\], radius',
+    'authoredOpenBlocked \? overOpenStartRow : authoredOpenRow;'
+) 'Over-open rows must engage only when the authored-open row is blocked.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
     'rockGrabThumbSweepMaxOpenValue,\s*g_rockConfig\.rockGrabFingerSweepMaxOpenValue' `
     'Grab solve sites must pass the config-driven thumb/finger sweep max-open caps.'
