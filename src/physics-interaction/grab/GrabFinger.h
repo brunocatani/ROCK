@@ -1281,9 +1281,9 @@ namespace rock::grab_finger_pose_runtime
          * normal-sign already applied) from the arc zero to the contact row
          * each finger was adopted at. Valid only for swept front contacts on
          * the palm-plane arc (thumb: Wrap lane only - alternate lanes solve in
-         * a different plane). Held re-solves feed these back as
-         * GrabFingerArcAnchorHints so the anchor de-rotation uses the KNOWN
-         * commanded rotation instead of re-estimating it from the live chord.
+         * a different plane). Diagnostics-only: the FINGER-CYCLE adoption
+         * trace logs them so convergence (rotations settling) is visible in
+         * one grab's log.
          */
         std::array<float, 5> contactArcRotationRadians{};
         std::array<std::uint8_t, 5> contactArcRotationValid{};
@@ -1312,62 +1312,41 @@ namespace rock::grab_finger_pose_runtime
     };
 
     /*
-     * Known per-finger arc rotations from the pose currently DRIVING the
-     * hand (the last adopted solve). A held re-solve de-rotates each live
-     * chord by its known rotation - exact once the pose smoothing has
-     * settled, unambiguous for over-open poses, and valid for the thumb
-     * (whose chord-length inversion is spurious under opposition/twist).
+     * The arc zero reference reconstructed from the COMMANDED hand model:
+     * chain bone origins of hFRIK's authored fully-open pose in hand-bone
+     * space - the identical zero definition the offline bake uses
+     * (normalize(distal_open_origin - base_origin)). Rendered finger bones
+     * must NEVER anchor a held re-solve: ROCK's own surface-aim
+     * local-transform corrections bend the rendered chain after every
+     * publish, so any anchor measured from rendered geometry feeds the
+     * solver its own output. In-game evidence (FINGER-CYCLE trace,
+     * 2026-07-13): relPos static within 0.06gu while values and contact
+     * rotations wandered through dozens of adoptions - the infinite
+     * open/close cycle. Estimation-based anchors (chord-length inversion,
+     * adopted-rotation hints, thumb keep rules) were all approximations of
+     * this direction and were retired when it landed.
      */
-    struct GrabFingerArcAnchorHints
+    [[nodiscard]] inline std::array<RE::NiPoint3, 5> computeCommandedOpenDirectionsHandLocal(
+        const RE::NiTransform* openLocalTransforms /* 15 finger bones, finger-major */)
     {
-        std::array<float, 5> rotationRadians{};
-        std::array<std::uint8_t, 5> valid{};
-    };
-
-    [[nodiscard]] inline GrabFingerArcAnchorHints makeArcAnchorHintsFromPose(const SolvedGrabFingerPose& pose)
-    {
-        GrabFingerArcAnchorHints hints{};
-        hints.rotationRadians = pose.contactArcRotationRadians;
-        hints.valid = pose.contactArcRotationValid;
-        return hints;
-    }
-
-    /*
-     * Held re-solve rule: a thumb WITHOUT an exact arc-anchor hint (its last
-     * adoption was an alternate lane, a miss, or a floored value) must keep
-     * its previous pose instead of re-solving from the raw live chord. The
-     * raw-chord anchor rotates with the thumb's own curl (opposition/twist,
-     * out of the palm plane), so an unhinted re-solve maps pose A to pose B
-     * and pose B back to pose A - a period-2 open/close cycle the adoption
-     * deadband cannot break. The previous pose (capture, or the last hinted
-     * adoption) is authoritative until a hinted re-solve exists. Surface-aim
-     * entries are not carried: the thumb's are cleared at adoption by
-     * useThumbIndexCurveOnlyPose anyway.
-     */
-    inline void keepThumbPoseFromPrevious(SolvedGrabFingerPose& pose, const SolvedGrabFingerPose& previous)
-    {
-        pose.values[0] = previous.values[0];
-        for (std::size_t segment = 0; segment < 3; ++segment) {
-            pose.jointValues[segment] = previous.jointValues[segment];
+        std::array<RE::NiPoint3, 5> result{};
+        if (!openLocalTransforms) {
+            return result;
         }
-        pose.hitKind[0] = previous.hitKind[0];
-        pose.contactArcRotationRadians[0] = previous.contactArcRotationRadians[0];
-        pose.contactArcRotationValid[0] = previous.contactArcRotationValid[0];
-        pose.thumbSurfaceFollowAllowed = previous.thumbSurfaceFollowAllowed;
-        pose.usedAlternateThumbCurve = previous.usedAlternateThumbCurve;
-        pose.usedAlternateThumbSurfaceHit = previous.usedAlternateThumbSurfaceHit;
-        pose.selectedThumbLane = previous.selectedThumbLane;
-        pose.selectedThumbLaneNormalBlend = previous.selectedThumbLaneNormalBlend;
-        pose.selectedThumbLaneLocalCorrectionStrength = previous.selectedThumbLaneLocalCorrectionStrength;
-        pose.hasThumbAlternateCurveFrame = previous.hasThumbAlternateCurveFrame;
-        pose.thumbAlternateCurveBaseWorld = previous.thumbAlternateCurveBaseWorld;
-        pose.thumbAlternateCurveOpenDirectionWorld = previous.thumbAlternateCurveOpenDirectionWorld;
-        pose.thumbAlternateCurveNormalWorld = previous.thumbAlternateCurveNormalWorld;
-        pose.thumbAlternateCurveMaxCurlAngleRadians = previous.thumbAlternateCurveMaxCurlAngleRadians;
-        pose.hasThumbCurveDiagnostics = previous.hasThumbCurveDiagnostics;
-        pose.thumbPrimaryCurve = previous.thumbPrimaryCurve;
-        pose.thumbAlternateCurve = previous.thumbAlternateCurve;
-        pose.thumbSidePadCurve = previous.thumbSidePadCurve;
+        for (std::size_t finger = 0; finger < result.size(); ++finger) {
+            const RE::NiTransform& bone1 = openLocalTransforms[finger * 3];
+            const RE::NiTransform bone2 = transform_math::composeTransforms(bone1, openLocalTransforms[finger * 3 + 1]);
+            const RE::NiTransform bone3 = transform_math::composeTransforms(bone2, openLocalTransforms[finger * 3 + 2]);
+            const RE::NiPoint3 span = bone3.translate - bone1.translate;
+            const float lengthSquared = span.x * span.x + span.y * span.y + span.z * span.z;
+            if (!std::isfinite(lengthSquared) || lengthSquared <= 0.000001f) {
+                // Zero vector = "invalid" downstream; callers gate on magnitude.
+                continue;
+            }
+            const float inverseLength = 1.0f / std::sqrt(lengthSquared);
+            result[finger] = RE::NiPoint3{ span.x * inverseLength, span.y * inverseLength, span.z * inverseLength };
+        }
+        return result;
     }
 
     struct GrabFingerPoseTargetSet
@@ -2202,7 +2181,7 @@ namespace rock::grab_finger_pose_runtime
         bool allowSurfaceAimTargets = true, float sweepContactRadiusGameUnits = 1.0f, float unreachableFingerOpenValue = -1.0f,
         float thumbSweepMaxOpenValue = grab_finger_pose_math::kMaxFingerOpenValue,
         float fingerSweepMaxOpenValue = grab_finger_pose_math::kMaxFingerOpenValue,
-        const GrabFingerArcAnchorHints* arcAnchorHints = nullptr)
+        const std::array<RE::NiPoint3, 5>* commandedOpenDirectionsWorld = nullptr)
     {
         SolvedGrabFingerPose result{};
         const float clampedMin = std::clamp(minValue, 0.0f, 1.0f);
@@ -2262,10 +2241,16 @@ namespace rock::grab_finger_pose_runtime
              * result re-rotated the next solve's reference.
              *
              * Anchor priority:
-             * 1. A caller-provided arc-anchor hint (the rotation the finger
-             *    was ADOPTED at) de-rotates exactly - no estimation, valid
-             *    for the thumb and for over-open poses. Held re-solves pass
-             *    hints from the pose currently driving the hand.
+             * 1. A caller-provided COMMANDED open direction (hFRIK's authored
+             *    open-pose chain in hand-bone space, rotated by the hand
+             *    bone). Zero feedback by construction: no rendered finger
+             *    data can influence it, so a static hand-object relation
+             *    solves identically every interval. Held re-solves REQUIRE
+             *    this - rendered chords carry ROCK's own surface-aim
+             *    local-transform corrections, and anchoring on them fed the
+             *    solver its own output (the infinite adoption cycle,
+             *    FINGER-CYCLE trace 2026-07-13: relPos static while values
+             *    wandered).
              * 2. Otherwise, estimate the current curl from the chord length
              *    via the baked Tip reach table (acquisition solves, where the
              *    chain is mid-motion and the inversion tracks the ACTUAL
@@ -2273,21 +2258,16 @@ namespace rock::grab_finger_pose_runtime
              *    shortens from opposition and twist - motion outside the arc
              *    plane - so the inversion reads a large spurious curl
              *    (session evidence 2026-07-13: thumb inside the mesh on
-             *    every grab). With no hint the thumb uses its raw chord.
+             *    every grab). Without a commanded anchor the thumb uses its
+             *    raw chord.
              */
             RE::NiPoint3 openDirectionWorld = live.openDirection;
-            const bool hasArcAnchorHint = arcAnchorHints &&
-                                          arcAnchorHints->valid[finger] != 0 &&
-                                          std::isfinite(arcAnchorHints->rotationRadians[finger]);
-            if (hasArcAnchorHint) {
-                if (std::fabs(arcAnchorHints->rotationRadians[finger]) > 0.0035f) {
-                    openDirectionWorld = normalizedOrFallback(
-                        grab_finger_pose_math::rotateAroundUnitAxis(
-                            openDirectionWorld,
-                            curlNormalWorld,
-                            -arcAnchorHints->rotationRadians[finger]),
-                        openDirectionWorld);
-                }
+            const bool hasCommandedOpenDirection =
+                commandedOpenDirectionsWorld &&
+                isFinitePoint((*commandedOpenDirectionsWorld)[finger]) &&
+                distanceSquared((*commandedOpenDirectionsWorld)[finger], RE::NiPoint3{}) > 0.25f;
+            if (hasCommandedOpenDirection) {
+                openDirectionWorld = (*commandedOpenDirectionsWorld)[finger];
             } else if (finger != 0) {
                 const auto& liveChain = liveFingerSnapshot->fingers[finger];
                 const float liveChordLength = std::sqrt(distanceSquared(liveChain.points[2], liveChain.points[0]));
@@ -2434,8 +2414,8 @@ namespace rock::grab_finger_pose_runtime
             result.values[finger] = solved.value;
             result.hitKind[finger] = solved.hitKind;
             /*
-             * Record the contact-row rotation the finger was adopted at, for
-             * feedback-free anchor de-rotation on held re-solves. Only
+             * Record the contact-row rotation the finger was adopted at
+             * (diagnostics: the FINGER-CYCLE trace logs them). Only
              * palm-plane sweep contacts qualify: the thumb's alternate lanes
              * rotate in a blended plane the palm-normal de-rotation cannot
              * invert, and a value floored by minValue no longer matches its
@@ -2486,7 +2466,7 @@ namespace rock::grab_finger_pose_runtime
         bool allowSurfaceAimTargets = true, float sweepContactRadiusGameUnits = 1.0f, float unreachableFingerOpenValue = -1.0f,
         float thumbSweepMaxOpenValue = grab_finger_pose_math::kMaxFingerOpenValue,
         float fingerSweepMaxOpenValue = grab_finger_pose_math::kMaxFingerOpenValue,
-        const GrabFingerArcAnchorHints* arcAnchorHints = nullptr)
+        const std::array<RE::NiPoint3, 5>* commandedOpenDirectionsWorld = nullptr)
     {
         return solveGrabFingerPoseFromTriangles(triangles,
             handTransform,
@@ -2504,7 +2484,7 @@ namespace rock::grab_finger_pose_runtime
             unreachableFingerOpenValue,
             thumbSweepMaxOpenValue,
             fingerSweepMaxOpenValue,
-            arcAnchorHints);
+            commandedOpenDirectionsWorld);
     }
 }
 

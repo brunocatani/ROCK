@@ -496,35 +496,37 @@ int main()
 
     {
         /*
-         * Unhinted held thumb rule: without an exact arc-anchor hint the
-         * thumb must keep its previous pose wholesale - value, joints, arc
-         * rotation, and lane selection - while the other fingers keep the
-         * fresh solve.
+         * Commanded anchor reconstruction: the held-re-solve arc zero comes
+         * from the authored open pose's chain bone ORIGINS in hand space
+         * (normalize(bone3 origin - bone1 origin)), the bake's own zero
+         * definition. It must never consult rendered geometry.
          */
-        SolvedGrabFingerPose previousThumbPose{};
-        previousThumbPose.values = { 1.6f, 0.4f, 0.5f, 0.6f, 0.7f };
-        previousThumbPose.jointValues = rock::grab_finger_pose_math::expandFingerCurlsToJointValues(previousThumbPose.values);
-        previousThumbPose.contactArcRotationRadians[0] = 0.35f;
-        previousThumbPose.contactArcRotationValid[0] = 1;
-        previousThumbPose.usedAlternateThumbCurve = true;
-        previousThumbPose.selectedThumbLane = rock::grab_finger_calibration_data::BakedGrabThumbLane::Opposition;
-
-        SolvedGrabFingerPose freshPose{};
-        freshPose.solved = true;
-        freshPose.values = { 0.9f, 0.3f, 0.5f, 0.6f, 0.7f };
-        freshPose.jointValues = rock::grab_finger_pose_math::expandFingerCurlsToJointValues(freshPose.values);
-        keepThumbPoseFromPrevious(freshPose, previousThumbPose);
-        ok &= expectFloat("unhinted thumb keeps its previous value", freshPose.values[0], 1.6f);
-        ok &= expectFloat("unhinted thumb keeps its previous middle joint",
-            freshPose.jointValues[1],
-            previousThumbPose.jointValues[1]);
-        ok &= expectFloat("kept thumb carries the previous arc rotation", freshPose.contactArcRotationRadians[0], 0.35f);
-        ok &= expectBool("kept thumb carries the previous hint validity", freshPose.contactArcRotationValid[0] == 1, true);
-        ok &= expectBool("kept thumb carries the previous lane selection",
-            freshPose.selectedThumbLane == rock::grab_finger_calibration_data::BakedGrabThumbLane::Opposition &&
-                freshPose.usedAlternateThumbCurve,
+        std::array<RE::NiTransform, 15> openLocals{};
+        for (auto& local : openLocals) {
+            local = rock::transform_math::makeIdentityTransform<RE::NiTransform>();
+        }
+        // Index finger chain: base at (1,0,0), each child 2gu then 1gu along +Y.
+        openLocals[3].translate = RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
+        openLocals[4].translate = RE::NiPoint3{ 0.0f, 2.0f, 0.0f };
+        openLocals[5].translate = RE::NiPoint3{ 0.0f, 1.0f, 0.0f };
+        // Middle finger chain: straight up.
+        openLocals[6].translate = RE::NiPoint3{ 0.0f, 0.0f, 1.0f };
+        openLocals[7].translate = RE::NiPoint3{ 0.0f, 0.0f, 2.0f };
+        openLocals[8].translate = RE::NiPoint3{ 0.0f, 0.0f, 2.0f };
+        const auto commandedDirections = computeCommandedOpenDirectionsHandLocal(openLocals.data());
+        ok &= expectPointClose("commanded open direction follows the chain bone origins",
+            commandedDirections[1],
+            RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
+        ok &= expectPointClose("commanded open direction normalizes the chain span",
+            commandedDirections[2],
+            RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
+        ok &= expectBool("degenerate chain yields a zero (invalid) direction",
+            distanceSquared(commandedDirections[4], RE::NiPoint3{}) < 0.000001f,
             true);
-        ok &= expectFloat("kept thumb leaves the index value alone", freshPose.values[1], 0.3f);
+        ok &= expectBool("null locals yield all-invalid directions",
+            distanceSquared(
+                computeCommandedOpenDirectionsHandLocal(nullptr)[0], RE::NiPoint3{}) < 0.000001f,
+            true);
     }
 
     SolvedGrabFingerPose invalidPadPose{};

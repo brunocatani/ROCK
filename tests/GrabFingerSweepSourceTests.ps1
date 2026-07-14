@@ -117,15 +117,21 @@ Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
 
 # The held update interval must re-solve the curls against the live seat, not
 # republish the promotion-instant snapshot for the whole hold - anchored on
-# the KNOWN adopted contact rotations, never on live-geometry estimation.
+# COMMANDED open directions (hFRIK's authored open pose in hand space), never
+# on rendered finger geometry: rendered chords carry ROCK's own surface-aim
+# corrections, and anchoring on them fed the solver its own output (the
+# infinite adoption cycle, FINGER-CYCLE trace 2026-07-13). If the commanded
+# anchors cannot be built, the re-solve is SKIPPED - never estimated.
 Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
     'rockGrabFingerPoseUpdateInterval',
     'tryGetGrabDriveObjectWorldTransform\(',
     'heldPinchFingerPose',
-    'makeArcAnchorHintsFromPose\(_grabFingerPose\)',
+    'getHandPoseLocalTransformsForPose\(',
+    'computeCommandedOpenDirectionsHandLocal\(',
+    'heldCommandedAnchorsValid\) \{',
     'solveGrabFingerPoseFromTriangles\(',
-    '&heldArcAnchorHints\);'
-) 'Held finger pose must re-solve curls at the update interval against the live seat, anchored by the adopted-pose arc hints.'
+    '&heldCommandedOpenDirections\);'
+) 'Held finger pose must re-solve curls anchored on commanded open directions, or skip the re-solve entirely.'
 
 # The live chain chord is rotated by the CURRENT curl; anchoring the arc zero
 # on it directly stopped every finger short by that curl (air gap) and made
@@ -140,26 +146,35 @@ Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
     'chordScale <= reachA && chordScale >= reachB'
 ) 'Chord curl estimation must invert the baked Tip probe reach table, restricted to the sub-open region.'
 
-# Anchor priority in the solve: a caller-provided arc-anchor hint (the
-# rotation the finger was ADOPTED at) de-rotates exactly and covers the thumb
-# and over-open poses; without a hint the inversion covers the four fingers
-# only (the thumb chord shortens from opposition/twist and the inversion
-# misreads it).
+# Anchor priority in the solve: a caller-provided COMMANDED open direction
+# (zero rendered-finger feedback by construction) wins outright; without one
+# the chord inversion covers the four fingers only (the thumb chord shortens
+# from opposition/twist and the inversion misreads it).
 Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
     'RE::NiPoint3 openDirectionWorld = live\.openDirection;',
-    'if \(hasArcAnchorHint\) \{',
-    '-arcAnchorHints->rotationRadians\[finger\]',
+    'if \(hasCommandedOpenDirection\) \{',
+    'openDirectionWorld = \(\*commandedOpenDirectionsWorld\)\[finger\];',
     '\} else if \(finger != 0\) \{',
     'estimateCalibratedChainCurlFromChord\(',
     '-chordCurl\.chordAngleRadians \* chordCurl\.normalSign'
-) 'The runtime solve must prefer adopted arc-anchor hints and fall back to the chord inversion for the four fingers only.'
+) 'The runtime solve must prefer commanded open directions and fall back to the chord inversion for the four fingers only.'
 
-# Adopted poses must record the contact rotation the hint mechanism feeds
-# back (palm-plane sweep contacts only).
+# The commanded zero reconstruction must walk the authored open pose's chain
+# bone origins - the bake's own zero definition - and never touch rendered
+# geometry.
+Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
+    'computeCommandedOpenDirectionsHandLocal\(',
+    'composeTransforms\(bone1',
+    'composeTransforms\(bone2',
+    'bone3\.translate - bone1\.translate'
+) 'Commanded open directions must be reconstructed from the authored open-pose chain bone origins.'
+
+# Adopted poses record the contact rotation for the FINGER-CYCLE trace
+# (diagnostics: rotations settling = convergence visible in one grab's log).
 Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
     'contactArcRotationRadians\[finger\] = solved\.distance \* bakedAnchorNormalSign',
     'contactArcRotationValid\[finger\] = 1'
-) 'Sweep solves must record the adopted contact-row rotation for held re-solve anchoring.'
+) 'Sweep solves must record the adopted contact-row rotation for the adoption trace.'
 
 # Held re-solves within noise of the current pose must not churn new FRIK
 # targets every interval (finger micro-twitch).
@@ -201,15 +216,6 @@ Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
     '\} // heldPoseSmoothingSettled',
     'applyRockGrabHandPose\('
 ) 'Held re-solves must wait for the pose smoothing to settle; publishes continue regardless.'
-
-# A thumb without an exact arc-anchor hint must keep its previous pose: the
-# raw-chord anchor rotates with the thumb's own curl, so an unhinted re-solve
-# period-2 cycles between two poses (the thumb open/close twitch).
-Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
-    '&heldArcAnchorHints\);',
-    'heldArcAnchorHints\.valid\[0\] == 0',
-    'keepThumbPoseFromPrevious\(liveFingerPose, _grabFingerPose\);'
-) 'Unhinted held thumb re-solves must keep the previous thumb pose.'
 
 # Pad probes on the publish paths are debug-overlay-only work (target
 # refinement is capture-only, open bias is deleted) and iterate every world

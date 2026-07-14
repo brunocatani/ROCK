@@ -12113,24 +12113,59 @@ namespace rock
                          * pockets keep their frozen at-grab pose.
                          */
                         const bool heldPinchFingerPose = _grabFrame.seatMode == GrabSeatMode::PinchPocket;
+                        /*
+                         * COMMANDED anchors, never rendered ones: the rendered
+                         * chain carries ROCK's own surface-aim corrections, so
+                         * any anchor measured from it feeds the solver its own
+                         * output - the infinite adoption cycle the FINGER-CYCLE
+                         * trace proved (relPos static, values wandering). The
+                         * zero directions come from hFRIK's authored fully-open
+                         * pose in hand-bone space (the bake's own zero
+                         * definition), rotated by the FRIK hand bone. If they
+                         * cannot be built this interval, the re-solve is
+                         * skipped outright - keeping the current pose beats
+                         * re-anchoring on contaminated geometry.
+                         */
+                        bool heldCommandedAnchorsValid = false;
+                        std::array<RE::NiPoint3, 5> heldCommandedOpenDirections{};
                         if (!heldPinchFingerPose && liveFingerSnapshotValid && !currentWorldTriangles.empty()) {
+                            frik_visual_authority::FingerLocalTransformOverride openPoseLocals{};
+                            const auto openHandPose = frik_visual_authority::makeUniformHandPoseData(1.0f, 1.0f, 1.0f, 1.0f, 1.0f);
+                            if (frik_visual_authority::getHandPoseLocalTransformsForPose(handFromBool(_isLeft), openHandPose, &openPoseLocals)) {
+                                const RE::NiTransform frikHandBoneWorld = frik_visual_authority::getHandWorldTransform(handFromBool(_isLeft));
+                                if (std::isfinite(frikHandBoneWorld.scale) && std::abs(frikHandBoneWorld.scale) > 0.000001f) {
+                                    const auto zeroHandLocal =
+                                        grab_finger_pose_runtime::computeCommandedOpenDirectionsHandLocal(openPoseLocals.localTransforms);
+                                    heldCommandedAnchorsValid = true;
+                                    for (std::size_t finger = 0; finger < heldCommandedOpenDirections.size(); ++finger) {
+                                        const RE::NiPoint3 directionWorld =
+                                            transform_math::localVectorToWorld(frikHandBoneWorld, zeroHandLocal[finger]);
+                                        const float lengthSquared = directionWorld.x * directionWorld.x +
+                                                                    directionWorld.y * directionWorld.y +
+                                                                    directionWorld.z * directionWorld.z;
+                                        if (!std::isfinite(lengthSquared) || lengthSquared <= 0.000001f) {
+                                            heldCommandedAnchorsValid = false;
+                                            break;
+                                        }
+                                        const float inverseLength = 1.0f / std::sqrt(lengthSquared);
+                                        heldCommandedOpenDirections[finger] = RE::NiPoint3{
+                                            directionWorld.x * inverseLength,
+                                            directionWorld.y * inverseLength,
+                                            directionWorld.z * inverseLength
+                                        };
+                                    }
+                                }
+                            }
+                            if (!heldCommandedAnchorsValid && g_rockConfig.rockDebugGrabFingerPoseLogging) {
+                                ROCK_LOG_DEBUG(Hand, "{} FINGER-CYCLE anchors unavailable this interval - re-solve skipped", handName());
+                            }
+                        }
+                        if (!heldPinchFingerPose && liveFingerSnapshotValid && !currentWorldTriangles.empty() && heldCommandedAnchorsValid) {
                             RE::NiPoint3 fingerPosePivotWorld = computeGrabPivotAWorld(world, handWorldTransform);
                             RE::NiPoint3 livePivotAWorld{};
                             if (tryComputeGrabProxyLocalPalmPocketPivotAWorld(world, livePivotAWorld)) {
                                 fingerPosePivotWorld = livePivotAWorld;
                             }
-                            /*
-                             * The pose currently driving the hand carries the
-                             * contact-row rotations its fingers were adopted at;
-                             * feeding them back de-rotates each live chord by the
-                             * KNOWN commanded rotation instead of re-estimating
-                             * it from live geometry. This is what makes held
-                             * re-solves feedback-free: a static hand-object
-                             * relation solves to the same values every interval,
-                             * so the adoption deadband actually holds.
-                             */
-                            const auto heldArcAnchorHints =
-                                grab_finger_pose_runtime::makeArcAnchorHintsFromPose(_grabFingerPose);
                             auto liveFingerPose = grab_finger_pose_runtime::solveGrabFingerPoseFromTriangles(
                                 currentWorldTriangles,
                                 handWorldTransform,
@@ -12148,10 +12183,7 @@ namespace rock
                                 -1.0f,
                                 g_rockConfig.rockGrabThumbSweepMaxOpenValue,
                                 g_rockConfig.rockGrabFingerSweepMaxOpenValue,
-                                &heldArcAnchorHints);
-                            if (heldArcAnchorHints.valid[0] == 0) {
-                                grab_finger_pose_runtime::keepThumbPoseFromPrevious(liveFingerPose, _grabFingerPose);
-                            }
+                                &heldCommandedOpenDirections);
                             /*
                              * Deadband: a held re-solve that lands within noise of
                              * the current pose must not churn new FRIK targets every
@@ -12177,7 +12209,7 @@ namespace rock
                                     const RE::NiPoint3 objectInHandLocal =
                                         transform_math::worldPointToLocal(handWorldTransform, currentNodeWorld.translate);
                                     ROCK_LOG_INFO(Hand,
-                                        "{} FINGER-CYCLE ADOPT #{} t={:.2f}s delta={:.3f} old=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f}) new=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f}) hints={}{}{}{}{} rotOld=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f}) rotNew=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f}) relPos=({:.2f},{:.2f},{:.2f}) thumbLane={} quiet={}",
+                                        "{} FINGER-CYCLE ADOPT #{} t={:.2f}s delta={:.3f} anchor=cmd old=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f}) new=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f}) rotNew=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f}) relPos=({:.2f},{:.2f},{:.2f}) thumbLane={} quiet={}",
                                         handName(),
                                         _grabFingerPoseAdoptionCount + 1,
                                         _grabFingerPoseResolveElapsedSeconds,
@@ -12186,11 +12218,6 @@ namespace rock
                                         _grabFingerPose.values[3], _grabFingerPose.values[4],
                                         liveFingerPose.values[0], liveFingerPose.values[1], liveFingerPose.values[2],
                                         liveFingerPose.values[3], liveFingerPose.values[4],
-                                        heldArcAnchorHints.valid[0], heldArcAnchorHints.valid[1], heldArcAnchorHints.valid[2],
-                                        heldArcAnchorHints.valid[3], heldArcAnchorHints.valid[4],
-                                        heldArcAnchorHints.rotationRadians[0], heldArcAnchorHints.rotationRadians[1],
-                                        heldArcAnchorHints.rotationRadians[2], heldArcAnchorHints.rotationRadians[3],
-                                        heldArcAnchorHints.rotationRadians[4],
                                         liveFingerPose.contactArcRotationRadians[0], liveFingerPose.contactArcRotationRadians[1],
                                         liveFingerPose.contactArcRotationRadians[2], liveFingerPose.contactArcRotationRadians[3],
                                         liveFingerPose.contactArcRotationRadians[4],
