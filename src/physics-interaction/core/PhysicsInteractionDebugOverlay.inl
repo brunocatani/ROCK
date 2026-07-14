@@ -36,9 +36,26 @@
         const auto probeMicroseconds =
             std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
 
+        // Per-hand previous-frame rotations for the rotation-step fields. The
+        // 2026-07-13 post-phase-lock session proved the visible stutter is NOT
+        // translation (obj-cam jitter 0.118gu with the percept unchanged);
+        // rotation was never sampled at the point of visibility. Probe-only
+        // state; consecutive-frame validity gated on the time gap.
+        struct RotationStepState
+        {
+            RE::NiMatrix3 wand{};
+            RE::NiMatrix3 target{};
+            RE::NiMatrix3 object{};
+            RE::NiMatrix3 handBody{};
+            long long microseconds = 0;
+            bool valid = false;
+        };
+        static RotationStepState s_rotationStepState[2]{};
+
         auto logHand = [&](Hand& hand, const RE::NiTransform& rawHandWorld) {
             GrabOverlayPointProbeSample sample{};
             if (!hand.tryGetGrabOverlayPointProbeSample(hknp, sample)) {
+                s_rotationStepState[hand.isLeft() ? 1 : 0].valid = false;
                 return;
             }
 
@@ -49,8 +66,31 @@
             const bool handBodyOk = tryResolveLiveBodyWorldTransform(hknp, hand.getCollisionBodyId(), handBodyWorld);
             const bool proxyOk = tryResolveLiveBodyWorldTransform(hknp, sample.proxyBodyId, proxyWorld);
 
+            // Per-frame rotation steps (degrees) of each trajectory. A steadily
+            // carried object should step like the wand; motor wobble shows as
+            // rotObj >> rotWand with rotTgt clean (downstream) or rotTgt dirty
+            // (upstream target noise).
+            auto& rotationState = s_rotationStepState[hand.isLeft() ? 1 : 0];
+            float rotStepWand = -1.0f;
+            float rotStepTarget = -1.0f;
+            float rotStepObject = -1.0f;
+            float rotStepHandBody = -1.0f;
+            if (rotationState.valid && objectOk && handBodyOk &&
+                (probeMicroseconds - rotationState.microseconds) < 50000) {
+                rotStepWand = grab_authority_source_clock::rotationDeltaDegrees(rawHandWorld.rotate, rotationState.wand);
+                rotStepTarget = grab_authority_source_clock::rotationDeltaDegrees(sample.appliedProxyTargetWorld.rotate, rotationState.target);
+                rotStepObject = grab_authority_source_clock::rotationDeltaDegrees(objectWorld.rotate, rotationState.object);
+                rotStepHandBody = grab_authority_source_clock::rotationDeltaDegrees(handBodyWorld.rotate, rotationState.handBody);
+            }
+            rotationState.wand = rawHandWorld.rotate;
+            rotationState.target = sample.appliedProxyTargetWorld.rotate;
+            rotationState.object = objectWorld.rotate;
+            rotationState.handBody = handBodyWorld.rotate;
+            rotationState.microseconds = probeMicroseconds;
+            rotationState.valid = objectOk && handBodyOk;
+
             ROCK_LOG_DEBUG(Hand,
-                "{} OVERLAY_POINT: t={}us flushSeq={} wand=({:.3f},{:.3f},{:.3f}) appliedWand=({:.3f},{:.3f},{:.3f}) tgt=({:.3f},{:.3f},{:.3f}) objOk={} obj=({:.3f},{:.3f},{:.3f}) handOk={} handBody=({:.3f},{:.3f},{:.3f}) proxyOk={} proxy=({:.3f},{:.3f},{:.3f}) camOk={} cam=({:.3f},{:.3f},{:.3f})",
+                "{} OVERLAY_POINT: t={}us flushSeq={} wand=({:.3f},{:.3f},{:.3f}) appliedWand=({:.3f},{:.3f},{:.3f}) tgt=({:.3f},{:.3f},{:.3f}) objOk={} obj=({:.3f},{:.3f},{:.3f}) handOk={} handBody=({:.3f},{:.3f},{:.3f}) proxyOk={} proxy=({:.3f},{:.3f},{:.3f}) camOk={} cam=({:.3f},{:.3f},{:.3f}) rotWand={:.3f} rotTgt={:.3f} rotObj={:.3f} rotHand={:.3f}",
                 hand.handName(),
                 probeMicroseconds,
                 sample.flushSequence,
@@ -78,7 +118,11 @@
                 stereoOk ? "y" : "n",
                 stereoOrigin.x,
                 stereoOrigin.y,
-                stereoOrigin.z);
+                stereoOrigin.z,
+                rotStepWand,
+                rotStepTarget,
+                rotStepObject,
+                rotStepHandBody);
         };
 
         if (probeRight) {
