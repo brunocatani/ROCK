@@ -12673,18 +12673,19 @@ namespace rock
             pending.proxyWorld.translate = _grabAuthoritySourceClock.evaluate(driveDelta, resampleAction);
             resampleRebaseCount = _grabAuthoritySourceClock.rebaseCount;
             /*
-             * Room-velocity feed-forward (one-substep prediction): the room
-             * origin is a physics-clock signal but the target was sampled on
-             * the game clock one frame earlier, so the resampled position
-             * replays room motion one substep late and the replay lag
-             * oscillates with the quantized substep delta (the residual
-             * stick-locomotion shimmer). Predict the room component to this
-             * substep's END using the LIVE character-controller velocity --
-             * the smoothest signal in the chain (2026-07-13 telemetry:
-             * std 2.89 vs 13.69 gu/s for game-clock room sampling). Applied
-             * to the same flush-local copy as the resample so every consumer
-             * stays consistent; fail-closed on read failure or implausible
-             * speed; identically zero when standing.
+             * Room-velocity feed-forward: the room origin is a physics-clock
+             * signal but the target was sampled on the game clock one frame
+             * earlier, so the resampled position replays room motion one step
+             * late. Close the lag with the LIVE character-controller velocity
+             * -- the smoothest signal in the chain (2026-07-13 telemetry:
+             * std 2.89 vs 13.69 gu/s for game-clock room sampling) -- times a
+             * CONSTANT lead. The lead must never be the varying substep dt:
+             * that puts vCC*(dt_n - dt_prev) into consecutive target
+             * displacements, which measured as +-55 gu/s velocity spikes on
+             * every dt transition (the noise the motors then low-passed).
+             * Applied to the same flush-local copy as the resample so every
+             * consumer stays consistent; fail-closed on read failure or
+             * implausible speed; identically zero when standing.
              */
             if (g_rockConfig.rockGrabRoomVelocityFeedForward) {
                 RE::NiPoint3 liveLocomotionVelocity{};
@@ -12692,7 +12693,7 @@ namespace rock
                     pending.proxyWorld.translate = grab_authority_source_clock::applyRoomVelocityFeedForward(
                         pending.proxyWorld.translate,
                         liveLocomotionVelocity,
-                        driveDelta,
+                        grab_authority_source_clock::kFeedForwardLeadSeconds,
                         roomFeedForwardApplied);
                 }
             }

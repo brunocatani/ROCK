@@ -165,6 +165,9 @@ Reject-Text 'src/physics-interaction/grab/GrabAuthorityProxyMotion.h' 'computeAn
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'computeAngularVelocityRadiansPerSecond\(previousProxyWorld,\s*pending\.proxyWorld,\s*driveDelta,\s*angularVelocityHavok\)' 'Proxy authority must not return to the old matrix-column angular delta helper.'
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'proxyDrive=exactZeroVelocity' 'Proxy authority must not return to the sampled-target exact-zero-velocity drive policy.'
 
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'applyRoomVelocityFeedForward\(\s*pending\.proxyWorld\.translate,\s*liveLocomotionVelocity,\s*grab_authority_source_clock::kFeedForwardLeadSeconds' 'The room-velocity feed-forward must predict with the CONSTANT lead so consecutive targets never carry dt-difference noise.'
+Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'applyRoomVelocityFeedForward\([^;]*driveDelta' 'Feeding the varying substep dt into the feed-forward injects vCC x (dt_n - dt_prev) velocity spikes on every dt transition (measured +-55 gu/s, 2026-07-13); the lead must stay constant.'
+
 if ($failures.Count -gt 0) {
     Write-Host 'Grab authority proxy frame source test failed:'
     foreach ($failure in $failures) {

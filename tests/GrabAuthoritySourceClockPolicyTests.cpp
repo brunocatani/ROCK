@@ -342,17 +342,32 @@ int main()
         ok &= expectTrue("long run output stays finite", std::isfinite(resampler.currentTranslation.x));
     }
 
-    // Room-velocity feed-forward: one-substep prediction of the room component.
+    // Room-velocity feed-forward: constant-lead prediction of the room component.
     {
         using rock::grab_authority_source_clock::applyRoomVelocityFeedForward;
+        using rock::grab_authority_source_clock::kFeedForwardLeadSeconds;
         const RE::NiPoint3 base{ 100.0f, -50.0f, 25.0f };
 
-        // Walking: target advances by exactly v * dt.
+        // Walking: target advances by exactly v * constant lead.
         bool applied = false;
-        const RE::NiPoint3 walking = applyRoomVelocityFeedForward(base, RE::NiPoint3{ 400.0f, 0.0f, 0.0f }, 0.011f, applied);
+        const RE::NiPoint3 walking =
+            applyRoomVelocityFeedForward(base, RE::NiPoint3{ 400.0f, 0.0f, 0.0f }, kFeedForwardLeadSeconds, applied);
         ok &= expectTrue("walking feed-forward applies", applied);
-        ok &= expectNear("walking feed-forward x", walking.x, 100.0f + 400.0f * 0.011f, 1e-4f);
+        ok &= expectNear("walking feed-forward x", walking.x, 100.0f + 400.0f * kFeedForwardLeadSeconds, 1e-4f);
         ok &= expectNear("walking feed-forward y untouched", walking.y, -50.0f, 1e-6f);
+
+        // The constant lead cancels out of consecutive-substep target
+        // differences: two bases one source step apart, predicted with the
+        // SAME lead, differ by exactly the source displacement regardless of
+        // how the physics dt was quantized (no vCC*(dt_n - dt_prev) noise).
+        bool appliedA = false;
+        bool appliedB = false;
+        const RE::NiPoint3 stepA =
+            applyRoomVelocityFeedForward(RE::NiPoint3{ 0.0f, 0.0f, 0.0f }, RE::NiPoint3{ 400.0f, 0.0f, 0.0f }, kFeedForwardLeadSeconds, appliedA);
+        const RE::NiPoint3 stepB =
+            applyRoomVelocityFeedForward(RE::NiPoint3{ 4.4f, 0.0f, 0.0f }, RE::NiPoint3{ 400.0f, 0.0f, 0.0f }, kFeedForwardLeadSeconds, appliedB);
+        ok &= expectTrue("constant-lead pair applies", appliedA && appliedB);
+        ok &= expectNear("constant lead cancels in the difference", stepB.x - stepA.x, 4.4f, 1e-5f);
 
         // Standing: sub-floor speed is controller noise and must not perturb the target.
         applied = true;

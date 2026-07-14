@@ -80,6 +80,17 @@ namespace rock::grab_authority_source_clock
     // predicted into the target.
     constexpr float kFeedForwardMinSpeedGameUnitsPerSecond = 1.0f;
     constexpr float kFeedForwardMaxSpeedGameUnitsPerSecond = 2000.0f;
+    /*
+     * CONSTANT prediction lead. Predicting each substep's end with that
+     * substep's own quantized dt puts the dt-DIFFERENCE into consecutive
+     * target displacements (dTgt = vSrc*dt_n + vCC*(dt_n - dt_prev)), which
+     * reads as +-vCC*2ms velocity spikes on every 10/11/12ms transition --
+     * measured 2026-07-13: target speed 467 on dt-up vs 349 on dt-down at a
+     * 412 gu/s walk. A constant lead cancels out of the difference, so the
+     * commanded velocity stays exactly the source velocity; the cost is a
+     * sub-2ms constant phase error, invisible next to the removed noise.
+     */
+    constexpr float kFeedForwardLeadSeconds = 1.0f / 90.0f;
 
     // angle(a^T * b) via trace(a^T * b) = element-wise dot product; identical for
     // row-major and column-major storage because both operands share it.
@@ -114,18 +125,19 @@ namespace rock::grab_authority_source_clock
      * in proportion to locomotion speed (2026-07-13 telemetry: ~0.7 gu at
      * 400 gu/s).
      *
-     * Adding liveCharControllerVelocity * physicsDelta to the resampled target
-     * predicts where the room will be at the END of the upcoming substep, so
-     * the object advances in lockstep with the world it lives in. This is NOT
-     * the removed compensation class: there is no position accumulator (the
-     * base is the resampled actual trajectory every substep, so error cannot
-     * build up), no commanded-vs-actual comparison, and no second behavior
-     * path -- standing still the velocity is zero and the result is
-     * byte-identical to the unpredicted target.
+     * Adding liveCharControllerVelocity * leadSeconds to the resampled target
+     * closes the one-frame sampling lag of the room component. leadSeconds
+     * MUST be a constant (kFeedForwardLeadSeconds), never the varying substep
+     * dt -- see the constant's comment for the measured dt-difference noise a
+     * varying lead injects. This is NOT the removed compensation class: there
+     * is no position accumulator (the base is the resampled actual trajectory
+     * every substep, so error cannot build up), no commanded-vs-actual
+     * comparison, and no second behavior path -- standing still the velocity
+     * is zero and the result is byte-identical to the unpredicted target.
      */
     inline RE::NiPoint3 applyRoomVelocityFeedForward(const RE::NiPoint3& resampledTranslation,
         const RE::NiPoint3& liveVelocityGameUnitsPerSecond,
-        float physicsDeltaSeconds,
+        float leadSeconds,
         bool& outApplied) noexcept
     {
         outApplied = false;
@@ -133,7 +145,7 @@ namespace rock::grab_authority_source_clock
             return resampledTranslation;
         }
         if (!isFiniteVector(liveVelocityGameUnitsPerSecond) ||
-            !havok_physics_timing::isUsableDelta(physicsDeltaSeconds)) {
+            !havok_physics_timing::isUsableDelta(leadSeconds)) {
             return resampledTranslation;
         }
         const float speedSquared =
@@ -146,9 +158,9 @@ namespace rock::grab_authority_source_clock
         }
         outApplied = true;
         return RE::NiPoint3{
-            resampledTranslation.x + liveVelocityGameUnitsPerSecond.x * physicsDeltaSeconds,
-            resampledTranslation.y + liveVelocityGameUnitsPerSecond.y * physicsDeltaSeconds,
-            resampledTranslation.z + liveVelocityGameUnitsPerSecond.z * physicsDeltaSeconds,
+            resampledTranslation.x + liveVelocityGameUnitsPerSecond.x * leadSeconds,
+            resampledTranslation.y + liveVelocityGameUnitsPerSecond.y * leadSeconds,
+            resampledTranslation.z + liveVelocityGameUnitsPerSecond.z * leadSeconds,
         };
     }
 
