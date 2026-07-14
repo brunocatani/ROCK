@@ -315,4 +315,8 @@ namespace rock::debug
     void PublishFrame(const BodyOverlayFrame& frame);
     void ClearFrame();
     void ClearShapeCache();
+    // Current-frame left-eye stereo origin (game world units) from the same
+    // fail-closed engine read the overlay camera uses. Diagnostic sampling only;
+    // returns false without touching the overlay's stereo health telemetry.
+    bool TryGetCurrentStereoOrigin(RE::NiPoint3& outOrigin);
 }

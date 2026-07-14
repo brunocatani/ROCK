@@ -258,6 +258,7 @@ namespace rock
             const Hand* sourceHand = nullptr);
 
         void publishDebugBodyOverlay(const PhysicsFrameContext& frame);
+        void logGrabOverlayPointProbe(const PhysicsFrameContext& frame);
 
         void clearLeftWeaponContact();
         void clearRightWeaponContact();

@@ -77,6 +77,19 @@ namespace rock
         std::uint32_t palmMotionIndex{ body_frame::kFreeMotionIndex };
     };
 
+    // The LAST APPLIED grab-authority state (what the most recent physics flush
+    // actually drove toward), not a live recompute like the proxy debug snapshot
+    // above. The OVERLAY-POINT stutter probe differences this against the current
+    // raw wand and live body readbacks at the frame's point of visibility.
+    struct GrabOverlayPointProbeSample
+    {
+        RE::NiTransform appliedProxyTargetWorld{};
+        RE::NiTransform appliedRawHandWorld{};
+        RE::hknpBodyId proxyBodyId{ INVALID_BODY_ID };
+        RE::hknpBodyId objectBodyId{ INVALID_BODY_ID };
+        std::uint64_t flushSequence = 0;
+    };
+
     struct GrabContactPatchDebugSnapshot
     {
         std::array<RE::NiPoint3, kMaxGrabContactPatchSamples> samplePointsWorld{};
@@ -362,6 +375,8 @@ namespace rock
         bool getGrabPivotDebugSnapshot(RE::hknpWorld* world, GrabPivotDebugSnapshot& out) const;
         bool getGrabPocketNormalDebugSnapshot(RE::hknpWorld* world, GrabPocketNormalDebugSnapshot& out) const;
         bool getGrabAuthorityProxyDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabAuthorityProxyDebugSnapshot& out) const;
+        // Non-const: takes _grabAuthorityProxyMutex to snapshot the applied pair.
+        bool tryGetGrabOverlayPointProbeSample(RE::hknpWorld* world, GrabOverlayPointProbeSample& out);
         bool getGrabContactPatchDebugSnapshot(RE::hknpWorld* world, GrabContactPatchDebugSnapshot& out) const;
         bool getGrabSupportFrameDebugSnapshot(RE::hknpWorld* world, GrabSupportFrameDebugSnapshot& out) const;
         bool getGrabForceTorqueDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabForceTorqueDebugSnapshot& out) const;

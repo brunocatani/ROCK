@@ -1,9 +1,99 @@
 /*
  * Debug overlay publishing is split from the runtime frame loop because it is diagnostic fan-out over many subsystems, not interaction authority. The fragment remains in this translation unit so existing helper visibility and behavior stay unchanged.
  */
+    /*
+     * OVERLAY-POINT probe: once per game frame, at the same frame phase where the
+     * overlay publishes body IDs, sample every trajectory the player's eye can
+     * compare: the current raw wand, the last APPLIED commanded proxy target plus
+     * the wand sample it was built from, the live held-object body, the live hand
+     * collider body, the live proxy body, and the current-frame stereo origin.
+     * Consecutive lines decompose visible held-object stutter into its links
+     * (object-vs-target, target-vs-wand, wand-vs-camera, camera-vs-world) in one
+     * common time base. Bodies here reflect the last completed physics step - the
+     * exact state this frame renders. Diagnostic only; rides
+     * bDebugGrabFrameLogging like the HELD_POSTSOLVE probe and logs only while a
+     * hand holds an object.
+     */
+    void PhysicsInteraction::logGrabOverlayPointProbe(const PhysicsFrameContext& context)
+    {
+        if (!g_rockConfig.rockDebugGrabFrameLogging) {
+            return;
+        }
+
+        auto* hknp = context.hknpWorld;
+        if (!hknp) {
+            return;
+        }
+
+        const bool probeRight = _rightHand.isHolding() && !context.right.disabled;
+        const bool probeLeft = _leftHand.isHolding() && !context.left.disabled;
+        if (!probeRight && !probeLeft) {
+            return;
+        }
+
+        RE::NiPoint3 stereoOrigin{};
+        const bool stereoOk = debug::TryGetCurrentStereoOrigin(stereoOrigin);
+        const auto probeMicroseconds =
+            std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+
+        auto logHand = [&](Hand& hand, const RE::NiTransform& rawHandWorld) {
+            GrabOverlayPointProbeSample sample{};
+            if (!hand.tryGetGrabOverlayPointProbeSample(hknp, sample)) {
+                return;
+            }
+
+            RE::NiTransform objectWorld{};
+            RE::NiTransform handBodyWorld{};
+            RE::NiTransform proxyWorld{};
+            const bool objectOk = tryResolveLiveBodyWorldTransform(hknp, sample.objectBodyId, objectWorld);
+            const bool handBodyOk = tryResolveLiveBodyWorldTransform(hknp, hand.getCollisionBodyId(), handBodyWorld);
+            const bool proxyOk = tryResolveLiveBodyWorldTransform(hknp, sample.proxyBodyId, proxyWorld);
+
+            ROCK_LOG_DEBUG(Hand,
+                "{} OVERLAY_POINT: t={}us flushSeq={} wand=({:.3f},{:.3f},{:.3f}) appliedWand=({:.3f},{:.3f},{:.3f}) tgt=({:.3f},{:.3f},{:.3f}) objOk={} obj=({:.3f},{:.3f},{:.3f}) handOk={} handBody=({:.3f},{:.3f},{:.3f}) proxyOk={} proxy=({:.3f},{:.3f},{:.3f}) camOk={} cam=({:.3f},{:.3f},{:.3f})",
+                hand.handName(),
+                probeMicroseconds,
+                sample.flushSequence,
+                rawHandWorld.translate.x,
+                rawHandWorld.translate.y,
+                rawHandWorld.translate.z,
+                sample.appliedRawHandWorld.translate.x,
+                sample.appliedRawHandWorld.translate.y,
+                sample.appliedRawHandWorld.translate.z,
+                sample.appliedProxyTargetWorld.translate.x,
+                sample.appliedProxyTargetWorld.translate.y,
+                sample.appliedProxyTargetWorld.translate.z,
+                objectOk ? "y" : "n",
+                objectWorld.translate.x,
+                objectWorld.translate.y,
+                objectWorld.translate.z,
+                handBodyOk ? "y" : "n",
+                handBodyWorld.translate.x,
+                handBodyWorld.translate.y,
+                handBodyWorld.translate.z,
+                proxyOk ? "y" : "n",
+                proxyWorld.translate.x,
+                proxyWorld.translate.y,
+                proxyWorld.translate.z,
+                stereoOk ? "y" : "n",
+                stereoOrigin.x,
+                stereoOrigin.y,
+                stereoOrigin.z);
+        };
+
+        if (probeRight) {
+            logHand(_rightHand, context.right.rawHandWorld);
+        }
+        if (probeLeft) {
+            logHand(_leftHand, context.left.rawHandWorld);
+        }
+    }
+
     void PhysicsInteraction::publishDebugBodyOverlay(const PhysicsFrameContext& context)
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::DebugOverlayPublish);
+
+        logGrabOverlayPointProbe(context);
 
         auto* hknp = context.hknpWorld;
         const bool drawRockColliderBodies = g_rockConfig.rockDebugShowColliders;

@@ -1150,32 +1150,48 @@ float4 main(PS_INPUT input) : SV_Target {
             }
         }
 
-        bool getEyeViewProjMatrices(DirectX::XMMATRIX& outEye0, DirectX::XMMATRIX& outEye1, DirectX::XMFLOAT4& outAdjust0, DirectX::XMFLOAT4& outAdjust1)
+        // Shared root-stereo read for the overlay camera and the diagnostic origin
+        // accessor. On failure returns false with the deepest stage reached and the
+        // Win32 error; callers decide whether to feed the stereo health telemetry.
+        bool readRootStereoFields(RootStereoFields& outFields, StereoCaptureStage& deepestStage, DWORD& readError)
         {
-            StereoCaptureStage deepestStage = StereoCaptureStage::None;
-            DWORD readError = ERROR_SUCCESS;
+            deepestStage = StereoCaptureStage::None;
+            readError = ERROR_SUCCESS;
 
             static REL::Relocation<std::uintptr_t> rootAddress{ REL::Offset(kVrRuntimeRootRva) };
             const std::uintptr_t relocationAddress = rootAddress.address();
             if (!isStereoPlausiblePointer(relocationAddress)) {
-                reportStereoCaptureFailure(deepestStage, ERROR_INVALID_ADDRESS);
+                readError = ERROR_INVALID_ADDRESS;
                 return false;
             }
             deepestStage = StereoCaptureStage::RelocationResolved;
 
             std::uintptr_t runtimeRoot = 0;
             if (!readStereoMemory(relocationAddress, &runtimeRoot, sizeof(runtimeRoot), readError) || !isStereoPlausiblePointer(runtimeRoot)) {
-                reportStereoCaptureFailure(deepestStage, readError == ERROR_SUCCESS ? ERROR_INVALID_ADDRESS : readError);
+                if (readError == ERROR_SUCCESS) {
+                    readError = ERROR_INVALID_ADDRESS;
+                }
                 return false;
             }
             deepestStage = StereoCaptureStage::RuntimeRootRead;
 
-            RootStereoFields rootFields{};
-            if (!readStereoMemory(runtimeRoot + kRootStereoSlot0OriginOffset, &rootFields, sizeof(rootFields), readError)) {
-                reportStereoCaptureFailure(deepestStage, readError);
+            if (!readStereoMemory(runtimeRoot + kRootStereoSlot0OriginOffset, &outFields, sizeof(outFields), readError)) {
                 return false;
             }
             deepestStage = StereoCaptureStage::RootStereoStateRead;
+            return true;
+        }
+
+        bool getEyeViewProjMatrices(DirectX::XMMATRIX& outEye0, DirectX::XMMATRIX& outEye1, DirectX::XMFLOAT4& outAdjust0, DirectX::XMFLOAT4& outAdjust1)
+        {
+            StereoCaptureStage deepestStage = StereoCaptureStage::None;
+            DWORD readError = ERROR_SUCCESS;
+
+            RootStereoFields rootFields{};
+            if (!readRootStereoFields(rootFields, deepestStage, readError)) {
+                reportStereoCaptureFailure(deepestStage, readError);
+                return false;
+            }
             if (!isStereoPlausiblePointer(rootFields.recordsData)) {
                 reportStereoCaptureFailure(deepestStage, ERROR_INVALID_ADDRESS);
                 return false;
@@ -3003,5 +3019,20 @@ float4 main(PS_INPUT input) : SV_Target {
     {
         std::scoped_lock lock(s_shapeCacheMutex);
         s_shapeCache.clear();
+    }
+
+    bool TryGetCurrentStereoOrigin(RE::NiPoint3& outOrigin)
+    {
+        StereoCaptureStage deepestStage = StereoCaptureStage::None;
+        DWORD readError = ERROR_SUCCESS;
+        RootStereoFields rootFields{};
+        if (!readRootStereoFields(rootFields, deepestStage, readError) || !validateStereoVector3(rootFields.slot0Origin)) {
+            return false;
+        }
+
+        outOrigin.x = rootFields.slot0Origin[0];
+        outOrigin.y = rootFields.slot0Origin[1];
+        outOrigin.z = rootFields.slot0Origin[2];
+        return true;
     }
 }

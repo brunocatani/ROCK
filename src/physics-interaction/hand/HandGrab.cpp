@@ -13310,6 +13310,26 @@ namespace rock
         }
     }
 
+    bool Hand::tryGetGrabOverlayPointProbeSample(RE::hknpWorld* world, GrabOverlayPointProbeSample& out)
+    {
+        out = {};
+        if (!world) {
+            return false;
+        }
+
+        std::scoped_lock lock(_grabAuthorityProxyMutex);
+        if (!_grabAuthorityProxy.isValid() || _grabAuthorityProxyHknpWorld != world || !_hasLastAppliedGrabAuthorityProxyWorld) {
+            return false;
+        }
+
+        out.appliedProxyTargetWorld = _lastAppliedGrabAuthorityProxyWorld;
+        out.appliedRawHandWorld = _lastAppliedGrabAuthorityRawHandWorld;
+        out.proxyBodyId = _grabAuthorityProxy.getBodyId();
+        out.objectBodyId = _savedObjectState.bodyId;
+        out.flushSequence = _grabAuthorityProxyFlushSequence;
+        return true;
+    }
+
     void Hand::observeCustomGrabAuthorityAfterSolve(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
     {
         if (!world) {
