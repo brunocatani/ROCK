@@ -1,33 +1,35 @@
 #pragma once
 
 /*
- * Source-clock to physics-clock trajectory resampling for the grab-authority
- * proxy target.
+ * Game-clock phase lock for the grab-authority proxy target.
  *
  * The held-object target is sampled on the game/source clock (precise wall
  * intervals, ~11ms) but consumed on the physics-substep clock (quantized
- * 10/11/12ms). The native keyframe drive computes velocity = error / delta and
- * the solver integrates it over the actual substep delta, so feeding a
- * source-clock displacement through a physics-clock delta modulates the proxy
- * velocity every frame (and multi-substep frames stall on a re-flushed,
- * already-reached target). Both cadences read as held-object stutter under
- * sustained stick locomotion.
+ * 10/11/12ms). The previous design here -- a source-to-physics-clock
+ * trajectory resampler -- played the sampled trajectory back on the PHYSICS
+ * clock: the commanded velocity was smooth, but the commanded POSITION
+ * deviated from the wand's game-time path by v x (clock mismatch) on every
+ * rendered frame. The 2026-07-13 OVERLAY_POINT probe measured that deviation
+ * as the dominant visible-stutter link (tgt-wand jitter 2x every other link;
+ * frame-gap-binned drift +0.28 gu on short frames / -0.19 gu on long frames
+ * at a 400 gu/s walk), while the hand collider -- keyframed straight onto the
+ * game-clock wand sample -- was the visibly smooth reference in the same
+ * view. The eye compares the held object against the wand, hands, and camera,
+ * all of which advance on the game clock; game-clock path fidelity wins over
+ * physics-clock velocity smoothness.
  *
- * This resampler keeps both clocks and maps the sampled translation trajectory
- * onto physics time: one segment (previous -> current sample) is retained, and
- * each physics substep evaluates the segment at that substep's end time. It is
- * not locomotion compensation: it never inspects stick input, player velocity,
- * or room deltas, and for constant-speed source motion the commanded velocity
- * becomes exactly the source segment velocity regardless of substep
- * quantization.
- *
- * Rebase anchoring: the game loop samples the frame, then physics integrates
- * up to that sample time, so steady state has substep end times landing inside
- * the latest segment (alpha near 1). Rebases therefore anchor phase at
- * -interval (not 0); a zero anchor would converge to the extrapolation
- * boundary and oscillate. Rotation is deliberately not resampled; it stays on
- * the existing exact/substep path. Rotation enters only the discontinuity
- * check.
+ * Contract: the LAST physics substep of every frame commands EXACTLY the
+ * newest queued game-frame sample (segment fraction (index+1)/count reaches
+ * 1), so frame-end proxy positions lie on the sampled wand path exactly like
+ * the hand collider's. Intra-frame substeps command the linear interpolation
+ * between the previous and newest sample. The commanded velocity absorbs the
+ * substep-dt quantization (~+-10%); the constraint motors low-pass velocity
+ * noise (measured 2026-07-13 against the far larger v1 feed-forward spikes),
+ * and no session ever correlated commanded-velocity smoothness with what the
+ * player sees. Discontinuity gates (teleport, snap turn, source hitch, proxy
+ * rebuild) snap to the new sample instead of interpolating across the jump.
+ * Rotation is deliberately not interpolated; it stays on the sampled path and
+ * enters only the discontinuity check.
  */
 
 #include "physics-interaction/native/HavokPhysicsTiming.h"
@@ -44,7 +46,7 @@ namespace rock::grab_authority_source_clock
     {
         Hold,
         Interpolate,
-        Extrapolate,
+        Lock,
         Rebase,
     };
 
@@ -55,8 +57,8 @@ namespace rock::grab_authority_source_clock
             return "hold";
         case ResampleAction::Interpolate:
             return "interpolate";
-        case ResampleAction::Extrapolate:
-            return "extrapolate";
+        case ResampleAction::Lock:
+            return "lock";
         case ResampleAction::Rebase:
             return "rebase";
         }
@@ -66,14 +68,9 @@ namespace rock::grab_authority_source_clock
     // A source sample farther than one game frame at 10 FPS is a hitch, not motion.
     constexpr float kMaxSourceIntervalSeconds = 0.1f;
     // One-sample discontinuity gates; beyond these the sample is a snap turn,
-    // teleport, or proxy rebuild and must not become extrapolated motion.
+    // teleport, or proxy rebuild and must not become interpolated motion.
     constexpr float kMaxTranslationJumpGameUnits = 35.0f;
     constexpr float kMaxRotationJumpDegrees = 15.0f;
-    // Physics may run at most one source interval past the newest sample on the
-    // measured segment velocity before the resampler rebases.
-    constexpr float kMaxExtrapolationSourceIntervals = 1.0f;
-    // Anchor interval used before any usable source delta has been seen.
-    constexpr float kFallbackSourceIntervalSeconds = 1.0f / 90.0f;
     // Room-velocity feed-forward speed gates. Below the floor the player is
     // standing (controller noise); above the cap the velocity is not
     // locomotion (launch, script teleport, corrupted read) and must not be
@@ -164,43 +161,43 @@ namespace rock::grab_authority_source_clock
         };
     }
 
-    struct Resampler
+    struct GameClockPhaseLock
     {
         bool initialized = false;
         RE::NiPoint3 previousTranslation{};
         RE::NiPoint3 currentTranslation{};
         RE::NiMatrix3 currentRotation{};
-        float sourceIntervalSeconds = 0.0f;
-        // Cumulative physics time minus cumulative source time, bounded by the
-        // alpha-window rebases below; both clocks accumulate real time so this
-        // oscillates near zero at steady state.
-        float phaseSeconds = 0.0f;
         std::uint64_t lastSourceSequence = 0;
+        // Largest segment fraction already commanded for the current segment.
+        // A re-flush of a stale segment (physics stepping without a new game
+        // sample) can only hold at this fraction, never step backward along
+        // the segment; a fresh sample resets it to 0.
+        float playedFraction = 1.0f;
         std::uint32_t rebaseCount = 0;
         std::uint32_t duplicateSourceCount = 0;
         std::uint32_t invalidSourceCount = 0;
 
         void reset() noexcept
         {
-            *this = Resampler{};
+            *this = GameClockPhaseLock{};
         }
 
-        void rebaseTo(const RE::NiPoint3& translation, const RE::NiMatrix3& rotation, float anchorIntervalSeconds) noexcept
+        // Snap: adopt the sample as a degenerate (fully played) segment so the
+        // next evaluate holds exactly on it instead of interpolating across a
+        // discontinuity.
+        void rebaseTo(const RE::NiPoint3& translation, const RE::NiMatrix3& rotation) noexcept
         {
-            const bool usableAnchor = havok_physics_timing::isUsableDelta(anchorIntervalSeconds) && anchorIntervalSeconds <= kMaxSourceIntervalSeconds;
-            const float anchor = usableAnchor ? anchorIntervalSeconds : kFallbackSourceIntervalSeconds;
             previousTranslation = translation;
             currentTranslation = translation;
             currentRotation = rotation;
-            sourceIntervalSeconds = anchor;
-            phaseSeconds = -anchor;
+            playedFraction = 1.0f;
             initialized = true;
             ++rebaseCount;
         }
 
         // Accept one game-frame source sample. Sequence identity keeps
         // multi-substep re-flushes of the same pending target from advancing
-        // the source timeline twice.
+        // the source segment twice.
         void advanceSource(const RE::NiPoint3& translation, const RE::NiMatrix3& rotation, float sourceDeltaSeconds, std::uint64_t sourceSequence) noexcept
         {
             if (initialized && sourceSequence == lastSourceSequence) {
@@ -217,12 +214,12 @@ namespace rock::grab_authority_source_clock
             }
 
             if (!initialized) {
-                rebaseTo(translation, rotation, sourceDeltaSeconds);
+                rebaseTo(translation, rotation);
                 return;
             }
 
             if (!havok_physics_timing::isUsableDelta(sourceDeltaSeconds) || sourceDeltaSeconds > kMaxSourceIntervalSeconds) {
-                rebaseTo(translation, rotation, 0.0f);
+                rebaseTo(translation, rotation);
                 return;
             }
 
@@ -232,48 +229,43 @@ namespace rock::grab_authority_source_clock
             const float jumpSquared = dx * dx + dy * dy + dz * dz;
             if (jumpSquared > kMaxTranslationJumpGameUnits * kMaxTranslationJumpGameUnits ||
                 rotationDeltaDegrees(rotation, currentRotation) > kMaxRotationJumpDegrees) {
-                rebaseTo(translation, rotation, sourceDeltaSeconds);
+                rebaseTo(translation, rotation);
                 return;
             }
 
             previousTranslation = currentTranslation;
             currentTranslation = translation;
             currentRotation = rotation;
-            sourceIntervalSeconds = sourceDeltaSeconds;
-            phaseSeconds -= sourceDeltaSeconds;
+            playedFraction = 0.0f;
         }
 
-        // Evaluate the drive translation for the END of the upcoming physics
-        // substep and advance the physics clock. Always returns a finite,
-        // previously accepted (or segment-interpolated) translation.
-        RE::NiPoint3 evaluate(float physicsDeltaSeconds, ResampleAction& outAction) noexcept
+        // Command the segment point for physics substep (substepIndex + 1) /
+        // substepCount of the current frame. The frame's last substep reaches
+        // fraction 1 and lands EXACTLY on the newest game-frame sample -- the
+        // game-clock lock that keeps frame-end proxy positions on the sampled
+        // wand path. Always returns a finite, previously accepted (or
+        // segment-interpolated) translation.
+        RE::NiPoint3 evaluate(std::uint32_t substepIndex, std::uint32_t substepCount, ResampleAction& outAction) noexcept
         {
             if (!initialized) {
                 outAction = ResampleAction::Hold;
                 return currentTranslation;
             }
-            if (havok_physics_timing::isUsableDelta(physicsDeltaSeconds)) {
-                phaseSeconds += physicsDeltaSeconds;
-            }
-            if (sourceIntervalSeconds <= 0.0f) {
+
+            const float count = substepCount > 0 ? static_cast<float>(substepCount) : 1.0f;
+            float fraction = (static_cast<float>(substepIndex) + 1.0f) / count;
+            fraction = fraction < 0.0f ? 0.0f : (fraction > 1.0f ? 1.0f : fraction);
+            if (fraction <= playedFraction) {
+                fraction = playedFraction;
                 outAction = ResampleAction::Hold;
-                return currentTranslation;
+            } else {
+                playedFraction = fraction;
+                outAction = fraction >= 1.0f ? ResampleAction::Lock : ResampleAction::Interpolate;
             }
-
-            const float alpha = 1.0f + phaseSeconds / sourceIntervalSeconds;
-            if (alpha < 0.0f || alpha > 1.0f + kMaxExtrapolationSourceIntervals) {
-                // Clock drift beyond the retained safe window in either
-                // direction: hold the exact current target and re-anchor.
-                rebaseTo(currentTranslation, currentRotation, sourceIntervalSeconds);
-                outAction = ResampleAction::Rebase;
-                return currentTranslation;
-            }
-
-            outAction = alpha <= 1.0f ? ResampleAction::Interpolate : ResampleAction::Extrapolate;
             return RE::NiPoint3{
-                previousTranslation.x + (currentTranslation.x - previousTranslation.x) * alpha,
-                previousTranslation.y + (currentTranslation.y - previousTranslation.y) * alpha,
-                previousTranslation.z + (currentTranslation.z - previousTranslation.z) * alpha,
+                previousTranslation.x + (currentTranslation.x - previousTranslation.x) * fraction,
+                previousTranslation.y + (currentTranslation.y - previousTranslation.y) * fraction,
+                previousTranslation.z + (currentTranslation.z - previousTranslation.z) * fraction,
             };
         }
     };

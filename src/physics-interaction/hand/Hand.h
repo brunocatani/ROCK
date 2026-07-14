@@ -954,9 +954,10 @@ namespace rock
             bool valid = false;
         };
         GrabAuthorityProxyPendingTarget _grabAuthorityPendingTarget{};
-        // Maps the game-frame-sampled proxy target trajectory onto physics-substep
-        // time; guarded by _grabAuthorityProxyMutex like the pending target.
-        grab_authority_source_clock::Resampler _grabAuthoritySourceClock{};
+        // Phase-locks the per-substep proxy target onto the game-clock wand
+        // path (frame-end substep = exact queued sample); guarded by
+        // _grabAuthorityProxyMutex like the pending target.
+        grab_authority_source_clock::GameClockPhaseLock _grabAuthoritySourceClock{};
         RE::NiTransform _lastAppliedGrabAuthorityProxyWorld{};
         RE::NiTransform _lastAppliedGrabAuthorityRawHandWorld{};
         bool _hasLastAppliedGrabAuthorityProxyWorld = false;

@@ -168,6 +168,10 @@ Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'proxyDrive=exactZeroVel
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'applyRoomVelocityFeedForward\(\s*pending\.proxyWorld\.translate,\s*liveLocomotionVelocity,\s*grab_authority_source_clock::kFeedForwardLeadSeconds' 'The room-velocity feed-forward must predict with the CONSTANT lead so consecutive targets never carry dt-difference noise.'
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'applyRoomVelocityFeedForward\([^;]*driveDelta' 'Feeding the varying substep dt into the feed-forward injects vCC x (dt_n - dt_prev) velocity spikes on every dt transition (measured +-55 gu/s, 2026-07-13); the lead must stay constant.'
 
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' '_grabAuthoritySourceClock\.evaluate\(\s*timing\.substepIndex,\s*timing\.substepCount' 'The grab-authority target must stay phase-locked to the game clock: the frame-end substep commands exactly the queued sample (OVERLAY_POINT probe 2026-07-13: physics-clock playback put v x clock-mismatch between the held object and everything the eye tracks).'
+Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' '_grabAuthoritySourceClock\.evaluate\(\s*driveDelta' 'Physics-clock trajectory playback is the measured stutter mechanism (tgt-wand jitter 2x every other link, frame-gap-binned drift +0.28/-0.19 gu at 400 gu/s); the target must never be evaluated on the physics dt again.'
+Reject-Text 'src/physics-interaction/grab/GrabAuthoritySourceClockResampler.h' 'phaseSeconds|kMaxExtrapolationSourceIntervals|ResampleAction::Extrapolate' 'The physics-clock resampler machinery (phase accumulator, extrapolation window) must stay removed; the game-clock phase lock owns the target time base.'
+
 if ($failures.Count -gt 0) {
     Write-Host 'Grab authority proxy frame source test failed:'
     foreach ($failure in $failures) {

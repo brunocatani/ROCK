@@ -8,8 +8,8 @@
 
 namespace
 {
+    using rock::grab_authority_source_clock::GameClockPhaseLock;
     using rock::grab_authority_source_clock::ResampleAction;
-    using rock::grab_authority_source_clock::Resampler;
 
     constexpr float kPi = 3.14159265358979323846f;
 
@@ -53,25 +53,6 @@ namespace
         matrix.entry[1][1] = c;
         return matrix;
     }
-
-    // Engine-shaped physics quantizer: whole-millisecond substep deltas with a
-    // carried remainder, mimicking the observed 10/11/12ms quantization of the
-    // FO4VR physics clock against precise source frame intervals.
-    struct MillisecondQuantizer
-    {
-        float carrySeconds = 0.0f;
-
-        float quantize(float sourceDeltaSeconds)
-        {
-            const float total = sourceDeltaSeconds + carrySeconds;
-            float quantized = std::round(total * 1000.0f) / 1000.0f;
-            if (quantized < 0.001f) {
-                quantized = 0.001f;
-            }
-            carrySeconds = total - quantized;
-            return quantized;
-        }
-    };
 }
 
 int main()
@@ -79,267 +60,213 @@ int main()
     bool ok = true;
     const RE::NiMatrix3 identity = identityRotation();
 
-    // Constant-speed source motion, precise source deltas, quantized physics
-    // deltas: per-substep commanded velocity must be the source velocity, not
-    // the physics-clock-modulated one.
+    // THE game-clock lock: with one substep per frame, every frame-end
+    // evaluate lands EXACTLY on the newest game-frame sample, so consecutive
+    // frame-end positions reproduce the sampled wand path with zero
+    // physics-clock deviation (the 2026-07-13 OVERLAY_POINT stutter link).
     {
-        Resampler resampler;
-        MillisecondQuantizer quantizer;
-        const float speed = 200.0f;
+        GameClockPhaseLock phaseLock;
+        const float speed = 400.0f;
         const float sourceDelta = 0.01114f;
         float sourceX = 0.0f;
         std::uint64_t sequence = 0;
-        float previousEvaluatedX = 0.0f;
-        bool warm = false;
-        float maxVelocityError = 0.0f;
-
         for (int frame = 0; frame < 2000; ++frame) {
             sourceX += speed * sourceDelta;
-            resampler.advanceSource(RE::NiPoint3{ sourceX, 0.0f, 0.0f }, identity, sourceDelta, ++sequence);
-            const float physicsDelta = quantizer.quantize(sourceDelta);
+            phaseLock.advanceSource(RE::NiPoint3{ sourceX, 0.0f, 0.0f }, identity, sourceDelta, ++sequence);
             ResampleAction action = ResampleAction::Hold;
-            const RE::NiPoint3 evaluated = resampler.evaluate(physicsDelta, action);
-            if (warm && frame > 2) {
-                const float velocity = (evaluated.x - previousEvaluatedX) / physicsDelta;
-                maxVelocityError = (std::max)(maxVelocityError, std::fabs(velocity - speed));
+            const RE::NiPoint3 evaluated = phaseLock.evaluate(0, 1, action);
+            ok &= expectNear("frame-end evaluate locks on the sample", evaluated.x, sourceX, 0.0f);
+            if (frame > 0) {
+                // Frame 0 adopts the sample as a degenerate segment (init snap)
+                // and reports hold; the position is exact either way.
+                ok &= expectTrue("fresh single-substep frame reports lock", action == ResampleAction::Lock);
             }
-            previousEvaluatedX = evaluated.x;
-            warm = true;
         }
-
-        ok &= expectNear("steady-state velocity stays on the source clock", maxVelocityError, 0.0f, 0.5f);
-        ok &= expectTrue("steady state never rebases after initialization", resampler.rebaseCount == 1);
-        ok &= expectNear("phase stays bounded at steady state", resampler.phaseSeconds, 0.0f, 2.0f * sourceDelta);
+        ok &= expectTrue("steady state never rebases after initialization", phaseLock.rebaseCount == 1);
     }
 
-    // Exact target agreement whenever cumulative source and physics time coincide.
+    // Multi-substep frames interpolate the sample segment evenly and still
+    // lock the frame's last substep on the newest sample.
     {
-        Resampler resampler;
-        const float sourceDelta = 0.01f;
-        float sourceX = 0.0f;
+        GameClockPhaseLock phaseLock;
         std::uint64_t sequence = 0;
-        for (int frame = 0; frame < 200; ++frame) {
-            sourceX += 150.0f * sourceDelta;
-            resampler.advanceSource(RE::NiPoint3{ sourceX, 0.0f, 0.0f }, identity, sourceDelta, ++sequence);
-            ResampleAction action = ResampleAction::Hold;
-            const RE::NiPoint3 evaluated = resampler.evaluate(sourceDelta, action);
-            if (frame > 1) {
-                ok &= expectNear("coinciding clocks return the exact sample", evaluated.x, sourceX, 0.001f);
-            }
-        }
+        phaseLock.advanceSource(RE::NiPoint3{ 100.0f, 0.0f, 0.0f }, identity, 0.011f, ++sequence);
+        ResampleAction action = ResampleAction::Hold;
+        phaseLock.evaluate(0, 1, action);
+        phaseLock.advanceSource(RE::NiPoint3{ 130.0f, 0.0f, 0.0f }, identity, 0.022f, ++sequence);
+
+        RE::NiPoint3 evaluated = phaseLock.evaluate(0, 2, action);
+        ok &= expectNear("substep 0/2 commands the segment midpoint", evaluated.x, 115.0f, 1e-3f);
+        ok &= expectTrue("substep 0/2 reports interpolate", action == ResampleAction::Interpolate);
+        evaluated = phaseLock.evaluate(1, 2, action);
+        ok &= expectNear("substep 1/2 locks on the sample", evaluated.x, 130.0f, 0.0f);
+        ok &= expectTrue("substep 1/2 reports lock", action == ResampleAction::Lock);
+
+        phaseLock.advanceSource(RE::NiPoint3{ 160.0f, 0.0f, 0.0f }, identity, 0.033f, ++sequence);
+        evaluated = phaseLock.evaluate(0, 3, action);
+        ok &= expectNear("substep 0/3 commands one third", evaluated.x, 140.0f, 1e-3f);
+        evaluated = phaseLock.evaluate(1, 3, action);
+        ok &= expectNear("substep 1/3 commands two thirds", evaluated.x, 150.0f, 1e-3f);
+        evaluated = phaseLock.evaluate(2, 3, action);
+        ok &= expectNear("substep 2/3 locks on the sample", evaluated.x, 160.0f, 0.0f);
+        ok &= expectTrue("multi-substep frames never rebase", phaseLock.rebaseCount == 1);
     }
 
-    // One, two, and three physics substeps per source frame: evaluated motion
-    // marches evenly, including bounded extrapolation past the newest sample.
+    // A stale segment (physics stepping without a new game sample) holds the
+    // newest sample and never steps backward along the segment, even when the
+    // stale frame reports multiple substeps.
     {
-        Resampler resampler;
-        const float speed = 90.0f;
-        float sourceX = 0.0f;
+        GameClockPhaseLock phaseLock;
         std::uint64_t sequence = 0;
-        float previousEvaluatedX = 0.0f;
-        bool warm = false;
+        phaseLock.advanceSource(RE::NiPoint3{ 10.0f, 0.0f, 0.0f }, identity, 0.011f, ++sequence);
+        phaseLock.advanceSource(RE::NiPoint3{ 20.0f, 0.0f, 0.0f }, identity, 0.011f, ++sequence);
+        ResampleAction action = ResampleAction::Hold;
+        RE::NiPoint3 evaluated = phaseLock.evaluate(0, 1, action);
+        ok &= expectNear("fresh segment locks", evaluated.x, 20.0f, 0.0f);
 
-        const int substepCounts[] = { 1, 2, 3, 2, 1, 3, 1, 2 };
-        for (int frame = 0; frame < 400; ++frame) {
-            const int substeps = substepCounts[frame % 8];
-            const float sourceDelta = 0.011f * static_cast<float>(substeps);
-            sourceX += speed * sourceDelta;
-            resampler.advanceSource(RE::NiPoint3{ sourceX, 0.0f, 0.0f }, identity, sourceDelta, ++sequence);
-            for (int substep = 0; substep < substeps; ++substep) {
-                ResampleAction action = ResampleAction::Hold;
-                const RE::NiPoint3 evaluated = resampler.evaluate(0.011f, action);
-                if (warm && frame > 1) {
-                    const float velocity = (evaluated.x - previousEvaluatedX) / 0.011f;
-                    ok &= expectNear("multi-substep velocity stays on the source clock", velocity, speed, 1.0f);
-                    ok &= expectTrue("multi-substep never rebases", action != ResampleAction::Rebase);
-                }
-                previousEvaluatedX = evaluated.x;
-                warm = true;
-            }
+        for (int starvedStep = 0; starvedStep < 12; ++starvedStep) {
+            evaluated = phaseLock.evaluate(0, 2, action);
+            ok &= expectNear("stale multi-substep never steps backward", evaluated.x, 20.0f, 0.0f);
+            ok &= expectTrue("stale segment reports hold", action == ResampleAction::Hold);
+            evaluated = phaseLock.evaluate(1, 2, action);
+            ok &= expectNear("stale segment holds the newest sample", evaluated.x, 20.0f, 0.0f);
         }
-        ok &= expectTrue("mixed substep cadence keeps a single initialization rebase", resampler.rebaseCount == 1);
+        ok &= expectTrue("starved source never rebases", phaseLock.rebaseCount == 1);
     }
 
     // Duplicate physics flushes of one pending target must not advance the
-    // source timeline twice.
+    // source segment twice.
     {
-        Resampler resampler;
+        GameClockPhaseLock phaseLock;
         std::uint64_t sequence = 0;
-        resampler.advanceSource(RE::NiPoint3{ 1.0f, 0.0f, 0.0f }, identity, 0.011f, ++sequence);
-        resampler.advanceSource(RE::NiPoint3{ 2.0f, 0.0f, 0.0f }, identity, 0.011f, ++sequence);
-        const float phaseBefore = resampler.phaseSeconds;
-        const float currentBefore = resampler.currentTranslation.x;
-        resampler.advanceSource(RE::NiPoint3{ 99.0f, 0.0f, 0.0f }, identity, 0.011f, sequence);
-        ok &= expectTrue("duplicate sequence is counted", resampler.duplicateSourceCount == 1);
-        ok &= expectNear("duplicate sequence leaves the phase alone", resampler.phaseSeconds, phaseBefore, 1e-9f);
-        ok &= expectNear("duplicate sequence leaves the segment alone", resampler.currentTranslation.x, currentBefore, 1e-9f);
+        phaseLock.advanceSource(RE::NiPoint3{ 1.0f, 0.0f, 0.0f }, identity, 0.011f, ++sequence);
+        phaseLock.advanceSource(RE::NiPoint3{ 2.0f, 0.0f, 0.0f }, identity, 0.011f, ++sequence);
+        const float previousBefore = phaseLock.previousTranslation.x;
+        const float currentBefore = phaseLock.currentTranslation.x;
+        phaseLock.advanceSource(RE::NiPoint3{ 99.0f, 0.0f, 0.0f }, identity, 0.011f, sequence);
+        ok &= expectTrue("duplicate sequence is counted", phaseLock.duplicateSourceCount == 1);
+        ok &= expectNear("duplicate sequence leaves the segment start alone", phaseLock.previousTranslation.x, previousBefore, 0.0f);
+        ok &= expectNear("duplicate sequence leaves the segment end alone", phaseLock.currentTranslation.x, currentBefore, 0.0f);
     }
 
-    // Stationary target: evaluated position holds exactly with zero velocity.
+    // Stationary target: evaluated position holds exactly.
     {
-        Resampler resampler;
+        GameClockPhaseLock phaseLock;
         std::uint64_t sequence = 0;
         const RE::NiPoint3 target{ 5.0f, -3.0f, 8.0f };
         for (int frame = 0; frame < 50; ++frame) {
-            resampler.advanceSource(target, identity, 0.011f, ++sequence);
+            phaseLock.advanceSource(target, identity, 0.011f, ++sequence);
             ResampleAction action = ResampleAction::Hold;
-            const RE::NiPoint3 evaluated = resampler.evaluate(0.011f, action);
-            ok &= expectNear("stationary x holds", evaluated.x, target.x, 1e-4f);
-            ok &= expectNear("stationary y holds", evaluated.y, target.y, 1e-4f);
-            ok &= expectNear("stationary z holds", evaluated.z, target.z, 1e-4f);
+            const RE::NiPoint3 evaluated = phaseLock.evaluate(0, 1, action);
+            ok &= expectNear("stationary x holds", evaluated.x, target.x, 0.0f);
+            ok &= expectNear("stationary y holds", evaluated.y, target.y, 0.0f);
+            ok &= expectNear("stationary z holds", evaluated.z, target.z, 0.0f);
         }
     }
 
-    // Acceleration, deceleration, and reversal below the discontinuity gates
-    // stay on the continuous path with no rebase.
+    // Invalid, zero, and non-finite source deltas snap to the exact target.
     {
-        Resampler resampler;
-        MillisecondQuantizer quantizer;
-        const float sourceDelta = 0.0111f;
-        float sourceX = 0.0f;
+        GameClockPhaseLock phaseLock;
         std::uint64_t sequence = 0;
-        for (int frame = 0; frame < 900; ++frame) {
-            const float speed = 300.0f * std::sin(static_cast<float>(frame) * 0.02f);
-            sourceX += speed * sourceDelta;
-            resampler.advanceSource(RE::NiPoint3{ sourceX, 0.0f, 0.0f }, identity, sourceDelta, ++sequence);
-            ResampleAction action = ResampleAction::Hold;
-            const RE::NiPoint3 evaluated = resampler.evaluate(quantizer.quantize(sourceDelta), action);
-            ok &= expectTrue("reversal profile output stays finite", std::isfinite(evaluated.x));
-        }
-        ok &= expectTrue("reversal profile never rebases", resampler.rebaseCount == 1);
-    }
+        phaseLock.advanceSource(RE::NiPoint3{ 1.0f, 0.0f, 0.0f }, identity, 0.011f, ++sequence);
+        phaseLock.advanceSource(RE::NiPoint3{ 2.0f, 0.0f, 0.0f }, identity, 0.011f, ++sequence);
 
-    // Invalid, zero, and non-finite source deltas rebase to the exact target.
-    {
-        Resampler resampler;
-        std::uint64_t sequence = 0;
-        resampler.advanceSource(RE::NiPoint3{ 1.0f, 0.0f, 0.0f }, identity, 0.011f, ++sequence);
-        resampler.advanceSource(RE::NiPoint3{ 2.0f, 0.0f, 0.0f }, identity, 0.011f, ++sequence);
-
-        resampler.advanceSource(RE::NiPoint3{ 3.0f, 0.0f, 0.0f }, identity, 0.0f, ++sequence);
-        ok &= expectTrue("zero source delta rebases", resampler.rebaseCount == 2);
+        phaseLock.advanceSource(RE::NiPoint3{ 3.0f, 0.0f, 0.0f }, identity, 0.0f, ++sequence);
+        ok &= expectTrue("zero source delta rebases", phaseLock.rebaseCount == 2);
         ResampleAction action = ResampleAction::Hold;
-        RE::NiPoint3 evaluated = resampler.evaluate(0.011f, action);
-        ok &= expectNear("zero source delta holds the exact target", evaluated.x, 3.0f, 1e-4f);
+        RE::NiPoint3 evaluated = phaseLock.evaluate(0, 1, action);
+        ok &= expectNear("zero source delta holds the exact target", evaluated.x, 3.0f, 0.0f);
 
         const float nan = std::nanf("");
-        resampler.advanceSource(RE::NiPoint3{ 4.0f, 0.0f, 0.0f }, identity, nan, ++sequence);
-        ok &= expectTrue("non-finite source delta rebases", resampler.rebaseCount == 3);
-        evaluated = resampler.evaluate(0.011f, action);
-        ok &= expectNear("non-finite source delta holds the exact target", evaluated.x, 4.0f, 1e-4f);
+        phaseLock.advanceSource(RE::NiPoint3{ 4.0f, 0.0f, 0.0f }, identity, nan, ++sequence);
+        ok &= expectTrue("non-finite source delta rebases", phaseLock.rebaseCount == 3);
+        evaluated = phaseLock.evaluate(0, 1, action);
+        ok &= expectNear("non-finite source delta holds the exact target", evaluated.x, 4.0f, 0.0f);
 
-        resampler.advanceSource(RE::NiPoint3{ 5.0f, 0.0f, 0.0f }, identity, 0.2f, ++sequence);
-        ok &= expectTrue("hitch-length source delta rebases", resampler.rebaseCount == 4);
+        phaseLock.advanceSource(RE::NiPoint3{ 5.0f, 0.0f, 0.0f }, identity, 0.2f, ++sequence);
+        ok &= expectTrue("hitch-length source delta rebases", phaseLock.rebaseCount == 4);
 
-        resampler.advanceSource(RE::NiPoint3{ nan, 0.0f, 0.0f }, identity, 0.011f, ++sequence);
-        ok &= expectTrue("non-finite target is refused", resampler.invalidSourceCount == 1);
-        evaluated = resampler.evaluate(0.011f, action);
+        phaseLock.advanceSource(RE::NiPoint3{ nan, 0.0f, 0.0f }, identity, 0.011f, ++sequence);
+        ok &= expectTrue("non-finite target is refused", phaseLock.invalidSourceCount == 1);
+        evaluated = phaseLock.evaluate(0, 1, action);
         ok &= expectTrue("non-finite target never reaches the output", std::isfinite(evaluated.x));
     }
 
-    // Invalid physics deltas neither corrupt the phase nor the output.
+    // Degenerate substep metadata fails closed onto the newest sample.
     {
-        Resampler resampler;
+        GameClockPhaseLock phaseLock;
         std::uint64_t sequence = 0;
-        resampler.advanceSource(RE::NiPoint3{ 1.0f, 0.0f, 0.0f }, identity, 0.011f, ++sequence);
-        resampler.advanceSource(RE::NiPoint3{ 2.0f, 0.0f, 0.0f }, identity, 0.011f, ++sequence);
+        phaseLock.advanceSource(RE::NiPoint3{ 1.0f, 0.0f, 0.0f }, identity, 0.011f, ++sequence);
+        phaseLock.advanceSource(RE::NiPoint3{ 2.0f, 0.0f, 0.0f }, identity, 0.011f, ++sequence);
         ResampleAction action = ResampleAction::Hold;
-        const RE::NiPoint3 reference = resampler.evaluate(0.011f, action);
-        const float phaseBefore = resampler.phaseSeconds;
-        const RE::NiPoint3 nanEvaluated = resampler.evaluate(std::nanf(""), action);
-        ok &= expectTrue("non-finite physics delta output stays finite", std::isfinite(nanEvaluated.x));
-        ok &= expectNear("non-finite physics delta does not advance the clock", resampler.phaseSeconds, phaseBefore, 1e-9f);
-        ok &= expectNear("non-finite physics delta repeats the reference", nanEvaluated.x, reference.x, 1e-4f);
+        RE::NiPoint3 evaluated = phaseLock.evaluate(0, 0, action);
+        ok &= expectNear("zero substep count locks on the sample", evaluated.x, 2.0f, 0.0f);
+        phaseLock.advanceSource(RE::NiPoint3{ 3.0f, 0.0f, 0.0f }, identity, 0.011f, ++sequence);
+        evaluated = phaseLock.evaluate(7, 2, action);
+        ok &= expectNear("out-of-range substep index clamps to the sample", evaluated.x, 3.0f, 0.0f);
     }
 
-    // Stale source: extrapolation is bounded to one source interval, then the
-    // resampler rebases and holds the exact last sample.
+    // Translation and rotation discontinuities snap to the exact new target
+    // instead of interpolating across the jump.
     {
-        Resampler resampler;
+        GameClockPhaseLock phaseLock;
         std::uint64_t sequence = 0;
-        const float speed = 200.0f;
-        const float sourceDelta = 0.011f;
-        float sourceX = 0.0f;
-        for (int frame = 0; frame < 10; ++frame) {
-            sourceX += speed * sourceDelta;
-            resampler.advanceSource(RE::NiPoint3{ sourceX, 0.0f, 0.0f }, identity, sourceDelta, ++sequence);
-            ResampleAction action = ResampleAction::Hold;
-            resampler.evaluate(sourceDelta, action);
-        }
+        phaseLock.advanceSource(RE::NiPoint3{ 0.0f, 0.0f, 0.0f }, identity, 0.011f, ++sequence);
+        phaseLock.advanceSource(RE::NiPoint3{ 1.0f, 0.0f, 0.0f }, identity, 0.011f, ++sequence);
 
-        const float lastSample = sourceX;
-        const float extrapolationCap = lastSample + speed * sourceDelta * 1.0f + 0.01f;
-        bool sawRebase = false;
-        float maxX = 0.0f;
-        float heldX = 0.0f;
-        for (int starvedStep = 0; starvedStep < 12; ++starvedStep) {
-            ResampleAction action = ResampleAction::Hold;
-            const RE::NiPoint3 evaluated = resampler.evaluate(sourceDelta, action);
-            maxX = (std::max)(maxX, evaluated.x);
-            sawRebase = sawRebase || action == ResampleAction::Rebase;
-            heldX = evaluated.x;
-        }
-        ok &= expectTrue("starved source triggers a rebase", sawRebase);
-        ok &= expectTrue("starved source never extrapolates past one interval", maxX <= extrapolationCap);
-        ok &= expectNear("starved source holds the exact last sample", heldX, lastSample, 0.01f);
-    }
-
-    // Translation and rotation discontinuities rebase to the exact new target
-    // instead of becoming extrapolated motion.
-    {
-        Resampler resampler;
-        std::uint64_t sequence = 0;
-        resampler.advanceSource(RE::NiPoint3{ 0.0f, 0.0f, 0.0f }, identity, 0.011f, ++sequence);
-        resampler.advanceSource(RE::NiPoint3{ 1.0f, 0.0f, 0.0f }, identity, 0.011f, ++sequence);
-
-        resampler.advanceSource(RE::NiPoint3{ 51.0f, 0.0f, 0.0f }, identity, 0.011f, ++sequence);
-        ok &= expectTrue("translation jump rebases", resampler.rebaseCount == 2);
+        phaseLock.advanceSource(RE::NiPoint3{ 51.0f, 0.0f, 0.0f }, identity, 0.011f, ++sequence);
+        ok &= expectTrue("translation jump rebases", phaseLock.rebaseCount == 2);
         ResampleAction action = ResampleAction::Hold;
-        RE::NiPoint3 evaluated = resampler.evaluate(0.011f, action);
-        ok &= expectNear("translation jump lands exactly on the new target", evaluated.x, 51.0f, 1e-4f);
+        RE::NiPoint3 evaluated = phaseLock.evaluate(0, 2, action);
+        ok &= expectNear("translation jump lands exactly on the new target", evaluated.x, 51.0f, 0.0f);
 
-        resampler.advanceSource(RE::NiPoint3{ 51.5f, 0.0f, 0.0f }, rotationAroundZ(kPi * 20.0f / 180.0f), 0.011f, ++sequence);
-        ok &= expectTrue("rotation jump rebases", resampler.rebaseCount == 3);
-        evaluated = resampler.evaluate(0.011f, action);
-        ok &= expectNear("rotation jump lands exactly on the new target", evaluated.x, 51.5f, 1e-4f);
+        phaseLock.advanceSource(RE::NiPoint3{ 51.5f, 0.0f, 0.0f }, rotationAroundZ(kPi * 20.0f / 180.0f), 0.011f, ++sequence);
+        ok &= expectTrue("rotation jump rebases", phaseLock.rebaseCount == 3);
+        evaluated = phaseLock.evaluate(0, 1, action);
+        ok &= expectNear("rotation jump lands exactly on the new target", evaluated.x, 51.5f, 0.0f);
 
-        resampler.advanceSource(RE::NiPoint3{ 51.6f, 0.0f, 0.0f }, rotationAroundZ(kPi * 22.0f / 180.0f), 0.011f, ++sequence);
-        ok &= expectTrue("small rotation step after a jump does not rebase", resampler.rebaseCount == 3);
+        phaseLock.advanceSource(RE::NiPoint3{ 51.6f, 0.0f, 0.0f }, rotationAroundZ(kPi * 22.0f / 180.0f), 0.011f, ++sequence);
+        ok &= expectTrue("small rotation step after a jump does not rebase", phaseLock.rebaseCount == 3);
     }
 
     // Proxy rebuild / world change resets restore the uninitialized state.
     {
-        Resampler resampler;
+        GameClockPhaseLock phaseLock;
         std::uint64_t sequence = 0;
-        resampler.advanceSource(RE::NiPoint3{ 7.0f, 0.0f, 0.0f }, identity, 0.011f, ++sequence);
-        resampler.reset();
-        ok &= expectTrue("reset drops initialization", !resampler.initialized);
-        ok &= expectTrue("reset clears the sequence", resampler.lastSourceSequence == 0);
+        phaseLock.advanceSource(RE::NiPoint3{ 7.0f, 0.0f, 0.0f }, identity, 0.011f, ++sequence);
+        phaseLock.reset();
+        ok &= expectTrue("reset drops initialization", !phaseLock.initialized);
+        ok &= expectTrue("reset clears the sequence", phaseLock.lastSourceSequence == 0);
         ResampleAction action = ResampleAction::Interpolate;
-        const RE::NiPoint3 evaluated = resampler.evaluate(0.011f, action);
+        const RE::NiPoint3 evaluated = phaseLock.evaluate(0, 1, action);
         ok &= expectTrue("uninitialized evaluate holds", action == ResampleAction::Hold);
-        ok &= expectNear("uninitialized evaluate returns the reset origin", evaluated.x, 0.0f, 1e-6f);
+        ok &= expectNear("uninitialized evaluate returns the reset origin", evaluated.x, 0.0f, 0.0f);
     }
 
-    // Long mixed-cadence run: no accumulated drift, bounded phase, finite output.
+    // Long mixed-cadence run: frame-end positions reproduce the source path
+    // exactly, output stays finite, and only the initialization rebase occurs.
     {
-        Resampler resampler;
-        MillisecondQuantizer quantizer;
+        GameClockPhaseLock phaseLock;
         std::uint64_t sequence = 0;
         float sourceX = 0.0f;
-        float maxTrackingError = 0.0f;
+        float maxFrameEndError = 0.0f;
+        const std::uint32_t substepCounts[] = { 1, 1, 1, 2, 1, 1, 3, 1 };
         for (int frame = 0; frame < 20000; ++frame) {
             const float sourceDelta = 0.010f + 0.003f * ((frame * 7919) % 100) / 100.0f;
             const float speed = 150.0f + 80.0f * std::sin(static_cast<float>(frame) * 0.01f);
             sourceX += speed * sourceDelta;
-            resampler.advanceSource(RE::NiPoint3{ sourceX, 0.0f, 0.0f }, identity, sourceDelta, ++sequence);
-            ResampleAction action = ResampleAction::Hold;
-            const RE::NiPoint3 evaluated = resampler.evaluate(quantizer.quantize(sourceDelta), action);
-            maxTrackingError = (std::max)(maxTrackingError, std::fabs(evaluated.x - sourceX));
+            phaseLock.advanceSource(RE::NiPoint3{ sourceX, 0.0f, 0.0f }, identity, sourceDelta, ++sequence);
+            const std::uint32_t substeps = substepCounts[frame % 8];
+            RE::NiPoint3 evaluated{};
+            for (std::uint32_t substep = 0; substep < substeps; ++substep) {
+                ResampleAction action = ResampleAction::Hold;
+                evaluated = phaseLock.evaluate(substep, substeps, action);
+                ok &= expectTrue("long run output stays finite", std::isfinite(evaluated.x));
+            }
+            maxFrameEndError = (std::max)(maxFrameEndError, std::fabs(evaluated.x - sourceX));
         }
-        ok &= expectTrue("long run phase stays bounded", std::fabs(resampler.phaseSeconds) < 0.05f);
-        ok &= expectTrue("long run tracks the source trajectory", maxTrackingError < 10.0f);
-        ok &= expectTrue("long run output stays finite", std::isfinite(resampler.currentTranslation.x));
+        ok &= expectNear("long run frame-end positions reproduce the source path", maxFrameEndError, 0.0f, 1e-3f);
+        ok &= expectTrue("long run keeps a single initialization rebase", phaseLock.rebaseCount == 1);
     }
 
     // Room-velocity feed-forward: constant-lead prediction of the room component.

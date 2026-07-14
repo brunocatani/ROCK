@@ -12636,11 +12636,11 @@ namespace rock
             performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GrabAuthorityFlush);
 
             pending = _grabAuthorityPendingTarget;
-            // Accept the game-frame sample exactly once on its own source-clock
-            // delta; the queued-sequence identity keeps multi-substep re-flushes
-            // of the same pending target from advancing the source timeline. The
-            // drive target is then evaluated per substep on the physics clock
-            // below. See GrabAuthoritySourceClockResampler.h for the contract.
+            // Accept the game-frame sample exactly once; the queued-sequence
+            // identity keeps multi-substep re-flushes of the same pending
+            // target from advancing the source segment. The drive target is
+            // then phase-locked to the game clock per substep below. See
+            // GrabAuthoritySourceClockResampler.h for the contract.
             _grabAuthoritySourceClock.advanceSource(
                 pending.proxyWorld.translate,
                 pending.proxyWorld.rotate,
@@ -12662,15 +12662,18 @@ namespace rock
             angularAuthority = _activeConstraint.angularAuthority;
 
             const float driveDelta = havok_physics_timing::driveDeltaSeconds(timing);
-            // Resample the sampled translation trajectory to this substep's end
-            // time so the native drive (velocity = error / driveDelta, verified
-            // contract) commands the source segment velocity instead of the
-            // quantization-modulated one. Local copy only: every downstream use
-            // in this flush -- keyframe drive, constraint target, motors,
-            // readback diagnostics, last-applied tracking -- sees the resampled
-            // target consistently, while the stored pending target stays the raw
+            // Game-clock phase lock: the frame's last substep commands EXACTLY
+            // the queued game-frame sample, so frame-end proxy positions lie on
+            // the sampled wand path the same way the hand collider's do -- the
+            // 2026-07-13 OVERLAY_POINT probe proved physics-clock playback put
+            // v x (clock mismatch) between the held object and everything else
+            // the eye tracks. Intra-frame substeps interpolate along the
+            // sample segment. Local copy only: every downstream use in this
+            // flush -- keyframe drive, constraint target, motors, readback
+            // diagnostics, last-applied tracking -- sees the locked target
+            // consistently, while the stored pending target stays the raw
             // sample. Rotation deliberately stays on the sampled path.
-            pending.proxyWorld.translate = _grabAuthoritySourceClock.evaluate(driveDelta, resampleAction);
+            pending.proxyWorld.translate = _grabAuthoritySourceClock.evaluate(timing.substepIndex, timing.substepCount, resampleAction);
             resampleRebaseCount = _grabAuthoritySourceClock.rebaseCount;
             /*
              * Room-velocity feed-forward: the room origin is a physics-clock
