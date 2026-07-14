@@ -254,6 +254,7 @@ namespace rock
         int rockDebugContactTargetIdentitySampleMilliseconds = 500;
         bool rockDebugVerboseLogging = false;
         bool rockDebugGrabFrameLogging = false;
+        bool rockDebugGrabFingerPoseLogging = false;
         bool rockDebugGrabTimelineTrace = false;
         bool rockDebugGrabAfterSolveAnomalySampling = false;
         bool rockDebugGrabTransformTelemetry = false;
@@ -501,6 +502,7 @@ namespace rock
         float rockGrabFingerSweepContactRadiusGameUnits = 1.0f;
         float rockGrabFingerSweepMaxOpenValue = 1.4f;
         float rockGrabThumbSweepMaxOpenValue = 2.0f;
+        float rockGrabFingerPoseResolveWindowSeconds = 2.0f;
         float rockGrabThumbOppositionStrength = 1.0f;
         float rockGrabThumbAlternateCurveStrength = 0.65f;
         bool rockGrabThumbSurfaceSafetyEnabled = true;

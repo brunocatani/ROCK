@@ -1093,6 +1093,15 @@ namespace rock
          */
         int _grabFingerPoseQuietResolves = 0;
         bool _grabFingerPoseFrozen = false;
+        /*
+         * Anti-livelock deadline: some grabs never converge naturally (an
+         * adoption cycle where pose A re-solves to pose B and back). The
+         * resolve window bounds the convergence phase in wall time; at
+         * expiry the pose freezes on the current adoption regardless, with
+         * a WARN carrying the cycle evidence. Reset with the freeze state.
+         */
+        float _grabFingerPoseResolveElapsedSeconds = 0.0f;
+        int _grabFingerPoseAdoptionCount = 0;
 
         static constexpr std::size_t GRAB_RELEASE_VELOCITY_HISTORY = 5;
         std::array<RE::NiPoint3, GRAB_RELEASE_VELOCITY_HISTORY> _heldLocalLinearVelocityHistory{};

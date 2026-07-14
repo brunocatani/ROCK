@@ -10398,6 +10398,8 @@ namespace rock
             _grabFingerPoseAccumulatedDeltaTime = 0.0f;
             _grabFingerPoseQuietResolves = 0;
             _grabFingerPoseFrozen = false;
+            _grabFingerPoseResolveElapsedSeconds = 0.0f;
+            _grabFingerPoseAdoptionCount = 0;
             _heldLocalLinearVelocityHistory = {};
             _heldLocalLinearVelocityHistoryCount = 0;
             _heldLocalLinearVelocityHistoryNext = 0;
@@ -10921,6 +10923,8 @@ namespace rock
             _grabFingerPose = fingerPose;
             _grabFingerPoseQuietResolves = 0;
             _grabFingerPoseFrozen = false;
+            _grabFingerPoseResolveElapsedSeconds = 0.0f;
+            _grabFingerPoseAdoptionCount = 0;
             _grabFingerProbeStart = fingerPose.probeStart;
             _grabFingerProbeEnd = fingerPose.probeEnd;
             _hasGrabFingerProbeDebug = fingerPose.candidateTriangleCount > 0;
@@ -11987,6 +11991,8 @@ namespace rock
                     _grabFingerPoseAccumulatedDeltaTime = 0.0f;
                     _grabFingerPoseQuietResolves = 0;
                     _grabFingerPoseFrozen = false;
+                    _grabFingerPoseResolveElapsedSeconds = 0.0f;
+                    _grabFingerPoseAdoptionCount = 0;
                     auto publishFingerPose =
                         grab_finger_pose_runtime::resolveSurfaceAimObjectLocal(_grabFingerPose, currentNodeWorld);
                     if (g_rockConfig.rockDebugShowGrabFingerProbes) {
@@ -12055,6 +12061,7 @@ namespace rock
             !_grabFingerPoseFrozen) {
             const int updateInterval = (std::max)(1, g_rockConfig.rockGrabFingerPoseUpdateInterval);
             _grabFingerPoseAccumulatedDeltaTime += (std::max)(0.0f, std::isfinite(deltaTime) ? deltaTime : 0.0f);
+            _grabFingerPoseResolveElapsedSeconds += (std::max)(0.0f, std::isfinite(deltaTime) ? deltaTime : 0.0f);
             ++_grabFingerPoseFrameCounter;
             if (_grabFingerPoseFrameCounter >= updateInterval) {
                 _grabFingerPoseFrameCounter = 0;
@@ -12157,11 +12164,46 @@ namespace rock
                                     std::fabs(liveFingerPose.values[fingerIndex] - _grabFingerPose.values[fingerIndex]));
                             }
                             if (liveFingerPose.solved && heldResolveMaxValueDelta > 0.02f) {
+                                /*
+                                 * Cycle trace: every adoption logs enough to
+                                 * discriminate the two possible infinite-cycle
+                                 * drivers offline. relPos static across
+                                 * alternating adoptions = chain-side anchor
+                                 * feedback (rendered bones vs commanded pose);
+                                 * relPos oscillating = the object physically
+                                 * moving in the hand.
+                                 */
+                                if (g_rockConfig.rockDebugGrabFingerPoseLogging) {
+                                    const RE::NiPoint3 objectInHandLocal =
+                                        transform_math::worldPointToLocal(handWorldTransform, currentNodeWorld.translate);
+                                    ROCK_LOG_INFO(Hand,
+                                        "{} FINGER-CYCLE ADOPT #{} t={:.2f}s delta={:.3f} old=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f}) new=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f}) hints={}{}{}{}{} rotOld=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f}) rotNew=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f}) relPos=({:.2f},{:.2f},{:.2f}) thumbLane={} quiet={}",
+                                        handName(),
+                                        _grabFingerPoseAdoptionCount + 1,
+                                        _grabFingerPoseResolveElapsedSeconds,
+                                        heldResolveMaxValueDelta,
+                                        _grabFingerPose.values[0], _grabFingerPose.values[1], _grabFingerPose.values[2],
+                                        _grabFingerPose.values[3], _grabFingerPose.values[4],
+                                        liveFingerPose.values[0], liveFingerPose.values[1], liveFingerPose.values[2],
+                                        liveFingerPose.values[3], liveFingerPose.values[4],
+                                        heldArcAnchorHints.valid[0], heldArcAnchorHints.valid[1], heldArcAnchorHints.valid[2],
+                                        heldArcAnchorHints.valid[3], heldArcAnchorHints.valid[4],
+                                        heldArcAnchorHints.rotationRadians[0], heldArcAnchorHints.rotationRadians[1],
+                                        heldArcAnchorHints.rotationRadians[2], heldArcAnchorHints.rotationRadians[3],
+                                        heldArcAnchorHints.rotationRadians[4],
+                                        liveFingerPose.contactArcRotationRadians[0], liveFingerPose.contactArcRotationRadians[1],
+                                        liveFingerPose.contactArcRotationRadians[2], liveFingerPose.contactArcRotationRadians[3],
+                                        liveFingerPose.contactArcRotationRadians[4],
+                                        objectInHandLocal.x, objectInHandLocal.y, objectInHandLocal.z,
+                                        grab_finger_pose_math::thumbLaneName(liveFingerPose.selectedThumbLane),
+                                        _grabFingerPoseQuietResolves);
+                                }
                                 grab_finger_pose_runtime::useThumbIndexCurveOnlyPose(liveFingerPose);
                                 grab_finger_pose_runtime::captureSurfaceAimObjectLocal(liveFingerPose, currentNodeWorld);
                                 _grabFingerPose = liveFingerPose;
                                 publishFingerPose = liveFingerPose;
                                 heldResolveAdopted = true;
+                                ++_grabFingerPoseAdoptionCount;
                             } else if (liveFingerPose.solved) {
                                 heldResolveQuiet = true;
                             }
@@ -12247,8 +12289,36 @@ namespace rock
                     _grabFingerPadProbeHitValid = {};
                     _hasGrabFingerPadProbeDebug = false;
                     ROCK_LOG_INFO(Hand,
-                        "{} hand FINGER POSE FROZEN: {} quiet re-solves, values=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f})",
+                        "{} hand FINGER POSE FROZEN: {} quiet re-solves, {} adoptions in {:.2f}s, values=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f})",
                         handName(),
+                        _grabFingerPoseQuietResolves,
+                        _grabFingerPoseAdoptionCount,
+                        _grabFingerPoseResolveElapsedSeconds,
+                        _grabFingerPose.values[0],
+                        _grabFingerPose.values[1],
+                        _grabFingerPose.values[2],
+                        _grabFingerPose.values[3],
+                        _grabFingerPose.values[4]);
+                } else if (_grabFingerPoseResolveElapsedSeconds >= g_rockConfig.rockGrabFingerPoseResolveWindowSeconds) {
+                    /*
+                     * Anti-livelock deadline: convergence has a wall-time
+                     * budget. A grab that is still adopting past the window
+                     * is cycling (pose A re-solves to pose B and back), not
+                     * settling - freeze on the current adoption and say so
+                     * loudly. The applied pose may land mid-blend between
+                     * the cycle phases; a re-grab re-captures cleanly.
+                     */
+                    _grabFingerPoseFrozen = true;
+                    _grabFingerPadProbeStart = {};
+                    _grabFingerPadProbeEnd = {};
+                    _grabFingerPadProbeHit = {};
+                    _grabFingerPadProbeHitValid = {};
+                    _hasGrabFingerPadProbeDebug = false;
+                    ROCK_LOG_WARN(Hand,
+                        "{} hand FINGER POSE RESOLVE WINDOW EXPIRED: frozen after {} adoptions in {:.2f}s (quiet={}) - adoption cycle suspected; enable bDebugGrabFingerPoseLogging for the FINGER-CYCLE trace. values=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f})",
+                        handName(),
+                        _grabFingerPoseAdoptionCount,
+                        _grabFingerPoseResolveElapsedSeconds,
                         _grabFingerPoseQuietResolves,
                         _grabFingerPose.values[0],
                         _grabFingerPose.values[1],
@@ -14179,6 +14249,8 @@ namespace rock
         _grabFingerPoseAccumulatedDeltaTime = 0.0f;
         _grabFingerPoseQuietResolves = 0;
         _grabFingerPoseFrozen = false;
+        _grabFingerPoseResolveElapsedSeconds = 0.0f;
+        _grabFingerPoseAdoptionCount = 0;
         _heldLocalLinearVelocityHistory = {};
         _heldLocalLinearVelocityHistoryCount = 0;
         _heldLocalLinearVelocityHistoryNext = 0;

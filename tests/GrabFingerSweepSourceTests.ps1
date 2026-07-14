@@ -219,6 +219,25 @@ Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
     'refineGrabFingerPoseWithPadProbes\('
 ) 'Publish-path pad probes must be gated behind the finger-probe overlay flag.'
 
+# Convergence has a wall-time budget: a grab still adopting past the resolve
+# window is cycling (pose A re-solves to pose B and back), not settling. It
+# must freeze regardless and log the expiry loudly.
+Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
+    '_grabFingerPoseResolveElapsedSeconds \+=',
+    'rockGrabFingerPoseResolveWindowSeconds\) \{',
+    'FINGER POSE RESOLVE WINDOW EXPIRED'
+) 'Held finger re-solves must freeze at the resolve-window deadline (anti-livelock).'
+
+# Every held adoption must be traceable: the FINGER-CYCLE log carries anchor
+# hints, contact rotations, and the hand-relative object position so an
+# infinite cycle names its driver (chain feedback vs object motion) offline.
+Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
+    'rockDebugGrabFingerPoseLogging\) \{',
+    'FINGER-CYCLE ADOPT',
+    'relPos=',
+    '\+\+_grabFingerPoseAdoptionCount;'
+) 'Held pose adoptions must be traceable via the FINGER-CYCLE debug log.'
+
 # The proximity-scaled pad open bias mutated PUBLISHED values from live pad
 # distance AFTER the deadband - the finger-twitch feedback loop. It must not
 # come back in any form; over-open is a swept-arc result now.

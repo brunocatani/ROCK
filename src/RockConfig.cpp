@@ -300,6 +300,7 @@ namespace rock
         rockDebugContactTargetIdentitySampleMilliseconds = 500;
         rockDebugVerboseLogging = false;
         rockDebugGrabFrameLogging = false;
+        rockDebugGrabFingerPoseLogging = false;
         rockDebugGrabTimelineTrace = false;
         rockDebugGrabAfterSolveAnomalySampling = false;
         rockDebugGrabTransformTelemetry = false;
@@ -549,6 +550,7 @@ namespace rock
         rockGrabFingerSweepContactRadiusGameUnits = 1.0f;
         rockGrabFingerSweepMaxOpenValue = 1.4f;
         rockGrabThumbSweepMaxOpenValue = 2.0f;
+        rockGrabFingerPoseResolveWindowSeconds = 2.0f;
         rockGrabThumbOppositionStrength = 1.0f;
         rockGrabThumbAlternateCurveStrength = 0.65f;
         rockGrabThumbSurfaceSafetyEnabled = true;
@@ -1277,6 +1279,7 @@ namespace rock
             ini.GetLongValue(SECTION, "iDebugContactTargetIdentitySampleMilliseconds", rockDebugContactTargetIdentitySampleMilliseconds)));
         rockDebugVerboseLogging = ini.GetBoolValue(SECTION, "bDebugVerboseLogging", rockDebugVerboseLogging);
         rockDebugGrabFrameLogging = ini.GetBoolValue(SECTION, "bDebugGrabFrameLogging", rockDebugGrabFrameLogging);
+        rockDebugGrabFingerPoseLogging = ini.GetBoolValue(SECTION, "bDebugGrabFingerPoseLogging", rockDebugGrabFingerPoseLogging);
         rockDebugGrabTimelineTrace = ini.GetBoolValue(SECTION, "bDebugGrabTimelineTrace", rockDebugGrabTimelineTrace);
         rockDebugGrabAfterSolveAnomalySampling =
             ini.GetBoolValue(SECTION, "bDebugGrabAfterSolveAnomalySampling", rockDebugGrabAfterSolveAnomalySampling);
@@ -2099,6 +2102,12 @@ namespace rock
         if (!std::isfinite(rockGrabThumbSweepMaxOpenValue) || rockGrabThumbSweepMaxOpenValue < 1.0f || rockGrabThumbSweepMaxOpenValue > 2.0f) {
             ROCK_LOG_WARN(Config, "Invalid fGrabThumbSweepMaxOpenValue={} -- using 2.0 (valid range 1.0-2.0)", rockGrabThumbSweepMaxOpenValue);
             rockGrabThumbSweepMaxOpenValue = 2.0f;
+        }
+        rockGrabFingerPoseResolveWindowSeconds =
+            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabFingerPoseResolveWindowSeconds", rockGrabFingerPoseResolveWindowSeconds));
+        if (!std::isfinite(rockGrabFingerPoseResolveWindowSeconds) || rockGrabFingerPoseResolveWindowSeconds < 0.25f || rockGrabFingerPoseResolveWindowSeconds > 10.0f) {
+            ROCK_LOG_WARN(Config, "Invalid fGrabFingerPoseResolveWindowSeconds={} -- using 2.0 (valid range 0.25-10)", rockGrabFingerPoseResolveWindowSeconds);
+            rockGrabFingerPoseResolveWindowSeconds = 2.0f;
         }
         rockGrabThumbOppositionStrength = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabThumbOppositionStrength", rockGrabThumbOppositionStrength));
         rockGrabThumbOppositionStrength = std::clamp(std::isfinite(rockGrabThumbOppositionStrength) ? rockGrabThumbOppositionStrength : 1.0f, 0.0f, 1.0f);
