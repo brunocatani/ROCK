@@ -13430,6 +13430,61 @@ namespace rock
             gripLiveProxyErrorGameUnits = pointDistanceGameUnits(liveGripWorld, liveProxyGripWorld);
         }
 
+        /*
+         * Per-substep POST-SOLVE ripple probe (2026-07-13 stutter hunt): every
+         * pre-solve metric in this file is blind to what the constraint motors
+         * actually did to the object this substep — the signal the eye sees.
+         * This line samples the object body and its solver-output velocities
+         * AFTER the solve, once per substep, continuously while held. Offline
+         * analysis differentiates obj/proxy positions per substep and checks
+         * the velocity ripple against dt quantization. Debug-flag gated; it is
+         * the replacement for trusting pre-solve telemetry.
+         */
+        if (debugGrabFrameLogging) {
+            RE::NiPoint3 objectLinearVelocityHavok{};
+            RE::NiPoint3 objectAngularVelocityRadians{};
+            if (objectOk) {
+                if (auto* motion = havok_runtime::getBodyMotion(world, objectBodyId)) {
+                    objectLinearVelocityHavok = RE::NiPoint3{
+                        motion->linearVelocity.x,
+                        motion->linearVelocity.y,
+                        motion->linearVelocity.z,
+                    };
+                    objectAngularVelocityRadians = RE::NiPoint3{
+                        motion->angularVelocity.x,
+                        motion->angularVelocity.y,
+                        motion->angularVelocity.z,
+                    };
+                }
+            }
+            ROCK_LOG_DEBUG(Hand,
+                "{} HELD_POSTSOLVE: afterSeq={} substep={}/{} dt={:.6f} objOk={} obj=({:.3f},{:.3f},{:.3f}) objVelHk=({:.4f},{:.4f},{:.4f}) objAngVel={:.4f} objErrTgt={:.3f}gu/{:.2f}deg objErrLive={:.3f}gu/{:.2f}deg gripErrLive={:.3f}gu proxyOk={} proxyErr={:.3f}gu/{:.2f}deg tgt=({:.3f},{:.3f},{:.3f})",
+                handName(),
+                afterSolveSequence,
+                timing.substepIndex,
+                timing.substepCount,
+                havok_physics_timing::driveDeltaSeconds(timing),
+                objectOk ? "y" : "n",
+                objectReadback.translate.x,
+                objectReadback.translate.y,
+                objectReadback.translate.z,
+                objectLinearVelocityHavok.x,
+                objectLinearVelocityHavok.y,
+                objectLinearVelocityHavok.z,
+                vectorMagnitude(objectAngularVelocityRadians),
+                objectTargetPositionErrorGameUnits,
+                objectTargetRotationErrorDegrees,
+                objectLiveProxyPositionErrorGameUnits,
+                objectLiveProxyRotationErrorDegrees,
+                gripLiveProxyErrorGameUnits,
+                proxyOk ? "y" : "n",
+                proxyTargetPositionErrorGameUnits,
+                proxyTargetRotationErrorDegrees,
+                desiredBodyFromTarget.translate.x,
+                desiredBodyFromTarget.translate.y,
+                desiredBodyFromTarget.translate.z);
+        }
+
         const bool hasRagdollAngularProbe =
             ragdollAngularProbePreSolve.valid &&
             ragdollAngularProbePreSolve.objectBodyId.value == objectBodyId.value;
