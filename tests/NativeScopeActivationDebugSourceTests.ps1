@@ -43,12 +43,12 @@ foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini
         'Native scope overlay template tuning must default to a neutral additive transform.'
 }
 
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' 'enum class NativeScopeCameraWriteSource[\s\S]*PreNativeGameUpdate[\s\S]*WeaponVisualAuthority[\s\S]*struct NativeScopeCameraDebugSnapshot[\s\S]*writeSource[\s\S]*usedSightAnchor[\s\S]*cameraWorldBefore[\s\S]*targetCameraWorld[\s\S]*immediateCameraWorldAfter' `
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' 'enum class NativeScopeCameraWriteSource[\s\S]*PreNativeGameUpdate[\s\S]*WeaponVisualAuthority[\s\S]*struct NativeScopeCameraDebugSnapshot[\s\S]*writeSource[\s\S]*usedSightAnchor[\s\S]*usedLastRenderedRockWeaponFrame[\s\S]*cameraWorldBefore[\s\S]*targetCameraWorld[\s\S]*immediateCameraWorldAfter' `
     'The handoff diagnostic must retain value snapshots for pre-write, target, and immediate readback stages.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'NativeScopeCameraFollowResult applyNativeScopeCameraFollow[\s\S]*result\.targetCameraWorld\s*=\s*targetCameraWorld[\s\S]*scopeCamera->local\s*=\s*targetCameraLocal[\s\S]*immediateCameraWorld\s*=\s*scopeCamera->world' `
     'The diagnostic must observe the stored camera world immediately after the real native-camera write.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'void TwoHandedGrip::prepareNativeScopeCameraForGameUpdate[\s\S]*_nativeScopeSightAnchorWeaponNode\s*!=\s*weaponNode[\s\S]*applyNativeScopeCameraFollow\(capture,\s*weaponNode->world,\s*&_nativeScopeSightAnchorWeaponLocal\)[\s\S]*NativeScopeCameraWriteSource::PreNativeGameUpdate' `
-    'Every equipped scoped-weapon frame must replace the one-hand hand-rooted camera translation with the exact generation-matched Sight anchor before native consumption.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'void TwoHandedGrip::prepareNativeScopeCameraForGameUpdate[\s\S]*_nativeScopeSightAnchorWeaponNode\s*!=\s*weaponNode[\s\S]*shouldUseLastRenderedRockWeaponFrame[\s\S]*activationWeaponWorld[\s\S]*applyNativeScopeCameraFollow\(capture,\s*activationWeaponWorld,\s*&_nativeScopeSightAnchorWeaponLocal\)[\s\S]*NativeScopeCameraWriteSource::PreNativeGameUpdate' `
+    'Pre-native scope detection must use the last rendered ROCK weapon frame during matching two-hand ownership and still anchor it to generated Sight geometry.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' 'NativeScopeOverlayPendingHandoff[\s\S]*nativeCameraWorldBefore[\s\S]*correctedCameraWorld[\s\S]*NativeScopeOverlayCalibrationState[\s\S]*scopeParentIdentity[\s\S]*scopeModelRootIdentity[\s\S]*scopeModelRootLocal[\s\S]*scopeModelRootCalibrationInCameraLocal[\s\S]*nativeScopeParentLocal[\s\S]*lastAppliedScopeParentLocal' `
     'The native overlay handoff must retain the native camera value, generation-keyed node identities, model orientation calibration, and rollback state.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'captureNativeScopeOverlayCalibration[\s\S]*ScopeParentNode[\s\S]*find1StChildNode\(scopeParent,\s*"world_scope\.nif"\)[\s\S]*captureModelRootCalibrationInCameraLocal[\s\S]*applyNativeScopeOverlayTarget[\s\S]*makeModelRootFineTuneLocal[\s\S]*resolveScopeModelRootWorld[\s\S]*resolveScopeParentWorldForModelRoot[\s\S]*worldTargetToParentLocal[\s\S]*updateTransformsDown\(scopeParent,\s*true\)' `
@@ -77,6 +77,8 @@ Require-Text $overlay 'getNativeScopeCameraDebugSnapshot\(\)[\s\S]*NativeScopePr
     'The overlay must expose the recorded pre-write and immediate-readback handoff stages.'
 Require-Text $overlay 'writeSnapshot\.usedSightAnchor' `
     'The overlay must report whether the actual authority write consumed generated sight geometry.'
+Require-Text $overlay 'writeSnapshot\.usedLastRenderedRockWeaponFrame' `
+    'The overlay must report whether pre-native scope detection consumed ROCKs last rendered weapon frame.'
 Require-Text $overlay 'scopeWriteSourceName[\s\S]*pre-native-game-update[\s\S]*weapon-visual-authority[\s\S]*writeSnapshot\.writeSource' `
     'The in-game panel must distinguish the pre-native baseline from a later weapon-authority write.'
 Require-Text $overlay 'hmdPositionWorld[\s\S]*NativeScopeHmd[\s\S]*HMD->live[\s\S]*HMD->target' `

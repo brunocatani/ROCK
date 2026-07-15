@@ -61,6 +61,12 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'scopeClosedThis
     'Scope exit must rebase smoothly from reconstructed or recent scoped authority to the restored hFRIK root hand.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'recentScopedHandAvailable\s*=\s*state\.hasLastHandWorld\s*&&[\s\S]*state\.consecutiveDriverMissFrames\s*<\s*SCOPE_DRIVER_MISS_GRACE_FRAMES;[\s\S]*state\.consecutiveDriverMissFrames\s*=\s*0;' `
     'Scope-exit history age must be checked before the normal root path resets its driver-miss counter.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'shouldReuseRightFiringCanonicalGrip[\s\S]*_rightFiringHandCanonicalWeaponLocal[\s\S]*_rightFiringGripCanonicalWeaponLocal[\s\S]*primaryGripSource=\{\}[\s\S]*pre-scope-canonical' `
+    'A right-firing support grab acquired inside ScopeMenu must reuse the generation-matched pre-scope hand and palm frames.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' '_scopeMenuOpenThisFrame\s*&&\s*!_firingHandIsLeft\s*&&\s*!reuseRightFiringCanonicalGrip[\s\S]*ROCK_LOG_SAMPLE_WARN[\s\S]*restoreFrikOffhandGrip\(\);[\s\S]*return;' `
+    'Scoped right-firing acquisition must fail closed instead of recomputing a primary grip across incompatible frames.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'canRefreshRightFiringCanonicalFrame[\s\S]*_scopeSafeHandFrames\[1\]\.rootRebaseActive[\s\S]*_rightFiringGripCanonicalWeaponLocal\s*=\s*canonicalGrip' `
+    'ScopeMenu and scope-exit rebase frames must not poison the stable right-firing canonical cache.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' '_scopeHandAuthorityCleanupPending\s*=\s*true[\s\S]*!_scopeMenuOpenThisFrame[\s\S]*clearExternalHandWorldTransform\(PRIMARY_GRIP_TAG[\s\S]*clearExternalHandWorldTransform\(SUPPORT_GRIP_TAG' `
     'Persistent hFRIK wrist-authority entries must be cleared once the visible root returns after ScopeMenu.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'refreshHand\(true,\s*frameInput\.leftHandDriverFrame\);[\s\S]*refreshHand\(false,\s*frameInput\.rightHandDriverFrame\);[\s\S]*clearExternalHandWorldTransform\(PRIMARY_GRIP_TAG' `

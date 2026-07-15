@@ -97,6 +97,16 @@ int main()
     bool ok = true;
 
     {
+        ok &= expectTrue("native scope activation uses ROCK's last rendered frame during matching two-hand ownership",
+            rock::native_scope_activation_frame_policy::shouldUseLastRenderedRockWeaponFrame(
+                true, true, true, 0x1234u, 0x1234u));
+        ok &= expectFalse("native scope activation rejects a stale rendered frame after generation change",
+            rock::native_scope_activation_frame_policy::shouldUseLastRenderedRockWeaponFrame(
+                true, true, true, 0x1234u, 0x5678u));
+        ok &= expectFalse("native scope activation retains hFRIK's frame without ROCK weapon ownership",
+            rock::native_scope_activation_frame_policy::shouldUseLastRenderedRockWeaponFrame(
+                false, true, true, 0x1234u, 0x1234u));
+
         TestTransform weaponBefore = rock::transform_math::makeIdentityTransform<TestTransform>();
         weaponBefore.translate = { 10.0f, 20.0f, 30.0f };
         TestTransform scopeBefore = rock::transform_math::makeIdentityTransform<TestTransform>();
@@ -290,6 +300,21 @@ int main()
             rock::scope_safe_hand_frame_math::shouldPublishLockedHandVisualAuthority(false));
         ok &= expectFalse("locked hand IK is suppressed while native scope hides the body",
             rock::scope_safe_hand_frame_math::shouldPublishLockedHandVisualAuthority(true));
+        ok &= expectTrue("visible stable carry may refresh the right firing canonical",
+            rock::scope_safe_hand_frame_math::canRefreshRightFiringCanonicalFrame(false, false));
+        ok &= expectFalse("ScopeMenu cannot overwrite the right firing canonical",
+            rock::scope_safe_hand_frame_math::canRefreshRightFiringCanonicalFrame(true, false));
+        ok &= expectFalse("scope-exit hand rebase cannot overwrite the right firing canonical",
+            rock::scope_safe_hand_frame_math::canRefreshRightFiringCanonicalFrame(false, true));
+        ok &= expectTrue("scoped right firing grip reuses the matching pre-scope canonical",
+            rock::scope_safe_hand_frame_math::shouldReuseRightFiringCanonicalGrip(
+                true, false, true, 0x1234u, 0x1234u));
+        ok &= expectFalse("scoped grip rejects a canonical from a stale weapon generation",
+            rock::scope_safe_hand_frame_math::shouldReuseRightFiringCanonicalGrip(
+                true, false, true, 0x1234u, 0x5678u));
+        ok &= expectFalse("ordinary visible acquisition captures the live primary grip",
+            rock::scope_safe_hand_frame_math::shouldReuseRightFiringCanonicalGrip(
+                false, false, true, 0x1234u, 0x1234u));
 
         TestTransform rebaseStart = rock::transform_math::makeIdentityTransform<TestTransform>();
         rebaseStart.translate = { 1.5f, -2.0f, 0.75f };

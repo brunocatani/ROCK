@@ -115,6 +115,7 @@ namespace rock
         bool writeApplied{ false };
         bool immediateReadbackValid{ false };
         bool usedSightAnchor{ false };
+        bool usedLastRenderedRockWeaponFrame{ false };
         RE::NiTransform cameraWorldBefore{};
         RE::NiTransform targetCameraWorld{};
         RE::NiTransform immediateCameraWorldAfter{};
@@ -722,6 +723,7 @@ namespace rock
         // Canonical right-hand firing hold (weapon-generation-keyed); see
         // rememberRightFiringHandCanonicalFrame().
         RE::NiTransform _rightFiringHandCanonicalWeaponLocal{};
+        RE::NiPoint3 _rightFiringGripCanonicalWeaponLocal{};
         std::uint64_t _rightFiringHandCanonicalGenerationKey{ 0 };
         bool _hasRightFiringHandCanonicalWeaponLocal{ false };
 

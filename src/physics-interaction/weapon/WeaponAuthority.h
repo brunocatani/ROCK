@@ -161,6 +161,28 @@ namespace rock::weapon_visual_authority_math
 
 // ---- NativeScopeCameraFollowMath.h ----
 
+namespace rock::native_scope_activation_frame_policy
+{
+    /*
+     * hFRIK runs before ROCK in the shared main-loop chain and restores its
+     * one-hand weapon pose before FO4VR evaluates native scope entry/exit.
+     * While ROCK owns the visible weapon, the activation camera must instead
+     * consume the last frame ROCK actually rendered. Keeping the node and
+     * generation checks here prevents a stale solve from crossing an equip or
+     * collision-generation boundary.
+     */
+    [[nodiscard]] inline constexpr bool shouldUseLastRenderedRockWeaponFrame(
+        bool ownsWeaponTransform,
+        bool hasLastRenderedWeaponWorld,
+        bool activeWeaponNodeMatches,
+        std::uint64_t activeWeaponGenerationKey,
+        std::uint64_t currentWeaponGenerationKey)
+    {
+        return ownsWeaponTransform && hasLastRenderedWeaponWorld && activeWeaponNodeMatches &&
+               activeWeaponGenerationKey != 0 && activeWeaponGenerationKey == currentWeaponGenerationKey;
+    }
+}
+
 namespace rock::native_scope_camera_follow_math
 {
     /*
@@ -405,6 +427,36 @@ namespace rock::scope_safe_hand_frame_math
         // hFRIK's hands are deliberately hidden in this state, and its arm IK
         // rejects the collapsed skeleton. Weapon/camera authority still runs.
         return !scopeMenuOpen;
+    }
+
+    /*
+     * A ScopeMenu frame and the short exit rebase deliberately combine hFRIK
+     * driver-relative hands with a weapon node authored on a different pass.
+     * Neither state is a valid source for replacing the native right-hand
+     * weapon-local calibration captured during ordinary visible carry.
+     */
+    [[nodiscard]] inline constexpr bool canRefreshRightFiringCanonicalFrame(
+        bool scopeMenuOpen,
+        bool rightHandRootRebaseActive)
+    {
+        return !scopeMenuOpen && !rightHandRootRebaseActive;
+    }
+
+    /*
+     * If the support hand starts a two-hand grip while ScopeMenu is already
+     * open, reconstructing a new primary weapon-local frame mixes the hidden
+     * driver hand with hFRIK's transient one-hand weapon node. Reuse the exact
+     * pre-scope canonical only for the same right-firing weapon generation.
+     */
+    [[nodiscard]] inline constexpr bool shouldReuseRightFiringCanonicalGrip(
+        bool scopeMenuOpen,
+        bool firingHandIsLeft,
+        bool canonicalValid,
+        std::uint64_t canonicalWeaponGenerationKey,
+        std::uint64_t currentWeaponGenerationKey)
+    {
+        return scopeMenuOpen && !firingHandIsLeft && canonicalValid &&
+               canonicalWeaponGenerationKey != 0 && canonicalWeaponGenerationKey == currentWeaponGenerationKey;
     }
 
     [[nodiscard]] inline float rebaseAlpha(float elapsedSeconds, float durationSeconds)
