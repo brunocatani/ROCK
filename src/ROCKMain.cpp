@@ -304,10 +304,19 @@ namespace
     using GameLoopFunc = void (*)(std::uint64_t rcx);
     GameLoopFunc s_originalGameLoopFunc = nullptr;
 
-    // ROCK applies weapon visual/collision authority after the chained frame update
-    // so FRIK finishes its skeleton and weapon pass before ROCK writes final state.
+    /*
+     * FRIK installs the outer hook at kGameLoaded and calls this chained hook
+     * after its skeleton/weapon pass. Publish the cached generated-sight
+     * baseline before returning control to the displaced FO4VR function so
+     * downstream native scope work sees the optic instead of FRIK's firing-hand
+     * baseline. Full ROCK visual/collision authority remains after that call.
+     */
     void onGameFrameUpdateHook(const std::uint64_t rcx)
     {
+        if (s_pluginLoaded && s_frikAvailable && g_rockConfig.rockEnabled && s_physicsInteraction) {
+            s_physicsInteraction->prepareNativeScopeCameraForGameUpdate();
+        }
+
         if (s_originalGameLoopFunc) {
             s_originalGameLoopFunc(rcx);
         }

@@ -1841,6 +1841,18 @@ namespace rock
 
 #include "physics-interaction/core/PhysicsInteractionFrame.inl"
 
+    void PhysicsInteraction::prepareNativeScopeCameraForGameUpdate()
+    {
+        if (!_initialized.load(std::memory_order_acquire) || !runtime_state::isLocalSkeletonReady()) {
+            return;
+        }
+
+        auto* weaponNode = f4vr::getWeaponNode();
+        _twoHandedGrip.prepareNativeScopeCameraForGameUpdate(
+            weaponNode,
+            _weaponCollision.getCurrentWeaponGenerationKey());
+    }
+
     void PhysicsInteraction::update()
     {
         ensureWeaponCollisionWorkbenchExitMenuSinkRegistered();

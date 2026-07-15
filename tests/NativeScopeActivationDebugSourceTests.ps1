@@ -35,12 +35,18 @@ Require-Text 'data/config/ROCK.ini' 'bDebugDrawNativeScopeActivation\s*=\s*false
 Require-Text 'data/mod/ROCK_Config/ROCK.ini' 'bDebugDrawNativeScopeActivation\s*=\s*false' `
     'The packaged config template must keep the native-scope diagnostic disabled by default.'
 
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' 'struct NativeScopeCameraDebugSnapshot[\s\S]*applySequence[\s\S]*framesSinceApply[\s\S]*usedSightAnchor[\s\S]*cameraWorldBefore[\s\S]*targetCameraWorld[\s\S]*immediateCameraWorldAfter' `
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' 'enum class NativeScopeCameraWriteSource[\s\S]*PreNativeGameUpdate[\s\S]*WeaponVisualAuthority[\s\S]*struct NativeScopeCameraDebugSnapshot[\s\S]*writeSource[\s\S]*usedSightAnchor[\s\S]*cameraWorldBefore[\s\S]*targetCameraWorld[\s\S]*immediateCameraWorldAfter' `
     'The handoff diagnostic must retain value snapshots for pre-write, target, and immediate readback stages.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'NativeScopeCameraFollowResult applyNativeScopeCameraFollow[\s\S]*result\.targetCameraWorld\s*=\s*targetCameraWorld[\s\S]*scopeCamera->local\s*=\s*targetCameraLocal[\s\S]*immediateCameraWorld\s*=\s*scopeCamera->world' `
     'The diagnostic must observe the stored camera world immediately after the real native-camera write.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'if \(g_rockConfig\.rockDebugDrawNativeScopeActivation\)[\s\S]*debugSnapshot\.usedSightAnchor\s*=\s*sightAnchorWeaponLocal\s*!=\s*nullptr[\s\S]*_nativeScopeCameraDebugSnapshot\s*=\s*debugSnapshot' `
-    'The actual two-hand authority path must report whether it consumed generated sight geometry.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'void TwoHandedGrip::prepareNativeScopeCameraForGameUpdate[\s\S]*_nativeScopeSightAnchorWeaponNode\s*!=\s*weaponNode[\s\S]*applyNativeScopeCameraFollow\(capture,\s*weaponNode->world,\s*&_nativeScopeSightAnchorWeaponLocal\)[\s\S]*NativeScopeCameraWriteSource::PreNativeGameUpdate' `
+    'Every equipped scoped-weapon frame must replace the one-hand hand-rooted camera translation with the exact generation-matched Sight anchor before native consumption.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'void PhysicsInteraction::prepareNativeScopeCameraForGameUpdate\(\)[\s\S]*_twoHandedGrip\.prepareNativeScopeCameraForGameUpdate\([\s\S]*_weaponCollision\.getCurrentWeaponGenerationKey\(\)' `
+    'The main-loop boundary must consume only the current weapon node and prior completed generation snapshot.'
+Require-Text 'src/ROCKMain.cpp' 'prepareNativeScopeCameraForGameUpdate\(\);[\s\S]*s_originalGameLoopFunc\(rcx\);[\s\S]*onFrameUpdate\(\);' `
+    'The sight baseline must publish after the outer hFRIK pass, before control returns to FO4VR, and before ROCK post-frame authority.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'NativeScopeCameraWriteSource::WeaponVisualAuthority[\s\S]*scopeCameraFollow[\s\S]*scopeCameraResult[\s\S]*sightAnchorWeaponLocal\s*!=\s*nullptr' `
+    'Later weapon authority writes must remain source-aware and report whether they consumed generated sight geometry.'
 
 $overlay = 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl'
 Require-Text $overlay 'drawNativeScopeActivation\s*=\s*g_rockConfig\.rockDebugDrawNativeScopeActivation' `
@@ -53,6 +59,8 @@ Require-Text $overlay 'getNativeScopeCameraDebugSnapshot\(\)[\s\S]*NativeScopePr
     'The overlay must expose the recorded pre-write and immediate-readback handoff stages.'
 Require-Text $overlay 'writeSnapshot\.usedSightAnchor' `
     'The overlay must report whether the actual authority write consumed generated sight geometry.'
+Require-Text $overlay 'scopeWriteSourceName[\s\S]*pre-native-game-update[\s\S]*weapon-visual-authority[\s\S]*writeSnapshot\.writeSource' `
+    'The in-game panel must distinguish the pre-native baseline from a later weapon-authority write.'
 Require-Text $overlay 'hmdPositionWorld[\s\S]*NativeScopeHmd[\s\S]*HMD->live[\s\S]*HMD->target' `
     'The headset relationship to the live and intended activation anchors must be visible and quantified.'
 Require-Text $overlay 'not verified engine cone thresholds' `

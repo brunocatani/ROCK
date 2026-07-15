@@ -572,6 +572,17 @@
                 }
                 return "Unknown";
             };
+            const auto scopeWriteSourceName = [](NativeScopeCameraWriteSource source) {
+                switch (source) {
+                case NativeScopeCameraWriteSource::None:
+                    return "none";
+                case NativeScopeCameraWriteSource::PreNativeGameUpdate:
+                    return "pre-native-game-update";
+                case NativeScopeCameraWriteSource::WeaponVisualAuthority:
+                    return "weapon-visual-authority";
+                }
+                return "unknown";
+            };
             const float panelColor[4]{ 0.96f, 0.98f, 1.0f, 0.98f };
             constexpr float panelX = 520.0f;
             float panelY = 18.0f;
@@ -612,14 +623,15 @@
             panelY += 14.0f;
 
             if (writeSnapshot.applySequence == 0) {
-                std::snprintf(panelLine, sizeof(panelLine), "write: never observed (two-hand weapon authority has not applied while this diagnostic was enabled)");
+                std::snprintf(panelLine, sizeof(panelLine), "write: never observed (no generated-sight camera write has applied while this diagnostic was enabled)");
                 addScreenTextLine(panelX, panelY, panelColor, panelLine);
                 panelY += 14.0f;
             } else {
                 std::snprintf(panelLine, sizeof(panelLine),
-                    "write seq=%llu age=%u generation=%016llX",
+                    "write seq=%llu age=%u source=%s generation=%016llX",
                     static_cast<unsigned long long>(writeSnapshot.applySequence),
                     writeSnapshot.framesSinceApply,
+                    scopeWriteSourceName(writeSnapshot.writeSource),
                     static_cast<unsigned long long>(writeSnapshot.weaponGenerationKey));
                 addScreenTextLine(panelX, panelY, panelColor, panelLine);
                 panelY += 14.0f;

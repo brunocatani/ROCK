@@ -312,6 +312,36 @@ namespace rock
             return result;
         }
 
+        NativeScopeCameraDebugSnapshot makeNativeScopeCameraDebugSnapshot(
+            const NativeScopeCameraDebugSnapshot& previous,
+            const std::uint64_t weaponGenerationKey,
+            const NativeScopeCameraWriteSource writeSource,
+            const NativeScopeCameraFollowCapture& capture,
+            const NativeScopeCameraFollowResult& result,
+            const bool usedSightAnchor)
+        {
+            NativeScopeCameraDebugSnapshot snapshot{};
+            snapshot.applySequence = previous.applySequence + 1;
+            snapshot.weaponGenerationKey = weaponGenerationKey;
+            snapshot.framesSinceApply = 0;
+            snapshot.writeSource = writeSource;
+            snapshot.captureValid = capture.valid;
+            snapshot.targetValid = result.targetValid;
+            snapshot.writeApplied = result.writeApplied;
+            snapshot.immediateReadbackValid = result.immediateReadbackValid;
+            snapshot.usedSightAnchor = usedSightAnchor;
+            if (capture.valid) {
+                snapshot.cameraWorldBefore = capture.cameraWorldBefore;
+            }
+            if (result.targetValid) {
+                snapshot.targetCameraWorld = result.targetCameraWorld;
+            }
+            if (result.immediateReadbackValid) {
+                snapshot.immediateCameraWorldAfter = result.immediateCameraWorldAfter;
+            }
+            return snapshot;
+        }
+
         float lengthSquared(const RE::NiPoint3& value)
         {
             return value.x * value.x + value.y * value.y + value.z * value.z;
@@ -572,6 +602,37 @@ namespace rock
         }
         outPalmWorld = computeGrabLegacyPalmPivotAWorldFromHandBasis(outHandWorld, isLeft);
         return true;
+    }
+
+    void TwoHandedGrip::prepareNativeScopeCameraForGameUpdate(RE::NiNode* weaponNode, const std::uint64_t currentWeaponGenerationKey)
+    {
+        if (!weaponNode || currentWeaponGenerationKey == 0 || !_nativeScopeSightAnchorValid ||
+            _nativeScopeSightAnchorWeaponNode != weaponNode || _nativeScopeSightAnchorGenerationKey != currentWeaponGenerationKey) {
+            return;
+        }
+
+        /*
+         * hFRIK authors the native camera's engine-specific rotation and scale
+         * every equipped-weapon frame. ROCK's main-loop chain invokes this
+         * immediately after that pass and before returning control to FO4VR,
+         * making the generated sight rear-center available to downstream native
+         * scope work instead of the firing-controller position. Passing the same
+         * weapon frame as before/after turns the existing follow operation into
+         * a pure sight-anchor write; later ROCK weapon-authority solves republish
+         * from the same anchor after moving the weapon.
+         */
+        const NativeScopeCameraFollowCapture capture = captureNativeScopeCameraFollow(weaponNode);
+        const NativeScopeCameraFollowResult result =
+            applyNativeScopeCameraFollow(capture, weaponNode->world, &_nativeScopeSightAnchorWeaponLocal);
+        if (g_rockConfig.rockDebugDrawNativeScopeActivation) {
+            _nativeScopeCameraDebugSnapshot = makeNativeScopeCameraDebugSnapshot(
+                _nativeScopeCameraDebugSnapshot,
+                currentWeaponGenerationKey,
+                NativeScopeCameraWriteSource::PreNativeGameUpdate,
+                capture,
+                result,
+                true);
+        }
     }
 
     void TwoHandedGrip::refreshNativeScopeSightAnchor(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, const WeaponCollision& weaponCollision)
@@ -3485,26 +3546,13 @@ namespace rock
         _lastRenderedWeaponWorld = weaponNode->world;
         _hasLastRenderedWeaponWorld = isFiniteTransform(_lastRenderedWeaponWorld);
         if (g_rockConfig.rockDebugDrawNativeScopeActivation) {
-            const std::uint64_t nextApplySequence = _nativeScopeCameraDebugSnapshot.applySequence + 1;
-            NativeScopeCameraDebugSnapshot debugSnapshot{};
-            debugSnapshot.applySequence = nextApplySequence;
-            debugSnapshot.weaponGenerationKey = effectiveGenerationKey;
-            debugSnapshot.framesSinceApply = 0;
-            debugSnapshot.captureValid = scopeCameraFollow.valid;
-            debugSnapshot.targetValid = scopeCameraResult.targetValid;
-            debugSnapshot.writeApplied = scopeCameraResult.writeApplied;
-            debugSnapshot.immediateReadbackValid = scopeCameraResult.immediateReadbackValid;
-            debugSnapshot.usedSightAnchor = sightAnchorWeaponLocal != nullptr;
-            if (scopeCameraFollow.valid) {
-                debugSnapshot.cameraWorldBefore = scopeCameraFollow.cameraWorldBefore;
-            }
-            if (scopeCameraResult.targetValid) {
-                debugSnapshot.targetCameraWorld = scopeCameraResult.targetCameraWorld;
-            }
-            if (scopeCameraResult.immediateReadbackValid) {
-                debugSnapshot.immediateCameraWorldAfter = scopeCameraResult.immediateCameraWorldAfter;
-            }
-            _nativeScopeCameraDebugSnapshot = debugSnapshot;
+            _nativeScopeCameraDebugSnapshot = makeNativeScopeCameraDebugSnapshot(
+                _nativeScopeCameraDebugSnapshot,
+                effectiveGenerationKey,
+                NativeScopeCameraWriteSource::WeaponVisualAuthority,
+                scopeCameraFollow,
+                scopeCameraResult,
+                sightAnchorWeaponLocal != nullptr);
         }
         return true;
     }

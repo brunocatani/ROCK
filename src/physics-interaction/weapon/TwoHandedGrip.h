@@ -92,6 +92,13 @@ namespace rock
         RE::NiPoint3 leftGripWorld{};
     };
 
+    enum class NativeScopeCameraWriteSource : std::uint8_t
+    {
+        None,
+        PreNativeGameUpdate,
+        WeaponVisualAuthority,
+    };
+
     /*
      * Main-thread diagnostic record for the native scope camera handoff. It
      * deliberately stores transform values instead of engine pointers so the
@@ -102,6 +109,7 @@ namespace rock
         std::uint64_t applySequence{ 0 };
         std::uint64_t weaponGenerationKey{ 0 };
         std::uint32_t framesSinceApply{ 0xFFFF'FFFFu };
+        NativeScopeCameraWriteSource writeSource{ NativeScopeCameraWriteSource::None };
         bool captureValid{ false };
         bool targetValid{ false };
         bool writeApplied{ false };
@@ -185,6 +193,15 @@ namespace rock
             weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode,
             bool firingGripProximityAuthorityEnabled,
             const EquippedWeaponGripMode& gripMode);
+
+        /*
+         * Called from ROCK's chained main-loop hook after hFRIK has authored
+         * the native camera, but before control returns to FO4VR's displaced
+         * frame call. Uses only the prior completed frame's generation-matched
+         * sight snapshot and otherwise does nothing, so startup and weapon
+         * transitions fail closed.
+         */
+        void prepareNativeScopeCameraForGameUpdate(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
 
         void reset();
 

@@ -146,6 +146,22 @@ int main()
                 ok &= expectNear("native scope camera preserves calibrated rotation", anchoredRelativeAfter.rotate.entry[row][column], relativeBefore.rotate.entry[row][column]);
             }
         }
+
+        const TestTransform equippedSightBaseline = rock::native_scope_camera_follow_math::followWeaponWorldChangeFromSightAnchor(
+            weaponBefore,
+            weaponBefore,
+            scopeBefore,
+            sightAnchor);
+        const TestVector3 expectedSightAnchorWorld = rock::transform_math::localPointToWorld(weaponBefore, sightAnchor);
+        ok &= expectNear("equipped scope baseline uses sight world position x", equippedSightBaseline.translate.x, expectedSightAnchorWorld.x);
+        ok &= expectNear("equipped scope baseline uses sight world position y", equippedSightBaseline.translate.y, expectedSightAnchorWorld.y);
+        ok &= expectNear("equipped scope baseline uses sight world position z", equippedSightBaseline.translate.z, expectedSightAnchorWorld.z);
+        ok &= expectNear("equipped scope baseline preserves hFRIK camera scale", equippedSightBaseline.scale, scopeBefore.scale);
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                ok &= expectNear("equipped scope baseline preserves hFRIK camera rotation", equippedSightBaseline.rotate.entry[row][column], scopeBefore.rotate.entry[row][column]);
+            }
+        }
     }
 
     {
