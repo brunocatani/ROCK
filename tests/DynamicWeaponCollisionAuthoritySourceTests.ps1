@@ -197,9 +197,14 @@ Require-Text 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' `
     'bool BethesdaPhysicsBodyGroup::validateSharedMotion' `
     'The group must expose a reusable runtime shared-motion/back-pointer invariant check.'
 
-Require-Text 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' `
-    'snapshot\.motion->motionPropertiesId[\s\S]{0,160}BethesdaMotionType::Dynamic' `
-    'Shared-motion validation must reject a group that is no longer dynamically simulated.'
+Require-OrderedText 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' @(
+    'snapshot\.motionIndex != _sharedMotionIndex',
+    'snapshot\.collisionObject != _collisionObjects\[index\]'
+) 'Shared-motion validation must require one motion ID and the expected collision-object selector for every member.'
+
+Reject-Text 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' `
+    'motionPropertiesId[\s\S]{0,160}BethesdaMotionType::Dynamic' `
+    'FO4VR motion-property profile IDs must not be compared with BethesdaMotionType enum values.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'rawRightHandWorld[\s\S]{0,500}_rightFiringHandCanonicalWeaponLocal' `

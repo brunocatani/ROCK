@@ -1390,14 +1390,16 @@ namespace rock
             return false;
         }
 
+        /*
+         * hknp body/motion motionPropertiesId values are engine-owned profile
+         * selectors, not BethesdaMotionType enum values. The dynamic state is
+         * established by the shared motion cinfo at creation; topology safety
+         * here is the live body-to-motion and collision-object relationship.
+         */
         for (std::size_t index = 0; index < _memberCount; ++index) {
             const auto snapshot = havok_runtime::snapshotBody(world, _bodyIds[index]);
             if (!snapshot.valid || snapshot.motionIndex != _sharedMotionIndex ||
                 !snapshot.body || !snapshot.motion ||
-                (snapshot.body->motionPropertiesId & 0xFFu) !=
-                    static_cast<std::uint8_t>(BethesdaMotionType::Dynamic) ||
-                (snapshot.motion->motionPropertiesId & 0xFFu) !=
-                    static_cast<std::uint16_t>(BethesdaMotionType::Dynamic) ||
                 snapshot.collisionObject != _collisionObjects[index]) {
                 return false;
             }
