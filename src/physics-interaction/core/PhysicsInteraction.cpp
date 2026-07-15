@@ -560,10 +560,6 @@ namespace rock
                 return false;
             }
 
-            if (input_remap_runtime::shouldDeferGrabInputForVirtualHolsters(isLeft, buttonId)) {
-                return false;
-            }
-
             const auto rawState = input_remap_runtime::peekRawButtonState(isLeft, buttonId);
             if (rawState.available) {
                 return rawState.held;
@@ -575,10 +571,6 @@ namespace rock
         bool readGrabButtonPressedEdge(bool isLeft, int buttonId)
         {
             if (!input_remap_policy::isAllowedGrabButtonId(buttonId)) {
-                return false;
-            }
-
-            if (input_remap_runtime::shouldDeferGrabInputForVirtualHolsters(isLeft, buttonId)) {
                 return false;
             }
 
@@ -2503,7 +2495,6 @@ namespace rock
                 weaponNode != nullptr,
                 currentEquippedWeaponOwnershipKey);
             const bool inputBlockingMenuActive = input_remap_runtime::isMenuInputActive();
-            const bool primaryGrabDeferredForVirtualHolsters = input_remap_runtime::shouldDeferGrabInputForVirtualHolsters(firingHandIsLeft, g_rockConfig.rockGrabButtonID);
             if (inputBlockingMenuActive) {
                 _pendingEquippedWeaponPrimaryOnlyGripStart = {};
             } else if (_pendingEquippedWeaponPrimaryOnlyGripStart.pending &&
@@ -2513,7 +2504,6 @@ namespace rock
                         .gripHeld = input_remap_runtime::isRawButtonPhysicallyHeld(firingHandIsLeft, g_rockConfig.rockGrabButtonID),
                         .configEnabled = g_rockConfig.rockRealisticWeaponHandlingEnabled,
                         .primaryPoseBlockerAvailable = primaryPoseBlockerAvailable,
-                        .virtualHolstersOwnsInput = primaryGrabDeferredForVirtualHolsters,
                     })) {
                 _pendingEquippedWeaponPrimaryOnlyGripStart = {};
             }
@@ -2521,7 +2511,6 @@ namespace rock
                 .featureAvailable = primaryDetachFeatureAvailable,
                 .canUsePrimaryDetachInput = _twoHandedGrip.canUsePrimaryDetachInput(),
                 .menuInputActive = inputBlockingMenuActive,
-                .virtualHolstersOwnsInput = primaryGrabDeferredForVirtualHolsters,
             };
             if (input_remap_policy::shouldConsumeEquippedWeaponPrimaryDetachInput(primaryDetachInputGate)) {
                 const auto& primaryState = readPrimaryGrabState();
@@ -2535,7 +2524,7 @@ namespace rock
             }
 
             bool primaryOnlyGripStartedThisFrame = false;
-            if (primaryDetachFeatureAvailable && !inputBlockingMenuActive && !primaryGrabDeferredForVirtualHolsters && !_twoHandedGrip.isManualOwnershipActive()) {
+            if (primaryDetachFeatureAvailable && !inputBlockingMenuActive && !_twoHandedGrip.isManualOwnershipActive()) {
                 const auto& primaryState = readPrimaryGrabState();
                 if (_pendingEquippedWeaponPrimaryOnlyGripStart.pending && !primaryState.held) {
                     _pendingEquippedWeaponPrimaryOnlyGripStart = {};
@@ -2572,12 +2561,8 @@ namespace rock
                         .released = primaryState.released,
                     };
                 }
-            } else if (inputBlockingMenuActive || primaryGrabDeferredForVirtualHolsters) {
+            } else if (inputBlockingMenuActive) {
                 _pendingEquippedWeaponPrimaryOnlyGripStart = {};
-            }
-
-            if (primaryDetachFeatureAvailable && !inputBlockingMenuActive && primaryGrabDeferredForVirtualHolsters && _twoHandedGrip.canUsePrimaryDetachInput()) {
-                primaryGripInput.held = true;
             }
 
             std::array<const RE::NiAVObject*, ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1> drivenSourceNodes{};
@@ -2849,8 +2834,8 @@ namespace rock
                         equippedWeaponStashCommitDecisions[equipped_weapon_drop_policy::isLeft(sourceHand) ? 1u : 0u].confirmedForCommit;
                     if (stashCommitSelected) {
                         /*
-                         * Stash-unequip resolves before VirtualHolsters because the
-                         * holster press request has side effects and cannot be
+                         * Stash-unequip is terminal for this release gesture because
+                         * the holster press request has side effects and cannot be
                          * probed. The weapon is only unequipped -- it stays in the
                          * inventory and no world reference is created. Once this
                          * action is selected, failure keeps the weapon equipped;
@@ -3006,7 +2991,6 @@ namespace rock
                 .featureAvailable = primaryDetachFeatureAvailable,
                 .canUsePrimaryDetachInput = _twoHandedGrip.canUsePrimaryDetachInput(),
                 .menuInputActive = inputBlockingMenuActive,
-                .virtualHolstersOwnsInput = primaryDetachInputGate.virtualHolstersOwnsInput,
             };
             input_remap_runtime::setEquippedWeaponPrimaryDetachInputActive(
                 input_remap_policy::shouldUseEquippedWeaponPrimaryDetachInput(updatedPrimaryDetachInputGate));
@@ -7288,13 +7272,6 @@ namespace rock
                 _firingHandGrabButtonFrameState.valid = false;
             } else {
                 grabInput = readGrabButtonState(isLeft, grabButton);
-            }
-            const bool virtualHolstersDeferredGrab =
-                !hand.isHolding() && input_remap_runtime::shouldDeferGrabInputForVirtualHolsters(isLeft, grabButton);
-            if (virtualHolstersDeferredGrab) {
-                grab_input_intent_policy::reset(inputIntentState);
-                cancelPeerHeldJoinRetry("virtual-holsters-zone", false);
-                grabInput = {};
             }
             if (inputSuppressionState.deferredGrabRelease) {
                 if (grabInput.held) {

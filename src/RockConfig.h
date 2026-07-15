@@ -68,10 +68,6 @@ namespace rock
         bool rockSuppressTakeEquipGameInputWhileHolding = true;
         std::string rockSuppressTakeEquipFormTypes = "WEAP,ARMO,AMMO,MISC,INGR,ALCH,BOOK,KEYM,SLGM";
         bool rockSuppressNativeGrabHoverHaptics = true;
-        bool rockVirtualHolstersCompatibilityEnabled = true;
-        bool rockVirtualHolstersDeferGrabInZone = true;
-        bool rockVirtualHolstersDeferWeaponToggleInZone = true;
-        bool rockVirtualHolstersDeferOnlyMatchingButton = false;
         bool rockGrabInputIntentStateEnabled = true;
         float rockGrabInputLeewaySeconds = 0.12f;
         float rockGrabInputForceSeconds = 0.08f;

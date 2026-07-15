@@ -238,7 +238,6 @@ namespace rock::equipped_weapon_manual_ownership_policy
         bool gripHeld{ false };
         bool configEnabled{ true };
         bool primaryPoseBlockerAvailable{ true };
-        bool virtualHolstersOwnsInput{ false };
     };
 
     [[nodiscard]] inline constexpr bool featureAvailable(
@@ -259,8 +258,7 @@ namespace rock::equipped_weapon_manual_ownership_policy
         return input.pending &&
                input.gripHeld &&
                input.configEnabled &&
-               input.primaryPoseBlockerAvailable &&
-               !input.virtualHolstersOwnsInput;
+               input.primaryPoseBlockerAvailable;
     }
 
     [[nodiscard]] inline constexpr bool canPreserveManualOwnership(

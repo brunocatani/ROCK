@@ -180,9 +180,6 @@ int main()
     auto unmatchedActivateReload = activateReload;
     unmatchedActivateReload.eventMatched = false;
     ok &= expectFalse("unmatched activate event does not route reload", shouldRouteFiringHandActivateReload(unmatchedActivateReload));
-    auto virtualHolstersActivateReload = activateReload;
-    virtualHolstersActivateReload.virtualHolstersOwnsInput = true;
-    ok &= expectFalse("VirtualHolsters zone ownership blocks firing-hand activate reload", shouldRouteFiringHandActivateReload(virtualHolstersActivateReload));
 
     SecondaryHandReloadInput secondaryReload{
         .remapEnabled = true,
@@ -191,7 +188,6 @@ int main()
         .weaponDrawn = true,
         .firingHandIsSecondaryHand = true,
         .acceptButtonPressedEdge = true,
-        .virtualHolstersOwnsInput = false,
     };
     ok &= expectTrue("left X routes reload while the left hand owns the firing grip", shouldDispatchSecondaryHandReloadPress(secondaryReload));
     auto leftXWhileRightFiring = secondaryReload;
@@ -206,14 +202,10 @@ int main()
     auto secondaryReloadMenu = secondaryReload;
     secondaryReloadMenu.menuInputActive = true;
     ok &= expectFalse("menu input blocks secondary-hand reload press", shouldDispatchSecondaryHandReloadPress(secondaryReloadMenu));
-    auto secondaryReloadVirtualHolsters = secondaryReload;
-    secondaryReloadVirtualHolsters.virtualHolstersOwnsInput = true;
-    ok &= expectFalse("VirtualHolsters zone ownership blocks secondary-hand reload press", shouldDispatchSecondaryHandReloadPress(secondaryReloadVirtualHolsters));
 
     EquippedWeaponPrimaryDetachInputGate primaryDetachGate{
         .featureAvailable = true,
         .canUsePrimaryDetachInput = false,
-        .virtualHolstersOwnsInput = false,
     };
     ok &= expectTrue("primary detach feature consumes stale edges before armed", shouldConsumeEquippedWeaponPrimaryDetachInput(primaryDetachGate));
     ok &= expectFalse("primary detach ignores consumed edges until armed", shouldUseEquippedWeaponPrimaryDetachInput(primaryDetachGate));
@@ -222,10 +214,7 @@ int main()
     primaryDetachGate.menuInputActive = true;
     ok &= expectFalse("menu input blocks primary detach edge use", shouldUseEquippedWeaponPrimaryDetachInput(primaryDetachGate));
     primaryDetachGate.menuInputActive = false;
-    primaryDetachGate.virtualHolstersOwnsInput = true;
-    ok &= expectFalse("VirtualHolsters ownership blocks primary detach edge use", shouldUseEquippedWeaponPrimaryDetachInput(primaryDetachGate));
     primaryDetachGate.featureAvailable = false;
-    primaryDetachGate.virtualHolstersOwnsInput = false;
     ok &= expectFalse("missing hFRIK blocker export disables primary detach consumption", shouldConsumeEquippedWeaponPrimaryDetachInput(primaryDetachGate));
 
     HeldWeaponEquipInput equipInput{
@@ -274,42 +263,6 @@ int main()
 
     ok &= expectTrue("enabled suppression requests native hook install", shouldInstallNativeActionSuppressionHook(true, true));
     ok &= expectFalse("disabled remap skips native hook install", shouldInstallNativeActionSuppressionHook(false, true));
-
-    VirtualHolstersCompatibilityInput virtualHolsters{
-        .compatibilityEnabled = true,
-        .deferActionEnabled = true,
-        .deferOnlyMatchingButton = true,
-        .apiAvailable = true,
-        .initialized = true,
-        .handInZone = true,
-        .rockButtonId = 2,
-        .holsterButtonId = 2,
-    };
-    ok &= expectTrue("VirtualHolsters zone defers matching ROCK button", shouldDeferVirtualHolstersInput(virtualHolsters));
-
-    auto realisticWeaponHandlingVirtualHolsters = virtualHolsters;
-    realisticWeaponHandlingVirtualHolsters.realisticWeaponHandlingEnabled = true;
-    ok &= expectFalse("realistic weapon handling disables VirtualHolsters input deferral", shouldDeferVirtualHolstersInput(realisticWeaponHandlingVirtualHolsters));
-
-    auto unmatchedVirtualHolsters = virtualHolsters;
-    unmatchedVirtualHolsters.holsterButtonId = 7;
-    ok &= expectFalse("VirtualHolsters match-only mode allows unrelated ROCK button", shouldDeferVirtualHolstersInput(unmatchedVirtualHolsters));
-
-    auto broadVirtualHolsters = unmatchedVirtualHolsters;
-    broadVirtualHolsters.deferOnlyMatchingButton = false;
-    ok &= expectTrue("VirtualHolsters broad mode defers unrelated ROCK button", shouldDeferVirtualHolstersInput(broadVirtualHolsters));
-
-    auto unknownBroadVirtualHolsters = broadVirtualHolsters;
-    unknownBroadVirtualHolsters.rockButtonId = -1;
-    ok &= expectTrue("VirtualHolsters broad mode defers unknown native button", shouldDeferVirtualHolstersInput(unknownBroadVirtualHolsters));
-
-    auto unknownMatchingVirtualHolsters = unknownBroadVirtualHolsters;
-    unknownMatchingVirtualHolsters.deferOnlyMatchingButton = true;
-    ok &= expectFalse("VirtualHolsters match-only mode requires known matching button", shouldDeferVirtualHolstersInput(unknownMatchingVirtualHolsters));
-
-    auto inactiveVirtualHolsters = virtualHolsters;
-    inactiveVirtualHolsters.handInZone = false;
-    ok &= expectFalse("VirtualHolsters outside zone does not defer ROCK input", shouldDeferVirtualHolstersInput(inactiveVirtualHolsters));
 
     return ok ? 0 : 1;
 }

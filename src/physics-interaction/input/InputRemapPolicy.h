@@ -19,11 +19,6 @@ namespace rock::input_remap_policy
         bool suppressRightTriggerGameInput{ true };
         bool suppressNativeMeleeThrowGameInput{ true };
         bool suppressPipboyGameInputWhileHolding{ true };
-        bool virtualHolstersCompatibilityEnabled{ true };
-        bool virtualHolstersDeferGrabInZone{ true };
-        bool virtualHolstersDeferWeaponToggleInZone{ true };
-        bool virtualHolstersDeferOnlyMatchingButton{ false };
-        bool realisticWeaponHandlingEnabled{ false };
     };
 
     struct Input
@@ -70,7 +65,6 @@ namespace rock::input_remap_policy
         bool primaryHandEvent{ false };
         bool firingHandIsPrimaryHand{ false };
         bool buttonJustPressed{ false };
-        bool virtualHolstersOwnsInput{ false };
         bool eventMatched{ false };
     };
 
@@ -88,7 +82,6 @@ namespace rock::input_remap_policy
         bool weaponDrawn{ false };
         bool firingHandIsSecondaryHand{ false };
         bool acceptButtonPressedEdge{ false };
-        bool virtualHolstersOwnsInput{ false };
     };
 
     struct EquippedWeaponPrimaryDetachInputGate
@@ -96,7 +89,6 @@ namespace rock::input_remap_policy
         bool featureAvailable{ false };
         bool canUsePrimaryDetachInput{ false };
         bool menuInputActive{ false };
-        bool virtualHolstersOwnsInput{ false };
     };
 
     struct HeldWeaponEquipInput
@@ -111,19 +103,6 @@ namespace rock::input_remap_policy
         bool triggerPressedEdge{ false };
         bool gripZoneEquipEnabled{ false };
         bool gripZoneEquipSettled{ false };
-    };
-
-    struct VirtualHolstersCompatibilityInput
-    {
-        bool compatibilityEnabled{ true };
-        bool deferActionEnabled{ true };
-        bool deferOnlyMatchingButton{ false };
-        bool realisticWeaponHandlingEnabled{ false };
-        bool apiAvailable{ false };
-        bool initialized{ false };
-        bool handInZone{ false };
-        int rockButtonId{ 2 };
-        int holsterButtonId{ 2 };
     };
 
     struct EdgeTransition
@@ -219,7 +198,7 @@ namespace rock::input_remap_policy
     {
         return input.remapEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.weaponDrawn &&
                input.primaryHandEvent && input.firingHandIsPrimaryHand &&
-               input.buttonJustPressed && !input.virtualHolstersOwnsInput && input.eventMatched;
+               input.buttonJustPressed && input.eventMatched;
     }
 
     /*
@@ -230,7 +209,7 @@ namespace rock::input_remap_policy
     [[nodiscard]] constexpr bool shouldDispatchSecondaryHandReloadPress(const SecondaryHandReloadInput& input)
     {
         return input.remapEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.weaponDrawn &&
-               input.firingHandIsSecondaryHand && input.acceptButtonPressedEdge && !input.virtualHolstersOwnsInput;
+               input.firingHandIsSecondaryHand && input.acceptButtonPressedEdge;
     }
 
     [[nodiscard]] constexpr bool shouldConsumeEquippedWeaponPrimaryDetachInput(const EquippedWeaponPrimaryDetachInputGate& input)
@@ -240,7 +219,7 @@ namespace rock::input_remap_policy
 
     [[nodiscard]] constexpr bool shouldUseEquippedWeaponPrimaryDetachInput(const EquippedWeaponPrimaryDetachInputGate& input)
     {
-        return input.featureAvailable && input.canUsePrimaryDetachInput && !input.menuInputActive && !input.virtualHolstersOwnsInput;
+        return input.featureAvailable && input.canUsePrimaryDetachInput && !input.menuInputActive;
     }
 
     /*
@@ -310,16 +289,6 @@ namespace rock::input_remap_policy
     [[nodiscard]] constexpr bool shouldInstallNativeActionSuppressionHook(bool remapEnabled, bool suppressionEnabled)
     {
         return remapEnabled && suppressionEnabled;
-    }
-
-    [[nodiscard]] constexpr bool shouldDeferVirtualHolstersInput(const VirtualHolstersCompatibilityInput& input)
-    {
-        if (!input.compatibilityEnabled || input.realisticWeaponHandlingEnabled || !input.deferActionEnabled ||
-            !input.apiAvailable || !input.initialized || !input.handInZone) {
-            return false;
-        }
-
-        return !input.deferOnlyMatchingButton || (isValidButtonId(input.rockButtonId) && input.rockButtonId == input.holsterButtonId);
     }
 
     [[nodiscard]] constexpr EdgeTransition evaluateEdgeTransition(bool hadPrevious, std::uint64_t previousPressed, std::uint64_t currentPressed)

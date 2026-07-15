@@ -270,6 +270,26 @@ Require-OrderedTokens $mainUpdate @(
     'enforceNoBareFistState(forceBareFistRecheck);'
 ) 'Bare-fist guard must run after menu equipment reconciliation and retain an explicit forced recheck witness.'
 
+# VirtualHolsters compatibility was removed completely. Keep the retired ABI
+# probe, config surface, and input-ownership branches from returning.
+foreach ($relativePath in @(
+    'src/RockConfig.cpp',
+    'src/RockConfig.h',
+    'src/physics-interaction/core/PhysicsInteraction.cpp',
+    'src/physics-interaction/input/InputRemapPolicy.h',
+    'src/physics-interaction/input/InputRemapRuntime.cpp',
+    'src/physics-interaction/input/InputRemapRuntime.h',
+    'src/physics-interaction/weapon/WeaponSupport.h',
+    'tests/InputRemapPolicyTests.cpp',
+    'tests/WeaponInteractionPolicyTests.cpp',
+    'data/config/ROCK.ini',
+    'data/mod/ROCK_Config/ROCK.ini'
+)) {
+    Reject-Text (Read-Source $relativePath) `
+        'VirtualHolsters|virtualHolsters|VHAPI_GetApi' `
+        "VirtualHolsters compatibility must remain fully removed: $relativePath"
+}
+
 # This is an internal behavioral correction: the public ABI remains v1.
 Require-Text $providerHeader `
     'ROCK_PROVIDER_API_VERSION\s*=\s*1' `

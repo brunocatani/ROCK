@@ -149,10 +149,6 @@ namespace rock
         rockSuppressTakeEquipGameInputWhileHolding = true;
         rockSuppressTakeEquipFormTypes = "WEAP,ARMO,AMMO,MISC,INGR,ALCH,BOOK,KEYM,SLGM";
         rockSuppressNativeGrabHoverHaptics = true;
-        rockVirtualHolstersCompatibilityEnabled = true;
-        rockVirtualHolstersDeferGrabInZone = true;
-        rockVirtualHolstersDeferWeaponToggleInZone = true;
-        rockVirtualHolstersDeferOnlyMatchingButton = false;
         rockGrabInputIntentStateEnabled = true;
         rockGrabInputLeewaySeconds = 0.12f;
         rockGrabInputForceSeconds = 0.08f;
@@ -689,10 +685,6 @@ namespace rock
             ini.GetBoolValue(SECTION, "bSuppressTakeEquipGameInputWhileHolding", rockSuppressTakeEquipGameInputWhileHolding);
         rockSuppressTakeEquipFormTypes = ini.GetValue(SECTION, "sSuppressTakeEquipFormTypes", rockSuppressTakeEquipFormTypes.c_str());
         rockSuppressNativeGrabHoverHaptics = ini.GetBoolValue(SECTION, "bSuppressNativeGrabHoverHaptics", rockSuppressNativeGrabHoverHaptics);
-        rockVirtualHolstersCompatibilityEnabled = ini.GetBoolValue(SECTION, "bVirtualHolstersCompatibilityEnabled", rockVirtualHolstersCompatibilityEnabled);
-        rockVirtualHolstersDeferGrabInZone = ini.GetBoolValue(SECTION, "bVirtualHolstersDeferGrabInZone", rockVirtualHolstersDeferGrabInZone);
-        rockVirtualHolstersDeferWeaponToggleInZone = ini.GetBoolValue(SECTION, "bVirtualHolstersDeferWeaponToggleInZone", rockVirtualHolstersDeferWeaponToggleInZone);
-        rockVirtualHolstersDeferOnlyMatchingButton = ini.GetBoolValue(SECTION, "bVirtualHolstersDeferOnlyMatchingButton", rockVirtualHolstersDeferOnlyMatchingButton);
         rockGrabInputIntentStateEnabled = ini.GetBoolValue(SECTION, "bGrabInputIntentStateEnabled", rockGrabInputIntentStateEnabled);
         rockGrabInputLeewaySeconds = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabInputLeewaySeconds", rockGrabInputLeewaySeconds));
         if (!std::isfinite(rockGrabInputLeewaySeconds) || rockGrabInputLeewaySeconds < 0.0f) {

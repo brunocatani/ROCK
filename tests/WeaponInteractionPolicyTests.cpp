@@ -345,7 +345,6 @@ int main()
             .gripHeld = true,
             .configEnabled = true,
             .primaryPoseBlockerAvailable = true,
-            .virtualHolstersOwnsInput = false,
         }));
     ok &= expectFalse("pending trigger-equip grip clears on release",
         shouldKeepPendingPrimaryOnlyStart(PendingPrimaryOnlyStartInput{
@@ -353,7 +352,6 @@ int main()
             .gripHeld = false,
             .configEnabled = true,
             .primaryPoseBlockerAvailable = true,
-            .virtualHolstersOwnsInput = false,
         }));
     ok &= expectTrue("pending trigger-equip grip is retained for visual-only sidearm release",
         shouldKeepPendingPrimaryOnlyStart(PendingPrimaryOnlyStartInput{
@@ -361,15 +359,6 @@ int main()
             .gripHeld = true,
             .configEnabled = true,
             .primaryPoseBlockerAvailable = true,
-            .virtualHolstersOwnsInput = false,
-        }));
-    ok &= expectFalse("pending trigger-equip grip clears when virtual holsters owns input",
-        shouldKeepPendingPrimaryOnlyStart(PendingPrimaryOnlyStartInput{
-            .pending = true,
-            .gripHeld = true,
-            .configEnabled = true,
-            .primaryPoseBlockerAvailable = true,
-            .virtualHolstersOwnsInput = true,
         }));
 
     ok &= expectTrue("same equipped weapon preserves ownership across collision rebuild",
