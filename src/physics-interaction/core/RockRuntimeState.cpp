@@ -231,6 +231,11 @@ namespace rock::runtime_state
         return s_snapshot;
     }
 
+    bool isScopeMenuOpenLive()
+    {
+        return s_menuHandlerInitialized && s_gameMenus.isInScopeMenu();
+    }
+
     bool isLocalSkeletonReady()
     {
         return s_snapshot.localSkeletonReady;

@@ -1860,6 +1860,7 @@ namespace rock
         }
 
         _twoHandedGrip.finalizeNativeScopeOverlayAfterGameUpdate(
+            runtime_state::isScopeMenuOpenLive(),
             _weaponCollision.getCurrentWeaponGenerationKey());
     }
 

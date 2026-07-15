@@ -163,6 +163,9 @@ namespace rock::weapon_visual_authority_math
 
 namespace rock::native_scope_activation_frame_policy
 {
+    inline constexpr float kExitHysteresisTranslationGameUnits = 3.5f;
+    inline constexpr float kExitHysteresisForwardMinDot = 0.9945219f;  // cos(6 degrees)
+
     /*
      * hFRIK runs before ROCK in the shared main-loop chain and restores its
      * one-hand weapon pose before FO4VR evaluates native scope entry/exit.
@@ -180,6 +183,56 @@ namespace rock::native_scope_activation_frame_policy
     {
         return ownsWeaponTransform && hasLastRenderedWeaponWorld && activeWeaponNodeMatches &&
                activeWeaponGenerationKey != 0 && activeWeaponGenerationKey == currentWeaponGenerationKey;
+    }
+
+    /*
+     * Native ScopeMenu has effectively no useful dead band around its boundary.
+     * Once the game has accepted a generated sight, retain that accepted
+     * camera-in-HMD frame across only small physical translation/orientation
+     * changes. Larger motion is always passed through so normal scope exit
+     * remains owned by FO4VR. The accepted frame is used only by the temporary
+     * pre-native detection write; it must never become weapon or overlay pose
+     * authority.
+     */
+    template <class Transform>
+    [[nodiscard]] inline bool isWithinExitHysteresis(
+        const Transform& acceptedCameraHmdLocal,
+        const Transform& liveCameraHmdLocal,
+        const float maxTranslationGameUnits = kExitHysteresisTranslationGameUnits,
+        const float minForwardDot = kExitHysteresisForwardMinDot)
+    {
+        const float dx = liveCameraHmdLocal.translate.x - acceptedCameraHmdLocal.translate.x;
+        const float dy = liveCameraHmdLocal.translate.y - acceptedCameraHmdLocal.translate.y;
+        const float dz = liveCameraHmdLocal.translate.z - acceptedCameraHmdLocal.translate.z;
+        const float distanceSquared = dx * dx + dy * dy + dz * dz;
+        const float maxDistanceSquared = maxTranslationGameUnits * maxTranslationGameUnits;
+        if (!std::isfinite(distanceSquared) || !std::isfinite(maxDistanceSquared) ||
+            maxTranslationGameUnits < 0.0f || distanceSquared > maxDistanceSquared) {
+            return false;
+        }
+
+        // Native scope camera forward is local +X. With NiMatrix3's transform
+        // convention that direction is row zero of the stored rotation.
+        const float acceptedLengthSquared =
+            acceptedCameraHmdLocal.rotate.entry[0][0] * acceptedCameraHmdLocal.rotate.entry[0][0] +
+            acceptedCameraHmdLocal.rotate.entry[0][1] * acceptedCameraHmdLocal.rotate.entry[0][1] +
+            acceptedCameraHmdLocal.rotate.entry[0][2] * acceptedCameraHmdLocal.rotate.entry[0][2];
+        const float liveLengthSquared =
+            liveCameraHmdLocal.rotate.entry[0][0] * liveCameraHmdLocal.rotate.entry[0][0] +
+            liveCameraHmdLocal.rotate.entry[0][1] * liveCameraHmdLocal.rotate.entry[0][1] +
+            liveCameraHmdLocal.rotate.entry[0][2] * liveCameraHmdLocal.rotate.entry[0][2];
+        if (!std::isfinite(acceptedLengthSquared) || !std::isfinite(liveLengthSquared) ||
+            acceptedLengthSquared <= 0.000001f || liveLengthSquared <= 0.000001f ||
+            !std::isfinite(minForwardDot)) {
+            return false;
+        }
+
+        const float forwardDot =
+            (acceptedCameraHmdLocal.rotate.entry[0][0] * liveCameraHmdLocal.rotate.entry[0][0] +
+                acceptedCameraHmdLocal.rotate.entry[0][1] * liveCameraHmdLocal.rotate.entry[0][1] +
+                acceptedCameraHmdLocal.rotate.entry[0][2] * liveCameraHmdLocal.rotate.entry[0][2]) /
+            std::sqrt(acceptedLengthSquared * liveLengthSquared);
+        return std::isfinite(forwardDot) && forwardDot >= minForwardDot;
     }
 }
 

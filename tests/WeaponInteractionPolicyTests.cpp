@@ -107,6 +107,35 @@ int main()
             rock::native_scope_activation_frame_policy::shouldUseLastRenderedRockWeaponFrame(
                 false, true, true, 0x1234u, 0x1234u));
 
+        TestTransform acceptedScopeCameraHmdLocal = rock::transform_math::makeIdentityTransform<TestTransform>();
+        TestTransform liveScopeCameraHmdLocal = acceptedScopeCameraHmdLocal;
+        liveScopeCameraHmdLocal.translate.x = 3.4f;
+        ok &= expectTrue("native scope exit hysteresis retains small accepted-camera translation jitter",
+            rock::native_scope_activation_frame_policy::isWithinExitHysteresis(
+                acceptedScopeCameraHmdLocal,
+                liveScopeCameraHmdLocal));
+        liveScopeCameraHmdLocal.translate.x = 3.6f;
+        ok &= expectFalse("native scope exit hysteresis releases deliberate translation beyond its dead band",
+            rock::native_scope_activation_frame_policy::isWithinExitHysteresis(
+                acceptedScopeCameraHmdLocal,
+                liveScopeCameraHmdLocal));
+
+        liveScopeCameraHmdLocal = acceptedScopeCameraHmdLocal;
+        constexpr float kFiveDegreesRadians = 5.0f * 3.14159265358979323846f / 180.0f;
+        liveScopeCameraHmdLocal.rotate.entry[0][0] = std::cos(kFiveDegreesRadians);
+        liveScopeCameraHmdLocal.rotate.entry[0][1] = std::sin(kFiveDegreesRadians);
+        ok &= expectTrue("native scope exit hysteresis retains small accepted-camera angular jitter",
+            rock::native_scope_activation_frame_policy::isWithinExitHysteresis(
+                acceptedScopeCameraHmdLocal,
+                liveScopeCameraHmdLocal));
+        constexpr float kSevenDegreesRadians = 7.0f * 3.14159265358979323846f / 180.0f;
+        liveScopeCameraHmdLocal.rotate.entry[0][0] = std::cos(kSevenDegreesRadians);
+        liveScopeCameraHmdLocal.rotate.entry[0][1] = std::sin(kSevenDegreesRadians);
+        ok &= expectFalse("native scope exit hysteresis releases deliberate angular motion beyond its dead band",
+            rock::native_scope_activation_frame_policy::isWithinExitHysteresis(
+                acceptedScopeCameraHmdLocal,
+                liveScopeCameraHmdLocal));
+
         TestTransform weaponBefore = rock::transform_math::makeIdentityTransform<TestTransform>();
         weaponBefore.translate = { 10.0f, 20.0f, 30.0f };
         TestTransform scopeBefore = rock::transform_math::makeIdentityTransform<TestTransform>();
