@@ -128,27 +128,6 @@ namespace rock
         bool valid{ false };
     };
 
-    struct NativeScopeDetectionProbeState
-    {
-        std::uint64_t weaponGenerationKey{ 0 };
-        RE::NiTransform cameraHmdLocal{};
-        bool valid{ false };
-    };
-
-    struct NativeScopeDetectionTemporaryWrite
-    {
-        /*
-         * Non-owning identity witnesses valid only across ROCK's synchronous
-         * pre-native/post-native hook pair. The restore path resolves the
-         * current PlayerNodes camera and parent before dereferencing either.
-         */
-        RE::NiNode* cameraIdentity{ nullptr };
-        RE::NiAVObject* cameraParentIdentity{ nullptr };
-        RE::NiTransform physicalCameraLocal{};
-        RE::NiTransform detectionCameraLocal{};
-        bool pending{ false };
-    };
-
     struct NativeScopeOverlayCalibrationState
     {
         std::uint64_t weaponGenerationKey{ 0 };
@@ -703,7 +682,6 @@ namespace rock
         void clearWeaponVisualReturn(const char* reason, bool logCancellation, bool restoreBlockers);
         void clearAllVisualReturns(const char* reason, bool logCancellation, bool restoreBlockers);
         void clearNativeScopeOverlayAuthority(bool restoreNativeLocal);
-        void restoreNativeScopeDetectionCameraAfterGameUpdate();
         bool captureNativeScopeOverlayCalibration(
             const RE::NiTransform& nativeCameraWorld,
             std::uint64_t currentWeaponGenerationKey);
@@ -772,9 +750,6 @@ namespace rock
         NativeScopeCameraDebugSnapshot _nativeScopeCameraDebugSnapshot{};
         NativeScopeOverlayPendingHandoff _nativeScopeOverlayPendingHandoff{};
         NativeScopeOverlayCalibrationState _nativeScopeOverlayCalibration{};
-        NativeScopeDetectionProbeState _nativeScopeDetectionProbe{};
-        NativeScopeDetectionProbeState _nativeScopeAcceptedProbe{};
-        NativeScopeDetectionTemporaryWrite _nativeScopeDetectionTemporaryWrite{};
 
         std::array<WeaponPartGrip, 2> _partGrips{};
 

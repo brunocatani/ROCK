@@ -13,7 +13,6 @@
 #include <cstdint>
 #include <cstddef>
 #include <string_view>
-#include <type_traits>
 
 namespace rock::weapon_authority_lifecycle_policy
 {
@@ -222,65 +221,6 @@ namespace rock::native_scope_camera_follow_math
             scopeCameraWorldBefore);
         scopeCameraWeaponLocal.translate = sightAnchorWeaponLocal;
         return transform_math::composeTransforms(weaponWorldAfter, scopeCameraWeaponLocal);
-    }
-}
-
-// ---- NativeScopeDetectionHysteresisPolicy.h ----
-
-namespace rock::native_scope_detection_hysteresis_policy
-{
-    inline constexpr float kExitTranslationDeadbandGameUnits = 3.5f;
-    inline constexpr float kExitForwardMinDot = 0.99026807f;  // cos(8 degrees)
-
-    /*
-     * Once FO4VR has accepted a two-hand scope frame, require a deliberate
-     * displacement from that accepted HMD-local frame before allowing the
-     * native detector to see an exit. This policy is detection-only: callers
-     * must restore the physical camera frame immediately after the synchronous
-     * native update so it cannot affect weapon or world-scope NIF placement.
-     */
-    template <class Transform>
-    [[nodiscard]] inline bool isInsideExitDeadband(
-        const Transform& acceptedCameraHmdLocal,
-        const Transform& candidateCameraHmdLocal)
-    {
-        const double deltaX = static_cast<double>(candidateCameraHmdLocal.translate.x) -
-                              static_cast<double>(acceptedCameraHmdLocal.translate.x);
-        const double deltaY = static_cast<double>(candidateCameraHmdLocal.translate.y) -
-                              static_cast<double>(acceptedCameraHmdLocal.translate.y);
-        const double deltaZ = static_cast<double>(candidateCameraHmdLocal.translate.z) -
-                              static_cast<double>(acceptedCameraHmdLocal.translate.z);
-        const double distanceSquared = deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ;
-        const double maxDistanceSquared =
-            static_cast<double>(kExitTranslationDeadbandGameUnits) * static_cast<double>(kExitTranslationDeadbandGameUnits);
-        if (!std::isfinite(distanceSquared) || distanceSquared > maxDistanceSquared) {
-            return false;
-        }
-
-        using Vector = std::remove_cv_t<std::remove_reference_t<decltype(acceptedCameraHmdLocal.translate)>>;
-        Vector localForward{};
-        localForward.x = 1.0f;
-        const Vector acceptedForward = transform_math::localVectorToWorld(acceptedCameraHmdLocal, localForward);
-        const Vector candidateForward = transform_math::localVectorToWorld(candidateCameraHmdLocal, localForward);
-        const double acceptedLengthSquared =
-            static_cast<double>(acceptedForward.x) * static_cast<double>(acceptedForward.x) +
-            static_cast<double>(acceptedForward.y) * static_cast<double>(acceptedForward.y) +
-            static_cast<double>(acceptedForward.z) * static_cast<double>(acceptedForward.z);
-        const double candidateLengthSquared =
-            static_cast<double>(candidateForward.x) * static_cast<double>(candidateForward.x) +
-            static_cast<double>(candidateForward.y) * static_cast<double>(candidateForward.y) +
-            static_cast<double>(candidateForward.z) * static_cast<double>(candidateForward.z);
-        if (!std::isfinite(acceptedLengthSquared) || !std::isfinite(candidateLengthSquared) ||
-            acceptedLengthSquared <= 0.000001 || candidateLengthSquared <= 0.000001) {
-            return false;
-        }
-
-        const double forwardDot =
-            (static_cast<double>(acceptedForward.x) * static_cast<double>(candidateForward.x) +
-                static_cast<double>(acceptedForward.y) * static_cast<double>(candidateForward.y) +
-                static_cast<double>(acceptedForward.z) * static_cast<double>(candidateForward.z)) /
-            std::sqrt(acceptedLengthSquared * candidateLengthSquared);
-        return std::isfinite(forwardDot) && forwardDot >= static_cast<double>(kExitForwardMinDot);
     }
 }
 

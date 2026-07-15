@@ -184,27 +184,6 @@ namespace rock
             return isFiniteTransform(outWorld);
         }
 
-        bool tryResolveNativeScopeCameraHmdLocal(
-            const RE::NiTransform& cameraWorld,
-            RE::NiTransform& outCameraHmdLocal,
-            RE::NiTransform& outHmdWorld)
-        {
-            outCameraHmdLocal = {};
-            outHmdWorld = {};
-            const auto* playerNodes = f4vr::getPlayerNodes();
-            auto* hmdNode = playerNodes ? playerNodes->HmdNode : nullptr;
-            if (!hmdNode || !isFiniteTransform(cameraWorld) || !isFiniteTransform(hmdNode->world) ||
-                std::abs(hmdNode->world.scale) <= 0.0001f) {
-                return false;
-            }
-
-            outHmdWorld = hmdNode->world;
-            outCameraHmdLocal = transform_math::composeTransforms(
-                transform_math::invertTransform(outHmdWorld),
-                cameraWorld);
-            return isFiniteTransform(outCameraHmdLocal) && std::abs(outCameraHmdLocal.scale) > 0.0001f;
-        }
-
         bool isUsableHandAuthorityTransform(const RE::NiTransform& transform)
         {
             // hFRIK uses 0.00001 as its intentional ScopeMenu hide scale.
@@ -656,22 +635,11 @@ namespace rock
 
     void TwoHandedGrip::prepareNativeScopeCameraForGameUpdate(RE::NiNode* weaponNode, const std::uint64_t currentWeaponGenerationKey)
     {
-        // A previous hook pair must never leak its detection-only camera local
-        // into a later frame, even if an early-return path was taken.
-        restoreNativeScopeDetectionCameraAfterGameUpdate();
         _nativeScopeOverlayPendingHandoff = {};
         if (!weaponNode || currentWeaponGenerationKey == 0 || !_nativeScopeSightAnchorValid ||
             _nativeScopeSightAnchorWeaponNode != weaponNode || _nativeScopeSightAnchorGenerationKey != currentWeaponGenerationKey) {
-            _nativeScopeDetectionProbe = {};
-            _nativeScopeAcceptedProbe = {};
             clearNativeScopeOverlayAuthority(true);
             return;
-        }
-
-        if (!_scopeMenuOpenThisFrame || !ownsWeaponTransform() ||
-            (_nativeScopeAcceptedProbe.valid &&
-                _nativeScopeAcceptedProbe.weaponGenerationKey != currentWeaponGenerationKey)) {
-            _nativeScopeAcceptedProbe = {};
         }
 
         if (_nativeScopeOverlayCalibration.valid &&
@@ -699,54 +667,6 @@ namespace rock
                 .correctedCameraWorld = result.targetCameraWorld,
                 .valid = true,
             };
-
-            RE::NiTransform candidateCameraHmdLocal{};
-            RE::NiTransform hmdWorld{};
-            if (tryResolveNativeScopeCameraHmdLocal(
-                    result.targetCameraWorld,
-                    candidateCameraHmdLocal,
-                    hmdWorld)) {
-                _nativeScopeDetectionProbe = NativeScopeDetectionProbeState{
-                    .weaponGenerationKey = currentWeaponGenerationKey,
-                    .cameraHmdLocal = candidateCameraHmdLocal,
-                    .valid = true,
-                };
-
-                if (_scopeMenuOpenThisFrame && ownsWeaponTransform() &&
-                    _nativeScopeAcceptedProbe.valid &&
-                    _nativeScopeAcceptedProbe.weaponGenerationKey == currentWeaponGenerationKey &&
-                    native_scope_detection_hysteresis_policy::isInsideExitDeadband(
-                        _nativeScopeAcceptedProbe.cameraHmdLocal,
-                        candidateCameraHmdLocal)) {
-                    const RE::NiTransform detectionCameraWorld = transform_math::composeTransforms(
-                        hmdWorld,
-                        _nativeScopeAcceptedProbe.cameraHmdLocal);
-                    const RE::NiTransform detectionCameraLocal = capture.camera->parent ?
-                        weapon_visual_authority_math::worldTargetToParentLocal(
-                            capture.camera->parent->world,
-                            detectionCameraWorld) :
-                        detectionCameraWorld;
-                    if (isFiniteTransform(detectionCameraLocal)) {
-                        _nativeScopeDetectionTemporaryWrite = NativeScopeDetectionTemporaryWrite{
-                            .cameraIdentity = capture.camera,
-                            .cameraParentIdentity = capture.camera->parent,
-                            .physicalCameraLocal = capture.camera->local,
-                            .detectionCameraLocal = detectionCameraLocal,
-                            .pending = true,
-                        };
-                        capture.camera->local = detectionCameraLocal;
-                        if (capture.camera->parent) {
-                            f4vr::updateTransforms(capture.camera);
-                        } else {
-                            capture.camera->world = detectionCameraWorld;
-                        }
-                    }
-                }
-            } else {
-                _nativeScopeDetectionProbe = {};
-            }
-        } else {
-            _nativeScopeDetectionProbe = {};
         }
         if (g_rockConfig.rockDebugDrawNativeScopeActivation) {
             _nativeScopeCameraDebugSnapshot = makeNativeScopeCameraDebugSnapshot(
@@ -756,29 +676,6 @@ namespace rock
                 capture,
                 result,
                 true);
-        }
-    }
-
-    void TwoHandedGrip::restoreNativeScopeDetectionCameraAfterGameUpdate()
-    {
-        const NativeScopeDetectionTemporaryWrite pending = _nativeScopeDetectionTemporaryWrite;
-        _nativeScopeDetectionTemporaryWrite = {};
-        if (!pending.pending || !pending.cameraIdentity || !RE::PlayerCharacter::GetSingleton()) {
-            return;
-        }
-
-        const auto* playerNodes = f4vr::getPlayerNodes();
-        auto* scopeCamera = playerNodes ? playerNodes->primaryWeaponScopeCamera : nullptr;
-        if (scopeCamera != pending.cameraIdentity || scopeCamera->parent != pending.cameraParentIdentity ||
-            !areTransformsNearlyEqual(scopeCamera->local, pending.detectionCameraLocal)) {
-            return;
-        }
-
-        scopeCamera->local = pending.physicalCameraLocal;
-        if (scopeCamera->parent) {
-            f4vr::updateTransforms(scopeCamera);
-        } else {
-            scopeCamera->world = pending.physicalCameraLocal;
         }
     }
 
@@ -963,9 +860,6 @@ namespace rock
 
     void TwoHandedGrip::finalizeNativeScopeOverlayAfterGameUpdate(const std::uint64_t currentWeaponGenerationKey)
     {
-        // The native detector has consumed the guarded frame. Restore the exact
-        // physical camera local before the known-good overlay/NIF handoff.
-        restoreNativeScopeDetectionCameraAfterGameUpdate();
         const NativeScopeOverlayPendingHandoff pending = _nativeScopeOverlayPendingHandoff;
         _nativeScopeOverlayPendingHandoff = {};
         if (!pending.valid || pending.weaponGenerationKey != currentWeaponGenerationKey) {
@@ -985,8 +879,6 @@ namespace rock
         }
 
         clearNativeScopeOverlayAuthority(true);
-        _nativeScopeDetectionProbe = {};
-        _nativeScopeAcceptedProbe = {};
 
         _nativeScopeSightAnchorWeaponNode = weaponNode;
         _nativeScopeSightAnchorGenerationKey = currentWeaponGenerationKey;
@@ -1028,16 +920,6 @@ namespace rock
         const bool scopeStateChanged = _scopeMenuOpenThisFrame != frameInput.scopeMenuOpen;
         _scopeMenuOpenThisFrame = frameInput.scopeMenuOpen;
         const bool scopeClosedThisFrame = scopeStateChanged && scopeWasOpen && !_scopeMenuOpenThisFrame;
-
-        if (scopeClosedThisFrame) {
-            _nativeScopeAcceptedProbe = {};
-        } else if (scopeStateChanged && _scopeMenuOpenThisFrame && ownsWeaponTransform() &&
-                   _nativeScopeDetectionProbe.valid &&
-                   _nativeScopeDetectionProbe.weaponGenerationKey == _nativeScopeSightAnchorGenerationKey) {
-            // Promote the exact HMD-local camera frame that FO4VR just
-            // accepted, rather than a later rendered or solver-derived frame.
-            _nativeScopeAcceptedProbe = _nativeScopeDetectionProbe;
-        }
 
         if (scopeStateChanged) {
             // Never resume a pre-menu visual interpolation after hFRIK restores
@@ -1551,7 +1433,6 @@ namespace rock
 
     void TwoHandedGrip::reset()
     {
-        restoreNativeScopeDetectionCameraAfterGameUpdate();
         clearAllVisualReturns("reset", false, true);
         clearNativeScopeOverlayAuthority(true);
         _equippedWeaponDropRequest = {};
@@ -1562,8 +1443,6 @@ namespace rock
         _nativeScopeSightAnchorWeaponLocal = {};
         _nativeScopeSightAnchorValid = false;
         _nativeScopeCameraDebugSnapshot = {};
-        _nativeScopeDetectionProbe = {};
-        _nativeScopeAcceptedProbe = {};
         _scopeSafeHandFrames = {};
         _scopeHandAuthorityCleanupPending = _scopeHandAuthorityCleanupPending || _scopeMenuOpenThisFrame;
         clearPrimaryGripPose(_firingHandIsLeft);
@@ -3906,27 +3785,6 @@ namespace rock
             applyNativeScopeCameraFollow(scopeCameraFollow, weaponNode->world, sightAnchorWeaponLocal);
         if (scopeCameraResult.targetValid && scopeCameraResult.writeApplied) {
             (void)applyNativeScopeOverlayTarget(scopeCameraResult.targetCameraWorld, effectiveGenerationKey);
-
-            if (_scopeMenuOpenThisFrame && ownsWeaponTransform() && effectiveGenerationKey != 0 &&
-                (!_nativeScopeAcceptedProbe.valid ||
-                    _nativeScopeAcceptedProbe.weaponGenerationKey != effectiveGenerationKey)) {
-                RE::NiTransform cameraHmdLocal{};
-                RE::NiTransform hmdWorld{};
-                if (tryResolveNativeScopeCameraHmdLocal(
-                        scopeCameraResult.targetCameraWorld,
-                        cameraHmdLocal,
-                        hmdWorld)) {
-                    // Covers taking the support grip after entering the scope
-                    // one-handed. The accepted frame is captured only once at
-                    // that authority transition and is never refreshed while
-                    // the user intentionally moves toward an exit.
-                    _nativeScopeAcceptedProbe = NativeScopeDetectionProbeState{
-                        .weaponGenerationKey = effectiveGenerationKey,
-                        .cameraHmdLocal = cameraHmdLocal,
-                        .valid = true,
-                    };
-                }
-            }
         }
         _lastRenderedWeaponWorld = weaponNode->world;
         _hasLastRenderedWeaponWorld = isFiniteTransform(_lastRenderedWeaponWorld);
