@@ -253,12 +253,6 @@ namespace rock::equipped_weapon_manual_ownership_policy
         bool gripHeld{ false };
     };
 
-    struct GripZoneSettleEquipInput
-    {
-        bool realisticWeaponHandlingEnabled{ false };
-        bool gripZoneEquipConfigured{ false };
-    };
-
     [[nodiscard]] inline constexpr bool firingGripOwnershipEnabled(const FiringGripModeAvailability& modes) noexcept
     {
         return modes.realisticWeaponHandlingEnabled || modes.ambidextrousFiringAvailable;
@@ -271,9 +265,9 @@ namespace rock::equipped_weapon_manual_ownership_policy
                    (input.handIsLeft && input.modes.ambidextrousFiringAvailable));
     }
 
-    [[nodiscard]] inline constexpr bool canSettleEquipInGripZone(const GripZoneSettleEquipInput& input) noexcept
+    [[nodiscard]] inline constexpr bool canSettleEquipInGripZone(bool realisticWeaponHandlingEnabled) noexcept
     {
-        return input.realisticWeaponHandlingEnabled && input.gripZoneEquipConfigured;
+        return realisticWeaponHandlingEnabled;
     }
 
     [[nodiscard]] inline constexpr bool shouldRetainPrimaryOnlyOwnership(

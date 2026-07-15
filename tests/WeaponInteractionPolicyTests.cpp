@@ -391,19 +391,10 @@ int main()
             },
             .handIsLeft = true,
         }));
-    ok &= expectTrue("realistic handling permits configured grip-zone settle equip",
-        canSettleEquipInGripZone(GripZoneSettleEquipInput{
-            .realisticWeaponHandlingEnabled = true,
-            .gripZoneEquipConfigured = true,
-        }));
+    ok &= expectTrue("realistic handling always enables grip-zone settle equip",
+        canSettleEquipInGripZone(true));
     ok &= expectFalse("grip-zone settle equip stays off when realistic handling is disabled",
-        canSettleEquipInGripZone(GripZoneSettleEquipInput{
-            .gripZoneEquipConfigured = true,
-        }));
-    ok &= expectFalse("realistic handling respects disabled grip-zone settle equip config",
-        canSettleEquipInGripZone(GripZoneSettleEquipInput{
-            .realisticWeaponHandlingEnabled = true,
-        }));
+        canSettleEquipInGripZone(false));
     ok &= expectTrue("ambidextrous-only ownership ignores an open firing grip",
         shouldRetainPrimaryOnlyOwnership(false, false));
     ok &= expectTrue("realistic ownership remains while the firing grip is held",

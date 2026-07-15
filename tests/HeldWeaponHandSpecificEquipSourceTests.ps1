@@ -64,11 +64,19 @@ foreach ($legacyPath in @(
         'The superseded position-blind loose-weapon auto-equip path must remain deleted.'
 }
 
-foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
-    Require-Text $configPath `
-        'bGrabbedWeaponGripZoneEquipEnabled\s*=\s*true' `
-        'The canonical firing-grip-zone equip path must remain enabled in shipped config.'
+foreach ($legacyPath in @(
+        'src/RockConfig.cpp',
+        'src/RockConfig.h',
+        'src/physics-interaction/core/PhysicsInteraction.cpp',
+        'src/physics-interaction/weapon/WeaponSupport.h',
+        'data/config/ROCK.ini',
+        'data/mod/ROCK_Config/ROCK.ini')) {
+    Reject-Text $legacyPath `
+        'bGrabbedWeaponGripZoneEquipEnabled|rockGrabbedWeaponGripZoneEquipEnabled|bWeaponGripHapticsEnabled|rockWeaponGripHapticsEnabled' `
+        'Grip-zone equip and weapon-grip haptics must not retain independently configurable Boolean gates.'
+}
 
+foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
     $ambidextrousSection = Read-IniSection $configPath 'AmbidextrousFiring'
     foreach ($key in @(
             'bAmbidextrousFiringGripEnabled',
@@ -84,6 +92,17 @@ foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini
     }
 
     $realisticSection = Read-IniSection $configPath 'RealisticWeapons'
+    foreach ($key in @(
+            'fGrabbedWeaponGripZoneEquipRadius',
+            'fGrabbedWeaponGripZoneEquipSettleSeconds',
+            'fWeaponGripHapticDurationSeconds',
+            'fWeaponFiringGripAttachHapticIntensity',
+            'fWeaponFiringGripDetachHapticIntensity',
+            'fWeaponSupportGripHapticIntensity')) {
+        if ($realisticSection -notmatch "(?m)^$([Regex]::Escape($key))\s*=") {
+            $failures.Add("$configPath`: [$key] must remain configurable in [RealisticWeapons].")
+        }
+    }
     if ($realisticSection -match '(?m)^(bAmbidextrousFiringGripEnabled|fFiringGripPromotionRadius|fLeftFiringAim\w+)\s*=') {
         $failures.Add("$configPath`: ambidextrous firing keys must not remain in [RealisticWeapons].")
     }
@@ -114,12 +133,16 @@ Reject-Text 'src/RockConfig.cpp' `
     'Ambidextrous firing settings must not retain a hidden [RealisticWeapons] loader path.'
 
 Require-Text 'src/physics-interaction/weapon/WeaponSupport.h' `
-    'canSettleEquipInGripZone[\s\S]{0,240}realisticWeaponHandlingEnabled\s*&&\s*input\.gripZoneEquipConfigured' `
-    'Grip-zone settle equip must be master-gated by realistic weapon handling.'
+    'canSettleEquipInGripZone\(\s*bool realisticWeaponHandlingEnabled\)[\s\S]{0,160}return realisticWeaponHandlingEnabled\s*;' `
+    'Grip-zone settle equip must follow realistic weapon handling directly, without a second setting.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'gripZoneSettleEquipEnabled[\s\S]{0,260}realisticWeaponHandlingEnabled\s*=\s*g_rockConfig\.rockRealisticWeaponHandlingEnabled[\s\S]{0,180}gripZoneEquipConfigured\s*=\s*g_rockConfig\.rockGrabbedWeaponGripZoneEquipEnabled' `
-    'Runtime grip-zone equip and hover ownership must use the realistic-handling master gate.'
+    'gripZoneSettleEquipEnabled\s*=\s*[\s\S]{0,180}canSettleEquipInGripZone\(\s*g_rockConfig\.rockRealisticWeaponHandlingEnabled\s*\)' `
+    'Runtime grip-zone equip and hover ownership must use realistic handling as their only feature gate.'
+
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'consumeHapticEvents\(\);\s*const auto queueGripHaptic' `
+    'Valid weapon-grip transitions must queue their configured haptics without an optional Boolean gate.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'shouldStartHeldWeaponEquipOwnership[\s\S]{0,260}\.modes\s*=\s*firingGripModes[\s\S]{0,120}\.handIsLeft\s*=\s*isLeft[\s\S]{0,120}\.gripHeld\s*=\s*rawGrabInput\.held' `

@@ -2800,25 +2800,23 @@ namespace rock
                 ROCK_LOG_DEBUG(Weapon, "Equipped weapon firing-grip ownership started from grip input or held-weapon equip");
             }
             const auto gripHapticEvents = _twoHandedGrip.consumeHapticEvents();
-            if (g_rockConfig.rockWeaponGripHapticsEnabled) {
-                const auto queueGripHaptic = [this](bool isLeft, float intensity) {
-                    (void)_feedbackHaptics.queue(
-                        isLeft ? feedback_haptics::FeedbackHand::Left : feedback_haptics::FeedbackHand::Right,
-                        g_rockConfig.rockWeaponGripHapticDurationSeconds,
-                        intensity);
-                };
-                if (gripHapticEvents.firingGripAttached) {
-                    queueGripHaptic(gripHapticEvents.firingGripAttachedHandIsLeft, g_rockConfig.rockWeaponFiringGripAttachHapticIntensity);
-                }
-                if (gripHapticEvents.firingGripDetached) {
-                    queueGripHaptic(gripHapticEvents.firingGripDetachedHandIsLeft, g_rockConfig.rockWeaponFiringGripDetachHapticIntensity);
-                }
-                if (gripHapticEvents.leftPartGripCaptured) {
-                    queueGripHaptic(true, g_rockConfig.rockWeaponSupportGripHapticIntensity);
-                }
-                if (gripHapticEvents.rightPartGripCaptured) {
-                    queueGripHaptic(false, g_rockConfig.rockWeaponSupportGripHapticIntensity);
-                }
+            const auto queueGripHaptic = [this](bool isLeft, float intensity) {
+                (void)_feedbackHaptics.queue(
+                    isLeft ? feedback_haptics::FeedbackHand::Left : feedback_haptics::FeedbackHand::Right,
+                    g_rockConfig.rockWeaponGripHapticDurationSeconds,
+                    intensity);
+            };
+            if (gripHapticEvents.firingGripAttached) {
+                queueGripHaptic(gripHapticEvents.firingGripAttachedHandIsLeft, g_rockConfig.rockWeaponFiringGripAttachHapticIntensity);
+            }
+            if (gripHapticEvents.firingGripDetached) {
+                queueGripHaptic(gripHapticEvents.firingGripDetachedHandIsLeft, g_rockConfig.rockWeaponFiringGripDetachHapticIntensity);
+            }
+            if (gripHapticEvents.leftPartGripCaptured) {
+                queueGripHaptic(true, g_rockConfig.rockWeaponSupportGripHapticIntensity);
+            }
+            if (gripHapticEvents.rightPartGripCaptured) {
+                queueGripHaptic(false, g_rockConfig.rockWeaponSupportGripHapticIntensity);
             }
             /*
              * Continuous hover feedback while the open firing palm sits inside
@@ -7104,11 +7102,9 @@ namespace rock
             .realisticWeaponHandlingEnabled = g_rockConfig.rockRealisticWeaponHandlingEnabled,
             .ambidextrousFiringAvailable = ambidextrousFiringAvailable,
         };
-        const bool gripZoneSettleEquipEnabled = equipped_weapon_manual_ownership_policy::canSettleEquipInGripZone(
-            equipped_weapon_manual_ownership_policy::GripZoneSettleEquipInput{
-                .realisticWeaponHandlingEnabled = g_rockConfig.rockRealisticWeaponHandlingEnabled,
-                .gripZoneEquipConfigured = g_rockConfig.rockGrabbedWeaponGripZoneEquipEnabled,
-            });
+        const bool gripZoneSettleEquipEnabled =
+            equipped_weapon_manual_ownership_policy::canSettleEquipInGripZone(
+                g_rockConfig.rockRealisticWeaponHandlingEnabled);
         const auto farHmdConeGate = makeFarSelectionHmdConeGate(frame);
         auto publishHandInputOwnership = [&](const Hand& hand, const bool isLeft) {
             auto* heldRef = hand.isHolding() ? hand.getHeldRef() : nullptr;

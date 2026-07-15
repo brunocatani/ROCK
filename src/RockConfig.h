@@ -110,7 +110,6 @@ namespace rock
         float rockWeaponFiringGripReattachRadius = 3.0f;
         bool rockFiringGripProximitySupportEnabled = true;
         float rockFiringGripProximitySupportRadius = 6.0f;
-        bool rockWeaponGripHapticsEnabled = true;
         float rockWeaponGripHapticDurationSeconds = 0.10f;
         float rockWeaponFiringGripAttachHapticIntensity = 0.85f;
         float rockWeaponFiringGripDetachHapticIntensity = 0.30f;
@@ -150,7 +149,6 @@ namespace rock
         float rockLeftFiringAimOffsetYGameUnits = 0.0f;
         float rockLeftFiringAimOffsetZGameUnits = 0.0f;
         float rockRealisticGrenadeFuseSeconds = 5.0f;
-        bool rockGrabbedWeaponGripZoneEquipEnabled = true;
         float rockGrabbedWeaponGripZoneEquipRadius = 3.0f;
         float rockGrabbedWeaponGripZoneEquipSettleSeconds = 0.15f;
         bool rockGripZoneHoverHapticsEnabled = true;
