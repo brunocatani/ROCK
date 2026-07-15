@@ -1144,6 +1144,53 @@ namespace rock
         return true;
     }
 
+    bool TwoHandedGrip::getCollisionRequestedWeaponTransform(
+        const RE::NiNode* weaponNode,
+        const std::uint64_t currentWeaponGenerationKey,
+        const RE::NiTransform* rawRightHandWorld,
+        RE::NiTransform& outTransform) const
+    {
+        if (!weaponNode || currentWeaponGenerationKey == 0) {
+            return false;
+        }
+
+        // Full two-hand, part-carry, and left-primary solvers publish their
+        // raw result before collision authority runs. This snapshot is never
+        // overwritten by applyWeaponVisualAuthority below.
+        if (_hasSolvedWeaponTransform && isFiniteTransform(_lastSolvedWeaponTransform)) {
+            outTransform = _lastSolvedWeaponTransform;
+            return true;
+        }
+
+        /*
+         * Native right-hand carry has no ROCK weapon solve. Reconstruct its
+         * raw weapon intent from the current uncorrected wrist and the stable
+         * authored weapon->hand frame captured before contact. Reading the
+         * rendered weapon node while collision authority is active would feed
+         * last frame's resolved pose back into this frame's request.
+         */
+        if (rawRightHandWorld && isFiniteTransform(*rawRightHandWorld) &&
+            _hasRightFiringHandCanonicalWeaponLocal &&
+            _rightFiringHandCanonicalGenerationKey == currentWeaponGenerationKey &&
+            isFiniteTransform(_rightFiringHandCanonicalWeaponLocal)) {
+            const RE::NiTransform reconstructed = transform_math::composeTransforms(
+                *rawRightHandWorld,
+                transform_math::invertTransform(_rightFiringHandCanonicalWeaponLocal));
+            if (isFiniteTransform(reconstructed)) {
+                outTransform = reconstructed;
+                return true;
+            }
+        }
+
+        // Cold-start fallback only. Once collision owns the rendered node,
+        // missing raw authority fails closed instead of recycling that node.
+        if (!_collisionResolvedWeaponAuthorityActive && isFiniteTransform(weaponNode->world)) {
+            outTransform = weaponNode->world;
+            return true;
+        }
+        return false;
+    }
+
     bool TwoHandedGrip::getDebugAuthoritySnapshot(TwoHandedGripDebugSnapshot& outSnapshot) const
     {
         const auto& leftGrip = partGrip(true);
@@ -3110,12 +3157,15 @@ namespace rock
             // never leave a collision-corrected weapon detached from its hands.
             (void)applyWeaponVisualAuthority(weaponNode, requestedWeaponWorld);
             clearCollisionResolvedWeaponAuthority();
+        } else {
+            _collisionResolvedWeaponAuthorityActive = true;
         }
         return applied;
     }
 
     void TwoHandedGrip::clearCollisionResolvedWeaponAuthority()
     {
+        _collisionResolvedWeaponAuthorityActive = false;
         (void)frik_visual_authority::clearExternalHandWorldTransform(
             WEAPON_COLLISION_HAND_TAG, frik_visual_authority::Hand::Right);
         (void)frik_visual_authority::clearExternalHandWorldTransform(
@@ -3339,7 +3389,7 @@ namespace rock
          * offsets (e.g. the UMP's large forward offset) silently missing
          * from the mirrored left hold ("worked before by coincidence").
          */
-        if (isManualOwnershipActive() || _weaponNodeOwnershipBlockEngaged ||
+        if (_collisionResolvedWeaponAuthorityActive || isManualOwnershipActive() || _weaponNodeOwnershipBlockEngaged ||
             !weaponNode || currentWeaponGenerationKey == 0 ||
             !isFiniteTransform(weaponNode->world)) {
             return;

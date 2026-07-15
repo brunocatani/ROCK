@@ -1246,9 +1246,20 @@ namespace rock
 
         _sharedMotionIndex = sharedMotion;
         _created = true;
-        applyGeneratedBodyMotionType(world, _collisionObjects[0], _bodyIds[0], BethesdaMotionType::Dynamic);
         if (!rebuildMassProperties(world, 0)) {
             ROCK_LOG_ERROR(BethesdaBody, "Shared-motion body group mass-property rebuild failed motion={}", sharedMotion);
+            destroy(bhkWorld);
+            return false;
+        }
+        /*
+         * Every body cinfo was born dynamic and already names local motion
+         * zero. Calling the single-body Bethesda SetMotionType wrapper on only
+         * member zero can replace that member's motion after the group has
+         * been validated. Keep the native many-body topology authoritative
+         * and verify it again after the mass rebuild instead.
+         */
+        if (!validateSharedMotion(world)) {
+            ROCK_LOG_ERROR(BethesdaBody, "Shared-motion body group topology changed during initialization motion={}", sharedMotion);
             destroy(bhkWorld);
             return false;
         }
@@ -1371,6 +1382,27 @@ namespace rock
     void* BethesdaPhysicsBodyGroup::getCollisionObject(std::size_t index) const
     {
         return index < _memberCount ? _collisionObjects[index] : nullptr;
+    }
+
+    bool BethesdaPhysicsBodyGroup::validateSharedMotion(RE::hknpWorld* world) const
+    {
+        if (!belongsToWorld(world) || !isUsableGeneratedMotion(_sharedMotionIndex)) {
+            return false;
+        }
+
+        for (std::size_t index = 0; index < _memberCount; ++index) {
+            const auto snapshot = havok_runtime::snapshotBody(world, _bodyIds[index]);
+            if (!snapshot.valid || snapshot.motionIndex != _sharedMotionIndex ||
+                !snapshot.body || !snapshot.motion ||
+                (snapshot.body->motionPropertiesId & 0xFFu) !=
+                    static_cast<std::uint8_t>(BethesdaMotionType::Dynamic) ||
+                (snapshot.motion->motionPropertiesId & 0xFFu) !=
+                    static_cast<std::uint16_t>(BethesdaMotionType::Dynamic) ||
+                snapshot.collisionObject != _collisionObjects[index]) {
+                return false;
+            }
+        }
+        return true;
     }
 
     bool BethesdaPhysicsBodyGroup::setMemberTransformDeferred(

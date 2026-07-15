@@ -226,6 +226,12 @@ namespace rock
 
         bool getSolvedWeaponTransform(RE::NiTransform& outTransform) const;
 
+        bool getCollisionRequestedWeaponTransform(
+            const RE::NiNode* weaponNode,
+            std::uint64_t currentWeaponGenerationKey,
+            const RE::NiTransform* rawRightHandWorld,
+            RE::NiTransform& outTransform) const;
+
         bool applyCollisionResolvedWeaponAuthority(
             RE::NiNode* weaponNode,
             const RE::NiTransform& requestedWeaponWorld,
@@ -671,6 +677,7 @@ namespace rock
         RE::NiTransform _lastSolvedWeaponTransform{};
 
         bool _hasSolvedWeaponTransform{ false };
+        bool _collisionResolvedWeaponAuthorityActive{ false };
 
         RE::NiTransform _primaryHandWeaponLocal{};
 

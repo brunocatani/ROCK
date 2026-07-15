@@ -185,6 +185,7 @@ namespace rock
         [[nodiscard]] void* getCollisionObject(std::size_t index) const;
         [[nodiscard]] std::uint32_t sharedMotionIndex() const { return _sharedMotionIndex; }
         [[nodiscard]] Member member(std::size_t index) { return Member(this, index); }
+        [[nodiscard]] bool validateSharedMotion(RE::hknpWorld* world) const;
 
         bool setMemberTransformDeferred(RE::hknpWorld* world, std::size_t index, const RE::NiTransform& transform, int mode = 1);
         bool setSharedVelocity(const float* linearVelocity, const float* angularVelocity);

@@ -12,6 +12,14 @@ function Require-Text {
     }
 }
 
+function Reject-Text {
+    param([string]$Path, [string]$Pattern, [string]$Message)
+    $fullPath = Join-Path $Root $Path
+    if ((Test-Path -LiteralPath $fullPath) -and (Get-Content -Raw -LiteralPath $fullPath) -match $Pattern) {
+        $failures.Add($Message)
+    }
+}
+
 function Require-OrderedText {
     param([string]$Path, [string[]]$Patterns, [string]$Message)
     $fullPath = Join-Path $Root $Path
@@ -65,19 +73,23 @@ Require-Text 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' `
     'niRowsToHavokColumns\(members\[index\]\.initialWorld\.rotate\)' `
     'Body-group creation must convert normal BODY/Ni stored axes to the native quaternion convention.'
 
-Require-OrderedText 'src/physics-interaction/weapon/WeaponCollision.cpp' @(
-    'setMemberTransformDeferred\(',
-    'rebuildMassProperties\(world, 0\)',
-    '_dynamicAuthorityGroup\.member\(0\)',
-    'driveGeneratedKeyframedBody\('
-) 'Animated members must batch before one mass rebuild, then only the anchor may drive the shared motion.'
+Reject-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' `
+    '_dynamicAuthorityGroup\.setMemberTransformDeferred\(' `
+    'A live shared weapon motion must never be reshaped member-by-member during the physics solve.'
 
 Require-OrderedText 'src/physics-interaction/weapon/WeaponCollision.cpp' @(
-    'requestedWeaponInverse\s*=\s*transform_math::invertTransform\(intent\.requestedWeaponWorld\)',
-    'intent\.memberWeaponLocal\[groupIndex\]\s*=\s*transform_math::composeTransforms\(',
-    'liveWeaponRoot',
-    'intent\.memberWeaponLocal\[groupIndex\]'
-) 'Held-hand fixtures must capture local relations from raw requested intent and only compose them with the live root inside the physics solve.'
+    '_dynamicAuthorityMemberWeaponLocal\s*=\s*memberWeaponLocals',
+    'intent\.memberWeaponLocal\[groupIndex\]\s*=\s*capturedLocal',
+    '_dynamicAuthorityGroup\.member\(0\)',
+    'driveGeneratedKeyframedBody\('
+) 'Weapon and held-hand member frames must be captured once per rigid group, then only the anchor may drive it.'
+
+Require-OrderedText 'src/physics-interaction/weapon/WeaponCollision.cpp' @(
+    'requestedWeaponInverse\s*=\s*transform_math::invertTransform\(requestedWeaponWorld\)',
+    'memberWeaponLocal\s*=\s*transform_math::composeTransforms\(',
+    'requestedWeaponInverse, handBodyWorld',
+    '_dynamicAuthorityMemberWeaponLocal\s*=\s*memberWeaponLocals'
+) 'Held-hand fixtures must capture their rigid weapon-local relation from explicit raw requested intent.'
 
 Require-OrderedText 'src/physics-interaction/weapon/WeaponCollision.cpp' @(
     'applySampledAnchorCorrectionToCurrentIntent\(',
@@ -91,12 +103,32 @@ Require-OrderedText 'src/physics-interaction/weapon/WeaponCollision.cpp' @(
 ) 'The live shared-motion pose must be published only by the post-solve phase.'
 
 Require-OrderedText 'src/physics-interaction/weapon/WeaponCollision.cpp' @(
-    'const bool massRebuildFailed',
-    'changedMemberPose && !_dynamicAuthorityGroup\.rebuildMassProperties\(world, 0\)',
-    'memberPoseUpdateFailed \|\| massRebuildFailed'
-) 'A partially accepted animated-member batch must rebuild COM/inertia even when a later member update fails.'
+    '!physics\.contactActive',
+    'memberArrangementChanged',
+    'rebuildForCurrentRoles\(\)'
+) 'Animated attached-part changes must rebuild the complete group only outside a real contact solve.'
+
+Require-OrderedText 'src/physics-interaction/core/PhysicsInteractionContacts.inl' @(
+    'GeneratedBodyKind::DynamicWeaponAuthority',
+    'isWorldSurfaceLayer\(targetLayer\)',
+    'recordDynamicAuthorityWorldContact\(',
+    'return;'
+) 'Layer-49 world callbacks must provide contact truth and exit before gameplay weapon routing.'
+
+Require-OrderedText 'src/physics-interaction/weapon/WeaponCollision.cpp' @(
+    '_dynamicAuthorityContactSignalSequence\.load',
+    'sourceBelongsToCurrentGroup',
+    'hasRecentWorldContactSignal\(',
+    'residualIsPlausible\(',
+    'const bool contact = recentWorldContact'
+) 'Residual magnitude must use a current-group native world-contact signal and fail closed on divergence.'
+
+Reject-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' `
+    'std::isfinite\(rotationRadians\)\s*\?' `
+    'A non-finite post-solve rotation must propagate into residual validation instead of being masked as zero.'
 
 Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @(
+    'getCollisionRequestedWeaponTransform\(',
     'updateDynamicAuthorityFrame\(',
     'applyCollisionResolvedWeaponAuthority\(',
     'updateBodiesFromCurrentSourceTransforms\('
@@ -113,6 +145,13 @@ Require-Text 'src/physics-interaction/collision/CollisionLayerPolicy.h' `
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' `
     'generatedDynamicWeaponAuthorityFilterInfo\(false\)' `
     'Dynamic weapon twins must enter the world collision-disabled until their complete group is valid.'
+
+Require-OrderedText 'src/physics-interaction/weapon/WeaponCollision.cpp' @(
+    'driveGeneratedKeyframedBody\(',
+    'generatedDynamicWeaponAuthorityFilterInfo\(true\)',
+    '_dynamicAuthorityGroup\.validateSharedMotion\(world\)',
+    '_dynamicAuthorityCollisionEnabled\.store\(true'
+) 'World collision must enable only after the first anchor drive and shared-motion validation succeed.'
 
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' `
     'generatedMaterialId\s*=\s*[\s\S]{0,100}registerGeneratedBodyMaterial\(world\)' `
@@ -137,8 +176,8 @@ Require-Text 'src/physics-interaction/debug/DebugBodyOverlay.cpp' `
     'Every dynamic weapon twin must render from its distinct BODY transform instead of their shared COM.'
 
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' `
-    'info\.initialWorld = makeGeneratedBodyArrayWorldTransform\(sourceWorld, center\)' `
-    'Shared-motion bookkeeping must use normal BODY frames rather than the keyframed weapon drive encoding.'
+    'visualBodyWorld\s*=\s*makeGeneratedBodyArrayWorldTransform\(sourceWorld, center\)' `
+    'Shared-motion bookkeeping must derive member locals from normal BODY frames rather than the keyframed weapon drive encoding.'
 
 Require-OrderedText 'src/physics-interaction/native/GeneratedKeyframedBodyDrive.cpp' @(
     'writeDynamicTargetRotation\(',
@@ -153,6 +192,18 @@ Require-Text 'src/physics-interaction/native/GeneratedKeyframedBodyDrive.cpp' `
 Require-Text 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' `
     'belongsToWorld\(world\).*setBodyTransformDeferred' `
     'Shared-motion member mutation must reject body IDs from another hknpWorld.'
+
+Require-Text 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' `
+    'bool BethesdaPhysicsBodyGroup::validateSharedMotion' `
+    'The group must expose a reusable runtime shared-motion/back-pointer invariant check.'
+
+Require-Text 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' `
+    'snapshot\.motion->motionPropertiesId[\s\S]{0,160}BethesdaMotionType::Dynamic' `
+    'Shared-motion validation must reject a group that is no longer dynamically simulated.'
+
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'rawRightHandWorld[\s\S]{0,500}_rightFiringHandCanonicalWeaponLocal' `
+    'Native right-hand collision intent must be reconstructed from the raw wrist and stable authored hold frame.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'dynamicWeaponProxyPairsDrifted' `

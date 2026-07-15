@@ -123,12 +123,15 @@ int main()
     ok &= truth("disabled dynamic proxies release right coupling", coupling.right, false);
     ok &= truth("disabled dynamic proxies release left coupling", coupling.left, false);
 
-    ok &= truth("free residual stays free", evaluateContactResidual(false, 0.05f, 0.1f), false);
-    ok &= truth("translation enters contact", evaluateContactResidual(false, 0.16f, 0.0f), true);
-    ok &= truth("rotation enters contact", evaluateContactResidual(false, 0.0f, 0.76f), true);
-    ok &= truth("hysteresis retains grazing contact", evaluateContactResidual(true, 0.06f, 0.0f), true);
-    ok &= truth("contact exits below stay thresholds", evaluateContactResidual(true, 0.04f, 0.19f), false);
-    ok &= truth("non-finite residual fails closed", evaluateContactResidual(true, INFINITY, 0.0f), false);
+    ok &= truth("missing native event is not contact", hasRecentWorldContactSignal(10, 0), false);
+    ok &= truth("current native event is contact", hasRecentWorldContactSignal(10, 10), true);
+    ok &= truth("native event survives short solve gap", hasRecentWorldContactSignal(13, 10), true);
+    ok &= truth("stale native event expires", hasRecentWorldContactSignal(14, 10), false);
+    ok &= truth("small free-space tracking residual is plausible", residualIsPlausible(false, 0.05f, 0.1f), true);
+    ok &= truth("air residual cannot manufacture collision", residualIsPlausible(false, 35.0f, 17.0f), false);
+    ok &= truth("real wall contact permits arm-length correction", residualIsPlausible(true, 35.0f, 17.0f), true);
+    ok &= truth("implausible contacted divergence fails closed", residualIsPlausible(true, 100.0f, 17.0f), false);
+    ok &= truth("non-finite residual fails closed", residualIsPlausible(true, INFINITY, 0.0f), false);
 
     Transform invalidTransform = identity();
     invalidTransform.rotate.entry[2][1] = INFINITY;

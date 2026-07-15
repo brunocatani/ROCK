@@ -3,6 +3,7 @@
 #include "physics-interaction/TransformMath.h"
 
 #include <cmath>
+#include <cstdint>
 
 namespace rock::dynamic_weapon_collision_authority_policy
 {
@@ -44,12 +45,24 @@ namespace rock::dynamic_weapon_collision_authority_policy
         };
     }
 
-    struct ContactThresholds
+    inline constexpr std::uint64_t kContactSignalGraceSolves = 3;
+
+    [[nodiscard]] inline bool hasRecentWorldContactSignal(
+        std::uint64_t currentPostSolveSequence,
+        std::uint64_t lastContactPostSolveSequence,
+        std::uint64_t graceSolves = kContactSignalGraceSolves)
     {
-        float translationEnterGameUnits = 0.15f;
-        float translationStayGameUnits = 0.05f;
-        float rotationEnterDegrees = 0.75f;
-        float rotationStayDegrees = 0.20f;
+        return lastContactPostSolveSequence != 0 &&
+            currentPostSolveSequence >= lastContactPostSolveSequence &&
+            currentPostSolveSequence - lastContactPostSolveSequence <= graceSolves;
+    }
+
+    struct ResidualSafetyLimits
+    {
+        float maxFreeTranslationGameUnits = 4.0f;
+        float maxFreeRotationDegrees = 8.0f;
+        float maxContactTranslationGameUnits = 96.0f;
+        float maxContactRotationDegrees = 75.0f;
     };
 
     template <class Transform>
@@ -70,20 +83,20 @@ namespace rock::dynamic_weapon_collision_authority_policy
         return true;
     }
 
-    [[nodiscard]] inline bool evaluateContactResidual(
-        bool wasActive,
+    [[nodiscard]] inline bool residualIsPlausible(
+        bool hasRecentWorldContact,
         float translationResidualGameUnits,
         float rotationResidualDegrees,
-        const ContactThresholds& thresholds = {})
+        const ResidualSafetyLimits& limits = {})
     {
         if (!std::isfinite(translationResidualGameUnits) || !std::isfinite(rotationResidualDegrees)) {
             return false;
         }
-        return wasActive ?
-            (translationResidualGameUnits > thresholds.translationStayGameUnits ||
-                rotationResidualDegrees > thresholds.rotationStayDegrees) :
-            (translationResidualGameUnits > thresholds.translationEnterGameUnits ||
-                rotationResidualDegrees > thresholds.rotationEnterDegrees);
+        return hasRecentWorldContact ?
+            translationResidualGameUnits <= limits.maxContactTranslationGameUnits &&
+                rotationResidualDegrees <= limits.maxContactRotationDegrees :
+            translationResidualGameUnits <= limits.maxFreeTranslationGameUnits &&
+                rotationResidualDegrees <= limits.maxFreeRotationDegrees;
     }
 
     template <class Transform>

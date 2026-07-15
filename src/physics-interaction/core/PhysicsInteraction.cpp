@@ -1455,6 +1455,23 @@ namespace rock
             addEntry(entry);
         }
 
+        /*
+         * Dynamic weapon twins are solver-only world-contact sources. They
+         * need their own registry kind so the contact callback can gate visual
+         * authority and haptics on a real manifold without routing the twins
+         * through keyframed weapon gameplay/reload contact behavior.
+         */
+        const auto dynamicWeaponSnapshot = _weaponCollision.getDynamicAuthorityBodySnapshot();
+        for (std::uint32_t i = 0;
+             i < dynamicWeaponSnapshot.count && i < WeaponCollision::MAX_DYNAMIC_AUTHORITY_BODIES;
+             ++i) {
+            Entry entry{};
+            entry.bodyId = dynamicWeaponSnapshot.bodyIds[i];
+            entry.kind = GeneratedBodyKind::DynamicWeaponAuthority;
+            entry.generationKey = dynamicWeaponSnapshot.generationKey;
+            addEntry(entry);
+        }
+
         const std::uint32_t bodyCount = (std::min)(_bodyBoneColliders.getBodyCount(), static_cast<std::uint32_t>(kBodyBoneColliderBodyCount));
         for (std::uint32_t i = 0; i < bodyCount; ++i) {
             const std::uint32_t bodyId = _bodyBoneColliders.getBodyIdAtomic(i);
@@ -3134,9 +3151,17 @@ namespace rock
             if (!weaponNode) {
                 _twoHandedGrip.clearCollisionResolvedWeaponAuthority();
             }
+            RE::NiTransform requestedWeaponWorld{};
+            const bool hasRequestedWeaponWorld = weaponNode &&
+                _twoHandedGrip.getCollisionRequestedWeaponTransform(
+                    weaponNode,
+                    currentWeaponGenerationKey,
+                    frame.right.disabled ? nullptr : &frame.right.rawHandWorld,
+                    requestedWeaponWorld);
             const auto dynamicWeaponAuthority = _weaponCollision.updateDynamicAuthorityFrame(
                 hknp,
-                weaponNode,
+                hasRequestedWeaponWorld ? weaponNode : nullptr,
+                requestedWeaponWorld,
                 frame.deltaSeconds,
                 _rightHand,
                 _leftHand,

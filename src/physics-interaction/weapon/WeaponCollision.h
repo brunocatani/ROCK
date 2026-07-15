@@ -209,11 +209,20 @@ namespace rock
         DynamicAuthorityVisualResult updateDynamicAuthorityFrame(
             RE::hknpWorld* world,
             RE::NiAVObject* weaponNode,
+            const RE::NiTransform& requestedWeaponWorld,
             float sourceDeltaSeconds,
             const Hand& rightHand,
             const Hand& leftHand,
             bool rightHandCoupled,
             bool leftHandCoupled);
+
+        // Physics-thread contact truth for layer-49 world manifolds. Solver
+        // residuals are correction magnitude only and never synthesize this.
+        void recordDynamicAuthorityWorldContact(
+            std::uint64_t generationKey,
+            std::uint32_t sourceBodyId,
+            std::uint32_t targetBodyId,
+            std::uint32_t targetLayer) noexcept;
 
         void sampleDynamicAuthorityPostSolve(RE::hknpWorld* world);
 
@@ -435,6 +444,7 @@ namespace rock
         bool rebuildDynamicAuthorityGroup(
             RE::hknpWorld* world,
             RE::NiAVObject* weaponNode,
+            const RE::NiTransform& requestedWeaponWorld,
             const Hand* rightHand = nullptr,
             const Hand* leftHand = nullptr,
             bool rightHandCoupled = false,
@@ -492,6 +502,9 @@ namespace rock
             std::uint64_t generationKey{ 0 };
             std::uint64_t intentSequence{ 0 };
             std::uint64_t contactEntrySequence{ 0 };
+            std::uint64_t postSolveSequence{ 0 };
+            std::uint64_t observedContactSignalSequence{ 0 };
+            std::uint64_t lastContactSignalPostSolveSequence{ 0 };
             RE::NiTransform commandedAnchorWorld{};
             RE::NiTransform liveAnchorWorld{};
             float translationResidualGameUnits{ 0.0f };
@@ -507,12 +520,21 @@ namespace rock
         BethesdaPhysicsBodyGroup _dynamicAuthorityGroup{};
         GeneratedKeyframedBodyDriveState _dynamicAuthorityDriveState{};
         std::array<DynamicAuthorityMemberBinding, MAX_DYNAMIC_AUTHORITY_BODIES> _dynamicAuthorityMemberBindings{};
+        // Captured once per rigid group generation. Held-hand targets and
+        // rendered collision correction never reshape the live shared motion.
+        std::array<RE::NiTransform, MAX_DYNAMIC_AUTHORITY_BODIES> _dynamicAuthorityMemberWeaponLocal{};
         std::array<DynamicAuthorityHandMembership, 2> _dynamicAuthorityHandMemberships{};
         std::size_t _dynamicAuthorityWeaponMemberCount{ 0 };
         std::size_t _dynamicAuthorityMemberCount{ 0 };
         std::uint64_t _dynamicAuthorityGenerationKey{ 0 };
         std::uint64_t _dynamicAuthorityLastVisualContactEntrySequence{ 0 };
         std::atomic<bool> _dynamicAuthorityRebuildRequested{ false };
+        std::atomic<bool> _dynamicAuthorityCollisionEnabled{ false };
+        std::atomic<std::uint64_t> _dynamicAuthorityContactSignalSequence{ 0 };
+        std::atomic<std::uint64_t> _dynamicAuthorityContactSignalGenerationKey{ 0 };
+        std::atomic<std::uint32_t> _dynamicAuthorityLastContactSourceBody{ INVALID_BODY_ID };
+        std::atomic<std::uint32_t> _dynamicAuthorityLastContactTargetBody{ INVALID_BODY_ID };
+        std::atomic<std::uint32_t> _dynamicAuthorityLastContactTargetLayer{ 0xFFFF'FFFFu };
         mutable std::mutex _dynamicAuthorityStateMutex;
         DynamicAuthorityIntent _dynamicAuthorityIntent{};
         DynamicAuthorityPhysicsState _dynamicAuthorityPhysics{};

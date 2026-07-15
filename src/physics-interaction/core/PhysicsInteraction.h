@@ -371,6 +371,7 @@ namespace rock
         static constexpr std::size_t kGeneratedBodyContactRegistryCapacity =
             (hand_collider_semantics::kHandColliderBodyCountPerHand * 2u) +
             MAX_WEAPON_COLLISION_BODIES +
+            WeaponCollision::MAX_DYNAMIC_AUTHORITY_BODIES +
             kBodyBoneColliderBodyCount;
         generated_body_contact_registry::Registry<kGeneratedBodyContactRegistryCapacity> _generatedBodyContactRegistry;
 
