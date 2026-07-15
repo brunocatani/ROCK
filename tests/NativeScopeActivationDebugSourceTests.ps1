@@ -43,16 +43,18 @@ foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini
         'Native scope overlay template tuning must default to a neutral additive transform.'
 }
 
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' 'enum class NativeScopeCameraWriteSource[\s\S]*PreNativeGameUpdate[\s\S]*WeaponVisualAuthority[\s\S]*struct NativeScopeCameraDebugSnapshot[\s\S]*writeSource[\s\S]*usedSightAnchor[\s\S]*usedLastRenderedRockWeaponFrame[\s\S]*usedExitHysteresisLatch[\s\S]*cameraWorldBefore[\s\S]*targetCameraWorld[\s\S]*immediateCameraWorldAfter' `
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' 'enum class NativeScopeCameraWriteSource[\s\S]*PreNativeGameUpdate[\s\S]*WeaponVisualAuthority[\s\S]*struct NativeScopeCameraDebugSnapshot[\s\S]*writeSource[\s\S]*usedSightAnchor[\s\S]*cameraWorldBefore[\s\S]*targetCameraWorld[\s\S]*immediateCameraWorldAfter' `
     'The handoff diagnostic must retain value snapshots for pre-write, target, and immediate readback stages.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'NativeScopeCameraFollowResult applyNativeScopeCameraFollow[\s\S]*return applyNativeScopeCameraWorldTarget\(capture\.camera,\s*targetCameraWorld\)[\s\S]*NativeScopeCameraFollowResult applyNativeScopeCameraWorldTarget[\s\S]*result\.targetCameraWorld\s*=\s*targetCameraWorld[\s\S]*scopeCamera->local\s*=\s*targetCameraLocal[\s\S]*result\.immediateCameraWorldAfter\s*=\s*scopeCamera->world' `
-    'All physical and hysteresis camera writes must share one helper that immediately records the stored camera world.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'void TwoHandedGrip::prepareNativeScopeCameraForGameUpdate[\s\S]*_nativeScopeSightAnchorWeaponNode\s*!=\s*weaponNode[\s\S]*shouldUseLastRenderedRockWeaponFrame[\s\S]*activationWeaponWorld[\s\S]*applyNativeScopeCameraFollow\(capture,\s*activationWeaponWorld,\s*&_nativeScopeSightAnchorWeaponLocal\)[\s\S]*NativeScopeCameraWriteSource::PreNativeGameUpdate' `
-    'Pre-native scope detection must use the last rendered ROCK weapon frame during matching two-hand ownership and still anchor it to generated Sight geometry.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' 'NativeScopeOverlayPendingHandoff[\s\S]*cameraWorldUsedForGameUpdate[\s\S]*overlayCameraWorldTarget[\s\S]*NativeScopeActivationLatchState[\s\S]*acceptedCameraHmdLocal[\s\S]*NativeScopeOverlayCalibrationState[\s\S]*scopeParentIdentity[\s\S]*scopeModelRootIdentity[\s\S]*scopeModelRootLocal[\s\S]*scopeModelRootCalibrationInCameraLocal[\s\S]*nativeScopeParentLocal[\s\S]*lastAppliedScopeParentLocal' `
-    'The native overlay handoff must separate the camera consumed by FO4VR from the physical NIF target and retain generation-keyed rollback state.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'isWithinExitHysteresis[\s\S]*applyNativeScopeCameraWorldTarget\(capture\.camera,\s*acceptedCameraWorld\)[\s\S]*cameraWorldUsedForGameUpdate\s*=\s*gameUpdateResult\.targetCameraWorld[\s\S]*overlayCameraWorldTarget\s*=\s*physicalResult\.targetCameraWorld[\s\S]*captureNativeScopeOverlayCalibration\(pending\.cameraWorldUsedForGameUpdate[\s\S]*applyNativeScopeOverlayTarget\(pending\.overlayCameraWorldTarget' `
-    'Exit hysteresis must affect only the temporary native detection write while visible NIF calibration and placement use explicitly separated frames.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'NativeScopeCameraFollowResult applyNativeScopeCameraFollow[\s\S]*result\.targetCameraWorld\s*=\s*targetCameraWorld[\s\S]*scopeCamera->local\s*=\s*targetCameraLocal[\s\S]*immediateCameraWorld\s*=\s*scopeCamera->world' `
+    'The diagnostic must observe the stored camera world immediately after the real native-camera write.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'void TwoHandedGrip::prepareNativeScopeCameraForGameUpdate[\s\S]*_nativeScopeSightAnchorWeaponNode\s*!=\s*weaponNode[\s\S]*applyNativeScopeCameraFollow\(capture,\s*weaponNode->world,\s*&_nativeScopeSightAnchorWeaponLocal\)[\s\S]*NativeScopeCameraWriteSource::PreNativeGameUpdate' `
+    'Every equipped scoped-weapon frame must replace the one-hand hand-rooted camera translation with the exact generation-matched Sight anchor before native consumption.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' 'NativeScopeDetectionProbeState[\s\S]*cameraHmdLocal[\s\S]*NativeScopeDetectionTemporaryWrite[\s\S]*physicalCameraLocal[\s\S]*detectionCameraLocal' `
+    'The flicker guard must retain value snapshots for the accepted HMD-local probe and the exact physical camera local that must be restored.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'prepareNativeScopeCameraForGameUpdate[\s\S]*isInsideExitDeadband[\s\S]*physicalCameraLocal\s*=\s*capture\.camera->local[\s\S]*detectionCameraLocal[\s\S]*finalizeNativeScopeOverlayAfterGameUpdate[\s\S]*restoreNativeScopeDetectionCameraAfterGameUpdate\(\)[\s\S]*captureNativeScopeOverlayCalibration\(pending\.nativeCameraWorldBefore[\s\S]*applyNativeScopeOverlayTarget\(pending\.correctedCameraWorld' `
+    'Two-hand hysteresis must affect only the synchronous native detector, restore the physical camera, and leave the known-good overlay/NIF handoff unchanged.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' 'NativeScopeOverlayPendingHandoff[\s\S]*nativeCameraWorldBefore[\s\S]*correctedCameraWorld[\s\S]*NativeScopeOverlayCalibrationState[\s\S]*scopeParentIdentity[\s\S]*scopeModelRootIdentity[\s\S]*scopeModelRootLocal[\s\S]*scopeModelRootCalibrationInCameraLocal[\s\S]*nativeScopeParentLocal[\s\S]*lastAppliedScopeParentLocal' `
+    'The native overlay handoff must retain the native camera value, generation-keyed node identities, model orientation calibration, and rollback state.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'captureNativeScopeOverlayCalibration[\s\S]*ScopeParentNode[\s\S]*find1StChildNode\(scopeParent,\s*"world_scope\.nif"\)[\s\S]*captureModelRootCalibrationInCameraLocal[\s\S]*applyNativeScopeOverlayTarget[\s\S]*makeModelRootFineTuneLocal[\s\S]*resolveScopeModelRootWorld[\s\S]*resolveScopeParentWorldForModelRoot[\s\S]*worldTargetToParentLocal[\s\S]*updateTransformsDown\(scopeParent,\s*true\)' `
     'The rendered world-scope hierarchy must preserve native model orientation, apply INI tuning, and compensate the live NIF root transform at the generated sight.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'tryGetComposedNodeWorld\(scopeModelRoot,\s*immediateScopeModelRootWorld\)[\s\S]*areTransformsNearlyEqual\(immediateScopeModelRootWorld,\s*targetScopeModelRootWorld,\s*0\.01f\)' `
@@ -61,10 +63,8 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'clearNativeScop
     'ScopeParent authority must restore the captured native local only while ROCK still owns the last applied transform.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'void PhysicsInteraction::prepareNativeScopeCameraForGameUpdate\(\)[\s\S]*_twoHandedGrip\.prepareNativeScopeCameraForGameUpdate\([\s\S]*_weaponCollision\.getCurrentWeaponGenerationKey\(\)' `
     'The main-loop boundary must consume only the current weapon node and prior completed generation snapshot.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'void PhysicsInteraction::finalizeNativeScopeOverlayAfterGameUpdate\(\)[\s\S]*_twoHandedGrip\.finalizeNativeScopeOverlayAfterGameUpdate\([\s\S]*runtime_state::isScopeMenuOpenLive\(\)[\s\S]*_weaponCollision\.getCurrentWeaponGenerationKey\(\)' `
-    'The post-native boundary must sample the just-consumed ScopeMenu state and retain the current weapon-generation guard.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'finalizeNativeScopeOverlayAfterGameUpdate\([\s\S]*scopeMenuOpenNow[\s\S]*!_scopeMenuOpenThisFrame[\s\S]*pending\.cameraWorldUsedForGameUpdate[\s\S]*acceptedCameraHmdLocal[\s\S]*_nativeScopeActivationLatch' `
-    'The hysteresis latch must capture the exact game-update camera on the native frame that first opens ScopeMenu.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'void PhysicsInteraction::finalizeNativeScopeOverlayAfterGameUpdate\(\)[\s\S]*_twoHandedGrip\.finalizeNativeScopeOverlayAfterGameUpdate\([\s\S]*_weaponCollision\.getCurrentWeaponGenerationKey\(\)' `
+    'The post-native boundary must retain the same current weapon-generation guard as the camera handoff.'
 Require-Text 'src/ROCKMain.cpp' 'prepareNativeScopeCameraForGameUpdate\(\);[\s\S]*s_originalGameLoopFunc\(rcx\);[\s\S]*finalizeNativeScopeOverlayAfterGameUpdate\(\);[\s\S]*onFrameUpdate\(\);' `
     'The camera must publish before native consumption, ScopeParent after native ownership, and both before ROCK post-frame authority.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'NativeScopeCameraWriteSource::WeaponVisualAuthority[\s\S]*scopeCameraFollow[\s\S]*scopeCameraResult[\s\S]*sightAnchorWeaponLocal\s*!=\s*nullptr' `
@@ -81,10 +81,6 @@ Require-Text $overlay 'getNativeScopeCameraDebugSnapshot\(\)[\s\S]*NativeScopePr
     'The overlay must expose the recorded pre-write and immediate-readback handoff stages.'
 Require-Text $overlay 'writeSnapshot\.usedSightAnchor' `
     'The overlay must report whether the actual authority write consumed generated sight geometry.'
-Require-Text $overlay 'writeSnapshot\.usedLastRenderedRockWeaponFrame' `
-    'The overlay must report whether pre-native scope detection consumed ROCKs last rendered weapon frame.'
-Require-Text $overlay 'writeSnapshot\.usedExitHysteresisLatch' `
-    'The overlay must report whether the temporary native detection frame used the exit hysteresis latch.'
 Require-Text $overlay 'scopeWriteSourceName[\s\S]*pre-native-game-update[\s\S]*weapon-visual-authority[\s\S]*writeSnapshot\.writeSource' `
     'The in-game panel must distinguish the pre-native baseline from a later weapon-authority write.'
 Require-Text $overlay 'hmdPositionWorld[\s\S]*NativeScopeHmd[\s\S]*HMD->live[\s\S]*HMD->target' `

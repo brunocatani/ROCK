@@ -636,14 +636,12 @@
                 addScreenTextLine(panelX, panelY, panelColor, panelLine);
                 panelY += 14.0f;
                 std::snprintf(panelLine, sizeof(panelLine),
-                    "stages: capture=%s target=%s applied=%s readback=%s sightAnchor=%s renderedWeapon=%s exitLatch=%s",
+                    "stages: capture=%s target=%s applied=%s readback=%s usedSightAnchor=%s",
                     writeSnapshot.captureValid ? "yes" : "no",
                     writeSnapshot.targetValid ? "yes" : "no",
                     writeSnapshot.writeApplied ? "yes" : "no",
                     writeSnapshot.immediateReadbackValid ? "yes" : "no",
-                    writeSnapshot.usedSightAnchor ? "yes" : "NO",
-                    writeSnapshot.usedLastRenderedRockWeaponFrame ? "yes" : "no",
-                    writeSnapshot.usedExitHysteresisLatch ? "yes" : "no");
+                    writeSnapshot.usedSightAnchor ? "yes" : "NO");
                 addScreenTextLine(panelX, panelY, panelColor, panelLine);
                 panelY += 14.0f;
             }

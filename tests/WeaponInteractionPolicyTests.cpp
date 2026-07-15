@@ -97,45 +97,6 @@ int main()
     bool ok = true;
 
     {
-        ok &= expectTrue("native scope activation uses ROCK's last rendered frame during matching two-hand ownership",
-            rock::native_scope_activation_frame_policy::shouldUseLastRenderedRockWeaponFrame(
-                true, true, true, 0x1234u, 0x1234u));
-        ok &= expectFalse("native scope activation rejects a stale rendered frame after generation change",
-            rock::native_scope_activation_frame_policy::shouldUseLastRenderedRockWeaponFrame(
-                true, true, true, 0x1234u, 0x5678u));
-        ok &= expectFalse("native scope activation retains hFRIK's frame without ROCK weapon ownership",
-            rock::native_scope_activation_frame_policy::shouldUseLastRenderedRockWeaponFrame(
-                false, true, true, 0x1234u, 0x1234u));
-
-        TestTransform acceptedScopeCameraHmdLocal = rock::transform_math::makeIdentityTransform<TestTransform>();
-        TestTransform liveScopeCameraHmdLocal = acceptedScopeCameraHmdLocal;
-        liveScopeCameraHmdLocal.translate.x = 3.4f;
-        ok &= expectTrue("native scope exit hysteresis retains small accepted-camera translation jitter",
-            rock::native_scope_activation_frame_policy::isWithinExitHysteresis(
-                acceptedScopeCameraHmdLocal,
-                liveScopeCameraHmdLocal));
-        liveScopeCameraHmdLocal.translate.x = 3.6f;
-        ok &= expectFalse("native scope exit hysteresis releases deliberate translation beyond its dead band",
-            rock::native_scope_activation_frame_policy::isWithinExitHysteresis(
-                acceptedScopeCameraHmdLocal,
-                liveScopeCameraHmdLocal));
-
-        liveScopeCameraHmdLocal = acceptedScopeCameraHmdLocal;
-        constexpr float kFiveDegreesRadians = 5.0f * 3.14159265358979323846f / 180.0f;
-        liveScopeCameraHmdLocal.rotate.entry[0][0] = std::cos(kFiveDegreesRadians);
-        liveScopeCameraHmdLocal.rotate.entry[0][1] = std::sin(kFiveDegreesRadians);
-        ok &= expectTrue("native scope exit hysteresis retains small accepted-camera angular jitter",
-            rock::native_scope_activation_frame_policy::isWithinExitHysteresis(
-                acceptedScopeCameraHmdLocal,
-                liveScopeCameraHmdLocal));
-        constexpr float kSevenDegreesRadians = 7.0f * 3.14159265358979323846f / 180.0f;
-        liveScopeCameraHmdLocal.rotate.entry[0][0] = std::cos(kSevenDegreesRadians);
-        liveScopeCameraHmdLocal.rotate.entry[0][1] = std::sin(kSevenDegreesRadians);
-        ok &= expectFalse("native scope exit hysteresis releases deliberate angular motion beyond its dead band",
-            rock::native_scope_activation_frame_policy::isWithinExitHysteresis(
-                acceptedScopeCameraHmdLocal,
-                liveScopeCameraHmdLocal));
-
         TestTransform weaponBefore = rock::transform_math::makeIdentityTransform<TestTransform>();
         weaponBefore.translate = { 10.0f, 20.0f, 30.0f };
         TestTransform scopeBefore = rock::transform_math::makeIdentityTransform<TestTransform>();
@@ -201,6 +162,44 @@ int main()
                 ok &= expectNear("equipped scope baseline preserves hFRIK camera rotation", equippedSightBaseline.rotate.entry[row][column], scopeBefore.rotate.entry[row][column]);
             }
         }
+
+        const TestTransform acceptedScopeHmdLocal = rock::transform_math::makeIdentityTransform<TestTransform>();
+        TestTransform candidateScopeHmdLocal = acceptedScopeHmdLocal;
+        candidateScopeHmdLocal.translate.x = 3.4f;
+        ok &= expectTrue(
+            "native scope exit hysteresis retains small positional jitter",
+            rock::native_scope_detection_hysteresis_policy::isInsideExitDeadband(
+                acceptedScopeHmdLocal,
+                candidateScopeHmdLocal));
+        candidateScopeHmdLocal.translate.x = 3.6f;
+        ok &= expectFalse(
+            "native scope exit hysteresis permits deliberate positional exit",
+            rock::native_scope_detection_hysteresis_policy::isInsideExitDeadband(
+                acceptedScopeHmdLocal,
+                candidateScopeHmdLocal));
+
+        candidateScopeHmdLocal = acceptedScopeHmdLocal;
+        constexpr float sevenDegreesRadians = 7.0f * 0.017453292519943295769f;
+        candidateScopeHmdLocal.rotate.entry[0][0] = std::cos(sevenDegreesRadians);
+        candidateScopeHmdLocal.rotate.entry[0][1] = std::sin(sevenDegreesRadians);
+        candidateScopeHmdLocal.rotate.entry[1][0] = -std::sin(sevenDegreesRadians);
+        candidateScopeHmdLocal.rotate.entry[1][1] = std::cos(sevenDegreesRadians);
+        ok &= expectTrue(
+            "native scope exit hysteresis retains small angular jitter",
+            rock::native_scope_detection_hysteresis_policy::isInsideExitDeadband(
+                acceptedScopeHmdLocal,
+                candidateScopeHmdLocal));
+
+        constexpr float nineDegreesRadians = 9.0f * 0.017453292519943295769f;
+        candidateScopeHmdLocal.rotate.entry[0][0] = std::cos(nineDegreesRadians);
+        candidateScopeHmdLocal.rotate.entry[0][1] = std::sin(nineDegreesRadians);
+        candidateScopeHmdLocal.rotate.entry[1][0] = -std::sin(nineDegreesRadians);
+        candidateScopeHmdLocal.rotate.entry[1][1] = std::cos(nineDegreesRadians);
+        ok &= expectFalse(
+            "native scope exit hysteresis permits deliberate angular exit",
+            rock::native_scope_detection_hysteresis_policy::isInsideExitDeadband(
+                acceptedScopeHmdLocal,
+                candidateScopeHmdLocal));
 
         TestTransform nativeModelRootInCameraLocal = rock::transform_math::makeIdentityTransform<TestTransform>();
         nativeModelRootInCameraLocal.translate = { 6.0f, -30.0f, 2.0f };
@@ -329,21 +328,6 @@ int main()
             rock::scope_safe_hand_frame_math::shouldPublishLockedHandVisualAuthority(false));
         ok &= expectFalse("locked hand IK is suppressed while native scope hides the body",
             rock::scope_safe_hand_frame_math::shouldPublishLockedHandVisualAuthority(true));
-        ok &= expectTrue("visible stable carry may refresh the right firing canonical",
-            rock::scope_safe_hand_frame_math::canRefreshRightFiringCanonicalFrame(false, false));
-        ok &= expectFalse("ScopeMenu cannot overwrite the right firing canonical",
-            rock::scope_safe_hand_frame_math::canRefreshRightFiringCanonicalFrame(true, false));
-        ok &= expectFalse("scope-exit hand rebase cannot overwrite the right firing canonical",
-            rock::scope_safe_hand_frame_math::canRefreshRightFiringCanonicalFrame(false, true));
-        ok &= expectTrue("scoped right firing grip reuses the matching pre-scope canonical",
-            rock::scope_safe_hand_frame_math::shouldReuseRightFiringCanonicalGrip(
-                true, false, true, 0x1234u, 0x1234u));
-        ok &= expectFalse("scoped grip rejects a canonical from a stale weapon generation",
-            rock::scope_safe_hand_frame_math::shouldReuseRightFiringCanonicalGrip(
-                true, false, true, 0x1234u, 0x5678u));
-        ok &= expectFalse("ordinary visible acquisition captures the live primary grip",
-            rock::scope_safe_hand_frame_math::shouldReuseRightFiringCanonicalGrip(
-                false, false, true, 0x1234u, 0x1234u));
 
         TestTransform rebaseStart = rock::transform_math::makeIdentityTransform<TestTransform>();
         rebaseStart.translate = { 1.5f, -2.0f, 0.75f };

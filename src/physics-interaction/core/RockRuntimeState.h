@@ -49,7 +49,6 @@ namespace rock::runtime_state
     void updateFrame(const RuntimeFrameInput& input);
 
     [[nodiscard]] const RuntimeFrameSnapshot& currentFrame();
-    [[nodiscard]] bool isScopeMenuOpenLive();
     [[nodiscard]] bool isLocalSkeletonReady();
     [[nodiscard]] bool isPhysicsMenuBlocked();
     [[nodiscard]] bool isCompatibilityConfigBlocked();

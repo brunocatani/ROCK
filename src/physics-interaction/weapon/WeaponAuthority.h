@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <string_view>
+#include <type_traits>
 
 namespace rock::weapon_authority_lifecycle_policy
 {
@@ -161,81 +162,6 @@ namespace rock::weapon_visual_authority_math
 
 // ---- NativeScopeCameraFollowMath.h ----
 
-namespace rock::native_scope_activation_frame_policy
-{
-    inline constexpr float kExitHysteresisTranslationGameUnits = 3.5f;
-    inline constexpr float kExitHysteresisForwardMinDot = 0.9945219f;  // cos(6 degrees)
-
-    /*
-     * hFRIK runs before ROCK in the shared main-loop chain and restores its
-     * one-hand weapon pose before FO4VR evaluates native scope entry/exit.
-     * While ROCK owns the visible weapon, the activation camera must instead
-     * consume the last frame ROCK actually rendered. Keeping the node and
-     * generation checks here prevents a stale solve from crossing an equip or
-     * collision-generation boundary.
-     */
-    [[nodiscard]] inline constexpr bool shouldUseLastRenderedRockWeaponFrame(
-        bool ownsWeaponTransform,
-        bool hasLastRenderedWeaponWorld,
-        bool activeWeaponNodeMatches,
-        std::uint64_t activeWeaponGenerationKey,
-        std::uint64_t currentWeaponGenerationKey)
-    {
-        return ownsWeaponTransform && hasLastRenderedWeaponWorld && activeWeaponNodeMatches &&
-               activeWeaponGenerationKey != 0 && activeWeaponGenerationKey == currentWeaponGenerationKey;
-    }
-
-    /*
-     * Native ScopeMenu has effectively no useful dead band around its boundary.
-     * Once the game has accepted a generated sight, retain that accepted
-     * camera-in-HMD frame across only small physical translation/orientation
-     * changes. Larger motion is always passed through so normal scope exit
-     * remains owned by FO4VR. The accepted frame is used only by the temporary
-     * pre-native detection write; it must never become weapon or overlay pose
-     * authority.
-     */
-    template <class Transform>
-    [[nodiscard]] inline bool isWithinExitHysteresis(
-        const Transform& acceptedCameraHmdLocal,
-        const Transform& liveCameraHmdLocal,
-        const float maxTranslationGameUnits = kExitHysteresisTranslationGameUnits,
-        const float minForwardDot = kExitHysteresisForwardMinDot)
-    {
-        const float dx = liveCameraHmdLocal.translate.x - acceptedCameraHmdLocal.translate.x;
-        const float dy = liveCameraHmdLocal.translate.y - acceptedCameraHmdLocal.translate.y;
-        const float dz = liveCameraHmdLocal.translate.z - acceptedCameraHmdLocal.translate.z;
-        const float distanceSquared = dx * dx + dy * dy + dz * dz;
-        const float maxDistanceSquared = maxTranslationGameUnits * maxTranslationGameUnits;
-        if (!std::isfinite(distanceSquared) || !std::isfinite(maxDistanceSquared) ||
-            maxTranslationGameUnits < 0.0f || distanceSquared > maxDistanceSquared) {
-            return false;
-        }
-
-        // Native scope camera forward is local +X. With NiMatrix3's transform
-        // convention that direction is row zero of the stored rotation.
-        const float acceptedLengthSquared =
-            acceptedCameraHmdLocal.rotate.entry[0][0] * acceptedCameraHmdLocal.rotate.entry[0][0] +
-            acceptedCameraHmdLocal.rotate.entry[0][1] * acceptedCameraHmdLocal.rotate.entry[0][1] +
-            acceptedCameraHmdLocal.rotate.entry[0][2] * acceptedCameraHmdLocal.rotate.entry[0][2];
-        const float liveLengthSquared =
-            liveCameraHmdLocal.rotate.entry[0][0] * liveCameraHmdLocal.rotate.entry[0][0] +
-            liveCameraHmdLocal.rotate.entry[0][1] * liveCameraHmdLocal.rotate.entry[0][1] +
-            liveCameraHmdLocal.rotate.entry[0][2] * liveCameraHmdLocal.rotate.entry[0][2];
-        if (!std::isfinite(acceptedLengthSquared) || !std::isfinite(liveLengthSquared) ||
-            acceptedLengthSquared <= 0.000001f || liveLengthSquared <= 0.000001f ||
-            !std::isfinite(minForwardDot)) {
-            return false;
-        }
-
-        const float forwardDot =
-            (acceptedCameraHmdLocal.rotate.entry[0][0] * liveCameraHmdLocal.rotate.entry[0][0] +
-                acceptedCameraHmdLocal.rotate.entry[0][1] * liveCameraHmdLocal.rotate.entry[0][1] +
-                acceptedCameraHmdLocal.rotate.entry[0][2] * liveCameraHmdLocal.rotate.entry[0][2]) /
-            std::sqrt(acceptedLengthSquared * liveLengthSquared);
-        return std::isfinite(forwardDot) && forwardDot >= minForwardDot;
-    }
-}
-
 namespace rock::native_scope_camera_follow_math
 {
     /*
@@ -296,6 +222,65 @@ namespace rock::native_scope_camera_follow_math
             scopeCameraWorldBefore);
         scopeCameraWeaponLocal.translate = sightAnchorWeaponLocal;
         return transform_math::composeTransforms(weaponWorldAfter, scopeCameraWeaponLocal);
+    }
+}
+
+// ---- NativeScopeDetectionHysteresisPolicy.h ----
+
+namespace rock::native_scope_detection_hysteresis_policy
+{
+    inline constexpr float kExitTranslationDeadbandGameUnits = 3.5f;
+    inline constexpr float kExitForwardMinDot = 0.99026807f;  // cos(8 degrees)
+
+    /*
+     * Once FO4VR has accepted a two-hand scope frame, require a deliberate
+     * displacement from that accepted HMD-local frame before allowing the
+     * native detector to see an exit. This policy is detection-only: callers
+     * must restore the physical camera frame immediately after the synchronous
+     * native update so it cannot affect weapon or world-scope NIF placement.
+     */
+    template <class Transform>
+    [[nodiscard]] inline bool isInsideExitDeadband(
+        const Transform& acceptedCameraHmdLocal,
+        const Transform& candidateCameraHmdLocal)
+    {
+        const double deltaX = static_cast<double>(candidateCameraHmdLocal.translate.x) -
+                              static_cast<double>(acceptedCameraHmdLocal.translate.x);
+        const double deltaY = static_cast<double>(candidateCameraHmdLocal.translate.y) -
+                              static_cast<double>(acceptedCameraHmdLocal.translate.y);
+        const double deltaZ = static_cast<double>(candidateCameraHmdLocal.translate.z) -
+                              static_cast<double>(acceptedCameraHmdLocal.translate.z);
+        const double distanceSquared = deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ;
+        const double maxDistanceSquared =
+            static_cast<double>(kExitTranslationDeadbandGameUnits) * static_cast<double>(kExitTranslationDeadbandGameUnits);
+        if (!std::isfinite(distanceSquared) || distanceSquared > maxDistanceSquared) {
+            return false;
+        }
+
+        using Vector = std::remove_cv_t<std::remove_reference_t<decltype(acceptedCameraHmdLocal.translate)>>;
+        Vector localForward{};
+        localForward.x = 1.0f;
+        const Vector acceptedForward = transform_math::localVectorToWorld(acceptedCameraHmdLocal, localForward);
+        const Vector candidateForward = transform_math::localVectorToWorld(candidateCameraHmdLocal, localForward);
+        const double acceptedLengthSquared =
+            static_cast<double>(acceptedForward.x) * static_cast<double>(acceptedForward.x) +
+            static_cast<double>(acceptedForward.y) * static_cast<double>(acceptedForward.y) +
+            static_cast<double>(acceptedForward.z) * static_cast<double>(acceptedForward.z);
+        const double candidateLengthSquared =
+            static_cast<double>(candidateForward.x) * static_cast<double>(candidateForward.x) +
+            static_cast<double>(candidateForward.y) * static_cast<double>(candidateForward.y) +
+            static_cast<double>(candidateForward.z) * static_cast<double>(candidateForward.z);
+        if (!std::isfinite(acceptedLengthSquared) || !std::isfinite(candidateLengthSquared) ||
+            acceptedLengthSquared <= 0.000001 || candidateLengthSquared <= 0.000001) {
+            return false;
+        }
+
+        const double forwardDot =
+            (static_cast<double>(acceptedForward.x) * static_cast<double>(candidateForward.x) +
+                static_cast<double>(acceptedForward.y) * static_cast<double>(candidateForward.y) +
+                static_cast<double>(acceptedForward.z) * static_cast<double>(candidateForward.z)) /
+            std::sqrt(acceptedLengthSquared * candidateLengthSquared);
+        return std::isfinite(forwardDot) && forwardDot >= static_cast<double>(kExitForwardMinDot);
     }
 }
 
@@ -480,36 +465,6 @@ namespace rock::scope_safe_hand_frame_math
         // hFRIK's hands are deliberately hidden in this state, and its arm IK
         // rejects the collapsed skeleton. Weapon/camera authority still runs.
         return !scopeMenuOpen;
-    }
-
-    /*
-     * A ScopeMenu frame and the short exit rebase deliberately combine hFRIK
-     * driver-relative hands with a weapon node authored on a different pass.
-     * Neither state is a valid source for replacing the native right-hand
-     * weapon-local calibration captured during ordinary visible carry.
-     */
-    [[nodiscard]] inline constexpr bool canRefreshRightFiringCanonicalFrame(
-        bool scopeMenuOpen,
-        bool rightHandRootRebaseActive)
-    {
-        return !scopeMenuOpen && !rightHandRootRebaseActive;
-    }
-
-    /*
-     * If the support hand starts a two-hand grip while ScopeMenu is already
-     * open, reconstructing a new primary weapon-local frame mixes the hidden
-     * driver hand with hFRIK's transient one-hand weapon node. Reuse the exact
-     * pre-scope canonical only for the same right-firing weapon generation.
-     */
-    [[nodiscard]] inline constexpr bool shouldReuseRightFiringCanonicalGrip(
-        bool scopeMenuOpen,
-        bool firingHandIsLeft,
-        bool canonicalValid,
-        std::uint64_t canonicalWeaponGenerationKey,
-        std::uint64_t currentWeaponGenerationKey)
-    {
-        return scopeMenuOpen && !firingHandIsLeft && canonicalValid &&
-               canonicalWeaponGenerationKey != 0 && canonicalWeaponGenerationKey == currentWeaponGenerationKey;
     }
 
     [[nodiscard]] inline float rebaseAlpha(float elapsedSeconds, float durationSeconds)

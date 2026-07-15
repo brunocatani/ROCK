@@ -115,8 +115,6 @@ namespace rock
         bool writeApplied{ false };
         bool immediateReadbackValid{ false };
         bool usedSightAnchor{ false };
-        bool usedLastRenderedRockWeaponFrame{ false };
-        bool usedExitHysteresisLatch{ false };
         RE::NiTransform cameraWorldBefore{};
         RE::NiTransform targetCameraWorld{};
         RE::NiTransform immediateCameraWorldAfter{};
@@ -125,18 +123,30 @@ namespace rock
     struct NativeScopeOverlayPendingHandoff
     {
         std::uint64_t weaponGenerationKey{ 0 };
-        // The first frame is the exact temporary camera consumed by FO4VR;
-        // the second is the physical optic target the visible NIF must follow.
-        RE::NiTransform cameraWorldUsedForGameUpdate{};
-        RE::NiTransform overlayCameraWorldTarget{};
+        RE::NiTransform nativeCameraWorldBefore{};
+        RE::NiTransform correctedCameraWorld{};
         bool valid{ false };
     };
 
-    struct NativeScopeActivationLatchState
+    struct NativeScopeDetectionProbeState
     {
         std::uint64_t weaponGenerationKey{ 0 };
-        RE::NiTransform acceptedCameraHmdLocal{};
+        RE::NiTransform cameraHmdLocal{};
         bool valid{ false };
+    };
+
+    struct NativeScopeDetectionTemporaryWrite
+    {
+        /*
+         * Non-owning identity witnesses valid only across ROCK's synchronous
+         * pre-native/post-native hook pair. The restore path resolves the
+         * current PlayerNodes camera and parent before dereferencing either.
+         */
+        RE::NiNode* cameraIdentity{ nullptr };
+        RE::NiAVObject* cameraParentIdentity{ nullptr };
+        RE::NiTransform physicalCameraLocal{};
+        RE::NiTransform detectionCameraLocal{};
+        bool pending{ false };
     };
 
     struct NativeScopeOverlayCalibrationState
@@ -247,7 +257,7 @@ namespace rock
          * prepareNativeScopeCameraForGameUpdate because the game can author
          * ScopeParent while consuming the corrected activation camera.
          */
-        void finalizeNativeScopeOverlayAfterGameUpdate(bool scopeMenuOpenNow, std::uint64_t currentWeaponGenerationKey);
+        void finalizeNativeScopeOverlayAfterGameUpdate(std::uint64_t currentWeaponGenerationKey);
 
         void reset();
 
@@ -693,6 +703,7 @@ namespace rock
         void clearWeaponVisualReturn(const char* reason, bool logCancellation, bool restoreBlockers);
         void clearAllVisualReturns(const char* reason, bool logCancellation, bool restoreBlockers);
         void clearNativeScopeOverlayAuthority(bool restoreNativeLocal);
+        void restoreNativeScopeDetectionCameraAfterGameUpdate();
         bool captureNativeScopeOverlayCalibration(
             const RE::NiTransform& nativeCameraWorld,
             std::uint64_t currentWeaponGenerationKey);
@@ -733,7 +744,6 @@ namespace rock
         // Canonical right-hand firing hold (weapon-generation-keyed); see
         // rememberRightFiringHandCanonicalFrame().
         RE::NiTransform _rightFiringHandCanonicalWeaponLocal{};
-        RE::NiPoint3 _rightFiringGripCanonicalWeaponLocal{};
         std::uint64_t _rightFiringHandCanonicalGenerationKey{ 0 };
         bool _hasRightFiringHandCanonicalWeaponLocal{ false };
 
@@ -762,7 +772,9 @@ namespace rock
         NativeScopeCameraDebugSnapshot _nativeScopeCameraDebugSnapshot{};
         NativeScopeOverlayPendingHandoff _nativeScopeOverlayPendingHandoff{};
         NativeScopeOverlayCalibrationState _nativeScopeOverlayCalibration{};
-        NativeScopeActivationLatchState _nativeScopeActivationLatch{};
+        NativeScopeDetectionProbeState _nativeScopeDetectionProbe{};
+        NativeScopeDetectionProbeState _nativeScopeAcceptedProbe{};
+        NativeScopeDetectionTemporaryWrite _nativeScopeDetectionTemporaryWrite{};
 
         std::array<WeaponPartGrip, 2> _partGrips{};
 
