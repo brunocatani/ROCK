@@ -45,7 +45,7 @@ int main()
 
     {
         Registry<8> registry;
-        Entry entries[5]{};
+        Entry entries[4]{};
         entries[0].bodyId = 300;
         entries[0].kind = GeneratedBodyKind::Weapon;
         entries[0].partKind = 7;
@@ -70,12 +70,8 @@ int main()
         entries[3].bodyId = kInvalidBodyId;
         entries[3].kind = GeneratedBodyKind::LeftHand;
 
-        entries[4].bodyId = 400;
-        entries[4].kind = GeneratedBodyKind::DynamicWeaponAuthority;
-        entries[4].generationKey = 0x1234;
-
-        registry.publish(entries, 5);
-        ok &= expectEqual("registry publishes valid unique entries", registry.count(), static_cast<std::uint32_t>(4));
+        registry.publish(entries, 4);
+        ok &= expectEqual("registry publishes valid unique entries", registry.count(), static_cast<std::uint32_t>(3));
 
         Classification hand{};
         ok &= expectTrue("right hand classified", registry.tryClassify(100, hand));
@@ -93,11 +89,6 @@ int main()
         ok &= expectTrue("body classified", registry.tryClassify(200, body));
         ok &= expectEqual("body kind", body.kind, GeneratedBodyKind::Body);
         ok &= expectTrue("body power armor flag", hasFlag(body.flags, kFlagPowerArmor));
-
-        Classification dynamicWeapon{};
-        ok &= expectTrue("dynamic weapon authority classified", registry.tryClassify(400, dynamicWeapon));
-        ok &= expectEqual("dynamic weapon authority kind", dynamicWeapon.kind, GeneratedBodyKind::DynamicWeaponAuthority);
-        ok &= expectEqual("dynamic weapon generation", dynamicWeapon.generationKey, static_cast<std::uint64_t>(0x1234));
 
         Classification unknown{};
         ok &= expectFalse("unknown body rejected", registry.tryClassify(999, unknown));

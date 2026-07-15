@@ -18,7 +18,6 @@ namespace rock::generated_body_contact_registry
         RightHand,
         LeftHand,
         Weapon,
-        DynamicWeaponAuthority,
         Body,
     };
 

@@ -267,13 +267,6 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKDynamicHandCollisionFeedbackPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKDynamicHandCollisionFeedbackPolicyTests)
 
-  add_executable(ROCKDynamicWeaponCollisionAuthorityPolicyTests
-    "${ROOT_DIR}/tests/DynamicWeaponCollisionAuthorityPolicyTests.cpp"
-  )
-  target_compile_features(ROCKDynamicWeaponCollisionAuthorityPolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKDynamicWeaponCollisionAuthorityPolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKDynamicWeaponCollisionAuthorityPolicyTests)
-
   add_executable(ROCKGrabContactEvidencePolicyTests
     "${ROOT_DIR}/tests/GrabContactEvidencePolicyTests.cpp"
   )
@@ -536,7 +529,6 @@ if(BUILD_ROCK_TESTS)
     ROCKGrabFingerLocalTransformPolicyTests
     ROCKGrabHapticPolicyTests
     ROCKDynamicHandCollisionFeedbackPolicyTests
-    ROCKDynamicWeaponCollisionAuthorityPolicyTests
     ROCKGrabContactEvidencePolicyTests
     ROCKHandSemanticContactPolicyTests
     ROCKGrabContactPatchClusterPolicyTests

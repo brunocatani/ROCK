@@ -2243,16 +2243,6 @@
                     addBody(RE::hknpBodyId{ weaponSnapshot.bodyIds[i] }, debug::BodyOverlayRole::Weapon);
                 }
             }
-            const auto dynamicWeaponSnapshot = _weaponCollision.getDynamicAuthorityBodySnapshot();
-            for (std::uint32_t i = 0; i < dynamicWeaponSnapshot.count; ++i) {
-                if (debug_overlay_policy::shouldDrawWeaponBody(
-                        drawRockColliderBodies,
-                        g_rockConfig.rockDebugDrawDynamicWeaponColliders,
-                        i,
-                        g_rockConfig.rockDebugMaxWeaponBodiesDrawn)) {
-                    addBody(RE::hknpBodyId{ dynamicWeaponSnapshot.bodyIds[i] }, debug::BodyOverlayRole::DynamicWeapon);
-                }
-            }
         }
 
         if (frame.drawTargetBodies || drawWorldOriginDiagnostics) {

@@ -134,7 +134,6 @@ namespace rock
             GeneratedKeyframedBodyDriveResult& result)
         {
             result.targetGamePosition = target.translate;
-            result.commandedTargetGameTransform = target;
             result.targetHavokPosition = havokTranslationToGamePoint(targetHavok);
         }
 
@@ -154,55 +153,9 @@ namespace rock
             fillRotationReadbackTelemetry(liveTransform, target, result);
         }
 
-        bool tryCaptureDriveBodyWorldTransform(
-            RE::hknpWorld* world,
-            BethesdaPhysicsBody& body,
-            RE::NiTransform& outTransform,
-            body_frame::BodyFrameSource& outFrameSource,
-            std::uint32_t& outMotionIndex)
-        {
-            return tryResolveLiveBodyWorldTransform(
-                world, body.getBodyId(), outTransform, &outFrameSource, &outMotionIndex);
-        }
-
-        bool tryCaptureDriveBodyWorldTransform(
-            RE::hknpWorld* world,
-            BethesdaPhysicsBodyGroup::Member& body,
-            RE::NiTransform& outTransform,
-            body_frame::BodyFrameSource& outFrameSource,
-            std::uint32_t& outMotionIndex)
-        {
-            /*
-             * Every group member shares one MOTION/COM frame. Anchor drive
-             * limiting must therefore read the selected BODY transform; using
-             * the generic motion-preferred helper would measure the anchor
-             * target against the aggregate weapon COM.
-             */
-            auto* liveBody = world ? havok_runtime::getBody(world, body.getBodyId()) : nullptr;
-            if (!liveBody || !tryGetBodyArrayWorldTransform(world, body.getBodyId(), outTransform)) {
-                return false;
-            }
-            bool finite = std::isfinite(outTransform.translate.x) &&
-                std::isfinite(outTransform.translate.y) &&
-                std::isfinite(outTransform.translate.z) &&
-                std::isfinite(outTransform.scale);
-            for (int row = 0; finite && row < 3; ++row) {
-                for (int column = 0; finite && column < 3; ++column) {
-                    finite = std::isfinite(outTransform.rotate.entry[row][column]);
-                }
-            }
-            if (!finite) {
-                return false;
-            }
-            outFrameSource = body_frame::BodyFrameSource::BodyTransform;
-            outMotionIndex = liveBody->motionIndex;
-            return true;
-        }
-
-        template <class Body>
         void captureTargetAndBodyTelemetry(
             RE::hknpWorld* world,
-            Body& body,
+            BethesdaPhysicsBody& body,
             const RE::NiTransform& target,
             const RE::hkTransformf& targetHavok,
             GeneratedKeyframedBodyDriveResult& result,
@@ -212,7 +165,7 @@ namespace rock
             body_frame::BodyFrameSource frameSource = body_frame::BodyFrameSource::Fallback;
             std::uint32_t motionIndex = body_frame::kFreeMotionIndex;
             RE::NiTransform liveTransform{};
-            if (tryCaptureDriveBodyWorldTransform(world, body, liveTransform, frameSource, motionIndex)) {
+            if (tryResolveLiveBodyWorldTransform(world, body.getBodyId(), liveTransform, &frameSource, &motionIndex)) {
                 if (outLiveTransform) {
                     *outLiveTransform = liveTransform;
                 }
@@ -453,33 +406,9 @@ namespace rock
 
     namespace
     {
-        void writeDynamicTargetRotation(
-            BethesdaPhysicsBody&,
-            const RE::NiMatrix3& targetRotation,
-            float outQuaternion[4])
-        {
-            // Preserve the established generated-body target convention.
-            transform_math::niRowsToHavokQuaternion(targetRotation, outQuaternion);
-        }
-
-        void writeDynamicTargetRotation(
-            BethesdaPhysicsBodyGroup::Member&,
-            const RE::NiMatrix3& targetRotation,
-            float outQuaternion[4])
-        {
-            /*
-             * Body-group targets use the same normal stored Ni basis returned
-             * by the hknp BODY array. Convert its stored axes to the physical
-             * Havok columns before producing the hard-keyframe quaternion.
-             */
-            const auto havokColumns = transform_math::niRowsToHavokColumns(targetRotation);
-            transform_math::niRowsToHavokQuaternion(havokColumns, outQuaternion);
-        }
-
-        template <class Body>
         bool driveDynamicBodyVelocityTowardTarget(
             RE::hknpWorld* world,
-            Body& body,
+            BethesdaPhysicsBody& body,
             const RE::NiTransform& target,
             float driveDeltaSeconds,
             const GeneratedBodyDriveMode& mode)
@@ -495,7 +424,7 @@ namespace rock
                 0.0f,
             };
             alignas(16) float targetRotationHavok[4]{};
-            writeDynamicTargetRotation(body, target.rotate, targetRotationHavok);
+            transform_math::niRowsToHavokQuaternion(target.rotate, targetRotationHavok);
 
             alignas(16) float linearVelocityHavok[4]{};
             alignas(16) float angularVelocityRadians[4]{};
@@ -532,8 +461,7 @@ namespace rock
         }
     }
 
-    template <class Body>
-    bool placeGeneratedKeyframedBodyImmediatelyImpl(Body& body, const RE::NiTransform& target)
+    bool placeGeneratedKeyframedBodyImmediately(BethesdaPhysicsBody& body, const RE::NiTransform& target)
     {
         if (!body.isValid()) {
             return false;
@@ -546,28 +474,9 @@ namespace rock
         return moved && zeroed;
     }
 
-    bool placeGeneratedKeyframedBodyImmediately(BethesdaPhysicsBody& body, const RE::NiTransform& target)
-    {
-        return placeGeneratedKeyframedBodyImmediatelyImpl(body, target);
-    }
-
-    bool placeGeneratedKeyframedBodyImmediately(BethesdaPhysicsBodyGroup::Member body, const RE::NiTransform& target)
-    {
-        (void)body;
-        (void)target;
-        /*
-         * Teleporting only the selected anchor can mutate its fixture relative
-         * to the shared motion instead of moving the rigid group. Report
-         * failure so the weapon owner retires/recreates the complete group at
-         * current source transforms.
-         */
-        return false;
-    }
-
-    template <class Body>
-    GeneratedKeyframedBodyDriveResult driveGeneratedKeyframedBodyImpl(
+    GeneratedKeyframedBodyDriveResult driveGeneratedKeyframedBody(
         RE::hknpWorld* world,
-        Body& body,
+        BethesdaPhysicsBody& body,
         GeneratedKeyframedBodyDriveState& state,
         const havok_physics_timing::PhysicsTimingSample& timing,
         const char* ownerName,
@@ -766,35 +675,5 @@ namespace rock
         }
 
         return result;
-    }
-
-    GeneratedKeyframedBodyDriveResult driveGeneratedKeyframedBody(
-        RE::hknpWorld* world,
-        BethesdaPhysicsBody& body,
-        GeneratedKeyframedBodyDriveState& state,
-        const havok_physics_timing::PhysicsTimingSample& timing,
-        const char* ownerName,
-        std::uint32_t bodyIndex,
-        float maxLinearVelocityHavok,
-        float maxAngularVelocityRadians,
-        const GeneratedBodyDriveMode& mode)
-    {
-        return driveGeneratedKeyframedBodyImpl(
-            world, body, state, timing, ownerName, bodyIndex, maxLinearVelocityHavok, maxAngularVelocityRadians, mode);
-    }
-
-    GeneratedKeyframedBodyDriveResult driveGeneratedKeyframedBody(
-        RE::hknpWorld* world,
-        BethesdaPhysicsBodyGroup::Member body,
-        GeneratedKeyframedBodyDriveState& state,
-        const havok_physics_timing::PhysicsTimingSample& timing,
-        const char* ownerName,
-        std::uint32_t bodyIndex,
-        float maxLinearVelocityHavok,
-        float maxAngularVelocityRadians,
-        const GeneratedBodyDriveMode& mode)
-    {
-        return driveGeneratedKeyframedBodyImpl(
-            world, body, state, timing, ownerName, bodyIndex, maxLinearVelocityHavok, maxAngularVelocityRadians, mode);
     }
 }

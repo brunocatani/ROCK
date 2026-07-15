@@ -10,7 +10,6 @@
 #include <vector>
 
 #include "physics-interaction/grab/MeshGrab.h"
-#include "physics-interaction/hand/DynamicHandTwinTargets.h"
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
 #include "physics-interaction/native/HavokPhysicsTiming.h"
@@ -20,7 +19,6 @@
 #include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"
 #include "physics-interaction/weapon/WeaponSemantics.h"
-#include "physics-interaction/collision/CollisionLayerPolicy.h"
 
 #include "RE/Havok/hknpBody.h"
 #include "RE/Havok/hknpBodyCinfo.h"
@@ -39,7 +37,6 @@ namespace RE
 
 namespace rock
 {
-    class Hand;
 
     inline constexpr std::uint32_t ROCK_WEAPON_LAYER = 44;
 
@@ -66,17 +63,6 @@ namespace rock
             std::array<std::uint32_t, MAX_WEAPON_COLLISION_BODIES> bodyIds{};
         };
 
-        static constexpr std::size_t MAX_DYNAMIC_AUTHORITY_BODIES =
-            MAX_WEAPON_COLLISION_BODIES + 2 * dynamic_hand_twin::kBodiesPerHand;
-        static_assert(MAX_DYNAMIC_AUTHORITY_BODIES <= kMaxBethesdaPhysicsBodyGroupMembers);
-
-        struct DynamicAuthorityBodySnapshot
-        {
-            std::uint64_t generationKey{ 0 };
-            std::uint32_t count{ 0 };
-            std::array<std::uint32_t, MAX_DYNAMIC_AUTHORITY_BODIES> bodyIds{};
-        };
-
         struct ReleaseGeometrySnapshot
         {
             float leverGameUnits{ 0.0f };
@@ -101,25 +87,9 @@ namespace rock
             std::uint32_t sightBodyCount{ 0 };
         };
 
-        struct DynamicAuthorityVisualResult
-        {
-            bool valid{ false };
-            bool contactActive{ false };
-            bool contactEntered{ false };
-            std::uint64_t generationKey{ 0 };
-            RE::NiTransform requestedWeaponWorld{};
-            RE::NiTransform resolvedWeaponWorld{};
-            float translationResidualGameUnits{ 0.0f };
-            float rotationResidualDegrees{ 0.0f };
-        };
-
         void init(RE::hknpWorld* world, void* bhkWorld);
 
         void shutdown();
-
-        // Called only after PhysicsInteraction has established that the cached
-        // world is stale. Clears local ownership without dereferencing it.
-        void abandonHavokStateAfterWorldLoss();
 
         void update(RE::hknpWorld* world, RE::NiAVObject* weaponNode, float dt, bool weaponDrawn);
 
@@ -152,8 +122,6 @@ namespace rock
         std::uint32_t getWeaponBodyIdAtomic(std::size_t index) const;
 
         WeaponBodySnapshot getWeaponBodySnapshotAtomic() const;
-
-        DynamicAuthorityBodySnapshot getDynamicAuthorityBodySnapshot() const;
 
         bool isWeaponBodyIdAtomic(std::uint32_t bodyId) const;
 
@@ -205,26 +173,6 @@ namespace rock
             float sourceDeltaSeconds,
             const RE::NiAVObject* const* drivenSourceNodes = nullptr,
             std::size_t drivenSourceNodeCount = 0);
-
-        DynamicAuthorityVisualResult updateDynamicAuthorityFrame(
-            RE::hknpWorld* world,
-            RE::NiAVObject* weaponNode,
-            const RE::NiTransform& requestedWeaponWorld,
-            float sourceDeltaSeconds,
-            const Hand& rightHand,
-            const Hand& leftHand,
-            bool rightHandCoupled,
-            bool leftHandCoupled);
-
-        // Physics-thread contact truth for layer-49 world manifolds. Solver
-        // residuals are correction magnitude only and never synthesize this.
-        void recordDynamicAuthorityWorldContact(
-            std::uint64_t generationKey,
-            std::uint32_t sourceBodyId,
-            std::uint32_t targetBodyId,
-            std::uint32_t targetLayer) noexcept;
-
-        void sampleDynamicAuthorityPostSolve(RE::hknpWorld* world);
 
         void flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
 
@@ -405,7 +353,6 @@ namespace rock
             float maxSourceDistanceGame,
             std::uint32_t& culledForDistance);
         RE::NiTransform makeGeneratedBodyWorldTransform(const RE::NiTransform& weaponRootTransform, const RE::NiPoint3& localCenterGame) const;
-        RE::NiTransform makeGeneratedBodyArrayWorldTransform(const RE::NiTransform& weaponRootTransform, const RE::NiPoint3& localCenterGame) const;
         bool weaponCollisionSettingsChanged() const;
         void handleGeneratedBodyDriveResult(const GeneratedKeyframedBodyDriveResult& result, const char* ownerName, std::uint32_t bodyIndex);
         void clearGeneratedSourceCompletenessTracking();
@@ -441,75 +388,6 @@ namespace rock
         void maybeDumpWeaponAnimNodeDiagnostics(RE::NiAVObject* updateWeaponNode, std::uint64_t observedKey);
 
         void queueBodyTarget(WeaponBodyInstance& instance, const RE::NiTransform& weaponTransform, float sourceDeltaSeconds);
-        bool rebuildDynamicAuthorityGroup(
-            RE::hknpWorld* world,
-            RE::NiAVObject* weaponNode,
-            const RE::NiTransform& requestedWeaponWorld,
-            const Hand* rightHand = nullptr,
-            const Hand* leftHand = nullptr,
-            bool rightHandCoupled = false,
-            bool leftHandCoupled = false);
-        void retireDynamicAuthorityGroup();
-
-        enum class DynamicAuthorityMemberKind : std::uint8_t
-        {
-            WeaponBody,
-            RightHandTwin,
-            LeftHandTwin,
-        };
-
-        struct DynamicAuthorityMemberBinding
-        {
-            DynamicAuthorityMemberKind kind{ DynamicAuthorityMemberKind::WeaponBody };
-            std::size_t sourceIndex{ 0 };
-        };
-
-        struct DynamicAuthorityHandSlotSignature
-        {
-            float length = 0.0f;
-            float radius = 0.0f;
-            float convexRadius = 0.0f;
-        };
-
-        struct DynamicAuthorityHandMembership
-        {
-            std::array<DynamicAuthorityHandSlotSignature, dynamic_hand_twin::kBodiesPerHand> slots{};
-            std::uint64_t geometrySignature = 0;
-            std::uint32_t slotMask = 0;
-            bool requested = false;
-        };
-
-        bool dynamicAuthorityHandMembershipMatches(
-            const Hand& hand,
-            bool requested,
-            std::size_t handIndex) const;
-
-        struct DynamicAuthorityIntent
-        {
-            bool valid{ false };
-            std::uint64_t generationKey{ 0 };
-            std::uint64_t sequence{ 0 };
-            std::size_t memberCount{ 0 };
-            RE::NiTransform requestedWeaponWorld{};
-            std::array<RE::NiTransform, MAX_DYNAMIC_AUTHORITY_BODIES> memberWeaponLocal{};
-        };
-
-        struct DynamicAuthorityPhysicsState
-        {
-            bool drove{ false };
-            bool postSolveValid{ false };
-            bool contactActive{ false };
-            std::uint64_t generationKey{ 0 };
-            std::uint64_t intentSequence{ 0 };
-            std::uint64_t contactEntrySequence{ 0 };
-            std::uint64_t postSolveSequence{ 0 };
-            std::uint64_t observedContactSignalSequence{ 0 };
-            std::uint64_t lastContactSignalPostSolveSequence{ 0 };
-            RE::NiTransform commandedAnchorWorld{};
-            RE::NiTransform liveAnchorWorld{};
-            float translationResidualGameUnits{ 0.0f };
-            float rotationResidualDegrees{ 0.0f };
-        };
 
         WeaponBodyBank _weaponBodies{};
         WeaponBodyBank _weaponReplacementBodies{};
@@ -517,27 +395,6 @@ namespace rock
         std::uint32_t _retiredWeaponBodyPayloadCount{ 0 };
         mutable std::mutex _retiredWeaponBodyPayloadMutex;
         bool _usingReplacementWeaponBodies{ false };
-        BethesdaPhysicsBodyGroup _dynamicAuthorityGroup{};
-        GeneratedKeyframedBodyDriveState _dynamicAuthorityDriveState{};
-        std::array<DynamicAuthorityMemberBinding, MAX_DYNAMIC_AUTHORITY_BODIES> _dynamicAuthorityMemberBindings{};
-        // Captured once per rigid group generation. Held-hand targets and
-        // rendered collision correction never reshape the live shared motion.
-        std::array<RE::NiTransform, MAX_DYNAMIC_AUTHORITY_BODIES> _dynamicAuthorityMemberWeaponLocal{};
-        std::array<DynamicAuthorityHandMembership, 2> _dynamicAuthorityHandMemberships{};
-        std::size_t _dynamicAuthorityWeaponMemberCount{ 0 };
-        std::size_t _dynamicAuthorityMemberCount{ 0 };
-        std::uint64_t _dynamicAuthorityGenerationKey{ 0 };
-        std::uint64_t _dynamicAuthorityLastVisualContactEntrySequence{ 0 };
-        std::atomic<bool> _dynamicAuthorityRebuildRequested{ false };
-        std::atomic<bool> _dynamicAuthorityCollisionEnabled{ false };
-        std::atomic<std::uint64_t> _dynamicAuthorityContactSignalSequence{ 0 };
-        std::atomic<std::uint64_t> _dynamicAuthorityContactSignalGenerationKey{ 0 };
-        std::atomic<std::uint32_t> _dynamicAuthorityLastContactSourceBody{ INVALID_BODY_ID };
-        std::atomic<std::uint32_t> _dynamicAuthorityLastContactTargetBody{ INVALID_BODY_ID };
-        std::atomic<std::uint32_t> _dynamicAuthorityLastContactTargetLayer{ 0xFFFF'FFFFu };
-        mutable std::mutex _dynamicAuthorityStateMutex;
-        DynamicAuthorityIntent _dynamicAuthorityIntent{};
-        DynamicAuthorityPhysicsState _dynamicAuthorityPhysics{};
         std::uint64_t _cachedWeaponKey{ 0 };
         std::uint64_t _cachedWeaponVisualKey{ 0 };
         std::uint64_t _cachedWeaponIdentityKey{ 0 };

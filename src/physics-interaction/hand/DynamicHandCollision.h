@@ -22,8 +22,8 @@ namespace rock
     struct HandFrameInput;
 
     /*
-     * Free-hand dynamic world collision uses DYNAMIC twins of the palm anchor
-     * and five fingertip colliders. They chase their published role frames with engine
+     * Dynamic world collision uses DYNAMIC twins of the palm anchor and the
+     * five fingertip colliders. They chase their published role frames with engine
      * hard-keyframe velocities every physics substep, on the world-only
      * extended layer. Static world clips their velocity inside the solver
      * (true multi-plane contact); the rendered FRIK hand follows the COMBINED
@@ -34,12 +34,6 @@ namespace rock
      * colliders are driven with, never from the rendered hand, so rendering
      * cannot feed back into physics. The twins are not gameplay contact
      * evidence and collide only with static world-surface layers.
-     *
-     * When a hand owns an equipped-weapon grip, its independent layer-48
-     * bodies are retired and equivalent shapes become fixtures of the
-     * weapon's layer-49 shared motion. This runtime remains the single owner of
-     * the free/coupled handoff, preventing coincident duplicate proxies and a
-     * second render-correction loop from fighting the weapon solve.
      *
      * Threading: updateFrame runs on the main game thread; the drive flush runs
      * on the physics step thread and publishes fixed per-body telemetry through
@@ -55,12 +49,8 @@ namespace rock
             bool physicsWritesAllowed,
             const Hand& rightHand,
             const Hand& leftHand,
-            bool rightHandWeaponVisualOwned,
-            bool leftHandWeaponVisualOwned);
-        // Main-thread ownership handoff. Call before rebuilding the weapon
-        // shared-motion group so removed layer-48 bodies cannot overlap its
-        // newly-created layer-49 hand fixtures for a physics step.
-        void synchronizeWeaponCoupledHands(void* bhkWorld, bool rightCoupled, bool leftCoupled);
+            bool rightHandWeaponEquipped,
+            bool leftSupportGripActive);
         void flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         /*
          * Post-solve deviation sampling (physics step thread, after-solve
@@ -231,7 +221,6 @@ namespace rock
         std::array<HandSlots, 2> _hands{};
         dynamic_hand_collision_telemetry::Snapshot _telemetrySnapshot{};
         dynamic_hand_collision_telemetry::HapticEvents _pendingHapticEvents{};
-        std::array<bool, 2> _weaponCoupledHands{};
         std::uint64_t _telemetryUpdateSequence = 0;
         std::uint32_t _logCounter = 0;
     };

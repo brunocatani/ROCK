@@ -625,16 +625,10 @@
         const bool bodyBIsLeftHeld = _leftHand.isHeldBodyId(bodyIdB);
         const bool bodyAIsWeapon = bodyAWeapon.valid;
         const bool bodyBIsWeapon = bodyBWeapon.valid;
-        const bool bodyAIsDynamicWeaponAuthority =
-            bodyAClassification.valid && bodyAClassification.kind == GeneratedBodyKind::DynamicWeaponAuthority;
-        const bool bodyBIsDynamicWeaponAuthority =
-            bodyBClassification.valid && bodyBClassification.kind == GeneratedBodyKind::DynamicWeaponAuthority;
         const bool bodyAIsBody = bodyABodyMetadata.valid;
         const bool bodyBIsBody = bodyBBodyMetadata.valid;
-        const bool bodyAIsRockSource = bodyAIsRight || bodyAIsLeft || bodyAIsRightHeld || bodyAIsLeftHeld ||
-            bodyAIsWeapon || bodyAIsDynamicWeaponAuthority || bodyAIsBody;
-        const bool bodyBIsRockSource = bodyBIsRight || bodyBIsLeft || bodyBIsRightHeld || bodyBIsLeftHeld ||
-            bodyBIsWeapon || bodyBIsDynamicWeaponAuthority || bodyBIsBody;
+        const bool bodyAIsRockSource = bodyAIsRight || bodyAIsLeft || bodyAIsRightHeld || bodyAIsLeftHeld || bodyAIsWeapon || bodyAIsBody;
+        const bool bodyBIsRockSource = bodyBIsRight || bodyBIsLeft || bodyBIsRightHeld || bodyBIsLeftHeld || bodyBIsWeapon || bodyBIsBody;
 
         auto looseGrenadeImpactBodyIsWatched = [&](std::uint32_t bodyId) {
             if (isInvalidGrabBodyId(bodyId)) {
@@ -706,29 +700,6 @@
         const std::uint32_t bodyBFilterInfo = readBodyFilterInfo(bodyIdB);
         const std::uint32_t bodyALayer = filterInfoToLayer(bodyAFilterInfo);
         const std::uint32_t bodyBLayer = filterInfoToLayer(bodyBFilterInfo);
-
-        if (bodyAIsDynamicWeaponAuthority || bodyBIsDynamicWeaponAuthority) {
-            /*
-             * Layer 49 is authored to meet world surfaces only. Treat those
-             * native callbacks as the contact truth for weapon authority, then
-             * stop: twins must never duplicate keyframed weapon gameplay,
-             * reload, actor-push, or semantic hand routes.
-             */
-            if (bodyAIsDynamicWeaponAuthority != bodyBIsDynamicWeaponAuthority) {
-                const auto& source = bodyAIsDynamicWeaponAuthority ? bodyAClassification : bodyBClassification;
-                const std::uint32_t sourceBodyId = bodyAIsDynamicWeaponAuthority ? bodyIdA : bodyIdB;
-                const std::uint32_t targetBodyId = bodyAIsDynamicWeaponAuthority ? bodyIdB : bodyIdA;
-                const std::uint32_t targetLayer = bodyAIsDynamicWeaponAuthority ? bodyBLayer : bodyALayer;
-                if (collision_layer_policy::isWorldSurfaceLayer(targetLayer)) {
-                    _weaponCollision.recordDynamicAuthorityWorldContact(
-                        source.generationKey,
-                        sourceBodyId,
-                        targetBodyId,
-                        targetLayer);
-                }
-            }
-            return;
-        }
 
         auto makeEndpoint = [&](std::uint32_t bodyId, std::uint32_t layer, bool isRightHand, bool isLeftHand, bool isWeapon, bool isRightHeld, bool isLeftHeld, bool isBody, bool isExternal) {
             using contact_pipeline_policy::ContactEndpoint;

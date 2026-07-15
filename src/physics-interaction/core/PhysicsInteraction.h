@@ -312,7 +312,6 @@ namespace rock
         std::uint64_t _expectedWeaponLayerMask = 0;
         std::uint64_t _expectedReloadLayerMask = 0;
         std::uint64_t _expectedBodyLayerMask = 0;
-        std::uint64_t _expectedDynamicWorldProxyLayerMask = 0;
         std::uint64_t _originalNativeCharacterControllerLayerMask = 0;
         std::uint64_t _expectedNativeCharacterControllerLayerMask = 0;
         bool _nativeCharacterControllerLayerPolicyCaptured = false;
@@ -371,7 +370,6 @@ namespace rock
         static constexpr std::size_t kGeneratedBodyContactRegistryCapacity =
             (hand_collider_semantics::kHandColliderBodyCountPerHand * 2u) +
             MAX_WEAPON_COLLISION_BODIES +
-            WeaponCollision::MAX_DYNAMIC_AUTHORITY_BODIES +
             kBodyBoneColliderBodyCount;
         generated_body_contact_registry::Registry<kGeneratedBodyContactRegistryCapacity> _generatedBodyContactRegistry;
 

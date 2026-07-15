@@ -74,8 +74,6 @@ namespace rock::collision_layer_policy
      * contact evidence.
      */
     inline constexpr std::uint32_t ROCK_LAYER_DYNAMIC_HAND_PROXY = 48;
-    /* Shared-motion generated weapon twins: world authority only. */
-    inline constexpr std::uint32_t ROCK_LAYER_DYNAMIC_WEAPON_PROXY = 49;
 
     inline constexpr std::uint32_t FO4_LAYER_VANILLA_CONFIGURED_COUNT = 47;
     inline constexpr std::uint32_t FO4_LAYER_LAST_VANILLA_CONFIGURED = FO4_LAYER_DROPPINGPICK;
@@ -514,22 +512,6 @@ namespace rock::collision_layer_policy
         return true;
     }
 
-    inline constexpr bool rockDynamicProxyPairsMatch(
-        const std::uint64_t* matrix,
-        std::uint32_t proxyLayer,
-        std::uint64_t expectedMask)
-    {
-        if (!matrix || proxyLayer >= FO4_LAYER_MATRIX_ADDRESSABLE_COUNT) {
-            return false;
-        }
-        for (std::uint32_t other = 0; other < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++other) {
-            if (!layerPairSymmetricMatches(matrix, proxyLayer, other, maskEnablesLayer(expectedMask, other))) {
-                return false;
-            }
-        }
-        return true;
-    }
-
     inline void applyRockHandLayerPolicy(std::uint64_t* matrix, bool includeWeaponLayer, bool includeStaticWorld = true)
     {
         applyLayerExpectedMask(matrix, ROCK_LAYER_HAND, buildRockHandExpectedMask(includeWeaponLayer, includeStaticWorld));
@@ -564,16 +546,6 @@ namespace rock::collision_layer_policy
     inline void applyRockDynamicHandProxyLayerPolicy(std::uint64_t* matrix)
     {
         applyLayerExpectedMask(matrix, ROCK_LAYER_DYNAMIC_HAND_PROXY, buildRockDynamicHandProxyExpectedMask());
-    }
-
-    inline constexpr std::uint64_t buildRockDynamicWeaponProxyExpectedMask()
-    {
-        return buildRockDynamicHandProxyExpectedMask();
-    }
-
-    inline void applyRockDynamicWeaponProxyLayerPolicy(std::uint64_t* matrix)
-    {
-        applyLayerExpectedMask(matrix, ROCK_LAYER_DYNAMIC_WEAPON_PROXY, buildRockDynamicWeaponProxyExpectedMask());
     }
 
     inline void applyNativeCharacterControllerObjectSuppressionPolicy(std::uint64_t* matrix, bool suppressDynamicObjects, std::uint64_t originalCharacterControllerMask)
@@ -612,6 +584,5 @@ namespace rock::collision_layer_policy
         applyRockReloadLayerPolicy(matrix, weaponBlocksProjectiles, weaponBlocksSpells, handStaticWorld);
         applyRockBodyLayerPolicy(matrix, bodyStaticWorld);
         applyRockDynamicHandProxyLayerPolicy(matrix);
-        applyRockDynamicWeaponProxyLayerPolicy(matrix);
     }
 }

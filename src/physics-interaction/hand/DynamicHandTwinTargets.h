@@ -5,14 +5,10 @@
 #include "RE/NetImmerse/NiTransform.h"
 
 #include <array>
-#include <cstddef>
 #include <cstdint>
 
 namespace rock::dynamic_hand_twin
 {
-    inline constexpr std::size_t kPalmSlot = 0;
-    inline constexpr std::size_t kBodiesPerHand = 1 + hand_collider_semantics::kHandFingerCount;
-
     /*
      * Per-frame publication from HandBoneColliderSet for the stage A dynamic
      * hand twins: the EXACT role frames and dimensions the keyframed palm
@@ -35,20 +31,6 @@ namespace rock::dynamic_hand_twin
     {
         TwinSlotFrame palm{};
         std::array<TwinSlotFrame, hand_collider_semantics::kHandFingerCount> fingertips{};
-        // Changes only when collider construction inputs (power armor or
-        // tuning overrides) change. Per-frame poses use updateCounter instead.
-        std::uint64_t geometrySignature = 0;
         std::uint64_t updateCounter = 0;
     };
-
-    [[nodiscard]] inline const TwinSlotFrame* frameForBodyIndex(
-        const TwinTargets& targets,
-        std::size_t bodyIndex)
-    {
-        if (bodyIndex == kPalmSlot) {
-            return &targets.palm;
-        }
-        const std::size_t fingerIndex = bodyIndex - 1;
-        return fingerIndex < targets.fingertips.size() ? &targets.fingertips[fingerIndex] : nullptr;
-    }
 }

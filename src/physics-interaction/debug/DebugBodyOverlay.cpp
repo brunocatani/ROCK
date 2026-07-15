@@ -808,11 +808,11 @@ float4 main(PS_INPUT input) : SV_Target {
         BodyOverlayFrameSource targetBodyOverlayFrameSource(BodyOverlayRole role)
         {
             /*
-             * Target colliders are grab diagnostics, and dynamic weapon twins
-             * are distinct fixtures on one shared motion. Draw both from each
-             * hknp BODY transform instead of the generic MOTION/COM frame.
+             * Target colliders are grab diagnostics. Draw them from the hknp
+             * BODY array transform, matching body-B authority, instead of the
+             * generic live MOTION/COM frame used by non-target body readback.
              */
-            return role == BodyOverlayRole::Target || role == BodyOverlayRole::DynamicWeapon ?
+            return role == BodyOverlayRole::Target ?
                        BodyOverlayFrameSource::BodyArrayTransform :
                        BodyOverlayFrameSource::LiveMotionWhenAvailable;
         }
@@ -1536,12 +1536,6 @@ float4 main(PS_INPUT input) : SV_Target {
                 color[0] = 0.35f;
                 color[1] = 1.0f;
                 color[2] = 0.25f;
-                break;
-            case BodyOverlayRole::DynamicWeapon:
-                color[0] = 1.0f;
-                color[1] = 0.45f;
-                color[2] = 0.08f;
-                color[3] = 0.92f;
                 break;
             case BodyOverlayRole::RightGrabAuthorityProxy:
                 color[0] = 0.05f;
@@ -2878,7 +2872,7 @@ float4 main(PS_INPUT input) : SV_Target {
                             entry.role == BodyOverlayRole::RightHandSegment || entry.role == BodyOverlayRole::LeftHandSegment ||
                             entry.role == BodyOverlayRole::BodyTorsoSegment || entry.role == BodyOverlayRole::BodyArmSegment ||
                             entry.role == BodyOverlayRole::BodyLegSegment || entry.role == BodyOverlayRole::BodyFootSegment ||
-                            entry.role == BodyOverlayRole::Weapon || entry.role == BodyOverlayRole::DynamicWeapon ||
+                            entry.role == BodyOverlayRole::Weapon ||
                             entry.role == BodyOverlayRole::RightGrabAuthorityProxy ||
                             entry.role == BodyOverlayRole::LeftGrabAuthorityProxy ||
                             entry.role == BodyOverlayRole::RightGrabPivotSourceCollider ||

@@ -919,7 +919,6 @@ namespace rock
             }
         }
 
-        twinTargets.geometrySignature = _cachedTuningSignature;
         twinTargets.updateCounter = _dynamicTwinTargets.updateCounter + 1;
         _dynamicTwinTargets = twinTargets;
     }
