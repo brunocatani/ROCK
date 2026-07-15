@@ -1,9 +1,19 @@
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 
+#include <array>
 #include <cstdio>
 
 namespace
 {
+    bool truth(const char* label, bool actual, bool expected)
+    {
+        if (actual == expected) {
+            return true;
+        }
+        std::printf("%s expected %s got %s\n", label, expected ? "true" : "false", actual ? "true" : "false");
+        return false;
+    }
+
     bool expectSuppressed(const char* label, std::uint32_t layer)
     {
         if (rock::collision_layer_policy::isNativePlayerCollisionSuppressionLayer(layer)) {
@@ -112,6 +122,19 @@ int main()
     ok &= expectNonWorldSurface("ROCK hand layer stays out of dynamic hand world collision", ROCK_LAYER_HAND);
     ok &= expectNonWorldSurface("ROCK weapon layer stays out of dynamic hand world collision", ROCK_LAYER_WEAPON);
     ok &= expectNonWorldSurface("ROCK body layer stays out of dynamic hand world collision", ROCK_LAYER_BODY);
+    static_assert(ROCK_LAYER_DYNAMIC_WEAPON_PROXY == 49);
+    static_assert(buildRockDynamicWeaponProxyExpectedMask() == buildRockDynamicHandProxyExpectedMask());
+
+    std::array<std::uint64_t, FO4_LAYER_MATRIX_ADDRESSABLE_COUNT> proxyMatrix{};
+    applyRockDynamicHandProxyLayerPolicy(proxyMatrix.data());
+    applyRockDynamicWeaponProxyLayerPolicy(proxyMatrix.data());
+    ok &= truth("dynamic hand proxy pairs are symmetric and world-only",
+        rockDynamicProxyPairsMatch(proxyMatrix.data(), ROCK_LAYER_DYNAMIC_HAND_PROXY, buildRockDynamicHandProxyExpectedMask()), true);
+    ok &= truth("dynamic weapon proxy pairs are symmetric and world-only",
+        rockDynamicProxyPairsMatch(proxyMatrix.data(), ROCK_LAYER_DYNAMIC_WEAPON_PROXY, buildRockDynamicWeaponProxyExpectedMask()), true);
+    proxyMatrix[FO4_LAYER_STATIC] &= ~(std::uint64_t{ 1 } << ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
+    ok &= truth("dynamic weapon proxy detects reverse-row drift",
+        rockDynamicProxyPairsMatch(proxyMatrix.data(), ROCK_LAYER_DYNAMIC_WEAPON_PROXY, buildRockDynamicWeaponProxyExpectedMask()), false);
 
     return ok ? 0 : 1;
 }

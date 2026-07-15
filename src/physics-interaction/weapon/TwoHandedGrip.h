@@ -226,6 +226,16 @@ namespace rock
 
         bool getSolvedWeaponTransform(RE::NiTransform& outTransform) const;
 
+        bool applyCollisionResolvedWeaponAuthority(
+            RE::NiNode* weaponNode,
+            const RE::NiTransform& requestedWeaponWorld,
+            const RE::NiTransform& resolvedWeaponWorld,
+            const RE::NiTransform* rawRightHandWorld,
+            const RE::NiTransform* rawLeftHandWorld,
+            float dt);
+
+        void clearCollisionResolvedWeaponAuthority();
+
         bool getDebugAuthoritySnapshot(TwoHandedGripDebugSnapshot& outSnapshot) const;
 
         bool beginPrimaryOnlyGrip(

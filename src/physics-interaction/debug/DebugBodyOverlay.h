@@ -29,6 +29,7 @@ namespace rock::debug
         BodyLegSegment,
         BodyFootSegment,
         Weapon,
+        DynamicWeapon,
         RightGrabAuthorityProxy,
         LeftGrabAuthorityProxy,
         RightGrabPivotSourceCollider,

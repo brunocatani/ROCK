@@ -427,6 +427,7 @@ namespace rock
         RE::NiPoint3 requestedTargetGamePosition{};
         RE::NiPoint3 targetHavokPosition{};
         RE::NiPoint3 liveBodyGamePosition{};
+        RE::NiTransform commandedTargetGameTransform{};
         RE::NiPoint3 sampledTargetLinearVelocityHavok{};
         RE::NiPoint3 targetAxisXWorld{};
         RE::NiPoint3 targetAxisYWorld{};
@@ -481,6 +482,7 @@ namespace rock
         float teleportDistanceGameUnits);
     GeneratedKeyframedBodyDriveSampledVelocity snapshotGeneratedKeyframedBodyDriveSampledVelocity(const GeneratedKeyframedBodyDriveState& state);
     bool placeGeneratedKeyframedBodyImmediately(BethesdaPhysicsBody& body, const RE::NiTransform& target);
+    bool placeGeneratedKeyframedBodyImmediately(BethesdaPhysicsBodyGroup::Member body, const RE::NiTransform& target);
     inline void markGeneratedKeyframedBodyDrivePlacedUnlocked(
         GeneratedKeyframedBodyDriveState& state,
         float driveDeltaSeconds = 0.0f,
@@ -544,6 +546,17 @@ namespace rock
     GeneratedKeyframedBodyDriveResult driveGeneratedKeyframedBody(
         RE::hknpWorld* world,
         BethesdaPhysicsBody& body,
+        GeneratedKeyframedBodyDriveState& state,
+        const havok_physics_timing::PhysicsTimingSample& timing,
+        const char* ownerName,
+        std::uint32_t bodyIndex,
+        float maxLinearVelocityHavok = 0.0f,
+        float maxAngularVelocityRadians = 0.0f,
+        const GeneratedBodyDriveMode& mode = {});
+
+    GeneratedKeyframedBodyDriveResult driveGeneratedKeyframedBody(
+        RE::hknpWorld* world,
+        BethesdaPhysicsBodyGroup::Member body,
         GeneratedKeyframedBodyDriveState& state,
         const havok_physics_timing::PhysicsTimingSample& timing,
         const char* ownerName,

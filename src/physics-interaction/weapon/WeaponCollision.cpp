@@ -14,6 +14,7 @@
 #include "physics-interaction/weapon/WeaponPartRecordIdentityPolicy.h"
 #include "physics-interaction/weapon/WeaponSemantics.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
+#include "physics-interaction/weapon/DynamicWeaponCollisionAuthorityPolicy.h"
 
 #include <intrin.h>
 
@@ -1505,6 +1506,15 @@ namespace rock
         return collisionEnabled ? baseFilterInfo : (baseFilterInfo | collision_suppression_registry::kSuppressionNoCollideBit);
     }
 
+    std::uint32_t generatedDynamicWeaponAuthorityFilterInfo(bool collisionEnabled)
+    {
+        constexpr std::uint32_t kDynamicWeaponAuthorityCollisionGroup = 0x000D;
+        const std::uint32_t baseFilterInfo =
+            (kDynamicWeaponAuthorityCollisionGroup << 16) |
+            (collision_layer_policy::ROCK_LAYER_DYNAMIC_WEAPON_PROXY & collision_layer_policy::FO4_LAYER_FILTER_MASK);
+        return collisionEnabled ? baseFilterInfo : (baseFilterInfo | collision_suppression_registry::kSuppressionNoCollideBit);
+    }
+
     WeaponCollision::WeaponCollision() { clearAtomicBodyIds(); }
 
     WeaponCollision::WeaponBodyBank& WeaponCollision::activeWeaponBodies()
@@ -1921,6 +1931,9 @@ namespace rock
         publishWeaponBodySetGeneration(summary);
         publishAtomicBodyIds(activeWeaponBodies());
         setWeaponBodyBankCollisionEnabled(world, activeWeaponBodies(), true);
+        (void)rebuildDynamicAuthorityGroup(
+            world,
+            resolvePackageDriveNode(activeWeaponBodies(), nullptr));
         _cachedConvexRadius = g_rockConfig.rockWeaponCollisionConvexRadius;
         _cachedPointDedupGrid = g_rockConfig.rockWeaponCollisionPointDedupGrid;
         _cachedSupportFitTargetPoints = g_rockConfig.rockWeaponCollisionSupportFitTargetPoints;
@@ -2101,6 +2114,21 @@ namespace rock
             }
         }
 
+        return snapshot;
+    }
+
+    WeaponCollision::WeaponBodySnapshot WeaponCollision::getDynamicAuthorityBodySnapshot() const
+    {
+        WeaponBodySnapshot snapshot{};
+        snapshot.bodyIds.fill(INVALID_BODY_ID);
+        if (!_dynamicAuthorityGroup.belongsToWorld(_cachedWorld) || _dynamicAuthorityGenerationKey == 0) {
+            return snapshot;
+        }
+        snapshot.generationKey = _dynamicAuthorityGenerationKey;
+        snapshot.count = static_cast<std::uint32_t>((std::min)(_dynamicAuthorityMemberCount, MAX_WEAPON_BODIES));
+        for (std::uint32_t index = 0; index < snapshot.count; ++index) {
+            snapshot.bodyIds[index] = _dynamicAuthorityGroup.getBodyId(index).value;
+        }
         return snapshot;
     }
 
@@ -2621,6 +2649,15 @@ namespace rock
         _driveRebuildRequested.store(false, std::memory_order_release);
         _workbenchExitRebuildRequested.store(false, std::memory_order_release);
         _driveFailureCount.store(0, std::memory_order_release);
+        _dynamicAuthorityRebuildRequested.store(false, std::memory_order_release);
+        _dynamicAuthorityMemberCount = 0;
+        _dynamicAuthorityGenerationKey = 0;
+        _dynamicAuthorityLastVisualContactEntrySequence = 0;
+        {
+            std::scoped_lock lock(_dynamicAuthorityStateMutex);
+            _dynamicAuthorityIntent = {};
+            _dynamicAuthorityPhysics = {};
+        }
         resetWeaponCollisionSettingsCache();
         _weaponAnimNodeDumpFrameCounter = 0;
         _lastWeaponAnimNodeDumpKey = 0;
@@ -2636,6 +2673,7 @@ namespace rock
 
     void WeaponCollision::shutdown()
     {
+        retireDynamicAuthorityGroup();
         if (hasWeaponBody()) {
             ROCK_LOG_INFO(Weapon, "WeaponCollision shutdown destroying generated bodies from cached context");
             destroyWeaponBody(_cachedWorld);
@@ -2660,11 +2698,54 @@ namespace rock
         _driveRebuildRequested.store(false, std::memory_order_release);
         _workbenchExitRebuildRequested.store(false, std::memory_order_release);
         _driveFailureCount.store(0, std::memory_order_release);
+        _dynamicAuthorityRebuildRequested.store(false, std::memory_order_release);
         resetWeaponCollisionSettingsCache();
         _weaponAnimNodeDumpFrameCounter = 0;
         _lastWeaponAnimNodeDumpKey = 0;
 
         ROCK_LOG_INFO(Weapon, "WeaponCollision shutdown");
+    }
+
+    void WeaponCollision::abandonHavokStateAfterWorldLoss()
+    {
+        const auto activeCount = bankWeaponBodyCount(activeWeaponBodies());
+        const auto inactiveCount = bankWeaponBodyCount(inactiveWeaponBodies());
+        const auto dynamicCount = _dynamicAuthorityGroup.size();
+        if (activeCount != 0 || inactiveCount != 0 || dynamicCount != 0) {
+            ROCK_LOG_WARN(Weapon,
+                "WeaponCollision abandoning stale Havok state after world loss: activeBodies={} inactiveBodies={} dynamicTwins={}",
+                activeCount,
+                inactiveCount,
+                dynamicCount);
+        }
+
+        _dynamicAuthorityGroup.abandonAfterWorldLoss();
+        clearGeneratedKeyframedBodyDriveState(_dynamicAuthorityDriveState);
+        _dynamicAuthorityMemberCount = 0;
+        _dynamicAuthorityGenerationKey = 0;
+        _dynamicAuthorityLastVisualContactEntrySequence = 0;
+        _dynamicAuthorityRebuildRequested.store(false, std::memory_order_release);
+        {
+            std::scoped_lock lock(_dynamicAuthorityStateMutex);
+            _dynamicAuthorityIntent = {};
+            _dynamicAuthorityPhysics = {};
+        }
+
+        auto abandonBank = [&](WeaponBodyBank& bank) {
+            for (auto& instance : bank) {
+                // reset() intentionally performs no native release. The world
+                // owns the stale collision system; ROCK only releases its
+                // independently retained generated-shape reference here.
+                instance.body.reset();
+                clearWeaponBodyInstance(instance, true);
+            }
+        };
+        abandonBank(_weaponBodies);
+        abandonBank(_weaponReplacementBodies);
+        _pendingGeneratedWeaponBuild = {};
+        _usingReplacementWeaponBodies = false;
+        clearAtomicBodyIds();
+        resetWeaponBodySetGeneration();
     }
 
     void WeaponCollision::requestWorkbenchExitRebuild()
@@ -2685,6 +2766,11 @@ namespace rock
         (void)dt;
 
         auto clearCurrentWeaponState = [&]() {
+            // Keep the shared-motion authority lifetime independent from the
+            // keyframed bank. Most callers destroy the bank first, but a
+            // partial publication/provider-loss path must not leave dynamic
+            // twins registered in the world.
+            retireDynamicAuthorityGroup();
             _cachedWeaponKey = 0;
             _cachedWeaponVisualKey = 0;
             _cachedWeaponIdentityKey = 0;
@@ -3772,6 +3858,23 @@ namespace rock
         return result;
     }
 
+    RE::NiTransform WeaponCollision::makeGeneratedBodyArrayWorldTransform(
+        const RE::NiTransform& weaponRootTransform,
+        const RE::NiPoint3& localCenterGame) const
+    {
+        RE::NiTransform result = makeGeneratedBodyWorldTransform(weaponRootTransform, localCenterGame);
+        /*
+         * makeGeneratedBodyWorldTransform is the legacy drive encoding: its
+         * rotation is transposed so the generic keyframed wrapper emits the
+         * correct native basis. Shared-motion bookkeeping instead uses the
+         * actual transform stored in each hknp BODY slot, which is the inverse
+         * conversion and never carries scene scale.
+         */
+        result.rotate = weapon_collision_geometry_math::transposeRotation(result.rotate);
+        result.scale = 1.0f;
+        return result;
+    }
+
     bool WeaponCollision::weaponCollisionSettingsChanged() const
     {
         if (_cachedConvexRadius < 0.0f || _cachedPointDedupGrid < 0.0f || _cachedSupportFitTargetPoints < 0 ||
@@ -3957,6 +4060,7 @@ namespace rock
 
     void WeaponCollision::destroyWeaponBody(RE::hknpWorld* world)
     {
+        retireDynamicAuthorityGroup();
         if (!bankHasWeaponBody(_weaponBodies) && !bankHasWeaponBody(_weaponReplacementBodies)) {
             clearGeneratedSourceCompletenessTracking();
             clearPendingWeaponVisualRebuild();
@@ -5497,6 +5601,264 @@ namespace rock
         _weaponBodySampledVelocityValidAtomic[publicationIndex].store(1, std::memory_order_release);
     }
 
+    void WeaponCollision::retireDynamicAuthorityGroup()
+    {
+        if (_dynamicAuthorityGroup.size() != 0) {
+            _dynamicAuthorityGroup.retireDeferred(_cachedBhkWorld);
+        }
+        clearGeneratedKeyframedBodyDriveState(_dynamicAuthorityDriveState);
+        _dynamicAuthorityMemberCount = 0;
+        _dynamicAuthorityGenerationKey = 0;
+        _dynamicAuthorityLastVisualContactEntrySequence = 0;
+        _dynamicAuthorityRebuildRequested.store(false, std::memory_order_release);
+        {
+            std::scoped_lock lock(_dynamicAuthorityStateMutex);
+            _dynamicAuthorityIntent = {};
+            _dynamicAuthorityPhysics = {};
+        }
+    }
+
+    bool WeaponCollision::rebuildDynamicAuthorityGroup(RE::hknpWorld* world, RE::NiAVObject* weaponNode)
+    {
+        retireDynamicAuthorityGroup();
+        if (!world || !_cachedBhkWorld || !weaponNode || !hasWeaponBody() || getCurrentWeaponGenerationKey() == 0) {
+            return false;
+        }
+
+        auto& bank = activeWeaponBodies();
+        std::array<BethesdaPhysicsBodyGroupMemberCreateInfo, MAX_WEAPON_BODIES> createInfos{};
+        std::array<std::size_t, MAX_WEAPON_BODIES> eligibleBankIndices{};
+        std::size_t eligibleCount = 0;
+        std::size_t anchorEligibleIndex = 0;
+        bool foundReceiverAnchor = false;
+        for (std::size_t bankIndex = 0; bankIndex < bank.size(); ++bankIndex) {
+            const auto& instance = bank[bankIndex];
+            if (!instance.body.isValid() || !instance.shape ||
+                (instance.sourceNode && !actor_equipment_grab::nodeContainsNode(weaponNode, instance.sourceNode, 64))) {
+                continue;
+            }
+            eligibleBankIndices[eligibleCount] = bankIndex;
+            if (!foundReceiverAnchor && instance.semantic.partKind == WeaponPartKind::Receiver) {
+                anchorEligibleIndex = eligibleCount;
+                foundReceiverAnchor = true;
+            }
+            ++eligibleCount;
+        }
+
+        std::size_t memberCount = 0;
+        for (std::size_t orderIndex = 0; orderIndex < eligibleCount; ++orderIndex) {
+            const std::size_t eligibleIndex = orderIndex == 0 ? anchorEligibleIndex :
+                (orderIndex <= anchorEligibleIndex ? orderIndex - 1 : orderIndex);
+            const std::size_t bankIndex = eligibleBankIndices[eligibleIndex];
+            auto& instance = bank[bankIndex];
+            const bool useSourceNode = instance.sourceNode != nullptr;
+            const RE::NiTransform& sourceWorld = useSourceNode ? instance.sourceNode->world : weaponNode->world;
+            const RE::NiPoint3& center = useSourceNode ? instance.generatedSourceLocalCenterGame : instance.generatedLocalCenterGame;
+            auto& info = createInfos[memberCount];
+            info.shape = const_cast<RE::hknpShape*>(instance.shape);
+            info.filterInfo = generatedDynamicWeaponAuthorityFilterInfo(false);
+            info.materialId = { 0 };
+            info.initialWorld = makeGeneratedBodyArrayWorldTransform(sourceWorld, center);
+            info.name = "ROCK_DynamicWeaponTwin";
+            _dynamicAuthorityGroupToBank[memberCount] = bankIndex;
+            ++memberCount;
+        }
+
+        if (memberCount == 0 || !_dynamicAuthorityGroup.create(
+                world,
+                _cachedBhkWorld,
+                createInfos.data(),
+                memberCount,
+                "ROCK_DynamicWeaponAuthority")) {
+            ROCK_LOG_ERROR(Weapon, "Dynamic weapon authority shared-motion group creation failed members={}", memberCount);
+            return false;
+        }
+
+        bool filtersEnabled = true;
+        for (std::size_t index = 0; index < memberCount; ++index) {
+            filtersEnabled &= _dynamicAuthorityGroup.setCollisionFilterInfo(
+                world, index, generatedDynamicWeaponAuthorityFilterInfo(true), 1);
+        }
+        if (!filtersEnabled) {
+            ROCK_LOG_ERROR(Weapon, "Dynamic weapon authority filter publication failed; retiring the incomplete group");
+            retireDynamicAuthorityGroup();
+            return false;
+        }
+        _dynamicAuthorityGroup.activate(world);
+        _dynamicAuthorityMemberCount = memberCount;
+        _dynamicAuthorityGenerationKey = getCurrentWeaponGenerationKey();
+
+        const auto anchorBankIndex = _dynamicAuthorityGroupToBank[0];
+        const auto& anchorInstance = bank[anchorBankIndex];
+        const RE::NiTransform& anchorSourceWorld = anchorInstance.sourceNode ? anchorInstance.sourceNode->world : weaponNode->world;
+        const RE::NiPoint3& anchorCenter = anchorInstance.sourceNode ?
+            anchorInstance.generatedSourceLocalCenterGame : anchorInstance.generatedLocalCenterGame;
+        const RE::NiTransform anchorWorld = makeGeneratedBodyArrayWorldTransform(anchorSourceWorld, anchorCenter);
+        initializeGeneratedKeyframedBodyDriveState(_dynamicAuthorityDriveState, anchorWorld);
+
+        ROCK_LOG_INFO(Weapon,
+            "Dynamic weapon authority created: generation={:016X} members={} anchorBody={} sharedMotion={} layer={}",
+            _dynamicAuthorityGenerationKey,
+            memberCount,
+            _dynamicAuthorityGroup.getBodyId(0).value,
+            _dynamicAuthorityGroup.sharedMotionIndex(),
+            collision_layer_policy::ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
+        return true;
+    }
+
+    WeaponCollision::DynamicAuthorityVisualResult WeaponCollision::updateDynamicAuthorityFrame(
+        RE::hknpWorld* world,
+        RE::NiAVObject* weaponNode,
+        float sourceDeltaSeconds)
+    {
+        DynamicAuthorityVisualResult visual{};
+        if (!world || !weaponNode || !_dynamicAuthorityGroup.belongsToWorld(world) ||
+            _dynamicAuthorityGenerationKey != getCurrentWeaponGenerationKey()) {
+            return visual;
+        }
+        if (_dynamicAuthorityRebuildRequested.exchange(false, std::memory_order_acq_rel)) {
+            (void)rebuildDynamicAuthorityGroup(world, weaponNode);
+            return visual;
+        }
+
+        auto& bank = activeWeaponBodies();
+        std::size_t attachedBodyCount = 0;
+        for (const auto& instance : bank) {
+            if (instance.body.isValid() && instance.shape &&
+                (!instance.sourceNode || actor_equipment_grab::nodeContainsNode(weaponNode, instance.sourceNode, 64))) {
+                ++attachedBodyCount;
+            }
+        }
+        if (attachedBodyCount != _dynamicAuthorityMemberCount) {
+            (void)rebuildDynamicAuthorityGroup(world, weaponNode);
+            return visual;
+        }
+        DynamicAuthorityIntent intent{};
+        intent.valid = true;
+        intent.generationKey = _dynamicAuthorityGenerationKey;
+        intent.requestedWeaponWorld = weaponNode->world;
+        intent.memberCount = _dynamicAuthorityMemberCount;
+
+        for (std::size_t groupIndex = 0; groupIndex < _dynamicAuthorityMemberCount; ++groupIndex) {
+            const auto bankIndex = _dynamicAuthorityGroupToBank[groupIndex];
+            auto& instance = bank[bankIndex];
+            const bool useSourceNode =
+                instance.sourceNode && actor_equipment_grab::nodeContainsNode(weaponNode, instance.sourceNode, 64);
+            if (instance.sourceNode && !useSourceNode) {
+                // Detached reload membership changes require a new native
+                // system so the removed shape no longer contributes inertia.
+                (void)rebuildDynamicAuthorityGroup(world, weaponNode);
+                return visual;
+            }
+            const RE::NiTransform& sourceWorld = useSourceNode ? instance.sourceNode->world : weaponNode->world;
+            const RE::NiPoint3& center = useSourceNode ? instance.generatedSourceLocalCenterGame : instance.generatedLocalCenterGame;
+            const RE::NiTransform bodyWorld = makeGeneratedBodyArrayWorldTransform(sourceWorld, center);
+            intent.memberWeaponLocal[groupIndex] = transform_math::composeTransforms(
+                transform_math::invertTransform(intent.requestedWeaponWorld), bodyWorld);
+        }
+
+        {
+            std::scoped_lock lock(_dynamicAuthorityStateMutex);
+            intent.sequence = _dynamicAuthorityIntent.sequence + 1;
+            _dynamicAuthorityIntent = intent;
+        }
+        const RE::NiTransform requestedAnchorWorld = transform_math::composeTransforms(
+            intent.requestedWeaponWorld, intent.memberWeaponLocal[0]);
+        (void)queueGeneratedKeyframedBodyTarget(
+            _dynamicAuthorityDriveState,
+            requestedAnchorWorld,
+            sourceDeltaSeconds,
+            1000.0f);
+
+        DynamicAuthorityPhysicsState physics{};
+        {
+            std::scoped_lock lock(_dynamicAuthorityStateMutex);
+            physics = _dynamicAuthorityPhysics;
+        }
+        if (!physics.postSolveValid || !physics.contactActive ||
+            physics.generationKey != intent.generationKey || physics.intentSequence == 0) {
+            return visual;
+        }
+
+        const RE::NiTransform resolved =
+            dynamic_weapon_collision_authority_policy::applySampledAnchorCorrectionToCurrentIntent(
+                intent.requestedWeaponWorld,
+                physics.commandedAnchorWorld,
+                physics.liveAnchorWorld);
+        if (!dynamic_weapon_collision_authority_policy::isFiniteTransform(resolved)) {
+            return visual;
+        }
+
+        visual.valid = true;
+        visual.contactActive = true;
+        visual.contactEntered = physics.contactEntrySequence != 0 &&
+            physics.contactEntrySequence != _dynamicAuthorityLastVisualContactEntrySequence;
+        if (visual.contactEntered) {
+            _dynamicAuthorityLastVisualContactEntrySequence = physics.contactEntrySequence;
+        }
+        visual.generationKey = intent.generationKey;
+        visual.requestedWeaponWorld = intent.requestedWeaponWorld;
+        visual.resolvedWeaponWorld = resolved;
+        visual.translationResidualGameUnits = physics.translationResidualGameUnits;
+        visual.rotationResidualDegrees = physics.rotationResidualDegrees;
+        return visual;
+    }
+
+    void WeaponCollision::sampleDynamicAuthorityPostSolve(RE::hknpWorld* world)
+    {
+        if (!world || !_dynamicAuthorityGroup.belongsToWorld(world) || _dynamicAuthorityMemberCount == 0) {
+            return;
+        }
+
+        DynamicAuthorityPhysicsState prior{};
+        {
+            std::scoped_lock lock(_dynamicAuthorityStateMutex);
+            prior = _dynamicAuthorityPhysics;
+        }
+        if (!prior.drove || prior.generationKey != _dynamicAuthorityGenerationKey) {
+            return;
+        }
+
+        RE::NiTransform liveAnchor{};
+        if (!havok_runtime::tryGetBodyArrayWorldTransform(
+                world, _dynamicAuthorityGroup.getBodyId(0), liveAnchor) ||
+            !dynamic_weapon_collision_authority_policy::isFiniteTransform(liveAnchor)) {
+            return;
+        }
+        const float dx = liveAnchor.translate.x - prior.commandedAnchorWorld.translate.x;
+        const float dy = liveAnchor.translate.y - prior.commandedAnchorWorld.translate.y;
+        const float dz = liveAnchor.translate.z - prior.commandedAnchorWorld.translate.z;
+        const float translationResidual = std::sqrt(dx * dx + dy * dy + dz * dz);
+        const float rotationRadians = generated_keyframed_body_drive_math::rotationAngleRadians(
+            liveAnchor.rotate, prior.commandedAnchorWorld.rotate);
+        const float rotationDegrees = std::isfinite(rotationRadians) ? rotationRadians * 57.29577951308232f : 0.0f;
+        const bool contact = dynamic_weapon_collision_authority_policy::evaluateContactResidual(
+            prior.contactActive, translationResidual, rotationDegrees);
+        if (contact && !prior.contactActive) {
+            ++prior.contactEntrySequence;
+        }
+        if (contact != prior.contactActive) {
+            ROCK_LOG_SAMPLE_DEBUG(Weapon,
+                g_rockConfig.rockLogSampleMilliseconds,
+                "Dynamic weapon authority contact {} generation={:016X} anchorBody={} translationResidual={:.3f} rotationResidualDeg={:.3f}",
+                contact ? "entered" : "exited",
+                prior.generationKey,
+                _dynamicAuthorityGroup.getBodyId(0).value,
+                translationResidual,
+                rotationDegrees);
+        }
+
+        prior.postSolveValid = true;
+        prior.contactActive = contact;
+        prior.liveAnchorWorld = liveAnchor;
+        prior.translationResidualGameUnits = translationResidual;
+        prior.rotationResidualDegrees = rotationDegrees;
+        {
+            std::scoped_lock lock(_dynamicAuthorityStateMutex);
+            _dynamicAuthorityPhysics = prior;
+        }
+    }
+
     void WeaponCollision::updateBodiesFromCurrentSourceTransforms(
         RE::hknpWorld* world,
         RE::NiAVObject* fallbackWeaponNode,
@@ -5580,6 +5942,138 @@ namespace rock
 
         auto& bank = activeWeaponBodies();
 
+        if (_dynamicAuthorityGroup.belongsToWorld(world) &&
+            _dynamicAuthorityGenerationKey == getCurrentWeaponGenerationKey()) {
+            DynamicAuthorityIntent intent{};
+            DynamicAuthorityPhysicsState priorPhysics{};
+            {
+                std::scoped_lock lock(_dynamicAuthorityStateMutex);
+                intent = _dynamicAuthorityIntent;
+                priorPhysics = _dynamicAuthorityPhysics;
+            }
+            if (intent.valid && intent.generationKey == _dynamicAuthorityGenerationKey &&
+                intent.memberCount == _dynamicAuthorityMemberCount) {
+                RE::NiTransform liveAnchor{};
+                if (havok_runtime::tryGetBodyArrayWorldTransform(
+                        world, _dynamicAuthorityGroup.getBodyId(0), liveAnchor) &&
+                    dynamic_weapon_collision_authority_policy::isFiniteTransform(liveAnchor)) {
+                    const RE::NiTransform liveWeaponRoot =
+                        dynamic_weapon_collision_authority_policy::reconstructWeaponRootFromAnchor(
+                            liveAnchor, intent.memberWeaponLocal[0]);
+                    bool changedMemberPose = false;
+                    bool memberPoseUpdateFailed =
+                        !dynamic_weapon_collision_authority_policy::isFiniteTransform(liveWeaponRoot);
+                    for (std::size_t groupIndex = 1;
+                         !memberPoseUpdateFailed && groupIndex < intent.memberCount;
+                         ++groupIndex) {
+                        const RE::NiTransform desiredMemberWorld = transform_math::composeTransforms(
+                            liveWeaponRoot, intent.memberWeaponLocal[groupIndex]);
+                        RE::NiTransform currentMemberWorld{};
+                        if (!dynamic_weapon_collision_authority_policy::isFiniteTransform(desiredMemberWorld) ||
+                            !havok_runtime::tryGetBodyArrayWorldTransform(
+                                world, _dynamicAuthorityGroup.getBodyId(groupIndex), currentMemberWorld) ||
+                            !dynamic_weapon_collision_authority_policy::isFiniteTransform(currentMemberWorld)) {
+                            memberPoseUpdateFailed = true;
+                            break;
+                        }
+
+                        const float dx = desiredMemberWorld.translate.x - currentMemberWorld.translate.x;
+                        const float dy = desiredMemberWorld.translate.y - currentMemberWorld.translate.y;
+                        const float dz = desiredMemberWorld.translate.z - currentMemberWorld.translate.z;
+                        const float translationDeltaSquared = dx * dx + dy * dy + dz * dz;
+                        const float rotationDelta = generated_keyframed_body_drive_math::rotationAngleRadians(
+                            currentMemberWorld.rotate, desiredMemberWorld.rotate);
+                        constexpr float kMemberTranslationEpsilonGame = 0.0005f;
+                        constexpr float kMemberRotationEpsilonRadians = 0.00008726646f;  // 0.005 degrees
+                        if (!std::isfinite(translationDeltaSquared) || !std::isfinite(rotationDelta)) {
+                            memberPoseUpdateFailed = true;
+                            break;
+                        }
+                        const bool poseChanged =
+                            translationDeltaSquared > kMemberTranslationEpsilonGame * kMemberTranslationEpsilonGame ||
+                            rotationDelta > kMemberRotationEpsilonRadians;
+                        if (!poseChanged) {
+                            continue;
+                        }
+
+                        if (!_dynamicAuthorityGroup.setMemberTransformDeferred(
+                                world, groupIndex, desiredMemberWorld, 1)) {
+                            memberPoseUpdateFailed = true;
+                            break;
+                        }
+                        changedMemberPose = true;
+                    }
+                    // A later member can fail after earlier deferred transforms
+                    // were accepted. Always rebuild mass properties for that
+                    // accepted prefix; do not let short-circuit evaluation leave
+                    // the next solve with stale COM/inertia.
+                    const bool massRebuildFailed =
+                        changedMemberPose && !_dynamicAuthorityGroup.rebuildMassProperties(world, 0);
+                    if (memberPoseUpdateFailed || massRebuildFailed) {
+                        _dynamicAuthorityRebuildRequested.store(true, std::memory_order_release);
+                    }
+                }
+
+                GeneratedBodyDriveMode mode{
+                    .dynamicVelocity = true,
+                    // A single-member teleport would reshape a shared-motion
+                    // group. Large source jumps fail the drive's immediate
+                    // placement and rebuild the complete group instead.
+                    .divergenceTeleportGameUnits = 0.0f,
+                };
+                if (priorPhysics.contactActive) {
+                    const float dx = priorPhysics.commandedAnchorWorld.translate.x - priorPhysics.liveAnchorWorld.translate.x;
+                    const float dy = priorPhysics.commandedAnchorWorld.translate.y - priorPhysics.liveAnchorWorld.translate.y;
+                    const float dz = priorPhysics.commandedAnchorWorld.translate.z - priorPhysics.liveAnchorWorld.translate.z;
+                    const float length = std::sqrt(dx * dx + dy * dy + dz * dz);
+                    if (std::isfinite(length) && length > 0.15f &&
+                        g_rockConfig.rockHandCollisionDynamicContactPressMaxVelocityHavok > 0.0f) {
+                        mode.hasContactPressDirection = true;
+                        mode.contactPressDirection[0] = dx / length;
+                        mode.contactPressDirection[1] = dy / length;
+                        mode.contactPressDirection[2] = dz / length;
+                        mode.contactPressMaxVelocityHavok = g_rockConfig.rockHandCollisionDynamicContactPressMaxVelocityHavok;
+                    }
+                }
+
+                auto anchor = _dynamicAuthorityGroup.member(0);
+                const auto result = driveGeneratedKeyframedBody(
+                    world,
+                    anchor,
+                    _dynamicAuthorityDriveState,
+                    timing,
+                    "dynamic-weapon-authority",
+                    0,
+                    g_rockConfig.rockHandCollisionDynamicMaxLinearVelocityHavok,
+                    g_rockConfig.rockWeaponCollisionMaxAngularVelocity,
+                    mode);
+                if (result.shouldRequestRebuild()) {
+                    _dynamicAuthorityRebuildRequested.store(true, std::memory_order_release);
+                    ROCK_LOG_SAMPLE_WARN(Weapon,
+                        g_rockConfig.rockLogSampleMilliseconds,
+                        "Dynamic weapon authority drive requested rebuild generation={:016X} missingBody={} ownerMismatch={} placementFailed={} nativeDriveFailed={}",
+                        intent.generationKey,
+                        result.missingBody ? "yes" : "no",
+                        result.bodyCollisionObjectMismatch ? "yes" : "no",
+                        result.placementFailed ? "yes" : "no",
+                        result.nativeDriveFailed ? "yes" : "no");
+                }
+
+                DynamicAuthorityPhysicsState current = priorPhysics;
+                current.drove = result.driven;
+                current.postSolveValid = false;
+                current.generationKey = intent.generationKey;
+                current.intentSequence = intent.sequence;
+                if (result.driven) {
+                    current.commandedAnchorWorld = result.commandedTargetGameTransform;
+                }
+                {
+                    std::scoped_lock lock(_dynamicAuthorityStateMutex);
+                    _dynamicAuthorityPhysics = current;
+                }
+            }
+        }
+
         for (std::size_t i = 0; i < bank.size(); ++i) {
             auto& instance = bank[i];
             if (!instance.body.isValid()) {
@@ -5605,6 +6099,8 @@ namespace rock
         if (completedPhysicsSteps == 0) {
             return;
         }
+
+        BethesdaPhysicsBodyGroup::serviceRetiredDeferredPayloads(completedPhysicsSteps);
 
         std::scoped_lock lock(_retiredWeaponBodyPayloadMutex);
         for (auto& retired : _retiredWeaponBodyPayloads) {

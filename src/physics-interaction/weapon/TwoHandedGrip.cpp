@@ -34,7 +34,9 @@ namespace rock
         constexpr const char* PRIMARY_DETACH_TAG = "ROCK_WeaponPrimaryDetach";
         constexpr const char* SUPPORT_GRIP_TAG = "ROCK_WeaponSupportGrip";
         constexpr const char* WEAPON_NODE_OWNERSHIP_TAG = "ROCK_LeftFiringCarry";
+        constexpr const char* WEAPON_COLLISION_HAND_TAG = "ROCK_WeaponCollisionAuthority";
         constexpr int GRIP_HAND_POSE_PRIORITY = 100;
+        constexpr int WEAPON_COLLISION_HAND_PRIORITY = 101;
         constexpr float SUPPORT_NORMAL_TWIST_FACTOR = 0.5f;
         constexpr std::uint32_t SCOPE_DRIVER_MISS_GRACE_FRAMES = 3;
         constexpr float SCOPE_ROOT_REBASE_DURATION_SECONDS = 0.075f;
@@ -1079,6 +1081,7 @@ namespace rock
 
     void TwoHandedGrip::reset()
     {
+        clearCollisionResolvedWeaponAuthority();
         _equippedWeaponDropRequest = {};
         _hapticEvents = {};
         _firingGripReattachHoverInsideRadius = false;
@@ -3018,6 +3021,105 @@ namespace rock
         } else {
             (void)frik_visual_authority::clearExternalHandWorldTransform(SUPPORT_GRIP_TAG, handFromBool(isLeft));
         }
+    }
+
+    bool TwoHandedGrip::applyCollisionResolvedWeaponAuthority(
+        RE::NiNode* weaponNode,
+        const RE::NiTransform& requestedWeaponWorld,
+        const RE::NiTransform& resolvedWeaponWorld,
+        const RE::NiTransform* rawRightHandWorld,
+        const RE::NiTransform* rawLeftHandWorld,
+        float dt)
+    {
+        if (!weaponNode) {
+            clearCollisionResolvedWeaponAuthority();
+            return false;
+        }
+        if (!isFiniteTransform(requestedWeaponWorld) || !isFiniteTransform(resolvedWeaponWorld)) {
+            clearCollisionResolvedWeaponAuthority();
+            return false;
+        }
+
+        RE::NiTransform nativeRightHandWeaponLocal{};
+        const bool needsNativeFiringHand = !isManualOwnershipActive();
+        if (!needsNativeFiringHand) {
+            // Manual grip tags own both hands. Remove any prior native one-hand
+            // collision tag so its higher priority cannot survive a mode change.
+            clearCollisionResolvedWeaponAuthority();
+        }
+        const bool hasNativeRightHand = needsNativeFiringHand && rawRightHandWorld;
+        if (!frik_visual_authority::isAvailable() || (needsNativeFiringHand && !hasNativeRightHand)) {
+            clearCollisionResolvedWeaponAuthority();
+            return false;
+        }
+        if (hasNativeRightHand) {
+            nativeRightHandWeaponLocal = transform_math::composeTransforms(
+                transform_math::invertTransform(requestedWeaponWorld), *rawRightHandWorld);
+        }
+
+        if (!applyWeaponVisualAuthority(weaponNode, resolvedWeaponWorld)) {
+            clearCollisionResolvedWeaponAuthority();
+            return false;
+        }
+
+        bool applied = true;
+        if (_state == TwoHandedState::PartCarry) {
+            std::array<bool, 2> partHandApplied{};
+            for (bool isLeft : { false, true }) {
+                if (!partGrip(isLeft).active) {
+                    continue;
+                }
+                const bool handApplied = applyPartGripLockedVisual(
+                    isLeft,
+                    weaponNode,
+                    dt,
+                    isLeft ? rawLeftHandWorld : rawRightHandWorld);
+                partHandApplied[isLeft ? 1u : 0u] = handApplied;
+                applied &= handApplied;
+            }
+            if (!applied) {
+                for (bool isLeft : { false, true }) {
+                    if (partHandApplied[isLeft ? 1u : 0u]) {
+                        (void)frik_visual_authority::clearExternalHandWorldTransform(
+                            SUPPORT_GRIP_TAG, handFromBool(isLeft));
+                    }
+                }
+            }
+        } else if (_state == TwoHandedState::Gripping || _state == TwoHandedState::PrimaryOnly) {
+            const RE::NiTransform* rawPrimary = _firingHandIsLeft ? rawLeftHandWorld : rawRightHandWorld;
+            const RE::NiTransform* rawSupport = _firingHandIsLeft ? rawRightHandWorld : rawLeftHandWorld;
+            applied = applyLockedHandVisualAuthority(
+                weaponNode,
+                true,
+                _state == TwoHandedState::Gripping,
+                dt,
+                rawPrimary,
+                rawSupport);
+        } else {
+            const RE::NiTransform resolvedRightHandWorld = transform_math::composeTransforms(
+                resolvedWeaponWorld, nativeRightHandWeaponLocal);
+            applied = frik_visual_authority::applyExternalHandWorldTransform(
+                WEAPON_COLLISION_HAND_TAG,
+                frik_visual_authority::Hand::Right,
+                resolvedRightHandWorld,
+                WEAPON_COLLISION_HAND_PRIORITY);
+        }
+
+        if (!applied) {
+            // Preserve the raw authority result if a hand publication fails;
+            // never leave a collision-corrected weapon detached from its hands.
+            (void)applyWeaponVisualAuthority(weaponNode, requestedWeaponWorld);
+            clearCollisionResolvedWeaponAuthority();
+        }
+        return applied;
+    }
+
+    void TwoHandedGrip::clearCollisionResolvedWeaponAuthority()
+    {
+        (void)frik_visual_authority::clearExternalHandWorldTransform(
+            WEAPON_COLLISION_HAND_TAG, frik_visual_authority::Hand::Right);
+        (void)frik_visual_authority::clearExternalHandWorldTransform(
+            WEAPON_COLLISION_HAND_TAG, frik_visual_authority::Hand::Left);
     }
 
     bool TwoHandedGrip::applyWeaponVisualAuthority(RE::NiNode* weaponNode, const RE::NiTransform& solvedWeaponWorld)
