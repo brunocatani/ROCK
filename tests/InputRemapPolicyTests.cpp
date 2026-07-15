@@ -258,19 +258,6 @@ int main()
     auto heldEquipInput = equipInput;
     heldEquipInput.triggerPressedEdge = false;
     ok &= expectFalse("held trigger does not repeat held weapon equip request", shouldRequestHeldWeaponEquip(heldEquipInput));
-    auto autoEquipInput = heldEquipInput;
-    autoEquipInput.autoEquipEnabled = true;
-    autoEquipInput.autoEquipSettled = true;
-    ok &= expectTrue("settled held weapon can auto-equip when enabled", shouldRequestHeldWeaponEquip(autoEquipInput));
-    auto disabledAutoEquipInput = autoEquipInput;
-    disabledAutoEquipInput.autoEquipEnabled = false;
-    ok &= expectFalse("settled held weapon does not auto-equip when disabled", shouldRequestHeldWeaponEquip(disabledAutoEquipInput));
-    auto offhandAutoEquipInput = autoEquipInput;
-    offhandAutoEquipInput.legacyAutoEquipPrimaryHand = false;
-    ok &= expectFalse("settled offhand held weapon does not auto-equip", shouldRequestHeldWeaponEquip(offhandAutoEquipInput));
-    auto unsettledAutoEquipInput = autoEquipInput;
-    unsettledAutoEquipInput.autoEquipSettled = false;
-    ok &= expectFalse("unsettled held weapon does not auto-equip", shouldRequestHeldWeaponEquip(unsettledAutoEquipInput));
     auto gripZoneEquipInput = heldEquipInput;
     gripZoneEquipInput.gripZoneEquipEnabled = true;
     gripZoneEquipInput.gripZoneEquipSettled = true;
@@ -279,7 +266,6 @@ int main()
     disabledGripZoneEquipInput.gripZoneEquipEnabled = false;
     ok &= expectFalse("grip zone equip disabled does not equip held weapon", shouldRequestHeldWeaponEquip(disabledGripZoneEquipInput));
     auto offhandGripZoneEquipInput = gripZoneEquipInput;
-    offhandGripZoneEquipInput.legacyAutoEquipPrimaryHand = false;
     offhandGripZoneEquipInput.heldWeaponHand = Hand::Left;
     ok &= expectTrue("left palm settled in grip zone equips its held weapon", shouldRequestHeldWeaponEquip(offhandGripZoneEquipInput));
     auto outsideGripZoneEquipInput = gripZoneEquipInput;

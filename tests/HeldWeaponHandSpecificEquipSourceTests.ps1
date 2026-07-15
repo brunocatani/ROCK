@@ -37,6 +37,25 @@ Require-Text 'src/physics-interaction/input/InputRemapPolicy.h' `
     '\(input\.gripZoneEquipEnabled\s*&&\s*input\.gripZoneEquipSettled\)' `
     'Firing-grip-zone equip must be available to either physical hand without a primary-hand gate.'
 
+foreach ($legacyPath in @(
+        'src/RockConfig.cpp',
+        'src/RockConfig.h',
+        'src/physics-interaction/core/PhysicsInteraction.cpp',
+        'src/physics-interaction/core/PhysicsInteraction.h',
+        'src/physics-interaction/input/InputRemapPolicy.h',
+        'data/config/ROCK.ini',
+        'data/mod/ROCK_Config/ROCK.ini')) {
+    Reject-Text $legacyPath `
+        'GrabbedWeaponAutoEquip|HeldWeaponAutoEquip|legacyAutoEquip|autoEquipEnabled|autoEquipSettled|autoEquipState|settled-auto-held-weapon-equip' `
+        'The superseded position-blind loose-weapon auto-equip path must remain deleted.'
+}
+
+foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
+    Require-Text $configPath `
+        'bGrabbedWeaponGripZoneEquipEnabled\s*=\s*true' `
+        'The canonical firing-grip-zone equip path must remain enabled in shipped config.'
+}
+
 Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
     'std::array<std::atomic<bool>,\s*2>\s+s_handHeldWeapon' `
     'Native trigger suppression must track held-weapon ownership for both physical hands.'

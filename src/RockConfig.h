@@ -151,8 +151,6 @@ namespace rock
         float rockLeftFiringAimOffsetYGameUnits = 0.0f;
         float rockLeftFiringAimOffsetZGameUnits = 0.0f;
         float rockRealisticGrenadeFuseSeconds = 5.0f;
-        bool rockGrabbedWeaponAutoEquipEnabled = false;
-        float rockGrabbedWeaponAutoEquipSettleSeconds = 0.75f;
         bool rockGrabbedWeaponGripZoneEquipEnabled = true;
         float rockGrabbedWeaponGripZoneEquipRadius = 3.0f;
         float rockGrabbedWeaponGripZoneEquipSettleSeconds = 0.15f;

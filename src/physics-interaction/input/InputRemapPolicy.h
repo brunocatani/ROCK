@@ -109,9 +109,6 @@ namespace rock::input_remap_policy
         Hand heldWeaponHand{ Hand::Right };
         Hand triggerInputHand{ Hand::Right };
         bool triggerPressedEdge{ false };
-        bool legacyAutoEquipPrimaryHand{ true };
-        bool autoEquipEnabled{ false };
-        bool autoEquipSettled{ false };
         bool gripZoneEquipEnabled{ false };
         bool gripZoneEquipSettled{ false };
     };
@@ -248,15 +245,13 @@ namespace rock::input_remap_policy
 
     /*
      * Loose-weapon equip fires on an explicit trigger edge from the SAME hand
-     * that owns the held weapon. The legacy position-blind settle timer stays
-     * primary-hand-only, while the firing-grip zone applies to either hand so
-     * the physical hand at the grip becomes the equipped firing hand.
+     * that owns the held weapon or after that hand settles in the firing-grip
+     * zone. Both paths apply to either physical hand.
      */
     [[nodiscard]] constexpr bool shouldRequestHeldWeaponEquip(const HeldWeaponEquipInput& input)
     {
         return input.remapEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.heldWeaponAtFrameStart && input.heldWeaponNow &&
                ((input.triggerPressedEdge && input.triggerInputHand == input.heldWeaponHand) ||
-                   (input.legacyAutoEquipPrimaryHand && input.autoEquipEnabled && input.autoEquipSettled) ||
                    (input.gripZoneEquipEnabled && input.gripZoneEquipSettled));
     }
 

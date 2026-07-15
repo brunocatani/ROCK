@@ -408,12 +408,6 @@ namespace rock
 
         static constexpr std::uint32_t INVALID_CONTACT_BODY_ID = 0x7FFF'FFFF;
         static constexpr std::uint32_t WEAPON_CONTACT_TIMEOUT_FRAMES = 5;
-        struct HeldWeaponAutoEquipState
-        {
-            std::uint32_t formID{ 0 };
-            std::uint32_t bodyId{ INVALID_CONTACT_BODY_ID };
-            float settledSeconds{ 0.0f };
-        };
         struct HeldWeaponTriggerEquipIntent
         {
             bool pending{ false };
@@ -627,7 +621,6 @@ namespace rock
         std::array<ProviderHandInputSuppressionRuntimeState, 2> _providerHandInputSuppressionStates{};
         std::array<grab_input_intent_policy::RuntimeState, 2> _grabInputIntentStates{};
         std::array<peer_held_join_retry_policy::RuntimeState, 2> _peerHeldJoinRetryStates{};
-        std::array<HeldWeaponAutoEquipState, 2> _heldWeaponAutoEquipStates{};
 
         RE::NiPoint3 _prevSmoothedPos;
         int _deltaLogCounter = 0;

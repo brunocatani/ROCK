@@ -1818,7 +1818,6 @@ namespace rock
         _feedbackHaptics.reset();
         _grabInputIntentStates = {};
         _peerHeldJoinRetryStates = {};
-        _heldWeaponAutoEquipStates = {};
         _heldWeaponTriggerEquipIntents = {};
         _forceGrabCommittedThisFrame = {};
         _bareFistGuardState = {};
@@ -3810,7 +3809,6 @@ namespace rock
         _feedbackHaptics.reset();
         _grabInputIntentStates = {};
         _peerHeldJoinRetryStates = {};
-        _heldWeaponAutoEquipStates = {};
         _heldWeaponTriggerEquipIntents = {};
         _forceGrabCommittedThisFrame = {};
         _bareFistGuardState = {};
@@ -7086,7 +7084,6 @@ namespace rock
             input_remap_runtime::setEquippedWeaponPrimaryDetached(false);
             input_remap_runtime::setProviderOpenVrGameInputSuppressed(false, false);
             input_remap_runtime::setProviderOpenVrGameInputSuppressed(true, false);
-            _heldWeaponAutoEquipStates = {};
             _heldWeaponTriggerEquipIntents = {};
             clearGameplayCandidatesForHand(_rightHand, false);
             clearGameplayCandidatesForHand(_leftHand, true);
@@ -7136,7 +7133,6 @@ namespace rock
             const auto& handInput = isLeft ? frame.left : frame.right;
             auto& inputIntentState = _grabInputIntentStates[isLeft ? 1u : 0u];
             auto& peerHeldJoinRetryState = _peerHeldJoinRetryStates[isLeft ? 1u : 0u];
-            auto& autoEquipState = _heldWeaponAutoEquipStates[isLeft ? 1u : 0u];
             auto& triggerEquipIntent = _heldWeaponTriggerEquipIntents[isLeft ? 1u : 0u];
             auto& shoulderStashState = _shoulderStashStates[isLeft ? 1u : 0u];
             auto& mouthConsumeState = _mouthConsumeStates[isLeft ? 1u : 0u];
@@ -7193,14 +7189,12 @@ namespace rock
                 inputSuppressionState.deferredGrabRelease = false;
                 grab_input_intent_policy::reset(inputIntentState);
                 cancelPeerHeldJoinRetry("force-grab-committed-this-frame", true);
-                autoEquipState = {};
                 clearGameplayCandidatesForHand(hand, isLeft);
                 return;
             }
             if (_pendingForceGrabCommits[handIndex].active) {
                 grab_input_intent_policy::reset(inputIntentState);
                 cancelPeerHeldJoinRetry("pending-force-grab-reservation", true);
-                autoEquipState = {};
                 clearGameplayCandidatesForHand(hand, isLeft);
                 if (hand.hasSelection()) {
                     hand.clearSelectionState(false);
@@ -7217,7 +7211,6 @@ namespace rock
             }
             if (handInput.disabled) {
                 cancelPeerHeldJoinRetry("hand-input-disabled", false);
-                autoEquipState = {};
                 clearGameplayCandidatesForHand(hand, isLeft);
                 return;
             }
@@ -7722,10 +7715,6 @@ namespace rock
                 dispatchGrabEvent(eventData);
             };
 
-            if (!hand.isHoldingLooseWeapon()) {
-                autoEquipState = {};
-            }
-
             loose_weapon_grip_zone::updateHeldLooseWeapon(
                 isLeft,
                 hand.isHoldingLooseWeapon(),
@@ -7774,35 +7763,6 @@ namespace rock
                 if (replayedSameHandTrigger || (heldWeaponEquipTriggerPressedEdge && hand.isHoldingLooseWeapon())) {
                     triggerEquipIntent = {};
                 }
-                const bool heldWeaponAutoEquipSettled = !heldLooseGrenade && [&]() {
-                    if (!hand.isHoldingLooseWeapon()) {
-                        autoEquipState = {};
-                        return false;
-                    }
-
-                    auto* currentRef = hand.getHeldRef();
-                    const auto currentFormID = currentRef ? currentRef->GetFormID() : 0u;
-                    const auto currentBodyId = hand.getSavedObjectState().bodyId.value;
-                    if (currentFormID == 0 || currentBodyId == INVALID_CONTACT_BODY_ID) {
-                        autoEquipState = {};
-                        return false;
-                    }
-
-                    if (autoEquipState.formID != currentFormID || autoEquipState.bodyId != currentBodyId) {
-                        autoEquipState = HeldWeaponAutoEquipState{
-                            .formID = currentFormID,
-                            .bodyId = currentBodyId,
-                        };
-                    }
-
-                    if (hand.getState() != HandState::HeldBody) {
-                        autoEquipState.settledSeconds = 0.0f;
-                        return false;
-                    }
-
-                    autoEquipState.settledSeconds += (std::max)(0.0f, frame.deltaSeconds);
-                    return autoEquipState.settledSeconds >= g_rockConfig.rockGrabbedWeaponAutoEquipSettleSeconds;
-                }();
                 const bool heldWeaponGripZoneEquipSettled = !heldLooseGrenade && loose_weapon_grip_zone::isGripZoneEquipSettled(isLeft);
                 const bool heldWeaponEquipRequested = input_remap_policy::shouldRequestHeldWeaponEquip(input_remap_policy::HeldWeaponEquipInput{
                     .remapEnabled = g_rockConfig.rockInputRemapEnabled,
@@ -7813,9 +7773,6 @@ namespace rock
                     .heldWeaponHand = isLeft ? input_remap_policy::Hand::Left : input_remap_policy::Hand::Right,
                     .triggerInputHand = isLeft ? input_remap_policy::Hand::Left : input_remap_policy::Hand::Right,
                     .triggerPressedEdge = heldWeaponEquipTriggerPressed,
-                    .legacyAutoEquipPrimaryHand = !isLeft,
-                    .autoEquipEnabled = g_rockConfig.rockGrabbedWeaponAutoEquipEnabled,
-                    .autoEquipSettled = heldWeaponAutoEquipSettled,
                     .gripZoneEquipEnabled = g_rockConfig.rockGrabbedWeaponGripZoneEquipEnabled,
                     .gripZoneEquipSettled = heldWeaponGripZoneEquipSettled,
                 });
@@ -7827,7 +7784,6 @@ namespace rock
                             hand.handName(),
                             logAction ? logAction : "requested",
                             heldRefForGameplay ? heldRefForGameplay->GetFormID() : 0u);
-                        autoEquipState = {};
                         return true;
                     }
 
@@ -7855,7 +7811,6 @@ namespace rock
                                 rawGrabInput.held ? "yes" : "no",
                                 leftCarryAvailable ? "yes" : "no",
                                 pendingGripStart.hasFiringHandWeaponLocal ? "yes" : "no");
-                            autoEquipState = {};
                             return true;
                         }
                     }
@@ -7924,26 +7879,19 @@ namespace rock
                         _pendingEquippedWeaponPrimaryOnlyGripStart = pendingGripStart;
                     }
                     input_remap_runtime::setHandHeldWeapon(isLeft, false);
-                    autoEquipState = {};
                     clearGameplayCandidatesForHand(hand, isLeft);
                     return true;
                 };
 
                 if (heldLooseGrenade) {
-                    autoEquipState = {};
                     if (heldWeaponEquipTriggerPressed) {
                         static_cast<void>(armHeldLooseGrenade(hand, frame));
                     }
                 } else if (heldWeaponEquipRequested) {
                     const bool triggeredByInput = heldWeaponEquipTriggerPressed;
-                    const bool triggeredByLegacyAutoEquip =
-                        !triggeredByInput && g_rockConfig.rockGrabbedWeaponAutoEquipEnabled && heldWeaponAutoEquipSettled;
-                    const char* requestReason = triggeredByInput          ? "same-hand-trigger-held-weapon-equip" :
-                                                triggeredByLegacyAutoEquip ? "settled-auto-held-weapon-equip" :
-                                                                             "grip-zone-held-weapon-equip";
-                    const char* logAction = triggeredByInput          ? "trigger" :
-                                            triggeredByLegacyAutoEquip ? "auto" :
-                                                                         "grip-zone";
+                    const char* requestReason = triggeredByInput ? "same-hand-trigger-held-weapon-equip" :
+                                                                   "grip-zone-held-weapon-equip";
+                    const char* logAction = triggeredByInput ? "trigger" : "grip-zone";
                     if (equipHeldWeaponFromHand(requestReason, logAction)) {
                         return;
                     }

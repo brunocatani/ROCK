@@ -159,8 +159,8 @@ Require-Text $selectionUpdate `
 
 $grabInput = Get-BoundedText $physicsSource 'void PhysicsInteraction::updateGrabInput(' 'bool PhysicsInteraction::physicsModOwnsObject(' 'grab input update'
 Require-Text $grabInput `
-    'if\s*\(_pendingForceGrabCommits\[handIndex\]\.active\)\s*\{[\s\S]*?grab_input_intent_policy::reset\(inputIntentState\);[\s\S]*?cancelPeerHeldJoinRetry[\s\S]*?autoEquipState\s*=\s*\{\};[\s\S]*?clearGameplayCandidatesForHand[\s\S]*?clearSelectionState\(false\);[\s\S]*?return;' `
-    'A pending force-grab must reserve normal input, retry, auto-equip, gameplay-candidate, and selection ownership for its hand.'
+    'if\s*\(_pendingForceGrabCommits\[handIndex\]\.active\)\s*\{[\s\S]*?grab_input_intent_policy::reset\(inputIntentState\);[\s\S]*?cancelPeerHeldJoinRetry[\s\S]*?clearGameplayCandidatesForHand[\s\S]*?clearSelectionState\(false\);[\s\S]*?return;' `
+    'A pending force-grab must reserve normal input, retry, gameplay-candidate, and selection ownership for its hand.'
 Require-Text $grabInput `
     'if\s*\(_forceGrabCommittedThisFrame\[handIndex\]\)[\s\S]*?readGrabButtonState\(isLeft,\s*grabButton\)[\s\S]*?grab_input_intent_policy::reset\(inputIntentState\)[\s\S]*?return;' `
     'A successful force-grab must consume stale pre-attachment button edges and skip normal release processing for the rest of its commit frame.'
