@@ -123,7 +123,6 @@ namespace rock
     struct NativeScopeOverlayPendingHandoff
     {
         std::uint64_t weaponGenerationKey{ 0 };
-        RE::NiTransform cameraWorldBefore{};
         RE::NiTransform correctedCameraWorld{};
         bool valid{ false };
     };
@@ -133,12 +132,13 @@ namespace rock
         std::uint64_t weaponGenerationKey{ 0 };
 
         /*
-         * Non-owning identity witness only. It is never dereferenced unless
-         * the current PlayerNodes ScopeParent pointer still matches it.
+         * Non-owning identity witnesses only. They are never dereferenced
+         * unless the current PlayerNodes hierarchy resolves the same nodes.
          */
         RE::NiNode* scopeParentIdentity{ nullptr };
+        RE::NiNode* scopeModelRootIdentity{ nullptr };
 
-        RE::NiTransform scopeParentInCameraLocal{};
+        RE::NiTransform scopeModelRootLocal{};
         RE::NiTransform nativeScopeParentLocal{};
         RE::NiTransform lastAppliedScopeParentLocal{};
         bool valid{ false };
@@ -680,9 +680,7 @@ namespace rock
         void clearWeaponVisualReturn(const char* reason, bool logCancellation, bool restoreBlockers);
         void clearAllVisualReturns(const char* reason, bool logCancellation, bool restoreBlockers);
         void clearNativeScopeOverlayAuthority(bool restoreNativeLocal);
-        bool captureNativeScopeOverlayCalibration(
-            const RE::NiTransform& nativeCameraWorld,
-            std::uint64_t currentWeaponGenerationKey);
+        bool captureNativeScopeOverlayCalibration(std::uint64_t currentWeaponGenerationKey);
         bool applyNativeScopeOverlayTarget(
             const RE::NiTransform& correctedCameraWorld,
             std::uint64_t currentWeaponGenerationKey);

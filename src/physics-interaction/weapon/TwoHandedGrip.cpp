@@ -663,7 +663,6 @@ namespace rock
         if (capture.valid && result.targetValid && result.writeApplied) {
             _nativeScopeOverlayPendingHandoff = NativeScopeOverlayPendingHandoff{
                 .weaponGenerationKey = currentWeaponGenerationKey,
-                .cameraWorldBefore = capture.cameraWorldBefore,
                 .correctedCameraWorld = result.targetCameraWorld,
                 .valid = true,
             };
@@ -703,12 +702,9 @@ namespace rock
         _nativeScopeOverlayCalibration = {};
     }
 
-    bool TwoHandedGrip::captureNativeScopeOverlayCalibration(
-        const RE::NiTransform& nativeCameraWorld,
-        const std::uint64_t currentWeaponGenerationKey)
+    bool TwoHandedGrip::captureNativeScopeOverlayCalibration(const std::uint64_t currentWeaponGenerationKey)
     {
-        if (currentWeaponGenerationKey == 0 || !isFiniteTransform(nativeCameraWorld) ||
-            std::abs(nativeCameraWorld.scale) <= 0.0001f || !RE::PlayerCharacter::GetSingleton()) {
+        if (currentWeaponGenerationKey == 0 || !RE::PlayerCharacter::GetSingleton()) {
             return false;
         }
 
@@ -719,10 +715,18 @@ namespace rock
             return false;
         }
 
+        auto* scopeModelRoot = f4vr::find1StChildNode(scopeParent, "world_scope.nif");
+        if (!scopeModelRoot || scopeModelRoot->parent != scopeParent ||
+            !isFiniteTransform(scopeModelRoot->local) || std::abs(scopeModelRoot->local.scale) <= 0.0001f) {
+            return false;
+        }
+
         if (_nativeScopeOverlayCalibration.valid) {
             const bool sameOwner =
                 _nativeScopeOverlayCalibration.weaponGenerationKey == currentWeaponGenerationKey &&
-                _nativeScopeOverlayCalibration.scopeParentIdentity == scopeParent;
+                _nativeScopeOverlayCalibration.scopeParentIdentity == scopeParent &&
+                _nativeScopeOverlayCalibration.scopeModelRootIdentity == scopeModelRoot &&
+                areTransformsNearlyEqual(scopeModelRoot->local, _nativeScopeOverlayCalibration.scopeModelRootLocal);
             const bool engineStillHasRockLocal =
                 !_nativeScopeOverlayCalibration.hasAppliedLocal ||
                 areTransformsNearlyEqual(scopeParent->local, _nativeScopeOverlayCalibration.lastAppliedScopeParentLocal);
@@ -739,34 +743,22 @@ namespace rock
             clearNativeScopeOverlayAuthority(!sameOwner && engineStillHasRockLocal);
         }
 
-        RE::NiTransform nativeScopeParentWorld{};
-        if (!tryGetComposedNodeWorld(scopeParent, nativeScopeParentWorld)) {
-            return false;
-        }
-
-        const RE::NiTransform scopeParentInCameraLocal =
-            native_scope_overlay_follow_math::captureScopeParentInCameraLocal(
-                nativeCameraWorld,
-                nativeScopeParentWorld);
-        if (!isFiniteTransform(scopeParentInCameraLocal)) {
-            return false;
-        }
-
         _nativeScopeOverlayCalibration = NativeScopeOverlayCalibrationState{
             .weaponGenerationKey = currentWeaponGenerationKey,
             .scopeParentIdentity = scopeParent,
-            .scopeParentInCameraLocal = scopeParentInCameraLocal,
+            .scopeModelRootIdentity = scopeModelRoot,
+            .scopeModelRootLocal = scopeModelRoot->local,
             .nativeScopeParentLocal = scopeParent->local,
             .lastAppliedScopeParentLocal = {},
             .valid = true,
             .hasAppliedLocal = false,
         };
         ROCK_LOG_DEBUG(Weapon,
-            "TwoHandedGrip: native scope overlay calibrated generation={:016X} cameraLocal=({:.2f},{:.2f},{:.2f}) nativeParentLocal=({:.2f},{:.2f},{:.2f})",
+            "TwoHandedGrip: native scope overlay calibrated generation={:016X} modelRootLocal=({:.2f},{:.2f},{:.2f}) nativeParentLocal=({:.2f},{:.2f},{:.2f})",
             currentWeaponGenerationKey,
-            scopeParentInCameraLocal.translate.x,
-            scopeParentInCameraLocal.translate.y,
-            scopeParentInCameraLocal.translate.z,
+            scopeModelRoot->local.translate.x,
+            scopeModelRoot->local.translate.y,
+            scopeModelRoot->local.translate.z,
             scopeParent->local.translate.x,
             scopeParent->local.translate.y,
             scopeParent->local.translate.z);
@@ -790,6 +782,13 @@ namespace rock
             return false;
         }
 
+        auto* scopeModelRoot = f4vr::find1StChildNode(scopeParent, "world_scope.nif");
+        if (!scopeModelRoot || scopeModelRoot != _nativeScopeOverlayCalibration.scopeModelRootIdentity ||
+            scopeModelRoot->parent != scopeParent ||
+            !areTransformsNearlyEqual(scopeModelRoot->local, _nativeScopeOverlayCalibration.scopeModelRootLocal)) {
+            return false;
+        }
+
         if (_nativeScopeOverlayCalibration.hasAppliedLocal &&
             !areTransformsNearlyEqual(scopeParent->local, _nativeScopeOverlayCalibration.lastAppliedScopeParentLocal)) {
             // FO4VR reclaimed the node after our calibration. The post-native
@@ -798,9 +797,9 @@ namespace rock
         }
 
         const RE::NiTransform targetScopeParentWorld =
-            native_scope_overlay_follow_math::resolveScopeParentWorld(
+            native_scope_overlay_follow_math::resolveScopeParentWorldForModelRoot(
                 correctedCameraWorld,
-                _nativeScopeOverlayCalibration.scopeParentInCameraLocal);
+                _nativeScopeOverlayCalibration.scopeModelRootLocal);
         if (!isFiniteTransform(targetScopeParentWorld)) {
             return false;
         }
@@ -817,7 +816,10 @@ namespace rock
         f4vr::updateTransformsDown(scopeParent, true);
         _nativeScopeOverlayCalibration.lastAppliedScopeParentLocal = targetScopeParentLocal;
         _nativeScopeOverlayCalibration.hasAppliedLocal = true;
-        return true;
+
+        RE::NiTransform immediateScopeModelRootWorld{};
+        return tryGetComposedNodeWorld(scopeModelRoot, immediateScopeModelRootWorld) &&
+               areTransformsNearlyEqual(immediateScopeModelRootWorld, correctedCameraWorld, 0.01f);
     }
 
     void TwoHandedGrip::finalizeNativeScopeOverlayAfterGameUpdate(const std::uint64_t currentWeaponGenerationKey)
@@ -828,7 +830,7 @@ namespace rock
             return;
         }
 
-        if (!captureNativeScopeOverlayCalibration(pending.cameraWorldBefore, currentWeaponGenerationKey)) {
+        if (!captureNativeScopeOverlayCalibration(currentWeaponGenerationKey)) {
             return;
         }
         (void)applyNativeScopeOverlayTarget(pending.correctedCameraWorld, currentWeaponGenerationKey);

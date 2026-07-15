@@ -230,30 +230,20 @@ namespace rock::native_scope_overlay_follow_math
 {
     /*
      * FO4VR attaches world_scope.nif beneath ScopeParent, not beneath the
-     * native activation camera. Capture the engine-authored one-hand relation
-     * between those two independent nodes before ROCK moves either of them.
-     * Reapplying that relation from ROCK's corrected camera frame preserves
-     * Bethesda's mesh depth/orientation calibration while relocating the
-     * complete overlay to the generated sight.
+     * native activation camera. Solve ScopeParent backwards from the model
+     * root's live local transform so the actual NIF root lands on ROCK's
+     * corrected camera frame. This compensates both Bethesda's stock root
+     * offset and any loose-file replacement without retaining the obsolete
+     * one-hand camera-to-parent translation.
      */
     template <class Transform>
-    [[nodiscard]] inline Transform captureScopeParentInCameraLocal(
-        const Transform& scopeCameraWorld,
-        const Transform& scopeParentWorld)
-    {
-        return transform_math::composeTransforms(
-            transform_math::invertTransform(scopeCameraWorld),
-            scopeParentWorld);
-    }
-
-    template <class Transform>
-    [[nodiscard]] inline Transform resolveScopeParentWorld(
+    [[nodiscard]] inline Transform resolveScopeParentWorldForModelRoot(
         const Transform& correctedScopeCameraWorld,
-        const Transform& scopeParentInCameraLocal)
+        const Transform& scopeModelRootLocal)
     {
         return transform_math::composeTransforms(
             correctedScopeCameraWorld,
-            scopeParentInCameraLocal);
+            transform_math::invertTransform(scopeModelRootLocal));
     }
 }
 
