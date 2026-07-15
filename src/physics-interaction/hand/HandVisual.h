@@ -30,6 +30,49 @@ namespace rock::hand_visual_lerp_math
         bool reachedTarget = true;
     };
 
+    struct VisualReturnConfig
+    {
+        float minSeconds = 0.0f;
+        float maxSeconds = 0.0f;
+        float minDistanceGameUnits = 0.0f;
+        float maxDistanceGameUnits = 0.0f;
+        float minAngleDegrees = 0.0f;
+        float maxAngleDegrees = 0.0f;
+    };
+
+    /*
+     * Visual-only release state. It deliberately owns transform values only:
+     * no scene nodes, Havok bodies, constraints, or object identity can leak
+     * past the gameplay release that created it.
+     */
+    template <class Transform>
+    struct VisualReturnTransition
+    {
+        bool active = false;
+        bool durationInitialized = false;
+        Transform start{};
+        Transform lastApplied{};
+        float elapsedSeconds = 0.0f;
+        float durationSeconds = 0.0f;
+        float lastAlpha = 0.0f;
+
+        void begin(const Transform& renderedStart)
+        {
+            active = true;
+            durationInitialized = false;
+            start = renderedStart;
+            lastApplied = renderedStart;
+            elapsedSeconds = 0.0f;
+            durationSeconds = 0.0f;
+            lastAlpha = 0.0f;
+        }
+
+        void clear()
+        {
+            *this = {};
+        }
+    };
+
     struct Quaternion
     {
         float x = 0.0f;
@@ -182,6 +225,44 @@ namespace rock::hand_visual_lerp_math
         return minTime + (maxTime - minTime) * alpha;
     }
 
+    inline float computeAngleMappedDurationDegrees(float angleDegrees, float minSeconds, float maxSeconds, float minAngleDegrees, float maxAngleDegrees)
+    {
+        return computeDistanceMappedDurationGameUnits(
+            angleDegrees,
+            minSeconds,
+            maxSeconds,
+            minAngleDegrees,
+            maxAngleDegrees);
+    }
+
+    template <class Transform>
+    inline float rotationDistanceDegrees(const Transform& start, const Transform& target)
+    {
+        return quaternionAngleRadians(
+                   matrixToQuaternion(start.rotate),
+                   matrixToQuaternion(target.rotate)) *
+            57.295779513082320876f;
+    }
+
+    template <class Transform>
+    inline float computeVisualReturnDuration(const Transform& start, const Transform& target, const VisualReturnConfig& config)
+    {
+        const float linearDuration = computeDistanceMappedDurationGameUnits(
+            distanceGameUnits(start.translate, target.translate),
+            config.minSeconds,
+            config.maxSeconds,
+            config.minDistanceGameUnits,
+            config.maxDistanceGameUnits);
+        const float angleDegrees = rotationDistanceDegrees(start, target);
+        const float angularDuration = computeAngleMappedDurationDegrees(
+            angleDegrees,
+            config.minSeconds,
+            config.maxSeconds,
+            config.minAngleDegrees,
+            config.maxAngleDegrees);
+        return (std::max)(linearDuration, angularDuration);
+    }
+
     inline float advanceTimedBlendElapsed(float elapsedSeconds, float deltaTime, float durationSeconds)
     {
         if (durationSeconds <= 0.0f) {
@@ -228,6 +309,32 @@ namespace rock::hand_visual_lerp_math
         const float alpha = timedBlendAlpha(elapsedSeconds, durationSeconds);
         result.transform = interpolateTransform(start, target, alpha);
         result.reachedTarget = alpha >= 1.0f;
+        return result;
+    }
+
+    template <class Transform>
+    inline AdvanceResult<Transform> advanceVisualReturn(
+        VisualReturnTransition<Transform>& state,
+        const Transform& movingTarget,
+        float deltaTime,
+        const VisualReturnConfig& config)
+    {
+        if (!state.active) {
+            return AdvanceResult<Transform>{ .transform = movingTarget, .reachedTarget = true };
+        }
+
+        if (!state.durationInitialized) {
+            state.durationSeconds = computeVisualReturnDuration(state.start, movingTarget, config);
+            state.durationInitialized = true;
+        }
+        state.elapsedSeconds = advanceTimedBlendElapsed(state.elapsedSeconds, deltaTime, state.durationSeconds);
+        const auto result = blendTransformOverDuration(
+            state.start,
+            movingTarget,
+            state.elapsedSeconds,
+            state.durationSeconds);
+        state.lastApplied = result.transform;
+        state.lastAlpha = timedBlendAlpha(state.elapsedSeconds, state.durationSeconds);
         return result;
     }
 

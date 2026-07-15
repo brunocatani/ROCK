@@ -219,6 +219,13 @@ namespace rock
         rockWeaponSupportGripHandLerpTimeMax = 0.20f;
         rockWeaponSupportGripHandLerpMinDistance = 1.0f;
         rockWeaponSupportGripHandLerpMaxDistance = 14.0f;
+        rockWeaponVisualReturnEnabled = true;
+        rockWeaponVisualReturnTimeMin = 0.12f;
+        rockWeaponVisualReturnTimeMax = 0.20f;
+        rockWeaponVisualReturnMinDistance = 1.0f;
+        rockWeaponVisualReturnMaxDistance = 14.0f;
+        rockWeaponVisualReturnMinAngleDegrees = 5.0f;
+        rockWeaponVisualReturnMaxAngleDegrees = 90.0f;
 
         rockHandCollisionDynamicDrive = true;
         rockHandCollisionDynamicMaxLinearVelocityHavok = 15.0f;
@@ -527,6 +534,13 @@ namespace rock
         rockGrabHandLerpTimeMax = 0.20f;
         rockGrabHandLerpMinDistance = 7.0f;
         rockGrabHandLerpMaxDistance = 14.0f;
+        rockGrabHandReturnEnabled = true;
+        rockGrabHandReturnTimeMin = 0.10f;
+        rockGrabHandReturnTimeMax = 0.20f;
+        rockGrabHandReturnMinDistance = 7.0f;
+        rockGrabHandReturnMaxDistance = 14.0f;
+        rockGrabHandReturnMinAngleDegrees = 5.0f;
+        rockGrabHandReturnMaxAngleDegrees = 90.0f;
         rockGrabMeshFingerPoseEnabled = true;
         rockGrabMeshJointPoseEnabled = true;
         rockGrabFingerPoseUpdateInterval = 3;
@@ -999,6 +1013,49 @@ namespace rock
             14.0f,
             rockWeaponSupportGripHandLerpMinDistance,
             120.0f);
+        rockWeaponVisualReturnEnabled = ini.GetBoolValue(SECTION, "bWeaponVisualReturnEnabled", rockWeaponVisualReturnEnabled);
+        rockWeaponVisualReturnTimeMin = readClampedFloat(ini,
+            SECTION,
+            "fWeaponVisualReturnTimeMin",
+            rockWeaponVisualReturnTimeMin,
+            0.12f,
+            0.0f,
+            1.0f);
+        rockWeaponVisualReturnTimeMax = readClampedFloat(ini,
+            SECTION,
+            "fWeaponVisualReturnTimeMax",
+            rockWeaponVisualReturnTimeMax,
+            0.20f,
+            rockWeaponVisualReturnTimeMin,
+            1.0f);
+        rockWeaponVisualReturnMinDistance = readClampedFloat(ini,
+            SECTION,
+            "fWeaponVisualReturnMinDistance",
+            rockWeaponVisualReturnMinDistance,
+            1.0f,
+            0.0f,
+            80.0f);
+        rockWeaponVisualReturnMaxDistance = readClampedFloat(ini,
+            SECTION,
+            "fWeaponVisualReturnMaxDistance",
+            rockWeaponVisualReturnMaxDistance,
+            14.0f,
+            rockWeaponVisualReturnMinDistance,
+            120.0f);
+        rockWeaponVisualReturnMinAngleDegrees = readClampedFloat(ini,
+            SECTION,
+            "fWeaponVisualReturnMinAngleDegrees",
+            rockWeaponVisualReturnMinAngleDegrees,
+            5.0f,
+            0.0f,
+            180.0f);
+        rockWeaponVisualReturnMaxAngleDegrees = readClampedFloat(ini,
+            SECTION,
+            "fWeaponVisualReturnMaxAngleDegrees",
+            rockWeaponVisualReturnMaxAngleDegrees,
+            90.0f,
+            rockWeaponVisualReturnMinAngleDegrees,
+            180.0f);
 
         rockHandCollisionDynamicDrive = ini.GetBoolValue(SECTION, "bHandCollisionDynamicDrive", rockHandCollisionDynamicDrive);
         rockHandCollisionDynamicMaxLinearVelocityHavok = readClampedFloat(ini,
@@ -1964,6 +2021,49 @@ namespace rock
             14.0f,
             rockGrabHandLerpMinDistance,
             120.0f);
+        rockGrabHandReturnEnabled = ini.GetBoolValue(SECTION, "bGrabHandReturnEnabled", rockGrabHandReturnEnabled);
+        rockGrabHandReturnTimeMin = readClampedFloat(ini,
+            SECTION,
+            "fGrabHandReturnTimeMin",
+            rockGrabHandReturnTimeMin,
+            0.10f,
+            0.0f,
+            1.0f);
+        rockGrabHandReturnTimeMax = readClampedFloat(ini,
+            SECTION,
+            "fGrabHandReturnTimeMax",
+            rockGrabHandReturnTimeMax,
+            0.20f,
+            rockGrabHandReturnTimeMin,
+            1.0f);
+        rockGrabHandReturnMinDistance = readClampedFloat(ini,
+            SECTION,
+            "fGrabHandReturnMinDistance",
+            rockGrabHandReturnMinDistance,
+            7.0f,
+            0.0f,
+            80.0f);
+        rockGrabHandReturnMaxDistance = readClampedFloat(ini,
+            SECTION,
+            "fGrabHandReturnMaxDistance",
+            rockGrabHandReturnMaxDistance,
+            14.0f,
+            rockGrabHandReturnMinDistance,
+            120.0f);
+        rockGrabHandReturnMinAngleDegrees = readClampedFloat(ini,
+            SECTION,
+            "fGrabHandReturnMinAngleDegrees",
+            rockGrabHandReturnMinAngleDegrees,
+            5.0f,
+            0.0f,
+            180.0f);
+        rockGrabHandReturnMaxAngleDegrees = readClampedFloat(ini,
+            SECTION,
+            "fGrabHandReturnMaxAngleDegrees",
+            rockGrabHandReturnMaxAngleDegrees,
+            90.0f,
+            rockGrabHandReturnMinAngleDegrees,
+            180.0f);
         rockGrabMeshFingerPoseEnabled = ini.GetBoolValue(SECTION, "bGrabMeshFingerPoseEnabled", rockGrabMeshFingerPoseEnabled);
         rockGrabMeshJointPoseEnabled = ini.GetBoolValue(SECTION, "bGrabMeshJointPoseEnabled", rockGrabMeshJointPoseEnabled);
         rockGrabFingerPoseUpdateInterval = static_cast<int>(ini.GetLongValue(SECTION, "iGrabFingerPoseUpdateInterval", rockGrabFingerPoseUpdateInterval));

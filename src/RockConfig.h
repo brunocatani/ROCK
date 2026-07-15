@@ -161,6 +161,13 @@ namespace rock
         float rockWeaponSupportGripHandLerpTimeMax = 0.20f;
         float rockWeaponSupportGripHandLerpMinDistance = 1.0f;
         float rockWeaponSupportGripHandLerpMaxDistance = 14.0f;
+        bool rockWeaponVisualReturnEnabled = true;
+        float rockWeaponVisualReturnTimeMin = 0.12f;
+        float rockWeaponVisualReturnTimeMax = 0.20f;
+        float rockWeaponVisualReturnMinDistance = 1.0f;
+        float rockWeaponVisualReturnMaxDistance = 14.0f;
+        float rockWeaponVisualReturnMinAngleDegrees = 5.0f;
+        float rockWeaponVisualReturnMaxAngleDegrees = 90.0f;
 
         /*
          * Canonical free-hand world collision: dynamic palm/fingertip proxy
@@ -478,6 +485,13 @@ namespace rock
         float rockGrabHandLerpTimeMax = 0.20f;
         float rockGrabHandLerpMinDistance = 7.0f;
         float rockGrabHandLerpMaxDistance = 14.0f;
+        bool rockGrabHandReturnEnabled = true;
+        float rockGrabHandReturnTimeMin = 0.10f;
+        float rockGrabHandReturnTimeMax = 0.20f;
+        float rockGrabHandReturnMinDistance = 7.0f;
+        float rockGrabHandReturnMaxDistance = 14.0f;
+        float rockGrabHandReturnMinAngleDegrees = 5.0f;
+        float rockGrabHandReturnMaxAngleDegrees = 90.0f;
         bool rockGrabMeshFingerPoseEnabled = true;
         bool rockGrabMeshJointPoseEnabled = true;
         int rockGrabFingerPoseUpdateInterval = 3;

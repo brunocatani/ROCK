@@ -6,6 +6,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <cmath>
 
 namespace
 {
@@ -73,6 +74,19 @@ namespace
     {
         Transform transform{};
         transform.translate = Vec3{ x, y, z };
+        return transform;
+    }
+
+    Transform makeRotatedTransform(float x, float y, float z, float angleDegrees)
+    {
+        Transform transform = makeTransform(x, y, z);
+        const float radians = angleDegrees * 0.01745329251994329577f;
+        const float cosine = std::cos(radians);
+        const float sine = std::sin(radians);
+        transform.rotate.entry[0][0] = cosine;
+        transform.rotate.entry[0][1] = -sine;
+        transform.rotate.entry[1][0] = sine;
+        transform.rotate.entry[1][1] = cosine;
         return transform;
     }
 }
@@ -592,6 +606,82 @@ int main()
         rock::hand_visual_lerp_math::advanceTimedBlendElapsed(0.15f, 0.20f, 0.20f),
         0.20f,
         0.001f);
+
+    const rock::hand_visual_lerp_math::VisualReturnConfig returnConfig{
+        .minSeconds = 0.10f,
+        .maxSeconds = 0.20f,
+        .minDistanceGameUnits = 1.0f,
+        .maxDistanceGameUnits = 11.0f,
+        .minAngleDegrees = 5.0f,
+        .maxAngleDegrees = 95.0f,
+    };
+    ok &= expectNear("translation-only return maps duration",
+        rock::hand_visual_lerp_math::computeVisualReturnDuration(
+            makeTransform(0.0f, 0.0f, 0.0f),
+            makeTransform(6.0f, 0.0f, 0.0f),
+            returnConfig),
+        0.15f,
+        0.001f);
+    ok &= expectNear("rotation-only return receives non-zero duration",
+        rock::hand_visual_lerp_math::computeVisualReturnDuration(
+            makeRotatedTransform(0.0f, 0.0f, 0.0f, 0.0f),
+            makeRotatedTransform(0.0f, 0.0f, 0.0f, 50.0f),
+            returnConfig),
+        0.15f,
+        0.002f);
+    ok &= expectNear("combined return chooses greater duration",
+        rock::hand_visual_lerp_math::computeVisualReturnDuration(
+            makeRotatedTransform(0.0f, 0.0f, 0.0f, 0.0f),
+            makeRotatedTransform(3.0f, 0.0f, 0.0f, 95.0f),
+            returnConfig),
+        0.20f,
+        0.002f);
+
+    rock::hand_visual_lerp_math::VisualReturnTransition<Transform> movingReturn{};
+    movingReturn.begin(makeTransform(0.0f, 0.0f, 0.0f));
+    const auto movingReturnHalf = rock::hand_visual_lerp_math::advanceVisualReturn(
+        movingReturn,
+        makeTransform(11.0f, 0.0f, 0.0f),
+        0.10f,
+        returnConfig);
+    ok &= expectFalse("visual return remains active at half duration", movingReturnHalf.reachedTarget);
+    ok &= expectNear("visual return half target", movingReturnHalf.transform.translate.x, 5.5f, 0.001f);
+    const auto movingReturnComplete = rock::hand_visual_lerp_math::advanceVisualReturn(
+        movingReturn,
+        makeTransform(13.0f, 0.0f, 0.0f),
+        0.10f,
+        returnConfig);
+    ok &= expectTrue("moving-target return completes", movingReturnComplete.reachedTarget);
+    ok &= expectNear("moving-target return publishes newest target exactly", movingReturnComplete.transform.translate.x, 13.0f, 0.001f);
+    ok &= expectNear("return state retains exact last applied target", movingReturn.lastApplied.translate.x, 13.0f, 0.001f);
+
+    rock::hand_visual_lerp_math::VisualReturnTransition<Transform> invalidDeltaReturn{};
+    invalidDeltaReturn.begin(makeTransform(0.0f, 0.0f, 0.0f));
+    const auto invalidDeltaResult = rock::hand_visual_lerp_math::advanceVisualReturn(
+        invalidDeltaReturn,
+        makeTransform(11.0f, 0.0f, 0.0f),
+        -1.0f,
+        returnConfig);
+    ok &= expectNear("invalid negative delta does not advance return", invalidDeltaResult.transform.translate.x, 0.0f, 0.001f);
+
+    rock::hand_visual_lerp_math::VisualReturnTransition<Transform> zeroDurationReturn{};
+    zeroDurationReturn.begin(makeTransform(4.0f, 2.0f, 1.0f));
+    const auto zeroDurationResult = rock::hand_visual_lerp_math::advanceVisualReturn(
+        zeroDurationReturn,
+        makeTransform(4.0f, 2.0f, 1.0f),
+        0.0f,
+        returnConfig);
+    ok &= expectTrue("zero-duration return completes immediately", zeroDurationResult.reachedTarget);
+    ok &= expectNear("zero-duration return publishes exact target", zeroDurationResult.transform.translate.x, 4.0f, 0.001f);
+
+    const auto shortestArcHalf = rock::hand_visual_lerp_math::interpolateTransform(
+        makeRotatedTransform(0.0f, 0.0f, 0.0f, 170.0f),
+        makeRotatedTransform(0.0f, 0.0f, 0.0f, -170.0f),
+        0.5f);
+    const float shortestArcHalfAngle = rock::hand_visual_lerp_math::quaternionAngleRadians(
+        rock::hand_visual_lerp_math::matrixToQuaternion(shortestArcHalf.rotate),
+        rock::hand_visual_lerp_math::matrixToQuaternion(makeRotatedTransform(0.0f, 0.0f, 0.0f, 180.0f).rotate));
+    ok &= expectNear("return rotation uses quaternion shortest arc", shortestArcHalfAngle, 0.0f, 0.002f);
 
     const auto ratioClamp = rock::grab_inertia_policy::normalizeInverseInertiaAxesForGrab(1.0f, 100.0f, 4.0f, 10.0f, 0.05f);
     ok &= expectTrue("inertia ratio clamp modifies axis", ratioClamp.modified);

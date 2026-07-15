@@ -55,7 +55,9 @@ namespace rock
             const Hand& leftHand,
             const BodyBoneColliderSet& bodyBoneColliders,
             bool rightHandWeaponEquipped,
-            bool leftSupportGripActive);
+            bool leftSupportGripActive,
+            bool rightVisualReturnActive,
+            bool leftVisualReturnActive);
         void flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         /*
          * Post-solve deviation sampling (physics step thread, after-solve

@@ -2796,6 +2796,12 @@ namespace rock
                     .ambidextrousHandoffEnabled = ambidextrousFiringAvailable,
                     .primaryDetachEnabled = primaryDetachFeatureAvailable,
                 });
+            if (_twoHandedGrip.hasVisualAuthorityForHand(false)) {
+                _rightHand.cancelGrabVisualReturn("equipped-weapon-visual-authority");
+            }
+            if (_twoHandedGrip.hasVisualAuthorityForHand(true)) {
+                _leftHand.cancelGrabVisualReturn("equipped-weapon-visual-authority");
+            }
             if (primaryOnlyGripStartedThisFrame) {
                 ROCK_LOG_DEBUG(Weapon, "Equipped weapon firing-grip ownership started from grip input or held-weapon equip");
             }
@@ -3138,7 +3144,9 @@ namespace rock
             _leftHand,
             _bodyBoneColliders,
             rightHandWeaponAuthorityActive,
-            leftSupportGripActive);
+            leftSupportGripActive,
+            _rightHand.isGrabVisualReturnActive() || _twoHandedGrip.isHandVisualReturnActive(false),
+            _leftHand.isGrabVisualReturnActive() || _twoHandedGrip.isHandVisualReturnActive(true));
         const auto dynamicHandHapticEvents = _dynamicHandCollision.consumeHapticEvents();
         for (const auto& pulse : dynamicHandHapticEvents.hands) {
             if (!pulse.fire) {
@@ -7078,6 +7086,8 @@ namespace rock
         };
 
         if (!runtime_state::isLocalSkeletonReady()) {
+            _rightHand.cancelGrabVisualReturn("skeleton-not-ready");
+            _leftHand.cancelGrabVisualReturn("skeleton-not-ready");
             provider::clearInteractionCommandsForProviderLossV1(provider::RockProviderInteractionFailureV1::ProviderNotReady);
             clearPendingForceGrabCommitsForOrigin(PendingForceGrabCommitOrigin::ProviderForceGrabCommand);
             input_remap_runtime::setHandHeldWeapon(false, false);
@@ -8437,6 +8447,23 @@ namespace rock
         publishHandInputOwnership(_rightHand, false);
         processHand(_leftHand, true);
         publishHandInputOwnership(_leftHand, true);
+
+        if (_rightHand.isHolding()) {
+            _twoHandedGrip.cancelHandVisualReturn(false, "generic-grab-acquired");
+        }
+        if (frame.right.disabled) {
+            _rightHand.cancelGrabVisualReturn("hand-disabled");
+        } else {
+            _rightHand.updateGrabVisualReturn(frame.right.rawHandWorld, frame.deltaSeconds);
+        }
+        if (_leftHand.isHolding()) {
+            _twoHandedGrip.cancelHandVisualReturn(true, "generic-grab-acquired");
+        }
+        if (frame.left.disabled) {
+            _leftHand.cancelGrabVisualReturn("hand-disabled");
+        } else {
+            _leftHand.updateGrabVisualReturn(frame.left.rawHandWorld, frame.deltaSeconds);
+        }
     }
 
 #include "physics-interaction/core/PhysicsInteractionContacts.inl"

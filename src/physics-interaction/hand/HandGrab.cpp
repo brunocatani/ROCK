@@ -4662,15 +4662,52 @@ namespace rock
 
         constexpr const char* GRAB_EXTERNAL_HAND_TAG = "ROCK_GrabVisual";
         constexpr int GRAB_EXTERNAL_HAND_PRIORITY = 90;
+        constexpr const char* GRAB_RETURN_HAND_TAG = "ROCK_GrabReturn";
+        constexpr int GRAB_RETURN_HAND_PRIORITY = 85;
 
-        void applyGrabExternalHandWorldTransform(bool isLeft, const RE::NiTransform& adjustedHandTransform)
+        bool applyGrabExternalHandWorldTransform(bool isLeft, const RE::NiTransform& adjustedHandTransform)
         {
-            (void)frik_visual_authority::applyExternalHandWorldTransform(GRAB_EXTERNAL_HAND_TAG, handFromBool(isLeft), adjustedHandTransform, GRAB_EXTERNAL_HAND_PRIORITY);
+            return frik_visual_authority::applyExternalHandWorldTransform(
+                GRAB_EXTERNAL_HAND_TAG,
+                handFromBool(isLeft),
+                adjustedHandTransform,
+                GRAB_EXTERNAL_HAND_PRIORITY);
         }
 
         void clearGrabExternalHandWorldTransform(bool isLeft)
         {
             (void)frik_visual_authority::clearExternalHandWorldTransform(GRAB_EXTERNAL_HAND_TAG, handFromBool(isLeft));
+        }
+
+        bool applyGrabReturnHandWorldTransform(bool isLeft, const RE::NiTransform& handTransform)
+        {
+            return frik_visual_authority::applyExternalHandWorldTransform(
+                GRAB_RETURN_HAND_TAG,
+                handFromBool(isLeft),
+                handTransform,
+                GRAB_RETURN_HAND_PRIORITY);
+        }
+
+        void clearGrabReturnHandWorldTransform(bool isLeft)
+        {
+            (void)frik_visual_authority::clearExternalHandWorldTransform(GRAB_RETURN_HAND_TAG, handFromBool(isLeft));
+        }
+
+        bool isUsableGrabVisualTransform(const RE::NiTransform& transform)
+        {
+            if (!std::isfinite(transform.translate.x) || !std::isfinite(transform.translate.y) ||
+                !std::isfinite(transform.translate.z) || !std::isfinite(transform.scale) ||
+                std::abs(transform.scale) <= 0.0001f) {
+                return false;
+            }
+            for (int row = 0; row < 3; ++row) {
+                for (int column = 0; column < 3; ++column) {
+                    if (!std::isfinite(transform.rotate.entry[row][column])) {
+                        return false;
+                    }
+                }
+            }
+            return true;
         }
 
         void logRuntimeScaleIfChanged(bool isLeft, const char* handName, const RE::NiTransform& handWorldTransform, const RE::NiAVObject* collidableNode)
@@ -4709,6 +4746,102 @@ namespace rock
                 state.vrScale = vrScale;
             }
         }
+    }
+
+    void Hand::beginGrabVisualReturn()
+    {
+        if (!g_rockConfig.rockGrabHandReturnEnabled ||
+            !_hasLastPublishedGrabVisualHandTransform ||
+            !isUsableGrabVisualTransform(_lastPublishedGrabVisualHandTransform) ||
+            !frik_visual_authority::isAvailable()) {
+            clearGrabVisualReturn("release-not-eligible", false);
+            return;
+        }
+
+        _grabVisualReturn.begin(_lastPublishedGrabVisualHandTransform);
+        if (!applyGrabReturnHandWorldTransform(_isLeft, _grabVisualReturn.start)) {
+            _grabVisualReturn.clear();
+            clearGrabReturnHandWorldTransform(_isLeft);
+            ROCK_LOG_WARN(Hand, "{} hand visual return start failed; restoring tracked authority immediately", handName());
+            return;
+        }
+
+        ROCK_LOG_DEBUG(Hand,
+            "{} hand visual return started from=({:.2f},{:.2f},{:.2f})",
+            handName(),
+            _grabVisualReturn.start.translate.x,
+            _grabVisualReturn.start.translate.y,
+            _grabVisualReturn.start.translate.z);
+    }
+
+    void Hand::updateGrabVisualReturn(const RE::NiTransform& trackedHandWorld, float deltaTime)
+    {
+        if (!_grabVisualReturn.active) {
+            return;
+        }
+        if (!runtime_state::isLocalSkeletonReady() ||
+            !frik_visual_authority::isAvailable() ||
+            !isUsableGrabVisualTransform(trackedHandWorld)) {
+            clearGrabVisualReturn("tracked-hand-unavailable", true);
+            return;
+        }
+
+        const bool timingPending = !_grabVisualReturn.durationInitialized;
+        const float initialDistance = timingPending ?
+            hand_visual_lerp_math::distanceGameUnits(_grabVisualReturn.start.translate, trackedHandWorld.translate) :
+            0.0f;
+        const float initialAngleDegrees = timingPending ?
+            hand_visual_lerp_math::rotationDistanceDegrees(_grabVisualReturn.start, trackedHandWorld) :
+            0.0f;
+        const auto result = hand_visual_lerp_math::advanceVisualReturn(
+            _grabVisualReturn,
+            trackedHandWorld,
+            deltaTime,
+            hand_visual_lerp_math::VisualReturnConfig{
+                .minSeconds = g_rockConfig.rockGrabHandReturnTimeMin,
+                .maxSeconds = g_rockConfig.rockGrabHandReturnTimeMax,
+                .minDistanceGameUnits = g_rockConfig.rockGrabHandReturnMinDistance,
+                .maxDistanceGameUnits = g_rockConfig.rockGrabHandReturnMaxDistance,
+                .minAngleDegrees = g_rockConfig.rockGrabHandReturnMinAngleDegrees,
+                .maxAngleDegrees = g_rockConfig.rockGrabHandReturnMaxAngleDegrees,
+            });
+        if (timingPending) {
+            ROCK_LOG_DEBUG(Hand,
+                "{} hand visual return timing distance={:.2f}gu angle={:.1f}deg duration={:.3f}s",
+                handName(),
+                initialDistance,
+                initialAngleDegrees,
+                _grabVisualReturn.durationSeconds);
+        }
+        if (!isUsableGrabVisualTransform(result.transform) ||
+            !applyGrabReturnHandWorldTransform(_isLeft, result.transform)) {
+            clearGrabVisualReturn("publish-failed", true);
+            return;
+        }
+
+        if (!result.reachedTarget) {
+            return;
+        }
+
+        const float completedDuration = _grabVisualReturn.durationSeconds;
+        clearGrabReturnHandWorldTransform(_isLeft);
+        _grabVisualReturn.clear();
+        ROCK_LOG_DEBUG(Hand, "{} hand visual return completed duration={:.3f}s", handName(), completedDuration);
+    }
+
+    void Hand::clearGrabVisualReturn(const char* reason, bool logCancellation)
+    {
+        const bool wasActive = _grabVisualReturn.active;
+        clearGrabReturnHandWorldTransform(_isLeft);
+        _grabVisualReturn.clear();
+        if (wasActive && logCancellation) {
+            ROCK_LOG_DEBUG(Hand, "{} hand visual return cancelled reason={}", handName(), reason ? reason : "unknown");
+        }
+    }
+
+    void Hand::cancelGrabVisualReturn(const char* reason)
+    {
+        clearGrabVisualReturn(reason, true);
     }
 
     static void nativeVRGrabDrop(void* playerChar, int handIndex)
@@ -10410,6 +10543,8 @@ namespace rock
             clearGrabExternalHandWorldTransform(_isLeft);
             _grabVisualHandTransform = handWorldTransform;
             _hasGrabVisualHandTransform = false;
+            _lastPublishedGrabVisualHandTransform = {};
+            _hasLastPublishedGrabVisualHandTransform = false;
             _grabVisualHandLerpStartTransform = handWorldTransform;
             _grabVisualHandLerpElapsedSeconds = 0.0f;
             _grabVisualHandLerpDurationSeconds = 0.0f;
@@ -11363,12 +11498,16 @@ namespace rock
                     _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld,
                     visualPublishDecision.acquisition);
                 if (!_hasGrabVisualHandTransform) {
-                    _grabVisualHandTransform = handWorldTransform;
-                    _grabVisualHandLerpStartTransform = handWorldTransform;
+                    const RE::NiTransform acquisitionStart =
+                        _grabVisualReturn.active && isUsableGrabVisualTransform(_grabVisualReturn.lastApplied) ?
+                        _grabVisualReturn.lastApplied :
+                        handWorldTransform;
+                    _grabVisualHandTransform = acquisitionStart;
+                    _grabVisualHandLerpStartTransform = acquisitionStart;
                     _grabVisualHandLerpElapsedSeconds = 0.0f;
                     _grabVisualHandLerpDurationSeconds = smoothVisualHand ?
                         hand_visual_lerp_math::computeDistanceMappedDurationGameUnits(
-                            hand_visual_lerp_math::distanceGameUnits(handWorldTransform.translate, targetVisualHandWorld.translate),
+                            hand_visual_lerp_math::distanceGameUnits(acquisitionStart.translate, targetVisualHandWorld.translate),
                             g_rockConfig.rockGrabHandLerpTimeMin,
                             g_rockConfig.rockGrabHandLerpTimeMax,
                             g_rockConfig.rockGrabHandLerpMinDistance,
@@ -11433,7 +11572,11 @@ namespace rock
                 }
 
                 _grabVisualHandTransform = nextVisualHandWorld;
-                applyGrabExternalHandWorldTransform(_isLeft, _grabVisualHandTransform);
+                if (applyGrabExternalHandWorldTransform(_isLeft, _grabVisualHandTransform)) {
+                    _lastPublishedGrabVisualHandTransform = _grabVisualHandTransform;
+                    _hasLastPublishedGrabVisualHandTransform = true;
+                    clearGrabVisualReturn("active-grab-authority-acquired", false);
+                }
 
                 ROCK_LOG_SAMPLE_DEBUG(Hand,
                     g_rockConfig.rockLogSampleMilliseconds,
@@ -11465,6 +11608,8 @@ namespace rock
                 if (_hasGrabVisualHandTransform) {
                     clearGrabExternalHandWorldTransform(_isLeft);
                     _hasGrabVisualHandTransform = false;
+                    _lastPublishedGrabVisualHandTransform = {};
+                    _hasLastPublishedGrabVisualHandTransform = false;
                 }
                 _grabVisualHandLerpStartTransform = {};
                 _grabVisualHandLerpElapsedSeconds = 0.0f;
@@ -11493,6 +11638,8 @@ namespace rock
             if (_hasGrabVisualHandTransform) {
                 clearGrabExternalHandWorldTransform(_isLeft);
                 _hasGrabVisualHandTransform = false;
+                _lastPublishedGrabVisualHandTransform = {};
+                _hasLastPublishedGrabVisualHandTransform = false;
             }
             _grabVisualHandLerpStartTransform = {};
             _grabVisualHandLerpElapsedSeconds = 0.0f;
@@ -11792,6 +11939,8 @@ namespace rock
                                 clearGrabExternalHandWorldTransform(_isLeft);
                                 _grabVisualHandTransform = handWorldTransform;
                                 _hasGrabVisualHandTransform = false;
+                                _lastPublishedGrabVisualHandTransform = {};
+                                _hasLastPublishedGrabVisualHandTransform = false;
                                 _grabVisualHandLerpStartTransform = handWorldTransform;
                                 _grabVisualHandLerpElapsedSeconds = 0.0f;
                                 _grabVisualHandLerpDurationSeconds = 0.0f;
@@ -14091,6 +14240,7 @@ namespace rock
             restoreHandCollisionAfterGrab(world);
         }
 
+        beginGrabVisualReturn();
         (void)frik_visual_authority::clearHandPose("ROCK_Grab", handFromBool(_isLeft));
         clearGrabExternalHandWorldTransform(_isLeft);
         clearSelectedCloseFingerPose();
@@ -14113,6 +14263,8 @@ namespace rock
         _grabDeviationHistoryNext = 0;
         _grabVisualHandTransform = {};
         _hasGrabVisualHandTransform = false;
+        _lastPublishedGrabVisualHandTransform = {};
+        _hasLastPublishedGrabVisualHandTransform = false;
         _grabVisualHandLerpStartTransform = {};
         _grabVisualHandLerpElapsedSeconds = 0.0f;
         _grabVisualHandLerpDurationSeconds = 0.0f;

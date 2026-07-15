@@ -277,9 +277,12 @@ namespace rock
         _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
         clearGrabHandPose(_isLeft);
         clearGrabExternalHandWorldTransform(_isLeft);
+        clearGrabVisualReturn("reset", false);
         _grabDeviationExceededSeconds = 0.0f;
         _grabVisualHandTransform = {};
         _hasGrabVisualHandTransform = false;
+        _lastPublishedGrabVisualHandTransform = {};
+        _hasLastPublishedGrabVisualHandTransform = false;
         _grabVisualDeviationExceededSeconds = 0.0f;
         _grabAuthorityProxyReleasePending.store(false, std::memory_order_release);
         _grabFingerProbeStart = {};
@@ -387,8 +390,11 @@ namespace rock
         _grabAuthorityProxyReleasePending.store(false, std::memory_order_release);
         clearGrabHandPose(_isLeft);
         clearGrabExternalHandWorldTransform(_isLeft);
+        clearGrabVisualReturn("world-loss", false);
         _grabVisualHandTransform = {};
         _hasGrabVisualHandTransform = false;
+        _lastPublishedGrabVisualHandTransform = {};
+        _hasLastPublishedGrabVisualHandTransform = false;
         _grabVisualDeviationExceededSeconds = 0.0f;
         clearSelectedCloseFingerPose();
         _grabFingerSweepDebugCapture = {};

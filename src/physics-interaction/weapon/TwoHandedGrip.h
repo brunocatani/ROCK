@@ -5,6 +5,7 @@
 
 #include "physics-interaction/grab/MeshGrab.h"
 #include "physics-interaction/hand/HandFrame.h"
+#include "physics-interaction/hand/HandVisual.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/PhysicsUtils.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
@@ -252,6 +253,10 @@ namespace rock
 
         bool isScopeMenuOpenThisFrame() const { return _scopeMenuOpenThisFrame; }
 
+        bool hasVisualAuthorityForHand(bool isLeft) const;
+        bool isHandVisualReturnActive(bool isLeft) const;
+        void cancelHandVisualReturn(bool isLeft, const char* reason);
+
         bool beginPrimaryOnlyGrip(
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey,
@@ -330,6 +335,23 @@ namespace rock
             float elapsedSeconds = 0.0f;
             float durationSeconds = 0.0f;
             float lastAlpha = 1.0f;
+        };
+
+        struct ReturningHandVisualState
+        {
+            hand_visual_lerp_math::VisualReturnTransition<RE::NiTransform> transition{};
+        };
+
+        struct ReturningWeaponVisualState
+        {
+            hand_visual_lerp_math::VisualReturnTransition<RE::NiTransform> localTransition{};
+            RE::NiNode* weaponNode{ nullptr };
+            RE::NiNode* nativeParent{ nullptr };
+            std::uint64_t weaponGenerationKey{ 0 };
+            std::uint64_t equippedWeaponOwnershipKey{ 0 };
+            RE::NiTransform nativeBaselineLocal{};
+            bool retainWeaponNodeBlocker{ false };
+            bool retainPrimaryPoseBlocker{ false };
         };
 
         struct ScopeSafeHandFrameState
@@ -543,7 +565,7 @@ namespace rock
 
         void lockPartGripToWeaponRoot(bool isLeft);
 
-        void releasePartGrip(bool isLeft, const char* reason);
+        void releasePartGrip(bool isLeft, const char* reason, bool smoothHandReturn = false);
 
         void setSupportGripPose(bool isLeft, WeaponGripPoseId poseId, const grab_finger_pose_runtime::SolvedGrabFingerPose* meshFingerPose);
 
@@ -551,7 +573,10 @@ namespace rock
 
         void clearPrimaryDetachVisualAuthority(bool isLeft);
 
-        bool applyWeaponVisualAuthority(RE::NiNode* weaponNode, const RE::NiTransform& solvedWeaponWorld);
+        bool applyWeaponVisualAuthority(
+            RE::NiNode* weaponNode,
+            const RE::NiTransform& solvedWeaponWorld,
+            std::uint64_t authorityGenerationKey = 0);
 
         bool applyFiringHandLockedVisual(RE::NiNode* weaponNode, float dt, const RE::NiTransform* liveHandWorld);
 
@@ -592,6 +617,18 @@ namespace rock
         RE::NiAVObject* resolveCurrentSupportAttachmentRoot(const WeaponPartGrip& grip, RE::NiNode* weaponNode) const;
 
         void resetLockedHandVisualLerp();
+        void recordPublishedHandWorld(bool isLeft, const RE::NiTransform& appliedWorld);
+        void beginHandVisualReturn(bool isLeft, const char* reason);
+        void updateHandVisualReturns(float dt);
+        void clearHandVisualReturn(bool isLeft, const char* reason, bool logCancellation);
+        void beginWeaponVisualReturn(const char* reason);
+        void updateWeaponVisualReturn(
+            RE::NiNode* currentWeaponNode,
+            std::uint64_t currentWeaponGenerationKey,
+            std::uint64_t currentEquippedWeaponOwnershipKey,
+            float dt);
+        void clearWeaponVisualReturn(const char* reason, bool logCancellation, bool restoreBlockers);
+        void clearAllVisualReturns(const char* reason, bool logCancellation, bool restoreBlockers);
         void refreshNativeScopeSightAnchor(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, const WeaponCollision& weaponCollision);
         void refreshScopeSafeHandFrames(RE::NiNode* weaponNode, const EquippedWeaponGripFrameInput& frameInput, float dt);
         bool tryGetSolverHandTransform(bool isLeft, RE::NiTransform& outTransform) const;
@@ -692,6 +729,13 @@ namespace rock
         bool _hasFiringHandWeaponLocal{ false };
 
         LockedHandVisualLerpState _primaryHandVisualLerp{};
+
+        std::array<ReturningHandVisualState, 2> _returningHandVisuals{};
+        std::array<RE::NiTransform, 2> _lastPublishedHandWorld{};
+        std::array<bool, 2> _hasLastPublishedHandWorld{};
+        ReturningWeaponVisualState _returningWeaponVisual{};
+        RE::NiTransform _lastRenderedWeaponWorld{};
+        bool _hasLastRenderedWeaponWorld{ false };
 
         float _primaryGripConfidence{ 0.0f };
 

@@ -520,7 +520,9 @@ namespace rock
         const Hand& leftHand,
         const BodyBoneColliderSet& bodyBoneColliders,
         bool rightHandWeaponEquipped,
-        bool leftSupportGripActive)
+        bool leftSupportGripActive,
+        bool rightVisualReturnActive,
+        bool leftVisualReturnActive)
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::DynamicHandCollisionFrame);
 
@@ -575,7 +577,7 @@ namespace rock
                 _hands[1].bodies[kPalmSlot].created ? "yes" : "no");
         }
 
-        auto updateHand = [&](bool isLeft, const HandFrameInput& handInput, const Hand& hand, bool weaponOwned) {
+        auto updateHand = [&](bool isLeft, const HandFrameInput& handInput, const Hand& hand, bool weaponOwned, bool visualReturnActive) {
             const std::size_t index = handIndex(isLeft);
             auto& handSlots = _hands[index];
             auto& handTelemetry = telemetry.hands[index];
@@ -673,15 +675,16 @@ namespace rock
             handTelemetry.combinedContactDeviationWorldGame = combined;
             handTelemetry.combinedContactDeviationGameUnits = pointLength(combined);
 
-            const bool ownedByStrongerSystem =
+            const bool physicallyOwnedByStrongerSystem =
                 suppressesGeneratedHandContactEvidence(hand.getState()) || weaponOwned;
-            handTelemetry.ownedByStrongerSystem = ownedByStrongerSystem;
+            const bool visuallyOwnedByStrongerSystem = physicallyOwnedByStrongerSystem || visualReturnActive;
+            handTelemetry.ownedByStrongerSystem = visuallyOwnedByStrongerSystem;
             updateHandHaptic(
                 handSlots,
                 handTelemetry,
-                !ownedByStrongerSystem && handTelemetry.visualAuthorityAvailable,
+                !physicallyOwnedByStrongerSystem && handTelemetry.visualAuthorityAvailable,
                 frame.deltaSeconds);
-            if (ownedByStrongerSystem || !handTelemetry.visualAuthorityAvailable) {
+            if (visuallyOwnedByStrongerSystem || !handTelemetry.visualAuthorityAvailable) {
                 clearVisual(handSlots, isLeft);
                 handTelemetry.appliedVisualDeviationWorldGame = handSlots.appliedDeviation;
                 handTelemetry.appliedVisualDeviationGameUnits = pointLength(handSlots.appliedDeviation);
@@ -761,8 +764,8 @@ namespace rock
             handTelemetry.visualActive = handSlots.visualActive;
         };
 
-        updateHand(false, frame.right, rightHand, rightHandWeaponEquipped);
-        updateHand(true, frame.left, leftHand, leftSupportGripActive);
+        updateHand(false, frame.right, rightHand, rightHandWeaponEquipped, rightVisualReturnActive);
+        updateHand(true, frame.left, leftHand, leftSupportGripActive, leftVisualReturnActive);
         _telemetrySnapshot = telemetry;
     }
 

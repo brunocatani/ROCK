@@ -14,6 +14,7 @@
 #include "physics-interaction/hand/HandBoneColliderSet.h"
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/hand/HandInteractionStateMachine.h"
+#include "physics-interaction/hand/HandVisual.h"
 #include "physics-interaction/hand/SelectionBeamEffect.h"
 #include "physics-interaction/grab/NearbyGrabDamping.h"
 #include "physics-interaction/object/ObjectDetection.h"
@@ -475,6 +476,9 @@ namespace rock
             RE::hknpWorld* world,
             GrabReleaseCollisionRestoreMode collisionRestoreMode = GrabReleaseCollisionRestoreMode::Delayed,
             const GrabReleaseContext& releaseContext = {});
+        void updateGrabVisualReturn(const RE::NiTransform& trackedHandWorld, float deltaTime);
+        void cancelGrabVisualReturn(const char* reason);
+        bool isGrabVisualReturnActive() const { return _grabVisualReturn.active; }
         void abandonHavokStateAfterWorldLoss();
         void updateDelayedGrabHandCollisionRestore(RE::hknpWorld* world, float deltaTime);
 
@@ -671,6 +675,8 @@ namespace rock
         void destroyGrabAuthorityProxyLocked(RE::bhkWorld* bhkWorld);
         void abandonGrabAuthorityProxyLocked();
         void clearGrabAuthorityProxyRuntimeLocked();
+        void beginGrabVisualReturn();
+        void clearGrabVisualReturn(const char* reason, bool logCancellation);
         void applyHeldLocomotionTransportLocked(RE::hknpWorld* world, bool roomVelocityOk, const RE::NiPoint3& roomVelocityGameUnitsPerSecond);
         bool tryGetGrabDriveObjectWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::NiTransform& outTransform) const;
         RE::NiPoint3 activeProxyConstraintPivotBLocalGame() const;
@@ -1102,6 +1108,9 @@ namespace rock
         std::size_t _grabDeviationHistoryNext = 0;
         RE::NiTransform _grabVisualHandTransform{};
         bool _hasGrabVisualHandTransform = false;
+        RE::NiTransform _lastPublishedGrabVisualHandTransform{};
+        bool _hasLastPublishedGrabVisualHandTransform = false;
+        hand_visual_lerp_math::VisualReturnTransition<RE::NiTransform> _grabVisualReturn{};
         RE::NiTransform _grabVisualHandLerpStartTransform{};
         float _grabVisualHandLerpElapsedSeconds = 0.0f;
         float _grabVisualHandLerpDurationSeconds = 0.0f;
