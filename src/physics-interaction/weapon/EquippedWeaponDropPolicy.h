@@ -34,6 +34,13 @@ namespace rock::equipped_weapon_drop_policy
         return primaryReleasedThisFrame ? SourceHand::Right : SourceHand::Left;
     }
 
+    [[nodiscard]] inline constexpr bool equippedWeaponShoulderStashAvailable(
+        bool realisticWeaponHandlingEnabled,
+        bool shoulderStashConfigured) noexcept
+    {
+        return realisticWeaponHandlingEnabled && shoulderStashConfigured;
+    }
+
     /*
      * Equipped-weapon shoulder stash only tracks a single carrying hand: the
      * gesture is "carry the weapon over the shoulder and let go", which

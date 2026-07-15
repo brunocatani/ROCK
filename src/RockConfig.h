@@ -115,6 +115,8 @@ namespace rock
         float rockWeaponFiringGripAttachHapticIntensity = 0.85f;
         float rockWeaponFiringGripDetachHapticIntensity = 0.30f;
         float rockWeaponSupportGripHapticIntensity = 0.50f;
+        // Preference only; realistic weapon handling is the runtime master
+        // gate for every equipped-weapon stash detector and commit path.
         bool rockEquippedWeaponShoulderStashEnabled = true;
         bool rockRealisticWeaponHandlingEnabled = false;
         // Independent ambidextrous firing mode: either free hand may take the

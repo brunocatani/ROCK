@@ -52,8 +52,26 @@ Require-Text 'src/physics-interaction/stash/ShoulderStashDetector.cpp' 'hmdBackB
 Require-Text 'src/physics-interaction/stash/ShoulderStashDetector.cpp' 'input\.config\.hmdBackExitPaddingGameUnits\s*:\s*input\.config\.hmdBackEnterPaddingGameUnits' `
     'HMD stash detector should use HMD-specific padding rather than body-zone padding.'
 Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'makeEquippedWeaponStashDetectorConfig\(\)[\s\S]*?config\.maxSpeedGameUnitsPerSecond\s*=\s*0\.0f[\s\S]*?return config' `
+    'makeEquippedWeaponStashDetectorConfig\([^)]*\)[\s\S]*?config\.maxSpeedGameUnitsPerSecond\s*=\s*0\.0f[\s\S]*?return config' `
     'Equipped-weapon stash candidate acquisition must retain the configured anti-throw speed gate.'
+Require-Text 'src/physics-interaction/weapon/EquippedWeaponDropPolicy.h' `
+    'equippedWeaponShoulderStashAvailable[\s\S]{0,240}realisticWeaponHandlingEnabled\s*&&\s*shoulderStashConfigured' `
+    'Equipped-weapon shoulder stash must require both realistic handling and its own setting.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'equippedWeaponShoulderStashActive\s*=\s*[\s\S]{0,160}equippedWeaponShoulderStashAvailable\(\s*g_rockConfig\.rockRealisticWeaponHandlingEnabled,\s*g_rockConfig\.rockEquippedWeaponShoulderStashEnabled\s*\)' `
+    'Runtime must derive one effective equipped-weapon stash gate from realistic handling and the stash setting.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'stashCarryHand\s*=\s*equippedWeaponShoulderStashActive\s*\?[\s\S]{0,500}SourceHand::None' `
+    'Disabled equipped-weapon stash must skip carry-hand acquisition.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    '!stashCarryEligible[\s\S]{0,300}resetRuntime\(stashState\)[\s\S]{0,120}commitLease\s*=\s*\{\}' `
+    'Disabled equipped-weapon stash must clear both dwell and fast-release commit-lease state.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'stashCommitSelected\s*=[\s\S]{0,180}equippedWeaponShoulderStashActive\s*&&[\s\S]{0,180}confirmedForCommit' `
+    'Final equipped-weapon unequip commit must use the same realistic-handling master gate.'
+Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'config\.enabled\s*=\s*g_rockConfig\.rockEquippedWeaponShoulderStashEnabled' `
+    'The detector must not bypass the effective realistic-handling master gate.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'shouldArmEquippedWeaponFastReleaseCommitLease[\s\S]*?currentEquippedWeaponOwnershipKey[\s\S]*?equippedWeaponFastReleaseCommitLeaseIsUsable' `
     'Fast release may bridge the release debounce only through an ownership-bound, spatially revalidated commit lease.'

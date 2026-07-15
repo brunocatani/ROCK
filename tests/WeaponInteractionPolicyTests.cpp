@@ -538,6 +538,14 @@ int main()
     using namespace rock::equipped_weapon_drop_policy;
     ok &= expectEqual("support release normally drops from left hand", sourceForSupportRelease(false), SourceHand::Left);
     ok &= expectEqual("same-frame primary release drops from right hand", sourceForSupportRelease(true), SourceHand::Right);
+    ok &= expectTrue("equipped shoulder stash is available when realistic handling and its setting are enabled",
+        equippedWeaponShoulderStashAvailable(true, true));
+    ok &= expectFalse("realistic handling off fully disables equipped shoulder stash",
+        equippedWeaponShoulderStashAvailable(false, true));
+    ok &= expectFalse("equipped shoulder stash setting remains authoritative under realistic handling",
+        equippedWeaponShoulderStashAvailable(true, false));
+    ok &= expectFalse("equipped shoulder stash stays disabled when both gates are off",
+        equippedWeaponShoulderStashAvailable(false, false));
 
     ok &= expectEqual("primary-only carry stashes from the firing hand",
         resolveEquippedWeaponStashCarryHand(true, false, false, false, false),

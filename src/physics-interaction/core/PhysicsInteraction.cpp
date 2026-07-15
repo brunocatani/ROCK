@@ -236,10 +236,10 @@ namespace rock
          * contact identity, so the HMD-relative back volume (forced on) is the
          * gesture authority for hand-carried weapons.
          */
-        shoulder_stash::DetectorConfig makeEquippedWeaponStashDetectorConfig()
+        shoulder_stash::DetectorConfig makeEquippedWeaponStashDetectorConfig(bool enabled)
         {
             shoulder_stash::DetectorConfig config = makeShoulderStashDetectorConfig();
-            config.enabled = g_rockConfig.rockEquippedWeaponShoulderStashEnabled;
+            config.enabled = enabled;
             config.useBodyZoneColliders = false;
             config.useHmdBackVolume = true;
             return config;
@@ -2506,6 +2506,10 @@ namespace rock
                 primaryPoseBlockerAvailable,
                 weaponNode != nullptr,
                 currentEquippedWeaponOwnershipKey);
+            const bool equippedWeaponShoulderStashActive =
+                equipped_weapon_drop_policy::equippedWeaponShoulderStashAvailable(
+                    g_rockConfig.rockRealisticWeaponHandlingEnabled,
+                    g_rockConfig.rockEquippedWeaponShoulderStashEnabled);
             const bool inputBlockingMenuActive = input_remap_runtime::isMenuInputActive();
             if (inputBlockingMenuActive) {
                 _pendingEquippedWeaponPrimaryOnlyGripStart = {};
@@ -2624,14 +2628,15 @@ namespace rock
             {
                 // Carry-authority grips only: an AttachOnly glue hand cannot
                 // carry the weapon, so it can never be the stash carry hand.
-                const auto stashCarryHand = equipped_weapon_drop_policy::resolveEquippedWeaponStashCarryHand(
-                    _twoHandedGrip.isPrimaryOnlyActive(),
-                    _twoHandedGrip.isPartCarryActive(),
-                    _twoHandedGrip.isHandPartCarryGripping(true),
-                    _twoHandedGrip.isHandPartCarryGripping(false),
-                    _twoHandedGrip.isFiringHandLeft());
-                const bool stashCarryEligible = g_rockConfig.rockEquippedWeaponShoulderStashEnabled &&
-                                                !inputBlockingMenuActive &&
+                const auto stashCarryHand = equippedWeaponShoulderStashActive ?
+                    equipped_weapon_drop_policy::resolveEquippedWeaponStashCarryHand(
+                        _twoHandedGrip.isPrimaryOnlyActive(),
+                        _twoHandedGrip.isPartCarryActive(),
+                        _twoHandedGrip.isHandPartCarryGripping(true),
+                        _twoHandedGrip.isHandPartCarryGripping(false),
+                        _twoHandedGrip.isFiringHandLeft()) :
+                    equipped_weapon_drop_policy::SourceHand::None;
+                const bool stashCarryEligible = !inputBlockingMenuActive &&
                                                 stashCarryHand != equipped_weapon_drop_policy::SourceHand::None;
                 for (const bool stashHandIsLeft : { true, false }) {
                     const std::size_t stashHandIndex = stashHandIsLeft ? 1u : 0u;
@@ -2644,7 +2649,7 @@ namespace rock
                     }
 
                     const HandFrameInput& carryInput = stashHandIsLeft ? frame.left : frame.right;
-                    const auto stashConfig = makeEquippedWeaponStashDetectorConfig();
+                    const auto stashConfig = makeEquippedWeaponStashDetectorConfig(equippedWeaponShoulderStashActive);
                     shoulder_stash::DetectorInput stashInput{
                             .isLeftHand = stashHandIsLeft,
                             .probe = shoulder_stash::Probe{ .pointGame = carryInput.grabAnchorWorld },
@@ -2847,7 +2852,7 @@ namespace rock
                 } else {
                     const bool stashCommitSelected =
                         sourceHandKnown &&
-                        g_rockConfig.rockEquippedWeaponShoulderStashEnabled &&
+                        equippedWeaponShoulderStashActive &&
                         equippedWeaponStashCommitDecisions[equipped_weapon_drop_policy::isLeft(sourceHand) ? 1u : 0u].confirmedForCommit;
                     if (stashCommitSelected) {
                         /*
