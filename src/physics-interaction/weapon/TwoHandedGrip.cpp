@@ -167,6 +167,15 @@ namespace rock
             bool valid{ false };
         };
 
+        struct NativeScopeCameraFollowResult
+        {
+            RE::NiTransform targetCameraWorld{};
+            RE::NiTransform immediateCameraWorldAfter{};
+            bool targetValid{ false };
+            bool writeApplied{ false };
+            bool immediateReadbackValid{ false };
+        };
+
         struct ScopeHandAuthorityCleanupVisualSnapshot
         {
             RE::NiNode* weapon{ nullptr };
@@ -254,10 +263,14 @@ namespace rock
             };
         }
 
-        void applyNativeScopeCameraFollow(const NativeScopeCameraFollowCapture& capture, const RE::NiTransform& weaponWorldAfter, const RE::NiPoint3* sightAnchorWeaponLocal)
+        NativeScopeCameraFollowResult applyNativeScopeCameraFollow(
+            const NativeScopeCameraFollowCapture& capture,
+            const RE::NiTransform& weaponWorldAfter,
+            const RE::NiPoint3* sightAnchorWeaponLocal)
         {
+            NativeScopeCameraFollowResult result{};
             if (!capture.valid || !capture.camera || !isFiniteTransform(weaponWorldAfter)) {
-                return;
+                return result;
             }
 
             const RE::NiTransform targetCameraWorld = sightAnchorWeaponLocal
@@ -265,8 +278,10 @@ namespace rock
                       *sightAnchorWeaponLocal)
                 : native_scope_camera_follow_math::followWeaponWorldChange(capture.weaponWorldBefore, weaponWorldAfter, capture.cameraWorldBefore);
             if (!isFiniteTransform(targetCameraWorld)) {
-                return;
+                return result;
             }
+            result.targetCameraWorld = targetCameraWorld;
+            result.targetValid = true;
 
             auto* scopeCamera = capture.camera;
             if (scopeCamera->parent) {
@@ -274,15 +289,25 @@ namespace rock
                     scopeCamera->parent->world,
                     targetCameraWorld);
                 if (!isFiniteTransform(targetCameraLocal)) {
-                    return;
+                    return result;
                 }
                 scopeCamera->local = targetCameraLocal;
                 f4vr::updateTransforms(scopeCamera);
-                return;
+                result.writeApplied = true;
+                const RE::NiTransform immediateCameraWorld = scopeCamera->world;
+                if (isFiniteTransform(immediateCameraWorld)) {
+                    result.immediateCameraWorldAfter = immediateCameraWorld;
+                    result.immediateReadbackValid = true;
+                }
+                return result;
             }
 
             scopeCamera->local = targetCameraWorld;
             scopeCamera->world = targetCameraWorld;
+            result.writeApplied = true;
+            result.immediateCameraWorldAfter = scopeCamera->world;
+            result.immediateReadbackValid = isFiniteTransform(result.immediateCameraWorldAfter);
+            return result;
         }
 
         float lengthSquared(const RE::NiPoint3& value)
@@ -834,6 +859,10 @@ namespace rock
         _hasSolvedWeaponTransform = false;
         _firingGripReattachHoverInsideRadius = false;
         _firingGripReattachHoverHandIsLeft = _firingHandIsLeft;
+        if (g_rockConfig.rockDebugDrawNativeScopeActivation &&
+            _nativeScopeCameraDebugSnapshot.framesSinceApply != (std::numeric_limits<std::uint32_t>::max)()) {
+            ++_nativeScopeCameraDebugSnapshot.framesSinceApply;
+        }
 
         refreshNativeScopeSightAnchor(weaponNode, currentWeaponGenerationKey, weaponCollision);
         refreshScopeSafeHandFrames(weaponNode, frameInput, dt);
@@ -1086,6 +1115,7 @@ namespace rock
         _nativeScopeSightAnchorGenerationKey = 0;
         _nativeScopeSightAnchorWeaponLocal = {};
         _nativeScopeSightAnchorValid = false;
+        _nativeScopeCameraDebugSnapshot = {};
         _scopeSafeHandFrames = {};
         _scopeHandAuthorityCleanupPending = _scopeHandAuthorityCleanupPending || _scopeMenuOpenThisFrame;
         clearPrimaryGripPose(_firingHandIsLeft);
@@ -3046,7 +3076,30 @@ namespace rock
             _nativeScopeSightAnchorValid && _nativeScopeSightAnchorWeaponNode == weaponNode && _nativeScopeSightAnchorGenerationKey == _activeWeaponGenerationKey
             ? &_nativeScopeSightAnchorWeaponLocal
             : nullptr;
-        applyNativeScopeCameraFollow(scopeCameraFollow, weaponNode->world, sightAnchorWeaponLocal);
+        const NativeScopeCameraFollowResult scopeCameraResult =
+            applyNativeScopeCameraFollow(scopeCameraFollow, weaponNode->world, sightAnchorWeaponLocal);
+        if (g_rockConfig.rockDebugDrawNativeScopeActivation) {
+            const std::uint64_t nextApplySequence = _nativeScopeCameraDebugSnapshot.applySequence + 1;
+            NativeScopeCameraDebugSnapshot debugSnapshot{};
+            debugSnapshot.applySequence = nextApplySequence;
+            debugSnapshot.weaponGenerationKey = _activeWeaponGenerationKey;
+            debugSnapshot.framesSinceApply = 0;
+            debugSnapshot.captureValid = scopeCameraFollow.valid;
+            debugSnapshot.targetValid = scopeCameraResult.targetValid;
+            debugSnapshot.writeApplied = scopeCameraResult.writeApplied;
+            debugSnapshot.immediateReadbackValid = scopeCameraResult.immediateReadbackValid;
+            debugSnapshot.usedSightAnchor = sightAnchorWeaponLocal != nullptr;
+            if (scopeCameraFollow.valid) {
+                debugSnapshot.cameraWorldBefore = scopeCameraFollow.cameraWorldBefore;
+            }
+            if (scopeCameraResult.targetValid) {
+                debugSnapshot.targetCameraWorld = scopeCameraResult.targetCameraWorld;
+            }
+            if (scopeCameraResult.immediateReadbackValid) {
+                debugSnapshot.immediateCameraWorldAfter = scopeCameraResult.immediateCameraWorldAfter;
+            }
+            _nativeScopeCameraDebugSnapshot = debugSnapshot;
+        }
         return true;
     }
 

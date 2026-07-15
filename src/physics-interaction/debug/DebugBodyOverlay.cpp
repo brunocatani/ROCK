@@ -1606,6 +1606,10 @@ float4 main(PS_INPUT input) : SV_Target {
             case AxisOverlayRole::RightGrabHeldNode:
             case AxisOverlayRole::LeftGrabHeldNode:
                 return kColliderAxisLength;
+            case AxisOverlayRole::NativeScopeLiveCamera:
+                return 14.0f;
+            case AxisOverlayRole::NativeScopeRockTarget:
+                return 10.0f;
             case AxisOverlayRole::RightGrabPalmGeneratedDirect:
             case AxisOverlayRole::LeftGrabPalmGeneratedDirect:
                 return 7.0f;
@@ -1659,6 +1663,8 @@ float4 main(PS_INPUT input) : SV_Target {
             case AxisOverlayRole::LeftHandRaw:
                 return 0.55f;
             case AxisOverlayRole::WeaponAuthority:
+            case AxisOverlayRole::NativeScopeLiveCamera:
+            case AxisOverlayRole::NativeScopeRockTarget:
             case AxisOverlayRole::RightWeaponPrimaryGrip:
             case AxisOverlayRole::LeftWeaponSupportGrip:
             case AxisOverlayRole::RightFrikAppliedHand:
@@ -2134,6 +2140,60 @@ float4 main(PS_INPUT input) : SV_Target {
                 color[1] = 0.25f;
                 color[2] = 1.0f;
                 color[3] = 0.95f;
+                break;
+            case MarkerOverlayRole::NativeScopeLiveCamera:
+                color[0] = 1.0f;
+                color[1] = 0.08f;
+                color[2] = 0.04f;
+                color[3] = 1.0f;
+                break;
+            case MarkerOverlayRole::NativeScopeRockTarget:
+                color[0] = 0.05f;
+                color[1] = 1.0f;
+                color[2] = 0.18f;
+                color[3] = 1.0f;
+                break;
+            case MarkerOverlayRole::NativeScopeImmediateReadback:
+                color[0] = 1.0f;
+                color[1] = 0.52f;
+                color[2] = 0.03f;
+                color[3] = 1.0f;
+                break;
+            case MarkerOverlayRole::NativeScopePreWriteCamera:
+                color[0] = 1.0f;
+                color[1] = 0.90f;
+                color[2] = 0.05f;
+                color[3] = 0.92f;
+                break;
+            case MarkerOverlayRole::NativeScopeParentComposedCamera:
+                color[0] = 0.20f;
+                color[1] = 0.45f;
+                color[2] = 1.0f;
+                color[3] = 0.92f;
+                break;
+            case MarkerOverlayRole::NativeScopeHmd:
+                color[0] = 0.05f;
+                color[1] = 0.92f;
+                color[2] = 1.0f;
+                color[3] = 0.96f;
+                break;
+            case MarkerOverlayRole::NativeScopeCameraParent:
+                color[0] = 0.82f;
+                color[1] = 0.82f;
+                color[2] = 0.82f;
+                color[3] = 0.82f;
+                break;
+            case MarkerOverlayRole::NativeScopeSightBounds:
+                color[0] = 0.25f;
+                color[1] = 1.0f;
+                color[2] = 0.48f;
+                color[3] = 0.78f;
+                break;
+            case MarkerOverlayRole::NativeScopeMismatch:
+                color[0] = 1.0f;
+                color[1] = 0.08f;
+                color[2] = 0.92f;
+                color[3] = 0.98f;
                 break;
             case MarkerOverlayRole::RightWeaponPrimaryGrip:
                 color[0] = 0.10f;

@@ -169,6 +169,7 @@
         const bool drawGrabTransformTelemetryText = drawGrabTransformTelemetry && g_rockConfig.rockDebugGrabTransformTelemetryText;
         const bool drawPerformanceProfilerOverlay = performance_profiler::overlayTextEnabled();
         const bool drawWeaponAuthorityDebug = _twoHandedGrip.isGripping() && (g_rockConfig.rockDebugShowHandAxes || drawGrabPivots);
+        const bool drawNativeScopeActivation = g_rockConfig.rockDebugDrawNativeScopeActivation;
         const bool drawWorldOriginDiagnostics = g_rockConfig.rockDebugWorldObjectOriginDiagnostics;
         const bool drawCustomCalibrationOffset = g_rockConfig.rockDebugCustomCalibrationOffset;
         if (drawWorldOriginDiagnostics && !s_worldOriginDiagnosticsEnabledLogged) {
@@ -183,7 +184,8 @@
         if (!drawRockColliderBodies && !g_rockConfig.rockDebugShowTargetColliders && !g_rockConfig.rockDebugShowHandAxes && !drawGrabPivots && !drawFingerProbes &&
             !drawFingerSweptArc && !drawPalmVectors && !drawGrabPockets && !drawRootFlattenedFingerSkeleton && !drawSkeletonBones && !drawGrabPocketNormal &&
             !drawGrabContactPatch && !drawHandBoneContacts && !drawGrabAuthorityProxy && !drawGrabForceTorque && !drawGrabTransformTelemetry && !drawPerformanceProfilerOverlay &&
-            !drawWeaponAuthorityDebug && !drawGrabSupportFrame && !drawWorldOriginDiagnostics && !drawCustomCalibrationOffset && !drawDynamicHandColliders) {
+            !drawWeaponAuthorityDebug && !drawNativeScopeActivation && !drawGrabSupportFrame && !drawWorldOriginDiagnostics && !drawCustomCalibrationOffset &&
+            !drawDynamicHandColliders) {
             debug::ClearFrame();
             return;
         }
@@ -195,12 +197,13 @@
         frame.drawRockBodies = drawRockColliderBodies || drawGrabAuthorityProxy || drawGrabPivotSourceCollider || drawDynamicHandColliders;
         frame.drawTargetBodies = g_rockConfig.rockDebugShowTargetColliders;
         frame.drawAxes = g_rockConfig.rockDebugShowHandAxes || drawGrabTransformTelemetryAxes || drawGrabAuthorityProxy || drawGrabForceTorque ||
-            drawCustomCalibrationOffset;
+            drawCustomCalibrationOffset || drawNativeScopeActivation;
         frame.drawMarkers = drawGrabPivots || drawFingerProbes || drawFingerSweptArc || drawPalmVectors || drawGrabPockets || drawRootFlattenedFingerSkeleton ||
             drawGrabPocketNormal || drawGrabContactPatch || drawGrabForceTorque || drawHandBoneContacts || drawGrabAuthorityProxy || drawGrabTransformTelemetryAxes ||
-            drawWeaponAuthorityDebug || drawGrabSupportFrame || drawWorldOriginDiagnostics || drawDynamicHandColliders;
+            drawWeaponAuthorityDebug || drawNativeScopeActivation || drawGrabSupportFrame || drawWorldOriginDiagnostics || drawDynamicHandColliders;
         frame.drawSkeleton = drawSkeletonBones;
-        frame.drawText = drawGrabTransformTelemetryText || drawGrabForceTorqueText || drawFingerSweptArcText || drawPerformanceProfilerOverlay || drawDynamicHandColliders;
+        frame.drawText = drawGrabTransformTelemetryText || drawGrabForceTorqueText || drawFingerSweptArcText || drawPerformanceProfilerOverlay ||
+            drawDynamicHandColliders || drawNativeScopeActivation;
         RE::bhkWorld* originDiagnosticBhk = drawWorldOriginDiagnostics ? context.bhkWorld : nullptr;
         const bool rightDisabled = context.right.disabled;
         const bool leftDisabled = context.left.disabled;
@@ -397,6 +400,269 @@
                     addScreenTextLine(18.0f, 18.0f + (14.0f * static_cast<float>(i)), profilerColor, profilerLines[i].data());
                 }
             }
+        }
+
+        if (drawNativeScopeActivation) {
+            constexpr float kScopeAxisGuideLengthGameUnits = 80.0f;
+            constexpr std::uint32_t kFreshScopeWriteMaxAgeFrames = 1;
+
+            auto finitePoint = [](const RE::NiPoint3& point) {
+                return std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z);
+            };
+            auto normalizeScopeVector = [&](const RE::NiPoint3& vector, const RE::NiPoint3& fallback) {
+                const float lengthSquared = vector.x * vector.x + vector.y * vector.y + vector.z * vector.z;
+                if (std::isfinite(lengthSquared) && lengthSquared > 0.000001f) {
+                    const float inverseLength = 1.0f / std::sqrt(lengthSquared);
+                    return vector * inverseLength;
+                }
+                return fallback;
+            };
+            auto scopeForwardWorld = [&](const RE::NiTransform& transform) {
+                return normalizeScopeVector(
+                    transform_math::localVectorToWorld(transform, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }),
+                    RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
+            };
+
+            const auto* playerNodes = f4vr::getPlayerNodes();
+            auto* scopeCamera = playerNodes ? playerNodes->primaryWeaponScopeCamera : nullptr;
+            auto* scopeCameraParent = scopeCamera ? scopeCamera->parent : nullptr;
+            const bool hmdFrameValid = context.hasHmdFrame && finitePoint(context.hmdPositionWorld) && finitePoint(context.hmdForwardWorld);
+
+            RE::NiTransform liveCameraWorld{};
+            const bool liveCameraValid = scopeCamera && finiteNiTransform(scopeCamera->world);
+            if (liveCameraValid) {
+                liveCameraWorld = scopeCamera->world;
+            }
+
+            RE::NiTransform parentComposedCameraWorld{};
+            bool parentComposedCameraValid = false;
+            if (scopeCamera && scopeCameraParent && finiteNiTransform(scopeCameraParent->world) && finiteNiTransform(scopeCamera->local)) {
+                parentComposedCameraWorld = transform_math::composeTransforms(scopeCameraParent->world, scopeCamera->local);
+                parentComposedCameraValid = finiteNiTransform(parentComposedCameraWorld);
+            } else if (liveCameraValid && scopeCamera && !scopeCameraParent) {
+                parentComposedCameraWorld = liveCameraWorld;
+                parentComposedCameraValid = true;
+            }
+
+            auto* weaponNode = f4vr::getWeaponNode();
+            const bool weaponWorldValid = weaponNode && finiteNiTransform(weaponNode->world);
+            const WeaponCollision::NativeScopeSightAnchorSnapshot sightSnapshot = _weaponCollision.getNativeScopeSightAnchorSnapshot();
+            const std::uint64_t publishedWeaponGeneration = _weaponCollision.getCurrentWeaponGenerationKey();
+            const bool sightGenerationMatches = sightSnapshot.weaponGenerationKey != 0 &&
+                sightSnapshot.weaponGenerationKey == publishedWeaponGeneration;
+            const bool sightGeometryValid = weaponWorldValid && sightSnapshot.valid && sightGenerationMatches &&
+                finitePoint(sightSnapshot.anchorWeaponLocal) && finitePoint(sightSnapshot.sightBoundsMinWeaponLocal) &&
+                finitePoint(sightSnapshot.sightBoundsMaxWeaponLocal);
+
+            RE::NiPoint3 sightAnchorWorld{};
+            if (sightGeometryValid) {
+                sightAnchorWorld = transform_math::localPointToWorld(weaponNode->world, sightSnapshot.anchorWeaponLocal);
+                addMarkerPoint(debug::MarkerOverlayRole::NativeScopeSightBounds, sightAnchorWorld, 3.8f);
+
+                const RE::NiPoint3& boundsMin = sightSnapshot.sightBoundsMinWeaponLocal;
+                const RE::NiPoint3& boundsMax = sightSnapshot.sightBoundsMaxWeaponLocal;
+                const std::array<RE::NiPoint3, 8> localCorners{
+                    RE::NiPoint3{ boundsMin.x, boundsMin.y, boundsMin.z },
+                    RE::NiPoint3{ boundsMax.x, boundsMin.y, boundsMin.z },
+                    RE::NiPoint3{ boundsMax.x, boundsMax.y, boundsMin.z },
+                    RE::NiPoint3{ boundsMin.x, boundsMax.y, boundsMin.z },
+                    RE::NiPoint3{ boundsMin.x, boundsMin.y, boundsMax.z },
+                    RE::NiPoint3{ boundsMax.x, boundsMin.y, boundsMax.z },
+                    RE::NiPoint3{ boundsMax.x, boundsMax.y, boundsMax.z },
+                    RE::NiPoint3{ boundsMin.x, boundsMax.y, boundsMax.z },
+                };
+                std::array<RE::NiPoint3, 8> worldCorners{};
+                for (std::size_t cornerIndex = 0; cornerIndex < localCorners.size(); ++cornerIndex) {
+                    worldCorners[cornerIndex] = transform_math::localPointToWorld(weaponNode->world, localCorners[cornerIndex]);
+                }
+                constexpr std::uint8_t kBoundsEdges[12][2]{
+                    { 0, 1 }, { 1, 2 }, { 2, 3 }, { 3, 0 },
+                    { 4, 5 }, { 5, 6 }, { 6, 7 }, { 7, 4 },
+                    { 0, 4 }, { 1, 5 }, { 2, 6 }, { 3, 7 },
+                };
+                for (const auto& edge : kBoundsEdges) {
+                    addMarkerLine(debug::MarkerOverlayRole::NativeScopeSightBounds, worldCorners[edge[0]], worldCorners[edge[1]]);
+                }
+            }
+
+            const NativeScopeCameraDebugSnapshot writeSnapshot = _twoHandedGrip.getNativeScopeCameraDebugSnapshot();
+            const bool freshWrite = writeSnapshot.applySequence != 0 &&
+                writeSnapshot.framesSinceApply <= kFreshScopeWriteMaxAgeFrames;
+            RE::NiTransform rockTargetWorld{};
+            bool rockTargetValid = false;
+            bool targetFromRecordedWrite = false;
+            if (freshWrite && writeSnapshot.targetValid && finiteNiTransform(writeSnapshot.targetCameraWorld)) {
+                rockTargetWorld = writeSnapshot.targetCameraWorld;
+                rockTargetValid = true;
+                targetFromRecordedWrite = true;
+            } else if (sightGeometryValid && (liveCameraValid || parentComposedCameraValid)) {
+                rockTargetWorld = liveCameraValid ? liveCameraWorld : parentComposedCameraWorld;
+                rockTargetWorld.translate = sightAnchorWorld;
+                rockTargetValid = finiteNiTransform(rockTargetWorld);
+            }
+
+            const float liveColor[4]{ 1.0f, 0.12f, 0.08f, 1.0f };
+            const float targetColor[4]{ 0.18f, 1.0f, 0.28f, 1.0f };
+            const float anchorColor[4]{ 0.42f, 1.0f, 0.60f, 0.95f };
+            const float hmdColor[4]{ 0.12f, 0.92f, 1.0f, 0.96f };
+
+            if (liveCameraValid) {
+                addAxisTransform(liveCameraWorld, debug::AxisOverlayRole::NativeScopeLiveCamera, liveCameraWorld.translate, false);
+                addMarkerRay(
+                    debug::MarkerOverlayRole::NativeScopeLiveCamera,
+                    liveCameraWorld.translate,
+                    liveCameraWorld.translate + scopeForwardWorld(liveCameraWorld) * kScopeAxisGuideLengthGameUnits,
+                    4.2f);
+                addTextLine(liveCameraWorld.translate, liveColor, "LIVE CAMERA (stored world)");
+            }
+            if (parentComposedCameraValid && scopeCameraParent) {
+                addMarkerPoint(debug::MarkerOverlayRole::NativeScopeParentComposedCamera, parentComposedCameraWorld.translate, 3.2f);
+                if (liveCameraValid) {
+                    addMarkerLine(debug::MarkerOverlayRole::NativeScopeParentComposedCamera, liveCameraWorld.translate, parentComposedCameraWorld.translate);
+                }
+                addMarkerRay(
+                    debug::MarkerOverlayRole::NativeScopeCameraParent,
+                    scopeCameraParent->world.translate,
+                    parentComposedCameraWorld.translate,
+                    2.8f);
+            }
+            if (rockTargetValid) {
+                addAxisTransform(rockTargetWorld, debug::AxisOverlayRole::NativeScopeRockTarget, rockTargetWorld.translate, false);
+                addMarkerRay(
+                    debug::MarkerOverlayRole::NativeScopeRockTarget,
+                    rockTargetWorld.translate,
+                    rockTargetWorld.translate + scopeForwardWorld(rockTargetWorld) * kScopeAxisGuideLengthGameUnits,
+                    4.0f);
+                addTextLine(rockTargetWorld.translate, targetColor, targetFromRecordedWrite ? "ROCK WRITE TARGET" : "ROCK GEOMETRY TARGET");
+                if (liveCameraValid) {
+                    addMarkerLine(debug::MarkerOverlayRole::NativeScopeMismatch, liveCameraWorld.translate, rockTargetWorld.translate);
+                }
+            }
+            if (freshWrite && writeSnapshot.captureValid && finiteNiTransform(writeSnapshot.cameraWorldBefore)) {
+                addMarkerPoint(debug::MarkerOverlayRole::NativeScopePreWriteCamera, writeSnapshot.cameraWorldBefore.translate, 2.8f);
+            }
+            if (freshWrite && writeSnapshot.immediateReadbackValid && finiteNiTransform(writeSnapshot.immediateCameraWorldAfter)) {
+                addMarkerPoint(debug::MarkerOverlayRole::NativeScopeImmediateReadback, writeSnapshot.immediateCameraWorldAfter.translate, 3.2f);
+            }
+            if (sightGeometryValid) {
+                addTextLine(sightAnchorWorld, anchorColor, "GENERATED SIGHT REAR-CENTER");
+            }
+            if (hmdFrameValid) {
+                const RE::NiPoint3 hmdForward = normalizeScopeVector(context.hmdForwardWorld, RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
+                addMarkerRay(
+                    debug::MarkerOverlayRole::NativeScopeHmd,
+                    context.hmdPositionWorld,
+                    context.hmdPositionWorld + hmdForward * 45.0f,
+                    3.5f);
+                addTextLine(context.hmdPositionWorld, hmdColor, "HMD");
+            }
+
+            const auto gripStateName = [](TwoHandedState state) {
+                switch (state) {
+                case TwoHandedState::Inactive:
+                    return "Inactive";
+                case TwoHandedState::Touching:
+                    return "Touching";
+                case TwoHandedState::Gripping:
+                    return "Gripping";
+                case TwoHandedState::PartCarry:
+                    return "PartCarry";
+                case TwoHandedState::PrimaryOnly:
+                    return "PrimaryOnly";
+                }
+                return "Unknown";
+            };
+            const float panelColor[4]{ 0.96f, 0.98f, 1.0f, 0.98f };
+            constexpr float panelX = 520.0f;
+            float panelY = 18.0f;
+            char panelLine[384]{};
+            addScreenTextLine(panelX, panelY, panelColor,
+                "NATIVE SCOPE: RED=stored live GREEN=ROCK target ORANGE=immediate YELLOW=pre-write BLUE=parent/local CYAN=HMD");
+            panelY += 14.0f;
+            addScreenTextLine(panelX, panelY, panelColor, "Long RED/GREEN rays are camera +X guides, not verified engine cone thresholds.");
+            panelY += 14.0f;
+
+            std::snprintf(panelLine, sizeof(panelLine),
+                "grip=%s ownsWeapon=%s scopeMenu=%s camera=%s parent=%s HMD=%s targetSource=%s",
+                gripStateName(_twoHandedGrip.getState()),
+                _twoHandedGrip.ownsWeaponTransform() ? "yes" : "no",
+                _twoHandedGrip.isScopeMenuOpenThisFrame() ? "open" : "closed",
+                liveCameraValid ? "yes" : "no",
+                scopeCameraParent ? "yes" : "no",
+                hmdFrameValid ? "yes" : "no",
+                targetFromRecordedWrite ? "recorded-write" : (rockTargetValid ? "geometry" : "none"));
+            addScreenTextLine(panelX, panelY, panelColor, panelLine);
+            panelY += 14.0f;
+
+            std::snprintf(panelLine, sizeof(panelLine),
+                "sight valid=%s generationMatch=%s bodies=%u anchorLocal=(%.2f,%.2f,%.2f)",
+                sightGeometryValid ? "yes" : "no",
+                sightGenerationMatches ? "yes" : "no",
+                sightSnapshot.sightBodyCount,
+                sightSnapshot.anchorWeaponLocal.x,
+                sightSnapshot.anchorWeaponLocal.y,
+                sightSnapshot.anchorWeaponLocal.z);
+            addScreenTextLine(panelX, panelY, panelColor, panelLine);
+            panelY += 14.0f;
+            std::snprintf(panelLine, sizeof(panelLine),
+                "generation: published=%016llX sight=%016llX",
+                static_cast<unsigned long long>(publishedWeaponGeneration),
+                static_cast<unsigned long long>(sightSnapshot.weaponGenerationKey));
+            addScreenTextLine(panelX, panelY, panelColor, panelLine);
+            panelY += 14.0f;
+
+            if (writeSnapshot.applySequence == 0) {
+                std::snprintf(panelLine, sizeof(panelLine), "write: never observed (two-hand weapon authority has not applied while this diagnostic was enabled)");
+                addScreenTextLine(panelX, panelY, panelColor, panelLine);
+                panelY += 14.0f;
+            } else {
+                std::snprintf(panelLine, sizeof(panelLine),
+                    "write seq=%llu age=%u generation=%016llX",
+                    static_cast<unsigned long long>(writeSnapshot.applySequence),
+                    writeSnapshot.framesSinceApply,
+                    static_cast<unsigned long long>(writeSnapshot.weaponGenerationKey));
+                addScreenTextLine(panelX, panelY, panelColor, panelLine);
+                panelY += 14.0f;
+                std::snprintf(panelLine, sizeof(panelLine),
+                    "stages: capture=%s target=%s applied=%s readback=%s usedSightAnchor=%s",
+                    writeSnapshot.captureValid ? "yes" : "no",
+                    writeSnapshot.targetValid ? "yes" : "no",
+                    writeSnapshot.writeApplied ? "yes" : "no",
+                    writeSnapshot.immediateReadbackValid ? "yes" : "no",
+                    writeSnapshot.usedSightAnchor ? "yes" : "NO");
+                addScreenTextLine(panelX, panelY, panelColor, panelLine);
+                panelY += 14.0f;
+            }
+
+            const float hmdToLive = hmdFrameValid && liveCameraValid ? pointDistance(context.hmdPositionWorld, liveCameraWorld.translate) : -1.0f;
+            const float hmdToTarget = hmdFrameValid && rockTargetValid ? pointDistance(context.hmdPositionWorld, rockTargetWorld.translate) : -1.0f;
+            const float liveToTarget = liveCameraValid && rockTargetValid ? pointDistance(liveCameraWorld.translate, rockTargetWorld.translate) : -1.0f;
+            const float storedToComposed = liveCameraValid && parentComposedCameraValid ?
+                pointDistance(liveCameraWorld.translate, parentComposedCameraWorld.translate) :
+                -1.0f;
+            std::snprintf(panelLine, sizeof(panelLine),
+                "distance gu: HMD->live=%.2f HMD->target=%.2f live->target=%.2f storedWorld->parentLocal=%.2f",
+                hmdToLive,
+                hmdToTarget,
+                liveToTarget,
+                storedToComposed);
+            addScreenTextLine(panelX, panelY, panelColor, panelLine);
+            panelY += 14.0f;
+
+            const RE::NiPoint3 livePosition = liveCameraValid ? liveCameraWorld.translate : RE::NiPoint3{};
+            const RE::NiPoint3 targetPosition = rockTargetValid ? rockTargetWorld.translate : RE::NiPoint3{};
+            std::snprintf(panelLine, sizeof(panelLine),
+                "world pos: live=(%.1f,%.1f,%.1f) target=(%.1f,%.1f,%.1f) sightAnchor=(%.1f,%.1f,%.1f)",
+                livePosition.x,
+                livePosition.y,
+                livePosition.z,
+                targetPosition.x,
+                targetPosition.y,
+                targetPosition.z,
+                sightAnchorWorld.x,
+                sightAnchorWorld.y,
+                sightAnchorWorld.z);
+            addScreenTextLine(panelX, panelY, panelColor, panelLine);
         }
 
         if (frame.drawAxes) {

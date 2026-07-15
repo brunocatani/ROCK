@@ -91,6 +91,26 @@ namespace rock
         RE::NiPoint3 leftGripWorld{};
     };
 
+    /*
+     * Main-thread diagnostic record for the native scope camera handoff. It
+     * deliberately stores transform values instead of engine pointers so the
+     * renderer-side overlay cannot retain a transient scene-graph reference.
+     */
+    struct NativeScopeCameraDebugSnapshot
+    {
+        std::uint64_t applySequence{ 0 };
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint32_t framesSinceApply{ 0xFFFF'FFFFu };
+        bool captureValid{ false };
+        bool targetValid{ false };
+        bool writeApplied{ false };
+        bool immediateReadbackValid{ false };
+        bool usedSightAnchor{ false };
+        RE::NiTransform cameraWorldBefore{};
+        RE::NiTransform targetCameraWorld{};
+        RE::NiTransform immediateCameraWorldAfter{};
+    };
+
     struct EquippedWeaponManualDropRequest
     {
         bool requested{ false };
@@ -227,6 +247,10 @@ namespace rock
         bool getSolvedWeaponTransform(RE::NiTransform& outTransform) const;
 
         bool getDebugAuthoritySnapshot(TwoHandedGripDebugSnapshot& outSnapshot) const;
+
+        NativeScopeCameraDebugSnapshot getNativeScopeCameraDebugSnapshot() const { return _nativeScopeCameraDebugSnapshot; }
+
+        bool isScopeMenuOpenThisFrame() const { return _scopeMenuOpenThisFrame; }
 
         bool beginPrimaryOnlyGrip(
             RE::NiNode* weaponNode,
@@ -627,6 +651,7 @@ namespace rock
         std::uint64_t _nativeScopeSightAnchorGenerationKey{ 0 };
         RE::NiPoint3 _nativeScopeSightAnchorWeaponLocal{};
         bool _nativeScopeSightAnchorValid{ false };
+        NativeScopeCameraDebugSnapshot _nativeScopeCameraDebugSnapshot{};
 
         std::array<WeaponPartGrip, 2> _partGrips{};
 
