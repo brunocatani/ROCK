@@ -109,6 +109,7 @@ namespace rock::dynamic_hand_collision_telemetry
 
         bool isLeft = false;
         bool handDisabled = false;
+        bool weaponMotionCoupled = false;
         bool ownedByStrongerSystem = false;
         bool visualAuthorityAvailable = false;
         bool visualActive = false;

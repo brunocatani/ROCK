@@ -208,7 +208,11 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'retainedWeap
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'rightHandWeaponAuthorityActive\s*=\s*rightHandWeaponEquipped\s*\|\|\s*retainedWeaponCollisionActive' 'Right-hand weapon suppression must stay active across reload-null visual frames with retained weapon bodies.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'if \(rightHandWeaponAuthorityActive\)[\s\S]{0,120}suppressRightHandCollisionForDominantWeapon\(hknp\)' 'PhysicsInteraction must suppress dominant-hand collision while retained weapon bodies are active.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'synchronizeContactEvidenceOwnership\(rightHandWeaponAuthorityActive,\s*leftSupportGripActive,\s*rightPartGripActive\)' 'Contact-evidence ownership must follow retained weapon authority and part-grip drivers.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' '_dynamicHandCollision\.updateFrame\([\s\S]{0,220}rightHandWeaponAuthorityActive' 'Dynamic hand visual ownership must follow retained weapon authority.'
+Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @(
+    'rightHandWeaponVisualOwned\s*=\s*rightHandWeaponAuthorityActive\s*\|\|\s*rightPartGripActive',
+    '_dynamicHandCollision\.updateFrame\(',
+    'rightHandWeaponVisualOwned'
+) 'Dynamic hand visual ownership must follow retained weapon authority and explicit part-grip ownership.'
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'retainedPackageRootStillCurrent[\s\S]{0,220}visualSourceMissRetainFrameLimit[\s\S]{0,220}canRetainCurrentWeaponBodiesForVisualSourceMiss' 'Same-identity visual-only source misses must retain live generated weapon bodies only when the retained root is current and the retain window is bounded.'
 Require-Text 'src/physics-interaction/performance/PerformanceProfiler.cpp' 'weaponRebuildVisualSourceUnavailableRetained' 'Profiler counters must expose retained same-identity visual source misses for runtime sampling.'
 Require-Text 'src/physics-interaction/performance/PerformanceProfiler.cpp' 'weaponRebuildVisualSourceUnavailableRetainExpired' 'Profiler counters must expose same-identity visual source retain-window expiration for runtime sampling.'

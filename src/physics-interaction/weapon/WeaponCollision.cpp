@@ -1,11 +1,14 @@
 #include "physics-interaction/weapon/WeaponCollision.h"
 
 #include "physics-interaction/actor/ActorEquipmentGrab.h"
+#include "physics-interaction/hand/Hand.h"
 #include "physics-interaction/native/BodyCollisionControl.h"
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
 #include "physics-interaction/native/HavokCompoundShapeBuilder.h"
 #include "physics-interaction/native/HavokConvexShapeBuilder.h"
+#include "physics-interaction/native/HavokMaterialRegistry.h"
 #include "physics-interaction/native/HavokOffsets.h"
+#include "physics-interaction/native/HavokRefCount.h"
 #include "physics-interaction/grab/MeshGrab.h"
 #include "RockConfig.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
@@ -56,6 +59,66 @@ namespace rock
         constexpr float MIN_HULL_DIAGONAL_GAME_UNITS = 0.5f;
         constexpr std::size_t MAX_GENERATED_CHILD_CONVEXES_PER_SOURCE = 16;
         constexpr std::size_t GENERATED_WEAPON_BODY_CREATION_BATCH = 8;
+        constexpr float kDynamicHandTwinDimensionRebuildToleranceGameUnits = 0.25f;
+
+        constexpr std::array<const char*, dynamic_hand_twin::kBodiesPerHand> kRightWeaponHandTwinNames{
+            "ROCK_WeaponHand_R_Palm",
+            "ROCK_WeaponHand_R_ThumbTip",
+            "ROCK_WeaponHand_R_IndexTip",
+            "ROCK_WeaponHand_R_MiddleTip",
+            "ROCK_WeaponHand_R_RingTip",
+            "ROCK_WeaponHand_R_PinkyTip",
+        };
+        constexpr std::array<const char*, dynamic_hand_twin::kBodiesPerHand> kLeftWeaponHandTwinNames{
+            "ROCK_WeaponHand_L_Palm",
+            "ROCK_WeaponHand_L_ThumbTip",
+            "ROCK_WeaponHand_L_IndexTip",
+            "ROCK_WeaponHand_L_MiddleTip",
+            "ROCK_WeaponHand_L_RingTip",
+            "ROCK_WeaponHand_L_PinkyTip",
+        };
+
+        [[nodiscard]] bool usableWeaponHandTwinFrame(const dynamic_hand_twin::TwinSlotFrame* frame)
+        {
+            return frame && frame->valid &&
+                   dynamic_weapon_collision_authority_policy::isFiniteTransform(frame->target) &&
+                   std::isfinite(frame->length) && frame->length > 0.0f &&
+                   std::isfinite(frame->radius) && frame->radius > 0.0f &&
+                   std::isfinite(frame->convexRadius) && frame->convexRadius >= 0.0f;
+        }
+
+        [[nodiscard]] RE::NiTransform generatedTwinTargetToBodyArrayWorld(
+            const dynamic_hand_twin::TwinSlotFrame& frame)
+        {
+            // Twin targets use the generated-body drive encoding. Shared
+            // motion member bookkeeping reads/writes normal BODY-array frames.
+            RE::NiTransform result = frame.target;
+            result.rotate = transform_math::transposeRotation(result.rotate);
+            result.scale = 1.0f;
+            return result;
+        }
+
+        struct ScopedGeneratedHandShapeRefs
+        {
+            ~ScopedGeneratedHandShapeRefs()
+            {
+                for (std::size_t index = 0; index < count; ++index) {
+                    havok_ref_count::release(shapes[index]);
+                }
+            }
+
+            bool add(RE::hknpShape* shape)
+            {
+                if (!shape || count >= shapes.size()) {
+                    return false;
+                }
+                shapes[count++] = shape;
+                return true;
+            }
+
+            std::array<RE::hknpShape*, 2 * dynamic_hand_twin::kBodiesPerHand> shapes{};
+            std::size_t count = 0;
+        };
 
         struct QuantizedPointKey
         {
@@ -2117,15 +2180,15 @@ namespace rock
         return snapshot;
     }
 
-    WeaponCollision::WeaponBodySnapshot WeaponCollision::getDynamicAuthorityBodySnapshot() const
+    WeaponCollision::DynamicAuthorityBodySnapshot WeaponCollision::getDynamicAuthorityBodySnapshot() const
     {
-        WeaponBodySnapshot snapshot{};
+        DynamicAuthorityBodySnapshot snapshot{};
         snapshot.bodyIds.fill(INVALID_BODY_ID);
         if (!_dynamicAuthorityGroup.belongsToWorld(_cachedWorld) || _dynamicAuthorityGenerationKey == 0) {
             return snapshot;
         }
         snapshot.generationKey = _dynamicAuthorityGenerationKey;
-        snapshot.count = static_cast<std::uint32_t>((std::min)(_dynamicAuthorityMemberCount, MAX_WEAPON_BODIES));
+        snapshot.count = static_cast<std::uint32_t>((std::min)(_dynamicAuthorityMemberCount, MAX_DYNAMIC_AUTHORITY_BODIES));
         for (std::uint32_t index = 0; index < snapshot.count; ++index) {
             snapshot.bodyIds[index] = _dynamicAuthorityGroup.getBodyId(index).value;
         }
@@ -2650,6 +2713,9 @@ namespace rock
         _workbenchExitRebuildRequested.store(false, std::memory_order_release);
         _driveFailureCount.store(0, std::memory_order_release);
         _dynamicAuthorityRebuildRequested.store(false, std::memory_order_release);
+        _dynamicAuthorityMemberBindings.fill({});
+        _dynamicAuthorityHandMemberships = {};
+        _dynamicAuthorityWeaponMemberCount = 0;
         _dynamicAuthorityMemberCount = 0;
         _dynamicAuthorityGenerationKey = 0;
         _dynamicAuthorityLastVisualContactEntrySequence = 0;
@@ -2721,6 +2787,9 @@ namespace rock
 
         _dynamicAuthorityGroup.abandonAfterWorldLoss();
         clearGeneratedKeyframedBodyDriveState(_dynamicAuthorityDriveState);
+        _dynamicAuthorityMemberBindings.fill({});
+        _dynamicAuthorityHandMemberships = {};
+        _dynamicAuthorityWeaponMemberCount = 0;
         _dynamicAuthorityMemberCount = 0;
         _dynamicAuthorityGenerationKey = 0;
         _dynamicAuthorityLastVisualContactEntrySequence = 0;
@@ -5607,6 +5676,9 @@ namespace rock
             _dynamicAuthorityGroup.retireDeferred(_cachedBhkWorld);
         }
         clearGeneratedKeyframedBodyDriveState(_dynamicAuthorityDriveState);
+        _dynamicAuthorityMemberBindings.fill({});
+        _dynamicAuthorityHandMemberships = {};
+        _dynamicAuthorityWeaponMemberCount = 0;
         _dynamicAuthorityMemberCount = 0;
         _dynamicAuthorityGenerationKey = 0;
         _dynamicAuthorityLastVisualContactEntrySequence = 0;
@@ -5618,7 +5690,48 @@ namespace rock
         }
     }
 
-    bool WeaponCollision::rebuildDynamicAuthorityGroup(RE::hknpWorld* world, RE::NiAVObject* weaponNode)
+    bool WeaponCollision::dynamicAuthorityHandMembershipMatches(
+        const Hand& hand,
+        bool requested,
+        std::size_t handIndex) const
+    {
+        if (handIndex >= _dynamicAuthorityHandMemberships.size()) {
+            return false;
+        }
+        const auto& expected = _dynamicAuthorityHandMemberships[handIndex];
+        if (expected.requested != requested) {
+            return false;
+        }
+        if (!requested) {
+            return expected.slotMask == 0;
+        }
+
+        const auto& targets = hand.dynamicTwinTargets();
+        std::uint32_t currentMask = 0;
+        for (std::size_t bodyIndex = 0; bodyIndex < dynamic_hand_twin::kBodiesPerHand; ++bodyIndex) {
+            const auto* frame = dynamic_hand_twin::frameForBodyIndex(targets, bodyIndex);
+            if (!usableWeaponHandTwinFrame(frame)) {
+                continue;
+            }
+            currentMask |= 1u << static_cast<std::uint32_t>(bodyIndex);
+            const auto& signature = expected.slots[bodyIndex];
+            if (std::fabs(frame->length - signature.length) > kDynamicHandTwinDimensionRebuildToleranceGameUnits ||
+                std::fabs(frame->radius - signature.radius) > kDynamicHandTwinDimensionRebuildToleranceGameUnits ||
+                std::fabs(frame->convexRadius - signature.convexRadius) > 0.0001f) {
+                return false;
+            }
+        }
+        return currentMask == expected.slotMask &&
+               targets.geometrySignature == expected.geometrySignature;
+    }
+
+    bool WeaponCollision::rebuildDynamicAuthorityGroup(
+        RE::hknpWorld* world,
+        RE::NiAVObject* weaponNode,
+        const Hand* rightHand,
+        const Hand* leftHand,
+        bool rightHandCoupled,
+        bool leftHandCoupled)
     {
         retireDynamicAuthorityGroup();
         if (!world || !_cachedBhkWorld || !weaponNode || !hasWeaponBody() || getCurrentWeaponGenerationKey() == 0) {
@@ -5626,7 +5739,9 @@ namespace rock
         }
 
         auto& bank = activeWeaponBodies();
-        std::array<BethesdaPhysicsBodyGroupMemberCreateInfo, MAX_WEAPON_BODIES> createInfos{};
+        const RE::hknpMaterialId generatedMaterialId =
+            havok_material_registry::registerGeneratedBodyMaterial(world);
+        std::array<BethesdaPhysicsBodyGroupMemberCreateInfo, MAX_DYNAMIC_AUTHORITY_BODIES> createInfos{};
         std::array<std::size_t, MAX_WEAPON_BODIES> eligibleBankIndices{};
         std::size_t eligibleCount = 0;
         std::size_t anchorEligibleIndex = 0;
@@ -5657,11 +5772,85 @@ namespace rock
             auto& info = createInfos[memberCount];
             info.shape = const_cast<RE::hknpShape*>(instance.shape);
             info.filterInfo = generatedDynamicWeaponAuthorityFilterInfo(false);
-            info.materialId = { 0 };
+            info.materialId = generatedMaterialId;
             info.initialWorld = makeGeneratedBodyArrayWorldTransform(sourceWorld, center);
             info.name = "ROCK_DynamicWeaponTwin";
-            _dynamicAuthorityGroupToBank[memberCount] = bankIndex;
+            _dynamicAuthorityMemberBindings[memberCount] = DynamicAuthorityMemberBinding{
+                .kind = DynamicAuthorityMemberKind::WeaponBody,
+                .sourceIndex = bankIndex,
+            };
             ++memberCount;
+        }
+        const std::size_t weaponMemberCount = memberCount;
+        if (weaponMemberCount == 0) {
+            ROCK_LOG_ERROR(Weapon, "Dynamic weapon authority has no attached weapon member for its anchor");
+            return false;
+        }
+
+        ScopedGeneratedHandShapeRefs generatedHandShapeRefs{};
+        std::array<DynamicAuthorityHandMembership, 2> handMemberships{};
+        auto appendHandTwins = [&](const Hand* hand, bool requested, bool isLeft) {
+            auto& membership = handMemberships[isLeft ? 1u : 0u];
+            membership.requested = requested;
+            if (!requested) {
+                return true;
+            }
+            if (!hand) {
+                return false;
+            }
+
+            const auto& targets = hand->dynamicTwinTargets();
+            membership.geometrySignature = targets.geometrySignature;
+            for (std::size_t bodyIndex = 0; bodyIndex < dynamic_hand_twin::kBodiesPerHand; ++bodyIndex) {
+                const auto* frame = dynamic_hand_twin::frameForBodyIndex(targets, bodyIndex);
+                if (!usableWeaponHandTwinFrame(frame)) {
+                    continue;
+                }
+                if (memberCount >= createInfos.size()) {
+                    return false;
+                }
+
+                auto* shape = hand->buildDynamicTwinShape(*frame, bodyIndex == dynamic_hand_twin::kPalmSlot);
+                if (!shape) {
+                    ROCK_LOG_ERROR(Weapon,
+                        "Dynamic weapon authority {} hand twin shape creation failed slot={}",
+                        isLeft ? "left" : "right",
+                        bodyIndex);
+                    return false;
+                }
+                if (!generatedHandShapeRefs.add(shape)) {
+                    havok_ref_count::release(shape);
+                    return false;
+                }
+
+                auto& info = createInfos[memberCount];
+                info.shape = shape;
+                info.filterInfo = generatedDynamicWeaponAuthorityFilterInfo(false);
+                info.materialId = generatedMaterialId;
+                info.initialWorld = generatedTwinTargetToBodyArrayWorld(*frame);
+                info.name = (isLeft ? kLeftWeaponHandTwinNames : kRightWeaponHandTwinNames)[bodyIndex];
+                _dynamicAuthorityMemberBindings[memberCount] = DynamicAuthorityMemberBinding{
+                    .kind = isLeft ? DynamicAuthorityMemberKind::LeftHandTwin : DynamicAuthorityMemberKind::RightHandTwin,
+                    .sourceIndex = bodyIndex,
+                };
+                membership.slotMask |= 1u << static_cast<std::uint32_t>(bodyIndex);
+                membership.slots[bodyIndex] = DynamicAuthorityHandSlotSignature{
+                    .length = frame->length,
+                    .radius = frame->radius,
+                    .convexRadius = frame->convexRadius,
+                };
+                ++memberCount;
+            }
+            return true;
+        };
+
+        if (!appendHandTwins(rightHand, rightHandCoupled, false) ||
+            !appendHandTwins(leftHand, leftHandCoupled, true)) {
+            ROCK_LOG_ERROR(Weapon,
+                "Dynamic weapon authority held-hand member construction failed right={} left={}",
+                rightHandCoupled ? "coupled" : "free",
+                leftHandCoupled ? "coupled" : "free");
+            return false;
         }
 
         if (memberCount == 0 || !_dynamicAuthorityGroup.create(
@@ -5685,10 +5874,12 @@ namespace rock
             return false;
         }
         _dynamicAuthorityGroup.activate(world);
+        _dynamicAuthorityHandMemberships = handMemberships;
+        _dynamicAuthorityWeaponMemberCount = weaponMemberCount;
         _dynamicAuthorityMemberCount = memberCount;
         _dynamicAuthorityGenerationKey = getCurrentWeaponGenerationKey();
 
-        const auto anchorBankIndex = _dynamicAuthorityGroupToBank[0];
+        const auto anchorBankIndex = _dynamicAuthorityMemberBindings[0].sourceIndex;
         const auto& anchorInstance = bank[anchorBankIndex];
         const RE::NiTransform& anchorSourceWorld = anchorInstance.sourceNode ? anchorInstance.sourceNode->world : weaponNode->world;
         const RE::NiPoint3& anchorCenter = anchorInstance.sourceNode ?
@@ -5697,9 +5888,12 @@ namespace rock
         initializeGeneratedKeyframedBodyDriveState(_dynamicAuthorityDriveState, anchorWorld);
 
         ROCK_LOG_INFO(Weapon,
-            "Dynamic weapon authority created: generation={:016X} members={} anchorBody={} sharedMotion={} layer={}",
+            "Dynamic weapon authority created: generation={:016X} members={} weaponMembers={} rightHandTwins={} leftHandTwins={} anchorBody={} sharedMotion={} layer={}",
             _dynamicAuthorityGenerationKey,
             memberCount,
+            _dynamicAuthorityWeaponMemberCount,
+            std::popcount(_dynamicAuthorityHandMemberships[0].slotMask),
+            std::popcount(_dynamicAuthorityHandMemberships[1].slotMask),
             _dynamicAuthorityGroup.getBodyId(0).value,
             _dynamicAuthorityGroup.sharedMotionIndex(),
             collision_layer_policy::ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
@@ -5709,15 +5903,47 @@ namespace rock
     WeaponCollision::DynamicAuthorityVisualResult WeaponCollision::updateDynamicAuthorityFrame(
         RE::hknpWorld* world,
         RE::NiAVObject* weaponNode,
-        float sourceDeltaSeconds)
+        float sourceDeltaSeconds,
+        const Hand& rightHand,
+        const Hand& leftHand,
+        bool rightHandCoupled,
+        bool leftHandCoupled)
     {
         DynamicAuthorityVisualResult visual{};
-        if (!world || !weaponNode || !_dynamicAuthorityGroup.belongsToWorld(world) ||
+        if (!world) {
+            return visual;
+        }
+        if (!weaponNode) {
+            // Reload-null visuals cannot publish fresh raw hand/weapon intent.
+            // Remove the whole shared motion so stale held-hand fixtures never
+            // overlap free-hand proxies or keep solving an old target.
+            if (_dynamicAuthorityGroup.size() != 0 || _dynamicAuthorityMemberCount != 0) {
+                retireDynamicAuthorityGroup();
+            }
+            return visual;
+        }
+
+        auto rebuildForCurrentRoles = [&]() {
+            return rebuildDynamicAuthorityGroup(
+                world,
+                weaponNode,
+                &rightHand,
+                &leftHand,
+                rightHandCoupled,
+                leftHandCoupled);
+        };
+        if (!_dynamicAuthorityGroup.belongsToWorld(world) ||
             _dynamicAuthorityGenerationKey != getCurrentWeaponGenerationKey()) {
+            (void)rebuildForCurrentRoles();
             return visual;
         }
         if (_dynamicAuthorityRebuildRequested.exchange(false, std::memory_order_acq_rel)) {
-            (void)rebuildDynamicAuthorityGroup(world, weaponNode);
+            (void)rebuildForCurrentRoles();
+            return visual;
+        }
+        if (!dynamicAuthorityHandMembershipMatches(rightHand, rightHandCoupled, 0) ||
+            !dynamicAuthorityHandMembershipMatches(leftHand, leftHandCoupled, 1)) {
+            (void)rebuildForCurrentRoles();
             return visual;
         }
 
@@ -5729,8 +5955,8 @@ namespace rock
                 ++attachedBodyCount;
             }
         }
-        if (attachedBodyCount != _dynamicAuthorityMemberCount) {
-            (void)rebuildDynamicAuthorityGroup(world, weaponNode);
+        if (attachedBodyCount != _dynamicAuthorityWeaponMemberCount) {
+            (void)rebuildForCurrentRoles();
             return visual;
         }
         DynamicAuthorityIntent intent{};
@@ -5738,23 +5964,50 @@ namespace rock
         intent.generationKey = _dynamicAuthorityGenerationKey;
         intent.requestedWeaponWorld = weaponNode->world;
         intent.memberCount = _dynamicAuthorityMemberCount;
+        if (!dynamic_weapon_collision_authority_policy::isFiniteTransform(intent.requestedWeaponWorld)) {
+            return visual;
+        }
+        const RE::NiTransform requestedWeaponInverse = transform_math::invertTransform(intent.requestedWeaponWorld);
 
         for (std::size_t groupIndex = 0; groupIndex < _dynamicAuthorityMemberCount; ++groupIndex) {
-            const auto bankIndex = _dynamicAuthorityGroupToBank[groupIndex];
-            auto& instance = bank[bankIndex];
-            const bool useSourceNode =
-                instance.sourceNode && actor_equipment_grab::nodeContainsNode(weaponNode, instance.sourceNode, 64);
-            if (instance.sourceNode && !useSourceNode) {
-                // Detached reload membership changes require a new native
-                // system so the removed shape no longer contributes inertia.
-                (void)rebuildDynamicAuthorityGroup(world, weaponNode);
+            const auto& binding = _dynamicAuthorityMemberBindings[groupIndex];
+            RE::NiTransform bodyWorld{};
+            if (binding.kind == DynamicAuthorityMemberKind::WeaponBody) {
+                if (binding.sourceIndex >= bank.size()) {
+                    (void)rebuildForCurrentRoles();
+                    return visual;
+                }
+                auto& instance = bank[binding.sourceIndex];
+                const bool useSourceNode =
+                    instance.sourceNode && actor_equipment_grab::nodeContainsNode(weaponNode, instance.sourceNode, 64);
+                if (instance.sourceNode && !useSourceNode) {
+                    // Detached reload membership changes require a new native
+                    // system so the removed shape no longer contributes inertia.
+                    (void)rebuildForCurrentRoles();
+                    return visual;
+                }
+                const RE::NiTransform& sourceWorld = useSourceNode ? instance.sourceNode->world : weaponNode->world;
+                const RE::NiPoint3& center = useSourceNode ? instance.generatedSourceLocalCenterGame : instance.generatedLocalCenterGame;
+                bodyWorld = makeGeneratedBodyArrayWorldTransform(sourceWorld, center);
+            } else {
+                const bool isLeft = binding.kind == DynamicAuthorityMemberKind::LeftHandTwin;
+                const auto& targets = (isLeft ? leftHand : rightHand).dynamicTwinTargets();
+                const auto* frame = dynamic_hand_twin::frameForBodyIndex(targets, binding.sourceIndex);
+                if (!usableWeaponHandTwinFrame(frame)) {
+                    (void)rebuildForCurrentRoles();
+                    return visual;
+                }
+                bodyWorld = generatedTwinTargetToBodyArrayWorld(*frame);
+            }
+            if (!dynamic_weapon_collision_authority_policy::isFiniteTransform(bodyWorld)) {
                 return visual;
             }
-            const RE::NiTransform& sourceWorld = useSourceNode ? instance.sourceNode->world : weaponNode->world;
-            const RE::NiPoint3& center = useSourceNode ? instance.generatedSourceLocalCenterGame : instance.generatedLocalCenterGame;
-            const RE::NiTransform bodyWorld = makeGeneratedBodyArrayWorldTransform(sourceWorld, center);
+            // Raw requested intent is the only source of memberWeaponLocal.
+            // Physics later composes this relation with the live root only to
+            // keep the fixtures rigid during the next solve; the resolved pose
+            // is never recycled into the next requested frame.
             intent.memberWeaponLocal[groupIndex] = transform_math::composeTransforms(
-                transform_math::invertTransform(intent.requestedWeaponWorld), bodyWorld);
+                requestedWeaponInverse, bodyWorld);
         }
 
         {

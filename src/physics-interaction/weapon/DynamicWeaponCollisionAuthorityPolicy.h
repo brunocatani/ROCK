@@ -6,6 +6,44 @@
 
 namespace rock::dynamic_weapon_collision_authority_policy
 {
+    struct HeldHandCouplingInput
+    {
+        bool weaponVisualAvailable = false;
+        bool dynamicHandProxyEnabled = false;
+        bool rightHandDisabled = false;
+        bool leftHandDisabled = false;
+        bool rightHandWeaponAuthorityActive = false;
+        bool rightPartGripActive = false;
+        bool leftFiringGripActive = false;
+        bool leftSupportOrPartGripActive = false;
+    };
+
+    struct HeldHandCoupling
+    {
+        bool right = false;
+        bool left = false;
+    };
+
+    /*
+     * Role-driven and deliberately hand-symmetric. A native right firing grip,
+     * a manual left firing grip, either support grip, and either part-carry
+     * grip all move that physical hand's proxies into the weapon motion. A
+     * missing weapon visual cannot publish fresh raw intent, so it never keeps
+     * stale hand members coupled to a retained collision generation.
+     */
+    [[nodiscard]] inline HeldHandCoupling resolveHeldHandCoupling(const HeldHandCouplingInput& input)
+    {
+        if (!input.weaponVisualAvailable || !input.dynamicHandProxyEnabled) {
+            return {};
+        }
+        return HeldHandCoupling{
+            .right = !input.rightHandDisabled &&
+                     (input.rightHandWeaponAuthorityActive || input.rightPartGripActive),
+            .left = !input.leftHandDisabled &&
+                    (input.leftFiringGripActive || input.leftSupportOrPartGripActive),
+        };
+    }
+
     struct ContactThresholds
     {
         float translationEnterGameUnits = 0.15f;

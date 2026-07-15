@@ -240,6 +240,25 @@ Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'ownedByStrongerSystem'
 ) 'Dynamic hand drive must queue the wand target before evaluating visual ownership gates.'
 
+# A weapon-coupled hand has exactly one physical owner. Its layer-48 bodies
+# retire before the layer-49 group is rebuilt, and updateFrame must not create
+# or drive coincident independent twins while that lease is active.
+Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @(
+    '_dynamicHandCollision\.synchronizeWeaponCoupledHands\(',
+    '_weaponCollision\.updateDynamicAuthorityFrame\('
+) 'Independent hand twins must retire before the weapon shared-motion group changes membership.'
+Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
+    'synchronizeWeaponCoupledHands\(',
+    'requested\[index\].*retireHand\(',
+    '_weaponCoupledHands\[index\]\s*=\s*requested\[index\]'
+) 'The dynamic-hand runtime must retire independent bodies before publishing coupled ownership.'
+Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
+    'if \(_weaponCoupledHands\[index\]\)',
+    'handTelemetry\.ownedByStrongerSystem\s*=\s*true;',
+    'return;',
+    'ensureSlotCreated\('
+) 'A coupled hand must return before independent proxy creation and drive queueing.'
+
 # Dynamic collision is the only free-hand world-collision implementation.
 Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'SoftContactRuntime|_softContactRuntime|NativeContactEvidence' `

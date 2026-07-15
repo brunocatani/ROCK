@@ -35,6 +35,32 @@ Require-Text 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' `
     'snapshot\.motionIndex != sharedMotion' `
     'Every dynamic weapon twin must be runtime-validated against the same world motion.'
 
+Require-OrderedText 'src/physics-interaction/weapon/WeaponCollision.cpp' @(
+    'weaponMemberCount\s*=\s*memberCount',
+    'if \(weaponMemberCount == 0\)',
+    'appendHandTwins',
+    'hand->buildDynamicTwinShape\(',
+    'DynamicAuthorityMemberKind::LeftHandTwin',
+    '_dynamicAuthorityGroup\.create\('
+) 'Held-hand palm/fingertip hulls must join the same native body group as the weapon hulls.'
+
+Require-Text 'src/physics-interaction/weapon/WeaponCollision.h' `
+    'MAX_DYNAMIC_AUTHORITY_BODIES[\s\S]{0,180}2 \* dynamic_hand_twin::kBodiesPerHand' `
+    'The shared group and debug snapshot must reserve both complete six-body held-hand sets beyond the weapon bank.'
+
+Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @(
+    'resolveHeldHandCoupling\(',
+    'synchronizeWeaponCoupledHands\(',
+    'updateDynamicAuthorityFrame\('
+) 'Ambidextrous role resolution and independent-proxy retirement must precede shared-group intent publication.'
+
+Require-Text 'src/physics-interaction/weapon/DynamicWeaponCollisionAuthorityPolicy.h' `
+    'rightHandWeaponAuthorityActive \|\| input\.rightPartGripActive' `
+    'Right firing/support/part-carry roles must all couple the physical right hand.'
+Require-Text 'src/physics-interaction/weapon/DynamicWeaponCollisionAuthorityPolicy.h' `
+    'leftFiringGripActive \|\| input\.leftSupportOrPartGripActive' `
+    'Left firing/support/part-carry roles must all couple the physical left hand.'
+
 Require-Text 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' `
     'niRowsToHavokColumns\(members\[index\]\.initialWorld\.rotate\)' `
     'Body-group creation must convert normal BODY/Ni stored axes to the native quaternion convention.'
@@ -45,6 +71,24 @@ Require-OrderedText 'src/physics-interaction/weapon/WeaponCollision.cpp' @(
     '_dynamicAuthorityGroup\.member\(0\)',
     'driveGeneratedKeyframedBody\('
 ) 'Animated members must batch before one mass rebuild, then only the anchor may drive the shared motion.'
+
+Require-OrderedText 'src/physics-interaction/weapon/WeaponCollision.cpp' @(
+    'requestedWeaponInverse\s*=\s*transform_math::invertTransform\(intent\.requestedWeaponWorld\)',
+    'intent\.memberWeaponLocal\[groupIndex\]\s*=\s*transform_math::composeTransforms\(',
+    'liveWeaponRoot',
+    'intent\.memberWeaponLocal\[groupIndex\]'
+) 'Held-hand fixtures must capture local relations from raw requested intent and only compose them with the live root inside the physics solve.'
+
+Require-OrderedText 'src/physics-interaction/weapon/WeaponCollision.cpp' @(
+    'applySampledAnchorCorrectionToCurrentIntent\(',
+    'intent\.requestedWeaponWorld',
+    'physics\.commandedAnchorWorld',
+    'physics\.liveAnchorWorld'
+) 'Weapon/hand collision feedback must retain the requested-commanded-live contract instead of feeding the rendered result back into intent.'
+Require-OrderedText 'src/physics-interaction/weapon/WeaponCollision.cpp' @(
+    'sampleDynamicAuthorityPostSolve\(',
+    'prior\.liveAnchorWorld\s*=\s*liveAnchor'
+) 'The live shared-motion pose must be published only by the post-solve phase.'
 
 Require-OrderedText 'src/physics-interaction/weapon/WeaponCollision.cpp' @(
     'const bool massRebuildFailed',
@@ -69,6 +113,10 @@ Require-Text 'src/physics-interaction/collision/CollisionLayerPolicy.h' `
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' `
     'generatedDynamicWeaponAuthorityFilterInfo\(false\)' `
     'Dynamic weapon twins must enter the world collision-disabled until their complete group is valid.'
+
+Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' `
+    'generatedMaterialId\s*=\s*[\s\S]{0,100}registerGeneratedBodyMaterial\(world\)' `
+    'Weapon and held-hand shared-motion members must use ROCK''s established generated-collider friction material.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
     'g_rockConfig\.rockDebugDrawDynamicWeaponColliders' `

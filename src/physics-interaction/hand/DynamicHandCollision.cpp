@@ -122,18 +122,6 @@ namespace rock
             };
         }
 
-        const dynamic_hand_twin::TwinSlotFrame* twinFrameForSlot(const dynamic_hand_twin::TwinTargets& twins, std::size_t bodyIndex)
-        {
-            if (bodyIndex == DynamicHandCollisionRuntime::kPalmSlot) {
-                return &twins.palm;
-            }
-            const std::size_t fingerIndex = bodyIndex - 1;
-            if (fingerIndex >= twins.fingertips.size()) {
-                return nullptr;
-            }
-            return &twins.fingertips[fingerIndex];
-        }
-
         /*
          * Rigid-hand combination of per-body deviations: each twin's deviation
          * is a half-space push-out for its own contacts, so the minimal hand
@@ -482,9 +470,29 @@ namespace rock
         retireHand(_hands[1], bhkWorld, true);
     }
 
+    void DynamicHandCollisionRuntime::synchronizeWeaponCoupledHands(
+        void* bhkWorld,
+        bool rightCoupled,
+        bool leftCoupled)
+    {
+        const std::array<bool, 2> requested{ rightCoupled, leftCoupled };
+        for (std::size_t index = 0; index < requested.size(); ++index) {
+            auto& handSlots = _hands[index];
+            const bool hasIndependentBodies = std::any_of(
+                handSlots.bodies.begin(), handSlots.bodies.end(), [](const ProxySlot& slot) {
+                    return slot.created;
+                });
+            if (requested[index] && (!_weaponCoupledHands[index] || hasIndependentBodies)) {
+                retireHand(handSlots, bhkWorld, index == 1u);
+            }
+            _weaponCoupledHands[index] = requested[index];
+        }
+    }
+
     void DynamicHandCollisionRuntime::reset()
     {
         retireAll(nullptr);
+        _weaponCoupledHands = {};
         _telemetrySnapshot = {};
         _pendingHapticEvents = {};
         _telemetryUpdateSequence = 0;
@@ -495,10 +503,15 @@ namespace rock
         bool physicsWritesAllowed,
         const Hand& rightHand,
         const Hand& leftHand,
-        bool rightHandWeaponEquipped,
-        bool leftSupportGripActive)
+        bool rightHandWeaponVisualOwned,
+        bool leftHandWeaponVisualOwned)
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::DynamicHandCollisionFrame);
+
+        synchronizeWeaponCoupledHands(
+            frame.bhkWorld,
+            _weaponCoupledHands[0],
+            _weaponCoupledHands[1]);
 
         _pendingHapticEvents = {};
         dynamic_hand_collision_telemetry::Snapshot telemetry{};
@@ -546,12 +559,13 @@ namespace rock
                 _hands[1].bodies[kPalmSlot].created ? "yes" : "no");
         }
 
-        auto updateHand = [&](bool isLeft, const HandFrameInput& handInput, const Hand& hand, bool weaponOwned) {
+        auto updateHand = [&](bool isLeft, const HandFrameInput& handInput, const Hand& hand, bool weaponVisualOwned) {
             const std::size_t index = handIndex(isLeft);
             auto& handSlots = _hands[index];
             auto& handTelemetry = telemetry.hands[index];
             handTelemetry.isLeft = isLeft;
             handTelemetry.handDisabled = handInput.disabled;
+            handTelemetry.weaponMotionCoupled = _weaponCoupledHands[index];
             handTelemetry.visualAuthorityAvailable = frik_visual_authority::isAvailable();
 
             if (handInput.disabled) {
@@ -561,6 +575,31 @@ namespace rock
             }
 
             const auto& twins = hand.dynamicTwinTargets();
+
+            if (_weaponCoupledHands[index]) {
+                // The weapon group owns the physical copies and final hand
+                // pose. Keep raw publication visible in telemetry, but never
+                // create/drive a coincident independent motion or emit its
+                // lower-priority correction/haptics.
+                for (std::size_t bodyIndex = 0; bodyIndex < kBodiesPerHand; ++bodyIndex) {
+                    auto& twinTelemetry = handTelemetry.twins[bodyIndex];
+                    twinTelemetry.role = dynamic_hand_collision_telemetry::roleForBodyIndex(bodyIndex);
+                    const auto* twinFrame = dynamic_hand_twin::frameForBodyIndex(twins, bodyIndex);
+                    if (!twinFrame || !twinFrame->valid) {
+                        continue;
+                    }
+                    twinTelemetry.publishedTargetValid = true;
+                    twinTelemetry.publishedTargetWorld = twinFrame->target;
+                    twinTelemetry.lengthGameUnits = twinFrame->length;
+                    twinTelemetry.radiusGameUnits = twinFrame->radius;
+                    twinTelemetry.convexRadiusGameUnits = twinFrame->convexRadius;
+                }
+                handTelemetry.ownedByStrongerSystem = true;
+                clearVisual(handSlots, isLeft);
+                updateHandHaptic(handSlots, handTelemetry, false, frame.deltaSeconds);
+                return;
+            }
+
             std::array<RE::NiPoint3, kBodiesPerHand> deviations{};
             std::array<bool, kBodiesPerHand> deviationValid{};
 
@@ -575,7 +614,7 @@ namespace rock
                 auto& slot = handSlots.bodies[bodyIndex];
                 auto& twinTelemetry = handTelemetry.twins[bodyIndex];
                 twinTelemetry.role = dynamic_hand_collision_telemetry::roleForBodyIndex(bodyIndex);
-                const auto* twinFrame = twinFrameForSlot(twins, bodyIndex);
+                const auto* twinFrame = dynamic_hand_twin::frameForBodyIndex(twins, bodyIndex);
                 if (!twinFrame || !twinFrame->valid) {
                     continue;
                 }
@@ -641,7 +680,7 @@ namespace rock
             handTelemetry.combinedContactDeviationGameUnits = pointLength(combined);
 
             const bool ownedByStrongerSystem =
-                suppressesGeneratedHandContactEvidence(hand.getState()) || weaponOwned;
+                suppressesGeneratedHandContactEvidence(hand.getState()) || weaponVisualOwned;
             handTelemetry.ownedByStrongerSystem = ownedByStrongerSystem;
             updateHandHaptic(
                 handSlots,
@@ -728,8 +767,8 @@ namespace rock
             handTelemetry.visualActive = handSlots.visualActive;
         };
 
-        updateHand(false, frame.right, rightHand, rightHandWeaponEquipped);
-        updateHand(true, frame.left, leftHand, leftSupportGripActive);
+        updateHand(false, frame.right, rightHand, rightHandWeaponVisualOwned);
+        updateHand(true, frame.left, leftHand, leftHandWeaponVisualOwned);
         _telemetrySnapshot = telemetry;
     }
 

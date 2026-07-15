@@ -53,6 +53,76 @@ int main()
     using namespace rock::dynamic_weapon_collision_authority_policy;
     bool ok = true;
 
+    HeldHandCouplingInput couplingInput{
+        .weaponVisualAvailable = true,
+        .dynamicHandProxyEnabled = true,
+        .rightHandWeaponAuthorityActive = true,
+    };
+    auto coupling = resolveHeldHandCoupling(couplingInput);
+    ok &= truth("native right firing hand couples", coupling.right, true);
+    ok &= truth("native right firing leaves left free", coupling.left, false);
+
+    couplingInput = HeldHandCouplingInput{
+        .weaponVisualAvailable = true,
+        .dynamicHandProxyEnabled = true,
+        .rightHandWeaponAuthorityActive = true,
+        .leftSupportOrPartGripActive = true,
+    };
+    coupling = resolveHeldHandCoupling(couplingInput);
+    ok &= truth("right-firing right hand couples", coupling.right, true);
+    ok &= truth("right-firing left support hand couples", coupling.left, true);
+
+    couplingInput = HeldHandCouplingInput{
+        .weaponVisualAvailable = true,
+        .dynamicHandProxyEnabled = true,
+        .leftFiringGripActive = true,
+    };
+    coupling = resolveHeldHandCoupling(couplingInput);
+    ok &= truth("left primary hand couples", coupling.left, true);
+    ok &= truth("left primary leaves right free", coupling.right, false);
+
+    couplingInput = HeldHandCouplingInput{
+        .weaponVisualAvailable = true,
+        .dynamicHandProxyEnabled = true,
+        .rightPartGripActive = true,
+        .leftFiringGripActive = true,
+    };
+    coupling = resolveHeldHandCoupling(couplingInput);
+    ok &= truth("left firing hand couples", coupling.left, true);
+    ok &= truth("left-firing right support hand couples", coupling.right, true);
+
+    couplingInput = HeldHandCouplingInput{
+        .weaponVisualAvailable = true,
+        .dynamicHandProxyEnabled = true,
+        .rightPartGripActive = true,
+        .leftSupportOrPartGripActive = true,
+    };
+    coupling = resolveHeldHandCoupling(couplingInput);
+    ok &= truth("part carry right hand couples", coupling.right, true);
+    ok &= truth("part carry left hand couples", coupling.left, true);
+
+    couplingInput.rightHandDisabled = true;
+    couplingInput.leftHandDisabled = true;
+    coupling = resolveHeldHandCoupling(couplingInput);
+    ok &= truth("disabled right hand cannot couple", coupling.right, false);
+    ok &= truth("disabled left hand cannot couple", coupling.left, false);
+
+    couplingInput = HeldHandCouplingInput{
+        .weaponVisualAvailable = false,
+        .dynamicHandProxyEnabled = true,
+        .rightHandWeaponAuthorityActive = true,
+        .leftFiringGripActive = true,
+    };
+    coupling = resolveHeldHandCoupling(couplingInput);
+    ok &= truth("missing weapon visual releases right coupling", coupling.right, false);
+    ok &= truth("missing weapon visual releases left coupling", coupling.left, false);
+
+    couplingInput.weaponVisualAvailable = true;
+    couplingInput.dynamicHandProxyEnabled = false;
+    coupling = resolveHeldHandCoupling(couplingInput);
+    ok &= truth("disabled dynamic proxies release right coupling", coupling.right, false);
+    ok &= truth("disabled dynamic proxies release left coupling", coupling.left, false);
+
     ok &= truth("free residual stays free", evaluateContactResidual(false, 0.05f, 0.1f), false);
     ok &= truth("translation enters contact", evaluateContactResidual(false, 0.16f, 0.0f), true);
     ok &= truth("rotation enters contact", evaluateContactResidual(false, 0.0f, 0.76f), true);

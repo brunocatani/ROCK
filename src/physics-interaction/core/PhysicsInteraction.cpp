@@ -57,6 +57,7 @@
 #include "physics-interaction/stash/ShoulderStashPolicy.h"
 #include "physics-interaction/stash/ShoulderStashTransfer.h"
 #include "physics-interaction/weapon/LooseWeaponGripZone.h"
+#include "physics-interaction/weapon/DynamicWeaponCollisionAuthorityPolicy.h"
 #include "physics-interaction/weapon/WeaponEquipTransfer.h"
 #include "physics-interaction/weapon/WeaponInteraction.h"
 #include "physics-interaction/hand/HandFrame.h"
@@ -2237,6 +2238,10 @@ namespace rock
         const bool rightHandWeaponAuthorityActiveBeforeGrip = rightHandWeaponAuthorityActive;
         bool leftSupportGripActive = false;
         bool rightPartGripActive = _twoHandedGrip.isHandPartGripping(false);
+        bool leftHandFiringActiveAfterGrip = false;
+        bool rightHandWeaponVisualOwned = rightHandWeaponAuthorityActive || rightPartGripActive;
+        bool leftHandWeaponVisualOwned = false;
+        dynamic_weapon_collision_authority_policy::HeldHandCoupling weaponCoupledHands{};
         if (rightHandWeaponAuthorityActive) {
             suppressRightHandCollisionForDominantWeapon(hknp);
         } else {
@@ -3035,7 +3040,7 @@ namespace rock
              * firing grip, the OpenVR-level trigger remap presents the left
              * trigger to the game as the primary (right) wand's trigger.
              */
-            const bool leftHandFiringActiveAfterGrip = _twoHandedGrip.isFiringHandLeft() && _twoHandedGrip.isFiringGripOccupied();
+            leftHandFiringActiveAfterGrip = _twoHandedGrip.isFiringHandLeft() && _twoHandedGrip.isFiringGripOccupied();
             input_remap_runtime::setEquippedWeaponLeftHandFiringActive(leftHandFiringActiveAfterGrip);
             ::rock::provider::setEquippedWeaponFiringHandIsLeft(_twoHandedGrip.isFiringHandLeft());
 
@@ -3108,14 +3113,36 @@ namespace rock
                 restoreHandCollisionAfterWeaponSupport(hknp, true);
             }
 
+            rightHandWeaponVisualOwned = rightHandWeaponAuthorityActive || rightPartGripActive;
+            leftHandWeaponVisualOwned = weaponSupportGripActive || leftHandFiringActiveAfterGrip;
+            weaponCoupledHands = dynamic_weapon_collision_authority_policy::resolveHeldHandCoupling(
+                dynamic_weapon_collision_authority_policy::HeldHandCouplingInput{
+                    .weaponVisualAvailable = weaponNode != nullptr,
+                    .dynamicHandProxyEnabled = g_rockConfig.rockHandCollisionDynamicDrive,
+                    .rightHandDisabled = frame.right.disabled,
+                    .leftHandDisabled = frame.left.disabled,
+                    .rightHandWeaponAuthorityActive = rightHandWeaponAuthorityActive,
+                    .rightPartGripActive = rightPartGripActive,
+                    .leftFiringGripActive = leftHandFiringActiveAfterGrip,
+                    .leftSupportOrPartGripActive = weaponSupportGripActive,
+                });
+            _dynamicHandCollision.synchronizeWeaponCoupledHands(
+                frame.bhkWorld,
+                weaponCoupledHands.right,
+                weaponCoupledHands.left);
+
             if (!weaponNode) {
                 _twoHandedGrip.clearCollisionResolvedWeaponAuthority();
             }
+            const auto dynamicWeaponAuthority = _weaponCollision.updateDynamicAuthorityFrame(
+                hknp,
+                weaponNode,
+                frame.deltaSeconds,
+                _rightHand,
+                _leftHand,
+                weaponCoupledHands.right,
+                weaponCoupledHands.left);
             if (weaponNode) {
-                const auto dynamicWeaponAuthority = _weaponCollision.updateDynamicAuthorityFrame(
-                    hknp,
-                    weaponNode,
-                    frame.deltaSeconds);
                 if (dynamicWeaponAuthority.valid) {
                     const bool authorityPublished = _twoHandedGrip.applyCollisionResolvedWeaponAuthority(
                             weaponNode,
@@ -3199,8 +3226,8 @@ namespace rock
             physicsWritesAllowedForWorld(frame.hknpWorld),
             _rightHand,
             _leftHand,
-            rightHandWeaponAuthorityActive,
-            leftSupportGripActive);
+            rightHandWeaponVisualOwned,
+            leftHandWeaponVisualOwned);
         const auto dynamicHandHapticEvents = _dynamicHandCollision.consumeHapticEvents();
         for (const auto& pulse : dynamicHandHapticEvents.hands) {
             if (!pulse.fire) {
