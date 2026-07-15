@@ -144,6 +144,9 @@
         const bool drawRockColliderBodies = g_rockConfig.rockDebugShowColliders;
         const bool drawGrabPivots = g_rockConfig.rockDebugShowGrabPivots;
         const bool drawFingerProbes = g_rockConfig.rockDebugShowGrabFingerProbes;
+        const bool drawFingerSweptArc = g_rockConfig.rockDebugShowGrabFingerSweptArc;
+        const bool drawFingerSweptArcText = drawFingerSweptArc && g_rockConfig.rockDebugShowGrabFingerSweptArcText;
+        const bool drawFingerSweptArcLiveSkeleton = drawFingerSweptArc && g_rockConfig.rockDebugShowGrabFingerSweptArcLiveSkeleton;
         const bool drawPalmVectors = g_rockConfig.rockDebugShowPalmVectors;
         const bool drawGrabPockets = g_rockConfig.rockDebugDrawGrabPockets;
         const bool drawRootFlattenedFingerSkeleton = g_rockConfig.rockDebugShowRootFlattenedFingerSkeletonMarkers;
@@ -178,9 +181,9 @@
             s_worldOriginDiagnosticsEnabledLogged = false;
         }
         if (!drawRockColliderBodies && !g_rockConfig.rockDebugShowTargetColliders && !g_rockConfig.rockDebugShowHandAxes && !drawGrabPivots && !drawFingerProbes &&
-            !drawPalmVectors && !drawGrabPockets && !drawRootFlattenedFingerSkeleton && !drawSkeletonBones && !drawGrabPocketNormal && !drawGrabContactPatch && !drawHandBoneContacts &&
-            !drawGrabAuthorityProxy && !drawGrabForceTorque && !drawGrabTransformTelemetry && !drawPerformanceProfilerOverlay && !drawWeaponAuthorityDebug &&
-            !drawGrabSupportFrame && !drawWorldOriginDiagnostics && !drawCustomCalibrationOffset && !drawDynamicHandColliders) {
+            !drawFingerSweptArc && !drawPalmVectors && !drawGrabPockets && !drawRootFlattenedFingerSkeleton && !drawSkeletonBones && !drawGrabPocketNormal &&
+            !drawGrabContactPatch && !drawHandBoneContacts && !drawGrabAuthorityProxy && !drawGrabForceTorque && !drawGrabTransformTelemetry && !drawPerformanceProfilerOverlay &&
+            !drawWeaponAuthorityDebug && !drawGrabSupportFrame && !drawWorldOriginDiagnostics && !drawCustomCalibrationOffset && !drawDynamicHandColliders) {
             debug::ClearFrame();
             return;
         }
@@ -193,12 +196,11 @@
         frame.drawTargetBodies = g_rockConfig.rockDebugShowTargetColliders;
         frame.drawAxes = g_rockConfig.rockDebugShowHandAxes || drawGrabTransformTelemetryAxes || drawGrabAuthorityProxy || drawGrabForceTorque ||
             drawCustomCalibrationOffset;
-        frame.drawMarkers =
-            drawGrabPivots || drawFingerProbes || drawPalmVectors || drawGrabPockets || drawRootFlattenedFingerSkeleton || drawGrabPocketNormal || drawGrabContactPatch ||
-            drawGrabForceTorque || drawHandBoneContacts || drawGrabAuthorityProxy || drawGrabTransformTelemetryAxes || drawWeaponAuthorityDebug ||
-            drawGrabSupportFrame || drawWorldOriginDiagnostics || drawDynamicHandColliders;
+        frame.drawMarkers = drawGrabPivots || drawFingerProbes || drawFingerSweptArc || drawPalmVectors || drawGrabPockets || drawRootFlattenedFingerSkeleton ||
+            drawGrabPocketNormal || drawGrabContactPatch || drawGrabForceTorque || drawHandBoneContacts || drawGrabAuthorityProxy || drawGrabTransformTelemetryAxes ||
+            drawWeaponAuthorityDebug || drawGrabSupportFrame || drawWorldOriginDiagnostics || drawDynamicHandColliders;
         frame.drawSkeleton = drawSkeletonBones;
-        frame.drawText = drawGrabTransformTelemetryText || drawGrabForceTorqueText || drawPerformanceProfilerOverlay || drawDynamicHandColliders;
+        frame.drawText = drawGrabTransformTelemetryText || drawGrabForceTorqueText || drawFingerSweptArcText || drawPerformanceProfilerOverlay || drawDynamicHandColliders;
         RE::bhkWorld* originDiagnosticBhk = drawWorldOriginDiagnostics ? context.bhkWorld : nullptr;
         const bool rightDisabled = context.right.disabled;
         const bool leftDisabled = context.left.disabled;
@@ -1040,6 +1042,162 @@
 
             addGrabForceTorqueDebug(_rightHand);
             addGrabForceTorqueDebug(_leftHand);
+        }
+
+        if (drawFingerSweptArc) {
+            bool anySweepCapture = false;
+            constexpr float kSweepHitTextColor[4] = { 1.0f, 0.90f, 0.05f, 1.0f };
+            constexpr float kSweepMissTextColor[4] = { 1.0f, 0.05f, 0.05f, 1.0f };
+            constexpr float kSweepOutOfReachTextColor[4] = { 0.08f, 0.35f, 1.0f, 1.0f };
+            constexpr float kSweepOverOpenTextColor[4] = { 1.0f, 0.45f, 0.02f, 1.0f };
+            constexpr float kSweepClosedLimitTextColor[4] = { 1.0f, 0.05f, 0.42f, 1.0f };
+            constexpr float kSweepLegendTextColor[4] = { 0.92f, 0.92f, 0.92f, 0.96f };
+
+            auto addFingerSweptArcDebug = [&](const Hand& hand) {
+                if ((hand.isLeft() && leftDisabled) || (!hand.isLeft() && rightDisabled)) {
+                    return;
+                }
+
+                grab_finger_pose_runtime::FingerSweepDebugSnapshot snapshot{};
+                if (!hand.getGrabFingerSweepDebugSnapshot(snapshot) || !snapshot.valid || !snapshot.capture.valid || !std::isfinite(snapshot.objectWorld.scale) ||
+                    std::abs(snapshot.objectWorld.scale) <= 0.000001f) {
+                    return;
+                }
+                anySweepCapture = true;
+
+                auto roleForProbe = [](grab_finger_pose_math::CalibratedFingerProbe probe) {
+                    switch (probe) {
+                    case grab_finger_pose_math::CalibratedFingerProbe::Outer:
+                        return debug::MarkerOverlayRole::GrabFingerSweepOuter;
+                    case grab_finger_pose_math::CalibratedFingerProbe::Inner:
+                        return debug::MarkerOverlayRole::GrabFingerSweepInner;
+                    case grab_finger_pose_math::CalibratedFingerProbe::Tip:
+                    default:
+                        return debug::MarkerOverlayRole::GrabFingerSweepTip;
+                    }
+                };
+                auto roleForState = [](grab_finger_pose_runtime::FingerSweepDebugState state) {
+                    switch (state) {
+                    case grab_finger_pose_runtime::FingerSweepDebugState::MissFallback:
+                        return debug::MarkerOverlayRole::GrabFingerSweepMiss;
+                    case grab_finger_pose_runtime::FingerSweepDebugState::OutOfReach:
+                        return debug::MarkerOverlayRole::GrabFingerSweepOutOfReach;
+                    case grab_finger_pose_runtime::FingerSweepDebugState::OverOpen:
+                        return debug::MarkerOverlayRole::GrabFingerSweepOverOpen;
+                    case grab_finger_pose_runtime::FingerSweepDebugState::ClosedLimit:
+                        return debug::MarkerOverlayRole::GrabFingerSweepClosedLimit;
+                    case grab_finger_pose_runtime::FingerSweepDebugState::Hit:
+                    default:
+                        return debug::MarkerOverlayRole::GrabFingerSweepContact;
+                    }
+                };
+                auto textColorForState = [&](grab_finger_pose_runtime::FingerSweepDebugState state) -> const float* {
+                    switch (state) {
+                    case grab_finger_pose_runtime::FingerSweepDebugState::MissFallback:
+                        return kSweepMissTextColor;
+                    case grab_finger_pose_runtime::FingerSweepDebugState::OutOfReach:
+                        return kSweepOutOfReachTextColor;
+                    case grab_finger_pose_runtime::FingerSweepDebugState::OverOpen:
+                        return kSweepOverOpenTextColor;
+                    case grab_finger_pose_runtime::FingerSweepDebugState::ClosedLimit:
+                        return kSweepClosedLimitTextColor;
+                    case grab_finger_pose_runtime::FingerSweepDebugState::Hit:
+                    default:
+                        return kSweepHitTextColor;
+                    }
+                };
+
+                for (std::size_t fingerIndex = 0; fingerIndex < snapshot.capture.fingers.size(); ++fingerIndex) {
+                    const auto& finger = snapshot.capture.fingers[fingerIndex];
+                    if (!finger.valid) {
+                        continue;
+                    }
+
+                    RE::NiPoint3 stateAnchorWorld = snapshot.objectWorld.translate;
+                    bool stateAnchorValid = false;
+                    for (std::size_t probeIndex = 0; probeIndex < finger.probePointsObjectLocal.size(); ++probeIndex) {
+                        const std::size_t pointCount = (std::min)(static_cast<std::size_t>(finger.probePointCount[probeIndex]), finger.probePointsObjectLocal[probeIndex].size());
+                        if (pointCount == 0) {
+                            continue;
+                        }
+                        const auto role = roleForProbe(finger.probeKind[probeIndex]);
+                        RE::NiPoint3 previousWorld = transform_math::localPointToWorld(snapshot.objectWorld, finger.probePointsObjectLocal[probeIndex][0]);
+                        for (std::size_t pointIndex = 1; pointIndex < pointCount; ++pointIndex) {
+                            const RE::NiPoint3 pointWorld = transform_math::localPointToWorld(snapshot.objectWorld, finger.probePointsObjectLocal[probeIndex][pointIndex]);
+                            addMarkerLine(role, previousWorld, pointWorld);
+                            previousWorld = pointWorld;
+                        }
+                        if (finger.probeKind[probeIndex] == grab_finger_pose_math::CalibratedFingerProbe::Tip) {
+                            stateAnchorWorld = previousWorld;
+                            stateAnchorValid = true;
+                        }
+                    }
+
+                    if (finger.hasContact) {
+                        const RE::NiPoint3 contactCenterWorld = transform_math::localPointToWorld(snapshot.objectWorld, finger.contactCenterObjectLocal);
+                        const float contactRadiusWorld = finger.contactRadiusObjectLocal * std::abs(snapshot.objectWorld.scale);
+                        // A point marker is a three-axis diameter cross; using
+                        // the captured radius exposes the exact contact sphere.
+                        addMarkerPoint(debug::MarkerOverlayRole::GrabFingerSweepContact, contactCenterWorld, contactRadiusWorld);
+                        stateAnchorWorld = contactCenterWorld;
+                        stateAnchorValid = true;
+
+                        if (finger.hasHitPoint) {
+                            const RE::NiPoint3 hitPointWorld = transform_math::localPointToWorld(snapshot.objectWorld, finger.hitPointObjectLocal);
+                            addMarkerLine(debug::MarkerOverlayRole::GrabFingerSweepContact, contactCenterWorld, hitPointWorld);
+                            addMarkerPoint(debug::MarkerOverlayRole::GrabFingerSweepHitNormal, hitPointWorld, 0.8f);
+                            if (finger.hasHitNormal) {
+                                const RE::NiPoint3 normalWorld = grab_finger_pose_runtime::normalizedOrFallback(
+                                    transform_math::localVectorToWorld(snapshot.objectWorld, finger.hitNormalObjectLocal), RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
+                                addMarkerLine(debug::MarkerOverlayRole::GrabFingerSweepHitNormal, hitPointWorld, hitPointWorld + normalWorld * 4.0f);
+                            }
+                        }
+                    }
+
+                    if (stateAnchorValid && finger.state != grab_finger_pose_runtime::FingerSweepDebugState::Hit) {
+                        addMarkerPoint(roleForState(finger.state), stateAnchorWorld, 1.6f);
+                    }
+                    if (drawFingerSweptArcText && stateAnchorValid) {
+                        const char* selectedProbe = "NONE";
+                        if (finger.selectedProbeIndex < finger.probeKind.size()) {
+                            selectedProbe = grab_finger_pose_runtime::fingerSweepDebugProbeName(finger.probeKind[finger.selectedProbeIndex]);
+                        }
+                        const char* thumbLane = fingerIndex == 0 ? grab_finger_pose_math::thumbLaneName(finger.thumbLane) : "-";
+                        addTextLine(stateAnchorWorld + RE::NiPoint3{ 0.0f, 0.0f, 1.8f + static_cast<float>(fingerIndex) * 0.6f }, textColorForState(finger.state),
+                            "%c %s %s v=%.2f raw=%.2f probe=%s lane=%s",
+                            hand.isLeft() ? 'L' : 'R', grab_finger_pose_runtime::fingerSweepDebugFingerName(fingerIndex),
+                            grab_finger_pose_runtime::fingerSweepDebugStateName(finger.state), finger.publishedValue, finger.rawCurveValue, selectedProbe, thumbLane);
+                    }
+                }
+
+                if (drawFingerSweptArcLiveSkeleton) {
+                    root_flattened_finger_skeleton_runtime::Snapshot liveSkeleton{};
+                    if (root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(hand.isLeft(), liveSkeleton)) {
+                        for (const auto& finger : liveSkeleton.fingers) {
+                            if (!finger.valid) {
+                                continue;
+                            }
+                            addMarkerPoint(debug::MarkerOverlayRole::GrabFingerSweepLiveSkeleton, finger.points[0], 1.0f);
+                            addMarkerPoint(debug::MarkerOverlayRole::GrabFingerSweepLiveSkeleton, finger.points[1], 0.8f);
+                            addMarkerPoint(debug::MarkerOverlayRole::GrabFingerSweepLiveSkeleton, finger.points[2], 1.0f);
+                            addMarkerLine(debug::MarkerOverlayRole::GrabFingerSweepLiveSkeleton, finger.points[0], finger.points[1]);
+                            addMarkerLine(debug::MarkerOverlayRole::GrabFingerSweepLiveSkeleton, finger.points[1], finger.points[2]);
+                        }
+                    }
+                }
+
+                if (drawFingerSweptArcText) {
+                    addTextLine(snapshot.objectWorld.translate + RE::NiPoint3{ 0.0f, 0.0f, 10.0f }, kSweepLegendTextColor,
+                        "%c SWEEP tri=%u node=%u exact=%u | TIP cyan OUT green IN purple CONTACT yellow LIVE white", hand.isLeft() ? 'L' : 'R',
+                        snapshot.capture.candidateTriangleCount, snapshot.capture.spatialNodeVisits, snapshot.capture.spatialTriangleTests);
+                }
+            };
+
+            addFingerSweptArcDebug(_rightHand);
+            addFingerSweptArcDebug(_leftHand);
+            if (drawFingerSweptArcText && !anySweepCapture && (_rightHand.isHolding() || _leftHand.isHolding())) {
+                addScreenTextLine(20.0f, 20.0f, kSweepMissTextColor, "SWEPT ARC: no captured regular solve; release and grab again (pinch is intentionally excluded)");
+            }
         }
 
         if (drawFingerProbes) {

@@ -212,6 +212,9 @@ namespace rock
         bool rockDebugDrawGrabSupportFrame = false;
         bool rockDebugDrawGrabPockets = false;
         bool rockDebugShowGrabFingerProbes = false;
+        bool rockDebugShowGrabFingerSweptArc = false;
+        bool rockDebugShowGrabFingerSweptArcText = true;
+        bool rockDebugShowGrabFingerSweptArcLiveSkeleton = true;
         bool rockDebugShowPalmVectors = false;
         bool rockDebugDrawHandColliders = false;
         bool rockDebugDrawHandBoneColliders = false;

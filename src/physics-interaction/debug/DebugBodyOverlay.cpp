@@ -2063,6 +2063,66 @@ float4 main(PS_INPUT input) : SV_Target {
                 color[2] = 0.05f;
                 color[3] = 0.95f;
                 break;
+            case MarkerOverlayRole::GrabFingerSweepTip:
+                color[0] = 0.05f;
+                color[1] = 0.95f;
+                color[2] = 1.0f;
+                color[3] = 0.96f;
+                break;
+            case MarkerOverlayRole::GrabFingerSweepOuter:
+                color[0] = 0.25f;
+                color[1] = 1.0f;
+                color[2] = 0.12f;
+                color[3] = 0.94f;
+                break;
+            case MarkerOverlayRole::GrabFingerSweepInner:
+                color[0] = 0.92f;
+                color[1] = 0.18f;
+                color[2] = 1.0f;
+                color[3] = 0.94f;
+                break;
+            case MarkerOverlayRole::GrabFingerSweepContact:
+                color[0] = 1.0f;
+                color[1] = 0.90f;
+                color[2] = 0.05f;
+                color[3] = 1.0f;
+                break;
+            case MarkerOverlayRole::GrabFingerSweepHitNormal:
+                color[0] = 1.0f;
+                color[1] = 1.0f;
+                color[2] = 1.0f;
+                color[3] = 1.0f;
+                break;
+            case MarkerOverlayRole::GrabFingerSweepMiss:
+                color[0] = 1.0f;
+                color[1] = 0.05f;
+                color[2] = 0.05f;
+                color[3] = 1.0f;
+                break;
+            case MarkerOverlayRole::GrabFingerSweepOutOfReach:
+                color[0] = 0.08f;
+                color[1] = 0.35f;
+                color[2] = 1.0f;
+                color[3] = 1.0f;
+                break;
+            case MarkerOverlayRole::GrabFingerSweepOverOpen:
+                color[0] = 1.0f;
+                color[1] = 0.45f;
+                color[2] = 0.02f;
+                color[3] = 1.0f;
+                break;
+            case MarkerOverlayRole::GrabFingerSweepClosedLimit:
+                color[0] = 1.0f;
+                color[1] = 0.05f;
+                color[2] = 0.42f;
+                color[3] = 1.0f;
+                break;
+            case MarkerOverlayRole::GrabFingerSweepLiveSkeleton:
+                color[0] = 0.92f;
+                color[1] = 0.92f;
+                color[2] = 0.92f;
+                color[3] = 0.88f;
+                break;
             case MarkerOverlayRole::RightHandBoneContact:
                 color[0] = 0.0f;
                 color[1] = 1.0f;

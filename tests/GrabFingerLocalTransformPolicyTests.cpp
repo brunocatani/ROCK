@@ -816,6 +816,10 @@ int main()
     ok &= expectBool("sweep stops at first contact, never past the surface",
         midArcSolved.value >= 0.49f && midArcSolved.value <= 0.58f,
         true);
+    ok &= expectBool("sweep exposes the selected contact sphere", midArcSolved.hasContactCenter, true);
+    ok &= expectFloat("sweep exposes the exact contact radius", midArcSolved.contactRadius, 0.15f);
+    ok &= expectBool("single-probe sweep identifies the tip probe", midArcSolved.selectedProbeIndex == 0, true);
+    ok &= expectBool("sweep records the actual probe start row", midArcSolved.sweptProbeStartRowValid[0] != 0, true);
 
     // The most-open first contact across probes wins: the outer probe touches
     // its surface at 30 degrees before the tip reaches its own at 60.
@@ -831,6 +835,7 @@ int main()
         ok &= expectBool("sweep most-open probe contact wins",
             mostOpenSolved.hit && mostOpenSolved.value >= 0.64f && mostOpenSolved.value <= 0.78f,
             true);
+        ok &= expectBool("sweep identifies the winning outer probe", mostOpenSolved.selectedProbeIndex == 1, true);
     }
 
     // A surface already touching the fully open pose keeps the finger open.
@@ -852,6 +857,44 @@ int main()
     ok &= expectBool("sweep out-of-reach reports no hit", outOfReachSolved.hit, false);
     ok &= expectBool("sweep out-of-reach flags anticipation", outOfReachSolved.outOfReach, true);
     ok &= expectFloat("sweep out-of-reach keeps min value", outOfReachSolved.value, 0.2f);
+    ok &= expectBool("debug state distinguishes out-of-reach from fallback", classifyFingerSweepDebugState(outOfReachSolved, 0.2f) == FingerSweepDebugState::OutOfReach, true);
+
+    // Debug capture decimates the already-solved path into object-local fixed
+    // storage. It must preserve the selected sphere without issuing geometry
+    // queries of its own.
+    {
+        CalibratedFingerCurve<RE::NiPoint3> debugCurve{};
+        debugCurve.center = RE::NiPoint3{ 0.0f, 0.0f, 0.0f };
+        debugCurve.normal = RE::NiPoint3{ 0.0f, 0.0f, 1.0f };
+        debugCurve.zeroAngleVector = RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
+        debugCurve.probeCount = 1;
+        debugCurve.probes[0].probe = CalibratedFingerProbe::Tip;
+        debugCurve.probes[0].sampleCount = 3;
+        debugCurve.probes[0].samples[0] = { .openValue = 1.0f, .angleRadians = 0.0f, .reachLength = 2.0f };
+        debugCurve.probes[0].samples[1] = { .openValue = 0.5f, .angleRadians = kHalfPi * 0.5f, .reachLength = 2.0f };
+        debugCurve.probes[0].samples[2] = { .openValue = 0.0f, .angleRadians = kHalfPi, .reachLength = 2.0f };
+
+        auto debugSolved = rock::grab_finger_pose_math::FingerCurlValue{};
+        debugSolved.hit = true;
+        debugSolved.value = 0.5f;
+        debugSolved.rawCurveValue = 0.5f;
+        debugSolved.hasContactCenter = true;
+        debugSolved.contactCenterX = 0.0f;
+        debugSolved.contactCenterY = 2.0f;
+        debugSolved.contactRadius = 0.25f;
+        debugSolved.selectedProbeIndex = 0;
+        debugSolved.sweptProbeStartRowValid[0] = 1;
+        debugSolved.sweptProbeStartRow[0] = 0;
+
+        const auto identity = rock::transform_math::makeIdentityTransform<RE::NiTransform>();
+        FingerSweepDebugFingerCapture capture{};
+        ok &= expectBool("sweep debug capture accepts a solved fixed path",
+            captureFingerSweepDebugCurve(capture, debugCurve, debugSolved, 0.2f, grab_data::BakedGrabThumbLane::Wrap, identity), true);
+        ok &= expectBool("sweep debug capture keeps all short-path rows", capture.probePointCount[0] == 3, true);
+        ok &= expectPointClose("sweep debug capture stores contact center object-local", capture.contactCenterObjectLocal, RE::NiPoint3{ 0.0f, 2.0f, 0.0f });
+        ok &= expectFloat("sweep debug capture stores contact radius object-local", capture.contactRadiusObjectLocal, 0.25f);
+        ok &= expectBool("sweep debug capture classifies a normal hit", capture.state == FingerSweepDebugState::Hit, true);
+    }
 
     // ---- over-open sweep rows (values past the authored open pose) ----
     {

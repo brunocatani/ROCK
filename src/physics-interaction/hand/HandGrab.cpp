@@ -10864,6 +10864,9 @@ namespace rock
         _grabFingerProbeStart = {};
         _grabFingerProbeEnd = {};
         _hasGrabFingerProbeDebug = false;
+        _grabFingerSweepDebugCapture = {};
+        _grabFingerSweepDebugObjectWorld = {};
+        _hasGrabFingerSweepDebug = false;
         _grabFingerPadProbeStart = {};
         _grabFingerPadProbeEnd = {};
         _grabFingerPadProbeHit = {};
@@ -10937,12 +10940,17 @@ namespace rock
                 const auto targetFingerPoseTargets = rebuildFingerPoseTargetsFromGrabFrame(_grabFrame, targetObjectWorld);
                 std::array<RE::NiPoint3, 5> commandedOpenDirectionsWorld{};
                 const bool commandedOpenDirectionsValid = !pinchFingerPose && resolveCommandedOpenDirectionsWorld(_isLeft, commandedOpenDirectionsWorld);
-                auto fingerPose = grab_finger_pose_runtime::solveGrabFingerPoseFromTriangles(targetFingerPoseWorldTriangles, targetFingerHandTransform, _isLeft,
-                    fingerPosePivotWorld, targetFingerPoseTargets, g_rockConfig.rockGrabFingerMinValue, g_rockConfig.rockGrabMaxTriangleDistance, !pinchFingerPose,
-                    liveFingerSnapshotAtGrabPtr, g_rockConfig.rockGrabFingerRejectBacksideHits, g_rockConfig.rockGrabFingerSurfacePlaneToleranceGameUnits,
-                    _grabFrame.fingerPoseAimValid, g_rockConfig.rockGrabFingerSweepContactRadiusGameUnits, -1.0f, g_rockConfig.rockGrabThumbSweepMaxOpenValue,
-                    g_rockConfig.rockGrabFingerSweepMaxOpenValue, commandedOpenDirectionsValid ? &commandedOpenDirectionsWorld : nullptr,
-                    spatialIndexBuilt ? &_grabFingerTriangleIndex : nullptr, spatialIndexBuilt ? &targetObjectWorld : nullptr);
+                grab_finger_pose_runtime::FingerSweepDebugCapture sweepDebugCapture{};
+                auto fingerPose =
+                    grab_finger_pose_runtime::solveGrabFingerPoseFromTriangles(targetFingerPoseWorldTriangles, targetFingerHandTransform, _isLeft, fingerPosePivotWorld,
+                        targetFingerPoseTargets, g_rockConfig.rockGrabFingerMinValue, g_rockConfig.rockGrabMaxTriangleDistance, !pinchFingerPose, liveFingerSnapshotAtGrabPtr,
+                        g_rockConfig.rockGrabFingerRejectBacksideHits, g_rockConfig.rockGrabFingerSurfacePlaneToleranceGameUnits, _grabFrame.fingerPoseAimValid,
+                        g_rockConfig.rockGrabFingerSweepContactRadiusGameUnits, -1.0f, g_rockConfig.rockGrabThumbSweepMaxOpenValue, g_rockConfig.rockGrabFingerSweepMaxOpenValue,
+                        commandedOpenDirectionsValid ? &commandedOpenDirectionsWorld : nullptr, spatialIndexBuilt ? &_grabFingerTriangleIndex : nullptr,
+                        spatialIndexBuilt ? &targetObjectWorld : nullptr, g_rockConfig.rockDebugShowGrabFingerSweptArc ? &sweepDebugCapture : nullptr);
+                _grabFingerSweepDebugCapture = sweepDebugCapture;
+                _grabFingerSweepDebugObjectWorld = targetObjectWorld;
+                _hasGrabFingerSweepDebug = sweepDebugCapture.valid;
                 if (pinchFingerPose) {
                     applyPinchFingerPosePolicy(fingerPose, _grabFrame, g_rockConfig.rockGrabFingerMinValue);
                 }
@@ -11163,6 +11171,9 @@ namespace rock
         }
         RE::NiTransform desiredObjectWorld =
             grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyAuthorityWorld, _grabFrame.proxyAuthorityHandSpace);
+        if (_hasGrabFingerSweepDebug) {
+            _grabFingerSweepDebugObjectWorld = desiredObjectWorld;
+        }
         RE::NiTransform desiredBodyWorld =
             grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyAuthorityWorld, _grabFrame.proxyAuthorityBodyHandSpace);
         const RE::NiPoint3 activePivotBBodyLocalGame = activeProxyConstraintPivotBLocalGame();
@@ -14112,6 +14123,9 @@ namespace rock
         _grabFingerProbeStart = {};
         _grabFingerProbeEnd = {};
         _hasGrabFingerProbeDebug = false;
+        _grabFingerSweepDebugCapture = {};
+        _grabFingerSweepDebugObjectWorld = {};
+        _hasGrabFingerSweepDebug = false;
         _grabFingerPadProbeStart = {};
         _grabFingerPadProbeEnd = {};
         _grabFingerPadProbeHit = {};

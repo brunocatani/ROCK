@@ -285,6 +285,9 @@ namespace rock
         _grabFingerProbeStart = {};
         _grabFingerProbeEnd = {};
         _hasGrabFingerProbeDebug = false;
+        _grabFingerSweepDebugCapture = {};
+        _grabFingerSweepDebugObjectWorld = {};
+        _hasGrabFingerSweepDebug = false;
         _grabFingerPadProbeStart = {};
         _grabFingerPadProbeEnd = {};
         _grabFingerPadProbeHit = {};
@@ -388,6 +391,9 @@ namespace rock
         _hasGrabVisualHandTransform = false;
         _grabVisualDeviationExceededSeconds = 0.0f;
         clearSelectedCloseFingerPose();
+        _grabFingerSweepDebugCapture = {};
+        _grabFingerSweepDebugObjectWorld = {};
+        _hasGrabFingerSweepDebug = false;
         _grabFingerJointPose = {};
         _grabFingerLocalTransforms = {};
         _grabFingerLocalTransformMask = 0;

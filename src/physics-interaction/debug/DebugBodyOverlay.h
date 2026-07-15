@@ -194,6 +194,16 @@ namespace rock::debug
         LeftGrabFingerPadProbe,
         RightGrabFingerSurfaceTarget,
         LeftGrabFingerSurfaceTarget,
+        GrabFingerSweepTip,
+        GrabFingerSweepOuter,
+        GrabFingerSweepInner,
+        GrabFingerSweepContact,
+        GrabFingerSweepHitNormal,
+        GrabFingerSweepMiss,
+        GrabFingerSweepOutOfReach,
+        GrabFingerSweepOverOpen,
+        GrabFingerSweepClosedLimit,
+        GrabFingerSweepLiveSkeleton,
         RightHandBoneContact,
         LeftHandBoneContact,
         RightWeaponPrimaryGrip,
@@ -294,7 +304,7 @@ namespace rock::debug
                 skeleton_bone_debug_math::kStandardBodyColliderDescriptors.size() + 8>
             entries{};
         std::array<AxisOverlayEntry, 96> axisEntries{};
-        std::array<MarkerOverlayEntry, 192> markerEntries{};
+        std::array<MarkerOverlayEntry, 512> markerEntries{};
         std::array<SkeletonOverlayEntry, skeleton_bone_debug_math::skeletonOverlayBudget()> skeletonEntries{};
         std::array<TextOverlayEntry, 96> textEntries{};
         std::uint32_t count{ 0 };

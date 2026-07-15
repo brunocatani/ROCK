@@ -45,8 +45,16 @@ namespace rock::grab_finger_pose_math
         float hitNormalX = 0.0f;
         float hitNormalY = 0.0f;
         float hitNormalZ = 0.0f;
+        float contactCenterX = 0.0f;
+        float contactCenterY = 0.0f;
+        float contactCenterZ = 0.0f;
+        float contactRadius = 0.0f;
         bool hasHitPoint = false;
         bool hasHitNormal = false;
+        bool hasContactCenter = false;
+        std::uint8_t selectedProbeIndex = 0xFF;
+        std::array<std::uint16_t, 3> sweptProbeStartRow{};
+        std::array<std::uint8_t, 3> sweptProbeStartRowValid{};
         bool openedByBehindContact = false;
         /*
          * Swept-arc solver only: no candidate triangle lies within the finger's
@@ -924,6 +932,8 @@ namespace rock::grab_finger_pose_math
         float bestAngle = 0.0f;
         Vector bestHitPoint{};
         Vector bestHitNormal{};
+        Vector bestContactCenter{};
+        std::uint8_t bestProbeIndex = 0xFF;
         bool bestHitPointValid = false;
         bool bestHitNormalValid = false;
 
@@ -987,6 +997,10 @@ namespace rock::grab_finger_pose_math
                 authoredOpenBlocked = sphereContact(rowPositions[authoredOpenRow], radius, nullptr, nullptr);
             }
             const std::size_t startRow = authoredOpenBlocked ? overOpenStartRow : authoredOpenRow;
+            if (probeIndex < result.sweptProbeStartRow.size()) {
+                result.sweptProbeStartRow[probeIndex] = static_cast<std::uint16_t>(startRow);
+                result.sweptProbeStartRowValid[probeIndex] = 1;
+            }
 
             bool probeContact = false;
             for (std::size_t coarse = startRow; coarse < probe.sampleCount && !probeContact; coarse += kCoarseRowStep) {
@@ -1007,6 +1021,8 @@ namespace rock::grab_finger_pose_math
                         bestAngle = probe.samples[row].angleRadians;
                         bestHitPoint = hitPoint;
                         bestHitNormal = hitNormal;
+                        bestContactCenter = rowPositions[row];
+                        bestProbeIndex = static_cast<std::uint8_t>(probeIndex);
                         bestHitPointValid = true;
                         bestHitNormalValid = hasUsableDirection(hitNormal);
                     }
@@ -1022,6 +1038,12 @@ namespace rock::grab_finger_pose_math
             result.distance = bestAngle;
             result.rawCurveValue = bestOpenValue;
             result.value = std::clamp(bestOpenValue, clampedMin, clampedMaxOpen);
+            result.contactCenterX = bestContactCenter.x;
+            result.contactCenterY = bestContactCenter.y;
+            result.contactCenterZ = bestContactCenter.z;
+            result.contactRadius = radius;
+            result.hasContactCenter = true;
+            result.selectedProbeIndex = bestProbeIndex;
             if (bestHitPointValid) {
                 result.hitPointX = bestHitPoint.x;
                 result.hitPointY = bestHitPoint.y;
@@ -1298,6 +1320,96 @@ namespace rock::grab_finger_pose_runtime
      * curl normals come directly from the live root flattened finger bones.
      */
     constexpr std::size_t kMaxFingerPoseCandidateTriangles = 2048;
+
+    inline constexpr std::size_t kFingerSweepDebugProbeCount = 3;
+    inline constexpr std::size_t kFingerSweepDebugPointsPerProbe = 9;
+
+    enum class FingerSweepDebugState : std::uint8_t
+    {
+        Hit,
+        ClosedLimit,
+        MissFallback,
+        OutOfReach,
+        OverOpen
+    };
+
+    [[nodiscard]] inline const char* fingerSweepDebugStateName(FingerSweepDebugState state)
+    {
+        switch (state) {
+        case FingerSweepDebugState::Hit:
+            return "HIT";
+        case FingerSweepDebugState::ClosedLimit:
+            return "HIT@CLOSE-LIMIT";
+        case FingerSweepDebugState::OutOfReach:
+            return "OUT-OF-REACH";
+        case FingerSweepDebugState::OverOpen:
+            return "OVER-OPEN";
+        case FingerSweepDebugState::MissFallback:
+        default:
+            return "MISS->FALLBACK";
+        }
+    }
+
+    [[nodiscard]] inline const char* fingerSweepDebugFingerName(std::size_t finger)
+    {
+        constexpr std::array<const char*, 5> kNames{ "THUMB", "INDEX", "MIDDLE", "RING", "PINKY" };
+        return finger < kNames.size() ? kNames[finger] : "UNKNOWN";
+    }
+
+    [[nodiscard]] inline const char* fingerSweepDebugProbeName(grab_finger_pose_math::CalibratedFingerProbe probe)
+    {
+        switch (probe) {
+        case grab_finger_pose_math::CalibratedFingerProbe::Outer:
+            return "OUTER";
+        case grab_finger_pose_math::CalibratedFingerProbe::Inner:
+            return "INNER";
+        case grab_finger_pose_math::CalibratedFingerProbe::Tip:
+        default:
+            return "TIP";
+        }
+    }
+
+    struct FingerSweepDebugFingerCapture
+    {
+        std::array<std::array<RE::NiPoint3, kFingerSweepDebugPointsPerProbe>, kFingerSweepDebugProbeCount> probePointsObjectLocal{};
+        std::array<std::uint8_t, kFingerSweepDebugProbeCount> probePointCount{};
+        std::array<grab_finger_pose_math::CalibratedFingerProbe, kFingerSweepDebugProbeCount> probeKind{
+            grab_finger_pose_math::CalibratedFingerProbe::Tip,
+            grab_finger_pose_math::CalibratedFingerProbe::Outer,
+            grab_finger_pose_math::CalibratedFingerProbe::Inner,
+        };
+        RE::NiPoint3 contactCenterObjectLocal{};
+        RE::NiPoint3 hitPointObjectLocal{};
+        RE::NiPoint3 hitNormalObjectLocal{};
+        float contactRadiusObjectLocal = 0.0f;
+        float publishedValue = 0.0f;
+        float rawCurveValue = 0.0f;
+        FingerSweepDebugState state = FingerSweepDebugState::MissFallback;
+        grab_finger_calibration_data::BakedGrabThumbLane thumbLane = grab_finger_calibration_data::BakedGrabThumbLane::Wrap;
+        std::uint8_t selectedProbeIndex = 0xFF;
+        bool hasContact = false;
+        bool hasHitPoint = false;
+        bool hasHitNormal = false;
+        bool valid = false;
+    };
+
+    struct FingerSweepDebugCapture
+    {
+        std::array<FingerSweepDebugFingerCapture, 5> fingers{};
+        std::uint32_t spatialNodeVisits = 0;
+        std::uint32_t spatialTriangleTests = 0;
+        std::uint32_t candidateTriangleCount = 0;
+        bool isLeft = false;
+        bool inPowerArmor = false;
+        bool valid = false;
+    };
+
+    struct FingerSweepDebugSnapshot
+    {
+        FingerSweepDebugCapture capture{};
+        RE::NiTransform objectWorld{};
+        bool valid = false;
+    };
 
     struct SolvedGrabFingerPose
     {
@@ -1580,6 +1692,143 @@ namespace rock::grab_finger_pose_runtime
     inline bool isFinitePoint(const RE::NiPoint3& point)
     {
         return std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z);
+    }
+
+    [[nodiscard]] inline FingerSweepDebugState classifyFingerSweepDebugState(const grab_finger_pose_math::FingerCurlValue& solved, float minValue)
+    {
+        if (solved.hit) {
+            if (solved.rawCurveValue > grab_finger_pose_math::kMaxFingerOpenValue + 0.0001f) {
+                return FingerSweepDebugState::OverOpen;
+            }
+            const float clampedMin = std::clamp(std::isfinite(minValue) ? minValue : 0.0f, 0.0f, 1.0f);
+            if (solved.value <= clampedMin + 0.0001f) {
+                return FingerSweepDebugState::ClosedLimit;
+            }
+            return FingerSweepDebugState::Hit;
+        }
+        return solved.outOfReach ? FingerSweepDebugState::OutOfReach : FingerSweepDebugState::MissFallback;
+    }
+
+    [[nodiscard]] inline grab_finger_pose_math::CalibratedFingerCurve<RE::NiPoint3> makeSelectedFingerSweepDebugCurve(std::size_t finger, bool isLeft, bool inPowerArmor,
+        const RE::NiPoint3& centerWorld, const RE::NiPoint3& selectedNormalWorld, const RE::NiPoint3& zeroAngleVectorWorld, float fingerLength,
+        grab_finger_calibration_data::BakedGrabThumbLane selectedThumbLane)
+    {
+        const auto& handProfile = grab_finger_calibration_data::bakedGrabFingerHandProfile(isLeft, inPowerArmor);
+        if (finger >= handProfile.fingers.size()) {
+            return {};
+        }
+
+        const RE::NiPoint3 selectedNormal = normalizedOrFallback(selectedNormalWorld, RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
+        if (finger != 0 || selectedThumbLane == grab_finger_calibration_data::BakedGrabThumbLane::Wrap) {
+            return grab_finger_pose_math::makeBakedCalibratedFingerCurveFromBaked<RE::NiPoint3>(handProfile.fingers[finger], centerWorld, selectedNormal, zeroAngleVectorWorld,
+                fingerLength,
+                /*applyBakedNormalSign=*/false);
+        }
+
+        const auto& thumbProfile = grab_finger_calibration_data::bakedGrabThumbProfile(isLeft, inPowerArmor);
+        for (const auto& lane : thumbProfile.lanes) {
+            if (lane.lane != selectedThumbLane) {
+                continue;
+            }
+            const auto& bakedCurve = lane.curveSource == grab_finger_calibration_data::BakedGrabThumbCurveSource::SidePad ? thumbProfile.sidePadCurve : handProfile.fingers[0];
+            return grab_finger_pose_math::makeBakedCalibratedFingerCurveFromBaked<RE::NiPoint3>(bakedCurve, centerWorld, selectedNormal, zeroAngleVectorWorld, fingerLength,
+                /*applyBakedNormalSign=*/false, lane.surfaceThicknessScale);
+        }
+        return {};
+    }
+
+    inline bool captureFingerSweepDebugCurve(FingerSweepDebugFingerCapture& out, const grab_finger_pose_math::CalibratedFingerCurve<RE::NiPoint3>& curve,
+        const grab_finger_pose_math::FingerCurlValue& solved, float minValue, grab_finger_calibration_data::BakedGrabThumbLane selectedThumbLane,
+        const RE::NiTransform& objectWorldTransform)
+    {
+        out = {};
+        if (!std::isfinite(objectWorldTransform.scale) || std::abs(objectWorldTransform.scale) <= 0.000001f || !isFinitePoint(curve.center) || !isFinitePoint(curve.normal) ||
+            !isFinitePoint(curve.zeroAngleVector)) {
+            return false;
+        }
+
+        const RE::NiPoint3 planeNormal = normalizedOrFallback(curve.normal, RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
+        const RE::NiPoint3 zeroAngle = normalizedOrFallback(curve.zeroAngleVector, RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
+        bool anyPath = false;
+        for (std::size_t probeIndex = 0; probeIndex < curve.probeCount && probeIndex < curve.probes.size() && probeIndex < out.probePointsObjectLocal.size(); ++probeIndex) {
+            const auto& probe = curve.probes[probeIndex];
+            const std::size_t sampleCount = (std::min)(probe.sampleCount, probe.samples.size());
+            if (sampleCount == 0) {
+                continue;
+            }
+
+            std::size_t startRow = sampleCount;
+            if (probeIndex < solved.sweptProbeStartRowValid.size() && solved.sweptProbeStartRowValid[probeIndex] != 0 && solved.sweptProbeStartRow[probeIndex] < sampleCount) {
+                startRow = solved.sweptProbeStartRow[probeIndex];
+            } else {
+                for (std::size_t row = 0; row < sampleCount; ++row) {
+                    if (probe.samples[row].openValue <= grab_finger_pose_math::kMaxFingerOpenValue + 0.0001f) {
+                        startRow = row;
+                        break;
+                    }
+                }
+            }
+            if (startRow >= sampleCount) {
+                continue;
+            }
+
+            const std::size_t availableRows = sampleCount - startRow;
+            const std::size_t pointCount = (std::min)(availableRows, kFingerSweepDebugPointsPerProbe);
+            if (pointCount == 0) {
+                continue;
+            }
+            out.probeKind[probeIndex] = probe.probe;
+            for (std::size_t pointIndex = 0; pointIndex < pointCount; ++pointIndex) {
+                const std::size_t rowOffset = pointCount > 1 ? ((availableRows - 1) * pointIndex) / (pointCount - 1) : 0;
+                const auto& sample = probe.samples[startRow + rowOffset];
+                const RE::NiPoint3 arm = grab_finger_pose_math::rotateAroundUnitAxis(zeroAngle, planeNormal, sample.angleRadians);
+                const RE::NiPoint3 pointWorld = grab_finger_pose_math::add(curve.center, grab_finger_pose_math::scale(arm, sample.reachLength));
+                if (!isFinitePoint(pointWorld)) {
+                    break;
+                }
+                const RE::NiPoint3 pointObjectLocal = transform_math::worldPointToLocal(objectWorldTransform, pointWorld);
+                if (!isFinitePoint(pointObjectLocal)) {
+                    break;
+                }
+                out.probePointsObjectLocal[probeIndex][out.probePointCount[probeIndex]++] = pointObjectLocal;
+            }
+            anyPath = anyPath || out.probePointCount[probeIndex] > 1;
+        }
+
+        out.publishedValue = solved.value;
+        out.rawCurveValue = solved.rawCurveValue;
+        out.state = classifyFingerSweepDebugState(solved, minValue);
+        out.thumbLane = selectedThumbLane;
+        out.selectedProbeIndex = solved.selectedProbeIndex;
+
+        if (solved.hasContactCenter) {
+            const RE::NiPoint3 centerWorld{ solved.contactCenterX, solved.contactCenterY, solved.contactCenterZ };
+            if (isFinitePoint(centerWorld)) {
+                out.contactCenterObjectLocal = transform_math::worldPointToLocal(objectWorldTransform, centerWorld);
+                out.contactRadiusObjectLocal = solved.contactRadius / std::abs(objectWorldTransform.scale);
+                out.hasContact = isFinitePoint(out.contactCenterObjectLocal) && std::isfinite(out.contactRadiusObjectLocal) && out.contactRadiusObjectLocal > 0.0f;
+            }
+        }
+        if (solved.hasHitPoint) {
+            const RE::NiPoint3 hitPointWorld{ solved.hitPointX, solved.hitPointY, solved.hitPointZ };
+            if (isFinitePoint(hitPointWorld)) {
+                out.hitPointObjectLocal = transform_math::worldPointToLocal(objectWorldTransform, hitPointWorld);
+                out.hasHitPoint = isFinitePoint(out.hitPointObjectLocal);
+            }
+        }
+        if (solved.hasHitNormal) {
+            const RE::NiPoint3 hitNormalWorld{ solved.hitNormalX, solved.hitNormalY, solved.hitNormalZ };
+            if (isFinitePoint(hitNormalWorld)) {
+                const RE::NiPoint3 hitNormalObjectLocal = transform_math::worldVectorToLocal(objectWorldTransform, hitNormalWorld);
+                if (isFinitePoint(hitNormalObjectLocal) && distanceSquared(hitNormalObjectLocal, RE::NiPoint3{}) > 0.000001f) {
+                    out.hitNormalObjectLocal = normalizedOrFallback(hitNormalObjectLocal, RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
+                    out.hasHitNormal = true;
+                }
+            }
+        }
+
+        out.valid = anyPath;
+        return out.valid;
     }
 
     struct FingerPoseSpatialQueryStats
@@ -2440,8 +2689,11 @@ namespace rock::grab_finger_pose_runtime
         bool allowSurfaceAimTargets = true, float sweepContactRadiusGameUnits = 1.0f, float unreachableFingerOpenValue = -1.0f,
         float thumbSweepMaxOpenValue = grab_finger_pose_math::kMaxFingerOpenValue, float fingerSweepMaxOpenValue = grab_finger_pose_math::kMaxFingerOpenValue,
         const std::array<RE::NiPoint3, 5>* commandedOpenDirectionsWorld = nullptr, const FingerPoseTriangleSpatialIndex* spatialIndex = nullptr,
-        const RE::NiTransform* spatialObjectWorldTransform = nullptr)
+        const RE::NiTransform* spatialObjectWorldTransform = nullptr, FingerSweepDebugCapture* outSweepDebugCapture = nullptr)
     {
+        if (outSweepDebugCapture) {
+            *outSweepDebugCapture = {};
+        }
         SolvedGrabFingerPose result{};
         const float clampedMin = std::clamp(minValue, 0.0f, 1.0f);
         result.values = { clampedMin, clampedMin, clampedMin, clampedMin, clampedMin };
@@ -2556,6 +2808,9 @@ namespace rock::grab_finger_pose_runtime
             RE::NiPoint3 fallbackHitPoint{};
             bool fallbackHitPointValid = false;
             bool curveSolverRan = false;
+            bool sweepDebugCurveAvailable = false;
+            RE::NiPoint3 sweepDebugCurveNormalWorld{};
+            grab_finger_calibration_data::BakedGrabThumbLane sweepDebugThumbLane = grab_finger_calibration_data::BakedGrabThumbLane::Wrap;
             if (useCurveSolver) {
                 const bool isThumb = finger == 0;
                 /*
@@ -2585,6 +2840,9 @@ namespace rock::grab_finger_pose_runtime
                 }
                 curveSolverRan = true;
                 solved = curveSolved.value;
+                sweepDebugCurveAvailable = useSpatialIndex && outSweepDebugCapture;
+                sweepDebugCurveNormalWorld = curveSolved.selectedThumbLaneNormal;
+                sweepDebugThumbLane = curveSolved.selectedThumbLane;
                 result.usedAlternateThumbCurve = result.usedAlternateThumbCurve || curveSolved.usedAlternateThumbCurve;
                 if (isThumb) {
                     result.hasThumbCurveDiagnostics = true;
@@ -2644,6 +2902,12 @@ namespace rock::grab_finger_pose_runtime
                 solved.value = std::clamp(unreachableFingerOpenValue, clampedMin, 1.0f);
                 solved.rawCurveValue = solved.value;
             }
+            if (sweepDebugCurveAvailable) {
+                const auto selectedDebugCurve = makeSelectedFingerSweepDebugCurve(finger, isLeft, inPowerArmor, baseWorld, sweepDebugCurveNormalWorld, openDirectionWorld,
+                    fingerOpenLengthWorld, sweepDebugThumbLane);
+                (void)captureFingerSweepDebugCurve((*outSweepDebugCapture).fingers[finger], selectedDebugCurve, solved, clampedMin, sweepDebugThumbLane,
+                    *spatialObjectWorldTransform);
+            }
             result.values[finger] = solved.value;
             result.hitKind[finger] = solved.hitKind;
             /*
@@ -2687,6 +2951,15 @@ namespace rock::grab_finger_pose_runtime
         result.hasJointValues = result.solved;
         result.spatialNodeVisitCount = spatialQueryStats.nodeVisits;
         result.spatialTriangleTestCount = spatialQueryStats.triangleTests;
+        if (outSweepDebugCapture && useSpatialIndex) {
+            outSweepDebugCapture->spatialNodeVisits = result.spatialNodeVisitCount;
+            outSweepDebugCapture->spatialTriangleTests = result.spatialTriangleTestCount;
+            outSweepDebugCapture->candidateTriangleCount = static_cast<std::uint32_t>((std::max)(result.candidateTriangleCount, 0));
+            outSweepDebugCapture->isLeft = isLeft;
+            outSweepDebugCapture->inPowerArmor = inPowerArmor;
+            outSweepDebugCapture->valid = result.solved &&
+                std::any_of(outSweepDebugCapture->fingers.begin(), outSweepDebugCapture->fingers.end(), [](const FingerSweepDebugFingerCapture& finger) { return finger.valid; });
+        }
         return result;
     }
 
@@ -2696,11 +2969,11 @@ namespace rock::grab_finger_pose_runtime
         bool allowSurfaceAimTargets = true, float sweepContactRadiusGameUnits = 1.0f, float unreachableFingerOpenValue = -1.0f,
         float thumbSweepMaxOpenValue = grab_finger_pose_math::kMaxFingerOpenValue, float fingerSweepMaxOpenValue = grab_finger_pose_math::kMaxFingerOpenValue,
         const std::array<RE::NiPoint3, 5>* commandedOpenDirectionsWorld = nullptr, const FingerPoseTriangleSpatialIndex* spatialIndex = nullptr,
-        const RE::NiTransform* spatialObjectWorldTransform = nullptr)
+        const RE::NiTransform* spatialObjectWorldTransform = nullptr, FingerSweepDebugCapture* outSweepDebugCapture = nullptr)
     {
         return solveGrabFingerPoseFromTriangles(triangles, handTransform, isLeft, grabAnchorWorld, makeSharedGripPoseTarget(grabGripPoint), minValue, maxTriangleDistanceSquared,
             useCurveSolver, liveFingerSnapshot, rejectBacksideHits, surfacePlaneToleranceGameUnits, allowSurfaceAimTargets, sweepContactRadiusGameUnits, unreachableFingerOpenValue,
-            thumbSweepMaxOpenValue, fingerSweepMaxOpenValue, commandedOpenDirectionsWorld, spatialIndex, spatialObjectWorldTransform);
+            thumbSweepMaxOpenValue, fingerSweepMaxOpenValue, commandedOpenDirectionsWorld, spatialIndex, spatialObjectWorldTransform, outSweepDebugCapture);
     }
 }
 
