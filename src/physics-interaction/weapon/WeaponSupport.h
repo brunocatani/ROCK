@@ -236,17 +236,60 @@ namespace rock::equipped_weapon_manual_ownership_policy
     {
         bool pending{ false };
         bool gripHeld{ false };
-        bool configEnabled{ true };
+        bool ownershipModeEnabled{ true };
         bool primaryPoseBlockerAvailable{ true };
     };
 
+    struct FiringGripModeAvailability
+    {
+        bool realisticWeaponHandlingEnabled{ false };
+        bool ambidextrousFiringAvailable{ false };
+    };
+
+    struct HeldWeaponEquipOwnershipInput
+    {
+        FiringGripModeAvailability modes{};
+        bool handIsLeft{ false };
+        bool gripHeld{ false };
+    };
+
+    struct GripZoneSettleEquipInput
+    {
+        bool realisticWeaponHandlingEnabled{ false };
+        bool gripZoneEquipConfigured{ false };
+    };
+
+    [[nodiscard]] inline constexpr bool firingGripOwnershipEnabled(const FiringGripModeAvailability& modes) noexcept
+    {
+        return modes.realisticWeaponHandlingEnabled || modes.ambidextrousFiringAvailable;
+    }
+
+    [[nodiscard]] inline constexpr bool shouldStartHeldWeaponEquipOwnership(const HeldWeaponEquipOwnershipInput& input) noexcept
+    {
+        return input.gripHeld &&
+               (input.modes.realisticWeaponHandlingEnabled ||
+                   (input.handIsLeft && input.modes.ambidextrousFiringAvailable));
+    }
+
+    [[nodiscard]] inline constexpr bool canSettleEquipInGripZone(const GripZoneSettleEquipInput& input) noexcept
+    {
+        return input.realisticWeaponHandlingEnabled && input.gripZoneEquipConfigured;
+    }
+
+    [[nodiscard]] inline constexpr bool shouldRetainPrimaryOnlyOwnership(
+        bool primaryDetachEnabled,
+        bool primaryGripHeld) noexcept
+    {
+        return !primaryDetachEnabled || primaryGripHeld;
+    }
+
     [[nodiscard]] inline constexpr bool featureAvailable(
-        bool configEnabled,
+        bool ownershipModeEnabled,
         bool primaryPoseBlockerAvailable,
         bool weaponNodeAvailable,
         std::uint64_t equippedWeaponOwnershipKey) noexcept
     {
-        return configEnabled &&
+        return ownershipModeEnabled &&
                primaryPoseBlockerAvailable &&
                weaponNodeAvailable &&
                equippedWeaponOwnershipKey != 0;
@@ -257,7 +300,7 @@ namespace rock::equipped_weapon_manual_ownership_policy
         // Keep trigger-equip's already-held grip alive across equipped weapon node/collision generation latency.
         return input.pending &&
                input.gripHeld &&
-               input.configEnabled &&
+               input.ownershipModeEnabled &&
                input.primaryPoseBlockerAvailable;
     }
 
@@ -368,6 +411,13 @@ namespace rock::weapon_two_handed_grip_math
         DropEquippedWeapon = 2,
     };
 
+    struct SupportReleaseOwnershipInput
+    {
+        bool firingGripOwnershipEnabled{ false };
+        bool primaryDetachEnabled{ false };
+        bool primaryGripHeld{ false };
+    };
+
     /*
      * Equipped weapon two-hand support has two independent ownership rules:
      * the support hand must be attached to the mesh point it actually touched,
@@ -395,13 +445,17 @@ namespace rock::weapon_two_handed_grip_math
         return gripPressed && !supportHandHoldingObject;
     }
 
-    inline constexpr SupportReleaseManualAction resolveSupportReleaseManualAction(bool primaryDetachEnabled, bool primaryGripHeld)
+    inline constexpr SupportReleaseManualAction resolveSupportReleaseManualAction(const SupportReleaseOwnershipInput& input)
     {
-        if (!primaryDetachEnabled) {
+        if (!input.firingGripOwnershipEnabled) {
             return SupportReleaseManualAction::EndSupportOnly;
         }
 
-        return primaryGripHeld ? SupportReleaseManualAction::KeepPrimaryOwnership : SupportReleaseManualAction::DropEquippedWeapon;
+        if (input.primaryGripHeld || !input.primaryDetachEnabled) {
+            return SupportReleaseManualAction::KeepPrimaryOwnership;
+        }
+
+        return SupportReleaseManualAction::DropEquippedWeapon;
     }
 
     /*

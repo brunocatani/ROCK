@@ -186,9 +186,9 @@ namespace rock
             return isLeft ? PhysicsObjectClaimOwner::LeftHand : PhysicsObjectClaimOwner::RightHand;
         }
 
-        void clearEquippedWeaponPrimaryInputState()
+        void clearEquippedWeaponFiringGripInputState()
         {
-            input_remap_runtime::setEquippedWeaponPrimaryDetachInputActive(false);
+            input_remap_runtime::setEquippedWeaponFiringGripInputActive(false);
             input_remap_runtime::setEquippedWeaponPrimaryDetached(false);
         }
 
@@ -1896,7 +1896,7 @@ namespace rock
             if (_initialized) {
                 _twoHandedGrip.reset();
                 _pendingEquippedWeaponPrimaryOnlyGripStart = {};
-                clearEquippedWeaponPrimaryInputState();
+                clearEquippedWeaponFiringGripInputState();
                 auto* bhkMenu = getPlayerBhkWorld();
                 if (bhkMenu) {
                     auto* hknpMenu = getHknpWorld(bhkMenu);
@@ -1930,7 +1930,7 @@ namespace rock
                 }
             }
             debug::ClearFrame();
-            clearEquippedWeaponPrimaryInputState();
+            clearEquippedWeaponFiringGripInputState();
             _pendingEquippedWeaponPrimaryOnlyGripStart = {};
             auto* snapshotBhk = getPlayerBhkWorld();
             auto* snapshotHknp = snapshotBhk ? getHknpWorld(snapshotBhk) : nullptr;
@@ -1984,7 +1984,7 @@ namespace rock
             observeLifecycleFrame(bhk, nullptr, ::rock::provider::RockProviderLifecycleReason::WorldUnavailable);
             _twoHandedGrip.reset();
             _pendingEquippedWeaponPrimaryOnlyGripStart = {};
-            clearEquippedWeaponPrimaryInputState();
+            clearEquippedWeaponFiringGripInputState();
             debug::ClearFrame();
             restoreHeldMassMovementSlowdown("world-unavailable");
             _shoulderStashStates = {};
@@ -2024,7 +2024,7 @@ namespace rock
             restoreHandCollisionAfterEquippedWeaponDrop(hknp, true);
             _twoHandedGrip.reset();
             _pendingEquippedWeaponPrimaryOnlyGripStart = {};
-            clearEquippedWeaponPrimaryInputState();
+            clearEquippedWeaponFiringGripInputState();
             _bodyContactRuntime.reset();
             clearLeftWeaponContact();
             clearRightWeaponContact();
@@ -2068,7 +2068,7 @@ namespace rock
                 debug::ClearFrame();
                 _twoHandedGrip.reset();
                 _pendingEquippedWeaponPrimaryOnlyGripStart = {};
-                clearEquippedWeaponPrimaryInputState();
+                clearEquippedWeaponFiringGripInputState();
                 _shoulderStashStates = {};
                 _mouthConsumeStates = {};
                 _feedbackHaptics.reset();
@@ -2090,7 +2090,7 @@ namespace rock
             debug::ClearFrame();
             _twoHandedGrip.reset();
             _pendingEquippedWeaponPrimaryOnlyGripStart = {};
-            clearEquippedWeaponPrimaryInputState();
+            clearEquippedWeaponFiringGripInputState();
             _shoulderStashStates = {};
             _mouthConsumeStates = {};
             _feedbackHaptics.reset();
@@ -2472,8 +2472,8 @@ namespace rock
                 if (!primaryGrabStateRead) {
                     primaryGrabState = readGrabButtonState(firingHandIsLeft, g_rockConfig.rockGrabButtonID);
                     // Menu rearm intentionally masks gameplay edges, but
-                    // realistic weapon ownership still follows the physical
-                    // hand state after the menu closes.
+                    // firing-grip ownership still follows the physical hand
+                    // state after the menu closes.
                     primaryGrabState.held = input_remap_runtime::isRawButtonPhysicallyHeld(firingHandIsLeft, g_rockConfig.rockGrabButtonID);
                     primaryGrabStateRead = true;
                     // Publish the consumed snapshot so the normal grab pipeline
@@ -2489,6 +2489,18 @@ namespace rock
                 return primaryGrabState;
             };
             const bool primaryPoseBlockerAvailable = frik_visual_authority::canBlockPrimaryHandWeaponPose();
+            const bool ambidextrousFiringAvailable = TwoHandedGrip::canBeginPrimaryOnlyGripForHand(true);
+            const equipped_weapon_manual_ownership_policy::FiringGripModeAvailability firingGripModes{
+                .realisticWeaponHandlingEnabled = g_rockConfig.rockRealisticWeaponHandlingEnabled,
+                .ambidextrousFiringAvailable = ambidextrousFiringAvailable,
+            };
+            const bool firingGripOwnershipModeEnabled =
+                equipped_weapon_manual_ownership_policy::firingGripOwnershipEnabled(firingGripModes);
+            const bool firingGripOwnershipFeatureAvailable = equipped_weapon_manual_ownership_policy::featureAvailable(
+                firingGripOwnershipModeEnabled,
+                primaryPoseBlockerAvailable,
+                weaponNode != nullptr,
+                currentEquippedWeaponOwnershipKey);
             const bool primaryDetachFeatureAvailable = equipped_weapon_manual_ownership_policy::featureAvailable(
                 g_rockConfig.rockRealisticWeaponHandlingEnabled,
                 primaryPoseBlockerAvailable,
@@ -2502,19 +2514,19 @@ namespace rock
                     equipped_weapon_manual_ownership_policy::PendingPrimaryOnlyStartInput{
                         .pending = _pendingEquippedWeaponPrimaryOnlyGripStart.pending,
                         .gripHeld = input_remap_runtime::isRawButtonPhysicallyHeld(firingHandIsLeft, g_rockConfig.rockGrabButtonID),
-                        .configEnabled = g_rockConfig.rockRealisticWeaponHandlingEnabled,
+                        .ownershipModeEnabled = firingGripOwnershipModeEnabled,
                         .primaryPoseBlockerAvailable = primaryPoseBlockerAvailable,
                     })) {
                 _pendingEquippedWeaponPrimaryOnlyGripStart = {};
             }
-            const input_remap_policy::EquippedWeaponPrimaryDetachInputGate primaryDetachInputGate{
-                .featureAvailable = primaryDetachFeatureAvailable,
-                .canUsePrimaryDetachInput = _twoHandedGrip.canUsePrimaryDetachInput(),
+            const input_remap_policy::EquippedWeaponFiringGripInputGate firingGripInputGate{
+                .featureAvailable = firingGripOwnershipFeatureAvailable,
+                .canUseFiringGripInput = _twoHandedGrip.canUseFiringGripInput(),
                 .menuInputActive = inputBlockingMenuActive,
             };
-            if (input_remap_policy::shouldConsumeEquippedWeaponPrimaryDetachInput(primaryDetachInputGate)) {
+            if (input_remap_policy::shouldConsumeEquippedWeaponFiringGripInput(firingGripInputGate)) {
                 const auto& primaryState = readPrimaryGrabState();
-                if (input_remap_policy::shouldUseEquippedWeaponPrimaryDetachInput(primaryDetachInputGate)) {
+                if (input_remap_policy::shouldUseEquippedWeaponFiringGripInput(firingGripInputGate)) {
                     primaryGripInput = EquippedWeaponPrimaryGripInput{
                         .held = primaryState.held,
                         .pressed = primaryState.pressed,
@@ -2524,7 +2536,7 @@ namespace rock
             }
 
             bool primaryOnlyGripStartedThisFrame = false;
-            if (primaryDetachFeatureAvailable && !inputBlockingMenuActive && !_twoHandedGrip.isManualOwnershipActive()) {
+            if (firingGripOwnershipFeatureAvailable && !inputBlockingMenuActive && !_twoHandedGrip.isManualOwnershipActive()) {
                 const auto& primaryState = readPrimaryGrabState();
                 if (_pendingEquippedWeaponPrimaryOnlyGripStart.pending && !primaryState.held) {
                     _pendingEquippedWeaponPrimaryOnlyGripStart = {};
@@ -2534,7 +2546,8 @@ namespace rock
                     weaponNode != nullptr &&
                     currentEquippedWeaponOwnershipKey != 0 &&
                     primaryState.held &&
-                    (primaryState.pressed || _pendingEquippedWeaponPrimaryOnlyGripStart.pending);
+                    ((primaryDetachFeatureAvailable && primaryState.pressed) ||
+                        _pendingEquippedWeaponPrimaryOnlyGripStart.pending);
                 const RE::NiTransform* capturedFiringHandWeaponLocal =
                     _pendingEquippedWeaponPrimaryOnlyGripStart.pending &&
                         _pendingEquippedWeaponPrimaryOnlyGripStart.hasFiringHandWeaponLocal ?
@@ -2773,9 +2786,13 @@ namespace rock
                 rightHandInteractionState,
                 supportAuthorityMode,
                 firingGripProximityAuthorityEnabled,
-                primaryDetachFeatureAvailable);
+                EquippedWeaponGripMode{
+                    .firingGripOwnershipEnabled = firingGripOwnershipFeatureAvailable,
+                    .ambidextrousHandoffEnabled = ambidextrousFiringAvailable,
+                    .primaryDetachEnabled = primaryDetachFeatureAvailable,
+                });
             if (primaryOnlyGripStartedThisFrame) {
-                ROCK_LOG_DEBUG(Weapon, "Equipped weapon primary-only manual ownership started from primary grip input");
+                ROCK_LOG_DEBUG(Weapon, "Equipped weapon firing-grip ownership started from grip input or held-weapon equip");
             }
             const auto gripHapticEvents = _twoHandedGrip.consumeHapticEvents();
             if (g_rockConfig.rockWeaponGripHapticsEnabled) {
@@ -2826,7 +2843,7 @@ namespace rock
                         dropLoc.y,
                         dropLoc.z);
                     _pendingEquippedWeaponPrimaryOnlyGripStart = {};
-                    clearEquippedWeaponPrimaryInputState();
+                    clearEquippedWeaponFiringGripInputState();
                 } else {
                     const bool stashCommitSelected =
                         sourceHandKnown &&
@@ -2982,18 +2999,18 @@ namespace rock
                         }
                     }
                     _pendingEquippedWeaponPrimaryOnlyGripStart = {};
-                    clearEquippedWeaponPrimaryInputState();
+                    clearEquippedWeaponFiringGripInputState();
                 }
             }
             updateEquippedWeaponReleaseCapture(frame, weaponNode);
             const bool weaponSupportGripActive = _twoHandedGrip.isHandPartGripping(true);
-            const input_remap_policy::EquippedWeaponPrimaryDetachInputGate updatedPrimaryDetachInputGate{
-                .featureAvailable = primaryDetachFeatureAvailable,
-                .canUsePrimaryDetachInput = _twoHandedGrip.canUsePrimaryDetachInput(),
+            const input_remap_policy::EquippedWeaponFiringGripInputGate updatedFiringGripInputGate{
+                .featureAvailable = firingGripOwnershipFeatureAvailable,
+                .canUseFiringGripInput = _twoHandedGrip.canUseFiringGripInput(),
                 .menuInputActive = inputBlockingMenuActive,
             };
-            input_remap_runtime::setEquippedWeaponPrimaryDetachInputActive(
-                input_remap_policy::shouldUseEquippedWeaponPrimaryDetachInput(updatedPrimaryDetachInputGate));
+            input_remap_runtime::setEquippedWeaponFiringGripInputActive(
+                input_remap_policy::shouldUseEquippedWeaponFiringGripInput(updatedFiringGripInputGate));
             input_remap_runtime::setEquippedWeaponPrimaryDetached(_twoHandedGrip.isPartCarryActive());
             /*
              * Left-hand fire publication: while the LEFT hand occupies the
@@ -3744,7 +3761,7 @@ namespace rock
         _pendingEquippedWeaponPrimaryOnlyGripStart = {};
         clearPendingForceGrabCommitsForOrigin(PendingForceGrabCommitOrigin::ProviderForceGrabCommand);
         clearLooseGrenadeRuntimeState(true);
-        clearEquippedWeaponPrimaryInputState();
+        clearEquippedWeaponFiringGripInputState();
         _bodyContactRuntime.reset();
         _shoulderStashStates = {};
         _mouthConsumeStates = {};
@@ -7064,7 +7081,7 @@ namespace rock
             input_remap_runtime::setHandInteractionEngaged(true, false);
             input_remap_runtime::setHeldObjectFormId(false, 0u);
             input_remap_runtime::setHeldObjectFormId(true, 0u);
-            input_remap_runtime::setEquippedWeaponPrimaryDetachInputActive(false);
+            input_remap_runtime::setEquippedWeaponFiringGripInputActive(false);
             input_remap_runtime::setEquippedWeaponPrimaryDetached(false);
             input_remap_runtime::setProviderOpenVrGameInputSuppressed(false, false);
             input_remap_runtime::setProviderOpenVrGameInputSuppressed(true, false);
@@ -7077,6 +7094,16 @@ namespace rock
         auto* hknp = frame.hknpWorld;
         int grabButton = g_rockConfig.rockGrabButtonID;
         const bool rightHandWeaponEquipped = resolveEquippedWeaponInteractionNode() != nullptr;
+        const bool ambidextrousFiringAvailable = TwoHandedGrip::canBeginPrimaryOnlyGripForHand(true);
+        const equipped_weapon_manual_ownership_policy::FiringGripModeAvailability firingGripModes{
+            .realisticWeaponHandlingEnabled = g_rockConfig.rockRealisticWeaponHandlingEnabled,
+            .ambidextrousFiringAvailable = ambidextrousFiringAvailable,
+        };
+        const bool gripZoneSettleEquipEnabled = equipped_weapon_manual_ownership_policy::canSettleEquipInGripZone(
+            equipped_weapon_manual_ownership_policy::GripZoneSettleEquipInput{
+                .realisticWeaponHandlingEnabled = g_rockConfig.rockRealisticWeaponHandlingEnabled,
+                .gripZoneEquipConfigured = g_rockConfig.rockGrabbedWeaponGripZoneEquipEnabled,
+            });
         const auto farHmdConeGate = makeFarSelectionHmdConeGate(frame);
         auto publishHandInputOwnership = [&](const Hand& hand, const bool isLeft) {
             auto* heldRef = hand.isHolding() ? hand.getHeldRef() : nullptr;
@@ -7703,14 +7730,15 @@ namespace rock
              * Grip-zone hover probe: while either OPEN hand's selection
              * candidate is a loose weapon, feel out whether grabbing right now
              * would land the palm inside the firing-grip zone (and therefore
-             * equip after the settle into that same physical hand). Both hands
+             * equip after the settle into that same physical hand while
+             * realistic handling is enabled). Both hands
              * use the same projected FRIK firing-grip radius; grenades never
              * reach the equip path so they never hum. Vibration stops on grab
              * because the hover candidate goes null while holding.
              */
             RE::TESObjectREFR* gripZoneHoverCandidate = nullptr;
             if (g_rockConfig.rockGripZoneHoverHapticsEnabled &&
-                g_rockConfig.rockGrabbedWeaponGripZoneEquipEnabled &&
+                gripZoneSettleEquipEnabled &&
                 g_rockConfig.rockInputRemapEnabled &&
                 !hand.isHolding() &&
                 hand.hasSelection() &&
@@ -7750,7 +7778,7 @@ namespace rock
                     .heldWeaponHand = isLeft ? input_remap_policy::Hand::Left : input_remap_policy::Hand::Right,
                     .triggerInputHand = isLeft ? input_remap_policy::Hand::Left : input_remap_policy::Hand::Right,
                     .triggerPressedEdge = heldWeaponEquipTriggerPressed,
-                    .gripZoneEquipEnabled = g_rockConfig.rockGrabbedWeaponGripZoneEquipEnabled,
+                    .gripZoneEquipEnabled = gripZoneSettleEquipEnabled,
                     .gripZoneEquipSettled = heldWeaponGripZoneEquipSettled,
                 });
 
@@ -7765,11 +7793,15 @@ namespace rock
                     }
 
                     PendingEquippedWeaponPrimaryOnlyGripStart pendingGripStart{};
-                    pendingGripStart.pending =
-                        g_rockConfig.rockRealisticWeaponHandlingEnabled && rawGrabInput.held;
+                    pendingGripStart.pending = equipped_weapon_manual_ownership_policy::shouldStartHeldWeaponEquipOwnership(
+                        equipped_weapon_manual_ownership_policy::HeldWeaponEquipOwnershipInput{
+                            .modes = firingGripModes,
+                            .handIsLeft = isLeft,
+                            .gripHeld = rawGrabInput.held,
+                        });
                     pendingGripStart.isLeft = isLeft;
                     if (isLeft) {
-                        const bool leftCarryAvailable = TwoHandedGrip::canBeginPrimaryOnlyGripForHand(true);
+                        const bool leftCarryAvailable = ambidextrousFiringAvailable;
                         const bool capturedLeftHold = pendingGripStart.pending &&
                             leftCarryAvailable &&
                             loose_weapon_grip_zone::tryGetFiringHandWeaponLocal(
@@ -7782,9 +7814,10 @@ namespace rock
                             ROCK_LOG_SAMPLE_WARN(
                                 Hand,
                                 g_rockConfig.rockLogSampleMilliseconds,
-                                "left hand {} held weapon equip blocked: canonical weapon-relative left carry unavailable realisticHandling={} grabHeld={} hFRIKBlockers={} gripFrame={}",
+                                "left hand {} held weapon equip blocked: canonical weapon-relative left carry unavailable realisticHandling={} ambidextrousFiring={} grabHeld={} hFRIKBlockers={} gripFrame={}",
                                 logAction ? logAction : "requested",
                                 g_rockConfig.rockRealisticWeaponHandlingEnabled ? "yes" : "no",
+                                g_rockConfig.rockAmbidextrousFiringGripEnabled ? "yes" : "no",
                                 rawGrabInput.held ? "yes" : "no",
                                 leftCarryAvailable ? "yes" : "no",
                                 pendingGripStart.hasFiringHandWeaponLocal ? "yes" : "no");

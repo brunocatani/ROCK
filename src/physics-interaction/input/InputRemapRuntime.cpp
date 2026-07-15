@@ -168,7 +168,7 @@ namespace rock::input_remap_runtime
         std::array<std::atomic<bool>, 2> s_handInteractionEngaged{};
         std::array<std::atomic<std::uint32_t>, 2> s_heldObjectFormId{};
         std::array<std::atomic<bool>, 2> s_pendingSavedGrabOffsetRequest{};
-        std::atomic<bool> s_equippedWeaponPrimaryDetachInputActive{ false };
+        std::atomic<bool> s_equippedWeaponFiringGripInputActive{ false };
         std::atomic<bool> s_equippedWeaponPrimaryDetached{ false };
         std::atomic<bool> s_equippedWeaponLeftHandFiringActive{ false };
         std::atomic<bool> s_hooksInstalled{ false };
@@ -851,7 +851,7 @@ namespace rock::input_remap_runtime
                 .weaponDrawn = s_weaponDrawn.load(std::memory_order_acquire),
                 .eventHandHeldWeapon = false,
                 .primaryHandEvent = false,
-                .equippedWeaponPrimaryDetachInputActive = s_equippedWeaponPrimaryDetachInputActive.load(std::memory_order_acquire),
+                .equippedWeaponFiringGripInputActive = s_equippedWeaponFiringGripInputActive.load(std::memory_order_acquire),
                 .equippedWeaponPrimaryDetached = s_equippedWeaponPrimaryDetached.load(std::memory_order_acquire),
                 .eventMatched = eventMatched,
             };
@@ -1713,9 +1713,9 @@ namespace rock::input_remap_runtime
         s_heldObjectFormId[isLeft ? 0u : 1u].store(formId, std::memory_order_release);
     }
 
-    void setEquippedWeaponPrimaryDetachInputActive(bool active)
+    void setEquippedWeaponFiringGripInputActive(bool active)
     {
-        s_equippedWeaponPrimaryDetachInputActive.store(active, std::memory_order_release);
+        s_equippedWeaponFiringGripInputActive.store(active, std::memory_order_release);
     }
 
     void setEquippedWeaponPrimaryDetached(bool detached)

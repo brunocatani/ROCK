@@ -48,7 +48,7 @@ namespace rock::input_remap_policy
         bool weaponDrawn{ false };
         bool eventHandHeldWeapon{ false };
         bool primaryHandEvent{ false };
-        bool equippedWeaponPrimaryDetachInputActive{ false };
+        bool equippedWeaponFiringGripInputActive{ false };
         bool equippedWeaponPrimaryDetached{ false };
         bool pipboyHandEngaged{ false };
         bool takeEquipHandEngaged{ false };
@@ -84,10 +84,10 @@ namespace rock::input_remap_policy
         bool acceptButtonPressedEdge{ false };
     };
 
-    struct EquippedWeaponPrimaryDetachInputGate
+    struct EquippedWeaponFiringGripInputGate
     {
         bool featureAvailable{ false };
-        bool canUsePrimaryDetachInput{ false };
+        bool canUseFiringGripInput{ false };
         bool menuInputActive{ false };
     };
 
@@ -165,7 +165,7 @@ namespace rock::input_remap_policy
     [[nodiscard]] constexpr bool shouldSuppressNativeGripReadyAction(const NativeActionSuppressionInput& input)
     {
         return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched &&
-               (!input.weaponDrawn || input.equippedWeaponPrimaryDetachInputActive);
+               (!input.weaponDrawn || input.equippedWeaponFiringGripInputActive);
     }
 
     [[nodiscard]] constexpr bool shouldSuppressNativeTriggerAction(const NativeActionSuppressionInput& input)
@@ -212,14 +212,14 @@ namespace rock::input_remap_policy
                input.firingHandIsSecondaryHand && input.acceptButtonPressedEdge;
     }
 
-    [[nodiscard]] constexpr bool shouldConsumeEquippedWeaponPrimaryDetachInput(const EquippedWeaponPrimaryDetachInputGate& input)
+    [[nodiscard]] constexpr bool shouldConsumeEquippedWeaponFiringGripInput(const EquippedWeaponFiringGripInputGate& input)
     {
         return input.featureAvailable;
     }
 
-    [[nodiscard]] constexpr bool shouldUseEquippedWeaponPrimaryDetachInput(const EquippedWeaponPrimaryDetachInputGate& input)
+    [[nodiscard]] constexpr bool shouldUseEquippedWeaponFiringGripInput(const EquippedWeaponFiringGripInputGate& input)
     {
-        return input.featureAvailable && input.canUsePrimaryDetachInput && !input.menuInputActive;
+        return input.featureAvailable && input.canUseFiringGripInput && !input.menuInputActive;
     }
 
     /*

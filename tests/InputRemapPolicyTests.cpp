@@ -61,9 +61,9 @@ int main()
     auto drawnGrip = base;
     drawnGrip.weaponDrawn = true;
     ok &= expectFalse("drawn weapon allows native grip ready action", shouldSuppressNativeGripReadyAction(drawnGrip));
-    auto primaryDetachGrip = drawnGrip;
-    primaryDetachGrip.equippedWeaponPrimaryDetachInputActive = true;
-    ok &= expectTrue("primary detach input suppresses drawn native grip ready action", shouldSuppressNativeGripReadyAction(primaryDetachGrip));
+    auto firingGripInput = drawnGrip;
+    firingGripInput.equippedWeaponFiringGripInputActive = true;
+    ok &= expectTrue("firing-grip input suppresses drawn native grip ready action", shouldSuppressNativeGripReadyAction(firingGripInput));
     drawnGrip.primaryHandEvent = true;
     ok &= expectTrue("drawn primary WandGrip suppresses native reload action", shouldSuppressNativeGripReloadAction(drawnGrip));
     auto drawnOffhandGrip = drawnGrip;
@@ -203,19 +203,19 @@ int main()
     secondaryReloadMenu.menuInputActive = true;
     ok &= expectFalse("menu input blocks secondary-hand reload press", shouldDispatchSecondaryHandReloadPress(secondaryReloadMenu));
 
-    EquippedWeaponPrimaryDetachInputGate primaryDetachGate{
+    EquippedWeaponFiringGripInputGate firingGripGate{
         .featureAvailable = true,
-        .canUsePrimaryDetachInput = false,
+        .canUseFiringGripInput = false,
     };
-    ok &= expectTrue("primary detach feature consumes stale edges before armed", shouldConsumeEquippedWeaponPrimaryDetachInput(primaryDetachGate));
-    ok &= expectFalse("primary detach ignores consumed edges until armed", shouldUseEquippedWeaponPrimaryDetachInput(primaryDetachGate));
-    primaryDetachGate.canUsePrimaryDetachInput = true;
-    ok &= expectTrue("primary detach uses fresh edge after armed", shouldUseEquippedWeaponPrimaryDetachInput(primaryDetachGate));
-    primaryDetachGate.menuInputActive = true;
-    ok &= expectFalse("menu input blocks primary detach edge use", shouldUseEquippedWeaponPrimaryDetachInput(primaryDetachGate));
-    primaryDetachGate.menuInputActive = false;
-    primaryDetachGate.featureAvailable = false;
-    ok &= expectFalse("missing hFRIK blocker export disables primary detach consumption", shouldConsumeEquippedWeaponPrimaryDetachInput(primaryDetachGate));
+    ok &= expectTrue("firing-grip feature consumes stale edges before armed", shouldConsumeEquippedWeaponFiringGripInput(firingGripGate));
+    ok &= expectFalse("firing-grip input ignores consumed edges until armed", shouldUseEquippedWeaponFiringGripInput(firingGripGate));
+    firingGripGate.canUseFiringGripInput = true;
+    ok &= expectTrue("firing-grip input uses fresh edge after armed", shouldUseEquippedWeaponFiringGripInput(firingGripGate));
+    firingGripGate.menuInputActive = true;
+    ok &= expectFalse("menu input blocks firing-grip edge use", shouldUseEquippedWeaponFiringGripInput(firingGripGate));
+    firingGripGate.menuInputActive = false;
+    firingGripGate.featureAvailable = false;
+    ok &= expectFalse("missing hFRIK blocker export disables firing-grip input consumption", shouldConsumeEquippedWeaponFiringGripInput(firingGripGate));
 
     HeldWeaponEquipInput equipInput{
         .remapEnabled = true,

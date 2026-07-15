@@ -72,6 +72,16 @@ namespace rock
         EquippedWeaponPrimaryGripInput primaryGripInput{};
     };
 
+    struct EquippedWeaponGripMode
+    {
+        // Keeps ROCK's firing-hand role/left-hand carry state alive.
+        bool firingGripOwnershipEnabled{ false };
+        // Allows the wrapped support hand to inherit the firing grip.
+        bool ambidextrousHandoffEnabled{ false };
+        // Enables realistic firing-hand detach, part carry, and drop.
+        bool primaryDetachEnabled{ false };
+    };
+
     struct TwoHandedGripDebugSnapshot
     {
         RE::NiTransform weaponWorld{};
@@ -153,7 +163,7 @@ namespace rock
             const WeaponInteractionRuntimeState& rightRuntimeState,
             weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode,
             bool firingGripProximityAuthorityEnabled,
-            bool primaryDetachEnabled);
+            const EquippedWeaponGripMode& gripMode);
 
         void reset();
 
@@ -197,7 +207,7 @@ namespace rock
         // hover the firing grip when ambidextrous takeover is available).
         bool isFiringGripReattachHoverHandLeft() const { return _firingGripReattachHoverHandIsLeft; }
 
-        bool canUsePrimaryDetachInput() const
+        bool canUseFiringGripInput() const
         {
             return _state == TwoHandedState::Gripping ||
                    _state == TwoHandedState::PartCarry ||
@@ -438,7 +448,8 @@ namespace rock
         void updatePrimaryOnlyGrip(
             RE::NiNode* weaponNode,
             std::uint64_t currentEquippedWeaponOwnershipKey,
-            const EquippedWeaponPrimaryGripInput& primaryGripInput);
+            const EquippedWeaponPrimaryGripInput& primaryGripInput,
+            bool primaryDetachEnabled);
 
         // Rigid left-firing weapon carry: weapon = firing hand ∘ inverse of the
         // captured weapon-relative grip frame. Used by PrimaryOnly and

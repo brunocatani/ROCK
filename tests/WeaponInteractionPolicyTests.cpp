@@ -219,6 +219,7 @@ int main()
 
     using rock::weapon_two_handed_grip_math::canProcessNormalGrabInput;
     using rock::weapon_two_handed_grip_math::resolveSupportReleaseManualAction;
+    using rock::weapon_two_handed_grip_math::SupportReleaseOwnershipInput;
     using rock::weapon_two_handed_grip_math::SupportReleaseManualAction;
     ok &= expectFalse("support-hand normal grab is blocked while its part grip is active", canProcessNormalGrabInput(false, true, true, false));
     ok &= expectTrue("support-hand normal grab stays available without a part grip", canProcessNormalGrabInput(false, true, false, false));
@@ -277,14 +278,29 @@ int main()
         isBetterProbeCandidate(
             ProbeCandidateRank{ .distanceSquaredGame = 0.0f, .aabbDiagonalSquaredGame = 82.0f, .semanticPriority = 62 },
             ProbeCandidateRank{ .distanceSquaredGame = 0.0f, .aabbDiagonalSquaredGame = 82.0f, .semanticPriority = 62 }));
-    ok &= expectEqual("support release keeps primary ownership when primary grip is held",
-        resolveSupportReleaseManualAction(true, true),
+    ok &= expectEqual("support release keeps realistic primary ownership while its grip is held",
+        resolveSupportReleaseManualAction(SupportReleaseOwnershipInput{
+            .firingGripOwnershipEnabled = true,
+            .primaryDetachEnabled = true,
+            .primaryGripHeld = true,
+        }),
         SupportReleaseManualAction::KeepPrimaryOwnership);
-    ok &= expectEqual("support release drops equipped weapon when primary grip is not held",
-        resolveSupportReleaseManualAction(true, false),
+    ok &= expectEqual("support release drops realistically detached weapon when primary grip is open",
+        resolveSupportReleaseManualAction(SupportReleaseOwnershipInput{
+            .firingGripOwnershipEnabled = true,
+            .primaryDetachEnabled = true,
+            .primaryGripHeld = false,
+        }),
         SupportReleaseManualAction::DropEquippedWeapon);
-    ok &= expectEqual("support release ends support only when manual detach is disabled",
-        resolveSupportReleaseManualAction(false, true),
+    ok &= expectEqual("support release preserves ambidextrous firing ownership without realistic detach",
+        resolveSupportReleaseManualAction(SupportReleaseOwnershipInput{
+            .firingGripOwnershipEnabled = true,
+            .primaryDetachEnabled = false,
+            .primaryGripHeld = false,
+        }),
+        SupportReleaseManualAction::KeepPrimaryOwnership);
+    ok &= expectEqual("support release ends support when firing-grip ownership is disabled",
+        resolveSupportReleaseManualAction(SupportReleaseOwnershipInput{}),
         SupportReleaseManualAction::EndSupportOnly);
 
     using rock::weapon_two_handed_grip_math::canStartFreeHandPartGrip;
@@ -335,6 +351,79 @@ int main()
         canStartFreeHandPartGrip(true, true, false, true));
 
     using namespace rock::equipped_weapon_manual_ownership_policy;
+    ok &= expectTrue("realistic handling enables firing-grip ownership",
+        firingGripOwnershipEnabled(FiringGripModeAvailability{
+            .realisticWeaponHandlingEnabled = true,
+        }));
+    ok &= expectTrue("ambidextrous firing independently enables firing-grip ownership",
+        firingGripOwnershipEnabled(FiringGripModeAvailability{
+            .ambidextrousFiringAvailable = true,
+        }));
+    ok &= expectFalse("firing-grip ownership is disabled when both modes are off",
+        firingGripOwnershipEnabled(FiringGripModeAvailability{}));
+    ok &= expectTrue("left-hand trigger equip starts ambidextrous firing ownership",
+        shouldStartHeldWeaponEquipOwnership(HeldWeaponEquipOwnershipInput{
+            .modes = FiringGripModeAvailability{
+                .ambidextrousFiringAvailable = true,
+            },
+            .handIsLeft = true,
+            .gripHeld = true,
+        }));
+    ok &= expectFalse("right-hand trigger equip cannot start ambidextrous-only ownership",
+        shouldStartHeldWeaponEquipOwnership(HeldWeaponEquipOwnershipInput{
+            .modes = FiringGripModeAvailability{
+                .ambidextrousFiringAvailable = true,
+            },
+            .gripHeld = true,
+        }));
+    ok &= expectTrue("realistic trigger equip can start right-hand ownership",
+        shouldStartHeldWeaponEquipOwnership(HeldWeaponEquipOwnershipInput{
+            .modes = FiringGripModeAvailability{
+                .realisticWeaponHandlingEnabled = true,
+            },
+            .gripHeld = true,
+        }));
+    ok &= expectFalse("trigger equip ownership requires the same hand grip",
+        shouldStartHeldWeaponEquipOwnership(HeldWeaponEquipOwnershipInput{
+            .modes = FiringGripModeAvailability{
+                .realisticWeaponHandlingEnabled = true,
+                .ambidextrousFiringAvailable = true,
+            },
+            .handIsLeft = true,
+        }));
+    ok &= expectTrue("realistic handling permits configured grip-zone settle equip",
+        canSettleEquipInGripZone(GripZoneSettleEquipInput{
+            .realisticWeaponHandlingEnabled = true,
+            .gripZoneEquipConfigured = true,
+        }));
+    ok &= expectFalse("grip-zone settle equip stays off when realistic handling is disabled",
+        canSettleEquipInGripZone(GripZoneSettleEquipInput{
+            .gripZoneEquipConfigured = true,
+        }));
+    ok &= expectFalse("realistic handling respects disabled grip-zone settle equip config",
+        canSettleEquipInGripZone(GripZoneSettleEquipInput{
+            .realisticWeaponHandlingEnabled = true,
+        }));
+    ok &= expectTrue("ambidextrous-only ownership ignores an open firing grip",
+        shouldRetainPrimaryOnlyOwnership(false, false));
+    ok &= expectTrue("realistic ownership remains while the firing grip is held",
+        shouldRetainPrimaryOnlyOwnership(true, true));
+    ok &= expectFalse("realistic ownership releases when the firing grip opens",
+        shouldRetainPrimaryOnlyOwnership(true, false));
+    RuntimeState ambidextrousLifecycleState{
+        .active = true,
+        .ownershipKey = 0x21u,
+    };
+    const auto ambidextrousWeaponChanged = update(ambidextrousLifecycleState,
+        Input{
+            .weaponEquipped = true,
+            .ownershipKey = 0x22u,
+            .primaryGripRetained = shouldRetainPrimaryOnlyOwnership(false, false),
+        });
+    ok &= expectTrue("ambidextrous-only ownership still clears when equipped identity changes",
+        ambidextrousWeaponChanged.cleared);
+    ok &= expectFalse("ambidextrous identity cleanup never drops the newly equipped weapon",
+        ambidextrousWeaponChanged.dropRequested);
     ok &= expectTrue("manual grip feature is available for an equipped instance", featureAvailable(true, true, true, 20));
     ok &= expectFalse("manual grip feature is unavailable without active weapon node", featureAvailable(true, true, false, 20));
     ok &= expectTrue("manual primary ownership is available while colliders build", featureAvailable(true, true, true, 20));
@@ -343,21 +432,21 @@ int main()
         shouldKeepPendingPrimaryOnlyStart(PendingPrimaryOnlyStartInput{
             .pending = true,
             .gripHeld = true,
-            .configEnabled = true,
+            .ownershipModeEnabled = true,
             .primaryPoseBlockerAvailable = true,
         }));
     ok &= expectFalse("pending trigger-equip grip clears on release",
         shouldKeepPendingPrimaryOnlyStart(PendingPrimaryOnlyStartInput{
             .pending = true,
             .gripHeld = false,
-            .configEnabled = true,
+            .ownershipModeEnabled = true,
             .primaryPoseBlockerAvailable = true,
         }));
     ok &= expectTrue("pending trigger-equip grip is retained for visual-only sidearm release",
         shouldKeepPendingPrimaryOnlyStart(PendingPrimaryOnlyStartInput{
             .pending = true,
             .gripHeld = true,
-            .configEnabled = true,
+            .ownershipModeEnabled = true,
             .primaryPoseBlockerAvailable = true,
         }));
 
