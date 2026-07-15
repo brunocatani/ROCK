@@ -4362,8 +4362,9 @@ namespace rock
         _bodyBoneColliderCreateRetryFrames = 0;
         _bodyContactRuntime.reset();
         ROCK_LOG_INFO(Body,
-            "Full body bone collider set created: bodies={} enabled=true",
-            _bodyBoneColliders.getBodyCount());
+            "Body bone collider set created: bodies={} legsAndFeet={}",
+            _bodyBoneColliders.getBodyCount(),
+            g_rockConfig.rockBodyBoneLegAndFootCollidersEnabled ? "enabled" : "disabled");
         return true;
     }
 

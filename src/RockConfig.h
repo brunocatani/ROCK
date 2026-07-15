@@ -273,6 +273,7 @@ namespace rock
 
         int rockHandColliderRuntimeMode = 1;
         bool rockBodyBoneCollidersEnabled = true;
+        bool rockBodyBoneLegAndFootCollidersEnabled = false;
         bool rockBodyBoneCollisionStaticWorldEnabled = true;
         float rockBodyBoneColliderStandardRadiusScale = 1.0f;
         float rockBodyBoneColliderStandardLengthScale = 1.0f;

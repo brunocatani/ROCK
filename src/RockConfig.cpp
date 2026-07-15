@@ -28,6 +28,7 @@ namespace
     constexpr auto DEBUG_SECTION = "Debug";
     constexpr auto REALISTIC_WEAPONS_SECTION = "RealisticWeapons";
     constexpr auto AMBIDEXTROUS_FIRING_SECTION = "AmbidextrousFiring";
+    constexpr auto EXPERIMENTAL_SECTION = "Experimental";
     constexpr int kDefaultWeaponCollisionSupportFitTargetPoints = 96;
     constexpr int kMinWeaponCollisionSupportFitTargetPoints = 4;
     constexpr int kMaxWeaponCollisionSupportFitTargetPoints = 252;
@@ -325,6 +326,7 @@ namespace rock
 
         rockHandColliderRuntimeMode = 1;
         rockBodyBoneCollidersEnabled = true;
+        rockBodyBoneLegAndFootCollidersEnabled = false;
         rockBodyBoneCollisionStaticWorldEnabled = true;
         rockBodyBoneColliderStandardRadiusScale = 1.0f;
         rockBodyBoneColliderStandardLengthScale = 1.0f;
@@ -1280,7 +1282,9 @@ namespace rock
             ROCK_LOG_WARN(Config, "Invalid iHandColliderRuntimeMode={} - using BoneDerivedHands", rockHandColliderRuntimeMode);
             rockHandColliderRuntimeMode = 1;
         }
-        rockBodyBoneCollidersEnabled = ini.GetBoolValue(SECTION, "bBodyBoneCollidersEnabled", rockBodyBoneCollidersEnabled);
+        rockBodyBoneCollidersEnabled = ini.GetBoolValue(EXPERIMENTAL_SECTION, "bBodyBoneCollidersEnabled", rockBodyBoneCollidersEnabled);
+        rockBodyBoneLegAndFootCollidersEnabled =
+            ini.GetBoolValue(EXPERIMENTAL_SECTION, "bBodyBoneLegAndFootCollidersEnabled", rockBodyBoneLegAndFootCollidersEnabled);
         rockBodyBoneCollisionStaticWorldEnabled = ini.GetBoolValue(SECTION, "bBodyBoneCollisionStaticWorldEnabled", rockBodyBoneCollisionStaticWorldEnabled);
         auto readBodyBoneScale = [&](const char* key, float currentValue) {
             const auto value = static_cast<float>(ini.GetDoubleValue(SECTION, key, currentValue));

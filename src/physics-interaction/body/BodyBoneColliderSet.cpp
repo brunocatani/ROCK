@@ -370,9 +370,18 @@ namespace rock
             }
         }
 
+        bool bodyColliderRoleEnabled(BoneColliderRole role)
+        {
+            if (role == BoneColliderRole::LegSegment || role == BoneColliderRole::FootSegment) {
+                return g_rockConfig.rockBodyBoneLegAndFootCollidersEnabled;
+            }
+            return true;
+        }
+
         std::uint64_t bodyColliderTuningSignature(bool inPowerArmor)
         {
             std::uint64_t signature = inPowerArmor ? 0x5041'524D'4F52ull : 0x5354'414E'4444ull;
+            mixBodyColliderSignature(signature, g_rockConfig.rockBodyBoneLegAndFootCollidersEnabled ? 1.0f : 0.0f);
             mixBodyColliderSignature(signature, profileRadiusScale(inPowerArmor));
             mixBodyColliderSignature(signature, profileLengthScale(inPowerArmor));
             mixBodyColliderSignature(signature, profileConvexRadiusScale(inPowerArmor));
@@ -670,6 +679,10 @@ namespace rock
         std::size_t createdCount = 0;
         for (std::uint32_t descriptorIndex = 0; descriptorIndex < descriptors.size(); ++descriptorIndex) {
             const auto& descriptor = descriptors[descriptorIndex];
+            if (!bodyColliderRoleEnabled(descriptor.role)) {
+                continue;
+            }
+
             DescriptorFrameResult frame{};
             if (!makeDescriptorFrame(bonesByName, descriptor, snapshot.inPowerArmor, frame)) {
                 ROCK_LOG_WARN(Body,
@@ -711,9 +724,10 @@ namespace rock
         publishAtomicBodyIds(snapshot.inPowerArmor);
 
         ROCK_LOG_INFO(Body,
-            "Body bone colliders created: bodies={} descriptors={} sourceSkeleton={} tree={} powerArmor={}",
+            "Body bone colliders created: bodies={} descriptors={} legsAndFeet={} sourceSkeleton={} tree={} powerArmor={}",
             createdCount,
             descriptors.size(),
+            g_rockConfig.rockBodyBoneLegAndFootCollidersEnabled ? "enabled" : "disabled",
             reinterpret_cast<std::uintptr_t>(_cachedSkeleton),
             reinterpret_cast<std::uintptr_t>(_cachedBoneTree),
             _cachedPowerArmor ? "yes" : "no");
