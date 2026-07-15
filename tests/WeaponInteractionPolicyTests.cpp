@@ -163,19 +163,84 @@ int main()
             }
         }
 
+        TestTransform nativeModelRootInCameraLocal = rock::transform_math::makeIdentityTransform<TestTransform>();
+        nativeModelRootInCameraLocal.translate = { 6.0f, -30.0f, 2.0f };
+        nativeModelRootInCameraLocal.rotate.entry[1][1] = 0.0f;
+        nativeModelRootInCameraLocal.rotate.entry[1][2] = 1.0f;
+        nativeModelRootInCameraLocal.rotate.entry[2][1] = -1.0f;
+        nativeModelRootInCameraLocal.rotate.entry[2][2] = 0.0f;
+        const TestTransform nativeScopeModelRootWorld = rock::transform_math::composeTransforms(
+            scopeBefore,
+            nativeModelRootInCameraLocal);
+        const TestTransform modelRootCalibration =
+            rock::native_scope_overlay_follow_math::captureModelRootCalibrationInCameraLocal(
+                scopeBefore,
+                nativeScopeModelRootWorld);
+        ok &= expectNear("native scope overlay discards obsolete lateral calibration", modelRootCalibration.translate.x, 0.0f);
+        ok &= expectNear("native scope overlay discards obsolete depth calibration", modelRootCalibration.translate.y, 0.0f);
+        ok &= expectNear("native scope overlay discards obsolete vertical calibration", modelRootCalibration.translate.z, 0.0f);
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                ok &= expectNear(
+                    "native scope overlay preserves Bethesda model orientation",
+                    modelRootCalibration.rotate.entry[row][column],
+                    nativeModelRootInCameraLocal.rotate.entry[row][column]);
+            }
+        }
+
+        const TestTransform zeroFineTune =
+            rock::native_scope_overlay_follow_math::makeModelRootFineTuneLocal<TestTransform>(
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+        const TestTransform targetScopeModelRoot =
+            rock::native_scope_overlay_follow_math::resolveScopeModelRootWorld(
+                anchoredScopeAfter,
+                modelRootCalibration,
+                zeroFineTune);
+        const TestTransform expectedScopeModelRoot = rock::transform_math::composeTransforms(
+            anchoredScopeAfter,
+            modelRootCalibration);
+        ok &= expectTransformNear(
+            "native scope overlay applies Bethesda orientation at the generated sight",
+            targetScopeModelRoot,
+            expectedScopeModelRoot);
+        ok &= expectNear("native scope overlay keeps generated sight lateral anchor", targetScopeModelRoot.translate.x, anchoredScopeAfter.translate.x);
+        ok &= expectNear("native scope overlay keeps generated sight depth anchor", targetScopeModelRoot.translate.y, anchoredScopeAfter.translate.y);
+        ok &= expectNear("native scope overlay keeps generated sight vertical anchor", targetScopeModelRoot.translate.z, anchoredScopeAfter.translate.z);
+
         TestTransform scopeModelRootLocal = rock::transform_math::makeIdentityTransform<TestTransform>();
         scopeModelRootLocal.translate = { 0.0f, -12.0f, 0.0f };
         const TestTransform correctedScopeParent =
             rock::native_scope_overlay_follow_math::resolveScopeParentWorldForModelRoot(
-                anchoredScopeAfter,
+                targetScopeModelRoot,
                 scopeModelRootLocal);
         const TestTransform correctedScopeModelRoot = rock::transform_math::composeTransforms(
             correctedScopeParent,
             scopeModelRootLocal);
         ok &= expectTransformNear(
-            "native scope overlay compensates the model-root depth at the corrected camera",
+            "native scope overlay compensates model-root depth after calibrated orientation",
             correctedScopeModelRoot,
-            anchoredScopeAfter);
+            targetScopeModelRoot);
+
+        const TestTransform fineTune =
+            rock::native_scope_overlay_follow_math::makeModelRootFineTuneLocal<TestTransform>(
+                1.0f, 2.0f, 3.0f, 90.0f, 0.0f, 0.0f);
+        ok &= expectNear("native scope overlay INI lateral offset", fineTune.translate.x, 1.0f);
+        ok &= expectNear("native scope overlay INI depth offset", fineTune.translate.y, 2.0f);
+        ok &= expectNear("native scope overlay INI vertical offset", fineTune.translate.z, 3.0f);
+        ok &= expectNear("native scope overlay INI pitch rotates local Y toward Z", fineTune.rotate.entry[1][2], 1.0f);
+        ok &= expectNear("native scope overlay INI pitch rotates local Z toward negative Y", fineTune.rotate.entry[2][1], -1.0f);
+
+        const TestTransform yawFineTune =
+            rock::native_scope_overlay_follow_math::makeModelRootFineTuneLocal<TestTransform>(
+                0.0f, 0.0f, 0.0f, 0.0f, 90.0f, 0.0f);
+        ok &= expectNear("native scope overlay INI yaw rotates local X toward Y", yawFineTune.rotate.entry[0][1], 1.0f);
+        ok &= expectNear("native scope overlay INI yaw rotates local Y toward negative X", yawFineTune.rotate.entry[1][0], -1.0f);
+
+        const TestTransform rollFineTune =
+            rock::native_scope_overlay_follow_math::makeModelRootFineTuneLocal<TestTransform>(
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 90.0f);
+        ok &= expectNear("native scope overlay INI roll rotates local X toward negative Z", rollFineTune.rotate.entry[0][2], -1.0f);
+        ok &= expectNear("native scope overlay INI roll rotates local Z toward X", rollFineTune.rotate.entry[2][0], 1.0f);
     }
 
     {

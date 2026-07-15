@@ -169,6 +169,17 @@ namespace rock
         float rockWeaponVisualReturnMinAngleDegrees = 5.0f;
         float rockWeaponVisualReturnMaxAngleDegrees = 90.0f;
 
+        // Fine tuning for FO4VR's game-native world_scope.nif overlay. These
+        // offsets are applied in the calibrated model-root frame after ROCK
+        // anchors it to generated Sight geometry; they do not move the native
+        // activation camera or alter its entry detection.
+        float rockNativeScopeOverlayOffsetXGameUnits = 0.0f;
+        float rockNativeScopeOverlayOffsetYGameUnits = 0.0f;
+        float rockNativeScopeOverlayOffsetZGameUnits = 0.0f;
+        float rockNativeScopeOverlayPitchDegrees = 0.0f;
+        float rockNativeScopeOverlayYawDegrees = 0.0f;
+        float rockNativeScopeOverlayRollDegrees = 0.0f;
+
         /*
          * Canonical free-hand world collision: dynamic palm/fingertip proxy
          * bodies are solver-clipped by static world surfaces and drive the

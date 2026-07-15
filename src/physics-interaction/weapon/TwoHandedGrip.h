@@ -123,6 +123,7 @@ namespace rock
     struct NativeScopeOverlayPendingHandoff
     {
         std::uint64_t weaponGenerationKey{ 0 };
+        RE::NiTransform nativeCameraWorldBefore{};
         RE::NiTransform correctedCameraWorld{};
         bool valid{ false };
     };
@@ -139,6 +140,7 @@ namespace rock
         RE::NiNode* scopeModelRootIdentity{ nullptr };
 
         RE::NiTransform scopeModelRootLocal{};
+        RE::NiTransform scopeModelRootCalibrationInCameraLocal{};
         RE::NiTransform nativeScopeParentLocal{};
         RE::NiTransform lastAppliedScopeParentLocal{};
         bool valid{ false };
@@ -680,7 +682,9 @@ namespace rock
         void clearWeaponVisualReturn(const char* reason, bool logCancellation, bool restoreBlockers);
         void clearAllVisualReturns(const char* reason, bool logCancellation, bool restoreBlockers);
         void clearNativeScopeOverlayAuthority(bool restoreNativeLocal);
-        bool captureNativeScopeOverlayCalibration(std::uint64_t currentWeaponGenerationKey);
+        bool captureNativeScopeOverlayCalibration(
+            const RE::NiTransform& nativeCameraWorld,
+            std::uint64_t currentWeaponGenerationKey);
         bool applyNativeScopeOverlayTarget(
             const RE::NiTransform& correctedCameraWorld,
             std::uint64_t currentWeaponGenerationKey);

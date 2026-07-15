@@ -27,6 +27,7 @@ namespace
     constexpr auto SECTION = "PhysicsInteraction";
     constexpr auto DEBUG_SECTION = "Debug";
     constexpr auto REALISTIC_WEAPONS_SECTION = "RealisticWeapons";
+    constexpr auto NATIVE_SCOPES_SECTION = "NativeScopes";
     constexpr auto AMBIDEXTROUS_FIRING_SECTION = "AmbidextrousFiring";
     constexpr auto EXPERIMENTAL_SECTION = "Experimental";
     constexpr int kDefaultWeaponCollisionSupportFitTargetPoints = 96;
@@ -226,6 +227,12 @@ namespace rock
         rockWeaponVisualReturnMaxDistance = 14.0f;
         rockWeaponVisualReturnMinAngleDegrees = 5.0f;
         rockWeaponVisualReturnMaxAngleDegrees = 90.0f;
+        rockNativeScopeOverlayOffsetXGameUnits = 0.0f;
+        rockNativeScopeOverlayOffsetYGameUnits = 0.0f;
+        rockNativeScopeOverlayOffsetZGameUnits = 0.0f;
+        rockNativeScopeOverlayPitchDegrees = 0.0f;
+        rockNativeScopeOverlayYawDegrees = 0.0f;
+        rockNativeScopeOverlayRollDegrees = 0.0f;
 
         rockHandCollisionDynamicDrive = true;
         rockHandCollisionDynamicMaxLinearVelocityHavok = 15.0f;
@@ -1055,6 +1062,49 @@ namespace rock
             rockWeaponVisualReturnMaxAngleDegrees,
             90.0f,
             rockWeaponVisualReturnMinAngleDegrees,
+            180.0f);
+
+        rockNativeScopeOverlayOffsetXGameUnits = readClampedFloat(ini,
+            NATIVE_SCOPES_SECTION,
+            "fNativeScopeOverlayOffsetXGameUnits",
+            rockNativeScopeOverlayOffsetXGameUnits,
+            0.0f,
+            -100.0f,
+            100.0f);
+        rockNativeScopeOverlayOffsetYGameUnits = readClampedFloat(ini,
+            NATIVE_SCOPES_SECTION,
+            "fNativeScopeOverlayOffsetYGameUnits",
+            rockNativeScopeOverlayOffsetYGameUnits,
+            0.0f,
+            -100.0f,
+            100.0f);
+        rockNativeScopeOverlayOffsetZGameUnits = readClampedFloat(ini,
+            NATIVE_SCOPES_SECTION,
+            "fNativeScopeOverlayOffsetZGameUnits",
+            rockNativeScopeOverlayOffsetZGameUnits,
+            0.0f,
+            -100.0f,
+            100.0f);
+        rockNativeScopeOverlayPitchDegrees = readClampedFloat(ini,
+            NATIVE_SCOPES_SECTION,
+            "fNativeScopeOverlayPitchDegrees",
+            rockNativeScopeOverlayPitchDegrees,
+            0.0f,
+            -180.0f,
+            180.0f);
+        rockNativeScopeOverlayYawDegrees = readClampedFloat(ini,
+            NATIVE_SCOPES_SECTION,
+            "fNativeScopeOverlayYawDegrees",
+            rockNativeScopeOverlayYawDegrees,
+            0.0f,
+            -180.0f,
+            180.0f);
+        rockNativeScopeOverlayRollDegrees = readClampedFloat(ini,
+            NATIVE_SCOPES_SECTION,
+            "fNativeScopeOverlayRollDegrees",
+            rockNativeScopeOverlayRollDegrees,
+            0.0f,
+            -180.0f,
             180.0f);
 
         rockHandCollisionDynamicDrive = ini.GetBoolValue(SECTION, "bHandCollisionDynamicDrive", rockHandCollisionDynamicDrive);

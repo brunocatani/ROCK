@@ -230,19 +230,117 @@ namespace rock::native_scope_overlay_follow_math
 {
     /*
      * FO4VR attaches world_scope.nif beneath ScopeParent, not beneath the
-     * native activation camera. Solve ScopeParent backwards from the model
-     * root's live local transform so the actual NIF root lands on ROCK's
-     * corrected camera frame. This compensates both Bethesda's stock root
-     * offset and any loose-file replacement without retaining the obsolete
-     * one-hand camera-to-parent translation.
+     * native activation camera. Bethesda's camera-to-model translation was
+     * authored for a one-hand pose, but its rotation and scale are the native
+     * overlay calibration. Capture those components independently so ROCK can
+     * replace only the obsolete translation with the generated sight anchor.
+     */
+    template <class Transform>
+    [[nodiscard]] inline Transform captureModelRootCalibrationInCameraLocal(
+        const Transform& nativeScopeCameraWorld,
+        const Transform& nativeScopeModelRootWorld)
+    {
+        Transform calibration = transform_math::composeTransforms(
+            transform_math::invertTransform(nativeScopeCameraWorld),
+            nativeScopeModelRootWorld);
+        calibration.translate = {};
+        return calibration;
+    }
+
+    /*
+     * Fine tuning is model-local after Bethesda's native calibration:
+     * X is lateral, Y is the optical/depth axis, and Z is vertical for the
+     * stock world-scope model. Pitch rotates about X, yaw about Z, and roll
+     * about Y. Euler composition is pitch, then yaw, then roll.
+     */
+    template <class Transform>
+    [[nodiscard]] inline Transform makeModelRootFineTuneLocal(
+        const float offsetXGameUnits,
+        const float offsetYGameUnits,
+        const float offsetZGameUnits,
+        const float pitchDegrees,
+        const float yawDegrees,
+        const float rollDegrees)
+    {
+        constexpr float kDegreesToRadians = 0.017453292519943295769f;
+
+        const auto makePitchStored = [](const float radians) {
+            Transform result = transform_math::makeIdentityTransform<Transform>();
+            if (radians == 0.0f) {
+                return result;
+            }
+            const float cosine = std::cos(radians);
+            const float sine = std::sin(radians);
+            result.rotate.entry[1][1] = cosine;
+            result.rotate.entry[1][2] = sine;
+            result.rotate.entry[2][1] = -sine;
+            result.rotate.entry[2][2] = cosine;
+            return result;
+        };
+        const auto makeYawStored = [](const float radians) {
+            Transform result = transform_math::makeIdentityTransform<Transform>();
+            if (radians == 0.0f) {
+                return result;
+            }
+            const float cosine = std::cos(radians);
+            const float sine = std::sin(radians);
+            result.rotate.entry[0][0] = cosine;
+            result.rotate.entry[0][1] = sine;
+            result.rotate.entry[1][0] = -sine;
+            result.rotate.entry[1][1] = cosine;
+            return result;
+        };
+        const auto makeRollStored = [](const float radians) {
+            Transform result = transform_math::makeIdentityTransform<Transform>();
+            if (radians == 0.0f) {
+                return result;
+            }
+            const float cosine = std::cos(radians);
+            const float sine = std::sin(radians);
+            result.rotate.entry[0][0] = cosine;
+            result.rotate.entry[0][2] = -sine;
+            result.rotate.entry[2][0] = sine;
+            result.rotate.entry[2][2] = cosine;
+            return result;
+        };
+
+        const Transform pitch = makePitchStored(pitchDegrees * kDegreesToRadians);
+        const Transform yaw = makeYawStored(yawDegrees * kDegreesToRadians);
+        const Transform roll = makeRollStored(rollDegrees * kDegreesToRadians);
+
+        Transform fineTune = transform_math::makeIdentityTransform<Transform>();
+        fineTune.rotate = transform_math::multiplyStoredRotations(
+            transform_math::multiplyStoredRotations(pitch.rotate, yaw.rotate),
+            roll.rotate);
+        fineTune.translate.x = offsetXGameUnits;
+        fineTune.translate.y = offsetYGameUnits;
+        fineTune.translate.z = offsetZGameUnits;
+        return fineTune;
+    }
+
+    template <class Transform>
+    [[nodiscard]] inline Transform resolveScopeModelRootWorld(
+        const Transform& correctedScopeCameraWorld,
+        const Transform& modelRootCalibrationInCameraLocal,
+        const Transform& modelRootFineTuneLocal)
+    {
+        return transform_math::composeTransforms(
+            transform_math::composeTransforms(correctedScopeCameraWorld, modelRootCalibrationInCameraLocal),
+            modelRootFineTuneLocal);
+    }
+
+    /*
+     * Solve ScopeParent backwards from the target model-root world transform.
+     * The live root local is retained so stock and loose replacement NIFs are
+     * both compensated without hard-coded mesh offsets.
      */
     template <class Transform>
     [[nodiscard]] inline Transform resolveScopeParentWorldForModelRoot(
-        const Transform& correctedScopeCameraWorld,
+        const Transform& targetScopeModelRootWorld,
         const Transform& scopeModelRootLocal)
     {
         return transform_math::composeTransforms(
-            correctedScopeCameraWorld,
+            targetScopeModelRootWorld,
             transform_math::invertTransform(scopeModelRootLocal));
     }
 }
