@@ -1,6 +1,7 @@
 #pragma once
 
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
+#include "physics-interaction/hand/DynamicHandTwinTargets.h"
 #include "physics-interaction/hand/HandColliderTypes.h"
 #include "physics-interaction/hand/HandSkeleton.h"
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
@@ -65,6 +66,8 @@ namespace rock
         bool tryGetBodyMetadataAtomic(std::uint32_t bodyId, BodyBoneColliderMetadata& outMetadata) const;
         bool tryGetBodyRoleAtomic(std::uint32_t bodyId, skeleton_bone_debug_math::BoneColliderRole& outRole) const;
         bool isRebuildPendingAtomic() const { return _driveRebuildRequested.load(std::memory_order_acquire); }
+        const dynamic_hand_twin::ForearmTwinTargets& dynamicForearmTwinTargets() const { return _dynamicForearmTwinTargets; }
+        RE::hknpShape* buildDynamicForearmTwinShape(const dynamic_hand_twin::TwinSlotFrame& slotFrame) const;
 
     private:
         struct BodyInstance
@@ -107,6 +110,7 @@ namespace rock
         const void* _lastCapturedSkeleton = nullptr;
         const void* _lastCapturedBoneTree = nullptr;
         bool _lastCapturedPowerArmor = false;
+        dynamic_hand_twin::ForearmTwinTargets _dynamicForearmTwinTargets{};
         std::atomic<bool> _driveRebuildRequested{ false };
         std::atomic<std::uint32_t> _driveFailureCount{ 0 };
         bool _created = false;

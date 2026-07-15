@@ -546,6 +546,49 @@ namespace rock
             return true;
         }
 
+        dynamic_hand_twin::TwinSlotFrame* forearmTwinSlotForDescriptor(
+            dynamic_hand_twin::ForearmTwinTargets& targets,
+            const BoneColliderDescriptor& descriptor)
+        {
+            if (descriptor.role != BoneColliderRole::ForearmSegment) {
+                return nullptr;
+            }
+
+            auto* sideTargets = descriptor.side == body_zone::BodyZoneSide::Left ? &targets.left :
+                                descriptor.side == body_zone::BodyZoneSide::Right ? &targets.right : nullptr;
+            if (!sideTargets) {
+                return nullptr;
+            }
+
+            switch (descriptor.zone) {
+            case body_zone::BodyZoneKind::LeftForearmUpper:
+            case body_zone::BodyZoneKind::RightForearmUpper:
+                return &(*sideTargets)[0];
+            case body_zone::BodyZoneKind::LeftForearmLower:
+            case body_zone::BodyZoneKind::RightForearmLower:
+                return &(*sideTargets)[1];
+            default:
+                return nullptr;
+            }
+        }
+
+        void publishForearmTwinSlot(
+            dynamic_hand_twin::ForearmTwinTargets& targets,
+            const BoneColliderDescriptor& descriptor,
+            const BodyBoneColliderSet::DescriptorFrameResult& frame)
+        {
+            auto* slot = forearmTwinSlotForDescriptor(targets, descriptor);
+            if (!slot || !frame.valid) {
+                return;
+            }
+
+            slot->valid = true;
+            slot->target = frame.transform;
+            slot->length = frame.length;
+            slot->radius = frame.radius;
+            slot->convexRadius = frame.convexRadius;
+        }
+
         void shapeRemoveRef(const RE::hknpShape* shape)
         {
             havok_ref_count::release(shape);
@@ -589,6 +632,16 @@ namespace rock
 
         const auto gamePoints = hand_bone_collider_geometry_math::makeCapsuleLikeHullPoints<RE::NiPoint3>(frame.length, frame.radius);
         return havok_convex_shape_builder::buildConvexShapeFromLocalHavokPoints(toHavokPointCloud(gamePoints), frame.convexRadius * gameToHavokScale());
+    }
+
+    RE::hknpShape* BodyBoneColliderSet::buildDynamicForearmTwinShape(const dynamic_hand_twin::TwinSlotFrame& slotFrame) const
+    {
+        DescriptorFrameResult frame{};
+        frame.valid = slotFrame.valid;
+        frame.length = slotFrame.length;
+        frame.radius = slotFrame.radius;
+        frame.convexRadius = slotFrame.convexRadius;
+        return buildShapeForFrame(frame);
     }
 
     bool BodyBoneColliderSet::createBodyForDescriptor(
@@ -676,6 +729,7 @@ namespace rock
         const auto& descriptors = bodyDescriptorsForPowerArmor(snapshot.inPowerArmor);
         const auto tuningSignature = bodyColliderTuningSignature(snapshot.inPowerArmor);
         const auto bonesByName = makeSnapshotBoneMap(snapshot);
+        dynamic_hand_twin::ForearmTwinTargets forearmTwinTargets{};
         std::size_t createdCount = 0;
         for (std::uint32_t descriptorIndex = 0; descriptorIndex < descriptors.size(); ++descriptorIndex) {
             const auto& descriptor = descriptors[descriptorIndex];
@@ -703,6 +757,7 @@ namespace rock
                 destroy(bhkWorld);
                 return false;
             }
+            publishForearmTwinSlot(forearmTwinTargets, descriptor, frame);
             ++createdCount;
         }
 
@@ -721,6 +776,8 @@ namespace rock
         _driveRebuildRequested.store(false, std::memory_order_release);
         _driveFailureCount.store(0, std::memory_order_release);
         _created = true;
+        forearmTwinTargets.updateCounter = _dynamicForearmTwinTargets.updateCounter + 1;
+        _dynamicForearmTwinTargets = forearmTwinTargets;
         publishAtomicBodyIds(snapshot.inPowerArmor);
 
         ROCK_LOG_INFO(Body,
@@ -751,6 +808,7 @@ namespace rock
         _cachedBoneTree = nullptr;
         _cachedPowerArmor = false;
         _cachedTuningSignature = 0;
+        _dynamicForearmTwinTargets = {};
         _driveRebuildRequested.store(false, std::memory_order_release);
         _driveFailureCount.store(0, std::memory_order_release);
         _reader.resetCache();
@@ -772,6 +830,7 @@ namespace rock
         _cachedBoneTree = nullptr;
         _cachedPowerArmor = false;
         _cachedTuningSignature = 0;
+        _dynamicForearmTwinTargets = {};
         _driveRebuildRequested.store(false, std::memory_order_release);
         _driveFailureCount.store(0, std::memory_order_release);
         _reader.resetCache();
@@ -814,16 +873,21 @@ namespace rock
 
         const auto& descriptors = bodyDescriptorsForPowerArmor(snapshot.inPowerArmor);
         const auto bonesByName = makeSnapshotBoneMap(snapshot);
+        dynamic_hand_twin::ForearmTwinTargets forearmTwinTargets{};
         for (auto& instance : _bodies) {
             if (!instance.body.isValid() || instance.descriptorIndex >= descriptors.size()) {
                 continue;
             }
 
+            const auto& descriptor = descriptors[instance.descriptorIndex];
             DescriptorFrameResult frame{};
-            if (makeDescriptorFrame(bonesByName, descriptors[instance.descriptorIndex], snapshot.inPowerArmor, frame)) {
+            if (makeDescriptorFrame(bonesByName, descriptor, snapshot.inPowerArmor, frame)) {
+                publishForearmTwinSlot(forearmTwinTargets, descriptor, frame);
                 queueBodyTarget(instance.body, frame.transform, deltaTime, instance.driveState);
             }
         }
+        forearmTwinTargets.updateCounter = _dynamicForearmTwinTargets.updateCounter + 1;
+        _dynamicForearmTwinTargets = forearmTwinTargets;
     }
 
     void BodyBoneColliderSet::flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)

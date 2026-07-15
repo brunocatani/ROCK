@@ -17,22 +17,25 @@
 
 namespace rock
 {
+    class BodyBoneColliderSet;
     class Hand;
     struct PhysicsFrameContext;
     struct HandFrameInput;
 
     /*
-     * Dynamic world collision uses DYNAMIC twins of the palm anchor and the
-     * five fingertip colliders. They chase their published role frames with engine
-     * hard-keyframe velocities every physics substep, on the world-only
+     * Dynamic world collision uses DYNAMIC twins of the palm anchor, five
+     * fingertip colliders, and two keyframed forearm segments per side. They
+     * chase their published role frames with engine hard-keyframe velocities
+     * every physics substep, on the world-only
      * extended layer. Static world clips their velocity inside the solver
      * (true multi-plane contact); the rendered FRIK hand follows the COMBINED
      * position deviation (sequential projection over per-body deviations, then
      * exponential smoothing against solver contact noise). Authority is
      * strictly one-directional (wand/skeleton targets -> twins -> render): the
-     * twin targets come from the same role-frame publication the keyframed
-     * colliders are driven with, never from the rendered hand, so rendering
-     * cannot feed back into physics. The twins are not gameplay contact
+     * twin targets come from the same HandBoneColliderSet/BodyBoneColliderSet
+     * role-frame publications the keyframed colliders are driven with, never
+     * from dynamic-body readback, so rendering cannot feed back into physics.
+     * The twins are not gameplay contact
      * evidence and collide only with static world-surface layers.
      *
      * Threading: updateFrame runs on the main game thread; the drive flush runs
@@ -43,12 +46,14 @@ namespace rock
     {
     public:
         static constexpr std::size_t kPalmSlot = dynamic_hand_collision_telemetry::kPalmSlot;
+        static constexpr std::size_t kFirstForearmSlot = dynamic_hand_collision_telemetry::kFirstForearmSlot;
         static constexpr std::size_t kBodiesPerHand = dynamic_hand_collision_telemetry::kBodiesPerHand;
 
         void updateFrame(const PhysicsFrameContext& frame,
             bool physicsWritesAllowed,
             const Hand& rightHand,
             const Hand& leftHand,
+            const BodyBoneColliderSet& bodyBoneColliders,
             bool rightHandWeaponEquipped,
             bool leftSupportGripActive);
         void flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
@@ -138,6 +143,7 @@ namespace rock
             void* createdBhkWorld = nullptr;
             float createdLength = 0.0f;
             float createdRadius = 0.0f;
+            float createdConvexRadius = 0.0f;
             bool created = false;
             /*
              * Physics-thread-only handshake between the pre-collide drive and
@@ -205,6 +211,7 @@ namespace rock
             std::size_t bodyIndex,
             const PhysicsFrameContext& frame,
             const Hand& hand,
+            const BodyBoneColliderSet& bodyBoneColliders,
             const dynamic_hand_twin::TwinSlotFrame& twinFrame);
         void retireSlot(ProxySlot& slot, void* bhkWorld);
         void retireHand(HandSlots& handSlots, void* bhkWorld, bool isLeft);

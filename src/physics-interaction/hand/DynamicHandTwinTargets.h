@@ -9,6 +9,8 @@
 
 namespace rock::dynamic_hand_twin
 {
+    inline constexpr std::size_t kForearmSegmentCountPerHand = 2;
+
     /*
      * Per-frame publication from HandBoneColliderSet for the stage A dynamic
      * hand twins: the EXACT role frames and dimensions the keyframed palm
@@ -32,5 +34,24 @@ namespace rock::dynamic_hand_twin
         TwinSlotFrame palm{};
         std::array<TwinSlotFrame, hand_collider_semantics::kHandFingerCount> fingertips{};
         std::uint64_t updateCounter = 0;
+    };
+
+    /*
+     * Main-thread publication from BodyBoneColliderSet. These are the exact
+     * tuned ForeArm1->ForeArm2 and ForeArm2->ForeArm3 frames that drive the
+     * production keyframed body colliders. DynamicHandCollisionRuntime consumes
+     * them after BodyBoneColliderSet::update in the same frame, so the forearm
+     * twins never guess geometry or read live Havok bodies back into intent.
+     */
+    struct ForearmTwinTargets
+    {
+        std::array<TwinSlotFrame, kForearmSegmentCountPerHand> right{};
+        std::array<TwinSlotFrame, kForearmSegmentCountPerHand> left{};
+        std::uint64_t updateCounter = 0;
+
+        [[nodiscard]] const std::array<TwinSlotFrame, kForearmSegmentCountPerHand>& forHand(bool isLeft) const
+        {
+            return isLeft ? left : right;
+        }
     };
 }

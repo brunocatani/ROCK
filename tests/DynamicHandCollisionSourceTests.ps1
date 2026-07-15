@@ -80,8 +80,9 @@ Reject-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
     'body\.destroy\(' `
     'Dynamic hand twins must never destroy() a live-world body immediately.'
 
-# The twins must mirror the production collider conventions: frames and shapes
-# come from the HandBoneColliderSet publication, never re-derived geometry.
+# The twins must mirror the production collider conventions: hand frames/shapes
+# come from HandBoneColliderSet and forearm frames/shapes from BodyBoneColliderSet,
+# never from independently re-derived geometry.
 Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
     'hand\.dynamicTwinTargets\(\)' `
     'Dynamic hand twins must consume the HandBoneColliderSet role-frame publication.'
@@ -93,6 +94,32 @@ Require-OrderedText 'src/physics-interaction/hand/HandBoneColliderSet.cpp' @(
     'HandFingerSegment::Tip',
     '_dynamicTwinTargets = twinTargets;'
 ) 'HandBoneColliderSet must publish palm anchor and fingertip twin frames every update.'
+Require-OrderedText 'src/physics-interaction/body/BodyBoneColliderSet.cpp' @(
+    'makeDescriptorFrame\(',
+    'publishForearmTwinSlot\(forearmTwinTargets, descriptor, frame\);',
+    'queueBodyTarget\(instance\.body, frame\.transform'
+) 'BodyBoneColliderSet must publish each forearm twin from the exact frame queued to its keyframed body.'
+Require-Text 'src/physics-interaction/body/BodyBoneColliderSet.cpp' `
+    'buildDynamicForearmTwinShape[\s\S]*buildShapeForFrame\(frame\)' `
+    'Forearm twins must share the production body-collider hull construction.'
+Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
+    'bodyBoneColliders\.dynamicForearmTwinTargets\(\)',
+    'twinFrameForSlot\(handTwins, forearmTwins, isLeft, bodyIndex\)'
+) 'Dynamic collision must consume the body-collider forearm frame publication.'
+Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
+    'bodyBoneColliders\.buildDynamicForearmTwinShape\(twinFrame\)' `
+    'Dynamic forearm twins must use the body-collider shared hull builder.'
+Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
+    'twinFrame\.convexRadius - slot\.createdConvexRadius' `
+    'Dynamic twin rebuild gating must include convex-radius tuning changes.'
+Require-Text 'src/physics-interaction/hand/DynamicHandCollisionTelemetry.h' `
+    'kForearmUpperSlot[\s\S]*kForearmLowerSlot[\s\S]*ForearmUpper[\s\S]*ForearmLower' `
+    'Dynamic hand telemetry must reserve stable upper/lower forearm slots.'
+Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @(
+    'updateBodyBoneCollisions\(frame\);',
+    '_dynamicHandCollision\.updateFrame\(',
+    '_bodyBoneColliders,'
+) 'Body forearm frames must publish before dynamic hand collision consumes them in the same game frame.'
 
 # Render-follow pipeline: combine per-body deviations, smooth (rest twitch), gate.
 Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(

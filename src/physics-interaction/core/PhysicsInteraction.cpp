@@ -3136,6 +3136,7 @@ namespace rock
             physicsWritesAllowedForWorld(frame.hknpWorld),
             _rightHand,
             _leftHand,
+            _bodyBoneColliders,
             rightHandWeaponAuthorityActive,
             leftSupportGripActive);
         const auto dynamicHandHapticEvents = _dynamicHandCollision.consumeHapticEvents();

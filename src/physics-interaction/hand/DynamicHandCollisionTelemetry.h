@@ -11,6 +11,7 @@
  * units. Proxy body IDs are transient diagnostics, never ownership handles.
  */
 
+#include "physics-interaction/hand/DynamicHandTwinTargets.h"
 #include "physics-interaction/hand/HandColliderTypes.h"
 
 #include "RE/NetImmerse/NiPoint.h"
@@ -23,7 +24,10 @@
 namespace rock::dynamic_hand_collision_telemetry
 {
     inline constexpr std::size_t kPalmSlot = 0;
-    inline constexpr std::size_t kBodiesPerHand = 1 + hand_collider_semantics::kHandFingerCount;
+    inline constexpr std::size_t kFirstForearmSlot = 1 + hand_collider_semantics::kHandFingerCount;
+    inline constexpr std::size_t kForearmUpperSlot = kFirstForearmSlot;
+    inline constexpr std::size_t kForearmLowerSlot = kFirstForearmSlot + 1;
+    inline constexpr std::size_t kBodiesPerHand = kFirstForearmSlot + dynamic_hand_twin::kForearmSegmentCountPerHand;
     inline constexpr std::uint32_t kInvalidBodyId = 0x7FFF'FFFF;
 
     enum class TwinRole : std::uint8_t
@@ -34,6 +38,8 @@ namespace rock::dynamic_hand_collision_telemetry
         MiddleTip,
         RingTip,
         PinkyTip,
+        ForearmUpper,
+        ForearmLower,
     };
 
     [[nodiscard]] constexpr TwinRole roleForBodyIndex(std::size_t bodyIndex) noexcept
@@ -56,9 +62,15 @@ namespace rock::dynamic_hand_collision_telemetry
             return "RING";
         case TwinRole::PinkyTip:
             return "PNKY";
+        case TwinRole::ForearmUpper:
+            return "FUPR";
+        case TwinRole::ForearmLower:
+            return "FLWR";
         }
         return "UNKN";
     }
+
+    static_assert(static_cast<std::size_t>(TwinRole::ForearmLower) + 1 == kBodiesPerHand);
 
     struct TwinSample
     {

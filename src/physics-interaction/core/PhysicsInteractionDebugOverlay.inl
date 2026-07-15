@@ -2377,9 +2377,9 @@
             }
 
             /*
-             * The stage A dynamic hand twins are not part of any collider set,
+             * The dynamic hand/forearm twins are not part of any collider set,
              * so the overlay enumerates them explicitly behind their OWN flag:
-             * bDebugDrawDynamicHandColliders shows just the twins without the
+             * bDebugDrawDynamicHandColliders shows just this arm-authority set without the
              * full keyframed collider soup. Watching a twin stop while the raw
              * hand axes keep moving is the primary in-game validation view.
              */

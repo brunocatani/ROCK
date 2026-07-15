@@ -2,6 +2,7 @@
 
 #include "RockConfig.h"
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/body/BodyBoneColliderSet.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/core/PhysicsFrameContext.h"
 #include "physics-interaction/hand/Hand.h"
@@ -27,6 +28,7 @@ namespace rock
          * only a real tuning/power-armor change should rebuild the twin bodies.
          */
         constexpr float kTwinDimensionRebuildToleranceGameUnits = 0.25f;
+        constexpr float kTwinConvexRadiusRebuildToleranceGameUnits = 0.01f;
         /*
          * Post-solve solver-residual thresholds separating "tracking freely"
          * (residual is integration noise, well under the 0.05 gu render
@@ -45,6 +47,8 @@ namespace rock
             "ROCK_DynHandTwin_R_MiddleTip",
             "ROCK_DynHandTwin_R_RingTip",
             "ROCK_DynHandTwin_R_PinkyTip",
+            "ROCK_DynHandTwin_R_ForearmUpper",
+            "ROCK_DynHandTwin_R_ForearmLower",
         };
         constexpr std::array<const char*, DynamicHandCollisionRuntime::kBodiesPerHand> kLeftTwinNames{
             "ROCK_DynHandTwin_L_Palm",
@@ -53,6 +57,8 @@ namespace rock
             "ROCK_DynHandTwin_L_MiddleTip",
             "ROCK_DynHandTwin_L_RingTip",
             "ROCK_DynHandTwin_L_PinkyTip",
+            "ROCK_DynHandTwin_L_ForearmUpper",
+            "ROCK_DynHandTwin_L_ForearmLower",
         };
         constexpr std::array<const char*, DynamicHandCollisionRuntime::kBodiesPerHand> kRightTwinOwnerNames{
             "DynHandTwinR.Palm",
@@ -61,6 +67,8 @@ namespace rock
             "DynHandTwinR.Middle",
             "DynHandTwinR.Ring",
             "DynHandTwinR.Pinky",
+            "DynHandTwinR.ForearmUpper",
+            "DynHandTwinR.ForearmLower",
         };
         constexpr std::array<const char*, DynamicHandCollisionRuntime::kBodiesPerHand> kLeftTwinOwnerNames{
             "DynHandTwinL.Palm",
@@ -69,6 +77,8 @@ namespace rock
             "DynHandTwinL.Middle",
             "DynHandTwinL.Ring",
             "DynHandTwinL.Pinky",
+            "DynHandTwinL.ForearmUpper",
+            "DynHandTwinL.ForearmLower",
         };
 
         const char* dynamicHandTag(bool isLeft)
@@ -122,16 +132,23 @@ namespace rock
             };
         }
 
-        const dynamic_hand_twin::TwinSlotFrame* twinFrameForSlot(const dynamic_hand_twin::TwinTargets& twins, std::size_t bodyIndex)
+        const dynamic_hand_twin::TwinSlotFrame* twinFrameForSlot(
+            const dynamic_hand_twin::TwinTargets& handTwins,
+            const dynamic_hand_twin::ForearmTwinTargets& forearmTwins,
+            bool isLeft,
+            std::size_t bodyIndex)
         {
             if (bodyIndex == DynamicHandCollisionRuntime::kPalmSlot) {
-                return &twins.palm;
+                return &handTwins.palm;
             }
-            const std::size_t fingerIndex = bodyIndex - 1;
-            if (fingerIndex >= twins.fingertips.size()) {
-                return nullptr;
+            if (bodyIndex < DynamicHandCollisionRuntime::kFirstForearmSlot) {
+                const std::size_t fingerIndex = bodyIndex - 1;
+                return fingerIndex < handTwins.fingertips.size() ? &handTwins.fingertips[fingerIndex] : nullptr;
             }
-            return &twins.fingertips[fingerIndex];
+
+            const std::size_t forearmIndex = bodyIndex - DynamicHandCollisionRuntime::kFirstForearmSlot;
+            const auto& sideForearms = forearmTwins.forHand(isLeft);
+            return forearmIndex < sideForearms.size() ? &sideForearms[forearmIndex] : nullptr;
         }
 
         /*
@@ -355,12 +372,14 @@ namespace rock
         std::size_t bodyIndex,
         const PhysicsFrameContext& frame,
         const Hand& hand,
+        const BodyBoneColliderSet& bodyBoneColliders,
         const dynamic_hand_twin::TwinSlotFrame& twinFrame)
     {
         if (slot.created) {
             const bool dimensionsDrifted =
                 std::fabs(twinFrame.length - slot.createdLength) > kTwinDimensionRebuildToleranceGameUnits ||
-                std::fabs(twinFrame.radius - slot.createdRadius) > kTwinDimensionRebuildToleranceGameUnits;
+                std::fabs(twinFrame.radius - slot.createdRadius) > kTwinDimensionRebuildToleranceGameUnits ||
+                std::fabs(twinFrame.convexRadius - slot.createdConvexRadius) > kTwinConvexRadiusRebuildToleranceGameUnits;
             if (slot.createdWorld == frame.hknpWorld &&
                 !dimensionsDrifted &&
                 !slot.rebuildRequestedAtomic.load(std::memory_order_acquire)) {
@@ -373,7 +392,9 @@ namespace rock
             return false;
         }
 
-        auto* shape = hand.buildDynamicTwinShape(twinFrame, bodyIndex == kPalmSlot);
+        auto* shape = bodyIndex >= kFirstForearmSlot ?
+            bodyBoneColliders.buildDynamicForearmTwinShape(twinFrame) :
+            hand.buildDynamicTwinShape(twinFrame, bodyIndex == kPalmSlot);
         if (!shape) {
             ROCK_LOG_SAMPLE_WARN(Hand,
                 5000,
@@ -405,6 +426,7 @@ namespace rock
         slot.createdBhkWorld = frame.bhkWorld;
         slot.createdLength = twinFrame.length;
         slot.createdRadius = twinFrame.radius;
+        slot.createdConvexRadius = twinFrame.convexRadius;
         slot.created = true;
         slot.rebuildRequestedAtomic.store(false, std::memory_order_release);
         clearPhysicsContactState(slot);
@@ -443,6 +465,7 @@ namespace rock
         slot.createdBhkWorld = nullptr;
         slot.createdLength = 0.0f;
         slot.createdRadius = 0.0f;
+        slot.createdConvexRadius = 0.0f;
         slot.droveThisSubstep = false;
         slot.divergenceDwellSeconds = 0.0f;
         slot.commandedTargetGame = {};
@@ -495,6 +518,7 @@ namespace rock
         bool physicsWritesAllowed,
         const Hand& rightHand,
         const Hand& leftHand,
+        const BodyBoneColliderSet& bodyBoneColliders,
         bool rightHandWeaponEquipped,
         bool leftSupportGripActive)
     {
@@ -511,7 +535,12 @@ namespace rock
         telemetry.hands[1].isLeft = true;
 
         if (!g_rockConfig.rockHandCollisionDynamicDrive) {
-            if (_hands[0].bodies[kPalmSlot].created || _hands[1].bodies[kPalmSlot].created) {
+            const auto hasCreatedTwin = [](const HandSlots& handSlots) {
+                return std::any_of(handSlots.bodies.begin(), handSlots.bodies.end(), [](const ProxySlot& slot) {
+                    return slot.created;
+                });
+            };
+            if (hasCreatedTwin(_hands[0]) || hasCreatedTwin(_hands[1])) {
                 retireAll(frame.bhkWorld);
             }
             _hands[0].hapticState = {};
@@ -560,7 +589,8 @@ namespace rock
                 return;
             }
 
-            const auto& twins = hand.dynamicTwinTargets();
+            const auto& handTwins = hand.dynamicTwinTargets();
+            const auto& forearmTwins = bodyBoneColliders.dynamicForearmTwinTargets();
             std::array<RE::NiPoint3, kBodiesPerHand> deviations{};
             std::array<bool, kBodiesPerHand> deviationValid{};
 
@@ -575,8 +605,11 @@ namespace rock
                 auto& slot = handSlots.bodies[bodyIndex];
                 auto& twinTelemetry = handTelemetry.twins[bodyIndex];
                 twinTelemetry.role = dynamic_hand_collision_telemetry::roleForBodyIndex(bodyIndex);
-                const auto* twinFrame = twinFrameForSlot(twins, bodyIndex);
+                const auto* twinFrame = twinFrameForSlot(handTwins, forearmTwins, isLeft, bodyIndex);
                 if (!twinFrame || !twinFrame->valid) {
+                    if (bodyIndex >= kFirstForearmSlot && slot.created) {
+                        retireSlot(slot, frame.bhkWorld);
+                    }
                     continue;
                 }
                 twinTelemetry.publishedTargetValid = true;
@@ -584,7 +617,7 @@ namespace rock
                 twinTelemetry.lengthGameUnits = twinFrame->length;
                 twinTelemetry.radiusGameUnits = twinFrame->radius;
                 twinTelemetry.convexRadiusGameUnits = twinFrame->convexRadius;
-                if (!ensureSlotCreated(slot, isLeft, bodyIndex, frame, hand, *twinFrame)) {
+                if (!ensureSlotCreated(slot, isLeft, bodyIndex, frame, hand, bodyBoneColliders, *twinFrame)) {
                     continue;
                 }
                 (void)queueGeneratedKeyframedBodyTarget(
