@@ -127,6 +127,25 @@ int main()
             rock::transform_math::invertTransform(weaponAfter),
             rotatedScopeAfter);
         ok &= expectTransformNear("native scope camera preserves calibrated weapon-local frame", relativeAfter, relativeBefore);
+
+        const TestVector3 sightBoundsMin{ -4.0f, 8.0f, 7.0f };
+        const TestVector3 sightBoundsMax{ 6.0f, 38.0f, 15.0f };
+        const TestVector3 sightAnchor = rock::native_scope_camera_follow_math::rearPlaneCenterFromSightBounds(sightBoundsMin, sightBoundsMax);
+        ok &= expectNear("native scope sight anchor centers lateral bounds", sightAnchor.x, 1.0f);
+        ok &= expectNear("native scope sight anchor uses rear forward plane", sightAnchor.y, 8.0f);
+        ok &= expectNear("native scope sight anchor centers vertical bounds", sightAnchor.z, 11.0f);
+
+        const TestTransform anchoredScopeAfter = rock::native_scope_camera_follow_math::followWeaponWorldChangeFromSightAnchor(weaponBefore, weaponAfter, scopeBefore, sightAnchor);
+        const TestTransform anchoredRelativeAfter = rock::transform_math::composeTransforms(rock::transform_math::invertTransform(weaponAfter), anchoredScopeAfter);
+        ok &= expectNear("native scope camera replaces controller-relative lateral position", anchoredRelativeAfter.translate.x, sightAnchor.x);
+        ok &= expectNear("native scope camera replaces controller-relative forward position", anchoredRelativeAfter.translate.y, sightAnchor.y);
+        ok &= expectNear("native scope camera replaces controller-relative vertical position", anchoredRelativeAfter.translate.z, sightAnchor.z);
+        ok &= expectNear("native scope camera preserves calibrated scale", anchoredRelativeAfter.scale, relativeBefore.scale);
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                ok &= expectNear("native scope camera preserves calibrated rotation", anchoredRelativeAfter.rotate.entry[row][column], relativeBefore.rotate.entry[row][column]);
+            }
+        }
     }
 
     {

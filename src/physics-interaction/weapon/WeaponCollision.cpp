@@ -2364,6 +2364,72 @@ namespace rock
         return descriptors;
     }
 
+    namespace
+    {
+        bool isFiniteOrderedEvidenceBounds(const WeaponEvidenceBounds3& bounds)
+        {
+            return bounds.valid && std::isfinite(bounds.min.x) && std::isfinite(bounds.min.y) && std::isfinite(bounds.min.z) && std::isfinite(bounds.max.x) &&
+                std::isfinite(bounds.max.y) && std::isfinite(bounds.max.z) && bounds.min.x <= bounds.max.x && bounds.min.y <= bounds.max.y && bounds.min.z <= bounds.max.z;
+        }
+
+        WeaponCollision::NativeScopeSightAnchorSnapshot buildNativeScopeSightAnchorSnapshot(std::uint64_t weaponGenerationKey,
+            const std::vector<WeaponCollisionProfileEvidenceDescriptor>& descriptors)
+        {
+            WeaponCollision::NativeScopeSightAnchorSnapshot snapshot{};
+            snapshot.weaponGenerationKey = weaponGenerationKey;
+
+            bool hasSightBounds = false;
+            RE::NiPoint3 sightBoundsMin{};
+            RE::NiPoint3 sightBoundsMax{};
+            for (const auto& descriptor : descriptors) {
+                if (!descriptor.valid || descriptor.weaponGenerationKey != weaponGenerationKey || descriptor.semantic.partKind != WeaponPartKind::Sight ||
+                    !isFiniteOrderedEvidenceBounds(descriptor.localBoundsGame)) {
+                    continue;
+                }
+
+                const RE::NiPoint3 candidateMin{
+                    descriptor.localBoundsGame.min.x,
+                    descriptor.localBoundsGame.min.y,
+                    descriptor.localBoundsGame.min.z,
+                };
+                const RE::NiPoint3 candidateMax{
+                    descriptor.localBoundsGame.max.x,
+                    descriptor.localBoundsGame.max.y,
+                    descriptor.localBoundsGame.max.z,
+                };
+                if (!hasSightBounds) {
+                    sightBoundsMin = candidateMin;
+                    sightBoundsMax = candidateMax;
+                    hasSightBounds = true;
+                } else {
+                    sightBoundsMin.x = (std::min)(sightBoundsMin.x, candidateMin.x);
+                    sightBoundsMin.y = (std::min)(sightBoundsMin.y, candidateMin.y);
+                    sightBoundsMin.z = (std::min)(sightBoundsMin.z, candidateMin.z);
+                    sightBoundsMax.x = (std::max)(sightBoundsMax.x, candidateMax.x);
+                    sightBoundsMax.y = (std::max)(sightBoundsMax.y, candidateMax.y);
+                    sightBoundsMax.z = (std::max)(sightBoundsMax.z, candidateMax.z);
+                }
+                ++snapshot.sightBodyCount;
+            }
+
+            if (!hasSightBounds) {
+                return snapshot;
+            }
+
+            const RE::NiPoint3 anchor = native_scope_camera_follow_math::rearPlaneCenterFromSightBounds(sightBoundsMin, sightBoundsMax);
+            if (!std::isfinite(anchor.x) || !std::isfinite(anchor.y) || !std::isfinite(anchor.z)) {
+                snapshot.sightBodyCount = 0;
+                return snapshot;
+            }
+
+            snapshot.anchorWeaponLocal = anchor;
+            snapshot.sightBoundsMinWeaponLocal = sightBoundsMin;
+            snapshot.sightBoundsMaxWeaponLocal = sightBoundsMax;
+            snapshot.valid = true;
+            return snapshot;
+        }
+    }
+
     std::vector<WeaponCollisionProfileEvidenceDescriptor> WeaponCollision::getProfileEvidenceDescriptors() const
     {
         for (int attempt = 0; attempt < 4; ++attempt) {
@@ -2374,13 +2440,36 @@ namespace rock
 
             std::vector<WeaponCollisionProfileEvidenceDescriptor> descriptors;
             {
-                std::scoped_lock lock(_profileEvidenceSnapshotMutex);
+                std::scoped_lock lock(_weaponEvidenceSnapshotMutex);
                 descriptors = _profileEvidenceSnapshot;
             }
 
             const std::uint64_t endVersion = _weaponBodyPublicationVersion.load(std::memory_order_acquire);
             if (startVersion == endVersion && (endVersion & 1u) == 0) {
                 return descriptors;
+            }
+        }
+
+        return {};
+    }
+
+    WeaponCollision::NativeScopeSightAnchorSnapshot WeaponCollision::getNativeScopeSightAnchorSnapshot() const
+    {
+        for (int attempt = 0; attempt < 4; ++attempt) {
+            const std::uint64_t startVersion = _weaponBodyPublicationVersion.load(std::memory_order_acquire);
+            if ((startVersion & 1u) != 0) {
+                continue;
+            }
+
+            NativeScopeSightAnchorSnapshot snapshot{};
+            {
+                std::scoped_lock lock(_weaponEvidenceSnapshotMutex);
+                snapshot = _nativeScopeSightAnchorSnapshot;
+            }
+
+            const std::uint64_t endVersion = _weaponBodyPublicationVersion.load(std::memory_order_acquire);
+            if (startVersion == endVersion && (endVersion & 1u) == 0) {
+                return snapshot;
             }
         }
 
@@ -4088,8 +4177,9 @@ namespace rock
             value.store(0, std::memory_order_release);
         }
         {
-            std::scoped_lock lock(_profileEvidenceSnapshotMutex);
+            std::scoped_lock lock(_weaponEvidenceSnapshotMutex);
             _profileEvidenceSnapshot.clear();
+            _nativeScopeSightAnchorSnapshot = {};
         }
         endWeaponBodyPublication();
     }
@@ -4102,6 +4192,7 @@ namespace rock
     void WeaponCollision::publishAtomicBodyIds(WeaponBodyBank& bank)
     {
         auto evidenceSnapshot = buildProfileEvidenceSnapshot(bank);
+        const NativeScopeSightAnchorSnapshot nativeScopeSightAnchorSnapshot = buildNativeScopeSightAnchorSnapshot(_cachedWeaponBodySetKey, evidenceSnapshot);
         std::uint32_t count = 0;
         beginWeaponBodyPublication();
         _weaponBodyCountAtomic.store(0, std::memory_order_release);
@@ -4113,8 +4204,9 @@ namespace rock
         }
         _weaponBodySetKeyAtomic.store(_cachedWeaponBodySetKey, std::memory_order_release);
         {
-            std::scoped_lock lock(_profileEvidenceSnapshotMutex);
+            std::scoped_lock lock(_weaponEvidenceSnapshotMutex);
             _profileEvidenceSnapshot = std::move(evidenceSnapshot);
+            _nativeScopeSightAnchorSnapshot = nativeScopeSightAnchorSnapshot;
         }
         RE::NiAVObject* packageDriveNode = resolvePackageDriveNode(bank, nullptr);
         for (auto& instance : bank) {

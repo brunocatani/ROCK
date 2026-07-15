@@ -254,18 +254,16 @@ namespace rock
             };
         }
 
-        void applyNativeScopeCameraFollow(
-            const NativeScopeCameraFollowCapture& capture,
-            const RE::NiTransform& weaponWorldAfter)
+        void applyNativeScopeCameraFollow(const NativeScopeCameraFollowCapture& capture, const RE::NiTransform& weaponWorldAfter, const RE::NiPoint3* sightAnchorWeaponLocal)
         {
             if (!capture.valid || !capture.camera || !isFiniteTransform(weaponWorldAfter)) {
                 return;
             }
 
-            const RE::NiTransform targetCameraWorld = native_scope_camera_follow_math::followWeaponWorldChange(
-                capture.weaponWorldBefore,
-                weaponWorldAfter,
-                capture.cameraWorldBefore);
+            const RE::NiTransform targetCameraWorld = sightAnchorWeaponLocal
+                ? native_scope_camera_follow_math::followWeaponWorldChangeFromSightAnchor(capture.weaponWorldBefore, weaponWorldAfter, capture.cameraWorldBefore,
+                      *sightAnchorWeaponLocal)
+                : native_scope_camera_follow_math::followWeaponWorldChange(capture.weaponWorldBefore, weaponWorldAfter, capture.cameraWorldBefore);
             if (!isFiniteTransform(targetCameraWorld)) {
                 return;
             }
@@ -549,6 +547,46 @@ namespace rock
         return true;
     }
 
+    void TwoHandedGrip::refreshNativeScopeSightAnchor(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, const WeaponCollision& weaponCollision)
+    {
+        if (_nativeScopeSightAnchorWeaponNode == weaponNode && _nativeScopeSightAnchorGenerationKey == currentWeaponGenerationKey) {
+            return;
+        }
+
+        _nativeScopeSightAnchorWeaponNode = weaponNode;
+        _nativeScopeSightAnchorGenerationKey = currentWeaponGenerationKey;
+        _nativeScopeSightAnchorWeaponLocal = {};
+        _nativeScopeSightAnchorValid = false;
+
+        if (!weaponNode || currentWeaponGenerationKey == 0) {
+            return;
+        }
+
+        const WeaponCollision::NativeScopeSightAnchorSnapshot snapshot = weaponCollision.getNativeScopeSightAnchorSnapshot();
+        if (snapshot.weaponGenerationKey != currentWeaponGenerationKey) {
+            // Publication changed between the caller's generation read and
+            // this snapshot. Leave the cache key unmatched so the next frame
+            // retries instead of retaining geometry from another weapon.
+            _nativeScopeSightAnchorWeaponNode = nullptr;
+            _nativeScopeSightAnchorGenerationKey = 0;
+            return;
+        }
+
+        if (!snapshot.valid) {
+            ROCK_LOG_DEBUG(Weapon, "TwoHandedGrip: native scope sight anchor unavailable generation={:016X}; preserving calibrated camera delta", currentWeaponGenerationKey);
+            return;
+        }
+
+        _nativeScopeSightAnchorWeaponLocal = snapshot.anchorWeaponLocal;
+        _nativeScopeSightAnchorValid = true;
+        ROCK_LOG_DEBUG(Weapon,
+            "TwoHandedGrip: native scope sight anchor generation={:016X} bodies={} local=({:.2f},{:.2f},{:.2f}) boundsMin=({:.2f},{:.2f},{:.2f}) boundsMax=({:.2f},{:.2f},{:.2f}) "
+            "policy=rear-center",
+            currentWeaponGenerationKey, snapshot.sightBodyCount, snapshot.anchorWeaponLocal.x, snapshot.anchorWeaponLocal.y, snapshot.anchorWeaponLocal.z,
+            snapshot.sightBoundsMinWeaponLocal.x, snapshot.sightBoundsMinWeaponLocal.y, snapshot.sightBoundsMinWeaponLocal.z, snapshot.sightBoundsMaxWeaponLocal.x,
+            snapshot.sightBoundsMaxWeaponLocal.y, snapshot.sightBoundsMaxWeaponLocal.z);
+    }
+
     void TwoHandedGrip::refreshScopeSafeHandFrames(RE::NiNode* weaponNode, const EquippedWeaponGripFrameInput& frameInput, float dt)
     {
         const bool scopeWasOpen = _scopeMenuOpenThisFrame;
@@ -797,6 +835,7 @@ namespace rock
         _firingGripReattachHoverInsideRadius = false;
         _firingGripReattachHoverHandIsLeft = _firingHandIsLeft;
 
+        refreshNativeScopeSightAnchor(weaponNode, currentWeaponGenerationKey, weaponCollision);
         refreshScopeSafeHandFrames(weaponNode, frameInput, dt);
 
         if (!runtime_state::isLocalSkeletonReady() || !weaponNode) {
@@ -1043,6 +1082,10 @@ namespace rock
         _equippedWeaponDropRequest = {};
         _hapticEvents = {};
         _firingGripReattachHoverInsideRadius = false;
+        _nativeScopeSightAnchorWeaponNode = nullptr;
+        _nativeScopeSightAnchorGenerationKey = 0;
+        _nativeScopeSightAnchorWeaponLocal = {};
+        _nativeScopeSightAnchorValid = false;
         _scopeSafeHandFrames = {};
         _scopeHandAuthorityCleanupPending = _scopeHandAuthorityCleanupPending || _scopeMenuOpenThisFrame;
         clearPrimaryGripPose(_firingHandIsLeft);
@@ -2983,9 +3026,11 @@ namespace rock
             return false;
         }
 
-        // hFRIK has already calibrated the native activation camera for the
-        // current one-hand weapon frame. Capture that relationship before ROCK
-        // publishes its final physical grip frame, then move both together.
+        // hFRIK supplies the native camera's engine-specific axis calibration.
+        // Capture it before ROCK publishes the physical grip frame; when the
+        // current generated weapon has sight geometry, translation is replaced
+        // by that optic's rear-center anchor. Otherwise the prior rigid-delta
+        // behavior remains the fail-closed path.
         const NativeScopeCameraFollowCapture scopeCameraFollow = captureNativeScopeCameraFollow(weaponNode);
 
         if (weaponNode->parent) {
@@ -2997,7 +3042,11 @@ namespace rock
             f4vr::updateTransformsDown(weaponNode, false);
         }
 
-        applyNativeScopeCameraFollow(scopeCameraFollow, weaponNode->world);
+        const RE::NiPoint3* sightAnchorWeaponLocal =
+            _nativeScopeSightAnchorValid && _nativeScopeSightAnchorWeaponNode == weaponNode && _nativeScopeSightAnchorGenerationKey == _activeWeaponGenerationKey
+            ? &_nativeScopeSightAnchorWeaponLocal
+            : nullptr;
+        applyNativeScopeCameraFollow(scopeCameraFollow, weaponNode->world, sightAnchorWeaponLocal);
         return true;
     }
 

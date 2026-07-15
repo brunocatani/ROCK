@@ -70,6 +70,23 @@ namespace rock
             RE::NiTransform capturedWeaponWorld{};
         };
 
+        /*
+         * Immutable, generation-keyed view of the assembled optical-sight
+         * geometry. The anchor is expressed in the equipped weapon root's
+         * local frame and is published under the same seqlock as the generated
+         * body/evidence bank, so readers never combine bounds from two weapon
+         * generations.
+         */
+        struct NativeScopeSightAnchorSnapshot
+        {
+            bool valid{ false };
+            std::uint64_t weaponGenerationKey{ 0 };
+            RE::NiPoint3 anchorWeaponLocal{};
+            RE::NiPoint3 sightBoundsMinWeaponLocal{};
+            RE::NiPoint3 sightBoundsMaxWeaponLocal{};
+            std::uint32_t sightBodyCount{ 0 };
+        };
+
         void init(RE::hknpWorld* world, void* bhkWorld);
 
         void shutdown();
@@ -115,6 +132,8 @@ namespace rock
         bool tryGetWeaponContactDebugInfo(std::uint32_t bodyId, WeaponInteractionDebugInfo& outInfo) const;
 
         std::vector<WeaponCollisionProfileEvidenceDescriptor> getProfileEvidenceDescriptors() const;
+
+        NativeScopeSightAnchorSnapshot getNativeScopeSightAnchorSnapshot() const;
 
         bool tryGetProfileEvidenceDescriptorForBodyId(
             std::uint32_t bodyId,
@@ -413,8 +432,9 @@ namespace rock
         std::atomic<std::uint32_t> _weaponBodyCountAtomic{ 0 };
         std::atomic<std::uint64_t> _weaponBodySetKeyAtomic{ 0 };
         std::atomic<std::uint64_t> _weaponBodyPublicationVersion{ 0 };
-        mutable std::mutex _profileEvidenceSnapshotMutex;
+        mutable std::mutex _weaponEvidenceSnapshotMutex;
         std::vector<WeaponCollisionProfileEvidenceDescriptor> _profileEvidenceSnapshot;
+        NativeScopeSightAnchorSnapshot _nativeScopeSightAnchorSnapshot{};
         // Debug OMOD evidence dump fires once per weapon generation key.
         std::uint64_t _lastOmodDumpGenerationKey{ 0 };
         /*

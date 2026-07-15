@@ -568,6 +568,7 @@ namespace rock
         RE::NiAVObject* resolveCurrentSupportAttachmentRoot(const WeaponPartGrip& grip, RE::NiNode* weaponNode) const;
 
         void resetLockedHandVisualLerp();
+        void refreshNativeScopeSightAnchor(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, const WeaponCollision& weaponCollision);
         void refreshScopeSafeHandFrames(RE::NiNode* weaponNode, const EquippedWeaponGripFrameInput& frameInput, float dt);
         bool tryGetSolverHandTransform(bool isLeft, RE::NiTransform& outTransform) const;
         RE::NiTransform resolveLockedHandVisualTarget(
@@ -618,6 +619,14 @@ namespace rock
         std::array<ScopeSafeHandFrameState, 2> _scopeSafeHandFrames{};
         bool _scopeMenuOpenThisFrame{ false };
         bool _scopeHandAuthorityCleanupPending{ false };
+
+        // Cached once per generated weapon generation. The pointer is only an
+        // identity witness; the anchor itself is a value in weapon-root local
+        // space and is never derived from a retained transient engine object.
+        RE::NiNode* _nativeScopeSightAnchorWeaponNode{ nullptr };
+        std::uint64_t _nativeScopeSightAnchorGenerationKey{ 0 };
+        RE::NiPoint3 _nativeScopeSightAnchorWeaponLocal{};
+        bool _nativeScopeSightAnchorValid{ false };
 
         std::array<WeaponPartGrip, 2> _partGrips{};
 

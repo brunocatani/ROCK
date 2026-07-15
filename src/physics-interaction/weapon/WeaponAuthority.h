@@ -183,6 +183,45 @@ namespace rock::native_scope_camera_follow_math
             scopeCameraWorldBefore);
         return transform_math::composeTransforms(weaponWorldAfter, scopeCameraWeaponLocal);
     }
+
+    /*
+     * Equipped weapon geometry uses +Y as the muzzle/forward axis. The rear
+     * plane of the assembled sight is therefore its minimum-Y face; centering
+     * the other two axes places FO4VR's native activation camera at the
+     * physical ocular end instead of at the firing controller near the cheek.
+     */
+    template <class Point>
+    [[nodiscard]] inline Point rearPlaneCenterFromSightBounds(
+        const Point& sightBoundsMinWeaponLocal,
+        const Point& sightBoundsMaxWeaponLocal)
+    {
+        Point result = sightBoundsMinWeaponLocal;
+        result.x = (sightBoundsMinWeaponLocal.x + sightBoundsMaxWeaponLocal.x) * 0.5f;
+        result.y = sightBoundsMinWeaponLocal.y;
+        result.z = (sightBoundsMinWeaponLocal.z + sightBoundsMaxWeaponLocal.z) * 0.5f;
+        return result;
+    }
+
+    /*
+     * Keep hFRIK's native-scope axis calibration, but replace its
+     * controller-derived translation with ROCK's assembled sight anchor.
+     * The resulting frame follows every ROCK weapon-authority change while
+     * remaining tied to the visible optic for both pre-entry cone detection
+     * and the open native overlay.
+     */
+    template <class Transform, class Point>
+    [[nodiscard]] inline Transform followWeaponWorldChangeFromSightAnchor(
+        const Transform& weaponWorldBefore,
+        const Transform& weaponWorldAfter,
+        const Transform& scopeCameraWorldBefore,
+        const Point& sightAnchorWeaponLocal)
+    {
+        Transform scopeCameraWeaponLocal = transform_math::composeTransforms(
+            transform_math::invertTransform(weaponWorldBefore),
+            scopeCameraWorldBefore);
+        scopeCameraWeaponLocal.translate = sightAnchorWeaponLocal;
+        return transform_math::composeTransforms(weaponWorldAfter, scopeCameraWeaponLocal);
+    }
 }
 
 // ---- ScopeSafeHandFrameMath.h ----

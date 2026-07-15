@@ -38,8 +38,19 @@ Require-Text 'src/physics-interaction/core/RockRuntimeState.cpp' 'localScopeMenu
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'leftHandedMode\s*!=\s*isLeft[\s\S]*SecondaryMeleeWeaponOffsetNode2\s*:\s*playerNodes->primaryWeaponOffsetNOde[\s\S]*scopeMenuOpen\s*=\s*runtime\.localScopeMenuOpen[\s\S]*leftHandDriverFrame\s*=\s*leftHandDriverFrame[\s\S]*rightHandDriverFrame\s*=\s*rightHandDriverFrame' `
     'Two-hand authority must receive hFRIK-damped physical left/right arm-driver frames together with explicit ScopeMenu state.'
 
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' '_hasSolvedWeaponTransform\s*=\s*false;[\s\S]*refreshScopeSafeHandFrames\(weaponNode,\s*frameInput,\s*dt\);[\s\S]*if\s*\(!runtime_state::isLocalSkeletonReady\(\)\s*\|\|\s*!weaponNode\)' `
-    'Scope-safe hFRIK-driver calibration must refresh before the grip state machine and its early return.'
+Require-Text 'src/physics-interaction/weapon/WeaponCollision.h' 'struct NativeScopeSightAnchorSnapshot[\s\S]*weaponGenerationKey[\s\S]*anchorWeaponLocal[\s\S]*sightBodyCount[\s\S]*getNativeScopeSightAnchorSnapshot' `
+    'Generated weapon evidence must publish a generation-keyed native-scope sight anchor snapshot.'
+Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'descriptor\.semantic\.partKind\s*!=\s*WeaponPartKind::Sight[\s\S]*rearPlaneCenterFromSightBounds[\s\S]*_nativeScopeSightAnchorSnapshot\s*=\s*nativeScopeSightAnchorSnapshot' `
+    'Native-scope placement must aggregate only validated Sight geometry and publish its rear-center anchor with the weapon generation.'
+
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' '_hasSolvedWeaponTransform\s*=\s*false;[\s\S]*refreshNativeScopeSightAnchor\(weaponNode,\s*currentWeaponGenerationKey,\s*weaponCollision\);[\s\S]*refreshScopeSafeHandFrames\(weaponNode,\s*frameInput,\s*dt\);[\s\S]*if\s*\(!runtime_state::isLocalSkeletonReady\(\)\s*\|\|\s*!weaponNode\)' `
+    'Scope geometry and hFRIK-driver calibration must refresh before the grip state machine and its early return.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'snapshot\.weaponGenerationKey\s*!=\s*currentWeaponGenerationKey[\s\S]*_nativeScopeSightAnchorGenerationKey\s*=\s*0[\s\S]*_nativeScopeSightAnchorValid\s*=\s*true' `
+    'Native-scope geometry must fail closed across publication races and become usable only after an exact generation match.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' '_nativeScopeSightAnchorWeaponNode\s*==\s*weaponNode[\s\S]*_nativeScopeSightAnchorGenerationKey\s*==\s*_activeWeaponGenerationKey[\s\S]*applyNativeScopeCameraFollow\(scopeCameraFollow,\s*weaponNode->world,\s*sightAnchorWeaponLocal\)' `
+    'Native-scope camera authority must consume the sight anchor only for the active weapon node and generation.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'followWeaponWorldChangeFromSightAnchor[\s\S]*followWeaponWorldChange\(' `
+    'Native-scope camera authority must preserve the calibrated rigid-delta fallback when sight geometry is unavailable.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'rootHandValid\s*=\s*!_scopeMenuOpenThisFrame\s*&&[\s\S]*tryGetRootFlattenedHandBoneTransform[\s\S]*captureDriverToHandLocal\(driverFrame\.world,\s*resolvedHandWorld\)' `
     'Collapsed ScopeMenu root frames must never overwrite hFRIK-driver-to-hand calibration.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'ResolutionMode::DriverReconstructed[\s\S]*currentHandWorld\s*=\s*reconstructedHandWorld' `
