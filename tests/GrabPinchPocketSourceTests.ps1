@@ -79,7 +79,7 @@ Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'promotionRequested &&\
     'Pinch grabs must not enter seated palm-pocket reacquire.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'const bool pinchFingerPose = _grabFrame\.seatMode == GrabSeatMode::PinchPocket' `
     'TouchHeld finger solve must identify pinch pose mode from stored seat state.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'rockGrabMaxTriangleDistance, !pinchFingerPose, liveFingerSnapshotAtGrabPtr' `
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'rockGrabMaxTriangleDistance,\s*!pinchFingerPose,\s*liveFingerSnapshotAtGrabPtr' `
     'Pinch finger solve must bypass the generic thumb curve solver.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'if \(pinchFingerPose\) \{\s*applyPinchFingerPosePolicy\(_grabFingerPose, _grabFrame, g_rockConfig\.rockGrabFingerMinValue' `
     'TouchHeld pinch finger solve must post-process the final stored pose.'
@@ -89,7 +89,7 @@ Require-Text 'src/physics-interaction/grab/GrabPinchPocket.h' 'buildStablePinchF
     'Pinch finger pose must publish a stable whole-thumb joint shape instead of raw mesh-solver curl.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'buildStablePinchFingerPose[\s\S]*surfaceAimTargetValid\[finger\] = 0[\s\S]*pose\.solved = true' `
     'Pinch pose must clear raw mesh-solver thumb/index aim instead of installing object-local mesh-follow targets.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'useThumbIndexCurveOnlyPose\(fingerPose\)[\s\S]*captureSurfaceAimObjectLocal\(fingerPose, objectWorldTransform\)' `
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'useThumbIndexCurveOnlyPose\(fingerPose\)[\s\S]*captureSurfaceAimObjectLocal\(fingerPose, targetObjectWorld\)' `
     'Object grabs must disable thumb/index mesh-follow before capturing object-local surface aim.'
 Require-Text 'src/physics-interaction/grab/GrabFinger.h' 'thumbSurfaceFollowAllowed[\s\S]*shouldApplySurfaceAimCorrection' `
     'Thumb mesh-follow authority must be explicit so ROCK object grabs can use fixed thumb/index curves.'

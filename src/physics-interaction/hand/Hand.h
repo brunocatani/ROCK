@@ -1113,6 +1113,7 @@ namespace rock
         std::array<RE::NiTransform, 15> _grabFingerLocalTransforms{};
         std::uint16_t _grabFingerLocalTransformMask = 0;
         grab_finger_pose_runtime::SolvedGrabFingerPose _grabFingerPose{};
+        grab_finger_pose_runtime::FingerPoseTriangleSpatialIndex _grabFingerTriangleIndex{};
         bool _hasGrabFingerJointPose = false;
         bool _hasGrabFingerLocalTransforms = false;
         bool _hasGrabFingerPose = false;
@@ -1120,29 +1121,6 @@ namespace rock
         RE::NiPoint3 _lastSelectedCloseOrigin{};
         bool _hasLastSelectedCloseOrigin = false;
         float _selectedCloseHandSpeedMetersPerSecond = 0.0f;
-        int _grabFingerPoseFrameCounter = 0;
-        float _grabFingerPoseAccumulatedDeltaTime = 0.0f;
-        /*
-         * Converge-then-freeze for the held finger pose: interval re-solves
-         * exist only to track the settling seat after TouchHeld. Once
-         * consecutive re-solves land inside the adoption deadband and the
-         * published smoothing has reached its target, the pose is FROZEN -
-         * no further solves, pad probes, or publishes for the rest of the
-         * hold (the FRIK overrides are bone-local and ride the hand). This
-         * is what keeps external pushes on the held object from re-posing
-         * the fingers. Any pose re-capture resets it.
-         */
-        int _grabFingerPoseQuietResolves = 0;
-        bool _grabFingerPoseFrozen = false;
-        /*
-         * Anti-livelock deadline: some grabs never converge naturally (an
-         * adoption cycle where pose A re-solves to pose B and back). The
-         * resolve window bounds the convergence phase in wall time; at
-         * expiry the pose freezes on the current adoption regardless, with
-         * a WARN carrying the cycle evidence. Reset with the freeze state.
-         */
-        float _grabFingerPoseResolveElapsedSeconds = 0.0f;
-        int _grabFingerPoseAdoptionCount = 0;
 
         static constexpr std::size_t GRAB_RELEASE_VELOCITY_HISTORY = 5;
         std::array<RE::NiPoint3, GRAB_RELEASE_VELOCITY_HISTORY> _heldLocalLinearVelocityHistory{};

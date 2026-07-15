@@ -646,25 +646,47 @@ int main()
     highPolyTargets.useWholeMeshForMissingTargets = true;
     std::vector<rock::grab_finger_pose_math::Triangle<RE::NiPoint3>> highPolyCandidates;
     appendCandidateTriangles(highPolyFallbackTriangles, highPolyTargets, 100.0f, highPolyCandidates);
-    ok &= expectBool("whole-mesh finger fallback is bounded",
-        highPolyCandidates.size() == kMaxFingerPoseCandidateTriangles,
-        true);
-    ok &= expectPointClose("whole-mesh finger fallback keeps nearest seat triangle first",
-        highPolyCandidates.empty() ? RE::NiPoint3{} : highPolyCandidates.front().v0,
+    ok &= expectBool("whole-mesh finger fallback is bounded", highPolyCandidates.size() == kMaxFingerPoseCandidateTriangles, true);
+    ok &= expectPointClose("whole-mesh finger fallback keeps nearest seat triangle first", highPolyCandidates.empty() ? RE::NiPoint3{} : highPolyCandidates.front().v0,
         RE::NiPoint3{ 0.0f, 0.0f, 0.0f });
+
+    std::vector<TriangleData> spatialLocalTriangles;
+    spatialLocalTriangles.reserve(kMaxFingerPoseCandidateTriangles + 32);
+    for (std::size_t i = 0; i < kMaxFingerPoseCandidateTriangles + 32; ++i) {
+        const float x = static_cast<float>(i) * 4.0f;
+        spatialLocalTriangles.push_back(TriangleData{
+            RE::NiPoint3{ x, 0.0f, 0.0f },
+            RE::NiPoint3{ x + 1.0f, 0.0f, 0.0f },
+            RE::NiPoint3{ x, 1.0f, 0.0f },
+        });
+    }
+    FingerPoseTriangleSpatialIndex spatialIndex{};
+    ok &= expectBool("finger spatial index builds from bounded local triangles", spatialIndex.buildFromLocalTriangles(spatialLocalTriangles), true);
+    ok &= expectBool("finger spatial index retains the 2048 triangle cap", spatialIndex.triangleCount() == kMaxFingerPoseCandidateTriangles, true);
+
+    constexpr std::size_t kSpatialHitTriangle = 1377;
+    const float spatialHitX = static_cast<float>(kSpatialHitTriangle) * 4.0f;
+    RE::NiTransform spatialObjectWorld = rock::transform_math::makeIdentityTransform<RE::NiTransform>();
+    spatialObjectWorld.scale = 2.0f;
+    spatialObjectWorld.translate = RE::NiPoint3{ 5.0f, -3.0f, 4.0f };
+    const RE::NiPoint3 spatialExpectedLocal{ spatialHitX + 0.25f, 0.25f, 0.0f };
+    const RE::NiPoint3 spatialExpectedWorld = rock::transform_math::localPointToWorld(spatialObjectWorld, spatialExpectedLocal);
+    const RE::NiPoint3 spatialProbeWorld = rock::transform_math::localPointToWorld(spatialObjectWorld, RE::NiPoint3{ spatialHitX + 0.25f, 0.25f, 0.2f });
+    RE::NiPoint3 spatialHitPoint{};
+    RE::NiPoint3 spatialHitNormal{};
+    FingerPoseSpatialQueryStats spatialStats{};
+    ok &= expectBool("finger spatial index finds exact transformed sphere contact",
+        spatialIndex.querySphereWorld(spatialObjectWorld, spatialProbeWorld, 0.6f, &spatialHitPoint, &spatialHitNormal, &spatialStats), true);
+    ok &= expectPointClose("finger spatial index returns exact transformed closest point", spatialHitPoint, spatialExpectedWorld);
+    ok &= expectBool("finger spatial index orients the hit normal toward the probe", spatialHitNormal.z > 0.99f, true);
+    ok &= expectBool("finger spatial index culls dense unrelated geometry", spatialStats.triangleTests <= 32 && spatialStats.nodeVisits < 128, true);
 
     using namespace rock::grab_finger_pose_math;
     namespace grab_data = rock::grab_finger_calibration_data;
     constexpr float kHalfPi = 1.57079632679489661923f;
 
-    const auto bakedIndexCurve = makeBakedCalibratedFingerCurve<TestVector>(
-        1,
-        false,
-        false,
-        TestVector{ 0.0f, 0.0f, 0.0f },
-        TestVector{ 0.0f, 0.0f, 1.0f },
-        TestVector{ 1.0f, 0.0f, 0.0f },
-        10.0f);
+    const auto bakedIndexCurve =
+        makeBakedCalibratedFingerCurve<TestVector>(1, false, false, TestVector{ 0.0f, 0.0f, 0.0f }, TestVector{ 0.0f, 0.0f, 1.0f }, TestVector{ 1.0f, 0.0f, 0.0f }, 10.0f);
     ok &= expectBool("baked calibration creates three probe curves",
         bakedIndexCurve.probeCount == 3 &&
             bakedIndexCurve.probes[0].sampleCount == kCalibratedFingerCurveSampleCount &&

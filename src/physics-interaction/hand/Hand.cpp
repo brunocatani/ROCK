@@ -297,6 +297,7 @@ namespace rock
         _grabFingerLocalTransforms = {};
         _grabFingerLocalTransformMask = 0;
         _grabFingerPose = {};
+        _grabFingerTriangleIndex.clear();
         _hasGrabFingerJointPose = false;
         _hasGrabFingerLocalTransforms = false;
         _hasGrabFingerPose = false;
@@ -304,8 +305,6 @@ namespace rock
         _lastSelectedCloseOrigin = {};
         _hasLastSelectedCloseOrigin = false;
         _selectedCloseHandSpeedMetersPerSecond = 0.0f;
-        _grabFingerPoseFrameCounter = 0;
-        _grabFingerPoseAccumulatedDeltaTime = 0.0f;
         _heldLocalLinearVelocityHistory = {};
         _heldLocalLinearVelocityHistoryCount = 0;
         _heldLocalLinearVelocityHistoryNext = 0;
@@ -393,11 +392,10 @@ namespace rock
         _grabFingerLocalTransforms = {};
         _grabFingerLocalTransformMask = 0;
         _grabFingerPose = {};
+        _grabFingerTriangleIndex.clear();
         _hasGrabFingerJointPose = false;
         _hasGrabFingerLocalTransforms = false;
         _hasGrabFingerPose = false;
-        _grabFingerPoseFrameCounter = 0;
-        _grabFingerPoseAccumulatedDeltaTime = 0.0f;
         _heldLocalHandVelocityHistory = {};
         _heldHandAngularVelocityHistory = {};
         _heldHandVelocityHistoryCount = 0;

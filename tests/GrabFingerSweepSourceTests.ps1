@@ -74,19 +74,25 @@ function Reject-Text {
 # stop at first volumetric mesh contact. See
 # Docs/ROCK/docs/2026-07-13-grab-finger-sweep-and-live-resolve.md.
 
-# The sweep core must reconstruct probe arc rows and test them volumetrically.
+# The sweep core must reconstruct probe arc rows and delegate exact volumetric
+# contact to a query. The vector wrapper retains the plain/test/two-hand route.
+Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
+    'inline FingerCurlValue sweepCalibratedFingerCurveCurlValueWithContactQuery\(',
+    'sphereContact\(curve\.center, filterRadius',
+    'rotateAroundUnitAxis\(',
+    'sphereContact\(rowPositions\[row\], radius'
+) 'Swept-arc solver must walk reconstructed arc rows through an exact sphere-contact query.'
 Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
     'inline FingerCurlValue sweepCalibratedFingerCurveCurlValue\(',
     'filterTrianglesNearPoint\(',
-    'rotateAroundUnitAxis\(',
     'closestPointOnTriangle\('
-) 'Swept-arc solver must walk reconstructed arc rows with volumetric contact tests.'
+) 'The vector sweep wrapper must retain bounded volumetric triangle contact for non-index callers.'
 
 # The runtime curve branch must use the sweep, not the retired plane-slice
 # solvers (their gate/lane patch machinery must stay deleted).
 Require-Text 'src/physics-interaction/grab/GrabFinger.h' `
-    'sweepThumbAwareCalibratedFingerCurveCurlValue\(candidateTriangles' `
-    'Grab finger runtime must solve curls through the thumb-aware swept-arc solver.'
+    'sweepThumbAwareCalibratedFingerCurveCurlValueWithCurveSolver<RE::NiPoint3>' `
+    'Grab finger runtime must route indexed curls through the same thumb-aware swept-arc solver.'
 Reject-Text 'src/physics-interaction/grab/GrabFinger.h' `
     'solveThumbAwareCalibratedFingerCurveCurlValue|solveCalibratedFingerCurveCurlValue|solveFingerCurveCurlValue|shouldRunFallbackRayAfterCurveSolve' `
     'Retired plane-slice curve solvers must not come back; the sweep is the only arc solver.'
@@ -104,34 +110,54 @@ Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
     'solved\.outOfReach && unreachableFingerOpenValue >= 0\.0f'
 ) 'Swept-arc solver must expose out-of-reach so callers can hold an anticipation pose.'
 
-# Acquisition (pull-to-grab / close grab) re-solves fingers LIVE against the
-# converging object every frame; pinch pockets keep the confirmed-good blend.
+# Regular grabs solve once against the already-frozen target relation. The
+# bounded local mesh is indexed once, commanded open directions anchor the
+# calibrated arcs, and surface contacts are stored object-local.
 Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
-    '!_grabFingerPosePublished\) \{',
-    'GrabSeatMode::PinchPocket;',
-    'buildAcquisitionFingerPose\(',
-    'rebuildFingerPoseWorldTrianglesFromGrabFrame\(_grabFrame, currentNodeWorld\)',
-    'anticipationOpenValue,',
-    'useThumbIndexCurveOnlyPose\(liveFingerPose\)'
-) 'Grab acquisition must live re-solve wrap fingers against the converging object (pinch keeps the blend).'
+    'targetObjectWorld =',
+    '_grabFrame\.desiredObjectWorldAtGrab',
+    'buildFromLocalTriangles\(localFingerPoseTriangles\)',
+    'resolveCommandedOpenDirectionsWorld\(',
+    'solveGrabFingerPoseFromTriangles\(',
+    '&_grabFingerTriangleIndex',
+    'captureSurfaceAimObjectLocal\(fingerPose, targetObjectWorld\)'
+) 'Regular grab commit must solve one object-local endpoint against the frozen target relation.'
 
-# The held update interval must re-solve the curls against the live seat, not
-# republish the promotion-instant snapshot for the whole hold - anchored on
-# COMMANDED open directions (hFRIK's authored open pose in hand space), never
-# on rendered finger geometry: rendered chords carry ROCK's own surface-aim
-# corrections, and anchoring on them fed the solver its own output (the
-# infinite adoption cycle, FINGER-CYCLE trace 2026-07-13). If the commanded
-# anchors cannot be built, the re-solve is SKIPPED - never estimated.
+# The index must own a bounded object-local BVH and perform exact closest-point
+# tests with a fixed query stack; no allocation or full candidate scan is
+# allowed inside each arc-row probe.
+Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
+    'class FingerPoseTriangleSpatialIndex',
+    'buildFromLocalTriangles\(',
+    'querySphereWorld\(',
+    'std::array<std::uint32_t, 64> stack',
+    'pointAabbDistanceSquared\(',
+    'closestPointOnTriangle\(',
+    'std::nth_element\('
+) 'Finger arc probes must use the bounded object-local BVH with exact leaf tests and no query allocation.'
+Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
+    'const bool useSpatialIndex =',
+    'result\.candidateTriangleCount = static_cast<int>\(spatialIndex->triangleCount\(\)\)',
+    'querySphereWorld\(',
+    'result\.spatialTriangleTestCount = spatialQueryStats\.triangleTests'
+) 'The runtime solve must use and report spatial-index work for regular grabs.'
+
+# Acquisition only blends toward that immutable endpoint. It must never rebuild
+# mesh triangles or invoke the geometric solver while the object converges.
 Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
-    'rockGrabFingerPoseUpdateInterval',
-    'tryGetGrabDriveObjectWorldTransform\(',
-    'heldPinchFingerPose',
+    '_grabFingerPosePublished\) \{',
+    'resolveSurfaceAimObjectLocal\(_grabFingerPose, desiredObjectWorld\)',
+    'buildAcquisitionFingerPose\(resolvedTargetPose, acquisitionProgress\)',
+    'applyRockGrabHandPose\('
+) 'Grab acquisition must blend toward the pre-solved target without geometric re-solves.'
+
+# The commanded zero reconstruction walks authored open-pose chain origins.
+Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
+    'resolveCommandedOpenDirectionsWorld\(',
     'getHandPoseLocalTransformsForPose\(',
     'computeCommandedOpenDirectionsHandLocal\(',
-    'heldCommandedAnchorsValid\) \{',
-    'solveGrabFingerPoseFromTriangles\(',
-    '&heldCommandedOpenDirections\);'
-) 'Held finger pose must re-solve curls anchored on commanded open directions, or skip the re-solve entirely.'
+    'localVectorToWorld\(frikHandBoneWorld'
+) 'Regular target-space solves must anchor arcs on the authored commanded-open hand model.'
 
 # The live chain chord is rotated by the CURRENT curl; anchoring the arc zero
 # on it directly stopped every finger short by that curl (air gap) and made
@@ -169,80 +195,49 @@ Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
     'bone3\.translate - bone1\.translate'
 ) 'Commanded open directions must be reconstructed from the authored open-pose chain bone origins.'
 
-# Adopted poses record the contact rotation for the FINGER-CYCLE trace
-# (diagnostics: rotations settling = convergence visible in one grab's log).
+# Solved poses retain their exact contact-row rotation for diagnostics.
 Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
     'contactArcRotationRadians\[finger\] = solved\.distance \* bakedAnchorNormalSign',
     'contactArcRotationValid\[finger\] = 1'
-) 'Sweep solves must record the adopted contact-row rotation for the adoption trace.'
+) 'Sweep solves must record the selected contact-row rotation.'
 
-# Held re-solves within noise of the current pose must not churn new FRIK
-# targets every interval (finger micro-twitch).
+# TouchHeld atomically publishes the same stored endpoint, resolved through
+# object-local surface aims. It does not fire the regular solver again.
 Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
-    'heldResolveMaxValueDelta',
-    'liveFingerPose\.solved && heldResolveMaxValueDelta > 0\.02f'
-) 'Held finger re-solve must apply a publish deadband.'
+    'finalPoseObjectWorld =',
+    'resolveSurfaceAimObjectLocal\(_grabFingerPose, finalPoseObjectWorld\)',
+    'applyRockGrabHandPose\(_isLeft,',
+    '0\.0f,\s*true,\s*true'
+) 'TouchHeld must snap the pre-solved endpoint atomically with local transforms enabled.'
 
-# The interval re-solve exists ONLY to track the settling seat. Once
-# consecutive re-solves land inside the deadband and smoothing has reached
-# its target, the pose FREEZES: no more mesh rebuilds, solves, pad probes,
-# or publishes for the rest of the hold. A converged grip must never re-pose
-# because the held object was pushed or physically deviated - and the
-# per-interval O(triangles) work must stop (FPS on high-poly weapon/part
-# meshes).
+# Pinch is the sole deferred special route and keeps its existing at-touch
+# non-curve solve and policy.
 Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
-    '!_grabFingerPoseFrozen\) \{',
-    'heldResolveAdopted',
-    'kGrabFingerPoseFreezeQuietResolves = 3;',
-    '_grabFingerPoseFrozen = true;',
-    'FINGER POSE FROZEN'
-) 'Held finger pose must converge-then-freeze; a converged grip never re-poses or re-scans the mesh.'
-Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
-    'captureSurfaceAimObjectLocal\(_grabFingerPose, currentNodeWorld\);',
-    '_grabFingerPoseQuietResolves = 0;',
-    '_grabFingerPoseFrozen = false;'
-) 'Pose re-captures must unfreeze the held finger pose.'
-
-# Solving against a chain still blending toward the last adopted target reads
-# a LAGGING chord: the anchor de-rotation is off by the lag and successive
-# adoptions ping-pong (open/close twitch). The held re-solve must be gated on
-# the applied joints having reached the commanded pose; the publish keeps
-# advancing the smoothing every interval regardless.
-Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
-    'bool heldPoseSmoothingSettled = true;',
-    'if \(heldPoseSmoothingSettled\) \{',
-    'rebuildFingerPoseWorldTrianglesFromGrabFrame\(_grabFrame, currentNodeWorld\)',
+    'pinch solve deferred until TouchHeld',
+    'if \(!_grabFingerPosePublished\) \{',
+    'const bool pinchFingerPose = _grabFrame\.seatMode == GrabSeatMode::PinchPocket;',
     'solveGrabFingerPoseFromTriangles\(',
-    '\} // heldPoseSmoothingSettled',
-    'applyRockGrabHandPose\('
-) 'Held re-solves must wait for the pose smoothing to settle; publishes continue regardless.'
+    'applyPinchFingerPosePolicy\(_grabFingerPose'
+) 'Pinch must remain the only deferred at-touch finger solve.'
 
-# Pad probes on the publish paths are debug-overlay-only work (target
-# refinement is capture-only, open bias is deleted) and iterate every world
-# triangle per finger - they must not run when the overlay is off.
+# The former live convergence and held adoption loops are the regression:
+# they must stay absent, including their interval/deadline state.
+Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' `
+    'anticipationOpenValue|heldResolveMaxValueDelta|heldPoseSmoothingSettled|FINGER-CYCLE ADOPT|FINGER POSE FROZEN|FINGER POSE RESOLVE WINDOW EXPIRED|_grabFingerPoseFrozen|_grabFingerPoseResolveElapsedSeconds|rockGrabFingerPoseUpdateInterval' `
+    'Normal grabs must not retain live convergence or held settle re-solve machinery.'
+
+$handGrabText = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/hand/HandGrab.cpp')
+$handGrabSolveCount = [regex]::Matches($handGrabText, 'solveGrabFingerPoseFromTriangles\(').Count
+if ($handGrabSolveCount -ne 2) {
+    $failures.Add("HandGrab must have exactly two solve sites: target-space regular/at-touch pinch; found $handGrabSolveCount.")
+}
+
+# Additional publish-path pad probes are debug-overlay-only work; capture-time
+# target refinement remains one-shot.
 Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
     'rockDebugShowGrabFingerProbes\) \{',
     'refineGrabFingerPoseWithPadProbes\('
 ) 'Publish-path pad probes must be gated behind the finger-probe overlay flag.'
-
-# Convergence has a wall-time budget: a grab still adopting past the resolve
-# window is cycling (pose A re-solves to pose B and back), not settling. It
-# must freeze regardless and log the expiry loudly.
-Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
-    '_grabFingerPoseResolveElapsedSeconds \+=',
-    'rockGrabFingerPoseResolveWindowSeconds\) \{',
-    'FINGER POSE RESOLVE WINDOW EXPIRED'
-) 'Held finger re-solves must freeze at the resolve-window deadline (anti-livelock).'
-
-# Every held adoption must be traceable: the FINGER-CYCLE log carries anchor
-# hints, contact rotations, and the hand-relative object position so an
-# infinite cycle names its driver (chain feedback vs object motion) offline.
-Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
-    'rockDebugGrabFingerPoseLogging\) \{',
-    'FINGER-CYCLE ADOPT',
-    'relPos=',
-    '\+\+_grabFingerPoseAdoptionCount;'
-) 'Held pose adoptions must be traceable via the FINGER-CYCLE debug log.'
 
 # The proximity-scaled pad open bias mutated PUBLISHED values from live pad
 # distance AFTER the deadband - the finger-twitch feedback loop. It must not
@@ -258,10 +253,14 @@ Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
     'inline constexpr float kMaxOverOpenValue = 2\.0f;'
 ) 'Open-value ceilings must model the authored open pose and the hFRIK flex ceiling.'
 Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
-    'float maxOpenValue = kMaxFingerOpenValue\)',
+    'sweepCalibratedFingerCurveCurlValueWithContactQuery\(',
+    'float maxOpenValue,',
     'samples\[overOpenStartRow\]\.openValue > clampedMaxOpen',
     'std::clamp\(probe\.samples\[row\]\.openValue, 0\.0f, clampedMaxOpen\)'
 ) 'The sweep must honor a per-call max-open cap by skipping rows above it.'
+Require-Text 'src/physics-interaction/grab/GrabFinger.h' `
+    'float maxOpenValue = kMaxFingerOpenValue\)' `
+    'The vector sweep wrapper must preserve the authored-open default cap.'
 
 # Over-open engages ONLY when the authored-open row is blocked (the mesh
 # interpenetrates the finger at 1.0). A free authored-open row closes

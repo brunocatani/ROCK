@@ -886,20 +886,20 @@ namespace rock::grab_finger_pose_math
      * it the finger may stop over-open when the mesh interpenetrates the
      * default open pose (objects thicker than the open finger span).
      */
-    template <class Vector>
-    inline FingerCurlValue sweepCalibratedFingerCurveCurlValue(
-        const std::vector<Triangle<Vector>>& triangles,
+    template <class Vector, class SphereContactQuery>
+    inline FingerCurlValue sweepCalibratedFingerCurveCurlValueWithContactQuery(
         const CalibratedFingerCurve<Vector>& curve,
         float minValue,
         float contactRadiusGameUnits,
-        float maxOpenValue = kMaxFingerOpenValue)
+        float maxOpenValue,
+        SphereContactQuery&& sphereContact)
     {
         FingerCurlValue result{};
         const float clampedMin = std::clamp(minValue, 0.0f, 1.0f);
         const float clampedMaxOpen = std::clamp(
             std::isfinite(maxOpenValue) ? maxOpenValue : kMaxFingerOpenValue, kMaxFingerOpenValue, kMaxOverOpenValue);
         result.value = clampedMin;
-        if (triangles.empty() || curve.probeCount == 0) {
+        if (curve.probeCount == 0) {
             result.outOfReach = true;
             return result;
         }
@@ -914,8 +914,7 @@ namespace rock::grab_finger_pose_math
         }
 
         const float filterRadius = maxReach + radius + 0.5f;
-        const auto nearTriangles = filterTrianglesNearPoint(triangles, curve.center, filterRadius * filterRadius);
-        if (nearTriangles.empty()) {
+        if (!sphereContact(curve.center, filterRadius, nullptr, nullptr)) {
             result.outOfReach = true;
             return result;
         }
@@ -927,35 +926,6 @@ namespace rock::grab_finger_pose_math
         Vector bestHitNormal{};
         bool bestHitPointValid = false;
         bool bestHitNormalValid = false;
-
-        auto sphereContact = [&](const Vector& position, float testRadius, Vector* outPoint, Vector* outNormal) {
-            const float radiusSquared = testRadius * testRadius;
-            float bestDistanceSquared = radiusSquared;
-            bool found = false;
-            for (const auto& triangle : nearTriangles) {
-                const Vector closest = closestPointOnTriangle(position, triangle);
-                const float distanceSq = lengthSquared(sub(closest, position));
-                if (distanceSq <= bestDistanceSquared) {
-                    bestDistanceSquared = distanceSq;
-                    found = true;
-                    if (outPoint) {
-                        *outPoint = closest;
-                    }
-                    if (outNormal) {
-                        /*
-                         * Orient the triangle normal toward the probe so the
-                         * published surface normal always faces the finger pad.
-                         */
-                        Vector normal = triangleNormal(triangle);
-                        if (dot(normal, sub(position, closest)) < 0.0f) {
-                            normal = scale(normal, -1.0f);
-                        }
-                        *outNormal = normal;
-                    }
-                }
-            }
-            return found;
-        };
 
         for (std::size_t probeIndex = 0; probeIndex < curve.probeCount && probeIndex < curve.probes.size(); ++probeIndex) {
             const auto& probe = curve.probes[probeIndex];
@@ -1068,6 +1038,47 @@ namespace rock::grab_finger_pose_math
         return result;
     }
 
+    template <class Vector>
+    inline FingerCurlValue sweepCalibratedFingerCurveCurlValue(const std::vector<Triangle<Vector>>& triangles, const CalibratedFingerCurve<Vector>& curve, float minValue,
+        float contactRadiusGameUnits, float maxOpenValue = kMaxFingerOpenValue)
+    {
+        const float radius = std::clamp(std::isfinite(contactRadiusGameUnits) ? contactRadiusGameUnits : 1.0f, 0.05f, 4.0f);
+        const float maxReach = maxCalibratedCurveReach(curve);
+        const float filterRadius = std::isfinite(maxReach) && maxReach > 0.0001f ? maxReach + radius + 0.5f : 0.0f;
+        const auto nearTriangles = filterRadius > 0.0f ? filterTrianglesNearPoint(triangles, curve.center, filterRadius * filterRadius) : std::vector<Triangle<Vector>>{};
+
+        auto sphereContact = [&](const Vector& position, float testRadius, Vector* outPoint, Vector* outNormal) {
+            const float radiusSquared = testRadius * testRadius;
+            float bestDistanceSquared = radiusSquared;
+            bool found = false;
+            for (const auto& triangle : nearTriangles) {
+                const Vector closest = closestPointOnTriangle(position, triangle);
+                const float distanceSq = lengthSquared(sub(closest, position));
+                if (distanceSq <= bestDistanceSquared) {
+                    bestDistanceSquared = distanceSq;
+                    found = true;
+                    if (outPoint) {
+                        *outPoint = closest;
+                    }
+                    if (outNormal) {
+                        /*
+                         * Orient the triangle normal toward the probe so the
+                         * published surface normal always faces the finger pad.
+                         */
+                        Vector normal = triangleNormal(triangle);
+                        if (dot(normal, sub(position, closest)) < 0.0f) {
+                            normal = scale(normal, -1.0f);
+                        }
+                        *outNormal = normal;
+                    }
+                }
+            }
+            return found;
+        };
+
+        return sweepCalibratedFingerCurveCurlValueWithContactQuery(curve, minValue, contactRadiusGameUnits, maxOpenValue, sphereContact);
+    }
+
     /*
      * Thumb-aware wrapper over the swept-arc solver. Lane bookkeeping (wrap
      * first, then opposition/side-pad candidates with their normal blends and
@@ -1075,26 +1086,14 @@ namespace rock::grab_finger_pose_math
      * plane-slice selector so the downstream local-transform machinery keeps
      * its contract; only the per-lane curl solve changed.
      */
-    template <class Vector>
-    inline ThumbAwareFingerCurveCurlValue<Vector> sweepThumbAwareCalibratedFingerCurveCurlValue(
-        const std::vector<Triangle<Vector>>& triangles,
-        std::size_t fingerIndex,
-        bool isLeft,
-        bool inPowerArmor,
-        const Vector& center,
-        const Vector& primaryNormal,
-        const Vector& alternateThumbNormal,
-        const Vector& zeroAngleVector,
-        float fingerLength,
-        float minValue,
-        bool allowAlternateThumbCurve,
-        float contactRadiusGameUnits,
-        float maxOpenValue = kMaxFingerOpenValue)
+    template <class Vector, class CurveSolver>
+    inline ThumbAwareFingerCurveCurlValue<Vector> sweepThumbAwareCalibratedFingerCurveCurlValueWithCurveSolver(std::size_t fingerIndex, bool isLeft, bool inPowerArmor,
+        const Vector& center, const Vector& primaryNormal, const Vector& alternateThumbNormal, const Vector& zeroAngleVector, float fingerLength, float minValue,
+        bool allowAlternateThumbCurve, float contactRadiusGameUnits, float maxOpenValue, CurveSolver&& solveCurve)
     {
         ThumbAwareFingerCurveCurlValue<Vector> result{};
-        const auto primaryCurve = makeBakedCalibratedFingerCurve(
-            fingerIndex, isLeft, inPowerArmor, center, primaryNormal, zeroAngleVector, fingerLength);
-        result.primary = sweepCalibratedFingerCurveCurlValue(triangles, primaryCurve, minValue, contactRadiusGameUnits, maxOpenValue);
+        const auto primaryCurve = makeBakedCalibratedFingerCurve(fingerIndex, isLeft, inPowerArmor, center, primaryNormal, zeroAngleVector, fingerLength);
+        result.primary = solveCurve(primaryCurve, minValue, contactRadiusGameUnits, maxOpenValue);
         result.value = result.primary;
         result.selectedThumbCurve = result.primary;
         result.selectedThumbLane = grab_finger_calibration_data::BakedGrabThumbLane::Wrap;
@@ -1129,18 +1128,11 @@ namespace rock::grab_finger_pose_math
                 continue;
             }
 
-            const auto& bakedLaneCurve = lane.curveSource == grab_finger_calibration_data::BakedGrabThumbCurveSource::SidePad ?
-                thumbProfile.sidePadCurve :
-                thumbHandProfile.fingers[0];
+            const auto& bakedLaneCurve =
+                lane.curveSource == grab_finger_calibration_data::BakedGrabThumbCurveSource::SidePad ? thumbProfile.sidePadCurve : thumbHandProfile.fingers[0];
             const Vector laneNormal = blendedThumbLaneNormal(primaryNormal, alternateThumbNormal, lane.normalBlend);
-            const auto laneCurve = makeBakedCalibratedThumbLaneCurve<Vector>(
-                lane,
-                bakedLaneCurve,
-                center,
-                laneNormal,
-                zeroAngleVector,
-                fingerLength);
-            const FingerCurlValue laneSolved = sweepCalibratedFingerCurveCurlValue(triangles, laneCurve, minValue, contactRadiusGameUnits, maxOpenValue);
+            const auto laneCurve = makeBakedCalibratedThumbLaneCurve<Vector>(lane, bakedLaneCurve, center, laneNormal, zeroAngleVector, fingerLength);
+            const FingerCurlValue laneSolved = solveCurve(laneCurve, minValue, contactRadiusGameUnits, maxOpenValue);
 
             if (lane.lane == grab_finger_calibration_data::BakedGrabThumbLane::Opposition) {
                 result.alternateThumb = laneSolved;
@@ -1158,18 +1150,15 @@ namespace rock::grab_finger_pose_math
                 .valid = true,
             };
 
-            const bool candidatePositive =
-                laneSolved.hit && !laneSolved.openedByBehindContact && laneSolved.rawCurveValue > kClosedEpsilon;
+            const bool candidatePositive = laneSolved.hit && !laneSolved.openedByBehindContact && laneSolved.rawCurveValue > kClosedEpsilon;
             if (candidatePositive &&
-                (!bestPositive.valid ||
-                    laneSolved.rawCurveValue > bestPositive.value.rawCurveValue + kClosedEpsilon ||
+                (!bestPositive.valid || laneSolved.rawCurveValue > bestPositive.value.rawCurveValue + kClosedEpsilon ||
                     (std::abs(laneSolved.rawCurveValue - bestPositive.value.rawCurveValue) <= kClosedEpsilon &&
                         candidate.localCorrectionStrength > bestPositive.localCorrectionStrength))) {
                 bestPositive = candidate;
             }
 
-            const bool candidateClosedOrMissed =
-                !laneSolved.hit || (!laneSolved.openedByBehindContact && laneSolved.rawCurveValue <= kClosedEpsilon);
+            const bool candidateClosedOrMissed = !laneSolved.hit || (!laneSolved.openedByBehindContact && laneSolved.rawCurveValue <= kClosedEpsilon);
             if (candidateClosedOrMissed && !closedFallback.valid) {
                 closedFallback = candidate;
             }
@@ -1200,12 +1189,38 @@ namespace rock::grab_finger_pose_math
          * out of reach; a thumb that can reach the mesh through ANY lane is
          * genuinely closing, not anticipating.
          */
-        result.value.outOfReach = !result.value.hit &&
-                                  result.primary.outOfReach &&
-                                  result.alternateThumb.outOfReach &&
-                                  result.sidePadThumb.outOfReach;
+        result.value.outOfReach = !result.value.hit && result.primary.outOfReach && result.alternateThumb.outOfReach && result.sidePadThumb.outOfReach;
 
         return result;
+    }
+
+    template <class Vector>
+    inline ThumbAwareFingerCurveCurlValue<Vector> sweepThumbAwareCalibratedFingerCurveCurlValue(const std::vector<Triangle<Vector>>& triangles, std::size_t fingerIndex,
+        bool isLeft, bool inPowerArmor, const Vector& center, const Vector& primaryNormal, const Vector& alternateThumbNormal, const Vector& zeroAngleVector, float fingerLength,
+        float minValue, bool allowAlternateThumbCurve, float contactRadiusGameUnits, float maxOpenValue = kMaxFingerOpenValue)
+    {
+        auto solveCurve = [&](const CalibratedFingerCurve<Vector>& curve, float curveMinValue, float curveContactRadius, float curveMaxOpenValue) {
+            return sweepCalibratedFingerCurveCurlValue(
+                triangles,
+                curve,
+                curveMinValue,
+                curveContactRadius,
+                curveMaxOpenValue);
+        };
+        return sweepThumbAwareCalibratedFingerCurveCurlValueWithCurveSolver<Vector>(
+            fingerIndex,
+            isLeft,
+            inPowerArmor,
+            center,
+            primaryNormal,
+            alternateThumbNormal,
+            zeroAngleVector,
+            fingerLength,
+            minValue,
+            allowAlternateThumbCurve,
+            contactRadiusGameUnits,
+            maxOpenValue,
+            solveCurve);
     }
 
     [[nodiscard]] inline float clampOpenValue(float value)
@@ -1302,20 +1317,23 @@ namespace rock::grab_finger_pose_runtime
         /*
          * Signed in-plane rotation (about the unsigned palm curl normal, baked
          * normal-sign already applied) from the arc zero to the contact row
-         * each finger was adopted at. Valid only for swept front contacts on
+         * each finger selected. Valid only for swept front contacts on
          * the palm-plane arc (thumb: Wrap lane only - alternate lanes solve in
-         * a different plane). Diagnostics-only: the FINGER-CYCLE adoption
-         * trace logs them so convergence (rotations settling) is visible in
-         * one grab's log.
+         * a different plane). Diagnostics-only: the target-space solve can
+         * report the exact calibrated contact row without re-reading rendered
+         * finger geometry.
          */
         std::array<float, 5> contactArcRotationRadians{};
         std::array<std::uint8_t, 5> contactArcRotationValid{};
         int hitCount = 0;
         int candidateTriangleCount = 0;
         int poseTargetCount = 0;
+        std::uint32_t spatialNodeVisitCount = 0;
+        std::uint32_t spatialTriangleTestCount = 0;
         bool solved = false;
         bool hasJointValues = false;
         bool hasObjectLocalSurfaceAim = false;
+        bool usedSpatialIndex = false;
         bool usedAlternateThumbCurve = false;
         bool usedAlternateThumbSurfaceHit = false;
         bool thumbSurfaceFollowAllowed = true;
@@ -1339,18 +1357,13 @@ namespace rock::grab_finger_pose_runtime
      * chain bone origins of hFRIK's authored fully-open pose in hand-bone
      * space - the identical zero definition the offline bake uses
      * (normalize(distal_open_origin - base_origin)). Rendered finger bones
-     * must NEVER anchor a held re-solve: ROCK's own surface-aim
-     * local-transform corrections bend the rendered chain after every
-     * publish, so any anchor measured from rendered geometry feeds the
-     * solver its own output. In-game evidence (FINGER-CYCLE trace,
-     * 2026-07-13): relPos static within 0.06gu while values and contact
-     * rotations wandered through dozens of adoptions - the infinite
-     * open/close cycle. Estimation-based anchors (chord-length inversion,
-     * adopted-rotation hints, thumb keep rules) were all approximations of
-     * this direction and were retired when it landed.
+     * anchor the regular target-space solve: ROCK's own surface-aim local
+     * transforms bend the rendered chain, so measuring the arc zero from
+     * rendered geometry makes the result depend on the pose currently being
+     * replaced. The authored-open direction is immutable and exactly matches
+     * the calibration bake's reference.
      */
-    [[nodiscard]] inline std::array<RE::NiPoint3, 5> computeCommandedOpenDirectionsHandLocal(
-        const RE::NiTransform* openLocalTransforms /* 15 finger bones, finger-major */)
+    [[nodiscard]] inline std::array<RE::NiPoint3, 5> computeCommandedOpenDirectionsHandLocal(const RE::NiTransform* openLocalTransforms /* 15 finger bones, finger-major */)
     {
         std::array<RE::NiPoint3, 5> result{};
         if (!openLocalTransforms) {
@@ -1568,6 +1581,229 @@ namespace rock::grab_finger_pose_runtime
     {
         return std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z);
     }
+
+    struct FingerPoseSpatialQueryStats
+    {
+        std::uint32_t nodeVisits = 0;
+        std::uint32_t triangleTests = 0;
+    };
+
+    /*
+     * Immutable, object-local BVH for the bounded finger-pose triangle set.
+     * A regular grab builds it once at commit, then every swept-arc sphere
+     * probe queries the exact same triangles without linearly revisiting all
+     * 2048 candidates. Nodes and triangles own no engine pointers, and query
+     * uses a fixed stack so the runtime sweep performs no heap allocation.
+     */
+    class FingerPoseTriangleSpatialIndex
+    {
+    public:
+        void clear()
+        {
+            _triangles.clear();
+            _triangleIndices.clear();
+            _nodes.clear();
+        }
+
+        template <class TriangleContainer>
+        bool buildFromLocalTriangles(const TriangleContainer& localTriangles)
+        {
+            clear();
+            const std::size_t triangleLimit = (std::min)(localTriangles.size(), kMaxFingerPoseCandidateTriangles);
+            _triangles.reserve(triangleLimit);
+            for (const auto& source : localTriangles) {
+                if (!isFinitePoint(source.v0) || !isFinitePoint(source.v1) || !isFinitePoint(source.v2)) {
+                    continue;
+                }
+                _triangles.push_back(grab_finger_pose_math::Triangle<RE::NiPoint3>{ source.v0, source.v1, source.v2 });
+                if (_triangles.size() >= kMaxFingerPoseCandidateTriangles) {
+                    break;
+                }
+            }
+            if (_triangles.empty()) {
+                return false;
+            }
+
+            _triangleIndices.resize(_triangles.size());
+            for (std::size_t i = 0; i < _triangleIndices.size(); ++i) {
+                _triangleIndices[i] = static_cast<std::uint32_t>(i);
+            }
+            _nodes.reserve(_triangles.size() * 2);
+            (void)buildNode(0, static_cast<std::uint32_t>(_triangleIndices.size()));
+            return !_nodes.empty();
+        }
+
+        [[nodiscard]] bool empty() const { return _nodes.empty(); }
+        [[nodiscard]] std::size_t triangleCount() const { return _triangles.size(); }
+
+        [[nodiscard]] bool querySphereWorld(const RE::NiTransform& objectWorldTransform, const RE::NiPoint3& centerWorld, float radiusWorld, RE::NiPoint3* outPointWorld,
+            RE::NiPoint3* outNormalWorld, FingerPoseSpatialQueryStats* stats = nullptr) const
+        {
+            if (_nodes.empty() || !isFinitePoint(centerWorld) || !std::isfinite(radiusWorld) || radiusWorld <= 0.0f || !std::isfinite(objectWorldTransform.scale) ||
+                std::abs(objectWorldTransform.scale) <= 0.000001f) {
+                return false;
+            }
+
+            const RE::NiPoint3 centerLocal = transform_math::worldPointToLocal(objectWorldTransform, centerWorld);
+            const float radiusLocal = radiusWorld / std::abs(objectWorldTransform.scale);
+            float bestDistanceSquared = radiusLocal * radiusLocal;
+            std::uint32_t bestTriangleIndex = kInvalidIndex;
+            RE::NiPoint3 bestPointLocal{};
+
+            std::array<std::uint32_t, 64> stack{};
+            std::size_t stackSize = 0;
+            stack[stackSize++] = 0;
+            while (stackSize > 0) {
+                const std::uint32_t nodeIndex = stack[--stackSize];
+                const Node& node = _nodes[nodeIndex];
+                if (stats) {
+                    ++stats->nodeVisits;
+                }
+                if (pointAabbDistanceSquared(centerLocal, node.boundsMin, node.boundsMax) > bestDistanceSquared) {
+                    continue;
+                }
+
+                if (node.isLeaf()) {
+                    for (std::uint32_t offset = 0; offset < node.count; ++offset) {
+                        const std::uint32_t triangleIndex = _triangleIndices[node.begin + offset];
+                        const auto& triangle = _triangles[triangleIndex];
+                        if (stats) {
+                            ++stats->triangleTests;
+                        }
+                        const RE::NiPoint3 closest = grab_finger_pose_math::closestPointOnTriangle(centerLocal, triangle);
+                        const float distanceSquared = grab_finger_pose_math::lengthSquared(grab_finger_pose_math::sub(closest, centerLocal));
+                        if (distanceSquared <= bestDistanceSquared &&
+                            (bestTriangleIndex == kInvalidIndex || distanceSquared < bestDistanceSquared || triangleIndex < bestTriangleIndex)) {
+                            bestDistanceSquared = distanceSquared;
+                            bestTriangleIndex = triangleIndex;
+                            bestPointLocal = closest;
+                        }
+                    }
+                    continue;
+                }
+
+                const float leftDistance = pointAabbDistanceSquared(centerLocal, _nodes[node.left].boundsMin, _nodes[node.left].boundsMax);
+                const float rightDistance = pointAabbDistanceSquared(centerLocal, _nodes[node.right].boundsMin, _nodes[node.right].boundsMax);
+                const std::uint32_t nearChild = leftDistance <= rightDistance ? node.left : node.right;
+                const std::uint32_t farChild = leftDistance <= rightDistance ? node.right : node.left;
+                if (pointAabbDistanceSquared(centerLocal, _nodes[farChild].boundsMin, _nodes[farChild].boundsMax) <= bestDistanceSquared) {
+                    if (stackSize >= stack.size()) {
+                        return false;
+                    }
+                    stack[stackSize++] = farChild;
+                }
+                if (pointAabbDistanceSquared(centerLocal, _nodes[nearChild].boundsMin, _nodes[nearChild].boundsMax) <= bestDistanceSquared) {
+                    if (stackSize >= stack.size()) {
+                        return false;
+                    }
+                    stack[stackSize++] = nearChild;
+                }
+            }
+
+            if (bestTriangleIndex == kInvalidIndex) {
+                return false;
+            }
+            if (outPointWorld) {
+                *outPointWorld = transform_math::localPointToWorld(objectWorldTransform, bestPointLocal);
+            }
+            if (outNormalWorld) {
+                RE::NiPoint3 normalWorld = transform_math::localVectorToWorld(objectWorldTransform, grab_finger_pose_math::triangleNormal(_triangles[bestTriangleIndex]));
+                normalWorld = normalizedOrFallback(normalWorld, RE::NiPoint3{});
+                const RE::NiPoint3 pointWorld = transform_math::localPointToWorld(objectWorldTransform, bestPointLocal);
+                if (dotPoint(normalWorld, centerWorld - pointWorld) < 0.0f) {
+                    normalWorld = normalWorld * -1.0f;
+                }
+                *outNormalWorld = normalWorld;
+            }
+            return true;
+        }
+
+    private:
+        static constexpr std::uint32_t kInvalidIndex = 0xFFFF'FFFFu;
+        static constexpr std::uint32_t kLeafTriangleCount = 8;
+
+        struct Node
+        {
+            RE::NiPoint3 boundsMin{};
+            RE::NiPoint3 boundsMax{};
+            std::uint32_t left = kInvalidIndex;
+            std::uint32_t right = kInvalidIndex;
+            std::uint32_t begin = 0;
+            std::uint32_t count = 0;
+
+            [[nodiscard]] bool isLeaf() const { return count > 0; }
+        };
+
+        static void expandBounds(RE::NiPoint3& boundsMin, RE::NiPoint3& boundsMax, const RE::NiPoint3& point)
+        {
+            boundsMin.x = (std::min)(boundsMin.x, point.x);
+            boundsMin.y = (std::min)(boundsMin.y, point.y);
+            boundsMin.z = (std::min)(boundsMin.z, point.z);
+            boundsMax.x = (std::max)(boundsMax.x, point.x);
+            boundsMax.y = (std::max)(boundsMax.y, point.y);
+            boundsMax.z = (std::max)(boundsMax.z, point.z);
+        }
+
+        [[nodiscard]] static RE::NiPoint3 triangleCentroid(const grab_finger_pose_math::Triangle<RE::NiPoint3>& triangle)
+        {
+            return (triangle.v0 + triangle.v1 + triangle.v2) * (1.0f / 3.0f);
+        }
+
+        [[nodiscard]] static float axisValue(const RE::NiPoint3& point, int axis) { return axis == 0 ? point.x : (axis == 1 ? point.y : point.z); }
+
+        [[nodiscard]] static float pointAabbDistanceSquared(const RE::NiPoint3& point, const RE::NiPoint3& boundsMin, const RE::NiPoint3& boundsMax)
+        {
+            const float dx = point.x < boundsMin.x ? boundsMin.x - point.x : (point.x > boundsMax.x ? point.x - boundsMax.x : 0.0f);
+            const float dy = point.y < boundsMin.y ? boundsMin.y - point.y : (point.y > boundsMax.y ? point.y - boundsMax.y : 0.0f);
+            const float dz = point.z < boundsMin.z ? boundsMin.z - point.z : (point.z > boundsMax.z ? point.z - boundsMax.z : 0.0f);
+            return dx * dx + dy * dy + dz * dz;
+        }
+
+        std::uint32_t buildNode(std::uint32_t begin, std::uint32_t end)
+        {
+            const float infinity = std::numeric_limits<float>::infinity();
+            Node node{};
+            node.boundsMin = RE::NiPoint3{ infinity, infinity, infinity };
+            node.boundsMax = RE::NiPoint3{ -infinity, -infinity, -infinity };
+            RE::NiPoint3 centroidMin{ infinity, infinity, infinity };
+            RE::NiPoint3 centroidMax{ -infinity, -infinity, -infinity };
+            for (std::uint32_t i = begin; i < end; ++i) {
+                const auto& triangle = _triangles[_triangleIndices[i]];
+                expandBounds(node.boundsMin, node.boundsMax, triangle.v0);
+                expandBounds(node.boundsMin, node.boundsMax, triangle.v1);
+                expandBounds(node.boundsMin, node.boundsMax, triangle.v2);
+                const RE::NiPoint3 centroid = triangleCentroid(triangle);
+                expandBounds(centroidMin, centroidMax, centroid);
+            }
+
+            const std::uint32_t nodeIndex = static_cast<std::uint32_t>(_nodes.size());
+            _nodes.push_back(node);
+            const std::uint32_t count = end - begin;
+            if (count <= kLeafTriangleCount) {
+                _nodes[nodeIndex].begin = begin;
+                _nodes[nodeIndex].count = count;
+                return nodeIndex;
+            }
+
+            const RE::NiPoint3 centroidExtent = centroidMax - centroidMin;
+            const int splitAxis = centroidExtent.x >= centroidExtent.y && centroidExtent.x >= centroidExtent.z ? 0 : (centroidExtent.y >= centroidExtent.z ? 1 : 2);
+            const std::uint32_t middle = begin + count / 2;
+            std::nth_element(_triangleIndices.begin() + begin, _triangleIndices.begin() + middle, _triangleIndices.begin() + end, [&](std::uint32_t lhs, std::uint32_t rhs) {
+                const float lhsValue = axisValue(triangleCentroid(_triangles[lhs]), splitAxis);
+                const float rhsValue = axisValue(triangleCentroid(_triangles[rhs]), splitAxis);
+                return lhsValue == rhsValue ? lhs < rhs : lhsValue < rhsValue;
+            });
+            const std::uint32_t left = buildNode(begin, middle);
+            const std::uint32_t right = buildNode(middle, end);
+            _nodes[nodeIndex].left = left;
+            _nodes[nodeIndex].right = right;
+            return nodeIndex;
+        }
+
+        std::vector<grab_finger_pose_math::Triangle<RE::NiPoint3>> _triangles;
+        std::vector<std::uint32_t> _triangleIndices;
+        std::vector<Node> _nodes;
+    };
 
     inline float triangleDistanceSquaredToPoint(const TriangleData& triangle, const RE::NiPoint3& point)
     {
@@ -2202,23 +2438,30 @@ namespace rock::grab_finger_pose_runtime
         const RE::NiPoint3& grabAnchorWorld, const GrabFingerPoseTargetSet& poseTargets, float minValue, float maxTriangleDistanceSquared = 100.0f, bool useCurveSolver = true,
         const root_flattened_finger_skeleton_runtime::Snapshot* liveFingerSnapshot = nullptr, bool rejectBacksideHits = true, float surfacePlaneToleranceGameUnits = 1.5f,
         bool allowSurfaceAimTargets = true, float sweepContactRadiusGameUnits = 1.0f, float unreachableFingerOpenValue = -1.0f,
-        float thumbSweepMaxOpenValue = grab_finger_pose_math::kMaxFingerOpenValue,
-        float fingerSweepMaxOpenValue = grab_finger_pose_math::kMaxFingerOpenValue,
-        const std::array<RE::NiPoint3, 5>* commandedOpenDirectionsWorld = nullptr)
+        float thumbSweepMaxOpenValue = grab_finger_pose_math::kMaxFingerOpenValue, float fingerSweepMaxOpenValue = grab_finger_pose_math::kMaxFingerOpenValue,
+        const std::array<RE::NiPoint3, 5>* commandedOpenDirectionsWorld = nullptr, const FingerPoseTriangleSpatialIndex* spatialIndex = nullptr,
+        const RE::NiTransform* spatialObjectWorldTransform = nullptr)
     {
         SolvedGrabFingerPose result{};
         const float clampedMin = std::clamp(minValue, 0.0f, 1.0f);
         result.values = { clampedMin, clampedMin, clampedMin, clampedMin, clampedMin };
         result.poseTargetCount = static_cast<int>(poseTargets.targetCount);
+        const bool useSpatialIndex = useCurveSolver && spatialIndex && !spatialIndex->empty() && spatialObjectWorldTransform && std::isfinite(spatialObjectWorldTransform->scale) &&
+            std::abs(spatialObjectWorldTransform->scale) > 0.000001f;
+        result.usedSpatialIndex = useSpatialIndex;
 
-        if (triangles.empty() || !poseTargets.seatPointValid) {
+        if ((!useSpatialIndex && triangles.empty()) || !poseTargets.seatPointValid) {
             return result;
         }
 
         std::vector<grab_finger_pose_math::Triangle<RE::NiPoint3>> candidateTriangles;
-        appendCandidateTriangles(triangles, poseTargets, maxTriangleDistanceSquared, candidateTriangles);
-        result.candidateTriangleCount = static_cast<int>(candidateTriangles.size());
-        if (candidateTriangles.empty()) {
+        if (useSpatialIndex) {
+            result.candidateTriangleCount = static_cast<int>(spatialIndex->triangleCount());
+        } else {
+            appendCandidateTriangles(triangles, poseTargets, maxTriangleDistanceSquared, candidateTriangles);
+            result.candidateTriangleCount = static_cast<int>(candidateTriangles.size());
+        }
+        if (result.candidateTriangleCount == 0) {
             return result;
         }
 
@@ -2227,16 +2470,17 @@ namespace rock::grab_finger_pose_runtime
         constexpr float kMaxFingerProbeDistance = 26.0f;
         constexpr float kFingerProbeRadius = 1.25f;
         const RE::NiPoint3 fallbackDirection = transformHandspaceDirection(handTransform, RE::NiPoint3(1.0f, 0.0f, 0.0f), isLeft);
-        const auto liveLandmarks = liveFingerSnapshot ? root_flattened_finger_skeleton_runtime::buildLandmarkSet(*liveFingerSnapshot) : root_flattened_finger_skeleton_runtime::LandmarkSet{};
+        const auto liveLandmarks =
+            liveFingerSnapshot ? root_flattened_finger_skeleton_runtime::buildLandmarkSet(*liveFingerSnapshot) : root_flattened_finger_skeleton_runtime::LandmarkSet{};
         if (!liveLandmarks.valid) {
             return result;
         }
         const bool inPowerArmor = liveFingerSnapshot && liveFingerSnapshot->inPowerArmor;
         const RE::NiPoint3 curlNormalWorld = liveLandmarks.palmNormalWorld;
-        const bool usePalmSeatProbeShift =
-            poseTargets.useWholeMeshForMissingTargets && poseTargets.seatPointValid && poseTargets.targetCount == 0;
+        const bool usePalmSeatProbeShift = poseTargets.useWholeMeshForMissingTargets && poseTargets.seatPointValid && poseTargets.targetCount == 0;
         const RE::NiPoint3 palmSeatProbeShift = usePalmSeatProbeShift ? poseTargets.seatPointWorld - grabAnchorWorld : RE::NiPoint3{};
         result.usedLiveRootFlattenedFingerBones = true;
+        FingerPoseSpatialQueryStats spatialQueryStats{};
 
         for (std::size_t finger = 0; finger < result.values.size(); ++finger) {
             const auto& live = liveLandmarks.fingers[finger];
@@ -2260,24 +2504,18 @@ namespace rock::grab_finger_pose_runtime
              * curl, but the arc reconstruction treats it as the fully-open
              * zero reference. Solving from a curled chain therefore stopped
              * every finger short by exactly the current curl angle (the
-             * "finger-width air gap") and made held re-solves oscillate: each
-             * result re-rotated the next solve's reference.
+             * "finger-width air gap").
              *
              * Anchor priority:
              * 1. A caller-provided COMMANDED open direction (hFRIK's authored
              *    open-pose chain in hand-bone space, rotated by the hand
              *    bone). Zero feedback by construction: no rendered finger
-             *    data can influence it, so a static hand-object relation
-             *    solves identically every interval. Held re-solves REQUIRE
-             *    this - rendered chords carry ROCK's own surface-aim
-             *    local-transform corrections, and anchoring on them fed the
-             *    solver its own output (the infinite adoption cycle,
-             *    FINGER-CYCLE trace 2026-07-13: relPos static while values
-             *    wandered).
+             *    data can influence it, so a static hand-object relation has
+             *    one deterministic endpoint.
              * 2. Otherwise, estimate the current curl from the chord length
-             *    via the baked Tip reach table (acquisition solves, where the
-             *    chain is mid-motion and the inversion tracks the ACTUAL
-             *    pose). THE THUMB IS EXCLUDED from the estimate: its chord
+             *    via the baked Tip reach table (deferred pinch and legacy
+             *    callers, where the inversion tracks the ACTUAL pose). THE
+             *    THUMB IS EXCLUDED from the estimate: its chord
              *    shortens from opposition and twist - motion outside the arc
              *    plane - so the inversion reads a large spurious curl
              *    (session evidence 2026-07-13: thumb inside the mesh on
@@ -2285,24 +2523,17 @@ namespace rock::grab_finger_pose_runtime
              *    raw chord.
              */
             RE::NiPoint3 openDirectionWorld = live.openDirection;
-            const bool hasCommandedOpenDirection =
-                commandedOpenDirectionsWorld &&
-                isFinitePoint((*commandedOpenDirectionsWorld)[finger]) &&
+            const bool hasCommandedOpenDirection = commandedOpenDirectionsWorld && isFinitePoint((*commandedOpenDirectionsWorld)[finger]) &&
                 distanceSquared((*commandedOpenDirectionsWorld)[finger], RE::NiPoint3{}) > 0.25f;
             if (hasCommandedOpenDirection) {
                 openDirectionWorld = (*commandedOpenDirectionsWorld)[finger];
             } else if (finger != 0) {
                 const auto& liveChain = liveFingerSnapshot->fingers[finger];
                 const float liveChordLength = std::sqrt(distanceSquared(liveChain.points[2], liveChain.points[0]));
-                const auto chordCurl = grab_finger_pose_math::estimateCalibratedChainCurlFromChord(
-                    finger, isLeft, inPowerArmor, fingerOpenLengthWorld, liveChordLength);
+                const auto chordCurl = grab_finger_pose_math::estimateCalibratedChainCurlFromChord(finger, isLeft, inPowerArmor, fingerOpenLengthWorld, liveChordLength);
                 if (chordCurl.valid && std::fabs(chordCurl.chordAngleRadians) > 0.0035f) {
                     openDirectionWorld = normalizedOrFallback(
-                        grab_finger_pose_math::rotateAroundUnitAxis(
-                            openDirectionWorld,
-                            curlNormalWorld,
-                            -chordCurl.chordAngleRadians * chordCurl.normalSign),
-                        openDirectionWorld);
+                        grab_finger_pose_math::rotateAroundUnitAxis(openDirectionWorld, curlNormalWorld, -chordCurl.chordAngleRadians * chordCurl.normalSign), openDirectionWorld);
                 }
             }
             const RE::NiPoint3 thumbAlternateCurlNormalWorld = liveThumbAlternateCurlNormalWorld(openDirectionWorld, curlNormalWorld, baseWorld, grabAnchorWorld, isLeft);
@@ -2334,19 +2565,24 @@ namespace rock::grab_finger_pose_runtime
                  * the arc than the near surface, so a first-contact stop can
                  * never select it.
                  */
-                const auto curveSolved = grab_finger_pose_math::sweepThumbAwareCalibratedFingerCurveCurlValue(candidateTriangles,
-                    finger,
-                    isLeft,
-                    inPowerArmor,
-                    baseWorld,
-                    curlNormalWorld,
-                    thumbAlternateCurlNormalWorld,
-                    openDirectionWorld,
-                    fingerOpenLengthWorld,
-                    clampedMin,
-                    isThumb,
-                    sweepContactRadiusGameUnits,
-                    isThumb ? thumbSweepMaxOpenValue : fingerSweepMaxOpenValue);
+                grab_finger_pose_math::ThumbAwareFingerCurveCurlValue<RE::NiPoint3> curveSolved{};
+                if (useSpatialIndex) {
+                    auto solveSpatialCurve = [&](const grab_finger_pose_math::CalibratedFingerCurve<RE::NiPoint3>& curve, float curveMinValue, float curveContactRadius,
+                                                 float curveMaxOpenValue) {
+                        auto sphereContact = [&](const RE::NiPoint3& centerWorld, float radiusWorld, RE::NiPoint3* outPointWorld, RE::NiPoint3* outNormalWorld) {
+                            return spatialIndex->querySphereWorld(*spatialObjectWorldTransform, centerWorld, radiusWorld, outPointWorld, outNormalWorld, &spatialQueryStats);
+                        };
+                        return grab_finger_pose_math::sweepCalibratedFingerCurveCurlValueWithContactQuery(curve, curveMinValue, curveContactRadius, curveMaxOpenValue,
+                            sphereContact);
+                    };
+                    curveSolved = grab_finger_pose_math::sweepThumbAwareCalibratedFingerCurveCurlValueWithCurveSolver<RE::NiPoint3>(finger, isLeft, inPowerArmor, baseWorld,
+                        curlNormalWorld, thumbAlternateCurlNormalWorld, openDirectionWorld, fingerOpenLengthWorld, clampedMin, isThumb, sweepContactRadiusGameUnits,
+                        isThumb ? thumbSweepMaxOpenValue : fingerSweepMaxOpenValue, solveSpatialCurve);
+                } else {
+                    curveSolved = grab_finger_pose_math::sweepThumbAwareCalibratedFingerCurveCurlValue(candidateTriangles, finger, isLeft, inPowerArmor, baseWorld, curlNormalWorld,
+                        thumbAlternateCurlNormalWorld, openDirectionWorld, fingerOpenLengthWorld, clampedMin, isThumb, sweepContactRadiusGameUnits,
+                        isThumb ? thumbSweepMaxOpenValue : fingerSweepMaxOpenValue);
+                }
                 curveSolverRan = true;
                 solved = curveSolved.value;
                 result.usedAlternateThumbCurve = result.usedAlternateThumbCurve || curveSolved.usedAlternateThumbCurve;
@@ -2359,55 +2595,30 @@ namespace rock::grab_finger_pose_runtime
                     result.selectedThumbLaneNormalBlend = curveSolved.selectedThumbLaneNormalBlend;
                     result.selectedThumbLaneLocalCorrectionStrength = curveSolved.selectedThumbLaneLocalCorrectionStrength;
                     if (curveSolved.usedAlternateThumbCurve) {
-                        result.thumbAlternateCurveNormalWorld = normalizedOrFallback(
-                            curveSolved.selectedThumbLaneNormal,
-                            thumbAlternateCurlNormalWorld);
+                        result.thumbAlternateCurveNormalWorld = normalizedOrFallback(curveSolved.selectedThumbLaneNormal, thumbAlternateCurlNormalWorld);
                         if (curveSolved.selectedThumbLaneMaxCurlAngleRadians > 0.0001f) {
                             result.thumbAlternateCurveMaxCurlAngleRadians = curveSolved.selectedThumbLaneMaxCurlAngleRadians;
                         }
                     }
                     const auto& selectedThumbCurve = curveSolved.selectedThumbCurve;
-                    const bool alternateThumbSurfaceHit =
-                        curveSolved.usedAlternateThumbCurve &&
-                        selectedThumbCurve.hit &&
-                        selectedThumbCurve.hasHitPoint &&
-                        !selectedThumbCurve.openedByBehindContact &&
-                        selectedThumbCurve.hitKind == grab_finger_pose_math::FingerCurlValue::HitKind::FrontValid;
+                    const bool alternateThumbSurfaceHit = curveSolved.usedAlternateThumbCurve && selectedThumbCurve.hit && selectedThumbCurve.hasHitPoint &&
+                        !selectedThumbCurve.openedByBehindContact && selectedThumbCurve.hitKind == grab_finger_pose_math::FingerCurlValue::HitKind::FrontValid;
                     result.usedAlternateThumbSurfaceHit = alternateThumbSurfaceHit;
                     if (alternateThumbSurfaceHit) {
-                        result.surfaceAimTarget[0] = RE::NiPoint3{
-                            selectedThumbCurve.hitPointX,
-                            selectedThumbCurve.hitPointY,
-                            selectedThumbCurve.hitPointZ
-                        };
+                        result.surfaceAimTarget[0] = RE::NiPoint3{ selectedThumbCurve.hitPointX, selectedThumbCurve.hitPointY, selectedThumbCurve.hitPointZ };
                         result.surfaceAimTargetValid[0] = 1;
                         if (selectedThumbCurve.hasHitNormal) {
-                            result.surfaceAimNormal[0] = normalizedOrFallback(
-                                RE::NiPoint3{
-                                    selectedThumbCurve.hitNormalX,
-                                    selectedThumbCurve.hitNormalY,
-                                    selectedThumbCurve.hitNormalZ },
-                                curlNormalWorld);
+                            result.surfaceAimNormal[0] =
+                                normalizedOrFallback(RE::NiPoint3{ selectedThumbCurve.hitNormalX, selectedThumbCurve.hitNormalY, selectedThumbCurve.hitNormalZ }, curlNormalWorld);
                             result.surfaceAimNormalValid[0] = 1;
                         }
                     }
                 }
             }
             if (useTarget && !solved.hit && !curveSolverRan) {
-                solved = grab_finger_pose_math::solveFingerCurlValue(candidateTriangles,
-                    baseWorld,
-                    probeDirection,
-                    probeDistance,
-                    clampedMin,
-                    kFingerProbeRadius,
-                    curlNormalWorld,
-                    openDirectionWorld,
-                    grab_finger_pose_math::bakedCalibratedFingerMaxAngleRadians(finger, isLeft, inPowerArmor),
-                    fingerTargetWorld,
-                    fingerTargetNormalWorld,
-                    rejectBacksideHits && useTargetNormal,
-                    surfacePlaneToleranceGameUnits,
-                    &fallbackHitPoint);
+                solved = grab_finger_pose_math::solveFingerCurlValue(candidateTriangles, baseWorld, probeDirection, probeDistance, clampedMin, kFingerProbeRadius, curlNormalWorld,
+                    openDirectionWorld, grab_finger_pose_math::bakedCalibratedFingerMaxAngleRadians(finger, isLeft, inPowerArmor), fingerTargetWorld, fingerTargetNormalWorld,
+                    rejectBacksideHits && useTargetNormal, surfacePlaneToleranceGameUnits, &fallbackHitPoint);
                 fallbackHitPointValid = solved.hit && solved.hitKind == grab_finger_pose_math::FingerCurlValue::HitKind::FrontValid;
             }
             /*
@@ -2417,8 +2628,7 @@ namespace rock::grab_finger_pose_runtime
              * palm seat point as fake finger evidence.
              */
             if (!solved.hit &&
-                (!useTarget ||
-                    solved.hitKind == grab_finger_pose_math::FingerCurlValue::HitKind::BackSurface ||
+                (!useTarget || solved.hitKind == grab_finger_pose_math::FingerCurlValue::HitKind::BackSurface ||
                     solved.hitKind == grab_finger_pose_math::FingerCurlValue::HitKind::Rejected)) {
                 solved.value = missedFingerCurlFallbackValue(useTarget, solved.hitKind, clampedMin);
                 solved.rawCurveValue = solved.value;
@@ -2437,16 +2647,13 @@ namespace rock::grab_finger_pose_runtime
             result.values[finger] = solved.value;
             result.hitKind[finger] = solved.hitKind;
             /*
-             * Record the contact-row rotation the finger was adopted at
-             * (diagnostics: the FINGER-CYCLE trace logs them). Only
+             * Record the selected contact-row rotation for diagnostics. Only
              * palm-plane sweep contacts qualify: the thumb's alternate lanes
              * rotate in a blended plane the palm-normal de-rotation cannot
              * invert, and a value floored by minValue no longer matches its
              * contact row.
              */
-            if (curveSolverRan && solved.hit &&
-                solved.hitKind == grab_finger_pose_math::FingerCurlValue::HitKind::FrontValid &&
-                solved.rawCurveValue >= clampedMin - 0.0001f &&
+            if (curveSolverRan && solved.hit && solved.hitKind == grab_finger_pose_math::FingerCurlValue::HitKind::FrontValid && solved.rawCurveValue >= clampedMin - 0.0001f &&
                 (finger != 0 || !result.usedAlternateThumbCurve)) {
                 const auto& bakedAnchorProfile = grab_finger_calibration_data::bakedGrabFingerHandProfile(isLeft, inPowerArmor);
                 const float bakedAnchorNormalSign = bakedAnchorProfile.fingers[finger].normalSign < 0.0f ? -1.0f : 1.0f;
@@ -2463,9 +2670,7 @@ namespace rock::grab_finger_pose_runtime
                     result.surfaceAimTargetValid[finger] = 1;
                 }
                 if (result.surfaceAimNormalValid[finger] == 0 && solved.hasHitNormal) {
-                    result.surfaceAimNormal[finger] = normalizedOrFallback(
-                        RE::NiPoint3{ solved.hitNormalX, solved.hitNormalY, solved.hitNormalZ },
-                        curlNormalWorld);
+                    result.surfaceAimNormal[finger] = normalizedOrFallback(RE::NiPoint3{ solved.hitNormalX, solved.hitNormalY, solved.hitNormalZ }, curlNormalWorld);
                     result.surfaceAimNormalValid[finger] = 1;
                 } else if (result.surfaceAimNormalValid[finger] == 0 && useTargetNormal && distanceSquared(fingerTargetNormalWorld, RE::NiPoint3{}) > 0.000001f) {
                     result.surfaceAimNormal[finger] = normalizedOrFallback(fingerTargetNormalWorld, curlNormalWorld);
@@ -2480,6 +2685,8 @@ namespace rock::grab_finger_pose_runtime
         result.solved = result.candidateTriangleCount > 0 && result.usedLiveRootFlattenedFingerBones;
         result.jointValues = grab_finger_pose_math::expandFingerCurlsToJointValues(result.values);
         result.hasJointValues = result.solved;
+        result.spatialNodeVisitCount = spatialQueryStats.nodeVisits;
+        result.spatialTriangleTestCount = spatialQueryStats.triangleTests;
         return result;
     }
 
@@ -2487,27 +2694,13 @@ namespace rock::grab_finger_pose_runtime
         const RE::NiPoint3& grabAnchorWorld, const RE::NiPoint3& grabGripPoint, float minValue, float maxTriangleDistanceSquared = 100.0f, bool useCurveSolver = true,
         const root_flattened_finger_skeleton_runtime::Snapshot* liveFingerSnapshot = nullptr, bool rejectBacksideHits = true, float surfacePlaneToleranceGameUnits = 1.5f,
         bool allowSurfaceAimTargets = true, float sweepContactRadiusGameUnits = 1.0f, float unreachableFingerOpenValue = -1.0f,
-        float thumbSweepMaxOpenValue = grab_finger_pose_math::kMaxFingerOpenValue,
-        float fingerSweepMaxOpenValue = grab_finger_pose_math::kMaxFingerOpenValue,
-        const std::array<RE::NiPoint3, 5>* commandedOpenDirectionsWorld = nullptr)
+        float thumbSweepMaxOpenValue = grab_finger_pose_math::kMaxFingerOpenValue, float fingerSweepMaxOpenValue = grab_finger_pose_math::kMaxFingerOpenValue,
+        const std::array<RE::NiPoint3, 5>* commandedOpenDirectionsWorld = nullptr, const FingerPoseTriangleSpatialIndex* spatialIndex = nullptr,
+        const RE::NiTransform* spatialObjectWorldTransform = nullptr)
     {
-        return solveGrabFingerPoseFromTriangles(triangles,
-            handTransform,
-            isLeft,
-            grabAnchorWorld,
-            makeSharedGripPoseTarget(grabGripPoint),
-            minValue,
-            maxTriangleDistanceSquared,
-            useCurveSolver,
-            liveFingerSnapshot,
-            rejectBacksideHits,
-            surfacePlaneToleranceGameUnits,
-            allowSurfaceAimTargets,
-            sweepContactRadiusGameUnits,
-            unreachableFingerOpenValue,
-            thumbSweepMaxOpenValue,
-            fingerSweepMaxOpenValue,
-            commandedOpenDirectionsWorld);
+        return solveGrabFingerPoseFromTriangles(triangles, handTransform, isLeft, grabAnchorWorld, makeSharedGripPoseTarget(grabGripPoint), minValue, maxTriangleDistanceSquared,
+            useCurveSolver, liveFingerSnapshot, rejectBacksideHits, surfacePlaneToleranceGameUnits, allowSurfaceAimTargets, sweepContactRadiusGameUnits, unreachableFingerOpenValue,
+            thumbSweepMaxOpenValue, fingerSweepMaxOpenValue, commandedOpenDirectionsWorld, spatialIndex, spatialObjectWorldTransform);
     }
 }
 
