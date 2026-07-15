@@ -120,6 +120,31 @@ namespace rock
         RE::NiTransform immediateCameraWorldAfter{};
     };
 
+    struct NativeScopeOverlayPendingHandoff
+    {
+        std::uint64_t weaponGenerationKey{ 0 };
+        RE::NiTransform cameraWorldBefore{};
+        RE::NiTransform correctedCameraWorld{};
+        bool valid{ false };
+    };
+
+    struct NativeScopeOverlayCalibrationState
+    {
+        std::uint64_t weaponGenerationKey{ 0 };
+
+        /*
+         * Non-owning identity witness only. It is never dereferenced unless
+         * the current PlayerNodes ScopeParent pointer still matches it.
+         */
+        RE::NiNode* scopeParentIdentity{ nullptr };
+
+        RE::NiTransform scopeParentInCameraLocal{};
+        RE::NiTransform nativeScopeParentLocal{};
+        RE::NiTransform lastAppliedScopeParentLocal{};
+        bool valid{ false };
+        bool hasAppliedLocal{ false };
+    };
+
     struct EquippedWeaponManualDropRequest
     {
         bool requested{ false };
@@ -202,6 +227,14 @@ namespace rock
          * transitions fail closed.
          */
         void prepareNativeScopeCameraForGameUpdate(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
+
+        /*
+         * Completes the synchronous native-scope handoff after FO4VR's
+         * displaced frame call. This boundary is deliberately separate from
+         * prepareNativeScopeCameraForGameUpdate because the game can author
+         * ScopeParent while consuming the corrected activation camera.
+         */
+        void finalizeNativeScopeOverlayAfterGameUpdate(std::uint64_t currentWeaponGenerationKey);
 
         void reset();
 
@@ -646,6 +679,13 @@ namespace rock
             float dt);
         void clearWeaponVisualReturn(const char* reason, bool logCancellation, bool restoreBlockers);
         void clearAllVisualReturns(const char* reason, bool logCancellation, bool restoreBlockers);
+        void clearNativeScopeOverlayAuthority(bool restoreNativeLocal);
+        bool captureNativeScopeOverlayCalibration(
+            const RE::NiTransform& nativeCameraWorld,
+            std::uint64_t currentWeaponGenerationKey);
+        bool applyNativeScopeOverlayTarget(
+            const RE::NiTransform& correctedCameraWorld,
+            std::uint64_t currentWeaponGenerationKey);
         void refreshNativeScopeSightAnchor(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, const WeaponCollision& weaponCollision);
         void refreshScopeSafeHandFrames(RE::NiNode* weaponNode, const EquippedWeaponGripFrameInput& frameInput, float dt);
         bool tryGetSolverHandTransform(bool isLeft, RE::NiTransform& outTransform) const;
@@ -706,6 +746,8 @@ namespace rock
         RE::NiPoint3 _nativeScopeSightAnchorWeaponLocal{};
         bool _nativeScopeSightAnchorValid{ false };
         NativeScopeCameraDebugSnapshot _nativeScopeCameraDebugSnapshot{};
+        NativeScopeOverlayPendingHandoff _nativeScopeOverlayPendingHandoff{};
+        NativeScopeOverlayCalibrationState _nativeScopeOverlayCalibration{};
 
         std::array<WeaponPartGrip, 2> _partGrips{};
 

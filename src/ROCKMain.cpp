@@ -309,7 +309,9 @@ namespace
      * after its skeleton/weapon pass. Publish the cached generated-sight
      * baseline before returning control to the displaced FO4VR function so
      * downstream native scope work sees the optic instead of FRIK's firing-hand
-     * baseline. Full ROCK visual/collision authority remains after that call.
+     * baseline. FO4VR owns ScopeParent separately from that camera, so finish
+     * the overlay handoff immediately after the displaced call and before
+     * full ROCK visual/collision authority runs.
      */
     void onGameFrameUpdateHook(const std::uint64_t rcx)
     {
@@ -319,6 +321,10 @@ namespace
 
         if (s_originalGameLoopFunc) {
             s_originalGameLoopFunc(rcx);
+        }
+
+        if (s_pluginLoaded && s_frikAvailable && g_rockConfig.rockEnabled && s_physicsInteraction) {
+            s_physicsInteraction->finalizeNativeScopeOverlayAfterGameUpdate();
         }
 
         onFrameUpdate();

@@ -91,6 +91,8 @@ namespace rock
 
         void prepareNativeScopeCameraForGameUpdate();
 
+        void finalizeNativeScopeOverlayAfterGameUpdate();
+
         void update();
 
         void shutdown(::rock::provider::RockProviderLifecycleReason reason = ::rock::provider::RockProviderLifecycleReason::Shutdown);

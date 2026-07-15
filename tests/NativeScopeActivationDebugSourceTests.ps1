@@ -41,10 +41,18 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'NativeScopeCame
     'The diagnostic must observe the stored camera world immediately after the real native-camera write.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'void TwoHandedGrip::prepareNativeScopeCameraForGameUpdate[\s\S]*_nativeScopeSightAnchorWeaponNode\s*!=\s*weaponNode[\s\S]*applyNativeScopeCameraFollow\(capture,\s*weaponNode->world,\s*&_nativeScopeSightAnchorWeaponLocal\)[\s\S]*NativeScopeCameraWriteSource::PreNativeGameUpdate' `
     'Every equipped scoped-weapon frame must replace the one-hand hand-rooted camera translation with the exact generation-matched Sight anchor before native consumption.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' 'NativeScopeOverlayPendingHandoff[\s\S]*cameraWorldBefore[\s\S]*correctedCameraWorld[\s\S]*NativeScopeOverlayCalibrationState[\s\S]*scopeParentIdentity[\s\S]*scopeParentInCameraLocal[\s\S]*nativeScopeParentLocal[\s\S]*lastAppliedScopeParentLocal' `
+    'The native overlay handoff must retain a generation-keyed value calibration and an identity-only ScopeParent witness with rollback state.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'captureNativeScopeOverlayCalibration[\s\S]*ScopeParentNode[\s\S]*captureScopeParentInCameraLocal[\s\S]*applyNativeScopeOverlayTarget[\s\S]*resolveScopeParentWorld[\s\S]*worldTargetToParentLocal[\s\S]*updateTransformsDown\(scopeParent,\s*true\)' `
+    'The rendered world-scope hierarchy must preserve Bethesda camera-local calibration while moving ScopeParent to the corrected sight frame.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'clearNativeScopeOverlayAuthority[\s\S]*lastAppliedScopeParentLocal[\s\S]*nativeScopeParentLocal[\s\S]*finalizeNativeScopeOverlayAfterGameUpdate' `
+    'ScopeParent authority must restore the captured native local only while ROCK still owns the last applied transform.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'void PhysicsInteraction::prepareNativeScopeCameraForGameUpdate\(\)[\s\S]*_twoHandedGrip\.prepareNativeScopeCameraForGameUpdate\([\s\S]*_weaponCollision\.getCurrentWeaponGenerationKey\(\)' `
     'The main-loop boundary must consume only the current weapon node and prior completed generation snapshot.'
-Require-Text 'src/ROCKMain.cpp' 'prepareNativeScopeCameraForGameUpdate\(\);[\s\S]*s_originalGameLoopFunc\(rcx\);[\s\S]*onFrameUpdate\(\);' `
-    'The sight baseline must publish after the outer hFRIK pass, before control returns to FO4VR, and before ROCK post-frame authority.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'void PhysicsInteraction::finalizeNativeScopeOverlayAfterGameUpdate\(\)[\s\S]*_twoHandedGrip\.finalizeNativeScopeOverlayAfterGameUpdate\([\s\S]*_weaponCollision\.getCurrentWeaponGenerationKey\(\)' `
+    'The post-native boundary must retain the same current weapon-generation guard as the camera handoff.'
+Require-Text 'src/ROCKMain.cpp' 'prepareNativeScopeCameraForGameUpdate\(\);[\s\S]*s_originalGameLoopFunc\(rcx\);[\s\S]*finalizeNativeScopeOverlayAfterGameUpdate\(\);[\s\S]*onFrameUpdate\(\);' `
+    'The camera must publish before native consumption, ScopeParent after native ownership, and both before ROCK post-frame authority.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'NativeScopeCameraWriteSource::WeaponVisualAuthority[\s\S]*scopeCameraFollow[\s\S]*scopeCameraResult[\s\S]*sightAnchorWeaponLocal\s*!=\s*nullptr' `
     'Later weapon authority writes must remain source-aware and report whether they consumed generated sight geometry.'
 

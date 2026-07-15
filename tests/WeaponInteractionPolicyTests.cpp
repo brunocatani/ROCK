@@ -162,6 +162,28 @@ int main()
                 ok &= expectNear("equipped scope baseline preserves hFRIK camera rotation", equippedSightBaseline.rotate.entry[row][column], scopeBefore.rotate.entry[row][column]);
             }
         }
+
+        TestTransform nativeScopeParent = rock::transform_math::makeIdentityTransform<TestTransform>();
+        nativeScopeParent.translate = { 9.0f, 13.0f, 37.0f };
+        nativeScopeParent.rotate.entry[0][0] = 0.0f;
+        nativeScopeParent.rotate.entry[0][1] = 1.0f;
+        nativeScopeParent.rotate.entry[1][0] = -1.0f;
+        nativeScopeParent.rotate.entry[1][1] = 0.0f;
+        const TestTransform scopeParentInCamera =
+            rock::native_scope_overlay_follow_math::captureScopeParentInCameraLocal(
+                scopeBefore,
+                nativeScopeParent);
+        const TestTransform correctedScopeParent =
+            rock::native_scope_overlay_follow_math::resolveScopeParentWorld(
+                anchoredScopeAfter,
+                scopeParentInCamera);
+        const TestTransform correctedScopeParentInCamera = rock::transform_math::composeTransforms(
+            rock::transform_math::invertTransform(anchoredScopeAfter),
+            correctedScopeParent);
+        ok &= expectTransformNear(
+            "native scope overlay preserves Bethesda camera-local mesh calibration",
+            correctedScopeParentInCamera,
+            scopeParentInCamera);
     }
 
     {

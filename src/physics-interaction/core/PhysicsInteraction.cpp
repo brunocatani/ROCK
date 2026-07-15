@@ -1853,6 +1853,16 @@ namespace rock
             _weaponCollision.getCurrentWeaponGenerationKey());
     }
 
+    void PhysicsInteraction::finalizeNativeScopeOverlayAfterGameUpdate()
+    {
+        if (!_initialized.load(std::memory_order_acquire) || !runtime_state::isLocalSkeletonReady()) {
+            return;
+        }
+
+        _twoHandedGrip.finalizeNativeScopeOverlayAfterGameUpdate(
+            _weaponCollision.getCurrentWeaponGenerationKey());
+    }
+
     void PhysicsInteraction::update()
     {
         ensureWeaponCollisionWorkbenchExitMenuSinkRegistered();

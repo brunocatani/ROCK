@@ -155,6 +155,35 @@ namespace rock
                    std::isfinite(transform.translate.z) && std::isfinite(transform.scale);
         }
 
+        bool areTransformsNearlyEqual(const RE::NiTransform& lhs, const RE::NiTransform& rhs, const float epsilon = 0.001f)
+        {
+            if (std::abs(lhs.translate.x - rhs.translate.x) > epsilon ||
+                std::abs(lhs.translate.y - rhs.translate.y) > epsilon ||
+                std::abs(lhs.translate.z - rhs.translate.z) > epsilon ||
+                std::abs(lhs.scale - rhs.scale) > epsilon) {
+                return false;
+            }
+            for (int row = 0; row < 3; ++row) {
+                for (int column = 0; column < 3; ++column) {
+                    if (std::abs(lhs.rotate.entry[row][column] - rhs.rotate.entry[row][column]) > epsilon) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        bool tryGetComposedNodeWorld(const RE::NiAVObject* node, RE::NiTransform& outWorld)
+        {
+            if (!node) {
+                return false;
+            }
+            outWorld = node->parent ?
+                transform_math::composeTransforms(node->parent->world, node->local) :
+                node->world;
+            return isFiniteTransform(outWorld);
+        }
+
         bool isUsableHandAuthorityTransform(const RE::NiTransform& transform)
         {
             // hFRIK uses 0.00001 as its intentional ScopeMenu hide scale.
@@ -606,9 +635,16 @@ namespace rock
 
     void TwoHandedGrip::prepareNativeScopeCameraForGameUpdate(RE::NiNode* weaponNode, const std::uint64_t currentWeaponGenerationKey)
     {
+        _nativeScopeOverlayPendingHandoff = {};
         if (!weaponNode || currentWeaponGenerationKey == 0 || !_nativeScopeSightAnchorValid ||
             _nativeScopeSightAnchorWeaponNode != weaponNode || _nativeScopeSightAnchorGenerationKey != currentWeaponGenerationKey) {
+            clearNativeScopeOverlayAuthority(true);
             return;
+        }
+
+        if (_nativeScopeOverlayCalibration.valid &&
+            _nativeScopeOverlayCalibration.weaponGenerationKey != currentWeaponGenerationKey) {
+            clearNativeScopeOverlayAuthority(true);
         }
 
         /*
@@ -624,6 +660,14 @@ namespace rock
         const NativeScopeCameraFollowCapture capture = captureNativeScopeCameraFollow(weaponNode);
         const NativeScopeCameraFollowResult result =
             applyNativeScopeCameraFollow(capture, weaponNode->world, &_nativeScopeSightAnchorWeaponLocal);
+        if (capture.valid && result.targetValid && result.writeApplied) {
+            _nativeScopeOverlayPendingHandoff = NativeScopeOverlayPendingHandoff{
+                .weaponGenerationKey = currentWeaponGenerationKey,
+                .cameraWorldBefore = capture.cameraWorldBefore,
+                .correctedCameraWorld = result.targetCameraWorld,
+                .valid = true,
+            };
+        }
         if (g_rockConfig.rockDebugDrawNativeScopeActivation) {
             _nativeScopeCameraDebugSnapshot = makeNativeScopeCameraDebugSnapshot(
                 _nativeScopeCameraDebugSnapshot,
@@ -635,11 +679,168 @@ namespace rock
         }
     }
 
+    void TwoHandedGrip::clearNativeScopeOverlayAuthority(const bool restoreNativeLocal)
+    {
+        _nativeScopeOverlayPendingHandoff = {};
+
+        if (restoreNativeLocal && _nativeScopeOverlayCalibration.valid &&
+            _nativeScopeOverlayCalibration.hasAppliedLocal && runtime_state::isLocalSkeletonReady() &&
+            RE::PlayerCharacter::GetSingleton()) {
+            const auto* playerNodes = f4vr::getPlayerNodes();
+            auto* scopeParent = playerNodes ? playerNodes->ScopeParentNode : nullptr;
+            if (scopeParent == _nativeScopeOverlayCalibration.scopeParentIdentity &&
+                areTransformsNearlyEqual(scopeParent->local, _nativeScopeOverlayCalibration.lastAppliedScopeParentLocal)) {
+                scopeParent->local = _nativeScopeOverlayCalibration.nativeScopeParentLocal;
+                if (scopeParent->parent) {
+                    f4vr::updateTransformsDown(scopeParent, true);
+                } else {
+                    scopeParent->world = scopeParent->local;
+                    f4vr::updateTransformsDown(scopeParent, false);
+                }
+            }
+        }
+
+        _nativeScopeOverlayCalibration = {};
+    }
+
+    bool TwoHandedGrip::captureNativeScopeOverlayCalibration(
+        const RE::NiTransform& nativeCameraWorld,
+        const std::uint64_t currentWeaponGenerationKey)
+    {
+        if (currentWeaponGenerationKey == 0 || !isFiniteTransform(nativeCameraWorld) ||
+            std::abs(nativeCameraWorld.scale) <= 0.0001f || !RE::PlayerCharacter::GetSingleton()) {
+            return false;
+        }
+
+        const auto* playerNodes = f4vr::getPlayerNodes();
+        auto* scopeParent = playerNodes ? playerNodes->ScopeParentNode : nullptr;
+        if (!scopeParent || !scopeParent->parent || !isFiniteTransform(scopeParent->local) ||
+            std::abs(scopeParent->parent->world.scale) <= 0.0001f) {
+            return false;
+        }
+
+        if (_nativeScopeOverlayCalibration.valid) {
+            const bool sameOwner =
+                _nativeScopeOverlayCalibration.weaponGenerationKey == currentWeaponGenerationKey &&
+                _nativeScopeOverlayCalibration.scopeParentIdentity == scopeParent;
+            const bool engineStillHasRockLocal =
+                !_nativeScopeOverlayCalibration.hasAppliedLocal ||
+                areTransformsNearlyEqual(scopeParent->local, _nativeScopeOverlayCalibration.lastAppliedScopeParentLocal);
+            if (sameOwner && engineStillHasRockLocal) {
+                return true;
+            }
+
+            /*
+             * A changed local transform is an engine re-authoring event (for
+             * example an equip/OMOD change), not ours to restore. A changed
+             * generation/node with our last local still present is restored
+             * before the new native baseline is captured.
+             */
+            clearNativeScopeOverlayAuthority(!sameOwner && engineStillHasRockLocal);
+        }
+
+        RE::NiTransform nativeScopeParentWorld{};
+        if (!tryGetComposedNodeWorld(scopeParent, nativeScopeParentWorld)) {
+            return false;
+        }
+
+        const RE::NiTransform scopeParentInCameraLocal =
+            native_scope_overlay_follow_math::captureScopeParentInCameraLocal(
+                nativeCameraWorld,
+                nativeScopeParentWorld);
+        if (!isFiniteTransform(scopeParentInCameraLocal)) {
+            return false;
+        }
+
+        _nativeScopeOverlayCalibration = NativeScopeOverlayCalibrationState{
+            .weaponGenerationKey = currentWeaponGenerationKey,
+            .scopeParentIdentity = scopeParent,
+            .scopeParentInCameraLocal = scopeParentInCameraLocal,
+            .nativeScopeParentLocal = scopeParent->local,
+            .lastAppliedScopeParentLocal = {},
+            .valid = true,
+            .hasAppliedLocal = false,
+        };
+        ROCK_LOG_DEBUG(Weapon,
+            "TwoHandedGrip: native scope overlay calibrated generation={:016X} cameraLocal=({:.2f},{:.2f},{:.2f}) nativeParentLocal=({:.2f},{:.2f},{:.2f})",
+            currentWeaponGenerationKey,
+            scopeParentInCameraLocal.translate.x,
+            scopeParentInCameraLocal.translate.y,
+            scopeParentInCameraLocal.translate.z,
+            scopeParent->local.translate.x,
+            scopeParent->local.translate.y,
+            scopeParent->local.translate.z);
+        return true;
+    }
+
+    bool TwoHandedGrip::applyNativeScopeOverlayTarget(
+        const RE::NiTransform& correctedCameraWorld,
+        const std::uint64_t currentWeaponGenerationKey)
+    {
+        if (!_nativeScopeOverlayCalibration.valid ||
+            _nativeScopeOverlayCalibration.weaponGenerationKey != currentWeaponGenerationKey ||
+            !isFiniteTransform(correctedCameraWorld) || !RE::PlayerCharacter::GetSingleton()) {
+            return false;
+        }
+
+        const auto* playerNodes = f4vr::getPlayerNodes();
+        auto* scopeParent = playerNodes ? playerNodes->ScopeParentNode : nullptr;
+        if (!scopeParent || scopeParent != _nativeScopeOverlayCalibration.scopeParentIdentity ||
+            !scopeParent->parent || std::abs(scopeParent->parent->world.scale) <= 0.0001f) {
+            return false;
+        }
+
+        if (_nativeScopeOverlayCalibration.hasAppliedLocal &&
+            !areTransformsNearlyEqual(scopeParent->local, _nativeScopeOverlayCalibration.lastAppliedScopeParentLocal)) {
+            // FO4VR reclaimed the node after our calibration. The post-native
+            // boundary will capture the newly authored baseline before retrying.
+            return false;
+        }
+
+        const RE::NiTransform targetScopeParentWorld =
+            native_scope_overlay_follow_math::resolveScopeParentWorld(
+                correctedCameraWorld,
+                _nativeScopeOverlayCalibration.scopeParentInCameraLocal);
+        if (!isFiniteTransform(targetScopeParentWorld)) {
+            return false;
+        }
+
+        const RE::NiTransform targetScopeParentLocal =
+            weapon_visual_authority_math::worldTargetToParentLocal(
+                scopeParent->parent->world,
+                targetScopeParentWorld);
+        if (!isFiniteTransform(targetScopeParentLocal)) {
+            return false;
+        }
+
+        scopeParent->local = targetScopeParentLocal;
+        f4vr::updateTransformsDown(scopeParent, true);
+        _nativeScopeOverlayCalibration.lastAppliedScopeParentLocal = targetScopeParentLocal;
+        _nativeScopeOverlayCalibration.hasAppliedLocal = true;
+        return true;
+    }
+
+    void TwoHandedGrip::finalizeNativeScopeOverlayAfterGameUpdate(const std::uint64_t currentWeaponGenerationKey)
+    {
+        const NativeScopeOverlayPendingHandoff pending = _nativeScopeOverlayPendingHandoff;
+        _nativeScopeOverlayPendingHandoff = {};
+        if (!pending.valid || pending.weaponGenerationKey != currentWeaponGenerationKey) {
+            return;
+        }
+
+        if (!captureNativeScopeOverlayCalibration(pending.cameraWorldBefore, currentWeaponGenerationKey)) {
+            return;
+        }
+        (void)applyNativeScopeOverlayTarget(pending.correctedCameraWorld, currentWeaponGenerationKey);
+    }
+
     void TwoHandedGrip::refreshNativeScopeSightAnchor(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, const WeaponCollision& weaponCollision)
     {
         if (_nativeScopeSightAnchorWeaponNode == weaponNode && _nativeScopeSightAnchorGenerationKey == currentWeaponGenerationKey) {
             return;
         }
+
+        clearNativeScopeOverlayAuthority(true);
 
         _nativeScopeSightAnchorWeaponNode = weaponNode;
         _nativeScopeSightAnchorGenerationKey = currentWeaponGenerationKey;
@@ -1195,6 +1396,7 @@ namespace rock
     void TwoHandedGrip::reset()
     {
         clearAllVisualReturns("reset", false, true);
+        clearNativeScopeOverlayAuthority(true);
         _equippedWeaponDropRequest = {};
         _hapticEvents = {};
         _firingGripReattachHoverInsideRadius = false;
@@ -3543,6 +3745,9 @@ namespace rock
             : nullptr;
         const NativeScopeCameraFollowResult scopeCameraResult =
             applyNativeScopeCameraFollow(scopeCameraFollow, weaponNode->world, sightAnchorWeaponLocal);
+        if (scopeCameraResult.targetValid && scopeCameraResult.writeApplied) {
+            (void)applyNativeScopeOverlayTarget(scopeCameraResult.targetCameraWorld, effectiveGenerationKey);
+        }
         _lastRenderedWeaponWorld = weaponNode->world;
         _hasLastRenderedWeaponWorld = isFiniteTransform(_lastRenderedWeaponWorld);
         if (g_rockConfig.rockDebugDrawNativeScopeActivation) {

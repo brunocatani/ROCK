@@ -224,6 +224,39 @@ namespace rock::native_scope_camera_follow_math
     }
 }
 
+// ---- NativeScopeOverlayFollowMath.h ----
+
+namespace rock::native_scope_overlay_follow_math
+{
+    /*
+     * FO4VR attaches world_scope.nif beneath ScopeParent, not beneath the
+     * native activation camera. Capture the engine-authored one-hand relation
+     * between those two independent nodes before ROCK moves either of them.
+     * Reapplying that relation from ROCK's corrected camera frame preserves
+     * Bethesda's mesh depth/orientation calibration while relocating the
+     * complete overlay to the generated sight.
+     */
+    template <class Transform>
+    [[nodiscard]] inline Transform captureScopeParentInCameraLocal(
+        const Transform& scopeCameraWorld,
+        const Transform& scopeParentWorld)
+    {
+        return transform_math::composeTransforms(
+            transform_math::invertTransform(scopeCameraWorld),
+            scopeParentWorld);
+    }
+
+    template <class Transform>
+    [[nodiscard]] inline Transform resolveScopeParentWorld(
+        const Transform& correctedScopeCameraWorld,
+        const Transform& scopeParentInCameraLocal)
+    {
+        return transform_math::composeTransforms(
+            correctedScopeCameraWorld,
+            scopeParentInCameraLocal);
+    }
+}
+
 // ---- ScopeSafeHandFrameMath.h ----
 
 namespace rock::scope_safe_hand_frame_math
