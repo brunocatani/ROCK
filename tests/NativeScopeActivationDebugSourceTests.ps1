@@ -26,6 +26,19 @@ function Require-Text {
     }
 }
 
+function Reject-Text {
+    param(
+        [string]$RelativePath,
+        [string]$Pattern,
+        [string]$Message
+    )
+
+    $path = Join-Path $Root $RelativePath
+    if ((Test-Path -LiteralPath $path) -and ((Get-Content -Raw -LiteralPath $path) -match $Pattern)) {
+        $failures.Add("$RelativePath`: $Message")
+    }
+}
+
 Require-Text 'src/RockConfig.h' 'rockDebugDrawNativeScopeActivation\s*=\s*false' `
     'Native-scope visualization must have a dedicated opt-in runtime gate.'
 Require-Text 'src/RockConfig.cpp' 'rockDebugDrawNativeScopeActivation\s*=\s*false[\s\S]*bDebugDrawNativeScopeActivation' `
@@ -43,28 +56,32 @@ foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini
         'Native scope overlay template tuning must default to a neutral additive transform.'
 }
 
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' 'enum class NativeScopeCameraWriteSource[\s\S]*PreNativeGameUpdate[\s\S]*WeaponVisualAuthority[\s\S]*struct NativeScopeCameraDebugSnapshot[\s\S]*writeSource[\s\S]*usedSightAnchor[\s\S]*cameraWorldBefore[\s\S]*targetCameraWorld[\s\S]*immediateCameraWorldAfter' `
-    'The handoff diagnostic must retain value snapshots for pre-write, target, and immediate readback stages.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'NativeScopeCameraFollowResult applyNativeScopeCameraFollow[\s\S]*result\.targetCameraWorld\s*=\s*targetCameraWorld[\s\S]*scopeCamera->local\s*=\s*targetCameraLocal[\s\S]*immediateCameraWorld\s*=\s*scopeCamera->world' `
-    'The diagnostic must observe the stored camera world immediately after the real native-camera write.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'void TwoHandedGrip::prepareNativeScopeCameraForGameUpdate[\s\S]*_nativeScopeSightAnchorWeaponNode\s*!=\s*weaponNode[\s\S]*applyNativeScopeCameraFollow\(capture,\s*weaponNode->world,\s*&_nativeScopeSightAnchorWeaponLocal\)[\s\S]*NativeScopeCameraWriteSource::PreNativeGameUpdate' `
-    'Every equipped scoped-weapon frame must replace the one-hand hand-rooted camera translation with the exact generation-matched Sight anchor before native consumption.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' 'NativeScopeOverlayPendingHandoff[\s\S]*nativeCameraWorldBefore[\s\S]*correctedCameraWorld[\s\S]*NativeScopeOverlayCalibrationState[\s\S]*scopeParentIdentity[\s\S]*scopeModelRootIdentity[\s\S]*scopeModelRootLocal[\s\S]*scopeModelRootCalibrationInCameraLocal[\s\S]*nativeScopeParentLocal[\s\S]*lastAppliedScopeParentLocal' `
-    'The native overlay handoff must retain the native camera value, generation-keyed node identities, model orientation calibration, and rollback state.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' 'enum class NativeScopeCameraWriteSource[\s\S]*PostFrikPresentationSync[\s\S]*WeaponVisualAuthority[\s\S]*struct NativeScopeActivationDebugSnapshot' `
+    'Native scope activation diagnostics must retain the verified cone decision.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' 'struct NativeScopeRigidFrameState[\s\S]*weaponGenerationKey[\s\S]*cameraWeaponLocal' `
+    'Native scope presentation must retain a generation-bound weapon-local frame.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'captureNativeScopeRigidFrame[\s\S]*captureRigidSightFrameWeaponLocal[\s\S]*synchronizeNativeScopePresentationAfterFrikUpdate[\s\S]*resolveRigidSightFrameWorld[\s\S]*NativeScopeCameraWriteSource::PostFrikPresentationSync' `
+    'Post-FRIK presentation must reuse one immutable weapon-local sight frame instead of recapturing per hand mode.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'tryResolveNativeScopeGeometryDecision[\s\S]*_nativeScopeSightAnchorGenerationKey\s*!=\s*currentWeaponGenerationKey[\s\S]*native_scope_activation_geometry::sample[\s\S]*native_scope_activation_geometry::isInsideCone' `
+    'Native entry and exit must use the exact generation-matched generated sight and final weapon transform.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'captureNativeScopeOverlayCalibration[\s\S]*ScopeParentNode[\s\S]*find1StChildNode\(scopeParent,\s*"world_scope\.nif"\)[\s\S]*captureModelRootCalibrationInCameraLocal[\s\S]*applyNativeScopeOverlayTarget[\s\S]*makeModelRootFineTuneLocal[\s\S]*resolveScopeModelRootWorld[\s\S]*resolveScopeParentWorldForModelRoot[\s\S]*worldTargetToParentLocal[\s\S]*updateTransformsDown\(scopeParent,\s*true\)' `
     'The rendered world-scope hierarchy must preserve native model orientation, apply INI tuning, and compensate the live NIF root transform at the generated sight.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'tryGetComposedNodeWorld\(scopeModelRoot,\s*immediateScopeModelRootWorld\)[\s\S]*areTransformsNearlyEqual\(immediateScopeModelRootWorld,\s*targetScopeModelRootWorld,\s*0\.01f\)' `
     'Every overlay write must immediately verify that the live world-scope model root reached its calibrated and tuned target.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'clearNativeScopeOverlayAuthority[\s\S]*lastAppliedScopeParentLocal[\s\S]*nativeScopeParentLocal[\s\S]*finalizeNativeScopeOverlayAfterGameUpdate' `
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'clearNativeScopeOverlayAuthority[\s\S]*lastAppliedScopeParentLocal[\s\S]*nativeScopeParentLocal[\s\S]*_nativeScopeOverlayCalibration\s*=\s*\{\}' `
     'ScopeParent authority must restore the captured native local only while ROCK still owns the last applied transform.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'void PhysicsInteraction::prepareNativeScopeCameraForGameUpdate\(\)[\s\S]*_twoHandedGrip\.prepareNativeScopeCameraForGameUpdate\([\s\S]*_weaponCollision\.getCurrentWeaponGenerationKey\(\)' `
-    'The main-loop boundary must consume only the current weapon node and prior completed generation snapshot.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'void PhysicsInteraction::finalizeNativeScopeOverlayAfterGameUpdate\(\)[\s\S]*_twoHandedGrip\.finalizeNativeScopeOverlayAfterGameUpdate\([\s\S]*_weaponCollision\.getCurrentWeaponGenerationKey\(\)' `
-    'The post-native boundary must retain the same current weapon-generation guard as the camera handoff.'
-Require-Text 'src/ROCKMain.cpp' 'prepareNativeScopeCameraForGameUpdate\(\);[\s\S]*s_originalGameLoopFunc\(rcx\);[\s\S]*finalizeNativeScopeOverlayAfterGameUpdate\(\);[\s\S]*onFrameUpdate\(\);' `
-    'The camera must publish before native consumption, ScopeParent after native ownership, and both before ROCK post-frame authority.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'NativeScopeCameraWriteSource::WeaponVisualAuthority[\s\S]*scopeCameraFollow[\s\S]*scopeCameraResult[\s\S]*sightAnchorWeaponLocal\s*!=\s*nullptr' `
-    'Later weapon authority writes must remain source-aware and report whether they consumed generated sight geometry.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'tryReadNativeScopeRequestState[\s\S]*kSetting_HmdScopeOffsetY[\s\S]*kSetting_HmdScopeAngleEnterDegrees[\s\S]*kSetting_WeaponScopeAngleExitDegrees[\s\S]*kSetting_ScopeWeaponAngleExponent[\s\S]*tryResolveNativeScopeGeometryDecision' `
+    'The replacement cone must preserve the live native settings and current enter/exit state.'
+Require-Text 'src/ROCKMain.cpp' 'hookNativeScopeGeometryDecision[\s\S]*callBytes\[0\]\s*!=\s*0xE8[\s\S]*decodedTarget\s*!=\s*expectedTarget[\s\S]*kExpectedNativeDecisionTest[\s\S]*write_call<5>\(callSiteAddress,\s*&onNativeScopeGeometryDecision\)[\s\S]*kRockDecisionTest[\s\S]*REL::safe_write' `
+    'The exact verified geometry call site and original target must be validated before patching.'
+Require-Text 'src/ROCKMain.cpp' 'bool onNativeScopeGeometryDecision[\s\S]*finalGeometryDecision\s*=\s*nativeGeometryDecision[\s\S]*nativeForceDecision[\s\S]*tryResolveNativeScopeGeometryDecision[\s\S]*s_originalNativeScopeStateTransition\(player,\s*finalGeometryDecision\)[\s\S]*return finalGeometryDecision' `
+    'The hook must preserve Bethesda force-state priority, fail closed to native geometry, and return one decision for state and fade.'
+Require-Text 'src/physics-interaction/native/HavokOffsets.h' 'kHookSite_NativeScopeGeometryDecision\s*=\s*0xEF851F[\s\S]*kPatchSite_NativeScopePostDecisionTest\s*=\s*0xEF8528[\s\S]*kFunc_NativeScopeStateTransition\s*=\s*0xEFAA60[\s\S]*kPlayerCharacter_NativeScopeForceDecisionMask\s*=\s*0x08' `
+    'The production hook must retain the independently raw-disassembly-verified FO4VR scope boundary constants.'
+Require-Text 'src/ROCKMain.cpp' 's_originalGameLoopFunc\(rcx\);[\s\S]*synchronizeNativeScopePresentationAfterFrikUpdate\(\);[\s\S]*onFrameUpdate\(\);' `
+    'Presentation must synchronize after hFRIK and before ROCK final weapon authority.'
+Reject-Text 'src/ROCKMain.cpp' 'prepareNativeScopeCameraForGameUpdate|finalizeNativeScopeOverlayAfterGameUpdate' `
+    'The disproven pre/post displaced-call scope handoff must not remain.'
 
 $overlay = 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl'
 Require-Text $overlay 'drawNativeScopeActivation\s*=\s*g_rockConfig\.rockDebugDrawNativeScopeActivation' `
@@ -77,12 +94,12 @@ Require-Text $overlay 'getNativeScopeCameraDebugSnapshot\(\)[\s\S]*NativeScopePr
     'The overlay must expose the recorded pre-write and immediate-readback handoff stages.'
 Require-Text $overlay 'writeSnapshot\.usedSightAnchor' `
     'The overlay must report whether the actual authority write consumed generated sight geometry.'
-Require-Text $overlay 'scopeWriteSourceName[\s\S]*pre-native-game-update[\s\S]*weapon-visual-authority[\s\S]*writeSnapshot\.writeSource' `
-    'The in-game panel must distinguish the pre-native baseline from a later weapon-authority write.'
+Require-Text $overlay 'scopeWriteSourceName[\s\S]*post-frik-presentation-sync[\s\S]*weapon-visual-authority[\s\S]*writeSnapshot\.writeSource' `
+    'The in-game panel must distinguish presentation synchronization from final weapon authority.'
 Require-Text $overlay 'hmdPositionWorld[\s\S]*NativeScopeHmd[\s\S]*HMD->live[\s\S]*HMD->target' `
     'The headset relationship to the live and intended activation anchors must be visible and quantified.'
-Require-Text $overlay 'not verified engine cone thresholds' `
-    'Axis guides must explicitly avoid misrepresenting an unverified engine activation predicate.'
+Require-Text $overlay 'getNativeScopeActivationDebugSnapshot[\s\S]*nativeGeometryDecision[\s\S]*rockGeometryDecision[\s\S]*hmdAngleDegrees[\s\S]*weaponAngleDegrees[\s\S]*weaponAngleWidening' `
+    'The verified native-cone sample, limits, and replacement decision must be visible at runtime.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'NativeScopeActivationDebugSourceTests failed:' -ForegroundColor Red

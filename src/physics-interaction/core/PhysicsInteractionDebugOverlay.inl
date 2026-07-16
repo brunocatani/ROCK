@@ -486,6 +486,7 @@
             }
 
             const NativeScopeCameraDebugSnapshot writeSnapshot = _twoHandedGrip.getNativeScopeCameraDebugSnapshot();
+            const NativeScopeActivationDebugSnapshot activationSnapshot = _twoHandedGrip.getNativeScopeActivationDebugSnapshot();
             const bool freshWrite = writeSnapshot.applySequence != 0 &&
                 writeSnapshot.framesSinceApply <= kFreshScopeWriteMaxAgeFrames;
             RE::NiTransform rockTargetWorld{};
@@ -576,8 +577,8 @@
                 switch (source) {
                 case NativeScopeCameraWriteSource::None:
                     return "none";
-                case NativeScopeCameraWriteSource::PreNativeGameUpdate:
-                    return "pre-native-game-update";
+            case NativeScopeCameraWriteSource::PostFrikPresentationSync:
+                return "post-frik-presentation-sync";
                 case NativeScopeCameraWriteSource::WeaponVisualAuthority:
                     return "weapon-visual-authority";
                 }
@@ -590,7 +591,7 @@
             addScreenTextLine(panelX, panelY, panelColor,
                 "NATIVE SCOPE: RED=stored live GREEN=ROCK target ORANGE=immediate YELLOW=pre-write BLUE=parent/local CYAN=HMD");
             panelY += 14.0f;
-            addScreenTextLine(panelX, panelY, panelColor, "Long RED/GREEN rays are camera +X guides, not verified engine cone thresholds.");
+        addScreenTextLine(panelX, panelY, panelColor, "Long RED/GREEN rays are camera +X guides; verified activation samples HMD/weapon +Y.");
             panelY += 14.0f;
 
             std::snprintf(panelLine, sizeof(panelLine),
@@ -642,6 +643,28 @@
                     writeSnapshot.writeApplied ? "yes" : "no",
                     writeSnapshot.immediateReadbackValid ? "yes" : "no",
                     writeSnapshot.usedSightAnchor ? "yes" : "NO");
+                addScreenTextLine(panelX, panelY, panelColor, panelLine);
+                panelY += 14.0f;
+            }
+
+            if (activationSnapshot.evaluationSequence == 0) {
+                addScreenTextLine(panelX, panelY, panelColor, "cone: no valid generated-sight evaluation observed");
+                panelY += 14.0f;
+            } else {
+                std::snprintf(panelLine, sizeof(panelLine), "cone seq=%llu state=%s native=%s ROCK=%s generation=%016llX",
+                    static_cast<unsigned long long>(activationSnapshot.evaluationSequence), activationSnapshot.nativeScopeAlreadyActive ? "exit" : "enter",
+                    activationSnapshot.nativeGeometryDecision ? "inside" : "outside", activationSnapshot.rockGeometryDecision ? "inside" : "outside",
+                    static_cast<unsigned long long>(activationSnapshot.weaponGenerationKey));
+                addScreenTextLine(panelX, panelY, panelColor, panelLine);
+                panelY += 14.0f;
+
+                const auto& sample = activationSnapshot.sample;
+                const auto& thresholds = activationSnapshot.thresholds;
+                const float hmdLimit = activationSnapshot.nativeScopeAlreadyActive ? thresholds.hmdExitDegrees : thresholds.hmdEnterDegrees;
+                const float weaponLimit = (activationSnapshot.nativeScopeAlreadyActive ? thresholds.weaponExitDegrees : thresholds.weaponEnterDegrees) * sample.weaponAngleWidening;
+                const float distanceLimit = activationSnapshot.nativeScopeAlreadyActive ? thresholds.distanceExitGameUnits : thresholds.distanceEnterGameUnits;
+                std::snprintf(panelLine, sizeof(panelLine), "sample: HMD=%.2f/%.2f deg weapon=%.2f/%.2f deg distance=%.2f/%.2f gu widen=%.3f", sample.hmdAngleDegrees, hmdLimit,
+                    sample.weaponAngleDegrees, weaponLimit, sample.distanceGameUnits, distanceLimit, sample.weaponAngleWidening);
                 addScreenTextLine(panelX, panelY, panelColor, panelLine);
                 panelY += 14.0f;
             }

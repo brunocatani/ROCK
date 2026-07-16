@@ -47,8 +47,8 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' '_hasSolvedWeapo
     'Scope geometry and hFRIK-driver calibration must refresh before the grip state machine and its early return.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'snapshot\.weaponGenerationKey\s*!=\s*currentWeaponGenerationKey[\s\S]*_nativeScopeSightAnchorGenerationKey\s*=\s*0[\s\S]*_nativeScopeSightAnchorValid\s*=\s*true' `
     'Native-scope geometry must fail closed across publication races and become usable only after an exact generation match.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' '_nativeScopeSightAnchorWeaponNode\s*==\s*weaponNode[\s\S]*_nativeScopeSightAnchorGenerationKey\s*==\s*_activeWeaponGenerationKey[\s\S]*applyNativeScopeCameraFollow\(scopeCameraFollow,\s*weaponNode->world,\s*sightAnchorWeaponLocal\)' `
-    'Native-scope camera authority must consume the sight anchor only for the active weapon node and generation.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'scopeAnchorMatchesAuthority[\s\S]*captureNativeScopeRigidFrame[\s\S]*rigidFrameMatchesAuthority[\s\S]*resolveRigidSightFrameWorld' `
+    'Native-scope camera authority must resolve one generation-bound rigid sight frame for every weapon authority mode.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'followWeaponWorldChangeFromSightAnchor[\s\S]*followWeaponWorldChange\(' `
     'Native-scope camera authority must preserve the calibrated rigid-delta fallback when sight geometry is unavailable.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'rootHandValid\s*=\s*!_scopeMenuOpenThisFrame\s*&&[\s\S]*tryGetRootFlattenedHandBoneTransform[\s\S]*captureDriverToHandLocal\(driverFrame\.world,\s*resolvedHandWorld\)' `
@@ -77,6 +77,10 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'applyWeaponVisu
     'Full two-hand solve must publish weapon and native scope-camera authority before considering hidden hand IK.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'bool TwoHandedGrip::applyLockedHandVisualAuthority\([\s\S]*shouldPublishLockedHandVisualAuthority\(_scopeMenuOpenThisFrame\)[\s\S]*return true;[\s\S]*frik_visual_authority::isAvailable\(\)' `
     'Hidden ScopeMenu hand IK must be a successful no-op so it cannot revoke weapon ownership.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'shouldReuseRightFiringCanonicalGrip[\s\S]*_rightFiringGripCanonicalWeaponLocal[\s\S]*pre-scope-canonical' `
+    'A support grip acquired while scoped must reuse the generation-matched visible firing-hand hold instead of hidden driver geometry.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'canRefreshRightFiringCanonicalFrame[\s\S]*rootRebaseActive[\s\S]*_rightFiringGripCanonicalWeaponLocal\s*=\s*canonicalGrip' `
+    'ScopeMenu and scope-exit rebase frames must not poison the right-hand canonical grip.'
 
 Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'static bool tryGetHandBoneTransform' `
     'The old finite-only root-hand reader must not remain as the two-hand solver authority path.'

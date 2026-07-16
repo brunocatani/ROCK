@@ -147,11 +147,50 @@ int main()
             }
         }
 
-        const TestTransform equippedSightBaseline = rock::native_scope_camera_follow_math::followWeaponWorldChangeFromSightAnchor(
+        const TestTransform rigidSightFrameLocal = rock::native_scope_camera_follow_math::captureRigidSightFrameWeaponLocal(weaponBefore, scopeBefore, sightAnchor);
+        ok &= expectNear("rigid scope frame stores generated sight x", rigidSightFrameLocal.translate.x, sightAnchor.x);
+        ok &= expectNear("rigid scope frame stores generated sight y", rigidSightFrameLocal.translate.y, sightAnchor.y);
+        ok &= expectNear("rigid scope frame stores generated sight z", rigidSightFrameLocal.translate.z, sightAnchor.z);
+        const std::array<TestTransform, 3> handModeWeaponFrames{
             weaponBefore,
-            weaponBefore,
-            scopeBefore,
-            sightAnchor);
+            weaponAfter,
+            [] {
+                TestTransform leftFiring = rock::transform_math::makeIdentityTransform<TestTransform>();
+                leftFiring.translate = { -18.0f, 6.0f, 42.0f };
+                leftFiring.rotate.entry[0][0] = -1.0f;
+                leftFiring.rotate.entry[1][1] = -1.0f;
+                return leftFiring;
+            }(),
+        };
+        for (const TestTransform& handModeWeaponFrame : handModeWeaponFrames) {
+            const TestTransform rigidScopeWorld = rock::native_scope_camera_follow_math::resolveRigidSightFrameWorld(handModeWeaponFrame, rigidSightFrameLocal);
+            const TestTransform resolvedLocal = rock::transform_math::composeTransforms(rock::transform_math::invertTransform(handModeWeaponFrame), rigidScopeWorld);
+            ok &= expectTransformNear("one-hand, two-hand, and left-hand modes preserve one rigid scope frame", resolvedLocal, rigidSightFrameLocal);
+        }
+
+        const rock::native_scope_activation_geometry::ConeThresholds coneThresholds{};
+        TestTransform coneWeapon = rock::transform_math::makeIdentityTransform<TestTransform>();
+        TestTransform coneHmd = rock::transform_math::makeIdentityTransform<TestTransform>();
+        const TestVector3 zeroOffset{};
+        const auto centeredConeSample = rock::native_scope_activation_geometry::sample(coneWeapon, TestVector3{ 0.0f, 30.0f, 0.0f }, coneHmd, zeroOffset, coneThresholds);
+        ok &= expectTrue("generated sight rear-center produces a valid native cone sample", centeredConeSample.valid);
+        ok &= expectNear("native cone uses HMD-to-sight distance", centeredConeSample.distanceGameUnits, 30.0f);
+        ok &= expectNear("native cone uses HMD +Y", centeredConeSample.hmdAngleDegrees, 0.0f);
+        ok &= expectNear("native cone uses weapon +Y", centeredConeSample.weaponAngleDegrees, 0.0f);
+        ok &= expectNear("native cone preserves shipped widening formula", centeredConeSample.weaponAngleWidening, 4.0f);
+        ok &= expectTrue("centered generated sight enters native scope", rock::native_scope_activation_geometry::isInsideCone(centeredConeSample, false, coneThresholds));
+
+        const auto hysteresisDistanceSample = rock::native_scope_activation_geometry::sample(coneWeapon, TestVector3{ 0.0f, 39.0f, 0.0f }, coneHmd, zeroOffset, coneThresholds);
+        ok &= expectFalse("39 game units stays outside the strict enter distance",
+            rock::native_scope_activation_geometry::isInsideCone(hysteresisDistanceSample, false, coneThresholds));
+        ok &=
+            expectTrue("39 game units stays inside the wider exit distance", rock::native_scope_activation_geometry::isInsideCone(hysteresisDistanceSample, true, coneThresholds));
+        auto strictBoundarySample = centeredConeSample;
+        strictBoundarySample.distanceGameUnits = coneThresholds.distanceEnterGameUnits;
+        ok &= expectFalse("native enter boundary remains a strict comparison", rock::native_scope_activation_geometry::isInsideCone(strictBoundarySample, false, coneThresholds));
+
+        const TestTransform equippedSightBaseline =
+            rock::native_scope_camera_follow_math::followWeaponWorldChangeFromSightAnchor(weaponBefore, weaponBefore, scopeBefore, sightAnchor);
         const TestVector3 expectedSightAnchorWorld = rock::transform_math::localPointToWorld(weaponBefore, sightAnchor);
         ok &= expectNear("equipped scope baseline uses sight world position x", equippedSightBaseline.translate.x, expectedSightAnchorWorld.x);
         ok &= expectNear("equipped scope baseline uses sight world position y", equippedSightBaseline.translate.y, expectedSightAnchorWorld.y);
@@ -284,12 +323,18 @@ int main()
             rock::scope_safe_hand_frame_math::resolveMode(true, true, false, false, 0, 3),
             ResolutionMode::Unavailable);
         ok &= expectEqual("ordinary aiming never substitutes the scope driver for a missing canonical hand frame",
-            rock::scope_safe_hand_frame_math::resolveMode(false, false, true, true, 0, 3),
-            ResolutionMode::Unavailable);
-        ok &= expectTrue("locked hand IK publishes outside native scope",
-            rock::scope_safe_hand_frame_math::shouldPublishLockedHandVisualAuthority(false));
-        ok &= expectFalse("locked hand IK is suppressed while native scope hides the body",
-            rock::scope_safe_hand_frame_math::shouldPublishLockedHandVisualAuthority(true));
+            rock::scope_safe_hand_frame_math::resolveMode(false, false, true, true, 0, 3), ResolutionMode::Unavailable);
+        ok &= expectTrue("locked hand IK publishes outside native scope", rock::scope_safe_hand_frame_math::shouldPublishLockedHandVisualAuthority(false));
+        ok &= expectFalse("locked hand IK is suppressed while native scope hides the body", rock::scope_safe_hand_frame_math::shouldPublishLockedHandVisualAuthority(true));
+        ok &= expectTrue("visible stable carry may refresh the right firing canonical", rock::scope_safe_hand_frame_math::canRefreshRightFiringCanonicalFrame(false, false));
+        ok &= expectFalse("ScopeMenu cannot overwrite the right firing canonical", rock::scope_safe_hand_frame_math::canRefreshRightFiringCanonicalFrame(true, false));
+        ok &= expectFalse("scope-exit hand rebase cannot overwrite the right firing canonical", rock::scope_safe_hand_frame_math::canRefreshRightFiringCanonicalFrame(false, true));
+        ok &= expectTrue("scoped right firing grip reuses the matching pre-scope canonical",
+            rock::scope_safe_hand_frame_math::shouldReuseRightFiringCanonicalGrip(true, false, true, 0x1234u, 0x1234u));
+        ok &= expectFalse("scoped grip rejects a canonical from a stale weapon generation",
+            rock::scope_safe_hand_frame_math::shouldReuseRightFiringCanonicalGrip(true, false, true, 0x1234u, 0x5678u));
+        ok &= expectFalse("left firing grip keeps its established mirrored hold",
+            rock::scope_safe_hand_frame_math::shouldReuseRightFiringCanonicalGrip(true, true, true, 0x1234u, 0x1234u));
 
         TestTransform rebaseStart = rock::transform_math::makeIdentityTransform<TestTransform>();
         rebaseStart.translate = { 1.5f, -2.0f, 0.75f };

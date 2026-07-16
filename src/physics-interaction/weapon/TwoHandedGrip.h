@@ -9,6 +9,7 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/PhysicsUtils.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
+#include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/WeaponInteraction.h"
 #include "physics-interaction/weapon/WeaponPartGripReportPolicy.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
@@ -95,7 +96,7 @@ namespace rock
     enum class NativeScopeCameraWriteSource : std::uint8_t
     {
         None,
-        PreNativeGameUpdate,
+        PostFrikPresentationSync,
         WeaponVisualAuthority,
     };
 
@@ -120,11 +121,23 @@ namespace rock
         RE::NiTransform immediateCameraWorldAfter{};
     };
 
-    struct NativeScopeOverlayPendingHandoff
+    struct NativeScopeActivationDebugSnapshot
+    {
+        std::uint64_t evaluationSequence{ 0 };
+        std::uint64_t weaponGenerationKey{ 0 };
+        bool nativeGeometryDecision{ false };
+        bool rockGeometryDecision{ false };
+        bool nativeScopeAlreadyActive{ false };
+        native_scope_activation_geometry::ConeSample sample{};
+        native_scope_activation_geometry::ConeThresholds thresholds{};
+    };
+
+    struct NativeScopeRigidFrameState
     {
         std::uint64_t weaponGenerationKey{ 0 };
-        RE::NiTransform nativeCameraWorldBefore{};
-        RE::NiTransform correctedCameraWorld{};
+        RE::NiNode* weaponNodeIdentity{ nullptr };
+        RE::NiNode* scopeCameraIdentity{ nullptr };
+        RE::NiTransform cameraWeaponLocal{};
         bool valid{ false };
     };
 
@@ -222,21 +235,15 @@ namespace rock
             const EquippedWeaponGripMode& gripMode);
 
         /*
-         * Called from ROCK's chained main-loop hook after hFRIK has authored
-         * the native camera, but before control returns to FO4VR's displaced
-         * frame call. Uses only the prior completed frame's generation-matched
-         * sight snapshot and otherwise does nothing, so startup and weapon
-         * transitions fail closed.
+         * Called after hFRIK's weapon pass. FO4VR has already completed its
+         * activation update earlier in PlayerCharacter::Update; this method
+         * synchronizes the mono camera and native presentation to the current
+         * weapon before the later render pass.
          */
-        void prepareNativeScopeCameraForGameUpdate(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
+        void synchronizeNativeScopePresentationAfterFrikUpdate(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
 
-        /*
-         * Completes the synchronous native-scope handoff after FO4VR's
-         * displaced frame call. This boundary is deliberately separate from
-         * prepareNativeScopeCameraForGameUpdate because the game can author
-         * ScopeParent while consuming the corrected activation camera.
-         */
-        void finalizeNativeScopeOverlayAfterGameUpdate(std::uint64_t currentWeaponGenerationKey);
+        bool tryResolveNativeScopeGeometryDecision(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, RE::NiNode* hmdNode, const RE::NiPoint3& hmdSampleOffsetLocal,
+            const native_scope_activation_geometry::ConeThresholds& thresholds, bool nativeScopeAlreadyActive, bool nativeGeometryDecision, bool& outRockGeometryDecision);
 
         void reset();
 
@@ -302,6 +309,7 @@ namespace rock
         bool getDebugAuthoritySnapshot(TwoHandedGripDebugSnapshot& outSnapshot) const;
 
         NativeScopeCameraDebugSnapshot getNativeScopeCameraDebugSnapshot() const { return _nativeScopeCameraDebugSnapshot; }
+        NativeScopeActivationDebugSnapshot getNativeScopeActivationDebugSnapshot() const { return _nativeScopeActivationDebugSnapshot; }
 
         bool isScopeMenuOpenThisFrame() const { return _scopeMenuOpenThisFrame; }
 
@@ -682,12 +690,10 @@ namespace rock
         void clearWeaponVisualReturn(const char* reason, bool logCancellation, bool restoreBlockers);
         void clearAllVisualReturns(const char* reason, bool logCancellation, bool restoreBlockers);
         void clearNativeScopeOverlayAuthority(bool restoreNativeLocal);
-        bool captureNativeScopeOverlayCalibration(
-            const RE::NiTransform& nativeCameraWorld,
-            std::uint64_t currentWeaponGenerationKey);
-        bool applyNativeScopeOverlayTarget(
-            const RE::NiTransform& correctedCameraWorld,
-            std::uint64_t currentWeaponGenerationKey);
+        void clearNativeScopeRigidFrame();
+        bool captureNativeScopeRigidFrame(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, RE::NiNode* scopeCamera, const RE::NiTransform& nativeCameraWorld);
+        bool captureNativeScopeOverlayCalibration(const RE::NiTransform& nativeCameraWorld, std::uint64_t currentWeaponGenerationKey);
+        bool applyNativeScopeOverlayTarget(const RE::NiTransform& correctedCameraWorld, std::uint64_t currentWeaponGenerationKey);
         void refreshNativeScopeSightAnchor(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, const WeaponCollision& weaponCollision);
         void refreshScopeSafeHandFrames(RE::NiNode* weaponNode, const EquippedWeaponGripFrameInput& frameInput, float dt);
         bool tryGetSolverHandTransform(bool isLeft, RE::NiTransform& outTransform) const;
@@ -722,6 +728,7 @@ namespace rock
         // Canonical right-hand firing hold (weapon-generation-keyed); see
         // rememberRightFiringHandCanonicalFrame().
         RE::NiTransform _rightFiringHandCanonicalWeaponLocal{};
+        RE::NiPoint3 _rightFiringGripCanonicalWeaponLocal{};
         std::uint64_t _rightFiringHandCanonicalGenerationKey{ 0 };
         bool _hasRightFiringHandCanonicalWeaponLocal{ false };
 
@@ -748,7 +755,8 @@ namespace rock
         RE::NiPoint3 _nativeScopeSightAnchorWeaponLocal{};
         bool _nativeScopeSightAnchorValid{ false };
         NativeScopeCameraDebugSnapshot _nativeScopeCameraDebugSnapshot{};
-        NativeScopeOverlayPendingHandoff _nativeScopeOverlayPendingHandoff{};
+        NativeScopeActivationDebugSnapshot _nativeScopeActivationDebugSnapshot{};
+        NativeScopeRigidFrameState _nativeScopeRigidFrame{};
         NativeScopeOverlayCalibrationState _nativeScopeOverlayCalibration{};
 
         std::array<WeaponPartGrip, 2> _partGrips{};

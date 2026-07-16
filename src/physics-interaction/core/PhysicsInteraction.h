@@ -89,9 +89,9 @@ namespace rock
 
         void init();
 
-        void prepareNativeScopeCameraForGameUpdate();
+        void synchronizeNativeScopePresentationAfterFrikUpdate();
 
-        void finalizeNativeScopeOverlayAfterGameUpdate();
+        bool tryResolveNativeScopeGeometryDecision(bool nativeGeometryDecision, bool& outRockGeometryDecision);
 
         void update();
 

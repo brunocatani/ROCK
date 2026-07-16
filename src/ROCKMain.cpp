@@ -1,4 +1,5 @@
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 
@@ -6,18 +7,19 @@
 #define ROCK_API_EXPORTS
 #include "RockConfig.h"
 #include "api/ROCKProviderApi.h"
-#include "physics-interaction/debug/DebugBodyOverlay.h"
 #include "physics-interaction/core/PhysicsCreationGatePolicy.h"
 #include "physics-interaction/core/PhysicsHooks.h"
-#include "physics-interaction/core/RockRuntimeState.h"
-#include "physics-interaction/grenade/LooseGrenadeRuntime.h"
-#include "physics-interaction/native/HavokOffsets.h"
-#include "physics-interaction/native/HavokRuntime.h"
-#include "physics-interaction/input/DebugControllerRuntime.h"
-#include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
+#include "physics-interaction/core/RockRuntimeState.h"
+#include "physics-interaction/debug/DebugBodyOverlay.h"
 #include "physics-interaction/grab/FrikWeaponOffsetCache.h"
 #include "physics-interaction/grab/SavedGrabOffsetStore.h"
+#include "physics-interaction/grenade/LooseGrenadeRuntime.h"
+#include "physics-interaction/input/DebugControllerRuntime.h"
+#include "physics-interaction/input/InputRemapRuntime.h"
+#include "physics-interaction/native/HavokOffsets.h"
+#include "physics-interaction/native/HavokRuntime.h"
+#include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 
@@ -304,27 +306,88 @@ namespace
     using GameLoopFunc = void (*)(std::uint64_t rcx);
     GameLoopFunc s_originalGameLoopFunc = nullptr;
 
+    using NativeScopeStateTransitionFunc = void (*)(RE::PlayerCharacter*, bool);
+    NativeScopeStateTransitionFunc s_originalNativeScopeStateTransition = nullptr;
+
+    bool onNativeScopeGeometryDecision(RE::PlayerCharacter* player, const bool nativeGeometryDecision)
+    {
+        bool finalGeometryDecision = nativeGeometryDecision;
+        std::uint8_t nativeScopeFlags = 0;
+        const bool nativeForceDecision = rock::native_memory::tryReadField(player, rock::offsets::kPlayerCharacter_NativeScopeFlags, nativeScopeFlags) &&
+            (nativeScopeFlags & rock::offsets::kPlayerCharacter_NativeScopeForceDecisionMask) != 0;
+        if (!nativeForceDecision && s_pluginLoaded && s_frikAvailable && g_rockConfig.rockEnabled && s_physicsInteraction) {
+            (void)s_physicsInteraction->tryResolveNativeScopeGeometryDecision(nativeGeometryDecision, finalGeometryDecision);
+        }
+
+        if (s_originalNativeScopeStateTransition) {
+            s_originalNativeScopeStateTransition(player, finalGeometryDecision);
+        }
+        return finalGeometryDecision;
+    }
+
+    bool hookNativeScopeGeometryDecision()
+    {
+        REL::Relocation<std::uintptr_t> callSite{ REL::Offset(rock::offsets::kHookSite_NativeScopeGeometryDecision) };
+        const auto callSiteAddress = callSite.address();
+        const auto* callBytes = reinterpret_cast<const std::uint8_t*>(callSiteAddress);
+        if (!callBytes || callBytes[0] != 0xE8) {
+            logger::critical("ROCK: Native scope geometry hook validation failed at 0x{:X}: expected CALL rel32, found 0x{:02X}.", callSiteAddress, callBytes ? callBytes[0] : 0u);
+            return false;
+        }
+
+        const auto relativeTarget = *reinterpret_cast<const std::int32_t*>(callBytes + 1);
+        const auto decodedTarget = callSiteAddress + 5u + relativeTarget;
+        const auto expectedTarget = REL::Offset(rock::offsets::kFunc_NativeScopeStateTransition).address();
+        if (decodedTarget != expectedTarget) {
+            logger::critical("ROCK: Native scope geometry hook validation failed at 0x{:X}: target 0x{:X}, expected 0x{:X}.", callSiteAddress, decodedTarget, expectedTarget);
+            return false;
+        }
+
+        REL::Relocation<std::uintptr_t> postDecisionTest{ REL::Offset(rock::offsets::kPatchSite_NativeScopePostDecisionTest) };
+        const auto postDecisionTestAddress = postDecisionTest.address();
+        const auto* postDecisionTestBytes = reinterpret_cast<const std::uint8_t*>(postDecisionTestAddress);
+        constexpr std::array<std::uint8_t, 2> kExpectedNativeDecisionTest{ 0x84, 0xDB }; // TEST BL,BL
+        if (!postDecisionTestBytes || postDecisionTestBytes[0] != kExpectedNativeDecisionTest[0] || postDecisionTestBytes[1] != kExpectedNativeDecisionTest[1]) {
+            logger::critical("ROCK: Native scope fade-decision validation failed at 0x{:X}: expected TEST BL,BL.", postDecisionTestAddress);
+            return false;
+        }
+
+        auto& trampoline = F4SE::GetTrampoline();
+        const auto original = trampoline.write_call<5>(callSiteAddress, &onNativeScopeGeometryDecision);
+        s_originalNativeScopeStateTransition = reinterpret_cast<NativeScopeStateTransitionFunc>(original);
+        if (!s_originalNativeScopeStateTransition) {
+            logger::critical("ROCK: Native scope geometry hook original target is null.");
+            return false;
+        }
+
+        /*
+         * The caller uses its pre-hook BL value for the adjacent approach-fade
+         * branch. Our wrapper returns the replacement decision in AL; point the
+         * existing two-byte TEST at AL so state and fade cannot disagree for a
+         * frame and present as a flash.
+         */
+        constexpr std::array<std::uint8_t, 2> kRockDecisionTest{ 0x84, 0xC0 }; // TEST AL,AL
+        REL::safe_write(postDecisionTestAddress, kRockDecisionTest.data(), kRockDecisionTest.size());
+
+        logger::info("ROCK: Native scope geometry/fade hook installed at 0x{:X}, original 0x{:X}.", callSiteAddress, original);
+        return true;
+    }
+
     /*
      * FRIK installs the outer hook at kGameLoaded and calls this chained hook
-     * after its skeleton/weapon pass. Publish the cached generated-sight
-     * baseline before returning control to the displaced FO4VR function so
-     * downstream native scope work sees the optic instead of FRIK's firing-hand
-     * baseline. FO4VR owns ScopeParent separately from that camera, so finish
-     * the overlay handoff immediately after the displaced call and before
-     * full ROCK visual/collision authority runs.
+     * after its skeleton/weapon pass. The displaced call is an unrelated
+     * PlayerCharacter flag update; native scope activation ran earlier. Publish
+     * the generation-bound rigid camera/overlay frame here for the later mono
+     * render, then let ROCK apply any final weapon authority in onFrameUpdate.
      */
     void onGameFrameUpdateHook(const std::uint64_t rcx)
     {
-        if (s_pluginLoaded && s_frikAvailable && g_rockConfig.rockEnabled && s_physicsInteraction) {
-            s_physicsInteraction->prepareNativeScopeCameraForGameUpdate();
-        }
-
         if (s_originalGameLoopFunc) {
             s_originalGameLoopFunc(rcx);
         }
 
         if (s_pluginLoaded && s_frikAvailable && g_rockConfig.rockEnabled && s_physicsInteraction) {
-            s_physicsInteraction->finalizeNativeScopeOverlayAfterGameUpdate();
+            s_physicsInteraction->synchronizeNativeScopePresentationAfterFrikUpdate();
         }
 
         onFrameUpdate();
@@ -569,6 +632,11 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
 
     logger::info("ROCK: Install main loop hook...");
     if (!hookMainLoop()) {
+        return false;
+    }
+
+    logger::info("ROCK: Install native scope geometry hook...");
+    if (!hookNativeScopeGeometryDecision()) {
         return false;
     }
 

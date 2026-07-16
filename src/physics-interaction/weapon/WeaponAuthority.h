@@ -222,6 +222,186 @@ namespace rock::native_scope_camera_follow_math
         scopeCameraWeaponLocal.translate = sightAnchorWeaponLocal;
         return transform_math::composeTransforms(weaponWorldAfter, scopeCameraWeaponLocal);
     }
+
+    /*
+     * Capture the engine-specific NiCamera axis/scale calibration once in the
+     * equipped weapon frame, while replacing its controller-derived position
+     * with the generated optic's ocular (rear-center) point. This value is the
+     * complete rigid scope frame: later hand-role and ScopeMenu changes may
+     * move the weapon, but must never recapture a different camera rotation.
+     */
+    template <class Transform, class Point>
+    [[nodiscard]] inline Transform captureRigidSightFrameWeaponLocal(
+        const Transform& weaponWorld,
+        const Transform& nativeScopeCameraWorld,
+        const Point& sightAnchorWeaponLocal)
+    {
+        Transform scopeFrameWeaponLocal = transform_math::composeTransforms(
+            transform_math::invertTransform(weaponWorld),
+            nativeScopeCameraWorld);
+        scopeFrameWeaponLocal.translate = sightAnchorWeaponLocal;
+        return scopeFrameWeaponLocal;
+    }
+
+    template <class Transform>
+    [[nodiscard]] inline Transform resolveRigidSightFrameWorld(
+        const Transform& weaponWorld,
+        const Transform& scopeFrameWeaponLocal)
+    {
+        return transform_math::composeTransforms(weaponWorld, scopeFrameWeaponLocal);
+    }
+}
+
+// ---- NativeScopeActivationGeometry.h ----
+
+namespace rock::native_scope_activation_geometry
+{
+    struct ConeThresholds
+    {
+        float hmdEnterDegrees{ 25.0f };
+        float hmdExitDegrees{ 35.0f };
+        float weaponEnterDegrees{ 7.0f };
+        float weaponExitDegrees{ 15.0f };
+        float distanceEnterGameUnits{ 38.0f };
+        float distanceExitGameUnits{ 40.0f };
+        float weaponAngleWideningFactor{ 60.0f };
+        float weaponAngleExponent{ 2.0f };
+    };
+
+    struct ConeSample
+    {
+        bool valid{ false };
+        float distanceGameUnits{ 0.0f };
+        float hmdAngleDegrees{ 0.0f };
+        float weaponAngleDegrees{ 0.0f };
+        float weaponAngleWidening{ 1.0f };
+    };
+
+    [[nodiscard]] inline bool finitePositive(const float value)
+    {
+        return std::isfinite(value) && value > 0.0f;
+    }
+
+    [[nodiscard]] inline bool validThresholds(const ConeThresholds& thresholds)
+    {
+        return finitePositive(thresholds.hmdEnterDegrees) &&
+               finitePositive(thresholds.hmdExitDegrees) &&
+               thresholds.hmdExitDegrees >= thresholds.hmdEnterDegrees &&
+               finitePositive(thresholds.weaponEnterDegrees) &&
+               finitePositive(thresholds.weaponExitDegrees) &&
+               thresholds.weaponExitDegrees >= thresholds.weaponEnterDegrees &&
+               finitePositive(thresholds.distanceEnterGameUnits) &&
+               finitePositive(thresholds.distanceExitGameUnits) &&
+               thresholds.distanceExitGameUnits >= thresholds.distanceEnterGameUnits &&
+               finitePositive(thresholds.weaponAngleWideningFactor) &&
+               finitePositive(thresholds.weaponAngleExponent);
+    }
+
+    template <class Point>
+    [[nodiscard]] inline float lengthSquared(const Point& value)
+    {
+        return value.x * value.x + value.y * value.y + value.z * value.z;
+    }
+
+    template <class Point>
+    [[nodiscard]] inline bool normalize(const Point& value, Point& out)
+    {
+        const float squared = lengthSquared(value);
+        if (!std::isfinite(squared) || squared <= 0.000001f) {
+            out = {};
+            return false;
+        }
+        const float inverseLength = 1.0f / std::sqrt(squared);
+        out = Point{ value.x * inverseLength, value.y * inverseLength, value.z * inverseLength };
+        return std::isfinite(out.x) && std::isfinite(out.y) && std::isfinite(out.z);
+    }
+
+    template <class Point>
+    [[nodiscard]] inline float angleDegrees(const Point& firstUnit, const Point& secondUnit)
+    {
+        constexpr float kRadiansToDegrees = 57.295779513082320876f;
+        const float dot = std::clamp(
+            firstUnit.x * secondUnit.x + firstUnit.y * secondUnit.y + firstUnit.z * secondUnit.z,
+            -1.0f,
+            1.0f);
+        return std::acos(dot) * kRadiansToDegrees;
+    }
+
+    /*
+     * FO4VR's verified native gate samples HMD and weapon +Y bases. ROCK keeps
+     * the same units, comparisons, widening formula, and HMD offset, but uses
+     * the assembled sight's ocular point and the final visible weapon frame.
+     */
+    template <class Transform, class Point>
+    [[nodiscard]] inline ConeSample sample(
+        const Transform& weaponWorld,
+        const Point& sightAnchorWeaponLocal,
+        const Transform& hmdWorld,
+        const Point& hmdSampleOffsetLocal,
+        const ConeThresholds& thresholds)
+    {
+        ConeSample result{};
+        if (!validThresholds(thresholds)) {
+            return result;
+        }
+
+        const Point sightWorld = transform_math::localPointToWorld(weaponWorld, sightAnchorWeaponLocal);
+        const Point hmdSampleWorld = transform_math::localPointToWorld(hmdWorld, hmdSampleOffsetLocal);
+        const Point delta{
+            sightWorld.x - hmdSampleWorld.x,
+            sightWorld.y - hmdSampleWorld.y,
+            sightWorld.z - hmdSampleWorld.z,
+        };
+        Point direction{};
+        if (!normalize(delta, direction)) {
+            return result;
+        }
+
+        const float distance = std::sqrt(lengthSquared(delta));
+        Point hmdForward{
+            hmdWorld.rotate.entry[1][0],
+            hmdWorld.rotate.entry[1][1],
+            hmdWorld.rotate.entry[1][2],
+        };
+        Point weaponForward{
+            weaponWorld.rotate.entry[1][0],
+            weaponWorld.rotate.entry[1][1],
+            weaponWorld.rotate.entry[1][2],
+        };
+        if (!finitePositive(distance) || !normalize(hmdForward, hmdForward) || !normalize(weaponForward, weaponForward)) {
+            return result;
+        }
+
+        const float wideningBase = thresholds.weaponAngleWideningFactor / distance;
+        const float widening = std::pow(wideningBase, thresholds.weaponAngleExponent);
+        if (!finitePositive(widening)) {
+            return result;
+        }
+
+        result.distanceGameUnits = distance;
+        result.hmdAngleDegrees = angleDegrees(direction, hmdForward);
+        result.weaponAngleDegrees = angleDegrees(direction, weaponForward);
+        result.weaponAngleWidening = widening;
+        result.valid = std::isfinite(result.hmdAngleDegrees) && std::isfinite(result.weaponAngleDegrees);
+        return result;
+    }
+
+    [[nodiscard]] inline bool isInsideCone(
+        const ConeSample& sample,
+        const bool nativeScopeAlreadyActive,
+        const ConeThresholds& thresholds)
+    {
+        if (!sample.valid || !validThresholds(thresholds)) {
+            return false;
+        }
+        const float hmdLimit = nativeScopeAlreadyActive ? thresholds.hmdExitDegrees : thresholds.hmdEnterDegrees;
+        const float weaponLimit =
+            (nativeScopeAlreadyActive ? thresholds.weaponExitDegrees : thresholds.weaponEnterDegrees) * sample.weaponAngleWidening;
+        const float distanceLimit = nativeScopeAlreadyActive ? thresholds.distanceExitGameUnits : thresholds.distanceEnterGameUnits;
+        return sample.hmdAngleDegrees < hmdLimit &&
+               sample.weaponAngleDegrees < weaponLimit &&
+               sample.distanceGameUnits < distanceLimit;
+    }
 }
 
 // ---- NativeScopeOverlayFollowMath.h ----
@@ -405,6 +585,37 @@ namespace rock::scope_safe_hand_frame_math
         // hFRIK's hands are deliberately hidden in this state, and its arm IK
         // rejects the collapsed skeleton. Weapon/camera authority still runs.
         return !scopeMenuOpen;
+    }
+
+    /*
+     * ScopeMenu and the short exit rebase use reconstructed hand frames whose
+     * update ownership differs from the visible weapon node. Neither is a
+     * valid source for replacing the native, visible right-hand calibration.
+     */
+    [[nodiscard]] inline constexpr bool canRefreshRightFiringCanonicalFrame(
+        bool scopeMenuOpen,
+        bool rightHandRootRebaseActive)
+    {
+        return !scopeMenuOpen && !rightHandRootRebaseActive;
+    }
+
+    /*
+     * A support grip acquired while ScopeMenu is open must not recapture the
+     * firing hold from hFRIK's hidden/reconstructed hand. Reuse only the exact
+     * pre-scope right-hand grip from the same generated weapon.
+     */
+    [[nodiscard]] inline constexpr bool shouldReuseRightFiringCanonicalGrip(
+        bool scopeMenuOpen,
+        bool firingHandIsLeft,
+        bool canonicalValid,
+        std::uint64_t canonicalWeaponGenerationKey,
+        std::uint64_t currentWeaponGenerationKey)
+    {
+        return scopeMenuOpen &&
+               !firingHandIsLeft &&
+               canonicalValid &&
+               canonicalWeaponGenerationKey != 0 &&
+               canonicalWeaponGenerationKey == currentWeaponGenerationKey;
     }
 
     [[nodiscard]] inline float rebaseAlpha(float elapsedSeconds, float durationSeconds)

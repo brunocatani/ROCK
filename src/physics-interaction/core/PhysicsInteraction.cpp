@@ -148,6 +148,28 @@ namespace rock
 
         WeaponCollisionWorkbenchExitMenuSink s_weaponCollisionWorkbenchExitMenuSink;
 
+        float readNativeScopeFloatSetting(const std::uintptr_t offset, const float fallback)
+        {
+            REL::Relocation<float*> setting{ REL::Offset(offset) };
+            if (!setting.address()) {
+                return fallback;
+            }
+            const float value = *setting;
+            return std::isfinite(value) ? value : fallback;
+        }
+
+        bool tryReadNativeScopeRequestState(bool& outActive)
+        {
+            using GetScopeRequestState = bool (*)(const void*);
+            static REL::Relocation<GetScopeRequestState> getScopeRequestState{ REL::Offset(offsets::kFunc_NativeScopeRequestStateGet) };
+            static REL::Relocation<std::uintptr_t> rendererState{ REL::Offset(offsets::kData_NativeScopeRendererState) };
+            if (!getScopeRequestState.address() || !rendererState.address()) {
+                return false;
+            }
+            outActive = getScopeRequestState(reinterpret_cast<const void*>(rendererState.address()));
+            return true;
+        }
+
         bool ensureWeaponCollisionWorkbenchExitMenuSinkRegistered()
         {
             bool expected = false;
@@ -1841,26 +1863,52 @@ namespace rock
 
 #include "physics-interaction/core/PhysicsInteractionFrame.inl"
 
-    void PhysicsInteraction::prepareNativeScopeCameraForGameUpdate()
+    void PhysicsInteraction::synchronizeNativeScopePresentationAfterFrikUpdate()
     {
         if (!_initialized.load(std::memory_order_acquire) || !runtime_state::isLocalSkeletonReady()) {
             return;
         }
 
         auto* weaponNode = f4vr::getWeaponNode();
-        _twoHandedGrip.prepareNativeScopeCameraForGameUpdate(
-            weaponNode,
-            _weaponCollision.getCurrentWeaponGenerationKey());
+        _twoHandedGrip.synchronizeNativeScopePresentationAfterFrikUpdate(weaponNode, _weaponCollision.getCurrentWeaponGenerationKey());
     }
 
-    void PhysicsInteraction::finalizeNativeScopeOverlayAfterGameUpdate()
+    bool PhysicsInteraction::tryResolveNativeScopeGeometryDecision(const bool nativeGeometryDecision, bool& outRockGeometryDecision)
     {
+        outRockGeometryDecision = nativeGeometryDecision;
         if (!_initialized.load(std::memory_order_acquire) || !runtime_state::isLocalSkeletonReady()) {
-            return;
+            return false;
         }
 
-        _twoHandedGrip.finalizeNativeScopeOverlayAfterGameUpdate(
-            _weaponCollision.getCurrentWeaponGenerationKey());
+        const auto* playerNodes = f4vr::getPlayerNodes();
+        auto* weaponNode = f4vr::getWeaponNode();
+        auto* hmdNode = playerNodes ? playerNodes->HmdNode : nullptr;
+        if (!weaponNode || !hmdNode) {
+            return false;
+        }
+
+        bool nativeScopeAlreadyActive = false;
+        if (!tryReadNativeScopeRequestState(nativeScopeAlreadyActive)) {
+            return false;
+        }
+
+        const RE::NiPoint3 hmdSampleOffsetLocal{
+            readNativeScopeFloatSetting(offsets::kSetting_HmdScopeOffsetX, 0.0f),
+            readNativeScopeFloatSetting(offsets::kSetting_HmdScopeOffsetY, -16.0f),
+            readNativeScopeFloatSetting(offsets::kSetting_HmdScopeOffsetZ, 0.0f),
+        };
+        const native_scope_activation_geometry::ConeThresholds thresholds{
+            .hmdEnterDegrees = readNativeScopeFloatSetting(offsets::kSetting_HmdScopeAngleEnterDegrees, 25.0f),
+            .hmdExitDegrees = readNativeScopeFloatSetting(offsets::kSetting_HmdScopeAngleExitDegrees, 35.0f),
+            .weaponEnterDegrees = readNativeScopeFloatSetting(offsets::kSetting_WeaponScopeAngleEnterDegrees, 7.0f),
+            .weaponExitDegrees = readNativeScopeFloatSetting(offsets::kSetting_WeaponScopeAngleExitDegrees, 15.0f),
+            .distanceEnterGameUnits = readNativeScopeFloatSetting(offsets::kSetting_WeaponScopeDistanceEnter, 38.0f),
+            .distanceExitGameUnits = readNativeScopeFloatSetting(offsets::kSetting_WeaponScopeDistanceExit, 40.0f),
+            .weaponAngleWideningFactor = readNativeScopeFloatSetting(offsets::kSetting_ScopeWeaponAngleWideningFactor, 60.0f),
+            .weaponAngleExponent = readNativeScopeFloatSetting(offsets::kSetting_ScopeWeaponAngleExponent, 2.0f),
+        };
+        return _twoHandedGrip.tryResolveNativeScopeGeometryDecision(weaponNode, _weaponCollision.getCurrentWeaponGenerationKey(), hmdNode, hmdSampleOffsetLocal, thresholds,
+            nativeScopeAlreadyActive, nativeGeometryDecision, outRockGeometryDecision);
     }
 
     void PhysicsInteraction::update()
