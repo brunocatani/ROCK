@@ -332,19 +332,6 @@ MigrationBackup/
 /docs/
 /analysis/
 
-# Local Havok files stay machine-local unless explicitly re-added.
-*[Hh]avok*
-[Hh]avok/
-[Hh]avok*/
-*[Hh]avok*.zip
-*[Hh]avok*.7z
-*[Hh]avok*.rar
-*[Hh]avok*.tar
-*[Hh]avok*.tar.gz
-*[Hh]avok*.lib
-*[Hh]avok*.dll
-*[Hh]avok*.pdb
-*[Hh]avok*.exp
 lib/
 lib_debug/
 xbyak/
