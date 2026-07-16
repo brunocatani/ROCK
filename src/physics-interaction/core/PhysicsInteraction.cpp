@@ -3853,6 +3853,19 @@ namespace rock
         const bool menuInputActive)
     {
         constexpr std::uint16_t kMaximumResolveFrames = 180;
+        if (!g_rockConfig.rockPipboyTriggerHandEquipEnabled) {
+            pipboy_equip_runtime::setLeftHandEquipAvailable(false);
+            if (_pipboyWeaponHandAssignment.pending || _pipboyWeaponHandAssignment.active) {
+                clearPipboyWeaponHandAssignment("feature-disabled", true);
+            } else {
+                pipboy_equip_runtime::AssignmentSnapshot persisted{};
+                if (pipboy_equip_runtime::getAssignment(persisted) && persisted.active) {
+                    pipboy_equip_runtime::clearWeaponAssignment();
+                }
+            }
+            return;
+        }
+
         const bool leftCarryAvailable = TwoHandedGrip::canBeginPrimaryOnlyGripForHand(true);
         pipboy_equip_runtime::setLeftHandEquipAvailable(leftCarryAvailable);
 

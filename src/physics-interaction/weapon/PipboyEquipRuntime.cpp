@@ -1,5 +1,6 @@
 #include "physics-interaction/weapon/PipboyEquipRuntime.h"
 
+#include "RockConfig.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/PhysicsLog.h"
@@ -274,6 +275,10 @@ namespace rock::pipboy_equip_runtime
                 s_originalUpdateData(menu);
                 return;
             }
+            if (!g_rockConfig.rockPipboyTriggerHandEquipEnabled) {
+                s_originalUpdateData(menu);
+                return;
+            }
 
             UpdateDataHookScope hookScope;
             AssignmentSnapshot assignment{};
@@ -297,7 +302,7 @@ namespace rock::pipboy_equip_runtime
         {
             const auto trigger = input_remap_runtime::consumePipboyEquipTriggerResolution();
             s_originalUseItem(handleId, stackId, actionSucceeded, secondaryResult);
-            if (!actionSucceeded) {
+            if (!g_rockConfig.rockPipboyTriggerHandEquipEnabled || !actionSucceeded) {
                 return;
             }
 

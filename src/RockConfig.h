@@ -290,6 +290,7 @@ namespace rock
         std::string rockDebugSkeletonAxisBoneFilter = "";
 
         int rockHandColliderRuntimeMode = 1;
+        bool rockPipboyTriggerHandEquipEnabled = false;
         bool rockBodyBoneCollidersEnabled = true;
         bool rockBodyBoneLegAndFootCollidersEnabled = false;
         bool rockBodyBoneCollisionStaticWorldEnabled = true;

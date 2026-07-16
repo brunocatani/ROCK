@@ -18,6 +18,22 @@ function Reject-Text {
     if ($text -match $Pattern) { $failures.Add($Message) }
 }
 
+Require-Text 'src/RockConfig.h' `
+    'rockPipboyTriggerHandEquipEnabled\s*=\s*false' `
+    'The experimental Pip-Boy trigger-hand feature must have a default-off config field.'
+Require-Text 'src/RockConfig.cpp' `
+    'rockPipboyTriggerHandEquipEnabled\s*=\s*false[\s\S]*GetBoolValue\(EXPERIMENTAL_SECTION,\s*"bPipboyTriggerHandEquipEnabled"' `
+    'The trigger-hand feature must reset off and load only from [Experimental].'
+
+foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
+    $configText = Get-Content -Raw -LiteralPath (Join-Path $Root $configPath)
+    $experimentalMatch = [regex]::Match($configText, '(?ms)^\[Experimental\]\s*(?<body>.*?)(?=^\[[^\]]+\])')
+    if (!$experimentalMatch.Success -or
+        $experimentalMatch.Groups['body'].Value -notmatch '(?m)^bPipboyTriggerHandEquipEnabled\s*=\s*false\s*$') {
+        $failures.Add("$configPath`: Pip-Boy trigger-hand equip must be present under [Experimental] and default off.")
+    }
+}
+
 Require-Text 'src/physics-interaction/native/HavokOffsets.h' `
     'kHookSite_PipboyInventoryUseItem\s*=\s*0xB9CFBA[\s\S]*kFunc_PipboyInventoryUseItem\s*=\s*0xB9B890[\s\S]*kFunc_PipboyInventoryUpdateData\s*=\s*0xB99C30' `
     'The FO4VR Pip-Boy hook and UpdateData targets must remain the independently verified RVAs.'
@@ -28,6 +44,9 @@ Require-Text 'src/physics-interaction/weapon/PipboyEquipRuntime.cpp' `
 Require-Text 'src/physics-interaction/weapon/PipboyEquipRuntime.cpp' `
     'hookedUseItem\([\s\S]*s_originalUseItem\(handleId,\s*stackId,\s*actionSucceeded,\s*secondaryResult\)' `
     'The Pip-Boy selection wrapper must always chain the displaced native UseItem call.'
+Require-Text 'src/physics-interaction/weapon/PipboyEquipRuntime.cpp' `
+    'hookedUpdateData\([\s\S]{0,700}!g_rockConfig\.rockPipboyTriggerHandEquipEnabled[\s\S]*hookedUseItem\([\s\S]{0,700}!g_rockConfig\.rockPipboyTriggerHandEquipEnabled' `
+    'Disabled mode must pass through native row updates and native item use without assignment or tag behavior.'
 
 Require-Text 'src/physics-interaction/weapon/PipboyEquipRuntime.cpp' `
     'GetMember\("HandleID"[\s\S]*GetMember\("StackID"[\s\S]*GetMember\("text"[\s\S]*SetMember\("text",\s*taggedValue\)[\s\S]*SetMember\("text",\s*mutation\.originalText\)' `
@@ -55,6 +74,9 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'f4vr::isNodeVisible\(weaponNode\)[\s\S]*nativeOffsetSample\s*=\s*weaponNode->local[\s\S]*advanceNativeOffsetReadiness[\s\S]*beginPersistentEquippedCarry' `
     'Direct left carry must wait for a visible, stable hFRIK-owned offset and a reserved canonical-refresh frame before ownership transfer.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    '!g_rockConfig\.rockPipboyTriggerHandEquipEnabled[\s\S]{0,700}setLeftHandEquipAvailable\(false\)[\s\S]{0,700}clearPipboyWeaponHandAssignment\("feature-disabled",\s*true\)' `
+    'Hot-disable must remove Pip-Boy-owned carry/tag state and restore native right without touching unrelated ambidextrous handovers.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'commitRight\s*=\s*\[&\]\(const char\* reason\)[\s\S]{0,500}restoreNativeRightEquippedCarry\(reason\)[\s\S]{0,500}Hand::Right' `
