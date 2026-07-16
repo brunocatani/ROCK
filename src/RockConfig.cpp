@@ -339,8 +339,8 @@ namespace rock
         rockDebugSkeletonAxisBoneFilter = "";
 
         rockHandColliderRuntimeMode = 1;
-        rockPipboyTriggerHandEquipEnabled = false;
-        rockPipboyPreferredHandLeft = false;
+        rockMenuTriggerHandEquipEnabled = false;
+        rockEquipPreferredHandLeft = false;
         rockBodyBoneCollidersEnabled = true;
         rockBodyBoneLegAndFootCollidersEnabled = false;
         rockBodyBoneCollisionStaticWorldEnabled = true;
@@ -1391,10 +1391,10 @@ namespace rock
             ROCK_LOG_WARN(Config, "Invalid iHandColliderRuntimeMode={} - using BoneDerivedHands", rockHandColliderRuntimeMode);
             rockHandColliderRuntimeMode = 1;
         }
-        rockPipboyTriggerHandEquipEnabled =
-            ini.GetBoolValue(EXPERIMENTAL_SECTION, "bPipboyTriggerHandEquipEnabled", rockPipboyTriggerHandEquipEnabled);
-        rockPipboyPreferredHandLeft =
-            ini.GetBoolValue(EXPERIMENTAL_SECTION, "bPipboyPreferredHandLeft", rockPipboyPreferredHandLeft);
+        rockMenuTriggerHandEquipEnabled =
+            ini.GetBoolValue(EXPERIMENTAL_SECTION, "bMenuTriggerHandEquipEnabled", rockMenuTriggerHandEquipEnabled);
+        rockEquipPreferredHandLeft =
+            ini.GetBoolValue(EXPERIMENTAL_SECTION, "bEquipPreferredHandLeft", rockEquipPreferredHandLeft);
         rockBodyBoneCollidersEnabled = ini.GetBoolValue(EXPERIMENTAL_SECTION, "bBodyBoneCollidersEnabled", rockBodyBoneCollidersEnabled);
         rockBodyBoneLegAndFootCollidersEnabled =
             ini.GetBoolValue(EXPERIMENTAL_SECTION, "bBodyBoneLegAndFootCollidersEnabled", rockBodyBoneLegAndFootCollidersEnabled);

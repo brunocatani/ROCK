@@ -73,8 +73,8 @@ namespace rock::pipboy_equip_runtime
         [[nodiscard]] pipboy_equip_policy::EquipMode configuredEquipMode() noexcept
         {
             return pipboy_equip_policy::resolveEquipMode(
-                g_rockConfig.rockPipboyTriggerHandEquipEnabled,
-                g_rockConfig.rockPipboyPreferredHandLeft);
+                g_rockConfig.rockMenuTriggerHandEquipEnabled,
+                g_rockConfig.rockEquipPreferredHandLeft);
         }
 
         [[nodiscard]] bool tryBeginWrite(std::atomic_flag& writer)

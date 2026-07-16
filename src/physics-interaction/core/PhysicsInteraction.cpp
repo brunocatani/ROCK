@@ -3854,8 +3854,8 @@ namespace rock
     {
         constexpr std::uint16_t kMaximumResolveFrames = 180;
         const auto equipMode = pipboy_equip_policy::resolveEquipMode(
-            g_rockConfig.rockPipboyTriggerHandEquipEnabled,
-            g_rockConfig.rockPipboyPreferredHandLeft);
+            g_rockConfig.rockMenuTriggerHandEquipEnabled,
+            g_rockConfig.rockEquipPreferredHandLeft);
         if (!pipboy_equip_policy::managesHandAssignment(equipMode)) {
             pipboy_equip_runtime::setLeftHandEquipAvailable(false);
             pipboy_equip_runtime::SelectionEvent discardedEvent{};
