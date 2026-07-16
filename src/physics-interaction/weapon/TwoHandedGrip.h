@@ -325,6 +325,22 @@ namespace rock
             const RE::NiTransform* capturedFiringHandWeaponLocal,
             const RE::NiPoint3* capturedFiringGripWeaponLocal);
 
+        /*
+         * Pip-Boy left-hand assignment starts without a physical grab hold.
+         * This entry point reuses the generation-bound native right-hand
+         * canonical pose, mirrors it through the live wand frames, and marks
+         * the resulting PrimaryOnly session as persistent until the selected
+         * inventory stack is unequipped or the player deliberately arms and
+         * releases the firing-hand grab.
+         */
+        bool beginPersistentEquippedCarry(
+            RE::NiNode* weaponNode,
+            std::uint64_t currentWeaponGenerationKey,
+            std::uint64_t currentEquippedWeaponOwnershipKey);
+
+        void clearPersistentEquippedCarry(const char* reason);
+        bool isPersistentEquippedCarryActive() const { return _persistentEquippedCarryActive; }
+
         // Left-hand primary ownership requires the hFRIK ambidextrous weapon-
         // node blockers; right-hand native ownership is always eligible.
         static bool canBeginPrimaryOnlyGripForHand(bool isLeft);
@@ -814,6 +830,8 @@ namespace rock
         std::uint64_t _activeWeaponGenerationKey{ 0 };
         std::uint64_t _activeEquippedWeaponOwnershipKey{ 0 };
         equipped_weapon_manual_ownership_policy::GripReleaseDebounceState _primaryReleaseDebounce{};
+        bool _persistentEquippedCarryActive{ false };
+        bool _persistentEquippedCarryDetachArmed{ false };
 
         /*
          * Whole frames spent in Gripping since the support grab was captured.

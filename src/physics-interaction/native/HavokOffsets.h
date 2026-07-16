@@ -288,6 +288,15 @@ namespace rock::offsets
      * object at 0x146239340.
      */
     constexpr std::uintptr_t kHookSite_NativeScopeGeometryDecision = 0xEF851F;
+
+    // PipboyInventoryMenu::DoSelectItem call to UseItem. Raw-disassembly
+    // verified against Fallout4VR.exe 1.2.72; the runtime hook validates both
+    // the E8 opcode and decoded destination before patching.
+    constexpr std::uintptr_t kHookSite_PipboyInventoryUseItem = 0xB9CFBA;
+
+    constexpr std::uintptr_t kFunc_PipboyInventoryUseItem = 0xB9B890;
+
+    constexpr std::uintptr_t kFunc_PipboyInventoryUpdateData = 0xB99C30;
     constexpr std::uintptr_t kPatchSite_NativeScopePostDecisionTest = 0xEF8528;
     constexpr std::uintptr_t kFunc_NativeScopeStateTransition = 0xEFAA60;
     constexpr std::uintptr_t kFunc_NativeScopeRequestStateGet = 0x1D947B0;

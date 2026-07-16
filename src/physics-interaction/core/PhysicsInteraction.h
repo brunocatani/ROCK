@@ -265,6 +265,14 @@ namespace rock
         void clearLeftWeaponContact();
         void clearRightWeaponContact();
 
+        void servicePipboyWeaponHandAssignment(
+            RE::NiNode* weaponNode,
+            std::uint64_t currentWeaponGenerationKey,
+            std::uint64_t currentEquippedWeaponOwnershipKey,
+            bool menuInputActive);
+        void reconcilePipboyWeaponHandAssignmentAfterGrip();
+        void clearPipboyWeaponHandAssignment(const char* reason, bool clearUiAssignment);
+
         void suppressRightHandCollisionForDominantWeapon(RE::hknpWorld* world);
 
         void restoreRightHandCollisionAfterDominantWeapon(RE::hknpWorld* world);
@@ -542,6 +550,20 @@ namespace rock
         hand_collision_suppression_math::DelayedRestoreState _leftEquippedWeaponDropDelayedRestore{};
         weapon_debug_notification_policy::WeaponNotificationState _weaponDebugNotificationState{};
         PendingEquippedWeaponPrimaryOnlyGripStart _pendingEquippedWeaponPrimaryOnlyGripStart{};
+        struct PipboyWeaponHandAssignmentState
+        {
+            bool pending{ false };
+            bool active{ false };
+            bool requestedLeft{ false };
+            bool effectiveLeft{ false };
+            std::uint16_t remainingResolveFrames{ 0 };
+            std::uint32_t handleId{ 0 };
+            std::uint32_t stackId{ 0 };
+            std::uint32_t formId{ 0 };
+            std::uint64_t ownershipKey{ 0 };
+        };
+        PipboyWeaponHandAssignmentState _pipboyWeaponHandAssignment{};
+        std::uint64_t _lastPipboyWeaponSelectionSequence{ 0 };
         bool _equippedWeaponMenuReconcilePending = false;
         /*
          * Single-consumption snapshot of the firing hand's grab button. The

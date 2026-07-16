@@ -22,6 +22,7 @@
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
+#include "physics-interaction/weapon/PipboyEquipRuntime.h"
 
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/TESForms.h"
@@ -256,6 +257,7 @@ namespace
         performance_profiler::FrameScope profilerFrame;
 
         if (!s_pluginLoaded || !s_frikAvailable) {
+            pipboy_equip_runtime::setLeftHandEquipAvailable(false);
             input_remap_runtime::setGameplayInputAllowed(false);
             input_remap_runtime::setWeaponDrawn(false);
             input_remap_runtime::setHandHeldWeapon(false, false);
@@ -286,6 +288,7 @@ namespace
         debug_controller_runtime::update(gameplayInputAllowed, runtime.deltaSeconds);
 
         if (!g_rockConfig.rockEnabled) {
+            pipboy_equip_runtime::setLeftHandEquipAvailable(false);
             s_physicsCreationRequested.store(false, std::memory_order_release);
             s_physicsCreationReadyDeferralFrames.store(0, std::memory_order_release);
             resetPhysicsCreationGate();
@@ -549,6 +552,7 @@ namespace
             s_physicsCreationReadyDeferralFrames.store(0, std::memory_order_release);
             resetPhysicsCreationGate();
             runtime_state::resetTransientState();
+            pipboy_equip_runtime::resetRuntimeState();
             if (s_physicsInteraction) {
                 s_physicsInteraction->noteProviderLifecycle(
                     providerGeneration,
@@ -627,6 +631,11 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
 
     logger::info("ROCK: Install loose grenade equip hook...");
     if (!rock::loose_grenade_runtime::installEquipHook()) {
+        return false;
+    }
+
+    logger::info("ROCK: Install Pip-Boy trigger-hand equip hooks...");
+    if (!rock::pipboy_equip_runtime::installHooks()) {
         return false;
     }
 

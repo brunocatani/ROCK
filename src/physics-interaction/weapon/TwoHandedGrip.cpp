@@ -1231,9 +1231,27 @@ namespace rock
             dt);
 
         EquippedWeaponGripFrameInput stableFrameInput = frameInput;
+        if (_persistentEquippedCarryActive && isManualOwnershipActive()) {
+            /*
+             * A Pip-Boy equip has no grab press to retain PrimaryOnly. Keep
+             * the firing grip virtually closed until the player physically
+             * holds it once; only that armed hand's later release is allowed
+             * through the normal debounce/drop machinery. This preserves all
+             * existing two-hand, detach, stash, and handoff gestures without
+             * an immediate phantom drop on the first post-menu frame.
+             */
+            if (frameInput.primaryGripInput.held || frameInput.primaryGripInput.pressed) {
+                _persistentEquippedCarryDetachArmed = true;
+            }
+            if (!_persistentEquippedCarryDetachArmed) {
+                stableFrameInput.primaryGripInput.held = true;
+                stableFrameInput.primaryGripInput.pressed = false;
+                stableFrameInput.primaryGripInput.released = false;
+            }
+        }
         const auto primaryReleaseDecision = equipped_weapon_manual_ownership_policy::debouncePrimaryGripRelease(
             _primaryReleaseDebounce,
-            frameInput.primaryGripInput.held);
+            stableFrameInput.primaryGripInput.held);
         stableFrameInput.primaryGripInput.held = primaryReleaseDecision.retained;
         stableFrameInput.primaryGripInput.released = primaryReleaseDecision.releaseConfirmed;
 
@@ -1526,6 +1544,8 @@ namespace rock
         _activeWeaponGenerationKey = 0;
         _activeEquippedWeaponOwnershipKey = 0;
         _primaryReleaseDebounce = {};
+        _persistentEquippedCarryActive = false;
+        _persistentEquippedCarryDetachArmed = false;
         _weaponNodeLocalBaseline = {};
         _hasWeaponNodeLocalBaseline = false;
         _primaryHandWeaponLocal = {};
@@ -2402,6 +2422,8 @@ namespace rock
         _activeWeaponGenerationKey = 0;
         _activeEquippedWeaponOwnershipKey = 0;
         _primaryReleaseDebounce = {};
+        _persistentEquippedCarryActive = false;
+        _persistentEquippedCarryDetachArmed = false;
         _weaponNodeLocalBaseline = {};
         _hasWeaponNodeLocalBaseline = false;
         resetLockedHandVisualLerp();
@@ -2859,6 +2881,67 @@ namespace rock
         _hapticEvents.firingGripAttachedHandIsLeft = _firingHandIsLeft;
         _firingGripSequence = ++_gripCaptureSequence;
         return true;
+    }
+
+    bool TwoHandedGrip::beginPersistentEquippedCarry(
+        RE::NiNode* weaponNode,
+        const std::uint64_t currentWeaponGenerationKey,
+        const std::uint64_t currentEquippedWeaponOwnershipKey)
+    {
+        if (!weaponNode || currentWeaponGenerationKey == 0 || currentEquippedWeaponOwnershipKey == 0 ||
+            _state != TwoHandedState::Inactive || !canBeginPrimaryOnlyGripForHand(true) ||
+            !_hasRightFiringHandCanonicalWeaponLocal ||
+            _rightFiringHandCanonicalGenerationKey != currentWeaponGenerationKey) {
+            return false;
+        }
+
+        RE::NiTransform rightHandWorld{};
+        RE::NiTransform leftHandWorld{};
+        RE::NiTransform mirroredLeftHold{};
+        if (!tryGetSolverHandTransform(false, rightHandWorld) ||
+            !tryGetSolverHandTransform(true, leftHandWorld) ||
+            !tryBuildMirroredLeftFiringHandWeaponLocal(
+                _rightFiringHandCanonicalWeaponLocal,
+                _rightFiringGripCanonicalWeaponLocal,
+                rightHandWorld,
+                leftHandWorld,
+                mirroredLeftHold,
+                true)) {
+            return false;
+        }
+
+        if (!beginPrimaryOnlyGrip(
+                weaponNode,
+                currentWeaponGenerationKey,
+                currentEquippedWeaponOwnershipKey,
+                true,
+                &mirroredLeftHold,
+                &_rightFiringGripCanonicalWeaponLocal)) {
+            return false;
+        }
+
+        _persistentEquippedCarryActive = true;
+        _persistentEquippedCarryDetachArmed = false;
+        ROCK_LOG_INFO(Weapon,
+            "TwoHandedGrip: persistent Pip-Boy left-hand carry active generation={:016X} ownership={:016X}",
+            currentWeaponGenerationKey,
+            currentEquippedWeaponOwnershipKey);
+        return true;
+    }
+
+    void TwoHandedGrip::clearPersistentEquippedCarry(const char* reason)
+    {
+        if (!_persistentEquippedCarryActive) {
+            return;
+        }
+        ROCK_LOG_INFO(Weapon,
+            "TwoHandedGrip: clearing persistent Pip-Boy carry reason={}",
+            reason ? reason : "unknown");
+        _persistentEquippedCarryActive = false;
+        _persistentEquippedCarryDetachArmed = false;
+        if (isManualOwnershipActive()) {
+            transitionToInactive(false);
+        }
     }
 
     bool TwoHandedGrip::publishLeftFiringFeedForwardWeaponPose(RE::NiNode* weaponNode)
@@ -4344,6 +4427,9 @@ namespace rock
         clearPrimaryDetachVisualAuthority(_firingHandIsLeft);
         _primaryHandVisualLerp = {};
         _primaryReleaseDebounce = {};
+        if (_persistentEquippedCarryActive) {
+            _persistentEquippedCarryDetachArmed = false;
+        }
         _firingHandIsLeft = isLeft;
         ROCK_LOG_INFO(Weapon, "TwoHandedGrip: firing hand switched to {} reason={}", isLeft ? "left" : "right", reason ? reason : "unknown");
     }

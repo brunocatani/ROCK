@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+#include "physics-interaction/weapon/PipboyEquipPolicy.h"
+
 namespace RE
 {
     class InputEvent;
@@ -15,6 +17,12 @@ namespace rock::input_remap_runtime
         bool held{ false };
         bool pressed{ false };
         bool released{ false };
+    };
+
+    struct PipboyEquipTriggerResolution
+    {
+        pipboy_equip_policy::Hand hand{ pipboy_equip_policy::Hand::Right };
+        pipboy_equip_policy::TriggerSource source{ pipboy_equip_policy::TriggerSource::FallbackRight };
     };
 
     bool installInputRemapHooks();
@@ -45,6 +53,12 @@ namespace rock::input_remap_runtime
     bool isMenuInputActive();
     bool shouldSuppressNativeTriggerAction(const RE::InputEvent* event);
     bool isNativePipboyInputSuppressionActive();
+    bool isPipboyMenuOpen();
+
+    // Consumes the menu-generation-bound trigger evidence for one Pip-Boy
+    // selection. Physical held state wins; ambiguous/missing input preserves
+    // Bethesda's native right-hand behavior.
+    PipboyEquipTriggerResolution consumePipboyEquipTriggerResolution();
 
     // Test-and-clear: true once for the frame after an Activate/WandAccept
     // (A button) press fired on this hand while it was holding a ROCK
