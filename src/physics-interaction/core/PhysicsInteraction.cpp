@@ -889,13 +889,24 @@ namespace rock
             return false;
         }
 
-        std::uint32_t currentEquippedWeaponFormId()
+        const RE::TESObjectWEAP* currentEquippedWeaponForm()
         {
             auto* player = f4vr::getPlayer();
             auto* processData = player && player->middleProcess ? player->middleProcess->unk08 : nullptr;
             auto* equipData = processData ? processData->equipData : nullptr;
             auto* weaponForm = equipData ? equipData->item : nullptr;
-            return weaponForm ? weaponForm->formID : 0;
+            if (!weaponForm || weaponForm->formType != static_cast<std::uint8_t>(RE::ENUM_FORM_ID::kWEAP)) {
+                return nullptr;
+            }
+
+            auto* reForm = reinterpret_cast<RE::TESForm*>(weaponForm);
+            return reForm ? reForm->As<RE::TESObjectWEAP>() : nullptr;
+        }
+
+        std::uint32_t currentEquippedWeaponFormId()
+        {
+            const auto* weapon = currentEquippedWeaponForm();
+            return weapon ? weapon->formID : 0;
         }
 
         void fillProviderTransform(const RE::NiTransform& source, ::rock::provider::RockProviderTransform& target)
@@ -940,6 +951,36 @@ namespace rock
                    std::isfinite(transform.translate.z) &&
                    std::isfinite(transform.scale) &&
                    std::abs(transform.scale) > 0.0001f;
+        }
+
+        bool approximatelySameWeaponLocalOffset(
+            const RE::NiTransform& live,
+            const RE::NiTransform& expected)
+        {
+            constexpr float kMaximumTranslationError = 0.05f;
+            constexpr float kMaximumRotationElementError = 0.001f;
+            constexpr float kMaximumScaleError = 0.001f;
+            if (!finiteNiTransform(live) || !finiteNiTransform(expected)) {
+                return false;
+            }
+
+            const float dx = live.translate.x - expected.translate.x;
+            const float dy = live.translate.y - expected.translate.y;
+            const float dz = live.translate.z - expected.translate.z;
+            if (dx * dx + dy * dy + dz * dz > kMaximumTranslationError * kMaximumTranslationError ||
+                std::abs(live.scale - expected.scale) > kMaximumScaleError) {
+                return false;
+            }
+
+            for (int row = 0; row < 3; ++row) {
+                for (int column = 0; column < 3; ++column) {
+                    if (std::abs(live.rotate.entry[row][column] - expected.rotate.entry[row][column]) >
+                        kMaximumRotationElementError) {
+                        return false;
+                    }
+                }
+            }
+            return true;
         }
 
         std::string_view providerFixedStringView(const char* value, std::size_t capacity)
@@ -3882,6 +3923,10 @@ namespace rock
             assignment.pending = true;
             assignment.ownershipKey = 0;
             assignment.remainingResolveFrames = kMaximumResolveFrames;
+            assignment.nativeOffsetGenerationKey = 0;
+            assignment.nativeOffsetSampleValid = false;
+            assignment.nativeOffsetReadinessLogged = false;
+            assignment.matchingNativeOffsetFrames = 0;
         }
 
         if (!assignment.pending) {
@@ -3916,12 +3961,57 @@ namespace rock
             return;
         }
 
+        const auto* equippedWeapon = currentEquippedWeaponForm();
         const bool identityReady =
             weaponNode &&
+            f4vr::isNodeVisible(weaponNode) &&
             currentWeaponGenerationKey != 0 &&
             currentEquippedWeaponOwnershipKey != 0 &&
-            currentEquippedWeaponFormId() == assignment.formId;
-        if (identityReady &&
+            equippedWeapon &&
+            equippedWeapon->formID == assignment.formId;
+
+        bool nativeOffsetReady = false;
+        if (identityReady) {
+            if (assignment.nativeOffsetGenerationKey != currentWeaponGenerationKey) {
+                assignment.nativeOffsetGenerationKey = currentWeaponGenerationKey;
+                assignment.nativeOffsetSampleValid = false;
+                assignment.nativeOffsetReadinessLogged = false;
+                assignment.matchingNativeOffsetFrames = 0;
+            }
+
+            const bool liveOffsetFinite = finiteNiTransform(weaponNode->local);
+            bool liveOffsetMatches =
+                assignment.nativeOffsetSampleValid &&
+                liveOffsetFinite &&
+                approximatelySameWeaponLocalOffset(weaponNode->local, assignment.nativeOffsetSample);
+            if (liveOffsetFinite && !liveOffsetMatches) {
+                // hFRIK owns the native-right offset, including custom,
+                // no-custom, melee, PA, and in-session configuration values.
+                // Rebase until that live authority remains stable instead of
+                // duplicating or overriding its placement rules in ROCK.
+                assignment.nativeOffsetSample = weaponNode->local;
+                assignment.nativeOffsetSampleValid = true;
+                assignment.matchingNativeOffsetFrames = 0;
+                liveOffsetMatches = true;
+            }
+
+            const auto previousMatchingFrames = assignment.matchingNativeOffsetFrames;
+            nativeOffsetReady = pipboy_equip_policy::advanceNativeOffsetReadiness(
+                assignment.nativeOffsetSampleValid,
+                liveOffsetMatches,
+                assignment.matchingNativeOffsetFrames);
+            if (!assignment.nativeOffsetReadinessLogged &&
+                previousMatchingFrames == 0 && assignment.matchingNativeOffsetFrames == 1) {
+                assignment.nativeOffsetReadinessLogged = true;
+                ROCK_LOG_INFO(Weapon,
+                    "Pip-Boy left-hand assignment observed visible native-right offset; reserving canonical refresh form={:08X}",
+                    assignment.formId);
+            }
+        } else {
+            assignment.matchingNativeOffsetFrames = 0;
+        }
+
+        if (identityReady && nativeOffsetReady &&
             _twoHandedGrip.beginPersistentEquippedCarry(
                 weaponNode,
                 currentWeaponGenerationKey,

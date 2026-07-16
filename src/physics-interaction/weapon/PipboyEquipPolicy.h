@@ -84,4 +84,25 @@ namespace rock::pipboy_equip_policy
     {
         return hand == Hand::Left ? " [Left]" : " [Right]";
     }
+
+    /*
+     * Direct left carry is serviced before TwoHandedGrip's per-frame update.
+     * Requiring two consecutive observations of hFRIK's stable native-right
+     * offset reserves the intervening update for canonical-frame capture.
+     */
+    [[nodiscard]] inline constexpr bool advanceNativeOffsetReadiness(
+        const bool offsetSampleValid,
+        const bool liveOffsetMatches,
+        std::uint8_t& consecutiveMatchingFrames) noexcept
+    {
+        if (!offsetSampleValid || !liveOffsetMatches) {
+            consecutiveMatchingFrames = 0;
+            return false;
+        }
+
+        if (consecutiveMatchingFrames < 2) {
+            ++consecutiveMatchingFrames;
+        }
+        return consecutiveMatchingFrames >= 2;
+    }
 }

@@ -561,6 +561,11 @@ namespace rock
             std::uint32_t stackId{ 0 };
             std::uint32_t formId{ 0 };
             std::uint64_t ownershipKey{ 0 };
+            std::uint64_t nativeOffsetGenerationKey{ 0 };
+            bool nativeOffsetSampleValid{ false };
+            bool nativeOffsetReadinessLogged{ false };
+            std::uint8_t matchingNativeOffsetFrames{ 0 };
+            RE::NiTransform nativeOffsetSample{};
         };
         PipboyWeaponHandAssignmentState _pipboyWeaponHandAssignment{};
         std::uint64_t _lastPipboyWeaponSelectionSequence{ 0 };

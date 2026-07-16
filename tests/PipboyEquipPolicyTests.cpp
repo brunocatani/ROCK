@@ -73,5 +73,28 @@ int main()
         std::printf("side tags are incorrect\n");
         ok = false;
     }
+
+    std::uint8_t matchingOffsetFrames = 1;
+    if (advanceNativeOffsetReadiness(false, true, matchingOffsetFrames) || matchingOffsetFrames != 0) {
+        std::printf("an invalid offset sample did not fail closed\n");
+        ok = false;
+    }
+    if (advanceNativeOffsetReadiness(true, false, matchingOffsetFrames) || matchingOffsetFrames != 0) {
+        std::printf("an offset mismatch did not reset readiness\n");
+        ok = false;
+    }
+    if (advanceNativeOffsetReadiness(true, true, matchingOffsetFrames) || matchingOffsetFrames != 1) {
+        std::printf("the first offset match did not reserve a canonical refresh frame\n");
+        ok = false;
+    }
+    if (!advanceNativeOffsetReadiness(true, true, matchingOffsetFrames) || matchingOffsetFrames != 2) {
+        std::printf("the second consecutive offset match did not become ready\n");
+        ok = false;
+    }
+    if (advanceNativeOffsetReadiness(true, false, matchingOffsetFrames) || matchingOffsetFrames != 0 ||
+        advanceNativeOffsetReadiness(true, true, matchingOffsetFrames)) {
+        std::printf("readiness did not require two new matches after a mismatch\n");
+        ok = false;
+    }
     return ok ? 0 : 1;
 }
