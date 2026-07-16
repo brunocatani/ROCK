@@ -70,6 +70,13 @@ namespace rock::pipboy_equip_runtime
         std::atomic<std::uint64_t> s_selectionSequence{ 0 };
         std::atomic<std::uint64_t> s_assignmentSequence{ 0 };
 
+        [[nodiscard]] pipboy_equip_policy::EquipMode configuredEquipMode() noexcept
+        {
+            return pipboy_equip_policy::resolveEquipMode(
+                g_rockConfig.rockPipboyTriggerHandEquipEnabled,
+                g_rockConfig.rockPipboyPreferredHandLeft);
+        }
+
         [[nodiscard]] bool tryBeginWrite(std::atomic_flag& writer)
         {
             return !writer.test_and_set(std::memory_order_acquire);
@@ -275,7 +282,7 @@ namespace rock::pipboy_equip_runtime
                 s_originalUpdateData(menu);
                 return;
             }
-            if (!g_rockConfig.rockPipboyTriggerHandEquipEnabled) {
+            if (!pipboy_equip_policy::managesHandAssignment(configuredEquipMode())) {
                 s_originalUpdateData(menu);
                 return;
             }
@@ -301,8 +308,9 @@ namespace rock::pipboy_equip_runtime
             bool& secondaryResult)
         {
             const auto trigger = input_remap_runtime::consumePipboyEquipTriggerResolution();
+            const auto equipMode = configuredEquipMode();
             s_originalUseItem(handleId, stackId, actionSucceeded, secondaryResult);
-            if (!g_rockConfig.rockPipboyTriggerHandEquipEnabled || !actionSucceeded) {
+            if (!pipboy_equip_policy::managesHandAssignment(equipMode) || !actionSucceeded) {
                 return;
             }
 
@@ -311,19 +319,24 @@ namespace rock::pipboy_equip_runtime
                 return;
             }
 
+            const pipboy_equip_policy::TriggerResolution triggerResolution{
+                .hand = trigger.hand,
+                .source = trigger.source,
+            };
+            const auto requestedHand = pipboy_equip_policy::resolveRequestedHand(equipMode, triggerResolution);
             SelectionEvent event{
                 .sequence = s_selectionSequence.fetch_add(1, std::memory_order_acq_rel) + 1,
                 .handleId = handleId,
                 .stackId = stackId,
                 .formId = stack.formId,
-                .requestedHand = trigger.hand,
-                .triggerSource = trigger.source,
+                .requestedHand = requestedHand.hand,
+                .triggerSource = requestedHand.source,
                 .equipped = stack.equipped,
             };
             publishSelection(event);
 
             if (stack.equipped) {
-                const auto provisionalHand = trigger.hand == pipboy_equip_policy::Hand::Left &&
+                const auto provisionalHand = requestedHand.hand == pipboy_equip_policy::Hand::Left &&
                                                      s_leftHandEquipAvailable.load(std::memory_order_acquire) ?
                     pipboy_equip_policy::Hand::Left :
                     pipboy_equip_policy::Hand::Right;
@@ -338,8 +351,8 @@ namespace rock::pipboy_equip_runtime
                 stackId,
                 stack.formId,
                 stack.equipped ? "equip" : "unequip",
-                trigger.hand == pipboy_equip_policy::Hand::Left ? "left" : "right",
-                static_cast<unsigned>(trigger.source));
+                requestedHand.hand == pipboy_equip_policy::Hand::Left ? "left" : "right",
+                static_cast<unsigned>(requestedHand.source));
         }
     }
 

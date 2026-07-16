@@ -340,6 +340,7 @@ namespace rock
 
         rockHandColliderRuntimeMode = 1;
         rockPipboyTriggerHandEquipEnabled = false;
+        rockPipboyPreferredHandLeft = false;
         rockBodyBoneCollidersEnabled = true;
         rockBodyBoneLegAndFootCollidersEnabled = false;
         rockBodyBoneCollisionStaticWorldEnabled = true;
@@ -1392,6 +1393,8 @@ namespace rock
         }
         rockPipboyTriggerHandEquipEnabled =
             ini.GetBoolValue(EXPERIMENTAL_SECTION, "bPipboyTriggerHandEquipEnabled", rockPipboyTriggerHandEquipEnabled);
+        rockPipboyPreferredHandLeft =
+            ini.GetBoolValue(EXPERIMENTAL_SECTION, "bPipboyPreferredHandLeft", rockPipboyPreferredHandLeft);
         rockBodyBoneCollidersEnabled = ini.GetBoolValue(EXPERIMENTAL_SECTION, "bBodyBoneCollidersEnabled", rockBodyBoneCollidersEnabled);
         rockBodyBoneLegAndFootCollidersEnabled =
             ini.GetBoolValue(EXPERIMENTAL_SECTION, "bBodyBoneLegAndFootCollidersEnabled", rockBodyBoneLegAndFootCollidersEnabled);

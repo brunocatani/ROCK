@@ -291,6 +291,7 @@ namespace rock
 
         int rockHandColliderRuntimeMode = 1;
         bool rockPipboyTriggerHandEquipEnabled = false;
+        bool rockPipboyPreferredHandLeft = false;
         bool rockBodyBoneCollidersEnabled = true;
         bool rockBodyBoneLegAndFootCollidersEnabled = false;
         bool rockBodyBoneCollisionStaticWorldEnabled = true;

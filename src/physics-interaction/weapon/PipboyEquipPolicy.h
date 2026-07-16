@@ -16,6 +16,14 @@ namespace rock::pipboy_equip_policy
         FallbackRight,
         PhysicalLevel,
         FreshTransition,
+        ConfiguredPreference,
+    };
+
+    enum class EquipMode : std::uint8_t
+    {
+        NativeRight,
+        PreferredLeft,
+        TriggerHand,
     };
 
     struct TransitionToken
@@ -30,6 +38,34 @@ namespace rock::pipboy_equip_policy
         Hand hand{ Hand::Right };
         TriggerSource source{ TriggerSource::FallbackRight };
     };
+
+    [[nodiscard]] inline constexpr EquipMode resolveEquipMode(
+        const bool triggerHandEnabled,
+        const bool preferredHandLeft) noexcept
+    {
+        if (triggerHandEnabled) {
+            return EquipMode::TriggerHand;
+        }
+        return preferredHandLeft ? EquipMode::PreferredLeft : EquipMode::NativeRight;
+    }
+
+    [[nodiscard]] inline constexpr bool managesHandAssignment(const EquipMode mode) noexcept
+    {
+        return mode != EquipMode::NativeRight;
+    }
+
+    [[nodiscard]] inline constexpr TriggerResolution resolveRequestedHand(
+        const EquipMode mode,
+        const TriggerResolution triggerResolution) noexcept
+    {
+        if (mode == EquipMode::TriggerHand) {
+            return triggerResolution;
+        }
+        return TriggerResolution{
+            .hand = mode == EquipMode::PreferredLeft ? Hand::Left : Hand::Right,
+            .source = TriggerSource::ConfiguredPreference,
+        };
+    }
 
     [[nodiscard]] inline constexpr bool isFreshTransition(
         const TransitionToken& token,

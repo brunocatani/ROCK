@@ -32,6 +32,20 @@ int main()
     const TransitionToken none{};
 
     bool ok = true;
+    if (resolveEquipMode(false, false) != EquipMode::NativeRight ||
+        resolveEquipMode(false, true) != EquipMode::PreferredLeft ||
+        resolveEquipMode(true, false) != EquipMode::TriggerHand ||
+        resolveEquipMode(true, true) != EquipMode::TriggerHand) {
+        std::printf("configured equip mode precedence is incorrect\n");
+        ok = false;
+    }
+    if (managesHandAssignment(EquipMode::NativeRight) ||
+        !managesHandAssignment(EquipMode::PreferredLeft) ||
+        !managesHandAssignment(EquipMode::TriggerHand)) {
+        std::printf("configured hand-assignment ownership is incorrect\n");
+        ok = false;
+    }
+
     ok &= expectResolution("left physical level",
         resolveTriggerHand(true, false, none, none, generation, now, maximumAge),
         Hand::Left,
@@ -68,6 +82,24 @@ int main()
         resolveTriggerHand(false, false, none, none, generation, now, maximumAge),
         Hand::Right,
         TriggerSource::FallbackRight);
+    ok &= expectResolution("trigger mode preserves controller resolution",
+        resolveRequestedHand(
+            EquipMode::TriggerHand,
+            TriggerResolution{ .hand = Hand::Right, .source = TriggerSource::PhysicalLevel }),
+        Hand::Right,
+        TriggerSource::PhysicalLevel);
+    ok &= expectResolution("preferred-left mode ignores controller resolution",
+        resolveRequestedHand(
+            EquipMode::PreferredLeft,
+            TriggerResolution{ .hand = Hand::Right, .source = TriggerSource::PhysicalLevel }),
+        Hand::Left,
+        TriggerSource::ConfiguredPreference);
+    ok &= expectResolution("native-right mode ignores controller resolution",
+        resolveRequestedHand(
+            EquipMode::NativeRight,
+            TriggerResolution{ .hand = Hand::Left, .source = TriggerSource::PhysicalLevel }),
+        Hand::Right,
+        TriggerSource::ConfiguredPreference);
 
     if (handTag(Hand::Left) != " [Left]" || handTag(Hand::Right) != " [Right]") {
         std::printf("side tags are incorrect\n");

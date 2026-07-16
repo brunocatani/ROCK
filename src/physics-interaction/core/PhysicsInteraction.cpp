@@ -3853,10 +3853,17 @@ namespace rock
         const bool menuInputActive)
     {
         constexpr std::uint16_t kMaximumResolveFrames = 180;
-        if (!g_rockConfig.rockPipboyTriggerHandEquipEnabled) {
+        const auto equipMode = pipboy_equip_policy::resolveEquipMode(
+            g_rockConfig.rockPipboyTriggerHandEquipEnabled,
+            g_rockConfig.rockPipboyPreferredHandLeft);
+        if (!pipboy_equip_policy::managesHandAssignment(equipMode)) {
             pipboy_equip_runtime::setLeftHandEquipAvailable(false);
+            pipboy_equip_runtime::SelectionEvent discardedEvent{};
+            (void)pipboy_equip_runtime::consumeSelectionEvent(
+                _lastPipboyWeaponSelectionSequence,
+                discardedEvent);
             if (_pipboyWeaponHandAssignment.pending || _pipboyWeaponHandAssignment.active) {
-                clearPipboyWeaponHandAssignment("feature-disabled", true);
+                clearPipboyWeaponHandAssignment("native-right-preference", true);
             } else {
                 pipboy_equip_runtime::AssignmentSnapshot persisted{};
                 if (pipboy_equip_runtime::getAssignment(persisted) && persisted.active) {
