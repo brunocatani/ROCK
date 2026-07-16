@@ -125,7 +125,8 @@ Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
 
 # The index must own a bounded object-local BVH and perform exact closest-point
 # tests with a fixed query stack; no allocation or full candidate scan is
-# allowed inside each arc-row probe.
+# allowed inside each arc-row probe. The deep-inside clearance check is a
+# separate, bounded query issued only after an over-open contact candidate.
 Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
     'class FingerPoseTriangleSpatialIndex',
     'buildFromLocalTriangles\(',
@@ -139,6 +140,7 @@ Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
     'const bool useSpatialIndex =',
     'result\.candidateTriangleCount = static_cast<int>\(spatialIndex->triangleCount\(\)\)',
     'querySphereWorld\(',
+    'queryPointInsideWorld\(',
     'result\.spatialTriangleTestCount = spatialQueryStats\.triangleTests'
 ) 'The runtime solve must use and report spatial-index work for regular grabs.'
 
@@ -259,19 +261,30 @@ Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
     'std::clamp\(probe\.samples\[row\]\.openValue, 0\.0f, clampedMaxOpen\)'
 ) 'The sweep must honor a per-call max-open cap by skipping rows above it.'
 Require-Text 'src/physics-interaction/grab/GrabFinger.h' `
-    'float maxOpenValue = kMaxFingerOpenValue\)' `
-    'The vector sweep wrapper must preserve the authored-open default cap.'
+    'float maxOpenValue = kMaxOverOpenValue\)' `
+    'The vector sweep wrapper must traverse the full hFRIK flex domain by default.'
 
-# Over-open engages ONLY when the authored-open row is blocked (the mesh
-# interpenetrates the finger at 1.0). A free authored-open row closes
-# normally - fingers must never hyper-extend onto a surface that merely
-# grazes the dorsal side of the arc while a closing wrap exists (the skull
-# case, 2026-07-13).
+# The geometric walk and its diagnostics always begin at the configured
+# ceiling. Publishing an over-open contact still requires evidence that the
+# authored-open probe is blocked: either its contact sphere touches or its
+# center is enclosed by a consistently wound shell. This covers thick objects
+# without reviving dorsal-only hyperextension (the skull case, 2026-07-13).
 Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
-    'bool authoredOpenBlocked = false;',
-    'sphereContact\(rowPositions\[authoredOpenRow\], radius',
-    'authoredOpenBlocked \? overOpenStartRow : authoredOpenRow;'
-) 'Over-open rows must engage only when the authored-open row is blocked.'
+    'sweptProbeStartRow\[probeIndex\] = static_cast<std::uint16_t>\(overOpenStartRow\)',
+    'firstContactInRange\(overOpenStartRow, authoredOpenRow\)',
+    'authoredOpenTouches = sphereContact\(rowPositions\[authoredOpenRow\], radius',
+    'pointInside\(rowPositions\[authoredOpenRow\]\)',
+    'keepMostOpen\(bestOverOpen, overOpenContact\)'
+) 'The full over-open path must be walked while selection remains gated by authored-open obstruction evidence.'
+Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
+    'enum class FingerPoseMeshRelation',
+    'CurrentMeshRequiresVirtualSeat',
+    'AlreadyAtCommandedSeat',
+    'resolveFingerSweepBaseWorld\('
+) 'Finger-pose pivots must explicitly distinguish current geometry from already-seated geometry.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
+    'FingerPoseMeshRelation::AlreadyAtCommandedSeat' `
+    'Regular target-space grabs must keep their calibrated pivot on the live proximal bone.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
     'rockGrabThumbSweepMaxOpenValue,\s*g_rockConfig\.rockGrabFingerSweepMaxOpenValue' `
     'Grab solve sites must pass the config-driven thumb/finger sweep max-open caps.'
@@ -281,6 +294,12 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
 Require-Text 'tools/generate_grab_finger_calibration.py' `
     'OVER_OPEN_MAX = 2\.0' `
     'The calibration bake must sample the full over-open range for every finger.'
+Require-Text 'src/RockConfig.h' `
+    'rockGrabFingerSweepMaxOpenValue = 2\.0f' `
+    'Normal fingers must default to the same full 2.0 sweep ceiling as the calibration.'
+foreach ($path in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
+    Require-Text $path 'fGrabFingerSweepMaxOpenValue\s*=\s*2\.0' 'Reference INIs must expose the full 2.0 normal-finger sweep by default.'
+}
 
 # The presentation grip axis is not pure cross-palm Z (the thumb occupies that
 # line): both alignment sites must apply the configurable tilt toward X.

@@ -91,6 +91,29 @@ namespace
             },
         };
     }
+
+    std::vector<rock::grab_finger_pose_math::Triangle<TestVector>> makeClosedBox(
+        const TestVector& boundsMin,
+        const TestVector& boundsMax)
+    {
+        using Triangle = rock::grab_finger_pose_math::Triangle<TestVector>;
+        const TestVector v000{ boundsMin.x, boundsMin.y, boundsMin.z };
+        const TestVector v001{ boundsMin.x, boundsMin.y, boundsMax.z };
+        const TestVector v010{ boundsMin.x, boundsMax.y, boundsMin.z };
+        const TestVector v011{ boundsMin.x, boundsMax.y, boundsMax.z };
+        const TestVector v100{ boundsMax.x, boundsMin.y, boundsMin.z };
+        const TestVector v101{ boundsMax.x, boundsMin.y, boundsMax.z };
+        const TestVector v110{ boundsMax.x, boundsMax.y, boundsMin.z };
+        const TestVector v111{ boundsMax.x, boundsMax.y, boundsMax.z };
+        return {
+            Triangle{ v000, v011, v010 }, Triangle{ v000, v001, v011 },  // -X
+            Triangle{ v100, v110, v111 }, Triangle{ v100, v111, v101 },  // +X
+            Triangle{ v000, v100, v101 }, Triangle{ v000, v101, v001 },  // -Y
+            Triangle{ v010, v011, v111 }, Triangle{ v010, v111, v110 },  // +Y
+            Triangle{ v000, v010, v110 }, Triangle{ v000, v110, v100 },  // -Z
+            Triangle{ v001, v101, v111 }, Triangle{ v001, v111, v011 },  // +Z
+        };
+    }
 }
 
 int main()
@@ -163,6 +186,22 @@ int main()
     ok &= expectFloat("non-thumb curl can over-open through FRIK flex range",
         overOpenJoints[4],
         rock::grab_finger_pose_math::kMaxOverOpenValue);
+
+    const RE::NiPoint3 liveProximalBase{ 1.0f, 2.0f, 3.0f };
+    const RE::NiPoint3 seatPoint{ 7.0f, 8.0f, 9.0f };
+    const RE::NiPoint3 grabAnchor{ 4.0f, 4.0f, 4.0f };
+    ok &= expectPointClose("already-seated mesh keeps sweep pivot on live proximal bone",
+        resolveFingerSweepBaseWorld(
+            liveProximalBase, seatPoint, grabAnchor, true, 0, FingerPoseMeshRelation::AlreadyAtCommandedSeat),
+        liveProximalBase);
+    ok &= expectPointClose("current mesh receives one explicit virtual-seat shift",
+        resolveFingerSweepBaseWorld(
+            liveProximalBase, seatPoint, grabAnchor, true, 0, FingerPoseMeshRelation::CurrentMeshRequiresVirtualSeat),
+        RE::NiPoint3{ 4.0f, 6.0f, 8.0f });
+    ok &= expectPointClose("explicit pinch targets never shift the proximal pivot",
+        resolveFingerSweepBaseWorld(
+            liveProximalBase, seatPoint, grabAnchor, true, 2, FingerPoseMeshRelation::CurrentMeshRequiresVirtualSeat),
+        liveProximalBase);
     const auto overOpenUniformJoints = rock::grab_finger_pose_math::expandFingerCurlsToJointValues(
         std::array<float, 5>{ 1.0f, 1.5f, 1.0f, 1.0f, 1.0f });
     ok &= expectFloat("over-open joints hyper-extend uniformly (no proximal bias)",
@@ -870,17 +909,17 @@ int main()
         debugCurve.probeCount = 1;
         debugCurve.probes[0].probe = CalibratedFingerProbe::Tip;
         debugCurve.probes[0].sampleCount = 3;
-        debugCurve.probes[0].samples[0] = { .openValue = 1.0f, .angleRadians = 0.0f, .reachLength = 2.0f };
-        debugCurve.probes[0].samples[1] = { .openValue = 0.5f, .angleRadians = kHalfPi * 0.5f, .reachLength = 2.0f };
+        debugCurve.probes[0].samples[0] = { .openValue = 2.0f, .angleRadians = -kHalfPi, .reachLength = 2.0f };
+        debugCurve.probes[0].samples[1] = { .openValue = 1.0f, .angleRadians = 0.0f, .reachLength = 2.0f };
         debugCurve.probes[0].samples[2] = { .openValue = 0.0f, .angleRadians = kHalfPi, .reachLength = 2.0f };
 
         auto debugSolved = rock::grab_finger_pose_math::FingerCurlValue{};
         debugSolved.hit = true;
-        debugSolved.value = 0.5f;
-        debugSolved.rawCurveValue = 0.5f;
+        debugSolved.value = 1.0f;
+        debugSolved.rawCurveValue = 1.0f;
         debugSolved.hasContactCenter = true;
-        debugSolved.contactCenterX = 0.0f;
-        debugSolved.contactCenterY = 2.0f;
+        debugSolved.contactCenterX = 2.0f;
+        debugSolved.contactCenterY = 0.0f;
         debugSolved.contactRadius = 0.25f;
         debugSolved.selectedProbeIndex = 0;
         debugSolved.sweptProbeStartRowValid[0] = 1;
@@ -891,7 +930,13 @@ int main()
         ok &= expectBool("sweep debug capture accepts a solved fixed path",
             captureFingerSweepDebugCurve(capture, debugCurve, debugSolved, 0.2f, grab_data::BakedGrabThumbLane::Wrap, identity), true);
         ok &= expectBool("sweep debug capture keeps all short-path rows", capture.probePointCount[0] == 3, true);
-        ok &= expectPointClose("sweep debug capture stores contact center object-local", capture.contactCenterObjectLocal, RE::NiPoint3{ 0.0f, 2.0f, 0.0f });
+        ok &= expectBool("sweep debug capture exposes the proximal pivot", capture.hasPivot, true);
+        ok &= expectPointClose("sweep debug capture stores proximal pivot object-local", capture.pivotObjectLocal, RE::NiPoint3{});
+        ok &= expectFloat("sweep debug capture starts at full flex ceiling", capture.probeStartOpenValue[0], 2.0f);
+        ok &= expectFloat("sweep debug capture ends fully closed", capture.probeEndOpenValue[0], 0.0f);
+        ok &= expectBool("sweep debug capture marks authored open independently", capture.authoredOpenPointValid[0] != 0, true);
+        ok &= expectPointClose("sweep debug capture stores authored-open point", capture.authoredOpenPointObjectLocal[0], RE::NiPoint3{ 2.0f, 0.0f, 0.0f });
+        ok &= expectPointClose("sweep debug capture stores contact center object-local", capture.contactCenterObjectLocal, RE::NiPoint3{ 2.0f, 0.0f, 0.0f });
         ok &= expectFloat("sweep debug capture stores contact radius object-local", capture.contactRadiusObjectLocal, 0.25f);
         ok &= expectBool("sweep debug capture classifies a normal hit", capture.state == FingerSweepDebugState::Hit, true);
     }
@@ -928,12 +973,18 @@ int main()
         // A surface only reachable over-open (negative arc angle).
         const auto overOpenOnlyTriangles = makeSliverTriangleAtPoint(arcPoint(2.0f, -kHalfPi * 0.5f));
 
-        // Default cap (1.0): over-open rows are skipped entirely - the
-        // surface is invisible to the walked arc and the sweep misses (same
-        // miss semantics as any off-arc geometry inside the filter radius).
+        // The default walk starts at 2.0, but an isolated dorsal surface does
+        // not prove that the authored-open pose is obstructed. It therefore
+        // remains ineligible as a published over-open stop.
         const auto cappedSolved = sweepCalibratedFingerCurveCurlValue(
             overOpenOnlyTriangles, overOpenCurve, 0.2f, 0.15f);
-        ok &= expectBool("default cap never contacts over-open rows", cappedSolved.hit, false);
+        ok &= expectBool("default full sweep ignores unsupported dorsal contact", cappedSolved.hit, false);
+        ok &= expectBool("default full sweep records row zero as its actual start",
+            cappedSolved.sweptProbeStartRowValid[0] != 0 && cappedSolved.sweptProbeStartRow[0] == 0,
+            true);
+        ok &= expectBool("isolated surface does not classify authored open as enclosed",
+            pointInsideClosedTriangleMesh(overOpenOnlyTriangles, arcPoint(2.0f, 0.0f)),
+            false);
 
         /*
          * Over-open engages ONLY when the authored-open row is blocked. A
@@ -963,6 +1014,26 @@ int main()
             true);
         ok &= expectBool("over-open contact row reports its negative arc angle",
             overOpenSolved.distance < 0.0f,
+            true);
+
+        // A thick closed object can place the authored-open probe well inside
+        // the mesh, farther than the contact-sphere radius from every face.
+        // The old single sphere-at-1.0 gate called that pose free and skipped
+        // the entire 2 -> 1 clearance interval. Closed-shell occupancy must
+        // recognize it and select the first entry contact from the full walk.
+        const auto enclosingBox = makeClosedBox(
+            TestVector{ 1.7f, -0.6f, -0.3f },
+            TestVector{ 2.3f, 0.6f, 0.3f });
+        ok &= expectBool("closed shell recognizes a deep-inside authored-open point",
+            pointInsideClosedTriangleMesh(enclosingBox, arcPoint(2.0f, 0.0f)),
+            true);
+        const auto deepInsideSolved = sweepCalibratedFingerCurveCurlValue(
+            enclosingBox, overOpenCurve, 0.2f, 0.15f);
+        ok &= expectBool("deep-inside authored open engages full over-open clearance",
+            deepInsideSolved.hit && deepInsideSolved.value > 1.0f,
+            true);
+        ok &= expectBool("deep-inside clearance lands on the box entry surface",
+            deepInsideSolved.value >= 1.10f && deepInsideSolved.value <= 1.40f,
             true);
 
         // A cap below the contact row hides it even when the open row is

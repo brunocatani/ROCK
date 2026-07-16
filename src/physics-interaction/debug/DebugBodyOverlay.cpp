@@ -2087,6 +2087,18 @@ float4 main(PS_INPUT input) : SV_Target {
                 color[2] = 1.0f;
                 color[3] = 0.94f;
                 break;
+            case MarkerOverlayRole::GrabFingerSweepPivot:
+                color[0] = 1.0f;
+                color[1] = 1.0f;
+                color[2] = 1.0f;
+                color[3] = 1.0f;
+                break;
+            case MarkerOverlayRole::GrabFingerSweepAuthoredOpen:
+                color[0] = 1.0f;
+                color[1] = 0.72f;
+                color[2] = 0.08f;
+                color[3] = 1.0f;
+                break;
             case MarkerOverlayRole::GrabFingerSweepContact:
                 color[0] = 1.0f;
                 color[1] = 0.90f;

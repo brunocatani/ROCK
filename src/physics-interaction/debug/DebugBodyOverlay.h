@@ -199,6 +199,8 @@ namespace rock::debug
         GrabFingerSweepTip,
         GrabFingerSweepOuter,
         GrabFingerSweepInner,
+        GrabFingerSweepPivot,
+        GrabFingerSweepAuthoredOpen,
         GrabFingerSweepContact,
         GrabFingerSweepHitNormal,
         GrabFingerSweepMiss,

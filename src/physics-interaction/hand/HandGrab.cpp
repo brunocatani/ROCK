@@ -11082,7 +11082,8 @@ namespace rock
                         g_rockConfig.rockGrabFingerRejectBacksideHits, g_rockConfig.rockGrabFingerSurfacePlaneToleranceGameUnits, _grabFrame.fingerPoseAimValid,
                         g_rockConfig.rockGrabFingerSweepContactRadiusGameUnits, -1.0f, g_rockConfig.rockGrabThumbSweepMaxOpenValue, g_rockConfig.rockGrabFingerSweepMaxOpenValue,
                         commandedOpenDirectionsValid ? &commandedOpenDirectionsWorld : nullptr, spatialIndexBuilt ? &_grabFingerTriangleIndex : nullptr,
-                        spatialIndexBuilt ? &targetObjectWorld : nullptr, g_rockConfig.rockDebugShowGrabFingerSweptArc ? &sweepDebugCapture : nullptr);
+                        spatialIndexBuilt ? &targetObjectWorld : nullptr, g_rockConfig.rockDebugShowGrabFingerSweptArc ? &sweepDebugCapture : nullptr,
+                        grab_finger_pose_runtime::FingerPoseMeshRelation::AlreadyAtCommandedSeat);
                 _grabFingerSweepDebugCapture = sweepDebugCapture;
                 _grabFingerSweepDebugObjectWorld = targetObjectWorld;
                 _hasGrabFingerSweepDebug = sweepDebugCapture.valid;

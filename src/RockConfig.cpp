@@ -560,7 +560,7 @@ namespace rock
         rockGrabFingerRejectBacksideHits = true;
         rockGrabFingerSurfacePlaneToleranceGameUnits = 1.5f;
         rockGrabFingerSweepContactRadiusGameUnits = 1.0f;
-        rockGrabFingerSweepMaxOpenValue = 1.4f;
+        rockGrabFingerSweepMaxOpenValue = 2.0f;
         rockGrabThumbSweepMaxOpenValue = 2.0f;
         rockGrabFingerPoseResolveWindowSeconds = 2.0f;
         rockGrabThumbOppositionStrength = 1.0f;
@@ -2161,8 +2161,8 @@ namespace rock
         rockGrabFingerSweepMaxOpenValue =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabFingerSweepMaxOpenValue", rockGrabFingerSweepMaxOpenValue));
         if (!std::isfinite(rockGrabFingerSweepMaxOpenValue) || rockGrabFingerSweepMaxOpenValue < 1.0f || rockGrabFingerSweepMaxOpenValue > 2.0f) {
-            ROCK_LOG_WARN(Config, "Invalid fGrabFingerSweepMaxOpenValue={} -- using 1.4 (valid range 1.0-2.0)", rockGrabFingerSweepMaxOpenValue);
-            rockGrabFingerSweepMaxOpenValue = 1.4f;
+            ROCK_LOG_WARN(Config, "Invalid fGrabFingerSweepMaxOpenValue={} -- using 2.0 (valid range 1.0-2.0)", rockGrabFingerSweepMaxOpenValue);
+            rockGrabFingerSweepMaxOpenValue = 2.0f;
         }
         rockGrabThumbSweepMaxOpenValue =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabThumbSweepMaxOpenValue", rockGrabThumbSweepMaxOpenValue));

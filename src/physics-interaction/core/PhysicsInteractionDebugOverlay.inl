@@ -1353,6 +1353,7 @@
             constexpr float kSweepOverOpenTextColor[4] = { 1.0f, 0.45f, 0.02f, 1.0f };
             constexpr float kSweepClosedLimitTextColor[4] = { 1.0f, 0.05f, 0.42f, 1.0f };
             constexpr float kSweepLegendTextColor[4] = { 0.92f, 0.92f, 0.92f, 0.96f };
+            constexpr float kSweepAuthoredOpenTextColor[4] = { 1.0f, 0.72f, 0.08f, 1.0f };
 
             auto addFingerSweptArcDebug = [&](const Hand& hand) {
                 if ((hand.isLeft() && leftDisabled) || (!hand.isLeft() && rightDisabled)) {
@@ -1416,6 +1417,16 @@
 
                     RE::NiPoint3 stateAnchorWorld = snapshot.objectWorld.translate;
                     bool stateAnchorValid = false;
+                    RE::NiPoint3 pivotWorld{};
+                    const bool pivotValid = finger.hasPivot;
+                    if (pivotValid) {
+                        pivotWorld = transform_math::localPointToWorld(snapshot.objectWorld, finger.pivotObjectLocal);
+                        addMarkerPoint(debug::MarkerOverlayRole::GrabFingerSweepPivot, pivotWorld, 1.15f);
+                        if (drawFingerSweptArcText) {
+                            addTextLine(pivotWorld + RE::NiPoint3{ 0.0f, 0.0f, 0.8f }, kSweepLegendTextColor,
+                                "%c %s PROXIMAL PIVOT", hand.isLeft() ? 'L' : 'R', grab_finger_pose_runtime::fingerSweepDebugFingerName(fingerIndex));
+                        }
+                    }
                     for (std::size_t probeIndex = 0; probeIndex < finger.probePointsObjectLocal.size(); ++probeIndex) {
                         const std::size_t pointCount = (std::min)(static_cast<std::size_t>(finger.probePointCount[probeIndex]), finger.probePointsObjectLocal[probeIndex].size());
                         if (pointCount == 0) {
@@ -1423,6 +1434,25 @@
                         }
                         const auto role = roleForProbe(finger.probeKind[probeIndex]);
                         RE::NiPoint3 previousWorld = transform_math::localPointToWorld(snapshot.objectWorld, finger.probePointsObjectLocal[probeIndex][0]);
+                        if (pivotValid) {
+                            // Radial spoke: this exposes the proximal rotation
+                            // center that the colored distal trajectory alone
+                            // cannot communicate.
+                            addMarkerLine(role, pivotWorld, previousWorld);
+                        }
+                        addMarkerPoint(role, previousWorld, 0.55f);
+                        if (finger.authoredOpenPointValid[probeIndex] != 0) {
+                            const RE::NiPoint3 authoredOpenWorld =
+                                transform_math::localPointToWorld(snapshot.objectWorld, finger.authoredOpenPointObjectLocal[probeIndex]);
+                            addMarkerPoint(debug::MarkerOverlayRole::GrabFingerSweepAuthoredOpen, authoredOpenWorld, 0.62f);
+                            if (drawFingerSweptArcText && finger.probeKind[probeIndex] == grab_finger_pose_math::CalibratedFingerProbe::Tip) {
+                                addTextLine(authoredOpenWorld + RE::NiPoint3{ 0.0f, 0.0f, 0.7f }, kSweepAuthoredOpenTextColor, "1.0 AUTHORED OPEN");
+                            }
+                        }
+                        if (drawFingerSweptArcText && finger.probeKind[probeIndex] == grab_finger_pose_math::CalibratedFingerProbe::Tip) {
+                            addTextLine(previousWorld + RE::NiPoint3{ 0.0f, 0.0f, 0.7f }, kSweepLegendTextColor,
+                                "%.2f SWEEP START", finger.probeStartOpenValue[probeIndex]);
+                        }
                         for (std::size_t pointIndex = 1; pointIndex < pointCount; ++pointIndex) {
                             const RE::NiPoint3 pointWorld = transform_math::localPointToWorld(snapshot.objectWorld, finger.probePointsObjectLocal[probeIndex][pointIndex]);
                             addMarkerLine(role, previousWorld, pointWorld);
@@ -1465,9 +1495,10 @@
                         }
                         const char* thumbLane = fingerIndex == 0 ? grab_finger_pose_math::thumbLaneName(finger.thumbLane) : "-";
                         addTextLine(stateAnchorWorld + RE::NiPoint3{ 0.0f, 0.0f, 1.8f + static_cast<float>(fingerIndex) * 0.6f }, textColorForState(finger.state),
-                            "%c %s %s v=%.2f raw=%.2f probe=%s lane=%s",
+                            "%c %s %s v=%.2f raw=%.2f range=%.2f->%.2f probe=%s lane=%s",
                             hand.isLeft() ? 'L' : 'R', grab_finger_pose_runtime::fingerSweepDebugFingerName(fingerIndex),
-                            grab_finger_pose_runtime::fingerSweepDebugStateName(finger.state), finger.publishedValue, finger.rawCurveValue, selectedProbe, thumbLane);
+                            grab_finger_pose_runtime::fingerSweepDebugStateName(finger.state), finger.publishedValue, finger.rawCurveValue,
+                            finger.probeStartOpenValue[0], finger.probeEndOpenValue[0], selectedProbe, thumbLane);
                     }
                 }
 
@@ -1489,7 +1520,7 @@
 
                 if (drawFingerSweptArcText) {
                     addTextLine(snapshot.objectWorld.translate + RE::NiPoint3{ 0.0f, 0.0f, 10.0f }, kSweepLegendTextColor,
-                        "%c SWEEP tri=%u node=%u exact=%u | TIP cyan OUT green IN purple CONTACT yellow LIVE white", hand.isLeft() ? 'L' : 'R',
+                        "%c SWEEP tri=%u node=%u exact=%u | PIVOT white 1.0 gold TIP cyan OUT green IN purple CONTACT yellow LIVE gray", hand.isLeft() ? 'L' : 'R',
                         snapshot.capture.candidateTriangleCount, snapshot.capture.spatialNodeVisits, snapshot.capture.spatialTriangleTests);
                 }
             };
