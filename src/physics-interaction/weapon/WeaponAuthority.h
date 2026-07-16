@@ -636,6 +636,83 @@ namespace rock::scope_safe_hand_frame_math
         return !scopeMenuOpen;
     }
 
+    enum class HandAuthorityRole : std::uint8_t
+    {
+        PrimaryGrip = 1u << 0u,
+        SupportGrip = 1u << 1u,
+        PrimaryDetach = 1u << 2u,
+    };
+
+    using HandAuthorityRoleMask = std::uint8_t;
+
+    [[nodiscard]] inline constexpr HandAuthorityRoleMask roleMask(HandAuthorityRole role)
+    {
+        return static_cast<HandAuthorityRoleMask>(role);
+    }
+
+    [[nodiscard]] inline constexpr bool hasRole(HandAuthorityRoleMask mask, HandAuthorityRole role)
+    {
+        return (mask & roleMask(role)) != 0;
+    }
+
+    struct DesiredHandAuthorityInput
+    {
+        bool gripping{ false };
+        bool primaryHandAuthorityEnabled{ false };
+        bool firingHandIsLeft{ false };
+        bool leftPartGripActive{ false };
+        bool rightPartGripActive{ false };
+    };
+
+    /*
+     * ScopeMenu hides the arms but does not end ROCK ownership. On exit, the
+     * live role set is derived from the weapon state instead of treating every
+     * hFRIK tag as stale. PrimaryOnly relies on native/mirrored carry and owns
+     * no wrist tag; Gripping owns the firing wrist only in full-authority mode;
+     * every active part grip owns its physical support wrist in either firing
+     * topology or PartCarry.
+     */
+    [[nodiscard]] inline constexpr HandAuthorityRoleMask desiredRolesForHand(
+        const DesiredHandAuthorityInput& input,
+        bool isLeft)
+    {
+        HandAuthorityRoleMask desired = 0;
+        if (input.gripping && input.primaryHandAuthorityEnabled && input.firingHandIsLeft == isLeft) {
+            desired |= roleMask(HandAuthorityRole::PrimaryGrip);
+        }
+        if (isLeft ? input.leftPartGripActive : input.rightPartGripActive) {
+            desired |= roleMask(HandAuthorityRole::SupportGrip);
+        }
+        return desired;
+    }
+
+    enum class DeferredClearAction
+    {
+        RetainLiveRole,
+        ClearStaleRole,
+        WaitForReplacementPublication,
+    };
+
+    /*
+     * A stale tag may be removed only after a replacement role for the same
+     * hand has published this frame. That ordering prevents hFRIK from briefly
+     * restoring the tracked arm between two ROCK roles. Reacquiring the same
+     * role simply cancels its deferred clear and keeps the existing tag alive.
+     */
+    [[nodiscard]] inline constexpr DeferredClearAction resolveDeferredClearAction(
+        HandAuthorityRole pendingRole,
+        HandAuthorityRoleMask desiredRoles,
+        HandAuthorityRoleMask publishedRolesThisFrame)
+    {
+        if (hasRole(desiredRoles, pendingRole)) {
+            return DeferredClearAction::RetainLiveRole;
+        }
+        if (desiredRoles == 0 || (desiredRoles & publishedRolesThisFrame) != 0) {
+            return DeferredClearAction::ClearStaleRole;
+        }
+        return DeferredClearAction::WaitForReplacementPublication;
+    }
+
     /*
      * ScopeMenu and the short exit rebase use reconstructed hand frames whose
      * update ownership differs from the visible weapon node. Neither is a

@@ -365,6 +365,104 @@ int main()
         ok &= expectFalse("left firing grip keeps its established mirrored hold",
             rock::scope_safe_hand_frame_math::shouldReuseRightFiringCanonicalGrip(true, true, true, 0x1234u, 0x1234u));
 
+        using rock::scope_safe_hand_frame_math::DeferredClearAction;
+        using rock::scope_safe_hand_frame_math::DesiredHandAuthorityInput;
+        using rock::scope_safe_hand_frame_math::HandAuthorityRole;
+        const auto primaryRole = rock::scope_safe_hand_frame_math::roleMask(HandAuthorityRole::PrimaryGrip);
+        const auto supportRole = rock::scope_safe_hand_frame_math::roleMask(HandAuthorityRole::SupportGrip);
+
+        const DesiredHandAuthorityInput rightPrimaryOnly{
+            .firingHandIsLeft = false,
+        };
+        ok &= expectEqual("right-hand-only scope owns no ROCK wrist tag",
+            rock::scope_safe_hand_frame_math::desiredRolesForHand(rightPrimaryOnly, false),
+            static_cast<rock::scope_safe_hand_frame_math::HandAuthorityRoleMask>(0));
+        ok &= expectEqual("right-hand-only scope leaves the left wrist native",
+            rock::scope_safe_hand_frame_math::desiredRolesForHand(rightPrimaryOnly, true),
+            static_cast<rock::scope_safe_hand_frame_math::HandAuthorityRoleMask>(0));
+
+        const DesiredHandAuthorityInput leftPrimaryOnly{
+            .firingHandIsLeft = true,
+        };
+        ok &= expectEqual("left-hand-only scope uses mirrored carry without a ROCK wrist tag",
+            rock::scope_safe_hand_frame_math::desiredRolesForHand(leftPrimaryOnly, true),
+            static_cast<rock::scope_safe_hand_frame_math::HandAuthorityRoleMask>(0));
+        ok &= expectEqual("left-hand-only scope leaves the right wrist native",
+            rock::scope_safe_hand_frame_math::desiredRolesForHand(leftPrimaryOnly, false),
+            static_cast<rock::scope_safe_hand_frame_math::HandAuthorityRoleMask>(0));
+
+        const DesiredHandAuthorityInput rightFiringTwoHand{
+            .gripping = true,
+            .primaryHandAuthorityEnabled = true,
+            .firingHandIsLeft = false,
+            .leftPartGripActive = true,
+        };
+        ok &= expectEqual("right-fire two-hand scope retains the right primary wrist",
+            rock::scope_safe_hand_frame_math::desiredRolesForHand(rightFiringTwoHand, false), primaryRole);
+        ok &= expectEqual("right-fire two-hand scope retains the left support wrist",
+            rock::scope_safe_hand_frame_math::desiredRolesForHand(rightFiringTwoHand, true), supportRole);
+
+        const DesiredHandAuthorityInput rightFiringVisualSupport{
+            .gripping = true,
+            .primaryHandAuthorityEnabled = false,
+            .firingHandIsLeft = false,
+            .leftPartGripActive = true,
+        };
+        ok &= expectEqual("right-fire visual support keeps the native firing wrist unowned",
+            rock::scope_safe_hand_frame_math::desiredRolesForHand(rightFiringVisualSupport, false),
+            static_cast<rock::scope_safe_hand_frame_math::HandAuthorityRoleMask>(0));
+        ok &= expectEqual("right-fire visual support retains only the left support wrist",
+            rock::scope_safe_hand_frame_math::desiredRolesForHand(rightFiringVisualSupport, true), supportRole);
+
+        const DesiredHandAuthorityInput leftFiringTwoHand{
+            .gripping = true,
+            .primaryHandAuthorityEnabled = true,
+            .firingHandIsLeft = true,
+            .rightPartGripActive = true,
+        };
+        ok &= expectEqual("left-fire two-hand scope retains the left primary wrist",
+            rock::scope_safe_hand_frame_math::desiredRolesForHand(leftFiringTwoHand, true), primaryRole);
+        ok &= expectEqual("left-fire two-hand scope retains the right support wrist",
+            rock::scope_safe_hand_frame_math::desiredRolesForHand(leftFiringTwoHand, false), supportRole);
+
+        const DesiredHandAuthorityInput leftFiringVisualSupport{
+            .gripping = true,
+            .primaryHandAuthorityEnabled = false,
+            .firingHandIsLeft = true,
+            .rightPartGripActive = true,
+        };
+        ok &= expectEqual("left-fire visual support keeps the mirrored firing wrist native",
+            rock::scope_safe_hand_frame_math::desiredRolesForHand(leftFiringVisualSupport, true),
+            static_cast<rock::scope_safe_hand_frame_math::HandAuthorityRoleMask>(0));
+        ok &= expectEqual("left-fire visual support retains only the right support wrist",
+            rock::scope_safe_hand_frame_math::desiredRolesForHand(leftFiringVisualSupport, false), supportRole);
+
+        const DesiredHandAuthorityInput twoHandPartCarry{
+            .leftPartGripActive = true,
+            .rightPartGripActive = true,
+        };
+        ok &= expectEqual("part carry retains the left part-grip wrist",
+            rock::scope_safe_hand_frame_math::desiredRolesForHand(twoHandPartCarry, true), supportRole);
+        ok &= expectEqual("part carry retains the right part-grip wrist",
+            rock::scope_safe_hand_frame_math::desiredRolesForHand(twoHandPartCarry, false), supportRole);
+
+        ok &= expectEqual("scope exit retains a role still owned by the same hand",
+            rock::scope_safe_hand_frame_math::resolveDeferredClearAction(
+                HandAuthorityRole::PrimaryGrip, primaryRole, 0),
+            DeferredClearAction::RetainLiveRole);
+        ok &= expectEqual("scope exit waits before replacing primary with support on one hand",
+            rock::scope_safe_hand_frame_math::resolveDeferredClearAction(
+                HandAuthorityRole::PrimaryGrip, supportRole, 0),
+            DeferredClearAction::WaitForReplacementPublication);
+        ok &= expectEqual("scope exit clears the old primary after support publishes",
+            rock::scope_safe_hand_frame_math::resolveDeferredClearAction(
+                HandAuthorityRole::PrimaryGrip, supportRole, supportRole),
+            DeferredClearAction::ClearStaleRole);
+        ok &= expectEqual("scope exit clears released authority when no ROCK role remains",
+            rock::scope_safe_hand_frame_math::resolveDeferredClearAction(
+                HandAuthorityRole::SupportGrip, 0, 0),
+            DeferredClearAction::ClearStaleRole);
+
         TestTransform rebaseStart = rock::transform_math::makeIdentityTransform<TestTransform>();
         rebaseStart.translate = { 1.5f, -2.0f, 0.75f };
         rebaseStart.rotate.entry[0][0] = 0.0f;

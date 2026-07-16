@@ -43,7 +43,7 @@ Require-Text 'src/physics-interaction/weapon/WeaponCollision.h' 'struct NativeSc
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'descriptor\.semantic\.partKind\s*!=\s*WeaponPartKind::Sight[\s\S]*rearPlaneCenterFromSightBounds[\s\S]*_nativeScopeSightAnchorSnapshot\s*=\s*nativeScopeSightAnchorSnapshot' `
     'Native-scope placement must aggregate only validated Sight geometry and publish its rear-center anchor with the weapon generation.'
 
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' '_hasSolvedWeaponTransform\s*=\s*false;[\s\S]*refreshNativeScopeSightAnchor\(weaponNode,\s*currentWeaponGenerationKey,\s*weaponCollision\);[\s\S]*refreshScopeSafeHandFrames\(weaponNode,\s*frameInput,\s*dt\);[\s\S]*if\s*\(!runtime_state::isLocalSkeletonReady\(\)\s*\|\|\s*!weaponNode\)' `
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' '_hasSolvedWeaponTransform\s*=\s*false;[\s\S]*refreshNativeScopeSightAnchor\(weaponNode,\s*currentWeaponGenerationKey,\s*weaponCollision\);[\s\S]*refreshScopeSafeHandFrames\(frameInput,\s*dt\);[\s\S]*if\s*\(!runtime_state::isLocalSkeletonReady\(\)\s*\|\|\s*!weaponNode\)' `
     'Scope geometry and hFRIK-driver calibration must refresh before the grip state machine and its early return.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'snapshot\.weaponGenerationKey\s*!=\s*currentWeaponGenerationKey[\s\S]*_nativeScopeSightAnchorGenerationKey\s*=\s*0[\s\S]*_nativeScopeSightAnchorValid\s*=\s*true' `
     'Native-scope geometry must fail closed across publication races and become usable only after an exact generation match.'
@@ -65,15 +65,15 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'driverFrameAuth
     'Scope exit must rebase smoothly from reconstructed or recent scoped authority to the restored hFRIK root hand.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'recentScopedHandAvailable\s*=\s*state\.hasLastHandWorld\s*&&[\s\S]*state\.consecutiveDriverMissFrames\s*<\s*SCOPE_DRIVER_MISS_GRACE_FRAMES;[\s\S]*state\.consecutiveDriverMissFrames\s*=\s*0;' `
     'Scope-exit history age must be checked before the normal root path resets its driver-miss counter.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' '_scopeHandAuthorityCleanupPending\s*=\s*true[\s\S]*!_scopeMenuOpenThisFrame[\s\S]*clearExternalHandWorldTransform\(PRIMARY_GRIP_TAG[\s\S]*clearExternalHandWorldTransform\(SUPPORT_GRIP_TAG' `
-    'Persistent hFRIK wrist-authority entries must be cleared once the visible root returns after ScopeMenu.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'refreshHand\(true,\s*frameInput\.leftHandDriverFrame\);[\s\S]*refreshHand\(false,\s*frameInput\.rightHandDriverFrame\);[\s\S]*clearExternalHandWorldTransform\(PRIMARY_GRIP_TAG' `
-    'Scope-exit cleanup must not mutate hFRIK root hands before ROCK captures its fully adjusted rebase frames.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'captureScopeHandAuthorityCleanupVisuals\(weaponNode\)[\s\S]*clearExternalHandWorldTransform\(PRIMARY_GRIP_TAG[\s\S]*restoreScopeHandAuthorityCleanupVisuals\(visualSnapshot\)' `
-    'Scope-exit tag cleanup must preserve the adjusted weapon and native scope-camera world baselines across hFRIK arm restoration.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'void TwoHandedGrip::clearSupportGripPose[\s\S]*if \(_scopeMenuOpenThisFrame\)[\s\S]*_scopeHandAuthorityCleanupPending\s*=\s*true;[\s\S]*clearExternalHandWorldTransform\(SUPPORT_GRIP_TAG' `
+Require-Text 'src/physics-interaction/weapon/WeaponAuthority.h' 'enum class HandAuthorityRole[\s\S]*DesiredHandAuthorityInput[\s\S]*desiredRolesForHand[\s\S]*DeferredClearAction[\s\S]*resolveDeferredClearAction' `
+    'Scope-exit cleanup must derive role-aware live authority and wait for replacement publication before clearing stale tags.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'updateHandVisualReturns\(dt\);[\s\S]{0,500}reconcileDeferredScopeHandAuthority\(weaponNode\);' `
+    'Deferred scope authority must reconcile only after the current state has published its replacement hand roles.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'void TwoHandedGrip::reconcileDeferredScopeHandAuthority[\s\S]*captureScopeHandAuthorityCleanupVisuals\(weaponNode\)[\s\S]*desiredRolesForHand[\s\S]*resolveDeferredClearAction[\s\S]*restoreScopeHandAuthorityCleanupVisuals\(visualSnapshot\)' `
+    'Role-aware scope cleanup must preserve weapon and scope-camera baselines if clearing a stale tag restores an hFRIK arm.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'scopeStateChanged\s*&&\s*!_scopeMenuOpenThisFrame[\s\S]*void TwoHandedGrip::clearSupportGripPose[\s\S]*if \(_scopeMenuOpenThisFrame\s*\|\|\s*_scopeMenuClosedThisFrame\)[\s\S]*deferScopeHandAuthorityClear\(scope_safe_hand_frame_math::HandAuthorityRole::SupportGrip,\s*isLeft\)' `
     'Support-hand release while scoped must defer hFRIK wrist cleanup instead of restoring against the collapsed root.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'void TwoHandedGrip::clearPrimaryGripPose[\s\S]*if \(_scopeMenuOpenThisFrame\)[\s\S]*_scopeHandAuthorityCleanupPending\s*=\s*true;[\s\S]*clearExternalHandWorldTransform\(PRIMARY_GRIP_TAG' `
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'void TwoHandedGrip::clearPrimaryGripPose[\s\S]*if \(_scopeMenuOpenThisFrame\s*\|\|\s*_scopeMenuClosedThisFrame\)[\s\S]*deferScopeHandAuthorityClear\(scope_safe_hand_frame_math::HandAuthorityRole::PrimaryGrip,\s*isLeft\)' `
     'Primary-hand release while scoped must defer hFRIK wrist cleanup instead of restoring against the collapsed root.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'void TwoHandedGrip::reset\(\)[\s\S]*clearSupportGripPose\(false\);[\s\S]*_scopeMenuOpenThisFrame\s*=\s*false;' `
     'Reset must preserve the active ScopeMenu flag until all hand-authority clears have been safely deferred.'
@@ -88,6 +88,8 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'canRefreshRight
 
 Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'static bool tryGetHandBoneTransform' `
     'The old finite-only root-hand reader must not remain as the two-hand solver authority path.'
+Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' '_scopeHandAuthorityCleanupPending|for\s*\(const bool isLeft\s*:\s*\{\s*true,\s*false\s*\}\)[\s\S]{0,500}PRIMARY_GRIP_TAG[\s\S]{0,500}SUPPORT_GRIP_TAG[\s\S]{0,500}PRIMARY_DETACH_TAG' `
+    'Scope exit must not blanket-clear every hand-authority role for both hands.'
 
 if ($failures.Count -gt 0) {
     foreach ($failure in $failures) {

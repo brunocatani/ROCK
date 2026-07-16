@@ -967,10 +967,11 @@ namespace rock
             snapshot.sightBoundsMaxWeaponLocal.y, snapshot.sightBoundsMaxWeaponLocal.z);
     }
 
-    void TwoHandedGrip::refreshScopeSafeHandFrames(RE::NiNode* weaponNode, const EquippedWeaponGripFrameInput& frameInput, float dt)
+    void TwoHandedGrip::refreshScopeSafeHandFrames(const EquippedWeaponGripFrameInput& frameInput, float dt)
     {
         const bool scopeStateChanged = _scopeMenuOpenThisFrame != frameInput.scopeMenuOpen;
         _scopeMenuOpenThisFrame = frameInput.scopeMenuOpen;
+        _scopeMenuClosedThisFrame = scopeStateChanged && !_scopeMenuOpenThisFrame;
         const bool driverFrameAuthorityWasActive = _scopeDriverFrameAuthorityActive;
         _scopeDriverFrameAuthorityActive = scope_safe_hand_frame_math::retainDriverFrameAuthority(
             _scopeMenuOpenThisFrame,
@@ -991,12 +992,6 @@ namespace rock
                     "root-flattened",
                 _scopeSafeHandFrames[0].hasDriverToHandLocal ? "ready" : "missing",
                 _scopeSafeHandFrames[1].hasDriverToHandLocal ? "ready" : "missing");
-            if (_scopeMenuOpenThisFrame) {
-                // hFRIK's clear call cannot restore a hand after its root has
-                // already been collapsed. Defer removal of the persistent API
-                // authority entries until the visible root returns.
-                _scopeHandAuthorityCleanupPending = true;
-            }
         }
 
         const float frameDeltaSeconds = std::isfinite(dt) && dt > 0.0f ? (std::min)(dt, 0.1f) : (1.0f / 90.0f);
@@ -1112,28 +1107,6 @@ namespace rock
 
         refreshHand(true, frameInput.leftHandDriverFrame);
         refreshHand(false, frameInput.rightHandDriverFrame);
-
-        // Capture the fully adjusted hFRIK root hands first. Clearing an API
-        // wrist tag asks hFRIK to restore its tracked arm but does not rerun the
-        // later weapon-position adjustment pass, so cleanup must not mutate the
-        // canonical frames used by this exit-frame rebase/weapon solve.
-        if (!_scopeMenuOpenThisFrame &&
-            _scopeHandAuthorityCleanupPending &&
-            frik_visual_authority::isAvailable()) {
-            const ScopeHandAuthorityCleanupVisualSnapshot visualSnapshot =
-                captureScopeHandAuthorityCleanupVisuals(weaponNode);
-            bool cleared = true;
-            for (const bool isLeft : { true, false }) {
-                cleared &= frik_visual_authority::clearExternalHandWorldTransform(PRIMARY_GRIP_TAG, handFromBool(isLeft));
-                cleared &= frik_visual_authority::clearExternalHandWorldTransform(SUPPORT_GRIP_TAG, handFromBool(isLeft));
-                cleared &= frik_visual_authority::clearExternalHandWorldTransform(PRIMARY_DETACH_TAG, handFromBool(isLeft));
-            }
-            restoreScopeHandAuthorityCleanupVisuals(visualSnapshot);
-            if (cleared) {
-                _scopeHandAuthorityCleanupPending = false;
-                ROCK_LOG_DEBUG(Weapon, "TwoHandedGrip: cleared deferred native-scope hand authority entries");
-            }
-        }
     }
 
     bool TwoHandedGrip::tryGetSolverHandTransform(bool isLeft, RE::NiTransform& outTransform) const
@@ -1220,6 +1193,7 @@ namespace rock
         const EquippedWeaponGripMode& gripMode)
     {
         _hasSolvedWeaponTransform = false;
+        _scopeHandAuthorityPublishedThisFrame = {};
         _firingGripReattachHoverInsideRadius = false;
         _firingGripReattachHoverHandIsLeft = _firingHandIsLeft;
         if (g_rockConfig.rockDebugDrawNativeScopeActivation &&
@@ -1228,13 +1202,14 @@ namespace rock
         }
 
         refreshNativeScopeSightAnchor(weaponNode, currentWeaponGenerationKey, weaponCollision);
-        refreshScopeSafeHandFrames(weaponNode, frameInput, dt);
+        refreshScopeSafeHandFrames(frameInput, dt);
 
         if (!runtime_state::isLocalSkeletonReady() || !weaponNode) {
             clearAllVisualReturns("skeleton-or-weapon-unavailable", true, true);
             if (_state != TwoHandedState::Inactive) {
                 transitionToInactive(false);
             }
+            reconcileDeferredScopeHandAuthority(weaponNode);
             return;
         }
 
@@ -1281,6 +1256,7 @@ namespace rock
                 currentEquippedWeaponOwnershipKey);
             clearAllVisualReturns("equipped-weapon-identity-changed", true, true);
             transitionToInactive(false);
+            reconcileDeferredScopeHandAuthority(weaponNode);
             return;
         }
 
@@ -1372,6 +1348,13 @@ namespace rock
                 ROCK_LOG_INFO(Weapon, "TwoHandedGrip: clearing authority because offhand reservation disabled support grip");
                 transitionToInactive(false);
             } else if (!weapon_two_handed_grip_math::shouldContinueSupportGrip(supportGripHeld, supportHandHoldingObject)) {
+                ROCK_LOG_INFO(Weapon,
+                    "TwoHandedGrip: support release predicate firingHand={} supportHand={} gripHeld={} holdingObject={} scopeMenu={}",
+                    _firingHandIsLeft ? "left" : "right",
+                    supportHandIsLeft ? "left" : "right",
+                    supportGripHeld ? "yes" : "no",
+                    supportHandHoldingObject ? "yes" : "no",
+                    _scopeMenuOpenThisFrame ? "open" : "closed");
                 const auto releaseAction = weapon_two_handed_grip_math::resolveSupportReleaseManualAction(
                     weapon_two_handed_grip_math::SupportReleaseOwnershipInput{
                         .firingGripOwnershipEnabled = gripMode.firingGripOwnershipEnabled,
@@ -1508,6 +1491,10 @@ namespace rock
         // watchdog for engine-side re-attach).
         syncFiringHandWeaponNodeOwnership(weaponNode);
         updateHandVisualReturns(dt);
+        // State transitions and their replacement publications must finish
+        // before stale scoped roles are removed. This keeps hFRIK under one
+        // continuous ROCK authority selection across scope and role edges.
+        reconcileDeferredScopeHandAuthority(weaponNode);
     }
 
     void TwoHandedGrip::reset()
@@ -1528,7 +1515,7 @@ namespace rock
         clearNativeScopeRigidFrame();
         _scopeSafeHandFrames = {};
         _scopeDriverFrameAuthorityActive = false;
-        _scopeHandAuthorityCleanupPending = _scopeHandAuthorityCleanupPending || _scopeMenuOpenThisFrame;
+        _scopeHandAuthorityPublishedThisFrame = {};
         clearPrimaryGripPose(_firingHandIsLeft);
         clearPrimaryDetachVisualAuthority(_firingHandIsLeft);
         clearSupportGripPose(true);
@@ -1541,9 +1528,11 @@ namespace rock
         if (_state != TwoHandedState::Inactive) {
             transitionToInactive(false);
             _scopeMenuOpenThisFrame = false;
+            _scopeMenuClosedThisFrame = false;
             return;
         }
         _scopeMenuOpenThisFrame = false;
+        _scopeMenuClosedThisFrame = false;
         _state = TwoHandedState::Inactive;
         _touchFrames = 0;
         _rotationBlend = 0.0f;
@@ -3894,11 +3883,136 @@ namespace rock
         grip.hasFingerLocalTransforms = false;
 
         (void)frik_visual_authority::clearHandPose(SUPPORT_GRIP_TAG, handFromBool(isLeft));
-        if (_scopeMenuOpenThisFrame) {
-            _scopeHandAuthorityCleanupPending = true;
+        if (_scopeMenuOpenThisFrame || _scopeMenuClosedThisFrame) {
+            deferScopeHandAuthorityClear(scope_safe_hand_frame_math::HandAuthorityRole::SupportGrip, isLeft);
         } else {
-            (void)frik_visual_authority::clearExternalHandWorldTransform(SUPPORT_GRIP_TAG, handFromBool(isLeft));
+            (void)clearHandAuthorityRoleNow(scope_safe_hand_frame_math::HandAuthorityRole::SupportGrip, isLeft);
         }
+    }
+
+    void TwoHandedGrip::deferScopeHandAuthorityClear(
+        const scope_safe_hand_frame_math::HandAuthorityRole role,
+        const bool isLeft)
+    {
+        _scopeDeferredHandAuthorityClears[isLeft ? 0u : 1u] |= scope_safe_hand_frame_math::roleMask(role);
+    }
+
+    void TwoHandedGrip::recordScopeHandAuthorityPublication(
+        const scope_safe_hand_frame_math::HandAuthorityRole role,
+        const bool isLeft)
+    {
+        const std::size_t index = isLeft ? 0u : 1u;
+        const auto roleBit = scope_safe_hand_frame_math::roleMask(role);
+        _scopeHandAuthorityPublishedThisFrame[index] |= roleBit;
+        // A successfully republished role is live again; a clear requested for
+        // the same role while ScopeMenu was open is obsolete.
+        _scopeDeferredHandAuthorityClears[index] &= static_cast<scope_safe_hand_frame_math::HandAuthorityRoleMask>(~roleBit);
+    }
+
+    bool TwoHandedGrip::clearHandAuthorityRoleNow(
+        const scope_safe_hand_frame_math::HandAuthorityRole role,
+        const bool isLeft)
+    {
+        const char* tag = nullptr;
+        switch (role) {
+        case scope_safe_hand_frame_math::HandAuthorityRole::PrimaryGrip:
+            tag = PRIMARY_GRIP_TAG;
+            break;
+        case scope_safe_hand_frame_math::HandAuthorityRole::SupportGrip:
+            tag = SUPPORT_GRIP_TAG;
+            break;
+        case scope_safe_hand_frame_math::HandAuthorityRole::PrimaryDetach:
+            tag = PRIMARY_DETACH_TAG;
+            break;
+        }
+
+        if (!tag || !frik_visual_authority::clearExternalHandWorldTransform(tag, handFromBool(isLeft))) {
+            return false;
+        }
+
+        const auto roleBit = scope_safe_hand_frame_math::roleMask(role);
+        _scopeDeferredHandAuthorityClears[isLeft ? 0u : 1u] &=
+            static_cast<scope_safe_hand_frame_math::HandAuthorityRoleMask>(~roleBit);
+        return true;
+    }
+
+    void TwoHandedGrip::reconcileDeferredScopeHandAuthority(RE::NiNode* weaponNode)
+    {
+        if (_scopeMenuOpenThisFrame || !frik_visual_authority::isAvailable()) {
+            return;
+        }
+
+        const auto pendingBefore = _scopeDeferredHandAuthorityClears;
+        if (pendingBefore[0] == 0 && pendingBefore[1] == 0) {
+            return;
+        }
+
+        const scope_safe_hand_frame_math::DesiredHandAuthorityInput ownership{
+            .gripping = _state == TwoHandedState::Gripping,
+            .primaryHandAuthorityEnabled =
+                weapon_support_authority_policy::supportGripAppliesPrimaryHandAuthority(_authorityMode),
+            .firingHandIsLeft = _firingHandIsLeft,
+            .leftPartGripActive = partGrip(true).active,
+            .rightPartGripActive = partGrip(false).active,
+        };
+        const ScopeHandAuthorityCleanupVisualSnapshot visualSnapshot =
+            captureScopeHandAuthorityCleanupVisuals(weaponNode);
+
+        std::array<scope_safe_hand_frame_math::HandAuthorityRoleMask, 2> cleared{};
+        std::array<scope_safe_hand_frame_math::HandAuthorityRoleMask, 2> retained{};
+        bool clearAttempted = false;
+        constexpr std::array roles{
+            scope_safe_hand_frame_math::HandAuthorityRole::PrimaryGrip,
+            scope_safe_hand_frame_math::HandAuthorityRole::SupportGrip,
+            scope_safe_hand_frame_math::HandAuthorityRole::PrimaryDetach,
+        };
+
+        for (const bool isLeft : { true, false }) {
+            const std::size_t index = isLeft ? 0u : 1u;
+            const auto desiredRoles = scope_safe_hand_frame_math::desiredRolesForHand(ownership, isLeft);
+            for (const auto role : roles) {
+                if (!scope_safe_hand_frame_math::hasRole(_scopeDeferredHandAuthorityClears[index], role)) {
+                    continue;
+                }
+
+                switch (scope_safe_hand_frame_math::resolveDeferredClearAction(
+                    role,
+                    desiredRoles,
+                    _scopeHandAuthorityPublishedThisFrame[index])) {
+                case scope_safe_hand_frame_math::DeferredClearAction::RetainLiveRole:
+                    _scopeDeferredHandAuthorityClears[index] &=
+                        static_cast<scope_safe_hand_frame_math::HandAuthorityRoleMask>(
+                            ~scope_safe_hand_frame_math::roleMask(role));
+                    retained[index] |= scope_safe_hand_frame_math::roleMask(role);
+                    break;
+                case scope_safe_hand_frame_math::DeferredClearAction::ClearStaleRole:
+                    clearAttempted = true;
+                    if (clearHandAuthorityRoleNow(role, isLeft)) {
+                        cleared[index] |= scope_safe_hand_frame_math::roleMask(role);
+                    }
+                    break;
+                case scope_safe_hand_frame_math::DeferredClearAction::WaitForReplacementPublication:
+                    break;
+                }
+            }
+        }
+
+        // A stale-tag clear can ask hFRIK to restore an arm. Preserve the
+        // already-solved weapon/scope frame; live replacement hand authority
+        // was published before this reconciliation and remains selected.
+        if (clearAttempted) {
+            restoreScopeHandAuthorityCleanupVisuals(visualSnapshot);
+        }
+        ROCK_LOG_DEBUG(Weapon,
+            "TwoHandedGrip: reconciled deferred native-scope hand authority "
+            "left(clear=0x{:02X},retain=0x{:02X},pending=0x{:02X}) "
+            "right(clear=0x{:02X},retain=0x{:02X},pending=0x{:02X})",
+            static_cast<unsigned>(cleared[0]),
+            static_cast<unsigned>(retained[0]),
+            static_cast<unsigned>(_scopeDeferredHandAuthorityClears[0]),
+            static_cast<unsigned>(cleared[1]),
+            static_cast<unsigned>(retained[1]),
+            static_cast<unsigned>(_scopeDeferredHandAuthorityClears[1]));
     }
 
     bool TwoHandedGrip::applyWeaponVisualAuthority(
@@ -3974,6 +4088,7 @@ namespace rock
         const bool applied = frik_visual_authority::applyExternalHandWorldTransform(
             PRIMARY_GRIP_TAG, handFromBool(_firingHandIsLeft), appliedFiringHandWorld, GRIP_HAND_POSE_PRIORITY);
         if (applied) {
+            recordScopeHandAuthorityPublication(scope_safe_hand_frame_math::HandAuthorityRole::PrimaryGrip, _firingHandIsLeft);
             clearHandVisualReturn(_firingHandIsLeft, "firing-grip-authority-acquired", false);
             recordPublishedHandWorld(_firingHandIsLeft, appliedFiringHandWorld);
         }
@@ -4004,6 +4119,7 @@ namespace rock
         const bool applied = frik_visual_authority::applyExternalHandWorldTransform(
             SUPPORT_GRIP_TAG, handFromBool(isLeft), appliedHandWorld, GRIP_HAND_POSE_PRIORITY);
         if (applied) {
+            recordScopeHandAuthorityPublication(scope_safe_hand_frame_math::HandAuthorityRole::SupportGrip, isLeft);
             clearHandVisualReturn(isLeft, "part-grip-authority-acquired", false);
             recordPublishedHandWorld(isLeft, appliedHandWorld);
         }
@@ -4047,11 +4163,24 @@ namespace rock
             return true;
         }
 
+        ROCK_LOG_WARN(Weapon,
+            "TwoHandedGrip: locked hand authority publication failed primary={} support={} "
+            "firingHand={} supportHand={} state={} scopeMenu={} primaryFrame={} supportGrip={} supportFrame={}",
+            primaryApplied ? "ok" : "failed",
+            supportApplied ? "ok" : "failed",
+            _firingHandIsLeft ? "left" : "right",
+            supportHandIsLeft ? "left" : "right",
+            static_cast<int>(_state),
+            _scopeMenuOpenThisFrame ? "open" : "closed",
+            _hasFiringHandWeaponLocal ? "ready" : "missing",
+            partGrip(supportHandIsLeft).active ? "active" : "inactive",
+            partGrip(supportHandIsLeft).hasHandWeaponLocal ? "ready" : "missing");
+
         if (applyPrimaryHand && primaryApplied) {
-            (void)frik_visual_authority::clearExternalHandWorldTransform(PRIMARY_GRIP_TAG, handFromBool(_firingHandIsLeft));
+            (void)clearHandAuthorityRoleNow(scope_safe_hand_frame_math::HandAuthorityRole::PrimaryGrip, _firingHandIsLeft);
         }
         if (applySupportHand && supportApplied) {
-            (void)frik_visual_authority::clearExternalHandWorldTransform(SUPPORT_GRIP_TAG, handFromBool(supportHandIsLeft));
+            (void)clearHandAuthorityRoleNow(scope_safe_hand_frame_math::HandAuthorityRole::SupportGrip, supportHandIsLeft);
         }
         return false;
     }
@@ -4088,20 +4217,20 @@ namespace rock
     {
         _hasLastPublishedHandWorld[isLeft ? 0u : 1u] = false;
         (void)frik_visual_authority::clearHandPose(PRIMARY_GRIP_TAG, handFromBool(isLeft));
-        if (_scopeMenuOpenThisFrame) {
-            _scopeHandAuthorityCleanupPending = true;
+        if (_scopeMenuOpenThisFrame || _scopeMenuClosedThisFrame) {
+            deferScopeHandAuthorityClear(scope_safe_hand_frame_math::HandAuthorityRole::PrimaryGrip, isLeft);
         } else {
-            (void)frik_visual_authority::clearExternalHandWorldTransform(PRIMARY_GRIP_TAG, handFromBool(isLeft));
+            (void)clearHandAuthorityRoleNow(scope_safe_hand_frame_math::HandAuthorityRole::PrimaryGrip, isLeft);
         }
     }
 
     void TwoHandedGrip::clearPrimaryDetachVisualAuthority(bool isLeft)
     {
         (void)frik_visual_authority::clearHandPose(PRIMARY_DETACH_TAG, handFromBool(isLeft));
-        if (_scopeMenuOpenThisFrame) {
-            _scopeHandAuthorityCleanupPending = true;
+        if (_scopeMenuOpenThisFrame || _scopeMenuClosedThisFrame) {
+            deferScopeHandAuthorityClear(scope_safe_hand_frame_math::HandAuthorityRole::PrimaryDetach, isLeft);
         } else {
-            (void)frik_visual_authority::clearExternalHandWorldTransform(PRIMARY_DETACH_TAG, handFromBool(isLeft));
+            (void)clearHandAuthorityRoleNow(scope_safe_hand_frame_math::HandAuthorityRole::PrimaryDetach, isLeft);
         }
     }
 

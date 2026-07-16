@@ -649,6 +649,14 @@ namespace rock
 
         void clearPrimaryDetachVisualAuthority(bool isLeft);
 
+        void deferScopeHandAuthorityClear(scope_safe_hand_frame_math::HandAuthorityRole role, bool isLeft);
+
+        void recordScopeHandAuthorityPublication(scope_safe_hand_frame_math::HandAuthorityRole role, bool isLeft);
+
+        bool clearHandAuthorityRoleNow(scope_safe_hand_frame_math::HandAuthorityRole role, bool isLeft);
+
+        void reconcileDeferredScopeHandAuthority(RE::NiNode* weaponNode);
+
         bool applyWeaponVisualAuthority(
             RE::NiNode* weaponNode,
             const RE::NiTransform& solvedWeaponWorld,
@@ -711,7 +719,7 @@ namespace rock
         bool captureNativeScopeOverlayCalibration(const RE::NiTransform& nativeCameraWorld, std::uint64_t currentWeaponGenerationKey);
         bool applyNativeScopeOverlayTarget(const RE::NiTransform& correctedCameraWorld, std::uint64_t currentWeaponGenerationKey);
         void refreshNativeScopeSightAnchor(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, const WeaponCollision& weaponCollision);
-        void refreshScopeSafeHandFrames(RE::NiNode* weaponNode, const EquippedWeaponGripFrameInput& frameInput, float dt);
+        void refreshScopeSafeHandFrames(const EquippedWeaponGripFrameInput& frameInput, float dt);
         bool tryGetSolverHandTransform(bool isLeft, RE::NiTransform& outTransform) const;
         RE::NiTransform resolveLockedHandVisualTarget(
             const RE::NiTransform& targetWorld,
@@ -761,10 +769,18 @@ namespace rock
 
         std::array<ScopeSafeHandFrameState, 2> _scopeSafeHandFrames{};
         bool _scopeMenuOpenThisFrame{ false };
+        // True only for the first visible frame after ScopeMenu. Role clears
+        // on this edge use the same deferred transaction as hidden-frame
+        // clears so a same-frame handoff can publish its replacement first.
+        bool _scopeMenuClosedThisFrame{ false };
         // Latched across a manual grip session after its first scoped frame so
         // ScopeMenu presentation edges cannot reselect the weapon-solver basis.
         bool _scopeDriverFrameAuthorityActive{ false };
-        bool _scopeHandAuthorityCleanupPending{ false };
+        // Per physical hand (left index 0, right index 1). Clears requested
+        // while hFRIK's root is collapsed remain role-specific so scope exit
+        // never tears down authority that the current weapon state still owns.
+        std::array<scope_safe_hand_frame_math::HandAuthorityRoleMask, 2> _scopeDeferredHandAuthorityClears{};
+        std::array<scope_safe_hand_frame_math::HandAuthorityRoleMask, 2> _scopeHandAuthorityPublishedThisFrame{};
 
         // Cached once per generated weapon generation. The pointer is only an
         // identity witness; the anchor itself is a value in weapon-root local
