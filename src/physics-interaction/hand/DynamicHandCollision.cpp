@@ -5,6 +5,7 @@
 #include "physics-interaction/body/BodyBoneColliderSet.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/core/PhysicsFrameContext.h"
+#include "physics-interaction/hand/DynamicHandCollisionKinematics.h"
 #include "physics-interaction/hand/Hand.h"
 #include "physics-interaction/native/HavokMaterialRegistry.h"
 #include "physics-interaction/native/HavokRefCount.h"
@@ -47,8 +48,7 @@ namespace rock
             "ROCK_DynHandTwin_R_MiddleTip",
             "ROCK_DynHandTwin_R_RingTip",
             "ROCK_DynHandTwin_R_PinkyTip",
-            "ROCK_DynHandTwin_R_ForearmUpper",
-            "ROCK_DynHandTwin_R_ForearmLower",
+            "ROCK_DynHandTwin_R_Forearm",
         };
         constexpr std::array<const char*, DynamicHandCollisionRuntime::kBodiesPerHand> kLeftTwinNames{
             "ROCK_DynHandTwin_L_Palm",
@@ -57,8 +57,7 @@ namespace rock
             "ROCK_DynHandTwin_L_MiddleTip",
             "ROCK_DynHandTwin_L_RingTip",
             "ROCK_DynHandTwin_L_PinkyTip",
-            "ROCK_DynHandTwin_L_ForearmUpper",
-            "ROCK_DynHandTwin_L_ForearmLower",
+            "ROCK_DynHandTwin_L_Forearm",
         };
         constexpr std::array<const char*, DynamicHandCollisionRuntime::kBodiesPerHand> kRightTwinOwnerNames{
             "DynHandTwinR.Palm",
@@ -67,8 +66,7 @@ namespace rock
             "DynHandTwinR.Middle",
             "DynHandTwinR.Ring",
             "DynHandTwinR.Pinky",
-            "DynHandTwinR.ForearmUpper",
-            "DynHandTwinR.ForearmLower",
+            "DynHandTwinR.Forearm",
         };
         constexpr std::array<const char*, DynamicHandCollisionRuntime::kBodiesPerHand> kLeftTwinOwnerNames{
             "DynHandTwinL.Palm",
@@ -77,8 +75,7 @@ namespace rock
             "DynHandTwinL.Middle",
             "DynHandTwinL.Ring",
             "DynHandTwinL.Pinky",
-            "DynHandTwinL.ForearmUpper",
-            "DynHandTwinL.ForearmLower",
+            "DynHandTwinL.Forearm",
         };
 
         const char* dynamicHandTag(bool isLeft)
@@ -619,6 +616,8 @@ namespace rock
                 twinTelemetry.lengthGameUnits = twinFrame->length;
                 twinTelemetry.radiusGameUnits = twinFrame->radius;
                 twinTelemetry.convexRadiusGameUnits = twinFrame->convexRadius;
+                twinTelemetry.handTargetResponseScale =
+                    dynamic_hand_collision_kinematics::sanitizeHandTargetResponseScale(twinFrame->handTargetResponseScale);
                 if (!ensureSlotCreated(slot, isLeft, bodyIndex, frame, hand, bodyBoneColliders, *twinFrame)) {
                     continue;
                 }
@@ -662,7 +661,17 @@ namespace rock
                 if (physicsSample.contactActive) {
                     twinTelemetry.contactDeviationWorldGame = twinTelemetry.requestedGapWorldGame;
                     twinTelemetry.contactDeviationGameUnits = twinTelemetry.requestedGapGameUnits;
-                    deviations[bodyIndex] = twinTelemetry.contactDeviationWorldGame;
+                    // Palm/finger points are the hand target (scale 1). A
+                    // forearm point has less shoulder-lever response to that
+                    // target, so its source publication maps the blocked point
+                    // displacement into the IK target displacement first.
+                    twinTelemetry.handTargetCorrectionWorldGame = RE::NiPoint3{
+                        twinTelemetry.contactDeviationWorldGame.x * twinTelemetry.handTargetResponseScale,
+                        twinTelemetry.contactDeviationWorldGame.y * twinTelemetry.handTargetResponseScale,
+                        twinTelemetry.contactDeviationWorldGame.z * twinTelemetry.handTargetResponseScale,
+                    };
+                    twinTelemetry.handTargetCorrectionGameUnits = pointLength(twinTelemetry.handTargetCorrectionWorldGame);
+                    deviations[bodyIndex] = twinTelemetry.handTargetCorrectionWorldGame;
                     deviationValid[bodyIndex] = true;
                     handTelemetry.contactMask |= 1u << static_cast<std::uint32_t>(bodyIndex);
                     ++handTelemetry.contactCount;

@@ -96,9 +96,22 @@ Require-OrderedText 'src/physics-interaction/hand/HandBoneColliderSet.cpp' @(
 ) 'HandBoneColliderSet must publish palm anchor and fingertip twin frames every update.'
 Require-OrderedText 'src/physics-interaction/body/BodyBoneColliderSet.cpp' @(
     'makeDescriptorFrame\(',
-    'publishForearmTwinSlot\(forearmTwinTargets, descriptor, frame\);',
-    'queueBodyTarget\(instance\.body, frame\.transform'
-) 'BodyBoneColliderSet must publish each forearm twin from the exact frame queued to its keyframed body.'
+    'collectForearmTwinMergeSource\(forearmTwinMergeSources, descriptor, frame\);',
+    'queueBodyTarget\(instance\.body, frame\.transform',
+    'publishMergedForearmTwinTargets\('
+) 'BodyBoneColliderSet must merge the exact three frames queued to its keyframed forearm/wrist bodies.'
+Require-OrderedText 'src/physics-interaction/body/BodyBoneColliderSet.cpp' @(
+    'BoneColliderRole::ForearmSegment',
+    'kForearmUpperMergeSource',
+    'kForearmLowerMergeSource',
+    'BoneColliderRole::HandSegment',
+    'kWristMergeSource'
+) 'The merged dynamic forearm must include ForeArm1->2, ForeArm2->3, and ForeArm3->Hand sources.'
+Require-OrderedText 'src/physics-interaction/body/BodyBoneColliderSet.cpp' @(
+    'forearmStartBone = isLeft \? "LArm_ForeArm1" : "RArm_ForeArm1"',
+    'handBone = isLeft \? "LArm_Hand" : "RArm_Hand"',
+    'mergedFrame\.length = sources\[0\]\.length \+ sources\[1\]\.length \+ sources\[2\]\.length'
+) 'The single dynamic forearm must span ForeArm1->Hand and retain all three tuned source lengths.'
 Require-Text 'src/physics-interaction/body/BodyBoneColliderSet.cpp' `
     'buildDynamicForearmTwinShape[\s\S]*buildShapeForFrame\(frame\)' `
     'Forearm twins must share the production body-collider hull construction.'
@@ -113,8 +126,11 @@ Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
     'twinFrame\.convexRadius - slot\.createdConvexRadius' `
     'Dynamic twin rebuild gating must include convex-radius tuning changes.'
 Require-Text 'src/physics-interaction/hand/DynamicHandCollisionTelemetry.h' `
-    'kForearmUpperSlot[\s\S]*kForearmLowerSlot[\s\S]*ForearmUpper[\s\S]*ForearmLower' `
-    'Dynamic hand telemetry must reserve stable upper/lower forearm slots.'
+    'kForearmSlot\s*=\s*kFirstForearmSlot[\s\S]*Forearm,[\s\S]*return "FARM"' `
+    'Dynamic hand telemetry must expose one stable merged-forearm slot.'
+Reject-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
+    'DynHandTwin[RL]\.Forearm(?:Upper|Lower)|ROCK_DynHandTwin_[RL]_Forearm(?:Upper|Lower)' `
+    'Dynamic collision must not retain the superseded split forearm twin bodies.'
 Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @(
     'updateBodyBoneCollisions\(frame\);',
     '_dynamicHandCollision\.updateFrame\(',
@@ -123,10 +139,19 @@ Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @(
 
 # Render-follow pipeline: combine per-body deviations, smooth (rest twitch), gate.
 Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
+    'sanitizeHandTargetResponseScale\(twinFrame->handTargetResponseScale\)',
+    'handTargetCorrectionWorldGame',
     'combineTwinDeviations\(',
     'smoothAppliedDeviation\(',
     'applyExternalHandWorldTransform\('
-) 'Dynamic hand render-follow must combine, smooth, then apply the deviation.'
+) 'Dynamic hand render-follow must map forearm leverage, combine contacts, smooth, then apply the deviation.'
+Require-OrderedText 'src/physics-interaction/body/BodyBoneColliderSet.cpp' @(
+    'shoulderBone = isLeft \? "LArm_UpperArm" : "RArm_UpperArm"',
+    'forearmHandTargetResponseScale\(',
+    'shoulder\.translate',
+    'input\.end\.translate',
+    'mergedFrame\.transform\.translate'
+) 'Merged forearm response must derive its IK leverage from the live shoulder, hand, and proxy center.'
 
 # Physics-owned telemetry must cross to the main frame through atomics and
 # expose requested/commanded/live positions without changing provider API V1.

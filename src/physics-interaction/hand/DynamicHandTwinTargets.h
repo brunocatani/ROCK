@@ -9,7 +9,7 @@
 
 namespace rock::dynamic_hand_twin
 {
-    inline constexpr std::size_t kForearmSegmentCountPerHand = 2;
+    inline constexpr std::size_t kForearmSegmentCountPerHand = 1;
 
     /*
      * Per-frame publication from HandBoneColliderSet for the stage A dynamic
@@ -27,6 +27,9 @@ namespace rock::dynamic_hand_twin
         float length = 0.0f;
         float radius = 0.0f;
         float convexRadius = 0.0f;
+        // Palm/fingertip proxies map 1:1 to the hand target. The merged
+        // forearm proxy publishes its pose-derived IK leverage correction.
+        float handTargetResponseScale = 1.0f;
     };
 
     struct TwinTargets
@@ -38,10 +41,11 @@ namespace rock::dynamic_hand_twin
 
     /*
      * Main-thread publication from BodyBoneColliderSet. These are the exact
-     * tuned ForeArm1->ForeArm2 and ForeArm2->ForeArm3 frames that drive the
-     * production keyframed body colliders. DynamicHandCollisionRuntime consumes
-     * them after BodyBoneColliderSet::update in the same frame, so the forearm
-     * twins never guess geometry or read live Havok bodies back into intent.
+     * merged ForeArm1->Hand frame derived from all three tuned production
+     * keyframed segments (ForeArm1->2, ForeArm2->3, and ForeArm3->Hand).
+     * DynamicHandCollisionRuntime consumes it after BodyBoneColliderSet::update
+     * in the same frame, so the forearm twin never reads dynamic Havok bodies
+     * back into intent.
      */
     struct ForearmTwinTargets
     {

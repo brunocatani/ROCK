@@ -3,6 +3,7 @@
 #include "RockConfig.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
+#include "physics-interaction/hand/DynamicHandCollisionKinematics.h"
 #include "physics-interaction/hand/Hand.h"
 #include "physics-interaction/native/HavokConvexShapeBuilder.h"
 #include "physics-interaction/native/HavokMaterialRegistry.h"
@@ -546,47 +547,122 @@ namespace rock
             return true;
         }
 
-        dynamic_hand_twin::TwinSlotFrame* forearmTwinSlotForDescriptor(
-            dynamic_hand_twin::ForearmTwinTargets& targets,
-            const BoneColliderDescriptor& descriptor)
+        inline constexpr std::size_t kForearmUpperMergeSource = 0;
+        inline constexpr std::size_t kForearmLowerMergeSource = 1;
+        inline constexpr std::size_t kWristMergeSource = 2;
+        inline constexpr std::size_t kForearmMergeSourceCount = 3;
+
+        struct ForearmTwinMergeSources
         {
-            if (descriptor.role != BoneColliderRole::ForearmSegment) {
+            std::array<BodyBoneColliderSet::DescriptorFrameResult, kForearmMergeSourceCount> right{};
+            std::array<BodyBoneColliderSet::DescriptorFrameResult, kForearmMergeSourceCount> left{};
+        };
+
+        std::array<BodyBoneColliderSet::DescriptorFrameResult, kForearmMergeSourceCount>* forearmMergeSourcesForDescriptor(
+            ForearmTwinMergeSources& sources,
+            const BoneColliderDescriptor& descriptor,
+            std::size_t& outSourceIndex)
+        {
+            auto* sideSources = descriptor.side == body_zone::BodyZoneSide::Left ? &sources.left :
+                                descriptor.side == body_zone::BodyZoneSide::Right ? &sources.right : nullptr;
+            if (!sideSources) {
                 return nullptr;
             }
 
-            auto* sideTargets = descriptor.side == body_zone::BodyZoneSide::Left ? &targets.left :
-                                descriptor.side == body_zone::BodyZoneSide::Right ? &targets.right : nullptr;
-            if (!sideTargets) {
-                return nullptr;
+            if (descriptor.role == BoneColliderRole::ForearmSegment) {
+                switch (descriptor.zone) {
+                case body_zone::BodyZoneKind::LeftForearmUpper:
+                case body_zone::BodyZoneKind::RightForearmUpper:
+                    outSourceIndex = kForearmUpperMergeSource;
+                    return sideSources;
+                case body_zone::BodyZoneKind::LeftForearmLower:
+                case body_zone::BodyZoneKind::RightForearmLower:
+                    outSourceIndex = kForearmLowerMergeSource;
+                    return sideSources;
+                default:
+                    return nullptr;
+                }
             }
 
-            switch (descriptor.zone) {
-            case body_zone::BodyZoneKind::LeftForearmUpper:
-            case body_zone::BodyZoneKind::RightForearmUpper:
-                return &(*sideTargets)[0];
-            case body_zone::BodyZoneKind::LeftForearmLower:
-            case body_zone::BodyZoneKind::RightForearmLower:
-                return &(*sideTargets)[1];
-            default:
-                return nullptr;
+            if (descriptor.role == BoneColliderRole::HandSegment &&
+                (descriptor.zone == body_zone::BodyZoneKind::LeftHand ||
+                    descriptor.zone == body_zone::BodyZoneKind::RightHand)) {
+                outSourceIndex = kWristMergeSource;
+                return sideSources;
             }
+            return nullptr;
         }
 
-        void publishForearmTwinSlot(
-            dynamic_hand_twin::ForearmTwinTargets& targets,
+        void collectForearmTwinMergeSource(
+            ForearmTwinMergeSources& sources,
             const BoneColliderDescriptor& descriptor,
             const BodyBoneColliderSet::DescriptorFrameResult& frame)
         {
-            auto* slot = forearmTwinSlotForDescriptor(targets, descriptor);
-            if (!slot || !frame.valid) {
+            std::size_t sourceIndex = 0;
+            auto* sideSources = forearmMergeSourcesForDescriptor(sources, descriptor, sourceIndex);
+            if (sideSources && sourceIndex < sideSources->size() && frame.valid) {
+                (*sideSources)[sourceIndex] = frame;
+            }
+        }
+
+        void publishMergedForearmTwinSlot(
+            dynamic_hand_twin::TwinSlotFrame& slot,
+            const std::array<BodyBoneColliderSet::DescriptorFrameResult, kForearmMergeSourceCount>& sources,
+            const SnapshotBoneMap& bonesByName,
+            bool inPowerArmor,
+            bool isLeft)
+        {
+            if (!std::all_of(sources.begin(), sources.end(), [](const auto& source) { return source.valid; })) {
                 return;
             }
 
-            slot->valid = true;
-            slot->target = frame.transform;
-            slot->length = frame.length;
-            slot->radius = frame.radius;
-            slot->convexRadius = frame.convexRadius;
+            const std::string_view shoulderBone = isLeft ? "LArm_UpperArm" : "RArm_UpperArm";
+            const std::string_view forearmStartBone = isLeft ? "LArm_ForeArm1" : "RArm_ForeArm1";
+            const std::string_view handBone = isLeft ? "LArm_Hand" : "RArm_Hand";
+            RE::NiTransform shoulder{};
+            hand_bone_collider_geometry_math::BoneColliderFrameInput<RE::NiTransform, RE::NiPoint3> input{};
+            input.radius = std::max({ sources[0].radius, sources[1].radius, sources[2].radius });
+            input.convexRadius = std::max({ sources[0].convexRadius, sources[1].convexRadius, sources[2].convexRadius });
+            if (!findSnapshotBone(bonesByName, shoulderBone, shoulder) ||
+                !findSnapshotBone(bonesByName, forearmStartBone, input.start) ||
+                !findSnapshotBone(bonesByName, handBone, input.end)) {
+                return;
+            }
+
+            const auto mergedGeometry = hand_bone_collider_geometry_math::buildSegmentColliderFrame(input);
+            if (!mergedGeometry.valid) {
+                return;
+            }
+
+            BodyBoneColliderSet::DescriptorFrameResult mergedFrame{};
+            mergedFrame.valid = true;
+            mergedFrame.transform = mergedGeometry.transform;
+            mergedFrame.length = sources[0].length + sources[1].length + sources[2].length;
+            mergedFrame.radius = input.radius;
+            mergedFrame.convexRadius = input.convexRadius;
+            if (!descriptorFrameDimensionsValid(mergedFrame, BoneColliderRole::ForearmSegment, inPowerArmor)) {
+                return;
+            }
+
+            slot.valid = true;
+            slot.target = mergedFrame.transform;
+            slot.length = mergedFrame.length;
+            slot.radius = mergedFrame.radius;
+            slot.convexRadius = mergedFrame.convexRadius;
+            slot.handTargetResponseScale = dynamic_hand_collision_kinematics::forearmHandTargetResponseScale(
+                shoulder.translate,
+                input.end.translate,
+                mergedFrame.transform.translate);
+        }
+
+        void publishMergedForearmTwinTargets(
+            dynamic_hand_twin::ForearmTwinTargets& targets,
+            const ForearmTwinMergeSources& sources,
+            const SnapshotBoneMap& bonesByName,
+            bool inPowerArmor)
+        {
+            publishMergedForearmTwinSlot(targets.right[0], sources.right, bonesByName, inPowerArmor, false);
+            publishMergedForearmTwinSlot(targets.left[0], sources.left, bonesByName, inPowerArmor, true);
         }
 
         void shapeRemoveRef(const RE::hknpShape* shape)
@@ -730,6 +806,7 @@ namespace rock
         const auto tuningSignature = bodyColliderTuningSignature(snapshot.inPowerArmor);
         const auto bonesByName = makeSnapshotBoneMap(snapshot);
         dynamic_hand_twin::ForearmTwinTargets forearmTwinTargets{};
+        ForearmTwinMergeSources forearmTwinMergeSources{};
         std::size_t createdCount = 0;
         for (std::uint32_t descriptorIndex = 0; descriptorIndex < descriptors.size(); ++descriptorIndex) {
             const auto& descriptor = descriptors[descriptorIndex];
@@ -757,9 +834,15 @@ namespace rock
                 destroy(bhkWorld);
                 return false;
             }
-            publishForearmTwinSlot(forearmTwinTargets, descriptor, frame);
+            collectForearmTwinMergeSource(forearmTwinMergeSources, descriptor, frame);
             ++createdCount;
         }
+
+        publishMergedForearmTwinTargets(
+            forearmTwinTargets,
+            forearmTwinMergeSources,
+            bonesByName,
+            snapshot.inPowerArmor);
 
         if (createdCount == 0) {
             ROCK_LOG_ERROR(Body, "Body bone collider set creation produced zero bodies");
@@ -874,6 +957,7 @@ namespace rock
         const auto& descriptors = bodyDescriptorsForPowerArmor(snapshot.inPowerArmor);
         const auto bonesByName = makeSnapshotBoneMap(snapshot);
         dynamic_hand_twin::ForearmTwinTargets forearmTwinTargets{};
+        ForearmTwinMergeSources forearmTwinMergeSources{};
         for (auto& instance : _bodies) {
             if (!instance.body.isValid() || instance.descriptorIndex >= descriptors.size()) {
                 continue;
@@ -882,10 +966,15 @@ namespace rock
             const auto& descriptor = descriptors[instance.descriptorIndex];
             DescriptorFrameResult frame{};
             if (makeDescriptorFrame(bonesByName, descriptor, snapshot.inPowerArmor, frame)) {
-                publishForearmTwinSlot(forearmTwinTargets, descriptor, frame);
+                collectForearmTwinMergeSource(forearmTwinMergeSources, descriptor, frame);
                 queueBodyTarget(instance.body, frame.transform, deltaTime, instance.driveState);
             }
         }
+        publishMergedForearmTwinTargets(
+            forearmTwinTargets,
+            forearmTwinMergeSources,
+            bonesByName,
+            snapshot.inPowerArmor);
         forearmTwinTargets.updateCounter = _dynamicForearmTwinTargets.updateCounter + 1;
         _dynamicForearmTwinTargets = forearmTwinTargets;
     }

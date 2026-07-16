@@ -24,7 +24,7 @@ namespace rock
 
     /*
      * Dynamic world collision uses DYNAMIC twins of the palm anchor, five
-     * fingertip colliders, and two keyframed forearm segments per side. They
+     * fingertip colliders, and one merged ForeArm1->Hand proxy per side. They
      * chase their published role frames with engine hard-keyframe velocities
      * every physics substep, on the world-only
      * extended layer. Static world clips their velocity inside the solver

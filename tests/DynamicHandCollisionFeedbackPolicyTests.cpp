@@ -1,4 +1,5 @@
 #include "physics-interaction/hand/DynamicHandCollisionFeedbackPolicy.h"
+#include "physics-interaction/hand/DynamicHandCollisionKinematics.h"
 
 #include <cstdio>
 
@@ -98,6 +99,36 @@ int main()
 
     decision = updateContactPulse(state, 6, 2.0f, 0.0f, true, config);
     ok &= expectFalse("below-threshold approach does not pulse", decision.fire);
+
+    using rock::dynamic_hand_collision_kinematics::forearmHandTargetResponseScale;
+    ok &= expectNear("forearm leverage maps three-quarter reach to hand target",
+        forearmHandTargetResponseScale(
+            Vec3{ 0.0f, 0.0f, 0.0f },
+            Vec3{ 12.0f, 0.0f, 0.0f },
+            Vec3{ 9.0f, 0.0f, 0.0f }),
+        4.0f / 3.0f,
+        0.001f);
+    ok &= expectNear("forearm leverage clamps extreme folded-arm gain",
+        forearmHandTargetResponseScale(
+            Vec3{ 0.0f, 0.0f, 0.0f },
+            Vec3{ 12.0f, 0.0f, 0.0f },
+            Vec3{ 2.0f, 0.0f, 0.0f }),
+        2.5f,
+        0.001f);
+    ok &= expectNear("forearm leverage never weakens direct hand response",
+        forearmHandTargetResponseScale(
+            Vec3{ 0.0f, 0.0f, 0.0f },
+            Vec3{ 8.0f, 0.0f, 0.0f },
+            Vec3{ 10.0f, 0.0f, 0.0f }),
+        1.0f,
+        0.001f);
+    ok &= expectNear("forearm leverage fails closed on degenerate arm geometry",
+        forearmHandTargetResponseScale(
+            Vec3{ 0.0f, 0.0f, 0.0f },
+            Vec3{ 0.0f, 0.0f, 0.0f },
+            Vec3{ 5.0f, 0.0f, 0.0f }),
+        1.0f,
+        0.001f);
 
     return ok ? 0 : 1;
 }

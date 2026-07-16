@@ -25,8 +25,7 @@ namespace rock::dynamic_hand_collision_telemetry
 {
     inline constexpr std::size_t kPalmSlot = 0;
     inline constexpr std::size_t kFirstForearmSlot = 1 + hand_collider_semantics::kHandFingerCount;
-    inline constexpr std::size_t kForearmUpperSlot = kFirstForearmSlot;
-    inline constexpr std::size_t kForearmLowerSlot = kFirstForearmSlot + 1;
+    inline constexpr std::size_t kForearmSlot = kFirstForearmSlot;
     inline constexpr std::size_t kBodiesPerHand = kFirstForearmSlot + dynamic_hand_twin::kForearmSegmentCountPerHand;
     inline constexpr std::uint32_t kInvalidBodyId = 0x7FFF'FFFF;
 
@@ -38,8 +37,7 @@ namespace rock::dynamic_hand_collision_telemetry
         MiddleTip,
         RingTip,
         PinkyTip,
-        ForearmUpper,
-        ForearmLower,
+        Forearm,
     };
 
     [[nodiscard]] constexpr TwinRole roleForBodyIndex(std::size_t bodyIndex) noexcept
@@ -62,15 +60,13 @@ namespace rock::dynamic_hand_collision_telemetry
             return "RING";
         case TwinRole::PinkyTip:
             return "PNKY";
-        case TwinRole::ForearmUpper:
-            return "FUPR";
-        case TwinRole::ForearmLower:
-            return "FLWR";
+        case TwinRole::Forearm:
+            return "FARM";
         }
         return "UNKN";
     }
 
-    static_assert(static_cast<std::size_t>(TwinRole::ForearmLower) + 1 == kBodiesPerHand);
+    static_assert(static_cast<std::size_t>(TwinRole::Forearm) + 1 == kBodiesPerHand);
 
     struct TwinSample
     {
@@ -85,6 +81,7 @@ namespace rock::dynamic_hand_collision_telemetry
         RE::NiPoint3 solverResidualWorldGame{};
         RE::NiPoint3 requestedGapWorldGame{};
         RE::NiPoint3 contactDeviationWorldGame{};
+        RE::NiPoint3 handTargetCorrectionWorldGame{};
         RE::NiPoint3 targetVelocityWorldGameUnitsPerSecond{};
 
         float lengthGameUnits = 0.0f;
@@ -93,6 +90,8 @@ namespace rock::dynamic_hand_collision_telemetry
         float solverResidualGameUnits = 0.0f;
         float requestedGapGameUnits = 0.0f;
         float contactDeviationGameUnits = 0.0f;
+        float handTargetCorrectionGameUnits = 0.0f;
+        float handTargetResponseScale = 1.0f;
         float approachSpeedGameUnitsPerSecond = 0.0f;
         float physicsDeltaSeconds = 0.0f;
 
