@@ -8,7 +8,6 @@
 #include "RE/Bethesda/BGSInventoryItem.h"
 #include "RE/Bethesda/IMenu.h"
 #include "RE/Bethesda/TESBoundObjects.h"
-#include "RE/Bethesda/UI.h"
 #include "RE/Scaleform/GFx/GFx_Player.h"
 
 #include <F4SE/F4SE.h>
@@ -38,6 +37,7 @@ namespace rock::pipboy_equip_runtime
         UpdateData_t s_originalUpdateData = nullptr;
         std::atomic<bool> s_hooksInstalled{ false };
         std::atomic<bool> s_leftHandEquipAvailable{ false };
+        thread_local bool s_insideUpdateDataHook = false;
 
         struct AtomicSelectionMailbox
         {
@@ -187,6 +187,22 @@ namespace rock::pipboy_equip_runtime
             bool applied{ false };
         };
 
+        struct UpdateDataHookScope
+        {
+            UpdateDataHookScope()
+            {
+                s_insideUpdateDataHook = true;
+            }
+
+            ~UpdateDataHookScope()
+            {
+                s_insideUpdateDataHook = false;
+            }
+
+            UpdateDataHookScope(const UpdateDataHookScope&) = delete;
+            UpdateDataHookScope& operator=(const UpdateDataHookScope&) = delete;
+        };
+
         [[nodiscard]] bool tryMutateMatchingRow(
             const RE::Scaleform::GFx::Value& candidate,
             const AssignmentSnapshot& assignment,
@@ -254,13 +270,12 @@ namespace rock::pipboy_equip_runtime
             if (!s_originalUpdateData || !menu) {
                 return;
             }
-            static thread_local bool insideHook = false;
-            if (insideHook) {
+            if (s_insideUpdateDataHook) {
                 s_originalUpdateData(menu);
                 return;
             }
 
-            insideHook = true;
+            UpdateDataHookScope hookScope;
             AssignmentSnapshot assignment{};
             TextMutation mutation{};
             if (readAssignment(assignment) && assignment.active && menu->dataObj.IsObject()) {
@@ -271,19 +286,6 @@ namespace rock::pipboy_equip_runtime
             s_originalUpdateData(menu);
             if (mutation.applied) {
                 (void)mutation.row.SetMember("text", mutation.originalText);
-            }
-            insideHook = false;
-        }
-
-        void refreshOpenPipboyInventory()
-        {
-            auto* ui = RE::UI::GetSingleton();
-            if (!ui || !ui->GetMenuOpen<RE::PipboyMenu>()) {
-                return;
-            }
-            auto menu = ui->GetMenu<RE::PipboyMenu>();
-            if (menu) {
-                hookedUpdateData(&menu->inventoryMenuObj);
             }
         }
 
@@ -463,7 +465,6 @@ namespace rock::pipboy_equip_runtime
             .hand = hand,
             .active = true,
         });
-        refreshOpenPipboyInventory();
     }
 
     void clearWeaponAssignment(const std::uint32_t handleId, const std::uint32_t stackId)
@@ -477,7 +478,6 @@ namespace rock::pipboy_equip_runtime
         writeAssignment(AssignmentSnapshot{
             .sequence = s_assignmentSequence.fetch_add(1, std::memory_order_acq_rel) + 1,
         });
-        refreshOpenPipboyInventory();
     }
 
     void resetRuntimeState()

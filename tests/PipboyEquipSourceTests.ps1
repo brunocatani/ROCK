@@ -32,6 +32,9 @@ Require-Text 'src/physics-interaction/weapon/PipboyEquipRuntime.cpp' `
 Require-Text 'src/physics-interaction/weapon/PipboyEquipRuntime.cpp' `
     'GetMember\("HandleID"[\s\S]*GetMember\("StackID"[\s\S]*GetMember\("text"[\s\S]*SetMember\("text",\s*taggedValue\)[\s\S]*SetMember\("text",\s*mutation\.originalText\)' `
     'The inventory tag must target the exact handle/stack and restore the transient model text after projection.'
+Reject-Text 'src/physics-interaction/weapon/PipboyEquipRuntime.cpp' `
+    'refreshOpenPipboyInventory|requestUiRefresh|servicePendingUiRefresh|s_uiRefreshPending|hookedUpdateData\(&' `
+    'ROCK must never invoke Pip-Boy UpdateData; tag projection is allowed only when the engine owns the refresh.'
 
 Reject-Text 'src/physics-interaction/weapon/PipboyEquipRuntime.cpp' `
     'SetMember\("equipState"|TESFullName|GetFullName\(' `
