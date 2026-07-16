@@ -3837,7 +3837,7 @@ namespace rock
                 _pipboyWeaponHandAssignment.stackId,
                 _pipboyWeaponHandAssignment.formId);
         }
-        _twoHandedGrip.clearPersistentEquippedCarry(reason);
+        _twoHandedGrip.restoreNativeRightEquippedCarry(reason);
         if (clearUiAssignment) {
             pipboy_equip_runtime::clearWeaponAssignment(
                 _pipboyWeaponHandAssignment.handleId,
@@ -3871,7 +3871,7 @@ namespace rock
                 _pipboyWeaponHandAssignment = PipboyWeaponHandAssignmentState{
                     .pending = true,
                     .active = false,
-                    .requestedLeft = event.requestedHand == pipboy_equip_policy::Hand::Left,
+                    .assignedLeft = event.requestedHand == pipboy_equip_policy::Hand::Left,
                     .effectiveLeft = false,
                     .remainingResolveFrames = kMaximumResolveFrames,
                     .handleId = event.handleId,
@@ -3892,7 +3892,7 @@ namespace rock
                 _pipboyWeaponHandAssignment = PipboyWeaponHandAssignmentState{
                     .pending = left,
                     .active = !left,
-                    .requestedLeft = left,
+                    .assignedLeft = left,
                     .effectiveLeft = left,
                     .remainingResolveFrames = kMaximumResolveFrames,
                     .handleId = persisted.handleId,
@@ -3915,7 +3915,12 @@ namespace rock
             return;
         }
 
-        if (assignment.active && assignment.requestedLeft && assignment.effectiveLeft && !_twoHandedGrip.isPersistentEquippedCarryActive()) {
+        if (pipboy_equip_policy::shouldReacquirePersistentLeftCarry(
+                assignment.active,
+                assignment.assignedLeft,
+                assignment.effectiveLeft,
+                _twoHandedGrip.isPersistentEquippedCarryActive(),
+                _twoHandedGrip.isManualOwnershipActive())) {
             // Menu/lifecycle gates intentionally reset TwoHandedGrip. Preserve
             // the exact inventory assignment and reacquire after native right
             // carry has produced a fresh canonical frame.
@@ -3937,7 +3942,7 @@ namespace rock
         }
 
         const auto commitRight = [&](const char* reason) {
-            _twoHandedGrip.clearPersistentEquippedCarry(reason);
+            _twoHandedGrip.restoreNativeRightEquippedCarry(reason);
             assignment.pending = false;
             assignment.active = true;
             assignment.effectiveLeft = false;
@@ -3953,8 +3958,8 @@ namespace rock
                 assignment.formId);
         };
 
-        if (!assignment.requestedLeft || !leftCarryAvailable) {
-            commitRight(assignment.requestedLeft ? "left-carry-unavailable" : "right-trigger-selection");
+        if (!assignment.assignedLeft || !leftCarryAvailable) {
+            commitRight(assignment.assignedLeft ? "left-carry-unavailable" : "right-trigger-selection");
             return;
         }
         if (menuInputActive) {
@@ -4050,6 +4055,10 @@ namespace rock
         if (currentLeft == assignment.effectiveLeft) {
             return;
         }
+        // A deliberate physical handover becomes the durable assignment.
+        // Lifecycle reacquisition must restore the current side, not the side
+        // originally requested by an older Pip-Boy transaction.
+        assignment.assignedLeft = currentLeft;
         assignment.effectiveLeft = currentLeft;
         pipboy_equip_runtime::publishWeaponAssignment(
             assignment.handleId,

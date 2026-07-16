@@ -339,6 +339,7 @@ namespace rock
             std::uint64_t currentEquippedWeaponOwnershipKey);
 
         void clearPersistentEquippedCarry(const char* reason);
+        void restoreNativeRightEquippedCarry(const char* reason);
         bool isPersistentEquippedCarryActive() const { return _persistentEquippedCarryActive; }
 
         // Left-hand primary ownership requires the hFRIK ambidextrous weapon-

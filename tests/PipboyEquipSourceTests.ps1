@@ -56,6 +56,18 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'f4vr::isNodeVisible\(weaponNode\)[\s\S]*nativeOffsetSample\s*=\s*weaponNode->local[\s\S]*advanceNativeOffsetReadiness[\s\S]*beginPersistentEquippedCarry' `
     'Direct left carry must wait for a visible, stable hFRIK-owned offset and a reserved canonical-refresh frame before ownership transfer.'
 
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'commitRight\s*=\s*\[&\]\(const char\* reason\)[\s\S]{0,500}restoreNativeRightEquippedCarry\(reason\)[\s\S]{0,500}Hand::Right' `
+    'A fresh right-trigger assignment must restore native-right ownership before publishing the right side.'
+
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'shouldReacquirePersistentLeftCarry\([\s\S]{0,500}isManualOwnershipActive\(\)[\s\S]*assignment\.assignedLeft\s*=\s*currentLeft' `
+    'Persistent left reacquisition must not fight manual ownership, and deliberate handovers must replace the durable assigned side.'
+
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'restoreNativeRightEquippedCarry\(const char\* reason\)[\s\S]{0,500}clearPersistentEquippedCarry\(reason\)[\s\S]{0,500}isManualOwnershipActive\(\)[\s\S]{0,500}transitionToInactive\(false\)' `
+    'Native-right restoration must clear both persistent and surviving manual weapon ownership.'
+
 $physicsInteractionText = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/core/PhysicsInteraction.cpp')
 $assignmentServiceCall = $physicsInteractionText.IndexOf('servicePipboyWeaponHandAssignment(')
 $gripUpdateCall = if ($assignmentServiceCall -ge 0) {

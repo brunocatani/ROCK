@@ -96,5 +96,20 @@ int main()
         std::printf("readiness did not require two new matches after a mismatch\n");
         ok = false;
     }
+
+    if (!shouldReacquirePersistentLeftCarry(true, true, true, false, false)) {
+        std::printf("an inactive persistent left baseline was not reacquired\n");
+        ok = false;
+    }
+    if (shouldReacquirePersistentLeftCarry(true, true, true, false, true)) {
+        std::printf("persistent left reacquisition fought active manual ownership\n");
+        ok = false;
+    }
+    if (shouldReacquirePersistentLeftCarry(true, false, true, false, false) ||
+        shouldReacquirePersistentLeftCarry(true, true, false, false, false) ||
+        shouldReacquirePersistentLeftCarry(true, true, true, true, false)) {
+        std::printf("persistent left reacquisition ignored assignment/effective/persistent state\n");
+        ok = false;
+    }
     return ok ? 0 : 1;
 }

@@ -105,4 +105,18 @@ namespace rock::pipboy_equip_policy
         }
         return consecutiveMatchingFrames >= 2;
     }
+
+    [[nodiscard]] inline constexpr bool shouldReacquirePersistentLeftCarry(
+        const bool assignmentActive,
+        const bool assignedLeft,
+        const bool effectiveLeft,
+        const bool persistentCarryActive,
+        const bool manualOwnershipActive) noexcept
+    {
+        return assignmentActive &&
+               assignedLeft &&
+               effectiveLeft &&
+               !persistentCarryActive &&
+               !manualOwnershipActive;
+    }
 }

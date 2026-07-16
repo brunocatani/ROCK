@@ -2960,6 +2960,19 @@ namespace rock
         }
     }
 
+    void TwoHandedGrip::restoreNativeRightEquippedCarry(const char* reason)
+    {
+        clearPersistentEquippedCarry(reason);
+        if (!isManualOwnershipActive()) {
+            return;
+        }
+
+        ROCK_LOG_INFO(Weapon,
+            "TwoHandedGrip: restoring native right-hand carry reason={}",
+            reason ? reason : "unknown");
+        transitionToInactive(false);
+    }
+
     bool TwoHandedGrip::publishLeftFiringFeedForwardWeaponPose(RE::NiNode* weaponNode)
     {
         if (!weaponNode || weaponNode != _activeWeaponNode ||

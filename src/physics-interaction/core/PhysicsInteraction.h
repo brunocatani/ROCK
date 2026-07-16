@@ -554,7 +554,7 @@ namespace rock
         {
             bool pending{ false };
             bool active{ false };
-            bool requestedLeft{ false };
+            bool assignedLeft{ false };
             bool effectiveLeft{ false };
             std::uint16_t remainingResolveFrames{ 0 };
             std::uint32_t handleId{ 0 };
