@@ -65,8 +65,11 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'beginHandVisualReturn\(_firingHandIsLeft,\s*"ambidextrous-firing-hand-promotion"\)[\s\S]*setFiringHand\(supportHandIsLeft' `
     'Ambidextrous promotion must capture the departing firing hand before role ownership changes.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'worldTargetToParentLocal\(nativeParent->world,\s*startWorld\)[\s\S]*blockPrimaryWeaponNodeOwnership[\s\S]*AttachChild\(_activeWeaponNode[\s\S]*nativeBaselineLocal[\s\S]*releaseFiringHandWeaponNodeOwnership' `
-    'Left-to-right weapon return must preserve world pose, remain blocked, converge in native parent-local space, and unblock deterministically.'
+    'worldTargetToParentLocal\(nativeParent->world,\s*startWorld\)[\s\S]*releaseFiringHandWeaponNodeOwnership\(_activeWeaponNode\)[\s\S]*_activeWeaponNode->parent\s*!=\s*nativeParent[\s\S]*nativeBaselineLocal' `
+    'Weapon return must restore native right-hand topology before converging in native parent-local space.'
+Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'void TwoHandedGrip::beginWeaponVisualReturn[\s\S]{0,5000}frik_visual_authority::blockPrimaryWeaponNodeOwnership' `
+    'Weapon return must not engage hFRIK external-left-carry topology as a transform-write blocker.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'new-two-hand-acquisition[\s\S]*nativeBaselineLocal[\s\S]*new-primary-acquisition' `
     'New weapon acquisition must interrupt return without losing the original native baseline.'

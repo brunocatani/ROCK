@@ -1771,27 +1771,20 @@ namespace rock
             return;
         }
 
-        // FRIK normally rewrites the native weapon node before ROCK's frame.
-        // Keep that writer blocked for the short return overlay so the node's
-        // parent-local interpolation survives continuously between frames.
-        if (!_weaponNodeOwnershipBlockEngaged) {
-            if (!frik_visual_authority::blockPrimaryWeaponNodeOwnership(WEAPON_NODE_OWNERSHIP_TAG, true)) {
-                ROCK_LOG_WARN(Weapon, "TwoHandedGrip: weapon return skipped because the FRIK weapon-node blocker is unavailable");
-                return;
-            }
-            _weaponNodeOwnershipBlockEngaged = true;
-        }
-
-        if (_weaponNodeReparentedToLeftHand) {
-            RE::NiPointer<RE::NiAVObject> detached;
-            if (_activeWeaponNode->parent) {
-                _activeWeaponNode->parent->DetachChild(_activeWeaponNode, detached);
-            }
-            nativeParent->AttachChild(_activeWeaponNode, true);
-            _activeWeaponNode->local = weapon_visual_authority_math::worldTargetToParentLocal(nativeParent->world, startWorld);
-            f4vr::updateTransformsDown(_activeWeaponNode, true);
-            _weaponNodeReparentedToLeftHand = false;
-            ROCK_LOG_INFO(Weapon, "TwoHandedGrip: equipped weapon re-parented to native right hand for visual return");
+        /*
+         * blockPrimaryWeaponNodeOwnership is hFRIK's external LEFT-carry
+         * topology switch, not a transform-write-only blocker. Retaining it
+         * here makes hFRIK reparent the weapon back under LArm_Hand on the next
+         * frame, which invalidates this right-parent-local return and snaps the
+         * weapon immediately. Release left-carry topology before beginning the
+         * overlay. ROCK runs after hFRIK and republishes the interpolated node
+         * every frame, so hFRIK's earlier native write cannot reach rendering;
+         * at the exact endpoint both writers already agree on the baseline.
+         */
+        releaseFiringHandWeaponNodeOwnership(_activeWeaponNode);
+        if (_activeWeaponNode->parent != nativeParent) {
+            ROCK_LOG_WARN(Weapon, "TwoHandedGrip: weapon return skipped because native right-hand parenting could not be restored");
+            return;
         }
 
         ReturningWeaponVisualState returnState{};
@@ -1800,7 +1793,6 @@ namespace rock
         returnState.weaponGenerationKey = _activeWeaponGenerationKey;
         returnState.equippedWeaponOwnershipKey = _activeEquippedWeaponOwnershipKey;
         returnState.nativeBaselineLocal = _weaponNodeLocalBaseline;
-        returnState.retainWeaponNodeBlocker = true;
         returnState.retainPrimaryPoseBlocker = _firingHandIsLeft;
         returnState.localTransition.begin(startLocal);
         returnState.localTransition.durationSeconds = hand_visual_lerp_math::computeVisualReturnDuration(
@@ -2363,12 +2355,10 @@ namespace rock
     void TwoHandedGrip::transitionToInactive(bool publishRestoredWeaponTransform)
     {
         const bool weaponReturnActive = _returningWeaponVisual.localTransition.active;
-        // Return equipped weapon-node ownership to FRIK/native before FRIK
-        // pose restoration unless a visual-return overlay still owns the
-        // rendered node. The overlay releases both blockers at its endpoint.
-        if (!weaponReturnActive) {
-            releaseFiringHandWeaponNodeOwnership(_activeWeaponNode);
-        }
+        // Weapon-node topology always returns to native immediately. A visual
+        // return owns only ROCK's later transform publication, never hFRIK's
+        // external-left-carry topology switch.
+        releaseFiringHandWeaponNodeOwnership(_activeWeaponNode);
         clearPrimaryGripPose(_firingHandIsLeft);
         clearPrimaryDetachVisualAuthority(_firingHandIsLeft);
         clearSupportGripPose(true);
@@ -4465,10 +4455,6 @@ namespace rock
 
     void TwoHandedGrip::syncFiringHandWeaponNodeOwnership(RE::NiNode* weaponNode)
     {
-        if (_returningWeaponVisual.localTransition.active && _returningWeaponVisual.retainWeaponNodeBlocker) {
-            return;
-        }
-
         const bool wantLeftFiringCarry = _firingHandIsLeft &&
             (_state == TwoHandedState::Gripping || _state == TwoHandedState::PrimaryOnly);
 

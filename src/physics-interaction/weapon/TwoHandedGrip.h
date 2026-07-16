@@ -410,7 +410,6 @@ namespace rock
             std::uint64_t weaponGenerationKey{ 0 };
             std::uint64_t equippedWeaponOwnershipKey{ 0 };
             RE::NiTransform nativeBaselineLocal{};
-            bool retainWeaponNodeBlocker{ false };
             bool retainPrimaryPoseBlocker{ false };
         };
 
