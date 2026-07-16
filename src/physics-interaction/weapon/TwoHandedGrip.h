@@ -772,6 +772,9 @@ namespace rock
         std::uint64_t _nativeScopeSightAnchorGenerationKey{ 0 };
         RE::NiPoint3 _nativeScopeSightAnchorWeaponLocal{};
         bool _nativeScopeSightAnchorValid{ false };
+        // Exit-only stabilization is generation-bound; entry remains immediate.
+        std::uint64_t _nativeScopeExitDebounceGenerationKey{ 0 };
+        std::uint32_t _nativeScopeExitOutsideFrames{ 0 };
         NativeScopeCameraDebugSnapshot _nativeScopeCameraDebugSnapshot{};
         NativeScopeActivationDebugSnapshot _nativeScopeActivationDebugSnapshot{};
         NativeScopeRigidFrameState _nativeScopeRigidFrame{};

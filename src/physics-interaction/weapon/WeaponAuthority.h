@@ -402,6 +402,39 @@ namespace rock::native_scope_activation_geometry
                sample.weaponAngleDegrees < weaponLimit &&
                sample.distanceGameUnits < distanceLimit;
     }
+
+    struct ExitDebounceResult
+    {
+        bool decision{ false };
+        std::uint32_t consecutiveOutsideFrames{ 0 };
+    };
+
+    /*
+     * Entry remains immediate and uses the native enter cone unchanged. Once a
+     * scope is active, require a short run of valid outside samples before
+     * closing it so a single presentation/update-order sample cannot flash the
+     * overlay off. Returning inside at any point cancels the pending exit.
+     */
+    [[nodiscard]] inline ExitDebounceResult stabilizeExitDecision(
+        const bool insideCone,
+        const bool nativeScopeAlreadyActive,
+        const std::uint32_t previousOutsideFrames,
+        const std::uint32_t requiredOutsideFrames)
+    {
+        if (insideCone) {
+            return ExitDebounceResult{ .decision = true, .consecutiveOutsideFrames = 0 };
+        }
+        if (!nativeScopeAlreadyActive) {
+            return {};
+        }
+
+        const std::uint32_t required = (std::max)(requiredOutsideFrames, 1u);
+        const std::uint32_t outsideFrames = previousOutsideFrames < required ? previousOutsideFrames + 1 : required;
+        return ExitDebounceResult{
+            .decision = outsideFrames < required,
+            .consecutiveOutsideFrames = outsideFrames,
+        };
+    }
 }
 
 // ---- NativeScopeOverlayFollowMath.h ----
@@ -1053,9 +1086,12 @@ namespace rock::weapon_generation_identity_policy
 
     /*
      * Manual ownership is instance-bound, unlike generated collision, which is
-     * intentionally content-bound so harmless runtime pointer churn does not
-     * rebuild bodies. These live equip witnesses are compared only as opaque
-     * values on the main thread; ROCK never dereferences a retained address.
+     * intentionally content-bound. Use the strongest available witness and do
+     * not mix weaker equip-wrapper addresses into it: FO4VR can rebuild those
+     * wrappers while the same instanceData remains equipped. The ordered
+     * fallbacks preserve fail-closed ownership for weapons without instanceData.
+     * Witnesses are opaque main-thread values; retained addresses are never
+     * dereferenced.
      */
     inline std::uint64_t makeEquippedWeaponOwnershipKey(const EquippedWeaponGenerationIdentity& identity)
     {
@@ -1063,22 +1099,30 @@ namespace rock::weapon_generation_identity_policy
             return 0;
         }
 
-        const bool hasInstanceWitness =
-            identity.instanceDataAddress != 0 ||
-            identity.objectInstanceExtraAddress != 0 ||
-            identity.equippedDataAddress != 0 ||
-            identity.equippedObjectAddress != 0;
-        if (!hasInstanceWitness) {
+        std::uint64_t witnessKind = 0;
+        std::uintptr_t witnessAddress = 0;
+        if (identity.instanceDataAddress != 0) {
+            witnessKind = 1;
+            witnessAddress = identity.instanceDataAddress;
+        } else if (identity.objectInstanceExtraAddress != 0) {
+            witnessKind = 2;
+            witnessAddress = identity.objectInstanceExtraAddress;
+        } else if (identity.equippedObjectAddress != 0) {
+            witnessKind = 3;
+            witnessAddress = identity.equippedObjectAddress;
+        } else if (identity.equippedDataAddress != 0) {
+            witnessKind = 4;
+            witnessAddress = identity.equippedDataAddress;
+        }
+        if (witnessAddress == 0) {
             return 0;
         }
 
         std::uint64_t key = weapon_visual_composition_policy::kWeaponVisualCompositionOffset;
-        weapon_visual_composition_policy::mixString(key, "ROCKEquippedWeaponOwnershipV1");
+        weapon_visual_composition_policy::mixString(key, "ROCKEquippedWeaponOwnershipV2");
         weapon_visual_composition_policy::mixValue(key, identity.formID);
-        weapon_visual_composition_policy::mixValue(key, identity.instanceDataAddress);
-        weapon_visual_composition_policy::mixValue(key, identity.objectInstanceExtraAddress);
-        weapon_visual_composition_policy::mixValue(key, identity.equippedDataAddress);
-        weapon_visual_composition_policy::mixValue(key, identity.equippedObjectAddress);
+        weapon_visual_composition_policy::mixValue(key, witnessKind);
+        weapon_visual_composition_policy::mixValue(key, witnessAddress);
         return key;
     }
 

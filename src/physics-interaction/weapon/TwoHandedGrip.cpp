@@ -894,7 +894,19 @@ namespace rock
             return false;
         }
 
-        outRockGeometryDecision = native_scope_activation_geometry::isInsideCone(sample, nativeScopeAlreadyActive, thresholds);
+        constexpr std::uint32_t kNativeScopeExitConfirmationFrames = 3;
+        if (_nativeScopeExitDebounceGenerationKey != currentWeaponGenerationKey) {
+            _nativeScopeExitDebounceGenerationKey = currentWeaponGenerationKey;
+            _nativeScopeExitOutsideFrames = 0;
+        }
+        const bool insideCone = native_scope_activation_geometry::isInsideCone(sample, nativeScopeAlreadyActive, thresholds);
+        const native_scope_activation_geometry::ExitDebounceResult stabilizedDecision = native_scope_activation_geometry::stabilizeExitDecision(
+            insideCone,
+            nativeScopeAlreadyActive,
+            _nativeScopeExitOutsideFrames,
+            kNativeScopeExitConfirmationFrames);
+        _nativeScopeExitOutsideFrames = stabilizedDecision.consecutiveOutsideFrames;
+        outRockGeometryDecision = stabilizedDecision.decision;
         if (g_rockConfig.rockDebugDrawNativeScopeActivation) {
             _nativeScopeActivationDebugSnapshot = NativeScopeActivationDebugSnapshot{
                 .evaluationSequence = _nativeScopeActivationDebugSnapshot.evaluationSequence + 1,
@@ -917,6 +929,8 @@ namespace rock
 
         clearNativeScopeOverlayAuthority(true);
         clearNativeScopeRigidFrame();
+        _nativeScopeExitDebounceGenerationKey = 0;
+        _nativeScopeExitOutsideFrames = 0;
 
         _nativeScopeSightAnchorWeaponNode = weaponNode;
         _nativeScopeSightAnchorGenerationKey = currentWeaponGenerationKey;
@@ -1507,6 +1521,8 @@ namespace rock
         _nativeScopeSightAnchorGenerationKey = 0;
         _nativeScopeSightAnchorWeaponLocal = {};
         _nativeScopeSightAnchorValid = false;
+        _nativeScopeExitDebounceGenerationKey = 0;
+        _nativeScopeExitOutsideFrames = 0;
         _nativeScopeCameraDebugSnapshot = {};
         _nativeScopeActivationDebugSnapshot = {};
         clearNativeScopeRigidFrame();

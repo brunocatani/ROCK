@@ -64,6 +64,8 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'captureNativeSc
     'Post-FRIK presentation must reuse one immutable weapon-local sight frame instead of recapturing per hand mode.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'tryResolveNativeScopeGeometryDecision[\s\S]*_nativeScopeSightAnchorGenerationKey\s*!=\s*currentWeaponGenerationKey[\s\S]*native_scope_activation_geometry::sample[\s\S]*native_scope_activation_geometry::isInsideCone' `
     'Native entry and exit must use the exact generation-matched generated sight and final weapon transform.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'isInsideCone[\s\S]*stabilizeExitDecision[\s\S]*kNativeScopeExitConfirmationFrames' `
+    'Native scope exit must reject transient outside samples without changing the cone or immediate entry decision.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'captureNativeScopeOverlayCalibration[\s\S]*ScopeParentNode[\s\S]*find1StChildNode\(scopeParent,\s*"world_scope\.nif"\)[\s\S]*captureModelRootCalibrationInCameraLocal[\s\S]*applyNativeScopeOverlayTarget[\s\S]*makeModelRootFineTuneLocal[\s\S]*resolveScopeModelRootWorld[\s\S]*resolveScopeParentWorldForModelRoot[\s\S]*worldTargetToParentLocal[\s\S]*updateTransformsDown\(scopeParent,\s*true\)' `
     'The rendered world-scope hierarchy must preserve native model orientation, apply INI tuning, and compensate the live NIF root transform at the generated sight.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'tryGetComposedNodeWorld\(scopeModelRoot,\s*immediateScopeModelRootWorld\)[\s\S]*areTransformsNearlyEqual\(immediateScopeModelRootWorld,\s*targetScopeModelRootWorld,\s*0\.01f\)' `
