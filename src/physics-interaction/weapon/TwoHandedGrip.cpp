@@ -955,18 +955,26 @@ namespace rock
 
     void TwoHandedGrip::refreshScopeSafeHandFrames(RE::NiNode* weaponNode, const EquippedWeaponGripFrameInput& frameInput, float dt)
     {
-        const bool scopeWasOpen = _scopeMenuOpenThisFrame;
         const bool scopeStateChanged = _scopeMenuOpenThisFrame != frameInput.scopeMenuOpen;
         _scopeMenuOpenThisFrame = frameInput.scopeMenuOpen;
-        const bool scopeClosedThisFrame = scopeStateChanged && scopeWasOpen && !_scopeMenuOpenThisFrame;
+        const bool driverFrameAuthorityWasActive = _scopeDriverFrameAuthorityActive;
+        _scopeDriverFrameAuthorityActive = scope_safe_hand_frame_math::retainDriverFrameAuthority(
+            _scopeMenuOpenThisFrame,
+            isManualOwnershipActive(),
+            driverFrameAuthorityWasActive);
+        const bool driverFrameAuthorityStoppedThisFrame =
+            driverFrameAuthorityWasActive && !_scopeDriverFrameAuthorityActive;
 
         if (scopeStateChanged) {
             // Never resume a pre-menu visual interpolation after hFRIK restores
             // its visible body. The weapon solver itself remains continuous.
             resetLockedHandVisualLerp();
             ROCK_LOG_INFO(Weapon,
-                "TwoHandedGrip: native scope hand-frame mode={} leftCache={} rightCache={}",
-                _scopeMenuOpenThisFrame ? "frik-driver" : "root-flattened",
+                "TwoHandedGrip: native scope hand-frame menu={} solver={} leftCache={} rightCache={}",
+                _scopeMenuOpenThisFrame ? "open" : "closed",
+                _scopeDriverFrameAuthorityActive ?
+                    (_scopeMenuOpenThisFrame ? "frik-driver" : "frik-driver-latched") :
+                    "root-flattened",
                 _scopeSafeHandFrames[0].hasDriverToHandLocal ? "ready" : "missing",
                 _scopeSafeHandFrames[1].hasDriverToHandLocal ? "ready" : "missing");
             if (_scopeMenuOpenThisFrame) {
@@ -978,12 +986,12 @@ namespace rock
         }
 
         const float frameDeltaSeconds = std::isfinite(dt) && dt > 0.0f ? (std::min)(dt, 0.1f) : (1.0f / 90.0f);
-        const auto refreshHand = [this, scopeClosedThisFrame, frameDeltaSeconds](bool isLeft, const EquippedWeaponScopeHandDriverFrame& driverFrame) {
+        const auto refreshHand = [this, driverFrameAuthorityStoppedThisFrame, frameDeltaSeconds](bool isLeft, const EquippedWeaponScopeHandDriverFrame& driverFrame) {
             ScopeSafeHandFrameState& state = _scopeSafeHandFrames[isLeft ? 0u : 1u];
             state.currentHandWorldValid = false;
 
             RE::NiTransform rootHandWorld{};
-            const bool rootHandValid = !_scopeMenuOpenThisFrame &&
+            const bool rootHandValid = !_scopeDriverFrameAuthorityActive &&
                                        tryGetRootFlattenedHandBoneTransform(isLeft, rootHandWorld);
             const bool driverValid = driverFrame.valid &&
                                      isUsableHandAuthorityTransform(driverFrame.world);
@@ -996,7 +1004,7 @@ namespace rock
                 reconstructedHandValid = isUsableHandAuthorityTransform(reconstructedHandWorld);
             }
             const auto resolutionMode = scope_safe_hand_frame_math::resolveMode(
-                _scopeMenuOpenThisFrame,
+                _scopeDriverFrameAuthorityActive,
                 rootHandValid,
                 reconstructedHandValid,
                 state.hasLastHandWorld,
@@ -1006,7 +1014,7 @@ namespace rock
             if (resolutionMode == scope_safe_hand_frame_math::ResolutionMode::RootFlattened) {
                 const bool recentScopedHandAvailable = state.hasLastHandWorld &&
                                                        state.consecutiveDriverMissFrames < SCOPE_DRIVER_MISS_GRACE_FRAMES;
-                if (scopeClosedThisFrame && (reconstructedHandValid || recentScopedHandAvailable)) {
+                if (driverFrameAuthorityStoppedThisFrame && (reconstructedHandValid || recentScopedHandAvailable)) {
                     // The previous ROCK output is the continuity authority.
                     // hFRIK may resume non-scope damping from a stale internal
                     // sample on this exact edge even though its driver is finite.
@@ -1083,7 +1091,7 @@ namespace rock
                 ++state.consecutiveDriverMissFrames;
                 state.currentHandWorld = state.lastHandWorld;
                 state.currentHandWorldValid = true;
-            } else if (_scopeMenuOpenThisFrame) {
+            } else if (_scopeDriverFrameAuthorityActive) {
                 state.consecutiveDriverMissFrames = SCOPE_DRIVER_MISS_GRACE_FRAMES;
             }
         };
@@ -1485,6 +1493,7 @@ namespace rock
         _nativeScopeActivationDebugSnapshot = {};
         clearNativeScopeRigidFrame();
         _scopeSafeHandFrames = {};
+        _scopeDriverFrameAuthorityActive = false;
         _scopeHandAuthorityCleanupPending = _scopeHandAuthorityCleanupPending || _scopeMenuOpenThisFrame;
         clearPrimaryGripPose(_firingHandIsLeft);
         clearPrimaryDetachVisualAuthority(_firingHandIsLeft);

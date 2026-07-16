@@ -51,13 +51,17 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'scopeAnchorMatc
     'Native-scope camera authority must resolve one generation-bound rigid sight frame for every weapon authority mode.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'followWeaponWorldChangeFromSightAnchor[\s\S]*followWeaponWorldChange\(' `
     'Native-scope camera authority must preserve the calibrated rigid-delta fallback when sight geometry is unavailable.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'rootHandValid\s*=\s*!_scopeMenuOpenThisFrame\s*&&[\s\S]*tryGetRootFlattenedHandBoneTransform[\s\S]*captureDriverToHandLocal\(driverFrame\.world,\s*resolvedHandWorld\)' `
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'rootHandValid\s*=\s*!_scopeDriverFrameAuthorityActive\s*&&[\s\S]*tryGetRootFlattenedHandBoneTransform[\s\S]*captureDriverToHandLocal\(driverFrame\.world,\s*resolvedHandWorld\)' `
     'Collapsed ScopeMenu root frames must never overwrite hFRIK-driver-to-hand calibration.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'ResolutionMode::DriverReconstructed[\s\S]*currentHandWorld\s*=\s*reconstructedHandWorld' `
     'Scoped hand authority must reconstruct the authored hand frame from hFRIK damped arm drivers.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'SCOPE_DRIVER_MISS_GRACE_FRAMES[\s\S]*consecutiveDriverMissFrames[\s\S]*ResolutionMode::LastKnown[\s\S]*\+\+state\.consecutiveDriverMissFrames' `
     'The last valid scoped hand frame fallback must be explicitly bounded across driver loss.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'scopeClosedThisFrame\s*&&\s*\(reconstructedHandValid\s*\|\|\s*recentScopedHandAvailable\)[\s\S]*continuityHandWorld[\s\S]*rootRebaseLocalStart[\s\S]*interpolateRebaseTransform' `
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'retainDriverFrameAuthority\([\s\S]*isManualOwnershipActive\(\)[\s\S]*driverFrameAuthorityWasActive[\s\S]*driverFrameAuthorityStoppedThisFrame' `
+    'A manual weapon-grip session must retain its driver-relative solver basis across ScopeMenu close/reopen pulses.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'rootHandValid\s*=\s*!_scopeDriverFrameAuthorityActive[\s\S]*resolveMode\([\s\S]*_scopeDriverFrameAuthorityActive' `
+    'The latched scope-driver authority, not presentation visibility, must select the weapon-solver hand basis.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'driverFrameAuthorityStoppedThisFrame\s*&&\s*\(reconstructedHandValid\s*\|\|\s*recentScopedHandAvailable\)[\s\S]*continuityHandWorld[\s\S]*rootRebaseLocalStart[\s\S]*interpolateRebaseTransform' `
     'Scope exit must rebase smoothly from reconstructed or recent scoped authority to the restored hFRIK root hand.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'recentScopedHandAvailable\s*=\s*state\.hasLastHandWorld\s*&&[\s\S]*state\.consecutiveDriverMissFrames\s*<\s*SCOPE_DRIVER_MISS_GRACE_FRAMES;[\s\S]*state\.consecutiveDriverMissFrames\s*=\s*0;' `
     'Scope-exit history age must be checked before the normal root path resets its driver-miss counter.'

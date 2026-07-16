@@ -324,6 +324,16 @@ int main()
             ResolutionMode::Unavailable);
         ok &= expectEqual("ordinary aiming never substitutes the scope driver for a missing canonical hand frame",
             rock::scope_safe_hand_frame_math::resolveMode(false, false, true, true, 0, 3), ResolutionMode::Unavailable);
+        ok &= expectTrue("open ScopeMenu selects driver-frame weapon authority",
+            rock::scope_safe_hand_frame_math::retainDriverFrameAuthority(true, false, false));
+        ok &= expectTrue("manual grip retains driver-frame authority across a transient ScopeMenu close",
+            rock::scope_safe_hand_frame_math::retainDriverFrameAuthority(false, true, true));
+        ok &= expectTrue("manual grip retains driver-frame authority across a later ScopeMenu reopen",
+            rock::scope_safe_hand_frame_math::retainDriverFrameAuthority(true, true, true));
+        ok &= expectFalse("driver-frame authority returns to the visible root only after manual ownership ends",
+            rock::scope_safe_hand_frame_math::retainDriverFrameAuthority(false, false, true));
+        ok &= expectFalse("ordinary unscoped aiming does not acquire driver-frame authority",
+            rock::scope_safe_hand_frame_math::retainDriverFrameAuthority(false, true, false));
         ok &= expectTrue("locked hand IK publishes outside native scope", rock::scope_safe_hand_frame_math::shouldPublishLockedHandVisualAuthority(false));
         ok &= expectFalse("locked hand IK is suppressed while native scope hides the body", rock::scope_safe_hand_frame_math::shouldPublishLockedHandVisualAuthority(true));
         ok &= expectTrue("visible stable carry may refresh the right firing canonical", rock::scope_safe_hand_frame_math::canRefreshRightFiringCanonicalFrame(false, false));

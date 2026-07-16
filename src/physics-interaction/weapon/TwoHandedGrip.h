@@ -745,6 +745,9 @@ namespace rock
 
         std::array<ScopeSafeHandFrameState, 2> _scopeSafeHandFrames{};
         bool _scopeMenuOpenThisFrame{ false };
+        // Latched across a manual grip session after its first scoped frame so
+        // ScopeMenu presentation edges cannot reselect the weapon-solver basis.
+        bool _scopeDriverFrameAuthorityActive{ false };
         bool _scopeHandAuthorityCleanupPending{ false };
 
         // Cached once per generated weapon generation. The pointer is only an

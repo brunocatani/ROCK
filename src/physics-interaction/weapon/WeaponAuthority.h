@@ -561,6 +561,22 @@ namespace rock::scope_safe_hand_frame_math
         Unavailable,
     };
 
+    /*
+     * ScopeMenu visibility is presentation state, not weapon-solver
+     * ownership. Once a manual grip has crossed into the driver-reconstructed
+     * hand basis, retain that basis for the rest of the grip session. Letting
+     * a transient ScopeMenu close select the restored root for one frame moves
+     * the weapon/sight, which can immediately reopen the menu and create a
+     * self-sustaining root/driver oscillation.
+     */
+    [[nodiscard]] inline constexpr bool retainDriverFrameAuthority(
+        bool scopeMenuOpen,
+        bool manualOwnershipActive,
+        bool driverFrameAuthorityWasActive)
+    {
+        return scopeMenuOpen || (manualOwnershipActive && driverFrameAuthorityWasActive);
+    }
+
     [[nodiscard]] inline constexpr ResolutionMode resolveMode(
         bool scopeMenuOpen,
         bool rootHandValid,
