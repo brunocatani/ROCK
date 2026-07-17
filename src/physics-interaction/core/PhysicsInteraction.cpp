@@ -1972,7 +1972,7 @@ namespace rock
 
         // Before any early return below: a skipped consume would let a stale
         // accept-button press replay as a reload frames later (see the API doc).
-        input_remap_runtime::updateFiringHandReloadInput();
+        input_remap_runtime::updateFiringHandReloadInput(runtime.deltaSeconds);
 
         _deltaTime = runtime.deltaSeconds;
 

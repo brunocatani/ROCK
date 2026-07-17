@@ -169,6 +169,11 @@ namespace rock
         float rockWeaponVisualReturnMinAngleDegrees = 5.0f;
         float rockWeaponVisualReturnMaxAngleDegrees = 90.0f;
 
+        // False replaces FO4VR's generated-sight cone with a held firing-hand
+        // A/X gesture. A release before the threshold remains reload input.
+        bool rockAutoActivateScope = false;
+        float rockManualScopeHoldSeconds = 0.30f;
+
         // Fine tuning for FO4VR's game-native world_scope.nif overlay. These
         // offsets are applied in the calibrated model-root frame after ROCK
         // anchors it to generated Sight geometry; they do not move the native

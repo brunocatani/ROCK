@@ -40,19 +40,20 @@ Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
     'shouldRouteFiringHandActivateReload[\s\S]{0,1400}isPrimaryWandInputEvent\(event\)[\s\S]{0,600}firingHandIsLeft\s*=\s*s_equippedWeaponLeftHandFiringActive' `
     'Runtime A-side reload routing must derive the event hand from primary-wand identity and compare it with live firing-hand ownership.'
 
-# X-side: the secondary wand accept button never produces an engine event, so
-# the reload must be dispatched from ROCK''s own raw press edge each frame.
+# Automatic X-side: the secondary wand accept button never produces an engine
+# event, so reload must still be dispatched from ROCK's raw press edge. Manual
+# scope mode consumes both physical A/X streams before classifying tap vs hold.
 Require-Text 'src/physics-interaction/input/InputRemapPolicy.h' `
     'shouldDispatchSecondaryHandReloadPress[\s\S]{0,600}firingHandIsSecondaryHand\s*&&\s*input\.acceptButtonPressedEdge' `
     'X-side reload policy must gate the raw accept-button press edge on secondary-hand firing-grip ownership.'
 
 Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
-    'updateFiringHandReloadInput[\s\S]{0,2400}consumeRawButtonState\(secondaryHandIsLeft,\s*input_remap_policy::kOpenVrAcceptButtonId\)[\s\S]{0,2400}dispatchNativeReloadAction' `
-    'Runtime X-side reload must consume the secondary wand''s raw accept press edge every frame and dispatch the native reload action.'
+    'updateFiringHandReloadInput[\s\S]{0,1600}consumeRawButtonState\(true,\s*input_remap_policy::kOpenVrAcceptButtonId\)[\s\S]{0,500}consumeRawButtonState\(false,\s*input_remap_policy::kOpenVrAcceptButtonId\)[\s\S]{0,5000}secondaryHandIsLeft\s*\?\s*leftAcceptState\s*:\s*rightAcceptState[\s\S]{0,1800}dispatchNativeReloadAction' `
+    'Runtime must drain both physical accept streams, preserve automatic secondary-wand reload, and dispatch the native reload action.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'input_remap_runtime::updateFiringHandReloadInput\(\)' `
-    'PhysicsInteraction must drive the per-frame X-side reload poll so press edges are consumed before any early return.'
+    'input_remap_runtime::updateFiringHandReloadInput\(runtime\.deltaSeconds\)' `
+    'PhysicsInteraction must drive per-frame tap/hold arbitration with frame time before any early return.'
 
 Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
     'shouldRouteFiringHandActivateReload\(inputEvent\)[\s\S]{0,700}shouldSuppressNativeTakeEquipActionEvent\(inputEvent\)' `

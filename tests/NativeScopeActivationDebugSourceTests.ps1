@@ -43,6 +43,10 @@ Require-Text 'src/RockConfig.h' 'rockDebugDrawNativeScopeActivation\s*=\s*false'
     'Native-scope visualization must have a dedicated opt-in runtime gate.'
 Require-Text 'src/RockConfig.cpp' 'rockDebugDrawNativeScopeActivation\s*=\s*false[\s\S]*bDebugDrawNativeScopeActivation' `
     'The diagnostic gate must reset fail-closed and load from ROCK.ini.'
+Require-Text 'src/RockConfig.h' 'rockAutoActivateScope\s*=\s*false[\s\S]*rockManualScopeHoldSeconds\s*=\s*0\.30f' `
+    'Manual firing-hand hold activation must be the native-scope default.'
+Require-Text 'src/RockConfig.cpp' 'bAutoActivateScope[\s\S]*fManualScopeHoldSeconds' `
+    'Native-scope activation mode and hold threshold must load from ROCK.ini.'
 Require-Text 'data/config/ROCK.ini' 'bDebugDrawNativeScopeActivation\s*=\s*false' `
     'The development config template must keep the native-scope diagnostic disabled by default.'
 Require-Text 'data/mod/ROCK_Config/ROCK.ini' 'bDebugDrawNativeScopeActivation\s*=\s*false' `
@@ -52,6 +56,8 @@ Require-Text 'src/RockConfig.h' 'rockNativeScopeOverlayOffsetXGameUnits[\s\S]*ro
 Require-Text 'src/RockConfig.cpp' 'NATIVE_SCOPES_SECTION\s*=\s*"NativeScopes"[\s\S]*fNativeScopeOverlayOffsetXGameUnits[\s\S]*fNativeScopeOverlayOffsetYGameUnits[\s\S]*fNativeScopeOverlayOffsetZGameUnits[\s\S]*fNativeScopeOverlayPitchDegrees[\s\S]*fNativeScopeOverlayYawDegrees[\s\S]*fNativeScopeOverlayRollDegrees' `
     'Native scope overlay tuning must load from its independent NativeScopes INI section.'
 foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
+    Require-Text $configPath '\[NativeScopes\][\s\S]*bAutoActivateScope\s*=\s*false[\s\S]*fManualScopeHoldSeconds\s*=\s*0\.30' `
+        'Native scope templates must default to manual A/X hold activation.'
     Require-Text $configPath '\[NativeScopes\][\s\S]*fNativeScopeOverlayOffsetXGameUnits\s*=\s*0\.0[\s\S]*fNativeScopeOverlayOffsetYGameUnits\s*=\s*0\.0[\s\S]*fNativeScopeOverlayOffsetZGameUnits\s*=\s*0\.0[\s\S]*fNativeScopeOverlayPitchDegrees\s*=\s*0\.0[\s\S]*fNativeScopeOverlayYawDegrees\s*=\s*0\.0[\s\S]*fNativeScopeOverlayRollDegrees\s*=\s*0\.0' `
         'Native scope overlay template tuning must default to a neutral additive transform.'
 }
@@ -76,8 +82,12 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'tryReadNativ
     'The replacement cone must preserve the live native settings and current enter/exit state.'
 Require-Text 'src/ROCKMain.cpp' 'hookNativeScopeGeometryDecision[\s\S]*callBytes\[0\]\s*!=\s*0xE8[\s\S]*decodedTarget\s*!=\s*expectedTarget[\s\S]*kExpectedNativeDecisionTest[\s\S]*write_call<5>\(callSiteAddress,\s*&onNativeScopeGeometryDecision\)[\s\S]*kRockDecisionTest[\s\S]*REL::safe_write' `
     'The exact verified geometry call site and original target must be validated before patching.'
-Require-Text 'src/ROCKMain.cpp' 'bool onNativeScopeGeometryDecision[\s\S]*finalGeometryDecision\s*=\s*nativeGeometryDecision[\s\S]*nativeForceDecision[\s\S]*tryResolveNativeScopeGeometryDecision[\s\S]*s_originalNativeScopeStateTransition\(player,\s*finalGeometryDecision\)[\s\S]*return finalGeometryDecision' `
-    'The hook must preserve Bethesda force-state priority, fail closed to native geometry, and return one decision for state and fade.'
+Require-Text 'src/ROCKMain.cpp' 'bool onNativeScopeGeometryDecision[\s\S]*finalGeometryDecision\s*=\s*nativeGeometryDecision[\s\S]*nativeForceDecision[\s\S]*!g_rockConfig\.rockAutoActivateScope[\s\S]*isManualScopeActivationRequested[\s\S]*tryResolveNativeScopeGeometryDecision[\s\S]*s_originalNativeScopeStateTransition\(player,\s*finalGeometryDecision\)[\s\S]*manualScopeDecisionApplied\s*\?\s*true\s*:\s*finalGeometryDecision' `
+    'The hook must preserve Bethesda force priority, use held input instead of the cone in manual mode, and bypass cone-derived approach fade.'
+Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' 'consumeRawButtonState\(true,\s*input_remap_policy::kOpenVrAcceptButtonId\)[\s\S]*consumeRawButtonState\(false,\s*input_remap_policy::kOpenVrAcceptButtonId\)[\s\S]*manual_scope_input_policy::update[\s\S]*decision\.scopeRequested[\s\S]*decision\.dispatchReload' `
+    'Manual scope and release-time reload must share one physical firing-hand A/X gesture classifier.'
+Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' 'shouldDeferFiringHandActivateForManualScope\(inputEvent\)[\s\S]*markInputEventStopped\(inputEvent\)[\s\S]*return;' `
+    'Primary-wand press-time reload must be deferred while manual scope classifies the hold.'
 Require-Text 'src/physics-interaction/native/HavokOffsets.h' 'kHookSite_NativeScopeGeometryDecision\s*=\s*0xEF851F[\s\S]*kPatchSite_NativeScopePostDecisionTest\s*=\s*0xEF8528[\s\S]*kFunc_NativeScopeStateTransition\s*=\s*0xEFAA60[\s\S]*kPlayerCharacter_NativeScopeForceDecisionMask\s*=\s*0x08' `
     'The production hook must retain the independently raw-disassembly-verified FO4VR scope boundary constants.'
 Require-Text 'src/ROCKMain.cpp' 's_originalGameLoopFunc\(rcx\);[\s\S]*synchronizeNativeScopePresentationAfterFrikUpdate\(\);[\s\S]*onFrameUpdate\(\);' `

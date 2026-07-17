@@ -315,17 +315,32 @@ namespace
     bool onNativeScopeGeometryDecision(RE::PlayerCharacter* player, const bool nativeGeometryDecision)
     {
         bool finalGeometryDecision = nativeGeometryDecision;
+        bool manualScopeDecisionApplied = false;
         std::uint8_t nativeScopeFlags = 0;
         const bool nativeForceDecision = rock::native_memory::tryReadField(player, rock::offsets::kPlayerCharacter_NativeScopeFlags, nativeScopeFlags) &&
             (nativeScopeFlags & rock::offsets::kPlayerCharacter_NativeScopeForceDecisionMask) != 0;
-        if (!nativeForceDecision && s_pluginLoaded && s_frikAvailable && g_rockConfig.rockEnabled && s_physicsInteraction) {
-            (void)s_physicsInteraction->tryResolveNativeScopeGeometryDecision(nativeGeometryDecision, finalGeometryDecision);
+        if (!nativeForceDecision && s_pluginLoaded && s_frikAvailable && g_rockConfig.rockEnabled) {
+            if (!g_rockConfig.rockAutoActivateScope) {
+                // Manual mode replaces the cone completely. The raw physical
+                // firing-hand hold remains authoritative until release.
+                finalGeometryDecision = input_remap_runtime::isManualScopeActivationRequested();
+                manualScopeDecisionApplied = true;
+            } else if (s_physicsInteraction) {
+                (void)s_physicsInteraction->tryResolveNativeScopeGeometryDecision(nativeGeometryDecision, finalGeometryDecision);
+            }
         }
 
         if (s_originalNativeScopeStateTransition) {
             s_originalNativeScopeStateTransition(player, finalGeometryDecision);
         }
-        return finalGeometryDecision;
+        /*
+         * AL feeds only ROCK's patched post-call TEST below; the original
+         * transition is void and already received finalGeometryDecision.
+         * Manual mode must skip Bethesda's cone-derived approach fade both
+         * while held and while idle, otherwise the cone would still darken
+         * the view despite no longer owning scope activation.
+         */
+        return manualScopeDecisionApplied ? true : finalGeometryDecision;
     }
 
     bool hookNativeScopeGeometryDecision()
@@ -365,9 +380,9 @@ namespace
 
         /*
          * The caller uses its pre-hook BL value for the adjacent approach-fade
-         * branch. Our wrapper returns the replacement decision in AL; point the
-         * existing two-byte TEST at AL so state and fade cannot disagree for a
-         * frame and present as a flash.
+         * branch. Our wrapper returns the replacement automatic decision in
+         * AL, or true in manual mode to bypass cone-derived approach fade.
+         * Point the existing two-byte TEST at that explicit result.
          */
         constexpr std::array<std::uint8_t, 2> kRockDecisionTest{ 0x84, 0xC0 }; // TEST AL,AL
         REL::safe_write(postDecisionTestAddress, kRockDecisionTest.data(), kRockDecisionTest.size());

@@ -41,15 +41,16 @@ namespace rock::input_remap_runtime
     void setEquippedWeaponLeftHandFiringActive(bool active);
     void setProviderOpenVrGameInputSuppressed(bool isLeft, bool suppressed);
     /*
-     * Once-per-frame reload input for the firing hand on the SECONDARY wand
-     * (left X in the default layout): that button never produces an engine
-     * event ROCK can hook, so PhysicsInteraction drives this poll, which
-     * consumes the raw accept-button press edge and dispatches the native
-     * reload action while that physical hand occupies the firing grip.
-     * Call every frame regardless of weapon state so stale press edges can
-     * never latch across a firing-hand change. Frame thread only.
+     * Once-per-frame physical firing-hand A/X arbitration. Automatic scope
+     * mode preserves press-time reload and only dispatches the secondary-wand
+     * raw edge here. Manual mode classifies both hands: release before the
+     * configured threshold dispatches reload, while a completed hold publishes
+     * native scope activation until release. Frame thread only.
      */
-    void updateFiringHandReloadInput();
+    void updateFiringHandReloadInput(float deltaSeconds);
+    // Published manual-scope level state. The native scope decision hook owns
+    // the engine transition; input runtime owns only the physical hold gesture.
+    bool isManualScopeActivationRequested();
     bool isMenuInputActive();
     bool shouldSuppressNativeTriggerAction(const RE::InputEvent* event);
     bool isNativePipboyInputSuppressionActive();

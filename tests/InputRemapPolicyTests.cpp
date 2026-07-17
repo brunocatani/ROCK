@@ -1,9 +1,12 @@
 #include "physics-interaction/input/InputRemapPolicy.h"
+#include "physics-interaction/input/ManualScopeInputPolicy.h"
 
 #include <cstdio>
 
 namespace
 {
+    namespace manual = rock::manual_scope_input_policy;
+
     bool expectTrue(const char* label, bool value)
     {
         if (value) {
@@ -19,6 +22,17 @@ namespace
             return true;
         }
         std::printf("%s expected false\n", label);
+        return false;
+    }
+
+    bool expectManualScopeState(const char* label,
+        rock::manual_scope_input_policy::State actual,
+        rock::manual_scope_input_policy::State expected)
+    {
+        if (actual == expected) {
+            return true;
+        }
+        std::printf("%s expected state %u, got %u\n", label, static_cast<unsigned>(expected), static_cast<unsigned>(actual));
         return false;
     }
 }
@@ -181,6 +195,31 @@ int main()
     unmatchedActivateReload.eventMatched = false;
     ok &= expectFalse("unmatched activate event does not route reload", shouldRouteFiringHandActivateReload(unmatchedActivateReload));
 
+    ManualScopeActivateInput manualActivate{
+        .manualScopeEnabled = true,
+        .rawInputCaptureAvailable = true,
+        .gameplayInputAllowed = true,
+        .menuInputActive = false,
+        .weaponDrawn = true,
+        .primaryHandEvent = true,
+        .firingHandIsPrimaryHand = true,
+        .eventMatched = true,
+    };
+    ok &= expectTrue("manual scope claims the complete primary firing-hand activate event",
+        shouldDeferFiringHandActivateForManualScope(manualActivate));
+    auto automaticActivate = manualActivate;
+    automaticActivate.manualScopeEnabled = false;
+    ok &= expectFalse("automatic scope leaves primary activate on the existing reload route",
+        shouldDeferFiringHandActivateForManualScope(automaticActivate));
+    auto missingRawCapture = manualActivate;
+    missingRawCapture.rawInputCaptureAvailable = false;
+    ok &= expectFalse("manual scope does not swallow reload when raw capture is unavailable",
+        shouldDeferFiringHandActivateForManualScope(missingRawCapture));
+    auto supportHandActivate = manualActivate;
+    supportHandActivate.firingHandIsPrimaryHand = false;
+    ok &= expectFalse("manual scope does not claim the support hand activate event",
+        shouldDeferFiringHandActivateForManualScope(supportHandActivate));
+
     SecondaryHandReloadInput secondaryReload{
         .remapEnabled = true,
         .gameplayInputAllowed = true,
@@ -263,6 +302,106 @@ int main()
 
     ok &= expectTrue("enabled suppression requests native hook install", shouldInstallNativeActionSuppressionHook(true, true));
     ok &= expectFalse("disabled remap skips native hook install", shouldInstallNativeActionSuppressionHook(false, true));
+    ok &= expectTrue("manual scope installs the activate event hook independently of general remapping",
+        shouldInstallActivateEventHook(false, true));
+    ok &= expectTrue("manual scope installs raw controller capture independently of general remapping",
+        shouldInstallRawControllerHooks(false, true));
+    ok &= expectFalse("disabled remap and automatic scope need no raw controller hook",
+        shouldInstallRawControllerHooks(false, false));
+
+    manual::RuntimeState manualState{};
+    manual::Input manualInput{
+        .manualModeEnabled = true,
+        .gameplayInputAllowed = true,
+        .menuInputActive = false,
+        .weaponDrawn = true,
+        .firingHandIsLeft = false,
+        .leftButton = manual::ButtonState{ .available = true },
+        .rightButton = manual::ButtonState{ .available = true },
+        .holdSeconds = 0.30f,
+    };
+
+    manualInput.rightButton = manual::ButtonState{ .available = true, .held = true, .pressed = true };
+    auto manualDecision = manual::update(manualState, manualInput);
+    ok &= expectManualScopeState("manual right-A press starts pending classification", manualDecision.state, manual::State::Pending);
+    ok &= expectFalse("manual right-A press does not reload immediately", manualDecision.dispatchReload);
+    ok &= expectFalse("manual right-A press does not scope immediately", manualDecision.scopeRequested);
+
+    manualInput.rightButton.pressed = false;
+    manualInput.deltaSeconds = 0.29f;
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectManualScopeState("manual hold remains pending below threshold", manualDecision.state, manual::State::Pending);
+    ok &= expectFalse("manual hold below threshold remains unscoped", manualDecision.scopeRequested);
+
+    manualInput.deltaSeconds = 0.02f;
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectManualScopeState("manual hold crosses into scope ownership", manualDecision.state, manual::State::ScopeHeld);
+    ok &= expectTrue("manual hold requests scope after threshold", manualDecision.scopeRequested);
+    ok &= expectFalse("scope hold never dispatches reload", manualDecision.dispatchReload);
+
+    manualInput.deltaSeconds = 0.5f;
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectTrue("manual scope remains requested for the entire physical hold", manualDecision.scopeRequested);
+
+    manualInput.rightButton.held = false;
+    manualInput.rightButton.released = true;
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectManualScopeState("manual scope release returns idle", manualDecision.state, manual::State::Idle);
+    ok &= expectFalse("release after scope hold never reloads", manualDecision.dispatchReload);
+    ok &= expectFalse("release ends manual scope request", manualDecision.scopeRequested);
+
+    manualInput.rightButton = manual::ButtonState{ .available = true, .held = true, .pressed = true };
+    manualInput.deltaSeconds = 0.0f;
+    (void)manual::update(manualState, manualInput);
+    manualInput.rightButton = manual::ButtonState{ .available = true, .released = true };
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectTrue("release before hold threshold dispatches reload exactly once", manualDecision.dispatchReload);
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectFalse("held release edge cannot repeat manual reload", manualDecision.dispatchReload);
+
+    manualInput.rightButton = manual::ButtonState{ .available = true, .pressed = true, .released = true };
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectTrue("press and release between frame polls still dispatches reload", manualDecision.dispatchReload);
+
+    manual::reset(manualState);
+    manualInput.firingHandIsLeft = true;
+    manualInput.rightButton = manual::ButtonState{ .available = true, .held = true, .pressed = true };
+    manualInput.leftButton = manual::ButtonState{ .available = true };
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectManualScopeState("support-hand A does not start a left-firing gesture", manualDecision.state, manual::State::Idle);
+    manualInput.rightButton = manual::ButtonState{ .available = true };
+    manualInput.leftButton = manual::ButtonState{ .available = true, .held = true, .pressed = true };
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectManualScopeState("left-firing X starts the same pending gesture", manualDecision.state, manual::State::Pending);
+
+    manualInput.leftButton.pressed = false;
+    manualInput.firingHandIsLeft = false;
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectManualScopeState("firing-hand change invalidates the bound gesture", manualDecision.state, manual::State::BlockedUntilRelease);
+    ok &= expectFalse("firing-hand change cannot convert a pending hold into reload", manualDecision.dispatchReload);
+    manualInput.leftButton.held = false;
+    manualInput.leftButton.released = true;
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectManualScopeState("all accept buttons up rearm after a hand change", manualDecision.state, manual::State::Idle);
+
+    manualInput.rightButton = manual::ButtonState{ .available = true, .held = true, .pressed = true };
+    manualInput.leftButton = manual::ButtonState{ .available = true };
+    (void)manual::update(manualState, manualInput);
+    manualInput.rightButton.pressed = false;
+    manualInput.menuInputActive = true;
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectManualScopeState("blocking menu cancels and blocks a held gesture", manualDecision.state, manual::State::BlockedUntilRelease);
+    manualInput.menuInputActive = false;
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectManualScopeState("held-through-menu input stays blocked", manualDecision.state, manual::State::BlockedUntilRelease);
+    manualInput.rightButton.held = false;
+    manualInput.rightButton.released = true;
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectFalse("menu-cancelled gesture cannot replay as reload", manualDecision.dispatchReload);
+
+    manualInput.manualModeEnabled = false;
+    manualDecision = manual::update(manualState, manualInput);
+    ok &= expectManualScopeState("automatic mode clears all manual gesture state", manualDecision.state, manual::State::Idle);
 
     return ok ? 0 : 1;
 }

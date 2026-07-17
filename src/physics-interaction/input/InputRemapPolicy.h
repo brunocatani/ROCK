@@ -68,6 +68,18 @@ namespace rock::input_remap_policy
         bool eventMatched{ false };
     };
 
+    struct ManualScopeActivateInput
+    {
+        bool manualScopeEnabled{ false };
+        bool rawInputCaptureAvailable{ false };
+        bool gameplayInputAllowed{ true };
+        bool menuInputActive{ false };
+        bool weaponDrawn{ false };
+        bool primaryHandEvent{ false };
+        bool firingHandIsPrimaryHand{ false };
+        bool eventMatched{ false };
+    };
+
     /*
      * X-side reload input: the secondary wand's accept button never produces
      * an engine event ROCK can hook (see shouldRouteFiringHandActivateReload),
@@ -202,6 +214,18 @@ namespace rock::input_remap_policy
     }
 
     /*
+     * In manual-scope mode the complete primary-wand A/X event is claimed by
+     * ROCK. Raw physical state decides later whether release means reload or
+     * whether the hold threshold converted the gesture into scope ownership.
+     */
+    [[nodiscard]] constexpr bool shouldDeferFiringHandActivateForManualScope(const ManualScopeActivateInput& input)
+    {
+        return input.manualScopeEnabled && input.rawInputCaptureAvailable && input.gameplayInputAllowed &&
+               !input.menuInputActive && input.weaponDrawn && input.primaryHandEvent &&
+               input.firingHandIsPrimaryHand && input.eventMatched;
+    }
+
+    /*
      * X-side route twin of the gate above, evaluated per frame from the raw
      * press edge of the SECONDARY wand's accept button while that physical
      * hand occupies the firing grip.
@@ -289,6 +313,16 @@ namespace rock::input_remap_policy
     [[nodiscard]] constexpr bool shouldInstallNativeActionSuppressionHook(bool remapEnabled, bool suppressionEnabled)
     {
         return remapEnabled && suppressionEnabled;
+    }
+
+    [[nodiscard]] constexpr bool shouldInstallActivateEventHook(const bool remapEnabled, const bool manualScopeEnabled)
+    {
+        return remapEnabled || manualScopeEnabled;
+    }
+
+    [[nodiscard]] constexpr bool shouldInstallRawControllerHooks(const bool remapEnabled, const bool manualScopeEnabled)
+    {
+        return remapEnabled || manualScopeEnabled;
     }
 
     [[nodiscard]] constexpr EdgeTransition evaluateEdgeTransition(bool hadPrevious, std::uint64_t previousPressed, std::uint64_t currentPressed)
