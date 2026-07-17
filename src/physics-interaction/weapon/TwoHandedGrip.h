@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <array>
+#include <memory>
 
 #include "physics-interaction/grab/MeshGrab.h"
 #include "physics-interaction/hand/HandFrame.h"
@@ -219,6 +220,14 @@ namespace rock
     class TwoHandedGrip
     {
     public:
+        TwoHandedGrip();
+        ~TwoHandedGrip();
+
+        TwoHandedGrip(const TwoHandedGrip&) = delete;
+        TwoHandedGrip& operator=(const TwoHandedGrip&) = delete;
+        TwoHandedGrip(TwoHandedGrip&&) = delete;
+        TwoHandedGrip& operator=(TwoHandedGrip&&) = delete;
+
         void update(
             RE::NiNode* weaponNode,
             const WeaponInteractionContact& leftWeaponContact,
@@ -405,6 +414,8 @@ namespace rock
         static bool tryCaptureRootFlattenedPalmWorld(bool isLeft, RE::NiPoint3& outPalmWorld, RE::NiTransform& outHandWorld);
 
     private:
+        struct FingerPoseSolveScratch;
+
         struct LockedHandVisualLerpState
         {
             bool active = false;
@@ -643,7 +654,10 @@ namespace rock
 
         void releasePartGrip(bool isLeft, const char* reason, bool smoothHandReturn = false);
 
-        void setSupportGripPose(bool isLeft, WeaponGripPoseId poseId, const grab_finger_pose_runtime::SolvedGrabFingerPose* meshFingerPose);
+        void setSupportGripPose(
+            bool isLeft,
+            const grab_finger_pose_runtime::SolvedGrabFingerPose* meshFingerPose,
+            const std::array<float, 5>* capturedSplayRadians);
 
         void clearSupportGripPose(bool isLeft);
 
@@ -728,6 +742,11 @@ namespace rock
             LockedHandVisualLerpState& state);
 
         TwoHandedState _state{ TwoHandedState::Inactive };
+
+        // Reused one-shot solve storage. It owns no engine pointers and keeps
+        // bounded vector/BVH capacity across re-grabs without polluting the
+        // per-frame WeaponPartGrip state.
+        std::unique_ptr<FingerPoseSolveScratch> _fingerPoseSolveScratch;
 
         weapon_support_authority_policy::WeaponSupportAuthorityMode _authorityMode{
             weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver

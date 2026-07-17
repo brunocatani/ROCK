@@ -116,12 +116,22 @@ Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
 Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
     'targetObjectWorld =',
     '_grabFrame\.desiredObjectWorldAtGrab',
-    'buildFromLocalTriangles\(localFingerPoseTriangles\)',
+    'solveFrozenMeshFingerPose\(',
+    'localFingerPoseTriangles',
+    'targetObjectWorld',
+    '_grabFingerTriangleIndex'
+) 'Regular grab commit must solve one object-local endpoint against the frozen target relation.'
+Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
+    'solveFrozenMeshFingerPose\(',
+    'rebuildBoundedWorldTriangles\(',
+    'buildFromLocalTriangles\(boundedLocalTriangles\)',
     'resolveCommandedOpenDirectionsWorld\(',
     'solveGrabFingerPoseFromTriangles\(',
-    '&_grabFingerTriangleIndex',
-    'captureSurfaceAimObjectLocal\(fingerPose, targetObjectWorld\)'
-) 'Regular grab commit must solve one object-local endpoint against the frozen target relation.'
+    'FingerPoseMeshRelation::AlreadyAtCommandedSeat',
+    'useThumbIndexCurveOnlyPose\(result\.pose\)',
+    'refineGrabFingerPoseWithPadProbes\(',
+    'captureSurfaceAimObjectLocal\(result\.pose, frozenMeshWorldTransform\)'
+) 'The shared frozen-mesh boundary must own the indexed solve, calibrated anchors, refinement, and object-local capture.'
 
 # The index must own a bounded object-local BVH and perform exact closest-point
 # tests with a fixed query stack; no allocation or full candidate scan is
@@ -154,11 +164,11 @@ Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
 ) 'Grab acquisition must blend toward the pre-solved target without geometric re-solves.'
 
 # The commanded zero reconstruction walks authored open-pose chain origins.
-Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
+Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
     'resolveCommandedOpenDirectionsWorld\(',
     'getHandPoseLocalTransformsForPose\(',
     'computeCommandedOpenDirectionsHandLocal\(',
-    'localVectorToWorld\(frikHandBoneWorld'
+    'localVectorToWorld\(handWorldTransform'
 ) 'Regular target-space solves must anchor arcs on the authored commanded-open hand model.'
 
 # The live chain chord is rotated by the CURRENT curl; anchoring the arc zero
@@ -231,7 +241,7 @@ Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' `
 $handGrabText = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/hand/HandGrab.cpp')
 $handGrabSolveCount = [regex]::Matches($handGrabText, 'solveGrabFingerPoseFromTriangles\(').Count
 if ($handGrabSolveCount -ne 2) {
-    $failures.Add("HandGrab must have exactly two solve sites: target-space regular/at-touch pinch; found $handGrabSolveCount.")
+    $failures.Add("HandGrab must retain exactly two direct non-curve solve sites for pinch commit/deferred pinch; found $handGrabSolveCount.")
 }
 
 # Additional publish-path pad probes are debug-overlay-only work; capture-time
@@ -282,14 +292,14 @@ Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
     'AlreadyAtCommandedSeat',
     'resolveFingerSweepBaseWorld\('
 ) 'Finger-pose pivots must explicitly distinguish current geometry from already-seated geometry.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
+Require-Text 'src/physics-interaction/grab/GrabFinger.h' `
     'FingerPoseMeshRelation::AlreadyAtCommandedSeat' `
     'Regular target-space grabs must keep their calibrated pivot on the live proximal bone.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
-    'rockGrabThumbSweepMaxOpenValue,\s*g_rockConfig\.rockGrabFingerSweepMaxOpenValue' `
+    '\.thumbSweepMaxOpenValue\s*=\s*g_rockConfig\.rockGrabThumbSweepMaxOpenValue,[\s\S]{0,160}\.fingerSweepMaxOpenValue\s*=\s*g_rockConfig\.rockGrabFingerSweepMaxOpenValue' `
     'Grab solve sites must pass the config-driven thumb/finger sweep max-open caps.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'rockGrabThumbSweepMaxOpenValue, g_rockConfig\.rockGrabFingerSweepMaxOpenValue' `
+    '\.thumbSweepMaxOpenValue\s*=\s*g_rockConfig\.rockGrabThumbSweepMaxOpenValue,[\s\S]{0,160}\.fingerSweepMaxOpenValue\s*=\s*g_rockConfig\.rockGrabFingerSweepMaxOpenValue' `
     'The two-handed support-hand solve must pass the same sweep max-open caps.'
 Require-Text 'tools/generate_grab_finger_calibration.py' `
     'OVER_OPEN_MAX = 2\.0' `

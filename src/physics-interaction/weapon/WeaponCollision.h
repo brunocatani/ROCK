@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
+#include <span>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -87,6 +88,25 @@ namespace rock
             std::uint32_t sightBodyCount{ 0 };
         };
 
+        /*
+         * Frame-scoped, non-owning view of one generated weapon body's source
+         * triangles. The triangle storage remains owned by WeaponCollision and
+         * is immutable for the published weapon generation. Consumers must use
+         * the view synchronously on the main thread and must not retain it past
+         * the next WeaponCollision update/rebuild.
+         *
+         * Keeping the source-local representation avoids copying and
+         * transforming an unbounded high-poly weapon part before a consumer can
+         * apply its own bounded evidence policy.
+         */
+        struct SupportGripEvidenceView
+        {
+            std::span<const TriangleData> localTriangles{};
+            RE::NiTransform localToWorld{};
+            std::uint64_t weaponGenerationKey{ 0 };
+            bool sourceNodeCurrent{ false };
+        };
+
         void init(RE::hknpWorld* world, void* bhkWorld);
 
         void shutdown();
@@ -156,10 +176,10 @@ namespace rock
             float probeRadiusGame,
             WeaponInteractionContact& outContact) const;
 
-        bool tryBuildSupportGripEvidenceTriangles(
+        bool tryGetSupportGripEvidenceView(
             std::uint32_t bodyId,
             const RE::NiAVObject* currentWeaponRoot,
-            std::vector<TriangleData>& outTriangles) const;
+            SupportGripEvidenceView& outView) const;
 
         BethesdaPhysicsBody& getWeaponBody();
 

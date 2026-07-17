@@ -26,6 +26,7 @@ namespace rock::performance_profiler
         WeaponColliderBuild,
         WeaponColliderCreate,
         TwoHandedGripStart,
+        EquippedWeaponFingerPoseCapture,
         SupportGripSuppression,
         SelectionCasts,
         DynamicHandCollisionFrame,
@@ -80,6 +81,10 @@ namespace rock::performance_profiler
         GrabAcquisitionBodyIds,
         GrabMeshTriangles,
         GrabNearbyDampingMotions,
+        EquippedWeaponFingerPoseSourceTriangles,
+        EquippedWeaponFingerPoseSelectedTriangles,
+        EquippedWeaponFingerPoseSpatialNodeVisits,
+        EquippedWeaponFingerPoseTriangleTests,
         Count
     };
 

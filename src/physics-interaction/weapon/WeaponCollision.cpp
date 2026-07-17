@@ -2245,12 +2245,12 @@ namespace rock
         return false;
     }
 
-    bool WeaponCollision::tryBuildSupportGripEvidenceTriangles(
+    bool WeaponCollision::tryGetSupportGripEvidenceView(
         std::uint32_t bodyId,
         const RE::NiAVObject* currentWeaponRoot,
-        std::vector<TriangleData>& outTriangles) const
+        SupportGripEvidenceView& outView) const
     {
-        outTriangles.clear();
+        outView = {};
         if (bodyId == INVALID_BODY_ID) {
             return false;
         }
@@ -2269,14 +2269,15 @@ namespace rock
             const auto& localTriangles = sourceNodeCurrent && !instance.generatedSourceLocalTrianglesGame.empty() ?
                 instance.generatedSourceLocalTrianglesGame :
                 instance.generatedLocalTrianglesGame;
-            outTriangles.reserve(localTriangles.size());
-            const RE::NiTransform driveWorld = driveRoot->world;
-            for (const auto& localTriangle : localTriangles) {
-                TriangleData worldTriangle = localTriangle;
-                worldTriangle.applyTransform(driveWorld);
-                outTriangles.push_back(worldTriangle);
+            if (localTriangles.empty() || !std::isfinite(driveRoot->world.scale) || std::abs(driveRoot->world.scale) <= 0.000001f) {
+                continue;
             }
-            return !outTriangles.empty();
+
+            outView.localTriangles = std::span<const TriangleData>(localTriangles.data(), localTriangles.size());
+            outView.localToWorld = driveRoot->world;
+            outView.weaponGenerationKey = getCurrentWeaponGenerationKey();
+            outView.sourceNodeCurrent = sourceNodeCurrent;
+            return outView.weaponGenerationKey != 0;
         }
 
         return false;

@@ -24,7 +24,9 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <span>
 #include <string_view>
+#include <vector>
 
 namespace rock
 {
@@ -40,34 +42,6 @@ namespace rock
         constexpr float SUPPORT_NORMAL_TWIST_FACTOR = 0.5f;
         constexpr std::uint32_t SCOPE_DRIVER_MISS_GRACE_FRAMES = 3;
         constexpr float SCOPE_ROOT_REBASE_DURATION_SECONDS = 0.075f;
-
-        constexpr std::array<float, 15> BARREL_WRAP_POSE = { 0.85f, 0.80f, 0.75f, 0.35f, 0.30f, 0.25f, 0.30f, 0.25f, 0.20f, 0.35f, 0.30f, 0.25f, 0.40f, 0.35f, 0.30f };
-        constexpr std::array<float, 15> HANDGUARD_CLAMP_POSE = { 0.75f, 0.72f, 0.68f, 0.45f, 0.42f, 0.38f, 0.46f, 0.42f, 0.38f, 0.48f, 0.44f, 0.40f, 0.54f, 0.48f, 0.42f };
-        constexpr std::array<float, 15> FOREGRIP_POSE = { 0.90f, 0.86f, 0.82f, 0.70f, 0.66f, 0.60f, 0.74f, 0.68f, 0.62f, 0.72f, 0.66f, 0.60f, 0.66f, 0.58f, 0.50f };
-        constexpr std::array<float, 15> PUMP_GRIP_POSE = { 0.82f, 0.78f, 0.72f, 0.58f, 0.54f, 0.48f, 0.60f, 0.56f, 0.50f, 0.62f, 0.56f, 0.50f, 0.58f, 0.50f, 0.44f };
-        constexpr std::array<float, 15> MAGWELL_HOLD_POSE = { 0.58f, 0.52f, 0.46f, 0.40f, 0.36f, 0.32f, 0.42f, 0.38f, 0.34f, 0.42f, 0.38f, 0.34f, 0.44f, 0.38f, 0.32f };
-        constexpr std::array<float, 15> RECEIVER_SUPPORT_POSE = { 0.46f, 0.40f, 0.34f, 0.34f, 0.30f, 0.26f, 0.36f, 0.32f, 0.28f, 0.36f, 0.32f, 0.28f, 0.36f, 0.30f, 0.24f };
-
-        const std::array<float, 15>& poseValuesForGrip(WeaponGripPoseId poseId)
-        {
-            switch (poseId) {
-            case WeaponGripPoseId::HandguardClamp:
-                return HANDGUARD_CLAMP_POSE;
-            case WeaponGripPoseId::VerticalForegrip:
-            case WeaponGripPoseId::AngledForegrip:
-                return FOREGRIP_POSE;
-            case WeaponGripPoseId::PumpGrip:
-                return PUMP_GRIP_POSE;
-            case WeaponGripPoseId::MagwellHold:
-                return MAGWELL_HOLD_POSE;
-            case WeaponGripPoseId::ReceiverSupport:
-                return RECEIVER_SUPPORT_POSE;
-            case WeaponGripPoseId::BarrelWrap:
-            case WeaponGripPoseId::None:
-            default:
-                return BARREL_WRAP_POSE;
-            }
-        }
 
         /*
          * The part-carry two-anchor solve feeds its own rotation back as the
@@ -134,9 +108,6 @@ namespace rock
             return RE::NiPoint3{ from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t, from.z + (to.z - from.z) * t };
         }
 
-        constexpr std::uint16_t SUPPORT_THUMB_LOCAL_TRANSFORM_MASK = 0x0007;
-        constexpr float MIN_THUMB_OPPOSITION_DISTANCE = 0.001f;
-
         bool isFiniteRotation(const RE::NiMatrix3& rotation)
         {
             for (int row = 0; row < 3; ++row) {
@@ -188,6 +159,100 @@ namespace rock
         {
             // hFRIK uses 0.00001 as its intentional ScopeMenu hide scale.
             return isFiniteTransform(transform) && std::abs(transform.scale) > 0.0001f;
+        }
+
+        struct RankedSupportGripTriangle
+        {
+            float distanceSquared = 0.0f;
+            std::size_t sourceIndex = 0;
+        };
+
+        bool rankedSupportGripTriangleLess(const RankedSupportGripTriangle& lhs, const RankedSupportGripTriangle& rhs)
+        {
+            if (lhs.distanceSquared == rhs.distanceSquared) {
+                return lhs.sourceIndex < rhs.sourceIndex;
+            }
+            return lhs.distanceSquared < rhs.distanceSquared;
+        }
+
+        struct TransformedSupportGripTriangleView
+        {
+            std::span<const TriangleData> localTriangles{};
+            RE::NiTransform localToWorld{};
+
+            [[nodiscard]] std::size_t size() const noexcept { return localTriangles.size(); }
+
+            [[nodiscard]] TriangleData operator[](std::size_t index) const
+            {
+                const auto& triangle = localTriangles[index];
+                return TriangleData{
+                    transform_math::localPointToWorld(localToWorld, triangle.v0),
+                    transform_math::localPointToWorld(localToWorld, triangle.v1),
+                    transform_math::localPointToWorld(localToWorld, triangle.v2),
+                };
+            }
+        };
+
+        void selectNearestSupportGripFingerTriangles(
+            std::span<const TriangleData> sourceTriangles,
+            const RE::NiPoint3& gripPointLocal,
+            std::size_t maxTriangles,
+            std::vector<RankedSupportGripTriangle>& rankingScratch,
+            std::vector<TriangleData>& outTriangles)
+        {
+            rankingScratch.clear();
+            outTriangles.clear();
+            const std::size_t boundedLimit = (std::min)(maxTriangles, grab_finger_pose_runtime::kMaxFingerPoseCandidateTriangles);
+            if (boundedLimit == 0 || sourceTriangles.empty()) {
+                return;
+            }
+
+            if (sourceTriangles.size() <= boundedLimit) {
+                outTriangles.reserve(sourceTriangles.size());
+                for (const auto& triangle : sourceTriangles) {
+                    if (grab_finger_pose_runtime::isFinitePoint(triangle.v0) &&
+                        grab_finger_pose_runtime::isFinitePoint(triangle.v1) &&
+                        grab_finger_pose_runtime::isFinitePoint(triangle.v2)) {
+                        outTriangles.push_back(triangle);
+                    }
+                }
+                return;
+            }
+
+            rankingScratch.reserve(boundedLimit);
+            for (std::size_t sourceIndex = 0; sourceIndex < sourceTriangles.size(); ++sourceIndex) {
+                const auto& triangle = sourceTriangles[sourceIndex];
+                if (!grab_finger_pose_runtime::isFinitePoint(triangle.v0) ||
+                    !grab_finger_pose_runtime::isFinitePoint(triangle.v1) ||
+                    !grab_finger_pose_runtime::isFinitePoint(triangle.v2)) {
+                    continue;
+                }
+
+                float distanceSquared = 0.0f;
+                (void)closestPointOnTriangleToPoint(gripPointLocal, triangle, distanceSquared);
+                if (!std::isfinite(distanceSquared)) {
+                    continue;
+                }
+
+                const RankedSupportGripTriangle candidate{ distanceSquared, sourceIndex };
+                if (rankingScratch.size() < boundedLimit) {
+                    rankingScratch.push_back(candidate);
+                    std::push_heap(rankingScratch.begin(), rankingScratch.end(), rankedSupportGripTriangleLess);
+                    continue;
+                }
+
+                if (rankedSupportGripTriangleLess(candidate, rankingScratch.front())) {
+                    std::pop_heap(rankingScratch.begin(), rankingScratch.end(), rankedSupportGripTriangleLess);
+                    rankingScratch.back() = candidate;
+                    std::push_heap(rankingScratch.begin(), rankingScratch.end(), rankedSupportGripTriangleLess);
+                }
+            }
+
+            std::sort(rankingScratch.begin(), rankingScratch.end(), rankedSupportGripTriangleLess);
+            outTriangles.reserve(rankingScratch.size());
+            for (const auto& ranked : rankingScratch) {
+                outTriangles.push_back(sourceTriangles[ranked.sourceIndex]);
+            }
         }
 
         struct NativeScopeCameraFollowCapture
@@ -368,36 +433,6 @@ namespace rock
             return snapshot;
         }
 
-        float lengthSquared(const RE::NiPoint3& value)
-        {
-            return value.x * value.x + value.y * value.y + value.z * value.z;
-        }
-
-        RE::NiPoint3 normalizeOrFallback(const RE::NiPoint3& value, const RE::NiPoint3& fallback)
-        {
-            const float valueLengthSquared = lengthSquared(value);
-            if (std::isfinite(valueLengthSquared) && valueLengthSquared > 0.000001f) {
-                const float invLength = 1.0f / std::sqrt(valueLengthSquared);
-                return RE::NiPoint3{ value.x * invLength, value.y * invLength, value.z * invLength };
-            }
-
-            const float fallbackLengthSquared = lengthSquared(fallback);
-            if (std::isfinite(fallbackLengthSquared) && fallbackLengthSquared > 0.000001f) {
-                const float invLength = 1.0f / std::sqrt(fallbackLengthSquared);
-                return RE::NiPoint3{ fallback.x * invLength, fallback.y * invLength, fallback.z * invLength };
-            }
-
-            return RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
-        }
-
-        struct LiveThumbTransform
-        {
-            RE::NiTransform world{};
-            RE::NiTransform parentWorld{};
-            RE::NiTransform local{};
-            bool valid = false;
-        };
-
         DirectSkeletonBoneReader& rootFlattenedTwoHandedReader()
         {
             static DirectSkeletonBoneReader reader;
@@ -412,128 +447,6 @@ namespace rock
                 }
             }
             return nullptr;
-        }
-
-        const DirectSkeletonBoneEntry* findSnapshotBoneByTreeIndex(const DirectSkeletonBoneSnapshot& snapshot, int treeIndex)
-        {
-            if (treeIndex < 0) {
-                return nullptr;
-            }
-
-            for (const auto& bone : snapshot.bones) {
-                if (bone.treeIndex == treeIndex) {
-                    return &bone;
-                }
-            }
-            return nullptr;
-        }
-
-        bool resolveLiveThumbTransforms(bool isLeft, std::array<LiveThumbTransform, 3>& outNodes)
-        {
-            outNodes = {};
-
-            DirectSkeletonBoneSnapshot snapshot{};
-            if (!rootFlattenedTwoHandedReader().capture(skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
-                    skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
-                    snapshot)) {
-                return false;
-            }
-
-            for (std::size_t segment = 0; segment < outNodes.size(); ++segment) {
-                const char* boneName = root_flattened_finger_skeleton_runtime::fingerBoneName(isLeft, 0, segment);
-                const auto* node = boneName ? findSnapshotBone(snapshot, boneName) : nullptr;
-                const auto* parent = node ? findSnapshotBoneByTreeIndex(snapshot, node->parentTreeIndex) : nullptr;
-                if (!node || !parent || !isFiniteTransform(node->world) || !isFiniteTransform(parent->world)) {
-                    return false;
-                }
-
-                const RE::NiTransform local = transform_math::composeTransforms(transform_math::invertTransform(parent->world), node->world);
-                if (!isFiniteTransform(local)) {
-                    return false;
-                }
-
-                outNodes[segment] = LiveThumbTransform{
-                    .world = node->world,
-                    .parentWorld = parent->world,
-                    .local = local,
-                    .valid = true,
-                };
-            }
-            return true;
-        }
-
-        bool buildAlternateThumbLocalTransforms(
-            bool isLeft,
-            const RE::NiPoint3& supportGripPivotWorldPoint,
-            const RE::NiPoint3& gripWorldPoint,
-            float thumbScalarValue,
-            std::array<RE::NiTransform, 15>& outLocalTransforms,
-            std::uint16_t& outMask)
-        {
-            /*
-             * ROCK switches the support thumb to an alternate local-transform
-             * target when the weapon mesh solve requires thumb opposition. FRIK
-             * only exposes scalar curls by default, so derive local thumb targets
-             * from the root-flattened chain and publish them through the local
-             * pose API.
-             */
-            outLocalTransforms = {};
-            outMask = 0;
-
-            std::array<LiveThumbTransform, 3> thumbNodes{};
-            if (!resolveLiveThumbTransforms(isLeft, thumbNodes)) {
-                return false;
-            }
-
-            const float sanitizedThumbValue = std::isfinite(thumbScalarValue) ? std::clamp(thumbScalarValue, 0.0f, 1.0f) : 1.0f;
-            const float oppositionStrength = std::clamp(0.45f + (1.0f - sanitizedThumbValue) * 0.55f, 0.45f, 1.0f);
-
-            for (std::size_t segment = 0; segment < thumbNodes.size(); ++segment) {
-                const auto& node = thumbNodes[segment];
-                if (!node.valid) {
-                    return false;
-                }
-
-                const RE::NiPoint3 currentAxisWorld = normalizeOrFallback(
-                    transform_math::rotateLocalVectorToWorld(node.world.rotate, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }),
-                    RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
-                const RE::NiPoint3 toGrip = weapon_support_thumb_pose_policy::vectorToGripFromPredictedThumbNode(
-                    node.world.translate,
-                    supportGripPivotWorldPoint,
-                    gripWorldPoint);
-                if (lengthSquared(toGrip) <= MIN_THUMB_OPPOSITION_DISTANCE * MIN_THUMB_OPPOSITION_DISTANCE) {
-                    return false;
-                }
-
-                const RE::NiPoint3 targetAxisWorld = normalizeOrFallback(toGrip, currentAxisWorld);
-                const float dotToTarget = std::clamp(weaponSolverDot(currentAxisWorld, targetAxisWorld), -1.0f, 1.0f);
-                const float angle = std::acos(dotToTarget) * oppositionStrength;
-                if (!std::isfinite(angle)) {
-                    return false;
-                }
-
-                RE::NiMatrix3 rotationDelta = transform_math::makeIdentityRotation<RE::NiMatrix3>();
-                if (angle > 0.0001f) {
-                    RE::NiPoint3 axis = weaponSolverCross(currentAxisWorld, targetAxisWorld);
-                    if (lengthSquared(axis) <= 0.000001f) {
-                        axis = weaponSolverOrthogonalAxis(currentAxisWorld);
-                    }
-                    rotationDelta = weaponSolverAxisAngleStored<RE::NiMatrix3, RE::NiPoint3>(axis, angle);
-                }
-
-                const RE::NiMatrix3 targetWorldRotation =
-                    weaponSolverApplyWorldRotationToStoredBasis<RE::NiMatrix3, RE::NiPoint3>(rotationDelta, node.world.rotate);
-                RE::NiTransform localTransform = node.local;
-                localTransform.rotate = transform_math::multiplyStoredRotations(targetWorldRotation, transform_math::transposeRotation(node.parentWorld.rotate));
-                if (!isFiniteTransform(localTransform)) {
-                    return false;
-                }
-
-                outLocalTransforms[segment] = localTransform;
-                outMask = static_cast<std::uint16_t>(outMask | (1U << segment));
-            }
-
-            return outMask == SUPPORT_THUMB_LOCAL_TRANSFORM_MASK;
         }
 
         bool buildFullHandLocalTransformsForMeshPose(
@@ -600,6 +513,25 @@ namespace rock
         }
 
     }
+
+    struct TwoHandedGrip::FingerPoseSolveScratch
+    {
+        struct HandScratch
+        {
+            std::vector<RankedSupportGripTriangle> ranking;
+            std::vector<TriangleData> localTriangles;
+            std::vector<TriangleData> worldTriangles;
+            grab_finger_pose_runtime::FingerPoseTriangleSpatialIndex spatialIndex;
+        };
+
+        std::array<HandScratch, 2> hands{};
+    };
+
+    TwoHandedGrip::TwoHandedGrip() :
+        _fingerPoseSolveScratch(std::make_unique<FingerPoseSolveScratch>())
+    {}
+
+    TwoHandedGrip::~TwoHandedGrip() = default;
 
     static bool tryGetRootFlattenedHandBoneTransform(bool isLeft, RE::NiTransform& outTransform)
     {
@@ -2050,16 +1982,35 @@ namespace rock
             }
         }
 
-        RE::NiPoint3 palmPos = computeGrabLegacyPalmPivotAWorldFromHandBasis(handTransform, isLeft);
-        RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(handTransform, isLeft);
+        performance_profiler::ScopedTimer fingerPoseCaptureTimer(performance_profiler::Scope::EquippedWeaponFingerPoseCapture);
 
-        std::vector<TriangleData> triangles;
-        const bool cachedTrianglesFound = weaponCollision.tryBuildSupportGripEvidenceTriangles(decision.bodyId, weaponNode, triangles);
+        const RE::NiPoint3 palmPos = computeGrabLegacyPalmPivotAWorldFromHandBasis(handTransform, isLeft);
+        const RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(handTransform, isLeft);
 
-        GrabPoint grabPoint;
+        auto& fingerScratch = _fingerPoseSolveScratch->hands[isLeft ? 0u : 1u];
+        fingerScratch.ranking.clear();
+        fingerScratch.localTriangles.clear();
+        fingerScratch.worldTriangles.clear();
+        fingerScratch.spatialIndex.clear();
+
+        WeaponCollision::SupportGripEvidenceView evidenceView{};
+        const bool cachedTrianglesFound = weaponCollision.tryGetSupportGripEvidenceView(decision.bodyId, weaponNode, evidenceView) &&
+            evidenceView.weaponGenerationKey == decision.weaponGenerationKey &&
+            evidenceView.weaponGenerationKey == _activeWeaponGenerationKey;
+        const std::size_t sourceTriangleCount = cachedTrianglesFound ? evidenceView.localTriangles.size() : 0u;
+        performance_profiler::observeValue(
+            performance_profiler::ValueMetric::EquippedWeaponFingerPoseSourceTriangles,
+            static_cast<std::uint64_t>(sourceTriangleCount));
+
+        GrabPoint grabPoint{};
         bool meshFound = false;
-        if (!triangles.empty()) {
-            meshFound = findClosestGrabPoint(triangles,
+        if (cachedTrianglesFound) {
+            const TransformedSupportGripTriangleView worldEvidence{
+                .localTriangles = evidenceView.localTriangles,
+                .localToWorld = evidenceView.localToWorld,
+            };
+            meshFound = findClosestGrabPoint(
+                worldEvidence,
                 palmPos,
                 palmDir,
                 g_rockConfig.rockGrabLateralWeight,
@@ -2076,6 +2027,19 @@ namespace rock
             grip.grabNormalWorld = palmDir;
         }
         const RE::NiPoint3 gripWorldPoint = meshFound ? grabPoint.position : palmPos;
+        if (cachedTrianglesFound && g_rockConfig.rockGrabMeshFingerPoseEnabled) {
+            const RE::NiPoint3 triangleSelectionPointLocal = transform_math::worldPointToLocal(evidenceView.localToWorld, gripWorldPoint);
+            selectNearestSupportGripFingerTriangles(
+                evidenceView.localTriangles,
+                triangleSelectionPointLocal,
+                grab_finger_pose_runtime::kMaxFingerPoseCandidateTriangles,
+                fingerScratch.ranking,
+                fingerScratch.localTriangles);
+        }
+        performance_profiler::observeValue(
+            performance_profiler::ValueMetric::EquippedWeaponFingerPoseSelectedTriangles,
+            static_cast<std::uint64_t>(fingerScratch.localTriangles.size()));
+
         const RE::NiTransform adjustedHandTransform =
             weapon_two_handed_grip_math::alignHandFrameToGripPoint(handTransform, palmPos, gripWorldPoint);
         grip.handWeaponLocal = transform_math::composeTransforms(transform_math::invertTransform(weaponNode->world), adjustedHandTransform);
@@ -2092,73 +2056,95 @@ namespace rock
 
         grab_finger_pose_runtime::SolvedGrabFingerPose meshFingerPose{};
         const grab_finger_pose_runtime::SolvedGrabFingerPose* meshFingerPosePtr = nullptr;
-        if (g_rockConfig.rockGrabMeshFingerPoseEnabled) {
-            auto fingerPoseTargets = grab_finger_pose_runtime::makeSharedGripPoseTarget(gripWorldPoint, grip.grabNormalWorld);
+        std::array<float, 5> capturedFingerSplayRadians{};
+        const std::array<float, 5>* capturedFingerSplayRadiansPtr = nullptr;
+        bool spatialIndexBuilt = false;
+        bool commandedOpenDirectionsValid = false;
+        if (g_rockConfig.rockGrabMeshFingerPoseEnabled && !fingerScratch.localTriangles.empty()) {
+            const RE::NiTransform frozenMeshWorld = weapon_two_handed_grip_math::virtualizeMeshForTranslatedHandSeat(
+                evidenceView.localToWorld,
+                palmPos,
+                gripWorldPoint);
+            const RE::NiPoint3 frozenGripPoint = weapon_two_handed_grip_math::virtualizeGripPointForTranslatedHandSeat(
+                palmPos,
+                gripWorldPoint);
+            auto fingerPoseTargets = grab_finger_pose_runtime::makeSharedGripPoseTarget(frozenGripPoint, grip.grabNormalWorld);
             fingerPoseTargets.useSeatPointForMissingTargets = false;
             fingerPoseTargets.useWholeMeshForMissingTargets = true;
-            root_flattened_finger_skeleton_runtime::Snapshot liveFingerSnapshot{};
-            const auto* liveFingerSnapshotPtr =
-                root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(isLeft, liveFingerSnapshot) ? &liveFingerSnapshot : nullptr;
-            const auto solvedFingerPose = grab_finger_pose_runtime::solveGrabFingerPoseFromTriangles(
-                triangles, handTransform, isLeft, palmPos, fingerPoseTargets, g_rockConfig.rockGrabFingerMinValue,
-                g_rockConfig.rockGrabMaxTriangleDistance, true, liveFingerSnapshotPtr,
-                g_rockConfig.rockGrabFingerRejectBacksideHits, g_rockConfig.rockGrabFingerSurfacePlaneToleranceGameUnits,
-                true, g_rockConfig.rockGrabFingerSweepContactRadiusGameUnits, -1.0f,
-                g_rockConfig.rockGrabThumbSweepMaxOpenValue, g_rockConfig.rockGrabFingerSweepMaxOpenValue);
-            if (solvedFingerPose.solved) {
-                meshFingerPose = solvedFingerPose;
+            const auto frozenSolve = grab_finger_pose_runtime::solveFrozenMeshFingerPose(
+                fingerScratch.localTriangles,
+                frozenMeshWorld,
+                handTransform,
+                isLeft,
+                frozenGripPoint,
+                fingerPoseTargets,
+                fingerScratch.spatialIndex,
+                fingerScratch.worldTriangles,
+                grab_finger_pose_runtime::FrozenMeshFingerPoseSolveOptions{
+                    .minValue = g_rockConfig.rockGrabFingerMinValue,
+                    .maxTriangleDistanceSquared = g_rockConfig.rockGrabMaxTriangleDistance,
+                    .rejectBacksideHits = g_rockConfig.rockGrabFingerRejectBacksideHits,
+                    .surfacePlaneToleranceGameUnits = g_rockConfig.rockGrabFingerSurfacePlaneToleranceGameUnits,
+                    .allowSurfaceAimTargets = true,
+                    .sweepContactRadiusGameUnits = g_rockConfig.rockGrabFingerSweepContactRadiusGameUnits,
+                    .thumbSweepMaxOpenValue = g_rockConfig.rockGrabThumbSweepMaxOpenValue,
+                    .fingerSweepMaxOpenValue = g_rockConfig.rockGrabFingerSweepMaxOpenValue,
+                    .meshFingerPoseEnabled = g_rockConfig.rockGrabMeshFingerPoseEnabled,
+                    .captureSweepDebug = false,
+                });
+            spatialIndexBuilt = frozenSolve.spatialIndexBuilt;
+            commandedOpenDirectionsValid = frozenSolve.commandedOpenDirectionsValid;
+            meshFingerPose = frozenSolve.pose;
+            performance_profiler::observeValue(
+                performance_profiler::ValueMetric::EquippedWeaponFingerPoseSpatialNodeVisits,
+                meshFingerPose.spatialNodeVisitCount);
+            performance_profiler::observeValue(
+                performance_profiler::ValueMetric::EquippedWeaponFingerPoseTriangleTests,
+                meshFingerPose.spatialTriangleTestCount);
+            if (meshFingerPose.solved) {
                 meshFingerPosePtr = &meshFingerPose;
+                if (frozenSolve.liveFingerSnapshotValid &&
+                    grab_finger_pose_runtime::buildSurfaceContactSplayValues(
+                        meshFingerPose,
+                        frozenSolve.liveFingerSnapshot,
+                        capturedFingerSplayRadians)) {
+                    capturedFingerSplayRadiansPtr = &capturedFingerSplayRadians;
+                }
                 ROCK_LOG_DEBUG(Weapon,
-                    "TwoHandedGrip: mesh finger pose hand={} values=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f}) hits={} candidateTris={} altThumb={} thumbLane={}",
+                    "TwoHandedGrip: mesh finger pose hand={} values=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f}) hits={} sourceTris={} candidateTris={} spatial={} nodes={} tests={} commandedAnchors={} altThumb={} thumbLane={}",
                     isLeft ? "left" : "right",
                     meshFingerPose.values[0],
                     meshFingerPose.values[1],
                     meshFingerPose.values[2],
                     meshFingerPose.values[3],
                     meshFingerPose.values[4],
-                    solvedFingerPose.hitCount,
-                    solvedFingerPose.candidateTriangleCount,
-                    solvedFingerPose.usedAlternateThumbCurve ? "yes" : "no",
-                    grab_finger_pose_math::thumbLaneName(solvedFingerPose.selectedThumbLane));
-                if (solvedFingerPose.hasThumbCurveDiagnostics) {
+                    meshFingerPose.hitCount,
+                    sourceTriangleCount,
+                    meshFingerPose.candidateTriangleCount,
+                    spatialIndexBuilt ? "yes" : "no",
+                    meshFingerPose.spatialNodeVisitCount,
+                    meshFingerPose.spatialTriangleTestCount,
+                    commandedOpenDirectionsValid ? "yes" : "no",
+                    meshFingerPose.usedAlternateThumbCurve ? "yes" : "no",
+                    grab_finger_pose_math::thumbLaneName(meshFingerPose.selectedThumbLane));
+                if (meshFingerPose.hasThumbCurveDiagnostics) {
                     ROCK_LOG_DEBUG(Weapon,
                         "TwoHandedGrip: thumb curve primary(hit={} value={:.2f} behind={}) opposition(hit={} value={:.2f} behind={}) sidePad(hit={} value={:.2f} behind={}) selected={}",
-                        solvedFingerPose.thumbPrimaryCurve.hit ? "yes" : "no",
-                        solvedFingerPose.thumbPrimaryCurve.value,
-                        solvedFingerPose.thumbPrimaryCurve.openedByBehindContact ? "yes" : "no",
-                        solvedFingerPose.thumbAlternateCurve.hit ? "yes" : "no",
-                        solvedFingerPose.thumbAlternateCurve.value,
-                        solvedFingerPose.thumbAlternateCurve.openedByBehindContact ? "yes" : "no",
-                        solvedFingerPose.thumbSidePadCurve.hit ? "yes" : "no",
-                        solvedFingerPose.thumbSidePadCurve.value,
-                        solvedFingerPose.thumbSidePadCurve.openedByBehindContact ? "yes" : "no",
-                        grab_finger_pose_math::thumbLaneName(solvedFingerPose.selectedThumbLane));
-                }
-
-                const bool canPublishAlternateThumb = !g_rockConfig.rockGrabMeshLocalTransformPoseEnabled &&
-                    weapon_support_thumb_pose_policy::shouldPublishAlternateThumbLocalOverride(
-                    solvedFingerPose.solved,
-                    solvedFingerPose.usedAlternateThumbCurve,
-                    frik_visual_authority::api() && frik_visual_authority::api()->setHandPoseCustomLocalTransformsWithPriority);
-                if (canPublishAlternateThumb) {
-                    std::array<RE::NiTransform, 15> localTransforms{};
-                    std::uint16_t localTransformMask = 0;
-                    if (buildAlternateThumbLocalTransforms(isLeft, palmPos, gripWorldPoint, meshFingerPose.values[0], localTransforms, localTransformMask)) {
-                        grip.fingerLocalTransforms = localTransforms;
-                        grip.fingerLocalTransformMask = localTransformMask;
-                        grip.hasFingerLocalTransforms = true;
-                        ROCK_LOG_DEBUG(Weapon,
-                            "TwoHandedGrip: alternate thumb local transform override prepared hand={} mask=0x{:04X}",
-                            isLeft ? "left" : "right",
-                            grip.fingerLocalTransformMask);
-                    } else {
-                        ROCK_LOG_WARN(Weapon, "TwoHandedGrip: alternate thumb selected but local transform override could not be built");
-                    }
+                        meshFingerPose.thumbPrimaryCurve.hit ? "yes" : "no",
+                        meshFingerPose.thumbPrimaryCurve.value,
+                        meshFingerPose.thumbPrimaryCurve.openedByBehindContact ? "yes" : "no",
+                        meshFingerPose.thumbAlternateCurve.hit ? "yes" : "no",
+                        meshFingerPose.thumbAlternateCurve.value,
+                        meshFingerPose.thumbAlternateCurve.openedByBehindContact ? "yes" : "no",
+                        meshFingerPose.thumbSidePadCurve.hit ? "yes" : "no",
+                        meshFingerPose.thumbSidePadCurve.value,
+                        meshFingerPose.thumbSidePadCurve.openedByBehindContact ? "yes" : "no",
+                        grab_finger_pose_math::thumbLaneName(meshFingerPose.selectedThumbLane));
                 }
             }
         }
 
-        setSupportGripPose(isLeft, grip.gripPose, meshFingerPosePtr);
+        setSupportGripPose(isLeft, meshFingerPosePtr, capturedFingerSplayRadiansPtr);
         if (meshFingerPosePtr && grip.hasFingerPose) {
             std::array<RE::NiTransform, 15> localTransforms{};
             std::uint16_t localTransformMask = 0;
@@ -2190,15 +2176,17 @@ namespace rock
         }
 
         ROCK_LOG_INFO(Weapon,
-            "TwoHandedGrip: part grip captured hand={} weapon='{}' gripLocal=({:.3f},{:.3f},{:.3f}) meshGrab={} triangles={} cachedTriangles={} partKind={} pose={} generation={:016X}",
+            "TwoHandedGrip: part grip captured hand={} weapon='{}' gripLocal=({:.3f},{:.3f},{:.3f}) meshGrab={} sourceTriangles={} fingerTriangles={} cachedTriangles={} sourceNodeCurrent={} partKind={} pose={} generation={:016X}",
             isLeft ? "left" : "right",
             weaponNode->name.c_str(),
             grip.gripLocal.x,
             grip.gripLocal.y,
             grip.gripLocal.z,
             meshFound ? "YES" : "FALLBACK",
-            triangles.size(),
+            sourceTriangleCount,
+            fingerScratch.localTriangles.size(),
             cachedTrianglesFound ? "yes" : "no",
+            cachedTrianglesFound && evidenceView.sourceNodeCurrent ? "yes" : "no",
             static_cast<int>(grip.partKind),
             static_cast<int>(grip.gripPose),
             _activeWeaponGenerationKey);
@@ -3852,22 +3840,40 @@ namespace rock
         }
     }
 
-    void TwoHandedGrip::setSupportGripPose(bool isLeft, WeaponGripPoseId poseId, const grab_finger_pose_runtime::SolvedGrabFingerPose* meshFingerPose)
+    void TwoHandedGrip::setSupportGripPose(
+        bool isLeft,
+        const grab_finger_pose_runtime::SolvedGrabFingerPose* meshFingerPose,
+        const std::array<float, 5>* capturedSplayRadians)
     {
         WeaponPartGrip& grip = partGrip(isLeft);
         if (meshFingerPose && meshFingerPose->solved) {
             grip.fingerPose = meshFingerPose->hasJointValues ? meshFingerPose->jointValues : grab_finger_pose_math::expandFingerCurlsToJointValues(meshFingerPose->values);
-            grip.fingerSplayRadians = {};
-            grip.hasFingerSplay = grab_finger_pose_runtime::resolveSurfaceContactSplayValues(isLeft, *meshFingerPose, grip.fingerSplayRadians);
+            grip.fingerSplayRadians = capturedSplayRadians ? *capturedSplayRadians : std::array<float, 5>{};
+            grip.hasFingerSplay = capturedSplayRadians != nullptr;
             grip.hasFingerPose = true;
             return;
         }
 
-        const auto& poseValues = poseValuesForGrip(poseId);
-        grip.fingerPose = poseValues;
+        const float fallbackMin =
+            std::clamp(std::isfinite(g_rockConfig.rockGrabFingerMinValue) ? g_rockConfig.rockGrabFingerMinValue : 0.2f, 0.0f, 1.0f);
+        const float configuredFallback =
+            std::isfinite(g_rockConfig.rockSelectedCloseFingerAnimValue) ? g_rockConfig.rockSelectedCloseFingerAnimValue : 0.9f;
+        const float fallbackValue = std::clamp(configuredFallback, fallbackMin, 1.0f);
+        const std::array<float, 5> fallbackCurls{
+            fallbackValue,
+            fallbackValue,
+            fallbackValue,
+            fallbackValue,
+            fallbackValue,
+        };
+        grip.fingerPose = grab_finger_pose_math::expandFingerCurlsToJointValues(fallbackCurls);
         grip.fingerSplayRadians = {};
         grip.hasFingerPose = true;
         grip.hasFingerSplay = false;
+        ROCK_LOG_DEBUG(Weapon,
+            "TwoHandedGrip: using selected-close finger fallback hand={} value={:.2f}",
+            isLeft ? "left" : "right",
+            fallbackValue);
     }
 
     void TwoHandedGrip::clearSupportGripPose(bool isLeft)

@@ -97,6 +97,8 @@ namespace rock::performance_profiler
                 return "weaponColliderCreate";
             case Scope::TwoHandedGripStart:
                 return "twoHandedGripStart";
+            case Scope::EquippedWeaponFingerPoseCapture:
+                return "equippedWeaponFingerPoseCapture";
             case Scope::SupportGripSuppression:
                 return "supportGripSuppression";
             case Scope::SelectionCasts:
@@ -203,6 +205,14 @@ namespace rock::performance_profiler
                 return "grabMeshTriangles";
             case ValueMetric::GrabNearbyDampingMotions:
                 return "grabNearbyDampingMotions";
+            case ValueMetric::EquippedWeaponFingerPoseSourceTriangles:
+                return "equippedWeaponFingerPoseSourceTriangles";
+            case ValueMetric::EquippedWeaponFingerPoseSelectedTriangles:
+                return "equippedWeaponFingerPoseSelectedTriangles";
+            case ValueMetric::EquippedWeaponFingerPoseSpatialNodeVisits:
+                return "equippedWeaponFingerPoseSpatialNodeVisits";
+            case ValueMetric::EquippedWeaponFingerPoseTriangleTests:
+                return "equippedWeaponFingerPoseTriangleTests";
             case ValueMetric::Count:
                 break;
             }

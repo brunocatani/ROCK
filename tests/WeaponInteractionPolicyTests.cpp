@@ -97,6 +97,63 @@ int main()
     bool ok = true;
 
     {
+        TestTransform liveHandWorld = rock::transform_math::makeIdentityTransform<TestTransform>();
+        liveHandWorld.translate = { 10.0f, 5.0f, -2.0f };
+        const TestVector3 livePalmPivot{ 12.0f, 8.0f, 1.0f };
+        const TestVector3 selectedGripPoint{ 18.0f, 6.0f, 5.0f };
+
+        TestTransform partWorld = rock::transform_math::makeIdentityTransform<TestTransform>();
+        partWorld.translate = { 30.0f, 40.0f, 50.0f };
+        partWorld.rotate.entry[0][0] = 0.0f;
+        partWorld.rotate.entry[0][1] = 1.0f;
+        partWorld.rotate.entry[1][0] = -1.0f;
+        partWorld.rotate.entry[1][1] = 0.0f;
+        partWorld.scale = 1.25f;
+
+        const TestTransform seatedHandWorld = rock::weapon_two_handed_grip_math::alignHandFrameToGripPoint(
+            liveHandWorld,
+            livePalmPivot,
+            selectedGripPoint);
+        const TestTransform virtualPartWorld = rock::weapon_two_handed_grip_math::virtualizeMeshForTranslatedHandSeat(
+            partWorld,
+            livePalmPivot,
+            selectedGripPoint);
+        const TestVector3 virtualGripPoint = rock::weapon_two_handed_grip_math::virtualizeGripPointForTranslatedHandSeat(
+            livePalmPivot,
+            selectedGripPoint);
+
+        ok &= expectNear("support grip seats hand translation x", seatedHandWorld.translate.x, 16.0f);
+        ok &= expectNear("support grip seats hand translation y", seatedHandWorld.translate.y, 3.0f);
+        ok &= expectNear("support grip seats hand translation z", seatedHandWorld.translate.z, 2.0f);
+        ok &= expectNear("support grip virtual mesh applies inverse seat x", virtualPartWorld.translate.x, 24.0f);
+        ok &= expectNear("support grip virtual mesh applies inverse seat y", virtualPartWorld.translate.y, 42.0f);
+        ok &= expectNear("support grip virtual mesh applies inverse seat z", virtualPartWorld.translate.z, 46.0f);
+        ok &= expectNear("support grip virtual seat resolves to live palm x", virtualGripPoint.x, livePalmPivot.x);
+        ok &= expectNear("support grip virtual seat resolves to live palm y", virtualGripPoint.y, livePalmPivot.y);
+        ok &= expectNear("support grip virtual seat resolves to live palm z", virtualGripPoint.z, livePalmPivot.z);
+        ok &= expectNear("support grip virtual mesh preserves scale", virtualPartWorld.scale, partWorld.scale);
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                ok &= expectNear("support grip virtual mesh preserves rotation", virtualPartWorld.rotate.entry[row][column], partWorld.rotate.entry[row][column]);
+            }
+        }
+
+        const TestVector3 finalGripFromHand{
+            selectedGripPoint.x - seatedHandWorld.translate.x,
+            selectedGripPoint.y - seatedHandWorld.translate.y,
+            selectedGripPoint.z - seatedHandWorld.translate.z,
+        };
+        const TestVector3 virtualGripFromHand{
+            virtualGripPoint.x - liveHandWorld.translate.x,
+            virtualGripPoint.y - liveHandWorld.translate.y,
+            virtualGripPoint.z - liveHandWorld.translate.z,
+        };
+        ok &= expectNear("support grip frozen solve preserves final hand/mesh relation x", virtualGripFromHand.x, finalGripFromHand.x);
+        ok &= expectNear("support grip frozen solve preserves final hand/mesh relation y", virtualGripFromHand.y, finalGripFromHand.y);
+        ok &= expectNear("support grip frozen solve preserves final hand/mesh relation z", virtualGripFromHand.z, finalGripFromHand.z);
+    }
+
+    {
         TestTransform weaponBefore = rock::transform_math::makeIdentityTransform<TestTransform>();
         weaponBefore.translate = { 10.0f, 20.0f, 30.0f };
         TestTransform scopeBefore = rock::transform_math::makeIdentityTransform<TestTransform>();

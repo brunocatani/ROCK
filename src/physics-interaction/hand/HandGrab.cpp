@@ -4475,34 +4475,6 @@ namespace rock
             return debug;
         }
 
-        bool resolveCommandedOpenDirectionsWorld(bool isLeft, std::array<RE::NiPoint3, 5>& outDirectionsWorld)
-        {
-            outDirectionsWorld = {};
-            frik_visual_authority::FingerLocalTransformOverride openPoseLocals{};
-            const auto openHandPose = frik_visual_authority::makeUniformHandPoseData(1.0f, 1.0f, 1.0f, 1.0f, 1.0f);
-            if (!frik_visual_authority::getHandPoseLocalTransformsForPose(handFromBool(isLeft), openHandPose, &openPoseLocals)) {
-                return false;
-            }
-
-            const RE::NiTransform frikHandBoneWorld = frik_visual_authority::getHandWorldTransform(handFromBool(isLeft));
-            if (!std::isfinite(frikHandBoneWorld.scale) || std::abs(frikHandBoneWorld.scale) <= 0.000001f) {
-                return false;
-            }
-
-            const auto openDirectionsHandLocal = grab_finger_pose_runtime::computeCommandedOpenDirectionsHandLocal(openPoseLocals.localTransforms);
-            for (std::size_t finger = 0; finger < outDirectionsWorld.size(); ++finger) {
-                const RE::NiPoint3 directionWorld = transform_math::localVectorToWorld(frikHandBoneWorld, openDirectionsHandLocal[finger]);
-                const float directionLengthSquared = directionWorld.x * directionWorld.x + directionWorld.y * directionWorld.y + directionWorld.z * directionWorld.z;
-                if (!std::isfinite(directionLengthSquared) || directionLengthSquared <= 0.000001f) {
-                    outDirectionsWorld = {};
-                    return false;
-                }
-                const float inverseLength = 1.0f / std::sqrt(directionLengthSquared);
-                outDirectionsWorld[finger] = directionWorld * inverseLength;
-            }
-            return true;
-        }
-
         void applyRockGrabHandPose(bool isLeft, const grab_finger_pose_runtime::SolvedGrabFingerPose& fingerPose, std::array<float, 15>& currentJointPose,
             bool& hasCurrentJointPose, std::array<RE::NiTransform, 15>& currentLocalTransforms, std::uint16_t& currentLocalTransformMask, bool& hasCurrentLocalTransforms,
             float deltaTime, bool publishLocalTransforms = true, bool snapJointPoseToTarget = false)
@@ -11059,42 +11031,65 @@ namespace rock
                  * pose. The endpoint therefore exists before the first approach
                  * frame and cannot visibly change at TouchHeld. Pinch keeps its
                  * established at-touch triangle path above.
-                 */
+                */
                 const RE::NiTransform& targetObjectWorld = pinchFingerPose ? objectWorldTransform : _grabFrame.desiredObjectWorldAtGrab;
-                const auto targetFingerPoseWorldTriangles =
-                    pinchFingerPose ? grabFingerPoseMeshTriangles : rebuildFingerPoseWorldTrianglesFromGrabFrame(_grabFrame, targetObjectWorld);
+                std::vector<TriangleData> targetFingerPoseWorldTriangles = pinchFingerPose ? grabFingerPoseMeshTriangles : std::vector<TriangleData>{};
                 const auto& localFingerPoseTriangles = !_grabFrame.fingerPoseLocalMeshTriangles.empty() ? _grabFrame.fingerPoseLocalMeshTriangles : _grabFrame.localMeshTriangles;
-                const bool spatialIndexBuilt = !pinchFingerPose && _grabFingerTriangleIndex.buildFromLocalTriangles(localFingerPoseTriangles);
 
                 const RE::NiTransform& targetFingerHandTransform = handWorldTransform;
                 root_flattened_finger_skeleton_runtime::Snapshot liveFingerSnapshotAtGrab{};
-                const auto* liveFingerSnapshotAtGrabPtr =
-                    root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(_isLeft, liveFingerSnapshotAtGrab) ? &liveFingerSnapshotAtGrab : nullptr;
                 const RE::NiPoint3 fingerPosePivotWorld =
                     _grabFrame.hasTelemetryCapture ? _grabFrame.grabPivotWorldAtGrab : computeGrabPivotAWorld(world, targetFingerHandTransform);
                 const auto targetFingerPoseTargets = rebuildFingerPoseTargetsFromGrabFrame(_grabFrame, targetObjectWorld);
-                std::array<RE::NiPoint3, 5> commandedOpenDirectionsWorld{};
-                const bool commandedOpenDirectionsValid = !pinchFingerPose && resolveCommandedOpenDirectionsWorld(_isLeft, commandedOpenDirectionsWorld);
                 grab_finger_pose_runtime::FingerSweepDebugCapture sweepDebugCapture{};
-                auto fingerPose =
-                    grab_finger_pose_runtime::solveGrabFingerPoseFromTriangles(targetFingerPoseWorldTriangles, targetFingerHandTransform, _isLeft, fingerPosePivotWorld,
+                grab_finger_pose_runtime::SolvedGrabFingerPose fingerPose{};
+                bool spatialIndexBuilt = false;
+                bool commandedOpenDirectionsValid = false;
+                if (pinchFingerPose) {
+                    const auto* liveFingerSnapshotAtGrabPtr =
+                        root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(_isLeft, liveFingerSnapshotAtGrab) ? &liveFingerSnapshotAtGrab : nullptr;
+                    fingerPose = grab_finger_pose_runtime::solveGrabFingerPoseFromTriangles(targetFingerPoseWorldTriangles, targetFingerHandTransform, _isLeft, fingerPosePivotWorld,
                         targetFingerPoseTargets, g_rockConfig.rockGrabFingerMinValue, g_rockConfig.rockGrabMaxTriangleDistance, !pinchFingerPose, liveFingerSnapshotAtGrabPtr,
                         g_rockConfig.rockGrabFingerRejectBacksideHits, g_rockConfig.rockGrabFingerSurfacePlaneToleranceGameUnits, _grabFrame.fingerPoseAimValid,
                         g_rockConfig.rockGrabFingerSweepContactRadiusGameUnits, -1.0f, g_rockConfig.rockGrabThumbSweepMaxOpenValue, g_rockConfig.rockGrabFingerSweepMaxOpenValue,
-                        commandedOpenDirectionsValid ? &commandedOpenDirectionsWorld : nullptr, spatialIndexBuilt ? &_grabFingerTriangleIndex : nullptr,
-                        spatialIndexBuilt ? &targetObjectWorld : nullptr, g_rockConfig.rockDebugShowGrabFingerSweptArc ? &sweepDebugCapture : nullptr,
-                        grab_finger_pose_runtime::FingerPoseMeshRelation::AlreadyAtCommandedSeat);
+                        nullptr, nullptr, nullptr, nullptr, grab_finger_pose_runtime::FingerPoseMeshRelation::AlreadyAtCommandedSeat);
+                    applyPinchFingerPosePolicy(fingerPose, _grabFrame, g_rockConfig.rockGrabFingerMinValue);
+                    grab_finger_pose_runtime::useThumbIndexCurveOnlyPose(fingerPose);
+                    std::array<grab_finger_pose_runtime::FingerPadSurfaceEvidence, 5> padCaptureEvidence{};
+                    (void)grab_finger_pose_runtime::refineGrabFingerPoseWithPadProbes(fingerPose, targetFingerPoseWorldTriangles, targetFingerPoseTargets,
+                        liveFingerSnapshotAtGrab, targetObjectWorld, g_rockConfig.rockGrabMeshFingerPoseEnabled, true, padCaptureEvidence, true);
+                    grab_finger_pose_runtime::captureSurfaceAimObjectLocal(fingerPose, targetObjectWorld);
+                } else {
+                    const auto frozenSolve = grab_finger_pose_runtime::solveFrozenMeshFingerPose(
+                        localFingerPoseTriangles,
+                        targetObjectWorld,
+                        targetFingerHandTransform,
+                        _isLeft,
+                        fingerPosePivotWorld,
+                        targetFingerPoseTargets,
+                        _grabFingerTriangleIndex,
+                        targetFingerPoseWorldTriangles,
+                        grab_finger_pose_runtime::FrozenMeshFingerPoseSolveOptions{
+                            .minValue = g_rockConfig.rockGrabFingerMinValue,
+                            .maxTriangleDistanceSquared = g_rockConfig.rockGrabMaxTriangleDistance,
+                            .rejectBacksideHits = g_rockConfig.rockGrabFingerRejectBacksideHits,
+                            .surfacePlaneToleranceGameUnits = g_rockConfig.rockGrabFingerSurfacePlaneToleranceGameUnits,
+                            .allowSurfaceAimTargets = _grabFrame.fingerPoseAimValid,
+                            .sweepContactRadiusGameUnits = g_rockConfig.rockGrabFingerSweepContactRadiusGameUnits,
+                            .thumbSweepMaxOpenValue = g_rockConfig.rockGrabThumbSweepMaxOpenValue,
+                            .fingerSweepMaxOpenValue = g_rockConfig.rockGrabFingerSweepMaxOpenValue,
+                            .meshFingerPoseEnabled = g_rockConfig.rockGrabMeshFingerPoseEnabled,
+                            .captureSweepDebug = g_rockConfig.rockDebugShowGrabFingerSweptArc,
+                        });
+                    fingerPose = frozenSolve.pose;
+                    sweepDebugCapture = frozenSolve.sweepDebug;
+                    liveFingerSnapshotAtGrab = frozenSolve.liveFingerSnapshot;
+                    spatialIndexBuilt = frozenSolve.spatialIndexBuilt;
+                    commandedOpenDirectionsValid = frozenSolve.commandedOpenDirectionsValid;
+                }
                 _grabFingerSweepDebugCapture = sweepDebugCapture;
                 _grabFingerSweepDebugObjectWorld = targetObjectWorld;
                 _hasGrabFingerSweepDebug = sweepDebugCapture.valid;
-                if (pinchFingerPose) {
-                    applyPinchFingerPosePolicy(fingerPose, _grabFrame, g_rockConfig.rockGrabFingerMinValue);
-                }
-                grab_finger_pose_runtime::useThumbIndexCurveOnlyPose(fingerPose);
-                std::array<grab_finger_pose_runtime::FingerPadSurfaceEvidence, 5> padCaptureEvidence{};
-                (void)grab_finger_pose_runtime::refineGrabFingerPoseWithPadProbes(fingerPose, targetFingerPoseWorldTriangles, targetFingerPoseTargets, liveFingerSnapshotAtGrab,
-                    targetObjectWorld, g_rockConfig.rockGrabMeshFingerPoseEnabled, true, padCaptureEvidence, true);
-                grab_finger_pose_runtime::captureSurfaceAimObjectLocal(fingerPose, targetObjectWorld);
                 _grabFingerPose = fingerPose;
                 _grabFingerProbeStart = fingerPose.probeStart;
                 _grabFingerProbeEnd = fingerPose.probeEnd;

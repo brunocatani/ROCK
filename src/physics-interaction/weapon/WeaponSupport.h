@@ -137,61 +137,6 @@ namespace rock::weapon_support_grip_policy
     }
 }
 
-// ---- WeaponSupportThumbPosePolicy.h ----
-
-/*
- * Two-handed equipped-weapon support grip uses ROCK's mesh probe to decide
- * whether the thumb should follow the alternate thumb path. FRIK's existing
- * scalar pose API can bend the thumb, but it cannot switch the local rotation
- * basis by itself. Keep the publication decision isolated here so the runtime
- * only sends local thumb transforms when the mesh solve selected that alternate
- * path and the provider can actually accept those transforms.
- */
-
-namespace rock::weapon_support_thumb_pose_policy
-{
-    [[nodiscard]] constexpr bool shouldPublishAlternateThumbLocalOverride(
-        const bool solvedFingerPose,
-        const bool usedAlternateThumbCurve,
-        const bool hasLocalTransformApi)
-    {
-        return solvedFingerPose && usedAlternateThumbCurve && hasLocalTransformApi;
-    }
-
-    template <class Vector>
-    [[nodiscard]] constexpr Vector predictThumbNodeWorldForGripFrame(
-        const Vector& liveThumbNodeWorld,
-        const Vector& currentSupportGripPivotWorld,
-        const Vector& targetGripPointWorld)
-    {
-        const Vector supportHandOffset{
-            targetGripPointWorld.x - currentSupportGripPivotWorld.x,
-            targetGripPointWorld.y - currentSupportGripPivotWorld.y,
-            targetGripPointWorld.z - currentSupportGripPivotWorld.z,
-        };
-        return Vector{
-            liveThumbNodeWorld.x + supportHandOffset.x,
-            liveThumbNodeWorld.y + supportHandOffset.y,
-            liveThumbNodeWorld.z + supportHandOffset.z,
-        };
-    }
-
-    template <class Vector>
-    [[nodiscard]] constexpr Vector vectorToGripFromPredictedThumbNode(
-        const Vector& liveThumbNodeWorld,
-        const Vector& currentSupportGripPivotWorld,
-        const Vector& targetGripPointWorld)
-    {
-        const Vector predictedNodeWorld =
-            predictThumbNodeWorldForGripFrame(liveThumbNodeWorld, currentSupportGripPivotWorld, targetGripPointWorld);
-        return Vector{
-            targetGripPointWorld.x - predictedNodeWorld.x,
-            targetGripPointWorld.y - predictedNodeWorld.y,
-            targetGripPointWorld.z - predictedNodeWorld.z,
-        };
-    }
-}
-
 // ---- EquippedWeaponManualOwnershipPolicy.h ----
 
 namespace rock::equipped_weapon_manual_ownership_policy
@@ -427,6 +372,34 @@ namespace rock::weapon_two_handed_grip_math
         const Vector correction = weaponSolverSub(targetGripPointWorld, currentGripPivotWorld);
         result.translate = weaponSolverAdd(result.translate, correction);
         return result;
+    }
+
+    /*
+     * Finger solving keeps the live skeleton in its current authoritative hand
+     * frame and moves the contacted mesh by the inverse of the pending hand-seat
+     * translation. This is rigidly equivalent to moving the hand onto the
+     * weapon, but it lets the regular frozen-target solver, pad probes, and
+     * object-local surface capture all observe one coherent final relation.
+     */
+    template <class Transform, class Vector>
+    inline Transform virtualizeMeshForTranslatedHandSeat(
+        const Transform& meshWorldTransform,
+        const Vector& currentGripPivotWorld,
+        const Vector& targetGripPointWorld)
+    {
+        Transform result = meshWorldTransform;
+        const Vector handSeatCorrection = weaponSolverSub(targetGripPointWorld, currentGripPivotWorld);
+        result.translate = weaponSolverSub(result.translate, handSeatCorrection);
+        return result;
+    }
+
+    template <class Vector>
+    inline Vector virtualizeGripPointForTranslatedHandSeat(
+        const Vector& currentGripPivotWorld,
+        const Vector& targetGripPointWorld)
+    {
+        const Vector handSeatCorrection = weaponSolverSub(targetGripPointWorld, currentGripPivotWorld);
+        return weaponSolverSub(targetGripPointWorld, handSeatCorrection);
     }
 
     inline bool canStartSupportGrip(bool touchingSupportPart, bool gripPressed, bool supportHandHoldingObject)

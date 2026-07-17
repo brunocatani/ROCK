@@ -3927,3 +3927,154 @@ namespace rock::grab_finger_local_transform_runtime
         return true;
     }
 }
+
+// ---- GrabFingerFrozenMeshRuntime.h ----
+
+/*
+ * Regular object grabs and equipped-weapon part grips must not assemble their
+ * own subtly different argument lists around the calibrated solver. This
+ * shared one-shot boundary owns the authored-open anchor, bounded local BVH,
+ * thumb/index surface policy, pad refinement, and object-local surface capture.
+ * Callers remain responsible only for presenting the mesh in the final frozen
+ * hand/object relation and for caching/publishing the returned pose.
+ */
+namespace rock::grab_finger_pose_runtime
+{
+    struct FrozenMeshFingerPoseSolveOptions
+    {
+        float minValue = 0.2f;
+        float maxTriangleDistanceSquared = 100.0f;
+        bool rejectBacksideHits = true;
+        float surfacePlaneToleranceGameUnits = 1.5f;
+        bool allowSurfaceAimTargets = true;
+        float sweepContactRadiusGameUnits = 1.0f;
+        float thumbSweepMaxOpenValue = grab_finger_pose_math::kMaxOverOpenValue;
+        float fingerSweepMaxOpenValue = grab_finger_pose_math::kMaxOverOpenValue;
+        bool meshFingerPoseEnabled = true;
+        bool captureSweepDebug = false;
+    };
+
+    struct FrozenMeshFingerPoseSolveResult
+    {
+        SolvedGrabFingerPose pose{};
+        FingerSweepDebugCapture sweepDebug{};
+        std::array<FingerPadSurfaceEvidence, 5> padEvidence{};
+        root_flattened_finger_skeleton_runtime::Snapshot liveFingerSnapshot{};
+        bool liveFingerSnapshotValid = false;
+        bool commandedOpenDirectionsValid = false;
+        bool spatialIndexBuilt = false;
+    };
+
+    inline bool resolveCommandedOpenDirectionsWorld(
+        bool isLeft,
+        const RE::NiTransform& handWorldTransform,
+        std::array<RE::NiPoint3, 5>& outDirectionsWorld)
+    {
+        outDirectionsWorld = {};
+        if (!std::isfinite(handWorldTransform.scale) || std::abs(handWorldTransform.scale) <= 0.000001f) {
+            return false;
+        }
+
+        frik_visual_authority::FingerLocalTransformOverride openPoseLocals{};
+        const auto openHandPose = frik_visual_authority::makeUniformHandPoseData(1.0f, 1.0f, 1.0f, 1.0f, 1.0f);
+        if (!frik_visual_authority::getHandPoseLocalTransformsForPose(frik_visual_authority::handFromBool(isLeft), openHandPose, &openPoseLocals)) {
+            return false;
+        }
+
+        const auto openDirectionsHandLocal = computeCommandedOpenDirectionsHandLocal(openPoseLocals.localTransforms);
+        for (std::size_t finger = 0; finger < outDirectionsWorld.size(); ++finger) {
+            const RE::NiPoint3 directionWorld = transform_math::localVectorToWorld(handWorldTransform, openDirectionsHandLocal[finger]);
+            const float directionLengthSquared = distanceSquared(directionWorld, RE::NiPoint3{});
+            if (!std::isfinite(directionLengthSquared) || directionLengthSquared <= 0.000001f) {
+                outDirectionsWorld = {};
+                return false;
+            }
+            outDirectionsWorld[finger] = directionWorld * (1.0f / std::sqrt(directionLengthSquared));
+        }
+        return true;
+    }
+
+    template <class TriangleContainer>
+    inline void rebuildBoundedWorldTriangles(
+        const TriangleContainer& localTriangles,
+        const RE::NiTransform& meshWorldTransform,
+        std::vector<TriangleData>& outWorldTriangles)
+    {
+        outWorldTriangles.clear();
+        outWorldTriangles.reserve((std::min)(localTriangles.size(), kMaxFingerPoseCandidateTriangles));
+        for (const auto& localTriangle : localTriangles) {
+            if (!isFinitePoint(localTriangle.v0) || !isFinitePoint(localTriangle.v1) || !isFinitePoint(localTriangle.v2)) {
+                continue;
+            }
+            outWorldTriangles.push_back(TriangleData{
+                transform_math::localPointToWorld(meshWorldTransform, localTriangle.v0),
+                transform_math::localPointToWorld(meshWorldTransform, localTriangle.v1),
+                transform_math::localPointToWorld(meshWorldTransform, localTriangle.v2),
+            });
+            if (outWorldTriangles.size() >= kMaxFingerPoseCandidateTriangles) {
+                break;
+            }
+        }
+    }
+
+    template <class TriangleContainer>
+    inline FrozenMeshFingerPoseSolveResult solveFrozenMeshFingerPose(
+        const TriangleContainer& boundedLocalTriangles,
+        const RE::NiTransform& frozenMeshWorldTransform,
+        const RE::NiTransform& handWorldTransform,
+        bool isLeft,
+        const RE::NiPoint3& grabAnchorWorld,
+        const GrabFingerPoseTargetSet& poseTargets,
+        FingerPoseTriangleSpatialIndex& spatialIndex,
+        std::vector<TriangleData>& worldTriangleScratch,
+        const FrozenMeshFingerPoseSolveOptions& options)
+    {
+        FrozenMeshFingerPoseSolveResult result{};
+        rebuildBoundedWorldTriangles(boundedLocalTriangles, frozenMeshWorldTransform, worldTriangleScratch);
+        result.spatialIndexBuilt = spatialIndex.buildFromLocalTriangles(boundedLocalTriangles);
+
+        result.liveFingerSnapshotValid = root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(isLeft, result.liveFingerSnapshot);
+        const auto* liveFingerSnapshotPtr = result.liveFingerSnapshotValid ? &result.liveFingerSnapshot : nullptr;
+
+        std::array<RE::NiPoint3, 5> commandedOpenDirectionsWorld{};
+        result.commandedOpenDirectionsValid = resolveCommandedOpenDirectionsWorld(isLeft, handWorldTransform, commandedOpenDirectionsWorld);
+        result.pose = solveGrabFingerPoseFromTriangles(
+            worldTriangleScratch,
+            handWorldTransform,
+            isLeft,
+            grabAnchorWorld,
+            poseTargets,
+            options.minValue,
+            options.maxTriangleDistanceSquared,
+            true,
+            liveFingerSnapshotPtr,
+            options.rejectBacksideHits,
+            options.surfacePlaneToleranceGameUnits,
+            options.allowSurfaceAimTargets,
+            options.sweepContactRadiusGameUnits,
+            -1.0f,
+            options.thumbSweepMaxOpenValue,
+            options.fingerSweepMaxOpenValue,
+            result.commandedOpenDirectionsValid ? &commandedOpenDirectionsWorld : nullptr,
+            result.spatialIndexBuilt ? &spatialIndex : nullptr,
+            result.spatialIndexBuilt ? &frozenMeshWorldTransform : nullptr,
+            options.captureSweepDebug ? &result.sweepDebug : nullptr,
+            FingerPoseMeshRelation::AlreadyAtCommandedSeat);
+
+        useThumbIndexCurveOnlyPose(result.pose);
+        if (result.liveFingerSnapshotValid) {
+            (void)refineGrabFingerPoseWithPadProbes(
+                result.pose,
+                worldTriangleScratch,
+                poseTargets,
+                result.liveFingerSnapshot,
+                frozenMeshWorldTransform,
+                options.meshFingerPoseEnabled,
+                true,
+                result.padEvidence,
+                true);
+        }
+        captureSurfaceAimObjectLocal(result.pose, frozenMeshWorldTransform);
+        return result;
+    }
+}

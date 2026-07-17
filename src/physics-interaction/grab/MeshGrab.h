@@ -1324,7 +1324,8 @@ namespace rock
         return best ? best : surfaceTriangle.sourceNode;
     }
 
-    inline bool findClosestGrabPoint(const std::vector<TriangleData>& triangles,
+    template <class TriangleRange>
+    inline bool findClosestGrabPoint(const TriangleRange& triangles,
         const RE::NiPoint3& palmPos,
         const RE::NiPoint3& palmDir,
         float lateralWeight,
