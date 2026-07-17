@@ -29,6 +29,7 @@
 #include "physics-interaction/native/PhysicsStepDriveCoordinator.h"
 #include "physics-interaction/stash/ShoulderStashDetector.h"
 #include "physics-interaction/weapon/EquipVisualBridge.h"
+#include "physics-interaction/weapon/AuthoredPrimaryFiringGrip.h"
 #include "physics-interaction/weapon/EquippedWeaponDropMomentum.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
@@ -94,6 +95,11 @@ namespace rock
         bool tryResolveNativeScopeGeometryDecision(bool nativeGeometryDecision, bool& outRockGeometryDecision);
 
         void update();
+
+        // Runs after the normal ROCK frame even when update() took an early
+        // lifecycle/menu return, so the tagged primary-hand lease is always
+        // released deterministically when its experiment gate closes.
+        void updateAuthoredPrimaryFiringGripExperiment();
 
         void shutdown(::rock::provider::RockProviderLifecycleReason reason = ::rock::provider::RockProviderLifecycleReason::Shutdown);
 
@@ -352,6 +358,7 @@ namespace rock
         std::atomic<std::uint64_t> _completedPhysicsSolveSequence{ 0 };
 
         TwoHandedGrip _twoHandedGrip;
+        AuthoredPrimaryFiringGripRuntime _authoredPrimaryFiringGrip;
         DynamicHandCollisionRuntime _dynamicHandCollision;
 
         mutable std::mutex _ownedObjectsMutex;

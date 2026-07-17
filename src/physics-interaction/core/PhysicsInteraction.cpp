@@ -20,6 +20,7 @@
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/native/BodyCollisionControl.h"
 #include "physics-interaction/actor/ActorEquipmentGrab.h"
+#include "physics-interaction/animation/NativeAnimationAuthority.h"
 #include "physics-interaction/api/InteractionCommandQueue.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
@@ -1315,6 +1316,8 @@ namespace rock
     {
         s_instance.store(nullptr, std::memory_order_release);
 
+        _authoredPrimaryFiringGrip.reset("physics-destroyed");
+
         if (_initialized) {
             shutdown();
         }
@@ -1347,6 +1350,7 @@ namespace rock
 
     void PhysicsInteraction::noteSkeletonLifecycle(std::uint32_t skeletonGeneration, ::rock::provider::RockProviderLifecycleReason reason)
     {
+        _authoredPrimaryFiringGrip.reset("skeleton-lifecycle");
         physics_lifecycle::noteSkeletonGeneration(_lifecycleState, skeletonGeneration, reason);
         physics_lifecycle::noteReason(_lifecycleState, reason);
         markGeneratedBodiesInvalidated();
@@ -1362,6 +1366,7 @@ namespace rock
 
     void PhysicsInteraction::noteProviderLifecycle(std::uint32_t providerGeneration, ::rock::provider::RockProviderLifecycleReason reason)
     {
+        _authoredPrimaryFiringGrip.reset("provider-lifecycle");
         physics_lifecycle::noteProviderGeneration(_lifecycleState, providerGeneration, reason);
         physics_lifecycle::noteReason(_lifecycleState, reason);
         markGeneratedBodiesInvalidated();
@@ -3321,6 +3326,42 @@ namespace rock
         ::rock::provider::dispatchFrameCallbacks(*this);
     }
 
+    void PhysicsInteraction::updateAuthoredPrimaryFiringGripExperiment()
+    {
+        const auto& runtime = runtime_state::currentFrame();
+        auto* weaponNode = resolveEquippedWeaponInteractionNode();
+        const bool leftHandedMode = f4vr::isLeftHandedMode();
+        const bool primaryHandHoldingObject =
+            leftHandedMode ? _leftHand.isHolding() : _rightHand.isHolding();
+        const auto nativeAuthorityStatus =
+            native_animation_authority::queryRuntimeStatus();
+        std::uint64_t weaponOwnershipKey =
+            weaponNode ? _weaponCollision.getCurrentEquippedWeaponOwnershipKey() : 0;
+        if (weaponNode && weaponOwnershipKey == 0) {
+            // Keep the experiment independent of generated weapon collision.
+            // The richer stack/instance key wins when available; the equipped
+            // form remains a stable freshness boundary when collision is off.
+            weaponOwnershipKey = currentEquippedWeaponFormId();
+        }
+
+        _authoredPrimaryFiringGrip.update(AuthoredPrimaryFiringGripFrameInput{
+            .weaponNode = weaponNode,
+            .weaponOwnershipKey = weaponOwnershipKey,
+            .enabled = g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled,
+            .runtimeInitialized = _initialized.load(std::memory_order_acquire),
+            .visualAuthorityAvailable = runtime.visualAuthorityAvailable,
+            .localSkeletonReady = runtime.localSkeletonReady,
+            .menuBlocking = runtime.localMenuBlocking,
+            .compatibilityBlocking = runtime.compatibilityConfigBlocking,
+            .weaponDrawn = runtime.weaponDrawn,
+            .weaponVisible = weaponNode && f4vr::isNodeVisible(weaponNode),
+            .nativeReloadAuthorityActive = nativeAuthorityStatus.effectiveFlags != 0,
+            .manualWeaponAuthorityActive = _twoHandedGrip.isManualOwnershipActive(),
+            .primaryHandHoldingObject = primaryHandHoldingObject,
+            .leftHandedMode = leftHandedMode,
+        });
+    }
+
     void PhysicsInteraction::clearLeftWeaponContact()
     {
         _leftWeaponContactBodyId.store(INVALID_CONTACT_BODY_ID, std::memory_order_release);
@@ -4094,6 +4135,7 @@ namespace rock
     void PhysicsInteraction::shutdown(::rock::provider::RockProviderLifecycleReason reason)
     {
         pipboy_equip_runtime::setLeftHandEquipAvailable(false);
+        _authoredPrimaryFiringGrip.reset("physics-shutdown");
         if (!_initialized) {
             // The global equip hook can accept a request while physics init is
             // deferred. Destruction/provider loss must not replay that request

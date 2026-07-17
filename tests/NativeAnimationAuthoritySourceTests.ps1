@@ -77,6 +77,50 @@ Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
     'rockNativeReloadAnimationAuthorityTestEnabled[\s\S]*requestLocalReloadTestLease\(\)' `
     'The ROCK-only validation flag must arm a bounded lease only when a native reload dispatch succeeds.'
 
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
+    'capturePrimaryFiringGrip[\s\S]*weaponTransform\.parPos\s*!=\s*s_cache\.sourcePrimaryHandIndex[\s\S]*s_authoredPrimaryWeaponInHand\s*=\s*weaponTransform\.local' `
+    'The authored primary grip must come from the native flattened Weapon local under RArm_Hand.'
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
+    'resolveAuthoredPrimaryHandWorld\([\s\S]*liveWeaponWorld[\s\S]*s_authoredPrimaryWeaponInHand' `
+    'The experiment must solve the hand from the unchanged live weapon and authored Weapon-in-hand relation.'
+
+$nativeAuthorityText = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/animation/NativeAnimationAuthority.cpp')
+$primaryCaptureMatch = [regex]::Match(
+    $nativeAuthorityText,
+    '(?s)capturePrimaryFiringGrip\(const BoneTree& source\).*?(?=\s+void captureNativePose\()')
+if (-not $primaryCaptureMatch.Success) {
+    $failures.Add('The authored primary firing-grip capture function could not be isolated for source validation.')
+} elseif ($primaryCaptureMatch.Value -match 'authoritativeLocal\s*\(|=\s*weaponTransform\.refNode->local') {
+    $failures.Add('The authored primary grip must never capture hFRIK''s live refNode local/offset.')
+}
+
+Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
+    'applyExternalHandWorldTransform\([\s\S]*Hand::Primary[\s\S]*kAuthorityPriority' `
+    'The experiment must publish only the FRIK primary-hand world target through ranked authority.'
+Reject-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
+    'Hand::(?:Offhand|Left|Right)|weaponNode->(?:local|world)\s*=' `
+    'The primary-only experiment must not write a support/explicit-side hand or mutate the weapon transform.'
+Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
+    'input\.nativeReloadAuthorityActive[\s\S]*clearAuthority\("native-reload-authority"\)[\s\S]*captureSequenceFloor' `
+    'Native reload authority must release the experiment and require a fresh capture before restoring it.'
+Require-Text 'src/ROCKMain.cpp' `
+    's_physicsInteraction->update\(\);[\s\S]{0,180}s_physicsInteraction->updateAuthoredPrimaryFiringGripExperiment\(\)' `
+    'The primary grip must run after the normal ROCK frame so it is the final eligible primary-arm writer.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'updateAuthoredPrimaryFiringGripExperiment[\s\S]*getCurrentEquippedWeaponOwnershipKey\(\)[\s\S]*weaponOwnershipKey\s*=\s*currentEquippedWeaponFormId\(\)' `
+    'The experiment must retain a weapon freshness key when generated weapon collision is disabled.'
+Require-Text 'src/RockConfig.cpp' `
+    'rockAuthoredPrimaryFiringGripTestEnabled\s*=\s*false[\s\S]*GetBoolValue\(\s*EXPERIMENTAL_SECTION,\s*"bAuthoredPrimaryFiringGripTestEnabled"' `
+    'The authored firing-grip experiment must default off and load only from [Experimental].'
+foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
+    $configText = Get-Content -Raw -LiteralPath (Join-Path $Root $configPath)
+    $experimentalMatch = [regex]::Match($configText, '(?ms)^\[Experimental\]\s*(?<body>.*?)(?=^\[[^\]]+\])')
+    if (-not $experimentalMatch.Success -or
+        $experimentalMatch.Groups['body'].Value -notmatch '(?m)^bAuthoredPrimaryFiringGripTestEnabled\s*=\s*false\s*$') {
+        $failures.Add("$configPath`: Authored primary firing-grip experiment must exist under [Experimental] and default off.")
+    }
+}
+
 if ($failures.Count -gt 0) {
     $failures | ForEach-Object { Write-Error $_ }
     exit 1

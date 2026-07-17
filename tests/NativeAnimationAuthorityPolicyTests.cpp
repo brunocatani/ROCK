@@ -66,6 +66,61 @@ int main()
     static_assert(additiveCompose(sourceToSharedTarget, 13.0f) == 103.0f);
     static_assert(additiveCompose(destinationToSharedTarget, -79940.0f) == 103.0f);
 
+    constexpr AffineTransform authoredWeaponInHand{ 2.0f, 10.0f };
+    constexpr AffineTransform liveWeaponWorld{ 6.0f, 100.0f };
+    constexpr auto authoredHandWorld = resolveAuthoredPrimaryHandWorld(
+        liveWeaponWorld,
+        authoredWeaponInHand,
+        affineCompose,
+        affineInvert);
+    constexpr auto recomposedWeaponWorld = affineCompose(authoredHandWorld, authoredWeaponInHand);
+    static_assert(recomposedWeaponWorld.scale == liveWeaponWorld.scale);
+    static_assert(recomposedWeaponWorld.translate == liveWeaponWorld.translate);
+
+    constexpr AuthoredPrimaryFiringGripEligibility authoredGripEligible{
+        .enabled = true,
+        .runtimeInitialized = true,
+        .visualAuthorityAvailable = true,
+        .localSkeletonReady = true,
+        .menuBlocking = false,
+        .compatibilityBlocking = false,
+        .weaponDrawn = true,
+        .weaponVisible = true,
+        .weaponKeyValid = true,
+        .captureValid = true,
+        .captureNewerThanWeaponBoundary = true,
+        .nativeReloadAuthorityActive = false,
+        .manualWeaponAuthorityActive = false,
+        .primaryHandHoldingObject = false,
+        .leftHandedMode = false,
+    };
+    static_assert(shouldApplyAuthoredPrimaryFiringGrip(authoredGripEligible));
+    static_assert([=] {
+        auto input = authoredGripEligible;
+        input.nativeReloadAuthorityActive = true;
+        return !shouldApplyAuthoredPrimaryFiringGrip(input);
+    }());
+    static_assert([=] {
+        auto input = authoredGripEligible;
+        input.manualWeaponAuthorityActive = true;
+        return !shouldApplyAuthoredPrimaryFiringGrip(input);
+    }());
+    static_assert([=] {
+        auto input = authoredGripEligible;
+        input.primaryHandHoldingObject = true;
+        return !shouldApplyAuthoredPrimaryFiringGrip(input);
+    }());
+    static_assert([=] {
+        auto input = authoredGripEligible;
+        input.leftHandedMode = true;
+        return !shouldApplyAuthoredPrimaryFiringGrip(input);
+    }());
+    static_assert([=] {
+        auto input = authoredGripEligible;
+        input.captureNewerThanWeaponBoundary = false;
+        return !shouldApplyAuthoredPrimaryFiringGrip(input);
+    }());
+
     constexpr LocalReloadLeaseState awaitingReload{
         .watchdogFramesRemaining = 600,
         .startSequenceAtArm = 10,

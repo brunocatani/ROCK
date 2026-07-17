@@ -51,6 +51,7 @@ namespace rock::native_animation_authority
             BoneTransform* destinationTransforms{ nullptr };
             int sourceCount{ 0 };
             int destinationCount{ 0 };
+            int sourcePrimaryHandIndex{ -1 };
             int sourceWeaponIndex{ -1 };
             int destinationWeaponIndex{ -1 };
             std::array<Binding, kMaxBindings> bindings{};
@@ -83,6 +84,8 @@ namespace rock::native_animation_authority
         std::atomic<bool> s_reloadStateHookInstalled{ false };
         std::atomic<bool> s_hookInstallFailed{ false };
         std::atomic<bool> s_runtimeEnabled{ false };
+        std::atomic<bool> s_primaryFiringGripCaptureEnabled{ false };
+        std::atomic<bool> s_primaryFiringGripCaptureValid{ false };
         std::atomic<bool> s_captureValid{ false };
         std::atomic<bool> s_threadMismatch{ false };
         std::atomic<bool> s_captureFault{ false };
@@ -95,6 +98,14 @@ namespace rock::native_animation_authority
         std::atomic<std::uint32_t> s_capturedFlags{ 0 };
         std::atomic<std::uint32_t> s_capturedTransformCount{ 0 };
         std::atomic<std::uint64_t> s_captureSequence{ 0 };
+        std::atomic<std::uint64_t> s_primaryFiringGripCaptureSequence{ 0 };
+
+        // Published only by the validated post-animation hook and consumed on
+        // the same claimed ROCK game thread. The atomic valid/sequence pair is
+        // the publication boundary; the scene pointer is never retained after
+        // capture invalidation or skeleton/cache reset.
+        RE::NiTransform s_authoredPrimaryWeaponInHand{};
+        std::atomic<RE::NiNode*> s_primaryFiringGripWeaponNode{ nullptr };
 
         std::uint64_t s_frameCaptureSequence{ 0 };
         std::uint64_t s_lastCompletedCaptureSequence{ 0 };
@@ -180,12 +191,16 @@ namespace rock::native_animation_authority
                    s_cache.destinationTransforms == destination->transforms &&
                    s_cache.sourceCount == source->numTransforms &&
                    s_cache.destinationCount == destination->numTransforms &&
+                   s_cache.sourcePrimaryHandIndex >= 0 &&
+                   s_cache.sourceWeaponIndex >= 0 &&
                    s_cache.bindingCount > 0;
         }
 
         [[nodiscard]] bool rebuildCache(BoneTree* source, BoneTree* destination)
         {
             resetHybridPoseState();
+            s_primaryFiringGripCaptureValid.store(false, std::memory_order_release);
+            s_primaryFiringGripWeaponNode.store(nullptr, std::memory_order_release);
             s_cache = {};
             if (!validTree(source) || !validTree(destination)) {
                 return false;
@@ -200,6 +215,9 @@ namespace rock::native_animation_authority
 
             for (int sourceIndex = 0; sourceIndex < source->numTransforms; ++sourceIndex) {
                 const auto name = transformName(source->transforms[sourceIndex]);
+                if (native_animation_authority_policy::equalsIgnoreCase(name, "RArm_Hand")) {
+                    s_cache.sourcePrimaryHandIndex = sourceIndex;
+                }
                 const auto flags = native_animation_authority_policy::classifyBone(name);
                 if (flags == 0) {
                     continue;
@@ -219,6 +237,7 @@ namespace rock::native_animation_authority
                 }
             }
             return s_cache.bindingCount > 0 &&
+                   s_cache.sourcePrimaryHandIndex >= 0 &&
                    s_cache.sourceWeaponIndex >= 0 &&
                    s_cache.destinationWeaponIndex >= 0;
         }
@@ -235,11 +254,53 @@ namespace rock::native_animation_authority
             s_capturedTransformCount.store(0, std::memory_order_release);
         }
 
+        void invalidatePrimaryFiringGripCapture()
+        {
+            s_primaryFiringGripCaptureValid.store(false, std::memory_order_release);
+            s_primaryFiringGripWeaponNode.store(nullptr, std::memory_order_release);
+        }
+
+        [[nodiscard]] bool capturePrimaryFiringGrip(const BoneTree& source)
+        {
+            if (s_cache.sourcePrimaryHandIndex < 0 ||
+                s_cache.sourcePrimaryHandIndex >= source.numTransforms ||
+                s_cache.sourceWeaponIndex < 0 ||
+                s_cache.sourceWeaponIndex >= source.numTransforms) {
+                return false;
+            }
+
+            const auto& weaponTransform = source.transforms[s_cache.sourceWeaponIndex];
+            if (weaponTransform.parPos != s_cache.sourcePrimaryHandIndex ||
+                !weaponTransform.refNode ||
+                !finiteTransform(weaponTransform.local)) {
+                return false;
+            }
+
+            // Deliberately use the flattened graph local. hFRIK's weapon
+            // position adjuster writes refNode->local every frame; reading that
+            // scene local here would merely recapture the offset being tested.
+            const RE::NiTransform handInWeapon = transform_math::invertTransform(weaponTransform.local);
+            if (!finiteTransform(handInWeapon)) {
+                return false;
+            }
+
+            s_authoredPrimaryWeaponInHand = weaponTransform.local;
+            s_primaryFiringGripWeaponNode.store(weaponTransform.refNode, std::memory_order_release);
+            s_primaryFiringGripCaptureSequence.fetch_add(1, std::memory_order_acq_rel);
+            s_primaryFiringGripCaptureValid.store(true, std::memory_order_release);
+            return true;
+        }
+
         void captureNativePose()
         {
             const std::uint32_t requestedFlags = effectiveRequestedFlags();
-            if (requestedFlags == 0 || !claimOrValidateThread()) {
+            const bool primaryGripCaptureEnabled =
+                s_primaryFiringGripCaptureEnabled.load(std::memory_order_acquire);
+            if ((requestedFlags == 0 && !primaryGripCaptureEnabled) || !claimOrValidateThread()) {
                 invalidateCapture();
+                if (primaryGripCaptureEnabled) {
+                    invalidatePrimaryFiringGripCapture();
+                }
                 return;
             }
 
@@ -247,9 +308,30 @@ namespace rock::native_animation_authority
             auto* destination = f4vr::getFlattenedBoneTree();
             if (!validTree(source) || !validTree(destination)) {
                 invalidateCapture();
+                if (primaryGripCaptureEnabled) {
+                    invalidatePrimaryFiringGripCapture();
+                }
                 return;
             }
             if (!cacheMatches(source, destination) && !rebuildCache(source, destination)) {
+                invalidateCapture();
+                if (primaryGripCaptureEnabled) {
+                    invalidatePrimaryFiringGripCapture();
+                }
+                return;
+            }
+
+            // Freeze the last pre-reload relation while Bethesda owns the
+            // complete reload pose. The grip runtime yields during that window
+            // and requires a fresh post-boundary capture before resuming.
+            if (primaryGripCaptureEnabled &&
+                requestedFlags == 0 &&
+                !s_playerReloadEventActive.load(std::memory_order_acquire) &&
+                !capturePrimaryFiringGrip(*source)) {
+                invalidatePrimaryFiringGripCapture();
+            }
+
+            if (requestedFlags == 0) {
                 invalidateCapture();
                 return;
             }
@@ -298,6 +380,7 @@ namespace rock::native_animation_authority
             } __except (EXCEPTION_EXECUTE_HANDLER) {
                 s_captureFault.store(true, std::memory_order_release);
                 invalidateCapture();
+                invalidatePrimaryFiringGripCapture();
             }
 #else
             captureNativePose();
@@ -940,6 +1023,62 @@ namespace rock::native_animation_authority
         }
     }
 
+    void setPrimaryFiringGripCaptureEnabled(const bool enabled)
+    {
+        const bool effectiveEnabled = enabled && s_hookInstalled.load(std::memory_order_acquire);
+        s_primaryFiringGripCaptureEnabled.store(effectiveEnabled, std::memory_order_release);
+        if (!effectiveEnabled) {
+            invalidatePrimaryFiringGripCapture();
+        }
+    }
+
+    PrimaryFiringGripCaptureStatus queryPrimaryFiringGripCaptureStatus()
+    {
+        return PrimaryFiringGripCaptureStatus{
+            .captureSequence = s_primaryFiringGripCaptureSequence.load(std::memory_order_acquire),
+            .valid = s_primaryFiringGripCaptureValid.load(std::memory_order_acquire),
+        };
+    }
+
+    bool tryResolvePrimaryFiringGripWorldTarget(
+        const RE::NiNode* expectedWeaponNode,
+        const RE::NiTransform& liveWeaponWorld,
+        RE::NiTransform& outHandWorld,
+        std::uint64_t& outCaptureSequence)
+    {
+        outCaptureSequence = 0;
+        if (!expectedWeaponNode ||
+            !s_primaryFiringGripCaptureEnabled.load(std::memory_order_acquire) ||
+            !s_primaryFiringGripCaptureValid.load(std::memory_order_acquire) ||
+            !claimOrValidateThread() ||
+            expectedWeaponNode != s_primaryFiringGripWeaponNode.load(std::memory_order_acquire) ||
+            !finiteTransform(liveWeaponWorld) ||
+            !finiteTransform(s_authoredPrimaryWeaponInHand)) {
+            return false;
+        }
+
+        const auto sequence = s_primaryFiringGripCaptureSequence.load(std::memory_order_acquire);
+        if (sequence == 0) {
+            return false;
+        }
+
+        outHandWorld = native_animation_authority_policy::resolveAuthoredPrimaryHandWorld(
+            liveWeaponWorld,
+            s_authoredPrimaryWeaponInHand,
+            [](const RE::NiTransform& parent, const RE::NiTransform& child) {
+                return transform_math::composeTransforms(parent, child);
+            },
+            [](const RE::NiTransform& transform) {
+                return transform_math::invertTransform(transform);
+            });
+        if (!finiteTransform(outHandWorld)) {
+            return false;
+        }
+
+        outCaptureSequence = sequence;
+        return true;
+    }
+
     void requestLocalReloadTestLease()
     {
         if (!s_runtimeEnabled.load(std::memory_order_acquire) || !s_hookInstalled.load(std::memory_order_acquire)) {
@@ -1039,11 +1178,13 @@ namespace rock::native_animation_authority
     void resetTransientState()
     {
         s_runtimeEnabled.store(false, std::memory_order_release);
+        s_primaryFiringGripCaptureEnabled.store(false, std::memory_order_release);
         s_localReloadTestLeaseFrames.store(0, std::memory_order_release);
         s_localReloadLeaseState = {};
         s_seenLocalReloadTestRequestSequence = s_localReloadTestRequestSequence.load(std::memory_order_acquire);
         s_playerReloadEventActive.store(false, std::memory_order_release);
         invalidateCapture();
+        invalidatePrimaryFiringGripCapture();
         resetHybridPoseState();
         s_frameCaptureReady = false;
         s_frameCaptureFlags = 0;

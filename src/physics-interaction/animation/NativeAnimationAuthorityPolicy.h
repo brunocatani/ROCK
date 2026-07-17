@@ -43,6 +43,47 @@ namespace rock::native_animation_authority_policy
         }
     };
 
+    struct AuthoredPrimaryFiringGripEligibility
+    {
+        bool enabled{ false };
+        bool runtimeInitialized{ false };
+        bool visualAuthorityAvailable{ false };
+        bool localSkeletonReady{ false };
+        bool menuBlocking{ false };
+        bool compatibilityBlocking{ false };
+        bool weaponDrawn{ false };
+        bool weaponVisible{ false };
+        bool weaponKeyValid{ false };
+        bool captureValid{ false };
+        bool captureNewerThanWeaponBoundary{ false };
+        bool nativeReloadAuthorityActive{ false };
+        bool manualWeaponAuthorityActive{ false };
+        bool primaryHandHoldingObject{ false };
+        // Flat Fallout 4 authors its firing pose on RArm_Hand -> Weapon.
+        // Left-handed mirroring has no equivalent modeler-authored relation.
+        bool leftHandedMode{ false };
+    };
+
+    [[nodiscard]] constexpr bool shouldApplyAuthoredPrimaryFiringGrip(
+        const AuthoredPrimaryFiringGripEligibility& input)
+    {
+        return input.enabled &&
+               input.runtimeInitialized &&
+               input.visualAuthorityAvailable &&
+               input.localSkeletonReady &&
+               !input.menuBlocking &&
+               !input.compatibilityBlocking &&
+               input.weaponDrawn &&
+               input.weaponVisible &&
+               input.weaponKeyValid &&
+               input.captureValid &&
+               input.captureNewerThanWeaponBoundary &&
+               !input.nativeReloadAuthorityActive &&
+               !input.manualWeaponAuthorityActive &&
+               !input.primaryHandHoldingObject &&
+               !input.leftHandedMode;
+    }
+
     [[nodiscard]] constexpr LocalReloadLeaseStep advanceLocalReloadLease(
         LocalReloadLeaseState state,
         LocalReloadLifecycleSignal signal)
@@ -102,6 +143,24 @@ namespace rock::native_animation_authority_policy
         Invert&& invert)
     {
         return compose(worldTarget, invert(authoredCurrent));
+    }
+
+    /*
+     * The native first-person hierarchy defines:
+     *
+     *   authoredWeaponWorld = authoredHandWorld * authoredWeaponInHand
+     *
+     * Keep the live controller-owned weapon world unchanged and solve the
+     * firing hand that would reproduce it with the modeler's authored local.
+     */
+    template <class Transform, class Compose, class Invert>
+    [[nodiscard]] constexpr Transform resolveAuthoredPrimaryHandWorld(
+        const Transform& liveWeaponWorld,
+        const Transform& authoredWeaponInHand,
+        Compose&& compose,
+        Invert&& invert)
+    {
+        return compose(liveWeaponWorld, invert(authoredWeaponInHand));
     }
 
     [[nodiscard]] constexpr char asciiLower(char value)

@@ -158,6 +158,7 @@ namespace rock
 
         rockDeveloperModeEnabled = false;
         rockNativeReloadAnimationAuthorityTestEnabled = false;
+        rockAuthoredPrimaryFiringGripTestEnabled = false;
 
         rockLogLevel = logging_policy::DefaultLogLevel;
         rockLogPattern = logging_policy::DefaultLogPattern;
@@ -1411,6 +1412,10 @@ namespace rock
             EXPERIMENTAL_SECTION,
             "bNativeReloadAnimationAuthorityTestEnabled",
             rockNativeReloadAnimationAuthorityTestEnabled);
+        rockAuthoredPrimaryFiringGripTestEnabled = ini.GetBoolValue(
+            EXPERIMENTAL_SECTION,
+            "bAuthoredPrimaryFiringGripTestEnabled",
+            rockAuthoredPrimaryFiringGripTestEnabled);
         rockBodyBoneCollidersEnabled = ini.GetBoolValue(EXPERIMENTAL_SECTION, "bBodyBoneCollidersEnabled", rockBodyBoneCollidersEnabled);
         rockBodyBoneLegAndFootCollidersEnabled =
             ini.GetBoolValue(EXPERIMENTAL_SECTION, "bBodyBoneLegAndFootCollidersEnabled", rockBodyBoneLegAndFootCollidersEnabled);

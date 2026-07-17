@@ -259,6 +259,7 @@ namespace
 
         if (!s_pluginLoaded || !s_frikAvailable) {
             native_animation_authority::setRuntimeEnabled(false);
+            native_animation_authority::setPrimaryFiringGripCaptureEnabled(false);
             pipboy_equip_runtime::setLeftHandEquipAvailable(false);
             input_remap_runtime::setGameplayInputAllowed(false);
             input_remap_runtime::setWeaponDrawn(false);
@@ -280,10 +281,14 @@ namespace
             .compatibilityConfigBlocking = frik_visual_authority::isCompatibilityConfigBlocking(),
         });
         const auto& runtime = runtime_state::currentFrame();
-        native_animation_authority::setRuntimeEnabled(
+        const bool nativeAnimationCaptureRuntimeEnabled =
             g_rockConfig.rockEnabled &&
             runtime.localSkeletonReady &&
-            !runtime.compatibilityConfigBlocking);
+            !runtime.compatibilityConfigBlocking;
+        native_animation_authority::setRuntimeEnabled(nativeAnimationCaptureRuntimeEnabled);
+        native_animation_authority::setPrimaryFiringGripCaptureEnabled(
+            nativeAnimationCaptureRuntimeEnabled &&
+            g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled);
         const bool gameplayInputAllowed =
             g_rockConfig.rockEnabled &&
             runtime.localSkeletonReady &&
@@ -295,6 +300,7 @@ namespace
 
         if (!g_rockConfig.rockEnabled) {
             native_animation_authority::setRuntimeEnabled(false);
+            native_animation_authority::setPrimaryFiringGripCaptureEnabled(false);
             pipboy_equip_runtime::setLeftHandEquipAvailable(false);
             s_physicsCreationRequested.store(false, std::memory_order_release);
             s_physicsCreationReadyDeferralFrames.store(0, std::memory_order_release);
@@ -309,6 +315,7 @@ namespace
 
         if (s_physicsInteraction) {
             s_physicsInteraction->update();
+            s_physicsInteraction->updateAuthoredPrimaryFiringGripExperiment();
             publishPhysicsInteractionIfReady();
         }
     }
@@ -464,6 +471,9 @@ namespace
                     "ROCK: Native animation authority hook unavailable; selective reload-pose API is disabled for this runtime/FRIK build.");
             }
             native_animation_authority::setRuntimeEnabled(g_rockConfig.rockEnabled);
+            native_animation_authority::setPrimaryFiringGripCaptureEnabled(
+                g_rockConfig.rockEnabled &&
+                g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled);
             if (!g_rockConfig.rockEnabled) {
                 logger::info("ROCK: Physics disabled in config, skipping creation.");
                 break;
@@ -493,6 +503,9 @@ namespace
             bumpGeneration(s_skeletonGeneration);
             native_animation_authority::resetTransientState();
             native_animation_authority::setRuntimeEnabled(g_rockConfig.rockEnabled);
+            native_animation_authority::setPrimaryFiringGripCaptureEnabled(
+                g_rockConfig.rockEnabled &&
+                g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled);
             if (msg->data && msg->dataLen >= sizeof(bool)) {
                 const bool isInPA = *static_cast<const bool*>(msg->data);
                 logger::info("ROCK: Power Armor state changed: {}", isInPA ? "IN PA" : "NOT IN PA");

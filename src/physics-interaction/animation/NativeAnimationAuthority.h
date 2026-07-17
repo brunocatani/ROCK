@@ -2,6 +2,12 @@
 
 #include <cstdint>
 
+namespace RE
+{
+    class NiNode;
+    class NiTransform;
+}
+
 namespace rock::native_animation_authority
 {
     enum class RuntimeStatusFlag : std::uint32_t
@@ -24,11 +30,26 @@ namespace rock::native_animation_authority
         std::uint64_t captureSequence{ 0 };
     };
 
+    struct PrimaryFiringGripCaptureStatus
+    {
+        std::uint64_t captureSequence{ 0 };
+        bool valid{ false };
+    };
+
     // Install only after FRIK has emitted kSkeletonReady and has already
     // applied its verified PostUpdateAnimationGraphManager NOP patch.
     [[nodiscard]] bool installPostUpdateHook();
 
     void setRuntimeEnabled(bool enabled);
+    // Independent ROCK-only experiment capture. This reads the native
+    // flattened Weapon local before hFRIK writes its live scene-node offset.
+    void setPrimaryFiringGripCaptureEnabled(bool enabled);
+    [[nodiscard]] PrimaryFiringGripCaptureStatus queryPrimaryFiringGripCaptureStatus();
+    [[nodiscard]] bool tryResolvePrimaryFiringGripWorldTarget(
+        const RE::NiNode* expectedWeaponNode,
+        const RE::NiTransform& liveWeaponWorld,
+        RE::NiTransform& outHandWorld,
+        std::uint64_t& outCaptureSequence);
     void requestLocalReloadTestLease();
     void beginRockFrame();
     [[nodiscard]] bool applyCapturedPose();
