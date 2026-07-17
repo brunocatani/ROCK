@@ -5242,10 +5242,10 @@ namespace rock
                     if (_omodSelfHealAttempted.contains(attemptKey)) {
                         continue;
                     }
-                    _omodSelfHealAttempted.insert(attemptKey);
 
                     auto* omod = RE::TESForm::GetFormByID<RE::BGSMod::Attachment::Mod>(record.formId);
                     if (!omod) {
+                        _omodSelfHealAttempted.insert(attemptKey);
                         ROCK_LOG_WARN(Weapon, "OMOD-HEAL run={} omod={:08X} skipped: form no longer resolves", runIndex, record.formId);
                         continue;
                     }
@@ -5261,16 +5261,19 @@ namespace rock
                      * root names. What it DOES preserve are the template's
                      * DESCENDANT names ('Pistol_Grip', 'Comp:0', 'Drum_Mag'
                      * all appear verbatim in the assembled weapon). So:
-                     * Demand the template, collect its descendant node and
-                     * mesh names (skipping connect points and generic
-                     * helpers), and treat the part as PRESENT if any of them
-                     * already exists in the instance. Only genuinely absent
-                     * parts get attached.
+                     * Demand the template and build a distinct signature from
+                     * its named descendant meshes (falling back to named nodes
+                     * only when the template has no named meshes). A multi-mesh
+                     * part is PRESENT only when a strict majority survives in
+                     * the same assembled weapon. This rejects incidental names
+                     * reused by another attachment while preserving the
+                     * duplicate-geometry guard for a coherent installed part.
                      */
                     RE::NiPointer<RE::NiNode> templateRoot;
                     ModelDbDemandArgs demandArgs{};
                     const int demandResult = demandModel(record.modelPath.c_str(), templateRoot, demandArgs);
                     if (demandResult != 0 || !templateRoot) {
+                        _omodSelfHealAttempted.insert(attemptKey);
                         ROCK_LOG_WARN(Weapon,
                             "OMOD-HEAL run={} omod={:08X} '{}' skipped: model demand failed result={} model='{}'",
                             runIndex,
@@ -5281,12 +5284,24 @@ namespace rock
                         continue;
                     }
 
-                    std::vector<const char*> templateContentNames;
-                    templateContentNames.reserve(32);
+                    // Names are borrowed from descendants owned by templateRoot and are consumed
+                    // before that NiPointer leaves this scope.
+                    std::vector<const char*> templateMeshNames;
+                    std::vector<const char*> templateNodeNames;
+                    templateMeshNames.reserve(24);
+                    templateNodeNames.reserve(16);
                     std::size_t templateNameVisited = 0;
-                    const auto collectTemplateContentNames = [&templateContentNames, &templateNameVisited](
+                    const auto appendUniqueName = [](std::vector<const char*>& names, const char* name) {
+                        const auto duplicate = std::find_if(names.begin(), names.end(), [name](const char* existing) {
+                            return _stricmp(existing, name) == 0;
+                        });
+                        if (duplicate == names.end()) {
+                            names.push_back(name);
+                        }
+                    };
+                    const auto collectTemplateContentNames = [&templateMeshNames, &templateNodeNames, &templateNameVisited, &appendUniqueName](
                                                                  RE::NiAVObject* node, const int depth, const bool isRoot, const auto& self) -> void {
-                        if (!node || depth > 10 || templateNameVisited > 256 || templateContentNames.size() >= 64) {
+                        if (!node || depth > 10 || templateNameVisited > 256 || (templateMeshNames.size() + templateNodeNames.size()) >= 64) {
                             return;
                         }
                         ++templateNameVisited;
@@ -5298,7 +5313,11 @@ namespace rock
                         if (!isRoot && name && name[0] != '\0' &&
                             !(name[0] == 'P' && name[1] == '-') && !(name[0] == 'p' && name[1] == '-') &&
                             _stricmp(name, "ProjectileNode") != 0) {
-                            templateContentNames.push_back(name);
+                            if (node->IsNode()) {
+                                appendUniqueName(templateNodeNames, name);
+                            } else {
+                                appendUniqueName(templateMeshNames, name);
+                            }
                         }
                         auto* niNode = node->IsNode();
                         if (!niNode) {
@@ -5313,7 +5332,10 @@ namespace rock
                     };
                     collectTemplateContentNames(templateRoot.get(), 0, true, collectTemplateContentNames);
 
-                    if (templateContentNames.empty()) {
+                    const auto& templateSignatureNames = !templateMeshNames.empty() ? templateMeshNames : templateNodeNames;
+                    const char* templateSignatureKind = !templateMeshNames.empty() ? "mesh" : "node";
+                    if (templateSignatureNames.empty()) {
+                        _omodSelfHealAttempted.insert(attemptKey);
                         ROCK_LOG_WARN(Weapon,
                             "OMOD-HEAL run={} omod={:08X} '{}' skipped: template has no verifiable content names model='{}'",
                             runIndex,
@@ -5323,23 +5345,43 @@ namespace rock
                         continue;
                     }
 
-                    const char* presentName = nullptr;
-                    for (const char* contentName : templateContentNames) {
+                    std::size_t matchedSignatureNameCount = 0;
+                    const char* firstMatchedSignatureName = nullptr;
+                    for (const char* contentName : templateSignatureNames) {
                         if (!collectWeaponAnimNodeMatches(healTargetNode, contentName).empty()) {
-                            presentName = contentName;
-                            break;
+                            ++matchedSignatureNameCount;
+                            if (!firstMatchedSignatureName) {
+                                firstMatchedSignatureName = contentName;
+                            }
                         }
                     }
-                    if (presentName) {
+                    const std::size_t requiredSignatureNameCount =
+                        weapon_omod_audit_policy::requiredTemplateSignatureMatches(templateSignatureNames.size());
+                    if (weapon_omod_audit_policy::templateSignatureIsPresent(matchedSignatureNameCount, templateSignatureNames.size())) {
+                        _omodSelfHealAttempted.insert(attemptKey);
                         ROCK_LOG_INFO(Weapon,
-                            "OMOD-HEAL run={} omod={:08X} '{}' skipped: template content '{}' already present in instance ({} names checked) — token verdict was a false negative",
+                            "OMOD-HEAL run={} omod={:08X} '{}' skipped: coherent template {} signature already present in instance "
+                            "matches={}/{} required={} example='{}' — token verdict was a false negative",
                             runIndex,
                             record.formId,
                             record.name,
-                            presentName,
-                            templateContentNames.size());
+                            templateSignatureKind,
+                            matchedSignatureNameCount,
+                            templateSignatureNames.size(),
+                            requiredSignatureNameCount,
+                            firstMatchedSignatureName ? firstMatchedSignatureName : "");
                         continue;
                     }
+
+                    ROCK_LOG_INFO(Weapon,
+                        "OMOD-HEAL run={} omod={:08X} '{}' confirmed missing: template {} signature matches={}/{} required={} - attempting engine attach",
+                        runIndex,
+                        record.formId,
+                        record.name,
+                        templateSignatureKind,
+                        matchedSignatureNameCount,
+                        templateSignatureNames.size(),
+                        requiredSignatureNameCount);
 
                     char rankSuffixBuffer[8] = {};
                     const char* rankSuffix = nullptr;
@@ -5359,6 +5401,7 @@ namespace rock
                      * clone is the part appearing — not a double.
                      */
                     const auto beforeStats = summarizeWeaponAnimNodeSubtree(healTargetNode);
+                    _omodSelfHealAttempted.insert(attemptKey);
                     ++selfHealAttemptCount;
                     const bool attached = tryAttach3DRecurse(omod, healTargetNode, rankSuffix, equipData ? equipData->instanceData : nullptr);
                     const auto afterStats = summarizeWeaponAnimNodeSubtree(healTargetNode);

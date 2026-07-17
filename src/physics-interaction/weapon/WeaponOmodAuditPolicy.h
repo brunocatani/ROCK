@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 namespace rock::weapon_omod_audit_policy
@@ -41,6 +42,33 @@ namespace rock::weapon_omod_audit_policy
         return hasPublishedBodySet &&
                auditedEquippedKey != 0 &&
                auditedEquippedKey == publishedEquippedKey;
+    }
+
+    /*
+     * Engine-attached OMOD roots are renamed, but their named descendant
+     * meshes survive in the assembled weapon tree. A single global name match
+     * is not sufficient evidence for a multi-mesh part: unrelated attachments
+     * commonly reuse helpers and iron-sight mesh names. Require a strict
+     * majority of the distinct template mesh signature while preserving the
+     * only useful rule for a one-mesh attachment.
+     */
+    [[nodiscard]] inline constexpr std::size_t requiredTemplateSignatureMatches(std::size_t distinctTemplateMeshCount) noexcept
+    {
+        if (distinctTemplateMeshCount == 0) {
+            return 0;
+        }
+        if (distinctTemplateMeshCount == 1) {
+            return 1;
+        }
+        return (distinctTemplateMeshCount / 2) + 1;
+    }
+
+    [[nodiscard]] inline constexpr bool templateSignatureIsPresent(
+        std::size_t matchedDistinctMeshCount,
+        std::size_t distinctTemplateMeshCount) noexcept
+    {
+        const std::size_t requiredMatches = requiredTemplateSignatureMatches(distinctTemplateMeshCount);
+        return requiredMatches != 0 && matchedDistinctMeshCount >= requiredMatches;
     }
 
     [[nodiscard]] inline constexpr CoverageDecision decideCoverage(const CoverageInput& input) noexcept

@@ -119,6 +119,21 @@ int main()
     ok &= expectFalse("OMOD audit rejects an absent published body set",
         publishedBodyEvidenceMatchesAudit(0xAA, 0xAA, false));
 
+    ok &= expectTrue("single-mesh OMOD requires its one mesh",
+        requiredTemplateSignatureMatches(1) == 1);
+    ok &= expectTrue("two-mesh OMOD requires both meshes",
+        requiredTemplateSignatureMatches(2) == 2);
+    ok &= expectTrue("six-mesh scope requires a strict majority",
+        requiredTemplateSignatureMatches(6) == 4);
+    ok &= expectFalse("one reused scope mesh does not prove a six-mesh scope is installed",
+        templateSignatureIsPresent(1, 6));
+    ok &= expectFalse("two reused iron-sight meshes do not prove a six-mesh scope is installed",
+        templateSignatureIsPresent(2, 6));
+    ok &= expectTrue("coherent majority proves a six-mesh scope is installed",
+        templateSignatureIsPresent(4, 6));
+    ok &= expectFalse("empty template signature fails closed",
+        templateSignatureIsPresent(0, 0));
+
     const auto enabledMissingOmod = decideCoverage(CoverageInput{
         .resolved = true,
         .hasModelToken = true,
