@@ -2,6 +2,7 @@
 #include <cstdio>
 
 #include "physics-interaction/weapon/WeaponAuthority.h"
+#include "physics-interaction/weapon/WeaponEffectGeometryPolicy.h"
 #include "physics-interaction/weapon/WeaponOmodAuditPolicy.h"
 
 namespace
@@ -62,6 +63,7 @@ int main()
     using namespace rock::weapon_authority_lifecycle_policy;
     using namespace rock::weapon_generated_source_completeness_policy;
     using namespace rock::weapon_generation_identity_policy;
+    using namespace rock::weapon_effect_geometry_policy;
     using namespace rock::weapon_omod_audit_policy;
     using rock::WeaponPartKind;
 
@@ -133,6 +135,29 @@ int main()
         templateSignatureIsPresent(4, 6));
     ok &= expectFalse("empty template signature fails closed",
         templateSignatureIsPresent(0, 0));
+
+    ok &= expectTrue("effect-shader geometry is excluded regardless of author name",
+        classify(Evidence{ .hasEffectShaderProperty = true, .geometryName = "Glass:0" }) == ExclusionReason::EffectShaderProperty);
+    ok &= expectTrue("billboard geometry is excluded without relying on author name",
+        classify(Evidence{ .hasBillboardAncestor = true, .geometryName = "Plane01" }) == ExclusionReason::BillboardAncestor);
+    ok &= expectTrue("laser beam fallback name is excluded",
+        classify(Evidence{ .geometryName = "LaserSightBeam:0" }) == ExclusionReason::KnownEffectName);
+    ok &= expectTrue("laser dot fallback name is excluded",
+        classify(Evidence{ .geometryName = "LaserSightDot:0" }) == ExclusionReason::KnownEffectName);
+    ok &= expectTrue("custom laser ray fallback name is excluded",
+        classify(Evidence{ .geometryName = "AA12LaserRay" }) == ExclusionReason::KnownEffectName);
+    ok &= expectTrue("flashlight glow fallback name is excluded",
+        classify(Evidence{ .geometryName = "ScreenGlowEffect01:0" }) == ExclusionReason::KnownEffectName);
+    ok &= expectTrue("reticle fallback name is excluded",
+        classify(Evidence{ .geometryName = "deltapoint_reticle" }) == ExclusionReason::KnownEffectName);
+    ok &= expectFalse("physical flashlight module remains collidable",
+        classify(Evidence{ .geometryName = "Flashlight:0" }) != ExclusionReason::None);
+    ok &= expectFalse("physical laser module remains collidable",
+        classify(Evidence{ .geometryName = "LaserSight:0" }) != ExclusionReason::None);
+    ok &= expectFalse("combined physical laser and light housing remains collidable",
+        classify(Evidence{ .geometryName = "laser_light_Viridian_C5L:0" }) != ExclusionReason::None);
+    ok &= expectFalse("scope housing remains collidable",
+        classify(Evidence{ .geometryName = "Sight:0" }) != ExclusionReason::None);
 
     const auto enabledMissingOmod = decideCoverage(CoverageInput{
         .resolved = true,

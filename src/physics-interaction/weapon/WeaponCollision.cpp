@@ -10,6 +10,7 @@
 #include "RockConfig.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"
+#include "physics-interaction/weapon/WeaponEffectGeometryPolicy.h"
 #include "physics-interaction/weapon/WeaponOmodAuditPolicy.h"
 #include "physics-interaction/weapon/WeaponPartRecordIdentityPolicy.h"
 #include "physics-interaction/weapon/WeaponSemantics.h"
@@ -182,7 +183,7 @@ namespace rock
         constexpr int WEAPON_ANIM_NODE_DUMP_MAX_FLATTENED_TRANSFORMS = 768;
 
         bool weaponVisualNodeVisible(const RE::NiAVObject* node);
-        const char* safeNodeName(RE::NiAVObject* node);
+        const char* safeNodeName(const RE::NiAVObject* node);
 
         const char* generatedWeaponPartKindName(WeaponPartKind kind)
         {
@@ -1372,13 +1373,59 @@ namespace rock
             return result;
         }
 
-        const char* safeNodeName(RE::NiAVObject* node)
+        const char* safeNodeName(const RE::NiAVObject* node)
         {
             if (!node) {
                 return "(null)";
             }
             const char* name = node->name.c_str();
             return name ? name : "(null)";
+        }
+
+        [[nodiscard]] bool niObjectRttiChainContains(const RE::NiObject* object, const char* typeName)
+        {
+            const RE::NiRTTI* rtti = object && typeName ? object->GetRTTI() : nullptr;
+            for (int depth = 0; rtti && depth < 16; ++depth, rtti = rtti->GetBaseRTTI()) {
+                const char* rttiName = rtti->GetName();
+                if (rttiName && std::strcmp(rttiName, typeName) == 0) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        [[nodiscard]] bool generatedWeaponShapeHasEffectShaderProperty(const RE::BSTriShape* triShape)
+        {
+            if (!triShape) {
+                return false;
+            }
+            for (const auto& property : triShape->GetRuntimeData().properties) {
+                if (niObjectRttiChainContains(property.get(), "BSEffectShaderProperty")) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        [[nodiscard]] bool generatedWeaponShapeHasBillboardAncestor(const RE::NiAVObject* node)
+        {
+            // Parent links are frame-scoped engine references; nothing from this walk is retained.
+            for (auto* ancestor = node ? node->parent : nullptr; ancestor; ancestor = ancestor->parent) {
+                if (niObjectRttiChainContains(ancestor, "NiBillboardNode")) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        [[nodiscard]] weapon_effect_geometry_policy::ExclusionReason classifyGeneratedWeaponEffectGeometry(
+            const RE::BSTriShape* triShape)
+        {
+            return weapon_effect_geometry_policy::classify({
+                .hasEffectShaderProperty = generatedWeaponShapeHasEffectShaderProperty(triShape),
+                .hasBillboardAncestor = generatedWeaponShapeHasBillboardAncestor(triShape),
+                .geometryName = safeNodeName(triShape),
+            });
         }
 
         bool weaponVisualNodeVisible(const RE::NiAVObject* node)
@@ -1439,6 +1486,20 @@ namespace rock
         void accumulateWeaponVisualKey(RE::NiAVObject* node, RE::NiAVObject* parent, std::uint32_t childIndex, int depth, std::uint64_t& key, WeaponVisualKeyStats& stats)
         {
             if (!node || depth > 15 || stats.nodeCount > 512) {
+                return;
+            }
+
+            /*
+             * Effect-only geometry cannot create collision and therefore must
+             * not make flashlight/laser/reticle visibility toggle the weapon's
+             * collision generation key. A billboard subtree is effect-only by
+             * construction; other effect shapes are filtered by shader/name.
+             */
+            if (niObjectRttiChainContains(node, "NiBillboardNode")) {
+                return;
+            }
+            if (auto* triShape = node->IsTriShape();
+                triShape && classifyGeneratedWeaponEffectGeometry(triShape) != weapon_effect_geometry_policy::ExclusionReason::None) {
                 return;
             }
 
@@ -3352,6 +3413,7 @@ namespace rock
         std::uint32_t totalVisitedShapes = 0;
         std::uint32_t totalExtractedTriangles = 0;
         std::uint32_t totalCulledForDistance = 0;
+        std::uint32_t totalCulledForEffectGeometry = 0;
         const auto groupingMode = weapon_collision_grouping_policy::sanitizeWeaponCollisionGroupingMode(g_rockConfig.rockWeaponCollisionGroupingMode);
         for (const auto& candidate : candidates) {
             std::vector<GeneratedHullSource> candidateSources;
@@ -3360,6 +3422,7 @@ namespace rock
             std::uint32_t visitedShapes = 0;
             std::uint32_t extractedTriangles = 0;
             std::uint32_t culledForDistance = 0;
+            std::uint32_t culledForEffectGeometry = 0;
             findGeneratedWeaponShapeSourcesRecursive(
                 candidate.root,
                 packageDriveRoot,
@@ -3371,11 +3434,13 @@ namespace rock
                 claimedSourceGroups,
                 candidateExtractedSourceGroups,
                 maxSourceDistanceGame,
-                culledForDistance);
+                culledForDistance,
+                culledForEffectGeometry);
             totalCulledForDistance += culledForDistance;
+            totalCulledForEffectGeometry += culledForEffectGeometry;
 
             ROCK_LOG_DEBUG(Weapon,
-                "Generated weapon mesh candidate: label='{}' root='{}' addr={:x} packageRoot='{}' grouping={} acceptedShapes={} visitedShapes={} triangles={} hulls={}",
+                "Generated weapon mesh candidate: label='{}' root='{}' addr={:x} packageRoot='{}' grouping={} acceptedShapes={} visitedShapes={} triangles={} hulls={} effectShapesCulled={}",
                 candidate.label,
                 safeNodeName(candidate.root),
                 reinterpret_cast<std::uintptr_t>(candidate.root),
@@ -3384,7 +3449,8 @@ namespace rock
                 candidateExtractedSourceGroups.size(),
                 visitedShapes,
                 extractedTriangles,
-                candidateSources.size());
+                candidateSources.size(),
+                culledForEffectGeometry);
             totalVisitedShapes += visitedShapes;
             totalExtractedTriangles += extractedTriangles;
 
@@ -3550,6 +3616,13 @@ namespace rock
                 safeNodeName(packageDriveRoot));
         }
 
+        if (totalCulledForEffectGeometry > 0) {
+            ROCK_LOG_INFO(Weapon,
+                "Generated weapon effect geometry filter: excluded {} visual-only shape(s) from collision root='{}' policy=effect-shader+billboard+role-name",
+                totalCulledForEffectGeometry,
+                safeNodeName(packageDriveRoot));
+        }
+
         return outSources.size();
     }
 
@@ -3563,7 +3636,8 @@ namespace rock
         const std::unordered_set<std::uintptr_t>& claimedSourceGroups,
         std::unordered_set<std::uintptr_t>& candidateExtractedSourceGroups,
         float maxSourceDistanceGame,
-        std::uint32_t& culledForDistance)
+        std::uint32_t& culledForDistance,
+        std::uint32_t& culledForEffectGeometry)
     {
         if (!node || depth > 15) {
             return;
@@ -3577,6 +3651,17 @@ namespace rock
             }
             if (!weaponVisualNodeVisible(node)) {
                 ROCK_LOG_TRACE(Weapon, "{}generated mesh source skipped '{}': TriShape is hidden or locally zero-scale", std::string(depth * 2, ' '), safeNodeName(node));
+                return;
+            }
+
+            const auto effectExclusionReason = classifyGeneratedWeaponEffectGeometry(triShape);
+            if (effectExclusionReason != weapon_effect_geometry_policy::ExclusionReason::None) {
+                ++culledForEffectGeometry;
+                ROCK_LOG_TRACE(Weapon,
+                    "{}generated mesh source skipped '{}': visual effect geometry reason={}",
+                    std::string(depth * 2, ' '),
+                    safeNodeName(node),
+                    weapon_effect_geometry_policy::exclusionReasonName(effectExclusionReason));
                 return;
             }
             ++visitedShapes;
@@ -3751,7 +3836,8 @@ namespace rock
                         claimedSourceGroups,
                         candidateExtractedSourceGroups,
                         maxSourceDistanceGame,
-                        culledForDistance);
+                        culledForDistance,
+                        culledForEffectGeometry);
                 }
             }
         }

@@ -371,7 +371,8 @@ namespace rock
             const std::unordered_set<std::uintptr_t>& claimedSourceGroups,
             std::unordered_set<std::uintptr_t>& candidateExtractedSourceGroups,
             float maxSourceDistanceGame,
-            std::uint32_t& culledForDistance);
+            std::uint32_t& culledForDistance,
+            std::uint32_t& culledForEffectGeometry);
         RE::NiTransform makeGeneratedBodyWorldTransform(const RE::NiTransform& weaponRootTransform, const RE::NiPoint3& localCenterGame) const;
         bool weaponCollisionSettingsChanged() const;
         void handleGeneratedBodyDriveResult(const GeneratedKeyframedBodyDriveResult& result, const char* ownerName, std::uint32_t bodyIndex);
