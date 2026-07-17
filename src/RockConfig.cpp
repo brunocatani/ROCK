@@ -157,6 +157,7 @@ namespace rock
         rockGrabInputForceSeconds = 0.08f;
 
         rockDeveloperModeEnabled = false;
+        rockNativeReloadAnimationAuthorityTestEnabled = false;
 
         rockLogLevel = logging_policy::DefaultLogLevel;
         rockLogPattern = logging_policy::DefaultLogPattern;
@@ -1406,6 +1407,10 @@ namespace rock
             ini.GetBoolValue(EXPERIMENTAL_SECTION, "bMenuTriggerHandEquipEnabled", rockMenuTriggerHandEquipEnabled);
         rockEquipPreferredHandLeft =
             ini.GetBoolValue(EXPERIMENTAL_SECTION, "bEquipPreferredHandLeft", rockEquipPreferredHandLeft);
+        rockNativeReloadAnimationAuthorityTestEnabled = ini.GetBoolValue(
+            EXPERIMENTAL_SECTION,
+            "bNativeReloadAnimationAuthorityTestEnabled",
+            rockNativeReloadAnimationAuthorityTestEnabled);
         rockBodyBoneCollidersEnabled = ini.GetBoolValue(EXPERIMENTAL_SECTION, "bBodyBoneCollidersEnabled", rockBodyBoneCollidersEnabled);
         rockBodyBoneLegAndFootCollidersEnabled =
             ini.GetBoolValue(EXPERIMENTAL_SECTION, "bBodyBoneLegAndFootCollidersEnabled", rockBodyBoneLegAndFootCollidersEnabled);

@@ -280,6 +280,16 @@ namespace rock::offsets
     constexpr std::uintptr_t kHookSite_MainLoop = 0xD8405E;
 
     /*
+     * PlayerCharacter::PostUpdateAnimationGraphManager entry in Fallout4VR
+     * 1.2.72. Raw disassembly verified 2026-07-17 at 0x140F2F0A0.
+     * hFRIK intentionally NOPs the native first-person-to-fullbody bridge from
+     * entry+0x8 for 0x1FF bytes. ROCK validates the surviving eight-byte
+     * prologue plus six post-hFRIK NOPs before installing its capture-only
+     * trampoline; no version-only trust or unverified write is permitted.
+     */
+    constexpr std::uintptr_t kFunc_PlayerPostUpdateAnimationGraphManager = 0xF2F0A0;
+
+    /*
      * FO4VR native-scope geometry boundary. Raw-disassembly verified
      * 2026-07-15: CALL at 0x140EF851F targets 0x140EFAA60 with ABI
      * (PlayerCharacter*, bool). The surrounding routine has already applied

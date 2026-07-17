@@ -7,6 +7,7 @@
 #define ROCK_API_EXPORTS
 #include "RockConfig.h"
 #include "api/ROCKProviderApi.h"
+#include "physics-interaction/animation/NativeAnimationAuthority.h"
 #include "physics-interaction/core/PhysicsCreationGatePolicy.h"
 #include "physics-interaction/core/PhysicsHooks.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
@@ -257,6 +258,7 @@ namespace
         performance_profiler::FrameScope profilerFrame;
 
         if (!s_pluginLoaded || !s_frikAvailable) {
+            native_animation_authority::setRuntimeEnabled(false);
             pipboy_equip_runtime::setLeftHandEquipAvailable(false);
             input_remap_runtime::setGameplayInputAllowed(false);
             input_remap_runtime::setWeaponDrawn(false);
@@ -278,6 +280,10 @@ namespace
             .compatibilityConfigBlocking = frik_visual_authority::isCompatibilityConfigBlocking(),
         });
         const auto& runtime = runtime_state::currentFrame();
+        native_animation_authority::setRuntimeEnabled(
+            g_rockConfig.rockEnabled &&
+            runtime.localSkeletonReady &&
+            !runtime.compatibilityConfigBlocking);
         const bool gameplayInputAllowed =
             g_rockConfig.rockEnabled &&
             runtime.localSkeletonReady &&
@@ -288,6 +294,7 @@ namespace
         debug_controller_runtime::update(gameplayInputAllowed, runtime.deltaSeconds);
 
         if (!g_rockConfig.rockEnabled) {
+            native_animation_authority::setRuntimeEnabled(false);
             pipboy_equip_runtime::setLeftHandEquipAvailable(false);
             s_physicsCreationRequested.store(false, std::memory_order_release);
             s_physicsCreationReadyDeferralFrames.store(0, std::memory_order_release);
@@ -404,11 +411,21 @@ namespace
             s_originalGameLoopFunc(rcx);
         }
 
+        native_animation_authority::beginRockFrame();
+        (void)native_animation_authority::applyCapturedPose();
+
         if (s_pluginLoaded && s_frikAvailable && g_rockConfig.rockEnabled && s_physicsInteraction) {
             s_physicsInteraction->synchronizeNativeScopePresentationAfterFrikUpdate();
         }
 
         onFrameUpdate();
+
+        // ROCK's collision/grab/weapon pass may legitimately publish its own
+        // controller authority. Reapply the same captured native locals last
+        // so the temporary reload lease is the final visual writer while all
+        // normal ROCK state continues to advance underneath it.
+        (void)native_animation_authority::applyCapturedPose();
+        native_animation_authority::completeRockFrame();
     }
 
     bool hookMainLoop()
@@ -442,6 +459,11 @@ namespace
         case LE::kSkeletonReady:
             logger::info("ROCK: Received kSkeletonReady from FRIK.");
             bumpGeneration(s_skeletonGeneration);
+            if (!native_animation_authority::installPostUpdateHook()) {
+                logger::error(
+                    "ROCK: Native animation authority hook unavailable; selective reload-pose API is disabled for this runtime/FRIK build.");
+            }
+            native_animation_authority::setRuntimeEnabled(g_rockConfig.rockEnabled);
             if (!g_rockConfig.rockEnabled) {
                 logger::info("ROCK: Physics disabled in config, skipping creation.");
                 break;
@@ -455,6 +477,7 @@ namespace
         case LE::kSkeletonDestroying:
             logger::info("ROCK: Received kSkeletonDestroying from FRIK.");
             bumpGeneration(s_skeletonGeneration);
+            native_animation_authority::resetTransientState();
             s_physicsCreationRequested.store(false, std::memory_order_release);
             s_physicsCreationReadyDeferralFrames.store(0, std::memory_order_release);
             resetPhysicsCreationGate();
@@ -468,6 +491,8 @@ namespace
 
         case LE::kPowerArmorChanged:
             bumpGeneration(s_skeletonGeneration);
+            native_animation_authority::resetTransientState();
+            native_animation_authority::setRuntimeEnabled(g_rockConfig.rockEnabled);
             if (msg->data && msg->dataLen >= sizeof(bool)) {
                 const bool isInPA = *static_cast<const bool*>(msg->data);
                 logger::info("ROCK: Power Armor state changed: {}", isInPA ? "IN PA" : "NOT IN PA");
@@ -567,6 +592,7 @@ namespace
             s_physicsCreationReadyDeferralFrames.store(0, std::memory_order_release);
             resetPhysicsCreationGate();
             runtime_state::resetTransientState();
+            native_animation_authority::resetTransientState();
             pipboy_equip_runtime::resetRuntimeState();
             if (s_physicsInteraction) {
                 s_physicsInteraction->noteProviderLifecycle(

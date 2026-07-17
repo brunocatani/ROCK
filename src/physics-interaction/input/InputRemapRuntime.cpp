@@ -2,6 +2,7 @@
 
 #include "physics-interaction/input/InputRemapPolicy.h"
 #include "physics-interaction/input/ManualScopeInputPolicy.h"
+#include "physics-interaction/animation/NativeAnimationAuthority.h"
 #include "physics-interaction/object/FarSelectionBlacklistPolicy.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "RockConfig.h"
@@ -1059,7 +1060,11 @@ namespace rock::input_remap_runtime
                 return false;
             }
 
-            return nativeActionDispatcher(dispatcherObject, kNativeReloadActionId, kNativeActionPriorityQueue);
+            const bool dispatched = nativeActionDispatcher(dispatcherObject, kNativeReloadActionId, kNativeActionPriorityQueue);
+            if (dispatched && g_rockConfig.rockNativeReloadAnimationAuthorityTestEnabled) {
+                native_animation_authority::requestLocalReloadTestLease();
+            }
+            return dispatched;
         }
 
         /*

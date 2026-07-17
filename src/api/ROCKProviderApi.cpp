@@ -12,6 +12,8 @@
 #include "physics-interaction/object/ExternalBodyRegistry.h"
 #include "physics-interaction/api/InteractionCommandQueue.h"
 #include "physics-interaction/api/InteractionCommandPolicy.h"
+#include "physics-interaction/animation/NativeAnimationAuthority.h"
+#include "physics-interaction/animation/NativeAnimationAuthorityPolicy.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/input/InputRemapPolicy.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
@@ -45,6 +47,16 @@ namespace
                   static_cast<std::uint32_t>(weapon_part_grip_report_policy::HandGripKind::PartCarry));
     static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartGripKindV1::AttachOnly) ==
                   static_cast<std::uint32_t>(weapon_part_grip_report_policy::HandGripKind::AttachOnly));
+    static_assert(static_cast<std::uint32_t>(RockProviderNativeAnimationAuthorityFlagV1::Arms) ==
+                  native_animation_authority_policy::kArms);
+    static_assert(static_cast<std::uint32_t>(RockProviderNativeAnimationAuthorityFlagV1::Hands) ==
+                  native_animation_authority_policy::kHands);
+    static_assert(static_cast<std::uint32_t>(RockProviderNativeAnimationAuthorityFlagV1::Weapon) ==
+                  native_animation_authority_policy::kWeapon);
+    static_assert(static_cast<std::uint32_t>(RockProviderNativeAnimationAuthorityFlagV1::ReloadPose) ==
+                  native_animation_authority_policy::kReloadPose);
+    static_assert(static_cast<std::uint32_t>(RockProviderNativeAnimationAuthorityStatusFlagV1::CaptureFault) ==
+                  static_cast<std::uint32_t>(native_animation_authority::RuntimeStatusFlag::CaptureFault));
     // Public V1 part-kind / action-role values are a wire contract for
     // external consumers (PAPER_Redux); pin every enumerator to the internal
     // classification enums so a reorder breaks this build, not a consumer.
@@ -133,7 +145,8 @@ namespace
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::OffhandReservation) |
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::InteractionCommands) |
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::HandInputSuppression) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::WeaponPartInteraction);
+        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::WeaponPartInteraction) |
+        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::NativeAnimationAuthority);
     constexpr std::uint32_t kProviderFeatureBitsV1 =
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::FrameCallbacks) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::LifecycleFields) |
@@ -154,7 +167,8 @@ namespace
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::WeaponPartTargetNonExclusive) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::RawWandButtonState) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::PipboyInputSuppression) |
-        static_cast<std::uint32_t>(RockProviderFeatureBitV1::WeaponEmitters);
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::WeaponEmitters) |
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::NativeAnimationAuthority);
     constexpr std::uint32_t kImplementedForceGrabFlagsV1 =
         static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::UsePreferredGrabPointGame);
     constexpr std::uint32_t kImplementedForceReleaseFlagsV1 =
@@ -231,6 +245,20 @@ namespace
 
     std::mutex s_handInputSuppressionMutex;
     std::array<HandInputSuppressionSlot, ROCK_PROVIDER_MAX_HAND_INPUT_SUPPRESSIONS_V1> s_handInputSuppressions{};
+
+    struct NativeAnimationAuthoritySlot
+    {
+        bool active{ false };
+        std::uint64_t ownerToken{ 0 };
+        std::uint32_t flags{ 0 };
+        // Zero is persistent. Non-zero is an exclusive provider frame index.
+        std::uint64_t expiresAtFrame{ 0 };
+    };
+
+    std::mutex s_nativeAnimationAuthorityMutex;
+    std::array<NativeAnimationAuthoritySlot, ROCK_PROVIDER_MAX_CONSUMERS_V1> s_nativeAnimationAuthoritySlots{};
+    std::atomic<std::uint32_t> s_nativeAnimationAuthorityFlags{ 0 };
+    std::atomic<std::uint32_t> s_nativeAnimationAuthorityOwnerCount{ 0 };
 
     struct WeaponPartTargetSlot
     {
@@ -497,6 +525,49 @@ namespace
             if (hand == RockProviderHand::None || slot.hand == hand) {
                 slot = {};
             }
+        }
+    }
+
+    void publishNativeAnimationAuthorityAggregateLocked()
+    {
+        std::uint32_t flags = 0;
+        std::uint32_t ownerCount = 0;
+        for (const auto& slot : s_nativeAnimationAuthoritySlots) {
+            if (!slot.active) {
+                continue;
+            }
+            flags |= slot.flags;
+            ++ownerCount;
+        }
+        s_nativeAnimationAuthorityFlags.store(flags, std::memory_order_release);
+        s_nativeAnimationAuthorityOwnerCount.store(ownerCount, std::memory_order_release);
+    }
+
+    void pruneExpiredNativeAnimationAuthorityLocked(std::uint64_t frameIndex)
+    {
+        bool changed = false;
+        for (auto& slot : s_nativeAnimationAuthoritySlots) {
+            if (slot.active && slot.expiresAtFrame != 0 && frameIndex >= slot.expiresAtFrame) {
+                slot = {};
+                changed = true;
+            }
+        }
+        if (changed) {
+            publishNativeAnimationAuthorityAggregateLocked();
+        }
+    }
+
+    void clearNativeAnimationAuthorityForOwnerLocked(std::uint64_t ownerToken)
+    {
+        bool changed = false;
+        for (auto& slot : s_nativeAnimationAuthoritySlots) {
+            if (slot.active && slot.ownerToken == ownerToken) {
+                slot = {};
+                changed = true;
+            }
+        }
+        if (changed) {
+            publishNativeAnimationAuthorityAggregateLocked();
         }
     }
 
@@ -1036,7 +1107,8 @@ namespace
                 s_consumerMutex,
                 s_interactionCommandMutex,
                 s_handInputSuppressionMutex,
-                s_weaponPartMutex);
+                s_weaponPartMutex,
+                s_nativeAnimationAuthorityMutex);
             auto* slot = findConsumerSlotLocked(ownerToken);
             if (!slot) {
                 return RockProviderResultV1::OwnerNotRegistered;
@@ -1046,6 +1118,7 @@ namespace
             clearHandInputSuppressionsForOwnerLocked(ownerToken, RockProviderHand::None);
             clearWeaponPartTargetsForOwnerLocked(ownerToken);
             clearWeaponPartDrivesForOwnerLocked(ownerToken);
+            clearNativeAnimationAuthorityForOwnerLocked(ownerToken);
         }
 
         {
@@ -1385,6 +1458,109 @@ namespace
 
         clearHandInputSuppressionsForOwnerLocked(ownerToken, hand);
         return RockProviderResultV1::Ok;
+    }
+
+    RockProviderResultV1 ROCK_PROVIDER_CALL apiSetNativeAnimationAuthorityV1(
+        std::uint64_t ownerToken,
+        const RockProviderNativeAnimationAuthorityRequestV1* request)
+    {
+        if (!request || ownerToken == 0) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        if (request->size != sizeof(RockProviderNativeAnimationAuthorityRequestV1)) {
+            return RockProviderResultV1::InvalidSize;
+        }
+        if (request->version == 0 || request->version > ROCK_PROVIDER_API_VERSION) {
+            return RockProviderResultV1::UnsupportedVersion;
+        }
+        constexpr auto implementedFlags = static_cast<std::uint32_t>(RockProviderNativeAnimationAuthorityFlagV1::ReloadPose);
+        if (request->flags == 0 || (request->flags & ~implementedFlags) != 0) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+
+        const auto generationResult = validateGenerationGuards(
+            request->worldGeneration,
+            request->skeletonGeneration,
+            request->providerGeneration);
+        if (generationResult != RockProviderResultV1::Ok) {
+            return generationResult;
+        }
+        if (!native_animation_authority::isHookInstalled() || !apiIsProviderReady()) {
+            return RockProviderResultV1::NotReady;
+        }
+
+        const auto frameIndex = currentProviderFrameIndex();
+        const auto boundedLeaseFrames = request->leaseFrames == 0 ? 0u :
+            (std::min)(request->leaseFrames, ROCK_PROVIDER_MAX_NATIVE_ANIMATION_AUTHORITY_LEASE_FRAMES_V1);
+        const auto expiresAtFrame = boundedLeaseFrames == 0 ? 0ull : frameIndex + boundedLeaseFrames;
+
+        std::scoped_lock lock(s_consumerMutex, s_nativeAnimationAuthorityMutex);
+        const auto ownerResult = validateRegisteredOwnerCapabilityLocked(
+            ownerToken,
+            RockProviderConsumerCapabilityV1::NativeAnimationAuthority);
+        if (ownerResult != RockProviderResultV1::Ok) {
+            return ownerResult;
+        }
+
+        pruneExpiredNativeAnimationAuthorityLocked(frameIndex);
+        NativeAnimationAuthoritySlot* available = nullptr;
+        for (auto& slot : s_nativeAnimationAuthoritySlots) {
+            if (slot.active && slot.ownerToken == ownerToken) {
+                available = &slot;
+                break;
+            }
+            if (!slot.active && !available) {
+                available = &slot;
+            }
+        }
+        if (!available) {
+            return RockProviderResultV1::CapacityFull;
+        }
+
+        *available = NativeAnimationAuthoritySlot{
+            .active = true,
+            .ownerToken = ownerToken,
+            .flags = request->flags,
+            .expiresAtFrame = expiresAtFrame,
+        };
+        publishNativeAnimationAuthorityAggregateLocked();
+        return RockProviderResultV1::Ok;
+    }
+
+    RockProviderResultV1 ROCK_PROVIDER_CALL apiClearNativeAnimationAuthorityV1(std::uint64_t ownerToken)
+    {
+        if (ownerToken == 0) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+
+        std::scoped_lock lock(s_consumerMutex, s_nativeAnimationAuthorityMutex);
+        const auto ownerResult = validateRegisteredOwnerCapabilityLocked(
+            ownerToken,
+            RockProviderConsumerCapabilityV1::NativeAnimationAuthority);
+        if (ownerResult != RockProviderResultV1::Ok) {
+            return ownerResult;
+        }
+        clearNativeAnimationAuthorityForOwnerLocked(ownerToken);
+        return RockProviderResultV1::Ok;
+    }
+
+    bool ROCK_PROVIDER_CALL apiGetNativeAnimationAuthorityStateV1(
+        RockProviderNativeAnimationAuthorityStateV1* outState)
+    {
+        if (!outState || outState->size != sizeof(RockProviderNativeAnimationAuthorityStateV1)) {
+            return false;
+        }
+
+        const auto runtime = native_animation_authority::queryRuntimeStatus();
+        *outState = {};
+        outState->size = sizeof(RockProviderNativeAnimationAuthorityStateV1);
+        outState->version = ROCK_PROVIDER_API_VERSION;
+        outState->activeFlags = runtime.effectiveFlags;
+        outState->statusFlags = runtime.statusFlags;
+        outState->activeOwnerCount = s_nativeAnimationAuthorityOwnerCount.load(std::memory_order_acquire);
+        outState->capturedTransformCount = runtime.capturedTransformCount;
+        outState->captureSequence = runtime.captureSequence;
+        return true;
     }
 
     RockProviderResultV1 ROCK_PROVIDER_CALL apiSetWeaponPartTargetsV1(
@@ -1765,6 +1941,9 @@ namespace
         .isNativePipboyInputSuppressedV1 = &apiIsNativePipboyInputSuppressedV1,
         .getWeaponEmitterCountV1 = &apiGetWeaponEmitterCountV1,
         .copyWeaponEmittersV1 = &apiCopyWeaponEmittersV1,
+        .setNativeAnimationAuthorityV1 = &apiSetNativeAnimationAuthorityV1,
+        .clearNativeAnimationAuthorityV1 = &apiClearNativeAnimationAuthorityV1,
+        .getNativeAnimationAuthorityStateV1 = &apiGetNativeAnimationAuthorityStateV1,
     };
 }
 
@@ -1835,6 +2014,11 @@ namespace rock::provider
             std::scoped_lock lock(s_weaponPartMutex);
             s_weaponPartTargets = {};
             s_weaponPartDrives = {};
+        }
+        {
+            std::scoped_lock lock(s_nativeAnimationAuthorityMutex);
+            s_nativeAnimationAuthoritySlots = {};
+            publishNativeAnimationAuthorityAggregateLocked();
         }
         s_offhandReservation.store(static_cast<std::uint32_t>(RockProviderOffhandReservation::Normal), std::memory_order_release);
         s_offhandReservationOwner.store(0, std::memory_order_release);
@@ -1957,6 +2141,18 @@ namespace rock::provider
             }
         }
         return flags;
+    }
+
+    std::uint32_t currentNativeAnimationAuthorityFlagsV1()
+    {
+        return s_nativeAnimationAuthorityFlags.load(std::memory_order_acquire);
+    }
+
+    void refreshNativeAnimationAuthorityLeasesV1()
+    {
+        const auto frameIndex = currentProviderFrameIndex();
+        std::scoped_lock lock(s_nativeAnimationAuthorityMutex);
+        pruneExpiredNativeAnimationAuthorityLocked(frameIndex);
     }
 
     bool resolveWeaponPartTargetV1(

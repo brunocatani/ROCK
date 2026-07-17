@@ -73,6 +73,9 @@ namespace rock
         float rockGrabInputForceSeconds = 0.08f;
 
         bool rockDeveloperModeEnabled = false;
+        // Local validation path only: each ROCK-routed native reload arms a
+        // bounded Bethesda arms/hands/weapon animation-authority lease.
+        bool rockNativeReloadAnimationAuthorityTestEnabled = false;
 
         int rockLogLevel = 2;
         std::string rockLogPattern = "%Y-%m-%d %H:%M:%S.%e [%l] %v";

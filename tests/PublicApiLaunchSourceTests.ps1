@@ -207,6 +207,12 @@ Require-Text 'src/api/ROCKProviderApi.cpp' 'maxWeaponEmitters\s*=\s*ROCK_PROVIDE
     'Provider limits must publish the bounded emitter capacity.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'providerApiByteSize\s*=\s*static_cast<std::uint32_t>\(sizeof\(RockProviderApi\)\)' `
     'Provider limits must report the current function table byte size.'
+Require-Text 'src/api/ROCKProviderApi.h' 'NativeAnimationAuthority[\s\S]*RockProviderNativeAnimationAuthorityRequestV1' `
+    'API V1 must expose selective native animation authority as a registered consumer capability.'
+Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_API_V1_NATIVE_ANIMATION_AUTHORITY_TABLE_BYTES[\s\S]*supportsNativeAnimationAuthorityV1' `
+    'Native animation authority consumers must negotiate both feature bit and appended table size.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'clearNativeAnimationAuthorityForOwnerLocked\(ownerToken\)' `
+    'Unregistering a consumer must clear its native animation authority lease.'
 Require-Text 'src/api/ROCKProviderApi.h' 'RockProviderForceReleaseFlagV1[\s\S]*UseVelocityHavok' `
     'Force release must expose an explicit trusted Havok velocity flag.'
 Require-Text 'src/api/ROCKProviderApi.h' 'RockProviderForceReleaseRequestV1[\s\S]*linearVelocityHavok[\s\S]*angularVelocityRadiansPerSecond' `
@@ -288,7 +294,10 @@ $expectedProviderFunctions = [string[]]@(
     'getRawWandButtonStateV1',
     'isNativePipboyInputSuppressedV1',
     'getWeaponEmitterCountV1',
-    'copyWeaponEmittersV1'
+    'copyWeaponEmittersV1',
+    'setNativeAnimationAuthorityV1',
+    'clearNativeAnimationAuthorityV1',
+    'getNativeAnimationAuthorityStateV1'
 )
 Require-SequenceEqual 'ROCKProviderApi function pointer order' (Get-ProviderFunctionNames $providerHeader) $expectedProviderFunctions
 
