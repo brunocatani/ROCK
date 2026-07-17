@@ -370,7 +370,11 @@ namespace rock
             std::uint64_t auditedEquippedKey,
             bool forceBeforeInitialBuild = false);
 
-        std::size_t findGeneratedWeaponShapeSources(RE::NiAVObject* weaponNode, std::vector<GeneratedHullSource>& outSources, float maxSourceDistanceGame);
+        std::size_t findGeneratedWeaponShapeSources(
+            RE::NiAVObject* weaponNode,
+            std::uint64_t equippedWeaponKey,
+            std::vector<GeneratedHullSource>& outSources,
+            float maxSourceDistanceGame);
 
         void findGeneratedWeaponShapeSourcesRecursive(RE::NiAVObject* node, RE::NiAVObject* sourceRoot, const RE::NiTransform& weaponRootTransform,
             int depth,

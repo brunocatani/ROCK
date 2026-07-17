@@ -744,13 +744,16 @@ namespace rock::provider
      * (author discretion, least trustworthy); SlotAnchor means the part sits
      * under a connect-point slot and carries record-authored identity
      * (attach point, owning OMOD); RigAnchor means an engine-animated rig
-     * node (bolt, magazine display) supplied the function.
+     * node (bolt, magazine display) supplied the function;
+     * AttachmentEvidence means the installed OMOD or its discovered emitter
+     * capabilities refined the physical module kind.
      */
     enum class RockProviderWeaponPartClassificationSourceV1 : std::uint32_t
     {
         NameToken = 0,
         SlotAnchor = 1,
         RigAnchor = 2,
+        AttachmentEvidence = 3,
     };
 
     /*
@@ -760,7 +763,10 @@ namespace rock::provider
      * classification enums one-to-one (static_asserted inside ROCK, so drift
      * breaks ROCK's build, never a consumer at runtime). External consumers
      * use these to build part whitelists and gate grips without including
-     * ROCK internals.
+     * ROCK internals. Scope is reserved for an installed OMOD carrying
+     * Fallout's native scope-overlay property; Sight covers every other optic,
+     * including red-dot and holographic sights. LaserFlashlightCombo means one
+     * physical module owns both emitter capabilities.
      */
     enum class RockProviderWeaponPartKindV1 : std::uint32_t
     {
@@ -787,6 +793,10 @@ namespace rock::provider
         Accessory = 20,
         CosmeticAmmo = 21,
         Other = 22,
+        LaserSight = 23,
+        Flashlight = 24,
+        LaserFlashlightCombo = 25,
+        Scope = 26,
     };
 
     enum class RockProviderWeaponActionRoleV1 : std::uint32_t

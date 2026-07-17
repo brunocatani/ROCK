@@ -2,6 +2,7 @@
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"
+#include "physics-interaction/weapon/WeaponAccessoryPartKindPolicy.h"
 #include "physics-interaction/weapon/WeaponPartGripReportPolicy.h"
 #include "physics-interaction/weapon/WeaponPartRecordIdentityPolicy.h"
 #include "physics-interaction/weapon/WeaponPartRuntime.h"
@@ -1018,6 +1019,46 @@ int main()
             noAnchor.partKind, rock::WeaponPartKind::Other);
         ok &= expectEqual("no anchor keeps the name source",
             noAnchor.classificationSource, rock::WeaponPartClassificationSource::NameToken);
+    }
+
+    {
+        using namespace rock::weapon_accessory_part_kind_policy;
+
+        auto sight = rock::classifyWeaponPartKind(rock::WeaponPartKind::Sight);
+        sight.attachPointFormId = rock::weapon_part_record_identity_policy::kAttachPointSight;
+        const auto unchangedSight = applyAttachmentEvidence(sight, {});
+        ok &= expectEqual("reticle-only optic remains Sight",
+            unchangedSight.partKind, rock::WeaponPartKind::Sight);
+        ok &= expectEqual("unchanged sight retains its original classification source",
+            unchangedSight.classificationSource, rock::WeaponPartClassificationSource::NameToken);
+
+        const auto laser = applyAttachmentEvidence(sight, Evidence{ .laserEmitter = true });
+        ok &= expectEqual("laser emitter refines the physical module to LaserSight",
+            laser.partKind, rock::WeaponPartKind::LaserSight);
+        ok &= expectEqual("laser module reports attachment-backed classification",
+            laser.classificationSource, rock::WeaponPartClassificationSource::AttachmentEvidence);
+        ok &= expectEqual("attachment refinement retains the owning slot FormID",
+            laser.attachPointFormId, sight.attachPointFormId);
+
+        const auto flashlight = applyAttachmentEvidence(sight, Evidence{ .flashlightEmitter = true });
+        ok &= expectEqual("flashlight emitter refines the physical module to Flashlight",
+            flashlight.partKind, rock::WeaponPartKind::Flashlight);
+
+        const auto combo = applyAttachmentEvidence(sight, Evidence{ .laserEmitter = true, .flashlightEmitter = true });
+        ok &= expectEqual("co-owned laser and flashlight emitters produce the combo kind",
+            combo.partKind, rock::WeaponPartKind::LaserFlashlightCombo);
+
+        const auto nativeScope = applyAttachmentEvidence(
+            rock::classifyWeaponPartKind(rock::WeaponPartKind::Barrel),
+            Evidence{ .nativeScopeOverlay = true, .laserEmitter = true, .flashlightEmitter = true });
+        ok &= expectEqual("native overlay OMOD evidence is authoritative for Scope",
+            nativeScope.partKind, rock::WeaponPartKind::Scope);
+
+        static_assert(static_cast<std::uint32_t>(rock::WeaponPartKind::Other) == 22);
+        static_assert(static_cast<std::uint32_t>(rock::WeaponPartKind::LaserSight) == 23);
+        static_assert(static_cast<std::uint32_t>(rock::WeaponPartKind::Flashlight) == 24);
+        static_assert(static_cast<std::uint32_t>(rock::WeaponPartKind::LaserFlashlightCombo) == 25);
+        static_assert(static_cast<std::uint32_t>(rock::WeaponPartKind::Scope) == 26);
     }
 
     using namespace rock::weapon_part_runtime;

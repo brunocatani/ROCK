@@ -10,6 +10,7 @@
 #include "RockConfig.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"
+#include "physics-interaction/weapon/WeaponAccessoryPartKindPolicy.h"
 #include "physics-interaction/weapon/WeaponEffectGeometryPolicy.h"
 #include "physics-interaction/weapon/WeaponEmitterPolicy.h"
 #include "physics-interaction/weapon/WeaponOmodAuditPolicy.h"
@@ -235,8 +236,18 @@ namespace rock
             case WeaponPartKind::CosmeticAmmo:
                 return "CosmeticAmmo";
             case WeaponPartKind::Other:
-            default:
                 return "Other";
+            case WeaponPartKind::LaserSight:
+                return "LaserSight";
+            case WeaponPartKind::Flashlight:
+                return "Flashlight";
+            case WeaponPartKind::LaserFlashlightCombo:
+                return "LaserFlashlightCombo";
+            case WeaponPartKind::Scope:
+                return "Scope";
+            case WeaponPartKind::Count:
+            default:
+                return "Invalid";
             }
         }
 
@@ -605,7 +616,7 @@ namespace rock
         std::string generatedWeaponSemanticMaskNames(std::uint32_t mask)
         {
             std::string result;
-            for (std::uint32_t i = 0; i <= static_cast<std::uint32_t>(WeaponPartKind::Other); ++i) {
+            for (std::uint32_t i = 0; i < static_cast<std::uint32_t>(WeaponPartKind::Count); ++i) {
                 const auto bit = std::uint32_t{ 1 } << i;
                 if ((mask & bit) == 0) {
                     continue;
@@ -979,6 +990,24 @@ namespace rock
             return result;
         }
 
+        [[nodiscard]] bool attachmentModHasNativeScopeOverlayTarget(std::uint32_t omodFormId)
+        {
+            constexpr std::uint8_t kBgsModPropertyBlockId = 1;
+            constexpr std::uint32_t kNativeScopeOverlayTarget = 48;
+            using PropertyMod = RE::BGSMod::Property::Mod;
+
+            auto* omod = RE::TESForm::GetFormByID<RE::BGSMod::Attachment::Mod>(omodFormId);
+            if (!omod) {
+                return false;
+            }
+            for (const auto& property : omod->GetBuffer<PropertyMod>(kBgsModPropertyBlockId)) {
+                if (property.target == kNativeScopeOverlayTarget) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         const RE::TESObjectWEAP* asEquippedWeaponForm(const F4SEVR::TESForm* form)
         {
             if (!form || form->formType != static_cast<std::uint8_t>(RE::ENUM_FORM_ID::kWEAP)) {
@@ -1310,6 +1339,10 @@ namespace rock
                 return { HullCoverageMagazine, semantic.priority, semantic.cosmetic, "magazine/socket" };
             case WeaponPartKind::Sight:
             case WeaponPartKind::Accessory:
+            case WeaponPartKind::LaserSight:
+            case WeaponPartKind::Flashlight:
+            case WeaponPartKind::LaserFlashlightCombo:
+            case WeaponPartKind::Scope:
                 return { HullCoverageTopAccessory, semantic.priority, semantic.cosmetic, "top/accessory" };
             case WeaponPartKind::Bolt:
             case WeaponPartKind::Slide:
@@ -1325,6 +1358,7 @@ namespace rock
             case WeaponPartKind::CosmeticAmmo:
                 return { HullCoverageCosmeticAmmo, semantic.priority, true, "cosmetic-ammo" };
             case WeaponPartKind::Other:
+            case WeaponPartKind::Count:
             default:
                 return { HullCoverageOther, semantic.priority, semantic.cosmetic, "other" };
             }
@@ -1661,7 +1695,13 @@ namespace rock
         {
             weapon_part_record_identity_policy::StructureAnchor anchor{ weapon_part_record_identity_policy::StructureAnchor::None };
             RE::NiAVObject* ownerRoot{ nullptr };
+            bool ownerRootStructural{ false };
         };
+
+        [[nodiscard]] bool isWeaponAttachmentPointNode(std::string_view name)
+        {
+            return name.starts_with("P-");
+        }
 
         [[nodiscard]] WeaponEmitterStructuralContext resolveWeaponEmitterStructuralContext(
             RE::NiAVObject* node,
@@ -1671,10 +1711,23 @@ namespace rock
             RE::NiAVObject* childBelowAncestor = node;
             int step = 0;
             for (auto* ancestor = node ? node->parent : nullptr; ancestor && step < 32; ancestor = ancestor->parent, ++step) {
-                const auto anchor = weapon_part_record_identity_policy::resolveStructureAnchor(safeNodeName(ancestor));
+                const std::string_view ancestorName{ safeNodeName(ancestor) };
+                const auto anchor = weapon_part_record_identity_policy::resolveStructureAnchor(ancestorName);
                 if (anchor != weapon_part_record_identity_policy::StructureAnchor::None) {
                     result.anchor = anchor;
                     result.ownerRoot = childBelowAncestor;
+                    result.ownerRootStructural = true;
+                    return result;
+                }
+                /*
+                 * Mod-added attachment slots do not have a vanilla attach-point
+                 * FormID mapping, but their P-* boundary still gives us a safe
+                 * physical owner subtree. Stop here instead of walking upward
+                 * and incorrectly assigning the emitter to P-Receiver/barrel.
+                 */
+                if (isWeaponAttachmentPointNode(ancestorName)) {
+                    result.ownerRoot = childBelowAncestor;
+                    result.ownerRootStructural = true;
                     return result;
                 }
                 childBelowAncestor = ancestor;
@@ -1874,6 +1927,7 @@ namespace rock
                     descriptor.transformNodeAddress = reinterpret_cast<std::uintptr_t>(node);
                     descriptor.effectNodeAddress = effectGeometry ? reinterpret_cast<std::uintptr_t>(node) : 0;
                     descriptor.ownerRootAddress = reinterpret_cast<std::uintptr_t>(structural.ownerRoot);
+                    descriptor.ownerRootStructural = structural.ownerRootStructural;
                     descriptor.attachPointFormId = weapon_part_record_identity_policy::attachPointFormIdForAnchor(structural.anchor);
                     if (descriptor.attachPointFormId != 0) {
                         const auto omod = omodByAttachPointFormId.find(descriptor.attachPointFormId);
@@ -1909,6 +1963,37 @@ namespace rock
                     visitedNodes,
                     snapshot);
             }
+        }
+
+        [[nodiscard]] WeaponEmitterSnapshot collectWeaponEmitterSnapshot(
+            RE::NiAVObject* weaponNode,
+            const std::unordered_map<std::uint32_t, std::uint32_t>& omodByAttachPointFormId,
+            std::uint64_t equippedWeaponKey,
+            std::uint64_t weaponGenerationKey,
+            std::uint64_t rootSetKey)
+        {
+            WeaponEmitterSnapshot snapshot{};
+            if (!weaponNode || equippedWeaponKey == 0 || weaponGenerationKey == 0) {
+                return snapshot;
+            }
+
+            snapshot.weaponGenerationKey = weaponGenerationKey;
+            snapshot.equippedWeaponKey = equippedWeaponKey;
+            snapshot.rootSetKey = rootSetKey;
+            snapshot.weaponRootAddress = reinterpret_cast<std::uintptr_t>(weaponNode);
+            visitGeneratedWeaponMeshRootCandidates(weaponNode, [&](const WeaponMeshRootCandidate& candidate) {
+                std::uint32_t visitedNodes = 0;
+                collectWeaponEmittersRecursive(
+                    candidate.root,
+                    candidate.root,
+                    weaponNode,
+                    omodByAttachPointFormId,
+                    weaponGenerationKey,
+                    0,
+                    visitedNodes,
+                    snapshot);
+            });
+            return snapshot;
         }
 
         void refreshWeaponEmittersRecursive(
@@ -2811,28 +2896,13 @@ namespace rock
         std::uint64_t weaponGenerationKey,
         std::uint64_t rootSetKey) const
     {
-        WeaponEmitterSnapshot snapshot{};
-        if (!weaponNode || equippedWeaponKey == 0 || weaponGenerationKey == 0) {
-            return snapshot;
-        }
-
-        snapshot.weaponGenerationKey = weaponGenerationKey;
-        snapshot.equippedWeaponKey = equippedWeaponKey;
-        snapshot.rootSetKey = rootSetKey;
-        snapshot.weaponRootAddress = reinterpret_cast<std::uintptr_t>(weaponNode);
         const auto omodByAttachPointFormId = readEquippedOmodsByAttachPointFormId();
-        visitGeneratedWeaponMeshRootCandidates(weaponNode, [&](const WeaponMeshRootCandidate& candidate) {
-            std::uint32_t visitedNodes = 0;
-            collectWeaponEmittersRecursive(
-                candidate.root,
-                candidate.root,
-                weaponNode,
-                omodByAttachPointFormId,
-                weaponGenerationKey,
-                0,
-                visitedNodes,
-                snapshot);
-        });
+        auto snapshot = collectWeaponEmitterSnapshot(
+            weaponNode,
+            omodByAttachPointFormId,
+            equippedWeaponKey,
+            weaponGenerationKey,
+            rootSetKey);
 
         ROCK_LOG_DEBUG(Weapon,
             "Weapon emitter snapshot discovered generation={:016X} emitters={} roots={:016X}",
@@ -2901,35 +2971,44 @@ namespace rock
             bool hasSightBounds = false;
             RE::NiPoint3 sightBoundsMin{};
             RE::NiPoint3 sightBoundsMax{};
-            for (const auto& descriptor : descriptors) {
-                if (!descriptor.valid || descriptor.weaponGenerationKey != weaponGenerationKey || descriptor.semantic.partKind != WeaponPartKind::Sight ||
-                    !isFiniteOrderedEvidenceBounds(descriptor.localBoundsGame)) {
-                    continue;
-                }
+            const auto accumulatePartKind = [&](WeaponPartKind partKind) {
+                for (const auto& descriptor : descriptors) {
+                    if (!descriptor.valid || descriptor.weaponGenerationKey != weaponGenerationKey || descriptor.semantic.partKind != partKind ||
+                        !isFiniteOrderedEvidenceBounds(descriptor.localBoundsGame)) {
+                        continue;
+                    }
 
-                const RE::NiPoint3 candidateMin{
-                    descriptor.localBoundsGame.min.x,
-                    descriptor.localBoundsGame.min.y,
-                    descriptor.localBoundsGame.min.z,
-                };
-                const RE::NiPoint3 candidateMax{
-                    descriptor.localBoundsGame.max.x,
-                    descriptor.localBoundsGame.max.y,
-                    descriptor.localBoundsGame.max.z,
-                };
-                if (!hasSightBounds) {
-                    sightBoundsMin = candidateMin;
-                    sightBoundsMax = candidateMax;
-                    hasSightBounds = true;
-                } else {
-                    sightBoundsMin.x = (std::min)(sightBoundsMin.x, candidateMin.x);
-                    sightBoundsMin.y = (std::min)(sightBoundsMin.y, candidateMin.y);
-                    sightBoundsMin.z = (std::min)(sightBoundsMin.z, candidateMin.z);
-                    sightBoundsMax.x = (std::max)(sightBoundsMax.x, candidateMax.x);
-                    sightBoundsMax.y = (std::max)(sightBoundsMax.y, candidateMax.y);
-                    sightBoundsMax.z = (std::max)(sightBoundsMax.z, candidateMax.z);
+                    const RE::NiPoint3 candidateMin{
+                        descriptor.localBoundsGame.min.x,
+                        descriptor.localBoundsGame.min.y,
+                        descriptor.localBoundsGame.min.z,
+                    };
+                    const RE::NiPoint3 candidateMax{
+                        descriptor.localBoundsGame.max.x,
+                        descriptor.localBoundsGame.max.y,
+                        descriptor.localBoundsGame.max.z,
+                    };
+                    if (!hasSightBounds) {
+                        sightBoundsMin = candidateMin;
+                        sightBoundsMax = candidateMax;
+                        hasSightBounds = true;
+                    } else {
+                        sightBoundsMin.x = (std::min)(sightBoundsMin.x, candidateMin.x);
+                        sightBoundsMin.y = (std::min)(sightBoundsMin.y, candidateMin.y);
+                        sightBoundsMin.z = (std::min)(sightBoundsMin.z, candidateMin.z);
+                        sightBoundsMax.x = (std::max)(sightBoundsMax.x, candidateMax.x);
+                        sightBoundsMax.y = (std::max)(sightBoundsMax.y, candidateMax.y);
+                        sightBoundsMax.z = (std::max)(sightBoundsMax.z, candidateMax.z);
+                    }
+                    ++snapshot.sightBodyCount;
                 }
-                ++snapshot.sightBodyCount;
+            };
+
+            // Native-overlay OMOD evidence isolates the actual scope. Retain
+            // Sight as a compatibility fallback when record pairing is absent.
+            accumulatePartKind(WeaponPartKind::Scope);
+            if (!hasSightBounds) {
+                accumulatePartKind(WeaponPartKind::Sight);
             }
 
             if (!hasSightBounds) {
@@ -3503,7 +3582,7 @@ namespace rock
                 } else {
                     performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::WeaponColliderBuild);
                     const float maxGeneratedSourceDistanceGame = resolveMaxGeneratedSourceDistanceGame(observedSizeClass);
-                    generatedCount = findGeneratedWeaponShapeSources(weaponNode, generatedSources, maxGeneratedSourceDistanceGame);
+                    generatedCount = findGeneratedWeaponShapeSources(weaponNode, observedKey, generatedSources, maxGeneratedSourceDistanceGame);
                     generatedSummary = summarizeGeneratedSources(generatedSources);
                 }
 
@@ -3851,7 +3930,11 @@ namespace rock
         return visualKey;
     }
 
-    std::size_t WeaponCollision::findGeneratedWeaponShapeSources(RE::NiAVObject* weaponNode, std::vector<GeneratedHullSource>& outSources, float maxSourceDistanceGame)
+    std::size_t WeaponCollision::findGeneratedWeaponShapeSources(
+        RE::NiAVObject* weaponNode,
+        std::uint64_t equippedWeaponKey,
+        std::vector<GeneratedHullSource>& outSources,
+        float maxSourceDistanceGame)
     {
         outSources.clear();
         if (!weaponNode) {
@@ -3944,6 +4027,89 @@ namespace rock
         if (outSources.empty()) {
             ROCK_LOG_DEBUG(Weapon, "Generated weapon mesh source scan: all {} candidates produced zero hulls", candidates.size());
             return 0;
+        }
+
+        /*
+         * Refine physical module kinds from the same installed-OMOD and live
+         * emitter evidence that ROCK publishes through the provider API.
+         * Exact OMOD identity is authoritative for standard slots. Mod-added
+         * P-* slots have no vanilla attach-point FormID, so they use only the
+         * bounded owner subtree captured during this same traversal; candidate
+         * root fallbacks are explicitly rejected by ownerRootStructural.
+         */
+        const auto omodByAttachPointFormId = readEquippedOmodsByAttachPointFormId();
+        std::unordered_set<std::uint32_t> nativeScopeOverlayOmods;
+        nativeScopeOverlayOmods.reserve(omodByAttachPointFormId.size());
+        for (const auto& [attachPointFormId, omodFormId] : omodByAttachPointFormId) {
+            (void)attachPointFormId;
+            if (attachmentModHasNativeScopeOverlayTarget(omodFormId)) {
+                nativeScopeOverlayOmods.insert(omodFormId);
+            }
+        }
+
+        const auto emitterSnapshot = collectWeaponEmitterSnapshot(
+            weaponNode,
+            omodByAttachPointFormId,
+            equippedWeaponKey,
+            equippedWeaponKey,
+            makeWeaponEmitterRootSetKey(weaponNode));
+        for (auto& source : outSources) {
+            std::uint32_t sourceOmodFormId = 0;
+            if (source.semantic.attachPointFormId != 0) {
+                const auto omod = omodByAttachPointFormId.find(source.semantic.attachPointFormId);
+                if (omod != omodByAttachPointFormId.end()) {
+                    sourceOmodFormId = omod->second;
+                }
+            }
+
+            weapon_accessory_part_kind_policy::Evidence evidence{};
+            evidence.nativeScopeOverlay =
+                (sourceOmodFormId != 0 && nativeScopeOverlayOmods.contains(sourceOmodFormId)) ||
+                (sourceOmodFormId == 0 && source.semantic.partKind == WeaponPartKind::Sight && nativeScopeOverlayOmods.size() == 1);
+
+            for (std::size_t emitterIndex = 0; emitterIndex < emitterSnapshot.count; ++emitterIndex) {
+                const auto& emitter = emitterSnapshot.emitters[emitterIndex];
+                if (!emitter.valid) {
+                    continue;
+                }
+
+                const bool sameOmod = sourceOmodFormId != 0 && emitter.omodFormId == sourceOmodFormId;
+                bool sameStructuralOwner = false;
+                if (!sameOmod && emitter.ownerRootStructural && emitter.ownerRootAddress != 0 && source.sourceRoot) {
+                    auto* ownerRoot = reinterpret_cast<RE::NiAVObject*>(emitter.ownerRootAddress);
+                    sameStructuralOwner = actor_equipment_grab::nodeContainsNode(ownerRoot, source.sourceRoot, 32);
+                }
+                if (!sameOmod && !sameStructuralOwner) {
+                    continue;
+                }
+
+                switch (static_cast<weapon_emitter_policy::Kind>(emitter.kind)) {
+                case weapon_emitter_policy::Kind::Laser:
+                    evidence.laserEmitter = true;
+                    break;
+                case weapon_emitter_policy::Kind::Flashlight:
+                    evidence.flashlightEmitter = true;
+                    break;
+                case weapon_emitter_policy::Kind::Reticle:
+                case weapon_emitter_policy::Kind::Unknown:
+                default:
+                    break;
+                }
+            }
+
+            const auto baseKind = source.semantic.partKind;
+            source.semantic = weapon_accessory_part_kind_policy::applyAttachmentEvidence(source.semantic, evidence);
+            if (source.semantic.partKind != baseKind) {
+                ROCK_LOG_DEBUG(Weapon,
+                    "Generated weapon part refined by attachment evidence: source='{}' base={} resolved={} omod={:08X} nativeScope={} laser={} flashlight={}",
+                    source.sourceName,
+                    generatedWeaponPartKindName(baseKind),
+                    generatedWeaponPartKindName(source.semantic.partKind),
+                    sourceOmodFormId,
+                    evidence.nativeScopeOverlay,
+                    evidence.laserEmitter,
+                    evidence.flashlightEmitter);
+            }
         }
 
         auto generatedSourceConvexCount = [](const GeneratedHullSource& source) {

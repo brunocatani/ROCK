@@ -123,6 +123,16 @@ namespace rock::weapon_debug_notification_policy
         case WeaponPartKind::CosmeticAmmo:
             return "CosmeticAmmo";
         case WeaponPartKind::Other:
+            return "Other";
+        case WeaponPartKind::LaserSight:
+            return "LaserSight";
+        case WeaponPartKind::Flashlight:
+            return "Flashlight";
+        case WeaponPartKind::LaserFlashlightCombo:
+            return "LaserFlashlightCombo";
+        case WeaponPartKind::Scope:
+            return "Scope";
+        case WeaponPartKind::Count:
         default:
             return "Other";
         }

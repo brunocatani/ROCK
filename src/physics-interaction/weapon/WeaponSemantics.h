@@ -146,6 +146,10 @@ namespace rock
             break;
         case WeaponPartKind::Sight:
         case WeaponPartKind::Accessory:
+        case WeaponPartKind::LaserSight:
+        case WeaponPartKind::Flashlight:
+        case WeaponPartKind::LaserFlashlightCombo:
+        case WeaponPartKind::Scope:
             result.priority = 28;
             break;
         case WeaponPartKind::CosmeticAmmo:
@@ -154,6 +158,7 @@ namespace rock
             result.priority = 12;
             break;
         case WeaponPartKind::Other:
+        case WeaponPartKind::Count:
         default:
             result.priority = 10;
             break;

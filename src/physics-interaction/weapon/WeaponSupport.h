@@ -116,11 +116,16 @@ namespace rock::weapon_support_grip_policy
         case WeaponPartKind::Lever:
         case WeaponPartKind::Sight:
         case WeaponPartKind::Accessory:
+        case WeaponPartKind::LaserSight:
+        case WeaponPartKind::Flashlight:
+        case WeaponPartKind::LaserFlashlightCombo:
+        case WeaponPartKind::Scope:
             return WeaponGripPoseId::ReceiverSupport;
         case WeaponPartKind::Shell:
         case WeaponPartKind::Round:
         case WeaponPartKind::CosmeticAmmo:
         case WeaponPartKind::Other:
+        case WeaponPartKind::Count:
         default:
             return WeaponGripPoseId::BarrelWrap;
         }

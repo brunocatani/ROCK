@@ -40,8 +40,8 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'leftHandedMo
 
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.h' 'struct NativeScopeSightAnchorSnapshot[\s\S]*weaponGenerationKey[\s\S]*anchorWeaponLocal[\s\S]*sightBodyCount[\s\S]*getNativeScopeSightAnchorSnapshot' `
     'Generated weapon evidence must publish a generation-keyed native-scope sight anchor snapshot.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'descriptor\.semantic\.partKind\s*!=\s*WeaponPartKind::Sight[\s\S]*rearPlaneCenterFromSightBounds[\s\S]*_nativeScopeSightAnchorSnapshot\s*=\s*nativeScopeSightAnchorSnapshot' `
-    'Native-scope placement must aggregate only validated Sight geometry and publish its rear-center anchor with the weapon generation.'
+Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'accumulatePartKind\(WeaponPartKind::Scope\)[\s\S]*accumulatePartKind\(WeaponPartKind::Sight\)[\s\S]*rearPlaneCenterFromSightBounds[\s\S]*_nativeScopeSightAnchorSnapshot\s*=\s*nativeScopeSightAnchorSnapshot' `
+    'Native-scope placement must prefer validated native-overlay Scope geometry, retain Sight only as an evidence fallback, and publish its rear-center anchor with the weapon generation.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' '_hasSolvedWeaponTransform\s*=\s*false;[\s\S]*refreshNativeScopeSightAnchor\(weaponNode,\s*currentWeaponGenerationKey,\s*weaponCollision\);[\s\S]*refreshScopeSafeHandFrames\(frameInput,\s*dt\);[\s\S]*if\s*\(!runtime_state::isLocalSkeletonReady\(\)\s*\|\|\s*!weaponNode\)' `
     'Scope geometry and hFRIK-driver calibration must refresh before the grip state machine and its early return.'

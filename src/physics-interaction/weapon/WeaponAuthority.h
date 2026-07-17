@@ -990,7 +990,9 @@ namespace rock::weapon_generated_source_completeness_policy
 
         const bool actionOrSocketEvidence = hasFirearmActionPackageEvidence(completeness);
         const bool authoredLongGunCoverage = hasFrontPackageCoverage(completeness) && hasCompactRearPackageCoverage(completeness);
-        const bool sightedWeaponPackage = hasPart(completeness, WeaponPartKind::Sight) && (actionOrSocketEvidence || authoredLongGunCoverage);
+        const bool sightedWeaponPackage =
+            (hasPart(completeness, WeaponPartKind::Sight) || hasPart(completeness, WeaponPartKind::Scope)) &&
+            (actionOrSocketEvidence || authoredLongGunCoverage);
         return actionOrSocketEvidence || sightedWeaponPackage || authoredLongGunCoverage;
     }
 

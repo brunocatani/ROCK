@@ -31,29 +31,34 @@ namespace rock
 
     enum class WeaponPartKind : std::uint8_t
     {
-        Receiver,
-        Barrel,
-        Handguard,
-        Foregrip,
-        Pump,
-        Stock,
-        Grip,
-        Magazine,
-        Magwell,
-        Bolt,
-        Slide,
-        ChargingHandle,
-        BreakAction,
-        Cylinder,
-        Chamber,
-        Shell,
-        Round,
-        LaserCell,
-        Lever,
-        Sight,
-        Accessory,
-        CosmeticAmmo,
-        Other
+        Receiver = 0,
+        Barrel = 1,
+        Handguard = 2,
+        Foregrip = 3,
+        Pump = 4,
+        Stock = 5,
+        Grip = 6,
+        Magazine = 7,
+        Magwell = 8,
+        Bolt = 9,
+        Slide = 10,
+        ChargingHandle = 11,
+        BreakAction = 12,
+        Cylinder = 13,
+        Chamber = 14,
+        Shell = 15,
+        Round = 16,
+        LaserCell = 17,
+        Lever = 18,
+        Sight = 19,
+        Accessory = 20,
+        CosmeticAmmo = 21,
+        Other = 22,
+        LaserSight = 23,
+        Flashlight = 24,
+        LaserFlashlightCombo = 25,
+        Scope = 26,
+        Count = 27,
     };
 
     /*
@@ -215,6 +220,7 @@ namespace rock
         NameToken = 0,
         SlotAnchor = 1,
         RigAnchor = 2,
+        AttachmentEvidence = 3,
     };
 
     struct WeaponPartClassification
@@ -394,11 +400,16 @@ namespace rock
         /*
          * Frame-to-frame identity tokens only. Refresh compares them with
          * addresses encountered during a fresh bounded traversal and never
-         * dereferences a retained address.
+         * dereferences a retained address. Rebuild-time part classification
+         * may dereference ownerRootAddress only from a just-collected local
+         * snapshot while the same main-thread tree traversal is still active.
          */
         std::uintptr_t transformNodeAddress{ 0 };
         std::uintptr_t effectNodeAddress{ 0 };
         std::uintptr_t ownerRootAddress{ 0 };
+        // Internal-only trust bit: ownerRootAddress came from an actual P-* or
+        // rig anchor, rather than the candidate traversal root fallback.
+        bool ownerRootStructural{ false };
         std::array<float, 9> rotate{};
         std::array<float, 3> translate{};
         float scale{ 1.0f };
