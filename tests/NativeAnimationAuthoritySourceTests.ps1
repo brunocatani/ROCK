@@ -37,9 +37,36 @@ Require-Text 'src/ROCKMain.cpp' `
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthorityPolicy.h' `
     'equalsIgnoreCase\(name,\s*"Weapon"\)[\s\S]*LArm_[\s\S]*RArm_' `
     'Bone authority must be an explicit arms/hands/two-weapon-root allowlist.'
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthorityPolicy.h' `
+    'desiredAnchor\s*=\s*liveControl\s*\*\s*authoredDelta[\s\S]*correction\s*=\s*desiredAnchor\s*\*\s*inverse\(authoredCurrent\)[\s\S]*resolveControllerAnchoredPoseCorrection' `
+    'Native reload motion must preserve one rigid authored pose inside the live controller aim frame.'
 Reject-Text 'src/physics-interaction/animation/NativeAnimationAuthorityPolicy.h' `
     'classifyBone[\s\S]*return\s+kReloadPose' `
     'The classifier must never broadly grant every pose flag to arbitrary body bones.'
+Require-Text 'src/physics-interaction/native/HavokOffsets.h' `
+    'kFunc_ReloadStateChangeHandler_Handle\s*=\s*0x0FF2B90[\s\S]*kFunc_GetReloadStartStateToken\s*=\s*0x16A3070[\s\S]*kFunc_GetReloadEndStateToken\s*=\s*0x16A30D0[\s\S]*kVtableEntry_ReloadStateChangeHandler_Handle\s*=\s*0x2D8D300' `
+    'Reload lifecycle authority must stay pinned to the independently verified FO4VR handler, tokens, and vtable slot.'
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
+    'onReloadStateChange[\s\S]*nativeReloadStartStateToken[\s\S]*s_playerReloadStartSequence\.fetch_add[\s\S]*nativeReloadEndStateToken[\s\S]*s_playerReloadEndSequence\.fetch_add' `
+    'The lifecycle hook must classify the verified Bethesda start/end tokens and publish player-only event sequences.'
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
+    'advanceLocalReloadLease[\s\S]*installReloadStateChangeHook[\s\S]*expectedTarget[\s\S]*kFunc_ReloadStateChangeHandler_Handle[\s\S]*VirtualProtect' `
+    'The local ROCK test lease must consume event sequences from a validated ReloadStateChangeHandler vtable hook.'
+Reject-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
+    'gunState\s*==\s*RE::GUN_STATE::kReloading' `
+    'FO4VR does not publish this VR reload path through ActorState::gunState; lifecycle code must not regress to that poll.'
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
+    'weaponInControlParent\s*=\s*weaponNode->local[\s\S]*composeTransforms\(\s*aimFrame\.controlParent->world,\s*aimFrame\.weaponInControlParent\)[\s\S]*applyControllerAimFrame[\s\S]*nativeBaselineWeaponWorld' `
+    'The visible first-person weapon must derive a non-accumulating controller frame for the complete authored pose.'
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
+    'auto&\s+aimFrame\s*=\s*s_sourceAimFrame[\s\S]*resolveWorldTargetCorrection\(\s*aimFrame\.desiredWeaponWorld,\s*nativeWeaponWorld\)' `
+    'The full-body arms must resolve to the visible weapon world target instead of a hidden destination Weapon target.'
+Reject-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
+    's_destinationAimFrame|prepareControllerAimFrame\(\s*\*s_cache\.destinationTree' `
+    'The hidden full-body Weapon node must never establish an independent controller anchor.'
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
+    'parentIsSelected\(transform\.parPos,[\s\S]*composeTransforms\(correction,\s*nativeRootWorld\)' `
+    'The controller aim correction must be applied once at selected hierarchy roots, not independently per bone.'
 Require-Text 'src/api/ROCKProviderApi.h' `
     'ROCK_PROVIDER_API_VERSION\s*=\s*1[\s\S]*NativeAnimationAuthority[\s\S]*setNativeAnimationAuthorityV1[\s\S]*clearNativeAnimationAuthorityV1' `
     'The authority lease must append to API V1 without a version bump.'

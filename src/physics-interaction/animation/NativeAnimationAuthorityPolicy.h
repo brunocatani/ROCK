@@ -10,6 +10,100 @@ namespace rock::native_animation_authority_policy
     inline constexpr std::uint32_t kWeapon = 1u << 2;
     inline constexpr std::uint32_t kReloadPose = kArms | kHands | kWeapon;
 
+    enum class LocalReloadLeaseEndReason : std::uint32_t
+    {
+        None = 0,
+        ReloadEnded,
+        WatchdogExpired,
+    };
+
+    struct LocalReloadLifecycleSignal
+    {
+        std::uint64_t startSequence{ 0 };
+        std::uint64_t endSequence{ 0 };
+        bool reloadActive{ false };
+    };
+
+    struct LocalReloadLeaseState
+    {
+        std::uint32_t watchdogFramesRemaining{ 0 };
+        std::uint64_t startSequenceAtArm{ 0 };
+        std::uint64_t endSequenceAtArm{ 0 };
+        bool observedReloadStart{ false };
+    };
+
+    struct LocalReloadLeaseStep
+    {
+        LocalReloadLeaseState state{};
+        LocalReloadLeaseEndReason endReason{ LocalReloadLeaseEndReason::None };
+
+        [[nodiscard]] constexpr bool active() const
+        {
+            return endReason == LocalReloadLeaseEndReason::None && state.watchdogFramesRemaining > 0;
+        }
+    };
+
+    [[nodiscard]] constexpr LocalReloadLeaseStep advanceLocalReloadLease(
+        LocalReloadLeaseState state,
+        LocalReloadLifecycleSignal signal)
+    {
+        if (state.watchdogFramesRemaining == 0) {
+            return { state, LocalReloadLeaseEndReason::WatchdogExpired };
+        }
+
+        --state.watchdogFramesRemaining;
+        if (signal.reloadActive || signal.startSequence != state.startSequenceAtArm) {
+            state.observedReloadStart = true;
+        }
+        if (state.observedReloadStart && signal.endSequence != state.endSequenceAtArm) {
+            return { state, LocalReloadLeaseEndReason::ReloadEnded };
+        }
+        if (state.watchdogFramesRemaining == 0) {
+            return { state, LocalReloadLeaseEndReason::WatchdogExpired };
+        }
+        return { state, LocalReloadLeaseEndReason::None };
+    }
+
+    /*
+     * Resolve one rigid world correction for the complete authored pose:
+     *
+     *   authoredDelta = inverse(authoredBaseline) * authoredCurrent
+     *   desiredAnchor = liveControl * authoredDelta
+     *   correction = desiredAnchor * inverse(authoredCurrent)
+     *
+     * Applying correction to every selected hierarchy root keeps the authored
+     * arms/hands/weapon relationship intact while the live controller replaces
+     * the flat game's mouse-aim frame.
+     */
+    template <class Transform, class Compose, class Invert>
+    [[nodiscard]] constexpr Transform resolveControllerAnchoredPoseCorrection(
+        const Transform& liveControl,
+        const Transform& authoredBaseline,
+        const Transform& authoredCurrent,
+        Compose&& compose,
+        Invert&& invert)
+    {
+        const Transform authoredDelta = compose(invert(authoredBaseline), authoredCurrent);
+        const Transform desiredAnchor = compose(liveControl, authoredDelta);
+        return compose(desiredAnchor, invert(authoredCurrent));
+    }
+
+    /*
+     * Align an authored pose from any native tree space to one already-resolved
+     * world target. The visible first-person weapon supplies that target; the
+     * full-body tree must not derive a second target from its hidden Weapon
+     * node because that node follows the current FRIK arm pose.
+     */
+    template <class Transform, class Compose, class Invert>
+    [[nodiscard]] constexpr Transform resolvePoseCorrectionToWorldTarget(
+        const Transform& worldTarget,
+        const Transform& authoredCurrent,
+        Compose&& compose,
+        Invert&& invert)
+    {
+        return compose(worldTarget, invert(authoredCurrent));
+    }
+
     [[nodiscard]] constexpr char asciiLower(char value)
     {
         return value >= 'A' && value <= 'Z' ? static_cast<char>(value - 'A' + 'a') : value;

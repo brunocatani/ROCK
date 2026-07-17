@@ -260,7 +260,11 @@ namespace rock::provider
     };
 
     /*
-     * Selective Bethesda animation authority. Arms covers only the two
+     * Selective Bethesda animation authority. ROCK preserves the authored
+     * relationship between both arms, hands, and weapon, then rigidly anchors
+     * both skeleton trees to the visible first-person weapon/controller world
+     * frame while retaining the weapon's authored motion since lease acquisition.
+     * Arms covers only the two
      * collarbone-to-hand chains; Hands adds the hand roots and finger/thumb
      * descendants; Weapon covers only Weapon and WeaponLeft. The character
      * root, COM, torso, head, and legs remain owned by the live VR body.

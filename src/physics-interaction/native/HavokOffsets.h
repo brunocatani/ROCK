@@ -261,6 +261,16 @@ namespace rock::offsets
 
     constexpr std::uintptr_t kFunc_HitFrameHandler_Handle = 0x0FEFFB0;
 
+    /*
+     * Fallout4VR.exe 1.2.72 ReloadStateChangeHandler::Handle. Ghidra verified
+     * that the first interned token calls ActorState::SetReloadingImpl(true)
+     * and the second calls it with false. The token accessors below are the
+     * exact functions used by the handler, avoiding text/case assumptions.
+     */
+    constexpr std::uintptr_t kFunc_ReloadStateChangeHandler_Handle = 0x0FF2B90;
+    constexpr std::uintptr_t kFunc_GetReloadStartStateToken = 0x16A3070;
+    constexpr std::uintptr_t kFunc_GetReloadEndStateToken = 0x16A30D0;
+
     constexpr std::uintptr_t kFunc_AttackBlockHandler_ShouldHandleEvent = 0x0FCD770;
 
     constexpr std::uintptr_t kFunc_PlayerCharacter_WeaponSwingCallBack = 0x0F23E00;
@@ -270,6 +280,8 @@ namespace rock::offsets
     constexpr std::uintptr_t kVtableEntry_WeaponSwingHandler_Handle = 0x2D8CA00;
 
     constexpr std::uintptr_t kVtableEntry_HitFrameHandler_Handle = 0x2D8CB98;
+
+    constexpr std::uintptr_t kVtableEntry_ReloadStateChangeHandler_Handle = 0x2D8D300;
 
     constexpr std::uintptr_t kVtableEntry_AttackBlockHandler_ShouldHandleEvent = 0x2D8A350;
 

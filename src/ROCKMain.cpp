@@ -421,9 +421,9 @@ namespace
         onFrameUpdate();
 
         // ROCK's collision/grab/weapon pass may legitimately publish its own
-        // controller authority. Reapply the same captured native locals last
-        // so the temporary reload lease is the final visual writer while all
-        // normal ROCK state continues to advance underneath it.
+        // controller authority. Reapply the same controller-anchored native
+        // pose last so the temporary reload lease is the final visual writer
+        // while all normal ROCK state continues to advance underneath it.
         (void)native_animation_authority::applyCapturedPose();
         native_animation_authority::completeRockFrame();
     }
