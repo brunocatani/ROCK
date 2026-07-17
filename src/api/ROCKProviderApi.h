@@ -47,6 +47,7 @@ namespace rock::provider
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_PART_TARGETS_V1 = 128;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1 = 64;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_PART_DRIVE_LEASE_FRAMES_V1 = 120;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_EMITTERS_V1 = 32;
 
     enum class RockProviderHand : std::uint32_t
     {
@@ -252,6 +253,33 @@ namespace rock::provider
         WeaponPartTargetNonExclusive = 1u << 18,
         RawWandButtonState = 1u << 19,
         PipboyInputSuppression = 1u << 20,
+        WeaponEmitters = 1u << 21,
+    };
+
+    enum class RockProviderWeaponEmitterKindV1 : std::uint32_t
+    {
+        Unknown = 0,
+        Flashlight = 1,
+        Laser = 2,
+        Reticle = 3,
+    };
+
+    enum class RockProviderWeaponEmitterSourceV1 : std::uint32_t
+    {
+        Unknown = 0,
+        EffectGeometry = 1,
+        AddOnNode = 2,
+    };
+
+    enum class RockProviderWeaponEmitterFlagV1 : std::uint32_t
+    {
+        None = 0,
+        TransformValid = 1u << 0,
+        DirectionValid = 1u << 1,
+        EffectStateKnown = 1u << 2,
+        HasAddOnNodeValue = 1u << 3,
+        HasOmod = 1u << 4,
+        HasAttachPoint = 1u << 5,
     };
 
     enum class RockProviderInteractionCommandKindV1 : std::uint32_t
@@ -528,7 +556,8 @@ namespace rock::provider
         std::uint32_t maxInteractionCommands{ 0 };
         std::uint32_t maxCompletedInteractionCommands{ 0 };
         std::uint32_t providerApiByteSize{ 0 };
-        std::uint32_t reserved[6]{};
+        std::uint32_t maxWeaponEmitters{ 0 };
+        std::uint32_t reserved[5]{};
     };
 
     struct RockProviderForceGrabRequestV1
@@ -924,6 +953,33 @@ namespace rock::provider
     };
 
     /*
+     * One value snapshot of a weapon-mounted visual emitter. The transform and
+     * forward vector are expressed in the equipped weapon root's local game-
+     * unit space and contain no retained engine object. Active follows the
+     * effect geometry's effective scene visibility; Visible follows the node
+     * that supplied the transform. EffectStateKnown distinguishes an inactive
+     * effect from an AddOnNode marker for which no live effect was found.
+     */
+    struct RockProviderWeaponEmitterV1
+    {
+        std::uint32_t size{ sizeof(RockProviderWeaponEmitterV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        RockProviderWeaponEmitterKindV1 kind{ RockProviderWeaponEmitterKindV1::Unknown };
+        RockProviderWeaponEmitterSourceV1 source{ RockProviderWeaponEmitterSourceV1::Unknown };
+        std::uint32_t flags{ 0 };
+        std::uint32_t active{ 0 };
+        std::uint32_t visible{ 0 };
+        std::uint32_t addOnNodeValue{ 0 };
+        std::uint32_t omodFormId{ 0 };
+        std::uint32_t attachPointFormId{ 0 };
+        std::uint64_t weaponGenerationKey{ 0 };
+        RockProviderTransform weaponLocalTransform{};
+        RockProviderPoint3 forwardWeaponLocal{};
+        char sourceName[ROCK_PROVIDER_MAX_EVIDENCE_NAME]{};
+        std::uint32_t reserved[8]{};
+    };
+
+    /*
      * Detailed weapon evidence carries semantic body identity, local generated
      * bounds, and total point count without making the fixed function table own
      * variable-length buffers. Callers fetch the local mesh point cloud through
@@ -1109,6 +1165,8 @@ namespace rock::provider
          * or toggle the flashlight.
          */
         bool(ROCK_PROVIDER_CALL* isNativePipboyInputSuppressedV1)();
+        std::uint32_t(ROCK_PROVIDER_CALL* getWeaponEmitterCountV1)();
+        std::uint32_t(ROCK_PROVIDER_CALL* copyWeaponEmittersV1)(RockProviderWeaponEmitterV1* outEmitters, std::uint32_t maxEmitters);
 
         [[nodiscard]] static int initialize(
             const std::uint32_t minVersion = ROCK_PROVIDER_API_VERSION,
@@ -1181,6 +1239,8 @@ namespace rock::provider
         offsetof(RockProviderApi, getRawWandButtonStateV1) + sizeof(std::declval<RockProviderApi>().getRawWandButtonStateV1));
     inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_PIPBOY_INPUT_SUPPRESSION_TABLE_BYTES = static_cast<std::uint32_t>(
         offsetof(RockProviderApi, isNativePipboyInputSuppressedV1) + sizeof(std::declval<RockProviderApi>().isNativePipboyInputSuppressedV1));
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_WEAPON_EMITTERS_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, copyWeaponEmittersV1) + sizeof(std::declval<RockProviderApi>().copyWeaponEmittersV1));
 
     [[nodiscard]] inline bool queryProviderLimitsV1(RockProviderLimitsV1& outLimits)
     {
@@ -1313,6 +1373,18 @@ namespace rock::provider
         return queryProviderLimitsV1(limits) && supportsWeaponPartRecordIdentityV1(limits);
     }
 
+    [[nodiscard]] inline bool supportsWeaponEmittersV1(const RockProviderLimitsV1& limits)
+    {
+        return providerApiTableSupportsV1(limits, ROCK_PROVIDER_API_V1_WEAPON_EMITTERS_TABLE_BYTES) &&
+               hasFeatureBitV1(limits.featureBits, RockProviderFeatureBitV1::WeaponEmitters);
+    }
+
+    [[nodiscard]] inline bool supportsWeaponEmittersV1()
+    {
+        RockProviderLimitsV1 limits{};
+        return queryProviderLimitsV1(limits) && supportsWeaponEmittersV1(limits);
+    }
+
     static_assert(std::is_standard_layout_v<RockProviderTransform>);
     static_assert(std::is_trivially_copyable_v<RockProviderTransform>);
     static_assert(sizeof(RockProviderConsumerRegistrationV1) == 104);
@@ -1391,6 +1463,10 @@ namespace rock::provider
     static_assert(alignof(RockProviderWeaponEvidenceDetailV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderWeaponEvidenceDetailV1>);
     static_assert(std::is_trivially_copyable_v<RockProviderWeaponEvidenceDetailV1>);
+    static_assert(sizeof(RockProviderWeaponEmitterV1) == 208);
+    static_assert(alignof(RockProviderWeaponEmitterV1) == 8);
+    static_assert(std::is_standard_layout_v<RockProviderWeaponEmitterV1>);
+    static_assert(std::is_trivially_copyable_v<RockProviderWeaponEmitterV1>);
     static_assert(sizeof(RockProviderBodyContactV1) == 128);
     static_assert(alignof(RockProviderBodyContactV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderBodyContactV1>);

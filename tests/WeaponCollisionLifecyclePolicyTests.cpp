@@ -3,6 +3,7 @@
 
 #include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/WeaponEffectGeometryPolicy.h"
+#include "physics-interaction/weapon/WeaponEmitterPolicy.h"
 #include "physics-interaction/weapon/WeaponOmodAuditPolicy.h"
 
 namespace
@@ -64,6 +65,7 @@ int main()
     using namespace rock::weapon_generated_source_completeness_policy;
     using namespace rock::weapon_generation_identity_policy;
     using namespace rock::weapon_effect_geometry_policy;
+    namespace emitter = rock::weapon_emitter_policy;
     using namespace rock::weapon_omod_audit_policy;
     using rock::WeaponPartKind;
 
@@ -158,6 +160,23 @@ int main()
         classify(Evidence{ .geometryName = "laser_light_Viridian_C5L:0" }) != ExclusionReason::None);
     ok &= expectFalse("scope housing remains collidable",
         classify(Evidence{ .geometryName = "Sight:0" }) != ExclusionReason::None);
+
+    ok &= expectTrue("laser beam is classified as a laser emitter",
+        emitter::classify({ .nodeName = "LaserSightBeam:0", .effectGeometry = true, .sightContext = true }) == emitter::Kind::Laser);
+    ok &= expectTrue("reticle name outranks a neighboring laser context",
+        emitter::classify({ .nodeName = "Reticle:0", .effectGeometry = true, .laserContext = true, .sightContext = true }) == emitter::Kind::Reticle);
+    ok &= expectTrue("generic sight effect is classified as a reticle emitter",
+        emitter::classify({ .nodeName = "Glass:0", .effectGeometry = true, .sightContext = true }) == emitter::Kind::Reticle);
+    ok &= expectTrue("flashlight AddOnNode uses physical attachment context",
+        emitter::classify({ .nodeName = "AddOnNode130", .valueNode = true, .flashlightContext = true }) == emitter::Kind::Flashlight);
+    ok &= expectTrue("unowned AddOnNode fails closed",
+        emitter::classify({ .nodeName = "AddOnNode130", .valueNode = true }) == emitter::Kind::Unknown);
+    const auto addOnNode130 = emitter::parseAddOnNodeValue("AddOnNode130");
+    ok &= expectTrue("AddOnNode decimal suffix is available", addOnNode130.valid && addOnNode130.value == 130);
+    ok &= expectFalse("AddOnNode without numeric suffix is unavailable", emitter::parseAddOnNodeValue("AddOnNode").valid);
+    ok &= expectTrue("AddOnNode transform outranks laser dot geometry",
+        emitter::transformPriority(emitter::Kind::Laser, emitter::Source::AddOnNode, "AddOnNode130") >
+            emitter::transformPriority(emitter::Kind::Laser, emitter::Source::EffectGeometry, "LaserSightDot:0"));
 
     const auto enabledMissingOmod = decideCoverage(CoverageInput{
         .resolved = true,

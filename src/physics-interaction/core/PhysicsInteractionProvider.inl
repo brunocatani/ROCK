@@ -206,6 +206,67 @@
         return copied;
     }
 
+    std::uint32_t PhysicsInteraction::getProviderWeaponEmitterCountV1() const
+    {
+        const auto snapshot = _weaponCollision.getWeaponEmitterSnapshot();
+        return static_cast<std::uint32_t>((std::min)(snapshot.count, snapshot.emitters.size()));
+    }
+
+    std::uint32_t PhysicsInteraction::copyProviderWeaponEmittersV1(
+        ::rock::provider::RockProviderWeaponEmitterV1* outEmitters,
+        std::uint32_t maxEmitters) const
+    {
+        if (!outEmitters || maxEmitters == 0) {
+            return 0;
+        }
+
+        static_assert(MAX_WEAPON_EMITTERS == ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_EMITTERS_V1);
+        const auto snapshot = _weaponCollision.getWeaponEmitterSnapshot();
+        const std::uint32_t count = (std::min)(maxEmitters,
+            static_cast<std::uint32_t>((std::min)(snapshot.count, snapshot.emitters.size())));
+        for (std::uint32_t i = 0; i < count; ++i) {
+            const auto& descriptor = snapshot.emitters[i];
+            auto& out = outEmitters[i];
+            out = {};
+            out.size = sizeof(::rock::provider::RockProviderWeaponEmitterV1);
+            out.version = ::rock::provider::ROCK_PROVIDER_API_VERSION;
+            out.kind = static_cast<::rock::provider::RockProviderWeaponEmitterKindV1>(descriptor.kind);
+            out.source = static_cast<::rock::provider::RockProviderWeaponEmitterSourceV1>(descriptor.source);
+            out.flags = static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponEmitterFlagV1::TransformValid) |
+                static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponEmitterFlagV1::DirectionValid);
+            if (descriptor.effectStateKnown) {
+                out.flags |= static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponEmitterFlagV1::EffectStateKnown);
+            }
+            if (descriptor.hasAddOnNodeValue) {
+                out.flags |= static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponEmitterFlagV1::HasAddOnNodeValue);
+            }
+            if (descriptor.omodFormId != 0) {
+                out.flags |= static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponEmitterFlagV1::HasOmod);
+            }
+            if (descriptor.attachPointFormId != 0) {
+                out.flags |= static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponEmitterFlagV1::HasAttachPoint);
+            }
+            out.active = descriptor.active ? 1u : 0u;
+            out.visible = descriptor.visible ? 1u : 0u;
+            out.addOnNodeValue = descriptor.addOnNodeValue;
+            out.omodFormId = descriptor.omodFormId;
+            out.attachPointFormId = descriptor.attachPointFormId;
+            out.weaponGenerationKey = descriptor.weaponGenerationKey;
+            std::copy(descriptor.rotate.begin(), descriptor.rotate.end(), out.weaponLocalTransform.rotate);
+            std::copy(descriptor.translate.begin(), descriptor.translate.end(), out.weaponLocalTransform.translate);
+            out.weaponLocalTransform.scale = descriptor.scale;
+            out.forwardWeaponLocal = {
+                descriptor.forwardWeaponLocal[0],
+                descriptor.forwardWeaponLocal[1],
+                descriptor.forwardWeaponLocal[2],
+            };
+            static_assert(sizeof(out.sourceName) == std::tuple_size_v<decltype(descriptor.sourceName)>);
+            std::memcpy(out.sourceName, descriptor.sourceName.data(), sizeof(out.sourceName));
+            out.sourceName[sizeof(out.sourceName) - 1] = '\0';
+        }
+        return count;
+    }
+
     std::uint32_t PhysicsInteraction::copyProviderBodyContacts(
         ::rock::provider::RockProviderBodyContactV1* outContacts,
         std::uint32_t maxContacts) const

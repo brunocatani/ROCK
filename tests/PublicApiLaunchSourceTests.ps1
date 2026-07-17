@@ -201,6 +201,10 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'attachmentWeapo
     'Part-carry source-part grips must solve weapon authority from the captured source-to-weapon frame.'
 Require-Text 'src/api/ROCKProviderApi.h' 'supportsForceGrabCommandV1' `
     'SDK must expose safe feature/table helpers for force-grab commands.'
+Require-Text 'src/api/ROCKProviderApi.h' 'WeaponEmitters[\s\S]*RockProviderWeaponEmitterV1[\s\S]*ROCK_PROVIDER_API_V1_WEAPON_EMITTERS_TABLE_BYTES[\s\S]*supportsWeaponEmittersV1' `
+    'Weapon emitter snapshots must remain feature- and table-size-gated inside API V1.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'maxWeaponEmitters\s*=\s*ROCK_PROVIDER_MAX_WEAPON_EMITTERS_V1' `
+    'Provider limits must publish the bounded emitter capacity.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'providerApiByteSize\s*=\s*static_cast<std::uint32_t>\(sizeof\(RockProviderApi\)\)' `
     'Provider limits must report the current function table byte size.'
 Require-Text 'src/api/ROCKProviderApi.h' 'RockProviderForceReleaseFlagV1[\s\S]*UseVelocityHavok' `
@@ -282,7 +286,9 @@ $expectedProviderFunctions = [string[]]@(
     'queryEquippedWeaponClassificationV1',
     'getWeaponPartGripStateV1',
     'getRawWandButtonStateV1',
-    'isNativePipboyInputSuppressedV1'
+    'isNativePipboyInputSuppressedV1',
+    'getWeaponEmitterCountV1',
+    'copyWeaponEmittersV1'
 )
 Require-SequenceEqual 'ROCKProviderApi function pointer order' (Get-ProviderFunctionNames $providerHeader) $expectedProviderFunctions
 

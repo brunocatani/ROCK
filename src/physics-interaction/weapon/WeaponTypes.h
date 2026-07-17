@@ -375,6 +375,47 @@ namespace rock
         std::uint32_t omodFormId{ 0 };
     };
 
+    inline constexpr std::size_t MAX_WEAPON_EMITTERS = 32;
+
+    struct WeaponEmitterDescriptor
+    {
+        bool valid{ false };
+        bool active{ false };
+        bool visible{ false };
+        bool effectStateKnown{ false };
+        bool hasAddOnNodeValue{ false };
+        std::uint32_t kind{ 0 };
+        std::uint32_t source{ 0 };
+        std::uint32_t transformPriority{ 0 };
+        std::uint32_t addOnNodeValue{ 0 };
+        std::uint32_t omodFormId{ 0 };
+        std::uint32_t attachPointFormId{ 0 };
+        std::uint64_t weaponGenerationKey{ 0 };
+        /*
+         * Frame-to-frame identity tokens only. Refresh compares them with
+         * addresses encountered during a fresh bounded traversal and never
+         * dereferences a retained address.
+         */
+        std::uintptr_t transformNodeAddress{ 0 };
+        std::uintptr_t effectNodeAddress{ 0 };
+        std::uintptr_t ownerRootAddress{ 0 };
+        std::array<float, 9> rotate{};
+        std::array<float, 3> translate{};
+        float scale{ 1.0f };
+        std::array<float, 3> forwardWeaponLocal{};
+        std::array<char, 64> sourceName{};
+    };
+
+    struct WeaponEmitterSnapshot
+    {
+        std::array<WeaponEmitterDescriptor, MAX_WEAPON_EMITTERS> emitters{};
+        std::size_t count{ 0 };
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint64_t equippedWeaponKey{ 0 };
+        std::uint64_t rootSetKey{ 0 };
+        std::uintptr_t weaponRootAddress{ 0 };
+    };
+
     inline WeaponEvidencePoint3 makeWeaponEvidencePoint(float x, float y, float z)
     {
         return WeaponEvidencePoint3{ .x = x, .y = y, .z = z };

@@ -141,7 +141,8 @@ namespace
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::WeaponPartRecordIdentity) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::WeaponPartTargetNonExclusive) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::RawWandButtonState) |
-        static_cast<std::uint32_t>(RockProviderFeatureBitV1::PipboyInputSuppression);
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::PipboyInputSuppression) |
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::WeaponEmitters);
     constexpr std::uint32_t kImplementedForceGrabFlagsV1 =
         static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::UsePreferredGrabPointGame);
     constexpr std::uint32_t kImplementedForceReleaseFlagsV1 =
@@ -1074,6 +1075,7 @@ namespace
         outLimits->maxInteractionCommands = ROCK_PROVIDER_MAX_INTERACTION_COMMANDS_V1;
         outLimits->maxCompletedInteractionCommands = ROCK_PROVIDER_MAX_COMPLETED_INTERACTION_COMMANDS_V1;
         outLimits->providerApiByteSize = static_cast<std::uint32_t>(sizeof(RockProviderApi));
+        outLimits->maxWeaponEmitters = ROCK_PROVIDER_MAX_WEAPON_EMITTERS_V1;
         return true;
     }
 
@@ -1691,6 +1693,26 @@ namespace
         return rock::input_remap_runtime::isNativePipboyInputSuppressionActive();
     }
 
+    std::uint32_t ROCK_PROVIDER_CALL apiGetWeaponEmitterCountV1()
+    {
+        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        if (!pi || !pi->isInitialized()) {
+            return 0;
+        }
+        return pi->getProviderWeaponEmitterCountV1();
+    }
+
+    std::uint32_t ROCK_PROVIDER_CALL apiCopyWeaponEmittersV1(
+        RockProviderWeaponEmitterV1* outEmitters,
+        std::uint32_t maxEmitters)
+    {
+        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        if (!pi || !pi->isInitialized()) {
+            return 0;
+        }
+        return pi->copyProviderWeaponEmittersV1(outEmitters, maxEmitters);
+    }
+
     constexpr RockProviderApi ROCK_PROVIDER_API_FUNCTION_TABLE{
         .getVersion = &apiGetVersion,
         .getModVersion = &apiGetModVersion,
@@ -1729,6 +1751,8 @@ namespace
         .getWeaponPartGripStateV1 = &apiGetWeaponPartGripStateV1,
         .getRawWandButtonStateV1 = &apiGetRawWandButtonStateV1,
         .isNativePipboyInputSuppressedV1 = &apiIsNativePipboyInputSuppressedV1,
+        .getWeaponEmitterCountV1 = &apiGetWeaponEmitterCountV1,
+        .copyWeaponEmittersV1 = &apiCopyWeaponEmittersV1,
     };
 }
 

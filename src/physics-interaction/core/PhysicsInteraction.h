@@ -136,6 +136,10 @@ namespace rock
             std::uint32_t bodyId,
             ::rock::provider::RockProviderPoint3* outPoints,
             std::uint32_t maxPoints) const;
+        std::uint32_t getProviderWeaponEmitterCountV1() const;
+        std::uint32_t copyProviderWeaponEmittersV1(
+            ::rock::provider::RockProviderWeaponEmitterV1* outEmitters,
+            std::uint32_t maxEmitters) const;
         std::uint32_t copyProviderBodyContacts(
             ::rock::provider::RockProviderBodyContactV1* outContacts,
             std::uint32_t maxContacts) const;

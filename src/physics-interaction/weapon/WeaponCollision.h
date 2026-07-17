@@ -153,6 +153,8 @@ namespace rock
 
         std::vector<WeaponCollisionProfileEvidenceDescriptor> getProfileEvidenceDescriptors() const;
 
+        WeaponEmitterSnapshot getWeaponEmitterSnapshot() const;
+
         NativeScopeSightAnchorSnapshot getNativeScopeSightAnchorSnapshot() const;
 
         bool tryGetProfileEvidenceDescriptorForBodyId(
@@ -354,6 +356,13 @@ namespace rock
         void beginWeaponBodyPublication();
         void endWeaponBodyPublication();
         std::vector<WeaponCollisionProfileEvidenceDescriptor> buildProfileEvidenceSnapshot(const WeaponBodyBank& bank) const;
+        WeaponEmitterSnapshot buildWeaponEmitterSnapshot(
+            RE::NiAVObject* weaponNode,
+            std::uint64_t equippedWeaponKey,
+            std::uint64_t weaponGenerationKey,
+            std::uint64_t rootSetKey) const;
+        void updateWeaponEmitterSnapshot(RE::NiAVObject* weaponNode, std::uint64_t equippedWeaponKey);
+        void clearWeaponEmitterSnapshot();
         void publishSampledVelocityAtomic(std::uint32_t publicationIndex, const GeneratedKeyframedBodyDriveQueueResult& queueResult);
         void dumpEquippedWeaponOmodEvidence(const WeaponBodyBank& bank, RE::NiAVObject* packageDriveNode);
         OmodCoverageAuditResult maybeRunWeaponOmodCoverageAudit(
@@ -455,6 +464,7 @@ namespace rock
         std::atomic<std::uint64_t> _weaponBodyPublicationVersion{ 0 };
         mutable std::mutex _weaponEvidenceSnapshotMutex;
         std::vector<WeaponCollisionProfileEvidenceDescriptor> _profileEvidenceSnapshot;
+        WeaponEmitterSnapshot _weaponEmitterSnapshot{};
         NativeScopeSightAnchorSnapshot _nativeScopeSightAnchorSnapshot{};
         // Debug OMOD evidence dump fires once per weapon generation key.
         std::uint64_t _lastOmodDumpGenerationKey{ 0 };
