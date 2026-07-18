@@ -1,6 +1,7 @@
 #pragma once
 
 #include "physics-interaction/native/HavokPhysicsTiming.h"
+#include "physics-interaction/native/PhysicsCallbackQuiescenceGate.h"
 
 #include "RE/Havok/hknpWorld.h"
 
@@ -31,6 +32,8 @@ namespace rock
             void* userData);
         void registerForNextStep(void* bhkWorld, RE::hknpWorld* hknpWorld);
         void reset();
+
+        PhysicsCallbackQuiescenceGate& callbackGate();
 
         const havok_physics_timing::PhysicsTimingSample& lastTimingSample() const { return _lastTimingSample; }
         std::uint64_t stepSequence() const { return _stepSequence; }

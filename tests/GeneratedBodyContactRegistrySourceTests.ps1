@@ -62,9 +62,12 @@ if (!$frameGeneratedBodyBlock.Success) {
     if ($publishCount -ne 1) {
         $failures.Add("src/physics-interaction/core/PhysicsInteraction.cpp: Generated-body frame update must publish the contact registry exactly once after queueing targets; found $publishCount.")
     }
-    if ($block -notmatch '(?s)updateBodiesFromCurrentSourceTransforms\(\s*hknp,\s*weaponNode,\s*frame\.deltaSeconds[\s\S]*?\);\s*}\s*if \(f4vr::isNodeVisible\(weaponNode\)\)[\s\S]*?refreshGeneratedBodyContactRegistry\(\);\s*_generatedBodyStepDrive\.registerForNextStep\(bhk,\s*hknp\);') {
-        $failures.Add('src/physics-interaction/core/PhysicsInteraction.cpp: Generated-body registry publication and step-drive registration must run after weapon transform target queueing.')
+    if ($block -notmatch '(?s)updateBodiesFromCurrentSourceTransforms\(\s*hknp,\s*weaponNode,\s*frame\.deltaSeconds[\s\S]*?\);\s*}\s*if \(f4vr::isNodeVisible\(weaponNode\)\)[\s\S]*?refreshGeneratedBodyContactRegistry\(\);') {
+        $failures.Add('src/physics-interaction/core/PhysicsInteraction.cpp: Generated-body registry publication must run after weapon transform target queueing.')
     }
+}
+if ($physicsInteraction -notmatch '(?s)::rock::provider::dispatchFrameCallbacks\(\*this\);\s*// Publish callback ownership[\s\S]{0,220}_generatedBodyStepDrive\.registerForNextStep\(bhk,\s*hknp\);') {
+    $failures.Add('src/physics-interaction/core/PhysicsInteraction.cpp: Step-drive registration must run after every main-thread collider mutation and provider callback.')
 }
 
 if ($failures.Count -gt 0) {

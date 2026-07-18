@@ -685,6 +685,9 @@ namespace rock
         const RE::NiTransform& rollAuthorityWorld,
         BethesdaPhysicsBody& palmAnchorBody)
     {
+        auto structuralMutation = _physicsCallbackGate ?
+            _physicsCallbackGate->pauseForMutation() :
+            PhysicsCallbackQuiescenceGate::MutationLease{};
         destroy(bhkWorld, palmAnchorBody);
         if (!world || !bhkWorld) {
             return false;
@@ -695,12 +698,21 @@ namespace rock
             return false;
         }
         const auto tuningSignature = handColliderTuningSignature(_lastCapturedPowerArmor);
+        dynamic_hand_twin::TwinTargets canonicalTwinTargets{};
+        const auto publishCanonicalTwinSlot = [](dynamic_hand_twin::TwinSlotFrame& slot, const RoleFrameResult& frame) {
+            slot.valid = true;
+            slot.target = frame.transform;
+            slot.length = frame.length;
+            slot.radius = frame.radius;
+            slot.convexRadius = frame.convexRadius;
+        };
 
         RoleFrameResult anchorFrame{};
         if (!makeRoleFrame(lookup, isLeft, HandColliderRole::PalmAnchor, anchorFrame)) {
             ROCK_LOG_ERROR(Hand, "{} palm anchor frame could not be derived; bone-derived hand creation cannot continue", isLeft ? "Left" : "Right");
             return false;
         }
+        publishCanonicalTwinSlot(canonicalTwinTargets.palm, anchorFrame);
 
         auto* anchorShape = buildShapeForRole(anchorFrame, HandColliderRole::PalmAnchor);
         if (!anchorShape) {
@@ -749,6 +761,14 @@ namespace rock
                 destroy(bhkWorld, palmAnchorBody);
                 return false;
             }
+            if (hand_collider_semantics::isFingerRole(role) &&
+                hand_collider_semantics::segmentForRole(role) == HandFingerSegment::Tip) {
+                const auto fingerIndex =
+                    static_cast<std::size_t>(hand_collider_semantics::fingerForRole(role));
+                if (fingerIndex < canonicalTwinTargets.fingertips.size()) {
+                    publishCanonicalTwinSlot(canonicalTwinTargets.fingertips[fingerIndex], frame);
+                }
+            }
             ++createdCount;
         }
 
@@ -762,6 +782,11 @@ namespace rock
         _driveRebuildRequested.store(false, std::memory_order_release);
         _driveFailureCount.store(0, std::memory_order_release);
         _created = true;
+        if (++_dynamicTwinGeometryGeneration == 0) {
+            _dynamicTwinGeometryGeneration = 1;
+        }
+        canonicalTwinTargets.geometryGeneration = _dynamicTwinGeometryGeneration;
+        _canonicalDynamicTwinDimensions = canonicalTwinTargets;
         publishAtomicBodyIds(palmAnchorBody, isLeft);
         ROCK_LOG_INFO(Hand,
             "{} bone-derived hand colliders created: anchor={} segments={} sourceSkeleton={} tree={} powerArmor={}",
@@ -776,6 +801,9 @@ namespace rock
 
     void HandBoneColliderSet::destroy(void* bhkWorld, BethesdaPhysicsBody& palmAnchorBody)
     {
+        auto structuralMutation = _physicsCallbackGate ?
+            _physicsCallbackGate->pauseForMutation() :
+            PhysicsCallbackQuiescenceGate::MutationLease{};
         clearAtomicBodyIds();
         for (auto& instance : _bodies) {
             if (instance.body.isValid()) {
@@ -795,6 +823,7 @@ namespace rock
         _latestPalmAnchorTarget = {};
         _hasLatestPalmAnchorTarget = false;
         _dynamicTwinTargets = {};
+        _canonicalDynamicTwinDimensions = {};
         _cachedSkeleton = nullptr;
         _cachedBoneTree = nullptr;
         _cachedPowerArmor = false;
@@ -807,6 +836,9 @@ namespace rock
 
     void HandBoneColliderSet::reset()
     {
+        auto structuralMutation = _physicsCallbackGate ?
+            _physicsCallbackGate->pauseForMutation() :
+            PhysicsCallbackQuiescenceGate::MutationLease{};
         clearAtomicBodyIds();
         for (auto& instance : _bodies) {
             clearInstance(instance, false);
@@ -818,6 +850,7 @@ namespace rock
         _latestPalmAnchorTarget = {};
         _hasLatestPalmAnchorTarget = false;
         _dynamicTwinTargets = {};
+        _canonicalDynamicTwinDimensions = {};
         _cachedSkeleton = nullptr;
         _cachedBoneTree = nullptr;
         _cachedPowerArmor = false;
@@ -919,7 +952,11 @@ namespace rock
             }
         }
 
+        dynamic_hand_twin::applyCanonicalHandDimensions(
+            twinTargets,
+            _canonicalDynamicTwinDimensions);
         twinTargets.updateCounter = _dynamicTwinTargets.updateCounter + 1;
+        twinTargets.geometryGeneration = _dynamicTwinGeometryGeneration;
         _dynamicTwinTargets = twinTargets;
     }
 

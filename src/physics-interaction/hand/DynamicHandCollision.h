@@ -1,11 +1,13 @@
 #pragma once
 
 #include "physics-interaction/hand/DynamicHandCollisionFeedbackPolicy.h"
+#include "physics-interaction/hand/DynamicHandCollisionTransitionPolicy.h"
 #include "physics-interaction/hand/DynamicHandCollisionTelemetry.h"
 #include "physics-interaction/hand/DynamicHandTwinTargets.h"
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
 #include "physics-interaction/native/HavokPhysicsTiming.h"
+#include "physics-interaction/native/PhysicsCallbackQuiescenceGate.h"
 
 #include "RE/Havok/hknpShape.h"
 #include "RE/Havok/hknpWorld.h"
@@ -48,6 +50,8 @@ namespace rock
         static constexpr std::size_t kPalmSlot = dynamic_hand_collision_telemetry::kPalmSlot;
         static constexpr std::size_t kFirstForearmSlot = dynamic_hand_collision_telemetry::kFirstForearmSlot;
         static constexpr std::size_t kBodiesPerHand = dynamic_hand_collision_telemetry::kBodiesPerHand;
+
+        void setPhysicsCallbackGate(PhysicsCallbackQuiescenceGate* gate) { _physicsCallbackGate = gate; }
 
         void updateFrame(const PhysicsFrameContext& frame,
             bool physicsWritesAllowed,
@@ -143,9 +147,7 @@ namespace rock
             GeneratedKeyframedBodyDriveState driveState{};
             RE::hknpWorld* createdWorld = nullptr;
             void* createdBhkWorld = nullptr;
-            float createdLength = 0.0f;
-            float createdRadius = 0.0f;
-            float createdConvexRadius = 0.0f;
+            std::uint64_t createdGeometryGeneration = 0;
             bool created = false;
             /*
              * Physics-thread-only handshake between the pre-collide drive and
@@ -214,10 +216,12 @@ namespace rock
             const PhysicsFrameContext& frame,
             const Hand& hand,
             const BodyBoneColliderSet& bodyBoneColliders,
-            const dynamic_hand_twin::TwinSlotFrame& twinFrame);
+            const dynamic_hand_twin::TwinSlotFrame& twinFrame,
+            std::uint64_t geometryGeneration);
         void retireSlot(ProxySlot& slot, void* bhkWorld);
         void retireHand(HandSlots& handSlots, void* bhkWorld, bool isLeft);
         void clearVisual(HandSlots& handSlots, bool isLeft);
+        void applyTransitionCollisionSuppression(RE::hknpWorld* world, bool suppressCollision);
         static void publishPhysicsTelemetry(ProxySlot& slot, const PhysicsTelemetrySample& sample);
         [[nodiscard]] static bool readPhysicsTelemetry(const ProxySlot& slot, PhysicsTelemetrySample& outSample, std::uint64_t& outSequence);
         static void clearPhysicsContactState(ProxySlot& slot);
@@ -232,5 +236,8 @@ namespace rock
         dynamic_hand_collision_telemetry::HapticEvents _pendingHapticEvents{};
         std::uint64_t _telemetryUpdateSequence = 0;
         std::uint32_t _logCounter = 0;
+        PhysicsCallbackQuiescenceGate* _physicsCallbackGate = nullptr;
+        dynamic_hand_collision_transition::State _transitionState{};
+        bool _transitionCollisionSuppressed = false;
     };
 }

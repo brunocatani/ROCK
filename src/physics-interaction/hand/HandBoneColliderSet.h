@@ -6,6 +6,7 @@
 #include "physics-interaction/hand/HandColliderTypes.h"
 #include "physics-interaction/hand/DynamicHandTwinTargets.h"
 #include "physics-interaction/native/HavokPhysicsTiming.h"
+#include "physics-interaction/native/PhysicsCallbackQuiescenceGate.h"
 
 #include "RE/Havok/hknpShape.h"
 #include "RE/Havok/hknpWorld.h"
@@ -35,6 +36,8 @@ namespace rock
     {
     public:
         HandBoneColliderSet();
+
+        void setPhysicsCallbackGate(PhysicsCallbackQuiescenceGate* gate) { _physicsCallbackGate = gate; }
 
         bool create(
             RE::hknpWorld* world,
@@ -127,6 +130,8 @@ namespace rock
         RE::NiTransform _latestPalmAnchorTarget{};
         bool _hasLatestPalmAnchorTarget = false;
         dynamic_hand_twin::TwinTargets _dynamicTwinTargets{};
+        dynamic_hand_twin::TwinTargets _canonicalDynamicTwinDimensions{};
+        PhysicsCallbackQuiescenceGate* _physicsCallbackGate = nullptr;
         const void* _cachedSkeleton = nullptr;
         const void* _cachedBoneTree = nullptr;
         bool _cachedPowerArmor = false;
@@ -139,6 +144,7 @@ namespace rock
         std::atomic<std::uint32_t> _driveFailureCount{ 0 };
         std::uint32_t _palmAnchorPublicationIndex = kInvalidPublicationIndex;
         bool _created = false;
+        std::uint64_t _dynamicTwinGeometryGeneration = 0;
         int _updateLogCounter = 0;
 
         std::array<std::atomic<std::uint32_t>, hand_collider_semantics::kHandColliderBodyCountPerHand> _bodyIdsAtomic{};

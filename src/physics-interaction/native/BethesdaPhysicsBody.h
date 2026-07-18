@@ -108,10 +108,14 @@ namespace rock
         void* getNiNode() const { return _niNode; }
 
     private:
+        [[nodiscard]] bool matchesCreationWorld(RE::hknpWorld* world, void* bhkWorld) const;
+
         void* _collisionObject = nullptr;
         void* _physicsSystem = nullptr;
         void* _systemData = nullptr;
         void* _niNode = nullptr;
+        RE::hknpWorld* _createdHknpWorld = nullptr;
+        void* _createdBhkWorld = nullptr;
         RE::hknpBodyId _bodyId{ 0x7FFF'FFFF };
         bool _created = false;
     };

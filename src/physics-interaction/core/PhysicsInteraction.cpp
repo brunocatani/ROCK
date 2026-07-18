@@ -21,6 +21,7 @@
 #include "physics-interaction/native/BodyCollisionControl.h"
 #include "physics-interaction/actor/ActorEquipmentGrab.h"
 #include "physics-interaction/animation/NativeAnimationAuthority.h"
+#include "physics-interaction/animation/NativeAnimationAuthorityPolicy.h"
 #include "physics-interaction/api/InteractionCommandQueue.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
@@ -1296,6 +1297,12 @@ namespace rock
             &PhysicsInteraction::onCustomGrabAuthorityBetweenStep,
             &PhysicsInteraction::onCustomGrabAuthorityAfterSolve,
             this);
+        auto* generatedBodyCallbackGate = &_generatedBodyStepDrive.callbackGate();
+        _rightHand.setPhysicsCallbackGate(generatedBodyCallbackGate);
+        _leftHand.setPhysicsCallbackGate(generatedBodyCallbackGate);
+        _bodyBoneColliders.setPhysicsCallbackGate(generatedBodyCallbackGate);
+        _dynamicHandCollision.setPhysicsCallbackGate(generatedBodyCallbackGate);
+        _weaponCollision.setPhysicsCallbackGate(generatedBodyCallbackGate);
         clearLooseGrenadeImpactWatches();
 
         installBumpHook();
@@ -1410,8 +1417,22 @@ namespace rock
 
     void PhysicsInteraction::markGeneratedBodiesInvalidated()
     {
+        // Close callback entry and drain any native step already traversing
+        // ROCK-owned body banks before clearing registry or wrapper state.
+        _generatedBodyStepDrive.reset();
         clearGeneratedBodyContactRegistry();
-        _dynamicHandCollision.retireAll(_generatedBodiesBhkWorld);
+        auto* currentBhkWorld = getPlayerBhkWorld();
+        auto* currentHknpWorld = currentBhkWorld ? getHknpWorld(currentBhkWorld) : nullptr;
+        const bool generatedWorldStillLive =
+            currentBhkWorld &&
+            currentBhkWorld == _generatedBodiesBhkWorld &&
+            currentHknpWorld &&
+            currentHknpWorld == _generatedBodiesHknpWorld;
+        if (generatedWorldStillLive) {
+            _dynamicHandCollision.retireAll(_generatedBodiesBhkWorld);
+        } else {
+            _dynamicHandCollision.reset();
+        }
         _generatedBodiesBhkWorld = nullptr;
         _generatedBodiesHknpWorld = nullptr;
         _generatedBodiesWorldGeneration = 0;
@@ -1426,7 +1447,6 @@ namespace rock
         _lifecycleFlagsAtomic.store(_lifecycleState.flags, std::memory_order_release);
         _stableFrameCountAtomic.store(_lifecycleState.stableFrameCount, std::memory_order_release);
         _lifecycleHknpWorldAtomic.store(nullptr, std::memory_order_release);
-        _generatedBodyStepDrive.reset();
         _completedPhysicsSolveSequence.store(0, std::memory_order_release);
         _equippedWeaponDropMomentumHandoffs = {};
         _shoulderStashStates = {};
@@ -2171,13 +2191,17 @@ namespace rock
         _palmClockGameDeltaSeconds.store(frame.deltaSeconds, std::memory_order_release);
         observeLifecycleFrame(bhk, hknp, ::rock::provider::RockProviderLifecycleReason::None);
         if (!generatedBodiesMatchLifecycle(bhk, hknp)) {
-            if (rebuildGeneratedBodiesForLifecycle(bhk, hknp, "epoch-mismatch")) {
+            const bool rebuilt =
+                !frame.reloadBoundaryActive &&
+                rebuildGeneratedBodiesForLifecycle(bhk, hknp, "epoch-mismatch");
+            if (rebuilt) {
                 observeLifecycleFrame(bhk, hknp, ::rock::provider::RockProviderLifecycleReason::GeneratedBodiesRebuilt);
             } else {
                 observeLifecycleFrame(bhk, hknp, ::rock::provider::RockProviderLifecycleReason::GeneratedBodiesInvalidated);
                 ROCK_LOG_SAMPLE_DEBUG(Update,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "ROCK lifecycle generated-body rebuild pending: flags=0x{:08X} reason={} worldGen={} skeletonGen={} providerGen={} stableFrames={}",
+                    "ROCK lifecycle generated-body rebuild pending: animationBoundary={} flags=0x{:08X} reason={} worldGen={} skeletonGen={} providerGen={} stableFrames={}",
+                    frame.reloadBoundaryActive ? "yes" : "no",
                     _lifecycleFlagsAtomic.load(std::memory_order_acquire),
                     _lastLifecycleReasonAtomic.load(std::memory_order_acquire),
                     _worldGenerationAtomic.load(std::memory_order_acquire),
@@ -3239,8 +3263,6 @@ namespace rock
             }
         }
         refreshGeneratedBodyContactRegistry();
-        _generatedBodyStepDrive.registerForNextStep(bhk, hknp);
-
         updateSelection(frame);
 
         /*
@@ -3324,6 +3346,9 @@ namespace rock
         }
 
         ::rock::provider::dispatchFrameCallbacks(*this);
+        // Publish callback ownership only after every main-thread collider
+        // mutation and target update for this frame has committed.
+        _generatedBodyStepDrive.registerForNextStep(bhk, hknp);
     }
 
     void PhysicsInteraction::updateAuthoredPrimaryFiringGripExperiment()
@@ -4149,13 +4174,22 @@ namespace rock
             return;
         }
 
+        // No generated-body owner may be torn down while a native listener is
+        // still executing or eligible to enter its ROCK callback.
+        _generatedBodyStepDrive.reset();
+
         dispatchPhysicsMessage(kPhysMsg_OnPhysicsShutdown, false);
 
         ROCK_LOG_INFO(Init, "Shutting down ROCK physics module...");
         restoreHeldMassMovementSlowdown("shutdown");
 
         auto* currentBhk = getPlayerBhkWorld();
-        const bool worldValid = _cachedBhkWorld && currentBhk == _cachedBhkWorld;
+        auto* currentHknp = currentBhk ? getHknpWorld(currentBhk) : nullptr;
+        const bool worldValid =
+            _cachedBhkWorld &&
+            currentBhk == _cachedBhkWorld &&
+            _cachedHknpWorld &&
+            currentHknp == _cachedHknpWorld;
 
         if (worldValid) {
             auto* hknp = getHknpWorld(_cachedBhkWorld);
@@ -4186,6 +4220,7 @@ namespace rock
             ROCK_LOG_INFO(Init, "World stale or null — skipping Havok body destruction");
             _rightHand.abandonHavokStateAfterWorldLoss();
             _leftHand.abandonHavokStateAfterWorldLoss();
+            _weaponCollision.abandonHavokStateAfterWorldLoss();
             _equipVisualBridge.abandonSceneGraph();
             _bodyBoneColliders.reset();
             _rightDominantWeaponCollisionSuppressed.store(false, std::memory_order_release);
@@ -4758,6 +4793,9 @@ namespace rock
         auto* world = frame.hknpWorld;
 
         if (!_rightHand.hasCollisionBody() || !_leftHand.hasCollisionBody()) {
+            if (frame.reloadBoundaryActive) {
+                return;
+            }
             if (_handColliderCreateRetryFrames > 0) {
                 --_handColliderCreateRetryFrames;
                 return;
@@ -4837,6 +4875,9 @@ namespace rock
         }
 
         if (!_bodyBoneColliders.hasBodies()) {
+            if (frame.reloadBoundaryActive) {
+                return;
+            }
             if (_bodyBoneColliderCreateRetryFrames > 0) {
                 --_bodyBoneColliderCreateRetryFrames;
                 return;

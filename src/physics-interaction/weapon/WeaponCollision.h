@@ -14,6 +14,7 @@
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
 #include "physics-interaction/native/HavokPhysicsTiming.h"
+#include "physics-interaction/native/PhysicsCallbackQuiescenceGate.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/PhysicsUtils.h"
 #include "physics-interaction/weapon/WeaponTypes.h"
@@ -56,6 +57,8 @@ namespace rock
     {
     public:
         WeaponCollision();
+
+        void setPhysicsCallbackGate(PhysicsCallbackQuiescenceGate* gate) { _physicsCallbackGate = gate; }
 
         struct WeaponBodySnapshot
         {
@@ -110,6 +113,7 @@ namespace rock
         void init(RE::hknpWorld* world, void* bhkWorld);
 
         void shutdown();
+        void abandonHavokStateAfterWorldLoss();
 
         void update(RE::hknpWorld* world, RE::NiAVObject* weaponNode, float dt, bool weaponDrawn);
 
@@ -429,6 +433,7 @@ namespace rock
         std::uint32_t _retiredWeaponBodyPayloadCount{ 0 };
         mutable std::mutex _retiredWeaponBodyPayloadMutex;
         bool _usingReplacementWeaponBodies{ false };
+        PhysicsCallbackQuiescenceGate* _physicsCallbackGate{ nullptr };
         std::uint64_t _cachedWeaponKey{ 0 };
         std::uint64_t _cachedWeaponVisualKey{ 0 };
         std::uint64_t _cachedWeaponIdentityKey{ 0 };

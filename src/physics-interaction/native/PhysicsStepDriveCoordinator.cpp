@@ -5,6 +5,7 @@
 
 #include <REL/Relocation.h>
 
+#include <atomic>
 #include <cstddef>
 
 namespace rock
@@ -24,14 +25,21 @@ namespace rock
         void (*afterAfterWhole)();
     };
 
+    struct PhysicsStepDriveCoordinatorCallbackState
+    {
+        PhysicsCallbackQuiescenceGate gate{};
+        PhysicsCallbackQuiescenceGate::CallbackLease wholeUpdateLease{};
+    };
+
     struct PhysicsStepDriveCoordinator::NativeStepListener
     {
         const PhysicsStepDriveCoordinatorNativeStepListenerVTable* vtable = nullptr;
         void* engineScratch = nullptr;
-        PhysicsStepDriveCoordinator* owner = nullptr;
+        std::atomic<PhysicsStepDriveCoordinator*> owner{ nullptr };
+        PhysicsStepDriveCoordinatorCallbackState* callbackState = nullptr;
     };
 
-    static_assert(sizeof(PhysicsStepDriveCoordinator::NativeStepListener) <= 32);
+    static_assert(sizeof(PhysicsStepDriveCoordinator::NativeStepListener) == 32);
     static_assert(offsetof(PhysicsStepDriveCoordinator::NativeStepListener, engineScratch) == 0x08);
     static_assert(offsetof(PhysicsStepDriveCoordinator::NativeStepListener, owner) == 0x10);
 
@@ -50,15 +58,25 @@ namespace rock
 
         void beforeWhole(PhysicsStepDriveCoordinator::NativeStepListener* listener, std::uint32_t, void*)
         {
-            if (listener && listener->owner) {
-                listener->owner->onBeforeWholePhysicsUpdate();
+            if (!listener || !listener->callbackState) {
+                return;
+            }
+            auto& callbackState = *listener->callbackState;
+            callbackState.wholeUpdateLease = callbackState.gate.tryEnterCallback();
+            if (callbackState.wholeUpdateLease) {
+                if (auto* owner = listener->owner.load(std::memory_order_acquire)) {
+                    owner->onBeforeWholePhysicsUpdate();
+                }
             }
         }
 
         void beforeAny(PhysicsStepDriveCoordinator::NativeStepListener* listener, std::uint32_t, void*, float substepProgress, float substepDeltaSeconds)
         {
-            if (listener && listener->owner) {
-                listener->owner->onBeforeAnyPhysicsStep(substepProgress, substepDeltaSeconds);
+            if (!listener || !listener->callbackState || !listener->callbackState->wholeUpdateLease) {
+                return;
+            }
+            if (auto* owner = listener->owner.load(std::memory_order_acquire)) {
+                owner->onBeforeAnyPhysicsStep(substepProgress, substepDeltaSeconds);
             }
         }
 
@@ -70,20 +88,30 @@ namespace rock
             float substepProgress,
             float substepDeltaSeconds)
         {
-            if (listener && listener->owner) {
-                listener->owner->onBetweenCollideAndSolve(substepProgress, substepDeltaSeconds);
+            if (!listener || !listener->callbackState || !listener->callbackState->wholeUpdateLease) {
+                return;
+            }
+            if (auto* owner = listener->owner.load(std::memory_order_acquire)) {
+                owner->onBetweenCollideAndSolve(substepProgress, substepDeltaSeconds);
             }
         }
 
         void afterAny(PhysicsStepDriveCoordinator::NativeStepListener* listener, std::uint32_t, void*, float substepProgress, float substepDeltaSeconds)
         {
-            if (listener && listener->owner) {
-                listener->owner->onAfterAnyPhysicsStep(substepProgress, substepDeltaSeconds);
+            if (!listener || !listener->callbackState || !listener->callbackState->wholeUpdateLease) {
+                return;
+            }
+            if (auto* owner = listener->owner.load(std::memory_order_acquire)) {
+                owner->onAfterAnyPhysicsStep(substepProgress, substepDeltaSeconds);
             }
         }
 
-        void afterWhole(PhysicsStepDriveCoordinator::NativeStepListener*, std::uint32_t, void*)
-        {}
+        void afterWhole(PhysicsStepDriveCoordinator::NativeStepListener* listener, std::uint32_t, void*)
+        {
+            if (listener && listener->callbackState) {
+                listener->callbackState->wholeUpdateLease = {};
+            }
+        }
 
         const NativeStepListenerVTable kStepListenerVTable{
             &noop,
@@ -110,7 +138,8 @@ namespace rock
              */
             auto* listener = new PhysicsStepDriveCoordinator::NativeStepListener();
             listener->vtable = &kStepListenerVTable;
-            listener->owner = owner;
+            listener->callbackState = new PhysicsStepDriveCoordinatorCallbackState();
+            listener->owner.store(owner, std::memory_order_release);
             return listener;
         }
     }
@@ -127,6 +156,7 @@ namespace rock
         DriveCallback substepPostSolveCallback,
         void* userData)
     {
+        auto mutation = callbackGate().pauseForMutation();
         _wholePreStepCallback = wholePreStepCallback;
         _substepPreCollideCallback = substepPreCollideCallback;
         _betweenCollideAndSolveCallback = betweenCollideAndSolveCallback;
@@ -140,29 +170,39 @@ namespace rock
             return;
         }
 
+        auto& gate = callbackGate();
+        gate.pauseAndWait();
         _registeredWorld = hknpWorld;
         ++_registrationSequence;
         if (_nativeListener) {
             _nativeListener->vtable = &kStepListenerVTable;
-            _nativeListener->owner = this;
+            _nativeListener->owner.store(this, std::memory_order_release);
         }
 
         using AddStepListener_t = void (*)(void*, NativeStepListener*);
         static REL::Relocation<AddStepListener_t> addStepListener{ REL::Offset(offsets::kFunc_World_AddStepListener) };
         addStepListener(bhkWorld, nativeListener());
+        gate.resumeCallbacks();
     }
 
     void PhysicsStepDriveCoordinator::reset()
     {
+        auto& gate = callbackGate();
+        gate.pauseAndWait();
+        if (_nativeListener) {
+            _nativeListener->owner.store(nullptr, std::memory_order_release);
+        }
         _registeredWorld = nullptr;
         _lastTimingSample = {};
         _lastSubstepTimingSample = {};
         _registrationSequence = 0;
         _stepSequence = 0;
         _currentSubstepIndex = 0;
-        if (_nativeListener && _nativeListener->owner == this) {
-            _nativeListener->owner = nullptr;
-        }
+    }
+
+    PhysicsCallbackQuiescenceGate& PhysicsStepDriveCoordinator::callbackGate()
+    {
+        return _nativeListener->callbackState->gate;
     }
 
     PhysicsStepDriveCoordinator::NativeStepListener* PhysicsStepDriveCoordinator::nativeListener()

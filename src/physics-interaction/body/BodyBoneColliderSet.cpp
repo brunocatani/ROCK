@@ -791,6 +791,9 @@ namespace rock
 
     bool BodyBoneColliderSet::create(RE::hknpWorld* world, void* bhkWorld)
     {
+        auto structuralMutation = _physicsCallbackGate ?
+            _physicsCallbackGate->pauseForMutation() :
+            PhysicsCallbackQuiescenceGate::MutationLease{};
         destroy(bhkWorld);
         if (!world || !bhkWorld) {
             return false;
@@ -859,6 +862,11 @@ namespace rock
         _driveRebuildRequested.store(false, std::memory_order_release);
         _driveFailureCount.store(0, std::memory_order_release);
         _created = true;
+        if (++_dynamicForearmGeometryGeneration == 0) {
+            _dynamicForearmGeometryGeneration = 1;
+        }
+        forearmTwinTargets.geometryGeneration = _dynamicForearmGeometryGeneration;
+        _canonicalForearmTwinDimensions = forearmTwinTargets;
         forearmTwinTargets.updateCounter = _dynamicForearmTwinTargets.updateCounter + 1;
         _dynamicForearmTwinTargets = forearmTwinTargets;
         publishAtomicBodyIds(snapshot.inPowerArmor);
@@ -876,6 +884,9 @@ namespace rock
 
     void BodyBoneColliderSet::destroy(void* bhkWorld)
     {
+        auto structuralMutation = _physicsCallbackGate ?
+            _physicsCallbackGate->pauseForMutation() :
+            PhysicsCallbackQuiescenceGate::MutationLease{};
         clearAtomicBodyIds();
         for (auto& instance : _bodies) {
             if (instance.body.isValid()) {
@@ -892,6 +903,7 @@ namespace rock
         _cachedPowerArmor = false;
         _cachedTuningSignature = 0;
         _dynamicForearmTwinTargets = {};
+        _canonicalForearmTwinDimensions = {};
         _driveRebuildRequested.store(false, std::memory_order_release);
         _driveFailureCount.store(0, std::memory_order_release);
         _reader.resetCache();
@@ -899,6 +911,9 @@ namespace rock
 
     void BodyBoneColliderSet::reset()
     {
+        auto structuralMutation = _physicsCallbackGate ?
+            _physicsCallbackGate->pauseForMutation() :
+            PhysicsCallbackQuiescenceGate::MutationLease{};
         clearAtomicBodyIds();
         for (auto& instance : _bodies) {
             // reset is used when the Havok world is already gone. The body handle cannot be
@@ -914,6 +929,7 @@ namespace rock
         _cachedPowerArmor = false;
         _cachedTuningSignature = 0;
         _dynamicForearmTwinTargets = {};
+        _canonicalForearmTwinDimensions = {};
         _driveRebuildRequested.store(false, std::memory_order_release);
         _driveFailureCount.store(0, std::memory_order_release);
         _reader.resetCache();
@@ -975,7 +991,11 @@ namespace rock
             forearmTwinMergeSources,
             bonesByName,
             snapshot.inPowerArmor);
+        dynamic_hand_twin::applyCanonicalForearmDimensions(
+            forearmTwinTargets,
+            _canonicalForearmTwinDimensions);
         forearmTwinTargets.updateCounter = _dynamicForearmTwinTargets.updateCounter + 1;
+        forearmTwinTargets.geometryGeneration = _dynamicForearmGeometryGeneration;
         _dynamicForearmTwinTargets = forearmTwinTargets;
     }
 

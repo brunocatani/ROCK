@@ -7,6 +7,7 @@
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
 #include "physics-interaction/native/HavokPhysicsTiming.h"
+#include "physics-interaction/native/PhysicsCallbackQuiescenceGate.h"
 
 #include "RE/Havok/hknpShape.h"
 #include "RE/Havok/hknpWorld.h"
@@ -51,6 +52,8 @@ namespace rock
         };
 
         BodyBoneColliderSet();
+
+        void setPhysicsCallbackGate(PhysicsCallbackQuiescenceGate* gate) { _physicsCallbackGate = gate; }
 
         bool create(RE::hknpWorld* world, void* bhkWorld);
         void destroy(void* bhkWorld);
@@ -111,9 +114,12 @@ namespace rock
         const void* _lastCapturedBoneTree = nullptr;
         bool _lastCapturedPowerArmor = false;
         dynamic_hand_twin::ForearmTwinTargets _dynamicForearmTwinTargets{};
+        dynamic_hand_twin::ForearmTwinTargets _canonicalForearmTwinDimensions{};
+        PhysicsCallbackQuiescenceGate* _physicsCallbackGate = nullptr;
         std::atomic<bool> _driveRebuildRequested{ false };
         std::atomic<std::uint32_t> _driveFailureCount{ 0 };
         bool _created = false;
+        std::uint64_t _dynamicForearmGeometryGeneration = 0;
         int _updateLogCounter = 0;
 
         std::array<std::atomic<std::uint32_t>, kBodyBoneColliderBodyCount> _bodyIdsAtomic{};

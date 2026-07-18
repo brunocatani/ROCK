@@ -488,6 +488,8 @@ namespace rock
             static REL::Relocation<CollisionObjectAddToWorld_t> addToWorld{ REL::Offset(offsets::kFunc_CollisionObject_AddToWorld) };
             addToWorld(_collisionObject, bhkWorld);
         }
+        _createdHknpWorld = world;
+        _createdBhkWorld = bhkWorld;
 
         RE::hknpBodyId bodyId{ kInvalidGeneratedId };
         {
@@ -536,6 +538,21 @@ namespace rock
             ROCK_LOG_ERROR(BethesdaBody, "Native wrapper body {} is not readable after setup", bodyId.value);
         }
 
+        auto* instanceWorld = nativeWorldFromPhysicsSystem(_physicsSystem);
+        auto* wrapperWorld = havok_runtime::getHknpWorldFromBhk(reinterpret_cast<RE::bhkWorld*>(bhkWorld));
+        if (instanceWorld != world || wrapperWorld != world) {
+            ROCK_LOG_ERROR(
+                BethesdaBody,
+                "Generated body world identity mismatch after create: bodyId={} requestedHknp={:p} wrapperHknp={:p} instanceHknp={:p} bhk={:p}",
+                _bodyId.value,
+                static_cast<void*>(world),
+                static_cast<void*>(wrapperWorld),
+                static_cast<void*>(instanceWorld),
+                bhkWorld);
+            destroy(bhkWorld);
+            return false;
+        }
+
         _created = true;
 
         ROCK_LOG_DEBUG(BethesdaBody, "Created '{}': bodyId={} collObj={:p} physSys={:p} sysData={:p} motionType={}", name, _bodyId.value, _collisionObject, _physicsSystem,
@@ -581,6 +598,17 @@ namespace rock
         ROCK_LOG_DEBUG(BethesdaBody, "Destroying body: bodyId={} collObj={:p}", _bodyId.value, _collisionObject);
 
         auto* physicsSystemInstance = nativePhysicsSystemInstance(_physicsSystem);
+        if (bhkWorld && physicsSystemInstance && !matchesCreationWorld(_createdHknpWorld, bhkWorld)) {
+            ROCK_LOG_ERROR(
+                BethesdaBody,
+                "Rejected body destruction through mismatched world: bodyId={} callerBhk={:p} createdBhk={:p} createdHknp={:p} instanceHknp={:p}",
+                _bodyId.value,
+                bhkWorld,
+                _createdBhkWorld,
+                static_cast<void*>(_createdHknpWorld),
+                static_cast<void*>(nativeWorldFromPhysicsSystem(_physicsSystem)));
+            return;
+        }
         if (bhkWorld && physicsSystemInstance) {
             static REL::Relocation<RemovePhysicsSystem_t> removePhysicsSystem{ REL::Offset(offsets::kFunc_BhkWorld_RemovePhysicsSystemInstance) };
             removePhysicsSystem(bhkWorld, physicsSystemInstance);
@@ -617,6 +645,17 @@ namespace rock
         ROCK_LOG_DEBUG(BethesdaBody, "Retiring body from world: bodyId={} collObj={:p}", _bodyId.value, _collisionObject);
 
         auto* physicsSystemInstance = nativePhysicsSystemInstance(_physicsSystem);
+        if (bhkWorld && physicsSystemInstance && !matchesCreationWorld(_createdHknpWorld, bhkWorld)) {
+            ROCK_LOG_ERROR(
+                BethesdaBody,
+                "Rejected body retirement through mismatched world: bodyId={} callerBhk={:p} createdBhk={:p} createdHknp={:p} instanceHknp={:p}",
+                _bodyId.value,
+                bhkWorld,
+                _createdBhkWorld,
+                static_cast<void*>(_createdHknpWorld),
+                static_cast<void*>(nativeWorldFromPhysicsSystem(_physicsSystem)));
+            return false;
+        }
         if (bhkWorld && physicsSystemInstance) {
             static REL::Relocation<RemovePhysicsSystem_t> removePhysicsSystem{ REL::Offset(offsets::kFunc_BhkWorld_RemovePhysicsSystemInstance) };
             removePhysicsSystem(bhkWorld, physicsSystemInstance);
@@ -757,8 +796,28 @@ namespace rock
         _physicsSystem = nullptr;
         _systemData = nullptr;
         _niNode = nullptr;
+        _createdHknpWorld = nullptr;
+        _createdBhkWorld = nullptr;
         _bodyId.value = 0x7FFF'FFFF;
         _created = false;
+    }
+
+    bool BethesdaPhysicsBody::matchesCreationWorld(RE::hknpWorld* world, void* bhkWorld) const
+    {
+        if (!world || !bhkWorld ||
+            world != _createdHknpWorld ||
+            bhkWorld != _createdBhkWorld) {
+            return false;
+        }
+
+        auto* instanceWorld = nativeWorldFromPhysicsSystem(_physicsSystem);
+        if (instanceWorld != world) {
+            return false;
+        }
+
+        auto* wrapperWorld =
+            havok_runtime::getHknpWorldFromBhk(reinterpret_cast<RE::bhkWorld*>(bhkWorld));
+        return wrapperWorld == world;
     }
 
     bool BethesdaPhysicsBody::createNiNode(const char* name)

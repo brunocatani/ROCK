@@ -2324,6 +2324,9 @@ namespace rock
 
     void WeaponCollision::clearPendingGeneratedWeaponBuild(RE::hknpWorld* world, bool destroyTargetBank)
     {
+        auto structuralMutation = destroyTargetBank && _physicsCallbackGate ?
+            _physicsCallbackGate->pauseForMutation() :
+            PhysicsCallbackQuiescenceGate::MutationLease{};
         if (_pendingGeneratedWeaponBuild.active && destroyTargetBank) {
             destroyWeaponBodyBank(_pendingGeneratedWeaponBuild.replacingExisting ? inactiveWeaponBodies() : activeWeaponBodies(), true);
         }
@@ -2437,6 +2440,10 @@ namespace rock
         const bool settingsChanged = pending.settingsChanged;
         const bool driveRequestedRebuild = pending.driveRequestedRebuild;
         const auto summary = pending.summary;
+
+        auto structuralMutation = _physicsCallbackGate ?
+            _physicsCallbackGate->pauseForMutation() :
+            PhysicsCallbackQuiescenceGate::MutationLease{};
 
         if (replacingExisting) {
             ROCK_LOG_INFO(Weapon,
@@ -3271,6 +3278,27 @@ namespace rock
         clearWeaponEmitterSnapshot();
 
         ROCK_LOG_INFO(Weapon, "WeaponCollision shutdown");
+    }
+
+    void WeaponCollision::abandonHavokStateAfterWorldLoss()
+    {
+        auto structuralMutation = _physicsCallbackGate ?
+            _physicsCallbackGate->pauseForMutation() :
+            PhysicsCallbackQuiescenceGate::MutationLease{};
+
+        clearAtomicBodyIds();
+        resetWeaponBodySetGeneration();
+        for (auto& instance : _weaponBodies) {
+            clearWeaponBodyInstance(instance, true);
+        }
+        for (auto& instance : _weaponReplacementBodies) {
+            clearWeaponBodyInstance(instance, true);
+        }
+        _pendingGeneratedWeaponBuild = {};
+        _usingReplacementWeaponBodies = false;
+        _cachedWorld = nullptr;
+        _cachedBhkWorld = nullptr;
+        ROCK_LOG_INFO(Weapon, "Weapon collision wrappers abandoned after Havok world loss");
     }
 
     void WeaponCollision::requestWorkbenchExitRebuild()
@@ -4677,6 +4705,9 @@ namespace rock
 
     void WeaponCollision::destroyWeaponBody(RE::hknpWorld* world)
     {
+        auto structuralMutation = _physicsCallbackGate ?
+            _physicsCallbackGate->pauseForMutation() :
+            PhysicsCallbackQuiescenceGate::MutationLease{};
         if (!bankHasWeaponBody(_weaponBodies) && !bankHasWeaponBody(_weaponReplacementBodies)) {
             clearGeneratedSourceCompletenessTracking();
             clearPendingWeaponVisualRebuild();
@@ -6338,7 +6369,8 @@ namespace rock
 
     void WeaponCollision::flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
     {
-        if (!world || !hasWeaponBody() || getCurrentWeaponGenerationKey() == 0) {
+        const auto publishedGeneration = getCurrentWeaponGenerationKey();
+        if (!world || publishedGeneration == 0) {
             return;
         }
 

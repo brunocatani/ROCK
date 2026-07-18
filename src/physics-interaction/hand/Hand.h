@@ -600,6 +600,8 @@ namespace rock
 
         bool createCollision(RE::hknpWorld* world, void* bhkWorld, const RE::NiTransform& rollAuthorityWorld);
 
+        void setPhysicsCallbackGate(PhysicsCallbackQuiescenceGate* gate) { _boneColliders.setPhysicsCallbackGate(gate); }
+
         void destroyCollision(void* bhkWorld);
 
         void updateCollisionTransform(

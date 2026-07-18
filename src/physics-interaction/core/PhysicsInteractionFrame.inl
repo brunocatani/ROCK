@@ -12,7 +12,11 @@ PhysicsFrameContext PhysicsInteraction::buildFrameContext(RE::bhkWorld* bhk, RE:
     frame.deltaSeconds = (deltaSeconds > 0.0f && deltaSeconds <= 0.1f) ? deltaSeconds : (1.0f / 90.0f);
     frame.worldReady = bhk && hknp;
     frame.menuBlocked = runtime_state::isPhysicsMenuBlocked();
-    frame.reloadBoundaryActive = false;
+    const auto animationAuthority = native_animation_authority::queryRuntimeStatus();
+    frame.reloadBoundaryActive =
+        (animationAuthority.effectiveFlags &
+            (native_animation_authority_policy::kArms |
+                native_animation_authority_policy::kHands)) != 0;
 
     if (auto* player = RE::PlayerCharacter::GetSingleton()) {
         (void)player;

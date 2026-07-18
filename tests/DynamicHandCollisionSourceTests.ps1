@@ -122,9 +122,27 @@ Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
 Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
     'bodyBoneColliders\.buildDynamicForearmTwinShape\(twinFrame\)' `
     'Dynamic forearm twins must use the body-collider shared hull builder.'
+Reject-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
+    'dimensionsDrifted|twinFrame\.length - slot\.createdLength|twinFrame\.radius - slot\.createdRadius|twinFrame\.convexRadius - slot\.createdConvexRadius' `
+    'Live pose dimensions must never trigger dynamic twin body reconstruction.'
+Require-OrderedText 'src/physics-interaction/body/BodyBoneColliderSet.cpp' @(
+    '_canonicalForearmTwinDimensions = forearmTwinTargets;',
+    'applyCanonicalForearmDimensions\(',
+    '_dynamicForearmTwinTargets = forearmTwinTargets;'
+) 'Forearm twins must retain generation-canonical dimensions while publishing live rigid targets.'
+Require-OrderedText 'src/physics-interaction/hand/HandBoneColliderSet.cpp' @(
+    '_canonicalDynamicTwinDimensions = canonicalTwinTargets;',
+    'applyCanonicalHandDimensions\(',
+    '_dynamicTwinTargets = twinTargets;'
+) 'Palm and fingertip twins must retain generation-canonical dimensions while publishing live rigid targets.'
 Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'twinFrame\.convexRadius - slot\.createdConvexRadius' `
-    'Dynamic twin rebuild gating must include convex-radius tuning changes.'
+    'slot\.createdGeometryGeneration == geometryGeneration' `
+    'Real source/tuning geometry generations must still rebuild dynamic twins once.'
+Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
+    'if \(_transitionCollisionSuppressed \|\|',
+    'slot\.createdGeometryGeneration == geometryGeneration',
+    'retireSlot\(slot, frame\.bhkWorld\);'
+) 'Queued geometry rebuilds must coalesce behind animation suspension and commit only after stable resume.'
 Require-Text 'src/physics-interaction/hand/DynamicHandCollisionTelemetry.h' `
     'kForearmSlot\s*=\s*kFirstForearmSlot[\s\S]*Forearm,[\s\S]*return "FARM"' `
     'Dynamic hand telemetry must expose one stable merged-forearm slot.'

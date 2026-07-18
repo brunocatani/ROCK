@@ -535,6 +535,27 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKNativeAnimationAuthorityPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKNativeAnimationAuthorityPolicyTests)
 
+  add_executable(ROCKPhysicsCallbackQuiescenceGateTests
+    "${ROOT_DIR}/tests/PhysicsCallbackQuiescenceGateTests.cpp"
+  )
+  target_compile_features(ROCKPhysicsCallbackQuiescenceGateTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKPhysicsCallbackQuiescenceGateTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKPhysicsCallbackQuiescenceGateTests)
+
+  add_executable(ROCKDynamicHandTwinGeometryPolicyTests
+    "${ROOT_DIR}/tests/DynamicHandTwinGeometryPolicyTests.cpp"
+  )
+  target_compile_features(ROCKDynamicHandTwinGeometryPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKDynamicHandTwinGeometryPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKDynamicHandTwinGeometryPolicyTests)
+
+  add_executable(ROCKDynamicHandCollisionTransitionPolicyTests
+    "${ROOT_DIR}/tests/DynamicHandCollisionTransitionPolicyTests.cpp"
+  )
+  target_compile_features(ROCKDynamicHandCollisionTransitionPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKDynamicHandCollisionTransitionPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKDynamicHandCollisionTransitionPolicyTests)
+
   set(ROCK_COMMONLIB_TEST_TARGETS
     ROCKGrabInputIntentPolicyTests
     ROCKInputRemapPolicyTests
@@ -581,6 +602,9 @@ if(BUILD_ROCK_TESTS)
     ROCKNativeGrabHapticSuppressionPolicyTests
     ROCKPipboyEquipPolicyTests
     ROCKNativeAnimationAuthorityPolicyTests
+    ROCKPhysicsCallbackQuiescenceGateTests
+    ROCKDynamicHandTwinGeometryPolicyTests
+    ROCKDynamicHandCollisionTransitionPolicyTests
   )
   add_custom_target(ROCKPolicyTestBinaries DEPENDS ${ROCK_COMMONLIB_TEST_TARGETS})
   foreach(ROCK_COMMONLIB_TEST_TARGET IN LISTS ROCK_COMMONLIB_TEST_TARGETS)

@@ -4,6 +4,7 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/body/BodyBoneColliderSet.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
+#include "physics-interaction/collision/CollisionSuppressionRegistry.h"
 #include "physics-interaction/core/PhysicsFrameContext.h"
 #include "physics-interaction/hand/DynamicHandCollisionKinematics.h"
 #include "physics-interaction/hand/Hand.h"
@@ -24,12 +25,6 @@ namespace rock
         constexpr const char* RIGHT_DYNAMIC_HAND_TAG = "ROCK_DynamicHand_Right";
         constexpr const char* LEFT_DYNAMIC_HAND_TAG = "ROCK_DynamicHand_Left";
         constexpr std::uint32_t kDynamicHandProxyCollisionGroup = 0x000C;
-        /*
-         * Published palm dimensions breathe slightly with live finger bases;
-         * only a real tuning/power-armor change should rebuild the twin bodies.
-         */
-        constexpr float kTwinDimensionRebuildToleranceGameUnits = 0.25f;
-        constexpr float kTwinConvexRadiusRebuildToleranceGameUnits = 0.01f;
         /*
          * Post-solve solver-residual thresholds separating "tracking freely"
          * (residual is integration noise, well under the 0.05 gu render
@@ -88,10 +83,14 @@ namespace rock
             return isLeft ? 1u : 0u;
         }
 
-        std::uint32_t dynamicHandProxyFilterInfo()
+        std::uint32_t dynamicHandProxyFilterInfo(bool suppressCollision = false)
         {
-            return (kDynamicHandProxyCollisionGroup << 16) |
-                   (collision_layer_policy::ROCK_LAYER_DYNAMIC_HAND_PROXY & collision_layer_policy::FO4_LAYER_FILTER_MASK);
+            const auto baseFilter =
+                (kDynamicHandProxyCollisionGroup << 16) |
+                (collision_layer_policy::ROCK_LAYER_DYNAMIC_HAND_PROXY & collision_layer_policy::FO4_LAYER_FILTER_MASK);
+            return suppressCollision ?
+                (baseFilter | collision_suppression_registry::kSuppressionNoCollideBit) :
+                baseFilter;
         }
 
         bool isFinitePoint(const RE::NiPoint3& value)
@@ -370,24 +369,31 @@ namespace rock
         const PhysicsFrameContext& frame,
         const Hand& hand,
         const BodyBoneColliderSet& bodyBoneColliders,
-        const dynamic_hand_twin::TwinSlotFrame& twinFrame)
+        const dynamic_hand_twin::TwinSlotFrame& twinFrame,
+        std::uint64_t geometryGeneration)
     {
         if (slot.created) {
-            const bool dimensionsDrifted =
-                std::fabs(twinFrame.length - slot.createdLength) > kTwinDimensionRebuildToleranceGameUnits ||
-                std::fabs(twinFrame.radius - slot.createdRadius) > kTwinDimensionRebuildToleranceGameUnits ||
-                std::fabs(twinFrame.convexRadius - slot.createdConvexRadius) > kTwinConvexRadiusRebuildToleranceGameUnits;
-            if (slot.createdWorld == frame.hknpWorld &&
-                !dimensionsDrifted &&
-                !slot.rebuildRequestedAtomic.load(std::memory_order_acquire)) {
-                return true;
+            if (slot.createdWorld == frame.hknpWorld) {
+                // Animation transitions retain the old body even if a real
+                // geometry rebuild is queued. The latest generation commits
+                // once stable targets have restored collision.
+                if (_transitionCollisionSuppressed ||
+                    (slot.createdGeometryGeneration == geometryGeneration &&
+                        !slot.rebuildRequestedAtomic.load(std::memory_order_acquire))) {
+                    return true;
+                }
             }
             retireSlot(slot, frame.bhkWorld);
         }
 
-        if (!frame.hknpWorld || !frame.bhkWorld || !twinFrame.valid || !isFiniteTransform(twinFrame.target)) {
+        if (!frame.hknpWorld || !frame.bhkWorld || geometryGeneration == 0 ||
+            !twinFrame.valid || !isFiniteTransform(twinFrame.target)) {
             return false;
         }
+
+        auto structuralMutation = _physicsCallbackGate ?
+            _physicsCallbackGate->pauseForMutation() :
+            PhysicsCallbackQuiescenceGate::MutationLease{};
 
         auto* shape = bodyIndex >= kFirstForearmSlot ?
             bodyBoneColliders.buildDynamicForearmTwinShape(twinFrame) :
@@ -405,7 +411,7 @@ namespace rock
                 frame.hknpWorld,
                 frame.bhkWorld,
                 shape,
-                dynamicHandProxyFilterInfo(),
+                dynamicHandProxyFilterInfo(_transitionCollisionSuppressed),
                 havok_material_registry::registerGeneratedBodyMaterial(frame.hknpWorld),
                 BethesdaMotionType::Dynamic,
                 (isLeft ? kLeftTwinNames : kRightTwinNames)[bodyIndex])) {
@@ -421,9 +427,7 @@ namespace rock
         slot.shape = shape;
         slot.createdWorld = frame.hknpWorld;
         slot.createdBhkWorld = frame.bhkWorld;
-        slot.createdLength = twinFrame.length;
-        slot.createdRadius = twinFrame.radius;
-        slot.createdConvexRadius = twinFrame.convexRadius;
+        slot.createdGeometryGeneration = geometryGeneration;
         slot.created = true;
         slot.rebuildRequestedAtomic.store(false, std::memory_order_release);
         clearPhysicsContactState(slot);
@@ -444,6 +448,9 @@ namespace rock
 
     void DynamicHandCollisionRuntime::retireSlot(ProxySlot& slot, void* bhkWorld)
     {
+        auto structuralMutation = _physicsCallbackGate ?
+            _physicsCallbackGate->pauseForMutation() :
+            PhysicsCallbackQuiescenceGate::MutationLease{};
         if (slot.created) {
             /*
              * Live-world teardown must go through the deferred-retirement queue:
@@ -460,9 +467,7 @@ namespace rock
         slot.created = false;
         slot.createdWorld = nullptr;
         slot.createdBhkWorld = nullptr;
-        slot.createdLength = 0.0f;
-        slot.createdRadius = 0.0f;
-        slot.createdConvexRadius = 0.0f;
+        slot.createdGeometryGeneration = 0;
         slot.droveThisSubstep = false;
         slot.divergenceDwellSeconds = 0.0f;
         slot.commandedTargetGame = {};
@@ -496,8 +501,39 @@ namespace rock
         handSlots.visualActive = false;
     }
 
+    void DynamicHandCollisionRuntime::applyTransitionCollisionSuppression(
+        RE::hknpWorld* world,
+        bool suppressCollision)
+    {
+        if (_transitionCollisionSuppressed == suppressCollision) {
+            return;
+        }
+
+        auto structuralMutation = _physicsCallbackGate ?
+            _physicsCallbackGate->pauseForMutation() :
+            PhysicsCallbackQuiescenceGate::MutationLease{};
+        const auto filterInfo = dynamicHandProxyFilterInfo(suppressCollision);
+        for (auto& handSlots : _hands) {
+            for (auto& slot : handSlots.bodies) {
+                if (!slot.created || !slot.body.isValid() || slot.createdWorld != world) {
+                    continue;
+                }
+                slot.body.setCollisionFilterInfo(filterInfo, 1);
+                clearPhysicsContactState(slot);
+            }
+        }
+        _transitionCollisionSuppressed = suppressCollision;
+        ROCK_LOG_INFO(
+            Hand,
+            "Dynamic hand collision animation transition {} retained bodies",
+            suppressCollision ? "suspended for" : "resumed on");
+    }
+
     void DynamicHandCollisionRuntime::retireAll(void* bhkWorld)
     {
+        auto structuralMutation = _physicsCallbackGate ?
+            _physicsCallbackGate->pauseForMutation() :
+            PhysicsCallbackQuiescenceGate::MutationLease{};
         retireHand(_hands[0], bhkWorld, false);
         retireHand(_hands[1], bhkWorld, true);
     }
@@ -509,6 +545,8 @@ namespace rock
         _pendingHapticEvents = {};
         _telemetryUpdateSequence = 0;
         _logCounter = 0;
+        _transitionState = {};
+        _transitionCollisionSuppressed = false;
     }
 
     void DynamicHandCollisionRuntime::updateFrame(const PhysicsFrameContext& frame,
@@ -544,6 +582,8 @@ namespace rock
             }
             _hands[0].hapticState = {};
             _hands[1].hapticState = {};
+            _transitionState = {};
+            _transitionCollisionSuppressed = false;
             _telemetrySnapshot = telemetry;
             return;
         }
@@ -572,6 +612,35 @@ namespace rock
                 g_rockConfig.rockHandCollisionDynamicVisualPriority,
                 _hands[0].bodies[kPalmSlot].created ? "yes" : "no",
                 _hands[1].bodies[kPalmSlot].created ? "yes" : "no");
+        }
+
+        const auto handTargetsStable = [&](bool isLeft, const HandFrameInput& handInput, const Hand& hand) {
+            if (handInput.disabled) {
+                return true;
+            }
+            const auto& handTwins = hand.dynamicTwinTargets();
+            const auto& forearmTwins = bodyBoneColliders.dynamicForearmTwinTargets();
+            const auto& handSlots = _hands[handIndex(isLeft)];
+            for (std::size_t bodyIndex = 0; bodyIndex < kBodiesPerHand; ++bodyIndex) {
+                const auto* twinFrame = twinFrameForSlot(handTwins, forearmTwins, isLeft, bodyIndex);
+                const bool targetRequired = bodyIndex == kPalmSlot || handSlots.bodies[bodyIndex].created;
+                if (targetRequired &&
+                    (!twinFrame || !twinFrame->valid || !isFiniteTransform(twinFrame->target))) {
+                    return false;
+                }
+            }
+            return true;
+        };
+        const bool transitionTargetsStable =
+            handTargetsStable(false, frame.right, rightHand) &&
+            handTargetsStable(true, frame.left, leftHand);
+        const auto transitionStep = dynamic_hand_collision_transition::advance(
+            _transitionState,
+            frame.reloadBoundaryActive,
+            transitionTargetsStable);
+        _transitionState = transitionStep.state;
+        if (transitionStep.collisionStateChanged) {
+            applyTransitionCollisionSuppression(frame.hknpWorld, transitionStep.suppressCollision);
         }
 
         auto updateHand = [&](bool isLeft, const HandFrameInput& handInput, const Hand& hand, bool weaponOwned, bool visualReturnActive) {
@@ -606,7 +675,7 @@ namespace rock
                 twinTelemetry.role = dynamic_hand_collision_telemetry::roleForBodyIndex(bodyIndex);
                 const auto* twinFrame = twinFrameForSlot(handTwins, forearmTwins, isLeft, bodyIndex);
                 if (!twinFrame || !twinFrame->valid) {
-                    if (bodyIndex >= kFirstForearmSlot && slot.created) {
+                    if (bodyIndex >= kFirstForearmSlot && slot.created && !_transitionCollisionSuppressed) {
                         retireSlot(slot, frame.bhkWorld);
                     }
                     continue;
@@ -618,7 +687,18 @@ namespace rock
                 twinTelemetry.convexRadiusGameUnits = twinFrame->convexRadius;
                 twinTelemetry.handTargetResponseScale =
                     dynamic_hand_collision_kinematics::sanitizeHandTargetResponseScale(twinFrame->handTargetResponseScale);
-                if (!ensureSlotCreated(slot, isLeft, bodyIndex, frame, hand, bodyBoneColliders, *twinFrame)) {
+                const auto geometryGeneration = bodyIndex >= kFirstForearmSlot ?
+                    forearmTwins.geometryGeneration :
+                    handTwins.geometryGeneration;
+                if (!ensureSlotCreated(
+                        slot,
+                        isLeft,
+                        bodyIndex,
+                        frame,
+                        hand,
+                        bodyBoneColliders,
+                        *twinFrame,
+                        geometryGeneration)) {
                     continue;
                 }
                 (void)queueGeneratedKeyframedBodyTarget(
@@ -685,7 +765,9 @@ namespace rock
             handTelemetry.combinedContactDeviationGameUnits = pointLength(combined);
 
             const bool physicallyOwnedByStrongerSystem =
-                suppressesGeneratedHandContactEvidence(hand.getState()) || weaponOwned;
+                suppressesGeneratedHandContactEvidence(hand.getState()) ||
+                weaponOwned ||
+                _transitionCollisionSuppressed;
             const bool visuallyOwnedByStrongerSystem = physicallyOwnedByStrongerSystem || visualReturnActive;
             handTelemetry.ownedByStrongerSystem = visuallyOwnedByStrongerSystem;
             updateHandHaptic(
