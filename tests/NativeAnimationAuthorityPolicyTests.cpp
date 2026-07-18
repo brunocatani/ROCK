@@ -89,6 +89,36 @@ int main()
     static_assert(alignedAuthoredHandWorld.scale == trackedPrimaryHandWorld.scale);
     static_assert(alignedAuthoredHandWorld.translate == trackedPrimaryHandWorld.translate);
 
+    constexpr AffineTransform authoredPrimaryHandModel{ 2.0f, 20.0f };
+    constexpr AffineTransform authoredSupportHandModel{ 6.0f, 80.0f };
+    constexpr auto supportHandInPrimaryHand =
+        resolveAuthoredSupportHandInPrimaryHand(
+            authoredPrimaryHandModel,
+            authoredSupportHandModel,
+            affineCompose,
+            affineInvert);
+    constexpr auto authoredSupportHandInWeapon =
+        resolveAuthoredSupportHandInWeapon(
+            authoredHandInWeapon,
+            supportHandInPrimaryHand,
+            affineCompose);
+    constexpr auto authoredPrimaryHandWorldForSupport = affineCompose(
+        liveWeaponWorld,
+        authoredHandInWeapon);
+    constexpr auto authoredSupportHandWorldForSupport = affineCompose(
+        liveWeaponWorld,
+        authoredSupportHandInWeapon);
+    static_assert(supportHandInPrimaryHand.scale == 3.0f);
+    static_assert(supportHandInPrimaryHand.translate == 30.0f);
+    static_assert(authoredSupportHandInWeapon.scale == 6.0f);
+    static_assert(authoredSupportHandInWeapon.translate == 70.0f);
+    static_assert(authoredSupportHandWorldForSupport.scale == 36.0f);
+    static_assert(authoredSupportHandWorldForSupport.translate == 520.0f);
+    static_assert(affineCompose(
+                      authoredPrimaryHandWorldForSupport,
+                      supportHandInPrimaryHand)
+                      .translate == authoredSupportHandWorldForSupport.translate);
+
     constexpr AuthoredPrimaryFiringGripEligibility authoredGripEligible{
         .enabled = true,
         .runtimeInitialized = true,
@@ -148,18 +178,18 @@ int main()
         .weaponIdentityMatches = true,
         .generationMatches = true,
         .completeFingerPose = true,
-        .palmDistanceGameUnits = 1.25f,
+        .weaponRelativeHandDistanceGameUnits = 1.25f,
         .snapRadiusGameUnits = 2.0f,
     };
     static_assert(shouldUseAuthoredSupportGrip(authoredSupportEligible));
     static_assert([=] {
         auto input = authoredSupportEligible;
-        input.palmDistanceGameUnits = input.snapRadiusGameUnits;
+        input.weaponRelativeHandDistanceGameUnits = input.snapRadiusGameUnits;
         return shouldUseAuthoredSupportGrip(input);
     }());
     static_assert([=] {
         auto input = authoredSupportEligible;
-        input.palmDistanceGameUnits = 2.01f;
+        input.weaponRelativeHandDistanceGameUnits = 2.01f;
         return !shouldUseAuthoredSupportGrip(input);
     }());
     static_assert([=] {

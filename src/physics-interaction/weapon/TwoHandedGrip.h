@@ -94,6 +94,27 @@ namespace rock
         RE::NiPoint3 leftGripWorld{};
     };
 
+    // Frame-local proof of the authored support gate. Both hand transforms
+    // are expressed in the exact current Weapon frame before distance is
+    // measured; world values exist only for renderer visualization/readback.
+    struct AuthoredSupportGripDebugSnapshot
+    {
+        RE::NiTransform weaponWorld{};
+        RE::NiTransform authoredHandWorld{};
+        RE::NiTransform liveHandWorld{};
+        RE::NiTransform authoredHandWeaponLocal{};
+        RE::NiTransform liveHandWeaponLocal{};
+        RE::NiPoint3 authoredPalmSeatWeaponLocal{};
+        RE::NiPoint3 authoredPalmSeatWorld{};
+        float weaponRelativeDistanceGameUnits{ 0.0f };
+        float worldReadbackDistanceGameUnits{ 0.0f };
+        float frameAgreementErrorGameUnits{ 0.0f };
+        float snapRadiusGameUnits{ 0.0f };
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint64_t captureSequence{ 0 };
+        bool insideSnapRadius{ false };
+    };
+
     enum class NativeScopeCameraWriteSource : std::uint8_t
     {
         None,
@@ -356,6 +377,9 @@ namespace rock
         bool getSolvedWeaponTransform(RE::NiTransform& outTransform) const;
 
         bool getDebugAuthoritySnapshot(TwoHandedGripDebugSnapshot& outSnapshot) const;
+
+        bool getAuthoredSupportGripDebugSnapshot(
+            AuthoredSupportGripDebugSnapshot& outSnapshot) const;
 
         NativeScopeCameraDebugSnapshot getNativeScopeCameraDebugSnapshot() const { return _nativeScopeCameraDebugSnapshot; }
         NativeScopeActivationDebugSnapshot getNativeScopeActivationDebugSnapshot() const { return _nativeScopeActivationDebugSnapshot; }

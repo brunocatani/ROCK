@@ -85,7 +85,9 @@ namespace rock::debug
         RightGrabMotorSolverEffectiveBody,
         LeftGrabMotorSolverEffectiveBody,
         RightCustomCalibrationOffset,
-        LeftCustomCalibrationOffset
+        LeftCustomCalibrationOffset,
+        AuthoredSupportGripTarget,
+        AuthoredSupportGripLiveSample
     };
 
     enum class AxisOverlaySource : std::uint8_t
@@ -242,7 +244,11 @@ namespace rock::debug
         RightDynamicHandRequestedDeviation,
         LeftDynamicHandRequestedDeviation,
         RightDynamicHandSolverResidual,
-        LeftDynamicHandSolverResidual
+        LeftDynamicHandSolverResidual,
+        AuthoredSupportGripTarget,
+        AuthoredSupportGripPalmSeat,
+        AuthoredSupportGripLiveSample,
+        AuthoredSupportGripError
     };
 
     enum class SkeletonOverlayRole : std::uint8_t

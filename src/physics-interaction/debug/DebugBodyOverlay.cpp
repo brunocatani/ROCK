@@ -2223,6 +2223,30 @@ float4 main(PS_INPUT input) : SV_Target {
                 color[1] = 0.15f;
                 color[2] = 0.05f;
                 break;
+            case MarkerOverlayRole::AuthoredSupportGripTarget:
+                color[0] = 0.10f;
+                color[1] = 1.0f;
+                color[2] = 0.20f;
+                color[3] = 0.98f;
+                break;
+            case MarkerOverlayRole::AuthoredSupportGripPalmSeat:
+                color[0] = 1.0f;
+                color[1] = 0.78f;
+                color[2] = 0.05f;
+                color[3] = 0.98f;
+                break;
+            case MarkerOverlayRole::AuthoredSupportGripLiveSample:
+                color[0] = 0.05f;
+                color[1] = 0.72f;
+                color[2] = 1.0f;
+                color[3] = 0.98f;
+                break;
+            case MarkerOverlayRole::AuthoredSupportGripError:
+                color[0] = 1.0f;
+                color[1] = 0.06f;
+                color[2] = 0.03f;
+                color[3] = 0.98f;
+                break;
             case MarkerOverlayRole::RightRootFlattenedFingerSkeleton:
                 color[0] = 0.05f;
                 color[1] = 0.95f;

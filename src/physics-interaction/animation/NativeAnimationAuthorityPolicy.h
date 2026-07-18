@@ -75,7 +75,7 @@ namespace rock::native_animation_authority_policy
         bool weaponIdentityMatches{ false };
         bool generationMatches{ false };
         bool completeFingerPose{ false };
-        float palmDistanceGameUnits{ 0.0f };
+        float weaponRelativeHandDistanceGameUnits{ 0.0f };
         float snapRadiusGameUnits{ 0.0f };
     };
 
@@ -103,9 +103,10 @@ namespace rock::native_animation_authority_policy
     /*
      * Explicit consumer/provider authority remains the highest-priority part
      * grab. Bethesda's authored support grip is selected only at acquisition,
-     * only for the paired left support hand, and only when its live palm is
-     * already inside the tight authored snap zone. Every other case falls
-     * through to ROCK's unrestricted dynamic mesh grab.
+     * only for the paired left support hand, and only when the live LArm_Hand
+     * origin is already inside the tight authored snap zone after both live
+     * and captured transforms are expressed in the current Weapon frame.
+     * Every other case falls through to ROCK's unrestricted dynamic mesh grab.
      */
     [[nodiscard]] constexpr bool shouldUseAuthoredSupportGrip(
         const AuthoredSupportGripCandidateInput& input)
@@ -118,9 +119,9 @@ namespace rock::native_animation_authority_policy
                input.weaponIdentityMatches &&
                input.generationMatches &&
                input.completeFingerPose &&
-               input.palmDistanceGameUnits >= 0.0f &&
+               input.weaponRelativeHandDistanceGameUnits >= 0.0f &&
                input.snapRadiusGameUnits > 0.0f &&
-               input.palmDistanceGameUnits <= input.snapRadiusGameUnits;
+               input.weaponRelativeHandDistanceGameUnits <= input.snapRadiusGameUnits;
     }
 
     [[nodiscard]] constexpr LocalReloadLeaseStep advanceLocalReloadLease(
@@ -218,6 +219,40 @@ namespace rock::native_animation_authority_policy
         Invert&& invert)
     {
         return compose(trackedPrimaryHandWorld, invert(authoredHandInWeapon));
+    }
+
+    /*
+     * The paired non-primary Bethesda pass does not place LArm_Hand in world;
+     * it aligns WeaponLeft against the selected secondary offset. Recover the
+     * authored support target without consulting that live presentation state:
+     *
+     *   B = inverse(authoredPrimaryHandModel) * authoredSupportHandModel
+     *   supportHandInWeapon = primaryHandInWeapon * B
+     *
+     * `primaryHandInWeapon` is the already runtime-validated per-weapon result
+     * from Bethesda's primary pass. The two model transforms are reconstructed
+     * from graph locals in the same flattened hierarchy, so their shared model
+     * root cancels and no controller/world transform enters the authored datum.
+     */
+    template <class Transform, class Compose, class Invert>
+    [[nodiscard]] constexpr Transform resolveAuthoredSupportHandInPrimaryHand(
+        const Transform& authoredPrimaryHandModel,
+        const Transform& authoredSupportHandModel,
+        Compose&& compose,
+        Invert&& invert)
+    {
+        return compose(
+            invert(authoredPrimaryHandModel),
+            authoredSupportHandModel);
+    }
+
+    template <class Transform, class Compose>
+    [[nodiscard]] constexpr Transform resolveAuthoredSupportHandInWeapon(
+        const Transform& primaryHandInWeapon,
+        const Transform& supportHandInPrimaryHand,
+        Compose&& compose)
+    {
+        return compose(primaryHandInWeapon, supportHandInPrimaryHand);
     }
 
     [[nodiscard]] constexpr char asciiLower(char value)

@@ -78,7 +78,7 @@ namespace rock
         bool rockNativeReloadAnimationAuthorityTestEnabled = false;
         // Local validation path only: align the weapon to the flat animation's
         // authored primary relation and expose its paired support grip as a
-        // tight, acquisition-only priority candidate.
+        // tight, Weapon-relative LArm_Hand acquisition candidate.
         bool rockAuthoredPrimaryFiringGripTestEnabled = false;
         float rockAuthoredSupportGripSnapRadius = 2.0f;
 

@@ -169,6 +169,8 @@
         const bool drawGrabTransformTelemetryText = drawGrabTransformTelemetry && g_rockConfig.rockDebugGrabTransformTelemetryText;
         const bool drawPerformanceProfilerOverlay = performance_profiler::overlayTextEnabled();
         const bool drawWeaponAuthorityDebug = _twoHandedGrip.isGripping() && (g_rockConfig.rockDebugShowHandAxes || drawGrabPivots);
+        const bool drawAuthoredSupportGripDebug =
+            g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled;
         const bool drawNativeScopeActivation = g_rockConfig.rockDebugDrawNativeScopeActivation;
         const bool drawWorldOriginDiagnostics = g_rockConfig.rockDebugWorldObjectOriginDiagnostics;
         const bool drawCustomCalibrationOffset = g_rockConfig.rockDebugCustomCalibrationOffset;
@@ -185,7 +187,7 @@
             !drawFingerSweptArc && !drawPalmVectors && !drawGrabPockets && !drawRootFlattenedFingerSkeleton && !drawSkeletonBones && !drawGrabPocketNormal &&
             !drawGrabContactPatch && !drawHandBoneContacts && !drawGrabAuthorityProxy && !drawGrabForceTorque && !drawGrabTransformTelemetry && !drawPerformanceProfilerOverlay &&
             !drawWeaponAuthorityDebug && !drawNativeScopeActivation && !drawGrabSupportFrame && !drawWorldOriginDiagnostics && !drawCustomCalibrationOffset &&
-            !drawDynamicHandColliders) {
+            !drawDynamicHandColliders && !drawAuthoredSupportGripDebug) {
             debug::ClearFrame();
             return;
         }
@@ -197,13 +199,16 @@
         frame.drawRockBodies = drawRockColliderBodies || drawGrabAuthorityProxy || drawGrabPivotSourceCollider || drawDynamicHandColliders;
         frame.drawTargetBodies = g_rockConfig.rockDebugShowTargetColliders;
         frame.drawAxes = g_rockConfig.rockDebugShowHandAxes || drawGrabTransformTelemetryAxes || drawGrabAuthorityProxy || drawGrabForceTorque ||
-            drawCustomCalibrationOffset || drawNativeScopeActivation;
+            drawCustomCalibrationOffset || drawNativeScopeActivation ||
+            drawAuthoredSupportGripDebug;
         frame.drawMarkers = drawGrabPivots || drawFingerProbes || drawFingerSweptArc || drawPalmVectors || drawGrabPockets || drawRootFlattenedFingerSkeleton ||
             drawGrabPocketNormal || drawGrabContactPatch || drawGrabForceTorque || drawHandBoneContacts || drawGrabAuthorityProxy || drawGrabTransformTelemetryAxes ||
-            drawWeaponAuthorityDebug || drawNativeScopeActivation || drawGrabSupportFrame || drawWorldOriginDiagnostics || drawDynamicHandColliders;
+            drawWeaponAuthorityDebug || drawNativeScopeActivation || drawGrabSupportFrame || drawWorldOriginDiagnostics || drawDynamicHandColliders ||
+            drawAuthoredSupportGripDebug;
         frame.drawSkeleton = drawSkeletonBones;
         frame.drawText = drawGrabTransformTelemetryText || drawGrabForceTorqueText || drawFingerSweptArcText || drawPerformanceProfilerOverlay ||
-            drawDynamicHandColliders || drawNativeScopeActivation;
+            drawDynamicHandColliders || drawNativeScopeActivation ||
+            drawAuthoredSupportGripDebug;
         RE::bhkWorld* originDiagnosticBhk = drawWorldOriginDiagnostics ? context.bhkWorld : nullptr;
         const bool rightDisabled = context.right.disabled;
         const bool leftDisabled = context.left.disabled;
@@ -1610,6 +1615,81 @@
 
             addSemanticContactDebug(_rightHand);
             addSemanticContactDebug(_leftHand);
+        }
+
+        if (drawAuthoredSupportGripDebug) {
+            AuthoredSupportGripDebugSnapshot snapshot{};
+            if (_twoHandedGrip.getAuthoredSupportGripDebugSnapshot(snapshot)) {
+                addAxisTransform(
+                    snapshot.authoredHandWorld,
+                    debug::AxisOverlayRole::AuthoredSupportGripTarget,
+                    snapshot.authoredHandWorld.translate,
+                    false);
+                addAxisTransform(
+                    snapshot.liveHandWorld,
+                    debug::AxisOverlayRole::AuthoredSupportGripLiveSample,
+                    snapshot.liveHandWorld.translate,
+                    false);
+
+                // GREEN tripod/cross: the exact animation-authored LArm_Hand
+                // target. BLUE cross: the live LArm_Hand sample after it has
+                // been converted into the same Weapon frame. YELLOW cross:
+                // the palm seat used only by the two-hand weapon solver after
+                // acquisition. The connecting line turns green inside the
+                // radius and remains red outside it.
+                addMarkerPoint(
+                    debug::MarkerOverlayRole::AuthoredSupportGripTarget,
+                    snapshot.authoredHandWorld.translate,
+                    (std::max)(1.0f, snapshot.snapRadiusGameUnits));
+                addMarkerPoint(
+                    debug::MarkerOverlayRole::AuthoredSupportGripPalmSeat,
+                    snapshot.authoredPalmSeatWorld,
+                    2.0f);
+                addMarkerPoint(
+                    debug::MarkerOverlayRole::AuthoredSupportGripLiveSample,
+                    snapshot.liveHandWorld.translate,
+                    2.5f);
+                addMarkerLine(
+                    snapshot.insideSnapRadius ?
+                        debug::MarkerOverlayRole::AuthoredSupportGripTarget :
+                        debug::MarkerOverlayRole::AuthoredSupportGripError,
+                    snapshot.liveHandWorld.translate,
+                    snapshot.authoredHandWorld.translate);
+
+                constexpr float kInsideColor[4]{ 0.20f, 1.0f, 0.30f, 0.98f };
+                constexpr float kOutsideColor[4]{ 1.0f, 0.20f, 0.08f, 0.98f };
+                constexpr float kCoordinateColor[4]{ 0.92f, 0.92f, 1.0f, 0.94f };
+                const float* statusColor =
+                    snapshot.insideSnapRadius ? kInsideColor : kOutsideColor;
+                const RE::NiPoint3 labelAnchor =
+                    snapshot.authoredHandWorld.translate +
+                    RE::NiPoint3{ 0.0f, 0.0f, 4.0f };
+                addTextLineSized(
+                    labelAnchor,
+                    2.1f,
+                    statusColor,
+                    "AUTHORED SUPPORT %s d=%.2f / r=%.2f",
+                    snapshot.insideSnapRadius ? "INSIDE" : "OUTSIDE",
+                    snapshot.weaponRelativeDistanceGameUnits,
+                    snapshot.snapRadiusGameUnits);
+                addTextLineSized(
+                    labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -2.2f },
+                    1.7f,
+                    kCoordinateColor,
+                    "target Weapon=(%.2f, %.2f, %.2f)",
+                    snapshot.authoredHandWeaponLocal.translate.x,
+                    snapshot.authoredHandWeaponLocal.translate.y,
+                    snapshot.authoredHandWeaponLocal.translate.z);
+                addTextLineSized(
+                    labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -4.2f },
+                    1.7f,
+                    kCoordinateColor,
+                    "live Weapon=(%.2f, %.2f, %.2f) frameErr=%.4f",
+                    snapshot.liveHandWeaponLocal.translate.x,
+                    snapshot.liveHandWeaponLocal.translate.y,
+                    snapshot.liveHandWeaponLocal.translate.z,
+                    snapshot.frameAgreementErrorGameUnits);
+            }
         }
 
         if (drawWeaponAuthorityDebug) {

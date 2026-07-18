@@ -93,8 +93,17 @@ Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
     'tryResolvePrimaryFiringGripAlignment[\s\S]*expectedWeaponNode->parent\s*!=\s*capturedHandNode[\s\S]*resolveAuthoredPrimaryWeaponWorld\([\s\S]*trackedPrimaryHandWorld[\s\S]*s_authoredPrimaryHandInWeapon' `
     'The experiment must invert the captured native relation onto the tracked primary hand and reject a changed hand/weapon hierarchy.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
-    '"LArm_Finger11"[\s\S]*"LArm_Finger53"[\s\S]*captureNativeAuthoredSupportGrip[\s\S]*invertTransform\(weaponTransform\.refNode->world\)[\s\S]*supportHandWorld[\s\S]*authoritativeLocal\(fingerTransform\)[\s\S]*s_authoredSupportGripCaptureSequence\.fetch_add' `
-    'The support capture must use the paired native LArm hand-in-weapon relation and all 15 authoritative first-person finger locals.'
+    '"LArm_Finger11"[\s\S]*"LArm_Finger53"[\s\S]*composeAuthoredLogicalModelTransform[\s\S]*parPos[\s\S]*authoritativeLocal[\s\S]*captureAuthoredSupportGraphPose[\s\S]*resolveAuthoredSupportHandInPrimaryHand[\s\S]*authoritativeLocal\(source->transforms\[transformIndex\]\)[\s\S]*s_authoredSupportGraphPoseSequence\.fetch_add' `
+    'The post-animation capture must reconstruct both authored hands through the flattened local hierarchy and retain all 15 authoritative finger locals.'
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
+    'onPostUpdateAnimationGraphManager[\s\S]*captureAuthoredSupportGraphPose\(\)[\s\S]*captureNativePose\(\)[\s\S]*s_originalPostUpdate\(holder\)' `
+    'The authored hand relation must be captured at the proven graph-output boundary before the later native presentation writers.'
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
+    'captureNativeAuthoredSupportGrip[\s\S]*graphPoseSequence\s*==\s*0[\s\S]*graphPoseSequence\s*!=\s*s_primaryFiringGripGraphPoseSequence[\s\S]*s_lastConsumedAuthoredSupportGraphPoseSequence[\s\S]*resolveAuthoredSupportHandInWeapon[\s\S]*s_authoredSupportHandInPrimaryHand[\s\S]*s_authoredSupportGraphFingerLocals' `
+    'The paired support pass must consume exactly the graph pose matched by the immediately preceding primary capture.'
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthorityPolicy.h' `
+    'resolveAuthoredSupportHandInPrimaryHand[\s\S]*invert\(authoredPrimaryHandModel\)[\s\S]*authoredSupportHandModel[\s\S]*resolveAuthoredSupportHandInWeapon[\s\S]*compose\(primaryHandInWeapon,\s*supportHandInPrimaryHand\)' `
+    'The support target must combine the same-tree authored hand relation with the validated per-weapon primary hand anchor.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
     'tryResolveAuthoredSupportGrip[\s\S]*expectedWeaponNode->parent\s*!=\s*capturedPrimaryHandNode[\s\S]*outSupportHandInWeapon\s*=\s*s_authoredSupportHandInWeapon[\s\S]*outFingerLocalTransforms\s*=\s*s_authoredSupportFingerLocals[\s\S]*kAuthoredSupportFingerTransformMask' `
     'The support resolver must retain scene identity and publish one complete generation-ready hand/finger frame.'
@@ -109,13 +118,24 @@ if (-not $primaryCaptureMatch.Success) {
     $failures.Add('The authored primary grip must never capture hFRIK''s downstream Weapon local/offset path.')
 }
 
-$supportCaptureMatch = [regex]::Match(
+$supportGraphCaptureMatch = [regex]::Match(
     $nativeAuthorityText,
-    '(?s)captureNativeAuthoredSupportGrip\(\).*?(?=\s+__declspec\(noinline\))')
-if (-not $supportCaptureMatch.Success) {
-    $failures.Add('The native authored support-grip capture function could not be isolated for source validation.')
-} elseif ($supportCaptureMatch.Value -match '!fingerTransform\.refNode|fingerTransform\.refNode->local') {
+    '(?s)captureAuthoredSupportGraphPose\(\).*?(?=\s+\[\[nodiscard\]\]\s+bool\s+captureNativeAuthoredSupportGrip\(\))')
+if (-not $supportGraphCaptureMatch.Success) {
+    $failures.Add('The authored support graph-pose capture function could not be isolated for source validation.')
+} elseif ($supportGraphCaptureMatch.Value -match '!fingerTransform\.refNode|fingerTransform\.refNode->local') {
     $failures.Add('The authored support grip must accept authoritative flattened finger locals when a scene refNode is absent.')
+} elseif ($supportGraphCaptureMatch.Value -match '(?:support|primary)HandTransform\.(?:refNode->)?world|\.transforms\[[^\]]+\]\.world') {
+    $failures.Add('The authored support graph relation must never be derived from live/presentation world transforms.')
+}
+
+$supportPairCaptureMatch = [regex]::Match(
+    $nativeAuthorityText,
+    '(?s)captureNativeAuthoredSupportGrip\(\).*?(?=\s+\[\[nodiscard\]\]\s+bool\s+captureNativePrimaryFiringGrip\(\))')
+if (-not $supportPairCaptureMatch.Success) {
+    $failures.Add('The paired authored support-grip capture function could not be isolated for source validation.')
+} elseif ($supportPairCaptureMatch.Value -match 'supportHandTransform\.(?:refNode->)?world|weaponTransform\.(?:refNode->)?world') {
+    $failures.Add('The authored support target must never be derived from live/presentation world transforms.')
 }
 
 Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
@@ -144,8 +164,17 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'capturePartGrip[\s\S]*shouldUseAuthoredSupportGrip[\s\S]*providerAuthorityActive\s*=\s*providerPartAuthority\.active[\s\S]*grip\.handWeaponLocal\s*=[\s\S]*fingerLocalTransforms[\s\S]*return\s+true;[\s\S]*tryGetSupportGripEvidenceView' `
     'Support acquisition must prioritize provider authority, latch the complete authored frame inside its zone, and retain the existing dynamic mesh fallback.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthorityPolicy.h' `
-    'shouldUseAuthoredSupportGrip[\s\S]*!input\.providerAuthorityActive[\s\S]*input\.palmDistanceGameUnits\s*<=\s*input\.snapRadiusGameUnits' `
-    'The authored support selector must preserve provider priority and require tight palm-space proximity.'
+    'shouldUseAuthoredSupportGrip[\s\S]*!input\.providerAuthorityActive[\s\S]*input\.weaponRelativeHandDistanceGameUnits\s*<=\s*input\.snapRadiusGameUnits' `
+    'The authored support selector must preserve provider priority and require tight Weapon-relative hand-target proximity.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'resolveAuthoredSupportWeaponRelativeProximity[\s\S]*invertTransform\(weaponWorld\)[\s\S]*liveHandWeaponLocal[\s\S]*authoredHandWeaponLocal\.translate\.x[\s\S]*weaponLocalDistance\s*\*\s*std::abs\(weaponWorld\.scale\)' `
+    'The authored support distance must compare live and captured LArm_Hand translations in one current Weapon frame and convert the local result back to game units.'
+Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'authoredSupportPalmDistance|sub\(\s*palmPos,\s*authoredSupportPalmWorld\s*\)' `
+    'The authored selector must not regress to world-space or configured-palm proximity.'
+Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
+    'drawAuthoredSupportGripDebug[\s\S]*getAuthoredSupportGripDebugSnapshot[\s\S]*AuthoredSupportGripTarget[\s\S]*AuthoredSupportGripPalmSeat[\s\S]*AuthoredSupportGripLiveSample[\s\S]*weaponRelativeDistanceGameUnits' `
+    'The experimental path must continuously visualize its authored target, solver palm seat, live sample, and measured Weapon-relative error before acquisition.'
 Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'applyAuthoredPrimaryGripWeaponAlignment[\s\S]{0,600}isManualOwnershipActive\(\)' `
     'Right-hand PrimaryOnly bookkeeping must not suppress the authored weapon calibration.'

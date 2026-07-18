@@ -162,6 +162,79 @@ namespace rock
             return isFiniteTransform(transform) && std::abs(transform.scale) > 0.0001f;
         }
 
+        struct AuthoredSupportWeaponRelativeProximity
+        {
+            RE::NiTransform authoredHandWorld{};
+            RE::NiTransform liveHandWeaponLocal{};
+            float weaponRelativeDistanceGameUnits{ 0.0f };
+            float worldReadbackDistanceGameUnits{ 0.0f };
+            float frameAgreementErrorGameUnits{ 0.0f };
+        };
+
+        [[nodiscard]] bool resolveAuthoredSupportWeaponRelativeProximity(
+            const RE::NiTransform& weaponWorld,
+            const RE::NiTransform& liveHandWorld,
+            const RE::NiTransform& authoredHandWeaponLocal,
+            AuthoredSupportWeaponRelativeProximity& out)
+        {
+            out = {};
+            if (!isFiniteTransform(weaponWorld) ||
+                std::abs(weaponWorld.scale) <= 0.0001f ||
+                !isUsableHandAuthorityTransform(liveHandWorld) ||
+                !isFiniteTransform(authoredHandWeaponLocal) ||
+                std::abs(authoredHandWeaponLocal.scale) <= 0.0001f) {
+                return false;
+            }
+
+            // Both samples enter the same current Weapon coordinate system.
+            // The captured transform is already Weapon-local; only the live
+            // LArm_Hand is inverted through Weapon. No hand-authored palm
+            // offset, controller frame, or world-origin subtraction decides
+            // whether the authored grip wins.
+            out.liveHandWeaponLocal = transform_math::composeTransforms(
+                transform_math::invertTransform(weaponWorld),
+                liveHandWorld);
+            out.authoredHandWorld = transform_math::composeTransforms(
+                weaponWorld,
+                authoredHandWeaponLocal);
+            if (!isFiniteTransform(out.liveHandWeaponLocal) ||
+                !isFiniteTransform(out.authoredHandWorld)) {
+                return false;
+            }
+
+            const float localDeltaX =
+                out.liveHandWeaponLocal.translate.x - authoredHandWeaponLocal.translate.x;
+            const float localDeltaY =
+                out.liveHandWeaponLocal.translate.y - authoredHandWeaponLocal.translate.y;
+            const float localDeltaZ =
+                out.liveHandWeaponLocal.translate.z - authoredHandWeaponLocal.translate.z;
+            const float weaponLocalDistance = std::sqrt(
+                localDeltaX * localDeltaX +
+                localDeltaY * localDeltaY +
+                localDeltaZ * localDeltaZ);
+            out.weaponRelativeDistanceGameUnits =
+                weaponLocalDistance * std::abs(weaponWorld.scale);
+
+            // Readback is diagnostic only. It proves that the rendered target
+            // agrees with the weapon-relative solve without becoming the gate.
+            const float worldDeltaX =
+                liveHandWorld.translate.x - out.authoredHandWorld.translate.x;
+            const float worldDeltaY =
+                liveHandWorld.translate.y - out.authoredHandWorld.translate.y;
+            const float worldDeltaZ =
+                liveHandWorld.translate.z - out.authoredHandWorld.translate.z;
+            out.worldReadbackDistanceGameUnits = std::sqrt(
+                worldDeltaX * worldDeltaX +
+                worldDeltaY * worldDeltaY +
+                worldDeltaZ * worldDeltaZ);
+            out.frameAgreementErrorGameUnits = std::abs(
+                out.weaponRelativeDistanceGameUnits -
+                out.worldReadbackDistanceGameUnits);
+            return std::isfinite(out.weaponRelativeDistanceGameUnits) &&
+                   std::isfinite(out.worldReadbackDistanceGameUnits) &&
+                   std::isfinite(out.frameAgreementErrorGameUnits);
+        }
+
         struct RankedSupportGripTriangle
         {
             float distanceSquared = 0.0f;
@@ -1562,6 +1635,74 @@ namespace rock
         return true;
     }
 
+    bool TwoHandedGrip::getAuthoredSupportGripDebugSnapshot(
+        AuthoredSupportGripDebugSnapshot& outSnapshot) const
+    {
+        outSnapshot = {};
+        const auto& candidate = _authoredSupportGripCandidate;
+        if (!candidate.valid ||
+            !candidate.weaponNode ||
+            candidate.weaponGenerationKey == 0 ||
+            candidate.captureSequence == 0 ||
+            !isFiniteTransform(candidate.weaponNode->world)) {
+            return false;
+        }
+
+        RE::NiTransform liveSupportHandWorld{};
+        if (!tryGetSolverHandTransform(true, liveSupportHandWorld)) {
+            return false;
+        }
+
+        AuthoredSupportWeaponRelativeProximity proximity{};
+        if (!resolveAuthoredSupportWeaponRelativeProximity(
+                candidate.weaponNode->world,
+                liveSupportHandWorld,
+                candidate.handWeaponLocal,
+                proximity)) {
+            return false;
+        }
+
+        const RE::NiPoint3 authoredPalmSeatWeaponLocal =
+            computeGrabLegacyPalmPivotAWorldFromHandBasis(
+                candidate.handWeaponLocal,
+                true);
+        const RE::NiPoint3 authoredPalmSeatWorld =
+            transform_math::localPointToWorld(
+                candidate.weaponNode->world,
+                authoredPalmSeatWeaponLocal);
+        if (!std::isfinite(authoredPalmSeatWeaponLocal.x) ||
+            !std::isfinite(authoredPalmSeatWeaponLocal.y) ||
+            !std::isfinite(authoredPalmSeatWeaponLocal.z) ||
+            !std::isfinite(authoredPalmSeatWorld.x) ||
+            !std::isfinite(authoredPalmSeatWorld.y) ||
+            !std::isfinite(authoredPalmSeatWorld.z)) {
+            return false;
+        }
+
+        outSnapshot.weaponWorld = candidate.weaponNode->world;
+        outSnapshot.authoredHandWorld = proximity.authoredHandWorld;
+        outSnapshot.liveHandWorld = liveSupportHandWorld;
+        outSnapshot.authoredHandWeaponLocal = candidate.handWeaponLocal;
+        outSnapshot.liveHandWeaponLocal = proximity.liveHandWeaponLocal;
+        outSnapshot.authoredPalmSeatWeaponLocal =
+            authoredPalmSeatWeaponLocal;
+        outSnapshot.authoredPalmSeatWorld = authoredPalmSeatWorld;
+        outSnapshot.weaponRelativeDistanceGameUnits =
+            proximity.weaponRelativeDistanceGameUnits;
+        outSnapshot.worldReadbackDistanceGameUnits =
+            proximity.worldReadbackDistanceGameUnits;
+        outSnapshot.frameAgreementErrorGameUnits =
+            proximity.frameAgreementErrorGameUnits;
+        outSnapshot.snapRadiusGameUnits =
+            g_rockConfig.rockAuthoredSupportGripSnapRadius;
+        outSnapshot.weaponGenerationKey = candidate.weaponGenerationKey;
+        outSnapshot.captureSequence = candidate.captureSequence;
+        outSnapshot.insideSnapRadius =
+            proximity.weaponRelativeDistanceGameUnits <=
+            outSnapshot.snapRadiusGameUnits;
+        return true;
+    }
+
     void TwoHandedGrip::resetLockedHandVisualLerp()
     {
         _primaryHandVisualLerp = {};
@@ -2011,45 +2152,57 @@ namespace rock
         const RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(handTransform, isLeft);
 
         /*
-         * Acquisition-only authored priority. The candidate is prepared
-         * earlier in this ROCK frame from Bethesda's paired support-arm pass.
-         * Comparing anatomical palm pivots (rather than wrist origins) makes
-         * the radius mean the same thing as the existing grip solver. Once
-         * selected, the exact hand/weapon relation and 15 finger locals are
-         * latched into WeaponPartGrip; later candidate changes cannot move an
-         * already-held hand. Explicit provider authority always falls through
-         * to its existing path below.
+         * Acquisition-only authored priority. The native authority is the
+         * exact LArm_Hand-in-Weapon relation, so proximity must use that same
+         * relation: convert the live LArm_Hand into the current Weapon frame
+         * and compare the two Weapon-local translations. The configured palm
+         * seat remains the two-hand solver's grip point after selection, but
+         * it cannot rotate or offset the acquisition gate. Once selected, the
+         * exact hand/weapon relation and 15 finger locals are latched into
+         * WeaponPartGrip; later candidate changes cannot move an active grip.
+         * Explicit provider authority always falls through to its existing
+         * path below.
          */
         const bool authoredWeaponIdentityMatches =
             _authoredSupportGripCandidate.weaponNode == weaponNode;
+        AuthoredSupportWeaponRelativeProximity authoredSupportProximity{};
         RE::NiTransform authoredSupportHandWorld{};
+        RE::NiPoint3 authoredSupportPalmWeaponLocal{};
         RE::NiPoint3 authoredSupportPalmWorld{};
         RE::NiPoint3 authoredSupportPalmNormalWorld{};
-        float authoredSupportPalmDistance =
+        float authoredSupportWeaponRelativeDistance =
             (std::numeric_limits<float>::infinity)();
         bool authoredSupportFrameValid = false;
         if (_authoredSupportGripCandidate.valid &&
             authoredWeaponIdentityMatches &&
-            isFiniteTransform(weaponNode->world)) {
-            authoredSupportHandWorld = transform_math::composeTransforms(
+            resolveAuthoredSupportWeaponRelativeProximity(
                 weaponNode->world,
-                _authoredSupportGripCandidate.handWeaponLocal);
-            if (isFiniteTransform(authoredSupportHandWorld)) {
+                handTransform,
+                _authoredSupportGripCandidate.handWeaponLocal,
+                authoredSupportProximity)) {
+            authoredSupportHandWorld = authoredSupportProximity.authoredHandWorld;
+            authoredSupportPalmWeaponLocal =
+                computeGrabLegacyPalmPivotAWorldFromHandBasis(
+                    _authoredSupportGripCandidate.handWeaponLocal,
+                    isLeft);
+            if (std::isfinite(authoredSupportPalmWeaponLocal.x) &&
+                std::isfinite(authoredSupportPalmWeaponLocal.y) &&
+                std::isfinite(authoredSupportPalmWeaponLocal.z)) {
                 authoredSupportPalmWorld =
-                    computeGrabLegacyPalmPivotAWorldFromHandBasis(
-                        authoredSupportHandWorld,
-                        isLeft);
+                    transform_math::localPointToWorld(
+                        weaponNode->world,
+                        authoredSupportPalmWeaponLocal);
                 authoredSupportPalmNormalWorld =
                     computePalmNormalFromHandBasis(
                         authoredSupportHandWorld,
                         isLeft);
-                const RE::NiPoint3 palmDelta = sub(
-                    palmPos,
-                    authoredSupportPalmWorld);
-                authoredSupportPalmDistance =
-                    std::sqrt(dot(palmDelta, palmDelta));
+                authoredSupportWeaponRelativeDistance =
+                    authoredSupportProximity.weaponRelativeDistanceGameUnits;
                 authoredSupportFrameValid =
-                    std::isfinite(authoredSupportPalmDistance) &&
+                    std::isfinite(authoredSupportPalmWorld.x) &&
+                    std::isfinite(authoredSupportPalmWorld.y) &&
+                    std::isfinite(authoredSupportPalmWorld.z) &&
+                    std::isfinite(authoredSupportWeaponRelativeDistance) &&
                     std::isfinite(authoredSupportPalmNormalWorld.x) &&
                     std::isfinite(authoredSupportPalmNormalWorld.y) &&
                     std::isfinite(authoredSupportPalmNormalWorld.z);
@@ -2075,7 +2228,8 @@ namespace rock
                     .completeFingerPose =
                         _authoredSupportGripCandidate.fingerLocalTransformMask ==
                         kCompleteAuthoredFingerMask,
-                    .palmDistanceGameUnits = authoredSupportPalmDistance,
+                    .weaponRelativeHandDistanceGameUnits =
+                        authoredSupportWeaponRelativeDistance,
                     .snapRadiusGameUnits =
                         g_rockConfig.rockAuthoredSupportGripSnapRadius,
                 });
@@ -2084,9 +2238,7 @@ namespace rock
             grip.authoredSupportCaptureSequence =
                 _authoredSupportGripCandidate.captureSequence;
             grip.attachmentRoot = weaponNode;
-            grip.gripLocal = worldToWeaponLocal(
-                authoredSupportPalmWorld,
-                weaponNode);
+            grip.gripLocal = authoredSupportPalmWeaponLocal;
             grip.grabNormalWorld = authoredSupportPalmNormalWorld;
             grip.normalLocal = transform_math::worldVectorToLocal(
                 weaponNode->world,
@@ -2121,14 +2273,21 @@ namespace rock
             }
 
             ROCK_LOG_INFO(Weapon,
-                "TwoHandedGrip: authored support grip captured hand={} weapon='{}' gripLocal=({:.3f},{:.3f},{:.3f}) palmDistance={:.3f} radius={:.3f} capture={} generation={:016X} priority=provider>authored>dynamic",
+                "TwoHandedGrip: authored support grip captured hand={} weapon='{}' gripLocal=({:.3f},{:.3f},{:.3f}) weaponDistance={:.3f} radius={:.3f} targetLocal=({:.3f},{:.3f},{:.3f}) liveLocal=({:.3f},{:.3f},{:.3f}) frameError={:.4f} capture={} generation={:016X} priority=provider>authored>dynamic",
                 isLeft ? "left" : "right",
                 weaponNode->name.c_str(),
                 grip.gripLocal.x,
                 grip.gripLocal.y,
                 grip.gripLocal.z,
-                authoredSupportPalmDistance,
+                authoredSupportWeaponRelativeDistance,
                 g_rockConfig.rockAuthoredSupportGripSnapRadius,
+                _authoredSupportGripCandidate.handWeaponLocal.translate.x,
+                _authoredSupportGripCandidate.handWeaponLocal.translate.y,
+                _authoredSupportGripCandidate.handWeaponLocal.translate.z,
+                authoredSupportProximity.liveHandWeaponLocal.translate.x,
+                authoredSupportProximity.liveHandWeaponLocal.translate.y,
+                authoredSupportProximity.liveHandWeaponLocal.translate.z,
+                authoredSupportProximity.frameAgreementErrorGameUnits,
                 grip.authoredSupportCaptureSequence,
                 _activeWeaponGenerationKey);
             return true;
@@ -2323,7 +2482,7 @@ namespace rock
         }
 
         ROCK_LOG_INFO(Weapon,
-            "TwoHandedGrip: part grip captured hand={} weapon='{}' gripLocal=({:.3f},{:.3f},{:.3f}) meshGrab={} sourceTriangles={} fingerTriangles={} cachedTriangles={} sourceNodeCurrent={} authoredSupport=NO authoredDistance={:.3f} authoredRadius={:.3f} partKind={} pose={} generation={:016X}",
+            "TwoHandedGrip: part grip captured hand={} weapon='{}' gripLocal=({:.3f},{:.3f},{:.3f}) meshGrab={} sourceTriangles={} fingerTriangles={} cachedTriangles={} sourceNodeCurrent={} authoredSupport=NO authoredWeaponDistance={:.3f} authoredRadius={:.3f} authoredTargetLocal=({:.3f},{:.3f},{:.3f}) liveHandLocal=({:.3f},{:.3f},{:.3f}) frameError={:.4f} partKind={} pose={} generation={:016X}",
             isLeft ? "left" : "right",
             weaponNode->name.c_str(),
             grip.gripLocal.x,
@@ -2334,8 +2493,15 @@ namespace rock
             fingerScratch.localTriangles.size(),
             cachedTrianglesFound ? "yes" : "no",
             cachedTrianglesFound && evidenceView.sourceNodeCurrent ? "yes" : "no",
-            authoredSupportPalmDistance,
+            authoredSupportWeaponRelativeDistance,
             g_rockConfig.rockAuthoredSupportGripSnapRadius,
+            _authoredSupportGripCandidate.handWeaponLocal.translate.x,
+            _authoredSupportGripCandidate.handWeaponLocal.translate.y,
+            _authoredSupportGripCandidate.handWeaponLocal.translate.z,
+            authoredSupportProximity.liveHandWeaponLocal.translate.x,
+            authoredSupportProximity.liveHandWeaponLocal.translate.y,
+            authoredSupportProximity.liveHandWeaponLocal.translate.z,
+            authoredSupportProximity.frameAgreementErrorGameUnits,
             static_cast<int>(grip.partKind),
             static_cast<int>(grip.gripPose),
             _activeWeaponGenerationKey);
