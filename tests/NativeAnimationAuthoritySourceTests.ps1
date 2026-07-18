@@ -149,6 +149,33 @@ Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
     'tryResolvePrimaryFiringGripAlignment[\s\S]*authoredPrimaryHandInWeapon[\s\S]*applyAuthoredPrimaryGripWeaponAlignment[\s\S]*setAuthoredPrimaryFiringGripCanonical\([\s\S]*authoredPrimaryHandInWeapon[\s\S]*input\.weaponGenerationKey[\s\S]*currentWeaponKey[\s\S]*resolvedCaptureSequence' `
     'A successful right-hand alignment must explicitly bind the exact authored Hand-in-Weapon relation to generation, equipped ownership, and capture sequence for physical-left mirroring.'
 Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
+    'findPrimaryWeaponOffset\([\s\S]{0,500}OffsetSource::CustomFile[\s\S]{0,600}custom-frik-weapon-offset[\s\S]*applyAuthoredPrimaryGripWeaponAlignment' `
+    'A custom hFRIK weapon JSON must be resolved at the equip boundary and suspend ROCK authored alignment before any weapon transform write.'
+Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
+    'currentRevision\(\)[\s\S]{0,500}frikOffsetCacheRevision\s*!=\s*_frikOffsetCacheRevision[\s\S]{0,800}OffsetSource::CustomFile[\s\S]{0,800}custom-frik-weapon-offset-change[\s\S]{0,300}captureSequenceFloor' `
+    'A live custom-file add/remove must re-evaluate the equipped weapon from the in-memory revision, release stale authority, and require a fresh graph capture.'
+Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
+    'authored_weapon_grip_library::publish\([\s\S]{0,300}input\.weapon[\s\S]{0,200}authoredPrimaryHandInWeapon[\s\S]{0,160}resolvedCaptureSequence' `
+    'Every successful native grip solve must publish the exact relation to the bounded loose-weapon library.'
+Require-Text 'src/physics-interaction/weapon/EquipVisualBridge.cpp' `
+    'customFrikOffsetPresent\s*=[\s\S]{0,300}OffsetSource::CustomFile[\s\S]{0,700}tryResolveLooseWeaponFiringHandHoldForModel[\s\S]{0,700}else if\s*\(\s*!customFrikOffsetPresent' `
+    'Loose-to-equipped visual handoff must re-resolve the filewatch-published shared authority and never fall back across a custom override.'
+Require-Text 'src/physics-interaction/grab/FrikWeaponOffsetCache.cpp' `
+    'FileWatch<std::string>[\s\S]*reloadCache\(\)[\s\S]*FileWatch invokes callbacks on its own worker' `
+    'Custom hFRIK offset changes must reload on a filewatch worker, never through frame/input/animation filesystem polling.'
+Reject-Text 'src/physics-interaction/grab/FrikWeaponOffsetCache.cpp' `
+    'findPrimaryWeaponOffset\([\s\S]{0,1800}directory_iterator' `
+    'Runtime offset lookup must not perform directory I/O.'
+Require-Text 'src/physics-interaction/grab/FrikWeaponOffsetCache.cpp' `
+    'loadCustomOffsets[\s\S]{0,1400}OffsetSource::CustomFile[\s\S]*findPrimaryWeaponOffsetLocked[\s\S]{0,1800}\.source\s*=\s*offset->source' `
+    'The hFRIK cache must retain per-entry custom-vs-embedded provenance through final lookup.'
+Require-Text 'src/physics-interaction/weapon/AuthoredWeaponGripLibrary.cpp' `
+    'std::array<Entry,\s*kCapacity>[\s\S]*weaponFormId[\s\S]*variantKey[\s\S]*inPowerArmor[\s\S]*formMatchCount\s*==\s*1' `
+    'The learned loose grip library must be bounded and keyed by weapon, stock variant, and power-armor topology with only unambiguous fallback.'
+Require-Text 'src/physics-interaction/weapon/WeaponGripAuthorityPolicy.h' `
+    'frikCustomFile[\s\S]{0,300}Source::FrikCustomFile[\s\S]{0,300}authoredAnimation[\s\S]{0,300}Source::AuthoredAnimation[\s\S]{0,300}frikEmbeddedResource[\s\S]{0,300}Source::FrikEmbeddedResource' `
+    'Weapon grip authority must encode custom hFRIK JSON above ROCK authored animation and embedded data below it.'
+Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
     'input\.leftHandedMode[\s\S]*clearAuthoredPrimaryFiringGripCanonical\([\s\S]*game-left-handed-mode[\s\S]*rockFiringHandIsLeft\s*=\s*input\.rockFiringHandIsLeft' `
     'Global game-left topology must discard the right-authored canonical while ROCK physical-left firing remains an explicit eligibility state.'
 Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `

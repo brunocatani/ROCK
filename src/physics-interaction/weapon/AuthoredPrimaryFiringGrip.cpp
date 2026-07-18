@@ -3,7 +3,9 @@
 #include "physics-interaction/animation/NativeAnimationAuthority.h"
 #include "physics-interaction/animation/NativeAnimationAuthorityPolicy.h"
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/grab/FrikWeaponOffsetCache.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
+#include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 
 #include "RE/NetImmerse/NiNode.h"
@@ -63,12 +65,15 @@ namespace rock
         endSession(reason);
         _weaponNodeIdentity = nullptr;
         _weaponOwnershipKey = 0;
+        _frikOffsetCacheRevision = 0;
         _captureSequenceFloor = 0;
         _supportCaptureSequenceFloor = 0;
         _nativeReloadWasActive = false;
         _sessionLogged = false;
         _applyFailureLogged = false;
         _canonicalPublishFailureLogged = false;
+        _libraryPublishFailureLogged = false;
+        _customFrikOffsetOverrideActive = false;
         _supportCaptureFailureReasonLogged = 0;
         _supportCaptureFailureMaskLogged = 0;
         _supportCaptureFailureLogged = false;
@@ -124,7 +129,58 @@ namespace rock
             _sessionLogged = false;
             _applyFailureLogged = false;
             _canonicalPublishFailureLogged = false;
+            _libraryPublishFailureLogged = false;
             _supportCaptureFailureLogged = false;
+
+            _customFrikOffsetOverrideActive = false;
+            _frikOffsetCacheRevision = frik_weapon_offset_cache::currentRevision();
+            if (input.weapon && input.weaponNode) {
+                const auto frikOffset =
+                    frik_weapon_offset_cache::findPrimaryWeaponOffset(input.weapon, input.weaponNode);
+                _customFrikOffsetOverrideActive =
+                    frikOffset.found &&
+                    frikOffset.source == frik_weapon_offset_cache::OffsetSource::CustomFile;
+                if (_customFrikOffsetOverrideActive) {
+                    ROCK_LOG_INFO(Animation,
+                        "Authored primary firing grip yielded to custom hFRIK weapon offset weaponKey=0x{:X} source={}",
+                        currentWeaponKey,
+                        frikOffset.reason);
+                }
+            }
+            return;
+        }
+
+        const auto frikOffsetCacheRevision = frik_weapon_offset_cache::currentRevision();
+        if (frikOffsetCacheRevision != _frikOffsetCacheRevision) {
+            const bool previousCustomOverride = _customFrikOffsetOverrideActive;
+            _frikOffsetCacheRevision = frikOffsetCacheRevision;
+
+            const auto frikOffset =
+                frik_weapon_offset_cache::findPrimaryWeaponOffset(input.weapon, input.weaponNode);
+            _customFrikOffsetOverrideActive =
+                frikOffset.found &&
+                frikOffset.source == frik_weapon_offset_cache::OffsetSource::CustomFile;
+            if (_customFrikOffsetOverrideActive != previousCustomOverride) {
+                ROCK_LOG_INFO(Animation,
+                    "Authored primary firing grip custom hFRIK override {} weaponKey=0x{:X} cacheRevision={} source={}",
+                    _customFrikOffsetOverrideActive ? "activated" : "released",
+                    currentWeaponKey,
+                    frikOffsetCacheRevision,
+                    frikOffset.reason);
+
+                weaponAuthority.clearAuthoredPrimaryFiringGripCanonical(
+                    "custom-frik-weapon-offset-change");
+                _captureSequenceFloor = captureStatus.captureSequence;
+                _supportCaptureSequenceFloor = supportCaptureStatus.captureSequence;
+                endSession("custom-frik-weapon-offset-change");
+                return;
+            }
+        }
+
+        if (_customFrikOffsetOverrideActive) {
+            weaponAuthority.clearAuthoredPrimaryFiringGripCanonical(
+                "custom-frik-weapon-offset");
+            endSession("custom-frik-weapon-offset");
             return;
         }
 
@@ -223,6 +279,23 @@ namespace rock
             }
         } else {
             _canonicalPublishFailureLogged = false;
+        }
+
+        if (!authored_weapon_grip_library::publish(
+                input.weapon,
+                input.weaponNode,
+                input.inPowerArmor,
+                authoredPrimaryHandInWeapon,
+                resolvedCaptureSequence)) {
+            if (!_libraryPublishFailureLogged) {
+                ROCK_LOG_WARN(Animation,
+                    "Authored primary firing grip could not publish loose-weapon relation weaponKey=0x{:X} capture={}",
+                    currentWeaponKey,
+                    resolvedCaptureSequence);
+                _libraryPublishFailureLogged = true;
+            }
+        } else {
+            _libraryPublishFailureLogged = false;
         }
 
         _active = true;

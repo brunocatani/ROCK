@@ -5,6 +5,8 @@
 
 namespace RE
 {
+    class NiAVObject;
+    class TESObjectWEAP;
     class TESObjectREFR;
 }
 
@@ -13,13 +15,11 @@ namespace rock::loose_weapon_grip_zone
     /*
      * Firing-grip zone for loosely held weapons.
      *
-     * While a hand holds a loose/dynamic weapon, this runtime projects the
-     * FRIK weapon offset (frik_weapon_offset_cache: saved offsets, FRIK.dll
-     * embedded defaults, live-node fallback) onto the held world model to
-     * find where the firing grip sits on the mesh, then tracks whether the
-     * holding palm is inside the grip radius. PhysicsInteraction consumes
-     * isGripZoneEquipSettled() to gate loose-weapon equip on actually holding
-     * the gun by its grip; the debug overlay consumes the snapshot.
+     * While a hand holds a loose/dynamic weapon, this runtime resolves one
+     * canonical firing relation in strict authority order: a user hFRIK JSON,
+     * ROCK's learned native-animation pose, then an hFRIK embedded cold
+     * fallback. It projects that fixed Weapon-relative grip onto the loose
+     * model and tracks whether the holding palm is inside the grip radius.
      *
      * All geometry is weapon-root-local at the projection step and world at
      * the comparison step; nothing is stored hand-relative.
@@ -66,8 +66,8 @@ namespace rock::loose_weapon_grip_zone
 
     /*
      * Stateless one-shot resolver of the canonical firing hold for a loose
-     * weapon in the tested hand: the primary hand receives the raw FRIK
-     * attach pose, the other hand receives ROCK's mirrored firing hold, both
+     * weapon in the tested hand: the primary hand receives the selected
+     * canonical pose, the other hand receives ROCK's mirrored firing hold, both
      * expressed as the tested hand's live root-flattened frame plus the hand
      * transform in weapon-root-local space (weapon world = hand world o
      * inverse(hold)). Used by the pull-catch/force-grab commit to seat a far
@@ -77,6 +77,16 @@ namespace rock::loose_weapon_grip_zone
     bool tryResolveLooseWeaponFiringHandHold(
         bool isLeft,
         RE::TESObjectREFR* weaponRef,
+        RE::NiTransform& outHandWorld,
+        RE::NiTransform& outHandWeaponLocal,
+        const char** outReason);
+
+    // Same resolver for a detached world model during loose-to-equipped
+    // visual handoff. No reference lifetime is retained.
+    bool tryResolveLooseWeaponFiringHandHoldForModel(
+        bool isLeft,
+        const RE::TESObjectWEAP* weapon,
+        RE::NiAVObject* weaponRoot,
         RE::NiTransform& outHandWorld,
         RE::NiTransform& outHandWeaponLocal,
         const char** outReason);

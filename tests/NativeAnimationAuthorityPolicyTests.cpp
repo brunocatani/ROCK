@@ -1,10 +1,35 @@
 #include "physics-interaction/animation/NativeAnimationAuthorityPolicy.h"
+#include "physics-interaction/weapon/WeaponGripAuthorityPolicy.h"
 
 #include <cassert>
 
 int main()
 {
     using namespace rock::native_animation_authority_policy;
+
+    using rock::weapon_grip_authority_policy::Availability;
+    using rock::weapon_grip_authority_policy::select;
+    using rock::weapon_grip_authority_policy::Source;
+
+    static_assert(select(Availability{
+                      .frikCustomFile = true,
+                      .authoredAnimation = true,
+                      .frikEmbeddedResource = true,
+                      .allowFrikLiveNodeFallback = true,
+                  }) == Source::FrikCustomFile);
+    static_assert(select(Availability{
+                      .authoredAnimation = true,
+                      .frikEmbeddedResource = true,
+                      .allowFrikLiveNodeFallback = true,
+                  }) == Source::AuthoredAnimation);
+    static_assert(select(Availability{
+                      .frikEmbeddedResource = true,
+                      .allowFrikLiveNodeFallback = true,
+                  }) == Source::FrikEmbeddedResource);
+    static_assert(select(Availability{
+                      .allowFrikLiveNodeFallback = true,
+                  }) == Source::FrikLiveNodeFallback);
+    static_assert(select(Availability{}) == Source::None);
 
     struct AffineTransform
     {

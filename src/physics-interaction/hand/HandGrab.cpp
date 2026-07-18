@@ -13,7 +13,6 @@
 #include "physics-interaction/grab/GrabConstraintMath.h"
 #include "physics-interaction/grab/GrabContact.h"
 #include "physics-interaction/grab/GrabCore.h"
-#include "physics-interaction/grab/FrikWeaponOffsetCache.h"
 #include "physics-interaction/grab/SavedGrabOffsetStore.h"
 #include "physics-interaction/grab/GrabFinger.h"
 #include "physics-interaction/grab/GrabMassPolicy.h"
@@ -747,11 +746,6 @@ namespace rock
             return selectedBase && selectedBase->Is(RE::ENUM_FORM_ID::kWEAP);
         }
 
-        bool isPrimaryHandForWeaponAttach(bool isLeft)
-        {
-            return isLeft == f4vr::isLeftHandedMode();
-        }
-
         bool isFiniteNiTransform(const RE::NiTransform& value)
         {
             bool rotationFinite = true;
@@ -823,32 +817,6 @@ namespace rock
             RE::NiPoint3 gripPointWorld{};
             const char* reason = "notEvaluated";
         };
-
-        struct LooseWeaponPrimaryAttachSource
-        {
-            frik_weapon_offset_cache::LookupResult offset{};
-            RE::NiAVObject* parent = nullptr;
-            RE::NiAVObject* visibilityNode = nullptr;
-            const char* missingParentReason = "missingPrimaryWeaponParent";
-            const char* nonFiniteParentReason = "nonFinitePrimaryWeaponParent";
-        };
-
-        LooseWeaponPrimaryAttachSource resolveLooseWeaponPrimaryAttachSource(
-            const RE::TESObjectWEAP* weapon,
-            const RE::NiAVObject* rootNode)
-        {
-            LooseWeaponPrimaryAttachSource source{};
-
-            source.offset = frik_weapon_offset_cache::findPrimaryWeaponOffset(weapon, rootNode);
-            if (!source.offset.found) {
-                return source;
-            }
-
-            auto* weaponNode = f4vr::getWeaponNode();
-            source.parent = weaponNode ? weaponNode->parent : nullptr;
-            source.visibilityNode = weaponNode;
-            return source;
-        }
 
         enum class GrabOffsetSourceKind : std::uint8_t
         {
@@ -1055,50 +1023,25 @@ namespace rock
                     return frame;
                 }
 
-                bool haveDesiredRoot = false;
-                if (isPrimaryHandForWeaponAttach(isLeft)) {
-                    LooseWeaponPrimaryAttachSource attachSource{};
-                    attachSource = resolveLooseWeaponPrimaryAttachSource(looseWeapon, rootNode);
-                    /*
-                     * FRIK offsets are local transforms written under a live first-person
-                     * attach parent. Loose refs are not equipped, so use only the current
-                     * parent frame and never a stale/hidden equipped-object world transform.
-                     */
-                    if (attachSource.offset.found && attachSource.parent && isFiniteNiTransform(attachSource.parent->world)) {
-                        frame.desiredRootWorld = multiplyTransforms(attachSource.parent->world, attachSource.offset.offset);
-                        frame.sourceVisible = f4vr::isNodeVisible(attachSource.visibilityNode);
-                        frame.reason = attachSource.offset.reason;
-                        haveDesiredRoot = true;
-                    } else if (!selection.forcedArrival) {
-                        frame.reason = !attachSource.offset.found       ? attachSource.offset.reason :
-                                       !attachSource.parent             ? attachSource.missingParentReason :
-                                                                          attachSource.nonFiniteParentReason;
-                        return frame;
-                    }
-                } else {
-                    /*
-                     * Secondary-hand pull-catch/force-grab gets the same
-                     * FRIK-offset auto-align as the primary hand, expressed
-                     * through ROCK's mirrored firing hold shared with the
-                     * grip-zone runtimes: weapon = live hand world composed
-                     * with the inverse of the mirrored hold. Seating the far
-                     * grabbed weapon directly on its firing grip lets the
-                     * grip-zone equip settle hand it off to secondary-hand
-                     * firing ownership without manual re-seating. Close grabs
-                     * never reach here (free mesh hold gate above).
-                     */
-                    RE::NiTransform handWorld{};
-                    RE::NiTransform handWeaponLocal{};
-                    const char* holdReason = "mirroredHoldUnavailable";
-                    if (loose_weapon_grip_zone::tryResolveLooseWeaponFiringHandHold(isLeft, selection.refr, handWorld, handWeaponLocal, &holdReason)) {
-                        frame.desiredRootWorld = multiplyTransforms(handWorld, transform_math::invertTransform(handWeaponLocal));
-                        frame.sourceVisible = false;
-                        frame.reason = holdReason;
-                        haveDesiredRoot = true;
-                    } else if (!selection.forcedArrival) {
-                        frame.reason = holdReason;
-                        return frame;
-                    }
+                /*
+                 * Both firing hands use the same weapon-relative authority resolver.
+                 * It enforces custom hFRIK > learned authored > embedded hFRIK and
+                 * performs no filesystem work on this grab path. Weapon world is the
+                 * live hand world composed with the inverse of that canonical hold.
+                 */
+                RE::NiTransform handWorld{};
+                RE::NiTransform handWeaponLocal{};
+                const char* holdReason = "canonicalHoldUnavailable";
+                const bool haveDesiredRoot = loose_weapon_grip_zone::tryResolveLooseWeaponFiringHandHold(
+                    isLeft, selection.refr, handWorld, handWeaponLocal, &holdReason);
+                if (haveDesiredRoot) {
+                    frame.desiredRootWorld = multiplyTransforms(
+                        handWorld, transform_math::invertTransform(handWeaponLocal));
+                    frame.sourceVisible = false;
+                    frame.reason = holdReason;
+                } else if (!selection.forcedArrival) {
+                    frame.reason = holdReason;
+                    return frame;
                 }
 
                 if (!haveDesiredRoot) {

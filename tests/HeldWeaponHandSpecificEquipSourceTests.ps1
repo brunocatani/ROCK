@@ -169,8 +169,12 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'Loose equip must carry the canonical weapon-relative firing-hand frame across inventory transfer.'
 
 Require-Text 'src/physics-interaction/weapon/LooseWeaponGripZone.cpp' `
-    'gripWeaponLocal\s*=\s*transform_math::worldPointToLocal\(attachedRootWorld,\s*canonicalPalmWorld\)[\s\S]{0,180}localPointToWorld\(looseRoot->world,\s*state\.gripWeaponLocal\)' `
-    'The firing-grip point must be derived from the canonical attach pose and then projected through the loose weapon, never derived from the tested hand.'
+    'gripWeaponLocal\s*=\s*transform_math::worldPointToLocal\([\s\S]{0,120}attachedRootWorld,[\s\S]{0,120}canonicalPalmWorld\)[\s\S]{0,900}localPointToWorld\(looseRoot->world,\s*state\.gripWeaponLocal\)' `
+    'The hFRIK firing-grip point must be derived from the canonical primary attach pose and projected through the loose weapon, never derived from the tested hand.'
+
+Require-Text 'src/physics-interaction/weapon/LooseWeaponGripZone.cpp' `
+    'weapon_grip_authority_policy::select\([\s\S]{0,1200}frikCustomFile[\s\S]{0,600}authoredAnimation[\s\S]{0,600}frikEmbeddedResource[\s\S]{0,1600}Source::AuthoredAnimation[\s\S]{0,600}authoredLookup\.rightHandWeaponLocal' `
+    'Loose weapons must select explicit hFRIK JSON before ROCK-authored data, then consume the learned Hand-in-Weapon relation directly.'
 
 Reject-Text 'src/physics-interaction/weapon/LooseWeaponGripZone.cpp' `
     'worldPointToLocal\(attachedRootWorld,\s*palmWorld\)' `
@@ -204,11 +208,11 @@ Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'RE::TESObjectREFR\* gripZoneHoverCandidate\s*=\s*nullptr;\s*if\s*\(\s*!isLeft\s*&&' `
     'Grip-zone hover/equip discovery must not remain right-hand-only.'
 
-# Pull-catch/force-grab FRIK auto-align must cover the secondary hand through
-# the shared mirrored firing hold instead of returning notPrimaryHand.
+# Pull-catch/force-grab canonical auto-align must cover both physical hands
+# through the shared firing-hold resolver.
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
-    'loose_weapon_grip_zone::tryResolveLooseWeaponFiringHandHold\(isLeft,\s*selection\.refr,[\s\S]{0,200}multiplyTransforms\(handWorld,\s*transform_math::invertTransform\(handWeaponLocal\)\)' `
-    'Secondary-hand pull-catch/force-grab must seat the loose weapon from the mirrored firing hold (weapon = hand world o inverse(hold)).'
+    'loose_weapon_grip_zone::tryResolveLooseWeaponFiringHandHold\([\s\S]{0,160}isLeft,[\s\S]{0,160}selection\.refr[\s\S]{0,300}multiplyTransforms\([\s\S]{0,120}handWorld,[\s\S]{0,120}transform_math::invertTransform\(handWeaponLocal\)\)' `
+    'Pull-catch/force-grab must seat either hand from the shared in-memory canonical hold (weapon = hand world o inverse(hold)).'
 
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' `
     '"notPrimaryHand"' `
@@ -219,7 +223,7 @@ Require-Text 'src/physics-interaction/weapon/LooseWeaponGripZone.cpp' `
     'The one-shot firing-hold resolver must share the grip-zone projection core so both paths seat identical holds.'
 
 # Non-throwable weapons never participate in saved grab offsets, on either
-# side: the FRIK weapon-offset pipeline is the only weapon seat authority.
+# side: the shared custom/authored weapon-grip pipeline owns their seat.
 Require-Text 'src/physics-interaction/grab/SavedGrabOffsetStore.h' `
     'constexpr\s+bool\s+participatesInSavedGrabOffsets\(' `
     'Saved-grab-offset weapon eligibility must be one shared policy for the save and apply sides.'

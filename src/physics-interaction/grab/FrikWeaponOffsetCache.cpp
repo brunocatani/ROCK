@@ -10,17 +10,21 @@
 #include "RE/Bethesda/TESBoundObjects.h"
 
 #include <nlohmann/json.hpp>
+#include <thomasmonkman-filewatch/FileWatch.hpp>
 
-#include <algorithm>
+#include <atomic>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -37,26 +41,25 @@ namespace rock::frik_weapon_offset_cache
         constexpr auto kPowerArmorSuffix = "-PowerArmor";
         constexpr auto kLeftHandedSuffix = "-leftHanded";
 
-        struct CustomOffsetsSignature
-        {
-            bool directoryExists = false;
-            std::uint32_t fileCount = 0;
-            std::int64_t latestWriteTick = 0;
-
-            [[nodiscard]] bool operator==(const CustomOffsetsSignature&) const = default;
-        };
-
         struct CacheState
         {
-            std::unordered_map<std::string, RE::NiTransform> offsets;
-            CustomOffsetsSignature customSignature{};
+            struct CachedOffset
+            {
+                RE::NiTransform transform{};
+                OffsetSource source{ OffsetSource::None };
+            };
+
+            std::unordered_map<std::string, CachedOffset> offsets;
             bool loaded = false;
             std::size_t embeddedCount = 0;
             std::size_t customCount = 0;
         };
 
         std::mutex g_cacheMutex;
+        std::mutex g_reloadMutex;
         CacheState g_cache;
+        std::atomic<std::uint64_t> g_cacheRevision{ 0 };
+        std::unique_ptr<filewatch::FileWatch<std::string>> g_customOffsetWatch;
 
         [[nodiscard]] bool hasText(std::string_view text)
         {
@@ -81,36 +84,6 @@ namespace rock::frik_weapon_offset_cache
         [[nodiscard]] std::filesystem::path customOffsetDirectory()
         {
             return common::getRelativePathInDocuments(kFrikWeaponOffsetsRelativePath);
-        }
-
-        [[nodiscard]] CustomOffsetsSignature scanCustomOffsetsSignature()
-        {
-            CustomOffsetsSignature signature{};
-            const std::filesystem::path offsetDir = customOffsetDirectory();
-            std::error_code ec;
-            if (!std::filesystem::exists(offsetDir, ec) || !std::filesystem::is_directory(offsetDir, ec)) {
-                return signature;
-            }
-
-            signature.directoryExists = true;
-            for (const auto& entry : std::filesystem::directory_iterator(offsetDir, ec)) {
-                if (ec) {
-                    break;
-                }
-
-                std::error_code entryEc;
-                if (!entry.is_regular_file(entryEc)) {
-                    continue;
-                }
-
-                ++signature.fileCount;
-                const auto writeTime = entry.last_write_time(entryEc);
-                if (!entryEc) {
-                    const auto ticks = static_cast<std::int64_t>(writeTime.time_since_epoch().count());
-                    signature.latestWriteTick = (std::max)(signature.latestWriteTick, ticks);
-                }
-            }
-            return signature;
         }
 
         [[nodiscard]] bool isFiniteNiTransform(const RE::NiTransform& value)
@@ -157,7 +130,8 @@ namespace rock::frik_weapon_offset_cache
 
         [[nodiscard]] bool loadOffsetJsonToMap(
             const json& root,
-            std::unordered_map<std::string, RE::NiTransform>& offsets)
+            std::unordered_map<std::string, CacheState::CachedOffset>& offsets,
+            const OffsetSource source)
         {
             bool loadedAny = false;
             for (const auto& [key, value] : root.items()) {
@@ -177,7 +151,15 @@ namespace rock::frik_weapon_offset_cache
                 transform.translate.z = value.at("z").get<float>();
                 transform.scale = value.at("scale").get<float>();
 
-                offsets[key] = transform;
+                if (!isFiniteNiTransform(transform)) {
+                    ROCK_LOG_WARN(Hand, "FRIK weapon offset '{}' ignored because its transform is invalid", key);
+                    continue;
+                }
+
+                offsets[key] = CacheState::CachedOffset{
+                    .transform = transform,
+                    .source = source,
+                };
                 loadedAny = true;
             }
             return loadedAny;
@@ -185,10 +167,11 @@ namespace rock::frik_weapon_offset_cache
 
         [[nodiscard]] bool loadOffsetJsonString(
             const std::string& text,
-            std::unordered_map<std::string, RE::NiTransform>& offsets)
+            std::unordered_map<std::string, CacheState::CachedOffset>& offsets,
+            const OffsetSource source)
         {
             try {
-                return loadOffsetJsonToMap(json::parse(text), offsets);
+                return loadOffsetJsonToMap(json::parse(text), offsets, source);
             } catch (const std::exception& e) {
                 ROCK_LOG_WARN(Hand, "FRIK weapon offset JSON parse failed: {}", e.what());
                 return false;
@@ -197,7 +180,8 @@ namespace rock::frik_weapon_offset_cache
 
         [[nodiscard]] bool loadOffsetJsonFile(
             const std::filesystem::path& path,
-            std::unordered_map<std::string, RE::NiTransform>& offsets)
+            std::unordered_map<std::string, CacheState::CachedOffset>& offsets,
+            const OffsetSource source)
         {
             try {
                 std::ifstream input(path, std::ios::in);
@@ -206,14 +190,15 @@ namespace rock::frik_weapon_offset_cache
                 }
                 json parsed;
                 input >> parsed;
-                return loadOffsetJsonToMap(parsed, offsets);
+                return loadOffsetJsonToMap(parsed, offsets, source);
             } catch (const std::exception& e) {
                 ROCK_LOG_WARN(Hand, "FRIK weapon offset file '{}' load failed: {}", path.string(), e.what());
                 return false;
             }
         }
 
-        [[nodiscard]] std::size_t loadEmbeddedOffsets(std::unordered_map<std::string, RE::NiTransform>& offsets)
+        [[nodiscard]] std::size_t loadEmbeddedOffsets(
+            std::unordered_map<std::string, CacheState::CachedOffset>& offsets)
         {
             std::size_t loadedCount = 0;
             for (WORD resourceId = kFrikWeaponOffsetResourceFirst; resourceId <= kFrikWeaponOffsetResourceLast; ++resourceId) {
@@ -222,13 +207,14 @@ namespace rock::frik_weapon_offset_cache
                     continue;
                 }
                 const auto before = offsets.size();
-                (void)loadOffsetJsonString(*resource, offsets);
+                (void)loadOffsetJsonString(*resource, offsets, OffsetSource::EmbeddedResource);
                 loadedCount += offsets.size() - before;
             }
             return loadedCount;
         }
 
-        [[nodiscard]] std::size_t loadCustomOffsets(std::unordered_map<std::string, RE::NiTransform>& offsets)
+        [[nodiscard]] std::size_t loadCustomOffsets(
+            std::unordered_map<std::string, CacheState::CachedOffset>& offsets)
         {
             const std::filesystem::path offsetDir = customOffsetDirectory();
             std::error_code ec;
@@ -245,7 +231,7 @@ namespace rock::frik_weapon_offset_cache
                     continue;
                 }
                 const auto before = offsets.size();
-                if (loadOffsetJsonFile(entry.path(), offsets)) {
+                if (loadOffsetJsonFile(entry.path(), offsets, OffsetSource::CustomFile)) {
                     loadedCount += offsets.size() > before ? offsets.size() - before : 1;
                 }
             }
@@ -304,7 +290,7 @@ namespace rock::frik_weapon_offset_cache
             return key;
         }
 
-        [[nodiscard]] std::optional<RE::NiTransform> findOffsetByKeyLocked(
+        [[nodiscard]] std::optional<CacheState::CachedOffset> findOffsetByKeyLocked(
             const CacheState& cache,
             const std::string& key,
             bool allowCaseInsensitiveFallback)
@@ -339,54 +325,111 @@ namespace rock::frik_weapon_offset_cache
             if (inPowerArmor) {
                 const auto powerArmorOffset = findOffsetByKeyLocked(cache, weaponOffsetKey(weaponName, true, leftHanded), false);
                 if (powerArmorOffset) {
-                    return LookupResult{ .found = true, .offset = *powerArmorOffset, .reason = "powerArmorOffset" };
+                    return LookupResult{
+                        .found = true,
+                        .offset = powerArmorOffset->transform,
+                        .source = powerArmorOffset->source,
+                        .reason = powerArmorOffset->source == OffsetSource::CustomFile ?
+                                      "customPowerArmorOffset" :
+                                      "embeddedPowerArmorOffset",
+                    };
                 }
             }
 
             const auto offset = findOffsetByKeyLocked(cache, weaponOffsetKey(weaponName, false, leftHanded), false);
             if (offset) {
-                return LookupResult{ .found = true, .offset = *offset, .reason = "offset" };
+                return LookupResult{
+                    .found = true,
+                    .offset = offset->transform,
+                    .source = offset->source,
+                    .reason = offset->source == OffsetSource::CustomFile ? "customOffset" : "embeddedOffset",
+                };
             }
 
             return LookupResult{ .found = false, .reason = "offsetMissing" };
         }
 
-        void refreshIfStale()
+        void reloadCache()
         {
-            const auto currentSignature = scanCustomOffsetsSignature();
-            bool shouldReload = false;
+            // Startup and filewatch callbacks may overlap during teardown or
+            // rapid config churn. Serialize source reads, then publish one
+            // complete immutable-by-convention snapshot under the query lock.
+            std::scoped_lock reloadLock(g_reloadMutex);
+
+            CacheState next{};
+            next.embeddedCount = loadEmbeddedOffsets(next.offsets);
+            next.customCount = loadCustomOffsets(next.offsets);
+            next.loaded = true;
+            const std::size_t totalCount = next.offsets.size();
+            const std::size_t embeddedCount = next.embeddedCount;
+            const std::size_t customCount = next.customCount;
+
             {
-                std::scoped_lock lock(g_cacheMutex);
-                shouldReload = !g_cache.loaded || !(g_cache.customSignature == currentSignature);
+                std::scoped_lock cacheLock(g_cacheMutex);
+                g_cache = std::move(next);
+            }
+            const auto revision = g_cacheRevision.fetch_add(1, std::memory_order_acq_rel) + 1;
+
+            ROCK_LOG_INFO(Hand,
+                "Loaded FRIK weapon offsets: entries={} embeddedLoaded={} customLoaded={} revision={}",
+                totalCount,
+                embeddedCount,
+                customCount,
+                revision);
+        }
+
+        void startCustomOffsetWatch()
+        {
+            if (g_customOffsetWatch) {
+                return;
             }
 
-            if (shouldReload) {
-                preload();
+            const auto offsetDir = customOffsetDirectory();
+            std::error_code ec;
+            if (!std::filesystem::exists(offsetDir, ec) || !std::filesystem::is_directory(offsetDir, ec)) {
+                ROCK_LOG_WARN(Hand,
+                    "FRIK custom weapon-offset watch unavailable: directory '{}' does not exist",
+                    offsetDir.string());
+                return;
+            }
+
+            try {
+                g_customOffsetWatch = std::make_unique<filewatch::FileWatch<std::string>>(
+                    offsetDir.string(),
+                    [](const std::string&, const filewatch::Event changeType) {
+                        if (changeType != filewatch::Event::modified &&
+                            changeType != filewatch::Event::added &&
+                            changeType != filewatch::Event::removed &&
+                            changeType != filewatch::Event::renamed_new &&
+                            changeType != filewatch::Event::renamed_old) {
+                            return;
+                        }
+
+                        // FileWatch invokes callbacks on its own worker.
+                        // JSON/resource I/O and parsing stay off every game,
+                        // animation, input, and physics callback thread.
+                        std::this_thread::sleep_for(std::chrono::milliseconds(150));
+                        reloadCache();
+                    });
+                ROCK_LOG_INFO(Hand, "Watching hFRIK custom weapon offsets at '{}'", offsetDir.string());
+            } catch (const std::exception& e) {
+                ROCK_LOG_WARN(Hand,
+                    "FRIK custom weapon-offset watch failed for '{}': {}",
+                    offsetDir.string(),
+                    e.what());
             }
         }
     }
 
     void preload()
     {
-        CacheState next{};
-        next.embeddedCount = loadEmbeddedOffsets(next.offsets);
-        next.customCount = loadCustomOffsets(next.offsets);
-        next.customSignature = scanCustomOffsetsSignature();
-        next.loaded = true;
-        const std::size_t totalCount = next.offsets.size();
-        const std::size_t embeddedCount = next.embeddedCount;
-        const std::size_t customCount = next.customCount;
+        reloadCache();
+        startCustomOffsetWatch();
+    }
 
-        {
-            std::scoped_lock lock(g_cacheMutex);
-            g_cache = std::move(next);
-        }
-
-        ROCK_LOG_INFO(Hand,
-            "Loaded FRIK weapon offsets for loose weapon attach: entries={} embeddedLoaded={} customLoaded={}",
-            totalCount,
-            embeddedCount,
-            customCount);
+    std::uint64_t currentRevision() noexcept
+    {
+        return g_cacheRevision.load(std::memory_order_acquire);
     }
 
     LookupResult findPrimaryWeaponOffset(
@@ -403,7 +446,6 @@ namespace rock::frik_weapon_offset_cache
         }
 
         const std::string weaponName = extendWeaponNameLikeFrik(std::string(fullName), weaponRoot);
-        refreshIfStale();
 
         LookupResult lookup{};
         {
@@ -416,7 +458,12 @@ namespace rock::frik_weapon_offset_cache
 
         const auto defaultOffset = liveWeaponNodeDefaultOffset();
         if (defaultOffset) {
-            return LookupResult{ .found = true, .offset = *defaultOffset, .reason = "defaultWeaponNodeLocal" };
+            return LookupResult{
+                .found = true,
+                .offset = *defaultOffset,
+                .source = OffsetSource::LiveWeaponNodeFallback,
+                .reason = "defaultWeaponNodeLocal",
+            };
         }
         return lookup;
     }

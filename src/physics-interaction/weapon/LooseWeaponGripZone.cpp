@@ -8,7 +8,10 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/grab/FrikWeaponOffsetCache.h"
+#include "physics-interaction/hand/HandFrame.h"
+#include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
+#include "physics-interaction/weapon/WeaponGripAuthorityPolicy.h"
 
 #include "RE/Bethesda/TESBoundObjects.h"
 #include "RE/Bethesda/TESObjectREFRs.h"
@@ -64,20 +67,24 @@ namespace rock::loose_weapon_grip_zone
         }
 
         /*
-         * Resolve one fixed firing grip in WEAPON space. FRIK's offset builds
-         * the canonical attached weapon root; the game-primary palm is then
-         * projected into that root exactly once. The tested hand is used only
-         * for the final palm-to-world-grip distance. Using the tested palm to
-         * derive the grip made the point follow the left hand and was only
-         * accidentally correct for the native right hand, whose palm shares
-         * the FRIK attach-parent chain. outTestedHandWorld, when requested,
-         * receives the tested hand's live root-flattened frame (the same one
-         * the resolved firingHandWeaponLocal is valid against).
+         * Resolve one fixed firing grip in WEAPON space. Explicit hFRIK JSON
+         * remains user correction authority. Otherwise ROCK consumes the
+         * exact native-animation relation learned while this weapon/stock was
+         * equipped. Embedded hFRIK data is a cold fallback only; the unrelated
+         * live Weapon-node local is accepted solely when the authored feature
+         * is disabled to preserve legacy behavior.
+         *
+         * The tested hand is used only for final world placement. It must
+         * never define the Weapon-relative grip point, or the target follows
+         * the probing hand instead of remaining fixed on the gun.
          */
-        bool tryResolveGripWorld(const bool isLeft, RE::TESObjectREFR* heldRef, HandZoneState& state, RE::NiTransform* outTestedHandWorld = nullptr)
+        bool tryResolveGripWorldForModel(
+            const bool isLeft,
+            const RE::TESObjectWEAP* weapon,
+            RE::NiAVObject* looseRoot,
+            HandZoneState& state,
+            RE::NiTransform* outTestedHandWorld = nullptr)
         {
-            auto* baseForm = heldRef->GetObjectReference();
-            const auto* weapon = baseForm ? baseForm->As<RE::TESObjectWEAP>() : nullptr;
             if (!weapon) {
                 state.reason = "missingWeaponForm";
                 return false;
@@ -93,29 +100,8 @@ namespace rock::loose_weapon_grip_zone
                 return false;
             }
 
-            auto* looseRoot = heldRef->Get3D();
             if (!looseRoot || !isUsableWorldTransform(looseRoot->world)) {
                 state.reason = "missingWeaponRoot";
-                return false;
-            }
-
-            const auto lookup = frik_weapon_offset_cache::findPrimaryWeaponOffset(weapon, looseRoot);
-            if (!lookup.found) {
-                state.reason = lookup.reason;
-                return false;
-            }
-
-            auto* weaponNode = f4vr::getWeaponNode();
-            auto* attachParent = weaponNode ? weaponNode->parent : nullptr;
-            if (!attachParent || !isUsableWorldTransform(attachParent->world)) {
-                state.reason = "missingPrimaryWeaponParent";
-                return false;
-            }
-
-            RE::NiTransform attachedRootWorld = transform_math::composeTransforms(attachParent->world, lookup.offset);
-            attachedRootWorld.scale = looseRoot->world.scale;
-            if (!isUsableWorldTransform(attachedRootWorld)) {
-                state.reason = "nonFiniteAttachedRoot";
                 return false;
             }
 
@@ -132,16 +118,84 @@ namespace rock::loose_weapon_grip_zone
                 return false;
             }
 
-            state.gripWeaponLocal = transform_math::worldPointToLocal(attachedRootWorld, canonicalPalmWorld);
+            const auto frikLookup =
+                frik_weapon_offset_cache::findPrimaryWeaponOffset(weapon, looseRoot);
+            const auto authoredLookup = authored_weapon_grip_library::find(
+                weapon,
+                looseRoot,
+                f4vr::isInPowerArmor());
+            const bool authoredFeatureEnabled =
+                g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled &&
+                !canonicalHandIsLeft;
+            const auto selectedSource = weapon_grip_authority_policy::select(
+                weapon_grip_authority_policy::Availability{
+                    .frikCustomFile =
+                        frikLookup.found &&
+                        frikLookup.source == frik_weapon_offset_cache::OffsetSource::CustomFile,
+                    .authoredAnimation = authoredFeatureEnabled && authoredLookup.found,
+                    .frikEmbeddedResource =
+                        frikLookup.found &&
+                        frikLookup.source == frik_weapon_offset_cache::OffsetSource::EmbeddedResource,
+                    .allowFrikLiveNodeFallback =
+                        !authoredFeatureEnabled &&
+                        frikLookup.found &&
+                        frikLookup.source ==
+                            frik_weapon_offset_cache::OffsetSource::LiveWeaponNodeFallback,
+                });
+
+            RE::NiTransform canonicalHandWeaponLocal{};
+            if (selectedSource == weapon_grip_authority_policy::Source::AuthoredAnimation) {
+                canonicalHandWeaponLocal = authoredLookup.rightHandWeaponLocal;
+                state.gripWeaponLocal =
+                    computeGrabLegacyPalmPivotAWorldFromHandBasis(canonicalHandWeaponLocal, false);
+                state.reason = authoredLookup.reason;
+            } else if (
+                selectedSource == weapon_grip_authority_policy::Source::FrikCustomFile ||
+                selectedSource == weapon_grip_authority_policy::Source::FrikEmbeddedResource ||
+                selectedSource == weapon_grip_authority_policy::Source::FrikLiveNodeFallback) {
+                auto* weaponNode = f4vr::getWeaponNode();
+                auto* attachParent = weaponNode ? weaponNode->parent : nullptr;
+                if (!attachParent || !isUsableWorldTransform(attachParent->world)) {
+                    state.reason =
+                        selectedSource == weapon_grip_authority_policy::Source::FrikCustomFile ?
+                            "customFrikMissingPrimaryWeaponParent" :
+                            "missingPrimaryWeaponParent";
+                    return false;
+                }
+
+                RE::NiTransform attachedRootWorld =
+                    transform_math::composeTransforms(attachParent->world, frikLookup.offset);
+                attachedRootWorld.scale = looseRoot->world.scale;
+                if (!isUsableWorldTransform(attachedRootWorld)) {
+                    state.reason = "nonFiniteAttachedRoot";
+                    return false;
+                }
+
+                state.gripWeaponLocal =
+                    transform_math::worldPointToLocal(attachedRootWorld, canonicalPalmWorld);
+                canonicalHandWeaponLocal = transform_math::composeTransforms(
+                    transform_math::invertTransform(attachedRootWorld),
+                    canonicalHandWorld);
+                state.reason = frikLookup.reason;
+            } else {
+                state.reason = authoredFeatureEnabled ?
+                                   authoredLookup.reason :
+                                   weapon_grip_authority_policy::sourceName(selectedSource);
+                return false;
+            }
+
+            if (!isFinitePoint(state.gripWeaponLocal) ||
+                !isUsableWorldTransform(canonicalHandWeaponLocal)) {
+                state.reason = "nonFiniteCanonicalGrip";
+                return false;
+            }
+
             state.gripWorld = transform_math::localPointToWorld(looseRoot->world, state.gripWeaponLocal);
             if (!isFinitePoint(state.gripWorld)) {
                 state.reason = "nonFiniteGripPoint";
                 return false;
             }
 
-            const RE::NiTransform canonicalHandWeaponLocal = transform_math::composeTransforms(
-                transform_math::invertTransform(attachedRootWorld),
-                canonicalHandWorld);
             if (isLeft == canonicalHandIsLeft) {
                 state.firingHandWeaponLocal = canonicalHandWeaponLocal;
                 state.hasFiringHandWeaponLocal = isUsableWorldTransform(state.firingHandWeaponLocal);
@@ -164,8 +218,27 @@ namespace rock::loose_weapon_grip_zone
                 }
             }
 
-            state.reason = lookup.reason;
             return true;
+        }
+
+        bool tryResolveGripWorld(
+            const bool isLeft,
+            RE::TESObjectREFR* heldRef,
+            HandZoneState& state,
+            RE::NiTransform* outTestedHandWorld = nullptr)
+        {
+            if (!heldRef) {
+                state.reason = "missingWeaponRef";
+                return false;
+            }
+            auto* baseForm = heldRef->GetObjectReference();
+            const auto* weapon = baseForm ? baseForm->As<RE::TESObjectWEAP>() : nullptr;
+            return tryResolveGripWorldForModel(
+                isLeft,
+                weapon,
+                heldRef->Get3D(),
+                state,
+                outTestedHandWorld);
         }
     }
 
@@ -319,6 +392,34 @@ namespace rock::loose_weapon_grip_zone
             *outReason = resolved && !scratch.hasFiringHandWeaponLocal ? "mirroredHoldUnavailable" : scratch.reason;
         }
         if (!resolved || !scratch.hasFiringHandWeaponLocal || !isUsableWorldTransform(testedHandWorld)) {
+            return false;
+        }
+
+        outHandWorld = testedHandWorld;
+        outHandWeaponLocal = scratch.firingHandWeaponLocal;
+        return true;
+    }
+
+    bool tryResolveLooseWeaponFiringHandHoldForModel(
+        const bool isLeft,
+        const RE::TESObjectWEAP* weapon,
+        RE::NiAVObject* weaponRoot,
+        RE::NiTransform& outHandWorld,
+        RE::NiTransform& outHandWeaponLocal,
+        const char** outReason)
+    {
+        HandZoneState scratch{};
+        RE::NiTransform testedHandWorld{};
+        const bool resolved =
+            tryResolveGripWorldForModel(isLeft, weapon, weaponRoot, scratch, &testedHandWorld);
+        if (outReason) {
+            *outReason = resolved && !scratch.hasFiringHandWeaponLocal ?
+                             "mirroredHoldUnavailable" :
+                             scratch.reason;
+        }
+        if (!resolved ||
+            !scratch.hasFiringHandWeaponLocal ||
+            !isUsableWorldTransform(testedHandWorld)) {
             return false;
         }
 

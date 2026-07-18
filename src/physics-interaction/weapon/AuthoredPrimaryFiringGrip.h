@@ -5,6 +5,7 @@
 namespace RE
 {
     class NiNode;
+    class TESObjectWEAP;
 }
 
 namespace rock
@@ -14,6 +15,7 @@ namespace rock
     struct AuthoredPrimaryFiringGripFrameInput
     {
         RE::NiNode* weaponNode{ nullptr };
+        const RE::TESObjectWEAP* weapon{ nullptr };
         std::uint64_t weaponOwnershipKey{ 0 };
         std::uint64_t weaponGenerationKey{ 0 };
         bool enabled{ false };
@@ -30,6 +32,7 @@ namespace rock
         bool primaryHandHoldingObject{ false };
         bool leftHandedMode{ false };
         bool rockFiringHandIsLeft{ false };
+        bool inPowerArmor{ false };
     };
 
     // ROCK derives one generation-bound, modeler-authored primary grip and
@@ -51,6 +54,7 @@ namespace rock
         // an equip before WeaponCollision has published the new generation.
         RE::NiNode* _weaponNodeIdentity{ nullptr };
         std::uint64_t _weaponOwnershipKey{ 0 };
+        std::uint64_t _frikOffsetCacheRevision{ 0 };
         std::uint64_t _captureSequenceFloor{ 0 };
         std::uint64_t _supportCaptureSequenceFloor{ 0 };
         bool _active{ false };
@@ -58,6 +62,8 @@ namespace rock
         bool _sessionLogged{ false };
         bool _applyFailureLogged{ false };
         bool _canonicalPublishFailureLogged{ false };
+        bool _libraryPublishFailureLogged{ false };
+        bool _customFrikOffsetOverrideActive{ false };
         std::uint32_t _supportCaptureFailureReasonLogged{ 0 };
         std::uint16_t _supportCaptureFailureMaskLogged{ 0 };
         bool _supportCaptureFailureLogged{ false };

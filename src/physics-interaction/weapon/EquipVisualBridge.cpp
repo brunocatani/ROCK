@@ -8,6 +8,7 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/grab/FrikWeaponOffsetCache.h"
+#include "physics-interaction/weapon/LooseWeaponGripZone.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 #include "RockConfig.h"
 
@@ -172,21 +173,40 @@ namespace rock
 
         _modelInHandLocal = transform_math::composeTransforms(transform_math::invertTransform(handNode->world), model->world);
 
-        _hasFiringHandWeaponLocal = input.hasFiringHandWeaponLocal && isFiniteTransform(input.firingHandWeaponLocal);
-        _firingHandWeaponLocal = _hasFiringHandWeaponLocal ? input.firingHandWeaponLocal : RE::NiTransform{};
+        // Re-resolving from the still-live detached model against the
+        // filewatch-published cache guarantees that a newly created custom
+        // offset also overrides a previously captured authored handoff frame.
+        const auto frikLookup =
+            frik_weapon_offset_cache::findPrimaryWeaponOffset(input.weapon, model);
+        const bool customFrikOffsetPresent =
+            frikLookup.found &&
+            frikLookup.source == frik_weapon_offset_cache::OffsetSource::CustomFile;
 
-        // One-shot lookup: file/resource I/O is acceptable here (equip event,
-        // not per-frame); update() only composes the cached value.
-        _hasPredictedAttachLocal = false;
-        _predictedAttachLocal = {};
-        const char* predictedAttachReason = "offhandHold";
-        if (!_hasFiringHandWeaponLocal) {
-            const auto lookup = frik_weapon_offset_cache::findPrimaryWeaponOffset(input.weapon, model);
-            predictedAttachReason = lookup.reason;
-            if (lookup.found && isFiniteTransform(lookup.offset)) {
-                _predictedAttachLocal = lookup.offset;
-                _hasPredictedAttachLocal = true;
-            }
+        RE::NiTransform resolvedHandWorld{};
+        RE::NiTransform resolvedHandWeaponLocal{};
+        const char* targetReason = "canonicalHoldUnavailable";
+        _hasFiringHandWeaponLocal =
+            loose_weapon_grip_zone::tryResolveLooseWeaponFiringHandHoldForModel(
+                input.isLeftHand,
+                input.weapon,
+                model,
+                resolvedHandWorld,
+                resolvedHandWeaponLocal,
+                &targetReason) &&
+            isFiniteTransform(resolvedHandWeaponLocal);
+        if (_hasFiringHandWeaponLocal) {
+            _firingHandWeaponLocal = resolvedHandWeaponLocal;
+        } else if (
+            !customFrikOffsetPresent &&
+            input.hasFiringHandWeaponLocal &&
+            isFiniteTransform(input.firingHandWeaponLocal)) {
+            // The frame captured before inventory transfer remains a safe
+            // fallback only when no explicit custom correction is present.
+            _firingHandWeaponLocal = input.firingHandWeaponLocal;
+            _hasFiringHandWeaponLocal = true;
+            targetReason = "capturedLooseHoldFallback";
+        } else {
+            _firingHandWeaponLocal = {};
         }
 
         _model = input.worldModel;
@@ -209,7 +229,7 @@ namespace rock
         const bool attachedNow = !model->parent && tryAttachToWorldRoot();
         ROCK_LOG_INFO(Weapon, "EquipVisualBridge begin formID={:08X} hand={} attachedNow={} blend={:.2f}s timeout={:.2f}s target={}",
             _weaponFormID, _isLeftHand ? "left" : "right", attachedNow ? "yes" : "no", _blendSeconds, _timeoutSeconds,
-            predictedAttachReason);
+            targetReason);
         return true;
     }
 
@@ -292,12 +312,8 @@ namespace rock
         }
 
         RE::NiTransform desiredWorld = transform_math::composeTransforms(handNode->world, _modelInHandLocal);
-        /*
-         * Blend toward where the weapon will actually stabilize (see the
-         * class comment): the raw Weapon bone mid-draw still carries the
-         * vanilla local because FRIK only stamps configured offsets on
-         * visible weapon nodes. No valid target -> hold the hand glue.
-         */
+        // Blend toward the authority-selected firing relation. No valid
+        // relation means a first-observation fallback to the engine bone.
         RE::NiTransform blendTarget{};
         bool haveBlendTarget = false;
         if (_hasFiringHandWeaponLocal) {
@@ -308,16 +324,12 @@ namespace rock
                 blendTarget = transform_math::composeTransforms(rootFlattenedHandWorld, transform_math::invertTransform(_firingHandWeaponLocal));
                 haveBlendTarget = isFiniteTransform(blendTarget);
             }
-        } else if (weaponBone) {
-            if (_hasPredictedAttachLocal && weaponBone->parent && isFiniteTransform(weaponBone->parent->world)) {
-                blendTarget = transform_math::composeTransforms(weaponBone->parent->world, _predictedAttachLocal);
-                haveBlendTarget = isFiniteTransform(blendTarget);
-            }
-            if (!haveBlendTarget && isFiniteTransform(weaponBone->world)) {
-                // No offset prediction available: legacy raw-bone target.
-                blendTarget = weaponBone->world;
-                haveBlendTarget = true;
-            }
+        } else if (weaponBone && isFiniteTransform(weaponBone->world)) {
+            // First-ever uncaptured weapon: the native graph will establish
+            // ROCK's exact relation after equip. Until then, target only the
+            // engine-owned bone; never borrow another weapon's live local.
+            blendTarget = weaponBone->world;
+            haveBlendTarget = true;
         }
         if (haveBlendTarget && _blendSeconds > 0.0001f) {
             const float t = (std::min)(1.0f, _elapsedSeconds / _blendSeconds);
@@ -358,8 +370,6 @@ namespace rock
         _model.reset();
         _parent = nullptr;
         _modelInHandLocal = {};
-        _predictedAttachLocal = {};
-        _hasPredictedAttachLocal = false;
         _firingHandWeaponLocal = {};
         _hasFiringHandWeaponLocal = false;
         _elapsedSeconds = 0.0f;

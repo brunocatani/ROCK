@@ -3371,6 +3371,7 @@ namespace rock
 
         _authoredPrimaryFiringGrip.update(AuthoredPrimaryFiringGripFrameInput{
             .weaponNode = weaponNode,
+            .weapon = currentEquippedWeaponForm(),
             .weaponOwnershipKey = weaponOwnershipKey,
             .weaponGenerationKey =
                 weaponNode ? _weaponCollision.getCurrentWeaponGenerationKey() : 0,
@@ -3389,6 +3390,7 @@ namespace rock
             .primaryHandHoldingObject = primaryHandHoldingObject,
             .leftHandedMode = leftHandedMode,
             .rockFiringHandIsLeft = _twoHandedGrip.isFiringHandLeft(),
+            .inPowerArmor = f4vr::isInPowerArmor(),
         }, _twoHandedGrip);
     }
 
@@ -8288,29 +8290,27 @@ namespace rock
                             .gripHeld = rawGrabInput.held,
                         });
                     pendingGripStart.isLeft = isLeft;
-                    if (isLeft) {
-                        const bool leftCarryAvailable = ambidextrousFiringAvailable;
-                        const bool capturedLeftHold = pendingGripStart.pending &&
-                            leftCarryAvailable &&
-                            loose_weapon_grip_zone::tryGetFiringHandWeaponLocal(
-                                true,
-                                pendingGripStart.firingHandWeaponLocal,
-                                pendingGripStart.firingGripWeaponLocal);
-                        pendingGripStart.hasFiringHandWeaponLocal = capturedLeftHold;
-                        pendingGripStart.hasFiringGripWeaponLocal = capturedLeftHold;
-                        if (!capturedLeftHold) {
-                            ROCK_LOG_SAMPLE_WARN(
-                                Hand,
-                                g_rockConfig.rockLogSampleMilliseconds,
-                                "left hand {} held weapon equip blocked: canonical weapon-relative left carry unavailable realisticHandling={} ambidextrousFiring={} grabHeld={} hFRIKBlockers={} gripFrame={}",
-                                logAction ? logAction : "requested",
-                                g_rockConfig.rockRealisticWeaponHandlingEnabled ? "yes" : "no",
-                                g_rockConfig.rockAmbidextrousFiringGripEnabled ? "yes" : "no",
-                                rawGrabInput.held ? "yes" : "no",
-                                leftCarryAvailable ? "yes" : "no",
-                                pendingGripStart.hasFiringHandWeaponLocal ? "yes" : "no");
-                            return true;
-                        }
+                    const bool handCarryAvailable = !isLeft || ambidextrousFiringAvailable;
+                    const bool capturedLooseHold = pendingGripStart.pending &&
+                        handCarryAvailable &&
+                        loose_weapon_grip_zone::tryGetFiringHandWeaponLocal(
+                            isLeft,
+                            pendingGripStart.firingHandWeaponLocal,
+                            pendingGripStart.firingGripWeaponLocal);
+                    pendingGripStart.hasFiringHandWeaponLocal = capturedLooseHold;
+                    pendingGripStart.hasFiringGripWeaponLocal = capturedLooseHold;
+                    if (isLeft && !capturedLooseHold) {
+                        ROCK_LOG_SAMPLE_WARN(
+                            Hand,
+                            g_rockConfig.rockLogSampleMilliseconds,
+                            "left hand {} held weapon equip blocked: canonical weapon-relative left carry unavailable realisticHandling={} ambidextrousFiring={} grabHeld={} hFRIKBlockers={} gripFrame={}",
+                            logAction ? logAction : "requested",
+                            g_rockConfig.rockRealisticWeaponHandlingEnabled ? "yes" : "no",
+                            g_rockConfig.rockAmbidextrousFiringGripEnabled ? "yes" : "no",
+                            rawGrabInput.held ? "yes" : "no",
+                            handCarryAvailable ? "yes" : "no",
+                            pendingGripStart.hasFiringHandWeaponLocal ? "yes" : "no");
+                        return true;
                     }
 
                     hand.captureHeldReleaseMotion(hknp, handInput.rawHandWorld, frame.deltaSeconds);
