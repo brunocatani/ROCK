@@ -49,6 +49,10 @@ namespace rock::native_idle_grip_preharvest
 
         constexpr std::size_t kSimpleAnimationGraphManagerHolderSize = 0x18;
         static_assert(kSimpleAnimationGraphManagerHolderSize == sizeof(RE::SimpleAnimationGraphManagerHolder));
+        constexpr std::uint32_t kSubgraphOutputInlineCapacity = 2;
+        constexpr std::size_t kSmallArrayInlineStorageOffset = 0x8;
+        static_assert(sizeof(RE::BSTSmallArray<RE::SubgraphHandle, kSubgraphOutputInlineCapacity>) == 0x20);
+        static_assert(sizeof(RE::BSTSmallArray<RE::SubgraphIdentifier, kSubgraphOutputInlineCapacity>) == 0x20);
         constexpr std::ptrdiff_t kGraphSkeletonOwnerOffset = 0x240;
         constexpr std::ptrdiff_t kSkeletonFromOwnerOffset = 0x20;
         constexpr std::ptrdiff_t kSkeletonParentIndicesOffset = 0x18;
@@ -252,6 +256,23 @@ namespace rock::native_idle_grip_preharvest
                 return nullptr;
             }
             return reinterpret_cast<RE::SimpleAnimationGraphManagerHolder*>(job.graphHolderStorage.data());
+        }
+
+        template <class T>
+        [[nodiscard]] bool prepareNativeSubgraphOutput(RE::BSTSmallArray<T, kSubgraphOutputInlineCapacity>& output)
+        {
+            static_assert(sizeof(T) == sizeof(std::uint64_t));
+            if (!output.empty()) {
+                return false;
+            }
+
+            // Bethesda initializes an empty BSTSmallArray with its inline-storage bit set.
+            // CommonLibF4VR leaves a default array in null heap mode, so reserve and verify
+            // the embedded two-element buffer before exposing the object to native code.
+            output.reserve(kSubgraphOutputInlineCapacity);
+            const auto* expectedInlineData = reinterpret_cast<const std::byte*>(&output) + kSmallArrayInlineStorageOffset;
+            return output.capacity() == kSubgraphOutputInlineCapacity &&
+                   static_cast<const void*>(output.data()) == static_cast<const void*>(expectedInlineData);
         }
 
         [[nodiscard]] bool sameFailureIdentity(const FailureEntry& entry, const Job& job)
@@ -740,6 +761,12 @@ namespace rock::native_idle_grip_preharvest
             candidate.startedAtMilliseconds = GetTickCount64();
             candidate.phase = Phase::BaseGraphsLoading;
             state.job = std::move(candidate);
+
+            if (!prepareNativeSubgraphOutput(state.job.subgraphHandles) ||
+                !prepareNativeSubgraphOutput(state.job.subgraphIdentifiers)) {
+                failJob(state, "nativeSubgraphOutputStorageUnavailable");
+                return;
+            }
 
             void* constructed = state.native.graphHolderCtor(state.job.graphHolderStorage.data());
             if (constructed != state.job.graphHolderStorage.data()) {

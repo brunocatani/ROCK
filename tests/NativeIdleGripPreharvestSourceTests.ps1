@@ -50,6 +50,12 @@ Require-Text $source `
     'PopulateGraphProjectsToLoad[\s\S]*graphProjects\.size\(\)\s*<\s*2[\s\S]*createBackgroundSimpleManager' `
     'Off-screen native loads must create the plain holder from both player graph projects.'
 Require-Text $source `
+    'kSubgraphOutputInlineCapacity\s*=\s*2[\s\S]*kSmallArrayInlineStorageOffset\s*=\s*0x8[\s\S]*prepareNativeSubgraphOutput[\s\S]*output\.reserve\(kSubgraphOutputInlineCapacity\)[\s\S]*output\.capacity\(\)\s*==\s*kSubgraphOutputInlineCapacity[\s\S]*output\.data\(\)[\s\S]*expectedInlineData' `
+    'Native subgraph outputs must repair and verify CommonLibF4VR small-array inline storage before crossing the ABI.'
+Require-Text $source `
+    'state\.job\s*=\s*std::move\(candidate\)[\s\S]*prepareNativeSubgraphOutput\(state\.job\.subgraphHandles\)[\s\S]*prepareNativeSubgraphOutput\(state\.job\.subgraphIdentifiers\)[\s\S]*graphHolderCtor' `
+    'Both native output arrays must be prepared in their final stable Job storage before background loading starts.'
+Require-Text $source `
     'Phase::BaseGraphsLoading[\s\S]*isAnimationLoadingComplete[\s\S]*requestAnimationSubGraph[\s\S]*Phase::WeaponSubgraphLoading[\s\S]*isAnimationSubGraphLoaded' `
     'Off-screen native loads must poll both asynchronous load stages before sampling.'
 Require-Text $source `
