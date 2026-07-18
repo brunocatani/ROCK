@@ -66,7 +66,9 @@ namespace rock::native_idle_grip_preharvest
         constexpr std::ptrdiff_t kAnimationFromBindingOffset = 0x18;
         constexpr std::ptrdiff_t kTrackToBoneMappingOffset = 0x20;
         constexpr std::ptrdiff_t kTrackToBoneMappingCountOffset = 0x28;
-        constexpr std::ptrdiff_t kAnimationTransformTrackCountOffset = 0x14;
+        // hkaAnimation +0x14 is duration (float); independent FO4VR sample
+        // paths read transform/float track counts from +0x18/+0x1C.
+        constexpr std::ptrdiff_t kAnimationTransformTrackCountOffset = 0x18;
         constexpr std::ptrdiff_t kAnimationResourceFlagsOffset = 0x0C;
         constexpr std::ptrdiff_t kAnimationResourceDataOffset = 0x20;
         constexpr std::ptrdiff_t kRootContainerFromAnimationDataOffset = 0x08;

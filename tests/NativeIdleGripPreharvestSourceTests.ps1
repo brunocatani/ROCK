@@ -47,6 +47,12 @@ Require-Text $source `
     'findBoneWithName\(skeleton,\s*"Weapon"[\s\S]*findBoneWithName\(skeleton,\s*"RArm_Hand"[\s\S]*WPNIdleReady[\s\S]*WPNIdle' `
     'The proof must sample authored idle clips and resolve the exact Weapon/RArm_Hand skeleton relation.'
 Require-Text $source `
+    'kAnimationTransformTrackCountOffset\s*=\s*0x18' `
+    'The sampler must read hkaAnimation transform-track count at the two-witness FO4VR offset, not reinterpret duration as an integer.'
+Reject-Text $source `
+    'kAnimationTransformTrackCountOffset\s*=\s*0x14' `
+    'hkaAnimation +0x14 is the float duration and must never return as the transform-track count.'
+Require-Text $source `
     'enum class IdleGripExtractionFailure[\s\S]*ClipBindingUnavailable[\s\S]*WeaponNotDirectChildOfHand[\s\S]*WeaponTrackUnavailable[\s\S]*SampledWeaponTransformInvalid' `
     'Idle pose extraction must retain precise fail-closed stage identities instead of collapsing every unavailable datum.'
 Require-Text $source `
