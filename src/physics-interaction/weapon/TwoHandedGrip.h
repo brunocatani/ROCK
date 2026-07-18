@@ -309,6 +309,10 @@ namespace rock
             const authored_weapon_grip_library::FiringFingerPose* leftFingerPose = nullptr);
         void clearAuthoredPrimaryFiringGripCanonical(const char* reason);
         bool publishAuthoredPrimaryFiringGripFingerPose(bool isLeft);
+        [[nodiscard]] bool hasPublishedAuthoredPrimaryFiringGripFingerPose(const bool isLeft) const noexcept
+        {
+            return _authoredPrimaryFingerPosePublished && _publishedFiringFingerPoseIsLeft == isLeft;
+        }
         void clearAuthoredPrimaryFiringGripFingerPose();
         void setAuthoredPrimaryFiringGripFingerPoseSuppressed(bool suppressed);
 

@@ -170,8 +170,8 @@ Require-Text 'src/physics-interaction/grab/FrikWeaponOffsetCache.cpp' `
     'loadCustomOffsets[\s\S]{0,1400}OffsetSource::CustomFile[\s\S]*findPrimaryWeaponOffsetLocked[\s\S]{0,1800}\.source\s*=\s*offset->source' `
     'The hFRIK cache must retain per-entry custom-vs-embedded provenance through final lookup.'
 Require-Text 'src/physics-interaction/weapon/AuthoredWeaponGripLibrary.cpp' `
-    'std::array<Entry,\s*kCapacity>[\s\S]*weaponFormId[\s\S]*variantKey[\s\S]*inPowerArmor[\s\S]*formMatchCount\s*==\s*1' `
-    'The learned loose grip library must be bounded and keyed by weapon, stock variant, and power-armor topology with only unambiguous fallback.'
+    'std::array<Entry,\s*kCapacity>[\s\S]*weaponFormId[\s\S]*variantKey[\s\S]*inPowerArmor[\s\S]*nativeIdleMatchCount[\s\S]*selectLookup' `
+    'The learned loose grip library must be bounded and keyed by weapon, stock variant, and power-armor topology while preferring only an unambiguous native-idle fallback.'
 Require-Text 'src/physics-interaction/weapon/AuthoredWeaponGripLibrary.cpp' `
     'shouldAcceptPublication\([\s\S]*CaptureSource::NativeIdlePreharvest[\s\S]*rightFiringFingerPose' `
     'A native-idle relation and its complete finger pose must remain authoritative over later live fallback frames.'
@@ -179,8 +179,20 @@ Reject-Text 'src/physics-interaction/weapon/AuthoredWeaponGripLibrary.cpp' `
     'PreharvestBaseline|observeLiveEquivalence|Authored grip equivalence' `
     'The completed preharvest path must not retain the obsolete live proving/equivalence machinery.'
 Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
-    'harvestedRelationAvailable[\s\S]*authoredLookup\.rightHandWeaponLocal[\s\S]*buildMirroredLeftFingerPose[\s\S]*setAuthoredPrimaryFiringGripCanonical\([\s\S]*rightFingerPose[\s\S]*leftFingerPose[\s\S]*publishAuthoredPrimaryFiringGripFingerPose\(false\)' `
+    'harvestedRelationAvailable[\s\S]*buildMirroredLeftFingerPose[\s\S]*authoredPrimaryHandInWeapon\s*=\s*authoredLookup\.rightHandWeaponLocal[\s\S]*setAuthoredPrimaryFiringGripCanonical\([\s\S]*rightFingerPose[\s\S]*leftFingerPose[\s\S]*publishAuthoredPrimaryFiringGripFingerPose\(false\)' `
     'Equipped primary alignment must consume harvested relation and complete right/left finger poses without waiting for a live proof sample.'
+Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
+    'input\.rockFiringHandIsLeft[\s\S]*setAuthoredPrimaryFiringGripCanonical\([\s\S]*authoredLookup\.rightHandWeaponLocal[\s\S]*publishAuthoredPrimaryFiringGripFingerPose\(true\)[\s\S]*physical-left-firing-canonical-only' `
+    'Physical-left firing must bind and publish the mirrored harvested canonical without entering the right-controller weapon alignment solve.'
+Require-Text 'src/physics-interaction/weapon/EquipVisualBridge.cpp' `
+    'kHandPoseHandoffPriority\s*=\s*99[\s\S]*CaptureSource::NativeIdlePreharvest[\s\S]*publishHandPoseHandoff[\s\S]*initial-hand-transform-publish-failed[\s\S]*blockPrimaryHandWeaponPose[\s\S]*setHandPoseCustomLocalTransformsWithPriority[\s\S]*applyExternalHandWorldTransform' `
+    'Loose-to-equipped transition must retain the exact pose and hand frame below equipped priority until positive authority acquisition.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    '\.weaponFormID\s*=\s*equipResult\.weapon\s*\?\s*equipResult\.weapon->formID\s*:\s*equipResult\.observedEquippedFormID' `
+    'The equip bridge must match the equipped instance by base weapon form, never by the temporary loose reference ID.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'hasPublishedAuthoredPrimaryFiringGripFingerPose[\s\S]*completeHandPoseHandoff\("equipped-authored-pose-acquired"\)' `
+    'The transition pose must be released only after the equipped exact-pose tag is positively active.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
     'grabOffsetFingerPoseSource\.valid[\s\S]*applyRockGrabHandPose[\s\S]*else\s*\{[\s\S]*publishLooseWeaponPrimaryAttachHandPose' `
     'Synthetic loose-weapon attach must preserve explicit saved finger authority before consulting the authored/default pose resolver.'

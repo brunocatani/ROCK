@@ -3370,6 +3370,7 @@ namespace rock
             leftHandedMode ? _leftHand.isHolding() : _rightHand.isHolding();
         const auto nativeAuthorityStatus =
             native_animation_authority::queryRuntimeStatus();
+        auto* equippedWeapon = currentEquippedWeaponForm();
         std::uint64_t weaponOwnershipKey =
             weaponNode ? _weaponCollision.getCurrentEquippedWeaponOwnershipKey() : 0;
         if (weaponNode && weaponOwnershipKey == 0) {
@@ -3381,7 +3382,7 @@ namespace rock
 
         _authoredPrimaryFiringGrip.update(AuthoredPrimaryFiringGripFrameInput{
             .weaponNode = weaponNode,
-            .weapon = currentEquippedWeaponForm(),
+            .weapon = equippedWeapon,
             .weaponOwnershipKey = weaponOwnershipKey,
             .weaponGenerationKey =
                 weaponNode ? _weaponCollision.getCurrentWeaponGenerationKey() : 0,
@@ -3402,6 +3403,21 @@ namespace rock
             .rockFiringHandIsLeft = _twoHandedGrip.isFiringHandLeft(),
             .inPowerArmor = f4vr::isInPowerArmor(),
         }, _twoHandedGrip);
+
+        if (_equipVisualBridge.isHandPoseHandoffActive()) {
+            const bool handoffHandIsLeft = _equipVisualBridge.handPoseHandoffIsLeft();
+            if (!g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled ||
+                nativeAuthorityStatus.effectiveFlags != 0 ||
+                leftHandedMode ||
+                runtime.localMenuBlocking ||
+                runtime.compatibilityConfigBlocking) {
+                _equipVisualBridge.completeHandPoseHandoff("authored-pose-unavailable");
+            } else if (equippedWeapon && equippedWeapon->formID != _equipVisualBridge.weaponBaseFormID()) {
+                _equipVisualBridge.completeHandPoseHandoff("equipped-weapon-changed");
+            } else if (_twoHandedGrip.hasPublishedAuthoredPrimaryFiringGripFingerPose(handoffHandIsLeft)) {
+                _equipVisualBridge.completeHandPoseHandoff("equipped-authored-pose-acquired");
+            }
+        }
     }
 
     void PhysicsInteraction::clearLeftWeaponContact()
@@ -8365,7 +8381,7 @@ namespace rock
                     if (equipResult.success && g_rockConfig.rockGrabbedWeaponEquipBridgeEnabled) {
                         equipBridgeStarted = _equipVisualBridge.begin(EquipVisualBridge::BeginInput{
                             .worldModel = equipResult.detachedWorldModel,
-                            .weaponFormID = equipResult.formID,
+                            .weaponFormID = equipResult.weapon ? equipResult.weapon->formID : equipResult.observedEquippedFormID,
                             .isLeftHand = isLeft,
                             .weapon = equipResult.weapon,
                             .hasFiringHandWeaponLocal = pendingGripStart.hasFiringHandWeaponLocal,

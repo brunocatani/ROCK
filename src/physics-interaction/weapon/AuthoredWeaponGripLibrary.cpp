@@ -193,28 +193,50 @@ namespace rock::authored_weapon_grip_library
         }
 
         const std::uint64_t variantKey = weaponVariantKey(weaponRoot);
+        const Entry* exactVariantMatch = nullptr;
         const Entry* soleFormMatch = nullptr;
+        const Entry* soleNativeIdleMatch = nullptr;
         std::size_t formMatchCount = 0;
+        std::size_t nativeIdleMatchCount = 0;
         for (const auto& entry : s_entries) {
             if (!entry.occupied || entry.weaponFormId != weaponFormId || entry.inPowerArmor != inPowerArmor) {
                 continue;
             }
             if (entry.variantKey == variantKey) {
-                return makeResult(entry, false);
+                exactVariantMatch = &entry;
             }
             soleFormMatch = &entry;
             ++formMatchCount;
+            if (entry.source == CaptureSource::NativeIdlePreharvest) {
+                soleNativeIdleMatch = &entry;
+                ++nativeIdleMatchCount;
+            }
         }
 
         // Equipped and loose scene graphs occasionally omit P-Grip at
-        // different wrapper depths. A single known form variant is
-        // unambiguous; multiple known variants fail closed instead of applying
-        // the wrong stock's grip.
-        if (formMatchCount == 1 && soleFormMatch) {
+        // different wrapper depths. Prefer the sole native-idle authority over
+        // an exact-key live fallback: that generic live entry is commonly
+        // created while the equipped subtree is incomplete and must not erase
+        // the exact loose pose. Multiple native-idle variants remain ambiguous.
+        switch (authored_weapon_grip_authority_policy::selectLookup(
+            exactVariantMatch != nullptr,
+            exactVariantMatch && exactVariantMatch->source == CaptureSource::NativeIdlePreharvest,
+            exactVariantMatch && exactVariantMatch->variantKey == 0,
+            nativeIdleMatchCount,
+            formMatchCount)) {
+        case authored_weapon_grip_authority_policy::LookupSelection::ExactVariant:
+            return makeResult(*exactVariantMatch, false);
+        case authored_weapon_grip_authority_policy::LookupSelection::SoleNativeIdleVariant:
+            return makeResult(*soleNativeIdleMatch, soleNativeIdleMatch->variantKey != variantKey);
+        case authored_weapon_grip_authority_policy::LookupSelection::SoleFormVariant:
             return makeResult(*soleFormMatch, true);
+        case authored_weapon_grip_authority_policy::LookupSelection::None:
+        default:
+            break;
         }
         return LookupResult{
-            .reason = formMatchCount > 1 ? "authoredAnimationVariantAmbiguous" : "authoredAnimationNotLearned",
+            .reason = nativeIdleMatchCount > 1 ? "authoredAnimationNativeIdleVariantAmbiguous" :
+                                                  (formMatchCount > 1 ? "authoredAnimationVariantAmbiguous" : "authoredAnimationNotLearned"),
         };
     }
 }

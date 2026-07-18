@@ -240,6 +240,63 @@ namespace rock
 
         const auto authoredLookup = authored_weapon_grip_library::find(input.weapon, input.weaponNode, input.inPowerArmor);
         const bool harvestedRelationAvailable = authoredLookup.found && authoredLookup.source == authored_weapon_grip_library::CaptureSource::NativeIdlePreharvest;
+        const auto* rightFingerPose = harvestedRelationAvailable && authoredLookup.rightFiringFingerPose.complete() ? &authoredLookup.rightFiringFingerPose : nullptr;
+        if (rightFingerPose && _mirroredFingerPoseCaptureSequence != authoredLookup.captureSequence) {
+            _mirroredLeftFingerPose = {};
+            _mirroredFingerPoseValid = buildMirroredLeftFingerPose(*rightFingerPose, _mirroredLeftFingerPose);
+            _mirroredFingerPoseCaptureSequence = authoredLookup.captureSequence;
+            if (!_mirroredFingerPoseValid && !_fingerMirrorFailureLogged) {
+                ROCK_LOG_WARN(Animation, "Authored primary firing grip could not mirror exact native-idle finger pose for left firing weaponKey=0x{:X} capture={}",
+                    currentWeaponKey, authoredLookup.captureSequence);
+                _fingerMirrorFailureLogged = true;
+            }
+        }
+        const auto* leftFingerPose = rightFingerPose && _mirroredFingerPoseValid ? &_mirroredLeftFingerPose : nullptr;
+
+        /*
+         * Physical-left firing already owns the weapon transform through
+         * TwoHandedGrip, so the right-controller inverse alignment below must
+         * stay disabled. The harvested right canonical is still the exact
+         * weapon-relative source for both finger sets; bind it to the stable
+         * equipped identity and publish only the mirrored left pose.
+         */
+        if (input.rockFiringHandIsLeft) {
+            const bool canonicalReady =
+                input.runtimeInitialized &&
+                input.visualAuthorityAvailable &&
+                input.localSkeletonReady &&
+                !input.menuBlocking &&
+                !input.compatibilityBlocking &&
+                input.weaponDrawn &&
+                input.weaponVisible &&
+                currentWeaponKey != 0 &&
+                input.weaponGenerationKey != 0 &&
+                harvestedRelationAvailable &&
+                rightFingerPose &&
+                leftFingerPose;
+            if (canonicalReady) {
+                if (weaponAuthority.setAuthoredPrimaryFiringGripCanonical(
+                        input.weaponNode,
+                        authoredLookup.rightHandWeaponLocal,
+                        input.weaponGenerationKey,
+                        currentWeaponKey,
+                        authoredLookup.captureSequence,
+                        rightFingerPose,
+                        leftFingerPose)) {
+                    _canonicalPublishFailureLogged = false;
+                    (void)weaponAuthority.publishAuthoredPrimaryFiringGripFingerPose(true);
+                } else if (!_canonicalPublishFailureLogged) {
+                    ROCK_LOG_WARN(Animation,
+                        "Authored primary firing grip could not bind physical-left canonical weaponKey=0x{:X} generation=0x{:X} capture={}",
+                        currentWeaponKey,
+                        input.weaponGenerationKey,
+                        authoredLookup.captureSequence);
+                    _canonicalPublishFailureLogged = true;
+                }
+            }
+            endSession("physical-left-firing-canonical-only");
+            return;
+        }
 
         const native_animation_authority_policy::AuthoredPrimaryFiringGripEligibility eligibility{
             .enabled = input.enabled,
@@ -322,19 +379,6 @@ namespace rock
             endSession("weapon-alignment-failed");
             return;
         }
-
-        const auto* rightFingerPose = harvestedRelationAvailable && authoredLookup.rightFiringFingerPose.complete() ? &authoredLookup.rightFiringFingerPose : nullptr;
-        if (rightFingerPose && _mirroredFingerPoseCaptureSequence != resolvedCaptureSequence) {
-            _mirroredLeftFingerPose = {};
-            _mirroredFingerPoseValid = buildMirroredLeftFingerPose(*rightFingerPose, _mirroredLeftFingerPose);
-            _mirroredFingerPoseCaptureSequence = resolvedCaptureSequence;
-            if (!_mirroredFingerPoseValid && !_fingerMirrorFailureLogged) {
-                ROCK_LOG_WARN(Animation, "Authored primary firing grip could not mirror exact native-idle finger pose for left firing weaponKey=0x{:X} capture={}",
-                    currentWeaponKey, resolvedCaptureSequence);
-                _fingerMirrorFailureLogged = true;
-            }
-        }
-        const auto* leftFingerPose = rightFingerPose && _mirroredFingerPoseValid ? &_mirroredLeftFingerPose : nullptr;
 
         if (!weaponAuthority.setAuthoredPrimaryFiringGripCanonical(
                 input.weaponNode,

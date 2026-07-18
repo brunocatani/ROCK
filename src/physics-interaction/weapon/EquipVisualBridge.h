@@ -4,6 +4,7 @@
 #include "RE/NetImmerse/NiPoint.h"
 #include "RE/NetImmerse/NiSmartPointer.h"
 
+#include <array>
 #include <cstdint>
 
 namespace RE
@@ -53,6 +54,8 @@ namespace rock
             // Loose weapon 3D captured before ActivateRef (engine has already
             // detached it from the scene by the time begin() runs).
             RE::NiPointer<RE::NiAVObject> worldModel;
+            // Base TESObjectWEAP form ID used by the equipped instance-node
+            // name. This is deliberately not the temporary loose reference ID.
             std::uint32_t weaponFormID = 0;
             bool isLeftHand = false;
             // Weapon base form for the shared loose-grip authority resolver;
@@ -90,11 +93,22 @@ namespace rock
         void abandonSceneGraph();
 
         [[nodiscard]] bool isActive() const noexcept { return _active; }
+        [[nodiscard]] bool isHandPoseHandoffActive() const noexcept { return _handPoseHandoffActive; }
+        [[nodiscard]] bool handPoseHandoffIsLeft() const noexcept { return _isLeftHand; }
+        [[nodiscard]] std::uint32_t weaponBaseFormID() const noexcept { return _weaponFormID; }
+
+        // Called only after the equipped exact-pose publisher has positively
+        // acquired the same physical hand. The lower-priority bridge pose is
+        // then removed without disturbing the equipped publisher's tag.
+        void completeHandPoseHandoff(const char* reason);
 
     private:
         // Attach the (already orphaned) model under the world root; false when
         // the model is still parented or the world root is unavailable.
         bool tryAttachToWorldRoot();
+        bool publishHandPoseHandoff();
+        void clearModel(const char* reason, bool detachFromParent);
+        void clearHandPoseHandoff(const char* reason, bool logCompletion);
         void clear(const char* reason, bool detachFromParent);
 
         RE::NiPointer<RE::NiAVObject> _model;
@@ -106,12 +120,16 @@ namespace rock
         // bridge obeys the same priority as pull seating and grip-zone equip.
         RE::NiTransform _firingHandWeaponLocal{};
         bool _hasFiringHandWeaponLocal = false;
+        std::array<RE::NiTransform, 15> _handoffFingerLocalTransforms{};
+        std::uint16_t _handoffFingerLocalTransformMask = 0;
         float _elapsedSeconds = 0.0f;
         float _blendSeconds = 0.15f;
         float _timeoutSeconds = 2.0f;
         std::uint32_t _weaponFormID = 0;
         char _instanceNameToken[16] = {};
         bool _isLeftHand = false;
+        bool _handPoseHandoffActive = false;
+        bool _handPoseBlockEngaged = false;
         bool _active = false;
     };
 }

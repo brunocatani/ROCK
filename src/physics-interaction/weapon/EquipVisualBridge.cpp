@@ -8,6 +8,8 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/grab/FrikWeaponOffsetCache.h"
+#include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
+#include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/LooseWeaponGripZone.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 #include "RockConfig.h"
@@ -22,6 +24,15 @@ namespace rock
         constexpr std::uint64_t kAppCulledFlag = 0x1ull;
         constexpr int kSubtreeWalkBudget = 1024;
         constexpr int kInstanceSearchDepth = 4;
+        constexpr const char* kHandPoseHandoffTag = "ROCK_EquipPoseBridge";
+        constexpr const char* kRightHandPoseBlockTag = "ROCK_EquipPoseBridgeRight";
+        constexpr const char* kLeftHandPoseBlockTag = "ROCK_EquipPoseBridgeLeft";
+        constexpr int kHandPoseHandoffPriority = 99;
+
+        [[nodiscard]] frik_visual_authority::Hand handFromBool(const bool isLeft)
+        {
+            return isLeft ? frik_visual_authority::Hand::Left : frik_visual_authority::Hand::Right;
+        }
 
         [[nodiscard]] bool isFiniteTransform(const RE::NiTransform& transform)
         {
@@ -37,6 +48,43 @@ namespace rock
                 }
             }
             return true;
+        }
+
+        [[nodiscard]] bool buildPhysicalHandFingerPose(
+            const bool isLeftHand,
+            const authored_weapon_grip_library::FiringFingerPose& rightPose,
+            std::array<RE::NiTransform, 15>& outTransforms,
+            std::uint16_t& outMask)
+        {
+            outTransforms = {};
+            outMask = 0;
+            if (!rightPose.complete()) {
+                return false;
+            }
+
+            if (!isLeftHand) {
+                outTransforms = rightPose.localTransforms;
+                outMask = rightPose.enabledMask;
+            } else {
+                frik_visual_authority::FingerLocalTransformOverride right{};
+                right.enabledMask = rightPose.enabledMask;
+                for (std::size_t index = 0; index < rightPose.localTransforms.size(); ++index) {
+                    right.localTransforms[index] = rightPose.localTransforms[index];
+                }
+
+                frik_visual_authority::FingerLocalTransformOverride left{};
+                if (!frik_visual_authority::mirrorPrimaryWeaponFingerLocalTransforms(right, left) ||
+                    left.enabledMask != authored_weapon_grip_library::kCompleteFiringFingerMask) {
+                    return false;
+                }
+                for (std::size_t index = 0; index < outTransforms.size(); ++index) {
+                    outTransforms[index] = left.localTransforms[index];
+                }
+                outMask = left.enabledMask;
+            }
+
+            return outMask == authored_weapon_grip_library::kCompleteFiringFingerMask &&
+                   std::ranges::all_of(outTransforms, isFiniteTransform);
         }
 
         [[nodiscard]] RE::NiNode* resolveHandWandNode(bool isLeftHand)
@@ -181,6 +229,11 @@ namespace rock
         const bool customFrikOffsetPresent =
             frikLookup.found &&
             frikLookup.source == frik_weapon_offset_cache::OffsetSource::CustomFile;
+        const auto authoredLookup =
+            g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled &&
+                !customFrikOffsetPresent && input.weapon ?
+            authored_weapon_grip_library::find(input.weapon, model, f4vr::isInPowerArmor()) :
+            authored_weapon_grip_library::LookupResult{};
 
         RE::NiTransform resolvedHandWorld{};
         RE::NiTransform resolvedHandWeaponLocal{};
@@ -218,6 +271,31 @@ namespace rock
         _timeoutSeconds = g_rockConfig.rockGrabbedWeaponEquipBridgeTimeoutSeconds;
         _active = true;
 
+        if (authoredLookup.found &&
+            authoredLookup.source == authored_weapon_grip_library::CaptureSource::NativeIdlePreharvest &&
+            buildPhysicalHandFingerPose(
+                _isLeftHand,
+                authoredLookup.rightFiringFingerPose,
+                _handoffFingerLocalTransforms,
+                _handoffFingerLocalTransformMask)) {
+            _handPoseHandoffActive = true;
+            if (!publishHandPoseHandoff()) {
+                clearHandPoseHandoff("initial-publish-failed", false);
+            } else if (_hasFiringHandWeaponLocal) {
+                const RE::NiTransform handWorld = transform_math::composeTransforms(
+                    model->world,
+                    _firingHandWeaponLocal);
+                if (!isFiniteTransform(handWorld) ||
+                    !frik_visual_authority::applyExternalHandWorldTransform(
+                        kHandPoseHandoffTag,
+                        handFromBool(_isLeftHand),
+                        handWorld,
+                        kHandPoseHandoffPriority)) {
+                    clearHandPoseHandoff("initial-hand-transform-publish-failed", false);
+                }
+            }
+        }
+
         /*
          * The pickup normally detaches the model inline before ActivateRef
          * returns, so it is already orphaned here and attaches immediately.
@@ -227,9 +305,9 @@ namespace rock
          * live scene node.
          */
         const bool attachedNow = !model->parent && tryAttachToWorldRoot();
-        ROCK_LOG_INFO(Weapon, "EquipVisualBridge begin formID={:08X} hand={} attachedNow={} blend={:.2f}s timeout={:.2f}s target={}",
+        ROCK_LOG_INFO(Weapon, "EquipVisualBridge begin formID={:08X} hand={} attachedNow={} blend={:.2f}s timeout={:.2f}s target={} exactPoseHandoff={}",
             _weaponFormID, _isLeftHand ? "left" : "right", attachedNow ? "yes" : "no", _blendSeconds, _timeoutSeconds,
-            targetReason);
+            targetReason, _handPoseHandoffActive ? "yes" : "no");
         return true;
     }
 
@@ -255,93 +333,163 @@ namespace rock
         return true;
     }
 
+    bool EquipVisualBridge::publishHandPoseHandoff()
+    {
+        if (!_handPoseHandoffActive ||
+            _handoffFingerLocalTransformMask != authored_weapon_grip_library::kCompleteFiringFingerMask) {
+            return false;
+        }
+
+        const auto hand = handFromBool(_isLeftHand);
+        const char* blockTag = _isLeftHand ? kLeftHandPoseBlockTag : kRightHandPoseBlockTag;
+        if (!_handPoseBlockEngaged) {
+            if (!frik_visual_authority::blockPrimaryHandWeaponPose(blockTag, true)) {
+                return false;
+            }
+            _handPoseBlockEngaged = true;
+        }
+
+        if (!frik_visual_authority::setHandPoseCustomWithPriority(
+                kHandPoseHandoffTag,
+                hand,
+                frik_visual_authority::HandPoseData{},
+                kHandPoseHandoffPriority)) {
+            return false;
+        }
+
+        frik_visual_authority::FingerLocalTransformOverride exactPose{};
+        exactPose.enabledMask = _handoffFingerLocalTransformMask;
+        for (std::size_t index = 0; index < _handoffFingerLocalTransforms.size(); ++index) {
+            exactPose.localTransforms[index] = _handoffFingerLocalTransforms[index];
+        }
+        return frik_visual_authority::setHandPoseCustomLocalTransformsWithPriority(
+            kHandPoseHandoffTag,
+            hand,
+            &exactPose,
+            kHandPoseHandoffPriority);
+    }
+
     void EquipVisualBridge::update(float deltaSeconds)
     {
         if (!_active) {
             return;
         }
 
-        auto* model = _model.get();
-        if (!model) {
-            clear("model-lost", false);
+        _elapsedSeconds += (std::max)(0.0f, deltaSeconds);
+        if (_elapsedSeconds >= _timeoutSeconds) {
+            clear("timeout", _parent != nullptr);
             return;
         }
 
-        _elapsedSeconds += (std::max)(0.0f, deltaSeconds);
-        const bool ownsSceneAttachment = _parent != nullptr;
-
         auto* weaponBone = resolveWeaponBone();
+        RE::NiAVObject* equippedInstance = nullptr;
         if (weaponBone) {
             int budget = kSubtreeWalkBudget;
-            auto* instance = findInstanceNodeByToken(weaponBone, _instanceNameToken, kInstanceSearchDepth, budget);
-            if (instance && f4vr::isNodeVisible(weaponBone) && f4vr::isNodeVisible(instance)) {
-                clear("equipped-3d-visible", ownsSceneAttachment);
-                return;
+            equippedInstance = findInstanceNodeByToken(weaponBone, _instanceNameToken, kInstanceSearchDepth, budget);
+        }
+        const bool equippedInstanceVisible =
+            equippedInstance &&
+            f4vr::isNodeVisible(weaponBone) &&
+            f4vr::isNodeVisible(equippedInstance);
+
+        RE::NiTransform handoffWeaponWorld{};
+        bool hasHandoffWeaponWorld = false;
+        if (equippedInstanceVisible && isFiniteTransform(weaponBone->world)) {
+            handoffWeaponWorld = weaponBone->world;
+            hasHandoffWeaponWorld = true;
+            if (_model) {
+                clearModel("equipped-3d-visible", _parent != nullptr);
             }
         }
 
-        if (_elapsedSeconds >= _timeoutSeconds) {
-            clear("timeout", ownsSceneAttachment);
-            return;
-        }
-
-        if (!ownsSceneAttachment) {
+        auto* model = _model.get();
+        if (model && !_parent) {
             /*
              * Waiting for the engine's (rare, cross-thread queued) pickup
              * detach. The loose model is still rendered in-world, so there is
-             * no visual break to cover yet; the overall timeout bounds this.
+             * no visual break to cover yet. Its live world frame remains the
+             * exact hand-pose target while we wait.
              */
             if (model->parent) {
-                return;
-            }
-            if (!tryAttachToWorldRoot()) {
+                if (isFiniteTransform(model->world)) {
+                    handoffWeaponWorld = model->world;
+                    hasHandoffWeaponWorld = true;
+                }
+            } else if (!tryAttachToWorldRoot()) {
                 clear("attach-failed", false);
                 return;
             }
-        } else if (model->parent != _parent) {
+        } else if (model && model->parent != _parent) {
             // Engine (or a load) re-owned or dropped the node: abandon, never fight it.
             clear("parent-changed", false);
             return;
         }
 
-        auto* worldRoot = f4vr::getWorldRootNode();
-        auto* handNode = resolveHandWandNode(_isLeftHand);
-        if (!worldRoot || worldRoot != _parent || !handNode) {
-            clear("nodes-missing", true);
-            return;
-        }
-
-        RE::NiTransform desiredWorld = transform_math::composeTransforms(handNode->world, _modelInHandLocal);
-        // Blend toward the authority-selected firing relation. No valid
-        // relation means a first-observation fallback to the engine bone.
-        RE::NiTransform blendTarget{};
-        bool haveBlendTarget = false;
-        if (_hasFiringHandWeaponLocal) {
-            RE::NiPoint3 palmWorld{};
-            RE::NiTransform rootFlattenedHandWorld{};
-            if (TwoHandedGrip::tryCaptureRootFlattenedPalmWorld(_isLeftHand, palmWorld, rootFlattenedHandWorld) &&
-                isFiniteTransform(rootFlattenedHandWorld)) {
-                blendTarget = transform_math::composeTransforms(rootFlattenedHandWorld, transform_math::invertTransform(_firingHandWeaponLocal));
-                haveBlendTarget = isFiniteTransform(blendTarget);
+        model = _model.get();
+        if (model && _parent) {
+            auto* worldRoot = f4vr::getWorldRootNode();
+            auto* handNode = resolveHandWandNode(_isLeftHand);
+            if (!worldRoot || worldRoot != _parent || !handNode) {
+                clear("nodes-missing", true);
+                return;
             }
-        } else if (weaponBone && isFiniteTransform(weaponBone->world)) {
-            // First-ever uncaptured weapon: the native graph will establish
-            // ROCK's exact relation after equip. Until then, target only the
-            // engine-owned bone; never borrow another weapon's live local.
-            blendTarget = weaponBone->world;
-            haveBlendTarget = true;
-        }
-        if (haveBlendTarget && _blendSeconds > 0.0001f) {
-            const float t = (std::min)(1.0f, _elapsedSeconds / _blendSeconds);
-            desiredWorld = blendWorldTransforms(desiredWorld, blendTarget, t);
-        }
-        if (!isFiniteTransform(desiredWorld)) {
-            clear("non-finite-pose", true);
-            return;
+
+            RE::NiTransform desiredWorld = transform_math::composeTransforms(handNode->world, _modelInHandLocal);
+            // Blend toward the authority-selected firing relation. No valid
+            // relation means a first-observation fallback to the engine bone.
+            RE::NiTransform blendTarget{};
+            bool haveBlendTarget = false;
+            if (_hasFiringHandWeaponLocal) {
+                RE::NiPoint3 palmWorld{};
+                RE::NiTransform rootFlattenedHandWorld{};
+                if (TwoHandedGrip::tryCaptureRootFlattenedPalmWorld(_isLeftHand, palmWorld, rootFlattenedHandWorld) &&
+                    isFiniteTransform(rootFlattenedHandWorld)) {
+                    blendTarget = transform_math::composeTransforms(rootFlattenedHandWorld, transform_math::invertTransform(_firingHandWeaponLocal));
+                    haveBlendTarget = isFiniteTransform(blendTarget);
+                }
+            } else if (weaponBone && isFiniteTransform(weaponBone->world)) {
+                // First-ever uncaptured weapon: the native graph will establish
+                // ROCK's exact relation after equip. Until then, target only the
+                // engine-owned bone; never borrow another weapon's live local.
+                blendTarget = weaponBone->world;
+                haveBlendTarget = true;
+            }
+            if (haveBlendTarget && _blendSeconds > 0.0001f) {
+                const float t = (std::min)(1.0f, _elapsedSeconds / _blendSeconds);
+                desiredWorld = blendWorldTransforms(desiredWorld, blendTarget, t);
+            }
+            if (!isFiniteTransform(desiredWorld)) {
+                clear("non-finite-pose", true);
+                return;
+            }
+
+            model->local = transform_math::composeTransforms(transform_math::invertTransform(_parent->world), desiredWorld);
+            f4vr::updateDown(model, true);
+            handoffWeaponWorld = desiredWorld;
+            hasHandoffWeaponWorld = true;
         }
 
-        model->local = transform_math::composeTransforms(transform_math::invertTransform(_parent->world), desiredWorld);
-        f4vr::updateDown(model, true);
+        if (_handPoseHandoffActive) {
+            if (!publishHandPoseHandoff()) {
+                clearHandPoseHandoff("republish-failed", true);
+            } else if (_hasFiringHandWeaponLocal && hasHandoffWeaponWorld) {
+                const RE::NiTransform handWorld = transform_math::composeTransforms(
+                    handoffWeaponWorld,
+                    _firingHandWeaponLocal);
+                if (!isFiniteTransform(handWorld) ||
+                    !frik_visual_authority::applyExternalHandWorldTransform(
+                        kHandPoseHandoffTag,
+                        handFromBool(_isLeftHand),
+                        handWorld,
+                        kHandPoseHandoffPriority)) {
+                    clearHandPoseHandoff("hand-transform-publish-failed", true);
+                }
+            }
+        }
+
+        if (!_model && !_handPoseHandoffActive) {
+            clear("completed", false);
+        }
     }
 
     void EquipVisualBridge::shutdown()
@@ -354,7 +502,19 @@ namespace rock
         clear("world-loss", false);
     }
 
-    void EquipVisualBridge::clear(const char* reason, bool detachFromParent)
+    void EquipVisualBridge::completeHandPoseHandoff(const char* reason)
+    {
+        if (!_handPoseHandoffActive && !_handPoseBlockEngaged) {
+            return;
+        }
+
+        clearHandPoseHandoff(reason ? reason : "equipped-pose-acquired", true);
+        if (!_model) {
+            clear("handoff-completed", false);
+        }
+    }
+
+    void EquipVisualBridge::clearModel(const char* reason, const bool detachFromParent)
     {
         auto* model = _model.get();
         if (detachFromParent && model && _parent && model->parent == _parent) {
@@ -362,14 +522,51 @@ namespace rock
             _parent->DetachChild(model, detached);
         }
 
-        if (_active) {
-            ROCK_LOG_INFO(Weapon, "EquipVisualBridge cleared reason={} formID={:08X} elapsed={:.3f}s",
+        if (model) {
+            ROCK_LOG_INFO(Weapon, "EquipVisualBridge model released reason={} formID={:08X} elapsed={:.3f}s",
                 reason ? reason : "unknown", _weaponFormID, _elapsedSeconds);
         }
 
         _model.reset();
         _parent = nullptr;
         _modelInHandLocal = {};
+    }
+
+    void EquipVisualBridge::clearHandPoseHandoff(const char* reason, const bool logCompletion)
+    {
+        const bool wasActive = _handPoseHandoffActive || _handPoseBlockEngaged;
+        const auto hand = handFromBool(_isLeftHand);
+        const char* blockTag = _isLeftHand ? kLeftHandPoseBlockTag : kRightHandPoseBlockTag;
+        if (_handPoseHandoffActive || _handPoseBlockEngaged) {
+            (void)frik_visual_authority::clearHandPose(kHandPoseHandoffTag, hand);
+            (void)frik_visual_authority::clearExternalHandWorldTransform(kHandPoseHandoffTag, hand);
+        }
+        if (_handPoseBlockEngaged) {
+            (void)frik_visual_authority::blockPrimaryHandWeaponPose(blockTag, false);
+        }
+
+        if (wasActive && logCompletion) {
+            ROCK_LOG_INFO(Weapon, "EquipVisualBridge hand-pose handoff released reason={} formID={:08X} hand={} elapsed={:.3f}s",
+                reason ? reason : "unknown", _weaponFormID, _isLeftHand ? "left" : "right", _elapsedSeconds);
+        }
+
+        _handoffFingerLocalTransforms = {};
+        _handoffFingerLocalTransformMask = 0;
+        _handPoseHandoffActive = false;
+        _handPoseBlockEngaged = false;
+    }
+
+    void EquipVisualBridge::clear(const char* reason, bool detachFromParent)
+    {
+        const bool wasActive = _active;
+        clearModel(reason, detachFromParent);
+        clearHandPoseHandoff(reason, false);
+
+        if (wasActive) {
+            ROCK_LOG_INFO(Weapon, "EquipVisualBridge cleared reason={} formID={:08X} elapsed={:.3f}s",
+                reason ? reason : "unknown", _weaponFormID, _elapsedSeconds);
+        }
+
         _firingHandWeaponLocal = {};
         _hasFiringHandWeaponLocal = false;
         _elapsedSeconds = 0.0f;
