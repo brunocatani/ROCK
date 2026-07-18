@@ -58,6 +58,7 @@ namespace rock::native_animation_authority_policy
         bool captureNewerThanWeaponBoundary{ false };
         bool nativeReloadAuthorityActive{ false };
         bool manualWeaponAuthorityActive{ false };
+        bool weaponVisualReturnActive{ false };
         bool primaryHandHoldingObject{ false };
         // Flat Fallout 4 authors its firing pose on RArm_Hand -> Weapon.
         // Left-handed mirroring has no equivalent modeler-authored relation.
@@ -80,6 +81,7 @@ namespace rock::native_animation_authority_policy
                input.captureNewerThanWeaponBoundary &&
                !input.nativeReloadAuthorityActive &&
                !input.manualWeaponAuthorityActive &&
+               !input.weaponVisualReturnActive &&
                !input.primaryHandHoldingObject &&
                !input.leftHandedMode;
     }
@@ -147,9 +149,9 @@ namespace rock::native_animation_authority_policy
 
     /*
      * Bethesda's native primary-arm pass runs before hFRIK replaces the
-     * weapon basis. Capture the resulting hand in that native weapon frame,
-     * then carry the relation into the unchanged live controller-owned weapon
-     * world after hFRIK has completed its pass.
+     * weapon basis. Capture the resulting hand in that native weapon frame.
+     * The forward composition remains useful for measuring the visible
+     * mismatch before the inverse solve is applied.
      */
     template <class Transform, class Compose>
     [[nodiscard]] constexpr Transform resolveAuthoredPrimaryHandWorld(
@@ -158,6 +160,27 @@ namespace rock::native_animation_authority_policy
         Compose&& compose)
     {
         return compose(liveWeaponWorld, authoredHandInWeapon);
+    }
+
+    /*
+     * Move the weapon, not the tracked hand. If A is Bethesda's authored
+     * hand-in-weapon relation and H is hFRIK's controller-driven hand world,
+     * solve W such that W * A == H:
+     *
+     *   W = H * inverse(A)
+     *
+     * This is the automatic equivalent of a per-weapon FRIK adjustment, but
+     * it is derived from the modeler's native animation rather than a manual
+     * translation/rotation guess.
+     */
+    template <class Transform, class Compose, class Invert>
+    [[nodiscard]] constexpr Transform resolveAuthoredPrimaryWeaponWorld(
+        const Transform& trackedPrimaryHandWorld,
+        const Transform& authoredHandInWeapon,
+        Compose&& compose,
+        Invert&& invert)
+    {
+        return compose(trackedPrimaryHandWorld, invert(authoredHandInWeapon));
     }
 
     [[nodiscard]] constexpr char asciiLower(char value)

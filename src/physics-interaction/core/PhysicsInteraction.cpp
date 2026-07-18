@@ -3347,6 +3347,8 @@ namespace rock
         _authoredPrimaryFiringGrip.update(AuthoredPrimaryFiringGripFrameInput{
             .weaponNode = weaponNode,
             .weaponOwnershipKey = weaponOwnershipKey,
+            .weaponGenerationKey =
+                weaponNode ? _weaponCollision.getCurrentWeaponGenerationKey() : 0,
             .enabled = g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled,
             .runtimeInitialized = _initialized.load(std::memory_order_acquire),
             .visualAuthorityAvailable = runtime.visualAuthorityAvailable,
@@ -3357,9 +3359,10 @@ namespace rock
             .weaponVisible = weaponNode && f4vr::isNodeVisible(weaponNode),
             .nativeReloadAuthorityActive = nativeAuthorityStatus.effectiveFlags != 0,
             .manualWeaponAuthorityActive = _twoHandedGrip.isManualOwnershipActive(),
+            .weaponVisualReturnActive = _twoHandedGrip.isWeaponVisualReturnActive(),
             .primaryHandHoldingObject = primaryHandHoldingObject,
             .leftHandedMode = leftHandedMode,
-        });
+        }, _twoHandedGrip);
     }
 
     void PhysicsInteraction::clearLeftWeaponContact()

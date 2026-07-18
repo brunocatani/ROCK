@@ -251,6 +251,18 @@ namespace rock
          */
         void synchronizeNativeScopePresentationAfterFrikUpdate(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
 
+        /*
+         * Baseline one-hand calibration derived from Bethesda's native
+         * primary grip. This intentionally reuses the complete equipped-
+         * weapon visual path so the scope camera and later manual-grip state
+         * observe the same corrected frame. It fails closed while a ROCK
+         * manual authority or its weapon-return transition owns the node.
+         */
+        bool applyAuthoredPrimaryGripWeaponAlignment(
+            RE::NiNode* weaponNode,
+            const RE::NiTransform& solvedWeaponWorld,
+            std::uint64_t currentWeaponGenerationKey);
+
         bool tryResolveNativeScopeGeometryDecision(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, RE::NiNode* hmdNode, const RE::NiPoint3& hmdSampleOffsetLocal,
             const native_scope_activation_geometry::ConeThresholds& thresholds, bool nativeScopeAlreadyActive, bool nativeGeometryDecision, bool& outRockGeometryDecision);
 
@@ -264,6 +276,8 @@ namespace rock
                    _state == TwoHandedState::PartCarry ||
                    _state == TwoHandedState::PrimaryOnly;
         }
+
+        bool isWeaponVisualReturnActive() const;
 
         bool isPartCarryActive() const { return _state == TwoHandedState::PartCarry; }
 

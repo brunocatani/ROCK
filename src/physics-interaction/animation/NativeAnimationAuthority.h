@@ -43,14 +43,16 @@ namespace rock::native_animation_authority
     void setRuntimeEnabled(bool enabled);
     // Independent ROCK-only experiment capture. A byte-validated native arm
     // hook records Bethesda's primary-hand pose before hFRIK replaces the
-    // weapon basis, then resolves that relation against the unchanged live
-    // weapon after hFRIK's pass.
+    // weapon basis. The runtime can then invert that relation and place the
+    // complete weapon on hFRIK's live controller-driven primary hand.
     void setPrimaryFiringGripCaptureEnabled(bool enabled);
     [[nodiscard]] PrimaryFiringGripCaptureStatus queryPrimaryFiringGripCaptureStatus();
-    [[nodiscard]] bool tryResolvePrimaryFiringGripWorldTarget(
+    [[nodiscard]] bool tryResolvePrimaryFiringGripAlignment(
         const RE::NiNode* expectedWeaponNode,
         const RE::NiTransform& liveWeaponWorld,
-        RE::NiTransform& outHandWorld,
+        const RE::NiTransform& trackedPrimaryHandWorld,
+        RE::NiTransform& outWeaponWorld,
+        RE::NiTransform& outCurrentAuthoredHandWorld,
         std::uint64_t& outCaptureSequence);
     void requestLocalReloadTestLease();
     void beginRockFrame();

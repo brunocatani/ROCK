@@ -1501,6 +1501,11 @@ namespace rock
                weapon_support_authority_policy::supportGripOwnsWeaponTransform(_authorityMode);
     }
 
+    bool TwoHandedGrip::isWeaponVisualReturnActive() const
+    {
+        return _returningWeaponVisual.localTransition.active;
+    }
+
     bool TwoHandedGrip::getSolvedWeaponTransform(RE::NiTransform& outTransform) const
     {
         if (!_hasSolvedWeaponTransform) {
@@ -4019,6 +4024,20 @@ namespace rock
             static_cast<unsigned>(cleared[1]),
             static_cast<unsigned>(retained[1]),
             static_cast<unsigned>(_scopeDeferredHandAuthorityClears[1]));
+    }
+
+    bool TwoHandedGrip::applyAuthoredPrimaryGripWeaponAlignment(
+        RE::NiNode* weaponNode,
+        const RE::NiTransform& solvedWeaponWorld,
+        const std::uint64_t currentWeaponGenerationKey)
+    {
+        if (isManualOwnershipActive() || isWeaponVisualReturnActive()) {
+            return false;
+        }
+        return applyWeaponVisualAuthority(
+            weaponNode,
+            solvedWeaponWorld,
+            currentWeaponGenerationKey);
     }
 
     bool TwoHandedGrip::applyWeaponVisualAuthority(

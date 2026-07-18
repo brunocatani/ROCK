@@ -90,8 +90,8 @@ Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
     'captureNativePrimaryFiringGrip[\s\S]*weaponTransform\.parPos\s*!=\s*handIndex[\s\S]*invertTransform\(weaponTransform\.refNode->world\)[\s\S]*handTransform\.refNode->world[\s\S]*s_authoredPrimaryHandInWeapon\s*=\s*handInWeapon' `
     'The authored grip must be captured as Bethesda''s pre-hFRIK primary hand in the visible Weapon world frame.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
-    'resolveAuthoredPrimaryHandWorld\([\s\S]*liveWeaponWorld[\s\S]*s_authoredPrimaryHandInWeapon' `
-    'The experiment must carry the captured native relation into the unchanged live weapon world.'
+    'tryResolvePrimaryFiringGripAlignment[\s\S]*expectedWeaponNode->parent\s*!=\s*capturedHandNode[\s\S]*resolveAuthoredPrimaryWeaponWorld\([\s\S]*trackedPrimaryHandWorld[\s\S]*s_authoredPrimaryHandInWeapon' `
+    'The experiment must invert the captured native relation onto the tracked primary hand and reject a changed hand/weapon hierarchy.'
 
 $nativeAuthorityText = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/animation/NativeAnimationAuthority.cpp')
 $primaryCaptureMatch = [regex]::Match(
@@ -104,17 +104,20 @@ if (-not $primaryCaptureMatch.Success) {
 }
 
 Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
-    'applyExternalHandWorldTransform\([\s\S]*Hand::Primary[\s\S]*kAuthorityPriority' `
-    'The experiment must publish only the FRIK primary-hand world target through ranked authority.'
+    'getHandWorldTransform\([\s\S]*Hand::Primary[\s\S]*tryResolvePrimaryFiringGripAlignment[\s\S]*applyAuthoredPrimaryGripWeaponAlignment' `
+    'The experiment must preserve the controller-driven primary hand and apply the inverse solve through the shared weapon visual path.'
 Reject-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
-    'Hand::(?:Offhand|Left|Right)|weaponNode->(?:local|world)\s*=' `
-    'The primary-only experiment must not write a support/explicit-side hand or mutate the weapon transform.'
+    'applyExternalHandWorldTransform|clearExternalHandWorldTransform|Hand::(?:Offhand|Left|Right)|weaponNode->(?:local|world)\s*=|blockPrimaryWeaponNodeOwnership' `
+    'The primary-only alignment must not move either hand, write the node outside the shared weapon path, or enter hFRIK''s left-carry topology.'
 Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
-    'input\.nativeReloadAuthorityActive[\s\S]*clearAuthority\("native-reload-authority"\)[\s\S]*captureSequenceFloor' `
-    'Native reload authority must release the experiment and require a fresh capture before restoring it.'
+    'input\.nativeReloadAuthorityActive[\s\S]*endSession\("native-reload-authority"\)[\s\S]*captureSequenceFloor' `
+    'Native reload authority must suspend the alignment and require a fresh capture before restoring it.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'applyAuthoredPrimaryGripWeaponAlignment[\s\S]*isManualOwnershipActive\(\)[\s\S]*isWeaponVisualReturnActive\(\)[\s\S]*applyWeaponVisualAuthority' `
+    'Authored alignment must reuse the scope-aware weapon visual path and yield to manual/return authority.'
 Require-Text 'src/ROCKMain.cpp' `
-    's_physicsInteraction->update\(\);[\s\S]{0,180}s_physicsInteraction->updateAuthoredPrimaryFiringGripExperiment\(\)' `
-    'The primary grip must run after the normal ROCK frame so it is the final eligible primary-arm writer.'
+    's_physicsInteraction->updateAuthoredPrimaryFiringGripExperiment\(\);[\s\S]{0,180}s_physicsInteraction->update\(\)' `
+    'The authored weapon alignment must run before ROCK collision, probes, and manual grip capture.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'updateAuthoredPrimaryFiringGripExperiment[\s\S]*getCurrentEquippedWeaponOwnershipKey\(\)[\s\S]*weaponOwnershipKey\s*=\s*currentEquippedWeaponFormId\(\)' `
     'The experiment must retain a weapon freshness key when generated weapon collision is disabled.'

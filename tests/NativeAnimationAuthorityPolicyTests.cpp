@@ -75,6 +75,20 @@ int main()
     static_assert(authoredHandWorld.scale == 12.0f);
     static_assert(authoredHandWorld.translate == 160.0f);
 
+    constexpr AffineTransform trackedPrimaryHandWorld{ 12.0f, 300.0f };
+    constexpr auto alignedWeaponWorld = resolveAuthoredPrimaryWeaponWorld(
+        trackedPrimaryHandWorld,
+        authoredHandInWeapon,
+        affineCompose,
+        affineInvert);
+    constexpr auto alignedAuthoredHandWorld = affineCompose(
+        alignedWeaponWorld,
+        authoredHandInWeapon);
+    static_assert(alignedWeaponWorld.scale == 6.0f);
+    static_assert(alignedWeaponWorld.translate == 240.0f);
+    static_assert(alignedAuthoredHandWorld.scale == trackedPrimaryHandWorld.scale);
+    static_assert(alignedAuthoredHandWorld.translate == trackedPrimaryHandWorld.translate);
+
     constexpr AuthoredPrimaryFiringGripEligibility authoredGripEligible{
         .enabled = true,
         .runtimeInitialized = true,
@@ -89,6 +103,7 @@ int main()
         .captureNewerThanWeaponBoundary = true,
         .nativeReloadAuthorityActive = false,
         .manualWeaponAuthorityActive = false,
+        .weaponVisualReturnActive = false,
         .primaryHandHoldingObject = false,
         .leftHandedMode = false,
     };
@@ -101,6 +116,11 @@ int main()
     static_assert([=] {
         auto input = authoredGripEligible;
         input.manualWeaponAuthorityActive = true;
+        return !shouldApplyAuthoredPrimaryFiringGrip(input);
+    }());
+    static_assert([=] {
+        auto input = authoredGripEligible;
+        input.weaponVisualReturnActive = true;
         return !shouldApplyAuthoredPrimaryFiringGrip(input);
     }());
     static_assert([=] {

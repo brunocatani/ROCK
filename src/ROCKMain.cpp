@@ -314,8 +314,14 @@ namespace
         ensurePhysicsInteractionForReadySkeleton(runtime);
 
         if (s_physicsInteraction) {
-            s_physicsInteraction->update();
+            /*
+             * hFRIK has already restored its generic one-gun Weapon local.
+             * Reconstruct the Bethesda-authored primary grip before ROCK's
+             * collision/probe/grip pass so every weapon-relative subsystem
+             * sees the same corrected frame that will be rendered.
+             */
             s_physicsInteraction->updateAuthoredPrimaryFiringGripExperiment();
+            s_physicsInteraction->update();
             publishPhysicsInteractionIfReady();
         }
     }

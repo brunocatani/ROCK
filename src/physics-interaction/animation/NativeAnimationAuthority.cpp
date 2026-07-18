@@ -116,9 +116,10 @@ namespace rock::native_animation_authority
 
         // Published only after Bethesda's validated primary arm pass and
         // consumed on the same claimed ROCK game thread. The atomic
-        // valid/sequence pair is the publication boundary; the scene pointer
-        // is never retained after capture invalidation or skeleton reset.
+        // valid/sequence pair is the publication boundary; the scene identity
+        // witnesses are never retained after invalidation or skeleton reset.
         RE::NiTransform s_authoredPrimaryHandInWeapon{};
+        std::atomic<RE::NiNode*> s_primaryFiringGripHandNode{ nullptr };
         std::atomic<RE::NiNode*> s_primaryFiringGripWeaponNode{ nullptr };
         std::uintptr_t s_nativePrimaryArmReturnAddress{ 0 };
 
@@ -265,6 +266,7 @@ namespace rock::native_animation_authority
         void invalidatePrimaryFiringGripCapture()
         {
             s_primaryFiringGripCaptureValid.store(false, std::memory_order_release);
+            s_primaryFiringGripHandNode.store(nullptr, std::memory_order_release);
             s_primaryFiringGripWeaponNode.store(nullptr, std::memory_order_release);
         }
 
@@ -333,6 +335,7 @@ namespace rock::native_animation_authority
             }
 
             s_authoredPrimaryHandInWeapon = handInWeapon;
+            s_primaryFiringGripHandNode.store(handTransform.refNode, std::memory_order_release);
             s_primaryFiringGripWeaponNode.store(weaponTransform.refNode, std::memory_order_release);
             s_primaryFiringGripCaptureSequence.fetch_add(1, std::memory_order_acq_rel);
             s_primaryFiringGripCaptureValid.store(true, std::memory_order_release);
@@ -1155,19 +1158,26 @@ namespace rock::native_animation_authority
         };
     }
 
-    bool tryResolvePrimaryFiringGripWorldTarget(
+    bool tryResolvePrimaryFiringGripAlignment(
         const RE::NiNode* expectedWeaponNode,
         const RE::NiTransform& liveWeaponWorld,
-        RE::NiTransform& outHandWorld,
+        const RE::NiTransform& trackedPrimaryHandWorld,
+        RE::NiTransform& outWeaponWorld,
+        RE::NiTransform& outCurrentAuthoredHandWorld,
         std::uint64_t& outCaptureSequence)
     {
         outCaptureSequence = 0;
+        auto* const capturedHandNode =
+            s_primaryFiringGripHandNode.load(std::memory_order_acquire);
         if (!expectedWeaponNode ||
             !s_primaryFiringGripCaptureEnabled.load(std::memory_order_acquire) ||
             !s_primaryFiringGripCaptureValid.load(std::memory_order_acquire) ||
             !claimOrValidateThread() ||
+            !capturedHandNode ||
             expectedWeaponNode != s_primaryFiringGripWeaponNode.load(std::memory_order_acquire) ||
+            expectedWeaponNode->parent != capturedHandNode ||
             !finiteTransform(liveWeaponWorld) ||
+            !finiteTransform(trackedPrimaryHandWorld) ||
             !finiteTransform(s_authoredPrimaryHandInWeapon)) {
             return false;
         }
@@ -1177,13 +1187,23 @@ namespace rock::native_animation_authority
             return false;
         }
 
-        outHandWorld = native_animation_authority_policy::resolveAuthoredPrimaryHandWorld(
+        outCurrentAuthoredHandWorld = native_animation_authority_policy::resolveAuthoredPrimaryHandWorld(
             liveWeaponWorld,
             s_authoredPrimaryHandInWeapon,
             [](const RE::NiTransform& parent, const RE::NiTransform& child) {
                 return transform_math::composeTransforms(parent, child);
             });
-        if (!finiteTransform(outHandWorld)) {
+        outWeaponWorld = native_animation_authority_policy::resolveAuthoredPrimaryWeaponWorld(
+            trackedPrimaryHandWorld,
+            s_authoredPrimaryHandInWeapon,
+            [](const RE::NiTransform& parent, const RE::NiTransform& child) {
+                return transform_math::composeTransforms(parent, child);
+            },
+            [](const RE::NiTransform& transform) {
+                return transform_math::invertTransform(transform);
+            });
+        if (!finiteTransform(outCurrentAuthoredHandWorld) ||
+            !finiteTransform(outWeaponWorld)) {
             return false;
         }
 
