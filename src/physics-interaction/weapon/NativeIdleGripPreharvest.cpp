@@ -116,6 +116,51 @@ namespace rock::native_idle_grip_preharvest
             WeaponSubgraphLoading,
         };
 
+        enum class IdleGripExtractionFailure : std::uint8_t
+        {
+            None,
+            FirstPersonGraphPairUnavailable,
+            FirstPersonGraphUnavailable,
+            FirstPersonSubgraphIdentifierUnavailable,
+            AnimationFileLookupUnavailable,
+            AnimationFileListUnavailable,
+            AnimationFileListEmpty,
+            IdleClipPathUnavailable,
+            IdleClipPathTooLong,
+            BehaviorGraphSwapSingletonUnavailable,
+            ClipBindingUnavailable,
+            AnimationBindingUnavailable,
+            BoundAnimationUnavailable,
+            TransformTrackCountInvalid,
+            GraphSkeletonUnavailable,
+            SkeletonLayoutInvalid,
+            RequiredBoneUnavailable,
+            SkeletonParentCopyUnavailable,
+            WeaponNotDirectChildOfHand,
+            TrackMappingLayoutInvalid,
+            TrackMappingCopyUnavailable,
+            WeaponTrackUnavailable,
+            AnimationSamplerUnavailable,
+            AnimationSamplingFault,
+            SampledWeaponTransformInvalid,
+        };
+
+        struct IdleGripExtractionDiagnostics
+        {
+            IdleGripExtractionFailure failure{ IdleGripExtractionFailure::None };
+            std::size_t graphCount{ 0 };
+            std::size_t identifierCount{ 0 };
+            std::size_t animationFileCount{ 0 };
+            std::size_t idlePathMatchCount{ 0 };
+            std::size_t sampleAttemptCount{ 0 };
+            std::uint64_t subgraphIdentifier{ 0 };
+            std::uint64_t weaponBone{ 0xFFFFFFFFull };
+            std::uint64_t handBone{ 0xFFFFFFFFull };
+            int weaponParentIndex{ -1 };
+            int transformTrackCount{ 0 };
+            int mappingCount{ 0 };
+        };
+
         struct Job
         {
             alignas(16) std::array<std::byte, kSimpleAnimationGraphManagerHolderSize> graphHolderStorage{};
@@ -273,6 +318,69 @@ namespace rock::native_idle_grip_preharvest
             const auto* expectedInlineData = reinterpret_cast<const std::byte*>(&output) + kSmallArrayInlineStorageOffset;
             return output.capacity() == kSubgraphOutputInlineCapacity &&
                    static_cast<const void*>(output.data()) == static_cast<const void*>(expectedInlineData);
+        }
+
+        [[nodiscard]] const char* extractionFailureName(const IdleGripExtractionFailure failure)
+        {
+            switch (failure) {
+            case IdleGripExtractionFailure::None:
+                return "none";
+            case IdleGripExtractionFailure::FirstPersonGraphPairUnavailable:
+                return "firstPersonGraphPairUnavailable";
+            case IdleGripExtractionFailure::FirstPersonGraphUnavailable:
+                return "firstPersonGraphUnavailable";
+            case IdleGripExtractionFailure::FirstPersonSubgraphIdentifierUnavailable:
+                return "firstPersonSubgraphIdentifierUnavailable";
+            case IdleGripExtractionFailure::AnimationFileLookupUnavailable:
+                return "animationFileLookupUnavailable";
+            case IdleGripExtractionFailure::AnimationFileListUnavailable:
+                return "animationFileListUnavailable";
+            case IdleGripExtractionFailure::AnimationFileListEmpty:
+                return "animationFileListEmpty";
+            case IdleGripExtractionFailure::IdleClipPathUnavailable:
+                return "idleClipPathUnavailable";
+            case IdleGripExtractionFailure::IdleClipPathTooLong:
+                return "idleClipPathTooLong";
+            case IdleGripExtractionFailure::BehaviorGraphSwapSingletonUnavailable:
+                return "behaviorGraphSwapSingletonUnavailable";
+            case IdleGripExtractionFailure::ClipBindingUnavailable:
+                return "clipBindingUnavailable";
+            case IdleGripExtractionFailure::AnimationBindingUnavailable:
+                return "animationBindingUnavailable";
+            case IdleGripExtractionFailure::BoundAnimationUnavailable:
+                return "boundAnimationUnavailable";
+            case IdleGripExtractionFailure::TransformTrackCountInvalid:
+                return "transformTrackCountInvalid";
+            case IdleGripExtractionFailure::GraphSkeletonUnavailable:
+                return "graphSkeletonUnavailable";
+            case IdleGripExtractionFailure::SkeletonLayoutInvalid:
+                return "skeletonLayoutInvalid";
+            case IdleGripExtractionFailure::RequiredBoneUnavailable:
+                return "requiredBoneUnavailable";
+            case IdleGripExtractionFailure::SkeletonParentCopyUnavailable:
+                return "skeletonParentCopyUnavailable";
+            case IdleGripExtractionFailure::WeaponNotDirectChildOfHand:
+                return "weaponNotDirectChildOfHand";
+            case IdleGripExtractionFailure::TrackMappingLayoutInvalid:
+                return "trackMappingLayoutInvalid";
+            case IdleGripExtractionFailure::TrackMappingCopyUnavailable:
+                return "trackMappingCopyUnavailable";
+            case IdleGripExtractionFailure::WeaponTrackUnavailable:
+                return "weaponTrackUnavailable";
+            case IdleGripExtractionFailure::AnimationSamplerUnavailable:
+                return "animationSamplerUnavailable";
+            case IdleGripExtractionFailure::AnimationSamplingFault:
+                return "animationSamplingFault";
+            case IdleGripExtractionFailure::SampledWeaponTransformInvalid:
+                return "sampledWeaponTransformInvalid";
+            }
+            return "unknownExtractionFailure";
+        }
+
+        [[nodiscard]] bool failExtraction(IdleGripExtractionDiagnostics& diagnostics, const IdleGripExtractionFailure failure)
+        {
+            diagnostics.failure = failure;
+            return false;
         }
 
         [[nodiscard]] bool sameFailureIdentity(const FailureEntry& entry, const Job& job)
@@ -459,37 +567,49 @@ namespace rock::native_idle_grip_preharvest
             return isFiniteTransform(outHandInWeapon);
         }
 
-        [[nodiscard]] bool trySampleClip(Runtime& state, RE::BShkbAnimationGraph* graph, const std::uint64_t subgraphIdentifier, char* clipName, RE::NiTransform& outHandInWeapon)
+        [[nodiscard]] bool trySampleClip(Runtime& state, RE::BShkbAnimationGraph* graph, const std::uint64_t subgraphIdentifier, char* clipName,
+            RE::NiTransform& outHandInWeapon, IdleGripExtractionDiagnostics& diagnostics)
         {
+            diagnostics.weaponBone = 0xFFFFFFFFull;
+            diagnostics.handBone = 0xFFFFFFFFull;
+            diagnostics.weaponParentIndex = -1;
+            diagnostics.transformTrackCount = 0;
+            diagnostics.mappingCount = 0;
+
             void* swapSingleton = nullptr;
             const auto singletonAddress = REL::Offset(kBehaviorGraphSwapSingleton).address();
             if (!native_memory::tryReadValue(reinterpret_cast<void* const*>(singletonAddress), swapSingleton) || !swapSingleton) {
-                return false;
+                return failExtraction(diagnostics, IdleGripExtractionFailure::BehaviorGraphSwapSingletonUnavailable);
             }
 
             void* bindingWithTriggers = state.native.getClipGeneratorBinding(swapSingleton, graph, subgraphIdentifier, clipName);
             if (!bindingWithTriggers) {
-                return false;
+                return failExtraction(diagnostics, IdleGripExtractionFailure::ClipBindingUnavailable);
             }
 
             void* binding = nullptr;
             void* animation = nullptr;
-            if (!native_memory::tryReadField(bindingWithTriggers, kBindingFromBindingWithTriggersOffset, binding) || !binding ||
-                !native_memory::tryReadField(binding, kAnimationFromBindingOffset, animation) || !animation) {
-                return false;
+            if (!native_memory::tryReadField(bindingWithTriggers, kBindingFromBindingWithTriggersOffset, binding) || !binding) {
+                return failExtraction(diagnostics, IdleGripExtractionFailure::AnimationBindingUnavailable);
+            }
+            if (!native_memory::tryReadField(binding, kAnimationFromBindingOffset, animation) || !animation) {
+                return failExtraction(diagnostics, IdleGripExtractionFailure::BoundAnimationUnavailable);
             }
 
             int transformTrackCount = 0;
-            if (!native_memory::tryReadField(animation, kAnimationTransformTrackCountOffset, transformTrackCount) || transformTrackCount <= 0 ||
-                transformTrackCount > static_cast<int>(kMaxBonesAndTracks)) {
-                return false;
+            if (!native_memory::tryReadField(animation, kAnimationTransformTrackCountOffset, transformTrackCount)) {
+                return failExtraction(diagnostics, IdleGripExtractionFailure::TransformTrackCountInvalid);
+            }
+            diagnostics.transformTrackCount = transformTrackCount;
+            if (transformTrackCount <= 0 || transformTrackCount > static_cast<int>(kMaxBonesAndTracks)) {
+                return failExtraction(diagnostics, IdleGripExtractionFailure::TransformTrackCountInvalid);
             }
 
             void* skeletonOwner = nullptr;
             void* skeleton = nullptr;
             if (!native_memory::tryReadField(graph, kGraphSkeletonOwnerOffset, skeletonOwner) || !skeletonOwner ||
                 !native_memory::tryReadField(skeletonOwner, kSkeletonFromOwnerOffset, skeleton) || !skeleton) {
-                return false;
+                return failExtraction(diagnostics, IdleGripExtractionFailure::GraphSkeletonUnavailable);
             }
 
             int boneCount = 0;
@@ -498,38 +618,44 @@ namespace rock::native_idle_grip_preharvest
             if (!native_memory::tryReadField(skeleton, kSkeletonBoneCountOffset, boneCount) || !native_memory::tryReadField(skeleton, kSkeletonParentCountOffset, parentCount) ||
                 !native_memory::tryReadField(skeleton, kSkeletonParentIndicesOffset, parentIndices) || boneCount <= 0 || boneCount > static_cast<int>(kMaxBonesAndTracks) ||
                 parentCount < boneCount || !parentIndices) {
-                return false;
+                return failExtraction(diagnostics, IdleGripExtractionFailure::SkeletonLayoutInvalid);
             }
 
             const auto weaponBoneRaw = state.native.findBoneWithName(skeleton, "Weapon", nullptr);
             const auto handBoneRaw = state.native.findBoneWithName(skeleton, "RArm_Hand", nullptr);
+            diagnostics.weaponBone = weaponBoneRaw;
+            diagnostics.handBone = handBoneRaw;
             if (weaponBoneRaw == 0xFFFFFFFFull || handBoneRaw == 0xFFFFFFFFull || weaponBoneRaw >= static_cast<std::uint64_t>(boneCount) ||
                 handBoneRaw >= static_cast<std::uint64_t>(boneCount)) {
-                return false;
+                return failExtraction(diagnostics, IdleGripExtractionFailure::RequiredBoneUnavailable);
             }
             const int weaponBoneIndex = static_cast<int>(weaponBoneRaw);
             const int handBoneIndex = static_cast<int>(handBoneRaw);
 
             std::array<std::int16_t, kMaxBonesAndTracks> parentBuffer{};
-            if (!native_memory::guardedCopyFromMemory(parentIndices, parentBuffer.data(), static_cast<std::size_t>(boneCount) * sizeof(std::int16_t)) ||
-                !native_idle_grip_preharvest_policy::weaponIsDirectChildOfHand(weaponBoneIndex, handBoneIndex,
+            if (!native_memory::guardedCopyFromMemory(parentIndices, parentBuffer.data(), static_cast<std::size_t>(boneCount) * sizeof(std::int16_t))) {
+                return failExtraction(diagnostics, IdleGripExtractionFailure::SkeletonParentCopyUnavailable);
+            }
+            diagnostics.weaponParentIndex = parentBuffer[static_cast<std::size_t>(weaponBoneIndex)];
+            if (!native_idle_grip_preharvest_policy::weaponIsDirectChildOfHand(weaponBoneIndex, handBoneIndex,
                     std::span<const std::int16_t>{ parentBuffer.data(), static_cast<std::size_t>(boneCount) })) {
-                return false;
+                return failExtraction(diagnostics, IdleGripExtractionFailure::WeaponNotDirectChildOfHand);
             }
 
             const std::int16_t* trackToBoneIndices = nullptr;
             int mappingCount = 0;
             if (!native_memory::tryReadField(binding, kTrackToBoneMappingOffset, trackToBoneIndices) ||
                 !native_memory::tryReadField(binding, kTrackToBoneMappingCountOffset, mappingCount) || mappingCount < 0 || mappingCount > static_cast<int>(kMaxBonesAndTracks)) {
-                return false;
+                return failExtraction(diagnostics, IdleGripExtractionFailure::TrackMappingLayoutInvalid);
             }
+            diagnostics.mappingCount = mappingCount;
 
             std::array<std::int16_t, kMaxBonesAndTracks> mappingBuffer{};
             std::span<const std::int16_t> mapping{};
             if (mappingCount > 0) {
                 if (!trackToBoneIndices ||
                     !native_memory::guardedCopyFromMemory(trackToBoneIndices, mappingBuffer.data(), static_cast<std::size_t>(mappingCount) * sizeof(std::int16_t))) {
-                    return false;
+                    return failExtraction(diagnostics, IdleGripExtractionFailure::TrackMappingCopyUnavailable);
                 }
                 mapping = std::span<const std::int16_t>{
                     mappingBuffer.data(),
@@ -538,7 +664,7 @@ namespace rock::native_idle_grip_preharvest
             }
             const int weaponTrackIndex = native_idle_grip_preharvest_policy::findTransformTrackForBone(weaponBoneIndex, transformTrackCount, mapping);
             if (weaponTrackIndex < 0) {
-                return false;
+                return failExtraction(diagnostics, IdleGripExtractionFailure::WeaponTrackUnavailable);
             }
 
             void** animationVtable = nullptr;
@@ -546,43 +672,55 @@ namespace rock::native_idle_grip_preharvest
             if (!native_memory::tryReadValue(reinterpret_cast<void***>(animation), animationVtable) || !animationVtable ||
                 !native_memory::tryReadValue(reinterpret_cast<SampleAnimationTracksFn*>(animationVtable + 5), sampleTracks) ||
                 !addressIsExecutable(reinterpret_cast<const void*>(sampleTracks))) {
-                return false;
+                return failExtraction(diagnostics, IdleGripExtractionFailure::AnimationSamplerUnavailable);
             }
 
             alignas(16) std::array<HkQsTransform, kMaxBonesAndTracks> sampledTracks{};
             if (!guardedSampleTracks(sampleTracks, animation, transformTrackCount, sampledTracks.data())) {
-                return false;
+                return failExtraction(diagnostics, IdleGripExtractionFailure::AnimationSamplingFault);
             }
-            return convertWeaponTrackToHandInWeapon(sampledTracks[static_cast<std::size_t>(weaponTrackIndex)], outHandInWeapon);
+            if (!convertWeaponTrackToHandInWeapon(sampledTracks[static_cast<std::size_t>(weaponTrackIndex)], outHandInWeapon)) {
+                return failExtraction(diagnostics, IdleGripExtractionFailure::SampledWeaponTransformInvalid);
+            }
+            diagnostics.failure = IdleGripExtractionFailure::None;
+            return true;
         }
 
         [[nodiscard]] bool tryExtractIdleGrip(Runtime& state, RE::BSAnimationGraphManager& manager, RE::NiTransform& outHandInWeapon, std::array<char, 260>& outClipPath,
-            std::uint64_t& outSubgraphIdentifier)
+            std::uint64_t& outSubgraphIdentifier, IdleGripExtractionDiagnostics& diagnostics)
         {
+            diagnostics = {};
+            diagnostics.graphCount = manager.graph.size();
+            diagnostics.identifierCount = state.job.subgraphIdentifiers.size();
+            outClipPath.fill('\0');
+
             const auto selection = native_idle_grip_preharvest_policy::selectFirstPersonGraph(manager.graph.size(), state.job.subgraphIdentifiers.size());
             if (!selection.valid) {
-                return false;
+                return failExtraction(diagnostics, IdleGripExtractionFailure::FirstPersonGraphPairUnavailable);
             }
             const auto firstPersonIndex = static_cast<decltype(manager.graph)::size_type>(selection.graphIndex);
             auto* graph = manager.graph[firstPersonIndex].get();
             if (!graph) {
-                return false;
+                return failExtraction(diagnostics, IdleGripExtractionFailure::FirstPersonGraphUnavailable);
             }
             outSubgraphIdentifier = state.job.subgraphIdentifiers[static_cast<decltype(state.job.subgraphIdentifiers)::size_type>(selection.graphIndex)].identifier;
+            diagnostics.subgraphIdentifier = outSubgraphIdentifier;
             if (outSubgraphIdentifier == 0) {
-                return false;
+                return failExtraction(diagnostics, IdleGripExtractionFailure::FirstPersonSubgraphIdentifierUnavailable);
             }
 
-            const auto* animationFiles = [&]() -> const RE::BSTArray<RE::BSFixedString>* {
-                void* lookupSingleton = nullptr;
-                const auto lookupSingletonAddress = REL::Offset(kAnimationFileLookupSingleton).address();
-                if (!native_memory::tryReadValue(reinterpret_cast<void* const*>(lookupSingletonAddress), lookupSingleton) || !lookupSingleton) {
-                    return nullptr;
-                }
-                return state.native.getAnimationFilesForSubgraph(&outSubgraphIdentifier);
-            }();
+            void* lookupSingleton = nullptr;
+            const auto lookupSingletonAddress = REL::Offset(kAnimationFileLookupSingleton).address();
+            if (!native_memory::tryReadValue(reinterpret_cast<void* const*>(lookupSingletonAddress), lookupSingleton) || !lookupSingleton) {
+                return failExtraction(diagnostics, IdleGripExtractionFailure::AnimationFileLookupUnavailable);
+            }
+            const auto* animationFiles = state.native.getAnimationFilesForSubgraph(&outSubgraphIdentifier);
             if (!animationFiles) {
-                return false;
+                return failExtraction(diagnostics, IdleGripExtractionFailure::AnimationFileListUnavailable);
+            }
+            diagnostics.animationFileCount = animationFiles->size();
+            if (animationFiles->empty()) {
+                return failExtraction(diagnostics, IdleGripExtractionFailure::AnimationFileListEmpty);
             }
 
             constexpr std::array<std::string_view, 2> desiredClipStems{
@@ -597,16 +735,28 @@ namespace rock::native_idle_grip_preharvest
                         continue;
                     }
                     const std::string_view path{ pathChars };
-                    if (!native_idle_grip_preharvest_policy::clipPathHasStem(path, desiredStem) || path.size() >= outClipPath.size()) {
+                    if (!native_idle_grip_preharvest_policy::clipPathHasStem(path, desiredStem)) {
+                        continue;
+                    }
+                    ++diagnostics.idlePathMatchCount;
+                    if (path.size() >= outClipPath.size()) {
+                        diagnostics.failure = IdleGripExtractionFailure::IdleClipPathTooLong;
                         continue;
                     }
 
                     outClipPath.fill('\0');
                     std::memcpy(outClipPath.data(), path.data(), path.size());
-                    if (trySampleClip(state, graph, outSubgraphIdentifier, outClipPath.data(), outHandInWeapon)) {
+                    ++diagnostics.sampleAttemptCount;
+                    if (trySampleClip(state, graph, outSubgraphIdentifier, outClipPath.data(), outHandInWeapon, diagnostics)) {
                         return true;
                     }
                 }
+            }
+            if (diagnostics.idlePathMatchCount == 0) {
+                return failExtraction(diagnostics, IdleGripExtractionFailure::IdleClipPathUnavailable);
+            }
+            if (diagnostics.sampleAttemptCount == 0) {
+                return failExtraction(diagnostics, IdleGripExtractionFailure::IdleClipPathTooLong);
             }
             return false;
         }
@@ -695,8 +845,17 @@ namespace rock::native_idle_grip_preharvest
             RE::NiTransform handInWeapon{};
             std::array<char, 260> clipPath{};
             std::uint64_t subgraphIdentifier = 0;
-            if (!tryExtractIdleGrip(state, *manager, handInWeapon, clipPath, subgraphIdentifier)) {
-                failJob(state, "firstPersonIdleWeaponTrackUnavailable");
+            IdleGripExtractionDiagnostics extractionDiagnostics{};
+            if (!tryExtractIdleGrip(state, *manager, handInWeapon, clipPath, subgraphIdentifier, extractionDiagnostics)) {
+                const char* failure = extractionFailureName(extractionDiagnostics.failure);
+                ROCK_LOG_INFO(Animation,
+                    "Native idle-grip preharvest extraction detail formID={:08X} reason={} graphs={} identifiers={} subgraph={:016X} files={} idleMatches={} "
+                    "sampleAttempts={} tracks={} mapping={} weaponBone={:X} handBone={:X} weaponParent={} clip={}",
+                    job.weaponFormId, failure, extractionDiagnostics.graphCount, extractionDiagnostics.identifierCount, extractionDiagnostics.subgraphIdentifier,
+                    extractionDiagnostics.animationFileCount, extractionDiagnostics.idlePathMatchCount, extractionDiagnostics.sampleAttemptCount,
+                    extractionDiagnostics.transformTrackCount, extractionDiagnostics.mappingCount, extractionDiagnostics.weaponBone, extractionDiagnostics.handBone,
+                    extractionDiagnostics.weaponParentIndex, clipPath[0] != '\0' ? clipPath.data() : "<none>");
+                failJob(state, failure);
                 return true;
             }
 

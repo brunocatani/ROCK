@@ -44,6 +44,18 @@ Require-Text $source `
     'findBoneWithName\(skeleton,\s*"Weapon"[\s\S]*findBoneWithName\(skeleton,\s*"RArm_Hand"[\s\S]*WPNIdleReady[\s\S]*WPNIdle' `
     'The proof must sample authored idle clips and resolve the exact Weapon/RArm_Hand skeleton relation.'
 Require-Text $source `
+    'enum class IdleGripExtractionFailure[\s\S]*ClipBindingUnavailable[\s\S]*WeaponNotDirectChildOfHand[\s\S]*WeaponTrackUnavailable[\s\S]*SampledWeaponTransformInvalid' `
+    'Idle pose extraction must retain precise fail-closed stage identities instead of collapsing every unavailable datum.'
+Require-Text $source `
+    'IdleGripExtractionDiagnostics[\s\S]*idlePathMatchCount[\s\S]*sampleAttemptCount[\s\S]*weaponParentIndex[\s\S]*trySampleClip[\s\S]*failExtraction' `
+    'The sampler must collect bounded runtime evidence for clip, skeleton, topology, mapping, and transform failures.'
+Require-Text $source `
+    'extractionFailureName\(extractionDiagnostics\.failure\)[\s\S]*Native idle-grip preharvest extraction detail[\s\S]*failJob\(state,\s*failure\)' `
+    'A failed extraction must emit its one-shot evidence and preserve the exact stage in the terminal job reason.'
+Reject-Text $source `
+    'firstPersonIdleWeaponTrackUnavailable' `
+    'The obsolete catch-all idle extraction reason must not hide the exact native datum that failed.'
+Require-Text $source `
     'kAnimationFileLookupSingleton\s*=\s*0x5B64318[\s\S]*tryReadValue\([\s\S]*lookupSingleton[\s\S]*getAnimationFilesForSubgraph\(\s*&outSubgraphIdentifier\)[\s\S]*clipPathHasStem[\s\S]*trySampleClip' `
     'Clip binding must consume the exact winning AnimationFileData path for the selected subgraph instead of guessing a basename.'
 Require-Text $source `
