@@ -287,8 +287,9 @@ namespace rock
             std::uint64_t currentWeaponGenerationKey);
 
         /*
-         * Generation-binds Bethesda's exact RArm_Hand-in-Weapon relation to
-         * ROCK's existing firing canonical. The physical-left firing path
+         * Binds Bethesda's exact RArm_Hand-in-Weapon relation to ROCK's
+         * existing firing canonical by node identity, collision generation,
+         * and equipped ownership. The physical-left firing path
          * consumes this one canonical through its established wand mirror;
          * no left-authored animation datum is fabricated or retained beyond
          * the matching weapon identity. The node pointer is comparison-only
@@ -298,6 +299,7 @@ namespace rock
             RE::NiNode* weaponNode,
             const RE::NiTransform& rightHandWeaponLocal,
             std::uint64_t weaponGenerationKey,
+            std::uint64_t weaponOwnershipKey,
             std::uint64_t captureSequence);
         void clearAuthoredPrimaryFiringGripCanonical(const char* reason);
 
@@ -698,11 +700,15 @@ namespace rock
          * left bone basis, instead of freezing the live squeeze orientation.
          */
         void rememberRightFiringHandCanonicalFrame();
-        void refreshRightNativeCanonicalFrame(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
+        void refreshRightNativeCanonicalFrame(
+            RE::NiNode* weaponNode,
+            std::uint64_t currentWeaponGenerationKey,
+            std::uint64_t currentEquippedWeaponOwnershipKey);
         void clearRightFiringHandCanonicalFrame();
         bool hasRightFiringHandCanonicalFrame(
             const RE::NiNode* weaponNode,
-            std::uint64_t weaponGenerationKey) const;
+            std::uint64_t weaponGenerationKey,
+            std::uint64_t weaponOwnershipKey) const;
 
         bool tryComputeMirroredLeftFiringHandWeaponLocal(
             RE::NiTransform& outHandWeaponLocal,
@@ -877,13 +883,15 @@ namespace rock
             AuthoredAnimation,
         };
 
-        // Canonical right-hand firing hold (weapon-generation-keyed); see
+        // Canonical right-hand firing hold, keyed by node identity, collision
+        // generation, and equipped ownership; see
         // rememberRightFiringHandCanonicalFrame().
         RE::NiTransform _rightFiringHandCanonicalWeaponLocal{};
         RE::NiPoint3 _rightFiringGripCanonicalWeaponLocal{};
         // Non-owning identity witness only; compared, never dereferenced.
         RE::NiNode* _rightFiringHandCanonicalWeaponNode{ nullptr };
         std::uint64_t _rightFiringHandCanonicalGenerationKey{ 0 };
+        std::uint64_t _rightFiringHandCanonicalOwnershipKey{ 0 };
         std::uint64_t _rightFiringHandCanonicalCaptureSequence{ 0 };
         RightFiringCanonicalSource _rightFiringHandCanonicalSource{
             RightFiringCanonicalSource::None

@@ -1490,7 +1490,10 @@ namespace rock
             break;
         }
 
-        refreshRightNativeCanonicalFrame(weaponNode, currentWeaponGenerationKey);
+        refreshRightNativeCanonicalFrame(
+            weaponNode,
+            currentWeaponGenerationKey,
+            currentEquippedWeaponOwnershipKey);
 
         // Enforce the left-firing weapon-node ownership contract after every
         // state/role transition this frame (idempotent; also the parent
@@ -2594,7 +2597,10 @@ namespace rock
         }
 
         const bool reuseRightFiringCanonicalGrip = scope_safe_hand_frame_math::shouldReuseRightFiringCanonicalGrip(_scopeMenuOpenThisFrame, _firingHandIsLeft,
-            hasRightFiringHandCanonicalFrame(weaponNode, decision.weaponGenerationKey),
+            hasRightFiringHandCanonicalFrame(
+                weaponNode,
+                decision.weaponGenerationKey,
+                currentEquippedWeaponOwnershipKey),
             _rightFiringHandCanonicalGenerationKey,
             decision.weaponGenerationKey);
         if (_scopeMenuOpenThisFrame && !_firingHandIsLeft && !reuseRightFiringCanonicalGrip) {
@@ -3199,7 +3205,8 @@ namespace rock
             _state != TwoHandedState::Inactive || !canBeginPrimaryOnlyGripForHand(true) ||
             !hasRightFiringHandCanonicalFrame(
                 weaponNode,
-                currentWeaponGenerationKey)) {
+                currentWeaponGenerationKey,
+                currentEquippedWeaponOwnershipKey)) {
             return false;
         }
 
@@ -3661,7 +3668,8 @@ namespace rock
             }
         } else if (hasRightFiringHandCanonicalFrame(
                        _activeWeaponNode,
-                       _activeWeaponGenerationKey)) {
+                       _activeWeaponGenerationKey,
+                       _activeEquippedWeaponOwnershipKey)) {
             _primaryHandWeaponLocal = _rightFiringHandCanonicalWeaponLocal;
             usedCanonicalHold = true;
             holdSource = _rightFiringHandCanonicalSource ==
@@ -4396,10 +4404,12 @@ namespace rock
         RE::NiNode* weaponNode,
         const RE::NiTransform& rightHandWeaponLocal,
         const std::uint64_t weaponGenerationKey,
+        const std::uint64_t weaponOwnershipKey,
         const std::uint64_t captureSequence)
     {
         if (!weaponNode ||
             weaponGenerationKey == 0 ||
+            weaponOwnershipKey == 0 ||
             captureSequence == 0 ||
             !isFiniteTransform(rightHandWeaponLocal) ||
             std::abs(rightHandWeaponLocal.scale) <= 0.0001f) {
@@ -4424,12 +4434,14 @@ namespace rock
             _rightFiringHandCanonicalSource !=
                 RightFiringCanonicalSource::AuthoredAnimation ||
             _rightFiringHandCanonicalWeaponNode != weaponNode ||
-            _rightFiringHandCanonicalGenerationKey != weaponGenerationKey;
+            _rightFiringHandCanonicalGenerationKey != weaponGenerationKey ||
+            _rightFiringHandCanonicalOwnershipKey != weaponOwnershipKey;
 
         _rightFiringHandCanonicalWeaponLocal = rightHandWeaponLocal;
         _rightFiringGripCanonicalWeaponLocal = authoredGripWeaponLocal;
         _rightFiringHandCanonicalWeaponNode = weaponNode;
         _rightFiringHandCanonicalGenerationKey = weaponGenerationKey;
+        _rightFiringHandCanonicalOwnershipKey = weaponOwnershipKey;
         _rightFiringHandCanonicalCaptureSequence = captureSequence;
         _rightFiringHandCanonicalSource =
             RightFiringCanonicalSource::AuthoredAnimation;
@@ -4437,8 +4449,9 @@ namespace rock
 
         if (sourceBoundary) {
             ROCK_LOG_INFO(Animation,
-                "TwoHandedGrip: authored firing canonical active generation={:016X} capture={} handWeaponT=({:.3f},{:.3f},{:.3f}) gripWeapon=({:.3f},{:.3f},{:.3f}) leftSource=wand-mirror",
+                "TwoHandedGrip: authored firing canonical active generation={:016X} ownership={:016X} capture={} handWeaponT=({:.3f},{:.3f},{:.3f}) gripWeapon=({:.3f},{:.3f},{:.3f}) leftSource=wand-mirror",
                 weaponGenerationKey,
+                weaponOwnershipKey,
                 captureSequence,
                 rightHandWeaponLocal.translate.x,
                 rightHandWeaponLocal.translate.y,
@@ -4459,9 +4472,10 @@ namespace rock
         }
 
         ROCK_LOG_DEBUG(Animation,
-            "TwoHandedGrip: clearing authored firing canonical reason={} generation={:016X} capture={}",
+            "TwoHandedGrip: clearing authored firing canonical reason={} generation={:016X} ownership={:016X} capture={}",
             reason ? reason : "unknown",
             _rightFiringHandCanonicalGenerationKey,
+            _rightFiringHandCanonicalOwnershipKey,
             _rightFiringHandCanonicalCaptureSequence);
         clearRightFiringHandCanonicalFrame();
     }
@@ -4735,6 +4749,7 @@ namespace rock
         _rightFiringGripCanonicalWeaponLocal = {};
         _rightFiringHandCanonicalWeaponNode = nullptr;
         _rightFiringHandCanonicalGenerationKey = 0;
+        _rightFiringHandCanonicalOwnershipKey = 0;
         _rightFiringHandCanonicalCaptureSequence = 0;
         _rightFiringHandCanonicalSource = RightFiringCanonicalSource::None;
         _hasRightFiringHandCanonicalWeaponLocal = false;
@@ -4742,13 +4757,15 @@ namespace rock
 
     bool TwoHandedGrip::hasRightFiringHandCanonicalFrame(
         const RE::NiNode* weaponNode,
-        const std::uint64_t weaponGenerationKey) const
+        const std::uint64_t weaponGenerationKey,
+        const std::uint64_t weaponOwnershipKey) const
     {
         return weaponNode &&
                weaponGenerationKey != 0 &&
                _hasRightFiringHandCanonicalWeaponLocal &&
                _rightFiringHandCanonicalWeaponNode == weaponNode &&
                _rightFiringHandCanonicalGenerationKey == weaponGenerationKey &&
+               _rightFiringHandCanonicalOwnershipKey == weaponOwnershipKey &&
                _rightFiringHandCanonicalSource != RightFiringCanonicalSource::None;
     }
 
@@ -4760,7 +4777,8 @@ namespace rock
         }
         if (hasRightFiringHandCanonicalFrame(
                 _activeWeaponNode,
-                _activeWeaponGenerationKey) &&
+                _activeWeaponGenerationKey,
+                _activeEquippedWeaponOwnershipKey) &&
             _rightFiringHandCanonicalSource ==
                 RightFiringCanonicalSource::AuthoredAnimation) {
             return;
@@ -4769,12 +4787,16 @@ namespace rock
         _rightFiringGripCanonicalWeaponLocal = _primaryGripLocal;
         _rightFiringHandCanonicalWeaponNode = _activeWeaponNode;
         _rightFiringHandCanonicalGenerationKey = _activeWeaponGenerationKey;
+        _rightFiringHandCanonicalOwnershipKey = _activeEquippedWeaponOwnershipKey;
         _rightFiringHandCanonicalCaptureSequence = 0;
         _rightFiringHandCanonicalSource = RightFiringCanonicalSource::NativeCarry;
         _hasRightFiringHandCanonicalWeaponLocal = true;
     }
 
-    void TwoHandedGrip::refreshRightNativeCanonicalFrame(RE::NiNode* weaponNode, const std::uint64_t currentWeaponGenerationKey)
+    void TwoHandedGrip::refreshRightNativeCanonicalFrame(
+        RE::NiNode* weaponNode,
+        const std::uint64_t currentWeaponGenerationKey,
+        const std::uint64_t currentEquippedWeaponOwnershipKey)
     {
         /*
          * Passive canonical capture: whenever the equipped weapon rides the
@@ -4824,11 +4846,13 @@ namespace rock
         _hasRightNaturalBoneInWand = true;
 
         // The animation capture is a more direct authority than a later
-        // presentation sample. Preserve it for this exact weapon generation,
-        // while still refreshing the anatomy-only bone-in-wand relation above.
+        // presentation sample. Preserve it for this exact weapon identity,
+        // generation, and ownership while still refreshing the anatomy-only
+        // bone-in-wand relation above.
         if (hasRightFiringHandCanonicalFrame(
                 weaponNode,
-                currentWeaponGenerationKey) &&
+                currentWeaponGenerationKey,
+                currentEquippedWeaponOwnershipKey) &&
             _rightFiringHandCanonicalSource ==
                 RightFiringCanonicalSource::AuthoredAnimation) {
             return;
@@ -4838,6 +4862,7 @@ namespace rock
         _rightFiringGripCanonicalWeaponLocal = canonicalGrip;
         _rightFiringHandCanonicalWeaponNode = weaponNode;
         _rightFiringHandCanonicalGenerationKey = currentWeaponGenerationKey;
+        _rightFiringHandCanonicalOwnershipKey = currentEquippedWeaponOwnershipKey;
         _rightFiringHandCanonicalCaptureSequence = 0;
         _rightFiringHandCanonicalSource = RightFiringCanonicalSource::NativeCarry;
         _hasRightFiringHandCanonicalWeaponLocal = true;
@@ -4852,7 +4877,8 @@ namespace rock
         }
         if (!hasRightFiringHandCanonicalFrame(
                 _activeWeaponNode,
-                _activeWeaponGenerationKey)) {
+                _activeWeaponGenerationKey,
+                _activeEquippedWeaponOwnershipKey)) {
             return false;
         }
 
@@ -4899,9 +4925,10 @@ namespace rock
             *outUsedAuthoredCanonical = usedAuthoredCanonical;
         }
         ROCK_LOG_INFO(Weapon,
-            "TwoHandedGrip: left firing hold resolved source={} generation={:016X} capture={} mirroredHandWeaponT=({:.3f},{:.3f},{:.3f})",
+            "TwoHandedGrip: left firing hold resolved source={} generation={:016X} ownership={:016X} capture={} mirroredHandWeaponT=({:.3f},{:.3f},{:.3f})",
             usedAuthoredCanonical ? "authored-animation" : "native-carry",
             _rightFiringHandCanonicalGenerationKey,
+            _rightFiringHandCanonicalOwnershipKey,
             _rightFiringHandCanonicalCaptureSequence,
             outHandWeaponLocal.translate.x,
             outHandWeaponLocal.translate.y,
@@ -5196,7 +5223,8 @@ namespace rock
             }
         } else if (hasRightFiringHandCanonicalFrame(
                        _activeWeaponNode,
-                       _activeWeaponGenerationKey)) {
+                       _activeWeaponGenerationKey,
+                       _activeEquippedWeaponOwnershipKey)) {
             newFiringHandWeaponLocal = _rightFiringHandCanonicalWeaponLocal;
             usedCanonicalHold = true;
             holdSource = _rightFiringHandCanonicalSource ==

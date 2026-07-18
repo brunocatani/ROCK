@@ -146,8 +146,8 @@ Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
     'getHandWorldTransform\([\s\S]*Hand::Primary[\s\S]*tryResolvePrimaryFiringGripAlignment[\s\S]*applyAuthoredPrimaryGripWeaponAlignment' `
     'The experiment must preserve the controller-driven primary hand and apply the inverse solve through the shared weapon visual path.'
 Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
-    'tryResolvePrimaryFiringGripAlignment[\s\S]*authoredPrimaryHandInWeapon[\s\S]*applyAuthoredPrimaryGripWeaponAlignment[\s\S]*setAuthoredPrimaryFiringGripCanonical\([\s\S]*authoredPrimaryHandInWeapon[\s\S]*input\.weaponGenerationKey[\s\S]*resolvedCaptureSequence' `
-    'A successful right-hand alignment must explicitly generation-bind the exact authored Hand-in-Weapon relation for physical-left mirroring.'
+    'tryResolvePrimaryFiringGripAlignment[\s\S]*authoredPrimaryHandInWeapon[\s\S]*applyAuthoredPrimaryGripWeaponAlignment[\s\S]*setAuthoredPrimaryFiringGripCanonical\([\s\S]*authoredPrimaryHandInWeapon[\s\S]*input\.weaponGenerationKey[\s\S]*currentWeaponKey[\s\S]*resolvedCaptureSequence' `
+    'A successful right-hand alignment must explicitly bind the exact authored Hand-in-Weapon relation to generation, equipped ownership, and capture sequence for physical-left mirroring.'
 Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
     'input\.leftHandedMode[\s\S]*clearAuthoredPrimaryFiringGripCanonical\([\s\S]*game-left-handed-mode[\s\S]*rockFiringHandIsLeft\s*=\s*input\.rockFiringHandIsLeft' `
     'Global game-left topology must discard the right-authored canonical while ROCK physical-left firing remains an explicit eligibility state.'
@@ -170,8 +170,11 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'applyAuthoredPrimaryGripWeaponAlignment[\s\S]*blocksAuthoredPrimaryGripWeaponAlignment\(\)[\s\S]*isWeaponVisualReturnActive\(\)[\s\S]*applyWeaponVisualAuthority' `
     'Authored alignment must reuse the scope-aware weapon visual path and yield to conflicting transform/return authority.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'setAuthoredPrimaryFiringGripCanonical[\s\S]*computeGrabLegacyPalmPivotAWorldFromHandBasis\([\s\S]*rightHandWeaponLocal[\s\S]*false[\s\S]*_rightFiringHandCanonicalWeaponLocal\s*=\s*rightHandWeaponLocal[\s\S]*RightFiringCanonicalSource::AuthoredAnimation' `
-    'The authored canonical must derive its grip seat directly in Weapon space from the captured right-hand relation and retain explicit source authority.'
+    'setAuthoredPrimaryFiringGripCanonical[\s\S]*weaponOwnershipKey\s*==\s*0[\s\S]*computeGrabLegacyPalmPivotAWorldFromHandBasis\([\s\S]*rightHandWeaponLocal[\s\S]*false[\s\S]*_rightFiringHandCanonicalWeaponLocal\s*=\s*rightHandWeaponLocal[\s\S]*_rightFiringHandCanonicalOwnershipKey\s*=\s*weaponOwnershipKey[\s\S]*RightFiringCanonicalSource::AuthoredAnimation' `
+    'The authored canonical must derive its grip seat directly in Weapon space from the captured right-hand relation and retain explicit ownership/source authority.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'hasRightFiringHandCanonicalFrame[\s\S]*_rightFiringHandCanonicalWeaponNode\s*==\s*weaponNode[\s\S]*_rightFiringHandCanonicalGenerationKey\s*==\s*weaponGenerationKey[\s\S]*_rightFiringHandCanonicalOwnershipKey\s*==\s*weaponOwnershipKey' `
+    'Canonical consumption must reject the one-frame equip race where node and collision generation are unchanged but equipped ownership has advanced.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'refreshRightNativeCanonicalFrame[\s\S]*_rightNaturalBoneInWand\s*=\s*boneInRightWand[\s\S]*hasRightFiringHandCanonicalFrame[\s\S]*RightFiringCanonicalSource::AuthoredAnimation[\s\S]*return;[\s\S]*RightFiringCanonicalSource::NativeCarry' `
     'Native presentation refresh must retain anatomy sampling without overwriting a matching authored canonical.'

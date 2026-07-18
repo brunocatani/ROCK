@@ -211,6 +211,7 @@ namespace rock
                 input.weaponNode,
                 authoredPrimaryHandInWeapon,
                 input.weaponGenerationKey,
+                currentWeaponKey,
                 resolvedCaptureSequence)) {
             if (!_canonicalPublishFailureLogged) {
                 ROCK_LOG_WARN(Animation,
