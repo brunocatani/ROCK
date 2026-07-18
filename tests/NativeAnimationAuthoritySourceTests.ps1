@@ -78,20 +78,26 @@ Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
     'The ROCK-only validation flag must arm a bounded lease only when a native reload dispatch succeeds.'
 
 Require-Text 'src/physics-interaction/native/HavokOffsets.h' `
-    'kFunc_UpdateFirstPersonArm\s*=\s*0xEF6280[\s\S]*kCallsite_UpdateFirstPersonArmPrimaryReturn\s*=\s*0xEF610D' `
-    'The primary firing-grip probe must stay pinned to the independently verified FO4VR helper and Bethesda primary-call return.'
+    'kFunc_UpdateFirstPersonArm\s*=\s*0xEF6280[\s\S]*kCallsite_UpdateFirstPersonArmPrimaryReturn\s*=\s*0xEF610D[\s\S]*kCallsite_UpdateFirstPersonArmSecondaryReturn\s*=\s*0xEF6150' `
+    'The firing-grip probe must stay pinned to the independently verified FO4VR helper and paired Bethesda arm-call returns.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
     'kExpectedUpdateFirstPersonArmPrefix[\s\S]*0x48,\s*0x8B,\s*0xC4,\s*0x55,\s*0x53,\s*0x41,\s*0x56,[\s\S]*0x48,\s*0x8D,\s*0xA8,\s*0xF8,\s*0xFE,\s*0xFF,\s*0xFF[\s\S]*kFunc_UpdateFirstPersonArm' `
     'The native arm interception must validate the complete position-independent FO4VR prologue before patching.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
-    'onUpdateFirstPersonArm[\s\S]*_ReturnAddress\(\)[\s\S]*s_originalUpdateFirstPersonArm\([\s\S]*returnAddress\s*!=\s*s_nativePrimaryArmReturnAddress[\s\S]*captureNativePrimaryFiringGrip\(\)' `
-    'The hook must call the native helper first and capture only Bethesda''s verified primary pass, never hFRIK''s later calls.'
+    'onUpdateFirstPersonArm[\s\S]*_ReturnAddress\(\)[\s\S]*s_originalUpdateFirstPersonArm\([\s\S]*primaryPass\s*=\s*returnAddress\s*==\s*s_nativePrimaryArmReturnAddress[\s\S]*supportPass\s*=\s*returnAddress\s*==\s*s_nativeSupportArmReturnAddress[\s\S]*primaryPass\s*\?[\s\S]*captureNativePrimaryFiringGrip\(\)[\s\S]*captureNativeAuthoredSupportGrip\(\)' `
+    'The hook must call the native helper first and capture only Bethesda''s verified paired arm passes, never hFRIK''s later calls.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
     'captureNativePrimaryFiringGrip[\s\S]*weaponTransform\.parPos\s*!=\s*handIndex[\s\S]*invertTransform\(weaponTransform\.refNode->world\)[\s\S]*handTransform\.refNode->world[\s\S]*s_authoredPrimaryHandInWeapon\s*=\s*handInWeapon' `
     'The authored grip must be captured as Bethesda''s pre-hFRIK primary hand in the visible Weapon world frame.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
     'tryResolvePrimaryFiringGripAlignment[\s\S]*expectedWeaponNode->parent\s*!=\s*capturedHandNode[\s\S]*resolveAuthoredPrimaryWeaponWorld\([\s\S]*trackedPrimaryHandWorld[\s\S]*s_authoredPrimaryHandInWeapon' `
     'The experiment must invert the captured native relation onto the tracked primary hand and reject a changed hand/weapon hierarchy.'
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
+    '"LArm_Finger11"[\s\S]*"LArm_Finger53"[\s\S]*captureNativeAuthoredSupportGrip[\s\S]*invertTransform\(weaponTransform\.refNode->world\)[\s\S]*supportHandTransform\.refNode->world[\s\S]*fingerTransform\.refNode->local[\s\S]*s_authoredSupportGripCaptureSequence\.fetch_add' `
+    'The support capture must use the paired native LArm hand-in-weapon relation and all 15 exact first-person finger locals.'
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
+    'tryResolveAuthoredSupportGrip[\s\S]*expectedWeaponNode->parent\s*!=\s*capturedPrimaryHandNode[\s\S]*outSupportHandInWeapon\s*=\s*s_authoredSupportHandInWeapon[\s\S]*outFingerLocalTransforms\s*=\s*s_authoredSupportFingerLocals[\s\S]*kAuthoredSupportFingerTransformMask' `
+    'The support resolver must retain scene identity and publish one complete generation-ready hand/finger frame.'
 
 $nativeAuthorityText = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/animation/NativeAnimationAuthority.cpp')
 $primaryCaptureMatch = [regex]::Match(
@@ -112,12 +118,21 @@ Reject-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
 Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
     'input\.nativeReloadAuthorityActive[\s\S]*endSession\("native-reload-authority"\)[\s\S]*captureSequenceFloor' `
     'Native reload authority must suspend the alignment and require a fresh capture before restoring it.'
+Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
+    'clearAuthoredSupportGripCandidate\(\)[\s\S]*applyAuthoredPrimaryGripWeaponAlignment[\s\S]*tryResolveAuthoredSupportGrip[\s\S]*setAuthoredSupportGripCandidate' `
+    'The support candidate must be frame-ephemeral and published only after the primary weapon alignment establishes its final basis.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'blocksAuthoredPrimaryGripWeaponAlignment[\s\S]{0,700}_firingHandIsLeft[\s\S]{0,180}_weaponNodeOwnershipBlockEngaged[\s\S]{0,180}ownsWeaponTransform\(\)' `
     'Authored alignment must distinguish conflicting weapon-transform ownership from right-primary bookkeeping ownership.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'applyAuthoredPrimaryGripWeaponAlignment[\s\S]*blocksAuthoredPrimaryGripWeaponAlignment\(\)[\s\S]*isWeaponVisualReturnActive\(\)[\s\S]*applyWeaponVisualAuthority' `
     'Authored alignment must reuse the scope-aware weapon visual path and yield to conflicting transform/return authority.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'capturePartGrip[\s\S]*shouldUseAuthoredSupportGrip[\s\S]*providerAuthorityActive\s*=\s*providerPartAuthority\.active[\s\S]*grip\.handWeaponLocal\s*=[\s\S]*fingerLocalTransforms[\s\S]*return\s+true;[\s\S]*tryGetSupportGripEvidenceView' `
+    'Support acquisition must prioritize provider authority, latch the complete authored frame inside its zone, and retain the existing dynamic mesh fallback.'
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthorityPolicy.h' `
+    'shouldUseAuthoredSupportGrip[\s\S]*!input\.providerAuthorityActive[\s\S]*input\.palmDistanceGameUnits\s*<=\s*input\.snapRadiusGameUnits' `
+    'The authored support selector must preserve provider priority and require tight palm-space proximity.'
 Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'applyAuthoredPrimaryGripWeaponAlignment[\s\S]{0,600}isManualOwnershipActive\(\)' `
     'Right-hand PrimaryOnly bookkeeping must not suppress the authored weapon calibration.'
@@ -131,14 +146,15 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'updateAuthoredPrimaryFiringGripExperiment[\s\S]*getCurrentEquippedWeaponOwnershipKey\(\)[\s\S]*weaponOwnershipKey\s*=\s*currentEquippedWeaponFormId\(\)' `
     'The experiment must retain a weapon freshness key when generated weapon collision is disabled.'
 Require-Text 'src/RockConfig.cpp' `
-    'rockAuthoredPrimaryFiringGripTestEnabled\s*=\s*false[\s\S]*GetBoolValue\(\s*EXPERIMENTAL_SECTION,\s*"bAuthoredPrimaryFiringGripTestEnabled"' `
-    'The authored firing-grip experiment must default off and load only from [Experimental].'
+    'rockAuthoredPrimaryFiringGripTestEnabled\s*=\s*false[\s\S]*rockAuthoredSupportGripSnapRadius\s*=\s*2\.0f[\s\S]*GetBoolValue\(\s*EXPERIMENTAL_SECTION,\s*"bAuthoredPrimaryFiringGripTestEnabled"[\s\S]*"fAuthoredSupportGripSnapRadius"[\s\S]*std::clamp\(rockAuthoredSupportGripSnapRadius,\s*0\.25f,\s*12\.0f\)' `
+    'The authored firing-grip experiment must default off and load a bounded support snap radius only from [Experimental].'
 foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
     $configText = Get-Content -Raw -LiteralPath (Join-Path $Root $configPath)
     $experimentalMatch = [regex]::Match($configText, '(?ms)^\[Experimental\]\s*(?<body>.*?)(?=^\[[^\]]+\])')
     if (-not $experimentalMatch.Success -or
-        $experimentalMatch.Groups['body'].Value -notmatch '(?m)^bAuthoredPrimaryFiringGripTestEnabled\s*=\s*false\s*$') {
-        $failures.Add("$configPath`: Authored primary firing-grip experiment must exist under [Experimental] and default off.")
+        $experimentalMatch.Groups['body'].Value -notmatch '(?m)^bAuthoredPrimaryFiringGripTestEnabled\s*=\s*false\s*$' -or
+        $experimentalMatch.Groups['body'].Value -notmatch '(?m)^fAuthoredSupportGripSnapRadius\s*=\s*2\.0\s*$') {
+        $failures.Add("$configPath`: Authored firing-grip experiment and support snap radius must exist under [Experimental] with safe defaults.")
     }
 }
 

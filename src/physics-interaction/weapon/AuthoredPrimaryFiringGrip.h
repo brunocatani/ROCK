@@ -32,9 +32,9 @@ namespace rock
     };
 
     // ROCK derives one generation-bound, modeler-authored primary grip and
-    // inverts it onto hFRIK's live primary hand. Only the equipped weapon is
-    // moved; the hand remains controller-driven and the support hand is never
-    // touched. TwoHandedGrip supplies the shared scene/scope write path.
+    // inverts it onto hFRIK's live primary hand. The paired support relation
+    // is published to TwoHandedGrip as an ephemeral proximity candidate; only
+    // acquisition can latch it, so unrestricted dynamic grabs remain intact.
     class AuthoredPrimaryFiringGripRuntime
     {
     public:
@@ -51,6 +51,7 @@ namespace rock
         RE::NiNode* _weaponNodeIdentity{ nullptr };
         std::uint64_t _weaponOwnershipKey{ 0 };
         std::uint64_t _captureSequenceFloor{ 0 };
+        std::uint64_t _supportCaptureSequenceFloor{ 0 };
         bool _active{ false };
         bool _nativeReloadWasActive{ false };
         bool _sessionLogged{ false };

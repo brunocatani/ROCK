@@ -61,6 +61,7 @@ namespace rock
         _weaponNodeIdentity = nullptr;
         _weaponOwnershipKey = 0;
         _captureSequenceFloor = 0;
+        _supportCaptureSequenceFloor = 0;
         _nativeReloadWasActive = false;
         _sessionLogged = false;
         _applyFailureLogged = false;
@@ -70,8 +71,13 @@ namespace rock
         const AuthoredPrimaryFiringGripFrameInput& input,
         TwoHandedGrip& weaponAuthority)
     {
+        // A candidate is valid only across this pre-update/update pair. Clear
+        // first so every early return falls back to ordinary dynamic grabbing.
+        weaponAuthority.clearAuthoredSupportGripCandidate();
         const auto captureStatus =
             native_animation_authority::queryPrimaryFiringGripCaptureStatus();
+        const auto supportCaptureStatus =
+            native_animation_authority::queryAuthoredSupportGripCaptureStatus();
 
         if (!input.enabled) {
             reset("experiment-disabled");
@@ -81,6 +87,7 @@ namespace rock
         if (input.nativeReloadAuthorityActive) {
             if (!_nativeReloadWasActive) {
                 _captureSequenceFloor = captureStatus.captureSequence;
+                _supportCaptureSequenceFloor = supportCaptureStatus.captureSequence;
             }
             _nativeReloadWasActive = true;
             endSession("native-reload-authority");
@@ -91,6 +98,7 @@ namespace rock
             // frame. One new native graph sample must establish the idle grip.
             _nativeReloadWasActive = false;
             _captureSequenceFloor = captureStatus.captureSequence;
+            _supportCaptureSequenceFloor = supportCaptureStatus.captureSequence;
             endSession("native-reload-ended-awaiting-fresh-capture");
             return;
         }
@@ -103,6 +111,7 @@ namespace rock
             _weaponNodeIdentity = input.weaponNode;
             _weaponOwnershipKey = currentWeaponKey;
             _captureSequenceFloor = captureStatus.captureSequence;
+            _supportCaptureSequenceFloor = supportCaptureStatus.captureSequence;
             _sessionLogged = false;
             _applyFailureLogged = false;
             return;
@@ -174,6 +183,29 @@ namespace rock
 
         _active = true;
         _applyFailureLogged = false;
+
+        RE::NiTransform authoredSupportHandInWeapon{};
+        std::array<RE::NiTransform, 15> authoredSupportFingerLocals{};
+        std::uint16_t authoredSupportFingerMask = 0;
+        std::uint64_t authoredSupportCaptureSequence = 0;
+        if (supportCaptureStatus.valid &&
+            supportCaptureStatus.captureSequence > _supportCaptureSequenceFloor &&
+            native_animation_authority::tryResolveAuthoredSupportGrip(
+                input.weaponNode,
+                authoredSupportHandInWeapon,
+                authoredSupportFingerLocals,
+                authoredSupportFingerMask,
+                authoredSupportCaptureSequence) &&
+            authoredSupportCaptureSequence > _supportCaptureSequenceFloor) {
+            (void)weaponAuthority.setAuthoredSupportGripCandidate(
+                input.weaponNode,
+                authoredSupportHandInWeapon,
+                authoredSupportFingerLocals,
+                authoredSupportFingerMask,
+                input.weaponGenerationKey,
+                authoredSupportCaptureSequence);
+        }
+
         if (!_sessionLogged) {
             ROCK_LOG_INFO(Animation,
                 "Authored primary firing grip weapon alignment active weaponKey=0x{:X} generation=0x{:X} capture={} handMismatch={:.3f}gu weaponCorrection={:.3f}gu originalWeaponT=({:.3f},{:.3f},{:.3f}) alignedWeaponT=({:.3f},{:.3f},{:.3f}) alignedLocalT=({:.3f},{:.3f},{:.3f}) authority=weapon-only primaryHand=controller-driven",

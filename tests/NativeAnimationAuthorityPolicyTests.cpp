@@ -139,6 +139,60 @@ int main()
         return !shouldApplyAuthoredPrimaryFiringGrip(input);
     }());
 
+    constexpr AuthoredSupportGripCandidateInput authoredSupportEligible{
+        .featureEnabled = true,
+        .rightFiringTopology = true,
+        .supportHandIsLeft = true,
+        .providerAuthorityActive = false,
+        .captureValid = true,
+        .weaponIdentityMatches = true,
+        .generationMatches = true,
+        .completeFingerPose = true,
+        .palmDistanceGameUnits = 1.25f,
+        .snapRadiusGameUnits = 2.0f,
+    };
+    static_assert(shouldUseAuthoredSupportGrip(authoredSupportEligible));
+    static_assert([=] {
+        auto input = authoredSupportEligible;
+        input.palmDistanceGameUnits = input.snapRadiusGameUnits;
+        return shouldUseAuthoredSupportGrip(input);
+    }());
+    static_assert([=] {
+        auto input = authoredSupportEligible;
+        input.palmDistanceGameUnits = 2.01f;
+        return !shouldUseAuthoredSupportGrip(input);
+    }());
+    static_assert([=] {
+        auto input = authoredSupportEligible;
+        input.providerAuthorityActive = true;
+        return !shouldUseAuthoredSupportGrip(input);
+    }());
+    static_assert([=] {
+        auto input = authoredSupportEligible;
+        input.rightFiringTopology = false;
+        return !shouldUseAuthoredSupportGrip(input);
+    }());
+    static_assert([=] {
+        auto input = authoredSupportEligible;
+        input.supportHandIsLeft = false;
+        return !shouldUseAuthoredSupportGrip(input);
+    }());
+    static_assert([=] {
+        auto input = authoredSupportEligible;
+        input.generationMatches = false;
+        return !shouldUseAuthoredSupportGrip(input);
+    }());
+    static_assert([=] {
+        auto input = authoredSupportEligible;
+        input.captureValid = false;
+        return !shouldUseAuthoredSupportGrip(input);
+    }());
+    static_assert([=] {
+        auto input = authoredSupportEligible;
+        input.completeFingerPose = false;
+        return !shouldUseAuthoredSupportGrip(input);
+    }());
+
     constexpr LocalReloadLeaseState awaitingReload{
         .watchdogFramesRemaining = 600,
         .startSequenceAtArm = 10,

@@ -65,6 +65,20 @@ namespace rock::native_animation_authority_policy
         bool leftHandedMode{ false };
     };
 
+    struct AuthoredSupportGripCandidateInput
+    {
+        bool featureEnabled{ false };
+        bool rightFiringTopology{ false };
+        bool supportHandIsLeft{ false };
+        bool providerAuthorityActive{ false };
+        bool captureValid{ false };
+        bool weaponIdentityMatches{ false };
+        bool generationMatches{ false };
+        bool completeFingerPose{ false };
+        float palmDistanceGameUnits{ 0.0f };
+        float snapRadiusGameUnits{ 0.0f };
+    };
+
     [[nodiscard]] constexpr bool shouldApplyAuthoredPrimaryFiringGrip(
         const AuthoredPrimaryFiringGripEligibility& input)
     {
@@ -84,6 +98,29 @@ namespace rock::native_animation_authority_policy
                !input.weaponVisualReturnActive &&
                !input.primaryHandHoldingObject &&
                !input.leftHandedMode;
+    }
+
+    /*
+     * Explicit consumer/provider authority remains the highest-priority part
+     * grab. Bethesda's authored support grip is selected only at acquisition,
+     * only for the paired left support hand, and only when its live palm is
+     * already inside the tight authored snap zone. Every other case falls
+     * through to ROCK's unrestricted dynamic mesh grab.
+     */
+    [[nodiscard]] constexpr bool shouldUseAuthoredSupportGrip(
+        const AuthoredSupportGripCandidateInput& input)
+    {
+        return input.featureEnabled &&
+               input.rightFiringTopology &&
+               input.supportHandIsLeft &&
+               !input.providerAuthorityActive &&
+               input.captureValid &&
+               input.weaponIdentityMatches &&
+               input.generationMatches &&
+               input.completeFingerPose &&
+               input.palmDistanceGameUnits >= 0.0f &&
+               input.snapRadiusGameUnits > 0.0f &&
+               input.palmDistanceGameUnits <= input.snapRadiusGameUnits;
     }
 
     [[nodiscard]] constexpr LocalReloadLeaseStep advanceLocalReloadLease(

@@ -1,11 +1,13 @@
 #pragma once
 
+#include "RE/NetImmerse/NiTransform.h"
+
+#include <array>
 #include <cstdint>
 
 namespace RE
 {
     class NiNode;
-    class NiTransform;
 }
 
 namespace rock::native_animation_authority
@@ -36,23 +38,37 @@ namespace rock::native_animation_authority
         bool valid{ false };
     };
 
+    struct AuthoredSupportGripCaptureStatus
+    {
+        std::uint64_t captureSequence{ 0 };
+        bool valid{ false };
+    };
+
     // Install only after FRIK has emitted kSkeletonReady and has already
     // applied its verified PostUpdateAnimationGraphManager NOP patch.
     [[nodiscard]] bool installPostUpdateHook();
 
     void setRuntimeEnabled(bool enabled);
     // Independent ROCK-only experiment capture. A byte-validated native arm
-    // hook records Bethesda's primary-hand pose before hFRIK replaces the
-    // weapon basis. The runtime can then invert that relation and place the
-    // complete weapon on hFRIK's live controller-driven primary hand.
+    // hook records Bethesda's paired primary/support poses before hFRIK
+    // replaces them. The runtime inverts the primary relation onto the live
+    // controller and offers the support relation as a proximity-only grip
+    // candidate; dynamic support grabbing remains the fallback.
     void setPrimaryFiringGripCaptureEnabled(bool enabled);
     [[nodiscard]] PrimaryFiringGripCaptureStatus queryPrimaryFiringGripCaptureStatus();
+    [[nodiscard]] AuthoredSupportGripCaptureStatus queryAuthoredSupportGripCaptureStatus();
     [[nodiscard]] bool tryResolvePrimaryFiringGripAlignment(
         const RE::NiNode* expectedWeaponNode,
         const RE::NiTransform& liveWeaponWorld,
         const RE::NiTransform& trackedPrimaryHandWorld,
         RE::NiTransform& outWeaponWorld,
         RE::NiTransform& outCurrentAuthoredHandWorld,
+        std::uint64_t& outCaptureSequence);
+    [[nodiscard]] bool tryResolveAuthoredSupportGrip(
+        const RE::NiNode* expectedWeaponNode,
+        RE::NiTransform& outSupportHandInWeapon,
+        std::array<RE::NiTransform, 15>& outFingerLocalTransforms,
+        std::uint16_t& outFingerLocalTransformMask,
         std::uint64_t& outCaptureSequence);
     void requestLocalReloadTestLease();
     void beginRockFrame();

@@ -264,6 +264,22 @@ namespace rock
             const RE::NiTransform& solvedWeaponWorld,
             std::uint64_t currentWeaponGenerationKey);
 
+        /*
+         * Ephemeral pre-update candidate derived from Bethesda's paired
+         * support-arm pass. AuthoredPrimaryFiringGripRuntime clears it at the
+         * start of every frame and republishes only a fresh, generation-bound
+         * relation. capturePartGrip latches it only inside the configured
+         * proximity zone; it never changes an already-active grip.
+         */
+        void clearAuthoredSupportGripCandidate();
+        bool setAuthoredSupportGripCandidate(
+            RE::NiNode* weaponNode,
+            const RE::NiTransform& handWeaponLocal,
+            const std::array<RE::NiTransform, 15>& fingerLocalTransforms,
+            std::uint16_t fingerLocalTransformMask,
+            std::uint64_t weaponGenerationKey,
+            std::uint64_t captureSequence);
+
         bool tryResolveNativeScopeGeometryDecision(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, RE::NiNode* hmdNode, const RE::NiPoint3& hmdSampleOffsetLocal,
             const native_scope_activation_geometry::ConeThresholds& thresholds, bool nativeScopeAlreadyActive, bool nativeGeometryDecision, bool& outRockGeometryDecision);
 
@@ -504,6 +520,8 @@ namespace rock
             WeaponGripPoseId gripPose{ WeaponGripPoseId::BarrelWrap };
             WeaponPartKind partKind{ WeaponPartKind::Other };
             WeaponProviderPartAuthority providerPartAuthority{};
+            bool authoredSupportGrip{ false };
+            std::uint64_t authoredSupportCaptureSequence{ 0 };
             /*
              * AttachOnly glue: the hand stays visually attached to the part
              * (source frames survive part-carry so it follows provider-driven
@@ -536,6 +554,20 @@ namespace rock
             bool hasFingerSplay{ false };
             bool hasFingerLocalTransforms{ false };
             LockedHandVisualLerpState visualLerp{};
+        };
+
+        struct AuthoredSupportGripCandidate
+        {
+            // Non-owning identity witness, valid only for the current ROCK
+            // pre-update/update pair. It is never dereferenced after the
+            // candidate is cleared or across a weapon-generation boundary.
+            RE::NiNode* weaponNode{ nullptr };
+            RE::NiTransform handWeaponLocal{};
+            std::array<RE::NiTransform, 15> fingerLocalTransforms{};
+            std::uint16_t fingerLocalTransformMask{ 0 };
+            std::uint64_t weaponGenerationKey{ 0 };
+            std::uint64_t captureSequence{ 0 };
+            bool valid{ false };
         };
 
         WeaponPartGrip& partGrip(bool isLeft) { return _partGrips[isLeft ? 0u : 1u]; }
@@ -841,6 +873,7 @@ namespace rock
         NativeScopeOverlayCalibrationState _nativeScopeOverlayCalibration{};
 
         std::array<WeaponPartGrip, 2> _partGrips{};
+        AuthoredSupportGripCandidate _authoredSupportGripCandidate{};
 
         /*
          * Monotonic capture sequences so API consumers can detect a re-grab

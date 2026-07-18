@@ -76,10 +76,11 @@ namespace rock
         // Local validation path only: each ROCK-routed native reload arms a
         // bounded Bethesda arms/hands/weapon animation-authority lease.
         bool rockNativeReloadAnimationAuthorityTestEnabled = false;
-        // Local validation path only: solve the primary firing hand to the
-        // flat animation's authored RArm_Hand -> Weapon relation while leaving
-        // the live weapon/controller transform untouched.
+        // Local validation path only: align the weapon to the flat animation's
+        // authored primary relation and expose its paired support grip as a
+        // tight, acquisition-only priority candidate.
         bool rockAuthoredPrimaryFiringGripTestEnabled = false;
+        float rockAuthoredSupportGripSnapRadius = 2.0f;
 
         int rockLogLevel = 2;
         std::string rockLogPattern = "%Y-%m-%d %H:%M:%S.%e [%l] %v";

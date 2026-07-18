@@ -307,7 +307,8 @@ namespace rock::offsets
      * 0x140EF6280 and the paired calls at 0x140EF6108/0x140EF614B. In
      * right-handed mode the first call uses PlayerNodes +0x718 while the
      * second uses +0x790; module+0xEF610D is therefore the exact return site
-     * for Bethesda's primary-hand pass. Its player-update caller at
+     * for Bethesda's primary-hand pass and module+0xEF6150 is the exact
+     * return site for the paired secondary/offhand pass. Its player-update caller at
      * module+0xD83F0F precedes the framework/FRIK main-loop injection at
      * module+0xD8405E in the same native routine, proving this snapshot is
      * taken before hFRIK's arm/weapon pass. ROCK validates the complete
@@ -315,6 +316,7 @@ namespace rock::offsets
      */
     constexpr std::uintptr_t kFunc_UpdateFirstPersonArm = 0xEF6280;
     constexpr std::uintptr_t kCallsite_UpdateFirstPersonArmPrimaryReturn = 0xEF610D;
+    constexpr std::uintptr_t kCallsite_UpdateFirstPersonArmSecondaryReturn = 0xEF6150;
 
     /*
      * FO4VR native-scope geometry boundary. Raw-disassembly verified
