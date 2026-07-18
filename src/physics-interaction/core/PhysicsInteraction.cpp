@@ -3358,7 +3358,8 @@ namespace rock
             .weaponDrawn = runtime.weaponDrawn,
             .weaponVisible = weaponNode && f4vr::isNodeVisible(weaponNode),
             .nativeReloadAuthorityActive = nativeAuthorityStatus.effectiveFlags != 0,
-            .manualWeaponAuthorityActive = _twoHandedGrip.isManualOwnershipActive(),
+            .conflictingWeaponTransformAuthorityActive =
+                _twoHandedGrip.blocksAuthoredPrimaryGripWeaponAlignment(),
             .weaponVisualReturnActive = _twoHandedGrip.isWeaponVisualReturnActive(),
             .primaryHandHoldingObject = primaryHandHoldingObject,
             .leftHandedMode = leftHandedMode,

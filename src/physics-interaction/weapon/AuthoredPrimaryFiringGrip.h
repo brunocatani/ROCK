@@ -25,7 +25,7 @@ namespace rock
         bool weaponDrawn{ false };
         bool weaponVisible{ false };
         bool nativeReloadAuthorityActive{ false };
-        bool manualWeaponAuthorityActive{ false };
+        bool conflictingWeaponTransformAuthorityActive{ false };
         bool weaponVisualReturnActive{ false };
         bool primaryHandHoldingObject{ false };
         bool leftHandedMode{ false };

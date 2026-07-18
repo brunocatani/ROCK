@@ -256,7 +256,8 @@ namespace rock
          * primary grip. This intentionally reuses the complete equipped-
          * weapon visual path so the scope camera and later manual-grip state
          * observe the same corrected frame. It fails closed while a ROCK
-         * manual authority or its weapon-return transition owns the node.
+         * conflicting weapon-transform authority or its return transition
+         * owns the node.
          */
         bool applyAuthoredPrimaryGripWeaponAlignment(
             RE::NiNode* weaponNode,
@@ -326,6 +327,15 @@ namespace rock
         weapon_support_authority_policy::WeaponSupportAuthorityMode getAuthorityMode() const { return _authorityMode; }
 
         bool ownsWeaponTransform() const;
+
+        /*
+         * The manual-ownership state machine also tracks right-hand
+         * PrimaryOnly input ownership, but that state deliberately leaves the
+         * weapon transform with hFRIK. Authored calibration must continue to
+         * correct that native carry. Only a ROCK weapon solve or left-firing
+         * topology conflicts with the authored right-hand alignment.
+         */
+        bool blocksAuthoredPrimaryGripWeaponAlignment() const;
 
         bool getSolvedWeaponTransform(RE::NiTransform& outTransform) const;
 

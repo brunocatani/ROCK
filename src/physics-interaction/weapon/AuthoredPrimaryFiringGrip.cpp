@@ -122,7 +122,8 @@ namespace rock
             .captureNewerThanWeaponBoundary =
                 captureStatus.captureSequence > _captureSequenceFloor,
             .nativeReloadAuthorityActive = input.nativeReloadAuthorityActive,
-            .manualWeaponAuthorityActive = input.manualWeaponAuthorityActive,
+            .conflictingWeaponTransformAuthorityActive =
+                input.conflictingWeaponTransformAuthorityActive,
             .weaponVisualReturnActive = input.weaponVisualReturnActive,
             .primaryHandHoldingObject = input.primaryHandHoldingObject,
             .leftHandedMode = input.leftHandedMode,

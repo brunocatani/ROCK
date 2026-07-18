@@ -102,7 +102,7 @@ int main()
         .captureValid = true,
         .captureNewerThanWeaponBoundary = true,
         .nativeReloadAuthorityActive = false,
-        .manualWeaponAuthorityActive = false,
+        .conflictingWeaponTransformAuthorityActive = false,
         .weaponVisualReturnActive = false,
         .primaryHandHoldingObject = false,
         .leftHandedMode = false,
@@ -115,7 +115,7 @@ int main()
     }());
     static_assert([=] {
         auto input = authoredGripEligible;
-        input.manualWeaponAuthorityActive = true;
+        input.conflictingWeaponTransformAuthorityActive = true;
         return !shouldApplyAuthoredPrimaryFiringGrip(input);
     }());
     static_assert([=] {

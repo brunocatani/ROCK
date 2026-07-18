@@ -113,8 +113,17 @@ Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
     'input\.nativeReloadAuthorityActive[\s\S]*endSession\("native-reload-authority"\)[\s\S]*captureSequenceFloor' `
     'Native reload authority must suspend the alignment and require a fresh capture before restoring it.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'applyAuthoredPrimaryGripWeaponAlignment[\s\S]*isManualOwnershipActive\(\)[\s\S]*isWeaponVisualReturnActive\(\)[\s\S]*applyWeaponVisualAuthority' `
-    'Authored alignment must reuse the scope-aware weapon visual path and yield to manual/return authority.'
+    'blocksAuthoredPrimaryGripWeaponAlignment[\s\S]{0,700}_firingHandIsLeft[\s\S]{0,180}_weaponNodeOwnershipBlockEngaged[\s\S]{0,180}ownsWeaponTransform\(\)' `
+    'Authored alignment must distinguish conflicting weapon-transform ownership from right-primary bookkeeping ownership.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'applyAuthoredPrimaryGripWeaponAlignment[\s\S]*blocksAuthoredPrimaryGripWeaponAlignment\(\)[\s\S]*isWeaponVisualReturnActive\(\)[\s\S]*applyWeaponVisualAuthority' `
+    'Authored alignment must reuse the scope-aware weapon visual path and yield to conflicting transform/return authority.'
+Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'applyAuthoredPrimaryGripWeaponAlignment[\s\S]{0,600}isManualOwnershipActive\(\)' `
+    'Right-hand PrimaryOnly bookkeeping must not suppress the authored weapon calibration.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'conflictingWeaponTransformAuthorityActive\s*=\s*_twoHandedGrip\.blocksAuthoredPrimaryGripWeaponAlignment\(\)' `
+    'Authored alignment eligibility must consume the narrow transform-conflict predicate.'
 Require-Text 'src/ROCKMain.cpp' `
     's_physicsInteraction->updateAuthoredPrimaryFiringGripExperiment\(\);[\s\S]{0,180}s_physicsInteraction->update\(\)' `
     'The authored weapon alignment must run before ROCK collision, probes, and manual grip capture.'

@@ -1501,6 +1501,22 @@ namespace rock
                weapon_support_authority_policy::supportGripOwnsWeaponTransform(_authorityMode);
     }
 
+    bool TwoHandedGrip::blocksAuthoredPrimaryGripWeaponAlignment() const
+    {
+        /*
+         * Right-firing PrimaryOnly is lifecycle/input ownership only: hFRIK
+         * still publishes the native Weapon transform every frame. Treating
+         * that state as a competing transform owner made the authored
+         * calibration disappear immediately after a support-hand return.
+         * Left-firing carry always remains ROCK-owned even in PrimaryOnly or
+         * visual-only support mode, and the topology blocker is included as a
+         * fail-closed witness if state and bridge cleanup ever diverge.
+         */
+        return _firingHandIsLeft ||
+               _weaponNodeOwnershipBlockEngaged ||
+               ownsWeaponTransform();
+    }
+
     bool TwoHandedGrip::isWeaponVisualReturnActive() const
     {
         return _returningWeaponVisual.localTransition.active;
@@ -4031,7 +4047,7 @@ namespace rock
         const RE::NiTransform& solvedWeaponWorld,
         const std::uint64_t currentWeaponGenerationKey)
     {
-        if (isManualOwnershipActive() || isWeaponVisualReturnActive()) {
+        if (blocksAuthoredPrimaryGripWeaponAlignment() || isWeaponVisualReturnActive()) {
             return false;
         }
         return applyWeaponVisualAuthority(

@@ -57,7 +57,7 @@ namespace rock::native_animation_authority_policy
         bool captureValid{ false };
         bool captureNewerThanWeaponBoundary{ false };
         bool nativeReloadAuthorityActive{ false };
-        bool manualWeaponAuthorityActive{ false };
+        bool conflictingWeaponTransformAuthorityActive{ false };
         bool weaponVisualReturnActive{ false };
         bool primaryHandHoldingObject{ false };
         // Flat Fallout 4 authors its firing pose on RArm_Hand -> Weapon.
@@ -80,7 +80,7 @@ namespace rock::native_animation_authority_policy
                input.captureValid &&
                input.captureNewerThanWeaponBoundary &&
                !input.nativeReloadAuthorityActive &&
-               !input.manualWeaponAuthorityActive &&
+               !input.conflictingWeaponTransformAuthorityActive &&
                !input.weaponVisualReturnActive &&
                !input.primaryHandHoldingObject &&
                !input.leftHandedMode;
