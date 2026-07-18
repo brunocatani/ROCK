@@ -26,6 +26,13 @@ int main()
     static_assert(!weaponIsDirectChildOfHand(4, 2, parents));
     static_assert(!weaponIsDirectChildOfHand(6, 3, parents));
 
+    static_assert(animationResourceState(0x30000000u) == 3u);
+    static_assert(animationResourceState(0x4FFFFFFFu) == 4u);
+    static_assert(animationResourceCanExposeData(0x30000000u));
+    static_assert(animationResourceCanExposeData(0x40000000u));
+    static_assert(!animationResourceCanExposeData(0x20000000u));
+    static_assert(!animationResourceCanExposeData(0x50000000u));
+
     static_assert(clipPathHasStem("UMPAnims\\VerticalGrip\\WPNIdleReady.hkx", "WPNIdleReady"));
     static_assert(clipPathHasStem("Animations/Weapons/wpnidle.HKX", "WPNIdle"));
     static_assert(clipPathHasStem("WPNIdle", "wpnidle"));

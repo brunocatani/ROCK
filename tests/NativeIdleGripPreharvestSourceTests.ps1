@@ -26,8 +26,8 @@ $source = 'src/physics-interaction/weapon/NativeIdleGripPreharvest.cpp'
 $policy = 'src/physics-interaction/weapon/NativeIdleGripPreharvestPolicy.h'
 
 Require-Text $source `
-    'kSimpleAnimationGraphManagerHolderCtor\s*=\s*0x0811F10[\s\S]*kCreateBackgroundSimpleManager\s*=\s*0x0811FE0[\s\S]*kIsAnimationLoadingComplete\s*=\s*0x08122C0[\s\S]*kRequestAnimationSubGraph\s*=\s*0x10162B0[\s\S]*kGetClipGeneratorBinding\s*=\s*0x1774800[\s\S]*kGetAnimationFilesForSubgraph\s*=\s*0x1769140[\s\S]*kFindBoneWithName\s*=\s*0x190A580' `
-    'The proof must remain pinned to the independently verified FO4VR plain-holder, request, clip, and skeleton functions.'
+    'kSimpleAnimationGraphManagerHolderCtor\s*=\s*0x0811F10[\s\S]*kCreateBackgroundSimpleManager\s*=\s*0x0811FE0[\s\S]*kIsAnimationLoadingComplete\s*=\s*0x08122C0[\s\S]*kRequestAnimationSubGraph\s*=\s*0x10162B0[\s\S]*kGetClipGeneratorBinding\s*=\s*0x1774800[\s\S]*kGetAnimationFilesForSubgraph\s*=\s*0x1769140[\s\S]*kLoadIdleAnimationResource\s*=\s*0x1728BA0[\s\S]*kMoveAnimationResourceHandle\s*=\s*0x172AB40[\s\S]*kIsHkxDerivativeDbData\s*=\s*0x152C0D0[\s\S]*kRetrieveBindingFromContainer\s*=\s*0x17865C0[\s\S]*kFindBoneWithName\s*=\s*0x190A580' `
+    'The proof must remain pinned to the independently verified FO4VR graph, direct idle-resource, binding, and skeleton functions.'
 Require-Text $source `
     'RUNTIME_VR_1_2_72[\s\S]*validateNativeEntry\([\s\S]*"SimpleAnimationGraphManagerHolder::ctor"[\s\S]*validateNativeEntry\("GetClipGeneratorBinding"' `
     'Hardcoded FO4VR calls must retain executable identity and live-byte gates.'
@@ -37,6 +37,9 @@ Require-Text $source `
 Require-Text $source `
     'validateNativeEntry\("SimpleAnimationGraphManagerHolder::IsAnimationLoadingComplete",\s*kIsAnimationLoadingComplete,\s*std::array<std::uint8_t,\s*9>\{\s*0x48,\s*0x8B,\s*0x41,\s*0x10,\s*0x48,\s*0x85,\s*0xC0,\s*0x74,\s*0x0C\s*\}\)' `
     'The plain-holder completion poll must retain its verified Fallout4VR.exe 1.2.72 byte gate.'
+Require-Text $source `
+    'validateNativeEntry\("LoadIdle",\s*kLoadIdleAnimationResource[\s\S]*validateNativeEntry\("BShkbHkxDB resource-handle move assignment",\s*kMoveAnimationResourceHandle[\s\S]*validateNativeEntry\("BShkbHkxDBUtils::IsHkxDerivativeDBData",\s*kIsHkxDerivativeDbData[\s\S]*validateNativeEntry\("BShkbUtils::RetrieveBindingFromContainer",\s*kRetrieveBindingFromContainer' `
+    'Every direct idle-resource call must retain its independently verified Fallout4VR.exe 1.2.72 live-byte gate.'
 Require-Text $policy `
     'kFirstPersonGraphIndex\s*=\s*1[\s\S]*graphCount\s*<=\s*kFirstPersonGraphIndex[\s\S]*identifierCount\s*<=\s*kFirstPersonGraphIndex' `
     'The sampler must fail closed unless Bethesda produced the paired first-person graph and identifier.'
@@ -70,6 +73,12 @@ Require-Text $source `
 Require-Text $source `
     'Phase::BaseGraphsLoading[\s\S]*isAnimationLoadingComplete[\s\S]*requestAnimationSubGraph[\s\S]*Phase::WeaponSubgraphLoading[\s\S]*isAnimationSubGraphLoaded' `
     'Off-screen native loads must poll both asynchronous load stages before sampling.'
+Require-Text $source `
+    'getClipGeneratorBinding[\s\S]*loadIdleAnimationResource[\s\S]*Phase::IdleClipLoading[\s\S]*animationResourceCanExposeData[\s\S]*retrieveBindingFromContainer[\s\S]*trySampleAnimationBinding' `
+    'An idle absent from the behavior clip map must use Bethesda''s retained asynchronous HKX resource path and the same frame-zero sampler.'
+Require-Text $source `
+    'idleClipResource\.entry[\s\S]*moveAnimationResourceHandle\(&job\.idleClipResource,\s*&empty\)[\s\S]*releaseAnimationSubGraph[\s\S]*graphHolderDtor' `
+    'The retained idle HKX must be released through Bethesda''s BShkbHkxDB handle operation before graph teardown.'
 Require-Text $source `
     'releaseAnimationSubGraph\([\s\S]*graphHolderDtor' `
     'Weapon subgraphs must be released before destroying the plain graph holder.'

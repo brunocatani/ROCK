@@ -8,6 +8,8 @@
 namespace rock::native_idle_grip_preharvest_policy
 {
     inline constexpr std::size_t kFirstPersonGraphIndex = 1;
+    inline constexpr std::uint32_t kAnimationResourceStateMask = 0x70000000u;
+    inline constexpr unsigned kAnimationResourceStateShift = 28;
 
     struct FirstPersonSelection
     {
@@ -62,6 +64,22 @@ namespace rock::native_idle_grip_preharvest_policy
     {
         return weaponBoneIndex >= 0 && handBoneIndex >= 0 && static_cast<std::size_t>(weaponBoneIndex) < parentIndices.size() &&
             parentIndices[static_cast<std::size_t>(weaponBoneIndex)] == handBoneIndex;
+    }
+
+    /*
+     * AnimationFileManagerSingleton only dereferences a BShkbHkxDB entry's
+     * BSAnimationDBData pointer in resource states 3 and 4. Mirror that exact
+     * native gate before ROCK inspects the retained off-screen idle handle.
+     */
+    [[nodiscard]] constexpr std::uint32_t animationResourceState(const std::uint32_t flags) noexcept
+    {
+        return (flags & kAnimationResourceStateMask) >> kAnimationResourceStateShift;
+    }
+
+    [[nodiscard]] constexpr bool animationResourceCanExposeData(const std::uint32_t flags) noexcept
+    {
+        const auto state = animationResourceState(flags);
+        return state == 3u || state == 4u;
     }
 
     [[nodiscard]] constexpr bool clipPathHasStem(const std::string_view path, const std::string_view expectedStem) noexcept
