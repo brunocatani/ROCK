@@ -10,6 +10,7 @@
 #include "physics-interaction/grab/FrikWeaponOffsetCache.h"
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
+#include "physics-interaction/weapon/NativeIdleGripPreharvest.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 #include "physics-interaction/weapon/WeaponGripAuthorityPolicy.h"
 
@@ -244,6 +245,9 @@ namespace rock::loose_weapon_grip_zone
 
     void updateHeldLooseWeapon(const bool isLeft, const bool holdingLooseWeapon, RE::TESObjectREFR* heldRef, const bool heldSettled, const float dt)
     {
+        native_idle_grip_preharvest::observeCandidate(
+            holdingLooseWeapon ? heldRef : nullptr);
+
         auto& state = s_handStates[handIndex(isLeft)];
         if (!holdingLooseWeapon || !heldRef) {
             state = {};
@@ -300,6 +304,8 @@ namespace rock::loose_weapon_grip_zone
 
     void updateHoverCandidateWeapon(const bool isLeft, RE::TESObjectREFR* candidateRef)
     {
+        native_idle_grip_preharvest::observeCandidate(candidateRef);
+
         auto& state = s_hoverStates[handIndex(isLeft)];
         if (!candidateRef) {
             state = {};

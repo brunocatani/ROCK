@@ -535,6 +535,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKNativeAnimationAuthorityPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKNativeAnimationAuthorityPolicyTests)
 
+  add_executable(ROCKNativeIdleGripPreharvestPolicyTests
+    "${ROOT_DIR}/tests/NativeIdleGripPreharvestPolicyTests.cpp"
+  )
+  target_compile_features(ROCKNativeIdleGripPreharvestPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKNativeIdleGripPreharvestPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKNativeIdleGripPreharvestPolicyTests)
+
   add_executable(ROCKPhysicsCallbackQuiescenceGateTests
     "${ROOT_DIR}/tests/PhysicsCallbackQuiescenceGateTests.cpp"
   )
@@ -602,6 +609,7 @@ if(BUILD_ROCK_TESTS)
     ROCKNativeGrabHapticSuppressionPolicyTests
     ROCKPipboyEquipPolicyTests
     ROCKNativeAnimationAuthorityPolicyTests
+    ROCKNativeIdleGripPreharvestPolicyTests
     ROCKPhysicsCallbackQuiescenceGateTests
     ROCKDynamicHandTwinGeometryPolicyTests
     ROCKDynamicHandCollisionTransitionPolicyTests
