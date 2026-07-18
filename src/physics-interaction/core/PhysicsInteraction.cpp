@@ -59,6 +59,7 @@
 #include "physics-interaction/stash/ShoulderStashPolicy.h"
 #include "physics-interaction/stash/ShoulderStashTransfer.h"
 #include "physics-interaction/weapon/LooseWeaponGripZone.h"
+#include "physics-interaction/weapon/NativeIdleGripPreharvest.h"
 #include "physics-interaction/weapon/PipboyEquipRuntime.h"
 #include "physics-interaction/weapon/WeaponEquipTransfer.h"
 #include "physics-interaction/weapon/WeaponInteraction.h"
@@ -8217,6 +8218,21 @@ namespace rock
                 eventData.flags |= ROCK_GRAB_EVENT_FLAG_INTENSITY_VALID;
                 dispatchGrabEvent(eventData);
             };
+
+            /*
+             * Native idle-grip harvesting is acquisition preparation, not a
+             * hover-haptic side effect. Offer the held loose weapon or the raw
+             * open-hand selection before grab input is committed below. A null
+             * candidate still advances an in-flight asynchronous load, so pull
+             * travel can hide the load without blocking the frame thread.
+             */
+            RE::TESObjectREFR* nativeIdleGripCandidate = nullptr;
+            if (hand.isHoldingLooseWeapon()) {
+                nativeIdleGripCandidate = hand.getHeldRef();
+            } else if (!hand.isHolding() && hand.hasSelection() && !input_remap_runtime::isMenuInputActive()) {
+                nativeIdleGripCandidate = hand.getSelection().refr;
+            }
+            native_idle_grip_preharvest::observeCandidate(nativeIdleGripCandidate);
 
             loose_weapon_grip_zone::updateHeldLooseWeapon(
                 isLeft,

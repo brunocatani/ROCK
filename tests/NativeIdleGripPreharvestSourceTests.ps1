@@ -97,9 +97,12 @@ Require-Text $source `
 Require-Text $source `
     'authored_weapon_grip_library::publish' `
     'The proof must publish only through ROCK''s bounded authored-grip cache.'
-Require-Text 'src/physics-interaction/weapon/LooseWeaponGripZone.cpp' `
-    'NativeIdleGripPreharvest\.h[\s\S]*observeCandidate\([\s\S]*updateHoverCandidateWeapon[\s\S]*observeCandidate\(candidateRef\)' `
-    'Held and hover loose-weapon paths must advance the demand-driven preharvest state machine.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'NativeIdleGripPreharvest\.h[\s\S]*nativeIdleGripCandidate[\s\S]*hand\.isHoldingLooseWeapon\(\)[\s\S]*hand\.hasSelection\(\)[\s\S]*native_idle_grip_preharvest::observeCandidate\(nativeIdleGripCandidate\)[\s\S]*rockGripZoneHoverHapticsEnabled' `
+    'The frame owner must offer held or raw selected weapons before input commit, independently of optional hover haptics.'
+Reject-Text 'src/physics-interaction/weapon/LooseWeaponGripZone.cpp' `
+    'native_idle_grip_preharvest::observeCandidate' `
+    'Native preharvest scheduling must not become coupled to grip-zone projection or hover-haptic feature gates again.'
 Reject-Text $source `
     'PAPER|PAPERRedux|PAPER_Redux' `
     'The narrow ROCK proof must not acquire a PAPER dependency.'
