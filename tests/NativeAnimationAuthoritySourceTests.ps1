@@ -77,21 +77,30 @@ Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
     'rockNativeReloadAnimationAuthorityTestEnabled[\s\S]*requestLocalReloadTestLease\(\)' `
     'The ROCK-only validation flag must arm a bounded lease only when a native reload dispatch succeeds.'
 
+Require-Text 'src/physics-interaction/native/HavokOffsets.h' `
+    'kFunc_UpdateFirstPersonArm\s*=\s*0xEF6280[\s\S]*kCallsite_UpdateFirstPersonArmPrimaryReturn\s*=\s*0xEF610D' `
+    'The primary firing-grip probe must stay pinned to the independently verified FO4VR helper and Bethesda primary-call return.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
-    'capturePrimaryFiringGrip[\s\S]*weaponTransform\.parPos\s*!=\s*s_cache\.sourcePrimaryHandIndex[\s\S]*s_authoredPrimaryWeaponInHand\s*=\s*weaponTransform\.local' `
-    'The authored primary grip must come from the native flattened Weapon local under RArm_Hand.'
+    'kExpectedUpdateFirstPersonArmPrefix[\s\S]*0x48,\s*0x8B,\s*0xC4,\s*0x55,\s*0x53,\s*0x41,\s*0x56,[\s\S]*0x48,\s*0x8D,\s*0xA8,\s*0xF8,\s*0xFE,\s*0xFF,\s*0xFF[\s\S]*kFunc_UpdateFirstPersonArm' `
+    'The native arm interception must validate the complete position-independent FO4VR prologue before patching.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
-    'resolveAuthoredPrimaryHandWorld\([\s\S]*liveWeaponWorld[\s\S]*s_authoredPrimaryWeaponInHand' `
-    'The experiment must solve the hand from the unchanged live weapon and authored Weapon-in-hand relation.'
+    'onUpdateFirstPersonArm[\s\S]*_ReturnAddress\(\)[\s\S]*s_originalUpdateFirstPersonArm\([\s\S]*returnAddress\s*!=\s*s_nativePrimaryArmReturnAddress[\s\S]*captureNativePrimaryFiringGrip\(\)' `
+    'The hook must call the native helper first and capture only Bethesda''s verified primary pass, never hFRIK''s later calls.'
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
+    'captureNativePrimaryFiringGrip[\s\S]*weaponTransform\.parPos\s*!=\s*handIndex[\s\S]*invertTransform\(weaponTransform\.refNode->world\)[\s\S]*handTransform\.refNode->world[\s\S]*s_authoredPrimaryHandInWeapon\s*=\s*handInWeapon' `
+    'The authored grip must be captured as Bethesda''s pre-hFRIK primary hand in the visible Weapon world frame.'
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
+    'resolveAuthoredPrimaryHandWorld\([\s\S]*liveWeaponWorld[\s\S]*s_authoredPrimaryHandInWeapon' `
+    'The experiment must carry the captured native relation into the unchanged live weapon world.'
 
 $nativeAuthorityText = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/animation/NativeAnimationAuthority.cpp')
 $primaryCaptureMatch = [regex]::Match(
     $nativeAuthorityText,
-    '(?s)capturePrimaryFiringGrip\(const BoneTree& source\).*?(?=\s+void captureNativePose\()')
+    '(?s)captureNativePrimaryFiringGrip\(\).*?(?=\s+__declspec\(noinline\))')
 if (-not $primaryCaptureMatch.Success) {
-    $failures.Add('The authored primary firing-grip capture function could not be isolated for source validation.')
-} elseif ($primaryCaptureMatch.Value -match 'authoritativeLocal\s*\(|=\s*weaponTransform\.refNode->local') {
-    $failures.Add('The authored primary grip must never capture hFRIK''s live refNode local/offset.')
+    $failures.Add('The native primary firing-grip capture function could not be isolated for source validation.')
+} elseif ($primaryCaptureMatch.Value -match 'refNode->local|weaponTransform\.local|authoritativeLocal\s*\(') {
+    $failures.Add('The authored primary grip must never capture hFRIK''s downstream Weapon local/offset path.')
 }
 
 Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `

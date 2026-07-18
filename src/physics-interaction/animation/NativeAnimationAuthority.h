@@ -41,8 +41,10 @@ namespace rock::native_animation_authority
     [[nodiscard]] bool installPostUpdateHook();
 
     void setRuntimeEnabled(bool enabled);
-    // Independent ROCK-only experiment capture. This reads the native
-    // flattened Weapon local before hFRIK writes its live scene-node offset.
+    // Independent ROCK-only experiment capture. A byte-validated native arm
+    // hook records Bethesda's primary-hand pose before hFRIK replaces the
+    // weapon basis, then resolves that relation against the unchanged live
+    // weapon after hFRIK's pass.
     void setPrimaryFiringGripCaptureEnabled(bool enabled);
     [[nodiscard]] PrimaryFiringGripCaptureStatus queryPrimaryFiringGripCaptureStatus();
     [[nodiscard]] bool tryResolvePrimaryFiringGripWorldTarget(

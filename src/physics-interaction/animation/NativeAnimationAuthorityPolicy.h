@@ -146,21 +146,18 @@ namespace rock::native_animation_authority_policy
     }
 
     /*
-     * The native first-person hierarchy defines:
-     *
-     *   authoredWeaponWorld = authoredHandWorld * authoredWeaponInHand
-     *
-     * Keep the live controller-owned weapon world unchanged and solve the
-     * firing hand that would reproduce it with the modeler's authored local.
+     * Bethesda's native primary-arm pass runs before hFRIK replaces the
+     * weapon basis. Capture the resulting hand in that native weapon frame,
+     * then carry the relation into the unchanged live controller-owned weapon
+     * world after hFRIK has completed its pass.
      */
-    template <class Transform, class Compose, class Invert>
+    template <class Transform, class Compose>
     [[nodiscard]] constexpr Transform resolveAuthoredPrimaryHandWorld(
         const Transform& liveWeaponWorld,
-        const Transform& authoredWeaponInHand,
-        Compose&& compose,
-        Invert&& invert)
+        const Transform& authoredHandInWeapon,
+        Compose&& compose)
     {
-        return compose(liveWeaponWorld, invert(authoredWeaponInHand));
+        return compose(liveWeaponWorld, authoredHandInWeapon);
     }
 
     [[nodiscard]] constexpr char asciiLower(char value)

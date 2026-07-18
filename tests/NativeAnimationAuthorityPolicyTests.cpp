@@ -66,16 +66,14 @@ int main()
     static_assert(additiveCompose(sourceToSharedTarget, 13.0f) == 103.0f);
     static_assert(additiveCompose(destinationToSharedTarget, -79940.0f) == 103.0f);
 
-    constexpr AffineTransform authoredWeaponInHand{ 2.0f, 10.0f };
+    constexpr AffineTransform authoredHandInWeapon{ 2.0f, 10.0f };
     constexpr AffineTransform liveWeaponWorld{ 6.0f, 100.0f };
     constexpr auto authoredHandWorld = resolveAuthoredPrimaryHandWorld(
         liveWeaponWorld,
-        authoredWeaponInHand,
-        affineCompose,
-        affineInvert);
-    constexpr auto recomposedWeaponWorld = affineCompose(authoredHandWorld, authoredWeaponInHand);
-    static_assert(recomposedWeaponWorld.scale == liveWeaponWorld.scale);
-    static_assert(recomposedWeaponWorld.translate == liveWeaponWorld.translate);
+        authoredHandInWeapon,
+        affineCompose);
+    static_assert(authoredHandWorld.scale == 12.0f);
+    static_assert(authoredHandWorld.translate == 160.0f);
 
     constexpr AuthoredPrimaryFiringGripEligibility authoredGripEligible{
         .enabled = true,
