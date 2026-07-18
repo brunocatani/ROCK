@@ -84,6 +84,10 @@ Require-Text 'src/ROCKMain.cpp' 'hookNativeScopeGeometryDecision[\s\S]*callBytes
     'The exact verified geometry call site and original target must be validated before patching.'
 Require-Text 'src/ROCKMain.cpp' 'bool onNativeScopeGeometryDecision[\s\S]*finalGeometryDecision\s*=\s*nativeGeometryDecision[\s\S]*nativeForceDecision[\s\S]*!g_rockConfig\.rockAutoActivateScope[\s\S]*isManualScopeActivationRequested[\s\S]*tryResolveNativeScopeGeometryDecision[\s\S]*s_originalNativeScopeStateTransition\(player,\s*finalGeometryDecision\)[\s\S]*manualScopeDecisionApplied\s*\?\s*true\s*:\s*finalGeometryDecision' `
     'The hook must preserve Bethesda force priority, use held input instead of the cone in manual mode, and bypass cone-derived approach fade.'
+Require-Text 'src/ROCKMain.cpp' 'driveManualScopeTransitionFallback[\s\S]*nativeForceDecision[\s\S]*requiresManualScopeDirectTransition\(\)[\s\S]*isManualScopeActivationRequested\(\)[\s\S]*s_originalNativeScopeStateTransition\(player,\s*true\)[\s\S]*s_originalNativeScopeStateTransition\(player,\s*false\)' `
+    'Manual hold must directly drive the verified native transition for explicit scope models whose OMOD omitted Bethesda scope activation metadata.'
+Require-Text 'src/physics-interaction/weapon/ManualScopeTargetPolicy.h' 'modelPath\.empty\(\)[\s\S]*recordName,\s*"scope"[\s\S]*modelPath,\s*"scope"' `
+    'Unflagged manual-scope recovery must require an explicit scope identity and a physical model instead of promoting generic sights.'
 Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' 'consumeRawButtonState\(true,\s*input_remap_policy::kOpenVrAcceptButtonId\)[\s\S]*consumeRawButtonState\(false,\s*input_remap_policy::kOpenVrAcceptButtonId\)[\s\S]*manual_scope_input_policy::update[\s\S]*decision\.scopeRequested[\s\S]*decision\.dispatchReload' `
     'Manual scope and release-time reload must share one physical firing-hand A/X gesture classifier.'
 Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' 'shouldDeferFiringHandActivateForManualScope\(inputEvent\)[\s\S]*markInputEventStopped\(inputEvent\)[\s\S]*return;' `

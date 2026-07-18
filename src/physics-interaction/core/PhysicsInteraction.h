@@ -94,6 +94,8 @@ namespace rock
 
         bool tryResolveNativeScopeGeometryDecision(bool nativeGeometryDecision, bool& outRockGeometryDecision);
 
+        [[nodiscard]] bool requiresManualScopeDirectTransition() const;
+
         void update();
 
         // Runs after the normal ROCK frame even when update() took an early

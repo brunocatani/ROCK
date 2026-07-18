@@ -331,6 +331,7 @@ namespace
 
     using NativeScopeStateTransitionFunc = void (*)(RE::PlayerCharacter*, bool);
     NativeScopeStateTransitionFunc s_originalNativeScopeStateTransition = nullptr;
+    bool s_manualScopeDirectTransitionActive = false;
 
     bool onNativeScopeGeometryDecision(RE::PlayerCharacter* player, const bool nativeGeometryDecision)
     {
@@ -361,6 +362,52 @@ namespace
          * the view despite no longer owning scope activation.
          */
         return manualScopeDecisionApplied ? true : finalGeometryDecision;
+    }
+
+    void driveManualScopeTransitionFallback()
+    {
+        if (!s_originalNativeScopeStateTransition) {
+            return;
+        }
+
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        std::uint8_t nativeScopeFlags = 0;
+        const bool nativeForceDecision = player &&
+            rock::native_memory::tryReadField(player, rock::offsets::kPlayerCharacter_NativeScopeFlags, nativeScopeFlags) &&
+            (nativeScopeFlags & rock::offsets::kPlayerCharacter_NativeScopeForceDecisionMask) != 0;
+        if (nativeForceDecision) {
+            // Reload/menu transitions temporarily own the native scope state.
+            return;
+        }
+
+        const bool targetAvailable = s_pluginLoaded && s_frikAvailable && g_rockConfig.rockEnabled &&
+            !g_rockConfig.rockAutoActivateScope && s_physicsInteraction &&
+            s_physicsInteraction->requiresManualScopeDirectTransition();
+        const bool requested = targetAvailable && input_remap_runtime::isManualScopeActivationRequested();
+
+        if (requested && player) {
+            /*
+             * Bethesda only reaches the hooked cone call for weapons whose
+             * OMOD carries its native scope flag. Explicit scope models from
+             * imperfect ports (the OMEN Watchman) still have a valid ROCK
+             * sight anchor and world_scope presentation, but otherwise never
+             * receive a state transition. This path is gated to explicit
+             * scope models without native metadata, and drives the same
+             * verified native transition while the hold is active.
+             */
+            s_originalNativeScopeStateTransition(player, true);
+            if (!s_manualScopeDirectTransitionActive) {
+                ROCK_LOG_DEBUG(Input, "Manual scope direct transition engaged for explicit scope target");
+            }
+            s_manualScopeDirectTransitionActive = true;
+            return;
+        }
+
+        if (s_manualScopeDirectTransitionActive && player) {
+            s_originalNativeScopeStateTransition(player, false);
+            ROCK_LOG_DEBUG(Input, "Manual scope direct transition released");
+        }
+        s_manualScopeDirectTransitionActive = false;
     }
 
     bool hookNativeScopeGeometryDecision()
@@ -432,6 +479,11 @@ namespace
         }
 
         onFrameUpdate();
+
+        // Input classification runs inside onFrameUpdate. Apply the manual
+        // scope level after it so an unflagged scope does not wait for a native
+        // cone callback that Bethesda will never issue.
+        driveManualScopeTransitionFallback();
 
         // ROCK's collision/grab/weapon pass may legitimately publish its own
         // controller authority. Reapply the same controller-anchored native

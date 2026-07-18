@@ -10,6 +10,7 @@
 #include "RockConfig.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"
+#include "physics-interaction/weapon/ManualScopeTargetPolicy.h"
 #include "physics-interaction/weapon/WeaponAccessoryPartKindPolicy.h"
 #include "physics-interaction/weapon/WeaponEffectGeometryPolicy.h"
 #include "physics-interaction/weapon/WeaponEmitterPolicy.h"
@@ -1011,6 +1012,39 @@ namespace rock
                 }
             }
             return false;
+        }
+
+        [[nodiscard]] bool equippedWeaponRequiresManualScopeDirectTransition()
+        {
+            auto* player = f4vr::getPlayer();
+            auto* processData = player && player->middleProcess ? player->middleProcess->unk08 : nullptr;
+            auto* equipData = processData ? processData->equipData : nullptr;
+            auto* weaponForm = equipData ? equipData->item : nullptr;
+            const RE::BGSObjectInstanceExtra* objectInstanceExtra =
+                weaponForm ? findEquippedWeaponObjectInstanceExtra(player, weaponForm, equipData->instanceData) : nullptr;
+            if (!objectInstanceExtra || !objectInstanceExtra->values) {
+                return false;
+            }
+
+            bool nativeScopeOverlayAuthored = false;
+            bool explicitScopeModelInstalled = false;
+            for (const auto& modIndex : objectInstanceExtra->GetIndexData()) {
+                if (modIndex.disabled) {
+                    continue;
+                }
+                auto* omod = RE::TESForm::GetFormByID<RE::BGSMod::Attachment::Mod>(modIndex.objectID);
+                if (!omod) {
+                    continue;
+                }
+                nativeScopeOverlayAuthored = nativeScopeOverlayAuthored || attachmentModHasNativeScopeOverlayTarget(omod->formID);
+                explicitScopeModelInstalled = explicitScopeModelInstalled ||
+                    manual_scope_target_policy::hasExplicitScopeIdentity(
+                        omod->fullName.c_str() ? omod->fullName.c_str() : "",
+                        omod->model.c_str() ? omod->model.c_str() : "");
+            }
+            return manual_scope_target_policy::requiresDirectNativeTransition(
+                nativeScopeOverlayAuthored,
+                explicitScopeModelInstalled);
         }
 
         const RE::TESObjectWEAP* asEquippedWeaponForm(const F4SEVR::TESForm* form)
@@ -4992,7 +5026,9 @@ namespace rock
     void WeaponCollision::publishAtomicBodyIds(WeaponBodyBank& bank)
     {
         auto evidenceSnapshot = buildProfileEvidenceSnapshot(bank);
-        const NativeScopeSightAnchorSnapshot nativeScopeSightAnchorSnapshot = buildNativeScopeSightAnchorSnapshot(_cachedWeaponBodySetKey, evidenceSnapshot);
+        NativeScopeSightAnchorSnapshot nativeScopeSightAnchorSnapshot = buildNativeScopeSightAnchorSnapshot(_cachedWeaponBodySetKey, evidenceSnapshot);
+        nativeScopeSightAnchorSnapshot.manualDirectTransitionRequired =
+            nativeScopeSightAnchorSnapshot.valid && equippedWeaponRequiresManualScopeDirectTransition();
         std::uint32_t count = 0;
         beginWeaponBodyPublication();
         _weaponBodyCountAtomic.store(0, std::memory_order_release);
@@ -6204,12 +6240,70 @@ namespace rock
                     const auto beforeStats = summarizeWeaponAnimNodeSubtree(healTargetNode);
                     _omodSelfHealAttempted.insert(attemptKey);
                     ++selfHealAttemptCount;
-                    const bool attached = tryAttach3DRecurse(omod, healTargetNode, rankSuffix, equipData ? equipData->instanceData : nullptr);
-                    const auto afterStats = summarizeWeaponAnimNodeSubtree(healTargetNode);
-                    selfHealSuccessCount += attached ? 1 : 0;
+                    bool attached = tryAttach3DRecurse(omod, healTargetNode, rankSuffix, equipData ? equipData->instanceData : nullptr);
+                    auto afterStats = summarizeWeaponAnimNodeSubtree(healTargetNode);
+                    bool geometryAdded = afterStats.triShapeCount > beforeStats.triShapeCount;
+                    bool recoveryConnectPointCreated = false;
+                    std::string recoveryConnectPointName;
+
+                    /*
+                     * Several flat-authored weapon ports omit the standard
+                     * attachment slot node from the assembled first-person
+                     * tree. TryAttach3DRecurse reports the record as handled in
+                     * that case but adds no geometry (Break Action Laser:
+                     * P-Barrel/P-Muzzle). Recover only standard CK slots, only
+                     * after the template signature proved the model absent,
+                     * and remove the synthetic node if the retry still adds no
+                     * geometry. The equipped weapon owns a successful node and
+                     * therefore destroys it with the instance.
+                     */
+                    if (!geometryAdded) {
+                        const std::string_view connectPoint =
+                            weapon_part_record_identity_policy::canonicalConnectPointForAttachPoint(record.attachPointFormId);
+                        const std::string_view parentConnectPoint =
+                            weapon_part_record_identity_policy::recoveryParentConnectPointForAttachPoint(record.attachPointFormId);
+                        recoveryConnectPointName.assign(connectPoint);
+                        const bool connectPointMissing = !connectPoint.empty() &&
+                            collectWeaponAnimNodeMatches(healTargetNode, recoveryConnectPointName.c_str()).empty();
+                        if (connectPointMissing) {
+                            RE::NiNode* recoveryParent = nullptr;
+                            if (!parentConnectPoint.empty()) {
+                                const std::string parentConnectPointName{ parentConnectPoint };
+                                const auto parentMatches = collectWeaponAnimNodeMatches(healTargetNode, parentConnectPointName.c_str());
+                                if (!parentMatches.empty()) {
+                                    recoveryParent = parentMatches.front().node ? parentMatches.front().node->IsNode() : nullptr;
+                                }
+                            }
+                            if (!recoveryParent) {
+                                recoveryParent = healTargetNode;
+                            }
+
+                            RE::NiPointer<RE::NiNode> recoveryNode{ new RE::NiNode(4) };
+                            recoveryNode->name = recoveryConnectPointName.c_str();
+                            recoveryNode->local = {};
+                            recoveryNode->local.rotate.entry[0][0] = 1.0f;
+                            recoveryNode->local.rotate.entry[1][1] = 1.0f;
+                            recoveryNode->local.rotate.entry[2][2] = 1.0f;
+                            recoveryNode->local.scale = 1.0f;
+                            recoveryParent->AttachChild(recoveryNode.get(), true);
+                            f4vr::updateTransformsDown(recoveryNode.get(), true);
+                            const auto beforeRetryStats = summarizeWeaponAnimNodeSubtree(healTargetNode);
+                            const bool retryAttached = tryAttach3DRecurse(omod, healTargetNode, rankSuffix, equipData ? equipData->instanceData : nullptr);
+                            afterStats = summarizeWeaponAnimNodeSubtree(healTargetNode);
+                            geometryAdded = afterStats.triShapeCount > beforeRetryStats.triShapeCount;
+                            attached = attached || retryAttached;
+                            if (geometryAdded) {
+                                recoveryConnectPointCreated = true;
+                            } else {
+                                recoveryParent->DetachChild(recoveryNode.get());
+                                f4vr::updateTransformsDown(recoveryParent, true);
+                            }
+                        }
+                    }
+                    selfHealSuccessCount += geometryAdded ? 1 : 0;
 
                     ROCK_LOG_INFO(Weapon,
-                        "OMOD-HEAL run={} omod={:08X} '{}' model='{}' suffix='{}' target='{}'/{:x} attached={} subtreeNodes {}->{} triShapes {}->{} visibleTriShapes {}->{}",
+                        "OMOD-HEAL run={} omod={:08X} '{}' model='{}' suffix='{}' target='{}'/{:x} attached={} geometryAdded={} recoveryConnectPoint='{}' subtreeNodes {}->{} triShapes {}->{} visibleTriShapes {}->{}",
                         runIndex,
                         record.formId,
                         record.name,
@@ -6218,6 +6312,8 @@ namespace rock
                         healTargetRootLabel,
                         reinterpret_cast<std::uintptr_t>(healTargetNode),
                         attached ? "YES" : "no",
+                        geometryAdded ? "YES" : "no",
+                        recoveryConnectPointCreated ? recoveryConnectPointName : "",
                         beforeStats.nodeCount,
                         afterStats.nodeCount,
                         beforeStats.triShapeCount,

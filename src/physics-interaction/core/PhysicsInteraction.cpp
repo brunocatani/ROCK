@@ -1980,6 +1980,15 @@ namespace rock
             nativeScopeAlreadyActive, nativeGeometryDecision, outRockGeometryDecision);
     }
 
+    bool PhysicsInteraction::requiresManualScopeDirectTransition() const
+    {
+        if (!_initialized.load(std::memory_order_acquire) || !runtime_state::isLocalSkeletonReady()) {
+            return false;
+        }
+        const auto snapshot = _weaponCollision.getNativeScopeSightAnchorSnapshot();
+        return snapshot.valid && snapshot.manualDirectTransitionRequired;
+    }
+
     void PhysicsInteraction::update()
     {
         ensureWeaponCollisionWorkbenchExitMenuSinkRegistered();

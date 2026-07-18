@@ -89,7 +89,19 @@ namespace rock::weapon_omod_audit_policy
             return { .verdict = CoverageVerdict::OkRecordPaired };
         }
         if (input.hasNodeMatch) {
-            return { .verdict = input.anyNodeMatchVisible ? CoverageVerdict::NodePresentNoCollider : CoverageVerdict::NodeHiddenNoCollider };
+            /*
+             * Basename/token matches are diagnostic hints, not proof that the
+             * installed OMOD model exists under the equipped instance. Generic
+             * names such as P-Mag and nodes from other objects in the global
+             * scene produced false presence for the SR-25 and Break Action
+             * Laser. Send every uncovered modeled record through the guarded
+             * template-signature check; that check skips coherent existing
+             * geometry before any engine attach is attempted.
+             */
+            return {
+                .verdict = input.anyNodeMatchVisible ? CoverageVerdict::NodePresentNoCollider : CoverageVerdict::NodeHiddenNoCollider,
+                .selfHealCandidate = true,
+            };
         }
         return { .verdict = CoverageVerdict::NodeNotFound, .selfHealCandidate = true };
     }

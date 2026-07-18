@@ -4,6 +4,7 @@
 #include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/WeaponEffectGeometryPolicy.h"
 #include "physics-interaction/weapon/WeaponEmitterPolicy.h"
+#include "physics-interaction/weapon/ManualScopeTargetPolicy.h"
 #include "physics-interaction/weapon/WeaponOmodAuditPolicy.h"
 
 namespace
@@ -193,6 +194,16 @@ int main()
         .hasModelToken = true,
     });
     ok &= expectTrue("enabled missing OMOD is eligible for guarded self-heal", enabledMissingOmod.selfHealCandidate);
+    const auto misleadingVisibleTokenMatch = decideCoverage(CoverageInput{
+        .resolved = true,
+        .hasModelToken = true,
+        .hasNodeMatch = true,
+        .anyNodeMatchVisible = true,
+    });
+    ok &= expectTrue("uncovered OMOD with a misleading visible token match still receives template verification",
+        misleadingVisibleTokenMatch.selfHealCandidate);
+    ok &= expectTrue("visible token-only coverage keeps its diagnostic verdict",
+        misleadingVisibleTokenMatch.verdict == CoverageVerdict::NodePresentNoCollider);
     const auto disabledMissingOmod = decideCoverage(CoverageInput{
         .disabled = true,
         .resolved = true,
@@ -201,6 +212,20 @@ int main()
     ok &= expectFalse("disabled missing OMOD is excluded from self-heal", disabledMissingOmod.selfHealCandidate);
     ok &= expectTrue("disabled OMOD has an explicit audit verdict",
         disabledMissingOmod.verdict == CoverageVerdict::Disabled);
+
+    using rock::manual_scope_target_policy::hasExplicitScopeIdentity;
+    ok &= expectTrue("Watchman scope path recovers manual native-scope eligibility",
+        hasExplicitScopeIdentity("[Sights] S&B PM II 5-25x56 - Black", "Weapons\\SalientPhantom\\OMEN\\Sights\\Scopes\\5x25.nif"));
+    ok &= expectTrue("explicit scope record recovers eligibility with a generic model path",
+        hasExplicitScopeIdentity("Recon Scope", "Weapons\\Example\\Optic.nif"));
+    ok &= expectFalse("generic red-dot sight does not acquire native-scope eligibility",
+        hasExplicitScopeIdentity("Trijicon MRO", "Weapons\\Example\\Sight_MRO.nif"));
+    ok &= expectFalse("scope-named record without a physical model fails closed",
+        hasExplicitScopeIdentity("Recon Scope", ""));
+    ok &= expectTrue("unflagged explicit scope requires the direct native transition",
+        rock::manual_scope_target_policy::requiresDirectNativeTransition(false, true));
+    ok &= expectFalse("authored native scope keeps the normal hooked transition path",
+        rock::manual_scope_target_policy::requiresDirectNativeTransition(true, true));
 
     const std::uint64_t bodySetKey = makeGeneratedWeaponBodySetKey(0xABC, derivedCompact, 1);
     ok &= expectNonZero("body-set key is created for equipped source and epoch", bodySetKey);

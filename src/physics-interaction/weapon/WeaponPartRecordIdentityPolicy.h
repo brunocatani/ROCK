@@ -55,6 +55,33 @@ namespace rock::weapon_part_record_identity_policy
     inline constexpr std::uint32_t kAttachPointGripStock = 0x0002249F;
     inline constexpr std::uint32_t kAttachPointReceiver = 0x00024004;
 
+    [[nodiscard]] inline constexpr std::string_view canonicalConnectPointForAttachPoint(std::uint32_t attachPointFormId) noexcept
+    {
+        switch (attachPointFormId) {
+        case kAttachPointMagazine:
+            return "P-Mag";
+        case kAttachPointBarrel:
+            return "P-Barrel";
+        case kAttachPointMuzzle:
+            return "P-Muzzle";
+        case kAttachPointSight:
+            return "P-Scope";
+        case kAttachPointGripStock:
+            return "P-Grip";
+        case kAttachPointReceiver:
+            return "P-Receiver";
+        default:
+            return {};
+        }
+    }
+
+    [[nodiscard]] inline constexpr std::string_view recoveryParentConnectPointForAttachPoint(std::uint32_t attachPointFormId) noexcept
+    {
+        // A muzzle belongs to the barrel subtree when it exists. All other
+        // standard attachment slots are immediate receiver-owned modules.
+        return attachPointFormId == kAttachPointMuzzle ? "P-Barrel" : "P-Receiver";
+    }
+
     [[nodiscard]] inline constexpr StructureAnchor resolveStructureAnchor(std::string_view nodeName)
     {
         // Exact matches for the CK-standard connect points observed in

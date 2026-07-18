@@ -84,6 +84,7 @@ namespace rock
         struct NativeScopeSightAnchorSnapshot
         {
             bool valid{ false };
+            bool manualDirectTransitionRequired{ false };
             std::uint64_t weaponGenerationKey{ 0 };
             RE::NiPoint3 anchorWeaponLocal{};
             RE::NiPoint3 sightBoundsMinWeaponLocal{};
