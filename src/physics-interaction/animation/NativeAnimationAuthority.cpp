@@ -125,6 +125,11 @@ namespace rock::native_animation_authority
         std::atomic<std::uint64_t> s_captureSequence{ 0 };
         std::atomic<std::uint64_t> s_primaryFiringGripCaptureSequence{ 0 };
         std::atomic<std::uint64_t> s_authoredSupportGripCaptureSequence{ 0 };
+        std::atomic<std::uint64_t> s_authoredSupportGripSecondaryPassSequence{ 0 };
+        std::atomic<AuthoredSupportGripCaptureFailureReason> s_authoredSupportGripCaptureFailureReason{
+            AuthoredSupportGripCaptureFailureReason::SecondaryPassNotObserved
+        };
+        std::atomic<std::uint16_t> s_authoredSupportGripInvalidOrMissingFingerMask{ 0 };
 
         // Published only after Bethesda's validated paired arm passes and
         // consumed on the same claimed ROCK game thread. Each atomic
@@ -136,7 +141,6 @@ namespace rock::native_animation_authority
         RE::NiTransform s_authoredSupportHandInWeapon{};
         std::array<RE::NiTransform, kAuthoredSupportFingerBoneNames.size()> s_authoredSupportFingerLocals{};
         std::atomic<RE::NiNode*> s_authoredSupportGripPrimaryHandNode{ nullptr };
-        std::atomic<RE::NiNode*> s_authoredSupportGripHandNode{ nullptr };
         std::atomic<RE::NiNode*> s_authoredSupportGripWeaponNode{ nullptr };
         std::uintptr_t s_nativePrimaryArmReturnAddress{ 0 };
         std::uintptr_t s_nativeSupportArmReturnAddress{ 0 };
@@ -292,8 +296,19 @@ namespace rock::native_animation_authority
         {
             s_authoredSupportGripCaptureValid.store(false, std::memory_order_release);
             s_authoredSupportGripPrimaryHandNode.store(nullptr, std::memory_order_release);
-            s_authoredSupportGripHandNode.store(nullptr, std::memory_order_release);
             s_authoredSupportGripWeaponNode.store(nullptr, std::memory_order_release);
+        }
+
+        void recordAuthoredSupportGripCaptureFailure(
+            const AuthoredSupportGripCaptureFailureReason reason,
+            const std::uint16_t invalidOrMissingFingerMask = 0)
+        {
+            s_authoredSupportGripInvalidOrMissingFingerMask.store(
+                invalidOrMissingFingerMask,
+                std::memory_order_release);
+            s_authoredSupportGripCaptureFailureReason.store(
+                reason,
+                std::memory_order_release);
         }
 
         [[nodiscard]] bool primaryFiringGripCacheMatches(const BoneTree& source)
@@ -340,27 +355,46 @@ namespace rock::native_animation_authority
                    s_primaryFiringGripBoneCache.weaponIndex >= 0;
         }
 
-        [[nodiscard]] bool authoredSupportGripCacheReady(const BoneTree& source)
+        [[nodiscard]] bool authoredSupportGripCacheReady(
+            const BoneTree& source,
+            std::uint16_t& outMissingFingerMask)
         {
+            outMissingFingerMask = 0;
             if (s_primaryFiringGripBoneCache.supportHandIndex < 0 ||
                 s_primaryFiringGripBoneCache.supportHandIndex >= source.numTransforms) {
                 return false;
             }
-            for (const int index : s_primaryFiringGripBoneCache.supportFingerIndices) {
+            for (std::size_t fingerIndex = 0;
+                 fingerIndex < s_primaryFiringGripBoneCache.supportFingerIndices.size();
+                 ++fingerIndex) {
+                const int index =
+                    s_primaryFiringGripBoneCache.supportFingerIndices[fingerIndex];
                 if (index < 0 || index >= source.numTransforms) {
-                    return false;
+                    outMissingFingerMask |= static_cast<std::uint16_t>(1u << fingerIndex);
                 }
             }
-            return true;
+            return outMissingFingerMask == 0;
         }
 
         [[nodiscard]] bool captureNativeAuthoredSupportGrip()
         {
             auto* source = f4vr::getFirstPersonBoneTree();
-            if (!validTree(source) ||
-                (!primaryFiringGripCacheMatches(*source) &&
-                    !rebuildPrimaryFiringGripBoneCache(*source)) ||
-                !authoredSupportGripCacheReady(*source)) {
+            if (!validTree(source)) {
+                recordAuthoredSupportGripCaptureFailure(
+                    AuthoredSupportGripCaptureFailureReason::SourceTreeUnavailable);
+                return false;
+            }
+            if (!primaryFiringGripCacheMatches(*source) &&
+                !rebuildPrimaryFiringGripBoneCache(*source)) {
+                recordAuthoredSupportGripCaptureFailure(
+                    AuthoredSupportGripCaptureFailureReason::BoneCacheIncomplete);
+                return false;
+            }
+            std::uint16_t missingFingerMask = 0;
+            if (!authoredSupportGripCacheReady(*source, missingFingerMask)) {
+                recordAuthoredSupportGripCaptureFailure(
+                    AuthoredSupportGripCaptureFailureReason::BoneCacheIncomplete,
+                    missingFingerMask);
                 return false;
             }
 
@@ -377,40 +411,59 @@ namespace rock::native_animation_authority
             const auto& weaponTransform = source->transforms[weaponIndex];
             if (weaponTransform.parPos != primaryHandIndex ||
                 !primaryHandTransform.refNode ||
-                !supportHandTransform.refNode ||
-                !weaponTransform.refNode ||
-                !finiteTransform(supportHandTransform.refNode->world) ||
-                !finiteTransform(weaponTransform.refNode->world)) {
+                !weaponTransform.refNode) {
+                recordAuthoredSupportGripCaptureFailure(
+                    AuthoredSupportGripCaptureFailureReason::TopologyInvalid);
                 return false;
             }
 
+            const RE::NiTransform& supportHandWorld = supportHandTransform.refNode ?
+                supportHandTransform.refNode->world :
+                supportHandTransform.world;
+            if (!finiteTransform(supportHandWorld) ||
+                !finiteTransform(weaponTransform.refNode->world)) {
+                recordAuthoredSupportGripCaptureFailure(
+                    AuthoredSupportGripCaptureFailureReason::SupportHandTransformInvalid);
+                return false;
+            }
             const RE::NiTransform supportHandInWeapon = transform_math::composeTransforms(
                 transform_math::invertTransform(weaponTransform.refNode->world),
-                supportHandTransform.refNode->world);
+                supportHandWorld);
             if (!finiteTransform(supportHandInWeapon)) {
+                recordAuthoredSupportGripCaptureFailure(
+                    AuthoredSupportGripCaptureFailureReason::SupportHandTransformInvalid);
                 return false;
             }
 
             std::array<RE::NiTransform, kAuthoredSupportFingerBoneNames.size()> fingerLocals{};
+            std::uint16_t invalidFingerMask = 0;
             for (std::size_t fingerIndex = 0;
                  fingerIndex < s_primaryFiringGripBoneCache.supportFingerIndices.size();
                  ++fingerIndex) {
                 const int transformIndex =
                     s_primaryFiringGripBoneCache.supportFingerIndices[fingerIndex];
                 const auto& fingerTransform = source->transforms[transformIndex];
-                if (!fingerTransform.refNode ||
-                    !finiteTransform(fingerTransform.refNode->local)) {
-                    return false;
+                const RE::NiTransform& fingerLocal = authoritativeLocal(fingerTransform);
+                if (!finiteTransform(fingerLocal)) {
+                    invalidFingerMask |= static_cast<std::uint16_t>(1u << fingerIndex);
+                    continue;
                 }
-                fingerLocals[fingerIndex] = fingerTransform.refNode->local;
+                fingerLocals[fingerIndex] = fingerLocal;
+            }
+            if (invalidFingerMask != 0) {
+                recordAuthoredSupportGripCaptureFailure(
+                    AuthoredSupportGripCaptureFailureReason::FingerTransformInvalid,
+                    invalidFingerMask);
+                return false;
             }
 
             s_authoredSupportHandInWeapon = supportHandInWeapon;
             s_authoredSupportFingerLocals = fingerLocals;
             s_authoredSupportGripPrimaryHandNode.store(primaryHandTransform.refNode, std::memory_order_release);
-            s_authoredSupportGripHandNode.store(supportHandTransform.refNode, std::memory_order_release);
             s_authoredSupportGripWeaponNode.store(weaponTransform.refNode, std::memory_order_release);
             s_authoredSupportGripCaptureSequence.fetch_add(1, std::memory_order_acq_rel);
+            recordAuthoredSupportGripCaptureFailure(
+                AuthoredSupportGripCaptureFailureReason::None);
             s_authoredSupportGripCaptureValid.store(true, std::memory_order_release);
             return true;
         }
@@ -473,10 +526,20 @@ namespace rock::native_animation_authority
                 s_playerReloadEventActive.load(std::memory_order_acquire)) {
                 return result;
             }
+            if (supportPass) {
+                s_authoredSupportGripSecondaryPassSequence.fetch_add(
+                    1,
+                    std::memory_order_acq_rel);
+            }
 
 #if defined(_MSC_VER)
             __try {
-                const bool captured = claimOrValidateThread() &&
+                const bool threadValid = claimOrValidateThread();
+                if (!threadValid && supportPass) {
+                    recordAuthoredSupportGripCaptureFailure(
+                        AuthoredSupportGripCaptureFailureReason::ThreadMismatch);
+                }
+                const bool captured = threadValid &&
                     (primaryPass ?
                             captureNativePrimaryFiringGrip() :
                             captureNativeAuthoredSupportGrip());
@@ -492,11 +555,18 @@ namespace rock::native_animation_authority
                 if (primaryPass) {
                     invalidatePrimaryFiringGripCapture();
                 } else {
+                    recordAuthoredSupportGripCaptureFailure(
+                        AuthoredSupportGripCaptureFailureReason::CaptureFault);
                     invalidateAuthoredSupportGripCapture();
                 }
             }
 #else
-            const bool captured = claimOrValidateThread() &&
+            const bool threadValid = claimOrValidateThread();
+            if (!threadValid && supportPass) {
+                recordAuthoredSupportGripCaptureFailure(
+                    AuthoredSupportGripCaptureFailureReason::ThreadMismatch);
+            }
+            const bool captured = threadValid &&
                 (primaryPass ?
                         captureNativePrimaryFiringGrip() :
                         captureNativeAuthoredSupportGrip());
@@ -1286,10 +1356,16 @@ namespace rock::native_animation_authority
     {
         const bool effectiveEnabled = enabled &&
             s_primaryFiringGripHookInstalled.load(std::memory_order_acquire);
-        s_primaryFiringGripCaptureEnabled.store(effectiveEnabled, std::memory_order_release);
+        const bool wasEnabled = s_primaryFiringGripCaptureEnabled.exchange(
+            effectiveEnabled,
+            std::memory_order_acq_rel);
         if (!effectiveEnabled) {
             invalidatePrimaryFiringGripCapture();
             invalidateAuthoredSupportGripCapture();
+        } else if (!wasEnabled) {
+            invalidateAuthoredSupportGripCapture();
+            recordAuthoredSupportGripCaptureFailure(
+                AuthoredSupportGripCaptureFailureReason::SecondaryPassNotObserved);
         }
     }
 
@@ -1305,8 +1381,40 @@ namespace rock::native_animation_authority
     {
         return AuthoredSupportGripCaptureStatus{
             .captureSequence = s_authoredSupportGripCaptureSequence.load(std::memory_order_acquire),
+            .secondaryPassSequence =
+                s_authoredSupportGripSecondaryPassSequence.load(std::memory_order_acquire),
+            .failureReason =
+                s_authoredSupportGripCaptureFailureReason.load(std::memory_order_acquire),
+            .invalidOrMissingFingerMask =
+                s_authoredSupportGripInvalidOrMissingFingerMask.load(std::memory_order_acquire),
             .valid = s_authoredSupportGripCaptureValid.load(std::memory_order_acquire),
         };
+    }
+
+    const char* authoredSupportGripCaptureFailureReasonName(
+        const AuthoredSupportGripCaptureFailureReason reason)
+    {
+        switch (reason) {
+        case AuthoredSupportGripCaptureFailureReason::None:
+            return "none";
+        case AuthoredSupportGripCaptureFailureReason::SecondaryPassNotObserved:
+            return "secondary-pass-not-observed";
+        case AuthoredSupportGripCaptureFailureReason::SourceTreeUnavailable:
+            return "source-tree-unavailable";
+        case AuthoredSupportGripCaptureFailureReason::BoneCacheIncomplete:
+            return "bone-cache-incomplete";
+        case AuthoredSupportGripCaptureFailureReason::TopologyInvalid:
+            return "topology-invalid";
+        case AuthoredSupportGripCaptureFailureReason::SupportHandTransformInvalid:
+            return "support-hand-transform-invalid";
+        case AuthoredSupportGripCaptureFailureReason::FingerTransformInvalid:
+            return "finger-transform-invalid";
+        case AuthoredSupportGripCaptureFailureReason::ThreadMismatch:
+            return "thread-mismatch";
+        case AuthoredSupportGripCaptureFailureReason::CaptureFault:
+            return "capture-fault";
+        }
+        return "unknown";
     }
 
     bool tryResolvePrimaryFiringGripAlignment(
@@ -1373,14 +1481,11 @@ namespace rock::native_animation_authority
         outCaptureSequence = 0;
         auto* const capturedPrimaryHandNode =
             s_authoredSupportGripPrimaryHandNode.load(std::memory_order_acquire);
-        auto* const capturedSupportHandNode =
-            s_authoredSupportGripHandNode.load(std::memory_order_acquire);
         if (!expectedWeaponNode ||
             !s_primaryFiringGripCaptureEnabled.load(std::memory_order_acquire) ||
             !s_authoredSupportGripCaptureValid.load(std::memory_order_acquire) ||
             !claimOrValidateThread() ||
             !capturedPrimaryHandNode ||
-            !capturedSupportHandNode ||
             expectedWeaponNode != s_authoredSupportGripWeaponNode.load(std::memory_order_acquire) ||
             expectedWeaponNode->parent != capturedPrimaryHandNode ||
             !finiteTransform(s_authoredSupportHandInWeapon)) {
@@ -1513,6 +1618,8 @@ namespace rock::native_animation_authority
         invalidateCapture();
         invalidatePrimaryFiringGripCapture();
         invalidateAuthoredSupportGripCapture();
+        recordAuthoredSupportGripCaptureFailure(
+            AuthoredSupportGripCaptureFailureReason::SecondaryPassNotObserved);
         resetHybridPoseState();
         s_frameCaptureReady = false;
         s_frameCaptureFlags = 0;

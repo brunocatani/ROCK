@@ -56,5 +56,8 @@ namespace rock
         bool _nativeReloadWasActive{ false };
         bool _sessionLogged{ false };
         bool _applyFailureLogged{ false };
+        std::uint32_t _supportCaptureFailureReasonLogged{ 0 };
+        std::uint16_t _supportCaptureFailureMaskLogged{ 0 };
+        bool _supportCaptureFailureLogged{ false };
     };
 }

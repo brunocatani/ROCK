@@ -93,8 +93,8 @@ Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
     'tryResolvePrimaryFiringGripAlignment[\s\S]*expectedWeaponNode->parent\s*!=\s*capturedHandNode[\s\S]*resolveAuthoredPrimaryWeaponWorld\([\s\S]*trackedPrimaryHandWorld[\s\S]*s_authoredPrimaryHandInWeapon' `
     'The experiment must invert the captured native relation onto the tracked primary hand and reject a changed hand/weapon hierarchy.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
-    '"LArm_Finger11"[\s\S]*"LArm_Finger53"[\s\S]*captureNativeAuthoredSupportGrip[\s\S]*invertTransform\(weaponTransform\.refNode->world\)[\s\S]*supportHandTransform\.refNode->world[\s\S]*fingerTransform\.refNode->local[\s\S]*s_authoredSupportGripCaptureSequence\.fetch_add' `
-    'The support capture must use the paired native LArm hand-in-weapon relation and all 15 exact first-person finger locals.'
+    '"LArm_Finger11"[\s\S]*"LArm_Finger53"[\s\S]*captureNativeAuthoredSupportGrip[\s\S]*invertTransform\(weaponTransform\.refNode->world\)[\s\S]*supportHandWorld[\s\S]*authoritativeLocal\(fingerTransform\)[\s\S]*s_authoredSupportGripCaptureSequence\.fetch_add' `
+    'The support capture must use the paired native LArm hand-in-weapon relation and all 15 authoritative first-person finger locals.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
     'tryResolveAuthoredSupportGrip[\s\S]*expectedWeaponNode->parent\s*!=\s*capturedPrimaryHandNode[\s\S]*outSupportHandInWeapon\s*=\s*s_authoredSupportHandInWeapon[\s\S]*outFingerLocalTransforms\s*=\s*s_authoredSupportFingerLocals[\s\S]*kAuthoredSupportFingerTransformMask' `
     'The support resolver must retain scene identity and publish one complete generation-ready hand/finger frame.'
@@ -108,6 +108,19 @@ if (-not $primaryCaptureMatch.Success) {
 } elseif ($primaryCaptureMatch.Value -match 'refNode->local|weaponTransform\.local|authoritativeLocal\s*\(') {
     $failures.Add('The authored primary grip must never capture hFRIK''s downstream Weapon local/offset path.')
 }
+
+$supportCaptureMatch = [regex]::Match(
+    $nativeAuthorityText,
+    '(?s)captureNativeAuthoredSupportGrip\(\).*?(?=\s+__declspec\(noinline\))')
+if (-not $supportCaptureMatch.Success) {
+    $failures.Add('The native authored support-grip capture function could not be isolated for source validation.')
+} elseif ($supportCaptureMatch.Value -match '!fingerTransform\.refNode|fingerTransform\.refNode->local') {
+    $failures.Add('The authored support grip must accept authoritative flattened finger locals when a scene refNode is absent.')
+}
+
+Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
+    'supportCaptureStatus\.valid[\s\S]*authoredSupportGripCaptureFailureReasonName[\s\S]*secondaryPassSequence[\s\S]*invalidOrMissingFingerMask' `
+    'A failed authored support capture must publish rate-limited stage and finger-mask telemetry for runtime diagnosis.'
 
 Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
     'getHandWorldTransform\([\s\S]*Hand::Primary[\s\S]*tryResolvePrimaryFiringGripAlignment[\s\S]*applyAuthoredPrimaryGripWeaponAlignment' `

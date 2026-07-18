@@ -38,9 +38,27 @@ namespace rock::native_animation_authority
         bool valid{ false };
     };
 
+    enum class AuthoredSupportGripCaptureFailureReason : std::uint32_t
+    {
+        None = 0,
+        SecondaryPassNotObserved,
+        SourceTreeUnavailable,
+        BoneCacheIncomplete,
+        TopologyInvalid,
+        SupportHandTransformInvalid,
+        FingerTransformInvalid,
+        ThreadMismatch,
+        CaptureFault,
+    };
+
     struct AuthoredSupportGripCaptureStatus
     {
         std::uint64_t captureSequence{ 0 };
+        std::uint64_t secondaryPassSequence{ 0 };
+        AuthoredSupportGripCaptureFailureReason failureReason{
+            AuthoredSupportGripCaptureFailureReason::SecondaryPassNotObserved
+        };
+        std::uint16_t invalidOrMissingFingerMask{ 0 };
         bool valid{ false };
     };
 
@@ -57,6 +75,8 @@ namespace rock::native_animation_authority
     void setPrimaryFiringGripCaptureEnabled(bool enabled);
     [[nodiscard]] PrimaryFiringGripCaptureStatus queryPrimaryFiringGripCaptureStatus();
     [[nodiscard]] AuthoredSupportGripCaptureStatus queryAuthoredSupportGripCaptureStatus();
+    [[nodiscard]] const char* authoredSupportGripCaptureFailureReasonName(
+        AuthoredSupportGripCaptureFailureReason reason);
     [[nodiscard]] bool tryResolvePrimaryFiringGripAlignment(
         const RE::NiNode* expectedWeaponNode,
         const RE::NiTransform& liveWeaponWorld,

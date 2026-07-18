@@ -65,6 +65,9 @@ namespace rock
         _nativeReloadWasActive = false;
         _sessionLogged = false;
         _applyFailureLogged = false;
+        _supportCaptureFailureReasonLogged = 0;
+        _supportCaptureFailureMaskLogged = 0;
+        _supportCaptureFailureLogged = false;
     }
 
     void AuthoredPrimaryFiringGripRuntime::update(
@@ -114,6 +117,7 @@ namespace rock
             _supportCaptureSequenceFloor = supportCaptureStatus.captureSequence;
             _sessionLogged = false;
             _applyFailureLogged = false;
+            _supportCaptureFailureLogged = false;
             return;
         }
 
@@ -183,6 +187,30 @@ namespace rock
 
         _active = true;
         _applyFailureLogged = false;
+
+        const auto supportCaptureFailureReason =
+            static_cast<std::uint32_t>(supportCaptureStatus.failureReason);
+        if (!supportCaptureStatus.valid) {
+            if (!_supportCaptureFailureLogged ||
+                supportCaptureFailureReason != _supportCaptureFailureReasonLogged ||
+                supportCaptureStatus.invalidOrMissingFingerMask !=
+                    _supportCaptureFailureMaskLogged) {
+                ROCK_LOG_WARN(Animation,
+                    "Authored support grip capture unavailable weaponKey=0x{:X} reason={} secondaryPass={} capture={} fingerMask=0x{:04X}",
+                    currentWeaponKey,
+                    native_animation_authority::authoredSupportGripCaptureFailureReasonName(
+                        supportCaptureStatus.failureReason),
+                    supportCaptureStatus.secondaryPassSequence,
+                    supportCaptureStatus.captureSequence,
+                    supportCaptureStatus.invalidOrMissingFingerMask);
+                _supportCaptureFailureReasonLogged = supportCaptureFailureReason;
+                _supportCaptureFailureMaskLogged =
+                    supportCaptureStatus.invalidOrMissingFingerMask;
+                _supportCaptureFailureLogged = true;
+            }
+        } else {
+            _supportCaptureFailureLogged = false;
+        }
 
         RE::NiTransform authoredSupportHandInWeapon{};
         std::array<RE::NiTransform, 15> authoredSupportFingerLocals{};
