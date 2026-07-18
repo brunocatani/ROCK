@@ -960,6 +960,8 @@ int main()
         using namespace rock::weapon_part_record_identity_policy;
         ok &= expectEqual("P-Mag resolves the magazine slot anchor",
             resolveStructureAnchor("P-Mag"), StructureAnchor::SlotMagazine);
+        ok &= expectEqual("P-Stock resolves the rear-furniture slot anchor",
+            resolveStructureAnchor("P-Stock"), StructureAnchor::SlotRearFurniture);
         ok &= expectEqual("P-Barrel resolves the barrel slot anchor",
             resolveStructureAnchor("P-Barrel"), StructureAnchor::SlotBarrel);
         ok &= expectEqual("P-Compensator resolves the muzzle slot anchor",
@@ -972,6 +974,10 @@ int main()
             resolveStructureAnchor("WeaponBolt"), StructureAnchor::RigBolt);
         ok &= expectEqual("WeaponMagazineChild3 resolves the magazine display rig anchor",
             resolveStructureAnchor("WeaponMagazineChild3"), StructureAnchor::RigMagazineDisplay);
+        ok &= expectEqual("dedicated magazine slot outranks its internal display rig",
+            chooseStructureAnchor(StructureAnchor::SlotMagazine, StructureAnchor::RigMagazineDisplay), StructureAnchor::SlotMagazine);
+        ok &= expectEqual("bolt rig outranks the catch-all receiver slot",
+            chooseStructureAnchor(StructureAnchor::SlotReceiver, StructureAnchor::RigBolt), StructureAnchor::RigBolt);
         ok &= expectEqual("unknown mod-added connect point resolves no anchor",
             resolveStructureAnchor("P-CustomThing"), StructureAnchor::None);
         ok &= expectEqual("plain mesh name resolves no anchor",
@@ -985,6 +991,14 @@ int main()
             magFromSlot.classificationSource, rock::WeaponPartClassificationSource::SlotAnchor);
         ok &= expectEqual("magazine slot carries the vanilla attach-point form id",
             magFromSlot.attachPointFormId, kAttachPointMagazine);
+        const auto cartridgeKeptInMagazineSlot = applyStructureAnchor(
+            rock::classifyWeaponPartKind(rock::WeaponPartKind::Round), StructureAnchor::SlotMagazine);
+        ok &= expectEqual("magazine slot preserves an explicitly named cartridge",
+            cartridgeKeptInMagazineSlot.partKind, rock::WeaponPartKind::Round);
+        const auto cosmeticBulletKeptInMagazineSlot = applyStructureAnchor(
+            rock::classifyWeaponPartKind(rock::WeaponPartKind::CosmeticAmmo), StructureAnchor::SlotMagazine);
+        ok &= expectEqual("magazine slot preserves explicitly cosmetic bullet geometry",
+            cosmeticBulletKeptInMagazineSlot.partKind, rock::WeaponPartKind::CosmeticAmmo);
 
         const auto receiverByWeakToken = rock::classifyWeaponPartKind(rock::WeaponPartKind::Receiver);
         const auto barrelOverride = applyStructureAnchor(receiverByWeakToken, StructureAnchor::SlotBarrel);
@@ -1262,6 +1276,31 @@ int main()
     ok &= expectTrue("post-drop suppression uses grab release delay seconds", beginDelayedRestore(postDropRestore, postDropSuppression, 0.8f));
     ok &= expectFalse("post-drop suppression remains active before configured delay", advanceDelayedRestore(postDropRestore, postDropSuppression, 0.79f));
     ok &= expectTrue("post-drop suppression expires at configured delay", advanceDelayedRestore(postDropRestore, postDropSuppression, 0.01f));
+
+    {
+        using namespace rock::weapon_collision_geometry_math;
+        ok &= expectFalse("small unscaled source-local hull stays below the build threshold",
+            scaledHullDiagonalCanBuild(0.04f, 1.0f, 0.5f));
+        ok &= expectTrue("authored node scale participates in source-local hull validation",
+            scaledHullDiagonalCanBuild(0.04f, 78.0f, 0.5f));
+        ok &= expectFalse("zero-scale source-local hull fails closed",
+            scaledHullDiagonalCanBuild(4.0f, 0.0f, 0.5f));
+
+        std::vector<HullSelectionInput> balancedInputs{
+            { .center = { 0.0f, -100.0f, 0.0f }, .min = { -2.0f, -102.0f, -2.0f }, .max = { 2.0f, -98.0f, 2.0f }, .pointCount = 40, .coverageClass = 1, .priority = 62 },
+            { .center = { 0.0f, 100.0f, 0.0f }, .min = { -2.0f, 98.0f, -2.0f }, .max = { 2.0f, 102.0f, 2.0f }, .pointCount = 40, .coverageClass = 1, .priority = 62 },
+            { .center = { 0.0f, 0.0f, 0.0f }, .min = { -1.0f, -1.0f, -1.0f }, .max = { 1.0f, 1.0f, 1.0f }, .pointCount = 20, .coverageClass = 3, .priority = 56 },
+            { .center = { 0.0f, 0.0f, 0.0f }, .min = { -1.0f, -1.0f, -1.0f }, .max = { 1.0f, 1.0f, 1.0f }, .pointCount = 20, .coverageClass = 3, .priority = 80 },
+            { .center = { 0.0f, 0.0f, 0.0f }, .min = { -1.0f, -1.0f, -1.0f }, .max = { 1.0f, 1.0f, 1.0f }, .pointCount = 20, .coverageClass = 7, .priority = 12, .cosmetic = true },
+        };
+        const auto balancedSelection = selectBalancedHullIndices(balancedInputs, 3);
+        ok &= expectTrue("balanced hull selection keeps the higher-priority magazine shell",
+            std::find(balancedSelection.begin(), balancedSelection.end(), 3) != balancedSelection.end());
+        ok &= expectFalse("balanced hull selection drops the lower-priority same-class candidate first",
+            std::find(balancedSelection.begin(), balancedSelection.end(), 2) != balancedSelection.end());
+        ok &= expectFalse("balanced hull selection does not spend structural capacity on cosmetic ammunition",
+            std::find(balancedSelection.begin(), balancedSelection.end(), 4) != balancedSelection.end());
+    }
 
     return ok ? 0 : 1;
 }

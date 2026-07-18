@@ -725,9 +725,10 @@ namespace rock
             return dx * dx + dy * dy + dz * dz;
         }
 
-        bool pointCloudCanBuildHull(const std::vector<RE::NiPoint3>& points)
+        bool pointCloudCanBuildHull(const std::vector<RE::NiPoint3>& points, float sourceScale = 1.0f)
         {
-            return points.size() >= 4 && pointCloudDiagonalSquared(points) >= (MIN_HULL_DIAGONAL_GAME_UNITS * MIN_HULL_DIAGONAL_GAME_UNITS);
+            return points.size() >= 4 && weapon_collision_geometry_math::scaledHullDiagonalCanBuild(
+                                             pointCloudDiagonalSquared(points), sourceScale, MIN_HULL_DIAGONAL_GAME_UNITS);
         }
 
         bool compressGeneratedChildClustersForBudget(
@@ -1370,15 +1371,10 @@ namespace rock
             }
         }
 
-        GeneratedHullCoverageInfo classifyGeneratedHull(std::string_view sourceName)
-        {
-            return classifyGeneratedHullSemantic(classifyWeaponPartName(sourceName));
-        }
-
         weapon_collision_geometry_math::HullSelectionInput makeHullSelectionInput(const RE::NiPoint3& localCenterGame, const RE::NiPoint3& localMinGame,
-            const RE::NiPoint3& localMaxGame, std::size_t pointCount, std::string_view sourceName)
+            const RE::NiPoint3& localMaxGame, std::size_t pointCount, const WeaponPartClassification& semantic)
         {
-            const auto coverage = classifyGeneratedHull(sourceName);
+            const auto coverage = classifyGeneratedHullSemantic(semantic);
             return weapon_collision_geometry_math::HullSelectionInput{
                 pointToArray(localCenterGame),
                 pointToArray(localMinGame),
@@ -4208,20 +4204,39 @@ namespace rock
 
         if (outSources.size() > MAX_WEAPON_BODIES) {
             logGeneratedSourceInventory("body-capacity-overflow", outSources);
-            const std::size_t droppedCount = outSources.size() - MAX_WEAPON_BODIES;
+            const std::size_t extractedCount = outSources.size();
+            const std::size_t droppedCount = extractedCount - MAX_WEAPON_BODIES;
+            std::vector<weapon_collision_geometry_math::HullSelectionInput> selectionInputs;
+            selectionInputs.reserve(outSources.size());
+            for (const auto& source : outSources) {
+                selectionInputs.push_back(makeHullSelectionInput(
+                    source.localCenterGame,
+                    source.localMinGame,
+                    source.localMaxGame,
+                    source.localPointsGame.size(),
+                    source.semantic));
+            }
+
+            const auto selectedIndices =
+                weapon_collision_geometry_math::selectBalancedHullIndices(selectionInputs, MAX_WEAPON_BODIES);
+            std::vector<GeneratedHullSource> selectedSources;
+            selectedSources.reserve(selectedIndices.size());
+            for (const auto selectedIndex : selectedIndices) {
+                selectedSources.push_back(std::move(outSources[selectedIndex]));
+            }
+            outSources = std::move(selectedSources);
             ROCK_LOG_WARN(Weapon,
-                "Generated weapon mesh body cap reached: extracted={} kept={} dropped={} policy=visible-traversal-order",
+                "Generated weapon mesh body cap reached: extracted={} kept={} dropped={} policy=balanced-semantic-coverage",
+                extractedCount,
                 outSources.size(),
-                MAX_WEAPON_BODIES,
                 droppedCount);
-            outSources.resize(MAX_WEAPON_BODIES);
         } else if (outSources.size() == MAX_WEAPON_BODIES) {
             logGeneratedSourceInventory("body-capacity-exact", outSources);
         }
 
         for (std::size_t i = 0; i < outSources.size(); ++i) {
             const auto& source = outSources[i];
-            const auto coverage = classifyGeneratedHull(source.sourceName);
+            const auto coverage = classifyGeneratedHullSemantic(source.semantic);
             /*
              * The actual Havok hull is built from sourceLocalPoints* (the
              * source NiNode's own local space), not localPoints* (weapon-root
@@ -4307,6 +4322,13 @@ namespace rock
         std::uint32_t& culledForEffectGeometry)
     {
         if (!node || depth > 15) {
+            return;
+        }
+        if (node->GetAppCulled()) {
+            ROCK_LOG_TRACE(Weapon,
+                "{}generated mesh source branch skipped '{}': ancestor branch is app-culled",
+                std::string(depth * 2, ' '),
+                safeNodeName(node));
             return;
         }
         auto* triShape = node->IsTriShape();
@@ -4395,23 +4417,34 @@ namespace rock
             }
 
             /*
-             * Structure anchors outrank NIF name tokens: the nearest ancestor
-             * that is a connect point (P-*) or an engine rig node decides the
-             * part's slot/function per the record-identity policy. The walk is
-             * bounded and purely upward, so it needs no recursion-state
-             * threading and stays valid for cached sources (the OMOD set is
-             * part of the weapon generation identity).
+             * Structure anchors outrank NIF name tokens. A P-* slot is the
+             * attachment owner and therefore outranks a nearer animation rig
+             * node such as WeaponMagazine; explicit ammunition mesh names are
+             * preserved by the record-identity policy. The walk is bounded and
+             * purely upward, so it needs no recursion-state threading and stays
+             * valid for cached sources (the OMOD set is part of the weapon
+             * generation identity).
              */
             auto sourceSemantic = classifyWeaponPartName(safeNodeName(node));
             {
-                auto structureAnchor = weapon_part_record_identity_policy::StructureAnchor::None;
+                auto slotAnchor = weapon_part_record_identity_policy::StructureAnchor::None;
+                auto rigAnchor = weapon_part_record_identity_policy::StructureAnchor::None;
                 RE::NiAVObject* ancestor = node->parent;
                 for (int step = 0; ancestor && step < 24; ++step, ancestor = ancestor->parent) {
-                    structureAnchor = weapon_part_record_identity_policy::resolveStructureAnchor(safeNodeName(ancestor));
-                    if (structureAnchor != weapon_part_record_identity_policy::StructureAnchor::None) {
+                    const auto candidateAnchor = weapon_part_record_identity_policy::resolveStructureAnchor(safeNodeName(ancestor));
+                    if (candidateAnchor == weapon_part_record_identity_policy::StructureAnchor::RigBolt ||
+                        candidateAnchor == weapon_part_record_identity_policy::StructureAnchor::RigMagazineDisplay) {
+                        if (rigAnchor == weapon_part_record_identity_policy::StructureAnchor::None) {
+                            rigAnchor = candidateAnchor;
+                        }
+                        continue;
+                    }
+                    if (candidateAnchor != weapon_part_record_identity_policy::StructureAnchor::None) {
+                        slotAnchor = candidateAnchor;
                         break;
                     }
                 }
+                const auto structureAnchor = weapon_part_record_identity_policy::chooseStructureAnchor(slotAnchor, rigAnchor);
                 sourceSemantic = weapon_part_record_identity_policy::applyStructureAnchor(sourceSemantic, structureAnchor);
                 if (sourceSemantic.classificationSource != WeaponPartClassificationSource::NameToken) {
                     ROCK_LOG_DEBUG(Weapon,
@@ -4632,8 +4665,17 @@ namespace rock
             const std::size_t sourceIndex = nextSourceIndex++;
             ++attemptedThisFrame;
             const auto& source = sources[sourceIndex];
-            const auto& shapePoints = source.sourceLocalPointsGame.empty() ? source.localPointsGame : source.sourceLocalPointsGame;
-            if (!pointCloudCanBuildHull(shapePoints)) {
+            const bool useSourceLocal = !source.sourceLocalPointsGame.empty();
+            const auto& shapePoints = useSourceLocal ? source.sourceLocalPointsGame : source.localPointsGame;
+            const float shapePointScale = useSourceLocal ? source.sourceNodeScale : 1.0f;
+            if (!pointCloudCanBuildHull(shapePoints, shapePointScale)) {
+                ROCK_LOG_DEBUG(Weapon,
+                    "Generated weapon mesh hull '{}' rejected before native shape build: points={} sourceLocal={} sourceScale={:.4f} effective hull diagonal below {:.2f} game units",
+                    source.sourceName,
+                    shapePoints.size(),
+                    useSourceLocal,
+                    shapePointScale,
+                    MIN_HULL_DIAGONAL_GAME_UNITS);
                 continue;
             }
 
@@ -5485,10 +5527,12 @@ namespace rock
                 if (!instance.body.isValid()) {
                     continue;
                 }
-                if (instance.sourceNode) {
+                const bool durableAttachmentEvidence =
+                    !weapon_generated_source_completeness_policy::isTransientReloadPart(instance.semantic.partKind);
+                if (instance.sourceNode && durableAttachmentEvidence) {
                     evidenceSourceAddresses.insert(reinterpret_cast<std::uintptr_t>(instance.sourceNode));
                 }
-                if (instance.semantic.attachPointFormId != 0) {
+                if (instance.semantic.attachPointFormId != 0 && durableAttachmentEvidence) {
                     ++bodiesByAttachPointFormId[instance.semantic.attachPointFormId];
                 }
             }

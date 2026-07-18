@@ -74,7 +74,7 @@ namespace rock::weapon_part_record_identity_policy
         if (nodeName == "P-Scope" || nodeName == "P-Sights") {
             return StructureAnchor::SlotSight;
         }
-        if (nodeName == "P-Grip") {
+        if (nodeName == "P-Grip" || nodeName == "P-Stock") {
             return StructureAnchor::SlotRearFurniture;
         }
         if (nodeName == "P-PGrip") {
@@ -127,6 +127,22 @@ namespace rock::weapon_part_record_identity_policy
         }
     }
 
+    [[nodiscard]] inline constexpr StructureAnchor chooseStructureAnchor(
+        StructureAnchor slotAnchor,
+        StructureAnchor rigAnchor) noexcept
+    {
+        if (slotAnchor == StructureAnchor::None) {
+            return rigAnchor;
+        }
+        // P-Receiver is the catch-all owner of the assembled weapon. A nearer
+        // engine rig is more specific there; dedicated attachment slots such
+        // as P-Mag remain authoritative over their internal animation rigs.
+        if (slotAnchor == StructureAnchor::SlotReceiver && rigAnchor != StructureAnchor::None) {
+            return rigAnchor;
+        }
+        return slotAnchor;
+    }
+
     [[nodiscard]] inline WeaponPartKind partKindForAnchor(StructureAnchor anchor)
     {
         switch (anchor) {
@@ -166,13 +182,27 @@ namespace rock::weapon_part_record_identity_policy
      * of nearly everything, so it only fills gaps. Rig anchors likewise only
      * fill gaps where the name classifier found nothing gameplay-critical.
      */
+    [[nodiscard]] inline constexpr bool isAmmoPieceKind(WeaponPartKind kind) noexcept
+    {
+        return kind == WeaponPartKind::Shell ||
+               kind == WeaponPartKind::Round ||
+               kind == WeaponPartKind::LaserCell ||
+               kind == WeaponPartKind::CosmeticAmmo;
+    }
+
     [[nodiscard]] inline constexpr bool anchorOverridesName(
         StructureAnchor anchor,
+        WeaponPartKind namePartKind,
         bool nameHasActionRole,
         bool nameGameplayCritical)
     {
         switch (anchor) {
         case StructureAnchor::SlotMagazine:
+            // Magazine rigs frequently place visible cartridges and follower
+            // meshes below the same P-Mag owner. Preserve explicit ammunition
+            // identities while allowing an otherwise unnamed shell mesh to
+            // inherit the physical magazine slot.
+            return !nameHasActionRole && !isAmmoPieceKind(namePartKind);
         case StructureAnchor::SlotBarrel:
         case StructureAnchor::SlotMuzzle:
         case StructureAnchor::SlotSight:
@@ -198,7 +228,7 @@ namespace rock::weapon_part_record_identity_policy
         const WeaponPartClassification& nameResult,
         StructureAnchor anchor)
     {
-        if (!anchorOverridesName(anchor, nameResult.actionRole != WeaponActionRole::None, nameResult.gameplayCritical)) {
+        if (!anchorOverridesName(anchor, nameResult.partKind, nameResult.actionRole != WeaponActionRole::None, nameResult.gameplayCritical)) {
             return nameResult;
         }
 

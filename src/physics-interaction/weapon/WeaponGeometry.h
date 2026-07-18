@@ -808,6 +808,25 @@ namespace rock::weapon_collision_geometry_math
         bool cosmetic = false;
     };
 
+    [[nodiscard]] inline bool scaledHullDiagonalCanBuild(
+        float diagonalSquaredGame,
+        float sourceScale,
+        float minimumDiagonalGame) noexcept
+    {
+        if (!std::isfinite(diagonalSquaredGame) || !std::isfinite(sourceScale) || !std::isfinite(minimumDiagonalGame) ||
+            diagonalSquaredGame < 0.0f || minimumDiagonalGame < 0.0f) {
+            return false;
+        }
+
+        const float absoluteScale = std::abs(sourceScale);
+        if (absoluteScale <= std::numeric_limits<float>::epsilon()) {
+            return false;
+        }
+        const float effectiveDiagonalSquared = diagonalSquaredGame * absoluteScale * absoluteScale;
+        return std::isfinite(effectiveDiagonalSquared) &&
+               effectiveDiagonalSquared >= minimumDiagonalGame * minimumDiagonalGame;
+    }
+
     inline float hullAxisValue(const std::array<float, 3>& value, int axis)
     {
         return value[static_cast<std::size_t>((std::max)(0, (std::min)(axis, 2)))];
@@ -920,10 +939,10 @@ namespace rock::weapon_collision_geometry_math
         }
 
         auto classBestPriority = [&](int coverageClass) {
-            int best = std::numeric_limits<int>::max();
+            int best = std::numeric_limits<int>::min();
             for (const auto& input : inputs) {
                 if (!input.cosmetic && input.coverageClass == coverageClass) {
-                    best = (std::min)(best, input.priority);
+                    best = (std::max)(best, input.priority);
                 }
             }
             return best;
@@ -933,14 +952,14 @@ namespace rock::weapon_collision_geometry_math
             const int lhsPriority = classBestPriority(lhs);
             const int rhsPriority = classBestPriority(rhs);
             if (lhsPriority != rhsPriority) {
-                return lhsPriority < rhsPriority;
+                return lhsPriority > rhsPriority;
             }
             return lhs < rhs;
         });
 
         auto findBestForClass = [&](int coverageClass, bool includeCosmetic) {
             std::size_t best = inputs.size();
-            int bestPriority = std::numeric_limits<int>::max();
+            int bestPriority = std::numeric_limits<int>::min();
             float bestScore = 0.0f;
             for (std::size_t i = 0; i < inputs.size(); ++i) {
                 if (selected[i] || inputs[i].coverageClass != coverageClass || (!includeCosmetic && inputs[i].cosmetic)) {
@@ -949,7 +968,7 @@ namespace rock::weapon_collision_geometry_math
 
                 const int priority = inputs[i].priority;
                 const float score = hullSelectionScore(inputs[i]);
-                if (best == inputs.size() || priority < bestPriority || (priority == bestPriority && score > bestScore)) {
+                if (best == inputs.size() || priority > bestPriority || (priority == bestPriority && score > bestScore)) {
                     best = i;
                     bestPriority = priority;
                     bestScore = score;
@@ -978,7 +997,7 @@ namespace rock::weapon_collision_geometry_math
 
         while (result.size() < budget) {
             std::size_t best = inputs.size();
-            int bestPriority = std::numeric_limits<int>::max();
+            int bestPriority = std::numeric_limits<int>::min();
             float bestScore = 0.0f;
             for (std::size_t i = 0; i < inputs.size(); ++i) {
                 if (selected[i]) {
@@ -987,7 +1006,7 @@ namespace rock::weapon_collision_geometry_math
 
                 const int priority = inputs[i].priority;
                 const float score = hullSelectionScore(inputs[i]);
-                if (best == inputs.size() || priority < bestPriority || (priority == bestPriority && score > bestScore)) {
+                if (best == inputs.size() || priority > bestPriority || (priority == bestPriority && score > bestScore)) {
                     best = i;
                     bestPriority = priority;
                     bestScore = score;
