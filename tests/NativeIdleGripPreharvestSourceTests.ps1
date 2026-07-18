@@ -26,14 +26,14 @@ $source = 'src/physics-interaction/weapon/NativeIdleGripPreharvest.cpp'
 $policy = 'src/physics-interaction/weapon/NativeIdleGripPreharvestPolicy.h'
 
 Require-Text $source `
-    'kExtraAnimGraphPreloadCtor\s*=\s*0x0C8FC0[\s\S]*kRequestAnimationSubGraph\s*=\s*0x10162B0[\s\S]*kGetClipGeneratorBinding\s*=\s*0x1774800[\s\S]*kGetAnimationFilesForSubgraph\s*=\s*0x1769140[\s\S]*kFindBoneWithName\s*=\s*0x190A580' `
-    'The proof must remain pinned to the independently verified FO4VR native preload, request, clip, and skeleton functions.'
+    'kSimpleAnimationGraphManagerHolderCtor\s*=\s*0x0811F10[\s\S]*kCreateBackgroundSimpleManager\s*=\s*0x0811FE0[\s\S]*kIsAnimationLoadingComplete\s*=\s*0x08122C0[\s\S]*kRequestAnimationSubGraph\s*=\s*0x10162B0[\s\S]*kGetClipGeneratorBinding\s*=\s*0x1774800[\s\S]*kGetAnimationFilesForSubgraph\s*=\s*0x1769140[\s\S]*kFindBoneWithName\s*=\s*0x190A580' `
+    'The proof must remain pinned to the independently verified FO4VR plain-holder, request, clip, and skeleton functions.'
 Require-Text $source `
-    'RUNTIME_VR_1_2_72[\s\S]*validateNativeEntry\("ExtraAnimGraphPreload::ctor"[\s\S]*validateNativeEntry\("GetClipGeneratorBinding"' `
+    'RUNTIME_VR_1_2_72[\s\S]*validateNativeEntry\([\s\S]*"SimpleAnimationGraphManagerHolder::ctor"[\s\S]*validateNativeEntry\("GetClipGeneratorBinding"' `
     'Hardcoded FO4VR calls must retain executable identity and live-byte gates.'
 Require-Text $source `
-    'validateNativeEntry\("ExtraAnimGraphPreload::IsFinishedLoading",\s*kIsFinishedLoading,\s*std::array<std::uint8_t,\s*7>\{\s*0x40,\s*0x53,\s*0x57,\s*0x48,\s*0x83,\s*0xEC,\s*0x28\s*\}\)' `
-    'The IsFinishedLoading gate must retain the verified redundant REX prefix present in Fallout4VR.exe 1.2.72.'
+    'validateNativeEntry\("SimpleAnimationGraphManagerHolder::IsAnimationLoadingComplete",\s*kIsAnimationLoadingComplete,\s*std::array<std::uint8_t,\s*9>\{\s*0x48,\s*0x8B,\s*0x41,\s*0x10,\s*0x48,\s*0x85,\s*0xC0,\s*0x74,\s*0x0C\s*\}\)' `
+    'The plain-holder completion poll must retain its verified Fallout4VR.exe 1.2.72 byte gate.'
 Require-Text $policy `
     'kFirstPersonGraphIndex\s*=\s*1[\s\S]*graphCount\s*<=\s*kFirstPersonGraphIndex[\s\S]*identifierCount\s*<=\s*kFirstPersonGraphIndex' `
     'The sampler must fail closed unless Bethesda produced the paired first-person graph and identifier.'
@@ -44,8 +44,17 @@ Require-Text $source `
     'kAnimationFileLookupSingleton\s*=\s*0x5B64318[\s\S]*tryReadValue\([\s\S]*lookupSingleton[\s\S]*getAnimationFilesForSubgraph\(\s*&outSubgraphIdentifier\)[\s\S]*clipPathHasStem[\s\S]*trySampleClip' `
     'Clip binding must consume the exact winning AnimationFileData path for the selected subgraph instead of guessing a basename.'
 Require-Text $source `
-    'isFinishedLoading[\s\S]*requestAnimationSubGraph[\s\S]*isAnimationSubGraphLoaded[\s\S]*releaseAnimationSubGraph[\s\S]*extraDtor' `
-    'Off-screen native loads must be polled asynchronously and released before destroying their preload owner.'
+    'PopulateGraphProjectsToLoad[\s\S]*graphProjects\.size\(\)\s*<\s*2[\s\S]*createBackgroundSimpleManager' `
+    'Off-screen native loads must create the plain holder from both player graph projects.'
+Require-Text $source `
+    'Phase::BaseGraphsLoading[\s\S]*isAnimationLoadingComplete[\s\S]*requestAnimationSubGraph[\s\S]*Phase::WeaponSubgraphLoading[\s\S]*isAnimationSubGraphLoaded' `
+    'Off-screen native loads must poll both asynchronous load stages before sampling.'
+Require-Text $source `
+    'releaseAnimationSubGraph\([\s\S]*graphHolderDtor' `
+    'Weapon subgraphs must be released before destroying the plain graph holder.'
+Reject-Text $source `
+    'ExtraAnimGraphPreload|kLoadAnimGraphs|isFinishedLoading' `
+    'The actor-bound ExtraAnimGraphPreload completion path must not return after its verified FO4VR crash.'
 Require-Text $source `
     'rockAuthoredPrimaryFiringGripTestEnabled' `
     'The proof must remain behind the existing ROCK authored-grip experiment.'

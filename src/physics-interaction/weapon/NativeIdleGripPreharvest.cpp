@@ -13,6 +13,7 @@
 #include "RE/Bethesda/BSAnimationGraph.h"
 #include "RE/Bethesda/BSExtraData.h"
 #include "RE/Bethesda/BSFixedString.h"
+#include "RE/Bethesda/BSStringT.h"
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/TESBoundObjects.h"
 #include "RE/Bethesda/TESObjectREFRs.h"
@@ -32,10 +33,10 @@ namespace rock::native_idle_grip_preharvest
 {
     namespace
     {
-        constexpr std::uintptr_t kExtraAnimGraphPreloadCtor = 0x0C8FC0;
-        constexpr std::uintptr_t kExtraAnimGraphPreloadDtor = 0x0C9190;
-        constexpr std::uintptr_t kLoadAnimGraphs = 0x0C92E0;
-        constexpr std::uintptr_t kIsFinishedLoading = 0x0C9570;
+        constexpr std::uintptr_t kSimpleAnimationGraphManagerHolderCtor = 0x0811F10;
+        constexpr std::uintptr_t kSimpleAnimationGraphManagerHolderDtor = 0x0811F50;
+        constexpr std::uintptr_t kCreateBackgroundSimpleManager = 0x0811FE0;
+        constexpr std::uintptr_t kIsAnimationLoadingComplete = 0x08122C0;
         constexpr std::uintptr_t kRequestAnimationSubGraph = 0x10162B0;
         constexpr std::uintptr_t kIsAnimationSubGraphLoaded = 0x07F4320;
         constexpr std::uintptr_t kReleaseAnimationSubGraph = 0x07F43C0;
@@ -46,8 +47,8 @@ namespace rock::native_idle_grip_preharvest
         constexpr std::uintptr_t kBehaviorGraphSwapSingleton = 0x5AB9200;
         constexpr std::uintptr_t kAnimationFileLookupSingleton = 0x5B64318;
 
-        constexpr std::size_t kExtraAnimGraphPreloadSize = 0x168;
-        constexpr std::ptrdiff_t kEmbeddedGraphHolderOffset = 0x18;
+        constexpr std::size_t kSimpleAnimationGraphManagerHolderSize = 0x18;
+        static_assert(kSimpleAnimationGraphManagerHolderSize == sizeof(RE::SimpleAnimationGraphManagerHolder));
         constexpr std::ptrdiff_t kGraphSkeletonOwnerOffset = 0x240;
         constexpr std::ptrdiff_t kSkeletonFromOwnerOffset = 0x20;
         constexpr std::ptrdiff_t kSkeletonParentIndicesOffset = 0x18;
@@ -75,10 +76,10 @@ namespace rock::native_idle_grip_preharvest
         };
         static_assert(sizeof(HkQsTransform) == 0x30);
 
-        using ExtraCtorFn = void* (*)(void*, RE::TESRace*);
-        using ExtraDtorFn = void (*)(void*);
-        using LoadAnimGraphsFn = bool (*)(void*, RE::Actor*, RE::TESObjectREFR*);
-        using IsFinishedLoadingFn = bool (*)(void*);
+        using GraphHolderCtorFn = void* (*)(void*);
+        using GraphHolderDtorFn = void (*)(void*);
+        using CreateBackgroundSimpleManagerFn = bool (*)(void*, RE::BSScrapArray<RE::BSStaticStringT<260>>*, std::int32_t);
+        using IsAnimationLoadingCompleteFn = bool (*)(void*);
         using AddItemToTargetKeywordsFn = void (*)(RE::BGSObjectInstance*, RE::BSScrapArray<RE::IKeywordFormBase*>*);
         using RequestAnimationSubGraphFn = void (*)(RE::Actor*, RE::BSAnimationGraphManager*, std::int32_t*, RE::BSScrapArray<RE::IKeywordFormBase*>*, std::int32_t*,
             RE::BSTSmallArray<RE::SubgraphHandle, 2>*, RE::BSTSmallArray<RE::SubgraphIdentifier, 2>*);
@@ -91,10 +92,10 @@ namespace rock::native_idle_grip_preharvest
 
         struct NativeFunctions
         {
-            ExtraCtorFn extraCtor{ nullptr };
-            ExtraDtorFn extraDtor{ nullptr };
-            LoadAnimGraphsFn loadAnimGraphs{ nullptr };
-            IsFinishedLoadingFn isFinishedLoading{ nullptr };
+            GraphHolderCtorFn graphHolderCtor{ nullptr };
+            GraphHolderDtorFn graphHolderDtor{ nullptr };
+            CreateBackgroundSimpleManagerFn createBackgroundSimpleManager{ nullptr };
+            IsAnimationLoadingCompleteFn isAnimationLoadingComplete{ nullptr };
             AddItemToTargetKeywordsFn addItemToTargetKeywords{ nullptr };
             RequestAnimationSubGraphFn requestAnimationSubGraph{ nullptr };
             IsAnimationSubGraphLoadedFn isAnimationSubGraphLoaded{ nullptr };
@@ -113,7 +114,7 @@ namespace rock::native_idle_grip_preharvest
 
         struct Job
         {
-            alignas(16) std::array<std::byte, kExtraAnimGraphPreloadSize> extraStorage{};
+            alignas(16) std::array<std::byte, kSimpleAnimationGraphManagerHolderSize> graphHolderStorage{};
             RE::ObjectRefHandle reference{};
             RE::BSTSmartPointer<RE::TBO_InstanceData> instanceData{};
             RE::BSTSmallArray<RE::SubgraphHandle, 2> subgraphHandles{};
@@ -126,7 +127,7 @@ namespace rock::native_idle_grip_preharvest
             ULONGLONG startedAtMilliseconds{ 0 };
             Phase phase{ Phase::Idle };
             bool inPowerArmor{ false };
-            bool extraConstructed{ false };
+            bool graphHolderConstructed{ false };
             bool longLoadLogged{ false };
         };
 
@@ -208,11 +209,15 @@ namespace rock::native_idle_grip_preharvest
                 return false;
             }
 
-            const bool entriesMatch = validateNativeEntry("ExtraAnimGraphPreload::ctor", kExtraAnimGraphPreloadCtor, std::array<std::uint8_t, 5>{ 0x48, 0x89, 0x5C, 0x24, 0x10 }) &&
-                validateNativeEntry("ExtraAnimGraphPreload::dtor", kExtraAnimGraphPreloadDtor,
-                    std::array<std::uint8_t, 9>{ 0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24 }) &&
-                validateNativeEntry("ExtraAnimGraphPreload::LoadAnimGraphs", kLoadAnimGraphs, std::array<std::uint8_t, 5>{ 0x48, 0x89, 0x5C, 0x24, 0x10 }) &&
-                validateNativeEntry("ExtraAnimGraphPreload::IsFinishedLoading", kIsFinishedLoading, std::array<std::uint8_t, 7>{ 0x40, 0x53, 0x57, 0x48, 0x83, 0xEC, 0x28 }) &&
+            const bool entriesMatch = validateNativeEntry(
+                                          "SimpleAnimationGraphManagerHolder::ctor", kSimpleAnimationGraphManagerHolderCtor,
+                                          std::array<std::uint8_t, 5>{ 0x53, 0x48, 0x83, 0xEC, 0x20 }) &&
+                validateNativeEntry("SimpleAnimationGraphManagerHolder::dtor", kSimpleAnimationGraphManagerHolderDtor,
+                    std::array<std::uint8_t, 5>{ 0x48, 0x89, 0x5C, 0x24, 0x10 }) &&
+                validateNativeEntry("SimpleAnimationGraphManagerHolder::CreateBackgroundSimpleManager", kCreateBackgroundSimpleManager,
+                    std::array<std::uint8_t, 5>{ 0x48, 0x89, 0x5C, 0x24, 0x18 }) &&
+                validateNativeEntry("SimpleAnimationGraphManagerHolder::IsAnimationLoadingComplete", kIsAnimationLoadingComplete,
+                    std::array<std::uint8_t, 9>{ 0x48, 0x8B, 0x41, 0x10, 0x48, 0x85, 0xC0, 0x74, 0x0C }) &&
                 validateNativeEntry("RequestAnimationSubGraph", kRequestAnimationSubGraph, std::array<std::uint8_t, 5>{ 0x48, 0x89, 0x5C, 0x24, 0x08 }) &&
                 validateNativeEntry("IsAnimationSubGraphLoaded", kIsAnimationSubGraphLoaded, std::array<std::uint8_t, 5>{ 0x48, 0x89, 0x5C, 0x24, 0x08 }) &&
                 validateNativeEntry("ReleaseAnimationSubGraph", kReleaseAnimationSubGraph, std::array<std::uint8_t, 7>{ 0x48, 0x83, 0xEC, 0x28, 0x83, 0x7A, 0x18 }) &&
@@ -225,10 +230,10 @@ namespace rock::native_idle_grip_preharvest
                 return false;
             }
 
-            state.native.extraCtor = reinterpret_cast<ExtraCtorFn>(REL::Offset(kExtraAnimGraphPreloadCtor).address());
-            state.native.extraDtor = reinterpret_cast<ExtraDtorFn>(REL::Offset(kExtraAnimGraphPreloadDtor).address());
-            state.native.loadAnimGraphs = reinterpret_cast<LoadAnimGraphsFn>(REL::Offset(kLoadAnimGraphs).address());
-            state.native.isFinishedLoading = reinterpret_cast<IsFinishedLoadingFn>(REL::Offset(kIsFinishedLoading).address());
+            state.native.graphHolderCtor = reinterpret_cast<GraphHolderCtorFn>(REL::Offset(kSimpleAnimationGraphManagerHolderCtor).address());
+            state.native.graphHolderDtor = reinterpret_cast<GraphHolderDtorFn>(REL::Offset(kSimpleAnimationGraphManagerHolderDtor).address());
+            state.native.createBackgroundSimpleManager = reinterpret_cast<CreateBackgroundSimpleManagerFn>(REL::Offset(kCreateBackgroundSimpleManager).address());
+            state.native.isAnimationLoadingComplete = reinterpret_cast<IsAnimationLoadingCompleteFn>(REL::Offset(kIsAnimationLoadingComplete).address());
             state.native.requestAnimationSubGraph = reinterpret_cast<RequestAnimationSubGraphFn>(REL::Offset(kRequestAnimationSubGraph).address());
             state.native.isAnimationSubGraphLoaded = reinterpret_cast<IsAnimationSubGraphLoadedFn>(REL::Offset(kIsAnimationSubGraphLoaded).address());
             state.native.releaseAnimationSubGraph = reinterpret_cast<ReleaseAnimationSubGraphFn>(REL::Offset(kReleaseAnimationSubGraph).address());
@@ -237,16 +242,16 @@ namespace rock::native_idle_grip_preharvest
             state.native.getAnimationFilesForSubgraph = reinterpret_cast<GetAnimationFilesForSubgraphFn>(REL::Offset(kGetAnimationFilesForSubgraph).address());
             state.native.findBoneWithName = reinterpret_cast<FindBoneWithNameFn>(REL::Offset(kFindBoneWithName).address());
             state.nativeValidated = true;
-            ROCK_LOG_INFO(Init, "Native idle-grip preharvest validated: off-screen graph, exact first-person subgraph, and idle clip sampler ready");
+            ROCK_LOG_INFO(Init, "Native idle-grip preharvest validated: plain off-screen graph holder, exact first-person subgraph, and idle clip sampler ready");
             return true;
         }
 
         [[nodiscard]] RE::SimpleAnimationGraphManagerHolder* graphHolder(Job& job)
         {
-            if (!job.extraConstructed) {
+            if (!job.graphHolderConstructed) {
                 return nullptr;
             }
-            return reinterpret_cast<RE::SimpleAnimationGraphManagerHolder*>(job.extraStorage.data() + kEmbeddedGraphHolderOffset);
+            return reinterpret_cast<RE::SimpleAnimationGraphManagerHolder*>(job.graphHolderStorage.data());
         }
 
         [[nodiscard]] bool sameFailureIdentity(const FailureEntry& entry, const Job& job)
@@ -298,15 +303,15 @@ namespace rock::native_idle_grip_preharvest
         void releaseJob(Runtime& state)
         {
             auto& job = state.job;
-            if (job.extraConstructed) {
+            if (job.graphHolderConstructed) {
                 auto* holder = graphHolder(job);
                 if (holder && holder->animationGraphManager && !job.subgraphHandles.empty()) {
                     state.native.releaseAnimationSubGraph(&holder->animationGraphManager, &job.subgraphHandles);
                 }
                 job.subgraphHandles.clear();
                 job.subgraphIdentifiers.clear();
-                state.native.extraDtor(job.extraStorage.data());
-                job.extraConstructed = false;
+                state.native.graphHolderDtor(job.graphHolderStorage.data());
+                job.graphHolderConstructed = false;
             }
             job = {};
         }
@@ -605,7 +610,12 @@ namespace rock::native_idle_grip_preharvest
             }
 
             if (job.phase == Phase::BaseGraphsLoading) {
-                if (!state.native.isFinishedLoading(job.extraStorage.data())) {
+                auto* holder = graphHolder(job);
+                if (!holder) {
+                    failJob(state, "backgroundGraphHolderUnavailable");
+                    return true;
+                }
+                if (!state.native.isAnimationLoadingComplete(holder)) {
                     return false;
                 }
 
@@ -618,7 +628,6 @@ namespace rock::native_idle_grip_preharvest
                     failJob(state, "playerRaceOrPowerArmorChanged");
                     return true;
                 }
-                auto* holder = graphHolder(job);
                 auto* manager = holder ? holder->animationGraphManager.get() : nullptr;
                 if (!holder || !manager) {
                     failJob(state, "backgroundManagerUnavailable");
@@ -732,20 +741,31 @@ namespace rock::native_idle_grip_preharvest
             candidate.phase = Phase::BaseGraphsLoading;
             state.job = std::move(candidate);
 
-            void* constructed = state.native.extraCtor(state.job.extraStorage.data(), state.job.race);
-            if (constructed != state.job.extraStorage.data()) {
-                state.job.extraConstructed = false;
-                failJob(state, "extraAnimGraphPreloadConstructionFailed");
+            void* constructed = state.native.graphHolderCtor(state.job.graphHolderStorage.data());
+            if (constructed != state.job.graphHolderStorage.data()) {
+                state.job.graphHolderConstructed = false;
+                failJob(state, "simpleGraphHolderConstructionFailed");
                 return;
             }
-            state.job.extraConstructed = true;
-            if (!state.native.loadAnimGraphs(state.job.extraStorage.data(), player, nullptr)) {
+            state.job.graphHolderConstructed = true;
+
+            auto* playerRoot = player->Get3D();
+            RE::BSScrapArray<RE::BSStaticStringT<260>> graphProjects{};
+            if (!playerRoot || !player->PopulateGraphProjectsToLoad(playerRoot, graphProjects) || graphProjects.size() < 2) {
+                failJob(state, "playerGraphProjectsUnavailable");
+                return;
+            }
+            if (!state.native.createBackgroundSimpleManager(state.job.graphHolderStorage.data(), &graphProjects, kIoTaskPriority)) {
                 failJob(state, "backgroundGraphLoadRequestRejected");
                 return;
             }
 
-            ROCK_LOG_INFO(Animation, "Native idle-grip preharvest started formID={:08X} refID={:08X} powerArmor={} instance=0x{:X}", state.job.weaponFormId,
-                state.job.referenceFormId, state.job.inPowerArmor ? "yes" : "no", state.job.instanceIdentity);
+            const char* baseGraph = graphProjects[0].c_str();
+            const char* firstPersonGraph = graphProjects[1].c_str();
+            ROCK_LOG_INFO(Animation,
+                "Native idle-grip preharvest started formID={:08X} refID={:08X} powerArmor={} instance=0x{:X} graphProjects={} base={} firstPerson={}",
+                state.job.weaponFormId, state.job.referenceFormId, state.job.inPowerArmor ? "yes" : "no", state.job.instanceIdentity, graphProjects.size(),
+                baseGraph ? baseGraph : "<null>", firstPersonGraph ? firstPersonGraph : "<null>");
         }
     }
 
