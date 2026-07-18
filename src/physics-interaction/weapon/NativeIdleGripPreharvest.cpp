@@ -211,7 +211,7 @@ namespace rock::native_idle_grip_preharvest
 
             const bool entriesMatch = validateNativeEntry(
                                           "SimpleAnimationGraphManagerHolder::ctor", kSimpleAnimationGraphManagerHolderCtor,
-                                          std::array<std::uint8_t, 5>{ 0x53, 0x48, 0x83, 0xEC, 0x20 }) &&
+                                          std::array<std::uint8_t, 6>{ 0x40, 0x53, 0x48, 0x83, 0xEC, 0x20 }) &&
                 validateNativeEntry("SimpleAnimationGraphManagerHolder::dtor", kSimpleAnimationGraphManagerHolderDtor,
                     std::array<std::uint8_t, 5>{ 0x48, 0x89, 0x5C, 0x24, 0x10 }) &&
                 validateNativeEntry("SimpleAnimationGraphManagerHolder::CreateBackgroundSimpleManager", kCreateBackgroundSimpleManager,

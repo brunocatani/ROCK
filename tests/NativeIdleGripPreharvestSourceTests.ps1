@@ -32,6 +32,9 @@ Require-Text $source `
     'RUNTIME_VR_1_2_72[\s\S]*validateNativeEntry\([\s\S]*"SimpleAnimationGraphManagerHolder::ctor"[\s\S]*validateNativeEntry\("GetClipGeneratorBinding"' `
     'Hardcoded FO4VR calls must retain executable identity and live-byte gates.'
 Require-Text $source `
+    'validateNativeEntry\(\s*"SimpleAnimationGraphManagerHolder::ctor",\s*kSimpleAnimationGraphManagerHolderCtor,\s*std::array<std::uint8_t,\s*6>\{\s*0x40,\s*0x53,\s*0x48,\s*0x83,\s*0xEC,\s*0x20\s*\}\)' `
+    'The plain-holder constructor gate must retain the verified redundant REX prefix present in Fallout4VR.exe 1.2.72.'
+Require-Text $source `
     'validateNativeEntry\("SimpleAnimationGraphManagerHolder::IsAnimationLoadingComplete",\s*kIsAnimationLoadingComplete,\s*std::array<std::uint8_t,\s*9>\{\s*0x48,\s*0x8B,\s*0x41,\s*0x10,\s*0x48,\s*0x85,\s*0xC0,\s*0x74,\s*0x0C\s*\}\)' `
     'The plain-holder completion poll must retain its verified Fallout4VR.exe 1.2.72 byte gate.'
 Require-Text $policy `
