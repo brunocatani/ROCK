@@ -1316,7 +1316,7 @@ namespace rock
     {
         s_instance.store(nullptr, std::memory_order_release);
 
-        _authoredPrimaryFiringGrip.reset("physics-destroyed");
+        _authoredPrimaryFiringGrip.reset("physics-destroyed", _twoHandedGrip);
 
         if (_initialized) {
             shutdown();
@@ -1350,7 +1350,7 @@ namespace rock
 
     void PhysicsInteraction::noteSkeletonLifecycle(std::uint32_t skeletonGeneration, ::rock::provider::RockProviderLifecycleReason reason)
     {
-        _authoredPrimaryFiringGrip.reset("skeleton-lifecycle");
+        _authoredPrimaryFiringGrip.reset("skeleton-lifecycle", _twoHandedGrip);
         physics_lifecycle::noteSkeletonGeneration(_lifecycleState, skeletonGeneration, reason);
         physics_lifecycle::noteReason(_lifecycleState, reason);
         markGeneratedBodiesInvalidated();
@@ -1366,7 +1366,7 @@ namespace rock
 
     void PhysicsInteraction::noteProviderLifecycle(std::uint32_t providerGeneration, ::rock::provider::RockProviderLifecycleReason reason)
     {
-        _authoredPrimaryFiringGrip.reset("provider-lifecycle");
+        _authoredPrimaryFiringGrip.reset("provider-lifecycle", _twoHandedGrip);
         physics_lifecycle::noteProviderGeneration(_lifecycleState, providerGeneration, reason);
         physics_lifecycle::noteReason(_lifecycleState, reason);
         markGeneratedBodiesInvalidated();
@@ -3363,6 +3363,7 @@ namespace rock
             .weaponVisualReturnActive = _twoHandedGrip.isWeaponVisualReturnActive(),
             .primaryHandHoldingObject = primaryHandHoldingObject,
             .leftHandedMode = leftHandedMode,
+            .rockFiringHandIsLeft = _twoHandedGrip.isFiringHandLeft(),
         }, _twoHandedGrip);
     }
 
@@ -4139,7 +4140,7 @@ namespace rock
     void PhysicsInteraction::shutdown(::rock::provider::RockProviderLifecycleReason reason)
     {
         pipboy_equip_runtime::setLeftHandEquipAvailable(false);
-        _authoredPrimaryFiringGrip.reset("physics-shutdown");
+        _authoredPrimaryFiringGrip.reset("physics-shutdown", _twoHandedGrip);
         if (!_initialized) {
             // The global equip hook can accept a request while physics init is
             // deferred. Destruction/provider loss must not replay that request

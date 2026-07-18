@@ -90,8 +90,8 @@ Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
     'captureNativePrimaryFiringGrip[\s\S]*weaponTransform\.parPos\s*!=\s*handIndex[\s\S]*invertTransform\(weaponTransform\.refNode->world\)[\s\S]*handTransform\.refNode->world[\s\S]*s_authoredPrimaryHandInWeapon\s*=\s*handInWeapon' `
     'The authored grip must be captured as Bethesda''s pre-hFRIK primary hand in the visible Weapon world frame.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
-    'tryResolvePrimaryFiringGripAlignment[\s\S]*expectedWeaponNode->parent\s*!=\s*capturedHandNode[\s\S]*resolveAuthoredPrimaryWeaponWorld\([\s\S]*trackedPrimaryHandWorld[\s\S]*s_authoredPrimaryHandInWeapon' `
-    'The experiment must invert the captured native relation onto the tracked primary hand and reject a changed hand/weapon hierarchy.'
+    'tryResolvePrimaryFiringGripAlignment[\s\S]*expectedWeaponNode->parent\s*!=\s*capturedHandNode[\s\S]*outAuthoredPrimaryHandInWeapon\s*=\s*s_authoredPrimaryHandInWeapon[\s\S]*resolveAuthoredPrimaryWeaponWorld\([\s\S]*trackedPrimaryHandWorld[\s\S]*outAuthoredPrimaryHandInWeapon' `
+    'The experiment must invert the captured native relation onto the tracked primary hand, return that exact Weapon-relative canonical, and reject a changed hand/weapon hierarchy.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
     '"LArm_Finger11"[\s\S]*"LArm_Finger53"[\s\S]*composeAuthoredLogicalModelTransform[\s\S]*parPos[\s\S]*authoritativeLocal[\s\S]*captureAuthoredSupportGraphPose[\s\S]*resolveAuthoredSupportHandInPrimaryHand[\s\S]*authoritativeLocal\(source->transforms\[transformIndex\]\)[\s\S]*s_authoredSupportGraphPoseSequence\.fetch_add' `
     'The post-animation capture must reconstruct both authored hands through the flattened local hierarchy and retain all 15 authoritative finger locals.'
@@ -145,6 +145,15 @@ Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
 Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
     'getHandWorldTransform\([\s\S]*Hand::Primary[\s\S]*tryResolvePrimaryFiringGripAlignment[\s\S]*applyAuthoredPrimaryGripWeaponAlignment' `
     'The experiment must preserve the controller-driven primary hand and apply the inverse solve through the shared weapon visual path.'
+Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
+    'tryResolvePrimaryFiringGripAlignment[\s\S]*authoredPrimaryHandInWeapon[\s\S]*applyAuthoredPrimaryGripWeaponAlignment[\s\S]*setAuthoredPrimaryFiringGripCanonical\([\s\S]*authoredPrimaryHandInWeapon[\s\S]*input\.weaponGenerationKey[\s\S]*resolvedCaptureSequence' `
+    'A successful right-hand alignment must explicitly generation-bind the exact authored Hand-in-Weapon relation for physical-left mirroring.'
+Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
+    'input\.leftHandedMode[\s\S]*clearAuthoredPrimaryFiringGripCanonical\([\s\S]*game-left-handed-mode[\s\S]*rockFiringHandIsLeft\s*=\s*input\.rockFiringHandIsLeft' `
+    'Global game-left topology must discard the right-authored canonical while ROCK physical-left firing remains an explicit eligibility state.'
+Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
+    'AuthoredPrimaryFiringGripRuntime::reset[\s\S]*clearAuthoredPrimaryFiringGripCanonical\(reason\)[\s\S]*weapon-boundary[\s\S]*clearAuthoredPrimaryFiringGripCanonical' `
+    'Feature/lifecycle reset and weapon identity changes must deterministically release the authored canonical.'
 Reject-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
     'applyExternalHandWorldTransform|clearExternalHandWorldTransform|Hand::(?:Offhand|Left|Right)|weaponNode->(?:local|world)\s*=|blockPrimaryWeaponNodeOwnership' `
     'The primary-only alignment must not move either hand, write the node outside the shared weapon path, or enter hFRIK''s left-carry topology.'
@@ -160,6 +169,24 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'applyAuthoredPrimaryGripWeaponAlignment[\s\S]*blocksAuthoredPrimaryGripWeaponAlignment\(\)[\s\S]*isWeaponVisualReturnActive\(\)[\s\S]*applyWeaponVisualAuthority' `
     'Authored alignment must reuse the scope-aware weapon visual path and yield to conflicting transform/return authority.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'setAuthoredPrimaryFiringGripCanonical[\s\S]*computeGrabLegacyPalmPivotAWorldFromHandBasis\([\s\S]*rightHandWeaponLocal[\s\S]*false[\s\S]*_rightFiringHandCanonicalWeaponLocal\s*=\s*rightHandWeaponLocal[\s\S]*RightFiringCanonicalSource::AuthoredAnimation' `
+    'The authored canonical must derive its grip seat directly in Weapon space from the captured right-hand relation and retain explicit source authority.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'refreshRightNativeCanonicalFrame[\s\S]*_rightNaturalBoneInWand\s*=\s*boneInRightWand[\s\S]*hasRightFiringHandCanonicalFrame[\s\S]*RightFiringCanonicalSource::AuthoredAnimation[\s\S]*return;[\s\S]*RightFiringCanonicalSource::NativeCarry' `
+    'Native presentation refresh must retain anatomy sampling without overwriting a matching authored canonical.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'tryComputeMirroredLeftFiringHandWeaponLocal[\s\S]*hasRightFiringHandCanonicalFrame[\s\S]*tryBuildMirroredLeftFiringHandWeaponLocal\([\s\S]*_rightFiringHandCanonicalWeaponLocal,[\s\S]*_rightFiringGripCanonicalWeaponLocal[\s\S]*authored-animation' `
+    'Physical-left firing must consume the generation- and identity-matched canonical plus its authored Weapon-relative palm seat through the existing wand mirror.'
+
+$leftMirrorConsumerMatch = [regex]::Match(
+    (Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp')),
+    '(?s)bool\s+TwoHandedGrip::tryComputeMirroredLeftFiringHandWeaponLocal\(.*?(?=\s+bool\s+TwoHandedGrip::tryBuildMirroredLeftFiringHandWeaponLocal\()')
+if (-not $leftMirrorConsumerMatch.Success) {
+    $failures.Add('The left-firing canonical consumer could not be isolated for source validation.')
+} elseif ($leftMirrorConsumerMatch.Value -match '_primaryGripLocal') {
+    $failures.Add('The authored left mirror must never fall back to the live/session _primaryGripLocal when a canonical frame is selected.')
+}
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'capturePartGrip[\s\S]*shouldUseAuthoredSupportGrip[\s\S]*providerAuthorityActive\s*=\s*providerPartAuthority\.active[\s\S]*grip\.handWeaponLocal\s*=[\s\S]*fingerLocalTransforms[\s\S]*return\s+true;[\s\S]*tryGetSupportGripEvidenceView' `
     'Support acquisition must prioritize provider authority, latch the complete authored frame inside its zone, and retain the existing dynamic mesh fallback.'

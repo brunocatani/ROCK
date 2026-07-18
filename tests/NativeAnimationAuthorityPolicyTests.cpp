@@ -136,6 +136,7 @@ int main()
         .weaponVisualReturnActive = false,
         .primaryHandHoldingObject = false,
         .leftHandedMode = false,
+        .rockFiringHandIsLeft = false,
     };
     static_assert(shouldApplyAuthoredPrimaryFiringGrip(authoredGripEligible));
     static_assert([=] {
@@ -161,6 +162,11 @@ int main()
     static_assert([=] {
         auto input = authoredGripEligible;
         input.leftHandedMode = true;
+        return !shouldApplyAuthoredPrimaryFiringGrip(input);
+    }());
+    static_assert([=] {
+        auto input = authoredGripEligible;
+        input.rockFiringHandIsLeft = true;
         return !shouldApplyAuthoredPrimaryFiringGrip(input);
     }());
     static_assert([=] {

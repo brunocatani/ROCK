@@ -29,6 +29,7 @@ namespace rock
         bool weaponVisualReturnActive{ false };
         bool primaryHandHoldingObject{ false };
         bool leftHandedMode{ false };
+        bool rockFiringHandIsLeft{ false };
     };
 
     // ROCK derives one generation-bound, modeler-authored primary grip and
@@ -41,7 +42,7 @@ namespace rock
         void update(
             const AuthoredPrimaryFiringGripFrameInput& input,
             TwoHandedGrip& weaponAuthority);
-        void reset(const char* reason);
+        void reset(const char* reason, TwoHandedGrip& weaponAuthority);
 
     private:
         void endSession(const char* reason);
@@ -56,6 +57,7 @@ namespace rock
         bool _nativeReloadWasActive{ false };
         bool _sessionLogged{ false };
         bool _applyFailureLogged{ false };
+        bool _canonicalPublishFailureLogged{ false };
         std::uint32_t _supportCaptureFailureReasonLogged{ 0 };
         std::uint16_t _supportCaptureFailureMaskLogged{ 0 };
         bool _supportCaptureFailureLogged{ false };

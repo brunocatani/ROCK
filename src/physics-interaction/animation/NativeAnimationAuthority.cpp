@@ -1669,8 +1669,10 @@ namespace rock::native_animation_authority
         const RE::NiTransform& trackedPrimaryHandWorld,
         RE::NiTransform& outWeaponWorld,
         RE::NiTransform& outCurrentAuthoredHandWorld,
+        RE::NiTransform& outAuthoredPrimaryHandInWeapon,
         std::uint64_t& outCaptureSequence)
     {
+        outAuthoredPrimaryHandInWeapon = {};
         outCaptureSequence = 0;
         auto* const capturedHandNode =
             s_primaryFiringGripHandNode.load(std::memory_order_acquire);
@@ -1692,15 +1694,21 @@ namespace rock::native_animation_authority
             return false;
         }
 
+        // Publish the exact captured RArm_Hand-in-Weapon relation alongside
+        // the world solve. ROCK's ambidextrous firing path generation-binds
+        // this same datum and mirrors it only when the physical left hand
+        // takes the firing role; it must never reconstruct the canonical from
+        // presentation-world transforms after hFRIK has moved the weapon.
+        outAuthoredPrimaryHandInWeapon = s_authoredPrimaryHandInWeapon;
         outCurrentAuthoredHandWorld = native_animation_authority_policy::resolveAuthoredPrimaryHandWorld(
             liveWeaponWorld,
-            s_authoredPrimaryHandInWeapon,
+            outAuthoredPrimaryHandInWeapon,
             [](const RE::NiTransform& parent, const RE::NiTransform& child) {
                 return transform_math::composeTransforms(parent, child);
             });
         outWeaponWorld = native_animation_authority_policy::resolveAuthoredPrimaryWeaponWorld(
             trackedPrimaryHandWorld,
-            s_authoredPrimaryHandInWeapon,
+            outAuthoredPrimaryHandInWeapon,
             [](const RE::NiTransform& parent, const RE::NiTransform& child) {
                 return transform_math::composeTransforms(parent, child);
             },

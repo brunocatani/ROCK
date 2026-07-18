@@ -61,8 +61,11 @@ namespace rock::native_animation_authority_policy
         bool weaponVisualReturnActive{ false };
         bool primaryHandHoldingObject{ false };
         // Flat Fallout 4 authors its firing pose on RArm_Hand -> Weapon.
-        // Left-handed mirroring has no equivalent modeler-authored relation.
+        // Game-left-handed mode has a separate Bethesda/hFRIK topology and is
+        // not inferred from this right-authored relation. ROCK's physical-left
+        // firing role mirrors the validated right canonical downstream.
         bool leftHandedMode{ false };
+        bool rockFiringHandIsLeft{ false };
     };
 
     struct AuthoredSupportGripCandidateInput
@@ -97,7 +100,8 @@ namespace rock::native_animation_authority_policy
                !input.conflictingWeaponTransformAuthorityActive &&
                !input.weaponVisualReturnActive &&
                !input.primaryHandHoldingObject &&
-               !input.leftHandedMode;
+               !input.leftHandedMode &&
+               !input.rockFiringHandIsLeft;
     }
 
     /*

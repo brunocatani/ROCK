@@ -55,8 +55,11 @@ namespace rock
         _sessionLogged = false;
     }
 
-    void AuthoredPrimaryFiringGripRuntime::reset(const char* reason)
+    void AuthoredPrimaryFiringGripRuntime::reset(
+        const char* reason,
+        TwoHandedGrip& weaponAuthority)
     {
+        weaponAuthority.clearAuthoredPrimaryFiringGripCanonical(reason);
         endSession(reason);
         _weaponNodeIdentity = nullptr;
         _weaponOwnershipKey = 0;
@@ -65,6 +68,7 @@ namespace rock
         _nativeReloadWasActive = false;
         _sessionLogged = false;
         _applyFailureLogged = false;
+        _canonicalPublishFailureLogged = false;
         _supportCaptureFailureReasonLogged = 0;
         _supportCaptureFailureMaskLogged = 0;
         _supportCaptureFailureLogged = false;
@@ -83,7 +87,7 @@ namespace rock
             native_animation_authority::queryAuthoredSupportGripCaptureStatus();
 
         if (!input.enabled) {
-            reset("experiment-disabled");
+            reset("experiment-disabled", weaponAuthority);
             return;
         }
 
@@ -110,6 +114,8 @@ namespace rock
             input.weaponNode ? input.weaponOwnershipKey : 0;
         if (input.weaponNode != _weaponNodeIdentity ||
             currentWeaponKey != _weaponOwnershipKey) {
+            weaponAuthority.clearAuthoredPrimaryFiringGripCanonical(
+                "weapon-boundary");
             endSession("weapon-boundary");
             _weaponNodeIdentity = input.weaponNode;
             _weaponOwnershipKey = currentWeaponKey;
@@ -117,7 +123,20 @@ namespace rock
             _supportCaptureSequenceFloor = supportCaptureStatus.captureSequence;
             _sessionLogged = false;
             _applyFailureLogged = false;
+            _canonicalPublishFailureLogged = false;
             _supportCaptureFailureLogged = false;
+            return;
+        }
+
+        if (input.leftHandedMode) {
+            // Bethesda/hFRIK game-left mode is a distinct topology, not the
+            // ROCK ambidextrous role. Never carry a right-authored canonical
+            // across that mode; require a new right-mode graph sample later.
+            weaponAuthority.clearAuthoredPrimaryFiringGripCanonical(
+                "game-left-handed-mode");
+            _captureSequenceFloor = captureStatus.captureSequence;
+            _supportCaptureSequenceFloor = supportCaptureStatus.captureSequence;
+            endSession("game-left-handed-mode");
             return;
         }
 
@@ -140,6 +159,7 @@ namespace rock
             .weaponVisualReturnActive = input.weaponVisualReturnActive,
             .primaryHandHoldingObject = input.primaryHandHoldingObject,
             .leftHandedMode = input.leftHandedMode,
+            .rockFiringHandIsLeft = input.rockFiringHandIsLeft,
         };
         if (!native_animation_authority_policy::shouldApplyAuthoredPrimaryFiringGrip(eligibility)) {
             endSession("frame-ineligible");
@@ -157,6 +177,7 @@ namespace rock
 
         RE::NiTransform solvedWeaponWorld{};
         RE::NiTransform currentAuthoredHandWorld{};
+        RE::NiTransform authoredPrimaryHandInWeapon{};
         std::uint64_t resolvedCaptureSequence = 0;
         if (!native_animation_authority::tryResolvePrimaryFiringGripAlignment(
                 input.weaponNode,
@@ -164,6 +185,7 @@ namespace rock
                 trackedHandWorld,
                 solvedWeaponWorld,
                 currentAuthoredHandWorld,
+                authoredPrimaryHandInWeapon,
                 resolvedCaptureSequence) ||
             resolvedCaptureSequence <= _captureSequenceFloor) {
             endSession("capture-resolution-failed");
@@ -183,6 +205,23 @@ namespace rock
             }
             endSession("weapon-alignment-failed");
             return;
+        }
+
+        if (!weaponAuthority.setAuthoredPrimaryFiringGripCanonical(
+                input.weaponNode,
+                authoredPrimaryHandInWeapon,
+                input.weaponGenerationKey,
+                resolvedCaptureSequence)) {
+            if (!_canonicalPublishFailureLogged) {
+                ROCK_LOG_WARN(Animation,
+                    "Authored primary firing grip could not publish mirrored-left canonical weaponKey=0x{:X} generation=0x{:X} capture={}",
+                    currentWeaponKey,
+                    input.weaponGenerationKey,
+                    resolvedCaptureSequence);
+                _canonicalPublishFailureLogged = true;
+            }
+        } else {
+            _canonicalPublishFailureLogged = false;
         }
 
         _active = true;
@@ -236,7 +275,7 @@ namespace rock
 
         if (!_sessionLogged) {
             ROCK_LOG_INFO(Animation,
-                "Authored primary firing grip weapon alignment active weaponKey=0x{:X} generation=0x{:X} capture={} handMismatch={:.3f}gu weaponCorrection={:.3f}gu originalWeaponT=({:.3f},{:.3f},{:.3f}) alignedWeaponT=({:.3f},{:.3f},{:.3f}) alignedLocalT=({:.3f},{:.3f},{:.3f}) authority=weapon-only primaryHand=controller-driven",
+                "Authored primary firing grip weapon alignment active weaponKey=0x{:X} generation=0x{:X} capture={} handMismatch={:.3f}gu weaponCorrection={:.3f}gu originalWeaponT=({:.3f},{:.3f},{:.3f}) alignedWeaponT=({:.3f},{:.3f},{:.3f}) alignedLocalT=({:.3f},{:.3f},{:.3f}) authority=weapon-only primaryHand=controller-driven physicalLeftSource=mirrored-authored-canonical",
                 currentWeaponKey,
                 input.weaponGenerationKey,
                 resolvedCaptureSequence,
