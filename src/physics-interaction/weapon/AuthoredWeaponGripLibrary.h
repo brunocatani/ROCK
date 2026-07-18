@@ -12,11 +12,19 @@ namespace RE
 
 namespace rock::authored_weapon_grip_library
 {
+    enum class CaptureSource : std::uint8_t
+    {
+        Unknown,
+        LiveEquippedGraph,
+        NativeIdlePreharvest,
+    };
+
     struct LookupResult
     {
         bool found{ false };
         RE::NiTransform rightHandWeaponLocal{};
         std::uint64_t captureSequence{ 0 };
+        CaptureSource source{ CaptureSource::Unknown };
         bool usedVariantFallback{ false };
         const char* reason{ "notEvaluated" };
     };
@@ -29,7 +37,7 @@ namespace rock::authored_weapon_grip_library
      * not allocate in the animation or interaction hot paths.
      */
     [[nodiscard]] bool publish(const RE::TESObjectWEAP* weapon, const RE::NiAVObject* weaponRoot, bool inPowerArmor, const RE::NiTransform& rightHandWeaponLocal,
-        std::uint64_t captureSequence);
+        std::uint64_t captureSequence, CaptureSource source);
 
     [[nodiscard]] LookupResult find(const RE::TESObjectWEAP* weapon, const RE::NiAVObject* weaponRoot, bool inPowerArmor);
 }

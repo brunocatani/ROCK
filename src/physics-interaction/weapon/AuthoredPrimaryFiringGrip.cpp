@@ -286,7 +286,8 @@ namespace rock
                 input.weaponNode,
                 input.inPowerArmor,
                 authoredPrimaryHandInWeapon,
-                resolvedCaptureSequence)) {
+                resolvedCaptureSequence,
+                authored_weapon_grip_library::CaptureSource::LiveEquippedGraph)) {
             if (!_libraryPublishFailureLogged) {
                 ROCK_LOG_WARN(Animation,
                     "Authored primary firing grip could not publish loose-weapon relation weaponKey=0x{:X} capture={}",

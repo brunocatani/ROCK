@@ -95,8 +95,11 @@ Require-Text $source `
     'rockAuthoredPrimaryFiringGripTestEnabled' `
     'The proof must remain behind the existing ROCK authored-grip experiment.'
 Require-Text $source `
-    'authored_weapon_grip_library::publish' `
-    'The proof must publish only through ROCK''s bounded authored-grip cache.'
+    'authored_weapon_grip_library::publish[\s\S]{0,300}CaptureSource::NativeIdlePreharvest' `
+    'The proof must publish only through ROCK''s bounded authored-grip cache with explicit preharvest provenance.'
+Require-Text $source `
+    'kAnimationTypeOffset\s*=\s*0x10[\s\S]*kAnimationDurationOffset\s*=\s*0x14[\s\S]*kAnimationTransformTrackCountOffset\s*=\s*0x18[\s\S]*kAnimationFloatTrackCountOffset\s*=\s*0x1C[\s\S]*kBindingBlendHintOffset\s*=\s*0x50' `
+    'The sampler diagnostics must retain the audited FO4VR hkaAnimation and hkaAnimationBinding field layout.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'NativeIdleGripPreharvest\.h[\s\S]*nativeIdleGripCandidate[\s\S]*hand\.isHoldingLooseWeapon\(\)[\s\S]*hand\.hasSelection\(\)[\s\S]*native_idle_grip_preharvest::observeCandidate\(nativeIdleGripCandidate\)[\s\S]*rockGripZoneHoverHapticsEnabled' `
     'The frame owner must offer held or raw selected weapons before input commit, independently of optional hover haptics.'
