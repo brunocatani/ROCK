@@ -807,7 +807,10 @@ namespace rock::provider
      * ROCK internals. Scope is reserved for an installed OMOD carrying
      * Fallout's native scope-overlay property; Sight covers every other optic,
      * including red-dot and holographic sights. LaserFlashlightCombo means one
-     * physical module owns both emitter capabilities.
+     * physical module owns both emitter capabilities. MuzzleDevice covers the
+     * dedicated muzzle attachment slot (suppressors, compensators, brakes, and
+     * flash hiders). Bipod identifies an authored bipod component without
+     * implying deployed/folded state.
      */
     enum class RockProviderWeaponPartKindV1 : std::uint32_t
     {
@@ -838,6 +841,8 @@ namespace rock::provider
         Flashlight = 24,
         LaserFlashlightCombo = 25,
         Scope = 26,
+        MuzzleDevice = 27,
+        Bipod = 28,
     };
 
     enum class RockProviderWeaponActionRoleV1 : std::uint32_t

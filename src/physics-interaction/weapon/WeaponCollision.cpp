@@ -245,6 +245,10 @@ namespace rock
                 return "LaserFlashlightCombo";
             case WeaponPartKind::Scope:
                 return "Scope";
+            case WeaponPartKind::MuzzleDevice:
+                return "MuzzleDevice";
+            case WeaponPartKind::Bipod:
+                return "Bipod";
             case WeaponPartKind::Count:
             default:
                 return "Invalid";
@@ -1330,6 +1334,8 @@ namespace rock
             case WeaponPartKind::Receiver:
                 return { HullCoverageReceiver, semantic.priority, semantic.cosmetic, "receiver/body" };
             case WeaponPartKind::Barrel:
+            case WeaponPartKind::MuzzleDevice:
+            case WeaponPartKind::Bipod:
             case WeaponPartKind::Handguard:
             case WeaponPartKind::Foregrip:
             case WeaponPartKind::Pump:

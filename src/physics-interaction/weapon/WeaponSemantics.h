@@ -61,9 +61,16 @@ namespace rock
             result.gameplayCritical = true;
             break;
         case WeaponPartKind::Barrel:
+        case WeaponPartKind::MuzzleDevice:
             result.supportGripRole = WeaponSupportGripRole::SupportSurface;
             result.fallbackGripPose = WeaponGripPoseId::BarrelWrap;
             result.priority = 84;
+            result.gameplayCritical = true;
+            break;
+        case WeaponPartKind::Bipod:
+            result.supportGripRole = WeaponSupportGripRole::SupportSurface;
+            result.fallbackGripPose = WeaponGripPoseId::BarrelWrap;
+            result.priority = 70;
             result.gameplayCritical = true;
             break;
         case WeaponPartKind::Magwell:
@@ -169,6 +176,12 @@ namespace rock
 
     inline WeaponPartClassification classifyWeaponPartName(std::string_view sourceName)
     {
+        // Bipod exports frequently contain action-looking tokens such as
+        // "Cylinder". The explicit physical component name must win before
+        // action-role parsing, while making no folded/deployed distinction.
+        if (weaponPartNameContains(sourceName, "bipod")) {
+            return classifyWeaponPartKind(WeaponPartKind::Bipod);
+        }
         if (weaponPartNameContains(sourceName, "magwell")) {
             return classifyWeaponPartKind(WeaponPartKind::Magwell);
         }
@@ -223,8 +236,12 @@ namespace rock
         if (weaponPartNameContains(sourceName, "stock") || weaponPartNameContains(sourceName, "butt")) {
             return classifyWeaponPartKind(WeaponPartKind::Stock);
         }
-        if (weaponPartNameContains(sourceName, "barrel") || weaponPartNameContains(sourceName, "muzzle") ||
-            weaponPartNameContains(sourceName, "suppressor") || weaponPartNameContains(sourceName, "silencer")) {
+        if (weaponPartNameContains(sourceName, "muzzle") || weaponPartNameContains(sourceName, "suppressor") ||
+            weaponPartNameContains(sourceName, "silencer") || weaponPartNameContains(sourceName, "compensator") ||
+            weaponPartNameContains(sourceName, "flash hider") || weaponPartNameContains(sourceName, "flashhider")) {
+            return classifyWeaponPartKind(WeaponPartKind::MuzzleDevice);
+        }
+        if (weaponPartNameContains(sourceName, "barrel")) {
             return classifyWeaponPartKind(WeaponPartKind::Barrel);
         }
         if (weaponPartNameContains(sourceName, "sight") || weaponPartNameContains(sourceName, "scope")) {

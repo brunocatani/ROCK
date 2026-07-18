@@ -99,6 +99,8 @@ namespace rock::weapon_support_grip_policy
         case WeaponPartKind::Handguard:
             return WeaponGripPoseId::HandguardClamp;
         case WeaponPartKind::Barrel:
+        case WeaponPartKind::MuzzleDevice:
+        case WeaponPartKind::Bipod:
             return WeaponGripPoseId::BarrelWrap;
         case WeaponPartKind::Magazine:
         case WeaponPartKind::Magwell:

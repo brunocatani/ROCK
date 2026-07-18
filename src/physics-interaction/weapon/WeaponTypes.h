@@ -58,7 +58,9 @@ namespace rock
         Flashlight = 24,
         LaserFlashlightCombo = 25,
         Scope = 26,
-        Count = 27,
+        MuzzleDevice = 27,
+        Bipod = 28,
+        Count = 29,
     };
 
     /*

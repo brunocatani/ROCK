@@ -946,6 +946,7 @@ namespace rock::weapon_generated_source_completeness_policy
     inline bool hasFrontPackageCoverage(const GeneratedSourceCompleteness& completeness)
     {
         return hasPart(completeness, WeaponPartKind::Barrel) ||
+               hasPart(completeness, WeaponPartKind::MuzzleDevice) ||
                hasPart(completeness, WeaponPartKind::Handguard) ||
                hasPart(completeness, WeaponPartKind::Foregrip) ||
                hasPart(completeness, WeaponPartKind::Pump);
@@ -1053,6 +1054,8 @@ namespace rock::weapon_generated_source_completeness_policy
          */
         return partMask(WeaponPartKind::Receiver) |
                partMask(WeaponPartKind::Barrel) |
+               partMask(WeaponPartKind::MuzzleDevice) |
+               partMask(WeaponPartKind::Bipod) |
                partMask(WeaponPartKind::Handguard) |
                partMask(WeaponPartKind::Foregrip) |
                partMask(WeaponPartKind::Pump) |

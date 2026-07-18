@@ -132,6 +132,10 @@ namespace rock::weapon_debug_notification_policy
             return "LaserFlashlightCombo";
         case WeaponPartKind::Scope:
             return "Scope";
+        case WeaponPartKind::MuzzleDevice:
+            return "MuzzleDevice";
+        case WeaponPartKind::Bipod:
+            return "Bipod";
         case WeaponPartKind::Count:
         default:
             return "Other";

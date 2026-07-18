@@ -109,11 +109,21 @@ int main()
     ok &= expectFalse("long-gun rear coverage requires stock", hasLongGunRearPackageCoverage(longGunCoverage));
     ok &= expectFalse("long-gun package with only grip lacks required rear telemetry", longGunCoverage.hasRequiredRearCoverage);
 
+    GeneratedSourceCompleteness receiverMuzzleGrip = receiverBarrelGrip;
+    receiverMuzzleGrip.semanticPartMask =
+        partMask(WeaponPartKind::Receiver) |
+        partMask(WeaponPartKind::MuzzleDevice) |
+        partMask(WeaponPartKind::Grip);
+    ok &= expectTrue("muzzle device preserves structural front-coverage telemetry",
+        withDerivedPackageCoverage(receiverMuzzleGrip).hasRequiredFrontCoverage);
+
     ok &= expectTrue("shell is transient reload geometry", isTransientReloadPart(WeaponPartKind::Shell));
     ok &= expectTrue("round is transient reload geometry", isTransientReloadPart(WeaponPartKind::Round));
     ok &= expectTrue("cosmetic ammo is transient reload geometry", isTransientReloadPart(WeaponPartKind::CosmeticAmmo));
     ok &= expectFalse("magazine is durable weapon structure", isTransientReloadPart(WeaponPartKind::Magazine));
     ok &= expectTrue("receiver is permanent gameplay-critical structure", (permanentGameplayCriticalPartMask() & partMask(WeaponPartKind::Receiver)) != 0);
+    ok &= expectTrue("muzzle device preserves permanent barrel-like structure", (permanentGameplayCriticalPartMask() & partMask(WeaponPartKind::MuzzleDevice)) != 0);
+    ok &= expectTrue("bipod remains durable weapon structure independent of deployment state", (permanentGameplayCriticalPartMask() & partMask(WeaponPartKind::Bipod)) != 0);
     ok &= expectFalse("shell is not permanent gameplay-critical structure", (permanentGameplayCriticalPartMask() & partMask(WeaponPartKind::Shell)) != 0);
 
     ok &= expectTrue("OMOD audit accepts body evidence from its audited equipped generation",

@@ -37,6 +37,7 @@ namespace rock::weapon_part_record_identity_policy
         SlotRearFurniture,
         SlotPistolGrip,
         SlotHandguard,
+        SlotBipod,
         SlotReceiver,
         RigBolt,
         RigMagazineDisplay,
@@ -57,9 +58,10 @@ namespace rock::weapon_part_record_identity_policy
     [[nodiscard]] inline constexpr StructureAnchor resolveStructureAnchor(std::string_view nodeName)
     {
         // Exact matches for the CK-standard connect points observed in
-        // assembled trees. "P-Scope"/"P-Muzzle" follow the same standard;
-        // unknown "P-*" names (mod-added slots) intentionally resolve None so
-        // the name classifier keeps authority there.
+        // assembled trees. "P-Scope"/"P-Muzzle" follow the same standard.
+        // Bipod slots are mod-added but retain a consistent functional Bipod
+        // token in current runtime evidence; other unknown "P-*" names still
+        // resolve None so the name classifier keeps authority there.
         if (nodeName == "P-Mag") {
             return StructureAnchor::SlotMagazine;
         }
@@ -80,6 +82,13 @@ namespace rock::weapon_part_record_identity_policy
         }
         if (nodeName == "P-Handguard" || nodeName == "P-HandguardU") {
             return StructureAnchor::SlotHandguard;
+        }
+        if (nodeName == "P-Bipod" ||
+            (nodeName.starts_with("P-") &&
+                (nodeName.find("Bipod") != std::string_view::npos ||
+                    nodeName.find("bipod") != std::string_view::npos ||
+                    nodeName.find("BIPOD") != std::string_view::npos))) {
+            return StructureAnchor::SlotBipod;
         }
         if (nodeName == "P-Receiver") {
             return StructureAnchor::SlotReceiver;
@@ -112,6 +121,7 @@ namespace rock::weapon_part_record_identity_policy
         // weapons that carry them; no vanilla keyword exists for pairing.
         case StructureAnchor::SlotPistolGrip:
         case StructureAnchor::SlotHandguard:
+        case StructureAnchor::SlotBipod:
         default:
             return 0;
         }
@@ -123,8 +133,9 @@ namespace rock::weapon_part_record_identity_policy
         case StructureAnchor::SlotMagazine:
             return WeaponPartKind::Magazine;
         case StructureAnchor::SlotBarrel:
-        case StructureAnchor::SlotMuzzle:
             return WeaponPartKind::Barrel;
+        case StructureAnchor::SlotMuzzle:
+            return WeaponPartKind::MuzzleDevice;
         case StructureAnchor::SlotSight:
             return WeaponPartKind::Sight;
         case StructureAnchor::SlotRearFurniture:
@@ -133,6 +144,8 @@ namespace rock::weapon_part_record_identity_policy
             return WeaponPartKind::Grip;
         case StructureAnchor::SlotHandguard:
             return WeaponPartKind::Handguard;
+        case StructureAnchor::SlotBipod:
+            return WeaponPartKind::Bipod;
         case StructureAnchor::SlotReceiver:
             return WeaponPartKind::Receiver;
         case StructureAnchor::RigBolt:
@@ -167,6 +180,10 @@ namespace rock::weapon_part_record_identity_policy
         case StructureAnchor::SlotPistolGrip:
         case StructureAnchor::SlotHandguard:
             return !nameHasActionRole;
+        case StructureAnchor::SlotBipod:
+            // A dedicated authored bipod connect point is stronger evidence
+            // than incidental action words inside exported mesh names.
+            return true;
         case StructureAnchor::SlotReceiver:
         case StructureAnchor::RigBolt:
         case StructureAnchor::RigMagazineDisplay:

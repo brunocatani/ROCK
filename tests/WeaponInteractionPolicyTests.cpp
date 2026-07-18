@@ -964,6 +964,10 @@ int main()
             resolveStructureAnchor("P-Barrel"), StructureAnchor::SlotBarrel);
         ok &= expectEqual("P-Compensator resolves the muzzle slot anchor",
             resolveStructureAnchor("P-Compensator"), StructureAnchor::SlotMuzzle);
+        ok &= expectEqual("P-Bipod resolves the dedicated bipod slot anchor",
+            resolveStructureAnchor("P-Bipod"), StructureAnchor::SlotBipod);
+        ok &= expectEqual("mod-prefixed bipod connect point resolves the bipod slot anchor",
+            resolveStructureAnchor("P-SV98Bipod"), StructureAnchor::SlotBipod);
         ok &= expectEqual("WeaponBolt resolves the bolt rig anchor",
             resolveStructureAnchor("WeaponBolt"), StructureAnchor::RigBolt);
         ok &= expectEqual("WeaponMagazineChild3 resolves the magazine display rig anchor",
@@ -986,6 +990,11 @@ int main()
         const auto barrelOverride = applyStructureAnchor(receiverByWeakToken, StructureAnchor::SlotBarrel);
         ok &= expectEqual("barrel slot overrides a weak receiver name match",
             barrelOverride.partKind, rock::WeaponPartKind::Barrel);
+        const auto muzzleOverride = applyStructureAnchor(receiverByWeakToken, StructureAnchor::SlotMuzzle);
+        ok &= expectEqual("muzzle slot classifies its physical module separately from the barrel",
+            muzzleOverride.partKind, rock::WeaponPartKind::MuzzleDevice);
+        ok &= expectEqual("muzzle slot carries the vanilla attach-point form id",
+            muzzleOverride.attachPointFormId, kAttachPointMuzzle);
 
         const auto slideByName = rock::classifyWeaponPartKind(rock::WeaponPartKind::Slide);
         const auto slideKept = applyStructureAnchor(slideByName, StructureAnchor::RigBolt);
@@ -1019,6 +1028,23 @@ int main()
             noAnchor.partKind, rock::WeaponPartKind::Other);
         ok &= expectEqual("no anchor keeps the name source",
             noAnchor.classificationSource, rock::WeaponPartClassificationSource::NameToken);
+
+        ok &= expectEqual("authored suppressor name classifies as a muzzle device",
+            rock::classifyWeaponPartName("AK_Suppressor_Mesh").partKind,
+            rock::WeaponPartKind::MuzzleDevice);
+        ok &= expectEqual("barrel remains distinct from its installed muzzle device",
+            rock::classifyWeaponPartName("WeaponBarrel").partKind,
+            rock::WeaponPartKind::Barrel);
+        ok &= expectEqual("authored bipod name classifies without deployment inference",
+            rock::classifyWeaponPartName("Rifle_BiPod").partKind,
+            rock::WeaponPartKind::Bipod);
+        ok &= expectEqual("bipod identity outranks incidental cylinder export token",
+            rock::classifyWeaponPartName("bipod_Cylinder_009_Bipod").partKind,
+            rock::WeaponPartKind::Bipod);
+        const auto bipodOverActionName = applyStructureAnchor(
+            rock::classifyWeaponPartKind(rock::WeaponPartKind::Cylinder), StructureAnchor::SlotBipod);
+        ok &= expectEqual("dedicated bipod slot overrides incidental action-name classification",
+            bipodOverActionName.partKind, rock::WeaponPartKind::Bipod);
     }
 
     {
@@ -1059,6 +1085,8 @@ int main()
         static_assert(static_cast<std::uint32_t>(rock::WeaponPartKind::Flashlight) == 24);
         static_assert(static_cast<std::uint32_t>(rock::WeaponPartKind::LaserFlashlightCombo) == 25);
         static_assert(static_cast<std::uint32_t>(rock::WeaponPartKind::Scope) == 26);
+        static_assert(static_cast<std::uint32_t>(rock::WeaponPartKind::MuzzleDevice) == 27);
+        static_assert(static_cast<std::uint32_t>(rock::WeaponPartKind::Bipod) == 28);
     }
 
     using namespace rock::weapon_part_runtime;

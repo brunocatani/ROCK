@@ -87,6 +87,8 @@ namespace
     static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartKindV1::Flashlight) == static_cast<std::uint32_t>(WeaponPartKind::Flashlight));
     static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartKindV1::LaserFlashlightCombo) == static_cast<std::uint32_t>(WeaponPartKind::LaserFlashlightCombo));
     static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartKindV1::Scope) == static_cast<std::uint32_t>(WeaponPartKind::Scope));
+    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartKindV1::MuzzleDevice) == static_cast<std::uint32_t>(WeaponPartKind::MuzzleDevice));
+    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartKindV1::Bipod) == static_cast<std::uint32_t>(WeaponPartKind::Bipod));
     static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartClassificationSourceV1::NameToken) ==
                   static_cast<std::uint32_t>(WeaponPartClassificationSource::NameToken));
     static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartClassificationSourceV1::SlotAnchor) ==
