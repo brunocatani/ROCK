@@ -68,6 +68,24 @@ Require-Text $source `
     'kAnimationFileLookupSingleton\s*=\s*0x5B64318[\s\S]*tryReadValue\([\s\S]*lookupSingleton[\s\S]*getAnimationFilesForSubgraph\(\s*&outSubgraphIdentifier\)[\s\S]*clipPathHasStem[\s\S]*trySampleClip' `
     'Clip binding must consume the exact winning AnimationFileData path for the selected subgraph instead of guessing a basename.'
 Require-Text $source `
+    'kGraphLoadedSubgraphsOffset\s*=\s*0x3A0[\s\S]*kLoadedSubgraphEntryStride\s*=\s*0x48[\s\S]*kBindingTableSubgraphIdentifierOffset\s*=\s*0xC0[\s\S]*kBindingTableNodeStride\s*=\s*0x18' `
+    'The malformed-AnimationFileData fallback must retain the audited loaded-subgraph and clip-map layout.'
+Require-Text $source `
+    'tryFindLoadedGraphIdlePath[\s\S]*BSAutoLock<RE::BSSpinLock>[\s\S]*candidateIdentifier\s*==\s*subgraphIdentifier[\s\S]*clipPathHasStem\(candidate,\s*"WPNIdleReady"\)[\s\S]*clipPathHasStem\(candidate,\s*"WPNIdle"\)' `
+    'The fallback must inspect only the exact selected subgraph under Bethesda''s graph lock and preserve idle-path priority.'
+Require-Text $source `
+    'animationFiles->empty\(\)[\s\S]*tryGraphPathFallback\(IdleGripExtractionFailure::AnimationFileListEmpty\)[\s\S]*trySampleClip' `
+    'An absent numeric AnimationFileData record must recover only an exact path already owned by the loaded selected graph.'
+Reject-Text $source `
+    '35006BE1|Actors\\\\AKsAR15s\\\\Character\\\\_1stPerson\\\\Animations\\\\SVD' `
+    'The generic graph-path fallback must never hardcode the observed SVD form or asset path.'
+Require-Text $source `
+    'weaponLocal\.rotate\s*=\s*transform_math::transposeRotation\(\s*transform_math::havokQuaternionToNiRows<RE::NiMatrix3>\(sampledWeaponLocal\.rotation\)\s*\)[\s\S]*outHandInWeapon\s*=\s*transform_math::invertTransform\(weaponLocal\)' `
+    'Sampled Havok rotation must enter ROCK stored-axis convention before inversion so rotation and translation are corrected together.'
+Reject-Text $source `
+    'weaponLocal\.rotate\s*=\s*transform_math::havokQuaternionToNiRows<RE::NiMatrix3>\(sampledWeaponLocal\.rotation\)\s*;' `
+    'The measured transpose error must not return at the sampled-animation boundary.'
+Require-Text $source `
     'PopulateGraphProjectsToLoad[\s\S]*graphProjects\.size\(\)\s*<\s*2[\s\S]*createBackgroundSimpleManager' `
     'Off-screen native loads must create the plain holder from both player graph projects.'
 Require-Text $source `

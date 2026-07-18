@@ -34,6 +34,7 @@ int main()
     static_assert(!animationResourceCanExposeData(0x50000000u));
 
     static_assert(clipPathHasStem("UMPAnims\\VerticalGrip\\WPNIdleReady.hkx", "WPNIdleReady"));
+    static_assert(clipPathHasStem("Actors\\AKsAR15s\\Character\\_1stPerson\\Animations\\SVD\\WPNIdleReady.hkx", "WPNIdleReady"));
     static_assert(clipPathHasStem("Animations/Weapons/wpnidle.HKX", "WPNIdle"));
     static_assert(clipPathHasStem("WPNIdle", "wpnidle"));
     static_assert(!clipPathHasStem("UMPAnims\\VerticalGrip\\WPNIdleReady.hkx", "WPNIdle"));

@@ -13,6 +13,8 @@
 #include "RE/Bethesda/BSAnimationGraph.h"
 #include "RE/Bethesda/BSExtraData.h"
 #include "RE/Bethesda/BSFixedString.h"
+#include "RE/Bethesda/BSLock.h"
+#include "RE/Bethesda/BSStringPool.h"
 #include "RE/Bethesda/BSStringT.h"
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/TESBoundObjects.h"
@@ -81,7 +83,27 @@ namespace rock::native_idle_grip_preharvest
         constexpr std::ptrdiff_t kAnimationResourceDataOffset = 0x20;
         constexpr std::ptrdiff_t kRootContainerFromAnimationDataOffset = 0x08;
 
+        // GetClipGeneratorBinding at 0x141774800 and the loaded-subgraph map
+        // walker at 0x141777570 independently establish this layout. It lets
+        // ROCK recover an exact clip path from the selected loaded subgraph
+        // when a malformed mod omitted AnimationFileData for that identifier.
+        constexpr std::ptrdiff_t kGraphLoadedSubgraphsOffset = 0x3A0;
+        constexpr std::ptrdiff_t kLoadedSubgraphsEntriesOffset = 0x00;
+        constexpr std::ptrdiff_t kLoadedSubgraphsCountOffset = 0x10;
+        constexpr std::ptrdiff_t kLoadedSubgraphsLockOffset = 0x28;
+        constexpr std::size_t kLoadedSubgraphEntryStride = 0x48;
+        constexpr std::ptrdiff_t kLoadedSubgraphBindingTableOffset = 0x08;
+        constexpr std::ptrdiff_t kBindingTableBucketCountOffset = 0x0C;
+        constexpr std::ptrdiff_t kBindingTableBucketsOffset = 0x28;
+        constexpr std::ptrdiff_t kBindingTableSubgraphIdentifierOffset = 0xC0;
+        constexpr std::size_t kBindingTableNodeStride = 0x18;
+        constexpr std::ptrdiff_t kBindingTableNodeKeyOffset = 0x00;
+        constexpr std::ptrdiff_t kBindingTableNodeOccupancyOffset = 0x10;
+
         constexpr std::size_t kMaxBonesAndTracks = 768;
+        constexpr std::size_t kMaxLoadedSubgraphs = 128;
+        constexpr std::size_t kMaxClipBindingBuckets = 4096;
+        constexpr std::size_t kMaxFixedStringShallowDepth = 8;
         constexpr std::size_t kFailureCapacity = 64;
         constexpr ULONGLONG kFailureRetryDelayMilliseconds = 30000;
         constexpr ULONGLONG kLongLoadLogDelayMilliseconds = 5000;
@@ -200,6 +222,8 @@ namespace rock::native_idle_grip_preharvest
             std::size_t animationFileCount{ 0 };
             std::size_t idlePathMatchCount{ 0 };
             std::size_t sampleAttemptCount{ 0 };
+            std::size_t graphClipBucketCount{ 0 };
+            std::size_t graphClipPathCount{ 0 };
             std::uint64_t subgraphIdentifier{ 0 };
             std::uint64_t weaponBone{ 0xFFFFFFFFull };
             std::uint64_t handBone{ 0xFFFFFFFFull };
@@ -211,6 +235,7 @@ namespace rock::native_idle_grip_preharvest
             int floatTrackCount{ -1 };
             int mappingCount{ 0 };
             float animationDurationSeconds{ -1.0f };
+            bool usedGraphClipPathFallback{ false };
         };
 
         struct Job
@@ -588,6 +613,122 @@ namespace rock::native_idle_grip_preharvest
                 std::abs(transform.scale) > 0.000001f;
         }
 
+        [[nodiscard]] bool copyBorrowedFixedString(const void* stringEntry, std::array<char, 260>& outPath)
+        {
+            outPath.fill('\0');
+            const void* current = stringEntry;
+            for (std::size_t depth = 0; depth < kMaxFixedStringShallowDepth; ++depth) {
+                std::uint16_t flags = 0;
+                if (!native_memory::tryReadField(current, 0x08, flags)) {
+                    return false;
+                }
+                if ((flags & RE::BSStringPool::Entry::kShallow) != 0) {
+                    void* right = nullptr;
+                    if (!native_memory::tryReadField(current, 0x10, right) || !right) {
+                        return false;
+                    }
+                    current = right;
+                    continue;
+                }
+                if ((flags & RE::BSStringPool::Entry::kWide) != 0) {
+                    return false;
+                }
+
+                std::uint32_t length = 0;
+                if (!native_memory::tryReadField(current, 0x10, length) || length == 0 || length >= outPath.size()) {
+                    return false;
+                }
+                const auto* characters = reinterpret_cast<const char*>(current) + sizeof(RE::BSStringPool::Entry);
+                if (!native_memory::guardedCopyFromMemory(characters, outPath.data(), static_cast<std::size_t>(length) + 1)) {
+                    return false;
+                }
+                return outPath[length] == '\0';
+            }
+            return false;
+        }
+
+        [[nodiscard]] bool tryFindLoadedGraphIdlePath(RE::BShkbAnimationGraph* graph, const std::uint64_t subgraphIdentifier, std::array<char, 260>& outPath,
+            IdleGripExtractionDiagnostics& diagnostics)
+        {
+            outPath.fill('\0');
+            void* loadedSubgraphs = nullptr;
+            if (!native_memory::tryReadField(graph, kGraphLoadedSubgraphsOffset, loadedSubgraphs) || !loadedSubgraphs) {
+                return false;
+            }
+
+            RE::BSSpinLock* graphLock = nullptr;
+            if (!native_memory::tryReadField(loadedSubgraphs, kLoadedSubgraphsLockOffset, graphLock) || !graphLock ||
+                !native_memory::pointerRangeLooksWritable(graphLock, sizeof(*graphLock))) {
+                return false;
+            }
+
+            RE::BSAutoLock<RE::BSSpinLock> lock{ graphLock };
+            void* entries = nullptr;
+            std::uint32_t entryCount = 0;
+            if (!native_memory::tryReadField(loadedSubgraphs, kLoadedSubgraphsEntriesOffset, entries) || !entries ||
+                !native_memory::tryReadField(loadedSubgraphs, kLoadedSubgraphsCountOffset, entryCount) || entryCount == 0 || entryCount > kMaxLoadedSubgraphs) {
+                return false;
+            }
+
+            void* bindingTable = nullptr;
+            for (std::uint32_t index = 0; index < entryCount; ++index) {
+                const auto* entry = reinterpret_cast<const std::byte*>(entries) + static_cast<std::size_t>(index) * kLoadedSubgraphEntryStride;
+                void* candidateTable = nullptr;
+                std::uint64_t candidateIdentifier = 0;
+                if (!native_memory::tryReadField(entry, kLoadedSubgraphBindingTableOffset, candidateTable) || !candidateTable ||
+                    !native_memory::tryReadField(candidateTable, kBindingTableSubgraphIdentifierOffset, candidateIdentifier)) {
+                    continue;
+                }
+                if (candidateIdentifier == subgraphIdentifier) {
+                    bindingTable = candidateTable;
+                    break;
+                }
+            }
+            if (!bindingTable) {
+                return false;
+            }
+
+            void* buckets = nullptr;
+            std::uint32_t bucketCount = 0;
+            if (!native_memory::tryReadField(bindingTable, kBindingTableBucketsOffset, buckets) || !buckets ||
+                !native_memory::tryReadField(bindingTable, kBindingTableBucketCountOffset, bucketCount) || bucketCount == 0 || bucketCount > kMaxClipBindingBuckets) {
+                return false;
+            }
+            diagnostics.graphClipBucketCount = bucketCount;
+
+            std::array<char, 260> idleFallback{};
+            for (std::uint32_t index = 0; index < bucketCount; ++index) {
+                const auto* node = reinterpret_cast<const std::byte*>(buckets) + static_cast<std::size_t>(index) * kBindingTableNodeStride;
+                void* occupancy = nullptr;
+                if (!native_memory::tryReadField(node, kBindingTableNodeOccupancyOffset, occupancy) || !occupancy) {
+                    continue;
+                }
+
+                void* stringEntry = nullptr;
+                std::array<char, 260> candidatePath{};
+                if (!native_memory::tryReadField(node, kBindingTableNodeKeyOffset, stringEntry) || !stringEntry || !copyBorrowedFixedString(stringEntry, candidatePath)) {
+                    continue;
+                }
+                ++diagnostics.graphClipPathCount;
+                const std::string_view candidate{ candidatePath.data() };
+                if (native_idle_grip_preharvest_policy::clipPathHasStem(candidate, "WPNIdleReady")) {
+                    outPath = candidatePath;
+                    diagnostics.usedGraphClipPathFallback = true;
+                    return true;
+                }
+                if (idleFallback[0] == '\0' && native_idle_grip_preharvest_policy::clipPathHasStem(candidate, "WPNIdle")) {
+                    idleFallback = candidatePath;
+                }
+            }
+
+            if (idleFallback[0] != '\0') {
+                outPath = idleFallback;
+                diagnostics.usedGraphClipPathFallback = true;
+                return true;
+            }
+            return false;
+        }
+
         [[nodiscard]] bool addressIsExecutable(const void* address)
         {
             if (!address) {
@@ -649,7 +790,11 @@ namespace rock::native_idle_grip_preharvest
                 sampledWeaponLocal.translation[1],
                 sampledWeaponLocal.translation[2],
             };
-            weaponLocal.rotate = transform_math::havokQuaternionToNiRows<RE::NiMatrix3>(sampledWeaponLocal.rotation);
+            // hkaAnimation's quaternion matrix is the opposite stored-axis
+            // convention from ROCK's NiTransform relationships. Convert it at
+            // this boundary before inversion so both the inverse rotation and
+            // inverse translation use the authored weapon-local basis.
+            weaponLocal.rotate = transform_math::transposeRotation(transform_math::havokQuaternionToNiRows<RE::NiMatrix3>(sampledWeaponLocal.rotation));
             weaponLocal.scale = sampledWeaponLocal.scale[0];
             if (!isFiniteTransform(weaponLocal)) {
                 return false;
@@ -917,8 +1062,22 @@ namespace rock::native_idle_grip_preharvest
                 return failExtractionResult(diagnostics, IdleGripExtractionFailure::AnimationFileListUnavailable);
             }
             diagnostics.animationFileCount = animationFiles->size();
+
+            const auto tryGraphPathFallback = [&](const IdleGripExtractionFailure unavailableFailure) {
+                if (!tryFindLoadedGraphIdlePath(graph, outSubgraphIdentifier, outClipPath, diagnostics)) {
+                    return failExtractionResult(diagnostics, unavailableFailure);
+                }
+                ++diagnostics.idlePathMatchCount;
+                ++diagnostics.sampleAttemptCount;
+                if (!state.job.idleClipResource.entry) {
+                    ROCK_LOG_INFO(Animation, "Native idle-grip preharvest recovered exact idle path from loaded graph formID={:08X} subgraph={:016X} buckets={} paths={} clip={}",
+                        state.job.weaponFormId, outSubgraphIdentifier, diagnostics.graphClipBucketCount, diagnostics.graphClipPathCount, outClipPath.data());
+                }
+                return trySampleClip(state, graph, outSubgraphIdentifier, outClipPath.data(), outHandInWeapon, diagnostics);
+            };
+
             if (animationFiles->empty()) {
-                return failExtractionResult(diagnostics, IdleGripExtractionFailure::AnimationFileListEmpty);
+                return tryGraphPathFallback(IdleGripExtractionFailure::AnimationFileListEmpty);
             }
 
             constexpr std::array<std::string_view, 2> desiredClipStems{
@@ -955,7 +1114,7 @@ namespace rock::native_idle_grip_preharvest
                 }
             }
             if (diagnostics.idlePathMatchCount == 0) {
-                return failExtractionResult(diagnostics, IdleGripExtractionFailure::IdleClipPathUnavailable);
+                return tryGraphPathFallback(IdleGripExtractionFailure::IdleClipPathUnavailable);
             }
             if (diagnostics.sampleAttemptCount == 0) {
                 return failExtractionResult(diagnostics, IdleGripExtractionFailure::IdleClipPathTooLong);
@@ -1056,10 +1215,12 @@ namespace rock::native_idle_grip_preharvest
                 const char* failure = extractionFailureName(extractionDiagnostics.failure);
                 ROCK_LOG_INFO(Animation,
                     "Native idle-grip preharvest extraction detail formID={:08X} reason={} graphs={} identifiers={} subgraph={:016X} files={} idleMatches={} "
-                    "sampleAttempts={} resourceState={:X} animationType={} duration={:.6f} tracks={} floatTracks={} bindingBlendHint={:X} mapping={} "
+                    "sampleAttempts={} graphBuckets={} graphPaths={} graphFallback={} resourceState={:X} animationType={} duration={:.6f} tracks={} floatTracks={} "
+                    "bindingBlendHint={:X} mapping={} "
                     "weaponBone={:X} handBone={:X} weaponParent={} clip={}",
                     job.weaponFormId, failure, extractionDiagnostics.graphCount, extractionDiagnostics.identifierCount, extractionDiagnostics.subgraphIdentifier,
                     extractionDiagnostics.animationFileCount, extractionDiagnostics.idlePathMatchCount, extractionDiagnostics.sampleAttemptCount,
+                    extractionDiagnostics.graphClipBucketCount, extractionDiagnostics.graphClipPathCount, extractionDiagnostics.usedGraphClipPathFallback,
                     extractionDiagnostics.directResourceState, extractionDiagnostics.animationType, extractionDiagnostics.animationDurationSeconds,
                     extractionDiagnostics.transformTrackCount, extractionDiagnostics.floatTrackCount, extractionDiagnostics.bindingBlendHint, extractionDiagnostics.mappingCount,
                     extractionDiagnostics.weaponBone, extractionDiagnostics.handBone, extractionDiagnostics.weaponParentIndex, clipPath[0] != '\0' ? clipPath.data() : "<none>");
