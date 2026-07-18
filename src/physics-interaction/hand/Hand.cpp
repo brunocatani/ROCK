@@ -23,6 +23,8 @@ namespace rock
     namespace
     {
         constexpr const char* GRAB_HAND_POSE_TAG = "ROCK_Grab";
+        constexpr const char* LEFT_GRAB_PRIMARY_POSE_BLOCK_TAG = "ROCK_GrabPrimaryPoseLeft";
+        constexpr const char* RIGHT_GRAB_PRIMARY_POSE_BLOCK_TAG = "ROCK_GrabPrimaryPoseRight";
         constexpr const char* GRAB_EXTERNAL_HAND_TAG = "ROCK_GrabVisual";
         constexpr object_physics_body_set::ObjectPhysicsBodyScanBudget kGrabAcquisitionPrewarmBudget{
             .maxVisitedNodes = 64,
@@ -33,6 +35,7 @@ namespace rock
         void clearGrabHandPose(bool isLeft)
         {
             (void)frik_visual_authority::clearHandPose(GRAB_HAND_POSE_TAG, handFromBool(isLeft));
+            (void)frik_visual_authority::blockPrimaryHandWeaponPose(isLeft ? LEFT_GRAB_PRIMARY_POSE_BLOCK_TAG : RIGHT_GRAB_PRIMARY_POSE_BLOCK_TAG, false);
         }
 
         void clearGrabExternalHandWorldTransform(bool isLeft)

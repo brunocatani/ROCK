@@ -1,7 +1,10 @@
 #pragma once
 
 #include "RE/NetImmerse/NiTransform.h"
+#include "physics-interaction/weapon/AuthoredWeaponGripAuthorityPolicy.h"
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 
 namespace RE
@@ -12,6 +15,9 @@ namespace RE
 
 namespace rock::authored_weapon_grip_library
 {
+    inline constexpr std::size_t kFiringFingerBoneCount = 15;
+    inline constexpr std::uint16_t kCompleteFiringFingerMask = authored_weapon_grip_authority_policy::kCompleteFiringFingerMask;
+
     enum class CaptureSource : std::uint8_t
     {
         Unknown,
@@ -19,10 +25,19 @@ namespace rock::authored_weapon_grip_library
         NativeIdlePreharvest,
     };
 
+    struct FiringFingerPose
+    {
+        std::array<RE::NiTransform, kFiringFingerBoneCount> localTransforms{};
+        std::uint16_t enabledMask{ 0 };
+
+        [[nodiscard]] bool complete() const noexcept { return authored_weapon_grip_authority_policy::completeFiringFingerPose(enabledMask); }
+    };
+
     struct LookupResult
     {
         bool found{ false };
         RE::NiTransform rightHandWeaponLocal{};
+        FiringFingerPose rightFiringFingerPose{};
         std::uint64_t captureSequence{ 0 };
         CaptureSource source{ CaptureSource::Unknown };
         bool usedVariantFallback{ false };
@@ -37,7 +52,7 @@ namespace rock::authored_weapon_grip_library
      * not allocate in the animation or interaction hot paths.
      */
     [[nodiscard]] bool publish(const RE::TESObjectWEAP* weapon, const RE::NiAVObject* weaponRoot, bool inPowerArmor, const RE::NiTransform& rightHandWeaponLocal,
-        std::uint64_t captureSequence, CaptureSource source);
+        std::uint64_t captureSequence, CaptureSource source, const FiringFingerPose* rightFiringFingerPose = nullptr);
 
     [[nodiscard]] LookupResult find(const RE::TESObjectWEAP* weapon, const RE::NiAVObject* weaponRoot, bool inPowerArmor);
 }

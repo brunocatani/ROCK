@@ -24,6 +24,11 @@ namespace rock
 {
     class WeaponCollision;
 
+    namespace authored_weapon_grip_library
+    {
+        struct FiringFingerPose;
+    }
+
     namespace grab_finger_pose_runtime
     {
         struct SolvedGrabFingerPose;
@@ -289,19 +294,23 @@ namespace rock
         /*
          * Binds Bethesda's exact RArm_Hand-in-Weapon relation to ROCK's
          * existing firing canonical by node identity, collision generation,
-         * and equipped ownership. The physical-left firing path
-         * consumes this one canonical through its established wand mirror;
-         * no left-authored animation datum is fabricated or retained beyond
-         * the matching weapon identity. The node pointer is comparison-only
-         * and is never dereferenced after publication.
+         * and equipped ownership. When a complete firing-finger pose is
+         * available, the right animation locals and hFRIK's anatomy-correct
+         * left mirror are retained only for the matching weapon identity.
+         * The node pointer is comparison-only and is never dereferenced after
+         * publication.
          */
         bool setAuthoredPrimaryFiringGripCanonical(
             RE::NiNode* weaponNode,
             const RE::NiTransform& rightHandWeaponLocal,
             std::uint64_t weaponGenerationKey,
             std::uint64_t weaponOwnershipKey,
-            std::uint64_t captureSequence);
+            std::uint64_t captureSequence, const authored_weapon_grip_library::FiringFingerPose* rightFingerPose = nullptr,
+            const authored_weapon_grip_library::FiringFingerPose* leftFingerPose = nullptr);
         void clearAuthoredPrimaryFiringGripCanonical(const char* reason);
+        bool publishAuthoredPrimaryFiringGripFingerPose(bool isLeft);
+        void clearAuthoredPrimaryFiringGripFingerPose();
+        void setAuthoredPrimaryFiringGripFingerPoseSuppressed(bool suppressed);
 
         /*
          * Ephemeral pre-update candidate derived from Bethesda's paired
@@ -897,6 +906,14 @@ namespace rock
             RightFiringCanonicalSource::None
         };
         bool _hasRightFiringHandCanonicalWeaponLocal{ false };
+        std::array<RE::NiTransform, 15> _rightFiringFingerLocalTransforms{};
+        std::array<RE::NiTransform, 15> _leftFiringFingerLocalTransforms{};
+        std::uint16_t _rightFiringFingerLocalTransformMask{ 0 };
+        std::uint16_t _leftFiringFingerLocalTransformMask{ 0 };
+        bool _publishedFiringFingerPoseIsLeft{ false };
+        bool _authoredPrimaryFingerPosePublished{ false };
+        bool _authoredPrimaryFingerPoseBlockEngaged{ false };
+        bool _authoredPrimaryFingerPoseSuppressed{ false };
 
         /*
          * Natural right hand-bone-in-wand relation, snapshotted only while

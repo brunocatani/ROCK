@@ -3,6 +3,7 @@
 #include "physics-interaction/animation/NativeAnimationAuthority.h"
 #include "physics-interaction/animation/NativeAnimationAuthorityPolicy.h"
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/TransformMath.h"
 #include "physics-interaction/grab/FrikWeaponOffsetCache.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
@@ -12,6 +13,7 @@
 #include "RE/NetImmerse/NiTransform.h"
 
 #include <cmath>
+#include <cstddef>
 
 namespace rock
 {
@@ -42,6 +44,35 @@ namespace rock
                    std::isfinite(transform.scale) &&
                    std::abs(transform.scale) > 0.000001f;
         }
+
+        [[nodiscard]] bool buildMirroredLeftFingerPose(const authored_weapon_grip_library::FiringFingerPose& rightPose, authored_weapon_grip_library::FiringFingerPose& outLeftPose)
+        {
+            outLeftPose = {};
+            if (!rightPose.complete()) {
+                return false;
+            }
+
+            frik_visual_authority::FingerLocalTransformOverride right{};
+            right.enabledMask = rightPose.enabledMask;
+            for (std::size_t index = 0; index < rightPose.localTransforms.size(); ++index) {
+                right.localTransforms[index] = rightPose.localTransforms[index];
+            }
+
+            frik_visual_authority::FingerLocalTransformOverride left{};
+            if (!frik_visual_authority::mirrorPrimaryWeaponFingerLocalTransforms(right, left) || left.enabledMask != authored_weapon_grip_library::kCompleteFiringFingerMask) {
+                return false;
+            }
+
+            outLeftPose.enabledMask = left.enabledMask;
+            for (std::size_t index = 0; index < outLeftPose.localTransforms.size(); ++index) {
+                if (!finiteTransform(left.localTransforms[index])) {
+                    outLeftPose = {};
+                    return false;
+                }
+                outLeftPose.localTransforms[index] = left.localTransforms[index];
+            }
+            return true;
+        }
     }
 
     void AuthoredPrimaryFiringGripRuntime::endSession(const char* reason)
@@ -61,6 +92,7 @@ namespace rock
         const char* reason,
         TwoHandedGrip& weaponAuthority)
     {
+        weaponAuthority.setAuthoredPrimaryFiringGripFingerPoseSuppressed(false);
         weaponAuthority.clearAuthoredPrimaryFiringGripCanonical(reason);
         endSession(reason);
         _weaponNodeIdentity = nullptr;
@@ -68,6 +100,10 @@ namespace rock
         _frikOffsetCacheRevision = 0;
         _captureSequenceFloor = 0;
         _supportCaptureSequenceFloor = 0;
+        _mirroredLeftFingerPose = {};
+        _mirroredFingerPoseCaptureSequence = 0;
+        _mirroredFingerPoseValid = false;
+        _fingerMirrorFailureLogged = false;
         _nativeReloadWasActive = false;
         _sessionLogged = false;
         _applyFailureLogged = false;
@@ -95,6 +131,8 @@ namespace rock
             reset("experiment-disabled", weaponAuthority);
             return;
         }
+
+        weaponAuthority.setAuthoredPrimaryFiringGripFingerPoseSuppressed(input.nativeReloadAuthorityActive);
 
         if (input.nativeReloadAuthorityActive) {
             if (!_nativeReloadWasActive) {
@@ -131,6 +169,10 @@ namespace rock
             _canonicalPublishFailureLogged = false;
             _libraryPublishFailureLogged = false;
             _supportCaptureFailureLogged = false;
+            _mirroredLeftFingerPose = {};
+            _mirroredFingerPoseCaptureSequence = 0;
+            _mirroredFingerPoseValid = false;
+            _fingerMirrorFailureLogged = false;
 
             _customFrikOffsetOverrideActive = false;
             _frikOffsetCacheRevision = frik_weapon_offset_cache::currentRevision();
@@ -196,6 +238,9 @@ namespace rock
             return;
         }
 
+        const auto authoredLookup = authored_weapon_grip_library::find(input.weapon, input.weaponNode, input.inPowerArmor);
+        const bool harvestedRelationAvailable = authoredLookup.found && authoredLookup.source == authored_weapon_grip_library::CaptureSource::NativeIdlePreharvest;
+
         const native_animation_authority_policy::AuthoredPrimaryFiringGripEligibility eligibility{
             .enabled = input.enabled,
             .runtimeInitialized = input.runtimeInitialized,
@@ -206,9 +251,8 @@ namespace rock
             .weaponDrawn = input.weaponDrawn,
             .weaponVisible = input.weaponVisible,
             .weaponKeyValid = currentWeaponKey != 0,
-            .captureValid = captureStatus.valid,
-            .captureNewerThanWeaponBoundary =
-                captureStatus.captureSequence > _captureSequenceFloor,
+            .captureValid = harvestedRelationAvailable || captureStatus.valid,
+            .captureNewerThanWeaponBoundary = harvestedRelationAvailable || captureStatus.captureSequence > _captureSequenceFloor,
             .nativeReloadAuthorityActive = input.nativeReloadAuthorityActive,
             .conflictingWeaponTransformAuthorityActive =
                 input.conflictingWeaponTransformAuthorityActive,
@@ -218,6 +262,9 @@ namespace rock
             .rockFiringHandIsLeft = input.rockFiringHandIsLeft,
         };
         if (!native_animation_authority_policy::shouldApplyAuthoredPrimaryFiringGrip(eligibility)) {
+            if (!input.rockFiringHandIsLeft) {
+                weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
+            }
             endSession("frame-ineligible");
             return;
         }
@@ -227,6 +274,7 @@ namespace rock
             frik_visual_authority::getHandWorldTransform(
                 frik_visual_authority::Hand::Primary);
         if (!finiteTransform(liveWeaponWorld) || !finiteTransform(trackedHandWorld)) {
+            weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
             endSession("live-transform-invalid");
             return;
         }
@@ -235,15 +283,26 @@ namespace rock
         RE::NiTransform currentAuthoredHandWorld{};
         RE::NiTransform authoredPrimaryHandInWeapon{};
         std::uint64_t resolvedCaptureSequence = 0;
-        if (!native_animation_authority::tryResolvePrimaryFiringGripAlignment(
+        bool alignmentResolved = false;
+        if (harvestedRelationAvailable) {
+            authoredPrimaryHandInWeapon = authoredLookup.rightHandWeaponLocal;
+            resolvedCaptureSequence = authoredLookup.captureSequence;
+            currentAuthoredHandWorld = transform_math::composeTransforms(liveWeaponWorld, authoredPrimaryHandInWeapon);
+            solvedWeaponWorld = transform_math::composeTransforms(trackedHandWorld, transform_math::invertTransform(authoredPrimaryHandInWeapon));
+            alignmentResolved = finiteTransform(authoredPrimaryHandInWeapon) && finiteTransform(currentAuthoredHandWorld) && finiteTransform(solvedWeaponWorld);
+        } else {
+            alignmentResolved = native_animation_authority::tryResolvePrimaryFiringGripAlignment(
                 input.weaponNode,
                 liveWeaponWorld,
                 trackedHandWorld,
                 solvedWeaponWorld,
                 currentAuthoredHandWorld,
                 authoredPrimaryHandInWeapon,
-                resolvedCaptureSequence) ||
-            resolvedCaptureSequence <= _captureSequenceFloor) {
+                resolvedCaptureSequence) &&
+                resolvedCaptureSequence > _captureSequenceFloor;
+        }
+        if (!alignmentResolved) {
+            weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
             endSession("capture-resolution-failed");
             return;
         }
@@ -259,16 +318,30 @@ namespace rock
                     resolvedCaptureSequence);
                 _applyFailureLogged = true;
             }
+            weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
             endSession("weapon-alignment-failed");
             return;
         }
+
+        const auto* rightFingerPose = harvestedRelationAvailable && authoredLookup.rightFiringFingerPose.complete() ? &authoredLookup.rightFiringFingerPose : nullptr;
+        if (rightFingerPose && _mirroredFingerPoseCaptureSequence != resolvedCaptureSequence) {
+            _mirroredLeftFingerPose = {};
+            _mirroredFingerPoseValid = buildMirroredLeftFingerPose(*rightFingerPose, _mirroredLeftFingerPose);
+            _mirroredFingerPoseCaptureSequence = resolvedCaptureSequence;
+            if (!_mirroredFingerPoseValid && !_fingerMirrorFailureLogged) {
+                ROCK_LOG_WARN(Animation, "Authored primary firing grip could not mirror exact native-idle finger pose for left firing weaponKey=0x{:X} capture={}",
+                    currentWeaponKey, resolvedCaptureSequence);
+                _fingerMirrorFailureLogged = true;
+            }
+        }
+        const auto* leftFingerPose = rightFingerPose && _mirroredFingerPoseValid ? &_mirroredLeftFingerPose : nullptr;
 
         if (!weaponAuthority.setAuthoredPrimaryFiringGripCanonical(
                 input.weaponNode,
                 authoredPrimaryHandInWeapon,
                 input.weaponGenerationKey,
                 currentWeaponKey,
-                resolvedCaptureSequence)) {
+                resolvedCaptureSequence, rightFingerPose, leftFingerPose)) {
             if (!_canonicalPublishFailureLogged) {
                 ROCK_LOG_WARN(Animation,
                     "Authored primary firing grip could not publish mirrored-left canonical weaponKey=0x{:X} generation=0x{:X} capture={}",
@@ -277,11 +350,18 @@ namespace rock
                     resolvedCaptureSequence);
                 _canonicalPublishFailureLogged = true;
             }
+            weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
         } else {
             _canonicalPublishFailureLogged = false;
+            if (rightFingerPose) {
+                (void)weaponAuthority.publishAuthoredPrimaryFiringGripFingerPose(false);
+            } else {
+                weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
+            }
         }
 
-        if (!authored_weapon_grip_library::publish(
+        if (!harvestedRelationAvailable &&
+            !authored_weapon_grip_library::publish(
                 input.weapon,
                 input.weaponNode,
                 input.inPowerArmor,
@@ -350,10 +430,13 @@ namespace rock
 
         if (!_sessionLogged) {
             ROCK_LOG_INFO(Animation,
-                "Authored primary firing grip weapon alignment active weaponKey=0x{:X} generation=0x{:X} capture={} handMismatch={:.3f}gu weaponCorrection={:.3f}gu originalWeaponT=({:.3f},{:.3f},{:.3f}) alignedWeaponT=({:.3f},{:.3f},{:.3f}) alignedLocalT=({:.3f},{:.3f},{:.3f}) authority=weapon-only primaryHand=controller-driven physicalLeftSource=mirrored-authored-canonical",
+                "Authored primary firing grip weapon alignment active weaponKey=0x{:X} generation=0x{:X} capture={} source={} exactFingerPose={} handMismatch={:.3f}gu "
+                "weaponCorrection={:.3f}gu originalWeaponT=({:.3f},{:.3f},{:.3f}) alignedWeaponT=({:.3f},{:.3f},{:.3f}) alignedLocalT=({:.3f},{:.3f},{:.3f}) authority=weapon-only "
+                "primaryHand=controller-driven physicalLeftSource=mirrored-authored-canonical",
                 currentWeaponKey,
                 input.weaponGenerationKey,
-                resolvedCaptureSequence,
+                resolvedCaptureSequence, harvestedRelationAvailable ? "native-idle-preharvest" : "live-equipped-fallback",
+                rightFingerPose ? (leftFingerPose ? "right-and-left" : "right-only") : "fallback",
                 translationDistance(trackedHandWorld, currentAuthoredHandWorld),
                 translationDistance(liveWeaponWorld, solvedWeaponWorld),
                 liveWeaponWorld.translate.x,

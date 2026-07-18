@@ -25,9 +25,11 @@
 #include "physics-interaction/grab/MeshGrab.h"
 #include "physics-interaction/object/MechanicalConnectedBodySet.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
+#include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/LooseWeaponGripZone.h"
 #include "physics-interaction/object/SkinnedBodyResolver.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
+#include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/hand/HandVisual.h"
 #include "physics-interaction/core/PhysicsHooks.h"
@@ -800,10 +802,45 @@ namespace rock
 
         bool publishLooseWeaponPrimaryAttachHandPose(bool isLeft, RE::TESObjectREFR* refr)
         {
+            const auto* weapon = looseWeaponFormFromRef(refr);
+            auto* weaponRoot = refr ? refr->Get3D() : nullptr;
+            if (g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled && weapon && weaponRoot) {
+                const auto authored = authored_weapon_grip_library::find(weapon, weaponRoot, f4vr::isInPowerArmor());
+                if (authored.found && authored.rightFiringFingerPose.complete()) {
+                    frik_visual_authority::FingerLocalTransformOverride exactRightPose{};
+                    exactRightPose.enabledMask = authored.rightFiringFingerPose.enabledMask;
+                    for (std::size_t index = 0; index < authored.rightFiringFingerPose.localTransforms.size(); ++index) {
+                        exactRightPose.localTransforms[index] = authored.rightFiringFingerPose.localTransforms[index];
+                    }
+
+                    frik_visual_authority::FingerLocalTransformOverride exactPose = exactRightPose;
+                    if (!isLeft || frik_visual_authority::mirrorPrimaryWeaponFingerLocalTransforms(exactRightPose, exactPose)) {
+                        constexpr const char* tag = "ROCK_Grab";
+                        constexpr int priority = 100;
+                        const char* blockTag = isLeft ? "ROCK_GrabPrimaryPoseLeft" : "ROCK_GrabPrimaryPoseRight";
+                        const bool blockedNativePose = frik_visual_authority::blockPrimaryHandWeaponPose(blockTag, true);
+                        const bool scalarPublished =
+                            blockedNativePose && frik_visual_authority::setHandPoseCustomWithPriority(tag, handFromBool(isLeft), frik_visual_authority::HandPoseData{}, priority);
+                        const bool localsPublished =
+                            scalarPublished && frik_visual_authority::setHandPoseCustomLocalTransformsWithPriority(tag, handFromBool(isLeft), &exactPose, priority);
+                        if (localsPublished) {
+                            ROCK_LOG_INFO(Hand, "{} hand loose weapon attach: applying exact native-idle firing pose source={} mask=0x{:04X}", isLeft ? "left" : "right",
+                                authored.reason, exactPose.enabledMask);
+                            return true;
+                        }
+
+                        (void)frik_visual_authority::clearHandPose(tag, handFromBool(isLeft));
+                        if (blockedNativePose) {
+                            (void)frik_visual_authority::blockPrimaryHandWeaponPose(blockTag, false);
+                        }
+                    }
+                }
+            }
+
             return frik_visual_authority::setHandPoseWithPriority(
                 "ROCK_Grab",
                 handFromBool(isLeft),
-                looseWeaponPrimaryAttachPoseKind(looseWeaponFormFromRef(refr)),
+                looseWeaponPrimaryAttachPoseKind(weapon),
                 100);
         }
 

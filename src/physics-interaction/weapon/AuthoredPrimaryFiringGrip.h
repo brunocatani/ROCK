@@ -1,5 +1,7 @@
 #pragma once
 
+#include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
+
 #include <cstdint>
 
 namespace RE
@@ -57,6 +59,8 @@ namespace rock
         std::uint64_t _frikOffsetCacheRevision{ 0 };
         std::uint64_t _captureSequenceFloor{ 0 };
         std::uint64_t _supportCaptureSequenceFloor{ 0 };
+        authored_weapon_grip_library::FiringFingerPose _mirroredLeftFingerPose{};
+        std::uint64_t _mirroredFingerPoseCaptureSequence{ 0 };
         bool _active{ false };
         bool _nativeReloadWasActive{ false };
         bool _sessionLogged{ false };
@@ -67,5 +71,7 @@ namespace rock
         std::uint32_t _supportCaptureFailureReasonLogged{ 0 };
         std::uint16_t _supportCaptureFailureMaskLogged{ 0 };
         bool _supportCaptureFailureLogged{ false };
+        bool _mirroredFingerPoseValid{ false };
+        bool _fingerMirrorFailureLogged{ false };
     };
 }

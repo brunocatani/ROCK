@@ -12,6 +12,7 @@
 #include "RockConfig.h"
 #include "RockUtils.h"
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/WeaponCollision.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"
@@ -34,6 +35,7 @@ namespace rock
     namespace
     {
         constexpr const char* PRIMARY_GRIP_TAG = "ROCK_WeaponPrimaryGrip";
+        constexpr const char* AUTHORED_PRIMARY_POSE_BLOCK_TAG = "ROCK_AuthoredPrimaryPose";
         constexpr const char* PRIMARY_DETACH_TAG = "ROCK_WeaponPrimaryDetach";
         constexpr const char* SUPPORT_GRIP_TAG = "ROCK_WeaponSupportGrip";
         constexpr const char* RETURN_HAND_TAG = "ROCK_WeaponReturn";
@@ -1532,6 +1534,7 @@ namespace rock
         clearSupportGripPose(false);
         restoreFrikPrimaryWeaponPose();
         clearRightFiringHandCanonicalFrame();
+        _authoredPrimaryFingerPoseSuppressed = false;
         if (_state != TwoHandedState::Inactive) {
             transitionToInactive(false);
             _scopeMenuOpenThisFrame = false;
@@ -3550,6 +3553,7 @@ namespace rock
             return false;
         }
 
+        (void)publishAuthoredPrimaryFiringGripFingerPose(true);
         _lastSolvedWeaponTransform = weaponNode->world;
         _hasSolvedWeaponTransform = true;
 
@@ -4405,14 +4409,24 @@ namespace rock
         const RE::NiTransform& rightHandWeaponLocal,
         const std::uint64_t weaponGenerationKey,
         const std::uint64_t weaponOwnershipKey,
-        const std::uint64_t captureSequence)
+        const std::uint64_t captureSequence, const authored_weapon_grip_library::FiringFingerPose* rightFingerPose,
+        const authored_weapon_grip_library::FiringFingerPose* leftFingerPose)
     {
+        const auto validFingerPose = [](const authored_weapon_grip_library::FiringFingerPose* pose) {
+            if (!pose) {
+                return true;
+            }
+            if (!pose->complete()) {
+                return false;
+            }
+            return std::ranges::all_of(pose->localTransforms, [](const RE::NiTransform& transform) { return isFiniteTransform(transform) && std::abs(transform.scale) > 0.0001f; });
+        };
         if (!weaponNode ||
             weaponGenerationKey == 0 ||
             weaponOwnershipKey == 0 ||
             captureSequence == 0 ||
             !isFiniteTransform(rightHandWeaponLocal) ||
-            std::abs(rightHandWeaponLocal.scale) <= 0.0001f) {
+            std::abs(rightHandWeaponLocal.scale) <= 0.0001f || !validFingerPose(rightFingerPose) || !validFingerPose(leftFingerPose) || (leftFingerPose && !rightFingerPose)) {
             return false;
         }
 
@@ -4446,10 +4460,15 @@ namespace rock
         _rightFiringHandCanonicalSource =
             RightFiringCanonicalSource::AuthoredAnimation;
         _hasRightFiringHandCanonicalWeaponLocal = true;
+        _rightFiringFingerLocalTransforms = rightFingerPose ? rightFingerPose->localTransforms : std::array<RE::NiTransform, 15>{};
+        _rightFiringFingerLocalTransformMask = rightFingerPose ? rightFingerPose->enabledMask : 0;
+        _leftFiringFingerLocalTransforms = leftFingerPose ? leftFingerPose->localTransforms : std::array<RE::NiTransform, 15>{};
+        _leftFiringFingerLocalTransformMask = leftFingerPose ? leftFingerPose->enabledMask : 0;
 
         if (sourceBoundary) {
             ROCK_LOG_INFO(Animation,
-                "TwoHandedGrip: authored firing canonical active generation={:016X} ownership={:016X} capture={} handWeaponT=({:.3f},{:.3f},{:.3f}) gripWeapon=({:.3f},{:.3f},{:.3f}) leftSource=wand-mirror",
+                "TwoHandedGrip: authored firing canonical active generation={:016X} ownership={:016X} capture={} handWeaponT=({:.3f},{:.3f},{:.3f}) "
+                "gripWeapon=({:.3f},{:.3f},{:.3f}) rightFingerMask=0x{:04X} leftFingerMask=0x{:04X} leftSource=wand-and-anatomy-mirror",
                 weaponGenerationKey,
                 weaponOwnershipKey,
                 captureSequence,
@@ -4458,9 +4477,75 @@ namespace rock
                 rightHandWeaponLocal.translate.z,
                 authoredGripWeaponLocal.x,
                 authoredGripWeaponLocal.y,
-                authoredGripWeaponLocal.z);
+                authoredGripWeaponLocal.z, _rightFiringFingerLocalTransformMask, _leftFiringFingerLocalTransformMask);
         }
         return true;
+    }
+
+    bool TwoHandedGrip::publishAuthoredPrimaryFiringGripFingerPose(const bool isLeft)
+    {
+        if (_authoredPrimaryFingerPoseSuppressed || _rightFiringHandCanonicalSource != RightFiringCanonicalSource::AuthoredAnimation) {
+            return false;
+        }
+
+        const auto& transforms = isLeft ? _leftFiringFingerLocalTransforms : _rightFiringFingerLocalTransforms;
+        const std::uint16_t mask = isLeft ? _leftFiringFingerLocalTransformMask : _rightFiringFingerLocalTransformMask;
+        if (mask != authored_weapon_grip_library::kCompleteFiringFingerMask) {
+            return false;
+        }
+
+        if (_authoredPrimaryFingerPosePublished && _publishedFiringFingerPoseIsLeft != isLeft) {
+            clearAuthoredPrimaryFiringGripFingerPose();
+        }
+
+        if (!_authoredPrimaryFingerPoseBlockEngaged) {
+            if (!frik_visual_authority::blockPrimaryHandWeaponPose(AUTHORED_PRIMARY_POSE_BLOCK_TAG, true)) {
+                return false;
+            }
+            _authoredPrimaryFingerPoseBlockEngaged = true;
+        }
+
+        const auto hand = handFromBool(isLeft);
+        _publishedFiringFingerPoseIsLeft = isLeft;
+        if (!frik_visual_authority::setHandPoseCustomWithPriority(PRIMARY_GRIP_TAG, hand, frik_visual_authority::HandPoseData{}, GRIP_HAND_POSE_PRIORITY)) {
+            clearAuthoredPrimaryFiringGripFingerPose();
+            return false;
+        }
+
+        frik_visual_authority::FingerLocalTransformOverride overrideData{};
+        overrideData.enabledMask = mask;
+        for (std::size_t index = 0; index < transforms.size(); ++index) {
+            overrideData.localTransforms[index] = transforms[index];
+        }
+        if (!frik_visual_authority::setHandPoseCustomLocalTransformsWithPriority(PRIMARY_GRIP_TAG, hand, &overrideData, GRIP_HAND_POSE_PRIORITY)) {
+            clearAuthoredPrimaryFiringGripFingerPose();
+            return false;
+        }
+
+        _publishedFiringFingerPoseIsLeft = isLeft;
+        _authoredPrimaryFingerPosePublished = true;
+        return true;
+    }
+
+    void TwoHandedGrip::clearAuthoredPrimaryFiringGripFingerPose()
+    {
+        if (_authoredPrimaryFingerPosePublished || _authoredPrimaryFingerPoseBlockEngaged) {
+            (void)frik_visual_authority::clearHandPose(PRIMARY_GRIP_TAG, handFromBool(_publishedFiringFingerPoseIsLeft));
+        }
+        if (_authoredPrimaryFingerPoseBlockEngaged) {
+            (void)frik_visual_authority::blockPrimaryHandWeaponPose(AUTHORED_PRIMARY_POSE_BLOCK_TAG, false);
+        }
+        _publishedFiringFingerPoseIsLeft = false;
+        _authoredPrimaryFingerPosePublished = false;
+        _authoredPrimaryFingerPoseBlockEngaged = false;
+    }
+
+    void TwoHandedGrip::setAuthoredPrimaryFiringGripFingerPoseSuppressed(const bool suppressed)
+    {
+        _authoredPrimaryFingerPoseSuppressed = suppressed;
+        if (suppressed) {
+            clearAuthoredPrimaryFiringGripFingerPose();
+        }
     }
 
     void TwoHandedGrip::clearAuthoredPrimaryFiringGripCanonical(
@@ -4477,6 +4562,7 @@ namespace rock
             _rightFiringHandCanonicalGenerationKey,
             _rightFiringHandCanonicalOwnershipKey,
             _rightFiringHandCanonicalCaptureSequence);
+        clearAuthoredPrimaryFiringGripFingerPose();
         clearRightFiringHandCanonicalFrame();
     }
 
@@ -4564,6 +4650,7 @@ namespace rock
             liveHandWorld;
         const RE::NiTransform appliedFiringHandWorld =
             resolveLockedHandVisualTarget(firingHandWorld, acquisitionStart, dt, _primaryHandVisualLerp);
+        (void)publishAuthoredPrimaryFiringGripFingerPose(_firingHandIsLeft);
         const bool applied = frik_visual_authority::applyExternalHandWorldTransform(
             PRIMARY_GRIP_TAG, handFromBool(_firingHandIsLeft), appliedFiringHandWorld, GRIP_HAND_POSE_PRIORITY);
         if (applied) {
@@ -4695,7 +4782,11 @@ namespace rock
     void TwoHandedGrip::clearPrimaryGripPose(bool isLeft)
     {
         _hasLastPublishedHandWorld[isLeft ? 0u : 1u] = false;
-        (void)frik_visual_authority::clearHandPose(PRIMARY_GRIP_TAG, handFromBool(isLeft));
+        if (_authoredPrimaryFingerPosePublished && _publishedFiringFingerPoseIsLeft == isLeft) {
+            clearAuthoredPrimaryFiringGripFingerPose();
+        } else {
+            (void)frik_visual_authority::clearHandPose(PRIMARY_GRIP_TAG, handFromBool(isLeft));
+        }
         if (_scopeMenuOpenThisFrame || _scopeMenuClosedThisFrame) {
             deferScopeHandAuthorityClear(scope_safe_hand_frame_math::HandAuthorityRole::PrimaryGrip, isLeft);
         } else {
@@ -4753,6 +4844,10 @@ namespace rock
         _rightFiringHandCanonicalCaptureSequence = 0;
         _rightFiringHandCanonicalSource = RightFiringCanonicalSource::None;
         _hasRightFiringHandCanonicalWeaponLocal = false;
+        _rightFiringFingerLocalTransforms = {};
+        _leftFiringFingerLocalTransforms = {};
+        _rightFiringFingerLocalTransformMask = 0;
+        _leftFiringFingerLocalTransformMask = 0;
     }
 
     bool TwoHandedGrip::hasRightFiringHandCanonicalFrame(

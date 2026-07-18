@@ -155,8 +155,8 @@ Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
     'currentRevision\(\)[\s\S]{0,500}frikOffsetCacheRevision\s*!=\s*_frikOffsetCacheRevision[\s\S]{0,800}OffsetSource::CustomFile[\s\S]{0,800}custom-frik-weapon-offset-change[\s\S]{0,300}captureSequenceFloor' `
     'A live custom-file add/remove must re-evaluate the equipped weapon from the in-memory revision, release stale authority, and require a fresh graph capture.'
 Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
-    'authored_weapon_grip_library::publish\([\s\S]{0,300}input\.weapon[\s\S]{0,200}authoredPrimaryHandInWeapon[\s\S]{0,200}resolvedCaptureSequence[\s\S]{0,160}CaptureSource::LiveEquippedGraph' `
-    'Every successful native grip solve must publish the exact relation and live-graph provenance to the bounded loose-weapon library.'
+    '!harvestedRelationAvailable\s*&&\s*!authored_weapon_grip_library::publish\([\s\S]{0,350}CaptureSource::LiveEquippedGraph' `
+    'Live equipped capture must remain only the bounded compatibility fallback when no native-idle harvest exists.'
 Require-Text 'src/physics-interaction/weapon/EquipVisualBridge.cpp' `
     'customFrikOffsetPresent\s*=[\s\S]{0,300}OffsetSource::CustomFile[\s\S]{0,700}tryResolveLooseWeaponFiringHandHoldForModel[\s\S]{0,700}else if\s*\(\s*!customFrikOffsetPresent' `
     'Loose-to-equipped visual handoff must re-resolve the filewatch-published shared authority and never fall back across a custom override.'
@@ -173,8 +173,23 @@ Require-Text 'src/physics-interaction/weapon/AuthoredWeaponGripLibrary.cpp' `
     'std::array<Entry,\s*kCapacity>[\s\S]*weaponFormId[\s\S]*variantKey[\s\S]*inPowerArmor[\s\S]*formMatchCount\s*==\s*1' `
     'The learned loose grip library must be bounded and keyed by weapon, stock variant, and power-armor topology with only unambiguous fallback.'
 Require-Text 'src/physics-interaction/weapon/AuthoredWeaponGripLibrary.cpp' `
-    'PreharvestBaseline[\s\S]*findPreharvestBaseline[\s\S]*Authored grip equivalence matrices[\s\S]*initialComparisonReported[\s\S]*stableComparisonReported' `
-    'Preharvest and equipped-graph relations must retain explicit provenance and emit bounded exact/stable equivalence telemetry.'
+    'shouldAcceptPublication\([\s\S]*CaptureSource::NativeIdlePreharvest[\s\S]*rightFiringFingerPose' `
+    'A native-idle relation and its complete finger pose must remain authoritative over later live fallback frames.'
+Reject-Text 'src/physics-interaction/weapon/AuthoredWeaponGripLibrary.cpp' `
+    'PreharvestBaseline|observeLiveEquivalence|Authored grip equivalence' `
+    'The completed preharvest path must not retain the obsolete live proving/equivalence machinery.'
+Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
+    'harvestedRelationAvailable[\s\S]*authoredLookup\.rightHandWeaponLocal[\s\S]*buildMirroredLeftFingerPose[\s\S]*setAuthoredPrimaryFiringGripCanonical\([\s\S]*rightFingerPose[\s\S]*leftFingerPose[\s\S]*publishAuthoredPrimaryFiringGripFingerPose\(false\)' `
+    'Equipped primary alignment must consume harvested relation and complete right/left finger poses without waiting for a live proof sample.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
+    'grabOffsetFingerPoseSource\.valid[\s\S]*applyRockGrabHandPose[\s\S]*else\s*\{[\s\S]*publishLooseWeaponPrimaryAttachHandPose' `
+    'Synthetic loose-weapon attach must preserve explicit saved finger authority before consulting the authored/default pose resolver.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
+    'publishLooseWeaponPrimaryAttachHandPose[\s\S]{0,2600}rightFiringFingerPose\.complete\(\)[\s\S]{0,1600}mirrorPrimaryWeaponFingerLocalTransforms[\s\S]{0,1800}setHandPoseCustomLocalTransformsWithPriority[\s\S]{0,1600}setHandPoseWithPriority' `
+    'The authored/default resolver must publish only a complete harvested right/mirrored-left pose and retain the generic named-pose fallback.'
+Require-Text 'src/physics-interaction/hand/Hand.cpp' `
+    'clearGrabHandPose[\s\S]*clearHandPose\(GRAB_HAND_POSE_TAG[\s\S]*blockPrimaryHandWeaponPose\([\s\S]*false' `
+    'Grab cleanup must release both the exact pose tag and its native-primary-pose blocker.'
 Require-Text 'src/physics-interaction/weapon/WeaponGripAuthorityPolicy.h' `
     'frikCustomFile[\s\S]{0,300}Source::FrikCustomFile[\s\S]{0,300}authoredAnimation[\s\S]{0,300}Source::AuthoredAnimation[\s\S]{0,300}frikEmbeddedResource[\s\S]{0,300}Source::FrikEmbeddedResource' `
     'Weapon grip authority must encode custom hFRIK JSON above ROCK authored animation and embedded data below it.'

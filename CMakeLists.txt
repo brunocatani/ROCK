@@ -542,12 +542,12 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKNativeIdleGripPreharvestPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKNativeIdleGripPreharvestPolicyTests)
 
-  add_executable(ROCKAuthoredWeaponGripEquivalencePolicyTests
-    "${ROOT_DIR}/tests/AuthoredWeaponGripEquivalencePolicyTests.cpp"
+  add_executable(ROCKAuthoredWeaponGripAuthorityPolicyTests
+    "${ROOT_DIR}/tests/AuthoredWeaponGripAuthorityPolicyTests.cpp"
   )
-  target_compile_features(ROCKAuthoredWeaponGripEquivalencePolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKAuthoredWeaponGripEquivalencePolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKAuthoredWeaponGripEquivalencePolicyTests)
+  target_compile_features(ROCKAuthoredWeaponGripAuthorityPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKAuthoredWeaponGripAuthorityPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKAuthoredWeaponGripAuthorityPolicyTests)
 
   add_executable(ROCKPhysicsCallbackQuiescenceGateTests
     "${ROOT_DIR}/tests/PhysicsCallbackQuiescenceGateTests.cpp"
@@ -617,7 +617,7 @@ if(BUILD_ROCK_TESTS)
     ROCKPipboyEquipPolicyTests
     ROCKNativeAnimationAuthorityPolicyTests
     ROCKNativeIdleGripPreharvestPolicyTests
-    ROCKAuthoredWeaponGripEquivalencePolicyTests
+    ROCKAuthoredWeaponGripAuthorityPolicyTests
     ROCKPhysicsCallbackQuiescenceGateTests
     ROCKDynamicHandTwinGeometryPolicyTests
     ROCKDynamicHandCollisionTransitionPolicyTests

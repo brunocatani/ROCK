@@ -80,11 +80,17 @@ Reject-Text $source `
     '35006BE1|Actors\\\\AKsAR15s\\\\Character\\\\_1stPerson\\\\Animations\\\\SVD' `
     'The generic graph-path fallback must never hardcode the observed SVD form or asset path.'
 Require-Text $source `
-    'weaponLocal\.rotate\s*=\s*transform_math::transposeRotation\(\s*transform_math::havokQuaternionToNiRows<RE::NiMatrix3>\(sampledWeaponLocal\.rotation\)\s*\)[\s\S]*outHandInWeapon\s*=\s*transform_math::invertTransform\(weaponLocal\)' `
+    'convertHavokLocalTransform[\s\S]*outLocal\.rotate\s*=\s*transform_math::transposeRotation\(transform_math::havokQuaternionToNiRows<RE::NiMatrix3>\(sampledLocal\.rotation\)\)[\s\S]*convertWeaponTrackToHandInWeapon[\s\S]*outHandInWeapon\s*=\s*transform_math::invertTransform\(weaponLocal\)' `
     'Sampled Havok rotation must enter ROCK stored-axis convention before inversion so rotation and translation are corrected together.'
 Reject-Text $source `
-    'weaponLocal\.rotate\s*=\s*transform_math::havokQuaternionToNiRows<RE::NiMatrix3>\(sampledWeaponLocal\.rotation\)\s*;' `
+    'outLocal\.rotate\s*=\s*transform_math::havokQuaternionToNiRows<RE::NiMatrix3>\(sampledLocal\.rotation\)\s*;' `
     'The measured transpose error must not return at the sampled-animation boundary.'
+Require-Text $source `
+    'kSkeletonReferencePoseOffset\s*=\s*0x38[\s\S]*kSkeletonReferencePoseCountOffset\s*=\s*0x40[\s\S]*"RArm_Finger11"[\s\S]*"RArm_Finger53"[\s\S]*extractRightFiringFingerPose[\s\S]*findTransformTrackForBone[\s\S]*guardedCopyFromMemory\(referencePose\s*\+\s*boneIndex[\s\S]*convertHavokLocalTransform' `
+    'The sampler must resolve all 15 firing fingers as local tracks and use the verified hkaSkeleton reference pose only for compressed-out tracks.'
+Require-Text $source `
+    'sampledFingerMask[\s\S]*referenceFingerMask[\s\S]*missingFingerMask[\s\S]*rightFiringFingerPose\.complete\(\)[\s\S]*CaptureSource::NativeIdlePreharvest[\s\S]*completeFingerPose' `
+    'Only a complete finite 15-bone pose may accompany a harvested grip publication; partial poses must remain diagnostic-only.'
 Require-Text $source `
     'PopulateGraphProjectsToLoad[\s\S]*graphProjects\.size\(\)\s*<\s*2[\s\S]*createBackgroundSimpleManager' `
     'Off-screen native loads must create the plain holder from both player graph projects.'
@@ -115,6 +121,9 @@ Require-Text $source `
 Require-Text $source `
     'authored_weapon_grip_library::publish[\s\S]{0,300}CaptureSource::NativeIdlePreharvest' `
     'The proof must publish only through ROCK''s bounded authored-grip cache with explicit preharvest provenance.'
+Require-Text $source `
+    'existing\.found\s*&&\s*existing\.source\s*==\s*authored_weapon_grip_library::CaptureSource::NativeIdlePreharvest' `
+    'A prior live equipped fallback must not suppress the later native-idle harvest needed for exact finger data.'
 Require-Text $source `
     'kAnimationTypeOffset\s*=\s*0x10[\s\S]*kAnimationDurationOffset\s*=\s*0x14[\s\S]*kAnimationTransformTrackCountOffset\s*=\s*0x18[\s\S]*kAnimationFloatTrackCountOffset\s*=\s*0x1C[\s\S]*kBindingBlendHintOffset\s*=\s*0x50' `
     'The sampler diagnostics must retain the audited FO4VR hkaAnimation and hkaAnimationBinding field layout.'
