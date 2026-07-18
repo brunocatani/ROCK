@@ -212,7 +212,7 @@ namespace rock::native_idle_grip_preharvest
                 validateNativeEntry("ExtraAnimGraphPreload::dtor", kExtraAnimGraphPreloadDtor,
                     std::array<std::uint8_t, 9>{ 0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24 }) &&
                 validateNativeEntry("ExtraAnimGraphPreload::LoadAnimGraphs", kLoadAnimGraphs, std::array<std::uint8_t, 5>{ 0x48, 0x89, 0x5C, 0x24, 0x10 }) &&
-                validateNativeEntry("ExtraAnimGraphPreload::IsFinishedLoading", kIsFinishedLoading, std::array<std::uint8_t, 6>{ 0x53, 0x57, 0x48, 0x83, 0xEC, 0x28 }) &&
+                validateNativeEntry("ExtraAnimGraphPreload::IsFinishedLoading", kIsFinishedLoading, std::array<std::uint8_t, 7>{ 0x40, 0x53, 0x57, 0x48, 0x83, 0xEC, 0x28 }) &&
                 validateNativeEntry("RequestAnimationSubGraph", kRequestAnimationSubGraph, std::array<std::uint8_t, 5>{ 0x48, 0x89, 0x5C, 0x24, 0x08 }) &&
                 validateNativeEntry("IsAnimationSubGraphLoaded", kIsAnimationSubGraphLoaded, std::array<std::uint8_t, 5>{ 0x48, 0x89, 0x5C, 0x24, 0x08 }) &&
                 validateNativeEntry("ReleaseAnimationSubGraph", kReleaseAnimationSubGraph, std::array<std::uint8_t, 7>{ 0x48, 0x83, 0xEC, 0x28, 0x83, 0x7A, 0x18 }) &&

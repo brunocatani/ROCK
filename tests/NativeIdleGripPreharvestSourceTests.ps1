@@ -31,6 +31,9 @@ Require-Text $source `
 Require-Text $source `
     'RUNTIME_VR_1_2_72[\s\S]*validateNativeEntry\("ExtraAnimGraphPreload::ctor"[\s\S]*validateNativeEntry\("GetClipGeneratorBinding"' `
     'Hardcoded FO4VR calls must retain executable identity and live-byte gates.'
+Require-Text $source `
+    'validateNativeEntry\("ExtraAnimGraphPreload::IsFinishedLoading",\s*kIsFinishedLoading,\s*std::array<std::uint8_t,\s*7>\{\s*0x40,\s*0x53,\s*0x57,\s*0x48,\s*0x83,\s*0xEC,\s*0x28\s*\}\)' `
+    'The IsFinishedLoading gate must retain the verified redundant REX prefix present in Fallout4VR.exe 1.2.72.'
 Require-Text $policy `
     'kFirstPersonGraphIndex\s*=\s*1[\s\S]*graphCount\s*<=\s*kFirstPersonGraphIndex[\s\S]*identifierCount\s*<=\s*kFirstPersonGraphIndex' `
     'The sampler must fail closed unless Bethesda produced the paired first-person graph and identifier.'
