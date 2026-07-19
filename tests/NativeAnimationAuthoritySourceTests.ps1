@@ -95,8 +95,8 @@ Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
     'publishManualCycleHandVisual[\s\S]*applyExternalHandWorldTransform[\s\S]*kManualCycleVisualAuthorityPriority[\s\S]*applyManualCyclePoseAfterRock[\s\S]*restoreFixedVisibleWeaponTarget' `
     'Manual-cycle IK must outrank grip-locked visual authority and restore the exact controller-fixed Weapon world.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
-    'kManualCyclePrimaryFingerBoneNames[\s\S]*captureManualCycleFingerLocals[\s\S]*setHandPoseCustomLocalTransformsWithPriority[\s\S]*clearManualCycleVisualAuthority' `
-    'Manual-cycle authority must carry native finger locals and deterministically release both hand-pose and world-transform tags.'
+    'kManualCyclePrimaryFingerBoneNames[\s\S]*captureManualCycleFingerLocals[\s\S]*publishManualCycleHandVisual[\s\S]*setHandPoseCustomWithPriority[\s\S]*setHandPoseCustomLocalTransformsWithPriority[\s\S]*clearManualCycleVisualAuthority' `
+    'Manual-cycle authority must establish the required base pose, attach native finger locals, and deterministically release both hand-pose and world-transform tags.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
     'clearManualCycleVisualAuthorityPreservingWeapon[\s\S]*refreshFixedVisibleWeaponTarget[\s\S]*clearManualCycleVisualAuthority\(\)[\s\S]*tryRestoreFixedVisibleWeaponTarget[\s\S]*beginRockFrame[\s\S]*clearManualCycleVisualAuthorityPreservingWeapon\(\)[\s\S]*resetHybridPoseState' `
     'Per-frame and lease-edge hand-authority release must preserve the controller-fixed Weapon before dropping the cached node.'

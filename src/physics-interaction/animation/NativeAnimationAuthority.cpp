@@ -1550,6 +1550,19 @@ namespace rock::native_animation_authority
             }
 
             if (fingerLocals.enabledMask != 0) {
+                // FRIK's local-transform override augments an existing pose
+                // publication under the same tag. Publishing it alone is
+                // intentionally rejected, so establish the base tag before
+                // attaching Bethesda's exact animated finger locals.
+                if (!frik_visual_authority::setHandPoseCustomWithPriority(
+                        kManualCycleVisualAuthorityTag,
+                        hand,
+                        frik_visual_authority::HandPoseData{},
+                        kManualCycleVisualAuthorityPriority)) {
+                    (void)clearManualCycleVisualForHand(hand);
+                    return false;
+                }
+                publication.fingerPosePublished = true;
                 if (!frik_visual_authority::setHandPoseCustomLocalTransformsWithPriority(
                         kManualCycleVisualAuthorityTag,
                         hand,
@@ -1558,7 +1571,6 @@ namespace rock::native_animation_authority
                     (void)clearManualCycleVisualForHand(hand);
                     return false;
                 }
-                publication.fingerPosePublished = true;
             } else if (publication.fingerPosePublished) {
                 if (!frik_visual_authority::clearHandPose(
                         kManualCycleVisualAuthorityTag,
