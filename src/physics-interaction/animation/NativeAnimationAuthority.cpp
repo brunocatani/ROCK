@@ -1741,17 +1741,18 @@ namespace rock::native_animation_authority
             !claimOrValidateThread() ||
             !capturedPrimaryHandNode ||
             expectedWeaponNode != s_authoredSupportGripWeaponNode.load(std::memory_order_acquire) ||
+            expectedWeaponNode->parent != capturedPrimaryHandNode ||
             !finiteTransform(s_authoredSupportHandInWeapon)) {
             return false;
         }
 
         /*
-         * The paired native pass already proved Weapon was parented to the
-         * captured primary hand when this value snapshot was published.
-         * ROCK may subsequently reparent that same scene node while the
-         * physical left hand carries it. The copied Hand-in-Weapon relation is
-         * still valid for the exact weapon pointer; requiring its live parent
-         * here made physical-right support lose the authored source entirely.
+         * The live resolver is valid only while the scene still has the
+         * right-primary topology whose world transforms produced this value.
+         * AuthoredPrimaryFiringGripRuntime copies the value before physical-
+         * left takeover and republishes that generation-bound snapshot after
+         * ROCK reparents Weapon. Accepting a new capture after that reparent
+         * converts ROCK's presentation world into an enormous false local.
          */
 
         for (const auto& fingerLocal : s_authoredSupportFingerLocals) {

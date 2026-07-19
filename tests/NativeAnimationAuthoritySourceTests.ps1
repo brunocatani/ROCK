@@ -105,11 +105,8 @@ Require-Text 'src/physics-interaction/animation/NativeAnimationAuthorityPolicy.h
     'resolveAuthoredSupportHandInPrimaryHand[\s\S]*invert\(authoredPrimaryHandModel\)[\s\S]*authoredSupportHandModel[\s\S]*resolveAuthoredSupportHandInWeapon[\s\S]*compose\(primaryHandInWeapon,\s*supportHandInPrimaryHand\)' `
     'The support target must combine the same-tree authored hand relation with the validated per-weapon primary hand anchor.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
-    'tryResolveAuthoredSupportGrip[\s\S]*capturedPrimaryHandNode[\s\S]*expectedWeaponNode\s*!=\s*s_authoredSupportGripWeaponNode\.load[\s\S]*outSupportHandInWeapon\s*=\s*s_authoredSupportHandInWeapon[\s\S]*outFingerLocalTransforms\s*=\s*s_authoredSupportFingerLocals[\s\S]*kAuthoredSupportFingerTransformMask' `
-    'The support resolver must retain captured topology and exact weapon identity while publishing one complete generation-ready hand/finger frame.'
-Reject-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
-    'expectedWeaponNode->parent\s*!=\s*capturedPrimaryHandNode' `
-    'The copied authored Hand-in-Weapon source must survive ROCK reparenting the same weapon for physical-left firing.'
+    'tryResolveAuthoredSupportGrip[\s\S]*capturedPrimaryHandNode[\s\S]*expectedWeaponNode\s*!=\s*s_authoredSupportGripWeaponNode\.load[\s\S]*expectedWeaponNode->parent\s*!=\s*capturedPrimaryHandNode[\s\S]*outSupportHandInWeapon\s*=\s*s_authoredSupportHandInWeapon[\s\S]*outFingerLocalTransforms\s*=\s*s_authoredSupportFingerLocals[\s\S]*kAuthoredSupportFingerTransformMask' `
+    'The live support resolver must reject ROCK-reparented scene topology and publish only a complete right-primary hand/finger frame.'
 
 $nativeAuthorityText = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/animation/NativeAnimationAuthority.cpp')
 $primaryCaptureMatch = [regex]::Match(
@@ -221,14 +218,26 @@ Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
     'input\.nativeReloadAuthorityActive[\s\S]*endSession\("native-reload-authority"\)[\s\S]*captureSequenceFloor' `
     'Native reload authority must suspend the alignment and require a fresh capture before restoring it.'
 Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
-    'clearAuthoredSupportGripCandidate\(\)[\s\S]*publishAuthoredSupportCandidate[\s\S]*tryResolveAuthoredSupportGrip[\s\S]*setAuthoredSupportGripCandidate' `
-    'The support candidate must remain frame-ephemeral and generation-bound to a fresh native capture.'
+    'clearAuthoredSupportGripCandidate\(\)[\s\S]*publishLiveAuthoredSupportCandidate[\s\S]*tryResolveAuthoredSupportGrip[\s\S]*setAuthoredSupportGripCandidate[\s\S]*_stableAuthoredSupportGrip\s*=\s*StableAuthoredSupportGripSnapshot[\s\S]*weaponNodeIdentity[\s\S]*weaponOwnershipKey[\s\S]*weaponGenerationKey[\s\S]*primaryGripCaptureSequence[\s\S]*supportCaptureSequence' `
+    'The frame-ephemeral candidate must snapshot a topology-valid native support relation under every equipped/canonical identity key.'
 Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
-    'input\.rockFiringHandIsLeft[\s\S]*setAuthoredPrimaryFiringGripCanonical[\s\S]*publishAuthoredSupportCandidate\(\)[\s\S]*physical-left-firing-canonical-only' `
-    'Physical-left firing must publish the same authored support source before returning so physical-right support can mirror it.'
+    'publishStableAuthoredSupportCandidate[\s\S]*stable\.weaponNodeIdentity\s*!=\s*input\.weaponNode[\s\S]*stable\.weaponOwnershipKey\s*!=\s*currentWeaponKey[\s\S]*stable\.weaponGenerationKey\s*!=\s*input\.weaponGenerationKey[\s\S]*stable\.primaryGripCaptureSequence\s*!=\s*primaryGripCaptureSequence[\s\S]*setAuthoredSupportGripCandidate' `
+    'Physical-left support publication must reject a stable snapshot unless weapon identity, ownership, generation, and authored canonical all still match.'
 Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
-    'applyAuthoredPrimaryGripWeaponAlignment[\s\S]*publishAuthoredSupportCandidate\(\)' `
-    'Right-primary alignment must continue to publish its support candidate after establishing the final weapon basis.'
+    'applyAuthoredPrimaryGripWeaponAlignment[\s\S]*publishLiveAuthoredSupportCandidate\(resolvedCaptureSequence\)' `
+    'Right-primary alignment must refresh the topology-valid support snapshot after establishing the final weapon basis.'
+
+$primaryRuntimeText = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp')
+$physicalLeftSupportMatch = [regex]::Match(
+    $primaryRuntimeText,
+    '(?s)if\s*\(input\.rockFiringHandIsLeft\)\s*\{.*?(?=\s+const\s+native_animation_authority_policy::AuthoredPrimaryFiringGripEligibility)')
+if (-not $physicalLeftSupportMatch.Success) {
+    $failures.Add('The physical-left firing branch could not be isolated for support-source validation.')
+} elseif ($physicalLeftSupportMatch.Value -notmatch 'publishStableAuthoredSupportCandidate\(\s*authoredLookup\.captureSequence\s*\)') {
+    $failures.Add('Physical-left firing must republish the last topology-valid support snapshot for right-hand mirroring.')
+} elseif ($physicalLeftSupportMatch.Value -match 'publishLiveAuthoredSupportCandidate|tryResolveAuthoredSupportGrip') {
+    $failures.Add('Physical-left firing must never consume a fresh native support capture after ROCK has reparented Weapon.')
+}
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'blocksAuthoredPrimaryGripWeaponAlignment[\s\S]{0,700}_firingHandIsLeft[\s\S]{0,180}_weaponNodeOwnershipBlockEngaged[\s\S]{0,180}ownsWeaponTransform\(\)' `
     'Authored alignment must distinguish conflicting weapon-transform ownership from right-primary bookkeeping ownership.'

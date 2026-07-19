@@ -319,10 +319,11 @@ namespace rock
         /*
          * Ephemeral pre-update candidate derived from Bethesda's paired
          * support-arm pass. AuthoredPrimaryFiringGripRuntime clears it at the
-         * start of every frame and republishes only a fresh, generation-bound
-         * relation. capturePartGrip latches it only for proximity-probe
-         * acquisition under full solver authority; it never changes an
-         * already-active grip.
+         * start of every frame and republishes one identity/generation-bound
+         * relation. During physical-left firing, that relation comes from the
+         * last topology-valid value snapshot captured before ROCK reparented
+         * Weapon. capturePartGrip latches it only during acquisition; it never
+         * changes an already-active grip.
          */
         void clearAuthoredSupportGripCandidate();
         bool setAuthoredSupportGripCandidate(

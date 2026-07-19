@@ -88,6 +88,11 @@ namespace rock
         _sessionLogged = false;
     }
 
+    void AuthoredPrimaryFiringGripRuntime::clearStableAuthoredSupportGripSnapshot()
+    {
+        _stableAuthoredSupportGrip = {};
+    }
+
     void AuthoredPrimaryFiringGripRuntime::reset(
         const char* reason,
         TwoHandedGrip& weaponAuthority)
@@ -100,6 +105,7 @@ namespace rock
         _frikOffsetCacheRevision = 0;
         _captureSequenceFloor = 0;
         _supportCaptureSequenceFloor = 0;
+        clearStableAuthoredSupportGripSnapshot();
         _mirroredLeftFingerPose = {};
         _mirroredFingerPoseCaptureSequence = 0;
         _mirroredFingerPoseValid = false;
@@ -164,6 +170,7 @@ namespace rock
             _weaponOwnershipKey = currentWeaponKey;
             _captureSequenceFloor = captureStatus.captureSequence;
             _supportCaptureSequenceFloor = supportCaptureStatus.captureSequence;
+            clearStableAuthoredSupportGripSnapshot();
             _sessionLogged = false;
             _applyFailureLogged = false;
             _canonicalPublishFailureLogged = false;
@@ -214,6 +221,7 @@ namespace rock
                     "custom-frik-weapon-offset-change");
                 _captureSequenceFloor = captureStatus.captureSequence;
                 _supportCaptureSequenceFloor = supportCaptureStatus.captureSequence;
+                clearStableAuthoredSupportGripSnapshot();
                 endSession("custom-frik-weapon-offset-change");
                 return;
             }
@@ -222,6 +230,7 @@ namespace rock
         if (_customFrikOffsetOverrideActive) {
             weaponAuthority.clearAuthoredPrimaryFiringGripCanonical(
                 "custom-frik-weapon-offset");
+            clearStableAuthoredSupportGripSnapshot();
             endSession("custom-frik-weapon-offset");
             return;
         }
@@ -234,6 +243,7 @@ namespace rock
                 "game-left-handed-mode");
             _captureSequenceFloor = captureStatus.captureSequence;
             _supportCaptureSequenceFloor = supportCaptureStatus.captureSequence;
+            clearStableAuthoredSupportGripSnapshot();
             endSession("game-left-handed-mode");
             return;
         }
@@ -277,7 +287,8 @@ namespace rock
             _supportCaptureFailureLogged = false;
         }
 
-        const auto publishAuthoredSupportCandidate = [&]() {
+        const auto publishLiveAuthoredSupportCandidate =
+            [&](const std::uint64_t primaryGripCaptureSequence) {
             RE::NiTransform authoredSupportHandInWeapon{};
             std::array<RE::NiTransform, 15> authoredSupportFingerLocals{};
             std::uint16_t authoredSupportFingerMask = 0;
@@ -294,13 +305,55 @@ namespace rock
                 return false;
             }
 
+            if (!weaponAuthority.setAuthoredSupportGripCandidate(
+                    input.weaponNode,
+                    authoredSupportHandInWeapon,
+                    authoredSupportFingerLocals,
+                    authoredSupportFingerMask,
+                    input.weaponGenerationKey,
+                    authoredSupportCaptureSequence)) {
+                return false;
+            }
+
+            _stableAuthoredSupportGrip = StableAuthoredSupportGripSnapshot{
+                .weaponNodeIdentity = input.weaponNode,
+                .handWeaponLocal = authoredSupportHandInWeapon,
+                .fingerLocalTransforms = authoredSupportFingerLocals,
+                .fingerLocalTransformMask = authoredSupportFingerMask,
+                .weaponOwnershipKey = currentWeaponKey,
+                .weaponGenerationKey = input.weaponGenerationKey,
+                .primaryGripCaptureSequence = primaryGripCaptureSequence,
+                .supportCaptureSequence = authoredSupportCaptureSequence,
+                .valid = true,
+            };
+            return true;
+        };
+
+        const auto publishStableAuthoredSupportCandidate =
+            [&](const std::uint64_t primaryGripCaptureSequence) {
+            constexpr std::uint16_t kCompleteFingerLocalTransformMask = 0x7FFFu;
+            const auto& stable = _stableAuthoredSupportGrip;
+            if (!stable.valid ||
+                !input.weaponNode ||
+                stable.weaponNodeIdentity != input.weaponNode ||
+                currentWeaponKey == 0 ||
+                stable.weaponOwnershipKey != currentWeaponKey ||
+                input.weaponGenerationKey == 0 ||
+                stable.weaponGenerationKey != input.weaponGenerationKey ||
+                primaryGripCaptureSequence == 0 ||
+                stable.primaryGripCaptureSequence != primaryGripCaptureSequence ||
+                stable.fingerLocalTransformMask !=
+                    kCompleteFingerLocalTransformMask) {
+                return false;
+            }
+
             return weaponAuthority.setAuthoredSupportGripCandidate(
                 input.weaponNode,
-                authoredSupportHandInWeapon,
-                authoredSupportFingerLocals,
-                authoredSupportFingerMask,
-                input.weaponGenerationKey,
-                authoredSupportCaptureSequence);
+                stable.handWeaponLocal,
+                stable.fingerLocalTransforms,
+                stable.fingerLocalTransformMask,
+                stable.weaponGenerationKey,
+                stable.supportCaptureSequence);
         };
 
         /*
@@ -343,7 +396,23 @@ namespace rock
                         authoredLookup.captureSequence);
                     _canonicalPublishFailureLogged = true;
                 }
-                (void)publishAuthoredSupportCandidate();
+                const bool stableSupportPublished =
+                    publishStableAuthoredSupportCandidate(
+                        authoredLookup.captureSequence);
+                if (!stableSupportPublished) {
+                    const auto& stable = _stableAuthoredSupportGrip;
+                    ROCK_LOG_SAMPLE_WARN(Animation, 2000,
+                        "Authored physical-right support snapshot unavailable weaponKey=0x{:X} generation=0x{:X} canonical={} stable=(valid={} nodeMatch={} ownership=0x{:X} generation=0x{:X} canonical={} support={})",
+                        currentWeaponKey,
+                        input.weaponGenerationKey,
+                        authoredLookup.captureSequence,
+                        stable.valid,
+                        stable.weaponNodeIdentity == input.weaponNode,
+                        stable.weaponOwnershipKey,
+                        stable.weaponGenerationKey,
+                        stable.primaryGripCaptureSequence,
+                        stable.supportCaptureSequence);
+                }
             }
             endSession("physical-left-firing-canonical-only");
             return;
@@ -477,7 +546,7 @@ namespace rock
         _active = true;
         _applyFailureLogged = false;
 
-        (void)publishAuthoredSupportCandidate();
+        (void)publishLiveAuthoredSupportCandidate(resolvedCaptureSequence);
 
         if (!_sessionLogged) {
             ROCK_LOG_INFO(Animation,
