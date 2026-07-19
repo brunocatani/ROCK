@@ -115,6 +115,13 @@ namespace rock::native_animation_authority
             bool fingerPosePublished{ false };
         };
 
+        struct ManualCycleHandRebase
+        {
+            RE::NiTransform nativeBaselineHandInWeapon{};
+            RE::NiTransform liveBaselineHandInWeapon{};
+            bool captured{ false };
+        };
+
         struct ControllerAimFrame
         {
             // Non-owning scene references. They are valid only while the
@@ -126,6 +133,7 @@ namespace rock::native_animation_authority
             RE::NiTransform controlWeaponWorld{};
             RE::NiTransform nativeBaselineWeaponWorld{};
             RE::NiTransform desiredWeaponWorld{};
+            std::array<ManualCycleHandRebase, 2> manualCycleHandRebases{};
             bool controlBindingCaptured{ false };
             bool controlCaptured{ false };
             bool nativeBaselineCaptured{ false };
@@ -1534,12 +1542,61 @@ namespace rock::native_animation_authority
             const frik_visual_authority::FingerLocalTransformOverride& fingerLocals,
             const RE::NiTransform& fixedWeaponWorld)
         {
-            auto& publication =
-                s_manualCycleVisualPublications[manualCycleHandIndex(hand)];
+            const std::size_t handIndex = manualCycleHandIndex(hand);
+            auto& publication = s_manualCycleVisualPublications[handIndex];
+            auto& handRebase =
+                s_sourceAimFrame.manualCycleHandRebases[handIndex];
+            if (!handRebase.captured) {
+                const RE::NiTransform liveHandWorld =
+                    frik_visual_authority::getHandWorldTransform(hand);
+                if (!finiteTransform(liveHandWorld)) {
+                    (void)clearManualCycleVisualForHand(hand);
+                    return false;
+                }
+
+                handRebase.liveBaselineHandInWeapon =
+                    transform_math::composeTransforms(
+                        transform_math::invertTransform(fixedWeaponWorld),
+                        liveHandWorld);
+                handRebase.nativeBaselineHandInWeapon = handInWeapon;
+                if (!finiteTransform(
+                        handRebase.liveBaselineHandInWeapon) ||
+                    !finiteTransform(
+                        handRebase.nativeBaselineHandInWeapon)) {
+                    handRebase = {};
+                    (void)clearManualCycleVisualForHand(hand);
+                    return false;
+                }
+                handRebase.captured = true;
+            }
+
+            // Use the same baseline/delta/live-frame solve as full reload
+            // authority. Bethesda's absolute hand-in-Weapon basis points away
+            // from the VR controller frame; only its delta from the first
+            // cycle sample belongs on ROCK's already-correct live grip.
+            const RE::NiTransform handInWeaponCorrection =
+                native_animation_authority_policy::
+                    resolveControllerAnchoredPoseCorrection(
+                        handRebase.liveBaselineHandInWeapon,
+                        handRebase.nativeBaselineHandInWeapon,
+                        handInWeapon,
+                        [](const RE::NiTransform& parent,
+                           const RE::NiTransform& child) {
+                            return transform_math::composeTransforms(
+                                parent,
+                                child);
+                        },
+                        [](const RE::NiTransform& transform) {
+                            return transform_math::invertTransform(transform);
+                        });
+            const RE::NiTransform rebasedHandInWeapon =
+                transform_math::composeTransforms(
+                    handInWeaponCorrection,
+                    handInWeapon);
             const RE::NiTransform handWorld =
                 native_animation_authority_policy::resolveAuthoredPrimaryHandWorld(
                     fixedWeaponWorld,
-                    handInWeapon,
+                    rebasedHandInWeapon,
                     [](const RE::NiTransform& parent,
                        const RE::NiTransform& child) {
                         return transform_math::composeTransforms(parent, child);

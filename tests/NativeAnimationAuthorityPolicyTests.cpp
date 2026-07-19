@@ -108,6 +108,21 @@ int main()
     static_assert(fixedCycleHandWorld.scale == 8.0f);
     static_assert(fixedCycleHandWorld.translate == 280.0f);
 
+    constexpr AffineTransform nativeCycleBaselineHandInWeapon{ 2.0f, 40.0f };
+    constexpr AffineTransform nativeCycleCurrentHandInWeapon{ 4.0f, 90.0f };
+    constexpr AffineTransform liveCycleBaselineHandInWeapon{ 3.0f, 10.0f };
+    constexpr auto cycleHandCorrection = resolveControllerAnchoredPoseCorrection(
+        liveCycleBaselineHandInWeapon,
+        nativeCycleBaselineHandInWeapon,
+        nativeCycleCurrentHandInWeapon,
+        affineCompose,
+        affineInvert);
+    constexpr auto rebasedCycleHandInWeapon = affineCompose(
+        cycleHandCorrection,
+        nativeCycleCurrentHandInWeapon);
+    static_assert(rebasedCycleHandInWeapon.scale == 6.0f);
+    static_assert(rebasedCycleHandInWeapon.translate == 85.0f);
+
     constexpr AffineTransform authoredHandInWeapon{ 2.0f, 10.0f };
     constexpr AffineTransform liveWeaponWorld{ 6.0f, 100.0f };
     constexpr auto authoredHandWorld = resolveAuthoredPrimaryHandWorld(

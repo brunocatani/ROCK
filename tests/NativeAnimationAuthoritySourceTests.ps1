@@ -89,6 +89,9 @@ Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
     'captureManualCyclePose[\s\S]*weaponTransform\.local[\s\S]*nativeWeaponModel[\s\S]*resolveNativeHandInWeapon[\s\S]*primaryHandInWeapon[\s\S]*supportHandInWeapon' `
     'Hand-only cycling must derive both physical hands from graph-local native relations in one Weapon frame.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
+    'ManualCycleHandRebase[\s\S]*manualCycleHandRebases[\s\S]*getHandWorldTransform\(hand\)[\s\S]*liveBaselineHandInWeapon[\s\S]*nativeBaselineHandInWeapon[\s\S]*resolveControllerAnchoredPoseCorrection[\s\S]*rebasedHandInWeapon' `
+    'Each manual-cycle hand must rebase only the native animation delta onto its live ROCK grip instead of publishing Bethesda''s absolute flat-game basis.'
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
     'applyCapturedPose\(const ApplyPhase phase\)[\s\S]*ApplyPhase::BeforeRock[\s\S]*return true;[\s\S]*applyManualCyclePoseAfterRock' `
     'Manual-cycle IK must be a no-op before ROCK and publish only in the explicit final phase.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
