@@ -203,6 +203,7 @@ int main()
     constexpr AuthoredSupportGripCandidateInput authoredSupportEligible{
         .featureEnabled = true,
         .proximityProbeAcquisition = true,
+        .visualOnlyTouchAcquisition = false,
         .providerAuthorityActive = false,
         .attachOnly = false,
         .captureValid = true,
@@ -215,6 +216,12 @@ int main()
         auto input = authoredSupportEligible;
         input.proximityProbeAcquisition = false;
         return !shouldUseAuthoredSupportGrip(input);
+    }());
+    static_assert([=] {
+        auto input = authoredSupportEligible;
+        input.proximityProbeAcquisition = false;
+        input.visualOnlyTouchAcquisition = true;
+        return shouldUseAuthoredSupportGrip(input);
     }());
     static_assert([=] {
         auto input = authoredSupportEligible;

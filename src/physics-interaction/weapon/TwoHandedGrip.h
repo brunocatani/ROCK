@@ -799,7 +799,8 @@ namespace rock
             RE::NiNode* weaponNode,
             const WeaponInteractionDecision& decision,
             const WeaponCollision& weaponCollision,
-            const WeaponProviderPartAuthority& providerPartAuthority);
+            const WeaponProviderPartAuthority& providerPartAuthority,
+            bool firingGripProximityAuthorityEnabled);
 
         void lockPartGripToWeaponRoot(bool isLeft);
 

@@ -257,11 +257,11 @@ if (-not $leftMirrorConsumerMatch.Success) {
     $failures.Add('The authored left mirror must never fall back to the live/session _primaryGripLocal when a canonical frame is selected.')
 }
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'capturePartGrip[\s\S]*shouldUseAuthoredSupportGrip[\s\S]*decision\.acquisitionSource\s*==[\s\S]*WeaponInteractionAcquisitionSource::ProximityProbe[\s\S]*providerAuthorityActive\s*=\s*providerPartAuthority\.active[\s\S]*attachOnly\s*=\s*grip\.attachOnly[\s\S]*grip\.handWeaponLocal\s*=[\s\S]*fingerLocalTransforms[\s\S]*return\s+true;[\s\S]*fingerScratch\.ranking\.clear' `
-    'Support acquisition must use the exact authored frame only for a pure proximity probe, then retain the dynamic mesh fallback for palm touch.'
+    'capturePartGrip[\s\S]*authoredSupportPalmWeaponLocal[\s\S]*authoredSeatToFiringGripLocal[\s\S]*_primaryGripLocal[\s\S]*resolveFiringGripProximityAuthorityMode[\s\S]*visualOnlyTouchAuthoredAcquisition[\s\S]*WeaponInteractionAcquisitionSource::PhysicalContact[\s\S]*WeaponSupportAuthorityMode::VisualOnlySupport[\s\S]*shouldUseAuthoredSupportGrip[\s\S]*visualOnlyTouchAcquisition\s*=\s*visualOnlyTouchAuthoredAcquisition[\s\S]*providerAuthorityActive\s*=\s*providerPartAuthority\.active[\s\S]*attachOnly\s*=\s*grip\.attachOnly[\s\S]*grip\.handWeaponLocal\s*=[\s\S]*fingerLocalTransforms[\s\S]*return\s+true;[\s\S]*fingerScratch\.ranking\.clear' `
+    'Support acquisition must gate authority from the final Weapon-relative authored palm seat and replace touch only when both the live and final seats are visual-only.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthorityPolicy.h' `
-    'shouldUseAuthoredSupportGrip[\s\S]*input\.proximityProbeAcquisition[\s\S]*!input\.providerAuthorityActive[\s\S]*!input\.attachOnly' `
-    'The authored support selector must reject palm touch, provider authority, and AttachOnly reload glue while remaining independent of visual-only versus full support authority.'
+    'shouldUseAuthoredSupportGrip[\s\S]*input\.proximityProbeAcquisition[\s\S]*input\.visualOnlyTouchAcquisition[\s\S]*!input\.providerAuthorityActive[\s\S]*!input\.attachOnly' `
+    'The authored support selector must admit probes plus the prevalidated visual-only touch exception while rejecting provider authority and AttachOnly reload glue.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthorityPolicy.h' `
     'shouldUseAuthoredFiringGripProbe[\s\S]*input\.proximityProbeAcquisition[\s\S]*!input\.providerAuthorityActive[\s\S]*!input\.attachOnly' `
     'Authored firing-grip probe takeover must preserve provider and AttachOnly exclusions without changing the selected support authority mode.'
@@ -280,6 +280,12 @@ Require-Text 'src/physics-interaction/weapon/WeaponInteraction.h' `
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'setAuthoredSupportGripCandidate[\s\S]*refreshAuthoredSupportRightMirror[\s\S]*tryBuildMirroredRightSupportHandWeaponLocal[\s\S]*mirrorFingerLocalTransforms\([\s\S]*Hand::Left[\s\S]*candidate\.rightMirrorValid\s*=\s*true[\s\S]*tryResolveAuthoredSupportGripCandidateForHand[\s\S]*candidate\.rightMirrorValid' `
     'Physical-right support must consume a complete transform and anatomical finger mirror derived from Bethesda''s physical-left support pose.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'tryBuildMirroredRightSupportHandWeaponLocal[\s\S]*orientationFrame[\s\S]*result\.translate\s*=\s*\{\}[\s\S]*result\.scale\s*=\s*1\.0f[\s\S]*leftPalmWeaponLocal[\s\S]*desiredRightPalmWeaponLocal[\s\S]*mirroredRightHandWeaponLocal\.translate\s*=\s*\{\}[\s\S]*rightPalmOffsetWeaponLocal[\s\S]*mirroredRightHandWeaponLocal\.translate\s*=[\s\S]*sub\(desiredRightPalmWeaponLocal,\s*rightPalmOffsetWeaponLocal\)[\s\S]*anchorError' `
+    'The physical-right support mirror must solve orientation as a rigid zero-origin frame and anchor its palm directly in Weapon space without affine translation cancellation.'
+Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'mirroredRightHandWeaponLocal\.translate\s*\+[\s\S]{0,80}sub\(desiredRightPalmWeaponLocal' `
+    'The right-support mirror must never restore the unstable large-translation cancellation path.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'refreshNaturalHandInWandFrames\(\);[\s\S]*refreshAuthoredSupportRightMirror\(\);' `
     'A right-support mirror that arrived before natural wand frames must be retried after those frames refresh.'
