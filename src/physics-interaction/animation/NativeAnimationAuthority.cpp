@@ -6,6 +6,7 @@
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 
 #include "f4vr/F4VRUtils.h"
 #include "f4vr/PlayerNodes.h"
@@ -43,8 +44,18 @@ namespace rock::native_animation_authority
         constexpr float kManualCycleWatchdogPaddingSeconds = 0.75f;
         constexpr float kManualCycleMinimumWatchdogSeconds = 1.0f;
         constexpr float kManualCycleMaximumWatchdogSeconds = 12.0f;
+        constexpr int kManualCycleVisualAuthorityPriority = 110;
+        constexpr const char* kManualCycleVisualAuthorityTag =
+            "ROCK_NativeManualCycle";
         constexpr std::uint32_t kImplementedFlags = native_animation_authority_policy::kReloadPose;
         constexpr std::uint16_t kAuthoredSupportFingerTransformMask = 0x7FFFu;
+        constexpr std::array<std::string_view, 15> kManualCyclePrimaryFingerBoneNames{
+            "RArm_Finger11", "RArm_Finger12", "RArm_Finger13",
+            "RArm_Finger21", "RArm_Finger22", "RArm_Finger23",
+            "RArm_Finger31", "RArm_Finger32", "RArm_Finger33",
+            "RArm_Finger41", "RArm_Finger42", "RArm_Finger43",
+            "RArm_Finger51", "RArm_Finger52", "RArm_Finger53",
+        };
         constexpr std::array<std::string_view, 15> kAuthoredSupportFingerBoneNames{
             "LArm_Finger11", "LArm_Finger12", "LArm_Finger13",
             "LArm_Finger21", "LArm_Finger22", "LArm_Finger23",
@@ -84,7 +95,24 @@ namespace rock::native_animation_authority
             int primaryHandIndex{ -1 };
             int supportHandIndex{ -1 };
             int weaponIndex{ -1 };
+            std::array<int, kManualCyclePrimaryFingerBoneNames.size()> primaryFingerIndices{};
             std::array<int, kAuthoredSupportFingerBoneNames.size()> supportFingerIndices{};
+        };
+
+        struct ManualCyclePoseCapture
+        {
+            RE::NiTransform primaryHandInWeapon{};
+            RE::NiTransform supportHandInWeapon{};
+            frik_visual_authority::FingerLocalTransformOverride primaryFingerLocals{};
+            frik_visual_authority::FingerLocalTransformOverride supportFingerLocals{};
+            bool primaryHandValid{ false };
+            bool supportHandValid{ false };
+        };
+
+        struct ManualCycleVisualPublication
+        {
+            bool worldPublished{ false };
+            bool fingerPosePublished{ false };
         };
 
         struct ControllerAimFrame
@@ -103,10 +131,13 @@ namespace rock::native_animation_authority
             bool nativeBaselineCaptured{ false };
             bool desiredCaptured{ false };
             bool destinationAlignmentLogged{ false };
+            bool manualCycleIkLogged{ false };
         };
 
         BindingCache s_cache{};
         PrimaryFiringGripBoneCache s_primaryFiringGripBoneCache{};
+        ManualCyclePoseCapture s_manualCyclePoseCapture{};
+        std::array<ManualCycleVisualPublication, 2> s_manualCycleVisualPublications{};
         ControllerAimFrame s_sourceAimFrame{};
         PostUpdateAnimationGraphManagerFn s_originalPostUpdate{ nullptr };
         UpdateFirstPersonArmFn s_originalUpdateFirstPersonArm{ nullptr };
@@ -183,6 +214,8 @@ namespace rock::native_animation_authority
         native_animation_authority_policy::LocalReloadLeaseState s_localReloadLeaseState{};
         native_animation_authority_policy::LocalManualCycleLeaseState s_localManualCycleLeaseState{};
         bool s_frameCaptureReady{ false };
+        bool s_frameManualCycleExpected{ false };
+        bool s_frameManualCycleApplied{ false };
 
         [[nodiscard]] bool validTree(const BoneTree* tree)
         {
@@ -209,6 +242,61 @@ namespace rock::native_animation_authority
                    std::isfinite(transform.translate.z) &&
                    std::isfinite(transform.scale) &&
                    std::abs(transform.scale) > 0.000001f;
+        }
+
+        [[nodiscard]] constexpr std::size_t manualCycleHandIndex(
+            const frik_visual_authority::Hand hand)
+        {
+            return hand == frik_visual_authority::Hand::Left ? 1u : 0u;
+        }
+
+        [[nodiscard]] bool clearManualCycleVisualForHand(
+            const frik_visual_authority::Hand hand)
+        {
+            auto& publication =
+                s_manualCycleVisualPublications[manualCycleHandIndex(hand)];
+            if (!publication.worldPublished && !publication.fingerPosePublished) {
+                return true;
+            }
+
+            const bool skeletonReady =
+                frik_visual_authority::isSkeletonReadyHint();
+            const bool fingerPoseCleared = !publication.fingerPosePublished ||
+                frik_visual_authority::clearHandPose(
+                    kManualCycleVisualAuthorityTag,
+                    hand);
+            const bool worldCleared = !publication.worldPublished ||
+                frik_visual_authority::clearExternalHandWorldTransform(
+                    kManualCycleVisualAuthorityTag,
+                    hand);
+
+            if (fingerPoseCleared || !skeletonReady) {
+                publication.fingerPosePublished = false;
+            }
+            if (worldCleared || !skeletonReady) {
+                publication.worldPublished = false;
+            }
+            return !publication.worldPublished &&
+                   !publication.fingerPosePublished;
+        }
+
+        void clearManualCycleVisualAuthority()
+        {
+            (void)clearManualCycleVisualForHand(
+                frik_visual_authority::Hand::Right);
+            (void)clearManualCycleVisualForHand(
+                frik_visual_authority::Hand::Left);
+        }
+
+        [[nodiscard]] bool manualCycleVisualAuthorityPublished()
+        {
+            for (const auto& publication : s_manualCycleVisualPublications) {
+                if (publication.worldPublished ||
+                    publication.fingerPosePublished) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         [[nodiscard]] bool claimOrValidateThread()
@@ -384,6 +472,7 @@ namespace rock::native_animation_authority
             s_captureValid.store(false, std::memory_order_release);
             s_capturedFlags.store(0, std::memory_order_release);
             s_capturedTransformCount.store(0, std::memory_order_release);
+            s_manualCyclePoseCapture = {};
         }
 
         void invalidatePrimaryFiringGripCapture()
@@ -434,6 +523,7 @@ namespace rock::native_animation_authority
         [[nodiscard]] bool rebuildPrimaryFiringGripBoneCache(BoneTree& source)
         {
             s_primaryFiringGripBoneCache = {};
+            s_primaryFiringGripBoneCache.primaryFingerIndices.fill(-1);
             s_primaryFiringGripBoneCache.supportFingerIndices.fill(-1);
             if (!validTree(&source)) {
                 return false;
@@ -450,6 +540,16 @@ namespace rock::native_animation_authority
                     s_primaryFiringGripBoneCache.supportHandIndex = index;
                 } else if (native_animation_authority_policy::equalsIgnoreCase(name, "Weapon")) {
                     s_primaryFiringGripBoneCache.weaponIndex = index;
+                }
+                for (std::size_t fingerIndex = 0;
+                     fingerIndex < kManualCyclePrimaryFingerBoneNames.size();
+                     ++fingerIndex) {
+                    if (native_animation_authority_policy::equalsIgnoreCase(
+                            name,
+                            kManualCyclePrimaryFingerBoneNames[fingerIndex])) {
+                        s_primaryFiringGripBoneCache.primaryFingerIndices[fingerIndex] = index;
+                        break;
+                    }
                 }
                 for (std::size_t fingerIndex = 0;
                      fingerIndex < kAuthoredSupportFingerBoneNames.size();
@@ -485,6 +585,119 @@ namespace rock::native_animation_authority
                 }
             }
             return outMissingFingerMask == 0;
+        }
+
+        void captureManualCycleFingerLocals(
+            const BoneTree& source,
+            const std::array<int, kManualCyclePrimaryFingerBoneNames.size()>& indices,
+            frik_visual_authority::FingerLocalTransformOverride& out)
+        {
+            out = {};
+            for (std::size_t fingerIndex = 0;
+                 fingerIndex < indices.size();
+                 ++fingerIndex) {
+                const int transformIndex = indices[fingerIndex];
+                if (transformIndex < 0 || transformIndex >= source.numTransforms) {
+                    continue;
+                }
+                const RE::NiTransform& local =
+                    authoritativeLocal(source.transforms[transformIndex]);
+                if (!finiteTransform(local)) {
+                    continue;
+                }
+                out.localTransforms[fingerIndex] = local;
+                out.enabledMask |= static_cast<std::uint16_t>(1u << fingerIndex);
+            }
+        }
+
+        [[nodiscard]] bool captureManualCyclePose(BoneTree& source)
+        {
+            s_manualCyclePoseCapture = {};
+            if (!primaryFiringGripCacheMatches(source) &&
+                !rebuildPrimaryFiringGripBoneCache(source)) {
+                return false;
+            }
+
+            const int primaryHandIndex =
+                s_primaryFiringGripBoneCache.primaryHandIndex;
+            const int supportHandIndex =
+                s_primaryFiringGripBoneCache.supportHandIndex;
+            const int weaponIndex = s_primaryFiringGripBoneCache.weaponIndex;
+            if (primaryHandIndex < 0 || primaryHandIndex >= source.numTransforms ||
+                weaponIndex < 0 || weaponIndex >= source.numTransforms) {
+                return false;
+            }
+
+            const auto& weaponTransform = source.transforms[weaponIndex];
+            if (weaponTransform.parPos != primaryHandIndex ||
+                !finiteTransform(weaponTransform.local)) {
+                return false;
+            }
+
+            AuthoredLogicalModelTransform primaryHandModel{};
+            if (!composeAuthoredLogicalModelTransform(
+                    source,
+                    primaryHandIndex,
+                    primaryHandModel)) {
+                return false;
+            }
+            const RE::NiTransform nativeWeaponModel =
+                transform_math::composeTransforms(
+                    primaryHandModel.model,
+                    weaponTransform.local);
+            if (!finiteTransform(nativeWeaponModel)) {
+                return false;
+            }
+
+            const auto resolveHandInWeapon = [&](
+                                                   const RE::NiTransform& handModel) {
+                return native_animation_authority_policy::resolveNativeHandInWeapon(
+                    nativeWeaponModel,
+                    handModel,
+                    [](const RE::NiTransform& parent,
+                       const RE::NiTransform& child) {
+                        return transform_math::composeTransforms(parent, child);
+                    },
+                    [](const RE::NiTransform& transform) {
+                        return transform_math::invertTransform(transform);
+                    });
+            };
+
+            s_manualCyclePoseCapture.primaryHandInWeapon =
+                resolveHandInWeapon(primaryHandModel.model);
+            if (!finiteTransform(
+                    s_manualCyclePoseCapture.primaryHandInWeapon)) {
+                s_manualCyclePoseCapture = {};
+                return false;
+            }
+            s_manualCyclePoseCapture.primaryHandValid = true;
+            captureManualCycleFingerLocals(
+                source,
+                s_primaryFiringGripBoneCache.primaryFingerIndices,
+                s_manualCyclePoseCapture.primaryFingerLocals);
+
+            if (supportHandIndex >= 0 &&
+                supportHandIndex < source.numTransforms) {
+                AuthoredLogicalModelTransform supportHandModel{};
+                if (composeAuthoredLogicalModelTransform(
+                        source,
+                        supportHandIndex,
+                        supportHandModel) &&
+                    supportHandModel.rootIndex == primaryHandModel.rootIndex) {
+                    const RE::NiTransform supportHandInWeapon =
+                        resolveHandInWeapon(supportHandModel.model);
+                    if (finiteTransform(supportHandInWeapon)) {
+                        s_manualCyclePoseCapture.supportHandInWeapon =
+                            supportHandInWeapon;
+                        s_manualCyclePoseCapture.supportHandValid = true;
+                        captureManualCycleFingerLocals(
+                            source,
+                            s_primaryFiringGripBoneCache.supportFingerIndices,
+                            s_manualCyclePoseCapture.supportFingerLocals);
+                    }
+                }
+            }
+            return true;
         }
 
         void captureAuthoredSupportGraphPose()
@@ -895,8 +1108,22 @@ namespace rock::native_animation_authority
             }
 
             if (capturedCount == 0 || (destinationMappedFlags & requestedFlags) != requestedFlags) {
+                s_manualCyclePoseCapture = {};
                 invalidateCapture();
                 return;
+            }
+
+            const bool handOnlyAuthority =
+                (requestedFlags & native_animation_authority_policy::kWeapon) == 0;
+            if (handOnlyAuthority) {
+                if ((requestedFlags & native_animation_authority_policy::kArms) == 0 ||
+                    !captureManualCyclePose(*source)) {
+                    s_manualCyclePoseCapture = {};
+                    invalidateCapture();
+                    return;
+                }
+            } else {
+                s_manualCyclePoseCapture = {};
             }
 
             s_capturedFlags.store(requestedFlags, std::memory_order_release);
@@ -1197,6 +1424,27 @@ namespace rock::native_animation_authority
                 s_sourceAimFrame);
         }
 
+        [[nodiscard]] bool prepareManualCycleWeaponNode()
+        {
+            if (!validTree(s_cache.sourceTree) ||
+                s_cache.sourceWeaponIndex < 0 ||
+                s_cache.sourceWeaponIndex >= s_cache.sourceTree->numTransforms) {
+                return false;
+            }
+            auto* weaponNode = s_cache.sourceTree
+                                   ->transforms[s_cache.sourceWeaponIndex]
+                                   .refNode;
+            if (!weaponNode) {
+                return false;
+            }
+            if (s_sourceAimFrame.weaponNode &&
+                s_sourceAimFrame.weaponNode != weaponNode) {
+                return false;
+            }
+            s_sourceAimFrame.weaponNode = weaponNode;
+            return true;
+        }
+
         [[nodiscard]] bool refreshFixedVisibleWeaponTarget(
             RE::NiTransform& outWeaponWorld)
         {
@@ -1268,6 +1516,128 @@ namespace rock::native_animation_authority
 #endif
         }
 
+        void clearManualCycleVisualAuthorityPreservingWeapon()
+        {
+            RE::NiTransform fixedWeaponWorld{};
+            const bool restoreWeapon =
+                manualCycleVisualAuthorityPublished() &&
+                refreshFixedVisibleWeaponTarget(fixedWeaponWorld);
+            clearManualCycleVisualAuthority();
+            if (restoreWeapon) {
+                (void)tryRestoreFixedVisibleWeaponTarget(fixedWeaponWorld);
+            }
+        }
+
+        [[nodiscard]] bool publishManualCycleHandVisual(
+            const frik_visual_authority::Hand hand,
+            const RE::NiTransform& handInWeapon,
+            const frik_visual_authority::FingerLocalTransformOverride& fingerLocals,
+            const RE::NiTransform& fixedWeaponWorld)
+        {
+            auto& publication =
+                s_manualCycleVisualPublications[manualCycleHandIndex(hand)];
+            const RE::NiTransform handWorld =
+                native_animation_authority_policy::resolveAuthoredPrimaryHandWorld(
+                    fixedWeaponWorld,
+                    handInWeapon,
+                    [](const RE::NiTransform& parent,
+                       const RE::NiTransform& child) {
+                        return transform_math::composeTransforms(parent, child);
+                    });
+            if (!finiteTransform(handWorld)) {
+                (void)clearManualCycleVisualForHand(hand);
+                return false;
+            }
+
+            if (fingerLocals.enabledMask != 0) {
+                if (!frik_visual_authority::setHandPoseCustomLocalTransformsWithPriority(
+                        kManualCycleVisualAuthorityTag,
+                        hand,
+                        &fingerLocals,
+                        kManualCycleVisualAuthorityPriority)) {
+                    (void)clearManualCycleVisualForHand(hand);
+                    return false;
+                }
+                publication.fingerPosePublished = true;
+            } else if (publication.fingerPosePublished) {
+                if (!frik_visual_authority::clearHandPose(
+                        kManualCycleVisualAuthorityTag,
+                        hand)) {
+                    return false;
+                }
+                publication.fingerPosePublished = false;
+            }
+
+            if (!frik_visual_authority::applyExternalHandWorldTransform(
+                    kManualCycleVisualAuthorityTag,
+                    hand,
+                    handWorld,
+                    kManualCycleVisualAuthorityPriority)) {
+                (void)clearManualCycleVisualForHand(hand);
+                return false;
+            }
+            publication.worldPublished = true;
+            return true;
+        }
+
+        [[nodiscard]] bool applyManualCyclePoseAfterRock()
+        {
+            if (!s_manualCyclePoseCapture.primaryHandValid) {
+                clearManualCycleVisualAuthority();
+                return false;
+            }
+
+            RE::NiTransform fixedWeaponWorld{};
+            if (!refreshFixedVisibleWeaponTarget(fixedWeaponWorld)) {
+                clearManualCycleVisualAuthority();
+                return false;
+            }
+
+            const bool primaryApplied = publishManualCycleHandVisual(
+                frik_visual_authority::Hand::Right,
+                s_manualCyclePoseCapture.primaryHandInWeapon,
+                s_manualCyclePoseCapture.primaryFingerLocals,
+                fixedWeaponWorld);
+            bool supportApplied = false;
+            if (s_manualCyclePoseCapture.supportHandValid) {
+                supportApplied = publishManualCycleHandVisual(
+                    frik_visual_authority::Hand::Left,
+                    s_manualCyclePoseCapture.supportHandInWeapon,
+                    s_manualCyclePoseCapture.supportFingerLocals,
+                    fixedWeaponWorld);
+            } else {
+                (void)clearManualCycleVisualForHand(
+                    frik_visual_authority::Hand::Left);
+            }
+
+            // hFRIK's external-hand solver deliberately excludes the Weapon
+            // child while moving an arm. Recompute the Weapon local anyway so
+            // its scene hierarchy remains coherent with the controller-fixed
+            // world before the next engine transform propagation.
+            if (!restoreFixedVisibleWeaponTarget(fixedWeaponWorld)) {
+                clearManualCycleVisualAuthority();
+                (void)tryRestoreFixedVisibleWeaponTarget(fixedWeaponWorld);
+                return false;
+            }
+            if (!primaryApplied) {
+                clearManualCycleVisualAuthority();
+                (void)tryRestoreFixedVisibleWeaponTarget(fixedWeaponWorld);
+                return false;
+            }
+
+            if (!s_sourceAimFrame.manualCycleIkLogged) {
+                ROCK_LOG_INFO(Animation,
+                    "Native manual-cycle IK ready priority={} hands={} weaponT=({:.3f},{:.3f},{:.3f})",
+                    kManualCycleVisualAuthorityPriority,
+                    supportApplied ? 2 : 1,
+                    fixedWeaponWorld.translate.x,
+                    fixedWeaponWorld.translate.y,
+                    fixedWeaponWorld.translate.z);
+                s_sourceAimFrame.manualCycleIkLogged = true;
+            }
+            return true;
+        }
+
         [[nodiscard]] RE::NiTransform resolveControllerAimCorrection(
             const RE::NiTransform& liveControl,
             const RE::NiTransform& authoredBaseline,
@@ -1304,22 +1674,6 @@ namespace rock::native_animation_authority
         {
             for (std::size_t i = 0; i < s_cache.bindingCount; ++i) {
                 const auto& binding = s_cache.bindings[i];
-                const bool fixedWeaponLogicalAnchor =
-                    (requestedFlags & native_animation_authority_policy::kWeapon) == 0 &&
-                    binding.sourceIndex == s_cache.sourceWeaponIndex &&
-                    binding.captured;
-                if (fixedWeaponLogicalAnchor) {
-                    const int weaponIndex = destination ?
-                        binding.destinationIndex :
-                        binding.sourceIndex;
-                    if (weaponIndex >= 0 && weaponIndex < tree.numTransforms) {
-                        // Keep the native Weapon local in the flattened graph
-                        // only. Writing refNode here would move the visible gun
-                        // before the fixed-world counter-transform is applied.
-                        tree.transforms[weaponIndex].local = binding.capturedLocal;
-                    }
-                    continue;
-                }
                 if (!bindingSelectedForTree(binding, destination, requestedFlags)) {
                     continue;
                 }
@@ -1372,33 +1726,25 @@ namespace rock::native_animation_authority
             }
             const bool weaponTransformRequested =
                 (requestedFlags & native_animation_authority_policy::kWeapon) != 0;
+            if (!weaponTransformRequested) {
+                return false;
+            }
             const bool initializedBaseline =
-                weaponTransformRequested && !destination &&
+                !destination &&
                 !aimFrame.nativeBaselineCaptured;
             RE::NiTransform correction{};
             if (!destination) {
-                if (weaponTransformRequested) {
-                    if (initializedBaseline) {
-                        aimFrame.nativeBaselineWeaponWorld = nativeWeaponWorld;
-                        aimFrame.nativeBaselineCaptured = true;
-                    }
-                    correction = resolveControllerAimCorrection(
-                        aimFrame.controlWeaponWorld,
-                        aimFrame.nativeBaselineWeaponWorld,
-                        nativeWeaponWorld);
-                    aimFrame.desiredWeaponWorld = transform_math::composeTransforms(
-                        correction,
-                        nativeWeaponWorld);
-                } else {
-                    // Manual bolt/lever cycling owns only arms and hands. Rebase
-                    // every native arm root onto the current visible Weapon
-                    // world instead of carrying the native Weapon delta into a
-                    // phantom moving target.
-                    correction = resolveWorldTargetCorrection(
-                        aimFrame.controlWeaponWorld,
-                        nativeWeaponWorld);
-                    aimFrame.desiredWeaponWorld = aimFrame.controlWeaponWorld;
+                if (initializedBaseline) {
+                    aimFrame.nativeBaselineWeaponWorld = nativeWeaponWorld;
+                    aimFrame.nativeBaselineCaptured = true;
                 }
+                correction = resolveControllerAimCorrection(
+                    aimFrame.controlWeaponWorld,
+                    aimFrame.nativeBaselineWeaponWorld,
+                    nativeWeaponWorld);
+                aimFrame.desiredWeaponWorld = transform_math::composeTransforms(
+                    correction,
+                    nativeWeaponWorld);
                 aimFrame.desiredCaptured = finiteTransform(aimFrame.desiredWeaponWorld);
                 if (!aimFrame.desiredCaptured) {
                     return false;
@@ -1953,6 +2299,11 @@ namespace rock::native_animation_authority
         s_runtimeEnabled.store(enabled && s_hookInstalled.load(std::memory_order_acquire), std::memory_order_release);
         if (!enabled) {
             cancelLocalManualCycleTestLease();
+            const DWORD ownerThread =
+                s_ownerThreadId.load(std::memory_order_acquire);
+            if (ownerThread == 0 || ownerThread == GetCurrentThreadId()) {
+                clearManualCycleVisualAuthorityPreservingWeapon();
+            }
             invalidateCapture();
             s_frameCaptureReady = false;
             resetHybridPoseState();
@@ -2178,31 +2529,54 @@ namespace rock::native_animation_authority
         s_frameCaptureReady = false;
         s_frameCaptureFlags = 0;
         s_frameCaptureSequence = 0;
+        s_frameManualCycleExpected = false;
+        s_frameManualCycleApplied = false;
 
         const std::uint32_t currentFlags = effectiveRequestedFlags();
         const std::uint32_t previousFlags = s_lastLoggedEffectiveFlags;
+        // Removing last frame's IK target moves the arm back under its lower
+        // controller/grip authority. Preserve and rebase the Weapon across
+        // that transition before any authority-edge reset drops its node.
+        clearManualCycleVisualAuthorityPreservingWeapon();
         if (localReloadRequestChanged || localManualCycleRequestChanged ||
             currentFlags != previousFlags) {
             resetHybridPoseState();
         }
+        s_frameManualCycleExpected = currentFlags != 0 &&
+            (currentFlags & native_animation_authority_policy::kWeapon) == 0 &&
+            (currentFlags & native_animation_authority_policy::kArms) != 0;
         if (currentFlags != s_lastLoggedEffectiveFlags) {
+            const char* composition = s_frameManualCycleExpected ?
+                "post-rock-weapon-anchored-hand-ik" :
+                "visible-weapon-shared-rigid-pose";
             ROCK_LOG_INFO(Animation,
-                "Native animation authority {} flags=0x{:X} composition=visible-weapon-shared-rigid-pose",
+                "Native animation authority {} flags=0x{:X} composition={}",
                 currentFlags != 0 ? "enabled" : "disabled",
-                currentFlags);
+                currentFlags,
+                composition);
             s_lastLoggedEffectiveFlags = currentFlags;
         }
 
         if (currentFlags == 0 || !s_captureValid.load(std::memory_order_acquire) || !claimOrValidateThread()) {
+            if (s_frameManualCycleExpected) {
+                clearManualCycleVisualAuthority();
+            }
             return;
         }
 
         const auto sequence = s_captureSequence.load(std::memory_order_acquire);
         const auto capturedFlags = s_capturedFlags.load(std::memory_order_acquire) & currentFlags;
         if (sequence == 0 || sequence == s_lastCompletedCaptureSequence || capturedFlags == 0) {
+            if (s_frameManualCycleExpected) {
+                clearManualCycleVisualAuthority();
+            }
             return;
         }
-        if (!prepareControllerAimFrames()) {
+        const bool framePrepared = s_frameManualCycleExpected ?
+            prepareManualCycleWeaponNode() :
+            prepareControllerAimFrames();
+        if (!framePrepared) {
+            clearManualCycleVisualAuthority();
             invalidateCapture();
             return;
         }
@@ -2212,64 +2586,49 @@ namespace rock::native_animation_authority
         s_frameCaptureReady = true;
     }
 
-    bool applyCapturedPose()
+    bool applyCapturedPose(const ApplyPhase phase)
     {
         if (!s_frameCaptureReady || s_frameCaptureFlags == 0 || !claimOrValidateThread()) {
             return false;
         }
 
+        if (s_frameManualCycleExpected) {
+            // ROCK's collision/grab/two-hand pass must see only controller-
+            // tracked hands. Publishing the animated IK target before that
+            // pass feeds the clip back into the weapon solve and rotates the
+            // gun away from the controllers.
+            if (phase == ApplyPhase::BeforeRock) {
+                return true;
+            }
+
+            bool applied = false;
+#if defined(_MSC_VER)
+            __try {
+                applied = applyManualCyclePoseAfterRock();
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                clearManualCycleVisualAuthority();
+                s_captureFault.store(true, std::memory_order_release);
+            }
+#else
+            applied = applyManualCyclePoseAfterRock();
+#endif
+            if (!applied) {
+                s_frameCaptureReady = false;
+                invalidateCapture();
+                return false;
+            }
+            s_frameManualCycleApplied = true;
+            return true;
+        }
+
         bool sourceApplied = false;
         bool destinationApplied = false;
-        const bool fixedWeaponMode =
-            (s_frameCaptureFlags & native_animation_authority_policy::kWeapon) == 0;
-        RE::NiTransform fixedWeaponWorld{};
-        bool fixedWeaponTargetCaptured = false;
 #if defined(_MSC_VER)
         __try {
-            fixedWeaponTargetCaptured = !fixedWeaponMode ||
-                refreshFixedVisibleWeaponTarget(fixedWeaponWorld);
-            if (fixedWeaponTargetCaptured) {
-                sourceApplied = applyToTree(
-                    s_cache.sourceTree,
-                    false,
-                    s_frameCaptureFlags);
-                if (fixedWeaponMode &&
-                    !restoreFixedVisibleWeaponTarget(fixedWeaponWorld)) {
-                    sourceApplied = false;
-                }
-                destinationApplied =
-                    s_cache.destinationTree == s_cache.sourceTree ?
-                    sourceApplied :
-                    sourceApplied && applyToTree(
-                        s_cache.destinationTree,
-                        true,
-                        s_frameCaptureFlags);
-                if (fixedWeaponMode && destinationApplied &&
-                    !restoreFixedVisibleWeaponTarget(fixedWeaponWorld)) {
-                    destinationApplied = false;
-                }
-            }
-        } __except (EXCEPTION_EXECUTE_HANDLER) {
-            if (fixedWeaponMode && fixedWeaponTargetCaptured) {
-                (void)tryRestoreFixedVisibleWeaponTarget(fixedWeaponWorld);
-            }
-            s_captureFault.store(true, std::memory_order_release);
-            invalidateCapture();
-            s_frameCaptureReady = false;
-            return false;
-        }
-#else
-        fixedWeaponTargetCaptured = !fixedWeaponMode ||
-            refreshFixedVisibleWeaponTarget(fixedWeaponWorld);
-        if (fixedWeaponTargetCaptured) {
             sourceApplied = applyToTree(
                 s_cache.sourceTree,
                 false,
                 s_frameCaptureFlags);
-            if (fixedWeaponMode &&
-                !restoreFixedVisibleWeaponTarget(fixedWeaponWorld)) {
-                sourceApplied = false;
-            }
             destinationApplied =
                 s_cache.destinationTree == s_cache.sourceTree ?
                 sourceApplied :
@@ -2277,11 +2636,24 @@ namespace rock::native_animation_authority
                     s_cache.destinationTree,
                     true,
                     s_frameCaptureFlags);
-            if (fixedWeaponMode && destinationApplied &&
-                !restoreFixedVisibleWeaponTarget(fixedWeaponWorld)) {
-                destinationApplied = false;
-            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            s_captureFault.store(true, std::memory_order_release);
+            invalidateCapture();
+            s_frameCaptureReady = false;
+            return false;
         }
+#else
+        sourceApplied = applyToTree(
+            s_cache.sourceTree,
+            false,
+            s_frameCaptureFlags);
+        destinationApplied =
+            s_cache.destinationTree == s_cache.sourceTree ?
+            sourceApplied :
+            sourceApplied && applyToTree(
+                s_cache.destinationTree,
+                true,
+                s_frameCaptureFlags);
 #endif
         if (!sourceApplied || !destinationApplied) {
             s_frameCaptureReady = false;
@@ -2293,12 +2665,17 @@ namespace rock::native_animation_authority
 
     void completeRockFrame()
     {
+        if (s_frameManualCycleExpected && !s_frameManualCycleApplied) {
+            clearManualCycleVisualAuthority();
+        }
         if (s_frameCaptureReady) {
             s_lastCompletedCaptureSequence = s_frameCaptureSequence;
         }
         s_frameCaptureReady = false;
         s_frameCaptureFlags = 0;
         s_frameCaptureSequence = 0;
+        s_frameManualCycleExpected = false;
+        s_frameManualCycleApplied = false;
     }
 
     void resetTransientState()
@@ -2314,6 +2691,10 @@ namespace rock::native_animation_authority
         s_seenLocalManualCycleTestRequestSequence =
             s_localManualCycleTestRequestSequence.load(std::memory_order_acquire);
         s_playerReloadEventActive.store(false, std::memory_order_release);
+        const DWORD ownerThread = s_ownerThreadId.load(std::memory_order_acquire);
+        if (ownerThread == 0 || ownerThread == GetCurrentThreadId()) {
+            clearManualCycleVisualAuthorityPreservingWeapon();
+        }
         invalidateCapture();
         invalidatePrimaryFiringGripCapture();
         invalidateAuthoredSupportGraphPose();
@@ -2324,13 +2705,15 @@ namespace rock::native_animation_authority
         s_frameCaptureReady = false;
         s_frameCaptureFlags = 0;
         s_frameCaptureSequence = 0;
+        s_frameManualCycleExpected = false;
+        s_frameManualCycleApplied = false;
         s_lastCompletedCaptureSequence = s_captureSequence.load(std::memory_order_acquire);
         s_lastConsumedAuthoredSupportGraphPoseSequence =
             s_authoredSupportGraphPoseSequence.load(std::memory_order_acquire);
-        const DWORD ownerThread = s_ownerThreadId.load(std::memory_order_acquire);
         if (ownerThread == 0 || ownerThread == GetCurrentThreadId()) {
             s_cache = {};
             s_primaryFiringGripBoneCache = {};
+            s_manualCycleVisualPublications = {};
         }
     }
 

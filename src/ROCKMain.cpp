@@ -478,7 +478,8 @@ namespace
 
         native_animation_authority::beginRockFrame(
             runtime_state::currentFrame().deltaSeconds);
-        (void)native_animation_authority::applyCapturedPose();
+        (void)native_animation_authority::applyCapturedPose(
+            native_animation_authority::ApplyPhase::BeforeRock);
 
         if (s_pluginLoaded && s_frikAvailable && g_rockConfig.rockEnabled && s_physicsInteraction) {
             s_physicsInteraction->synchronizeNativeScopePresentationAfterFrikUpdate();
@@ -495,7 +496,8 @@ namespace
         // controller authority. Reapply the same controller-anchored native
         // pose last so the temporary reload lease is the final visual writer
         // while all normal ROCK state continues to advance underneath it.
-        (void)native_animation_authority::applyCapturedPose();
+        (void)native_animation_authority::applyCapturedPose(
+            native_animation_authority::ApplyPhase::AfterRock);
         native_animation_authority::completeRockFrame();
     }
 

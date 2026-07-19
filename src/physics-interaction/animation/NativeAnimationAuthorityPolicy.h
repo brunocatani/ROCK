@@ -293,6 +293,22 @@ namespace rock::native_animation_authority_policy
     }
 
     /*
+     * Recover the animated hand in Weapon space from two graph-local model
+     * transforms captured in the same native hierarchy. This relation is the
+     * datum needed by hand-only cycle authority: the visible Weapon remains in
+     * ROCK's controller world, while hFRIK solves the hand to W * handInWeapon.
+     */
+    template <class Transform, class Compose, class Invert>
+    [[nodiscard]] constexpr Transform resolveNativeHandInWeapon(
+        const Transform& nativeWeaponModel,
+        const Transform& nativeHandModel,
+        Compose&& compose,
+        Invert&& invert)
+    {
+        return compose(invert(nativeWeaponModel), nativeHandModel);
+    }
+
+    /*
      * Bethesda's native primary-arm pass runs before hFRIK replaces the
      * weapon basis. Capture the resulting hand in that native weapon frame.
      * The forward composition remains useful for measuring the visible

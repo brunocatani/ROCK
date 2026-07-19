@@ -91,6 +91,23 @@ int main()
     static_assert(additiveCompose(sourceToSharedTarget, 13.0f) == 103.0f);
     static_assert(additiveCompose(destinationToSharedTarget, -79940.0f) == 103.0f);
 
+    constexpr AffineTransform nativeCycleWeaponModel{ 2.0f, 40.0f };
+    constexpr AffineTransform nativeCycleHandModel{ 4.0f, 80.0f };
+    constexpr auto nativeCycleHandInWeapon = resolveNativeHandInWeapon(
+        nativeCycleWeaponModel,
+        nativeCycleHandModel,
+        affineCompose,
+        affineInvert);
+    constexpr AffineTransform fixedCycleWeaponWorld{ 4.0f, 200.0f };
+    constexpr auto fixedCycleHandWorld = resolveAuthoredPrimaryHandWorld(
+        fixedCycleWeaponWorld,
+        nativeCycleHandInWeapon,
+        affineCompose);
+    static_assert(nativeCycleHandInWeapon.scale == 2.0f);
+    static_assert(nativeCycleHandInWeapon.translate == 20.0f);
+    static_assert(fixedCycleHandWorld.scale == 8.0f);
+    static_assert(fixedCycleHandWorld.translate == 280.0f);
+
     constexpr AffineTransform authoredHandInWeapon{ 2.0f, 10.0f };
     constexpr AffineTransform liveWeaponWorld{ 6.0f, 100.0f };
     constexpr auto authoredHandWorld = resolveAuthoredPrimaryHandWorld(

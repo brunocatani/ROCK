@@ -32,8 +32,8 @@ Require-Text 'src/ROCKMain.cpp' `
     'case\s+LE::kSkeletonReady:[\s\S]*installPostUpdateHook\(\)' `
     'ROCK must install only after the FRIK skeleton-ready boundary.'
 Require-Text 'src/ROCKMain.cpp' `
-    'beginRockFrame\([\s\S]{0,120}deltaSeconds[\s\S]*applyCapturedPose\(\)[\s\S]*onFrameUpdate\(\)[\s\S]*applyCapturedPose\(\)[\s\S]*completeRockFrame\(\)' `
-    'The captured pose must bracket ROCK sampling and remain the final visual writer.'
+    'beginRockFrame\([\s\S]{0,120}deltaSeconds[\s\S]*applyCapturedPose\([\s\S]{0,120}ApplyPhase::BeforeRock[\s\S]*onFrameUpdate\(\)[\s\S]*applyCapturedPose\([\s\S]{0,120}ApplyPhase::AfterRock[\s\S]*completeRockFrame\(\)' `
+    'Native authority must expose explicit pre/post ROCK phases so hand-only IK cannot contaminate the controller-owned weapon solve.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthorityPolicy.h' `
     'equalsIgnoreCase\(name,\s*"Weapon"\)[\s\S]*LArm_[\s\S]*RArm_' `
     'Bone authority must be an explicit arms/hands/two-weapon-root allowlist.'
@@ -86,8 +86,23 @@ Require-Text 'src/physics-interaction/animation/NativeAnimationAuthorityPolicy.h
     'kManualCyclePose\s*=\s*kArms\s*\|\s*kHands[\s\S]*advanceLocalManualCycleLease[\s\S]*observedReloadEndEvents\s*>=\s*2' `
     'Manual-cycle authority must exclude Weapon and end on the native bolt/lever clip bracket.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
-    'weaponTransformRequested[\s\S]*resolveWorldTargetCorrection\(\s*aimFrame\.controlWeaponWorld,\s*nativeWeaponWorld\)[\s\S]*refreshFixedVisibleWeaponTarget[\s\S]*restoreFixedVisibleWeaponTarget' `
-    'Arms/hands-only authority must rebase onto and restore the current visible ROCK-held Weapon world.'
+    'captureManualCyclePose[\s\S]*weaponTransform\.local[\s\S]*nativeWeaponModel[\s\S]*resolveNativeHandInWeapon[\s\S]*primaryHandInWeapon[\s\S]*supportHandInWeapon' `
+    'Hand-only cycling must derive both physical hands from graph-local native relations in one Weapon frame.'
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
+    'applyCapturedPose\(const ApplyPhase phase\)[\s\S]*ApplyPhase::BeforeRock[\s\S]*return true;[\s\S]*applyManualCyclePoseAfterRock' `
+    'Manual-cycle IK must be a no-op before ROCK and publish only in the explicit final phase.'
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
+    'publishManualCycleHandVisual[\s\S]*applyExternalHandWorldTransform[\s\S]*kManualCycleVisualAuthorityPriority[\s\S]*applyManualCyclePoseAfterRock[\s\S]*restoreFixedVisibleWeaponTarget' `
+    'Manual-cycle IK must outrank grip-locked visual authority and restore the exact controller-fixed Weapon world.'
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
+    'kManualCyclePrimaryFingerBoneNames[\s\S]*captureManualCycleFingerLocals[\s\S]*setHandPoseCustomLocalTransformsWithPriority[\s\S]*clearManualCycleVisualAuthority' `
+    'Manual-cycle authority must carry native finger locals and deterministically release both hand-pose and world-transform tags.'
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
+    'clearManualCycleVisualAuthorityPreservingWeapon[\s\S]*refreshFixedVisibleWeaponTarget[\s\S]*clearManualCycleVisualAuthority\(\)[\s\S]*tryRestoreFixedVisibleWeaponTarget[\s\S]*beginRockFrame[\s\S]*clearManualCycleVisualAuthorityPreservingWeapon\(\)[\s\S]*resetHybridPoseState' `
+    'Per-frame and lease-edge hand-authority release must preserve the controller-fixed Weapon before dropping the cached node.'
+Reject-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
+    'resolveWorldTargetCorrection\(\s*aimFrame\.controlWeaponWorld,\s*nativeWeaponWorld\)' `
+    'Hand-only cycling must never return to a rigid collarbone-root correction against the Weapon.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'nativeReloadAuthorityActive\s*=[\s\S]{0,180}effectiveFlags\s*&[\s\S]{0,120}kWeapon' `
     'Arms/hands-only cycling must not suspend ROCK authored weapon alignment.'

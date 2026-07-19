@@ -12,6 +12,12 @@ namespace RE
 
 namespace rock::native_animation_authority
 {
+    enum class ApplyPhase : std::uint8_t
+    {
+        BeforeRock,
+        AfterRock,
+    };
+
     enum class RuntimeStatusFlag : std::uint32_t
     {
         None = 0,
@@ -71,8 +77,9 @@ namespace rock::native_animation_authority
 
     void setRuntimeEnabled(bool enabled);
     // The existing native-reload experiment also owns a ROCK-local manual
-    // weapon-cycle window. It applies native arms/hands while preserving the
-    // live ROCK weapon world transform.
+    // weapon-cycle window. It resolves Bethesda's animated hand-in-weapon
+    // relations through hFRIK IK after ROCK has fixed the weapon to the live
+    // controllers; the weapon itself never enters that temporary authority.
     void setLocalManualCycleTestEnabled(bool enabled);
     // Independent ROCK-only experiment capture. A byte-validated native arm
     // hook records Bethesda's paired primary/support poses before hFRIK
@@ -100,7 +107,7 @@ namespace rock::native_animation_authority
         std::uint64_t& outCaptureSequence);
     void requestLocalReloadTestLease();
     void beginRockFrame(float deltaSeconds);
-    [[nodiscard]] bool applyCapturedPose();
+    [[nodiscard]] bool applyCapturedPose(ApplyPhase phase);
     void completeRockFrame();
     void resetTransientState();
 
