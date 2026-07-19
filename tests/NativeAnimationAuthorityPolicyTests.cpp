@@ -315,6 +315,48 @@ int main()
     static_assert(!watchdogExpired.active());
     static_assert(watchdogExpired.endReason == LocalReloadLeaseEndReason::WatchdogExpired);
 
+    constexpr LocalManualCycleLeaseState manualCycleArmed{
+        .watchdogSecondsRemaining = 4.0f,
+        .reloadStartSequenceAtArm = 7,
+        .lastReloadEndSequence = 20,
+        .observedReloadEndEvents = 0,
+    };
+    constexpr auto manualCycleEntered = advanceLocalManualCycleLease(
+        manualCycleArmed,
+        LocalManualCycleLifecycleSignal{ 7, 21, 0.0625f });
+    static_assert(manualCycleEntered.active());
+    static_assert(manualCycleEntered.state.observedReloadEndEvents == 1);
+    static_assert(manualCycleEntered.state.watchdogSecondsRemaining == 3.9375f);
+    constexpr auto manualCycleCompleted = advanceLocalManualCycleLease(
+        manualCycleEntered.state,
+        LocalManualCycleLifecycleSignal{ 7, 22, 0.25f });
+    static_assert(!manualCycleCompleted.active());
+    static_assert(
+        manualCycleCompleted.endReason ==
+        LocalManualCycleLeaseEndReason::CycleBracketEnded);
+
+    constexpr auto manualCycleReloadPreempted = advanceLocalManualCycleLease(
+        manualCycleArmed,
+        LocalManualCycleLifecycleSignal{ 8, 20, 0.25f });
+    static_assert(!manualCycleReloadPreempted.active());
+    static_assert(
+        manualCycleReloadPreempted.endReason ==
+        LocalManualCycleLeaseEndReason::ReloadStarted);
+
+    constexpr auto manualCycleWatchdogExpired = advanceLocalManualCycleLease(
+        LocalManualCycleLeaseState{
+            .watchdogSecondsRemaining = 0.01f,
+            .reloadStartSequenceAtArm = 7,
+            .lastReloadEndSequence = 20,
+        },
+        LocalManualCycleLifecycleSignal{ 7, 20, 0.02f });
+    static_assert(!manualCycleWatchdogExpired.active());
+    static_assert(
+        manualCycleWatchdogExpired.endReason ==
+        LocalManualCycleLeaseEndReason::WatchdogExpired);
+
+    static_assert(kManualCyclePose == (kArms | kHands));
+    static_assert((kManualCyclePose & kWeapon) == 0);
     static_assert(classifyBone("RArm_Collarbone") == kArms);
     static_assert(classifyBone("LArm_ForeArm3") == kArms);
     static_assert(classifyBone("RArm_Hand") == (kArms | kHands));

@@ -3428,7 +3428,12 @@ namespace rock
             .compatibilityBlocking = runtime.compatibilityConfigBlocking,
             .weaponDrawn = runtime.weaponDrawn,
             .weaponVisible = weaponNode && f4vr::isNodeVisible(weaponNode),
-            .nativeReloadAuthorityActive = nativeAuthorityStatus.effectiveFlags != 0,
+            // Arms/hands-only manual cycling must retain ROCK's authored
+            // weapon-to-controller alignment. Only a native Weapon transform
+            // lease (the full reload path) suspends that owner.
+            .nativeReloadAuthorityActive =
+                (nativeAuthorityStatus.effectiveFlags &
+                    native_animation_authority_policy::kWeapon) != 0,
             .conflictingWeaponTransformAuthorityActive =
                 _twoHandedGrip.blocksAuthoredPrimaryGripWeaponAlignment(),
             .weaponVisualReturnActive = _twoHandedGrip.isWeaponVisualReturnActive(),

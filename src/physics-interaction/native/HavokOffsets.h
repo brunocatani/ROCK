@@ -262,6 +262,14 @@ namespace rock::offsets
     constexpr std::uintptr_t kFunc_HitFrameHandler_Handle = 0x0FEFFB0;
 
     /*
+     * Fallout4VR.exe 1.2.72 WeaponFireHandler::Handle. Ghidra verified the
+     * handler at module+0xFF2A40 and its actual IHandlerFunctor Handle slot at
+     * module+0x2D8D2E8. ROCK uses the event only as the player manual-cycle
+     * boundary; the original handler always remains the gameplay authority.
+     */
+    constexpr std::uintptr_t kFunc_WeaponFireHandler_Handle = 0x0FF2A40;
+
+    /*
      * Fallout4VR.exe 1.2.72 ReloadStateChangeHandler::Handle. Ghidra verified
      * that the first interned token calls ActorState::SetReloadingImpl(true)
      * and the second calls it with false. The token accessors below are the
@@ -280,6 +288,8 @@ namespace rock::offsets
     constexpr std::uintptr_t kVtableEntry_WeaponSwingHandler_Handle = 0x2D8CA00;
 
     constexpr std::uintptr_t kVtableEntry_HitFrameHandler_Handle = 0x2D8CB98;
+
+    constexpr std::uintptr_t kVtableEntry_WeaponFireHandler_Handle = 0x2D8D2E8;
 
     constexpr std::uintptr_t kVtableEntry_ReloadStateChangeHandler_Handle = 0x2D8D300;
 

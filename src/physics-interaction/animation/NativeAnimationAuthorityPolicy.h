@@ -8,6 +8,7 @@ namespace rock::native_animation_authority_policy
     inline constexpr std::uint32_t kArms = 1u << 0;
     inline constexpr std::uint32_t kHands = 1u << 1;
     inline constexpr std::uint32_t kWeapon = 1u << 2;
+    inline constexpr std::uint32_t kManualCyclePose = kArms | kHands;
     inline constexpr std::uint32_t kReloadPose = kArms | kHands | kWeapon;
 
     enum class LocalReloadLeaseEndReason : std::uint32_t
@@ -40,6 +41,41 @@ namespace rock::native_animation_authority_policy
         [[nodiscard]] constexpr bool active() const
         {
             return endReason == LocalReloadLeaseEndReason::None && state.watchdogFramesRemaining > 0;
+        }
+    };
+
+    enum class LocalManualCycleLeaseEndReason : std::uint32_t
+    {
+        None = 0,
+        CycleBracketEnded,
+        ReloadStarted,
+        WatchdogExpired,
+    };
+
+    struct LocalManualCycleLifecycleSignal
+    {
+        std::uint64_t reloadStartSequence{ 0 };
+        std::uint64_t reloadEndSequence{ 0 };
+        float deltaSeconds{ 0.0f };
+    };
+
+    struct LocalManualCycleLeaseState
+    {
+        float watchdogSecondsRemaining{ 0.0f };
+        std::uint64_t reloadStartSequenceAtArm{ 0 };
+        std::uint64_t lastReloadEndSequence{ 0 };
+        std::uint32_t observedReloadEndEvents{ 0 };
+    };
+
+    struct LocalManualCycleLeaseStep
+    {
+        LocalManualCycleLeaseState state{};
+        LocalManualCycleLeaseEndReason endReason{ LocalManualCycleLeaseEndReason::None };
+
+        [[nodiscard]] constexpr bool active() const
+        {
+            return endReason == LocalManualCycleLeaseEndReason::None &&
+                   state.watchdogSecondsRemaining > 0.0f;
         }
     };
 
@@ -162,6 +198,58 @@ namespace rock::native_animation_authority_policy
             return { state, LocalReloadLeaseEndReason::WatchdogExpired };
         }
         return { state, LocalReloadLeaseEndReason::None };
+    }
+
+    /*
+     * Bethesda's manual-cycle action is bracketed by two ReloadEnd graph
+     * events: one at the start of the bolt/lever clip and one at its end. A
+     * player WeaponFire event arms this state with the event sequence sampled
+     * at that exact boundary. A real reload start wins immediately, while the
+     * duration derived from the equipped weapon's live animation data remains
+     * a bounded fallback for non-conforming replacement clips.
+     */
+    [[nodiscard]] constexpr LocalManualCycleLeaseStep advanceLocalManualCycleLease(
+        LocalManualCycleLeaseState state,
+        LocalManualCycleLifecycleSignal signal)
+    {
+        if (state.watchdogSecondsRemaining <= 0.0f) {
+            state.watchdogSecondsRemaining = 0.0f;
+            return { state, LocalManualCycleLeaseEndReason::WatchdogExpired };
+        }
+
+        if (signal.reloadStartSequence != state.reloadStartSequenceAtArm) {
+            state.watchdogSecondsRemaining = 0.0f;
+            return { state, LocalManualCycleLeaseEndReason::ReloadStarted };
+        }
+
+        if (signal.reloadEndSequence != state.lastReloadEndSequence) {
+            const std::uint64_t eventCount =
+                signal.reloadEndSequence > state.lastReloadEndSequence ?
+                signal.reloadEndSequence - state.lastReloadEndSequence :
+                1;
+            state.lastReloadEndSequence = signal.reloadEndSequence;
+            const std::uint64_t totalEvents =
+                static_cast<std::uint64_t>(state.observedReloadEndEvents) + eventCount;
+            constexpr std::uint64_t maxEventCount = 0xFFFFFFFFull;
+            state.observedReloadEndEvents = totalEvents > maxEventCount ?
+                static_cast<std::uint32_t>(maxEventCount) :
+                static_cast<std::uint32_t>(totalEvents);
+            if (state.observedReloadEndEvents >= 2) {
+                state.watchdogSecondsRemaining = 0.0f;
+                return { state, LocalManualCycleLeaseEndReason::CycleBracketEnded };
+            }
+        }
+
+        const float deltaSeconds =
+            signal.deltaSeconds > 0.0f && signal.deltaSeconds <= 0.1f ?
+            signal.deltaSeconds :
+            (1.0f / 90.0f);
+        state.watchdogSecondsRemaining -= deltaSeconds;
+        if (state.watchdogSecondsRemaining <= 0.0f) {
+            state.watchdogSecondsRemaining = 0.0f;
+            return { state, LocalManualCycleLeaseEndReason::WatchdogExpired };
+        }
+        return { state, LocalManualCycleLeaseEndReason::None };
     }
 
     /*

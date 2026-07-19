@@ -259,6 +259,7 @@ namespace
 
         if (!s_pluginLoaded || !s_frikAvailable) {
             native_animation_authority::setRuntimeEnabled(false);
+            native_animation_authority::setLocalManualCycleTestEnabled(false);
             native_animation_authority::setPrimaryFiringGripCaptureEnabled(false);
             pipboy_equip_runtime::setLeftHandEquipAvailable(false);
             input_remap_runtime::setGameplayInputAllowed(false);
@@ -286,6 +287,9 @@ namespace
             runtime.localSkeletonReady &&
             !runtime.compatibilityConfigBlocking;
         native_animation_authority::setRuntimeEnabled(nativeAnimationCaptureRuntimeEnabled);
+        native_animation_authority::setLocalManualCycleTestEnabled(
+            nativeAnimationCaptureRuntimeEnabled &&
+            g_rockConfig.rockNativeReloadAnimationAuthorityTestEnabled);
         native_animation_authority::setPrimaryFiringGripCaptureEnabled(
             nativeAnimationCaptureRuntimeEnabled &&
             g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled);
@@ -300,6 +304,7 @@ namespace
 
         if (!g_rockConfig.rockEnabled) {
             native_animation_authority::setRuntimeEnabled(false);
+            native_animation_authority::setLocalManualCycleTestEnabled(false);
             native_animation_authority::setPrimaryFiringGripCaptureEnabled(false);
             pipboy_equip_runtime::setLeftHandEquipAvailable(false);
             s_physicsCreationRequested.store(false, std::memory_order_release);
@@ -471,7 +476,8 @@ namespace
             s_originalGameLoopFunc(rcx);
         }
 
-        native_animation_authority::beginRockFrame();
+        native_animation_authority::beginRockFrame(
+            runtime_state::currentFrame().deltaSeconds);
         (void)native_animation_authority::applyCapturedPose();
 
         if (s_pluginLoaded && s_frikAvailable && g_rockConfig.rockEnabled && s_physicsInteraction) {
@@ -529,6 +535,9 @@ namespace
                     "ROCK: Native animation authority hook unavailable; selective reload-pose API is disabled for this runtime/FRIK build.");
             }
             native_animation_authority::setRuntimeEnabled(g_rockConfig.rockEnabled);
+            native_animation_authority::setLocalManualCycleTestEnabled(
+                g_rockConfig.rockEnabled &&
+                g_rockConfig.rockNativeReloadAnimationAuthorityTestEnabled);
             native_animation_authority::setPrimaryFiringGripCaptureEnabled(
                 g_rockConfig.rockEnabled &&
                 g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled);
@@ -561,6 +570,9 @@ namespace
             bumpGeneration(s_skeletonGeneration);
             native_animation_authority::resetTransientState();
             native_animation_authority::setRuntimeEnabled(g_rockConfig.rockEnabled);
+            native_animation_authority::setLocalManualCycleTestEnabled(
+                g_rockConfig.rockEnabled &&
+                g_rockConfig.rockNativeReloadAnimationAuthorityTestEnabled);
             native_animation_authority::setPrimaryFiringGripCaptureEnabled(
                 g_rockConfig.rockEnabled &&
                 g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled);

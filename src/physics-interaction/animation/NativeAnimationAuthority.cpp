@@ -10,6 +10,10 @@
 #include "f4vr/F4VRUtils.h"
 #include "f4vr/PlayerNodes.h"
 
+#include "RE/Bethesda/Actor.h"
+#include "RE/Bethesda/PlayerCharacter.h"
+#include "RE/Bethesda/TESBoundObjects.h"
+
 #include <Windows.h>
 
 #include <array>
@@ -28,12 +32,17 @@ namespace rock::native_animation_authority
         using BoneTransform = BoneTree::BoneTransforms;
         using PostUpdateAnimationGraphManagerFn = void (*)(void* holder);
         using UpdateFirstPersonArmFn = void* (*)(const RE::PlayerCharacter* player, RE::NiNode** weapon, RE::NiNode** offsetNode);
+        using WeaponFireHandlerFn = bool (*)(void* handler, RE::Actor* actor, RE::BSFixedString* eventData);
         using ReloadStateChangeHandlerFn = bool (*)(void* handler, RE::Actor* actor, RE::BSFixedString* stateToken);
         using ReloadStateTokenFn = RE::BSFixedString* (*)();
 
         constexpr std::size_t kMaxBindings = 192;
         constexpr int kMaxFlattenedTransforms = 768;
         constexpr std::uint32_t kLocalReloadTestLeaseFrames = 600;
+        constexpr float kManualCycleFallbackWatchdogSeconds = 6.0f;
+        constexpr float kManualCycleWatchdogPaddingSeconds = 0.75f;
+        constexpr float kManualCycleMinimumWatchdogSeconds = 1.0f;
+        constexpr float kManualCycleMaximumWatchdogSeconds = 12.0f;
         constexpr std::uint32_t kImplementedFlags = native_animation_authority_policy::kReloadPose;
         constexpr std::uint16_t kAuthoredSupportFingerTransformMask = 0x7FFFu;
         constexpr std::array<std::string_view, 15> kAuthoredSupportFingerBoneNames{
@@ -101,13 +110,18 @@ namespace rock::native_animation_authority
         ControllerAimFrame s_sourceAimFrame{};
         PostUpdateAnimationGraphManagerFn s_originalPostUpdate{ nullptr };
         UpdateFirstPersonArmFn s_originalUpdateFirstPersonArm{ nullptr };
+        WeaponFireHandlerFn s_originalWeaponFire{ nullptr };
         ReloadStateChangeHandlerFn s_originalReloadStateChange{ nullptr };
         std::atomic<bool> s_hookInstalled{ false };
         std::atomic<bool> s_primaryFiringGripHookInstalled{ false };
         std::atomic<bool> s_primaryFiringGripHookInstallFailed{ false };
         std::atomic<bool> s_reloadStateHookInstalled{ false };
+        std::atomic<bool> s_weaponFireHookInstalled{ false };
+        std::atomic<bool> s_weaponFireHookInstallFailed{ false };
         std::atomic<bool> s_hookInstallFailed{ false };
         std::atomic<bool> s_runtimeEnabled{ false };
+        std::atomic<bool> s_localManualCycleTestEnabled{ false };
+        std::atomic<bool> s_localManualCycleTestLeaseActive{ false };
         std::atomic<bool> s_primaryFiringGripCaptureEnabled{ false };
         std::atomic<bool> s_primaryFiringGripCaptureValid{ false };
         std::atomic<bool> s_authoredSupportGraphPoseValid{ false };
@@ -118,6 +132,10 @@ namespace rock::native_animation_authority
         std::atomic<DWORD> s_ownerThreadId{ 0 };
         std::atomic<std::uint32_t> s_localReloadTestLeaseFrames{ 0 };
         std::atomic<std::uint64_t> s_localReloadTestRequestSequence{ 0 };
+        std::atomic<std::uint64_t> s_localManualCycleTestRequestSequence{ 0 };
+        std::atomic<std::uint32_t> s_localManualCycleRequestedWatchdogMilliseconds{ 0 };
+        std::atomic<std::uint64_t> s_localManualCycleReloadStartSequenceAtArm{ 0 };
+        std::atomic<std::uint64_t> s_localManualCycleReloadEndSequenceAtArm{ 0 };
         std::atomic<std::uint64_t> s_playerReloadStartSequence{ 0 };
         std::atomic<std::uint64_t> s_playerReloadEndSequence{ 0 };
         std::atomic<bool> s_playerReloadEventActive{ false };
@@ -159,9 +177,11 @@ namespace rock::native_animation_authority
         std::uint64_t s_frameCaptureSequence{ 0 };
         std::uint64_t s_lastCompletedCaptureSequence{ 0 };
         std::uint64_t s_seenLocalReloadTestRequestSequence{ 0 };
+        std::uint64_t s_seenLocalManualCycleTestRequestSequence{ 0 };
         std::uint32_t s_frameCaptureFlags{ 0 };
         std::uint32_t s_lastLoggedEffectiveFlags{ 0 };
         native_animation_authority_policy::LocalReloadLeaseState s_localReloadLeaseState{};
+        native_animation_authority_policy::LocalManualCycleLeaseState s_localManualCycleLeaseState{};
         bool s_frameCaptureReady{ false };
 
         [[nodiscard]] bool validTree(const BoneTree* tree)
@@ -212,7 +232,13 @@ namespace rock::native_animation_authority
                 return 0;
             }
             const std::uint32_t providerFlags = provider::currentNativeAnimationAuthorityFlagsV1();
-            const std::uint32_t localFlags = s_localReloadTestLeaseFrames.load(std::memory_order_acquire) > 0 ? kImplementedFlags : 0;
+            std::uint32_t localFlags =
+                s_localReloadTestLeaseFrames.load(std::memory_order_acquire) > 0 ?
+                kImplementedFlags :
+                0;
+            if (s_localManualCycleTestLeaseActive.load(std::memory_order_acquire)) {
+                localFlags |= native_animation_authority_policy::kManualCyclePose;
+            }
             return (providerFlags | localFlags) & kImplementedFlags;
         }
 
@@ -848,7 +874,15 @@ namespace rock::native_animation_authority
                     continue;
                 }
 
-                const auto& local = authoritativeLocal(source->transforms[binding.sourceIndex]);
+                // Arms/hands-only authority counter-transforms the visible
+                // Weapon child after each apply. During that mode the scene
+                // node local is presentation state, not the graph's native
+                // weapon local; retain the flattened logical local as the
+                // alignment anchor for the next capture.
+                const auto& local = controllerAimAnchor &&
+                        (requestedFlags & native_animation_authority_policy::kWeapon) == 0 ?
+                    source->transforms[binding.sourceIndex].local :
+                    authoritativeLocal(source->transforms[binding.sourceIndex]);
                 if (!finiteTransform(local)) {
                     continue;
                 }
@@ -893,6 +927,107 @@ namespace rock::native_animation_authority
             }
         }
 
+        [[nodiscard]] RE::TESObjectWEAP::InstanceData* currentPlayerWeaponInstanceData(
+            RE::TESObjectWEAP*& outWeapon)
+        {
+            outWeapon = nullptr;
+            auto* player = f4vr::getPlayer();
+            auto* processData = player && player->middleProcess ? player->middleProcess->unk08 : nullptr;
+            auto* equipData = processData ? processData->equipData : nullptr;
+            auto* weaponForm = equipData ? equipData->item : nullptr;
+            if (!weaponForm ||
+                weaponForm->formType != static_cast<std::uint8_t>(RE::ENUM_FORM_ID::kWEAP)) {
+                return nullptr;
+            }
+
+            auto* reForm = reinterpret_cast<RE::TESForm*>(weaponForm);
+            outWeapon = reForm ? reForm->As<RE::TESObjectWEAP>() : nullptr;
+            if (!outWeapon) {
+                return nullptr;
+            }
+            return equipData->instanceData ?
+                static_cast<RE::TESObjectWEAP::InstanceData*>(equipData->instanceData) :
+                &outWeapon->weaponData;
+        }
+
+        [[nodiscard]] float manualCycleWatchdogSeconds(
+            const RE::TESObjectWEAP::InstanceData& weaponData)
+        {
+            const auto* rangedData = weaponData.rangedData;
+            if (!rangedData ||
+                !std::isfinite(rangedData->boltChargeSeconds) ||
+                rangedData->boltChargeSeconds <= 0.0f) {
+                return kManualCycleFallbackWatchdogSeconds;
+            }
+
+            const float fireSeconds =
+                std::isfinite(rangedData->fireSeconds) && rangedData->fireSeconds > 0.0f ?
+                rangedData->fireSeconds :
+                0.0f;
+            float watchdogSeconds =
+                fireSeconds + rangedData->boltChargeSeconds +
+                kManualCycleWatchdogPaddingSeconds;
+            if (watchdogSeconds < kManualCycleMinimumWatchdogSeconds) {
+                watchdogSeconds = kManualCycleMinimumWatchdogSeconds;
+            } else if (watchdogSeconds > kManualCycleMaximumWatchdogSeconds) {
+                watchdogSeconds = kManualCycleMaximumWatchdogSeconds;
+            }
+            return watchdogSeconds;
+        }
+
+        void cancelLocalManualCycleTestLease()
+        {
+            s_localManualCycleRequestedWatchdogMilliseconds.store(0, std::memory_order_release);
+            s_localManualCycleTestLeaseActive.store(false, std::memory_order_release);
+        }
+
+        bool onWeaponFire(void* handler, RE::Actor* actor, RE::BSFixedString* eventData)
+        {
+            // Sample before Bethesda handles the fire event. Replacement clips
+            // may publish their frame-zero ReloadEnd marker synchronously from
+            // the original handler; arming from the post-call value would lose
+            // the first half of the native cycle bracket.
+            const auto reloadStartSequenceBeforeFire =
+                s_playerReloadStartSequence.load(std::memory_order_acquire);
+            const auto reloadEndSequenceBeforeFire =
+                s_playerReloadEndSequence.load(std::memory_order_acquire);
+            const bool handled = s_originalWeaponFire ?
+                s_originalWeaponFire(handler, actor, eventData) :
+                false;
+
+            const auto* player = RE::PlayerCharacter::GetSingleton();
+            if (!handled || !actor || actor != player ||
+                !s_runtimeEnabled.load(std::memory_order_acquire) ||
+                !s_localManualCycleTestEnabled.load(std::memory_order_acquire) ||
+                s_localReloadTestLeaseFrames.load(std::memory_order_acquire) > 0 ||
+                s_playerReloadEventActive.load(std::memory_order_acquire)) {
+                return handled;
+            }
+
+            RE::TESObjectWEAP* weapon = nullptr;
+            const auto* weaponData = currentPlayerWeaponInstanceData(weapon);
+            if (!weapon || !weaponData ||
+                !weaponData->flags.any(RE::WEAPON_FLAGS::kBoltAction)) {
+                return handled;
+            }
+
+            const float watchdogSeconds = manualCycleWatchdogSeconds(*weaponData);
+            const auto watchdogMilliseconds = static_cast<std::uint32_t>(
+                watchdogSeconds * 1000.0f + 0.5f);
+            s_localManualCycleReloadStartSequenceAtArm.store(
+                reloadStartSequenceBeforeFire,
+                std::memory_order_release);
+            s_localManualCycleReloadEndSequenceAtArm.store(
+                reloadEndSequenceBeforeFire,
+                std::memory_order_release);
+            s_localManualCycleRequestedWatchdogMilliseconds.store(
+                watchdogMilliseconds,
+                std::memory_order_release);
+            s_localManualCycleTestRequestSequence.fetch_add(1, std::memory_order_acq_rel);
+            s_localManualCycleTestLeaseActive.store(true, std::memory_order_release);
+            return handled;
+        }
+
         [[nodiscard]] const RE::BSFixedString* nativeReloadStartStateToken()
         {
             static REL::Relocation<ReloadStateTokenFn> getToken{
@@ -922,6 +1057,7 @@ namespace rock::native_animation_authority
 
             const auto* startToken = nativeReloadStartStateToken();
             if (startToken && *stateToken == *startToken) {
+                cancelLocalManualCycleTestLease();
                 s_playerReloadEventActive.store(true, std::memory_order_release);
                 s_playerReloadStartSequence.fetch_add(1, std::memory_order_acq_rel);
                 return handled;
@@ -1061,6 +1197,77 @@ namespace rock::native_animation_authority
                 s_sourceAimFrame);
         }
 
+        [[nodiscard]] bool refreshFixedVisibleWeaponTarget(
+            RE::NiTransform& outWeaponWorld)
+        {
+            auto& aimFrame = s_sourceAimFrame;
+            auto* weaponNode = aimFrame.weaponNode;
+            if (!weaponNode || !weaponNode->parent ||
+                !finiteTransform(weaponNode->world)) {
+                return false;
+            }
+
+            outWeaponWorld = weaponNode->world;
+            aimFrame.controlWeaponWorld = outWeaponWorld;
+            aimFrame.controlCaptured = true;
+            aimFrame.desiredWeaponWorld = outWeaponWorld;
+            aimFrame.desiredCaptured = true;
+            return true;
+        }
+
+        [[nodiscard]] bool restoreFixedVisibleWeaponTarget(
+            const RE::NiTransform& weaponWorld)
+        {
+            auto& aimFrame = s_sourceAimFrame;
+            auto* weaponNode = aimFrame.weaponNode;
+            auto* weaponParent = weaponNode ? weaponNode->parent : nullptr;
+            if (!weaponNode || !weaponParent ||
+                !finiteTransform(weaponWorld) ||
+                !finiteTransform(weaponParent->world)) {
+                return false;
+            }
+
+            const RE::NiTransform weaponLocal = transform_math::composeTransforms(
+                transform_math::invertTransform(weaponParent->world),
+                weaponWorld);
+            if (!finiteTransform(weaponLocal)) {
+                return false;
+            }
+            weaponNode->local = weaponLocal;
+            f4vr::updateTransformsDown(weaponNode, true);
+            if (!finiteTransform(weaponNode->world)) {
+                return false;
+            }
+
+            if (validTree(s_cache.sourceTree) &&
+                s_cache.sourceWeaponIndex >= 0 &&
+                s_cache.sourceWeaponIndex < s_cache.sourceTree->numTransforms) {
+                // Keep the flattened local as the native graph anchor. Only
+                // its presentation world follows the counter-transformed node.
+                s_cache.sourceTree->transforms[s_cache.sourceWeaponIndex].world =
+                    weaponNode->world;
+            }
+            aimFrame.controlWeaponWorld = weaponWorld;
+            aimFrame.desiredWeaponWorld = weaponWorld;
+            aimFrame.controlCaptured = true;
+            aimFrame.desiredCaptured = true;
+            return true;
+        }
+
+        [[nodiscard]] bool tryRestoreFixedVisibleWeaponTarget(
+            const RE::NiTransform& weaponWorld)
+        {
+#if defined(_MSC_VER)
+            __try {
+                return restoreFixedVisibleWeaponTarget(weaponWorld);
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                return false;
+            }
+#else
+            return restoreFixedVisibleWeaponTarget(weaponWorld);
+#endif
+        }
+
         [[nodiscard]] RE::NiTransform resolveControllerAimCorrection(
             const RE::NiTransform& liveControl,
             const RE::NiTransform& authoredBaseline,
@@ -1097,6 +1304,22 @@ namespace rock::native_animation_authority
         {
             for (std::size_t i = 0; i < s_cache.bindingCount; ++i) {
                 const auto& binding = s_cache.bindings[i];
+                const bool fixedWeaponLogicalAnchor =
+                    (requestedFlags & native_animation_authority_policy::kWeapon) == 0 &&
+                    binding.sourceIndex == s_cache.sourceWeaponIndex &&
+                    binding.captured;
+                if (fixedWeaponLogicalAnchor) {
+                    const int weaponIndex = destination ?
+                        binding.destinationIndex :
+                        binding.sourceIndex;
+                    if (weaponIndex >= 0 && weaponIndex < tree.numTransforms) {
+                        // Keep the native Weapon local in the flattened graph
+                        // only. Writing refNode here would move the visible gun
+                        // before the fixed-world counter-transform is applied.
+                        tree.transforms[weaponIndex].local = binding.capturedLocal;
+                    }
+                    continue;
+                }
                 if (!bindingSelectedForTree(binding, destination, requestedFlags)) {
                     continue;
                 }
@@ -1147,20 +1370,35 @@ namespace rock::native_animation_authority
             if (!readLogicalWorld(tree, weaponIndex, nativeWeaponWorld)) {
                 return false;
             }
-            const bool initializedBaseline = !destination && !aimFrame.nativeBaselineCaptured;
+            const bool weaponTransformRequested =
+                (requestedFlags & native_animation_authority_policy::kWeapon) != 0;
+            const bool initializedBaseline =
+                weaponTransformRequested && !destination &&
+                !aimFrame.nativeBaselineCaptured;
             RE::NiTransform correction{};
             if (!destination) {
-                if (initializedBaseline) {
-                    aimFrame.nativeBaselineWeaponWorld = nativeWeaponWorld;
-                    aimFrame.nativeBaselineCaptured = true;
+                if (weaponTransformRequested) {
+                    if (initializedBaseline) {
+                        aimFrame.nativeBaselineWeaponWorld = nativeWeaponWorld;
+                        aimFrame.nativeBaselineCaptured = true;
+                    }
+                    correction = resolveControllerAimCorrection(
+                        aimFrame.controlWeaponWorld,
+                        aimFrame.nativeBaselineWeaponWorld,
+                        nativeWeaponWorld);
+                    aimFrame.desiredWeaponWorld = transform_math::composeTransforms(
+                        correction,
+                        nativeWeaponWorld);
+                } else {
+                    // Manual bolt/lever cycling owns only arms and hands. Rebase
+                    // every native arm root onto the current visible Weapon
+                    // world instead of carrying the native Weapon delta into a
+                    // phantom moving target.
+                    correction = resolveWorldTargetCorrection(
+                        aimFrame.controlWeaponWorld,
+                        nativeWeaponWorld);
+                    aimFrame.desiredWeaponWorld = aimFrame.controlWeaponWorld;
                 }
-                correction = resolveControllerAimCorrection(
-                    aimFrame.controlWeaponWorld,
-                    aimFrame.nativeBaselineWeaponWorld,
-                    nativeWeaponWorld);
-                aimFrame.desiredWeaponWorld = transform_math::composeTransforms(
-                    correction,
-                    nativeWeaponWorld);
                 aimFrame.desiredCaptured = finiteTransform(aimFrame.desiredWeaponWorld);
                 if (!aimFrame.desiredCaptured) {
                     return false;
@@ -1422,6 +1660,125 @@ namespace rock::native_animation_authority
             return requestChanged;
         }
 
+        [[nodiscard]] const char* localManualCycleLeaseEndReasonName(
+            native_animation_authority_policy::LocalManualCycleLeaseEndReason reason)
+        {
+            using Reason = native_animation_authority_policy::LocalManualCycleLeaseEndReason;
+            switch (reason) {
+            case Reason::CycleBracketEnded:
+                return "native bolt/lever clip end observed";
+            case Reason::ReloadStarted:
+                return "native reload-start event preempted cycle";
+            case Reason::WatchdogExpired:
+                return "animation-duration watchdog expired";
+            case Reason::None:
+            default:
+                return "active";
+            }
+        }
+
+        [[nodiscard]] bool refreshLocalManualCycleTestLease(const float deltaSeconds)
+        {
+            const auto requestSequence =
+                s_localManualCycleTestRequestSequence.load(std::memory_order_acquire);
+            const bool requestChanged =
+                requestSequence != s_seenLocalManualCycleTestRequestSequence;
+            if (requestChanged) {
+                s_seenLocalManualCycleTestRequestSequence = requestSequence;
+                const auto watchdogMilliseconds =
+                    s_localManualCycleRequestedWatchdogMilliseconds.load(
+                        std::memory_order_acquire);
+                s_localManualCycleLeaseState =
+                    native_animation_authority_policy::LocalManualCycleLeaseState{
+                        .watchdogSecondsRemaining =
+                            static_cast<float>(watchdogMilliseconds) / 1000.0f,
+                        .reloadStartSequenceAtArm =
+                            s_localManualCycleReloadStartSequenceAtArm.load(
+                                std::memory_order_acquire),
+                        .lastReloadEndSequence =
+                            s_localManualCycleReloadEndSequenceAtArm.load(
+                                std::memory_order_acquire),
+                    };
+            }
+
+            if (!s_localManualCycleTestLeaseActive.load(std::memory_order_acquire)) {
+                return requestChanged;
+            }
+
+            const auto step =
+                native_animation_authority_policy::advanceLocalManualCycleLease(
+                    s_localManualCycleLeaseState,
+                    native_animation_authority_policy::LocalManualCycleLifecycleSignal{
+                        .reloadStartSequence =
+                            s_playerReloadStartSequence.load(std::memory_order_acquire),
+                        .reloadEndSequence =
+                            s_playerReloadEndSequence.load(std::memory_order_acquire),
+                        .deltaSeconds = deltaSeconds,
+                    });
+            s_localManualCycleLeaseState = step.state;
+            if (!step.active()) {
+                s_localManualCycleTestLeaseActive.store(false, std::memory_order_release);
+                ROCK_LOG_DEBUG(Animation,
+                    "Native bolt/lever hand-only authority released: {}",
+                    localManualCycleLeaseEndReasonName(step.endReason));
+            }
+            return requestChanged;
+        }
+
+        [[nodiscard]] bool installWeaponFireHook()
+        {
+            if (s_weaponFireHookInstalled.load(std::memory_order_acquire)) {
+                return s_originalWeaponFire != nullptr;
+            }
+            if (s_weaponFireHookInstallFailed.load(std::memory_order_acquire)) {
+                return false;
+            }
+
+            REL::Relocation<std::uintptr_t> entry{
+                REL::Offset(offsets::kVtableEntry_WeaponFireHandler_Handle)
+            };
+            REL::Relocation<std::uintptr_t> expectedTarget{
+                REL::Offset(offsets::kFunc_WeaponFireHandler_Handle)
+            };
+            auto* slot = reinterpret_cast<std::uintptr_t*>(entry.address());
+            if (!slot || *slot != expectedTarget.address()) {
+                ROCK_LOG_ERROR(Init,
+                    "WeaponFireHandler hook validation failed at 0x{:X}; expected target 0x{:X}, found 0x{:X}",
+                    entry.address(),
+                    expectedTarget.address(),
+                    slot ? *slot : 0);
+                s_weaponFireHookInstallFailed.store(true, std::memory_order_release);
+                return false;
+            }
+
+            s_originalWeaponFire = reinterpret_cast<WeaponFireHandlerFn>(*slot);
+            DWORD oldProtect = 0;
+            if (!VirtualProtect(slot, sizeof(*slot), PAGE_EXECUTE_READWRITE, &oldProtect)) {
+                ROCK_LOG_ERROR(Init,
+                    "WeaponFireHandler hook install failed at 0x{:X}: VirtualProtect failed",
+                    entry.address());
+                s_originalWeaponFire = nullptr;
+                s_weaponFireHookInstallFailed.store(true, std::memory_order_release);
+                return false;
+            }
+
+            *slot = reinterpret_cast<std::uintptr_t>(&onWeaponFire);
+            FlushInstructionCache(GetCurrentProcess(), slot, sizeof(*slot));
+            DWORD unusedProtect = 0;
+            if (!VirtualProtect(slot, sizeof(*slot), oldProtect, &unusedProtect)) {
+                ROCK_LOG_WARN(Init,
+                    "WeaponFireHandler hook installed at 0x{:X}, but restoring page protection failed",
+                    entry.address());
+            }
+
+            s_weaponFireHookInstalled.store(true, std::memory_order_release);
+            ROCK_LOG_INFO(Init,
+                "Installed validated WeaponFireHandler manual-cycle hook at 0x{:X}, original=0x{:X}",
+                entry.address(),
+                reinterpret_cast<std::uintptr_t>(s_originalWeaponFire));
+            return true;
+        }
+
         [[nodiscard]] bool installReloadStateChangeHook()
         {
             if (s_reloadStateHookInstalled.load(std::memory_order_acquire)) {
@@ -1528,6 +1885,13 @@ namespace rock::native_animation_authority
     bool installPostUpdateHook()
     {
         if (s_hookInstalled.load(std::memory_order_acquire)) {
+            if (!s_weaponFireHookInstalled.load(std::memory_order_acquire) &&
+                !s_weaponFireHookInstallFailed.load(std::memory_order_acquire)) {
+                if (!installWeaponFireHook()) {
+                    ROCK_LOG_WARN(Init,
+                        "Native reload authority remains available, but bolt/lever hand-only animation is disabled because WeaponFireHandler was not installed");
+                }
+            }
             if (!s_primaryFiringGripHookInstalled.load(std::memory_order_acquire) &&
                 !s_primaryFiringGripHookInstallFailed.load(std::memory_order_acquire)) {
                 if (!installPrimaryFiringGripCaptureHook()) {
@@ -1571,12 +1935,16 @@ namespace rock::native_animation_authority
 
         s_originalPostUpdate = reinterpret_cast<PostUpdateAnimationGraphManagerFn>(original);
         s_hookInstalled.store(true, std::memory_order_release);
+        if (!installWeaponFireHook()) {
+            ROCK_LOG_WARN(Init,
+                "Native reload authority remains available, but bolt/lever hand-only animation is disabled because WeaponFireHandler was not installed");
+        }
         if (!installPrimaryFiringGripCaptureHook()) {
             ROCK_LOG_WARN(Init,
                 "Native reload authority remains available, but the authored firing-grip experiment is disabled because its paired native arm hook was not installed");
         }
         ROCK_LOG_INFO(Init,
-            "Native animation authority hooks ready; scope=arms,hands,Weapon/WeaponLeft lifecycle=ReloadStateChangeHandler API=v1");
+            "Native animation authority hooks ready; scope=arms,hands,Weapon/WeaponLeft lifecycle=WeaponFireHandler+ReloadStateChangeHandler API=v1");
         return true;
     }
 
@@ -1584,9 +1952,21 @@ namespace rock::native_animation_authority
     {
         s_runtimeEnabled.store(enabled && s_hookInstalled.load(std::memory_order_acquire), std::memory_order_release);
         if (!enabled) {
+            cancelLocalManualCycleTestLease();
             invalidateCapture();
             s_frameCaptureReady = false;
             resetHybridPoseState();
+        }
+    }
+
+    void setLocalManualCycleTestEnabled(const bool enabled)
+    {
+        const bool effectiveEnabled = enabled &&
+            s_hookInstalled.load(std::memory_order_acquire) &&
+            s_weaponFireHookInstalled.load(std::memory_order_acquire);
+        s_localManualCycleTestEnabled.store(effectiveEnabled, std::memory_order_release);
+        if (!effectiveEnabled) {
+            cancelLocalManualCycleTestLease();
         }
     }
 
@@ -1781,6 +2161,7 @@ namespace rock::native_animation_authority
                 "Native reload animation authority test lease ignored because the capture hook/skeleton is not ready");
             return;
         }
+        cancelLocalManualCycleTestLease();
         s_localReloadTestLeaseFrames.store(kLocalReloadTestLeaseFrames, std::memory_order_release);
         s_localReloadTestRequestSequence.fetch_add(1, std::memory_order_acq_rel);
         ROCK_LOG_INFO(Animation,
@@ -1788,17 +2169,20 @@ namespace rock::native_animation_authority
             kLocalReloadTestLeaseFrames);
     }
 
-    void beginRockFrame()
+    void beginRockFrame(const float deltaSeconds)
     {
         provider::refreshNativeAnimationAuthorityLeasesV1();
         const bool localReloadRequestChanged = refreshLocalReloadTestLease();
+        const bool localManualCycleRequestChanged =
+            refreshLocalManualCycleTestLease(deltaSeconds);
         s_frameCaptureReady = false;
         s_frameCaptureFlags = 0;
         s_frameCaptureSequence = 0;
 
         const std::uint32_t currentFlags = effectiveRequestedFlags();
         const std::uint32_t previousFlags = s_lastLoggedEffectiveFlags;
-        if (localReloadRequestChanged || currentFlags != previousFlags) {
+        if (localReloadRequestChanged || localManualCycleRequestChanged ||
+            currentFlags != previousFlags) {
             resetHybridPoseState();
         }
         if (currentFlags != s_lastLoggedEffectiveFlags) {
@@ -1836,21 +2220,68 @@ namespace rock::native_animation_authority
 
         bool sourceApplied = false;
         bool destinationApplied = false;
+        const bool fixedWeaponMode =
+            (s_frameCaptureFlags & native_animation_authority_policy::kWeapon) == 0;
+        RE::NiTransform fixedWeaponWorld{};
+        bool fixedWeaponTargetCaptured = false;
 #if defined(_MSC_VER)
         __try {
-            sourceApplied = applyToTree(s_cache.sourceTree, false, s_frameCaptureFlags);
-            destinationApplied = s_cache.destinationTree == s_cache.sourceTree ? sourceApplied :
-                applyToTree(s_cache.destinationTree, true, s_frameCaptureFlags);
+            fixedWeaponTargetCaptured = !fixedWeaponMode ||
+                refreshFixedVisibleWeaponTarget(fixedWeaponWorld);
+            if (fixedWeaponTargetCaptured) {
+                sourceApplied = applyToTree(
+                    s_cache.sourceTree,
+                    false,
+                    s_frameCaptureFlags);
+                if (fixedWeaponMode &&
+                    !restoreFixedVisibleWeaponTarget(fixedWeaponWorld)) {
+                    sourceApplied = false;
+                }
+                destinationApplied =
+                    s_cache.destinationTree == s_cache.sourceTree ?
+                    sourceApplied :
+                    sourceApplied && applyToTree(
+                        s_cache.destinationTree,
+                        true,
+                        s_frameCaptureFlags);
+                if (fixedWeaponMode && destinationApplied &&
+                    !restoreFixedVisibleWeaponTarget(fixedWeaponWorld)) {
+                    destinationApplied = false;
+                }
+            }
         } __except (EXCEPTION_EXECUTE_HANDLER) {
+            if (fixedWeaponMode && fixedWeaponTargetCaptured) {
+                (void)tryRestoreFixedVisibleWeaponTarget(fixedWeaponWorld);
+            }
             s_captureFault.store(true, std::memory_order_release);
             invalidateCapture();
             s_frameCaptureReady = false;
             return false;
         }
 #else
-        sourceApplied = applyToTree(s_cache.sourceTree, false, s_frameCaptureFlags);
-        destinationApplied = s_cache.destinationTree == s_cache.sourceTree ? sourceApplied :
-            applyToTree(s_cache.destinationTree, true, s_frameCaptureFlags);
+        fixedWeaponTargetCaptured = !fixedWeaponMode ||
+            refreshFixedVisibleWeaponTarget(fixedWeaponWorld);
+        if (fixedWeaponTargetCaptured) {
+            sourceApplied = applyToTree(
+                s_cache.sourceTree,
+                false,
+                s_frameCaptureFlags);
+            if (fixedWeaponMode &&
+                !restoreFixedVisibleWeaponTarget(fixedWeaponWorld)) {
+                sourceApplied = false;
+            }
+            destinationApplied =
+                s_cache.destinationTree == s_cache.sourceTree ?
+                sourceApplied :
+                sourceApplied && applyToTree(
+                    s_cache.destinationTree,
+                    true,
+                    s_frameCaptureFlags);
+            if (fixedWeaponMode && destinationApplied &&
+                !restoreFixedVisibleWeaponTarget(fixedWeaponWorld)) {
+                destinationApplied = false;
+            }
+        }
 #endif
         if (!sourceApplied || !destinationApplied) {
             s_frameCaptureReady = false;
@@ -1873,10 +2304,15 @@ namespace rock::native_animation_authority
     void resetTransientState()
     {
         s_runtimeEnabled.store(false, std::memory_order_release);
+        s_localManualCycleTestEnabled.store(false, std::memory_order_release);
         s_primaryFiringGripCaptureEnabled.store(false, std::memory_order_release);
         s_localReloadTestLeaseFrames.store(0, std::memory_order_release);
+        cancelLocalManualCycleTestLease();
         s_localReloadLeaseState = {};
+        s_localManualCycleLeaseState = {};
         s_seenLocalReloadTestRequestSequence = s_localReloadTestRequestSequence.load(std::memory_order_acquire);
+        s_seenLocalManualCycleTestRequestSequence =
+            s_localManualCycleTestRequestSequence.load(std::memory_order_acquire);
         s_playerReloadEventActive.store(false, std::memory_order_release);
         invalidateCapture();
         invalidatePrimaryFiringGripCapture();

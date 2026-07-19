@@ -70,6 +70,10 @@ namespace rock::native_animation_authority
     [[nodiscard]] bool installPostUpdateHook();
 
     void setRuntimeEnabled(bool enabled);
+    // The existing native-reload experiment also owns a ROCK-local manual
+    // weapon-cycle window. It applies native arms/hands while preserving the
+    // live ROCK weapon world transform.
+    void setLocalManualCycleTestEnabled(bool enabled);
     // Independent ROCK-only experiment capture. A byte-validated native arm
     // hook records Bethesda's paired primary/support poses before hFRIK
     // replaces them. The runtime inverts the primary relation onto the live
@@ -95,7 +99,7 @@ namespace rock::native_animation_authority
         std::uint16_t& outFingerLocalTransformMask,
         std::uint64_t& outCaptureSequence);
     void requestLocalReloadTestLease();
-    void beginRockFrame();
+    void beginRockFrame(float deltaSeconds);
     [[nodiscard]] bool applyCapturedPose();
     void completeRockFrame();
     void resetTransientState();

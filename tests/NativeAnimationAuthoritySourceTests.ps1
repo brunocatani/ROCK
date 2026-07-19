@@ -32,7 +32,7 @@ Require-Text 'src/ROCKMain.cpp' `
     'case\s+LE::kSkeletonReady:[\s\S]*installPostUpdateHook\(\)' `
     'ROCK must install only after the FRIK skeleton-ready boundary.'
 Require-Text 'src/ROCKMain.cpp' `
-    'beginRockFrame\(\)[\s\S]*applyCapturedPose\(\)[\s\S]*onFrameUpdate\(\)[\s\S]*applyCapturedPose\(\)[\s\S]*completeRockFrame\(\)' `
+    'beginRockFrame\([\s\S]{0,120}deltaSeconds[\s\S]*applyCapturedPose\(\)[\s\S]*onFrameUpdate\(\)[\s\S]*applyCapturedPose\(\)[\s\S]*completeRockFrame\(\)' `
     'The captured pose must bracket ROCK sampling and remain the final visual writer.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthorityPolicy.h' `
     'equalsIgnoreCase\(name,\s*"Weapon"\)[\s\S]*LArm_[\s\S]*RArm_' `
@@ -46,12 +46,27 @@ Reject-Text 'src/physics-interaction/animation/NativeAnimationAuthorityPolicy.h'
 Require-Text 'src/physics-interaction/native/HavokOffsets.h' `
     'kFunc_ReloadStateChangeHandler_Handle\s*=\s*0x0FF2B90[\s\S]*kFunc_GetReloadStartStateToken\s*=\s*0x16A3070[\s\S]*kFunc_GetReloadEndStateToken\s*=\s*0x16A30D0[\s\S]*kVtableEntry_ReloadStateChangeHandler_Handle\s*=\s*0x2D8D300' `
     'Reload lifecycle authority must stay pinned to the independently verified FO4VR handler, tokens, and vtable slot.'
+Require-Text 'src/physics-interaction/native/HavokOffsets.h' `
+    'kFunc_WeaponFireHandler_Handle\s*=\s*0x0FF2A40[\s\S]*kVtableEntry_WeaponFireHandler_Handle\s*=\s*0x2D8D2E8' `
+    'Manual-cycle authority must stay pinned to the independently verified FO4VR WeaponFire handler and vtable slot.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
     'onReloadStateChange[\s\S]*nativeReloadStartStateToken[\s\S]*s_playerReloadStartSequence\.fetch_add[\s\S]*nativeReloadEndStateToken[\s\S]*s_playerReloadEndSequence\.fetch_add' `
     'The lifecycle hook must classify the verified Bethesda start/end tokens and publish player-only event sequences.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
     'advanceLocalReloadLease[\s\S]*installReloadStateChangeHook[\s\S]*expectedTarget[\s\S]*kFunc_ReloadStateChangeHandler_Handle[\s\S]*VirtualProtect' `
     'The local ROCK test lease must consume event sequences from a validated ReloadStateChangeHandler vtable hook.'
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
+    'onWeaponFire[\s\S]*actor\s*!=\s*player[\s\S]*currentPlayerWeaponInstanceData[\s\S]*WEAPON_FLAGS::kBoltAction[\s\S]*s_localManualCycleTestRequestSequence\.fetch_add' `
+    'The hand-only cycle must arm only from a handled player WeaponFire event and the live instance-aware Bethesda bolt-action flag.'
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
+    'onWeaponFire[\s\S]*reloadEndSequenceBeforeFire[\s\S]*s_originalWeaponFire[\s\S]*s_localManualCycleReloadEndSequenceAtArm\.store\([\s\S]*reloadEndSequenceBeforeFire' `
+    'The manual-cycle bracket baseline must be sampled before Bethesda can synchronously publish the clip frame-zero marker.'
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
+    'advanceLocalManualCycleLease[\s\S]*installWeaponFireHook[\s\S]*kVtableEntry_WeaponFireHandler_Handle[\s\S]*kFunc_WeaponFireHandler_Handle[\s\S]*VirtualProtect' `
+    'The manual-cycle lease must consume the native ReloadEnd bracket after a validated WeaponFire vtable hook.'
+Require-Text 'src/ROCKMain.cpp' `
+    'setLocalManualCycleTestEnabled\([\s\S]{0,180}rockNativeReloadAnimationAuthorityTestEnabled' `
+    'The manual-cycle path must remain gated by the existing native reload authority experiment flag.'
 Reject-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
     'gunState\s*==\s*RE::GUN_STATE::kReloading' `
     'FO4VR does not publish this VR reload path through ActorState::gunState; lifecycle code must not regress to that poll.'
@@ -67,6 +82,15 @@ Reject-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
     'parentIsSelected\(transform\.parPos,[\s\S]*composeTransforms\(correction,\s*nativeRootWorld\)' `
     'The controller aim correction must be applied once at selected hierarchy roots, not independently per bone.'
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthorityPolicy.h' `
+    'kManualCyclePose\s*=\s*kArms\s*\|\s*kHands[\s\S]*advanceLocalManualCycleLease[\s\S]*observedReloadEndEvents\s*>=\s*2' `
+    'Manual-cycle authority must exclude Weapon and end on the native bolt/lever clip bracket.'
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
+    'weaponTransformRequested[\s\S]*resolveWorldTargetCorrection\(\s*aimFrame\.controlWeaponWorld,\s*nativeWeaponWorld\)[\s\S]*refreshFixedVisibleWeaponTarget[\s\S]*restoreFixedVisibleWeaponTarget' `
+    'Arms/hands-only authority must rebase onto and restore the current visible ROCK-held Weapon world.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'nativeReloadAuthorityActive\s*=[\s\S]{0,180}effectiveFlags\s*&[\s\S]{0,120}kWeapon' `
+    'Arms/hands-only cycling must not suspend ROCK authored weapon alignment.'
 Require-Text 'src/api/ROCKProviderApi.h' `
     'ROCK_PROVIDER_API_VERSION\s*=\s*1[\s\S]*NativeAnimationAuthority[\s\S]*setNativeAnimationAuthorityV1[\s\S]*clearNativeAnimationAuthorityV1' `
     'The authority lease must append to API V1 without a version bump.'
