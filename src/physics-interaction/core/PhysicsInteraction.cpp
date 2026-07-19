@@ -2482,10 +2482,11 @@ namespace rock
                 auto& bodyIdAtomic = isLeft ? _leftWeaponContactBodyId : _rightWeaponContactBodyId;
                 auto& missedFrames = isLeft ? _leftWeaponContactMissedFrames : _rightWeaponContactMissedFrames;
                 auto& sequence = isLeft ? _leftWeaponContactSequence : _rightWeaponContactSequence;
-                auto source = weapon_debug_notification_policy::WeaponContactSource::None;
+                auto& acquisitionState = _weaponInteractionAcquisitionStates[isLeft ? 0u : 1u];
 
                 const std::uint32_t weaponBodyId = bodyIdAtomic.exchange(INVALID_CONTACT_BODY_ID, std::memory_order_acquire);
-                if (weaponBodyId != INVALID_CONTACT_BODY_ID) {
+                const bool physicalContactObserved = weaponBodyId != INVALID_CONTACT_BODY_ID;
+                if (physicalContactObserved) {
                     missedFrames.store(0, std::memory_order_release);
                     /*
                      * Contact evidence only gates "the hand is touching the
@@ -2500,20 +2501,16 @@ namespace rock
                         _weaponCollision.tryFindInteractionContactNearPoint(
                             weaponNode, handInput.grabAnchorWorld, g_rockConfig.rockWeaponInteractionProbeRadius, outContact)) {
                         publishWeaponProbeContact(isLeft, outContact);
-                        source = weapon_debug_notification_policy::WeaponContactSource::Contact;
                     } else if (!_weaponCollision.tryGetWeaponContactAtomic(weaponBodyId, outContact)) {
                         clearWeaponContactForHand(isLeft);
                         outContact = {};
-                        source = weapon_debug_notification_policy::WeaponContactSource::None;
                     } else {
                         outContact.sequence = sequence.load(std::memory_order_acquire);
-                        source = weapon_debug_notification_policy::WeaponContactSource::Contact;
                     }
                 } else if (weaponNode && probeAllowed) {
                     const RE::NiPoint3 probePoint = handInput.grabAnchorWorld;
                     if (_weaponCollision.tryFindInteractionContactNearPoint(weaponNode, probePoint, g_rockConfig.rockWeaponInteractionProbeRadius, outContact)) {
                         publishWeaponProbeContact(isLeft, outContact);
-                        source = weapon_debug_notification_policy::WeaponContactSource::Probe;
                         if (g_rockConfig.rockDebugVerboseLogging && ++_weaponInteractionProbeLogCounter >= 90) {
                             _weaponInteractionProbeLogCounter = 0;
                             ROCK_LOG_DEBUG(Weapon,
@@ -2539,7 +2536,19 @@ namespace rock
                     }
                 }
 
-                return source;
+                outContact.acquisitionSource = weapon_interaction_acquisition_policy::resolve(
+                    acquisitionState,
+                    physicalContactObserved,
+                    outContact.valid);
+                switch (outContact.acquisitionSource) {
+                case WeaponInteractionAcquisitionSource::PhysicalContact:
+                    return weapon_debug_notification_policy::WeaponContactSource::Contact;
+                case WeaponInteractionAcquisitionSource::ProximityProbe:
+                    return weapon_debug_notification_policy::WeaponContactSource::Probe;
+                case WeaponInteractionAcquisitionSource::None:
+                default:
+                    return weapon_debug_notification_policy::WeaponContactSource::None;
+                }
             };
 
             // A loose-weapon equip carries the originating physical hand into
@@ -3458,6 +3467,7 @@ namespace rock
         _leftWeaponContactActionRole.store(static_cast<std::uint32_t>(WeaponActionRole::None), std::memory_order_release);
         _leftWeaponContactGripPose.store(static_cast<std::uint32_t>(WeaponGripPoseId::None), std::memory_order_release);
         _leftWeaponContactMissedFrames.store(WEAPON_CONTACT_TIMEOUT_FRAMES + 1, std::memory_order_release);
+        _weaponInteractionAcquisitionStates[0] = {};
     }
 
     void PhysicsInteraction::clearRightWeaponContact()
@@ -3470,6 +3480,7 @@ namespace rock
         _rightWeaponContactActionRole.store(static_cast<std::uint32_t>(WeaponActionRole::None), std::memory_order_release);
         _rightWeaponContactGripPose.store(static_cast<std::uint32_t>(WeaponGripPoseId::None), std::memory_order_release);
         _rightWeaponContactMissedFrames.store(WEAPON_CONTACT_TIMEOUT_FRAMES + 1, std::memory_order_release);
+        _weaponInteractionAcquisitionStates[1] = {};
     }
 
     bool PhysicsInteraction::isHandContactEvidenceSuppressed(bool isLeft) const

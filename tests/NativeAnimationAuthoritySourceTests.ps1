@@ -233,8 +233,8 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'hasRightFiringHandCanonicalFrame[\s\S]*_rightFiringHandCanonicalWeaponNode\s*==\s*weaponNode[\s\S]*_rightFiringHandCanonicalGenerationKey\s*==\s*weaponGenerationKey[\s\S]*_rightFiringHandCanonicalOwnershipKey\s*==\s*weaponOwnershipKey' `
     'Canonical consumption must reject the one-frame equip race where node and collision generation are unchanged but equipped ownership has advanced.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'refreshRightNativeCanonicalFrame[\s\S]*_rightNaturalBoneInWand\s*=\s*boneInRightWand[\s\S]*hasRightFiringHandCanonicalFrame[\s\S]*RightFiringCanonicalSource::AuthoredAnimation[\s\S]*return;[\s\S]*RightFiringCanonicalSource::NativeCarry' `
-    'Native presentation refresh must retain anatomy sampling without overwriting a matching authored canonical.'
+    'refreshNaturalHandInWandFrames[\s\S]*refreshHand\(false,[\s\S]*_rightNaturalBoneInWand[\s\S]*refreshHand\(true,[\s\S]*_leftNaturalBoneInWand[\s\S]*refreshRightNativeCanonicalFrame[\s\S]*hasRightFiringHandCanonicalFrame[\s\S]*RightFiringCanonicalSource::AuthoredAnimation[\s\S]*return;[\s\S]*RightFiringCanonicalSource::NativeCarry' `
+    'Native presentation refresh must retain both physical hand-to-wand anatomy frames without overwriting a matching authored canonical.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'tryComputeMirroredLeftFiringHandWeaponLocal[\s\S]*hasRightFiringHandCanonicalFrame[\s\S]*tryBuildMirroredLeftFiringHandWeaponLocal\([\s\S]*_rightFiringHandCanonicalWeaponLocal,[\s\S]*_rightFiringGripCanonicalWeaponLocal[\s\S]*authored-animation' `
     'Physical-left firing must consume the generation- and identity-matched canonical plus its authored Weapon-relative palm seat through the existing wand mirror.'
@@ -248,11 +248,26 @@ if (-not $leftMirrorConsumerMatch.Success) {
     $failures.Add('The authored left mirror must never fall back to the live/session _primaryGripLocal when a canonical frame is selected.')
 }
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'capturePartGrip[\s\S]*shouldUseAuthoredSupportGrip[\s\S]*providerAuthorityActive\s*=\s*providerPartAuthority\.active[\s\S]*grip\.handWeaponLocal\s*=[\s\S]*fingerLocalTransforms[\s\S]*return\s+true;[\s\S]*tryGetSupportGripEvidenceView' `
-    'Support acquisition must prioritize provider authority, latch the complete authored frame inside its zone, and retain the existing dynamic mesh fallback.'
+    'capturePartGrip[\s\S]*shouldUseAuthoredSupportGrip[\s\S]*decision\.acquisitionSource\s*==[\s\S]*WeaponInteractionAcquisitionSource::ProximityProbe[\s\S]*_authorityMode\s*==[\s\S]*WeaponSupportAuthorityMode::FullTwoHandedSolver[\s\S]*providerAuthorityActive\s*=\s*providerPartAuthority\.active[\s\S]*attachOnly\s*=\s*grip\.attachOnly[\s\S]*grip\.handWeaponLocal\s*=[\s\S]*fingerLocalTransforms[\s\S]*return\s+true;[\s\S]*fingerScratch\.ranking\.clear' `
+    'Support acquisition must use the exact authored frame only for a pure proximity probe with full solver authority, then retain the dynamic mesh fallback.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthorityPolicy.h' `
-    'shouldUseAuthoredSupportGrip[\s\S]*!input\.providerAuthorityActive[\s\S]*input\.weaponRelativeHandDistanceGameUnits\s*<=\s*input\.snapRadiusGameUnits' `
-    'The authored support selector must preserve provider priority and require tight Weapon-relative hand-target proximity.'
+    'shouldUseAuthoredSupportGrip[\s\S]*input\.proximityProbeAcquisition[\s\S]*input\.fullTwoHandedAuthority[\s\S]*!input\.providerAuthorityActive[\s\S]*!input\.attachOnly' `
+    'The authored support selector must reject physical contact, VisualOnlySupport handoff, provider authority, and AttachOnly reload glue.'
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthorityPolicy.h' `
+    'shouldUseAuthoredFiringGripProbe[\s\S]*input\.proximityProbeAcquisition[\s\S]*input\.fullTwoHandedAuthority[\s\S]*!input\.providerAuthorityActive[\s\S]*!input\.attachOnly' `
+    'Authored firing-grip probe takeover must preserve the same VisualOnlySupport and AttachOnly exclusions.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'tryReattachFiringGrip[\s\S]*authoredProviderAuthorityActive[\s\S]*authoredAttachOnlyAuthorityActive[\s\S]*shouldUseAuthoredFiringGripProbe[\s\S]*fullTwoHandedAuthority\s*=[\s\S]*FullTwoHandedSolver[\s\S]*providerAuthorityActive\s*=\s*authoredProviderAuthorityActive[\s\S]*attachOnly\s*=\s*authoredAttachOnlyAuthorityActive[\s\S]*updatePartCarryGrip[\s\S]*authoredProviderAuthorityActive\s*=[\s\S]*leftRuntimeState\.providerPartAuthority\.active[\s\S]*rightRuntimeState\.providerPartAuthority\.active[\s\S]*authoredAttachOnlyAuthorityActive\s*=[\s\S]*providerGrabModeIsAttachOnly[\s\S]*partGrip\(true\)\.attachOnly[\s\S]*partGrip\(false\)\.attachOnly' `
+    'Firing-grip probe takeover must wire both hands'' live provider/AttachOnly state and the actual full-authority mode into the authored policy.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'physicalContactObserved[\s\S]*weapon_interaction_acquisition_policy::resolve\([\s\S]*acquisitionState,[\s\S]*physicalContactObserved,[\s\S]*outContact\.valid[\s\S]*WeaponInteractionAcquisitionSource::PhysicalContact[\s\S]*WeaponInteractionAcquisitionSource::ProximityProbe' `
+    'Contact consumption must explicitly distinguish physical/recent contact from proximity-probe acquisition.'
+Require-Text 'src/physics-interaction/weapon/WeaponInteraction.h' `
+    'kPhysicalContactGraceFrames\s*=\s*2[\s\S]*physicalContactGraceFramesRemaining[\s\S]*decision\.acquisitionSource\s*=\s*contact\.acquisitionSource' `
+    'Acquisition provenance must survive callback jitter and propagate through weapon routing.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'setAuthoredSupportGripCandidate[\s\S]*tryBuildMirroredRightSupportHandWeaponLocal[\s\S]*mirrorFingerLocalTransforms\([\s\S]*Hand::Left[\s\S]*candidate\.rightMirrorValid\s*=\s*true[\s\S]*tryResolveAuthoredSupportGripCandidateForHand[\s\S]*candidate\.rightMirrorValid' `
+    'Physical-right support must consume a complete transform and anatomical finger mirror derived from Bethesda''s physical-left support pose.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'resolveAuthoredSupportWeaponRelativeProximity[\s\S]*invertTransform\(weaponWorld\)[\s\S]*liveHandWeaponLocal[\s\S]*authoredHandWeaponLocal\.translate\.x[\s\S]*weaponLocalDistance\s*\*\s*std::abs\(weaponWorld\.scale\)' `
     'The authored support distance must compare live and captured LArm_Hand translations in one current Weapon frame and convert the local result back to game units.'
@@ -261,7 +276,7 @@ Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'The authored selector must not regress to world-space or configured-palm proximity.'
 Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
     'drawAuthoredSupportGripDebug[\s\S]*getAuthoredSupportGripDebugSnapshot[\s\S]*AuthoredSupportGripTarget[\s\S]*AuthoredSupportGripPalmSeat[\s\S]*AuthoredSupportGripLiveSample[\s\S]*weaponRelativeDistanceGameUnits' `
-    'The experimental path must continuously visualize its authored target, solver palm seat, live sample, and measured Weapon-relative error before acquisition.'
+    'The experimental path must continuously visualize its role-correct authored target, solver palm seat, live sample, and diagnostic Weapon-relative error.'
 Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'applyAuthoredPrimaryGripWeaponAlignment[\s\S]{0,600}isManualOwnershipActive\(\)' `
     'Right-hand PrimaryOnly bookkeeping must not suppress the authored weapon calibration.'
@@ -275,15 +290,18 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'updateAuthoredPrimaryFiringGripExperiment[\s\S]*getCurrentEquippedWeaponOwnershipKey\(\)[\s\S]*weaponOwnershipKey\s*=\s*currentEquippedWeaponFormId\(\)' `
     'The experiment must retain a weapon freshness key when generated weapon collision is disabled.'
 Require-Text 'src/RockConfig.cpp' `
-    'rockAuthoredPrimaryFiringGripTestEnabled\s*=\s*false[\s\S]*rockAuthoredSupportGripSnapRadius\s*=\s*2\.0f[\s\S]*GetBoolValue\(\s*EXPERIMENTAL_SECTION,\s*"bAuthoredPrimaryFiringGripTestEnabled"[\s\S]*"fAuthoredSupportGripSnapRadius"[\s\S]*std::clamp\(rockAuthoredSupportGripSnapRadius,\s*0\.25f,\s*12\.0f\)' `
-    'The authored firing-grip experiment must default off and load a bounded support snap radius only from [Experimental].'
+    'rockAuthoredPrimaryFiringGripTestEnabled\s*=\s*false[\s\S]*GetBoolValue\(\s*EXPERIMENTAL_SECTION,\s*"bAuthoredPrimaryFiringGripTestEnabled"' `
+    'The authored firing-grip experiment must default off and load only from [Experimental].'
+Reject-Text 'src/RockConfig.cpp' `
+    'rockAuthoredSupportGripSnapRadius|fAuthoredSupportGripSnapRadius' `
+    'The obsolete distance-gated authored support radius must not remain in runtime configuration.'
 foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
     $configText = Get-Content -Raw -LiteralPath (Join-Path $Root $configPath)
     $experimentalMatch = [regex]::Match($configText, '(?ms)^\[Experimental\]\s*(?<body>.*?)(?=^\[[^\]]+\])')
     if (-not $experimentalMatch.Success -or
         $experimentalMatch.Groups['body'].Value -notmatch '(?m)^bAuthoredPrimaryFiringGripTestEnabled\s*=\s*false\s*$' -or
-        $experimentalMatch.Groups['body'].Value -notmatch '(?m)^fAuthoredSupportGripSnapRadius\s*=\s*2\.0\s*$') {
-        $failures.Add("$configPath`: Authored firing-grip experiment and support snap radius must exist under [Experimental] with safe defaults.")
+        $experimentalMatch.Groups['body'].Value -match '(?m)^fAuthoredSupportGripSnapRadius\s*=') {
+        $failures.Add("$configPath`: Authored firing-grip experiment must exist under [Experimental] without the obsolete distance gate.")
     }
 }
 

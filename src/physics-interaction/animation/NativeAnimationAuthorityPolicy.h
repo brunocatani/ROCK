@@ -71,15 +71,24 @@ namespace rock::native_animation_authority_policy
     struct AuthoredSupportGripCandidateInput
     {
         bool featureEnabled{ false };
-        bool rightFiringTopology{ false };
-        bool supportHandIsLeft{ false };
+        bool proximityProbeAcquisition{ false };
+        bool fullTwoHandedAuthority{ false };
         bool providerAuthorityActive{ false };
+        bool attachOnly{ false };
         bool captureValid{ false };
         bool weaponIdentityMatches{ false };
         bool generationMatches{ false };
         bool completeFingerPose{ false };
-        float weaponRelativeHandDistanceGameUnits{ 0.0f };
-        float snapRadiusGameUnits{ 0.0f };
+    };
+
+    struct AuthoredFiringGripProbeInput
+    {
+        bool featureEnabled{ false };
+        bool proximityProbeAcquisition{ false };
+        bool fullTwoHandedAuthority{ false };
+        bool providerAuthorityActive{ false };
+        bool attachOnly{ false };
+        bool authoredCanonicalAvailable{ false };
     };
 
     [[nodiscard]] constexpr bool shouldApplyAuthoredPrimaryFiringGrip(
@@ -106,26 +115,34 @@ namespace rock::native_animation_authority_policy
 
     /*
      * Explicit consumer/provider authority remains the highest-priority part
-     * grab. Bethesda's authored support grip is selected only at acquisition,
-     * only for the paired left support hand, and only when the live LArm_Hand
-     * origin is already inside the tight authored snap zone after both live
-     * and captured transforms are expressed in the current Weapon frame.
-     * Every other case falls through to ROCK's unrestricted dynamic mesh grab.
+     * grab. Bethesda's authored support grip is selected only for a pure
+     * proximity acquisition under full two-handed authority. Physical/recent
+     * contact keeps ROCK's unrestricted mesh grab; VisualOnlySupport remains
+     * the firing-grip handoff path; AttachOnly remains consumer-owned glue.
      */
     [[nodiscard]] constexpr bool shouldUseAuthoredSupportGrip(
         const AuthoredSupportGripCandidateInput& input)
     {
         return input.featureEnabled &&
-               input.rightFiringTopology &&
-               input.supportHandIsLeft &&
+               input.proximityProbeAcquisition &&
+               input.fullTwoHandedAuthority &&
                !input.providerAuthorityActive &&
+               !input.attachOnly &&
                input.captureValid &&
                input.weaponIdentityMatches &&
                input.generationMatches &&
-               input.completeFingerPose &&
-               input.weaponRelativeHandDistanceGameUnits >= 0.0f &&
-               input.snapRadiusGameUnits > 0.0f &&
-               input.weaponRelativeHandDistanceGameUnits <= input.snapRadiusGameUnits;
+               input.completeFingerPose;
+    }
+
+    [[nodiscard]] constexpr bool shouldUseAuthoredFiringGripProbe(
+        const AuthoredFiringGripProbeInput& input)
+    {
+        return input.featureEnabled &&
+               input.proximityProbeAcquisition &&
+               input.fullTwoHandedAuthority &&
+               !input.providerAuthorityActive &&
+               !input.attachOnly &&
+               input.authoredCanonicalAvailable;
     }
 
     [[nodiscard]] constexpr LocalReloadLeaseStep advanceLocalReloadLease(

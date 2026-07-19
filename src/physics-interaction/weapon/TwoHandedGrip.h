@@ -100,9 +100,9 @@ namespace rock
         RE::NiPoint3 leftGripWorld{};
     };
 
-    // Frame-local proof of the authored support gate. Both hand transforms
-    // are expressed in the exact current Weapon frame before distance is
-    // measured; world values exist only for renderer visualization/readback.
+    // Frame-local authored support target diagnostics. Both hand transforms
+    // are expressed in the exact current Weapon frame; world values exist
+    // only for renderer visualization/readback.
     struct AuthoredSupportGripDebugSnapshot
     {
         RE::NiTransform weaponWorld{};
@@ -115,10 +115,10 @@ namespace rock
         float weaponRelativeDistanceGameUnits{ 0.0f };
         float worldReadbackDistanceGameUnits{ 0.0f };
         float frameAgreementErrorGameUnits{ 0.0f };
-        float snapRadiusGameUnits{ 0.0f };
         std::uint64_t weaponGenerationKey{ 0 };
         std::uint64_t captureSequence{ 0 };
-        bool insideSnapRadius{ false };
+        bool supportHandIsLeft{ true };
+        bool mirroredForRightSupport{ false };
     };
 
     enum class NativeScopeCameraWriteSource : std::uint8_t
@@ -320,8 +320,9 @@ namespace rock
          * Ephemeral pre-update candidate derived from Bethesda's paired
          * support-arm pass. AuthoredPrimaryFiringGripRuntime clears it at the
          * start of every frame and republishes only a fresh, generation-bound
-         * relation. capturePartGrip latches it only inside the configured
-         * proximity zone; it never changes an already-active grip.
+         * relation. capturePartGrip latches it only for proximity-probe
+         * acquisition under full solver authority; it never changes an
+         * already-active grip.
          */
         void clearAuthoredSupportGripCandidate();
         bool setAuthoredSupportGripCandidate(
@@ -617,11 +618,15 @@ namespace rock
             // pre-update/update pair. It is never dereferenced after the
             // candidate is cleared or across a weapon-generation boundary.
             RE::NiNode* weaponNode{ nullptr };
-            RE::NiTransform handWeaponLocal{};
-            std::array<RE::NiTransform, 15> fingerLocalTransforms{};
-            std::uint16_t fingerLocalTransformMask{ 0 };
+            RE::NiTransform leftHandWeaponLocal{};
+            RE::NiTransform rightHandWeaponLocal{};
+            std::array<RE::NiTransform, 15> leftFingerLocalTransforms{};
+            std::array<RE::NiTransform, 15> rightFingerLocalTransforms{};
+            std::uint16_t leftFingerLocalTransformMask{ 0 };
+            std::uint16_t rightFingerLocalTransformMask{ 0 };
             std::uint64_t weaponGenerationKey{ 0 };
             std::uint64_t captureSequence{ 0 };
+            bool rightMirrorValid{ false };
             bool valid{ false };
         };
 
@@ -717,6 +722,7 @@ namespace rock
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey,
             std::uint64_t currentEquippedWeaponOwnershipKey);
+        void refreshNaturalHandInWandFrames();
         void clearRightFiringHandCanonicalFrame();
         bool hasRightFiringHandCanonicalFrame(
             const RE::NiNode* weaponNode,
@@ -727,6 +733,18 @@ namespace rock
             RE::NiTransform& outHandWeaponLocal,
             bool* outUsedAuthoredCanonical = nullptr) const;
 
+        bool tryBuildMirroredRightSupportHandWeaponLocal(
+            const RE::NiTransform& leftHandWeaponLocal,
+            RE::NiTransform& outRightHandWeaponLocal) const;
+
+        bool tryResolveAuthoredSupportGripCandidateForHand(
+            bool isLeft,
+            RE::NiNode* weaponNode,
+            std::uint64_t weaponGenerationKey,
+            RE::NiTransform& outHandWeaponLocal,
+            std::array<RE::NiTransform, 15>& outFingerLocalTransforms,
+            std::uint16_t& outFingerLocalTransformMask) const;
+
         /*
          * Reattach validates the hand first and only then commits; a takeover
          * by the non-firing hand flips the firing-hand role inside the commit
@@ -734,7 +752,17 @@ namespace rock
          * frames - the hands only choose who fires, the grip stays
          * weapon-relative.
          */
-        bool tryReattachFiringGrip(bool handIsLeft, RE::NiNode* weaponNode, const WeaponInteractionContact& handWeaponContact);
+        bool tryReattachFiringGrip(
+            bool handIsLeft,
+            RE::NiNode* weaponNode,
+            const WeaponInteractionContact& handWeaponContact,
+            bool authoredProviderAuthorityActive,
+            bool authoredAttachOnlyAuthorityActive);
+
+        bool tryResolveAuthoredFiringHandCanonicalForProbe(
+            bool handIsLeft,
+            RE::NiTransform& outHandWeaponLocal,
+            const char*& outSource) const;
 
         bool firingGripContactMatchesCapturedGrip(
             RE::NiNode* weaponNode,
@@ -920,15 +948,15 @@ namespace rock
         bool _authoredPrimaryFingerPoseSuppressed{ false };
 
         /*
-         * Natural right hand-bone-in-wand relation, snapshotted only while
-         * the weapon rides the native right carry (hand guaranteed unlocked,
-         * same gates as the canonical refresh). Weapon-independent anatomy,
-         * so it is deliberately NOT generation-keyed. Consumed by the left
-         * mirror when the live right bone is part-grip-locked and therefore
-         * not expressing the wand-riding relation the conjugation needs.
+         * Natural physical hand-bone-in-wand relations. They are refreshed
+         * only while ROCK has no visual authority for that hand and are
+         * deliberately not weapon-generation keyed. The firing and support
+         * mirrors consume these anatomy frames instead of a locked hand pose.
          */
         RE::NiTransform _rightNaturalBoneInWand{};
+        RE::NiTransform _leftNaturalBoneInWand{};
         bool _hasRightNaturalBoneInWand{ false };
+        bool _hasLeftNaturalBoneInWand{ false };
 
         std::array<ScopeSafeHandFrameState, 2> _scopeSafeHandFrames{};
         bool _scopeMenuOpenThisFrame{ false };

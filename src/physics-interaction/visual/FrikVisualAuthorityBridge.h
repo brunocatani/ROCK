@@ -48,6 +48,7 @@ namespace rock::frik_visual_authority
 
         using BlockPrimaryHandWeaponPoseFn = bool(FRIK_CALL*)(const char*, bool);
         using MirrorPrimaryWeaponFingerLocalTransformsFn = bool(FRIK_CALL*)(const FingerLocalTransformOverride*, FingerLocalTransformOverride*);
+        using MirrorFingerLocalTransformsFn = bool(FRIK_CALL*)(Hand, const FingerLocalTransformOverride*, FingerLocalTransformOverride*);
 
         [[nodiscard]] inline BlockPrimaryHandWeaponPoseFn blockPrimaryHandWeaponPoseExport()
         {
@@ -81,6 +82,24 @@ namespace rock::frik_visual_authority
                 }
                 attemptedWithLoadedFrik = true;
                 fn = reinterpret_cast<MirrorPrimaryWeaponFingerLocalTransformsFn>(GetProcAddress(frikDll, "FRIKAPI_MirrorPrimaryWeaponFingerLocalTransforms"));
+            }
+            return fn;
+        }
+
+        [[nodiscard]] inline MirrorFingerLocalTransformsFn mirrorFingerLocalTransformsExport()
+        {
+            static MirrorFingerLocalTransformsFn fn = nullptr;
+            static bool attemptedWithLoadedFrik = false;
+            if (!fn) {
+                const auto frikDll = GetModuleHandleA("FRIK.dll");
+                if (!frikDll) {
+                    return nullptr;
+                }
+                if (attemptedWithLoadedFrik) {
+                    return nullptr;
+                }
+                attemptedWithLoadedFrik = true;
+                fn = reinterpret_cast<MirrorFingerLocalTransformsFn>(GetProcAddress(frikDll, "FRIKAPI_MirrorFingerLocalTransforms"));
             }
             return fn;
         }
@@ -488,13 +507,29 @@ namespace rock::frik_visual_authority
         return detail::blockPrimaryHandWeaponPoseExport() != nullptr;
     }
 
-    [[nodiscard]] inline bool mirrorPrimaryWeaponFingerLocalTransforms(const FingerLocalTransformOverride& rightTransforms, FingerLocalTransformOverride& outLeftTransforms)
+    [[nodiscard]] inline bool mirrorFingerLocalTransforms(Hand sourceHand, const FingerLocalTransformOverride& sourceTransforms, FingerLocalTransformOverride& outTargetTransforms)
     {
-        const auto fn = detail::mirrorPrimaryWeaponFingerLocalTransformsExport();
-        return fn && fn(&rightTransforms, &outLeftTransforms);
+        if (const auto fn = detail::mirrorFingerLocalTransformsExport()) {
+            return fn(sourceHand, &sourceTransforms, &outTargetTransforms);
+        }
+        if (sourceHand == Hand::Right) {
+            const auto legacyFn = detail::mirrorPrimaryWeaponFingerLocalTransformsExport();
+            return legacyFn && legacyFn(&sourceTransforms, &outTargetTransforms);
+        }
+        return false;
     }
 
-    [[nodiscard]] inline bool canMirrorPrimaryWeaponFingerLocalTransforms() { return detail::mirrorPrimaryWeaponFingerLocalTransformsExport() != nullptr; }
+    [[nodiscard]] inline bool mirrorPrimaryWeaponFingerLocalTransforms(const FingerLocalTransformOverride& rightTransforms, FingerLocalTransformOverride& outLeftTransforms)
+    {
+        return mirrorFingerLocalTransforms(Hand::Right, rightTransforms, outLeftTransforms);
+    }
+
+    [[nodiscard]] inline bool canMirrorPrimaryWeaponFingerLocalTransforms()
+    {
+        return detail::mirrorFingerLocalTransformsExport() != nullptr || detail::mirrorPrimaryWeaponFingerLocalTransformsExport() != nullptr;
+    }
+
+    [[nodiscard]] inline bool canMirrorFingerLocalTransforms() { return detail::mirrorFingerLocalTransformsExport() != nullptr; }
 
     // Appended v5 table member - null on older FRIK builds, so availability gates the
     // ambidextrous firing-grip feature instead of failing at call time.

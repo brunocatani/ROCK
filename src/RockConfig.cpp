@@ -159,7 +159,6 @@ namespace rock
         rockDeveloperModeEnabled = false;
         rockNativeReloadAnimationAuthorityTestEnabled = false;
         rockAuthoredPrimaryFiringGripTestEnabled = false;
-        rockAuthoredSupportGripSnapRadius = 2.0f;
 
         rockLogLevel = logging_policy::DefaultLogLevel;
         rockLogPattern = logging_policy::DefaultLogPattern;
@@ -1417,26 +1416,6 @@ namespace rock
             EXPERIMENTAL_SECTION,
             "bAuthoredPrimaryFiringGripTestEnabled",
             rockAuthoredPrimaryFiringGripTestEnabled);
-        rockAuthoredSupportGripSnapRadius = static_cast<float>(ini.GetDoubleValue(
-            EXPERIMENTAL_SECTION,
-            "fAuthoredSupportGripSnapRadius",
-            rockAuthoredSupportGripSnapRadius));
-        if (!std::isfinite(rockAuthoredSupportGripSnapRadius)) {
-            ROCK_LOG_WARN(Config,
-                "Invalid fAuthoredSupportGripSnapRadius={} - using 2.0",
-                rockAuthoredSupportGripSnapRadius);
-            rockAuthoredSupportGripSnapRadius = 2.0f;
-        } else {
-            const float clampedRadius =
-                std::clamp(rockAuthoredSupportGripSnapRadius, 0.25f, 12.0f);
-            if (clampedRadius != rockAuthoredSupportGripSnapRadius) {
-                ROCK_LOG_WARN(Config,
-                    "Clamped fAuthoredSupportGripSnapRadius from {} to {}",
-                    rockAuthoredSupportGripSnapRadius,
-                    clampedRadius);
-                rockAuthoredSupportGripSnapRadius = clampedRadius;
-            }
-        }
         rockBodyBoneCollidersEnabled = ini.GetBoolValue(EXPERIMENTAL_SECTION, "bBodyBoneCollidersEnabled", rockBodyBoneCollidersEnabled);
         rockBodyBoneLegAndFootCollidersEnabled =
             ini.GetBoolValue(EXPERIMENTAL_SECTION, "bBodyBoneLegAndFootCollidersEnabled", rockBodyBoneLegAndFootCollidersEnabled);

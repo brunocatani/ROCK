@@ -78,9 +78,8 @@ namespace rock
         bool rockNativeReloadAnimationAuthorityTestEnabled = false;
         // Local validation path only: align the weapon to the flat animation's
         // authored primary relation and expose its paired support grip as a
-        // tight, Weapon-relative LArm_Hand acquisition candidate.
+        // role-aware Weapon-relative proximity-probe acquisition candidate.
         bool rockAuthoredPrimaryFiringGripTestEnabled = false;
-        float rockAuthoredSupportGripSnapRadius = 2.0f;
 
         int rockLogLevel = 2;
         std::string rockLogPattern = "%Y-%m-%d %H:%M:%S.%e [%l] %v";

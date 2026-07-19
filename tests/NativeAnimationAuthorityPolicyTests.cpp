@@ -202,25 +202,24 @@ int main()
 
     constexpr AuthoredSupportGripCandidateInput authoredSupportEligible{
         .featureEnabled = true,
-        .rightFiringTopology = true,
-        .supportHandIsLeft = true,
+        .proximityProbeAcquisition = true,
+        .fullTwoHandedAuthority = true,
         .providerAuthorityActive = false,
+        .attachOnly = false,
         .captureValid = true,
         .weaponIdentityMatches = true,
         .generationMatches = true,
         .completeFingerPose = true,
-        .weaponRelativeHandDistanceGameUnits = 1.25f,
-        .snapRadiusGameUnits = 2.0f,
     };
     static_assert(shouldUseAuthoredSupportGrip(authoredSupportEligible));
     static_assert([=] {
         auto input = authoredSupportEligible;
-        input.weaponRelativeHandDistanceGameUnits = input.snapRadiusGameUnits;
-        return shouldUseAuthoredSupportGrip(input);
+        input.proximityProbeAcquisition = false;
+        return !shouldUseAuthoredSupportGrip(input);
     }());
     static_assert([=] {
         auto input = authoredSupportEligible;
-        input.weaponRelativeHandDistanceGameUnits = 2.01f;
+        input.fullTwoHandedAuthority = false;
         return !shouldUseAuthoredSupportGrip(input);
     }());
     static_assert([=] {
@@ -230,18 +229,48 @@ int main()
     }());
     static_assert([=] {
         auto input = authoredSupportEligible;
-        input.rightFiringTopology = false;
-        return !shouldUseAuthoredSupportGrip(input);
-    }());
-    static_assert([=] {
-        auto input = authoredSupportEligible;
-        input.supportHandIsLeft = false;
+        input.attachOnly = true;
         return !shouldUseAuthoredSupportGrip(input);
     }());
     static_assert([=] {
         auto input = authoredSupportEligible;
         input.generationMatches = false;
         return !shouldUseAuthoredSupportGrip(input);
+    }());
+
+    constexpr AuthoredFiringGripProbeInput authoredFiringProbeEligible{
+        .featureEnabled = true,
+        .proximityProbeAcquisition = true,
+        .fullTwoHandedAuthority = true,
+        .providerAuthorityActive = false,
+        .attachOnly = false,
+        .authoredCanonicalAvailable = true,
+    };
+    static_assert(shouldUseAuthoredFiringGripProbe(authoredFiringProbeEligible));
+    static_assert([=] {
+        auto input = authoredFiringProbeEligible;
+        input.proximityProbeAcquisition = false;
+        return !shouldUseAuthoredFiringGripProbe(input);
+    }());
+    static_assert([=] {
+        auto input = authoredFiringProbeEligible;
+        input.fullTwoHandedAuthority = false;
+        return !shouldUseAuthoredFiringGripProbe(input);
+    }());
+    static_assert([=] {
+        auto input = authoredFiringProbeEligible;
+        input.providerAuthorityActive = true;
+        return !shouldUseAuthoredFiringGripProbe(input);
+    }());
+    static_assert([=] {
+        auto input = authoredFiringProbeEligible;
+        input.attachOnly = true;
+        return !shouldUseAuthoredFiringGripProbe(input);
+    }());
+    static_assert([=] {
+        auto input = authoredFiringProbeEligible;
+        input.authoredCanonicalAvailable = false;
+        return !shouldUseAuthoredFiringGripProbe(input);
     }());
     static_assert([=] {
         auto input = authoredSupportEligible;

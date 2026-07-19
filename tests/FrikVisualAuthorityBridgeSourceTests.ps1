@@ -61,20 +61,23 @@ Require-Text 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h' `
 Require-Text 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h' `
     'FRIKAPI_MirrorPrimaryWeaponFingerLocalTransforms[\s\S]*mirrorPrimaryWeaponFingerLocalTransforms' `
     'ROCK must feature-detect hFRIK''s anatomical primary-pose mirror without changing the FRIK function-table ABI.'
+Require-Text 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h' `
+    'FRIKAPI_MirrorFingerLocalTransforms[\s\S]*mirrorFingerLocalTransforms\(Hand sourceHand[\s\S]*sourceHand\s*==\s*Hand::Right[\s\S]*legacyFn' `
+    'ROCK must feature-detect bidirectional anatomical mirroring while retaining right-to-left compatibility with older hFRIK builds.'
 
 Reject-ExternalText 'hFRIK/src/skeleton/HandPose.cpp' 'logger::info\("Hand pose:' `
     'hFRIK must not info-log hand-pose override set/clear operations from the runtime hot path.'
 Require-ExternalText 'hFRIK/src/skeleton/HandPose.cpp' 'logger::debug\("Hand pose:' `
     'hFRIK hand-pose stack transition diagnostics should remain debug-only.'
 Require-ExternalText 'hFRIK/src/skeleton/HandPose.cpp' `
-    'mirrorPrimaryWeaponFingerLocalTransforms[\s\S]*tryTransferMirroredThumbBase[\s\S]*measureAnimatedFlexSplay[\s\S]*blendBoneRotation' `
-    'hFRIK must mirror harvested right-hand finger locals through the same anatomy-aware path as its live left firing pose.'
+    'mirrorFingerLocalTransforms[\s\S]*sourceIsLeft[\s\S]*tryTransferMirroredThumbBase[\s\S]*measureAnimatedFlexSplay[\s\S]*blendBoneRotation' `
+    'hFRIK must mirror harvested finger locals in either physical direction through the same anatomy-aware path.'
 Require-ExternalText 'hFRIK/src/skeleton/HandPose.cpp' `
     'Skeleton::isPrimaryWeaponNodeOwnershipBlocked\(\)\s*&&\s*!isPrimaryWeaponPoseBlocked\(\)' `
     'A blocked native primary pose must allow ROCK''s exact explicit pose to win during physical-left firing carry.'
 Require-ExternalText 'hFRIK/src/api/FRIKApi.cpp' `
-    'FRIKAPI_MirrorPrimaryWeaponFingerLocalTransforms[\s\S]*mirrorPrimaryWeaponFingerLocalTransforms' `
-    'hFRIK must expose the optional mirror helper as a standalone feature-detected export.'
+    'FRIKAPI_MirrorFingerLocalTransforms[\s\S]*sourceHand\s*!=\s*FRIKApi::Hand::Left[\s\S]*sourceHand\s*!=\s*FRIKApi::Hand::Right[\s\S]*mirrorFingerLocalTransforms[\s\S]*FRIKAPI_MirrorPrimaryWeaponFingerLocalTransforms[\s\S]*FRIKAPI_MirrorFingerLocalTransforms\(FRIKApi::Hand::Right' `
+    'hFRIK must expose a bidirectional standalone mirror export and retain the original primary-pose export as a compatibility wrapper.'
 
 if ($failures.Count -gt 0) {
     $failures | ForEach-Object { Write-Error $_ }

@@ -212,6 +212,13 @@ namespace rock
         PassiveTouch
     };
 
+    enum class WeaponInteractionAcquisitionSource : std::uint8_t
+    {
+        None,
+        PhysicalContact,
+        ProximityProbe,
+    };
+
     /*
      * Which signal produced a part classification. NIF name tokens are author
      * discretion; slot/rig anchors are structural (connect points and engine
@@ -268,6 +275,7 @@ namespace rock
         std::uint64_t weaponGenerationKey{ 0 };
         float probeDistanceGame{ 0.0f };
         std::uint32_t sequence{ 0 };
+        WeaponInteractionAcquisitionSource acquisitionSource{ WeaponInteractionAcquisitionSource::None };
     };
 
     /*
@@ -300,6 +308,7 @@ namespace rock
         RE::NiAVObject* interactionRoot{ nullptr };
         RE::NiAVObject* sourceRoot{ nullptr };
         std::uint64_t weaponGenerationKey{ 0 };
+        WeaponInteractionAcquisitionSource acquisitionSource{ WeaponInteractionAcquisitionSource::None };
     };
 
     inline constexpr std::size_t kWeaponProviderSourceNameCapacity = 64;

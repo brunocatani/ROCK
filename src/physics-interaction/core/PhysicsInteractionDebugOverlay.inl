@@ -1635,12 +1635,13 @@
                 // target. BLUE cross: the live LArm_Hand sample after it has
                 // been converted into the same Weapon frame. YELLOW cross:
                 // the palm seat used only by the two-hand weapon solver after
-                // acquisition. The connecting line turns green inside the
-                // radius and remains red outside it.
+                // acquisition. The connecting line is diagnostic only: grab
+                // eligibility now comes from contact-versus-probe provenance,
+                // not distance from this authored hand origin.
                 addMarkerPoint(
                     debug::MarkerOverlayRole::AuthoredSupportGripTarget,
                     snapshot.authoredHandWorld.translate,
-                    (std::max)(1.0f, snapshot.snapRadiusGameUnits));
+                    2.5f);
                 addMarkerPoint(
                     debug::MarkerOverlayRole::AuthoredSupportGripPalmSeat,
                     snapshot.authoredPalmSeatWorld,
@@ -1650,28 +1651,23 @@
                     snapshot.liveHandWorld.translate,
                     2.5f);
                 addMarkerLine(
-                    snapshot.insideSnapRadius ?
-                        debug::MarkerOverlayRole::AuthoredSupportGripTarget :
-                        debug::MarkerOverlayRole::AuthoredSupportGripError,
+                    debug::MarkerOverlayRole::AuthoredSupportGripTarget,
                     snapshot.liveHandWorld.translate,
                     snapshot.authoredHandWorld.translate);
 
-                constexpr float kInsideColor[4]{ 0.20f, 1.0f, 0.30f, 0.98f };
-                constexpr float kOutsideColor[4]{ 1.0f, 0.20f, 0.08f, 0.98f };
+                constexpr float kTargetColor[4]{ 0.20f, 1.0f, 0.30f, 0.98f };
                 constexpr float kCoordinateColor[4]{ 0.92f, 0.92f, 1.0f, 0.94f };
-                const float* statusColor =
-                    snapshot.insideSnapRadius ? kInsideColor : kOutsideColor;
                 const RE::NiPoint3 labelAnchor =
                     snapshot.authoredHandWorld.translate +
                     RE::NiPoint3{ 0.0f, 0.0f, 4.0f };
                 addTextLineSized(
                     labelAnchor,
                     2.1f,
-                    statusColor,
-                    "AUTHORED SUPPORT %s d=%.2f / r=%.2f",
-                    snapshot.insideSnapRadius ? "INSIDE" : "OUTSIDE",
-                    snapshot.weaponRelativeDistanceGameUnits,
-                    snapshot.snapRadiusGameUnits);
+                    kTargetColor,
+                    "AUTHORED SUPPORT %s%s d=%.2f",
+                    snapshot.supportHandIsLeft ? "LEFT" : "RIGHT",
+                    snapshot.mirroredForRightSupport ? " MIRRORED" : "",
+                    snapshot.weaponRelativeDistanceGameUnits);
                 addTextLineSized(
                     labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -2.2f },
                     1.7f,

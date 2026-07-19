@@ -2,6 +2,7 @@
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"
+#include "physics-interaction/weapon/WeaponInteraction.h"
 #include "physics-interaction/weapon/WeaponAccessoryPartKindPolicy.h"
 #include "physics-interaction/weapon/WeaponPartGripReportPolicy.h"
 #include "physics-interaction/weapon/WeaponPartRecordIdentityPolicy.h"
@@ -1275,6 +1276,26 @@ int main()
         });
     ok &= expectFalse("NonExclusive without a matcher is unusable", semanticsOnly.matched);
     ok &= expectFalse("NonExclusive without a matcher activates nothing", semanticsOnly.whitelistActive);
+
+    {
+        using namespace rock::weapon_interaction_acquisition_policy;
+        State acquisitionState{};
+        ok &= expectEqual("physics contact publishes physical acquisition provenance",
+            resolve(acquisitionState, true, true),
+            rock::WeaponInteractionAcquisitionSource::PhysicalContact);
+        ok &= expectEqual("first callback-gap frame retains physical provenance",
+            resolve(acquisitionState, false, true),
+            rock::WeaponInteractionAcquisitionSource::PhysicalContact);
+        ok &= expectEqual("second callback-gap frame retains physical provenance",
+            resolve(acquisitionState, false, true),
+            rock::WeaponInteractionAcquisitionSource::PhysicalContact);
+        ok &= expectEqual("probe provenance begins after the bounded contact lease",
+            resolve(acquisitionState, false, true),
+            rock::WeaponInteractionAcquisitionSource::ProximityProbe);
+        ok &= expectEqual("provenance never manufactures a contact candidate",
+            resolve(acquisitionState, false, false),
+            rock::WeaponInteractionAcquisitionSource::None);
+    }
 
     using namespace rock::hand_collision_suppression_math;
     SuppressionSet<2> postDropSuppression{};

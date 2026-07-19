@@ -12,6 +12,43 @@
 
 namespace rock
 {
+    namespace weapon_interaction_acquisition_policy
+    {
+        inline constexpr std::uint8_t kPhysicalContactGraceFrames = 2;
+
+        struct State
+        {
+            std::uint8_t physicalContactGraceFramesRemaining{ 0 };
+        };
+
+        /*
+         * hknp contact callbacks may miss an individual presentation frame.
+         * Keep a two-frame physical-contact lease so a continuously touching
+         * hand cannot be reclassified as a proximity snap by callback jitter.
+         * The lease affects provenance only; a valid current contact/probe is
+         * still required before a grab can start.
+         */
+        [[nodiscard]] inline constexpr WeaponInteractionAcquisitionSource resolve(
+            State& state,
+            bool physicalContactObserved,
+            bool candidateResolved)
+        {
+            if (physicalContactObserved) {
+                state.physicalContactGraceFramesRemaining = kPhysicalContactGraceFrames;
+                return candidateResolved ? WeaponInteractionAcquisitionSource::PhysicalContact : WeaponInteractionAcquisitionSource::None;
+            }
+
+            const bool physicalContactLeaseActive = state.physicalContactGraceFramesRemaining > 0;
+            if (physicalContactLeaseActive) {
+                --state.physicalContactGraceFramesRemaining;
+            }
+            if (!candidateResolved) {
+                return WeaponInteractionAcquisitionSource::None;
+            }
+            return physicalContactLeaseActive ? WeaponInteractionAcquisitionSource::PhysicalContact : WeaponInteractionAcquisitionSource::ProximityProbe;
+        }
+    }
+
     /*
      * Left-hand weapon behavior needs one authority. Generated layer 44 weapon
      * colliders can describe authored parts, but ROCK's live weapon interaction
@@ -38,6 +75,7 @@ namespace rock
         decision.interactionRoot = contact.interactionRoot;
         decision.sourceRoot = contact.sourceRoot;
         decision.weaponGenerationKey = contact.weaponGenerationKey;
+        decision.acquisitionSource = contact.acquisitionSource;
 
         if (weapon_support_grip_policy::canUseContactForSupportGrip(contact, runtimeState)) {
             decision.kind = WeaponInteractionKind::SupportGrip;
