@@ -72,7 +72,6 @@ namespace rock::native_animation_authority_policy
     {
         bool featureEnabled{ false };
         bool proximityProbeAcquisition{ false };
-        bool fullTwoHandedAuthority{ false };
         bool providerAuthorityActive{ false };
         bool attachOnly{ false };
         bool captureValid{ false };
@@ -85,7 +84,6 @@ namespace rock::native_animation_authority_policy
     {
         bool featureEnabled{ false };
         bool proximityProbeAcquisition{ false };
-        bool fullTwoHandedAuthority{ false };
         bool providerAuthorityActive{ false };
         bool attachOnly{ false };
         bool authoredCanonicalAvailable{ false };
@@ -116,16 +114,17 @@ namespace rock::native_animation_authority_policy
     /*
      * Explicit consumer/provider authority remains the highest-priority part
      * grab. Bethesda's authored support grip is selected only for a pure
-     * proximity acquisition under full two-handed authority. Physical/recent
-     * contact keeps ROCK's unrestricted mesh grab; VisualOnlySupport remains
-     * the firing-grip handoff path; AttachOnly remains consumer-owned glue.
+     * proximity acquisition. Physical/recent palm touch keeps ROCK's
+     * unrestricted mesh grab. The already-selected support authority mode is
+     * deliberately not an input: an authored seat may be visual-only, but
+     * selecting that seat must never promote it to weapon steering authority.
+     * AttachOnly remains consumer-owned glue.
      */
     [[nodiscard]] constexpr bool shouldUseAuthoredSupportGrip(
         const AuthoredSupportGripCandidateInput& input)
     {
         return input.featureEnabled &&
                input.proximityProbeAcquisition &&
-               input.fullTwoHandedAuthority &&
                !input.providerAuthorityActive &&
                !input.attachOnly &&
                input.captureValid &&
@@ -139,7 +138,6 @@ namespace rock::native_animation_authority_policy
     {
         return input.featureEnabled &&
                input.proximityProbeAcquisition &&
-               input.fullTwoHandedAuthority &&
                !input.providerAuthorityActive &&
                !input.attachOnly &&
                input.authoredCanonicalAvailable;

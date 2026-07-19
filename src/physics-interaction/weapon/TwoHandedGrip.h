@@ -737,6 +737,8 @@ namespace rock
             const RE::NiTransform& leftHandWeaponLocal,
             RE::NiTransform& outRightHandWeaponLocal) const;
 
+        void refreshAuthoredSupportRightMirror();
+
         bool tryResolveAuthoredSupportGripCandidateForHand(
             bool isLeft,
             RE::NiNode* weaponNode,

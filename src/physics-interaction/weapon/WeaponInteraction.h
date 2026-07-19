@@ -14,38 +14,38 @@ namespace rock
 {
     namespace weapon_interaction_acquisition_policy
     {
-        inline constexpr std::uint8_t kPhysicalContactGraceFrames = 2;
+        inline constexpr std::uint8_t kTouchGraceFrames = 2;
 
         struct State
         {
-            std::uint8_t physicalContactGraceFramesRemaining{ 0 };
+            std::uint8_t touchGraceFramesRemaining{ 0 };
         };
 
         /*
-         * hknp contact callbacks may miss an individual presentation frame.
-         * Keep a two-frame physical-contact lease so a continuously touching
-         * hand cannot be reclassified as a proximity snap by callback jitter.
-         * The lease affects provenance only; a valid current contact/probe is
-         * still required before a grab can start.
+         * The small legacy-palm overlap can flicker for a presentation frame
+         * at collider seams. Keep a two-frame touch lease so a continuously
+         * touching hand cannot be reclassified as an authored proximity snap.
+         * The lease affects provenance only; a valid current touch/probe
+         * candidate is still required before a grab can start.
          */
         [[nodiscard]] inline constexpr WeaponInteractionAcquisitionSource resolve(
             State& state,
-            bool physicalContactObserved,
+            bool touchObserved,
             bool candidateResolved)
         {
-            if (physicalContactObserved) {
-                state.physicalContactGraceFramesRemaining = kPhysicalContactGraceFrames;
+            if (touchObserved) {
+                state.touchGraceFramesRemaining = kTouchGraceFrames;
                 return candidateResolved ? WeaponInteractionAcquisitionSource::PhysicalContact : WeaponInteractionAcquisitionSource::None;
             }
 
-            const bool physicalContactLeaseActive = state.physicalContactGraceFramesRemaining > 0;
-            if (physicalContactLeaseActive) {
-                --state.physicalContactGraceFramesRemaining;
+            const bool touchLeaseActive = state.touchGraceFramesRemaining > 0;
+            if (touchLeaseActive) {
+                --state.touchGraceFramesRemaining;
             }
             if (!candidateResolved) {
                 return WeaponInteractionAcquisitionSource::None;
             }
-            return physicalContactLeaseActive ? WeaponInteractionAcquisitionSource::PhysicalContact : WeaponInteractionAcquisitionSource::ProximityProbe;
+            return touchLeaseActive ? WeaponInteractionAcquisitionSource::PhysicalContact : WeaponInteractionAcquisitionSource::ProximityProbe;
         }
     }
 

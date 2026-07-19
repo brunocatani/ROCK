@@ -203,7 +203,6 @@ int main()
     constexpr AuthoredSupportGripCandidateInput authoredSupportEligible{
         .featureEnabled = true,
         .proximityProbeAcquisition = true,
-        .fullTwoHandedAuthority = true,
         .providerAuthorityActive = false,
         .attachOnly = false,
         .captureValid = true,
@@ -215,11 +214,6 @@ int main()
     static_assert([=] {
         auto input = authoredSupportEligible;
         input.proximityProbeAcquisition = false;
-        return !shouldUseAuthoredSupportGrip(input);
-    }());
-    static_assert([=] {
-        auto input = authoredSupportEligible;
-        input.fullTwoHandedAuthority = false;
         return !shouldUseAuthoredSupportGrip(input);
     }());
     static_assert([=] {
@@ -241,7 +235,6 @@ int main()
     constexpr AuthoredFiringGripProbeInput authoredFiringProbeEligible{
         .featureEnabled = true,
         .proximityProbeAcquisition = true,
-        .fullTwoHandedAuthority = true,
         .providerAuthorityActive = false,
         .attachOnly = false,
         .authoredCanonicalAvailable = true,
@@ -250,11 +243,6 @@ int main()
     static_assert([=] {
         auto input = authoredFiringProbeEligible;
         input.proximityProbeAcquisition = false;
-        return !shouldUseAuthoredFiringGripProbe(input);
-    }());
-    static_assert([=] {
-        auto input = authoredFiringProbeEligible;
-        input.fullTwoHandedAuthority = false;
         return !shouldUseAuthoredFiringGripProbe(input);
     }());
     static_assert([=] {

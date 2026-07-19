@@ -66,6 +66,18 @@ namespace rock::weapon_support_authority_policy
         return true;
     }
 
+    inline constexpr bool canPromoteSupportGripToFiringGrip(
+        WeaponSupportAuthorityMode mode,
+        bool authoredSupportGrip)
+    {
+        // A non-touch authored seat may be used for presentation under the
+        // visual-only pistol/near-grip contract, but it must never turn that
+        // acquisition into weapon authority. A true-touch dynamic visual grip
+        // retains the established explicit handoff path.
+        return mode != WeaponSupportAuthorityMode::VisualOnlySupport ||
+               !authoredSupportGrip;
+    }
+
     template <class Transform>
     inline Transform buildVisualOnlySupportHandWorld(const Transform& weaponWorld, const Transform& supportHandWeaponLocal)
     {

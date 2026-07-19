@@ -579,6 +579,7 @@ int main()
         rock::weapon_support_authority_policy::supportGripAppliesSupportHandAuthority(rock::weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver));
 
     using rock::weapon_support_authority_policy::canApplyFiringGripProximityAuthority;
+    using rock::weapon_support_authority_policy::canPromoteSupportGripToFiringGrip;
     using rock::weapon_support_authority_policy::resolveFiringGripProximityAuthorityMode;
     using rock::weapon_support_authority_policy::WeaponSupportAuthorityMode;
     ok &= expectTrue("firing-grip proximity contract applies to any equipped weapon when enabled",
@@ -596,6 +597,18 @@ int main()
     ok &= expectEqual("any weapon grab away from the firing grip takes full authority",
         resolveFiringGripProximityAuthorityMode(6.5f, 6.0f),
         WeaponSupportAuthorityMode::FullTwoHandedSolver);
+    ok &= expectFalse("authored visual-only support never promotes into firing authority",
+        canPromoteSupportGripToFiringGrip(
+            WeaponSupportAuthorityMode::VisualOnlySupport,
+            true));
+    ok &= expectTrue("dynamic touch visual-only support retains explicit handoff",
+        canPromoteSupportGripToFiringGrip(
+            WeaponSupportAuthorityMode::VisualOnlySupport,
+            false));
+    ok &= expectTrue("full-authority support keeps its existing promotion contract",
+        canPromoteSupportGripToFiringGrip(
+            WeaponSupportAuthorityMode::FullTwoHandedSolver,
+            true));
 
     using rock::weapon_interaction_probe_math::isBetterProbeCandidate;
     using rock::weapon_interaction_probe_math::ProbeCandidateRank;
@@ -1280,16 +1293,16 @@ int main()
     {
         using namespace rock::weapon_interaction_acquisition_policy;
         State acquisitionState{};
-        ok &= expectEqual("physics contact publishes physical acquisition provenance",
+        ok &= expectEqual("legacy-palm overlap publishes touch acquisition provenance",
             resolve(acquisitionState, true, true),
             rock::WeaponInteractionAcquisitionSource::PhysicalContact);
-        ok &= expectEqual("first callback-gap frame retains physical provenance",
+        ok &= expectEqual("first overlap-gap frame retains touch provenance",
             resolve(acquisitionState, false, true),
             rock::WeaponInteractionAcquisitionSource::PhysicalContact);
-        ok &= expectEqual("second callback-gap frame retains physical provenance",
+        ok &= expectEqual("second overlap-gap frame retains touch provenance",
             resolve(acquisitionState, false, true),
             rock::WeaponInteractionAcquisitionSource::PhysicalContact);
-        ok &= expectEqual("probe provenance begins after the bounded contact lease",
+        ok &= expectEqual("probe provenance begins after the bounded touch lease",
             resolve(acquisitionState, false, true),
             rock::WeaponInteractionAcquisitionSource::ProximityProbe);
         ok &= expectEqual("provenance never manufactures a contact candidate",

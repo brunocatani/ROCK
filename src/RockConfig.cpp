@@ -192,6 +192,7 @@ namespace rock
         rockWeaponCollisionMaxSourceDistanceHeavy = 70.0f;
         rockWeaponSizeClassPistolMaxWeight = 6.0f;
         rockWeaponSizeClassRifleMaxWeight = 20.0f;
+        rockWeaponInteractionTouchRadius = 2.0f;
         rockWeaponInteractionProbeRadius = 12.0f;
         rockWeaponFiringGripReattachRadius = 3.0f;
         rockFiringGripProximitySupportEnabled = true;
@@ -844,6 +845,13 @@ namespace rock
             rockWeaponSizeClassPistolMaxWeight = 6.0f;
             rockWeaponSizeClassRifleMaxWeight = 20.0f;
         }
+        rockWeaponInteractionTouchRadius = readClampedFloat(ini,
+            SECTION,
+            "fWeaponInteractionTouchRadius",
+            rockWeaponInteractionTouchRadius,
+            2.0f,
+            0.25f,
+            6.0f);
         rockWeaponInteractionProbeRadius = static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponInteractionProbeRadius", rockWeaponInteractionProbeRadius));
         rockWeaponFiringGripReattachRadius = readClampedFloat(ini,
             REALISTIC_WEAPONS_SECTION,

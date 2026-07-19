@@ -113,6 +113,7 @@ namespace rock
         float rockWeaponCollisionMaxSourceDistanceHeavy = 70.0f;
         float rockWeaponSizeClassPistolMaxWeight = 6.0f;
         float rockWeaponSizeClassRifleMaxWeight = 20.0f;
+        float rockWeaponInteractionTouchRadius = 2.0f;
         float rockWeaponInteractionProbeRadius = 12.0f;
         float rockWeaponFiringGripReattachRadius = 3.0f;
         bool rockFiringGripProximitySupportEnabled = true;

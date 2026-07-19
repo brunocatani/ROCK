@@ -253,6 +253,56 @@ namespace rock
         }
         const auto* leftFingerPose = rightFingerPose && _mirroredFingerPoseValid ? &_mirroredLeftFingerPose : nullptr;
 
+        const auto supportCaptureFailureReason =
+            static_cast<std::uint32_t>(supportCaptureStatus.failureReason);
+        if (!supportCaptureStatus.valid) {
+            if (!_supportCaptureFailureLogged ||
+                supportCaptureFailureReason != _supportCaptureFailureReasonLogged ||
+                supportCaptureStatus.invalidOrMissingFingerMask !=
+                    _supportCaptureFailureMaskLogged) {
+                ROCK_LOG_WARN(Animation,
+                    "Authored support grip capture unavailable weaponKey=0x{:X} reason={} secondaryPass={} capture={} fingerMask=0x{:04X}",
+                    currentWeaponKey,
+                    native_animation_authority::authoredSupportGripCaptureFailureReasonName(
+                        supportCaptureStatus.failureReason),
+                    supportCaptureStatus.secondaryPassSequence,
+                    supportCaptureStatus.captureSequence,
+                    supportCaptureStatus.invalidOrMissingFingerMask);
+                _supportCaptureFailureReasonLogged = supportCaptureFailureReason;
+                _supportCaptureFailureMaskLogged =
+                    supportCaptureStatus.invalidOrMissingFingerMask;
+                _supportCaptureFailureLogged = true;
+            }
+        } else {
+            _supportCaptureFailureLogged = false;
+        }
+
+        const auto publishAuthoredSupportCandidate = [&]() {
+            RE::NiTransform authoredSupportHandInWeapon{};
+            std::array<RE::NiTransform, 15> authoredSupportFingerLocals{};
+            std::uint16_t authoredSupportFingerMask = 0;
+            std::uint64_t authoredSupportCaptureSequence = 0;
+            if (!supportCaptureStatus.valid ||
+                supportCaptureStatus.captureSequence <= _supportCaptureSequenceFloor ||
+                !native_animation_authority::tryResolveAuthoredSupportGrip(
+                    input.weaponNode,
+                    authoredSupportHandInWeapon,
+                    authoredSupportFingerLocals,
+                    authoredSupportFingerMask,
+                    authoredSupportCaptureSequence) ||
+                authoredSupportCaptureSequence <= _supportCaptureSequenceFloor) {
+                return false;
+            }
+
+            return weaponAuthority.setAuthoredSupportGripCandidate(
+                input.weaponNode,
+                authoredSupportHandInWeapon,
+                authoredSupportFingerLocals,
+                authoredSupportFingerMask,
+                input.weaponGenerationKey,
+                authoredSupportCaptureSequence);
+        };
+
         /*
          * Physical-left firing already owns the weapon transform through
          * TwoHandedGrip, so the right-controller inverse alignment below must
@@ -293,6 +343,7 @@ namespace rock
                         authoredLookup.captureSequence);
                     _canonicalPublishFailureLogged = true;
                 }
+                (void)publishAuthoredSupportCandidate();
             }
             endSession("physical-left-firing-canonical-only");
             return;
@@ -426,51 +477,7 @@ namespace rock
         _active = true;
         _applyFailureLogged = false;
 
-        const auto supportCaptureFailureReason =
-            static_cast<std::uint32_t>(supportCaptureStatus.failureReason);
-        if (!supportCaptureStatus.valid) {
-            if (!_supportCaptureFailureLogged ||
-                supportCaptureFailureReason != _supportCaptureFailureReasonLogged ||
-                supportCaptureStatus.invalidOrMissingFingerMask !=
-                    _supportCaptureFailureMaskLogged) {
-                ROCK_LOG_WARN(Animation,
-                    "Authored support grip capture unavailable weaponKey=0x{:X} reason={} secondaryPass={} capture={} fingerMask=0x{:04X}",
-                    currentWeaponKey,
-                    native_animation_authority::authoredSupportGripCaptureFailureReasonName(
-                        supportCaptureStatus.failureReason),
-                    supportCaptureStatus.secondaryPassSequence,
-                    supportCaptureStatus.captureSequence,
-                    supportCaptureStatus.invalidOrMissingFingerMask);
-                _supportCaptureFailureReasonLogged = supportCaptureFailureReason;
-                _supportCaptureFailureMaskLogged =
-                    supportCaptureStatus.invalidOrMissingFingerMask;
-                _supportCaptureFailureLogged = true;
-            }
-        } else {
-            _supportCaptureFailureLogged = false;
-        }
-
-        RE::NiTransform authoredSupportHandInWeapon{};
-        std::array<RE::NiTransform, 15> authoredSupportFingerLocals{};
-        std::uint16_t authoredSupportFingerMask = 0;
-        std::uint64_t authoredSupportCaptureSequence = 0;
-        if (supportCaptureStatus.valid &&
-            supportCaptureStatus.captureSequence > _supportCaptureSequenceFloor &&
-            native_animation_authority::tryResolveAuthoredSupportGrip(
-                input.weaponNode,
-                authoredSupportHandInWeapon,
-                authoredSupportFingerLocals,
-                authoredSupportFingerMask,
-                authoredSupportCaptureSequence) &&
-            authoredSupportCaptureSequence > _supportCaptureSequenceFloor) {
-            (void)weaponAuthority.setAuthoredSupportGripCandidate(
-                input.weaponNode,
-                authoredSupportHandInWeapon,
-                authoredSupportFingerLocals,
-                authoredSupportFingerMask,
-                input.weaponGenerationKey,
-                authoredSupportCaptureSequence);
-        }
+        (void)publishAuthoredSupportCandidate();
 
         if (!_sessionLogged) {
             ROCK_LOG_INFO(Animation,

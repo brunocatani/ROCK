@@ -51,6 +51,10 @@ Require-Text 'src/physics-interaction/weapon/WeaponSupport.h' `
     'return proximityAuthorityEnabled && !providerGrabModeOverride;' `
     'Explicit provider grab modes must bypass the generic proximity authority contract.'
 
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'tryPromoteSupportGripToFiringGrip[\s\S]*canPromoteSupportGripToFiringGrip\([\s\S]*_authorityMode,[\s\S]*supportGrip\.authoredSupportGrip' `
+    'An authored visual-only grip must remain presentation-only instead of inheriting firing authority through handoff promotion.'
+
 Require-Text 'data/config/ROCK.ini' `
     'bFiringGripProximitySupportEnabled\s*=\s*true[\s\S]*fFiringGripProximitySupportRadius\s*=\s*6\.0' `
     'The source config must publish the weapon-generic firing-grip proximity contract.'

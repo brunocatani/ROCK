@@ -1222,6 +1222,7 @@ namespace rock
         }
 
         refreshNaturalHandInWandFrames();
+        refreshAuthoredSupportRightMirror();
 
         updateWeaponVisualReturn(
             weaponNode,
@@ -2172,13 +2173,13 @@ namespace rock
         const RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(handTransform, isLeft);
 
         /*
-         * Acquisition-only authored priority. A pure proximity probe under
-         * full two-handed authority snaps to the authored support relation;
-         * physical/recent contact stays dynamic. VisualOnlySupport is the
-         * protected firing-grip handoff, while provider AttachOnly remains
-         * PAPER/consumer glue, so neither can enter this path. Once selected,
-         * the exact hand/weapon relation and 15 finger locals are latched;
-         * later candidate changes cannot move an active grip.
+         * Acquisition-only authored priority. A pure proximity probe snaps to
+         * the authored support relation; physical/recent legacy-palm touch
+         * stays dynamic. The authority mode was resolved before this call and
+         * is never changed here, so an authored VisualOnlySupport grab remains
+         * visual-only while provider AttachOnly remains PAPER/consumer glue.
+         * Once selected, the exact hand/weapon relation and 15 finger locals
+         * are latched; later candidate changes cannot move an active grip.
          */
         const bool authoredWeaponIdentityMatches =
             _authoredSupportGripCandidate.weaponNode == weaponNode;
@@ -2248,9 +2249,6 @@ namespace rock
                     .proximityProbeAcquisition =
                         decision.acquisitionSource ==
                         WeaponInteractionAcquisitionSource::ProximityProbe,
-                    .fullTwoHandedAuthority =
-                        _authorityMode ==
-                        weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver,
                     .providerAuthorityActive = providerPartAuthority.active,
                     .attachOnly = grip.attachOnly,
                     .captureValid =
@@ -2302,7 +2300,7 @@ namespace rock
             }
 
             ROCK_LOG_INFO(Weapon,
-                "TwoHandedGrip: authored support grip captured hand={} weapon='{}' gripLocal=({:.3f},{:.3f},{:.3f}) weaponDistance={:.3f} targetLocal=({:.3f},{:.3f},{:.3f}) liveLocal=({:.3f},{:.3f},{:.3f}) frameError={:.4f} capture={} generation={:016X} acquisition=probe authority=full priority=provider>authored>dynamic",
+                "TwoHandedGrip: authored support grip captured hand={} weapon='{}' gripLocal=({:.3f},{:.3f},{:.3f}) weaponDistance={:.3f} targetLocal=({:.3f},{:.3f},{:.3f}) liveLocal=({:.3f},{:.3f},{:.3f}) frameError={:.4f} capture={} generation={:016X} acquisition=probe authority={} priority=provider>authored>dynamic",
                 isLeft ? "left" : "right",
                 weaponNode->name.c_str(),
                 grip.gripLocal.x,
@@ -2317,7 +2315,10 @@ namespace rock
                 authoredSupportProximity.liveHandWeaponLocal.translate.z,
                 authoredSupportProximity.frameAgreementErrorGameUnits,
                 grip.authoredSupportCaptureSequence,
-                _activeWeaponGenerationKey);
+                _activeWeaponGenerationKey,
+                _authorityMode == weapon_support_authority_policy::WeaponSupportAuthorityMode::VisualOnlySupport ?
+                    "visual-only" :
+                    "full");
             return true;
         }
 
@@ -3735,9 +3736,6 @@ namespace rock
                     .proximityProbeAcquisition =
                         handWeaponContact.acquisitionSource ==
                         WeaponInteractionAcquisitionSource::ProximityProbe,
-                    .fullTwoHandedAuthority =
-                        _authorityMode ==
-                        weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver,
                     .providerAuthorityActive = authoredProviderAuthorityActive,
                     .attachOnly = authoredAttachOnlyAuthorityActive,
                     .authoredCanonicalAvailable =
@@ -3903,8 +3901,6 @@ namespace rock
                     g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled &&
                     candidate.contact->acquisitionSource ==
                         WeaponInteractionAcquisitionSource::ProximityProbe &&
-                    _authorityMode ==
-                        weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver &&
                     !authoredProviderAuthorityActive &&
                     !authoredAttachOnlyAuthorityActive);
             if (!_firingGripReattachHoverInsideRadius &&
@@ -4544,16 +4540,33 @@ namespace rock
             .valid = true,
         };
 
+        _authoredSupportGripCandidate = candidate;
+        refreshAuthoredSupportRightMirror();
+        return true;
+    }
+
+    void TwoHandedGrip::refreshAuthoredSupportRightMirror()
+    {
+        auto& candidate = _authoredSupportGripCandidate;
+        if (!candidate.valid || candidate.rightMirrorValid) {
+            return;
+        }
+
+        constexpr std::uint16_t kCompleteFingerLocalTransformMask = 0x7FFFu;
         RE::NiTransform mirroredRightHandWeaponLocal{};
         frik_visual_authority::FingerLocalTransformOverride leftFingerLocals{};
-        leftFingerLocals.enabledMask = fingerLocalTransformMask;
-        for (std::size_t index = 0; index < fingerLocalTransforms.size(); ++index) {
-            leftFingerLocals.localTransforms[index] = fingerLocalTransforms[index];
+        leftFingerLocals.enabledMask = candidate.leftFingerLocalTransformMask;
+        for (std::size_t index = 0;
+             index < candidate.leftFingerLocalTransforms.size();
+             ++index) {
+            leftFingerLocals.localTransforms[index] =
+                candidate.leftFingerLocalTransforms[index];
         }
+
         frik_visual_authority::FingerLocalTransformOverride mirroredRightFingerLocals{};
         const bool rightHandTransformMirrored =
             tryBuildMirroredRightSupportHandWeaponLocal(
-                handWeaponLocal,
+                candidate.leftHandWeaponLocal,
                 mirroredRightHandWeaponLocal);
         const bool rightFingerPoseMirrored =
             frik_visual_authority::mirrorFingerLocalTransforms(
@@ -4572,6 +4585,7 @@ namespace rock
                 }
             }
         }
+
         if (rightHandTransformMirrored && rightFingerPoseFinite) {
             candidate.rightHandWeaponLocal = mirroredRightHandWeaponLocal;
             for (std::size_t index = 0;
@@ -4583,7 +4597,10 @@ namespace rock
             candidate.rightFingerLocalTransformMask =
                 mirroredRightFingerLocals.enabledMask;
             candidate.rightMirrorValid = true;
-        } else if (_firingHandIsLeft) {
+            return;
+        }
+
+        if (_firingHandIsLeft) {
             ROCK_LOG_SAMPLE_WARN(Weapon, 2000,
                 "TwoHandedGrip: authored right-support mirror unavailable transform={} fingers={} naturalFrames=({}, {})",
                 rightHandTransformMirrored ? "ready" : "missing",
@@ -4591,9 +4608,6 @@ namespace rock
                 _hasLeftNaturalBoneInWand ? "left" : "no-left",
                 _hasRightNaturalBoneInWand ? "right" : "no-right");
         }
-
-        _authoredSupportGripCandidate = candidate;
-        return true;
     }
 
     bool TwoHandedGrip::tryResolveAuthoredSupportGripCandidateForHand(
@@ -5604,9 +5618,16 @@ namespace rock
 
         const bool supportHandIsLeft = !_firingHandIsLeft;
         const WeaponPartGrip& supportGrip = partGrip(supportHandIsLeft);
-        // AttachOnly glue never inherits the firing grip; the distance gate
-        // below keeps promotion to hands physically wrapped over the grip.
-        if (!supportGrip.active || supportGrip.attachOnly) {
+        // AttachOnly glue never inherits the firing grip. Likewise, an
+        // authored non-touch seat captured under VisualOnlySupport stays
+        // presentation-only; a close dynamic touch retains the handoff path.
+        // The distance gate below keeps other support grips physically tied
+        // to the firing grip before promotion.
+        if (!supportGrip.active ||
+            supportGrip.attachOnly ||
+            !weapon_support_authority_policy::canPromoteSupportGripToFiringGrip(
+                _authorityMode,
+                supportGrip.authoredSupportGrip)) {
             return false;
         }
 

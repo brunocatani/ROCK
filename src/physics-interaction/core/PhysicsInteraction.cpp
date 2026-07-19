@@ -2450,7 +2450,7 @@ namespace rock
             WeaponInteractionContact rightWeaponContact{};
             auto leftWeaponContactSource = weapon_debug_notification_policy::WeaponContactSource::None;
 
-            auto publishWeaponProbeContact = [&](bool isLeft, WeaponInteractionContact& contact) {
+            auto publishWeaponInteractionContact = [&](bool isLeft, WeaponInteractionContact& contact) {
                 auto& partKind = isLeft ? _leftWeaponContactPartKind : _rightWeaponContactPartKind;
                 auto& reloadRole = isLeft ? _leftWeaponContactReloadRole : _rightWeaponContactReloadRole;
                 auto& supportRole = isLeft ? _leftWeaponContactSupportRole : _rightWeaponContactSupportRole;
@@ -2481,36 +2481,33 @@ namespace rock
             auto consumeWeaponContactForHand = [&](bool isLeft, const HandFrameInput& handInput, bool probeAllowed, WeaponInteractionContact& outContact) {
                 auto& bodyIdAtomic = isLeft ? _leftWeaponContactBodyId : _rightWeaponContactBodyId;
                 auto& missedFrames = isLeft ? _leftWeaponContactMissedFrames : _rightWeaponContactMissedFrames;
-                auto& sequence = isLeft ? _leftWeaponContactSequence : _rightWeaponContactSequence;
                 auto& acquisitionState = _weaponInteractionAcquisitionStates[isLeft ? 0u : 1u];
 
-                const std::uint32_t weaponBodyId = bodyIdAtomic.exchange(INVALID_CONTACT_BODY_ID, std::memory_order_acquire);
-                const bool physicalContactObserved = weaponBodyId != INVALID_CONTACT_BODY_ID;
-                if (physicalContactObserved) {
-                    missedFrames.store(0, std::memory_order_release);
-                    /*
-                     * Contact evidence only gates "the hand is touching the
-                     * weapon". The physics thread publishes last-contact-wins,
-                     * which lets a large part (receiver/handguard) mask the
-                     * tiny foregrip or bolt the palm is actually inside, so
-                     * the part itself is re-selected by the palm-ranked probe.
-                     * The touched body stays as the fallback when the ranked
-                     * scan cannot resolve a candidate.
-                     */
-                    if (weaponNode &&
-                        _weaponCollision.tryFindInteractionContactNearPoint(
-                            weaponNode, handInput.grabAnchorWorld, g_rockConfig.rockWeaponInteractionProbeRadius, outContact)) {
-                        publishWeaponProbeContact(isLeft, outContact);
-                    } else if (!_weaponCollision.tryGetWeaponContactAtomic(weaponBodyId, outContact)) {
-                        clearWeaponContactForHand(isLeft);
-                        outContact = {};
-                    } else {
-                        outContact.sequence = sequence.load(std::memory_order_acquire);
-                    }
+                // Drain the physics-thread notification, but do not use an
+                // arbitrary finger/body callback as palm-touch provenance.
+                // Touch is the deterministic overlap below for both physical
+                // hands and for either firing/support role.
+                (void)bodyIdAtomic.exchange(INVALID_CONTACT_BODY_ID, std::memory_order_acquire);
+
+                const RE::NiPoint3 legacyPalmPivotWorld =
+                    computeGrabLegacyPalmPivotAWorldFromHandBasis(
+                        handInput.rawHandWorld,
+                        isLeft);
+                const bool touchObserved = weaponNode &&
+                    _weaponCollision.tryFindInteractionContactNearPoint(
+                        weaponNode,
+                        legacyPalmPivotWorld,
+                        g_rockConfig.rockWeaponInteractionTouchRadius,
+                        outContact);
+                if (touchObserved) {
+                    publishWeaponInteractionContact(isLeft, outContact);
                 } else if (weaponNode && probeAllowed) {
-                    const RE::NiPoint3 probePoint = handInput.grabAnchorWorld;
-                    if (_weaponCollision.tryFindInteractionContactNearPoint(weaponNode, probePoint, g_rockConfig.rockWeaponInteractionProbeRadius, outContact)) {
-                        publishWeaponProbeContact(isLeft, outContact);
+                    if (_weaponCollision.tryFindInteractionContactNearPoint(
+                            weaponNode,
+                            handInput.grabAnchorWorld,
+                            g_rockConfig.rockWeaponInteractionProbeRadius,
+                            outContact)) {
+                        publishWeaponInteractionContact(isLeft, outContact);
                         if (g_rockConfig.rockDebugVerboseLogging && ++_weaponInteractionProbeLogCounter >= 90) {
                             _weaponInteractionProbeLogCounter = 0;
                             ROCK_LOG_DEBUG(Weapon,
@@ -2538,7 +2535,7 @@ namespace rock
 
                 outContact.acquisitionSource = weapon_interaction_acquisition_policy::resolve(
                     acquisitionState,
-                    physicalContactObserved,
+                    touchObserved,
                     outContact.valid);
                 switch (outContact.acquisitionSource) {
                 case WeaponInteractionAcquisitionSource::PhysicalContact:
