@@ -77,15 +77,6 @@ namespace rock::authored_weapon_grip_library
             return hash;
         }
 
-        [[nodiscard]] std::uint64_t weaponVariantKey(const RE::NiAVObject* weaponRoot)
-        {
-            auto* mutableRoot = const_cast<RE::NiAVObject*>(weaponRoot);
-            auto* grip = mutableRoot ? f4vr::findNode(mutableRoot, "P-Grip") : nullptr;
-            auto* gripChild = grip ? f4vr::getFirstChild(grip) : nullptr;
-            const char* childName = gripChild ? gripChild->name.c_str() : nullptr;
-            return childName ? hashName(childName) : 0;
-        }
-
         [[nodiscard]] bool sameIdentity(const Entry& entry, const std::uint32_t weaponFormId, const std::uint64_t variantKey, const bool inPowerArmor)
         {
             return entry.occupied && entry.weaponFormId == weaponFormId && entry.variantKey == variantKey && entry.inPowerArmor == inPowerArmor;
@@ -118,8 +109,31 @@ namespace rock::authored_weapon_grip_library
         }
     }
 
+    WeaponVariantIdentity identifyWeaponVariant(const RE::NiAVObject* weaponRoot) noexcept
+    {
+        auto* mutableRoot = const_cast<RE::NiAVObject*>(weaponRoot);
+        auto* grip = mutableRoot ? f4vr::findNode(mutableRoot, "P-Grip") : nullptr;
+        auto* gripChild = grip ? f4vr::getFirstChild(grip) : nullptr;
+        const char* childName = gripChild ? gripChild->name.c_str() : nullptr;
+        return WeaponVariantIdentity{ .key = childName ? hashName(childName) : 0 };
+    }
+
     bool publish(const RE::TESObjectWEAP* weapon, const RE::NiAVObject* weaponRoot, const bool inPowerArmor, const RE::NiTransform& rightHandWeaponLocal,
         const std::uint64_t captureSequence, const CaptureSource source, const FiringFingerPose* rightFiringFingerPose)
+    {
+        return publishResolvedVariant(
+            weapon,
+            identifyWeaponVariant(weaponRoot),
+            inPowerArmor,
+            rightHandWeaponLocal,
+            captureSequence,
+            source,
+            rightFiringFingerPose);
+    }
+
+    bool publishResolvedVariant(const RE::TESObjectWEAP* weapon, const WeaponVariantIdentity variant, const bool inPowerArmor,
+        const RE::NiTransform& rightHandWeaponLocal, const std::uint64_t captureSequence, const CaptureSource source,
+        const FiringFingerPose* rightFiringFingerPose)
     {
         const std::uint32_t weaponFormId = weapon ? weapon->formID : 0;
         if (weaponFormId == 0 || captureSequence == 0 || source == CaptureSource::Unknown || !finiteTransform(rightHandWeaponLocal) ||
@@ -127,7 +141,7 @@ namespace rock::authored_weapon_grip_library
             return false;
         }
 
-        const std::uint64_t variantKey = weaponVariantKey(weaponRoot);
+        const std::uint64_t variantKey = variant.key;
         Entry* destination = nullptr;
         Entry* oldest = nullptr;
         for (auto& entry : s_entries) {
@@ -192,7 +206,7 @@ namespace rock::authored_weapon_grip_library
             return LookupResult{ .reason = "missingWeaponForm" };
         }
 
-        const std::uint64_t variantKey = weaponVariantKey(weaponRoot);
+        const std::uint64_t variantKey = identifyWeaponVariant(weaponRoot).key;
         const Entry* exactVariantMatch = nullptr;
         const Entry* soleFormMatch = nullptr;
         const Entry* soleNativeIdleMatch = nullptr;

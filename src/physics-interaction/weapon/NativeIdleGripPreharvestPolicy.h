@@ -18,6 +18,25 @@ namespace rock::native_idle_grip_preharvest_policy
     };
 
     /*
+     * A sole-form fallback is sufficient while the candidate graph is still
+     * generic (variant key zero), but a resolved nonzero stock variant must be
+     * harvested under its own exact key. A live-equipped fallback never
+     * suppresses native-idle work because it cannot carry the exact finger
+     * locals.
+     */
+    [[nodiscard]] constexpr bool shouldStartNativeIdleHarvest(
+        const bool lookupFound,
+        const bool lookupIsNativeIdle,
+        const bool lookupUsedVariantFallback,
+        const std::uint64_t candidateVariantKey) noexcept
+    {
+        if (!lookupFound || !lookupIsNativeIdle) {
+            return true;
+        }
+        return lookupUsedVariantFallback && candidateVariantKey != 0;
+    }
+
+    /*
      * Bethesda builds the background actor manager in paired graph order:
      * third person first, first person second. RequestAnimationSubGraph visits
      * those same graphs in order and appends matching identifiers in lockstep.

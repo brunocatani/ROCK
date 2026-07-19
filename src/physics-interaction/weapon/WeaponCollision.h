@@ -173,6 +173,8 @@ namespace rock
 
         std::uint64_t getCurrentEquippedWeaponOwnershipKey() const { return _observedEquippedWeaponOwnershipKey; }
 
+        std::uint32_t getCurrentObservedEquippedWeaponFormID() const { return _observedEquippedWeaponFormID; }
+
         weapon_generation_identity_policy::EquippedWeaponGenerationIdentity getEquippedWeaponClassification() const;
 
         std::uint64_t getCurrentWeaponGenerationKey() const { return _weaponBodySetKeyAtomic.load(std::memory_order_acquire); }
@@ -421,7 +423,8 @@ namespace rock
         std::uint64_t getEquippedWeaponIdentityKey(
             std::uint64_t* outIdentityKey = nullptr,
             std::uint64_t* outOwnershipKey = nullptr,
-            WeaponSizeClass* outSizeClass = nullptr) const;
+            WeaponSizeClass* outSizeClass = nullptr,
+            std::uint32_t* outFormID = nullptr) const;
         std::uint64_t getWeaponVisualCompositionKey(RE::NiAVObject* weaponNode, WeaponVisualKeyStats& stats) const;
 
         void maybeDumpWeaponAnimNodeDiagnostics(RE::NiAVObject* updateWeaponNode, std::uint64_t observedKey);
@@ -444,6 +447,10 @@ namespace rock
         // Instance-bound authority witness; never substitute this for a
         // collision generation or content-equivalence key.
         std::uint64_t _observedEquippedWeaponOwnershipKey{ 0 };
+        // Form paired with the observed identity/ownership witnesses above.
+        // Consumers use it to reject the one-frame old-generation/new-form
+        // overlap during direct Pip-Boy equipment changes.
+        std::uint32_t _observedEquippedWeaponFormID{ 0 };
         std::uint64_t _cachedWeaponBodySetKey{ 0 };
         std::uint64_t _weaponBodySetEpoch{ 0 };
         weapon_generated_source_completeness_policy::GeneratedSourceCompleteness _cachedGeneratedSourceCompleteness{};

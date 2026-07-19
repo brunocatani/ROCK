@@ -44,6 +44,19 @@ namespace rock::authored_weapon_grip_library
         const char* reason{ "notEvaluated" };
     };
 
+    struct WeaponVariantIdentity
+    {
+        std::uint64_t key{ 0 };
+    };
+
+    /*
+     * Resolve the fixed, value-only identity used by the cache. Callers that
+     * start asynchronous work must capture this value while the scene root is
+     * frame-valid; they must never retain the NiAVObject solely to re-identify
+     * the variant later.
+     */
+    [[nodiscard]] WeaponVariantIdentity identifyWeaponVariant(const RE::NiAVObject* weaponRoot) noexcept;
+
     /*
      * Main-thread, process-local library of Bethesda's exact
      * RArm_Hand-in-Weapon relation. Entries are keyed by runtime weapon form,
@@ -53,6 +66,10 @@ namespace rock::authored_weapon_grip_library
      */
     [[nodiscard]] bool publish(const RE::TESObjectWEAP* weapon, const RE::NiAVObject* weaponRoot, bool inPowerArmor, const RE::NiTransform& rightHandWeaponLocal,
         std::uint64_t captureSequence, CaptureSource source, const FiringFingerPose* rightFiringFingerPose = nullptr);
+
+    [[nodiscard]] bool publishResolvedVariant(const RE::TESObjectWEAP* weapon, WeaponVariantIdentity variant, bool inPowerArmor,
+        const RE::NiTransform& rightHandWeaponLocal, std::uint64_t captureSequence, CaptureSource source,
+        const FiringFingerPose* rightFiringFingerPose = nullptr);
 
     [[nodiscard]] LookupResult find(const RE::TESObjectWEAP* weapon, const RE::NiAVObject* weaponRoot, bool inPowerArmor);
 }

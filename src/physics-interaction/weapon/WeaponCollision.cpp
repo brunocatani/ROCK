@@ -3257,6 +3257,7 @@ namespace rock
         _cachedWeaponIdentityKey = 0;
         _observedEquippedWeaponIdentityKey = 0;
         _observedEquippedWeaponOwnershipKey = 0;
+        _observedEquippedWeaponFormID = 0;
         _omodPrebuildAuditEquippedKey = 0;
         _omodPrebuildAuditRoot = nullptr;
         resetWeaponBodySetGeneration();
@@ -3294,6 +3295,7 @@ namespace rock
         _cachedWeaponIdentityKey = 0;
         _observedEquippedWeaponIdentityKey = 0;
         _observedEquippedWeaponOwnershipKey = 0;
+        _observedEquippedWeaponFormID = 0;
         _omodPrebuildAuditEquippedKey = 0;
         _omodPrebuildAuditRoot = nullptr;
         resetWeaponBodySetGeneration();
@@ -3360,6 +3362,7 @@ namespace rock
             _cachedWeaponIdentityKey = 0;
             _observedEquippedWeaponIdentityKey = 0;
             _observedEquippedWeaponOwnershipKey = 0;
+            _observedEquippedWeaponFormID = 0;
             clearGeneratedSourceCompletenessTracking();
             clearPendingWeaponVisualRebuild();
             clearGeneratedSourceCache();
@@ -3410,8 +3413,9 @@ namespace rock
 
         std::uint64_t observedIdentityKey = 0;
         std::uint64_t observedOwnershipKey = 0;
+        std::uint32_t observedFormID = 0;
         WeaponSizeClass observedSizeClass{ WeaponSizeClass::Rifle };
-        const std::uint64_t observedKey = getEquippedWeaponIdentityKey(&observedIdentityKey, &observedOwnershipKey, &observedSizeClass);
+        const std::uint64_t observedKey = getEquippedWeaponIdentityKey(&observedIdentityKey, &observedOwnershipKey, &observedSizeClass, &observedFormID);
         if (observedKey == 0) {
             if (hasWeaponBody()) {
                 ROCK_LOG_INFO(Weapon, "Weapon identity unavailable - destroying generated weapon bodies");
@@ -3422,6 +3426,7 @@ namespace rock
         }
         _observedEquippedWeaponIdentityKey = observedIdentityKey;
         _observedEquippedWeaponOwnershipKey = observedOwnershipKey;
+        _observedEquippedWeaponFormID = observedFormID;
         updateWeaponEmitterSnapshot(weaponNode, observedKey);
 
         const bool settingsChanged = weaponCollisionSettingsChanged();
@@ -3948,7 +3953,8 @@ namespace rock
     std::uint64_t WeaponCollision::getEquippedWeaponIdentityKey(
         std::uint64_t* outIdentityKey,
         std::uint64_t* outOwnershipKey,
-        WeaponSizeClass* outSizeClass) const
+        WeaponSizeClass* outSizeClass,
+        std::uint32_t* outFormID) const
     {
         const auto identity = readEquippedWeaponGenerationIdentity();
         const auto identityKey = weapon_generation_identity_policy::makeEquippedWeaponIdentityKey(identity);
@@ -3960,6 +3966,9 @@ namespace rock
         }
         if (outSizeClass) {
             *outSizeClass = identity.sizeClass;
+        }
+        if (outFormID) {
+            *outFormID = identity.formID;
         }
 
         return identityKey;
@@ -4835,6 +4844,7 @@ namespace rock
         _cachedWeaponIdentityKey = 0;
         _observedEquippedWeaponIdentityKey = 0;
         _observedEquippedWeaponOwnershipKey = 0;
+        _observedEquippedWeaponFormID = 0;
         _omodPrebuildAuditEquippedKey = 0;
         _omodPrebuildAuditRoot = nullptr;
         clearGeneratedSourceCompletenessTracking();

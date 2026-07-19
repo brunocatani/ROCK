@@ -4444,12 +4444,18 @@ namespace rock
             return false;
         }
 
+        const std::uint16_t incomingRightFingerMask = rightFingerPose ? rightFingerPose->enabledMask : 0;
+        const std::uint16_t incomingLeftFingerMask = leftFingerPose ? leftFingerPose->enabledMask : 0;
+        const bool fingerPoseBoundary =
+            _rightFiringFingerLocalTransformMask != incomingRightFingerMask ||
+            _leftFiringFingerLocalTransformMask != incomingLeftFingerMask;
         const bool sourceBoundary =
             _rightFiringHandCanonicalSource !=
                 RightFiringCanonicalSource::AuthoredAnimation ||
             _rightFiringHandCanonicalWeaponNode != weaponNode ||
             _rightFiringHandCanonicalGenerationKey != weaponGenerationKey ||
-            _rightFiringHandCanonicalOwnershipKey != weaponOwnershipKey;
+            _rightFiringHandCanonicalOwnershipKey != weaponOwnershipKey ||
+            fingerPoseBoundary;
 
         _rightFiringHandCanonicalWeaponLocal = rightHandWeaponLocal;
         _rightFiringGripCanonicalWeaponLocal = authoredGripWeaponLocal;

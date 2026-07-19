@@ -892,7 +892,7 @@ namespace rock
             return false;
         }
 
-        const RE::TESObjectWEAP* currentEquippedWeaponForm()
+        RE::TESObjectWEAP* currentEquippedWeaponForm()
         {
             auto* player = f4vr::getPlayer();
             auto* processData = player && player->middleProcess ? player->middleProcess->unk08 : nullptr;
@@ -904,6 +904,21 @@ namespace rock
 
             auto* reForm = reinterpret_cast<RE::TESForm*>(weaponForm);
             return reForm ? reForm->As<RE::TESObjectWEAP>() : nullptr;
+        }
+
+        RE::TBO_InstanceData* currentEquippedWeaponInstanceData(const RE::TESObjectWEAP* expectedWeapon)
+        {
+            auto* player = f4vr::getPlayer();
+            auto* processData = player && player->middleProcess ? player->middleProcess->unk08 : nullptr;
+            auto* equipData = processData ? processData->equipData : nullptr;
+            if (!expectedWeapon || !equipData) {
+                return nullptr;
+            }
+
+            auto* weaponForm = equipData ? equipData->item : nullptr;
+            auto* reForm = weaponForm ? reinterpret_cast<RE::TESForm*>(weaponForm) : nullptr;
+            auto* equippedWeapon = reForm ? reForm->As<RE::TESObjectWEAP>() : nullptr;
+            return equippedWeapon == expectedWeapon ? equipData->instanceData : nullptr;
         }
 
         std::uint32_t currentEquippedWeaponFormId()
@@ -3371,6 +3386,8 @@ namespace rock
         const auto nativeAuthorityStatus =
             native_animation_authority::queryRuntimeStatus();
         auto* equippedWeapon = currentEquippedWeaponForm();
+        const std::uint64_t weaponGenerationKey =
+            weaponNode ? _weaponCollision.getCurrentWeaponGenerationKey() : 0;
         std::uint64_t weaponOwnershipKey =
             weaponNode ? _weaponCollision.getCurrentEquippedWeaponOwnershipKey() : 0;
         if (weaponNode && weaponOwnershipKey == 0) {
@@ -3380,12 +3397,23 @@ namespace rock
             weaponOwnershipKey = currentEquippedWeaponFormId();
         }
 
+        const bool equippedGenerationMatchesForm =
+            weaponNode &&
+            equippedWeapon &&
+            weaponGenerationKey != 0 &&
+            weaponOwnershipKey != 0 &&
+            _weaponCollision.getCurrentObservedEquippedWeaponFormID() == equippedWeapon->formID;
+
+        native_idle_grip_preharvest::observeEquippedWeapon(
+            equippedGenerationMatchesForm ? equippedWeapon : nullptr,
+            equippedGenerationMatchesForm ? weaponNode : nullptr,
+            equippedGenerationMatchesForm ? currentEquippedWeaponInstanceData(equippedWeapon) : nullptr);
+
         _authoredPrimaryFiringGrip.update(AuthoredPrimaryFiringGripFrameInput{
             .weaponNode = weaponNode,
             .weapon = equippedWeapon,
             .weaponOwnershipKey = weaponOwnershipKey,
-            .weaponGenerationKey =
-                weaponNode ? _weaponCollision.getCurrentWeaponGenerationKey() : 0,
+            .weaponGenerationKey = weaponGenerationKey,
             .enabled = g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled,
             .runtimeInitialized = _initialized.load(std::memory_order_acquire),
             .visualAuthorityAvailable = runtime.visualAuthorityAvailable,

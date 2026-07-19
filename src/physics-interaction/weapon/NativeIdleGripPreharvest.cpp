@@ -195,6 +195,13 @@ namespace rock::native_idle_grip_preharvest
             IdleClipLoading,
         };
 
+        enum class CandidateOrigin : std::uint8_t
+        {
+            Unknown,
+            LooseReference,
+            EquippedWeapon,
+        };
+
         enum class ExtractionResult : std::uint8_t
         {
             Failed,
@@ -275,6 +282,7 @@ namespace rock::native_idle_grip_preharvest
             std::array<char, 260> idleClipPath{};
             RE::TESObjectWEAP* weapon{ nullptr }; // Stable loaded-form identity; never owns the form.
             RE::TESRace* race{ nullptr }; // Stable loaded-form identity; never owns the form.
+            authored_weapon_grip_library::WeaponVariantIdentity variant{};
             std::uintptr_t instanceIdentity{ 0 };
             std::uint32_t referenceFormId{ 0 };
             std::uint32_t weaponFormId{ 0 };
@@ -284,12 +292,13 @@ namespace rock::native_idle_grip_preharvest
             bool inPowerArmor{ false };
             bool graphHolderConstructed{ false };
             bool longLoadLogged{ false };
+            CandidateOrigin origin{ CandidateOrigin::Unknown };
         };
 
         struct FailureEntry
         {
-            std::uint32_t referenceFormId{ 0 };
             std::uint32_t weaponFormId{ 0 };
+            std::uint64_t variantKey{ 0 };
             ULONGLONG retryAfterMilliseconds{ 0 };
             bool inPowerArmor{ false };
             bool occupied{ false };
@@ -522,7 +531,10 @@ namespace rock::native_idle_grip_preharvest
 
         [[nodiscard]] bool sameFailureIdentity(const FailureEntry& entry, const Job& job)
         {
-            return entry.occupied && entry.referenceFormId == job.referenceFormId && entry.weaponFormId == job.weaponFormId && entry.inPowerArmor == job.inPowerArmor;
+            return entry.occupied &&
+                   entry.weaponFormId == job.weaponFormId &&
+                   entry.variantKey == job.variant.key &&
+                   entry.inPowerArmor == job.inPowerArmor;
         }
 
         [[nodiscard]] bool candidateIsCoolingDown(const Runtime& state, const Job& candidate, const ULONGLONG now)
@@ -558,8 +570,8 @@ namespace rock::native_idle_grip_preharvest
                 return;
             }
             *destination = FailureEntry{
-                .referenceFormId = job.referenceFormId,
                 .weaponFormId = job.weaponFormId,
+                .variantKey = job.variant.key,
                 .retryAfterMilliseconds = now + kFailureRetryDelayMilliseconds,
                 .inPowerArmor = job.inPowerArmor,
                 .occupied = true,
@@ -590,16 +602,16 @@ namespace rock::native_idle_grip_preharvest
 
         void failJob(Runtime& state, const char* reason)
         {
-            const Job failed = {
-                .instanceIdentity = state.job.instanceIdentity,
-                .referenceFormId = state.job.referenceFormId,
-                .weaponFormId = state.job.weaponFormId,
-                .inPowerArmor = state.job.inPowerArmor,
-            };
-            ROCK_LOG_WARN(Animation, "Native idle-grip preharvest failed formID={:08X} refID={:08X} powerArmor={} phase={} reason={}", state.job.weaponFormId,
-                state.job.referenceFormId, state.job.inPowerArmor ? "yes" : "no", static_cast<unsigned>(state.job.phase), reason ? reason : "unknown");
+            ROCK_LOG_WARN(Animation, "Native idle-grip preharvest failed formID={:08X} refID={:08X} variant={:016X} origin={} powerArmor={} phase={} reason={}",
+                state.job.weaponFormId,
+                state.job.referenceFormId,
+                state.job.variant.key,
+                state.job.origin == CandidateOrigin::EquippedWeapon ? "equipped" : "loose",
+                state.job.inPowerArmor ? "yes" : "no",
+                static_cast<unsigned>(state.job.phase),
+                reason ? reason : "unknown");
+            recordFailure(state, state.job, GetTickCount64());
             releaseJob(state);
-            recordFailure(state, failed, GetTickCount64());
         }
 
         void finishWithoutPublishing(Runtime& state, const char* reason)
@@ -1311,34 +1323,40 @@ namespace rock::native_idle_grip_preharvest
                 return true;
             }
 
-            const auto reference = job.reference.get();
-            auto* referenceRaw = reference.get();
-            auto* root = referenceRaw ? referenceRaw->Get3D() : nullptr;
-            if (!referenceRaw || !root || referenceRaw->GetObjectReference() != job.weapon) {
-                failJob(state, "looseReferenceUnavailableAtPublish");
+            if (!job.weapon || job.weapon->GetFormID() != job.weaponFormId) {
+                failJob(state, "weaponFormUnavailableAtPublish");
                 return true;
             }
 
             const std::uint64_t captureSequence = kPreharvestCaptureSequenceDomain | (++state.nextCaptureSequence);
             const auto* completeFingerPose = rightFiringFingerPose.complete() ? &rightFiringFingerPose : nullptr;
-            if (!authored_weapon_grip_library::publish(job.weapon, root, job.inPowerArmor, handInWeapon, captureSequence,
+            if (!authored_weapon_grip_library::publishResolvedVariant(job.weapon, job.variant, job.inPowerArmor, handInWeapon, captureSequence,
                     authored_weapon_grip_library::CaptureSource::NativeIdlePreharvest, completeFingerPose)) {
                 failJob(state, "authoredGripLibraryRejectedSample");
                 return true;
             }
 
             ROCK_LOG_INFO(Animation,
-                "Native idle-grip preharvest succeeded formID={:08X} refID={:08X} subgraph={} clip={} powerArmor={} animationType={} duration={:.6f} "
+                "Native idle-grip preharvest succeeded formID={:08X} refID={:08X} variant={:016X} origin={} subgraph={} clip={} powerArmor={} animationType={} duration={:.6f} "
                 "tracks={} floatTracks={} bindingBlendHint={:X} sampledFingerMask=0x{:04X} referenceFingerMask=0x{:04X} missingFingerMask=0x{:04X} "
                 "handInWeaponT=({:.6f},{:.6f},{:.6f}) scale={:.7f}",
-                job.weaponFormId, job.referenceFormId, subgraphIdentifier, clipPath.data(), job.inPowerArmor ? "yes" : "no", extractionDiagnostics.animationType,
+                job.weaponFormId, job.referenceFormId, job.variant.key,
+                job.origin == CandidateOrigin::EquippedWeapon ? "equipped" : "loose",
+                subgraphIdentifier, clipPath.data(), job.inPowerArmor ? "yes" : "no", extractionDiagnostics.animationType,
                 extractionDiagnostics.animationDurationSeconds, extractionDiagnostics.transformTrackCount, extractionDiagnostics.floatTrackCount,
                 extractionDiagnostics.bindingBlendHint, extractionDiagnostics.sampledFingerMask, extractionDiagnostics.referenceFingerMask, extractionDiagnostics.missingFingerMask, handInWeapon.translate.x, handInWeapon.translate.y, handInWeapon.translate.z, handInWeapon.scale);
             releaseJob(state);
             return true;
         }
 
-        [[nodiscard]] Job describeCandidate(RE::TESObjectREFR* reference)
+        [[nodiscard]] bool eligibleWeapon(const RE::TESObjectWEAP* weapon)
+        {
+            return weapon &&
+                   weapon->weaponData.type != RE::WEAPON_TYPE::kGrenade &&
+                   weapon->weaponData.type != RE::WEAPON_TYPE::kMine;
+        }
+
+        [[nodiscard]] Job describeLooseCandidate(RE::TESObjectREFR* reference)
         {
             Job candidate{};
             if (!reference) {
@@ -1346,32 +1364,93 @@ namespace rock::native_idle_grip_preharvest
             }
             auto* baseForm = reference->GetObjectReference();
             auto* weapon = baseForm ? baseForm->As<RE::TESObjectWEAP>() : nullptr;
-            if (!weapon || weapon->weaponData.type == RE::WEAPON_TYPE::kGrenade || weapon->weaponData.type == RE::WEAPON_TYPE::kMine || !reference->Get3D()) {
+            auto* weaponRoot = reference->Get3D();
+            if (!eligibleWeapon(weapon) || !weaponRoot) {
                 return candidate;
             }
 
             candidate.reference = reference->GetHandle();
             candidate.weapon = weapon;
+            candidate.variant = authored_weapon_grip_library::identifyWeaponVariant(weaponRoot);
             candidate.referenceFormId = reference->GetFormID();
             candidate.weaponFormId = weapon->GetFormID();
             candidate.inPowerArmor = f4vr::isInPowerArmor();
+            candidate.origin = CandidateOrigin::LooseReference;
             return candidate;
+        }
+
+        [[nodiscard]] Job describeEquippedCandidate(
+            RE::TESObjectWEAP* weapon,
+            RE::NiAVObject* weaponRoot,
+            RE::TBO_InstanceData* instanceData)
+        {
+            Job candidate{};
+            if (!eligibleWeapon(weapon) || !weaponRoot) {
+                return candidate;
+            }
+
+            candidate.instanceData = RE::BSTSmartPointer<RE::TBO_InstanceData>(instanceData);
+            candidate.weapon = weapon;
+            candidate.variant = authored_weapon_grip_library::identifyWeaponVariant(weaponRoot);
+            candidate.instanceIdentity = reinterpret_cast<std::uintptr_t>(candidate.instanceData.get());
+            candidate.weaponFormId = weapon->GetFormID();
+            candidate.inPowerArmor = f4vr::isInPowerArmor();
+            candidate.origin = CandidateOrigin::EquippedWeapon;
+            return candidate;
+        }
+
+        [[nodiscard]] bool advanceAndCanStart(Runtime& state)
+        {
+            if (state.job.phase != Phase::Idle) {
+                (void)progressJob(state);
+            }
+            return state.job.phase == Phase::Idle &&
+                   g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled &&
+                   !f4vr::isLeftHandedMode() &&
+                   resolveNativeFunctions(state);
+        }
+
+        [[nodiscard]] bool shouldStartCandidate(
+            const Runtime& state,
+            const Job& candidate,
+            RE::NiAVObject* weaponRoot)
+        {
+            if (!candidate.weapon || candidate.weaponFormId == 0 || candidate.origin == CandidateOrigin::Unknown || !weaponRoot) {
+                return false;
+            }
+            const auto existing = authored_weapon_grip_library::find(
+                candidate.weapon,
+                weaponRoot,
+                candidate.inPowerArmor);
+            if (!native_idle_grip_preharvest_policy::shouldStartNativeIdleHarvest(
+                    existing.found,
+                    existing.source == authored_weapon_grip_library::CaptureSource::NativeIdlePreharvest,
+                    existing.usedVariantFallback,
+                    candidate.variant.key)) {
+                return false;
+            }
+            return !candidateIsCoolingDown(state, candidate, GetTickCount64());
         }
 
         void startJob(Runtime& state, Job&& candidate)
         {
             auto* player = RE::PlayerCharacter::GetSingleton();
-            if (!player || !player->race || !candidate.weapon || !candidate.reference || candidate.weaponFormId == 0) {
+            if (!player || !player->race || !candidate.weapon || candidate.weaponFormId == 0 || candidate.origin == CandidateOrigin::Unknown) {
                 return;
             }
 
-            const auto reference = candidate.reference.get();
-            auto* referenceRaw = reference.get();
-            if (!referenceRaw || referenceRaw->GetObjectReference() != candidate.weapon) {
-                return;
+            if (candidate.origin == CandidateOrigin::LooseReference) {
+                if (!candidate.reference) {
+                    return;
+                }
+                const auto reference = candidate.reference.get();
+                auto* referenceRaw = reference.get();
+                if (!referenceRaw || referenceRaw->GetObjectReference() != candidate.weapon) {
+                    return;
+                }
+                candidate.instanceData = resolveInstanceData(referenceRaw, candidate.weapon);
+                candidate.instanceIdentity = reinterpret_cast<std::uintptr_t>(candidate.instanceData.get());
             }
-            candidate.instanceData = resolveInstanceData(referenceRaw, candidate.weapon);
-            candidate.instanceIdentity = reinterpret_cast<std::uintptr_t>(candidate.instanceData.get());
 
             candidate.race = player->race;
             candidate.startedAtMilliseconds = GetTickCount64();
@@ -1406,8 +1485,14 @@ namespace rock::native_idle_grip_preharvest
             const char* baseGraph = graphProjects[0].c_str();
             const char* firstPersonGraph = graphProjects[1].c_str();
             ROCK_LOG_INFO(Animation,
-                "Native idle-grip preharvest started formID={:08X} refID={:08X} powerArmor={} instance=0x{:X} graphProjects={} base={} firstPerson={}",
-                state.job.weaponFormId, state.job.referenceFormId, state.job.inPowerArmor ? "yes" : "no", state.job.instanceIdentity, graphProjects.size(),
+                "Native idle-grip preharvest started formID={:08X} refID={:08X} variant={:016X} origin={} powerArmor={} instance=0x{:X} graphProjects={} base={} firstPerson={}",
+                state.job.weaponFormId,
+                state.job.referenceFormId,
+                state.job.variant.key,
+                state.job.origin == CandidateOrigin::EquippedWeapon ? "equipped" : "loose",
+                state.job.inPowerArmor ? "yes" : "no",
+                state.job.instanceIdentity,
+                graphProjects.size(),
                 baseGraph ? baseGraph : "<null>", firstPersonGraph ? firstPersonGraph : "<null>");
         }
     }
@@ -1419,22 +1504,35 @@ namespace rock::native_idle_grip_preharvest
             return;
         }
 
-        if (state.job.phase != Phase::Idle) {
-            (void)progressJob(state);
-        }
-        if (state.job.phase != Phase::Idle || !candidate || !g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled || f4vr::isLeftHandedMode() || !resolveNativeFunctions(state)) {
+        if (!advanceAndCanStart(state) || !candidate) {
             return;
         }
 
-        Job candidateDescription = describeCandidate(candidate);
-        if (!candidateDescription.weapon || !candidateDescription.reference || candidateDescription.weaponFormId == 0) {
+        auto* weaponRoot = candidate->Get3D();
+        Job candidateDescription = describeLooseCandidate(candidate);
+        if (!shouldStartCandidate(state, candidateDescription, weaponRoot)) {
             return;
         }
-        const auto existing = authored_weapon_grip_library::find(candidateDescription.weapon, candidate->Get3D(), candidateDescription.inPowerArmor);
-        if (existing.found && existing.source == authored_weapon_grip_library::CaptureSource::NativeIdlePreharvest) {
+
+        startJob(state, std::move(candidateDescription));
+    }
+
+    void observeEquippedWeapon(
+        RE::TESObjectWEAP* weapon,
+        RE::NiAVObject* weaponRoot,
+        RE::TBO_InstanceData* instanceData) noexcept
+    {
+        auto& state = runtime();
+        if (!claimOrValidateThread(state)) {
             return;
         }
-        if (candidateIsCoolingDown(state, candidateDescription, GetTickCount64())) {
+
+        if (!advanceAndCanStart(state) || !weapon || !weaponRoot) {
+            return;
+        }
+
+        Job candidateDescription = describeEquippedCandidate(weapon, weaponRoot, instanceData);
+        if (!shouldStartCandidate(state, candidateDescription, weaponRoot)) {
             return;
         }
 

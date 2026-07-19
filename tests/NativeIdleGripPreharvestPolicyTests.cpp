@@ -12,6 +12,12 @@ int main()
     static_assert(selectFirstPersonGraph(2, 2).valid);
     static_assert(selectFirstPersonGraph(2, 2).graphIndex == 1);
 
+    static_assert(shouldStartNativeIdleHarvest(false, false, false, 0x1234));
+    static_assert(shouldStartNativeIdleHarvest(true, false, false, 0x1234));
+    static_assert(!shouldStartNativeIdleHarvest(true, true, false, 0x1234));
+    static_assert(shouldStartNativeIdleHarvest(true, true, true, 0x1234));
+    static_assert(!shouldStartNativeIdleHarvest(true, true, true, 0));
+
     static_assert(findTransformTrackForBone(3, 8, {}) == 3);
     static_assert(findTransformTrackForBone(8, 8, {}) == -1);
     static_assert(findTransformTrackForBone(-1, 8, {}) == -1);

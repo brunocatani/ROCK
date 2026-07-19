@@ -119,17 +119,35 @@ Require-Text $source `
     'rockAuthoredPrimaryFiringGripTestEnabled' `
     'The proof must remain behind the existing ROCK authored-grip experiment.'
 Require-Text $source `
-    'authored_weapon_grip_library::publish[\s\S]{0,300}CaptureSource::NativeIdlePreharvest' `
+    'authored_weapon_grip_library::publishResolvedVariant[\s\S]{0,300}CaptureSource::NativeIdlePreharvest' `
     'The proof must publish only through ROCK''s bounded authored-grip cache with explicit preharvest provenance.'
 Require-Text $source `
-    'existing\.found\s*&&\s*existing\.source\s*==\s*authored_weapon_grip_library::CaptureSource::NativeIdlePreharvest' `
-    'A prior live equipped fallback must not suppress the later native-idle harvest needed for exact finger data.'
+    'shouldStartNativeIdleHarvest\([\s\S]*existing\.found[\s\S]*existing\.source\s*==\s*authored_weapon_grip_library::CaptureSource::NativeIdlePreharvest[\s\S]*existing\.usedVariantFallback[\s\S]*candidate\.variant\.key' `
+    'A prior live fallback or a different resolved stock variant must not suppress the exact native-idle harvest.'
+Require-Text $source `
+    'describeEquippedCandidate[\s\S]*candidate\.instanceData\s*=\s*RE::BSTSmartPointer<RE::TBO_InstanceData>\(instanceData\)[\s\S]*identifyWeaponVariant\(weaponRoot\)[\s\S]*CandidateOrigin::EquippedWeapon' `
+    'Direct inventory equip must capture stable instance data and a value-only variant identity without retaining the scene node.'
+Require-Text $source `
+    'publishResolvedVariant\(job\.weapon,\s*job\.variant[\s\S]*releaseJob\(state\)' `
+    'An asynchronous harvest must publish from its captured variant value even after the originating loose or equipped scene node disappears.'
+Reject-Text $source `
+    'looseReferenceUnavailableAtPublish' `
+    'Successful asynchronous extraction must not depend on the loose reference surviving until publication.'
 Require-Text $source `
     'kAnimationTypeOffset\s*=\s*0x10[\s\S]*kAnimationDurationOffset\s*=\s*0x14[\s\S]*kAnimationTransformTrackCountOffset\s*=\s*0x18[\s\S]*kAnimationFloatTrackCountOffset\s*=\s*0x1C[\s\S]*kBindingBlendHintOffset\s*=\s*0x50' `
     'The sampler diagnostics must retain the audited FO4VR hkaAnimation and hkaAnimationBinding field layout.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'NativeIdleGripPreharvest\.h[\s\S]*nativeIdleGripCandidate[\s\S]*hand\.isHoldingLooseWeapon\(\)[\s\S]*hand\.hasSelection\(\)[\s\S]*native_idle_grip_preharvest::observeCandidate\(nativeIdleGripCandidate\)[\s\S]*rockGripZoneHoverHapticsEnabled' `
     'The frame owner must offer held or raw selected weapons before input commit, independently of optional hover haptics.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'weaponGenerationKey[\s\S]*equippedGenerationMatchesForm[\s\S]*getCurrentObservedEquippedWeaponFormID\(\)\s*==\s*equippedWeapon->formID[\s\S]*native_idle_grip_preharvest::observeEquippedWeapon\([\s\S]*equippedWeapon[\s\S]*weaponNode[\s\S]*currentEquippedWeaponInstanceData\(equippedWeapon\)[\s\S]*_authoredPrimaryFiringGrip\.update' `
+    'A stable directly equipped weapon must enter preharvest before authored pose lookup, without pairing the new form with a stale scene generation.'
+Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' `
+    'observedFormID[\s\S]*getEquippedWeaponIdentityKey\([\s\S]*&observedFormID[\s\S]*_observedEquippedWeaponFormID\s*=\s*observedFormID[\s\S]*outFormID[\s\S]*\*outFormID\s*=\s*identity\.formID' `
+    'The collision observer must publish the form ID paired with its stable generation witness.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'incomingRightFingerMask[\s\S]*incomingLeftFingerMask[\s\S]*fingerPoseBoundary[\s\S]*_rightFiringFingerLocalTransformMask\s*!=\s*incomingRightFingerMask[\s\S]*_leftFiringFingerLocalTransformMask\s*!=\s*incomingLeftFingerMask[\s\S]*sourceBoundary[\s\S]*fingerPoseBoundary' `
+    'Canonical pose diagnostics must expose the live-fallback to exact-finger-pose boundary without relying on a source-name change.'
 Reject-Text 'src/physics-interaction/weapon/LooseWeaponGripZone.cpp' `
     'native_idle_grip_preharvest::observeCandidate' `
     'Native preharvest scheduling must not become coupled to grip-zone projection or hover-haptic feature gates again.'
