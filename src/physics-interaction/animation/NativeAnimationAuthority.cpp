@@ -637,8 +637,10 @@ namespace rock::native_animation_authority
             }
 
             const auto& weaponTransform = source.transforms[weaponIndex];
+            const RE::NiTransform& animatedWeaponLocal =
+                authoritativeLocal(weaponTransform);
             if (weaponTransform.parPos != primaryHandIndex ||
-                !finiteTransform(weaponTransform.local)) {
+                !finiteTransform(animatedWeaponLocal)) {
                 return false;
             }
 
@@ -652,7 +654,7 @@ namespace rock::native_animation_authority
             const RE::NiTransform nativeWeaponModel =
                 transform_math::composeTransforms(
                     primaryHandModel.model,
-                    weaponTransform.local);
+                    animatedWeaponLocal);
             if (!finiteTransform(nativeWeaponModel)) {
                 return false;
             }
@@ -1095,14 +1097,7 @@ namespace rock::native_animation_authority
                     continue;
                 }
 
-                // Arms/hands-only authority counter-transforms the visible
-                // Weapon child after each apply. During that mode the scene
-                // node local is presentation state, not the graph's native
-                // weapon local; retain the flattened logical local as the
-                // alignment anchor for the next capture.
-                const auto& local = controllerAimAnchor &&
-                        (requestedFlags & native_animation_authority_policy::kWeapon) == 0 ?
-                    source->transforms[binding.sourceIndex].local :
+                const auto& local =
                     authoritativeLocal(source->transforms[binding.sourceIndex]);
                 if (!finiteTransform(local)) {
                     continue;
@@ -2603,17 +2598,26 @@ namespace rock::native_animation_authority
 
         const std::uint32_t currentFlags = effectiveRequestedFlags();
         const std::uint32_t previousFlags = s_lastLoggedEffectiveFlags;
-        // Removing last frame's IK target moves the arm back under its lower
-        // controller/grip authority. Preserve and rebase the Weapon across
-        // that transition before any authority-edge reset drops its node.
-        clearManualCycleVisualAuthorityPreservingWeapon();
+        const bool manualCycleRequested = currentFlags != 0 &&
+            (currentFlags & native_animation_authority_policy::kWeapon) == 0 &&
+            (currentFlags & native_animation_authority_policy::kArms) != 0;
+        if (manualCycleRequested) {
+            // Yield last frame's final visual hand targets before ROCK samples
+            // its controller drivers and solves the weapon for this frame. A
+            // fixed-world restore here feeds yesterday's weapon pose back into
+            // the two-hand solver and makes the gun appear world-locked.
+            clearManualCycleVisualAuthority();
+        } else {
+            // On a real lease edge there is no later manual-cycle publication
+            // to repair the hierarchy. Preserve the last controller-owned gun
+            // world while hFRIK restores its lower hand authority.
+            clearManualCycleVisualAuthorityPreservingWeapon();
+        }
         if (localReloadRequestChanged || localManualCycleRequestChanged ||
             currentFlags != previousFlags) {
             resetHybridPoseState();
         }
-        s_frameManualCycleExpected = currentFlags != 0 &&
-            (currentFlags & native_animation_authority_policy::kWeapon) == 0 &&
-            (currentFlags & native_animation_authority_policy::kArms) != 0;
+        s_frameManualCycleExpected = manualCycleRequested;
         if (currentFlags != s_lastLoggedEffectiveFlags) {
             const char* composition = s_frameManualCycleExpected ?
                 "post-rock-weapon-anchored-hand-ik" :

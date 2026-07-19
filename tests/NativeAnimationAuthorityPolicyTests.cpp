@@ -108,6 +108,39 @@ int main()
     static_assert(fixedCycleHandWorld.scale == 8.0f);
     static_assert(fixedCycleHandWorld.translate == 280.0f);
 
+    // A primary-hand cycle is encoded by the Weapon child's animated inverse
+    // local. Reusing its flattened baseline local cancels the hand motion and
+    // falsely attributes the delta to the support hand.
+    constexpr float nativePrimaryHandBaseline = 10.0f;
+    constexpr float nativePrimaryHandCurrent = 13.0f;
+    constexpr float animatedWeaponLocalBaseline = 5.0f;
+    constexpr float animatedWeaponLocalCurrent = 2.0f;
+    constexpr float nativeWeaponBaseline = additiveCompose(
+        nativePrimaryHandBaseline,
+        animatedWeaponLocalBaseline);
+    constexpr float nativeWeaponCurrent = additiveCompose(
+        nativePrimaryHandCurrent,
+        animatedWeaponLocalCurrent);
+    static_assert(nativeWeaponBaseline == nativeWeaponCurrent);
+    static_assert(resolveNativeHandInWeapon(
+                      nativeWeaponBaseline,
+                      nativePrimaryHandBaseline,
+                      additiveCompose,
+                      additiveInvert) == -5.0f);
+    static_assert(resolveNativeHandInWeapon(
+                      nativeWeaponCurrent,
+                      nativePrimaryHandCurrent,
+                      additiveCompose,
+                      additiveInvert) == -2.0f);
+    constexpr float falselyMovedWeapon = additiveCompose(
+        nativePrimaryHandCurrent,
+        animatedWeaponLocalBaseline);
+    static_assert(resolveNativeHandInWeapon(
+                      falselyMovedWeapon,
+                      nativePrimaryHandCurrent,
+                      additiveCompose,
+                      additiveInvert) == -5.0f);
+
     constexpr AffineTransform nativeCycleBaselineHandInWeapon{ 2.0f, 40.0f };
     constexpr AffineTransform nativeCycleCurrentHandInWeapon{ 4.0f, 90.0f };
     constexpr AffineTransform liveCycleBaselineHandInWeapon{ 3.0f, 10.0f };

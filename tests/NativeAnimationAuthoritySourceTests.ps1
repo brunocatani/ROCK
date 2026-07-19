@@ -86,8 +86,8 @@ Require-Text 'src/physics-interaction/animation/NativeAnimationAuthorityPolicy.h
     'kManualCyclePose\s*=\s*kArms\s*\|\s*kHands[\s\S]*advanceLocalManualCycleLease[\s\S]*observedReloadEndEvents\s*>=\s*2' `
     'Manual-cycle authority must exclude Weapon and end on the native bolt/lever clip bracket.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
-    'captureManualCyclePose[\s\S]*weaponTransform\.local[\s\S]*nativeWeaponModel[\s\S]*resolveNativeHandInWeapon[\s\S]*primaryHandInWeapon[\s\S]*supportHandInWeapon' `
-    'Hand-only cycling must derive both physical hands from graph-local native relations in one Weapon frame.'
+    'captureManualCyclePose[\s\S]*animatedWeaponLocal\s*=\s*authoritativeLocal\(weaponTransform\)[\s\S]*nativeWeaponModel[\s\S]*resolveNativeHandInWeapon[\s\S]*primaryHandInWeapon[\s\S]*supportHandInWeapon' `
+    'Hand-only cycling must derive both physical hands from the live animated Weapon local in one native graph frame.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
     'ManualCycleHandRebase[\s\S]*manualCycleHandRebases[\s\S]*getHandWorldTransform\(hand\)[\s\S]*liveBaselineHandInWeapon[\s\S]*nativeBaselineHandInWeapon[\s\S]*resolveControllerAnchoredPoseCorrection[\s\S]*rebasedHandInWeapon' `
     'Each manual-cycle hand must rebase only the native animation delta onto its live ROCK grip instead of publishing Bethesda''s absolute flat-game basis.'
@@ -101,8 +101,8 @@ Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
     'kManualCyclePrimaryFingerBoneNames[\s\S]*captureManualCycleFingerLocals[\s\S]*publishManualCycleHandVisual[\s\S]*setHandPoseCustomWithPriority[\s\S]*setHandPoseCustomLocalTransformsWithPriority[\s\S]*clearManualCycleVisualAuthority' `
     'Manual-cycle authority must establish the required base pose, attach native finger locals, and deterministically release both hand-pose and world-transform tags.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
-    'clearManualCycleVisualAuthorityPreservingWeapon[\s\S]*refreshFixedVisibleWeaponTarget[\s\S]*clearManualCycleVisualAuthority\(\)[\s\S]*tryRestoreFixedVisibleWeaponTarget[\s\S]*beginRockFrame[\s\S]*clearManualCycleVisualAuthorityPreservingWeapon\(\)[\s\S]*resetHybridPoseState' `
-    'Per-frame and lease-edge hand-authority release must preserve the controller-fixed Weapon before dropping the cached node.'
+    'clearManualCycleVisualAuthorityPreservingWeapon[\s\S]*refreshFixedVisibleWeaponTarget[\s\S]*clearManualCycleVisualAuthority\(\)[\s\S]*tryRestoreFixedVisibleWeaponTarget[\s\S]*beginRockFrame[\s\S]*if\s*\(manualCycleRequested\)[\s\S]*clearManualCycleVisualAuthority\(\);[\s\S]*else[\s\S]*clearManualCycleVisualAuthorityPreservingWeapon\(\)[\s\S]*resetHybridPoseState' `
+    'Active cycling must yield the stale hand target to ROCK before its controller solve, while lease-edge cleanup preserves the final visible Weapon world.'
 Reject-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
     'resolveWorldTargetCorrection\(\s*aimFrame\.controlWeaponWorld,\s*nativeWeaponWorld\)' `
     'Hand-only cycling must never return to a rigid collarbone-root correction against the Weapon.'
