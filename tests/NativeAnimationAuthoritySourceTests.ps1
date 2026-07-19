@@ -266,11 +266,11 @@ if (-not $leftMirrorConsumerMatch.Success) {
     $failures.Add('The authored left mirror must never fall back to the live/session _primaryGripLocal when a canonical frame is selected.')
 }
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'capturePartGrip[\s\S]*authoredSupportPalmWeaponLocal[\s\S]*authoredSeatToFiringGripLocal[\s\S]*_primaryGripLocal[\s\S]*resolveFiringGripProximityAuthorityMode[\s\S]*visualOnlyTouchAuthoredAcquisition[\s\S]*WeaponInteractionAcquisitionSource::PhysicalContact[\s\S]*WeaponSupportAuthorityMode::VisualOnlySupport[\s\S]*shouldUseAuthoredSupportGrip[\s\S]*visualOnlyTouchAcquisition\s*=\s*visualOnlyTouchAuthoredAcquisition[\s\S]*providerAuthorityActive\s*=\s*providerPartAuthority\.active[\s\S]*attachOnly\s*=\s*grip\.attachOnly[\s\S]*grip\.handWeaponLocal\s*=[\s\S]*fingerLocalTransforms[\s\S]*return\s+true;[\s\S]*fingerScratch\.ranking\.clear' `
-    'Support acquisition must gate authority from the final Weapon-relative authored palm seat and replace touch only when both the live and final seats are visual-only.'
+    'capturePartGrip[\s\S]*resolveAuthoredSupportPalmSeatProximity[\s\S]*authoredSupportPalmWeaponLocal[\s\S]*authoredSeatToFiringGripLocal[\s\S]*_primaryGripLocal[\s\S]*resolveFiringGripProximityAuthorityMode[\s\S]*authoredSeatTouchAcquisition[\s\S]*WeaponInteractionAcquisitionSource::PhysicalContact[\s\S]*authoredSupportTouchProbeDistance\s*<=[\s\S]*rockWeaponInteractionTouchRadius[\s\S]*shouldUseAuthoredSupportGrip[\s\S]*authoredSeatTouchAcquisition\s*=\s*authoredSeatTouchAcquisition[\s\S]*providerAuthorityActive\s*=\s*providerPartAuthority\.active[\s\S]*attachOnly\s*=\s*grip\.attachOnly[\s\S]*_authorityMode\s*=\s*authoredSupportAuthorityMode[\s\S]*grip\.handWeaponLocal\s*=[\s\S]*fingerLocalTransforms' `
+    'Support acquisition must use the live touch probe versus the final yellow Weapon-relative palm seat, retain dynamic touch outside that radius, and derive authority from the final authored seat.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthorityPolicy.h' `
-    'shouldUseAuthoredSupportGrip[\s\S]*input\.proximityProbeAcquisition[\s\S]*input\.visualOnlyTouchAcquisition[\s\S]*!input\.providerAuthorityActive[\s\S]*!input\.attachOnly' `
-    'The authored support selector must admit probes plus the prevalidated visual-only touch exception while rejecting provider authority and AttachOnly reload glue.'
+    'shouldUseAuthoredSupportGrip[\s\S]*input\.proximityProbeAcquisition[\s\S]*input\.authoredSeatTouchAcquisition[\s\S]*!input\.providerAuthorityActive[\s\S]*!input\.attachOnly' `
+    'The authored support selector must admit broad probes plus yellow-seat touch acquisition while rejecting provider authority and AttachOnly reload glue.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthorityPolicy.h' `
     'shouldUseAuthoredFiringGripProbe[\s\S]*input\.proximityProbeAcquisition[\s\S]*!input\.providerAuthorityActive[\s\S]*!input\.attachOnly' `
     'Authored firing-grip probe takeover must preserve provider and AttachOnly exclusions without changing the selected support authority mode.'
@@ -302,14 +302,23 @@ Require-Text 'src/RockConfig.cpp' `
     'fWeaponInteractionTouchRadius[\s\S]*2\.0f[\s\S]*0\.25f[\s\S]*6\.0f[\s\S]*fWeaponInteractionProbeRadius' `
     'The touch sphere must expose a bounded small radius independently from the broad authored probe.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'resolveAuthoredSupportWeaponRelativeProximity[\s\S]*invertTransform\(weaponWorld\)[\s\S]*liveHandWeaponLocal[\s\S]*authoredHandWeaponLocal\.translate\.x[\s\S]*weaponLocalDistance\s*\*\s*std::abs\(weaponWorld\.scale\)' `
-    'The authored support distance must compare live and captured LArm_Hand translations in one current Weapon frame and convert the local result back to game units.'
+    'resolveAuthoredSupportPalmSeatProximity[\s\S]*computeGrabLegacyPalmPivotAWorldFromHandBasis\([\s\S]*authoredHandWeaponLocal[\s\S]*computeGrabLegacyPalmPivotAWorldFromHandBasis\([\s\S]*liveHandWorld[\s\S]*worldPointToLocal\([\s\S]*liveTouchProbeWeaponLocal[\s\S]*authoredPalmSeatWeaponLocal[\s\S]*weaponLocalDistance\s*\*\s*std::abs\(weaponWorld\.scale\)' `
+    'The authored touch gate must compare the live palm probe with the yellow authored palm seat in one current Weapon frame and convert the result back to game units.'
 Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'authoredSupportPalmDistance|sub\(\s*palmPos,\s*authoredSupportPalmWorld\s*\)' `
-    'The authored selector must not regress to world-space or configured-palm proximity.'
+    'resolveAuthoredSupportWeaponRelativeProximity|liveHandWeaponLocal\.translate\.[xyz]\s*-\s*authoredHandWeaponLocal\.translate\.[xyz]' `
+    'The authored selector must never return to the green/blue wrist-bone origin distance.'
 Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
-    'drawAuthoredSupportGripDebug[\s\S]*getAuthoredSupportGripDebugSnapshot[\s\S]*AuthoredSupportGripTarget[\s\S]*AuthoredSupportGripPalmSeat[\s\S]*AuthoredSupportGripLiveSample[\s\S]*weaponRelativeDistanceGameUnits' `
-    'The experimental path must continuously visualize its role-correct authored target, solver palm seat, live sample, and diagnostic Weapon-relative error.'
+    'drawAuthoredSupportGripDebug[\s\S]*getAuthoredSupportGripDebugSnapshot[\s\S]*AuthoredSupportGripPalmSeat[\s\S]*authoredPalmSeatWorld[\s\S]*AuthoredSupportGripLiveSample[\s\S]*liveTouchProbeWorld[\s\S]*touchRadiusGameUnits[\s\S]*insideTouchRadius' `
+    'The experimental path must make the yellow authored palm seat the guide and visualize the live touch probe, radius, and inside/outside decision.'
+Reject-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
+    'AuthoredSupportGripTarget|snapshot\.authoredHandWorld|snapshot\.liveHandWorld' `
+    'The debug overlay must not retain the obsolete green authored wrist target or blue live wrist sample.'
+Reject-Text 'src/physics-interaction/debug/DebugBodyOverlay.h' `
+    'AuthoredSupportGripTarget' `
+    'The obsolete green authored wrist marker role must be removed rather than left as dead debug infrastructure.'
+Reject-Text 'src/physics-interaction/debug/DebugBodyOverlay.cpp' `
+    'AuthoredSupportGripTarget' `
+    'The obsolete green authored wrist marker color path must be removed with the marker.'
 Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'applyAuthoredPrimaryGripWeaponAlignment[\s\S]{0,600}isManualOwnershipActive\(\)' `
     'Right-hand PrimaryOnly bookkeeping must not suppress the authored weapon calibration.'

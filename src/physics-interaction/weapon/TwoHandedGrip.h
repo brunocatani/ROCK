@@ -100,25 +100,25 @@ namespace rock
         RE::NiPoint3 leftGripWorld{};
     };
 
-    // Frame-local authored support target diagnostics. Both hand transforms
-    // are expressed in the exact current Weapon frame; world values exist
-    // only for renderer visualization/readback.
+    // Frame-local authored support-seat diagnostics. Both palm points are
+    // expressed in the exact current Weapon frame; world values exist only
+    // for renderer visualization/readback.
     struct AuthoredSupportGripDebugSnapshot
     {
         RE::NiTransform weaponWorld{};
-        RE::NiTransform authoredHandWorld{};
-        RE::NiTransform liveHandWorld{};
-        RE::NiTransform authoredHandWeaponLocal{};
-        RE::NiTransform liveHandWeaponLocal{};
         RE::NiPoint3 authoredPalmSeatWeaponLocal{};
         RE::NiPoint3 authoredPalmSeatWorld{};
+        RE::NiPoint3 liveTouchProbeWeaponLocal{};
+        RE::NiPoint3 liveTouchProbeWorld{};
         float weaponRelativeDistanceGameUnits{ 0.0f };
         float worldReadbackDistanceGameUnits{ 0.0f };
         float frameAgreementErrorGameUnits{ 0.0f };
+        float touchRadiusGameUnits{ 0.0f };
         std::uint64_t weaponGenerationKey{ 0 };
         std::uint64_t captureSequence{ 0 };
         bool supportHandIsLeft{ true };
         bool mirroredForRightSupport{ false };
+        bool insideTouchRadius{ false };
     };
 
     enum class NativeScopeCameraWriteSource : std::uint8_t

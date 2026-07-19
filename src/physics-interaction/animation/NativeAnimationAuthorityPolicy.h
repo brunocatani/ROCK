@@ -72,7 +72,7 @@ namespace rock::native_animation_authority_policy
     {
         bool featureEnabled{ false };
         bool proximityProbeAcquisition{ false };
-        bool visualOnlyTouchAcquisition{ false };
+        bool authoredSeatTouchAcquisition{ false };
         bool providerAuthorityActive{ false };
         bool attachOnly{ false };
         bool captureValid{ false };
@@ -114,19 +114,17 @@ namespace rock::native_animation_authority_policy
 
     /*
      * Explicit consumer/provider authority remains the highest-priority part
-     * grab. Bethesda's authored support grip is selected only for a pure
-     * proximity acquisition. Physical/recent palm touch normally keeps ROCK's
-     * unrestricted mesh grab. The narrow exception is a touch already
-     * classified as visual-only whose final authored palm seat is inside that
-     * same firing-grip radius; using the authored seat there cannot acquire
-     * weapon authority. AttachOnly remains consumer-owned glue.
+     * grab. Bethesda's authored support grip is selected for a broad proximity
+     * acquisition or when the small physical-touch probe is already inside the
+     * final authored palm-seat radius. Other physical touches keep ROCK's
+     * unrestricted mesh grab. AttachOnly remains consumer-owned glue.
      */
     [[nodiscard]] constexpr bool shouldUseAuthoredSupportGrip(
         const AuthoredSupportGripCandidateInput& input)
     {
         return input.featureEnabled &&
                (input.proximityProbeAcquisition ||
-                   input.visualOnlyTouchAcquisition) &&
+                   input.authoredSeatTouchAcquisition) &&
                !input.providerAuthorityActive &&
                !input.attachOnly &&
                input.captureValid &&

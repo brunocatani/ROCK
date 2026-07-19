@@ -2223,12 +2223,6 @@ float4 main(PS_INPUT input) : SV_Target {
                 color[1] = 0.15f;
                 color[2] = 0.05f;
                 break;
-            case MarkerOverlayRole::AuthoredSupportGripTarget:
-                color[0] = 0.10f;
-                color[1] = 1.0f;
-                color[2] = 0.20f;
-                color[3] = 0.98f;
-                break;
             case MarkerOverlayRole::AuthoredSupportGripPalmSeat:
                 color[0] = 1.0f;
                 color[1] = 0.78f;

@@ -1620,70 +1620,54 @@
         if (drawAuthoredSupportGripDebug) {
             AuthoredSupportGripDebugSnapshot snapshot{};
             if (_twoHandedGrip.getAuthoredSupportGripDebugSnapshot(snapshot)) {
-                addAxisTransform(
-                    snapshot.authoredHandWorld,
-                    debug::AxisOverlayRole::AuthoredSupportGripTarget,
-                    snapshot.authoredHandWorld.translate,
-                    false);
-                addAxisTransform(
-                    snapshot.liveHandWorld,
-                    debug::AxisOverlayRole::AuthoredSupportGripLiveSample,
-                    snapshot.liveHandWorld.translate,
-                    false);
-
-                // GREEN tripod/cross: the exact animation-authored LArm_Hand
-                // target. BLUE cross: the live LArm_Hand sample after it has
-                // been converted into the same Weapon frame. YELLOW cross:
-                // the palm seat used only by the two-hand weapon solver after
-                // acquisition. The connecting line is diagnostic only: grab
-                // eligibility now comes from contact-versus-probe provenance,
-                // not distance from this authored hand origin.
-                addMarkerPoint(
-                    debug::MarkerOverlayRole::AuthoredSupportGripTarget,
-                    snapshot.authoredHandWorld.translate,
-                    2.5f);
+                // YELLOW cross: the final authored palm seat and center of the
+                // touch-substitution radius. BLUE cross: the live palm touch
+                // probe expressed in that same current Weapon frame. Wrist/
+                // hand-bone origins no longer participate in eligibility.
                 addMarkerPoint(
                     debug::MarkerOverlayRole::AuthoredSupportGripPalmSeat,
                     snapshot.authoredPalmSeatWorld,
-                    2.0f);
+                    3.0f);
                 addMarkerPoint(
                     debug::MarkerOverlayRole::AuthoredSupportGripLiveSample,
-                    snapshot.liveHandWorld.translate,
+                    snapshot.liveTouchProbeWorld,
                     2.5f);
                 addMarkerLine(
-                    debug::MarkerOverlayRole::AuthoredSupportGripTarget,
-                    snapshot.liveHandWorld.translate,
-                    snapshot.authoredHandWorld.translate);
+                    debug::MarkerOverlayRole::AuthoredSupportGripPalmSeat,
+                    snapshot.liveTouchProbeWorld,
+                    snapshot.authoredPalmSeatWorld);
 
-                constexpr float kTargetColor[4]{ 0.20f, 1.0f, 0.30f, 0.98f };
+                constexpr float kSeatColor[4]{ 1.0f, 0.78f, 0.05f, 0.98f };
                 constexpr float kCoordinateColor[4]{ 0.92f, 0.92f, 1.0f, 0.94f };
                 const RE::NiPoint3 labelAnchor =
-                    snapshot.authoredHandWorld.translate +
+                    snapshot.authoredPalmSeatWorld +
                     RE::NiPoint3{ 0.0f, 0.0f, 4.0f };
                 addTextLineSized(
                     labelAnchor,
                     2.1f,
-                    kTargetColor,
-                    "AUTHORED SUPPORT %s%s d=%.2f",
+                    kSeatColor,
+                    "AUTHORED SUPPORT SEAT %s%s d=%.2f r=%.2f %s",
                     snapshot.supportHandIsLeft ? "LEFT" : "RIGHT",
                     snapshot.mirroredForRightSupport ? " MIRRORED" : "",
-                    snapshot.weaponRelativeDistanceGameUnits);
+                    snapshot.weaponRelativeDistanceGameUnits,
+                    snapshot.touchRadiusGameUnits,
+                    snapshot.insideTouchRadius ? "INSIDE" : "OUTSIDE");
                 addTextLineSized(
                     labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -2.2f },
                     1.7f,
                     kCoordinateColor,
-                    "target Weapon=(%.2f, %.2f, %.2f)",
-                    snapshot.authoredHandWeaponLocal.translate.x,
-                    snapshot.authoredHandWeaponLocal.translate.y,
-                    snapshot.authoredHandWeaponLocal.translate.z);
+                    "seat Weapon=(%.2f, %.2f, %.2f)",
+                    snapshot.authoredPalmSeatWeaponLocal.x,
+                    snapshot.authoredPalmSeatWeaponLocal.y,
+                    snapshot.authoredPalmSeatWeaponLocal.z);
                 addTextLineSized(
                     labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -4.2f },
                     1.7f,
                     kCoordinateColor,
-                    "live Weapon=(%.2f, %.2f, %.2f) frameErr=%.4f",
-                    snapshot.liveHandWeaponLocal.translate.x,
-                    snapshot.liveHandWeaponLocal.translate.y,
-                    snapshot.liveHandWeaponLocal.translate.z,
+                    "touch Weapon=(%.2f, %.2f, %.2f) frameErr=%.4f",
+                    snapshot.liveTouchProbeWeaponLocal.x,
+                    snapshot.liveTouchProbeWeaponLocal.y,
+                    snapshot.liveTouchProbeWeaponLocal.z,
                     snapshot.frameAgreementErrorGameUnits);
             }
         }
