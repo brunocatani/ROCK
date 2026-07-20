@@ -73,15 +73,24 @@ Require-Text 'src/RockConfig.cpp' `
 Require-Text 'src/ROCKMain.cpp' `
     'setLocalReloadPartialAuthorityEnabled\([\s\S]{0,260}rockNativeReloadAnimationAuthorityTestEnabled[\s\S]{0,180}rockNativeReloadAnimationPartialAuthorityTestEnabled' `
     'The partial reload selector must remain subordinate to the existing native reload experiment gate.'
+Require-Text 'src/ROCKMain.cpp' `
+    'setLocalReloadTestEnabled\([\s\S]{0,180}rockNativeReloadAnimationAuthorityTestEnabled' `
+    'Confirmed native reload-start arming must remain gated by the existing local experiment switch.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
-    'effectiveRequestedFlags[\s\S]*resolveLocalReloadAuthorityFlags[\s\S]*s_localReloadLeasePartialAuthority[\s\S]*s_manualCycleTwoHandAuthorityActive' `
-    'A local reload lease must resolve full versus partial flags from its latched mode and current ROCK two-hand weapon authority.'
+    'effectiveRequestedFlags[\s\S]*resolveLocalReloadAuthorityFlags[\s\S]*s_localReloadLeasePartialAuthority' `
+    'A local reload lease must resolve full versus partial flags from its reload-start-latched mode.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
-    'requestLocalReloadTestLease[\s\S]*s_localReloadPartialAuthorityEnabled\.load[\s\S]*s_localReloadLeasePartialAuthority\.store[\s\S]*s_localReloadTestLeaseFrames\.store' `
-    'Each reload must latch its configured authority mode before publishing the active lease.'
+    'armLocalReloadTestLeaseFromNativeStart[\s\S]*s_localReloadPartialAuthorityEnabled\.load[\s\S]*s_localReloadLeasePartialAuthority\.store[\s\S]*s_localReloadTestLeaseFrames\.store[\s\S]*s_localReloadTestRequestSequence\.fetch_add' `
+    'Each confirmed reload must latch its configured authority mode before publishing the active lease.'
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
+    'setLocalReloadTestEnabled[\s\S]{0,650}!effectiveEnabled\s*&&\s*wasEnabled[\s\S]{0,250}s_localReloadTestLeaseFrames\.store\(0[\s\S]{0,220}s_localReloadLeasePartialAuthority\.store' `
+    'Disabling the local reload experiment must cancel an active lease and its latched partial mode.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthorityPolicy.h' `
-    'resolveLocalReloadAuthorityFlags[\s\S]*!selection\.partialAuthorityEnabled[\s\S]*return\s+kReloadPose[\s\S]*rockTwoHandWeaponAuthorityActive\s*\?[\s\S]*kWeaponFixedHandsPose[\s\S]*:\s*0' `
-    'Partial reload authority must exclude Weapon only under stable ROCK two-hand ownership and otherwise fail closed to parts-only behavior.'
+    'resolveLocalReloadAuthorityFlags[\s\S]*!selection\.partialAuthorityEnabled[\s\S]*return\s+kReloadPose[\s\S]*return\s+kWeaponFixedHandsPose' `
+    'Partial reload authority must exclude Weapon without borrowing the bolt-only two-hand eligibility gate.'
+Reject-Text 'src/physics-interaction/animation/NativeAnimationAuthorityPolicy.h' `
+    'LocalReloadAuthoritySelection[\s\S]{0,220}rockTwoHandWeaponAuthorityActive' `
+    'Pistol and one-hand reload eligibility must not depend on ROCK full-two-hand weapon ownership.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'hasNativeManualCycleTwoHandAuthority[\s\S]*TwoHandedState::Gripping[\s\S]*isFiringHandLeft\(\)[\s\S]*ownsWeaponTransform\(\)' `
     'Native cycle hand animation must require a right-primary full two-hand weapon solver.'
@@ -122,8 +131,14 @@ Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
     'captureManualCyclePose[\s\S]*animatedWeaponLocal\s*=\s*authoritativeLocal\(weaponTransform\)[\s\S]*nativeWeaponModel[\s\S]*resolveNativeHandInWeapon[\s\S]*primaryHandInWeapon[\s\S]*supportHandInWeapon' `
     'Hand-only cycling must derive both physical hands from the live animated Weapon local in one native graph frame.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
-    'ManualCycleHandRebase[\s\S]*manualCycleHandRebases[\s\S]*getHandWorldTransform\(hand\)[\s\S]*liveBaselineHandInWeapon[\s\S]*nativeBaselineHandInWeapon[\s\S]*resolveControllerAnchoredPoseCorrection[\s\S]*rebasedHandInWeapon' `
-    'Each weapon-fixed hand must rebase only the native animation delta onto its live ROCK grip instead of publishing Bethesda''s absolute flat-game basis.'
+    'ManualCycleHandRebase[\s\S]*manualCycleHandRebases[\s\S]*getHandWorldTransform\(hand\)[\s\S]*liveBaselineHandInWeapon[\s\S]*nativeBaselineHandInWeapon[\s\S]*WeaponFixedHandTargetMode::LiveGripDelta[\s\S]*resolveControllerAnchoredPoseCorrection[\s\S]*targetHandInWeapon' `
+    'Bolt/lever hands and the partial-reload primary must rebase native deltas onto their live ROCK grip.'
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthorityPolicy.h' `
+    'resolveWeaponFixedHandTargetMode[\s\S]*partialReload\s*&&\s*role\s*==\s*WeaponFixedHandRole::Support[\s\S]*WeaponFixedHandTargetMode::NativeWeaponRelative' `
+    'Only the partial-reload support hand may use the exact native Weapon-relative target.'
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
+    'targetHandInWeapon\s*=\s*handInWeapon[\s\S]*WeaponFixedHandTargetMode::LiveGripDelta[\s\S]*resolveControllerAnchoredPoseCorrection[\s\S]*applyWeaponFixedHandsPoseAfterRock[\s\S]*s_framePartialReloadExpected[\s\S]*WeaponFixedHandRole::Support' `
+    'A partial reload must discard an arbitrary dynamic support-grip offset once native magazine-hand motion qualifies.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
     'publishManualCycleHandVisual[\s\S]*rockBaselineHandInWeapon[\s\S]*measureManualCycleHandMotion[\s\S]*updateManualCycleHandMotionQualification[\s\S]*ManualCycleHandVisualResult::Suppressed[\s\S]*ManualCycleHandVisualResult::Published' `
     'Both cycle hands must remain under their exact ROCK grip authority until their own native Weapon-relative motion crosses the shared substantial-motion gate.'
@@ -160,9 +175,12 @@ Require-Text 'src/api/ROCKProviderApi.h' `
 Require-Text 'src/api/ROCKProviderApi.cpp' `
     'clearNativeAnimationAuthorityForOwnerLocked\(ownerToken\)' `
     'Consumer unregister must deterministically release native animation authority.'
-Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
-    'rockNativeReloadAnimationAuthorityTestEnabled[\s\S]*requestLocalReloadTestLease\(\)' `
-    'The ROCK-only validation flag must arm a bounded lease only when a native reload dispatch succeeds.'
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
+    'onReloadStateChange[\s\S]*nativeReloadStartStateToken[\s\S]*s_playerReloadStartSequence\.fetch_add[\s\S]*armLocalReloadTestLeaseFromNativeStart\(\)' `
+    'Manual and automatic empty-mag reloads must share the verified Bethesda player reload-start arming path.'
+Reject-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
+    'requestLocalReloadTestLease|rockNativeReloadAnimationAuthorityTestEnabled' `
+    'Input dispatch must not pre-arm animation authority before Bethesda confirms a real reload.'
 
 Require-Text 'src/physics-interaction/native/HavokOffsets.h' `
     'kFunc_UpdateFirstPersonArm\s*=\s*0xEF6280[\s\S]*kCallsite_UpdateFirstPersonArmPrimaryReturn\s*=\s*0xEF610D[\s\S]*kCallsite_UpdateFirstPersonArmSecondaryReturn\s*=\s*0xEF6150' `

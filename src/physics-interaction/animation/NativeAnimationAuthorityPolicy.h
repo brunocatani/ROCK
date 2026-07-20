@@ -51,14 +51,14 @@ namespace rock::native_animation_authority_policy
     {
         bool leaseActive{ false };
         bool partialAuthorityEnabled{ false };
-        bool rockTwoHandWeaponAuthorityActive{ false };
     };
 
     /*
      * Full authority preserves the existing arms/hands/Weapon composition.
-     * Partial authority deliberately fails closed unless ROCK owns the weapon
-     * through the same stable right-primary two-hand solver used by manual
-     * cycling; a one-hand reload therefore remains Bethesda parts-only.
+     * Partial reload authority excludes Weapon regardless of support-grip
+     * topology. The post-ROCK publication path restores the visible Weapon to
+     * its controller-owned world after moving either hand, so pistols and
+     * one-hand reloads do not need the bolt-only two-hand solver gate.
      */
     [[nodiscard]] inline constexpr std::uint32_t resolveLocalReloadAuthorityFlags(
         const LocalReloadAuthoritySelection& selection)
@@ -69,9 +69,36 @@ namespace rock::native_animation_authority_policy
         if (!selection.partialAuthorityEnabled) {
             return kReloadPose;
         }
-        return selection.rockTwoHandWeaponAuthorityActive ?
-            kWeaponFixedHandsPose :
-            0;
+        return kWeaponFixedHandsPose;
+    }
+
+    enum class WeaponFixedHandRole : std::uint8_t
+    {
+        Primary,
+        Support,
+    };
+
+    enum class WeaponFixedHandTargetMode : std::uint8_t
+    {
+        LiveGripDelta,
+        NativeWeaponRelative,
+    };
+
+    /*
+     * Bolt/lever motion remains rebased onto each exact live ROCK grip. During
+     * a partial reload, however, the native support hand must target its
+     * authored Weapon-relative pose directly. Rebasing that hand onto an
+     * arbitrary dynamic support grab carries the grab offset all the way to
+     * the magazine and bolt nodes.
+     */
+    [[nodiscard]] inline constexpr WeaponFixedHandTargetMode
+        resolveWeaponFixedHandTargetMode(
+            const bool partialReload,
+            const WeaponFixedHandRole role)
+    {
+        return partialReload && role == WeaponFixedHandRole::Support ?
+            WeaponFixedHandTargetMode::NativeWeaponRelative :
+            WeaponFixedHandTargetMode::LiveGripDelta;
     }
 
     enum class LocalManualCycleLeaseEndReason : std::uint32_t

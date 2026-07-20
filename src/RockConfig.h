@@ -73,12 +73,12 @@ namespace rock
         float rockGrabInputForceSeconds = 0.08f;
 
         bool rockDeveloperModeEnabled = false;
-        // Local validation path only: each ROCK-routed native reload arms a
-        // bounded Bethesda arms/hands/weapon animation-authority lease.
+        // Local validation path only: each confirmed Bethesda player reload
+        // start arms a bounded arms/hands/weapon animation-authority lease.
         bool rockNativeReloadAnimationAuthorityTestEnabled = false;
         // Mode selector for the local reload lease above. Partial authority
-        // publishes only the native hand/IK deltas after ROCK has solved a
-        // right-primary two-hand weapon; the Weapon transform stays with ROCK.
+        // publishes native hand/IK motion after ROCK's weapon update while
+        // restoring the Weapon to its controller-owned world.
         bool rockNativeReloadAnimationPartialAuthorityTestEnabled = false;
         // Local validation path only: align the weapon to the flat animation's
         // authored primary relation and expose its paired support grip as a

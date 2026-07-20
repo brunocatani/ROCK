@@ -140,14 +140,24 @@ int main()
                       LocalReloadAuthoritySelection{
                           .leaseActive = true,
                           .partialAuthorityEnabled = true,
-                      }) == 0);
-    static_assert(resolveLocalReloadAuthorityFlags(
-                      LocalReloadAuthoritySelection{
-                          .leaseActive = true,
-                          .partialAuthorityEnabled = true,
-                          .rockTwoHandWeaponAuthorityActive = true,
                       }) == kWeaponFixedHandsPose);
     static_assert((kWeaponFixedHandsPose & kWeapon) == 0);
+    static_assert(resolveWeaponFixedHandTargetMode(
+                      false,
+                      WeaponFixedHandRole::Primary) ==
+                  WeaponFixedHandTargetMode::LiveGripDelta);
+    static_assert(resolveWeaponFixedHandTargetMode(
+                      false,
+                      WeaponFixedHandRole::Support) ==
+                  WeaponFixedHandTargetMode::LiveGripDelta);
+    static_assert(resolveWeaponFixedHandTargetMode(
+                      true,
+                      WeaponFixedHandRole::Primary) ==
+                  WeaponFixedHandTargetMode::LiveGripDelta);
+    static_assert(resolveWeaponFixedHandTargetMode(
+                      true,
+                      WeaponFixedHandRole::Support) ==
+                  WeaponFixedHandTargetMode::NativeWeaponRelative);
 
     static_assert(!updateManualCycleHandMotionQualification(
         false,

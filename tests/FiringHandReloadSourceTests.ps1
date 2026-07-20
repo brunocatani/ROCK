@@ -51,6 +51,26 @@ Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
     'updateFiringHandReloadInput[\s\S]{0,1600}consumeRawButtonState\(true,\s*input_remap_policy::kOpenVrAcceptButtonId\)[\s\S]{0,500}consumeRawButtonState\(false,\s*input_remap_policy::kOpenVrAcceptButtonId\)[\s\S]{0,5000}secondaryHandIsLeft\s*\?\s*leftAcceptState\s*:\s*rightAcceptState[\s\S]{0,1800}dispatchNativeReloadAction' `
     'Runtime must drain both physical accept streams, preserve automatic secondary-wand reload, and dispatch the native reload action.'
 
+Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
+    'updateFiringHandReloadInput[\s\S]{0,1800}consumeRawButtonState\(true,[\s\S]*consumeRawButtonState\(false,[\s\S]{0,600}isAnyProviderOpenVrGameInputSuppressed\(\)[\s\S]{0,300}blockManualScopeInputUntilRelease\(\)[\s\S]{0,120}return' `
+    'Configurator/provider game-input suppression must drain A/X edges and cancel tap/hold state before any reload dispatch.'
+
+Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
+    'dispatchNativeReloadAction[\s\S]{0,900}s_gameplayInputAllowed[\s\S]{0,350}isInputBlockingMenuActive\(\)[\s\S]{0,500}isAnyProviderOpenVrGameInputSuppressedAtDispatch\(\)[\s\S]{0,350}s_weaponDrawn' `
+    'The native reload dispatcher must enforce gameplay, menu, provider-lease, and weapon-drawn gates itself.'
+
+Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
+    'isAnyProviderOpenVrGameInputSuppressedAtDispatch[\s\S]{0,900}currentHandInputSuppressionFlagsV1\(hand\)[\s\S]{0,500}RockProviderHand::Right[\s\S]{0,160}RockProviderHand::Left' `
+    'Reload dispatch must observe a Configurator/provider lease acquired before the later per-hand cache refresh in the same frame.'
+
+Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
+    'setProviderOpenVrGameInputSuppressed[\s\S]{0,800}exchange\([\s\S]{0,450}suppressed\s*&&\s*!wasSuppressed[\s\S]{0,350}blockManualScopeInputUntilRelease' `
+    'A newly active provider UI lease must immediately invalidate an in-progress reload gesture.'
+
+Reject-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
+    'requestLocalReloadTestLease|rockNativeReloadAnimationAuthorityTestEnabled' `
+    'Input routing must not pre-arm native animation authority; the verified reload-start hook owns that lifecycle.'
+
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'input_remap_runtime::updateFiringHandReloadInput\(runtime\.deltaSeconds\)' `
     'PhysicsInteraction must drive per-frame tap/hold arbitration with frame time before any early return.'

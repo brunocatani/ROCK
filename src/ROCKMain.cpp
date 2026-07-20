@@ -260,6 +260,7 @@ namespace
         if (!s_pluginLoaded || !s_frikAvailable) {
             native_animation_authority::setRuntimeEnabled(false);
             native_animation_authority::setLocalManualCycleTestEnabled(false);
+            native_animation_authority::setLocalReloadTestEnabled(false);
             native_animation_authority::setLocalReloadPartialAuthorityEnabled(false);
             native_animation_authority::setPrimaryFiringGripCaptureEnabled(false);
             pipboy_equip_runtime::setLeftHandEquipAvailable(false);
@@ -291,6 +292,9 @@ namespace
         native_animation_authority::setLocalManualCycleTestEnabled(
             nativeAnimationCaptureRuntimeEnabled &&
             g_rockConfig.rockNativeReloadAnimationAuthorityTestEnabled);
+        native_animation_authority::setLocalReloadTestEnabled(
+            nativeAnimationCaptureRuntimeEnabled &&
+            g_rockConfig.rockNativeReloadAnimationAuthorityTestEnabled);
         native_animation_authority::setLocalReloadPartialAuthorityEnabled(
             nativeAnimationCaptureRuntimeEnabled &&
             g_rockConfig.rockNativeReloadAnimationAuthorityTestEnabled &&
@@ -310,6 +314,7 @@ namespace
         if (!g_rockConfig.rockEnabled) {
             native_animation_authority::setRuntimeEnabled(false);
             native_animation_authority::setLocalManualCycleTestEnabled(false);
+            native_animation_authority::setLocalReloadTestEnabled(false);
             native_animation_authority::setLocalReloadPartialAuthorityEnabled(false);
             native_animation_authority::setPrimaryFiringGripCaptureEnabled(false);
             pipboy_equip_runtime::setLeftHandEquipAvailable(false);
@@ -574,6 +579,9 @@ namespace
             native_animation_authority::setLocalManualCycleTestEnabled(
                 g_rockConfig.rockEnabled &&
                 g_rockConfig.rockNativeReloadAnimationAuthorityTestEnabled);
+            native_animation_authority::setLocalReloadTestEnabled(
+                g_rockConfig.rockEnabled &&
+                g_rockConfig.rockNativeReloadAnimationAuthorityTestEnabled);
             native_animation_authority::setLocalReloadPartialAuthorityEnabled(
                 g_rockConfig.rockEnabled &&
                 g_rockConfig.rockNativeReloadAnimationAuthorityTestEnabled &&
@@ -611,6 +619,9 @@ namespace
             native_animation_authority::resetTransientState();
             native_animation_authority::setRuntimeEnabled(g_rockConfig.rockEnabled);
             native_animation_authority::setLocalManualCycleTestEnabled(
+                g_rockConfig.rockEnabled &&
+                g_rockConfig.rockNativeReloadAnimationAuthorityTestEnabled);
+            native_animation_authority::setLocalReloadTestEnabled(
                 g_rockConfig.rockEnabled &&
                 g_rockConfig.rockNativeReloadAnimationAuthorityTestEnabled);
             native_animation_authority::setLocalReloadPartialAuthorityEnabled(

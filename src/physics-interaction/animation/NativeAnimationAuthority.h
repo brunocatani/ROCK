@@ -84,18 +84,17 @@ namespace rock::native_animation_authority
     [[nodiscard]] bool installPostUpdateHook();
 
     void setRuntimeEnabled(bool enabled);
-    // The existing native-reload experiment also owns ROCK's weapon-fixed
-    // hands composition, used by manual cycling and optional partial reloads.
-    // With a right-firing full two-hand hold, it resolves Bethesda's
-    // substantial per-hand animation deltas through hFRIK after ROCK has
-    // solved the weapon from the live controllers. Either hand stays exactly
-    // seated until its own native motion qualifies; one-hand operation keeps
-    // FO4VR's parts-only behavior.
+    // The existing native-reload experiment also owns ROCK's bolt/lever
+    // window. That path remains right-primary and full-two-hand only.
     void setLocalManualCycleTestEnabled(bool enabled);
+    // Gates future ROCK-local reload leases. Leases arm from Bethesda's
+    // verified player reload-start event, covering both explicit input and
+    // automatic empty-mag reloads without pre-arming rejected actions.
+    void setLocalReloadTestEnabled(bool enabled);
     // Selects the composition latched by the next ROCK-local reload lease.
     // False preserves full arms/hands/Weapon authority. True reuses the
-    // post-ROCK weapon-fixed hand composition and requires stable two-hand
-    // ROCK weapon ownership; the provider API remains unaffected.
+    // post-ROCK weapon-fixed hand composition for pistols, one-hand holds,
+    // and two-hand holds; the provider API remains unaffected.
     void setLocalReloadPartialAuthorityEnabled(bool enabled);
     void setManualCycleTwoHandAuthorityActive(bool active);
     void setManualCycleRockGripBaselines(
@@ -124,7 +123,6 @@ namespace rock::native_animation_authority
         std::array<RE::NiTransform, 15>& outFingerLocalTransforms,
         std::uint16_t& outFingerLocalTransformMask,
         std::uint64_t& outCaptureSequence);
-    void requestLocalReloadTestLease();
     void beginRockFrame(float deltaSeconds);
     [[nodiscard]] bool applyCapturedPose(ApplyPhase phase);
     void completeRockFrame();

@@ -2,7 +2,6 @@
 
 #include "physics-interaction/input/InputRemapPolicy.h"
 #include "physics-interaction/input/ManualScopeInputPolicy.h"
-#include "physics-interaction/animation/NativeAnimationAuthority.h"
 #include "physics-interaction/object/FarSelectionBlacklistPolicy.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "RockConfig.h"
@@ -439,6 +438,22 @@ namespace rock::input_remap_runtime
         {
             return s_providerOpenVrGameInputSuppressed[0].load(std::memory_order_acquire) ||
                    s_providerOpenVrGameInputSuppressed[1].load(std::memory_order_acquire);
+        }
+
+        [[nodiscard]] bool isAnyProviderOpenVrGameInputSuppressedAtDispatch()
+        {
+            if (isAnyProviderOpenVrGameInputSuppressed()) {
+                return true;
+            }
+
+            const auto handSuppresses = [](const provider::RockProviderHand hand) {
+                return provider::hasHandInputSuppressionFlagV1(
+                    provider::currentHandInputSuppressionFlagsV1(hand),
+                    provider::RockProviderHandInputSuppressionFlagV1::
+                        SuppressOpenVrGameInput);
+            };
+            return handSuppresses(provider::RockProviderHand::Right) ||
+                   handSuppresses(provider::RockProviderHand::Left);
         }
 
         [[nodiscard]] bool isCallerModule(const void* address, const wchar_t* moduleName)
@@ -1051,6 +1066,28 @@ namespace rock::input_remap_runtime
 
         [[nodiscard]] bool dispatchNativeReloadAction()
         {
+            const bool gameplayAllowed =
+                s_gameplayInputAllowed.load(std::memory_order_acquire);
+            const bool menuActive = isInputBlockingMenuActive();
+            // The cached snapshot is refreshed later in PhysicsInteraction's
+            // hand pass. Query the provider lease here as well so a UI lease
+            // acquired during this frame closes the reload path immediately.
+            const bool providerSuppressed =
+                isAnyProviderOpenVrGameInputSuppressedAtDispatch();
+            const bool weaponDrawn =
+                s_weaponDrawn.load(std::memory_order_acquire);
+            if (!gameplayAllowed || menuActive || providerSuppressed ||
+                !weaponDrawn) {
+                ROCK_LOG_SAMPLE_DEBUG(Input,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "Rejected native reload dispatch at final gate gameplay={} menu={} providerLease={} weaponDrawn={}",
+                    gameplayAllowed ? "yes" : "no",
+                    menuActive ? "yes" : "no",
+                    providerSuppressed ? "yes" : "no",
+                    weaponDrawn ? "yes" : "no");
+                return false;
+            }
+
             static REL::Relocation<void**> nativeActionDispatcherObject{ REL::Offset(kNativePlayerActionDispatcherDataOffset) };
             static REL::Relocation<NativeActionDispatcher_t> nativeActionDispatcher{ REL::Offset(kNativeActionDispatcherFunctionOffset) };
 
@@ -1060,11 +1097,10 @@ namespace rock::input_remap_runtime
                 return false;
             }
 
-            const bool dispatched = nativeActionDispatcher(dispatcherObject, kNativeReloadActionId, kNativeActionPriorityQueue);
-            if (dispatched && g_rockConfig.rockNativeReloadAnimationAuthorityTestEnabled) {
-                native_animation_authority::requestLocalReloadTestLease();
-            }
-            return dispatched;
+            return nativeActionDispatcher(
+                dispatcherObject,
+                kNativeReloadActionId,
+                kNativeActionPriorityQueue);
         }
 
         /*
@@ -1827,7 +1863,16 @@ namespace rock::input_remap_runtime
 
     void setProviderOpenVrGameInputSuppressed(bool isLeft, bool suppressed)
     {
-        s_providerOpenVrGameInputSuppressed[isLeft ? 0u : 1u].store(suppressed, std::memory_order_release);
+        const bool wasSuppressed =
+            s_providerOpenVrGameInputSuppressed[isLeft ? 0u : 1u].exchange(
+                suppressed,
+                std::memory_order_acq_rel);
+        if (suppressed && !wasSuppressed) {
+            // This setter is driven from PhysicsInteraction's frame thread.
+            // A provider UI lease must also cancel an in-progress A/X
+            // tap/hold transaction so its eventual release cannot reload.
+            blockManualScopeInputUntilRelease();
+        }
     }
 
     void updateFiringHandReloadInput(const float deltaSeconds)
@@ -1848,6 +1893,13 @@ namespace rock::input_remap_runtime
          */
         const auto leftAcceptState = consumeRawButtonState(true, input_remap_policy::kOpenVrAcceptButtonId);
         const auto rightAcceptState = consumeRawButtonState(false, input_remap_policy::kOpenVrAcceptButtonId);
+        if (isAnyProviderOpenVrGameInputSuppressed()) {
+            // The reads above intentionally drain both physical A/X edges.
+            // SuppressOpenVrGameInput is a game-facing lease, so ROCK must not
+            // turn the Configurator's raw UI press into a native reload.
+            blockManualScopeInputUntilRelease();
+            return;
+        }
         const bool secondaryHandIsLeft = !f4vr::isLeftHandedMode();
         const bool firingHandIsLeft = s_equippedWeaponLeftHandFiringActive.load(std::memory_order_acquire);
 
