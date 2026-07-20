@@ -254,10 +254,10 @@ Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
     'tryResolvePrimaryFiringGripAlignment[\s\S]*authoredPrimaryHandInWeapon[\s\S]*applyAuthoredPrimaryGripWeaponAlignment[\s\S]*setAuthoredPrimaryFiringGripCanonical\([\s\S]*authoredPrimaryHandInWeapon[\s\S]*input\.weaponGenerationKey[\s\S]*currentWeaponKey[\s\S]*resolvedCaptureSequence' `
     'A successful right-hand alignment must explicitly bind the exact authored Hand-in-Weapon relation to generation, equipped ownership, and capture sequence for physical-left mirroring.'
 Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
-    'findPrimaryWeaponOffset\([\s\S]{0,500}OffsetSource::CustomFile[\s\S]{0,600}custom-frik-weapon-offset[\s\S]*applyAuthoredPrimaryGripWeaponAlignment' `
-    'A custom hFRIK weapon JSON must be resolved at the equip boundary and suspend ROCK authored alignment before any weapon transform write.'
+    'findCustomGripOverride\([\s\S]{0,500}_customFrikOffsetOverrideActive\s*=\s*customFrikOffset\.found[\s\S]{0,600}custom-frik-weapon-offset[\s\S]*applyAuthoredPrimaryGripWeaponAlignment' `
+    'Any effective custom hFRIK grip JSON must be resolved at the equip boundary and suspend ROCK authored alignment before any weapon transform write.'
 Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
-    'currentRevision\(\)[\s\S]{0,500}frikOffsetCacheRevision\s*!=\s*_frikOffsetCacheRevision[\s\S]{0,800}OffsetSource::CustomFile[\s\S]{0,800}custom-frik-weapon-offset-change[\s\S]{0,300}captureSequenceFloor' `
+    'currentRevision\(\)[\s\S]{0,500}frikOffsetCacheRevision\s*!=\s*_frikOffsetCacheRevision[\s\S]{0,800}findCustomGripOverride[\s\S]{0,800}custom-frik-weapon-offset-change[\s\S]{0,300}captureSequenceFloor' `
     'A live custom-file add/remove must re-evaluate the equipped weapon from the in-memory revision, release stale authority, and require a fresh graph capture.'
 Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
     '!harvestedRelationAvailable\s*&&\s*!authored_weapon_grip_library::publish\([\s\S]{0,350}CaptureSource::LiveEquippedGraph' `
@@ -274,6 +274,9 @@ Reject-Text 'src/physics-interaction/grab/FrikWeaponOffsetCache.cpp' `
 Require-Text 'src/physics-interaction/grab/FrikWeaponOffsetCache.cpp' `
     'loadCustomOffsets[\s\S]{0,1400}OffsetSource::CustomFile[\s\S]*findPrimaryWeaponOffsetLocked[\s\S]{0,1800}\.source\s*=\s*offset->source' `
     'The hFRIK cache must retain per-entry custom-vs-embedded provenance through final lookup.'
+Require-Text 'src/physics-interaction/grab/FrikWeaponOffsetCache.cpp' `
+    'findCustomGripOverrideLocked[\s\S]{0,1200}kGripOffsetModes[\s\S]{0,800}OffsetSource::CustomFile[\s\S]{0,900}customPrimaryHandOffset[\s\S]{0,500}customOffHandOffset' `
+    'Custom-file authority detection must cover effective weapon, primary-hand, and offhand grip offsets without treating embedded entries as user overrides.'
 Require-Text 'src/physics-interaction/weapon/AuthoredWeaponGripLibrary.cpp' `
     'std::array<Entry,\s*kCapacity>[\s\S]*weaponFormId[\s\S]*variantKey[\s\S]*inPowerArmor[\s\S]*nativeIdleMatchCount[\s\S]*selectLookup' `
     'The learned loose grip library must be bounded and keyed by weapon, stock variant, and power-armor topology while preferring only an unambiguous native-idle fallback.'

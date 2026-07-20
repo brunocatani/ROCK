@@ -217,6 +217,8 @@ namespace frik::api
 
         bool(FRIK_CALL* getHandPoseLocalTransformsForPose)(Hand hand, const HandPoseData& handPose, FingerLocalTransformOverride* outTransforms);
 
+        // While blocked, FRIK yields every built-in primary weapon hand-pose
+        // contributor, including its per-weapon primary-hand grip rotation.
         bool(FRIK_CALL* blockPrimaryHandWeaponPose)(const char* tag, bool block);
 
         // Appended v5 member - may be null on older FRIK builds; callers must null-check.

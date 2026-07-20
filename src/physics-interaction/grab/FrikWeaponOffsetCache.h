@@ -28,10 +28,27 @@ namespace rock::frik_weapon_offset_cache
         const char* reason = "notEvaluated";
     };
 
+    struct CustomGripOverrideResult
+    {
+        bool found = false;
+        const char* reason = "notEvaluated";
+    };
+
     void preload();
     [[nodiscard]] std::uint64_t currentRevision() noexcept;
 
     [[nodiscard]] LookupResult findPrimaryWeaponOffset(
+        const RE::TESObjectWEAP* weapon,
+        const RE::NiAVObject* weaponRoot);
+
+    /*
+     * Report whether hFRIK has an effective filesystem-authored offset for
+     * any equipped-weapon grip contributor (weapon, primary hand, or
+     * offhand). This intentionally excludes embedded resources so ROCK can
+     * supersede legacy bundled calibration while preserving explicit user
+     * corrections as the highest authority.
+     */
+    [[nodiscard]] CustomGripOverrideResult findCustomGripOverride(
         const RE::TESObjectWEAP* weapon,
         const RE::NiAVObject* weaponRoot);
 }

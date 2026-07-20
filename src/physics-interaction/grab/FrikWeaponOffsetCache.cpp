@@ -12,6 +12,7 @@
 #include <nlohmann/json.hpp>
 #include <thomasmonkman-filewatch/FileWatch.hpp>
 
+#include <array>
 #include <atomic>
 #include <cctype>
 #include <chrono>
@@ -38,8 +39,23 @@ namespace rock::frik_weapon_offset_cache
         constexpr WORD kFrikWeaponOffsetResourceLast = 600;
         constexpr auto kFrikModuleName = "FRIK.dll";
         constexpr auto kFrikWeaponOffsetsRelativePath = R"(\My Games\Fallout4VR\FRIK_Config\Weapons_Offsets)";
+        constexpr auto kPrimaryHandSuffix = "-primHand";
+        constexpr auto kOffHandSuffix = "-offHand";
         constexpr auto kPowerArmorSuffix = "-PowerArmor";
         constexpr auto kLeftHandedSuffix = "-leftHanded";
+
+        enum class GripOffsetMode : std::uint8_t
+        {
+            Weapon,
+            PrimaryHand,
+            OffHand,
+        };
+
+        constexpr std::array kGripOffsetModes{
+            GripOffsetMode::Weapon,
+            GripOffsetMode::PrimaryHand,
+            GripOffsetMode::OffHand,
+        };
 
         struct CacheState
         {
@@ -278,9 +294,27 @@ namespace rock::frik_weapon_offset_cache
             return weaponName;
         }
 
-        [[nodiscard]] std::string weaponOffsetKey(std::string_view weaponName, bool inPowerArmor, bool leftHanded)
+        [[nodiscard]] std::string_view gripOffsetModeSuffix(const GripOffsetMode mode)
+        {
+            switch (mode) {
+            case GripOffsetMode::PrimaryHand:
+                return kPrimaryHandSuffix;
+            case GripOffsetMode::OffHand:
+                return kOffHandSuffix;
+            case GripOffsetMode::Weapon:
+            default:
+                return {};
+            }
+        }
+
+        [[nodiscard]] std::string weaponOffsetKey(
+            std::string_view weaponName,
+            const GripOffsetMode mode,
+            bool inPowerArmor,
+            bool leftHanded)
         {
             std::string key(weaponName);
+            key += gripOffsetModeSuffix(mode);
             if (inPowerArmor) {
                 key += kPowerArmorSuffix;
             }
@@ -312,6 +346,29 @@ namespace rock::frik_weapon_offset_cache
             return std::nullopt;
         }
 
+        [[nodiscard]] std::optional<CacheState::CachedOffset> findEffectiveGripOffsetLocked(
+            const CacheState& cache,
+            const std::string& weaponName,
+            const GripOffsetMode mode,
+            const bool inPowerArmor,
+            const bool leftHanded)
+        {
+            if (inPowerArmor) {
+                const auto powerArmorOffset = findOffsetByKeyLocked(
+                    cache,
+                    weaponOffsetKey(weaponName, mode, true, leftHanded),
+                    false);
+                if (powerArmorOffset) {
+                    return powerArmorOffset;
+                }
+            }
+
+            return findOffsetByKeyLocked(
+                cache,
+                weaponOffsetKey(weaponName, mode, false, leftHanded),
+                false);
+        }
+
         [[nodiscard]] LookupResult findPrimaryWeaponOffsetLocked(
             const CacheState& cache,
             const std::string& weaponName)
@@ -322,31 +379,57 @@ namespace rock::frik_weapon_offset_cache
 
             const bool inPowerArmor = f4vr::isInPowerArmor();
             const bool leftHanded = f4vr::isLeftHandedMode();
-            if (inPowerArmor) {
-                const auto powerArmorOffset = findOffsetByKeyLocked(cache, weaponOffsetKey(weaponName, true, leftHanded), false);
-                if (powerArmorOffset) {
-                    return LookupResult{
-                        .found = true,
-                        .offset = powerArmorOffset->transform,
-                        .source = powerArmorOffset->source,
-                        .reason = powerArmorOffset->source == OffsetSource::CustomFile ?
-                                      "customPowerArmorOffset" :
-                                      "embeddedPowerArmorOffset",
-                    };
-                }
-            }
-
-            const auto offset = findOffsetByKeyLocked(cache, weaponOffsetKey(weaponName, false, leftHanded), false);
+            const auto offset = findEffectiveGripOffsetLocked(
+                cache,
+                weaponName,
+                GripOffsetMode::Weapon,
+                inPowerArmor,
+                leftHanded);
             if (offset) {
                 return LookupResult{
                     .found = true,
                     .offset = offset->transform,
                     .source = offset->source,
-                    .reason = offset->source == OffsetSource::CustomFile ? "customOffset" : "embeddedOffset",
+                    .reason = offset->source == OffsetSource::CustomFile ? "customWeaponOffset" : "embeddedWeaponOffset",
                 };
             }
 
             return LookupResult{ .found = false, .reason = "offsetMissing" };
+        }
+
+        [[nodiscard]] CustomGripOverrideResult findCustomGripOverrideLocked(
+            const CacheState& cache,
+            const std::string& weaponName)
+        {
+            if (!cache.loaded) {
+                return CustomGripOverrideResult{ .found = false, .reason = "cacheNotLoaded" };
+            }
+
+            const bool inPowerArmor = f4vr::isInPowerArmor();
+            const bool leftHanded = f4vr::isLeftHandedMode();
+            for (const auto mode : kGripOffsetModes) {
+                const auto offset = findEffectiveGripOffsetLocked(
+                    cache,
+                    weaponName,
+                    mode,
+                    inPowerArmor,
+                    leftHanded);
+                if (!offset || offset->source != OffsetSource::CustomFile) {
+                    continue;
+                }
+
+                switch (mode) {
+                case GripOffsetMode::PrimaryHand:
+                    return CustomGripOverrideResult{ .found = true, .reason = "customPrimaryHandOffset" };
+                case GripOffsetMode::OffHand:
+                    return CustomGripOverrideResult{ .found = true, .reason = "customOffHandOffset" };
+                case GripOffsetMode::Weapon:
+                default:
+                    return CustomGripOverrideResult{ .found = true, .reason = "customWeaponOffset" };
+                }
+            }
+
+            return CustomGripOverrideResult{ .found = false, .reason = "customGripOffsetMissing" };
         }
 
         void reloadCache()
@@ -466,6 +549,24 @@ namespace rock::frik_weapon_offset_cache
             };
         }
         return lookup;
+    }
+
+    CustomGripOverrideResult findCustomGripOverride(
+        const RE::TESObjectWEAP* weapon,
+        const RE::NiAVObject* weaponRoot)
+    {
+        if (!weapon) {
+            return CustomGripOverrideResult{ .found = false, .reason = "missingWeaponForm" };
+        }
+
+        const auto fullName = RE::TESFullName::GetFullName(*weapon, false);
+        if (!hasText(fullName)) {
+            return CustomGripOverrideResult{ .found = false, .reason = "missingWeaponName" };
+        }
+
+        const std::string weaponName = extendWeaponNameLikeFrik(std::string(fullName), weaponRoot);
+        std::scoped_lock lock(g_cacheMutex);
+        return findCustomGripOverrideLocked(g_cache, weaponName);
     }
 
 }

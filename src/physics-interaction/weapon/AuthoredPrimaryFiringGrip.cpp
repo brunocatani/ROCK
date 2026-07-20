@@ -184,16 +184,14 @@ namespace rock
             _customFrikOffsetOverrideActive = false;
             _frikOffsetCacheRevision = frik_weapon_offset_cache::currentRevision();
             if (input.weapon && input.weaponNode) {
-                const auto frikOffset =
-                    frik_weapon_offset_cache::findPrimaryWeaponOffset(input.weapon, input.weaponNode);
-                _customFrikOffsetOverrideActive =
-                    frikOffset.found &&
-                    frikOffset.source == frik_weapon_offset_cache::OffsetSource::CustomFile;
+                const auto customFrikOffset =
+                    frik_weapon_offset_cache::findCustomGripOverride(input.weapon, input.weaponNode);
+                _customFrikOffsetOverrideActive = customFrikOffset.found;
                 if (_customFrikOffsetOverrideActive) {
                     ROCK_LOG_INFO(Animation,
                         "Authored primary firing grip yielded to custom hFRIK weapon offset weaponKey=0x{:X} source={}",
                         currentWeaponKey,
-                        frikOffset.reason);
+                        customFrikOffset.reason);
                 }
             }
             return;
@@ -204,18 +202,16 @@ namespace rock
             const bool previousCustomOverride = _customFrikOffsetOverrideActive;
             _frikOffsetCacheRevision = frikOffsetCacheRevision;
 
-            const auto frikOffset =
-                frik_weapon_offset_cache::findPrimaryWeaponOffset(input.weapon, input.weaponNode);
-            _customFrikOffsetOverrideActive =
-                frikOffset.found &&
-                frikOffset.source == frik_weapon_offset_cache::OffsetSource::CustomFile;
+            const auto customFrikOffset =
+                frik_weapon_offset_cache::findCustomGripOverride(input.weapon, input.weaponNode);
+            _customFrikOffsetOverrideActive = customFrikOffset.found;
             if (_customFrikOffsetOverrideActive != previousCustomOverride) {
                 ROCK_LOG_INFO(Animation,
                     "Authored primary firing grip custom hFRIK override {} weaponKey=0x{:X} cacheRevision={} source={}",
                     _customFrikOffsetOverrideActive ? "activated" : "released",
                     currentWeaponKey,
                     frikOffsetCacheRevision,
-                    frikOffset.reason);
+                    customFrikOffset.reason);
 
                 weaponAuthority.clearAuthoredPrimaryFiringGripCanonical(
                     "custom-frik-weapon-offset-change");
