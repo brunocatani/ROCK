@@ -84,13 +84,19 @@ namespace rock::native_animation_authority
     [[nodiscard]] bool installPostUpdateHook();
 
     void setRuntimeEnabled(bool enabled);
-    // The existing native-reload experiment also owns a ROCK-local manual
-    // weapon-cycle window. With a right-firing full two-hand hold, it resolves
-    // Bethesda's substantial per-hand animation deltas through hFRIK after
-    // ROCK has solved the weapon from the live controllers. Either hand stays
-    // exactly seated until its own native motion qualifies; one-hand firing
-    // keeps FO4VR's parts-only behavior.
+    // The existing native-reload experiment also owns ROCK's weapon-fixed
+    // hands composition, used by manual cycling and optional partial reloads.
+    // With a right-firing full two-hand hold, it resolves Bethesda's
+    // substantial per-hand animation deltas through hFRIK after ROCK has
+    // solved the weapon from the live controllers. Either hand stays exactly
+    // seated until its own native motion qualifies; one-hand operation keeps
+    // FO4VR's parts-only behavior.
     void setLocalManualCycleTestEnabled(bool enabled);
+    // Selects the composition latched by the next ROCK-local reload lease.
+    // False preserves full arms/hands/Weapon authority. True reuses the
+    // post-ROCK weapon-fixed hand composition and requires stable two-hand
+    // ROCK weapon ownership; the provider API remains unaffected.
+    void setLocalReloadPartialAuthorityEnabled(bool enabled);
     void setManualCycleTwoHandAuthorityActive(bool active);
     void setManualCycleRockGripBaselines(
         const ManualCycleRockGripBaselines& baselines);

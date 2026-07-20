@@ -158,6 +158,7 @@ namespace rock
 
         rockDeveloperModeEnabled = false;
         rockNativeReloadAnimationAuthorityTestEnabled = false;
+        rockNativeReloadAnimationPartialAuthorityTestEnabled = false;
         rockAuthoredPrimaryFiringGripTestEnabled = false;
 
         rockLogLevel = logging_policy::DefaultLogLevel;
@@ -1420,6 +1421,10 @@ namespace rock
             EXPERIMENTAL_SECTION,
             "bNativeReloadAnimationAuthorityTestEnabled",
             rockNativeReloadAnimationAuthorityTestEnabled);
+        rockNativeReloadAnimationPartialAuthorityTestEnabled = ini.GetBoolValue(
+            EXPERIMENTAL_SECTION,
+            "bNativeReloadAnimationPartialAuthorityTestEnabled",
+            rockNativeReloadAnimationPartialAuthorityTestEnabled);
         rockAuthoredPrimaryFiringGripTestEnabled = ini.GetBoolValue(
             EXPERIMENTAL_SECTION,
             "bAuthoredPrimaryFiringGripTestEnabled",

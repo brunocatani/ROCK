@@ -8,7 +8,8 @@ namespace rock::native_animation_authority_policy
     inline constexpr std::uint32_t kArms = 1u << 0;
     inline constexpr std::uint32_t kHands = 1u << 1;
     inline constexpr std::uint32_t kWeapon = 1u << 2;
-    inline constexpr std::uint32_t kManualCyclePose = kArms | kHands;
+    inline constexpr std::uint32_t kWeaponFixedHandsPose = kArms | kHands;
+    inline constexpr std::uint32_t kManualCyclePose = kWeaponFixedHandsPose;
     inline constexpr std::uint32_t kReloadPose = kArms | kHands | kWeapon;
     inline constexpr float kManualCycleHandMotionTranslationThresholdGameUnits = 1.5f;
     inline constexpr float kManualCycleHandMotionRotationThresholdDegrees = 10.0f;
@@ -45,6 +46,33 @@ namespace rock::native_animation_authority_policy
             return endReason == LocalReloadLeaseEndReason::None && state.watchdogFramesRemaining > 0;
         }
     };
+
+    struct LocalReloadAuthoritySelection
+    {
+        bool leaseActive{ false };
+        bool partialAuthorityEnabled{ false };
+        bool rockTwoHandWeaponAuthorityActive{ false };
+    };
+
+    /*
+     * Full authority preserves the existing arms/hands/Weapon composition.
+     * Partial authority deliberately fails closed unless ROCK owns the weapon
+     * through the same stable right-primary two-hand solver used by manual
+     * cycling; a one-hand reload therefore remains Bethesda parts-only.
+     */
+    [[nodiscard]] inline constexpr std::uint32_t resolveLocalReloadAuthorityFlags(
+        const LocalReloadAuthoritySelection& selection)
+    {
+        if (!selection.leaseActive) {
+            return 0;
+        }
+        if (!selection.partialAuthorityEnabled) {
+            return kReloadPose;
+        }
+        return selection.rockTwoHandWeaponAuthorityActive ?
+            kWeaponFixedHandsPose :
+            0;
+    }
 
     enum class LocalManualCycleLeaseEndReason : std::uint32_t
     {

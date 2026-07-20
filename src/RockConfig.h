@@ -76,6 +76,10 @@ namespace rock
         // Local validation path only: each ROCK-routed native reload arms a
         // bounded Bethesda arms/hands/weapon animation-authority lease.
         bool rockNativeReloadAnimationAuthorityTestEnabled = false;
+        // Mode selector for the local reload lease above. Partial authority
+        // publishes only the native hand/IK deltas after ROCK has solved a
+        // right-primary two-hand weapon; the Weapon transform stays with ROCK.
+        bool rockNativeReloadAnimationPartialAuthorityTestEnabled = false;
         // Local validation path only: align the weapon to the flat animation's
         // authored primary relation and expose its paired support grip as a
         // role-aware Weapon-relative proximity-probe acquisition candidate.

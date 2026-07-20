@@ -67,6 +67,21 @@ Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
 Require-Text 'src/ROCKMain.cpp' `
     'setLocalManualCycleTestEnabled\([\s\S]{0,180}rockNativeReloadAnimationAuthorityTestEnabled' `
     'The manual-cycle path must remain gated by the existing native reload authority experiment flag.'
+Require-Text 'src/RockConfig.cpp' `
+    'rockNativeReloadAnimationPartialAuthorityTestEnabled\s*=\s*false[\s\S]*GetBoolValue\(\s*EXPERIMENTAL_SECTION,\s*"bNativeReloadAnimationPartialAuthorityTestEnabled"' `
+    'Partial reload authority must default off and load only from [Experimental].'
+Require-Text 'src/ROCKMain.cpp' `
+    'setLocalReloadPartialAuthorityEnabled\([\s\S]{0,260}rockNativeReloadAnimationAuthorityTestEnabled[\s\S]{0,180}rockNativeReloadAnimationPartialAuthorityTestEnabled' `
+    'The partial reload selector must remain subordinate to the existing native reload experiment gate.'
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
+    'effectiveRequestedFlags[\s\S]*resolveLocalReloadAuthorityFlags[\s\S]*s_localReloadLeasePartialAuthority[\s\S]*s_manualCycleTwoHandAuthorityActive' `
+    'A local reload lease must resolve full versus partial flags from its latched mode and current ROCK two-hand weapon authority.'
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
+    'requestLocalReloadTestLease[\s\S]*s_localReloadPartialAuthorityEnabled\.load[\s\S]*s_localReloadLeasePartialAuthority\.store[\s\S]*s_localReloadTestLeaseFrames\.store' `
+    'Each reload must latch its configured authority mode before publishing the active lease.'
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthorityPolicy.h' `
+    'resolveLocalReloadAuthorityFlags[\s\S]*!selection\.partialAuthorityEnabled[\s\S]*return\s+kReloadPose[\s\S]*rockTwoHandWeaponAuthorityActive\s*\?[\s\S]*kWeaponFixedHandsPose[\s\S]*:\s*0' `
+    'Partial reload authority must exclude Weapon only under stable ROCK two-hand ownership and otherwise fail closed to parts-only behavior.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'hasNativeManualCycleTwoHandAuthority[\s\S]*TwoHandedState::Gripping[\s\S]*isFiringHandLeft\(\)[\s\S]*ownsWeaponTransform\(\)' `
     'Native cycle hand animation must require a right-primary full two-hand weapon solver.'
@@ -101,14 +116,14 @@ Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
     'parentIsSelected\(transform\.parPos,[\s\S]*composeTransforms\(correction,\s*nativeRootWorld\)' `
     'The controller aim correction must be applied once at selected hierarchy roots, not independently per bone.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthorityPolicy.h' `
-    'kManualCyclePose\s*=\s*kArms\s*\|\s*kHands[\s\S]*advanceLocalManualCycleLease[\s\S]*observedReloadEndEvents\s*>=\s*2' `
+    'kWeaponFixedHandsPose\s*=\s*kArms\s*\|\s*kHands[\s\S]*kManualCyclePose\s*=\s*kWeaponFixedHandsPose[\s\S]*advanceLocalManualCycleLease[\s\S]*observedReloadEndEvents\s*>=\s*2' `
     'Manual-cycle authority must exclude Weapon and end on the native bolt/lever clip bracket.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
     'captureManualCyclePose[\s\S]*animatedWeaponLocal\s*=\s*authoritativeLocal\(weaponTransform\)[\s\S]*nativeWeaponModel[\s\S]*resolveNativeHandInWeapon[\s\S]*primaryHandInWeapon[\s\S]*supportHandInWeapon' `
     'Hand-only cycling must derive both physical hands from the live animated Weapon local in one native graph frame.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
     'ManualCycleHandRebase[\s\S]*manualCycleHandRebases[\s\S]*getHandWorldTransform\(hand\)[\s\S]*liveBaselineHandInWeapon[\s\S]*nativeBaselineHandInWeapon[\s\S]*resolveControllerAnchoredPoseCorrection[\s\S]*rebasedHandInWeapon' `
-    'Each manual-cycle hand must rebase only the native animation delta onto its live ROCK grip instead of publishing Bethesda''s absolute flat-game basis.'
+    'Each weapon-fixed hand must rebase only the native animation delta onto its live ROCK grip instead of publishing Bethesda''s absolute flat-game basis.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
     'publishManualCycleHandVisual[\s\S]*rockBaselineHandInWeapon[\s\S]*measureManualCycleHandMotion[\s\S]*updateManualCycleHandMotionQualification[\s\S]*ManualCycleHandVisualResult::Suppressed[\s\S]*ManualCycleHandVisualResult::Published' `
     'Both cycle hands must remain under their exact ROCK grip authority until their own native Weapon-relative motion crosses the shared substantial-motion gate.'
@@ -116,23 +131,23 @@ Require-Text 'src/physics-interaction/animation/NativeAnimationAuthorityPolicy.h
     'kManualCycleHandMotionTranslationThresholdGameUnits\s*=\s*1\.5f[\s\S]*kManualCycleHandMotionRotationThresholdDegrees\s*=\s*10\.0f[\s\S]*alreadyQualified\s*\|\|' `
     'Manual-cycle hand motion qualification must use explicit translation/rotation thresholds and latch for the remainder of the cycle.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
-    'applyCapturedPose\(const ApplyPhase phase\)[\s\S]*ApplyPhase::BeforeRock[\s\S]*return true;[\s\S]*applyManualCyclePoseAfterRock' `
-    'Manual-cycle IK must be a no-op before ROCK and publish only in the explicit final phase.'
+    'applyCapturedPose\(const ApplyPhase phase\)[\s\S]*ApplyPhase::BeforeRock[\s\S]*return true;[\s\S]*applyWeaponFixedHandsPoseAfterRock' `
+    'Weapon-fixed hand IK must be a no-op before ROCK and publish only in the explicit final phase.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
-    'publishManualCycleHandVisual[\s\S]*applyExternalHandWorldTransform[\s\S]*kManualCycleVisualAuthorityPriority[\s\S]*applyManualCyclePoseAfterRock[\s\S]*restoreFixedVisibleWeaponTarget' `
-    'Manual-cycle IK must outrank grip-locked visual authority and restore the exact controller-fixed Weapon world.'
+    'publishManualCycleHandVisual[\s\S]*applyExternalHandWorldTransform[\s\S]*kManualCycleVisualAuthorityPriority[\s\S]*applyWeaponFixedHandsPoseAfterRock[\s\S]*restoreFixedVisibleWeaponTarget' `
+    'Weapon-fixed hand IK must outrank grip-locked visual authority and restore the exact controller-fixed Weapon world.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
     'kManualCyclePrimaryFingerBoneNames[\s\S]*captureManualCycleFingerLocals[\s\S]*publishManualCycleHandVisual[\s\S]*setHandPoseCustomWithPriority[\s\S]*setHandPoseCustomLocalTransformsWithPriority[\s\S]*clearManualCycleVisualAuthority' `
     'Manual-cycle authority must establish the required base pose, attach native finger locals, and deterministically release both hand-pose and world-transform tags.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
-    'clearManualCycleVisualAuthorityPreservingWeapon[\s\S]*beginRockFrame[\s\S]*s_frameManualCycleCleanupPending\s*=\s*manualCycleVisualAuthorityPublished\(\)[\s\S]*Keep ROCK''s higher-priority cycle tags selected[\s\S]*completeRockFrame[\s\S]*s_frameManualCycleCleanupPending[\s\S]*clearManualCycleVisualAuthorityPreservingWeapon\(\)' `
-    'Active cycling and a parts-only lease edge must retain the selected overlay until ROCK refreshes the hidden controller grip targets.'
+    'clearManualCycleVisualAuthorityPreservingWeapon[\s\S]*beginRockFrame[\s\S]*s_frameWeaponFixedHandsCleanupPending\s*=\s*manualCycleVisualAuthorityPublished\(\)[\s\S]*Keep ROCK''s higher-priority weapon-fixed tags selected[\s\S]*completeRockFrame[\s\S]*s_frameWeaponFixedHandsCleanupPending[\s\S]*clearManualCycleVisualAuthorityPreservingWeapon\(\)' `
+    'Active weapon-fixed hands and a parts-only lease edge must retain the selected overlay until ROCK refreshes the hidden controller grip targets.'
 Reject-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
-    'if\s*\(manualCycleRequested\)\s*\{[^}]*clearManualCycleVisualAuthority' `
-    'Active cycle setup must not reselect stale previous-frame grip targets before ROCK solves the weapon.'
+    'if\s*\(weaponFixedHandsRequested\)\s*\{[^}]*clearManualCycleVisualAuthority' `
+    'Active weapon-fixed setup must not reselect stale previous-frame grip targets before ROCK solves the weapon.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
-    'applyCapturedPose[\s\S]*manualCycleStillRequested[\s\S]*clearManualCycleVisualAuthorityPreservingWeapon\(\)[\s\S]*s_frameManualCycleApplied\s*=\s*true' `
-    'Support release during ROCK update must cancel the hand overlay after the current weapon solve without disturbing the weapon world.'
+    'applyCapturedPose[\s\S]*weaponFixedHandsStillRequested[\s\S]*clearManualCycleVisualAuthorityPreservingWeapon\(\)[\s\S]*s_frameWeaponFixedHandsApplied\s*=\s*true' `
+    'Support release during ROCK update must cancel the weapon-fixed hand overlay after the current weapon solve without disturbing the weapon world.'
 Reject-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
     'resolveWorldTargetCorrection\(\s*aimFrame\.controlWeaponWorld,\s*nativeWeaponWorld\)' `
     'Hand-only cycling must never return to a rigid collarbone-root correction against the Weapon.'
@@ -414,8 +429,12 @@ foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini
     $experimentalMatch = [regex]::Match($configText, '(?ms)^\[Experimental\]\s*(?<body>.*?)(?=^\[[^\]]+\])')
     if (-not $experimentalMatch.Success -or
         $experimentalMatch.Groups['body'].Value -notmatch '(?m)^bAuthoredPrimaryFiringGripTestEnabled\s*=\s*false\s*$' -or
+        $experimentalMatch.Groups['body'].Value -notmatch '(?m)^bNativeReloadAnimationAuthorityTestEnabled\s*=\s*false\s*$' -or
+        $experimentalMatch.Groups['body'].Value -notmatch '(?m)^bNativeReloadAnimationPartialAuthorityTestEnabled\s*=\s*false\s*$' -or
+        $experimentalMatch.Groups['body'].Value.IndexOf('bNativeReloadAnimationPartialAuthorityTestEnabled') -lt
+            $experimentalMatch.Groups['body'].Value.IndexOf('bNativeReloadAnimationAuthorityTestEnabled') -or
         $experimentalMatch.Groups['body'].Value -match '(?m)^fAuthoredSupportGripSnapRadius\s*=') {
-        $failures.Add("$configPath`: Authored firing-grip experiment must exist under [Experimental] without the obsolete distance gate.")
+        $failures.Add("$configPath`: Native partial reload and authored firing-grip experiments must exist in order under [Experimental] without the obsolete distance gate.")
     }
 }
 

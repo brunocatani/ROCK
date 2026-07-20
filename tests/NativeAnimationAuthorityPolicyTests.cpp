@@ -130,6 +130,25 @@ int main()
         return !canApplyManualCycleHandAnimation(input);
     }());
 
+    static_assert(resolveLocalReloadAuthorityFlags(
+                      LocalReloadAuthoritySelection{}) == 0);
+    static_assert(resolveLocalReloadAuthorityFlags(
+                      LocalReloadAuthoritySelection{
+                          .leaseActive = true,
+                      }) == kReloadPose);
+    static_assert(resolveLocalReloadAuthorityFlags(
+                      LocalReloadAuthoritySelection{
+                          .leaseActive = true,
+                          .partialAuthorityEnabled = true,
+                      }) == 0);
+    static_assert(resolveLocalReloadAuthorityFlags(
+                      LocalReloadAuthoritySelection{
+                          .leaseActive = true,
+                          .partialAuthorityEnabled = true,
+                          .rockTwoHandWeaponAuthorityActive = true,
+                      }) == kWeaponFixedHandsPose);
+    static_assert((kWeaponFixedHandsPose & kWeapon) == 0);
+
     static_assert(!updateManualCycleHandMotionQualification(
         false,
         ManualCycleHandMotionSample{

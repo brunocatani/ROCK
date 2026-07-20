@@ -171,6 +171,8 @@ namespace rock::native_animation_authority
         std::atomic<bool> s_hookInstallFailed{ false };
         std::atomic<bool> s_runtimeEnabled{ false };
         std::atomic<bool> s_localManualCycleTestEnabled{ false };
+        std::atomic<bool> s_localReloadPartialAuthorityEnabled{ false };
+        std::atomic<bool> s_localReloadLeasePartialAuthority{ false };
         std::atomic<bool> s_manualCycleTwoHandAuthorityActive{ false };
         std::atomic<bool> s_localManualCycleTestLeaseActive{ false };
         std::atomic<bool> s_primaryFiringGripCaptureEnabled{ false };
@@ -234,9 +236,9 @@ namespace rock::native_animation_authority
         native_animation_authority_policy::LocalReloadLeaseState s_localReloadLeaseState{};
         native_animation_authority_policy::LocalManualCycleLeaseState s_localManualCycleLeaseState{};
         bool s_frameCaptureReady{ false };
-        bool s_frameManualCycleExpected{ false };
-        bool s_frameManualCycleApplied{ false };
-        bool s_frameManualCycleCleanupPending{ false };
+        bool s_frameWeaponFixedHandsExpected{ false };
+        bool s_frameWeaponFixedHandsApplied{ false };
+        bool s_frameWeaponFixedHandsCleanupPending{ false };
 
         [[nodiscard]] bool validTree(const BoneTree* tree)
         {
@@ -379,9 +381,18 @@ namespace rock::native_animation_authority
             }
             const std::uint32_t providerFlags = provider::currentNativeAnimationAuthorityFlagsV1();
             std::uint32_t localFlags =
-                s_localReloadTestLeaseFrames.load(std::memory_order_acquire) > 0 ?
-                kImplementedFlags :
-                0;
+                native_animation_authority_policy::resolveLocalReloadAuthorityFlags(
+                    native_animation_authority_policy::LocalReloadAuthoritySelection{
+                        .leaseActive =
+                            s_localReloadTestLeaseFrames.load(
+                                std::memory_order_acquire) > 0,
+                        .partialAuthorityEnabled =
+                            s_localReloadLeasePartialAuthority.load(
+                                std::memory_order_acquire),
+                        .rockTwoHandWeaponAuthorityActive =
+                            s_manualCycleTwoHandAuthorityActive.load(
+                                std::memory_order_acquire),
+                    });
             if (s_localManualCycleTestLeaseActive.load(std::memory_order_acquire) &&
                 s_manualCycleTwoHandAuthorityActive.load(std::memory_order_acquire)) {
                 localFlags |= native_animation_authority_policy::kManualCyclePose;
@@ -1479,7 +1490,7 @@ namespace rock::native_animation_authority
                 s_sourceAimFrame);
         }
 
-        [[nodiscard]] bool prepareManualCycleWeaponNode()
+        [[nodiscard]] bool prepareWeaponFixedHandsWeaponNode()
         {
             if (!validTree(s_cache.sourceTree) ||
                 s_cache.sourceWeaponIndex < 0 ||
@@ -1654,7 +1665,7 @@ namespace rock::native_animation_authority
             }
             if (!wasMotionQualified) {
                 ROCK_LOG_DEBUG(Animation,
-                    "Native manual-cycle hand motion qualified hand={} translation={:.3f}gu rotation={:.2f}deg",
+                    "Native weapon-fixed hand motion qualified hand={} translation={:.3f}gu rotation={:.2f}deg",
                     hand == frik_visual_authority::Hand::Left ? "left" : "right",
                     motion.translationGameUnits,
                     motion.rotationDegrees);
@@ -1663,7 +1674,7 @@ namespace rock::native_animation_authority
             // Use the same baseline/delta/live-frame solve as full reload
             // authority. Bethesda's absolute hand-in-Weapon basis points away
             // from the VR controller frame; only its delta from the first
-            // cycle sample belongs on ROCK's already-correct live grip.
+            // weapon-fixed sample belongs on ROCK's already-correct live grip.
             const RE::NiTransform handInWeaponCorrection =
                 native_animation_authority_policy::
                     resolveControllerAnchoredPoseCorrection(
@@ -1739,7 +1750,7 @@ namespace rock::native_animation_authority
             return ManualCycleHandVisualResult::Published;
         }
 
-        [[nodiscard]] bool applyManualCyclePoseAfterRock()
+        [[nodiscard]] bool applyWeaponFixedHandsPoseAfterRock()
         {
             if (!s_manualCyclePoseCapture.primaryHandValid) {
                 clearManualCycleVisualAuthority();
@@ -1786,7 +1797,7 @@ namespace rock::native_animation_authority
 
             if (!s_sourceAimFrame.manualCycleIkLogged) {
                 ROCK_LOG_INFO(Animation,
-                    "Native manual-cycle IK ready priority={} motionGate=({:.2f}gu,{:.1f}deg) weaponT=({:.3f},{:.3f},{:.3f})",
+                    "Native weapon-fixed hand IK ready priority={} motionGate=({:.2f}gu,{:.1f}deg) weaponT=({:.3f},{:.3f},{:.3f})",
                     kManualCycleVisualAuthorityPriority,
                     native_animation_authority_policy::
                         kManualCycleHandMotionTranslationThresholdGameUnits,
@@ -2161,6 +2172,7 @@ namespace rock::native_animation_authority
                 s_localReloadTestLeaseFrames.store(step.state.watchdogFramesRemaining, std::memory_order_release);
             } else {
                 s_localReloadTestLeaseFrames.store(0, std::memory_order_release);
+                s_localReloadLeasePartialAuthority.store(false, std::memory_order_release);
                 ROCK_LOG_INFO(Animation,
                     "Native reload animation authority local test lease released: {}",
                     localReloadLeaseEndReasonName(step.endReason));
@@ -2486,6 +2498,13 @@ namespace rock::native_animation_authority
         }
     }
 
+    void setLocalReloadPartialAuthorityEnabled(const bool enabled)
+    {
+        s_localReloadPartialAuthorityEnabled.store(
+            enabled,
+            std::memory_order_release);
+    }
+
     void setManualCycleTwoHandAuthorityActive(const bool active)
     {
         const bool effectiveActive = active &&
@@ -2718,11 +2737,27 @@ namespace rock::native_animation_authority
             return;
         }
         cancelLocalManualCycleTestLease();
+        const bool partialAuthority =
+            s_localReloadPartialAuthorityEnabled.load(
+                std::memory_order_acquire);
+        s_localReloadLeasePartialAuthority.store(
+            partialAuthority,
+            std::memory_order_release);
         s_localReloadTestLeaseFrames.store(kLocalReloadTestLeaseFrames, std::memory_order_release);
         s_localReloadTestRequestSequence.fetch_add(1, std::memory_order_acq_rel);
-        ROCK_LOG_INFO(Animation,
-            "Native reload animation authority local test lease armed; exact end follows Bethesda reload events, watchdog={} ROCK frames",
-            kLocalReloadTestLeaseFrames);
+        if (partialAuthority) {
+            ROCK_LOG_INFO(Animation,
+                "Native reload partial-authority local test lease armed; composition=weapon-fixed-hands twoHandWeaponAuthority={} exact end follows Bethesda reload events, watchdog={} ROCK frames",
+                s_manualCycleTwoHandAuthorityActive.load(
+                    std::memory_order_acquire) ?
+                    "ready" :
+                    "waiting",
+                kLocalReloadTestLeaseFrames);
+        } else {
+            ROCK_LOG_INFO(Animation,
+                "Native reload full-authority local test lease armed; composition=arms-hands-weapon exact end follows Bethesda reload events, watchdog={} ROCK frames",
+                kLocalReloadTestLeaseFrames);
+        }
     }
 
     void beginRockFrame(const float deltaSeconds)
@@ -2734,31 +2769,31 @@ namespace rock::native_animation_authority
         s_frameCaptureReady = false;
         s_frameCaptureFlags = 0;
         s_frameCaptureSequence = 0;
-        s_frameManualCycleExpected = false;
-        s_frameManualCycleApplied = false;
-        s_frameManualCycleCleanupPending = false;
+        s_frameWeaponFixedHandsExpected = false;
+        s_frameWeaponFixedHandsApplied = false;
+        s_frameWeaponFixedHandsCleanupPending = false;
 
         const std::uint32_t currentFlags = effectiveRequestedFlags();
         const std::uint32_t previousFlags = s_lastLoggedEffectiveFlags;
-        const bool manualCycleRequested = currentFlags != 0 &&
+        const bool weaponFixedHandsRequested = currentFlags != 0 &&
             (currentFlags & native_animation_authority_policy::kWeapon) == 0 &&
             (currentFlags & native_animation_authority_policy::kArms) != 0;
-        if (!manualCycleRequested && currentFlags != 0) {
+        if (!weaponFixedHandsRequested && currentFlags != 0) {
             // Full reload authority is taking over and will immediately write
-            // its own pose in both ROCK phases, so release a preceding cycle
-            // overlay before that different authority composition is applied.
+            // its own pose in both ROCK phases, so release a preceding weapon-
+            // fixed hand overlay before that composition is applied.
             clearManualCycleVisualAuthorityPreservingWeapon();
-        } else if (!manualCycleRequested) {
-            // With no replacement pose, retain the selected cycle tags until
+        } else if (!weaponFixedHandsRequested) {
+            // With no replacement pose, retain the selected weapon-fixed tags until
             // ROCK has refreshed its normal grip targets. Releasing them here
             // would make hFRIK apply the previous frame's lower-priority pose
             // immediately before ROCK samples the controller-driven hands.
-            s_frameManualCycleCleanupPending =
+            s_frameWeaponFixedHandsCleanupPending =
                 manualCycleVisualAuthorityPublished();
         } else {
             // hFRIK has already restored the scene arms from the controllers.
-            // Keep ROCK's higher-priority cycle tags selected while the two-
-            // hand solver updates its lower-priority grip targets underneath.
+            // Keep ROCK's higher-priority weapon-fixed tags selected while the
+            // two-hand solver updates its lower-priority grip targets underneath.
             // Clearing here re-selects those previous-frame targets and feeds
             // a stale hand/weapon pose back into the current weapon solve.
         }
@@ -2766,9 +2801,9 @@ namespace rock::native_animation_authority
             currentFlags != previousFlags) {
             resetHybridPoseState();
         }
-        s_frameManualCycleExpected = manualCycleRequested;
+        s_frameWeaponFixedHandsExpected = weaponFixedHandsRequested;
         if (currentFlags != s_lastLoggedEffectiveFlags) {
-            const char* composition = s_frameManualCycleExpected ?
+            const char* composition = s_frameWeaponFixedHandsExpected ?
                 "post-rock-weapon-anchored-hand-ik" :
                 "visible-weapon-shared-rigid-pose";
             ROCK_LOG_INFO(Animation,
@@ -2788,8 +2823,8 @@ namespace rock::native_animation_authority
         if (sequence == 0 || sequence == s_lastCompletedCaptureSequence || capturedFlags == 0) {
             return;
         }
-        const bool framePrepared = s_frameManualCycleExpected ?
-            prepareManualCycleWeaponNode() :
+        const bool framePrepared = s_frameWeaponFixedHandsExpected ?
+            prepareWeaponFixedHandsWeaponNode() :
             prepareControllerAimFrames();
         if (!framePrepared) {
             invalidateCapture();
@@ -2807,7 +2842,7 @@ namespace rock::native_animation_authority
             return false;
         }
 
-        if (s_frameManualCycleExpected) {
+        if (s_frameWeaponFixedHandsExpected) {
             // ROCK's collision/grab/two-hand pass must see only controller-
             // tracked hands. Publishing the animated IK target before that
             // pass feeds the clip back into the weapon solve and rotates the
@@ -2817,37 +2852,37 @@ namespace rock::native_animation_authority
             }
 
             const std::uint32_t currentFlags = effectiveRequestedFlags();
-            const bool manualCycleStillRequested = currentFlags != 0 &&
+            const bool weaponFixedHandsStillRequested = currentFlags != 0 &&
                 (currentFlags & native_animation_authority_policy::kWeapon) == 0 &&
                 (currentFlags & native_animation_authority_policy::kArms) != 0;
-            if (!manualCycleStillRequested) {
+            if (!weaponFixedHandsStillRequested) {
                 // The support hand can leave during ROCK's own update. Drop
                 // the native overlay only after that update, when the normal
                 // grip tags hold current-frame controller/weapon targets.
                 clearManualCycleVisualAuthorityPreservingWeapon();
                 invalidateCapture();
                 s_frameCaptureReady = false;
-                s_frameManualCycleApplied = true;
+                s_frameWeaponFixedHandsApplied = true;
                 return false;
             }
 
             bool applied = false;
 #if defined(_MSC_VER)
             __try {
-                applied = applyManualCyclePoseAfterRock();
+                applied = applyWeaponFixedHandsPoseAfterRock();
             } __except (EXCEPTION_EXECUTE_HANDLER) {
                 clearManualCycleVisualAuthority();
                 s_captureFault.store(true, std::memory_order_release);
             }
 #else
-            applied = applyManualCyclePoseAfterRock();
+            applied = applyWeaponFixedHandsPoseAfterRock();
 #endif
             if (!applied) {
                 s_frameCaptureReady = false;
                 invalidateCapture();
                 return false;
             }
-            s_frameManualCycleApplied = true;
+            s_frameWeaponFixedHandsApplied = true;
             return true;
         }
 
@@ -2895,10 +2930,10 @@ namespace rock::native_animation_authority
 
     void completeRockFrame()
     {
-        if ((s_frameManualCycleExpected && !s_frameManualCycleApplied) ||
-            s_frameManualCycleCleanupPending) {
+        if ((s_frameWeaponFixedHandsExpected && !s_frameWeaponFixedHandsApplied) ||
+            s_frameWeaponFixedHandsCleanupPending) {
             // Failure cleanup runs after ROCK has refreshed its normal grip
-            // targets, so releasing the retained cycle tags cannot feed a
+            // targets, so releasing the retained weapon-fixed tags cannot feed a
             // previous-frame pose into the weapon solver.
             clearManualCycleVisualAuthorityPreservingWeapon();
         }
@@ -2908,15 +2943,17 @@ namespace rock::native_animation_authority
         s_frameCaptureReady = false;
         s_frameCaptureFlags = 0;
         s_frameCaptureSequence = 0;
-        s_frameManualCycleExpected = false;
-        s_frameManualCycleApplied = false;
-        s_frameManualCycleCleanupPending = false;
+        s_frameWeaponFixedHandsExpected = false;
+        s_frameWeaponFixedHandsApplied = false;
+        s_frameWeaponFixedHandsCleanupPending = false;
     }
 
     void resetTransientState()
     {
         s_runtimeEnabled.store(false, std::memory_order_release);
         s_localManualCycleTestEnabled.store(false, std::memory_order_release);
+        s_localReloadPartialAuthorityEnabled.store(false, std::memory_order_release);
+        s_localReloadLeasePartialAuthority.store(false, std::memory_order_release);
         s_manualCycleTwoHandAuthorityActive.store(false, std::memory_order_release);
         s_manualCycleRockGripBaselines = {};
         s_primaryFiringGripCaptureEnabled.store(false, std::memory_order_release);
@@ -2942,9 +2979,9 @@ namespace rock::native_animation_authority
         s_frameCaptureReady = false;
         s_frameCaptureFlags = 0;
         s_frameCaptureSequence = 0;
-        s_frameManualCycleExpected = false;
-        s_frameManualCycleApplied = false;
-        s_frameManualCycleCleanupPending = false;
+        s_frameWeaponFixedHandsExpected = false;
+        s_frameWeaponFixedHandsApplied = false;
+        s_frameWeaponFixedHandsCleanupPending = false;
         s_lastCompletedCaptureSequence = s_captureSequence.load(std::memory_order_acquire);
         s_lastConsumedAuthoredSupportGraphPoseSequence =
             s_authoredSupportGraphPoseSequence.load(std::memory_order_acquire);
