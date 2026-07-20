@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <exception>
 #include <limits>
 #include <mutex>
 #include <tuple>
@@ -22,8 +23,10 @@
 
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/debug/DebugConvexHullMesh.h"
+#include "physics-interaction/debug/DebugOverlayFrameAdmission.h"
 #include "physics-interaction/debug/DebugOverlayLineBatch.h"
 #include "physics-interaction/debug/DebugOverlayPolicy.h"
+#include "physics-interaction/debug/DebugOverlayShaders.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/PhysicsUtils.h"
@@ -67,6 +70,8 @@ namespace rock::debug
         constexpr float kTargetAxisLength = 20.0f;
         constexpr std::uint32_t kTextVertexCapacity = 131072;
         constexpr DWORD kPageExecuteReadWrite = 0x00000040u;
+        constexpr UINT kMaxShaderClassInstances = 256;
+        constexpr UINT kSavedVertexBufferSlots = 2;
 
         struct Vertex
         {
@@ -178,10 +183,19 @@ namespace rock::debug
         {
             ID3D11VertexShader* vs = nullptr;
             ID3D11PixelShader* ps = nullptr;
-            ID3D11ClassInstance* vsInstances[256] = {};
-            ID3D11ClassInstance* psInstances[256] = {};
+            ID3D11GeometryShader* gs = nullptr;
+            ID3D11HullShader* hs = nullptr;
+            ID3D11DomainShader* ds = nullptr;
+            ID3D11ClassInstance* vsInstances[kMaxShaderClassInstances] = {};
+            ID3D11ClassInstance* psInstances[kMaxShaderClassInstances] = {};
+            ID3D11ClassInstance* gsInstances[kMaxShaderClassInstances] = {};
+            ID3D11ClassInstance* hsInstances[kMaxShaderClassInstances] = {};
+            ID3D11ClassInstance* dsInstances[kMaxShaderClassInstances] = {};
             UINT vsInstanceCount = 0;
             UINT psInstanceCount = 0;
+            UINT gsInstanceCount = 0;
+            UINT hsInstanceCount = 0;
+            UINT dsInstanceCount = 0;
             ID3D11Buffer* vsCBs[2] = {};
             ID3D11InputLayout* inputLayout = nullptr;
             D3D11_PRIMITIVE_TOPOLOGY topology = D3D11_PRIMITIVE_TOPOLOGY_UNDEFINED;
@@ -195,12 +209,53 @@ namespace rock::debug
             ID3D11DepthStencilView* dsv = nullptr;
             D3D11_VIEWPORT viewports[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE] = {};
             UINT numViewports = 0;
-            ID3D11Buffer* vertexBuffer = nullptr;
-            UINT vbStride = 0;
-            UINT vbOffset = 0;
+            ID3D11Buffer* vertexBuffers[kSavedVertexBufferSlots] = {};
+            UINT vbStrides[kSavedVertexBufferSlots] = {};
+            UINT vbOffsets[kSavedVertexBufferSlots] = {};
             ID3D11Buffer* indexBuffer = nullptr;
             DXGI_FORMAT ibFormat = DXGI_FORMAT_UNKNOWN;
             UINT ibOffset = 0;
+        };
+
+        struct D3DResources
+        {
+            Microsoft::WRL::ComPtr<ID3D11Device> device;
+            Microsoft::WRL::ComPtr<ID3D11VertexShader> vertexShader;
+            Microsoft::WRL::ComPtr<ID3D11VertexShader> screenTextVertexShader;
+            Microsoft::WRL::ComPtr<ID3D11PixelShader> pixelShader;
+            Microsoft::WRL::ComPtr<ID3D11InputLayout> inputLayout;
+            Microsoft::WRL::ComPtr<ID3D11Buffer> cameraCB;
+            Microsoft::WRL::ComPtr<ID3D11Buffer> modelCB;
+            Microsoft::WRL::ComPtr<ID3D11Buffer> axisLineVB;
+            Microsoft::WRL::ComPtr<ID3D11Buffer> textVB;
+            Microsoft::WRL::ComPtr<ID3D11RasterizerState> wireRasterizer;
+            Microsoft::WRL::ComPtr<ID3D11RasterizerState> solidRasterizer;
+            Microsoft::WRL::ComPtr<ID3D11DepthStencilState> depthStencil;
+            Microsoft::WRL::ComPtr<ID3D11BlendState> blendState;
+
+            [[nodiscard]] bool ready() const noexcept
+            {
+                return device && vertexShader && screenTextVertexShader && pixelShader && inputLayout && cameraCB && modelCB && axisLineVB && textVB &&
+                       wireRasterizer && solidRasterizer && depthStencil && blendState;
+            }
+        };
+
+        class RenderPassGuard
+        {
+        public:
+            RenderPassGuard(ID3D11DeviceContext* context, ID3D11RenderTargetView* renderTarget, UINT width, UINT height) noexcept;
+            RenderPassGuard(const RenderPassGuard&) = delete;
+            RenderPassGuard& operator=(const RenderPassGuard&) = delete;
+            ~RenderPassGuard() noexcept;
+
+            [[nodiscard]] bool active() const noexcept { return _active; }
+
+        private:
+            void restore() noexcept;
+
+            ID3D11DeviceContext* _context{ nullptr };
+            SavedState _saved{};
+            bool _active{ false };
         };
 
         struct CachedRenderTargetView
@@ -213,114 +268,28 @@ namespace rock::debug
         static BodyOverlayFrame s_frame{};
         static std::mutex s_frameMutex;
         static std::atomic<bool> s_enabled{ false };
-        static bool s_initialized = false;
-        static bool s_submitHookInstalled = false;
+        static std::atomic<bool> s_initialized{ false };
+        static std::atomic<bool> s_submitHookInstalled{ false };
         static bool s_installAttemptedWithoutDevice = false;
         static std::uintptr_t s_previousWorld = 0;
         static std::uint64_t s_previousShapeDecodeSettingsKey = 0;
         static std::uint32_t s_overlayStatsLogCounter = 0;
 
-        static ID3D11VertexShader* s_vertexShader = nullptr;
-        static ID3D11VertexShader* s_screenTextVertexShader = nullptr;
-        static ID3D11PixelShader* s_pixelShader = nullptr;
-        static ID3D11InputLayout* s_inputLayout = nullptr;
-        static ID3D11Buffer* s_cameraCB = nullptr;
-        static ID3D11Buffer* s_modelCB = nullptr;
-        static ID3D11Buffer* s_axisLineVB = nullptr;
-        static ID3D11Buffer* s_textVB = nullptr;
-        static ID3D11RasterizerState* s_wireRasterizer = nullptr;
-        static ID3D11RasterizerState* s_solidRasterizer = nullptr;
-        static ID3D11DepthStencilState* s_depthStencil = nullptr;
-        static ID3D11BlendState* s_blendState = nullptr;
-        static SavedState s_saved{};
+        static D3DResources s_d3d{};
+        static std::atomic_flag s_renderPassActive = ATOMIC_FLAG_INIT;
+        static debug_overlay_frame_admission::FrameAdmission s_frameAdmission{};
+        static std::atomic<bool> s_overlayExceptionReported{ false };
+        static std::atomic<bool> s_cameraUploadFailureReported{ false };
+        static std::atomic<bool> s_modelUploadFailureReported{ false };
+        static std::atomic<bool> s_submitInstallFailureReported{ false };
         static std::unordered_map<ShapeKey, GpuShape, ShapeKeyHash> s_shapeCache;
         static std::mutex s_shapeCacheMutex;
         static CachedRenderTargetView s_submittedTextureRtv{};
         static std::uint32_t s_frameShapeGenerations = 0;
 
-        using MainRenderCandidate_t = void (*)(void*);
-        static MainRenderCandidate_t s_originalMainRenderCandidate = nullptr;
-
         using VRSubmit_t = vr::EVRCompositorError(__thiscall*)(vr::IVRCompositor*, vr::EVREye, const vr::Texture_t*, const vr::VRTextureBounds_t*, vr::EVRSubmitFlags);
-        static VRSubmit_t s_originalVRSubmit = nullptr;
+        static std::atomic<VRSubmit_t> s_originalVRSubmit{ nullptr };
         static void** s_vrCompositorVTable = nullptr;
-
-        const char* kVertexShaderSource = R"(
-struct VS_INPUT {
-    float3 vPos : POS;
-    uint instanceId : SV_InstanceID;
-};
-
-struct VS_OUTPUT {
-    float4 vPos : SV_POSITION;
-    float4 vColor : COLOR0;
-    float clipDistance : SV_ClipDistance0;
-    float cullDistance : SV_CullDistance0;
-};
-
-cbuffer Camera : register(b0) {
-    column_major float4x4 matProjView[2];
-    float4 posAdjust[2];
-};
-
-cbuffer Model : register(b1) {
-    row_major float4x4 matModel;
-    float4 color;
-};
-
-VS_OUTPUT main(VS_INPUT input) {
-    const float4 eyeClipEdge[2] = { { -1, 0, 0, 1 }, { 1, 0, 0, 1 } };
-    const float eyeOffsetScale[2] = { -0.5, 0.5 };
-
-    float4 pos = float4(input.vPos.xyz, 1.0f);
-    pos = mul(pos, matModel);
-    pos.xyz -= posAdjust[input.instanceId].xyz;
-    pos = mul(matProjView[input.instanceId], pos);
-
-    VS_OUTPUT output;
-    output.vColor = color;
-    output.clipDistance = dot(pos, eyeClipEdge[input.instanceId]);
-    output.cullDistance = output.clipDistance;
-    output.vPos = pos;
-    output.vPos.x *= 0.5;
-    output.vPos.x += eyeOffsetScale[input.instanceId] * output.vPos.w;
-    return output;
-}
-)";
-
-        const char* kScreenTextVertexShaderSource = R"(
-struct VS_INPUT {
-    float3 vPos : POS;
-};
-
-struct VS_OUTPUT {
-    float4 vPos : SV_POSITION;
-    float4 vColor : COLOR0;
-};
-
-cbuffer Model : register(b1) {
-    row_major float4x4 matModel;
-    float4 color;
-};
-
-VS_OUTPUT main(VS_INPUT input) {
-    VS_OUTPUT output;
-    output.vPos = float4(input.vPos.xy, 0.0f, 1.0f);
-    output.vColor = color;
-    return output;
-}
-)";
-
-        const char* kPixelShaderSource = R"(
-struct PS_INPUT {
-    float4 pos : SV_POSITION;
-    float4 color : COLOR0;
-};
-
-float4 main(PS_INPUT input) : SV_Target {
-    return input.color;
-}
-)";
 
         Vertex sub(const Vertex& a, const Vertex& b) { return Vertex{ a.x - b.x, a.y - b.y, a.z - b.z }; }
         Vertex add(const Vertex& a, const Vertex& b) { return Vertex{ a.x + b.x, a.y + b.y, a.z + b.z }; }
@@ -953,56 +922,52 @@ float4 main(PS_INPUT input) : SV_Target {
             return &inserted->second;
         }
 
-        void releaseSavedState()
+        template <class T>
+        void releaseSavedComReference(T*& value) noexcept
         {
-            if (s_saved.vs) {
-                s_saved.vs->Release();
+            if (value) {
+                value->Release();
+                value = nullptr;
             }
-            if (s_saved.ps) {
-                s_saved.ps->Release();
+        }
+
+        template <std::size_t N>
+        void releaseSavedClassInstances(ID3D11ClassInstance* (&instances)[N], UINT count) noexcept
+        {
+            const UINT boundedCount = (std::min)(count, static_cast<UINT>(N));
+            for (UINT i = 0; i < boundedCount; ++i) {
+                releaseSavedComReference(instances[i]);
             }
-            for (UINT i = 0; i < s_saved.vsInstanceCount; i++) {
-                if (s_saved.vsInstances[i]) {
-                    s_saved.vsInstances[i]->Release();
-                }
+        }
+
+        void releaseSavedState(SavedState& saved) noexcept
+        {
+            releaseSavedComReference(saved.vs);
+            releaseSavedComReference(saved.ps);
+            releaseSavedComReference(saved.gs);
+            releaseSavedComReference(saved.hs);
+            releaseSavedComReference(saved.ds);
+            releaseSavedClassInstances(saved.vsInstances, saved.vsInstanceCount);
+            releaseSavedClassInstances(saved.psInstances, saved.psInstanceCount);
+            releaseSavedClassInstances(saved.gsInstances, saved.gsInstanceCount);
+            releaseSavedClassInstances(saved.hsInstances, saved.hsInstanceCount);
+            releaseSavedClassInstances(saved.dsInstances, saved.dsInstanceCount);
+            for (auto*& cb : saved.vsCBs) {
+                releaseSavedComReference(cb);
             }
-            for (UINT i = 0; i < s_saved.psInstanceCount; i++) {
-                if (s_saved.psInstances[i]) {
-                    s_saved.psInstances[i]->Release();
-                }
+            releaseSavedComReference(saved.inputLayout);
+            releaseSavedComReference(saved.rasterizerState);
+            releaseSavedComReference(saved.depthStencilState);
+            releaseSavedComReference(saved.blendState);
+            for (auto*& rtv : saved.rtvs) {
+                releaseSavedComReference(rtv);
             }
-            for (auto* cb : s_saved.vsCBs) {
-                if (cb) {
-                    cb->Release();
-                }
+            releaseSavedComReference(saved.dsv);
+            for (auto*& vertexBuffer : saved.vertexBuffers) {
+                releaseSavedComReference(vertexBuffer);
             }
-            if (s_saved.inputLayout) {
-                s_saved.inputLayout->Release();
-            }
-            if (s_saved.rasterizerState) {
-                s_saved.rasterizerState->Release();
-            }
-            if (s_saved.depthStencilState) {
-                s_saved.depthStencilState->Release();
-            }
-            if (s_saved.blendState) {
-                s_saved.blendState->Release();
-            }
-            for (auto* rtv : s_saved.rtvs) {
-                if (rtv) {
-                    rtv->Release();
-                }
-            }
-            if (s_saved.dsv) {
-                s_saved.dsv->Release();
-            }
-            if (s_saved.vertexBuffer) {
-                s_saved.vertexBuffer->Release();
-            }
-            if (s_saved.indexBuffer) {
-                s_saved.indexBuffer->Release();
-            }
-            std::memset(&s_saved, 0, sizeof(s_saved));
+            releaseSavedComReference(saved.indexBuffer);
+            saved = SavedState{};
         }
 
         // FO4VR stereo state layout. The +0x2590/+0x25A0 pair is the CURRENT-frame left/right
@@ -1229,60 +1194,89 @@ float4 main(PS_INPUT input) : SV_Target {
                 return false;
             }
 
-            ID3DBlob* vsBlob = nullptr;
-            ID3DBlob* psBlob = nullptr;
-            ID3DBlob* errorBlob = nullptr;
-            HRESULT hr = D3DCompile(kVertexShaderSource, std::strlen(kVertexShaderSource), "ROCKDebugBodyVS", nullptr, nullptr, "main", "vs_5_0",
-                D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_PACK_MATRIX_COLUMN_MAJOR, 0, &vsBlob, &errorBlob);
+            D3DResources resources{};
+            resources.device = device;
+
+            Microsoft::WRL::ComPtr<ID3DBlob> vsBlob;
+            Microsoft::WRL::ComPtr<ID3DBlob> psBlob;
+            Microsoft::WRL::ComPtr<ID3DBlob> errorBlob;
+            HRESULT hr = D3DCompile(
+                debug_overlay_shaders::kStereoVertex,
+                sizeof(debug_overlay_shaders::kStereoVertex) - 1,
+                "ROCKDebugBodyVS",
+                nullptr,
+                nullptr,
+                "main",
+                "vs_5_0",
+                D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_PACK_MATRIX_COLUMN_MAJOR,
+                0,
+                vsBlob.GetAddressOf(),
+                errorBlob.GetAddressOf());
             if (FAILED(hr)) {
                 if (errorBlob) {
                     ROCK_LOG_ERROR(Hand, "Debug overlay vertex shader compile failed: {}", static_cast<const char*>(errorBlob->GetBufferPointer()));
-                    errorBlob->Release();
                 }
                 return false;
             }
 
-            hr = device->CreateVertexShader(vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), nullptr, &s_vertexShader);
+            hr = device->CreateVertexShader(vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), nullptr, resources.vertexShader.GetAddressOf());
             if (FAILED(hr)) {
-                vsBlob->Release();
                 return false;
             }
 
             D3D11_INPUT_ELEMENT_DESC layoutDesc[] = { { "POS", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 } };
-            hr = device->CreateInputLayout(layoutDesc, 1, vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), &s_inputLayout);
-            vsBlob->Release();
+            hr = device->CreateInputLayout(layoutDesc, 1, vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), resources.inputLayout.GetAddressOf());
             if (FAILED(hr)) {
                 return false;
             }
 
-            hr = D3DCompile(kScreenTextVertexShaderSource, std::strlen(kScreenTextVertexShaderSource), "ROCKDebugTextVS", nullptr, nullptr, "main", "vs_5_0",
-                D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_PACK_MATRIX_COLUMN_MAJOR, 0, &vsBlob, &errorBlob);
+            vsBlob.Reset();
+            errorBlob.Reset();
+            hr = D3DCompile(
+                debug_overlay_shaders::kScreenTextVertex,
+                sizeof(debug_overlay_shaders::kScreenTextVertex) - 1,
+                "ROCKDebugTextVS",
+                nullptr,
+                nullptr,
+                "main",
+                "vs_5_0",
+                D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_PACK_MATRIX_COLUMN_MAJOR,
+                0,
+                vsBlob.GetAddressOf(),
+                errorBlob.GetAddressOf());
             if (FAILED(hr)) {
                 if (errorBlob) {
                     ROCK_LOG_ERROR(Hand, "Debug overlay text vertex shader compile failed: {}", static_cast<const char*>(errorBlob->GetBufferPointer()));
-                    errorBlob->Release();
                 }
                 return false;
             }
 
-            hr = device->CreateVertexShader(vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), nullptr, &s_screenTextVertexShader);
-            vsBlob->Release();
+            hr = device->CreateVertexShader(vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), nullptr, resources.screenTextVertexShader.GetAddressOf());
             if (FAILED(hr)) {
                 return false;
             }
 
-            hr = D3DCompile(kPixelShaderSource, std::strlen(kPixelShaderSource), "ROCKDebugBodyPS", nullptr, nullptr, "main", "ps_5_0",
-                D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_PACK_MATRIX_COLUMN_MAJOR, 0, &psBlob, &errorBlob);
+            errorBlob.Reset();
+            hr = D3DCompile(
+                debug_overlay_shaders::kPixel,
+                sizeof(debug_overlay_shaders::kPixel) - 1,
+                "ROCKDebugBodyPS",
+                nullptr,
+                nullptr,
+                "main",
+                "ps_5_0",
+                D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_PACK_MATRIX_COLUMN_MAJOR,
+                0,
+                psBlob.GetAddressOf(),
+                errorBlob.GetAddressOf());
             if (FAILED(hr)) {
                 if (errorBlob) {
                     ROCK_LOG_ERROR(Hand, "Debug overlay pixel shader compile failed: {}", static_cast<const char*>(errorBlob->GetBufferPointer()));
-                    errorBlob->Release();
                 }
                 return false;
             }
 
-            hr = device->CreatePixelShader(psBlob->GetBufferPointer(), psBlob->GetBufferSize(), nullptr, &s_pixelShader);
-            psBlob->Release();
+            hr = device->CreatePixelShader(psBlob->GetBufferPointer(), psBlob->GetBufferSize(), nullptr, resources.pixelShader.GetAddressOf());
             if (FAILED(hr)) {
                 return false;
             }
@@ -1292,7 +1286,7 @@ float4 main(PS_INPUT input) : SV_Target {
             cameraDesc.ByteWidth = sizeof(PerFrameVSData);
             cameraDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
             cameraDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-            if (FAILED(device->CreateBuffer(&cameraDesc, nullptr, &s_cameraCB))) {
+            if (FAILED(device->CreateBuffer(&cameraDesc, nullptr, resources.cameraCB.GetAddressOf()))) {
                 return false;
             }
 
@@ -1301,7 +1295,7 @@ float4 main(PS_INPUT input) : SV_Target {
             modelDesc.ByteWidth = sizeof(PerObjectVSData);
             modelDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
             modelDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-            if (FAILED(device->CreateBuffer(&modelDesc, nullptr, &s_modelCB))) {
+            if (FAILED(device->CreateBuffer(&modelDesc, nullptr, resources.modelCB.GetAddressOf()))) {
                 return false;
             }
 
@@ -1310,7 +1304,7 @@ float4 main(PS_INPUT input) : SV_Target {
             axisLineDesc.ByteWidth = sizeof(Vertex) * debug_overlay_policy::kMaxLineVertexBudget;
             axisLineDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
             axisLineDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-            if (FAILED(device->CreateBuffer(&axisLineDesc, nullptr, &s_axisLineVB))) {
+            if (FAILED(device->CreateBuffer(&axisLineDesc, nullptr, resources.axisLineVB.GetAddressOf()))) {
                 return false;
             }
 
@@ -1319,7 +1313,7 @@ float4 main(PS_INPUT input) : SV_Target {
             textDesc.ByteWidth = sizeof(Vertex) * kTextVertexCapacity;
             textDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
             textDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-            if (FAILED(device->CreateBuffer(&textDesc, nullptr, &s_textVB))) {
+            if (FAILED(device->CreateBuffer(&textDesc, nullptr, resources.textVB.GetAddressOf()))) {
                 return false;
             }
 
@@ -1328,12 +1322,12 @@ float4 main(PS_INPUT input) : SV_Target {
             rasterDesc.CullMode = D3D11_CULL_NONE;
             rasterDesc.FrontCounterClockwise = TRUE;
             rasterDesc.DepthClipEnable = TRUE;
-            if (FAILED(device->CreateRasterizerState(&rasterDesc, &s_wireRasterizer))) {
+            if (FAILED(device->CreateRasterizerState(&rasterDesc, resources.wireRasterizer.GetAddressOf()))) {
                 return false;
             }
 
             rasterDesc.FillMode = D3D11_FILL_SOLID;
-            if (FAILED(device->CreateRasterizerState(&rasterDesc, &s_solidRasterizer))) {
+            if (FAILED(device->CreateRasterizerState(&rasterDesc, resources.solidRasterizer.GetAddressOf()))) {
                 return false;
             }
 
@@ -1341,7 +1335,7 @@ float4 main(PS_INPUT input) : SV_Target {
             depthDesc.DepthEnable = FALSE;
             depthDesc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
             depthDesc.DepthFunc = D3D11_COMPARISON_ALWAYS;
-            if (FAILED(device->CreateDepthStencilState(&depthDesc, &s_depthStencil))) {
+            if (FAILED(device->CreateDepthStencilState(&depthDesc, resources.depthStencil.GetAddressOf()))) {
                 return false;
             }
 
@@ -1354,10 +1348,15 @@ float4 main(PS_INPUT input) : SV_Target {
             blendDesc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
             blendDesc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
             blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
-            if (FAILED(device->CreateBlendState(&blendDesc, &s_blendState))) {
+            if (FAILED(device->CreateBlendState(&blendDesc, resources.blendState.GetAddressOf()))) {
                 return false;
             }
 
+            if (!resources.ready()) {
+                return false;
+            }
+
+            s_d3d = std::move(resources);
             return true;
         }
 
@@ -1406,83 +1405,143 @@ float4 main(PS_INPUT input) : SV_Target {
             return s_submittedTextureRtv.rtv.Get();
         }
 
-        void beginFrame(ID3D11DeviceContext* context)
+        RenderPassGuard::RenderPassGuard(ID3D11DeviceContext* context, ID3D11RenderTargetView* renderTarget, UINT width, UINT height) noexcept
+            : _context(context)
         {
-            std::memset(&s_saved, 0, sizeof(s_saved));
-            s_saved.vsInstanceCount = 256;
-            s_saved.psInstanceCount = 256;
-            context->VSGetShader(&s_saved.vs, s_saved.vsInstances, &s_saved.vsInstanceCount);
-            context->PSGetShader(&s_saved.ps, s_saved.psInstances, &s_saved.psInstanceCount);
-            context->VSGetConstantBuffers(0, 2, s_saved.vsCBs);
-            context->IAGetInputLayout(&s_saved.inputLayout);
-            context->IAGetPrimitiveTopology(&s_saved.topology);
-            context->RSGetState(&s_saved.rasterizerState);
-            context->OMGetDepthStencilState(&s_saved.depthStencilState, &s_saved.stencilRef);
-            context->OMGetBlendState(&s_saved.blendState, s_saved.blendFactor, &s_saved.sampleMask);
-            context->OMGetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, s_saved.rtvs, &s_saved.dsv);
-            s_saved.numViewports = D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE;
-            context->RSGetViewports(&s_saved.numViewports, s_saved.viewports);
-            context->IAGetVertexBuffers(0, 1, &s_saved.vertexBuffer, &s_saved.vbStride, &s_saved.vbOffset);
-            context->IAGetIndexBuffer(&s_saved.indexBuffer, &s_saved.ibFormat, &s_saved.ibOffset);
+            if (!context || !renderTarget || width == 0 || height == 0 || !s_d3d.ready() || s_renderPassActive.test_and_set(std::memory_order_acquire)) {
+                _context = nullptr;
+                return;
+            }
 
+            _active = true;
+            _saved.vsInstanceCount = kMaxShaderClassInstances;
+            _saved.psInstanceCount = kMaxShaderClassInstances;
+            _saved.gsInstanceCount = kMaxShaderClassInstances;
+            _saved.hsInstanceCount = kMaxShaderClassInstances;
+            _saved.dsInstanceCount = kMaxShaderClassInstances;
+            context->VSGetShader(&_saved.vs, _saved.vsInstances, &_saved.vsInstanceCount);
+            context->PSGetShader(&_saved.ps, _saved.psInstances, &_saved.psInstanceCount);
+            context->GSGetShader(&_saved.gs, _saved.gsInstances, &_saved.gsInstanceCount);
+            context->HSGetShader(&_saved.hs, _saved.hsInstances, &_saved.hsInstanceCount);
+            context->DSGetShader(&_saved.ds, _saved.dsInstances, &_saved.dsInstanceCount);
+            context->VSGetConstantBuffers(0, static_cast<UINT>(std::size(_saved.vsCBs)), _saved.vsCBs);
+            context->IAGetInputLayout(&_saved.inputLayout);
+            context->IAGetPrimitiveTopology(&_saved.topology);
+            context->RSGetState(&_saved.rasterizerState);
+            context->OMGetDepthStencilState(&_saved.depthStencilState, &_saved.stencilRef);
+            context->OMGetBlendState(&_saved.blendState, _saved.blendFactor, &_saved.sampleMask);
+            context->OMGetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, _saved.rtvs, &_saved.dsv);
+            _saved.numViewports = D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE;
+            context->RSGetViewports(&_saved.numViewports, _saved.viewports);
+            context->IAGetVertexBuffers(0, 2, _saved.vertexBuffers, _saved.vbStrides, _saved.vbOffsets);
+            context->IAGetIndexBuffer(&_saved.indexBuffer, &_saved.ibFormat, &_saved.ibOffset);
+
+            context->OMSetRenderTargets(1, &renderTarget, nullptr);
+            D3D11_VIEWPORT viewport{};
+            viewport.Width = static_cast<float>(width);
+            viewport.Height = static_cast<float>(height);
+            viewport.MinDepth = 0.0f;
+            viewport.MaxDepth = 1.0f;
+            context->RSSetViewports(1, &viewport);
             context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-            context->IASetInputLayout(s_inputLayout);
-            context->VSSetShader(s_vertexShader, nullptr, 0);
-            context->PSSetShader(s_pixelShader, nullptr, 0);
-            context->RSSetState(s_wireRasterizer);
+            context->IASetInputLayout(s_d3d.inputLayout.Get());
+            context->VSSetShader(s_d3d.vertexShader.Get(), nullptr, 0);
+            context->PSSetShader(s_d3d.pixelShader.Get(), nullptr, 0);
+            context->GSSetShader(nullptr, nullptr, 0);
+            context->HSSetShader(nullptr, nullptr, 0);
+            context->DSSetShader(nullptr, nullptr, 0);
+            context->RSSetState(s_d3d.wireRasterizer.Get());
             FLOAT blendFactor[4] = {};
-            context->OMSetBlendState(s_blendState, blendFactor, 0xFFFFFFFF);
-            context->OMSetDepthStencilState(s_depthStencil, 0);
+            context->OMSetBlendState(s_d3d.blendState.Get(), blendFactor, 0xFFFFFFFF);
+            context->OMSetDepthStencilState(s_d3d.depthStencil.Get(), 0);
         }
 
-        void endFrame(ID3D11DeviceContext* context)
+        RenderPassGuard::~RenderPassGuard() noexcept
         {
-            context->VSSetShader(s_saved.vs, s_saved.vsInstances, s_saved.vsInstanceCount);
-            context->PSSetShader(s_saved.ps, s_saved.psInstances, s_saved.psInstanceCount);
-            context->VSSetConstantBuffers(0, 2, s_saved.vsCBs);
-            context->IASetInputLayout(s_saved.inputLayout);
-            context->IASetPrimitiveTopology(s_saved.topology);
-            context->RSSetState(s_saved.rasterizerState);
-            context->OMSetDepthStencilState(s_saved.depthStencilState, s_saved.stencilRef);
-            context->OMSetBlendState(s_saved.blendState, s_saved.blendFactor, s_saved.sampleMask);
-            context->OMSetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, s_saved.rtvs, s_saved.dsv);
-            context->RSSetViewports(s_saved.numViewports, s_saved.viewports);
-            context->IASetVertexBuffers(0, 1, &s_saved.vertexBuffer, &s_saved.vbStride, &s_saved.vbOffset);
-            context->IASetIndexBuffer(s_saved.indexBuffer, s_saved.ibFormat, s_saved.ibOffset);
-            releaseSavedState();
+            restore();
         }
 
-        void uploadCamera(ID3D11DeviceContext* context, const DirectX::XMMATRIX& eye0, const DirectX::XMMATRIX& eye1, const DirectX::XMFLOAT4& adjust0,
+        void RenderPassGuard::restore() noexcept
+        {
+            if (!_active || !_context) {
+                return;
+            }
+
+            _context->VSSetShader(_saved.vs, _saved.vsInstances, _saved.vsInstanceCount);
+            _context->PSSetShader(_saved.ps, _saved.psInstances, _saved.psInstanceCount);
+            _context->GSSetShader(_saved.gs, _saved.gsInstances, _saved.gsInstanceCount);
+            _context->HSSetShader(_saved.hs, _saved.hsInstances, _saved.hsInstanceCount);
+            _context->DSSetShader(_saved.ds, _saved.dsInstances, _saved.dsInstanceCount);
+            _context->VSSetConstantBuffers(0, static_cast<UINT>(std::size(_saved.vsCBs)), _saved.vsCBs);
+            _context->IASetInputLayout(_saved.inputLayout);
+            _context->IASetPrimitiveTopology(_saved.topology);
+            _context->RSSetState(_saved.rasterizerState);
+            _context->OMSetDepthStencilState(_saved.depthStencilState, _saved.stencilRef);
+            _context->OMSetBlendState(_saved.blendState, _saved.blendFactor, _saved.sampleMask);
+            _context->OMSetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, _saved.rtvs, _saved.dsv);
+            _context->RSSetViewports(_saved.numViewports, _saved.viewports);
+            _context->IASetVertexBuffers(0, 2, _saved.vertexBuffers, _saved.vbStrides, _saved.vbOffsets);
+            _context->IASetIndexBuffer(_saved.indexBuffer, _saved.ibFormat, _saved.ibOffset);
+            releaseSavedState(_saved);
+
+            _active = false;
+            _context = nullptr;
+            s_renderPassActive.clear(std::memory_order_release);
+        }
+
+        bool uploadCamera(ID3D11DeviceContext* context, const DirectX::XMMATRIX& eye0, const DirectX::XMMATRIX& eye1, const DirectX::XMFLOAT4& adjust0,
             const DirectX::XMFLOAT4& adjust1)
         {
-            D3D11_MAPPED_SUBRESOURCE mapped{};
-            if (SUCCEEDED(context->Map(s_cameraCB, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) {
-                auto* data = static_cast<PerFrameVSData*>(mapped.pData);
-                data->matProjView[0] = eye0;
-                data->matProjView[1] = eye1;
-                data->posAdjust[0] = adjust0;
-                data->posAdjust[1] = adjust1;
-                context->Unmap(s_cameraCB, 0);
+            if (!context || !s_d3d.cameraCB) {
+                return false;
             }
-            context->VSSetConstantBuffers(0, 1, &s_cameraCB);
+
+            D3D11_MAPPED_SUBRESOURCE mapped{};
+            if (FAILED(context->Map(s_d3d.cameraCB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)) || !mapped.pData) {
+                if (!s_cameraUploadFailureReported.exchange(true, std::memory_order_relaxed)) {
+                    ROCK_LOG_WARN(Hand, "Debug overlay: camera constant-buffer map failed; frame skipped");
+                }
+                return false;
+            }
+
+            auto* data = static_cast<PerFrameVSData*>(mapped.pData);
+            data->matProjView[0] = eye0;
+            data->matProjView[1] = eye1;
+            data->posAdjust[0] = adjust0;
+            data->posAdjust[1] = adjust1;
+            context->Unmap(s_d3d.cameraCB.Get(), 0);
+            ID3D11Buffer* cameraCB = s_d3d.cameraCB.Get();
+            context->VSSetConstantBuffers(0, 1, &cameraCB);
+            return true;
         }
 
-        void uploadColorModel(ID3D11DeviceContext* context, const DirectX::XMMATRIX& model, const float color[4])
+        bool uploadColorModel(ID3D11DeviceContext* context, const DirectX::XMMATRIX& model, const float color[4])
         {
-            D3D11_MAPPED_SUBRESOURCE mapped{};
-            if (SUCCEEDED(context->Map(s_modelCB, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) {
-                auto* data = static_cast<PerObjectVSData*>(mapped.pData);
-                data->matModel = model;
-                data->color[0] = color[0];
-                data->color[1] = color[1];
-                data->color[2] = color[2];
-                data->color[3] = color[3];
-                context->Unmap(s_modelCB, 0);
+            if (!context || !s_d3d.modelCB || !color) {
+                return false;
             }
-            context->VSSetConstantBuffers(1, 1, &s_modelCB);
+
+            D3D11_MAPPED_SUBRESOURCE mapped{};
+            if (FAILED(context->Map(s_d3d.modelCB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)) || !mapped.pData) {
+                if (!s_modelUploadFailureReported.exchange(true, std::memory_order_relaxed)) {
+                    ROCK_LOG_WARN(Hand, "Debug overlay: model constant-buffer map failed; affected draws skipped");
+                }
+                return false;
+            }
+
+            auto* data = static_cast<PerObjectVSData*>(mapped.pData);
+            data->matModel = model;
+            data->color[0] = color[0];
+            data->color[1] = color[1];
+            data->color[2] = color[2];
+            data->color[3] = color[3];
+            context->Unmap(s_d3d.modelCB.Get(), 0);
+            ID3D11Buffer* modelCB = s_d3d.modelCB.Get();
+            context->VSSetConstantBuffers(1, 1, &modelCB);
+            return true;
         }
 
-        void uploadModel(ID3D11DeviceContext* context, const DirectX::XMMATRIX& model, BodyOverlayRole role, debug_overlay_policy::ShapeDecodeMode decodeMode)
+        bool uploadModel(ID3D11DeviceContext* context, const DirectX::XMMATRIX& model, BodyOverlayRole role, debug_overlay_policy::ShapeDecodeMode decodeMode)
         {
             float color[4] = { 1.0f, 1.0f, 1.0f, 0.85f };
             switch (role) {
@@ -1580,7 +1639,7 @@ float4 main(PS_INPUT input) : SV_Target {
                 color[3] = 0.90f;
             }
 
-            uploadColorModel(context, model, color);
+            return uploadColorModel(context, model, color);
         }
 
         float axisLengthForRole(AxisOverlayRole role)
@@ -2435,7 +2494,7 @@ float4 main(PS_INPUT input) : SV_Target {
             stats.lineLogicalLines += static_cast<std::uint32_t>(batch.lineCount());
             stats.lineBudgetRejects += static_cast<std::uint32_t>(batch.rejectedLineCount());
 
-            if (batch.empty() || !s_axisLineVB) {
+            if (batch.empty() || !s_d3d.axisLineVB) {
                 return;
             }
 
@@ -2455,22 +2514,24 @@ float4 main(PS_INPUT input) : SV_Target {
             }
 
             D3D11_MAPPED_SUBRESOURCE mapped{};
-            if (FAILED(context->Map(s_axisLineVB, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) {
+            if (FAILED(context->Map(s_d3d.axisLineVB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) {
                 return;
             }
 
             std::memcpy(mapped.pData, vertices.data(), vertices.size() * sizeof(Vertex));
-            context->Unmap(s_axisLineVB, 0);
+            context->Unmap(s_d3d.axisLineVB.Get(), 0);
 
             constexpr UINT stride = sizeof(Vertex);
             constexpr UINT offset = 0;
-            ID3D11Buffer* vertexBuffer = s_axisLineVB;
+            ID3D11Buffer* vertexBuffer = s_d3d.axisLineVB.Get();
             context->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
             context->IASetIndexBuffer(nullptr, DXGI_FORMAT_UNKNOWN, 0);
 
             for (const auto& run : runs) {
                 const float color[4] = { run.color.r, run.color.g, run.color.b, run.color.a };
-                uploadColorModel(context, DirectX::XMMatrixIdentity(), color);
+                if (!uploadColorModel(context, DirectX::XMMatrixIdentity(), color)) {
+                    continue;
+                }
                 context->DrawInstanced(run.vertexCount, 2, run.firstVertex, 0);
                 ++stats.lineDrawCalls;
             }
@@ -2828,19 +2889,19 @@ float4 main(PS_INPUT input) : SV_Target {
             const DirectX::XMFLOAT4& adjust1,
             OverlayRuntimeStats& stats)
         {
-            if (!frame.drawText || frame.textCount == 0 || !s_textVB || !s_screenTextVertexShader || textureWidth <= 0.0f || textureHeight <= 0.0f) {
+            if (!frame.drawText || frame.textCount == 0 || !s_d3d.textVB || !s_d3d.screenTextVertexShader || textureWidth <= 0.0f || textureHeight <= 0.0f) {
                 return;
             }
 
-            context->IASetInputLayout(s_inputLayout);
-            context->VSSetShader(s_screenTextVertexShader, nullptr, 0);
-            context->PSSetShader(s_pixelShader, nullptr, 0);
-            context->RSSetState(s_solidRasterizer);
+            context->IASetInputLayout(s_d3d.inputLayout.Get());
+            context->VSSetShader(s_d3d.screenTextVertexShader.Get(), nullptr, 0);
+            context->PSSetShader(s_d3d.pixelShader.Get(), nullptr, 0);
+            context->RSSetState(s_d3d.solidRasterizer.Get());
             context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
             constexpr UINT stride = sizeof(Vertex);
             constexpr UINT offset = 0;
-            ID3D11Buffer* vertexBuffer = s_textVB;
+            ID3D11Buffer* vertexBuffer = s_d3d.textVB.Get();
             context->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
             context->IASetIndexBuffer(nullptr, DXGI_FORMAT_UNKNOWN, 0);
 
@@ -2867,13 +2928,15 @@ float4 main(PS_INPUT input) : SV_Target {
                 }
 
                 D3D11_MAPPED_SUBRESOURCE mapped{};
-                if (FAILED(context->Map(s_textVB, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) {
+                if (FAILED(context->Map(s_d3d.textVB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) {
                     ++stats.textMapFailures;
                     continue;
                 }
                 std::memcpy(mapped.pData, vertices.data(), vertices.size() * sizeof(Vertex));
-                context->Unmap(s_textVB, 0);
-                uploadColorModel(context, DirectX::XMMatrixIdentity(), entry.color);
+                context->Unmap(s_d3d.textVB.Get(), 0);
+                if (!uploadColorModel(context, DirectX::XMMatrixIdentity(), entry.color)) {
+                    continue;
+                }
                 context->Draw(static_cast<UINT>(vertices.size()), 0);
                 stats.textVertices += static_cast<std::uint32_t>(vertices.size());
                 ++stats.textDrawCalls;
@@ -2901,7 +2964,8 @@ float4 main(PS_INPUT input) : SV_Target {
 
             auto* device = getDevice();
             auto* context = getContext();
-            if (!device || !context || !s_initialized || !texture || !texture->handle || texture->eType != vr::TextureType_DirectX) {
+            if (!device || !context || !s_initialized.load(std::memory_order_acquire) || s_d3d.device.Get() != device || !texture || !texture->handle ||
+                texture->eType != vr::TextureType_DirectX) {
                 return;
             }
 
@@ -2928,187 +2992,207 @@ float4 main(PS_INPUT input) : SV_Target {
                 return;
             }
 
-            ID3D11RenderTargetView* oldRtvs[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT] = {};
-            ID3D11DepthStencilView* oldDsv = nullptr;
-            context->OMGetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, oldRtvs, &oldDsv);
-            UINT oldViewportCount = D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE;
-            D3D11_VIEWPORT oldViewports[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE] = {};
-            context->RSGetViewports(&oldViewportCount, oldViewports);
-
-            context->OMSetRenderTargets(1, &rtv, nullptr);
-            D3D11_VIEWPORT viewport{};
-            viewport.Width = static_cast<float>(textureDesc.Width);
-            viewport.Height = static_cast<float>(textureDesc.Height);
-            viewport.MinDepth = 0.0f;
-            viewport.MaxDepth = 1.0f;
-            context->RSSetViewports(1, &viewport);
-
             DirectX::XMMATRIX eye0;
             DirectX::XMMATRIX eye1;
             DirectX::XMFLOAT4 adjust0;
             DirectX::XMFLOAT4 adjust1;
-            if (getEyeViewProjMatrices(eye0, eye1, adjust0, adjust1)) {
-                beginFrame(context);
-                uploadCamera(context, eye0, eye1, adjust0, adjust1);
-                s_frameShapeGenerations = 0;
+            if (!getEyeViewProjMatrices(eye0, eye1, adjust0, adjust1)) {
+                return;
+            }
 
-                if (hasBodiesToDraw) {
-                    context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-                    const GpuShape* lastBoundShape = nullptr;
-                    for (std::uint32_t i = 0; i < frame.count && i < frame.entries.size(); i++) {
-                        ++stats.bodyEntries;
-                        const auto& entry = frame.entries[i];
-                        const bool rockRole = entry.role == BodyOverlayRole::RightHand || entry.role == BodyOverlayRole::LeftHand ||
-                            entry.role == BodyOverlayRole::RightHandSegment || entry.role == BodyOverlayRole::LeftHandSegment ||
-                            entry.role == BodyOverlayRole::BodyTorsoSegment || entry.role == BodyOverlayRole::BodyArmSegment ||
-                            entry.role == BodyOverlayRole::BodyLegSegment || entry.role == BodyOverlayRole::BodyFootSegment ||
-                            entry.role == BodyOverlayRole::Weapon ||
-                            entry.role == BodyOverlayRole::RightGrabAuthorityProxy ||
-                            entry.role == BodyOverlayRole::LeftGrabAuthorityProxy ||
-                            entry.role == BodyOverlayRole::RightGrabPivotSourceCollider ||
-                            entry.role == BodyOverlayRole::LeftGrabPivotSourceCollider;
-                        if ((rockRole && !frame.drawRockBodies) || (!rockRole && !frame.drawTargetBodies)) {
-                            continue;
-                        }
+            RenderPassGuard renderPass(context, rtv, textureDesc.Width, textureDesc.Height);
+            if (!renderPass.active() || !uploadCamera(context, eye0, eye1, adjust0, adjust1)) {
+                return;
+            }
 
-                        BodyRenderInfo body{};
-                        if (!extractBody(frame.world, entry.bodyId, targetBodyOverlayFrameSource(entry.role), body)) {
-                            ++stats.bodyExtractFailures;
-                            continue;
-                        }
+            s_frameShapeGenerations = 0;
 
-                        const auto* gpuShape = getOrCreateShape(device, body, stats);
-                        if (!gpuShape) {
-                            continue;
-                        }
-
-                        UINT stride = sizeof(Vertex);
-                        UINT offset = 0;
-                        if (gpuShape != lastBoundShape) {
-                            ID3D11Buffer* vertexBuffer = gpuShape->vertexBuffer.Get();
-                            context->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
-                            context->IASetIndexBuffer(gpuShape->indexBuffer.Get(), DXGI_FORMAT_R16_UINT, 0);
-                            lastBoundShape = gpuShape;
-                            ++stats.bodyMeshBinds;
-                        }
-                        uploadModel(context, body.worldMatrix, entry.role, gpuShape->decodeMode);
-                        context->DrawIndexedInstanced(gpuShape->indexCount, 2, 0, 0, 0);
-                        ++stats.bodiesDrawn;
-                        ++stats.bodyDrawCalls;
+            if (hasBodiesToDraw) {
+                context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                const GpuShape* lastBoundShape = nullptr;
+                for (std::uint32_t i = 0; i < frame.count && i < frame.entries.size(); i++) {
+                    ++stats.bodyEntries;
+                    const auto& entry = frame.entries[i];
+                    const bool rockRole = entry.role == BodyOverlayRole::RightHand || entry.role == BodyOverlayRole::LeftHand ||
+                        entry.role == BodyOverlayRole::RightHandSegment || entry.role == BodyOverlayRole::LeftHandSegment ||
+                        entry.role == BodyOverlayRole::BodyTorsoSegment || entry.role == BodyOverlayRole::BodyArmSegment ||
+                        entry.role == BodyOverlayRole::BodyLegSegment || entry.role == BodyOverlayRole::BodyFootSegment ||
+                        entry.role == BodyOverlayRole::Weapon ||
+                        entry.role == BodyOverlayRole::RightGrabAuthorityProxy ||
+                        entry.role == BodyOverlayRole::LeftGrabAuthorityProxy ||
+                        entry.role == BodyOverlayRole::RightGrabPivotSourceCollider ||
+                        entry.role == BodyOverlayRole::LeftGrabPivotSourceCollider;
+                    if ((rockRole && !frame.drawRockBodies) || (!rockRole && !frame.drawTargetBodies)) {
+                        continue;
                     }
-                }
 
-                debug_overlay_line_batch::LineBatch lineBatch;
-                collectAxisOverlays(lineBatch, frame.world, frame, stats);
-                collectMarkerOverlays(lineBatch, frame);
-                collectSkeletonOverlays(lineBatch, frame);
-                context->VSSetShader(s_vertexShader, nullptr, 0);
-                context->PSSetShader(s_pixelShader, nullptr, 0);
-                context->RSSetState(s_wireRasterizer);
-                context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
-                drawLineBatch(context, lineBatch, stats);
-                drawTextOverlays(context, static_cast<float>(textureDesc.Width), static_cast<float>(textureDesc.Height), frame, eye0, eye1, adjust0, adjust1, stats);
+                    BodyRenderInfo body{};
+                    if (!extractBody(frame.world, entry.bodyId, targetBodyOverlayFrameSource(entry.role), body)) {
+                        ++stats.bodyExtractFailures;
+                        continue;
+                    }
 
-                if (g_rockConfig.rockDebugVerboseLogging && ++s_overlayStatsLogCounter >= 90) {
-                    s_overlayStatsLogCounter = 0;
-                    ROCK_LOG_DEBUG(Hand,
-                        "Debug overlay frame: entries={} drawn={} bodyBinds={} bodyDraws={} axes={} markers={} skeleton={} text={} cacheHits={} cacheMisses={} shapeGenerations={} genDefers={} genCap={} cacheBudgetSkips={} proxies={} unsupportedProxy={} unsupportedSkip={} bodyReadFails={} lineVerts={} lineLines={} lineDraws={} lineRejects={} textVerts={} textDraws={} textTrunc={} textMapFails={} rtvHits={} rtvMisses={}",
-                        stats.bodyEntries,
-                        stats.bodiesDrawn,
-                        stats.bodyMeshBinds,
-                        stats.bodyDrawCalls,
-                        frame.axisCount,
-                        frame.markerCount,
-                        frame.skeletonCount,
-                        frame.textCount,
-                        stats.shapeCacheHits,
-                        stats.shapeCacheMisses,
-                        stats.shapeGenerations,
-                        stats.shapeGenerationDeferrals,
-                        debug_overlay_policy::clampShapeGenerationsPerFrame(g_rockConfig.rockDebugMaxShapeGenerationsPerFrame),
-                        stats.shapeCacheBudgetSkips,
-                        stats.shapeProxyFallbacks,
-                        stats.unsupportedShapeProxies,
-                        stats.unsupportedShapeSkips,
-                        stats.bodyExtractFailures,
-                        stats.lineVertices,
-                        stats.lineLogicalLines,
-                        stats.lineDrawCalls,
-                        stats.lineBudgetRejects,
-                        stats.textVertices,
-                        stats.textDrawCalls,
-                        stats.textVertexTruncations,
-                        stats.textMapFailures,
-                        stats.rtvCacheHits,
-                        stats.rtvCacheMisses);
-                }
+                    const auto* gpuShape = getOrCreateShape(device, body, stats);
+                    if (!gpuShape) {
+                        continue;
+                    }
 
-                endFrame(context);
-            }
-
-            context->RSSetViewports(oldViewportCount, oldViewports);
-            context->OMSetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, oldRtvs, oldDsv);
-
-            for (auto* oldRtv : oldRtvs) {
-                if (oldRtv) {
-                    oldRtv->Release();
+                    UINT stride = sizeof(Vertex);
+                    UINT offset = 0;
+                    if (gpuShape != lastBoundShape) {
+                        ID3D11Buffer* vertexBuffer = gpuShape->vertexBuffer.Get();
+                        context->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
+                        context->IASetIndexBuffer(gpuShape->indexBuffer.Get(), DXGI_FORMAT_R16_UINT, 0);
+                        lastBoundShape = gpuShape;
+                        ++stats.bodyMeshBinds;
+                    }
+                    if (!uploadModel(context, body.worldMatrix, entry.role, gpuShape->decodeMode)) {
+                        continue;
+                    }
+                    context->DrawIndexedInstanced(gpuShape->indexCount, 2, 0, 0, 0);
+                    ++stats.bodiesDrawn;
+                    ++stats.bodyDrawCalls;
                 }
             }
-            if (oldDsv) {
-                oldDsv->Release();
+
+            debug_overlay_line_batch::LineBatch lineBatch;
+            collectAxisOverlays(lineBatch, frame.world, frame, stats);
+            collectMarkerOverlays(lineBatch, frame);
+            collectSkeletonOverlays(lineBatch, frame);
+            context->VSSetShader(s_d3d.vertexShader.Get(), nullptr, 0);
+            context->PSSetShader(s_d3d.pixelShader.Get(), nullptr, 0);
+            context->RSSetState(s_d3d.wireRasterizer.Get());
+            context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
+            drawLineBatch(context, lineBatch, stats);
+            drawTextOverlays(context, static_cast<float>(textureDesc.Width), static_cast<float>(textureDesc.Height), frame, eye0, eye1, adjust0, adjust1, stats);
+
+            if (g_rockConfig.rockDebugVerboseLogging && ++s_overlayStatsLogCounter >= 90) {
+                s_overlayStatsLogCounter = 0;
+                ROCK_LOG_DEBUG(Hand,
+                    "Debug overlay frame: entries={} drawn={} bodyBinds={} bodyDraws={} axes={} markers={} skeleton={} text={} cacheHits={} cacheMisses={} shapeGenerations={} genDefers={} genCap={} cacheBudgetSkips={} proxies={} unsupportedProxy={} unsupportedSkip={} bodyReadFails={} lineVerts={} lineLines={} lineDraws={} lineRejects={} textVerts={} textDraws={} textTrunc={} textMapFails={} rtvHits={} rtvMisses={}",
+                    stats.bodyEntries,
+                    stats.bodiesDrawn,
+                    stats.bodyMeshBinds,
+                    stats.bodyDrawCalls,
+                    frame.axisCount,
+                    frame.markerCount,
+                    frame.skeletonCount,
+                    frame.textCount,
+                    stats.shapeCacheHits,
+                    stats.shapeCacheMisses,
+                    stats.shapeGenerations,
+                    stats.shapeGenerationDeferrals,
+                    debug_overlay_policy::clampShapeGenerationsPerFrame(g_rockConfig.rockDebugMaxShapeGenerationsPerFrame),
+                    stats.shapeCacheBudgetSkips,
+                    stats.shapeProxyFallbacks,
+                    stats.unsupportedShapeProxies,
+                    stats.unsupportedShapeSkips,
+                    stats.bodyExtractFailures,
+                    stats.lineVertices,
+                    stats.lineLogicalLines,
+                    stats.lineDrawCalls,
+                    stats.lineBudgetRejects,
+                    stats.textVertices,
+                    stats.textDrawCalls,
+                    stats.textVertexTruncations,
+                    stats.textMapFailures,
+                    stats.rtvCacheHits,
+                    stats.rtvCacheMisses);
             }
+        }
+
+        void reportOverlayExceptionOnce(const char* detail) noexcept
+        {
+            if (s_overlayExceptionReported.exchange(true, std::memory_order_relaxed)) {
+                return;
+            }
+
+            try {
+                ROCK_LOG_ERROR(Hand, "Debug overlay: compositor draw aborted by exception ({})", detail ? detail : "unknown");
+            } catch (...) {
+            }
+        }
+
+        void reportSubmitInstallFailureOnce(const char* detail) noexcept
+        {
+            if (s_submitInstallFailureReported.exchange(true, std::memory_order_relaxed)) {
+                return;
+            }
+
+            ROCK_LOG_WARN(Hand, "Debug body overlay: {}; Submit hook installation will retry", detail);
         }
 
         vr::EVRCompositorError VRSubmitHook(vr::IVRCompositor* compositor, vr::EVREye eye, const vr::Texture_t* texture, const vr::VRTextureBounds_t* bounds,
-            vr::EVRSubmitFlags flags)
+            vr::EVRSubmitFlags flags) noexcept
         {
-            if (s_enabled.load(std::memory_order_relaxed) && eye == vr::Eye_Left) {
-                drawOverlayToSubmittedTexture(texture);
+            if (eye == vr::Eye_Left && s_enabled.load(std::memory_order_acquire)) {
+                auto admission = s_frameAdmission.tryAcquire();
+                if (admission) {
+                    try {
+                        drawOverlayToSubmittedTexture(texture);
+                    } catch (const std::exception& exception) {
+                        reportOverlayExceptionOnce(exception.what());
+                    } catch (...) {
+                        reportOverlayExceptionOnce("non-standard exception");
+                    }
+                }
             }
-            return s_originalVRSubmit(compositor, eye, texture, bounds, flags);
+
+            const auto originalSubmit = s_originalVRSubmit.load(std::memory_order_acquire);
+            return originalSubmit ? originalSubmit(compositor, eye, texture, bounds, flags) : vr::VRCompositorError_RequestFailed;
         }
 
-        void installSubmitHook()
+        bool installSubmitHook()
         {
-            if (s_submitHookInstalled) {
-                return;
+            if (s_submitHookInstalled.load(std::memory_order_acquire)) {
+                return true;
             }
 
             auto* compositor = vr::VRCompositor();
             if (!compositor) {
-                ROCK_LOG_WARN(Hand, "Debug body overlay: VRCompositor unavailable; Submit hook not installed");
-                return;
+                reportSubmitInstallFailureOnce("VRCompositor unavailable");
+                return false;
             }
 
             auto*** objectVTable = reinterpret_cast<void***>(compositor);
+            if (!objectVTable || !*objectVTable) {
+                reportSubmitInstallFailureOnce("VRCompositor vtable unavailable");
+                return false;
+            }
             s_vrCompositorVTable = *objectVTable;
             constexpr std::size_t kSubmitVTableIndex = 5;
 
             DWORD oldProtect = 0;
             if (!VirtualProtect(&s_vrCompositorVTable[kSubmitVTableIndex], sizeof(void*), kPageExecuteReadWrite, &oldProtect)) {
-                ROCK_LOG_WARN(Hand, "Debug body overlay: VirtualProtect failed; Submit hook not installed");
-                return;
+                reportSubmitInstallFailureOnce("VRCompositor vtable protection change failed");
+                return false;
             }
 
-            s_originalVRSubmit = reinterpret_cast<VRSubmit_t>(s_vrCompositorVTable[kSubmitVTableIndex]);
+            const auto originalSubmit = reinterpret_cast<VRSubmit_t>(s_vrCompositorVTable[kSubmitVTableIndex]);
+            if (!originalSubmit || originalSubmit == &VRSubmitHook) {
+                DWORD ignoredProtect = 0;
+                VirtualProtect(&s_vrCompositorVTable[kSubmitVTableIndex], sizeof(void*), oldProtect, &ignoredProtect);
+                reportSubmitInstallFailureOnce("original OpenVR Submit target is invalid");
+                return false;
+            }
+
+            s_originalVRSubmit.store(originalSubmit, std::memory_order_release);
             s_vrCompositorVTable[kSubmitVTableIndex] = reinterpret_cast<void*>(&VRSubmitHook);
-            VirtualProtect(&s_vrCompositorVTable[kSubmitVTableIndex], sizeof(void*), oldProtect, &oldProtect);
-
-            s_submitHookInstalled = true;
-            ROCK_LOG_INFO(Hand, "Debug body overlay: OpenVR Submit hook installed");
-        }
-
-        void renderCandidateHook(void* bsGraphicsState)
-        {
-            if (s_originalMainRenderCandidate) {
-                s_originalMainRenderCandidate(bsGraphicsState);
+            DWORD ignoredProtect = 0;
+            if (!VirtualProtect(&s_vrCompositorVTable[kSubmitVTableIndex], sizeof(void*), oldProtect, &ignoredProtect)) {
+                ROCK_LOG_ERROR(Hand, "Debug body overlay: failed to restore OpenVR Submit vtable protection after hook install");
             }
+
+            s_submitHookInstalled.store(true, std::memory_order_release);
+            s_submitInstallFailureReported.store(false, std::memory_order_relaxed);
+            ROCK_LOG_INFO(Hand, "Debug body overlay: OpenVR Submit hook installed");
+            return true;
         }
     }
 
     void Install()
     {
-        if (s_initialized) {
+        if (s_initialized.load(std::memory_order_acquire)) {
             installSubmitHook();
             return;
         }
@@ -3127,20 +3211,16 @@ float4 main(PS_INPUT input) : SV_Target {
             return;
         }
 
-        auto hookAddress = REL::Offset(0xD844BC).address();
-        auto& trampoline = F4SE::GetTrampoline();
-        s_originalMainRenderCandidate = reinterpret_cast<MainRenderCandidate_t>(trampoline.write_call<5>(hookAddress, reinterpret_cast<std::uintptr_t>(&renderCandidateHook)));
-        if (!s_originalMainRenderCandidate) {
-            ROCK_LOG_ERROR(Hand, "Debug body overlay: render hook original was null");
-            return;
+        s_initialized.store(true, std::memory_order_release);
+        if (installSubmitHook()) {
+            ROCK_LOG_INFO(Hand, "Debug body overlay installed");
         }
-
-        installSubmitHook();
-        s_initialized = true;
-        ROCK_LOG_INFO(Hand, "Debug body overlay installed");
     }
 
-    bool IsInstalled() { return s_initialized; }
+    bool IsInstalled()
+    {
+        return s_initialized.load(std::memory_order_acquire) && s_submitHookInstalled.load(std::memory_order_acquire);
+    }
 
         void PublishFrame(const BodyOverlayFrame& frame)
         {
@@ -3154,6 +3234,7 @@ float4 main(PS_INPUT input) : SV_Target {
             const bool hasSkeletonToDraw = frame.drawSkeleton && frame.skeletonCount > 0;
             const bool hasTextToDraw = frame.drawText && frame.textCount > 0;
             s_enabled.store(hasBodiesToDraw || hasAxesToDraw || hasMarkersToDraw || hasSkeletonToDraw || hasTextToDraw, std::memory_order_release);
+            (void)s_frameAdmission.publish();
         }
 
     void ClearFrame()
@@ -3163,6 +3244,7 @@ float4 main(PS_INPUT input) : SV_Target {
             s_frame = BodyOverlayFrame{};
         }
         s_enabled.store(false, std::memory_order_release);
+        (void)s_frameAdmission.publish();
     }
 
     void ClearShapeCache()

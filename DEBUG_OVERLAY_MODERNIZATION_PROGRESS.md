@@ -18,7 +18,9 @@ After any context compaction or interrupted session:
 4. Reconcile the live tree with the `Current Progress` and `Commit Ledger` sections below.
 5. Preserve all unrelated user/concurrent changes; never stage them into overlay commits.
 6. Continue the first unchecked implementation slice only after its prerequisites are complete.
-7. Use the required `custom-fast` preset with `--config Release -- /m:1 /p:CL_MPCount=2` for every normal plugin build.
+7. Use the required `custom-fast` configure preset followed by the capped Release build for every normal plugin build:
+   - `cmake --preset custom-fast`
+   - `cmake --build build-fast --config Release --target ROCK -- /m:1 /p:CL_MPCount=2`
 8. Cap every CTest run at `-j 4`.
 9. Commit each complete, validated slice and run post-commit regression checks before advancing.
 
@@ -81,21 +83,21 @@ No FPS or GPU-time claim is inferred from source inspection. Runtime timing must
 
 ### Slice 1: Render-Hook And D3D Hardening
 
-- [ ] Add once-per-published-game-frame rendering using the overlay frame serial.
-- [ ] Add an atomic reentrancy guard around the overlay draw.
-- [ ] Make the OpenVR Submit hook fail closed and prevent exceptions crossing the hook.
-- [ ] Replace manual pass cleanup with one RAII render-pass guard.
-- [ ] Save, clear, and restore vertex, pixel, geometry, hull, and domain shaders including class instances.
-- [ ] Preserve every D3D state that the overlay changes.
-- [ ] Preserve vertex-buffer slots 0 and 1 so later instancing cannot leak state.
-- [ ] Reject nested render passes.
-- [ ] Make camera/model upload functions return failure and skip affected draws rather than binding stale contents.
-- [ ] Convert long-lived D3D resources to deterministic COM ownership where practical.
-- [ ] Add deterministic shutdown/device-reset cleanup and safe Submit-hook restoration where supported by plugin lifetime.
-- [ ] Remove the no-op hardcoded `0xD844BC` main-render trampoline.
-- [ ] Remove redundant nested RTV/viewport save-restore ownership.
-- [ ] Add source regressions for the single Submit path, frame guard, shader-state coverage, and fail-closed upload behavior.
-- [ ] Add/retain shader compilation coverage.
+- [x] Add once-per-published-game-frame rendering using the overlay frame serial.
+- [x] Add an atomic reentrancy guard around the overlay draw.
+- [x] Make the OpenVR Submit hook fail closed and prevent exceptions crossing the hook.
+- [x] Replace manual pass cleanup with one RAII render-pass guard.
+- [x] Save, clear, and restore vertex, pixel, geometry, hull, and domain shaders including class instances.
+- [x] Preserve every D3D state that the overlay changes.
+- [x] Preserve vertex-buffer slots 0 and 1 so later instancing cannot leak state.
+- [x] Reject nested render passes.
+- [x] Make camera/model upload functions return failure and skip affected draws rather than binding stale contents.
+- [x] Convert long-lived D3D resources to deterministic COM ownership with all-or-nothing partial-initialization cleanup.
+- [x] Keep D3D/hook ownership process-scoped because ROCK/F4SEVR exposes no supported hot-unload or device-reset callback; avoid unsafe destructor-time vtable restoration.
+- [x] Remove the no-op hardcoded `0xD844BC` main-render trampoline.
+- [x] Remove redundant nested RTV/viewport save-restore ownership.
+- [x] Add source regressions for the single Submit path, frame guard, shader-state coverage, and fail-closed upload behavior.
+- [x] Add/retain shader compilation coverage.
 
 Acceptance:
 
@@ -236,7 +238,9 @@ For every implementation slice:
 2. Run targeted unit/source/shader tests.
 3. Run the required auto-deploying preset in Release configuration:
 
-   `cmake --build --preset custom-fast --config Release -- /m:1 /p:CL_MPCount=2`
+   `cmake --preset custom-fast`
+
+   `cmake --build build-fast --config Release --target ROCK -- /m:1 /p:CL_MPCount=2`
 
 4. If C1060 occurs, retry with `/p:CL_MPCount=1`.
 5. Run CTest with no more than `-j 4`.
@@ -259,7 +263,7 @@ Runtime completion also requires, when the game can be exercised safely:
 - [x] Completed source audit of ROCK versus CollisionVisualizerF4VR.
 - [x] Classified direct transfers, ROCK-specific adaptations, and excluded standalone behavior.
 - [x] Created persistent implementation ledger.
-- [ ] Slice 1 in progress.
+- [x] Slice 1 implementation, full regression suite, build, and auto-deploy complete; commit pending.
 - [ ] Slice 2 not started.
 - [ ] Slice 3 not started.
 - [ ] Slice 4 not started.
@@ -278,8 +282,8 @@ Record any Ghidra/FO4VR source verification here before implementing a new offse
 
 | Slice | Commit | Build | Tests | Post-commit regression | Notes |
 |---|---|---|---|---|---|
-| Ledger setup | Pending | Not applicable | Not applicable | Pending | Explicitly authorized Markdown progress artifact |
-| 1: Hook/D3D hardening | Pending | Pending | Pending | Pending | |
+| Ledger setup | `a48c915` | Not applicable | Not applicable | `git show --check` passed | Explicitly authorized Markdown progress artifact |
+| 1: Hook/D3D hardening | Pending | `custom-fast` Release build and auto-deploy passed | 117/117 full suite passed | Pending | Deployed DLL/PDB hashes match build artifacts |
 | 2: Immutable publication | Pending | Pending | Pending | Pending | |
 | 3: Async shape/cache | Pending | Pending | Pending | Pending | |
 | 4: GPU/diagnostic batching | Pending | Pending | Pending | Pending | |
@@ -295,6 +299,24 @@ Record any Ghidra/FO4VR source verification here before implementing a new offse
 - Confirmed that standalone commit `806fef7` introduced a per-frame guard after repeated rendering caused an NVIDIA driver failure; ROCK currently lacks the equivalent guard.
 - Confirmed that the standalone current renderer adds complete programmable-stage state handling, immutable snapshot publication, bounded shape recipe/build/upload work, stateful cache generations, AABB transitional proxies, multi-body stereo instancing, reusable render scratch, shader compile tests, and performance-policy tests.
 - Recorded unrelated active weapon/scope changes in the ROCK worktree. They are not owned by this effort and must not be staged or reverted.
+
+### 2026-07-20 — Slice 1 Hook/D3D Hardening
+
+- Added a tested publication-serial `FrameAdmission` lease. It rejects duplicate and reentrant overlay draws while leaving a newer publication claimable after the active draw completes.
+- Made the OpenVR Submit hook `noexcept`, catch overlay exceptions, log the first failure, and always forward to the original Submit function.
+- Removed the no-op hardcoded main-render trampoline at RVA `0xD844BC`.
+- Replaced partial raw D3D ownership with an all-or-nothing `D3DResources` COM aggregate.
+- Added a single RAII render-pass guard that captures/restores VS, PS, GS, HS, DS, shader class instances, VS constant buffers, input layout, topology, raster/depth/blend state, render targets, viewports, vertex-buffer slots 0 and 1, and the index buffer.
+- The overlay now explicitly disables GS/HS/DS while its shaders are active.
+- Camera and model constant-buffer map failures now fail closed and skip the affected frame/draw instead of binding stale data.
+- Extracted shader source into a testable header and added runtime shader-compilation tests.
+- Added frame-admission unit tests and render-safety source-boundary tests.
+- Focused tests passed: frame admission, shader compilation, render safety, and verified stereo layout.
+- `custom-fast` Release compilation and link succeeded. Auto-deploy failed only when overwriting `D:\FO4\mods\ROCK\F4SE\Plugins\ROCK.dll` because `Fallout4VR.exe` was running and held the DLL open. The game was not terminated.
+- After the game exited naturally, the required retry compiled, linked, and auto-deployed successfully.
+- Full capped regression suite passed: 52 policy tests and 65 source-boundary tests, 117/117 total.
+- Deployed `ROCK.dll` is version `0.5.0.0`, size `5,479,424`, timestamp `2026-07-20 19:38:38`; build/deploy SHA-256 match `328CF566A0272E59B0641455A35E6437EDFDD4CA4A0EA918CEF6CE32FEFFB8F2`.
+- Build/deploy `ROCK.pdb` SHA-256 match `6E818CEA09C6DECE0CE682F56EF63E7A0E8B5CFA5B657239600482CED27C32FD`.
 
 ## Remaining Risks
 

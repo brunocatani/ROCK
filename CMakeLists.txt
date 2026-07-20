@@ -657,6 +657,27 @@ if(BUILD_ROCK_TESTS)
   endforeach()
   add_custom_target(ROCKPolicyTestBinaries DEPENDS ${ROCK_COMMONLIB_TEST_TARGETS})
 
+  add_executable(ROCKDebugOverlayFrameAdmissionTests
+    "${ROOT_DIR}/tests/DebugOverlayFrameAdmissionTests.cpp"
+  )
+  target_compile_features(ROCKDebugOverlayFrameAdmissionTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKDebugOverlayFrameAdmissionTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKDebugOverlayFrameAdmissionTests)
+
+  add_executable(ROCKDebugOverlayShaderCompileTests
+    "${ROOT_DIR}/tests/DebugOverlayShaderCompileTests.cpp"
+  )
+  target_compile_features(ROCKDebugOverlayShaderCompileTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKDebugOverlayShaderCompileTests PRIVATE ${SOURCE_DIR})
+  target_link_libraries(ROCKDebugOverlayShaderCompileTests PRIVATE d3dcompiler.lib)
+  add_rock_test(ROCKDebugOverlayShaderCompileTests)
+
+  add_dependencies(
+    ROCKPolicyTestBinaries
+    ROCKDebugOverlayFrameAdmissionTests
+    ROCKDebugOverlayShaderCompileTests
+  )
+
   find_program(ROCK_POWERSHELL_EXECUTABLE NAMES pwsh powershell)
   if(ROCK_POWERSHELL_EXECUTABLE)
     file(GLOB ROCK_SOURCE_BOUNDARY_TESTS CONFIGURE_DEPENDS "${ROOT_DIR}/tests/*SourceTests.ps1")
