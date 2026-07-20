@@ -6,6 +6,7 @@
 #include "physics-interaction/native/HavokCompoundShapeBuilder.h"
 #include "physics-interaction/native/HavokConvexShapeBuilder.h"
 #include "physics-interaction/native/HavokOffsets.h"
+#include "physics-interaction/native/NativeNiNodeFactory.h"
 #include "physics-interaction/grab/MeshGrab.h"
 #include "RockConfig.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
@@ -6288,25 +6289,34 @@ namespace rock
                                 recoveryParent = healTargetNode;
                             }
 
-                            RE::NiPointer<RE::NiNode> recoveryNode{ new RE::NiNode(4) };
-                            recoveryNode->name = recoveryConnectPointName.c_str();
-                            recoveryNode->local = {};
-                            recoveryNode->local.rotate.entry[0][0] = 1.0f;
-                            recoveryNode->local.rotate.entry[1][1] = 1.0f;
-                            recoveryNode->local.rotate.entry[2][2] = 1.0f;
-                            recoveryNode->local.scale = 1.0f;
-                            recoveryParent->AttachChild(recoveryNode.get(), true);
-                            f4vr::updateTransformsDown(recoveryNode.get(), true);
-                            const auto beforeRetryStats = summarizeWeaponAnimNodeSubtree(healTargetNode);
-                            const bool retryAttached = tryAttach3DRecurse(omod, healTargetNode, rankSuffix, equipData ? equipData->instanceData : nullptr);
-                            afterStats = summarizeWeaponAnimNodeSubtree(healTargetNode);
-                            geometryAdded = afterStats.triShapeCount > beforeRetryStats.triShapeCount;
-                            attached = attached || retryAttached;
-                            if (geometryAdded) {
-                                recoveryConnectPointCreated = true;
+                            auto recoveryNode = native_scene::createEngineNiNode(4);
+                            if (!recoveryNode) {
+                                ROCK_LOG_ERROR(Weapon,
+                                    "OMOD-HEAL run={} omod={:08X} '{}' could not create verified FO4VR recovery node '{}'",
+                                    runIndex,
+                                    record.formId,
+                                    record.name,
+                                    recoveryConnectPointName);
                             } else {
-                                recoveryParent->DetachChild(recoveryNode.get());
-                                f4vr::updateTransformsDown(recoveryParent, true);
+                                recoveryNode->name = recoveryConnectPointName.c_str();
+                                recoveryNode->local = {};
+                                recoveryNode->local.rotate.entry[0][0] = 1.0f;
+                                recoveryNode->local.rotate.entry[1][1] = 1.0f;
+                                recoveryNode->local.rotate.entry[2][2] = 1.0f;
+                                recoveryNode->local.scale = 1.0f;
+                                recoveryParent->AttachChild(recoveryNode.get(), true);
+                                f4vr::updateTransformsDown(recoveryNode.get(), true);
+                                const auto beforeRetryStats = summarizeWeaponAnimNodeSubtree(healTargetNode);
+                                const bool retryAttached = tryAttach3DRecurse(omod, healTargetNode, rankSuffix, equipData ? equipData->instanceData : nullptr);
+                                afterStats = summarizeWeaponAnimNodeSubtree(healTargetNode);
+                                geometryAdded = afterStats.triShapeCount > beforeRetryStats.triShapeCount;
+                                attached = attached || retryAttached;
+                                if (geometryAdded) {
+                                    recoveryConnectPointCreated = true;
+                                } else {
+                                    recoveryParent->DetachChild(recoveryNode.get());
+                                    f4vr::updateTransformsDown(recoveryParent, true);
+                                }
                             }
                         }
                     }
