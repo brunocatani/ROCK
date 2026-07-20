@@ -78,12 +78,23 @@ function Normalize-RelativePath {
 function Invoke-GitLines {
     param([Parameter(Mandatory)][string[]]$Arguments)
 
-    $output = @(& git -C $script:RepoRoot @Arguments 2>&1)
+    $combinedOutput = @(& git -C $script:RepoRoot @Arguments 2>&1)
+    $errorOutput = @(
+        $combinedOutput |
+            Where-Object { $_ -is [System.Management.Automation.ErrorRecord] } |
+            ForEach-Object { "$_" }
+    )
+    $output = @(
+        $combinedOutput |
+            Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] } |
+            ForEach-Object { "$_" }
+    )
     if ($LASTEXITCODE -ne 0) {
-        throw "git $($Arguments -join ' ') failed: $($output -join [Environment]::NewLine)"
+        $diagnostics = @($output + $errorOutput) -join [Environment]::NewLine
+        throw "git $($Arguments -join ' ') failed: $diagnostics"
     }
 
-    return @($output | ForEach-Object { "$_" } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    return @($output | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 }
 
 function Test-GitRef {
@@ -127,7 +138,7 @@ function Get-ChangedFiles {
             $null = $paths.Add((Normalize-RelativePath $path))
         }
     } elseif ($worktreePaths.Count -eq 0 -and $untrackedPaths.Count -eq 0) {
-        if (Test-GitRef 'HEAD^{commit}' -and Test-GitRef 'HEAD^{commit}^') {
+        if ((Test-GitRef 'HEAD^{commit}') -and (Test-GitRef 'HEAD^{commit}^')) {
             foreach ($path in Invoke-GitLines @('-c', 'core.quotepath=false', 'diff',
                     '--name-only', '--diff-filter=ACDMRTUXB', '--no-renames', 'HEAD^', 'HEAD', '--')) {
                 $null = $paths.Add((Normalize-RelativePath $path))

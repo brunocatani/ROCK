@@ -42,6 +42,14 @@ function Reject-Contains {
 if (-not (Test-Path -LiteralPath $selectorPath -PathType Leaf)) {
     $failures.Add('Affected-test selector must exist under tools/.')
 } else {
+    $selectorText = Get-Content -Raw -LiteralPath $selectorPath
+    if ($selectorText -notmatch "if\s*\(\(Test-GitRef 'HEAD\^\{commit\}'\)\s*-and\s*\(Test-GitRef 'HEAD\^\{commit\}\^'\)\)") {
+        $failures.Add('Clean-worktree Git ref predicates must remain parenthesized PowerShell expressions.')
+    }
+    if ($selectorText -notmatch 'System\.Management\.Automation\.ErrorRecord') {
+        $failures.Add('Git stderr records must stay separate from changed-file stdout.')
+    }
+
     $focusedPlan = Get-TestPlan 'src/physics-interaction/input/GrabInputIntentPolicy.h'
     if ($focusedPlan.Mode -ne 'affected') {
         $failures.Add('A focused policy-header change must remain in affected-test mode.')
