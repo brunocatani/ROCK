@@ -56,6 +56,7 @@ if (-not (Test-Path -LiteralPath $selectorPath -PathType Leaf)) {
     }
     Require-Contains $focusedPlan.PolicyTargets 'ROCKGrabInputIntentPolicyTests' 'A changed policy header must select its consuming C++ policy test.'
     Reject-Contains $focusedPlan.PolicyTargets 'ROCKWeaponInteractionPolicyTests' 'An unrelated C++ policy target must not be built for a focused input-policy change.'
+    Require-Contains $focusedPlan.PolicyBuildTargets 'ROCKGrabInputIntentPolicyTests' 'A focused policy plan must build its exact CMake target.'
 
     $sourcePlan = Get-TestPlan 'src/physics-interaction/native/PhysicsShapeCast.cpp'
     Require-Contains $sourcePlan.SourceTests 'HavokWorldLockSourceTests' 'A source scan must run when a file inside its scanned tree changes.'
@@ -70,6 +71,10 @@ if (-not (Test-Path -LiteralPath $selectorPath -PathType Leaf)) {
     }
     if (@($sharedPlan.PolicyTargets).Count -ne @($fullPlan.PolicyTargets).Count) {
         $failures.Add('A shared policy-support dependency must select every C++ policy target.')
+    }
+    if (@($sharedPlan.PolicyBuildTargets).Count -ne 1 -or
+        @($sharedPlan.PolicyBuildTargets) -notcontains 'ROCKPolicyTestBinaries') {
+        $failures.Add('All-policy plans must use the single aggregate CMake build target.')
     }
     if ($fullPlan.Mode -ne 'full') {
         $failures.Add('CMake changes must fail closed to the complete regression suite.')

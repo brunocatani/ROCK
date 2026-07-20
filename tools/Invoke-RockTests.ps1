@@ -495,6 +495,11 @@ if ($fullSuiteReason) {
 $policyTargets = @($selectedPolicy | Sort-Object)
 $sourceTests = @($selectedSource | Sort-Object)
 $testNames = @($policyTargets + $sourceTests | Sort-Object -Unique)
+if ($policyTargets.Count -eq $allPolicyTargets.Count) {
+    $policyBuildTargets = @('ROCKPolicyTestBinaries')
+} else {
+    $policyBuildTargets = @($policyTargets)
+}
 $hasInfrastructureChange = @(
     $changedFiles | Where-Object { Test-FullSuiteInfrastructurePath $_ }
 ).Count -gt 0
@@ -512,6 +517,7 @@ $plan = [pscustomobject]@{
     FullSuiteReason = $fullSuiteReason
     AllPolicyReason = $allPolicyReason
     PolicyTargets = @($policyTargets)
+    PolicyBuildTargets = @($policyBuildTargets)
     SourceTests = @($sourceTests)
     TestNames = @($testNames)
     ConfigureRequired = [bool]$configureRequired
@@ -541,7 +547,7 @@ if ($configureRequired) {
     Invoke-CheckedCommand 'cmake' @('--preset', 'custom-tests')
 }
 
-if ($policyTargets.Count -gt 0) {
+if ($policyBuildTargets.Count -gt 0) {
     $buildArguments = @(
         '--build',
         $script:BuildDirectory,
@@ -549,7 +555,7 @@ if ($policyTargets.Count -gt 0) {
         'Release',
         '--target'
     )
-    $buildArguments += $policyTargets
+    $buildArguments += $policyBuildTargets
     $buildArguments += @('--', '/m:1', '/p:CL_MPCount=2')
     Invoke-CheckedCommand 'cmake' $buildArguments
 }
