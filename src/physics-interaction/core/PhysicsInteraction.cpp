@@ -4267,6 +4267,7 @@ namespace rock
 
     void PhysicsInteraction::shutdown(::rock::provider::RockProviderLifecycleReason reason)
     {
+        debug::ShutdownShapePipeline();
         pipboy_equip_runtime::setLeftHandEquipAvailable(false);
         _authoredPrimaryFiringGrip.reset("physics-shutdown", _twoHandedGrip);
         if (!_initialized) {
@@ -4339,7 +4340,6 @@ namespace rock
             collision_suppression_registry::globalCollisionSuppressionRegistry().clear();
         }
 
-        debug::ClearFrame();
         clearPipboyWeaponHandAssignment("physics-shutdown", false);
         _twoHandedGrip.reset();
         _pendingEquippedWeaponPrimaryOnlyGripStart = {};

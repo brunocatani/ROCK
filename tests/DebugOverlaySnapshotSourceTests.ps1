@@ -40,8 +40,8 @@ Require-Pattern 'world->GetBodyAabb\(bodyId,\s*&raw\)' `
     'Body bounds must use the current CommonLibF4VR world wrapper instead of imported raw standalone offsets.'
 Require-Pattern 'captureOverlayRenderSettings[\s\S]*g_rockConfig' `
     'Mutable overlay settings must be captured into the publication.'
-Require-Pattern 'std::unordered_map<ShapeKey,\s*std::shared_ptr<const GpuShape>' `
-    'GPU cache entries must remain alive across concurrent cache invalidation.'
+Require-Pattern 'std::shared_ptr<const GpuShape>\s+shapeOwner' `
+    'A render lookup must retain immutable GPU buffers across concurrent cache invalidation.'
 
 Reject-Pattern 's_frameMutex' `
     'The compositor must not contend on the retired full-frame mutex.'

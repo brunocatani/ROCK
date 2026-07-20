@@ -132,23 +132,23 @@ Acceptance:
 
 ### Slice 3: Bounded Shape Recipe, Worker, Upload, And Cache Pipeline
 
-- [ ] Define stable CPU-only shape recipes captured on the ROCK update thread.
-- [ ] Ensure recipe capture is admitted against the per-frame and queue budgets before expensive decoding begins.
-- [ ] Add one owned low-priority worker that never dereferences Havok or calls D3D.
-- [ ] Build mesh data from immutable recipes only.
-- [ ] Add explicit worker initialization and deterministic shutdown/join ordering.
-- [ ] Add bounded pending-job and completed-upload queues.
-- [ ] Limit recipe captures per game frame.
-- [ ] Limit GPU uploads per rendered frame.
-- [ ] Add cache states `Pending`, `Ready`, and `Unsupported`.
-- [ ] Add generation tokens so stale jobs/uploads are discarded after world/settings invalidation.
-- [ ] Add LRU eviction and both entry-count and approximate GPU-byte budgets.
-- [ ] Keep generated-shape address-reuse protection; never reduce identity to a raw pointer.
-- [ ] Compute geometry identity once during safe capture, not on every render lookup.
-- [ ] Keep cache locks out of geometry building and D3D resource creation.
-- [ ] Publish a captured real body AABB proxy while detailed geometry is pending.
-- [ ] Keep detailed geometry as the final output whenever supported.
-- [ ] Add deterministic queue/cache policy tests and lifecycle regressions.
+- [x] Define stable CPU-only shape recipes captured on the ROCK update thread.
+- [x] Ensure recipe capture is admitted against the per-frame and queue budgets before expensive decoding begins.
+- [x] Add one owned low-priority worker that never dereferences Havok or calls D3D.
+- [x] Build mesh data from immutable recipes only.
+- [x] Add explicit worker initialization and deterministic shutdown/join ordering.
+- [x] Add bounded pending-job and completed-upload queues.
+- [x] Limit recipe captures per game frame.
+- [x] Limit GPU uploads per rendered frame.
+- [x] Add cache states `Pending`, `Ready`, and `Unsupported`.
+- [x] Add generation tokens so stale jobs/uploads are discarded after world/settings invalidation.
+- [x] Add LRU eviction and both entry-count and approximate GPU-byte budgets.
+- [x] Keep generated-shape address-reuse protection; never reduce identity to a raw pointer.
+- [x] Compute geometry identity once during safe capture, not on every render lookup.
+- [x] Keep cache locks out of geometry building and D3D resource creation.
+- [x] Publish a captured real body AABB proxy while detailed geometry is pending.
+- [x] Keep detailed geometry as the final output whenever supported.
+- [x] Add deterministic queue/cache policy tests and lifecycle regressions.
 
 Acceptance:
 
@@ -264,8 +264,8 @@ Runtime completion also requires, when the game can be exercised safely:
 - [x] Classified direct transfers, ROCK-specific adaptations, and excluded standalone behavior.
 - [x] Created persistent implementation ledger.
 - [x] Slice 1 implementation, full regression suite, build, auto-deploy, commit, and post-commit regression complete.
-- [ ] Slice 2 implementation/build/tests complete; commit and post-commit regression pending.
-- [ ] Slice 3 not started.
+- [x] Slice 2 implementation, build, auto-deploy, commit, and post-commit regression complete.
+- [x] Slice 3 implementation, build, auto-deploy, and pre-commit full regression complete.
 - [ ] Slice 4 not started.
 - [ ] Slice 5 not started.
 - [ ] Final runtime validation not started.
@@ -277,8 +277,8 @@ Record any Ghidra/FO4VR source verification here before implementing a new offse
 | Date | Claim | Authority/evidence | Result | Implemented in commit |
 |---|---|---|---|---|
 | 2026-07-20 | Existing ROCK stereo matrices and role-specific transform sources remain authoritative | Current ROCK source and existing stereo/semantic tests | Preserve unchanged | Pending |
-| 2026-07-20 | `hknpWorld::GetBodyAabb` has the ABI and output layout required by ROCK | Modified and pristine CommonLibF4VR both declare `(hknpWorld*, hknpBodyId, void*)` at `REL::ID(249572)`; local address library/PDB map it to FO4VR `0x141539120`; read-only Ghidra disassembly/decompilation shows the third argument in `R8`, exactly eight float writes, min `[0..3]` then max `[4..7]`, after unsigned 16-bit decompression | **Confirmed.** Use the engine wrapper on the publisher thread, validate finite ordered bounds, and convert Havok units to game units | Pending Slice 2 commit |
-| 2026-07-20 | ROCK must not copy the standalone raw compressed-AABB decoder | Read-only Ghidra shows `PUNPCKLWD`/`PUNPCKHWD` against zero, while CollisionVisualizerF4VR reads the same body storage through `std::int16_t*` | **Standalone implementation disputed.** Its signed interpretation is wrong above `32767`; ROCK keeps the verified engine wrapper and rejects those raw-offset/signed patterns in source regression | Pending Slice 2 commit |
+| 2026-07-20 | `hknpWorld::GetBodyAabb` has the ABI and output layout required by ROCK | Modified and pristine CommonLibF4VR both declare `(hknpWorld*, hknpBodyId, void*)` at `REL::ID(249572)`; local address library/PDB map it to FO4VR `0x141539120`; read-only Ghidra disassembly/decompilation shows the third argument in `R8`, exactly eight float writes, min `[0..3]` then max `[4..7]`, after unsigned 16-bit decompression | **Confirmed.** Use the engine wrapper on the publisher thread, validate finite ordered bounds, and convert Havok units to game units | `07abc83` |
+| 2026-07-20 | ROCK must not copy the standalone raw compressed-AABB decoder | Read-only Ghidra shows `PUNPCKLWD`/`PUNPCKHWD` against zero, while CollisionVisualizerF4VR reads the same body storage through `std::int16_t*` | **Standalone implementation disputed.** Its signed interpretation is wrong above `32767`; ROCK keeps the verified engine wrapper and rejects those raw-offset/signed patterns in source regression | `07abc83` |
 | 2026-07-20 | Overlay `hknpShape` virtual calls have the correct slots/signatures | Modified and pristine `hknpShape.h` agree exactly: `GetType` slot `04`, `GetNumberOfSupportVertices` slot `08`, and `GetSupportVertices(hkcdVertex*, int32)` slot `09`; the standalone visualizer independently calls the same virtuals/slots | **Confirmed.** Preserve the CommonLib virtual calls and bounded/null-checked support-vertex handling | Existing behavior; guarded during Slice 3 extraction |
 | 2026-07-20 | Renderer singleton and D3D device/context layout are stable across the two local CommonLib copies | Modified and pristine `BSGraphics.h` agree on `RendererData::GetSingleton` ID `1235449`, device `+0x48`, context `+0x50`, and size `0x25C0`; local relocation manifest maps the ID to FO4VR `.data` `0x1460F3CE8`; standalone uses the same interface | **Confirmed.** Retain null checks and non-owning casts to D3D11 interfaces | Existing behavior; Slice 1 hardened lifetime/state handling |
 
@@ -288,8 +288,8 @@ Record any Ghidra/FO4VR source verification here before implementing a new offse
 |---|---|---|---|---|---|
 | Ledger setup | `a48c915` | Not applicable | Not applicable | `git show --check` passed | Explicitly authorized Markdown progress artifact |
 | 1: Hook/D3D hardening | `da16718` | `custom-fast` Release build and auto-deploy passed | 117/117 full suite passed | 117/117 passed after commit | Deployed DLL/PDB hashes match build artifacts |
-| 2: Immutable publication | Pending | `custom-fast` Release build and auto-deploy passed | 119/119 full suite passed | Pending | Build/test preset was explicitly refreshed after stale regeneration lacked `VCPKG_ROOT` |
-| 3: Async shape/cache | Pending | Pending | Pending | Pending | |
+| 2: Immutable publication | `07abc83` | `custom-fast` Release build and auto-deploy passed | 119/119 full suite passed | 119/119 passed after commit; `git show --check` passed | CommonLib boundary independently cross-checked against pristine source, local address evidence, and FO4VR Ghidra |
+| 3: Async shape/cache | Pending hash | `custom-fast` Release build and auto-deploy passed | 122/122 full suite passed | Pending commit | One low-priority worker; bounded recipe, CPU-completion, upload, LRU, and GPU-byte paths |
 | 4: GPU/diagnostic batching | Pending | Pending | Pending | Pending | |
 | 5: Fidelity/config/metrics/modules | Pending | Pending | Pending | Pending | |
 
@@ -345,6 +345,25 @@ Record any Ghidra/FO4VR source verification here before implementing a new offse
 - Final audited Slice 2 build recompiled and auto-deployed successfully after the CommonLib verification comments/regression were added. The complete suite again passed: 53 policy tests and 66 source-boundary tests, 119/119 total.
 - Deployed `ROCK.dll` is version `0.5.0.0`, size `5,357,056`, timestamp `2026-07-20 20:06:57`; build/deploy SHA-256 match `38AB73B97C75D38C5F31B582FD683C8B1390B4F4BB299B31A05D4BA5E9C3F0D2`.
 - Build/deploy `ROCK.pdb` SHA-256 match `F4E13E7D3920CBAC38A0554EA12CEE5ECC02551E3D6B39BB821803CE4880B49A`.
+- Committed Slice 2 as `07abc83` (`fix/debug-overlay: publish immutable render snapshots`).
+- Post-commit regression passed 119/119 tests; `git show --check` passed and the worktree was clean before Slice 3 began.
+
+### 2026-07-20 — Slice 3 Bounded Shape Pipeline
+
+- Slice started from clean commit `07abc83` after its full post-commit regression.
+- Added immutable CPU-only recipes for supported sphere, capsule, convex, and scale-only scaled-convex geometry. Engine reads occur only during guarded publisher capture; the worker consumes copied values only.
+- Publisher admission now reserves a bounded cache/queue slot before recipe capture. Duplicate shapes coalesce, per-frame capture work is capped, and pointer-plus-geometry-fingerprint identity remains intact.
+- Replaced synchronous compositor mesh generation with one owned below-normal-priority worker. The compositor processes a bounded number of completed CPU meshes and performs D3D uploads outside the pipeline mutex.
+- Added explicit `Pending`, `Ready`, and `Unsupported` states; generation-token invalidation; independent pending/completed queue bounds; entry and approximate GPU-byte budgets; LRU eviction; stale-result accounting; and allocation-failure terminalization.
+- Captured real body AABBs remain visible through one canonical unit-cube proxy while detail is pending and for genuinely unsupported geometry. Supported detailed geometry replaces the proxy as soon as its upload completes.
+- Added deterministic shutdown before physics teardown, including worker notification, join, cache release, and restart coverage.
+- Eliminated per-frame fingerprint heap allocation by replacing the temporary support-vertex vector with a fixed 256-entry stack array.
+- Added pure geometry tests, pipeline lifecycle/bounds/LRU tests, and a source-boundary regression proving the worker has no CommonLib/Havok/D3D access and the compositor performs no recipe capture, fingerprinting, or CPU mesh construction.
+- Re-audited every CommonLib-facing overlay function against `original frik deps/CommonLibF4VR`. Exact virtual-slot counts are now enforced for `GetType`, `GetNumberOfSupportVertices`, and `GetSupportVertices`; both fingerprint and recipe paths are enclosed by fail-closed SEH boundaries.
+- Replaced the duplicated raw `+0x14` radius read with the identically laid-out CommonLib `hknpShape::convexRadius` member. Recursive scaled recipes use unique ownership attached before the deeper guarded read, so a structured access fault cannot orphan a temporary inner recipe.
+- Required `custom-fast` configure and capped Release build passed and auto-deployed. The dedicated `custom-tests` tree was regenerated to avoid accepting the stale test registry left in `build-fast`; the current complete suite passed 55 policy tests and 67 source-boundary tests, 122/122 total.
+- Deployed `ROCK.dll` is version `0.5.0.0`, size `5,373,440`, timestamp `2026-07-20 20:42:40`; build/deploy SHA-256 match `EC586103C9FBB5425465ED4FF699CA63141088659EA4E29FCD29C1F58729ED3E`.
+- Build/deploy `ROCK.pdb` SHA-256 match `FBB3C5C9B45C35888D7903229D57544DC797566977C41B5C0EDA2CCC9AAFEE93`.
 
 ## Remaining Risks
 

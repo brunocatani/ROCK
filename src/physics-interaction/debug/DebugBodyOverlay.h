@@ -341,6 +341,9 @@ namespace rock::debug
     void PublishFrame(const BodyOverlayFrame& frame);
     void ClearFrame();
     void ClearShapeCache();
+    // Stops and joins the owned CPU shape worker without uninstalling the
+    // process-scoped OpenVR hook or D3D resources. PublishFrame restarts it.
+    void ShutdownShapePipeline();
     // Current-frame left-eye stereo origin (game world units) from the same
     // fail-closed engine read the overlay camera uses. Diagnostic sampling only;
     // returns false without touching the overlay's stereo health telemetry.

@@ -671,6 +671,24 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKDebugOverlaySnapshotPoolTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKDebugOverlaySnapshotPoolTests)
 
+  add_executable(ROCKDebugOverlayShapeGeometryTests
+    "${ROOT_DIR}/tests/DebugOverlayShapeGeometryTests.cpp"
+    "${SOURCE_DIR}/physics-interaction/debug/DebugOverlayShapeGeometry.cpp"
+  )
+  target_compile_features(ROCKDebugOverlayShapeGeometryTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKDebugOverlayShapeGeometryTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKDebugOverlayShapeGeometryTests)
+
+  add_executable(ROCKDebugOverlayShapePipelineTests
+    "${ROOT_DIR}/tests/DebugOverlayShapePipelineTests.cpp"
+    "${SOURCE_DIR}/physics-interaction/debug/DebugOverlayShapeGeometry.cpp"
+    "${SOURCE_DIR}/physics-interaction/debug/DebugOverlayShapePipeline.cpp"
+  )
+  target_compile_features(ROCKDebugOverlayShapePipelineTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKDebugOverlayShapePipelineTests PRIVATE ${SOURCE_DIR})
+  target_link_libraries(ROCKDebugOverlayShapePipelineTests PRIVATE d3d11.lib)
+  add_rock_test(ROCKDebugOverlayShapePipelineTests)
+
   add_executable(ROCKDebugOverlayShaderCompileTests
     "${ROOT_DIR}/tests/DebugOverlayShaderCompileTests.cpp"
   )
@@ -682,6 +700,8 @@ if(BUILD_ROCK_TESTS)
   add_dependencies(
     ROCKPolicyTestBinaries
     ROCKDebugOverlayFrameAdmissionTests
+    ROCKDebugOverlayShapeGeometryTests
+    ROCKDebugOverlayShapePipelineTests
     ROCKDebugOverlaySnapshotPoolTests
     ROCKDebugOverlayShaderCompileTests
   )
