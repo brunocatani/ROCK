@@ -664,6 +664,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKDebugOverlayFrameAdmissionTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKDebugOverlayFrameAdmissionTests)
 
+  add_executable(ROCKDebugOverlaySnapshotPoolTests
+    "${ROOT_DIR}/tests/DebugOverlaySnapshotPoolTests.cpp"
+  )
+  target_compile_features(ROCKDebugOverlaySnapshotPoolTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKDebugOverlaySnapshotPoolTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKDebugOverlaySnapshotPoolTests)
+
   add_executable(ROCKDebugOverlayShaderCompileTests
     "${ROOT_DIR}/tests/DebugOverlayShaderCompileTests.cpp"
   )
@@ -675,6 +682,7 @@ if(BUILD_ROCK_TESTS)
   add_dependencies(
     ROCKPolicyTestBinaries
     ROCKDebugOverlayFrameAdmissionTests
+    ROCKDebugOverlaySnapshotPoolTests
     ROCKDebugOverlayShaderCompileTests
   )
 

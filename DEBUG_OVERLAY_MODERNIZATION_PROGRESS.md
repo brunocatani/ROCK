@@ -110,16 +110,16 @@ Acceptance:
 
 ### Slice 2: Immutable Render-Ready Publication Boundary
 
-- [ ] Replace the mutex-protected full-frame copy with a pooled immutable snapshot or fixed triple-buffer design.
-- [ ] Add a monotonic publication serial used by the render guard.
-- [ ] Capture exact role-specific body transforms on ROCK's game/physics update path.
-- [ ] Capture stable body identity, shape identity/fingerprint, actual body AABB, role, color/decode metadata, and render flags.
-- [ ] Capture a narrow immutable overlay settings structure with the frame.
-- [ ] Remove `hknpWorld*` and transient engine pointers from the render-facing snapshot.
-- [ ] Remove all body/motion-array dereferences from the compositor callback.
-- [ ] Remove all mutable `g_rockConfig` reads from the compositor callback.
-- [ ] Ensure builder buffers are reused without clearing or copying unused fixed-capacity storage.
-- [ ] Preserve Target body-array transforms and all other current transform-source rules with explicit tests.
+- [x] Replace the mutex-protected full-frame copy with a pooled immutable snapshot or fixed triple-buffer design.
+- [x] Add a monotonic publication serial used by the render guard.
+- [x] Capture exact role-specific body transforms on ROCK's game/physics update path.
+- [x] Capture stable body identity, shape identity/fingerprint, actual body AABB, role, color/decode metadata, and render flags.
+- [x] Capture a narrow immutable overlay settings structure with the frame.
+- [x] Remove `hknpWorld*` and transient engine pointers from the render-facing snapshot.
+- [x] Remove all body/motion-array dereferences from the compositor callback.
+- [x] Remove all mutable `g_rockConfig` reads from the compositor callback.
+- [x] Ensure builder buffers are reused without clearing or copying unused fixed-capacity storage.
+- [x] Preserve Target body-array transforms and all other current transform-source rules with explicit tests.
 
 Acceptance:
 
@@ -263,8 +263,8 @@ Runtime completion also requires, when the game can be exercised safely:
 - [x] Completed source audit of ROCK versus CollisionVisualizerF4VR.
 - [x] Classified direct transfers, ROCK-specific adaptations, and excluded standalone behavior.
 - [x] Created persistent implementation ledger.
-- [x] Slice 1 implementation, full regression suite, build, and auto-deploy complete; commit pending.
-- [ ] Slice 2 not started.
+- [x] Slice 1 implementation, full regression suite, build, auto-deploy, commit, and post-commit regression complete.
+- [ ] Slice 2 implementation/build/tests complete; commit and post-commit regression pending.
 - [ ] Slice 3 not started.
 - [ ] Slice 4 not started.
 - [ ] Slice 5 not started.
@@ -277,14 +277,18 @@ Record any Ghidra/FO4VR source verification here before implementing a new offse
 | Date | Claim | Authority/evidence | Result | Implemented in commit |
 |---|---|---|---|---|
 | 2026-07-20 | Existing ROCK stereo matrices and role-specific transform sources remain authoritative | Current ROCK source and existing stereo/semantic tests | Preserve unchanged | Pending |
+| 2026-07-20 | `hknpWorld::GetBodyAabb` has the ABI and output layout required by ROCK | Modified and pristine CommonLibF4VR both declare `(hknpWorld*, hknpBodyId, void*)` at `REL::ID(249572)`; local address library/PDB map it to FO4VR `0x141539120`; read-only Ghidra disassembly/decompilation shows the third argument in `R8`, exactly eight float writes, min `[0..3]` then max `[4..7]`, after unsigned 16-bit decompression | **Confirmed.** Use the engine wrapper on the publisher thread, validate finite ordered bounds, and convert Havok units to game units | Pending Slice 2 commit |
+| 2026-07-20 | ROCK must not copy the standalone raw compressed-AABB decoder | Read-only Ghidra shows `PUNPCKLWD`/`PUNPCKHWD` against zero, while CollisionVisualizerF4VR reads the same body storage through `std::int16_t*` | **Standalone implementation disputed.** Its signed interpretation is wrong above `32767`; ROCK keeps the verified engine wrapper and rejects those raw-offset/signed patterns in source regression | Pending Slice 2 commit |
+| 2026-07-20 | Overlay `hknpShape` virtual calls have the correct slots/signatures | Modified and pristine `hknpShape.h` agree exactly: `GetType` slot `04`, `GetNumberOfSupportVertices` slot `08`, and `GetSupportVertices(hkcdVertex*, int32)` slot `09`; the standalone visualizer independently calls the same virtuals/slots | **Confirmed.** Preserve the CommonLib virtual calls and bounded/null-checked support-vertex handling | Existing behavior; guarded during Slice 3 extraction |
+| 2026-07-20 | Renderer singleton and D3D device/context layout are stable across the two local CommonLib copies | Modified and pristine `BSGraphics.h` agree on `RendererData::GetSingleton` ID `1235449`, device `+0x48`, context `+0x50`, and size `0x25C0`; local relocation manifest maps the ID to FO4VR `.data` `0x1460F3CE8`; standalone uses the same interface | **Confirmed.** Retain null checks and non-owning casts to D3D11 interfaces | Existing behavior; Slice 1 hardened lifetime/state handling |
 
 ## Commit Ledger
 
 | Slice | Commit | Build | Tests | Post-commit regression | Notes |
 |---|---|---|---|---|---|
 | Ledger setup | `a48c915` | Not applicable | Not applicable | `git show --check` passed | Explicitly authorized Markdown progress artifact |
-| 1: Hook/D3D hardening | Pending | `custom-fast` Release build and auto-deploy passed | 117/117 full suite passed | Pending | Deployed DLL/PDB hashes match build artifacts |
-| 2: Immutable publication | Pending | Pending | Pending | Pending | |
+| 1: Hook/D3D hardening | `da16718` | `custom-fast` Release build and auto-deploy passed | 117/117 full suite passed | 117/117 passed after commit | Deployed DLL/PDB hashes match build artifacts |
+| 2: Immutable publication | Pending | `custom-fast` Release build and auto-deploy passed | 119/119 full suite passed | Pending | Build/test preset was explicitly refreshed after stale regeneration lacked `VCPKG_ROOT` |
 | 3: Async shape/cache | Pending | Pending | Pending | Pending | |
 | 4: GPU/diagnostic batching | Pending | Pending | Pending | Pending | |
 | 5: Fidelity/config/metrics/modules | Pending | Pending | Pending | Pending | |
@@ -317,6 +321,30 @@ Record any Ghidra/FO4VR source verification here before implementing a new offse
 - Full capped regression suite passed: 52 policy tests and 65 source-boundary tests, 117/117 total.
 - Deployed `ROCK.dll` is version `0.5.0.0`, size `5,479,424`, timestamp `2026-07-20 19:38:38`; build/deploy SHA-256 match `328CF566A0272E59B0641455A35E6437EDFDD4CA4A0EA918CEF6CE32FEFFB8F2`.
 - Build/deploy `ROCK.pdb` SHA-256 match `6E818CEA09C6DECE0CE682F56EF63E7A0E8B5CFA5B657239600482CED27C32FD`.
+- Committed Slice 1 as `da16718` (`fix/debug-overlay: harden compositor rendering lifecycle`).
+- Post-commit regression rebuilt the registered targets and passed 117/117 tests. The worktree was clean before Slice 2 began.
+
+### 2026-07-20 — Slice 2 Immutable Publication Boundary
+
+- Replaced the mutex-protected `BodyOverlayFrame` copy with a four-buffer single-producer snapshot pool and `std::atomic<std::shared_ptr<const PublishedOverlayFrame>>` publication.
+- Added focused pool tests covering reuse, retention while published/consumed, capacity exhaustion, and recovery.
+- The publisher now resolves role-specific body and body-axis transforms before publication. Target bodies/axes retain BODY-array authority; other roles retain live-motion-when-available behavior.
+- Captured stable body IDs, pointer-plus-geometry-fingerprint shape keys, real world body AABBs, roles, render flags, decode data, and the narrow overlay settings consumed by rendering.
+- Real AABBs use the current local CommonLibF4VR `hknpWorld::GetBodyAabb` wrapper, validate finite ordered bounds, and convert Havok units to ROCK game units. No standalone raw AABB offsets were imported.
+- Blind CommonLib verification was performed locally without assuming the modified headers were correct: every overlay-facing wrapper was compared with `original frik deps/CommonLibF4VR`, then relocations were checked against the local address database/PDB, and the new AABB call was independently verified in the FO4VR binary through read-only Ghidra analysis.
+- `hknpBodyId` is byte-identical in the modified and pristine CommonLib copies (four-byte `hkHandle<uint32_t, 0x7fffffff, ...>`), and the two local address-ID maps are byte-identical. This rules out a hidden argument-width or map-drift mismatch for `GetBodyAabb`.
+- Ghidra confirmed that FO4VR's AABB function writes exactly 32 bytes as minimum then maximum float vectors and zero-extends the stored 16-bit components. The standalone visualizer's raw `std::int16_t` decoder is therefore not safe to transfer; a source regression now rejects that decoder and its raw offsets.
+- The existing `hknpShape` virtuals and `BSGraphics::RendererData` access were separately cross-checked between both CommonLib trees and against the standalone caller/address evidence; no overlay-side correction was required.
+- The compositor now atomically acquires one immutable snapshot and no longer dereferences `hknpWorld`, body arrays, motion arrays, shape pointers, or mutable `g_rockConfig` state.
+- Shape CPU decoding is temporarily performed during safe publication and passed as CPU-owned data. Slice 3 replaces this synchronous transitional step with bounded immutable recipes and a worker.
+- GPU cache values are shared immutable handles so game-thread invalidation cannot destroy a buffer still used by the compositor.
+- Only active marker, skeleton, axis, body, and text records cross the publication boundary; pooled vector capacity is retained between frames.
+- Added a compositor-boundary source regression and strengthened Target transform-source regression patterns for the new publication location.
+- Required `custom-fast` configure, capped Release build, auto-deploy, and the complete test suite passed.
+- The initial full-suite invocation encountered stale `build-tests` regeneration without preset-provided `VCPKG_ROOT`; refreshing `custom-tests` corrected the test environment, after which 53 policy tests and 66 source-boundary tests passed, 119/119 total.
+- Final audited Slice 2 build recompiled and auto-deployed successfully after the CommonLib verification comments/regression were added. The complete suite again passed: 53 policy tests and 66 source-boundary tests, 119/119 total.
+- Deployed `ROCK.dll` is version `0.5.0.0`, size `5,357,056`, timestamp `2026-07-20 20:06:57`; build/deploy SHA-256 match `38AB73B97C75D38C5F31B582FD683C8B1390B4F4BB299B31A05D4BA5E9C3F0D2`.
+- Build/deploy `ROCK.pdb` SHA-256 match `F4E13E7D3920CBAC38A0554EA12CEE5ECC02551E3D6B39BB821803CE4880B49A`.
 
 ## Remaining Risks
 

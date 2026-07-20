@@ -11,6 +11,7 @@
 #include <cstring>
 #include <exception>
 #include <limits>
+#include <memory>
 #include <mutex>
 #include <tuple>
 #include <unordered_map>
@@ -27,6 +28,7 @@
 #include "physics-interaction/debug/DebugOverlayLineBatch.h"
 #include "physics-interaction/debug/DebugOverlayPolicy.h"
 #include "physics-interaction/debug/DebugOverlayShaders.h"
+#include "physics-interaction/debug/DebugOverlaySnapshotPool.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/PhysicsUtils.h"
@@ -35,6 +37,7 @@
 
 #include "RE/Bethesda/BSGraphics.h"
 #include "RE/Havok/hknpShape.h"
+#include "RE/Havok/hknpWorld.h"
 
 #include <F4SE/F4SE.h>
 #include <REL/Relocation.h>
@@ -132,6 +135,62 @@ namespace rock::debug
             std::uint32_t filterInfo = 0;
             std::uint16_t motionPropertiesId = 0;
             DirectX::XMMATRIX worldMatrix = DirectX::XMMatrixIdentity();
+        };
+
+        struct OverlayRenderSettings
+        {
+            std::uint32_t maxShapeGenerationsPerFrame{ 0 };
+            int maxConvexSupportVertices{ 0 };
+            std::uint64_t shapeDecodeSettingsKey{ 0 };
+            bool useBoundsForHeavyConvex{ false };
+            bool duplicateTextPerEye{ true };
+            bool verboseLogging{ false };
+        };
+
+        struct CapturedShape
+        {
+            ShapeKey key{};
+            ShapeDecodeResult decoded{};
+            bool hasDecodedGeometry{ false };
+        };
+
+        struct PublishedBodyEntry
+        {
+            ShapeKey shapeKey{};
+            DirectX::XMMATRIX worldMatrix = DirectX::XMMatrixIdentity();
+            DirectX::XMFLOAT3 worldAabbMin{};
+            DirectX::XMFLOAT3 worldAabbMax{};
+            BodyOverlayRole role{ BodyOverlayRole::Target };
+            std::uint32_t bodyId{ kInvalidBodyId };
+            std::uint32_t capturedShapeIndex{ (std::numeric_limits<std::uint32_t>::max)() };
+            bool hasValidWorldAabb{ false };
+        };
+
+        struct PublishedAxisEntry
+        {
+            AxisOverlayEntry entry{};
+            DirectX::XMMATRIX bodyWorldMatrix = DirectX::XMMatrixIdentity();
+        };
+
+        struct PublishedOverlayFrame
+        {
+            std::vector<PublishedBodyEntry> bodies;
+            std::vector<PublishedAxisEntry> axes;
+            std::vector<MarkerOverlayEntry> markers;
+            std::vector<SkeletonOverlayEntry> skeleton;
+            std::vector<TextOverlayEntry> text;
+            std::vector<CapturedShape> capturedShapes;
+            OverlayRenderSettings settings{};
+            std::uintptr_t worldIdentity{ 0 };
+            std::uint32_t bodyExtractFailures{ 0 };
+            std::uint32_t shapeGenerations{ 0 };
+            std::uint32_t shapeGenerationDeferrals{ 0 };
+            bool drawRockBodies{ false };
+            bool drawTargetBodies{ false };
+            bool drawAxes{ false };
+            bool drawMarkers{ false };
+            bool drawSkeleton{ false };
+            bool drawText{ false };
         };
 
         enum class BodyOverlayFrameSource : std::uint8_t
@@ -265,8 +324,9 @@ namespace rock::debug
             Microsoft::WRL::ComPtr<ID3D11RenderTargetView> rtv;
         };
 
-        static BodyOverlayFrame s_frame{};
-        static std::mutex s_frameMutex;
+        constexpr std::size_t kPublishedFramePoolCapacity = 4;
+        static debug_overlay_snapshot::SnapshotPool<PublishedOverlayFrame, kPublishedFramePoolCapacity> s_framePool{};
+        static std::atomic<std::shared_ptr<const PublishedOverlayFrame>> s_publishedFrame{};
         static std::atomic<bool> s_enabled{ false };
         static std::atomic<bool> s_initialized{ false };
         static std::atomic<bool> s_submitHookInstalled{ false };
@@ -282,10 +342,10 @@ namespace rock::debug
         static std::atomic<bool> s_cameraUploadFailureReported{ false };
         static std::atomic<bool> s_modelUploadFailureReported{ false };
         static std::atomic<bool> s_submitInstallFailureReported{ false };
-        static std::unordered_map<ShapeKey, GpuShape, ShapeKeyHash> s_shapeCache;
+        static std::atomic<bool> s_snapshotPoolExhaustionReported{ false };
+        static std::unordered_map<ShapeKey, std::shared_ptr<const GpuShape>, ShapeKeyHash> s_shapeCache;
         static std::mutex s_shapeCacheMutex;
         static CachedRenderTargetView s_submittedTextureRtv{};
-        static std::uint32_t s_frameShapeGenerations = 0;
 
         using VRSubmit_t = vr::EVRCompositorError(__thiscall*)(vr::IVRCompositor*, vr::EVREye, const vr::Texture_t*, const vr::VRTextureBounds_t*, vr::EVRSubmitFlags);
         static std::atomic<VRSubmit_t> s_originalVRSubmit{ nullptr };
@@ -601,7 +661,7 @@ namespace rock::debug
             return mesh;
         }
 
-        ShapeDecodeResult generateConvexPolytope(std::uintptr_t shapeAddress, int shapeType)
+        ShapeDecodeResult generateConvexPolytope(std::uintptr_t shapeAddress, int shapeType, const OverlayRenderSettings& settings)
         {
             if (!shapeAddress) {
                 return {};
@@ -611,13 +671,13 @@ namespace rock::debug
             const float convexRadius = *reinterpret_cast<float*>(shapeAddress + 0x14);
             const int vertexCount = shape->GetNumberOfSupportVertices();
             if (vertexCount < 3) {
-                if (g_rockConfig.rockDebugUseBoundsForHeavyConvex) {
+                if (settings.useBoundsForHeavyConvex) {
                     return makeShapeResult(generateOriginProxyBox(), debug_overlay_policy::ShapeDecodeMode::Proxy, shapeType);
                 }
                 return makeUnsupportedShapeResult(shapeType);
             }
             if (vertexCount > 256) {
-                if (g_rockConfig.rockDebugUseBoundsForHeavyConvex) {
+                if (settings.useBoundsForHeavyConvex) {
                     return makeShapeResult(generateOriginProxyBox(), debug_overlay_policy::ShapeDecodeMode::Proxy, shapeType);
                 }
                 return makeUnsupportedShapeResult(shapeType);
@@ -627,7 +687,7 @@ namespace rock::debug
             auto* supportBuffer = reinterpret_cast<RE::hkcdVertex*>(supportVertices.data());
             const auto* resultRaw = shape->GetSupportVertices(supportBuffer, vertexCount);
             if (!resultRaw) {
-                if (g_rockConfig.rockDebugUseBoundsForHeavyConvex) {
+                if (settings.useBoundsForHeavyConvex) {
                     return makeShapeResult(generateOriginProxyBox(), debug_overlay_policy::ShapeDecodeMode::Proxy, shapeType);
                 }
                 return makeUnsupportedShapeResult(shapeType);
@@ -644,7 +704,7 @@ namespace rock::debug
 
             auto hullVertices = debug_convex_hull_mesh::deduplicateVertices(rawVertices);
             if (hullVertices.size() < 3) {
-                if (g_rockConfig.rockDebugUseBoundsForHeavyConvex) {
+                if (settings.useBoundsForHeavyConvex) {
                     return makeShapeResult(generateOriginProxyBox(), debug_overlay_policy::ShapeDecodeMode::Proxy, shapeType);
                 }
                 return makeUnsupportedShapeResult(shapeType);
@@ -652,8 +712,8 @@ namespace rock::debug
 
             const auto decodeMode = debug_overlay_policy::chooseShapeDecodeMode(shapeType,
                     static_cast<std::uint32_t>(hullVertices.size()),
-                    g_rockConfig.rockDebugMaxConvexSupportVertices,
-                    g_rockConfig.rockDebugUseBoundsForHeavyConvex);
+                    settings.maxConvexSupportVertices,
+                    settings.useBoundsForHeavyConvex);
             if (decodeMode == debug_overlay_policy::ShapeDecodeMode::Proxy) {
                 std::vector<Vertex> boundsVertices;
                 boundsVertices.reserve(hullVertices.size());
@@ -662,7 +722,7 @@ namespace rock::debug
                 }
 
                 ROCK_LOG_DEBUG(Hand, "Debug overlay using bounds LOD for heavy convex: shape=0x{:X} supportVertices={} cap={}", shapeAddress, hullVertices.size(),
-                    debug_overlay_policy::clampMaxConvexSupportVertices(g_rockConfig.rockDebugMaxConvexSupportVertices));
+                    settings.maxConvexSupportVertices);
                 return makeShapeResult(generateBoundsBox(boundsVertices), decodeMode, shapeType);
             }
 
@@ -672,7 +732,7 @@ namespace rock::debug
 
             const auto triangles = debug_convex_hull_mesh::triangulateConvexHullFaces(hullVertices);
             if (triangles.empty() || triangles.size() > debug_convex_hull_mesh::maxExpectedConvexHullTriangles(static_cast<std::uint32_t>(hullVertices.size()))) {
-                if (g_rockConfig.rockDebugUseBoundsForHeavyConvex) {
+                if (settings.useBoundsForHeavyConvex) {
                     std::vector<Vertex> boundsVertices;
                     boundsVertices.reserve(hullVertices.size());
                     for (const auto& vertex : hullVertices) {
@@ -698,7 +758,7 @@ namespace rock::debug
             return makeShapeResult(std::move(mesh), debug_overlay_policy::ShapeDecodeMode::Detailed, shapeType);
         }
 
-        ShapeDecodeResult generateShape(std::uintptr_t shapeAddress)
+        ShapeDecodeResult generateShape(std::uintptr_t shapeAddress, const OverlayRenderSettings& settings)
         {
             if (!shapeAddress) {
                 return {};
@@ -710,7 +770,7 @@ namespace rock::debug
                 switch (shapeType) {
                 case 0:
                 case 1:
-                    return generateConvexPolytope(shapeAddress, shapeType);
+                    return generateConvexPolytope(shapeAddress, shapeType, settings);
                 case 2:
                     return makeShapeResult(generateSphere(*reinterpret_cast<float*>(shapeAddress + 0x14)), debug_overlay_policy::ShapeDecodeMode::Detailed, shapeType);
                 case 3:
@@ -719,13 +779,13 @@ namespace rock::debug
                         debug_overlay_policy::ShapeDecodeMode::Detailed,
                         shapeType);
                 case 4:
-                    return generateConvexPolytope(shapeAddress, shapeType);
+                    return generateConvexPolytope(shapeAddress, shapeType, settings);
                 case 11: {
                     const auto innerShape = *reinterpret_cast<std::uintptr_t*>(shapeAddress + 0x30);
                     if (!innerShape) {
                         return {};
                     }
-                    ShapeDecodeResult inner = generateShape(innerShape);
+                    ShapeDecodeResult inner = generateShape(innerShape, settings);
                     if (!inner.mesh.valid) {
                         inner.shapeType = shapeType;
                         return inner;
@@ -740,7 +800,7 @@ namespace rock::debug
                     return inner;
                 }
                 default:
-                    if (debug_overlay_policy::chooseShapeDecodeMode(shapeType, 0, g_rockConfig.rockDebugMaxConvexSupportVertices, g_rockConfig.rockDebugUseBoundsForHeavyConvex) ==
+                    if (debug_overlay_policy::chooseShapeDecodeMode(shapeType, 0, settings.maxConvexSupportVertices, settings.useBoundsForHeavyConvex) ==
                         debug_overlay_policy::ShapeDecodeMode::Proxy) {
                         return makeShapeResult(generateOriginProxyBox(), debug_overlay_policy::ShapeDecodeMode::Proxy, shapeType);
                     }
@@ -842,6 +902,45 @@ namespace rock::debug
             return true;
         }
 
+        bool captureBodyWorldAabb(
+            RE::hknpWorld* world, RE::hknpBodyId bodyId, DirectX::XMFLOAT3& outMin, DirectX::XMFLOAT3& outMax)
+        {
+            // FO4VR 1.2.72 function 0x141539120 (CommonLibF4VR ID 249572)
+            // zero-extends the body's eight compressed 16-bit AABB components,
+            // decompresses them in Havok space, then writes min[0..3] followed
+            // by max[0..3]. Keep this engine wrapper instead of duplicating the
+            // version-sensitive raw world/body offsets or signed decoding.
+            struct alignas(16) RawBodyAabb
+            {
+                float minimum[4]{};
+                float maximum[4]{};
+            };
+            static_assert(sizeof(RawBodyAabb) == 32);
+
+            if (!world || bodyId.value == kInvalidBodyId || bodyId.value > kMaxBodyIndex) {
+                return false;
+            }
+
+            RawBodyAabb raw{};
+            world->GetBodyAabb(bodyId, &raw);
+            const float scale = havokToGameScale();
+            const float minX = raw.minimum[0] * scale;
+            const float minY = raw.minimum[1] * scale;
+            const float minZ = raw.minimum[2] * scale;
+            const float maxX = raw.maximum[0] * scale;
+            const float maxY = raw.maximum[1] * scale;
+            const float maxZ = raw.maximum[2] * scale;
+            if (!std::isfinite(minX) || !std::isfinite(minY) || !std::isfinite(minZ) ||
+                !std::isfinite(maxX) || !std::isfinite(maxY) || !std::isfinite(maxZ) ||
+                minX > maxX || minY > maxY || minZ > maxZ) {
+                return false;
+            }
+
+            outMin = DirectX::XMFLOAT3{ minX, minY, minZ };
+            outMax = DirectX::XMFLOAT3{ maxX, maxY, maxZ };
+            return true;
+        }
+
         bool createBuffers(ID3D11Device* device, const MeshData& mesh, GpuShape& out)
         {
             D3D11_BUFFER_DESC vertexDesc{};
@@ -875,51 +974,213 @@ namespace rock::debug
             return true;
         }
 
-        const GpuShape* getOrCreateShape(ID3D11Device* device, const BodyRenderInfo& body, OverlayRuntimeStats& stats)
+        bool isShapeCached(const ShapeKey& key)
         {
             std::scoped_lock lock(s_shapeCacheMutex);
-            const ShapeKey key = makeShapeKey(body.shapeAddress);
+            return s_shapeCache.contains(key);
+        }
+
+        std::shared_ptr<const GpuShape> getOrCreateShape(
+            ID3D11Device* device, const ShapeKey& key, const ShapeDecodeResult* decoded, OverlayRuntimeStats& stats)
+        {
+            std::scoped_lock lock(s_shapeCacheMutex);
             auto it = s_shapeCache.find(key);
             if (it != s_shapeCache.end()) {
                 ++stats.shapeCacheHits;
-                return it->second.indexCount > 0 ? &it->second : nullptr;
+                return it->second && it->second->indexCount > 0 ? it->second : std::shared_ptr<const GpuShape>{};
             }
 
             ++stats.shapeCacheMisses;
+            if (!decoded) {
+                ++stats.shapeGenerationDeferrals;
+                return {};
+            }
+
             const std::uint32_t shapeCacheBudget = debug_overlay_policy::clampShapeCacheBudget(static_cast<int>(debug_overlay_policy::kDefaultShapeCacheBudget));
             if (s_shapeCache.size() >= shapeCacheBudget) {
                 ++stats.shapeCacheBudgetSkips;
-                return nullptr;
+                return {};
             }
 
-            const std::uint32_t maxGenerations = debug_overlay_policy::clampShapeGenerationsPerFrame(g_rockConfig.rockDebugMaxShapeGenerationsPerFrame);
-            if (s_frameShapeGenerations >= maxGenerations) {
-                ++stats.shapeGenerationDeferrals;
-                return nullptr;
-            }
-            s_frameShapeGenerations++;
-            ++stats.shapeGenerations;
-
-            ShapeDecodeResult decoded = generateShape(body.shapeAddress);
-            if (decoded.mode == debug_overlay_policy::ShapeDecodeMode::Proxy) {
+            if (decoded->mode == debug_overlay_policy::ShapeDecodeMode::Proxy) {
                 ++stats.shapeProxyFallbacks;
-                if (!debug_overlay_policy::isSupportedDetailedShapeType(decoded.shapeType)) {
+                if (!debug_overlay_policy::isSupportedDetailedShapeType(decoded->shapeType)) {
                     ++stats.unsupportedShapeProxies;
                 }
-            } else if (decoded.mode == debug_overlay_policy::ShapeDecodeMode::Unsupported) {
+            } else if (decoded->mode == debug_overlay_policy::ShapeDecodeMode::Unsupported) {
                 ++stats.unsupportedShapeSkips;
             }
 
-            GpuShape gpuShape;
-            gpuShape.decodeMode = decoded.mode;
-            gpuShape.shapeType = decoded.shapeType;
-            if (!decoded.mesh.valid || decoded.mesh.vertices.empty() || decoded.mesh.indices.empty() || !createBuffers(device, decoded.mesh, gpuShape)) {
-                s_shapeCache.emplace(key, std::move(gpuShape));
-                return nullptr;
+            auto gpuShape = std::make_shared<GpuShape>();
+            gpuShape->decodeMode = decoded->mode;
+            gpuShape->shapeType = decoded->shapeType;
+            if (!decoded->mesh.valid || decoded->mesh.vertices.empty() || decoded->mesh.indices.empty() || !createBuffers(device, decoded->mesh, *gpuShape)) {
+                s_shapeCache.emplace(key, gpuShape);
+                return {};
             }
 
-            auto [inserted, _] = s_shapeCache.emplace(key, std::move(gpuShape));
-            return &inserted->second;
+            auto [inserted, _] = s_shapeCache.emplace(key, gpuShape);
+            return inserted->second;
+        }
+
+        bool isRockBodyRole(BodyOverlayRole role)
+        {
+            return role == BodyOverlayRole::RightHand || role == BodyOverlayRole::LeftHand ||
+                   role == BodyOverlayRole::RightHandSegment || role == BodyOverlayRole::LeftHandSegment ||
+                   role == BodyOverlayRole::BodyTorsoSegment || role == BodyOverlayRole::BodyArmSegment ||
+                   role == BodyOverlayRole::BodyLegSegment || role == BodyOverlayRole::BodyFootSegment ||
+                   role == BodyOverlayRole::Weapon ||
+                   role == BodyOverlayRole::RightGrabAuthorityProxy ||
+                   role == BodyOverlayRole::LeftGrabAuthorityProxy ||
+                   role == BodyOverlayRole::RightGrabPivotSourceCollider ||
+                   role == BodyOverlayRole::LeftGrabPivotSourceCollider;
+        }
+
+        OverlayRenderSettings captureOverlayRenderSettings()
+        {
+            OverlayRenderSettings settings{};
+            settings.maxShapeGenerationsPerFrame =
+                debug_overlay_policy::clampShapeGenerationsPerFrame(g_rockConfig.rockDebugMaxShapeGenerationsPerFrame);
+            settings.maxConvexSupportVertices =
+                static_cast<int>(debug_overlay_policy::clampMaxConvexSupportVertices(g_rockConfig.rockDebugMaxConvexSupportVertices));
+            settings.useBoundsForHeavyConvex = g_rockConfig.rockDebugUseBoundsForHeavyConvex;
+            settings.shapeDecodeSettingsKey = debug_overlay_policy::makeShapeDecodeSettingsKey(
+                settings.maxConvexSupportVertices,
+                settings.useBoundsForHeavyConvex);
+            settings.duplicateTextPerEye = g_rockConfig.rockDebugGrabTransformTelemetryTextMode == 0;
+            settings.verboseLogging = g_rockConfig.rockDebugVerboseLogging;
+            return settings;
+        }
+
+        void resetPublishedFrame(PublishedOverlayFrame& frame)
+        {
+            frame.bodies.clear();
+            frame.axes.clear();
+            frame.markers.clear();
+            frame.skeleton.clear();
+            frame.text.clear();
+            frame.capturedShapes.clear();
+            frame.settings = {};
+            frame.worldIdentity = 0;
+            frame.bodyExtractFailures = 0;
+            frame.shapeGenerations = 0;
+            frame.shapeGenerationDeferrals = 0;
+            frame.drawRockBodies = false;
+            frame.drawTargetBodies = false;
+            frame.drawAxes = false;
+            frame.drawMarkers = false;
+            frame.drawSkeleton = false;
+            frame.drawText = false;
+        }
+
+        std::uint32_t captureShapeForFrame(PublishedOverlayFrame& frame, const ShapeKey& key, std::uintptr_t shapeAddress)
+        {
+            for (std::uint32_t index = 0; index < frame.capturedShapes.size(); ++index) {
+                if (frame.capturedShapes[index].key == key) {
+                    return index;
+                }
+            }
+
+            CapturedShape captured{};
+            captured.key = key;
+            if (!isShapeCached(key)) {
+                if (frame.shapeGenerations < frame.settings.maxShapeGenerationsPerFrame) {
+                    captured.decoded = generateShape(shapeAddress, frame.settings);
+                    captured.hasDecodedGeometry = true;
+                    ++frame.shapeGenerations;
+                } else {
+                    ++frame.shapeGenerationDeferrals;
+                }
+            }
+
+            const auto index = static_cast<std::uint32_t>(frame.capturedShapes.size());
+            frame.capturedShapes.push_back(std::move(captured));
+            return index;
+        }
+
+        bool buildPublishedFrame(const BodyOverlayFrame& source, PublishedOverlayFrame& destination)
+        {
+            resetPublishedFrame(destination);
+            destination.settings = captureOverlayRenderSettings();
+            destination.worldIdentity = reinterpret_cast<std::uintptr_t>(source.world);
+            if (!destination.worldIdentity) {
+                return false;
+            }
+
+            if (destination.worldIdentity != s_previousWorld ||
+                destination.settings.shapeDecodeSettingsKey != s_previousShapeDecodeSettingsKey) {
+                ClearShapeCache();
+                s_previousWorld = destination.worldIdentity;
+                s_previousShapeDecodeSettingsKey = destination.settings.shapeDecodeSettingsKey;
+            }
+
+            destination.drawRockBodies = source.drawRockBodies;
+            destination.drawTargetBodies = source.drawTargetBodies;
+            destination.drawAxes = source.drawAxes;
+            destination.drawMarkers = source.drawMarkers;
+            destination.drawSkeleton = source.drawSkeleton;
+            destination.drawText = source.drawText;
+
+            const auto bodyCount = (std::min)(source.count, static_cast<std::uint32_t>(source.entries.size()));
+            destination.bodies.reserve(source.entries.size());
+            destination.capturedShapes.reserve(source.entries.size());
+            for (std::uint32_t index = 0; index < bodyCount; ++index) {
+                const auto& entry = source.entries[index];
+                const bool rockRole = isRockBodyRole(entry.role);
+                if ((rockRole && !source.drawRockBodies) || (!rockRole && !source.drawTargetBodies)) {
+                    continue;
+                }
+
+                BodyRenderInfo body{};
+                if (!extractBody(source.world, entry.bodyId, targetBodyOverlayFrameSource(entry.role), body)) {
+                    ++destination.bodyExtractFailures;
+                    continue;
+                }
+
+                PublishedBodyEntry published{};
+                published.shapeKey = makeShapeKey(body.shapeAddress);
+                published.worldMatrix = body.worldMatrix;
+                published.role = entry.role;
+                published.bodyId = body.bodyId;
+                published.hasValidWorldAabb =
+                    captureBodyWorldAabb(source.world, entry.bodyId, published.worldAabbMin, published.worldAabbMax);
+                published.capturedShapeIndex = captureShapeForFrame(destination, published.shapeKey, body.shapeAddress);
+                destination.bodies.push_back(std::move(published));
+            }
+
+            const auto axisCount = (std::min)(source.axisCount, static_cast<std::uint32_t>(source.axisEntries.size()));
+            destination.axes.reserve(source.axisEntries.size());
+            if (source.drawAxes) {
+                for (std::uint32_t index = 0; index < axisCount; ++index) {
+                    PublishedAxisEntry published{};
+                    published.entry = source.axisEntries[index];
+                    if (published.entry.source == AxisOverlaySource::Body) {
+                        BodyRenderInfo body{};
+                        if (!extractBody(source.world, published.entry.bodyId, targetAxisOverlayFrameSource(published.entry.role), body)) {
+                            ++destination.bodyExtractFailures;
+                            continue;
+                        }
+                        published.bodyWorldMatrix = body.worldMatrix;
+                    }
+                    destination.axes.push_back(std::move(published));
+                }
+            }
+
+            if (source.drawMarkers) {
+                const auto count = (std::min)(source.markerCount, static_cast<std::uint32_t>(source.markerEntries.size()));
+                destination.markers.assign(source.markerEntries.begin(), source.markerEntries.begin() + count);
+            }
+            if (source.drawSkeleton) {
+                const auto count = (std::min)(source.skeletonCount, static_cast<std::uint32_t>(source.skeletonEntries.size()));
+                destination.skeleton.assign(source.skeletonEntries.begin(), source.skeletonEntries.begin() + count);
+            }
+            if (source.drawText) {
+                const auto count = (std::min)(source.textCount, static_cast<std::uint32_t>(source.textEntries.size()));
+                destination.text.assign(source.textEntries.begin(), source.textEntries.begin() + count);
+            }
+
+            return !destination.bodies.empty() || !destination.axes.empty() || !destination.markers.empty() ||
+                   !destination.skeleton.empty() || !destination.text.empty();
         }
 
         template <class T>
@@ -2573,18 +2834,15 @@ namespace rock::debug
             }
         }
 
-        void collectBodyAxisEntry(debug_overlay_line_batch::LineBatch& batch, RE::hknpWorld* world, const AxisOverlayEntry& entry, OverlayRuntimeStats& stats)
+        void collectBodyAxisEntry(debug_overlay_line_batch::LineBatch& batch, const PublishedAxisEntry& published)
         {
-            BodyRenderInfo body{};
-            if (!extractBody(world, entry.bodyId, targetAxisOverlayFrameSource(entry.role), body)) {
-                ++stats.bodyExtractFailures;
-                return;
-            }
+            const auto& entry = published.entry;
 
             const float length = axisLengthForRole(entry.role);
-            const Vertex origin = transformPoint(body.worldMatrix, 0.0f, 0.0f, 0.0f);
-            appendAxisTripod(batch, origin, transformPoint(body.worldMatrix, length, 0.0f, 0.0f), transformPoint(body.worldMatrix, 0.0f, length, 0.0f),
-                transformPoint(body.worldMatrix, 0.0f, 0.0f, length), entry.role);
+            const Vertex origin = transformPoint(published.bodyWorldMatrix, 0.0f, 0.0f, 0.0f);
+            appendAxisTripod(batch, origin, transformPoint(published.bodyWorldMatrix, length, 0.0f, 0.0f),
+                transformPoint(published.bodyWorldMatrix, 0.0f, length, 0.0f),
+                transformPoint(published.bodyWorldMatrix, 0.0f, 0.0f, length), entry.role);
 
             if (entry.drawTranslationLine) {
                 const float color[4] = { 1.0f, 0.86f, 0.05f, axisAlphaForRole(entry.role) };
@@ -2592,30 +2850,28 @@ namespace rock::debug
             }
         }
 
-        void collectAxisOverlays(debug_overlay_line_batch::LineBatch& batch, RE::hknpWorld* world, const BodyOverlayFrame& frame, OverlayRuntimeStats& stats)
+        void collectAxisOverlays(debug_overlay_line_batch::LineBatch& batch, const PublishedOverlayFrame& frame)
         {
-            if (!frame.drawAxes || frame.axisCount == 0) {
+            if (!frame.drawAxes || frame.axes.empty()) {
                 return;
             }
 
-            for (std::uint32_t i = 0; i < frame.axisCount && i < frame.axisEntries.size(); i++) {
-                const auto& entry = frame.axisEntries[i];
-                if (entry.source == AxisOverlaySource::Body) {
-                    collectBodyAxisEntry(batch, world, entry, stats);
+            for (const auto& published : frame.axes) {
+                if (published.entry.source == AxisOverlaySource::Body) {
+                    collectBodyAxisEntry(batch, published);
                 } else {
-                    collectTransformAxisEntry(batch, entry);
+                    collectTransformAxisEntry(batch, published.entry);
                 }
             }
         }
 
-        void collectMarkerOverlays(debug_overlay_line_batch::LineBatch& batch, const BodyOverlayFrame& frame)
+        void collectMarkerOverlays(debug_overlay_line_batch::LineBatch& batch, const PublishedOverlayFrame& frame)
         {
-            if (!frame.drawMarkers || frame.markerCount == 0) {
+            if (!frame.drawMarkers || frame.markers.empty()) {
                 return;
             }
 
-            for (std::uint32_t i = 0; i < frame.markerCount && i < frame.markerEntries.size(); i++) {
-                const auto& entry = frame.markerEntries[i];
+            for (const auto& entry : frame.markers) {
                 float color[4]{};
                 markerColorForRole(entry.role, color);
 
@@ -2628,14 +2884,13 @@ namespace rock::debug
             }
         }
 
-        void collectSkeletonOverlays(debug_overlay_line_batch::LineBatch& batch, const BodyOverlayFrame& frame)
+        void collectSkeletonOverlays(debug_overlay_line_batch::LineBatch& batch, const PublishedOverlayFrame& frame)
         {
-            if (!frame.drawSkeleton || frame.skeletonCount == 0) {
+            if (!frame.drawSkeleton || frame.skeleton.empty()) {
                 return;
             }
 
-            for (std::uint32_t i = 0; i < frame.skeletonCount && i < frame.skeletonEntries.size(); i++) {
-                const auto& entry = frame.skeletonEntries[i];
+            for (const auto& entry : frame.skeleton) {
                 float color[4]{};
                 skeletonColorForRole(entry.role, entry.inPowerArmor, color);
 
@@ -2852,9 +3107,9 @@ namespace rock::debug
             const DirectX::XMFLOAT4& adjust0,
             const DirectX::XMFLOAT4& adjust1,
             float textureWidth,
-            float textureHeight)
+            float textureHeight,
+            bool duplicatePerEye)
         {
-            const bool stereo = g_rockConfig.rockDebugGrabTransformTelemetryTextMode == 0;
             const float halfWidth = textureWidth * 0.5f;
             const float approximateWidth = textPixelWidth(entry);
             auto appendEye = [&](std::uint32_t eyeIndex, const DirectX::XMMATRIX& eye, const DirectX::XMFLOAT4& adjust) {
@@ -2874,7 +3129,7 @@ namespace rock::debug
             };
 
             appendEye(0, eye0, adjust0);
-            if (stereo) {
+            if (duplicatePerEye) {
                 appendEye(1, eye1, adjust1);
             }
         }
@@ -2882,14 +3137,14 @@ namespace rock::debug
         void drawTextOverlays(ID3D11DeviceContext* context,
             float textureWidth,
             float textureHeight,
-            const BodyOverlayFrame& frame,
+            const PublishedOverlayFrame& frame,
             const DirectX::XMMATRIX& eye0,
             const DirectX::XMMATRIX& eye1,
             const DirectX::XMFLOAT4& adjust0,
             const DirectX::XMFLOAT4& adjust1,
             OverlayRuntimeStats& stats)
         {
-            if (!frame.drawText || frame.textCount == 0 || !s_d3d.textVB || !s_d3d.screenTextVertexShader || textureWidth <= 0.0f || textureHeight <= 0.0f) {
+            if (!frame.drawText || frame.text.empty() || !s_d3d.textVB || !s_d3d.screenTextVertexShader || textureWidth <= 0.0f || textureHeight <= 0.0f) {
                 return;
             }
 
@@ -2905,14 +3160,13 @@ namespace rock::debug
             context->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
             context->IASetIndexBuffer(nullptr, DXGI_FORMAT_UNKNOWN, 0);
 
-            const bool duplicatePerEye = g_rockConfig.rockDebugGrabTransformTelemetryTextMode == 0;
+            const bool duplicatePerEye = frame.settings.duplicateTextPerEye;
             const float eyeWidth = duplicatePerEye ? textureWidth * 0.5f : textureWidth;
-            for (std::uint32_t i = 0; i < frame.textCount && i < frame.textEntries.size(); ++i) {
-                const auto& entry = frame.textEntries[i];
+            for (const auto& entry : frame.text) {
                 std::vector<Vertex> vertices;
                 vertices.reserve(4096);
                 if (entry.worldAnchored) {
-                    appendWorldAnchoredTextGlyphs(vertices, entry, eye0, eye1, adjust0, adjust1, textureWidth, textureHeight);
+                    appendWorldAnchoredTextGlyphs(vertices, entry, eye0, eye1, adjust0, adjust1, textureWidth, textureHeight, duplicatePerEye);
                 } else {
                     appendTextGlyphs(vertices, entry, entry.x, entry.y, eyeWidth - 8.0f, textureWidth, textureHeight);
                     if (duplicatePerEye) {
@@ -2947,18 +3201,17 @@ namespace rock::debug
         {
             performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::DebugOverlayRender);
 
-            BodyOverlayFrame frame{};
-            {
-                std::scoped_lock lock(s_frameMutex);
-                frame = s_frame;
+            const auto frame = s_publishedFrame.load(std::memory_order_acquire);
+            if (!frame) {
+                return;
             }
 
-            const bool hasBodiesToDraw = (frame.drawRockBodies || frame.drawTargetBodies) && frame.count > 0;
-            const bool hasAxesToDraw = frame.drawAxes && frame.axisCount > 0;
-            const bool hasMarkersToDraw = frame.drawMarkers && frame.markerCount > 0;
-            const bool hasSkeletonToDraw = frame.drawSkeleton && frame.skeletonCount > 0;
-            const bool hasTextToDraw = frame.drawText && frame.textCount > 0;
-            if ((!hasBodiesToDraw && !hasAxesToDraw && !hasMarkersToDraw && !hasSkeletonToDraw && !hasTextToDraw) || !frame.world) {
+            const bool hasBodiesToDraw = (frame->drawRockBodies || frame->drawTargetBodies) && !frame->bodies.empty();
+            const bool hasAxesToDraw = frame->drawAxes && !frame->axes.empty();
+            const bool hasMarkersToDraw = frame->drawMarkers && !frame->markers.empty();
+            const bool hasSkeletonToDraw = frame->drawSkeleton && !frame->skeleton.empty();
+            const bool hasTextToDraw = frame->drawText && !frame->text.empty();
+            if ((!hasBodiesToDraw && !hasAxesToDraw && !hasMarkersToDraw && !hasSkeletonToDraw && !hasTextToDraw) || !frame->worldIdentity) {
                 return;
             }
 
@@ -2969,24 +3222,14 @@ namespace rock::debug
                 return;
             }
 
-            const std::uint64_t shapeDecodeSettingsKey = debug_overlay_policy::makeShapeDecodeSettingsKey(
-                g_rockConfig.rockDebugMaxConvexSupportVertices,
-                g_rockConfig.rockDebugUseBoundsForHeavyConvex);
-            if (shapeDecodeSettingsKey != s_previousShapeDecodeSettingsKey) {
-                ClearShapeCache();
-                s_previousShapeDecodeSettingsKey = shapeDecodeSettingsKey;
-            }
-
-            if (reinterpret_cast<std::uintptr_t>(frame.world) != s_previousWorld) {
-                ClearShapeCache();
-                s_previousWorld = reinterpret_cast<std::uintptr_t>(frame.world);
-            }
-
             auto* submittedTexture = reinterpret_cast<ID3D11Texture2D*>(texture->handle);
             D3D11_TEXTURE2D_DESC textureDesc{};
             submittedTexture->GetDesc(&textureDesc);
 
             OverlayRuntimeStats stats{};
+            stats.bodyExtractFailures = frame->bodyExtractFailures;
+            stats.shapeGenerations = frame->shapeGenerations;
+            stats.shapeGenerationDeferrals = frame->shapeGenerationDeferrals;
             ID3D11RenderTargetView* rtv = getSubmittedTextureRtv(device, submittedTexture, textureDesc, stats);
             if (!rtv) {
                 return;
@@ -3005,48 +3248,34 @@ namespace rock::debug
                 return;
             }
 
-            s_frameShapeGenerations = 0;
-
             if (hasBodiesToDraw) {
                 context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-                const GpuShape* lastBoundShape = nullptr;
-                for (std::uint32_t i = 0; i < frame.count && i < frame.entries.size(); i++) {
+                std::shared_ptr<const GpuShape> lastBoundShape;
+                for (const auto& entry : frame->bodies) {
                     ++stats.bodyEntries;
-                    const auto& entry = frame.entries[i];
-                    const bool rockRole = entry.role == BodyOverlayRole::RightHand || entry.role == BodyOverlayRole::LeftHand ||
-                        entry.role == BodyOverlayRole::RightHandSegment || entry.role == BodyOverlayRole::LeftHandSegment ||
-                        entry.role == BodyOverlayRole::BodyTorsoSegment || entry.role == BodyOverlayRole::BodyArmSegment ||
-                        entry.role == BodyOverlayRole::BodyLegSegment || entry.role == BodyOverlayRole::BodyFootSegment ||
-                        entry.role == BodyOverlayRole::Weapon ||
-                        entry.role == BodyOverlayRole::RightGrabAuthorityProxy ||
-                        entry.role == BodyOverlayRole::LeftGrabAuthorityProxy ||
-                        entry.role == BodyOverlayRole::RightGrabPivotSourceCollider ||
-                        entry.role == BodyOverlayRole::LeftGrabPivotSourceCollider;
-                    if ((rockRole && !frame.drawRockBodies) || (!rockRole && !frame.drawTargetBodies)) {
-                        continue;
+                    const ShapeDecodeResult* decoded = nullptr;
+                    if (entry.capturedShapeIndex < frame->capturedShapes.size()) {
+                        const auto& captured = frame->capturedShapes[entry.capturedShapeIndex];
+                        if (captured.key == entry.shapeKey && captured.hasDecodedGeometry) {
+                            decoded = &captured.decoded;
+                        }
                     }
 
-                    BodyRenderInfo body{};
-                    if (!extractBody(frame.world, entry.bodyId, targetBodyOverlayFrameSource(entry.role), body)) {
-                        ++stats.bodyExtractFailures;
-                        continue;
-                    }
-
-                    const auto* gpuShape = getOrCreateShape(device, body, stats);
+                    const auto gpuShape = getOrCreateShape(device, entry.shapeKey, decoded, stats);
                     if (!gpuShape) {
                         continue;
                     }
 
                     UINT stride = sizeof(Vertex);
                     UINT offset = 0;
-                    if (gpuShape != lastBoundShape) {
+                    if (gpuShape.get() != lastBoundShape.get()) {
                         ID3D11Buffer* vertexBuffer = gpuShape->vertexBuffer.Get();
                         context->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
                         context->IASetIndexBuffer(gpuShape->indexBuffer.Get(), DXGI_FORMAT_R16_UINT, 0);
                         lastBoundShape = gpuShape;
                         ++stats.bodyMeshBinds;
                     }
-                    if (!uploadModel(context, body.worldMatrix, entry.role, gpuShape->decodeMode)) {
+                    if (!uploadModel(context, entry.worldMatrix, entry.role, gpuShape->decodeMode)) {
                         continue;
                     }
                     context->DrawIndexedInstanced(gpuShape->indexCount, 2, 0, 0, 0);
@@ -3056,17 +3285,17 @@ namespace rock::debug
             }
 
             debug_overlay_line_batch::LineBatch lineBatch;
-            collectAxisOverlays(lineBatch, frame.world, frame, stats);
-            collectMarkerOverlays(lineBatch, frame);
-            collectSkeletonOverlays(lineBatch, frame);
+            collectAxisOverlays(lineBatch, *frame);
+            collectMarkerOverlays(lineBatch, *frame);
+            collectSkeletonOverlays(lineBatch, *frame);
             context->VSSetShader(s_d3d.vertexShader.Get(), nullptr, 0);
             context->PSSetShader(s_d3d.pixelShader.Get(), nullptr, 0);
             context->RSSetState(s_d3d.wireRasterizer.Get());
             context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
             drawLineBatch(context, lineBatch, stats);
-            drawTextOverlays(context, static_cast<float>(textureDesc.Width), static_cast<float>(textureDesc.Height), frame, eye0, eye1, adjust0, adjust1, stats);
+            drawTextOverlays(context, static_cast<float>(textureDesc.Width), static_cast<float>(textureDesc.Height), *frame, eye0, eye1, adjust0, adjust1, stats);
 
-            if (g_rockConfig.rockDebugVerboseLogging && ++s_overlayStatsLogCounter >= 90) {
+            if (frame->settings.verboseLogging && ++s_overlayStatsLogCounter >= 90) {
                 s_overlayStatsLogCounter = 0;
                 ROCK_LOG_DEBUG(Hand,
                     "Debug overlay frame: entries={} drawn={} bodyBinds={} bodyDraws={} axes={} markers={} skeleton={} text={} cacheHits={} cacheMisses={} shapeGenerations={} genDefers={} genCap={} cacheBudgetSkips={} proxies={} unsupportedProxy={} unsupportedSkip={} bodyReadFails={} lineVerts={} lineLines={} lineDraws={} lineRejects={} textVerts={} textDraws={} textTrunc={} textMapFails={} rtvHits={} rtvMisses={}",
@@ -3074,15 +3303,15 @@ namespace rock::debug
                     stats.bodiesDrawn,
                     stats.bodyMeshBinds,
                     stats.bodyDrawCalls,
-                    frame.axisCount,
-                    frame.markerCount,
-                    frame.skeletonCount,
-                    frame.textCount,
+                    frame->axes.size(),
+                    frame->markers.size(),
+                    frame->skeleton.size(),
+                    frame->text.size(),
                     stats.shapeCacheHits,
                     stats.shapeCacheMisses,
                     stats.shapeGenerations,
                     stats.shapeGenerationDeferrals,
-                    debug_overlay_policy::clampShapeGenerationsPerFrame(g_rockConfig.rockDebugMaxShapeGenerationsPerFrame),
+                    frame->settings.maxShapeGenerationsPerFrame,
                     stats.shapeCacheBudgetSkips,
                     stats.shapeProxyFallbacks,
                     stats.unsupportedShapeProxies,
@@ -3222,27 +3451,27 @@ namespace rock::debug
         return s_initialized.load(std::memory_order_acquire) && s_submitHookInstalled.load(std::memory_order_acquire);
     }
 
-        void PublishFrame(const BodyOverlayFrame& frame)
-        {
-            {
-                std::scoped_lock lock(s_frameMutex);
-                s_frame = frame;
+    void PublishFrame(const BodyOverlayFrame& frame)
+    {
+        auto next = s_framePool.acquire();
+        if (!next) {
+            if (!s_snapshotPoolExhaustionReported.exchange(true, std::memory_order_relaxed)) {
+                ROCK_LOG_WARN(Hand, "Debug body overlay: immutable snapshot pool exhausted; retaining the last safe publication");
             }
-            const bool hasBodiesToDraw = (frame.drawRockBodies || frame.drawTargetBodies) && frame.count > 0;
-            const bool hasAxesToDraw = frame.drawAxes && frame.axisCount > 0;
-            const bool hasMarkersToDraw = frame.drawMarkers && frame.markerCount > 0;
-            const bool hasSkeletonToDraw = frame.drawSkeleton && frame.skeletonCount > 0;
-            const bool hasTextToDraw = frame.drawText && frame.textCount > 0;
-            s_enabled.store(hasBodiesToDraw || hasAxesToDraw || hasMarkersToDraw || hasSkeletonToDraw || hasTextToDraw, std::memory_order_release);
-            (void)s_frameAdmission.publish();
+            return;
         }
+
+        const bool enabled = buildPublishedFrame(frame, *next);
+        std::shared_ptr<const PublishedOverlayFrame> immutable = std::move(next);
+        s_publishedFrame.store(std::move(immutable), std::memory_order_release);
+        s_snapshotPoolExhaustionReported.store(false, std::memory_order_relaxed);
+        s_enabled.store(enabled, std::memory_order_release);
+        (void)s_frameAdmission.publish();
+    }
 
     void ClearFrame()
     {
-        {
-            std::scoped_lock lock(s_frameMutex);
-            s_frame = BodyOverlayFrame{};
-        }
+        s_publishedFrame.store({}, std::memory_order_release);
         s_enabled.store(false, std::memory_order_release);
         (void)s_frameAdmission.publish();
     }
