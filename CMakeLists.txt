@@ -622,30 +622,40 @@ if(BUILD_ROCK_TESTS)
     ROCKDynamicHandTwinGeometryPolicyTests
     ROCKDynamicHandCollisionTransitionPolicyTests
   )
-  add_custom_target(ROCKPolicyTestBinaries DEPENDS ${ROCK_COMMONLIB_TEST_TARGETS})
+  # Every policy executable uses the same CommonLib-heavy precompiled header and
+  # config stub. Build those once, then reuse the PCH artifact and support library
+  # instead of paying that cost independently for every focused test target.
+  add_library(ROCKPolicyTestSupport STATIC
+    "${ROOT_DIR}/tests/RockConfigPolicyStub.cpp"
+  )
+  target_compile_features(ROCKPolicyTestSupport PUBLIC cxx_std_23)
+  target_include_directories(ROCKPolicyTestSupport
+    PUBLIC
+      ${SOURCE_DIR}
+      ${BUILD_DIR}/include
+      "${F4VR_COMMON_FRAMEWORK_PATH_SELECTED}/src"
+      "${F4VR_COMMON_FRAMEWORK_PATH_SELECTED}/external/openvr"
+      "${COMMON_LIB_F4VR_PATH_SELECTED}/CommonLibF4/include"
+  )
+  target_compile_definitions(ROCKPolicyTestSupport
+    PUBLIC
+      WINVER=0x0601
+      _WIN32_WINNT=0x0601
+      F4SE_SUPPORT_XBYAK=1
+      ENABLE_FALLOUT_VR=1
+      ROCK_POLICY_TEST_NO_RUNTIME_LOGGER=1
+  )
+  target_precompile_headers(ROCKPolicyTestSupport PRIVATE "${ROOT_DIR}/tests/CommonLibPolicyPCH.h")
+  target_link_libraries(ROCKPolicyTestSupport PUBLIC spdlog::spdlog mmio::mmio)
+  if(TARGET xbyak::xbyak)
+    target_link_libraries(ROCKPolicyTestSupport PUBLIC xbyak::xbyak)
+  endif()
+
   foreach(ROCK_COMMONLIB_TEST_TARGET IN LISTS ROCK_COMMONLIB_TEST_TARGETS)
-    target_include_directories(${ROCK_COMMONLIB_TEST_TARGET}
-      PRIVATE
-        ${BUILD_DIR}/include
-        "${F4VR_COMMON_FRAMEWORK_PATH_SELECTED}/src"
-        "${F4VR_COMMON_FRAMEWORK_PATH_SELECTED}/external/openvr"
-        "${COMMON_LIB_F4VR_PATH_SELECTED}/CommonLibF4/include"
-    )
-    target_compile_definitions(${ROCK_COMMONLIB_TEST_TARGET}
-      PRIVATE
-        WINVER=0x0601
-        _WIN32_WINNT=0x0601
-        F4SE_SUPPORT_XBYAK=1
-        ENABLE_FALLOUT_VR=1
-        ROCK_POLICY_TEST_NO_RUNTIME_LOGGER=1
-    )
-    target_precompile_headers(${ROCK_COMMONLIB_TEST_TARGET} PRIVATE "${ROOT_DIR}/tests/CommonLibPolicyPCH.h")
-    target_link_libraries(${ROCK_COMMONLIB_TEST_TARGET} PRIVATE spdlog::spdlog mmio::mmio)
-    if(TARGET xbyak::xbyak)
-      target_link_libraries(${ROCK_COMMONLIB_TEST_TARGET} PRIVATE xbyak::xbyak)
-    endif()
-    target_sources(${ROCK_COMMONLIB_TEST_TARGET} PRIVATE "${ROOT_DIR}/tests/RockConfigPolicyStub.cpp")
+    target_precompile_headers(${ROCK_COMMONLIB_TEST_TARGET} REUSE_FROM ROCKPolicyTestSupport)
+    target_link_libraries(${ROCK_COMMONLIB_TEST_TARGET} PRIVATE ROCKPolicyTestSupport)
   endforeach()
+  add_custom_target(ROCKPolicyTestBinaries DEPENDS ${ROCK_COMMONLIB_TEST_TARGETS})
 
   find_program(ROCK_POWERSHELL_EXECUTABLE NAMES pwsh powershell)
   if(ROCK_POWERSHELL_EXECUTABLE)
