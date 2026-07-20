@@ -2021,13 +2021,22 @@ namespace rock
             nativeScopeAlreadyActive, nativeGeometryDecision, outRockGeometryDecision);
     }
 
-    bool PhysicsInteraction::requiresManualScopeDirectTransition() const
+    bool PhysicsInteraction::tryGetManualScopeDirectTransitionTarget(
+        std::uint64_t& outWeaponGenerationKey,
+        std::uint32_t& outNativeOverlayIndex) const
     {
+        outWeaponGenerationKey = 0;
+        outNativeOverlayIndex = 0;
         if (!_initialized.load(std::memory_order_acquire) || !runtime_state::isLocalSkeletonReady()) {
             return false;
         }
         const auto snapshot = _weaponCollision.getNativeScopeSightAnchorSnapshot();
-        return snapshot.valid && snapshot.manualDirectTransitionRequired;
+        if (!snapshot.valid || !snapshot.manualDirectTransitionRequired || !snapshot.nativeScopeOverlayValid || snapshot.weaponGenerationKey == 0) {
+            return false;
+        }
+        outWeaponGenerationKey = snapshot.weaponGenerationKey;
+        outNativeOverlayIndex = snapshot.nativeScopeOverlayIndex;
+        return true;
     }
 
     void PhysicsInteraction::update()

@@ -85,7 +85,9 @@ namespace rock
         {
             bool valid{ false };
             bool manualDirectTransitionRequired{ false };
+            bool nativeScopeOverlayValid{ false };
             std::uint64_t weaponGenerationKey{ 0 };
+            std::uint32_t nativeScopeOverlayIndex{ 0 };
             RE::NiPoint3 anchorWeaponLocal{};
             RE::NiPoint3 sightBoundsMinWeaponLocal{};
             RE::NiPoint3 sightBoundsMaxWeaponLocal{};

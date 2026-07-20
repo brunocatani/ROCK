@@ -42,8 +42,8 @@ Require-Text $factorySource `
     'RE::aligned_alloc\(alignof\(RE::NiNode\),\s*sizeof\(RE::NiNode\)\)[\s\S]*std::memset\([\s\S]*constructor\(storage,\s*childCapacity\)[\s\S]*RE::NiPointer<RE::NiNode>\{\s*node\s*\}' `
     'NiNode storage and its child array must be allocated and constructed entirely in the engine domain before RAII adoption.'
 Require-Text $weaponSource `
-    'native_scene::createEngineNiNode\(4\)[\s\S]*if\s*\(!recoveryNode\)[\s\S]*recoveryNode->name' `
-    'OMOD recovery must use the engine-native factory and fail closed before dereferencing an unavailable node.'
+    'native_scene::createEngineNiNode\(1\)[\s\S]*if\s*\(!enrichmentContainer\)[\s\S]*enrichmentContainer->name' `
+    'OMOD physical enrichment must use the engine-native factory and fail closed before dereferencing an unavailable container.'
 
 $unsafePatterns = @(
     'new\s*(?:\([^\)]*\)\s*)?RE::NiNode\b',

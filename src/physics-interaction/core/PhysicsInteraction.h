@@ -99,7 +99,9 @@ namespace rock
 
         bool tryResolveNativeScopeGeometryDecision(bool nativeGeometryDecision, bool& outRockGeometryDecision);
 
-        [[nodiscard]] bool requiresManualScopeDirectTransition() const;
+        [[nodiscard]] bool tryGetManualScopeDirectTransitionTarget(
+            std::uint64_t& outWeaponGenerationKey,
+            std::uint32_t& outNativeOverlayIndex) const;
 
         void update();
 

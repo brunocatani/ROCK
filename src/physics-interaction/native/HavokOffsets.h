@@ -352,6 +352,24 @@ namespace rock::offsets
     constexpr std::uintptr_t kData_NativeScopeRendererState = 0x6239340;
 
     /*
+     * Native WSScope presentation setup skipped by the equip path when an
+     * otherwise valid magnified optic omits WEAPON_FLAGS::kHasScope. The
+     * configure entry consumes the ZOOM record's overlay index. ROCK validates
+     * its prologue, the singleton pointer, and the singleton's primary vtable
+     * before invoking it for an unflagged manual-scope generation.
+     */
+    constexpr std::uintptr_t kFunc_NativeWorldScopeConfigure = 0xC8DC60;
+    constexpr std::uintptr_t kData_NativeWorldScopeSingleton = 0x5ACBF58;
+    constexpr std::uintptr_t kData_NativeWorldScopePrimaryVtable = 0x2D68718;
+
+    /*
+     * BGSModelMaterialSwap application used by TryAttach3DRecurse immediately
+     * after cloning an OMOD model. Manual physical-housing enrichment calls the
+     * same entry so recovered geometry keeps the equipped instance's skins.
+     */
+    constexpr std::uintptr_t kFunc_ApplyOmodModelCustomization = 0x53CD0;
+
+    /*
      * PlayerCharacter flag storage is independently witnessed in the scope
      * update at 0x140EF84AF and the state transition at 0x140EFAAF7. Bit 0x08
      * is the native force-true branch immediately before the cone decision and

@@ -369,6 +369,88 @@ namespace
     using NativeScopeStateTransitionFunc = void (*)(RE::PlayerCharacter*, bool);
     NativeScopeStateTransitionFunc s_originalNativeScopeStateTransition = nullptr;
     bool s_manualScopeDirectTransitionActive = false;
+    std::uint64_t s_manualScopeConfiguredWeaponGeneration = 0;
+    std::uint32_t s_manualScopeConfiguredOverlayIndex = 0;
+    std::uintptr_t s_manualScopeConfiguredWorldScope = 0;
+    std::uint64_t s_manualScopeConfigureFailureLoggedGeneration = 0;
+
+    bool configureNativeWorldScopeForManualTarget(
+        const std::uint64_t weaponGenerationKey,
+        const std::uint32_t overlayIndex)
+    {
+        if (weaponGenerationKey == 0) {
+            return false;
+        }
+        static const bool configureEntryValidated = []() {
+            if (!REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72) {
+                logger::critical("ROCK: Native world-scope configuration requires Fallout4VR.exe 1.2.72.");
+                return false;
+            }
+
+            constexpr std::array<std::uint8_t, 10> kExpectedConfigurePrefix{
+                0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x20
+            };
+            const auto configureAddress = REL::Offset(rock::offsets::kFunc_NativeWorldScopeConfigure).address();
+            std::array<std::uint8_t, kExpectedConfigurePrefix.size()> actualPrefix{};
+            if (!rock::native_memory::guardedCopyFromMemory(
+                    reinterpret_cast<const void*>(configureAddress),
+                    actualPrefix.data(),
+                    actualPrefix.size()) ||
+                actualPrefix != kExpectedConfigurePrefix) {
+                logger::critical("ROCK: Native world-scope configure validation failed at 0x{:X}.", configureAddress);
+                return false;
+            }
+            return true;
+        }();
+        if (!configureEntryValidated) {
+            return false;
+        }
+
+        std::uintptr_t worldScope = 0;
+        const auto singletonAddress = REL::Offset(rock::offsets::kData_NativeWorldScopeSingleton).address();
+        if (!rock::native_memory::tryReadValue(reinterpret_cast<const std::uintptr_t*>(singletonAddress), worldScope) || worldScope == 0) {
+            if (s_manualScopeConfigureFailureLoggedGeneration != weaponGenerationKey) {
+                ROCK_LOG_WARN(Input, "Manual scope target generation={:016X} has no native WSScope singleton", weaponGenerationKey);
+                s_manualScopeConfigureFailureLoggedGeneration = weaponGenerationKey;
+            }
+            return false;
+        }
+
+        std::uintptr_t primaryVtable = 0;
+        const auto expectedPrimaryVtable = REL::Offset(rock::offsets::kData_NativeWorldScopePrimaryVtable).address();
+        if (!rock::native_memory::tryReadValue(reinterpret_cast<const std::uintptr_t*>(worldScope), primaryVtable) ||
+            primaryVtable != expectedPrimaryVtable) {
+            if (s_manualScopeConfigureFailureLoggedGeneration != weaponGenerationKey) {
+                ROCK_LOG_WARN(Input,
+                    "Manual scope target generation={:016X} rejected WSScope identity vtable=0x{:X} expected=0x{:X}",
+                    weaponGenerationKey,
+                    primaryVtable,
+                    expectedPrimaryVtable);
+                s_manualScopeConfigureFailureLoggedGeneration = weaponGenerationKey;
+            }
+            return false;
+        }
+
+        if (s_manualScopeConfiguredWeaponGeneration == weaponGenerationKey &&
+            s_manualScopeConfiguredOverlayIndex == overlayIndex &&
+            s_manualScopeConfiguredWorldScope == worldScope) {
+            return true;
+        }
+
+        using ConfigureNativeWorldScope = void (*)(void*, std::uint32_t);
+        const auto configure = reinterpret_cast<ConfigureNativeWorldScope>(
+            REL::Offset(rock::offsets::kFunc_NativeWorldScopeConfigure).address());
+        configure(reinterpret_cast<void*>(worldScope), overlayIndex);
+        s_manualScopeConfiguredWeaponGeneration = weaponGenerationKey;
+        s_manualScopeConfiguredOverlayIndex = overlayIndex;
+        s_manualScopeConfiguredWorldScope = worldScope;
+        s_manualScopeConfigureFailureLoggedGeneration = 0;
+        ROCK_LOG_DEBUG(Input,
+            "Configured native WSScope for manual target generation={:016X} overlay={}",
+            weaponGenerationKey,
+            overlayIndex);
+        return true;
+    }
 
     bool onNativeScopeGeometryDecision(RE::PlayerCharacter* player, const bool nativeGeometryDecision)
     {
@@ -417,12 +499,17 @@ namespace
             return;
         }
 
+        std::uint64_t targetWeaponGenerationKey = 0;
+        std::uint32_t targetOverlayIndex = 0;
         const bool targetAvailable = s_pluginLoaded && s_frikAvailable && g_rockConfig.rockEnabled &&
             !g_rockConfig.rockAutoActivateScope && s_physicsInteraction &&
-            s_physicsInteraction->requiresManualScopeDirectTransition();
-        const bool requested = targetAvailable && input_remap_runtime::isManualScopeActivationRequested();
+            s_physicsInteraction->tryGetManualScopeDirectTransitionTarget(targetWeaponGenerationKey, targetOverlayIndex);
+        const bool requested = targetAvailable &&
+            input_remap_runtime::isManualScopeActivationRequested() &&
+            player &&
+            configureNativeWorldScopeForManualTarget(targetWeaponGenerationKey, targetOverlayIndex);
 
-        if (requested && player) {
+        if (requested) {
             /*
              * Bethesda only reaches the hooked cone call for weapons whose
              * OMOD carries its native scope flag. Explicit scope models from

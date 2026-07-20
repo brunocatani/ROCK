@@ -7,6 +7,7 @@
 #include "physics-interaction/native/HavokConvexShapeBuilder.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/NativeNiNodeFactory.h"
+#include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/grab/MeshGrab.h"
 #include "RockConfig.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
@@ -965,6 +966,90 @@ namespace rock
             return scanEquipData(player->equipData);
         }
 
+        [[nodiscard]] bool startsWithAsciiInsensitive(std::string_view value, std::string_view prefix)
+        {
+            if (value.size() < prefix.size()) {
+                return false;
+            }
+            for (std::size_t i = 0; i < prefix.size(); ++i) {
+                const auto lowerAscii = [](const char c) {
+                    return c >= 'A' && c <= 'Z' ? static_cast<char>(c + ('a' - 'A')) : c;
+                };
+                if (lowerAscii(value[i]) != lowerAscii(prefix[i])) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        /*
+         * BSModelDB's ordinary OMOD demand uses flag 0x2D and may return only
+         * the currently selected controller branch. Loading through the same
+         * native entry with 0xED preserves the complete model hierarchy. This
+         * is required to see durable housings which are absent from the active
+         * branch (the SR-25 magazine shell is the concrete witness).
+         */
+        RE::NiPointer<RE::NiNode> loadCompleteOmodModelTemplate(const std::string& modelPath)
+        {
+            if (modelPath.empty()) {
+                return nullptr;
+            }
+
+            std::string resourcePath;
+            if (startsWithAsciiInsensitive(modelPath, "Data\\") || startsWithAsciiInsensitive(modelPath, "Data/")) {
+                resourcePath = modelPath;
+            } else if (startsWithAsciiInsensitive(modelPath, "Meshes\\") || startsWithAsciiInsensitive(modelPath, "Meshes/")) {
+                resourcePath = "Data/" + modelPath;
+            } else {
+                resourcePath = "Data/Meshes/" + modelPath;
+            }
+
+            std::uint64_t loadFlags[2]{ 0, 0xED };
+            std::uint64_t loadedRoot = 0;
+            const int result = f4vr::loadNif(
+                reinterpret_cast<std::uint64_t>(resourcePath.c_str()),
+                reinterpret_cast<std::uint64_t>(&loadedRoot),
+                reinterpret_cast<std::uint64_t>(&loadFlags));
+            if (result != 0 || loadedRoot == 0) {
+                return nullptr;
+            }
+
+            RE::NiPointer<RE::NiNode> root;
+            root.reset(reinterpret_cast<RE::NiNode*>(loadedRoot));
+            return root;
+        }
+
+        void collectManualScopeStructuralMarkers(
+            RE::NiAVObject* node,
+            manual_scope_target_policy::StructuralMarkerEvidence& evidence,
+            std::size_t& visited,
+            const int depth = 0)
+        {
+            if (!node || depth > 16 || visited >= 512 ||
+                manual_scope_target_policy::hasMagnifiedScopeStructure(evidence)) {
+                return;
+            }
+
+            ++visited;
+            const char* name = node->name.c_str();
+            manual_scope_target_policy::observeStructuralNodeName(evidence, name ? name : "");
+            auto* niNode = node->IsNode();
+            if (!niNode) {
+                return;
+            }
+            const auto& children = niNode->children;
+            for (auto i = decltype(children.size()){ 0 }; i < children.size(); ++i) {
+                collectManualScopeStructuralMarkers(children[i].get(), evidence, visited, depth + 1);
+            }
+        }
+
+        struct EquippedManualScopeTarget
+        {
+            bool directTransitionRequired{ false };
+            bool overlayValid{ false };
+            std::uint32_t overlayIndex{ 0 };
+        };
+
         std::unordered_map<std::uint32_t, std::uint32_t> readEquippedOmodsByAttachPointFormId()
         {
             std::unordered_map<std::uint32_t, std::uint32_t> result;
@@ -1015,8 +1100,9 @@ namespace rock
             return false;
         }
 
-        [[nodiscard]] bool equippedWeaponRequiresManualScopeDirectTransition()
+        [[nodiscard]] EquippedManualScopeTarget resolveEquippedManualScopeTarget(RE::NiAVObject* assembledWeaponRoot)
         {
+            EquippedManualScopeTarget target{};
             auto* player = f4vr::getPlayer();
             auto* processData = player && player->middleProcess ? player->middleProcess->unk08 : nullptr;
             auto* equipData = processData ? processData->equipData : nullptr;
@@ -1024,11 +1110,32 @@ namespace rock
             const RE::BGSObjectInstanceExtra* objectInstanceExtra =
                 weaponForm ? findEquippedWeaponObjectInstanceExtra(player, weaponForm, equipData->instanceData) : nullptr;
             if (!objectInstanceExtra || !objectInstanceExtra->values) {
-                return false;
+                return target;
             }
 
-            bool nativeScopeOverlayAuthored = false;
+            auto* reWeaponForm = reinterpret_cast<RE::TESForm*>(weaponForm);
+            auto* weapon = reWeaponForm ? reWeaponForm->As<RE::TESObjectWEAP>() : nullptr;
+            auto* instanceData = weapon && equipData->instanceData ?
+                static_cast<RE::TESObjectWEAP::InstanceData*>(equipData->instanceData) :
+                nullptr;
+            RE::BGSZoomData* zoomData = instanceData ? instanceData->zoomData : nullptr;
+            if (!zoomData && weapon) {
+                zoomData = weapon->weaponData.zoomData;
+            }
+            if (zoomData) {
+                target.overlayIndex = zoomData->zoomData.overlay;
+                target.overlayValid = manual_scope_target_policy::isValidNativeOverlayIndex(target.overlayIndex);
+            }
+
+            bool nativeScopeMetadataAuthored = instanceData && instanceData->flags.all(RE::WEAPON_FLAGS::kHasScope);
+            if (!nativeScopeMetadataAuthored && weapon) {
+                nativeScopeMetadataAuthored = weapon->weaponData.flags.all(RE::WEAPON_FLAGS::kHasScope);
+            }
             bool explicitScopeModelInstalled = false;
+            manual_scope_target_policy::StructuralMarkerEvidence structuralEvidence{};
+            std::size_t structuralVisited = 0;
+            collectManualScopeStructuralMarkers(assembledWeaponRoot, structuralEvidence, structuralVisited);
+
             for (const auto& modIndex : objectInstanceExtra->GetIndexData()) {
                 if (modIndex.disabled) {
                     continue;
@@ -1037,15 +1144,39 @@ namespace rock
                 if (!omod) {
                     continue;
                 }
-                nativeScopeOverlayAuthored = nativeScopeOverlayAuthored || attachmentModHasNativeScopeOverlayTarget(omod->formID);
+                nativeScopeMetadataAuthored = nativeScopeMetadataAuthored || attachmentModHasNativeScopeOverlayTarget(omod->formID);
                 explicitScopeModelInstalled = explicitScopeModelInstalled ||
                     manual_scope_target_policy::hasExplicitScopeIdentity(
                         omod->fullName.c_str() ? omod->fullName.c_str() : "",
                         omod->model.c_str() ? omod->model.c_str() : "");
+
+                if (!manual_scope_target_policy::hasMagnifiedScopeStructure(structuralEvidence)) {
+                    const RE::BGSKeyword* attachPointKeyword =
+                        RE::BGSKeyword::GetTypedKeywordByIndex(RE::KeywordType::kAttachPoint, omod->attachPoint.keywordIndex);
+                    const std::string_view recordName = omod->fullName.c_str() ? omod->fullName.c_str() : "";
+                    const std::string modelPath = omod->model.c_str() ? omod->model.c_str() : "";
+                    const bool opticalCandidate =
+                        (attachPointKeyword && attachPointKeyword->formID == weapon_part_record_identity_policy::kAttachPointSight) ||
+                        weapon_effect_geometry_policy::containsAsciiInsensitive(recordName, "optic") ||
+                        weapon_effect_geometry_policy::containsAsciiInsensitive(recordName, "sight") ||
+                        weapon_effect_geometry_policy::containsAsciiInsensitive(recordName, "scope") ||
+                        weapon_effect_geometry_policy::containsAsciiInsensitive(modelPath, "optic") ||
+                        weapon_effect_geometry_policy::containsAsciiInsensitive(modelPath, "sight") ||
+                        weapon_effect_geometry_policy::containsAsciiInsensitive(modelPath, "scope");
+                    if (opticalCandidate) {
+                        auto templateRoot = loadCompleteOmodModelTemplate(modelPath);
+                        std::size_t templateVisited = 0;
+                        collectManualScopeStructuralMarkers(templateRoot.get(), structuralEvidence, templateVisited);
+                    }
+                }
             }
-            return manual_scope_target_policy::requiresDirectNativeTransition(
-                nativeScopeOverlayAuthored,
-                explicitScopeModelInstalled);
+
+            target.directTransitionRequired = manual_scope_target_policy::requiresDirectNativeTransition(
+                nativeScopeMetadataAuthored,
+                explicitScopeModelInstalled,
+                manual_scope_target_policy::hasMagnifiedScopeStructure(structuralEvidence),
+                target.overlayValid);
+            return target;
         }
 
         const RE::TESObjectWEAP* asEquippedWeaponForm(const F4SEVR::TESForm* form)
@@ -5037,9 +5168,13 @@ namespace rock
     void WeaponCollision::publishAtomicBodyIds(WeaponBodyBank& bank)
     {
         auto evidenceSnapshot = buildProfileEvidenceSnapshot(bank);
+        RE::NiAVObject* packageDriveNode = resolvePackageDriveNode(bank, nullptr);
         NativeScopeSightAnchorSnapshot nativeScopeSightAnchorSnapshot = buildNativeScopeSightAnchorSnapshot(_cachedWeaponBodySetKey, evidenceSnapshot);
+        const auto manualScopeTarget = resolveEquippedManualScopeTarget(packageDriveNode);
+        nativeScopeSightAnchorSnapshot.nativeScopeOverlayValid = manualScopeTarget.overlayValid;
+        nativeScopeSightAnchorSnapshot.nativeScopeOverlayIndex = manualScopeTarget.overlayIndex;
         nativeScopeSightAnchorSnapshot.manualDirectTransitionRequired =
-            nativeScopeSightAnchorSnapshot.valid && equippedWeaponRequiresManualScopeDirectTransition();
+            nativeScopeSightAnchorSnapshot.valid && manualScopeTarget.directTransitionRequired;
         std::uint32_t count = 0;
         beginWeaponBodyPublication();
         _weaponBodyCountAtomic.store(0, std::memory_order_release);
@@ -5055,7 +5190,6 @@ namespace rock
             _profileEvidenceSnapshot = std::move(evidenceSnapshot);
             _nativeScopeSightAnchorSnapshot = nativeScopeSightAnchorSnapshot;
         }
-        RE::NiAVObject* packageDriveNode = resolvePackageDriveNode(bank, nullptr);
         for (auto& instance : bank) {
             if (instance.body.isValid() && count < MAX_WEAPON_BODIES) {
                 instance.publicationIndex = count;
@@ -5478,6 +5612,373 @@ namespace rock
             }
             return count;
         }
+
+        struct OmodPhysicalTemplateSignature
+        {
+            std::vector<std::string> meshNames;
+            std::string durableAnchorName;
+            std::uint32_t durableAnchorTriangles{ 0 };
+        };
+
+        void collectOmodPhysicalTemplateSignatureRecursive(
+            RE::NiAVObject* node,
+            OmodPhysicalTemplateSignature& signature,
+            std::size_t& visited,
+            const int depth = 0)
+        {
+            if (!node || depth > 16 || visited >= 512 || signature.meshNames.size() >= 96) {
+                return;
+            }
+            ++visited;
+
+            if (auto* triShape = node->IsTriShape()) {
+                if (classifyGeneratedWeaponEffectGeometry(triShape) != weapon_effect_geometry_policy::ExclusionReason::None) {
+                    return;
+                }
+
+                const char* rawName = node->name.c_str();
+                if (!rawName || rawName[0] == '\0') {
+                    return;
+                }
+                const auto duplicate = std::find_if(signature.meshNames.begin(), signature.meshNames.end(), [rawName](const std::string& existing) {
+                    return _stricmp(existing.c_str(), rawName) == 0;
+                });
+                if (duplicate == signature.meshNames.end()) {
+                    signature.meshNames.emplace_back(rawName);
+                }
+
+                std::uint32_t triangleCount = 0;
+                if (native_memory::tryReadField(triShape, VROffset::numTriangles, triangleCount) &&
+                    triangleCount > signature.durableAnchorTriangles) {
+                    signature.durableAnchorTriangles = triangleCount;
+                    signature.durableAnchorName = rawName;
+                }
+                return;
+            }
+
+            auto* niNode = node->IsNode();
+            if (!niNode) {
+                return;
+            }
+            const auto& children = niNode->children;
+            for (auto i = decltype(children.size()){ 0 }; i < children.size(); ++i) {
+                collectOmodPhysicalTemplateSignatureRecursive(children[i].get(), signature, visited, depth + 1);
+            }
+        }
+
+        OmodPhysicalTemplateSignature collectOmodPhysicalTemplateSignature(RE::NiNode* root)
+        {
+            OmodPhysicalTemplateSignature signature{};
+            signature.meshNames.reserve(32);
+            std::size_t visited = 0;
+            collectOmodPhysicalTemplateSignatureRecursive(root, signature, visited);
+            return signature;
+        }
+
+        RE::NiNode* resolveOmodPhysicalCoverageRoot(
+            RE::NiNode* weaponRoot,
+            const std::uint32_t attachPointFormId)
+        {
+            if (!weaponRoot) {
+                return nullptr;
+            }
+            const std::string_view connectPoint =
+                weapon_part_record_identity_policy::canonicalConnectPointForAttachPoint(attachPointFormId);
+            if (connectPoint.empty()) {
+                return weaponRoot;
+            }
+
+            const std::string connectPointName{ connectPoint };
+            const auto matches = collectWeaponAnimNodeMatches(weaponRoot, connectPointName.c_str());
+            for (const auto& match : matches) {
+                if (auto* node = match.node ? match.node->IsNode() : nullptr) {
+                    return node;
+                }
+            }
+            return weaponRoot;
+        }
+
+        std::size_t countPresentOmodPhysicalSignatureNames(
+            RE::NiAVObject* coverageRoot,
+            const OmodPhysicalTemplateSignature& signature,
+            const char*& outFirstMatchedName)
+        {
+            outFirstMatchedName = nullptr;
+            std::size_t matched = 0;
+            for (const auto& meshName : signature.meshNames) {
+                if (!collectWeaponAnimNodeMatches(coverageRoot, meshName.c_str()).empty()) {
+                    ++matched;
+                    if (!outFirstMatchedName) {
+                        outFirstMatchedName = meshName.c_str();
+                    }
+                }
+            }
+            return matched;
+        }
+
+        constexpr std::string_view kRockOmodEnrichmentPrefix = "ROCK-OMOD-Enrichment-";
+
+        [[nodiscard]] bool tryParseRockOmodEnrichmentFormId(
+            const std::string_view nodeName,
+            std::uint32_t& outFormId) noexcept
+        {
+            outFormId = 0;
+            constexpr std::size_t kFormIdHexDigits = 8;
+            if (!nodeName.starts_with(kRockOmodEnrichmentPrefix) ||
+                nodeName.size() != kRockOmodEnrichmentPrefix.size() + kFormIdHexDigits) {
+                return false;
+            }
+
+            std::uint32_t formId = 0;
+            for (const char c : nodeName.substr(kRockOmodEnrichmentPrefix.size())) {
+                std::uint32_t digit = 0;
+                if (c >= '0' && c <= '9') {
+                    digit = static_cast<std::uint32_t>(c - '0');
+                } else if (c >= 'A' && c <= 'F') {
+                    digit = static_cast<std::uint32_t>(c - 'A' + 10);
+                } else if (c >= 'a' && c <= 'f') {
+                    digit = static_cast<std::uint32_t>(c - 'a' + 10);
+                } else {
+                    return false;
+                }
+                formId = (formId << 4) | digit;
+            }
+
+            outFormId = formId;
+            return formId != 0;
+        }
+
+        void collectRockOmodEnrichmentContainersRecursive(
+            RE::NiAVObject* node,
+            std::vector<RE::NiNode*>& outContainers,
+            std::size_t& visited,
+            const int depth = 0)
+        {
+            if (!node || depth > 24 || visited >= WEAPON_ANIM_NODE_DUMP_MAX_SUBTREE_NODES) {
+                return;
+            }
+            ++visited;
+
+            auto* niNode = node->IsNode();
+            if (!niNode) {
+                return;
+            }
+            std::uint32_t formId = 0;
+            const char* rawName = niNode->name.c_str();
+            if (rawName && tryParseRockOmodEnrichmentFormId(rawName, formId)) {
+                outContainers.push_back(niNode);
+                return;
+            }
+
+            const auto& children = niNode->children;
+            for (auto i = decltype(children.size()){ 0 }; i < children.size(); ++i) {
+                collectRockOmodEnrichmentContainersRecursive(children[i].get(), outContainers, visited, depth + 1);
+            }
+        }
+
+        std::size_t removeStaleRockOmodEnrichmentContainers(
+            RE::NiAVObject* weaponRoot,
+            const std::unordered_set<std::uint32_t>& activeOmodFormIds)
+        {
+            std::vector<RE::NiNode*> containers;
+            containers.reserve(8);
+            std::size_t visited = 0;
+            collectRockOmodEnrichmentContainersRecursive(weaponRoot, containers, visited);
+
+            std::size_t removed = 0;
+            for (auto* container : containers) {
+                std::uint32_t formId = 0;
+                const char* rawName = container ? container->name.c_str() : nullptr;
+                if (!rawName || !tryParseRockOmodEnrichmentFormId(rawName, formId) ||
+                    activeOmodFormIds.contains(formId)) {
+                    continue;
+                }
+
+                auto* parent = container->parent ? container->parent->IsNode() : nullptr;
+                if (!parent) {
+                    continue;
+                }
+                RE::NiPointer<RE::NiAVObject> detached;
+                parent->DetachChild(container, detached);
+                if (!detached) {
+                    continue;
+                }
+                f4vr::updateTransformsDown(parent, true);
+                ++removed;
+                ROCK_LOG_INFO(Weapon,
+                    "OMOD-HEAL removed stale owned enrichment '{}' for inactive omod={:08X}",
+                    rawName,
+                    formId);
+            }
+            return removed;
+        }
+
+        RE::BSTriShape* findTemplatePhysicalShapeByNameRecursive(
+            RE::NiAVObject* node,
+            const char* targetName,
+            std::size_t& visited,
+            const int depth = 0)
+        {
+            if (!node || !targetName || depth > 16 || visited >= 512) {
+                return nullptr;
+            }
+            ++visited;
+            if (auto* triShape = node->IsTriShape()) {
+                const char* rawName = node->name.c_str();
+                if (rawName && _stricmp(rawName, targetName) == 0 &&
+                    classifyGeneratedWeaponEffectGeometry(triShape) == weapon_effect_geometry_policy::ExclusionReason::None) {
+                    return triShape;
+                }
+                return nullptr;
+            }
+            auto* niNode = node->IsNode();
+            if (!niNode) {
+                return nullptr;
+            }
+            const auto& children = niNode->children;
+            for (auto i = decltype(children.size()){ 0 }; i < children.size(); ++i) {
+                if (auto* match = findTemplatePhysicalShapeByNameRecursive(children[i].get(), targetName, visited, depth + 1)) {
+                    return match;
+                }
+            }
+            return nullptr;
+        }
+
+        bool applyEquippedOmodModelCustomization(
+            RE::BGSMod::Attachment::Mod* omod,
+            RE::NiNode* clonedRoot,
+            RE::TBO_InstanceData* instanceData)
+        {
+            if (!omod || !clonedRoot) {
+                return false;
+            }
+
+            static const bool entryValidated = []() {
+                constexpr std::array<std::uint8_t, 12> kExpectedPrefix{
+                    0x48, 0x85, 0xC9, 0x0F, 0x84, 0x16, 0x01, 0x00, 0x00, 0x48, 0x8B, 0xC4
+                };
+                const auto address = REL::Offset(offsets::kFunc_ApplyOmodModelCustomization).address();
+                std::array<std::uint8_t, kExpectedPrefix.size()> actual{};
+                const bool valid = REL::Module::IsVR() &&
+                    REL::Module::get().version() == F4SE::RUNTIME_VR_1_2_72 &&
+                    native_memory::guardedCopyFromMemory(reinterpret_cast<const void*>(address), actual.data(), actual.size()) &&
+                    actual == kExpectedPrefix;
+                if (!valid) {
+                    ROCK_LOG_ERROR(Weapon, "OMOD physical enrichment disabled: model-customization entry validation failed at 0x{:X}", address);
+                }
+                return valid;
+            }();
+            if (!entryValidated) {
+                return false;
+            }
+
+            using ApplyModelCustomization = void (*)(RE::NiAVObject*, RE::BGSModelMaterialSwap*, void*, RE::TBO_InstanceData*, void*);
+            const auto applyCustomization = reinterpret_cast<ApplyModelCustomization>(
+                REL::Offset(offsets::kFunc_ApplyOmodModelCustomization).address());
+            applyCustomization(clonedRoot, static_cast<RE::BGSModelMaterialSwap*>(omod), nullptr, instanceData, nullptr);
+            return true;
+        }
+
+        bool enrichMissingOmodPhysicalAnchor(
+            RE::BGSMod::Attachment::Mod* omod,
+            RE::NiNode* templateRoot,
+            const OmodPhysicalTemplateSignature& signature,
+            RE::NiNode* coverageRoot,
+            RE::TBO_InstanceData* instanceData,
+            std::string& outTargetParentName)
+        {
+            outTargetParentName.clear();
+            if (!omod || !templateRoot || !coverageRoot || signature.durableAnchorName.empty()) {
+                return false;
+            }
+
+            const std::string containerName = fmt::format("{}{:08X}", kRockOmodEnrichmentPrefix, omod->formID);
+            if (!collectWeaponAnimNodeMatches(coverageRoot, containerName.c_str()).empty()) {
+                outTargetParentName = containerName;
+                return !collectWeaponAnimNodeMatches(coverageRoot, signature.durableAnchorName.c_str()).empty();
+            }
+
+            f4vr::NiCloneProcess cloneProcess{};
+            cloneProcess.unk18 = reinterpret_cast<std::uint64_t*>(f4vr::cloneAddr1.address());
+            cloneProcess.unk48 = reinterpret_cast<std::uint64_t*>(f4vr::cloneAddr2.address());
+            RE::NiPointer<RE::NiNode> clonedRoot;
+            clonedRoot.reset(f4vr::cloneNode(templateRoot, &cloneProcess));
+            if (!clonedRoot || !applyEquippedOmodModelCustomization(omod, clonedRoot.get(), instanceData)) {
+                return false;
+            }
+
+            std::size_t anchorVisited = 0;
+            auto* clonedAnchor = findTemplatePhysicalShapeByNameRecursive(
+                clonedRoot.get(), signature.durableAnchorName.c_str(), anchorVisited);
+            auto* clonedParent = clonedAnchor && clonedAnchor->parent ? clonedAnchor->parent->IsNode() : nullptr;
+            if (!clonedAnchor || !clonedParent) {
+                return false;
+            }
+
+            void* skinInstance = nullptr;
+            if (!native_memory::tryReadField(clonedAnchor, VROffset::skinInstance, skinInstance) || skinInstance) {
+                ROCK_LOG_WARN(Weapon,
+                    "OMOD physical enrichment rejected skinned/unreadable durable anchor '{}' omod={:08X}",
+                    signature.durableAnchorName,
+                    omod->formID);
+                return false;
+            }
+
+            RE::NiNode* targetParent = nullptr;
+            const bool anchorIsDirectRootChild = clonedParent == clonedRoot.get();
+            if (!anchorIsDirectRootChild) {
+                const char* parentName = clonedParent->name.c_str();
+                if (!parentName || parentName[0] == '\0') {
+                    return false;
+                }
+                const auto parentMatches = collectWeaponAnimNodeMatches(coverageRoot, parentName);
+                for (const auto& match : parentMatches) {
+                    if (auto* candidate = match.node ? match.node->IsNode() : nullptr) {
+                        targetParent = candidate;
+                        break;
+                    }
+                }
+                if (!targetParent) {
+                    ROCK_LOG_WARN(Weapon,
+                        "OMOD physical enrichment could not map animated parent '{}' for anchor '{}' omod={:08X}",
+                        parentName,
+                        signature.durableAnchorName,
+                        omod->formID);
+                    return false;
+                }
+            }
+
+            RE::NiPointer<RE::NiAVObject> recoveredAnchor;
+            clonedParent->DetachChild(clonedAnchor, recoveredAnchor);
+            if (!recoveredAnchor) {
+                return false;
+            }
+
+            auto enrichmentContainer = native_scene::createEngineNiNode(1);
+            if (!enrichmentContainer) {
+                return false;
+            }
+            enrichmentContainer->name = containerName.c_str();
+            enrichmentContainer->local = transform_math::makeIdentityTransform<RE::NiTransform>();
+            if (!targetParent) {
+                recoveredAnchor->local = transform_math::composeTransforms(clonedRoot->local, recoveredAnchor->local);
+            }
+
+            enrichmentContainer->AttachChild(recoveredAnchor.get(), true);
+            auto* containerParent = targetParent ? targetParent : coverageRoot;
+            containerParent->AttachChild(enrichmentContainer.get(), true);
+            f4vr::updateTransformsDown(containerParent, true);
+            const bool anchorAttached =
+                !collectWeaponAnimNodeMatches(enrichmentContainer.get(), signature.durableAnchorName.c_str()).empty();
+            if (!anchorAttached) {
+                containerParent->DetachChild(enrichmentContainer.get());
+                f4vr::updateTransformsDown(containerParent, true);
+                return false;
+            }
+
+            outTargetParentName = fmt::format("{}/{}", safeNodeName(containerParent), containerName);
+            return true;
+        }
     }
 
     /*
@@ -5618,6 +6119,27 @@ namespace rock
             }
         } else {
             ROCK_LOG_INFO(Weapon, "OMOD-AUDIT run={} no object instance extra available", runIndex);
+        }
+
+        if (g_rockConfig.rockDebugWeaponOmodSelfHeal) {
+            std::unordered_set<std::uint32_t> activeOmodFormIds;
+            activeOmodFormIds.reserve(records.size());
+            for (const auto& record : records) {
+                if (!record.disabled && record.formId != 0) {
+                    activeOmodFormIds.insert(record.formId);
+                }
+            }
+            const std::size_t staleEnrichmentCount =
+                removeStaleRockOmodEnrichmentContainers(weaponNode, activeOmodFormIds);
+            if (staleEnrichmentCount != 0) {
+                ROCK_LOG_INFO(Weapon,
+                    "OMOD-AUDIT run={} removed {} stale ROCK-owned enrichment container(s); requesting collider rebuild",
+                    runIndex,
+                    staleEnrichmentCount);
+                requestWorkbenchExitRebuild();
+                result.sceneEnriched = true;
+                return result;
+            }
         }
 
         std::vector<OmodAuditTokenSlot> tokenSlots(records.size());
@@ -6061,20 +6583,6 @@ namespace rock
             } else {
                 using TryAttach3DRecurseFn = bool (*)(RE::BGSMod::Attachment::Mod*, RE::NiNode*, const char*, RE::TBO_InstanceData*);
                 static REL::Relocation<TryAttach3DRecurseFn> tryAttach3DRecurse{ REL::Offset(0x2D9140) };
-                /*
-                 * BSModelDB::Demand(char*, NiPointer<NiNode>&, ArgsType&) —
-                 * raw-disasm verified inside TryAttach3DRecurse (0x141d0dee0):
-                 * args are a zeroed 16-byte block with flag byte 0x2D at +8;
-                 * returns 0 on success with the template root in the pointer.
-                 */
-                struct ModelDbDemandArgs
-                {
-                    std::uint64_t unk00{ 0 };
-                    std::uint8_t flags{ 0x2D };
-                    std::uint8_t pad09[7]{};
-                };
-                using DemandModelFn = int (*)(const char*, RE::NiPointer<RE::NiNode>&, ModelDbDemandArgs&);
-                static REL::Relocation<DemandModelFn> demandModel{ REL::Offset(0x1D0DEE0) };
                 constexpr std::size_t OMOD_SELF_HEAL_MAX_PER_AUDIT = 4;
 
                 if (_omodSelfHealAttempted.size() > 256) {
@@ -6099,93 +6607,21 @@ namespace rock
                     }
 
                     /*
-                     * Truth gate (2026-07-05, AK-104 audit): filename-token
-                     * verdicts produce false NODE_NOT_FOUND for parts whose
-                     * geometry is present under mesh names unrelated to the
-                     * model path (grip/cover/comp on the AK-104; barrel/mag
-                     * on the NZ41) — healing those is what created the
-                     * doubled parts. Root-name matching cannot detect them
-                     * either: the engine attach does NOT preserve template
-                     * root names. What it DOES preserve are the template's
-                     * DESCENDANT names ('Pistol_Grip', 'Comp:0', 'Drum_Mag'
-                     * all appear verbatim in the assembled weapon). So:
-                     * Demand the template and build a distinct signature from
-                     * its named descendant meshes (falling back to named nodes
-                     * only when the template has no named meshes). A multi-mesh
-                     * part is PRESENT only when a strict majority survives in
-                     * the same assembled weapon. This rejects incidental names
-                     * reused by another attachment while preserving the
-                     * duplicate-geometry guard for a coherent installed part.
+                     * Filename tokens are only a candidate trigger. The truth
+                     * gate loads the complete 0xED hierarchy, excludes effect
+                     * geometry, and selects its largest physical mesh as the
+                     * durable housing anchor. That anchor is authoritative for
+                     * collider recovery: if it already exists, ROCK does not
+                     * duplicate the model merely because cartridges, followers,
+                     * glass, or other secondary pieces differ. A partial branch
+                     * missing the anchor bypasses native whole-model attachment
+                     * and receives only the cloned authored housing.
                      */
-                    RE::NiPointer<RE::NiNode> templateRoot;
-                    ModelDbDemandArgs demandArgs{};
-                    const int demandResult = demandModel(record.modelPath.c_str(), templateRoot, demandArgs);
-                    if (demandResult != 0 || !templateRoot) {
+                    auto completeTemplateRoot = loadCompleteOmodModelTemplate(record.modelPath);
+                    if (!completeTemplateRoot) {
                         _omodSelfHealAttempted.insert(attemptKey);
                         ROCK_LOG_WARN(Weapon,
-                            "OMOD-HEAL run={} omod={:08X} '{}' skipped: model demand failed result={} model='{}'",
-                            runIndex,
-                            record.formId,
-                            record.name,
-                            demandResult,
-                            record.modelPath);
-                        continue;
-                    }
-
-                    // Names are borrowed from descendants owned by templateRoot and are consumed
-                    // before that NiPointer leaves this scope.
-                    std::vector<const char*> templateMeshNames;
-                    std::vector<const char*> templateNodeNames;
-                    templateMeshNames.reserve(24);
-                    templateNodeNames.reserve(16);
-                    std::size_t templateNameVisited = 0;
-                    const auto appendUniqueName = [](std::vector<const char*>& names, const char* name) {
-                        const auto duplicate = std::find_if(names.begin(), names.end(), [name](const char* existing) {
-                            return _stricmp(existing, name) == 0;
-                        });
-                        if (duplicate == names.end()) {
-                            names.push_back(name);
-                        }
-                    };
-                    const auto collectTemplateContentNames = [&templateMeshNames, &templateNodeNames, &templateNameVisited, &appendUniqueName](
-                                                                 RE::NiAVObject* node, const int depth, const bool isRoot, const auto& self) -> void {
-                        if (!node || depth > 10 || templateNameVisited > 256 || (templateMeshNames.size() + templateNodeNames.size()) >= 64) {
-                            return;
-                        }
-                        ++templateNameVisited;
-                        // The cloned ROOT is renamed by the engine, so the root
-                        // name is not evidence; connect points (P-*) can
-                        // pre-exist empty in other parts; ProjectileNode is a
-                        // universal helper. Everything else identifies content.
-                        const char* name = node->name.c_str();
-                        if (!isRoot && name && name[0] != '\0' &&
-                            !(name[0] == 'P' && name[1] == '-') && !(name[0] == 'p' && name[1] == '-') &&
-                            _stricmp(name, "ProjectileNode") != 0) {
-                            if (node->IsNode()) {
-                                appendUniqueName(templateNodeNames, name);
-                            } else {
-                                appendUniqueName(templateMeshNames, name);
-                            }
-                        }
-                        auto* niNode = node->IsNode();
-                        if (!niNode) {
-                            return;
-                        }
-                        const auto& children = niNode->children;
-                        for (auto i = decltype(children.size()){ 0 }; i < children.size(); ++i) {
-                            if (auto* child = children[i].get()) {
-                                self(child, depth + 1, false, self);
-                            }
-                        }
-                    };
-                    collectTemplateContentNames(templateRoot.get(), 0, true, collectTemplateContentNames);
-
-                    const auto& templateSignatureNames = !templateMeshNames.empty() ? templateMeshNames : templateNodeNames;
-                    const char* templateSignatureKind = !templateMeshNames.empty() ? "mesh" : "node";
-                    if (templateSignatureNames.empty()) {
-                        _omodSelfHealAttempted.insert(attemptKey);
-                        ROCK_LOG_WARN(Weapon,
-                            "OMOD-HEAL run={} omod={:08X} '{}' skipped: template has no verifiable content names model='{}'",
+                            "OMOD-HEAL run={} omod={:08X} '{}' skipped: complete 0xED model load failed model='{}'",
                             runIndex,
                             record.formId,
                             record.name,
@@ -6193,43 +6629,61 @@ namespace rock
                         continue;
                     }
 
-                    std::size_t matchedSignatureNameCount = 0;
+                    RE::NiNode* signatureRoot = completeTemplateRoot.get();
+                    const auto templateSignature = collectOmodPhysicalTemplateSignature(signatureRoot);
+                    if (templateSignature.meshNames.empty() || templateSignature.durableAnchorName.empty()) {
+                        _omodSelfHealAttempted.insert(attemptKey);
+                        ROCK_LOG_WARN(Weapon,
+                            "OMOD-HEAL run={} omod={:08X} '{}' skipped: template has no verifiable physical housing model='{}'",
+                            runIndex,
+                            record.formId,
+                            record.name,
+                            record.modelPath);
+                        continue;
+                    }
+
+                    RE::NiNode* coverageRoot = resolveOmodPhysicalCoverageRoot(healTargetNode, record.attachPointFormId);
                     const char* firstMatchedSignatureName = nullptr;
-                    for (const char* contentName : templateSignatureNames) {
-                        if (!collectWeaponAnimNodeMatches(healTargetNode, contentName).empty()) {
-                            ++matchedSignatureNameCount;
-                            if (!firstMatchedSignatureName) {
-                                firstMatchedSignatureName = contentName;
-                            }
-                        }
-                    }
+                    const std::size_t matchedSignatureNameCount = countPresentOmodPhysicalSignatureNames(
+                        coverageRoot,
+                        templateSignature,
+                        firstMatchedSignatureName);
+                    const bool durableAnchorPresent =
+                        !collectWeaponAnimNodeMatches(coverageRoot, templateSignature.durableAnchorName.c_str()).empty();
                     const std::size_t requiredSignatureNameCount =
-                        weapon_omod_audit_policy::requiredTemplateSignatureMatches(templateSignatureNames.size());
-                    if (weapon_omod_audit_policy::templateSignatureIsPresent(matchedSignatureNameCount, templateSignatureNames.size())) {
+                        weapon_omod_audit_policy::requiredTemplateSignatureMatches(templateSignature.meshNames.size());
+                    const bool coherentPhysicalSignaturePresent =
+                        weapon_omod_audit_policy::physicalTemplateSignatureIsPresent(
+                            matchedSignatureNameCount,
+                            templateSignature.meshNames.size(),
+                            durableAnchorPresent);
+                    if (!weapon_omod_audit_policy::requiresDurableAnchorRecovery(durableAnchorPresent)) {
                         _omodSelfHealAttempted.insert(attemptKey);
                         ROCK_LOG_INFO(Weapon,
-                            "OMOD-HEAL run={} omod={:08X} '{}' skipped: coherent template {} signature already present in instance "
-                            "matches={}/{} required={} example='{}' — token verdict was a false negative",
+                            "OMOD-HEAL run={} omod={:08X} '{}' skipped: durable physical housing already present in slot "
+                            "matches={}/{} required={} coherent={} anchor='{}' example='{}' — no duplicate recovery needed",
                             runIndex,
                             record.formId,
                             record.name,
-                            templateSignatureKind,
                             matchedSignatureNameCount,
-                            templateSignatureNames.size(),
+                            templateSignature.meshNames.size(),
                             requiredSignatureNameCount,
+                            coherentPhysicalSignaturePresent ? "yes" : "no",
+                            templateSignature.durableAnchorName,
                             firstMatchedSignatureName ? firstMatchedSignatureName : "");
                         continue;
                     }
 
                     ROCK_LOG_INFO(Weapon,
-                        "OMOD-HEAL run={} omod={:08X} '{}' confirmed missing: template {} signature matches={}/{} required={} - attempting engine attach",
+                        "OMOD-HEAL run={} omod={:08X} '{}' confirmed incomplete: physical signature matches={}/{} required={} anchor='{}' anchorPresent={} - starting bounded recovery",
                         runIndex,
                         record.formId,
                         record.name,
-                        templateSignatureKind,
                         matchedSignatureNameCount,
-                        templateSignatureNames.size(),
-                        requiredSignatureNameCount);
+                        templateSignature.meshNames.size(),
+                        requiredSignatureNameCount,
+                        templateSignature.durableAnchorName,
+                        durableAnchorPresent ? "yes" : "no");
 
                     char rankSuffixBuffer[8] = {};
                     const char* rankSuffix = nullptr;
@@ -6241,89 +6695,40 @@ namespace rock
                     }
 
                     /*
-                     * No post-attach hiding: the address-diff hide (5529dd3)
-                     * hid REAL rendered geometry because the engine attach can
-                     * capture/reparent existing nodes into the target. With
-                     * the truth gate above, heals only fire for parts with no
-                     * geometry anywhere in the instance, so a visible healed
-                     * clone is the part appearing — not a double.
+                     * Never post-hide an engine attachment: the address-diff
+                     * experiment hid real rendered geometry after native
+                     * capture/reparenting. Whole-model attach is now limited to
+                     * a completely absent physical signature. Partial trees
+                     * preserve their authored animated pieces and receive only
+                     * the missing durable housing below.
                      */
                     const auto beforeStats = summarizeWeaponAnimNodeSubtree(healTargetNode);
                     _omodSelfHealAttempted.insert(attemptKey);
                     ++selfHealAttemptCount;
-                    bool attached = tryAttach3DRecurse(omod, healTargetNode, rankSuffix, equipData ? equipData->instanceData : nullptr);
+                    const bool nativeAttachNeeded = weapon_omod_audit_policy::shouldAttemptWholeModelAttach(
+                        matchedSignatureNameCount,
+                        durableAnchorPresent);
+                    bool attached = nativeAttachNeeded &&
+                        tryAttach3DRecurse(omod, healTargetNode, rankSuffix, equipData ? equipData->instanceData : nullptr);
                     auto afterStats = summarizeWeaponAnimNodeSubtree(healTargetNode);
-                    bool geometryAdded = afterStats.triShapeCount > beforeStats.triShapeCount;
-                    bool recoveryConnectPointCreated = false;
-                    std::string recoveryConnectPointName;
-
-                    /*
-                     * Several flat-authored weapon ports omit the standard
-                     * attachment slot node from the assembled first-person
-                     * tree. TryAttach3DRecurse reports the record as handled in
-                     * that case but adds no geometry (Break Action Laser:
-                     * P-Barrel/P-Muzzle). Recover only standard CK slots, only
-                     * after the template signature proved the model absent,
-                     * and remove the synthetic node if the retry still adds no
-                     * geometry. The equipped weapon owns a successful node and
-                     * therefore destroys it with the instance.
-                     */
-                    if (!geometryAdded) {
-                        const std::string_view connectPoint =
-                            weapon_part_record_identity_policy::canonicalConnectPointForAttachPoint(record.attachPointFormId);
-                        const std::string_view parentConnectPoint =
-                            weapon_part_record_identity_policy::recoveryParentConnectPointForAttachPoint(record.attachPointFormId);
-                        recoveryConnectPointName.assign(connectPoint);
-                        const bool connectPointMissing = !connectPoint.empty() &&
-                            collectWeaponAnimNodeMatches(healTargetNode, recoveryConnectPointName.c_str()).empty();
-                        if (connectPointMissing) {
-                            RE::NiNode* recoveryParent = nullptr;
-                            if (!parentConnectPoint.empty()) {
-                                const std::string parentConnectPointName{ parentConnectPoint };
-                                const auto parentMatches = collectWeaponAnimNodeMatches(healTargetNode, parentConnectPointName.c_str());
-                                if (!parentMatches.empty()) {
-                                    recoveryParent = parentMatches.front().node ? parentMatches.front().node->IsNode() : nullptr;
-                                }
-                            }
-                            if (!recoveryParent) {
-                                recoveryParent = healTargetNode;
-                            }
-
-                            auto recoveryNode = native_scene::createEngineNiNode(4);
-                            if (!recoveryNode) {
-                                ROCK_LOG_ERROR(Weapon,
-                                    "OMOD-HEAL run={} omod={:08X} '{}' could not create verified FO4VR recovery node '{}'",
-                                    runIndex,
-                                    record.formId,
-                                    record.name,
-                                    recoveryConnectPointName);
-                            } else {
-                                recoveryNode->name = recoveryConnectPointName.c_str();
-                                recoveryNode->local = {};
-                                recoveryNode->local.rotate.entry[0][0] = 1.0f;
-                                recoveryNode->local.rotate.entry[1][1] = 1.0f;
-                                recoveryNode->local.rotate.entry[2][2] = 1.0f;
-                                recoveryNode->local.scale = 1.0f;
-                                recoveryParent->AttachChild(recoveryNode.get(), true);
-                                f4vr::updateTransformsDown(recoveryNode.get(), true);
-                                const auto beforeRetryStats = summarizeWeaponAnimNodeSubtree(healTargetNode);
-                                const bool retryAttached = tryAttach3DRecurse(omod, healTargetNode, rankSuffix, equipData ? equipData->instanceData : nullptr);
-                                afterStats = summarizeWeaponAnimNodeSubtree(healTargetNode);
-                                geometryAdded = afterStats.triShapeCount > beforeRetryStats.triShapeCount;
-                                attached = attached || retryAttached;
-                                if (geometryAdded) {
-                                    recoveryConnectPointCreated = true;
-                                } else {
-                                    recoveryParent->DetachChild(recoveryNode.get());
-                                    f4vr::updateTransformsDown(recoveryParent, true);
-                                }
-                            }
-                        }
-                    }
+                    bool anchorPresentAfterNative =
+                        !collectWeaponAnimNodeMatches(coverageRoot, templateSignature.durableAnchorName.c_str()).empty();
+                    std::string enrichmentParentName;
+                    const bool physicalAnchorEnriched = !anchorPresentAfterNative &&
+                        enrichMissingOmodPhysicalAnchor(
+                            omod,
+                            signatureRoot,
+                            templateSignature,
+                            coverageRoot,
+                            equipData ? equipData->instanceData : nullptr,
+                            enrichmentParentName);
+                    afterStats = summarizeWeaponAnimNodeSubtree(healTargetNode);
+                    const bool geometryAdded = afterStats.triShapeCount > beforeStats.triShapeCount;
+                    const bool durableAnchorRestored = anchorPresentAfterNative || physicalAnchorEnriched;
                     selfHealSuccessCount += geometryAdded ? 1 : 0;
 
                     ROCK_LOG_INFO(Weapon,
-                        "OMOD-HEAL run={} omod={:08X} '{}' model='{}' suffix='{}' target='{}'/{:x} attached={} geometryAdded={} recoveryConnectPoint='{}' subtreeNodes {}->{} triShapes {}->{} visibleTriShapes {}->{}",
+                        "OMOD-HEAL run={} omod={:08X} '{}' model='{}' suffix='{}' target='{}'/{:x} nativeAttachAttempted={} attached={} geometryAdded={} durableAnchor='{}' restored={} enrichmentParent='{}' subtreeNodes {}->{} triShapes {}->{} visibleTriShapes {}->{}",
                         runIndex,
                         record.formId,
                         record.name,
@@ -6331,9 +6736,12 @@ namespace rock
                         rankSuffix ? rankSuffix : "",
                         healTargetRootLabel,
                         reinterpret_cast<std::uintptr_t>(healTargetNode),
+                        nativeAttachNeeded ? "yes" : "no-partial-tree",
                         attached ? "YES" : "no",
                         geometryAdded ? "YES" : "no",
-                        recoveryConnectPointCreated ? recoveryConnectPointName : "",
+                        templateSignature.durableAnchorName,
+                        durableAnchorRestored ? "YES" : "no",
+                        enrichmentParentName,
                         beforeStats.nodeCount,
                         afterStats.nodeCount,
                         beforeStats.triShapeCount,

@@ -146,6 +146,18 @@ int main()
         templateSignatureIsPresent(2, 6));
     ok &= expectTrue("coherent majority proves a six-mesh scope is installed",
         templateSignatureIsPresent(4, 6));
+    ok &= expectFalse("cartridge majority without the durable magazine shell is incomplete",
+        physicalTemplateSignatureIsPresent(4, 6, false));
+    ok &= expectTrue("coherent signature with its durable housing is physically complete",
+        physicalTemplateSignatureIsPresent(4, 6, true));
+    ok &= expectTrue("partial cartridge branch without its housing requires anchor recovery",
+        requiresDurableAnchorRecovery(false));
+    ok &= expectFalse("existing durable housing forbids duplicate anchor recovery",
+        requiresDurableAnchorRecovery(true));
+    ok &= expectTrue("fully absent attachment may use the native whole-model attach",
+        shouldAttemptWholeModelAttach(0, false));
+    ok &= expectFalse("partial attachment bypasses native whole-model duplication",
+        shouldAttemptWholeModelAttach(3, false));
     ok &= expectFalse("empty template signature fails closed",
         templateSignatureIsPresent(0, 0));
 
@@ -222,10 +234,31 @@ int main()
         hasExplicitScopeIdentity("Trijicon MRO", "Weapons\\Example\\Sight_MRO.nif"));
     ok &= expectFalse("scope-named record without a physical model fails closed",
         hasExplicitScopeIdentity("Recon Scope", ""));
+    rock::manual_scope_target_policy::StructuralMarkerEvidence mike24Structure{};
+    rock::manual_scope_target_policy::observeStructuralNodeName(mike24Structure, "ScopeAiming");
+    rock::manual_scope_target_policy::observeStructuralNodeName(mike24Structure, "ScopeViewParts");
+    rock::manual_scope_target_policy::observeStructuralNodeName(mike24Structure, "ScopeFade:0");
+    ok &= expectTrue("Mike24 native scope hierarchy is recognized without scope text in its OMOD",
+        rock::manual_scope_target_policy::hasMagnifiedScopeStructure(mike24Structure));
+    rock::manual_scope_target_policy::StructuralMarkerEvidence redDotStructure{};
+    rock::manual_scope_target_policy::observeStructuralNodeName(redDotStructure, "Sight");
+    rock::manual_scope_target_policy::observeStructuralNodeName(redDotStructure, "Reticle:0");
+    ok &= expectFalse("generic red-dot hierarchy is not promoted to a magnified native scope",
+        rock::manual_scope_target_policy::hasMagnifiedScopeStructure(redDotStructure));
+    ok &= expectTrue("native overlay zero is a valid authored overlay index",
+        rock::manual_scope_target_policy::isValidNativeOverlayIndex(0));
+    ok &= expectTrue("native overlay upper bound is accepted",
+        rock::manual_scope_target_policy::isValidNativeOverlayIndex(16));
+    ok &= expectFalse("out-of-range native overlay fails closed",
+        rock::manual_scope_target_policy::isValidNativeOverlayIndex(17));
     ok &= expectTrue("unflagged explicit scope requires the direct native transition",
-        rock::manual_scope_target_policy::requiresDirectNativeTransition(false, true));
+        rock::manual_scope_target_policy::requiresDirectNativeTransition(false, true, false, true));
+    ok &= expectTrue("unflagged structurally verified scope requires the direct native transition",
+        rock::manual_scope_target_policy::requiresDirectNativeTransition(false, false, true, true));
     ok &= expectFalse("authored native scope keeps the normal hooked transition path",
-        rock::manual_scope_target_policy::requiresDirectNativeTransition(true, true));
+        rock::manual_scope_target_policy::requiresDirectNativeTransition(true, true, true, true));
+    ok &= expectFalse("unflagged scope with invalid overlay metadata fails closed",
+        rock::manual_scope_target_policy::requiresDirectNativeTransition(false, true, true, false));
 
     const std::uint64_t bodySetKey = makeGeneratedWeaponBodySetKey(0xABC, derivedCompact, 1);
     ok &= expectNonZero("body-set key is created for equipped source and epoch", bodySetKey);

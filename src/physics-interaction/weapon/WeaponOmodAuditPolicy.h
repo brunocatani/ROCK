@@ -71,6 +71,34 @@ namespace rock::weapon_omod_audit_policy
         return requiredMatches != 0 && matchedDistinctMeshCount >= requiredMatches;
     }
 
+    /*
+     * A controller branch can expose several cartridges/effect pieces while
+     * dropping the attachment's durable housing. A majority alone therefore
+     * cannot prove physical completeness. The largest non-effect template
+     * mesh is the bounded housing anchor and must survive together with the
+     * existing coherent-signature rule.
+     */
+    [[nodiscard]] inline constexpr bool physicalTemplateSignatureIsPresent(
+        std::size_t matchedDistinctMeshCount,
+        std::size_t distinctTemplateMeshCount,
+        bool durableAnchorPresent) noexcept
+    {
+        return durableAnchorPresent &&
+               templateSignatureIsPresent(matchedDistinctMeshCount, distinctTemplateMeshCount);
+    }
+
+    [[nodiscard]] inline constexpr bool requiresDurableAnchorRecovery(bool durableAnchorPresent) noexcept
+    {
+        return !durableAnchorPresent;
+    }
+
+    [[nodiscard]] inline constexpr bool shouldAttemptWholeModelAttach(
+        std::size_t matchedDistinctMeshCount,
+        bool durableAnchorPresent) noexcept
+    {
+        return requiresDurableAnchorRecovery(durableAnchorPresent) && matchedDistinctMeshCount == 0;
+    }
+
     [[nodiscard]] inline constexpr CoverageDecision decideCoverage(const CoverageInput& input) noexcept
     {
         if (input.disabled) {
