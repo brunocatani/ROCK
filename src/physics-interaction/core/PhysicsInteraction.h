@@ -92,6 +92,8 @@ namespace rock
 
         void synchronizeNativeScopePresentationAfterFrikUpdate();
 
+        [[nodiscard]] bool hasNativeManualCycleTwoHandAuthority() const;
+
         bool tryResolveNativeScopeGeometryDecision(bool nativeGeometryDecision, bool& outRockGeometryDecision);
 
         [[nodiscard]] bool requiresManualScopeDirectTransition() const;

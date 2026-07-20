@@ -331,6 +331,17 @@ namespace
         }
     }
 
+    void refreshNativeManualCycleTwoHandAuthority()
+    {
+        const bool active =
+            s_pluginLoaded &&
+            s_frikAvailable &&
+            g_rockConfig.rockEnabled &&
+            s_physicsInteraction &&
+            s_physicsInteraction->hasNativeManualCycleTwoHandAuthority();
+        native_animation_authority::setManualCycleTwoHandAuthorityActive(active);
+    }
+
     using GameLoopFunc = void (*)(std::uint64_t rcx);
     GameLoopFunc s_originalGameLoopFunc = nullptr;
 
@@ -476,6 +487,9 @@ namespace
             s_originalGameLoopFunc(rcx);
         }
 
+        // WeaponFire runs in Bethesda's update above. Refresh from ROCK's
+        // retained grip state before consuming a newly armed cycle lease.
+        refreshNativeManualCycleTwoHandAuthority();
         native_animation_authority::beginRockFrame(
             runtime_state::currentFrame().deltaSeconds);
         (void)native_animation_authority::applyCapturedPose(
@@ -486,6 +500,10 @@ namespace
         }
 
         onFrameUpdate();
+        // Input and grip transitions run inside onFrameUpdate. Recheck before
+        // final publication so releasing support cancels the overlay in this
+        // same frame and immediately restores one-hand parts-only behavior.
+        refreshNativeManualCycleTwoHandAuthority();
 
         // Input classification runs inside onFrameUpdate. Apply the manual
         // scope level after it so an unflagged scope does not wait for a native

@@ -1958,6 +1958,17 @@ namespace rock
         _twoHandedGrip.synchronizeNativeScopePresentationAfterFrikUpdate(weaponNode, _weaponCollision.getCurrentWeaponGenerationKey());
     }
 
+    bool PhysicsInteraction::hasNativeManualCycleTwoHandAuthority() const
+    {
+        return native_animation_authority_policy::canApplyManualCycleHandAnimation(
+            native_animation_authority_policy::ManualCycleTwoHandEligibility{
+                .twoHandGripActive =
+                    _twoHandedGrip.getState() == TwoHandedState::Gripping,
+                .firingHandIsLeft = _twoHandedGrip.isFiringHandLeft(),
+                .weaponTransformOwned = _twoHandedGrip.ownsWeaponTransform(),
+            });
+    }
+
     bool PhysicsInteraction::tryResolveNativeScopeGeometryDecision(const bool nativeGeometryDecision, bool& outRockGeometryDecision)
     {
         outRockGeometryDecision = nativeGeometryDecision;

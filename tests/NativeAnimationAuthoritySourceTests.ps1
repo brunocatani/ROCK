@@ -67,6 +67,15 @@ Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
 Require-Text 'src/ROCKMain.cpp' `
     'setLocalManualCycleTestEnabled\([\s\S]{0,180}rockNativeReloadAnimationAuthorityTestEnabled' `
     'The manual-cycle path must remain gated by the existing native reload authority experiment flag.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'hasNativeManualCycleTwoHandAuthority[\s\S]*TwoHandedState::Gripping[\s\S]*isFiringHandLeft\(\)[\s\S]*ownsWeaponTransform\(\)' `
+    'Native cycle hand animation must require a right-primary full two-hand weapon solver.'
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
+    'onWeaponFire[\s\S]*s_manualCycleTwoHandAuthorityActive\.load[\s\S]*WEAPON_FLAGS::kBoltAction[\s\S]*s_localManualCycleTestLeaseActive\.store\(true' `
+    'One-hand firing must retain FO4VR parts-only behavior by never arming the local hand-animation lease.'
+Require-Text 'src/ROCKMain.cpp' `
+    's_originalGameLoopFunc\(rcx\)[\s\S]*refreshNativeManualCycleTwoHandAuthority\(\)[\s\S]*beginRockFrame[\s\S]*onFrameUpdate\(\)[\s\S]*refreshNativeManualCycleTwoHandAuthority\(\)[\s\S]*ApplyPhase::AfterRock' `
+    'Two-hand eligibility must be sampled before lease consumption and again after ROCK grip transitions before final pose publication.'
 Reject-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
     'gunState\s*==\s*RE::GUN_STATE::kReloading' `
     'FO4VR does not publish this VR reload path through ActorState::gunState; lifecycle code must not regress to that poll.'
@@ -101,8 +110,14 @@ Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
     'kManualCyclePrimaryFingerBoneNames[\s\S]*captureManualCycleFingerLocals[\s\S]*publishManualCycleHandVisual[\s\S]*setHandPoseCustomWithPriority[\s\S]*setHandPoseCustomLocalTransformsWithPriority[\s\S]*clearManualCycleVisualAuthority' `
     'Manual-cycle authority must establish the required base pose, attach native finger locals, and deterministically release both hand-pose and world-transform tags.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
-    'clearManualCycleVisualAuthorityPreservingWeapon[\s\S]*refreshFixedVisibleWeaponTarget[\s\S]*clearManualCycleVisualAuthority\(\)[\s\S]*tryRestoreFixedVisibleWeaponTarget[\s\S]*beginRockFrame[\s\S]*if\s*\(manualCycleRequested\)[\s\S]*clearManualCycleVisualAuthority\(\);[\s\S]*else[\s\S]*clearManualCycleVisualAuthorityPreservingWeapon\(\)[\s\S]*resetHybridPoseState' `
-    'Active cycling must yield the stale hand target to ROCK before its controller solve, while lease-edge cleanup preserves the final visible Weapon world.'
+    'clearManualCycleVisualAuthorityPreservingWeapon[\s\S]*beginRockFrame[\s\S]*s_frameManualCycleCleanupPending\s*=\s*manualCycleVisualAuthorityPublished\(\)[\s\S]*Keep ROCK''s higher-priority cycle tags selected[\s\S]*completeRockFrame[\s\S]*s_frameManualCycleCleanupPending[\s\S]*clearManualCycleVisualAuthorityPreservingWeapon\(\)' `
+    'Active cycling and a parts-only lease edge must retain the selected overlay until ROCK refreshes the hidden controller grip targets.'
+Reject-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
+    'if\s*\(manualCycleRequested\)\s*\{[^}]*clearManualCycleVisualAuthority' `
+    'Active cycle setup must not reselect stale previous-frame grip targets before ROCK solves the weapon.'
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
+    'applyCapturedPose[\s\S]*manualCycleStillRequested[\s\S]*clearManualCycleVisualAuthorityPreservingWeapon\(\)[\s\S]*s_frameManualCycleApplied\s*=\s*true' `
+    'Support release during ROCK update must cancel the hand overlay after the current weapon solve without disturbing the weapon world.'
 Reject-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
     'resolveWorldTargetCorrection\(\s*aimFrame\.controlWeaponWorld,\s*nativeWeaponWorld\)' `
     'Hand-only cycling must never return to a rigid collarbone-root correction against the Weapon.'

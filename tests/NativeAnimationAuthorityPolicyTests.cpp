@@ -108,6 +108,28 @@ int main()
     static_assert(fixedCycleHandWorld.scale == 8.0f);
     static_assert(fixedCycleHandWorld.translate == 280.0f);
 
+    constexpr ManualCycleTwoHandEligibility manualCycleEligible{
+        .twoHandGripActive = true,
+        .firingHandIsLeft = false,
+        .weaponTransformOwned = true,
+    };
+    static_assert(canApplyManualCycleHandAnimation(manualCycleEligible));
+    static_assert([=] {
+        auto input = manualCycleEligible;
+        input.twoHandGripActive = false;
+        return !canApplyManualCycleHandAnimation(input);
+    }());
+    static_assert([=] {
+        auto input = manualCycleEligible;
+        input.firingHandIsLeft = true;
+        return !canApplyManualCycleHandAnimation(input);
+    }());
+    static_assert([=] {
+        auto input = manualCycleEligible;
+        input.weaponTransformOwned = false;
+        return !canApplyManualCycleHandAnimation(input);
+    }());
+
     // A primary-hand cycle is encoded by the Weapon child's animated inverse
     // local. Reusing its flattened baseline local cancels the hand motion and
     // falsely attributes the delta to the support hand.

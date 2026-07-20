@@ -79,6 +79,21 @@ namespace rock::native_animation_authority_policy
         }
     };
 
+    struct ManualCycleTwoHandEligibility
+    {
+        bool twoHandGripActive{ false };
+        bool firingHandIsLeft{ false };
+        bool weaponTransformOwned{ false };
+    };
+
+    [[nodiscard]] inline constexpr bool canApplyManualCycleHandAnimation(
+        const ManualCycleTwoHandEligibility& eligibility)
+    {
+        return eligibility.twoHandGripActive &&
+               !eligibility.firingHandIsLeft &&
+               eligibility.weaponTransformOwned;
+    }
+
     struct AuthoredPrimaryFiringGripEligibility
     {
         bool enabled{ false };
