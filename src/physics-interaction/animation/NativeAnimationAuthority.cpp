@@ -120,6 +120,14 @@ namespace rock::native_animation_authority
             RE::NiTransform nativeBaselineHandInWeapon{};
             RE::NiTransform liveBaselineHandInWeapon{};
             bool captured{ false };
+            bool motionQualified{ false };
+        };
+
+        enum class ManualCycleHandVisualResult : std::uint8_t
+        {
+            Failed,
+            Suppressed,
+            Published,
         };
 
         struct ControllerAimFrame
@@ -146,6 +154,9 @@ namespace rock::native_animation_authority
         PrimaryFiringGripBoneCache s_primaryFiringGripBoneCache{};
         ManualCyclePoseCapture s_manualCyclePoseCapture{};
         std::array<ManualCycleVisualPublication, 2> s_manualCycleVisualPublications{};
+        // Frame-local values copied from ROCK's two-hand solver on the game
+        // thread. Never retained across authority loss or skeleton teardown.
+        ManualCycleRockGripBaselines s_manualCycleRockGripBaselines{};
         ControllerAimFrame s_sourceAimFrame{};
         PostUpdateAnimationGraphManagerFn s_originalPostUpdate{ nullptr };
         UpdateFirstPersonArmFn s_originalUpdateFirstPersonArm{ nullptr };
@@ -252,6 +263,43 @@ namespace rock::native_animation_authority
                    std::isfinite(transform.translate.z) &&
                    std::isfinite(transform.scale) &&
                    std::abs(transform.scale) > 0.000001f;
+        }
+
+        [[nodiscard]] native_animation_authority_policy::ManualCycleHandMotionSample
+            measureManualCycleHandMotion(
+                const RE::NiTransform& baselineHandInWeapon,
+                const RE::NiTransform& currentHandInWeapon)
+        {
+            const RE::NiTransform delta = transform_math::composeTransforms(
+                transform_math::invertTransform(baselineHandInWeapon),
+                currentHandInWeapon);
+            if (!finiteTransform(delta)) {
+                return {};
+            }
+
+            const float translationGameUnits = std::sqrt(
+                delta.translate.x * delta.translate.x +
+                delta.translate.y * delta.translate.y +
+                delta.translate.z * delta.translate.z);
+            const float trace =
+                delta.rotate.entry[0][0] +
+                delta.rotate.entry[1][1] +
+                delta.rotate.entry[2][2];
+            const float rawCosine = (trace - 1.0f) * 0.5f;
+            const float cosine = rawCosine < -1.0f ?
+                -1.0f :
+                (rawCosine > 1.0f ? 1.0f : rawCosine);
+            constexpr float kRadiansToDegrees = 57.29577951308232f;
+            const float rotationDegrees =
+                std::acos(cosine) * kRadiansToDegrees;
+            if (!std::isfinite(translationGameUnits) ||
+                !std::isfinite(rotationDegrees)) {
+                return {};
+            }
+            return {
+                .translationGameUnits = translationGameUnits,
+                .rotationDegrees = rotationDegrees,
+            };
         }
 
         [[nodiscard]] constexpr std::size_t manualCycleHandIndex(
@@ -1535,7 +1583,7 @@ namespace rock::native_animation_authority
             }
         }
 
-        [[nodiscard]] bool publishManualCycleHandVisual(
+        [[nodiscard]] ManualCycleHandVisualResult publishManualCycleHandVisual(
             const frik_visual_authority::Hand hand,
             const RE::NiTransform& handInWeapon,
             const frik_visual_authority::FingerLocalTransformOverride& fingerLocals,
@@ -1546,17 +1594,34 @@ namespace rock::native_animation_authority
             auto& handRebase =
                 s_sourceAimFrame.manualCycleHandRebases[handIndex];
             if (!handRebase.captured) {
-                const RE::NiTransform liveHandWorld =
-                    frik_visual_authority::getHandWorldTransform(hand);
-                if (!finiteTransform(liveHandWorld)) {
-                    (void)clearManualCycleVisualForHand(hand);
-                    return false;
+                const bool rockBaselineValid =
+                    hand == frik_visual_authority::Hand::Left ?
+                    s_manualCycleRockGripBaselines.leftValid :
+                    s_manualCycleRockGripBaselines.rightValid;
+                const RE::NiTransform& rockBaselineHandInWeapon =
+                    hand == frik_visual_authority::Hand::Left ?
+                    s_manualCycleRockGripBaselines.leftHandInWeapon :
+                    s_manualCycleRockGripBaselines.rightHandInWeapon;
+                if (rockBaselineValid &&
+                    finiteTransform(rockBaselineHandInWeapon)) {
+                    // Use ROCK's exact requested grip target, not the solved
+                    // hand-bone readback. The latter retains a small hFRIK IK
+                    // residual that made cycle motion sit behind the handle.
+                    handRebase.liveBaselineHandInWeapon =
+                        rockBaselineHandInWeapon;
+                } else {
+                    const RE::NiTransform liveHandWorld =
+                        frik_visual_authority::getHandWorldTransform(hand);
+                    if (!finiteTransform(liveHandWorld)) {
+                        (void)clearManualCycleVisualForHand(hand);
+                        return ManualCycleHandVisualResult::Failed;
+                    }
+                    handRebase.liveBaselineHandInWeapon =
+                        transform_math::composeTransforms(
+                            transform_math::invertTransform(fixedWeaponWorld),
+                            liveHandWorld);
                 }
 
-                handRebase.liveBaselineHandInWeapon =
-                    transform_math::composeTransforms(
-                        transform_math::invertTransform(fixedWeaponWorld),
-                        liveHandWorld);
                 handRebase.nativeBaselineHandInWeapon = handInWeapon;
                 if (!finiteTransform(
                         handRebase.liveBaselineHandInWeapon) ||
@@ -1564,9 +1629,35 @@ namespace rock::native_animation_authority
                         handRebase.nativeBaselineHandInWeapon)) {
                     handRebase = {};
                     (void)clearManualCycleVisualForHand(hand);
-                    return false;
+                    return ManualCycleHandVisualResult::Failed;
                 }
                 handRebase.captured = true;
+            }
+
+            const auto motion = measureManualCycleHandMotion(
+                handRebase.nativeBaselineHandInWeapon,
+                handInWeapon);
+            const bool wasMotionQualified = handRebase.motionQualified;
+            handRebase.motionQualified =
+                native_animation_authority_policy::
+                    updateManualCycleHandMotionQualification(
+                        handRebase.motionQualified,
+                        motion);
+            if (!handRebase.motionQualified) {
+                // Leave ROCK's priority-100 grip tag as the visual owner. This
+                // preserves its exact position, rotation, and finger pose
+                // instead of forwarding native idle/squirm noise.
+                if (!clearManualCycleVisualForHand(hand)) {
+                    return ManualCycleHandVisualResult::Failed;
+                }
+                return ManualCycleHandVisualResult::Suppressed;
+            }
+            if (!wasMotionQualified) {
+                ROCK_LOG_DEBUG(Animation,
+                    "Native manual-cycle hand motion qualified hand={} translation={:.3f}gu rotation={:.2f}deg",
+                    hand == frik_visual_authority::Hand::Left ? "left" : "right",
+                    motion.translationGameUnits,
+                    motion.rotationDegrees);
             }
 
             // Use the same baseline/delta/live-frame solve as full reload
@@ -1602,7 +1693,7 @@ namespace rock::native_animation_authority
                     });
             if (!finiteTransform(handWorld)) {
                 (void)clearManualCycleVisualForHand(hand);
-                return false;
+                return ManualCycleHandVisualResult::Failed;
             }
 
             if (fingerLocals.enabledMask != 0) {
@@ -1616,7 +1707,7 @@ namespace rock::native_animation_authority
                         frik_visual_authority::HandPoseData{},
                         kManualCycleVisualAuthorityPriority)) {
                     (void)clearManualCycleVisualForHand(hand);
-                    return false;
+                    return ManualCycleHandVisualResult::Failed;
                 }
                 publication.fingerPosePublished = true;
                 if (!frik_visual_authority::setHandPoseCustomLocalTransformsWithPriority(
@@ -1625,13 +1716,13 @@ namespace rock::native_animation_authority
                         &fingerLocals,
                         kManualCycleVisualAuthorityPriority)) {
                     (void)clearManualCycleVisualForHand(hand);
-                    return false;
+                    return ManualCycleHandVisualResult::Failed;
                 }
             } else if (publication.fingerPosePublished) {
                 if (!frik_visual_authority::clearHandPose(
                         kManualCycleVisualAuthorityTag,
                         hand)) {
-                    return false;
+                    return ManualCycleHandVisualResult::Failed;
                 }
                 publication.fingerPosePublished = false;
             }
@@ -1642,10 +1733,10 @@ namespace rock::native_animation_authority
                     handWorld,
                     kManualCycleVisualAuthorityPriority)) {
                 (void)clearManualCycleVisualForHand(hand);
-                return false;
+                return ManualCycleHandVisualResult::Failed;
             }
             publication.worldPublished = true;
-            return true;
+            return ManualCycleHandVisualResult::Published;
         }
 
         [[nodiscard]] bool applyManualCyclePoseAfterRock()
@@ -1661,14 +1752,14 @@ namespace rock::native_animation_authority
                 return false;
             }
 
-            const bool primaryApplied = publishManualCycleHandVisual(
-                frik_visual_authority::Hand::Right,
-                s_manualCyclePoseCapture.primaryHandInWeapon,
-                s_manualCyclePoseCapture.primaryFingerLocals,
-                fixedWeaponWorld);
-            bool supportApplied = false;
+            const ManualCycleHandVisualResult primaryResult =
+                publishManualCycleHandVisual(
+                    frik_visual_authority::Hand::Right,
+                    s_manualCyclePoseCapture.primaryHandInWeapon,
+                    s_manualCyclePoseCapture.primaryFingerLocals,
+                    fixedWeaponWorld);
             if (s_manualCyclePoseCapture.supportHandValid) {
-                supportApplied = publishManualCycleHandVisual(
+                (void)publishManualCycleHandVisual(
                     frik_visual_authority::Hand::Left,
                     s_manualCyclePoseCapture.supportHandInWeapon,
                     s_manualCyclePoseCapture.supportFingerLocals,
@@ -1687,7 +1778,7 @@ namespace rock::native_animation_authority
                 (void)tryRestoreFixedVisibleWeaponTarget(fixedWeaponWorld);
                 return false;
             }
-            if (!primaryApplied) {
+            if (primaryResult == ManualCycleHandVisualResult::Failed) {
                 clearManualCycleVisualAuthority();
                 (void)tryRestoreFixedVisibleWeaponTarget(fixedWeaponWorld);
                 return false;
@@ -1695,9 +1786,12 @@ namespace rock::native_animation_authority
 
             if (!s_sourceAimFrame.manualCycleIkLogged) {
                 ROCK_LOG_INFO(Animation,
-                    "Native manual-cycle IK ready priority={} hands={} weaponT=({:.3f},{:.3f},{:.3f})",
+                    "Native manual-cycle IK ready priority={} motionGate=({:.2f}gu,{:.1f}deg) weaponT=({:.3f},{:.3f},{:.3f})",
                     kManualCycleVisualAuthorityPriority,
-                    supportApplied ? 2 : 1,
+                    native_animation_authority_policy::
+                        kManualCycleHandMotionTranslationThresholdGameUnits,
+                    native_animation_authority_policy::
+                        kManualCycleHandMotionRotationThresholdDegrees,
                     fixedWeaponWorld.translate.x,
                     fixedWeaponWorld.translate.y,
                     fixedWeaponWorld.translate.z);
@@ -2367,6 +2461,7 @@ namespace rock::native_animation_authority
         s_runtimeEnabled.store(enabled && s_hookInstalled.load(std::memory_order_acquire), std::memory_order_release);
         if (!enabled) {
             s_manualCycleTwoHandAuthorityActive.store(false, std::memory_order_release);
+            s_manualCycleRockGripBaselines = {};
             cancelLocalManualCycleTestLease();
             const DWORD ownerThread =
                 s_ownerThreadId.load(std::memory_order_acquire);
@@ -2386,6 +2481,7 @@ namespace rock::native_animation_authority
             s_weaponFireHookInstalled.load(std::memory_order_acquire);
         s_localManualCycleTestEnabled.store(effectiveEnabled, std::memory_order_release);
         if (!effectiveEnabled) {
+            s_manualCycleRockGripBaselines = {};
             cancelLocalManualCycleTestLease();
         }
     }
@@ -2398,11 +2494,35 @@ namespace rock::native_animation_authority
         const bool wasActive = s_manualCycleTwoHandAuthorityActive.exchange(
             effectiveActive,
             std::memory_order_acq_rel);
+        if (!effectiveActive) {
+            s_manualCycleRockGripBaselines = {};
+        }
         if (wasActive && !effectiveActive &&
             s_localManualCycleTestLeaseActive.load(std::memory_order_acquire)) {
             cancelLocalManualCycleTestLease();
             ROCK_LOG_DEBUG(Animation,
                 "Native bolt/lever hand-only authority released: full two-hand weapon authority lost");
+        }
+    }
+
+    void setManualCycleRockGripBaselines(
+        const ManualCycleRockGripBaselines& baselines)
+    {
+        s_manualCycleRockGripBaselines = {};
+        if (!s_manualCycleTwoHandAuthorityActive.load(std::memory_order_acquire)) {
+            return;
+        }
+        if (baselines.rightValid &&
+            finiteTransform(baselines.rightHandInWeapon)) {
+            s_manualCycleRockGripBaselines.rightHandInWeapon =
+                baselines.rightHandInWeapon;
+            s_manualCycleRockGripBaselines.rightValid = true;
+        }
+        if (baselines.leftValid &&
+            finiteTransform(baselines.leftHandInWeapon)) {
+            s_manualCycleRockGripBaselines.leftHandInWeapon =
+                baselines.leftHandInWeapon;
+            s_manualCycleRockGripBaselines.leftValid = true;
         }
     }
 
@@ -2798,6 +2918,7 @@ namespace rock::native_animation_authority
         s_runtimeEnabled.store(false, std::memory_order_release);
         s_localManualCycleTestEnabled.store(false, std::memory_order_release);
         s_manualCycleTwoHandAuthorityActive.store(false, std::memory_order_release);
+        s_manualCycleRockGripBaselines = {};
         s_primaryFiringGripCaptureEnabled.store(false, std::memory_order_release);
         s_localReloadTestLeaseFrames.store(0, std::memory_order_release);
         cancelLocalManualCycleTestLease();

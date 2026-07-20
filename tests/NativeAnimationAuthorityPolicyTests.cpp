@@ -130,6 +130,28 @@ int main()
         return !canApplyManualCycleHandAnimation(input);
     }());
 
+    static_assert(!updateManualCycleHandMotionQualification(
+        false,
+        ManualCycleHandMotionSample{
+            .translationGameUnits = 1.499f,
+            .rotationDegrees = 9.999f,
+        }));
+    static_assert(updateManualCycleHandMotionQualification(
+        false,
+        ManualCycleHandMotionSample{
+            .translationGameUnits =
+                kManualCycleHandMotionTranslationThresholdGameUnits,
+        }));
+    static_assert(updateManualCycleHandMotionQualification(
+        false,
+        ManualCycleHandMotionSample{
+            .rotationDegrees =
+                kManualCycleHandMotionRotationThresholdDegrees,
+        }));
+    static_assert(updateManualCycleHandMotionQualification(
+        true,
+        ManualCycleHandMotionSample{}));
+
     // A primary-hand cycle is encoded by the Weapon child's animated inverse
     // local. Reusing its flattened baseline local cancels the hand motion and
     // falsely attributes the delta to the support hand.

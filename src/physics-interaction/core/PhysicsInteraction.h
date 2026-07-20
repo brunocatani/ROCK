@@ -93,6 +93,9 @@ namespace rock
         void synchronizeNativeScopePresentationAfterFrikUpdate();
 
         [[nodiscard]] bool hasNativeManualCycleTwoHandAuthority() const;
+        [[nodiscard]] bool tryGetNativeManualCycleRockGripBaselines(
+            RE::NiTransform& outRightHandInWeapon,
+            RE::NiTransform& outLeftHandInWeapon) const;
 
         bool tryResolveNativeScopeGeometryDecision(bool nativeGeometryDecision, bool& outRockGeometryDecision);
 

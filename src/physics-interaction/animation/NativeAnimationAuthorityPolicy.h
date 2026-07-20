@@ -10,6 +10,8 @@ namespace rock::native_animation_authority_policy
     inline constexpr std::uint32_t kWeapon = 1u << 2;
     inline constexpr std::uint32_t kManualCyclePose = kArms | kHands;
     inline constexpr std::uint32_t kReloadPose = kArms | kHands | kWeapon;
+    inline constexpr float kManualCycleHandMotionTranslationThresholdGameUnits = 1.5f;
+    inline constexpr float kManualCycleHandMotionRotationThresholdDegrees = 10.0f;
 
     enum class LocalReloadLeaseEndReason : std::uint32_t
     {
@@ -92,6 +94,23 @@ namespace rock::native_animation_authority_policy
         return eligibility.twoHandGripActive &&
                !eligibility.firingHandIsLeft &&
                eligibility.weaponTransformOwned;
+    }
+
+    struct ManualCycleHandMotionSample
+    {
+        float translationGameUnits{ 0.0f };
+        float rotationDegrees{ 0.0f };
+    };
+
+    [[nodiscard]] inline constexpr bool updateManualCycleHandMotionQualification(
+        const bool alreadyQualified,
+        const ManualCycleHandMotionSample& sample)
+    {
+        return alreadyQualified ||
+               sample.translationGameUnits >=
+                   kManualCycleHandMotionTranslationThresholdGameUnits ||
+               sample.rotationDegrees >=
+                   kManualCycleHandMotionRotationThresholdDegrees;
     }
 
     struct AuthoredPrimaryFiringGripEligibility

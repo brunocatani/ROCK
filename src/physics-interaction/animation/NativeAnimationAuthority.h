@@ -44,6 +44,14 @@ namespace rock::native_animation_authority
         bool valid{ false };
     };
 
+    struct ManualCycleRockGripBaselines
+    {
+        RE::NiTransform rightHandInWeapon{};
+        RE::NiTransform leftHandInWeapon{};
+        bool rightValid{ false };
+        bool leftValid{ false };
+    };
+
     enum class AuthoredSupportGripCaptureFailureReason : std::uint32_t
     {
         None = 0,
@@ -78,11 +86,14 @@ namespace rock::native_animation_authority
     void setRuntimeEnabled(bool enabled);
     // The existing native-reload experiment also owns a ROCK-local manual
     // weapon-cycle window. With a right-firing full two-hand hold, it resolves
-    // Bethesda's animated hand relations through hFRIK after ROCK has solved
-    // the weapon from the live controllers. A support hand with no authored
-    // delta remains seated; one-hand firing keeps FO4VR's parts-only behavior.
+    // Bethesda's substantial per-hand animation deltas through hFRIK after
+    // ROCK has solved the weapon from the live controllers. Either hand stays
+    // exactly seated until its own native motion qualifies; one-hand firing
+    // keeps FO4VR's parts-only behavior.
     void setLocalManualCycleTestEnabled(bool enabled);
     void setManualCycleTwoHandAuthorityActive(bool active);
+    void setManualCycleRockGripBaselines(
+        const ManualCycleRockGripBaselines& baselines);
     // Independent ROCK-only experiment capture. A byte-validated native arm
     // hook records Bethesda's paired primary/support poses before hFRIK
     // replaces them. The runtime inverts the primary relation onto the live

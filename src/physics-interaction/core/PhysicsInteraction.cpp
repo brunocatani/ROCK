@@ -1969,6 +1969,20 @@ namespace rock
             });
     }
 
+    bool PhysicsInteraction::tryGetNativeManualCycleRockGripBaselines(
+        RE::NiTransform& outRightHandInWeapon,
+        RE::NiTransform& outLeftHandInWeapon) const
+    {
+        outRightHandInWeapon = {};
+        outLeftHandInWeapon = {};
+        if (!hasNativeManualCycleTwoHandAuthority()) {
+            return false;
+        }
+        return _twoHandedGrip.getManualCycleRockGripBaselines(
+            outRightHandInWeapon,
+            outLeftHandInWeapon);
+    }
+
     bool PhysicsInteraction::tryResolveNativeScopeGeometryDecision(const bool nativeGeometryDecision, bool& outRockGeometryDecision)
     {
         outRockGeometryDecision = nativeGeometryDecision;

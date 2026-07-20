@@ -340,6 +340,16 @@ namespace
             s_physicsInteraction &&
             s_physicsInteraction->hasNativeManualCycleTwoHandAuthority();
         native_animation_authority::setManualCycleTwoHandAuthorityActive(active);
+
+        native_animation_authority::ManualCycleRockGripBaselines baselines{};
+        if (active &&
+            s_physicsInteraction->tryGetNativeManualCycleRockGripBaselines(
+                baselines.rightHandInWeapon,
+                baselines.leftHandInWeapon)) {
+            baselines.rightValid = true;
+            baselines.leftValid = true;
+        }
+        native_animation_authority::setManualCycleRockGripBaselines(baselines);
     }
 
     using GameLoopFunc = void (*)(std::uint64_t rcx);

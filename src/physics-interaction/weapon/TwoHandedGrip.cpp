@@ -1644,6 +1644,46 @@ namespace rock
         return true;
     }
 
+    bool TwoHandedGrip::getManualCycleRockGripBaselines(
+        RE::NiTransform& outRightHandInWeapon,
+        RE::NiTransform& outLeftHandInWeapon) const
+    {
+        outRightHandInWeapon = {};
+        outLeftHandInWeapon = {};
+
+        const WeaponPartGrip& supportGrip = partGrip(true);
+        if (_state != TwoHandedState::Gripping ||
+            _firingHandIsLeft ||
+            !ownsWeaponTransform() ||
+            !_hasSolvedWeaponTransform ||
+            !_activeWeaponNode ||
+            !_hasFiringHandWeaponLocal ||
+            !supportGrip.active ||
+            !supportGrip.hasHandWeaponLocal ||
+            !isFiniteTransform(_lastSolvedWeaponTransform) ||
+            !isFiniteTransform(_primaryHandWeaponLocal)) {
+            return false;
+        }
+
+        const RE::NiTransform supportHandWorld =
+            resolvePartGripHandWorld(supportGrip, _activeWeaponNode);
+        if (!isFiniteTransform(supportHandWorld)) {
+            return false;
+        }
+
+        outRightHandInWeapon = _primaryHandWeaponLocal;
+        outLeftHandInWeapon = transform_math::composeTransforms(
+            transform_math::invertTransform(_lastSolvedWeaponTransform),
+            supportHandWorld);
+        if (!isFiniteTransform(outRightHandInWeapon) ||
+            !isFiniteTransform(outLeftHandInWeapon)) {
+            outRightHandInWeapon = {};
+            outLeftHandInWeapon = {};
+            return false;
+        }
+        return true;
+    }
+
     bool TwoHandedGrip::getDebugAuthoritySnapshot(TwoHandedGripDebugSnapshot& outSnapshot) const
     {
         const auto& leftGrip = partGrip(true);

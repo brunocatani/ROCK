@@ -409,6 +409,16 @@ namespace rock
 
         bool getSolvedWeaponTransform(RE::NiTransform& outTransform) const;
 
+        /*
+         * Returns the exact ROCK-authored right firing-hand and left support-
+         * hand targets in the final solved Weapon frame. Native cycle motion
+         * uses these as its neutral pose instead of reading hFRIK's residual
+         * IK result back from the skeleton.
+         */
+        bool getManualCycleRockGripBaselines(
+            RE::NiTransform& outRightHandInWeapon,
+            RE::NiTransform& outLeftHandInWeapon) const;
+
         bool getDebugAuthoritySnapshot(TwoHandedGripDebugSnapshot& outSnapshot) const;
 
         bool getAuthoredSupportGripDebugSnapshot(

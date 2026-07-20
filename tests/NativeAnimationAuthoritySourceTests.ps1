@@ -76,6 +76,15 @@ Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
 Require-Text 'src/ROCKMain.cpp' `
     's_originalGameLoopFunc\(rcx\)[\s\S]*refreshNativeManualCycleTwoHandAuthority\(\)[\s\S]*beginRockFrame[\s\S]*onFrameUpdate\(\)[\s\S]*refreshNativeManualCycleTwoHandAuthority\(\)[\s\S]*ApplyPhase::AfterRock' `
     'Two-hand eligibility must be sampled before lease consumption and again after ROCK grip transitions before final pose publication.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'tryGetNativeManualCycleRockGripBaselines[\s\S]*getManualCycleRockGripBaselines' `
+    'Manual-cycle rebasing must consume ROCK''s dedicated two-hand grip baselines rather than a debug-only snapshot path.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'getManualCycleRockGripBaselines[\s\S]*_primaryHandWeaponLocal[\s\S]*resolvePartGripHandWorld[\s\S]*invertTransform\(_lastSolvedWeaponTransform\)' `
+    'The cycle baselines must preserve ROCK''s exact firing-grip target and convert the resolved support target into the final solved Weapon frame.'
+Require-Text 'src/ROCKMain.cpp' `
+    'refreshNativeManualCycleTwoHandAuthority[\s\S]*tryGetNativeManualCycleRockGripBaselines[\s\S]*setManualCycleRockGripBaselines' `
+    'ROCK must refresh exact grip baselines alongside the two-hand cycle gate before final native publication.'
 Reject-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
     'gunState\s*==\s*RE::GUN_STATE::kReloading' `
     'FO4VR does not publish this VR reload path through ActorState::gunState; lifecycle code must not regress to that poll.'
@@ -100,6 +109,12 @@ Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
     'ManualCycleHandRebase[\s\S]*manualCycleHandRebases[\s\S]*getHandWorldTransform\(hand\)[\s\S]*liveBaselineHandInWeapon[\s\S]*nativeBaselineHandInWeapon[\s\S]*resolveControllerAnchoredPoseCorrection[\s\S]*rebasedHandInWeapon' `
     'Each manual-cycle hand must rebase only the native animation delta onto its live ROCK grip instead of publishing Bethesda''s absolute flat-game basis.'
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
+    'publishManualCycleHandVisual[\s\S]*rockBaselineHandInWeapon[\s\S]*measureManualCycleHandMotion[\s\S]*updateManualCycleHandMotionQualification[\s\S]*ManualCycleHandVisualResult::Suppressed[\s\S]*ManualCycleHandVisualResult::Published' `
+    'Both cycle hands must remain under their exact ROCK grip authority until their own native Weapon-relative motion crosses the shared substantial-motion gate.'
+Require-Text 'src/physics-interaction/animation/NativeAnimationAuthorityPolicy.h' `
+    'kManualCycleHandMotionTranslationThresholdGameUnits\s*=\s*1\.5f[\s\S]*kManualCycleHandMotionRotationThresholdDegrees\s*=\s*10\.0f[\s\S]*alreadyQualified\s*\|\|' `
+    'Manual-cycle hand motion qualification must use explicit translation/rotation thresholds and latch for the remainder of the cycle.'
 Require-Text 'src/physics-interaction/animation/NativeAnimationAuthority.cpp' `
     'applyCapturedPose\(const ApplyPhase phase\)[\s\S]*ApplyPhase::BeforeRock[\s\S]*return true;[\s\S]*applyManualCyclePoseAfterRock' `
     'Manual-cycle IK must be a no-op before ROCK and publish only in the explicit final phase.'
