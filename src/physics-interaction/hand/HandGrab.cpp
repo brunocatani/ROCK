@@ -803,7 +803,7 @@ namespace rock
         {
             const auto* weapon = looseWeaponFormFromRef(refr);
             auto* weaponRoot = refr ? refr->Get3D() : nullptr;
-            if (g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled && weapon && weaponRoot) {
+            if (weapon && weaponRoot) {
                 const auto authored = authored_weapon_grip_library::find(weapon, weaponRoot, f4vr::isInPowerArmor());
                 if (authored.found && authored.rightFiringFingerPose.complete()) {
                     frik_visual_authority::FingerLocalTransformOverride exactRightPose{};

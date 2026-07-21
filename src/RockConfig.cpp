@@ -157,8 +157,6 @@ namespace rock
         rockGrabInputForceSeconds = 0.08f;
 
         rockDeveloperModeEnabled = false;
-        rockAuthoredPrimaryFiringGripTestEnabled = false;
-
         rockLogLevel = logging_policy::DefaultLogLevel;
         rockLogPattern = logging_policy::DefaultLogPattern;
         rockLogSampleMilliseconds = logging_policy::DefaultLogSampleMilliseconds;
@@ -1461,10 +1459,6 @@ namespace rock
             ini.GetBoolValue(EXPERIMENTAL_SECTION, "bMenuTriggerHandEquipEnabled", rockMenuTriggerHandEquipEnabled);
         rockEquipPreferredHandLeft =
             ini.GetBoolValue(EXPERIMENTAL_SECTION, "bEquipPreferredHandLeft", rockEquipPreferredHandLeft);
-        rockAuthoredPrimaryFiringGripTestEnabled = ini.GetBoolValue(
-            EXPERIMENTAL_SECTION,
-            "bAuthoredPrimaryFiringGripTestEnabled",
-            rockAuthoredPrimaryFiringGripTestEnabled);
         rockBodyBoneCollidersEnabled = ini.GetBoolValue(EXPERIMENTAL_SECTION, "bBodyBoneCollidersEnabled", rockBodyBoneCollidersEnabled);
         rockBodyBoneLegAndFootCollidersEnabled =
             ini.GetBoolValue(EXPERIMENTAL_SECTION, "bBodyBoneLegAndFootCollidersEnabled", rockBodyBoneLegAndFootCollidersEnabled);

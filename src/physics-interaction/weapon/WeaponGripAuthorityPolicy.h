@@ -27,7 +27,7 @@ namespace rock::weapon_grip_authority_policy
      * otherwise authoritative; hFRIK's embedded table is retained only for a
      * weapon that has not produced a usable native capture in this session.
      * The live-node fallback is legacy behavior and is deliberately available
-     * only when the authored experiment is disabled by the caller.
+     * only when authored capture is ineligible for the canonical hand.
      */
     [[nodiscard]] constexpr Source select(const Availability& availability) noexcept
     {

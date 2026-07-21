@@ -21,7 +21,6 @@ namespace rock
         const RE::TESObjectWEAP* weapon{ nullptr };
         std::uint64_t weaponOwnershipKey{ 0 };
         std::uint64_t weaponGenerationKey{ 0 };
-        bool enabled{ false };
         bool runtimeInitialized{ false };
         bool visualAuthorityAvailable{ false };
         bool localSkeletonReady{ false };

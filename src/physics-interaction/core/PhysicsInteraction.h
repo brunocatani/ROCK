@@ -100,10 +100,10 @@ namespace rock
 
         void update();
 
-        // Runs after the normal ROCK frame even when update() took an early
-        // lifecycle/menu return, so the tagged primary-hand lease is always
-        // released deterministically when its experiment gate closes.
-        void updateAuthoredPrimaryFiringGripExperiment();
+        // Runs before the normal ROCK interaction frame so weapon-relative
+        // consumers see one authored primary-grip frame. Runtime eligibility
+        // failures clear the tagged hand authority deterministically.
+        void updateAuthoredPrimaryFiringGrip();
 
         void shutdown(::rock::provider::RockProviderLifecycleReason reason = ::rock::provider::RockProviderLifecycleReason::Shutdown);
 

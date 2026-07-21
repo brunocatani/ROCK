@@ -285,8 +285,7 @@ namespace
             runtime.localSkeletonReady &&
             !runtime.compatibilityConfigBlocking;
         authored_weapon_grip_capture::setEnabled(
-            authoredGripCaptureRuntimeEnabled &&
-            g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled);
+            authoredGripCaptureRuntimeEnabled);
         const bool gameplayInputAllowed =
             g_rockConfig.rockEnabled &&
             runtime.localSkeletonReady &&
@@ -317,7 +316,7 @@ namespace
              * collision/probe/grip pass so every weapon-relative subsystem
              * sees the same corrected frame that will be rendered.
              */
-            s_physicsInteraction->updateAuthoredPrimaryFiringGripExperiment();
+            s_physicsInteraction->updateAuthoredPrimaryFiringGrip();
             s_physicsInteraction->update();
             publishPhysicsInteractionIfReady();
         }
@@ -614,8 +613,7 @@ namespace
                     "ROCK: Authored equipped-weapon grip capture hook is unavailable for this runtime build.");
             }
             authored_weapon_grip_capture::setEnabled(
-                g_rockConfig.rockEnabled &&
-                g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled);
+                g_rockConfig.rockEnabled);
             if (!g_rockConfig.rockEnabled) {
                 logger::info("ROCK: Physics disabled in config, skipping creation.");
                 break;
@@ -645,8 +643,7 @@ namespace
             bumpGeneration(s_skeletonGeneration);
             authored_weapon_grip_capture::resetTransientState();
             authored_weapon_grip_capture::setEnabled(
-                g_rockConfig.rockEnabled &&
-                g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled);
+                g_rockConfig.rockEnabled);
             if (msg->data && msg->dataLen >= sizeof(bool)) {
                 const bool isInPA = *static_cast<const bool*>(msg->data);
                 logger::info("ROCK: Power Armor state changed: {}", isInPA ? "IN PA" : "NOT IN PA");

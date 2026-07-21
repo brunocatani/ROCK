@@ -2366,8 +2366,6 @@ namespace rock
         const bool useAuthoredSupportGrip =
             authored_weapon_grip_capture_policy::shouldUseAuthoredSupportGrip(
                 authored_weapon_grip_capture_policy::AuthoredSupportGripCandidateInput{
-                    .featureEnabled =
-                        g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled,
                     .proximityProbeAcquisition =
                         decision.acquisitionSource ==
                         WeaponInteractionAcquisitionSource::ProximityProbe,
@@ -3872,8 +3870,6 @@ namespace rock
         const bool useAuthoredProbeCanonical =
             authored_weapon_grip_capture_policy::shouldUseAuthoredFiringGripProbe(
                 authored_weapon_grip_capture_policy::AuthoredFiringGripProbeInput{
-                    .featureEnabled =
-                        g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled,
                     .proximityProbeAcquisition =
                         handWeaponContact.acquisitionSource ==
                         WeaponInteractionAcquisitionSource::ProximityProbe,
@@ -4039,7 +4035,6 @@ namespace rock
                 palmToGripDistance,
                 g_rockConfig.rockWeaponFiringGripReattachRadius) ||
                 (candidate.gripHeld &&
-                    g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled &&
                     candidate.contact->acquisitionSource ==
                         WeaponInteractionAcquisitionSource::ProximityProbe &&
                     !authoredProviderAuthorityActive &&

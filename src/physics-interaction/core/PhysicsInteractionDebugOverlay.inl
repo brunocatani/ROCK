@@ -169,8 +169,10 @@
         const bool drawGrabTransformTelemetryText = drawGrabTransformTelemetry && g_rockConfig.rockDebugGrabTransformTelemetryText;
         const bool drawPerformanceProfilerOverlay = performance_profiler::overlayTextEnabled();
         const bool drawWeaponAuthorityDebug = _twoHandedGrip.isGripping() && (g_rockConfig.rockDebugShowHandAxes || drawGrabPivots);
-        const bool drawAuthoredSupportGripDebug =
-            g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled;
+        // Authored support-grip diagnostics remain available through the
+        // existing weapon-authority debug controls without coupling normal
+        // production behavior to a debug-overlay writer.
+        const bool drawAuthoredSupportGripDebug = drawWeaponAuthorityDebug;
         const bool drawNativeScopeActivation = g_rockConfig.rockDebugDrawNativeScopeActivation;
         const bool drawWorldOriginDiagnostics = g_rockConfig.rockDebugWorldObjectOriginDiagnostics;
         const bool drawCustomCalibrationOffset = g_rockConfig.rockDebugCustomCalibrationOffset;

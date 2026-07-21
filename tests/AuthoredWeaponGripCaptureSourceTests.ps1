@@ -43,7 +43,8 @@ Reject-Text 'src/physics-interaction/animation/AuthoredWeaponGripCapture.cpp' 'W
 
 Require-Text 'src/ROCKMain.cpp' 'dispatchAnimationPhaseCallbacksV1\([\s\S]*BeforeRock[\s\S]*onFrameUpdate\(\)[\s\S]*AfterRock[\s\S]*Complete' 'ROCK must expose ordered addon animation phases around its update.'
 Reject-Text 'src/ROCKMain.cpp' 'setLocalReloadTestEnabled|setLocalManualCycleTestEnabled|applyCapturedPose|installPostUpdateHook' 'ROCK main must not execute the separated reload/bolt runtime.'
-Require-Text 'src/ROCKMain.cpp' 'authored_weapon_grip_capture::installHook\(\)[\s\S]*rockAuthoredPrimaryFiringGripTestEnabled' 'ROCK must retain and configure its authored equipped-weapon grip capture.'
+Require-Text 'src/ROCKMain.cpp' 'authored_weapon_grip_capture::installHook\(\)' 'ROCK must retain its authored equipped-weapon grip capture hook.'
+Require-Text 'src/ROCKMain.cpp' 'authored_weapon_grip_capture::setEnabled\(\s*authoredGripCaptureRuntimeEnabled\s*\)' 'ROCK must unconditionally run authored equipped-weapon grip capture while the runtime is eligible.'
 Require-Text 'src/api/ROCKProviderApi.h' 'enum class RockProviderAnimationPhaseV1[\s\S]*NativeGraphOutput' 'ROCK V1 must expose the proven native graph-output capture phase.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'phaseFrameIndex\s*=\s*s_activeAnimationPhaseFrameIndex[\s\S]*if \(phaseFrameIndex == 0\)' 'NativeGraphOutput and the later ROCK phases must share one frame identity.'
 Reject-Text 'src/api/ROCKProviderApi.cpp' 'phase == RockProviderAnimationPhaseV1::BeforeRock\s*\|\|' 'BeforeRock must not replace the frame identity opened by NativeGraphOutput.'
@@ -55,7 +56,9 @@ Require-Text 'src/api/ROCKProviderApi.cpp' 'apiPublishNativeAnimationRuntimeV1[\
 Require-Text 'src/physics-interaction/core/PhysicsInteractionProvider.inl' 'queryProviderEquippedWeaponGripStateV1[\s\S]*RightHandInWeaponValid[\s\S]*LeftHandInWeaponValid' 'ROCK must expose exact equipped-weapon grip baselines to addons.'
 
 Reject-Text 'src/RockConfig.h' 'rockNativeReloadAnimationAuthorityTestEnabled|rockNativeReloadAnimationPartialAuthorityTestEnabled' 'Reload validation configuration must not remain in ROCK.'
-Require-Text 'src/RockConfig.h' 'rockAuthoredPrimaryFiringGripTestEnabled' 'ROCK must retain the authored primary/equipped-grip switch.'
+Reject-Text 'src/RockConfig.h' 'rockAuthoredPrimaryFiringGripTestEnabled' 'The production authored primary/equipped-grip path must not retain an experimental config switch.'
+Reject-Text 'data/config/ROCK.ini' 'bAuthoredPrimaryFiringGripTestEnabled' 'Users must not be able to disable the production authored primary/equipped-grip path.'
+Reject-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' 'input\.enabled|experiment-disabled' 'The production authored primary grip runtime must not retain its removed experimental gate.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'AuthoredWeaponGripCaptureSourceTests failed:' -ForegroundColor Red

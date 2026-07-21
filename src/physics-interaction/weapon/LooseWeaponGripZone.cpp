@@ -123,20 +123,18 @@ namespace rock::loose_weapon_grip_zone
                 weapon,
                 looseRoot,
                 f4vr::isInPowerArmor());
-            const bool authoredFeatureEnabled =
-                g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled &&
-                !canonicalHandIsLeft;
+            const bool authoredGripEligible = !canonicalHandIsLeft;
             const auto selectedSource = weapon_grip_authority_policy::select(
                 weapon_grip_authority_policy::Availability{
                     .frikCustomFile =
                         frikLookup.found &&
                         frikLookup.source == frik_weapon_offset_cache::OffsetSource::CustomFile,
-                    .authoredAnimation = authoredFeatureEnabled && authoredLookup.found,
+                    .authoredAnimation = authoredGripEligible && authoredLookup.found,
                     .frikEmbeddedResource =
                         frikLookup.found &&
                         frikLookup.source == frik_weapon_offset_cache::OffsetSource::EmbeddedResource,
                     .allowFrikLiveNodeFallback =
-                        !authoredFeatureEnabled &&
+                        !authoredGripEligible &&
                         frikLookup.found &&
                         frikLookup.source ==
                             frik_weapon_offset_cache::OffsetSource::LiveWeaponNodeFallback,
@@ -177,7 +175,7 @@ namespace rock::loose_weapon_grip_zone
                     canonicalHandWorld);
                 state.reason = frikLookup.reason;
             } else {
-                state.reason = authoredFeatureEnabled ?
+                state.reason = authoredGripEligible ?
                                    authoredLookup.reason :
                                    weapon_grip_authority_policy::sourceName(selectedSource);
                 return false;

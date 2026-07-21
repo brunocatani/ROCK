@@ -14,7 +14,6 @@ namespace rock::authored_weapon_grip_capture_policy
 
     struct AuthoredPrimaryFiringGripEligibility
     {
-        bool enabled{ false };
         bool runtimeInitialized{ false };
         bool visualAuthorityAvailable{ false };
         bool localSkeletonReady{ false };
@@ -35,7 +34,6 @@ namespace rock::authored_weapon_grip_capture_policy
 
     struct AuthoredSupportGripCandidateInput
     {
-        bool featureEnabled{ false };
         bool proximityProbeAcquisition{ false };
         bool authoredSeatTouchAcquisition{ false };
         bool providerAuthorityActive{ false };
@@ -48,7 +46,6 @@ namespace rock::authored_weapon_grip_capture_policy
 
     struct AuthoredFiringGripProbeInput
     {
-        bool featureEnabled{ false };
         bool proximityProbeAcquisition{ false };
         bool providerAuthorityActive{ false };
         bool attachOnly{ false };
@@ -58,8 +55,7 @@ namespace rock::authored_weapon_grip_capture_policy
     [[nodiscard]] constexpr bool shouldApplyAuthoredPrimaryFiringGrip(
         const AuthoredPrimaryFiringGripEligibility& input)
     {
-        return input.enabled &&
-               input.runtimeInitialized &&
+        return input.runtimeInitialized &&
                input.visualAuthorityAvailable &&
                input.localSkeletonReady &&
                !input.menuBlocking &&
@@ -80,8 +76,7 @@ namespace rock::authored_weapon_grip_capture_policy
     [[nodiscard]] constexpr bool shouldUseAuthoredSupportGrip(
         const AuthoredSupportGripCandidateInput& input)
     {
-        return input.featureEnabled &&
-               (input.proximityProbeAcquisition ||
+        return (input.proximityProbeAcquisition ||
                    input.authoredSeatTouchAcquisition) &&
                !input.providerAuthorityActive &&
                !input.attachOnly &&
@@ -94,8 +89,7 @@ namespace rock::authored_weapon_grip_capture_policy
     [[nodiscard]] constexpr bool shouldUseAuthoredFiringGripProbe(
         const AuthoredFiringGripProbeInput& input)
     {
-        return input.featureEnabled &&
-               input.proximityProbeAcquisition &&
+        return input.proximityProbeAcquisition &&
                !input.providerAuthorityActive &&
                !input.attachOnly &&
                input.authoredCanonicalAvailable;

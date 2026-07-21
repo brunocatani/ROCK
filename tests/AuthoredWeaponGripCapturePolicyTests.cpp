@@ -65,7 +65,6 @@ int main()
     static_assert(supportInWeapon.translate == 70.0f);
 
     constexpr AuthoredPrimaryFiringGripEligibility eligible{
-        .enabled = true,
         .runtimeInitialized = true,
         .visualAuthorityAvailable = true,
         .localSkeletonReady = true,
@@ -113,7 +112,6 @@ int main()
     }());
 
     constexpr AuthoredSupportGripCandidateInput supportEligible{
-        .featureEnabled = true,
         .proximityProbeAcquisition = true,
         .captureValid = true,
         .weaponIdentityMatches = true,
@@ -144,7 +142,6 @@ int main()
     }());
 
     constexpr AuthoredFiringGripProbeInput firingProbeEligible{
-        .featureEnabled = true,
         .proximityProbeAcquisition = true,
         .authoredCanonicalAvailable = true,
     };

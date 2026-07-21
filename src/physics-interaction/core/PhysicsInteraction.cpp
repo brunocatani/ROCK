@@ -3392,7 +3392,7 @@ namespace rock
         _generatedBodyStepDrive.registerForNextStep(bhk, hknp);
     }
 
-    void PhysicsInteraction::updateAuthoredPrimaryFiringGripExperiment()
+    void PhysicsInteraction::updateAuthoredPrimaryFiringGrip()
     {
         const auto& runtime = runtime_state::currentFrame();
         auto* weaponNode = resolveEquippedWeaponInteractionNode();
@@ -3407,7 +3407,8 @@ namespace rock
         std::uint64_t weaponOwnershipKey =
             weaponNode ? _weaponCollision.getCurrentEquippedWeaponOwnershipKey() : 0;
         if (weaponNode && weaponOwnershipKey == 0) {
-            // Keep the experiment independent of generated weapon collision.
+            // Keep authored grip alignment independent of generated weapon
+            // collision.
             // The richer stack/instance key wins when available; the equipped
             // form remains a stable freshness boundary when collision is off.
             weaponOwnershipKey = currentEquippedWeaponFormId();
@@ -3430,7 +3431,6 @@ namespace rock
             .weapon = equippedWeapon,
             .weaponOwnershipKey = weaponOwnershipKey,
             .weaponGenerationKey = weaponGenerationKey,
-            .enabled = g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled,
             .runtimeInitialized = _initialized.load(std::memory_order_acquire),
             .visualAuthorityAvailable = runtime.visualAuthorityAvailable,
             .localSkeletonReady = runtime.localSkeletonReady,
@@ -3455,8 +3455,7 @@ namespace rock
 
         if (_equipVisualBridge.isHandPoseHandoffActive()) {
             const bool handoffHandIsLeft = _equipVisualBridge.handPoseHandoffIsLeft();
-            if (!g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled ||
-                nativeAuthorityFlags != 0 ||
+            if (nativeAuthorityFlags != 0 ||
                 leftHandedMode ||
                 runtime.localMenuBlocking ||
                 runtime.compatibilityConfigBlocking) {

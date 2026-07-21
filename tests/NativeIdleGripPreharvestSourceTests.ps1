@@ -115,9 +115,12 @@ Require-Text $source `
 Reject-Text $source `
     'ExtraAnimGraphPreload|kLoadAnimGraphs|isFinishedLoading' `
     'The actor-bound ExtraAnimGraphPreload completion path must not return after its verified FO4VR crash.'
+Reject-Text $source `
+    'rockAuthoredPrimaryFiringGripTestEnabled|experimentNoLongerEligible' `
+    'Native idle-grip preharvest must be a production ROCK path, not an experimental config branch.'
 Require-Text $source `
-    'rockAuthoredPrimaryFiringGripTestEnabled' `
-    'The proof must remain behind the existing ROCK authored-grip experiment.'
+    'f4vr::isLeftHandedMode\(\)[\s\S]*authoredGripNoLongerEligible' `
+    'Native idle-grip preharvest must retain its explicit fail-closed unsupported left-handed boundary.'
 Require-Text $source `
     'authored_weapon_grip_library::publishResolvedVariant[\s\S]{0,300}CaptureSource::NativeIdlePreharvest' `
     'The proof must publish only through ROCK''s bounded authored-grip cache with explicit preharvest provenance.'

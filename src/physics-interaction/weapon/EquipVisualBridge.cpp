@@ -229,10 +229,9 @@ namespace rock
             frikLookup.found &&
             frikLookup.source == frik_weapon_offset_cache::OffsetSource::CustomFile;
         const auto authoredLookup =
-            g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled &&
-                !customFrikOffsetPresent && input.weapon ?
-            authored_weapon_grip_library::find(input.weapon, model, f4vr::isInPowerArmor()) :
-            authored_weapon_grip_library::LookupResult{};
+            !customFrikOffsetPresent && input.weapon ?
+                authored_weapon_grip_library::find(input.weapon, model, f4vr::isInPowerArmor()) :
+                authored_weapon_grip_library::LookupResult{};
 
         RE::NiTransform resolvedHandWorld{};
         RE::NiTransform resolvedHandWeaponLocal{};

@@ -1244,8 +1244,8 @@ namespace rock::native_idle_grip_preharvest
                     return false;
                 }
 
-                if (!g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled || f4vr::isLeftHandedMode()) {
-                    finishWithoutPublishing(state, "experimentNoLongerEligible");
+                if (f4vr::isLeftHandedMode()) {
+                    finishWithoutPublishing(state, "authoredGripNoLongerEligible");
                     return true;
                 }
 
@@ -1291,8 +1291,8 @@ namespace rock::native_idle_grip_preharvest
             if (!state.native.isAnimationSubGraphLoaded(&holder->animationGraphManager, &job.subgraphHandles, &priority)) {
                 return false;
             }
-            if (!g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled || f4vr::isLeftHandedMode()) {
-                finishWithoutPublishing(state, "experimentNoLongerEligible");
+            if (f4vr::isLeftHandedMode()) {
+                finishWithoutPublishing(state, "authoredGripNoLongerEligible");
                 return true;
             }
 
@@ -1405,7 +1405,6 @@ namespace rock::native_idle_grip_preharvest
                 (void)progressJob(state);
             }
             return state.job.phase == Phase::Idle &&
-                   g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled &&
                    !f4vr::isLeftHandedMode() &&
                    resolveNativeFunctions(state);
         }

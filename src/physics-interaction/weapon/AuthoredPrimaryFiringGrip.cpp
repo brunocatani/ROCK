@@ -133,11 +133,6 @@ namespace rock
         const auto supportCaptureStatus =
             authored_weapon_grip_capture::queryAuthoredSupportGripCaptureStatus();
 
-        if (!input.enabled) {
-            reset("experiment-disabled", weaponAuthority);
-            return;
-        }
-
         weaponAuthority.setAuthoredPrimaryFiringGripFingerPoseSuppressed(input.nativeReloadAuthorityActive);
 
         if (input.nativeReloadAuthorityActive) {
@@ -415,7 +410,6 @@ namespace rock
         }
 
         const authored_weapon_grip_capture_policy::AuthoredPrimaryFiringGripEligibility eligibility{
-            .enabled = input.enabled,
             .runtimeInitialized = input.runtimeInitialized,
             .visualAuthorityAvailable = input.visualAuthorityAvailable,
             .localSkeletonReady = input.localSkeletonReady,
