@@ -9,6 +9,10 @@ namespace rock::debug_overlay_policy
     inline constexpr std::uint32_t kDefaultShapeCacheBudget = 512;
     inline constexpr std::uint32_t kMaxShapeCacheBudget = 4096;
     inline constexpr std::uint32_t kMaxDetailedConvexSupportVertices = 32;
+    inline constexpr std::uint32_t kDefaultMaxCompoundChildren = 256;
+    inline constexpr std::uint32_t kMaxCompoundChildren = 1024;
+    inline constexpr std::uint32_t kDefaultMaxCompoundDepth = 4;
+    inline constexpr std::uint32_t kMaxCompoundDepth = 8;
 
     enum class ShapeDecodeMode : std::uint8_t
     {
@@ -81,6 +85,28 @@ namespace rock::debug_overlay_policy
         return static_cast<std::uint32_t>(requested);
     }
 
+    inline std::uint32_t clampMaxCompoundChildren(int requested)
+    {
+        if (requested < 1) {
+            return 1;
+        }
+        if (requested > static_cast<int>(kMaxCompoundChildren)) {
+            return kMaxCompoundChildren;
+        }
+        return static_cast<std::uint32_t>(requested);
+    }
+
+    inline std::uint32_t clampMaxCompoundDepth(int requested)
+    {
+        if (requested < 1) {
+            return 1;
+        }
+        if (requested > static_cast<int>(kMaxCompoundDepth)) {
+            return kMaxCompoundDepth;
+        }
+        return static_cast<std::uint32_t>(requested);
+    }
+
     inline bool shouldUseBoundsForHeavyConvex(std::uint32_t supportVertexCount, int maxDetailedSupportVertices, bool boundsFallbackEnabled)
     {
         if (!boundsFallbackEnabled) {
@@ -97,6 +123,8 @@ namespace rock::debug_overlay_policy
         case 2:
         case 3:
         case 4:
+        case 7:
+        case 8:
         case 11:
             return true;
         default:
@@ -129,11 +157,17 @@ namespace rock::debug_overlay_policy
         return seed ^ (value + 0x9e3779b97f4a7c15ull + (seed << 6) + (seed >> 2));
     }
 
-    inline std::uint64_t makeShapeDecodeSettingsKey(int maxConvexSupportVertices, bool useBoundsForHeavyConvex)
+    inline std::uint64_t makeShapeDecodeSettingsKey(
+        int maxConvexSupportVertices,
+        bool useBoundsForHeavyConvex,
+        int maxCompoundChildren = static_cast<int>(kDefaultMaxCompoundChildren),
+        int maxCompoundDepth = static_cast<int>(kDefaultMaxCompoundDepth))
     {
         std::uint64_t key = 0xcbf29ce484222325ull;
         key = mixOverlaySettingsKey(key, clampMaxConvexSupportVertices(maxConvexSupportVertices));
         key = mixOverlaySettingsKey(key, useBoundsForHeavyConvex ? 1ull : 0ull);
+        key = mixOverlaySettingsKey(key, clampMaxCompoundChildren(maxCompoundChildren));
+        key = mixOverlaySettingsKey(key, clampMaxCompoundDepth(maxCompoundDepth));
         return key;
     }
 

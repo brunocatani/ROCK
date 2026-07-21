@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <utility>
 
 #include "physics-interaction/debug/DebugConvexHullMesh.h"
@@ -277,6 +278,115 @@ namespace rock::debug_overlay_shape
             result.decodeMode = result.mesh.valid ? debug_overlay_policy::ShapeDecodeMode::Detailed : debug_overlay_policy::ShapeDecodeMode::Unsupported;
             return result;
         }
+
+        BuiltShape makeTriangle(const ShapeRecipe& recipe)
+        {
+            BuiltShape result{};
+            result.shapeType = recipe.shapeType;
+            if (recipe.vertices.size() != 3) {
+                return result;
+            }
+
+            result.mesh.vertices = recipe.vertices;
+            result.mesh.indices = { 0, 1, 2, 2, 1, 0 };
+            result.mesh.valid = true;
+            result.decodeMode = debug_overlay_policy::ShapeDecodeMode::Detailed;
+            return result;
+        }
+
+        bool transformCompoundChild(MeshData& mesh, const ShapeRecipe::Child& child, float havokToGameScale)
+        {
+            if (!mesh.valid || !std::isfinite(havokToGameScale) || havokToGameScale <= 0.0f) {
+                return false;
+            }
+            for (std::size_t index = 0; index < 3; ++index) {
+                if (!std::isfinite(child.scale[index])) {
+                    return false;
+                }
+            }
+            for (const float value : child.transform) {
+                if (!std::isfinite(value)) {
+                    return false;
+                }
+            }
+
+            const float translationX = child.transform[12] * havokToGameScale;
+            const float translationY = child.transform[13] * havokToGameScale;
+            const float translationZ = child.transform[14] * havokToGameScale;
+            for (auto& vertex : mesh.vertices) {
+                const float x = vertex.x * child.scale[0];
+                const float y = vertex.y * child.scale[1];
+                const float z = vertex.z * child.scale[2];
+                vertex.x = child.transform[0] * x + child.transform[4] * y + child.transform[8] * z + translationX;
+                vertex.y = child.transform[1] * x + child.transform[5] * y + child.transform[9] * z + translationY;
+                vertex.z = child.transform[2] * x + child.transform[6] * y + child.transform[10] * z + translationZ;
+                if (!std::isfinite(vertex.x) || !std::isfinite(vertex.y) || !std::isfinite(vertex.z)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        bool appendMesh(MeshData& destination, const MeshData& source)
+        {
+            if (!source.valid || source.vertices.empty() || source.indices.empty()) {
+                return false;
+            }
+            constexpr std::size_t maxVertices = (std::numeric_limits<std::uint16_t>::max)();
+            if (source.vertices.size() > maxVertices || destination.vertices.size() > maxVertices - source.vertices.size()) {
+                return false;
+            }
+            for (const auto index : source.indices) {
+                if (index >= source.vertices.size()) {
+                    return false;
+                }
+            }
+
+            const auto base = static_cast<std::uint16_t>(destination.vertices.size());
+            destination.vertices.insert(destination.vertices.end(), source.vertices.begin(), source.vertices.end());
+            destination.indices.reserve(destination.indices.size() + source.indices.size());
+            for (const auto index : source.indices) {
+                destination.indices.push_back(static_cast<std::uint16_t>(base + index));
+            }
+            return true;
+        }
+
+        BuiltShape makeCompound(const ShapeRecipe& recipe)
+        {
+            BuiltShape result{};
+            result.shapeType = recipe.shapeType;
+            result.decodeMode = debug_overlay_policy::ShapeDecodeMode::Detailed;
+            if (recipe.children.empty() || recipe.children.size() > recipe.settings.maxCompoundChildren) {
+                result.decodeMode = debug_overlay_policy::ShapeDecodeMode::Unsupported;
+                return result;
+            }
+
+            for (const auto& child : recipe.children) {
+                if (!child.recipe) {
+                    result.mesh = {};
+                    result.decodeMode = debug_overlay_policy::ShapeDecodeMode::Unsupported;
+                    return result;
+                }
+
+                auto childBuilt = buildMeshFromRecipe(*child.recipe);
+                if (!childBuilt.mesh.valid || childBuilt.decodeMode == debug_overlay_policy::ShapeDecodeMode::Unsupported ||
+                    !transformCompoundChild(childBuilt.mesh, child, recipe.settings.havokToGameScale) ||
+                    !appendMesh(result.mesh, childBuilt.mesh)) {
+                    result.mesh = {};
+                    result.decodeMode = debug_overlay_policy::ShapeDecodeMode::Unsupported;
+                    return result;
+                }
+                if (childBuilt.decodeMode == debug_overlay_policy::ShapeDecodeMode::Proxy) {
+                    result.decodeMode = debug_overlay_policy::ShapeDecodeMode::Proxy;
+                }
+            }
+
+            result.mesh.valid = !result.mesh.vertices.empty() && !result.mesh.indices.empty();
+            if (!result.mesh.valid) {
+                result.decodeMode = debug_overlay_policy::ShapeDecodeMode::Unsupported;
+            }
+            return result;
+        }
     }
 
     BuiltShape buildMeshFromRecipe(const ShapeRecipe& recipe)
@@ -303,6 +413,8 @@ namespace rock::debug_overlay_shape
             return result;
         case ShapeRecipe::Kind::ConvexVertices:
             return makeConvex(recipe);
+        case ShapeRecipe::Kind::Triangle:
+            return makeTriangle(recipe);
         case ShapeRecipe::Kind::ScaledConvex:
             if (!recipe.inner) {
                 return result;
@@ -313,12 +425,17 @@ namespace rock::debug_overlay_shape
                 return result;
             }
             for (auto& vertex : result.mesh.vertices) {
-                vertex.x *= recipe.scale[0];
-                vertex.y *= recipe.scale[1];
-                vertex.z *= recipe.scale[2];
+                vertex.x = vertex.x * recipe.scale[0] + recipe.translation[0] * recipe.settings.havokToGameScale;
+                vertex.y = vertex.y * recipe.scale[1] + recipe.translation[1] * recipe.settings.havokToGameScale;
+                vertex.z = vertex.z * recipe.scale[2] + recipe.translation[2] * recipe.settings.havokToGameScale;
+                if (!std::isfinite(vertex.x) || !std::isfinite(vertex.y) || !std::isfinite(vertex.z)) {
+                    return BuiltShape{};
+                }
             }
             result.shapeType = recipe.shapeType;
             return result;
+        case ShapeRecipe::Kind::Compound:
+            return makeCompound(recipe);
         case ShapeRecipe::Kind::Unsupported:
         default:
             return result;

@@ -8,6 +8,7 @@ $ErrorActionPreference = 'Stop'
 $failures = [System.Collections.Generic.List[string]]::new()
 $overlay = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/debug/DebugBodyOverlay.cpp')
 $pipeline = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/debug/DebugOverlayShapePipeline.cpp')
+$geometry = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/debug/DebugOverlayShapeGeometry.cpp')
 $physics = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/core/PhysicsInteraction.cpp')
 
 function Require-In {
@@ -32,6 +33,20 @@ Require-In $overlay 'computeShapeGeometryFingerprintSeh[\s\S]*computeShapeGeomet
     'Geometry identity must use the same fail-closed SEH boundary as recipe capture.'
 Require-In $overlay 'shapePipeline\(\)\.reserve[\s\S]*captureShapeRecipeGuarded[\s\S]*shapePipeline\(\)\.submit' `
     'Queue/cache admission must happen before expensive recipe capture and submission.'
+Require-In $overlay 'kScaledConvexScaleOffset\s*=\s*0x40[\s\S]*kScaledConvexTranslationOffset\s*=\s*0x50' `
+    'Scaled-convex capture must use the FO4VR constructor-verified scale and translation offsets.'
+Require-In $overlay 'kCompoundSlotArrayOffset\s*=\s*0x60[\s\S]*kCompoundSlotCountOffset\s*=\s*0x68[\s\S]*kCompoundSlotStride\s*=\s*0x80' `
+    'Compound capture must use the independently verified FO4VR root and slot layout.'
+Require-In $overlay 'case 4:[\s\S]*GetSupportVertices[\s\S]*Kind::Triangle' `
+    'Triangle recipes must use the verified CommonLib support-vertex virtual and a dedicated triangle path.'
+Require-In $overlay 'case 7:[\s\S]*case 8:[\s\S]*kCompoundSlotActiveOffset[\s\S]*captureShapeRecipeUnsafe\(childShapeAddress' `
+    'Static and dynamic compound recipes must inspect active verified slots and recursively capture every active child.'
+Require-In $geometry 'makeCompound[\s\S]*ShapeDecodeMode::Unsupported[\s\S]*appendMesh' `
+    'Compound mesh construction must fail closed instead of publishing partial child geometry.'
+Reject-In $overlay 'kScaledConvexScaleOffset\s*=\s*0x38|kScaledConvexTranslationOffset\s*=\s*0x48' `
+    'The disputed standalone scaled-convex offsets must not return.'
+Reject-In $overlay 'kCompoundSlotArrayOffset\s*=\s*0x58|kCompoundSlotCountOffset\s*=\s*0x60' `
+    'The disputed standalone compound root offsets must not return.'
 Require-In $overlay 'captureBodyWorldAabb' `
     'The publisher must capture a real engine body AABB.'
 Require-In $overlay 'worldAabbMatrix[\s\S]*s_d3d\.aabbProxy' `

@@ -16,6 +16,8 @@ namespace rock::debug_overlay_shape
         float x{ 0.0f };
         float y{ 0.0f };
         float z{ 0.0f };
+
+        bool operator==(const Vertex&) const = default;
     };
 
     struct MeshData
@@ -48,6 +50,8 @@ namespace rock::debug_overlay_shape
     {
         float havokToGameScale{ 0.0f };
         std::uint32_t maxConvexSupportVertices{ 0 };
+        std::uint32_t maxCompoundChildren{ 0 };
+        std::uint32_t maxCompoundDepth{ 0 };
         bool useBoundsForHeavyConvex{ false };
     };
 
@@ -59,7 +63,21 @@ namespace rock::debug_overlay_shape
             Sphere,
             Capsule,
             ConvexVertices,
-            ScaledConvex
+            Triangle,
+            ScaledConvex,
+            Compound
+        };
+
+        struct Child
+        {
+            std::array<float, 16> transform{
+                1.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 1.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 1.0f, 0.0f,
+                0.0f, 0.0f, 0.0f, 1.0f
+            };
+            std::array<float, 4> scale{ 1.0f, 1.0f, 1.0f, 0.0f };
+            std::unique_ptr<ShapeRecipe> recipe;
         };
 
         Kind kind{ Kind::Unsupported };
@@ -68,8 +86,10 @@ namespace rock::debug_overlay_shape
         std::array<float, 4> vertexA{};
         std::array<float, 4> vertexB{};
         std::array<float, 4> scale{ 1.0f, 1.0f, 1.0f, 0.0f };
+        std::array<float, 4> translation{};
         std::vector<Vertex> vertices;
         std::unique_ptr<ShapeRecipe> inner;
+        std::vector<Child> children;
         int shapeType{ -1 };
         bool canonicalUnitSphere{ false };
         bool valid{ false };

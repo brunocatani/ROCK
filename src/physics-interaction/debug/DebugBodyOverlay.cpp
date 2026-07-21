@@ -62,6 +62,20 @@ namespace rock::debug
         constexpr std::uintptr_t kBodyMotionPropertiesOffset = 0x72;
         constexpr std::uintptr_t kMotionPositionOffset = 0x00;
         constexpr std::uintptr_t kMotionOrientationOffset = 0x10;
+        // Concrete scaled/compound layouts are absent from CommonLibF4VR.
+        // These FO4VR offsets were independently verified in the constructors,
+        // alloc/copy helpers, key-mask code, and shape consumers recorded in
+        // DEBUG_OVERLAY_MODERNIZATION_PROGRESS.md.
+        constexpr std::uintptr_t kScaledConvexInnerShapeOffset = 0x30;
+        constexpr std::uintptr_t kScaledConvexScaleOffset = 0x40;
+        constexpr std::uintptr_t kScaledConvexTranslationOffset = 0x50;
+        constexpr std::uintptr_t kCompoundSlotArrayOffset = 0x60;
+        constexpr std::uintptr_t kCompoundSlotCountOffset = 0x68;
+        constexpr std::uintptr_t kCompoundSlotStride = 0x80;
+        constexpr std::uintptr_t kCompoundSlotTransformOffset = 0x00;
+        constexpr std::uintptr_t kCompoundSlotScaleOffset = 0x40;
+        constexpr std::uintptr_t kCompoundSlotShapeOffset = 0x50;
+        constexpr std::uintptr_t kCompoundSlotActiveOffset = 0x60;
         constexpr std::uint32_t kInvalidBodyId = 0x7FFF'FFFF;
         constexpr std::uint32_t kFreeMotionIndex = 0x7FFF'FFFF;
         constexpr std::uint32_t kMaxBodyIndex = body_frame::kMaxReadableBodyIndex;
@@ -143,6 +157,8 @@ namespace rock::debug
         {
             std::uint32_t maxShapeGenerationsPerFrame{ 0 };
             int maxConvexSupportVertices{ 0 };
+            std::uint32_t maxCompoundChildren{ debug_overlay_policy::kDefaultMaxCompoundChildren };
+            std::uint32_t maxCompoundDepth{ debug_overlay_policy::kDefaultMaxCompoundDepth };
             std::uint64_t shapeDecodeSettingsKey{ 0 };
             debug_overlay_shape::PipelineLimits pipelineLimits{};
             std::uint32_t maxGpuUploadsPerFrame{ debug_overlay_shape::kDefaultMaxUploadsPerFrame };
@@ -394,6 +410,7 @@ namespace rock::debug
 
         std::uint64_t computeShapeGeometryFingerprintUnsafe(
             std::uintptr_t shapeAddress,
+            const OverlayRenderSettings& settings,
             int depth = 0,
             int* rootShapeType = nullptr,
             float* rootConvexRadius = nullptr)
@@ -406,7 +423,7 @@ namespace rock::debug
              * include a small geometry fingerprint instead of trusting the
              * pointer alone.
              */
-            if (!shapeAddress || depth > 4) {
+            if (!shapeAddress || depth > static_cast<int>(settings.maxCompoundDepth)) {
                 return 0;
             }
 
@@ -462,13 +479,57 @@ namespace rock::debug
                     }
                     return fingerprint;
                 }
+                case 7:
+                case 8: {
+                    const auto slotArray = *reinterpret_cast<const std::uintptr_t*>(shapeAddress + kCompoundSlotArrayOffset);
+                    const auto slotCount = *reinterpret_cast<const std::int32_t*>(shapeAddress + kCompoundSlotCountOffset);
+                    fingerprint = mixShapeFingerprint(fingerprint, static_cast<std::uint32_t>((std::max)(slotCount, 0)));
+                    if (!slotArray || slotCount <= 0 ||
+                        static_cast<std::uint32_t>(slotCount) > settings.maxCompoundChildren) {
+                        return fingerprint;
+                    }
+
+                    for (std::int32_t index = 0; index < slotCount; ++index) {
+                        const auto slotOffset = static_cast<std::uintptr_t>(index) * kCompoundSlotStride;
+                        if (slotArray > (std::numeric_limits<std::uintptr_t>::max)() - slotOffset) {
+                            return 0;
+                        }
+                        const auto slot = slotArray + slotOffset;
+                        const auto active = *reinterpret_cast<const std::uint8_t*>(slot + kCompoundSlotActiveOffset);
+                        fingerprint = mixShapeFingerprint(fingerprint, static_cast<std::uint32_t>(index));
+                        fingerprint = mixShapeFingerprint(fingerprint, active);
+                        if (active != 0) {
+                            continue;
+                        }
+
+                        const auto childShape = *reinterpret_cast<const std::uintptr_t*>(slot + kCompoundSlotShapeOffset);
+                        fingerprint = mixShapeFingerprint(fingerprint, childShape);
+                        const auto* transform = reinterpret_cast<const float*>(slot + kCompoundSlotTransformOffset);
+                        const auto* childScale = reinterpret_cast<const float*>(slot + kCompoundSlotScaleOffset);
+                        for (std::size_t component = 0; component < 16; ++component) {
+                            fingerprint = mixShapeFloat(fingerprint, transform[component]);
+                        }
+                        for (std::size_t component = 0; component < 3; ++component) {
+                            fingerprint = mixShapeFloat(fingerprint, childScale[component]);
+                        }
+                        fingerprint = mixShapeFingerprint(
+                            fingerprint,
+                            computeShapeGeometryFingerprintUnsafe(childShape, settings, depth + 1));
+                    }
+                    return fingerprint;
+                }
                 case 11: {
-                    const auto innerShape = *reinterpret_cast<std::uintptr_t*>(shapeAddress + 0x30);
-                    fingerprint = mixShapeFingerprint(fingerprint, computeShapeGeometryFingerprintUnsafe(innerShape, depth + 1));
-                    const auto* scaleVec = reinterpret_cast<const float*>(shapeAddress + 0x38);
-                    fingerprint = mixShapeFloat(fingerprint, scaleVec[0]);
-                    fingerprint = mixShapeFloat(fingerprint, scaleVec[1]);
-                    fingerprint = mixShapeFloat(fingerprint, scaleVec[2]);
+                    const auto innerShape = *reinterpret_cast<const std::uintptr_t*>(shapeAddress + kScaledConvexInnerShapeOffset);
+                    fingerprint = mixShapeFingerprint(fingerprint, innerShape);
+                    fingerprint = mixShapeFingerprint(
+                        fingerprint,
+                        computeShapeGeometryFingerprintUnsafe(innerShape, settings, depth + 1));
+                    const auto* scaleVector = reinterpret_cast<const float*>(shapeAddress + kScaledConvexScaleOffset);
+                    const auto* translationVector = reinterpret_cast<const float*>(shapeAddress + kScaledConvexTranslationOffset);
+                    for (std::size_t component = 0; component < 3; ++component) {
+                        fingerprint = mixShapeFloat(fingerprint, scaleVector[component]);
+                        fingerprint = mixShapeFloat(fingerprint, translationVector[component]);
+                    }
                     return fingerprint;
                 }
                 default:
@@ -480,7 +541,10 @@ namespace rock::debug
         }
 
         std::uint64_t computeShapeGeometryFingerprintSeh(
-            std::uintptr_t shapeAddress, int* rootShapeType, float* rootConvexRadius)
+            std::uintptr_t shapeAddress,
+            const OverlayRenderSettings* settings,
+            int* rootShapeType,
+            float* rootConvexRadius)
         {
             if (rootShapeType) {
                 *rootShapeType = -1;
@@ -488,16 +552,26 @@ namespace rock::debug
             if (rootConvexRadius) {
                 *rootConvexRadius = 0.0f;
             }
+            if (!settings) {
+                return 0;
+            }
             __try {
-                return computeShapeGeometryFingerprintUnsafe(shapeAddress, 0, rootShapeType, rootConvexRadius);
+                return computeShapeGeometryFingerprintUnsafe(shapeAddress, *settings, 0, rootShapeType, rootConvexRadius);
             } __except (EXCEPTION_EXECUTE_HANDLER) {
                 return 0;
             }
         }
 
-        ShapeKey makeShapeKey(std::uintptr_t shapeAddress, int& shapeType, float& convexRadius)
+        ShapeKey makeShapeKey(
+            std::uintptr_t shapeAddress,
+            const OverlayRenderSettings& settings,
+            int& shapeType,
+            float& convexRadius)
         {
-            return ShapeKey{ shapeAddress, computeShapeGeometryFingerprintSeh(shapeAddress, &shapeType, &convexRadius) };
+            return ShapeKey{
+                shapeAddress,
+                computeShapeGeometryFingerprintSeh(shapeAddress, &settings, &shapeType, &convexRadius)
+            };
         }
 
         RE::NiPoint3 normalizedNi(const RE::NiPoint3& value)
@@ -698,6 +772,19 @@ namespace rock::debug
             return values && std::isfinite(values[0]) && std::isfinite(values[1]) && std::isfinite(values[2]);
         }
 
+        bool finiteShapeTransform(const float* values)
+        {
+            if (!values) {
+                return false;
+            }
+            for (std::size_t index = 0; index < 16; ++index) {
+                if (!std::isfinite(values[index])) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
         bool captureShapeRecipeUnsafe(
             std::uintptr_t shapeAddress,
             const OverlayRenderSettings& settings,
@@ -707,8 +794,10 @@ namespace rock::debug
             recipe = {};
             recipe.settings.havokToGameScale = havokToGameScale();
             recipe.settings.maxConvexSupportVertices = static_cast<std::uint32_t>(settings.maxConvexSupportVertices);
+            recipe.settings.maxCompoundChildren = settings.maxCompoundChildren;
+            recipe.settings.maxCompoundDepth = settings.maxCompoundDepth;
             recipe.settings.useBoundsForHeavyConvex = settings.useBoundsForHeavyConvex;
-            if (!shapeAddress || depth > 4 || !std::isfinite(recipe.settings.havokToGameScale) ||
+            if (!shapeAddress || depth > static_cast<int>(settings.maxCompoundDepth) || !std::isfinite(recipe.settings.havokToGameScale) ||
                 recipe.settings.havokToGameScale <= 0.0f) {
                 return false;
             }
@@ -750,7 +839,12 @@ namespace rock::debug
                         values[2] * recipe.settings.havokToGameScale
                     });
                 }
-                recipe.kind = debug_overlay_shape::ShapeRecipe::Kind::ConvexVertices;
+                if (recipe.shapeType == 4) {
+                    recipe.vertices.resize(3);
+                    recipe.kind = debug_overlay_shape::ShapeRecipe::Kind::Triangle;
+                } else {
+                    recipe.kind = debug_overlay_shape::ShapeRecipe::Kind::ConvexVertices;
+                }
                 recipe.valid = true;
                 return true;
             }
@@ -771,10 +865,51 @@ namespace rock::debug
                 recipe.valid = true;
                 return true;
             }
+            case 7:
+            case 8: {
+                const auto slotArray = *reinterpret_cast<const std::uintptr_t*>(shapeAddress + kCompoundSlotArrayOffset);
+                const auto slotCount = *reinterpret_cast<const std::int32_t*>(shapeAddress + kCompoundSlotCountOffset);
+                if (!slotArray || slotCount <= 0 ||
+                    static_cast<std::uint32_t>(slotCount) > settings.maxCompoundChildren) {
+                    return false;
+                }
+
+                recipe.kind = debug_overlay_shape::ShapeRecipe::Kind::Compound;
+                recipe.children.reserve(static_cast<std::size_t>(slotCount));
+                for (std::int32_t index = 0; index < slotCount; ++index) {
+                    const auto slotOffset = static_cast<std::uintptr_t>(index) * kCompoundSlotStride;
+                    if (slotArray > (std::numeric_limits<std::uintptr_t>::max)() - slotOffset) {
+                        return false;
+                    }
+                    const auto slot = slotArray + slotOffset;
+                    if (*reinterpret_cast<const std::uint8_t*>(slot + kCompoundSlotActiveOffset) != 0) {
+                        continue;
+                    }
+
+                    const auto childShapeAddress = *reinterpret_cast<const std::uintptr_t*>(slot + kCompoundSlotShapeOffset);
+                    const auto* transform = reinterpret_cast<const float*>(slot + kCompoundSlotTransformOffset);
+                    const auto* childScale = reinterpret_cast<const float*>(slot + kCompoundSlotScaleOffset);
+                    if (!childShapeAddress || !finiteShapeTransform(transform) || !finiteShapeVector3(childScale)) {
+                        return false;
+                    }
+
+                    recipe.children.emplace_back();
+                    auto& child = recipe.children.back();
+                    std::copy_n(transform, child.transform.size(), child.transform.begin());
+                    std::copy_n(childScale, 3, child.scale.begin());
+                    child.recipe = std::make_unique<debug_overlay_shape::ShapeRecipe>();
+                    if (!captureShapeRecipeUnsafe(childShapeAddress, settings, *child.recipe, depth + 1)) {
+                        return false;
+                    }
+                }
+                recipe.valid = !recipe.children.empty();
+                return recipe.valid;
+            }
             case 11: {
-                const auto innerShapeAddress = *reinterpret_cast<const std::uintptr_t*>(shapeAddress + 0x30);
-                const auto* scaleVector = reinterpret_cast<const float*>(shapeAddress + 0x38);
-                if (!innerShapeAddress || !finiteShapeVector3(scaleVector)) {
+                const auto innerShapeAddress = *reinterpret_cast<const std::uintptr_t*>(shapeAddress + kScaledConvexInnerShapeOffset);
+                const auto* scaleVector = reinterpret_cast<const float*>(shapeAddress + kScaledConvexScaleOffset);
+                const auto* translationVector = reinterpret_cast<const float*>(shapeAddress + kScaledConvexTranslationOffset);
+                if (!innerShapeAddress || !finiteShapeVector3(scaleVector) || !finiteShapeVector3(translationVector)) {
                     return false;
                 }
 
@@ -782,7 +917,8 @@ namespace rock::debug
                 if (!captureShapeRecipeUnsafe(innerShapeAddress, settings, *recipe.inner, depth + 1)) {
                     return false;
                 }
-                std::copy_n(scaleVector, recipe.scale.size(), recipe.scale.begin());
+                std::copy_n(scaleVector, 3, recipe.scale.begin());
+                std::copy_n(translationVector, 3, recipe.translation.begin());
                 recipe.kind = debug_overlay_shape::ShapeRecipe::Kind::ScaledConvex;
                 recipe.valid = true;
                 return true;
@@ -840,10 +976,14 @@ namespace rock::debug
                 debug_overlay_policy::clampShapeGenerationsPerFrame(g_rockConfig.rockDebugMaxShapeGenerationsPerFrame);
             settings.maxConvexSupportVertices =
                 static_cast<int>(debug_overlay_policy::clampMaxConvexSupportVertices(g_rockConfig.rockDebugMaxConvexSupportVertices));
+            settings.maxCompoundChildren = debug_overlay_policy::kDefaultMaxCompoundChildren;
+            settings.maxCompoundDepth = debug_overlay_policy::kDefaultMaxCompoundDepth;
             settings.useBoundsForHeavyConvex = g_rockConfig.rockDebugUseBoundsForHeavyConvex;
             settings.shapeDecodeSettingsKey = debug_overlay_policy::makeShapeDecodeSettingsKey(
                 settings.maxConvexSupportVertices,
-                settings.useBoundsForHeavyConvex);
+                settings.useBoundsForHeavyConvex,
+                static_cast<int>(settings.maxCompoundChildren),
+                static_cast<int>(settings.maxCompoundDepth));
             settings.pipelineLimits.maxQueuedJobs = debug_overlay_shape::kDefaultMaxQueuedJobs;
             settings.pipelineLimits.maxCompletedJobs = debug_overlay_shape::kDefaultMaxCompletedJobs;
             settings.pipelineLimits.maxCacheEntries = debug_overlay_policy::clampShapeCacheBudget(
@@ -886,7 +1026,7 @@ namespace rock::debug
 
             int shapeType = -1;
             float convexRadius = 0.0f;
-            ShapeKey key = makeShapeKey(shapeAddress, shapeType, convexRadius);
+            ShapeKey key = makeShapeKey(shapeAddress, frame.settings, shapeType, convexRadius);
             float detailUniformScale = 1.0f;
             if (shapeType == 2 && std::isfinite(convexRadius) && convexRadius > 0.0f) {
                 key = ShapeKey{ 0, kCanonicalSphereGeometryFingerprint };

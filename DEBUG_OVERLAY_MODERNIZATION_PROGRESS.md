@@ -267,7 +267,7 @@ Runtime completion also requires, when the game can be exercised safely:
 - [x] Slice 2 implementation, build, auto-deploy, commit, and post-commit regression complete.
 - [x] Slice 3 implementation, build, auto-deploy, commit, and post-commit regression complete.
 - [x] Slice 4 implementation, build, auto-deploy, and pre-commit full regression complete.
-- [ ] Slice 5 not started.
+- [ ] Slice 5 in progress: FO4VR layout verification complete; implementation pending.
 - [ ] Final runtime validation not started.
 
 ## Verification Evidence Ledger
@@ -281,6 +281,9 @@ Record any Ghidra/FO4VR source verification here before implementing a new offse
 | 2026-07-20 | ROCK must not copy the standalone raw compressed-AABB decoder | Read-only Ghidra shows `PUNPCKLWD`/`PUNPCKHWD` against zero, while CollisionVisualizerF4VR reads the same body storage through `std::int16_t*` | **Standalone implementation disputed.** Its signed interpretation is wrong above `32767`; ROCK keeps the verified engine wrapper and rejects those raw-offset/signed patterns in source regression | `07abc83` |
 | 2026-07-20 | Overlay `hknpShape` virtual calls have the correct slots/signatures | Modified and pristine `hknpShape.h` agree exactly: `GetType` slot `04`, `GetNumberOfSupportVertices` slot `08`, and `GetSupportVertices(hkcdVertex*, int32)` slot `09`; the standalone visualizer independently calls the same virtuals/slots | **Confirmed.** Preserve the CommonLib virtual calls and bounded/null-checked support-vertex handling | Existing behavior; guarded during Slice 3 extraction |
 | 2026-07-20 | Renderer singleton and D3D device/context layout are stable across the two local CommonLib copies | Modified and pristine `BSGraphics.h` agree on `RendererData::GetSingleton` ID `1235449`, device `+0x48`, context `+0x50`, and size `0x25C0`; local relocation manifest maps the ID to FO4VR `.data` `0x1460F3CE8`; standalone uses the same interface | **Confirmed.** Retain null checks and non-owning casts to D3D11 interfaces | Existing behavior; Slice 1 hardened lifetime/state handling |
+| 2026-07-20 | FO4VR triangle shapes can be captured without importing an unverified concrete layout | Pristine and modified CommonLib expose no concrete `hknpTriangleShape` fields, but both expose the verified support-vertex virtuals. Read-only Ghidra shows `hknpTriangleShape` constructors at `0x1415A5550` and `0x1415A5900` inheriting the convex-polytope path | **Confirmed.** Capture exactly the first three finite support vertices through CommonLib and emit one double-sided triangle; do not apply generic centroid/radius hull inflation | Pending Slice 5 |
+| 2026-07-20 | Scaled-convex inner shape, scale, and translation fields used by the standalone are correct for FO4VR | Read-only Ghidra of `hknpScaledConvexShapeBase` constructor `0x14175FC50` writes the child pointer at `+0x30`, zero/metadata at `+0x38`, the scale vector at `+0x40`, and helper-produced translation at `+0x50` | **Standalone and current ROCK disputed.** `+0x38` is not the scale vector. Read scale at `+0x40`, translation at `+0x50`, validate both, include both in the cache fingerprint, and apply `inner * scale + translation` with translation converted from Havok units | Pending Slice 5 |
+| 2026-07-20 | Static/dynamic compound root and child-slot layouts from the standalone are correct for FO4VR | Read-only Ghidra of `hknpCompoundShape` constructor `0x1416E2BE0`, allocation helper `0x1416E3F20`, copy helper `0x1416E3340`, static key-mask constructor `0x1415F68E0`, and independent consumers shows root slots at `+0x60`, high-water/size at `+0x68`, 0x80-byte slots, transform at slot `+0x00`, scale at `+0x40`, child shape pointer at `+0x50`, and active byte `+0x60 == 0`. Static `0x141E9CAC0` and dynamic `0x1416E4420` constructors share that base | **Standalone root offsets disputed; FO4VR layout confirmed.** Support types 7 and 8 using the verified fields, fail the whole recipe to the body AABB if any active child is invalid/unsupported, and enforce configured child/depth bounds | Pending Slice 5 |
 
 ## Commit Ledger
 
@@ -290,7 +293,7 @@ Record any Ghidra/FO4VR source verification here before implementing a new offse
 | 1: Hook/D3D hardening | `da16718` | `custom-fast` Release build and auto-deploy passed | 117/117 full suite passed | 117/117 passed after commit | Deployed DLL/PDB hashes match build artifacts |
 | 2: Immutable publication | `07abc83` | `custom-fast` Release build and auto-deploy passed | 119/119 full suite passed | 119/119 passed after commit; `git show --check` passed | CommonLib boundary independently cross-checked against pristine source, local address evidence, and FO4VR Ghidra |
 | 3: Async shape/cache | `889347a` | `custom-fast` Release build and auto-deploy passed | 122/122 full suite passed | 122/122 passed after commit; `git show --check` passed | One low-priority worker; bounded recipe, CPU-completion, upload, LRU, and GPU-byte paths |
-| 4: GPU/diagnostic batching | Pending hash | `custom-fast` Release build and auto-deploy passed | 124/124 full suite passed | Pending commit | One body map, one colored-line map/draw, one aggregate text map/draw; ordered adjacent mesh runs |
+| 4: GPU/diagnostic batching | `2c0c365` | `custom-fast` Release build and auto-deploy passed | 124/124 full suite passed | 124/124 passed after commit; `git show --check` passed | One body map, one colored-line map/draw, one aggregate text map/draw; ordered adjacent mesh runs |
 | 5: Fidelity/config/metrics/modules | Pending | Pending | Pending | Pending | |
 
 ## Progress Journal
@@ -382,6 +385,22 @@ Record any Ghidra/FO4VR source verification here before implementing a new offse
 - Required `custom-fast` configure and capped Release build passed and auto-deployed with the final canonical-sphere implementation. The refreshed `custom-tests` tree built all 56 policy binaries, and the complete capped suite passed 56 policy plus 68 source-boundary tests, 124/124 total.
 - Deployed `ROCK.dll` is version `0.5.0.0`, size `5,380,096`, timestamp `2026-07-20 21:00:51`; build/deploy SHA-256 match `0DDF552B345573A9DCA11B2074833EA851545C48C22330DB4DF7AE9003FBE25D`.
 - Build/deploy `ROCK.pdb` SHA-256 match `AFED24D421596082AE908E3F9B298B947593E636ADC4AC338AA1263CA42A3B8C`.
+- Committed Slice 4 as `2c0c365` (`fix/debug-overlay: batch ordered diagnostic rendering`).
+- Post-commit regression passed 124/124 tests; `git show --check` passed and the worktree was clean before Slice 5 began.
+
+### 2026-07-20 — Slice 5 Fidelity, Configuration, Metrics, And Module Boundaries
+
+- Slice started from clean commit `2c0c365` after its full post-commit regression.
+- Verification target: establish triangle, scaled-convex translation, and compound child layouts independently from pristine/modified CommonLib and FO4VR binary evidence before adding any new engine-memory reads.
+- Neither local CommonLib tree defines concrete triangle, scaled-convex, or compound layouts, so CommonLib virtuals remain the authority for triangle vertices and read-only FO4VR Ghidra evidence is the authority for the two unavoidable concrete-layout reads.
+- Ghidra confirmed that the existing ROCK/standalone scaled-convex `+0x38` scale read is incorrect: FO4VR stores scale at `+0x40` and translation at `+0x50`. The Slice 5 correction must update capture and fingerprinting together so cache identity cannot alias distinct translated shapes.
+- Ghidra independently confirmed the compound root/slot layout through constructor, allocator, copier, key-mask, and consumer code. The standalone's `+0x58` root array and `+0x60` count are not valid for FO4VR; the verified root fields are `+0x60` and `+0x68` with 0x80-byte slots.
+- Added a dedicated triangle recipe built from exactly three finite CommonLib support vertices and emitted double-sided. It no longer passes through generic convex centroid/radius inflation.
+- Corrected scaled-convex capture and cache fingerprinting to use child `+0x30`, scale `+0x40`, and translation `+0x50`; translation is converted from Havok units and applied after component scale.
+- Added static/dynamic compound capture from the verified root and slot layout. Inactive/free slots are skipped, but every active slot must have a finite transform/scale, a child pointer, and a completely capturable child recipe. Recursion, scanned slots, combined vertices, and 16-bit indices are bounded.
+- Compound construction is intentionally all-or-nothing. Any invalid/unsupported child, non-finite transform result, or 16-bit combined-mesh overflow rejects the detailed cache entry so the renderer retains the full body's already-captured real AABB; it never displays a silently incomplete compound.
+- Focused shape geometry and shape pipeline source-boundary checks passed. The required `custom-fast` Release build compiled, linked, and auto-deployed successfully; the complete refreshed suite passed 124/124 tests before the shape-fidelity commit.
+- The deployed shape-fidelity artifact is `ROCK.dll` version `0.5.0.0`, size `5,390,848`, timestamp `2026-07-20 21:20:06`; DLL SHA-256 is `5C8F455B917B7B34283D6A6F2A065240B790A49056A87CF1405D40304EB12B5A` and PDB SHA-256 is `161E5AF12DE2F66D6041497B1FFEF3895C2461AD030696DF1579B398F4561CD1`.
 
 ## Remaining Risks
 
