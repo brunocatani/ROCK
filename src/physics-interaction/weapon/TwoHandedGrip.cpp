@@ -2,7 +2,7 @@
 
 #include "api/ROCKProviderApi.h"
 #include "physics-interaction/actor/ActorEquipmentGrab.h"
-#include "physics-interaction/animation/NativeAnimationAuthorityPolicy.h"
+#include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
 #include "physics-interaction/hand/HandSkeleton.h"
 #include "physics-interaction/hand/HandVisual.h"
 #include "physics-interaction/grab/GrabFinger.h"
@@ -2364,8 +2364,8 @@ namespace rock
 
         constexpr std::uint16_t kCompleteAuthoredFingerMask = 0x7FFFu;
         const bool useAuthoredSupportGrip =
-            native_animation_authority_policy::shouldUseAuthoredSupportGrip(
-                native_animation_authority_policy::AuthoredSupportGripCandidateInput{
+            authored_weapon_grip_capture_policy::shouldUseAuthoredSupportGrip(
+                authored_weapon_grip_capture_policy::AuthoredSupportGripCandidateInput{
                     .featureEnabled =
                         g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled,
                     .proximityProbeAcquisition =
@@ -3870,8 +3870,8 @@ namespace rock
                 authoredProbeCanonical,
                 authoredProbeCanonicalSource);
         const bool useAuthoredProbeCanonical =
-            native_animation_authority_policy::shouldUseAuthoredFiringGripProbe(
-                native_animation_authority_policy::AuthoredFiringGripProbeInput{
+            authored_weapon_grip_capture_policy::shouldUseAuthoredFiringGripProbe(
+                authored_weapon_grip_capture_policy::AuthoredFiringGripProbeInput{
                     .featureEnabled =
                         g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled,
                     .proximityProbeAcquisition =

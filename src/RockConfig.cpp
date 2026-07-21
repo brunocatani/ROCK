@@ -157,8 +157,6 @@ namespace rock
         rockGrabInputForceSeconds = 0.08f;
 
         rockDeveloperModeEnabled = false;
-        rockNativeReloadAnimationAuthorityTestEnabled = false;
-        rockNativeReloadAnimationPartialAuthorityTestEnabled = false;
         rockAuthoredPrimaryFiringGripTestEnabled = false;
 
         rockLogLevel = logging_policy::DefaultLogLevel;
@@ -1463,14 +1461,6 @@ namespace rock
             ini.GetBoolValue(EXPERIMENTAL_SECTION, "bMenuTriggerHandEquipEnabled", rockMenuTriggerHandEquipEnabled);
         rockEquipPreferredHandLeft =
             ini.GetBoolValue(EXPERIMENTAL_SECTION, "bEquipPreferredHandLeft", rockEquipPreferredHandLeft);
-        rockNativeReloadAnimationAuthorityTestEnabled = ini.GetBoolValue(
-            EXPERIMENTAL_SECTION,
-            "bNativeReloadAnimationAuthorityTestEnabled",
-            rockNativeReloadAnimationAuthorityTestEnabled);
-        rockNativeReloadAnimationPartialAuthorityTestEnabled = ini.GetBoolValue(
-            EXPERIMENTAL_SECTION,
-            "bNativeReloadAnimationPartialAuthorityTestEnabled",
-            rockNativeReloadAnimationPartialAuthorityTestEnabled);
         rockAuthoredPrimaryFiringGripTestEnabled = ini.GetBoolValue(
             EXPERIMENTAL_SECTION,
             "bAuthoredPrimaryFiringGripTestEnabled",

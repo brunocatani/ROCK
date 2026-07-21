@@ -1,7 +1,7 @@
 #include "physics-interaction/weapon/AuthoredPrimaryFiringGrip.h"
 
-#include "physics-interaction/animation/NativeAnimationAuthority.h"
-#include "physics-interaction/animation/NativeAnimationAuthorityPolicy.h"
+#include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
+#include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/grab/FrikWeaponOffsetCache.h"
@@ -129,9 +129,9 @@ namespace rock
         // first so every early return falls back to ordinary dynamic grabbing.
         weaponAuthority.clearAuthoredSupportGripCandidate();
         const auto captureStatus =
-            native_animation_authority::queryPrimaryFiringGripCaptureStatus();
+            authored_weapon_grip_capture::queryPrimaryFiringGripCaptureStatus();
         const auto supportCaptureStatus =
-            native_animation_authority::queryAuthoredSupportGripCaptureStatus();
+            authored_weapon_grip_capture::queryAuthoredSupportGripCaptureStatus();
 
         if (!input.enabled) {
             reset("experiment-disabled", weaponAuthority);
@@ -269,7 +269,7 @@ namespace rock
                 ROCK_LOG_WARN(Animation,
                     "Authored support grip capture unavailable weaponKey=0x{:X} reason={} secondaryPass={} capture={} fingerMask=0x{:04X}",
                     currentWeaponKey,
-                    native_animation_authority::authoredSupportGripCaptureFailureReasonName(
+                    authored_weapon_grip_capture::authoredSupportGripCaptureFailureReasonName(
                         supportCaptureStatus.failureReason),
                     supportCaptureStatus.secondaryPassSequence,
                     supportCaptureStatus.captureSequence,
@@ -291,7 +291,7 @@ namespace rock
             std::uint64_t authoredSupportCaptureSequence = 0;
             if (!supportCaptureStatus.valid ||
                 supportCaptureStatus.captureSequence <= _supportCaptureSequenceFloor ||
-                !native_animation_authority::tryResolveAuthoredSupportGrip(
+                !authored_weapon_grip_capture::tryResolveAuthoredSupportGrip(
                     input.weaponNode,
                     authoredSupportHandInWeapon,
                     authoredSupportFingerLocals,
@@ -414,7 +414,7 @@ namespace rock
             return;
         }
 
-        const native_animation_authority_policy::AuthoredPrimaryFiringGripEligibility eligibility{
+        const authored_weapon_grip_capture_policy::AuthoredPrimaryFiringGripEligibility eligibility{
             .enabled = input.enabled,
             .runtimeInitialized = input.runtimeInitialized,
             .visualAuthorityAvailable = input.visualAuthorityAvailable,
@@ -434,7 +434,7 @@ namespace rock
             .leftHandedMode = input.leftHandedMode,
             .rockFiringHandIsLeft = input.rockFiringHandIsLeft,
         };
-        if (!native_animation_authority_policy::shouldApplyAuthoredPrimaryFiringGrip(eligibility)) {
+        if (!authored_weapon_grip_capture_policy::shouldApplyAuthoredPrimaryFiringGrip(eligibility)) {
             if (!input.rockFiringHandIsLeft) {
                 weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
             }
@@ -464,7 +464,7 @@ namespace rock
             solvedWeaponWorld = transform_math::composeTransforms(trackedHandWorld, transform_math::invertTransform(authoredPrimaryHandInWeapon));
             alignmentResolved = finiteTransform(authoredPrimaryHandInWeapon) && finiteTransform(currentAuthoredHandWorld) && finiteTransform(solvedWeaponWorld);
         } else {
-            alignmentResolved = native_animation_authority::tryResolvePrimaryFiringGripAlignment(
+            alignmentResolved = authored_weapon_grip_capture::tryResolvePrimaryFiringGripAlignment(
                 input.weaponNode,
                 liveWeaponWorld,
                 trackedHandWorld,

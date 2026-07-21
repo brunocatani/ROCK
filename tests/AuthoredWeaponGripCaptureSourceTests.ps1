@@ -1,0 +1,68 @@
+param(
+    [string]$Root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+$failures = [System.Collections.Generic.List[string]]::new()
+
+function Require-Text {
+    param([string]$Path, [string]$Pattern, [string]$Message)
+    $text = Get-Content -Raw -LiteralPath (Join-Path $Root $Path)
+    if ($text -notmatch $Pattern) {
+        $failures.Add($Message)
+    }
+}
+
+function Reject-Text {
+    param([string]$Path, [string]$Pattern, [string]$Message)
+    $text = Get-Content -Raw -LiteralPath (Join-Path $Root $Path)
+    if ($text -match $Pattern) {
+        $failures.Add($Message)
+    }
+}
+
+$removedRuntimeFiles = @(
+    'src/physics-interaction/animation/NativeAnimationAuthority.cpp',
+    'src/physics-interaction/animation/NativeAnimationAuthority.h',
+    'src/physics-interaction/animation/NativeAnimationAuthorityPolicy.h'
+)
+foreach ($relativePath in $removedRuntimeFiles) {
+    if (Test-Path -LiteralPath (Join-Path $Root $relativePath)) {
+        $failures.Add("ROCK still owns removed reload/bolt runtime file '$relativePath'.")
+    }
+}
+
+Require-Text 'src/physics-interaction/native/HavokOffsets.h' 'kFunc_UpdateFirstPersonArm\s*=\s*0xEF6280[\s\S]*kCallsite_UpdateFirstPersonArmPrimaryReturn\s*=\s*0xEF610D[\s\S]*kCallsite_UpdateFirstPersonArmSecondaryReturn\s*=\s*0xEF6150[\s\S]*kFunc_PlayerPostUpdateAnimationGraphManager\s*=\s*0xF2F0A0' 'Authored grip capture must retain the independently verified graph-output and paired arm offsets.'
+Require-Text 'src/physics-interaction/animation/AuthoredWeaponGripCapture.cpp' 'kExpectedUpdateFirstPersonArmPrefix[\s\S]*0x48,\s*0x8B,\s*0xC4,\s*0x55,\s*0x53,\s*0x41,\s*0x56,[\s\S]*0x48,\s*0x8D,\s*0xA8,\s*0xF8,\s*0xFE,\s*0xFF,\s*0xFF[\s\S]*kFunc_UpdateFirstPersonArm' 'The ROCK-owned arm hook must retain byte validation.'
+Require-Text 'src/physics-interaction/animation/AuthoredWeaponGripCapture.cpp' 'kExpectedPostFrikPrefix[\s\S]*kFunc_PlayerPostUpdateAnimationGraphManager[\s\S]*onPostUpdateAnimationGraphManager' 'The shared graph-output coordinator must retain byte validation against hFRIK''s verified patch identity.'
+Require-Text 'src/physics-interaction/animation/AuthoredWeaponGripCapture.cpp' 'onPostUpdateAnimationGraphManager[\s\S]*NativeGraphOutput[\s\S]*captureAuthoredSupportGraphPose\(\)[\s\S]*s_originalPostUpdate' 'Addon capture and ROCK grip capture must share the proven pre-presentation graph-output boundary.'
+Require-Text 'src/physics-interaction/animation/AuthoredWeaponGripCapture.cpp' 's_originalUpdateFirstPersonArm[\s\S]*captureNativePrimaryFiringGrip' 'The later primary arm pass must pair the graph sample with the exact weapon-specific primary relation.'
+Require-Text 'src/physics-interaction/animation/AuthoredWeaponGripCapture.cpp' 'currentNativeAnimationAuthorityFlagsV1\(\)\s*!=\s*0' 'Authored grip capture must yield to ROCK V1 animation authority owners.'
+Reject-Text 'src/physics-interaction/animation/AuthoredWeaponGripCapture.cpp' 'WeaponFireHandler|ReloadStateChangeHandler|setLocalReload|ManualCycle|applyCapturedPose' 'ROCK-authored grip capture must not retain reload or bolt runtime ownership.'
+
+Require-Text 'src/ROCKMain.cpp' 'dispatchAnimationPhaseCallbacksV1\([\s\S]*BeforeRock[\s\S]*onFrameUpdate\(\)[\s\S]*AfterRock[\s\S]*Complete' 'ROCK must expose ordered addon animation phases around its update.'
+Reject-Text 'src/ROCKMain.cpp' 'setLocalReloadTestEnabled|setLocalManualCycleTestEnabled|applyCapturedPose|installPostUpdateHook' 'ROCK main must not execute the separated reload/bolt runtime.'
+Require-Text 'src/ROCKMain.cpp' 'authored_weapon_grip_capture::installHook\(\)[\s\S]*rockAuthoredPrimaryFiringGripTestEnabled' 'ROCK must retain and configure its authored equipped-weapon grip capture.'
+Require-Text 'src/api/ROCKProviderApi.h' 'enum class RockProviderAnimationPhaseV1[\s\S]*NativeGraphOutput' 'ROCK V1 must expose the proven native graph-output capture phase.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'phaseFrameIndex\s*=\s*s_activeAnimationPhaseFrameIndex[\s\S]*if \(phaseFrameIndex == 0\)' 'NativeGraphOutput and the later ROCK phases must share one frame identity.'
+Reject-Text 'src/api/ROCKProviderApi.cpp' 'phase == RockProviderAnimationPhaseV1::BeforeRock\s*\|\|' 'BeforeRock must not replace the frame identity opened by NativeGraphOutput.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'phase == RockProviderAnimationPhaseV1::Complete[\s\S]*s_activeAnimationPhaseFrameIndex\.store\(0' 'The shared animation phase frame must close deterministically at Complete.'
+
+Require-Text 'src/api/ROCKProviderApi.h' 'AnimationPhases[\s\S]*EquippedWeaponGripState[\s\S]*HandVisualAuthority[\s\S]*NativeAnimationRuntimeProvider' 'ROCK V1 must publish the complete Reanimate support capability surface.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'apiSetNativeAnimationAuthorityV1[\s\S]*apiIsProviderReady\(\)[\s\S]*NativeAnimationAuthoritySlot' 'ROCK must coordinate animation leases without requiring an in-process animation hook.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'apiPublishNativeAnimationRuntimeV1[\s\S]*s_nativeAnimationRuntimePublication' 'ROCK must accept status publication from the runtime addon.'
+Require-Text 'src/physics-interaction/core/PhysicsInteractionProvider.inl' 'queryProviderEquippedWeaponGripStateV1[\s\S]*RightHandInWeaponValid[\s\S]*LeftHandInWeaponValid' 'ROCK must expose exact equipped-weapon grip baselines to addons.'
+
+Reject-Text 'src/RockConfig.h' 'rockNativeReloadAnimationAuthorityTestEnabled|rockNativeReloadAnimationPartialAuthorityTestEnabled' 'Reload validation configuration must not remain in ROCK.'
+Require-Text 'src/RockConfig.h' 'rockAuthoredPrimaryFiringGripTestEnabled' 'ROCK must retain the authored primary/equipped-grip switch.'
+
+if ($failures.Count -gt 0) {
+    Write-Host 'AuthoredWeaponGripCaptureSourceTests failed:' -ForegroundColor Red
+    foreach ($failure in $failures) {
+        Write-Host " - $failure"
+    }
+    exit 1
+}
+
+Write-Host 'AuthoredWeaponGripCaptureSourceTests passed.' -ForegroundColor Green

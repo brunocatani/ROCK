@@ -20,8 +20,7 @@
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/native/BodyCollisionControl.h"
 #include "physics-interaction/actor/ActorEquipmentGrab.h"
-#include "physics-interaction/animation/NativeAnimationAuthority.h"
-#include "physics-interaction/animation/NativeAnimationAuthorityPolicy.h"
+#include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
 #include "physics-interaction/api/InteractionCommandQueue.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
@@ -1949,31 +1948,6 @@ namespace rock
         _twoHandedGrip.synchronizeNativeScopePresentationAfterFrikUpdate(weaponNode, _weaponCollision.getCurrentWeaponGenerationKey());
     }
 
-    bool PhysicsInteraction::hasNativeManualCycleTwoHandAuthority() const
-    {
-        return native_animation_authority_policy::canApplyManualCycleHandAnimation(
-            native_animation_authority_policy::ManualCycleTwoHandEligibility{
-                .twoHandGripActive =
-                    _twoHandedGrip.getState() == TwoHandedState::Gripping,
-                .firingHandIsLeft = _twoHandedGrip.isFiringHandLeft(),
-                .weaponTransformOwned = _twoHandedGrip.ownsWeaponTransform(),
-            });
-    }
-
-    bool PhysicsInteraction::tryGetNativeManualCycleRockGripBaselines(
-        RE::NiTransform& outRightHandInWeapon,
-        RE::NiTransform& outLeftHandInWeapon) const
-    {
-        outRightHandInWeapon = {};
-        outLeftHandInWeapon = {};
-        if (!hasNativeManualCycleTwoHandAuthority()) {
-            return false;
-        }
-        return _twoHandedGrip.getManualCycleRockGripBaselines(
-            outRightHandInWeapon,
-            outLeftHandInWeapon);
-    }
-
     bool PhysicsInteraction::tryResolveNativeScopeGeometryDecision(const bool nativeGeometryDecision, bool& outRockGeometryDecision)
     {
         outRockGeometryDecision = nativeGeometryDecision;
@@ -3425,8 +3399,8 @@ namespace rock
         const bool leftHandedMode = f4vr::isLeftHandedMode();
         const bool primaryHandHoldingObject =
             leftHandedMode ? _leftHand.isHolding() : _rightHand.isHolding();
-        const auto nativeAuthorityStatus =
-            native_animation_authority::queryRuntimeStatus();
+        const auto nativeAuthorityFlags =
+            provider::currentNativeAnimationAuthorityFlagsV1();
         auto* equippedWeapon = currentEquippedWeaponForm();
         const std::uint64_t weaponGenerationKey =
             weaponNode ? _weaponCollision.getCurrentWeaponGenerationKey() : 0;
@@ -3468,8 +3442,8 @@ namespace rock
             // weapon-to-controller alignment. Only a native Weapon transform
             // lease (the full reload path) suspends that owner.
             .nativeReloadAuthorityActive =
-                (nativeAuthorityStatus.effectiveFlags &
-                    native_animation_authority_policy::kWeapon) != 0,
+                (nativeAuthorityFlags &
+                    authored_weapon_grip_capture_policy::kWeapon) != 0,
             .conflictingWeaponTransformAuthorityActive =
                 _twoHandedGrip.blocksAuthoredPrimaryGripWeaponAlignment(),
             .weaponVisualReturnActive = _twoHandedGrip.isWeaponVisualReturnActive(),
@@ -3482,7 +3456,7 @@ namespace rock
         if (_equipVisualBridge.isHandPoseHandoffActive()) {
             const bool handoffHandIsLeft = _equipVisualBridge.handPoseHandoffIsLeft();
             if (!g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled ||
-                nativeAuthorityStatus.effectiveFlags != 0 ||
+                nativeAuthorityFlags != 0 ||
                 leftHandedMode ||
                 runtime.localMenuBlocking ||
                 runtime.compatibilityConfigBlocking) {

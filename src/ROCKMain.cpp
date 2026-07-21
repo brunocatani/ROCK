@@ -7,7 +7,7 @@
 #define ROCK_API_EXPORTS
 #include "RockConfig.h"
 #include "api/ROCKProviderApi.h"
-#include "physics-interaction/animation/NativeAnimationAuthority.h"
+#include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
 #include "physics-interaction/core/PhysicsCreationGatePolicy.h"
 #include "physics-interaction/core/PhysicsHooks.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
@@ -258,11 +258,7 @@ namespace
         performance_profiler::FrameScope profilerFrame;
 
         if (!s_pluginLoaded || !s_frikAvailable) {
-            native_animation_authority::setRuntimeEnabled(false);
-            native_animation_authority::setLocalManualCycleTestEnabled(false);
-            native_animation_authority::setLocalReloadTestEnabled(false);
-            native_animation_authority::setLocalReloadPartialAuthorityEnabled(false);
-            native_animation_authority::setPrimaryFiringGripCaptureEnabled(false);
+            authored_weapon_grip_capture::setEnabled(false);
             pipboy_equip_runtime::setLeftHandEquipAvailable(false);
             input_remap_runtime::setGameplayInputAllowed(false);
             input_remap_runtime::setWeaponDrawn(false);
@@ -284,23 +280,12 @@ namespace
             .compatibilityConfigBlocking = frik_visual_authority::isCompatibilityConfigBlocking(),
         });
         const auto& runtime = runtime_state::currentFrame();
-        const bool nativeAnimationCaptureRuntimeEnabled =
+        const bool authoredGripCaptureRuntimeEnabled =
             g_rockConfig.rockEnabled &&
             runtime.localSkeletonReady &&
             !runtime.compatibilityConfigBlocking;
-        native_animation_authority::setRuntimeEnabled(nativeAnimationCaptureRuntimeEnabled);
-        native_animation_authority::setLocalManualCycleTestEnabled(
-            nativeAnimationCaptureRuntimeEnabled &&
-            g_rockConfig.rockNativeReloadAnimationAuthorityTestEnabled);
-        native_animation_authority::setLocalReloadTestEnabled(
-            nativeAnimationCaptureRuntimeEnabled &&
-            g_rockConfig.rockNativeReloadAnimationAuthorityTestEnabled);
-        native_animation_authority::setLocalReloadPartialAuthorityEnabled(
-            nativeAnimationCaptureRuntimeEnabled &&
-            g_rockConfig.rockNativeReloadAnimationAuthorityTestEnabled &&
-            g_rockConfig.rockNativeReloadAnimationPartialAuthorityTestEnabled);
-        native_animation_authority::setPrimaryFiringGripCaptureEnabled(
-            nativeAnimationCaptureRuntimeEnabled &&
+        authored_weapon_grip_capture::setEnabled(
+            authoredGripCaptureRuntimeEnabled &&
             g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled);
         const bool gameplayInputAllowed =
             g_rockConfig.rockEnabled &&
@@ -312,11 +297,7 @@ namespace
         debug_controller_runtime::update(gameplayInputAllowed, runtime.deltaSeconds);
 
         if (!g_rockConfig.rockEnabled) {
-            native_animation_authority::setRuntimeEnabled(false);
-            native_animation_authority::setLocalManualCycleTestEnabled(false);
-            native_animation_authority::setLocalReloadTestEnabled(false);
-            native_animation_authority::setLocalReloadPartialAuthorityEnabled(false);
-            native_animation_authority::setPrimaryFiringGripCaptureEnabled(false);
+            authored_weapon_grip_capture::setEnabled(false);
             pipboy_equip_runtime::setLeftHandEquipAvailable(false);
             s_physicsCreationRequested.store(false, std::memory_order_release);
             s_physicsCreationReadyDeferralFrames.store(0, std::memory_order_release);
@@ -340,27 +321,6 @@ namespace
             s_physicsInteraction->update();
             publishPhysicsInteractionIfReady();
         }
-    }
-
-    void refreshNativeManualCycleTwoHandAuthority()
-    {
-        const bool active =
-            s_pluginLoaded &&
-            s_frikAvailable &&
-            g_rockConfig.rockEnabled &&
-            s_physicsInteraction &&
-            s_physicsInteraction->hasNativeManualCycleTwoHandAuthority();
-        native_animation_authority::setManualCycleTwoHandAuthorityActive(active);
-
-        native_animation_authority::ManualCycleRockGripBaselines baselines{};
-        if (active &&
-            s_physicsInteraction->tryGetNativeManualCycleRockGripBaselines(
-                baselines.rightHandInWeapon,
-                baselines.leftHandInWeapon)) {
-            baselines.rightValid = true;
-            baselines.leftValid = true;
-        }
-        native_animation_authority::setManualCycleRockGripBaselines(baselines);
     }
 
     using GameLoopFunc = void (*)(std::uint64_t rcx);
@@ -595,36 +555,27 @@ namespace
             s_originalGameLoopFunc(rcx);
         }
 
-        // WeaponFire runs in Bethesda's update above. Refresh from ROCK's
-        // retained grip state before consuming a newly armed cycle lease.
-        refreshNativeManualCycleTwoHandAuthority();
-        native_animation_authority::beginRockFrame(
+        rock::provider::refreshNativeAnimationAuthorityLeasesV1();
+        rock::provider::dispatchAnimationPhaseCallbacksV1(
+            rock::provider::RockProviderAnimationPhaseV1::BeforeRock,
             runtime_state::currentFrame().deltaSeconds);
-        (void)native_animation_authority::applyCapturedPose(
-            native_animation_authority::ApplyPhase::BeforeRock);
 
         if (s_pluginLoaded && s_frikAvailable && g_rockConfig.rockEnabled && s_physicsInteraction) {
             s_physicsInteraction->synchronizeNativeScopePresentationAfterFrikUpdate();
         }
 
         onFrameUpdate();
-        // Input and grip transitions run inside onFrameUpdate. Recheck before
-        // final publication so releasing support cancels the overlay in this
-        // same frame and immediately restores one-hand parts-only behavior.
-        refreshNativeManualCycleTwoHandAuthority();
-
         // Input classification runs inside onFrameUpdate. Apply the manual
         // scope level after it so an unflagged scope does not wait for a native
         // cone callback that Bethesda will never issue.
         driveManualScopeTransitionFallback();
 
-        // ROCK's collision/grab/weapon pass may legitimately publish its own
-        // controller authority. Reapply the same controller-anchored native
-        // pose last so the temporary reload lease is the final visual writer
-        // while all normal ROCK state continues to advance underneath it.
-        (void)native_animation_authority::applyCapturedPose(
-            native_animation_authority::ApplyPhase::AfterRock);
-        native_animation_authority::completeRockFrame();
+        rock::provider::dispatchAnimationPhaseCallbacksV1(
+            rock::provider::RockProviderAnimationPhaseV1::AfterRock,
+            runtime_state::currentFrame().deltaSeconds);
+        rock::provider::dispatchAnimationPhaseCallbacksV1(
+            rock::provider::RockProviderAnimationPhaseV1::Complete,
+            runtime_state::currentFrame().deltaSeconds);
     }
 
     bool hookMainLoop()
@@ -658,22 +609,11 @@ namespace
         case LE::kSkeletonReady:
             logger::info("ROCK: Received kSkeletonReady from FRIK.");
             bumpGeneration(s_skeletonGeneration);
-            if (!native_animation_authority::installPostUpdateHook()) {
+            if (!authored_weapon_grip_capture::installHook()) {
                 logger::error(
-                    "ROCK: Native animation authority hook unavailable; selective reload-pose API is disabled for this runtime/FRIK build.");
+                    "ROCK: Authored equipped-weapon grip capture hook is unavailable for this runtime build.");
             }
-            native_animation_authority::setRuntimeEnabled(g_rockConfig.rockEnabled);
-            native_animation_authority::setLocalManualCycleTestEnabled(
-                g_rockConfig.rockEnabled &&
-                g_rockConfig.rockNativeReloadAnimationAuthorityTestEnabled);
-            native_animation_authority::setLocalReloadTestEnabled(
-                g_rockConfig.rockEnabled &&
-                g_rockConfig.rockNativeReloadAnimationAuthorityTestEnabled);
-            native_animation_authority::setLocalReloadPartialAuthorityEnabled(
-                g_rockConfig.rockEnabled &&
-                g_rockConfig.rockNativeReloadAnimationAuthorityTestEnabled &&
-                g_rockConfig.rockNativeReloadAnimationPartialAuthorityTestEnabled);
-            native_animation_authority::setPrimaryFiringGripCaptureEnabled(
+            authored_weapon_grip_capture::setEnabled(
                 g_rockConfig.rockEnabled &&
                 g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled);
             if (!g_rockConfig.rockEnabled) {
@@ -689,7 +629,7 @@ namespace
         case LE::kSkeletonDestroying:
             logger::info("ROCK: Received kSkeletonDestroying from FRIK.");
             bumpGeneration(s_skeletonGeneration);
-            native_animation_authority::resetTransientState();
+            authored_weapon_grip_capture::resetTransientState();
             s_physicsCreationRequested.store(false, std::memory_order_release);
             s_physicsCreationReadyDeferralFrames.store(0, std::memory_order_release);
             resetPhysicsCreationGate();
@@ -703,19 +643,8 @@ namespace
 
         case LE::kPowerArmorChanged:
             bumpGeneration(s_skeletonGeneration);
-            native_animation_authority::resetTransientState();
-            native_animation_authority::setRuntimeEnabled(g_rockConfig.rockEnabled);
-            native_animation_authority::setLocalManualCycleTestEnabled(
-                g_rockConfig.rockEnabled &&
-                g_rockConfig.rockNativeReloadAnimationAuthorityTestEnabled);
-            native_animation_authority::setLocalReloadTestEnabled(
-                g_rockConfig.rockEnabled &&
-                g_rockConfig.rockNativeReloadAnimationAuthorityTestEnabled);
-            native_animation_authority::setLocalReloadPartialAuthorityEnabled(
-                g_rockConfig.rockEnabled &&
-                g_rockConfig.rockNativeReloadAnimationAuthorityTestEnabled &&
-                g_rockConfig.rockNativeReloadAnimationPartialAuthorityTestEnabled);
-            native_animation_authority::setPrimaryFiringGripCaptureEnabled(
+            authored_weapon_grip_capture::resetTransientState();
+            authored_weapon_grip_capture::setEnabled(
                 g_rockConfig.rockEnabled &&
                 g_rockConfig.rockAuthoredPrimaryFiringGripTestEnabled);
             if (msg->data && msg->dataLen >= sizeof(bool)) {
@@ -817,7 +746,7 @@ namespace
             s_physicsCreationReadyDeferralFrames.store(0, std::memory_order_release);
             resetPhysicsCreationGate();
             runtime_state::resetTransientState();
-            native_animation_authority::resetTransientState();
+            authored_weapon_grip_capture::resetTransientState();
             pipboy_equip_runtime::resetRuntimeState();
             if (s_physicsInteraction) {
                 s_physicsInteraction->noteProviderLifecycle(

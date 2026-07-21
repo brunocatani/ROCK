@@ -261,24 +261,6 @@ namespace rock::offsets
 
     constexpr std::uintptr_t kFunc_HitFrameHandler_Handle = 0x0FEFFB0;
 
-    /*
-     * Fallout4VR.exe 1.2.72 WeaponFireHandler::Handle. Ghidra verified the
-     * handler at module+0xFF2A40 and its actual IHandlerFunctor Handle slot at
-     * module+0x2D8D2E8. ROCK uses the event only as the player manual-cycle
-     * boundary; the original handler always remains the gameplay authority.
-     */
-    constexpr std::uintptr_t kFunc_WeaponFireHandler_Handle = 0x0FF2A40;
-
-    /*
-     * Fallout4VR.exe 1.2.72 ReloadStateChangeHandler::Handle. Ghidra verified
-     * that the first interned token calls ActorState::SetReloadingImpl(true)
-     * and the second calls it with false. The token accessors below are the
-     * exact functions used by the handler, avoiding text/case assumptions.
-     */
-    constexpr std::uintptr_t kFunc_ReloadStateChangeHandler_Handle = 0x0FF2B90;
-    constexpr std::uintptr_t kFunc_GetReloadStartStateToken = 0x16A3070;
-    constexpr std::uintptr_t kFunc_GetReloadEndStateToken = 0x16A30D0;
-
     constexpr std::uintptr_t kFunc_AttackBlockHandler_ShouldHandleEvent = 0x0FCD770;
 
     constexpr std::uintptr_t kFunc_PlayerCharacter_WeaponSwingCallBack = 0x0F23E00;
@@ -289,10 +271,6 @@ namespace rock::offsets
 
     constexpr std::uintptr_t kVtableEntry_HitFrameHandler_Handle = 0x2D8CB98;
 
-    constexpr std::uintptr_t kVtableEntry_WeaponFireHandler_Handle = 0x2D8D2E8;
-
-    constexpr std::uintptr_t kVtableEntry_ReloadStateChangeHandler_Handle = 0x2D8D300;
-
     constexpr std::uintptr_t kVtableEntry_AttackBlockHandler_ShouldHandleEvent = 0x2D8A350;
 
     constexpr std::uintptr_t kVtableEntry_PlayerCharacter_WeaponSwingCallBack = 0x2D817A8;
@@ -300,16 +278,6 @@ namespace rock::offsets
     constexpr std::uintptr_t kData_PlayerActorSingleton = 0x5A38518;
 
     constexpr std::uintptr_t kHookSite_MainLoop = 0xD8405E;
-
-    /*
-     * PlayerCharacter::PostUpdateAnimationGraphManager entry in Fallout4VR
-     * 1.2.72. Raw disassembly verified 2026-07-17 at 0x140F2F0A0.
-     * hFRIK intentionally NOPs the native first-person-to-fullbody bridge from
-     * entry+0x8 for 0x1FF bytes. ROCK validates the surviving eight-byte
-     * prologue plus six post-hFRIK NOPs before installing its capture-only
-     * trampoline; no version-only trust or unverified write is permitted.
-     */
-    constexpr std::uintptr_t kFunc_PlayerPostUpdateAnimationGraphManager = 0xF2F0A0;
 
     /*
      * FO4VR's recurring first-person node-chain alignment helper. Blind raw
@@ -327,6 +295,7 @@ namespace rock::offsets
     constexpr std::uintptr_t kFunc_UpdateFirstPersonArm = 0xEF6280;
     constexpr std::uintptr_t kCallsite_UpdateFirstPersonArmPrimaryReturn = 0xEF610D;
     constexpr std::uintptr_t kCallsite_UpdateFirstPersonArmSecondaryReturn = 0xEF6150;
+    constexpr std::uintptr_t kFunc_PlayerPostUpdateAnimationGraphManager = 0xF2F0A0;
 
     /*
      * FO4VR native-scope geometry boundary. Raw-disassembly verified

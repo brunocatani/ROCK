@@ -205,6 +205,8 @@ Require-Text 'src/api/ROCKProviderApi.h' 'WeaponEmitters[\s\S]*RockProviderWeapo
     'Weapon emitter snapshots must remain feature- and table-size-gated inside API V1.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'maxWeaponEmitters\s*=\s*ROCK_PROVIDER_MAX_WEAPON_EMITTERS_V1' `
     'Provider limits must publish the bounded emitter capacity.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'maxAnimationPhaseCallbacks\s*=\s*[\s\S]{0,100}ROCK_PROVIDER_MAX_ANIMATION_PHASE_CALLBACKS_V1[\s\S]{0,250}maxHandVisualAuthorityPublications[\s\S]{0,250}maxNativeAnimationRuntimeProviders\s*=\s*1' `
+    'Provider limits must publish every bounded animation-support capacity.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'providerApiByteSize\s*=\s*static_cast<std::uint32_t>\(sizeof\(RockProviderApi\)\)' `
     'Provider limits must report the current function table byte size.'
 Require-Text 'src/api/ROCKProviderApi.h' 'NativeAnimationAuthority[\s\S]*RockProviderNativeAnimationAuthorityRequestV1' `
@@ -297,7 +299,13 @@ $expectedProviderFunctions = [string[]]@(
     'copyWeaponEmittersV1',
     'setNativeAnimationAuthorityV1',
     'clearNativeAnimationAuthorityV1',
-    'getNativeAnimationAuthorityStateV1'
+    'getNativeAnimationAuthorityStateV1',
+    'registerAnimationPhaseCallbackV1',
+    'unregisterAnimationPhaseCallbackV1',
+    'getEquippedWeaponGripStateV1',
+    'setHandVisualAuthorityV1',
+    'clearHandVisualAuthorityV1',
+    'publishNativeAnimationRuntimeV1'
 )
 Require-SequenceEqual 'ROCKProviderApi function pointer order' (Get-ProviderFunctionNames $providerHeader) $expectedProviderFunctions
 

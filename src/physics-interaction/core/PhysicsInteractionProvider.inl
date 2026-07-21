@@ -129,6 +129,59 @@
         return identity.hasEquippedWeapon;
     }
 
+    bool PhysicsInteraction::queryProviderEquippedWeaponGripStateV1(
+        ::rock::provider::RockProviderEquippedWeaponGripStateV1& outState) const
+    {
+        using Flag = ::rock::provider::RockProviderEquippedWeaponGripStateFlagV1;
+
+        outState = {};
+        auto* weaponNode = resolveEquippedWeaponInteractionNode();
+        if (!_initialized.load(std::memory_order_acquire) || !weaponNode) {
+            return false;
+        }
+
+        outState.flags = static_cast<std::uint32_t>(Flag::Valid);
+        outState.weaponNode = reinterpret_cast<std::uintptr_t>(weaponNode);
+        outState.weaponFormId = currentEquippedWeaponFormId();
+        outState.weaponGenerationKey = _weaponCollision.getCurrentWeaponGenerationKey();
+
+        if (_twoHandedGrip.getState() == TwoHandedState::Gripping) {
+            outState.flags |= static_cast<std::uint32_t>(Flag::TwoHandGripActive);
+        }
+        if (_twoHandedGrip.isFiringHandLeft()) {
+            outState.flags |= static_cast<std::uint32_t>(Flag::FiringHandLeft);
+        }
+        if (_twoHandedGrip.ownsWeaponTransform()) {
+            outState.flags |= static_cast<std::uint32_t>(Flag::WeaponTransformOwned);
+        }
+
+        RE::NiTransform weaponWorld{};
+        const bool solvedWeaponWorldValid =
+            _twoHandedGrip.getSolvedWeaponTransform(weaponWorld) &&
+            finiteNiTransform(weaponWorld);
+        if (!solvedWeaponWorldValid && finiteNiTransform(weaponNode->world)) {
+            weaponWorld = weaponNode->world;
+        }
+        if (solvedWeaponWorldValid || finiteNiTransform(weaponNode->world)) {
+            fillProviderTransform(weaponWorld, outState.weaponWorld);
+            outState.flags |= static_cast<std::uint32_t>(Flag::WeaponWorldValid);
+        }
+
+        RE::NiTransform rightHandInWeapon{};
+        RE::NiTransform leftHandInWeapon{};
+        if (_twoHandedGrip.getManualCycleRockGripBaselines(
+                rightHandInWeapon,
+                leftHandInWeapon)) {
+            fillProviderTransform(rightHandInWeapon, outState.rightHandInWeapon);
+            fillProviderTransform(leftHandInWeapon, outState.leftHandInWeapon);
+            outState.flags |=
+                static_cast<std::uint32_t>(Flag::RightHandInWeaponValid) |
+                static_cast<std::uint32_t>(Flag::LeftHandInWeaponValid);
+        }
+
+        return true;
+    }
+
     std::uint32_t PhysicsInteraction::getProviderWeaponEvidenceDetailCountV1() const
     {
         return static_cast<std::uint32_t>(_weaponCollision.getProfileEvidenceDescriptors().size());

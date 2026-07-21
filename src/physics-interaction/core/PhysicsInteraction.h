@@ -92,11 +92,6 @@ namespace rock
 
         void synchronizeNativeScopePresentationAfterFrikUpdate();
 
-        [[nodiscard]] bool hasNativeManualCycleTwoHandAuthority() const;
-        [[nodiscard]] bool tryGetNativeManualCycleRockGripBaselines(
-            RE::NiTransform& outRightHandInWeapon,
-            RE::NiTransform& outLeftHandInWeapon) const;
-
         bool tryResolveNativeScopeGeometryDecision(bool nativeGeometryDecision, bool& outRockGeometryDecision);
 
         [[nodiscard]] bool tryGetManualScopeDirectTransitionTarget(
@@ -159,6 +154,8 @@ namespace rock
             ::rock::provider::RockProviderBodyContactV1* outContacts,
             std::uint32_t maxContacts) const;
         bool queryProviderEquippedWeaponClassificationV1(::rock::provider::RockProviderWeaponClassificationV1& outResult) const;
+        bool queryProviderEquippedWeaponGripStateV1(
+            ::rock::provider::RockProviderEquippedWeaponGripStateV1& outState) const;
         void fillProviderWeaponPartGripStates(
             std::array<::rock::provider::RockProviderWeaponPartGripStateV1, 2>& outStates) const;
 
