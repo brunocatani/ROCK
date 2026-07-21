@@ -189,19 +189,19 @@ Acceptance:
 
 ### Slice 5: Shape Fidelity, Configuration, Metrics, And Module Boundaries
 
-- [ ] Add triangle shape recipe support when local layout/source authority is sufficient.
-- [ ] Verify scaled-convex translation against FO4VR source/binary evidence before applying it.
-- [ ] Verify static/dynamic compound layouts against FO4VR before implementing compound recipes.
-- [ ] Add capped compound recursion and child-count policy.
-- [ ] Use actual captured AABB fallback for compressed mesh, height-field, unknown, or safely unsupported geometry.
-- [ ] Resolve configuration drift: generation value `100` versus effective cap `32`, C++ convex default `6` versus repository INI `8`, and hidden line/cache budgets.
-- [ ] Add validated keys for captures/frame, queued jobs, uploads/frame, cache entries, cache bytes, instance capacity, line vertices, and text vertices.
-- [ ] Update repository INIs and the active production INI in place for every added/renamed/removed key.
-- [ ] Remove or correctly use stale settings-key helpers.
-- [ ] Add counters for duplicate/reentrant skips, draw calls, mesh binds, buffer maps, instance counts, proxy/detail/cache state, queue depths, deferrals, evictions, and rejected vertices.
-- [ ] Add a nonblocking D3D timestamp-query ring if it can be read several frames later without flushing or stalling.
-- [ ] Split the current monolith into narrow modules for hook/lifecycle, D3D pass, shaders, published frame, shape recipe/cache, diagnostic batching, and statistics.
-- [ ] Remove superseded helpers and duplicate paths after module extraction.
+- [x] Add triangle shape recipe support when local layout/source authority is sufficient.
+- [x] Verify scaled-convex translation against FO4VR source/binary evidence before applying it.
+- [x] Verify static/dynamic compound layouts against FO4VR before implementing compound recipes.
+- [x] Add capped compound recursion and child-count policy.
+- [x] Use actual captured AABB fallback for compressed mesh, height-field, unknown, or safely unsupported geometry.
+- [x] Resolve configuration drift: generation value `100` versus effective cap `32`, C++ convex default `6` versus repository INI `8`, and hidden line/cache budgets.
+- [x] Add validated keys for captures/frame, queued jobs, uploads/frame, cache entries, cache bytes, instance capacity, line vertices, and text vertices.
+- [x] Update repository INIs and the active production INI in place for every added/renamed/removed key.
+- [x] Remove or correctly use stale settings-key helpers.
+- [x] Add counters for duplicate/reentrant skips, draw calls, mesh binds, buffer maps, instance counts, proxy/detail/cache state, queue depths, deferrals, evictions, and rejected vertices.
+- [x] Add a nonblocking D3D timestamp-query ring that reads older frames without flushing or stalling.
+- [x] Extract stable independently-owned domains into narrow shader, admission, snapshot-pool, settings, shape-geometry, shape-pipeline, diagnostic-batch, GPU-timing, and statistics modules. Keep the private hook/D3D-pass/published-frame coordinator in one translation unit so its process lifetime and render-pass ownership remain local rather than creating cyclic internal APIs.
+- [x] Remove superseded helpers and duplicate paths after module extraction.
 
 Acceptance:
 
@@ -266,9 +266,9 @@ Runtime completion also requires, when the game can be exercised safely:
 - [x] Slice 1 implementation, full regression suite, build, auto-deploy, commit, and post-commit regression complete.
 - [x] Slice 2 implementation, build, auto-deploy, commit, and post-commit regression complete.
 - [x] Slice 3 implementation, build, auto-deploy, commit, and post-commit regression complete.
-- [x] Slice 4 implementation, build, auto-deploy, and pre-commit full regression complete.
-- [ ] Slice 5 in progress: FO4VR layout verification complete; implementation pending.
-- [ ] Final runtime validation not started.
+- [x] Slice 4 implementation, build, auto-deploy, commit, and post-commit regression complete.
+- [x] Slice 5 implementation, build, auto-deploy, commit, and post-commit regression complete.
+- [ ] Final runtime/in-headset validation unavailable in this session: the game is not running and the final deployed artifact has not yet been loaded.
 
 ## Verification Evidence Ledger
 
@@ -276,7 +276,7 @@ Record any Ghidra/FO4VR source verification here before implementing a new offse
 
 | Date | Claim | Authority/evidence | Result | Implemented in commit |
 |---|---|---|---|---|
-| 2026-07-20 | Existing ROCK stereo matrices and role-specific transform sources remain authoritative | Current ROCK source and existing stereo/semantic tests | Preserve unchanged | Pending |
+| 2026-07-20 | Existing ROCK stereo matrices and role-specific transform sources remain authoritative | Current ROCK source and existing stereo/semantic tests | Preserve unchanged | `07abc83` and retained through final regression |
 | 2026-07-20 | `hknpWorld::GetBodyAabb` has the ABI and output layout required by ROCK | Modified and pristine CommonLibF4VR both declare `(hknpWorld*, hknpBodyId, void*)` at `REL::ID(249572)`; local address library/PDB map it to FO4VR `0x141539120`; read-only Ghidra disassembly/decompilation shows the third argument in `R8`, exactly eight float writes, min `[0..3]` then max `[4..7]`, after unsigned 16-bit decompression | **Confirmed.** Use the engine wrapper on the publisher thread, validate finite ordered bounds, and convert Havok units to game units | `07abc83` |
 | 2026-07-20 | ROCK must not copy the standalone raw compressed-AABB decoder | Read-only Ghidra shows `PUNPCKLWD`/`PUNPCKHWD` against zero, while CollisionVisualizerF4VR reads the same body storage through `std::int16_t*` | **Standalone implementation disputed.** Its signed interpretation is wrong above `32767`; ROCK keeps the verified engine wrapper and rejects those raw-offset/signed patterns in source regression | `07abc83` |
 | 2026-07-20 | Overlay `hknpShape` virtual calls have the correct slots/signatures | Modified and pristine `hknpShape.h` agree exactly: `GetType` slot `04`, `GetNumberOfSupportVertices` slot `08`, and `GetSupportVertices(hkcdVertex*, int32)` slot `09`; the standalone visualizer independently calls the same virtuals/slots | **Confirmed.** Preserve the CommonLib virtual calls and bounded/null-checked support-vertex handling | Existing behavior; guarded during Slice 3 extraction |
@@ -284,6 +284,7 @@ Record any Ghidra/FO4VR source verification here before implementing a new offse
 | 2026-07-20 | FO4VR triangle shapes can be captured without importing an unverified concrete layout | Pristine and modified CommonLib expose no concrete `hknpTriangleShape` fields, but both expose the verified support-vertex virtuals. Read-only Ghidra shows `hknpTriangleShape` constructors at `0x1415A5550` and `0x1415A5900` inheriting the convex-polytope path | **Confirmed.** Capture exactly the first three finite support vertices through CommonLib and emit one double-sided triangle; do not apply generic centroid/radius hull inflation | `833cc08` |
 | 2026-07-20 | Scaled-convex inner shape, scale, and translation fields used by the standalone are correct for FO4VR | Read-only Ghidra of `hknpScaledConvexShapeBase` constructor `0x14175FC50` writes the child pointer at `+0x30`, zero/metadata at `+0x38`, the scale vector at `+0x40`, and helper-produced translation at `+0x50` | **Standalone and current ROCK disputed.** `+0x38` is not the scale vector. Read scale at `+0x40`, translation at `+0x50`, validate both, include both in the cache fingerprint, and apply `inner * scale + translation` with translation converted from Havok units | `833cc08` |
 | 2026-07-20 | Static/dynamic compound root and child-slot layouts from the standalone are correct for FO4VR | Read-only Ghidra of `hknpCompoundShape` constructor `0x1416E2BE0`, allocation helper `0x1416E3F20`, copy helper `0x1416E3340`, static key-mask constructor `0x1415F68E0`, and independent consumers shows root slots at `+0x60`, high-water/size at `+0x68`, 0x80-byte slots, transform at slot `+0x00`, scale at `+0x40`, child shape pointer at `+0x50`, and active byte `+0x60 == 0`. Static `0x141E9CAC0` and dynamic `0x1416E4420` constructors share that base | **Standalone root offsets disputed; FO4VR layout confirmed.** Support types 7 and 8 using the verified fields, fail the whole recipe to the body AABB if any active child is invalid/unsupported, and enforce configured child/depth bounds | `833cc08` |
+| 2026-07-20 | Final overlay CommonLib call surface remains valid after all modernization changes | Exhaustive current-source scan found only `hknpShape::{GetType, GetNumberOfSupportVertices, GetSupportVertices}`, `hknpWorld::GetBodyAabb`, `BSGraphics::RendererData::GetSingleton`, and `REL::Relocation(REL::Offset)::address`. Modified and pristine CommonLibF4VR agree on the relevant virtual slots/signatures, relocation IDs, renderer member offsets, and offset-relocation semantics; the runtime-sensitive shape/AABB behavior was independently checked in FO4VR Ghidra above | **Confirmed.** The GPU timer uses only Windows D3D11 SDK interfaces and adds no CommonLib or engine-memory dependency | `ffc7852` |
 
 ## Commit Ledger
 
@@ -294,7 +295,9 @@ Record any Ghidra/FO4VR source verification here before implementing a new offse
 | 2: Immutable publication | `07abc83` | `custom-fast` Release build and auto-deploy passed | 119/119 full suite passed | 119/119 passed after commit; `git show --check` passed | CommonLib boundary independently cross-checked against pristine source, local address evidence, and FO4VR Ghidra |
 | 3: Async shape/cache | `889347a` | `custom-fast` Release build and auto-deploy passed | 122/122 full suite passed | 122/122 passed after commit; `git show --check` passed | One low-priority worker; bounded recipe, CPU-completion, upload, LRU, and GPU-byte paths |
 | 4: GPU/diagnostic batching | `2c0c365` | `custom-fast` Release build and auto-deploy passed | 124/124 full suite passed | 124/124 passed after commit; `git show --check` passed | One body map, one colored-line map/draw, one aggregate text map/draw; ordered adjacent mesh runs |
-| 5: Fidelity/config/metrics/modules | Pending | Pending | Pending | Pending | |
+| 5a: Shape fidelity | `833cc08` | `custom-fast` Release build and auto-deploy passed | 124/124 full suite passed | 124/124 passed after commit; `git show --check` passed | Correct triangle/scaled-convex/compound behavior from verified FO4VR evidence |
+| 5b: Bounded runtime settings | `212d9e9` | `custom-fast` Release build and auto-deploy passed | 126/126 full suite passed | 126/126 passed after commit; `git show --check` passed | Twelve sanitized limits wired at their actual enforcement points; repository, packaged, and active INIs updated in place |
+| 5c: GPU timing/admission/modules | `ffc7852` | `custom-fast` Release build and auto-deploy passed | 127/127 full suite passed pre-commit | Release rebuild/auto-deploy and 127/127 passed after commit; `git show --check` passed | Fixed non-blocking D3D11 query ring, differentiated admission counters, and isolated runtime-statistics contract |
 
 ## Progress Journal
 
@@ -409,6 +412,22 @@ Record any Ghidra/FO4VR source verification here before implementing a new offse
 - Updated `data/config/ROCK.ini`, `data/mod/ROCK_Config/ROCK.ini`, and the active production `ROCK_Config/ROCK.ini` in place with identical keys/defaults and documented ranges. No unrelated production setting was replaced.
 - Added pure runtime-limit tests and source-boundary coverage; strengthened line-batch tests so the allocation-free overload enforces each immutable frame's configured budget. The required `custom-fast` Release build compiled, linked, and auto-deployed, and the expanded complete suite passed 126/126 tests before the configuration commit.
 - The deployed bounded-settings artifact is `ROCK.dll` version `0.5.0.0`, size `5,396,480`, timestamp `2026-07-20 21:35:52`; DLL SHA-256 is `D66920AC27286FF0DC326370732173FAE2B211AE09F067BD1985AA81E0D8B6A1` and PDB SHA-256 is `5A1557A47CAAF3D3359CC542346816C10B2A37DD66D2CCF1289D35AA60BB04EC`.
+- Committed the bounded runtime settings as `212d9e9` (`feature/debug-overlay: expose bounded runtime budgets`). Post-commit regression passed 126/126 tests; `git show --check` passed and the worktree was clean before instrumentation began.
+- Added a four-slot D3D11 timestamp/disjoint query ring owned by the D3D resource generation. It issues one RAII sample around body, line, and text draws, checks at most one older slot per admitted frame, uses `D3D11_ASYNC_GETDATA_DONOTFLUSH` for every result probe, never loops waiting, and never calls `Flush`.
+- GPU query creation is optional and all-or-nothing. A failure logs once and leaves the renderer fully operational; query readiness is deliberately excluded from `D3DResources::ready()`.
+- Added cumulative admission telemetry that distinguishes no-publication, duplicate-publication, active/reentrant, and serial-race rejection from successful acquisitions. The existing atomic admission invariants and lease ownership remain unchanged.
+- Extracted the D3D query ring and per-frame runtime counter contract into `DebugOverlayGpuTimer` and `DebugOverlayStats`. Existing publication, shader, line-batch, shape-geometry, shape-pipeline, settings, and admission modules already own their narrow domains; the private render-pass coordinator remains together because splitting its D3D state and immutable-frame consumers would introduce cross-module lifetime coupling without removing hot-path work.
+- Added source-boundary coverage requiring the fixed query ring, correct begin/end ordering, non-flushing bounded readback, optional initialization, full draw-span scope, pre-log scope closure, telemetry publication, and removal of the monolithic statistics definition. Extended admission unit coverage verifies every deterministic counter category.
+- Re-scanned every CommonLib-facing call in the final overlay and compared it with both the active modified CommonLibF4VR and `original frik deps/CommonLibF4VR`. No new discrepancy was found beyond the scaled/compound layout defects already corrected in `833cc08`; the GPU timer is direct D3D11 and required no additional Ghidra claim.
+- The required `custom-fast` Release plugin build compiled, linked, and auto-deployed. After refreshing `custom-tests`, the complete pre-commit suite passed 57 policy tests plus 70 source-boundary tests, 127/127 total.
+- The final pre-commit instrumentation artifact is `ROCK.dll` version `0.5.0.0`, size `5,403,648`, timestamp `2026-07-20 21:52:33`; build/deploy DLL SHA-256 match `886A6FA3C840C6462DE8D3C5CD1A6BA4F9AB1912042A67DB12C615C5710A5537`, and build/deploy PDB SHA-256 match `329C385065D295F5191F8524D0EA90DCB95EAB6C3265D244A267C846EA8730E1`.
+- Committed the instrumentation/module slice as `ffc7852` (`feature/debug-overlay: add nonblocking gpu instrumentation`). The required post-commit Release build auto-deployed successfully, all 127 tests passed again, and `git show --check` reported no whitespace errors.
+
+### 2026-07-20 — Runtime Validation Boundary
+
+- `Fallout4VR.exe` was not running during the final validation check.
+- The final deployed DLL timestamp is `2026-07-20 21:52:33`, while the newest `f4sevr.log` and `ROCK.log` timestamps are `19:32:29` and `19:36:46`. Those logs predate the final artifact and therefore are not accepted as loader, hook, visual, or timing evidence for this build.
+- Build, link, auto-deploy, artifact identity, source/unit/shader regressions, and CommonLib/Ghidra verification are complete. Loader smoke, both-eye visual inspection, repeated lifecycle exercises, and collection of the new GPU timing samples remain runtime checks that require a new game session.
 
 ## Remaining Risks
 
