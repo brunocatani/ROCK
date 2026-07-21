@@ -27,6 +27,7 @@
 
 #include "physics-interaction/hand/HandSelection.h"
 #include "physics-interaction/hand/SelectionBeamPolicy.h"
+#include "physics-interaction/debug/DebugOverlayRuntimeSettings.h"
 #include "physics-interaction/native/HavokTimingFixPolicy.h"
 #include "physics-interaction/weapon/WeaponSemantics.h"
 
@@ -264,8 +265,18 @@ namespace rock
         bool rockDebugDumpWeaponAnimNodes = false;
         int rockDebugMaxWeaponBodiesDrawn = 100;
         int rockDebugWeaponAnimNodeDumpIntervalFrames = 120;
-        int rockDebugMaxShapeGenerationsPerFrame = 100;
-        int rockDebugMaxConvexSupportVertices = 6;
+        int rockDebugMaxShapeCapturesPerFrame = static_cast<int>(debug_overlay_runtime::kDefaultMaxShapeCapturesPerFrame);
+        int rockDebugMaxConvexSupportVertices = 8;
+        int rockDebugMaxCompoundChildren = static_cast<int>(debug_overlay_policy::kDefaultMaxCompoundChildren);
+        int rockDebugMaxCompoundDepth = static_cast<int>(debug_overlay_policy::kDefaultMaxCompoundDepth);
+        int rockDebugMaxShapeQueuedJobs = static_cast<int>(debug_overlay_runtime::kDefaultMaxShapeQueuedJobs);
+        int rockDebugMaxShapeCompletedJobs = static_cast<int>(debug_overlay_runtime::kDefaultMaxShapeCompletedJobs);
+        int rockDebugMaxShapeUploadsPerFrame = static_cast<int>(debug_overlay_runtime::kDefaultMaxShapeUploadsPerFrame);
+        int rockDebugMaxShapeCacheEntries = static_cast<int>(debug_overlay_policy::kDefaultShapeCacheBudget);
+        int rockDebugMaxShapeCacheBytes = static_cast<int>(debug_overlay_runtime::kDefaultMaxShapeCacheBytes);
+        int rockDebugMaxBodyInstances = static_cast<int>(debug_overlay_runtime::kDefaultMaxBodyInstances);
+        int rockDebugMaxLineVertices = static_cast<int>(debug_overlay_policy::kDefaultLineVertexBudget);
+        int rockDebugMaxTextVertices = static_cast<int>(debug_overlay_runtime::kDefaultMaxTextVertices);
         bool rockDebugUseBoundsForHeavyConvex = true;
         bool rockDebugVerboseLogging = false;
         bool rockDebugGrabFrameLogging = false;

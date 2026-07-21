@@ -50,8 +50,8 @@ Require-In $shaders 'kStereoColorVertex[\s\S]*float4 color\s*:\s*COLOR0' `
 Require-In $shaders 'kScreenTextVertex[\s\S]*float4 color\s*:\s*COLOR0' `
     'The screen-text shader must consume per-vertex color.'
 
-Require-In $overlay 'auto& lineBatch\s*=\s*s_d3d\.scratch->lines[\s\S]*lineBatch\.clear\(\)' `
-    'Line collection must reuse prepared process-lifetime scratch.'
+Require-In $overlay 'auto& lineBatch\s*=\s*s_d3d\.scratch->lines[\s\S]*lineBatch\.beginFrame\(frame->settings\.limits\.maxLineVertices\)' `
+    'Line collection must reuse prepared process-lifetime scratch with the published frame budget.'
 Require-In $overlay 'ColoredVertex start[\s\S]*DrawInstanced\(static_cast<UINT>\(batch\.vertexCount\(\)\),\s*2' `
     'All ordered colored lines must upload and draw as one stereo batch.'
 Reject-In $overlay 'lineColorLess|std::sort\(ordered|LineDrawRun' `

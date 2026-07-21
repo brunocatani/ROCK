@@ -7,15 +7,11 @@
 #include <d3d11.h>
 #include <wrl/client.h>
 
+#include "physics-interaction/debug/DebugOverlayRuntimeSettings.h"
 #include "physics-interaction/debug/DebugOverlayShapeGeometry.h"
 
 namespace rock::debug_overlay_shape
 {
-    inline constexpr std::uint32_t kDefaultMaxQueuedJobs = 64;
-    inline constexpr std::uint32_t kDefaultMaxCompletedJobs = 64;
-    inline constexpr std::uint32_t kDefaultMaxUploadsPerFrame = 2;
-    inline constexpr std::size_t kDefaultMaxGpuBytes = 64u * 1024u * 1024u;
-
     enum class CacheState : std::uint8_t
     {
         Missing,
@@ -37,10 +33,10 @@ namespace rock::debug_overlay_shape
 
     struct PipelineLimits
     {
-        std::uint32_t maxQueuedJobs{ kDefaultMaxQueuedJobs };
-        std::uint32_t maxCompletedJobs{ kDefaultMaxCompletedJobs };
+        std::uint32_t maxQueuedJobs{ debug_overlay_runtime::kDefaultMaxShapeQueuedJobs };
+        std::uint32_t maxCompletedJobs{ debug_overlay_runtime::kDefaultMaxShapeCompletedJobs };
         std::uint32_t maxCacheEntries{ debug_overlay_policy::kDefaultShapeCacheBudget };
-        std::size_t maxGpuBytes{ kDefaultMaxGpuBytes };
+        std::size_t maxGpuBytes{ debug_overlay_runtime::kDefaultMaxShapeCacheBytes };
     };
 
     struct GpuShape

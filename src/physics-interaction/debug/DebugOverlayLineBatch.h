@@ -161,12 +161,24 @@ namespace rock::debug_overlay_line_batch
         {
             _segments.clear();
             _rejectedLines = 0;
+            _activeMaxVertices = _preparedMaxVertices;
             if (++_generation == 0) {
                 for (auto& slot : _slots) {
                     slot.generation = 0;
                 }
                 _generation = 1;
             }
+        }
+
+        void beginFrame(std::size_t maxVertices)
+        {
+            clear();
+            _activeMaxVertices = (std::min)(maxVertices, _preparedMaxVertices);
+        }
+
+        bool addLine(const Vec3& start, const Vec3& end, const Rgba& color)
+        {
+            return addLine(start, end, color, _activeMaxVertices);
         }
 
         bool addLine(const Vec3& start, const Vec3& end, const Rgba& color, std::size_t maxVertices)
@@ -203,6 +215,11 @@ namespace rock::debug_overlay_line_batch
             const bool yAdded = addLine(Vec3{ center.x, center.y - size, center.z }, Vec3{ center.x, center.y + size, center.z }, color, maxVertices);
             const bool zAdded = addLine(Vec3{ center.x, center.y, center.z - size }, Vec3{ center.x, center.y, center.z + size }, color, maxVertices);
             return xAdded || yAdded || zAdded;
+        }
+
+        bool addPointMarker(const Vec3& center, float size, const Rgba& color)
+        {
+            return addPointMarker(center, size, color, _activeMaxVertices);
         }
 
         [[nodiscard]] std::size_t vertexCount() const { return _segments.size() * 2; }
@@ -261,6 +278,7 @@ namespace rock::debug_overlay_line_batch
         std::vector<LineSegment> _segments{};
         std::vector<KeySlot> _slots{};
         std::size_t _preparedMaxVertices{ 0 };
+        std::size_t _activeMaxVertices{ 0 };
         std::size_t _rejectedLines = 0;
         std::uint32_t _generation{ 0 };
     };

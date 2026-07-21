@@ -25,7 +25,7 @@ namespace rock::debug_overlay_policy
      * Debug body rendering is accurate but expensive because shape support
      * vertices are triangulated and uploaded on the VR submit path. Keep the
      * visualizer explicit-ID based, then cap the high-cardinality weapon hulls
-     * and first-time shape generation so diagnostics stay useful without making
+     * and first-time shape capture so diagnostics stay useful without making
      * every generated weapon part a per-frame cost spike.
      */
     inline bool shouldDrawHandBody(bool drawRockBodies, bool drawHandColliders)
@@ -41,18 +41,7 @@ namespace rock::debug_overlay_policy
         return weaponIndex < static_cast<std::uint32_t>(maxWeaponBodiesDrawn);
     }
 
-    inline std::uint32_t clampShapeGenerationsPerFrame(int requested)
-    {
-        if (requested <= 0) {
-            return 0;
-        }
-        if (requested > 32) {
-            return 32;
-        }
-        return static_cast<std::uint32_t>(requested);
-    }
-
-    inline std::uint32_t clampMaxConvexSupportVertices(int requested)
+    inline constexpr std::uint32_t clampMaxConvexSupportVertices(int requested)
     {
         if (requested < 4) {
             return 4;
@@ -63,7 +52,7 @@ namespace rock::debug_overlay_policy
         return static_cast<std::uint32_t>(requested);
     }
 
-    inline std::uint32_t clampLineVertexBudget(int requested)
+    inline constexpr std::uint32_t clampLineVertexBudget(int requested)
     {
         if (requested <= 0) {
             return 0;
@@ -74,7 +63,7 @@ namespace rock::debug_overlay_policy
         return static_cast<std::uint32_t>(requested);
     }
 
-    inline std::uint32_t clampShapeCacheBudget(int requested)
+    inline constexpr std::uint32_t clampShapeCacheBudget(int requested)
     {
         if (requested < 16) {
             return 16;
@@ -85,7 +74,7 @@ namespace rock::debug_overlay_policy
         return static_cast<std::uint32_t>(requested);
     }
 
-    inline std::uint32_t clampMaxCompoundChildren(int requested)
+    inline constexpr std::uint32_t clampMaxCompoundChildren(int requested)
     {
         if (requested < 1) {
             return 1;
@@ -96,7 +85,7 @@ namespace rock::debug_overlay_policy
         return static_cast<std::uint32_t>(requested);
     }
 
-    inline std::uint32_t clampMaxCompoundDepth(int requested)
+    inline constexpr std::uint32_t clampMaxCompoundDepth(int requested)
     {
         if (requested < 1) {
             return 1;
@@ -171,47 +160,4 @@ namespace rock::debug_overlay_policy
         return key;
     }
 
-    /*
-     * Overlay cache invalidation depends on every renderer-shape setting having
-     * a distinct contribution. The older manual bit packing overlapped wide
-     * fields, so some cap changes could leave cached hull meshes alive with the
-     * wrong draw policy. Use a small deterministic hash instead of packed bit
-     * ranges so adding body settings cannot collide by construction.
-     */
-    inline std::uint64_t makeOverlaySettingsKey(bool drawRockBodies,
-        bool drawTargetBodies,
-        bool drawAxes,
-        bool drawMarkers,
-        bool drawSkeleton,
-        bool drawText,
-        bool drawHandColliders,
-        bool drawHandBoneColliders,
-        bool drawWeaponColliders,
-        int maxHandBoneBodiesDrawn,
-        int maxWeaponBodiesDrawn,
-        int maxShapeGenerationsPerFrame,
-        int maxConvexSupportVertices,
-        bool useBoundsForHeavyConvex,
-        int lineVertexBudget = static_cast<int>(kDefaultLineVertexBudget),
-        int shapeCacheBudget = static_cast<int>(kDefaultShapeCacheBudget))
-    {
-        std::uint64_t key = 0xcbf29ce484222325ull;
-        key = mixOverlaySettingsKey(key, drawRockBodies ? 1ull : 0ull);
-        key = mixOverlaySettingsKey(key, drawTargetBodies ? 1ull : 0ull);
-        key = mixOverlaySettingsKey(key, drawAxes ? 1ull : 0ull);
-        key = mixOverlaySettingsKey(key, drawMarkers ? 1ull : 0ull);
-        key = mixOverlaySettingsKey(key, drawSkeleton ? 1ull : 0ull);
-        key = mixOverlaySettingsKey(key, drawText ? 1ull : 0ull);
-        key = mixOverlaySettingsKey(key, drawHandColliders ? 1ull : 0ull);
-        key = mixOverlaySettingsKey(key, drawHandBoneColliders ? 1ull : 0ull);
-        key = mixOverlaySettingsKey(key, drawWeaponColliders ? 1ull : 0ull);
-        key = mixOverlaySettingsKey(key, static_cast<std::uint32_t>(maxHandBoneBodiesDrawn < 0 ? 0 : maxHandBoneBodiesDrawn));
-        key = mixOverlaySettingsKey(key, static_cast<std::uint32_t>(maxWeaponBodiesDrawn < 0 ? 0 : maxWeaponBodiesDrawn));
-        key = mixOverlaySettingsKey(key, clampShapeGenerationsPerFrame(maxShapeGenerationsPerFrame));
-        key = mixOverlaySettingsKey(key, clampMaxConvexSupportVertices(maxConvexSupportVertices));
-        key = mixOverlaySettingsKey(key, useBoundsForHeavyConvex ? 1ull : 0ull);
-        key = mixOverlaySettingsKey(key, clampLineVertexBudget(lineVertexBudget));
-        key = mixOverlaySettingsKey(key, clampShapeCacheBudget(shapeCacheBudget));
-        return key;
-    }
 }

@@ -65,5 +65,10 @@ int main()
     passed &= expect(markerBatch.lineCount() == 3 && markerBatch.vertexCount() == 6,
         "A successful marker did not emit exactly three lines.");
 
+    markerBatch.beginFrame(2);
+    passed &= expect(markerBatch.addLine(a, b, red), "Configured frame budget rejected its first line.");
+    passed &= expect(!markerBatch.addLine(b, c, blue) && markerBatch.vertexCount() == 2,
+        "Configured frame budget was not enforced by the allocation-free overload.");
+
     return passed ? 0 : 1;
 }

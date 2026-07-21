@@ -24,6 +24,7 @@
 #include "physics-interaction/debug/DebugOverlayFrameAdmission.h"
 #include "physics-interaction/debug/DebugOverlayLineBatch.h"
 #include "physics-interaction/debug/DebugOverlayPolicy.h"
+#include "physics-interaction/debug/DebugOverlayRuntimeSettings.h"
 #include "physics-interaction/debug/DebugOverlayShapeGeometry.h"
 #include "physics-interaction/debug/DebugOverlayShapePipeline.h"
 #include "physics-interaction/debug/DebugOverlayShaders.h"
@@ -84,8 +85,8 @@ namespace rock::debug
         constexpr float kColliderAxisLength = 12.0f;
         constexpr float kBodyAxisLength = 16.0f;
         constexpr float kTargetAxisLength = 20.0f;
-        constexpr std::uint32_t kTextVertexCapacity = 131072;
         constexpr std::size_t kBodyInstanceCapacity = std::tuple_size_v<decltype(BodyOverlayFrame{}.entries)>;
+        static_assert(kBodyInstanceCapacity == debug_overlay_runtime::kMaxBodyInstances);
         constexpr std::uint64_t kCanonicalSphereGeometryFingerprint = 0x5350'4845'5245'0001ull;
         constexpr DWORD kPageExecuteReadWrite = 0x00000040u;
         constexpr UINT kMaxShaderClassInstances = 256;
@@ -133,7 +134,7 @@ namespace rock::debug
                         return false;
                     }
                     bodies.reserve(kBodyInstanceCapacity);
-                    textVertices.reserve(kTextVertexCapacity);
+                    textVertices.reserve(debug_overlay_runtime::kMaxTextVertices);
                 } catch (...) {
                     return false;
                 }
@@ -155,13 +156,9 @@ namespace rock::debug
 
         struct OverlayRenderSettings
         {
-            std::uint32_t maxShapeGenerationsPerFrame{ 0 };
-            int maxConvexSupportVertices{ 0 };
-            std::uint32_t maxCompoundChildren{ debug_overlay_policy::kDefaultMaxCompoundChildren };
-            std::uint32_t maxCompoundDepth{ debug_overlay_policy::kDefaultMaxCompoundDepth };
+            debug_overlay_runtime::Limits limits{};
             std::uint64_t shapeDecodeSettingsKey{ 0 };
             debug_overlay_shape::PipelineLimits pipelineLimits{};
-            std::uint32_t maxGpuUploadsPerFrame{ debug_overlay_shape::kDefaultMaxUploadsPerFrame };
             bool useBoundsForHeavyConvex{ false };
             bool duplicateTextPerEye{ true };
             bool verboseLogging{ false };
@@ -203,8 +200,8 @@ namespace rock::debug
             OverlayRenderSettings settings{};
             std::uintptr_t worldIdentity{ 0 };
             std::uint32_t bodyExtractFailures{ 0 };
-            std::uint32_t shapeGenerations{ 0 };
-            std::uint32_t shapeGenerationDeferrals{ 0 };
+            std::uint32_t shapeCaptures{ 0 };
+            std::uint32_t shapeCaptureDeferrals{ 0 };
             bool drawRockBodies{ false };
             bool drawTargetBodies{ false };
             bool drawAxes{ false };
@@ -229,8 +226,8 @@ namespace rock::debug
             std::uint32_t bodyInstanceRejects = 0;
             std::uint32_t shapeCacheHits = 0;
             std::uint32_t shapeCacheMisses = 0;
-            std::uint32_t shapeGenerations = 0;
-            std::uint32_t shapeGenerationDeferrals = 0;
+            std::uint32_t shapeCaptures = 0;
+            std::uint32_t shapeCaptureDeferrals = 0;
             std::uint32_t shapePendingProxies = 0;
             std::uint32_t shapeUploadsProcessed = 0;
             std::uint32_t shapeUploadsCompleted = 0;
@@ -423,7 +420,7 @@ namespace rock::debug
              * include a small geometry fingerprint instead of trusting the
              * pointer alone.
              */
-            if (!shapeAddress || depth > static_cast<int>(settings.maxCompoundDepth)) {
+            if (!shapeAddress || depth > static_cast<int>(settings.limits.maxCompoundDepth)) {
                 return 0;
             }
 
@@ -485,7 +482,7 @@ namespace rock::debug
                     const auto slotCount = *reinterpret_cast<const std::int32_t*>(shapeAddress + kCompoundSlotCountOffset);
                     fingerprint = mixShapeFingerprint(fingerprint, static_cast<std::uint32_t>((std::max)(slotCount, 0)));
                     if (!slotArray || slotCount <= 0 ||
-                        static_cast<std::uint32_t>(slotCount) > settings.maxCompoundChildren) {
+                        static_cast<std::uint32_t>(slotCount) > settings.limits.maxCompoundChildren) {
                         return fingerprint;
                     }
 
@@ -793,11 +790,11 @@ namespace rock::debug
         {
             recipe = {};
             recipe.settings.havokToGameScale = havokToGameScale();
-            recipe.settings.maxConvexSupportVertices = static_cast<std::uint32_t>(settings.maxConvexSupportVertices);
-            recipe.settings.maxCompoundChildren = settings.maxCompoundChildren;
-            recipe.settings.maxCompoundDepth = settings.maxCompoundDepth;
+            recipe.settings.maxConvexSupportVertices = settings.limits.maxConvexSupportVertices;
+            recipe.settings.maxCompoundChildren = settings.limits.maxCompoundChildren;
+            recipe.settings.maxCompoundDepth = settings.limits.maxCompoundDepth;
             recipe.settings.useBoundsForHeavyConvex = settings.useBoundsForHeavyConvex;
-            if (!shapeAddress || depth > static_cast<int>(settings.maxCompoundDepth) || !std::isfinite(recipe.settings.havokToGameScale) ||
+            if (!shapeAddress || depth > static_cast<int>(settings.limits.maxCompoundDepth) || !std::isfinite(recipe.settings.havokToGameScale) ||
                 recipe.settings.havokToGameScale <= 0.0f) {
                 return false;
             }
@@ -870,7 +867,7 @@ namespace rock::debug
                 const auto slotArray = *reinterpret_cast<const std::uintptr_t*>(shapeAddress + kCompoundSlotArrayOffset);
                 const auto slotCount = *reinterpret_cast<const std::int32_t*>(shapeAddress + kCompoundSlotCountOffset);
                 if (!slotArray || slotCount <= 0 ||
-                    static_cast<std::uint32_t>(slotCount) > settings.maxCompoundChildren) {
+                    static_cast<std::uint32_t>(slotCount) > settings.limits.maxCompoundChildren) {
                     return false;
                 }
 
@@ -972,24 +969,30 @@ namespace rock::debug
         OverlayRenderSettings captureOverlayRenderSettings()
         {
             OverlayRenderSettings settings{};
-            settings.maxShapeGenerationsPerFrame =
-                debug_overlay_policy::clampShapeGenerationsPerFrame(g_rockConfig.rockDebugMaxShapeGenerationsPerFrame);
-            settings.maxConvexSupportVertices =
-                static_cast<int>(debug_overlay_policy::clampMaxConvexSupportVertices(g_rockConfig.rockDebugMaxConvexSupportVertices));
-            settings.maxCompoundChildren = debug_overlay_policy::kDefaultMaxCompoundChildren;
-            settings.maxCompoundDepth = debug_overlay_policy::kDefaultMaxCompoundDepth;
+            debug_overlay_runtime::RequestedLimits requested{};
+            requested.maxShapeCapturesPerFrame = g_rockConfig.rockDebugMaxShapeCapturesPerFrame;
+            requested.maxConvexSupportVertices = g_rockConfig.rockDebugMaxConvexSupportVertices;
+            requested.maxCompoundChildren = g_rockConfig.rockDebugMaxCompoundChildren;
+            requested.maxCompoundDepth = g_rockConfig.rockDebugMaxCompoundDepth;
+            requested.maxShapeQueuedJobs = g_rockConfig.rockDebugMaxShapeQueuedJobs;
+            requested.maxShapeCompletedJobs = g_rockConfig.rockDebugMaxShapeCompletedJobs;
+            requested.maxShapeUploadsPerFrame = g_rockConfig.rockDebugMaxShapeUploadsPerFrame;
+            requested.maxShapeCacheEntries = g_rockConfig.rockDebugMaxShapeCacheEntries;
+            requested.maxShapeCacheBytes = g_rockConfig.rockDebugMaxShapeCacheBytes;
+            requested.maxBodyInstances = g_rockConfig.rockDebugMaxBodyInstances;
+            requested.maxLineVertices = g_rockConfig.rockDebugMaxLineVertices;
+            requested.maxTextVertices = g_rockConfig.rockDebugMaxTextVertices;
+            settings.limits = debug_overlay_runtime::sanitize(requested);
             settings.useBoundsForHeavyConvex = g_rockConfig.rockDebugUseBoundsForHeavyConvex;
             settings.shapeDecodeSettingsKey = debug_overlay_policy::makeShapeDecodeSettingsKey(
-                settings.maxConvexSupportVertices,
+                static_cast<int>(settings.limits.maxConvexSupportVertices),
                 settings.useBoundsForHeavyConvex,
-                static_cast<int>(settings.maxCompoundChildren),
-                static_cast<int>(settings.maxCompoundDepth));
-            settings.pipelineLimits.maxQueuedJobs = debug_overlay_shape::kDefaultMaxQueuedJobs;
-            settings.pipelineLimits.maxCompletedJobs = debug_overlay_shape::kDefaultMaxCompletedJobs;
-            settings.pipelineLimits.maxCacheEntries = debug_overlay_policy::clampShapeCacheBudget(
-                static_cast<int>(debug_overlay_policy::kDefaultShapeCacheBudget));
-            settings.pipelineLimits.maxGpuBytes = debug_overlay_shape::kDefaultMaxGpuBytes;
-            settings.maxGpuUploadsPerFrame = debug_overlay_shape::kDefaultMaxUploadsPerFrame;
+                static_cast<int>(settings.limits.maxCompoundChildren),
+                static_cast<int>(settings.limits.maxCompoundDepth));
+            settings.pipelineLimits.maxQueuedJobs = settings.limits.maxShapeQueuedJobs;
+            settings.pipelineLimits.maxCompletedJobs = settings.limits.maxShapeCompletedJobs;
+            settings.pipelineLimits.maxCacheEntries = settings.limits.maxShapeCacheEntries;
+            settings.pipelineLimits.maxGpuBytes = settings.limits.maxShapeCacheBytes;
             settings.duplicateTextPerEye = g_rockConfig.rockDebugGrabTransformTelemetryTextMode == 0;
             settings.verboseLogging = g_rockConfig.rockDebugVerboseLogging;
             return settings;
@@ -1006,8 +1009,8 @@ namespace rock::debug
             frame.settings = {};
             frame.worldIdentity = 0;
             frame.bodyExtractFailures = 0;
-            frame.shapeGenerations = 0;
-            frame.shapeGenerationDeferrals = 0;
+            frame.shapeCaptures = 0;
+            frame.shapeCaptureDeferrals = 0;
             frame.drawRockBodies = false;
             frame.drawTargetBodies = false;
             frame.drawAxes = false;
@@ -1044,8 +1047,8 @@ namespace rock::debug
             if (shapePipeline().lookup(key).state != debug_overlay_shape::CacheState::Missing) {
                 return;
             }
-            if (frame.shapeGenerations >= frame.settings.maxShapeGenerationsPerFrame) {
-                ++frame.shapeGenerationDeferrals;
+            if (frame.shapeCaptures >= frame.settings.limits.maxShapeCapturesPerFrame) {
+                ++frame.shapeCaptureDeferrals;
                 return;
             }
 
@@ -1053,14 +1056,14 @@ namespace rock::debug
             if (reservation.status != debug_overlay_shape::ReserveStatus::Reserved) {
                 if (reservation.status == debug_overlay_shape::ReserveStatus::QueueFull ||
                     reservation.status == debug_overlay_shape::ReserveStatus::NotRunning) {
-                    ++frame.shapeGenerationDeferrals;
+                    ++frame.shapeCaptureDeferrals;
                 } else if (reservation.status == debug_overlay_shape::ReserveStatus::CacheFull) {
-                    ++frame.shapeGenerationDeferrals;
+                    ++frame.shapeCaptureDeferrals;
                 }
                 return;
             }
 
-            ++frame.shapeGenerations;
+            ++frame.shapeCaptures;
             debug_overlay_shape::ShapeRecipe recipe{};
             bool captured = false;
             try {
@@ -1073,7 +1076,7 @@ namespace rock::debug
                 return;
             }
             if (!shapePipeline().submit(reservation.reservation, std::move(recipe))) {
-                ++frame.shapeGenerationDeferrals;
+                ++frame.shapeCaptureDeferrals;
             }
         }
 
@@ -1602,7 +1605,7 @@ namespace rock::debug
 
             D3D11_BUFFER_DESC textDesc{};
             textDesc.Usage = D3D11_USAGE_DYNAMIC;
-            textDesc.ByteWidth = sizeof(ColoredVertex) * kTextVertexCapacity;
+            textDesc.ByteWidth = sizeof(ColoredVertex) * debug_overlay_runtime::kMaxTextVertices;
             textDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
             textDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
             if (FAILED(device->CreateBuffer(&textDesc, nullptr, resources.textVB.GetAddressOf()))) {
@@ -2742,19 +2745,14 @@ namespace rock::debug
             return debug_overlay_line_batch::Rgba{ color[0], color[1], color[2], color[3] };
         }
 
-        std::uint32_t lineVertexBudget()
-        {
-            return debug_overlay_policy::clampLineVertexBudget(static_cast<int>(debug_overlay_policy::kDefaultLineVertexBudget));
-        }
-
         void appendDebugLine(debug_overlay_line_batch::LineBatch& batch, const Vertex& start, const Vertex& end, const float color[4])
         {
-            batch.addLine(toLineVec(start), toLineVec(end), toLineColor(color), lineVertexBudget());
+            batch.addLine(toLineVec(start), toLineVec(end), toLineColor(color));
         }
 
         void appendPointMarker(debug_overlay_line_batch::LineBatch& batch, const RE::NiPoint3& position, float size, const float color[4])
         {
-            batch.addPointMarker(toLineVec(toVertex(position)), size, toLineColor(color), lineVertexBudget());
+            batch.addPointMarker(toLineVec(toVertex(position)), size, toLineColor(color));
         }
 
         void drawLineBatch(ID3D11DeviceContext* context, const debug_overlay_line_batch::LineBatch& batch, OverlayRuntimeStats& stats)
@@ -3036,9 +3034,10 @@ namespace rock::debug
             float textureWidth,
             float textureHeight,
             const float color[4],
+            std::uint32_t maxVertices,
             std::uint32_t& rejectedVertices)
         {
-            if (vertices.size() + 6 > kTextVertexCapacity) {
+            if (vertices.size() + 6 > maxVertices) {
                 rejectedVertices += 6;
                 return false;
             }
@@ -3110,6 +3109,7 @@ namespace rock::debug
             float maxX,
             float textureWidth,
             float textureHeight,
+            std::uint32_t maxVertices,
             std::uint32_t& rejectedVertices)
         {
             constexpr float kGlyphColumns = 5.0f;
@@ -3131,6 +3131,7 @@ namespace rock::debug
                                 textureWidth,
                                 textureHeight,
                                 entry.color,
+                                maxVertices,
                                 rejectedVertices);
                         }
                     }
@@ -3151,6 +3152,7 @@ namespace rock::debug
             float textureWidth,
             float textureHeight,
             bool duplicatePerEye,
+            std::uint32_t maxVertices,
             std::uint32_t& rejectedVertices)
         {
             const float halfWidth = textureWidth * 0.5f;
@@ -3168,7 +3170,7 @@ namespace rock::debug
                 const float maxX = (std::max)(minX, eyeMaxX - approximateWidth - 24.0f);
                 const float baseX = std::clamp(projectedX + entry.x, minX, maxX);
                 const float baseY = std::clamp(projectedY + entry.y, 24.0f, (std::max)(24.0f, textureHeight - 64.0f));
-                appendTextGlyphs(vertices, entry, baseX, baseY, eyeMaxX - 8.0f, textureWidth, textureHeight, rejectedVertices);
+                appendTextGlyphs(vertices, entry, baseX, baseY, eyeMaxX - 8.0f, textureWidth, textureHeight, maxVertices, rejectedVertices);
             };
 
             appendEye(0, eye0, adjust0);
@@ -3197,16 +3199,17 @@ namespace rock::debug
             auto& vertices = s_d3d.scratch->textVertices;
             vertices.clear();
             std::uint32_t rejectedVertices = 0;
+            const auto maxVertices = frame.settings.limits.maxTextVertices;
             for (const auto& entry : frame.text) {
                 const std::uint32_t rejectedBefore = rejectedVertices;
                 if (entry.worldAnchored) {
                     appendWorldAnchoredTextGlyphs(
-                        vertices, entry, eye0, eye1, adjust0, adjust1, textureWidth, textureHeight, duplicatePerEye, rejectedVertices);
+                        vertices, entry, eye0, eye1, adjust0, adjust1, textureWidth, textureHeight, duplicatePerEye, maxVertices, rejectedVertices);
                 } else {
-                    appendTextGlyphs(vertices, entry, entry.x, entry.y, eyeWidth - 8.0f, textureWidth, textureHeight, rejectedVertices);
+                    appendTextGlyphs(vertices, entry, entry.x, entry.y, eyeWidth - 8.0f, textureWidth, textureHeight, maxVertices, rejectedVertices);
                     if (duplicatePerEye) {
                         appendTextGlyphs(
-                            vertices, entry, entry.x + eyeWidth, entry.y, textureWidth - 8.0f, textureWidth, textureHeight, rejectedVertices);
+                            vertices, entry, entry.x + eyeWidth, entry.y, textureWidth - 8.0f, textureWidth, textureHeight, maxVertices, rejectedVertices);
                     }
                 }
                 if (rejectedVertices != rejectedBefore) {
@@ -3290,7 +3293,7 @@ namespace rock::debug
                 if (!gpuShape || !gpuShape->vertexBuffer || !gpuShape->indexBuffer || gpuShape->indexCount == 0) {
                     continue;
                 }
-                if (draws.size() >= kBodyInstanceCapacity) {
+                if (draws.size() >= frame.settings.limits.maxBodyInstances) {
                     ++stats.bodyInstanceRejects;
                     continue;
                 }
@@ -3380,10 +3383,10 @@ namespace rock::debug
 
             OverlayRuntimeStats stats{};
             stats.bodyExtractFailures = frame->bodyExtractFailures;
-            stats.shapeGenerations = frame->shapeGenerations;
-            stats.shapeGenerationDeferrals = frame->shapeGenerationDeferrals;
+            stats.shapeCaptures = frame->shapeCaptures;
+            stats.shapeCaptureDeferrals = frame->shapeCaptureDeferrals;
             const auto uploadResult = shapePipeline().processCompletedUploads(
-                device, frame->settings.maxGpuUploadsPerFrame, frame->settings.pipelineLimits);
+                device, frame->settings.limits.maxShapeUploadsPerFrame, frame->settings.pipelineLimits);
             stats.shapeUploadsProcessed = uploadResult.processed;
             stats.shapeUploadsCompleted = uploadResult.uploaded;
             stats.shapeUploadFailures = uploadResult.failed;
@@ -3410,7 +3413,7 @@ namespace rock::debug
             }
 
             auto& lineBatch = s_d3d.scratch->lines;
-            lineBatch.clear();
+            lineBatch.beginFrame(frame->settings.limits.maxLineVertices);
             collectAxisOverlays(lineBatch, *frame);
             collectMarkerOverlays(lineBatch, *frame);
             collectSkeletonOverlays(lineBatch, *frame);
@@ -3421,7 +3424,7 @@ namespace rock::debug
                 s_overlayStatsLogCounter = 0;
                 const auto pipelineStats = shapePipeline().stats();
                 ROCK_LOG_DEBUG(Hand,
-                    "Debug overlay frame: entries={} drawn={} bodyBinds={} bodyDraws={} bodyMaps={} bodyRejects={} axes={} markers={} skeleton={} text={} cacheHits={} cacheMisses={} shapeCaptures={} captureDefers={} captureCap={} uploads={}/{} uploadFails={} proxies={} pendingProxy={} unsupportedProxy={} unsupportedSkip={} cache(ready/pending/unsupported/total/bytes)={}/{}/{}/{}/{} jobs(reserved/queued/active/completed)={}/{}/{}/{} evictions={} staleDrops={} completedDrops={} bodyReadFails={} lineVerts={} lineLines={} lineDraws={} lineRejects={} lineMapFails={} textVerts={} textDraws={} textTrunc={} textRejectVerts={} textMapFails={} rtvHits={} rtvMisses={}",
+                    "Debug overlay frame: entries={} drawn={} bodyBinds={} bodyDraws={} bodyMaps={} bodyRejects={} axes={} markers={} skeleton={} text={} cacheHits={} cacheMisses={} shapeCaptures={} captureDefers={} captureCap={} uploads={}/{} uploadFails={} proxies={} pendingProxy={} unsupportedProxy={} unsupportedSkip={} cache(ready/pending/unsupported/total/bytes)={}/{}/{}/{}/{} jobs(reserved/queued/active/completed)={}/{}/{}/{} evictions={} staleDrops={} completedDrops={} bodyReadFails={} lineVerts={} lineLines={} lineDraws={} lineRejects={} lineMapFails={} textVerts={} textDraws={} textTrunc={} textRejectVerts={} textMapFails={} rtvHits={} rtvMisses={} limits(convex/compound/depth/queue/completed/uploads/cacheEntries/cacheBytes/bodies/lines/text)={}/{}/{}/{}/{}/{}/{}/{}/{}/{}/{}",
                     stats.bodyEntries,
                     stats.bodiesDrawn,
                     stats.bodyMeshBinds,
@@ -3434,9 +3437,9 @@ namespace rock::debug
                     frame->text.size(),
                     stats.shapeCacheHits,
                     stats.shapeCacheMisses,
-                    stats.shapeGenerations,
-                    stats.shapeGenerationDeferrals,
-                    frame->settings.maxShapeGenerationsPerFrame,
+                    stats.shapeCaptures,
+                    stats.shapeCaptureDeferrals,
+                    frame->settings.limits.maxShapeCapturesPerFrame,
                     stats.shapeUploadsCompleted,
                     stats.shapeUploadsProcessed,
                     stats.shapeUploadFailures,
@@ -3468,7 +3471,18 @@ namespace rock::debug
                     stats.textRejectedVertices,
                     stats.textMapFailures,
                     stats.rtvCacheHits,
-                    stats.rtvCacheMisses);
+                    stats.rtvCacheMisses,
+                    frame->settings.limits.maxConvexSupportVertices,
+                    frame->settings.limits.maxCompoundChildren,
+                    frame->settings.limits.maxCompoundDepth,
+                    frame->settings.limits.maxShapeQueuedJobs,
+                    frame->settings.limits.maxShapeCompletedJobs,
+                    frame->settings.limits.maxShapeUploadsPerFrame,
+                    frame->settings.limits.maxShapeCacheEntries,
+                    frame->settings.limits.maxShapeCacheBytes,
+                    frame->settings.limits.maxBodyInstances,
+                    frame->settings.limits.maxLineVertices,
+                    frame->settings.limits.maxTextVertices);
             }
         }
 

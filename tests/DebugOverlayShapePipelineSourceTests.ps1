@@ -51,7 +51,7 @@ Require-In $overlay 'captureBodyWorldAabb' `
     'The publisher must capture a real engine body AABB.'
 Require-In $overlay 'worldAabbMatrix[\s\S]*s_d3d\.aabbProxy' `
     'Missing, pending, and unsupported detail must retain a real captured-AABB proxy.'
-Require-In $overlay 'processCompletedUploads\([\s\S]*maxGpuUploadsPerFrame' `
+Require-In $overlay 'processCompletedUploads\([\s\S]*maxShapeUploadsPerFrame' `
     'The compositor must enforce a per-rendered-frame upload budget.'
 Require-In $pipeline 'THREAD_PRIORITY_BELOW_NORMAL' `
     'The owned mesh worker must run below normal priority.'
