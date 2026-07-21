@@ -671,6 +671,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKDebugOverlaySnapshotPoolTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKDebugOverlaySnapshotPoolTests)
 
+  add_executable(ROCKDebugOverlayLineBatchTests
+    "${ROOT_DIR}/tests/DebugOverlayLineBatchTests.cpp"
+  )
+  target_compile_features(ROCKDebugOverlayLineBatchTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKDebugOverlayLineBatchTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKDebugOverlayLineBatchTests)
+
   add_executable(ROCKDebugOverlayShapeGeometryTests
     "${ROOT_DIR}/tests/DebugOverlayShapeGeometryTests.cpp"
     "${SOURCE_DIR}/physics-interaction/debug/DebugOverlayShapeGeometry.cpp"
@@ -700,6 +707,7 @@ if(BUILD_ROCK_TESTS)
   add_dependencies(
     ROCKPolicyTestBinaries
     ROCKDebugOverlayFrameAdmissionTests
+    ROCKDebugOverlayLineBatchTests
     ROCKDebugOverlayShapeGeometryTests
     ROCKDebugOverlayShapePipelineTests
     ROCKDebugOverlaySnapshotPoolTests

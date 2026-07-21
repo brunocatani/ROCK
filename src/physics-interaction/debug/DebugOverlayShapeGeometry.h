@@ -71,6 +71,7 @@ namespace rock::debug_overlay_shape
         std::vector<Vertex> vertices;
         std::unique_ptr<ShapeRecipe> inner;
         int shapeType{ -1 };
+        bool canonicalUnitSphere{ false };
         bool valid{ false };
     };
 

@@ -42,6 +42,15 @@ int main()
     passed &= expect(sphereBuilt.mesh.indices.size() == 864, "Sphere tessellation index count changed.");
     passed &= expect(sphereBuilt.decodeMode == rock::debug_overlay_policy::ShapeDecodeMode::Detailed, "Sphere must remain detailed.");
 
+    auto canonicalSphere = baseRecipe();
+    canonicalSphere.kind = ShapeRecipe::Kind::Sphere;
+    canonicalSphere.shapeType = 2;
+    canonicalSphere.convexRadius = 0.125f;
+    canonicalSphere.canonicalUnitSphere = true;
+    const auto canonicalSphereBuilt = buildMeshFromRecipe(canonicalSphere);
+    passed &= expect(canonicalSphereBuilt.mesh.valid && std::fabs(canonicalSphereBuilt.mesh.vertices[1].y - 1.0f) < 0.0001f,
+        "Canonical direct-sphere geometry baked the source radius instead of using unit radius.");
+
     auto capsule = baseRecipe();
     capsule.kind = ShapeRecipe::Kind::Capsule;
     capsule.shapeType = 3;

@@ -289,7 +289,12 @@ namespace rock::debug_overlay_shape
 
         switch (recipe.kind) {
         case ShapeRecipe::Kind::Sphere:
-            result.mesh = makeSphere(recipe.convexRadius, recipe.settings.havokToGameScale);
+            // A direct sphere carries radius in the published per-body model
+            // scale. Nested spheres retain baked dimensions so wrapping scaled
+            // shapes preserve their existing geometry exactly.
+            result.mesh = recipe.canonicalUnitSphere ?
+                makeSphere(1.0f, 1.0f) :
+                makeSphere(recipe.convexRadius, recipe.settings.havokToGameScale);
             result.decodeMode = debug_overlay_policy::ShapeDecodeMode::Detailed;
             return result;
         case ShapeRecipe::Kind::Capsule:

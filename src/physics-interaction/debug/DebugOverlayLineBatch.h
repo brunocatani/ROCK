@@ -1,11 +1,12 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cmath>
 #include <functional>
+#include <limits>
 #include <tuple>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -72,7 +73,7 @@ namespace rock::debug_overlay_line_batch
 
     struct LineKeyHash
     {
-        std::size_t operator()(const LineKey& key) const
+        std::size_t operator()(const LineKey& key) const noexcept
         {
             std::size_t h = 0;
             const auto mix = [&h](std::int64_t value) {
@@ -127,34 +128,73 @@ namespace rock::debug_overlay_line_batch
     class LineBatch
     {
     public:
+        bool prepare(std::size_t maxVertices)
+        {
+            const std::size_t maxLines = maxVertices / 2;
+            if (maxLines == 0 || maxLines > (std::numeric_limits<std::size_t>::max)() / 2) {
+                return false;
+            }
+
+            std::size_t slotCount = 1;
+            while (slotCount < maxLines * 2) {
+                if (slotCount > (std::numeric_limits<std::size_t>::max)() / 2) {
+                    return false;
+                }
+                slotCount *= 2;
+            }
+
+            try {
+                _segments.reserve(maxLines);
+                _slots.resize(slotCount);
+            } catch (...) {
+                _segments.clear();
+                _slots.clear();
+                _preparedMaxVertices = 0;
+                return false;
+            }
+            _preparedMaxVertices = maxLines * 2;
+            clear();
+            return true;
+        }
+
         void clear()
         {
             _segments.clear();
-            _lineKeys.clear();
             _rejectedLines = 0;
+            if (++_generation == 0) {
+                for (auto& slot : _slots) {
+                    slot.generation = 0;
+                }
+                _generation = 1;
+            }
         }
 
         bool addLine(const Vec3& start, const Vec3& end, const Rgba& color, std::size_t maxVertices)
         {
+            if (!finite(start) || !finite(end) || !finite(color)) {
+                ++_rejectedLines;
+                return false;
+            }
+
             const auto key = makeLineKey(start, end, color);
-            if (key.start == key.end || _lineKeys.find(key) != _lineKeys.end()) {
+            if (key.start == key.end || !canAppendLine(maxVertices)) {
                 ++_rejectedLines;
                 return false;
             }
 
-            if (!canAppendLine(maxVertices)) {
+            if (containsOrInsert(key)) {
                 ++_rejectedLines;
                 return false;
             }
 
-            _lineKeys.insert(key);
             _segments.push_back(LineSegment{ start, end, color });
             return true;
         }
 
         bool addPointMarker(const Vec3& center, float size, const Rgba& color, std::size_t maxVertices)
         {
-            if (vertexCount() + 6 > maxVertices) {
+            const std::size_t effectiveMax = (std::min)(maxVertices, _preparedMaxVertices);
+            if (vertexCount() + 6 > effectiveMax) {
                 _rejectedLines += 3;
                 return false;
             }
@@ -170,12 +210,58 @@ namespace rock::debug_overlay_line_batch
         [[nodiscard]] std::size_t rejectedLineCount() const { return _rejectedLines; }
         [[nodiscard]] bool empty() const { return _segments.empty(); }
         [[nodiscard]] const std::vector<LineSegment>& segments() const { return _segments; }
+        [[nodiscard]] std::size_t preparedMaxVertices() const { return _preparedMaxVertices; }
 
     private:
-        [[nodiscard]] bool canAppendLine(std::size_t maxVertices) const { return vertexCount() + 2 <= maxVertices; }
+        struct KeySlot
+        {
+            LineKey key{};
+            std::uint32_t generation{ 0 };
+        };
+
+        static bool finite(const Vec3& value)
+        {
+            return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+        }
+
+        static bool finite(const Rgba& value)
+        {
+            return std::isfinite(value.r) && std::isfinite(value.g) && std::isfinite(value.b) && std::isfinite(value.a);
+        }
+
+        bool containsOrInsert(const LineKey& key)
+        {
+            if (_slots.empty()) {
+                return true;
+            }
+
+            const std::size_t mask = _slots.size() - 1;
+            std::size_t index = LineKeyHash{}(key) & mask;
+            for (std::size_t probe = 0; probe < _slots.size(); ++probe) {
+                auto& slot = _slots[index];
+                if (slot.generation != _generation) {
+                    slot.key = key;
+                    slot.generation = _generation;
+                    return false;
+                }
+                if (slot.key == key) {
+                    return true;
+                }
+                index = (index + 1) & mask;
+            }
+            return true;
+        }
+
+        [[nodiscard]] bool canAppendLine(std::size_t maxVertices) const
+        {
+            const std::size_t effectiveMax = (std::min)(maxVertices, _preparedMaxVertices);
+            return vertexCount() + 2 <= effectiveMax;
+        }
 
         std::vector<LineSegment> _segments{};
-        std::unordered_set<LineKey, LineKeyHash> _lineKeys{};
+        std::vector<KeySlot> _slots{};
+        std::size_t _preparedMaxVertices{ 0 };
         std::size_t _rejectedLines = 0;
+        std::uint32_t _generation{ 0 };
     };
 }

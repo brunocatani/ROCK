@@ -39,8 +39,9 @@ namespace
 int main()
 {
     using namespace rock::debug_overlay_shaders;
-    const bool stereoVertex = compileShader(kStereoVertex, sizeof(kStereoVertex) - 1, "ROCKDebugBodyVS", "vs_5_0");
+    const bool bodyVertex = compileShader(kInstancedBodyVertex, sizeof(kInstancedBodyVertex) - 1, "ROCKDebugBodyVS", "vs_5_0");
+    const bool stereoColorVertex = compileShader(kStereoColorVertex, sizeof(kStereoColorVertex) - 1, "ROCKDebugColorVS", "vs_5_0");
     const bool textVertex = compileShader(kScreenTextVertex, sizeof(kScreenTextVertex) - 1, "ROCKDebugTextVS", "vs_5_0");
     const bool pixel = compileShader(kPixel, sizeof(kPixel) - 1, "ROCKDebugBodyPS", "ps_5_0");
-    return stereoVertex && textVertex && pixel ? 0 : 1;
+    return bodyVertex && stereoColorVertex && textVertex && pixel ? 0 : 1;
 }

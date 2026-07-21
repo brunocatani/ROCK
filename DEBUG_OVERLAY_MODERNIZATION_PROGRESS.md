@@ -162,20 +162,20 @@ Acceptance:
 
 ### Slice 4: Ordered GPU Instancing And Allocation-Free Diagnostic Batches
 
-- [ ] Add an 80-byte or equivalently aligned per-object instance record containing model matrix and color.
-- [ ] Add an instanced input layout with step rate 2 so each object record serves both stereo instances.
-- [ ] Upload one contiguous object-instance stream per overlay frame where practical.
-- [ ] Draw ordered adjacent runs that share the same mesh.
-- [ ] Preserve transparency/diagnostic ordering; do not globally reorder entries merely to enlarge batches.
-- [ ] Canonicalize shared unit-cube proxy geometry.
-- [ ] Canonicalize reusable sphere/capsule geometry when the required model transform preserves shape fidelity.
-- [ ] Keep arbitrary detailed convex meshes cached and batch adjacent equal meshes.
-- [ ] Add color to line vertices and upload/draw the complete ordered line stream without per-color model-buffer maps.
-- [ ] Replace per-frame `unordered_set` line deduplication with reusable bounded scratch or an allocation-free equivalent.
-- [ ] Aggregate all text entries into one reusable colored vertex upload/draw.
-- [ ] Fix the unreachable text-truncation statistic with an explicit overflow flag/counter.
-- [ ] Evaluate a glyph atlas or shader bitmask only after the single-upload text path is complete and measured.
-- [ ] Add GPU-instancing, stereo-indexing, ordering, capacity, and shader compilation tests.
+- [x] Add an 80-byte or equivalently aligned per-object instance record containing model matrix and color.
+- [x] Add an instanced input layout with step rate 2 so each object record serves both stereo instances.
+- [x] Upload one contiguous object-instance stream per overlay frame where practical.
+- [x] Draw ordered adjacent runs that share the same mesh.
+- [x] Preserve transparency/diagnostic ordering; do not globally reorder entries merely to enlarge batches.
+- [x] Canonicalize shared unit-cube proxy geometry.
+- [x] Canonicalize reusable sphere/capsule geometry when the required model transform preserves shape fidelity.
+- [x] Keep arbitrary detailed convex meshes cached and batch adjacent equal meshes.
+- [x] Add color to line vertices and upload/draw the complete ordered line stream without per-color model-buffer maps.
+- [x] Replace per-frame `unordered_set` line deduplication with reusable bounded scratch or an allocation-free equivalent.
+- [x] Aggregate all text entries into one reusable colored vertex upload/draw.
+- [x] Fix the unreachable text-truncation statistic with an explicit overflow flag/counter.
+- [x] Evaluate a glyph atlas or shader bitmask only after the single-upload text path is complete and measured.
+- [x] Add GPU-instancing, stereo-indexing, ordering, capacity, and shader compilation tests.
 
 Acceptance:
 
@@ -265,8 +265,8 @@ Runtime completion also requires, when the game can be exercised safely:
 - [x] Created persistent implementation ledger.
 - [x] Slice 1 implementation, full regression suite, build, auto-deploy, commit, and post-commit regression complete.
 - [x] Slice 2 implementation, build, auto-deploy, commit, and post-commit regression complete.
-- [x] Slice 3 implementation, build, auto-deploy, and pre-commit full regression complete.
-- [ ] Slice 4 not started.
+- [x] Slice 3 implementation, build, auto-deploy, commit, and post-commit regression complete.
+- [x] Slice 4 implementation, build, auto-deploy, and pre-commit full regression complete.
 - [ ] Slice 5 not started.
 - [ ] Final runtime validation not started.
 
@@ -289,8 +289,8 @@ Record any Ghidra/FO4VR source verification here before implementing a new offse
 | Ledger setup | `a48c915` | Not applicable | Not applicable | `git show --check` passed | Explicitly authorized Markdown progress artifact |
 | 1: Hook/D3D hardening | `da16718` | `custom-fast` Release build and auto-deploy passed | 117/117 full suite passed | 117/117 passed after commit | Deployed DLL/PDB hashes match build artifacts |
 | 2: Immutable publication | `07abc83` | `custom-fast` Release build and auto-deploy passed | 119/119 full suite passed | 119/119 passed after commit; `git show --check` passed | CommonLib boundary independently cross-checked against pristine source, local address evidence, and FO4VR Ghidra |
-| 3: Async shape/cache | Pending hash | `custom-fast` Release build and auto-deploy passed | 122/122 full suite passed | Pending commit | One low-priority worker; bounded recipe, CPU-completion, upload, LRU, and GPU-byte paths |
-| 4: GPU/diagnostic batching | Pending | Pending | Pending | Pending | |
+| 3: Async shape/cache | `889347a` | `custom-fast` Release build and auto-deploy passed | 122/122 full suite passed | 122/122 passed after commit; `git show --check` passed | One low-priority worker; bounded recipe, CPU-completion, upload, LRU, and GPU-byte paths |
+| 4: GPU/diagnostic batching | Pending hash | `custom-fast` Release build and auto-deploy passed | 124/124 full suite passed | Pending commit | One body map, one colored-line map/draw, one aggregate text map/draw; ordered adjacent mesh runs |
 | 5: Fidelity/config/metrics/modules | Pending | Pending | Pending | Pending | |
 
 ## Progress Journal
@@ -364,6 +364,24 @@ Record any Ghidra/FO4VR source verification here before implementing a new offse
 - Required `custom-fast` configure and capped Release build passed and auto-deployed. The dedicated `custom-tests` tree was regenerated to avoid accepting the stale test registry left in `build-fast`; the current complete suite passed 55 policy tests and 67 source-boundary tests, 122/122 total.
 - Deployed `ROCK.dll` is version `0.5.0.0`, size `5,373,440`, timestamp `2026-07-20 20:42:40`; build/deploy SHA-256 match `EC586103C9FBB5425465ED4FF699CA63141088659EA4E29FCD29C1F58729ED3E`.
 - Build/deploy `ROCK.pdb` SHA-256 match `FBB3C5C9B45C35888D7903229D57544DC797566977C41B5C0EDA2CCC9AAFEE93`.
+- Committed Slice 3 as `889347a` (`fix/debug-overlay: bound asynchronous shape pipeline`).
+- Post-commit regression passed 122/122 tests; `git show --check` passed and the worktree was clean before Slice 4 began.
+
+### 2026-07-20 — Slice 4 Ordered GPU And Diagnostic Batching
+
+- Slice started from clean commit `889347a` after its full post-commit regression.
+- Implementation target: one reusable per-object instance stream with ordered adjacent mesh runs, one colored line stream, one aggregate colored text stream, bounded reusable scratch, and explicit overflow statistics without changing stereo or transparency order.
+- Replaced per-body model/color constant-buffer maps with one exactly bounded 80-byte instance stream. D3D advances each record after two instances, while the shader derives the current eye from `SV_InstanceID & 1`; one mapped stream therefore retains ROCK's existing two-eye rendering.
+- Body draws now combine only adjacent entries whose resolved GPU mesh is identical. No global sort occurs, the original diagnostic/alpha order remains intact, and retained shared GPU owners prevent concurrent invalidation from releasing buffers during a render pass.
+- The existing actual-AABB fallback continues to use one shared unit-cube mesh. Direct spheres now share one canonical unit-sphere cache entry and retain exact radius through a per-body uniform model scale. Capsules deliberately remain parameterized cached meshes: endpoint distance and cap radius are independent, so a single ordinary model transform cannot canonicalize all capsules without distorting them. Nested spheres also remain baked so scaled-convex composition is unchanged.
+- Replaced line `unordered_set` storage with prepared generation-stamped open-address scratch. Reversed duplicates are coalesced, insertion order and per-line colors are retained, non-finite/degenerate input fails closed, and caller budgets cannot exceed the prepared hard capacity.
+- Colored lines are written directly to one mapped dynamic vertex buffer and emitted in one stereo draw. Text entries are appended in order to one prepared colored-vertex vector, mapped once, and drawn once; no per-entry or per-color model upload remains.
+- Text overflow reporting now records both affected entries and the exact number of rejected vertices. Body-instance and line-map failures are separately observable and continue to fail closed with once-only warnings.
+- A glyph atlas/shader-bitmask conversion was evaluated after aggregation. It is not adopted without runtime evidence: the current bit-font has no texture/sampler dependency, is allocation-free after preparation, and now costs one bounded upload/draw; adding atlas state would increase pass-state ownership and visual-risk surface before the Slice 5 timing ring can establish that text vertex generation is material.
+- Added line-order/dedup/non-finite/capacity unit coverage, canonical-sphere geometry coverage, explicit batching/source invariants, and compilation coverage for all three vertex shaders plus the pixel shader.
+- Required `custom-fast` configure and capped Release build passed and auto-deployed with the final canonical-sphere implementation. The refreshed `custom-tests` tree built all 56 policy binaries, and the complete capped suite passed 56 policy plus 68 source-boundary tests, 124/124 total.
+- Deployed `ROCK.dll` is version `0.5.0.0`, size `5,380,096`, timestamp `2026-07-20 21:00:51`; build/deploy SHA-256 match `0DDF552B345573A9DCA11B2074833EA851545C48C22330DB4DF7AE9003FBE25D`.
+- Build/deploy `ROCK.pdb` SHA-256 match `AFED24D421596082AE908E3F9B298B947593E636ADC4AC338AA1263CA42A3B8C`.
 
 ## Remaining Risks
 

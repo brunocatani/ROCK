@@ -39,12 +39,14 @@ Require-Pattern 'DSSetShader\(nullptr' 'The overlay must disable the prior domai
 Require-Pattern 'IAGetVertexBuffers\(0,\s*2' 'The render pass must preserve vertex-buffer slots zero and one.'
 Require-Pattern '~RenderPassGuard\(\)' 'D3D state restoration must be owned by an RAII render-pass guard.'
 Require-Pattern 'bool uploadCamera\(' 'Camera upload must report failure instead of binding stale data.'
-Require-Pattern 'bool uploadColorModel\(' 'Model/color upload must report failure instead of binding stale data.'
+Require-Pattern 'BodyInstanceData' 'Body model/color data must use the bounded instanced vertex stream.'
+Require-Pattern 'bodyInstanceUploadFailureReported' 'Instance-buffer upload failure must fail closed and report once.'
 
 Reject-Pattern 'MainRenderCandidate' 'The no-op hardcoded main-render trampoline must remain removed.'
 Reject-Pattern '0xD844BC' 'The retired hardcoded main-render callsite must remain removed.'
 Reject-Pattern 'void beginFrame\(' 'Manual begin/end frame ownership must not replace the RAII render pass.'
 Reject-Pattern 'void endFrame\(' 'Manual begin/end frame ownership must not replace the RAII render pass.'
+Reject-Pattern 'uploadColorModel|uploadModel|modelCB' 'Per-draw model constant-buffer updates must remain removed.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'DebugOverlayRenderSafetySourceTests failed:' -ForegroundColor Red

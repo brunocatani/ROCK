@@ -12,6 +12,7 @@
 #include <exception>
 #include <limits>
 #include <memory>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -70,6 +71,8 @@ namespace rock::debug
         constexpr float kBodyAxisLength = 16.0f;
         constexpr float kTargetAxisLength = 20.0f;
         constexpr std::uint32_t kTextVertexCapacity = 131072;
+        constexpr std::size_t kBodyInstanceCapacity = std::tuple_size_v<decltype(BodyOverlayFrame{}.entries)>;
+        constexpr std::uint64_t kCanonicalSphereGeometryFingerprint = 0x5350'4845'5245'0001ull;
         constexpr DWORD kPageExecuteReadWrite = 0x00000040u;
         constexpr UINT kMaxShaderClassInstances = 256;
         constexpr UINT kSavedVertexBufferSlots = 2;
@@ -78,6 +81,51 @@ namespace rock::debug
         using MeshData = debug_overlay_shape::MeshData;
         using ShapeKey = debug_overlay_shape::ShapeKey;
         using GpuShape = debug_overlay_shape::GpuShape;
+
+        struct ColoredVertex
+        {
+            float x{ 0.0f };
+            float y{ 0.0f };
+            float z{ 0.0f };
+            float color[4]{ 1.0f, 1.0f, 1.0f, 1.0f };
+        };
+        static_assert(sizeof(ColoredVertex) == 28);
+
+        struct alignas(16) BodyInstanceData
+        {
+            DirectX::XMFLOAT4X4 model{};
+            float color[4]{ 1.0f, 1.0f, 1.0f, 0.85f };
+        };
+        static_assert(sizeof(BodyInstanceData) == 80);
+        static_assert(alignof(BodyInstanceData) == 16);
+
+        struct BodyDrawItem
+        {
+            std::shared_ptr<const GpuShape> shapeOwner;
+            const GpuShape* shape{ nullptr };
+            BodyInstanceData instance{};
+        };
+
+        struct RenderScratch
+        {
+            debug_overlay_line_batch::LineBatch lines;
+            std::vector<BodyDrawItem> bodies;
+            std::vector<ColoredVertex> textVertices;
+
+            bool prepare()
+            {
+                try {
+                    if (!lines.prepare(debug_overlay_policy::kMaxLineVertexBudget)) {
+                        return false;
+                    }
+                    bodies.reserve(kBodyInstanceCapacity);
+                    textVertices.reserve(kTextVertexCapacity);
+                } catch (...) {
+                    return false;
+                }
+                return true;
+            }
+        };
 
         struct BodyRenderInfo
         {
@@ -107,6 +155,7 @@ namespace rock::debug
         {
             std::uintptr_t shapeAddress{ 0 };
             ShapeKey key{};
+            float detailUniformScale{ 1.0f };
         };
 
         struct PublishedBodyEntry
@@ -117,6 +166,7 @@ namespace rock::debug
             DirectX::XMFLOAT3 worldAabbMax{};
             BodyOverlayRole role{ BodyOverlayRole::Target };
             std::uint32_t bodyId{ kInvalidBodyId };
+            float detailUniformScale{ 1.0f };
             bool hasValidWorldAabb{ false };
         };
 
@@ -159,6 +209,8 @@ namespace rock::debug
             std::uint32_t bodiesDrawn = 0;
             std::uint32_t bodyMeshBinds = 0;
             std::uint32_t bodyDrawCalls = 0;
+            std::uint32_t bodyInstanceMaps = 0;
+            std::uint32_t bodyInstanceRejects = 0;
             std::uint32_t shapeCacheHits = 0;
             std::uint32_t shapeCacheMisses = 0;
             std::uint32_t shapeGenerations = 0;
@@ -174,12 +226,14 @@ namespace rock::debug
             std::uint32_t lineVertices = 0;
             std::uint32_t lineLogicalLines = 0;
             std::uint32_t lineDrawCalls = 0;
+            std::uint32_t lineMapFailures = 0;
             std::uint32_t lineBudgetRejects = 0;
             std::uint32_t rtvCacheHits = 0;
             std::uint32_t rtvCacheMisses = 0;
             std::uint32_t textVertices = 0;
             std::uint32_t textDrawCalls = 0;
             std::uint32_t textVertexTruncations = 0;
+            std::uint32_t textRejectedVertices = 0;
             std::uint32_t textMapFailures = 0;
         };
 
@@ -187,12 +241,6 @@ namespace rock::debug
         {
             DirectX::XMMATRIX matProjView[2];
             DirectX::XMFLOAT4 posAdjust[2];
-        };
-
-        struct alignas(16) PerObjectVSData
-        {
-            DirectX::XMMATRIX matModel;
-            float color[4];
         };
 
         struct SavedState
@@ -236,12 +284,14 @@ namespace rock::debug
         struct D3DResources
         {
             Microsoft::WRL::ComPtr<ID3D11Device> device;
-            Microsoft::WRL::ComPtr<ID3D11VertexShader> vertexShader;
+            Microsoft::WRL::ComPtr<ID3D11VertexShader> bodyVertexShader;
+            Microsoft::WRL::ComPtr<ID3D11VertexShader> stereoColorVertexShader;
             Microsoft::WRL::ComPtr<ID3D11VertexShader> screenTextVertexShader;
             Microsoft::WRL::ComPtr<ID3D11PixelShader> pixelShader;
-            Microsoft::WRL::ComPtr<ID3D11InputLayout> inputLayout;
+            Microsoft::WRL::ComPtr<ID3D11InputLayout> bodyInputLayout;
+            Microsoft::WRL::ComPtr<ID3D11InputLayout> coloredInputLayout;
             Microsoft::WRL::ComPtr<ID3D11Buffer> cameraCB;
-            Microsoft::WRL::ComPtr<ID3D11Buffer> modelCB;
+            Microsoft::WRL::ComPtr<ID3D11Buffer> bodyInstanceVB;
             Microsoft::WRL::ComPtr<ID3D11Buffer> axisLineVB;
             Microsoft::WRL::ComPtr<ID3D11Buffer> textVB;
             Microsoft::WRL::ComPtr<ID3D11RasterizerState> wireRasterizer;
@@ -249,10 +299,12 @@ namespace rock::debug
             Microsoft::WRL::ComPtr<ID3D11DepthStencilState> depthStencil;
             Microsoft::WRL::ComPtr<ID3D11BlendState> blendState;
             GpuShape aabbProxy;
+            std::unique_ptr<RenderScratch> scratch;
 
             [[nodiscard]] bool ready() const noexcept
             {
-                return device && vertexShader && screenTextVertexShader && pixelShader && inputLayout && cameraCB && modelCB && axisLineVB && textVB &&
+                return device && bodyVertexShader && stereoColorVertexShader && screenTextVertexShader && pixelShader && bodyInputLayout && coloredInputLayout &&
+                       cameraCB && bodyInstanceVB && axisLineVB && textVB && scratch &&
                        wireRasterizer && solidRasterizer && depthStencil && blendState &&
                        aabbProxy.vertexBuffer && aabbProxy.indexBuffer && aabbProxy.indexCount > 0;
             }
@@ -299,7 +351,9 @@ namespace rock::debug
         static debug_overlay_frame_admission::FrameAdmission s_frameAdmission{};
         static std::atomic<bool> s_overlayExceptionReported{ false };
         static std::atomic<bool> s_cameraUploadFailureReported{ false };
-        static std::atomic<bool> s_modelUploadFailureReported{ false };
+        static std::atomic<bool> s_bodyInstanceUploadFailureReported{ false };
+        static std::atomic<bool> s_lineUploadFailureReported{ false };
+        static std::atomic<bool> s_textUploadFailureReported{ false };
         static std::atomic<bool> s_submitInstallFailureReported{ false };
         static std::atomic<bool> s_snapshotPoolExhaustionReported{ false };
         static std::atomic<bool> s_shapeWorkerInitFailureReported{ false };
@@ -338,7 +392,11 @@ namespace rock::debug
             return mixShapeFingerprint(seed, floatBits(value));
         }
 
-        std::uint64_t computeShapeGeometryFingerprintUnsafe(std::uintptr_t shapeAddress, int depth = 0)
+        std::uint64_t computeShapeGeometryFingerprintUnsafe(
+            std::uintptr_t shapeAddress,
+            int depth = 0,
+            int* rootShapeType = nullptr,
+            float* rootConvexRadius = nullptr)
         {
             /*
              * Debug collider meshes are cached on the VR submit path, but
@@ -355,6 +413,14 @@ namespace rock::debug
             try {
                 auto* shape = reinterpret_cast<RE::hknpShape*>(shapeAddress);
                 const int shapeType = static_cast<int>(shape->GetType());
+                if (depth == 0) {
+                    if (rootShapeType) {
+                        *rootShapeType = shapeType;
+                    }
+                    if (rootConvexRadius) {
+                        *rootConvexRadius = shape->convexRadius;
+                    }
+                }
                 std::uint64_t fingerprint = 0xcbf29ce484222325ull;
                 fingerprint = mixShapeFingerprint(fingerprint, static_cast<std::uint64_t>(shapeType));
                 fingerprint = mixShapeFloat(fingerprint, shape->convexRadius);
@@ -413,18 +479,25 @@ namespace rock::debug
             }
         }
 
-        std::uint64_t computeShapeGeometryFingerprintSeh(std::uintptr_t shapeAddress)
+        std::uint64_t computeShapeGeometryFingerprintSeh(
+            std::uintptr_t shapeAddress, int* rootShapeType, float* rootConvexRadius)
         {
+            if (rootShapeType) {
+                *rootShapeType = -1;
+            }
+            if (rootConvexRadius) {
+                *rootConvexRadius = 0.0f;
+            }
             __try {
-                return computeShapeGeometryFingerprintUnsafe(shapeAddress);
+                return computeShapeGeometryFingerprintUnsafe(shapeAddress, 0, rootShapeType, rootConvexRadius);
             } __except (EXCEPTION_EXECUTE_HANDLER) {
                 return 0;
             }
         }
 
-        ShapeKey makeShapeKey(std::uintptr_t shapeAddress)
+        ShapeKey makeShapeKey(std::uintptr_t shapeAddress, int& shapeType, float& convexRadius)
         {
-            return ShapeKey{ shapeAddress, computeShapeGeometryFingerprintSeh(shapeAddress) };
+            return ShapeKey{ shapeAddress, computeShapeGeometryFingerprintSeh(shapeAddress, &shapeType, &convexRadius) };
         }
 
         RE::NiPoint3 normalizedNi(const RE::NiPoint3& value)
@@ -683,6 +756,7 @@ namespace rock::debug
             }
             case 2:
                 recipe.kind = debug_overlay_shape::ShapeRecipe::Kind::Sphere;
+                recipe.canonicalUnitSphere = depth == 0;
                 recipe.valid = true;
                 return true;
             case 3: {
@@ -802,17 +876,26 @@ namespace rock::debug
             frame.drawText = false;
         }
 
-        ShapeKey captureShapeIdentityForFrame(PublishedOverlayFrame& frame, std::uintptr_t shapeAddress)
+        CapturedShapeIdentity captureShapeIdentityForFrame(PublishedOverlayFrame& frame, std::uintptr_t shapeAddress)
         {
             for (const auto& captured : frame.capturedShapeIdentities) {
                 if (captured.shapeAddress == shapeAddress) {
-                    return captured.key;
+                    return captured;
                 }
             }
 
-            const ShapeKey key = makeShapeKey(shapeAddress);
-            frame.capturedShapeIdentities.push_back(CapturedShapeIdentity{ shapeAddress, key });
-            return key;
+            int shapeType = -1;
+            float convexRadius = 0.0f;
+            ShapeKey key = makeShapeKey(shapeAddress, shapeType, convexRadius);
+            float detailUniformScale = 1.0f;
+            if (shapeType == 2 && std::isfinite(convexRadius) && convexRadius > 0.0f) {
+                key = ShapeKey{ 0, kCanonicalSphereGeometryFingerprint };
+                detailUniformScale = convexRadius * havokToGameScale();
+            }
+
+            const CapturedShapeIdentity captured{ shapeAddress, key, detailUniformScale };
+            frame.capturedShapeIdentities.push_back(captured);
+            return captured;
         }
 
         void requestShapeBuildForFrame(
@@ -902,10 +985,12 @@ namespace rock::debug
                 }
 
                 PublishedBodyEntry published{};
-                published.shapeKey = captureShapeIdentityForFrame(destination, body.shapeAddress);
+                const auto shapeIdentity = captureShapeIdentityForFrame(destination, body.shapeAddress);
+                published.shapeKey = shapeIdentity.key;
                 published.worldMatrix = body.worldMatrix;
                 published.role = entry.role;
                 published.bodyId = body.bodyId;
+                published.detailUniformScale = shapeIdentity.detailUniformScale;
                 published.hasValidWorldAabb =
                     captureBodyWorldAabb(source.world, entry.bodyId, published.worldAabbMin, published.worldAabbMax);
                 requestShapeBuildForFrame(destination, published.shapeKey, body.shapeAddress);
@@ -1226,8 +1311,8 @@ namespace rock::debug
             Microsoft::WRL::ComPtr<ID3DBlob> psBlob;
             Microsoft::WRL::ComPtr<ID3DBlob> errorBlob;
             HRESULT hr = D3DCompile(
-                debug_overlay_shaders::kStereoVertex,
-                sizeof(debug_overlay_shaders::kStereoVertex) - 1,
+                debug_overlay_shaders::kInstancedBodyVertex,
+                sizeof(debug_overlay_shaders::kInstancedBodyVertex) - 1,
                 "ROCKDebugBodyVS",
                 nullptr,
                 nullptr,
@@ -1244,13 +1329,55 @@ namespace rock::debug
                 return false;
             }
 
-            hr = device->CreateVertexShader(vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), nullptr, resources.vertexShader.GetAddressOf());
+            hr = device->CreateVertexShader(vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), nullptr, resources.bodyVertexShader.GetAddressOf());
             if (FAILED(hr)) {
                 return false;
             }
 
-            D3D11_INPUT_ELEMENT_DESC layoutDesc[] = { { "POS", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 } };
-            hr = device->CreateInputLayout(layoutDesc, 1, vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), resources.inputLayout.GetAddressOf());
+            const D3D11_INPUT_ELEMENT_DESC bodyLayoutDesc[] = {
+                { "POS", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+                { "IROW", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 0, D3D11_INPUT_PER_INSTANCE_DATA, 2 },
+                { "IROW", 1, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 16, D3D11_INPUT_PER_INSTANCE_DATA, 2 },
+                { "IROW", 2, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 32, D3D11_INPUT_PER_INSTANCE_DATA, 2 },
+                { "IROW", 3, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 48, D3D11_INPUT_PER_INSTANCE_DATA, 2 },
+                { "ICOLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 64, D3D11_INPUT_PER_INSTANCE_DATA, 2 },
+            };
+            hr = device->CreateInputLayout(bodyLayoutDesc, static_cast<UINT>(std::size(bodyLayoutDesc)), vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), resources.bodyInputLayout.GetAddressOf());
+            if (FAILED(hr)) {
+                return false;
+            }
+
+            vsBlob.Reset();
+            errorBlob.Reset();
+            hr = D3DCompile(
+                debug_overlay_shaders::kStereoColorVertex,
+                sizeof(debug_overlay_shaders::kStereoColorVertex) - 1,
+                "ROCKDebugColorVS",
+                nullptr,
+                nullptr,
+                "main",
+                "vs_5_0",
+                D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_PACK_MATRIX_COLUMN_MAJOR,
+                0,
+                vsBlob.GetAddressOf(),
+                errorBlob.GetAddressOf());
+            if (FAILED(hr)) {
+                if (errorBlob) {
+                    ROCK_LOG_ERROR(Hand, "Debug overlay color vertex shader compile failed: {}", static_cast<const char*>(errorBlob->GetBufferPointer()));
+                }
+                return false;
+            }
+
+            hr = device->CreateVertexShader(vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), nullptr, resources.stereoColorVertexShader.GetAddressOf());
+            if (FAILED(hr)) {
+                return false;
+            }
+
+            const D3D11_INPUT_ELEMENT_DESC coloredLayoutDesc[] = {
+                { "POS", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+                { "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+            };
+            hr = device->CreateInputLayout(coloredLayoutDesc, static_cast<UINT>(std::size(coloredLayoutDesc)), vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), resources.coloredInputLayout.GetAddressOf());
             if (FAILED(hr)) {
                 return false;
             }
@@ -1315,18 +1442,18 @@ namespace rock::debug
                 return false;
             }
 
-            D3D11_BUFFER_DESC modelDesc{};
-            modelDesc.Usage = D3D11_USAGE_DYNAMIC;
-            modelDesc.ByteWidth = sizeof(PerObjectVSData);
-            modelDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-            modelDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-            if (FAILED(device->CreateBuffer(&modelDesc, nullptr, resources.modelCB.GetAddressOf()))) {
+            D3D11_BUFFER_DESC instanceDesc{};
+            instanceDesc.Usage = D3D11_USAGE_DYNAMIC;
+            instanceDesc.ByteWidth = static_cast<UINT>(sizeof(BodyInstanceData) * kBodyInstanceCapacity);
+            instanceDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+            instanceDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+            if (FAILED(device->CreateBuffer(&instanceDesc, nullptr, resources.bodyInstanceVB.GetAddressOf()))) {
                 return false;
             }
 
             D3D11_BUFFER_DESC axisLineDesc{};
             axisLineDesc.Usage = D3D11_USAGE_DYNAMIC;
-            axisLineDesc.ByteWidth = sizeof(Vertex) * debug_overlay_policy::kMaxLineVertexBudget;
+            axisLineDesc.ByteWidth = sizeof(ColoredVertex) * debug_overlay_policy::kMaxLineVertexBudget;
             axisLineDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
             axisLineDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
             if (FAILED(device->CreateBuffer(&axisLineDesc, nullptr, resources.axisLineVB.GetAddressOf()))) {
@@ -1335,10 +1462,19 @@ namespace rock::debug
 
             D3D11_BUFFER_DESC textDesc{};
             textDesc.Usage = D3D11_USAGE_DYNAMIC;
-            textDesc.ByteWidth = sizeof(Vertex) * kTextVertexCapacity;
+            textDesc.ByteWidth = sizeof(ColoredVertex) * kTextVertexCapacity;
             textDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
             textDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
             if (FAILED(device->CreateBuffer(&textDesc, nullptr, resources.textVB.GetAddressOf()))) {
+                return false;
+            }
+
+            try {
+                resources.scratch = std::make_unique<RenderScratch>();
+            } catch (...) {
+                return false;
+            }
+            if (!resources.scratch->prepare()) {
                 return false;
             }
 
@@ -1473,8 +1609,8 @@ namespace rock::debug
             viewport.MaxDepth = 1.0f;
             context->RSSetViewports(1, &viewport);
             context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-            context->IASetInputLayout(s_d3d.inputLayout.Get());
-            context->VSSetShader(s_d3d.vertexShader.Get(), nullptr, 0);
+            context->IASetInputLayout(s_d3d.bodyInputLayout.Get());
+            context->VSSetShader(s_d3d.bodyVertexShader.Get(), nullptr, 0);
             context->PSSetShader(s_d3d.pixelShader.Get(), nullptr, 0);
             context->GSSetShader(nullptr, nullptr, 0);
             context->HSSetShader(nullptr, nullptr, 0);
@@ -1544,35 +1680,12 @@ namespace rock::debug
             return true;
         }
 
-        bool uploadColorModel(ID3D11DeviceContext* context, const DirectX::XMMATRIX& model, const float color[4])
+        void bodyColor(BodyOverlayRole role, debug_overlay_policy::ShapeDecodeMode decodeMode, float color[4])
         {
-            if (!context || !s_d3d.modelCB || !color) {
-                return false;
-            }
-
-            D3D11_MAPPED_SUBRESOURCE mapped{};
-            if (FAILED(context->Map(s_d3d.modelCB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)) || !mapped.pData) {
-                if (!s_modelUploadFailureReported.exchange(true, std::memory_order_relaxed)) {
-                    ROCK_LOG_WARN(Hand, "Debug overlay: model constant-buffer map failed; affected draws skipped");
-                }
-                return false;
-            }
-
-            auto* data = static_cast<PerObjectVSData*>(mapped.pData);
-            data->matModel = model;
-            data->color[0] = color[0];
-            data->color[1] = color[1];
-            data->color[2] = color[2];
-            data->color[3] = color[3];
-            context->Unmap(s_d3d.modelCB.Get(), 0);
-            ID3D11Buffer* modelCB = s_d3d.modelCB.Get();
-            context->VSSetConstantBuffers(1, 1, &modelCB);
-            return true;
-        }
-
-        bool uploadModel(ID3D11DeviceContext* context, const DirectX::XMMATRIX& model, BodyOverlayRole role, debug_overlay_policy::ShapeDecodeMode decodeMode)
-        {
-            float color[4] = { 1.0f, 1.0f, 1.0f, 0.85f };
+            color[0] = 1.0f;
+            color[1] = 1.0f;
+            color[2] = 1.0f;
+            color[3] = 0.85f;
             switch (role) {
             case BodyOverlayRole::RightHand:
                 color[0] = 0.0f;
@@ -1668,7 +1781,6 @@ namespace rock::debug
                 color[3] = 0.90f;
             }
 
-            return uploadColorModel(context, model, color);
         }
 
         float axisLengthForRole(AxisOverlayRole role)
@@ -2505,65 +2617,58 @@ namespace rock::debug
             batch.addPointMarker(toLineVec(toVertex(position)), size, toLineColor(color), lineVertexBudget());
         }
 
-        struct LineDrawRun
-        {
-            debug_overlay_line_batch::Rgba color{};
-            UINT firstVertex = 0;
-            UINT vertexCount = 0;
-        };
-
-        bool lineColorLess(const debug_overlay_line_batch::LineSegment& lhs, const debug_overlay_line_batch::LineSegment& rhs)
-        {
-            return std::tie(lhs.color.r, lhs.color.g, lhs.color.b, lhs.color.a) < std::tie(rhs.color.r, rhs.color.g, rhs.color.b, rhs.color.a);
-        }
-
         void drawLineBatch(ID3D11DeviceContext* context, const debug_overlay_line_batch::LineBatch& batch, OverlayRuntimeStats& stats)
         {
             stats.lineVertices += static_cast<std::uint32_t>(batch.vertexCount());
             stats.lineLogicalLines += static_cast<std::uint32_t>(batch.lineCount());
             stats.lineBudgetRejects += static_cast<std::uint32_t>(batch.rejectedLineCount());
 
-            if (batch.empty() || !s_d3d.axisLineVB) {
+            if (batch.empty() || !s_d3d.axisLineVB || !s_d3d.stereoColorVertexShader || !s_d3d.coloredInputLayout) {
                 return;
-            }
-
-            std::vector<debug_overlay_line_batch::LineSegment> ordered = batch.segments();
-            std::sort(ordered.begin(), ordered.end(), lineColorLess);
-
-            std::vector<Vertex> vertices;
-            vertices.reserve(batch.vertexCount());
-            std::vector<LineDrawRun> runs;
-            for (const auto& segment : ordered) {
-                if (runs.empty() || !(runs.back().color == segment.color)) {
-                    runs.push_back(LineDrawRun{ segment.color, static_cast<UINT>(vertices.size()), 0 });
-                }
-                vertices.push_back(Vertex{ segment.start.x, segment.start.y, segment.start.z });
-                vertices.push_back(Vertex{ segment.end.x, segment.end.y, segment.end.z });
-                runs.back().vertexCount += 2;
             }
 
             D3D11_MAPPED_SUBRESOURCE mapped{};
-            if (FAILED(context->Map(s_d3d.axisLineVB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) {
+            if (FAILED(context->Map(s_d3d.axisLineVB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)) || !mapped.pData) {
+                ++stats.lineMapFailures;
+                if (!s_lineUploadFailureReported.exchange(true, std::memory_order_relaxed)) {
+                    ROCK_LOG_WARN(Hand, "Debug overlay: colored line vertex-buffer map failed; line batch skipped");
+                }
                 return;
             }
 
-            std::memcpy(mapped.pData, vertices.data(), vertices.size() * sizeof(Vertex));
+            auto* vertices = static_cast<ColoredVertex*>(mapped.pData);
+            std::size_t vertexIndex = 0;
+            for (const auto& segment : batch.segments()) {
+                const ColoredVertex start{
+                    segment.start.x,
+                    segment.start.y,
+                    segment.start.z,
+                    { segment.color.r, segment.color.g, segment.color.b, segment.color.a }
+                };
+                const ColoredVertex end{
+                    segment.end.x,
+                    segment.end.y,
+                    segment.end.z,
+                    { segment.color.r, segment.color.g, segment.color.b, segment.color.a }
+                };
+                vertices[vertexIndex++] = start;
+                vertices[vertexIndex++] = end;
+            }
             context->Unmap(s_d3d.axisLineVB.Get(), 0);
 
-            constexpr UINT stride = sizeof(Vertex);
+            context->IASetInputLayout(s_d3d.coloredInputLayout.Get());
+            context->VSSetShader(s_d3d.stereoColorVertexShader.Get(), nullptr, 0);
+            context->PSSetShader(s_d3d.pixelShader.Get(), nullptr, 0);
+            context->RSSetState(s_d3d.wireRasterizer.Get());
+            context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
+
+            constexpr UINT stride = sizeof(ColoredVertex);
             constexpr UINT offset = 0;
             ID3D11Buffer* vertexBuffer = s_d3d.axisLineVB.Get();
             context->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
             context->IASetIndexBuffer(nullptr, DXGI_FORMAT_UNKNOWN, 0);
-
-            for (const auto& run : runs) {
-                const float color[4] = { run.color.r, run.color.g, run.color.b, run.color.a };
-                if (!uploadColorModel(context, DirectX::XMMatrixIdentity(), color)) {
-                    continue;
-                }
-                context->DrawInstanced(run.vertexCount, 2, run.firstVertex, 0);
-                ++stats.lineDrawCalls;
-            }
+            context->DrawInstanced(static_cast<UINT>(batch.vertexCount()), 2, 0, 0);
+            ++stats.lineDrawCalls;
         }
 
         void appendAxisTripod(debug_overlay_line_batch::LineBatch& batch, const Vertex& origin, const Vertex& xEnd, const Vertex& yEnd, const Vertex& zEnd, AxisOverlayRole role)
@@ -2783,26 +2888,39 @@ namespace rock::debug
             }
         }
 
-        void appendTextQuad(std::vector<Vertex>& vertices, float x, float y, float size, float textureWidth, float textureHeight)
+        bool appendTextQuad(
+            std::vector<ColoredVertex>& vertices,
+            float x,
+            float y,
+            float size,
+            float textureWidth,
+            float textureHeight,
+            const float color[4],
+            std::uint32_t& rejectedVertices)
         {
             if (vertices.size() + 6 > kTextVertexCapacity) {
-                return;
+                rejectedVertices += 6;
+                return false;
             }
 
             const auto toClip = [&](float px, float py) {
                 return Vertex{ (px / textureWidth) * 2.0f - 1.0f, 1.0f - (py / textureHeight) * 2.0f, 0.0f };
             };
 
-            const Vertex a = toClip(x, y);
-            const Vertex b = toClip(x + size, y);
-            const Vertex c = toClip(x + size, y + size);
-            const Vertex d = toClip(x, y + size);
+            const auto colored = [&](const Vertex& position) {
+                return ColoredVertex{ position.x, position.y, position.z, { color[0], color[1], color[2], color[3] } };
+            };
+            const ColoredVertex a = colored(toClip(x, y));
+            const ColoredVertex b = colored(toClip(x + size, y));
+            const ColoredVertex c = colored(toClip(x + size, y + size));
+            const ColoredVertex d = colored(toClip(x, y + size));
             vertices.push_back(a);
             vertices.push_back(b);
             vertices.push_back(c);
             vertices.push_back(a);
             vertices.push_back(c);
             vertices.push_back(d);
+            return true;
         }
 
         float textPixelWidth(const TextOverlayEntry& entry)
@@ -2844,7 +2962,15 @@ namespace rock::debug
             return true;
         }
 
-        void appendTextGlyphs(std::vector<Vertex>& vertices, const TextOverlayEntry& entry, float baseX, float baseY, float maxX, float textureWidth, float textureHeight)
+        void appendTextGlyphs(
+            std::vector<ColoredVertex>& vertices,
+            const TextOverlayEntry& entry,
+            float baseX,
+            float baseY,
+            float maxX,
+            float textureWidth,
+            float textureHeight,
+            std::uint32_t& rejectedVertices)
         {
             constexpr float kGlyphColumns = 5.0f;
             constexpr float kGlyphAdvanceColumns = 6.0f;
@@ -2857,7 +2983,15 @@ namespace rock::debug
                     for (std::uint8_t col = 0; col < static_cast<std::uint8_t>(kGlyphColumns); ++col) {
                         const std::uint8_t bit = static_cast<std::uint8_t>(1u << (4u - col));
                         if ((rows[row] & bit) != 0) {
-                            appendTextQuad(vertices, cursorX + static_cast<float>(col) * pixel, cursorY + static_cast<float>(row) * pixel, pixel, textureWidth, textureHeight);
+                            (void)appendTextQuad(
+                                vertices,
+                                cursorX + static_cast<float>(col) * pixel,
+                                cursorY + static_cast<float>(row) * pixel,
+                                pixel,
+                                textureWidth,
+                                textureHeight,
+                                entry.color,
+                                rejectedVertices);
                         }
                     }
                 }
@@ -2868,7 +3002,7 @@ namespace rock::debug
             }
         }
 
-        void appendWorldAnchoredTextGlyphs(std::vector<Vertex>& vertices,
+        void appendWorldAnchoredTextGlyphs(std::vector<ColoredVertex>& vertices,
             const TextOverlayEntry& entry,
             const DirectX::XMMATRIX& eye0,
             const DirectX::XMMATRIX& eye1,
@@ -2876,7 +3010,8 @@ namespace rock::debug
             const DirectX::XMFLOAT4& adjust1,
             float textureWidth,
             float textureHeight,
-            bool duplicatePerEye)
+            bool duplicatePerEye,
+            std::uint32_t& rejectedVertices)
         {
             const float halfWidth = textureWidth * 0.5f;
             const float approximateWidth = textPixelWidth(entry);
@@ -2893,7 +3028,7 @@ namespace rock::debug
                 const float maxX = (std::max)(minX, eyeMaxX - approximateWidth - 24.0f);
                 const float baseX = std::clamp(projectedX + entry.x, minX, maxX);
                 const float baseY = std::clamp(projectedY + entry.y, 24.0f, (std::max)(24.0f, textureHeight - 64.0f));
-                appendTextGlyphs(vertices, entry, baseX, baseY, eyeMaxX - 8.0f, textureWidth, textureHeight);
+                appendTextGlyphs(vertices, entry, baseX, baseY, eyeMaxX - 8.0f, textureWidth, textureHeight, rejectedVertices);
             };
 
             appendEye(0, eye0, adjust0);
@@ -2912,56 +3047,165 @@ namespace rock::debug
             const DirectX::XMFLOAT4& adjust1,
             OverlayRuntimeStats& stats)
         {
-            if (!frame.drawText || frame.text.empty() || !s_d3d.textVB || !s_d3d.screenTextVertexShader || textureWidth <= 0.0f || textureHeight <= 0.0f) {
+            if (!frame.drawText || frame.text.empty() || !s_d3d.textVB || !s_d3d.screenTextVertexShader || !s_d3d.coloredInputLayout || !s_d3d.scratch ||
+                textureWidth <= 0.0f || textureHeight <= 0.0f) {
                 return;
             }
 
-            context->IASetInputLayout(s_d3d.inputLayout.Get());
+            const bool duplicatePerEye = frame.settings.duplicateTextPerEye;
+            const float eyeWidth = duplicatePerEye ? textureWidth * 0.5f : textureWidth;
+            auto& vertices = s_d3d.scratch->textVertices;
+            vertices.clear();
+            std::uint32_t rejectedVertices = 0;
+            for (const auto& entry : frame.text) {
+                const std::uint32_t rejectedBefore = rejectedVertices;
+                if (entry.worldAnchored) {
+                    appendWorldAnchoredTextGlyphs(
+                        vertices, entry, eye0, eye1, adjust0, adjust1, textureWidth, textureHeight, duplicatePerEye, rejectedVertices);
+                } else {
+                    appendTextGlyphs(vertices, entry, entry.x, entry.y, eyeWidth - 8.0f, textureWidth, textureHeight, rejectedVertices);
+                    if (duplicatePerEye) {
+                        appendTextGlyphs(
+                            vertices, entry, entry.x + eyeWidth, entry.y, textureWidth - 8.0f, textureWidth, textureHeight, rejectedVertices);
+                    }
+                }
+                if (rejectedVertices != rejectedBefore) {
+                    ++stats.textVertexTruncations;
+                }
+            }
+            stats.textRejectedVertices += rejectedVertices;
+            if (vertices.empty()) {
+                return;
+            }
+
+            D3D11_MAPPED_SUBRESOURCE mapped{};
+            if (FAILED(context->Map(s_d3d.textVB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)) || !mapped.pData) {
+                ++stats.textMapFailures;
+                if (!s_textUploadFailureReported.exchange(true, std::memory_order_relaxed)) {
+                    ROCK_LOG_WARN(Hand, "Debug overlay: aggregate colored text vertex-buffer map failed; text batch skipped");
+                }
+                return;
+            }
+            std::memcpy(mapped.pData, vertices.data(), vertices.size() * sizeof(ColoredVertex));
+            context->Unmap(s_d3d.textVB.Get(), 0);
+
+            context->IASetInputLayout(s_d3d.coloredInputLayout.Get());
             context->VSSetShader(s_d3d.screenTextVertexShader.Get(), nullptr, 0);
             context->PSSetShader(s_d3d.pixelShader.Get(), nullptr, 0);
             context->RSSetState(s_d3d.solidRasterizer.Get());
             context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-            constexpr UINT stride = sizeof(Vertex);
+            constexpr UINT stride = sizeof(ColoredVertex);
             constexpr UINT offset = 0;
             ID3D11Buffer* vertexBuffer = s_d3d.textVB.Get();
             context->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
             context->IASetIndexBuffer(nullptr, DXGI_FORMAT_UNKNOWN, 0);
+            context->Draw(static_cast<UINT>(vertices.size()), 0);
+            stats.textVertices += static_cast<std::uint32_t>(vertices.size());
+            ++stats.textDrawCalls;
+        }
 
-            const bool duplicatePerEye = frame.settings.duplicateTextPerEye;
-            const float eyeWidth = duplicatePerEye ? textureWidth * 0.5f : textureWidth;
-            for (const auto& entry : frame.text) {
-                std::vector<Vertex> vertices;
-                vertices.reserve(4096);
-                if (entry.worldAnchored) {
-                    appendWorldAnchoredTextGlyphs(vertices, entry, eye0, eye1, adjust0, adjust1, textureWidth, textureHeight, duplicatePerEye);
+        void drawBodyBatch(ID3D11DeviceContext* context, const PublishedOverlayFrame& frame, OverlayRuntimeStats& stats)
+        {
+            if (!context || !s_d3d.bodyInstanceVB || !s_d3d.bodyInputLayout || !s_d3d.bodyVertexShader || !s_d3d.scratch) {
+                return;
+            }
+
+            auto& draws = s_d3d.scratch->bodies;
+            draws.clear();
+            for (const auto& entry : frame.bodies) {
+                ++stats.bodyEntries;
+                const auto cached = shapePipeline().lookup(entry.shapeKey);
+                std::shared_ptr<const GpuShape> shapeOwner;
+                const GpuShape* gpuShape = nullptr;
+                DirectX::XMMATRIX model = entry.worldMatrix;
+                if (cached.state == debug_overlay_shape::CacheState::Ready && cached.shape && cached.shape->indexCount > 0) {
+                    shapeOwner = cached.shape;
+                    gpuShape = shapeOwner.get();
+                    if (entry.detailUniformScale != 1.0f) {
+                        model = DirectX::XMMatrixScaling(
+                            entry.detailUniformScale, entry.detailUniformScale, entry.detailUniformScale) * model;
+                    }
+                    ++stats.shapeCacheHits;
+                    if (gpuShape->decodeMode == debug_overlay_policy::ShapeDecodeMode::Proxy) {
+                        ++stats.shapeProxyFallbacks;
+                    }
                 } else {
-                    appendTextGlyphs(vertices, entry, entry.x, entry.y, eyeWidth - 8.0f, textureWidth, textureHeight);
-                    if (duplicatePerEye) {
-                        appendTextGlyphs(vertices, entry, entry.x + eyeWidth, entry.y, textureWidth - 8.0f, textureWidth, textureHeight);
+                    ++stats.shapeCacheMisses;
+                    if (!entry.hasValidWorldAabb) {
+                        if (cached.state == debug_overlay_shape::CacheState::Unsupported) {
+                            ++stats.unsupportedShapeSkips;
+                        }
+                        continue;
+                    }
+                    gpuShape = &s_d3d.aabbProxy;
+                    model = worldAabbMatrix(entry);
+                    ++stats.shapeProxyFallbacks;
+                    if (cached.state == debug_overlay_shape::CacheState::Unsupported) {
+                        ++stats.unsupportedShapeProxies;
+                    } else {
+                        ++stats.shapePendingProxies;
                     }
                 }
-                if (vertices.empty()) {
+                if (!gpuShape || !gpuShape->vertexBuffer || !gpuShape->indexBuffer || gpuShape->indexCount == 0) {
                     continue;
                 }
-                if (vertices.size() > kTextVertexCapacity) {
-                    ++stats.textVertexTruncations;
-                    vertices.resize(kTextVertexCapacity);
+                if (draws.size() >= kBodyInstanceCapacity) {
+                    ++stats.bodyInstanceRejects;
+                    continue;
                 }
 
-                D3D11_MAPPED_SUBRESOURCE mapped{};
-                if (FAILED(context->Map(s_d3d.textVB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) {
-                    ++stats.textMapFailures;
-                    continue;
+                BodyDrawItem draw{};
+                draw.shapeOwner = std::move(shapeOwner);
+                draw.shape = gpuShape;
+                DirectX::XMStoreFloat4x4(&draw.instance.model, model);
+                bodyColor(entry.role, gpuShape->decodeMode, draw.instance.color);
+                draws.push_back(std::move(draw));
+            }
+            if (draws.empty()) {
+                return;
+            }
+
+            D3D11_MAPPED_SUBRESOURCE mapped{};
+            if (FAILED(context->Map(s_d3d.bodyInstanceVB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)) || !mapped.pData) {
+                if (!s_bodyInstanceUploadFailureReported.exchange(true, std::memory_order_relaxed)) {
+                    ROCK_LOG_WARN(Hand, "Debug overlay: body instance-buffer map failed; body batch skipped");
                 }
-                std::memcpy(mapped.pData, vertices.data(), vertices.size() * sizeof(Vertex));
-                context->Unmap(s_d3d.textVB.Get(), 0);
-                if (!uploadColorModel(context, DirectX::XMMatrixIdentity(), entry.color)) {
-                    continue;
+                return;
+            }
+            auto* instances = static_cast<BodyInstanceData*>(mapped.pData);
+            for (std::size_t index = 0; index < draws.size(); ++index) {
+                instances[index] = draws[index].instance;
+            }
+            context->Unmap(s_d3d.bodyInstanceVB.Get(), 0);
+            ++stats.bodyInstanceMaps;
+
+            context->IASetInputLayout(s_d3d.bodyInputLayout.Get());
+            context->VSSetShader(s_d3d.bodyVertexShader.Get(), nullptr, 0);
+            context->PSSetShader(s_d3d.pixelShader.Get(), nullptr, 0);
+            context->RSSetState(s_d3d.wireRasterizer.Get());
+            context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+            std::size_t runStart = 0;
+            while (runStart < draws.size()) {
+                std::size_t runEnd = runStart + 1;
+                while (runEnd < draws.size() && draws[runEnd].shape == draws[runStart].shape) {
+                    ++runEnd;
                 }
-                context->Draw(static_cast<UINT>(vertices.size()), 0);
-                stats.textVertices += static_cast<std::uint32_t>(vertices.size());
-                ++stats.textDrawCalls;
+
+                const auto* shape = draws[runStart].shape;
+                ID3D11Buffer* vertexBuffers[2] = { shape->vertexBuffer.Get(), s_d3d.bodyInstanceVB.Get() };
+                const UINT strides[2] = { sizeof(Vertex), sizeof(BodyInstanceData) };
+                const UINT offsets[2] = { 0, static_cast<UINT>(runStart * sizeof(BodyInstanceData)) };
+                context->IASetVertexBuffers(0, 2, vertexBuffers, strides, offsets);
+                context->IASetIndexBuffer(shape->indexBuffer.Get(), DXGI_FORMAT_R16_UINT, 0);
+
+                const UINT runLength = static_cast<UINT>(runEnd - runStart);
+                context->DrawIndexedInstanced(shape->indexCount, runLength * 2, 0, 0, 0);
+                stats.bodiesDrawn += runLength;
+                ++stats.bodyMeshBinds;
+                ++stats.bodyDrawCalls;
+                runStart = runEnd;
             }
         }
 
@@ -3022,70 +3266,14 @@ namespace rock::debug
             }
 
             if (hasBodiesToDraw) {
-                context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-                std::shared_ptr<const GpuShape> lastBoundOwner;
-                const GpuShape* lastBoundShape = nullptr;
-                for (const auto& entry : frame->bodies) {
-                    ++stats.bodyEntries;
-                    const auto cached = shapePipeline().lookup(entry.shapeKey);
-                    std::shared_ptr<const GpuShape> shapeOwner;
-                    const GpuShape* gpuShape = nullptr;
-                    DirectX::XMMATRIX model = entry.worldMatrix;
-                    if (cached.state == debug_overlay_shape::CacheState::Ready && cached.shape && cached.shape->indexCount > 0) {
-                        shapeOwner = cached.shape;
-                        gpuShape = shapeOwner.get();
-                        ++stats.shapeCacheHits;
-                        if (gpuShape->decodeMode == debug_overlay_policy::ShapeDecodeMode::Proxy) {
-                            ++stats.shapeProxyFallbacks;
-                        }
-                    } else {
-                        ++stats.shapeCacheMisses;
-                        if (!entry.hasValidWorldAabb) {
-                            if (cached.state == debug_overlay_shape::CacheState::Unsupported) {
-                                ++stats.unsupportedShapeSkips;
-                            }
-                            continue;
-                        }
-                        gpuShape = &s_d3d.aabbProxy;
-                        model = worldAabbMatrix(entry);
-                        ++stats.shapeProxyFallbacks;
-                        if (cached.state == debug_overlay_shape::CacheState::Unsupported) {
-                            ++stats.unsupportedShapeProxies;
-                        } else {
-                            ++stats.shapePendingProxies;
-                        }
-                    }
-                    if (!gpuShape || !gpuShape->vertexBuffer || !gpuShape->indexBuffer || gpuShape->indexCount == 0) {
-                        continue;
-                    }
-
-                    UINT stride = sizeof(Vertex);
-                    UINT offset = 0;
-                    if (gpuShape != lastBoundShape) {
-                        ID3D11Buffer* vertexBuffer = gpuShape->vertexBuffer.Get();
-                        context->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
-                        context->IASetIndexBuffer(gpuShape->indexBuffer.Get(), DXGI_FORMAT_R16_UINT, 0);
-                        lastBoundShape = gpuShape;
-                        lastBoundOwner = std::move(shapeOwner);
-                        ++stats.bodyMeshBinds;
-                    }
-                    if (!uploadModel(context, model, entry.role, gpuShape->decodeMode)) {
-                        continue;
-                    }
-                    context->DrawIndexedInstanced(gpuShape->indexCount, 2, 0, 0, 0);
-                    ++stats.bodiesDrawn;
-                    ++stats.bodyDrawCalls;
-                }
+                drawBodyBatch(context, *frame, stats);
             }
 
-            debug_overlay_line_batch::LineBatch lineBatch;
+            auto& lineBatch = s_d3d.scratch->lines;
+            lineBatch.clear();
             collectAxisOverlays(lineBatch, *frame);
             collectMarkerOverlays(lineBatch, *frame);
             collectSkeletonOverlays(lineBatch, *frame);
-            context->VSSetShader(s_d3d.vertexShader.Get(), nullptr, 0);
-            context->PSSetShader(s_d3d.pixelShader.Get(), nullptr, 0);
-            context->RSSetState(s_d3d.wireRasterizer.Get());
-            context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
             drawLineBatch(context, lineBatch, stats);
             drawTextOverlays(context, static_cast<float>(textureDesc.Width), static_cast<float>(textureDesc.Height), *frame, eye0, eye1, adjust0, adjust1, stats);
 
@@ -3093,11 +3281,13 @@ namespace rock::debug
                 s_overlayStatsLogCounter = 0;
                 const auto pipelineStats = shapePipeline().stats();
                 ROCK_LOG_DEBUG(Hand,
-                    "Debug overlay frame: entries={} drawn={} bodyBinds={} bodyDraws={} axes={} markers={} skeleton={} text={} cacheHits={} cacheMisses={} shapeCaptures={} captureDefers={} captureCap={} uploads={}/{} uploadFails={} proxies={} pendingProxy={} unsupportedProxy={} unsupportedSkip={} cache(ready/pending/unsupported/total/bytes)={}/{}/{}/{}/{} jobs(reserved/queued/active/completed)={}/{}/{}/{} evictions={} staleDrops={} completedDrops={} bodyReadFails={} lineVerts={} lineLines={} lineDraws={} lineRejects={} textVerts={} textDraws={} textTrunc={} textMapFails={} rtvHits={} rtvMisses={}",
+                    "Debug overlay frame: entries={} drawn={} bodyBinds={} bodyDraws={} bodyMaps={} bodyRejects={} axes={} markers={} skeleton={} text={} cacheHits={} cacheMisses={} shapeCaptures={} captureDefers={} captureCap={} uploads={}/{} uploadFails={} proxies={} pendingProxy={} unsupportedProxy={} unsupportedSkip={} cache(ready/pending/unsupported/total/bytes)={}/{}/{}/{}/{} jobs(reserved/queued/active/completed)={}/{}/{}/{} evictions={} staleDrops={} completedDrops={} bodyReadFails={} lineVerts={} lineLines={} lineDraws={} lineRejects={} lineMapFails={} textVerts={} textDraws={} textTrunc={} textRejectVerts={} textMapFails={} rtvHits={} rtvMisses={}",
                     stats.bodyEntries,
                     stats.bodiesDrawn,
                     stats.bodyMeshBinds,
                     stats.bodyDrawCalls,
+                    stats.bodyInstanceMaps,
+                    stats.bodyInstanceRejects,
                     frame->axes.size(),
                     frame->markers.size(),
                     frame->skeleton.size(),
@@ -3131,9 +3321,11 @@ namespace rock::debug
                     stats.lineLogicalLines,
                     stats.lineDrawCalls,
                     stats.lineBudgetRejects,
+                    stats.lineMapFailures,
                     stats.textVertices,
                     stats.textDrawCalls,
                     stats.textVertexTruncations,
+                    stats.textRejectedVertices,
                     stats.textMapFailures,
                     stats.rtvCacheHits,
                     stats.rtvCacheMisses);
