@@ -10,7 +10,7 @@
 #include <filesystem>
 #include <thread>
 
-#include "common/CommonUtils.h"
+#include "rock_support/ResourceUtils.h"
 #include "physics-interaction/grab/GrabNodeNamePolicy.h"
 #include "physics-interaction/grab/GrabPinchPocket.h"
 #include "physics-interaction/grab/GrabThreePhase.h"
@@ -2471,9 +2471,9 @@ namespace rock
         _iniFilePath = resolveIniPath();
         ROCK_LOG_INFO(Config, "Loading ROCK config from: {}", _iniFilePath);
 
-        f4cf::common::createDirDeep(_iniFilePath);
+        rock::resources::createDirectoryTreeForFile(_iniFilePath);
 
-        f4cf::common::createFileFromResourceIfNotExists(_iniFilePath, "ROCK", IDR_ROCK_INI, true);
+        rock::resources::createFileFromResourceIfMissing(_iniFilePath, "ROCK", IDR_ROCK_INI, true);
 
         CSimpleIniA ini;
         ini.SetUnicode(false);

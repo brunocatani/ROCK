@@ -9,15 +9,10 @@
     "xbyak",
     "nlohmann-json",
     "simpleini",
-    "thomasmonkman-filewatch",
-    "cpptrace"
+    "thomasmonkman-filewatch"
   ],
   "builtin-baseline": "b4a3d89125e45bc8f80fb94bef9761d4f4e14fb9",
   "overrides": [
-    {
-      "name": "cpptrace",
-      "version": "1.0.0"
-    },
     {
       "name": "fmt",
       "version": "10.2.1"

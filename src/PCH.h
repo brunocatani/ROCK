@@ -16,9 +16,8 @@ using namespace std::literals;
 using std::max;
 using std::min;
 
-#include "Logger.h"
+#include "rock_support/Logger.h"
 
-using namespace f4cf;
 
 #define DLLEXPORT __declspec(dllexport)
 

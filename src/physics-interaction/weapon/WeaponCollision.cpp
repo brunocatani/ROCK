@@ -34,9 +34,7 @@
 #include "RE/Havok/hknpCapsuleShape.h"
 #include "RE/Havok/hknpMotion.h"
 
-#include "f4vr/PlayerNodes.h"
-#include "f4vr/F4VRUtils.h"
-#include "f4sevr/Forms.h"
+#include "rock_support/Fo4VrRuntime.h"
 
 #include <algorithm>
 #include <array>
@@ -932,38 +930,39 @@ namespace rock
         }
 
         const RE::BGSObjectInstanceExtra* findEquippedWeaponObjectInstanceExtra(
-            const F4SEVR::PlayerCharacter* player,
-            const F4SEVR::TESForm* weaponForm,
+            const RE::PlayerCharacter* player,
+            const RE::TESForm* weaponForm,
             const RE::TBO_InstanceData* instanceData)
         {
             if (!player || !weaponForm) {
                 return nullptr;
             }
 
-            const auto* reWeaponForm = reinterpret_cast<const RE::TESForm*>(weaponForm);
-            auto scanEquipData = [&](const F4SEVR::ActorEquipData* equipData) -> const RE::BGSObjectInstanceExtra* {
-                if (!equipData) {
+            auto scanBiped = [&](const RE::BipedAnim* biped) -> const RE::BGSObjectInstanceExtra* {
+                if (!biped) {
                     return nullptr;
                 }
-                for (std::uint32_t slotIndex = 0; slotIndex < F4SEVR::ActorEquipData::kMaxSlots; ++slotIndex) {
-                    const auto& slot = equipData->slots[slotIndex];
-                    if (slot.item != reWeaponForm) {
+                for (std::uint32_t slotIndex = 0;
+                     slotIndex < static_cast<std::uint32_t>(std::to_underlying(RE::BIPED_OBJECT::kTotal));
+                     ++slotIndex) {
+                    const auto& slot = biped->object[slotIndex];
+                    if (slot.parent.object != weaponForm) {
                         continue;
                     }
-                    if (instanceData && slot.instanceData && slot.instanceData != instanceData) {
+                    if (instanceData && slot.parent.instanceData && slot.parent.instanceData.get() != instanceData) {
                         continue;
                     }
-                    if (slot.extraData) {
-                        return slot.extraData;
+                    if (slot.modExtra) {
+                        return slot.modExtra;
                     }
                 }
                 return nullptr;
             };
 
-            if (const auto* firstPersonExtra = scanEquipData(player->playerEquipData)) {
+            if (const auto* firstPersonExtra = scanBiped(player->firstPersonBipedAnim.get())) {
                 return firstPersonExtra;
             }
-            return scanEquipData(player->equipData);
+            return scanBiped(player->biped.get());
         }
 
         [[nodiscard]] bool startsWithAsciiInsensitive(std::string_view value, std::string_view prefix)
@@ -1075,11 +1074,11 @@ namespace rock
         {
             std::unordered_map<std::uint32_t, std::uint32_t> result;
             auto* player = f4vr::getPlayer();
-            auto* processData = player && player->middleProcess ? player->middleProcess->unk08 : nullptr;
-            auto* equipData = processData ? processData->equipData : nullptr;
-            auto* weaponForm = equipData ? equipData->item : nullptr;
+            auto* equipData = f4vr::getEquippedItem();
+            auto* weaponForm = equipData ? equipData->item.object : nullptr;
+            auto* instanceData = equipData ? equipData->item.instanceData.get() : nullptr;
             const RE::BGSObjectInstanceExtra* objectInstanceExtra =
-                weaponForm ? findEquippedWeaponObjectInstanceExtra(player, weaponForm, equipData->instanceData) : nullptr;
+                weaponForm ? findEquippedWeaponObjectInstanceExtra(player, weaponForm, instanceData) : nullptr;
             if (!objectInstanceExtra || !objectInstanceExtra->values) {
                 return result;
             }
@@ -1125,19 +1124,18 @@ namespace rock
         {
             EquippedManualScopeTarget target{};
             auto* player = f4vr::getPlayer();
-            auto* processData = player && player->middleProcess ? player->middleProcess->unk08 : nullptr;
-            auto* equipData = processData ? processData->equipData : nullptr;
-            auto* weaponForm = equipData ? equipData->item : nullptr;
+            auto* equipData = f4vr::getEquippedItem();
+            auto* weaponForm = equipData ? equipData->item.object : nullptr;
+            auto* equippedInstanceData = equipData ? equipData->item.instanceData.get() : nullptr;
             const RE::BGSObjectInstanceExtra* objectInstanceExtra =
-                weaponForm ? findEquippedWeaponObjectInstanceExtra(player, weaponForm, equipData->instanceData) : nullptr;
+                weaponForm ? findEquippedWeaponObjectInstanceExtra(player, weaponForm, equippedInstanceData) : nullptr;
             if (!objectInstanceExtra || !objectInstanceExtra->values) {
                 return target;
             }
 
-            auto* reWeaponForm = reinterpret_cast<RE::TESForm*>(weaponForm);
-            auto* weapon = reWeaponForm ? reWeaponForm->As<RE::TESObjectWEAP>() : nullptr;
-            auto* instanceData = weapon && equipData->instanceData ?
-                static_cast<RE::TESObjectWEAP::InstanceData*>(equipData->instanceData) :
+            auto* weapon = weaponForm ? weaponForm->As<RE::TESObjectWEAP>() : nullptr;
+            auto* instanceData = weapon && equippedInstanceData ?
+                static_cast<RE::TESObjectWEAP::InstanceData*>(equippedInstanceData) :
                 nullptr;
             RE::BGSZoomData* zoomData = instanceData ? instanceData->zoomData : nullptr;
             if (!zoomData && weapon) {
@@ -1200,14 +1198,13 @@ namespace rock
             return target;
         }
 
-        const RE::TESObjectWEAP* asEquippedWeaponForm(const F4SEVR::TESForm* form)
+        const RE::TESObjectWEAP* asEquippedWeaponForm(const RE::TESForm* form)
         {
-            if (!form || form->formType != static_cast<std::uint8_t>(RE::ENUM_FORM_ID::kWEAP)) {
+            if (!form || form->formType != RE::ENUM_FORM_ID::kWEAP) {
                 return nullptr;
             }
 
-            const auto* reForm = reinterpret_cast<const RE::TESForm*>(form);
-            return reForm->As<RE::TESObjectWEAP>();
+            return form->As<RE::TESObjectWEAP>();
         }
 
         /*
@@ -1423,22 +1420,24 @@ namespace rock
             weapon_generation_identity_policy::EquippedWeaponGenerationIdentity identity{};
 
             auto* player = f4vr::getPlayer();
-            auto* processData = player && player->middleProcess ? player->middleProcess->unk08 : nullptr;
-            auto* equipData = processData ? processData->equipData : nullptr;
-            auto* weaponForm = equipData ? equipData->item : nullptr;
-            if (!weaponForm || weaponForm->formType != static_cast<std::uint8_t>(RE::ENUM_FORM_ID::kWEAP)) {
+            auto* equipData = f4vr::getEquippedItem();
+            auto* weaponForm = equipData ? equipData->item.object : nullptr;
+            auto* instanceData = equipData ? equipData->item.instanceData.get() : nullptr;
+            if (!weaponForm || weaponForm->formType != RE::ENUM_FORM_ID::kWEAP) {
                 return identity;
             }
 
             identity.hasEquippedWeapon = true;
             identity.formID = weaponForm->formID;
             identity.formAddress = reinterpret_cast<std::uintptr_t>(weaponForm);
-            identity.instanceDataAddress = reinterpret_cast<std::uintptr_t>(equipData->instanceData);
+            identity.instanceDataAddress = reinterpret_cast<std::uintptr_t>(instanceData);
             identity.instanceKeywordDataAddress = reinterpret_cast<std::uintptr_t>(
-                equipData->instanceData ? equipData->instanceData->GetKeywordData() : nullptr);
-            identity.equippedDataAddress = reinterpret_cast<std::uintptr_t>(equipData->equippedData);
-            identity.equippedObjectAddress = reinterpret_cast<std::uintptr_t>(equipData->equippedData ? equipData->equippedData->object : nullptr);
-            const auto* objectInstanceExtra = findEquippedWeaponObjectInstanceExtra(player, weaponForm, equipData->instanceData);
+                instanceData ? instanceData->GetKeywordData() : nullptr);
+            auto* equippedWeaponData = equipData->data ? static_cast<RE::EquippedWeaponData*>(equipData->data.get()) : nullptr;
+            identity.equippedDataAddress = reinterpret_cast<std::uintptr_t>(equippedWeaponData);
+            identity.equippedObjectAddress = reinterpret_cast<std::uintptr_t>(
+                equippedWeaponData ? equippedWeaponData->fireNode : nullptr);
+            const auto* objectInstanceExtra = findEquippedWeaponObjectInstanceExtra(player, weaponForm, instanceData);
             const auto objectInstanceWitness = makeObjectInstanceExtraWitness(objectInstanceExtra);
             identity.objectInstanceExtraAddress = reinterpret_cast<std::uintptr_t>(objectInstanceExtra);
             identity.objectIndexDataSignature = objectInstanceWitness.signature;
@@ -1446,8 +1445,8 @@ namespace rock
             identity.activeModCount = objectInstanceWitness.activeCount;
             identity.disabledModCount = objectInstanceWitness.disabledCount;
             if (const auto* weapon = asEquippedWeaponForm(weaponForm)) {
-                identity.instanceContentKey = makeEquippedWeaponInstanceContentKey(weapon, equipData->instanceData, objectInstanceExtra);
-                float weightGame = equipData->instanceData ? equipData->instanceData->GetWeight() : -1.0f;
+                identity.instanceContentKey = makeEquippedWeaponInstanceContentKey(weapon, instanceData, objectInstanceExtra);
+                float weightGame = instanceData ? instanceData->GetWeight() : -1.0f;
                 if (weightGame < 0.0f) {
                     weightGame = weapon->weaponData.weight;
                 }
@@ -1456,9 +1455,10 @@ namespace rock
                 identity.classificationSource = classification.source;
                 identity.keywordFlags = classification.keywordFlags;
             } else {
-                identity.instanceContentKey = makeEquippedWeaponInstanceContentKey(nullptr, equipData->instanceData, objectInstanceExtra);
+                identity.instanceContentKey = makeEquippedWeaponInstanceContentKey(nullptr, instanceData, objectInstanceExtra);
             }
-            if (const char* fullName = weaponForm->GetFullName()) {
+            const auto fullName = RE::TESFullName::GetFullName(*weaponForm);
+            if (!fullName.empty()) {
                 identity.displayName = fullName;
             }
             return identity;
@@ -5333,17 +5333,17 @@ namespace rock
         _lastOmodDumpGenerationKey = _cachedWeaponBodySetKey;
 
         auto* player = f4vr::getPlayer();
-        auto* processData = player && player->middleProcess ? player->middleProcess->unk08 : nullptr;
-        auto* equipData = processData ? processData->equipData : nullptr;
-        auto* weaponForm = equipData ? equipData->item : nullptr;
+        auto* equipData = f4vr::getEquippedItem();
+        auto* weaponForm = equipData ? equipData->item.object : nullptr;
+        auto* equippedInstanceData = equipData ? equipData->item.instanceData.get() : nullptr;
         ROCK_LOG_INFO(Weapon,
             "OMOD-DUMP begin generation={:016X} weapon={:08X} '{}'",
             _cachedWeaponBodySetKey,
             weaponForm ? weaponForm->formID : 0u,
-            weaponForm && weaponForm->GetFullName() ? weaponForm->GetFullName() : "");
+            weaponForm ? RE::TESFullName::GetFullName(*weaponForm) : std::string_view{});
 
         const RE::BGSObjectInstanceExtra* objectInstanceExtra =
-            weaponForm ? findEquippedWeaponObjectInstanceExtra(player, weaponForm, equipData->instanceData) : nullptr;
+            weaponForm ? findEquippedWeaponObjectInstanceExtra(player, weaponForm, equippedInstanceData) : nullptr;
         if (objectInstanceExtra && objectInstanceExtra->values) {
             const auto indexData = objectInstanceExtra->GetIndexData();
             ROCK_LOG_INFO(Weapon, "OMOD-DUMP installed mods count={}", indexData.size());
@@ -6640,9 +6640,9 @@ namespace rock
         result.ran = true;
 
         auto* player = f4vr::getPlayer();
-        auto* processData = player && player->middleProcess ? player->middleProcess->unk08 : nullptr;
-        auto* equipData = processData ? processData->equipData : nullptr;
-        auto* weaponForm = equipData ? equipData->item : nullptr;
+        auto* equipData = f4vr::getEquippedItem();
+        auto* weaponForm = equipData ? equipData->item.object : nullptr;
+        auto* equippedInstanceData = equipData ? equipData->item.instanceData.get() : nullptr;
 
         WeaponVisualKeyStats visualStatsNow{};
         const std::uint64_t visualKeyNow = getWeaponVisualCompositionKey(weaponNode, visualStatsNow);
@@ -6655,7 +6655,7 @@ namespace rock
             runIndex,
             _cachedWeaponBodySetKey,
             weaponForm ? weaponForm->formID : 0u,
-            weaponForm && weaponForm->GetFullName() ? weaponForm->GetFullName() : "",
+            weaponForm ? RE::TESFullName::GetFullName(*weaponForm) : std::string_view{},
             getWeaponBodyCount(),
             visualKeyNow,
             _cachedWeaponVisualKey,
@@ -6709,7 +6709,7 @@ namespace rock
 
         std::vector<OmodAuditRecord> records;
         const RE::BGSObjectInstanceExtra* objectInstanceExtra =
-            weaponForm ? findEquippedWeaponObjectInstanceExtra(player, weaponForm, equipData->instanceData) : nullptr;
+            weaponForm ? findEquippedWeaponObjectInstanceExtra(player, weaponForm, equippedInstanceData) : nullptr;
         if (objectInstanceExtra && objectInstanceExtra->values) {
             const auto indexData = objectInstanceExtra->GetIndexData();
             records.reserve(indexData.size());
@@ -6838,7 +6838,7 @@ namespace rock
         addRoot("fpSkeletonAbsoluteRoot", climbToAbsoluteRoot(f4vr::getFirstPersonSkeleton()), kOmodAuditSceneRootMaxVisited);
         addRoot("playerWorldAbsoluteRoot", climbToAbsoluteRoot(playerNodes ? playerNodes->playerworldnode : nullptr), kOmodAuditSceneRootMaxVisited);
         auto* playerCamera = f4vr::getPlayerCamera();
-        addRoot("cameraAbsoluteRoot", climbToAbsoluteRoot(playerCamera ? playerCamera->cameraNode : nullptr), kOmodAuditSceneRootMaxVisited);
+        addRoot("cameraAbsoluteRoot", climbToAbsoluteRoot(playerCamera ? playerCamera->cameraRoot.get() : nullptr), kOmodAuditSceneRootMaxVisited);
 
         /*
          * Engine biped-slot ground truth (raw disasm 2026-07-04, two sources:
@@ -6928,7 +6928,7 @@ namespace rock
             runIndex,
             reinterpret_cast<std::uintptr_t>(fpWeaponNode),
             reinterpret_cast<std::uintptr_t>(f4vr::getFirstPersonSkeleton()),
-            reinterpret_cast<std::uintptr_t>(playerCamera ? playerCamera->cameraNode : nullptr));
+            reinterpret_cast<std::uintptr_t>(playerCamera ? playerCamera->cameraRoot.get() : nullptr));
         for (const auto& root : roots) {
             std::uint32_t depth = 0;
             for (const RE::NiAVObject* node = root.root; node && node->parent && depth < 64; node = node->parent) {
@@ -7449,7 +7449,7 @@ namespace rock
                             recoveryTemplates,
                             parentPathPreparation);
                     bool attached = nativeAttachNeeded &&
-                        tryAttach3DRecurse(omod, healTargetNode, rankSuffix, equipData ? equipData->instanceData : nullptr);
+                        tryAttach3DRecurse(omod, healTargetNode, rankSuffix, equippedInstanceData);
                     auto afterStats = summarizeWeaponAnimNodeSubtree(healTargetNode);
                     bool anchorPresentAfterNative =
                         !collectWeaponAnimNodeMatches(coverageRoot, templateSignature.durableAnchorName.c_str()).empty();
@@ -7478,7 +7478,7 @@ namespace rock
                             signatureRoot,
                             templateSignature,
                             coverageRoot,
-                            equipData ? equipData->instanceData : nullptr,
+                            equippedInstanceData,
                             enrichmentParentName,
                             enrichmentStage);
                     afterStats = summarizeWeaponAnimNodeSubtree(healTargetNode);
@@ -7581,9 +7581,9 @@ namespace rock
         }
 
         auto* player = f4vr::getPlayer();
-        auto* processData = player && player->middleProcess ? player->middleProcess->unk08 : nullptr;
-        auto* equipData = processData ? processData->equipData : nullptr;
-        auto* weaponForm = equipData ? equipData->item : nullptr;
+        auto* equipData = f4vr::getEquippedItem();
+        auto* weaponForm = equipData ? equipData->item.object : nullptr;
+        auto* instanceData = equipData ? equipData->item.instanceData.get() : nullptr;
         if (!weaponForm) {
             ROCK_LOG_WARN(Weapon, "WORKBENCH-REATTACH skipped: no equipped weapon form");
             return;
@@ -7604,12 +7604,12 @@ namespace rock
         using QueueEquippedWeaponAttachFn = std::uint64_t (*)(void*, void*, EquippedObjectInstance*, std::uint32_t);
         static REL::Relocation<QueueEquippedWeaponAttachFn> queueEquippedWeaponAttach{ REL::Offset(0xDAB8F0) };
 
-        EquippedObjectInstance instance{ reinterpret_cast<RE::TESForm*>(weaponForm), equipData->instanceData };
+        EquippedObjectInstance instance{ weaponForm, instanceData };
         const std::uint64_t result = queueEquippedWeaponAttach(manager, player, &instance, 0);
         ROCK_LOG_INFO(Weapon,
             "WORKBENCH-REATTACH fired weapon={:08X} '{}' equipIndex=0 result={:#x}",
             weaponForm->formID,
-            weaponForm->GetFullName() ? weaponForm->GetFullName() : "",
+            RE::TESFullName::GetFullName(*weaponForm),
             result);
     }
 

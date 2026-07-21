@@ -10,8 +10,7 @@
 #include "RE/Bethesda/TESBoundObjects.h"
 #include "RE/Bethesda/TESObjectREFRs.h"
 
-#include "f4vr/PlayerNodes.h"
-#include "f4sevr/Forms.h"
+#include "rock_support/Fo4VrRuntime.h"
 
 namespace rock::weapon_equip_transfer
 {
@@ -33,25 +32,22 @@ namespace rock::weapon_equip_transfer
             RE::TBO_InstanceData* instanceData = nullptr;
         };
 
-        [[nodiscard]] RE::TESObjectWEAP* asWeaponForm(const F4SEVR::TESForm* form) noexcept
+        [[nodiscard]] RE::TESObjectWEAP* asWeaponForm(RE::TESForm* form) noexcept
         {
-            if (!form || form->formType != static_cast<std::uint8_t>(RE::ENUM_FORM_ID::kWEAP)) {
+            if (!form || form->formType != RE::ENUM_FORM_ID::kWEAP) {
                 return nullptr;
             }
 
-            auto* reForm = reinterpret_cast<RE::TESForm*>(const_cast<F4SEVR::TESForm*>(form));
-            return reForm ? reForm->As<RE::TESObjectWEAP>() : nullptr;
+            return form->As<RE::TESObjectWEAP>();
         }
 
         [[nodiscard]] EquippedWeaponSnapshot readEquippedWeaponSnapshot() noexcept
         {
             EquippedWeaponSnapshot snapshot{};
-            auto* player = f4vr::getPlayer();
-            auto* processData = player && player->middleProcess ? player->middleProcess->unk08 : nullptr;
-            auto* equipData = processData ? processData->equipData : nullptr;
-            auto* weaponForm = equipData ? equipData->item : nullptr;
+            auto* equipData = f4vr::getEquippedItem();
+            auto* weaponForm = equipData ? equipData->item.object : nullptr;
             snapshot.weapon = asWeaponForm(weaponForm);
-            snapshot.instanceData = equipData ? equipData->instanceData : nullptr;
+            snapshot.instanceData = equipData ? equipData->item.instanceData.get() : nullptr;
             return snapshot;
         }
 

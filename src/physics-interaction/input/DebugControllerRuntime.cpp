@@ -3,7 +3,7 @@
 #include "physics-interaction/input/DebugControllerPolicy.h"
 
 #include "RockConfig.h"
-#include "f4vr/F4VRUtils.h"
+#include "rock_support/Fo4VrRuntime.h"
 #include "physics-interaction/PhysicsLog.h"
 
 #include <algorithm>

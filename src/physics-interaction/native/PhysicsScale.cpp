@@ -2,7 +2,7 @@
 
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/PhysicsLog.h"
-#include "f4vr/F4VRUtils.h"
+#include "rock_support/Fo4VrRuntime.h"
 
 #include <REL/Relocation.h>
 

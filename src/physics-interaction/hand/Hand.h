@@ -23,8 +23,7 @@
 #include "physics-interaction/native/PhysicsUtils.h"
 #include "RockConfig.h"
 #include "physics-interaction/hand/HandSelection.h"
-#include "f4vr/F4VRUtils.h"
-#include "f4vr/PlayerNodes.h"
+#include "rock_support/Fo4VrRuntime.h"
 
 #include "RE/Bethesda/TESObjectREFRs.h"
 #include "RE/Bethesda/bhkPhysicsSystem.h"

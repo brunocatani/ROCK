@@ -7,14 +7,13 @@
 
 #include "physics-interaction/PhysicsLog.h"
 
-#include "f4vr/F4VRUtils.h"
-#include "f4vr/PlayerNodes.h"
+#include "rock_support/Fo4VrRuntime.h"
 
 namespace rock
 {
     namespace
     {
-        using f4cf::f4vr::BSFlattenedBoneTree;
+        using f4vr::BSFlattenedBoneTree;
         using skeleton_bone_debug_math::DebugSkeletonBoneMode;
         using skeleton_bone_debug_math::DebugSkeletonBoneSource;
         using skeleton_bone_debug_math::SkeletonBoneSnapshotSource;
@@ -55,12 +54,7 @@ namespace rock
 
         RE::NiNode* safeWorldRootNode()
         {
-            auto* player = f4vr::getPlayer();
-            if (!player || !player->unkF0) {
-                return nullptr;
-            }
-
-            return player->unkF0->rootNode;
+            return f4vr::getWorldRootNode();
         }
 
         RE::NiNode* safeRootNode(RE::NiNode* worldRoot)

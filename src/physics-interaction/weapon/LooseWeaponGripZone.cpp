@@ -17,8 +17,7 @@
 #include "RE/Bethesda/TESObjectREFRs.h"
 #include "RE/NetImmerse/NiNode.h"
 
-#include "f4vr/F4VRUtils.h"
-#include "f4vr/PlayerNodes.h"
+#include "rock_support/Fo4VrRuntime.h"
 
 namespace rock::loose_weapon_grip_zone
 {

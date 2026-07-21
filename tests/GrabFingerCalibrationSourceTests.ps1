@@ -39,8 +39,12 @@ function Reject-Text {
     }
 }
 
-Require-Text 'tools/generate_grab_finger_calibration.py' 'original frik deps' `
-    'Offline grab-finger calibration must use the original FRIK dependency source authority.'
+Require-Text 'tools/generate_grab_finger_calibration.py' 'workspace_root / "main_projects" / "hFRIK"' `
+    'Offline grab-finger calibration must resolve hFRIK from the reorganized main-project tree.'
+Reject-Text 'tools/generate_grab_finger_calibration.py' 'F4VR-CommonFramework' `
+    'Offline grab-finger calibration must not depend on F4VR-CommonFramework sources.'
+Reject-Text 'tools/generate_grab_finger_calibration.py' 'original frik deps' `
+    'Offline grab-finger calibration must not reference the removed dependency tree.'
 Require-Text 'tools/generate_grab_finger_calibration.py' 'runtime_landmark_reference_length' `
     'Offline reach scales must be normalized against the same root-flattened landmark length used by gameplay.'
 Require-Text 'tools/generate_grab_finger_calibration.py' 'THUMB_LANES' `

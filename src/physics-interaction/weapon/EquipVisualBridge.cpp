@@ -14,8 +14,7 @@
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 #include "RockConfig.h"
 
-#include "f4vr/F4VRUtils.h"
-#include "f4vr/PlayerNodes.h"
+#include "rock_support/Fo4VrRuntime.h"
 
 namespace rock
 {

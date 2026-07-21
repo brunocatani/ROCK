@@ -43,7 +43,7 @@
 
 #include <F4SE/F4SE.h>
 #include <REL/Relocation.h>
-#include <vrcf/VRControllersManager.h>
+#include "rock_support/VRControllers.h"
 #include <windows.h>
 
 #include "physics-interaction/debug/DebugMath.h"

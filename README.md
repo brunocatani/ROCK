@@ -54,7 +54,9 @@ Create the `ROCK_Config` folder if it does not already exist. The release archiv
 - F4SE VR
 - FRIK Experimental release, installed separately: `https://github.com/brunocatani/hFRIK/releases/tag/frik-experimental`
 - CMake, Visual Studio 2022, and vcpkg for local builds
-- Local Fallout 4 VR/CommonLib dependencies configured in `CMakeUserPresets.json`
+- ArthurHub CommonLibF4VR. This is ROCK's only external C++ source-project dependency; the workspace checkout at `libraries_and_tools/CommonLibF4VR` is used by default and `COMMON_LIB_F4VR_PATH` can override it.
+
+ROCK does not require F4VR-CommonFramework. The logging, FO4VR runtime, menu, resource, and controller support it needs is ROCK-owned under `src/rock_support/`. The small OpenVR SDK ABI used for controller input and haptics is vendored under `third_party/openvr/`, so it is not downloaded or built as another source project.
 
 ## Build
 
@@ -62,22 +64,22 @@ Fast plugin build and auto-deploy:
 
 ```powershell
 cmake --preset custom-fast
-cmake --build build-fast --config Release --target ROCK -- /m
+cmake --build build-fast --config Release --target ROCK -- /m:1 /p:CL_MPCount=2
 ```
 
 Release package build:
 
 ```powershell
 cmake --preset custom-release
-cmake --build build-release --config Release --target ROCK -- /m
+cmake --build build-release --config Release --target ROCK -- /m:1 /p:CL_MPCount=2
 ```
 
 ## Test
 
 ```powershell
 cmake --preset custom-tests
-cmake --build build-tests --config Release --target ROCKPolicyTestBinaries -- /m
-ctest --test-dir build-tests -C Release --output-on-failure
+cmake --build build-tests --config Release --target ROCKPolicyTestBinaries -- /m:1 /p:CL_MPCount=2
+ctest --test-dir build-tests -C Release --output-on-failure -j 4
 ```
 
 ## Public API

@@ -50,8 +50,7 @@
 #include "RockConfig.h"
 #include "RockUtils.h"
 #include "physics-interaction/TransformMath.h"
-#include "f4vr/PlayerNodes.h"
-#include "f4vr/F4VRUtils.h"
+#include "rock_support/Fo4VrRuntime.h"
 
 #include <cmath>
 #include <cstdint>

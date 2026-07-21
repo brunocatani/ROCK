@@ -2,9 +2,8 @@
 
 #include "physics-interaction/PhysicsLog.h"
 
-#include "common/CommonUtils.h"
-#include "f4vr/F4VRUtils.h"
-#include "f4vr/PlayerNodes.h"
+#include "rock_support/Fo4VrRuntime.h"
+#include "rock_support/ResourceUtils.h"
 
 #include "RE/Bethesda/FormComponents.h"
 #include "RE/Bethesda/TESBoundObjects.h"
@@ -99,7 +98,7 @@ namespace rock::frik_weapon_offset_cache
 
         [[nodiscard]] std::filesystem::path customOffsetDirectory()
         {
-            return common::getRelativePathInDocuments(kFrikWeaponOffsetsRelativePath);
+            return rock::resources::getPathInDocuments(kFrikWeaponOffsetsRelativePath);
         }
 
         [[nodiscard]] bool isFiniteNiTransform(const RE::NiTransform& value)

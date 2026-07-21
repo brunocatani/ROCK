@@ -8,8 +8,7 @@
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 
-#include "f4vr/F4VRUtils.h"
-#include "f4vr/PlayerNodes.h"
+#include "rock_support/Fo4VrRuntime.h"
 
 #include "RE/Bethesda/Actor.h"
 #include "RE/Bethesda/PlayerCharacter.h"
@@ -1230,22 +1229,19 @@ namespace rock::native_animation_authority
             RE::TESObjectWEAP*& outWeapon)
         {
             outWeapon = nullptr;
-            auto* player = f4vr::getPlayer();
-            auto* processData = player && player->middleProcess ? player->middleProcess->unk08 : nullptr;
-            auto* equipData = processData ? processData->equipData : nullptr;
-            auto* weaponForm = equipData ? equipData->item : nullptr;
+            auto* equipData = f4vr::getEquippedItem();
+            auto* weaponForm = equipData ? equipData->item.object : nullptr;
             if (!weaponForm ||
-                weaponForm->formType != static_cast<std::uint8_t>(RE::ENUM_FORM_ID::kWEAP)) {
+                weaponForm->formType != RE::ENUM_FORM_ID::kWEAP) {
                 return nullptr;
             }
 
-            auto* reForm = reinterpret_cast<RE::TESForm*>(weaponForm);
-            outWeapon = reForm ? reForm->As<RE::TESObjectWEAP>() : nullptr;
+            outWeapon = weaponForm->As<RE::TESObjectWEAP>();
             if (!outWeapon) {
                 return nullptr;
             }
-            return equipData->instanceData ?
-                static_cast<RE::TESObjectWEAP::InstanceData*>(equipData->instanceData) :
+            return equipData->item.instanceData ?
+                static_cast<RE::TESObjectWEAP::InstanceData*>(equipData->item.instanceData.get()) :
                 &outWeapon->weaponData;
         }
 

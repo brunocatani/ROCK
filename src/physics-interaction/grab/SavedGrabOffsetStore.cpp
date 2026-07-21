@@ -2,7 +2,7 @@
 
 #include "physics-interaction/PhysicsLog.h"
 
-#include "common/CommonUtils.h"
+#include "rock_support/ResourceUtils.h"
 
 #include "RE/Bethesda/TESForms.h"
 #include "RE/Bethesda/TESDataHandler.h"
@@ -25,7 +25,7 @@ namespace rock::saved_grab_offset
 
         std::string resolveStoreDirectory()
         {
-            return common::getRelativePathInDocuments(kSavedGrabOffsetsRelativePath);
+            return rock::resources::getPathInDocuments(kSavedGrabOffsetsRelativePath);
         }
 
         // Plugin names become file-name components; keep letters, digits,

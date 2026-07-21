@@ -10,6 +10,7 @@ message(">>> Start build for '${NAME}' v${VERSION}")
 set(ROOT_DIR  "${CMAKE_CURRENT_SOURCE_DIR}")
 set(SOURCE_DIR "${ROOT_DIR}/src")
 set(BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}")
+get_filename_component(WORKSPACE_ROOT "${ROOT_DIR}/../.." ABSOLUTE)
 
 if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
   message(FATAL_ERROR ">> In-source builds not allowed. Please make a new directory (called a build directory) and run CMake from there.")
@@ -33,20 +34,21 @@ else()
 endif()
 
 
-if(DEFINED F4VR_COMMON_FRAMEWORK_PATH AND NOT F4VR_COMMON_FRAMEWORK_PATH STREQUAL "")
-  set(F4VR_COMMON_FRAMEWORK_PATH_SELECTED ${F4VR_COMMON_FRAMEWORK_PATH} CACHE STRING "" FORCE)
-  message(">>> Using F4VR-CommonFramework from custom variable: '${F4VR_COMMON_FRAMEWORK_PATH_SELECTED}'")
+if(DEFINED COMMON_LIB_F4VR_PATH AND NOT COMMON_LIB_F4VR_PATH STREQUAL "")
+  set(COMMON_LIB_F4VR_PATH_SELECTED ${COMMON_LIB_F4VR_PATH} CACHE STRING "" FORCE)
+  message(">>> Using CommonLibF4VR from custom variable: '${COMMON_LIB_F4VR_PATH_SELECTED}'")
 else()
-  set(F4VR_COMMON_FRAMEWORK_PATH_SELECTED "${ROOT_DIR}/external/F4VR-CommonFramework" CACHE STRING "" FORCE)
-  message(">>> Using F4VR-CommonFramework in external: '${F4VR_COMMON_FRAMEWORK_PATH_SELECTED}'")
+  set(COMMON_LIB_F4VR_PATH_SELECTED "${WORKSPACE_ROOT}/libraries_and_tools/CommonLibF4VR" CACHE STRING "" FORCE)
+  message(">>> Using canonical pristine workspace CommonLibF4VR: '${COMMON_LIB_F4VR_PATH_SELECTED}'")
 endif()
-if(NOT EXISTS "${F4VR_COMMON_FRAMEWORK_PATH_SELECTED}/src/ModBase.h")
-  message(FATAL_ERROR ">> F4VR-CommonFramework path not found in '${F4VR_COMMON_FRAMEWORK_PATH_SELECTED}'!\n >> Did you init submodules? (git submodule update --init --recursive)\n >> or set F4VR_COMMON_FRAMEWORK_PATH?")
+if(NOT EXISTS "${COMMON_LIB_F4VR_PATH_SELECTED}/CommonLibF4/include/REL/Relocation.h")
+  message(FATAL_ERROR ">> CommonLibF4VR path not found in '${COMMON_LIB_F4VR_PATH_SELECTED}'!\n >> Restore libraries_and_tools/CommonLibF4VR or set COMMON_LIB_F4VR_PATH.")
 endif()
+set(COMMON_LIB_F4VR_PATH "${COMMON_LIB_F4VR_PATH_SELECTED}" CACHE PATH "" FORCE)
 
 project(${NAME} VERSION ${VERSION} LANGUAGES CXX)
 message(">>> Building project '${PROJECT_NAME}' v:${PROJECT_VERSION}")
-message(">>> Using found F4VR-CommonFramework in: '${F4VR_COMMON_FRAMEWORK_PATH_SELECTED}'")
+message(">>> Using CommonLibF4VR in: '${COMMON_LIB_F4VR_PATH_SELECTED}'")
 
 add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 set(Boost_USE_STATIC_RUNTIME OFF CACHE BOOL "")
@@ -54,7 +56,27 @@ set(Boost_USE_STATIC_LIBS ON)
 set(CMAKE_INTERPROCEDURAL_OPTIMIZATION OFF)
 set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_DEBUG OFF)
 
-add_subdirectory(${F4VR_COMMON_FRAMEWORK_PATH_SELECTED} "F4VR-CommonFramework" EXCLUDE_FROM_ALL)
+set(F4SE_SUPPORT_XBYAK ON CACHE BOOL "" FORCE)
+set(ENABLE_FALLOUT_NG OFF CACHE BOOL "" FORCE)
+set(ENABLE_FALLOUT_F4 OFF CACHE BOOL "" FORCE)
+set(ENABLE_FALLOUT_VR ON CACHE BOOL "" FORCE)
+
+if(NOT F4SE_SUPPORT_XBYAK OR ENABLE_FALLOUT_F4 OR ENABLE_FALLOUT_NG OR NOT ENABLE_FALLOUT_VR)
+  message(FATAL_ERROR ">> Invalid CommonLibF4VR configuration; remove the build tree and configure again.")
+endif()
+
+add_subdirectory(${COMMON_LIB_F4VR_PATH_SELECTED} "CommonLibF4" EXCLUDE_FROM_ALL)
+
+set(ROCK_OPENVR_ROOT "${ROOT_DIR}/third_party/openvr")
+if(NOT EXISTS "${ROCK_OPENVR_ROOT}/openvr.h" OR NOT EXISTS "${ROCK_OPENVR_ROOT}/openvr_api.lib")
+  message(FATAL_ERROR ">> ROCK's vendored OpenVR SDK is incomplete at '${ROCK_OPENVR_ROOT}'.")
+endif()
+add_library(ROCKOpenVR UNKNOWN IMPORTED)
+set_target_properties(ROCKOpenVR PROPERTIES
+  IMPORTED_LOCATION "${ROCK_OPENVR_ROOT}/openvr_api.lib"
+  INTERFACE_INCLUDE_DIRECTORIES "${ROCK_OPENVR_ROOT}"
+)
+add_library(ROCK::OpenVR ALIAS ROCKOpenVR)
 
 
 configure_file(${ROOT_DIR}/cmake/version.rc.in  ${BUILD_DIR}/version.rc  @ONLY)
@@ -85,7 +107,7 @@ add_library(${PROJECT_NAME} SHARED
 )
 
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
-target_compile_definitions(${PROJECT_NAME} PRIVATE _UNICODE)
+target_compile_definitions(${PROJECT_NAME} PRIVATE _UNICODE F4VR_WITH_OPENVR=1)
 
 target_include_directories(${PROJECT_NAME}
   PRIVATE
@@ -95,16 +117,15 @@ target_include_directories(${PROJECT_NAME}
 
 target_link_libraries(${PROJECT_NAME}
   PRIVATE
-    F4VRCommon::framework
+    CommonLibF4::CommonLibF4
+    ROCK::OpenVR
     d3d11.lib
     dxgi.lib
     d3dcompiler.lib
 )
 
-find_package(cpptrace CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 find_package(mmio CONFIG REQUIRED)
-target_link_libraries(${PROJECT_NAME} PRIVATE cpptrace::cpptrace)
 
 target_precompile_headers(${PROJECT_NAME} PRIVATE src/PCH.h)
 
@@ -633,8 +654,7 @@ if(BUILD_ROCK_TESTS)
     PUBLIC
       ${SOURCE_DIR}
       ${BUILD_DIR}/include
-      "${F4VR_COMMON_FRAMEWORK_PATH_SELECTED}/src"
-      "${F4VR_COMMON_FRAMEWORK_PATH_SELECTED}/external/openvr"
+      "${ROCK_OPENVR_ROOT}"
       "${COMMON_LIB_F4VR_PATH_SELECTED}/CommonLibF4/include"
   )
   target_compile_definitions(ROCKPolicyTestSupport

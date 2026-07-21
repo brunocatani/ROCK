@@ -24,12 +24,14 @@ After any context compaction or interrupted session:
 8. Cap every CTest run at `-j 4`.
 9. Commit each complete, validated slice and run post-commit regression checks before advancing.
 
+Dependency-layout note (2026-07-21): historical references below to separate modified and pristine CommonLib trees describe the layout used during those audits. The former pristine checkout is now the sole canonical checkout at `libraries_and_tools/CommonLibF4VR`; the separate modified tree and `original frik deps/` path no longer exist.
+
 ## Source Authority
 
 1. The user's current instructions.
 2. Current ROCK source and tests on the checked-out branch.
 3. Current ROCK build output, runtime logs, and active configuration.
-4. Current `hFRIK\` source for provider behavior when relevant.
+4. Current `main_projects\hFRIK\` source for provider behavior when relevant.
 5. Approved FO4VR binary verification when a layout, offset, or callsite requires it.
 6. `CollisionVisualizerF4VR` only as a local implementation reference for renderer architecture and performance patterns.
 
@@ -37,7 +39,7 @@ Do not copy standalone raw Havok offsets or assume that a standalone layout is a
 
 ## Repository Baseline
 
-- Target repo: `F:\fo4dev\PROJECT_ROCK_V2\ROCK`
+- Target repo: `F:\fo4dev\PROJECT_ROCK_V2\main_projects\ROCK`
 - Starting branch: `feature/ghidra-grab-motor-mapping`
 - Audit source revision: ROCK `5215de3`, later advanced concurrently to `5634ab2` before implementation began.
 - Standalone reference revision: `F:\fo4dev\devtools\CollisionVisualizerF4VR` at `596a1da` on clean `master`.
@@ -337,7 +339,7 @@ Record any Ghidra/FO4VR source verification here before implementing a new offse
 - The publisher now resolves role-specific body and body-axis transforms before publication. Target bodies/axes retain BODY-array authority; other roles retain live-motion-when-available behavior.
 - Captured stable body IDs, pointer-plus-geometry-fingerprint shape keys, real world body AABBs, roles, render flags, decode data, and the narrow overlay settings consumed by rendering.
 - Real AABBs use the current local CommonLibF4VR `hknpWorld::GetBodyAabb` wrapper, validate finite ordered bounds, and convert Havok units to ROCK game units. No standalone raw AABB offsets were imported.
-- Blind CommonLib verification was performed locally without assuming the modified headers were correct: every overlay-facing wrapper was compared with `original frik deps/CommonLibF4VR`, then relocations were checked against the local address database/PDB, and the new AABB call was independently verified in the FO4VR binary through read-only Ghidra analysis.
+- Blind CommonLib verification was performed locally without assuming the then-active modified headers were correct: every overlay-facing wrapper was compared with the then-separate pristine checkout (now canonical at `libraries_and_tools/CommonLibF4VR`), then relocations were checked against the local address database/PDB, and the new AABB call was independently verified in the FO4VR binary through read-only Ghidra analysis.
 - `hknpBodyId` is byte-identical in the modified and pristine CommonLib copies (four-byte `hkHandle<uint32_t, 0x7fffffff, ...>`), and the two local address-ID maps are byte-identical. This rules out a hidden argument-width or map-drift mismatch for `GetBodyAabb`.
 - Ghidra confirmed that FO4VR's AABB function writes exactly 32 bytes as minimum then maximum float vectors and zero-extends the stored 16-bit components. The standalone visualizer's raw `std::int16_t` decoder is therefore not safe to transfer; a source regression now rejects that decoder and its raw offsets.
 - The existing `hknpShape` virtuals and `BSGraphics::RendererData` access were separately cross-checked between both CommonLib trees and against the standalone caller/address evidence; no overlay-side correction was required.
@@ -365,7 +367,7 @@ Record any Ghidra/FO4VR source verification here before implementing a new offse
 - Added deterministic shutdown before physics teardown, including worker notification, join, cache release, and restart coverage.
 - Eliminated per-frame fingerprint heap allocation by replacing the temporary support-vertex vector with a fixed 256-entry stack array.
 - Added pure geometry tests, pipeline lifecycle/bounds/LRU tests, and a source-boundary regression proving the worker has no CommonLib/Havok/D3D access and the compositor performs no recipe capture, fingerprinting, or CPU mesh construction.
-- Re-audited every CommonLib-facing overlay function against `original frik deps/CommonLibF4VR`. Exact virtual-slot counts are now enforced for `GetType`, `GetNumberOfSupportVertices`, and `GetSupportVertices`; both fingerprint and recipe paths are enclosed by fail-closed SEH boundaries.
+- Re-audited every CommonLib-facing overlay function against the then-separate pristine checkout, now canonical at `libraries_and_tools/CommonLibF4VR`. Exact virtual-slot counts are now enforced for `GetType`, `GetNumberOfSupportVertices`, and `GetSupportVertices`; both fingerprint and recipe paths are enclosed by fail-closed SEH boundaries.
 - Replaced the duplicated raw `+0x14` radius read with the identically laid-out CommonLib `hknpShape::convexRadius` member. Recursive scaled recipes use unique ownership attached before the deeper guarded read, so a structured access fault cannot orphan a temporary inner recipe.
 - Required `custom-fast` configure and capped Release build passed and auto-deployed. The dedicated `custom-tests` tree was regenerated to avoid accepting the stale test registry left in `build-fast`; the current complete suite passed 55 policy tests and 67 source-boundary tests, 122/122 total.
 - Deployed `ROCK.dll` is version `0.5.0.0`, size `5,373,440`, timestamp `2026-07-20 20:42:40`; build/deploy SHA-256 match `EC586103C9FBB5425465ED4FF699CA63141088659EA4E29FCD29C1F58729ED3E`.
@@ -418,7 +420,7 @@ Record any Ghidra/FO4VR source verification here before implementing a new offse
 - Added cumulative admission telemetry that distinguishes no-publication, duplicate-publication, active/reentrant, and serial-race rejection from successful acquisitions. The existing atomic admission invariants and lease ownership remain unchanged.
 - Extracted the D3D query ring and per-frame runtime counter contract into `DebugOverlayGpuTimer` and `DebugOverlayStats`. Existing publication, shader, line-batch, shape-geometry, shape-pipeline, settings, and admission modules already own their narrow domains; the private render-pass coordinator remains together because splitting its D3D state and immutable-frame consumers would introduce cross-module lifetime coupling without removing hot-path work.
 - Added source-boundary coverage requiring the fixed query ring, correct begin/end ordering, non-flushing bounded readback, optional initialization, full draw-span scope, pre-log scope closure, telemetry publication, and removal of the monolithic statistics definition. Extended admission unit coverage verifies every deterministic counter category.
-- Re-scanned every CommonLib-facing call in the final overlay and compared it with both the active modified CommonLibF4VR and `original frik deps/CommonLibF4VR`. No new discrepancy was found beyond the scaled/compound layout defects already corrected in `833cc08`; the GPU timer is direct D3D11 and required no additional Ghidra claim.
+- Re-scanned every CommonLib-facing call in the final overlay and compared the two CommonLib trees that existed during the audit; the former pristine tree is now canonical at `libraries_and_tools/CommonLibF4VR`. No new discrepancy was found beyond the scaled/compound layout defects already corrected in `833cc08`; the GPU timer is direct D3D11 and required no additional Ghidra claim.
 - The required `custom-fast` Release plugin build compiled, linked, and auto-deployed. After refreshing `custom-tests`, the complete pre-commit suite passed 57 policy tests plus 70 source-boundary tests, 127/127 total.
 - The final pre-commit instrumentation artifact is `ROCK.dll` version `0.5.0.0`, size `5,403,648`, timestamp `2026-07-20 21:52:33`; build/deploy DLL SHA-256 match `886A6FA3C840C6462DE8D3C5CD1A6BA4F9AB1912042A67DB12C615C5710A5537`, and build/deploy PDB SHA-256 match `329C385065D295F5191F8524D0EA90DCB95EAB6C3265D244A267C846EA8730E1`.
 - Committed the instrumentation/module slice as `ffc7852` (`feature/debug-overlay: add nonblocking gpu instrumentation`). The required post-commit Release build auto-deployed successfully, all 127 tests passed again, and `git show --check` reported no whitespace errors.

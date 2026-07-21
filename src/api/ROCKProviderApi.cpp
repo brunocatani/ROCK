@@ -19,7 +19,7 @@
 #include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/weapon/WeaponPartGripReportPolicy.h"
 #include "physics-interaction/weapon/WeaponPartRuntime.h"
-#include "f4vr/F4VRUtils.h"
+#include "rock_support/Fo4VrRuntime.h"
 #include "RockConfig.h"
 
 #ifdef DrawText

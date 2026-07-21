@@ -94,11 +94,8 @@
 #include "ROCKMain.h"
 #include "RockConfig.h"
 #include "RockUtils.h"
-#include "f4vr/MiscStructs.h"
-#include "f4vr/F4VRUtils.h"
-#include "f4vr/PlayerNodes.h"
-#include "f4sevr/Forms.h"
-#include "vrcf/VRControllersManager.h"
+#include "rock_support/Fo4VrRuntime.h"
+#include "rock_support/VRControllers.h"
 #include <windows.h>
 
 namespace rock
@@ -895,31 +892,25 @@ namespace rock
 
         RE::TESObjectWEAP* currentEquippedWeaponForm()
         {
-            auto* player = f4vr::getPlayer();
-            auto* processData = player && player->middleProcess ? player->middleProcess->unk08 : nullptr;
-            auto* equipData = processData ? processData->equipData : nullptr;
-            auto* weaponForm = equipData ? equipData->item : nullptr;
-            if (!weaponForm || weaponForm->formType != static_cast<std::uint8_t>(RE::ENUM_FORM_ID::kWEAP)) {
+            auto* equipData = f4vr::getEquippedItem();
+            auto* weaponForm = equipData ? equipData->item.object : nullptr;
+            if (!weaponForm || weaponForm->formType != RE::ENUM_FORM_ID::kWEAP) {
                 return nullptr;
             }
 
-            auto* reForm = reinterpret_cast<RE::TESForm*>(weaponForm);
-            return reForm ? reForm->As<RE::TESObjectWEAP>() : nullptr;
+            return weaponForm->As<RE::TESObjectWEAP>();
         }
 
         RE::TBO_InstanceData* currentEquippedWeaponInstanceData(const RE::TESObjectWEAP* expectedWeapon)
         {
-            auto* player = f4vr::getPlayer();
-            auto* processData = player && player->middleProcess ? player->middleProcess->unk08 : nullptr;
-            auto* equipData = processData ? processData->equipData : nullptr;
+            auto* equipData = f4vr::getEquippedItem();
             if (!expectedWeapon || !equipData) {
                 return nullptr;
             }
 
-            auto* weaponForm = equipData ? equipData->item : nullptr;
-            auto* reForm = weaponForm ? reinterpret_cast<RE::TESForm*>(weaponForm) : nullptr;
-            auto* equippedWeapon = reForm ? reForm->As<RE::TESObjectWEAP>() : nullptr;
-            return equippedWeapon == expectedWeapon ? equipData->instanceData : nullptr;
+            auto* weaponForm = equipData->item.object;
+            auto* equippedWeapon = weaponForm ? weaponForm->As<RE::TESObjectWEAP>() : nullptr;
+            return equippedWeapon == expectedWeapon ? equipData->item.instanceData.get() : nullptr;
         }
 
         std::uint32_t currentEquippedWeaponFormId()
@@ -1202,13 +1193,12 @@ namespace rock
             WeaponInteractionDebugInfo info{};
             info.weaponNodeName = weaponDiagnosticNodeName(weaponNode);
 
-            auto* player = f4vr::getPlayer();
-            auto* processData = player && player->middleProcess ? player->middleProcess->unk08 : nullptr;
-            auto* equipData = processData ? processData->equipData : nullptr;
-            auto* weaponForm = equipData ? equipData->item : nullptr;
+            auto* equipData = f4vr::getEquippedItem();
+            auto* weaponForm = equipData ? equipData->item.object : nullptr;
             if (weaponForm) {
                 info.weaponFormId = weaponForm->formID;
-                if (const char* fullName = weaponForm->GetFullName()) {
+                const auto fullName = RE::TESFullName::GetFullName(*weaponForm);
+                if (!fullName.empty()) {
                     info.weaponName = fullName;
                 }
             }
@@ -1249,7 +1239,7 @@ namespace rock
                 return nullptr;
             }
 
-            const auto muzzle = reinterpret_cast<f4vr::MuzzleFlash*>(equipWeaponData->unk28);
+            const auto muzzle = reinterpret_cast<f4vr::MuzzleFlash*>(equipWeaponData->muzzleFlash);
             if (!muzzle || !muzzle->fireNode || !muzzle->projectileNode) {
                 return nullptr;
             }
@@ -4599,8 +4589,8 @@ namespace rock
                 continue;
             }
 
-            f4cf::vrcf::VRControllers.triggerHaptic(
-                output.hand == feedback_haptics::FeedbackHand::Left ? f4cf::vrcf::Hand::Left : f4cf::vrcf::Hand::Right,
+            vrcf::VRControllers.triggerHaptic(
+                output.hand == feedback_haptics::FeedbackHand::Left ? vrcf::Hand::Left : vrcf::Hand::Right,
                 output.pulseDurationSeconds,
                 output.intensity);
         }
@@ -5191,10 +5181,8 @@ namespace rock
                 scanCollisionObject(player->currentProcess->middleHigh->poseBound.get());
             }
         }
-        scanNode(scanNode, f4cf::f4vr::getFirstPersonSkeleton(), 64);
-        if (auto* player = f4cf::f4vr::getPlayer(); player && player->unkF0) {
-            scanNode(scanNode, player->unkF0->rootNode, 64);
-        }
+        scanNode(scanNode, f4vr::getFirstPersonSkeleton(), 64);
+        scanNode(scanNode, f4vr::getWorldRootNode(), 64);
 
         if (scanContext.overflow && !_nativePlayerCollisionSuppressionOverflowLogged) {
             _nativePlayerCollisionSuppressionOverflowLogged = true;

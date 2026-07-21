@@ -9,9 +9,8 @@
 #include <string_view>
 
 #include "RE/Bethesda/PlayerCharacter.h"
-#include "f4vr/F4VRUtils.h"
-#include "f4vr/GameMenusHandler.h"
-#include "f4vr/PlayerNodes.h"
+#include "rock_support/Fo4VrRuntime.h"
+#include "rock_support/GameMenus.h"
 
 namespace rock::runtime_state
 {
@@ -19,7 +18,7 @@ namespace rock::runtime_state
     {
         constexpr int kMaxFlattenedBoneTransforms = 768;
 
-        f4cf::f4vr::GameMenusHandler s_gameMenus;
+        f4vr::GameMenusHandler s_gameMenus;
         bool s_menuHandlerInitialized = false;
         bool s_hasLastFrameTime = false;
         std::chrono::steady_clock::time_point s_lastFrameTime{};
@@ -62,12 +61,7 @@ namespace rock::runtime_state
 
         [[nodiscard]] RE::NiNode* safeWorldRootNode()
         {
-            auto* player = f4cf::f4vr::getPlayer();
-            if (!player || !player->unkF0) {
-                return nullptr;
-            }
-
-            return player->unkF0->rootNode;
+            return f4vr::getWorldRootNode();
         }
 
         [[nodiscard]] RE::NiNode* safeRootNode(RE::NiNode* worldRoot)
@@ -85,10 +79,10 @@ namespace rock::runtime_state
                 return false;
             }
 
-            return f4cf::f4vr::IsWeaponDrawn();
+            return f4vr::IsWeaponDrawn();
         }
 
-        [[nodiscard]] bool flattenedTreeValid(const f4cf::f4vr::BSFlattenedBoneTree* tree)
+        [[nodiscard]] bool flattenedTreeValid(const f4vr::BSFlattenedBoneTree* tree)
         {
             return tree && tree->transforms && tree->numTransforms > 0 && tree->numTransforms <= kMaxFlattenedBoneTransforms;
         }
@@ -123,7 +117,7 @@ namespace rock::runtime_state
                 return frame;
             }
 
-            if (auto* playerNodes = f4cf::f4vr::getPlayerNodes(); playerNodes && playerNodes->roomnode) {
+            if (auto* playerNodes = f4vr::getPlayerNodes(); playerNodes && playerNodes->roomnode) {
                 frame.valid = true;
                 frame.source = "roomNode";
                 frame.world = playerNodes->roomnode->world;
@@ -157,7 +151,7 @@ namespace rock::runtime_state
 
             auto* worldRoot = safeWorldRootNode();
             auto* rootNode = safeRootNode(worldRoot);
-            auto* flattenedTree = rootNode ? reinterpret_cast<f4cf::f4vr::BSFlattenedBoneTree*>(rootNode) : nullptr;
+            auto* flattenedTree = rootNode ? reinterpret_cast<f4vr::BSFlattenedBoneTree*>(rootNode) : nullptr;
 
             snapshot.localSkeletonRootAttached = rootNode && rootNode->parent;
             readinessInput.rootNodeAvailable = worldRoot != nullptr && rootNode != nullptr;

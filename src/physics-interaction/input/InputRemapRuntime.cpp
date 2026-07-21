@@ -9,7 +9,7 @@
 #include "api/ROCKProviderApi.h"
 #include "api/FRIKApi.h"
 
-#include "f4vr/F4VRUtils.h"
+#include "rock_support/Fo4VrRuntime.h"
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/BSLock.h"
 #include "RE/Bethesda/BSPointerHandle.h"
@@ -19,7 +19,7 @@
 #include "RE/Bethesda/UI.h"
 
 #include <REL/Relocation.h>
-#include <vrcf/VRControllersManager.h>
+#include "rock_support/VRControllers.h"
 #include <windows.h>
 
 #include <algorithm>

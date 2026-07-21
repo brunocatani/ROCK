@@ -7,7 +7,7 @@
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/NativeIdleGripPreharvestPolicy.h"
 
-#include "f4vr/F4VRUtils.h"
+#include "rock_support/Fo4VrRuntime.h"
 
 #include "RE/Bethesda/Actor.h"
 #include "RE/Bethesda/BSAnimationGraph.h"
