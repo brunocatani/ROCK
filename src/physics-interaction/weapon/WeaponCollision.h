@@ -75,11 +75,11 @@ namespace rock
         };
 
         /*
-         * Immutable, generation-keyed view of the assembled optical-sight
-         * geometry. The anchor is expressed in the equipped weapon root's
-         * local frame and is published under the same seqlock as the generated
-         * body/evidence bank, so readers never combine bounds from two weapon
-         * generations.
+         * Immutable, generation/ownership/form-keyed view of the assembled
+         * optical-sight geometry. The anchor is expressed in the equipped
+         * weapon root's local frame and is published under the same seqlock as
+         * the generated body/evidence bank, so readers never combine bounds
+         * from different weapon publications.
          */
         struct NativeScopeSightAnchorSnapshot
         {
@@ -87,6 +87,8 @@ namespace rock
             bool manualDirectTransitionRequired{ false };
             bool nativeScopeOverlayValid{ false };
             std::uint64_t weaponGenerationKey{ 0 };
+            std::uint64_t equippedWeaponOwnershipKey{ 0 };
+            std::uint32_t weaponFormID{ 0 };
             std::uint32_t nativeScopeOverlayIndex{ 0 };
             RE::NiPoint3 anchorWeaponLocal{};
             RE::NiPoint3 sightBoundsMinWeaponLocal{};
@@ -315,6 +317,8 @@ namespace rock
             std::uint64_t equippedKey{ 0 };
             std::uint64_t visualKey{ 0 };
             std::uint64_t identityKey{ 0 };
+            std::uint64_t ownershipKey{ 0 };
+            std::uint32_t weaponFormID{ 0 };
             std::uint32_t visualRootCount{ 0 };
             std::uint32_t visibleTriShapeCount{ 0 };
             float convexRadius{ -1.0f };
@@ -412,6 +416,8 @@ namespace rock
         bool beginPendingGeneratedWeaponBuild(std::uint64_t equippedKey,
             std::uint64_t visualKey,
             std::uint64_t identityKey,
+            std::uint64_t ownershipKey,
+            std::uint32_t weaponFormID,
             const WeaponVisualKeyStats& visualKeyStats,
             bool replacingExisting,
             bool settingsChanged,
@@ -419,7 +425,10 @@ namespace rock
             std::vector<GeneratedHullSource> sources,
             const weapon_generated_source_completeness_policy::GeneratedSourceCompleteness& summary);
         bool advancePendingGeneratedWeaponBuild(RE::hknpWorld* world);
-        bool pendingGeneratedWeaponBuildMatches(std::uint64_t equippedKey) const;
+        bool pendingGeneratedWeaponBuildMatches(
+            std::uint64_t equippedKey,
+            std::uint64_t ownershipKey,
+            std::uint32_t weaponFormID) const;
         void resetWeaponCollisionSettingsCache();
 
         std::uint64_t getEquippedWeaponIdentityKey(
@@ -443,6 +452,10 @@ namespace rock
         std::uint64_t _cachedWeaponKey{ 0 };
         std::uint64_t _cachedWeaponVisualKey{ 0 };
         std::uint64_t _cachedWeaponIdentityKey{ 0 };
+        // Body-associated ownership witnesses. Unlike the observed fields
+        // below, these remain bound to the currently published body set.
+        std::uint64_t _cachedWeaponOwnershipKey{ 0 };
+        std::uint32_t _cachedWeaponFormID{ 0 };
         // Available before generated bodies publish; the cached identity above
         // remains body-associated for replacement safety.
         std::uint64_t _observedEquippedWeaponIdentityKey{ 0 };

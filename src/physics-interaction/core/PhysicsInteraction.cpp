@@ -59,6 +59,7 @@
 #include "physics-interaction/stash/ShoulderStashPolicy.h"
 #include "physics-interaction/stash/ShoulderStashTransfer.h"
 #include "physics-interaction/weapon/LooseWeaponGripZone.h"
+#include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
 #include "physics-interaction/weapon/NativeIdleGripPreharvest.h"
 #include "physics-interaction/weapon/PipboyEquipRuntime.h"
 #include "physics-interaction/weapon/WeaponEquipTransfer.h"
@@ -2031,7 +2032,18 @@ namespace rock
             return false;
         }
         const auto snapshot = _weaponCollision.getNativeScopeSightAnchorSnapshot();
-        if (!snapshot.valid || !snapshot.manualDirectTransitionRequired || !snapshot.nativeScopeOverlayValid || snapshot.weaponGenerationKey == 0) {
+        const native_scope_sight_anchor_policy::PublicationIdentity publishedIdentity{
+            .weaponGenerationKey = snapshot.weaponGenerationKey,
+            .equippedWeaponOwnershipKey = snapshot.equippedWeaponOwnershipKey,
+            .weaponFormID = snapshot.weaponFormID,
+        };
+        const native_scope_sight_anchor_policy::PublicationIdentity currentIdentity{
+            .weaponGenerationKey = _weaponCollision.getCurrentWeaponGenerationKey(),
+            .equippedWeaponOwnershipKey = _weaponCollision.getCurrentEquippedWeaponOwnershipKey(),
+            .weaponFormID = _weaponCollision.getCurrentObservedEquippedWeaponFormID(),
+        };
+        if (!snapshot.valid || !snapshot.manualDirectTransitionRequired || !snapshot.nativeScopeOverlayValid ||
+            !native_scope_sight_anchor_policy::matchesCurrentEquippedWeapon(publishedIdentity, currentIdentity)) {
             return false;
         }
         outWeaponGenerationKey = snapshot.weaponGenerationKey;

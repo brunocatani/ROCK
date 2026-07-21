@@ -2505,6 +2505,8 @@ namespace rock
     bool WeaponCollision::beginPendingGeneratedWeaponBuild(std::uint64_t equippedKey,
         std::uint64_t visualKey,
         std::uint64_t identityKey,
+        std::uint64_t ownershipKey,
+        std::uint32_t weaponFormID,
         const WeaponVisualKeyStats& visualKeyStats,
         bool replacingExisting,
         bool settingsChanged,
@@ -2512,7 +2514,7 @@ namespace rock
         std::vector<GeneratedHullSource> sources,
         const weapon_generated_source_completeness_policy::GeneratedSourceCompleteness& summary)
     {
-        if (equippedKey == 0 || sources.empty() || summary.signature == 0) {
+        if (equippedKey == 0 || ownershipKey == 0 || weaponFormID == 0 || sources.empty() || summary.signature == 0) {
             return false;
         }
 
@@ -2524,6 +2526,8 @@ namespace rock
         _pendingGeneratedWeaponBuild.equippedKey = equippedKey;
         _pendingGeneratedWeaponBuild.visualKey = visualKey;
         _pendingGeneratedWeaponBuild.identityKey = identityKey;
+        _pendingGeneratedWeaponBuild.ownershipKey = ownershipKey;
+        _pendingGeneratedWeaponBuild.weaponFormID = weaponFormID;
         _pendingGeneratedWeaponBuild.visualRootCount = visualKeyStats.rootCount;
         _pendingGeneratedWeaponBuild.visibleTriShapeCount = visualKeyStats.visibleTriShapeCount;
         _pendingGeneratedWeaponBuild.convexRadius = g_rockConfig.rockWeaponCollisionConvexRadius;
@@ -2535,10 +2539,15 @@ namespace rock
         return true;
     }
 
-    bool WeaponCollision::pendingGeneratedWeaponBuildMatches(std::uint64_t equippedKey) const
+    bool WeaponCollision::pendingGeneratedWeaponBuildMatches(
+        std::uint64_t equippedKey,
+        std::uint64_t ownershipKey,
+        std::uint32_t weaponFormID) const
     {
         return _pendingGeneratedWeaponBuild.active &&
                _pendingGeneratedWeaponBuild.equippedKey == equippedKey &&
+               _pendingGeneratedWeaponBuild.ownershipKey == ownershipKey &&
+               _pendingGeneratedWeaponBuild.weaponFormID == weaponFormID &&
                std::abs(_pendingGeneratedWeaponBuild.convexRadius - g_rockConfig.rockWeaponCollisionConvexRadius) <= 0.00001f &&
                std::abs(_pendingGeneratedWeaponBuild.pointDedupGrid - g_rockConfig.rockWeaponCollisionPointDedupGrid) <= 0.00001f &&
                _pendingGeneratedWeaponBuild.supportFitTargetPoints == g_rockConfig.rockWeaponCollisionSupportFitTargetPoints &&
@@ -2591,6 +2600,8 @@ namespace rock
                 _cachedWeaponKey = 0;
                 _cachedWeaponVisualKey = 0;
                 _cachedWeaponIdentityKey = 0;
+                _cachedWeaponOwnershipKey = 0;
+                _cachedWeaponFormID = 0;
                 clearGeneratedSourceCompletenessTracking();
                 clearPendingWeaponVisualRebuild();
                 clearAtomicBodyIds();
@@ -2608,6 +2619,8 @@ namespace rock
         const bool settingsChanged = pending.settingsChanged;
         const bool driveRequestedRebuild = pending.driveRequestedRebuild;
         const auto summary = pending.summary;
+        const auto ownershipKey = pending.ownershipKey;
+        const auto weaponFormID = pending.weaponFormID;
 
         auto structuralMutation = _physicsCallbackGate ?
             _physicsCallbackGate->pauseForMutation() :
@@ -2640,6 +2653,8 @@ namespace rock
         _cachedWeaponKey = equippedKey;
         _cachedWeaponVisualKey = pending.visualKey;
         _cachedWeaponIdentityKey = pending.identityKey;
+        _cachedWeaponOwnershipKey = ownershipKey;
+        _cachedWeaponFormID = weaponFormID;
         _cachedGeneratedSourceCompleteness = summary;
         clearPendingWeaponVisualRebuild();
         publishWeaponBodySetGeneration(summary);
@@ -3137,11 +3152,16 @@ namespace rock
                 std::isfinite(bounds.max.y) && std::isfinite(bounds.max.z) && bounds.min.x <= bounds.max.x && bounds.min.y <= bounds.max.y && bounds.min.z <= bounds.max.z;
         }
 
-        WeaponCollision::NativeScopeSightAnchorSnapshot buildNativeScopeSightAnchorSnapshot(std::uint64_t weaponGenerationKey,
+        WeaponCollision::NativeScopeSightAnchorSnapshot buildNativeScopeSightAnchorSnapshot(
+            std::uint64_t weaponGenerationKey,
+            std::uint64_t equippedWeaponOwnershipKey,
+            std::uint32_t weaponFormID,
             const std::vector<WeaponCollisionProfileEvidenceDescriptor>& descriptors)
         {
             WeaponCollision::NativeScopeSightAnchorSnapshot snapshot{};
             snapshot.weaponGenerationKey = weaponGenerationKey;
+            snapshot.equippedWeaponOwnershipKey = equippedWeaponOwnershipKey;
+            snapshot.weaponFormID = weaponFormID;
 
             bool hasSightBounds = false;
             RE::NiPoint3 sightBoundsMin{};
@@ -3387,6 +3407,8 @@ namespace rock
         _cachedWeaponKey = 0;
         _cachedWeaponVisualKey = 0;
         _cachedWeaponIdentityKey = 0;
+        _cachedWeaponOwnershipKey = 0;
+        _cachedWeaponFormID = 0;
         _observedEquippedWeaponIdentityKey = 0;
         _observedEquippedWeaponOwnershipKey = 0;
         _observedEquippedWeaponFormID = 0;
@@ -3425,6 +3447,8 @@ namespace rock
         _cachedWeaponKey = 0;
         _cachedWeaponVisualKey = 0;
         _cachedWeaponIdentityKey = 0;
+        _cachedWeaponOwnershipKey = 0;
+        _cachedWeaponFormID = 0;
         _observedEquippedWeaponIdentityKey = 0;
         _observedEquippedWeaponOwnershipKey = 0;
         _observedEquippedWeaponFormID = 0;
@@ -3492,6 +3516,8 @@ namespace rock
             _cachedWeaponKey = 0;
             _cachedWeaponVisualKey = 0;
             _cachedWeaponIdentityKey = 0;
+            _cachedWeaponOwnershipKey = 0;
+            _cachedWeaponFormID = 0;
             _observedEquippedWeaponIdentityKey = 0;
             _observedEquippedWeaponOwnershipKey = 0;
             _observedEquippedWeaponFormID = 0;
@@ -3612,7 +3638,8 @@ namespace rock
         }
 
         if (_pendingGeneratedWeaponBuild.active) {
-            const bool pendingInvalidated = driveRequestedRebuild || workbenchExitRequested || !pendingGeneratedWeaponBuildMatches(observedKey);
+            const bool pendingInvalidated = driveRequestedRebuild || workbenchExitRequested ||
+                !pendingGeneratedWeaponBuildMatches(observedKey, observedOwnershipKey, observedFormID);
             if (pendingInvalidated) {
                 ROCK_LOG_INFO(Weapon,
                     "Generated weapon staged create cancelled: pendingKey={:016X} observedKey={:016X} pendingVisual={:016X} driveRebuild={} workbenchExit={}",
@@ -3867,6 +3894,8 @@ namespace rock
                     _cachedWeaponKey = 0;
                     _cachedWeaponVisualKey = 0;
                     _cachedWeaponIdentityKey = 0;
+                    _cachedWeaponOwnershipKey = 0;
+                    _cachedWeaponFormID = 0;
                     clearGeneratedSourceCompletenessTracking();
                     clearPendingWeaponVisualRebuild();
                     clearGeneratedSourceCache();
@@ -3891,6 +3920,8 @@ namespace rock
                         observedKey,
                         observedVisualKey,
                         observedIdentityKey,
+                        observedOwnershipKey,
+                        observedFormID,
                         visualKeyStats,
                         replacingExisting,
                         settingsChanged,
@@ -3908,6 +3939,8 @@ namespace rock
                         _cachedWeaponKey = 0;
                         _cachedWeaponVisualKey = 0;
                         _cachedWeaponIdentityKey = 0;
+                        _cachedWeaponOwnershipKey = 0;
+                        _cachedWeaponFormID = 0;
                         clearGeneratedSourceCompletenessTracking();
                     }
                     clearPendingWeaponVisualRebuild();
@@ -4974,6 +5007,8 @@ namespace rock
         _cachedWeaponKey = 0;
         _cachedWeaponVisualKey = 0;
         _cachedWeaponIdentityKey = 0;
+        _cachedWeaponOwnershipKey = 0;
+        _cachedWeaponFormID = 0;
         _observedEquippedWeaponIdentityKey = 0;
         _observedEquippedWeaponOwnershipKey = 0;
         _observedEquippedWeaponFormID = 0;
@@ -5169,7 +5204,11 @@ namespace rock
     {
         auto evidenceSnapshot = buildProfileEvidenceSnapshot(bank);
         RE::NiAVObject* packageDriveNode = resolvePackageDriveNode(bank, nullptr);
-        NativeScopeSightAnchorSnapshot nativeScopeSightAnchorSnapshot = buildNativeScopeSightAnchorSnapshot(_cachedWeaponBodySetKey, evidenceSnapshot);
+        NativeScopeSightAnchorSnapshot nativeScopeSightAnchorSnapshot = buildNativeScopeSightAnchorSnapshot(
+            _cachedWeaponBodySetKey,
+            _cachedWeaponOwnershipKey,
+            _cachedWeaponFormID,
+            evidenceSnapshot);
         const auto manualScopeTarget = resolveEquippedManualScopeTarget(packageDriveNode);
         nativeScopeSightAnchorSnapshot.nativeScopeOverlayValid = manualScopeTarget.overlayValid;
         nativeScopeSightAnchorSnapshot.nativeScopeOverlayIndex = manualScopeTarget.overlayIndex;
@@ -5879,15 +5918,77 @@ namespace rock
             return true;
         }
 
+        enum class OmodPhysicalEnrichmentStage : std::uint8_t
+        {
+            NotAttempted,
+            InvalidInput,
+            ExistingContainerVerified,
+            ExistingContainerMissingAnchor,
+            CloneFailed,
+            CustomizationFailed,
+            AnchorLookupFailed,
+            AnchorParentMissing,
+            AnchorSkinUnreadable,
+            AnchorSkinned,
+            AnimatedParentUnnamed,
+            AnimatedParentMissing,
+            AnchorDetachFailed,
+            ContainerCreateFailed,
+            AttachVerificationFailed,
+            Restored,
+        };
+
+        const char* omodPhysicalEnrichmentStageName(const OmodPhysicalEnrichmentStage stage)
+        {
+            switch (stage) {
+            case OmodPhysicalEnrichmentStage::NotAttempted:
+                return "not-attempted";
+            case OmodPhysicalEnrichmentStage::InvalidInput:
+                return "invalid-input";
+            case OmodPhysicalEnrichmentStage::ExistingContainerVerified:
+                return "existing-container-verified";
+            case OmodPhysicalEnrichmentStage::ExistingContainerMissingAnchor:
+                return "existing-container-missing-anchor";
+            case OmodPhysicalEnrichmentStage::CloneFailed:
+                return "clone-failed";
+            case OmodPhysicalEnrichmentStage::CustomizationFailed:
+                return "customization-failed";
+            case OmodPhysicalEnrichmentStage::AnchorLookupFailed:
+                return "anchor-lookup-failed";
+            case OmodPhysicalEnrichmentStage::AnchorParentMissing:
+                return "anchor-parent-missing";
+            case OmodPhysicalEnrichmentStage::AnchorSkinUnreadable:
+                return "anchor-skin-unreadable";
+            case OmodPhysicalEnrichmentStage::AnchorSkinned:
+                return "anchor-skinned";
+            case OmodPhysicalEnrichmentStage::AnimatedParentUnnamed:
+                return "animated-parent-unnamed";
+            case OmodPhysicalEnrichmentStage::AnimatedParentMissing:
+                return "animated-parent-missing";
+            case OmodPhysicalEnrichmentStage::AnchorDetachFailed:
+                return "anchor-detach-failed";
+            case OmodPhysicalEnrichmentStage::ContainerCreateFailed:
+                return "container-create-failed";
+            case OmodPhysicalEnrichmentStage::AttachVerificationFailed:
+                return "attach-verification-failed";
+            case OmodPhysicalEnrichmentStage::Restored:
+                return "restored";
+            default:
+                return "unknown";
+            }
+        }
+
         bool enrichMissingOmodPhysicalAnchor(
             RE::BGSMod::Attachment::Mod* omod,
             RE::NiNode* templateRoot,
             const OmodPhysicalTemplateSignature& signature,
             RE::NiNode* coverageRoot,
             RE::TBO_InstanceData* instanceData,
-            std::string& outTargetParentName)
+            std::string& outTargetParentName,
+            OmodPhysicalEnrichmentStage& outStage)
         {
             outTargetParentName.clear();
+            outStage = OmodPhysicalEnrichmentStage::InvalidInput;
             if (!omod || !templateRoot || !coverageRoot || signature.durableAnchorName.empty()) {
                 return false;
             }
@@ -5895,7 +5996,12 @@ namespace rock
             const std::string containerName = fmt::format("{}{:08X}", kRockOmodEnrichmentPrefix, omod->formID);
             if (!collectWeaponAnimNodeMatches(coverageRoot, containerName.c_str()).empty()) {
                 outTargetParentName = containerName;
-                return !collectWeaponAnimNodeMatches(coverageRoot, signature.durableAnchorName.c_str()).empty();
+                const bool anchorPresent =
+                    !collectWeaponAnimNodeMatches(coverageRoot, signature.durableAnchorName.c_str()).empty();
+                outStage = anchorPresent ?
+                    OmodPhysicalEnrichmentStage::ExistingContainerVerified :
+                    OmodPhysicalEnrichmentStage::ExistingContainerMissingAnchor;
+                return anchorPresent;
             }
 
             f4vr::NiCloneProcess cloneProcess{};
@@ -5903,22 +6009,41 @@ namespace rock
             cloneProcess.unk48 = reinterpret_cast<std::uint64_t*>(f4vr::cloneAddr2.address());
             RE::NiPointer<RE::NiNode> clonedRoot;
             clonedRoot.reset(f4vr::cloneNode(templateRoot, &cloneProcess));
-            if (!clonedRoot || !applyEquippedOmodModelCustomization(omod, clonedRoot.get(), instanceData)) {
+            if (!clonedRoot) {
+                outStage = OmodPhysicalEnrichmentStage::CloneFailed;
+                return false;
+            }
+            if (!applyEquippedOmodModelCustomization(omod, clonedRoot.get(), instanceData)) {
+                outStage = OmodPhysicalEnrichmentStage::CustomizationFailed;
                 return false;
             }
 
             std::size_t anchorVisited = 0;
             auto* clonedAnchor = findTemplatePhysicalShapeByNameRecursive(
                 clonedRoot.get(), signature.durableAnchorName.c_str(), anchorVisited);
-            auto* clonedParent = clonedAnchor && clonedAnchor->parent ? clonedAnchor->parent->IsNode() : nullptr;
-            if (!clonedAnchor || !clonedParent) {
+            if (!clonedAnchor) {
+                outStage = OmodPhysicalEnrichmentStage::AnchorLookupFailed;
+                return false;
+            }
+            auto* clonedParent = clonedAnchor->parent ? clonedAnchor->parent->IsNode() : nullptr;
+            if (!clonedParent) {
+                outStage = OmodPhysicalEnrichmentStage::AnchorParentMissing;
                 return false;
             }
 
             void* skinInstance = nullptr;
-            if (!native_memory::tryReadField(clonedAnchor, VROffset::skinInstance, skinInstance) || skinInstance) {
+            if (!native_memory::tryReadField(clonedAnchor, VROffset::skinInstance, skinInstance)) {
+                outStage = OmodPhysicalEnrichmentStage::AnchorSkinUnreadable;
                 ROCK_LOG_WARN(Weapon,
-                    "OMOD physical enrichment rejected skinned/unreadable durable anchor '{}' omod={:08X}",
+                    "OMOD physical enrichment rejected unreadable durable anchor '{}' omod={:08X}",
+                    signature.durableAnchorName,
+                    omod->formID);
+                return false;
+            }
+            if (skinInstance) {
+                outStage = OmodPhysicalEnrichmentStage::AnchorSkinned;
+                ROCK_LOG_WARN(Weapon,
+                    "OMOD physical enrichment rejected skinned durable anchor '{}' omod={:08X}",
                     signature.durableAnchorName,
                     omod->formID);
                 return false;
@@ -5929,6 +6054,7 @@ namespace rock
             if (!anchorIsDirectRootChild) {
                 const char* parentName = clonedParent->name.c_str();
                 if (!parentName || parentName[0] == '\0') {
+                    outStage = OmodPhysicalEnrichmentStage::AnimatedParentUnnamed;
                     return false;
                 }
                 const auto parentMatches = collectWeaponAnimNodeMatches(coverageRoot, parentName);
@@ -5939,6 +6065,7 @@ namespace rock
                     }
                 }
                 if (!targetParent) {
+                    outStage = OmodPhysicalEnrichmentStage::AnimatedParentMissing;
                     ROCK_LOG_WARN(Weapon,
                         "OMOD physical enrichment could not map animated parent '{}' for anchor '{}' omod={:08X}",
                         parentName,
@@ -5951,11 +6078,13 @@ namespace rock
             RE::NiPointer<RE::NiAVObject> recoveredAnchor;
             clonedParent->DetachChild(clonedAnchor, recoveredAnchor);
             if (!recoveredAnchor) {
+                outStage = OmodPhysicalEnrichmentStage::AnchorDetachFailed;
                 return false;
             }
 
             auto enrichmentContainer = native_scene::createEngineNiNode(1);
             if (!enrichmentContainer) {
+                outStage = OmodPhysicalEnrichmentStage::ContainerCreateFailed;
                 return false;
             }
             enrichmentContainer->name = containerName.c_str();
@@ -5971,12 +6100,14 @@ namespace rock
             const bool anchorAttached =
                 !collectWeaponAnimNodeMatches(enrichmentContainer.get(), signature.durableAnchorName.c_str()).empty();
             if (!anchorAttached) {
+                outStage = OmodPhysicalEnrichmentStage::AttachVerificationFailed;
                 containerParent->DetachChild(enrichmentContainer.get());
                 f4vr::updateTransformsDown(containerParent, true);
                 return false;
             }
 
             outTargetParentName = fmt::format("{}/{}", safeNodeName(containerParent), containerName);
+            outStage = OmodPhysicalEnrichmentStage::Restored;
             return true;
         }
     }
@@ -6697,16 +6828,17 @@ namespace rock
                     /*
                      * Never post-hide an engine attachment: the address-diff
                      * experiment hid real rendered geometry after native
-                     * capture/reparenting. Whole-model attach is now limited to
-                     * a completely absent physical signature. Partial trees
-                     * preserve their authored animated pieces and receive only
-                     * the missing durable housing below.
+                     * capture/reparenting. Whole-model attach is used when the
+                     * observed names do not form a coherent template signature;
+                     * coherent partial trees preserve their authored animated
+                     * pieces and receive only the missing durable housing below.
                      */
                     const auto beforeStats = summarizeWeaponAnimNodeSubtree(healTargetNode);
                     _omodSelfHealAttempted.insert(attemptKey);
                     ++selfHealAttemptCount;
                     const bool nativeAttachNeeded = weapon_omod_audit_policy::shouldAttemptWholeModelAttach(
                         matchedSignatureNameCount,
+                        templateSignature.meshNames.size(),
                         durableAnchorPresent);
                     bool attached = nativeAttachNeeded &&
                         tryAttach3DRecurse(omod, healTargetNode, rankSuffix, equipData ? equipData->instanceData : nullptr);
@@ -6714,6 +6846,7 @@ namespace rock
                     bool anchorPresentAfterNative =
                         !collectWeaponAnimNodeMatches(coverageRoot, templateSignature.durableAnchorName.c_str()).empty();
                     std::string enrichmentParentName;
+                    OmodPhysicalEnrichmentStage enrichmentStage = OmodPhysicalEnrichmentStage::NotAttempted;
                     const bool physicalAnchorEnriched = !anchorPresentAfterNative &&
                         enrichMissingOmodPhysicalAnchor(
                             omod,
@@ -6721,14 +6854,15 @@ namespace rock
                             templateSignature,
                             coverageRoot,
                             equipData ? equipData->instanceData : nullptr,
-                            enrichmentParentName);
+                            enrichmentParentName,
+                            enrichmentStage);
                     afterStats = summarizeWeaponAnimNodeSubtree(healTargetNode);
                     const bool geometryAdded = afterStats.triShapeCount > beforeStats.triShapeCount;
                     const bool durableAnchorRestored = anchorPresentAfterNative || physicalAnchorEnriched;
                     selfHealSuccessCount += geometryAdded ? 1 : 0;
 
                     ROCK_LOG_INFO(Weapon,
-                        "OMOD-HEAL run={} omod={:08X} '{}' model='{}' suffix='{}' target='{}'/{:x} nativeAttachAttempted={} attached={} geometryAdded={} durableAnchor='{}' restored={} enrichmentParent='{}' subtreeNodes {}->{} triShapes {}->{} visibleTriShapes {}->{}",
+                        "OMOD-HEAL run={} omod={:08X} '{}' model='{}' suffix='{}' target='{}'/{:x} nativeAttachAttempted={} attached={} geometryAdded={} durableAnchor='{}' restored={} enrichmentStage={} enrichmentParent='{}' subtreeNodes {}->{} triShapes {}->{} visibleTriShapes {}->{}",
                         runIndex,
                         record.formId,
                         record.name,
@@ -6736,11 +6870,12 @@ namespace rock
                         rankSuffix ? rankSuffix : "",
                         healTargetRootLabel,
                         reinterpret_cast<std::uintptr_t>(healTargetNode),
-                        nativeAttachNeeded ? "yes" : "no-partial-tree",
+                        nativeAttachNeeded ? "yes" : "no-coherent-partial-tree",
                         attached ? "YES" : "no",
                         geometryAdded ? "YES" : "no",
                         templateSignature.durableAnchorName,
                         durableAnchorRestored ? "YES" : "no",
+                        omodPhysicalEnrichmentStageName(enrichmentStage),
                         enrichmentParentName,
                         beforeStats.nodeCount,
                         afterStats.nodeCount,

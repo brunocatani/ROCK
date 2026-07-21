@@ -895,7 +895,12 @@ namespace rock
         bool captureNativeScopeRigidFrame(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, RE::NiNode* scopeCamera, const RE::NiTransform& nativeCameraWorld);
         bool captureNativeScopeOverlayCalibration(const RE::NiTransform& nativeCameraWorld, std::uint64_t currentWeaponGenerationKey);
         bool applyNativeScopeOverlayTarget(const RE::NiTransform& correctedCameraWorld, std::uint64_t currentWeaponGenerationKey);
-        void refreshNativeScopeSightAnchor(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, const WeaponCollision& weaponCollision);
+        void refreshNativeScopeSightAnchor(
+            RE::NiNode* weaponNode,
+            std::uint64_t currentWeaponGenerationKey,
+            std::uint64_t currentEquippedWeaponOwnershipKey,
+            std::uint32_t currentEquippedWeaponFormID,
+            const WeaponCollision& weaponCollision);
         void refreshScopeSafeHandFrames(const EquippedWeaponGripFrameInput& frameInput, float dt);
         bool tryGetSolverHandTransform(bool isLeft, RE::NiTransform& outTransform) const;
         RE::NiTransform resolveLockedHandVisualTarget(
@@ -992,6 +997,8 @@ namespace rock
         // space and is never derived from a retained transient engine object.
         RE::NiNode* _nativeScopeSightAnchorWeaponNode{ nullptr };
         std::uint64_t _nativeScopeSightAnchorGenerationKey{ 0 };
+        std::uint64_t _nativeScopeSightAnchorOwnershipKey{ 0 };
+        std::uint32_t _nativeScopeSightAnchorWeaponFormID{ 0 };
         RE::NiPoint3 _nativeScopeSightAnchorWeaponLocal{};
         bool _nativeScopeSightAnchorValid{ false };
         // Exit-only stabilization is generation-bound; entry remains immediate.

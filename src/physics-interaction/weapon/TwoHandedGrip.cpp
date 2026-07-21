@@ -13,6 +13,7 @@
 #include "RockUtils.h"
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
+#include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/WeaponCollision.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"
@@ -957,9 +958,17 @@ namespace rock
         return true;
     }
 
-    void TwoHandedGrip::refreshNativeScopeSightAnchor(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, const WeaponCollision& weaponCollision)
+    void TwoHandedGrip::refreshNativeScopeSightAnchor(
+        RE::NiNode* weaponNode,
+        std::uint64_t currentWeaponGenerationKey,
+        std::uint64_t currentEquippedWeaponOwnershipKey,
+        std::uint32_t currentEquippedWeaponFormID,
+        const WeaponCollision& weaponCollision)
     {
-        if (_nativeScopeSightAnchorWeaponNode == weaponNode && _nativeScopeSightAnchorGenerationKey == currentWeaponGenerationKey) {
+        if (_nativeScopeSightAnchorWeaponNode == weaponNode &&
+            _nativeScopeSightAnchorGenerationKey == currentWeaponGenerationKey &&
+            _nativeScopeSightAnchorOwnershipKey == currentEquippedWeaponOwnershipKey &&
+            _nativeScopeSightAnchorWeaponFormID == currentEquippedWeaponFormID) {
             return;
         }
 
@@ -970,10 +979,13 @@ namespace rock
 
         _nativeScopeSightAnchorWeaponNode = weaponNode;
         _nativeScopeSightAnchorGenerationKey = currentWeaponGenerationKey;
+        _nativeScopeSightAnchorOwnershipKey = currentEquippedWeaponOwnershipKey;
+        _nativeScopeSightAnchorWeaponFormID = currentEquippedWeaponFormID;
         _nativeScopeSightAnchorWeaponLocal = {};
         _nativeScopeSightAnchorValid = false;
 
-        if (!weaponNode || currentWeaponGenerationKey == 0) {
+        if (!weaponNode || currentWeaponGenerationKey == 0 ||
+            currentEquippedWeaponOwnershipKey == 0 || currentEquippedWeaponFormID == 0) {
             return;
         }
 
@@ -984,7 +996,31 @@ namespace rock
             // retries instead of retaining geometry from another weapon.
             _nativeScopeSightAnchorWeaponNode = nullptr;
             _nativeScopeSightAnchorGenerationKey = 0;
+            _nativeScopeSightAnchorOwnershipKey = 0;
+            _nativeScopeSightAnchorWeaponFormID = 0;
             clearNativeScopeRigidFrame();
+            return;
+        }
+
+        const native_scope_sight_anchor_policy::PublicationIdentity publishedIdentity{
+            .weaponGenerationKey = snapshot.weaponGenerationKey,
+            .equippedWeaponOwnershipKey = snapshot.equippedWeaponOwnershipKey,
+            .weaponFormID = snapshot.weaponFormID,
+        };
+        const native_scope_sight_anchor_policy::PublicationIdentity currentIdentity{
+            .weaponGenerationKey = currentWeaponGenerationKey,
+            .equippedWeaponOwnershipKey = currentEquippedWeaponOwnershipKey,
+            .weaponFormID = currentEquippedWeaponFormID,
+        };
+        if (!native_scope_sight_anchor_policy::matchesCurrentEquippedWeapon(publishedIdentity, currentIdentity)) {
+            ROCK_LOG_DEBUG(Weapon,
+                "TwoHandedGrip: rejected stale native scope sight anchor generation={:016X}->{:016X} ownership={:016X}->{:016X} form={:08X}->{:08X}",
+                snapshot.weaponGenerationKey,
+                currentWeaponGenerationKey,
+                snapshot.equippedWeaponOwnershipKey,
+                currentEquippedWeaponOwnershipKey,
+                snapshot.weaponFormID,
+                currentEquippedWeaponFormID);
             return;
         }
 
@@ -1237,7 +1273,12 @@ namespace rock
             ++_nativeScopeCameraDebugSnapshot.framesSinceApply;
         }
 
-        refreshNativeScopeSightAnchor(weaponNode, currentWeaponGenerationKey, weaponCollision);
+        refreshNativeScopeSightAnchor(
+            weaponNode,
+            currentWeaponGenerationKey,
+            currentEquippedWeaponOwnershipKey,
+            weaponCollision.getCurrentObservedEquippedWeaponFormID(),
+            weaponCollision);
         refreshScopeSafeHandFrames(frameInput, dt);
 
         if (!runtime_state::isLocalSkeletonReady() || !weaponNode) {
@@ -1549,6 +1590,8 @@ namespace rock
         _firingGripReattachHoverInsideRadius = false;
         _nativeScopeSightAnchorWeaponNode = nullptr;
         _nativeScopeSightAnchorGenerationKey = 0;
+        _nativeScopeSightAnchorOwnershipKey = 0;
+        _nativeScopeSightAnchorWeaponFormID = 0;
         _nativeScopeSightAnchorWeaponLocal = {};
         _nativeScopeSightAnchorValid = false;
         _nativeScopeExitDebounceGenerationKey = 0;

@@ -5,6 +5,7 @@
 #include "physics-interaction/weapon/WeaponEffectGeometryPolicy.h"
 #include "physics-interaction/weapon/WeaponEmitterPolicy.h"
 #include "physics-interaction/weapon/ManualScopeTargetPolicy.h"
+#include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
 #include "physics-interaction/weapon/WeaponOmodAuditPolicy.h"
 
 namespace
@@ -155,11 +156,35 @@ int main()
     ok &= expectFalse("existing durable housing forbids duplicate anchor recovery",
         requiresDurableAnchorRecovery(true));
     ok &= expectTrue("fully absent attachment may use the native whole-model attach",
-        shouldAttemptWholeModelAttach(0, false));
-    ok &= expectFalse("partial attachment bypasses native whole-model duplication",
-        shouldAttemptWholeModelAttach(3, false));
+        shouldAttemptWholeModelAttach(0, 6, false));
+    ok &= expectTrue("RU556 incidental one-of-six match retains native whole-model recovery",
+        shouldAttemptWholeModelAttach(1, 6, false));
+    ok &= expectTrue("sub-majority matches do not masquerade as a coherent partial attachment",
+        shouldAttemptWholeModelAttach(3, 6, false));
+    ok &= expectFalse("coherent partial attachment bypasses native whole-model duplication",
+        shouldAttemptWholeModelAttach(4, 6, false));
+    ok &= expectFalse("existing durable housing forbids native whole-model duplication",
+        shouldAttemptWholeModelAttach(1, 1, true));
     ok &= expectFalse("empty template signature fails closed",
         templateSignatureIsPresent(0, 0));
+
+    using rock::native_scope_sight_anchor_policy::PublicationIdentity;
+    using rock::native_scope_sight_anchor_policy::matchesCurrentEquippedWeapon;
+    const PublicationIdentity currentScopeIdentity{
+        .weaponGenerationKey = 0x10,
+        .equippedWeaponOwnershipKey = 0x20,
+        .weaponFormID = 0x30,
+    };
+    ok &= expectTrue("scope sight publication accepts its exact equipped weapon owner",
+        matchesCurrentEquippedWeapon(currentScopeIdentity, currentScopeIdentity));
+    ok &= expectFalse("scope sight publication rejects a previous weapon instance",
+        matchesCurrentEquippedWeapon(PublicationIdentity{ 0x10, 0x21, 0x30 }, currentScopeIdentity));
+    ok &= expectFalse("scope sight publication rejects a previous weapon form",
+        matchesCurrentEquippedWeapon(PublicationIdentity{ 0x10, 0x20, 0x31 }, currentScopeIdentity));
+    ok &= expectFalse("scope sight publication rejects a previous collision generation",
+        matchesCurrentEquippedWeapon(PublicationIdentity{ 0x11, 0x20, 0x30 }, currentScopeIdentity));
+    ok &= expectFalse("scope sight publication fails closed without ownership",
+        matchesCurrentEquippedWeapon(PublicationIdentity{ 0x10, 0, 0x30 }, currentScopeIdentity));
 
     ok &= expectTrue("effect-shader geometry is excluded regardless of author name",
         classify(Evidence{ .hasEffectShaderProperty = true, .geometryName = "Glass:0" }) == ExclusionReason::EffectShaderProperty);

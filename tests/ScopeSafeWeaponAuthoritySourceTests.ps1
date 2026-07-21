@@ -38,15 +38,17 @@ Require-Text 'src/physics-interaction/core/RockRuntimeState.cpp' 'localScopeMenu
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'leftHandedMode\s*!=\s*isLeft[\s\S]*SecondaryMeleeWeaponOffsetNode2\s*:\s*playerNodes->primaryWeaponOffsetNOde[\s\S]*scopeMenuOpen\s*=\s*runtime\.localScopeMenuOpen[\s\S]*leftHandDriverFrame\s*=\s*leftHandDriverFrame[\s\S]*rightHandDriverFrame\s*=\s*rightHandDriverFrame' `
     'Two-hand authority must receive hFRIK-damped physical left/right arm-driver frames together with explicit ScopeMenu state.'
 
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.h' 'struct NativeScopeSightAnchorSnapshot[\s\S]*weaponGenerationKey[\s\S]*anchorWeaponLocal[\s\S]*sightBodyCount[\s\S]*getNativeScopeSightAnchorSnapshot' `
-    'Generated weapon evidence must publish a generation-keyed native-scope sight anchor snapshot.'
+Require-Text 'src/physics-interaction/weapon/WeaponCollision.h' 'struct NativeScopeSightAnchorSnapshot[\s\S]*weaponGenerationKey[\s\S]*equippedWeaponOwnershipKey[\s\S]*weaponFormID[\s\S]*anchorWeaponLocal[\s\S]*sightBodyCount[\s\S]*getNativeScopeSightAnchorSnapshot' `
+    'Generated weapon evidence must publish a generation-, ownership-, and form-keyed native-scope sight anchor snapshot.'
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'accumulatePartKind\(WeaponPartKind::Scope\)[\s\S]*accumulatePartKind\(WeaponPartKind::Sight\)[\s\S]*rearPlaneCenterFromSightBounds[\s\S]*_nativeScopeSightAnchorSnapshot\s*=\s*nativeScopeSightAnchorSnapshot' `
     'Native-scope placement must prefer validated native-overlay Scope geometry, retain Sight only as an evidence fallback, and publish its rear-center anchor with the weapon generation.'
 
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' '_hasSolvedWeaponTransform\s*=\s*false;[\s\S]*refreshNativeScopeSightAnchor\(weaponNode,\s*currentWeaponGenerationKey,\s*weaponCollision\);[\s\S]*refreshScopeSafeHandFrames\(frameInput,\s*dt\);[\s\S]*if\s*\(!runtime_state::isLocalSkeletonReady\(\)\s*\|\|\s*!weaponNode\)' `
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' '_hasSolvedWeaponTransform\s*=\s*false;[\s\S]*refreshNativeScopeSightAnchor\([\s\S]*currentWeaponGenerationKey,[\s\S]*currentEquippedWeaponOwnershipKey,[\s\S]*getCurrentObservedEquippedWeaponFormID\(\)[\s\S]*refreshScopeSafeHandFrames\(frameInput,\s*dt\);[\s\S]*if\s*\(!runtime_state::isLocalSkeletonReady\(\)\s*\|\|\s*!weaponNode\)' `
     'Scope geometry and hFRIK-driver calibration must refresh before the grip state machine and its early return.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'snapshot\.weaponGenerationKey\s*!=\s*currentWeaponGenerationKey[\s\S]*_nativeScopeSightAnchorGenerationKey\s*=\s*0[\s\S]*_nativeScopeSightAnchorValid\s*=\s*true' `
-    'Native-scope geometry must fail closed across publication races and become usable only after an exact generation match.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'snapshot\.weaponGenerationKey\s*!=\s*currentWeaponGenerationKey[\s\S]*matchesCurrentEquippedWeapon\(publishedIdentity,\s*currentIdentity\)[\s\S]*_nativeScopeSightAnchorValid\s*=\s*true' `
+    'Native-scope geometry must fail closed across publication races and become usable only after generation, ownership, and form all match.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'tryGetManualScopeDirectTransitionTarget[\s\S]*matchesCurrentEquippedWeapon\(publishedIdentity,\s*currentIdentity\)' `
+    'Manual direct scope transitions must reject a previous weapon body-set publication during equip replacement.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'scopeAnchorMatchesAuthority[\s\S]*captureNativeScopeRigidFrame[\s\S]*rigidFrameMatchesAuthority[\s\S]*resolveRigidSightFrameWorld' `
     'Native-scope camera authority must resolve one generation-bound rigid sight frame for every weapon authority mode.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'followWeaponWorldChangeFromSightAnchor[\s\S]*followWeaponWorldChange\(' `

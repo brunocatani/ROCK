@@ -94,9 +94,17 @@ namespace rock::weapon_omod_audit_policy
 
     [[nodiscard]] inline constexpr bool shouldAttemptWholeModelAttach(
         std::size_t matchedDistinctMeshCount,
+        std::size_t distinctTemplateMeshCount,
         bool durableAnchorPresent) noexcept
     {
-        return requiresDurableAnchorRecovery(durableAnchorPresent) && matchedDistinctMeshCount == 0;
+        /*
+         * A few reused mesh names are not evidence of a real partial subtree.
+         * Only a coherent signature is safe to preserve while enriching the
+         * missing housing; otherwise use the native whole-model attach that
+         * retains the authored transform and connect-point behavior.
+         */
+        return requiresDurableAnchorRecovery(durableAnchorPresent) &&
+               !templateSignatureIsPresent(matchedDistinctMeshCount, distinctTemplateMeshCount);
     }
 
     [[nodiscard]] inline constexpr CoverageDecision decideCoverage(const CoverageInput& input) noexcept
