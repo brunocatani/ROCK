@@ -6,6 +6,16 @@
 
 namespace rock::debug_overlay_frame_admission
 {
+    struct AdmissionStats
+    {
+        std::uint64_t publishedSerial{ 0 };
+        std::uint64_t acquiredFrames{ 0 };
+        std::uint64_t activeSkips{ 0 };
+        std::uint64_t noPublicationSkips{ 0 };
+        std::uint64_t duplicateSkips{ 0 };
+        std::uint64_t serialRaceSkips{ 0 };
+    };
+
     class FrameAdmission
     {
     public:
@@ -60,27 +70,47 @@ namespace rock::debug_overlay_frame_admission
         [[nodiscard]] Lease tryAcquire() noexcept
         {
             if (_drawInProgress.test_and_set(std::memory_order_acquire)) {
+                _activeSkips.fetch_add(1, std::memory_order_relaxed);
                 return {};
             }
 
             const auto published = _publishedSerial.load(std::memory_order_acquire);
             if (published == 0) {
+                _noPublicationSkips.fetch_add(1, std::memory_order_relaxed);
                 finishFrame();
                 return {};
             }
 
             auto previouslyRendered = _lastRenderedSerial.load(std::memory_order_relaxed);
-            if (previouslyRendered == published ||
-                !_lastRenderedSerial.compare_exchange_strong(
+            if (previouslyRendered == published) {
+                _duplicateSkips.fetch_add(1, std::memory_order_relaxed);
+                finishFrame();
+                return {};
+            }
+            if (!_lastRenderedSerial.compare_exchange_strong(
                     previouslyRendered,
                     published,
                     std::memory_order_acq_rel,
                     std::memory_order_relaxed)) {
+                _serialRaceSkips.fetch_add(1, std::memory_order_relaxed);
                 finishFrame();
                 return {};
             }
 
+            _acquiredFrames.fetch_add(1, std::memory_order_relaxed);
             return Lease{ this };
+        }
+
+        [[nodiscard]] AdmissionStats stats() const noexcept
+        {
+            return AdmissionStats{
+                _publishedSerial.load(std::memory_order_acquire),
+                _acquiredFrames.load(std::memory_order_relaxed),
+                _activeSkips.load(std::memory_order_relaxed),
+                _noPublicationSkips.load(std::memory_order_relaxed),
+                _duplicateSkips.load(std::memory_order_relaxed),
+                _serialRaceSkips.load(std::memory_order_relaxed)
+            };
         }
 
     private:
@@ -88,6 +118,11 @@ namespace rock::debug_overlay_frame_admission
 
         std::atomic<std::uint64_t> _publishedSerial{ 0 };
         std::atomic<std::uint64_t> _lastRenderedSerial{ 0 };
+        std::atomic<std::uint64_t> _acquiredFrames{ 0 };
+        std::atomic<std::uint64_t> _activeSkips{ 0 };
+        std::atomic<std::uint64_t> _noPublicationSkips{ 0 };
+        std::atomic<std::uint64_t> _duplicateSkips{ 0 };
+        std::atomic<std::uint64_t> _serialRaceSkips{ 0 };
         std::atomic_flag _drawInProgress = ATOMIC_FLAG_INIT;
     };
 }

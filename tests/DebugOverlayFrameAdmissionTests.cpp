@@ -58,5 +58,12 @@ int main()
         ok &= expect(!third && static_cast<bool>(moved), "lease ownership must transfer without releasing the frame early");
     }
 
+    const auto stats = admission.stats();
+    ok &= expect(stats.publishedSerial == 3 && stats.acquiredFrames == 3,
+        "admission publication/acquisition counters are inaccurate");
+    ok &= expect(stats.activeSkips == 2 && stats.noPublicationSkips == 1 && stats.duplicateSkips == 1,
+        "admission rejection counters do not distinguish active, unpublished, and duplicate skips");
+    ok &= expect(stats.serialRaceSkips == 0, "single-threaded admission reported a serial race");
+
     return ok ? 0 : 1;
 }

@@ -22,6 +22,7 @@
 
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/debug/DebugOverlayFrameAdmission.h"
+#include "physics-interaction/debug/DebugOverlayGpuTimer.h"
 #include "physics-interaction/debug/DebugOverlayLineBatch.h"
 #include "physics-interaction/debug/DebugOverlayPolicy.h"
 #include "physics-interaction/debug/DebugOverlayRuntimeSettings.h"
@@ -29,6 +30,7 @@
 #include "physics-interaction/debug/DebugOverlayShapePipeline.h"
 #include "physics-interaction/debug/DebugOverlayShaders.h"
 #include "physics-interaction/debug/DebugOverlaySnapshotPool.h"
+#include "physics-interaction/debug/DebugOverlayStats.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/PhysicsUtils.h"
@@ -216,39 +218,7 @@ namespace rock::debug
             BodyArrayTransform
         };
 
-        struct OverlayRuntimeStats
-        {
-            std::uint32_t bodyEntries = 0;
-            std::uint32_t bodiesDrawn = 0;
-            std::uint32_t bodyMeshBinds = 0;
-            std::uint32_t bodyDrawCalls = 0;
-            std::uint32_t bodyInstanceMaps = 0;
-            std::uint32_t bodyInstanceRejects = 0;
-            std::uint32_t shapeCacheHits = 0;
-            std::uint32_t shapeCacheMisses = 0;
-            std::uint32_t shapeCaptures = 0;
-            std::uint32_t shapeCaptureDeferrals = 0;
-            std::uint32_t shapePendingProxies = 0;
-            std::uint32_t shapeUploadsProcessed = 0;
-            std::uint32_t shapeUploadsCompleted = 0;
-            std::uint32_t shapeUploadFailures = 0;
-            std::uint32_t shapeProxyFallbacks = 0;
-            std::uint32_t unsupportedShapeProxies = 0;
-            std::uint32_t unsupportedShapeSkips = 0;
-            std::uint32_t bodyExtractFailures = 0;
-            std::uint32_t lineVertices = 0;
-            std::uint32_t lineLogicalLines = 0;
-            std::uint32_t lineDrawCalls = 0;
-            std::uint32_t lineMapFailures = 0;
-            std::uint32_t lineBudgetRejects = 0;
-            std::uint32_t rtvCacheHits = 0;
-            std::uint32_t rtvCacheMisses = 0;
-            std::uint32_t textVertices = 0;
-            std::uint32_t textDrawCalls = 0;
-            std::uint32_t textVertexTruncations = 0;
-            std::uint32_t textRejectedVertices = 0;
-            std::uint32_t textMapFailures = 0;
-        };
+        using OverlayRuntimeStats = debug_overlay_stats::RuntimeStats;
 
         struct alignas(16) PerFrameVSData
         {
@@ -313,6 +283,7 @@ namespace rock::debug
             Microsoft::WRL::ComPtr<ID3D11BlendState> blendState;
             GpuShape aabbProxy;
             std::unique_ptr<RenderScratch> scratch;
+            debug_overlay_gpu_timer::TimestampQueryRing gpuTimer;
 
             [[nodiscard]] bool ready() const noexcept
             {
@@ -370,6 +341,7 @@ namespace rock::debug
         static std::atomic<bool> s_submitInstallFailureReported{ false };
         static std::atomic<bool> s_snapshotPoolExhaustionReported{ false };
         static std::atomic<bool> s_shapeWorkerInitFailureReported{ false };
+        static std::atomic<bool> s_gpuTimerInitFailureReported{ false };
         static CachedRenderTargetView s_submittedTextureRtv{};
 
         debug_overlay_shape::ShapePipeline& shapePipeline()
@@ -1662,6 +1634,12 @@ namespace rock::debug
 
             if (!resources.ready()) {
                 return false;
+            }
+
+            if (resources.gpuTimer.initialize(device)) {
+                s_gpuTimerInitFailureReported.store(false, std::memory_order_relaxed);
+            } else if (!s_gpuTimerInitFailureReported.exchange(true, std::memory_order_relaxed)) {
+                ROCK_LOG_WARN(Hand, "Debug overlay: GPU timestamp queries unavailable; rendering will continue without GPU timing");
             }
 
             s_d3d = std::move(resources);
@@ -3408,21 +3386,26 @@ namespace rock::debug
                 return;
             }
 
-            if (hasBodiesToDraw) {
-                drawBodyBatch(context, *frame, stats);
-            }
+            {
+                [[maybe_unused]] auto gpuTimerScope = s_d3d.gpuTimer.begin(context);
+                if (hasBodiesToDraw) {
+                    drawBodyBatch(context, *frame, stats);
+                }
 
-            auto& lineBatch = s_d3d.scratch->lines;
-            lineBatch.beginFrame(frame->settings.limits.maxLineVertices);
-            collectAxisOverlays(lineBatch, *frame);
-            collectMarkerOverlays(lineBatch, *frame);
-            collectSkeletonOverlays(lineBatch, *frame);
-            drawLineBatch(context, lineBatch, stats);
-            drawTextOverlays(context, static_cast<float>(textureDesc.Width), static_cast<float>(textureDesc.Height), *frame, eye0, eye1, adjust0, adjust1, stats);
+                auto& lineBatch = s_d3d.scratch->lines;
+                lineBatch.beginFrame(frame->settings.limits.maxLineVertices);
+                collectAxisOverlays(lineBatch, *frame);
+                collectMarkerOverlays(lineBatch, *frame);
+                collectSkeletonOverlays(lineBatch, *frame);
+                drawLineBatch(context, lineBatch, stats);
+                drawTextOverlays(context, static_cast<float>(textureDesc.Width), static_cast<float>(textureDesc.Height), *frame, eye0, eye1, adjust0, adjust1, stats);
+            }
 
             if (frame->settings.verboseLogging && ++s_overlayStatsLogCounter >= 90) {
                 s_overlayStatsLogCounter = 0;
                 const auto pipelineStats = shapePipeline().stats();
+                const auto gpuStats = s_d3d.gpuTimer.stats();
+                const auto admissionStats = s_frameAdmission.stats();
                 ROCK_LOG_DEBUG(Hand,
                     "Debug overlay frame: entries={} drawn={} bodyBinds={} bodyDraws={} bodyMaps={} bodyRejects={} axes={} markers={} skeleton={} text={} cacheHits={} cacheMisses={} shapeCaptures={} captureDefers={} captureCap={} uploads={}/{} uploadFails={} proxies={} pendingProxy={} unsupportedProxy={} unsupportedSkip={} cache(ready/pending/unsupported/total/bytes)={}/{}/{}/{}/{} jobs(reserved/queued/active/completed)={}/{}/{}/{} evictions={} staleDrops={} completedDrops={} bodyReadFails={} lineVerts={} lineLines={} lineDraws={} lineRejects={} lineMapFails={} textVerts={} textDraws={} textTrunc={} textRejectVerts={} textMapFails={} rtvHits={} rtvMisses={} limits(convex/compound/depth/queue/completed/uploads/cacheEntries/cacheBytes/bodies/lines/text)={}/{}/{}/{}/{}/{}/{}/{}/{}/{}/{}",
                     stats.bodyEntries,
@@ -3483,6 +3466,22 @@ namespace rock::debug
                     frame->settings.limits.maxBodyInstances,
                     frame->settings.limits.maxLineVertices,
                     frame->settings.limits.maxTextVertices);
+                ROCK_LOG_DEBUG(Hand,
+                    "Debug overlay timing/admission: gpuUs(latest/average)={:.2f}/{:.2f} gpu(issued/completed/pendingPolls/skipped/disjoint/failed)={}/{}/{}/{}/{}/{} admission(published/acquired/active/noPublication/duplicate/serialRace)={}/{}/{}/{}/{}/{}",
+                    gpuStats.latestMicroseconds,
+                    gpuStats.averageMicroseconds,
+                    gpuStats.issuedSamples,
+                    gpuStats.completedSamples,
+                    gpuStats.pendingPolls,
+                    gpuStats.skippedBegins,
+                    gpuStats.disjointSamples,
+                    gpuStats.failedPolls,
+                    admissionStats.publishedSerial,
+                    admissionStats.acquiredFrames,
+                    admissionStats.activeSkips,
+                    admissionStats.noPublicationSkips,
+                    admissionStats.duplicateSkips,
+                    admissionStats.serialRaceSkips);
             }
         }
 
