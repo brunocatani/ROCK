@@ -167,6 +167,16 @@ int main()
         shouldAttemptWholeModelAttach(1, 1, true));
     ok &= expectFalse("empty template signature fails closed",
         templateSignatureIsPresent(0, 0));
+    ok &= expectTrue("physics-bearing receiver may use a strict-superset raw geometry template",
+        shouldPreferRawReceiverGeometryTemplate(true, true, true, 1, 4));
+    ok &= expectFalse("raw receiver geometry cannot replace names from the normal template",
+        shouldPreferRawReceiverGeometryTemplate(true, true, false, 1, 4));
+    ok &= expectFalse("raw receiver geometry requires an authored native collision object",
+        shouldPreferRawReceiverGeometryTemplate(true, false, true, 1, 4));
+    ok &= expectFalse("raw geometry fallback never changes sight attachment templates",
+        shouldPreferRawReceiverGeometryTemplate(false, true, true, 1, 4));
+    ok &= expectFalse("an equal raw receiver signature is not a recovery authority",
+        shouldPreferRawReceiverGeometryTemplate(true, true, true, 4, 4));
 
     using rock::native_scope_sight_anchor_policy::PublicationIdentity;
     using rock::native_scope_sight_anchor_policy::matchesCurrentEquippedWeapon;

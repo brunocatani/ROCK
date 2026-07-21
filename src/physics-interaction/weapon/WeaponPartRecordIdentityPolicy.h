@@ -75,11 +75,33 @@ namespace rock::weapon_part_record_identity_policy
         }
     }
 
-    [[nodiscard]] inline constexpr std::string_view recoveryParentConnectPointForAttachPoint(std::uint32_t attachPointFormId) noexcept
+    [[nodiscard]] inline constexpr std::uint32_t recoveryProviderAttachPointForAttachPoint(
+        std::uint32_t attachPointFormId) noexcept
     {
-        // A muzzle belongs to the barrel subtree when it exists. All other
-        // standard attachment slots are immediate receiver-owned modules.
-        return attachPointFormId == kAttachPointMuzzle ? "P-Barrel" : "P-Receiver";
+        switch (attachPointFormId) {
+        case kAttachPointMuzzle:
+            // The barrel model owns P-Muzzle metadata.
+            return kAttachPointBarrel;
+        case kAttachPointMagazine:
+        case kAttachPointBarrel:
+        case kAttachPointSight:
+        case kAttachPointGripStock:
+            // Standard top-level slots are authored by the receiver model.
+            return kAttachPointReceiver;
+        default:
+            return 0;
+        }
+    }
+
+    [[nodiscard]] inline constexpr std::uint8_t recoveryDependencyRank(std::uint32_t attachPointFormId) noexcept
+    {
+        if (attachPointFormId == kAttachPointReceiver) {
+            return 0;
+        }
+        if (attachPointFormId == kAttachPointMuzzle) {
+            return 2;
+        }
+        return 1;
     }
 
     [[nodiscard]] inline constexpr StructureAnchor resolveStructureAnchor(std::string_view nodeName)

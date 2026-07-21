@@ -107,6 +107,27 @@ namespace rock::weapon_omod_audit_policy
                !templateSignatureIsPresent(matchedDistinctMeshCount, distinctTemplateMeshCount);
     }
 
+    [[nodiscard]] inline constexpr bool shouldPreferRawReceiverGeometryTemplate(
+        bool receiverAttachPoint,
+        bool hasNativeCollisionObject,
+        bool completeSignatureCoveredByRaw,
+        std::size_t completeDistinctMeshCount,
+        std::size_t rawDistinctMeshCount) noexcept
+    {
+        /*
+         * Some receiver NIFs bind their durable display shell to an embedded
+         * bhkNPCollisionObject. The ordinary model postprocessor can consume
+         * those meshes before ROCK inspects the template. A raw geometry view
+         * is authoritative only when it strictly extends (rather than replaces)
+         * the normal signature. Restricting this to receiver OMODs prevents the
+         * fallback from changing optic or other attachment behavior.
+         */
+        return receiverAttachPoint &&
+               hasNativeCollisionObject &&
+               completeSignatureCoveredByRaw &&
+               rawDistinctMeshCount > completeDistinctMeshCount;
+    }
+
     [[nodiscard]] inline constexpr CoverageDecision decideCoverage(const CoverageInput& input) noexcept
     {
         if (input.disabled) {

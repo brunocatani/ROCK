@@ -982,14 +982,9 @@ namespace rock
             return true;
         }
 
-        /*
-         * BSModelDB's ordinary OMOD demand uses flag 0x2D and may return only
-         * the currently selected controller branch. Loading through the same
-         * native entry with 0xED preserves the complete model hierarchy. This
-         * is required to see durable housings which are absent from the active
-         * branch (the SR-25 magazine shell is the concrete witness).
-         */
-        RE::NiPointer<RE::NiNode> loadCompleteOmodModelTemplate(const std::string& modelPath)
+        RE::NiPointer<RE::NiNode> loadOmodModelTemplate(
+            const std::string& modelPath,
+            const std::uint8_t modelDemandFlags)
         {
             if (modelPath.empty()) {
                 return nullptr;
@@ -1004,7 +999,7 @@ namespace rock
                 resourcePath = "Data/Meshes/" + modelPath;
             }
 
-            std::uint64_t loadFlags[2]{ 0, 0xED };
+            std::uint64_t loadFlags[2]{ 0, modelDemandFlags };
             std::uint64_t loadedRoot = 0;
             const int result = f4vr::loadNif(
                 reinterpret_cast<std::uint64_t>(resourcePath.c_str()),
@@ -1017,6 +1012,32 @@ namespace rock
             RE::NiPointer<RE::NiNode> root;
             root.reset(reinterpret_cast<RE::NiNode*>(loadedRoot));
             return root;
+        }
+
+        /*
+         * BSModelDB's ordinary OMOD demand uses flag 0x2D and may return only
+         * the currently selected controller branch. Loading through the same
+         * native entry with 0xED preserves the complete model hierarchy. This
+         * is required to see durable housings which are absent from the active
+         * branch (the SR-25 magazine shell is the concrete witness).
+         */
+        RE::NiPointer<RE::NiNode> loadCompleteOmodModelTemplate(const std::string& modelPath)
+        {
+            return loadOmodModelTemplate(modelPath, 0xED);
+        }
+
+        /*
+         * Fallout4VR.exe 1.2.72 uses BSModelDB flag 0x20 in the geometry-query
+         * path at 0x1402824B0. Unlike an ordinary attachment demand, this path
+         * does not run the 0x08 model postprocessor which can consume display
+         * geometry owned by a bhkNPCollisionObject. It is used only as a
+         * read/clone template after the guarded receiver-specific comparison
+         * below; native attachment continues to use the engine's own 0x2D
+         * path.
+         */
+        RE::NiPointer<RE::NiNode> loadGeometryInspectionOmodModelTemplate(const std::string& modelPath)
+        {
+            return loadOmodModelTemplate(modelPath, 0x20);
         }
 
         void collectManualScopeStructuralMarkers(
@@ -5714,6 +5735,45 @@ namespace rock
             return signature;
         }
 
+        [[nodiscard]] bool physicalTemplateSignatureCovers(
+            const OmodPhysicalTemplateSignature& candidate,
+            const OmodPhysicalTemplateSignature& required)
+        {
+            return std::all_of(required.meshNames.begin(), required.meshNames.end(), [&candidate](const std::string& name) {
+                return std::any_of(candidate.meshNames.begin(), candidate.meshNames.end(), [&name](const std::string& candidateName) {
+                    return _stricmp(candidateName.c_str(), name.c_str()) == 0;
+                });
+            });
+        }
+
+        bool templateContainsNativeCollisionObjectRecursive(
+            RE::NiAVObject* object,
+            std::size_t& visited,
+            const int depth = 0)
+        {
+            if (!object || depth > 16 || visited >= 512) {
+                return false;
+            }
+            ++visited;
+
+            if (auto* collisionObject = object->collisionObject.get();
+                collisionObject && niObjectRttiChainContains(collisionObject, "bhkNPCollisionObject")) {
+                return true;
+            }
+
+            auto* node = object->IsNode();
+            if (!node) {
+                return false;
+            }
+            const auto& children = node->children;
+            for (auto index = decltype(children.size()){ 0 }; index < children.size(); ++index) {
+                if (templateContainsNativeCollisionObjectRecursive(children[index].get(), visited, depth + 1)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         RE::NiNode* resolveOmodPhysicalCoverageRoot(
             RE::NiNode* weaponRoot,
             const std::uint32_t attachPointFormId)
@@ -5850,6 +5910,429 @@ namespace rock
                     formId);
             }
             return removed;
+        }
+
+        /*
+         * Fallout4VR.exe 1.2.72 BSConnectPoint::Parents layout. The layout is
+         * independently corroborated by the local F4SEVR 0.6.21
+         * NiExtraData.h definition and the Ghidra-verified
+         * BSConnectPoint::DoAttach/Parent::ConnectChild chain at
+         * 0x141DF1200/0x141DEF8A0. These are read-only, frame-scoped views of
+         * extra data owned by a loaded OMOD template.
+         */
+        struct NativeConnectPointParentLayout
+        {
+            std::uint64_t referenceState;
+            RE::BSFixedString parentNodeName;
+            RE::BSFixedString connectPointName;
+            RE::NiQuaternion rotation;
+            RE::NiPoint3 translation;
+            float scale;
+        };
+        static_assert(offsetof(NativeConnectPointParentLayout, parentNodeName) == 0x08);
+        static_assert(offsetof(NativeConnectPointParentLayout, connectPointName) == 0x10);
+        static_assert(offsetof(NativeConnectPointParentLayout, rotation) == 0x18);
+        static_assert(offsetof(NativeConnectPointParentLayout, translation) == 0x28);
+        static_assert(sizeof(NativeConnectPointParentLayout) == 0x38);
+
+        struct NativeConnectPointParentArrayLayout
+        {
+            NativeConnectPointParentLayout** entries;
+            std::uint32_t capacity;
+            std::uint32_t pad0C;
+            std::uint32_t count;
+            std::uint32_t pad14;
+        };
+        static_assert(sizeof(NativeConnectPointParentArrayLayout) == 0x18);
+
+        struct AuthoredConnectPointParentMatch
+        {
+            RE::NiNode* metadataOwner{ nullptr };
+            const NativeConnectPointParentLayout* parent{ nullptr };
+        };
+
+        bool findAuthoredConnectPointParentRecursive(
+            RE::NiAVObject* object,
+            const RE::BSFixedString& cpaKey,
+            const char* targetConnectPointName,
+            AuthoredConnectPointParentMatch& outMatch,
+            std::size_t& visited,
+            const int depth = 0)
+        {
+            constexpr std::uint32_t kMaxParentRecords = 64;
+            if (!object || !targetConnectPointName || depth > 16 || visited >= 512) {
+                return false;
+            }
+            ++visited;
+
+            auto* node = object->IsNode();
+            if (!node) {
+                return false;
+            }
+
+            auto* extraData = node->GetExtraData(cpaKey);
+            if (extraData && niObjectRttiChainContains(extraData, "BSConnectPoint::Parents")) {
+                NativeConnectPointParentArrayLayout points{};
+                if (native_memory::guardedCopyFromMemory(
+                        reinterpret_cast<const char*>(extraData) + sizeof(RE::NiExtraData),
+                        &points,
+                        sizeof(points)) &&
+                    points.count <= points.capacity && points.count <= kMaxParentRecords &&
+                    (points.count == 0 || native_memory::pointerRangeLooksReadable(
+                        points.entries, sizeof(*points.entries) * points.count))) {
+                    for (std::uint32_t index = 0; index < points.count; ++index) {
+                        NativeConnectPointParentLayout* parent = nullptr;
+                        if (!native_memory::tryReadValue(points.entries + index, parent) ||
+                            !native_memory::pointerRangeLooksReadable(parent, sizeof(*parent))) {
+                            continue;
+                        }
+                        const char* authoredName = parent->connectPointName.c_str();
+                        if (authoredName && _stricmp(authoredName, targetConnectPointName) == 0) {
+                            outMatch = { .metadataOwner = node, .parent = parent };
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            const auto& children = node->children;
+            for (auto index = decltype(children.size()){ 0 }; index < children.size(); ++index) {
+                if (findAuthoredConnectPointParentRecursive(
+                        children[index].get(), cpaKey, targetConnectPointName, outMatch, visited, depth + 1)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        [[nodiscard]] bool finiteAuthoredNodeTransform(const RE::NiTransform& transform) noexcept
+        {
+            if (!std::isfinite(transform.translate.x) || !std::isfinite(transform.translate.y) ||
+                !std::isfinite(transform.translate.z) || !std::isfinite(transform.scale) ||
+                std::abs(transform.scale) <= 0.0001f) {
+                return false;
+            }
+            for (int row = 0; row < 3; ++row) {
+                for (int column = 0; column < 3; ++column) {
+                    if (!std::isfinite(transform.rotate.entry[row][column])) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        std::string materializeOmodRankSuffix(std::string_view authoredName, std::string_view rankSuffix)
+        {
+            if (rankSuffix.empty()) {
+                return std::string(authoredName);
+            }
+            const auto separator = authoredName.find_last_of('|');
+            if (separator == std::string_view::npos || separator + 1 >= authoredName.size() ||
+                authoredName[separator + 1] != '0') {
+                return std::string(authoredName);
+            }
+            std::string result(authoredName.substr(0, separator + 1));
+            result.append(rankSuffix);
+            return result;
+        }
+
+        enum class AuthoredOmodParentPathStage : std::uint8_t
+        {
+            NotAttempted,
+            UnsupportedAttachPoint,
+            ExistingParent,
+            ExistingOwnedPath,
+            ExistingOwnedPathInvalid,
+            ProviderMetadataMissing,
+            ProviderUsesRoot,
+            ProviderParentNodeMissing,
+            ProviderParentNodeAmbiguous,
+            LiveAncestorMissing,
+            DynamicPathNode,
+            InvalidPathTransform,
+            ContainerCreateFailed,
+            PathNodeCreateFailed,
+            AttachVerificationFailed,
+            Prepared,
+        };
+
+        const char* authoredOmodParentPathStageName(const AuthoredOmodParentPathStage stage)
+        {
+            switch (stage) {
+            case AuthoredOmodParentPathStage::NotAttempted:
+                return "not-attempted";
+            case AuthoredOmodParentPathStage::UnsupportedAttachPoint:
+                return "unsupported-attach-point";
+            case AuthoredOmodParentPathStage::ExistingParent:
+                return "existing-parent";
+            case AuthoredOmodParentPathStage::ExistingOwnedPath:
+                return "existing-owned-path";
+            case AuthoredOmodParentPathStage::ExistingOwnedPathInvalid:
+                return "existing-owned-path-invalid";
+            case AuthoredOmodParentPathStage::ProviderMetadataMissing:
+                return "provider-metadata-missing";
+            case AuthoredOmodParentPathStage::ProviderUsesRoot:
+                return "provider-uses-root";
+            case AuthoredOmodParentPathStage::ProviderParentNodeMissing:
+                return "provider-parent-node-missing";
+            case AuthoredOmodParentPathStage::ProviderParentNodeAmbiguous:
+                return "provider-parent-node-ambiguous";
+            case AuthoredOmodParentPathStage::LiveAncestorMissing:
+                return "live-ancestor-missing";
+            case AuthoredOmodParentPathStage::DynamicPathNode:
+                return "dynamic-path-node";
+            case AuthoredOmodParentPathStage::InvalidPathTransform:
+                return "invalid-path-transform";
+            case AuthoredOmodParentPathStage::ContainerCreateFailed:
+                return "container-create-failed";
+            case AuthoredOmodParentPathStage::PathNodeCreateFailed:
+                return "path-node-create-failed";
+            case AuthoredOmodParentPathStage::AttachVerificationFailed:
+                return "attach-verification-failed";
+            case AuthoredOmodParentPathStage::Prepared:
+                return "prepared";
+            default:
+                return "unknown";
+            }
+        }
+
+        struct OmodRecoveryTemplate
+        {
+            const OmodAuditRecord* record{ nullptr };
+            RE::NiPointer<RE::NiNode> connectionRoot;
+            RE::NiPointer<RE::NiNode> rawPhysicalRoot;
+            OmodPhysicalTemplateSignature physicalSignature;
+            bool usesRawReceiverGeometry{ false };
+
+            [[nodiscard]] RE::NiNode* physicalRoot() const
+            {
+                return usesRawReceiverGeometry ? rawPhysicalRoot.get() : connectionRoot.get();
+            }
+        };
+
+        struct AuthoredOmodParentPathPreparation
+        {
+            AuthoredOmodParentPathStage stage{ AuthoredOmodParentPathStage::NotAttempted };
+            RE::NiNode* containerParent{ nullptr };
+            RE::NiPointer<RE::NiNode> container;
+            std::uint32_t providerFormId{ 0 };
+            std::string connectPointName;
+            std::string parentNodeName;
+            std::string liveAncestorName;
+        };
+
+        void rollbackAuthoredOmodParentPath(AuthoredOmodParentPathPreparation& preparation)
+        {
+            if (!preparation.containerParent || !preparation.container) {
+                return;
+            }
+            RE::NiPointer<RE::NiAVObject> detached;
+            preparation.containerParent->DetachChild(preparation.container.get(), detached);
+            f4vr::updateTransformsDown(preparation.containerParent, true);
+            preparation.containerParent = nullptr;
+            preparation.container.reset();
+        }
+
+        bool prepareAuthoredOmodParentPath(
+            const OmodAuditRecord& candidate,
+            RE::NiNode* weaponRoot,
+            std::string_view rankSuffix,
+            const std::vector<OmodRecoveryTemplate>& templates,
+            AuthoredOmodParentPathPreparation& outPreparation)
+        {
+            outPreparation = {};
+            if (!weaponRoot) {
+                outPreparation.stage = AuthoredOmodParentPathStage::UnsupportedAttachPoint;
+                return false;
+            }
+
+            const std::string_view canonicalConnectPoint =
+                weapon_part_record_identity_policy::canonicalConnectPointForAttachPoint(candidate.attachPointFormId);
+            const std::uint32_t providerAttachPoint =
+                weapon_part_record_identity_policy::recoveryProviderAttachPointForAttachPoint(candidate.attachPointFormId);
+            if (canonicalConnectPoint.empty() || providerAttachPoint == 0) {
+                outPreparation.stage = AuthoredOmodParentPathStage::UnsupportedAttachPoint;
+                return false;
+            }
+            outPreparation.connectPointName.assign(canonicalConnectPoint);
+
+            const RE::BSFixedString cpaKey{ "CPA" };
+            AuthoredConnectPointParentMatch parentMatch{};
+            const OmodRecoveryTemplate* providerTemplate = nullptr;
+            for (const auto& modelTemplate : templates) {
+                if (!modelTemplate.record || !modelTemplate.connectionRoot ||
+                    modelTemplate.record->attachPointFormId != providerAttachPoint) {
+                    continue;
+                }
+                std::size_t visited = 0;
+                if (findAuthoredConnectPointParentRecursive(
+                        modelTemplate.connectionRoot.get(), cpaKey, outPreparation.connectPointName.c_str(),
+                        parentMatch, visited)) {
+                    providerTemplate = &modelTemplate;
+                    break;
+                }
+            }
+            if (!providerTemplate || !parentMatch.parent) {
+                outPreparation.stage = AuthoredOmodParentPathStage::ProviderMetadataMissing;
+                return false;
+            }
+            outPreparation.providerFormId = providerTemplate->record->formId;
+
+            const char* rawParentNodeName = parentMatch.parent->parentNodeName.c_str();
+            if (!rawParentNodeName || rawParentNodeName[0] == '\0') {
+                outPreparation.stage = AuthoredOmodParentPathStage::ProviderUsesRoot;
+                return false;
+            }
+            outPreparation.parentNodeName = materializeOmodRankSuffix(rawParentNodeName, rankSuffix);
+
+            const auto existingParentMatches =
+                collectWeaponAnimNodeMatches(weaponRoot, outPreparation.parentNodeName.c_str());
+            for (const auto& match : existingParentMatches) {
+                if (match.node && match.node->IsNode()) {
+                    outPreparation.stage = AuthoredOmodParentPathStage::ExistingParent;
+                    return false;
+                }
+            }
+
+            const std::string containerName = fmt::format("{}{:08X}", kRockOmodEnrichmentPrefix, candidate.formId);
+            const auto existingContainers = collectWeaponAnimNodeMatches(weaponRoot, containerName.c_str());
+            if (!existingContainers.empty()) {
+                for (const auto& match : existingContainers) {
+                    if (match.node && !collectWeaponAnimNodeMatches(
+                            match.node, outPreparation.parentNodeName.c_str()).empty()) {
+                        outPreparation.stage = AuthoredOmodParentPathStage::ExistingOwnedPath;
+                        return false;
+                    }
+                }
+                outPreparation.stage = AuthoredOmodParentPathStage::ExistingOwnedPathInvalid;
+                return false;
+            }
+
+            const auto providerParentMatches =
+                collectWeaponAnimNodeMatches(providerTemplate->connectionRoot.get(), rawParentNodeName);
+            RE::NiNode* providerParentNode = nullptr;
+            for (const auto& match : providerParentMatches) {
+                auto* candidateNode = match.node ? match.node->IsNode() : nullptr;
+                if (!candidateNode) {
+                    continue;
+                }
+                if (providerParentNode) {
+                    outPreparation.stage = AuthoredOmodParentPathStage::ProviderParentNodeAmbiguous;
+                    return false;
+                }
+                providerParentNode = candidateNode;
+            }
+            if (!providerParentNode) {
+                outPreparation.stage = AuthoredOmodParentPathStage::ProviderParentNodeMissing;
+                return false;
+            }
+
+            std::vector<RE::NiNode*> providerPath;
+            providerPath.reserve(8);
+            for (auto* cursor = providerParentNode; cursor && providerPath.size() < 16;) {
+                providerPath.push_back(cursor);
+                if (cursor == providerTemplate->connectionRoot.get()) {
+                    break;
+                }
+                cursor = cursor->parent ? cursor->parent->IsNode() : nullptr;
+            }
+            if (providerPath.empty() || providerPath.back() != providerTemplate->connectionRoot.get()) {
+                outPreparation.stage = AuthoredOmodParentPathStage::ProviderParentNodeMissing;
+                return false;
+            }
+
+            RE::NiNode* liveAncestor = nullptr;
+            std::size_t missingPathCount = 0;
+            for (std::size_t pathIndex = 1; pathIndex < providerPath.size(); ++pathIndex) {
+                const char* authoredAncestorName = providerPath[pathIndex]->name.c_str();
+                if (!authoredAncestorName || authoredAncestorName[0] == '\0') {
+                    continue;
+                }
+                const std::string liveName = materializeOmodRankSuffix(authoredAncestorName, rankSuffix);
+                const auto liveMatches = collectWeaponAnimNodeMatches(weaponRoot, liveName.c_str());
+                RE::NiNode* uniqueLiveNode = nullptr;
+                bool ambiguous = false;
+                for (const auto& match : liveMatches) {
+                    auto* liveNode = match.node ? match.node->IsNode() : nullptr;
+                    if (!liveNode) {
+                        continue;
+                    }
+                    if (uniqueLiveNode) {
+                        ambiguous = true;
+                        break;
+                    }
+                    uniqueLiveNode = liveNode;
+                }
+                if (!ambiguous && uniqueLiveNode) {
+                    liveAncestor = uniqueLiveNode;
+                    missingPathCount = pathIndex;
+                    outPreparation.liveAncestorName = liveName;
+                    break;
+                }
+            }
+            if (!liveAncestor || missingPathCount == 0) {
+                outPreparation.stage = AuthoredOmodParentPathStage::LiveAncestorMissing;
+                return false;
+            }
+
+            for (std::size_t pathIndex = 0; pathIndex < missingPathCount; ++pathIndex) {
+                const auto* sourceNode = providerPath[pathIndex];
+                if (sourceNode->controllers || sourceNode->extra || sourceNode->collisionObject || sourceNode->userData != 0) {
+                    outPreparation.stage = AuthoredOmodParentPathStage::DynamicPathNode;
+                    return false;
+                }
+                if (!finiteAuthoredNodeTransform(sourceNode->local)) {
+                    outPreparation.stage = AuthoredOmodParentPathStage::InvalidPathTransform;
+                    return false;
+                }
+            }
+
+            auto container = native_scene::createEngineNiNode(1);
+            if (!container) {
+                outPreparation.stage = AuthoredOmodParentPathStage::ContainerCreateFailed;
+                return false;
+            }
+            container->name = containerName.c_str();
+            container->local = transform_math::makeIdentityTransform<RE::NiTransform>();
+
+            std::vector<RE::NiPointer<RE::NiNode>> pathNodes;
+            pathNodes.reserve(missingPathCount);
+            for (std::size_t pathIndex = missingPathCount; pathIndex-- > 0;) {
+                const auto* sourceNode = providerPath[pathIndex];
+                auto pathNode = native_scene::createEngineNiNode(1);
+                if (!pathNode) {
+                    outPreparation.stage = AuthoredOmodParentPathStage::PathNodeCreateFailed;
+                    return false;
+                }
+                const char* sourceName = sourceNode->name.c_str();
+                const std::string authoredName = materializeOmodRankSuffix(
+                    sourceName ? std::string_view(sourceName) : std::string_view{}, rankSuffix);
+                pathNode->name = authoredName.c_str();
+                pathNode->local = sourceNode->local;
+                pathNode->flags.flags = sourceNode->flags.flags;
+                pathNodes.push_back(std::move(pathNode));
+            }
+
+            RE::NiNode* pathParent = container.get();
+            for (auto& pathNode : pathNodes) {
+                pathParent->AttachChild(pathNode.get(), true);
+                pathParent = pathNode.get();
+            }
+            liveAncestor->AttachChild(container.get(), true);
+            f4vr::updateTransformsDown(liveAncestor, true);
+            if (collectWeaponAnimNodeMatches(container.get(), outPreparation.parentNodeName.c_str()).empty()) {
+                RE::NiPointer<RE::NiAVObject> detached;
+                liveAncestor->DetachChild(container.get(), detached);
+                f4vr::updateTransformsDown(liveAncestor, true);
+                outPreparation.stage = AuthoredOmodParentPathStage::AttachVerificationFailed;
+                return false;
+            }
+
+            outPreparation.stage = AuthoredOmodParentPathStage::Prepared;
+            outPreparation.containerParent = liveAncestor;
+            outPreparation.container = std::move(container);
+            return true;
         }
 
         RE::BSTriShape* findTemplatePhysicalShapeByNameRecursive(
@@ -6671,15 +7154,21 @@ namespace rock
         /*
          * Self-heal (bDebugWeaponOmodSelfHeal): reattach missing OMOD models
          * with the engine's own primitive. Ghidra-verified (raw disasm +
-         * decompiler + address database, 2026-07-04):
+         * decompiler + address database, refreshed 2026-07-20):
          *   bool BGSMod::Attachment::Mod::TryAttach3DRecurse(
          *       NiNode* root, char* rankSuffix, TBO_InstanceData* instData)
          * at VR offset 0x2D9140. It demands the mod's model, deep-clones it
          * (scale from the root's REFR), applies material swaps with the
-         * instance data, and attaches at the mod NIF's declared connect point
-         * (BSConnectPoint::Parents) or the root as fallback. Fail-closed at
-         * every hop; success requests a collider rebuild so the healed
-         * geometry gets bodies. NODE_NOT_FOUND is the trigger, so the word-set
+         * instance data, and attaches at the mod NIF's declared connect point.
+         * Its bool reports that a BSConnectPoint::Parents record matched, not
+         * that Parent::ConnectChild found the declared scene parent or that
+         * geometry entered the requested subtree. Break Action Laser is the
+         * concrete failure: P-Barrel names CROSSBarrelOffsetNode, which the
+         * assembled receiver drops. ROCK therefore reconstructs only that
+         * authored static parent path before calling the native routine and
+         * verifies actual durable geometry below the owned path afterward.
+         * Successful geometry requests a collider rebuild. NODE_NOT_FOUND is
+         * the trigger, so the word-set
          * matcher above must keep false negatives rare - a heal on a part that
          * exists under an unmatchable name would duplicate its geometry, which
          * the once-per-instance-address guard bounds to a single attempt.
@@ -6716,10 +7205,112 @@ namespace rock
                 static REL::Relocation<TryAttach3DRecurseFn> tryAttach3DRecurse{ REL::Offset(0x2D9140) };
                 constexpr std::size_t OMOD_SELF_HEAL_MAX_PER_AUDIT = 4;
 
+                std::vector<std::size_t> orderedSelfHealCandidates = selfHealCandidates;
+                std::stable_sort(
+                    orderedSelfHealCandidates.begin(),
+                    orderedSelfHealCandidates.end(),
+                    [&records](const std::size_t lhs, const std::size_t rhs) {
+                        return weapon_part_record_identity_policy::recoveryDependencyRank(records[lhs].attachPointFormId) <
+                               weapon_part_record_identity_policy::recoveryDependencyRank(records[rhs].attachPointFormId);
+                    });
+
+                /*
+                 * Parent-path recovery needs the candidate model and only the
+                 * installed provider slot that authors its P-* metadata
+                 * (receiver for top-level parts, barrel for muzzle). Keep all
+                 * loaded roots alive through the bounded recovery pass because
+                 * every parsed connect-point pointer is owned by its root.
+                 */
+                std::unordered_set<std::uint32_t> requestedTemplateFormIds;
+                std::unordered_set<std::uint32_t> requestedProviderAttachPoints;
+                for (const std::size_t candidateIndex : orderedSelfHealCandidates) {
+                    const auto& record = records[candidateIndex];
+                    requestedTemplateFormIds.insert(record.formId);
+                    const auto providerAttachPoint =
+                        weapon_part_record_identity_policy::recoveryProviderAttachPointForAttachPoint(record.attachPointFormId);
+                    if (providerAttachPoint != 0) {
+                        requestedProviderAttachPoints.insert(providerAttachPoint);
+                    }
+                }
+
+                std::vector<OmodRecoveryTemplate> recoveryTemplates;
+                recoveryTemplates.reserve(requestedTemplateFormIds.size() + requestedProviderAttachPoints.size());
+                std::unordered_set<std::uint32_t> loadedTemplateFormIds;
+                const auto appendRecoveryTemplate = [&](const OmodAuditRecord& record) {
+                    if (record.disabled || !record.resolved || record.formId == 0 || record.modelPath.empty() ||
+                        !loadedTemplateFormIds.insert(record.formId).second) {
+                        return;
+                    }
+                    auto connectionRoot = loadCompleteOmodModelTemplate(record.modelPath);
+                    if (!connectionRoot) {
+                        return;
+                    }
+
+                    auto completeSignature = collectOmodPhysicalTemplateSignature(connectionRoot.get());
+                    OmodRecoveryTemplate modelTemplate{
+                        .record = &record,
+                        .connectionRoot = std::move(connectionRoot),
+                        .physicalSignature = std::move(completeSignature),
+                    };
+
+                    const bool recoveryCandidate = requestedTemplateFormIds.contains(record.formId);
+                    if (recoveryCandidate &&
+                        record.attachPointFormId == weapon_part_record_identity_policy::kAttachPointReceiver) {
+                        auto rawPhysicalRoot = loadGeometryInspectionOmodModelTemplate(record.modelPath);
+                        if (rawPhysicalRoot) {
+                            auto rawSignature = collectOmodPhysicalTemplateSignature(rawPhysicalRoot.get());
+                            std::size_t rawCollisionVisited = 0;
+                            std::size_t completeCollisionVisited = 0;
+                            const bool hasNativeCollisionObject =
+                                templateContainsNativeCollisionObjectRecursive(
+                                    rawPhysicalRoot.get(), rawCollisionVisited) ||
+                                templateContainsNativeCollisionObjectRecursive(
+                                    modelTemplate.connectionRoot.get(), completeCollisionVisited);
+                            const bool completeSignatureCoveredByRaw =
+                                physicalTemplateSignatureCovers(rawSignature, modelTemplate.physicalSignature);
+                            if (weapon_omod_audit_policy::shouldPreferRawReceiverGeometryTemplate(
+                                    true,
+                                    hasNativeCollisionObject,
+                                    completeSignatureCoveredByRaw,
+                                    modelTemplate.physicalSignature.meshNames.size(),
+                                    rawSignature.meshNames.size())) {
+                                ROCK_LOG_INFO(Weapon,
+                                    "OMOD-HEAL omod={:08X} '{}' selected raw receiver geometry template: "
+                                    "normalMeshes={} rawMeshes={} nativeCollision=yes",
+                                    record.formId,
+                                    record.name,
+                                    modelTemplate.physicalSignature.meshNames.size(),
+                                    rawSignature.meshNames.size());
+                                modelTemplate.rawPhysicalRoot = std::move(rawPhysicalRoot);
+                                modelTemplate.physicalSignature = std::move(rawSignature);
+                                modelTemplate.usesRawReceiverGeometry = true;
+                            }
+                        }
+                    }
+                    recoveryTemplates.push_back(std::move(modelTemplate));
+                };
+                for (const std::size_t candidateIndex : orderedSelfHealCandidates) {
+                    appendRecoveryTemplate(records[candidateIndex]);
+                }
+                for (const auto& record : records) {
+                    if (requestedProviderAttachPoints.contains(record.attachPointFormId)) {
+                        appendRecoveryTemplate(record);
+                    }
+                }
+
+                const auto findRecoveryTemplate = [&recoveryTemplates](const std::uint32_t formId) -> const OmodRecoveryTemplate* {
+                    for (const auto& modelTemplate : recoveryTemplates) {
+                        if (modelTemplate.record && modelTemplate.record->formId == formId) {
+                            return &modelTemplate;
+                        }
+                    }
+                    return nullptr;
+                };
+
                 if (_omodSelfHealAttempted.size() > 256) {
                     _omodSelfHealAttempted.clear();
                 }
-                for (const std::size_t candidateIndex : selfHealCandidates) {
+                for (const std::size_t candidateIndex : orderedSelfHealCandidates) {
                     if (selfHealAttemptCount >= OMOD_SELF_HEAL_MAX_PER_AUDIT) {
                         break;
                     }
@@ -6741,15 +7332,17 @@ namespace rock
                      * Filename tokens are only a candidate trigger. The truth
                      * gate loads the complete 0xED hierarchy, excludes effect
                      * geometry, and selects its largest physical mesh as the
-                     * durable housing anchor. That anchor is authoritative for
-                     * collider recovery: if it already exists, ROCK does not
-                     * duplicate the model merely because cartridges, followers,
-                     * glass, or other secondary pieces differ. A partial branch
-                     * missing the anchor bypasses native whole-model attachment
-                     * and receives only the cloned authored housing.
+                     * durable housing anchor. Physics-bearing receiver OMODs
+                     * may instead use a strict-superset 0x20 geometry view when
+                     * the normal postprocessor consumed their display shell.
+                     * That anchor is authoritative for collider recovery: if it
+                     * already exists, ROCK does not duplicate the model merely
+                     * because cartridges, followers, glass, or other secondary
+                     * pieces differ. A partial branch missing the anchor
+                     * receives only the cloned authored housing.
                      */
-                    auto completeTemplateRoot = loadCompleteOmodModelTemplate(record.modelPath);
-                    if (!completeTemplateRoot) {
+                    const OmodRecoveryTemplate* recoveryTemplate = findRecoveryTemplate(record.formId);
+                    if (!recoveryTemplate || !recoveryTemplate->physicalRoot()) {
                         _omodSelfHealAttempted.insert(attemptKey);
                         ROCK_LOG_WARN(Weapon,
                             "OMOD-HEAL run={} omod={:08X} '{}' skipped: complete 0xED model load failed model='{}'",
@@ -6760,8 +7353,8 @@ namespace rock
                         continue;
                     }
 
-                    RE::NiNode* signatureRoot = completeTemplateRoot.get();
-                    const auto templateSignature = collectOmodPhysicalTemplateSignature(signatureRoot);
+                    RE::NiNode* signatureRoot = recoveryTemplate->physicalRoot();
+                    const auto& templateSignature = recoveryTemplate->physicalSignature;
                     if (templateSignature.meshNames.empty() || templateSignature.durableAnchorName.empty()) {
                         _omodSelfHealAttempted.insert(attemptKey);
                         ROCK_LOG_WARN(Weapon,
@@ -6832,19 +7425,51 @@ namespace rock
                      * observed names do not form a coherent template signature;
                      * coherent partial trees preserve their authored animated
                      * pieces and receive only the missing durable housing below.
+                     * A raw receiver anchor is absent specifically because the
+                     * native postprocessed model consumed it, so repeating that
+                     * native attach cannot restore it and can only duplicate the
+                     * surviving trigger/controller branch. Recover that one
+                     * housing directly from the guarded raw template instead.
                      */
                     const auto beforeStats = summarizeWeaponAnimNodeSubtree(healTargetNode);
                     _omodSelfHealAttempted.insert(attemptKey);
                     ++selfHealAttemptCount;
-                    const bool nativeAttachNeeded = weapon_omod_audit_policy::shouldAttemptWholeModelAttach(
+                    const bool nativeWholeModelEligible = weapon_omod_audit_policy::shouldAttemptWholeModelAttach(
                         matchedSignatureNameCount,
                         templateSignature.meshNames.size(),
                         durableAnchorPresent);
+                    const bool nativeAttachNeeded = nativeWholeModelEligible &&
+                        !recoveryTemplate->usesRawReceiverGeometry;
+                    AuthoredOmodParentPathPreparation parentPathPreparation{};
+                    const bool authoredParentPathPrepared = nativeAttachNeeded &&
+                        prepareAuthoredOmodParentPath(
+                            record,
+                            healTargetNode,
+                            rankSuffix ? std::string_view(rankSuffix) : std::string_view{},
+                            recoveryTemplates,
+                            parentPathPreparation);
                     bool attached = nativeAttachNeeded &&
                         tryAttach3DRecurse(omod, healTargetNode, rankSuffix, equipData ? equipData->instanceData : nullptr);
                     auto afterStats = summarizeWeaponAnimNodeSubtree(healTargetNode);
                     bool anchorPresentAfterNative =
                         !collectWeaponAnimNodeMatches(coverageRoot, templateSignature.durableAnchorName.c_str()).empty();
+                    bool authoredPathCapturedAnchor = authoredParentPathPrepared && parentPathPreparation.container &&
+                        !collectWeaponAnimNodeMatches(
+                            parentPathPreparation.container.get(), templateSignature.durableAnchorName.c_str()).empty();
+                    if (authoredParentPathPrepared && !authoredPathCapturedAnchor) {
+                        /*
+                         * A true native return only means a CPA record matched;
+                         * FO4VR does not propagate Parent::ConnectChild failure.
+                         * Retain the authored path only when the candidate's
+                         * durable geometry actually landed below its owned
+                         * container. Otherwise remove the entire path before
+                         * the existing bounded housing enrichment runs.
+                         */
+                        rollbackAuthoredOmodParentPath(parentPathPreparation);
+                        afterStats = summarizeWeaponAnimNodeSubtree(healTargetNode);
+                        anchorPresentAfterNative =
+                            !collectWeaponAnimNodeMatches(coverageRoot, templateSignature.durableAnchorName.c_str()).empty();
+                    }
                     std::string enrichmentParentName;
                     OmodPhysicalEnrichmentStage enrichmentStage = OmodPhysicalEnrichmentStage::NotAttempted;
                     const bool physicalAnchorEnriched = !anchorPresentAfterNative &&
@@ -6862,7 +7487,7 @@ namespace rock
                     selfHealSuccessCount += geometryAdded ? 1 : 0;
 
                     ROCK_LOG_INFO(Weapon,
-                        "OMOD-HEAL run={} omod={:08X} '{}' model='{}' suffix='{}' target='{}'/{:x} nativeAttachAttempted={} attached={} geometryAdded={} durableAnchor='{}' restored={} enrichmentStage={} enrichmentParent='{}' subtreeNodes {}->{} triShapes {}->{} visibleTriShapes {}->{}",
+                        "OMOD-HEAL run={} omod={:08X} '{}' model='{}' suffix='{}' target='{}'/{:x} physicalTemplate={} nativeAttachAttempted={} attached={} geometryAdded={} durableAnchor='{}' restored={} authoredPathStage={} authoredPathProvider={:08X} authoredParent='{}' authoredAncestor='{}' authoredPathCapturedAnchor={} enrichmentStage={} enrichmentParent='{}' subtreeNodes {}->{} triShapes {}->{} visibleTriShapes {}->{}",
                         runIndex,
                         record.formId,
                         record.name,
@@ -6870,11 +7495,18 @@ namespace rock
                         rankSuffix ? rankSuffix : "",
                         healTargetRootLabel,
                         reinterpret_cast<std::uintptr_t>(healTargetNode),
-                        nativeAttachNeeded ? "yes" : "no-coherent-partial-tree",
+                        recoveryTemplate->usesRawReceiverGeometry ? "raw-receiver-geometry" : "complete-0xED",
+                        nativeAttachNeeded ? "yes" :
+                            (recoveryTemplate->usesRawReceiverGeometry ? "no-raw-receiver-anchor" : "no-coherent-partial-tree"),
                         attached ? "YES" : "no",
                         geometryAdded ? "YES" : "no",
                         templateSignature.durableAnchorName,
                         durableAnchorRestored ? "YES" : "no",
+                        authoredOmodParentPathStageName(parentPathPreparation.stage),
+                        parentPathPreparation.providerFormId,
+                        parentPathPreparation.parentNodeName,
+                        parentPathPreparation.liveAncestorName,
+                        authoredPathCapturedAnchor ? "YES" : "no",
                         omodPhysicalEnrichmentStageName(enrichmentStage),
                         enrichmentParentName,
                         beforeStats.nodeCount,

@@ -998,10 +998,14 @@ int main()
             resolveStructureAnchor("AK74M_Body"), StructureAnchor::None);
         ok &= expectTrue("standard barrel attach point recovers a P-Barrel node",
             canonicalConnectPointForAttachPoint(kAttachPointBarrel) == "P-Barrel");
-        ok &= expectTrue("standard muzzle recovery nests below the barrel",
-            recoveryParentConnectPointForAttachPoint(kAttachPointMuzzle) == "P-Barrel");
-        ok &= expectTrue("standard magazine recovery nests below the receiver",
-            recoveryParentConnectPointForAttachPoint(kAttachPointMagazine) == "P-Receiver");
+        ok &= expectTrue("muzzle recovery reads parent metadata from the installed barrel",
+            recoveryProviderAttachPointForAttachPoint(kAttachPointMuzzle) == kAttachPointBarrel);
+        ok &= expectTrue("magazine recovery reads parent metadata from the installed receiver",
+            recoveryProviderAttachPointForAttachPoint(kAttachPointMagazine) == kAttachPointReceiver);
+        ok &= expectTrue("receiver recovery precedes dependent barrel recovery",
+            recoveryDependencyRank(kAttachPointReceiver) < recoveryDependencyRank(kAttachPointBarrel));
+        ok &= expectTrue("barrel recovery precedes dependent muzzle recovery",
+            recoveryDependencyRank(kAttachPointBarrel) < recoveryDependencyRank(kAttachPointMuzzle));
         ok &= expectTrue("custom attach points do not synthesize guessed nodes",
             canonicalConnectPointForAttachPoint(0xFE123456).empty());
 
