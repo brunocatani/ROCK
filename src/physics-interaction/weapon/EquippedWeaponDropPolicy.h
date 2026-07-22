@@ -35,10 +35,10 @@ namespace rock::equipped_weapon_drop_policy
     }
 
     [[nodiscard]] inline constexpr bool equippedWeaponShoulderStashAvailable(
-        bool realisticWeaponHandlingEnabled,
+        bool primaryDetachEnabled,
         bool shoulderStashConfigured) noexcept
     {
-        return realisticWeaponHandlingEnabled && shoulderStashConfigured;
+        return primaryDetachEnabled && shoulderStashConfigured;
     }
 
     /*

@@ -12,8 +12,6 @@
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/LooseWeaponGripZone.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
-#include "RockConfig.h"
-
 #include "rock_support/Fo4VrRuntime.h"
 
 namespace rock
@@ -265,8 +263,8 @@ namespace rock
         std::snprintf(_instanceNameToken, sizeof(_instanceNameToken), "(%08X)", input.weaponFormID);
         _isLeftHand = input.isLeftHand;
         _elapsedSeconds = 0.0f;
-        _blendSeconds = g_rockConfig.rockGrabbedWeaponEquipBridgeBlendSeconds;
-        _timeoutSeconds = g_rockConfig.rockGrabbedWeaponEquipBridgeTimeoutSeconds;
+        _blendSeconds = input.blendSeconds;
+        _timeoutSeconds = input.timeoutSeconds;
         _active = true;
 
         if (authoredLookup.found &&

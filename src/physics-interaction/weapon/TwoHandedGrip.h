@@ -11,6 +11,7 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/PhysicsUtils.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
+#include "physics-interaction/weapon/EquippedWeaponHandlingSettings.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/WeaponInteraction.h"
 #include "physics-interaction/weapon/WeaponPartGripReportPolicy.h"
@@ -79,16 +80,6 @@ namespace rock
         // Grab state of the CURRENT firing hand (debounced release), read by
         // the caller from whichever physical hand isFiringHandLeft() reports.
         EquippedWeaponPrimaryGripInput primaryGripInput{};
-    };
-
-    struct EquippedWeaponGripMode
-    {
-        // Keeps ROCK's firing-hand role/left-hand carry state alive.
-        bool firingGripOwnershipEnabled{ false };
-        // Allows the wrapped support hand to inherit the firing grip.
-        bool ambidextrousHandoffEnabled{ false };
-        // Enables realistic firing-hand detach, part carry, and drop.
-        bool primaryDetachEnabled{ false };
     };
 
     struct TwoHandedGripDebugSnapshot
@@ -268,7 +259,7 @@ namespace rock
             const WeaponInteractionRuntimeState& rightRuntimeState,
             weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode,
             bool firingGripProximityAuthorityEnabled,
-            const EquippedWeaponGripMode& gripMode);
+            const EquippedWeaponHandlingSettings& handlingSettings);
 
         /*
          * Called after hFRIK's weapon pass. FO4VR has already completed its
@@ -458,8 +449,9 @@ namespace rock
         void restoreNativeRightEquippedCarry(const char* reason);
         bool isPersistentEquippedCarryActive() const { return _persistentEquippedCarryActive; }
 
-        // Left-hand primary ownership requires the hFRIK ambidextrous weapon-
-        // node blockers; right-hand native ownership is always eligible.
+        // Left-hand primary ownership requires ROCK's hFRIK weapon-pose and
+        // node-ownership blockers; right-hand native ownership is always
+        // eligible. Native Fallout/FRIK handedness is deliberately irrelevant.
         static bool canBeginPrimaryOnlyGripForHand(bool isLeft);
 
         /*
@@ -1080,6 +1072,7 @@ namespace rock
 
         EquippedWeaponManualDropRequest _equippedWeaponDropRequest{};
         TwoHandedGripHapticEvents _hapticEvents{};
+        EquippedWeaponHandlingSettings _handlingSettings{};
 
         // Per-frame hover state; only ever true in PartCarry (see getter).
         bool _firingGripReattachHoverInsideRadius{ false };

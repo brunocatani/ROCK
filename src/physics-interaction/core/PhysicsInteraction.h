@@ -156,6 +156,8 @@ namespace rock
         bool queryProviderEquippedWeaponClassificationV1(::rock::provider::RockProviderWeaponClassificationV1& outResult) const;
         bool queryProviderEquippedWeaponGripStateV1(
             ::rock::provider::RockProviderEquippedWeaponGripStateV1& outState) const;
+        bool queryProviderEquippedWeaponHandlingStateV1(
+            ::rock::provider::RockProviderEquippedWeaponHandlingStateV1& outState) const;
         void fillProviderWeaponPartGripStates(
             std::array<::rock::provider::RockProviderWeaponPartGripStateV1, 2>& outStates) const;
 
@@ -281,11 +283,20 @@ namespace rock
         void clearLeftWeaponContact();
         void clearRightWeaponContact();
 
-        void servicePipboyWeaponHandAssignment(
+        void refreshEquippedWeaponHandlingSettings();
+        void reconcileEquippedWeaponHandlingMode();
+        void serviceFixedWeaponHand(
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey,
             std::uint64_t currentEquippedWeaponOwnershipKey,
             bool menuInputActive);
+
+        void servicePipboyWeaponHandAssignment(
+            RE::NiNode* weaponNode,
+            std::uint64_t currentWeaponGenerationKey,
+            std::uint64_t currentEquippedWeaponOwnershipKey,
+            bool menuInputActive,
+            const EquippedWeaponHandlingSettings& handlingSettings);
         void reconcilePipboyWeaponHandAssignmentAfterGrip();
         void clearPipboyWeaponHandAssignment(const char* reason, bool clearUiAssignment);
 
@@ -364,6 +375,10 @@ namespace rock
         std::atomic<std::uint64_t> _completedPhysicsSolveSequence{ 0 };
 
         TwoHandedGrip _twoHandedGrip;
+        EquippedWeaponHandlingSettings _equippedWeaponHandlingSettings{};
+        bool _fixedFiringHandIsLeft{ false };
+        bool _equippedWeaponHandlingModeInitialized{ false };
+        bool _equippedWeaponHandlingModeReconcilePending{ false };
         AuthoredPrimaryFiringGripRuntime _authoredPrimaryFiringGrip;
         DynamicHandCollisionRuntime _dynamicHandCollision;
 
@@ -587,6 +602,17 @@ namespace rock
         };
         PipboyWeaponHandAssignmentState _pipboyWeaponHandAssignment{};
         std::uint64_t _lastPipboyWeaponSelectionSequence{ 0 };
+        struct FixedLeftCarryState
+        {
+            std::uint64_t weaponGenerationKey{ 0 };
+            std::uint64_t weaponOwnershipKey{ 0 };
+            RE::NiTransform nativeOffsetSample{};
+            std::uint16_t remainingResolveFrames{ 0 };
+            std::uint8_t matchingNativeOffsetFrames{ 0 };
+            bool nativeOffsetSampleValid{ false };
+            bool infrastructureWarningLogged{ false };
+        };
+        FixedLeftCarryState _fixedLeftCarry{};
         bool _equippedWeaponMenuReconcilePending = false;
         /*
          * Single-consumption snapshot of the firing hand's grab button. The

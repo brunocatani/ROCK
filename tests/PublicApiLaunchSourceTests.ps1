@@ -209,6 +209,12 @@ Require-Text 'src/api/ROCKProviderApi.cpp' 'maxAnimationPhaseCallbacks\s*=\s*[\s
     'Provider limits must publish every bounded animation-support capacity.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'providerApiByteSize\s*=\s*static_cast<std::uint32_t>\(sizeof\(RockProviderApi\)\)' `
     'Provider limits must report the current function table byte size.'
+Require-Text 'src/api/ROCKProviderApi.h' 'EquippedWeaponHandlingAuthority[\s\S]*RockProviderEquippedWeaponHandlingRequestV1[\s\S]*RockProviderEquippedWeaponHandlingStateV1' `
+    'API V1 must expose owner-bound equipped-weapon policy authority and runtime state.'
+Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_API_V1_EQUIPPED_WEAPON_HANDLING_AUTHORITY_TABLE_BYTES[\s\S]*supportsEquippedWeaponHandlingAuthorityV1' `
+    'Equipped-weapon policy consumers must negotiate both feature bit and appended table size.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'maxEquippedWeaponHandlingAuthorities\s*=\s*1[\s\S]*maxEquippedWeaponHandlingLeaseFrames\s*=[\s\S]*ROCK_PROVIDER_MAX_EQUIPPED_WEAPON_HANDLING_LEASE_FRAMES_V1' `
+    'Provider limits must publish the single-owner authority capacity and maximum lease.'
 Require-Text 'src/api/ROCKProviderApi.h' 'NativeAnimationAuthority[\s\S]*RockProviderNativeAnimationAuthorityRequestV1' `
     'API V1 must expose selective native animation authority as a registered consumer capability.'
 Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_API_V1_NATIVE_ANIMATION_AUTHORITY_TABLE_BYTES[\s\S]*supportsNativeAnimationAuthorityV1' `
@@ -305,7 +311,10 @@ $expectedProviderFunctions = [string[]]@(
     'getEquippedWeaponGripStateV1',
     'setHandVisualAuthorityV1',
     'clearHandVisualAuthorityV1',
-    'publishNativeAnimationRuntimeV1'
+    'publishNativeAnimationRuntimeV1',
+    'setEquippedWeaponHandlingAuthorityV1',
+    'clearEquippedWeaponHandlingAuthorityV1',
+    'getEquippedWeaponHandlingStateV1'
 )
 Require-SequenceEqual 'ROCKProviderApi function pointer order' (Get-ProviderFunctionNames $providerHeader) $expectedProviderFunctions
 

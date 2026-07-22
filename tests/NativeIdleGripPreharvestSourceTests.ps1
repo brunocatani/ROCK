@@ -118,9 +118,9 @@ Reject-Text $source `
 Reject-Text $source `
     'rockAuthoredPrimaryFiringGripTestEnabled|experimentNoLongerEligible' `
     'Native idle-grip preharvest must be a production ROCK path, not an experimental config branch.'
-Require-Text $source `
-    'f4vr::isLeftHandedMode\(\)[\s\S]*authoredGripNoLongerEligible' `
-    'Native idle-grip preharvest must retain its explicit fail-closed unsupported left-handed boundary.'
+Reject-Text $source `
+    'f4vr::isLeftHandedMode\(\)|authoredGripNoLongerEligible' `
+    'Native idle-grip preharvest must use ROCK''s fixed physical-right canonical topology, never Fallout 4 VR handedness.'
 Require-Text $source `
     'authored_weapon_grip_library::publishResolvedVariant[\s\S]{0,300}CaptureSource::NativeIdlePreharvest' `
     'The proof must publish only through ROCK''s bounded authored-grip cache with explicit preharvest provenance.'
@@ -140,7 +140,7 @@ Require-Text $source `
     'kAnimationTypeOffset\s*=\s*0x10[\s\S]*kAnimationDurationOffset\s*=\s*0x14[\s\S]*kAnimationTransformTrackCountOffset\s*=\s*0x18[\s\S]*kAnimationFloatTrackCountOffset\s*=\s*0x1C[\s\S]*kBindingBlendHintOffset\s*=\s*0x50' `
     'The sampler diagnostics must retain the audited FO4VR hkaAnimation and hkaAnimationBinding field layout.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'NativeIdleGripPreharvest\.h[\s\S]*nativeIdleGripCandidate[\s\S]*hand\.isHoldingLooseWeapon\(\)[\s\S]*hand\.hasSelection\(\)[\s\S]*native_idle_grip_preharvest::observeCandidate\(nativeIdleGripCandidate\)[\s\S]*rockGripZoneHoverHapticsEnabled' `
+    'NativeIdleGripPreharvest\.h[\s\S]*nativeIdleGripCandidate[\s\S]*hand\.isHoldingLooseWeapon\(\)[\s\S]*hand\.hasSelection\(\)[\s\S]*native_idle_grip_preharvest::observeCandidate\(nativeIdleGripCandidate\)[\s\S]*gripZoneHoverHapticsEnabled' `
     'The frame owner must offer held or raw selected weapons before input commit, independently of optional hover haptics.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'weaponGenerationKey[\s\S]*equippedGenerationMatchesForm[\s\S]*getCurrentObservedEquippedWeaponFormID\(\)\s*==\s*equippedWeapon->formID[\s\S]*native_idle_grip_preharvest::observeEquippedWeapon\([\s\S]*equippedWeapon[\s\S]*weaponNode[\s\S]*currentEquippedWeaponInstanceData\(equippedWeapon\)[\s\S]*_authoredPrimaryFiringGrip\.update' `

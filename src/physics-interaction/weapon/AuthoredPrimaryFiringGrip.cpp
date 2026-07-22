@@ -226,19 +226,6 @@ namespace rock
             return;
         }
 
-        if (input.leftHandedMode) {
-            // Bethesda/hFRIK game-left mode is a distinct topology, not the
-            // ROCK ambidextrous role. Never carry a right-authored canonical
-            // across that mode; require a new right-mode graph sample later.
-            weaponAuthority.clearAuthoredPrimaryFiringGripCanonical(
-                "game-left-handed-mode");
-            _captureSequenceFloor = captureStatus.captureSequence;
-            _supportCaptureSequenceFloor = supportCaptureStatus.captureSequence;
-            clearStableAuthoredSupportGripSnapshot();
-            endSession("game-left-handed-mode");
-            return;
-        }
-
         const auto authoredLookup = authored_weapon_grip_library::find(input.weapon, input.weaponNode, input.inPowerArmor);
         const bool harvestedRelationAvailable = authoredLookup.found && authoredLookup.source == authored_weapon_grip_library::CaptureSource::NativeIdlePreharvest;
         const auto* rightFingerPose = harvestedRelationAvailable && authoredLookup.rightFiringFingerPose.complete() ? &authoredLookup.rightFiringFingerPose : nullptr;
@@ -425,7 +412,6 @@ namespace rock
                 input.conflictingWeaponTransformAuthorityActive,
             .weaponVisualReturnActive = input.weaponVisualReturnActive,
             .primaryHandHoldingObject = input.primaryHandHoldingObject,
-            .leftHandedMode = input.leftHandedMode,
             .rockFiringHandIsLeft = input.rockFiringHandIsLeft,
         };
         if (!authored_weapon_grip_capture_policy::shouldApplyAuthoredPrimaryFiringGrip(eligibility)) {

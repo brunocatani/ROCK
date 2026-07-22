@@ -3,8 +3,6 @@
 #include <array>
 #include <cmath>
 
-#include "RockConfig.h"
-
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/grab/FrikWeaponOffsetCache.h"
@@ -104,7 +102,10 @@ namespace rock::loose_weapon_grip_zone
                 return false;
             }
 
-            const bool canonicalHandIsLeft = f4vr::isLeftHandedMode();
+            // ROCK's canonical authored weapon frame is always the physical
+            // right-hand/native weapon frame. Native game handedness is not a
+            // ROCK input and cannot change controller or offset identity.
+            constexpr bool canonicalHandIsLeft = false;
             RE::NiPoint3 canonicalPalmWorld{};
             RE::NiTransform canonicalHandWorld{};
             if (!TwoHandedGrip::tryCaptureRootFlattenedPalmWorld(
@@ -123,7 +124,7 @@ namespace rock::loose_weapon_grip_zone
                 weapon,
                 looseRoot,
                 f4vr::isInPowerArmor());
-            const bool authoredGripEligible = !canonicalHandIsLeft;
+            constexpr bool authoredGripEligible = true;
             const auto selectedSource = weapon_grip_authority_policy::select(
                 weapon_grip_authority_policy::Availability{
                     .frikCustomFile =
@@ -133,11 +134,7 @@ namespace rock::loose_weapon_grip_zone
                     .frikEmbeddedResource =
                         frikLookup.found &&
                         frikLookup.source == frik_weapon_offset_cache::OffsetSource::EmbeddedResource,
-                    .allowFrikLiveNodeFallback =
-                        !authoredGripEligible &&
-                        frikLookup.found &&
-                        frikLookup.source ==
-                            frik_weapon_offset_cache::OffsetSource::LiveWeaponNodeFallback,
+                    .allowFrikLiveNodeFallback = false,
                 });
 
             RE::NiTransform canonicalHandWeaponLocal{};
@@ -193,13 +190,13 @@ namespace rock::loose_weapon_grip_zone
                 return false;
             }
 
-            if (isLeft == canonicalHandIsLeft) {
+            if (!isLeft) {
                 state.firingHandWeaponLocal = canonicalHandWeaponLocal;
                 state.hasFiringHandWeaponLocal = isUsableWorldTransform(state.firingHandWeaponLocal);
                 if (outTestedHandWorld) {
                     *outTestedHandWorld = canonicalHandWorld;
                 }
-            } else if (isLeft && !canonicalHandIsLeft) {
+            } else {
                 RE::NiPoint3 leftPalmWorld{};
                 RE::NiTransform leftHandWorld{};
                 if (TwoHandedGrip::tryCaptureRootFlattenedPalmWorld(true, leftPalmWorld, leftHandWorld)) {
@@ -239,7 +236,13 @@ namespace rock::loose_weapon_grip_zone
         }
     }
 
-    void updateHeldLooseWeapon(const bool isLeft, const bool holdingLooseWeapon, RE::TESObjectREFR* heldRef, const bool heldSettled, const float dt)
+    void updateHeldLooseWeapon(
+        const bool isLeft,
+        const bool holdingLooseWeapon,
+        RE::TESObjectREFR* heldRef,
+        const bool heldSettled,
+        const float dt,
+        const float equipRadiusGameUnits)
     {
         auto& state = s_handStates[handIndex(isLeft)];
         if (!holdingLooseWeapon || !heldRef) {
@@ -274,7 +277,7 @@ namespace rock::loose_weapon_grip_zone
         }
 
         next.palmToGripDistance = pointDistance(next.palmWorld, next.gripWorld);
-        next.insideRadius = next.palmToGripDistance <= g_rockConfig.rockGrabbedWeaponGripZoneEquipRadius;
+        next.insideRadius = next.palmToGripDistance <= equipRadiusGameUnits;
         if (next.insideRadius && heldSettled) {
             next.insideSettledSeconds += (std::max)(0.0f, dt);
         } else {
@@ -287,7 +290,7 @@ namespace rock::loose_weapon_grip_zone
                 isLeft ? "left" : "right",
                 next.insideRadius ? "entered" : "exited",
                 next.palmToGripDistance,
-                g_rockConfig.rockGrabbedWeaponGripZoneEquipRadius,
+                equipRadiusGameUnits,
                 heldSettled ? "yes" : "no",
                 next.reason);
         }
@@ -295,7 +298,10 @@ namespace rock::loose_weapon_grip_zone
         state = next;
     }
 
-    void updateHoverCandidateWeapon(const bool isLeft, RE::TESObjectREFR* candidateRef)
+    void updateHoverCandidateWeapon(
+        const bool isLeft,
+        RE::TESObjectREFR* candidateRef,
+        const float equipRadiusGameUnits)
     {
         auto& state = s_hoverStates[handIndex(isLeft)];
         if (!candidateRef) {
@@ -338,7 +344,7 @@ namespace rock::loose_weapon_grip_zone
         }
 
         next.palmToGripDistance = pointDistance(next.palmWorld, next.gripWorld);
-        next.insideRadius = next.palmToGripDistance <= g_rockConfig.rockGrabbedWeaponGripZoneEquipRadius;
+        next.insideRadius = next.palmToGripDistance <= equipRadiusGameUnits;
 
         if (next.insideRadius != state.insideRadius) {
             ROCK_LOG_DEBUG(Hand,
@@ -346,7 +352,7 @@ namespace rock::loose_weapon_grip_zone
                 isLeft ? "left" : "right",
                 next.insideRadius ? "entered" : "exited",
                 next.palmToGripDistance,
-                g_rockConfig.rockGrabbedWeaponGripZoneEquipRadius,
+                equipRadiusGameUnits,
                 candidateRef->GetFormID(),
                 next.reason);
         }
@@ -360,12 +366,12 @@ namespace rock::loose_weapon_grip_zone
         return state.valid && state.insideRadius;
     }
 
-    bool isGripZoneEquipSettled(const bool isLeft)
+    bool isGripZoneEquipSettled(const bool isLeft, const float settleSeconds)
     {
         const auto& state = s_handStates[handIndex(isLeft)];
         return state.valid &&
                state.insideRadius &&
-               state.insideSettledSeconds >= g_rockConfig.rockGrabbedWeaponGripZoneEquipSettleSeconds;
+               state.insideSettledSeconds >= settleSeconds;
     }
 
     bool tryResolveLooseWeaponFiringHandHold(

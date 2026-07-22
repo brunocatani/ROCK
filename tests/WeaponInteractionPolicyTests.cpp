@@ -709,55 +709,55 @@ int main()
         canStartFreeHandPartGrip(true, true, false, true));
 
     using namespace rock::equipped_weapon_manual_ownership_policy;
-    ok &= expectTrue("realistic handling enables firing-grip ownership",
+    ok &= expectTrue("addon detach mode enables firing-grip ownership",
         firingGripOwnershipEnabled(FiringGripModeAvailability{
-            .realisticWeaponHandlingEnabled = true,
+            .primaryDetachEnabled = true,
         }));
-    ok &= expectTrue("ambidextrous firing independently enables firing-grip ownership",
+    ok &= expectTrue("addon handoff mode independently enables firing-grip ownership",
         firingGripOwnershipEnabled(FiringGripModeAvailability{
-            .ambidextrousFiringAvailable = true,
+            .ambidextrousHandoffAvailable = true,
         }));
     ok &= expectFalse("firing-grip ownership is disabled when both modes are off",
         firingGripOwnershipEnabled(FiringGripModeAvailability{}));
-    ok &= expectTrue("left-hand trigger equip starts ambidextrous firing ownership",
+    ok &= expectTrue("left-hand trigger equip starts addon handoff ownership",
         shouldStartHeldWeaponEquipOwnership(HeldWeaponEquipOwnershipInput{
             .modes = FiringGripModeAvailability{
-                .ambidextrousFiringAvailable = true,
+                .ambidextrousHandoffAvailable = true,
             },
             .handIsLeft = true,
             .gripHeld = true,
         }));
-    ok &= expectFalse("right-hand trigger equip cannot start ambidextrous-only ownership",
+    ok &= expectFalse("right-hand trigger equip cannot start handoff-only ownership",
         shouldStartHeldWeaponEquipOwnership(HeldWeaponEquipOwnershipInput{
             .modes = FiringGripModeAvailability{
-                .ambidextrousFiringAvailable = true,
+                .ambidextrousHandoffAvailable = true,
             },
             .gripHeld = true,
         }));
-    ok &= expectTrue("realistic trigger equip can start right-hand ownership",
+    ok &= expectTrue("addon detach mode can start right-hand ownership",
         shouldStartHeldWeaponEquipOwnership(HeldWeaponEquipOwnershipInput{
             .modes = FiringGripModeAvailability{
-                .realisticWeaponHandlingEnabled = true,
+                .primaryDetachEnabled = true,
             },
             .gripHeld = true,
         }));
     ok &= expectFalse("trigger equip ownership requires the same hand grip",
         shouldStartHeldWeaponEquipOwnership(HeldWeaponEquipOwnershipInput{
             .modes = FiringGripModeAvailability{
-                .realisticWeaponHandlingEnabled = true,
-                .ambidextrousFiringAvailable = true,
+                .primaryDetachEnabled = true,
+                .ambidextrousHandoffAvailable = true,
             },
             .handIsLeft = true,
         }));
-    ok &= expectTrue("realistic handling always enables grip-zone settle equip",
+    ok &= expectTrue("addon grip-zone flag enables settle equip",
         canSettleEquipInGripZone(true));
-    ok &= expectFalse("grip-zone settle equip stays off when realistic handling is disabled",
+    ok &= expectFalse("grip-zone settle equip stays off without addon authority",
         canSettleEquipInGripZone(false));
-    ok &= expectTrue("ambidextrous-only ownership ignores an open firing grip",
+    ok &= expectTrue("non-detaching ownership ignores an open firing grip",
         shouldRetainPrimaryOnlyOwnership(false, false));
-    ok &= expectTrue("realistic ownership remains while the firing grip is held",
+    ok &= expectTrue("detaching ownership remains while the firing grip is held",
         shouldRetainPrimaryOnlyOwnership(true, true));
-    ok &= expectFalse("realistic ownership releases when the firing grip opens",
+    ok &= expectFalse("detaching ownership releases when the firing grip opens",
         shouldRetainPrimaryOnlyOwnership(true, false));
     RuntimeState ambidextrousLifecycleState{
         .active = true,

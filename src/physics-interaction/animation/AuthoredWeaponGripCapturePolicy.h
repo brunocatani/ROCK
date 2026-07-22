@@ -28,7 +28,6 @@ namespace rock::authored_weapon_grip_capture_policy
         bool conflictingWeaponTransformAuthorityActive{ false };
         bool weaponVisualReturnActive{ false };
         bool primaryHandHoldingObject{ false };
-        bool leftHandedMode{ false };
         bool rockFiringHandIsLeft{ false };
     };
 
@@ -69,7 +68,6 @@ namespace rock::authored_weapon_grip_capture_policy
                !input.conflictingWeaponTransformAuthorityActive &&
                !input.weaponVisualReturnActive &&
                !input.primaryHandHoldingObject &&
-               !input.leftHandedMode &&
                !input.rockFiringHandIsLeft;
     }
 

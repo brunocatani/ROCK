@@ -90,6 +90,9 @@ namespace rock
         bool rockReversePalmNormal = true;
         bool rockReverseFarGrabNormal = true;
 
+        // ROCK-exclusive equipped-weapon hand preference. This never reads or
+        // mutates Fallout 4 VR's native handedness/controller mapping.
+        bool rockLeftHandedMode = false;
         bool rockWeaponCollisionEnabled = true;
         bool rockWeaponCollisionBlocksProjectiles = false;
         bool rockWeaponCollisionBlocksSpells = false;
@@ -111,55 +114,7 @@ namespace rock
         float rockWeaponSizeClassRifleMaxWeight = 20.0f;
         float rockWeaponInteractionTouchRadius = 2.0f;
         float rockWeaponInteractionProbeRadius = 12.0f;
-        float rockWeaponFiringGripReattachRadius = 3.0f;
-        bool rockFiringGripProximitySupportEnabled = true;
-        float rockFiringGripProximitySupportRadius = 6.0f;
-        float rockWeaponGripHapticDurationSeconds = 0.10f;
-        float rockWeaponFiringGripAttachHapticIntensity = 0.85f;
-        float rockWeaponFiringGripDetachHapticIntensity = 0.30f;
-        float rockWeaponSupportGripHapticIntensity = 0.50f;
-        // Preference only; realistic weapon handling is the runtime master
-        // gate for every equipped-weapon stash detector and commit path.
-        bool rockEquippedWeaponShoulderStashEnabled = true;
-        bool rockRealisticWeaponHandlingEnabled = false;
-        // Independent ambidextrous firing mode: either free hand may take the
-        // firing grip even when realistic detach/drop handling is disabled.
-        // Left-hand fire requires the hFRIK weapon-node ownership blockers.
-        bool rockAmbidextrousFiringGripEnabled = true;
-        // Support-grip-point to firing-grip distance within which a support
-        // hand wrapped over the grip is promoted in place when the firing
-        // hand opens (seamless hand switch). Wider than the reattach radius
-        // because a wrapped hand's grip point sits off the grip center, but
-        // tight enough that a forend support grab on a compact weapon stays
-        // a support grip (measured 6.9gu on the shortest rifle tested) and
-        // detaches to part carry on a real release instead of stealing the
-        // firing role.
-        float rockFiringGripPromotionRadius = 5.0f;
-        // Global aim trim for the mirrored LEFT firing hold, weapon-
-        // independent: compensates the engine's left arm chain cant (the
-        // left hand is driven through the melee offset pipeline, which is
-        // not an exact mirror of the right weapon pipeline). Degrees,
-        // applied about the weapon's own up/side axes. Positive yaw aims
-        // right, positive pitch aims down.
-        float rockLeftFiringAimYawDegrees = 0.0f;
-        float rockLeftFiringAimPitchDegrees = 0.0f;
-        // Translation trim for the mirrored LEFT firing hold, weapon-frame
-        // game units, same one-calibration semantics as the aim trims:
-        // compensates the fixed lateral/vertical placement bias of the left
-        // arm chain. +X toward the weapon's right side, +Y forward along
-        // the barrel, +Z up; if an axis moves the weapon the opposite way
-        // on a given engine matrix convention, flip its sign once.
-        float rockLeftFiringAimOffsetXGameUnits = 0.0f;
-        float rockLeftFiringAimOffsetYGameUnits = 0.0f;
-        float rockLeftFiringAimOffsetZGameUnits = 0.0f;
         float rockRealisticGrenadeFuseSeconds = 5.0f;
-        float rockGrabbedWeaponGripZoneEquipRadius = 3.0f;
-        float rockGrabbedWeaponGripZoneEquipSettleSeconds = 0.15f;
-        bool rockGripZoneHoverHapticsEnabled = true;
-        float rockGripZoneHoverHapticIntensity = 0.75f;
-        bool rockGrabbedWeaponEquipBridgeEnabled = true;
-        float rockGrabbedWeaponEquipBridgeTimeoutSeconds = 2.0f;
-        float rockGrabbedWeaponEquipBridgeBlendSeconds = 0.15f;
         bool rockWeaponSupportGripHandLerpEnabled = true;
         float rockWeaponSupportGripHandLerpTimeMin = 0.12f;
         float rockWeaponSupportGripHandLerpTimeMax = 0.20f;
@@ -309,8 +264,6 @@ namespace rock
         std::string rockDebugSkeletonAxisBoneFilter = "";
 
         int rockHandColliderRuntimeMode = 1;
-        bool rockMenuTriggerHandEquipEnabled = false;
-        bool rockEquipPreferredHandLeft = false;
         bool rockBodyBoneCollidersEnabled = true;
         bool rockBodyBoneLegAndFootCollidersEnabled = false;
         bool rockBodyBoneCollisionStaticWorldEnabled = true;

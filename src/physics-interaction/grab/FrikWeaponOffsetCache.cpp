@@ -377,7 +377,7 @@ namespace rock::frik_weapon_offset_cache
             }
 
             const bool inPowerArmor = f4vr::isInPowerArmor();
-            const bool leftHanded = f4vr::isLeftHandedMode();
+            constexpr bool leftHanded = false;
             const auto offset = findEffectiveGripOffsetLocked(
                 cache,
                 weaponName,
@@ -405,7 +405,7 @@ namespace rock::frik_weapon_offset_cache
             }
 
             const bool inPowerArmor = f4vr::isInPowerArmor();
-            const bool leftHanded = f4vr::isLeftHandedMode();
+            constexpr bool leftHanded = false;
             for (const auto mode : kGripOffsetModes) {
                 const auto offset = findEffectiveGripOffsetLocked(
                     cache,

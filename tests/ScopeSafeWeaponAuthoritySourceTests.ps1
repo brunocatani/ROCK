@@ -35,8 +35,10 @@ function Reject-Text {
 
 Require-Text 'src/physics-interaction/core/RockRuntimeState.cpp' 'localScopeMenuOpen\s*=\s*s_menuHandlerInitialized\s*&&\s*s_gameMenus\.isInScopeMenu\(\)' `
     'Runtime state must sample FO4VR ScopeMenu explicitly instead of treating it as a generic blocking menu.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'leftHandedMode\s*!=\s*isLeft[\s\S]*SecondaryMeleeWeaponOffsetNode2\s*:\s*playerNodes->primaryWeaponOffsetNOde[\s\S]*scopeMenuOpen\s*=\s*runtime\.localScopeMenuOpen[\s\S]*leftHandDriverFrame\s*=\s*leftHandDriverFrame[\s\S]*rightHandDriverFrame\s*=\s*rightHandDriverFrame' `
-    'Two-hand authority must receive hFRIK-damped physical left/right arm-driver frames together with explicit ScopeMenu state.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'scopeHandDriverNode\s*=\s*\[playerNodes\]\(bool isLeft\)[\s\S]*return isLeft\s*\?[\s\S]*SecondaryMeleeWeaponOffsetNode2\s*:[\s\S]*primaryWeaponOffsetNOde[\s\S]*scopeMenuOpen\s*=\s*runtime\.localScopeMenuOpen[\s\S]*leftHandDriverFrame\s*=\s*leftHandDriverFrame[\s\S]*rightHandDriverFrame\s*=\s*rightHandDriverFrame' `
+    'Two-hand authority must receive fixed physical-left secondary and physical-right primary hFRIK driver frames together with explicit ScopeMenu state.'
+Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'isLeftHandedMode' `
+    'Scope authority must not reinterpret ROCK controller identity through Fallout 4 VR native handedness.'
 
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.h' 'struct NativeScopeSightAnchorSnapshot[\s\S]*weaponGenerationKey[\s\S]*equippedWeaponOwnershipKey[\s\S]*weaponFormID[\s\S]*anchorWeaponLocal[\s\S]*sightBodyCount[\s\S]*getNativeScopeSightAnchorSnapshot' `
     'Generated weapon evidence must publish a generation-, ownership-, and form-keyed native-scope sight anchor snapshot.'

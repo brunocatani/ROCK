@@ -13,6 +13,7 @@
 #include "RockUtils.h"
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
+#include "physics-interaction/weapon/EquippedWeaponHandlingRuntime.h"
 #include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/WeaponCollision.h"
@@ -82,16 +83,11 @@ namespace rock
          * the finger-pose block (right hand must stop receiving FRIK's weapon
          * pose) and the weapon-node ownership block (FRIK must stop gluing the
          * weapon to the right hand). Fail closed to right-only behavior when
-         * either is missing (older FRIK build) or the feature is disabled.
+         * either is missing (older FRIK build).
          */
-        bool ambidextrousFiringGripTakeoverAvailable()
+        bool leftFiringInfrastructureAvailable()
         {
-            // The hFRIK cooperation reuses the native left-handed node
-            // topology; combining it with the game's own left-handed setting
-            // is untested/undefined, so the feature stands down there.
-            return g_rockConfig.rockAmbidextrousFiringGripEnabled &&
-                !f4vr::isLeftHandedMode() &&
-                frik_visual_authority::canBlockPrimaryHandWeaponPose() &&
+            return frik_visual_authority::canBlockPrimaryHandWeaponPose() &&
                 frik_visual_authority::canBlockPrimaryWeaponNodeOwnership();
         }
 
@@ -1261,8 +1257,9 @@ namespace rock
         const WeaponInteractionRuntimeState& rightRuntimeState,
         weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode,
         bool firingGripProximityAuthorityEnabled,
-        const EquippedWeaponGripMode& gripMode)
+        const EquippedWeaponHandlingSettings& handlingSettings)
     {
+        _handlingSettings = handlingSettings;
         _hasSolvedWeaponTransform = false;
         _scopeHandAuthorityPublishedThisFrame = {};
         _firingGripReattachHoverInsideRadius = false;
@@ -1301,7 +1298,8 @@ namespace rock
         EquippedWeaponGripFrameInput stableFrameInput = frameInput;
         if (_persistentEquippedCarryActive && isManualOwnershipActive()) {
             /*
-             * A Pip-Boy equip has no grab press to retain PrimaryOnly. Keep
+             * A persistent fixed/selected-hand carry has no grab press to
+             * retain PrimaryOnly. Keep
              * the firing grip virtually closed until the player physically
              * holds it once; only that armed hand's later release is allowed
              * through the normal debounce/drop machinery. This preserves all
@@ -1436,8 +1434,8 @@ namespace rock
                     _scopeMenuOpenThisFrame ? "open" : "closed");
                 const auto releaseAction = weapon_two_handed_grip_math::resolveSupportReleaseManualAction(
                     weapon_two_handed_grip_math::SupportReleaseOwnershipInput{
-                        .firingGripOwnershipEnabled = gripMode.firingGripOwnershipEnabled,
-                        .primaryDetachEnabled = gripMode.primaryDetachEnabled,
+                        .firingGripOwnershipEnabled = handlingSettings.firingGripOwnershipEnabled,
+                        .primaryDetachEnabled = handlingSettings.primaryDetachEnabled,
                         .primaryGripHeld = primaryGripInput.held,
                     });
                 if (releaseAction == weapon_two_handed_grip_math::SupportReleaseManualAction::KeepPrimaryOwnership) {
@@ -1467,7 +1465,7 @@ namespace rock
                     }
                     transitionToInactive(ownsWeaponTransform());
                 }
-            } else if ((gripMode.primaryDetachEnabled || gripMode.ambidextrousHandoffEnabled) && !primaryGripInput.held &&
+            } else if ((handlingSettings.primaryDetachEnabled || handlingSettings.ambidextrousHandoffEnabled) && !primaryGripInput.held &&
                        equipped_weapon_manual_ownership_policy::shouldDeferPrimaryReleaseActionForFreshSupportGrip(_supportGripAgeFrames)) {
                 /*
                  * The firing-grip release confirmed while the support grab is
@@ -1489,12 +1487,12 @@ namespace rock
                         stableFrameInput.rightGripHeld ? "yes" : "no");
                 }
                 updateGripping(_activeWeaponNode, dt);
-            } else if (gripMode.ambidextrousHandoffEnabled && !primaryGripInput.held && tryPromoteSupportGripToFiringGrip(_activeWeaponNode)) {
+            } else if (handlingSettings.ambidextrousHandoffEnabled && !primaryGripInput.held && tryPromoteSupportGripToFiringGrip(_activeWeaponNode)) {
                 // The support hand was wrapped over the firing grip when the
                 // firing hand opened: it takes over the SAME weapon-relative
                 // grip in place (seamless hand switch, pistol shooting-cup
                 // flow). State is PrimaryOnly under the new firing hand.
-            } else if (gripMode.primaryDetachEnabled &&
+            } else if (handlingSettings.primaryDetachEnabled &&
                        _authorityMode == weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver &&
                        !primaryGripInput.held) {
                 if (transitionToPartCarry()) {
@@ -1522,7 +1520,7 @@ namespace rock
             } else if (!weapon_authority_lifecycle_policy::isWeaponContactGenerationCurrent(_activeWeaponGenerationKey, currentWeaponGenerationKey)) {
                 ROCK_LOG_INFO(Weapon, "TwoHandedGrip: clearing part-carry authority because weapon generation changed");
                 transitionToInactive(false);
-            } else if (!gripMode.primaryDetachEnabled) {
+            } else if (!handlingSettings.primaryDetachEnabled) {
                 transitionToInactive(ownsWeaponTransform());
             } else {
                 updatePartCarryGrip(
@@ -1543,7 +1541,7 @@ namespace rock
             if (!_activeWeaponNode) {
                 ROCK_LOG_INFO(Weapon, "TwoHandedGrip: clearing primary-only authority because active weapon source root is unavailable");
                 transitionToInactive(false);
-            } else if (!gripMode.firingGripOwnershipEnabled) {
+            } else if (!handlingSettings.firingGripOwnershipEnabled) {
                 transitionToInactive(false);
             } else if (supportTouchingSupport && weapon_two_handed_grip_math::canStartSupportGrip(supportTouchingSupport, supportGripHeld, supportHandHoldingObject)) {
                 transitionToGripping(interactionWeaponNode,
@@ -1558,7 +1556,7 @@ namespace rock
                     _activeWeaponNode,
                     currentEquippedWeaponOwnershipKey,
                     primaryGripInput,
-                    gripMode.primaryDetachEnabled);
+                    handlingSettings.primaryDetachEnabled);
             }
             break;
         }
@@ -2350,7 +2348,7 @@ namespace rock
                 authoredSupportAuthorityMode =
                     weapon_support_authority_policy::resolveFiringGripProximityAuthorityMode(
                         authoredSupportPalmToFiringGripDistance,
-                        g_rockConfig.rockFiringGripProximitySupportRadius);
+                        _handlingSettings.firingGripProximitySupportRadiusGameUnits);
                 authoredSupportAuthorityGateValid = true;
             }
         }
@@ -2816,11 +2814,11 @@ namespace rock
                 if (std::isfinite(supportPalmToGripDistance)) {
                     _authorityMode = weapon_support_authority_policy::resolveFiringGripProximityAuthorityMode(
                         supportPalmToGripDistance,
-                        g_rockConfig.rockFiringGripProximitySupportRadius);
+                        _handlingSettings.firingGripProximitySupportRadiusGameUnits);
                     ROCK_LOG_INFO(Weapon,
                         "TwoHandedGrip: firing-grip proximity support distance={:.2f} radius={:.2f} mode={}",
                         supportPalmToGripDistance,
-                        g_rockConfig.rockFiringGripProximitySupportRadius,
+                        _handlingSettings.firingGripProximitySupportRadiusGameUnits,
                         _authorityMode == weapon_support_authority_policy::WeaponSupportAuthorityMode::VisualOnlySupport ?
                             "visual-only" :
                             "full-authority");
@@ -3308,7 +3306,7 @@ namespace rock
 
     bool TwoHandedGrip::canBeginPrimaryOnlyGripForHand(const bool isLeft)
     {
-        return !isLeft || ambidextrousFiringGripTakeoverAvailable();
+        return !isLeft || leftFiringInfrastructureAvailable();
     }
 
     bool TwoHandedGrip::beginPrimaryOnlyGrip(
@@ -3416,7 +3414,7 @@ namespace rock
             _rightFiringHandCanonicalSource ==
             RightFiringCanonicalSource::AuthoredAnimation;
         ROCK_LOG_INFO(Weapon,
-            "TwoHandedGrip: persistent Pip-Boy left-hand carry active generation={:016X} ownership={:016X} source={} capture={}",
+            "TwoHandedGrip: persistent left-hand carry active generation={:016X} ownership={:016X} source={} capture={}",
             currentWeaponGenerationKey,
             currentEquippedWeaponOwnershipKey,
             usedAuthoredCanonical ? "authored-animation" : "native-carry",
@@ -3430,7 +3428,7 @@ namespace rock
             return;
         }
         ROCK_LOG_INFO(Weapon,
-            "TwoHandedGrip: clearing persistent Pip-Boy carry reason={}",
+            "TwoHandedGrip: clearing persistent left-hand carry reason={}",
             reason ? reason : "unknown");
         _persistentEquippedCarryActive = false;
         _persistentEquippedCarryDetachArmed = false;
@@ -3775,7 +3773,8 @@ namespace rock
         const RE::NiPoint3 firingGripWorld = weaponLocalToWorld(_primaryGripLocal, weaponNode);
         const RE::NiPoint3 delta = sub(palm, firingGripWorld);
         const float distance = std::sqrt(dot(delta, delta));
-        return std::isfinite(distance) && distance <= g_rockConfig.rockWeaponFiringGripReattachRadius;
+        return std::isfinite(distance) &&
+               distance <= _handlingSettings.firingGripReattachRadiusGameUnits;
     }
 
     bool TwoHandedGrip::tryComputePalmToGripDistanceForHand(RE::NiNode* weaponNode, const bool handIsLeft, float& outDistance) const
@@ -4020,7 +4019,9 @@ namespace rock
                 &supportHandContact },
         };
         for (const FiringGripReattachCandidate& candidate : reattachCandidates) {
-            if (candidate.isLeft != firingHandIsLeft && !ambidextrousFiringGripTakeoverAvailable()) {
+            if (candidate.isLeft != firingHandIsLeft &&
+                (!_handlingSettings.ambidextrousHandoffEnabled ||
+                    !canBeginPrimaryOnlyGripForHand(candidate.isLeft))) {
                 continue;
             }
             if (!candidate.eligible || partGrip(candidate.isLeft).active) {
@@ -4033,7 +4034,7 @@ namespace rock
             const bool reattachRequested = weapon_two_handed_grip_math::shouldReattachFiringGripOnGrab(
                 candidate.gripHeld,
                 palmToGripDistance,
-                g_rockConfig.rockWeaponFiringGripReattachRadius) ||
+                _handlingSettings.firingGripReattachRadiusGameUnits) ||
                 (candidate.gripHeld &&
                     candidate.contact->acquisitionSource ==
                         WeaponInteractionAcquisitionSource::ProximityProbe &&
@@ -4043,7 +4044,7 @@ namespace rock
                 weapon_two_handed_grip_math::isFiringGripReattachHoverCandidate(
                     candidate.gripHeld,
                     palmToGripDistance,
-                    g_rockConfig.rockWeaponFiringGripReattachRadius)) {
+                    _handlingSettings.firingGripReattachRadiusGameUnits)) {
                 _firingGripReattachHoverInsideRadius = true;
                 _firingGripReattachHoverHandIsLeft = candidate.isLeft;
             }
@@ -5560,6 +5561,8 @@ namespace rock
         RE::NiTransform& outHandWeaponLocal,
         const bool logDiagnostic)
     {
+        const auto& handlingSettings =
+            equipped_weapon_handling_runtime::current();
         if (!isFiniteTransform(canonicalRightHandWeaponLocal) ||
             !std::isfinite(firingGripWeaponLocal.x) ||
             !std::isfinite(firingGripWeaponLocal.y) ||
@@ -5657,8 +5660,10 @@ namespace rock
          * anchored per weapon below, so a translation here would fight it.
          */
         constexpr float kDegreesToRadiansLocal = 0.017453292519943295769f;
-        const float aimYawRadians = g_rockConfig.rockLeftFiringAimYawDegrees * kDegreesToRadiansLocal;
-        const float aimPitchRadians = g_rockConfig.rockLeftFiringAimPitchDegrees * kDegreesToRadiansLocal;
+        const float aimYawRadians =
+            handlingSettings.leftFiringAimYawDegrees * kDegreesToRadiansLocal;
+        const float aimPitchRadians =
+            handlingSettings.leftFiringAimPitchDegrees * kDegreesToRadiansLocal;
         if (aimYawRadians != 0.0f || aimPitchRadians != 0.0f) {
             RE::NiTransform yawTrim{};
             yawTrim.MakeIdentity();
@@ -5713,9 +5718,9 @@ namespace rock
         const RE::NiPoint3 gripInRightHand = transform_math::localPointToWorld(
             transform_math::invertTransform(canonicalRightHandWeaponLocal), firingGripWeaponLocal);
         const RE::NiPoint3 gripTargetInLeftHand{
-            gripInRightHand.x + g_rockConfig.rockLeftFiringAimOffsetXGameUnits,
-            gripInRightHand.y + g_rockConfig.rockLeftFiringAimOffsetYGameUnits,
-            -gripInRightHand.z + g_rockConfig.rockLeftFiringAimOffsetZGameUnits
+            gripInRightHand.x + handlingSettings.leftFiringAimOffsetXGameUnits,
+            gripInRightHand.y + handlingSettings.leftFiringAimOffsetYGameUnits,
+            -gripInRightHand.z + handlingSettings.leftFiringAimOffsetZGameUnits
         };
         if (std::isfinite(gripTargetInLeftHand.x) && std::isfinite(gripTargetInLeftHand.y) && std::isfinite(gripTargetInLeftHand.z)) {
             RE::NiTransform anchoredWeaponInLeftHand = transform_math::invertTransform(mirroredHandWeaponLocal);
@@ -5775,11 +5780,12 @@ namespace rock
 
     bool TwoHandedGrip::tryPromoteSupportGripToFiringGrip(RE::NiNode* weaponNode)
     {
-        if (!weaponNode || !ambidextrousFiringGripTakeoverAvailable()) {
+        const bool supportHandIsLeft = !_firingHandIsLeft;
+        if (!weaponNode || !_handlingSettings.ambidextrousHandoffEnabled ||
+            !canBeginPrimaryOnlyGripForHand(supportHandIsLeft)) {
             return false;
         }
 
-        const bool supportHandIsLeft = !_firingHandIsLeft;
         const WeaponPartGrip& supportGrip = partGrip(supportHandIsLeft);
         // AttachOnly glue never inherits the firing grip. Likewise, an
         // authored non-touch seat captured under VisualOnlySupport stays
@@ -5806,7 +5812,8 @@ namespace rock
         const RE::NiPoint3 gripDelta = sub(supportGripWorld, firingGripWorld);
         const float supportGripToFiringGripDistance = std::sqrt(dot(gripDelta, gripDelta));
         if (!std::isfinite(supportGripToFiringGripDistance) ||
-            supportGripToFiringGripDistance > g_rockConfig.rockFiringGripPromotionRadius) {
+            supportGripToFiringGripDistance >
+                _handlingSettings.firingGripPromotionRadiusGameUnits) {
             return false;
         }
 

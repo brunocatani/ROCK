@@ -158,7 +158,8 @@ namespace
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::AnimationPhases) |
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::EquippedWeaponGripState) |
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::HandVisualAuthority) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::NativeAnimationRuntimeProvider);
+        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::NativeAnimationRuntimeProvider) |
+        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::EquippedWeaponHandlingAuthority);
     constexpr std::uint32_t kProviderFeatureBitsV1 =
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::FrameCallbacks) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::LifecycleFields) |
@@ -184,7 +185,8 @@ namespace
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::AnimationPhases) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::EquippedWeaponGripState) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::HandVisualAuthority) |
-        static_cast<std::uint32_t>(RockProviderFeatureBitV1::NativeAnimationRuntimeProvider);
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::NativeAnimationRuntimeProvider) |
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::EquippedWeaponHandlingAuthority);
     constexpr std::uint32_t kImplementedForceGrabFlagsV1 =
         static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::UsePreferredGrabPointGame);
     constexpr std::uint32_t kImplementedForceReleaseFlagsV1 =
@@ -310,6 +312,17 @@ namespace
     RockProviderNativeAnimationRuntimePublicationV1
         s_nativeAnimationRuntimePublication{};
     bool s_hasNativeAnimationRuntimePublication{ false };
+
+    struct EquippedWeaponHandlingAuthoritySlot
+    {
+        bool active{ false };
+        std::uint64_t ownerToken{ 0 };
+        std::uint64_t expiresAfterFrame{ 0 };
+        RockProviderEquippedWeaponHandlingRequestV1 request{};
+    };
+
+    std::mutex s_equippedWeaponHandlingAuthorityMutex;
+    EquippedWeaponHandlingAuthoritySlot s_equippedWeaponHandlingAuthority{};
 
     struct WeaponPartTargetSlot
     {
@@ -478,9 +491,9 @@ namespace
 
     RockProviderHand ROCK_PROVIDER_CALL apiGetPrimaryHandV1()
     {
-        // The primary hand is whichever hand currently owns weapon firing:
-        // ROCK's runtime firing hand (left-hand fire) or the game handedness.
-        const bool primaryIsLeft = f4vr::isLeftHandedMode() ||
+        // ROCK's firing role is the only primary/offhand authority. Native
+        // Fallout/FRIK handedness never changes ROCK controller identity.
+        const bool primaryIsLeft =
             s_equippedWeaponFiringHandIsLeft.load(std::memory_order_acquire);
         return primaryIsLeft ? RockProviderHand::Left : RockProviderHand::Right;
     }
@@ -712,6 +725,24 @@ namespace
             s_nativeAnimationRuntimeProviderOwner = 0;
             s_nativeAnimationRuntimePublication = {};
             s_hasNativeAnimationRuntimePublication = false;
+        }
+    }
+
+    void clearEquippedWeaponHandlingAuthorityForOwnerLocked(
+        const std::uint64_t ownerToken)
+    {
+        if (s_equippedWeaponHandlingAuthority.active &&
+            s_equippedWeaponHandlingAuthority.ownerToken == ownerToken) {
+            s_equippedWeaponHandlingAuthority = {};
+        }
+    }
+
+    void pruneExpiredEquippedWeaponHandlingAuthorityLocked(
+        const std::uint64_t frameIndex)
+    {
+        if (s_equippedWeaponHandlingAuthority.active &&
+            frameIndex >= s_equippedWeaponHandlingAuthority.expiresAfterFrame) {
+            s_equippedWeaponHandlingAuthority = {};
         }
     }
 
@@ -1322,7 +1353,8 @@ namespace
                 s_interactionCommandMutex,
                 s_handInputSuppressionMutex,
                 s_weaponPartMutex,
-                s_nativeAnimationAuthorityMutex);
+                s_nativeAnimationAuthorityMutex,
+                s_equippedWeaponHandlingAuthorityMutex);
             auto* slot = findConsumerSlotLocked(ownerToken);
             if (!slot) {
                 return RockProviderResultV1::OwnerNotRegistered;
@@ -1333,6 +1365,7 @@ namespace
             clearWeaponPartTargetsForOwnerLocked(ownerToken);
             clearWeaponPartDrivesForOwnerLocked(ownerToken);
             clearNativeAnimationAuthorityForOwnerLocked(ownerToken);
+            clearEquippedWeaponHandlingAuthorityForOwnerLocked(ownerToken);
         }
 
         {
@@ -1390,6 +1423,9 @@ namespace
         outLimits->maxHandVisualAuthorityPublications =
             static_cast<std::uint32_t>(s_handVisualAuthoritySlots.size());
         outLimits->maxNativeAnimationRuntimeProviders = 1;
+        outLimits->maxEquippedWeaponHandlingAuthorities = 1;
+        outLimits->maxEquippedWeaponHandlingLeaseFrames =
+            ROCK_PROVIDER_MAX_EQUIPPED_WEAPON_HANDLING_LEASE_FRAMES_V1;
         return true;
     }
 
@@ -2109,6 +2145,168 @@ namespace
         return RockProviderResultV1::Ok;
     }
 
+    [[nodiscard]] bool equippedWeaponHandlingRequestValuesValid(
+        const RockProviderEquippedWeaponHandlingRequestV1& request)
+    {
+        const auto inRange = [](const float value, const float minimum, const float maximum) {
+            return std::isfinite(value) && value >= minimum && value <= maximum;
+        };
+        return inRange(request.gripZoneEquipRadiusGameUnits, 0.25f, 30.0f) &&
+               inRange(request.gripZoneEquipSettleSeconds, 0.0f, 5.0f) &&
+               inRange(request.firingGripReattachRadiusGameUnits, 0.25f, 30.0f) &&
+               inRange(request.gripZoneHoverHapticIntensity, 0.0f, 1.0f) &&
+               inRange(request.firingGripProximitySupportRadiusGameUnits, 0.25f, 30.0f) &&
+               inRange(request.weaponGripHapticDurationSeconds, 0.01f, 0.50f) &&
+               inRange(request.firingGripAttachHapticIntensity, 0.0f, 1.0f) &&
+               inRange(request.firingGripDetachHapticIntensity, 0.0f, 1.0f) &&
+               inRange(request.supportGripHapticIntensity, 0.0f, 1.0f) &&
+               inRange(request.firingGripPromotionRadiusGameUnits, 0.25f, 30.0f) &&
+               inRange(request.leftFiringAimYawDegrees, -30.0f, 30.0f) &&
+               inRange(request.leftFiringAimPitchDegrees, -30.0f, 30.0f) &&
+               inRange(request.leftFiringAimOffsetGameUnits[0], -15.0f, 15.0f) &&
+               inRange(request.leftFiringAimOffsetGameUnits[1], -15.0f, 15.0f) &&
+               inRange(request.leftFiringAimOffsetGameUnits[2], -15.0f, 15.0f) &&
+               inRange(request.equipVisualBridgeTimeoutSeconds, 0.25f, 5.0f) &&
+               inRange(request.equipVisualBridgeBlendSeconds, 0.0f, 1.0f);
+    }
+
+    RockProviderResultV1 ROCK_PROVIDER_CALL apiSetEquippedWeaponHandlingAuthorityV1(
+        const std::uint64_t ownerToken,
+        const RockProviderEquippedWeaponHandlingRequestV1* request)
+    {
+        if (ownerToken == 0 || !request) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        if (request->size != sizeof(RockProviderEquippedWeaponHandlingRequestV1)) {
+            return RockProviderResultV1::InvalidSize;
+        }
+        if (request->version == 0 || request->version > ROCK_PROVIDER_API_VERSION) {
+            return RockProviderResultV1::UnsupportedVersion;
+        }
+        constexpr std::uint32_t implementedFlags =
+            static_cast<std::uint32_t>(RockProviderEquippedWeaponHandlingFlagV1::FiringGripOwnership) |
+            static_cast<std::uint32_t>(RockProviderEquippedWeaponHandlingFlagV1::PrimaryDetach) |
+            static_cast<std::uint32_t>(RockProviderEquippedWeaponHandlingFlagV1::AmbidextrousHandoff) |
+            static_cast<std::uint32_t>(RockProviderEquippedWeaponHandlingFlagV1::GripZoneEquip) |
+            static_cast<std::uint32_t>(RockProviderEquippedWeaponHandlingFlagV1::GripZoneHoverHaptics) |
+            static_cast<std::uint32_t>(RockProviderEquippedWeaponHandlingFlagV1::FiringGripProximitySupport) |
+            static_cast<std::uint32_t>(RockProviderEquippedWeaponHandlingFlagV1::EquippedWeaponShoulderStash) |
+            static_cast<std::uint32_t>(RockProviderEquippedWeaponHandlingFlagV1::PipboyTriggerHandEquip) |
+            static_cast<std::uint32_t>(RockProviderEquippedWeaponHandlingFlagV1::EquipVisualBridge);
+        const auto ownershipFlag = static_cast<std::uint32_t>(
+            RockProviderEquippedWeaponHandlingFlagV1::FiringGripOwnership);
+        const auto ownershipDependentFlags =
+            static_cast<std::uint32_t>(RockProviderEquippedWeaponHandlingFlagV1::PrimaryDetach) |
+            static_cast<std::uint32_t>(RockProviderEquippedWeaponHandlingFlagV1::AmbidextrousHandoff) |
+            static_cast<std::uint32_t>(RockProviderEquippedWeaponHandlingFlagV1::GripZoneEquip) |
+            static_cast<std::uint32_t>(RockProviderEquippedWeaponHandlingFlagV1::EquippedWeaponShoulderStash) |
+            static_cast<std::uint32_t>(RockProviderEquippedWeaponHandlingFlagV1::PipboyTriggerHandEquip);
+        const auto primaryDetachFlag = static_cast<std::uint32_t>(
+            RockProviderEquippedWeaponHandlingFlagV1::PrimaryDetach);
+        const auto shoulderStashFlag = static_cast<std::uint32_t>(
+            RockProviderEquippedWeaponHandlingFlagV1::EquippedWeaponShoulderStash);
+        if (request->flags == 0 ||
+            (request->flags & ~implementedFlags) != 0 ||
+            request->leaseFrames == 0 ||
+            ((request->flags & ownershipDependentFlags) != 0 &&
+                (request->flags & ownershipFlag) == 0) ||
+            ((request->flags & shoulderStashFlag) != 0 &&
+                (request->flags & primaryDetachFlag) == 0) ||
+            !equippedWeaponHandlingRequestValuesValid(*request)) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        const auto generationResult = validateGenerationGuards(
+            request->worldGeneration,
+            request->skeletonGeneration,
+            request->providerGeneration);
+        if (generationResult != RockProviderResultV1::Ok) {
+            return generationResult;
+        }
+
+        const auto frameIndex = currentProviderFrameIndex();
+        std::scoped_lock lock(
+            s_consumerMutex,
+            s_equippedWeaponHandlingAuthorityMutex);
+        const auto ownerResult = validateRegisteredOwnerCapabilityLocked(
+            ownerToken,
+            RockProviderConsumerCapabilityV1::EquippedWeaponHandlingAuthority);
+        if (ownerResult != RockProviderResultV1::Ok) {
+            return ownerResult;
+        }
+        pruneExpiredEquippedWeaponHandlingAuthorityLocked(frameIndex);
+        if (s_equippedWeaponHandlingAuthority.active &&
+            s_equippedWeaponHandlingAuthority.ownerToken != ownerToken) {
+            return RockProviderResultV1::OwnerConflict;
+        }
+
+        const auto leaseFrames = (std::min)(
+            request->leaseFrames,
+            ROCK_PROVIDER_MAX_EQUIPPED_WEAPON_HANDLING_LEASE_FRAMES_V1);
+        s_equippedWeaponHandlingAuthority.active = true;
+        s_equippedWeaponHandlingAuthority.ownerToken = ownerToken;
+        s_equippedWeaponHandlingAuthority.expiresAfterFrame =
+            frameIndex + leaseFrames;
+        s_equippedWeaponHandlingAuthority.request = *request;
+        s_equippedWeaponHandlingAuthority.request.size =
+            sizeof(RockProviderEquippedWeaponHandlingRequestV1);
+        s_equippedWeaponHandlingAuthority.request.version =
+            ROCK_PROVIDER_API_VERSION;
+        s_equippedWeaponHandlingAuthority.request.leaseFrames = leaseFrames;
+        return RockProviderResultV1::Ok;
+    }
+
+    RockProviderResultV1 ROCK_PROVIDER_CALL apiClearEquippedWeaponHandlingAuthorityV1(
+        const std::uint64_t ownerToken)
+    {
+        if (ownerToken == 0) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        std::scoped_lock lock(
+            s_consumerMutex,
+            s_equippedWeaponHandlingAuthorityMutex);
+        const auto ownerResult = validateRegisteredOwnerCapabilityLocked(
+            ownerToken,
+            RockProviderConsumerCapabilityV1::EquippedWeaponHandlingAuthority);
+        if (ownerResult != RockProviderResultV1::Ok) {
+            return ownerResult;
+        }
+        if (s_equippedWeaponHandlingAuthority.active &&
+            s_equippedWeaponHandlingAuthority.ownerToken != ownerToken) {
+            return RockProviderResultV1::OwnerConflict;
+        }
+        clearEquippedWeaponHandlingAuthorityForOwnerLocked(ownerToken);
+        return RockProviderResultV1::Ok;
+    }
+
+    bool ROCK_PROVIDER_CALL apiGetEquippedWeaponHandlingStateV1(
+        RockProviderEquippedWeaponHandlingStateV1* outState)
+    {
+        if (!outState ||
+            outState->size != sizeof(RockProviderEquippedWeaponHandlingStateV1)) {
+            return false;
+        }
+        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        if (!pi || !pi->isInitialized() ||
+            !pi->queryProviderEquippedWeaponHandlingStateV1(*outState)) {
+            return false;
+        }
+
+        const auto frameIndex = currentProviderFrameIndex();
+        std::scoped_lock lock(s_equippedWeaponHandlingAuthorityMutex);
+        pruneExpiredEquippedWeaponHandlingAuthorityLocked(frameIndex);
+        if (s_equippedWeaponHandlingAuthority.active) {
+            outState->authorityFlags =
+                s_equippedWeaponHandlingAuthority.request.flags;
+            outState->ownerToken =
+                s_equippedWeaponHandlingAuthority.ownerToken;
+            outState->expiresAfterFrame =
+                s_equippedWeaponHandlingAuthority.expiresAfterFrame;
+            outState->runtimeFlags |= static_cast<std::uint32_t>(
+                RockProviderEquippedWeaponHandlingRuntimeFlagV1::AuthorityActive);
+        }
+        return true;
+    }
+
     RockProviderResultV1 ROCK_PROVIDER_CALL apiSetWeaponPartTargetsV1(
         std::uint64_t ownerToken,
         const RockProviderWeaponPartTargetV1* targets,
@@ -2496,6 +2694,9 @@ namespace
         .setHandVisualAuthorityV1 = &apiSetHandVisualAuthorityV1,
         .clearHandVisualAuthorityV1 = &apiClearHandVisualAuthorityV1,
         .publishNativeAnimationRuntimeV1 = &apiPublishNativeAnimationRuntimeV1,
+        .setEquippedWeaponHandlingAuthorityV1 = &apiSetEquippedWeaponHandlingAuthorityV1,
+        .clearEquippedWeaponHandlingAuthorityV1 = &apiClearEquippedWeaponHandlingAuthorityV1,
+        .getEquippedWeaponHandlingStateV1 = &apiGetEquippedWeaponHandlingStateV1,
     };
 }
 
@@ -2674,6 +2875,10 @@ namespace rock::provider
                 true);
             clearNativeAnimationRuntimePublicationForOwner(slot.ownerToken);
             {
+                std::scoped_lock lock(s_equippedWeaponHandlingAuthorityMutex);
+                clearEquippedWeaponHandlingAuthorityForOwnerLocked(slot.ownerToken);
+            }
+            {
                 std::scoped_lock lock(s_nativeAnimationAuthorityMutex);
                 clearNativeAnimationAuthorityForOwnerLocked(slot.ownerToken);
             }
@@ -2716,6 +2921,10 @@ namespace rock::provider
             s_nativeAnimationRuntimeProviderOwner = 0;
             s_nativeAnimationRuntimePublication = {};
             s_hasNativeAnimationRuntimePublication = false;
+        }
+        {
+            std::scoped_lock lock(s_equippedWeaponHandlingAuthorityMutex);
+            s_equippedWeaponHandlingAuthority = {};
         }
         s_offhandReservation.store(static_cast<std::uint32_t>(RockProviderOffhandReservation::Normal), std::memory_order_release);
         s_offhandReservationOwner.store(0, std::memory_order_release);
@@ -2820,6 +3029,20 @@ namespace rock::provider
     void setEquippedWeaponFiringHandIsLeft(const bool isLeft)
     {
         s_equippedWeaponFiringHandIsLeft.store(isLeft, std::memory_order_release);
+    }
+
+    bool getEquippedWeaponHandlingAuthorityV1(
+        RockProviderEquippedWeaponHandlingRequestV1& outRequest)
+    {
+        outRequest = {};
+        const auto frameIndex = currentProviderFrameIndex();
+        std::scoped_lock lock(s_equippedWeaponHandlingAuthorityMutex);
+        pruneExpiredEquippedWeaponHandlingAuthorityLocked(frameIndex);
+        if (!s_equippedWeaponHandlingAuthority.active) {
+            return false;
+        }
+        outRequest = s_equippedWeaponHandlingAuthority.request;
+        return true;
     }
 
     std::uint32_t currentHandInputSuppressionFlagsV1(RockProviderHand hand)

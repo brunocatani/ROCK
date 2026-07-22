@@ -614,13 +614,6 @@ namespace rock::native_idle_grip_preharvest
             releaseJob(state);
         }
 
-        void finishWithoutPublishing(Runtime& state, const char* reason)
-        {
-            ROCK_LOG_DEBUG(Animation, "Native idle-grip preharvest released without publication formID={:08X} phase={} reason={}", state.job.weaponFormId,
-                static_cast<unsigned>(state.job.phase), reason ? reason : "unknown");
-            releaseJob(state);
-        }
-
         [[nodiscard]] RE::BSTSmartPointer<RE::TBO_InstanceData> resolveInstanceData(RE::TESObjectREFR* reference, const RE::TESObjectWEAP* weapon)
         {
             RE::BSTSmartPointer<RE::TBO_InstanceData> instanceData{};
@@ -1244,11 +1237,6 @@ namespace rock::native_idle_grip_preharvest
                     return false;
                 }
 
-                if (f4vr::isLeftHandedMode()) {
-                    finishWithoutPublishing(state, "authoredGripNoLongerEligible");
-                    return true;
-                }
-
                 if (player->race != job.race || f4vr::isInPowerArmor() != job.inPowerArmor) {
                     failJob(state, "playerRaceOrPowerArmorChanged");
                     return true;
@@ -1291,11 +1279,6 @@ namespace rock::native_idle_grip_preharvest
             if (!state.native.isAnimationSubGraphLoaded(&holder->animationGraphManager, &job.subgraphHandles, &priority)) {
                 return false;
             }
-            if (f4vr::isLeftHandedMode()) {
-                finishWithoutPublishing(state, "authoredGripNoLongerEligible");
-                return true;
-            }
-
             RE::NiTransform handInWeapon{};
             authored_weapon_grip_library::FiringFingerPose rightFiringFingerPose{};
             std::array<char, 260> clipPath{};
@@ -1405,7 +1388,6 @@ namespace rock::native_idle_grip_preharvest
                 (void)progressJob(state);
             }
             return state.job.phase == Phase::Idle &&
-                   !f4vr::isLeftHandedMode() &&
                    resolveNativeFunctions(state);
         }
 

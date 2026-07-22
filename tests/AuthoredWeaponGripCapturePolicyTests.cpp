@@ -97,11 +97,6 @@ int main()
     }());
     static_assert([=] {
         auto input = eligible;
-        input.leftHandedMode = true;
-        return !shouldApplyAuthoredPrimaryFiringGrip(input);
-    }());
-    static_assert([=] {
-        auto input = eligible;
         input.rockFiringHandIsLeft = true;
         return !shouldApplyAuthoredPrimaryFiringGrip(input);
     }());

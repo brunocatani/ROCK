@@ -206,8 +206,8 @@ namespace rock::equipped_weapon_manual_ownership_policy
 
     struct FiringGripModeAvailability
     {
-        bool realisticWeaponHandlingEnabled{ false };
-        bool ambidextrousFiringAvailable{ false };
+        bool primaryDetachEnabled{ false };
+        bool ambidextrousHandoffAvailable{ false };
     };
 
     struct HeldWeaponEquipOwnershipInput
@@ -219,19 +219,19 @@ namespace rock::equipped_weapon_manual_ownership_policy
 
     [[nodiscard]] inline constexpr bool firingGripOwnershipEnabled(const FiringGripModeAvailability& modes) noexcept
     {
-        return modes.realisticWeaponHandlingEnabled || modes.ambidextrousFiringAvailable;
+        return modes.primaryDetachEnabled || modes.ambidextrousHandoffAvailable;
     }
 
     [[nodiscard]] inline constexpr bool shouldStartHeldWeaponEquipOwnership(const HeldWeaponEquipOwnershipInput& input) noexcept
     {
         return input.gripHeld &&
-               (input.modes.realisticWeaponHandlingEnabled ||
-                   (input.handIsLeft && input.modes.ambidextrousFiringAvailable));
+               (input.modes.primaryDetachEnabled ||
+                   (input.handIsLeft && input.modes.ambidextrousHandoffAvailable));
     }
 
-    [[nodiscard]] inline constexpr bool canSettleEquipInGripZone(bool realisticWeaponHandlingEnabled) noexcept
+    [[nodiscard]] inline constexpr bool canSettleEquipInGripZone(bool gripZoneEquipEnabled) noexcept
     {
-        return realisticWeaponHandlingEnabled;
+        return gripZoneEquipEnabled;
     }
 
     [[nodiscard]] inline constexpr bool shouldRetainPrimaryOnlyOwnership(

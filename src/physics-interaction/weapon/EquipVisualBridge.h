@@ -67,6 +67,8 @@ namespace rock
             // capture the pending primary-only grip start consumes.
             bool hasFiringHandWeaponLocal = false;
             RE::NiTransform firingHandWeaponLocal{};
+            float timeoutSeconds = 2.0f;
+            float blendSeconds = 0.15f;
         };
 
         EquipVisualBridge() = default;

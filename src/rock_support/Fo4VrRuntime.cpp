@@ -117,7 +117,7 @@ namespace rock::fo4vr
         if (!nodes) {
             return nullptr;
         }
-        return isLeftHandedMode() ? nodes->primaryWandNode : nodes->SecondaryWandNode;
+        return nodes->SecondaryWandNode;
     }
 
     RE::NiNode* getRightHandNode() noexcept
@@ -126,7 +126,7 @@ namespace rock::fo4vr
         if (!nodes) {
             return nullptr;
         }
-        return isLeftHandedMode() ? nodes->SecondaryWandNode : nodes->primaryWandNode;
+        return nodes->primaryWandNode;
     }
 
     bool IsWeaponDrawn() noexcept
@@ -164,12 +164,6 @@ namespace rock::fo4vr
         }
         const auto* armor = static_cast<const RE::TESObjectARMO*>(equippedForm);
         return hasKeyword(armor, kPowerArmorKeywordFormId) || hasKeyword(armor, kPowerArmorFrameKeywordFormId);
-    }
-
-    bool isLeftHandedMode() noexcept
-    {
-        static const auto* leftHandedMode = reinterpret_cast<const bool*>(REL::Offset(0x37D5E48).address());
-        return leftHandedMode && *leftHandedMode;
     }
 
     RE::Setting* getIniSetting(const char* name) noexcept

@@ -50,6 +50,7 @@ namespace rock::provider
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_EMITTERS_V1 = 32;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_NATIVE_ANIMATION_AUTHORITY_LEASE_FRAMES_V1 = 1200;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_ANIMATION_PHASE_CALLBACKS_V1 = 16;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EQUIPPED_WEAPON_HANDLING_LEASE_FRAMES_V1 = 120;
     inline constexpr std::uint16_t ROCK_PROVIDER_ALL_FINGER_LOCAL_TRANSFORMS_V1 = 0x7FFFu;
 
     enum class RockProviderHand : std::uint32_t
@@ -238,6 +239,7 @@ namespace rock::provider
         EquippedWeaponGripState = 1u << 9,
         HandVisualAuthority = 1u << 10,
         NativeAnimationRuntimeProvider = 1u << 11,
+        EquippedWeaponHandlingAuthority = 1u << 12,
     };
 
     enum class RockProviderFeatureBitV1 : std::uint32_t
@@ -268,6 +270,7 @@ namespace rock::provider
         EquippedWeaponGripState = 1u << 24,
         HandVisualAuthority = 1u << 25,
         NativeAnimationRuntimeProvider = 1u << 26,
+        EquippedWeaponHandlingAuthority = 1u << 27,
     };
 
     /*
@@ -331,6 +334,40 @@ namespace rock::provider
         WeaponWorldValid = 1u << 4,
         RightHandInWeaponValid = 1u << 5,
         LeftHandInWeaponValid = 1u << 6,
+    };
+
+    /*
+     * Owner-bound policy supplied by a standalone equipped-weapon addon.
+     * ROCK remains the low-level hand, weapon-node, physics, input-routing,
+     * and inventory executor. The consumer selects which optional behaviors
+     * are active and supplies their bounded tuning without changing physical
+     * controller identity or Fallout 4 VR's native handedness setting.
+     */
+    enum class RockProviderEquippedWeaponHandlingFlagV1 : std::uint32_t
+    {
+        None = 0,
+        FiringGripOwnership = 1u << 0,
+        PrimaryDetach = 1u << 1,
+        AmbidextrousHandoff = 1u << 2,
+        GripZoneEquip = 1u << 3,
+        GripZoneHoverHaptics = 1u << 4,
+        FiringGripProximitySupport = 1u << 5,
+        EquippedWeaponShoulderStash = 1u << 6,
+        PipboyTriggerHandEquip = 1u << 7,
+        EquipVisualBridge = 1u << 8,
+    };
+
+    enum class RockProviderEquippedWeaponHandlingRuntimeFlagV1 : std::uint32_t
+    {
+        None = 0,
+        AuthorityActive = 1u << 0,
+        FixedHandLeft = 1u << 1,
+        FiringHandLeft = 1u << 2,
+        LeftFiringInfrastructureAvailable = 1u << 3,
+        ManualOwnershipActive = 1u << 4,
+        PartCarryActive = 1u << 5,
+        FiringGripOccupied = 1u << 6,
+        WeaponPresent = 1u << 7,
     };
 
     enum class RockProviderHandVisualAuthorityFlagV1 : std::uint32_t
@@ -614,6 +651,13 @@ namespace rock::provider
         return (flags & static_cast<std::uint32_t>(flag)) != 0;
     }
 
+    [[nodiscard]] inline constexpr bool hasEquippedWeaponHandlingFlagV1(
+        std::uint32_t flags,
+        RockProviderEquippedWeaponHandlingFlagV1 flag)
+    {
+        return (flags & static_cast<std::uint32_t>(flag)) != 0;
+    }
+
     struct RockProviderConsumerRegistrationV1
     {
         std::uint32_t size{ sizeof(RockProviderConsumerRegistrationV1) };
@@ -651,7 +695,8 @@ namespace rock::provider
         std::uint32_t maxAnimationPhaseCallbacks{ 0 };
         std::uint32_t maxHandVisualAuthorityPublications{ 0 };
         std::uint32_t maxNativeAnimationRuntimeProviders{ 0 };
-        std::uint32_t reserved[2]{};
+        std::uint32_t maxEquippedWeaponHandlingAuthorities{ 0 };
+        std::uint32_t maxEquippedWeaponHandlingLeaseFrames{ 0 };
     };
 
     struct RockProviderForceGrabRequestV1
@@ -1167,6 +1212,54 @@ namespace rock::provider
     };
 
     /*
+     * leaseFrames must be non-zero and is clamped to the public maximum.
+     * A rolling lease fails closed to ROCK's fixed configured firing hand if
+     * the addon stops publishing, unregisters, faults, or loses the provider.
+     * Generation guards use the established optional-zero V1 contract.
+     */
+    struct RockProviderEquippedWeaponHandlingRequestV1
+    {
+        std::uint32_t size{ sizeof(RockProviderEquippedWeaponHandlingRequestV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint32_t flags{ 0 };
+        std::uint32_t leaseFrames{ 0 };
+        float gripZoneEquipRadiusGameUnits{ 3.0f };
+        float gripZoneEquipSettleSeconds{ 0.15f };
+        float firingGripReattachRadiusGameUnits{ 3.0f };
+        float gripZoneHoverHapticIntensity{ 0.75f };
+        float firingGripProximitySupportRadiusGameUnits{ 6.0f };
+        float weaponGripHapticDurationSeconds{ 0.10f };
+        float firingGripAttachHapticIntensity{ 0.85f };
+        float firingGripDetachHapticIntensity{ 0.30f };
+        float supportGripHapticIntensity{ 0.50f };
+        float firingGripPromotionRadiusGameUnits{ 5.0f };
+        float leftFiringAimYawDegrees{ 0.0f };
+        float leftFiringAimPitchDegrees{ 0.0f };
+        float leftFiringAimOffsetGameUnits[3]{};
+        float equipVisualBridgeTimeoutSeconds{ 2.0f };
+        float equipVisualBridgeBlendSeconds{ 0.15f };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t providerGeneration{ 0 };
+        std::uint32_t reserved[8]{};
+    };
+
+    struct RockProviderEquippedWeaponHandlingStateV1
+    {
+        std::uint32_t size{ sizeof(RockProviderEquippedWeaponHandlingStateV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint32_t authorityFlags{ 0 };
+        std::uint32_t runtimeFlags{ 0 };
+        std::uint64_t ownerToken{ 0 };
+        std::uint64_t expiresAfterFrame{ 0 };
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint32_t weaponFormId{ 0 };
+        RockProviderHand fixedFiringHand{ RockProviderHand::Right };
+        RockProviderHand currentFiringHand{ RockProviderHand::Right };
+        std::uint32_t reserved[9]{};
+    };
+
+    /*
      * A consumer publishes one hand world target and/or an exact 15-bone
      * finger-local pose through ROCK's FRIK authority bridge. Set/clear only
      * from ROCK's animation/frame callbacks on the game thread; wrong-thread
@@ -1419,6 +1512,13 @@ namespace rock::provider
         RockProviderResultV1(ROCK_PROVIDER_CALL* publishNativeAnimationRuntimeV1)(
             std::uint64_t ownerToken,
             const RockProviderNativeAnimationRuntimePublicationV1* publication);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* setEquippedWeaponHandlingAuthorityV1)(
+            std::uint64_t ownerToken,
+            const RockProviderEquippedWeaponHandlingRequestV1* request);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* clearEquippedWeaponHandlingAuthorityV1)(
+            std::uint64_t ownerToken);
+        bool(ROCK_PROVIDER_CALL* getEquippedWeaponHandlingStateV1)(
+            RockProviderEquippedWeaponHandlingStateV1* outState);
 
         [[nodiscard]] static int initialize(
             const std::uint32_t minVersion = ROCK_PROVIDER_API_VERSION,
@@ -1503,6 +1603,8 @@ namespace rock::provider
         offsetof(RockProviderApi, clearHandVisualAuthorityV1) + sizeof(std::declval<RockProviderApi>().clearHandVisualAuthorityV1));
     inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_NATIVE_ANIMATION_RUNTIME_PROVIDER_TABLE_BYTES = static_cast<std::uint32_t>(
         offsetof(RockProviderApi, publishNativeAnimationRuntimeV1) + sizeof(std::declval<RockProviderApi>().publishNativeAnimationRuntimeV1));
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_EQUIPPED_WEAPON_HANDLING_AUTHORITY_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, getEquippedWeaponHandlingStateV1) + sizeof(std::declval<RockProviderApi>().getEquippedWeaponHandlingStateV1));
 
     [[nodiscard]] inline bool queryProviderLimitsV1(RockProviderLimitsV1& outLimits)
     {
@@ -1683,6 +1785,18 @@ namespace rock::provider
                hasFeatureBitV1(limits.featureBits, RockProviderFeatureBitV1::NativeAnimationRuntimeProvider);
     }
 
+    [[nodiscard]] inline bool supportsEquippedWeaponHandlingAuthorityV1(const RockProviderLimitsV1& limits)
+    {
+        return providerApiTableSupportsV1(limits, ROCK_PROVIDER_API_V1_EQUIPPED_WEAPON_HANDLING_AUTHORITY_TABLE_BYTES) &&
+               hasFeatureBitV1(limits.featureBits, RockProviderFeatureBitV1::EquippedWeaponHandlingAuthority);
+    }
+
+    [[nodiscard]] inline bool supportsEquippedWeaponHandlingAuthorityV1()
+    {
+        RockProviderLimitsV1 limits{};
+        return queryProviderLimitsV1(limits) && supportsEquippedWeaponHandlingAuthorityV1(limits);
+    }
+
     static_assert(std::is_standard_layout_v<RockProviderTransform>);
     static_assert(std::is_trivially_copyable_v<RockProviderTransform>);
     static_assert(sizeof(RockProviderConsumerRegistrationV1) == 104);
@@ -1741,6 +1855,14 @@ namespace rock::provider
     static_assert(alignof(RockProviderNativeAnimationRuntimePublicationV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderNativeAnimationRuntimePublicationV1>);
     static_assert(std::is_trivially_copyable_v<RockProviderNativeAnimationRuntimePublicationV1>);
+    static_assert(sizeof(RockProviderEquippedWeaponHandlingRequestV1) == 128);
+    static_assert(alignof(RockProviderEquippedWeaponHandlingRequestV1) == 4);
+    static_assert(std::is_standard_layout_v<RockProviderEquippedWeaponHandlingRequestV1>);
+    static_assert(std::is_trivially_copyable_v<RockProviderEquippedWeaponHandlingRequestV1>);
+    static_assert(sizeof(RockProviderEquippedWeaponHandlingStateV1) == 88);
+    static_assert(alignof(RockProviderEquippedWeaponHandlingStateV1) == 8);
+    static_assert(std::is_standard_layout_v<RockProviderEquippedWeaponHandlingStateV1>);
+    static_assert(std::is_trivially_copyable_v<RockProviderEquippedWeaponHandlingStateV1>);
     static_assert(sizeof(RockProviderRawWandButtonStateV1) == 32);
     static_assert(alignof(RockProviderRawWandButtonStateV1) == 4);
     static_assert(std::is_standard_layout_v<RockProviderRawWandButtonStateV1>);
@@ -1813,6 +1935,7 @@ namespace rock::provider
     // Published each frame by PhysicsInteraction; feeds primary/offhand
     // resolution so consumers track ROCK's runtime firing hand.
     void setEquippedWeaponFiringHandIsLeft(bool isLeft);
+    bool getEquippedWeaponHandlingAuthorityV1(RockProviderEquippedWeaponHandlingRequestV1& outRequest);
     std::uint32_t currentHandInputSuppressionFlagsV1(RockProviderHand hand);
     std::uint32_t currentNativeAnimationAuthorityFlagsV1();
     void refreshNativeAnimationAuthorityLeasesV1();

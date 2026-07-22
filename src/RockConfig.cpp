@@ -27,8 +27,8 @@ namespace
     constexpr auto SECTION = "PhysicsInteraction";
     constexpr auto DEBUG_SECTION = "Debug";
     constexpr auto REALISTIC_WEAPONS_SECTION = "RealisticWeapons";
+    constexpr auto WEAPON_HANDEDNESS_SECTION = "WeaponHandedness";
     constexpr auto NATIVE_SCOPES_SECTION = "NativeScopes";
-    constexpr auto AMBIDEXTROUS_FIRING_SECTION = "AmbidextrousFiring";
     constexpr auto EXPERIMENTAL_SECTION = "Experimental";
     constexpr int kDefaultWeaponCollisionSupportFitTargetPoints = 96;
     constexpr int kMinWeaponCollisionSupportFitTargetPoints = 4;
@@ -171,6 +171,7 @@ namespace rock
         rockReversePalmNormal = true;
         rockReverseFarGrabNormal = true;
 
+        rockLeftHandedMode = false;
         rockWeaponCollisionEnabled = true;
         rockWeaponCollisionBlocksProjectiles = false;
         rockWeaponCollisionBlocksSpells = false;
@@ -192,30 +193,7 @@ namespace rock
         rockWeaponSizeClassRifleMaxWeight = 20.0f;
         rockWeaponInteractionTouchRadius = 2.0f;
         rockWeaponInteractionProbeRadius = 12.0f;
-        rockWeaponFiringGripReattachRadius = 3.0f;
-        rockFiringGripProximitySupportEnabled = true;
-        rockFiringGripProximitySupportRadius = 6.0f;
-        rockWeaponGripHapticDurationSeconds = 0.10f;
-        rockWeaponFiringGripAttachHapticIntensity = 0.85f;
-        rockWeaponFiringGripDetachHapticIntensity = 0.30f;
-        rockWeaponSupportGripHapticIntensity = 0.50f;
-        rockEquippedWeaponShoulderStashEnabled = true;
-        rockRealisticWeaponHandlingEnabled = false;
-        rockAmbidextrousFiringGripEnabled = true;
-        rockFiringGripPromotionRadius = 5.0f;
-        rockLeftFiringAimYawDegrees = 0.0f;
-        rockLeftFiringAimPitchDegrees = 0.0f;
-        rockLeftFiringAimOffsetXGameUnits = 0.0f;
-        rockLeftFiringAimOffsetYGameUnits = 0.0f;
-        rockLeftFiringAimOffsetZGameUnits = 0.0f;
         rockRealisticGrenadeFuseSeconds = 5.0f;
-        rockGrabbedWeaponGripZoneEquipRadius = 3.0f;
-        rockGrabbedWeaponGripZoneEquipSettleSeconds = 0.15f;
-        rockGripZoneHoverHapticsEnabled = true;
-        rockGripZoneHoverHapticIntensity = 0.75f;
-        rockGrabbedWeaponEquipBridgeEnabled = true;
-        rockGrabbedWeaponEquipBridgeTimeoutSeconds = 2.0f;
-        rockGrabbedWeaponEquipBridgeBlendSeconds = 0.15f;
         rockWeaponSupportGripHandLerpEnabled = true;
         rockWeaponSupportGripHandLerpTimeMin = 0.12f;
         rockWeaponSupportGripHandLerpTimeMax = 0.20f;
@@ -352,8 +330,6 @@ namespace rock
         rockDebugSkeletonAxisBoneFilter = "";
 
         rockHandColliderRuntimeMode = 1;
-        rockMenuTriggerHandEquipEnabled = false;
-        rockEquipPreferredHandLeft = false;
         rockBodyBoneCollidersEnabled = true;
         rockBodyBoneLegAndFootCollidersEnabled = false;
         rockBodyBoneCollisionStaticWorldEnabled = true;
@@ -755,6 +731,10 @@ namespace rock
         rockReversePalmNormal = ini.GetBoolValue(SECTION, "bReversePalmNormal", rockReversePalmNormal);
         rockReverseFarGrabNormal = ini.GetBoolValue(SECTION, "bReverseFarGrabNormal", rockReverseFarGrabNormal);
 
+        rockLeftHandedMode = ini.GetBoolValue(
+            WEAPON_HANDEDNESS_SECTION,
+            "bLeftHandedMode",
+            rockLeftHandedMode);
         rockWeaponCollisionEnabled = ini.GetBoolValue(SECTION, "bWeaponCollisionEnabled", rockWeaponCollisionEnabled);
         rockWeaponCollisionBlocksProjectiles = ini.GetBoolValue(SECTION, "bWeaponCollisionBlocksProjectiles", rockWeaponCollisionBlocksProjectiles);
         rockWeaponCollisionBlocksSpells = ini.GetBoolValue(SECTION, "bWeaponCollisionBlocksSpells", rockWeaponCollisionBlocksSpells);
@@ -863,108 +843,6 @@ namespace rock
             0.25f,
             6.0f);
         rockWeaponInteractionProbeRadius = static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponInteractionProbeRadius", rockWeaponInteractionProbeRadius));
-        rockWeaponFiringGripReattachRadius = readClampedFloat(ini,
-            REALISTIC_WEAPONS_SECTION,
-            "fWeaponFiringGripReattachRadius",
-            rockWeaponFiringGripReattachRadius,
-            3.0f,
-            0.25f,
-            30.0f);
-        rockFiringGripProximitySupportEnabled =
-            ini.GetBoolValue(REALISTIC_WEAPONS_SECTION, "bFiringGripProximitySupportEnabled", rockFiringGripProximitySupportEnabled);
-        rockFiringGripProximitySupportRadius = readClampedFloat(ini,
-            REALISTIC_WEAPONS_SECTION,
-            "fFiringGripProximitySupportRadius",
-            rockFiringGripProximitySupportRadius,
-            6.0f,
-            0.25f,
-            30.0f);
-        rockWeaponGripHapticDurationSeconds = readClampedFloat(ini,
-            REALISTIC_WEAPONS_SECTION,
-            "fWeaponGripHapticDurationSeconds",
-            rockWeaponGripHapticDurationSeconds,
-            0.10f,
-            0.01f,
-            0.50f);
-        rockWeaponFiringGripAttachHapticIntensity = readClampedFloat(ini,
-            REALISTIC_WEAPONS_SECTION,
-            "fWeaponFiringGripAttachHapticIntensity",
-            rockWeaponFiringGripAttachHapticIntensity,
-            0.85f,
-            0.0f,
-            1.0f);
-        rockWeaponFiringGripDetachHapticIntensity = readClampedFloat(ini,
-            REALISTIC_WEAPONS_SECTION,
-            "fWeaponFiringGripDetachHapticIntensity",
-            rockWeaponFiringGripDetachHapticIntensity,
-            0.30f,
-            0.0f,
-            1.0f);
-        rockWeaponSupportGripHapticIntensity = readClampedFloat(ini,
-            REALISTIC_WEAPONS_SECTION,
-            "fWeaponSupportGripHapticIntensity",
-            rockWeaponSupportGripHapticIntensity,
-            0.50f,
-            0.0f,
-            1.0f);
-        rockEquippedWeaponShoulderStashEnabled =
-            ini.GetBoolValue(REALISTIC_WEAPONS_SECTION, "bEquippedWeaponShoulderStashEnabled", rockEquippedWeaponShoulderStashEnabled);
-        const bool legacyPhysicsPrimaryDetachEnabled =
-            ini.GetBoolValue(SECTION, "bEquippedWeaponPrimaryDetachEnabled", rockRealisticWeaponHandlingEnabled);
-        const bool legacyRealisticPrimaryDetachEnabled = ini.GetBoolValue(
-            REALISTIC_WEAPONS_SECTION,
-            "bEquippedWeaponPrimaryDetachEnabled",
-            legacyPhysicsPrimaryDetachEnabled);
-        rockRealisticWeaponHandlingEnabled = ini.GetBoolValue(
-            REALISTIC_WEAPONS_SECTION,
-            "bRealisticWeaponHandlingEnabled",
-            legacyRealisticPrimaryDetachEnabled);
-        rockAmbidextrousFiringGripEnabled = ini.GetBoolValue(
-            AMBIDEXTROUS_FIRING_SECTION,
-            "bAmbidextrousFiringGripEnabled",
-            rockAmbidextrousFiringGripEnabled);
-        rockFiringGripPromotionRadius = readClampedFloat(ini,
-            AMBIDEXTROUS_FIRING_SECTION,
-            "fFiringGripPromotionRadius",
-            rockFiringGripPromotionRadius,
-            5.0f,
-            0.25f,
-            30.0f);
-        rockLeftFiringAimYawDegrees = readClampedFloat(ini,
-            AMBIDEXTROUS_FIRING_SECTION,
-            "fLeftFiringAimYawDegrees",
-            rockLeftFiringAimYawDegrees,
-            0.0f,
-            -30.0f,
-            30.0f);
-        rockLeftFiringAimPitchDegrees = readClampedFloat(ini,
-            AMBIDEXTROUS_FIRING_SECTION,
-            "fLeftFiringAimPitchDegrees",
-            rockLeftFiringAimPitchDegrees,
-            0.0f,
-            -30.0f,
-            30.0f);
-        rockLeftFiringAimOffsetXGameUnits = readClampedFloat(ini,
-            AMBIDEXTROUS_FIRING_SECTION,
-            "fLeftFiringAimOffsetXGameUnits",
-            rockLeftFiringAimOffsetXGameUnits,
-            0.0f,
-            -15.0f,
-            15.0f);
-        rockLeftFiringAimOffsetYGameUnits = readClampedFloat(ini,
-            AMBIDEXTROUS_FIRING_SECTION,
-            "fLeftFiringAimOffsetYGameUnits",
-            rockLeftFiringAimOffsetYGameUnits,
-            0.0f,
-            -15.0f,
-            15.0f);
-        rockLeftFiringAimOffsetZGameUnits = readClampedFloat(ini,
-            AMBIDEXTROUS_FIRING_SECTION,
-            "fLeftFiringAimOffsetZGameUnits",
-            rockLeftFiringAimOffsetZGameUnits,
-            0.0f,
-            -15.0f,
-            15.0f);
         rockRealisticGrenadeFuseSeconds = readClampedFloat(ini,
             REALISTIC_WEAPONS_SECTION,
             "fRealisticGrenadeFuseSeconds",
@@ -972,49 +850,6 @@ namespace rock
             5.0f,
             0.0f,
             30.0f);
-        rockGrabbedWeaponGripZoneEquipRadius = readClampedFloat(ini,
-            REALISTIC_WEAPONS_SECTION,
-            "fGrabbedWeaponGripZoneEquipRadius",
-            rockGrabbedWeaponGripZoneEquipRadius,
-            3.0f,
-            0.25f,
-            30.0f);
-        rockGrabbedWeaponGripZoneEquipSettleSeconds = readClampedFloat(ini,
-            REALISTIC_WEAPONS_SECTION,
-            "fGrabbedWeaponGripZoneEquipSettleSeconds",
-            rockGrabbedWeaponGripZoneEquipSettleSeconds,
-            0.15f,
-            0.0f,
-            5.0f);
-        rockGripZoneHoverHapticsEnabled = ini.GetBoolValue(
-            REALISTIC_WEAPONS_SECTION,
-            "bGripZoneHoverHapticsEnabled",
-            rockGripZoneHoverHapticsEnabled);
-        rockGripZoneHoverHapticIntensity = readClampedFloat(ini,
-            REALISTIC_WEAPONS_SECTION,
-            "fGripZoneHoverHapticIntensity",
-            rockGripZoneHoverHapticIntensity,
-            0.75f,
-            0.0f,
-            1.0f);
-        rockGrabbedWeaponEquipBridgeEnabled = ini.GetBoolValue(
-            REALISTIC_WEAPONS_SECTION,
-            "bGrabbedWeaponEquipBridgeEnabled",
-            rockGrabbedWeaponEquipBridgeEnabled);
-        rockGrabbedWeaponEquipBridgeTimeoutSeconds = readClampedFloat(ini,
-            REALISTIC_WEAPONS_SECTION,
-            "fGrabbedWeaponEquipBridgeTimeoutSeconds",
-            rockGrabbedWeaponEquipBridgeTimeoutSeconds,
-            2.0f,
-            0.25f,
-            5.0f);
-        rockGrabbedWeaponEquipBridgeBlendSeconds = readClampedFloat(ini,
-            REALISTIC_WEAPONS_SECTION,
-            "fGrabbedWeaponEquipBridgeBlendSeconds",
-            rockGrabbedWeaponEquipBridgeBlendSeconds,
-            0.15f,
-            0.0f,
-            1.0f);
         rockWeaponSupportGripHandLerpEnabled = ini.GetBoolValue(SECTION, "bWeaponSupportGripHandLerpEnabled", rockWeaponSupportGripHandLerpEnabled);
         rockWeaponSupportGripHandLerpTimeMin = readClampedFloat(ini,
             SECTION,
@@ -1458,10 +1293,6 @@ namespace rock
             ROCK_LOG_WARN(Config, "Invalid iHandColliderRuntimeMode={} - using BoneDerivedHands", rockHandColliderRuntimeMode);
             rockHandColliderRuntimeMode = 1;
         }
-        rockMenuTriggerHandEquipEnabled =
-            ini.GetBoolValue(EXPERIMENTAL_SECTION, "bMenuTriggerHandEquipEnabled", rockMenuTriggerHandEquipEnabled);
-        rockEquipPreferredHandLeft =
-            ini.GetBoolValue(EXPERIMENTAL_SECTION, "bEquipPreferredHandLeft", rockEquipPreferredHandLeft);
         rockBodyBoneCollidersEnabled = ini.GetBoolValue(EXPERIMENTAL_SECTION, "bBodyBoneCollidersEnabled", rockBodyBoneCollidersEnabled);
         rockBodyBoneLegAndFootCollidersEnabled =
             ini.GetBoolValue(EXPERIMENTAL_SECTION, "bBodyBoneLegAndFootCollidersEnabled", rockBodyBoneLegAndFootCollidersEnabled);

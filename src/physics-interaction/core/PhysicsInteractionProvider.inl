@@ -182,6 +182,50 @@
         return true;
     }
 
+    bool PhysicsInteraction::queryProviderEquippedWeaponHandlingStateV1(
+        ::rock::provider::RockProviderEquippedWeaponHandlingStateV1& outState) const
+    {
+        using RuntimeFlag =
+            ::rock::provider::RockProviderEquippedWeaponHandlingRuntimeFlagV1;
+
+        outState = {};
+        outState.fixedFiringHand = _fixedFiringHandIsLeft ?
+            ::rock::provider::RockProviderHand::Left :
+            ::rock::provider::RockProviderHand::Right;
+        outState.currentFiringHand = _twoHandedGrip.isFiringHandLeft() ?
+            ::rock::provider::RockProviderHand::Left :
+            ::rock::provider::RockProviderHand::Right;
+        outState.weaponGenerationKey =
+            _weaponCollision.getCurrentWeaponGenerationKey();
+        outState.weaponFormId = currentEquippedWeaponFormId();
+
+        const auto setFlag = [&outState](const RuntimeFlag flag) {
+            outState.runtimeFlags |= static_cast<std::uint32_t>(flag);
+        };
+        if (_fixedFiringHandIsLeft) {
+            setFlag(RuntimeFlag::FixedHandLeft);
+        }
+        if (_twoHandedGrip.isFiringHandLeft()) {
+            setFlag(RuntimeFlag::FiringHandLeft);
+        }
+        if (TwoHandedGrip::canBeginPrimaryOnlyGripForHand(true)) {
+            setFlag(RuntimeFlag::LeftFiringInfrastructureAvailable);
+        }
+        if (_twoHandedGrip.isManualOwnershipActive()) {
+            setFlag(RuntimeFlag::ManualOwnershipActive);
+        }
+        if (_twoHandedGrip.isPartCarryActive()) {
+            setFlag(RuntimeFlag::PartCarryActive);
+        }
+        if (_twoHandedGrip.isFiringGripOccupied()) {
+            setFlag(RuntimeFlag::FiringGripOccupied);
+        }
+        if (resolveEquippedWeaponInteractionNode()) {
+            setFlag(RuntimeFlag::WeaponPresent);
+        }
+        return _initialized.load(std::memory_order_acquire);
+    }
+
     std::uint32_t PhysicsInteraction::getProviderWeaponEvidenceDetailCountV1() const
     {
         return static_cast<std::uint32_t>(_weaponCollision.getProfileEvidenceDescriptors().size());

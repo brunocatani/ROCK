@@ -32,7 +32,6 @@ namespace rock
         bool conflictingWeaponTransformAuthorityActive{ false };
         bool weaponVisualReturnActive{ false };
         bool primaryHandHoldingObject{ false };
-        bool leftHandedMode{ false };
         bool rockFiringHandIsLeft{ false };
         bool inPowerArmor{ false };
     };

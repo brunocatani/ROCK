@@ -40,6 +40,7 @@ namespace rock::pipboy_equip_runtime
     bool getAssignment(AssignmentSnapshot& outAssignment);
     bool inspectStack(std::uint32_t handleId, std::uint32_t stackId, StackSnapshot& outSnapshot);
 
+    void setEquipMode(pipboy_equip_policy::EquipMode mode);
     void setLeftHandEquipAvailable(bool available);
     void publishWeaponAssignment(
         std::uint32_t handleId,

@@ -978,8 +978,11 @@ namespace rock::input_remap_runtime
         {
             auto input = makeNativeActionSuppressionInput(suppressionEnabled, eventMatched);
             input.primaryHandEvent = isPrimaryWandInputEvent(event);
-            const bool primaryHandIsLeft = f4vr::isLeftHandedMode();
-            const bool eventHandIsLeft = input.primaryHandEvent ? primaryHandIsLeft : !primaryHandIsLeft;
+            // ROCK owns controller identity: FO4VR's primary wand is the
+            // physical right controller and the secondary wand is the
+            // physical left controller. The game's native handedness setting
+            // must never remap ROCK input ownership.
+            const bool eventHandIsLeft = !input.primaryHandEvent;
             input.eventHandHeldWeapon = s_handHeldWeapon[eventHandIsLeft ? 0u : 1u].load(std::memory_order_acquire);
             return input;
         }
@@ -1019,16 +1022,15 @@ namespace rock::input_remap_runtime
         }
 
         /*
-         * The pipboy trigger rides the secondary (non-primary) wand, so the
-         * suppression gate is the offhand's engagement state, not a fixed
-         * left hand. Verified in the slot-11 processor: its open path only
+         * The Pip-Boy trigger rides ROCK's physical-left secondary wand, so
+         * the suppression gate is the left hand's engagement state. Verified
+         * in the slot-11 processor: its open path only
          * accepts events whose controller id matches the secondary wand slot
          * at player+0x8D0 (primary sits at the already-verified +0x8CC).
          */
         [[nodiscard]] bool isPipboyHandEngaged()
         {
-            const bool pipboyHandIsLeft = !f4vr::isLeftHandedMode();
-            const auto index = pipboyHandIsLeft ? 0u : 1u;
+            constexpr auto index = 0u;
             // All three publications describe the same ownership boundary but
             // are refreshed by different transition paths. Treat any durable
             // witness as engaged so a just-committed left grab cannot expose a
@@ -1077,7 +1079,7 @@ namespace rock::input_remap_runtime
              * the primary-wand hand by identity.
              */
             const bool primaryHandEvent = eventMatched && isPrimaryWandInputEvent(event);
-            const bool primaryHandIsLeft = f4vr::isLeftHandedMode();
+            constexpr bool primaryHandIsLeft = false;
             const bool firingHandIsLeft = s_equippedWeaponLeftHandFiringActive.load(std::memory_order_acquire);
             const bool firingHandIsPrimaryHand = firingHandIsLeft == primaryHandIsLeft;
             const bool route = input_remap_policy::shouldRouteFiringHandActivateReload(input_remap_policy::NativeActivateReloadInput{
@@ -1107,7 +1109,7 @@ namespace rock::input_remap_runtime
         {
             const bool eventMatched = isActivateReloadEvent(event);
             const bool primaryHandEvent = eventMatched && isPrimaryWandInputEvent(event);
-            const bool primaryHandIsLeft = f4vr::isLeftHandedMode();
+            constexpr bool primaryHandIsLeft = false;
             const bool firingHandIsLeft = s_equippedWeaponLeftHandFiringActive.load(std::memory_order_acquire);
             return input_remap_policy::shouldDeferFiringHandActivateForManualScope(input_remap_policy::ManualScopeActivateInput{
                 .manualScopeEnabled = !g_rockConfig.rockAutoActivateScope,
@@ -1170,8 +1172,7 @@ namespace rock::input_remap_runtime
          */
         [[nodiscard]] std::size_t takeEquipHandIndex(bool primaryHandEvent)
         {
-            const bool primaryHandIsLeft = f4vr::isLeftHandedMode();
-            const bool eventHandIsLeft = primaryHandEvent ? primaryHandIsLeft : !primaryHandIsLeft;
+            const bool eventHandIsLeft = !primaryHandEvent;
             return eventHandIsLeft ? 0u : 1u;
         }
 
@@ -1321,9 +1322,9 @@ namespace rock::input_remap_runtime
             // suppression. Rate-limited like every other native-action trace in this file.
             ROCK_LOG_SAMPLE_DEBUG(Input,
                 g_rockConfig.rockLogSampleMilliseconds,
-                "Take/Equip gate: primaryHandEvent={} leftHandedMode={} handEngaged={} targetEligible={} suppressionEnabled={} gameplay={} menuInput={} -> {}",
+                "Take/Equip gate: primaryHandEvent={} physicalHand={} handEngaged={} targetEligible={} suppressionEnabled={} gameplay={} menuInput={} -> {}",
                 primaryHandEvent ? "yes" : "no",
-                f4vr::isLeftHandedMode() ? "yes" : "no",
+                primaryHandEvent ? "right" : "left",
                 handEngaged ? "yes" : "no",
                 targetEligible ? "yes" : "no",
                 g_rockConfig.rockSuppressTakeEquipGameInputWhileHolding ? "yes" : "no",
@@ -2134,7 +2135,7 @@ namespace rock::input_remap_runtime
             blockManualScopeInputUntilRelease();
             return;
         }
-        const bool secondaryHandIsLeft = !f4vr::isLeftHandedMode();
+        constexpr bool secondaryHandIsLeft = true;
         const bool firingHandIsLeft = s_equippedWeaponLeftHandFiringActive.load(std::memory_order_acquire);
 
         if (!g_rockConfig.rockAutoActivateScope) {

@@ -40,12 +40,12 @@ function Reject-Text {
 }
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'supportAuthorityMode\s*=\s*weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver;[\s\S]{0,1800}canApplyFiringGripProximityAuthority\(\s*g_rockConfig\.rockFiringGripProximitySupportEnabled,\s*supportAuthorityProviderOverride\)' `
-    'Equipped weapons must enter the generic proximity contract from full authority after provider overrides are resolved.'
+    'supportAuthorityMode\s*=\s*weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver;[\s\S]{0,1800}canApplyFiringGripProximityAuthority\(\s*_equippedWeaponHandlingSettings\.firingGripProximitySupportEnabled,\s*supportAuthorityProviderOverride\)' `
+    'Equipped weapons must enter the addon-leased proximity contract from full authority after provider overrides are resolved.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'if \(firingGripProximityAuthorityEnabled\)[\s\S]{0,900}resolveFiringGripProximityAuthorityMode\([\s\S]{0,220}rockFiringGripProximitySupportRadius' `
-    'Grip capture must resolve support authority from firing-grip proximity for every eligible equipped weapon.'
+    'if \(firingGripProximityAuthorityEnabled\)[\s\S]{0,900}resolveFiringGripProximityAuthorityMode\([\s\S]{0,260}_handlingSettings\.firingGripProximitySupportRadiusGameUnits' `
+    'Grip capture must resolve support authority from the addon-supplied firing-grip proximity radius.'
 
 Require-Text 'src/physics-interaction/weapon/WeaponSupport.h' `
     'return proximityAuthorityEnabled && !providerGrabModeOverride;' `
@@ -55,9 +55,12 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'tryPromoteSupportGripToFiringGrip[\s\S]*canPromoteSupportGripToFiringGrip\([\s\S]*_authorityMode,[\s\S]*supportGrip\.authoredSupportGrip' `
     'An authored visual-only grip must remain presentation-only instead of inheriting firing authority through handoff promotion.'
 
-Require-Text 'data/config/ROCK.ini' `
-    'bFiringGripProximitySupportEnabled\s*=\s*true[\s\S]*fFiringGripProximitySupportRadius\s*=\s*6\.0' `
-    'The source config must publish the weapon-generic firing-grip proximity contract.'
+Require-Text 'src/api/ROCKProviderApi.h' `
+    'FiringGripProximitySupport[\s\S]*firingGripProximitySupportRadiusGameUnits' `
+    'ROCK V1 must expose the addon-owned proximity feature and bounded radius.'
+Reject-Text 'data/config/ROCK.ini' `
+    'bFiringGripProximitySupportEnabled|fFiringGripProximitySupportRadius' `
+    'Base ROCK config must not retain addon-owned proximity tuning.'
 
 Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'AnimsGripPistol|classifyEquippedWeaponForSupportGrip|resolveEquippedWeaponSupportAuthorityMode' `

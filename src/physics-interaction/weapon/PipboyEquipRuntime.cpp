@@ -1,6 +1,5 @@
 #include "physics-interaction/weapon/PipboyEquipRuntime.h"
 
-#include "RockConfig.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/PhysicsLog.h"
@@ -38,6 +37,9 @@ namespace rock::pipboy_equip_runtime
         UpdateData_t s_originalUpdateData = nullptr;
         std::atomic<bool> s_hooksInstalled{ false };
         std::atomic<bool> s_leftHandEquipAvailable{ false };
+        std::atomic<std::uint8_t> s_equipMode{
+            static_cast<std::uint8_t>(pipboy_equip_policy::EquipMode::NativeRight)
+        };
         thread_local bool s_insideUpdateDataHook = false;
 
         struct AtomicSelectionMailbox
@@ -72,9 +74,8 @@ namespace rock::pipboy_equip_runtime
 
         [[nodiscard]] pipboy_equip_policy::EquipMode configuredEquipMode() noexcept
         {
-            return pipboy_equip_policy::resolveEquipMode(
-                g_rockConfig.rockMenuTriggerHandEquipEnabled,
-                g_rockConfig.rockEquipPreferredHandLeft);
+            return static_cast<pipboy_equip_policy::EquipMode>(
+                s_equipMode.load(std::memory_order_acquire));
         }
 
         [[nodiscard]] bool tryBeginWrite(std::atomic_flag& writer)
@@ -469,6 +470,11 @@ namespace rock::pipboy_equip_runtime
         s_leftHandEquipAvailable.store(available, std::memory_order_release);
     }
 
+    void setEquipMode(const pipboy_equip_policy::EquipMode mode)
+    {
+        s_equipMode.store(static_cast<std::uint8_t>(mode), std::memory_order_release);
+    }
+
     void publishWeaponAssignment(
         const std::uint32_t handleId,
         const std::uint32_t stackId,
@@ -500,6 +506,7 @@ namespace rock::pipboy_equip_runtime
 
     void resetRuntimeState()
     {
+        setEquipMode(pipboy_equip_policy::EquipMode::NativeRight);
         setLeftHandEquipAvailable(false);
         clearWeaponAssignment();
         publishSelection(SelectionEvent{

@@ -64,97 +64,56 @@ foreach ($legacyPath in @(
         'The superseded position-blind loose-weapon auto-equip path must remain deleted.'
 }
 
-foreach ($legacyPath in @(
-        'src/RockConfig.cpp',
-        'src/RockConfig.h',
-        'src/physics-interaction/core/PhysicsInteraction.cpp',
-        'src/physics-interaction/weapon/WeaponSupport.h',
-        'data/config/ROCK.ini',
-        'data/mod/ROCK_Config/ROCK.ini')) {
-    Reject-Text $legacyPath `
-        'bGrabbedWeaponGripZoneEquipEnabled|rockGrabbedWeaponGripZoneEquipEnabled|bWeaponGripHapticsEnabled|rockWeaponGripHapticsEnabled' `
-        'Grip-zone equip and weapon-grip haptics must not retain independently configurable Boolean gates.'
+foreach ($configSource in @('src/RockConfig.cpp', 'src/RockConfig.h')) {
+    Reject-Text $configSource `
+        'rock(?:RealisticWeaponHandlingEnabled|AmbidextrousFiringGripEnabled|FiringGripPromotionRadius|LeftFiringAim\w+|GrabbedWeaponGripZone\w+|WeaponGripHaptic\w+|WeaponFiringGrip\w+|WeaponSupportGripHaptic\w+|FiringGripProximity\w+|EquippedWeaponShoulderStashEnabled|GripZoneHover\w+|GrabbedWeaponEquipBridge\w+|MenuTriggerHandEquipEnabled|EquipPreferredHandLeft)' `
+        'Base ROCK config must not retain addon-owned realistic or ambidextrous settings.'
 }
 
 foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
-    $ambidextrousSection = Read-IniSection $configPath 'AmbidextrousFiring'
-    foreach ($key in @(
-            'bAmbidextrousFiringGripEnabled',
-            'fFiringGripPromotionRadius',
-            'fLeftFiringAimYawDegrees',
-            'fLeftFiringAimPitchDegrees',
-            'fLeftFiringAimOffsetXGameUnits',
-            'fLeftFiringAimOffsetYGameUnits',
-            'fLeftFiringAimOffsetZGameUnits')) {
-        if ($ambidextrousSection -notmatch "(?m)^$([Regex]::Escape($key))\s*=") {
-            $failures.Add("$configPath`: [$key] must live in [AmbidextrousFiring].")
-        }
-    }
-
+    $configText = Read-Source $configPath
     $realisticSection = Read-IniSection $configPath 'RealisticWeapons'
-    foreach ($key in @(
-            'fGrabbedWeaponGripZoneEquipRadius',
-            'fGrabbedWeaponGripZoneEquipSettleSeconds',
-            'fWeaponGripHapticDurationSeconds',
-            'fWeaponFiringGripAttachHapticIntensity',
-            'fWeaponFiringGripDetachHapticIntensity',
-            'fWeaponSupportGripHapticIntensity')) {
-        if ($realisticSection -notmatch "(?m)^$([Regex]::Escape($key))\s*=") {
-            $failures.Add("$configPath`: [$key] must remain configurable in [RealisticWeapons].")
-        }
+    $realisticAssignments = [regex]::Matches($realisticSection, '(?m)^[A-Za-z]\w*\s*=')
+    if ($realisticAssignments.Count -ne 1 -or
+        $realisticSection -notmatch '(?m)^fRealisticGrenadeFuseSeconds\s*=') {
+        $failures.Add("$configPath`: [RealisticWeapons] must retain only ROCK grenade fuse ownership.")
     }
-    if ($realisticSection -match '(?m)^(bAmbidextrousFiringGripEnabled|fFiringGripPromotionRadius|fLeftFiringAim\w+)\s*=') {
-        $failures.Add("$configPath`: ambidextrous firing keys must not remain in [RealisticWeapons].")
+    $handednessSection = Read-IniSection $configPath 'WeaponHandedness'
+    if ($handednessSection -notmatch '(?m)^bLeftHandedMode\s*=\s*false\s*$') {
+        $failures.Add("$configPath`: [WeaponHandedness] must expose the sole fixed-hand option and default right.")
+    }
+    if ($configText -match '(?m)^\[AmbidextrousFiring\]|^(?:bAmbidextrousFiringGripEnabled|fFiringGripPromotionRadius|fLeftFiringAim\w+|fGrabbedWeaponGripZone\w+|fWeapon(?:Firing|Support)?GripHaptic\w+|bGripZoneHoverHapticsEnabled|bGrabbedWeaponEquipBridgeEnabled)\s*=') {
+        $failures.Add("$configPath`: addon-owned realistic and ambidextrous options must be absent from ROCK.")
     }
 }
 
-Require-Text 'src/RockConfig.cpp' `
-    'constexpr\s+auto\s+AMBIDEXTROUS_FIRING_SECTION\s*=\s*"AmbidextrousFiring"' `
-    'Ambidextrous firing must have an independent INI section.'
-
-Require-Text 'src/RockConfig.cpp' `
-    'ini\.GetBoolValue\(\s*AMBIDEXTROUS_FIRING_SECTION,\s*"bAmbidextrousFiringGripEnabled"' `
-    'The ambidextrous firing switch must load from its independent INI section.'
-
-foreach ($key in @(
-        'fFiringGripPromotionRadius',
-        'fLeftFiringAimYawDegrees',
-        'fLeftFiringAimPitchDegrees',
-        'fLeftFiringAimOffsetXGameUnits',
-        'fLeftFiringAimOffsetYGameUnits',
-        'fLeftFiringAimOffsetZGameUnits')) {
-    Require-Text 'src/RockConfig.cpp' `
-        "readClampedFloat\(ini,\s*AMBIDEXTROUS_FIRING_SECTION,\s*`"$key`"" `
-        "$key must load from [AmbidextrousFiring]."
-}
-
-Reject-Text 'src/RockConfig.cpp' `
-    'REALISTIC_WEAPONS_SECTION,\s*"(bAmbidextrousFiringGripEnabled|fFiringGripPromotionRadius|fLeftFiringAim\w+)"' `
-    'Ambidextrous firing settings must not retain a hidden [RealisticWeapons] loader path.'
-
-Require-Text 'src/physics-interaction/weapon/WeaponSupport.h' `
-    'canSettleEquipInGripZone\(\s*bool realisticWeaponHandlingEnabled\)[\s\S]{0,160}return realisticWeaponHandlingEnabled\s*;' `
-    'Grip-zone settle equip must follow realistic weapon handling directly, without a second setting.'
-
+Require-Text 'src/api/ROCKProviderApi.h' `
+    'RockProviderEquippedWeaponHandlingFlagV1[\s\S]*FiringGripOwnership[\s\S]*PrimaryDetach[\s\S]*AmbidextrousHandoff[\s\S]*GripZoneEquip[\s\S]*PipboyTriggerHandEquip[\s\S]*RockProviderEquippedWeaponHandlingRequestV1' `
+    'ROCK V1 must expose the complete owner-bound equipped-weapon policy consumed by the addon.'
+Require-Text 'src/physics-interaction/weapon/EquippedWeaponHandlingSettings.h' `
+    'makeEquippedWeaponHandlingSettings[\s\S]*externalAuthorityActive\s*=\s*true[\s\S]*AmbidextrousHandoff[\s\S]*leftFiringAimOffsetGameUnits[\s\S]*equipVisualBridgeBlendSeconds' `
+    'ROCK must translate one validated V1 request into an internal value snapshot without addon globals.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'gripZoneSettleEquipEnabled\s*=\s*[\s\S]{0,180}canSettleEquipInGripZone\(\s*g_rockConfig\.rockRealisticWeaponHandlingEnabled\s*\)' `
-    'Runtime grip-zone equip and hover ownership must use realistic handling as their only feature gate.'
-
+    'getEquippedWeaponHandlingAuthorityV1\(request\)[\s\S]*makeEquippedWeaponHandlingSettings[\s\S]*!externalAuthorityActive\s*&&\s*fixedFiringHandIsLeft[\s\S]*settings\.firingGripOwnershipEnabled\s*=\s*true' `
+    'Without an addon lease, base ROCK may enable only the ownership needed for a fixed left-hand carry.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'consumeHapticEvents\(\);\s*const auto queueGripHaptic' `
-    'Valid weapon-grip transitions must queue their configured haptics without an optional Boolean gate.'
+    'gripZoneSettleEquipEnabled\s*=\s*[\s\S]{0,180}canSettleEquipInGripZone\(\s*_equippedWeaponHandlingSettings\.gripZoneEquipEnabled\s*\)' `
+    'Grip-zone equip and hover discovery must activate only from the addon snapshot.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'consumeHapticEvents\(\);[\s\S]{0,700}if \(_equippedWeaponHandlingSettings\.externalAuthorityActive\)' `
+    'Equipped-weapon transition haptics must remain addon-owned while events are always drained.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'shouldStartHeldWeaponEquipOwnership[\s\S]{0,260}\.modes\s*=\s*firingGripModes[\s\S]{0,120}\.handIsLeft\s*=\s*isLeft[\s\S]{0,120}\.gripHeld\s*=\s*rawGrabInput\.held' `
-    'Direct trigger equip must independently start left-hand ambidextrous ownership from the originating hand grip.'
+    'Direct trigger equip must start addon-owned hand-specific ownership from the originating hand grip.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'EquippedWeaponGripMode\{[\s\S]{0,220}\.firingGripOwnershipEnabled\s*=\s*firingGripOwnershipFeatureAvailable[\s\S]{0,160}\.ambidextrousHandoffEnabled\s*=\s*ambidextrousFiringAvailable[\s\S]{0,160}\.primaryDetachEnabled\s*=\s*primaryDetachFeatureAvailable' `
-    'Two-handed weapon state must receive independent ownership, handoff, and realistic-detach gates.'
+    'effectiveHandlingSettings\.firingGripOwnershipEnabled\s*=[\s\S]{0,160}firingGripOwnershipFeatureAvailable[\s\S]{0,220}effectiveHandlingSettings\.ambidextrousHandoffEnabled\s*=[\s\S]{0,160}ambidextrousHandoffAvailable[\s\S]{0,220}effectiveHandlingSettings\.primaryDetachEnabled\s*=[\s\S]{0,160}primaryDetachFeatureAvailable[\s\S]{0,260}_twoHandedGrip\.update\([\s\S]*effectiveHandlingSettings' `
+    'Two-handed weapon state must receive infrastructure-gated ownership, handoff, and detach values while preserving addon tuning.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'updatePrimaryOnlyGrip[\s\S]{0,1000}primaryGripRetained\s*=\s*equipped_weapon_manual_ownership_policy::shouldRetainPrimaryOnlyOwnership\(\s*primaryDetachEnabled,\s*primaryGripInput\.held\)' `
-    'Ambidextrous-only firing must ignore grip release while still running equipped-weapon identity cleanup.'
+    'Non-detaching fixed or addon ownership must ignore grip release while still running equipped-weapon identity cleanup.'
 
 Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
     'std::array<std::atomic<bool>,\s*2>\s+s_handHeldWeapon' `

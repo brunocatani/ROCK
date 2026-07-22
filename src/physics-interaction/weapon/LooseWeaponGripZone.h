@@ -44,7 +44,13 @@ namespace rock::loose_weapon_grip_zone
      * state (HeldBody); the inside-radius settle timer only accumulates then.
      * Pass holdingLooseWeapon=false to clear the hand's state.
      */
-    void updateHeldLooseWeapon(bool isLeft, bool holdingLooseWeapon, RE::TESObjectREFR* heldRef, bool heldSettled, float dt);
+    void updateHeldLooseWeapon(
+        bool isLeft,
+        bool holdingLooseWeapon,
+        RE::TESObjectREFR* heldRef,
+        bool heldSettled,
+        float dt,
+        float equipRadiusGameUnits);
 
     /*
      * True when the hand's palm has stayed inside the configured grip radius
@@ -52,7 +58,7 @@ namespace rock::loose_weapon_grip_zone
      * toggle and same-hand ownership contract are enforced by the caller's
      * input policy, not here.
      */
-    bool isGripZoneEquipSettled(bool isLeft);
+    bool isGripZoneEquipSettled(bool isLeft, float settleSeconds);
 
     /*
      * Returns the canonical firing-hand frame already resolved for the held
@@ -101,7 +107,10 @@ namespace rock::loose_weapon_grip_zone
      * both physical hands; grenade exclusion, feature toggles, and menu gating
      * are enforced by the caller.
      */
-    void updateHoverCandidateWeapon(bool isLeft, RE::TESObjectREFR* candidateRef);
+    void updateHoverCandidateWeapon(
+        bool isLeft,
+        RE::TESObjectREFR* candidateRef,
+        float equipRadiusGameUnits);
 
     /*
      * True while the open palm hovers inside the configured grip-zone equip
