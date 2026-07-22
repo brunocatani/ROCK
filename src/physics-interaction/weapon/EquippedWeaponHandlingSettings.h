@@ -12,7 +12,6 @@ namespace rock
         bool ambidextrousHandoffEnabled{ false };
         bool gripZoneEquipEnabled{ false };
         bool gripZoneHoverHapticsEnabled{ false };
-        bool firingGripProximitySupportEnabled{ false };
         bool equippedWeaponShoulderStashEnabled{ false };
         bool pipboyTriggerHandEquipEnabled{ false };
         bool equipVisualBridgeEnabled{ false };
@@ -38,9 +37,15 @@ namespace rock
 
     [[nodiscard]] inline EquippedWeaponHandlingSettings
     makeEquippedWeaponHandlingSettings(
+        const float rockFiringGripProximitySupportRadiusGameUnits,
         const provider::RockProviderEquippedWeaponHandlingRequestV1* request)
     {
         EquippedWeaponHandlingSettings settings{};
+        // Near-firing-grip VisualOnlySupport is a ROCK weapon-support safety
+        // contract, not ambidextrous ownership. ROCK supplies the baseline
+        // radius; an active handling owner may replace only that tuning value.
+        settings.firingGripProximitySupportRadiusGameUnits =
+            rockFiringGripProximitySupportRadiusGameUnits;
         if (!request) {
             return settings;
         }
@@ -62,8 +67,6 @@ namespace rock
             provider::RockProviderEquippedWeaponHandlingFlagV1::GripZoneEquip);
         settings.gripZoneHoverHapticsEnabled = enabled(
             provider::RockProviderEquippedWeaponHandlingFlagV1::GripZoneHoverHaptics);
-        settings.firingGripProximitySupportEnabled = enabled(
-            provider::RockProviderEquippedWeaponHandlingFlagV1::FiringGripProximitySupport);
         settings.equippedWeaponShoulderStashEnabled = enabled(
             provider::RockProviderEquippedWeaponHandlingFlagV1::EquippedWeaponShoulderStash);
         settings.pipboyTriggerHandEquipEnabled = enabled(
@@ -75,7 +78,10 @@ namespace rock
         settings.gripZoneEquipSettleSeconds = request->gripZoneEquipSettleSeconds;
         settings.firingGripReattachRadiusGameUnits = request->firingGripReattachRadiusGameUnits;
         settings.gripZoneHoverHapticIntensity = request->gripZoneHoverHapticIntensity;
-        settings.firingGripProximitySupportRadiusGameUnits = request->firingGripProximitySupportRadiusGameUnits;
+        if (enabled(provider::RockProviderEquippedWeaponHandlingFlagV1::FiringGripProximitySupport)) {
+            settings.firingGripProximitySupportRadiusGameUnits =
+                request->firingGripProximitySupportRadiusGameUnits;
+        }
         settings.weaponGripHapticDurationSeconds = request->weaponGripHapticDurationSeconds;
         settings.firingGripAttachHapticIntensity = request->firingGripAttachHapticIntensity;
         settings.firingGripDetachHapticIntensity = request->firingGripDetachHapticIntensity;

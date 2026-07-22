@@ -2676,7 +2676,6 @@ namespace rock
                 }
             }
             const bool firingGripProximityAuthorityEnabled = weapon_support_authority_policy::canApplyFiringGripProximityAuthority(
-                _equippedWeaponHandlingSettings.firingGripProximitySupportEnabled,
                 supportAuthorityProviderOverride);
             EquippedWeaponPrimaryGripInput primaryGripInput{};
             GrabButtonState primaryGrabState{};
@@ -4014,6 +4013,7 @@ namespace rock
         const bool externalAuthorityActive =
             ::rock::provider::getEquippedWeaponHandlingAuthorityV1(request);
         auto settings = makeEquippedWeaponHandlingSettings(
+            g_rockConfig.rockFiringGripProximitySupportRadius,
             externalAuthorityActive ? &request : nullptr);
 
         const bool fixedFiringHandIsLeft = g_rockConfig.rockLeftHandedMode;

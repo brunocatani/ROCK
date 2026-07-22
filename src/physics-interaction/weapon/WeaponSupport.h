@@ -36,10 +36,9 @@ namespace rock::weapon_support_authority_policy
      * releasing and re-grabbing.
      */
     inline constexpr bool canApplyFiringGripProximityAuthority(
-        bool proximityAuthorityEnabled,
         bool providerGrabModeOverride)
     {
-        return proximityAuthorityEnabled && !providerGrabModeOverride;
+        return !providerGrabModeOverride;
     }
 
     inline constexpr WeaponSupportAuthorityMode resolveFiringGripProximityAuthorityMode(

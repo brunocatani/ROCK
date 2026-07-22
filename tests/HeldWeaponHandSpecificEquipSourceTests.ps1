@@ -66,8 +66,8 @@ foreach ($legacyPath in @(
 
 foreach ($configSource in @('src/RockConfig.cpp', 'src/RockConfig.h')) {
     Reject-Text $configSource `
-        'rock(?:RealisticWeaponHandlingEnabled|AmbidextrousFiringGripEnabled|FiringGripPromotionRadius|LeftFiringAim\w+|GrabbedWeaponGripZone\w+|WeaponGripHaptic\w+|WeaponFiringGrip\w+|WeaponSupportGripHaptic\w+|FiringGripProximity\w+|EquippedWeaponShoulderStashEnabled|GripZoneHover\w+|GrabbedWeaponEquipBridge\w+|MenuTriggerHandEquipEnabled|EquipPreferredHandLeft)' `
-        'Base ROCK config must not retain addon-owned realistic or ambidextrous settings.'
+        'rock(?:RealisticWeaponHandlingEnabled|AmbidextrousFiringGripEnabled|FiringGripPromotionRadius|LeftFiringAim\w+|GrabbedWeaponGripZone\w+|WeaponGripHaptic\w+|WeaponFiringGrip\w+|WeaponSupportGripHaptic\w+|EquippedWeaponShoulderStashEnabled|GripZoneHover\w+|GrabbedWeaponEquipBridge\w+|MenuTriggerHandEquipEnabled|EquipPreferredHandLeft)' `
+        'Base ROCK config must not retain addon-owned realistic or ambidextrous settings beyond its core proximity radius.'
 }
 
 foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
@@ -95,7 +95,7 @@ Require-Text 'src/physics-interaction/weapon/EquippedWeaponHandlingSettings.h' `
     'ROCK must translate one validated V1 request into an internal value snapshot without addon globals.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'getEquippedWeaponHandlingAuthorityV1\(request\)[\s\S]*makeEquippedWeaponHandlingSettings[\s\S]*!externalAuthorityActive\s*&&\s*fixedFiringHandIsLeft[\s\S]*settings\.firingGripOwnershipEnabled\s*=\s*true' `
-    'Without an addon lease, base ROCK may enable only the ownership needed for a fixed left-hand carry.'
+    'Without an addon lease, base ROCK may enable fixed-left carry ownership but never ambidextrous handoff or realistic detach.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'gripZoneSettleEquipEnabled\s*=\s*[\s\S]{0,180}canSettleEquipInGripZone\(\s*_equippedWeaponHandlingSettings\.gripZoneEquipEnabled\s*\)' `
     'Grip-zone equip and hover discovery must activate only from the addon snapshot.'

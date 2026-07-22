@@ -351,6 +351,8 @@ namespace rock::provider
         AmbidextrousHandoff = 1u << 2,
         GripZoneEquip = 1u << 3,
         GripZoneHoverHaptics = 1u << 4,
+        // Replaces ROCK's configured radius while this authority lease lives;
+        // the core VisualOnlySupport behavior itself remains always enabled.
         FiringGripProximitySupport = 1u << 5,
         EquippedWeaponShoulderStash = 1u << 6,
         PipboyTriggerHandEquip = 1u << 7,

@@ -193,6 +193,7 @@ namespace rock
         rockWeaponSizeClassRifleMaxWeight = 20.0f;
         rockWeaponInteractionTouchRadius = 2.0f;
         rockWeaponInteractionProbeRadius = 12.0f;
+        rockFiringGripProximitySupportRadius = 6.0f;
         rockRealisticGrenadeFuseSeconds = 5.0f;
         rockWeaponSupportGripHandLerpEnabled = true;
         rockWeaponSupportGripHandLerpTimeMin = 0.12f;
@@ -843,6 +844,13 @@ namespace rock
             0.25f,
             6.0f);
         rockWeaponInteractionProbeRadius = static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponInteractionProbeRadius", rockWeaponInteractionProbeRadius));
+        rockFiringGripProximitySupportRadius = readClampedFloat(ini,
+            SECTION,
+            "fFiringGripProximitySupportRadius",
+            rockFiringGripProximitySupportRadius,
+            6.0f,
+            0.25f,
+            30.0f);
         rockRealisticGrenadeFuseSeconds = readClampedFloat(ini,
             REALISTIC_WEAPONS_SECTION,
             "fRealisticGrenadeFuseSeconds",

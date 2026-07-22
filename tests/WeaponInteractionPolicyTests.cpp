@@ -1,6 +1,7 @@
 #include "physics-interaction/collision/ContactPipelinePolicy.h"
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
+#include "physics-interaction/weapon/EquippedWeaponHandlingSettings.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"
 #include "physics-interaction/weapon/WeaponInteraction.h"
 #include "physics-interaction/weapon/WeaponAccessoryPartKindPolicy.h"
@@ -578,16 +579,44 @@ int main()
     ok &= expectTrue("support grip continues to apply offhand visual authority",
         rock::weapon_support_authority_policy::supportGripAppliesSupportHandAuthority(rock::weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver));
 
+    const auto coreWeaponHandling = rock::makeEquippedWeaponHandlingSettings(7.0f, nullptr);
+    ok &= expectFalse("base ROCK has no external equipped-weapon authority",
+        coreWeaponHandling.externalAuthorityActive);
+    ok &= expectNear("base ROCK owns the proximity support radius",
+        coreWeaponHandling.firingGripProximitySupportRadiusGameUnits,
+        7.0f);
+    ok &= expectFalse("base ROCK visual-only support does not enable ambidextrous handoff",
+        coreWeaponHandling.ambidextrousHandoffEnabled);
+
+    rock::provider::RockProviderEquippedWeaponHandlingRequestV1 externalWeaponHandling{};
+    externalWeaponHandling.flags = static_cast<std::uint32_t>(
+        rock::provider::RockProviderEquippedWeaponHandlingFlagV1::FiringGripOwnership);
+    externalWeaponHandling.firingGripProximitySupportRadiusGameUnits = 8.0f;
+    auto externalHandling = rock::makeEquippedWeaponHandlingSettings(
+        7.0f,
+        &externalWeaponHandling);
+    ok &= expectTrue("an equipped-weapon request activates external authority",
+        externalHandling.externalAuthorityActive);
+    ok &= expectNear("external authority preserves ROCK's radius without an override",
+        externalHandling.firingGripProximitySupportRadiusGameUnits,
+        7.0f);
+    externalWeaponHandling.flags |= static_cast<std::uint32_t>(
+        rock::provider::RockProviderEquippedWeaponHandlingFlagV1::FiringGripProximitySupport);
+    externalHandling = rock::makeEquippedWeaponHandlingSettings(
+        7.0f,
+        &externalWeaponHandling);
+    ok &= expectNear("an active owner supplies proximity tuning",
+        externalHandling.firingGripProximitySupportRadiusGameUnits,
+        8.0f);
+
     using rock::weapon_support_authority_policy::canApplyFiringGripProximityAuthority;
     using rock::weapon_support_authority_policy::canPromoteSupportGripToFiringGrip;
     using rock::weapon_support_authority_policy::resolveFiringGripProximityAuthorityMode;
     using rock::weapon_support_authority_policy::WeaponSupportAuthorityMode;
-    ok &= expectTrue("firing-grip proximity contract applies to any equipped weapon when enabled",
-        canApplyFiringGripProximityAuthority(true, false));
-    ok &= expectFalse("disabled firing-grip proximity contract preserves full authority",
-        canApplyFiringGripProximityAuthority(false, false));
+    ok &= expectTrue("firing-grip proximity contract always applies to eligible equipped weapons",
+        canApplyFiringGripProximityAuthority(false));
     ok &= expectFalse("firing-grip proximity never changes a provider-mandated grab mode",
-        canApplyFiringGripProximityAuthority(true, true));
+        canApplyFiringGripProximityAuthority(true));
     ok &= expectEqual("any weapon grab near the firing grip stays visual-only",
         resolveFiringGripProximityAuthorityMode(5.5f, 6.0f),
         WeaponSupportAuthorityMode::VisualOnlySupport);
