@@ -164,6 +164,40 @@ namespace rock
             ::rock::provider::RockProviderEquippedWeaponHandlingStateV1& outState) const;
         void fillProviderWeaponPartGripStates(
             std::array<::rock::provider::RockProviderWeaponPartGripStateV1, 2>& outStates) const;
+        void fillProviderHandInteractionStates(
+            std::array<::rock::provider::RockProviderHandInteractionStateV1, 2>& outStates) const;
+        bool queryProviderEquippedWeaponStateV1(
+            ::rock::provider::RockProviderEquippedWeaponStateV1& outState) const;
+        std::uint32_t copyProviderWeaponPartPosesV1(
+            ::rock::provider::RockProviderWeaponPartPoseV1* outParts,
+            std::uint32_t maxParts) const;
+        std::uint32_t copyProviderWeaponPartDriveResultsV1(
+            std::uint64_t ownerToken,
+            ::rock::provider::RockProviderWeaponPartDriveApplicationResultV1* outResults,
+            std::uint32_t maxResults) const;
+        bool queryProviderScopeSightStateV1(
+            ::rock::provider::RockProviderScopeSightStateV1& outState) const;
+        bool queryProviderWeaponCompositionStateV1(
+            ::rock::provider::RockProviderWeaponCompositionStateV1& outState) const;
+        std::uint32_t copyProviderWeaponCompositionEntriesV1(
+            ::rock::provider::RockProviderWeaponCompositionEntryV1* outEntries,
+            std::uint32_t maxEntries) const;
+        bool queryProviderSelectedAuthoredGripPoseV1(
+            ::rock::provider::RockProviderAuthoredGripPoseV1& outPose) const;
+        bool queryProviderPresentedHandPoseV1(
+            ::rock::provider::RockProviderHand hand,
+            ::rock::provider::RockProviderPresentedHandPoseV1& outPose) const;
+        std::uint32_t copyProviderSemanticHandContactsV1(
+            ::rock::provider::RockProviderHand hand,
+            std::uint32_t maxFramesSinceContact,
+            ::rock::provider::RockProviderSemanticHandContactV1* outContacts,
+            std::uint32_t maxContacts) const;
+        std::uint32_t copyProviderPlayerColliderDescriptorsV1(
+            ::rock::provider::RockProviderPlayerColliderDescriptorV1* outDescriptors,
+            std::uint32_t maxDescriptors) const;
+        bool queryProviderHandCollisionAvailabilityV1(
+            ::rock::provider::RockProviderHand hand,
+            ::rock::provider::RockProviderHandCollisionAvailabilityV1& outState) const;
 
     private:
         struct EquippedWeaponDropMomentumHandoff;
@@ -402,6 +436,7 @@ namespace rock
         std::atomic<std::uint32_t> _worldGenerationAtomic{ 1 };
         std::atomic<std::uint32_t> _skeletonGenerationAtomic{ 1 };
         std::atomic<std::uint32_t> _providerGenerationAtomic{ 1 };
+        std::atomic<std::uint32_t> _collisionGenerationAtomic{ 1 };
         std::atomic<std::uint32_t> _stableFrameCountAtomic{ 0 };
         std::atomic<RE::hknpWorld*> _lifecycleHknpWorldAtomic{ nullptr };
         int _handColliderCreateRetryFrames = 0;
@@ -648,10 +683,21 @@ namespace rock
         {
             RE::NiAVObject* node{ nullptr };
             RE::NiTransform baselineLocal{};
+            std::uint64_t ownerToken{ 0 };
+            std::uint32_t bodyId{ 0x7FFF'FFFFu };
+            std::uint32_t groupId{ 0 };
+            std::uint32_t priority{ 0 };
+            std::array<char, ::rock::provider::ROCK_PROVIDER_MAX_EVIDENCE_NAME>
+                sourceName{};
             bool activeThisFrame{ false };
         };
         std::array<ProviderWeaponPartDriveNodeState, ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1> _providerWeaponPartDriveNodeStates{};
         std::uint64_t _providerWeaponPartDriveGenerationKey{ 0 };
+        std::array<::rock::provider::RockProviderWeaponPartDriveApplicationResultV1,
+            ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVE_RESULTS_V1>
+            _providerWeaponPartDriveResults{};
+        std::uint32_t _providerWeaponPartDriveResultCount{ 0 };
+        mutable DirectSkeletonBoneReader _providerPresentedPoseReader{};
 
         static constexpr std::size_t kNativePlayerCollisionSuppressionBodyCapacity = 64;
         std::array<std::uint32_t, kNativePlayerCollisionSuppressionBodyCapacity> _nativePlayerCollisionSuppressedBodyIds{};

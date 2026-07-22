@@ -96,6 +96,30 @@ namespace rock
             std::uint32_t sightBodyCount{ 0 };
         };
 
+        static constexpr std::size_t kMaxWeaponCompositionEntries = 64;
+
+        struct WeaponCompositionEntrySnapshot
+        {
+            std::uint32_t omodFormId{ 0 };
+            std::uint32_t attachPointFormId{ 0 };
+            std::uint32_t stableIndex{ 0 };
+            std::uint32_t flags{ 0 };
+            std::uint64_t semanticCoverageMask{ 0 };
+        };
+
+        struct WeaponCompositionSnapshot
+        {
+            std::array<WeaponCompositionEntrySnapshot,
+                kMaxWeaponCompositionEntries> entries{};
+            std::uint32_t entryCount{ 0 };
+            std::uint64_t weaponGenerationKey{ 0 };
+            std::uint64_t compositionSignature{ 0 };
+            std::uint64_t semanticCoverageMask{ 0 };
+            std::uint64_t missingCoverageMask{ 0 };
+            std::uint64_t publicationSequence{ 0 };
+            std::uint32_t weaponFormId{ 0 };
+        };
+
         /*
          * Frame-scoped, non-owning view of one generated weapon body's source
          * triangles. The triangle storage remains owned by WeaponCollision and
@@ -155,6 +179,8 @@ namespace rock
         WeaponEmitterSnapshot getWeaponEmitterSnapshot() const;
 
         NativeScopeSightAnchorSnapshot getNativeScopeSightAnchorSnapshot() const;
+
+        WeaponCompositionSnapshot getWeaponCompositionSnapshot() const;
 
         bool tryGetProfileEvidenceDescriptorForBodyId(
             std::uint32_t bodyId,
@@ -358,7 +384,9 @@ namespace rock
         void unpublishAtomicBodyIds();
         void beginWeaponBodyPublication();
         void endWeaponBodyPublication();
-        std::vector<WeaponCollisionProfileEvidenceDescriptor> buildProfileEvidenceSnapshot(const WeaponBodyBank& bank) const;
+        std::vector<WeaponCollisionProfileEvidenceDescriptor> buildProfileEvidenceSnapshot(
+            const WeaponBodyBank& bank,
+            WeaponCompositionSnapshot& outComposition) const;
         WeaponEmitterSnapshot buildWeaponEmitterSnapshot(
             RE::NiAVObject* weaponNode,
             std::uint64_t equippedWeaponKey,
@@ -488,6 +516,8 @@ namespace rock
         std::vector<WeaponCollisionProfileEvidenceDescriptor> _profileEvidenceSnapshot;
         WeaponEmitterSnapshot _weaponEmitterSnapshot{};
         NativeScopeSightAnchorSnapshot _nativeScopeSightAnchorSnapshot{};
+        WeaponCompositionSnapshot _weaponCompositionSnapshot{};
+        std::uint64_t _weaponCompositionPublicationSequence{ 0 };
         // Debug OMOD evidence dump fires once per weapon generation key.
         std::uint64_t _lastOmodDumpGenerationKey{ 0 };
         /*

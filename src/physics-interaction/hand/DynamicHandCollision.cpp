@@ -523,6 +523,9 @@ namespace rock
             }
         }
         _transitionCollisionSuppressed = suppressCollision;
+        _transitionCollisionSuppressedAtomic.store(
+            suppressCollision,
+            std::memory_order_release);
         ROCK_LOG_INFO(
             Hand,
             "Dynamic hand collision animation transition {} retained bodies",
@@ -547,6 +550,7 @@ namespace rock
         _logCounter = 0;
         _transitionState = {};
         _transitionCollisionSuppressed = false;
+        _transitionCollisionSuppressedAtomic.store(false, std::memory_order_release);
     }
 
     void DynamicHandCollisionRuntime::updateFrame(const PhysicsFrameContext& frame,
@@ -584,6 +588,10 @@ namespace rock
             _hands[1].hapticState = {};
             _transitionState = {};
             _transitionCollisionSuppressed = false;
+            _transitionCollisionSuppressedAtomic.store(
+                false,
+                std::memory_order_release);
+            telemetry.transitionCollisionSuppressed = false;
             _telemetrySnapshot = telemetry;
             return;
         }
@@ -595,6 +603,8 @@ namespace rock
             telemetry.hands[1].visualAuthorityAvailable = telemetry.hands[0].visualAuthorityAvailable;
             updateHandHaptic(_hands[0], telemetry.hands[0], false, frame.deltaSeconds);
             updateHandHaptic(_hands[1], telemetry.hands[1], false, frame.deltaSeconds);
+            telemetry.transitionCollisionSuppressed =
+                _transitionCollisionSuppressed;
             _telemetrySnapshot = telemetry;
             return;
         }
@@ -857,6 +867,8 @@ namespace rock
 
         updateHand(false, frame.right, rightHand, rightHandWeaponEquipped, rightVisualReturnActive);
         updateHand(true, frame.left, leftHand, leftSupportGripActive, leftVisualReturnActive);
+        telemetry.transitionCollisionSuppressed =
+            _transitionCollisionSuppressed;
         _telemetrySnapshot = telemetry;
     }
 

@@ -729,6 +729,34 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKProviderDebugOverlayRuntimeTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKProviderDebugOverlayRuntimeTests)
 
+  add_executable(ROCKProviderApiAbiTests
+    "${ROOT_DIR}/tests/ProviderApiAbiTests.cpp"
+  )
+  target_compile_features(ROCKProviderApiAbiTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKProviderApiAbiTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKProviderApiAbiTests)
+
+  add_executable(ROCKProviderApiNegotiationTests
+    "${ROOT_DIR}/tests/ProviderApiNegotiationTests.cpp"
+  )
+  target_compile_features(ROCKProviderApiNegotiationTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKProviderApiNegotiationTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKProviderApiNegotiationTests)
+
+  add_executable(ROCKProviderExternalBodyRegistryTests
+    "${ROOT_DIR}/tests/ProviderExternalBodyRegistryTests.cpp"
+  )
+  target_compile_features(ROCKProviderExternalBodyRegistryTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKProviderExternalBodyRegistryTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKProviderExternalBodyRegistryTests)
+
+  add_executable(ROCKProviderLeasePolicyTests
+    "${ROOT_DIR}/tests/ProviderLeasePolicyTests.cpp"
+  )
+  target_compile_features(ROCKProviderLeasePolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKProviderLeasePolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKProviderLeasePolicyTests)
+
   add_executable(ROCKDebugOverlayShapeGeometryTests
     "${ROOT_DIR}/tests/DebugOverlayShapeGeometryTests.cpp"
     "${SOURCE_DIR}/physics-interaction/debug/DebugOverlayShapeGeometry.cpp"
@@ -760,6 +788,10 @@ if(BUILD_ROCK_TESTS)
     ROCKDebugOverlayFrameAdmissionTests
     ROCKDebugOverlayLineBatchTests
     ROCKProviderDebugOverlayRuntimeTests
+    ROCKProviderApiAbiTests
+    ROCKProviderApiNegotiationTests
+    ROCKProviderExternalBodyRegistryTests
+    ROCKProviderLeasePolicyTests
     ROCKDebugOverlayShapeGeometryTests
     ROCKDebugOverlayShapePipelineTests
     ROCKDebugOverlayRuntimeSettingsTests

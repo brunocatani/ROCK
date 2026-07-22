@@ -9,6 +9,7 @@
 #include "RE/Bethesda/Actor.h"
 
 #include <algorithm>
+#include <string_view>
 
 namespace rock
 {
@@ -32,6 +33,36 @@ namespace rock
             default:
                 return "unknown";
             }
+        }
+
+        [[nodiscard]] EquippedWeaponTransitionCoordinator::TerminalResult
+        terminalResultForReason(
+            const char* reason,
+            const bool recoveryExhausted) noexcept
+        {
+            const std::string_view value = reason ? reason : "";
+            if (recoveryExhausted || value == "watchdog-complete") {
+                return recoveryExhausted ?
+                    EquippedWeaponTransitionCoordinator::TerminalResult::RecoveryExhausted :
+                    EquippedWeaponTransitionCoordinator::TerminalResult::Completed;
+            }
+            if (value == "weapon-unequipped") {
+                return EquippedWeaponTransitionCoordinator::TerminalResult::WeaponUnequipped;
+            }
+            if (value == "bound-identity-lost") {
+                return EquippedWeaponTransitionCoordinator::TerminalResult::IdentityLost;
+            }
+            if (value == "expected-identity-timeout") {
+                return EquippedWeaponTransitionCoordinator::TerminalResult::ExpectedIdentityTimeout;
+            }
+            if (value == "native-weapon-animation-after-handoff" ||
+                value == "native-weapon-animation-timeout") {
+                return EquippedWeaponTransitionCoordinator::TerminalResult::NativeAnimationHandoff;
+            }
+            if (value == "weapon-no-longer-drawn") {
+                return EquippedWeaponTransitionCoordinator::TerminalResult::WeaponNoLongerDrawn;
+            }
+            return EquippedWeaponTransitionCoordinator::TerminalResult::Completed;
         }
 
     }
@@ -59,6 +90,7 @@ namespace rock
         _lateRecoveryWindowGranted = false;
         _drawExhaustionLogged = false;
         _repairExhaustionLogged = false;
+        ++_transitionSequence;
 
         const auto current = readCurrentIdentity();
         _observedIdentity = current;
@@ -390,6 +422,14 @@ namespace rock
 
     void EquippedWeaponTransitionCoordinator::shutdown()
     {
+        if (_active) {
+            _lastTerminalWeaponFormID = _boundIdentity.valid() ?
+                _boundIdentity.formID :
+                _expectedIdentity.formID;
+            _lastTerminalSource = _source;
+            _lastTerminalResult = TerminalResult::Shutdown;
+            ++_terminalSequence;
+        }
         _bridge.shutdown();
         _policyState = {};
         _observedIdentity = {};
@@ -412,6 +452,14 @@ namespace rock
 
     void EquippedWeaponTransitionCoordinator::abandonSceneGraph()
     {
+        if (_active) {
+            _lastTerminalWeaponFormID = _boundIdentity.valid() ?
+                _boundIdentity.formID :
+                _expectedIdentity.formID;
+            _lastTerminalSource = _source;
+            _lastTerminalResult = TerminalResult::ProviderLost;
+            ++_terminalSequence;
+        }
         _bridge.abandonSceneGraph();
         _policyState = {};
         _observedIdentity = {};
@@ -469,6 +517,13 @@ namespace rock
         if (!identity.valid()) {
             return;
         }
+        const bool startsNewTransition = !_active ||
+            !_boundIdentity.valid() ||
+            _boundIdentity != identity ||
+            _source != source;
+        if (startsNewTransition) {
+            ++_transitionSequence;
+        }
         if (_waitingForExpectedIdentity) {
             previousIdentity = Identity{
                 .formID = _expectedIdentity.previousFormID,
@@ -513,6 +568,13 @@ namespace rock
         const char* reason,
         const bool releaseSceneGraph)
     {
+        const auto terminalWeaponFormID = _boundIdentity.valid() ?
+            _boundIdentity.formID :
+            _expectedIdentity.formID;
+        const auto terminalSource = _source;
+        const auto terminalResult = terminalResultForReason(
+            reason,
+            _drawExhaustionLogged || _repairExhaustionLogged);
         if (releaseSceneGraph) {
             _bridge.releaseStandbyModel(reason);
         } else {
@@ -528,5 +590,38 @@ namespace rock
         _lateRecoveryWindowGranted = false;
         _drawExhaustionLogged = false;
         _repairExhaustionLogged = false;
+        _lastTerminalWeaponFormID = terminalWeaponFormID;
+        _lastTerminalSource = terminalSource;
+        _lastTerminalResult = terminalResult;
+        ++_terminalSequence;
+    }
+
+    EquippedWeaponTransitionCoordinator::PublicSnapshot
+    EquippedWeaponTransitionCoordinator::getPublicSnapshot() const noexcept
+    {
+        PublicSnapshot snapshot{};
+        snapshot.transitionSequence = _transitionSequence;
+        snapshot.terminalSequence = _terminalSequence;
+        snapshot.weaponFormID = _active ?
+            (_boundIdentity.valid() ? _boundIdentity.formID :
+                                     _expectedIdentity.formID) :
+            _lastTerminalWeaponFormID;
+        snapshot.source = _active ? _source : _lastTerminalSource;
+        snapshot.terminalResult = _lastTerminalResult;
+        snapshot.active = _active;
+        snapshot.identityPending = _waitingForExpectedIdentity;
+        snapshot.drawPending = _active &&
+            !_waitingForExpectedIdentity &&
+            !_policyState.nativeHandoffObserved;
+        snapshot.bridgePresented = _bridge.isModelPresented();
+        snapshot.nativeRenderable = _policyState.nativeHandoffObserved;
+        snapshot.handPoseHandoffComplete =
+            _policyState.nativeHandoffObserved &&
+            !_bridge.isHandPoseHandoffActive();
+        snapshot.recoveryExhausted =
+            _drawExhaustionLogged || _repairExhaustionLogged ||
+            (!_active &&
+                _lastTerminalResult == TerminalResult::RecoveryExhausted);
+        return snapshot;
     }
 }

@@ -1,6 +1,7 @@
 #include "physics-interaction/hand/HandLifecycle.h"
 
 #include <cstdio>
+#include <limits>
 #include <string_view>
 
 namespace
@@ -95,6 +96,27 @@ int main()
     decision = evaluateSemanticPivotCandidate(true, anchor, 20, 0);
     ok &= expectFalse("anchor-only semantic contact is rejected", decision.accept);
     ok &= expectReason("anchor-only semantic pivot reason", decision.reason, "anchorOnly");
+
+    ok &= expectTrue(
+        "same-body adjacent contacts continue a semantic contact run",
+        semanticContactContinuesRun(true, 20, 20, 101, 100));
+    ok &= expectFalse(
+        "same-body contacts separated by a frame gap start a new run",
+        semanticContactContinuesRun(true, 20, 20, 102, 100));
+    ok &= expectFalse(
+        "different-body contacts start a new run",
+        semanticContactContinuesRun(true, 20, 21, 101, 100));
+    ok &= expectFalse(
+        "invalid prior contacts start a new run",
+        semanticContactContinuesRun(false, 20, 20, 101, 100));
+    ok &= expectTrue(
+        "contact-run adjacency remains correct across frame-counter wrap",
+        semanticContactContinuesRun(
+            true,
+            20,
+            20,
+            0,
+            (std::numeric_limits<std::uint32_t>::max)()));
 
     return ok ? 0 : 1;
 }

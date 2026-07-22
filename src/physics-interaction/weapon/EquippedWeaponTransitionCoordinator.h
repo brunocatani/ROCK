@@ -19,6 +19,36 @@ namespace rock
             WorkbenchExit,
         };
 
+        enum class TerminalResult : std::uint8_t
+        {
+            None,
+            Completed,
+            WeaponUnequipped,
+            IdentityLost,
+            ExpectedIdentityTimeout,
+            NativeAnimationHandoff,
+            WeaponNoLongerDrawn,
+            RecoveryExhausted,
+            ProviderLost,
+            Shutdown,
+        };
+
+        struct PublicSnapshot
+        {
+            std::uint64_t transitionSequence{ 0 };
+            std::uint64_t terminalSequence{ 0 };
+            std::uint32_t weaponFormID{ 0 };
+            Source source{ Source::ObservedEquip };
+            TerminalResult terminalResult{ TerminalResult::None };
+            bool active{ false };
+            bool identityPending{ false };
+            bool drawPending{ false };
+            bool bridgePresented{ false };
+            bool nativeRenderable{ false };
+            bool handPoseHandoffComplete{ false };
+            bool recoveryExhausted{ false };
+        };
+
         struct FrameInput
         {
             float deltaSeconds{ 0.0f };
@@ -53,6 +83,7 @@ namespace rock
         void update(const FrameInput& input);
         void shutdown();
         void abandonSceneGraph();
+        [[nodiscard]] PublicSnapshot getPublicSnapshot() const noexcept;
 
         [[nodiscard]] bool isHandPoseHandoffActive() const noexcept
         {
@@ -112,5 +143,10 @@ namespace rock
         bool _lateRecoveryWindowGranted{ false };
         bool _drawExhaustionLogged{ false };
         bool _repairExhaustionLogged{ false };
+        std::uint64_t _transitionSequence{ 0 };
+        std::uint64_t _terminalSequence{ 0 };
+        std::uint32_t _lastTerminalWeaponFormID{ 0 };
+        Source _lastTerminalSource{ Source::ObservedEquip };
+        TerminalResult _lastTerminalResult{ TerminalResult::None };
     };
 }

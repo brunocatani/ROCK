@@ -23,10 +23,36 @@ namespace rock::provider_debug_overlay
         std::uint32_t textCount{ 0 };
     };
 
+    struct InvalidatedPublisher
+    {
+        std::uint64_t ownerToken{ 0 };
+        provider::RockProviderSuppressionInvalidationReasonV1 reason{
+            provider::RockProviderSuppressionInvalidationReasonV1::None
+        };
+    };
+
+    struct PruneResult
+    {
+        std::array<InvalidatedPublisher,
+            provider::ROCK_PROVIDER_MAX_DEBUG_OVERLAY_PUBLISHERS_V1>
+            publishers{};
+        std::uint32_t count{ 0 };
+    };
+
     [[nodiscard]] provider::RockProviderResultV1 publish(
         std::uint64_t ownerToken,
-        const provider::RockProviderDebugOverlayPublicationV1& publication);
+        const provider::RockProviderDebugOverlayPublicationV1& publication,
+        std::uint64_t frameIndex);
+    void prune(
+        std::uint64_t frameIndex,
+        std::uint32_t worldGeneration,
+        std::uint32_t skeletonGeneration,
+        std::uint32_t providerGeneration,
+        PruneResult& outResult);
     void clear(std::uint64_t ownerToken);
+    void clearAll(
+        PruneResult& outResult,
+        provider::RockProviderSuppressionInvalidationReasonV1 reason);
     void clearAll();
     [[nodiscard]] bool hasContent();
     void copySnapshot(Snapshot& outSnapshot);

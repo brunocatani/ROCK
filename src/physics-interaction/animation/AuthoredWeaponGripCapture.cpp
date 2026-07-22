@@ -1,6 +1,6 @@
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
 
-#include "api/ROCKProviderApi.h"
+#include "api/ROCKProviderApiInternal.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
 #include "physics-interaction/native/EntryTrampolineHook.h"
 #include "physics-interaction/native/HavokOffsets.h"

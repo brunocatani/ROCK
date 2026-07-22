@@ -1070,9 +1070,13 @@ namespace rock
             std::uint32_t overlayIndex{ 0 };
         };
 
-        std::unordered_map<std::uint32_t, std::uint32_t> readEquippedOmodsByAttachPointFormId()
+        std::unordered_map<std::uint32_t, std::uint32_t> readEquippedOmodsByAttachPointFormId(
+            WeaponCollision::WeaponCompositionSnapshot* outComposition = nullptr)
         {
             std::unordered_map<std::uint32_t, std::uint32_t> result;
+            if (outComposition) {
+                *outComposition = {};
+            }
             auto* player = f4vr::getPlayer();
             auto* equipData = f4vr::getEquippedItem();
             auto* weaponForm = equipData ? equipData->item.object : nullptr;
@@ -1085,19 +1089,32 @@ namespace rock
 
             const auto indexData = objectInstanceExtra->GetIndexData();
             result.reserve(indexData.size());
+            std::uint32_t stableIndex = 0;
             for (const auto& modIndex : indexData) {
-                if (modIndex.disabled) {
-                    continue;
-                }
                 auto* omod = RE::TESForm::GetFormByID<RE::BGSMod::Attachment::Mod>(modIndex.objectID);
-                if (!omod) {
-                    continue;
-                }
                 const RE::BGSKeyword* attachPointKeyword =
-                    RE::BGSKeyword::GetTypedKeywordByIndex(RE::KeywordType::kAttachPoint, omod->attachPoint.keywordIndex);
-                if (attachPointKeyword) {
+                    omod ? RE::BGSKeyword::GetTypedKeywordByIndex(
+                               RE::KeywordType::kAttachPoint,
+                               omod->attachPoint.keywordIndex) :
+                           nullptr;
+                if (!modIndex.disabled && attachPointKeyword && omod) {
                     result.emplace(attachPointKeyword->formID, omod->formID);
                 }
+                if (outComposition &&
+                    outComposition->entryCount <
+                        outComposition->entries.size()) {
+                    auto& entry = outComposition->entries[
+                        outComposition->entryCount++];
+                    entry.omodFormId = omod ? omod->formID : modIndex.objectID;
+                    entry.attachPointFormId =
+                        attachPointKeyword ? attachPointKeyword->formID : 0;
+                    entry.stableIndex = stableIndex;
+                    entry.flags = modIndex.disabled ? (1u << 1) : (1u << 0);
+                    if (attachPointKeyword) {
+                        entry.flags |= 1u << 2;
+                    }
+                }
+                ++stableIndex;
             }
             return result;
         }
@@ -3043,7 +3060,9 @@ namespace rock
         return false;
     }
 
-    std::vector<WeaponCollisionProfileEvidenceDescriptor> WeaponCollision::buildProfileEvidenceSnapshot(const WeaponBodyBank& bank) const
+    std::vector<WeaponCollisionProfileEvidenceDescriptor> WeaponCollision::buildProfileEvidenceSnapshot(
+        const WeaponBodyBank& bank,
+        WeaponCompositionSnapshot& outComposition) const
     {
         std::vector<WeaponCollisionProfileEvidenceDescriptor> descriptors;
         descriptors.reserve(bankWeaponBodyCount(bank));
@@ -3054,7 +3073,10 @@ namespace rock
          * them by attach-point keyword FormID. Runs once per publication on
          * the main thread; ~a dozen form lookups.
          */
-        const auto omodByAttachPointFormId = readEquippedOmodsByAttachPointFormId();
+        const auto omodByAttachPointFormId =
+            readEquippedOmodsByAttachPointFormId(&outComposition);
+        outComposition.weaponGenerationKey = _cachedWeaponBodySetKey;
+        outComposition.weaponFormId = _cachedWeaponFormID;
 
         auto copyLocalPoints = [](const std::vector<RE::NiPoint3>& points) {
             std::vector<WeaponEvidencePoint3> result;
@@ -3095,8 +3117,48 @@ namespace rock
                     descriptor.omodFormId = omodIt->second;
                 }
             }
+            const auto partValue = static_cast<std::uint32_t>(
+                instance.semantic.partKind);
+            if (partValue < 64) {
+                const auto coverageBit = 1ull << partValue;
+                outComposition.semanticCoverageMask |= coverageBit;
+                for (std::uint32_t compositionIndex = 0;
+                     compositionIndex < outComposition.entryCount;
+                     ++compositionIndex) {
+                    auto& entry = outComposition.entries[compositionIndex];
+                    if ((descriptor.omodFormId != 0 &&
+                            entry.omodFormId == descriptor.omodFormId) ||
+                        (instance.semantic.attachPointFormId != 0 &&
+                            entry.attachPointFormId ==
+                                instance.semantic.attachPointFormId)) {
+                        entry.semanticCoverageMask |= coverageBit;
+                        entry.flags |= 1u << 3;
+                    }
+                }
+            }
             descriptors.push_back(std::move(descriptor));
         }
+
+        constexpr std::uint64_t kFnvOffset = 1469598103934665603ull;
+        constexpr std::uint64_t kFnvPrime = 1099511628211ull;
+        auto signature = kFnvOffset;
+        for (std::uint32_t i = 0; i < outComposition.entryCount; ++i) {
+            const auto& entry = outComposition.entries[i];
+            for (const auto value : {
+                     entry.omodFormId,
+                     entry.attachPointFormId,
+                     entry.stableIndex,
+                     entry.flags }) {
+                signature ^= value;
+                signature *= kFnvPrime;
+            }
+            if ((entry.flags & (1u << 0)) != 0 &&
+                entry.semanticCoverageMask == 0 && i < 64) {
+                outComposition.missingCoverageMask |= 1ull << i;
+            }
+        }
+        outComposition.compositionSignature =
+            outComposition.entryCount != 0 ? signature : 0;
 
         return descriptors;
     }
@@ -3294,6 +3356,29 @@ namespace rock
             }
         }
 
+        return {};
+    }
+
+    WeaponCollision::WeaponCompositionSnapshot
+    WeaponCollision::getWeaponCompositionSnapshot() const
+    {
+        for (int attempt = 0; attempt < 4; ++attempt) {
+            const auto startVersion =
+                _weaponBodyPublicationVersion.load(std::memory_order_acquire);
+            if ((startVersion & 1u) != 0) {
+                continue;
+            }
+            WeaponCompositionSnapshot snapshot{};
+            {
+                std::scoped_lock lock(_weaponEvidenceSnapshotMutex);
+                snapshot = _weaponCompositionSnapshot;
+            }
+            const auto endVersion =
+                _weaponBodyPublicationVersion.load(std::memory_order_acquire);
+            if (startVersion == endVersion && (endVersion & 1u) == 0) {
+                return snapshot;
+            }
+        }
         return {};
     }
 
@@ -5210,6 +5295,7 @@ namespace rock
             _profileEvidenceSnapshot.clear();
             _weaponEmitterSnapshot = {};
             _nativeScopeSightAnchorSnapshot = {};
+            _weaponCompositionSnapshot = {};
         }
         endWeaponBodyPublication();
     }
@@ -5221,7 +5307,12 @@ namespace rock
 
     void WeaponCollision::publishAtomicBodyIds(WeaponBodyBank& bank)
     {
-        auto evidenceSnapshot = buildProfileEvidenceSnapshot(bank);
+        WeaponCompositionSnapshot weaponCompositionSnapshot{};
+        auto evidenceSnapshot = buildProfileEvidenceSnapshot(
+            bank,
+            weaponCompositionSnapshot);
+        weaponCompositionSnapshot.publicationSequence =
+            ++_weaponCompositionPublicationSequence;
         RE::NiAVObject* packageDriveNode = resolvePackageDriveNode(bank, nullptr);
         NativeScopeSightAnchorSnapshot nativeScopeSightAnchorSnapshot = buildNativeScopeSightAnchorSnapshot(
             _cachedWeaponBodySetKey,
@@ -5247,6 +5338,7 @@ namespace rock
             std::scoped_lock lock(_weaponEvidenceSnapshotMutex);
             _profileEvidenceSnapshot = std::move(evidenceSnapshot);
             _nativeScopeSightAnchorSnapshot = nativeScopeSightAnchorSnapshot;
+            _weaponCompositionSnapshot = weaponCompositionSnapshot;
         }
         for (auto& instance : bank) {
             if (instance.body.isValid() && count < MAX_WEAPON_BODIES) {

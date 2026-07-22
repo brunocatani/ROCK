@@ -89,6 +89,7 @@ namespace rock::weapon_part_runtime
         GrabMode grabMode{ GrabMode::None };
         std::uint64_t ownerToken{ 0 };
         std::uint32_t groupId{ 0 };
+        std::uint32_t priority{ 0 };
     };
 
     inline std::size_t boundedStringLength(const char* value, std::size_t capacity)
@@ -220,6 +221,7 @@ namespace rock::weapon_part_runtime
             result.grabMode = best->grabMode;
             result.ownerToken = best->ownerToken;
             result.groupId = best->groupId;
+            result.priority = best->priority;
         }
         return result;
     }

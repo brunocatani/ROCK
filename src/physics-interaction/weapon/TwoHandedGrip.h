@@ -151,6 +151,31 @@ namespace rock
         native_scope_activation_geometry::ConeThresholds thresholds{};
     };
 
+    struct SelectedAuthoredGripPoseSnapshot
+    {
+        enum class Source : std::uint8_t
+        {
+            Unknown = 0,
+            LiveEquippedGraph = 1,
+            NativeIdlePreharvest = 2,
+            RuntimeCanonical = 3,
+        };
+
+        bool valid{ false };
+        bool rightHandValid{ false };
+        bool leftHandValid{ false };
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint64_t variantKey{ 0 };
+        std::uint64_t captureSequence{ 0 };
+        Source source{ Source::Unknown };
+        RE::NiTransform rightHandWeaponLocal{};
+        RE::NiTransform leftHandWeaponLocal{};
+        std::array<RE::NiTransform, 15> rightFingerLocalTransforms{};
+        std::array<RE::NiTransform, 15> leftFingerLocalTransforms{};
+        std::uint16_t rightFingerLocalTransformMask{ 0 };
+        std::uint16_t leftFingerLocalTransformMask{ 0 };
+    };
+
     struct NativeScopeRigidFrameState
     {
         std::uint64_t weaponGenerationKey{ 0 };
@@ -420,6 +445,8 @@ namespace rock
 
         NativeScopeCameraDebugSnapshot getNativeScopeCameraDebugSnapshot() const { return _nativeScopeCameraDebugSnapshot; }
         NativeScopeActivationDebugSnapshot getNativeScopeActivationDebugSnapshot() const { return _nativeScopeActivationDebugSnapshot; }
+        bool getSelectedAuthoredGripPoseSnapshot(
+            SelectedAuthoredGripPoseSnapshot& outSnapshot) const;
 
         bool isScopeMenuOpenThisFrame() const { return _scopeMenuOpenThisFrame; }
 
@@ -737,7 +764,8 @@ namespace rock
 
         bool tryComputeMirroredLeftFiringHandWeaponLocal(
             RE::NiTransform& outHandWeaponLocal,
-            bool* outUsedAuthoredCanonical = nullptr) const;
+            bool* outUsedAuthoredCanonical = nullptr,
+            bool logDiagnostic = true) const;
 
         bool tryBuildMirroredRightSupportHandWeaponLocal(
             const RE::NiTransform& leftHandWeaponLocal,

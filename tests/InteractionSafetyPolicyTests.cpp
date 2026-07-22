@@ -149,5 +149,31 @@ int main()
     ok &= expectFalse("queued state is non-terminal", isTerminal(RockProviderInteractionCommandStateV1::Queued));
     ok &= expectTrue("rejected state is terminal", isTerminal(RockProviderInteractionCommandStateV1::Rejected));
 
+    RockProviderInteractionCommandResultV1 accepted{};
+    accepted.state = RockProviderInteractionCommandStateV1::Queued;
+    accepted.stage = RockProviderCommandStageV1::Committed;
+    accepted.acceptedFrame = 17;
+    accepted.committedFrame = 19;
+    RockProviderInteractionCommandResultV1 completed{};
+    completed.state = RockProviderInteractionCommandStateV1::Succeeded;
+    completed.stage = RockProviderCommandStageV1::Queued;
+    completed.acceptedFrame = 23;
+    const auto mergedCompletion = mergeResultHistory(accepted, completed, 29);
+    ok &= expectEqual("completion preserves acceptance frame", mergedCompletion.acceptedFrame, std::uint64_t{ 17 });
+    ok &= expectEqual("completion preserves committed frame", mergedCompletion.committedFrame, std::uint64_t{ 19 });
+    ok &= expectEqual("completion records terminal frame", mergedCompletion.frameIndex, std::uint64_t{ 29 });
+    ok &= expectEqual("successful completion records applied frame", mergedCompletion.appliedFrame, std::uint64_t{ 29 });
+    ok &= expectEqual("completion normalizes terminal stage", mergedCompletion.stage, RockProviderCommandStageV1::Terminal);
+
+    completed.state = RockProviderInteractionCommandStateV1::Rejected;
+    completed.failure = RockProviderInteractionFailureV1::TargetUnavailable;
+    completed.failureStage = RockProviderInteractionFailureV1::None;
+    completed.frameIndex = 31;
+    completed.appliedFrame = 0;
+    const auto mergedRejection = mergeResultHistory(accepted, completed, 37);
+    ok &= expectEqual("rejection preserves explicit terminal frame", mergedRejection.frameIndex, std::uint64_t{ 31 });
+    ok &= expectEqual("rejection records failure stage", mergedRejection.failureStage, RockProviderInteractionFailureV1::TargetUnavailable);
+    ok &= expectEqual("rejection does not invent applied frame", mergedRejection.appliedFrame, std::uint64_t{ 0 });
+
     return ok ? 0 : 1;
 }

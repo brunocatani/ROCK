@@ -11,12 +11,26 @@ namespace RE
 
 namespace rock::input_remap_runtime
 {
+    enum class RawButtonAvailabilityReason : std::uint32_t
+    {
+        Available = 0,
+        HookNotSampled = 1,
+        BlockingMenu = 2,
+        ReleaseToRearm = 3,
+        InvalidButton = 4,
+    };
+
     struct RawButtonState
     {
         bool available{ false };
         bool held{ false };
         bool pressed{ false };
         bool released{ false };
+        std::uint64_t sampleSequence{ 0 };
+        std::uint32_t sampleAgeMilliseconds{ 0 };
+        RawButtonAvailabilityReason availabilityReason{
+            RawButtonAvailabilityReason::HookNotSampled
+        };
     };
 
     struct PipboyEquipTriggerResolution

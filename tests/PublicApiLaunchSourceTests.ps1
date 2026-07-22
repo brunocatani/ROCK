@@ -118,6 +118,24 @@ Require-FilesEqual 'src/api/ROCKApi.h' 'SDK/ROCK/include/ROCKApi.h' `
 
 Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_API_VERSION\s*=\s*1' `
     'Provider API version must be v1.'
+Require-Text 'src/api/ROCKProviderApi.h' 'struct\s+RockProviderApiDescriptorV1[\s\S]*providerApiByteSize[\s\S]*featureBits2' `
+    'V1 must expose an immutable descriptor for safe table-extent discovery.'
+Require-Text 'src/api/ROCKProviderApi.h' 'ROCKAPI_GetDescriptorV1' `
+    'The public SDK must declare the independent V1 descriptor accessor.'
+Require-Text 'src/exports.def' 'ROCKAPI_GetDescriptorV1' `
+    'The provider descriptor must be exported independently of the function table.'
+Require-Text 'src/api/ROCKProviderApi.h' 'sizeof\(RockProviderApi\)\s*==\s*656' `
+    'The append-only V1 function table must retain its exact 82-slot x64 extent.'
+Require-Text 'src/api/ROCKProviderApi.h' 'struct\s+RockProviderLimitsExtV1' `
+    'Fixed capacities omitted by the legacy limits prefix must be discoverable through extended limits.'
+Require-Text 'src/api/ROCKProviderApi.h' 'RockProviderStructureIdV1[\s\S]*getPublicStructureSizeV1' `
+    'Consumers must be able to query exact public POD sizes.'
+Require-Path 'src/api/ROCKProviderApiInternal.h' `
+    'Runtime-only provider declarations must live outside the public SDK header.'
+Reject-Text 'src/api/ROCKProviderApi.h' 'setPhysicsInteractionInstance|resolveWeaponPartTargetV1|currentHandInputSuppressionFlagsV1' `
+    'The public SDK header must not leak ROCK runtime-only declarations.'
+Require-Text 'src/api/ProviderLeasePolicy.h' 'exclusiveExpiryFrame[\s\S]*isActive[\s\S]*remainingFrames' `
+    'All stateful publications must share the named exclusive lease-boundary policy.'
 Require-Text 'src/api/ROCKApi.h' 'ROCK_API_VERSION\s*=\s*rock::provider::ROCK_PROVIDER_API_VERSION' `
     'ROCKApi alias must use the same version constant as the provider API.'
 Require-Text 'src/api/ROCKProviderApi.h' 'enum\s+class\s+RockProviderResultV1' `
@@ -277,6 +295,22 @@ Reject-Text 'src/api/ROCKProviderApi.h' 'getWeaponEvidenceDescriptors|RockProvid
     'Public API must not expose redundant shallow weapon evidence or unowned contact snapshots.'
 Reject-Text 'src/api/ROCKProviderApi.h' 'DiagnosticOverlay|DiagnosticInput|publishDiagnosticOverlay|getDiagnosticInputSnapshotV1|setDiagnosticInputSuppressionV1' `
     'Public API must not expose diagnostic/probe control surfaces.'
+Require-Text 'src/api/ROCKProviderApi.h' 'Live scene/physics readbacks[\s\S]{0,220}WrongThread' `
+    'The public header must document the fail-closed game-thread contract for live readbacks.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'apiCopyWeaponPartDriveApplicationResultsV1[\s\S]{0,900}!onAnimationOwnerThread\(\)[\s\S]{0,120}WrongThread' `
+    'Weapon-part drive result readback must reject non-owner threads.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'apiGetScopeSightStateV1[\s\S]{0,520}queryProviderScopeSightStateV1[\s\S]{0,80}true\);' `
+    'Scope sight readback must require the animation owner thread.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'apiCopySemanticHandContactsV1[\s\S]{0,1000}!onAnimationOwnerThread\(\)[\s\S]{0,120}WrongThread' `
+    'Semantic hand-contact readback must reject non-owner threads.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'apiCopyPlayerColliderDescriptorsV1[\s\S]{0,900}!onAnimationOwnerThread\(\)[\s\S]{0,120}WrongThread' `
+    'Player collider readback must reject non-owner threads.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'apiGetHandCollisionAvailabilityV1[\s\S]{0,620}queryProviderHandCollisionAvailabilityV1[\s\S]{0,80}true\);' `
+    'Hand collision availability must require the animation owner thread.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'registerBodiesForScopeDetailed[\s\S]{0,600}RegistrationResult::CapacityFull[\s\S]{0,220}RockProviderResultV1::CapacityFull[\s\S]{0,220}RegistrationResult::OwnerConflict[\s\S]{0,220}RockProviderResultV1::OwnerConflict' `
+    'Scoped external-body registration must preserve capacity and ownership failure semantics.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'clearScope\(ownerToken, scopeToken\)[\s\S]{0,160}RockProviderResultV1::TargetUnavailable' `
+    'Clearing an unknown external-body scope must report target unavailability.'
 
 $providerHeader = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/api/ROCKProviderApi.h')
 $expectedProviderFunctions = [string[]]@(
@@ -333,7 +367,35 @@ $expectedProviderFunctions = [string[]]@(
     'getEquippedWeaponHandlingStateV1',
     'publishDebugOverlayV1',
     'clearDebugOverlayV1',
-    'getPresentedHandFrameV1'
+    'getPresentedHandFrameV1',
+    'getProviderLimitsExtV1',
+    'getPublicStructureSizeV1',
+    'registerFrameCallbackForOwnerV1',
+    'unregisterFrameCallbackForOwnerV1',
+    'getHandInteractionStateV1',
+    'copyProviderEventsSinceV1',
+    'getEquippedWeaponStateV1',
+    'registerExternalBodiesForScopeV1',
+    'clearExternalBodiesForScopeV1',
+    'copyExternalContactsSinceV1',
+    'queryWeaponPartTargetResolutionV1',
+    'copyWeaponPartPoseSnapshotV1',
+    'copyWeaponPartDriveApplicationResultsV1',
+    'getScopeSightStateV1',
+    'getWeaponCompositionStateV1',
+    'copyWeaponCompositionEntriesV1',
+    'getSelectedAuthoredGripPoseV1',
+    'getPresentedHandPoseV1',
+    'copySemanticHandContactsV1',
+    'copyPlayerColliderDescriptorsV1',
+    'getHandCollisionAvailabilityV1',
+    'cancelInteractionCommandV1',
+    'getHandInputSuppressionStateV1',
+    'acquireOffhandReservationV1',
+    'renewOffhandReservationV1',
+    'releaseOffhandReservationV1',
+    'getOffhandReservationStateV1',
+    'clearNativeAnimationRuntimeV1'
 )
 Require-SequenceEqual 'ROCKProviderApi function pointer order' (Get-ProviderFunctionNames $providerHeader) $expectedProviderFunctions
 

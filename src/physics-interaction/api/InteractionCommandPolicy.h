@@ -15,6 +15,39 @@ namespace rock::provider::interaction_command_policy
                state == RockProviderInteractionCommandStateV1::Cancelled;
     }
 
+    [[nodiscard]] inline constexpr RockProviderInteractionCommandResultV1 mergeResultHistory(
+        const RockProviderInteractionCommandResultV1& existing,
+        const RockProviderInteractionCommandResultV1& update,
+        const std::uint64_t currentFrame) noexcept
+    {
+        auto merged = update;
+
+        // The first stored result is created at queue acceptance. Later
+        // runtime stages must never reinterpret their own frame as acceptance.
+        merged.acceptedFrame = existing.acceptedFrame;
+        if (merged.committedFrame == 0) {
+            merged.committedFrame = existing.committedFrame;
+        }
+        if (merged.appliedFrame == 0) {
+            merged.appliedFrame = existing.appliedFrame;
+        }
+
+        if (isTerminal(merged.state)) {
+            merged.stage = RockProviderCommandStageV1::Terminal;
+            if (merged.frameIndex == 0) {
+                merged.frameIndex = currentFrame;
+            }
+            if (merged.state == RockProviderInteractionCommandStateV1::Succeeded &&
+                merged.appliedFrame == 0) {
+                merged.appliedFrame = merged.frameIndex;
+            }
+            if (merged.failureStage == RockProviderInteractionFailureV1::None) {
+                merged.failureStage = merged.failure;
+            }
+        }
+        return merged;
+    }
+
     struct ForceGrabReservation
     {
         std::uint64_t ownerToken{ 0 };

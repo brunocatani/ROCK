@@ -6,7 +6,7 @@
 #include "api/FRIKApi.h"
 #define ROCK_API_EXPORTS
 #include "RockConfig.h"
-#include "api/ROCKProviderApi.h"
+#include "api/ROCKProviderApiInternal.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapture.h"
 #include "physics-interaction/core/PhysicsCreationGatePolicy.h"
 #include "physics-interaction/core/PhysicsHooks.h"

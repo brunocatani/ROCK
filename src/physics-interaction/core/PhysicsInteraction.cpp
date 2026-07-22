@@ -1,6 +1,7 @@
 #include "physics-interaction/core/PhysicsInteraction.h"
 
 #include "api/ProviderDebugOverlayRuntime.h"
+#include "api/ROCKProviderApiInternal.h"
 
 #include <algorithm>
 #include <array>
@@ -1413,11 +1414,13 @@ namespace rock
         _generatedBodiesWorldGeneration = _lifecycleState.worldGeneration;
         _generatedBodiesSkeletonGeneration = _lifecycleState.skeletonGeneration;
         _generatedBodiesProviderGeneration = _lifecycleState.providerGeneration;
+        _collisionGenerationAtomic.fetch_add(1, std::memory_order_acq_rel);
         refreshGeneratedBodyContactRegistry();
     }
 
     void PhysicsInteraction::markGeneratedBodiesInvalidated()
     {
+        _collisionGenerationAtomic.fetch_add(1, std::memory_order_acq_rel);
         // Close callback entry and drain any native step already traversing
         // ROCK-owned body banks before clearing registry or wrapper state.
         _generatedBodyStepDrive.reset();
@@ -2841,6 +2844,8 @@ namespace rock
                     currentWeaponGenerationKey,
                     frame,
                     drivenSourceNodes);
+            } else {
+                _providerWeaponPartDriveResultCount = 0;
             }
 
             /*
@@ -7171,18 +7176,6 @@ namespace rock
                     return RockProviderHand::None;
                 }
             }();
-            const auto requestTargetRefr = [&]() -> std::uintptr_t {
-                switch (command.kind) {
-                case RockProviderInteractionCommandKindV1::ForceGrab:
-                    return command.forceGrab.targetRefr;
-                case RockProviderInteractionCommandKindV1::ForceRelease:
-                    return command.forceRelease.targetRefr;
-                case RockProviderInteractionCommandKindV1::ThrownDrop:
-                    return command.thrownDrop.targetRefr;
-                default:
-                    return 0;
-                }
-            }();
             const auto requestTargetFormId = [&]() -> std::uint32_t {
                 switch (command.kind) {
                 case RockProviderInteractionCommandKindV1::ForceGrab:
@@ -7253,7 +7246,6 @@ namespace rock
             result.state = RockProviderInteractionCommandStateV1::Rejected;
             result.failure = RockProviderInteractionFailureV1::InvalidRequest;
             result.hand = requestHand;
-            result.targetRefr = requestTargetRefr;
             result.targetFormId = requestTargetFormId;
             result.targetBodyId = requestTargetBodyId;
             result.frameIndex = _palmClockGameFrameIndex.load(std::memory_order_acquire);
@@ -7305,14 +7297,11 @@ namespace rock
             const auto& handInput = isLeft ? frame.left : frame.right;
 
             auto hasTargetIdentity = [&]() {
-                return requestTargetRefr != 0 || requestTargetFormId != 0 || requestTargetBodyId != INVALID_BODY_ID;
+                return requestTargetFormId != 0 || requestTargetBodyId != INVALID_BODY_ID;
             };
-            auto heldObjectMatchesRequest = [&](RE::TESObjectREFR* heldRef, std::uint32_t heldFormId, std::uint32_t primaryBodyId) {
+            auto heldObjectMatchesRequest = [&](std::uint32_t heldFormId, std::uint32_t primaryBodyId) {
                 if (!hasTargetIdentity()) {
                     return true;
-                }
-                if (requestTargetRefr != 0 && reinterpret_cast<std::uintptr_t>(heldRef) != requestTargetRefr) {
-                    return false;
                 }
                 if (requestTargetFormId != 0 && heldFormId != requestTargetFormId) {
                     return false;
@@ -7341,10 +7330,9 @@ namespace rock
                 auto* heldRef = hand.getHeldRef();
                 const std::uint32_t heldFormId = heldRef ? heldRef->GetFormID() : 0u;
                 const std::uint32_t primaryBodyId = hand.getSavedObjectState().bodyId.value;
-                result.targetRefr = reinterpret_cast<std::uintptr_t>(heldRef);
                 result.targetFormId = heldFormId;
                 result.targetBodyId = primaryBodyId;
-                if (!heldObjectMatchesRequest(heldRef, heldFormId, primaryBodyId)) {
+                if (!heldObjectMatchesRequest(heldFormId, primaryBodyId)) {
                     complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::HeldObjectMismatch);
                     continue;
                 }
@@ -7442,11 +7430,6 @@ namespace rock
                 complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::TargetMissing);
                 continue;
             }
-            if (command.forceGrab.targetRefr != 0 && reinterpret_cast<std::uintptr_t>(targetRef) != command.forceGrab.targetRefr) {
-                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::TargetUnavailable);
-                continue;
-            }
-            result.targetRefr = reinterpret_cast<std::uintptr_t>(targetRef);
             result.targetFormId = targetRef->GetFormID();
             if (targetRef->IsDeleted() || targetRef->IsDisabled()) {
                 complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::TargetUnavailable);
@@ -7513,6 +7496,7 @@ namespace rock
         std::array<const RE::NiAVObject*, ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1>& outDrivenSourceNodes)
     {
         outDrivenSourceNodes = {};
+        _providerWeaponPartDriveResultCount = 0;
         if (!weaponNode || currentWeaponGenerationKey == 0 || !frame.worldReady) {
             if (weaponNode && currentWeaponGenerationKey != 0) {
                 restoreExpiredProviderWeaponPartDriveNodes(weaponNode, currentWeaponGenerationKey);
@@ -7529,9 +7513,13 @@ namespace rock
         }
 
         std::array<::rock::provider::RockProviderWeaponPartDriveTargetV1, ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1> driveTargets{};
+        std::array<std::uint64_t,
+            ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1>
+            driveOwners{};
         const std::uint32_t driveCount = ::rock::provider::copyWeaponPartDriveTargetsV1(
             driveTargets.data(),
-            static_cast<std::uint32_t>(driveTargets.size()));
+            static_cast<std::uint32_t>(driveTargets.size()),
+            driveOwners.data());
         if (driveCount == 0) {
             restoreExpiredProviderWeaponPartDriveNodes(weaponNode, currentWeaponGenerationKey);
             return 0;
@@ -7541,6 +7529,7 @@ namespace rock
         {
             RE::NiAVObject* node{ nullptr };
             std::uint32_t priority{ 0 };
+            std::uint32_t resultIndex{ 0 };
         };
 
         std::array<AppliedNode, ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1> appliedNodes{};
@@ -7604,7 +7593,10 @@ namespace rock
             return candidate;
         };
 
-        auto shouldApplyPriority = [&](RE::NiAVObject* node, std::uint32_t priority) {
+        auto shouldApplyPriority = [&](
+                                       RE::NiAVObject* node,
+                                       std::uint32_t priority,
+                                       const std::uint32_t resultIndex) {
             for (std::size_t i = 0; i < appliedNodeCount; ++i) {
                 if (appliedNodes[i].node != node) {
                     continue;
@@ -7612,17 +7604,27 @@ namespace rock
                 if (priority < appliedNodes[i].priority) {
                     return false;
                 }
+                _providerWeaponPartDriveResults[
+                    appliedNodes[i].resultIndex].result =
+                    ::rock::provider::RockProviderWeaponPartDriveApplicationV1::LostPriority;
                 appliedNodes[i].priority = priority;
+                appliedNodes[i].resultIndex = resultIndex;
                 return true;
             }
             if (appliedNodeCount < appliedNodes.size()) {
-                appliedNodes[appliedNodeCount++] = AppliedNode{ .node = node, .priority = priority };
+                appliedNodes[appliedNodeCount++] = AppliedNode{
+                    .node = node,
+                    .priority = priority,
+                    .resultIndex = resultIndex,
+                };
                 return true;
             }
             return false;
         };
 
-        auto markDrivenNode = [&](RE::NiAVObject* node) {
+        auto markDrivenNode = [&](
+                                  RE::NiAVObject* node,
+                                  const ::rock::provider::RockProviderWeaponPartDriveApplicationResultV1& result) {
             if (!node) {
                 return false;
             }
@@ -7632,6 +7634,14 @@ namespace rock
             for (auto& state : _providerWeaponPartDriveNodeStates) {
                 if (state.node == node) {
                     state.activeThisFrame = true;
+                    state.ownerToken = result.ownerToken;
+                    state.bodyId = result.bodyId;
+                    state.groupId = result.groupId;
+                    state.priority = result.priority;
+                    std::memcpy(
+                        state.sourceName.data(),
+                        result.sourceName,
+                        state.sourceName.size());
                     return true;
                 }
             }
@@ -7639,6 +7649,14 @@ namespace rock
                 if (!state.node) {
                     state.node = node;
                     state.baselineLocal = node->local;
+                    state.ownerToken = result.ownerToken;
+                    state.bodyId = result.bodyId;
+                    state.groupId = result.groupId;
+                    state.priority = result.priority;
+                    std::memcpy(
+                        state.sourceName.data(),
+                        result.sourceName,
+                        state.sourceName.size());
                     state.activeThisFrame = true;
                     return true;
                 }
@@ -7649,13 +7667,44 @@ namespace rock
         std::size_t drivenSourceNodeCount = 0;
         for (std::uint32_t i = 0; i < driveCount && i < driveTargets.size(); ++i) {
             const auto& drive = driveTargets[i];
-            auto* sourceNode = resolveDriveNode(drive);
-            if (!sourceNode || !sourceNode->parent || !shouldApplyPriority(sourceNode, drive.priority)) {
+            auto& applicationResult = _providerWeaponPartDriveResults[
+                _providerWeaponPartDriveResultCount++];
+            applicationResult = {};
+            applicationResult.frameIndex =
+                _palmClockGameFrameIndex.load(std::memory_order_acquire);
+            applicationResult.ownerToken = driveOwners[i];
+            applicationResult.weaponGenerationKey =
+                currentWeaponGenerationKey;
+            applicationResult.bodyId = drive.bodyId;
+            applicationResult.groupId = drive.groupId;
+            applicationResult.priority = drive.priority;
+            std::memcpy(
+                applicationResult.sourceName,
+                drive.sourceName,
+                sizeof(applicationResult.sourceName));
+            applicationResult.sourceName[
+                sizeof(applicationResult.sourceName) - 1] = '\0';
+            if (drive.weaponGenerationKey != 0 &&
+                drive.weaponGenerationKey != currentWeaponGenerationKey) {
+                applicationResult.result =
+                    ::rock::provider::RockProviderWeaponPartDriveApplicationV1::StaleGeneration;
                 continue;
             }
-
+            auto* sourceNode = resolveDriveNode(drive);
+            if (!sourceNode) {
+                applicationResult.result =
+                    ::rock::provider::RockProviderWeaponPartDriveApplicationV1::Unresolved;
+                continue;
+            }
+            if (!sourceNode->parent) {
+                applicationResult.result =
+                    ::rock::provider::RockProviderWeaponPartDriveApplicationV1::MissingParent;
+                continue;
+            }
             const RE::NiTransform requestedLocal = providerTransformToNi(drive.targetTransform);
             if (!finiteNiTransform(requestedLocal)) {
+                applicationResult.result =
+                    ::rock::provider::RockProviderWeaponPartDriveApplicationV1::InvalidTransform;
                 continue;
             }
 
@@ -7670,18 +7719,37 @@ namespace rock
                 break;
             }
             if (!finiteNiTransform(desiredWorld)) {
+                applicationResult.result =
+                    ::rock::provider::RockProviderWeaponPartDriveApplicationV1::InvalidTransform;
                 continue;
             }
 
             const RE::NiTransform requestedNodeLocal = transform_math::composeTransforms(transform_math::invertTransform(sourceNode->parent->world), desiredWorld);
             if (!finiteNiTransform(requestedNodeLocal)) {
+                applicationResult.result =
+                    ::rock::provider::RockProviderWeaponPartDriveApplicationV1::InvalidTransform;
                 continue;
             }
-            if (!markDrivenNode(sourceNode)) {
+            if (!shouldApplyPriority(
+                    sourceNode,
+                    drive.priority,
+                    _providerWeaponPartDriveResultCount - 1)) {
+                applicationResult.result =
+                    ::rock::provider::RockProviderWeaponPartDriveApplicationV1::LostPriority;
+                continue;
+            }
+            if (!markDrivenNode(sourceNode, applicationResult)) {
+                applicationResult.result =
+                    ::rock::provider::RockProviderWeaponPartDriveApplicationV1::CapacityRejected;
                 continue;
             }
             sourceNode->local = requestedNodeLocal;
             f4vr::updateTransformsDown(sourceNode, true);
+            applicationResult.result =
+                ::rock::provider::RockProviderWeaponPartDriveApplicationV1::Applied;
+            fillProviderTransform(
+                requestedNodeLocal,
+                applicationResult.appliedSourceParentLocal);
 
             if (drivenSourceNodeCount < outDrivenSourceNodes.size()) {
                 outDrivenSourceNodes[drivenSourceNodeCount++] = sourceNode;
@@ -7715,6 +7783,31 @@ namespace rock
             if (actor_equipment_grab::nodeContainsNode(weaponNode, state.node, 64)) {
                 state.node->local = state.baselineLocal;
                 f4vr::updateTransformsDown(state.node, true);
+                if (_providerWeaponPartDriveResultCount <
+                    _providerWeaponPartDriveResults.size()) {
+                    auto& result = _providerWeaponPartDriveResults[
+                        _providerWeaponPartDriveResultCount++];
+                    result = {};
+                    result.frameIndex =
+                        _palmClockGameFrameIndex.load(
+                            std::memory_order_acquire);
+                    result.ownerToken = state.ownerToken;
+                    result.weaponGenerationKey =
+                        currentWeaponGenerationKey;
+                    result.bodyId = state.bodyId;
+                    result.groupId = state.groupId;
+                    result.priority = state.priority;
+                    result.result =
+                        ::rock::provider::RockProviderWeaponPartDriveApplicationV1::Restored;
+                    fillProviderTransform(
+                        state.baselineLocal,
+                        result.appliedSourceParentLocal);
+                    std::memcpy(
+                        result.sourceName,
+                        state.sourceName.data(),
+                        sizeof(result.sourceName));
+                    result.sourceName[sizeof(result.sourceName) - 1] = '\0';
+                }
             }
             state = {};
         }

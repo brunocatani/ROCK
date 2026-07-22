@@ -1,6 +1,6 @@
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 
-#include "api/ROCKProviderApi.h"
+#include "api/ROCKProviderApiInternal.h"
 #include "physics-interaction/actor/ActorEquipmentGrab.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
 #include "physics-interaction/hand/HandSkeleton.h"
@@ -939,17 +939,15 @@ namespace rock
             kNativeScopeExitConfirmationFrames);
         _nativeScopeExitOutsideFrames = stabilizedDecision.consecutiveOutsideFrames;
         outRockGeometryDecision = stabilizedDecision.decision;
-        if (g_rockConfig.rockDebugDrawNativeScopeActivation) {
-            _nativeScopeActivationDebugSnapshot = NativeScopeActivationDebugSnapshot{
-                .evaluationSequence = _nativeScopeActivationDebugSnapshot.evaluationSequence + 1,
-                .weaponGenerationKey = currentWeaponGenerationKey,
-                .nativeGeometryDecision = nativeGeometryDecision,
-                .rockGeometryDecision = outRockGeometryDecision,
-                .nativeScopeAlreadyActive = nativeScopeAlreadyActive,
-                .sample = sample,
-                .thresholds = thresholds,
-            };
-        }
+        _nativeScopeActivationDebugSnapshot = NativeScopeActivationDebugSnapshot{
+            .evaluationSequence = _nativeScopeActivationDebugSnapshot.evaluationSequence + 1,
+            .weaponGenerationKey = currentWeaponGenerationKey,
+            .nativeGeometryDecision = nativeGeometryDecision,
+            .rockGeometryDecision = outRockGeometryDecision,
+            .nativeScopeAlreadyActive = nativeScopeAlreadyActive,
+            .sample = sample,
+            .thresholds = thresholds,
+        };
         return true;
     }
 
@@ -5413,7 +5411,8 @@ namespace rock
 
     bool TwoHandedGrip::tryComputeMirroredLeftFiringHandWeaponLocal(
         RE::NiTransform& outHandWeaponLocal,
-        bool* outUsedAuthoredCanonical) const
+        bool* outUsedAuthoredCanonical,
+        const bool logDiagnostic) const
     {
         if (outUsedAuthoredCanonical) {
             *outUsedAuthoredCanonical = false;
@@ -5456,7 +5455,7 @@ namespace rock
             rightHandWorld,
             leftHandWorld,
             outHandWeaponLocal,
-            true);
+            logDiagnostic);
         if (!mirrored) {
             return false;
         }
@@ -5467,15 +5466,17 @@ namespace rock
         if (outUsedAuthoredCanonical) {
             *outUsedAuthoredCanonical = usedAuthoredCanonical;
         }
-        ROCK_LOG_INFO(Weapon,
-            "TwoHandedGrip: left firing hold resolved source={} generation={:016X} ownership={:016X} capture={} mirroredHandWeaponT=({:.3f},{:.3f},{:.3f})",
-            usedAuthoredCanonical ? "authored-animation" : "native-carry",
-            _rightFiringHandCanonicalGenerationKey,
-            _rightFiringHandCanonicalOwnershipKey,
-            _rightFiringHandCanonicalCaptureSequence,
-            outHandWeaponLocal.translate.x,
-            outHandWeaponLocal.translate.y,
-            outHandWeaponLocal.translate.z);
+        if (logDiagnostic) {
+            ROCK_LOG_INFO(Weapon,
+                "TwoHandedGrip: left firing hold resolved source={} generation={:016X} ownership={:016X} capture={} mirroredHandWeaponT=({:.3f},{:.3f},{:.3f})",
+                usedAuthoredCanonical ? "authored-animation" : "native-carry",
+                _rightFiringHandCanonicalGenerationKey,
+                _rightFiringHandCanonicalOwnershipKey,
+                _rightFiringHandCanonicalCaptureSequence,
+                outHandWeaponLocal.translate.x,
+                outHandWeaponLocal.translate.y,
+                outHandWeaponLocal.translate.z);
+        }
         return true;
     }
 
@@ -6011,6 +6012,95 @@ namespace rock
             _weaponNodeOwnershipBlockEngaged = false;
             ROCK_LOG_INFO(Weapon, "TwoHandedGrip: FRIK weapon-node ownership restored");
         }
+    }
+
+    bool TwoHandedGrip::getSelectedAuthoredGripPoseSnapshot(
+        SelectedAuthoredGripPoseSnapshot& outSnapshot) const
+    {
+        outSnapshot = {};
+        const auto generationKey = _activeWeaponGenerationKey != 0 ?
+            _activeWeaponGenerationKey :
+            _rightFiringHandCanonicalGenerationKey;
+        if (generationKey == 0) {
+            return false;
+        }
+
+        const bool canonicalCurrent =
+            _hasRightFiringHandCanonicalWeaponLocal &&
+            _rightFiringHandCanonicalGenerationKey == generationKey &&
+            (!_activeWeaponNode ||
+                _rightFiringHandCanonicalWeaponNode == _activeWeaponNode);
+        const bool supportCurrent =
+            _authoredSupportGripCandidate.valid &&
+            _authoredSupportGripCandidate.weaponGenerationKey == generationKey &&
+            (!_activeWeaponNode ||
+                _authoredSupportGripCandidate.weaponNode == _activeWeaponNode);
+        if (!canonicalCurrent && !supportCurrent) {
+            return false;
+        }
+
+        outSnapshot.weaponGenerationKey = generationKey;
+        if (canonicalCurrent) {
+            outSnapshot.rightHandWeaponLocal =
+                _rightFiringHandCanonicalWeaponLocal;
+            outSnapshot.rightHandValid = true;
+            outSnapshot.rightFingerLocalTransforms =
+                _rightFiringFingerLocalTransforms;
+            outSnapshot.rightFingerLocalTransformMask =
+                _rightFiringFingerLocalTransformMask;
+            outSnapshot.captureSequence =
+                _rightFiringHandCanonicalCaptureSequence;
+            outSnapshot.source =
+                _rightFiringHandCanonicalSource ==
+                        RightFiringCanonicalSource::AuthoredAnimation ?
+                    SelectedAuthoredGripPoseSnapshot::Source::NativeIdlePreharvest :
+                    SelectedAuthoredGripPoseSnapshot::Source::RuntimeCanonical;
+        }
+
+        if (supportCurrent) {
+            outSnapshot.leftHandWeaponLocal =
+                _authoredSupportGripCandidate.leftHandWeaponLocal;
+            outSnapshot.leftHandValid = true;
+            outSnapshot.leftFingerLocalTransforms =
+                _authoredSupportGripCandidate.leftFingerLocalTransforms;
+            outSnapshot.leftFingerLocalTransformMask =
+                _authoredSupportGripCandidate.leftFingerLocalTransformMask;
+            outSnapshot.captureSequence = (std::max)(
+                outSnapshot.captureSequence,
+                _authoredSupportGripCandidate.captureSequence);
+            if (!canonicalCurrent) {
+                outSnapshot.rightHandWeaponLocal =
+                    _authoredSupportGripCandidate.rightHandWeaponLocal;
+                outSnapshot.rightHandValid =
+                    _authoredSupportGripCandidate.rightMirrorValid;
+                outSnapshot.rightFingerLocalTransforms =
+                    _authoredSupportGripCandidate.rightFingerLocalTransforms;
+                outSnapshot.rightFingerLocalTransformMask =
+                    _authoredSupportGripCandidate.rightFingerLocalTransformMask;
+            }
+            outSnapshot.source =
+                SelectedAuthoredGripPoseSnapshot::Source::NativeIdlePreharvest;
+        } else if (canonicalCurrent) {
+            RE::NiTransform leftHandWeaponLocal{};
+            if (tryComputeMirroredLeftFiringHandWeaponLocal(
+                    leftHandWeaponLocal,
+                    nullptr,
+                    false)) {
+                outSnapshot.leftHandWeaponLocal = leftHandWeaponLocal;
+                outSnapshot.leftHandValid = true;
+                outSnapshot.leftFingerLocalTransforms =
+                    _leftFiringFingerLocalTransforms;
+                outSnapshot.leftFingerLocalTransformMask =
+                    _leftFiringFingerLocalTransformMask;
+            }
+        }
+
+        outSnapshot.variantKey = outSnapshot.captureSequence != 0 ?
+            outSnapshot.captureSequence :
+            generationKey;
+        outSnapshot.valid =
+            outSnapshot.rightHandValid || outSnapshot.leftHandValid;
+        return outSnapshot.valid;
     }
 
 }

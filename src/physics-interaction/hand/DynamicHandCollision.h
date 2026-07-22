@@ -82,6 +82,11 @@ namespace rock
         // Main-thread snapshot/event access. Future provider adapters must copy
         // from here on the main thread rather than retain runtime-owned state.
         [[nodiscard]] bool getTelemetrySnapshot(dynamic_hand_collision_telemetry::Snapshot& outSnapshot) const;
+        [[nodiscard]] bool isTransitionCollisionSuppressedAtomic() const
+        {
+            return _transitionCollisionSuppressedAtomic.load(
+                std::memory_order_acquire);
+        }
         [[nodiscard]] dynamic_hand_collision_telemetry::HapticEvents consumeHapticEvents();
 
         /*
@@ -239,5 +244,6 @@ namespace rock
         PhysicsCallbackQuiescenceGate* _physicsCallbackGate = nullptr;
         dynamic_hand_collision_transition::State _transitionState{};
         bool _transitionCollisionSuppressed = false;
+        std::atomic<bool> _transitionCollisionSuppressedAtomic{ false };
     };
 }

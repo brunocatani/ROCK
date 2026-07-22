@@ -7,7 +7,7 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "RockConfig.h"
 
-#include "api/ROCKProviderApi.h"
+#include "api/ROCKProviderApiInternal.h"
 #include "api/FRIKApi.h"
 
 #include "rock_support/Fo4VrRuntime.h"
@@ -177,8 +177,12 @@ namespace rock::input_remap_runtime
             // fire remap which presents it on the other wand's state.
             std::atomic<float> triggerAxisX{ 0.0f };
             std::atomic<float> triggerAxisY{ 0.0f };
+            std::atomic<std::uint64_t> sampleSequence{ 0 };
+            std::atomic<std::uint64_t> sampleTickMilliseconds{ 0 };
             std::atomic<bool> valid{ false };
         };
+
+        std::atomic<std::uint64_t> s_nextControllerSampleSequence{ 1 };
 
         std::array<ControllerTracker, 2> s_controllers;
         std::atomic<bool> s_gameplayInputAllowed{ false };
@@ -725,6 +729,14 @@ namespace rock::input_remap_runtime
                 static_cast<std::size_t>(input_remap_policy::kOpenVrSteamVrTriggerButtonId - input_remap_policy::kOpenVrAxisButtonBase);
             tracker.triggerAxisX.store(state->rAxis[triggerAxisIndex].x, std::memory_order_release);
             tracker.triggerAxisY.store(state->rAxis[triggerAxisIndex].y, std::memory_order_release);
+            tracker.sampleTickMilliseconds.store(
+                GetTickCount64(),
+                std::memory_order_release);
+            tracker.sampleSequence.store(
+                s_nextControllerSampleSequence.fetch_add(
+                    1,
+                    std::memory_order_acq_rel),
+                std::memory_order_release);
 
             const bool hadPrevious = tracker.valid.exchange(true, std::memory_order_acq_rel);
             const std::uint64_t previousRawPressed = tracker.rawPressed.exchange(rawPressed, std::memory_order_acq_rel);
@@ -1940,7 +1952,8 @@ namespace rock::input_remap_runtime
             RawButtonState result{};
             const auto mask = input_remap_policy::buttonMask(buttonId);
             if (mask == 0) {
-                result.available = true;
+                result.availabilityReason =
+                    RawButtonAvailabilityReason::InvalidButton;
                 return result;
             }
 
@@ -1949,7 +1962,17 @@ namespace rock::input_remap_runtime
                 return result;
             }
 
+            result.sampleSequence =
+                tracker.sampleSequence.load(std::memory_order_acquire);
+            const auto sampleTick = tracker.sampleTickMilliseconds.load(
+                std::memory_order_acquire);
+            const auto now = GetTickCount64();
+            result.sampleAgeMilliseconds = static_cast<std::uint32_t>(
+                (std::min<std::uint64_t>)(
+                    now >= sampleTick ? now - sampleTick : 0,
+                    UINT32_MAX));
             result.available = true;
+            result.availabilityReason = RawButtonAvailabilityReason::Available;
             const auto rawPressed = tracker.rawPressed.load(std::memory_order_acquire);
             const bool rawHeld = (rawPressed & mask) != 0;
 
@@ -1958,6 +1981,9 @@ namespace rock::input_remap_runtime
                     tracker.rearmPressedMask.fetch_or(mask, std::memory_order_acq_rel);
                 }
                 clearButtonEdges(tracker, mask);
+                result.available = false;
+                result.availabilityReason =
+                    RawButtonAvailabilityReason::BlockingMenu;
                 return result;
             }
 
@@ -1966,6 +1992,9 @@ namespace rock::input_remap_runtime
                 if (!rawHeld) {
                     tracker.rearmPressedMask.fetch_and(~mask, std::memory_order_acq_rel);
                 }
+                result.available = false;
+                result.availabilityReason =
+                    RawButtonAvailabilityReason::ReleaseToRearm;
                 return result;
             }
 

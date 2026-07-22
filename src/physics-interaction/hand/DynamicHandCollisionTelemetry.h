@@ -134,6 +134,7 @@ namespace rock::dynamic_hand_collision_telemetry
         bool worldReady = false;
         bool menuBlocked = false;
         bool physicsWritesAllowed = false;
+        bool transitionCollisionSuppressed = false;
     };
 
     struct HapticPulse

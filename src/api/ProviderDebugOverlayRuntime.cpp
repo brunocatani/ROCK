@@ -1,4 +1,5 @@
 #include "api/ProviderDebugOverlayRuntime.h"
+#include "api/ProviderLeasePolicy.h"
 
 #include <algorithm>
 #include <array>
@@ -25,6 +26,10 @@ namespace rock::provider_debug_overlay
                 textEntries{};
             std::uint32_t lineCount{ 0 };
             std::uint32_t textCount{ 0 };
+            std::uint64_t expiresAfterFrame{ 0 };
+            std::uint32_t worldGeneration{ 0 };
+            std::uint32_t skeletonGeneration{ 0 };
+            std::uint32_t providerGeneration{ 0 };
         };
 
         std::array<PublisherSlot,
@@ -118,7 +123,8 @@ namespace rock::provider_debug_overlay
 
     provider::RockProviderResultV1 publish(
         const std::uint64_t ownerToken,
-        const provider::RockProviderDebugOverlayPublicationV1& publication)
+        const provider::RockProviderDebugOverlayPublicationV1& publication,
+        const std::uint64_t frameIndex)
     {
         using namespace provider;
         if (ownerToken == 0 ||
@@ -126,6 +132,7 @@ namespace rock::provider_debug_overlay
                 ROCK_PROVIDER_MAX_DEBUG_OVERLAY_LINES_PER_PUBLISHER_V1 ||
             publication.textCount >
                 ROCK_PROVIDER_MAX_DEBUG_OVERLAY_TEXT_PER_PUBLISHER_V1 ||
+            publication.leaseFrames == 0 ||
             (publication.lineCount > 0 && !publication.lines) ||
             (publication.textCount > 0 && !publication.textEntries)) {
             return RockProviderResultV1::InvalidArgument;
@@ -158,6 +165,15 @@ namespace rock::provider_debug_overlay
         slot->ownerToken = ownerToken;
         slot->lineCount = publication.lineCount;
         slot->textCount = publication.textCount;
+        const auto leaseFrames = provider_lease_policy::clampLeaseFrames(
+            publication.leaseFrames,
+            ROCK_PROVIDER_MAX_DEBUG_OVERLAY_PUBLICATION_LEASE_FRAMES_V1);
+        slot->expiresAfterFrame = provider_lease_policy::exclusiveExpiryFrame(
+            frameIndex,
+            leaseFrames);
+        slot->worldGeneration = publication.worldGeneration;
+        slot->skeletonGeneration = publication.skeletonGeneration;
+        slot->providerGeneration = publication.providerGeneration;
         if (publication.lineCount > 0) {
             std::copy_n(
                 publication.lines,
@@ -172,6 +188,44 @@ namespace rock::provider_debug_overlay
         }
         publishContentStateLocked();
         return RockProviderResultV1::Ok;
+    }
+
+    void prune(
+        const std::uint64_t frameIndex,
+        const std::uint32_t worldGeneration,
+        const std::uint32_t skeletonGeneration,
+        const std::uint32_t providerGeneration,
+        PruneResult& outResult)
+    {
+        outResult = {};
+        std::scoped_lock lock(s_publisherMutex);
+        for (auto& slot : s_publishers) {
+            if (slot.ownerToken == 0) {
+                continue;
+            }
+            const bool generationChanged =
+                (slot.worldGeneration != 0 &&
+                    slot.worldGeneration != worldGeneration) ||
+                (slot.skeletonGeneration != 0 &&
+                    slot.skeletonGeneration != skeletonGeneration) ||
+                (slot.providerGeneration != 0 &&
+                    slot.providerGeneration != providerGeneration);
+            if (!generationChanged && provider_lease_policy::isActive(
+                    frameIndex,
+                    slot.expiresAfterFrame)) {
+                continue;
+            }
+
+            auto& invalidated = outResult.publishers[outResult.count++];
+            invalidated.ownerToken = slot.ownerToken;
+            invalidated.reason = generationChanged ?
+                RockProviderSuppressionInvalidationReasonV1::GenerationChanged :
+                RockProviderSuppressionInvalidationReasonV1::Expired;
+            slot = {};
+        }
+        if (outResult.count != 0) {
+            publishContentStateLocked();
+        }
     }
 
     void clear(const std::uint64_t ownerToken)
@@ -189,11 +243,30 @@ namespace rock::provider_debug_overlay
         }
     }
 
-    void clearAll()
+    void clearAll(
+        PruneResult& outResult,
+        const RockProviderSuppressionInvalidationReasonV1 reason)
     {
+        outResult = {};
         std::scoped_lock lock(s_publisherMutex);
+        for (const auto& slot : s_publishers) {
+            if (slot.ownerToken == 0) {
+                continue;
+            }
+            auto& invalidated = outResult.publishers[outResult.count++];
+            invalidated.ownerToken = slot.ownerToken;
+            invalidated.reason = reason;
+        }
         s_publishers = {};
         s_hasContent.store(false, std::memory_order_release);
+    }
+
+    void clearAll()
+    {
+        PruneResult ignored{};
+        clearAll(
+            ignored,
+            RockProviderSuppressionInvalidationReasonV1::ExplicitClear);
     }
 
     bool hasContent()

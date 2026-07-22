@@ -33,7 +33,11 @@ namespace rock::provider
 
     inline constexpr std::uint32_t ROCK_PROVIDER_API_VERSION = 1;
     inline constexpr std::uint32_t ROCK_PROVIDER_FRAME_SNAPSHOT_V1_SIZE = 256;
+    inline constexpr std::uint32_t ROCK_PROVIDER_INTERACTION_COMMAND_RESULT_V1_PREFIX_SIZE = 112;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_BODIES = 8;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_EVIDENCE_DETAILS_V1 =
+        ROCK_PROVIDER_MAX_WEAPON_BODIES;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_EVIDENCE_POINTS_PER_DETAIL_V1 = 252;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EVIDENCE_NAME = 64;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EXTERNAL_BODIES_V1 = 2048;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EXTERNAL_CONTACTS_V1 = 512;
@@ -50,14 +54,33 @@ namespace rock::provider
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_EMITTERS_V1 = 32;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_NATIVE_ANIMATION_AUTHORITY_LEASE_FRAMES_V1 = 1200;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_ANIMATION_PHASE_CALLBACKS_V1 = 16;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_HAND_VISUAL_AUTHORITY_LEASE_FRAMES_V1 = 120;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_NATIVE_ANIMATION_RUNTIME_LEASE_FRAMES_V1 = 120;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EQUIPPED_WEAPON_HANDLING_LEASE_FRAMES_V1 = 120;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DEBUG_OVERLAY_PUBLICATION_LEASE_FRAMES_V1 = 120;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DEBUG_OVERLAY_PUBLISHERS_V1 = 8;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DEBUG_OVERLAY_LINES_PER_PUBLISHER_V1 = 1024;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DEBUG_OVERLAY_TEXT_PER_PUBLISHER_V1 = 16;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DEBUG_OVERLAY_LINES_V1 = 2048;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DEBUG_OVERLAY_TEXT_V1 = 64;
     inline constexpr std::uint32_t ROCK_PROVIDER_DEBUG_OVERLAY_TEXT_CAPACITY_V1 = 128;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_PROVIDER_EVENTS_V1 = 256;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EXTERNAL_SCOPES_V1 = 256;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_HAND_HELD_BODIES_V1 = 8;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_COMPOSITION_ENTRIES_V1 = 64;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_SEMANTIC_HAND_CONTACTS_V1 = 20;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_PLAYER_COLLIDER_DESCRIPTORS_V1 = 96;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_PART_POSES_V1 = 128;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_PART_DRIVE_RESULTS_V1 = 64;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_OFFHAND_RESERVATION_LEASE_FRAMES_V1 = 120;
     inline constexpr std::uint16_t ROCK_PROVIDER_ALL_FINGER_LOCAL_TRANSFORMS_V1 = 0x7FFFu;
+
+    /*
+     * Every V1 lease uses the same exclusive expiry fence. A publication made
+     * at frame F with leaseFrames N is active while currentFrame < F + N and
+     * expires at F + N. Zero is invalid; values above the published family
+     * limit are clamped. Refresh replaces the prior expiry and generations.
+     */
 
     enum class RockProviderHand : std::uint32_t
     {
@@ -229,6 +252,7 @@ namespace rock::provider
         RequestQueued = 15,
         RequestNotFound = 16,
         WrongThread = 17,
+        AlreadyCommitted = 18,
     };
 
     enum class RockProviderConsumerCapabilityV1 : std::uint32_t
@@ -248,6 +272,16 @@ namespace rock::provider
         NativeAnimationRuntimeProvider = 1u << 11,
         EquippedWeaponHandlingAuthority = 1u << 12,
         DebugOverlayPublication = 1u << 13,
+        ProviderEvents = 1u << 14,
+        HandInteractionState = 1u << 15,
+        ExternalBodyScopes = 1u << 16,
+        WeaponPartObservability = 1u << 17,
+        WeaponComposition = 1u << 18,
+        PoseReadback = 1u << 19,
+        SemanticHandContacts = 1u << 20,
+        PlayerColliderDescriptors = 1u << 21,
+        ScopeSightState = 1u << 22,
+        InputObservability = 1u << 23,
     };
 
     enum class RockProviderFeatureBitV1 : std::uint32_t
@@ -281,6 +315,40 @@ namespace rock::provider
         EquippedWeaponHandlingAuthority = 1u << 27,
         DebugOverlayPublication = 1u << 28,
         PresentedHandFrames = 1u << 29,
+    };
+
+    enum class RockProviderFeatureBit2V1 : std::uint32_t
+    {
+        None = 0,
+        SafeDescriptor = 1u << 0,
+        ExtendedLimits = 1u << 1,
+        PublicStructureSizes = 1u << 2,
+        OwnerFrameCallbacks = 1u << 3,
+        HandInteractionState = 1u << 4,
+        ProviderEvents = 1u << 5,
+        EquippedWeaponState = 1u << 6,
+        ExternalBodyScopes = 1u << 7,
+        ExternalContactCursor = 1u << 8,
+        WeaponPartResolution = 1u << 9,
+        WeaponPartPoses = 1u << 10,
+        WeaponPartDriveResults = 1u << 11,
+        ScopeSightState = 1u << 12,
+        WeaponComposition = 1u << 13,
+        AuthoredGripSnapshot = 1u << 14,
+        PresentedHandPose = 1u << 15,
+        SemanticHandContacts = 1u << 16,
+        PlayerColliderDescriptors = 1u << 17,
+        HandCollisionAvailability = 1u << 18,
+        CommandCancellation = 1u << 19,
+        InputSuppressionState = 1u << 20,
+        OffhandReservationLeases = 1u << 21,
+        SnapshotEnrichment = 1u << 22,
+        NativeAnimationRuntimeLeases = 1u << 23,
+        StatefulPublicationLeases = 1u << 24,
+        CommandLifecycle = 1u << 25,
+        InputSampleMetadata = 1u << 26,
+        WeaponClassificationEnrichment = 1u << 27,
+        ExternalContactEnrichment = 1u << 28,
     };
 
     /*
@@ -631,6 +699,372 @@ namespace rock::provider
         Automatic = 1ull << 34,
     };
 
+    enum class RockProviderStructureIdV1 : std::uint32_t
+    {
+        ApiDescriptor = 1,
+        ConsumerRegistration = 2,
+        ConsumerHandle = 3,
+        Limits = 4,
+        LimitsExt = 5,
+        FrameSnapshot = 6,
+        HandFrame = 7,
+        HandInteractionState = 8,
+        ProviderEvent = 9,
+        ProviderEventStreamState = 10,
+        EquippedWeaponState = 11,
+        ExternalBodyRegistration = 12,
+        ExternalContact = 13,
+        ExternalContactRecord = 14,
+        ExternalContactStreamState = 15,
+        WeaponPartTargetQuery = 16,
+        WeaponPartTargetResolution = 17,
+        WeaponPartPose = 18,
+        WeaponPartDriveResult = 19,
+        ScopeSightState = 20,
+        WeaponCompositionState = 21,
+        WeaponCompositionEntry = 22,
+        AuthoredGripPose = 23,
+        PresentedHandPose = 24,
+        SemanticHandContact = 25,
+        PlayerColliderDescriptor = 26,
+        HandCollisionAvailability = 27,
+        InputSuppressionState = 28,
+        OffhandReservationRequest = 29,
+        OffhandReservationState = 30,
+        ForceGrabRequest = 31,
+        ForceReleaseRequest = 32,
+        ThrownDropRequest = 33,
+        InteractionCommandResult = 34,
+        HandInputSuppressionRequest = 35,
+        RawWandButtonState = 36,
+        WeaponPartTarget = 37,
+        Transform = 38,
+        WeaponPartDriveTarget = 39,
+        WeaponPartGripState = 40,
+        WeaponContactQuery = 41,
+        WeaponContactResult = 42,
+        WeaponClassification = 43,
+        Point3 = 44,
+        Bounds3 = 45,
+        WeaponEmitter = 46,
+        NativeAnimationAuthorityRequest = 47,
+        NativeAnimationAuthorityState = 48,
+        AnimationPhaseContext = 49,
+        EquippedWeaponGripState = 50,
+        EquippedWeaponHandlingRequest = 51,
+        EquippedWeaponHandlingState = 52,
+        HandVisualAuthorityRequest = 53,
+        NativeAnimationRuntimePublication = 54,
+        DebugOverlayLine = 55,
+        DebugOverlayText = 56,
+        DebugOverlayPublication = 57,
+        WeaponEvidenceDetail = 58,
+        BodyContact = 59,
+        ApiFunctionTable = 60,
+    };
+
+    enum class RockProviderHandInteractionPhaseV1 : std::uint32_t
+    {
+        Idle = 0,
+        Touching = 1,
+        Selecting = 2,
+        Pulling = 3,
+        Catching = 4,
+        Holding = 5,
+        Releasing = 6,
+        StashCandidate = 7,
+        ConsumeCandidate = 8,
+    };
+
+    enum class RockProviderHandInteractionFlagV1 : std::uint32_t
+    {
+        None = 0,
+        Valid = 1u << 0,
+        Primary = 1u << 1,
+        Offhand = 1u << 2,
+        LooseObject = 1u << 3,
+        LooseWeapon = 1u << 4,
+        FiringGrip = 1u << 5,
+        PartGrip = 1u << 6,
+        PartCarry = 1u << 7,
+        InputSuppressed = 1u << 8,
+        CollisionAvailable = 1u << 9,
+        TransitionSuppressed = 1u << 10,
+        HeldBodyListTruncated = 1u << 11,
+    };
+
+    enum class RockProviderEventKindV1 : std::uint32_t
+    {
+        Unknown = 0,
+        LifecycleChanged = 1,
+        EquippedWeaponTransitionTerminal = 2,
+        AuthorityLost = 3,
+        InteractionCommandTerminal = 4,
+        GrabStateChanged = 5,
+    };
+
+    enum class RockProviderEventStreamFlagV1 : std::uint32_t
+    {
+        None = 0,
+        GapBeforeFirstCopied = 1u << 0,
+        RingOverwroteRecords = 1u << 1,
+    };
+
+    enum class RockProviderAuthorityKindV1 : std::uint32_t
+    {
+        Unknown = 0,
+        HandInputSuppression = 1,
+        WeaponPartDrive = 2,
+        NativeAnimation = 3,
+        NativeAnimationRuntime = 4,
+        EquippedWeaponHandling = 5,
+        OffhandReservation = 6,
+        HandVisual = 7,
+        DebugOverlay = 8,
+        WeaponPartTargets = 9,
+    };
+
+    enum class RockProviderEquippedWeaponTransitionSourceV1 : std::uint32_t
+    {
+        Unknown = 0,
+        ObservedEquip = 1,
+        HeldTriggerEquip = 2,
+        HeldGripZoneEquip = 3,
+        MenuExit = 4,
+        WorkbenchExit = 5,
+    };
+
+    enum class RockProviderEquippedWeaponTransitionResultV1 : std::uint32_t
+    {
+        None = 0,
+        Completed = 1,
+        WeaponUnequipped = 2,
+        IdentityLost = 3,
+        ExpectedIdentityTimeout = 4,
+        NativeAnimationHandoff = 5,
+        WeaponNoLongerDrawn = 6,
+        RecoveryExhausted = 7,
+        ProviderLost = 8,
+        Shutdown = 9,
+    };
+
+    enum class RockProviderEquippedWeaponStateFlagV1 : std::uint32_t
+    {
+        None = 0,
+        Valid = 1u << 0,
+        IdentityPending = 1u << 1,
+        DrawPending = 1u << 2,
+        BridgePresented = 1u << 3,
+        NativeRenderable = 1u << 4,
+        HandPoseHandoffComplete = 1u << 5,
+        RecoveryExhausted = 1u << 6,
+        TransitionActive = 1u << 7,
+    };
+
+    enum class RockProviderExternalContactFlagV1 : std::uint32_t
+    {
+        None = 0,
+        SourceVelocityValid = 1u << 0,
+        ContactPointValid = 1u << 1,
+        ContactNormalValid = 1u << 2,
+        ContactPointMeasured = 1u << 3,
+        ContactPointEstimated = 1u << 4,
+        CollisionAvailable = 1u << 5,
+        TransitionSuppressed = 1u << 6,
+    };
+
+    enum class RockProviderExternalContactStreamFlagV1 : std::uint32_t
+    {
+        None = 0,
+        GapBeforeFirstCopied = 1u << 0,
+        RingOverwroteRecords = 1u << 1,
+    };
+
+    enum class RockProviderWeaponPartDriveApplicationV1 : std::uint32_t
+    {
+        Unknown = 0,
+        Applied = 1,
+        Unresolved = 2,
+        StaleGeneration = 3,
+        MissingParent = 4,
+        LostPriority = 5,
+        InvalidTransform = 6,
+        CapacityRejected = 7,
+        Restored = 8,
+    };
+
+    enum class RockProviderScopeActivationSourceV1 : std::uint32_t
+    {
+        None = 0,
+        NativeGeometry = 1,
+        RockGeometry = 2,
+        ManualInput = 3,
+    };
+
+    enum class RockProviderScopeSightFlagV1 : std::uint32_t
+    {
+        None = 0,
+        Available = 1u << 0,
+        Active = 1u << 1,
+        MenuOpen = 1u << 2,
+        AnchorValid = 1u << 3,
+        BoundsValid = 1u << 4,
+        NativeOverlayValid = 1u << 5,
+        ManualDirectTransitionRequired = 1u << 6,
+    };
+
+    enum class RockProviderWeaponPartPoseFlagV1 : std::uint32_t
+    {
+        None = 0,
+        Valid = 1u << 0,
+        SourceParentLocalValid = 1u << 1,
+        WeaponRootLocalValid = 1u << 2,
+    };
+
+    enum class RockProviderWeaponClassificationProvenanceFlagV1 : std::uint32_t
+    {
+        None = 0,
+        KeywordEvidence = 1u << 0,
+        MeshBoundsFallback = 1u << 1,
+        GenerationBound = 1u << 2,
+    };
+
+    enum class RockProviderWeaponCompositionFlagV1 : std::uint32_t
+    {
+        None = 0,
+        Active = 1u << 0,
+        Disabled = 1u << 1,
+        AttachPointResolved = 1u << 2,
+        SemanticEvidenceMatched = 1u << 3,
+    };
+
+    enum class RockProviderAuthoredGripSourceV1 : std::uint32_t
+    {
+        Unknown = 0,
+        LiveEquippedGraph = 1,
+        NativeIdlePreharvest = 2,
+        RuntimeCanonical = 3,
+    };
+
+    enum class RockProviderAuthoredGripPoseFlagV1 : std::uint32_t
+    {
+        None = 0,
+        Valid = 1u << 0,
+        RightHandValid = 1u << 1,
+        LeftHandValid = 1u << 2,
+        RightFingersValid = 1u << 3,
+        LeftFingersValid = 1u << 4,
+    };
+
+    enum class RockProviderPresentedHandPoseFlagV1 : std::uint32_t
+    {
+        None = 0,
+        Valid = 1u << 0,
+        HandWorldValid = 1u << 1,
+        FingerLocalsValid = 1u << 2,
+        RootFlattenedReadback = 1u << 3,
+    };
+
+    enum class RockProviderSemanticHandContactFlagV1 : std::uint32_t
+    {
+        None = 0,
+        ContactPointValid = 1u << 0,
+        ContactNormalValid = 1u << 1,
+        TargetFormResolved = 1u << 2,
+        HeldObjectRelation = 1u << 3,
+        CollisionAvailable = 1u << 4,
+        TransitionSuppressed = 1u << 5,
+    };
+
+    enum class RockProviderSemanticContactStateV1 : std::uint32_t
+    {
+        Begin = 1,
+        Continued = 2,
+        End = 3,
+    };
+
+    enum class RockProviderPlayerColliderKindV1 : std::uint32_t
+    {
+        Hand = 1,
+        Body = 2,
+    };
+
+    enum class RockProviderPlayerColliderFlagV1 : std::uint32_t
+    {
+        None = 0,
+        Valid = 1u << 0,
+        Enabled = 1u << 1,
+        PrimaryPalmAnchor = 1u << 2,
+        TransformValid = 1u << 3,
+        InPowerArmor = 1u << 4,
+    };
+
+    enum class RockProviderHandCollisionAvailabilityFlagV1 : std::uint32_t
+    {
+        None = 0,
+        BodiesReady = 1u << 0,
+        DynamicTwinsReady = 1u << 1,
+        PhysicsWritesAllowed = 1u << 2,
+        CollisionAvailable = 1u << 3,
+        TransitionSuppressed = 1u << 4,
+        MenuSuppressed = 1u << 5,
+        HandDisabled = 1u << 6,
+    };
+
+    enum class RockProviderInputAvailabilityReasonV1 : std::uint32_t
+    {
+        Available = 0,
+        HookNotSampled = 1,
+        BlockingMenu = 2,
+        ReleaseToRearm = 3,
+        InvalidButton = 4,
+    };
+
+    enum class RockProviderSuppressionInvalidationReasonV1 : std::uint32_t
+    {
+        None = 0,
+        Expired = 1,
+        GenerationChanged = 2,
+        OwnerUnregistered = 3,
+        ProviderLost = 4,
+        ExplicitClear = 5,
+        CallbackFault = 6,
+    };
+
+    enum class RockProviderCommandStageV1 : std::uint32_t
+    {
+        Unknown = 0,
+        Accepted = 1,
+        Queued = 2,
+        Committed = 3,
+        Applied = 4,
+        Terminal = 5,
+    };
+
+    enum class RockProviderFrameEnrichmentFlagV1 : std::uint32_t
+    {
+        None = 0,
+        DeltaSecondsValid = 1u << 0,
+        HmdTransformValid = 1u << 1,
+        HmdForwardValid = 1u << 2,
+        CoherentHandRoles = 1u << 3,
+        StateSequenceValid = 1u << 4,
+        CollisionGenerationValid = 1u << 5,
+        EquippedTransitionSequenceValid = 1u << 6,
+    };
+
+    enum class RockProviderFrameStateChangeFlagV1 : std::uint32_t
+    {
+        None = 0,
+        Lifecycle = 1u << 0,
+        RightHand = 1u << 1,
+        LeftHand = 1u << 2,
+        Weapon = 1u << 3,
+        EquippedTransition = 1u << 4,
+        Collision = 1u << 5,
+        HandRoles = 1u << 6,
+    };
+
     [[nodiscard]] inline constexpr bool hasLifecycleFlag(std::uint32_t flags, RockProviderLifecycleFlag flag)
     {
         return (flags & static_cast<std::uint32_t>(flag)) != 0;
@@ -665,6 +1099,11 @@ namespace rock::provider
         return (flags & static_cast<std::uint64_t>(flag)) != 0;
     }
 
+    [[nodiscard]] inline constexpr bool hasFeatureBit2V1(std::uint32_t featureBits, RockProviderFeatureBit2V1 feature)
+    {
+        return (featureBits & static_cast<std::uint32_t>(feature)) != 0;
+    }
+
     [[nodiscard]] inline constexpr bool hasNativeAnimationAuthorityFlagV1(
         std::uint32_t flags,
         RockProviderNativeAnimationAuthorityFlagV1 flag)
@@ -678,6 +1117,24 @@ namespace rock::provider
     {
         return (flags & static_cast<std::uint32_t>(flag)) != 0;
     }
+
+    struct RockProviderApi;
+
+    /*
+     * Immutable export-owned descriptor. Consumers read this before touching
+     * any function-table slot, which makes minimum-extent negotiation safe
+     * even when an older V1 provider returns a deliberately shorter table.
+     */
+    struct RockProviderApiDescriptorV1
+    {
+        std::uint32_t size{ sizeof(RockProviderApiDescriptorV1) };
+        std::uint32_t apiVersion{ ROCK_PROVIDER_API_VERSION };
+        std::uint32_t tableByteSize{ 0 };
+        std::uint32_t featureBits{ 0 };
+        std::uint32_t featureBits2{ 0 };
+        std::uint32_t reserved[3]{};
+        const RockProviderApi* table{ nullptr };
+    };
 
     struct RockProviderConsumerRegistrationV1
     {
@@ -724,6 +1181,69 @@ namespace rock::provider
         std::uint32_t maxDebugOverlayLines{ 0 };
         std::uint32_t maxDebugOverlayText{ 0 };
     };
+
+    /*
+     * Extensible limits surface. Callers set size to their local structure
+     * size; ROCK prefix-copies the supported bytes and returns the copied size.
+     */
+    struct RockProviderLimitsExtV1
+    {
+        std::uint32_t size{ sizeof(RockProviderLimitsExtV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint32_t featureBits{ 0 };
+        std::uint32_t featureBits2{ 0 };
+        std::uint32_t providerApiByteSize{ 0 };
+        std::uint32_t maxConsumers{ 0 };
+        std::uint32_t maxFrameCallbacks{ 0 };
+        std::uint32_t maxExternalBodies{ 0 };
+        std::uint32_t maxExternalScopes{ 0 };
+        std::uint32_t maxExternalContacts{ 0 };
+        std::uint32_t maxBodyContacts{ 0 };
+        std::uint32_t maxWeaponBodies{ 0 };
+        std::uint32_t maxWeaponEmitters{ 0 };
+        std::uint32_t maxInteractionCommands{ 0 };
+        std::uint32_t maxCompletedInteractionCommands{ 0 };
+        std::uint32_t maxHandInputSuppressions{ 0 };
+        std::uint32_t maxHandInputSuppressionLeaseFrames{ 0 };
+        std::uint32_t maxWeaponPartTargets{ 0 };
+        std::uint32_t maxWeaponPartDrives{ 0 };
+        std::uint32_t maxWeaponPartDriveLeaseFrames{ 0 };
+        std::uint32_t maxWeaponPartPoses{ 0 };
+        std::uint32_t maxWeaponPartDriveResults{ 0 };
+        std::uint32_t maxNativeAnimationAuthorityLeaseFrames{ 0 };
+        std::uint32_t maxAnimationPhaseCallbacks{ 0 };
+        std::uint32_t maxHandVisualAuthorityPublications{ 0 };
+        std::uint32_t maxNativeAnimationRuntimeProviders{ 0 };
+        std::uint32_t maxEquippedWeaponHandlingAuthorities{ 0 };
+        std::uint32_t maxEquippedWeaponHandlingLeaseFrames{ 0 };
+        std::uint32_t maxDebugOverlayPublishers{ 0 };
+        std::uint32_t maxDebugOverlayLinesPerPublisher{ 0 };
+        std::uint32_t maxDebugOverlayTextPerPublisher{ 0 };
+        std::uint32_t maxDebugOverlayLines{ 0 };
+        std::uint32_t maxDebugOverlayText{ 0 };
+        std::uint32_t maxProviderEvents{ 0 };
+        std::uint32_t maxWeaponCompositionEntries{ 0 };
+        std::uint32_t maxSemanticHandContacts{ 0 };
+        std::uint32_t maxPlayerColliderDescriptors{ 0 };
+        std::uint32_t maxOffhandReservationLeaseFrames{ 0 };
+        std::uint32_t maxHandVisualAuthorityLeaseFrames{ 0 };
+        std::uint32_t maxNativeAnimationRuntimeLeaseFrames{ 0 };
+        std::uint32_t maxDebugOverlayPublicationLeaseFrames{ 0 };
+        std::uint32_t maxNativeAnimationAuthorityOwners{ 0 };
+        std::uint32_t maxWeaponEvidenceDetails{ 0 };
+        std::uint32_t maxWeaponEvidencePointsPerDetail{ 0 };
+        std::uint32_t reserved[4]{};
+    };
+
+    /*
+     * Pointer-sized fields retained by the original V1 prefix are non-owning
+     * identity witnesses, never ownership or mutation authority. They may be
+     * compared only on ROCK's game-thread callback/query frame while the
+     * accompanying frame and generation identities still match, and must not
+     * be retained or dereferenced by a consumer. Command targetRefr inputs are
+     * ABI-retained but ignored; use targetFormId and/or targetBodyId. Command
+     * result targetRefr is zero. New V1 structures use value identity instead.
+     */
 
     struct RockProviderForceGrabRequestV1
     {
@@ -794,8 +1314,12 @@ namespace rock::provider
         std::uint32_t worldGeneration{ 0 };
         std::uint32_t skeletonGeneration{ 0 };
         std::uint32_t providerGeneration{ 0 };
-        std::uint32_t reserved0{ 0 };
-        std::uint32_t reserved[8]{};
+        RockProviderCommandStageV1 stage{ RockProviderCommandStageV1::Unknown };
+        RockProviderInteractionFailureV1 failureStage{ RockProviderInteractionFailureV1::None };
+        std::uint64_t acceptedFrame{ 0 };
+        std::uint64_t committedFrame{ 0 };
+        std::uint64_t appliedFrame{ 0 };
+        std::uint32_t reserved{ 0 };
     };
 
     struct RockProviderHandInputSuppressionRequestV1
@@ -829,7 +1353,11 @@ namespace rock::provider
         std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
         std::uint32_t available{ 0 };
         std::uint32_t held{ 0 };
-        std::uint32_t reserved[4]{};
+        std::uint64_t sampleSequence{ 0 };
+        std::uint32_t sampleAgeMilliseconds{ 0 };
+        RockProviderInputAvailabilityReasonV1 availabilityReason{
+            RockProviderInputAvailabilityReasonV1::HookNotSampled
+        };
     };
 
     struct RockProviderWeaponPartTargetV1
@@ -850,28 +1378,6 @@ namespace rock::provider
         std::uint32_t priority{ 0 };
         char sourceName[ROCK_PROVIDER_MAX_EVIDENCE_NAME]{};
         std::uint32_t reserved[8]{};
-    };
-
-    struct RockProviderWeaponPartTargetQueryV1
-    {
-        std::uint64_t weaponGenerationKey{ 0 };
-        std::uint32_t bodyId{ 0x7FFF'FFFF };
-        std::uint32_t partKind{ 0 };
-        std::uint32_t reloadRole{ 0 };
-        std::uint32_t supportRole{ 0 };
-        std::uint32_t socketRole{ 0 };
-        std::uint32_t actionRole{ 0 };
-        std::uintptr_t sourceRoot{ 0 };
-        char sourceName[ROCK_PROVIDER_MAX_EVIDENCE_NAME]{};
-    };
-
-    struct RockProviderWeaponPartTargetResolutionV1
-    {
-        std::uint32_t whitelistActive{ 0 };
-        std::uint32_t matched{ 0 };
-        RockProviderWeaponPartGrabModeV1 grabMode{ RockProviderWeaponPartGrabModeV1::None };
-        std::uint32_t groupId{ 0 };
-        std::uint64_t ownerToken{ 0 };
     };
 
     struct RockProviderTransform
@@ -1025,6 +1531,11 @@ namespace rock::provider
         std::uint32_t reserved[6]{};
     };
 
+    /*
+     * bhkWorld, hknpWorld, and weaponNode are legacy V1 witnesses governed by
+     * the pointer rule above. All other appended enrichment is copied value
+     * state and remains interpretable after the callback returns.
+     */
     struct RockProviderFrameSnapshot
     {
         std::uint32_t size{ sizeof(RockProviderFrameSnapshot) };
@@ -1058,6 +1569,16 @@ namespace rock::provider
         std::uint32_t skeletonGeneration{ 0 };
         std::uint32_t providerGeneration{ 0 };
         std::uint32_t stableFrameCount{ 0 };
+        float deltaSeconds{ 0.0f };
+        std::uint32_t enrichmentFlags{ 0 };
+        RockProviderTransform hmdTransform{};
+        float hmdForwardWorld[3]{};
+        RockProviderHand primaryHand{ RockProviderHand::Right };
+        RockProviderHand offhandHand{ RockProviderHand::Left };
+        std::uint64_t stateSequence{ 0 };
+        std::uint32_t stateChangeMask{ 0 };
+        std::uint32_t collisionGeneration{ 0 };
+        std::uint64_t equippedWeaponTransitionSequence{ 0 };
     };
 
     struct RockProviderHandFrameV1
@@ -1071,6 +1592,12 @@ namespace rock::provider
         std::uint32_t bodyId{ 0x7FFF'FFFF };
         std::uint32_t state{ 0 };
         std::uint32_t reserved[7]{};
+        std::uint64_t frameIndex{ 0 };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t providerGeneration{ 0 };
+        std::uint32_t collisionGeneration{ 0 };
+        std::uint64_t stateSequence{ 0 };
     };
 
     struct RockProviderWeaponContactQuery
@@ -1114,7 +1641,9 @@ namespace rock::provider
         RockProviderWeaponSizeClassV1 sizeClass{ RockProviderWeaponSizeClassV1::Rifle };
         RockProviderWeaponClassificationSourceV1 source{ RockProviderWeaponClassificationSourceV1::None };
         std::uint32_t formId{ 0 };
-        std::uint32_t reserved[4]{};
+        std::uint64_t weaponGenerationKey{ 0 };
+        float confidence{ 0.0f };
+        std::uint32_t provenanceFlags{ 0 };
     };
 
     struct RockProviderPoint3
@@ -1160,8 +1689,8 @@ namespace rock::provider
     };
 
     /*
-     * leaseFrames == 0 is persistent until clear/unregister/provider loss.
-     * Non-zero leases are bounded by
+     * Authority is always a rolling bounded lease. leaseFrames must be nonzero,
+     * is bounded by
      * ROCK_PROVIDER_MAX_NATIVE_ANIMATION_AUTHORITY_LEASE_FRAMES_V1 and should
      * be refreshed by a consumer that wants rolling temporary authority.
      * Generation guards follow the same optional-zero contract as the other
@@ -1199,7 +1728,10 @@ namespace rock::provider
      * at that phase may capture data but must not mutate the engine graph.
      * BeforeRock runs before ROCK mutates weapon/hand presentation, AfterRock
      * runs after the interaction update, and Complete closes the frame after
-     * all visual writers. Faulting callbacks are unregistered by ROCK.
+     * all visual writers. Unregister prevents future dispatch copies but does
+     * not wait for an already copied invocation; callback and userData storage
+     * must remain alive through that invocation. Faulting callbacks revoke all
+     * stateful resources and callbacks owned by that consumer.
      */
     struct RockProviderAnimationPhaseContextV1
     {
@@ -1289,9 +1821,10 @@ namespace rock::provider
      * A consumer publishes one hand world target and/or an exact 15-bone
      * finger-local pose through ROCK's FRIK authority bridge. Set/clear only
      * from ROCK's animation/frame callbacks on the game thread; wrong-thread
-     * writes are rejected. ROCK derives a unique tag from ownerToken and clears
-     * every publication on explicit clear, consumer unregister, provider loss,
-     * or callback fault.
+     * writes are rejected. ROCK derives a unique tag from ownerToken. Every
+     * publication is a rolling bounded lease with generation guards and is
+     * cleared on expiry, generation change, explicit clear, consumer
+     * unregister, provider loss, or callback fault.
      */
     struct RockProviderHandVisualAuthorityRequestV1
     {
@@ -1304,7 +1837,11 @@ namespace rock::provider
         std::uint16_t reserved0{ 0 };
         RockProviderTransform worldTransform{};
         RockProviderTransform fingerLocalTransforms[15]{};
-        std::uint32_t reserved[8]{};
+        std::uint32_t leaseFrames{ 0 };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t providerGeneration{ 0 };
+        std::uint32_t reserved[4]{};
     };
 
     /*
@@ -1319,14 +1856,20 @@ namespace rock::provider
         std::uint32_t statusFlags{ 0 };
         std::uint32_t capturedTransformCount{ 0 };
         std::uint64_t captureSequence{ 0 };
-        std::uint32_t reserved[10]{};
+        std::uint32_t leaseFrames{ 0 };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t providerGeneration{ 0 };
+        std::uint32_t reserved[6]{};
     };
 
     /*
      * Diagnostic-only colored geometry submitted to ROCK's single OpenVR/D3D
      * overlay renderer. Consumer memory is copied during publish and is never
      * retained. Publications are owner-scoped, bounded, game-thread-only, and
-     * cleared on explicit clear, unregister, callback fault, or provider loss.
+     * retained. Every publication is a rolling bounded lease and is cleared on
+     * expiry, generation change, explicit clear, unregister, callback fault,
+     * or provider loss.
      */
     struct RockProviderDebugOverlayLineV1
     {
@@ -1364,7 +1907,8 @@ namespace rock::provider
         std::uint32_t worldGeneration{ 0 };
         std::uint32_t skeletonGeneration{ 0 };
         std::uint32_t providerGeneration{ 0 };
-        std::uint32_t reserved[5]{};
+        std::uint32_t leaseFrames{ 0 };
+        std::uint32_t reserved[4]{};
     };
 
     /*
@@ -1464,7 +2008,399 @@ namespace rock::provider
         std::uint32_t sourcePartKind{ 0 };
         std::uint32_t sourceRole{ 0 };
         std::uint32_t sourceSubRole{ 0 };
-        std::uint32_t reserved[2]{};
+        std::uint32_t flags{ 0 };
+        std::uint32_t collisionGeneration{ 0 };
+    };
+
+    struct RockProviderHandInteractionStateV1
+    {
+        std::uint32_t size{ sizeof(RockProviderHandInteractionStateV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint64_t frameIndex{ 0 };
+        RockProviderHand hand{ RockProviderHand::None };
+        RockProviderHandInteractionPhaseV1 phase{ RockProviderHandInteractionPhaseV1::Idle };
+        RockProviderBodyContactTargetKind targetKind{ RockProviderBodyContactTargetKind::Unknown };
+        std::uint32_t flags{ 0 };
+        std::uint64_t reservedTargetIdentity{ 0 };
+        std::uint32_t targetFormId{ 0 };
+        std::uint32_t primaryBodyId{ 0x7FFF'FFFF };
+        std::uint32_t heldBodyCount{ 0 };
+        std::uint32_t heldBodyIds[ROCK_PROVIDER_MAX_HAND_HELD_BODIES_V1]{};
+        std::uint32_t effectiveInputSuppressionFlags{ 0 };
+        std::uint32_t collisionAvailabilityFlags{ 0 };
+        std::uint64_t stateSequence{ 0 };
+        std::uint64_t targetSequence{ 0 };
+        std::uint64_t gripSequence{ 0 };
+        std::uint64_t releaseSequence{ 0 };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t providerGeneration{ 0 };
+        std::uint32_t collisionGeneration{ 0 };
+        std::uint32_t reserved[4]{};
+    };
+
+    struct RockProviderEventV1
+    {
+        std::uint32_t size{ sizeof(RockProviderEventV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint64_t sequence{ 0 };
+        std::uint64_t frameIndex{ 0 };
+        RockProviderEventKindV1 kind{ RockProviderEventKindV1::Unknown };
+        RockProviderHand hand{ RockProviderHand::None };
+        std::uint64_t ownerToken{ 0 };
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint32_t formId{ 0 };
+        std::uint32_t result{ 0 };
+        std::uint64_t subjectSequence{ 0 };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t providerGeneration{ 0 };
+        std::uint32_t data[5]{};
+    };
+
+    struct RockProviderEventStreamStateV1
+    {
+        std::uint32_t size{ sizeof(RockProviderEventStreamStateV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint64_t oldestRetainedSequence{ 0 };
+        std::uint64_t latestEmittedSequence{ 0 };
+        std::uint64_t firstCopiedSequence{ 0 };
+        std::uint64_t lastCopiedSequence{ 0 };
+        std::uint32_t copiedCount{ 0 };
+        std::uint32_t flags{ 0 };
+        std::uint64_t overwrittenCount{ 0 };
+    };
+
+    struct RockProviderEquippedWeaponStateV1
+    {
+        std::uint32_t size{ sizeof(RockProviderEquippedWeaponStateV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint64_t frameIndex{ 0 };
+        std::uint32_t flags{ 0 };
+        std::uint32_t weaponFormId{ 0 };
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint64_t transitionSequence{ 0 };
+        std::uint64_t terminalSequence{ 0 };
+        RockProviderEquippedWeaponTransitionSourceV1 transitionSource{
+            RockProviderEquippedWeaponTransitionSourceV1::Unknown
+        };
+        RockProviderEquippedWeaponTransitionResultV1 terminalResult{
+            RockProviderEquippedWeaponTransitionResultV1::None
+        };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t providerGeneration{ 0 };
+        std::uint32_t reserved[7]{};
+    };
+
+    struct RockProviderExternalContactRecordV1
+    {
+        std::uint32_t size{ sizeof(RockProviderExternalContactRecordV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint64_t parentOwnerToken{ 0 };
+        std::uint64_t scopeToken{ 0 };
+        std::uint64_t sequence{ 0 };
+        std::uint64_t frameIndex{ 0 };
+        std::uint32_t sourceBodyId{ 0x7FFF'FFFF };
+        std::uint32_t targetExternalBodyId{ 0x7FFF'FFFF };
+        std::uint32_t bodyGeneration{ 0 };
+        RockProviderExternalSourceKind sourceKind{ RockProviderExternalSourceKind::Unknown };
+        RockProviderHand sourceHand{ RockProviderHand::None };
+        RockProviderExternalBodyRole targetRole{ RockProviderExternalBodyRole::Unknown };
+        RockProviderExternalContactQuality quality{ RockProviderExternalContactQuality::BodyPairOnly };
+        std::uint32_t flags{ 0 };
+        float sourceVelocityHavok[3]{};
+        float contactPointHavok[3]{};
+        float contactNormalHavok[3]{};
+        float contactPointWeightSum{ 0.0f };
+        std::uint32_t sourcePartKind{ 0 };
+        std::uint32_t sourceRole{ 0 };
+        std::uint32_t sourceSubRole{ 0 };
+        std::uint32_t collisionGeneration{ 0 };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t providerGeneration{ 0 };
+        std::uint32_t reserved[3]{};
+    };
+
+    struct RockProviderExternalContactStreamStateV1
+    {
+        std::uint32_t size{ sizeof(RockProviderExternalContactStreamStateV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint64_t oldestRetainedSequence{ 0 };
+        std::uint64_t latestEmittedSequence{ 0 };
+        std::uint64_t firstCopiedSequence{ 0 };
+        std::uint64_t lastCopiedSequence{ 0 };
+        std::uint64_t overwrittenCount{ 0 };
+        std::uint32_t copiedCount{ 0 };
+        std::uint32_t flags{ 0 };
+    };
+
+    struct RockProviderWeaponPartResolutionQueryV1
+    {
+        std::uint32_t size{ sizeof(RockProviderWeaponPartResolutionQueryV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint32_t bodyId{ 0x7FFF'FFFF };
+        std::uint32_t partKind{ 0 };
+        std::uint32_t reloadRole{ 0 };
+        std::uint32_t supportRole{ 0 };
+        std::uint32_t socketRole{ 0 };
+        std::uint32_t actionRole{ 0 };
+        std::uintptr_t sourceRoot{ 0 };
+        char sourceName[ROCK_PROVIDER_MAX_EVIDENCE_NAME]{};
+        std::uint32_t reserved[4]{};
+    };
+
+    struct RockProviderWeaponPartResolutionResultV1
+    {
+        std::uint32_t size{ sizeof(RockProviderWeaponPartResolutionResultV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint32_t whitelistActive{ 0 };
+        std::uint32_t matched{ 0 };
+        RockProviderWeaponPartGrabModeV1 grabMode{ RockProviderWeaponPartGrabModeV1::None };
+        std::uint32_t groupId{ 0 };
+        std::uint32_t priority{ 0 };
+        std::uint32_t reserved0{ 0 };
+        std::uint64_t winningOwnerToken{ 0 };
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint64_t frameIndex{ 0 };
+        std::uint32_t reserved[4]{};
+    };
+
+    struct RockProviderWeaponPartPoseV1
+    {
+        std::uint32_t size{ sizeof(RockProviderWeaponPartPoseV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint64_t frameIndex{ 0 };
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint32_t bodyId{ 0x7FFF'FFFF };
+        std::uint32_t partKind{ 0 };
+        std::uint32_t omodFormId{ 0 };
+        std::uint32_t attachPointFormId{ 0 };
+        std::uint32_t flags{ 0 };
+        std::uint32_t reserved0{ 0 };
+        RockProviderTransform sourceParentLocal{};
+        RockProviderTransform weaponRootLocal{};
+        char sourceName[ROCK_PROVIDER_MAX_EVIDENCE_NAME]{};
+        std::uint32_t reserved[4]{};
+    };
+
+    struct RockProviderWeaponPartDriveApplicationResultV1
+    {
+        std::uint32_t size{ sizeof(RockProviderWeaponPartDriveApplicationResultV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint64_t frameIndex{ 0 };
+        std::uint64_t ownerToken{ 0 };
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint32_t bodyId{ 0x7FFF'FFFF };
+        std::uint32_t groupId{ 0 };
+        std::uint32_t priority{ 0 };
+        RockProviderWeaponPartDriveApplicationV1 result{
+            RockProviderWeaponPartDriveApplicationV1::Unknown
+        };
+        RockProviderTransform appliedSourceParentLocal{};
+        char sourceName[ROCK_PROVIDER_MAX_EVIDENCE_NAME]{};
+        std::uint32_t reserved[4]{};
+    };
+
+    struct RockProviderScopeSightStateV1
+    {
+        std::uint32_t size{ sizeof(RockProviderScopeSightStateV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint64_t frameIndex{ 0 };
+        std::uint64_t publicationSequence{ 0 };
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint32_t weaponFormId{ 0 };
+        std::uint32_t flags{ 0 };
+        RockProviderScopeActivationSourceV1 activationSource{
+            RockProviderScopeActivationSourceV1::None
+        };
+        std::uint32_t nativeScopeOverlayIndex{ 0 };
+        RockProviderPoint3 anchorWeaponLocal{};
+        RockProviderBounds3 sightBoundsWeaponLocal{};
+        std::uint32_t sightBodyCount{ 0 };
+        std::uint32_t sightBodyId{ 0x7FFF'FFFF };
+        std::uint32_t omodFormId{ 0 };
+        std::uint32_t attachPointFormId{ 0 };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t providerGeneration{ 0 };
+        std::uint32_t reserved[5]{};
+    };
+
+    struct RockProviderWeaponCompositionStateV1
+    {
+        std::uint32_t size{ sizeof(RockProviderWeaponCompositionStateV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint64_t compositionSignature{ 0 };
+        std::uint32_t weaponFormId{ 0 };
+        std::uint32_t entryCount{ 0 };
+        std::uint64_t semanticCoverageMask{ 0 };
+        std::uint64_t missingCoverageMask{ 0 };
+        std::uint64_t publicationSequence{ 0 };
+        std::uint32_t reserved[6]{};
+    };
+
+    struct RockProviderWeaponCompositionEntryV1
+    {
+        std::uint32_t size{ sizeof(RockProviderWeaponCompositionEntryV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint32_t omodFormId{ 0 };
+        std::uint32_t attachPointFormId{ 0 };
+        std::uint32_t stableIndex{ 0 };
+        std::uint32_t flags{ 0 };
+        std::uint64_t semanticCoverageMask{ 0 };
+        std::uint32_t reserved[6]{};
+    };
+
+    struct RockProviderAuthoredGripPoseV1
+    {
+        std::uint32_t size{ sizeof(RockProviderAuthoredGripPoseV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint32_t weaponFormId{ 0 };
+        RockProviderAuthoredGripSourceV1 source{ RockProviderAuthoredGripSourceV1::Unknown };
+        std::uint64_t variantKey{ 0 };
+        std::uint64_t captureSequence{ 0 };
+        std::uint32_t flags{ 0 };
+        std::uint16_t rightFingerLocalTransformMask{ 0 };
+        std::uint16_t leftFingerLocalTransformMask{ 0 };
+        RockProviderTransform rightHandInWeapon{};
+        RockProviderTransform leftHandInWeapon{};
+        RockProviderTransform rightFingerLocalTransforms[15]{};
+        RockProviderTransform leftFingerLocalTransforms[15]{};
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t providerGeneration{ 0 };
+        std::uint32_t reserved[5]{};
+    };
+
+    struct RockProviderPresentedHandPoseV1
+    {
+        std::uint32_t size{ sizeof(RockProviderPresentedHandPoseV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint64_t frameIndex{ 0 };
+        RockProviderHand hand{ RockProviderHand::None };
+        std::uint32_t flags{ 0 };
+        RockProviderTransform handWorld{};
+        std::uint16_t fingerLocalTransformMask{ 0 };
+        std::uint16_t reserved0{ 0 };
+        RockProviderTransform fingerLocalTransforms[15]{};
+        std::uint64_t presentationSequence{ 0 };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t providerGeneration{ 0 };
+        std::uint32_t reserved[5]{};
+    };
+
+    struct RockProviderSemanticHandContactV1
+    {
+        std::uint32_t size{ sizeof(RockProviderSemanticHandContactV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint64_t frameIndex{ 0 };
+        RockProviderHand hand{ RockProviderHand::None };
+        std::uint32_t role{ 0 };
+        std::uint32_t finger{ 0 };
+        std::uint32_t segment{ 0 };
+        std::uint32_t handBodyId{ 0x7FFF'FFFF };
+        std::uint32_t targetBodyId{ 0x7FFF'FFFF };
+        std::uint32_t targetFormId{ 0 };
+        std::uint32_t flags{ 0 };
+        RockProviderSemanticContactStateV1 contactState{
+            RockProviderSemanticContactStateV1::Continued
+        };
+        std::uint32_t framesSinceContact{ 0 };
+        std::uint32_t contactSequence{ 0 };
+        RockProviderPoint3 contactPointGame{};
+        RockProviderPoint3 contactNormalGame{};
+        std::uint32_t collisionGeneration{ 0 };
+        std::uint32_t reserved[5]{};
+    };
+
+    struct RockProviderPlayerColliderDescriptorV1
+    {
+        std::uint32_t size{ sizeof(RockProviderPlayerColliderDescriptorV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint64_t frameIndex{ 0 };
+        RockProviderPlayerColliderKindV1 kind{ RockProviderPlayerColliderKindV1::Hand };
+        RockProviderHand hand{ RockProviderHand::None };
+        std::uint32_t bodyId{ 0x7FFF'FFFF };
+        std::uint32_t role{ 0 };
+        RockProviderBodyZoneKind zone{ RockProviderBodyZoneKind::Unknown };
+        RockProviderBodyZoneSide side{ RockProviderBodyZoneSide::Center };
+        std::uint32_t descriptorIndex{ 0 };
+        std::uint32_t flags{ 0 };
+        float lengthGameUnits{ 0.0f };
+        float radiusGameUnits{ 0.0f };
+        RockProviderTransform transform{};
+        std::uint32_t collisionGeneration{ 0 };
+        std::uint32_t reserved[5]{};
+    };
+
+    struct RockProviderHandCollisionAvailabilityV1
+    {
+        std::uint32_t size{ sizeof(RockProviderHandCollisionAvailabilityV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint64_t frameIndex{ 0 };
+        RockProviderHand hand{ RockProviderHand::None };
+        std::uint32_t flags{ 0 };
+        std::uint64_t collisionSequence{ 0 };
+        std::uint32_t collisionGeneration{ 0 };
+        std::uint32_t handBodyCount{ 0 };
+        std::uint32_t dynamicTwinCount{ 0 };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t providerGeneration{ 0 };
+        std::uint32_t reserved[6]{};
+    };
+
+    struct RockProviderHandInputSuppressionStateV1
+    {
+        std::uint32_t size{ sizeof(RockProviderHandInputSuppressionStateV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint64_t frameIndex{ 0 };
+        RockProviderHand hand{ RockProviderHand::None };
+        std::uint32_t callerFlags{ 0 };
+        std::uint32_t effectiveFlags{ 0 };
+        std::uint32_t callerLeaseActive{ 0 };
+        std::uint64_t callerExpiresAfterFrame{ 0 };
+        std::uint32_t callerRemainingFrames{ 0 };
+        RockProviderSuppressionInvalidationReasonV1 lastInvalidationReason{
+            RockProviderSuppressionInvalidationReasonV1::None
+        };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t providerGeneration{ 0 };
+        std::uint32_t reserved[5]{};
+    };
+
+    struct RockProviderOffhandReservationRequestV1
+    {
+        std::uint32_t size{ sizeof(RockProviderOffhandReservationRequestV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        RockProviderOffhandReservation reservation{ RockProviderOffhandReservation::Normal };
+        std::uint32_t leaseFrames{ 0 };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t providerGeneration{ 0 };
+        std::uint32_t reserved[7]{};
+    };
+
+    struct RockProviderOffhandReservationStateV1
+    {
+        std::uint32_t size{ sizeof(RockProviderOffhandReservationStateV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        RockProviderOffhandReservation reservation{ RockProviderOffhandReservation::Normal };
+        std::uint32_t active{ 0 };
+        std::uint64_t ownerToken{ 0 };
+        std::uint64_t expiresAfterFrame{ 0 };
+        std::uint32_t remainingFrames{ 0 };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t providerGeneration{ 0 };
+        std::uint32_t reserved[6]{};
     };
 
     using RockProviderFrameCallback = void(ROCK_PROVIDER_CALL*)(const RockProviderFrameSnapshot* snapshot, void* userData);
@@ -1603,32 +2539,179 @@ namespace rock::provider
         bool(ROCK_PROVIDER_CALL* getPresentedHandFrameV1)(
             RockProviderHand hand,
             RockProviderHandFrameV1* outFrame);
+        bool(ROCK_PROVIDER_CALL* getProviderLimitsExtV1)(RockProviderLimitsExtV1* outLimits);
+        std::uint32_t(ROCK_PROVIDER_CALL* getPublicStructureSizeV1)(RockProviderStructureIdV1 structureId);
+        /*
+         * Owner callbacks run on ROCK's game-thread frame boundary. Removal
+         * prevents future copies but is not a quiescence barrier for an
+         * invocation already copied for dispatch; userData must therefore
+         * remain alive until that invocation returns. A callback fault revokes
+         * every stateful resource and callback owned by that consumer.
+         */
+        RockProviderResultV1(ROCK_PROVIDER_CALL* registerFrameCallbackForOwnerV1)(
+            std::uint64_t ownerToken,
+            RockProviderFrameCallback callback,
+            void* userData,
+            std::uint64_t* outCallbackToken);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* unregisterFrameCallbackForOwnerV1)(
+            std::uint64_t ownerToken,
+            std::uint64_t callbackToken);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* getHandInteractionStateV1)(
+            std::uint64_t ownerToken,
+            RockProviderHand hand,
+            RockProviderHandInteractionStateV1* outState);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* copyProviderEventsSinceV1)(
+            std::uint64_t ownerToken,
+            std::uint64_t afterSequence,
+            RockProviderEventV1* outEvents,
+            std::uint32_t maxEvents,
+            RockProviderEventStreamStateV1* outStreamState);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* getEquippedWeaponStateV1)(
+            std::uint64_t ownerToken,
+            RockProviderEquippedWeaponStateV1* outState);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* registerExternalBodiesForScopeV1)(
+            std::uint64_t ownerToken,
+            std::uint64_t scopeToken,
+            const RockProviderExternalBodyRegistration* bodies,
+            std::uint32_t bodyCount);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* clearExternalBodiesForScopeV1)(
+            std::uint64_t ownerToken,
+            std::uint64_t scopeToken);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* copyExternalContactsSinceV1)(
+            std::uint64_t ownerToken,
+            std::uint64_t scopeToken,
+            std::uint64_t afterSequence,
+            RockProviderExternalContactRecordV1* outContacts,
+            std::uint32_t maxContacts,
+            RockProviderExternalContactStreamStateV1* outStreamState);
+        /*
+         * Live scene/physics readbacks are game-thread-only and return
+         * WrongThread outside ROCK's owner frame callbacks. This applies to
+         * weapon-part poses and drive results, scope state, authored/presented
+         * poses, semantic contacts, player colliders, and hand-collision
+         * availability. Target resolution and weapon-composition snapshots
+         * are independently synchronized value queries.
+         */
+        RockProviderResultV1(ROCK_PROVIDER_CALL* queryWeaponPartTargetResolutionV1)(
+            std::uint64_t ownerToken,
+            const RockProviderWeaponPartResolutionQueryV1* query,
+            RockProviderWeaponPartResolutionResultV1* outResolution);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* copyWeaponPartPoseSnapshotV1)(
+            std::uint64_t ownerToken,
+            RockProviderWeaponPartPoseV1* outParts,
+            std::uint32_t maxParts,
+            std::uint32_t* outPartCount);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* copyWeaponPartDriveApplicationResultsV1)(
+            std::uint64_t ownerToken,
+            RockProviderWeaponPartDriveApplicationResultV1* outResults,
+            std::uint32_t maxResults,
+            std::uint32_t* outResultCount);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* getScopeSightStateV1)(
+            std::uint64_t ownerToken,
+            RockProviderScopeSightStateV1* outState);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* getWeaponCompositionStateV1)(
+            std::uint64_t ownerToken,
+            RockProviderWeaponCompositionStateV1* outState);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* copyWeaponCompositionEntriesV1)(
+            std::uint64_t ownerToken,
+            RockProviderWeaponCompositionEntryV1* outEntries,
+            std::uint32_t maxEntries,
+            std::uint32_t* outEntryCount);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* getSelectedAuthoredGripPoseV1)(
+            std::uint64_t ownerToken,
+            RockProviderAuthoredGripPoseV1* outPose);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* getPresentedHandPoseV1)(
+            std::uint64_t ownerToken,
+            RockProviderHand hand,
+            RockProviderPresentedHandPoseV1* outPose);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* copySemanticHandContactsV1)(
+            std::uint64_t ownerToken,
+            RockProviderHand hand,
+            std::uint32_t maxFramesSinceContact,
+            RockProviderSemanticHandContactV1* outContacts,
+            std::uint32_t maxContacts,
+            std::uint32_t* outContactCount);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* copyPlayerColliderDescriptorsV1)(
+            std::uint64_t ownerToken,
+            RockProviderPlayerColliderDescriptorV1* outDescriptors,
+            std::uint32_t maxDescriptors,
+            std::uint32_t* outDescriptorCount);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* getHandCollisionAvailabilityV1)(
+            std::uint64_t ownerToken,
+            RockProviderHand hand,
+            RockProviderHandCollisionAvailabilityV1* outState);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* cancelInteractionCommandV1)(
+            std::uint64_t ownerToken,
+            std::uint64_t commandId);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* getHandInputSuppressionStateV1)(
+            std::uint64_t ownerToken,
+            RockProviderHand hand,
+            RockProviderHandInputSuppressionStateV1* outState);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* acquireOffhandReservationV1)(
+            std::uint64_t ownerToken,
+            const RockProviderOffhandReservationRequestV1* request);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* renewOffhandReservationV1)(
+            std::uint64_t ownerToken,
+            const RockProviderOffhandReservationRequestV1* request);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* releaseOffhandReservationV1)(
+            std::uint64_t ownerToken);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* getOffhandReservationStateV1)(
+            std::uint64_t ownerToken,
+            RockProviderOffhandReservationStateV1* outState);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* clearNativeAnimationRuntimeV1)(
+            std::uint64_t ownerToken);
 
         [[nodiscard]] static int initialize(
             const std::uint32_t minVersion = ROCK_PROVIDER_API_VERSION,
             const std::uint32_t minProviderApiByteSize = 0)
         {
-            const auto hasMinimumTableSize = [](const RockProviderApi* api, std::uint32_t requiredByteSize) {
-                if (requiredByteSize == 0) {
-                    return true;
-                }
-                if (!api || !api->getProviderLimitsV1) {
-                    return false;
-                }
-                RockProviderLimitsV1 limits{};
-                return api->getProviderLimitsV1(&limits) && limits.providerApiByteSize >= requiredByteSize;
-            };
-
             if (inst) {
-                if (inst->getVersion() < minVersion) {
+                if (negotiatedApiVersion < minVersion) {
                     return 4;
                 }
-                return hasMinimumTableSize(inst, minProviderApiByteSize) ? 0 : 5;
+                return minProviderApiByteSize == 0 ||
+                               (negotiatedTableByteSize != 0 &&
+                                   negotiatedTableByteSize >= minProviderApiByteSize) ?
+                    0 :
+                    5;
             }
 
             const auto rockDll = GetModuleHandleA("ROCK.dll");
             if (!rockDll) {
                 return 1;
+            }
+
+            using GetDescriptorFn = const RockProviderApiDescriptorV1*(ROCK_PROVIDER_CALL*)();
+            const auto getDescriptor = reinterpret_cast<GetDescriptorFn>(
+                GetProcAddress(rockDll, "ROCKAPI_GetDescriptorV1"));
+            if (getDescriptor) {
+                const auto* descriptor = getDescriptor();
+                constexpr auto minimumDescriptorBytes = static_cast<std::uint32_t>(
+                    offsetof(RockProviderApiDescriptorV1, table) +
+                    sizeof(std::declval<RockProviderApiDescriptorV1>().table));
+                constexpr auto minimumTableBytes = static_cast<std::uint32_t>(
+                    sizeof(std::declval<RockProviderApi>().getVersion));
+                if (!descriptor || descriptor->size < minimumDescriptorBytes ||
+                    !descriptor->table || descriptor->tableByteSize < minimumTableBytes) {
+                    return 6;
+                }
+                if (descriptor->apiVersion < minVersion) {
+                    return 4;
+                }
+                if (minProviderApiByteSize != 0 &&
+                    descriptor->tableByteSize < minProviderApiByteSize) {
+                    return 5;
+                }
+                inst = descriptor->table;
+                negotiatedApiVersion = descriptor->apiVersion;
+                negotiatedTableByteSize = descriptor->tableByteSize;
+                negotiatedFeatureBits = descriptor->featureBits;
+                negotiatedFeatureBits2 = descriptor->featureBits2;
+                return 0;
+            }
+
+            if (minProviderApiByteSize != 0) {
+                return 6;
             }
 
             const auto getApi = reinterpret_cast<const RockProviderApi*(ROCK_PROVIDER_CALL*)()>(GetProcAddress(rockDll, "ROCKAPI_GetProviderApi"));
@@ -1644,18 +2727,21 @@ namespace rock::provider
             if (api->getVersion() < minVersion) {
                 return 4;
             }
-            if (!hasMinimumTableSize(api, minProviderApiByteSize)) {
-                return 5;
-            }
 
             inst = api;
+            negotiatedApiVersion = api->getVersion();
             return 0;
         }
 
         inline static const RockProviderApi* inst = nullptr;
+        inline static std::uint32_t negotiatedApiVersion = 0;
+        inline static std::uint32_t negotiatedTableByteSize = 0;
+        inline static std::uint32_t negotiatedFeatureBits = 0;
+        inline static std::uint32_t negotiatedFeatureBits2 = 0;
     };
 
     ROCK_PROVIDER_API const RockProviderApi* ROCK_PROVIDER_CALL ROCKAPI_GetProviderApi();
+    ROCK_PROVIDER_API const RockProviderApiDescriptorV1* ROCK_PROVIDER_CALL ROCKAPI_GetDescriptorV1();
 
     inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_FORCE_GRAB_TABLE_BYTES = static_cast<std::uint32_t>(
         offsetof(RockProviderApi, getInteractionCommandResultV1) + sizeof(std::declval<RockProviderApi>().getInteractionCommandResultV1));
@@ -1693,15 +2779,78 @@ namespace rock::provider
         offsetof(RockProviderApi, clearDebugOverlayV1) + sizeof(std::declval<RockProviderApi>().clearDebugOverlayV1));
     inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_PRESENTED_HAND_FRAMES_TABLE_BYTES = static_cast<std::uint32_t>(
         offsetof(RockProviderApi, getPresentedHandFrameV1) + sizeof(std::declval<RockProviderApi>().getPresentedHandFrameV1));
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_EXTENDED_LIMITS_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, getPublicStructureSizeV1) + sizeof(std::declval<RockProviderApi>().getPublicStructureSizeV1));
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_OWNER_FRAME_CALLBACKS_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, unregisterFrameCallbackForOwnerV1) + sizeof(std::declval<RockProviderApi>().unregisterFrameCallbackForOwnerV1));
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_HAND_INTERACTION_STATE_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, getHandInteractionStateV1) + sizeof(std::declval<RockProviderApi>().getHandInteractionStateV1));
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_PROVIDER_EVENTS_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, copyProviderEventsSinceV1) + sizeof(std::declval<RockProviderApi>().copyProviderEventsSinceV1));
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_EQUIPPED_WEAPON_STATE_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, getEquippedWeaponStateV1) + sizeof(std::declval<RockProviderApi>().getEquippedWeaponStateV1));
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_EXTERNAL_BODY_SCOPES_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, copyExternalContactsSinceV1) + sizeof(std::declval<RockProviderApi>().copyExternalContactsSinceV1));
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_WEAPON_PART_OBSERVABILITY_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, copyWeaponPartDriveApplicationResultsV1) + sizeof(std::declval<RockProviderApi>().copyWeaponPartDriveApplicationResultsV1));
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_SCOPE_SIGHT_STATE_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, getScopeSightStateV1) + sizeof(std::declval<RockProviderApi>().getScopeSightStateV1));
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_WEAPON_COMPOSITION_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, copyWeaponCompositionEntriesV1) + sizeof(std::declval<RockProviderApi>().copyWeaponCompositionEntriesV1));
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_POSE_READBACK_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, getPresentedHandPoseV1) + sizeof(std::declval<RockProviderApi>().getPresentedHandPoseV1));
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_SEMANTIC_HAND_CONTACTS_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, copySemanticHandContactsV1) + sizeof(std::declval<RockProviderApi>().copySemanticHandContactsV1));
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_PLAYER_COLLIDERS_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, getHandCollisionAvailabilityV1) + sizeof(std::declval<RockProviderApi>().getHandCollisionAvailabilityV1));
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_COMMAND_CANCELLATION_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, cancelInteractionCommandV1) + sizeof(std::declval<RockProviderApi>().cancelInteractionCommandV1));
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_INPUT_OBSERVABILITY_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, getHandInputSuppressionStateV1) + sizeof(std::declval<RockProviderApi>().getHandInputSuppressionStateV1));
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_OFFHAND_RESERVATION_LEASES_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, getOffhandReservationStateV1) + sizeof(std::declval<RockProviderApi>().getOffhandReservationStateV1));
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_NATIVE_ANIMATION_RUNTIME_CLEAR_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, clearNativeAnimationRuntimeV1) + sizeof(std::declval<RockProviderApi>().clearNativeAnimationRuntimeV1));
 
     [[nodiscard]] inline bool queryProviderLimitsV1(RockProviderLimitsV1& outLimits)
     {
-        if (!RockProviderApi::inst || !RockProviderApi::inst->getProviderLimitsV1) {
+        constexpr auto limitsTableBytes = static_cast<std::uint32_t>(
+            offsetof(RockProviderApi, getProviderLimitsV1) +
+            sizeof(std::declval<RockProviderApi>().getProviderLimitsV1));
+        if (!RockProviderApi::inst ||
+            (RockProviderApi::negotiatedTableByteSize != 0 &&
+                RockProviderApi::negotiatedTableByteSize < limitsTableBytes) ||
+            !RockProviderApi::inst->getProviderLimitsV1) {
             return false;
         }
 
         outLimits = {};
         return RockProviderApi::inst->getProviderLimitsV1(&outLimits);
+    }
+
+    [[nodiscard]] inline bool queryProviderLimitsExtV1(RockProviderLimitsExtV1& outLimits)
+    {
+        if (!RockProviderApi::inst) {
+            return false;
+        }
+        if (RockProviderApi::negotiatedTableByteSize != 0) {
+            if (RockProviderApi::negotiatedTableByteSize <
+                ROCK_PROVIDER_API_V1_EXTENDED_LIMITS_TABLE_BYTES) {
+                return false;
+            }
+        } else {
+            RockProviderLimitsV1 baseLimits{};
+            if (!queryProviderLimitsV1(baseLimits) ||
+                baseLimits.providerApiByteSize <
+                    ROCK_PROVIDER_API_V1_EXTENDED_LIMITS_TABLE_BYTES) {
+                return false;
+            }
+        }
+        if (!RockProviderApi::inst->getProviderLimitsExtV1) {
+            return false;
+        }
+        outLimits = {};
+        return RockProviderApi::inst->getProviderLimitsExtV1(&outLimits);
     }
 
     [[nodiscard]] inline bool providerApiTableSupportsV1(const RockProviderLimitsV1& limits, std::uint32_t requiredByteSize)
@@ -1711,8 +2860,29 @@ namespace rock::provider
 
     [[nodiscard]] inline bool providerApiTableSupportsV1(std::uint32_t requiredByteSize)
     {
+        if (RockProviderApi::negotiatedTableByteSize != 0) {
+            return requiredByteSize != 0 &&
+                   RockProviderApi::negotiatedTableByteSize >= requiredByteSize;
+        }
         RockProviderLimitsV1 limits{};
         return queryProviderLimitsV1(limits) && providerApiTableSupportsV1(limits, requiredByteSize);
+    }
+
+    [[nodiscard]] inline bool providerSupportsFeature2V1(
+        std::uint32_t requiredByteSize,
+        RockProviderFeatureBit2V1 feature)
+    {
+        if (!providerApiTableSupportsV1(requiredByteSize)) {
+            return false;
+        }
+        if (RockProviderApi::negotiatedTableByteSize != 0) {
+            return hasFeatureBit2V1(
+                RockProviderApi::negotiatedFeatureBits2,
+                feature);
+        }
+        RockProviderLimitsExtV1 limits{};
+        return queryProviderLimitsExtV1(limits) &&
+               hasFeatureBit2V1(limits.featureBits2, feature);
     }
 
     [[nodiscard]] inline bool supportsForceGrabCommandV1(const RockProviderLimitsV1& limits)
@@ -1825,6 +2995,19 @@ namespace rock::provider
         return queryProviderLimitsV1(limits) && supportsWeaponPartRecordIdentityV1(limits);
     }
 
+    [[nodiscard]] inline bool supportsWeaponClassificationV1(const RockProviderLimitsV1& limits)
+    {
+        return providerApiTableSupportsV1(
+            limits,
+            ROCK_PROVIDER_API_V1_WEAPON_CLASSIFICATION_TABLE_BYTES);
+    }
+
+    [[nodiscard]] inline bool supportsWeaponClassificationV1()
+    {
+        RockProviderLimitsV1 limits{};
+        return queryProviderLimitsV1(limits) && supportsWeaponClassificationV1(limits);
+    }
+
     [[nodiscard]] inline bool supportsWeaponEmittersV1(const RockProviderLimitsV1& limits)
     {
         return providerApiTableSupportsV1(limits, ROCK_PROVIDER_API_V1_WEAPON_EMITTERS_TABLE_BYTES) &&
@@ -1855,10 +3038,22 @@ namespace rock::provider
                hasFeatureBitV1(limits.featureBits, RockProviderFeatureBitV1::AnimationPhases);
     }
 
+    [[nodiscard]] inline bool supportsAnimationPhasesV1()
+    {
+        RockProviderLimitsV1 limits{};
+        return queryProviderLimitsV1(limits) && supportsAnimationPhasesV1(limits);
+    }
+
     [[nodiscard]] inline bool supportsEquippedWeaponGripStateV1(const RockProviderLimitsV1& limits)
     {
         return providerApiTableSupportsV1(limits, ROCK_PROVIDER_API_V1_EQUIPPED_WEAPON_GRIP_STATE_TABLE_BYTES) &&
                hasFeatureBitV1(limits.featureBits, RockProviderFeatureBitV1::EquippedWeaponGripState);
+    }
+
+    [[nodiscard]] inline bool supportsEquippedWeaponGripStateV1()
+    {
+        RockProviderLimitsV1 limits{};
+        return queryProviderLimitsV1(limits) && supportsEquippedWeaponGripStateV1(limits);
     }
 
     [[nodiscard]] inline bool supportsHandVisualAuthorityV1(const RockProviderLimitsV1& limits)
@@ -1867,10 +3062,22 @@ namespace rock::provider
                hasFeatureBitV1(limits.featureBits, RockProviderFeatureBitV1::HandVisualAuthority);
     }
 
+    [[nodiscard]] inline bool supportsHandVisualAuthorityV1()
+    {
+        RockProviderLimitsV1 limits{};
+        return queryProviderLimitsV1(limits) && supportsHandVisualAuthorityV1(limits);
+    }
+
     [[nodiscard]] inline bool supportsNativeAnimationRuntimeProviderV1(const RockProviderLimitsV1& limits)
     {
         return providerApiTableSupportsV1(limits, ROCK_PROVIDER_API_V1_NATIVE_ANIMATION_RUNTIME_PROVIDER_TABLE_BYTES) &&
                hasFeatureBitV1(limits.featureBits, RockProviderFeatureBitV1::NativeAnimationRuntimeProvider);
+    }
+
+    [[nodiscard]] inline bool supportsNativeAnimationRuntimeProviderV1()
+    {
+        RockProviderLimitsV1 limits{};
+        return queryProviderLimitsV1(limits) && supportsNativeAnimationRuntimeProviderV1(limits);
     }
 
     [[nodiscard]] inline bool supportsEquippedWeaponHandlingAuthorityV1(const RockProviderLimitsV1& limits)
@@ -1909,6 +3116,111 @@ namespace rock::provider
         return queryProviderLimitsV1(limits) && supportsPresentedHandFramesV1(limits);
     }
 
+    [[nodiscard]] inline bool supportsExtendedLimitsV1()
+    {
+        return providerSupportsFeature2V1(
+            ROCK_PROVIDER_API_V1_EXTENDED_LIMITS_TABLE_BYTES,
+            RockProviderFeatureBit2V1::ExtendedLimits);
+    }
+
+    [[nodiscard]] inline bool supportsOwnerFrameCallbacksV1()
+    {
+        return providerSupportsFeature2V1(
+            ROCK_PROVIDER_API_V1_OWNER_FRAME_CALLBACKS_TABLE_BYTES,
+            RockProviderFeatureBit2V1::OwnerFrameCallbacks);
+    }
+
+    [[nodiscard]] inline bool supportsHandInteractionStateV1()
+    {
+        return providerSupportsFeature2V1(
+            ROCK_PROVIDER_API_V1_HAND_INTERACTION_STATE_TABLE_BYTES,
+            RockProviderFeatureBit2V1::HandInteractionState);
+    }
+
+    [[nodiscard]] inline bool supportsProviderEventsV1()
+    {
+        return providerSupportsFeature2V1(
+            ROCK_PROVIDER_API_V1_PROVIDER_EVENTS_TABLE_BYTES,
+            RockProviderFeatureBit2V1::ProviderEvents);
+    }
+
+    [[nodiscard]] inline bool supportsEquippedWeaponStateV1()
+    {
+        return providerSupportsFeature2V1(
+            ROCK_PROVIDER_API_V1_EQUIPPED_WEAPON_STATE_TABLE_BYTES,
+            RockProviderFeatureBit2V1::EquippedWeaponState);
+    }
+
+    [[nodiscard]] inline bool supportsExternalBodyScopesV1()
+    {
+        return providerSupportsFeature2V1(
+            ROCK_PROVIDER_API_V1_EXTERNAL_BODY_SCOPES_TABLE_BYTES,
+            RockProviderFeatureBit2V1::ExternalBodyScopes);
+    }
+
+    [[nodiscard]] inline bool supportsWeaponPartObservabilityV1()
+    {
+        return providerSupportsFeature2V1(
+            ROCK_PROVIDER_API_V1_WEAPON_PART_OBSERVABILITY_TABLE_BYTES,
+            RockProviderFeatureBit2V1::WeaponPartDriveResults);
+    }
+
+    [[nodiscard]] inline bool supportsScopeSightStateV1()
+    {
+        return providerSupportsFeature2V1(
+            ROCK_PROVIDER_API_V1_SCOPE_SIGHT_STATE_TABLE_BYTES,
+            RockProviderFeatureBit2V1::ScopeSightState);
+    }
+
+    [[nodiscard]] inline bool supportsWeaponCompositionV1()
+    {
+        return providerSupportsFeature2V1(
+            ROCK_PROVIDER_API_V1_WEAPON_COMPOSITION_TABLE_BYTES,
+            RockProviderFeatureBit2V1::WeaponComposition);
+    }
+
+    [[nodiscard]] inline bool supportsPoseReadbackV1()
+    {
+        return providerSupportsFeature2V1(
+            ROCK_PROVIDER_API_V1_POSE_READBACK_TABLE_BYTES,
+            RockProviderFeatureBit2V1::PresentedHandPose);
+    }
+
+    [[nodiscard]] inline bool supportsSemanticHandContactsV1()
+    {
+        return providerSupportsFeature2V1(
+            ROCK_PROVIDER_API_V1_SEMANTIC_HAND_CONTACTS_TABLE_BYTES,
+            RockProviderFeatureBit2V1::SemanticHandContacts);
+    }
+
+    [[nodiscard]] inline bool supportsPlayerColliderDescriptorsV1()
+    {
+        return providerSupportsFeature2V1(
+            ROCK_PROVIDER_API_V1_PLAYER_COLLIDERS_TABLE_BYTES,
+            RockProviderFeatureBit2V1::PlayerColliderDescriptors);
+    }
+
+    [[nodiscard]] inline bool supportsCommandCancellationV1()
+    {
+        return providerSupportsFeature2V1(
+            ROCK_PROVIDER_API_V1_COMMAND_CANCELLATION_TABLE_BYTES,
+            RockProviderFeatureBit2V1::CommandCancellation);
+    }
+
+    [[nodiscard]] inline bool supportsInputObservabilityV1()
+    {
+        return providerSupportsFeature2V1(
+            ROCK_PROVIDER_API_V1_INPUT_OBSERVABILITY_TABLE_BYTES,
+            RockProviderFeatureBit2V1::InputSuppressionState);
+    }
+
+    [[nodiscard]] inline bool supportsOffhandReservationLeasesV1()
+    {
+        return providerSupportsFeature2V1(
+            ROCK_PROVIDER_API_V1_OFFHAND_RESERVATION_LEASES_TABLE_BYTES,
+            RockProviderFeatureBit2V1::OffhandReservationLeases);
+    }
+
     static_assert(std::is_standard_layout_v<RockProviderTransform>);
     static_assert(std::is_trivially_copyable_v<RockProviderTransform>);
     static_assert(sizeof(RockProviderConsumerRegistrationV1) == 104);
@@ -1935,7 +3247,7 @@ namespace rock::provider
     static_assert(alignof(RockProviderThrownDropRequestV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderThrownDropRequestV1>);
     static_assert(std::is_trivially_copyable_v<RockProviderThrownDropRequestV1>);
-    static_assert(sizeof(RockProviderInteractionCommandResultV1) == 112);
+    static_assert(sizeof(RockProviderInteractionCommandResultV1) == 120);
     static_assert(alignof(RockProviderInteractionCommandResultV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderInteractionCommandResultV1>);
     static_assert(std::is_trivially_copyable_v<RockProviderInteractionCommandResultV1>);
@@ -1988,7 +3300,7 @@ namespace rock::provider
     static_assert(std::is_standard_layout_v<RockProviderEquippedWeaponHandlingStateV1>);
     static_assert(std::is_trivially_copyable_v<RockProviderEquippedWeaponHandlingStateV1>);
     static_assert(sizeof(RockProviderRawWandButtonStateV1) == 32);
-    static_assert(alignof(RockProviderRawWandButtonStateV1) == 4);
+    static_assert(alignof(RockProviderRawWandButtonStateV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderRawWandButtonStateV1>);
     static_assert(std::is_trivially_copyable_v<RockProviderRawWandButtonStateV1>);
     static_assert(sizeof(RockProviderWeaponPartTargetV1) == 160);
@@ -2000,14 +3312,6 @@ namespace rock::provider
     static_assert(alignof(RockProviderWeaponPartDriveTargetV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderWeaponPartDriveTargetV1>);
     static_assert(std::is_trivially_copyable_v<RockProviderWeaponPartDriveTargetV1>);
-    static_assert(sizeof(RockProviderWeaponPartTargetQueryV1) == 104);
-    static_assert(alignof(RockProviderWeaponPartTargetQueryV1) == 8);
-    static_assert(std::is_standard_layout_v<RockProviderWeaponPartTargetQueryV1>);
-    static_assert(std::is_trivially_copyable_v<RockProviderWeaponPartTargetQueryV1>);
-    static_assert(sizeof(RockProviderWeaponPartTargetResolutionV1) == 24);
-    static_assert(alignof(RockProviderWeaponPartTargetResolutionV1) == 8);
-    static_assert(std::is_standard_layout_v<RockProviderWeaponPartTargetResolutionV1>);
-    static_assert(std::is_trivially_copyable_v<RockProviderWeaponPartTargetResolutionV1>);
     static_assert(sizeof(RockProviderWeaponClassificationV1) == 48);
     static_assert(alignof(RockProviderWeaponClassificationV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderWeaponClassificationV1>);
@@ -2016,9 +3320,9 @@ namespace rock::provider
     static_assert(alignof(RockProviderWeaponPartGripStateV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderWeaponPartGripStateV1>);
     static_assert(std::is_trivially_copyable_v<RockProviderWeaponPartGripStateV1>);
-    static_assert(sizeof(RockProviderFrameSnapshot) == 272);
+    static_assert(sizeof(RockProviderFrameSnapshot) == 376);
     static_assert(alignof(RockProviderFrameSnapshot) == 8);
-    static_assert(sizeof(RockProviderHandFrameV1) == 112);
+    static_assert(sizeof(RockProviderHandFrameV1) == 144);
     static_assert(alignof(RockProviderHandFrameV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderHandFrameV1>);
     static_assert(std::is_trivially_copyable_v<RockProviderHandFrameV1>);
@@ -2039,36 +3343,11 @@ namespace rock::provider
     static_assert(alignof(RockProviderBodyContactV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderBodyContactV1>);
     static_assert(std::is_trivially_copyable_v<RockProviderBodyContactV1>);
-}
-
-namespace rock
-{
-    class PhysicsInteraction;
-}
-
-namespace rock::provider
-{
-    void setPhysicsInteractionInstance(rock::PhysicsInteraction* pi);
-    void dispatchFrameCallbacks(rock::PhysicsInteraction& pi);
-    void clearExternalBodiesForProviderLoss();
-    bool isExternalBodyId(std::uint32_t bodyId);
-    bool isExternalBodyDynamicPushSuppressed(std::uint32_t bodyId);
-    bool recordExternalHandContact(bool isLeft, std::uint32_t handBodyId, std::uint32_t externalBodyId, std::uint64_t frameIndex);
-    bool recordExternalContact(const RockProviderExternalContactV1& contact);
-    RockProviderOffhandReservation currentOffhandReservation();
-    // Published each frame by PhysicsInteraction; feeds primary/offhand
-    // resolution so consumers track ROCK's runtime firing hand.
-    void setEquippedWeaponFiringHandIsLeft(bool isLeft);
-    bool getEquippedWeaponHandlingAuthorityV1(RockProviderEquippedWeaponHandlingRequestV1& outRequest);
-    std::uint32_t currentHandInputSuppressionFlagsV1(RockProviderHand hand);
-    std::uint32_t currentNativeAnimationAuthorityFlagsV1();
-    void refreshNativeAnimationAuthorityLeasesV1();
-    void dispatchAnimationPhaseCallbacksV1(RockProviderAnimationPhaseV1 phase, float deltaSeconds);
-    bool resolveWeaponPartTargetV1(
-        const RockProviderWeaponPartTargetQueryV1& query,
-        RockProviderWeaponPartTargetResolutionV1& outResolution);
-    std::uint32_t copyWeaponPartDriveTargetsV1(
-        RockProviderWeaponPartDriveTargetV1* outTargets,
-        std::uint32_t maxTargets);
-    std::uint32_t currentExternalBodyCount();
+    static_assert(sizeof(RockProviderApi) == 656);
+    static_assert(alignof(RockProviderApi) == 8);
+    static_assert(
+        offsetof(RockProviderApi, getProviderLimitsExtV1) == 54 * sizeof(void*));
+    static_assert(
+        offsetof(RockProviderApi, clearNativeAnimationRuntimeV1) ==
+        81 * sizeof(void*));
 }

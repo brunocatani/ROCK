@@ -94,6 +94,8 @@ namespace rock::hand_semantic_contact_state
         std::uint32_t handBodyId = kInvalidBodyId;
         std::uint32_t otherBodyId = kInvalidBodyId;
         std::uint32_t sequence = 0;
+        std::uint32_t contactFrame = 0xFFFF'FFFFu;
+        std::uint32_t contactRunStartFrame = 0xFFFF'FFFFu;
         std::uint32_t framesSinceContact = 0xFFFF'FFFFu;
         bool hasContactPointGame = false;
         bool hasContactNormalGame = false;
@@ -141,7 +143,19 @@ namespace rock::hand_semantic_contact_state
         if (contactFrame == 0xFFFF'FFFFu) {
             return 0xFFFF'FFFFu;
         }
-        return currentFrame >= contactFrame ? currentFrame - contactFrame : 0;
+        return currentFrame - contactFrame;
+    }
+
+    inline constexpr bool semanticContactContinuesRun(
+        const bool previousValid,
+        const std::uint32_t previousOtherBodyId,
+        const std::uint32_t currentOtherBodyId,
+        const std::uint32_t currentFrame,
+        const std::uint32_t previousContactFrame)
+    {
+        return previousValid &&
+               previousOtherBodyId == currentOtherBodyId &&
+               currentFrame - previousContactFrame <= 1;
     }
 
     inline bool isFiniteVector(const SemanticContactVector& value)
