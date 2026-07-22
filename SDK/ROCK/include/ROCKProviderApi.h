@@ -1382,14 +1382,14 @@ namespace rock::provider
         bool(ROCK_PROVIDER_CALL* getWeaponPartGripStateV1)(RockProviderHand hand, RockProviderWeaponPartGripStateV1* outState);
         bool(ROCK_PROVIDER_CALL* getRawWandButtonStateV1)(RockProviderHand hand, std::uint32_t buttonId, RockProviderRawWandButtonStateV1* outState);
         /*
-         * True while ROCK's PipboyHandler hook would swallow a "Pipboy"
-         * trigger event right now: the pipboy hand is engaged in a ROCK
-         * interaction (holding an object, two-handing/supporting the equipped
-         * weapon, or carrying a part while the primary grip is detached), or
-         * a provider OpenVR game-input lease is active. Consumers that
-         * repurpose the pipboy trigger should treat the button as theirs only
-         * while this reads true; otherwise a press will also open the Pip-Boy
-         * or toggle the flashlight.
+         * True while ROCK suppresses the pipboy-hand trigger's remaining
+         * native game actions: its flashlight hold during a ROCK interaction,
+         * or all native game input while a provider suppression lease is
+         * active. Consumers that repurpose the trigger should treat it as
+         * exclusively theirs only while this reads true; otherwise a hold may
+         * still toggle the flashlight. While ROCK input remapping is enabled,
+         * the legacy trigger-release Pip-Boy open is always moved to a short
+         * release of the native Pause button and is not represented here.
          */
         bool(ROCK_PROVIDER_CALL* isNativePipboyInputSuppressedV1)();
         std::uint32_t(ROCK_PROVIDER_CALL* getWeaponEmitterCountV1)();

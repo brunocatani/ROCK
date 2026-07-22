@@ -56,6 +56,15 @@ namespace rock::input_remap_policy
         bool eventMatched{ false };
     };
 
+    struct LegacyPipboyTriggerOpenInput
+    {
+        bool remapEnabled{ true };
+        bool gameplayInputAllowed{ true };
+        bool menuInputActive{ false };
+        bool eventMatched{ false };
+        bool secondaryWandEvent{ false };
+    };
+
     struct NativeActivateReloadInput
     {
         bool remapEnabled{ true };
@@ -269,22 +278,25 @@ namespace rock::input_remap_policy
     }
 
     /*
-     * FO4VR's PipboyHandler owns the whole pipboy-hand trigger lifecycle:
-     * press starts hold tracking, holding past the game threshold toggles the
-     * pipboy light, release opens the Pip-Boy. The VR wand trigger reaches it
-     * as user event "WandTrigger" (observed live 2026-07-04 via the hook
-     * trace); "Pipboy" covers the flat/gamepad direct bindings. Both wands'
-     * trigger events flow through the handler but it only acts on the
-     * secondary wand, so suppression must exclude primary-hand events -
-     * marking a primary WandTrigger stopped would also block downstream
-     * attack handling. While the pipboy hand is engaged in a ROCK interaction
-     * (holding an object, two-handing or supporting the equipped weapon, or
-     * carrying a part while the primary grip is detached) that trigger
-     * belongs to interaction consumers (e.g. PAPER through the provider
-     * raw-button API), so both native actions are suppressed together at the
-     * verified handler while the raw OpenVR button stays readable. Menu input
-     * keeps native handling so the trigger can still close an already-open
-     * Pip-Boy.
+     * ROCK permanently moves gameplay Pip-Boy opening off the secondary-wand
+     * trigger. Only the verified VR WandTrigger event is claimed here: direct
+     * keyboard/gamepad Pipboy bindings and primary-wand attack events remain
+     * native, and menu input remains native so an open Pip-Boy keeps its
+     * existing controls. Flashlight suppression remains separately governed
+     * by shouldSuppressNativePipboyAction below.
+     */
+    [[nodiscard]] constexpr bool shouldSuppressLegacyPipboyTriggerOpen(const LegacyPipboyTriggerOpenInput& input)
+    {
+        return input.remapEnabled && input.gameplayInputAllowed && !input.menuInputActive &&
+               input.eventMatched && input.secondaryWandEvent;
+    }
+
+    /*
+     * FO4VR's separate PipboyLightHandler still owns the secondary trigger's
+     * flashlight hold. While the pipboy hand is engaged in a ROCK interaction
+     * that remaining native action is suppressed, while the raw OpenVR button
+     * stays readable. The same policy continues to protect direct Pipboy input
+     * bindings during an engaged interaction. Menu input stays native.
      */
     [[nodiscard]] constexpr bool shouldSuppressNativePipboyAction(const NativeActionSuppressionInput& input)
     {
@@ -313,6 +325,11 @@ namespace rock::input_remap_policy
     [[nodiscard]] constexpr bool shouldInstallNativeActionSuppressionHook(bool remapEnabled, bool suppressionEnabled)
     {
         return remapEnabled && suppressionEnabled;
+    }
+
+    [[nodiscard]] constexpr bool shouldInstallPipboyPauseArbitrationHooks(const bool remapEnabled)
+    {
+        return remapEnabled;
     }
 
     [[nodiscard]] constexpr bool shouldInstallActivateEventHook(const bool remapEnabled, const bool manualScopeEnabled)

@@ -28,6 +28,7 @@
 #include "physics-interaction/hand/HandSelection.h"
 #include "physics-interaction/hand/SelectionBeamPolicy.h"
 #include "physics-interaction/debug/DebugOverlayRuntimeSettings.h"
+#include "physics-interaction/input/PipboyPauseGesturePolicy.h"
 #include "physics-interaction/native/HavokTimingFixPolicy.h"
 #include "physics-interaction/weapon/WeaponSemantics.h"
 
@@ -66,6 +67,7 @@ namespace rock
         bool rockSuppressNativeReadyWeaponAutoReady = true;
         bool rockSuppressNativeMeleeThrowGameInput = true;
         bool rockSuppressPipboyGameInputWhileHolding = true;
+        float rockPipboyPauseHoldSeconds = pipboy_pause_gesture_policy::kDefaultHoldSeconds;
         bool rockSuppressTakeEquipGameInputWhileHolding = true;
         std::string rockSuppressTakeEquipFormTypes = "WEAP,ARMO,AMMO,MISC,INGR,ALCH,BOOK,KEYM,SLGM";
         bool rockSuppressNativeGrabHoverHaptics = true;

@@ -2,6 +2,7 @@
 
 #include "physics-interaction/input/InputRemapPolicy.h"
 #include "physics-interaction/input/ManualScopeInputPolicy.h"
+#include "physics-interaction/input/PipboyPauseGesturePolicy.h"
 #include "physics-interaction/object/FarSelectionBlacklistPolicy.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "RockConfig.h"
@@ -52,6 +53,20 @@ namespace rock::input_remap_runtime
         constexpr std::uintptr_t kFavoritesManagerHandleEventVTableSlotOffset = 0x2DC8520;
         constexpr std::uintptr_t kMeleeThrowHandlerHandleEventFunctionOffset = 0x0FC8AE0;
         constexpr std::uintptr_t kMeleeThrowHandlerHandleEventVTableSlotOffset = 0x2D8A9F0;
+        /*
+         * MenuOpenHandler is the MenuControls handler that owns the semantic
+         * "Pause" event. FO4VR maps OpenVR button 1 (Quest 2 Y on the
+         * secondary wand) to Pause. Its slot-11 processor opens Pause from a
+         * released ButtonEvent after verifying the secondary-wand device and
+         * all native menu/player gates. Verified 2026-07-21 from the
+         * MenuControls constructor (RVA 0x1323210), handler construction/list
+         * order (RVA 0x1323870), and processor (RVA 0x1326760).
+         */
+        constexpr std::uintptr_t kMenuOpenHandlerHandleEventFunctionOffset = 0x1326760;
+        constexpr std::uintptr_t kMenuOpenHandlerHandleEventVTableSlotOffset = 0x2DCC850;
+        constexpr std::uintptr_t kMenuControlsSingletonOffset = 0x5A3B888;
+        constexpr std::ptrdiff_t kMenuControlsPipboyHandlerOffset = 0x68;
+        constexpr std::uintptr_t kPipboyHandlerVTableOffset = 0x2DCC778;
         /*
          * PipboyHandler (BSInputEventUser in the MenuControls chain, vtable
          * 0x2DCC778) processes the pipboy-hand trigger in vtable slot 11
@@ -123,6 +138,7 @@ namespace rock::input_remap_runtime
         constexpr std::uintptr_t kNativePlayerActionDispatcherDataOffset = 0x5A3B8A0;
         constexpr std::uintptr_t kNativePlayerDataOffset = 0x5B043F0;
         constexpr std::ptrdiff_t kNativePrimaryWandDeviceIdOffset = 0x8CC;
+        constexpr std::ptrdiff_t kNativeSecondaryWandDeviceIdOffset = 0x8D0;
         constexpr int kNativeReloadActionId = 0x6C;
         constexpr std::uint32_t kNativeActionPriorityQueue = 2;
         constexpr std::uintptr_t kMeleeThrowFallbackDrawPressPatchSite = 0x0FC8C88;
@@ -136,6 +152,7 @@ namespace rock::input_remap_runtime
         constexpr std::string_view kNativeEventWandTrigger{ "WandTrigger" };
         constexpr std::string_view kNativeEventWandThumbClick{ "WandThumbClick" };
         constexpr std::string_view kNativeEventPipboy{ "Pipboy" };
+        constexpr std::string_view kNativeEventPause{ "Pause" };
 
         using GetControllerState_t = bool (*)(vr::IVRSystem*, vr::TrackedDeviceIndex_t, vr::VRControllerState_t*, std::uint32_t);
         using GetControllerStateWithPose_t =
@@ -147,6 +164,7 @@ namespace rock::input_remap_runtime
         using FavoritesInputEventHandler_t = void (*)(void*, RE::InputEvent*);
         // Verified PipboyHandler slot-11 signature: (this, event) only; no cursor/unk tail like the PlayerControls handlers.
         using PipboyInputEventHandler_t = void (*)(void*, RE::InputEvent*);
+        using MenuOpenInputEventHandler_t = void (*)(void*, RE::InputEvent*);
 
         struct ControllerTracker
         {
@@ -173,6 +191,9 @@ namespace rock::input_remap_runtime
         std::atomic<bool> s_equippedWeaponPrimaryDetached{ false };
         std::atomic<bool> s_equippedWeaponLeftHandFiringActive{ false };
         manual_scope_input_policy::RuntimeState s_manualScopeInputState{};
+        // MenuControls dispatches ButtonEvents serially on the frame/input
+        // thread; this gesture state is never read from worker callbacks.
+        pipboy_pause_gesture_policy::RuntimeState s_pipboyPauseGestureState{};
         std::atomic<bool> s_manualScopeActivationRequested{ false };
         std::atomic<bool> s_hooksInstalled{ false };
         std::atomic<bool> s_readyWeaponEventHookInstalled{ false };
@@ -181,6 +202,7 @@ namespace rock::input_remap_runtime
         std::atomic<bool> s_meleeThrowEventHookInstalled{ false };
         std::atomic<bool> s_pipboyEventHookInstalled{ false };
         std::atomic<bool> s_pipboyLightEventHookInstalled{ false };
+        std::atomic<bool> s_menuOpenEventHookInstalled{ false };
         std::atomic<bool> s_meleeThrowFallbackPatchesApplied{ false };
         std::atomic<bool> s_menuInputGateRegistered{ false };
         std::atomic<bool> s_menuInputActive{ false };
@@ -202,6 +224,7 @@ namespace rock::input_remap_runtime
         FavoritesInputEventHandler_t s_originalFavoritesEventHandler = nullptr;
         PipboyInputEventHandler_t s_originalPipboyEventHandler = nullptr;
         NativeInputEventHandler_t s_originalPipboyLightEventHandler = nullptr;
+        MenuOpenInputEventHandler_t s_originalMenuOpenEventHandler = nullptr;
 
         void blockManualScopeInputUntilRelease()
         {
@@ -888,10 +911,17 @@ namespace rock::input_remap_runtime
             return name.length() == expected.length() && _strnicmp(name.data(), expected.data(), expected.length()) == 0;
         }
 
-        [[nodiscard]] bool isPrimaryWandInputEvent(const RE::InputEvent* event)
+        enum class NativeWandIdentity : std::uint8_t
+        {
+            Unknown,
+            Primary,
+            Secondary,
+        };
+
+        [[nodiscard]] NativeWandIdentity resolveNativeWandIdentity(const RE::InputEvent* event)
         {
             if (!event) {
-                return false;
+                return NativeWandIdentity::Unknown;
             }
 
             static REL::Relocation<NativeInputDeviceToControllerId_t> nativeDeviceToControllerId{ REL::Offset(kNativeInputDeviceToControllerIdFunctionOffset) };
@@ -899,11 +929,27 @@ namespace rock::input_remap_runtime
 
             auto* player = *nativePlayer;
             if (!player) {
-                return false;
+                return NativeWandIdentity::Unknown;
             }
 
+            const auto controllerId = nativeDeviceToControllerId(event->deviceID);
             const auto primaryWandDeviceId = *reinterpret_cast<const std::int32_t*>(reinterpret_cast<std::uintptr_t>(player) + kNativePrimaryWandDeviceIdOffset);
-            return nativeDeviceToControllerId(event->deviceID) == primaryWandDeviceId;
+            if (controllerId == primaryWandDeviceId) {
+                return NativeWandIdentity::Primary;
+            }
+
+            const auto secondaryWandDeviceId = *reinterpret_cast<const std::int32_t*>(reinterpret_cast<std::uintptr_t>(player) + kNativeSecondaryWandDeviceIdOffset);
+            return controllerId == secondaryWandDeviceId ? NativeWandIdentity::Secondary : NativeWandIdentity::Unknown;
+        }
+
+        [[nodiscard]] bool isPrimaryWandInputEvent(const RE::InputEvent* event)
+        {
+            return resolveNativeWandIdentity(event) == NativeWandIdentity::Primary;
+        }
+
+        [[nodiscard]] bool isSecondaryWandInputEvent(const RE::InputEvent* event)
+        {
+            return resolveNativeWandIdentity(event) == NativeWandIdentity::Secondary;
         }
 
         [[nodiscard]] bool isActivateReloadEvent(const RE::InputEvent* event)
@@ -1000,6 +1046,17 @@ namespace rock::input_remap_runtime
             auto input = makeNativeActionSuppressionInput(g_rockConfig.rockSuppressPipboyGameInputWhileHolding, event, eventMatched);
             input.pipboyHandEngaged = isPipboyHandEngaged();
             return input_remap_policy::shouldSuppressNativePipboyAction(input);
+        }
+
+        [[nodiscard]] bool shouldSuppressLegacyPipboyTriggerOpenEvent(const RE::InputEvent* event)
+        {
+            return input_remap_policy::shouldSuppressLegacyPipboyTriggerOpen(input_remap_policy::LegacyPipboyTriggerOpenInput{
+                .remapEnabled = g_rockConfig.rockInputRemapEnabled,
+                .gameplayInputAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire),
+                .menuInputActive = isInputBlockingMenuActive(),
+                .eventMatched = eventNameMatches(event, kNativeEventWandTrigger),
+                .secondaryWandEvent = isSecondaryWandInputEvent(event),
+            });
         }
 
         [[nodiscard]] bool shouldSuppressNativeMeleeThrowAction(const RE::InputEvent* event)
@@ -1449,18 +1506,41 @@ namespace rock::input_remap_runtime
             }
         }
 
-        [[nodiscard]] bool decideAndTracePipboySuppression(const char* handlerLabel, const RE::InputEvent* inputEvent)
+        [[nodiscard]] bool decideAndTracePipboyOpenSuppression(const RE::InputEvent* inputEvent)
         {
             const bool providerSuppressed = isAnyProviderOpenVrGameInputSuppressed();
-            const bool suppressed = providerSuppressed || shouldSuppressNativePipboyActionEvent(inputEvent);
+            const bool legacyTriggerSuppressed = shouldSuppressLegacyPipboyTriggerOpenEvent(inputEvent);
+            const bool interactionSuppressed = shouldSuppressNativePipboyActionEvent(inputEvent);
+            const bool suppressed = providerSuppressed || legacyTriggerSuppressed || interactionSuppressed;
 
             if (inputEvent) {
-                // Diagnostic trace for the pipboy suppression hooks: shows the actual interned event name and every gate input.
                 const auto& userEvent = inputEvent->QUserEvent();
                 ROCK_LOG_SAMPLE_DEBUG(Input,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "{} handler event '{}': engaged={} gameplay={} menuInput={} providerLease={} -> {}",
-                    handlerLabel,
+                    "Pipboy handler event '{}': movedTrigger={} engaged={} gameplay={} menuInput={} providerLease={} -> {}",
+                    userEvent.c_str() ? userEvent.c_str() : "",
+                    legacyTriggerSuppressed ? "yes" : "no",
+                    isPipboyHandEngaged() ? "yes" : "no",
+                    s_gameplayInputAllowed.load(std::memory_order_acquire) ? "yes" : "no",
+                    isInputBlockingMenuActive() ? "yes" : "no",
+                    providerSuppressed ? "yes" : "no",
+                    suppressed ? "suppressed" : "native");
+            }
+
+            return suppressed;
+        }
+
+        [[nodiscard]] bool decideAndTracePipboyLightSuppression(const RE::InputEvent* inputEvent)
+        {
+            const bool providerSuppressed = isAnyProviderOpenVrGameInputSuppressed();
+            const bool interactionSuppressed = shouldSuppressNativePipboyActionEvent(inputEvent);
+            const bool suppressed = providerSuppressed || interactionSuppressed;
+
+            if (inputEvent) {
+                const auto& userEvent = inputEvent->QUserEvent();
+                ROCK_LOG_SAMPLE_DEBUG(Input,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "PipboyLight handler event '{}': engaged={} gameplay={} menuInput={} providerLease={} -> {}",
                     userEvent.c_str() ? userEvent.c_str() : "",
                     isPipboyHandEngaged() ? "yes" : "no",
                     s_gameplayInputAllowed.load(std::memory_order_acquire) ? "yes" : "no",
@@ -1472,9 +1552,157 @@ namespace rock::input_remap_runtime
             return suppressed;
         }
 
+        [[nodiscard]] void* resolvePipboyHandlerFromMenuControls()
+        {
+            static REL::Relocation<void**> menuControlsSingleton{ REL::Offset(kMenuControlsSingletonOffset) };
+            auto* menuControls = *menuControlsSingleton;
+            if (!menuControls) {
+                return nullptr;
+            }
+
+            auto* pipboyHandler = *reinterpret_cast<void**>(
+                reinterpret_cast<std::uintptr_t>(menuControls) + kMenuControlsPipboyHandlerOffset);
+            if (!pipboyHandler) {
+                return nullptr;
+            }
+
+            const auto actualVTable = *reinterpret_cast<const std::uintptr_t*>(pipboyHandler);
+            const auto expectedVTable = REL::Offset(kPipboyHandlerVTableOffset).address();
+            if (actualVTable != expectedVTable) {
+                ROCK_LOG_SAMPLE_WARN(Input,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "Cannot route Pause tap to Pip-Boy: handler vtable 0x{:X}, expected 0x{:X}",
+                    actualVTable,
+                    expectedVTable);
+                return nullptr;
+            }
+
+            return pipboyHandler;
+        }
+
+        [[nodiscard]] bool dispatchNativePipboyTap(RE::ButtonEvent& event)
+        {
+            auto* pipboyHandler = resolvePipboyHandlerFromMenuControls();
+            if (!pipboyHandler || !s_originalPipboyEventHandler) {
+                ROCK_LOG_SAMPLE_WARN(Input,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "Cannot route Pause tap to Pip-Boy: native PipboyHandler unavailable");
+                return false;
+            }
+
+            const RE::BSFixedString originalUserEvent = event.strUserEvent;
+            const float originalValue = event.value;
+            const float originalHeldDownSecs = event.heldDownSecs;
+            const auto originalHandled = event.handled;
+
+            // The verified VR path requires the native WandTrigger lifecycle,
+            // including its secondary-device check. The physical Pause event
+            // already carries that same secondary wand device ID; only the
+            // semantic name and button phase are temporarily substituted.
+            event.strUserEvent = kNativeEventWandTrigger.data();
+            event.value = 1.0f;
+            event.heldDownSecs = 0.0f;
+            event.handled = RE::InputEvent::HANDLED_RESULT::kUnhandled;
+            s_originalPipboyEventHandler(pipboyHandler, &event);
+
+            event.value = 0.0f;
+            event.heldDownSecs = (std::max)(originalHeldDownSecs, 0.001f);
+            event.handled = RE::InputEvent::HANDLED_RESULT::kUnhandled;
+            s_originalPipboyEventHandler(pipboyHandler, &event);
+
+            event.strUserEvent = originalUserEvent;
+            event.value = originalValue;
+            event.heldDownSecs = originalHeldDownSecs;
+            event.handled = originalHandled;
+            return true;
+        }
+
+        [[nodiscard]] bool dispatchNativePauseHold(void* handler, RE::ButtonEvent& event)
+        {
+            if (!handler || !s_originalMenuOpenEventHandler) {
+                ROCK_LOG_SAMPLE_WARN(Input,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "Cannot route held Pause button: native MenuOpenHandler unavailable");
+                return false;
+            }
+
+            const float originalValue = event.value;
+            const float originalHeldDownSecs = event.heldDownSecs;
+            const auto originalHandled = event.handled;
+
+            // MenuOpenHandler performs its complete native eligibility and
+            // secondary-device checks on a release phase. Feed that verified
+            // phase once when ROCK's hold threshold is crossed; the physical
+            // release is consumed later by the gesture state machine.
+            event.value = 0.0f;
+            event.heldDownSecs = (std::max)(
+                originalHeldDownSecs,
+                pipboy_pause_gesture_policy::sanitizedHoldSeconds(g_rockConfig.rockPipboyPauseHoldSeconds));
+            event.handled = RE::InputEvent::HANDLED_RESULT::kUnhandled;
+            s_originalMenuOpenEventHandler(handler, &event);
+
+            event.value = originalValue;
+            event.heldDownSecs = originalHeldDownSecs;
+            event.handled = originalHandled;
+            return true;
+        }
+
+        void hookedMenuOpenEventHandler(void* handler, RE::InputEvent* inputEvent)
+        {
+            auto* button = inputEvent ? inputEvent->As<RE::ButtonEvent>() : nullptr;
+            if (!button || !eventNameMatches(inputEvent, kNativeEventPause) || !isSecondaryWandInputEvent(inputEvent)) {
+                if (s_originalMenuOpenEventHandler) {
+                    s_originalMenuOpenEventHandler(handler, inputEvent);
+                }
+                return;
+            }
+
+            const bool gameplayInputAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire);
+            const bool menuInputActive = isInputBlockingMenuActive();
+            const bool providerSuppressed = isAnyProviderOpenVrGameInputSuppressedAtDispatch();
+            const auto decision = pipboy_pause_gesture_policy::update(s_pipboyPauseGestureState,
+                pipboy_pause_gesture_policy::Input{
+                    .enabled = g_rockConfig.rockInputRemapEnabled,
+                    .eligible = gameplayInputAllowed && !menuInputActive,
+                    .pressed = button->QJustPressed(),
+                    .held = button->QPressed(),
+                    .released = !button->QPressed(),
+                    .pipboyDispatchAllowed = !providerSuppressed,
+                    .heldSeconds = button->QHeldDownSecs(),
+                    .holdSeconds = g_rockConfig.rockPipboyPauseHoldSeconds,
+                });
+
+            if (!decision.consume) {
+                if (s_originalMenuOpenEventHandler) {
+                    s_originalMenuOpenEventHandler(handler, inputEvent);
+                }
+                return;
+            }
+
+            if (decision.dispatchPipboy) {
+                const bool routed = dispatchNativePipboyTap(*button);
+                ROCK_LOG_DEBUG(Input,
+                    "Pause-button short press routed to Pip-Boy result={} heldSeconds={:.3f}",
+                    routed ? "dispatched" : "unavailable",
+                    button->QHeldDownSecs());
+            } else if (decision.dispatchPause) {
+                const bool routed = dispatchNativePauseHold(handler, *button);
+                ROCK_LOG_DEBUG(Input,
+                    "Pause-button hold routed to native Pause result={} heldSeconds={:.3f}",
+                    routed ? "dispatched" : "unavailable",
+                    button->QHeldDownSecs());
+            } else if (std::string_view{ decision.reason } == "short-release-blocked") {
+                ROCK_LOG_SAMPLE_DEBUG(Input,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "Suppressed Pause-button Pip-Boy tap while provider OpenVR game-input suppression is active");
+            }
+
+            markInputEventStopped(inputEvent);
+        }
+
         void hookedPipboyEventHandler(void* handler, RE::InputEvent* inputEvent)
         {
-            if (decideAndTracePipboySuppression("Pipboy", inputEvent)) {
+            if (decideAndTracePipboyOpenSuppression(inputEvent)) {
                 markInputEventStopped(inputEvent);
                 return;
             }
@@ -1486,7 +1714,7 @@ namespace rock::input_remap_runtime
 
         void hookedPipboyLightEventHandler(void* handler, RE::InputEvent* inputEvent, void* cursor, void* unk)
         {
-            if (decideAndTracePipboySuppression("PipboyLight", inputEvent)) {
+            if (decideAndTracePipboyLightSuppression(inputEvent)) {
                 markInputEventStopped(inputEvent);
                 return;
             }
@@ -1584,7 +1812,7 @@ namespace rock::input_remap_runtime
                 "MeleeThrowHandler::HandleEvent suppression");
         }
 
-        bool installPipboyEventSuppressionHook()
+        bool installPipboyPauseArbitrationHooks()
         {
             const bool openHookReady = installNativeActionVTableHook(kPipboyHandlerHandleEventVTableSlotOffset,
                 kPipboyHandlerHandleEventFunctionOffset,
@@ -1598,7 +1826,13 @@ namespace rock::input_remap_runtime
                 s_originalPipboyLightEventHandler,
                 s_pipboyLightEventHookInstalled,
                 "PipboyLightHandler::HandleEvent suppression");
-            return openHookReady && lightHookReady;
+            const bool menuOpenHookReady = installNativeActionVTableHook(kMenuOpenHandlerHandleEventVTableSlotOffset,
+                kMenuOpenHandlerHandleEventFunctionOffset,
+                &hookedMenuOpenEventHandler,
+                s_originalMenuOpenEventHandler,
+                s_menuOpenEventHookInstalled,
+                "MenuOpenHandler::HandleButtonEvent Pip-Boy/Pause arbitration");
+            return openHookReady && lightHookReady && menuOpenHookReady;
         }
 
         bool writeMeleeThrowFallbackBranch(std::uintptr_t siteOffset, bool suppress, const char* label)
@@ -1691,8 +1925,8 @@ namespace rock::input_remap_runtime
             if (input_remap_policy::shouldInstallNativeActionSuppressionHook(settings.enabled, settings.suppressNativeMeleeThrowGameInput)) {
                 ready = installMeleeThrowEventSuppressionHook() && ready;
             }
-            if (input_remap_policy::shouldInstallNativeActionSuppressionHook(settings.enabled, settings.suppressPipboyGameInputWhileHolding)) {
-                ready = installPipboyEventSuppressionHook() && ready;
+            if (input_remap_policy::shouldInstallPipboyPauseArbitrationHooks(settings.enabled)) {
+                ready = installPipboyPauseArbitrationHooks() && ready;
             }
 
             const bool suppressTriggerFallbacks = input_remap_policy::shouldInstallNativeActionSuppressionHook(settings.enabled, settings.suppressRightTriggerGameInput);

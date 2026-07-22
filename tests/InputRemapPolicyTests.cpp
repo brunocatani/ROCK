@@ -1,11 +1,13 @@
 #include "physics-interaction/input/InputRemapPolicy.h"
 #include "physics-interaction/input/ManualScopeInputPolicy.h"
+#include "physics-interaction/input/PipboyPauseGesturePolicy.h"
 
 #include <cstdio>
 
 namespace
 {
     namespace manual = rock::manual_scope_input_policy;
+    namespace pipboyGesture = rock::pipboy_pause_gesture_policy;
 
     bool expectTrue(const char* label, bool value)
     {
@@ -28,6 +30,17 @@ namespace
     bool expectManualScopeState(const char* label,
         rock::manual_scope_input_policy::State actual,
         rock::manual_scope_input_policy::State expected)
+    {
+        if (actual == expected) {
+            return true;
+        }
+        std::printf("%s expected state %u, got %u\n", label, static_cast<unsigned>(expected), static_cast<unsigned>(actual));
+        return false;
+    }
+
+    bool expectPipboyGestureState(const char* label,
+        rock::pipboy_pause_gesture_policy::State actual,
+        rock::pipboy_pause_gesture_policy::State expected)
     {
         if (actual == expected) {
             return true;
@@ -138,6 +151,24 @@ int main()
     auto pipboyPrimaryHand = pipboyHolding;
     pipboyPrimaryHand.primaryHandEvent = true;
     ok &= expectFalse("primary-wand trigger event bypasses the pipboy gate so attack handling survives", shouldSuppressNativePipboyAction(pipboyPrimaryHand));
+
+    LegacyPipboyTriggerOpenInput legacyPipboyTrigger{
+        .remapEnabled = true,
+        .gameplayInputAllowed = true,
+        .menuInputActive = false,
+        .eventMatched = true,
+        .secondaryWandEvent = true,
+    };
+    ok &= expectTrue("secondary WandTrigger no longer opens the Pip-Boy during gameplay", shouldSuppressLegacyPipboyTriggerOpen(legacyPipboyTrigger));
+    auto legacyPrimaryTrigger = legacyPipboyTrigger;
+    legacyPrimaryTrigger.secondaryWandEvent = false;
+    ok &= expectFalse("primary trigger remains available to native attack handling", shouldSuppressLegacyPipboyTriggerOpen(legacyPrimaryTrigger));
+    auto legacyMenuTrigger = legacyPipboyTrigger;
+    legacyMenuTrigger.menuInputActive = true;
+    ok &= expectFalse("open-menu trigger behavior remains native", shouldSuppressLegacyPipboyTriggerOpen(legacyMenuTrigger));
+    auto legacyDirectPipboy = legacyPipboyTrigger;
+    legacyDirectPipboy.eventMatched = false;
+    ok &= expectFalse("direct keyboard or gamepad Pipboy binding is not the moved VR trigger", shouldSuppressLegacyPipboyTriggerOpen(legacyDirectPipboy));
 
     auto takeEquipIdleHand = base;
     takeEquipIdleHand.takeEquipTargetEligible = true;
@@ -302,12 +333,132 @@ int main()
 
     ok &= expectTrue("enabled suppression requests native hook install", shouldInstallNativeActionSuppressionHook(true, true));
     ok &= expectFalse("disabled remap skips native hook install", shouldInstallNativeActionSuppressionHook(false, true));
+    ok &= expectTrue("enabled remap installs mandatory Pip-Boy/Pause arbitration hooks", shouldInstallPipboyPauseArbitrationHooks(true));
+    ok &= expectFalse("disabled remap leaves native Pip-Boy and Pause handlers untouched", shouldInstallPipboyPauseArbitrationHooks(false));
     ok &= expectTrue("manual scope installs the activate event hook independently of general remapping",
         shouldInstallActivateEventHook(false, true));
     ok &= expectTrue("manual scope installs raw controller capture independently of general remapping",
         shouldInstallRawControllerHooks(false, true));
     ok &= expectFalse("disabled remap and automatic scope need no raw controller hook",
         shouldInstallRawControllerHooks(false, false));
+
+    pipboyGesture::RuntimeState pipboyGestureState{};
+    ok &= expectTrue("Pip-Boy/Pause hold duration clamps low values",
+        pipboyGesture::sanitizedHoldSeconds(0.01f) == pipboyGesture::kMinimumHoldSeconds);
+    ok &= expectTrue("Pip-Boy/Pause hold duration clamps high values",
+        pipboyGesture::sanitizedHoldSeconds(8.0f) == pipboyGesture::kMaximumHoldSeconds);
+    pipboyGesture::Input pipboyGestureInput{
+        .enabled = true,
+        .eligible = true,
+        .holdSeconds = 0.35f,
+    };
+
+    pipboyGestureInput.pressed = true;
+    pipboyGestureInput.held = true;
+    auto pipboyGestureDecision = pipboyGesture::update(pipboyGestureState, pipboyGestureInput);
+    ok &= expectPipboyGestureState("Pause-button press starts tap/hold classification", pipboyGestureDecision.state, pipboyGesture::State::Pending);
+    ok &= expectTrue("pending Pause-button press is consumed", pipboyGestureDecision.consume);
+    ok &= expectFalse("initial Pause-button press does not open either menu", pipboyGestureDecision.dispatchPipboy || pipboyGestureDecision.dispatchPause);
+
+    pipboyGestureInput.pressed = false;
+    pipboyGestureInput.held = false;
+    pipboyGestureInput.released = true;
+    pipboyGestureInput.heldSeconds = 0.12f;
+    pipboyGestureDecision = pipboyGesture::update(pipboyGestureState, pipboyGestureInput);
+    ok &= expectTrue("short Pause-button release opens the Pip-Boy", pipboyGestureDecision.dispatchPipboy);
+    ok &= expectFalse("short Pause-button release never opens Pause", pipboyGestureDecision.dispatchPause);
+    ok &= expectPipboyGestureState("short release rearms the gesture", pipboyGestureDecision.state, pipboyGesture::State::Idle);
+
+    pipboyGestureInput = pipboyGesture::Input{
+        .enabled = true,
+        .eligible = true,
+        .pressed = true,
+        .held = true,
+        .holdSeconds = 0.35f,
+    };
+    (void)pipboyGesture::update(pipboyGestureState, pipboyGestureInput);
+    pipboyGestureInput.pressed = false;
+    pipboyGestureInput.heldSeconds = 0.34f;
+    pipboyGestureDecision = pipboyGesture::update(pipboyGestureState, pipboyGestureInput);
+    ok &= expectFalse("hold below threshold opens neither menu", pipboyGestureDecision.dispatchPipboy || pipboyGestureDecision.dispatchPause);
+    pipboyGestureInput.heldSeconds = 0.35f;
+    pipboyGestureDecision = pipboyGesture::update(pipboyGestureState, pipboyGestureInput);
+    ok &= expectTrue("hold threshold opens native Pause exactly once", pipboyGestureDecision.dispatchPause);
+    ok &= expectPipboyGestureState("Pause hold commits the gesture", pipboyGestureDecision.state, pipboyGesture::State::PauseCommitted);
+    pipboyGestureInput.heldSeconds = 0.60f;
+    pipboyGestureDecision = pipboyGesture::update(pipboyGestureState, pipboyGestureInput);
+    ok &= expectFalse("continued Pause hold does not repeat menu dispatch", pipboyGestureDecision.dispatchPause);
+    pipboyGestureInput.held = false;
+    pipboyGestureInput.released = true;
+    pipboyGestureDecision = pipboyGesture::update(pipboyGestureState, pipboyGestureInput);
+    ok &= expectFalse("release after Pause hold cannot open the Pip-Boy", pipboyGestureDecision.dispatchPipboy);
+    ok &= expectPipboyGestureState("Pause-hold release rearms the gesture", pipboyGestureDecision.state, pipboyGesture::State::Idle);
+
+    pipboyGestureInput = pipboyGesture::Input{
+        .enabled = true,
+        .eligible = true,
+        .pressed = true,
+        .held = true,
+        .holdSeconds = 0.35f,
+    };
+    (void)pipboyGesture::update(pipboyGestureState, pipboyGestureInput);
+    pipboyGestureInput.pressed = false;
+    pipboyGestureInput.held = false;
+    pipboyGestureInput.released = true;
+    pipboyGestureInput.heldSeconds = 0.50f;
+    pipboyGestureDecision = pipboyGesture::update(pipboyGestureState, pipboyGestureInput);
+    ok &= expectTrue("release beyond threshold still chooses Pause when no held sample crossed it", pipboyGestureDecision.dispatchPause);
+    ok &= expectFalse("late release cannot fall back to Pip-Boy", pipboyGestureDecision.dispatchPipboy);
+
+    pipboyGestureInput = pipboyGesture::Input{
+        .enabled = true,
+        .eligible = true,
+        .pressed = true,
+        .held = true,
+        .pipboyDispatchAllowed = false,
+        .holdSeconds = 0.35f,
+    };
+    (void)pipboyGesture::update(pipboyGestureState, pipboyGestureInput);
+    pipboyGestureInput.pressed = false;
+    pipboyGestureInput.held = false;
+    pipboyGestureInput.released = true;
+    pipboyGestureInput.heldSeconds = 0.10f;
+    pipboyGestureDecision = pipboyGesture::update(pipboyGestureState, pipboyGestureInput);
+    ok &= expectFalse("provider game-input suppression blocks a short Pip-Boy tap", pipboyGestureDecision.dispatchPipboy);
+
+    pipboyGestureInput = pipboyGesture::Input{
+        .enabled = true,
+        .eligible = true,
+        .pressed = true,
+        .held = true,
+        .pipboyDispatchAllowed = false,
+        .holdSeconds = 0.35f,
+    };
+    (void)pipboyGesture::update(pipboyGestureState, pipboyGestureInput);
+    pipboyGestureInput.pressed = false;
+    pipboyGestureInput.heldSeconds = 0.35f;
+    pipboyGestureDecision = pipboyGesture::update(pipboyGestureState, pipboyGestureInput);
+    ok &= expectTrue("provider Pip-Boy suppression preserves the existing native Pause escape hold", pipboyGestureDecision.dispatchPause);
+    pipboyGestureInput.held = false;
+    pipboyGestureInput.released = true;
+    (void)pipboyGesture::update(pipboyGestureState, pipboyGestureInput);
+
+    pipboyGestureInput = pipboyGesture::Input{
+        .enabled = true,
+        .eligible = true,
+        .pressed = true,
+        .held = true,
+    };
+    (void)pipboyGesture::update(pipboyGestureState, pipboyGestureInput);
+    pipboyGestureInput.pressed = false;
+    pipboyGestureInput.eligible = false;
+    pipboyGestureDecision = pipboyGesture::update(pipboyGestureState, pipboyGestureInput);
+    ok &= expectTrue("menu transition keeps ownership of an in-flight Pause gesture", pipboyGestureDecision.consume);
+    ok &= expectPipboyGestureState("ineligible held gesture blocks until release", pipboyGestureDecision.state, pipboyGesture::State::BlockedUntilRelease);
+    pipboyGestureInput.held = false;
+    pipboyGestureInput.released = true;
+    pipboyGestureDecision = pipboyGesture::update(pipboyGestureState, pipboyGestureInput);
+    ok &= expectPipboyGestureState("blocked gesture rearms only on release", pipboyGestureDecision.state, pipboyGesture::State::Idle);
 
     manual::RuntimeState manualState{};
     manual::Input manualInput{
