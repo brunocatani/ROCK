@@ -20,6 +20,7 @@
 #include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/HavokRuntime.h"
+#include "physics-interaction/native/HeldWeaponInstantTransition.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
@@ -830,6 +831,11 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
     logger::info("ROCK: Install loose grenade equip hook...");
     if (!rock::loose_grenade_runtime::installEquipHook()) {
         return false;
+    }
+
+    logger::info("ROCK: Install held weapon instant-transition capability...");
+    if (!rock::held_weapon_instant_transition::install()) {
+        logger::warn("ROCK: Held trigger/grip-zone equip disabled because the exact native transition contract is unavailable.");
     }
 
     logger::info("ROCK: Install Pip-Boy trigger-hand equip hooks...");

@@ -45,12 +45,12 @@ function Reject-Text {
 }
 
 Require-Text 'src/physics-interaction/weapon/WeaponEquipTransfer.h' `
-    'EquipAcceptedPending' `
-    'Held weapon equip transfer must represent accepted asynchronous native equips.'
+    'RequestReason\s+transitionReason[\s\S]*ImmediateEquipResult\s+instantTransition' `
+    'Held weapon equip transfer must carry the typed instant-transition reason and evidence.'
 
 Require-Text 'src/physics-interaction/weapon/WeaponEquipTransfer.cpp' `
-    'const auto equippedAfter = readEquippedWeaponSnapshot\(\);[\s\S]{0,260}observedEquippedFormID[\s\S]{0,260}result\.success = true;[\s\S]{0,260}result\.committed[\s\S]{0,260}EquipReason::EquipAcceptedPending' `
-    'Held weapon equip transfer must distinguish accepted requests from same-frame native commit.'
+    'equipImmediatelyWithoutActions[\s\S]{0,1800}const auto equippedAfter = readEquippedWeaponSnapshot\(\);[\s\S]{0,900}result\.committed[\s\S]{0,1200}result\.matchedEquippedStack[\s\S]{0,500}result\.success = true' `
+    'Held weapon equip transfer must require scoped acceptance, synchronous identity commit, and the exact equipped stack.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'observedEquipped=\{:08X\}' `
@@ -149,8 +149,8 @@ Require-Text 'src/physics-interaction/weapon/WeaponEquipTransfer.h' `
     'The equip transaction must own the released reference and return it only when native pickup did not acquire it.'
 
 Require-Text 'src/physics-interaction/weapon/WeaponEquipTransfer.cpp' `
-    'transferHeldWeaponToPlayerAndEquip\(EquipInput input\)[\s\S]{0,300}result\.untransferredRef\s*=\s*std::move\(input\.heldRef\)[\s\S]*ActivateRef\([\s\S]{0,1400}result\.untransferredRef\.reset\(\);[\s\S]*EquipObject\(' `
-    'ROCK must release its world-reference lease after ActivateRef and before EquipObject.'
+    'transferHeldWeaponToPlayerAndEquip\(EquipInput input\)[\s\S]{0,300}result\.untransferredRef\s*=\s*std::move\(input\.heldRef\)[\s\S]*ActivateRef\([\s\S]{0,1400}result\.untransferredRef\.reset\(\);[\s\S]*equipImmediatelyWithoutActions\(' `
+    'ROCK must release its world-reference lease after ActivateRef and before the scoped immediate equip.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'releaseGrabbedObject[\s\S]{0,320}transferHeldWeaponToPlayerAndEquip[\s\S]{0,180}releaseOutcome\.takeRetainedReference\(\)[\s\S]*postEquipRef\s*=\s*equipResult\.untransferredRef\.get\(\)' `

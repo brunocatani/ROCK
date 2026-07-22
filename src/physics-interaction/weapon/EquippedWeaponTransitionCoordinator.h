@@ -79,6 +79,11 @@ namespace rock
             const ExpectedIdentity& expected,
             Source source,
             const EquipVisualBridge::BeginInput& bridgeInput);
+        // Called synchronously after the verified native completion helper.
+        // Keeps the bridge visible and immediately owns any exact native-child
+        // cull before the renderer can observe both weapon instances.
+        void synchronizeAfterInstantCompletion();
+        void failHeldCompletion(const char* reason);
         void requestCurrentWeaponReconcile(Source source) noexcept;
         void update(const FrameInput& input);
         void shutdown();

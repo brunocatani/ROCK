@@ -6,6 +6,7 @@
 #include "RE/NetImmerse/NiPoint.h"
 #include "RE/NetImmerse/NiSmartPointer.h"
 
+#include "physics-interaction/native/HeldWeaponInstantTransition.h"
 #include "physics-interaction/weapon/WeaponInventoryStackSelectionPolicy.h"
 
 #include <cstdint>
@@ -33,8 +34,11 @@ namespace rock::weapon_equip_transfer
         MissingInventoryList,
         InventoryStackNotFound,
         EquipObjectFailed,
-        EquipAcceptedPending,
-        ActivateRefThenEquipObject,
+        InstantTransitionUnavailable,
+        InvalidNativeActionTrace,
+        EquippedIdentityMismatch,
+        EquippedStackMismatch,
+        ActivateRefThenInstantEquip,
     };
 
     enum class DropReason : std::uint8_t
@@ -57,25 +61,30 @@ namespace rock::weapon_equip_transfer
         // native equip/draw path never runs with the picked ref artificially
         // alive.
         RE::NiPointer<RE::TESObjectREFR> heldRef{};
-        bool playSounds = true;
+        held_weapon_instant_transition::RequestReason transitionReason{
+            held_weapon_instant_transition::RequestReason::SameHandTrigger
+        };
     };
 
     struct EquipResult
     {
         bool attempted = false;
         bool transferredToInventory = false;
-        // EquipObject accepted the request. Native queued/special-item paths
-        // may publish the equipped identity on a later frame.
+        // The one immediate manager call was accepted, its exact equipped
+        // identity/stack was observed synchronously, and its intercepted
+        // native action trace authorizes the caller's final draw completion.
         bool success = false;
         bool committed = false;
         bool matchedInstanceData = false;
+        bool matchedEquippedStack = false;
         bool usedImmediateEquip = false;
-        bool usedQueuedEquip = false;
         EquipReason reason = EquipReason::NotAttempted;
         std::int32_t count = 1;
         std::uint32_t formID = 0;
         std::uint32_t previousEquippedFormID = 0;
         std::uint32_t observedEquippedFormID = 0;
+        std::uintptr_t observedEquippedInstanceData = 0;
+        std::uint32_t observedEquipIndex = 0;
         std::uint32_t stackID = 0;
         std::uint32_t preTransferStackCount = 0;
         std::uint32_t postTransferStackCount = 0;
@@ -84,6 +93,7 @@ namespace rock::weapon_equip_transfer
         std::uintptr_t requestedInstanceData = 0;
         weapon_inventory_stack_selection_policy::Evidence stackSelectionEvidence =
             weapon_inventory_stack_selection_policy::Evidence::None;
+        held_weapon_instant_transition::ImmediateEquipResult instantTransition{};
         RE::TESObjectWEAP* weapon = nullptr;
         // Present only when native pickup did not acquire the released world
         // reference. This keeps failure recovery and release events safe.

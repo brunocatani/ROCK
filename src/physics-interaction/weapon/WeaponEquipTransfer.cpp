@@ -33,6 +33,7 @@ namespace rock::weapon_equip_transfer
         {
             RE::TESObjectWEAP* weapon = nullptr;
             RE::TBO_InstanceData* instanceData = nullptr;
+            std::uint32_t equipIndex = 0;
         };
 
         struct InventoryWeaponStackSnapshot
@@ -59,6 +60,7 @@ namespace rock::weapon_equip_transfer
             auto* weaponForm = equipData ? equipData->item.object : nullptr;
             snapshot.weapon = asWeaponForm(weaponForm);
             snapshot.instanceData = equipData ? equipData->item.instanceData.get() : nullptr;
+            snapshot.equipIndex = equipData ? equipData->equipIndex.index : 0;
             return snapshot;
         }
 
@@ -213,10 +215,16 @@ namespace rock::weapon_equip_transfer
             return "inventory-stack-not-found";
         case EquipReason::EquipObjectFailed:
             return "equip-object-failed";
-        case EquipReason::EquipAcceptedPending:
-            return "equip-accepted-pending";
-        case EquipReason::ActivateRefThenEquipObject:
-            return "activate-ref-equip-object";
+        case EquipReason::InstantTransitionUnavailable:
+            return "instant-transition-unavailable";
+        case EquipReason::InvalidNativeActionTrace:
+            return "invalid-native-action-trace";
+        case EquipReason::EquippedIdentityMismatch:
+            return "equipped-identity-mismatch";
+        case EquipReason::EquippedStackMismatch:
+            return "equipped-stack-mismatch";
+        case EquipReason::ActivateRefThenInstantEquip:
+            return "activate-ref-instant-equip";
         default:
             return "not-attempted";
         }
@@ -393,53 +401,65 @@ namespace rock::weapon_equip_transfer
             stack.instanceData.get());
         RE::BGSObjectInstance objectInstance(result.weapon, stack.instanceData.get());
         /*
-         * a_queueEquip=false takes the engine's immediate DoEquip inside this
-         * call (raw disasm: EquipObject 0x140e6fea0 stores the flag at
-         * params+0x18, 0x140e71920 branches on it). Weapons on the player
-         * otherwise defer through the middleProcess pending-equip list, adding
-         * visible frames before the draw can start. Preserve the legacy queued
-         * submission when the immediate request is not accepted, but do not
-         * treat either call's boolean as proof that the equipped identity was
-         * published synchronously; the transition coordinator observes that
-         * commit on later frames for native special-item paths.
+         * The native wrapper owns one immediate manager call and suppresses
+         * only the verified sheathe/draw action submissions made inside that
+         * synchronous transaction. A queued retry cannot rescue an immediate
+         * validation failure and would escape the scoped interceptor, so it is
+         * deliberately unsupported here.
          */
-        bool equipped = equipManager->EquipObject(player,
-            objectInstance,
-            stack.stackID,
-            1,
-            stack.equipSlot,
-            false,
-            false,
-            input.playSounds,
-            true,
-            false);
-        result.usedImmediateEquip = equipped;
-        if (!equipped) {
-            equipped = equipManager->EquipObject(player,
-                objectInstance,
-                stack.stackID,
-                1,
-                stack.equipSlot,
-                true,
-                false,
-                input.playSounds,
-                true,
-                false);
-            result.usedQueuedEquip = equipped;
+        result.instantTransition =
+            held_weapon_instant_transition::equipImmediatelyWithoutActions(
+                held_weapon_instant_transition::ImmediateEquipInput{
+                    .manager = equipManager,
+                    .player = player,
+                    .object = &objectInstance,
+                    .stackID = stack.stackID,
+                    .equipSlot = stack.equipSlot,
+                    .reason = input.transitionReason,
+                });
+        result.usedImmediateEquip = result.instantTransition.managerAccepted;
+        if (!result.instantTransition.managerAccepted) {
+            result.reason = result.instantTransition.code ==
+                    held_weapon_instant_transition::ImmediateEquipCode::CapabilityUnavailable ?
+                EquipReason::InstantTransitionUnavailable :
+                EquipReason::EquipObjectFailed;
+            return result;
         }
-        if (!equipped) {
-            result.reason = EquipReason::EquipObjectFailed;
+        if (!result.instantTransition.success()) {
+            result.reason = EquipReason::InvalidNativeActionTrace;
             return result;
         }
 
         const auto equippedAfter = readEquippedWeaponSnapshot();
         result.observedEquippedFormID = equippedAfter.weapon ? equippedAfter.weapon->GetFormID() : 0;
-        result.success = true;
+        result.observedEquippedInstanceData = reinterpret_cast<std::uintptr_t>(
+            equippedAfter.instanceData);
+        result.observedEquipIndex = equippedAfter.equipIndex;
         result.committed = equippedAfter.weapon == result.weapon &&
             (!stack.instanceData || equippedAfter.instanceData == stack.instanceData.get());
-        result.reason = result.committed ?
-            EquipReason::ActivateRefThenEquipObject :
-            EquipReason::EquipAcceptedPending;
+        if (!result.committed) {
+            held_weapon_instant_transition::discardCompletionPermit(
+                result.instantTransition);
+            result.reason = EquipReason::EquippedIdentityMismatch;
+            return result;
+        }
+
+        const auto equippedStack = findEquippedWeaponStack(
+            player,
+            result.weapon,
+            stack.instanceData.get());
+        result.matchedEquippedStack = equippedStack.found &&
+            equippedStack.stackID == stack.stackID &&
+            (!stack.instanceData ||
+                equippedStack.instanceData.get() == stack.instanceData.get());
+        if (!result.matchedEquippedStack) {
+            held_weapon_instant_transition::discardCompletionPermit(
+                result.instantTransition);
+            result.reason = EquipReason::EquippedStackMismatch;
+            return result;
+        }
+        result.success = true;
+        result.reason = EquipReason::ActivateRefThenInstantEquip;
         return result;
     }
 
