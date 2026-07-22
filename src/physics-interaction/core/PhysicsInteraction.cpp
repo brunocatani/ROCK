@@ -1282,20 +1282,6 @@ namespace rock
             return resolveEquippedWeaponInteractionNodeDirect();
         }
 
-        bool requestHeldWeaponNativeDrawFollowup(RE::PlayerCharacter* player)
-        {
-            if (!player) {
-                return false;
-            }
-
-            const auto nativeState = static_cast<std::uint32_t>(player->weaponState);
-            if (!held_weapon_equip_state_policy::shouldSubmitDrawFollowup(nativeState)) {
-                return false;
-            }
-
-            player->DrawWeaponMagicHands(true);
-            return true;
-        }
     }
 
     PhysicsInteraction::PhysicsInteraction(std::uint32_t skeletonGeneration, std::uint32_t providerGeneration)
@@ -1352,7 +1338,8 @@ namespace rock
         }
 
         _weaponCollision.requestWorkbenchExitRebuild();
-        _weaponCollision.armWorkbenchWeaponReattach();
+        _equippedWeaponTransition.requestCurrentWeaponReconcile(
+            EquippedWeaponTransitionCoordinator::Source::WorkbenchExit);
         ROCK_LOG_DEBUG(Weapon,
             "Weapon collision workbench-exit rebuild gate armed by {} close",
             sourceMenuName ? sourceMenuName : "<unknown>");
@@ -2029,6 +2016,26 @@ namespace rock
         return true;
     }
 
+    void PhysicsInteraction::updateEquippedWeaponTransition()
+    {
+        const auto& runtime = runtime_state::currentFrame();
+        auto* player = f4vr::getPlayer();
+        const bool nativeWeaponAnimationActive =
+            provider::currentNativeAnimationAuthorityFlagsV1() != 0 ||
+            (player && player->gunState == RE::GUN_STATE::kReloading);
+        _equippedWeaponTransition.update(
+            EquippedWeaponTransitionCoordinator::FrameInput{
+                .deltaSeconds = runtime.deltaSeconds,
+                .visualAuthorityAvailable = runtime.visualAuthorityAvailable,
+                .localSkeletonReady = runtime.localSkeletonReady,
+                .menuBlocking = runtime.localMenuBlocking,
+                .compatibilityBlocking = runtime.compatibilityConfigBlocking,
+                .weaponExactlyDrawn =
+                    player && player->weaponState == RE::WEAPON_STATE::kDrawn,
+                .nativeWeaponAnimationActive = nativeWeaponAnimationActive,
+            });
+    }
+
     void PhysicsInteraction::update()
     {
         ensureWeaponCollisionWorkbenchExitMenuSinkRegistered();
@@ -2592,7 +2599,34 @@ namespace rock
             // A loose-weapon equip carries the originating physical hand into
             // the first equipped frame; use it immediately so input/contact
             // routing never spends a frame under the default right-hand role.
-            const bool firingHandIsLeft = _pendingEquippedWeaponPrimaryOnlyGripStart.pending ?
+            if (_pendingEquippedWeaponPrimaryOnlyGripStart.pending) {
+                _pendingEquippedWeaponPrimaryOnlyGripStart.remainingSeconds -=
+                    (std::max)(0.0f, frame.deltaSeconds);
+                if (_pendingEquippedWeaponPrimaryOnlyGripStart.remainingSeconds <= 0.0f) {
+                    ROCK_LOG_WARN(Weapon,
+                        "Held weapon manual ownership handoff expired targetForm={:08X} targetInstance={:#x}",
+                        _pendingEquippedWeaponPrimaryOnlyGripStart.targetWeaponFormID,
+                        _pendingEquippedWeaponPrimaryOnlyGripStart.targetWeaponInstanceData);
+                    _pendingEquippedWeaponPrimaryOnlyGripStart = {};
+                }
+            }
+            auto* observedEquippedWeapon = currentEquippedWeaponForm();
+            const std::uint32_t observedEquippedWeaponFormID =
+                observedEquippedWeapon ? observedEquippedWeapon->formID : 0;
+            const auto observedEquippedWeaponInstanceData =
+                reinterpret_cast<std::uintptr_t>(
+                    currentEquippedWeaponInstanceData(observedEquippedWeapon));
+            const bool pendingPrimaryStartMatchesCurrentWeapon =
+                _pendingEquippedWeaponPrimaryOnlyGripStart.pending &&
+                (_pendingEquippedWeaponPrimaryOnlyGripStart.targetWeaponFormID == 0 ||
+                    equipped_weapon_transition_policy::matchesExpectedIdentity(
+                        observedEquippedWeaponFormID,
+                        observedEquippedWeaponInstanceData,
+                        _pendingEquippedWeaponPrimaryOnlyGripStart.targetWeaponFormID,
+                        _pendingEquippedWeaponPrimaryOnlyGripStart.targetWeaponInstanceData,
+                        _pendingEquippedWeaponPrimaryOnlyGripStart.previousWeaponFormID,
+                        _pendingEquippedWeaponPrimaryOnlyGripStart.previousWeaponInstanceData));
+            const bool firingHandIsLeft = pendingPrimaryStartMatchesCurrentWeapon ?
                 _pendingEquippedWeaponPrimaryOnlyGripStart.isLeft :
                 _twoHandedGrip.isFiringHandLeft();
             const bool supportHandIsLeft = !firingHandIsLeft;
@@ -2767,14 +2801,14 @@ namespace rock
                     currentEquippedWeaponOwnershipKey != 0 &&
                     primaryState.held &&
                     ((primaryDetachFeatureAvailable && primaryState.pressed) ||
-                        _pendingEquippedWeaponPrimaryOnlyGripStart.pending);
+                        pendingPrimaryStartMatchesCurrentWeapon);
                 const RE::NiTransform* capturedFiringHandWeaponLocal =
-                    _pendingEquippedWeaponPrimaryOnlyGripStart.pending &&
+                    pendingPrimaryStartMatchesCurrentWeapon &&
                         _pendingEquippedWeaponPrimaryOnlyGripStart.hasFiringHandWeaponLocal ?
                     &_pendingEquippedWeaponPrimaryOnlyGripStart.firingHandWeaponLocal :
                     nullptr;
                 const RE::NiPoint3* capturedFiringGripWeaponLocal =
-                    _pendingEquippedWeaponPrimaryOnlyGripStart.pending &&
+                    pendingPrimaryStartMatchesCurrentWeapon &&
                         _pendingEquippedWeaponPrimaryOnlyGripStart.hasFiringGripWeaponLocal ?
                     &_pendingEquippedWeaponPrimaryOnlyGripStart.firingGripWeaponLocal :
                     nullptr;
@@ -3355,9 +3389,6 @@ namespace rock
          */
 
         updateGrabInput(frame);
-        // After grab input so a bridge started by this frame's equip gets its
-        // first pose write before rendering instead of one frame late.
-        _equipVisualBridge.update(frame.deltaSeconds);
         updateHeldMassMovementSlowdown(hknp, frame.deltaSeconds);
         synchronizeContactEvidenceOwnership(rightHandWeaponAuthorityActive, leftSupportGripActive, rightPartGripActive);
 
@@ -3496,16 +3527,16 @@ namespace rock
             .inPowerArmor = f4vr::isInPowerArmor(),
         }, _twoHandedGrip);
 
-        if (_equipVisualBridge.isHandPoseHandoffActive()) {
-            const bool handoffHandIsLeft = _equipVisualBridge.handPoseHandoffIsLeft();
+        if (_equippedWeaponTransition.isHandPoseHandoffActive()) {
+            const bool handoffHandIsLeft = _equippedWeaponTransition.handPoseHandoffIsLeft();
             if (nativeAuthorityFlags != 0 ||
                 runtime.localMenuBlocking ||
                 runtime.compatibilityConfigBlocking) {
-                _equipVisualBridge.completeHandPoseHandoff("authored-pose-unavailable");
-            } else if (equippedWeapon && equippedWeapon->formID != _equipVisualBridge.weaponBaseFormID()) {
-                _equipVisualBridge.completeHandPoseHandoff("equipped-weapon-changed");
+                _equippedWeaponTransition.completeHandPoseHandoff("authored-pose-unavailable");
+            } else if (equippedWeapon && equippedWeapon->formID != _equippedWeaponTransition.bridgeWeaponBaseFormID()) {
+                _equippedWeaponTransition.completeHandPoseHandoff("equipped-weapon-changed");
             } else if (_twoHandedGrip.hasPublishedAuthoredPrimaryFiringGripFingerPose(handoffHandIsLeft)) {
-                _equipVisualBridge.completeHandPoseHandoff("equipped-authored-pose-acquired");
+                _equippedWeaponTransition.completeHandPoseHandoff("equipped-authored-pose-acquired");
             }
         }
     }
@@ -4520,7 +4551,7 @@ namespace rock
             _rightHand.abandonHavokStateAfterWorldLoss();
             _leftHand.abandonHavokStateAfterWorldLoss();
             _weaponCollision.abandonHavokStateAfterWorldLoss();
-            _equipVisualBridge.abandonSceneGraph();
+            _equippedWeaponTransition.abandonSceneGraph();
             _bodyBoneColliders.reset();
             _rightDominantWeaponCollisionSuppressed.store(false, std::memory_order_release);
             _leftWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
@@ -4545,7 +4576,7 @@ namespace rock
         _shoulderStashStates = {};
         _mouthConsumeStates = {};
         _feedbackHaptics.reset();
-        _equipVisualBridge.shutdown();
+        _equippedWeaponTransition.shutdown();
         _weaponCollision.shutdown();
         _bodyBoneColliders.reset();
         _generatedBodyStepDrive.reset();
@@ -8663,6 +8694,13 @@ namespace rock
 
                     hand.captureHeldReleaseMotion(hknp, handInput.rawHandWorld, frame.deltaSeconds);
                     auto* heldRef = hand.getHeldRef();
+                    const auto previousEquippedWeaponFormID =
+                        currentEquippedWeaponFormId();
+                    const auto previousNativeInstanceNode =
+                        previousEquippedWeaponFormID != 0 ?
+                        equipped_weapon_visual_state::observe(
+                            previousEquippedWeaponFormID).exactInstance :
+                        nullptr;
                     hand.stopSelectionHighlight();
                     Hand& peerHandForVisualState = isLeft ? _rightHand : _leftHand;
                     if (heldRef && peerHandForVisualState.hasSelection() && peerHandForVisualState.getSelection().refr == heldRef) {
@@ -8683,14 +8721,24 @@ namespace rock
                         .playSounds = false,
                     });
                     const std::uint32_t nativeStateAfterEquip = static_cast<std::uint32_t>(player->weaponState);
-                    const bool nativeDrawFollowupRequested =
-                        equipResult.success && requestHeldWeaponNativeDrawFollowup(player);
-                    const std::uint32_t nativeStateAfterFollowup = static_cast<std::uint32_t>(player->weaponState);
-                    auto* immediateWeaponNode = equipResult.success ? resolveEquippedWeaponInteractionNodeDirect() : nullptr;
+                    auto* immediateWeaponNode = equipResult.committed ? resolveEquippedWeaponInteractionNodeDirect() : nullptr;
                     bool equipBridgeStarted = false;
-                    if (equipResult.success &&
-                        _equippedWeaponHandlingSettings.equipVisualBridgeEnabled) {
-                        equipBridgeStarted = _equipVisualBridge.begin(EquipVisualBridge::BeginInput{
+                    if (equipResult.success) {
+                        const auto transitionSource = triggeredByInput ?
+                            EquippedWeaponTransitionCoordinator::Source::HeldTriggerEquip :
+                            EquippedWeaponTransitionCoordinator::Source::HeldGripZoneEquip;
+                        equipBridgeStarted = _equippedWeaponTransition.beginHeldTransition(
+                            EquippedWeaponTransitionCoordinator::ExpectedIdentity{
+                                .formID = equipResult.weapon ? equipResult.weapon->formID : equipResult.observedEquippedFormID,
+                                .instanceData = equipResult.requestedInstanceData,
+                                .previousFormID = equipResult.previousEquippedFormID,
+                                .previousInstanceData = equipResult.previousEquippedInstanceData,
+                                .previousNativeInstanceNode =
+                                    reinterpret_cast<std::uintptr_t>(
+                                        previousNativeInstanceNode),
+                            },
+                            transitionSource,
+                            EquipVisualBridge::BeginInput{
                             .worldModel = equipResult.detachedWorldModel,
                             .weaponFormID = equipResult.weapon ? equipResult.weapon->formID : equipResult.observedEquippedFormID,
                             .isLeftHand = isLeft,
@@ -8712,28 +8760,38 @@ namespace rock
                     }
                     dispatchHeldObjectEventByFormID(GrabEventType::Released, postEquipRef, heldFormID, primaryBodyId);
                     ROCK_LOG_INFO(Hand,
-                        "{} hand {} held weapon equip formID={:08X} success={} equipReason={} count={} stack={} instanceMatch={} transferred={} observedEquipped={:08X} weaponState={}({})->{}({})->{}({}) nativeDrawFollowup={} immediateWeaponNode={} immediateEquip={} visualBridge={}",
+                        "{} hand {} held weapon equip formID={:08X} accepted={} committed={} equipReason={} count={} stack={} instanceMatch={} requestedInstance={:#x} transferred={} observedEquipped={:08X} weaponState={}({})->{}({}) immediateWeaponNode={} immediateEquip={} queuedEquip={} visualBridge={}",
                         hand.handName(),
                         logAction ? logAction : "requested",
                         heldFormID,
                         equipResult.success ? "yes" : "no",
+                        equipResult.committed ? "yes" : "no",
                         weapon_equip_transfer::equipReasonName(equipResult.reason),
                         equipResult.count,
                         equipResult.stackID,
                         equipResult.matchedInstanceData ? "yes" : "no",
+                        equipResult.requestedInstanceData,
                         equipResult.transferredToInventory ? "yes" : "no",
                         equipResult.observedEquippedFormID,
                         nativeStateBeforeEquip,
                         held_weapon_equip_state_policy::nativeWeaponStateName(nativeStateBeforeEquip),
                         nativeStateAfterEquip,
                         held_weapon_equip_state_policy::nativeWeaponStateName(nativeStateAfterEquip),
-                        nativeStateAfterFollowup,
-                        held_weapon_equip_state_policy::nativeWeaponStateName(nativeStateAfterFollowup),
-                        nativeDrawFollowupRequested ? "yes" : "no",
                         immediateWeaponNode ? "yes" : "no",
                         equipResult.usedImmediateEquip ? "yes" : "no",
+                        equipResult.usedQueuedEquip ? "yes" : "no",
                         equipBridgeStarted ? "yes" : "no");
                     if (equipResult.success && pendingGripStart.pending) {
+                        pendingGripStart.targetWeaponFormID = equipResult.weapon ?
+                            equipResult.weapon->formID :
+                            equipResult.observedEquippedFormID;
+                        pendingGripStart.targetWeaponInstanceData =
+                            equipResult.requestedInstanceData;
+                        pendingGripStart.previousWeaponFormID =
+                            equipResult.previousEquippedFormID;
+                        pendingGripStart.previousWeaponInstanceData =
+                            equipResult.previousEquippedInstanceData;
+                        pendingGripStart.remainingSeconds = 10.0f;
                         _pendingEquippedWeaponPrimaryOnlyGripStart = pendingGripStart;
                     }
                     input_remap_runtime::setHandHeldWeapon(isLeft, false);

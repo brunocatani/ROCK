@@ -3643,8 +3643,6 @@ namespace rock
         };
 
         maybeDumpWeaponAnimNodeDiagnostics(weaponNode, observedKey);
-        maybeFireWorkbenchWeaponReattach();
-
         if (driveRequestedRebuild) {
             ROCK_LOG_WARN(Weapon,
                 "Generated weapon collision drive failure requested rebuild cachedKey={:016X} observedKey={:016X}",
@@ -7541,76 +7539,6 @@ namespace rock
             selfHealAttemptCount,
             selfHealSuccessCount);
         return result;
-    }
-
-    void WeaponCollision::armWorkbenchWeaponReattach()
-    {
-        if (!g_rockConfig.rockDebugWorkbenchWeaponReattach) {
-            return;
-        }
-        // ~1s at 90fps: past the engine's queued full actor 3D reset so the
-        // re-fired attach lands on the settled post-workbench state.
-        _workbenchReattachFramesRemaining.store(90, std::memory_order_release);
-    }
-
-    /*
-     * One-shot post-workbench recovery for the engine-side invisibility
-     * (bDebugWorkbenchWeaponReattach). Diagnostics proved the audited weapon
-     * instances stay fully visible, sanely posed, and in-hand while the
-     * RENDERED copy goes invisible after a workbench mod change until the
-     * player swaps weapons. The swap works because equipping re-fires the
-     * engine's equipped-weapon attach; this does the same directly.
-     *
-     * Ghidra-verified chain (2026-07-04): the WeaponAttach anim event handler
-     * calls 0x140dab8f0(manager = *0x145b279e0, actor, BGSObjectInstance*,
-     * equipIndex) — a wrapper with its own thread marshaling that queues the
-     * type-0x12 attach task (actor vfunc +0x528). Fail-closed on any missing
-     * pointer.
-     */
-    void WeaponCollision::maybeFireWorkbenchWeaponReattach()
-    {
-        if (_workbenchReattachFramesRemaining.load(std::memory_order_acquire) <= 0) {
-            return;
-        }
-        if (!g_rockConfig.rockDebugWorkbenchWeaponReattach) {
-            _workbenchReattachFramesRemaining.store(0, std::memory_order_release);
-            return;
-        }
-        if (_workbenchReattachFramesRemaining.fetch_sub(1, std::memory_order_acq_rel) != 1) {
-            return;
-        }
-
-        auto* player = f4vr::getPlayer();
-        auto* equipData = f4vr::getEquippedItem();
-        auto* weaponForm = equipData ? equipData->item.object : nullptr;
-        auto* instanceData = equipData ? equipData->item.instanceData.get() : nullptr;
-        if (!weaponForm) {
-            ROCK_LOG_WARN(Weapon, "WORKBENCH-REATTACH skipped: no equipped weapon form");
-            return;
-        }
-
-        static REL::Relocation<void**> weaponAttachManager{ REL::Offset(0x5B279E0) };
-        void* manager = *weaponAttachManager;
-        if (!manager) {
-            ROCK_LOG_WARN(Weapon, "WORKBENCH-REATTACH skipped: weapon attach manager singleton is null");
-            return;
-        }
-
-        struct EquippedObjectInstance
-        {
-            RE::TESForm* object{ nullptr };
-            RE::TBO_InstanceData* instanceData{ nullptr };
-        };
-        using QueueEquippedWeaponAttachFn = std::uint64_t (*)(void*, void*, EquippedObjectInstance*, std::uint32_t);
-        static REL::Relocation<QueueEquippedWeaponAttachFn> queueEquippedWeaponAttach{ REL::Offset(0xDAB8F0) };
-
-        EquippedObjectInstance instance{ weaponForm, instanceData };
-        const std::uint64_t result = queueEquippedWeaponAttach(manager, player, &instance, 0);
-        ROCK_LOG_INFO(Weapon,
-            "WORKBENCH-REATTACH fired weapon={:08X} '{}' equipIndex=0 result={:#x}",
-            weaponForm->formID,
-            RE::TESFullName::GetFullName(*weaponForm),
-            result);
     }
 
     void WeaponCollision::publishSampledVelocityAtomic(std::uint32_t publicationIndex, const GeneratedKeyframedBodyDriveQueueResult& queueResult)

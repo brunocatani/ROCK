@@ -241,6 +241,17 @@ namespace rock::offsets
 
     constexpr std::uintptr_t kFunc_NativeVRGrabDrop = 0xF1AB90;
 
+    /*
+     * Equipped-weapon 3D attach task submission. Blind raw-disassembly
+     * verification against Fallout4VR.exe 1.2.72 on 2026-07-22 confirmed
+     * 0x140DAB8F0 submits task type 0x12 and retains both the actor and the
+     * BGSObjectInstance payload. The task re-resolves and exact-compares the
+     * actor's current form/instance before calling Actor::AttachWeapon, so a
+     * stale recovery request fails closed after a later weapon switch.
+     */
+    constexpr std::uintptr_t kFunc_QueueEquippedWeaponAttach = 0xDAB8F0;
+    constexpr std::uintptr_t kData_EquippedWeaponAttachManager = 0x5B279E0;
+
     constexpr std::uintptr_t kFunc_SetBodyMotionProperties = 0x153B2F0;
 
     constexpr std::uintptr_t kFunc_MotionPropertiesLibrary_AddEntry = 0x1767A70;

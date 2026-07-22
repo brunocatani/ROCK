@@ -31,7 +31,7 @@ namespace rock::weapon_equip_transfer
         MissingInventoryList,
         InventoryStackNotFound,
         EquipObjectFailed,
-        EquippedWeaponMismatch,
+        EquipAcceptedPending,
         ActivateRefThenEquipObject,
     };
 
@@ -62,14 +62,21 @@ namespace rock::weapon_equip_transfer
     {
         bool attempted = false;
         bool transferredToInventory = false;
+        // EquipObject accepted the request. Native queued/special-item paths
+        // may publish the equipped identity on a later frame.
         bool success = false;
+        bool committed = false;
         bool matchedInstanceData = false;
         bool usedImmediateEquip = false;
+        bool usedQueuedEquip = false;
         EquipReason reason = EquipReason::NotAttempted;
         std::int32_t count = 1;
         std::uint32_t formID = 0;
+        std::uint32_t previousEquippedFormID = 0;
         std::uint32_t observedEquippedFormID = 0;
         std::uint32_t stackID = 0;
+        std::uintptr_t previousEquippedInstanceData = 0;
+        std::uintptr_t requestedInstanceData = 0;
         RE::TESObjectWEAP* weapon = nullptr;
         // Present only when native pickup did not acquire the released world
         // reference. This keeps failure recovery and release events safe.

@@ -26,32 +26,98 @@ function Require-Text {
     }
 }
 
+function Reject-Text {
+    param(
+        [string]$Path,
+        [string]$Pattern,
+        [string]$Message
+    )
+
+    $fullPath = Join-Path $Root $Path
+    if (-not (Test-Path -LiteralPath $fullPath)) {
+        return
+    }
+
+    $text = Get-Content -Raw -LiteralPath $fullPath
+    if ($text -match $Pattern) {
+        $failures.Add($Message)
+    }
+}
+
 Require-Text 'src/physics-interaction/weapon/WeaponEquipTransfer.h' `
-    'EquippedWeaponMismatch' `
-    'Held weapon equip transfer must expose a distinct mismatch reason.'
+    'EquipAcceptedPending' `
+    'Held weapon equip transfer must represent accepted asynchronous native equips.'
 
 Require-Text 'src/physics-interaction/weapon/WeaponEquipTransfer.cpp' `
-    'const auto equippedAfter = readEquippedWeaponSnapshot\(\);[\s\S]{0,260}observedEquippedFormID[\s\S]{0,260}equippedAfter\.weapon != result\.weapon[\s\S]{0,180}EquipReason::EquippedWeaponMismatch[\s\S]{0,180}return result;[\s\S]{0,180}result\.success = true;' `
-    'Held weapon equip transfer must verify the runtime equipped base form before reporting success.'
+    'const auto equippedAfter = readEquippedWeaponSnapshot\(\);[\s\S]{0,260}observedEquippedFormID[\s\S]{0,260}result\.success = true;[\s\S]{0,260}result\.committed[\s\S]{0,260}EquipReason::EquipAcceptedPending' `
+    'Held weapon equip transfer must distinguish accepted requests from same-frame native commit.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'observedEquipped=\{:08X\}' `
     'Auto-equip logging must include the observed equipped form for mismatch diagnosis.'
 
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'const bool nativeDrawFollowupRequested\s*=\s*equipResult\.success\s*&&\s*requestHeldWeaponNativeDrawFollowup\(player\);' `
-    'The native draw followup must remain gated on verified equip success.'
+Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'requestHeldWeaponNativeDrawFollowup|nativeDrawFollowupRequested' `
+    'ROCK must not race EquipObject with a duplicate DrawWeaponMagicHands request.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'requestHeldWeaponNativeDrawFollowup[\s\S]{0,420}shouldSubmitDrawFollowup\(nativeState\)[\s\S]{0,180}DrawWeaponMagicHands\(true\)' `
-    'The draw followup must use exact FO4VR weapon states instead of broad GetWeaponMagicDrawn semantics.'
+    'equipResult\.success[\s\S]{0,500}_equippedWeaponTransition\.beginHeldTransition[\s\S]{0,500}requestedInstanceData' `
+    'Every accepted held equip must arm the shared exact-instance transition coordinator.'
+
+Require-Text 'src/ROCKMain.cpp' `
+    'updateEquippedWeaponTransition\(\);[\s\S]{0,500}updateAuthoredPrimaryFiringGrip\(\);[\s\S]{0,180}update\(\);' `
+    'Native weapon presentation recovery must run before authored grip and the normal ROCK frame.'
+
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'requestWeaponCollisionRebuildAfterWorkbenchExit[\s\S]{0,400}requestCurrentWeaponReconcile[\s\S]{0,180}WorkbenchExit' `
+    'Workbench exit must use the shared transition coordinator instead of a timer-only collision repair.'
+
+Reject-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' `
+    'maybeFireWorkbenchWeaponReattach|WORKBENCH-REATTACH' `
+    'The superseded debug-only workbench reattach path must stay removed.'
+
+Require-Text 'src/physics-interaction/weapon/NativeEquippedWeaponAttach.cpp' `
+    'RUNTIME_VR_1_2_72[\s\S]{0,700}kExpectedAttachEntry[\s\S]*object->formID != expected\.formID[\s\S]{0,220}instanceData\) != expected\.instanceData[\s\S]{0,900}using QueueAttach = void \(\*\)' `
+    'Native attach recovery must validate FO4VR 1.2.72, exact current identity, verified bytes, and the wrapper void ABI.'
+
+Require-Text 'src/physics-interaction/weapon/EquipVisualBridge.cpp' `
+    'hideModelForNativeStandby[\s\S]*synchronizeNativeInstanceCull[\s\S]*restoreNativeInstanceCull' `
+    'The visual bridge must retain a hidden standby and restore every exact-child cull.'
+
+Require-Text 'src/physics-interaction/weapon/EquipVisualBridge.cpp' `
+    'native-standby-republish-failed[\s\S]{0,700}applyExternalHandWorldTransform' `
+    'The standby bridge must keep the authored finger and hand-transform payload alive until the equipped owner acquires it.'
+
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'const bool nativeWeaponAnimationActive\s*=[\s\S]{0,300}currentNativeAnimationAuthorityFlagsV1\(\)[\s\S]{0,300}GUN_STATE::kReloading[\s\S]{0,700}\.nativeWeaponAnimationActive' `
+    'Equip recovery must yield during provider-owned and base-game reload presentation windows.'
+
+Require-Text 'src/physics-interaction/weapon/EquippedWeaponTransitionCoordinator.cpp' `
+    'nativeWeaponAnimationActive[\s\S]{0,700}completeHandPoseHandoff[\s\S]{0,500}presentModel\s*=\s*false' `
+    'The transition coordinator must park the phantom and release its hand pose during native weapon animation authority.'
+
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'const auto previousNativeInstanceNode\s*=[\s\S]{0,400}equipped_weapon_visual_state::observe[\s\S]*\.previousNativeInstanceNode\s*=[\s\S]{0,180}previousNativeInstanceNode' `
+    'Held equip must carry the pre-request native scene witness into exact-instance reconciliation.'
+
+Require-Text 'src/physics-interaction/weapon/EquippedWeaponVisualState.cpp' `
+    'excludedInstanceAddress[\s\S]*reinterpret_cast<std::uintptr_t>\(node\)\s*!=' `
+    'Visual reconciliation must exclude a stale same-base native scene instance while locating its replacement.'
+
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'pendingPrimaryStartMatchesCurrentWeapon[\s\S]{0,500}matchesExpectedIdentity[\s\S]{0,400}targetWeaponInstanceData[\s\S]*remainingSeconds\s*=\s*10\.0f' `
+    'Deferred manual hand ownership must bind to the accepted instance or a changed native clone and expire if it never commits.'
+
+Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'equipVisualBridgeEnabled' `
+    'Core equip continuity must not depend on an addon authority flag.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'canBeginEquip\(nativeStateBeforeEquip\)[\s\S]{0,900}shouldRearmTrigger\(nativeStateBeforeEquip,\s*triggeredByInput\)[\s\S]*hand\.captureHeldReleaseMotion' `
     'A native weapon transition must defer before physical release and preserve the same-hand trigger request.'
 
 Require-Text 'src/physics-interaction/weapon/WeaponEquipTransfer.h' `
-    'struct\s+EquipInput[\s\S]{0,300}NiPointer<RE::TESObjectREFR>\s+heldRef[\s\S]*struct\s+EquipResult[\s\S]{0,700}NiPointer<RE::TESObjectREFR>\s+untransferredRef' `
+    'struct\s+EquipInput[\s\S]{0,300}NiPointer<RE::TESObjectREFR>\s+heldRef[\s\S]*struct\s+EquipResult[\s\S]{0,1200}NiPointer<RE::TESObjectREFR>\s+untransferredRef' `
     'The equip transaction must own the released reference and return it only when native pickup did not acquire it.'
 
 Require-Text 'src/physics-interaction/weapon/WeaponEquipTransfer.cpp' `

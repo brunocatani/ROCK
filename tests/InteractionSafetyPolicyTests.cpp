@@ -113,7 +113,6 @@ int main()
     using rock::held_weapon_equip_state_policy::EquipReadiness;
     using rock::held_weapon_equip_state_policy::classifyForEquip;
     using rock::held_weapon_equip_state_policy::shouldRearmTrigger;
-    using rock::held_weapon_equip_state_policy::shouldSubmitDrawFollowup;
     ok &= expectEqual("sheathed state permits equip", classifyForEquip(0), EquipReadiness::Stable);
     ok &= expectEqual("drawn state permits replacement equip", classifyForEquip(3), EquipReadiness::Stable);
     ok &= expectEqual("want-draw state defers equip", classifyForEquip(1), EquipReadiness::Transitioning);
@@ -124,11 +123,6 @@ int main()
     ok &= expectTrue("transitioning trigger request rearms", shouldRearmTrigger(4, true));
     ok &= expectFalse("grip-zone request does not need trigger lease", shouldRearmTrigger(4, false));
     ok &= expectFalse("stable trigger request does not rearm", shouldRearmTrigger(0, true));
-    ok &= expectTrue("sheathe request can be reversed by draw followup", shouldSubmitDrawFollowup(4));
-    ok &= expectTrue("sheathing can be reversed by draw followup", shouldSubmitDrawFollowup(5));
-    ok &= expectFalse("drawing does not receive duplicate draw followup", shouldSubmitDrawFollowup(2));
-    ok &= expectFalse("drawn does not receive duplicate draw followup", shouldSubmitDrawFollowup(3));
-    ok &= expectFalse("unknown state receives no draw action", shouldSubmitDrawFollowup(7));
 
     ForceGrabReservations reservations;
     ok &= expectFalse("invalid API hand cannot reserve", reservations.reserve(RockProviderHand::None, 11, 100));

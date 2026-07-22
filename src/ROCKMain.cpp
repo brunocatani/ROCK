@@ -311,6 +311,12 @@ namespace
 
         if (s_physicsInteraction) {
             /*
+             * Native menu/equip animation work completed earlier in this game
+             * frame. Reconcile the exact equipped instance first so authored
+             * grip and collision never consume a stale hidden Weapon graph.
+             */
+            s_physicsInteraction->updateEquippedWeaponTransition();
+            /*
              * hFRIK has already restored its generic one-gun Weapon local.
              * Reconstruct the Bethesda-authored primary grip before ROCK's
              * collision/probe/grip pass so every weapon-relative subsystem

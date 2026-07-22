@@ -4,6 +4,8 @@
 #include "RE/NetImmerse/NiPoint.h"
 #include "RE/NetImmerse/NiSmartPointer.h"
 
+#include "physics-interaction/weapon/EquippedWeaponVisualState.h"
+
 #include <array>
 #include <cstdint>
 
@@ -28,10 +30,13 @@ namespace rock
      * (node named "Weapon %s (%08X)").
      *
      * The bridge re-attaches that orphaned model under the world root, glues
-     * it to the equipping hand's wand transform, blends it toward the pose
-     * the weapon will actually stabilize at, and removes it the moment the
-     * engine's equipped instance node exists and is visible. Every exit is
-     * deterministic: swap detection, equip failure, node loss, or timeout.
+     * it to the equipping hand's wand transform and blends it toward the pose
+     * the weapon will actually stabilize at. Once the exact native instance
+     * is stable, the model is parked off-scene as a bounded standby. If a late
+     * stale WeaponDetach event removes the new native graph, the coordinator
+     * can re-present this model in the same ROCK frame while the exact native
+     * attach is repaired. Every exit restores any native child cull and
+     * deterministically releases both scene references and pose authority.
      *
      * Blend target. begin() re-runs the shared loose-grip resolver against
      * the filewatch-published hFRIK cache. Both hands therefore converge
@@ -71,6 +76,14 @@ namespace rock
             float blendSeconds = 0.15f;
         };
 
+        struct UpdateInput
+        {
+            float deltaSeconds = 0.0f;
+            bool advanceLifetime = true;
+            bool presentModel = true;
+            const equipped_weapon_visual_state::Snapshot* nativeVisual = nullptr;
+        };
+
         EquipVisualBridge() = default;
         ~EquipVisualBridge();
 
@@ -84,8 +97,13 @@ namespace rock
         // simply means the transition looks like it does today.
         bool begin(const BeginInput& input);
 
-        // Per-frame: pose glue + blend, swap detection, timeout.
-        void update(float deltaSeconds);
+        // Per-frame pose glue and exact-native-instance presentation handoff.
+        // The coordinator may keep the detached model as a hidden standby and
+        // re-present it in the same frame that a late native detach is seen.
+        void update(const UpdateInput& input);
+
+        // Ends the bounded late-detach watchdog and releases the hidden model.
+        void releaseStandbyModel(const char* reason);
 
         // Detach from the (still valid) scene graph and release.
         void shutdown();
@@ -95,6 +113,9 @@ namespace rock
         void abandonSceneGraph();
 
         [[nodiscard]] bool isActive() const noexcept { return _active; }
+        [[nodiscard]] bool hasStandbyModel() const noexcept { return _model != nullptr; }
+        [[nodiscard]] bool isModelPresented() const noexcept { return _modelPresented; }
+        [[nodiscard]] bool ownsNativeInstanceCull(const RE::NiAVObject* node) const noexcept;
         [[nodiscard]] bool isHandPoseHandoffActive() const noexcept { return _handPoseHandoffActive; }
         [[nodiscard]] bool handPoseHandoffIsLeft() const noexcept { return _isLeftHand; }
         [[nodiscard]] std::uint32_t weaponBaseFormID() const noexcept { return _weaponFormID; }
@@ -109,11 +130,17 @@ namespace rock
         // the model is still parented or the world root is unavailable.
         bool tryAttachToWorldRoot();
         bool publishHandPoseHandoff();
+        void synchronizeNativeInstanceCull(
+            const equipped_weapon_visual_state::Snapshot* nativeVisual,
+            bool bridgePresented);
+        void restoreNativeInstanceCull();
+        void hideModelForNativeStandby(const char* reason);
         void clearModel(const char* reason, bool detachFromParent);
-        void clearHandPoseHandoff(const char* reason, bool logCompletion);
-        void clear(const char* reason, bool detachFromParent);
+        void clearHandPoseHandoff(const char* reason, bool logCompletion, bool discardPayload);
+        void clear(const char* reason, bool detachFromParent, bool restoreNativeCull = true);
 
         RE::NiPointer<RE::NiAVObject> _model;
+        RE::NiPointer<RE::NiAVObject> _culledNativeInstance;
         // Non-owning; validated each frame against _model->parent before use.
         RE::NiNode* _parent = nullptr;
         RE::NiTransform _modelInHandLocal{};
@@ -125,11 +152,14 @@ namespace rock
         std::array<RE::NiTransform, 15> _handoffFingerLocalTransforms{};
         std::uint16_t _handoffFingerLocalTransformMask = 0;
         float _elapsedSeconds = 0.0f;
+        float _lifetimeSeconds = 0.0f;
         float _blendSeconds = 0.15f;
         float _timeoutSeconds = 2.0f;
         std::uint32_t _weaponFormID = 0;
-        char _instanceNameToken[16] = {};
         bool _isLeftHand = false;
+        bool _modelPresented = false;
+        bool _culledNativeInstanceWasVisible = false;
+        bool _handPosePayloadAvailable = false;
         bool _handPoseHandoffActive = false;
         bool _handPoseBlockEngaged = false;
         bool _active = false;

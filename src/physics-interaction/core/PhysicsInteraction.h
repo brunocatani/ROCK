@@ -28,10 +28,10 @@
 #include "physics-interaction/input/GrabInputIntentPolicy.h"
 #include "physics-interaction/native/PhysicsStepDriveCoordinator.h"
 #include "physics-interaction/stash/ShoulderStashDetector.h"
-#include "physics-interaction/weapon/EquipVisualBridge.h"
 #include "physics-interaction/weapon/AuthoredPrimaryFiringGrip.h"
 #include "physics-interaction/weapon/EquippedWeaponDropMomentum.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
+#include "physics-interaction/weapon/EquippedWeaponTransitionCoordinator.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 #include "physics-interaction/weapon/WeaponCollision.h"
 #include "physics-interaction/weapon/WeaponDebug.h"
@@ -99,6 +99,10 @@ namespace rock
             std::uint32_t& outNativeOverlayIndex) const;
 
         void update();
+
+        // Observes and repairs native equipped-weapon presentation before any
+        // weapon-relative ROCK authority reads the first-person graph.
+        void updateEquippedWeaponTransition();
 
         // Runs before the normal ROCK interaction frame so weapon-relative
         // consumers see one authored primary-grip frame. Runtime eligibility
@@ -365,7 +369,7 @@ namespace rock
 
         WeaponCollision _weaponCollision;
 
-        EquipVisualBridge _equipVisualBridge;
+        EquippedWeaponTransitionCoordinator _equippedWeaponTransition;
 
         PhysicsStepDriveCoordinator _generatedBodyStepDrive;
         // Written only by the post-solve callback and sampled by the main-frame
@@ -468,6 +472,15 @@ namespace rock
         {
             bool pending{ false };
             bool isLeft{ false };
+            // Zero means "the current weapon" (menu reconciliation). Held
+            // equip requests bind these fields to the accepted target and its
+            // pre-request baseline so a cloned instance may be recognized
+            // without ever starting manual ownership on an old same-base gun.
+            std::uint32_t targetWeaponFormID{ 0 };
+            std::uintptr_t targetWeaponInstanceData{ 0 };
+            std::uint32_t previousWeaponFormID{ 0 };
+            std::uintptr_t previousWeaponInstanceData{ 0 };
+            float remainingSeconds{ 0.0f };
             bool hasFiringHandWeaponLocal{ false };
             RE::NiTransform firingHandWeaponLocal{};
             bool hasFiringGripWeaponLocal{ false };

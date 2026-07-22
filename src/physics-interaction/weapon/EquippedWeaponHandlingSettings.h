@@ -14,7 +14,6 @@ namespace rock
         bool gripZoneHoverHapticsEnabled{ false };
         bool equippedWeaponShoulderStashEnabled{ false };
         bool pipboyTriggerHandEquipEnabled{ false };
-        bool equipVisualBridgeEnabled{ false };
 
         float gripZoneEquipRadiusGameUnits{ 3.0f };
         float gripZoneEquipSettleSeconds{ 0.15f };
@@ -71,9 +70,6 @@ namespace rock
             provider::RockProviderEquippedWeaponHandlingFlagV1::EquippedWeaponShoulderStash);
         settings.pipboyTriggerHandEquipEnabled = enabled(
             provider::RockProviderEquippedWeaponHandlingFlagV1::PipboyTriggerHandEquip);
-        settings.equipVisualBridgeEnabled = enabled(
-            provider::RockProviderEquippedWeaponHandlingFlagV1::EquipVisualBridge);
-
         settings.gripZoneEquipRadiusGameUnits = request->gripZoneEquipRadiusGameUnits;
         settings.gripZoneEquipSettleSeconds = request->gripZoneEquipSettleSeconds;
         settings.firingGripReattachRadiusGameUnits = request->firingGripReattachRadiusGameUnits;

@@ -2,8 +2,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
-#include <cstring>
 
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
@@ -20,7 +18,7 @@ namespace rock
     {
         constexpr std::uint64_t kAppCulledFlag = 0x1ull;
         constexpr int kSubtreeWalkBudget = 1024;
-        constexpr int kInstanceSearchDepth = 4;
+        constexpr float kMinimumSafetyLifetimeSeconds = 12.0f;
         constexpr const char* kHandPoseHandoffTag = "ROCK_EquipPoseBridge";
         constexpr const char* kRightHandPoseBlockTag = "ROCK_EquipPoseBridgeRight";
         constexpr const char* kLeftHandPoseBlockTag = "ROCK_EquipPoseBridgeLeft";
@@ -92,12 +90,6 @@ namespace rock
             return isLeftHand ? f4vr::getLeftHandNode() : f4vr::getRightHandNode();
         }
 
-        [[nodiscard]] RE::NiNode* resolveWeaponBone()
-        {
-            auto* firstPersonSkeleton = f4vr::getFirstPersonSkeleton();
-            return firstPersonSkeleton ? f4vr::findNode(firstPersonSkeleton, "Weapon") : nullptr;
-        }
-
         /*
          * DetachHavok destroyed the loose ref's physics during pickup; any
          * collisionObject left on the orphaned graph is a dangling pointer the
@@ -120,36 +112,6 @@ namespace rock
                     clearCollisionObjectsRecursive(child.get(), budget);
                 }
             }
-        }
-
-        /*
-         * The engine names the built biped-slot weapon 3D "Weapon %s (%08X)"
-         * (builder 0x1401c8150); matching the "(%08X)" suffix is exact per
-         * weapon form and independent of the %s instance display name.
-         */
-        [[nodiscard]] RE::NiAVObject* findInstanceNodeByToken(RE::NiAVObject* node, const char* token, int depth, int& budget)
-        {
-            if (!node || depth < 0 || budget <= 0) {
-                return nullptr;
-            }
-            --budget;
-            const char* name = node->name.c_str();
-            if (name && *name && std::strstr(name, token)) {
-                return node;
-            }
-            auto* asNode = node->IsNode();
-            if (!asNode) {
-                return nullptr;
-            }
-            for (const auto& child : asNode->children) {
-                if (!child) {
-                    continue;
-                }
-                if (auto* match = findInstanceNodeByToken(child.get(), token, depth - 1, budget)) {
-                    return match;
-                }
-            }
-            return nullptr;
         }
 
         // Blend translate + rotation toward the target; the model keeps its own
@@ -260,11 +222,12 @@ namespace rock
 
         _model = input.worldModel;
         _weaponFormID = input.weaponFormID;
-        std::snprintf(_instanceNameToken, sizeof(_instanceNameToken), "(%08X)", input.weaponFormID);
         _isLeftHand = input.isLeftHand;
         _elapsedSeconds = 0.0f;
+        _lifetimeSeconds = 0.0f;
         _blendSeconds = input.blendSeconds;
-        _timeoutSeconds = input.timeoutSeconds;
+        _timeoutSeconds = (std::max)(input.timeoutSeconds, kMinimumSafetyLifetimeSeconds);
+        _modelPresented = true;
         _active = true;
 
         if (authoredLookup.found &&
@@ -274,9 +237,10 @@ namespace rock
                 authoredLookup.rightFiringFingerPose,
                 _handoffFingerLocalTransforms,
                 _handoffFingerLocalTransformMask)) {
+            _handPosePayloadAvailable = true;
             _handPoseHandoffActive = true;
             if (!publishHandPoseHandoff()) {
-                clearHandPoseHandoff("initial-publish-failed", false);
+                clearHandPoseHandoff("initial-publish-failed", false, false);
             } else if (_hasFiringHandWeaponLocal) {
                 const RE::NiTransform handWorld = transform_math::composeTransforms(
                     model->world,
@@ -287,7 +251,7 @@ namespace rock
                         handFromBool(_isLeftHand),
                         handWorld,
                         kHandPoseHandoffPriority)) {
-                    clearHandPoseHandoff("initial-hand-transform-publish-failed", false);
+                    clearHandPoseHandoff("initial-hand-transform-publish-failed", false, false);
                 }
             }
         }
@@ -365,46 +329,73 @@ namespace rock
             kHandPoseHandoffPriority);
     }
 
-    void EquipVisualBridge::update(float deltaSeconds)
+    void EquipVisualBridge::update(const UpdateInput& input)
     {
         if (!_active) {
             return;
         }
 
-        _elapsedSeconds += (std::max)(0.0f, deltaSeconds);
-        if (_elapsedSeconds >= _timeoutSeconds) {
-            clear("timeout", _parent != nullptr);
-            return;
-        }
-
-        auto* weaponBone = resolveWeaponBone();
-        RE::NiAVObject* equippedInstance = nullptr;
-        if (weaponBone) {
-            int budget = kSubtreeWalkBudget;
-            equippedInstance = findInstanceNodeByToken(weaponBone, _instanceNameToken, kInstanceSearchDepth, budget);
-        }
-        const bool equippedInstanceVisible =
-            equippedInstance &&
-            f4vr::isNodeVisible(weaponBone) &&
-            f4vr::isNodeVisible(equippedInstance);
-
-        RE::NiTransform handoffWeaponWorld{};
-        bool hasHandoffWeaponWorld = false;
-        if (equippedInstanceVisible && isFiniteTransform(weaponBone->world)) {
-            handoffWeaponWorld = weaponBone->world;
-            hasHandoffWeaponWorld = true;
-            if (_model) {
-                clearModel("equipped-3d-visible", _parent != nullptr);
+        const float frameSeconds = (std::max)(0.0f, input.deltaSeconds);
+        if (input.advanceLifetime) {
+            _lifetimeSeconds += frameSeconds;
+            if (_lifetimeSeconds >= _timeoutSeconds) {
+                clear("safety-timeout", _parent != nullptr);
+                return;
             }
         }
 
+        const bool wasModelPresented = _modelPresented;
+        _modelPresented = input.presentModel && _model != nullptr;
+        if (_modelPresented && !wasModelPresented) {
+            // A late native detach begins a fresh bounded recovery period. The
+            // coordinator remains the outer watchdog; this only prevents the
+            // bridge's independent safety lease from expiring mid-repair.
+            _lifetimeSeconds = 0.0f;
+        }
+        synchronizeNativeInstanceCull(input.nativeVisual, _modelPresented);
+
+        if (!_modelPresented) {
+            hideModelForNativeStandby("native-stable");
+            if (_handPoseHandoffActive) {
+                if (!publishHandPoseHandoff()) {
+                    clearHandPoseHandoff("native-standby-republish-failed", true, false);
+                } else if (_hasFiringHandWeaponLocal &&
+                           input.nativeVisual &&
+                           input.nativeVisual->weaponRoot &&
+                           isFiniteTransform(input.nativeVisual->weaponRoot->world)) {
+                    const RE::NiTransform handWorld = transform_math::composeTransforms(
+                        input.nativeVisual->weaponRoot->world,
+                        _firingHandWeaponLocal);
+                    if (!isFiniteTransform(handWorld) ||
+                        !frik_visual_authority::applyExternalHandWorldTransform(
+                            kHandPoseHandoffTag,
+                            handFromBool(_isLeftHand),
+                            handWorld,
+                            kHandPoseHandoffPriority)) {
+                        clearHandPoseHandoff("native-standby-hand-transform-failed", true, false);
+                    }
+                }
+            }
+            if (!_model && !_handPoseHandoffActive) {
+                clear("completed", false);
+            }
+            return;
+        }
+
+        _elapsedSeconds += frameSeconds;
+        if (_handPosePayloadAvailable && !_handPoseHandoffActive) {
+            _handPoseHandoffActive = true;
+        }
+
+        RE::NiTransform handoffWeaponWorld{};
+        bool hasHandoffWeaponWorld = false;
         auto* model = _model.get();
         if (model && !_parent) {
             /*
-             * Waiting for the engine's (rare, cross-thread queued) pickup
-             * detach. The loose model is still rendered in-world, so there is
-             * no visual break to cover yet. Its live world frame remains the
-             * exact hand-pose target while we wait.
+             * Before ActivateRef's removal has completed, the retained graph
+             * is still visible under its original parent. Once it becomes an
+             * orphan, ROCK moves it under the world root without stealing a
+             * live scene node.
              */
             if (model->parent) {
                 if (isFiniteTransform(model->world)) {
@@ -416,7 +407,6 @@ namespace rock
                 return;
             }
         } else if (model && model->parent != _parent) {
-            // Engine (or a load) re-owned or dropped the node: abandon, never fight it.
             clear("parent-changed", false);
             return;
         }
@@ -431,8 +421,6 @@ namespace rock
             }
 
             RE::NiTransform desiredWorld = transform_math::composeTransforms(handNode->world, _modelInHandLocal);
-            // Blend toward the authority-selected firing relation. No valid
-            // relation means a first-observation fallback to the engine bone.
             RE::NiTransform blendTarget{};
             bool haveBlendTarget = false;
             if (_hasFiringHandWeaponLocal) {
@@ -443,11 +431,9 @@ namespace rock
                     blendTarget = transform_math::composeTransforms(rootFlattenedHandWorld, transform_math::invertTransform(_firingHandWeaponLocal));
                     haveBlendTarget = isFiniteTransform(blendTarget);
                 }
-            } else if (weaponBone && isFiniteTransform(weaponBone->world)) {
-                // First-ever uncaptured weapon: the native graph will establish
-                // ROCK's exact relation after equip. Until then, target only the
-                // engine-owned bone; never borrow another weapon's live local.
-                blendTarget = weaponBone->world;
+            } else if (input.nativeVisual && input.nativeVisual->weaponRoot &&
+                       isFiniteTransform(input.nativeVisual->weaponRoot->world)) {
+                blendTarget = input.nativeVisual->weaponRoot->world;
                 haveBlendTarget = true;
             }
             if (haveBlendTarget && _blendSeconds > 0.0001f) {
@@ -467,7 +453,7 @@ namespace rock
 
         if (_handPoseHandoffActive) {
             if (!publishHandPoseHandoff()) {
-                clearHandPoseHandoff("republish-failed", true);
+                clearHandPoseHandoff("republish-failed", true, false);
             } else if (_hasFiringHandWeaponLocal && hasHandoffWeaponWorld) {
                 const RE::NiTransform handWorld = transform_math::composeTransforms(
                     handoffWeaponWorld,
@@ -478,14 +464,81 @@ namespace rock
                         handFromBool(_isLeftHand),
                         handWorld,
                         kHandPoseHandoffPriority)) {
-                    clearHandPoseHandoff("hand-transform-publish-failed", true);
+                    clearHandPoseHandoff("hand-transform-publish-failed", true, false);
                 }
             }
         }
+    }
 
-        if (!_model && !_handPoseHandoffActive) {
-            clear("completed", false);
+    bool EquipVisualBridge::ownsNativeInstanceCull(const RE::NiAVObject* node) const noexcept
+    {
+        return node && _culledNativeInstance.get() == node;
+    }
+
+    void EquipVisualBridge::synchronizeNativeInstanceCull(
+        const equipped_weapon_visual_state::Snapshot* nativeVisual,
+        const bool bridgePresented)
+    {
+        auto* exactInstance = nativeVisual ? nativeVisual->exactInstance : nullptr;
+        if (!bridgePresented || !exactInstance) {
+            restoreNativeInstanceCull();
+            return;
         }
+
+        if (_culledNativeInstance && _culledNativeInstance.get() != exactInstance) {
+            restoreNativeInstanceCull();
+        }
+        if (_culledNativeInstance) {
+            return;
+        }
+        if (!equipped_weapon_visual_state::isLocallyVisible(exactInstance)) {
+            return;
+        }
+
+        _culledNativeInstance.reset(exactInstance);
+        _culledNativeInstanceWasVisible = true;
+        equipped_weapon_visual_state::setLocallyVisible(exactInstance, false);
+        f4vr::updateDown(exactInstance, true);
+    }
+
+    void EquipVisualBridge::restoreNativeInstanceCull()
+    {
+        auto* exactInstance = _culledNativeInstance.get();
+        if (exactInstance && _culledNativeInstanceWasVisible) {
+            equipped_weapon_visual_state::setLocallyVisible(exactInstance, true);
+            f4vr::updateDown(exactInstance, true);
+        }
+        _culledNativeInstance.reset();
+        _culledNativeInstanceWasVisible = false;
+    }
+
+    void EquipVisualBridge::hideModelForNativeStandby(const char* reason)
+    {
+        auto* model = _model.get();
+        if (!model || !_parent) {
+            return;
+        }
+        if (model->parent != _parent) {
+            clear(reason ? reason : "standby-parent-changed", false);
+            return;
+        }
+
+        RE::NiPointer<RE::NiAVObject> detached;
+        _parent->DetachChild(model, detached);
+        _parent = nullptr;
+        ROCK_LOG_DEBUG(Weapon,
+            "EquipVisualBridge model parked as recovery standby reason={} formID={:08X} elapsed={:.3f}s",
+            reason ? reason : "unknown",
+            _weaponFormID,
+            _elapsedSeconds);
+    }
+
+    void EquipVisualBridge::releaseStandbyModel(const char* reason)
+    {
+        if (!_active) {
+            return;
+        }
+        clear(reason ? reason : "watchdog-finished", _parent != nullptr);
     }
 
     void EquipVisualBridge::shutdown()
@@ -495,7 +548,7 @@ namespace rock
 
     void EquipVisualBridge::abandonSceneGraph()
     {
-        clear("world-loss", false);
+        clear("world-loss", false, false);
     }
 
     void EquipVisualBridge::completeHandPoseHandoff(const char* reason)
@@ -504,10 +557,7 @@ namespace rock
             return;
         }
 
-        clearHandPoseHandoff(reason ? reason : "equipped-pose-acquired", true);
-        if (!_model) {
-            clear("handoff-completed", false);
-        }
+        clearHandPoseHandoff(reason ? reason : "equipped-pose-acquired", true, false);
     }
 
     void EquipVisualBridge::clearModel(const char* reason, const bool detachFromParent)
@@ -526,9 +576,13 @@ namespace rock
         _model.reset();
         _parent = nullptr;
         _modelInHandLocal = {};
+        _modelPresented = false;
     }
 
-    void EquipVisualBridge::clearHandPoseHandoff(const char* reason, const bool logCompletion)
+    void EquipVisualBridge::clearHandPoseHandoff(
+        const char* reason,
+        const bool logCompletion,
+        const bool discardPayload)
     {
         const bool wasActive = _handPoseHandoffActive || _handPoseBlockEngaged;
         const auto hand = handFromBool(_isLeftHand);
@@ -546,17 +600,29 @@ namespace rock
                 reason ? reason : "unknown", _weaponFormID, _isLeftHand ? "left" : "right", _elapsedSeconds);
         }
 
-        _handoffFingerLocalTransforms = {};
-        _handoffFingerLocalTransformMask = 0;
         _handPoseHandoffActive = false;
         _handPoseBlockEngaged = false;
+        if (discardPayload) {
+            _handoffFingerLocalTransforms = {};
+            _handoffFingerLocalTransformMask = 0;
+            _handPosePayloadAvailable = false;
+        }
     }
 
-    void EquipVisualBridge::clear(const char* reason, bool detachFromParent)
+    void EquipVisualBridge::clear(
+        const char* reason,
+        const bool detachFromParent,
+        const bool restoreNativeCull)
     {
         const bool wasActive = _active;
+        if (restoreNativeCull) {
+            restoreNativeInstanceCull();
+        } else {
+            _culledNativeInstance.reset();
+            _culledNativeInstanceWasVisible = false;
+        }
         clearModel(reason, detachFromParent);
-        clearHandPoseHandoff(reason, false);
+        clearHandPoseHandoff(reason, false, true);
 
         if (wasActive) {
             ROCK_LOG_INFO(Weapon, "EquipVisualBridge cleared reason={} formID={:08X} elapsed={:.3f}s",
@@ -566,9 +632,10 @@ namespace rock
         _firingHandWeaponLocal = {};
         _hasFiringHandWeaponLocal = false;
         _elapsedSeconds = 0.0f;
+        _lifetimeSeconds = 0.0f;
         _weaponFormID = 0;
-        _instanceNameToken[0] = '\0';
         _isLeftHand = false;
+        _modelPresented = false;
         _active = false;
     }
 }

@@ -124,16 +124,6 @@ namespace rock
 
         void requestWorkbenchExitRebuild();
 
-        /*
-         * Armed only by the workbench menu-close sink (never by internal
-         * rebuild requests such as the OMOD self-heal, which would loop:
-         * reattach -> fresh tree -> heal -> rebuild -> reattach). Fires the
-         * engine's own equipped-weapon attach once, a short delay after the
-         * menu closes, to recover the rendered weapon copy the engine's
-         * post-workbench actor reset leaves invisible.
-         */
-        void armWorkbenchWeaponReattach();
-
         bool hasWeaponBody() const;
 
         std::uint32_t getWeaponBodyCount() const;
@@ -521,11 +511,6 @@ namespace rock
          * and legitimately re-opens healing.
          */
         std::unordered_set<std::uint64_t> _omodSelfHealAttempted;
-        // Frames until the one-shot post-workbench weapon reattach fires; 0 = disarmed.
-        std::atomic<int> _workbenchReattachFramesRemaining{ 0 };
-
-        void maybeFireWorkbenchWeaponReattach();
-
         int _posLogCounter{ 0 };
 
         float _cachedConvexRadius{ -1.0f };

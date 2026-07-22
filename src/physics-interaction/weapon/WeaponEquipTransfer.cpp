@@ -213,8 +213,8 @@ namespace rock::weapon_equip_transfer
             return "inventory-stack-not-found";
         case EquipReason::EquipObjectFailed:
             return "equip-object-failed";
-        case EquipReason::EquippedWeaponMismatch:
-            return "equipped-weapon-mismatch";
+        case EquipReason::EquipAcceptedPending:
+            return "equip-accepted-pending";
         case EquipReason::ActivateRefThenEquipObject:
             return "activate-ref-equip-object";
         default:
@@ -323,6 +323,12 @@ namespace rock::weapon_equip_transfer
 
         const auto expectedInstanceData = resolveReferenceInstanceData(heldRef);
         result.attempted = true;
+        const auto equippedBeforeTransfer = readEquippedWeaponSnapshot();
+        result.previousEquippedFormID = equippedBeforeTransfer.weapon ?
+            equippedBeforeTransfer.weapon->GetFormID() :
+            0;
+        result.previousEquippedInstanceData = reinterpret_cast<std::uintptr_t>(
+            equippedBeforeTransfer.instanceData);
         /*
          * Capture the loose 3D before ActivateRef. The pickup path detaches it
          * from the scene graph synchronously inside this call (DetachHavok +
@@ -360,15 +366,19 @@ namespace rock::weapon_equip_transfer
 
         result.stackID = stack.stackID;
         result.matchedInstanceData = stack.matchedInstanceData;
+        result.requestedInstanceData = reinterpret_cast<std::uintptr_t>(
+            stack.instanceData.get());
         RE::BGSObjectInstance objectInstance(result.weapon, stack.instanceData.get());
         /*
          * a_queueEquip=false takes the engine's immediate DoEquip inside this
          * call (raw disasm: EquipObject 0x140e6fea0 stores the flag at
          * params+0x18, 0x140e71920 branches on it). Weapons on the player
-         * otherwise always defer through the middleProcess pending-equip list,
-         * adding visible frames before the draw can start. A keyword-gated
-         * engine pre-check can veto the immediate path for special items, so
-         * fall back to the legacy queued call when the immediate one fails.
+         * otherwise defer through the middleProcess pending-equip list, adding
+         * visible frames before the draw can start. Preserve the legacy queued
+         * submission when the immediate request is not accepted, but do not
+         * treat either call's boolean as proof that the equipped identity was
+         * published synchronously; the transition coordinator observes that
+         * commit on later frames for native special-item paths.
          */
         bool equipped = equipManager->EquipObject(player,
             objectInstance,
@@ -392,6 +402,7 @@ namespace rock::weapon_equip_transfer
                 input.playSounds,
                 true,
                 false);
+            result.usedQueuedEquip = equipped;
         }
         if (!equipped) {
             result.reason = EquipReason::EquipObjectFailed;
@@ -400,13 +411,12 @@ namespace rock::weapon_equip_transfer
 
         const auto equippedAfter = readEquippedWeaponSnapshot();
         result.observedEquippedFormID = equippedAfter.weapon ? equippedAfter.weapon->GetFormID() : 0;
-        if (equippedAfter.weapon != result.weapon) {
-            result.reason = EquipReason::EquippedWeaponMismatch;
-            return result;
-        }
-
         result.success = true;
-        result.reason = EquipReason::ActivateRefThenEquipObject;
+        result.committed = equippedAfter.weapon == result.weapon &&
+            (!stack.instanceData || equippedAfter.instanceData == stack.instanceData.get());
+        result.reason = result.committed ?
+            EquipReason::ActivateRefThenEquipObject :
+            EquipReason::EquipAcceptedPending;
         return result;
     }
 

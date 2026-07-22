@@ -366,6 +366,9 @@ namespace rock::provider
         FiringGripProximitySupport = 1u << 5,
         EquippedWeaponShoulderStash = 1u << 6,
         PipboyTriggerHandEquip = 1u << 7,
+        // Retained in V1 for source/ABI compatibility. The visual bridge and
+        // native attach recovery are now unconditional ROCK correctness
+        // services; addons may still supply the bounded blend/timeout tuning.
         EquipVisualBridge = 1u << 8,
     };
 
