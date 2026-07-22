@@ -57,8 +57,24 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'Auto-equip logging must include the observed equipped form for mismatch diagnosis.'
 
 Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'requestHeldWeaponNativeDrawFollowup|nativeDrawFollowupRequested' `
-    'ROCK must not race EquipObject with a duplicate DrawWeaponMagicHands request.'
+    'DrawWeaponMagicHands\s*\(\s*true' `
+    'Held equip must not submit an uncoordinated native draw from the transfer callsite.'
+
+Require-Text 'src/physics-interaction/weapon/NativeEquippedWeaponDraw.cpp' `
+    'object->formID != expected\.formID[\s\S]{0,300}instanceData\) != expected\.instanceData[\s\S]{0,300}equipIndex\.index != expected\.equipIndex[\s\S]{0,1200}DrawWeaponMagicHands\(true\)' `
+    'Native draw recovery must revalidate the exact current form, instance, and equip index before submission.'
+
+Require-Text 'src/physics-interaction/weapon/EquippedWeaponTransitionPolicy.h' `
+    'kMaximumDrawAttempts[\s\S]{0,10000}state\.drawAttempts < kMaximumDrawAttempts[\s\S]{0,500}RepairAction::RequestDraw[\s\S]{0,300}RepairAction::DrawExhausted' `
+    'Native draw recovery must remain bounded inside the shared transition policy.'
+
+Require-Text 'src/physics-interaction/weapon/EquippedWeaponTransitionCoordinator.cpp' `
+    'RepairAction::RequestDraw[\s\S]{0,500}native_equipped_weapon_draw::submitExactCurrent' `
+    'Every draw retry must pass through the exact-identity transition coordinator.'
+
+Require-Text 'src/physics-interaction/weapon/WeaponEquipTransfer.cpp' `
+    'inventoryBeforeTransfer\s*=\s*captureWeaponStacks[\s\S]{0,1800}ActivateRef\([\s\S]{0,1800}untransferredRef\.reset\(\);[\s\S]{0,500}inventoryAfterTransfer\s*=\s*captureWeaponStacks[\s\S]{0,500}selectTransferredStack' `
+    'Held pickup must select the acquired stack from a pre/post inventory differential.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'equipResult\.success[\s\S]{0,500}_equippedWeaponTransition\.beginHeldTransition[\s\S]{0,500}requestedInstanceData' `
@@ -117,7 +133,7 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'A native weapon transition must defer before physical release and preserve the same-hand trigger request.'
 
 Require-Text 'src/physics-interaction/weapon/WeaponEquipTransfer.h' `
-    'struct\s+EquipInput[\s\S]{0,300}NiPointer<RE::TESObjectREFR>\s+heldRef[\s\S]*struct\s+EquipResult[\s\S]{0,1200}NiPointer<RE::TESObjectREFR>\s+untransferredRef' `
+    'struct\s+EquipInput[\s\S]{0,300}NiPointer<RE::TESObjectREFR>\s+heldRef[\s\S]*struct\s+EquipResult[\s\S]{0,2000}NiPointer<RE::TESObjectREFR>\s+untransferredRef' `
     'The equip transaction must own the released reference and return it only when native pickup did not acquire it.'
 
 Require-Text 'src/physics-interaction/weapon/WeaponEquipTransfer.cpp' `

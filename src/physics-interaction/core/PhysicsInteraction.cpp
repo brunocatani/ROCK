@@ -2030,8 +2030,9 @@ namespace rock
                 .localSkeletonReady = runtime.localSkeletonReady,
                 .menuBlocking = runtime.localMenuBlocking,
                 .compatibilityBlocking = runtime.compatibilityConfigBlocking,
-                .weaponExactlyDrawn =
-                    player && player->weaponState == RE::WEAPON_STATE::kDrawn,
+                .nativeWeaponState = player ?
+                    static_cast<std::uint32_t>(player->weaponState) :
+                    (std::numeric_limits<std::uint32_t>::max)(),
                 .nativeWeaponAnimationActive = nativeWeaponAnimationActive,
             });
     }
@@ -8721,7 +8722,11 @@ namespace rock
                         .playSounds = false,
                     });
                     const std::uint32_t nativeStateAfterEquip = static_cast<std::uint32_t>(player->weaponState);
-                    auto* immediateWeaponNode = equipResult.committed ? resolveEquippedWeaponInteractionNodeDirect() : nullptr;
+                    const auto immediateVisual = equipResult.committed && equipResult.weapon ?
+                        equipped_weapon_visual_state::observe(
+                            equipResult.weapon->formID,
+                            reinterpret_cast<std::uintptr_t>(previousNativeInstanceNode)) :
+                        equipped_weapon_visual_state::Snapshot{};
                     bool equipBridgeStarted = false;
                     if (equipResult.success) {
                         const auto transitionSource = triggeredByInput ?
@@ -8760,7 +8765,7 @@ namespace rock
                     }
                     dispatchHeldObjectEventByFormID(GrabEventType::Released, postEquipRef, heldFormID, primaryBodyId);
                     ROCK_LOG_INFO(Hand,
-                        "{} hand {} held weapon equip formID={:08X} accepted={} committed={} equipReason={} count={} stack={} instanceMatch={} requestedInstance={:#x} transferred={} observedEquipped={:08X} weaponState={}({})->{}({}) immediateWeaponNode={} immediateEquip={} queuedEquip={} visualBridge={}",
+                        "{} hand {} held weapon equip formID={:08X} accepted={} committed={} equipReason={} count={} stack={} stackEvidence={} stacks={}->{} mutations={} instanceMatch={} requestedInstance={:#x} transferred={} observedEquipped={:08X} weaponState={}({})->{}({}) nativeInstance={} nativeAncestorsVisible={} nativeLocalVisible={} immediateEquip={} queuedEquip={} visualBridge={}",
                         hand.handName(),
                         logAction ? logAction : "requested",
                         heldFormID,
@@ -8769,6 +8774,11 @@ namespace rock
                         weapon_equip_transfer::equipReasonName(equipResult.reason),
                         equipResult.count,
                         equipResult.stackID,
+                        weapon_inventory_stack_selection_policy::evidenceName(
+                            equipResult.stackSelectionEvidence),
+                        equipResult.preTransferStackCount,
+                        equipResult.postTransferStackCount,
+                        equipResult.stackMutationCandidateCount,
                         equipResult.matchedInstanceData ? "yes" : "no",
                         equipResult.requestedInstanceData,
                         equipResult.transferredToInventory ? "yes" : "no",
@@ -8777,7 +8787,9 @@ namespace rock
                         held_weapon_equip_state_policy::nativeWeaponStateName(nativeStateBeforeEquip),
                         nativeStateAfterEquip,
                         held_weapon_equip_state_policy::nativeWeaponStateName(nativeStateAfterEquip),
-                        immediateWeaponNode ? "yes" : "no",
+                        immediateVisual.exactInstance ? "yes" : "no",
+                        immediateVisual.ancestorPathVisible ? "yes" : "no",
+                        immediateVisual.instanceLocallyVisible ? "yes" : "no",
                         equipResult.usedImmediateEquip ? "yes" : "no",
                         equipResult.usedQueuedEquip ? "yes" : "no",
                         equipBridgeStarted ? "yes" : "no");

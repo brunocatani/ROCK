@@ -6,6 +6,8 @@
 #include "RE/NetImmerse/NiPoint.h"
 #include "RE/NetImmerse/NiSmartPointer.h"
 
+#include "physics-interaction/weapon/WeaponInventoryStackSelectionPolicy.h"
+
 #include <cstdint>
 
 namespace RE
@@ -75,8 +77,13 @@ namespace rock::weapon_equip_transfer
         std::uint32_t previousEquippedFormID = 0;
         std::uint32_t observedEquippedFormID = 0;
         std::uint32_t stackID = 0;
+        std::uint32_t preTransferStackCount = 0;
+        std::uint32_t postTransferStackCount = 0;
+        std::uint32_t stackMutationCandidateCount = 0;
         std::uintptr_t previousEquippedInstanceData = 0;
         std::uintptr_t requestedInstanceData = 0;
+        weapon_inventory_stack_selection_policy::Evidence stackSelectionEvidence =
+            weapon_inventory_stack_selection_policy::Evidence::None;
         RE::TESObjectWEAP* weapon = nullptr;
         // Present only when native pickup did not acquire the released world
         // reference. This keeps failure recovery and release events safe.

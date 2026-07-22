@@ -19,6 +19,15 @@ int main()
     using namespace rock::equipped_weapon_transition_policy;
 
     bool ok = true;
+
+    ok &= expect("a menu identity mutation must survive the native forced holster",
+        presentationExpectedAfterMenu(false, true, false, 0, false));
+    ok &= expect("a changed menu-exit identity must request presentation",
+        presentationExpectedAfterMenu(false, false, true, 0, false));
+    ok &= expect("an unchanged deliberately holstered menu exit must stay holstered",
+        !presentationExpectedAfterMenu(false, false, false, 0, false));
+    ok &= expect("a drawn menu-entry intent must survive a menu-forced holster",
+        presentationExpectedAfterMenu(true, false, false, 0, false));
     ok &= expect("an exact requested instance must match",
         matchesExpectedIdentity(0x1234, 0x2222, 0x1234, 0x2222, 0x1234, 0x1111));
     ok &= expect("a same-base old instance must not satisfy a deferred equip",
@@ -32,7 +41,9 @@ int main()
     const auto drawing = advance(transitionState, FrameInput{
         .mutationAllowed = true,
         .identityMatches = true,
+        .presentationExpected = true,
         .weaponExactlyDrawn = false,
+        .nativeWeaponState = 2,
         .bridgeModelAvailable = true,
     });
     ok &= expect("drawing must keep the bridge without repairing native state",
@@ -44,7 +55,9 @@ int main()
     const FrameInput nativeVisible{
         .mutationAllowed = true,
         .identityMatches = true,
+        .presentationExpected = true,
         .weaponExactlyDrawn = true,
+        .nativeWeaponState = 3,
         .bridgeModelAvailable = true,
         .nativeInstanceFound = true,
         .nativeAncestorPathVisible = true,
@@ -64,7 +77,9 @@ int main()
     const auto holsteredAfterHandoff = advance(stableState, FrameInput{
         .mutationAllowed = true,
         .identityMatches = true,
+        .presentationExpected = true,
         .weaponExactlyDrawn = false,
+        .nativeWeaponState = 0,
         .bridgeModelAvailable = true,
     });
     ok &= expect("a completed native handoff must not resurrect the bridge while holstering",
@@ -75,13 +90,17 @@ int main()
     const auto lateDetachOne = advance(stableState, FrameInput{
         .mutationAllowed = true,
         .identityMatches = true,
+        .presentationExpected = true,
         .weaponExactlyDrawn = true,
+        .nativeWeaponState = 3,
         .bridgeModelAvailable = true,
     });
     const auto lateDetachTwo = advance(stableState, FrameInput{
         .mutationAllowed = true,
         .identityMatches = true,
+        .presentationExpected = true,
         .weaponExactlyDrawn = true,
+        .nativeWeaponState = 3,
         .bridgeModelAvailable = true,
     });
     ok &= expect("a late native detach must immediately restore the standby bridge",
@@ -97,7 +116,9 @@ int main()
     const FrameInput hiddenNative{
         .mutationAllowed = true,
         .identityMatches = true,
+        .presentationExpected = true,
         .weaponExactlyDrawn = true,
+        .nativeWeaponState = 3,
         .nativeInstanceFound = true,
         .nativeAncestorPathVisible = false,
         .nativeInstanceLocallyVisible = true,
@@ -113,7 +134,9 @@ int main()
     const auto ownedCull = advance(ownedCullState, FrameInput{
         .mutationAllowed = true,
         .identityMatches = true,
+        .presentationExpected = true,
         .weaponExactlyDrawn = true,
+        .nativeWeaponState = 3,
         .bridgeModelAvailable = true,
         .nativeInstanceFound = true,
         .nativeAncestorPathVisible = true,
@@ -129,7 +152,9 @@ int main()
     const auto blocked = advance(blockedState, FrameInput{
         .mutationAllowed = false,
         .identityMatches = true,
+        .presentationExpected = true,
         .weaponExactlyDrawn = true,
+        .nativeWeaponState = 3,
     });
     ok &= expect("menu or compatibility blocking must prevent native mutation",
         blocked.repair == RepairAction::None);
@@ -141,11 +166,120 @@ int main()
     const auto exhausted = advance(exhaustedState, FrameInput{
         .mutationAllowed = true,
         .identityMatches = true,
+        .presentationExpected = true,
         .weaponExactlyDrawn = true,
+        .nativeWeaponState = 3,
     });
     ok &= expect("native attachment recovery must be bounded",
         exhausted.repair == RepairAction::Exhausted &&
             exhaustedState.attachAttempts == kMaximumAttachAttempts);
+
+    State drawState{};
+    const auto firstDraw = advance(drawState, FrameInput{
+        .mutationAllowed = true,
+        .identityMatches = true,
+        .presentationExpected = true,
+        .weaponExactlyDrawn = false,
+        .nativeWeaponState = 0,
+        .bridgeModelAvailable = true,
+    });
+    ok &= expect("an explicitly expected sheathed weapon must request a bounded draw",
+        firstDraw.presentBridgeModel &&
+            firstDraw.repair == RepairAction::RequestDraw &&
+            drawState.drawAttempts == 1 &&
+            drawState.drawSettleFramesRemaining == kDrawSettleFrames);
+
+    const auto settlingDraw = advance(drawState, FrameInput{
+        .mutationAllowed = true,
+        .identityMatches = true,
+        .presentationExpected = true,
+        .weaponExactlyDrawn = false,
+        .nativeWeaponState = 4,
+        .bridgeModelAvailable = true,
+    });
+    ok &= expect("draw reversal retries must respect their settle window",
+        settlingDraw.presentBridgeModel &&
+            settlingDraw.repair == RepairAction::None &&
+            drawState.drawAttempts == 1);
+
+    State blockedDrawState{};
+    const auto blockedDraw = advance(blockedDrawState, FrameInput{
+        .mutationAllowed = false,
+        .identityMatches = true,
+        .presentationExpected = true,
+        .weaponExactlyDrawn = false,
+        .nativeWeaponState = 0,
+        .bridgeModelAvailable = true,
+    });
+    ok &= expect("menu blocking must preserve the bridge without submitting a draw",
+        blockedDraw.presentBridgeModel &&
+            blockedDraw.repair == RepairAction::None &&
+            blockedDrawState.drawAttempts == 0);
+
+    State stalledWantToDraw{
+        .drawAttempts = 1,
+    };
+    for (std::uint8_t frame = 1; frame < kWantToDrawStallFrames; ++frame) {
+        const auto waiting = advance(stalledWantToDraw, FrameInput{
+            .mutationAllowed = true,
+            .identityMatches = true,
+            .presentationExpected = true,
+            .weaponExactlyDrawn = false,
+            .nativeWeaponState = 1,
+        });
+        ok &= expect("want-to-draw must not retry before the stall threshold",
+            waiting.repair == RepairAction::None);
+    }
+    const auto stalledRetry = advance(stalledWantToDraw, FrameInput{
+        .mutationAllowed = true,
+        .identityMatches = true,
+        .presentationExpected = true,
+        .weaponExactlyDrawn = false,
+        .nativeWeaponState = 1,
+    });
+    ok &= expect("a stalled want-to-draw state must receive one bounded refresh",
+        stalledRetry.repair == RepairAction::RequestDraw &&
+            stalledWantToDraw.drawAttempts == 2);
+
+    State holsterReversal{};
+    const auto reverseHolster = advance(holsterReversal, FrameInput{
+        .mutationAllowed = true,
+        .identityMatches = true,
+        .presentationExpected = true,
+        .weaponExactlyDrawn = false,
+        .nativeWeaponState = 5,
+        .bridgeModelAvailable = true,
+    });
+    ok &= expect("an expected weapon may reverse a pre-handoff sheathing state",
+        reverseHolster.repair == RepairAction::RequestDraw);
+
+    State holsteredByChoice{};
+    const auto preserveHolster = advance(holsteredByChoice, FrameInput{
+        .mutationAllowed = true,
+        .identityMatches = true,
+        .presentationExpected = false,
+        .weaponExactlyDrawn = false,
+        .nativeWeaponState = 0,
+        .bridgeModelAvailable = true,
+    });
+    ok &= expect("a menu equip that began holstered must stay holstered",
+        !preserveHolster.presentBridgeModel &&
+            preserveHolster.repair == RepairAction::None &&
+            holsteredByChoice.drawAttempts == 0);
+
+    State exhaustedDrawState{
+        .drawAttempts = kMaximumDrawAttempts,
+    };
+    const auto exhaustedDraw = advance(exhaustedDrawState, FrameInput{
+        .mutationAllowed = true,
+        .identityMatches = true,
+        .presentationExpected = true,
+        .weaponExactlyDrawn = false,
+        .nativeWeaponState = 0,
+    });
+    ok &= expect("native draw recovery must be bounded",
+        exhaustedDraw.repair == RepairAction::DrawExhausted &&
+            exhaustedDrawState.drawAttempts == kMaximumDrawAttempts);
 
     return ok ? 0 : 1;
 }

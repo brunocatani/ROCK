@@ -12,6 +12,7 @@
 
 #include "rock_support/Fo4VrRuntime.h"
 
+#include <array>
 #include <utility>
 
 namespace rock::weapon_equip_transfer
@@ -32,6 +33,14 @@ namespace rock::weapon_equip_transfer
         {
             RE::TESObjectWEAP* weapon = nullptr;
             RE::TBO_InstanceData* instanceData = nullptr;
+        };
+
+        struct InventoryWeaponStackSnapshot
+        {
+            weapon_inventory_stack_selection_policy::Snapshot witnesses{};
+            std::array<InventoryWeaponStack,
+                weapon_inventory_stack_selection_policy::kMaximumObservedStacks>
+                stacks{};
         };
 
         [[nodiscard]] RE::TESObjectWEAP* asWeaponForm(RE::TESForm* form) noexcept
@@ -63,16 +72,14 @@ namespace rock::weapon_equip_transfer
             return instanceExtra ? instanceExtra->data : RE::BSTSmartPointer<RE::TBO_InstanceData>{};
         }
 
-        [[nodiscard]] InventoryWeaponStack findTransferredWeaponStack(
+        [[nodiscard]] InventoryWeaponStackSnapshot captureWeaponStacks(
             RE::PlayerCharacter* player,
             RE::TESObjectWEAP* weapon,
-            const RE::BSTSmartPointer<RE::TBO_InstanceData>& expectedInstanceData) noexcept
+            const bool retainRuntimeStacks) noexcept
         {
-            InventoryWeaponStack firstCandidate{};
-            InventoryWeaponStack fallback{};
-            std::uint32_t candidateCount = 0;
+            InventoryWeaponStackSnapshot snapshot{};
             if (!player || !weapon || !player->inventoryList) {
-                return fallback;
+                return snapshot;
             }
 
             const RE::BSAutoReadLock inventoryLock{ player->inventoryList->rwLock };
@@ -83,47 +90,40 @@ namespace rock::weapon_equip_transfer
 
                 std::uint32_t stackID = 0;
                 for (auto* stack = inventoryItem.stackData.get(); stack; stack = stack->nextStack.get(), ++stackID) {
-                    RE::BSTSmartPointer<RE::TBO_InstanceData> instanceData{};
+                    if (snapshot.witnesses.count >= snapshot.stacks.size()) {
+                        snapshot.witnesses.complete = false;
+                        return snapshot;
+                    }
+
+                    RE::TBO_InstanceData* instanceData = nullptr;
                     if (stack->extra) {
                         if (const auto* instanceExtra = stack->extra->GetByType<RE::ExtraInstanceData>()) {
-                            instanceData = instanceExtra->data;
+                            instanceData = instanceExtra->data.get();
                         }
                     }
-                    auto* equipSlot = weapon->GetEquipSlot(instanceData.get());
+                    auto* equipSlot = weapon->GetEquipSlot(instanceData);
                     if (!equipSlot) {
                         equipSlot = weapon->GetEquipSlot(nullptr);
                     }
-                    InventoryWeaponStack candidate{
-                        .found = true,
-                        .matchedInstanceData = expectedInstanceData && instanceData.get() == expectedInstanceData.get(),
-                        .stackID = stackID,
-                        .count = stack->GetCount(),
-                        .instanceData = instanceData,
-                        .equipSlot = equipSlot,
-                    };
-
-                    if (candidate.matchedInstanceData) {
-                        return candidate;
-                    }
-
-                    ++candidateCount;
-                    if (!firstCandidate.found) {
-                        firstCandidate = candidate;
-                    }
-                    const bool fallbackMatches = expectedInstanceData || !instanceData;
-                    if (fallbackMatches && !fallback.found) {
-                        fallback = candidate;
+                    const auto snapshotIndex = snapshot.witnesses.count++;
+                    snapshot.witnesses.stacks[snapshotIndex] =
+                        weapon_inventory_stack_selection_policy::StackWitness{
+                            .stackAddress = reinterpret_cast<std::uintptr_t>(stack),
+                            .instanceDataAddress = reinterpret_cast<std::uintptr_t>(instanceData),
+                            .count = stack->GetCount(),
+                        };
+                    if (retainRuntimeStacks) {
+                        snapshot.stacks[snapshotIndex] = InventoryWeaponStack{
+                            .found = true,
+                            .stackID = stackID,
+                            .count = stack->GetCount(),
+                            .instanceData = RE::BSTSmartPointer<RE::TBO_InstanceData>{ instanceData },
+                            .equipSlot = equipSlot,
+                        };
                     }
                 }
             }
-
-            if (expectedInstanceData && candidateCount != 1u) {
-                return {};
-            }
-            if (!fallback.found && candidateCount == 1u) {
-                return firstCandidate;
-            }
-            return fallback;
+            return snapshot;
         }
 
         [[nodiscard]] InventoryWeaponStack findEquippedWeaponStack(
@@ -322,6 +322,10 @@ namespace rock::weapon_equip_transfer
         }
 
         const auto expectedInstanceData = resolveReferenceInstanceData(heldRef);
+        const auto inventoryBeforeTransfer = captureWeaponStacks(
+            player,
+            result.weapon,
+            false);
         result.attempted = true;
         const auto equippedBeforeTransfer = readEquippedWeaponSnapshot();
         result.previousEquippedFormID = equippedBeforeTransfer.weapon ?
@@ -354,7 +358,25 @@ namespace rock::weapon_equip_transfer
          */
         result.untransferredRef.reset();
 
-        const auto stack = findTransferredWeaponStack(player, result.weapon, expectedInstanceData);
+        const auto inventoryAfterTransfer = captureWeaponStacks(
+            player,
+            result.weapon,
+            true);
+        const auto stackSelection =
+            weapon_inventory_stack_selection_policy::selectTransferredStack(
+                inventoryBeforeTransfer.witnesses,
+                inventoryAfterTransfer.witnesses,
+                reinterpret_cast<std::uintptr_t>(expectedInstanceData.get()));
+        result.preTransferStackCount = static_cast<std::uint32_t>(
+            inventoryBeforeTransfer.witnesses.count);
+        result.postTransferStackCount = static_cast<std::uint32_t>(
+            inventoryAfterTransfer.witnesses.count);
+        result.stackMutationCandidateCount = static_cast<std::uint32_t>(
+            stackSelection.mutationCandidateCount);
+        result.stackSelectionEvidence = stackSelection.evidence;
+        const auto stack = stackSelection.found ?
+            inventoryAfterTransfer.stacks[stackSelection.postIndex] :
+            InventoryWeaponStack{};
         if (!stack.found) {
             result.reason = EquipReason::InventoryStackNotFound;
             return result;
@@ -365,7 +387,8 @@ namespace rock::weapon_equip_transfer
         }
 
         result.stackID = stack.stackID;
-        result.matchedInstanceData = stack.matchedInstanceData;
+        result.matchedInstanceData = expectedInstanceData &&
+            stack.instanceData.get() == expectedInstanceData.get();
         result.requestedInstanceData = reinterpret_cast<std::uintptr_t>(
             stack.instanceData.get());
         RE::BGSObjectInstance objectInstance(result.weapon, stack.instanceData.get());

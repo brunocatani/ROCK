@@ -556,6 +556,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKEquippedWeaponTransitionPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKEquippedWeaponTransitionPolicyTests)
 
+  add_executable(ROCKWeaponInventoryStackSelectionPolicyTests
+    "${ROOT_DIR}/tests/WeaponInventoryStackSelectionPolicyTests.cpp"
+  )
+  target_compile_features(ROCKWeaponInventoryStackSelectionPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKWeaponInventoryStackSelectionPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKWeaponInventoryStackSelectionPolicyTests)
+
   add_executable(ROCKAuthoredWeaponGripCapturePolicyTests
     "${ROOT_DIR}/tests/AuthoredWeaponGripCapturePolicyTests.cpp"
   )
@@ -644,6 +651,7 @@ if(BUILD_ROCK_TESTS)
     ROCKNativeGrabHapticSuppressionPolicyTests
     ROCKPipboyEquipPolicyTests
     ROCKEquippedWeaponTransitionPolicyTests
+    ROCKWeaponInventoryStackSelectionPolicyTests
     ROCKAuthoredWeaponGripCapturePolicyTests
     ROCKNativeIdleGripPreharvestPolicyTests
     ROCKAuthoredWeaponGripAuthorityPolicyTests

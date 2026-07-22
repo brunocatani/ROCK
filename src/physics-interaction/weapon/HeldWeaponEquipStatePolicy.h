@@ -54,6 +54,34 @@ namespace rock::held_weapon_equip_state_policy
         return sameHandTriggerRequest && classifyForEquip(nativeState) == EquipReadiness::Transitioning;
     }
 
+    [[nodiscard]] inline constexpr bool isValidNativeWeaponState(
+        const std::uint32_t nativeState) noexcept
+    {
+        return nativeState <= static_cast<std::uint32_t>(NativeWeaponState::Sheathing);
+    }
+
+    /*
+     * FO4VR PlayerCharacter::DrawWeaponMagicHands(true) returns immediately
+     * only for Drawing/Drawn. Sheathed, WantToSheathe, and Sheathing are
+     * valid submissions; the latter two reverse an in-progress holster. The
+     * coordinator retries this request only through a bounded state machine.
+     */
+    [[nodiscard]] inline constexpr bool shouldSubmitDrawFollowup(
+        const std::uint32_t nativeState) noexcept
+    {
+        switch (static_cast<NativeWeaponState>(nativeState)) {
+        case NativeWeaponState::Sheathed:
+        case NativeWeaponState::WantToDraw:
+        case NativeWeaponState::WantToSheathe:
+        case NativeWeaponState::Sheathing:
+            return true;
+        case NativeWeaponState::Drawing:
+        case NativeWeaponState::Drawn:
+        default:
+            return false;
+        }
+    }
+
     [[nodiscard]] inline constexpr const char* nativeWeaponStateName(const std::uint32_t nativeState) noexcept
     {
         switch (static_cast<NativeWeaponState>(nativeState)) {

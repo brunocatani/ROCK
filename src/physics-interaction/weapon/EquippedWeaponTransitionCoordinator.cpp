@@ -3,6 +3,7 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/weapon/EquippedWeaponVisualState.h"
 #include "physics-interaction/weapon/NativeEquippedWeaponAttach.h"
+#include "physics-interaction/weapon/NativeEquippedWeaponDraw.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 #include "RE/Bethesda/Actor.h"
@@ -54,15 +55,18 @@ namespace rock
         _source = source;
         _activeSeconds = 0.0f;
         _active = true;
+        _presentationExpected = true;
+        _lastNonMenuPresentationExpected = true;
         _waitingForExpectedIdentity = true;
         _lateRecoveryWindowGranted = false;
+        _drawExhaustionLogged = false;
         _repairExhaustionLogged = false;
 
         const auto current = readCurrentIdentity();
         _observedIdentity = current;
         _observationInitialized = true;
         if (expectedMatches(current)) {
-            bindCurrentIdentity(current, source, "held-equip-current");
+            bindCurrentIdentity(current, source, "held-equip-current", {}, 0, true);
             auto immediateVisual = equipped_weapon_visual_state::observe(
                 current.formID,
                 _supersededNativeInstanceNode);
@@ -94,10 +98,15 @@ namespace rock
     void EquippedWeaponTransitionCoordinator::update(const FrameInput& input)
     {
         const auto current = readCurrentIdentity();
+        const bool currentStatePresentationExpected =
+            equipped_weapon_transition_policy::presentationExpectedFromNativeState(
+                input.nativeWeaponState,
+                _lastNonMenuPresentationExpected);
         if (!_observationInitialized) {
             _observedIdentity = current;
             _observationInitialized = true;
             _wasMenuBlocking = input.menuBlocking;
+            _lastNonMenuPresentationExpected = currentStatePresentationExpected;
             if (input.menuBlocking) {
                 _menuEntryIdentity = current;
                 _menuEntryNativeInstanceNode = current.valid() ?
@@ -105,6 +114,9 @@ namespace rock
                         equipped_weapon_visual_state::observe(current.formID).exactInstance) :
                     0;
                 _menuEntryCaptured = true;
+                _menuEntryPresentationExpected = currentStatePresentationExpected ||
+                    (_active && _presentationExpected);
+                _menuWeaponIdentityMutated = false;
             }
         }
 
@@ -117,14 +129,32 @@ namespace rock
                     equipped_weapon_visual_state::observe(current.formID).exactInstance) :
                 0;
             _menuEntryCaptured = true;
+            _menuEntryPresentationExpected = _lastNonMenuPresentationExpected ||
+                (_active && _presentationExpected);
+            _menuWeaponIdentityMutated = false;
+        }
+        if (!input.menuBlocking) {
+            _lastNonMenuPresentationExpected =
+                equipped_weapon_transition_policy::presentationExpectedFromNativeState(
+                    input.nativeWeaponState,
+                    _lastNonMenuPresentationExpected);
         }
 
         const bool identityChanged = current != _observedIdentity;
+        if (identityChanged && input.menuBlocking && _menuEntryCaptured) {
+            _menuWeaponIdentityMutated = true;
+        }
         if (identityChanged) {
             const auto previous = _observedIdentity;
             _observedIdentity = current;
             if (_waitingForExpectedIdentity && expectedMatches(current)) {
-                bindCurrentIdentity(current, _source, "expected-identity-observed");
+                bindCurrentIdentity(
+                    current,
+                    _source,
+                    "expected-identity-observed",
+                    {},
+                    0,
+                    true);
             } else if (!_waitingForExpectedIdentity && current.valid()) {
                 if (_bridge.isActive() && _boundIdentity.valid() && current != _boundIdentity) {
                     _bridge.releaseStandbyModel("equipped-weapon-changed");
@@ -138,7 +168,15 @@ namespace rock
                     Source::ObservedEquip,
                     "equipped-identity-changed",
                     previous,
-                    previousNativeInstanceNode);
+                    previousNativeInstanceNode,
+                    input.menuBlocking && _menuEntryCaptured ?
+                        equipped_weapon_transition_policy::presentationExpectedAfterMenu(
+                            _menuEntryPresentationExpected,
+                            _menuWeaponIdentityMutated,
+                            current != _menuEntryIdentity,
+                            input.nativeWeaponState,
+                            _lastNonMenuPresentationExpected) :
+                        currentStatePresentationExpected);
             } else if (!_waitingForExpectedIdentity && !current.valid() && previous == _boundIdentity) {
                 finish("weapon-unequipped", true);
             }
@@ -146,28 +184,48 @@ namespace rock
 
         _wasMenuBlocking = input.menuBlocking;
         if (menuClosed && !_waitingForExpectedIdentity && current.valid()) {
+            const bool presentationExpected = _menuEntryCaptured ?
+                equipped_weapon_transition_policy::presentationExpectedAfterMenu(
+                    _menuEntryPresentationExpected,
+                    _menuWeaponIdentityMutated,
+                    current != _menuEntryIdentity,
+                    input.nativeWeaponState,
+                    _lastNonMenuPresentationExpected) :
+                currentStatePresentationExpected;
             bindCurrentIdentity(
                 current,
                 Source::MenuExit,
                 "menu-closed",
                 _menuEntryCaptured ? _menuEntryIdentity : Identity{},
-                _menuEntryCaptured ? _menuEntryNativeInstanceNode : 0);
+                _menuEntryCaptured ? _menuEntryNativeInstanceNode : 0,
+                presentationExpected);
         }
         if (_requestCurrentPending) {
             _requestCurrentPending = false;
             if (current.valid()) {
+                const bool presentationExpected = _menuEntryCaptured ?
+                    equipped_weapon_transition_policy::presentationExpectedAfterMenu(
+                        _menuEntryPresentationExpected,
+                        _menuWeaponIdentityMutated,
+                        current != _menuEntryIdentity,
+                        input.nativeWeaponState,
+                        _lastNonMenuPresentationExpected) :
+                    currentStatePresentationExpected;
                 bindCurrentIdentity(
                     current,
                     _requestedCurrentSource,
                     "explicit-reconcile",
                     _menuEntryCaptured ? _menuEntryIdentity : Identity{},
-                    _menuEntryCaptured ? _menuEntryNativeInstanceNode : 0);
+                    _menuEntryCaptured ? _menuEntryNativeInstanceNode : 0,
+                    presentationExpected);
             }
         }
         if (menuClosed) {
             _menuEntryIdentity = {};
             _menuEntryNativeInstanceNode = 0;
             _menuEntryCaptured = false;
+            _menuEntryPresentationExpected = false;
+            _menuWeaponIdentityMutated = false;
         }
 
         if (!_active) {
@@ -202,6 +260,10 @@ namespace rock
             finish("bound-identity-lost", true);
             return;
         }
+        if (!_presentationExpected) {
+            finish("holstered-presentation-preserved", true);
+            return;
+        }
 
         auto visual = equipped_weapon_visual_state::observe(
             _boundIdentity.formID,
@@ -228,7 +290,10 @@ namespace rock
             return;
         }
 
-        if (_policyState.nativeHandoffObserved && !input.weaponExactlyDrawn) {
+        const bool weaponExactlyDrawn =
+            input.nativeWeaponState == static_cast<std::uint32_t>(
+                held_weapon_equip_state_policy::NativeWeaponState::Drawn);
+        if (_policyState.nativeHandoffObserved && !weaponExactlyDrawn) {
             finish("weapon-no-longer-drawn", true);
             return;
         }
@@ -259,7 +324,9 @@ namespace rock
             equipped_weapon_transition_policy::FrameInput{
                 .mutationAllowed = true,
                 .identityMatches = true,
-                .weaponExactlyDrawn = input.weaponExactlyDrawn,
+                .presentationExpected = _presentationExpected,
+                .weaponExactlyDrawn = weaponExactlyDrawn,
+                .nativeWeaponState = input.nativeWeaponState,
                 .bridgeModelAvailable = _bridge.hasStandbyModel(),
                 .nativeInstanceFound = exactNativeInstanceIsCurrent,
                 .nativeAncestorPathVisible = visual.ancestorPathVisible,
@@ -268,6 +335,46 @@ namespace rock
             });
 
         switch (decision.repair) {
+        case equipped_weapon_transition_policy::RepairAction::RequestDraw: {
+            const auto result = native_equipped_weapon_draw::submitExactCurrent(
+                native_equipped_weapon_draw::Identity{
+                    .formID = _boundIdentity.formID,
+                    .instanceData = _boundIdentity.instanceData,
+                    .equipIndex = _boundIdentity.equipIndex,
+                });
+            ROCK_LOG_INFO(Weapon,
+                "Equipped weapon transition draw recovery source={} formID={:08X} instance={:#x} attempt={}/{} state={}({})->{}({}) result={}",
+                sourceName(_source),
+                _boundIdentity.formID,
+                _boundIdentity.instanceData,
+                _policyState.drawAttempts,
+                equipped_weapon_transition_policy::kMaximumDrawAttempts,
+                result.stateBefore,
+                held_weapon_equip_state_policy::nativeWeaponStateName(result.stateBefore),
+                result.stateAfter,
+                held_weapon_equip_state_policy::nativeWeaponStateName(result.stateAfter),
+                native_equipped_weapon_draw::submitResultName(result.result));
+            if (result.result == native_equipped_weapon_draw::SubmitResult::InvalidWeaponState ||
+                result.result == native_equipped_weapon_draw::SubmitResult::MissingPlayer ||
+                result.result == native_equipped_weapon_draw::SubmitResult::MissingEquippedWeapon) {
+                _policyState.drawAttempts =
+                    equipped_weapon_transition_policy::kMaximumDrawAttempts;
+            }
+            break;
+        }
+        case equipped_weapon_transition_policy::RepairAction::DrawExhausted:
+            if (!_drawExhaustionLogged) {
+                _drawExhaustionLogged = true;
+                ROCK_LOG_WARN(Weapon,
+                    "Equipped weapon transition draw recovery exhausted source={} formID={:08X} instance={:#x} weaponState={}({})",
+                    sourceName(_source),
+                    _boundIdentity.formID,
+                    _boundIdentity.instanceData,
+                    input.nativeWeaponState,
+                    held_weapon_equip_state_policy::nativeWeaponStateName(
+                        input.nativeWeaponState));
+            }
+            break;
         case equipped_weapon_transition_policy::RepairAction::RestoreLocalVisibility: {
             const bool restored = equipped_weapon_visual_state::restoreExactInstancePathVisibility(visual);
             ROCK_LOG_INFO(Weapon,
@@ -341,10 +448,16 @@ namespace rock
         _activeSeconds = 0.0f;
         _observationInitialized = false;
         _active = false;
+        _presentationExpected = false;
         _waitingForExpectedIdentity = false;
         _requestCurrentPending = false;
+        _wasMenuBlocking = false;
         _menuEntryCaptured = false;
+        _menuEntryPresentationExpected = false;
+        _menuWeaponIdentityMutated = false;
+        _lastNonMenuPresentationExpected = false;
         _lateRecoveryWindowGranted = false;
+        _drawExhaustionLogged = false;
         _repairExhaustionLogged = false;
     }
 
@@ -359,10 +472,16 @@ namespace rock
         _supersededNativeInstanceNode = 0;
         _activeSeconds = 0.0f;
         _active = false;
+        _presentationExpected = false;
         _waitingForExpectedIdentity = false;
         _requestCurrentPending = false;
+        _wasMenuBlocking = false;
         _menuEntryCaptured = false;
+        _menuEntryPresentationExpected = false;
+        _menuWeaponIdentityMutated = false;
+        _lastNonMenuPresentationExpected = false;
         _lateRecoveryWindowGranted = false;
+        _drawExhaustionLogged = false;
         _repairExhaustionLogged = false;
     }
 
@@ -398,7 +517,8 @@ namespace rock
         const Source source,
         const char* reason,
         Identity previousIdentity,
-        std::uintptr_t previousNativeInstanceNode)
+        std::uintptr_t previousNativeInstanceNode,
+        const bool presentationExpected)
     {
         if (!identity.valid()) {
             return;
@@ -430,16 +550,19 @@ namespace rock
         _source = source;
         _activeSeconds = 0.0f;
         _active = true;
+        _presentationExpected = presentationExpected;
         _waitingForExpectedIdentity = false;
         _lateRecoveryWindowGranted = false;
+        _drawExhaustionLogged = false;
         _repairExhaustionLogged = false;
         ROCK_LOG_INFO(Weapon,
-            "Equipped weapon transition bound source={} reason={} formID={:08X} instance={:#x} equipIndex={}",
+            "Equipped weapon transition bound source={} reason={} formID={:08X} instance={:#x} equipIndex={} presentationExpected={}",
             sourceName(source),
             reason ? reason : "unknown",
             identity.formID,
             identity.instanceData,
-            identity.equipIndex);
+            identity.equipIndex,
+            presentationExpected ? "yes" : "no");
     }
 
     void EquippedWeaponTransitionCoordinator::finish(
@@ -457,8 +580,10 @@ namespace rock
         _supersededNativeInstanceNode = 0;
         _activeSeconds = 0.0f;
         _active = false;
+        _presentationExpected = false;
         _waitingForExpectedIdentity = false;
         _lateRecoveryWindowGranted = false;
+        _drawExhaustionLogged = false;
         _repairExhaustionLogged = false;
     }
 }

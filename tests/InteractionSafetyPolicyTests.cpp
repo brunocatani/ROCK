@@ -112,7 +112,9 @@ int main()
 
     using rock::held_weapon_equip_state_policy::EquipReadiness;
     using rock::held_weapon_equip_state_policy::classifyForEquip;
+    using rock::held_weapon_equip_state_policy::isValidNativeWeaponState;
     using rock::held_weapon_equip_state_policy::shouldRearmTrigger;
+    using rock::held_weapon_equip_state_policy::shouldSubmitDrawFollowup;
     ok &= expectEqual("sheathed state permits equip", classifyForEquip(0), EquipReadiness::Stable);
     ok &= expectEqual("drawn state permits replacement equip", classifyForEquip(3), EquipReadiness::Stable);
     ok &= expectEqual("want-draw state defers equip", classifyForEquip(1), EquipReadiness::Transitioning);
@@ -123,6 +125,15 @@ int main()
     ok &= expectTrue("transitioning trigger request rearms", shouldRearmTrigger(4, true));
     ok &= expectFalse("grip-zone request does not need trigger lease", shouldRearmTrigger(4, false));
     ok &= expectFalse("stable trigger request does not rearm", shouldRearmTrigger(0, true));
+    ok &= expectTrue("sheathed native weapon accepts draw recovery", shouldSubmitDrawFollowup(0));
+    ok &= expectTrue("want-draw native weapon accepts a bounded stalled retry", shouldSubmitDrawFollowup(1));
+    ok &= expectFalse("drawing native weapon rejects duplicate draw recovery", shouldSubmitDrawFollowup(2));
+    ok &= expectFalse("drawn native weapon rejects duplicate draw recovery", shouldSubmitDrawFollowup(3));
+    ok &= expectTrue("want-sheathe native weapon accepts draw reversal", shouldSubmitDrawFollowup(4));
+    ok &= expectTrue("sheathing native weapon accepts draw reversal", shouldSubmitDrawFollowup(5));
+    ok &= expectFalse("unknown native weapon state rejects draw recovery", shouldSubmitDrawFollowup(6));
+    ok &= expectTrue("last known native weapon state is valid", isValidNativeWeaponState(5));
+    ok &= expectFalse("state outside the FO4VR weapon enum is invalid", isValidNativeWeaponState(6));
 
     ForceGrabReservations reservations;
     ok &= expectFalse("invalid API hand cannot reserve", reservations.reserve(RockProviderHand::None, 11, 100));
