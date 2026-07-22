@@ -39,8 +39,28 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'Auto-equip logging must include the observed equipped form for mismatch diagnosis.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'const bool nativeDrawRequested = equipResult\.success && requestImmediateHeldWeaponNativeDraw\(\);' `
-    'Native draw requests must remain gated on verified equip success.'
+    'const bool nativeDrawFollowupRequested\s*=\s*equipResult\.success\s*&&\s*requestHeldWeaponNativeDrawFollowup\(player\);' `
+    'The native draw followup must remain gated on verified equip success.'
+
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'requestHeldWeaponNativeDrawFollowup[\s\S]{0,420}shouldSubmitDrawFollowup\(nativeState\)[\s\S]{0,180}DrawWeaponMagicHands\(true\)' `
+    'The draw followup must use exact FO4VR weapon states instead of broad GetWeaponMagicDrawn semantics.'
+
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'canBeginEquip\(nativeStateBeforeEquip\)[\s\S]{0,900}shouldRearmTrigger\(nativeStateBeforeEquip,\s*triggeredByInput\)[\s\S]*hand\.captureHeldReleaseMotion' `
+    'A native weapon transition must defer before physical release and preserve the same-hand trigger request.'
+
+Require-Text 'src/physics-interaction/weapon/WeaponEquipTransfer.h' `
+    'struct\s+EquipInput[\s\S]{0,300}NiPointer<RE::TESObjectREFR>\s+heldRef[\s\S]*struct\s+EquipResult[\s\S]{0,700}NiPointer<RE::TESObjectREFR>\s+untransferredRef' `
+    'The equip transaction must own the released reference and return it only when native pickup did not acquire it.'
+
+Require-Text 'src/physics-interaction/weapon/WeaponEquipTransfer.cpp' `
+    'transferHeldWeaponToPlayerAndEquip\(EquipInput input\)[\s\S]{0,300}result\.untransferredRef\s*=\s*std::move\(input\.heldRef\)[\s\S]*ActivateRef\([\s\S]{0,1400}result\.untransferredRef\.reset\(\);[\s\S]*EquipObject\(' `
+    'ROCK must release its world-reference lease after ActivateRef and before EquipObject.'
+
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'releaseGrabbedObject[\s\S]{0,320}transferHeldWeaponToPlayerAndEquip[\s\S]{0,180}releaseOutcome\.takeRetainedReference\(\)[\s\S]*postEquipRef\s*=\s*equipResult\.untransferredRef\.get\(\)' `
+    'The handoff caller must move release ownership into the transaction and use its failure pin for events.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'Weapon equip transfer source boundary failed:'

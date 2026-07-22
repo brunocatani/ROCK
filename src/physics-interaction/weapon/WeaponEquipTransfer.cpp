@@ -12,6 +12,8 @@
 
 #include "rock_support/Fo4VrRuntime.h"
 
+#include <utility>
+
 namespace rock::weapon_equip_transfer
 {
     namespace
@@ -268,10 +270,11 @@ namespace rock::weapon_equip_transfer
         }
     }
 
-    EquipResult transferHeldWeaponToPlayerAndEquip(const EquipInput& input) noexcept
+    EquipResult transferHeldWeaponToPlayerAndEquip(EquipInput input) noexcept
     {
         EquipResult result{};
-        auto* heldRef = input.heldRef;
+        auto* heldRef = input.heldRef.get();
+        result.untransferredRef = std::move(input.heldRef);
         if (!heldRef) {
             result.reason = EquipReason::MissingRef;
             return result;
@@ -335,6 +338,15 @@ namespace rock::weapon_equip_transfer
             return result;
         }
         result.transferredToInventory = true;
+        /*
+         * ActivateRef has synchronously acquired the item for player
+         * inventory. Drop ROCK's last TESObjectREFR lease before stack lookup,
+         * EquipObject, draw actions, or visual-bridge setup. Retaining the
+         * consumed world reference into those stages can postpone Bethesda's
+         * pickup teardown and leave the inventory stack equipped without a
+         * durable first-person scene instance.
+         */
+        result.untransferredRef.reset();
 
         const auto stack = findTransferredWeaponStack(player, result.weapon, expectedInstanceData);
         if (!stack.found) {

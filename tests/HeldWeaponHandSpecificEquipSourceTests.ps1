@@ -169,7 +169,11 @@ Require-Text 'src/physics-interaction/grab/GrabConstraint.h' `
 
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
     'const\s+auto\s+selectedRef\s*=\s*sel\.retainedRef[\s\S]*_savedObjectState\.setReference\(selectedRef\)[\s\S]*outcome\.retainedRef\s*=\s*_savedObjectState\.retainedRef[\s\S]{0,120}outcome\.refr\s*=\s*outcome\.retainedRef\.get\(\)[\s\S]*_savedObjectState\.clear\(\)' `
-    'Grab commit and release must carry one strong reference across cleanup and any following inventory-transfer handoff.'
+    'Grab commit and release must carry one strong reference across cleanup until the caller explicitly takes transfer ownership.'
+
+Require-Text 'src/physics-interaction/hand/Hand.h' `
+    'takeRetainedReference\(\)[\s\S]{0,180}refr\s*=\s*nullptr;[\s\S]{0,100}std::move\(retainedRef\)' `
+    'Native transfers must be able to consume the release pin while invalidating its raw alias.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'firingHandIsLeft\s*&&[\s\S]{0,180}!capturedFiringHandWeaponLocal[\s\S]{0,500}blockFrikPrimaryWeaponPose\(\)[\s\S]{0,500}setFiringHand\(firingHandIsLeft,[\s\S]{0,300}_primaryHandWeaponLocal\s*=\s*\*capturedFiringHandWeaponLocal' `

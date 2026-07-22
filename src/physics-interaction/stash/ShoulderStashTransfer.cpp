@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <utility>
 
 namespace rock::shoulder_stash
 {
@@ -49,10 +50,11 @@ namespace rock::shoulder_stash
         return (std::max<std::int32_t>)(1, static_cast<std::int32_t>(count));
     }
 
-    TransferResult transferToPlayerInventory(const TransferInput& input) noexcept
+    TransferResult transferToPlayerInventory(TransferInput input) noexcept
     {
         TransferResult result{};
-        auto* heldRef = input.heldRef;
+        auto* heldRef = input.heldRef.get();
+        result.untransferredRef = std::move(input.heldRef);
         if (!heldRef) {
             result.reason = TransferReason::MissingRef;
             return result;
@@ -76,6 +78,9 @@ namespace rock::shoulder_stash
         // Collectibles such as magazines, notes, and holotapes need native activation
         // so their scripts, perk grants, and terminal/holotape behavior run normally.
         result.success = heldRef->ActivateRef(player, nullptr, result.count, false, false, false);
+        if (result.success) {
+            result.untransferredRef.reset();
+        }
         result.reason = TransferReason::ActivateRef;
         return result;
     }

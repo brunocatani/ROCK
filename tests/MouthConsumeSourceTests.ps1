@@ -56,6 +56,12 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'if \(consumeEligibility\.eligible && consumeDecision\.candidate\)' `
     'Mouth candidate haptics must be gated by consume eligibility.'
+Require-Text 'src/physics-interaction/consume/MouthConsumeTransfer.cpp' `
+    'transferToPlayerConsume\(ConsumeInput input\)[\s\S]{0,300}untransferredRef\s*=\s*std::move\(input\.heldRef\)[\s\S]*ActivateRef\([\s\S]{0,500}untransferredRef\.reset\(\);[\s\S]*EquipObject\(' `
+    'Mouth consume must relinquish ROCK reference ownership before its native inventory-use dispatch.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'transferToPlayerConsume\([\s\S]{0,300}releaseOutcome\.takeRetainedReference\(\)[\s\S]{0,800}postConsumeRef\s*=\s*consumeResult\.untransferredRef\.get\(\)' `
+    'Mouth consume failure recovery must use the transfer-owned reference pin.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'MouthConsumeSourceTests failed:' -ForegroundColor Red

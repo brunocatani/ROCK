@@ -1,6 +1,8 @@
 #pragma once
 
 #include "RE/Bethesda/TESForms.h"
+#include "RE/Bethesda/TESObjectREFRs.h"
+#include "RE/NetImmerse/NiSmartPointer.h"
 
 #include <cstdint>
 
@@ -31,7 +33,7 @@ namespace rock::mouth_consume
 
     struct ConsumeInput
     {
-        RE::TESObjectREFR* heldRef = nullptr;
+        RE::NiPointer<RE::TESObjectREFR> heldRef{};
         bool allowPoison = false;
     };
 
@@ -43,8 +45,9 @@ namespace rock::mouth_consume
         std::int32_t count = 1;
         std::uint32_t formID = 0;
         RE::TESBoundObject* baseForm = nullptr;
+        RE::NiPointer<RE::TESObjectREFR> untransferredRef{};
     };
 
     [[nodiscard]] const char* consumeReasonName(ConsumeReason reason) noexcept;
-    [[nodiscard]] ConsumeResult transferToPlayerConsume(const ConsumeInput& input) noexcept;
+    [[nodiscard]] ConsumeResult transferToPlayerConsume(ConsumeInput input) noexcept;
 }

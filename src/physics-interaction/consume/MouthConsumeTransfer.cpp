@@ -9,6 +9,8 @@
 #include "RE/Bethesda/TESBoundObjects.h"
 #include "RE/Bethesda/TESObjectREFRs.h"
 
+#include <utility>
+
 namespace rock::mouth_consume
 {
     const char* consumeReasonName(ConsumeReason reason) noexcept
@@ -45,10 +47,11 @@ namespace rock::mouth_consume
         }
     }
 
-    ConsumeResult transferToPlayerConsume(const ConsumeInput& input) noexcept
+    ConsumeResult transferToPlayerConsume(ConsumeInput input) noexcept
     {
         ConsumeResult result{};
-        auto* heldRef = input.heldRef;
+        auto* heldRef = input.heldRef.get();
+        result.untransferredRef = std::move(input.heldRef);
         if (!heldRef) {
             result.reason = ConsumeReason::MissingRef;
             return result;
@@ -114,6 +117,9 @@ namespace rock::mouth_consume
             result.reason = ConsumeReason::ActivateRefFailed;
             return result;
         }
+        // Native pickup now owns the item. Do not keep the consumed world ref
+        // alive while the following inventory-use dispatch runs.
+        result.untransferredRef.reset();
 
         if (useAsInventoryObject) {
             RE::BGSObjectInstance objectInstance(result.baseForm, nullptr);

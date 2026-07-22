@@ -64,6 +64,7 @@
 #include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
 #include "physics-interaction/weapon/NativeIdleGripPreharvest.h"
 #include "physics-interaction/weapon/PipboyEquipRuntime.h"
+#include "physics-interaction/weapon/HeldWeaponEquipStatePolicy.h"
 #include "physics-interaction/weapon/WeaponEquipTransfer.h"
 #include "physics-interaction/weapon/WeaponInteraction.h"
 #include "physics-interaction/hand/HandFrame.h"
@@ -1281,10 +1282,14 @@ namespace rock
             return resolveEquippedWeaponInteractionNodeDirect();
         }
 
-        bool requestImmediateHeldWeaponNativeDraw()
+        bool requestHeldWeaponNativeDrawFollowup(RE::PlayerCharacter* player)
         {
-            auto* player = RE::PlayerCharacter::GetSingleton();
-            if (!player || player->GetWeaponMagicDrawn()) {
+            if (!player) {
+                return false;
+            }
+
+            const auto nativeState = static_cast<std::uint32_t>(player->weaponState);
+            if (!held_weapon_equip_state_policy::shouldSubmitDrawFollowup(nativeState)) {
                 return false;
             }
 
@@ -8587,13 +8592,41 @@ namespace rock
                     .gripZoneEquipSettled = heldWeaponGripZoneEquipSettled,
                 });
 
-                auto equipHeldWeaponFromHand = [&](const char* requestReason, const char* logAction) {
+                auto equipHeldWeaponFromHand = [&](const bool triggeredByInput, const char* requestReason, const char* logAction) {
                     if (peerHoldingSameObject) {
                         ROCK_LOG_WARN(Hand,
                             "{} hand {} held weapon equip blocked: peer hand still holding formID={:08X}",
                             hand.handName(),
                             logAction ? logAction : "requested",
                             heldRefForGameplay ? heldRefForGameplay->GetFormID() : 0u);
+                        return true;
+                    }
+
+                    auto* player = RE::PlayerCharacter::GetSingleton();
+                    const std::uint32_t nativeStateBeforeEquip = player ?
+                        static_cast<std::uint32_t>(player->weaponState) :
+                        (std::numeric_limits<std::uint32_t>::max)();
+                    if (!held_weapon_equip_state_policy::canBeginEquip(nativeStateBeforeEquip)) {
+                        const bool triggerIntentRearmed =
+                            held_weapon_equip_state_policy::shouldRearmTrigger(nativeStateBeforeEquip, triggeredByInput) &&
+                            heldRefForGameplay;
+                        if (triggerIntentRearmed) {
+                            triggerEquipIntent = HeldWeaponTriggerEquipIntent{
+                                .pending = true,
+                                .formID = heldRefForGameplay->GetFormID(),
+                                .remainingSeconds = 0.35f,
+                            };
+                        }
+                        ROCK_LOG_SAMPLE_WARN(
+                            Hand,
+                            g_rockConfig.rockLogSampleMilliseconds,
+                            "{} hand {} held weapon equip deferred/blocked before release formID={:08X} weaponState={}({}) triggerIntentRearmed={}",
+                            hand.handName(),
+                            logAction ? logAction : "requested",
+                            heldRefForGameplay ? heldRefForGameplay->GetFormID() : 0u,
+                            nativeStateBeforeEquip,
+                            held_weapon_equip_state_policy::nativeWeaponStateName(nativeStateBeforeEquip),
+                            triggerIntentRearmed ? "yes" : "no");
                         return true;
                     }
 
@@ -8640,16 +8673,19 @@ namespace rock
                     auto releaseContext = makeGrabReleaseContext(hand, isLeft);
                     releaseContext.disposition = GrabReleaseDisposition::PendingInventoryTransfer;
                     releaseContext.reason = requestReason ? requestReason : "held-weapon-equip";
-                    const auto releaseOutcome = hand.releaseGrabbedObject(hknp, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
+                    auto releaseOutcome = hand.releaseGrabbedObject(hknp, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
                     if (heldRef) {
                         releaseObject(heldRef, claimOwnerForHand(isLeft));
                     }
 
                     const auto equipResult = weapon_equip_transfer::transferHeldWeaponToPlayerAndEquip(weapon_equip_transfer::EquipInput{
-                        .heldRef = heldRef,
+                        .heldRef = releaseOutcome.takeRetainedReference(),
                         .playSounds = false,
                     });
-                    const bool nativeDrawRequested = equipResult.success && requestImmediateHeldWeaponNativeDraw();
+                    const std::uint32_t nativeStateAfterEquip = static_cast<std::uint32_t>(player->weaponState);
+                    const bool nativeDrawFollowupRequested =
+                        equipResult.success && requestHeldWeaponNativeDrawFollowup(player);
+                    const std::uint32_t nativeStateAfterFollowup = static_cast<std::uint32_t>(player->weaponState);
                     auto* immediateWeaponNode = equipResult.success ? resolveEquippedWeaponInteractionNodeDirect() : nullptr;
                     bool equipBridgeStarted = false;
                     if (equipResult.success &&
@@ -8669,14 +8705,14 @@ namespace rock
                         heldFormID = equipResult.formID;
                     }
 
-                    auto* postEquipRef = equipResult.transferredToInventory ? nullptr : heldRef;
+                    auto* postEquipRef = equipResult.untransferredRef.get();
                     dispatchPhysicsMessage(kPhysMsg_OnRelease, isLeft, postEquipRef, heldFormID, 0);
                     if (!equipResult.success && !equipResult.transferredToInventory) {
                         hand.applyReleaseVelocitySnapshot(hknp, releaseOutcome.velocity);
                     }
                     dispatchHeldObjectEventByFormID(GrabEventType::Released, postEquipRef, heldFormID, primaryBodyId);
                     ROCK_LOG_INFO(Hand,
-                        "{} hand {} held weapon equip formID={:08X} success={} equipReason={} count={} stack={} instanceMatch={} transferred={} observedEquipped={:08X} nativeDrawRequested={} immediateWeaponNode={} immediateEquip={} visualBridge={}",
+                        "{} hand {} held weapon equip formID={:08X} success={} equipReason={} count={} stack={} instanceMatch={} transferred={} observedEquipped={:08X} weaponState={}({})->{}({})->{}({}) nativeDrawFollowup={} immediateWeaponNode={} immediateEquip={} visualBridge={}",
                         hand.handName(),
                         logAction ? logAction : "requested",
                         heldFormID,
@@ -8687,7 +8723,13 @@ namespace rock
                         equipResult.matchedInstanceData ? "yes" : "no",
                         equipResult.transferredToInventory ? "yes" : "no",
                         equipResult.observedEquippedFormID,
-                        nativeDrawRequested ? "yes" : "no",
+                        nativeStateBeforeEquip,
+                        held_weapon_equip_state_policy::nativeWeaponStateName(nativeStateBeforeEquip),
+                        nativeStateAfterEquip,
+                        held_weapon_equip_state_policy::nativeWeaponStateName(nativeStateAfterEquip),
+                        nativeStateAfterFollowup,
+                        held_weapon_equip_state_policy::nativeWeaponStateName(nativeStateAfterFollowup),
+                        nativeDrawFollowupRequested ? "yes" : "no",
                         immediateWeaponNode ? "yes" : "no",
                         equipResult.usedImmediateEquip ? "yes" : "no",
                         equipBridgeStarted ? "yes" : "no");
@@ -8708,7 +8750,7 @@ namespace rock
                     const char* requestReason = triggeredByInput ? "same-hand-trigger-held-weapon-equip" :
                                                                    "grip-zone-held-weapon-equip";
                     const char* logAction = triggeredByInput ? "trigger" : "grip-zone";
-                    if (equipHeldWeaponFromHand(requestReason, logAction)) {
+                    if (equipHeldWeaponFromHand(triggeredByInput, requestReason, logAction)) {
                         return;
                     }
                 }
@@ -8833,12 +8875,12 @@ namespace rock
                         releaseContext.disposition = GrabReleaseDisposition::PendingConsumeTransfer;
                         releaseContext.reason = "mouth-consume-pending-transfer";
                         const std::uint32_t primaryBodyId = hand.getSavedObjectState().bodyId.value;
-                        const auto releaseOutcome = hand.releaseGrabbedObject(hknp, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
+                        auto releaseOutcome = hand.releaseGrabbedObject(hknp, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
                         if (heldRef) {
                             releaseObject(heldRef, claimOwnerForHand(isLeft));
                         }
                         const auto consumeResult = mouth_consume::transferToPlayerConsume(mouth_consume::ConsumeInput{
-                            .heldRef = heldRef,
+                            .heldRef = releaseOutcome.takeRetainedReference(),
                             .allowPoison = g_rockConfig.rockMouthConsumeAllowPoison,
                         });
                         if (heldFormID == 0 && consumeResult.formID != 0) {
@@ -8847,7 +8889,7 @@ namespace rock
 
                         const bool failedBeforeOwnershipTransfer =
                             !consumeResult.attempted || consumeResult.reason == mouth_consume::ConsumeReason::ActivateRefFailed;
-                        auto* postConsumeRef = failedBeforeOwnershipTransfer ? heldRef : nullptr;
+                        auto* postConsumeRef = consumeResult.untransferredRef.get();
                         dispatchPhysicsMessage(kPhysMsg_OnRelease, isLeft, postConsumeRef, heldFormID, 0);
                         if (consumeResult.success) {
                             dispatchMouthConsumeEvent(GrabEventType::Consumed, nullptr, heldFormID, primaryBodyId, consumeDecision);
@@ -8883,18 +8925,18 @@ namespace rock
                         releaseContext.disposition = GrabReleaseDisposition::PendingInventoryTransfer;
                         releaseContext.reason = "shoulder-stash-pending-transfer";
                         const std::uint32_t primaryBodyId = hand.getSavedObjectState().bodyId.value;
-                        const auto releaseOutcome = hand.releaseGrabbedObject(hknp, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
+                        auto releaseOutcome = hand.releaseGrabbedObject(hknp, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
                         if (heldRef) {
                             releaseObject(heldRef, claimOwnerForHand(isLeft));
                         }
                         const auto transferResult = shoulder_stash::transferToPlayerInventory(shoulder_stash::TransferInput{
-                            .heldRef = heldRef,
+                            .heldRef = releaseOutcome.takeRetainedReference(),
                         });
                         if (heldFormID == 0 && transferResult.formID != 0) {
                             heldFormID = transferResult.formID;
                         }
 
-                        auto* postTransferRef = transferResult.attempted ? nullptr : heldRef;
+                        auto* postTransferRef = transferResult.untransferredRef.get();
                         dispatchPhysicsMessage(kPhysMsg_OnRelease, isLeft, postTransferRef, heldFormID, 0);
                         if (transferResult.success) {
                             dispatchShoulderStashEvent(GrabEventType::Stashed, nullptr, heldFormID, primaryBodyId, stashDecision);

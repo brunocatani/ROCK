@@ -50,7 +50,11 @@ namespace rock::weapon_equip_transfer
 
     struct EquipInput
     {
-        RE::TESObjectREFR* heldRef = nullptr;
+        // Sole ROCK ownership of the released world reference. The transfer
+        // consumes this lease immediately after ActivateRef succeeds so the
+        // native equip/draw path never runs with the picked ref artificially
+        // alive.
+        RE::NiPointer<RE::TESObjectREFR> heldRef{};
         bool playSounds = true;
     };
 
@@ -67,6 +71,9 @@ namespace rock::weapon_equip_transfer
         std::uint32_t observedEquippedFormID = 0;
         std::uint32_t stackID = 0;
         RE::TESObjectWEAP* weapon = nullptr;
+        // Present only when native pickup did not acquire the released world
+        // reference. This keeps failure recovery and release events safe.
+        RE::NiPointer<RE::TESObjectREFR> untransferredRef{};
         /*
          * Loose weapon 3D captured before ActivateRef. The engine detaches it
          * from the scene graph synchronously during pickup but only releases
@@ -137,7 +144,7 @@ namespace rock::weapon_equip_transfer
     [[nodiscard]] const char* equipReasonName(EquipReason reason) noexcept;
     [[nodiscard]] const char* dropReasonName(DropReason reason) noexcept;
     [[nodiscard]] const char* unequipReasonName(UnequipReason reason) noexcept;
-    [[nodiscard]] EquipResult transferHeldWeaponToPlayerAndEquip(const EquipInput& input) noexcept;
+    [[nodiscard]] EquipResult transferHeldWeaponToPlayerAndEquip(EquipInput input) noexcept;
     [[nodiscard]] EquippedDropResult dropEquippedWeaponFromPlayer(const EquippedDropInput& input) noexcept;
     [[nodiscard]] EquippedUnequipResult unequipEquippedWeaponFromPlayer(const EquippedUnequipInput& input) noexcept;
 }
