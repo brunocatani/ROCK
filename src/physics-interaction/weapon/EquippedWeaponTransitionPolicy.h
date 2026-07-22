@@ -42,7 +42,6 @@ namespace rock::equipped_weapon_transition_policy
     {
         bool mutationAllowed{ false };
         bool identityMatches{ false };
-        bool presentationExpected{ false };
         bool weaponExactlyDrawn{ false };
         std::uint32_t nativeWeaponState{ 0 };
         bool bridgeModelAvailable{ false };
@@ -58,43 +57,6 @@ namespace rock::equipped_weapon_transition_policy
         bool handoffBridgeToNative{ false };
         RepairAction repair{ RepairAction::None };
     };
-
-    [[nodiscard]] inline constexpr bool presentationExpectedFromNativeState(
-        const std::uint32_t nativeWeaponState,
-        const bool priorPresentationExpected) noexcept
-    {
-        using NativeWeaponState = held_weapon_equip_state_policy::NativeWeaponState;
-        switch (static_cast<NativeWeaponState>(nativeWeaponState)) {
-        case NativeWeaponState::WantToDraw:
-        case NativeWeaponState::Drawing:
-        case NativeWeaponState::Drawn:
-            return true;
-        case NativeWeaponState::WantToSheathe:
-        case NativeWeaponState::Sheathing:
-            return priorPresentationExpected;
-        case NativeWeaponState::Sheathed:
-        default:
-            return false;
-        }
-    }
-
-    [[nodiscard]] inline constexpr bool presentationExpectedAfterMenu(
-        const bool menuEntryPresentationExpected,
-        const bool identityMutatedWhileMenuOpen,
-        const bool currentIdentityDiffersFromMenuEntry,
-        const std::uint32_t nativeWeaponState,
-        const bool priorPresentationExpected) noexcept
-    {
-        // Native menu code may fully holster before ROCK sees the close. An
-        // equipped-identity mutation is the durable evidence that the player
-        // selected or rebuilt a weapon and expects it to be presented again.
-        return menuEntryPresentationExpected ||
-               identityMutatedWhileMenuOpen ||
-               currentIdentityDiffersFromMenuEntry ||
-               presentationExpectedFromNativeState(
-                   nativeWeaponState,
-                   priorPresentationExpected);
-    }
 
     [[nodiscard]] inline constexpr bool matchesExpectedIdentity(
         const std::uint32_t currentFormID,
@@ -133,21 +95,13 @@ namespace rock::equipped_weapon_transition_policy
             return decision;
         }
 
-        if (!input.presentationExpected) {
-            state.stableFrames = 0;
-            state.missingFrames = 0;
-            state.drawSettleFramesRemaining = 0;
-            state.wantToDrawFrames = 0;
-            return decision;
-        }
-
         if (!input.weaponExactlyDrawn) {
             state.stableFrames = 0;
             state.missingFrames = 0;
             // Before the first native handoff, WantToDraw/Drawing may leave a
-            // real gap which the bridge must cover. After a native handoff,
-            // however, a non-drawn state is a real holster transition; never
-            // resurrect the loose model over it.
+            // real gap which the bridge must cover. After a completed handoff,
+            // a later non-drawn state belongs to a new engine/menu transition;
+            // never resurrect the completed equip's loose model over it.
             decision.presentBridgeModel =
                 input.bridgeModelAvailable && !state.nativeHandoffObserved;
 

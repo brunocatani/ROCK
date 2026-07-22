@@ -89,8 +89,7 @@ namespace rock
             Source source,
             const char* reason,
             Identity previousIdentity = {},
-            std::uintptr_t previousNativeInstanceNode = 0,
-            bool presentationExpected = false);
+            std::uintptr_t previousNativeInstanceNode = 0);
         void finish(const char* reason, bool releaseSceneGraph);
 
         EquipVisualBridge _bridge;
@@ -106,14 +105,10 @@ namespace rock
         float _activeSeconds{ 0.0f };
         bool _observationInitialized{ false };
         bool _active{ false };
-        bool _presentationExpected{ false };
         bool _waitingForExpectedIdentity{ false };
         bool _requestCurrentPending{ false };
         bool _wasMenuBlocking{ false };
         bool _menuEntryCaptured{ false };
-        bool _menuEntryPresentationExpected{ false };
-        bool _menuWeaponIdentityMutated{ false };
-        bool _lastNonMenuPresentationExpected{ false };
         bool _lateRecoveryWindowGranted{ false };
         bool _drawExhaustionLogged{ false };
         bool _repairExhaustionLogged{ false };

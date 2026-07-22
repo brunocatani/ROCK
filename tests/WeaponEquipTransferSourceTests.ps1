@@ -72,6 +72,18 @@ Require-Text 'src/physics-interaction/weapon/EquippedWeaponTransitionCoordinator
     'RepairAction::RequestDraw[\s\S]{0,500}native_equipped_weapon_draw::submitExactCurrent' `
     'Every draw retry must pass through the exact-identity transition coordinator.'
 
+Require-Text 'src/physics-interaction/weapon/EquippedWeaponTransitionCoordinator.cpp' `
+    '!_observationInitialized[\s\S]{0,700}current\.valid\(\)[\s\S]{0,240}bindCurrentIdentity[\s\S]{0,240}initial-equipped-identity' `
+    'An already-equipped weapon discovered on initial load must enter mandatory presentation recovery.'
+
+Reject-Text 'src/physics-interaction/weapon/EquippedWeaponTransitionCoordinator.cpp' `
+    'presentationExpected|holstered-presentation-preserved' `
+    'ROCK must not retain an equipped-but-intentionally-holstered presentation branch.'
+
+Reject-Text 'src/physics-interaction/weapon/EquippedWeaponTransitionPolicy.h' `
+    'presentationExpected' `
+    'Every active equipped-weapon transition must require drawn presentation.'
+
 Require-Text 'src/physics-interaction/weapon/WeaponEquipTransfer.cpp' `
     'inventoryBeforeTransfer\s*=\s*captureWeaponStacks[\s\S]{0,1800}ActivateRef\([\s\S]{0,1800}untransferredRef\.reset\(\);[\s\S]{0,500}inventoryAfterTransfer\s*=\s*captureWeaponStacks[\s\S]{0,500}selectTransferredStack' `
     'Held pickup must select the acquired stack from a pre/post inventory differential.'
