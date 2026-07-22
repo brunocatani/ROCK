@@ -197,6 +197,7 @@ namespace rock::debug
             std::vector<PublishedAxisEntry> axes;
             std::vector<MarkerOverlayEntry> markers;
             std::vector<SkeletonOverlayEntry> skeleton;
+            std::vector<ColoredLineOverlayEntry> coloredLines;
             std::vector<TextOverlayEntry> text;
             std::vector<CapturedShapeIdentity> capturedShapeIdentities;
             OverlayRenderSettings settings{};
@@ -209,6 +210,7 @@ namespace rock::debug
             bool drawAxes{ false };
             bool drawMarkers{ false };
             bool drawSkeleton{ false };
+            bool drawColoredLines{ false };
             bool drawText{ false };
         };
 
@@ -976,6 +978,7 @@ namespace rock::debug
             frame.axes.clear();
             frame.markers.clear();
             frame.skeleton.clear();
+            frame.coloredLines.clear();
             frame.text.clear();
             frame.capturedShapeIdentities.clear();
             frame.settings = {};
@@ -988,6 +991,7 @@ namespace rock::debug
             frame.drawAxes = false;
             frame.drawMarkers = false;
             frame.drawSkeleton = false;
+            frame.drawColoredLines = false;
             frame.drawText = false;
         }
 
@@ -1081,6 +1085,7 @@ namespace rock::debug
             destination.drawAxes = source.drawAxes;
             destination.drawMarkers = source.drawMarkers;
             destination.drawSkeleton = source.drawSkeleton;
+            destination.drawColoredLines = source.drawColoredLines;
             destination.drawText = source.drawText;
 
             const auto bodyCount = (std::min)(source.count, static_cast<std::uint32_t>(source.entries.size()));
@@ -1138,13 +1143,34 @@ namespace rock::debug
                 const auto count = (std::min)(source.skeletonCount, static_cast<std::uint32_t>(source.skeletonEntries.size()));
                 destination.skeleton.assign(source.skeletonEntries.begin(), source.skeletonEntries.begin() + count);
             }
+            if (source.drawColoredLines) {
+                const auto count = (std::min)(
+                    source.coloredLineCount,
+                    provider::ROCK_PROVIDER_MAX_DEBUG_OVERLAY_LINES_V1);
+                if (source.coloredLineEntries && count > 0) {
+                    destination.coloredLines.resize(count);
+                    for (std::uint32_t index = 0; index < count; ++index) {
+                        const auto& providerLine = source.coloredLineEntries[index];
+                        auto& line = destination.coloredLines[index];
+                        line.start = RE::NiPoint3(
+                            providerLine.startGame[0],
+                            providerLine.startGame[1],
+                            providerLine.startGame[2]);
+                        line.end = RE::NiPoint3(
+                            providerLine.endGame[0],
+                            providerLine.endGame[1],
+                            providerLine.endGame[2]);
+                        std::copy_n(providerLine.color, 4, line.color);
+                    }
+                }
+            }
             if (source.drawText) {
                 const auto count = (std::min)(source.textCount, static_cast<std::uint32_t>(source.textEntries.size()));
                 destination.text.assign(source.textEntries.begin(), source.textEntries.begin() + count);
             }
 
             return !destination.bodies.empty() || !destination.axes.empty() || !destination.markers.empty() ||
-                   !destination.skeleton.empty() || !destination.text.empty();
+                   !destination.skeleton.empty() || !destination.coloredLines.empty() || !destination.text.empty();
         }
 
         template <class T>
@@ -3157,6 +3183,17 @@ namespace rock::debug
             }
         }
 
+        void collectColoredLineOverlays(debug_overlay_line_batch::LineBatch& batch, const PublishedOverlayFrame& frame)
+        {
+            if (!frame.drawColoredLines || frame.coloredLines.empty()) {
+                return;
+            }
+
+            for (const auto& entry : frame.coloredLines) {
+                appendDebugLine(batch, toVertex(entry.start), toVertex(entry.end), entry.color);
+            }
+        }
+
         void drawTextOverlays(ID3D11DeviceContext* context,
             float textureWidth,
             float textureHeight,
@@ -3343,8 +3380,9 @@ namespace rock::debug
             const bool hasAxesToDraw = frame->drawAxes && !frame->axes.empty();
             const bool hasMarkersToDraw = frame->drawMarkers && !frame->markers.empty();
             const bool hasSkeletonToDraw = frame->drawSkeleton && !frame->skeleton.empty();
+            const bool hasColoredLinesToDraw = frame->drawColoredLines && !frame->coloredLines.empty();
             const bool hasTextToDraw = frame->drawText && !frame->text.empty();
-            if ((!hasBodiesToDraw && !hasAxesToDraw && !hasMarkersToDraw && !hasSkeletonToDraw && !hasTextToDraw) || !frame->worldIdentity) {
+            if ((!hasBodiesToDraw && !hasAxesToDraw && !hasMarkersToDraw && !hasSkeletonToDraw && !hasColoredLinesToDraw && !hasTextToDraw) || !frame->worldIdentity) {
                 return;
             }
 
@@ -3394,6 +3432,10 @@ namespace rock::debug
 
                 auto& lineBatch = s_d3d.scratch->lines;
                 lineBatch.beginFrame(frame->settings.limits.maxLineVertices);
+                // Owner-published diagnostics are already hard-bounded by the
+                // provider API. Admit them first so an enabled addon view is
+                // not silently starved by unrelated high-cardinality probes.
+                collectColoredLineOverlays(lineBatch, *frame);
                 collectAxisOverlays(lineBatch, *frame);
                 collectMarkerOverlays(lineBatch, *frame);
                 collectSkeletonOverlays(lineBatch, *frame);

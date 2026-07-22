@@ -1,5 +1,6 @@
 #define ROCK_API_EXPORTS
 #include "ROCKProviderApi.h"
+#include "api/ProviderDebugOverlayRuntime.h"
 
 #include <array>
 #include <atomic>
@@ -159,7 +160,8 @@ namespace
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::EquippedWeaponGripState) |
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::HandVisualAuthority) |
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::NativeAnimationRuntimeProvider) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::EquippedWeaponHandlingAuthority);
+        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::EquippedWeaponHandlingAuthority) |
+        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::DebugOverlayPublication);
     constexpr std::uint32_t kProviderFeatureBitsV1 =
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::FrameCallbacks) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::LifecycleFields) |
@@ -186,7 +188,9 @@ namespace
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::EquippedWeaponGripState) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::HandVisualAuthority) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::NativeAnimationRuntimeProvider) |
-        static_cast<std::uint32_t>(RockProviderFeatureBitV1::EquippedWeaponHandlingAuthority);
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::EquippedWeaponHandlingAuthority) |
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::DebugOverlayPublication) |
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::PresentedHandFrames);
     constexpr std::uint32_t kImplementedForceGrabFlagsV1 =
         static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::UsePreferredGrabPointGame);
     constexpr std::uint32_t kImplementedForceReleaseFlagsV1 =
@@ -639,12 +643,76 @@ namespace
         return target;
     }
 
+    [[nodiscard]] RockProviderTransform toProviderTransform(
+        const RE::NiTransform& source)
+    {
+        RockProviderTransform target{};
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                target.rotate[row * 3 + column] =
+                    source.rotate.entry[row][column];
+            }
+        }
+        target.translate[0] = source.translate.x;
+        target.translate[1] = source.translate.y;
+        target.translate[2] = source.translate.z;
+        target.scale = source.scale;
+        return target;
+    }
+
     [[nodiscard]] constexpr frik_visual_authority::Hand toVisualHand(
         const RockProviderHand hand)
     {
         return hand == RockProviderHand::Left ?
             frik_visual_authority::Hand::Left :
             frik_visual_authority::Hand::Right;
+    }
+
+    bool ROCK_PROVIDER_CALL apiGetPresentedHandFrameV1(
+        const RockProviderHand hand,
+        RockProviderHandFrameV1* outFrame)
+    {
+        if (!outFrame ||
+            outFrame->size != sizeof(RockProviderHandFrameV1) ||
+            (hand != RockProviderHand::Right &&
+                hand != RockProviderHand::Left) ||
+            !onAnimationOwnerThread() ||
+            !apiIsProviderReady() ||
+            !frik_visual_authority::isAvailable() ||
+            !frik_visual_authority::isSkeletonReadyHint()) {
+            return false;
+        }
+
+        const auto presentedWorld =
+            frik_visual_authority::getHandWorldTransform(
+                toVisualHand(hand));
+        const auto providerTransform =
+            toProviderTransform(presentedWorld);
+        if (!finiteProviderTransform(providerTransform)) {
+            return false;
+        }
+
+        RockProviderHandFrameV1 frame{};
+        frame.hand = hand;
+        frame.flags = static_cast<std::uint32_t>(
+                          RockProviderHandFrameFlagV1::Valid) |
+                      static_cast<std::uint32_t>(
+                          RockProviderHandFrameFlagV1::PresentedVisual);
+        if (hand == RockProviderHand::Left) {
+            frame.flags |= static_cast<std::uint32_t>(
+                RockProviderHandFrameFlagV1::Left);
+        }
+        if (hand == apiGetPrimaryHandV1()) {
+            frame.flags |= static_cast<std::uint32_t>(
+                RockProviderHandFrameFlagV1::Primary);
+        }
+        if (hand == apiGetOffhandHandV1()) {
+            frame.flags |= static_cast<std::uint32_t>(
+                RockProviderHandFrameFlagV1::Offhand);
+        }
+        frame.transform = providerTransform;
+        *outFrame = frame;
+        return true;
     }
 
     [[nodiscard]] HandVisualAuthoritySlot* findHandVisualAuthoritySlotLocked(
@@ -1387,6 +1455,7 @@ namespace
             RockProviderHand::None,
             true);
         clearNativeAnimationRuntimePublicationForOwner(ownerToken);
+        provider_debug_overlay::clear(ownerToken);
 
         return RockProviderResultV1::Ok;
     }
@@ -1426,6 +1495,16 @@ namespace
         outLimits->maxEquippedWeaponHandlingAuthorities = 1;
         outLimits->maxEquippedWeaponHandlingLeaseFrames =
             ROCK_PROVIDER_MAX_EQUIPPED_WEAPON_HANDLING_LEASE_FRAMES_V1;
+        outLimits->maxDebugOverlayPublishers =
+            ROCK_PROVIDER_MAX_DEBUG_OVERLAY_PUBLISHERS_V1;
+        outLimits->maxDebugOverlayLinesPerPublisher =
+            ROCK_PROVIDER_MAX_DEBUG_OVERLAY_LINES_PER_PUBLISHER_V1;
+        outLimits->maxDebugOverlayTextPerPublisher =
+            ROCK_PROVIDER_MAX_DEBUG_OVERLAY_TEXT_PER_PUBLISHER_V1;
+        outLimits->maxDebugOverlayLines =
+            ROCK_PROVIDER_MAX_DEBUG_OVERLAY_LINES_V1;
+        outLimits->maxDebugOverlayText =
+            ROCK_PROVIDER_MAX_DEBUG_OVERLAY_TEXT_V1;
         return true;
     }
 
@@ -2307,6 +2386,68 @@ namespace
         return true;
     }
 
+    RockProviderResultV1 ROCK_PROVIDER_CALL apiPublishDebugOverlayV1(
+        const std::uint64_t ownerToken,
+        const RockProviderDebugOverlayPublicationV1* publication)
+    {
+        if (ownerToken == 0 || !publication) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        if (!onAnimationOwnerThread()) {
+            return RockProviderResultV1::WrongThread;
+        }
+        if (publication->size !=
+            sizeof(RockProviderDebugOverlayPublicationV1)) {
+            return RockProviderResultV1::InvalidSize;
+        }
+        if (publication->version == 0 ||
+            publication->version > ROCK_PROVIDER_API_VERSION) {
+            return RockProviderResultV1::UnsupportedVersion;
+        }
+        const auto generationResult = validateGenerationGuards(
+            publication->worldGeneration,
+            publication->skeletonGeneration,
+            publication->providerGeneration);
+        if (generationResult != RockProviderResultV1::Ok) {
+            return generationResult;
+        }
+        if (!apiIsProviderReady()) {
+            return RockProviderResultV1::NotReady;
+        }
+        {
+            std::scoped_lock lock(s_consumerMutex);
+            const auto ownerResult = validateRegisteredOwnerCapabilityLocked(
+                ownerToken,
+                RockProviderConsumerCapabilityV1::DebugOverlayPublication);
+            if (ownerResult != RockProviderResultV1::Ok) {
+                return ownerResult;
+            }
+        }
+        return provider_debug_overlay::publish(ownerToken, *publication);
+    }
+
+    RockProviderResultV1 ROCK_PROVIDER_CALL apiClearDebugOverlayV1(
+        const std::uint64_t ownerToken)
+    {
+        if (ownerToken == 0) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        if (!onAnimationOwnerThread()) {
+            return RockProviderResultV1::WrongThread;
+        }
+        {
+            std::scoped_lock lock(s_consumerMutex);
+            const auto ownerResult = validateRegisteredOwnerCapabilityLocked(
+                ownerToken,
+                RockProviderConsumerCapabilityV1::DebugOverlayPublication);
+            if (ownerResult != RockProviderResultV1::Ok) {
+                return ownerResult;
+            }
+        }
+        provider_debug_overlay::clear(ownerToken);
+        return RockProviderResultV1::Ok;
+    }
+
     RockProviderResultV1 ROCK_PROVIDER_CALL apiSetWeaponPartTargetsV1(
         std::uint64_t ownerToken,
         const RockProviderWeaponPartTargetV1* targets,
@@ -2697,6 +2838,9 @@ namespace
         .setEquippedWeaponHandlingAuthorityV1 = &apiSetEquippedWeaponHandlingAuthorityV1,
         .clearEquippedWeaponHandlingAuthorityV1 = &apiClearEquippedWeaponHandlingAuthorityV1,
         .getEquippedWeaponHandlingStateV1 = &apiGetEquippedWeaponHandlingStateV1,
+        .publishDebugOverlayV1 = &apiPublishDebugOverlayV1,
+        .clearDebugOverlayV1 = &apiClearDebugOverlayV1,
+        .getPresentedHandFrameV1 = &apiGetPresentedHandFrameV1,
     };
 }
 
@@ -2874,6 +3018,7 @@ namespace rock::provider
                 RockProviderHand::None,
                 true);
             clearNativeAnimationRuntimePublicationForOwner(slot.ownerToken);
+            provider_debug_overlay::clear(slot.ownerToken);
             {
                 std::scoped_lock lock(s_equippedWeaponHandlingAuthorityMutex);
                 clearEquippedWeaponHandlingAuthorityForOwnerLocked(slot.ownerToken);
@@ -2926,6 +3071,7 @@ namespace rock::provider
             std::scoped_lock lock(s_equippedWeaponHandlingAuthorityMutex);
             s_equippedWeaponHandlingAuthority = {};
         }
+        provider_debug_overlay::clearAll();
         s_offhandReservation.store(static_cast<std::uint32_t>(RockProviderOffhandReservation::Normal), std::memory_order_release);
         s_offhandReservationOwner.store(0, std::memory_order_release);
     }

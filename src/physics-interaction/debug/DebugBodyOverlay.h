@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 
+#include "api/ROCKProviderApi.h"
 #include "physics-interaction/weapon/WeaponTypes.h"
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 #include "physics-interaction/hand/HandColliderTypes.h"
@@ -311,6 +312,13 @@ namespace rock::debug
         bool worldAnchored{ false };
     };
 
+    struct ColoredLineOverlayEntry
+    {
+        RE::NiPoint3 start{};
+        RE::NiPoint3 end{};
+        float color[4]{ 1.0f, 1.0f, 1.0f, 1.0f };
+    };
+
     struct BodyOverlayFrame
     {
         RE::hknpWorld* world{ nullptr };
@@ -322,17 +330,22 @@ namespace rock::debug
         std::array<AxisOverlayEntry, 96> axisEntries{};
         std::array<MarkerOverlayEntry, 512> markerEntries{};
         std::array<SkeletonOverlayEntry, skeleton_bone_debug_math::skeletonOverlayBudget()> skeletonEntries{};
+        // Borrowed only for the synchronous PublishFrame call, which copies
+        // the bounded prefix before returning.
+        const provider::RockProviderDebugOverlayLineV1* coloredLineEntries{ nullptr };
         std::array<TextOverlayEntry, 96> textEntries{};
         std::uint32_t count{ 0 };
         std::uint32_t axisCount{ 0 };
         std::uint32_t markerCount{ 0 };
         std::uint32_t skeletonCount{ 0 };
+        std::uint32_t coloredLineCount{ 0 };
         std::uint32_t textCount{ 0 };
         bool drawRockBodies{ false };
         bool drawTargetBodies{ false };
         bool drawAxes{ false };
         bool drawMarkers{ false };
         bool drawSkeleton{ false };
+        bool drawColoredLines{ false };
         bool drawText{ false };
     };
 

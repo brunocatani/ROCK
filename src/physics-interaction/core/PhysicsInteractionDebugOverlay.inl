@@ -141,6 +141,17 @@
         logGrabOverlayPointProbe(context);
 
         auto* hknp = context.hknpWorld;
+        provider_debug_overlay::Snapshot* providerOverlay = nullptr;
+        if (provider_debug_overlay::hasContent()) {
+            // Lazily keep the aggregate buffer off the per-frame game stack.
+            // This aggregate scratch remains on ROCK's update-owner thread;
+            // copySnapshot synchronizes against publication and teardown.
+            static provider_debug_overlay::Snapshot s_providerOverlay{};
+            provider_debug_overlay::copySnapshot(s_providerOverlay);
+            providerOverlay = &s_providerOverlay;
+        }
+        const bool drawProviderOverlay = providerOverlay &&
+            (providerOverlay->lineCount > 0 || providerOverlay->textCount > 0);
         const bool drawRockColliderBodies = g_rockConfig.rockDebugShowColliders;
         const bool drawGrabPivots = g_rockConfig.rockDebugShowGrabPivots;
         const bool drawFingerProbes = g_rockConfig.rockDebugShowGrabFingerProbes;
@@ -189,7 +200,7 @@
             !drawFingerSweptArc && !drawPalmVectors && !drawGrabPockets && !drawRootFlattenedFingerSkeleton && !drawSkeletonBones && !drawGrabPocketNormal &&
             !drawGrabContactPatch && !drawHandBoneContacts && !drawGrabAuthorityProxy && !drawGrabForceTorque && !drawGrabTransformTelemetry && !drawPerformanceProfilerOverlay &&
             !drawWeaponAuthorityDebug && !drawNativeScopeActivation && !drawGrabSupportFrame && !drawWorldOriginDiagnostics && !drawCustomCalibrationOffset &&
-            !drawDynamicHandColliders && !drawAuthoredSupportGripDebug) {
+            !drawDynamicHandColliders && !drawAuthoredSupportGripDebug && !drawProviderOverlay) {
             debug::ClearFrame();
             return;
         }
@@ -208,9 +219,33 @@
             drawWeaponAuthorityDebug || drawNativeScopeActivation || drawGrabSupportFrame || drawWorldOriginDiagnostics || drawDynamicHandColliders ||
             drawAuthoredSupportGripDebug;
         frame.drawSkeleton = drawSkeletonBones;
+        frame.drawColoredLines = providerOverlay && providerOverlay->lineCount > 0;
         frame.drawText = drawGrabTransformTelemetryText || drawGrabForceTorqueText || drawFingerSweptArcText || drawPerformanceProfilerOverlay ||
             drawDynamicHandColliders || drawNativeScopeActivation ||
-            drawAuthoredSupportGripDebug;
+            drawAuthoredSupportGripDebug ||
+            (providerOverlay && providerOverlay->textCount > 0);
+        if (providerOverlay) {
+            frame.coloredLineEntries = providerOverlay->lines.data();
+            frame.coloredLineCount = providerOverlay->lineCount;
+        }
+        for (std::uint32_t index = 0;
+             providerOverlay && index < providerOverlay->textCount && frame.textCount < frame.textEntries.size();
+             ++index) {
+            const auto& source = providerOverlay->textEntries[index];
+            auto& destination = frame.textEntries[frame.textCount++];
+            std::snprintf(destination.text, sizeof(destination.text), "%s", source.text);
+            destination.x = source.x;
+            destination.y = source.y;
+            destination.size = source.textSize;
+            std::copy_n(source.color, 4, destination.color);
+            destination.worldAnchor = RE::NiPoint3(
+                source.worldAnchorGame[0],
+                source.worldAnchorGame[1],
+                source.worldAnchorGame[2]);
+            destination.worldAnchored =
+                (source.flags & static_cast<std::uint32_t>(
+                    provider::RockProviderDebugOverlayTextFlagV1::WorldAnchored)) != 0;
+        }
         RE::bhkWorld* originDiagnosticBhk = drawWorldOriginDiagnostics ? context.bhkWorld : nullptr;
         const bool rightDisabled = context.right.disabled;
         const bool leftDisabled = context.left.disabled;

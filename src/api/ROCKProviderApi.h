@@ -51,6 +51,12 @@ namespace rock::provider
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_NATIVE_ANIMATION_AUTHORITY_LEASE_FRAMES_V1 = 1200;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_ANIMATION_PHASE_CALLBACKS_V1 = 16;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EQUIPPED_WEAPON_HANDLING_LEASE_FRAMES_V1 = 120;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DEBUG_OVERLAY_PUBLISHERS_V1 = 8;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DEBUG_OVERLAY_LINES_PER_PUBLISHER_V1 = 1024;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DEBUG_OVERLAY_TEXT_PER_PUBLISHER_V1 = 16;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DEBUG_OVERLAY_LINES_V1 = 2048;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DEBUG_OVERLAY_TEXT_V1 = 64;
+    inline constexpr std::uint32_t ROCK_PROVIDER_DEBUG_OVERLAY_TEXT_CAPACITY_V1 = 128;
     inline constexpr std::uint16_t ROCK_PROVIDER_ALL_FINGER_LOCAL_TRANSFORMS_V1 = 0x7FFFu;
 
     enum class RockProviderHand : std::uint32_t
@@ -77,6 +83,7 @@ namespace rock::provider
         Offhand = 1u << 3,
         HasSceneNode = 1u << 4,
         RootFlattenedAuthority = 1u << 5,
+        PresentedVisual = 1u << 6,
     };
 
     enum class RockProviderExternalBodyRole : std::uint32_t
@@ -240,6 +247,7 @@ namespace rock::provider
         HandVisualAuthority = 1u << 10,
         NativeAnimationRuntimeProvider = 1u << 11,
         EquippedWeaponHandlingAuthority = 1u << 12,
+        DebugOverlayPublication = 1u << 13,
     };
 
     enum class RockProviderFeatureBitV1 : std::uint32_t
@@ -271,6 +279,8 @@ namespace rock::provider
         HandVisualAuthority = 1u << 25,
         NativeAnimationRuntimeProvider = 1u << 26,
         EquippedWeaponHandlingAuthority = 1u << 27,
+        DebugOverlayPublication = 1u << 28,
+        PresentedHandFrames = 1u << 29,
     };
 
     /*
@@ -377,6 +387,12 @@ namespace rock::provider
         None = 0,
         WorldTransform = 1u << 0,
         FingerLocalTransforms = 1u << 1,
+    };
+
+    enum class RockProviderDebugOverlayTextFlagV1 : std::uint32_t
+    {
+        None = 0,
+        WorldAnchored = 1u << 0,
     };
 
     enum class RockProviderWeaponEmitterKindV1 : std::uint32_t
@@ -699,6 +715,11 @@ namespace rock::provider
         std::uint32_t maxNativeAnimationRuntimeProviders{ 0 };
         std::uint32_t maxEquippedWeaponHandlingAuthorities{ 0 };
         std::uint32_t maxEquippedWeaponHandlingLeaseFrames{ 0 };
+        std::uint32_t maxDebugOverlayPublishers{ 0 };
+        std::uint32_t maxDebugOverlayLinesPerPublisher{ 0 };
+        std::uint32_t maxDebugOverlayTextPerPublisher{ 0 };
+        std::uint32_t maxDebugOverlayLines{ 0 };
+        std::uint32_t maxDebugOverlayText{ 0 };
     };
 
     struct RockProviderForceGrabRequestV1
@@ -1299,6 +1320,51 @@ namespace rock::provider
     };
 
     /*
+     * Diagnostic-only colored geometry submitted to ROCK's single OpenVR/D3D
+     * overlay renderer. Consumer memory is copied during publish and is never
+     * retained. Publications are owner-scoped, bounded, game-thread-only, and
+     * cleared on explicit clear, unregister, callback fault, or provider loss.
+     */
+    struct RockProviderDebugOverlayLineV1
+    {
+        std::uint32_t size{ sizeof(RockProviderDebugOverlayLineV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        float startGame[3]{};
+        float endGame[3]{};
+        float color[4]{ 1.0f, 1.0f, 1.0f, 1.0f };
+        std::uint32_t reserved[2]{};
+    };
+
+    struct RockProviderDebugOverlayTextV1
+    {
+        std::uint32_t size{ sizeof(RockProviderDebugOverlayTextV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint32_t flags{ 0 };
+        std::uint32_t reserved0{ 0 };
+        char text[ROCK_PROVIDER_DEBUG_OVERLAY_TEXT_CAPACITY_V1]{};
+        float x{ 18.0f };
+        float y{ 18.0f };
+        float textSize{ 2.0f };
+        float color[4]{ 0.90f, 1.0f, 0.95f, 0.92f };
+        float worldAnchorGame[3]{};
+        std::uint32_t reserved[4]{};
+    };
+
+    struct RockProviderDebugOverlayPublicationV1
+    {
+        std::uint32_t size{ sizeof(RockProviderDebugOverlayPublicationV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint32_t lineCount{ 0 };
+        std::uint32_t textCount{ 0 };
+        const RockProviderDebugOverlayLineV1* lines{ nullptr };
+        const RockProviderDebugOverlayTextV1* textEntries{ nullptr };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t providerGeneration{ 0 };
+        std::uint32_t reserved[5]{};
+    };
+
+    /*
      * Detailed weapon evidence carries semantic body identity, local generated
      * bounds, and total point count without making the fixed function table own
      * variable-length buffers. Callers fetch the local mesh point cloud through
@@ -1521,6 +1587,19 @@ namespace rock::provider
             std::uint64_t ownerToken);
         bool(ROCK_PROVIDER_CALL* getEquippedWeaponHandlingStateV1)(
             RockProviderEquippedWeaponHandlingStateV1* outState);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* publishDebugOverlayV1)(
+            std::uint64_t ownerToken,
+            const RockProviderDebugOverlayPublicationV1* publication);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* clearDebugOverlayV1)(
+            std::uint64_t ownerToken);
+        /*
+         * Game-thread-only value snapshot of hFRIK's current presented hand
+         * after visual-authority writers. Unlike getHandFrameV1, this is not
+         * ROCK's root-flattened physics authority and exposes no scene node.
+         */
+        bool(ROCK_PROVIDER_CALL* getPresentedHandFrameV1)(
+            RockProviderHand hand,
+            RockProviderHandFrameV1* outFrame);
 
         [[nodiscard]] static int initialize(
             const std::uint32_t minVersion = ROCK_PROVIDER_API_VERSION,
@@ -1607,6 +1686,10 @@ namespace rock::provider
         offsetof(RockProviderApi, publishNativeAnimationRuntimeV1) + sizeof(std::declval<RockProviderApi>().publishNativeAnimationRuntimeV1));
     inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_EQUIPPED_WEAPON_HANDLING_AUTHORITY_TABLE_BYTES = static_cast<std::uint32_t>(
         offsetof(RockProviderApi, getEquippedWeaponHandlingStateV1) + sizeof(std::declval<RockProviderApi>().getEquippedWeaponHandlingStateV1));
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_DEBUG_OVERLAY_PUBLICATION_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, clearDebugOverlayV1) + sizeof(std::declval<RockProviderApi>().clearDebugOverlayV1));
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_PRESENTED_HAND_FRAMES_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, getPresentedHandFrameV1) + sizeof(std::declval<RockProviderApi>().getPresentedHandFrameV1));
 
     [[nodiscard]] inline bool queryProviderLimitsV1(RockProviderLimitsV1& outLimits)
     {
@@ -1799,6 +1882,30 @@ namespace rock::provider
         return queryProviderLimitsV1(limits) && supportsEquippedWeaponHandlingAuthorityV1(limits);
     }
 
+    [[nodiscard]] inline bool supportsDebugOverlayPublicationV1(const RockProviderLimitsV1& limits)
+    {
+        return providerApiTableSupportsV1(limits, ROCK_PROVIDER_API_V1_DEBUG_OVERLAY_PUBLICATION_TABLE_BYTES) &&
+               hasFeatureBitV1(limits.featureBits, RockProviderFeatureBitV1::DebugOverlayPublication);
+    }
+
+    [[nodiscard]] inline bool supportsDebugOverlayPublicationV1()
+    {
+        RockProviderLimitsV1 limits{};
+        return queryProviderLimitsV1(limits) && supportsDebugOverlayPublicationV1(limits);
+    }
+
+    [[nodiscard]] inline bool supportsPresentedHandFramesV1(const RockProviderLimitsV1& limits)
+    {
+        return providerApiTableSupportsV1(limits, ROCK_PROVIDER_API_V1_PRESENTED_HAND_FRAMES_TABLE_BYTES) &&
+               hasFeatureBitV1(limits.featureBits, RockProviderFeatureBitV1::PresentedHandFrames);
+    }
+
+    [[nodiscard]] inline bool supportsPresentedHandFramesV1()
+    {
+        RockProviderLimitsV1 limits{};
+        return queryProviderLimitsV1(limits) && supportsPresentedHandFramesV1(limits);
+    }
+
     static_assert(std::is_standard_layout_v<RockProviderTransform>);
     static_assert(std::is_trivially_copyable_v<RockProviderTransform>);
     static_assert(sizeof(RockProviderConsumerRegistrationV1) == 104);
@@ -1809,7 +1916,7 @@ namespace rock::provider
     static_assert(alignof(RockProviderConsumerHandleV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderConsumerHandleV1>);
     static_assert(std::is_trivially_copyable_v<RockProviderConsumerHandleV1>);
-    static_assert(sizeof(RockProviderLimitsV1) == 72);
+    static_assert(sizeof(RockProviderLimitsV1) == 92);
     static_assert(alignof(RockProviderLimitsV1) == 4);
     static_assert(std::is_standard_layout_v<RockProviderLimitsV1>);
     static_assert(std::is_trivially_copyable_v<RockProviderLimitsV1>);
@@ -1857,6 +1964,18 @@ namespace rock::provider
     static_assert(alignof(RockProviderNativeAnimationRuntimePublicationV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderNativeAnimationRuntimePublicationV1>);
     static_assert(std::is_trivially_copyable_v<RockProviderNativeAnimationRuntimePublicationV1>);
+    static_assert(sizeof(RockProviderDebugOverlayLineV1) == 56);
+    static_assert(alignof(RockProviderDebugOverlayLineV1) == 4);
+    static_assert(std::is_standard_layout_v<RockProviderDebugOverlayLineV1>);
+    static_assert(std::is_trivially_copyable_v<RockProviderDebugOverlayLineV1>);
+    static_assert(sizeof(RockProviderDebugOverlayTextV1) == 200);
+    static_assert(alignof(RockProviderDebugOverlayTextV1) == 4);
+    static_assert(std::is_standard_layout_v<RockProviderDebugOverlayTextV1>);
+    static_assert(std::is_trivially_copyable_v<RockProviderDebugOverlayTextV1>);
+    static_assert(sizeof(RockProviderDebugOverlayPublicationV1) == 64);
+    static_assert(alignof(RockProviderDebugOverlayPublicationV1) == 8);
+    static_assert(std::is_standard_layout_v<RockProviderDebugOverlayPublicationV1>);
+    static_assert(std::is_trivially_copyable_v<RockProviderDebugOverlayPublicationV1>);
     static_assert(sizeof(RockProviderEquippedWeaponHandlingRequestV1) == 128);
     static_assert(alignof(RockProviderEquippedWeaponHandlingRequestV1) == 4);
     static_assert(std::is_standard_layout_v<RockProviderEquippedWeaponHandlingRequestV1>);

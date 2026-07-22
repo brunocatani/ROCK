@@ -1,5 +1,7 @@
 #include "physics-interaction/core/PhysicsInteraction.h"
 
+#include "api/ProviderDebugOverlayRuntime.h"
+
 #include <algorithm>
 #include <array>
 #include <atomic>

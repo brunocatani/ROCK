@@ -215,6 +215,22 @@ Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_API_V1_EQUIPPED_WEAPON_H
     'Equipped-weapon policy consumers must negotiate both feature bit and appended table size.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'maxEquippedWeaponHandlingAuthorities\s*=\s*1[\s\S]*maxEquippedWeaponHandlingLeaseFrames\s*=[\s\S]*ROCK_PROVIDER_MAX_EQUIPPED_WEAPON_HANDLING_LEASE_FRAMES_V1' `
     'Provider limits must publish the single-owner authority capacity and maximum lease.'
+Require-Text 'src/api/ROCKProviderApi.h' 'DebugOverlayPublication[\s\S]*RockProviderDebugOverlayLineV1[\s\S]*RockProviderDebugOverlayTextV1[\s\S]*RockProviderDebugOverlayPublicationV1' `
+    'API V1 must expose bounded owner-scoped debug overlay publication values.'
+Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_API_V1_DEBUG_OVERLAY_PUBLICATION_TABLE_BYTES[\s\S]*supportsDebugOverlayPublicationV1' `
+    'Debug publishers must negotiate both the V1 feature bit and appended table size.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'maxDebugOverlayPublishers\s*=[\s\S]*ROCK_PROVIDER_MAX_DEBUG_OVERLAY_PUBLISHERS_V1[\s\S]*maxDebugOverlayLinesPerPublisher[\s\S]*maxDebugOverlayTextPerPublisher[\s\S]*maxDebugOverlayLines\s*=[\s\S]*ROCK_PROVIDER_MAX_DEBUG_OVERLAY_LINES_V1[\s\S]*maxDebugOverlayText\s*=[\s\S]*ROCK_PROVIDER_MAX_DEBUG_OVERLAY_TEXT_V1' `
+    'Provider limits must publish every bounded debug-overlay capacity.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'apiPublishDebugOverlayV1[\s\S]*validateRegisteredOwnerCapabilityLocked[\s\S]*DebugOverlayPublication[\s\S]*provider_debug_overlay::publish' `
+    'Debug overlay publication must remain registered-owner and capability gated.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'unregisterConsumer[\s\S]*provider_debug_overlay::clear\(ownerToken\)' `
+    'Unregistering a consumer must clear its debug overlay publication.'
+Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' 'provider_debug_overlay::hasContent[\s\S]*static provider_debug_overlay::Snapshot[\s\S]*provider_debug_overlay::copySnapshot[\s\S]*drawProviderOverlay[\s\S]*coloredLineEntries[\s\S]*RockProviderDebugOverlayTextFlagV1::WorldAnchored' `
+    'The existing ROCK stereo renderer must consume copied provider lines and text.'
+Require-Text 'src/api/ROCKProviderApi.h' 'PresentedVisual[\s\S]*PresentedHandFrames[\s\S]*ROCK_PROVIDER_API_V1_PRESENTED_HAND_FRAMES_TABLE_BYTES[\s\S]*supportsPresentedHandFramesV1' `
+    'API V1 must distinguish the final hFRIK-presented hand from ROCK''s root-flattened authority frame.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'apiGetPresentedHandFrameV1[\s\S]*onAnimationOwnerThread\(\)[\s\S]*frik_visual_authority::getHandWorldTransform[\s\S]*RockProviderHandFrameFlagV1::PresentedVisual' `
+    'Presented hand queries must read the final hFRIK transform on the animation owner thread.'
 Require-Text 'src/api/ROCKProviderApi.h' 'NativeAnimationAuthority[\s\S]*RockProviderNativeAnimationAuthorityRequestV1' `
     'API V1 must expose selective native animation authority as a registered consumer capability.'
 Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_API_V1_NATIVE_ANIMATION_AUTHORITY_TABLE_BYTES[\s\S]*supportsNativeAnimationAuthorityV1' `
@@ -314,7 +330,10 @@ $expectedProviderFunctions = [string[]]@(
     'publishNativeAnimationRuntimeV1',
     'setEquippedWeaponHandlingAuthorityV1',
     'clearEquippedWeaponHandlingAuthorityV1',
-    'getEquippedWeaponHandlingStateV1'
+    'getEquippedWeaponHandlingStateV1',
+    'publishDebugOverlayV1',
+    'clearDebugOverlayV1',
+    'getPresentedHandFrameV1'
 )
 Require-SequenceEqual 'ROCKProviderApi function pointer order' (Get-ProviderFunctionNames $providerHeader) $expectedProviderFunctions
 
