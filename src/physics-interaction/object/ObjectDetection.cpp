@@ -705,7 +705,7 @@ namespace rock
                 }
 
                 SelectedObject candidate;
-                candidate.refr = ref;
+                candidate.setReference(ref);
                 candidate.bodyId = hitBodyId;
                 candidate.hitPointWorld = hitPoint;
                 candidate.hitNormalWorld = hitNormal;

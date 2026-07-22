@@ -19,6 +19,7 @@
 #include "RE/Havok/hknpWorld.h"
 #include "RE/NetImmerse/NiAVObject.h"
 #include "RE/NetImmerse/NiCollisionObject.h"
+#include "RE/NetImmerse/NiSmartPointer.h"
 
 #include <cstdint>
 
@@ -26,6 +27,14 @@ namespace rock
 {
     struct SelectedObject
     {
+        /*
+         * Selection survives beyond the collision-query callback that found
+         * it. Retain the reference for exactly that lifetime so an engine
+         * pickup/unload cannot leave the per-frame consumers with a dangling
+         * raw TESObjectREFR. `refr` remains the non-owning convenience alias
+         * used by the hot interaction code and must always mirror retainedRef.
+         */
+        RE::NiPointer<RE::TESObjectREFR> retainedRef{};
         RE::TESObjectREFR* refr = nullptr;
         RE::hknpBodyId bodyId{ 0x7FFF'FFFF };
         RE::NiAVObject* hitNode = nullptr;
@@ -57,9 +66,16 @@ namespace rock
         bool forcedArrival = false;
         actor_equipment_grab::ActorEquipmentSelection actorEquipment{};
 
+        void setReference(RE::TESObjectREFR* value)
+        {
+            retainedRef.reset(value);
+            refr = retainedRef.get();
+        }
+
         void clear()
         {
             refr = nullptr;
+            retainedRef.reset();
             bodyId.value = 0x7FFF'FFFF;
             hitNode = nullptr;
             visualNode = nullptr;
@@ -85,7 +101,7 @@ namespace rock
             actorEquipment = {};
         }
 
-        bool isValid() const { return refr != nullptr; }
+        bool isValid() const { return refr != nullptr && retainedRef.get() == refr; }
     };
 
     inline bool resolveFarSelectionHmdConeAnchor(RE::hknpWorld* hknpWorld, const SelectedObject& selection, RE::NiPoint3& outAnchor)

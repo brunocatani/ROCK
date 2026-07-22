@@ -7425,7 +7425,8 @@ namespace rock
             return false;
 
         const auto& sel = _currentSelection;
-        if (!sel.refr || sel.bodyId.value == 0x7FFF'FFFF)
+        const auto selectedRef = sel.retainedRef;
+        if (!selectedRef || selectedRef.get() != sel.refr || sel.bodyId.value == 0x7FFF'FFFF)
             return false;
         if (sel.refr->IsDeleted() || sel.refr->IsDisabled())
             return false;
@@ -8458,7 +8459,7 @@ namespace rock
             return false;
         }
         _savedObjectState.bodyId = objectBodyId;
-        _savedObjectState.refr = sel.refr;
+        _savedObjectState.setReference(selectedRef);
         _savedObjectState.targetKind = sel.targetKind;
         _savedObjectState.originalFilterInfo = preparedBody->collisionFilterInfo;
         _savedObjectState.originalMotionPropsId = selectedOriginalMotionPropsId;
@@ -13885,7 +13886,8 @@ namespace rock
         }
 
         outcome.released = true;
-        outcome.refr = _savedObjectState.refr;
+        outcome.retainedRef = _savedObjectState.retainedRef;
+        outcome.refr = outcome.retainedRef.get();
         outcome.formID = outcome.refr ? outcome.refr->GetFormID() : 0;
 
         if (grabTimelineTraceEnabled()) {

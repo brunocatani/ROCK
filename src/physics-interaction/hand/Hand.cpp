@@ -875,7 +875,7 @@ namespace rock
         }
 
         SelectedObject selection{};
-        selection.refr = refr;
+        selection.setReference(refr);
         selection.bodyId = bodyId;
         selection.hitPointWorld = bodyWorld.translate;
         selection.hitNormalWorld = normalizeOrFallback(selectionOrigin - bodyWorld.translate, palmNormal);
@@ -1067,7 +1067,7 @@ namespace rock
                                            sourceHitPointWorld;
 
         SelectedObject replacement{};
-        replacement.refr = droppedRef;
+        replacement.setReference(droppedRef);
         replacement.bodyId = RE::hknpBodyId{ primaryChoice.bodyId };
         replacement.hitNode = primaryRecord && primaryRecord->owningNode ? primaryRecord->owningNode : droppedRef->Get3D();
         replacement.visualNode = droppedRef->Get3D();
@@ -1169,7 +1169,7 @@ namespace rock
         }
 
         SelectedObject selection{};
-        selection.refr = targetRef;
+        selection.setReference(targetRef);
         selection.bodyId = RE::hknpBodyId{ primaryChoice.bodyId };
         selection.hitNode = primaryRecord && primaryRecord->owningNode ? primaryRecord->owningNode : targetRef->Get3D();
         selection.visualNode = targetRef->Get3D();
@@ -2232,7 +2232,7 @@ namespace rock
 
                 bestDistance = distance;
                 bestSource = source;
-                best.refr = peerRef;
+                best.setReference(peerRef);
                 best.bodyId = RE::hknpBodyId{ bodyId };
                 best.hitPointWorld = hitPointWorld;
                 best.hitNormalWorld = normalizeOrFallback(hitNormalWorld, normalizeOrFallback(selectionOrigin - hitPointWorld, palmNormal));

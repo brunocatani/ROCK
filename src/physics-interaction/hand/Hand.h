@@ -271,6 +271,9 @@ namespace rock
         };
 
         bool released = false;
+        // Keeps a released reference alive while a caller completes a native
+        // inventory/consume handoff and while it dispatches release events.
+        RE::NiPointer<RE::TESObjectREFR> retainedRef{};
         RE::TESObjectREFR* refr = nullptr;
         std::uint32_t formID = 0;
         bool finalObjectRelease = true;

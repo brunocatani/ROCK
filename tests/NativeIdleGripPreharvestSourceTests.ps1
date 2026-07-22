@@ -131,6 +131,12 @@ Require-Text $source `
     'describeEquippedCandidate[\s\S]*candidate\.instanceData\s*=\s*RE::BSTSmartPointer<RE::TBO_InstanceData>\(instanceData\)[\s\S]*identifyWeaponVariant\(weaponRoot\)[\s\S]*CandidateOrigin::EquippedWeapon' `
     'Direct inventory equip must capture stable instance data and a value-only variant identity without retaining the scene node.'
 Require-Text $source `
+    'void\s+observeCandidate\(RE::NiPointer<RE::TESObjectREFR>\s+candidate\)[\s\S]{0,700}advanceAndCanStart\(state\)[\s\S]{0,300}candidate\.get\(\)[\s\S]{0,220}RE::NiPointer<RE::NiAVObject>\s+weaponRoot' `
+    'Loose preharvest must own the candidate across native job progress and retain the resolved scene root while copying its variant.'
+Reject-Text $source `
+    'void\s+observeCandidate\(RE::TESObjectREFR\*\s*candidate\)' `
+    'The preharvest boundary must never regress to a raw loose-reference parameter.'
+Require-Text $source `
     'publishResolvedVariant\(job\.weapon,\s*job\.variant[\s\S]*releaseJob\(state\)' `
     'An asynchronous harvest must publish from its captured variant value even after the originating loose or equipped scene node disappears.'
 Reject-Text $source `
@@ -140,8 +146,8 @@ Require-Text $source `
     'kAnimationTypeOffset\s*=\s*0x10[\s\S]*kAnimationDurationOffset\s*=\s*0x14[\s\S]*kAnimationTransformTrackCountOffset\s*=\s*0x18[\s\S]*kAnimationFloatTrackCountOffset\s*=\s*0x1C[\s\S]*kBindingBlendHintOffset\s*=\s*0x50' `
     'The sampler diagnostics must retain the audited FO4VR hkaAnimation and hkaAnimationBinding field layout.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'NativeIdleGripPreharvest\.h[\s\S]*nativeIdleGripCandidate[\s\S]*hand\.isHoldingLooseWeapon\(\)[\s\S]*hand\.hasSelection\(\)[\s\S]*native_idle_grip_preharvest::observeCandidate\(nativeIdleGripCandidate\)[\s\S]*gripZoneHoverHapticsEnabled' `
-    'The frame owner must offer held or raw selected weapons before input commit, independently of optional hover haptics.'
+    'NativeIdleGripPreharvest\.h[\s\S]*RE::NiPointer<RE::TESObjectREFR>\s+nativeIdleGripCandidate[\s\S]*hand\.getSavedObjectState\(\)\.retainedRef[\s\S]*hand\.getSelection\(\)\.retainedRef[\s\S]*native_idle_grip_preharvest::observeCandidate\(std::move\(nativeIdleGripCandidate\)\)[\s\S]*gripZoneHoverHapticsEnabled' `
+    'The frame owner must offer retained held or selected weapons before input commit, independently of optional hover haptics.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'weaponGenerationKey[\s\S]*equippedGenerationMatchesForm[\s\S]*getCurrentObservedEquippedWeaponFormID\(\)\s*==\s*equippedWeapon->formID[\s\S]*native_idle_grip_preharvest::observeEquippedWeapon\([\s\S]*equippedWeapon[\s\S]*weaponNode[\s\S]*currentEquippedWeaponInstanceData\(equippedWeapon\)[\s\S]*_authoredPrimaryFiringGrip\.update' `
     'A stable directly equipped weapon must enter preharvest before authored pose lookup, without pairing the new form with a stale scene generation.'

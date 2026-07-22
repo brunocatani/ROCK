@@ -1339,16 +1339,17 @@ namespace rock::native_idle_grip_preharvest
                    weapon->weaponData.type != RE::WEAPON_TYPE::kMine;
         }
 
-        [[nodiscard]] Job describeLooseCandidate(RE::TESObjectREFR* reference)
+        [[nodiscard]] Job describeLooseCandidate(
+            RE::TESObjectREFR* reference,
+            RE::NiAVObject* weaponRoot)
         {
             Job candidate{};
-            if (!reference) {
+            if (!reference || !weaponRoot) {
                 return candidate;
             }
             auto* baseForm = reference->GetObjectReference();
             auto* weapon = baseForm ? baseForm->As<RE::TESObjectWEAP>() : nullptr;
-            auto* weaponRoot = reference->Get3D();
-            if (!eligibleWeapon(weapon) || !weaponRoot) {
+            if (!eligibleWeapon(weapon)) {
                 return candidate;
             }
 
@@ -1478,7 +1479,7 @@ namespace rock::native_idle_grip_preharvest
         }
     }
 
-    void observeCandidate(RE::TESObjectREFR* candidate) noexcept
+    void observeCandidate(RE::NiPointer<RE::TESObjectREFR> candidate) noexcept
     {
         auto& state = runtime();
         if (!claimOrValidateThread(state)) {
@@ -1489,9 +1490,10 @@ namespace rock::native_idle_grip_preharvest
             return;
         }
 
-        auto* weaponRoot = candidate->Get3D();
-        Job candidateDescription = describeLooseCandidate(candidate);
-        if (!shouldStartCandidate(state, candidateDescription, weaponRoot)) {
+        auto* candidateRaw = candidate.get();
+        RE::NiPointer<RE::NiAVObject> weaponRoot(candidateRaw->Get3D());
+        Job candidateDescription = describeLooseCandidate(candidateRaw, weaponRoot.get());
+        if (!shouldStartCandidate(state, candidateDescription, weaponRoot.get())) {
             return;
         }
 

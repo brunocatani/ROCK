@@ -1,5 +1,7 @@
 #pragma once
 
+#include "RE/NetImmerse/NiSmartPointer.h"
+
 namespace RE
 {
     class NiAVObject;
@@ -12,10 +14,12 @@ namespace rock::native_idle_grip_preharvest
 {
     /*
      * Advance the one-slot off-screen native animation probe, then offer one
-     * loose weapon reference as the next candidate. Frame-thread only. A null
-     * candidate still advances an in-flight asynchronous engine load.
+     * retained loose weapon reference as the next candidate. Frame-thread
+     * only. A null candidate still advances an in-flight asynchronous engine
+     * load. Ownership by value prevents native progress from invalidating the
+     * reference before its scene identity is copied.
      */
-    void observeCandidate(RE::TESObjectREFR* candidate) noexcept;
+    void observeCandidate(RE::NiPointer<RE::TESObjectREFR> candidate) noexcept;
 
     /*
      * Offer the currently equipped weapon after its stable generation exists.

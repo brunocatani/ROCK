@@ -7,6 +7,8 @@
 #include "RE/Havok/hknpBodyId.h"
 #include "RE/Havok/hknpConstraintCinfo.h"
 #include "RE/Havok/hknpWorld.h"
+#include "RE/Bethesda/TESObjectREFRs.h"
+#include "RE/NetImmerse/NiSmartPointer.h"
 
 #include <cstdint>
 #include <cstring>
@@ -202,6 +204,9 @@ namespace rock
         };
 
         RE::hknpBodyId bodyId{ 0x7FFF'FFFF };
+        // An active ROCK grab owns a live reference until release cleanup.
+        // `refr` is a non-owning alias kept for the existing hot-path callers.
+        RE::NiPointer<RE::TESObjectREFR> retainedRef{};
         RE::TESObjectREFR* refr = nullptr;
         grab_target::Kind targetKind = grab_target::Kind::LooseObject;
         std::uint32_t originalFilterInfo = 0;
@@ -212,12 +217,22 @@ namespace rock
         bool inertiaModified = false;
         std::vector<SavedMotionInertiaState> motionInertiaStates;
 
-        bool isValid() const { return bodyId.value != 0x7FFF'FFFF && refr != nullptr; }
+        void setReference(const RE::NiPointer<RE::TESObjectREFR>& value)
+        {
+            retainedRef = value;
+            refr = retainedRef.get();
+        }
+
+        bool isValid() const
+        {
+            return bodyId.value != 0x7FFF'FFFF && refr != nullptr && retainedRef.get() == refr;
+        }
 
         void clear()
         {
             bodyId.value = 0x7FFF'FFFF;
             refr = nullptr;
+            retainedRef.reset();
             targetKind = grab_target::Kind::LooseObject;
             originalFilterInfo = 0;
             originalMotionPropsId = 0;

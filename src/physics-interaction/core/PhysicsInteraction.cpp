@@ -8502,18 +8502,20 @@ namespace rock
 
             /*
              * Native idle-grip harvesting is acquisition preparation, not a
-             * hover-haptic side effect. Offer the held loose weapon or the raw
-             * open-hand selection before grab input is committed below. A null
-             * candidate still advances an in-flight asynchronous load, so pull
-             * travel can hide the load without blocking the frame thread.
+             * hover-haptic side effect. Offer the retained held loose weapon or
+             * open-hand selection before grab input is committed below. The
+             * retained reference crosses native asynchronous progress safely;
+             * the visual equip bridge alone owns only a scene model. A null
+             * candidate still advances an in-flight load, so pull travel can
+             * hide the load without blocking the frame thread.
              */
-            RE::TESObjectREFR* nativeIdleGripCandidate = nullptr;
+            RE::NiPointer<RE::TESObjectREFR> nativeIdleGripCandidate{};
             if (hand.isHoldingLooseWeapon()) {
-                nativeIdleGripCandidate = hand.getHeldRef();
+                nativeIdleGripCandidate = hand.getSavedObjectState().retainedRef;
             } else if (!hand.isHolding() && hand.hasSelection() && !input_remap_runtime::isMenuInputActive()) {
-                nativeIdleGripCandidate = hand.getSelection().refr;
+                nativeIdleGripCandidate = hand.getSelection().retainedRef;
             }
-            native_idle_grip_preharvest::observeCandidate(nativeIdleGripCandidate);
+            native_idle_grip_preharvest::observeCandidate(std::move(nativeIdleGripCandidate));
 
             loose_weapon_grip_zone::updateHeldLooseWeapon(
                 isLeft,

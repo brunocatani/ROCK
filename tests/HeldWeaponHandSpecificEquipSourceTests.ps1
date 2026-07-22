@@ -159,6 +159,18 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     '_pendingEquippedWeaponPrimaryOnlyGripStart\s*=\s*pendingGripStart' `
     'Loose equip must preserve the originating hand and captured weapon-local frame across inventory transfer.'
 
+Require-Text 'src/physics-interaction/object/ObjectDetection.h' `
+    'struct\s+SelectedObject[\s\S]{0,500}RE::NiPointer<RE::TESObjectREFR>\s+retainedRef[\s\S]{0,180}RE::TESObjectREFR\*\s+refr[\s\S]*setReference\(RE::TESObjectREFR\*\s+value\)[\s\S]{0,180}retainedRef\.reset\(value\)[\s\S]{0,120}refr\s*=\s*retainedRef\.get\(\)' `
+    'A selection that outlives its physics query must retain the TESObjectREFR behind its raw hot-path alias.'
+
+Require-Text 'src/physics-interaction/grab/GrabConstraint.h' `
+    'struct\s+SavedObjectState[\s\S]*RE::NiPointer<RE::TESObjectREFR>\s+retainedRef[\s\S]{0,180}RE::TESObjectREFR\*\s+refr[\s\S]*setReference\(const\s+RE::NiPointer<RE::TESObjectREFR>&\s+value\)' `
+    'An active grab must retain its world reference instead of relying on the visual model or a raw pointer.'
+
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
+    'const\s+auto\s+selectedRef\s*=\s*sel\.retainedRef[\s\S]*_savedObjectState\.setReference\(selectedRef\)[\s\S]*outcome\.retainedRef\s*=\s*_savedObjectState\.retainedRef[\s\S]{0,120}outcome\.refr\s*=\s*outcome\.retainedRef\.get\(\)[\s\S]*_savedObjectState\.clear\(\)' `
+    'Grab commit and release must carry one strong reference across cleanup and any following inventory-transfer handoff.'
+
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'firingHandIsLeft\s*&&[\s\S]{0,180}!capturedFiringHandWeaponLocal[\s\S]{0,500}blockFrikPrimaryWeaponPose\(\)[\s\S]{0,500}setFiringHand\(firingHandIsLeft,[\s\S]{0,300}_primaryHandWeaponLocal\s*=\s*\*capturedFiringHandWeaponLocal' `
     'Left primary-only ownership must fail closed without the captured loose-weapon hold and commit the originating hand before transition.'
