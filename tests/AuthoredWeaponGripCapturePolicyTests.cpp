@@ -105,6 +105,8 @@ int main()
         input.captureNewerThanWeaponBoundary = false;
         return !shouldApplyAuthoredPrimaryFiringGrip(input);
     }());
+    static_assert(shouldPublishAuthoredFiringFingerPose(false));
+    static_assert(!shouldPublishAuthoredFiringFingerPose(true));
 
     constexpr AuthoredSupportGripCandidateInput supportEligible{
         .proximityProbeAcquisition = true,

@@ -306,6 +306,9 @@ namespace rock
         }
         void clearAuthoredPrimaryFiringGripFingerPose();
         void setAuthoredPrimaryFiringGripFingerPoseSuppressed(bool suppressed);
+        void setGrabbedObjectHandPoseOwnership(
+            bool leftHandHoldingObject,
+            bool rightHandHoldingObject);
 
         /*
          * Ephemeral pre-update candidate derived from Bethesda's paired
@@ -957,6 +960,8 @@ namespace rock
         bool _authoredPrimaryFingerPosePublished{ false };
         bool _authoredPrimaryFingerPoseBlockEngaged{ false };
         bool _authoredPrimaryFingerPoseSuppressed{ false };
+        bool _leftHandHoldingObjectForPose{ false };
+        bool _rightHandHoldingObjectForPose{ false };
 
         /*
          * Natural physical hand-bone-in-wand relations. They are refreshed

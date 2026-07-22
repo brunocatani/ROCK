@@ -1260,6 +1260,9 @@ namespace rock
         const EquippedWeaponHandlingSettings& handlingSettings)
     {
         _handlingSettings = handlingSettings;
+        setGrabbedObjectHandPoseOwnership(
+            frameInput.leftHandHoldingObject,
+            frameInput.rightHandHoldingObject);
         _hasSolvedWeaponTransform = false;
         _scopeHandAuthorityPublishedThisFrame = {};
         _firingGripReattachHoverInsideRadius = false;
@@ -1610,6 +1613,8 @@ namespace rock
         _hasRightNaturalBoneInWand = false;
         _hasLeftNaturalBoneInWand = false;
         _authoredPrimaryFingerPoseSuppressed = false;
+        _leftHandHoldingObjectForPose = false;
+        _rightHandHoldingObjectForPose = false;
         if (_state != TwoHandedState::Inactive) {
             transitionToInactive(false);
             _scopeMenuOpenThisFrame = false;
@@ -4877,7 +4882,12 @@ namespace rock
 
     bool TwoHandedGrip::publishAuthoredPrimaryFiringGripFingerPose(const bool isLeft)
     {
-        if (_authoredPrimaryFingerPoseSuppressed || _rightFiringHandCanonicalSource != RightFiringCanonicalSource::AuthoredAnimation) {
+        const bool targetHandHoldingObject =
+            isLeft ? _leftHandHoldingObjectForPose : _rightHandHoldingObjectForPose;
+        if (_authoredPrimaryFingerPoseSuppressed ||
+            !authored_weapon_grip_capture_policy::shouldPublishAuthoredFiringFingerPose(
+                targetHandHoldingObject) ||
+            _rightFiringHandCanonicalSource != RightFiringCanonicalSource::AuthoredAnimation) {
             return false;
         }
 
@@ -4937,6 +4947,26 @@ namespace rock
     {
         _authoredPrimaryFingerPoseSuppressed = suppressed;
         if (suppressed) {
+            clearAuthoredPrimaryFiringGripFingerPose();
+        }
+    }
+
+    void TwoHandedGrip::setGrabbedObjectHandPoseOwnership(
+        const bool leftHandHoldingObject,
+        const bool rightHandHoldingObject)
+    {
+        _leftHandHoldingObjectForPose = leftHandHoldingObject;
+        _rightHandHoldingObjectForPose = rightHandHoldingObject;
+
+        if (!_authoredPrimaryFingerPosePublished) {
+            return;
+        }
+
+        const bool publishedHandHoldingObject =
+            _publishedFiringFingerPoseIsLeft ?
+                _leftHandHoldingObjectForPose :
+                _rightHandHoldingObjectForPose;
+        if (publishedHandHoldingObject) {
             clearAuthoredPrimaryFiringGripFingerPose();
         }
     }

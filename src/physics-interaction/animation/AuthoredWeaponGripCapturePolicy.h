@@ -71,6 +71,18 @@ namespace rock::authored_weapon_grip_capture_policy
                !input.rockFiringHandIsLeft;
     }
 
+    /*
+     * A ROCK object grab owns the occupied physical hand's fingers. The
+     * equipped weapon may keep its independent transform/carry authority,
+     * but its persistent authored firing pose must not compete with the
+     * ROCK_Grab pose for that same hand.
+     */
+    [[nodiscard]] constexpr bool shouldPublishAuthoredFiringFingerPose(
+        const bool targetHandHoldingObject) noexcept
+    {
+        return !targetHandHoldingObject;
+    }
+
     [[nodiscard]] constexpr bool shouldUseAuthoredSupportGrip(
         const AuthoredSupportGripCandidateInput& input)
     {

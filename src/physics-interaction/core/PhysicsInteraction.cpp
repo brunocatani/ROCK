@@ -3433,7 +3433,11 @@ namespace rock
         auto* weaponNode = resolveEquippedWeaponInteractionNode();
         // The authored/native canonical weapon frame is always ROCK's
         // physical-right primary controller, independent of FO4VR settings.
-        const bool primaryHandHoldingObject = _rightHand.isHolding();
+        const bool leftHandHoldingObject = _leftHand.isHolding();
+        const bool rightHandHoldingObject = _rightHand.isHolding();
+        _twoHandedGrip.setGrabbedObjectHandPoseOwnership(
+            leftHandHoldingObject,
+            rightHandHoldingObject);
         const auto nativeAuthorityFlags =
             provider::currentNativeAnimationAuthorityFlagsV1();
         auto* equippedWeapon = currentEquippedWeaponForm();
@@ -3482,7 +3486,7 @@ namespace rock
             .conflictingWeaponTransformAuthorityActive =
                 _twoHandedGrip.blocksAuthoredPrimaryGripWeaponAlignment(),
             .weaponVisualReturnActive = _twoHandedGrip.isWeaponVisualReturnActive(),
-            .primaryHandHoldingObject = primaryHandHoldingObject,
+            .primaryHandHoldingObject = rightHandHoldingObject,
             .rockFiringHandIsLeft = _twoHandedGrip.isFiringHandLeft(),
             .inPowerArmor = f4vr::isInPowerArmor(),
         }, _twoHandedGrip);
