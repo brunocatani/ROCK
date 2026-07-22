@@ -7,6 +7,10 @@ int main()
     static_assert(completeFiringFingerPose(0x7FFF));
     static_assert(!completeFiringFingerPose(0x3FFF));
     static_assert(!completeFiringFingerPose(0));
+    static_assert(publicationHasRequiredFingerPose(false, false));
+    static_assert(publicationHasRequiredFingerPose(false, true));
+    static_assert(publicationHasRequiredFingerPose(true, true));
+    static_assert(!publicationHasRequiredFingerPose(true, false));
 
     static_assert(shouldAcceptPublication(false, false, false));
     static_assert(shouldAcceptPublication(false, true, false));

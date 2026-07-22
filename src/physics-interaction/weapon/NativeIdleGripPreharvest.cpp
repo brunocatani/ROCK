@@ -89,14 +89,17 @@ namespace rock::native_idle_grip_preharvest
         constexpr std::ptrdiff_t kRootContainerFromAnimationDataOffset = 0x08;
 
         // GetClipGeneratorBinding at 0x141774800 and the loaded-subgraph map
-        // walker at 0x141777570 independently establish this layout. It lets
-        // ROCK recover an exact clip path from the selected loaded subgraph
-        // when a malformed mod omitted AnimationFileData for that identifier.
+        // walker at 0x141777570 independently establish this layout. Bethesda's
+        // load-completion path at 0x1417743B0 selects the same entry by the
+        // SubgraphHandle stored at +0x00. That handle remains authoritative
+        // when malformed mod metadata gives the binding table a different
+        // identifier from its AnimationStanceData/AnimationFileData key.
         constexpr std::ptrdiff_t kGraphLoadedSubgraphsOffset = 0x3A0;
         constexpr std::ptrdiff_t kLoadedSubgraphsEntriesOffset = 0x00;
         constexpr std::ptrdiff_t kLoadedSubgraphsCountOffset = 0x10;
         constexpr std::ptrdiff_t kLoadedSubgraphsLockOffset = 0x28;
         constexpr std::size_t kLoadedSubgraphEntryStride = 0x48;
+        constexpr std::ptrdiff_t kLoadedSubgraphHandleOffset = 0x00;
         constexpr std::ptrdiff_t kLoadedSubgraphBindingTableOffset = 0x08;
         constexpr std::ptrdiff_t kBindingTableBucketCountOffset = 0x0C;
         constexpr std::ptrdiff_t kBindingTableBucketsOffset = 0x28;
@@ -214,6 +217,7 @@ namespace rock::native_idle_grip_preharvest
             None,
             FirstPersonGraphPairUnavailable,
             FirstPersonGraphUnavailable,
+            FirstPersonSubgraphHandleUnavailable,
             FirstPersonSubgraphIdentifierUnavailable,
             AnimationFileLookupUnavailable,
             AnimationFileListUnavailable,
@@ -242,19 +246,26 @@ namespace rock::native_idle_grip_preharvest
             AnimationSamplerUnavailable,
             AnimationSamplingFault,
             SampledWeaponTransformInvalid,
+            IncompleteFiringFingerPose,
         };
 
         struct IdleGripExtractionDiagnostics
         {
             IdleGripExtractionFailure failure{ IdleGripExtractionFailure::None };
             std::size_t graphCount{ 0 };
+            std::size_t handleCount{ 0 };
             std::size_t identifierCount{ 0 };
             std::size_t animationFileCount{ 0 };
             std::size_t idlePathMatchCount{ 0 };
             std::size_t sampleAttemptCount{ 0 };
+            std::size_t loadedSubgraphCount{ 0 };
+            std::size_t graphHandleMatchCount{ 0 };
             std::size_t graphClipBucketCount{ 0 };
             std::size_t graphClipPathCount{ 0 };
+            std::size_t graphIdlePathCandidateCount{ 0 };
+            std::uint64_t subgraphHandle{ 0 };
             std::uint64_t subgraphIdentifier{ 0 };
+            std::uint64_t bindingSubgraphIdentifier{ 0 };
             std::uint64_t weaponBone{ 0xFFFFFFFFull };
             std::uint64_t handBone{ 0xFFFFFFFFull };
             std::uint32_t directResourceState{ 0xFFFFFFFFu };
@@ -269,6 +280,7 @@ namespace rock::native_idle_grip_preharvest
             std::uint16_t referenceFingerMask{ 0 };
             std::uint16_t missingFingerMask{ authored_weapon_grip_library::kCompleteFiringFingerMask };
             bool usedGraphClipPathFallback{ false };
+            bool graphIdlePathAmbiguous{ false };
         };
 
         struct Job
@@ -457,6 +469,8 @@ namespace rock::native_idle_grip_preharvest
                 return "firstPersonGraphPairUnavailable";
             case IdleGripExtractionFailure::FirstPersonGraphUnavailable:
                 return "firstPersonGraphUnavailable";
+            case IdleGripExtractionFailure::FirstPersonSubgraphHandleUnavailable:
+                return "firstPersonSubgraphHandleUnavailable";
             case IdleGripExtractionFailure::FirstPersonSubgraphIdentifierUnavailable:
                 return "firstPersonSubgraphIdentifierUnavailable";
             case IdleGripExtractionFailure::AnimationFileLookupUnavailable:
@@ -513,6 +527,8 @@ namespace rock::native_idle_grip_preharvest
                 return "animationSamplingFault";
             case IdleGripExtractionFailure::SampledWeaponTransformInvalid:
                 return "sampledWeaponTransformInvalid";
+            case IdleGripExtractionFailure::IncompleteFiringFingerPose:
+                return "incompleteFiringFingerPose";
             }
             return "unknownExtractionFailure";
         }
@@ -678,10 +694,15 @@ namespace rock::native_idle_grip_preharvest
             return false;
         }
 
-        [[nodiscard]] bool tryFindLoadedGraphIdlePath(RE::BShkbAnimationGraph* graph, const std::uint64_t subgraphIdentifier, std::array<char, 260>& outPath,
-            IdleGripExtractionDiagnostics& diagnostics)
+        [[nodiscard]] bool tryFindLoadedGraphIdlePath(RE::BShkbAnimationGraph* graph, const std::uint64_t subgraphHandle,
+            std::uint64_t& outBindingSubgraphIdentifier, std::array<char, 260>& outPath, IdleGripExtractionDiagnostics& diagnostics)
         {
             outPath.fill('\0');
+            outBindingSubgraphIdentifier = 0;
+            if (subgraphHandle == 0) {
+                return false;
+            }
+
             void* loadedSubgraphs = nullptr;
             if (!native_memory::tryReadField(graph, kGraphLoadedSubgraphsOffset, loadedSubgraphs) || !loadedSubgraphs) {
                 return false;
@@ -700,24 +721,30 @@ namespace rock::native_idle_grip_preharvest
                 !native_memory::tryReadField(loadedSubgraphs, kLoadedSubgraphsCountOffset, entryCount) || entryCount == 0 || entryCount > kMaxLoadedSubgraphs) {
                 return false;
             }
+            diagnostics.loadedSubgraphCount = entryCount;
 
             void* bindingTable = nullptr;
             for (std::uint32_t index = 0; index < entryCount; ++index) {
                 const auto* entry = reinterpret_cast<const std::byte*>(entries) + static_cast<std::size_t>(index) * kLoadedSubgraphEntryStride;
+                std::uint64_t candidateHandle = 0;
+                if (!native_memory::tryReadField(entry, kLoadedSubgraphHandleOffset, candidateHandle) || candidateHandle != subgraphHandle) {
+                    continue;
+                }
+                ++diagnostics.graphHandleMatchCount;
+
                 void* candidateTable = nullptr;
                 std::uint64_t candidateIdentifier = 0;
                 if (!native_memory::tryReadField(entry, kLoadedSubgraphBindingTableOffset, candidateTable) || !candidateTable ||
                     !native_memory::tryReadField(candidateTable, kBindingTableSubgraphIdentifierOffset, candidateIdentifier)) {
                     continue;
                 }
-                if (candidateIdentifier == subgraphIdentifier) {
-                    bindingTable = candidateTable;
-                    break;
-                }
+                bindingTable = candidateTable;
+                outBindingSubgraphIdentifier = candidateIdentifier;
             }
-            if (!bindingTable) {
+            if (diagnostics.graphHandleMatchCount != 1 || !bindingTable || outBindingSubgraphIdentifier == 0) {
                 return false;
             }
+            diagnostics.bindingSubgraphIdentifier = outBindingSubgraphIdentifier;
 
             void* buckets = nullptr;
             std::uint32_t bucketCount = 0;
@@ -727,7 +754,8 @@ namespace rock::native_idle_grip_preharvest
             }
             diagnostics.graphClipBucketCount = bucketCount;
 
-            std::array<char, 260> idleFallback{};
+            auto selectedPriority = native_idle_grip_preharvest_policy::IdleClipPriority::None;
+            bool ambiguous = false;
             for (std::uint32_t index = 0; index < bucketCount; ++index) {
                 const auto* node = reinterpret_cast<const std::byte*>(buckets) + static_cast<std::size_t>(index) * kBindingTableNodeStride;
                 void* occupancy = nullptr;
@@ -742,22 +770,32 @@ namespace rock::native_idle_grip_preharvest
                 }
                 ++diagnostics.graphClipPathCount;
                 const std::string_view candidate{ candidatePath.data() };
-                if (native_idle_grip_preharvest_policy::clipPathHasStem(candidate, "WPNIdleReady")) {
-                    outPath = candidatePath;
-                    diagnostics.usedGraphClipPathFallback = true;
-                    return true;
+                const auto candidatePriority = native_idle_grip_preharvest_policy::idleClipPriority(candidate);
+                if (candidatePriority == native_idle_grip_preharvest_policy::IdleClipPriority::None) {
+                    continue;
                 }
-                if (idleFallback[0] == '\0' && native_idle_grip_preharvest_policy::clipPathHasStem(candidate, "WPNIdle")) {
-                    idleFallback = candidatePath;
+                ++diagnostics.graphIdlePathCandidateCount;
+
+                if (static_cast<std::uint8_t>(candidatePriority) > static_cast<std::uint8_t>(selectedPriority)) {
+                    outPath = candidatePath;
+                    selectedPriority = candidatePriority;
+                    ambiguous = false;
+                    continue;
+                }
+                if (candidatePriority == selectedPriority &&
+                    !native_idle_grip_preharvest_policy::sameClipPath(std::string_view{ outPath.data() }, candidate)) {
+                    ambiguous = true;
                 }
             }
 
-            if (idleFallback[0] != '\0') {
-                outPath = idleFallback;
-                diagnostics.usedGraphClipPathFallback = true;
-                return true;
+            diagnostics.graphIdlePathAmbiguous = ambiguous;
+            if (selectedPriority == native_idle_grip_preharvest_policy::IdleClipPriority::None || ambiguous) {
+                outPath.fill('\0');
+                outBindingSubgraphIdentifier = 0;
+                return false;
             }
-            return false;
+            diagnostics.usedGraphClipPathFallback = true;
+            return true;
         }
 
         [[nodiscard]] bool addressIsExecutable(const void* address)
@@ -1001,6 +1039,9 @@ namespace rock::native_idle_grip_preharvest
                 return failExtraction(diagnostics, IdleGripExtractionFailure::SampledWeaponTransformInvalid);
             }
             extractRightFiringFingerPose(state, skeleton, boneCount, transformTrackCount, mapping, sampledTracks, outRightFiringFingerPose, diagnostics);
+            if (!outRightFiringFingerPose.complete()) {
+                return failExtraction(diagnostics, IdleGripExtractionFailure::IncompleteFiringFingerPose);
+            }
             diagnostics.failure = IdleGripExtractionFailure::None;
             return true;
         }
@@ -1039,6 +1080,7 @@ namespace rock::native_idle_grip_preharvest
         [[nodiscard]] ExtractionResult trySampleClip(Runtime& state, RE::BShkbAnimationGraph* graph, const std::uint64_t subgraphIdentifier, char* clipName,
             RE::NiTransform& outHandInWeapon, authored_weapon_grip_library::FiringFingerPose& outRightFiringFingerPose, IdleGripExtractionDiagnostics& diagnostics)
         {
+            diagnostics.bindingSubgraphIdentifier = subgraphIdentifier;
             void* swapSingleton = nullptr;
             const auto singletonAddress = REL::Offset(kBehaviorGraphSwapSingleton).address();
             if (!native_memory::tryReadValue(reinterpret_cast<void* const*>(singletonAddress), swapSingleton) || !swapSingleton) {
@@ -1120,10 +1162,12 @@ namespace rock::native_idle_grip_preharvest
         {
             diagnostics = {};
             diagnostics.graphCount = manager.graph.size();
+            diagnostics.handleCount = state.job.subgraphHandles.size();
             diagnostics.identifierCount = state.job.subgraphIdentifiers.size();
             outClipPath.fill('\0');
 
-            const auto selection = native_idle_grip_preharvest_policy::selectFirstPersonGraph(manager.graph.size(), state.job.subgraphIdentifiers.size());
+            const auto selection = native_idle_grip_preharvest_policy::selectFirstPersonGraph(
+                manager.graph.size(), state.job.subgraphHandles.size(), state.job.subgraphIdentifiers.size());
             if (!selection.valid) {
                 return failExtractionResult(diagnostics, IdleGripExtractionFailure::FirstPersonGraphPairUnavailable);
             }
@@ -1131,6 +1175,12 @@ namespace rock::native_idle_grip_preharvest
             auto* graph = manager.graph[firstPersonIndex].get();
             if (!graph) {
                 return failExtractionResult(diagnostics, IdleGripExtractionFailure::FirstPersonGraphUnavailable);
+            }
+            const auto firstPersonOutputIndex = static_cast<decltype(state.job.subgraphHandles)::size_type>(selection.graphIndex);
+            const std::uint64_t subgraphHandle = state.job.subgraphHandles[firstPersonOutputIndex].handle;
+            diagnostics.subgraphHandle = subgraphHandle;
+            if (subgraphHandle == 0) {
+                return failExtractionResult(diagnostics, IdleGripExtractionFailure::FirstPersonSubgraphHandleUnavailable);
             }
             outSubgraphIdentifier = state.job.subgraphIdentifiers[static_cast<decltype(state.job.subgraphIdentifiers)::size_type>(selection.graphIndex)].identifier;
             diagnostics.subgraphIdentifier = outSubgraphIdentifier;
@@ -1150,16 +1200,21 @@ namespace rock::native_idle_grip_preharvest
             diagnostics.animationFileCount = animationFiles->size();
 
             const auto tryGraphPathFallback = [&](const IdleGripExtractionFailure unavailableFailure) {
-                if (!tryFindLoadedGraphIdlePath(graph, outSubgraphIdentifier, outClipPath, diagnostics)) {
+                std::uint64_t bindingSubgraphIdentifier = 0;
+                if (!tryFindLoadedGraphIdlePath(graph, subgraphHandle, bindingSubgraphIdentifier, outClipPath, diagnostics)) {
                     return failExtractionResult(diagnostics, unavailableFailure);
                 }
                 ++diagnostics.idlePathMatchCount;
                 ++diagnostics.sampleAttemptCount;
                 if (!state.job.idleClipResource.entry) {
-                    ROCK_LOG_INFO(Animation, "Native idle-grip preharvest recovered exact idle path from loaded graph formID={:08X} subgraph={:016X} buckets={} paths={} clip={}",
-                        state.job.weaponFormId, outSubgraphIdentifier, diagnostics.graphClipBucketCount, diagnostics.graphClipPathCount, outClipPath.data());
+                    ROCK_LOG_INFO(Animation,
+                        "Native idle-grip preharvest recovered handle-owned idle path from loaded graph formID={:08X} handle={:016X} requestedSubgraph={:016X} "
+                        "bindingSubgraph={:016X} loaded={} handleMatches={} buckets={} paths={} idleCandidates={} clip={}",
+                        state.job.weaponFormId, subgraphHandle, outSubgraphIdentifier, bindingSubgraphIdentifier, diagnostics.loadedSubgraphCount,
+                        diagnostics.graphHandleMatchCount, diagnostics.graphClipBucketCount, diagnostics.graphClipPathCount,
+                        diagnostics.graphIdlePathCandidateCount, outClipPath.data());
                 }
-                return trySampleClip(state, graph, outSubgraphIdentifier, outClipPath.data(), outHandInWeapon, outRightFiringFingerPose, diagnostics);
+                return trySampleClip(state, graph, bindingSubgraphIdentifier, outClipPath.data(), outHandInWeapon, outRightFiringFingerPose, diagnostics);
             };
 
             if (animationFiles->empty()) {
@@ -1291,13 +1346,17 @@ namespace rock::native_idle_grip_preharvest
             if (extractionResult == ExtractionResult::Failed) {
                 const char* failure = extractionFailureName(extractionDiagnostics.failure);
                 ROCK_LOG_INFO(Animation,
-                    "Native idle-grip preharvest extraction detail formID={:08X} reason={} graphs={} identifiers={} subgraph={:016X} files={} idleMatches={} "
-                    "sampleAttempts={} graphBuckets={} graphPaths={} graphFallback={} resourceState={:X} animationType={} duration={:.6f} tracks={} floatTracks={} "
+                    "Native idle-grip preharvest extraction detail formID={:08X} reason={} graphs={} handles={} identifiers={} handle={:016X} "
+                    "requestedSubgraph={:016X} bindingSubgraph={:016X} files={} idleMatches={} sampleAttempts={} loadedSubgraphs={} handleMatches={} "
+                    "graphBuckets={} graphPaths={} idleCandidates={} graphAmbiguous={} graphFallback={} resourceState={:X} animationType={} duration={:.6f} tracks={} floatTracks={} "
                     "bindingBlendHint={:X} mapping={} weaponBone={:X} handBone={:X} weaponParent={} sampledFingerMask=0x{:04X} "
                     "referenceFingerMask=0x{:04X} missingFingerMask=0x{:04X} clip={}",
-                    job.weaponFormId, failure, extractionDiagnostics.graphCount, extractionDiagnostics.identifierCount, extractionDiagnostics.subgraphIdentifier,
+                    job.weaponFormId, failure, extractionDiagnostics.graphCount, extractionDiagnostics.handleCount, extractionDiagnostics.identifierCount,
+                    extractionDiagnostics.subgraphHandle, extractionDiagnostics.subgraphIdentifier, extractionDiagnostics.bindingSubgraphIdentifier,
                     extractionDiagnostics.animationFileCount, extractionDiagnostics.idlePathMatchCount, extractionDiagnostics.sampleAttemptCount,
-                    extractionDiagnostics.graphClipBucketCount, extractionDiagnostics.graphClipPathCount, extractionDiagnostics.usedGraphClipPathFallback,
+                    extractionDiagnostics.loadedSubgraphCount, extractionDiagnostics.graphHandleMatchCount, extractionDiagnostics.graphClipBucketCount,
+                    extractionDiagnostics.graphClipPathCount, extractionDiagnostics.graphIdlePathCandidateCount, extractionDiagnostics.graphIdlePathAmbiguous,
+                    extractionDiagnostics.usedGraphClipPathFallback,
                     extractionDiagnostics.directResourceState, extractionDiagnostics.animationType, extractionDiagnostics.animationDurationSeconds,
                     extractionDiagnostics.transformTrackCount, extractionDiagnostics.floatTrackCount, extractionDiagnostics.bindingBlendHint, extractionDiagnostics.mappingCount,
                     extractionDiagnostics.weaponBone, extractionDiagnostics.handBone, extractionDiagnostics.weaponParentIndex, extractionDiagnostics.sampledFingerMask,
@@ -1312,20 +1371,21 @@ namespace rock::native_idle_grip_preharvest
             }
 
             const std::uint64_t captureSequence = kPreharvestCaptureSequenceDomain | (++state.nextCaptureSequence);
-            const auto* completeFingerPose = rightFiringFingerPose.complete() ? &rightFiringFingerPose : nullptr;
             if (!authored_weapon_grip_library::publishResolvedVariant(job.weapon, job.variant, job.inPowerArmor, handInWeapon, captureSequence,
-                    authored_weapon_grip_library::CaptureSource::NativeIdlePreharvest, completeFingerPose)) {
+                    authored_weapon_grip_library::CaptureSource::NativeIdlePreharvest, &rightFiringFingerPose)) {
                 failJob(state, "authoredGripLibraryRejectedSample");
                 return true;
             }
 
             ROCK_LOG_INFO(Animation,
-                "Native idle-grip preharvest succeeded formID={:08X} refID={:08X} variant={:016X} origin={} subgraph={} clip={} powerArmor={} animationType={} duration={:.6f} "
+                "Native idle-grip preharvest succeeded formID={:08X} refID={:08X} variant={:016X} origin={} handle={:016X} requestedSubgraph={:016X} "
+                "bindingSubgraph={:016X} clip={} powerArmor={} animationType={} duration={:.6f} "
                 "tracks={} floatTracks={} bindingBlendHint={:X} sampledFingerMask=0x{:04X} referenceFingerMask=0x{:04X} missingFingerMask=0x{:04X} "
                 "handInWeaponT=({:.6f},{:.6f},{:.6f}) scale={:.7f}",
                 job.weaponFormId, job.referenceFormId, job.variant.key,
                 job.origin == CandidateOrigin::EquippedWeapon ? "equipped" : "loose",
-                subgraphIdentifier, clipPath.data(), job.inPowerArmor ? "yes" : "no", extractionDiagnostics.animationType,
+                extractionDiagnostics.subgraphHandle, subgraphIdentifier, extractionDiagnostics.bindingSubgraphIdentifier,
+                clipPath.data(), job.inPowerArmor ? "yes" : "no", extractionDiagnostics.animationType,
                 extractionDiagnostics.animationDurationSeconds, extractionDiagnostics.transformTrackCount, extractionDiagnostics.floatTrackCount,
                 extractionDiagnostics.bindingBlendHint, extractionDiagnostics.sampledFingerMask, extractionDiagnostics.referenceFingerMask, extractionDiagnostics.missingFingerMask, handInWeapon.translate.x, handInWeapon.translate.y, handInWeapon.translate.z, handInWeapon.scale);
             releaseJob(state);

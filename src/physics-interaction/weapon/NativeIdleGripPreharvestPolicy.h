@@ -11,6 +11,13 @@ namespace rock::native_idle_grip_preharvest_policy
     inline constexpr std::uint32_t kAnimationResourceStateMask = 0x70000000u;
     inline constexpr unsigned kAnimationResourceStateShift = 28;
 
+    enum class IdleClipPriority : std::uint8_t
+    {
+        None,
+        Idle,
+        IdleReady,
+    };
+
     struct FirstPersonSelection
     {
         bool valid{ false };
@@ -39,13 +46,17 @@ namespace rock::native_idle_grip_preharvest_policy
     /*
      * Bethesda builds the background actor manager in paired graph order:
      * third person first, first person second. RequestAnimationSubGraph visits
-     * those same graphs in order and appends matching identifiers in lockstep.
+     * those same graphs in order and appends matching handles and identifiers
+     * in lockstep.
      * Never fall back to graph zero: that would silently harvest a flat/third-
      * person relation instead of the FO4VR first-person grip.
      */
-    [[nodiscard]] constexpr FirstPersonSelection selectFirstPersonGraph(const std::size_t graphCount, const std::size_t identifierCount) noexcept
+    [[nodiscard]] constexpr FirstPersonSelection selectFirstPersonGraph(
+        const std::size_t graphCount,
+        const std::size_t handleCount,
+        const std::size_t identifierCount) noexcept
     {
-        if (graphCount <= kFirstPersonGraphIndex || identifierCount <= kFirstPersonGraphIndex) {
+        if (graphCount <= kFirstPersonGraphIndex || handleCount <= kFirstPersonGraphIndex || identifierCount <= kFirstPersonGraphIndex) {
             return {};
         }
         return FirstPersonSelection{
@@ -114,6 +125,37 @@ namespace rock::native_idle_grip_preharvest_policy
         const auto asciiLower = [](const char value) { return value >= 'A' && value <= 'Z' ? static_cast<char>(value + ('a' - 'A')) : value; };
         for (std::size_t index = 0; index < expectedStem.size(); ++index) {
             if (asciiLower(path[stemBegin + index]) != asciiLower(expectedStem[index])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    [[nodiscard]] constexpr IdleClipPriority idleClipPriority(const std::string_view path) noexcept
+    {
+        if (clipPathHasStem(path, "WPNIdleReady")) {
+            return IdleClipPriority::IdleReady;
+        }
+        if (clipPathHasStem(path, "WPNIdle")) {
+            return IdleClipPriority::Idle;
+        }
+        return IdleClipPriority::None;
+    }
+
+    [[nodiscard]] constexpr bool sameClipPath(const std::string_view left, const std::string_view right) noexcept
+    {
+        if (left.size() != right.size()) {
+            return false;
+        }
+
+        const auto normalize = [](const char value) {
+            if (value == '/') {
+                return '\\';
+            }
+            return value >= 'A' && value <= 'Z' ? static_cast<char>(value + ('a' - 'A')) : value;
+        };
+        for (std::size_t index = 0; index < left.size(); ++index) {
+            if (normalize(left[index]) != normalize(right[index])) {
                 return false;
             }
         }

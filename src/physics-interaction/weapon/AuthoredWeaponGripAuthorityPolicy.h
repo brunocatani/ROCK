@@ -9,6 +9,11 @@ namespace rock::authored_weapon_grip_authority_policy
 
     [[nodiscard]] constexpr bool completeFiringFingerPose(const std::uint16_t enabledMask) noexcept { return enabledMask == kCompleteFiringFingerMask; }
 
+    [[nodiscard]] constexpr bool publicationHasRequiredFingerPose(const bool nativeIdlePreharvest, const bool completeFingerPose) noexcept
+    {
+        return !nativeIdlePreharvest || completeFingerPose;
+    }
+
     /*
      * Live equipped capture is retained only as a compatibility fallback.
      * Once the matching off-screen idle asset has been sampled, later live

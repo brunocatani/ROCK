@@ -41,8 +41,8 @@ Require-Text $source `
     'validateNativeEntry\("LoadIdle",\s*kLoadIdleAnimationResource[\s\S]*validateNativeEntry\("BShkbHkxDB resource-handle move assignment",\s*kMoveAnimationResourceHandle[\s\S]*validateNativeEntry\("BShkbHkxDBUtils::IsHkxDerivativeDBData",\s*kIsHkxDerivativeDbData[\s\S]*validateNativeEntry\("BShkbUtils::RetrieveBindingFromContainer",\s*kRetrieveBindingFromContainer' `
     'Every direct idle-resource call must retain its independently verified Fallout4VR.exe 1.2.72 live-byte gate.'
 Require-Text $policy `
-    'kFirstPersonGraphIndex\s*=\s*1[\s\S]*graphCount\s*<=\s*kFirstPersonGraphIndex[\s\S]*identifierCount\s*<=\s*kFirstPersonGraphIndex' `
-    'The sampler must fail closed unless Bethesda produced the paired first-person graph and identifier.'
+    'kFirstPersonGraphIndex\s*=\s*1[\s\S]*graphCount\s*<=\s*kFirstPersonGraphIndex[\s\S]*handleCount\s*<=\s*kFirstPersonGraphIndex[\s\S]*identifierCount\s*<=\s*kFirstPersonGraphIndex' `
+    'The sampler must fail closed unless Bethesda produced the paired first-person graph, handle, and identifier.'
 Require-Text $source `
     'findBoneWithName\(skeleton,\s*"Weapon"[\s\S]*findBoneWithName\(skeleton,\s*"RArm_Hand"[\s\S]*WPNIdleReady[\s\S]*WPNIdle' `
     'The proof must sample authored idle clips and resolve the exact Weapon/RArm_Hand skeleton relation.'
@@ -53,11 +53,14 @@ Reject-Text $source `
     'kAnimationTransformTrackCountOffset\s*=\s*0x14' `
     'hkaAnimation +0x14 is the float duration and must never return as the transform-track count.'
 Require-Text $source `
-    'enum class IdleGripExtractionFailure[\s\S]*ClipBindingUnavailable[\s\S]*WeaponNotDirectChildOfHand[\s\S]*WeaponTrackUnavailable[\s\S]*SampledWeaponTransformInvalid' `
+    'enum class IdleGripExtractionFailure[\s\S]*FirstPersonSubgraphHandleUnavailable[\s\S]*ClipBindingUnavailable[\s\S]*WeaponNotDirectChildOfHand[\s\S]*WeaponTrackUnavailable[\s\S]*SampledWeaponTransformInvalid[\s\S]*IncompleteFiringFingerPose' `
     'Idle pose extraction must retain precise fail-closed stage identities instead of collapsing every unavailable datum.'
 Require-Text $source `
-    'IdleGripExtractionDiagnostics[\s\S]*idlePathMatchCount[\s\S]*sampleAttemptCount[\s\S]*weaponParentIndex[\s\S]*trySampleClip[\s\S]*failExtraction' `
+    'IdleGripExtractionDiagnostics[\s\S]{0,1800}idlePathMatchCount[\s\S]{0,500}sampleAttemptCount[\s\S]{0,500}graphHandleMatchCount[\s\S]{0,500}subgraphHandle[\s\S]{0,500}bindingSubgraphIdentifier[\s\S]{0,1200}weaponParentIndex' `
     'The sampler must collect bounded runtime evidence for clip, skeleton, topology, mapping, and transform failures.'
+Require-Text $source `
+    'trySampleClip[\s\S]*failExtraction' `
+    'Every clip sampling failure must retain a precise extraction identity.'
 Require-Text $source `
     'extractionFailureName\(extractionDiagnostics\.failure\)[\s\S]*Native idle-grip preharvest extraction detail[\s\S]*failJob\(state,\s*failure\)' `
     'A failed extraction must emit its one-shot evidence and preserve the exact stage in the terminal job reason.'
@@ -68,14 +71,14 @@ Require-Text $source `
     'kAnimationFileLookupSingleton\s*=\s*0x5B64318[\s\S]*tryReadValue\([\s\S]*lookupSingleton[\s\S]*getAnimationFilesForSubgraph\(\s*&outSubgraphIdentifier\)[\s\S]*clipPathHasStem[\s\S]*trySampleClip' `
     'Clip binding must consume the exact winning AnimationFileData path for the selected subgraph instead of guessing a basename.'
 Require-Text $source `
-    'kGraphLoadedSubgraphsOffset\s*=\s*0x3A0[\s\S]*kLoadedSubgraphEntryStride\s*=\s*0x48[\s\S]*kBindingTableSubgraphIdentifierOffset\s*=\s*0xC0[\s\S]*kBindingTableNodeStride\s*=\s*0x18' `
+    'kGraphLoadedSubgraphsOffset\s*=\s*0x3A0[\s\S]*kLoadedSubgraphEntryStride\s*=\s*0x48[\s\S]*kLoadedSubgraphHandleOffset\s*=\s*0x00[\s\S]*kBindingTableSubgraphIdentifierOffset\s*=\s*0xC0[\s\S]*kBindingTableNodeStride\s*=\s*0x18' `
     'The malformed-AnimationFileData fallback must retain the audited loaded-subgraph and clip-map layout.'
 Require-Text $source `
-    'tryFindLoadedGraphIdlePath[\s\S]*BSAutoLock<RE::BSSpinLock>[\s\S]*candidateIdentifier\s*==\s*subgraphIdentifier[\s\S]*clipPathHasStem\(candidate,\s*"WPNIdleReady"\)[\s\S]*clipPathHasStem\(candidate,\s*"WPNIdle"\)' `
-    'The fallback must inspect only the exact selected subgraph under Bethesda''s graph lock and preserve idle-path priority.'
+    'tryFindLoadedGraphIdlePath[\s\S]*subgraphHandle[\s\S]*BSAutoLock<RE::BSSpinLock>[\s\S]*candidateHandle\s*!=\s*subgraphHandle[\s\S]*outBindingSubgraphIdentifier\s*=\s*candidateIdentifier[\s\S]*idleClipPriority[\s\S]*sameClipPath' `
+    'The fallback must select only the native handle-owned loaded entry, preserve idle-path priority, and fail closed on ambiguous preferred paths.'
 Require-Text $source `
-    'animationFiles->empty\(\)[\s\S]*tryGraphPathFallback\(IdleGripExtractionFailure::AnimationFileListEmpty\)[\s\S]*trySampleClip' `
-    'An absent numeric AnimationFileData record must recover only an exact path already owned by the loaded selected graph.'
+    'const auto tryGraphPathFallback[\s\S]{0,1800}trySampleClip\(state,\s*graph,\s*bindingSubgraphIdentifier[\s\S]{0,500}animationFiles->empty\(\)[\s\S]{0,300}tryGraphPathFallback\(IdleGripExtractionFailure::AnimationFileListEmpty\)' `
+    'An absent numeric AnimationFileData record must recover only a path owned by the selected native handle and bind through that table''s actual identifier.'
 Reject-Text $source `
     '35006BE1|Actors\\\\AKsAR15s\\\\Character\\\\_1stPerson\\\\Animations\\\\SVD' `
     'The generic graph-path fallback must never hardcode the observed SVD form or asset path.'
@@ -89,8 +92,11 @@ Require-Text $source `
     'kSkeletonReferencePoseOffset\s*=\s*0x38[\s\S]*kSkeletonReferencePoseCountOffset\s*=\s*0x40[\s\S]*"RArm_Finger11"[\s\S]*"RArm_Finger53"[\s\S]*extractRightFiringFingerPose[\s\S]*findTransformTrackForBone[\s\S]*guardedCopyFromMemory\(referencePose\s*\+\s*boneIndex[\s\S]*convertHavokLocalTransform' `
     'The sampler must resolve all 15 firing fingers as local tracks and use the verified hkaSkeleton reference pose only for compressed-out tracks.'
 Require-Text $source `
-    'sampledFingerMask[\s\S]*referenceFingerMask[\s\S]*missingFingerMask[\s\S]*rightFiringFingerPose\.complete\(\)[\s\S]*CaptureSource::NativeIdlePreharvest[\s\S]*completeFingerPose' `
-    'Only a complete finite 15-bone pose may accompany a harvested grip publication; partial poses must remain diagnostic-only.'
+    'sampledFingerMask[\s\S]*referenceFingerMask[\s\S]*missingFingerMask[\s\S]*outRightFiringFingerPose\.complete\(\)[\s\S]*IncompleteFiringFingerPose[\s\S]*CaptureSource::NativeIdlePreharvest,\s*&rightFiringFingerPose' `
+    'Only a complete finite 15-bone pose may become an authoritative harvested grip publication; partial poses must fail extraction.'
+Require-Text 'src/physics-interaction/weapon/AuthoredWeaponGripLibrary.cpp' `
+    'publicationHasRequiredFingerPose\(source\s*==\s*CaptureSource::NativeIdlePreharvest,\s*validFingerPose\)' `
+    'The authored-grip cache itself must reject a native-idle authority entry without a complete finite finger pose.'
 Require-Text $source `
     'PopulateGraphProjectsToLoad[\s\S]*graphProjects\.size\(\)\s*<\s*2[\s\S]*createBackgroundSimpleManager' `
     'Off-screen native loads must create the plain holder from both player graph projects.'

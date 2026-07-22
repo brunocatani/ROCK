@@ -6,11 +6,12 @@ int main()
 {
     using namespace rock::native_idle_grip_preharvest_policy;
 
-    static_assert(!selectFirstPersonGraph(0, 0).valid);
-    static_assert(!selectFirstPersonGraph(1, 2).valid);
-    static_assert(!selectFirstPersonGraph(2, 1).valid);
-    static_assert(selectFirstPersonGraph(2, 2).valid);
-    static_assert(selectFirstPersonGraph(2, 2).graphIndex == 1);
+    static_assert(!selectFirstPersonGraph(0, 0, 0).valid);
+    static_assert(!selectFirstPersonGraph(1, 2, 2).valid);
+    static_assert(!selectFirstPersonGraph(2, 1, 2).valid);
+    static_assert(!selectFirstPersonGraph(2, 2, 1).valid);
+    static_assert(selectFirstPersonGraph(2, 2, 2).valid);
+    static_assert(selectFirstPersonGraph(2, 2, 2).graphIndex == 1);
 
     static_assert(shouldStartNativeIdleHarvest(false, false, false, 0x1234));
     static_assert(shouldStartNativeIdleHarvest(true, false, false, 0x1234));
@@ -45,6 +46,12 @@ int main()
     static_assert(clipPathHasStem("WPNIdle", "wpnidle"));
     static_assert(!clipPathHasStem("UMPAnims\\VerticalGrip\\WPNIdleReady.hkx", "WPNIdle"));
     static_assert(!clipPathHasStem("WPNIdleReadyExtra.hkx", "WPNIdleReady"));
+
+    static_assert(idleClipPriority("SREP/WPNIdleReady.hkx") == IdleClipPriority::IdleReady);
+    static_assert(idleClipPriority("SVD\\WPNIdle.HKX") == IdleClipPriority::Idle);
+    static_assert(idleClipPriority("SREP/WPNFire.hkx") == IdleClipPriority::None);
+    static_assert(sameClipPath("Actors/Character/SREP/WPNIdleReady.hkx", "actors\\character\\srep\\wpnidleready.HKX"));
+    static_assert(!sameClipPath("SREP/WPNIdleReady.hkx", "SVD/WPNIdleReady.hkx"));
 
     return 0;
 }

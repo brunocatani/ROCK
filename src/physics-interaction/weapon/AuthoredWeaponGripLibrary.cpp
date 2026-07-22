@@ -136,8 +136,10 @@ namespace rock::authored_weapon_grip_library
         const FiringFingerPose* rightFiringFingerPose)
     {
         const std::uint32_t weaponFormId = weapon ? weapon->formID : 0;
+        const bool validFingerPose = rightFiringFingerPose && validCompleteFingerPose(*rightFiringFingerPose);
         if (weaponFormId == 0 || captureSequence == 0 || source == CaptureSource::Unknown || !finiteTransform(rightHandWeaponLocal) ||
-            (rightFiringFingerPose && !validCompleteFingerPose(*rightFiringFingerPose))) {
+            (rightFiringFingerPose && !validFingerPose) ||
+            !authored_weapon_grip_authority_policy::publicationHasRequiredFingerPose(source == CaptureSource::NativeIdlePreharvest, validFingerPose)) {
             return false;
         }
 
