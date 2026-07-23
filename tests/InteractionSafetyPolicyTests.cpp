@@ -73,6 +73,9 @@ int main()
     HandAvailabilityInput weaponOccupied = freeHand;
     weaponOccupied.equippedWeaponOccupiesHand = true;
     ok &= expectFalse("equipped weapon role blocks", isAvailable(weaponOccupied));
+    HandAvailabilityInput touchGrabbed = freeHand;
+    touchGrabbed.touchGrabActive = true;
+    ok &= expectFalse("touch grab blocks replacement", isAvailable(touchGrabbed));
 
     ok &= expectTrue("current right firing hand occupied", equippedWeaponOccupiesHand(false, true, false, false, false));
     ok &= expectFalse("current left offhand remains free", equippedWeaponOccupiesHand(true, true, false, false, false));

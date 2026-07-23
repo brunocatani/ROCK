@@ -262,6 +262,21 @@ namespace rock::offsets
 
     constexpr std::uintptr_t kFunc_GetConstraintInfoUtil = 0x1A4AD20;
 
+    /*
+     * Stock FO4VR constraint-data constructors and world-frame setters.
+     * Blind Ghidra verification on 2026-07-23 established the exact object
+     * sizes and setter ABIs used by TouchGrabRuntime:
+     *   Ball-and-socket: 0x70
+     *   Limited hinge:   0x130
+     *   Prismatic:       0x120
+     */
+    constexpr std::uintptr_t kFunc_BallAndSocketConstraintData_Ctor = 0x19AF690;
+    constexpr std::uintptr_t kFunc_BallAndSocketConstraintData_SetPivots = 0x19AF6E0;
+    constexpr std::uintptr_t kFunc_LimitedHingeConstraintData_Ctor = 0x19ACA30;
+    constexpr std::uintptr_t kFunc_LimitedHingeConstraintData_SetInWorldSpace = 0x19ACD90;
+    constexpr std::uintptr_t kFunc_PrismaticConstraintData_Ctor = 0x19B1350;
+    constexpr std::uintptr_t kFunc_PrismaticConstraintData_SetInWorldSpace = 0x19B1520;
+
     constexpr std::uintptr_t kFunc_HandleBumpedCharacter = 0x1E24980;
 
     constexpr std::uintptr_t kFunc_VRGrabInitiate = 0xF19250;

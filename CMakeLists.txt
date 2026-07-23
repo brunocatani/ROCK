@@ -758,6 +758,20 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKProviderExternalBodyRegistryTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKProviderExternalBodyRegistryTests)
 
+  add_executable(ROCKProviderTouchGrabRegistryTests
+    "${ROOT_DIR}/tests/ProviderTouchGrabRegistryTests.cpp"
+  )
+  target_compile_features(ROCKProviderTouchGrabRegistryTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKProviderTouchGrabRegistryTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKProviderTouchGrabRegistryTests)
+
+  add_executable(ROCKTouchGrabMathTests
+    "${ROOT_DIR}/tests/TouchGrabMathTests.cpp"
+  )
+  target_compile_features(ROCKTouchGrabMathTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKTouchGrabMathTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKTouchGrabMathTests)
+
   add_executable(ROCKProviderLeasePolicyTests
     "${ROOT_DIR}/tests/ProviderLeasePolicyTests.cpp"
   )
@@ -799,6 +813,8 @@ if(BUILD_ROCK_TESTS)
     ROCKProviderApiAbiTests
     ROCKProviderApiNegotiationTests
     ROCKProviderExternalBodyRegistryTests
+    ROCKProviderTouchGrabRegistryTests
+    ROCKTouchGrabMathTests
     ROCKProviderLeasePolicyTests
     ROCKDebugOverlayShapeGeometryTests
     ROCKDebugOverlayShapePipelineTests

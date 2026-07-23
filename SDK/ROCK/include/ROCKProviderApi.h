@@ -73,6 +73,9 @@ namespace rock::provider
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_PART_POSES_V1 = 128;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_PART_DRIVE_RESULTS_V1 = 64;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_OFFHAND_RESERVATION_LEASE_FRAMES_V1 = 120;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_TOUCH_GRAB_TARGETS_V1 = 256;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_TOUCH_GRAB_SCOPES_V1 = 64;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_TOUCH_GRAB_TARGET_LEASE_FRAMES_V1 = 120;
     inline constexpr std::uint16_t ROCK_PROVIDER_ALL_FINGER_LOCAL_TRANSFORMS_V1 = 0x7FFFu;
 
     /*
@@ -140,6 +143,74 @@ namespace rock::provider
         BodyPairOnly = 0,
         AggregateImpulse = 1,
         RawPoint = 2,
+    };
+
+    /*
+     * Touch-grab targets are a separate opt-in authority from ROCK's ordinary
+     * loose-object grab. Limited mechanisms may name one live dynamic or
+     * keyframed body. FixedAnchor may additionally match a bounded collision
+     * layer/motion mask without changing that body's motion type; this is the
+     * observation/ownership primitive needed by future climbing consumers.
+     */
+    enum class RockProviderTouchGrabKindV1 : std::uint32_t
+    {
+        FixedAnchor = 0,
+        LimitedHinge = 1,
+        LimitedPrismatic = 2,
+    };
+
+    enum class RockProviderTouchGrabTargetFlagV1 : std::uint32_t
+    {
+        None = 0,
+        AllowRightHand = 1u << 0,
+        AllowLeftHand = 1u << 1,
+        AllowTwoHands = 1u << 2,
+        LatchOnRelease = 1u << 3,
+        MatchAnyBody = 1u << 4,
+        MatchStaticMotion = 1u << 5,
+        MatchKeyframedMotion = 1u << 6,
+        MatchDynamicMotion = 1u << 7,
+    };
+
+    enum class RockProviderTouchGrabPhaseV1 : std::uint32_t
+    {
+        Inactive = 0,
+        Armed = 1,
+        Held = 2,
+        Latched = 3,
+        Yielded = 4,
+        Invalidated = 5,
+    };
+
+    enum class RockProviderTouchGrabReleaseReasonV1 : std::uint32_t
+    {
+        None = 0,
+        GripReleased = 1,
+        OwnerYield = 2,
+        TargetRemoved = 3,
+        RegistrationExpired = 4,
+        GenerationChanged = 5,
+        WorldLost = 6,
+        TargetInvalid = 7,
+        HandUnavailable = 8,
+    };
+
+    enum class RockProviderTouchGrabStateFlagV1 : std::uint32_t
+    {
+        None = 0,
+        ContactPointValid = 1u << 0,
+        ContactNormalValid = 1u << 1,
+        CoordinateValid = 1u << 2,
+        FixedAnchor = 1u << 3,
+        OriginalMotionKeyframed = 1u << 4,
+        OriginalMotionDynamic = 1u << 5,
+    };
+
+    enum class RockProviderTouchGrabHandMaskV1 : std::uint32_t
+    {
+        None = 0,
+        Right = 1u << 0,
+        Left = 1u << 1,
     };
 
     enum class RockProviderOffhandReservation : std::uint32_t
@@ -282,6 +353,7 @@ namespace rock::provider
         PlayerColliderDescriptors = 1u << 21,
         ScopeSightState = 1u << 22,
         InputObservability = 1u << 23,
+        TouchGrabTargets = 1u << 24,
     };
 
     enum class RockProviderFeatureBitV1 : std::uint32_t
@@ -349,6 +421,7 @@ namespace rock::provider
         InputSampleMetadata = 1u << 26,
         WeaponClassificationEnrichment = 1u << 27,
         ExternalContactEnrichment = 1u << 28,
+        TouchGrabTargets = 1u << 29,
     };
 
     /*
@@ -761,6 +834,8 @@ namespace rock::provider
         WeaponEvidenceDetail = 58,
         BodyContact = 59,
         ApiFunctionTable = 60,
+        TouchGrabTarget = 61,
+        TouchGrabState = 62,
     };
 
     enum class RockProviderHandInteractionPhaseV1 : std::uint32_t
@@ -1104,6 +1179,13 @@ namespace rock::provider
         return (featureBits & static_cast<std::uint32_t>(feature)) != 0;
     }
 
+    [[nodiscard]] inline constexpr bool hasTouchGrabTargetFlagV1(
+        std::uint32_t flags,
+        RockProviderTouchGrabTargetFlagV1 flag)
+    {
+        return (flags & static_cast<std::uint32_t>(flag)) != 0;
+    }
+
     [[nodiscard]] inline constexpr bool hasNativeAnimationAuthorityFlagV1(
         std::uint32_t flags,
         RockProviderNativeAnimationAuthorityFlagV1 flag)
@@ -1232,7 +1314,10 @@ namespace rock::provider
         std::uint32_t maxNativeAnimationAuthorityOwners{ 0 };
         std::uint32_t maxWeaponEvidenceDetails{ 0 };
         std::uint32_t maxWeaponEvidencePointsPerDetail{ 0 };
-        std::uint32_t reserved[4]{};
+        std::uint32_t maxTouchGrabTargets{ 0 };
+        std::uint32_t maxTouchGrabScopes{ 0 };
+        std::uint32_t maxTouchGrabTargetLeaseFrames{ 0 };
+        std::uint32_t reserved[1]{};
     };
 
     /*
@@ -2403,6 +2488,89 @@ namespace rock::provider
         std::uint32_t reserved[6]{};
     };
 
+    /*
+     * Publications are copied into ROCK's bounded registry and replace one
+     * owner/scope transactionally. Every target must carry the current,
+     * nonzero world/skeleton/provider generations and a nonzero owner-defined
+     * targetGeneration. Bump targetGeneration whenever the resolved body or
+     * any behavioral geometry/policy changes; refresh the unchanged value only
+     * to renew its lease.
+     *
+     * LimitedHinge coordinates and limits are radians. LimitedPrismatic
+     * coordinates and limits are game units. Their pivot and normalized axis
+     * are in current world/game space. ROCK temporarily converts a keyframed
+     * mechanism body to dynamic while held, owns all constraints, and restores
+     * the original motion class before publishing Latched/Yielded/Invalidated.
+     *
+     * FixedAnchor either names one body or uses MatchAnyBody plus a nonzero
+     * allowedLayerMask. It records hand/contact ownership only: ROCK never
+     * changes, activates, constrains, or writes velocity to the matched body.
+     * Exact body registrations are resolved before wildcard registrations.
+     * One wildcard descriptor owns at most one resolved body concurrently;
+     * publish disjoint right/left wildcard descriptors when a consumer needs
+     * two independent surfaces at once (for example, two-hand climbing).
+     */
+    struct RockProviderTouchGrabTargetV1
+    {
+        std::uint32_t size{ sizeof(RockProviderTouchGrabTargetV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint64_t targetId{ 0 };
+        std::uint32_t targetGeneration{ 0 };
+        RockProviderTouchGrabKindV1 kind{
+            RockProviderTouchGrabKindV1::FixedAnchor
+        };
+        std::uint32_t flags{ 0 };
+        std::uint32_t bodyId{ 0x7FFF'FFFF };
+        std::uint32_t referenceFormId{ 0 };
+        std::uint32_t referenceNativeHandle{ 0 };
+        std::uint64_t allowedLayerMask{ 0 };
+        std::uint32_t leaseFrames{ 0 };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t providerGeneration{ 0 };
+        RockProviderPoint3 pivotWorldGame{};
+        RockProviderPoint3 axisWorldGame{};
+        float minimumCoordinate{ 0.0f };
+        float maximumCoordinate{ 1.0f };
+        float currentCoordinate{ 0.0f };
+        std::uint32_t reserved0{ 0 };
+        std::uint64_t reserved[3]{};
+    };
+
+    struct RockProviderTouchGrabStateV1
+    {
+        std::uint32_t size{ sizeof(RockProviderTouchGrabStateV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint64_t targetId{ 0 };
+        std::uint32_t targetGeneration{ 0 };
+        RockProviderTouchGrabKindV1 kind{
+            RockProviderTouchGrabKindV1::FixedAnchor
+        };
+        RockProviderTouchGrabPhaseV1 phase{
+            RockProviderTouchGrabPhaseV1::Inactive
+        };
+        RockProviderTouchGrabReleaseReasonV1 releaseReason{
+            RockProviderTouchGrabReleaseReasonV1::None
+        };
+        std::uint32_t bodyId{ 0x7FFF'FFFF };
+        std::uint32_t referenceFormId{ 0 };
+        std::uint32_t referenceNativeHandle{ 0 };
+        std::uint32_t activeHandMask{ 0 };
+        std::uint32_t flags{ 0 };
+        std::uint32_t reserved0{ 0 };
+        float currentCoordinate{ 0.0f };
+        float coordinateVelocity{ 0.0f };
+        RockProviderPoint3 contactPointGame{};
+        RockProviderPoint3 contactNormalGame{};
+        std::uint64_t frameIndex{ 0 };
+        std::uint64_t sequence{ 0 };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t providerGeneration{ 0 };
+        std::uint32_t collisionGeneration{ 0 };
+        std::uint64_t reserved[2]{};
+    };
+
     using RockProviderFrameCallback = void(ROCK_PROVIDER_CALL*)(const RockProviderFrameSnapshot* snapshot, void* userData);
     using RockProviderAnimationPhaseCallbackV1 = void(ROCK_PROVIDER_CALL*)(
         const RockProviderAnimationPhaseContextV1* context,
@@ -2660,6 +2828,35 @@ namespace rock::provider
             RockProviderOffhandReservationStateV1* outState);
         RockProviderResultV1(ROCK_PROVIDER_CALL* clearNativeAnimationRuntimeV1)(
             std::uint64_t ownerToken);
+        /*
+         * Touch registrations are owner/capability gated. A zero-count set is
+         * a valid transactional scope clear. copyTouchGrabStatesForScopeV1
+         * returns owner-scoped snapshots; their sequence changes on every
+         * provider state transition/publication. Yield is asynchronous:
+         * requestTouchGrabYieldV1 blocks new acquisition immediately, and the
+         * owner waits for Yielded before starting native/scripted motion. A
+         * yielded or invalidated descriptor stays non-acquirable until removed
+         * or republished with a new targetGeneration.
+         */
+        RockProviderResultV1(ROCK_PROVIDER_CALL* setTouchGrabTargetsForScopeV1)(
+            std::uint64_t ownerToken,
+            std::uint64_t scopeToken,
+            const RockProviderTouchGrabTargetV1* targets,
+            std::uint32_t targetCount);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* clearTouchGrabTargetsForScopeV1)(
+            std::uint64_t ownerToken,
+            std::uint64_t scopeToken);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* copyTouchGrabStatesForScopeV1)(
+            std::uint64_t ownerToken,
+            std::uint64_t scopeToken,
+            RockProviderTouchGrabStateV1* outStates,
+            std::uint32_t maxStates,
+            std::uint32_t* outStateCount);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* requestTouchGrabYieldV1)(
+            std::uint64_t ownerToken,
+            std::uint64_t scopeToken,
+            std::uint64_t targetId,
+            std::uint32_t targetGeneration);
 
         [[nodiscard]] static int initialize(
             const std::uint32_t minVersion = ROCK_PROVIDER_API_VERSION,
@@ -2811,6 +3008,8 @@ namespace rock::provider
         offsetof(RockProviderApi, getOffhandReservationStateV1) + sizeof(std::declval<RockProviderApi>().getOffhandReservationStateV1));
     inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_NATIVE_ANIMATION_RUNTIME_CLEAR_TABLE_BYTES = static_cast<std::uint32_t>(
         offsetof(RockProviderApi, clearNativeAnimationRuntimeV1) + sizeof(std::declval<RockProviderApi>().clearNativeAnimationRuntimeV1));
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_TOUCH_GRAB_TARGETS_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, requestTouchGrabYieldV1) + sizeof(std::declval<RockProviderApi>().requestTouchGrabYieldV1));
 
     [[nodiscard]] inline bool queryProviderLimitsV1(RockProviderLimitsV1& outLimits)
     {
@@ -3221,6 +3420,13 @@ namespace rock::provider
             RockProviderFeatureBit2V1::OffhandReservationLeases);
     }
 
+    [[nodiscard]] inline bool supportsTouchGrabTargetsV1()
+    {
+        return providerSupportsFeature2V1(
+            ROCK_PROVIDER_API_V1_TOUCH_GRAB_TARGETS_TABLE_BYTES,
+            RockProviderFeatureBit2V1::TouchGrabTargets);
+    }
+
     static_assert(std::is_standard_layout_v<RockProviderTransform>);
     static_assert(std::is_trivially_copyable_v<RockProviderTransform>);
     static_assert(sizeof(RockProviderConsumerRegistrationV1) == 104);
@@ -3343,11 +3549,22 @@ namespace rock::provider
     static_assert(alignof(RockProviderBodyContactV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderBodyContactV1>);
     static_assert(std::is_trivially_copyable_v<RockProviderBodyContactV1>);
-    static_assert(sizeof(RockProviderApi) == 656);
+    static_assert(sizeof(RockProviderTouchGrabTargetV1) == 128);
+    static_assert(alignof(RockProviderTouchGrabTargetV1) == 8);
+    static_assert(std::is_standard_layout_v<RockProviderTouchGrabTargetV1>);
+    static_assert(std::is_trivially_copyable_v<RockProviderTouchGrabTargetV1>);
+    static_assert(sizeof(RockProviderTouchGrabStateV1) == 136);
+    static_assert(alignof(RockProviderTouchGrabStateV1) == 8);
+    static_assert(std::is_standard_layout_v<RockProviderTouchGrabStateV1>);
+    static_assert(std::is_trivially_copyable_v<RockProviderTouchGrabStateV1>);
+    static_assert(sizeof(RockProviderApi) == 688);
     static_assert(alignof(RockProviderApi) == 8);
     static_assert(
         offsetof(RockProviderApi, getProviderLimitsExtV1) == 54 * sizeof(void*));
     static_assert(
         offsetof(RockProviderApi, clearNativeAnimationRuntimeV1) ==
         81 * sizeof(void*));
+    static_assert(
+        offsetof(RockProviderApi, requestTouchGrabYieldV1) ==
+        85 * sizeof(void*));
 }

@@ -124,8 +124,8 @@ Require-Text 'src/api/ROCKProviderApi.h' 'ROCKAPI_GetDescriptorV1' `
     'The public SDK must declare the independent V1 descriptor accessor.'
 Require-Text 'src/exports.def' 'ROCKAPI_GetDescriptorV1' `
     'The provider descriptor must be exported independently of the function table.'
-Require-Text 'src/api/ROCKProviderApi.h' 'sizeof\(RockProviderApi\)\s*==\s*656' `
-    'The append-only V1 function table must retain its exact 82-slot x64 extent.'
+Require-Text 'src/api/ROCKProviderApi.h' 'sizeof\(RockProviderApi\)\s*==\s*688' `
+    'The append-only V1 function table must retain its exact 86-slot x64 extent.'
 Require-Text 'src/api/ROCKProviderApi.h' 'struct\s+RockProviderLimitsExtV1' `
     'Fixed capacities omitted by the legacy limits prefix must be discoverable through extended limits.'
 Require-Text 'src/api/ROCKProviderApi.h' 'RockProviderStructureIdV1[\s\S]*getPublicStructureSizeV1' `
@@ -311,6 +311,30 @@ Require-Text 'src/api/ROCKProviderApi.cpp' 'registerBodiesForScopeDetailed[\s\S]
     'Scoped external-body registration must preserve capacity and ownership failure semantics.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'clearScope\(ownerToken, scopeToken\)[\s\S]{0,160}RockProviderResultV1::TargetUnavailable' `
     'Clearing an unknown external-body scope must report target unavailability.'
+Require-Text 'src/api/ROCKProviderApi.h' 'TouchGrabTargets[\s\S]*RockProviderTouchGrabTargetV1[\s\S]*RockProviderTouchGrabStateV1' `
+    'API V1 must expose bounded provider-scoped touch-grab targets and states.'
+Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_API_V1_TOUCH_GRAB_TARGETS_TABLE_BYTES[\s\S]*supportsTouchGrabTargetsV1' `
+    'Touch-grab consumers must negotiate both the V1 feature bit and appended table extent.'
+Require-Text 'src/api/ROCKProviderApi.h' 'maxTouchGrabTargets[\s\S]*maxTouchGrabScopes[\s\S]*maxTouchGrabTargetLeaseFrames' `
+    'The extended V1 limits query must expose every bounded touch-grab registry capacity.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'apiSetTouchGrabTargetsForScopeV1[\s\S]{0,1500}validateRegisteredOwnerCapabilityLocked[\s\S]{0,180}TouchGrabTargets' `
+    'Touch-grab target publication must remain registered-owner and capability gated.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'unregisterConsumer[\s\S]*s_touchGrabTargets\.clearOwner\(ownerToken\)' `
+    'Unregistering a consumer must revoke all of its touch-grab targets.'
+Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' 'if\s*\(match\.yieldRequested\)\s*\{\s*return false;' `
+    'A target with pending native yield must reject every new hand acquisition.'
+Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' 'if\s*\(active\.target\.kind\s*!=[\s\S]{0,180}FixedAnchor\)\s*\{\s*havok_runtime::activateBody' `
+    'FixedAnchor ownership must not activate or otherwise drive the matched body.'
+Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' 'restoreTarget\s*&&\s*world\s*&&[\s\S]{0,180}active\.target\.kind\s*!=[\s\S]{0,180}FixedAnchor[\s\S]{0,500}SetLinearVelocity' `
+    'FixedAnchor release must not write velocity or motion state to the matched body.'
+Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' 'originalMotionClass\s*==[\s\S]{0,180}Keyframed[\s\S]{0,180}SetMotionType\([\s\S]{0,120}DYNAMIC' `
+    'A keyframed mechanism must enter dynamic motion only inside the dedicated mechanism path.'
+Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' 'originalMotionClass\s*==[\s\S]{0,180}Keyframed[\s\S]{0,180}SetMotionType\([\s\S]{0,120}KEYFRAMED' `
+    'Mechanism release must restore the exact keyframed motion class.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'tryTargetClass\([\s\S]{0,180}TargetClass::[\s\S]{0,80}Explicit\)\s*\|\|[\s\S]{0,180}tryTargetClass\([\s\S]{0,180}TargetClass::[\s\S]{0,80}Wildcard\)' `
+    'Exact mechanism targets must be attempted before wildcard fixed-surface targets.'
+Require-Text 'src/physics-interaction/object/PhysicsBodyClassifier.h' 'motionType\s*==\s*BodyMotionType::Static[\s\S]{0,120}BodyRejectReason::StaticMotion' `
+    'Ordinary loose-object classification must continue rejecting static motion.'
 
 $providerHeader = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/api/ROCKProviderApi.h')
 $expectedProviderFunctions = [string[]]@(
@@ -395,7 +419,11 @@ $expectedProviderFunctions = [string[]]@(
     'renewOffhandReservationV1',
     'releaseOffhandReservationV1',
     'getOffhandReservationStateV1',
-    'clearNativeAnimationRuntimeV1'
+    'clearNativeAnimationRuntimeV1',
+    'setTouchGrabTargetsForScopeV1',
+    'clearTouchGrabTargetsForScopeV1',
+    'copyTouchGrabStatesForScopeV1',
+    'requestTouchGrabYieldV1'
 )
 Require-SequenceEqual 'ROCKProviderApi function pointer order' (Get-ProviderFunctionNames $providerHeader) $expectedProviderFunctions
 

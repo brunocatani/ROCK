@@ -1,6 +1,7 @@
 #pragma once
 
 #include "api/ROCKProviderApi.h"
+#include "api/TouchGrabRegistry.h"
 
 namespace rock
 {
@@ -68,6 +69,33 @@ namespace rock::provider
         std::uint32_t maxTargets,
         std::uint64_t* outOwnerTokens = nullptr);
     std::uint32_t currentExternalBodyCount();
+    bool resolveTouchGrabTargetV1(
+        std::uint32_t bodyId,
+        std::uint32_t collisionLayer,
+        TouchGrabMotionClassV1 motionClass,
+        RockProviderHand hand,
+        std::uint32_t worldGeneration,
+        std::uint32_t skeletonGeneration,
+        std::uint32_t providerGeneration,
+        TouchGrabTargetMatchV1& outMatch);
+    bool currentTouchGrabTargetV1(
+        std::uint64_t ownerToken,
+        std::uint64_t scopeToken,
+        std::uint64_t targetId,
+        std::uint32_t targetGeneration,
+        std::uint32_t worldGeneration,
+        std::uint32_t skeletonGeneration,
+        std::uint32_t providerGeneration,
+        TouchGrabTargetMatchV1& outMatch);
+    bool publishTouchGrabStateV1(
+        std::uint64_t ownerToken,
+        std::uint64_t scopeToken,
+        const RockProviderTouchGrabStateV1& state);
+    void acknowledgeTouchGrabYieldV1(
+        std::uint64_t ownerToken,
+        std::uint64_t scopeToken,
+        std::uint64_t targetId,
+        std::uint32_t targetGeneration);
     void markInteractionCommandStageV1(
         std::uint64_t ownerToken,
         std::uint64_t commandId,

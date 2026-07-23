@@ -2,6 +2,7 @@
 #include "ROCKProviderApiInternal.h"
 #include "api/ProviderDebugOverlayRuntime.h"
 #include "api/ProviderLeasePolicy.h"
+#include "api/TouchGrabRegistry.h"
 
 #include <array>
 #include <atomic>
@@ -143,6 +144,8 @@ namespace
 
     std::mutex s_externalBodyMutex;
     ExternalBodyRegistry s_externalBodies{};
+    std::mutex s_touchGrabMutex;
+    TouchGrabRegistry s_touchGrabTargets{};
 
     struct OffhandReservationSlot
     {
@@ -194,7 +197,8 @@ namespace
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::SemanticHandContacts) |
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::PlayerColliderDescriptors) |
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::ScopeSightState) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::InputObservability);
+        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::InputObservability) |
+        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::TouchGrabTargets);
     constexpr std::uint32_t kProviderFeatureBitsV1 =
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::FrameCallbacks) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::LifecycleFields) |
@@ -253,7 +257,8 @@ namespace
         static_cast<std::uint32_t>(RockProviderFeatureBit2V1::CommandLifecycle) |
         static_cast<std::uint32_t>(RockProviderFeatureBit2V1::InputSampleMetadata) |
         static_cast<std::uint32_t>(RockProviderFeatureBit2V1::WeaponClassificationEnrichment) |
-        static_cast<std::uint32_t>(RockProviderFeatureBit2V1::ExternalContactEnrichment);
+        static_cast<std::uint32_t>(RockProviderFeatureBit2V1::ExternalContactEnrichment) |
+        static_cast<std::uint32_t>(RockProviderFeatureBit2V1::TouchGrabTargets);
     constexpr std::uint32_t kImplementedForceGrabFlagsV1 =
         static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::UsePreferredGrabPointGame);
     constexpr std::uint32_t kImplementedForceReleaseFlagsV1 =
@@ -1854,6 +1859,10 @@ namespace
             s_externalBodies.clearOwner(ownerToken);
         }
         {
+            std::scoped_lock lock(s_touchGrabMutex);
+            s_touchGrabTargets.clearOwner(ownerToken);
+        }
+        {
             std::scoped_lock lock(s_offhandReservationMutex);
             if (s_offhandReservationSlot.ownerToken == ownerToken) {
                 clearOffhandReservationLocked(
@@ -1972,6 +1981,10 @@ namespace
         {
             std::scoped_lock lock(s_externalBodyMutex);
             s_externalBodies.clearOwner(ownerToken);
+        }
+        {
+            std::scoped_lock lock(s_touchGrabMutex);
+            s_touchGrabTargets.clearOwner(ownerToken);
         }
 
         {
@@ -2133,6 +2146,12 @@ namespace
             ROCK_PROVIDER_MAX_WEAPON_EVIDENCE_DETAILS_V1;
         limits.maxWeaponEvidencePointsPerDetail =
             ROCK_PROVIDER_MAX_WEAPON_EVIDENCE_POINTS_PER_DETAIL_V1;
+        limits.maxTouchGrabTargets =
+            ROCK_PROVIDER_MAX_TOUCH_GRAB_TARGETS_V1;
+        limits.maxTouchGrabScopes =
+            ROCK_PROVIDER_MAX_TOUCH_GRAB_SCOPES_V1;
+        limits.maxTouchGrabTargetLeaseFrames =
+            ROCK_PROVIDER_MAX_TOUCH_GRAB_TARGET_LEASE_FRAMES_V1;
 
         const auto copySize = (std::min<std::size_t>)(
             outLimits->size,
@@ -2266,6 +2285,10 @@ namespace
             return sizeof(RockProviderBodyContactV1);
         case RockProviderStructureIdV1::ApiFunctionTable:
             return sizeof(RockProviderApi);
+        case RockProviderStructureIdV1::TouchGrabTarget:
+            return sizeof(RockProviderTouchGrabTargetV1);
+        case RockProviderStructureIdV1::TouchGrabState:
+            return sizeof(RockProviderTouchGrabStateV1);
         default:
             return 0;
         }
@@ -3628,6 +3651,141 @@ namespace
         return RockProviderResultV1::Ok;
     }
 
+    RockProviderResultV1 ROCK_PROVIDER_CALL
+    apiSetTouchGrabTargetsForScopeV1(
+        const std::uint64_t ownerToken,
+        const std::uint64_t scopeToken,
+        const RockProviderTouchGrabTargetV1* targets,
+        const std::uint32_t targetCount)
+    {
+        if (ownerToken == 0 || scopeToken == 0 ||
+            targetCount > ROCK_PROVIDER_MAX_TOUCH_GRAB_TARGETS_V1 ||
+            (targetCount != 0 && !targets)) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        for (std::uint32_t index = 0; index < targetCount; ++index) {
+            if (targets[index].size !=
+                sizeof(RockProviderTouchGrabTargetV1)) {
+                return RockProviderResultV1::InvalidSize;
+            }
+            if (targets[index].version == 0 ||
+                targets[index].version > ROCK_PROVIDER_API_VERSION) {
+                return RockProviderResultV1::UnsupportedVersion;
+            }
+            const auto generationResult = validateGenerationGuards(
+                targets[index].worldGeneration,
+                targets[index].skeletonGeneration,
+                targets[index].providerGeneration);
+            if (generationResult != RockProviderResultV1::Ok) {
+                return generationResult;
+            }
+        }
+
+        std::scoped_lock lock(s_consumerMutex, s_touchGrabMutex);
+        const auto ownerResult =
+            validateRegisteredOwnerCapabilityLocked(
+                ownerToken,
+                RockProviderConsumerCapabilityV1::TouchGrabTargets);
+        if (ownerResult != RockProviderResultV1::Ok) {
+            return ownerResult;
+        }
+        switch (s_touchGrabTargets.setScope(
+            ownerToken,
+            scopeToken,
+            targets,
+            targetCount,
+            currentProviderFrameIndex())) {
+        case TouchGrabRegistry::RegistrationResult::Ok:
+            return RockProviderResultV1::Ok;
+        case TouchGrabRegistry::RegistrationResult::CapacityFull:
+            return RockProviderResultV1::CapacityFull;
+        case TouchGrabRegistry::RegistrationResult::OwnerConflict:
+            return RockProviderResultV1::OwnerConflict;
+        case TouchGrabRegistry::RegistrationResult::InvalidArgument:
+        default:
+            return RockProviderResultV1::InvalidArgument;
+        }
+    }
+
+    RockProviderResultV1 ROCK_PROVIDER_CALL
+    apiClearTouchGrabTargetsForScopeV1(
+        const std::uint64_t ownerToken,
+        const std::uint64_t scopeToken)
+    {
+        if (ownerToken == 0 || scopeToken == 0) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        std::scoped_lock lock(s_consumerMutex, s_touchGrabMutex);
+        const auto ownerResult =
+            validateRegisteredOwnerCapabilityLocked(
+                ownerToken,
+                RockProviderConsumerCapabilityV1::TouchGrabTargets);
+        if (ownerResult != RockProviderResultV1::Ok) {
+            return ownerResult;
+        }
+        return s_touchGrabTargets.clearScope(ownerToken, scopeToken) ?
+            RockProviderResultV1::Ok :
+            RockProviderResultV1::TargetUnavailable;
+    }
+
+    RockProviderResultV1 ROCK_PROVIDER_CALL
+    apiCopyTouchGrabStatesForScopeV1(
+        const std::uint64_t ownerToken,
+        const std::uint64_t scopeToken,
+        RockProviderTouchGrabStateV1* outStates,
+        const std::uint32_t maxStates,
+        std::uint32_t* outStateCount)
+    {
+        if (ownerToken == 0 || scopeToken == 0 || !outStateCount ||
+            (maxStates != 0 && !outStates)) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        std::scoped_lock lock(s_consumerMutex, s_touchGrabMutex);
+        const auto ownerResult =
+            validateRegisteredOwnerCapabilityLocked(
+                ownerToken,
+                RockProviderConsumerCapabilityV1::TouchGrabTargets);
+        if (ownerResult != RockProviderResultV1::Ok) {
+            return ownerResult;
+        }
+        *outStateCount = s_touchGrabTargets.copyStates(
+            ownerToken,
+            scopeToken,
+            outStates,
+            maxStates,
+            currentProviderFrameIndex());
+        return RockProviderResultV1::Ok;
+    }
+
+    RockProviderResultV1 ROCK_PROVIDER_CALL
+    apiRequestTouchGrabYieldV1(
+        const std::uint64_t ownerToken,
+        const std::uint64_t scopeToken,
+        const std::uint64_t targetId,
+        const std::uint32_t targetGeneration)
+    {
+        if (ownerToken == 0 || scopeToken == 0 || targetId == 0 ||
+            targetGeneration == 0) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        std::scoped_lock lock(s_consumerMutex, s_touchGrabMutex);
+        const auto ownerResult =
+            validateRegisteredOwnerCapabilityLocked(
+                ownerToken,
+                RockProviderConsumerCapabilityV1::TouchGrabTargets);
+        if (ownerResult != RockProviderResultV1::Ok) {
+            return ownerResult;
+        }
+        return s_touchGrabTargets.requestYield(
+                   ownerToken,
+                   scopeToken,
+                   targetId,
+                   targetGeneration,
+                   currentProviderFrameIndex()) ?
+            RockProviderResultV1::Ok :
+            RockProviderResultV1::TargetUnavailable;
+    }
+
     [[nodiscard]] bool equippedWeaponHandlingRequestValuesValid(
         const RockProviderEquippedWeaponHandlingRequestV1& request)
     {
@@ -4739,6 +4897,14 @@ namespace
         .getOffhandReservationStateV1 = &apiGetOffhandReservationStateV1,
         .clearNativeAnimationRuntimeV1 =
             &apiClearNativeAnimationRuntimeV1,
+        .setTouchGrabTargetsForScopeV1 =
+            &apiSetTouchGrabTargetsForScopeV1,
+        .clearTouchGrabTargetsForScopeV1 =
+            &apiClearTouchGrabTargetsForScopeV1,
+        .copyTouchGrabStatesForScopeV1 =
+            &apiCopyTouchGrabStatesForScopeV1,
+        .requestTouchGrabYieldV1 =
+            &apiRequestTouchGrabYieldV1,
     };
 
     constexpr RockProviderApiDescriptorV1 ROCK_PROVIDER_API_DESCRIPTOR{
@@ -5195,6 +5361,10 @@ namespace rock::provider
             std::scoped_lock lock(s_externalBodyMutex);
             s_externalBodies.clearAll();
         }
+        {
+            std::scoped_lock lock(s_touchGrabMutex);
+            s_touchGrabTargets.clearAll();
+        }
         clearInteractionCommandsForProviderLossV1(RockProviderInteractionFailureV1::ProviderNotReady);
         {
             std::scoped_lock lock(s_handInputSuppressionMutex);
@@ -5622,5 +5792,78 @@ namespace rock::provider
     {
         std::scoped_lock lock(s_externalBodyMutex);
         return s_externalBodies.bodyCount();
+    }
+
+    bool resolveTouchGrabTargetV1(
+        const std::uint32_t bodyId,
+        const std::uint32_t collisionLayer,
+        const TouchGrabMotionClassV1 motionClass,
+        const RockProviderHand hand,
+        const std::uint32_t worldGeneration,
+        const std::uint32_t skeletonGeneration,
+        const std::uint32_t providerGeneration,
+        TouchGrabTargetMatchV1& outMatch)
+    {
+        std::scoped_lock lock(s_touchGrabMutex);
+        outMatch = s_touchGrabTargets.resolve(
+            bodyId,
+            collisionLayer,
+            motionClass,
+            hand,
+            worldGeneration,
+            skeletonGeneration,
+            providerGeneration,
+            currentProviderFrameIndex());
+        return outMatch.matched;
+    }
+
+    bool currentTouchGrabTargetV1(
+        const std::uint64_t ownerToken,
+        const std::uint64_t scopeToken,
+        const std::uint64_t targetId,
+        const std::uint32_t targetGeneration,
+        const std::uint32_t worldGeneration,
+        const std::uint32_t skeletonGeneration,
+        const std::uint32_t providerGeneration,
+        TouchGrabTargetMatchV1& outMatch)
+    {
+        std::scoped_lock lock(s_touchGrabMutex);
+        return s_touchGrabTargets.currentTarget(
+            ownerToken,
+            scopeToken,
+            targetId,
+            targetGeneration,
+            worldGeneration,
+            skeletonGeneration,
+            providerGeneration,
+            currentProviderFrameIndex(),
+            outMatch);
+    }
+
+    bool publishTouchGrabStateV1(
+        const std::uint64_t ownerToken,
+        const std::uint64_t scopeToken,
+        const RockProviderTouchGrabStateV1& state)
+    {
+        std::scoped_lock lock(s_touchGrabMutex);
+        return s_touchGrabTargets.publishState(
+            ownerToken,
+            scopeToken,
+            state,
+            currentProviderFrameIndex());
+    }
+
+    void acknowledgeTouchGrabYieldV1(
+        const std::uint64_t ownerToken,
+        const std::uint64_t scopeToken,
+        const std::uint64_t targetId,
+        const std::uint32_t targetGeneration)
+    {
+        std::scoped_lock lock(s_touchGrabMutex);
+        s_touchGrabTargets.acknowledgeYield(
+            ownerToken,
+            scopeToken,
+            targetId,
+            targetGeneration);
     }
 }

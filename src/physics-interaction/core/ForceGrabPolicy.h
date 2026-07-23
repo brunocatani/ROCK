@@ -21,6 +21,7 @@ namespace rock::force_grab_policy
         ActorEquipmentHandoff = 1u << 4,
         PendingForceGrab = 1u << 5,
         EquippedWeapon = 1u << 6,
+        TouchGrab = 1u << 7,
     };
 
     struct HandAvailabilityInput
@@ -32,6 +33,7 @@ namespace rock::force_grab_policy
         bool actorEquipmentHandoff{ false };
         bool pendingForceGrab{ false };
         bool equippedWeaponOccupiesHand{ false };
+        bool touchGrabActive{ false };
     };
 
     [[nodiscard]] inline constexpr std::uint32_t blockerMask(const HandAvailabilityInput& input) noexcept
@@ -50,6 +52,7 @@ namespace rock::force_grab_policy
         add(input.actorEquipmentHandoff, HandBlocker::ActorEquipmentHandoff);
         add(input.pendingForceGrab, HandBlocker::PendingForceGrab);
         add(input.equippedWeaponOccupiesHand, HandBlocker::EquippedWeapon);
+        add(input.touchGrabActive, HandBlocker::TouchGrab);
         return result;
     }
 

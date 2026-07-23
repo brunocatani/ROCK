@@ -14,6 +14,7 @@
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/grab/GrabEvent.h"
 #include "physics-interaction/grab/SavedGrabOffsetStore.h"
+#include "physics-interaction/grab/TouchGrabRuntime.h"
 #include "physics-interaction/grenade/LooseGrenadeRuntime.h"
 #include "physics-interaction/hand/DynamicHandCollision.h"
 #include "physics-interaction/contact/GeneratedBodyContactRegistry.h"
@@ -398,6 +399,7 @@ namespace rock
 
         Hand _rightHand{ false };
         Hand _leftHand{ true };
+        TouchGrabRuntime _touchGrabRuntime;
 
         BodyBoneColliderSet _bodyBoneColliders;
 

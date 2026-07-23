@@ -1663,12 +1663,10 @@ namespace rock
         return false;
     }
 
-    hand_semantic_contact_state::SemanticContactCollection Hand::collectFreshSemanticContactsForBody(std::uint32_t targetBodyId, std::uint32_t maxFramesSinceContact) const
+    hand_semantic_contact_state::SemanticContactCollection Hand::collectFreshSemanticContacts(
+        const std::uint32_t maxFramesSinceContact) const
     {
         hand_semantic_contact_state::SemanticContactCollection contacts{};
-        if (targetBodyId == hand_semantic_contact_state::kInvalidBodyId) {
-            return contacts;
-        }
 
         for (std::size_t i = 0; i < hand_semantic_contact_state::kMaxSemanticContactRecords; ++i) {
             for (int attempt = 0; attempt < 3; ++attempt) {
@@ -1712,7 +1710,8 @@ namespace rock
                     continue;
                 }
 
-                if (record.handBodyId == hand_semantic_contact_state::kInvalidBodyId || record.otherBodyId != targetBodyId) {
+                if (record.handBodyId == hand_semantic_contact_state::kInvalidBodyId ||
+                    record.otherBodyId == hand_semantic_contact_state::kInvalidBodyId) {
                     break;
                 }
                 if (record.hasContactPointGame && !hand_semantic_contact_state::isFiniteVector(record.contactPointGame)) {
@@ -1729,6 +1728,25 @@ namespace rock
         }
 
         return contacts;
+    }
+
+    hand_semantic_contact_state::SemanticContactCollection Hand::collectFreshSemanticContactsForBody(
+        const std::uint32_t targetBodyId,
+        const std::uint32_t maxFramesSinceContact) const
+    {
+        hand_semantic_contact_state::SemanticContactCollection matching{};
+        if (targetBodyId == hand_semantic_contact_state::kInvalidBodyId) {
+            return matching;
+        }
+
+        const auto contacts =
+            collectFreshSemanticContacts(maxFramesSinceContact);
+        for (std::size_t index = 0; index < contacts.count; ++index) {
+            if (contacts.records[index].otherBodyId == targetBodyId) {
+                matching.add(contacts.records[index]);
+            }
+        }
+        return matching;
     }
 
     bool Hand::tryGetHandColliderMetadataForRole(hand_collider_semantics::HandColliderRole role, HandColliderBodyMetadata& outMetadata) const

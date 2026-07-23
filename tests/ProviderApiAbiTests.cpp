@@ -92,13 +92,18 @@ int main()
     ROCK_EXPECT_LAYOUT(RockProviderDebugOverlayPublicationV1, 64, 8);
     ROCK_EXPECT_LAYOUT(RockProviderWeaponEvidenceDetailV1, 192, 8);
     ROCK_EXPECT_LAYOUT(RockProviderBodyContactV1, 128, 8);
-    ROCK_EXPECT_LAYOUT(RockProviderApi, 656, 8);
+    ROCK_EXPECT_LAYOUT(RockProviderTouchGrabTargetV1, 128, 8);
+    ROCK_EXPECT_LAYOUT(RockProviderTouchGrabStateV1, 136, 8);
+    ROCK_EXPECT_LAYOUT(RockProviderApi, 688, 8);
 #undef ROCK_EXPECT_LAYOUT
 
-    ok = ok && sizeof(RockProviderApi) == 82 * sizeof(void*);
+    ok = ok && sizeof(RockProviderApi) == 86 * sizeof(void*);
     ok = ok && alignof(RockProviderApi) == alignof(void*);
     ok = ok && offsetof(RockProviderApi, getProviderLimitsExtV1) == 54 * sizeof(void*);
     ok = ok && offsetof(RockProviderApi, clearNativeAnimationRuntimeV1) == 81 * sizeof(void*);
-    ok = ok && ROCK_PROVIDER_API_V1_NATIVE_ANIMATION_RUNTIME_CLEAR_TABLE_BYTES == sizeof(RockProviderApi);
+    ok = ok && offsetof(RockProviderApi, setTouchGrabTargetsForScopeV1) == 82 * sizeof(void*);
+    ok = ok && offsetof(RockProviderApi, requestTouchGrabYieldV1) == 85 * sizeof(void*);
+    ok = ok && ROCK_PROVIDER_API_V1_NATIVE_ANIMATION_RUNTIME_CLEAR_TABLE_BYTES == 82 * sizeof(void*);
+    ok = ok && ROCK_PROVIDER_API_V1_TOUCH_GRAB_TARGETS_TABLE_BYTES == sizeof(RockProviderApi);
     return ok ? 0 : 1;
 }

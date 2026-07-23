@@ -1302,6 +1302,7 @@ namespace rock
         auto* generatedBodyCallbackGate = &_generatedBodyStepDrive.callbackGate();
         _rightHand.setPhysicsCallbackGate(generatedBodyCallbackGate);
         _leftHand.setPhysicsCallbackGate(generatedBodyCallbackGate);
+        _touchGrabRuntime.setPhysicsCallbackGate(generatedBodyCallbackGate);
         _bodyBoneColliders.setPhysicsCallbackGate(generatedBodyCallbackGate);
         _dynamicHandCollision.setPhysicsCallbackGate(generatedBodyCallbackGate);
         _weaponCollision.setPhysicsCallbackGate(generatedBodyCallbackGate);
@@ -1421,13 +1422,32 @@ namespace rock
 
     void PhysicsInteraction::markGeneratedBodiesInvalidated()
     {
-        _collisionGenerationAtomic.fetch_add(1, std::memory_order_acq_rel);
+        const auto collisionGeneration =
+            _collisionGenerationAtomic.fetch_add(
+                1,
+                std::memory_order_acq_rel) +
+            1;
+        auto* currentBhkWorld = getPlayerBhkWorld();
+        auto* currentHknpWorld =
+            currentBhkWorld ?
+            getHknpWorld(currentBhkWorld) :
+            nullptr;
+        /*
+         * Touch constraints reference ROCK's generated hand bodies. Retire
+         * them while the matching world is still authoritative; if the world
+         * has already changed, the runtime abandons stale Havok IDs without
+         * dereferencing them.
+         */
+        _touchGrabRuntime.releaseAll(
+            currentBhkWorld,
+            currentHknpWorld,
+            provider::RockProviderTouchGrabReleaseReasonV1::
+                GenerationChanged,
+            collisionGeneration);
         // Close callback entry and drain any native step already traversing
         // ROCK-owned body banks before clearing registry or wrapper state.
         _generatedBodyStepDrive.reset();
         clearGeneratedBodyContactRegistry();
-        auto* currentBhkWorld = getPlayerBhkWorld();
-        auto* currentHknpWorld = currentBhkWorld ? getHknpWorld(currentBhkWorld) : nullptr;
         const bool generatedWorldStillLive =
             currentBhkWorld &&
             currentBhkWorld == _generatedBodiesBhkWorld &&
@@ -4530,6 +4550,13 @@ namespace rock
 
         if (worldValid) {
             auto* hknp = getHknpWorld(_cachedBhkWorld);
+            _touchGrabRuntime.releaseAll(
+                _cachedBhkWorld,
+                hknp,
+                provider::RockProviderTouchGrabReleaseReasonV1::
+                    GenerationChanged,
+                _collisionGenerationAtomic.load(
+                    std::memory_order_acquire));
             unsubscribeContactEvents(hknp);
             restoreNativePlayerCollisionSuppression(hknp, "shutdown");
             restoreRightHandCollisionAfterDominantWeapon(hknp);
@@ -4553,6 +4580,9 @@ namespace rock
             destroyBodyBoneCollisions(_cachedBhkWorld);
             destroyHandCollisions(_cachedBhkWorld);
         } else {
+            _touchGrabRuntime.abandonAll(
+                provider::RockProviderTouchGrabReleaseReasonV1::
+                    WorldLost);
             unsubscribeContactEvents(nullptr);
             ROCK_LOG_INFO(Init, "World stale or null — skipping Havok body destruction");
             _rightHand.abandonHavokStateAfterWorldLoss();
@@ -5112,6 +5142,19 @@ namespace rock
 
     void PhysicsInteraction::destroyHandCollisions(void* bhkWorld)
     {
+        auto* typedBhkWorld =
+            static_cast<RE::bhkWorld*>(bhkWorld);
+        auto* hknpWorld =
+            typedBhkWorld ?
+            getHknpWorld(typedBhkWorld) :
+            nullptr;
+        _touchGrabRuntime.releaseAll(
+            typedBhkWorld,
+            hknpWorld,
+            provider::RockProviderTouchGrabReleaseReasonV1::
+                GenerationChanged,
+            _collisionGenerationAtomic.load(
+                std::memory_order_acquire));
         clearGeneratedBodyContactRegistry();
         _rightHand.destroyCollision(bhkWorld);
         _leftHand.destroyCollision(bhkWorld);
@@ -5813,6 +5856,7 @@ namespace rock
             .actorEquipmentHandoff = hand.hasPendingActorEquipmentDropHandoff(),
             .pendingForceGrab = includePendingCommit && _pendingForceGrabCommits[isLeft ? 1u : 0u].active,
             .equippedWeaponOccupiesHand = equippedWeaponOccupiesHand,
+            .touchGrabActive = _touchGrabRuntime.isHandActive(isLeft),
         });
     }
 
@@ -7983,6 +8027,13 @@ namespace rock
         };
 
         if (!runtime_state::isLocalSkeletonReady()) {
+            _touchGrabRuntime.releaseAll(
+                frame.bhkWorld,
+                frame.hknpWorld,
+                provider::RockProviderTouchGrabReleaseReasonV1::
+                    HandUnavailable,
+                _collisionGenerationAtomic.load(
+                    std::memory_order_acquire));
             _rightHand.cancelGrabVisualReturn("skeleton-not-ready");
             _leftHand.cancelGrabVisualReturn("skeleton-not-ready");
             provider::clearInteractionCommandsForProviderLossV1(provider::RockProviderInteractionFailureV1::ProviderNotReady);
@@ -8004,6 +8055,34 @@ namespace rock
         }
 
         auto* hknp = frame.hknpWorld;
+        const auto worldGeneration =
+            _worldGenerationAtomic.load(
+                std::memory_order_acquire);
+        const auto skeletonGeneration =
+            _skeletonGenerationAtomic.load(
+                std::memory_order_acquire);
+        const auto providerGeneration =
+            _providerGenerationAtomic.load(
+                std::memory_order_acquire);
+        const auto collisionGeneration =
+            _collisionGenerationAtomic.load(
+                std::memory_order_acquire);
+        _touchGrabRuntime.service(
+            frame.bhkWorld,
+            frame.hknpWorld,
+            frame.deltaSeconds,
+            worldGeneration,
+            skeletonGeneration,
+            providerGeneration,
+            collisionGeneration);
+        if (frame.menuBlocked) {
+            _touchGrabRuntime.releaseAll(
+                frame.bhkWorld,
+                frame.hknpWorld,
+                provider::RockProviderTouchGrabReleaseReasonV1::
+                    HandUnavailable,
+                collisionGeneration);
+        }
         int grabButton = g_rockConfig.rockGrabButtonID;
         const bool rightHandWeaponEquipped = resolveEquippedWeaponInteractionNode() != nullptr;
         const bool ambidextrousHandoffAvailable =
@@ -8026,7 +8105,10 @@ namespace rock
             // Engaged = holding a ROCK object or gripping the equipped weapon (support/two-hand, part carry while primary detached, attach-only glue).
             input_remap_runtime::setHandInteractionEngaged(
                 isLeft,
-                hand.isHolding() || _twoHandedGrip.isHandPartGripping(isLeft) || pendingEquippedGripOwnership);
+                hand.isHolding() ||
+                    _touchGrabRuntime.isHandActive(isLeft) ||
+                    _twoHandedGrip.isHandPartGripping(isLeft) ||
+                    pendingEquippedGripOwnership);
             input_remap_runtime::setHeldObjectFormId(isLeft, heldRef ? heldRef->GetFormID() : 0u);
         };
         publishHandInputOwnership(_rightHand, false);
@@ -8133,6 +8215,13 @@ namespace rock
                 }
             }
             if (handInput.disabled) {
+                _touchGrabRuntime.releaseHand(
+                    isLeft,
+                    frame.bhkWorld,
+                    frame.hknpWorld,
+                    provider::RockProviderTouchGrabReleaseReasonV1::
+                        HandUnavailable,
+                    collisionGeneration);
                 cancelPeerHeldJoinRetry("hand-input-disabled", false);
                 clearGameplayCandidatesForHand(hand, isLeft);
                 return;
@@ -8142,10 +8231,14 @@ namespace rock
             }
             const bool providerHoldsCurrentGrabState =
                 providerSuppressesGrabRelease &&
-                (hand.isHolding() || hand.getState() == HandState::SelectionLocked || hand.getState() == HandState::Pulled);
+                (hand.isHolding() ||
+                    _touchGrabRuntime.isHandActive(isLeft) ||
+                    hand.getState() == HandState::SelectionLocked ||
+                    hand.getState() == HandState::Pulled);
             const bool providerBlocksNewGrabPress =
                 providerSuppressesNormalGrabPress &&
                 !hand.isHolding() &&
+                !_touchGrabRuntime.isHandActive(isLeft) &&
                 hand.getState() != HandState::SelectionLocked &&
                 hand.getState() != HandState::Pulled;
             if (providerHoldsCurrentGrabState || providerBlocksNewGrabPress) {
@@ -8169,6 +8262,15 @@ namespace rock
                 grab_input_intent_policy::reset(inputIntentState);
                 cancelPeerHeldJoinRetry("normal-grab-suppressed", true);
                 clearGameplayCandidatesForHand(hand, isLeft);
+                if (_touchGrabRuntime.isHandActive(isLeft)) {
+                    _touchGrabRuntime.releaseHand(
+                        isLeft,
+                        frame.bhkWorld,
+                        frame.hknpWorld,
+                        provider::RockProviderTouchGrabReleaseReasonV1::
+                            HandUnavailable,
+                        collisionGeneration);
+                }
                 if (hand.isHolding()) {
                     releaseSuppressedHeldObject(hand, isLeft, handIsFiringHand ? "firing-hand weapon equipped" : "equipped weapon support grip active");
                 } else if (hand.hasActivePullCatchIntent()) {
@@ -8217,13 +8319,118 @@ namespace rock
                     inputSuppressionState.deferredGrabRelease = false;
                 } else {
                     if (!grabInput.released &&
-                        (hand.isHolding() || hand.getState() == HandState::SelectionLocked || hand.getState() == HandState::Pulled)) {
+                        (hand.isHolding() ||
+                            _touchGrabRuntime.isHandActive(isLeft) ||
+                            hand.getState() == HandState::SelectionLocked ||
+                            hand.getState() == HandState::Pulled)) {
                         grabInput.released = true;
                     }
                     inputSuppressionState.deferredGrabRelease = false;
                 }
             }
             const auto rawGrabInput = grabInput;
+
+            /*
+             * Provider-registered touch targets consume the same physical
+             * grip edge as ordinary grabs, but live in a separate runtime so
+             * ROCK's loose-object selection policy continues to reject static
+             * and keyframed bodies. An explicit body registration always wins
+             * over a wildcard fixed-surface registration when one press has
+             * contact evidence for both.
+             */
+            if (_touchGrabRuntime.isHandActive(isLeft)) {
+                if (rawGrabInput.released ||
+                    !rawGrabInput.held) {
+                    _touchGrabRuntime.releaseHand(
+                        isLeft,
+                        frame.bhkWorld,
+                        frame.hknpWorld,
+                        provider::RockProviderTouchGrabReleaseReasonV1::
+                            GripReleased,
+                        collisionGeneration);
+                }
+                grab_input_intent_policy::reset(inputIntentState);
+                cancelPeerHeldJoinRetry(
+                    "touch-grab-active",
+                    true);
+                clearGameplayCandidatesForHand(hand, isLeft);
+                hand.cancelGrabVisualReturn(
+                    "touch-grab-active");
+                return;
+            }
+
+            const auto handState = hand.getState();
+            const bool touchGrabStateAvailable =
+                handState == HandState::Idle ||
+                handState == HandState::SelectedClose ||
+                handState == HandState::SelectedFar;
+            const bool canTryTouchGrab =
+                rawGrabInput.pressed &&
+                rawGrabInput.held &&
+                frame.worldReady &&
+                !frame.menuBlocked &&
+                !input_remap_runtime::isMenuInputActive() &&
+                !hand.isHolding() &&
+                touchGrabStateAvailable &&
+                !hand.hasActivePullCatchIntent() &&
+                !hand.hasPendingActorEquipmentDropHandoff() &&
+                !_pendingForceGrabCommits[handIndex].active &&
+                physicsWritesAllowedForWorld(frame.hknpWorld);
+            if (canTryTouchGrab) {
+                constexpr std::uint32_t
+                    kTouchGrabContactFreshnessFrames = 4;
+                const auto contacts =
+                    hand.collectFreshSemanticContacts(
+                        kTouchGrabContactFreshnessFrames);
+                const auto tryTargetClass =
+                    [&](const TouchGrabRuntime::TargetClass
+                            targetClass) {
+                        for (std::size_t index = 0;
+                             index < contacts.count;
+                             ++index) {
+                            if (_touchGrabRuntime.tryAcquire(
+                                    isLeft,
+                                    contacts.records[index],
+                                    frame.bhkWorld,
+                                    frame.hknpWorld,
+                                    worldGeneration,
+                                    skeletonGeneration,
+                                    providerGeneration,
+                                    collisionGeneration,
+                                    targetClass)) {
+                                return true;
+                            }
+                        }
+                        return false;
+                    };
+                const bool touchGrabAcquired =
+                    tryTargetClass(
+                        TouchGrabRuntime::TargetClass::
+                            Explicit) ||
+                    tryTargetClass(
+                        TouchGrabRuntime::TargetClass::
+                            Wildcard);
+                if (touchGrabAcquired) {
+                    if (hand.hasSelection()) {
+                        hand.clearSelectionState(false);
+                    }
+                    grab_input_intent_policy::reset(
+                        inputIntentState);
+                    cancelPeerHeldJoinRetry(
+                        "touch-grab-acquired",
+                        true);
+                    clearGameplayCandidatesForHand(
+                        hand,
+                        isLeft);
+                    _twoHandedGrip.cancelHandVisualReturn(
+                        isLeft,
+                        "touch-grab-acquired");
+                    hand.cancelGrabVisualReturn(
+                        "touch-grab-acquired");
+                    return;
+                }
+            }
+
             if (triggerEquipIntent.pending) {
                 triggerEquipIntent.remainingSeconds -= (std::max)(0.0f, frame.deltaSeconds);
                 if (triggerEquipIntent.remainingSeconds <= 0.0f) {
@@ -9514,19 +9721,37 @@ namespace rock
         processHand(_leftHand, true);
         publishHandInputOwnership(_leftHand, true);
 
-        if (_rightHand.isHolding()) {
-            _twoHandedGrip.cancelHandVisualReturn(false, "generic-grab-acquired");
+        if (_rightHand.isHolding() ||
+            _touchGrabRuntime.isHandActive(false)) {
+            _twoHandedGrip.cancelHandVisualReturn(
+                false,
+                _rightHand.isHolding() ?
+                    "generic-grab-acquired" :
+                    "touch-grab-active");
         }
-        if (frame.right.disabled) {
-            _rightHand.cancelGrabVisualReturn("hand-disabled");
+        if (frame.right.disabled ||
+            _touchGrabRuntime.isHandActive(false)) {
+            _rightHand.cancelGrabVisualReturn(
+                frame.right.disabled ?
+                    "hand-disabled" :
+                    "touch-grab-active");
         } else {
             _rightHand.updateGrabVisualReturn(frame.right.rawHandWorld, frame.deltaSeconds);
         }
-        if (_leftHand.isHolding()) {
-            _twoHandedGrip.cancelHandVisualReturn(true, "generic-grab-acquired");
+        if (_leftHand.isHolding() ||
+            _touchGrabRuntime.isHandActive(true)) {
+            _twoHandedGrip.cancelHandVisualReturn(
+                true,
+                _leftHand.isHolding() ?
+                    "generic-grab-acquired" :
+                    "touch-grab-active");
         }
-        if (frame.left.disabled) {
-            _leftHand.cancelGrabVisualReturn("hand-disabled");
+        if (frame.left.disabled ||
+            _touchGrabRuntime.isHandActive(true)) {
+            _leftHand.cancelGrabVisualReturn(
+                frame.left.disabled ?
+                    "hand-disabled" :
+                    "touch-grab-active");
         } else {
             _leftHand.updateGrabVisualReturn(frame.left.rawHandWorld, frame.deltaSeconds);
         }

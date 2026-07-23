@@ -49,6 +49,12 @@ namespace
         limits.featureBits2 = g_reportedFeatureBits2;
         limits.providerApiByteSize = g_reportedTableBytes;
         limits.maxExternalScopes = ROCK_PROVIDER_MAX_EXTERNAL_SCOPES_V1;
+        limits.maxTouchGrabTargets =
+            ROCK_PROVIDER_MAX_TOUCH_GRAB_TARGETS_V1;
+        limits.maxTouchGrabScopes =
+            ROCK_PROVIDER_MAX_TOUCH_GRAB_SCOPES_V1;
+        limits.maxTouchGrabTargetLeaseFrames =
+            ROCK_PROVIDER_MAX_TOUCH_GRAB_TARGET_LEASE_FRAMES_V1;
         std::memcpy(outLimits, &limits, sizeof(limits));
         return true;
     }
@@ -122,6 +128,12 @@ int main()
     assert(extendedLimits.providerApiByteSize == sizeof(RockProviderApi));
     assert(extendedLimits.maxExternalScopes ==
            ROCK_PROVIDER_MAX_EXTERNAL_SCOPES_V1);
+    assert(extendedLimits.maxTouchGrabTargets ==
+           ROCK_PROVIDER_MAX_TOUCH_GRAB_TARGETS_V1);
+    assert(extendedLimits.maxTouchGrabScopes ==
+           ROCK_PROVIDER_MAX_TOUCH_GRAB_SCOPES_V1);
+    assert(extendedLimits.maxTouchGrabTargetLeaseFrames ==
+           ROCK_PROVIDER_MAX_TOUCH_GRAB_TARGET_LEASE_FRAMES_V1);
     assert(supportsExtendedLimitsV1());
     assert(supportsOwnerFrameCallbacksV1());
     assert(supportsOffhandReservationLeasesV1());

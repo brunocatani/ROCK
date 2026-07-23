@@ -602,6 +602,8 @@ namespace rock
             hand_collider_semantics::HandColliderRole role,
             std::uint32_t maxFramesSinceContact,
             hand_semantic_contact_state::SemanticContactRecord& outContact) const;
+        hand_semantic_contact_state::SemanticContactCollection collectFreshSemanticContacts(
+            std::uint32_t maxFramesSinceContact) const;
         hand_semantic_contact_state::SemanticContactCollection collectFreshSemanticContactsForBody(std::uint32_t targetBodyId, std::uint32_t maxFramesSinceContact) const;
         bool isFingerTouching(hand_collider_semantics::HandFinger finger) const;
         bool isFingerTipTouching(hand_collider_semantics::HandFinger finger) const;
