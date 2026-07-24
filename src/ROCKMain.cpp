@@ -701,6 +701,12 @@ namespace
                         "Loaded FRIK API is older than required API v{}. Deploy the matching rebuilt FRIK.dll. ROCK is now DISABLED.",
                         frik::api::FRIK_API_VERSION);
                     break;
+                case 5:
+                    logger::critical(
+                        "ROCK: FRIKApi initialization FAILED (error 5). "
+                        "Loaded rolling FRIK API v5 contract is smaller than this ROCK build requires. "
+                        "Deploy the matching rebuilt FRIK.dll. ROCK is now DISABLED.");
+                    break;
                 default:
                     logger::critical("ROCK: FRIKApi initialization FAILED (error {}). ROCK is now DISABLED.", frikErr);
                     break;
@@ -718,10 +724,13 @@ namespace
                 frikApi->getHandPoseLocalTransformsForPose != nullptr &&
                 frikApi->setHandPoseCustomLocalTransformsWithPriority != nullptr &&
                 frikApi->applyExternalHandWorldTransform != nullptr &&
-                frikApi->clearExternalHandWorldTransform != nullptr;
+                frikApi->clearExternalHandWorldTransform != nullptr &&
+                frikApi->registerWeaponHandRecoilController != nullptr &&
+                frikApi->unregisterWeaponHandRecoilController != nullptr &&
+                frikApi->getWeaponHandRecoilState != nullptr;
             if (!hasCanonicalHandPoseContract) {
                 logger::critical(
-                    "ROCK: FRIKApi v5 contract mismatch. Loaded FRIK.dll does not expose the canonical 22-float hand-pose contract required by this ROCK build. Deploy the matching rebuilt FRIK.dll. ROCK is now DISABLED.");
+                    "ROCK: FRIKApi v5 contract mismatch. Loaded FRIK.dll does not expose the canonical hand-pose, visual-authority, and recoil-controller contract required by this ROCK build. Deploy the matching rebuilt FRIK.dll. ROCK is now DISABLED.");
                 s_frikAvailable = false;
                 return;
             }

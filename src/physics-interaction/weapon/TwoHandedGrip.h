@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <memory>
 
+#include "api/FRIKApi.h"
 #include "physics-interaction/grab/MeshGrab.h"
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/hand/HandVisual.h"
@@ -545,6 +546,11 @@ namespace rock
     private:
         struct FingerPoseSolveScratch;
 
+        static bool FRIK_CALL controlWeaponHandRecoil(
+            const frik::api::FRIKApi::RecoilSample* sample,
+            frik::api::FRIKApi::RecoilResponse* outResponse,
+            void* userData) noexcept;
+
         struct LockedHandVisualLerpState
         {
             bool active = false;
@@ -958,6 +964,7 @@ namespace rock
         // left-firing carry; see syncFiringHandWeaponNodeOwnership().
         bool _weaponNodeOwnershipBlockEngaged{ false };
         bool _weaponNodeReparentedToLeftHand{ false };
+        bool _recoilControllerRegistered{ false };
 
         enum class RightFiringCanonicalSource : std::uint8_t
         {

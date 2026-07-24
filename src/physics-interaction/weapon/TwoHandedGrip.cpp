@@ -41,6 +41,7 @@ namespace rock
         constexpr const char* SUPPORT_GRIP_TAG = "ROCK_WeaponSupportGrip";
         constexpr const char* RETURN_HAND_TAG = "ROCK_WeaponReturn";
         constexpr const char* WEAPON_NODE_OWNERSHIP_TAG = "ROCK_LeftFiringCarry";
+        constexpr const char* WEAPON_RECOIL_CONTROLLER_TAG = "ROCK_LeftFiringRecoil";
         constexpr int GRIP_HAND_POSE_PRIORITY = 100;
         constexpr int RETURN_HAND_VISUAL_PRIORITY = 85;
         constexpr float SUPPORT_NORMAL_TWIST_FACTOR = 0.5f;
@@ -629,9 +630,65 @@ namespace rock
 
     TwoHandedGrip::TwoHandedGrip() :
         _fingerPoseSolveScratch(std::make_unique<FingerPoseSolveScratch>())
-    {}
+    {
+        _recoilControllerRegistered =
+            frik_visual_authority::registerWeaponHandRecoilController(
+                WEAPON_RECOIL_CONTROLLER_TAG,
+                &TwoHandedGrip::controlWeaponHandRecoil,
+                this,
+                GRIP_HAND_POSE_PRIORITY);
+        if (!_recoilControllerRegistered) {
+            ROCK_LOG_WARN(
+                Weapon,
+                "TwoHandedGrip: FRIK weapon-hand recoil controller registration failed; regular FRIK recoil remains active");
+        }
+    }
 
-    TwoHandedGrip::~TwoHandedGrip() = default;
+    TwoHandedGrip::~TwoHandedGrip()
+    {
+        if (_recoilControllerRegistered) {
+            (void)frik_visual_authority::unregisterWeaponHandRecoilController(
+                WEAPON_RECOIL_CONTROLLER_TAG);
+            _recoilControllerRegistered = false;
+        }
+    }
+
+    bool FRIK_CALL TwoHandedGrip::controlWeaponHandRecoil(
+        const frik::api::FRIKApi::RecoilSample* const sample,
+        frik::api::FRIKApi::RecoilResponse* const outResponse,
+        void* const userData) noexcept
+    {
+        const auto* const self = static_cast<const TwoHandedGrip*>(userData);
+        if (!self ||
+            !sample ||
+            sample->structSize < sizeof(frik::api::FRIKApi::RecoilSample) ||
+            !outResponse) {
+            return false;
+        }
+
+        const auto externalLeftCarryFlag = static_cast<std::uint32_t>(
+            frik::api::FRIKApi::RecoilContextFlag::ExternalLeftCarry);
+        const auto nativeKickAvailableFlag = static_cast<std::uint32_t>(
+            frik::api::FRIKApi::RecoilContextFlag::NativeKickNodeAvailable);
+        const auto physicalLeftHand = static_cast<std::uint32_t>(
+            frik::api::FRIKApi::Hand::Left);
+        if (!self->_weaponNodeOwnershipBlockEngaged ||
+            !self->_firingHandIsLeft ||
+            !self->isManualOwnershipActive() ||
+            (sample->contextFlags & externalLeftCarryFlag) == 0 ||
+            (sample->contextFlags & nativeKickAvailableFlag) == 0 ||
+            sample->physicalPrimaryHand != physicalLeftHand) {
+            return false;
+        }
+
+        *outResponse = {};
+        outResponse->structSize = sizeof(frik::api::FRIKApi::RecoilResponse);
+        outResponse->handMask = static_cast<std::uint32_t>(
+            frik::api::FRIKApi::RecoilHandMask::Primary);
+        outResponse->delivery = frik::api::FRIKApi::RecoilDelivery::Direct;
+        outResponse->controlledKickLocal = sample->nativeKickLocal;
+        return true;
+    }
 
     static bool tryGetRootFlattenedHandBoneTransform(bool isLeft, RE::NiTransform& outTransform)
     {

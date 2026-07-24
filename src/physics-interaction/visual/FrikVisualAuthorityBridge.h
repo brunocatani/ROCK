@@ -15,6 +15,13 @@ namespace rock::frik_visual_authority
     using HandPoseTagState = frik::api::FRIKApi::HandPoseTagState;
     using HandPoseData = frik::api::FRIKApi::HandPoseData;
     using FingerLocalTransformOverride = frik::api::FRIKApi::FingerLocalTransformOverride;
+    using RecoilDelivery = frik::api::FRIKApi::RecoilDelivery;
+    using RecoilHandMask = frik::api::FRIKApi::RecoilHandMask;
+    using RecoilContextFlag = frik::api::FRIKApi::RecoilContextFlag;
+    using RecoilSample = frik::api::FRIKApi::RecoilSample;
+    using RecoilResponse = frik::api::FRIKApi::RecoilResponse;
+    using RecoilState = frik::api::FRIKApi::RecoilState;
+    using WeaponHandRecoilController = frik::api::FRIKApi::WeaponHandRecoilController;
 
     namespace detail
     {
@@ -543,6 +550,34 @@ namespace rock::frik_visual_authority
     {
         auto* frikApi = api();
         return frikApi && frikApi->blockPrimaryWeaponNodeOwnership != nullptr;
+    }
+
+    [[nodiscard]] inline bool registerWeaponHandRecoilController(
+        const char* tag,
+        WeaponHandRecoilController controller,
+        void* userData,
+        int priority)
+    {
+        auto* frikApi = api();
+        return frikApi &&
+            frikApi->registerWeaponHandRecoilController &&
+            frikApi->registerWeaponHandRecoilController(tag, controller, userData, priority);
+    }
+
+    [[nodiscard]] inline bool unregisterWeaponHandRecoilController(const char* tag)
+    {
+        auto* frikApi = api();
+        return frikApi &&
+            frikApi->unregisterWeaponHandRecoilController &&
+            frikApi->unregisterWeaponHandRecoilController(tag);
+    }
+
+    [[nodiscard]] inline bool getWeaponHandRecoilState(RecoilState* outState)
+    {
+        auto* frikApi = api();
+        return frikApi &&
+            frikApi->getWeaponHandRecoilState &&
+            frikApi->getWeaponHandRecoilState(outState);
     }
 
     [[nodiscard]] inline RE::NiTransform getHandWorldTransform(Hand hand)

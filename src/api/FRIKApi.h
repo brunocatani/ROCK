@@ -150,6 +150,76 @@ namespace frik::api
             RE::NiTransform localTransforms[15] = {};
         };
 
+        enum class RecoilDelivery : std::uint32_t
+        {
+            Damped = 0,
+            Direct = 1,
+        };
+
+        enum class RecoilHandMask : std::uint32_t
+        {
+            None = 0,
+            Primary = 1u << 0,
+            Offhand = 1u << 1,
+        };
+
+        enum class RecoilContextFlag : std::uint32_t
+        {
+            NativeKickNodeAvailable = 1u << 0,
+            NativeKickActive = 1u << 1,
+            ScopeMenuOpen = 1u << 2,
+            PowerArmor = 1u << 3,
+            ExternalLeftCarry = 1u << 4,
+        };
+
+        struct RecoilSample
+        {
+            std::uint32_t structSize = 0;
+            std::uint32_t contextFlags = 0;
+            std::uint64_t sequence = 0;
+            float deltaSeconds = 0.0f;
+            std::uint32_t physicalPrimaryHand = static_cast<std::uint32_t>(Hand::Right);
+            RE::NiTransform nativeKickLocal{};
+            std::uint32_t reserved[8] = {};
+        };
+
+        struct RecoilResponse
+        {
+            std::uint32_t structSize = 0;
+            std::uint32_t handMask = static_cast<std::uint32_t>(RecoilHandMask::Primary);
+            RecoilDelivery delivery = RecoilDelivery::Direct;
+            std::uint32_t reserved0 = 0;
+            RE::NiTransform controlledKickLocal{};
+            std::uint32_t reserved[8] = {};
+        };
+
+        struct RecoilState
+        {
+            std::uint32_t structSize = 0;
+            std::uint32_t controllerAvailable = 0;
+            std::uint32_t responseAccepted = 0;
+            std::uint32_t contextFlags = 0;
+            std::uint64_t sequence = 0;
+            std::uint32_t physicalPrimaryHand = static_cast<std::uint32_t>(Hand::Right);
+            std::uint32_t handMask = 0;
+            RecoilDelivery delivery = RecoilDelivery::Direct;
+            std::uint32_t reserved0 = 0;
+            RE::NiTransform nativeKickLocal{};
+            RE::NiTransform controlledKickLocal{};
+            std::uint32_t reserved[8] = {};
+        };
+
+        // Synchronous game-update callback. Returning false declines the
+        // current frame and allows the next controller or regular FRIK recoil.
+        using WeaponHandRecoilController = bool(FRIK_CALL*)(
+            const RecoilSample* sample,
+            RecoilResponse* outResponse,
+            void* userData) noexcept;
+
+        static_assert(sizeof(RecoilSample) == 128, "RecoilSample ABI changed");
+        static_assert(sizeof(RecoilResponse) == 112, "RecoilResponse ABI changed");
+        static_assert(sizeof(RecoilState) == 208, "RecoilState ABI changed");
+
         enum class LifecycleEvent : std::uint32_t
         {
 
@@ -227,6 +297,16 @@ namespace frik::api
         // re-parenting); the external caller owns the weapon node transform and parenting.
         bool(FRIK_CALL* blockPrimaryWeaponNodeOwnership)(const char* tag, bool block);
 
+        bool(FRIK_CALL* registerWeaponHandRecoilController)(
+            const char* tag,
+            WeaponHandRecoilController controller,
+            void* userData,
+            int priority);
+
+        bool(FRIK_CALL* unregisterWeaponHandRecoilController)(const char* tag);
+
+        bool(FRIK_CALL* getWeaponHandRecoilState)(RecoilState* outState);
+
         [[nodiscard]] static int initialize(const uint32_t minVersion = FRIK_API_VERSION)
         {
             if (inst) {
@@ -236,6 +316,12 @@ namespace frik::api
             const auto frikDll = GetModuleHandleA("FRIK.dll");
             if (!frikDll) {
                 return 1;
+            }
+
+            const auto getApiStructSize = reinterpret_cast<std::uint32_t(FRIK_CALL*)()>(
+                GetProcAddress(frikDll, "FRIKAPI_GetApiStructSize"));
+            if (!getApiStructSize || getApiStructSize() < sizeof(FRIKApi)) {
+                return 5;
             }
 
             const auto getApi = reinterpret_cast<const FRIKApi*(FRIK_CALL*)()>(GetProcAddress(frikDll, "FRIKAPI_GetApi"));
@@ -259,5 +345,5 @@ namespace frik::api
         inline static const FRIKApi* inst = nullptr;
     };
 
-    static_assert(FRIK_API_VERSION == 5, "ROCK requires the local FRIK API v5 canonical 22-float hand-pose and visual-authority contract");
+    static_assert(FRIK_API_VERSION == 5, "ROCK requires the rolling FRIK API v5 visual-authority and recoil-controller contract");
 }
