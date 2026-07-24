@@ -228,8 +228,6 @@ namespace rock
         bool rockDebugVerboseLogging = false;
         bool rockDebugGrabFrameLogging = false;
         bool rockDebugVideoSyncMarker = false;
-        float rockDebugVideoSyncMarkerX = 450.0f;
-        float rockDebugVideoSyncMarkerY = 40.0f;
         float rockDebugVideoSyncMarkerSize = 4.0f;
         bool rockDebugGrabFingerPoseLogging = false;
         bool rockDebugGrabTimelineTrace = false;

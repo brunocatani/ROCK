@@ -294,8 +294,6 @@ namespace rock
         rockDebugVerboseLogging = false;
         rockDebugGrabFrameLogging = false;
         rockDebugVideoSyncMarker = false;
-        rockDebugVideoSyncMarkerX = 450.0f;
-        rockDebugVideoSyncMarkerY = 40.0f;
         rockDebugVideoSyncMarkerSize = 4.0f;
         rockDebugGrabFingerPoseLogging = false;
         rockDebugGrabTimelineTrace = false;
@@ -1207,8 +1205,6 @@ namespace rock
         rockDebugVerboseLogging = ini.GetBoolValue(SECTION, "bDebugVerboseLogging", rockDebugVerboseLogging);
         rockDebugGrabFrameLogging = ini.GetBoolValue(SECTION, "bDebugGrabFrameLogging", rockDebugGrabFrameLogging);
         rockDebugVideoSyncMarker = ini.GetBoolValue(SECTION, "bDebugVideoSyncMarker", rockDebugVideoSyncMarker);
-        rockDebugVideoSyncMarkerX = static_cast<float>(ini.GetDoubleValue(SECTION, "fDebugVideoSyncMarkerX", rockDebugVideoSyncMarkerX));
-        rockDebugVideoSyncMarkerY = static_cast<float>(ini.GetDoubleValue(SECTION, "fDebugVideoSyncMarkerY", rockDebugVideoSyncMarkerY));
         rockDebugVideoSyncMarkerSize = static_cast<float>(ini.GetDoubleValue(SECTION, "fDebugVideoSyncMarkerSize", rockDebugVideoSyncMarkerSize));
         rockDebugGrabFingerPoseLogging = ini.GetBoolValue(SECTION, "bDebugGrabFingerPoseLogging", rockDebugGrabFingerPoseLogging);
         rockDebugGrabTimelineTrace = ini.GetBoolValue(SECTION, "bDebugGrabTimelineTrace", rockDebugGrabTimelineTrace);

@@ -490,28 +490,45 @@
         };
 
         if (drawVideoSyncMarker) {
-            // VIDEO-SYNC marker: a per-frame counter drawn on screen AND logged on
-            // the same steady-clock microsecond base as OVERLAY_POINT/RENDER_READ,
-            // so an external headset recording aligns 1:1 with the probe lines
-            // (decode the on-screen counter per video frame, join on seq/t).
-            // Counter is process-lifetime monotonic and increments once per
-            // rendered frame at this publish phase. Text is deliberately large
-            // and high-contrast to survive capture compression.
+            // VIDEO-SYNC marker: a per-frame counter drawn in the VR view AND
+            // logged on the same steady-clock microsecond base as
+            // OVERLAY_POINT/RENDER_READ, so an external headset recording aligns
+            // 1:1 with the probe lines (decode the on-screen counter per video
+            // frame, join on seq/t). WORLD-anchored at the held object — the
+            // screen-space overlay text path does not render visibly in the VR
+            // view — with an HMD-forward fallback between grabs so alignment
+            // coverage never drops. The log line emits regardless of whether an
+            // anchor resolved, so the timeline stays gap-free.
             static std::uint32_t s_videoSyncFrameCounter = 0;
             ++s_videoSyncFrameCounter;
             const auto syncMicroseconds = std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::steady_clock::now().time_since_epoch()).count();
-            if (frame.drawText && frame.textCount < frame.textEntries.size()) {
-                auto& entry = frame.textEntries[frame.textCount++];
-                entry.x = g_rockConfig.rockDebugVideoSyncMarkerX;
-                entry.y = g_rockConfig.rockDebugVideoSyncMarkerY;
-                entry.size = g_rockConfig.rockDebugVideoSyncMarkerSize;
-                entry.color[0] = 1.0f;
-                entry.color[1] = 1.0f;
-                entry.color[2] = 0.0f;
-                entry.color[3] = 1.0f;
-                entry.worldAnchored = false;
-                std::snprintf(entry.text, sizeof(entry.text), "SYNC %07u", s_videoSyncFrameCounter);
+            RE::NiPoint3 syncAnchor{};
+            bool syncAnchorValid = false;
+            auto anchorAboveHeldObject = [&](const Hand& hand) {
+                if (syncAnchorValid || !hand.isHolding() || !hknp) {
+                    return;
+                }
+                RE::NiTransform heldWorld{};
+                if (tryResolveLiveBodyWorldTransform(hknp, hand.getSavedObjectState().bodyId, heldWorld)) {
+                    syncAnchor = heldWorld.translate;
+                    syncAnchor.z += 10.0f;
+                    syncAnchorValid = true;
+                }
+            };
+            anchorAboveHeldObject(_rightHand);
+            anchorAboveHeldObject(_leftHand);
+            if (!syncAnchorValid && context.hasHmdFrame) {
+                const RE::NiPoint3& forward = context.hmdForwardWorld;
+                const float lengthSquared = forward.x * forward.x + forward.y * forward.y + forward.z * forward.z;
+                if (std::isfinite(lengthSquared) && lengthSquared > 0.000001f) {
+                    syncAnchor = context.hmdPositionWorld + forward * (60.0f / std::sqrt(lengthSquared));
+                    syncAnchorValid = true;
+                }
+            }
+            if (syncAnchorValid) {
+                const float syncColor[4]{ 1.0f, 1.0f, 0.0f, 1.0f };
+                addTextLineSized(syncAnchor, g_rockConfig.rockDebugVideoSyncMarkerSize, syncColor, "SYNC %07u", s_videoSyncFrameCounter);
             }
             ROCK_LOG_DEBUG(Hand, "VIDEO_SYNC: seq={} t={}us", s_videoSyncFrameCounter, syncMicroseconds);
         }
