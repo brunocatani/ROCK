@@ -100,12 +100,9 @@ namespace frik::api
             Attaboy = 6,
             ThumbsUp = 7,
 
-            Fist = 8,
             HoldingGun = 9,
             HoldingMelee = 10,
         };
-
-        using HandPoses = HandPoseKind;
 
         struct FingerPoseData
         {
@@ -193,22 +190,6 @@ namespace frik::api
             std::uint32_t reserved[8] = {};
         };
 
-        struct RecoilState
-        {
-            std::uint32_t structSize = 0;
-            std::uint32_t controllerAvailable = 0;
-            std::uint32_t responseAccepted = 0;
-            std::uint32_t contextFlags = 0;
-            std::uint64_t sequence = 0;
-            std::uint32_t physicalPrimaryHand = static_cast<std::uint32_t>(Hand::Right);
-            std::uint32_t handMask = 0;
-            RecoilDelivery delivery = RecoilDelivery::Direct;
-            std::uint32_t reserved0 = 0;
-            RE::NiTransform nativeKickLocal{};
-            RE::NiTransform controlledKickLocal{};
-            std::uint32_t reserved[8] = {};
-        };
-
         // Synchronous game-update callback. Returning false declines the
         // current frame and allows the next controller or regular FRIK recoil.
         using WeaponHandRecoilController = bool(FRIK_CALL*)(
@@ -218,7 +199,6 @@ namespace frik::api
 
         static_assert(sizeof(RecoilSample) == 128, "RecoilSample ABI changed");
         static_assert(sizeof(RecoilResponse) == 112, "RecoilResponse ABI changed");
-        static_assert(sizeof(RecoilState) == 208, "RecoilState ABI changed");
 
         enum class LifecycleEvent : std::uint32_t
         {
@@ -226,8 +206,6 @@ namespace frik::api
             kSkeletonReady = 100,
 
             kSkeletonDestroying = 101,
-
-            kPowerArmorChanged = 102,
         };
 
         std::uint32_t(FRIK_CALL* getVersion)();
@@ -272,8 +250,6 @@ namespace frik::api
 
         RE::NiTransform(FRIK_CALL* getHandWorldTransform)(Hand hand);
 
-        bool(FRIK_CALL* setHandPoseCustomFingerPositionsWithPriority)(const char* tag, Hand hand, float thumb, float index, float middle, float ring, float pinky, int priority);
-
         bool(FRIK_CALL* setHandPoseCustomWithPriority)(const char* tag, Hand hand, const HandPoseData& handPose, int priority);
 
         bool(FRIK_CALL* applyExternalHandWorldTransform)(const char* tag, Hand hand, const RE::NiTransform& worldTarget, int priority);
@@ -291,7 +267,6 @@ namespace frik::api
         // contributor, including its per-weapon primary-hand grip rotation.
         bool(FRIK_CALL* blockPrimaryHandWeaponPose)(const char* tag, bool block);
 
-        // Appended v5 member - may be null on older FRIK builds; callers must null-check.
         // While at least one tag blocks, FRIK yields equipped primary-weapon-node ownership
         // (no weapon local glue, no native arm-to-weapon coupling, no weapon-node
         // re-parenting); the external caller owns the weapon node transform and parenting.
@@ -304,8 +279,6 @@ namespace frik::api
             int priority);
 
         bool(FRIK_CALL* unregisterWeaponHandRecoilController)(const char* tag);
-
-        bool(FRIK_CALL* getWeaponHandRecoilState)(RecoilState* outState);
 
         [[nodiscard]] static int initialize(const uint32_t minVersion = FRIK_API_VERSION)
         {
@@ -320,7 +293,7 @@ namespace frik::api
 
             const auto getApiStructSize = reinterpret_cast<std::uint32_t(FRIK_CALL*)()>(
                 GetProcAddress(frikDll, "FRIKAPI_GetApiStructSize"));
-            if (!getApiStructSize || getApiStructSize() < sizeof(FRIKApi)) {
+            if (!getApiStructSize || getApiStructSize() != sizeof(FRIKApi)) {
                 return 5;
             }
 

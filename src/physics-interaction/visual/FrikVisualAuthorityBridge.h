@@ -20,7 +20,6 @@ namespace rock::frik_visual_authority
     using RecoilContextFlag = frik::api::FRIKApi::RecoilContextFlag;
     using RecoilSample = frik::api::FRIKApi::RecoilSample;
     using RecoilResponse = frik::api::FRIKApi::RecoilResponse;
-    using RecoilState = frik::api::FRIKApi::RecoilState;
     using WeaponHandRecoilController = frik::api::FRIKApi::WeaponHandRecoilController;
 
     namespace detail
@@ -53,45 +52,7 @@ namespace rock::frik_visual_authority
         inline std::size_t g_nextCachedHandPosePublication = 0;
         inline std::size_t g_nextCachedFingerLocalTransformPublication = 0;
 
-        using BlockPrimaryHandWeaponPoseFn = bool(FRIK_CALL*)(const char*, bool);
-        using MirrorPrimaryWeaponFingerLocalTransformsFn = bool(FRIK_CALL*)(const FingerLocalTransformOverride*, FingerLocalTransformOverride*);
         using MirrorFingerLocalTransformsFn = bool(FRIK_CALL*)(Hand, const FingerLocalTransformOverride*, FingerLocalTransformOverride*);
-
-        [[nodiscard]] inline BlockPrimaryHandWeaponPoseFn blockPrimaryHandWeaponPoseExport()
-        {
-            static BlockPrimaryHandWeaponPoseFn fn = nullptr;
-            static bool attemptedWithLoadedFrik = false;
-            if (!fn) {
-                const auto frikDll = GetModuleHandleA("FRIK.dll");
-                if (!frikDll) {
-                    return nullptr;
-                }
-                if (attemptedWithLoadedFrik) {
-                    return nullptr;
-                }
-                attemptedWithLoadedFrik = true;
-                fn = reinterpret_cast<BlockPrimaryHandWeaponPoseFn>(GetProcAddress(frikDll, "FRIKAPI_BlockPrimaryHandWeaponPose"));
-            }
-            return fn;
-        }
-
-        [[nodiscard]] inline MirrorPrimaryWeaponFingerLocalTransformsFn mirrorPrimaryWeaponFingerLocalTransformsExport()
-        {
-            static MirrorPrimaryWeaponFingerLocalTransformsFn fn = nullptr;
-            static bool attemptedWithLoadedFrik = false;
-            if (!fn) {
-                const auto frikDll = GetModuleHandleA("FRIK.dll");
-                if (!frikDll) {
-                    return nullptr;
-                }
-                if (attemptedWithLoadedFrik) {
-                    return nullptr;
-                }
-                attemptedWithLoadedFrik = true;
-                fn = reinterpret_cast<MirrorPrimaryWeaponFingerLocalTransformsFn>(GetProcAddress(frikDll, "FRIKAPI_MirrorPrimaryWeaponFingerLocalTransforms"));
-            }
-            return fn;
-        }
 
         [[nodiscard]] inline MirrorFingerLocalTransformsFn mirrorFingerLocalTransformsExport()
         {
@@ -505,23 +466,22 @@ namespace rock::frik_visual_authority
 
     [[nodiscard]] inline bool blockPrimaryHandWeaponPose(const char* tag, bool block)
     {
-        const auto fn = detail::blockPrimaryHandWeaponPoseExport();
-        return fn && fn(tag, block);
+        auto* frikApi = api();
+        return frikApi &&
+            frikApi->blockPrimaryHandWeaponPose &&
+            frikApi->blockPrimaryHandWeaponPose(tag, block);
     }
 
     [[nodiscard]] inline bool canBlockPrimaryHandWeaponPose()
     {
-        return detail::blockPrimaryHandWeaponPoseExport() != nullptr;
+        auto* frikApi = api();
+        return frikApi && frikApi->blockPrimaryHandWeaponPose != nullptr;
     }
 
     [[nodiscard]] inline bool mirrorFingerLocalTransforms(Hand sourceHand, const FingerLocalTransformOverride& sourceTransforms, FingerLocalTransformOverride& outTargetTransforms)
     {
         if (const auto fn = detail::mirrorFingerLocalTransformsExport()) {
             return fn(sourceHand, &sourceTransforms, &outTargetTransforms);
-        }
-        if (sourceHand == Hand::Right) {
-            const auto legacyFn = detail::mirrorPrimaryWeaponFingerLocalTransformsExport();
-            return legacyFn && legacyFn(&sourceTransforms, &outTargetTransforms);
         }
         return false;
     }
@@ -533,13 +493,11 @@ namespace rock::frik_visual_authority
 
     [[nodiscard]] inline bool canMirrorPrimaryWeaponFingerLocalTransforms()
     {
-        return detail::mirrorFingerLocalTransformsExport() != nullptr || detail::mirrorPrimaryWeaponFingerLocalTransformsExport() != nullptr;
+        return detail::mirrorFingerLocalTransformsExport() != nullptr;
     }
 
     [[nodiscard]] inline bool canMirrorFingerLocalTransforms() { return detail::mirrorFingerLocalTransformsExport() != nullptr; }
 
-    // Appended v5 table member - null on older FRIK builds, so availability gates the
-    // ambidextrous firing-grip feature instead of failing at call time.
     [[nodiscard]] inline bool blockPrimaryWeaponNodeOwnership(const char* tag, bool block)
     {
         auto* frikApi = api();
@@ -570,14 +528,6 @@ namespace rock::frik_visual_authority
         return frikApi &&
             frikApi->unregisterWeaponHandRecoilController &&
             frikApi->unregisterWeaponHandRecoilController(tag);
-    }
-
-    [[nodiscard]] inline bool getWeaponHandRecoilState(RecoilState* outState)
-    {
-        auto* frikApi = api();
-        return frikApi &&
-            frikApi->getWeaponHandRecoilState &&
-            frikApi->getWeaponHandRecoilState(outState);
     }
 
     [[nodiscard]] inline RE::NiTransform getHandWorldTransform(Hand hand)

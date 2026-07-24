@@ -74,7 +74,7 @@ if ($rockVersion -ne 5 -or $hfrikVersion -ne 5) {
 
 $rockPoseValues = Get-HandPoseValues $rockHeader
 $hfrikPoseValues = Get-HandPoseValues $hfrikHeader
-foreach ($poseName in @('Unset', 'Custom', 'Open', 'Pointing', 'HoldingWeapon', 'OffhandGrip', 'Attaboy', 'ThumbsUp', 'Fist', 'HoldingGun', 'HoldingMelee')) {
+foreach ($poseName in @('Unset', 'Custom', 'Open', 'Pointing', 'HoldingWeapon', 'OffhandGrip', 'Attaboy', 'ThumbsUp', 'HoldingGun', 'HoldingMelee')) {
     if (-not $rockPoseValues.ContainsKey($poseName) -or -not $hfrikPoseValues.ContainsKey($poseName)) {
         throw "HandPoseKind value missing: $poseName"
     }

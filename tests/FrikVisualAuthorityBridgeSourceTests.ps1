@@ -59,16 +59,17 @@ Require-Text 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h' `
     'g_cachedFingerLocalTransformPublications[\s\S]*sameFingerLocalTransforms[\s\S]*shouldSkipCachedFingerLocalTransformPublication[\s\S]*invalidateCachedFingerLocalTransformPublication' `
     'Exact finger-local publication must use bounded active-tag caching and invalidate with its scalar owner.'
 Require-Text 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h' `
-    'FRIKAPI_MirrorPrimaryWeaponFingerLocalTransforms[\s\S]*mirrorPrimaryWeaponFingerLocalTransforms' `
-    'ROCK must feature-detect hFRIK''s anatomical primary-pose mirror without changing the FRIK function-table ABI.'
+    'FRIKAPI_MirrorFingerLocalTransforms[\s\S]*mirrorFingerLocalTransforms\(Hand sourceHand[\s\S]*fn\(sourceHand,\s*&sourceTransforms,\s*&outTargetTransforms\)' `
+    'ROCK must use hFRIK''s single bidirectional anatomical mirror export.'
 Require-Text 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h' `
-    'FRIKAPI_MirrorFingerLocalTransforms[\s\S]*mirrorFingerLocalTransforms\(Hand sourceHand[\s\S]*sourceHand\s*==\s*Hand::Right[\s\S]*legacyFn' `
-    'ROCK must feature-detect bidirectional anatomical mirroring while retaining right-to-left compatibility with older hFRIK builds.'
+    'blockPrimaryHandWeaponPose\(const char\* tag,\s*bool block\)[\s\S]*api\(\)[\s\S]*frikApi->blockPrimaryHandWeaponPose\(tag,\s*block\)' `
+    'ROCK must use the V5 function table for primary weapon-pose blocking.'
+Require-Text 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h' `
+    'canBlockPrimaryHandWeaponPose\(\)[\s\S]*frikApi->blockPrimaryHandWeaponPose\s*!=\s*nullptr' `
+    'ROCK must feature-detect primary weapon-pose blocking through the V5 table.'
 
-Reject-ExternalText 'hFRIK/src/skeleton/HandPose.cpp' 'logger::info\("Hand pose:' `
-    'hFRIK must not info-log hand-pose override set/clear operations from the runtime hot path.'
-Require-ExternalText 'hFRIK/src/skeleton/HandPose.cpp' 'logger::debug\("Hand pose:' `
-    'hFRIK hand-pose stack transition diagnostics should remain debug-only.'
+Reject-ExternalText 'hFRIK/src/skeleton/HandPose.cpp' 'logger::(?:info|debug)\("Hand pose:' `
+    'hFRIK must not retain log-only hand-pose override bookkeeping in the runtime hot path.'
 Require-ExternalText 'hFRIK/src/skeleton/HandPose.cpp' `
     'mirrorFingerLocalTransforms[\s\S]*sourceIsLeft[\s\S]*tryTransferMirroredThumbBase[\s\S]*measureAnimatedFlexSplay[\s\S]*blendBoneRotation' `
     'hFRIK must mirror harvested finger locals in either physical direction through the same anatomy-aware path.'
@@ -76,8 +77,23 @@ Require-ExternalText 'hFRIK/src/skeleton/HandPose.cpp' `
     'Skeleton::isPrimaryWeaponNodeOwnershipBlocked\(\)\s*&&\s*!isPrimaryWeaponPoseBlocked\(\)' `
     'A blocked native primary pose must allow ROCK''s exact explicit pose to win during physical-left firing carry.'
 Require-ExternalText 'hFRIK/src/api/FRIKApi.cpp' `
-    'FRIKAPI_MirrorFingerLocalTransforms[\s\S]*sourceHand\s*!=\s*FRIKApi::Hand::Left[\s\S]*sourceHand\s*!=\s*FRIKApi::Hand::Right[\s\S]*mirrorFingerLocalTransforms[\s\S]*FRIKAPI_MirrorPrimaryWeaponFingerLocalTransforms[\s\S]*FRIKAPI_MirrorFingerLocalTransforms\(FRIKApi::Hand::Right' `
-    'hFRIK must expose a bidirectional standalone mirror export and retain the original primary-pose export as a compatibility wrapper.'
+    'FRIKAPI_MirrorFingerLocalTransforms[\s\S]*sourceHand\s*!=\s*FRIKApi::Hand::Left[\s\S]*sourceHand\s*!=\s*FRIKApi::Hand::Right[\s\S]*mirrorFingerLocalTransforms' `
+    'hFRIK must expose the bidirectional anatomy-aware mirror export.'
+Reject-ExternalText 'hFRIK/src/api/FRIKApi.cpp' `
+    'FRIKAPI_BlockPrimaryHandWeaponPose|FRIKAPI_MirrorPrimaryWeaponFingerLocalTransforms' `
+    'hFRIK must not retain duplicate direct-export paths for V5 table behavior or legacy mirroring.'
+Reject-ExternalText 'hFRIK/src/api/FRIKApi.h' `
+    'using\s+HandPoses|setHandPoseCustomFingerPositionsWithPriority|kPowerArmorChanged|Fist\s*=' `
+    'hFRIK V5 must not retain unused aliases, convenience calls, lifecycle events, or public fist exposure.'
+Reject-ExternalText 'ROCK/src/api/FRIKApi.h' `
+    'using\s+HandPoses|setHandPoseCustomFingerPositionsWithPriority|kPowerArmorChanged|Fist\s*=' `
+    'ROCK must mirror the cleaned hFRIK V5 contract.'
+Reject-ExternalText 'hFRIK/src/FRIK.cpp' `
+    'logSkeletonInitializationBlocked|Dispatched kSkeleton|Loading menu is open, defer skeleton initialization|initialization delayed after release' `
+    'hFRIK must keep skeleton readiness and lifecycle behavior free of added log-only scaffolding.'
+Reject-ExternalText 'hFRIK/src/PlayerControlsHandler.h' `
+    'Player controls - Reset restored' `
+    'hFRIK control-state restoration must not retain its added success-only log.'
 
 if ($failures.Count -gt 0) {
     $failures | ForEach-Object { Write-Error $_ }

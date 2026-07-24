@@ -646,22 +646,6 @@ namespace
             destroyPhysicsInteraction(rock::provider::RockProviderLifecycleReason::SkeletonDestroying);
             break;
 
-        case LE::kPowerArmorChanged:
-            bumpGeneration(s_skeletonGeneration);
-            authored_weapon_grip_capture::resetTransientState();
-            authored_weapon_grip_capture::setEnabled(
-                g_rockConfig.rockEnabled);
-            if (msg->data && msg->dataLen >= sizeof(bool)) {
-                const bool isInPA = *static_cast<const bool*>(msg->data);
-                logger::info("ROCK: Power Armor state changed: {}", isInPA ? "IN PA" : "NOT IN PA");
-            }
-            if (s_physicsInteraction) {
-                s_physicsInteraction->noteSkeletonLifecycle(
-                    s_skeletonGeneration.load(std::memory_order_acquire),
-                    rock::provider::RockProviderLifecycleReason::PowerArmorChanged);
-            }
-            break;
-
         default:
 
             break;
@@ -704,7 +688,7 @@ namespace
                 case 5:
                     logger::critical(
                         "ROCK: FRIKApi initialization FAILED (error 5). "
-                        "Loaded rolling FRIK API v5 contract is smaller than this ROCK build requires. "
+                        "Loaded rolling FRIK API v5 contract does not exactly match this ROCK build. "
                         "Deploy the matching rebuilt FRIK.dll. ROCK is now DISABLED.");
                     break;
                 default:
@@ -718,7 +702,7 @@ namespace
             logger::info("ROCK: FRIKApi v{} (API v{}) initialized successfully.", frik::api::FRIKApi::inst->getModVersion(), frik::api::FRIKApi::inst->getVersion());
 
             const auto* frikApi = frik::api::FRIKApi::inst;
-            const bool hasCanonicalHandPoseContract =
+            const bool hasRequiredFrikContract =
                 frikApi &&
                 frikApi->setHandPoseCustomWithPriority != nullptr &&
                 frikApi->getHandPoseLocalTransformsForPose != nullptr &&
@@ -726,9 +710,8 @@ namespace
                 frikApi->applyExternalHandWorldTransform != nullptr &&
                 frikApi->clearExternalHandWorldTransform != nullptr &&
                 frikApi->registerWeaponHandRecoilController != nullptr &&
-                frikApi->unregisterWeaponHandRecoilController != nullptr &&
-                frikApi->getWeaponHandRecoilState != nullptr;
-            if (!hasCanonicalHandPoseContract) {
+                frikApi->unregisterWeaponHandRecoilController != nullptr;
+            if (!hasRequiredFrikContract) {
                 logger::critical(
                     "ROCK: FRIKApi v5 contract mismatch. Loaded FRIK.dll does not expose the canonical hand-pose, visual-authority, and recoil-controller contract required by this ROCK build. Deploy the matching rebuilt FRIK.dll. ROCK is now DISABLED.");
                 s_frikAvailable = false;
