@@ -3711,7 +3711,9 @@ namespace rock
         struct GrabMeshLongAxisResult
         {
             RE::NiPoint3 axisWorld{};
+            RE::NiPoint3 secondAxisWorld{};
             float elongationRatio = 0.0f;
+            float secondElongationRatio = 0.0f;
             std::uint32_t triangleCount = 0;
             const char* reason = "notEvaluated";
             bool valid = false;
@@ -3723,10 +3725,14 @@ namespace rock
          * consistently across props, so long-object orientation must come from
          * the geometry itself. elongationRatio = sqrt(lambda1/lambda2), the RMS
          * extent ratio between the dominant and second axis: ~1 for compact
-         * objects, >2 for bottle/broom shapes. The axis sign is arbitrary;
-         * callers must align to the nearest hemisphere of their target axis.
-         * Double accumulators because world coordinates are large; covariance
-         * is built about the area-weighted mean.
+         * objects, >2 for bottle/broom shapes. secondAxisWorld is the second
+         * principal axis and secondElongationRatio = sqrt(lambda2/lambda3)
+         * (lambda3 recovered from the covariance trace): ~1 for round cross
+         * sections where roll about the long axis is meaningless, high for
+         * plank/board shapes with a well-defined flat face. Both axis signs
+         * are arbitrary; callers must align to the nearest hemisphere of
+         * their target axis. Double accumulators because world coordinates
+         * are large; covariance is built about the area-weighted mean.
          */
         GrabMeshLongAxisResult computeGrabMeshLongAxis(const std::vector<TriangleData>& worldTriangles)
         {
@@ -3856,6 +3862,31 @@ namespace rock
                 static_cast<float>(axis1[2]),
             };
             result.elongationRatio = static_cast<float>((std::min)(100.0, std::sqrt(lambda1 / (std::max)(lambda2, lambda1 * 1e-4))));
+            if (lambda2 > 1e-9) {
+                // Re-orthogonalize against axis1: deflation leaves numerical drift.
+                const double axis12dot = axis2[0] * axis1[0] + axis2[1] * axis1[1] + axis2[2] * axis1[2];
+                double axis2Ortho[3] = {
+                    axis2[0] - axis12dot * axis1[0],
+                    axis2[1] - axis12dot * axis1[1],
+                    axis2[2] - axis12dot * axis1[2],
+                };
+                const double axis2LenSq =
+                    axis2Ortho[0] * axis2Ortho[0] + axis2Ortho[1] * axis2Ortho[1] + axis2Ortho[2] * axis2Ortho[2];
+                if (axis2LenSq > 1e-12) {
+                    const double invLen = 1.0 / std::sqrt(axis2LenSq);
+                    result.secondAxisWorld = RE::NiPoint3{
+                        static_cast<float>(axis2Ortho[0] * invLen),
+                        static_cast<float>(axis2Ortho[1] * invLen),
+                        static_cast<float>(axis2Ortho[2] * invLen),
+                    };
+                    // Eigenvalues of a symmetric matrix sum to its trace, so
+                    // lambda3 needs no third power iteration.
+                    const double trace = cov[0] + cov[3] + cov[5];
+                    const double lambda3 = (std::max)(0.0, trace - lambda1 - lambda2);
+                    result.secondElongationRatio =
+                        static_cast<float>((std::min)(100.0, std::sqrt(lambda2 / (std::max)(lambda3, lambda2 * 1e-4))));
+                }
+            }
             result.reason = "meshPrincipalAxis";
             result.valid = true;
             return result;
@@ -9760,69 +9791,142 @@ namespace rock
                         looseWeaponPrimaryAttachSourceVisible = looseWeaponPrimaryAttachFrame.sourceVisible;
                     }
                     /*
-                     * Seat-time self-alignment for forced arrivals: force grabs
-                     * (grenade menu, provider API) commit without a pull flight, so
-                     * the long-axis presentation servo never gets to run. Rotate the
-                     * SEAT pose instead - the minimal rotation taking the mesh
-                     * principal axis onto the pocket's cross-palm (thumb->pinky)
-                     * line, about the grip point so the pivot pair is untouched.
-                     * Rotation survives the freeze (pivot alignment only rewrites
-                     * translation). Compact objects skip via the same elongation
-                     * gate as pull presentation; pull-catch arrivals already
-                     * aligned in flight and keep their arrival pose.
+                     * Seat-time self-alignment. Forced arrivals (grenade menu,
+                     * provider API) commit without a pull flight, so the
+                     * long-axis presentation servo never gets to run: rotate
+                     * the SEAT pose instead - the minimal rotation taking the
+                     * mesh principal axis onto the pocket's cross-palm
+                     * (thumb->pinky) line, about the grip point so the pivot
+                     * pair is untouched. Pull-catch arrivals already aligned
+                     * their long axis in flight and keep it.
+                     *
+                     * Roll about the long axis is a separate correction: a
+                     * minimal-arc swing (flight servo or seat rotation) adds
+                     * zero twist, so an object that arrived tilted keeps its
+                     * arrival roll and its flat face can cut diagonally into
+                     * the palm - the depth stop below only translates and
+                     * cannot fix a tilted face. For every programmatic arrival
+                     * (pull-catch and forced) with a meaningful flat face
+                     * (secondElongationRatio gate; round cross-sections skip
+                     * because any roll is equivalent for them), twist about
+                     * the long axis so the thinnest-extent direction faces
+                     * the palm. Rotations survive the freeze (pivot alignment
+                     * only rewrites translation). Compact objects skip via the
+                     * same elongation gate as pull presentation.
                      */
                     RE::NiTransform seatBodyWorld = grabBodyWorldAtGrab;
                     RE::NiTransform seatObjectWorld = objectWorldTransform;
                     float seatAlignmentAngleDegrees = 0.0f;
                     const char* seatAlignmentReason = "inactive";
+                    float seatRollAngleDegrees = 0.0f;
+                    const char* seatRollReason = "inactive";
                     bool seatPoseChanged = false;
-                    if (sel.forcedArrival &&
+                    const bool seatSwingAlignmentWanted =
+                        sel.forcedArrival && g_rockConfig.rockForceGrabSeatAlignmentEnabled;
+                    const bool seatRollAlignmentWanted =
+                        programmaticArrival && g_rockConfig.rockGrabSeatRollAlignmentEnabled;
+                    if ((seatSwingAlignmentWanted || seatRollAlignmentWanted) &&
                         !looseWeaponPrimaryAttachApplied &&
                         !usingPinchPocket &&
                         pocket.valid &&
-                        g_rockConfig.rockForceGrabSeatAlignmentEnabled &&
                         !grabMeshTriangles.empty()) {
                         const auto seatLongAxis = computeGrabMeshLongAxis(grabMeshTriangles);
-                        seatAlignmentReason = seatLongAxis.reason;
+                        if (seatSwingAlignmentWanted) {
+                            seatAlignmentReason = seatLongAxis.reason;
+                        }
+                        if (seatRollAlignmentWanted) {
+                            seatRollReason = seatLongAxis.reason;
+                        }
                         if (seatLongAxis.valid &&
                             seatLongAxis.elongationRatio >= g_rockConfig.rockPullPresentationMinElongationRatio) {
-                            const RE::NiPoint3 currentAxisWorld = normalizeOrZero(seatLongAxis.axisWorld);
-                            // Same thumb-clearance tilt toward fingers-forward as the flight servo.
-                            const float gripAxisTiltRadians =
-                                g_rockConfig.rockPullPresentationGripAxisTiltDegrees * 0.01745329252f;
-                            RE::NiPoint3 targetAxisWorld = normalizeOrZero(
-                                pocket.crossPalmWorld * std::cos(gripAxisTiltRadians) +
-                                pocket.fingerForwardWorld * std::sin(gripAxisTiltRadians));
-                            if (lengthSquared(currentAxisWorld) > 0.000001f && lengthSquared(targetAxisWorld) > 0.000001f) {
-                                if (dotProduct(currentAxisWorld, targetAxisWorld) < 0.0f) {
-                                    targetAxisWorld = RE::NiPoint3{ -targetAxisWorld.x, -targetAxisWorld.y, -targetAxisWorld.z };
-                                }
-                                const RE::NiPoint3 rotationAxisRaw = crossProduct(currentAxisWorld, targetAxisWorld);
-                                const float sinAngle = std::sqrt((std::max)(0.0f, lengthSquared(rotationAxisRaw)));
-                                const float cosAngle = std::clamp(dotProduct(currentAxisWorld, targetAxisWorld), -1.0f, 1.0f);
-                                const float angleRadians = std::atan2(sinAngle, cosAngle);
-                                if (sinAngle > 0.000001f && angleRadians > 0.01f) {
-                                    const float invSin = 1.0f / sinAngle;
-                                    const RE::NiPoint3 rotationAxis{
-                                        rotationAxisRaw.x * invSin,
-                                        rotationAxisRaw.y * invSin,
-                                        rotationAxisRaw.z * invSin,
-                                    };
-                                    seatBodyWorld = rotateTransformWorldAboutPoint(
-                                        grabBodyWorldAtGrab, rotationAxis, angleRadians, grabGripPoint);
-                                    seatObjectWorld = rotateTransformWorldAboutPoint(
-                                        objectWorldTransform, rotationAxis, angleRadians, grabGripPoint);
-                                    seatAlignmentAngleDegrees = angleRadians * 57.29577951308232f;
-                                    seatAlignmentReason = "longAxisSeatAligned";
-                                    seatPoseChanged = true;
+                            RE::NiPoint3 currentAxisWorld = normalizeOrZero(seatLongAxis.axisWorld);
+                            RE::NiPoint3 currentSecondAxisWorld = normalizeOrZero(seatLongAxis.secondAxisWorld);
+                            if (seatSwingAlignmentWanted) {
+                                // Same thumb-clearance tilt toward fingers-forward as the flight servo.
+                                const float gripAxisTiltRadians =
+                                    g_rockConfig.rockPullPresentationGripAxisTiltDegrees * 0.01745329252f;
+                                RE::NiPoint3 targetAxisWorld = normalizeOrZero(
+                                    pocket.crossPalmWorld * std::cos(gripAxisTiltRadians) +
+                                    pocket.fingerForwardWorld * std::sin(gripAxisTiltRadians));
+                                if (lengthSquared(currentAxisWorld) > 0.000001f && lengthSquared(targetAxisWorld) > 0.000001f) {
+                                    if (dotProduct(currentAxisWorld, targetAxisWorld) < 0.0f) {
+                                        targetAxisWorld = RE::NiPoint3{ -targetAxisWorld.x, -targetAxisWorld.y, -targetAxisWorld.z };
+                                    }
+                                    const RE::NiPoint3 rotationAxisRaw = crossProduct(currentAxisWorld, targetAxisWorld);
+                                    const float sinAngle = std::sqrt((std::max)(0.0f, lengthSquared(rotationAxisRaw)));
+                                    const float cosAngle = std::clamp(dotProduct(currentAxisWorld, targetAxisWorld), -1.0f, 1.0f);
+                                    const float angleRadians = std::atan2(sinAngle, cosAngle);
+                                    if (sinAngle > 0.000001f && angleRadians > 0.01f) {
+                                        const float invSin = 1.0f / sinAngle;
+                                        const RE::NiPoint3 rotationAxis{
+                                            rotationAxisRaw.x * invSin,
+                                            rotationAxisRaw.y * invSin,
+                                            rotationAxisRaw.z * invSin,
+                                        };
+                                        seatBodyWorld = rotateTransformWorldAboutPoint(
+                                            grabBodyWorldAtGrab, rotationAxis, angleRadians, grabGripPoint);
+                                        seatObjectWorld = rotateTransformWorldAboutPoint(
+                                            objectWorldTransform, rotationAxis, angleRadians, grabGripPoint);
+                                        // Carry the mesh axes into the swung pose so the roll below runs in seat space.
+                                        currentAxisWorld = grab_finger_pose_math::rotateAroundUnitAxis(
+                                            currentAxisWorld, rotationAxis, angleRadians);
+                                        currentSecondAxisWorld = grab_finger_pose_math::rotateAroundUnitAxis(
+                                            currentSecondAxisWorld, rotationAxis, angleRadians);
+                                        seatAlignmentAngleDegrees = angleRadians * 57.29577951308232f;
+                                        seatAlignmentReason = "longAxisSeatAligned";
+                                        seatPoseChanged = true;
+                                    } else {
+                                        seatAlignmentReason = "alreadyAligned";
+                                    }
                                 } else {
-                                    seatAlignmentReason = "alreadyAligned";
+                                    seatAlignmentReason = "degenerateAxes";
                                 }
-                            } else {
-                                seatAlignmentReason = "degenerateAxes";
+                            }
+                            if (seatRollAlignmentWanted) {
+                                if (seatLongAxis.secondElongationRatio >= g_rockConfig.rockGrabSeatRollMinSecondElongationRatio &&
+                                    lengthSquared(currentAxisWorld) > 0.000001f &&
+                                    lengthSquared(currentSecondAxisWorld) > 0.000001f) {
+                                    // Thinnest-extent direction = the flat face's normal.
+                                    const RE::NiPoint3 faceNormalWorld = crossProduct(currentAxisWorld, currentSecondAxisWorld);
+                                    const RE::NiPoint3 rollTargetRaw =
+                                        pocket.palmNormalWorld - currentAxisWorld * dotProduct(pocket.palmNormalWorld, currentAxisWorld);
+                                    const RE::NiPoint3 rollCurrentRaw =
+                                        faceNormalWorld - currentAxisWorld * dotProduct(faceNormalWorld, currentAxisWorld);
+                                    RE::NiPoint3 rollTargetWorld = normalizeOrZero(rollTargetRaw);
+                                    const RE::NiPoint3 rollCurrentWorld = normalizeOrZero(rollCurrentRaw);
+                                    if (lengthSquared(rollTargetWorld) > 0.000001f && lengthSquared(rollCurrentWorld) > 0.000001f) {
+                                        if (dotProduct(rollCurrentWorld, rollTargetWorld) < 0.0f) {
+                                            // A face has two sides; twist toward the nearer one.
+                                            rollTargetWorld = RE::NiPoint3{ -rollTargetWorld.x, -rollTargetWorld.y, -rollTargetWorld.z };
+                                        }
+                                        const float rollSin = dotProduct(crossProduct(rollCurrentWorld, rollTargetWorld), currentAxisWorld);
+                                        const float rollCos = std::clamp(dotProduct(rollCurrentWorld, rollTargetWorld), -1.0f, 1.0f);
+                                        const float rollAngleRadians = std::atan2(rollSin, rollCos);
+                                        if (std::fabs(rollAngleRadians) > 0.01f) {
+                                            seatBodyWorld = rotateTransformWorldAboutPoint(
+                                                seatBodyWorld, currentAxisWorld, rollAngleRadians, grabGripPoint);
+                                            seatObjectWorld = rotateTransformWorldAboutPoint(
+                                                seatObjectWorld, currentAxisWorld, rollAngleRadians, grabGripPoint);
+                                            seatRollAngleDegrees = rollAngleRadians * 57.29577951308232f;
+                                            seatRollReason = "faceRollSeatAligned";
+                                            seatPoseChanged = true;
+                                        } else {
+                                            seatRollReason = "alreadyRollAligned";
+                                        }
+                                    } else {
+                                        seatRollReason = "degenerateRollAxes";
+                                    }
+                                } else {
+                                    seatRollReason = "belowSecondElongationGate";
+                                }
                             }
                         } else if (seatLongAxis.valid) {
-                            seatAlignmentReason = "belowElongationGate";
+                            if (seatSwingAlignmentWanted) {
+                                seatAlignmentReason = "belowElongationGate";
+                            }
+                            if (seatRollAlignmentWanted) {
+                                seatRollReason = "belowElongationGate";
+                            }
                         }
                     }
 
@@ -9841,6 +9945,8 @@ namespace rock
                      */
                     GrabSeatDepthStopResult seatDepthStop{};
                     float seatDepthOffsetGameUnits = 0.0f;
+                    float seatPenetrationBackstopGameUnits = 0.0f;
+                    const char* seatPenetrationBackstopReason = "inactive";
                     if (!looseWeaponPrimaryAttachApplied && !usingPinchPocket && pocket.valid) {
                         seatDepthStop = computeGrabSeatDepthStop(
                             grabLocalMeshTriangles,
@@ -9861,6 +9967,56 @@ namespace rock
                                 grabPivotAWorld,
                                 grabGripPoint);
                             desiredObjectWorld = deriveNodeWorldFromBodyWorld(desiredBodyWorld, objectToBodyAtGrab);
+                        }
+                        /*
+                         * Fail-closed palm-plane backstop: the depth stop above
+                         * measures from the GRIP POINT and rejects mesh at
+                         * negative grip-relative depth, so a grip seed at or
+                         * behind the surface (inset grips, concave shells) or
+                         * an empty footprint leaves the correction at zero and
+                         * commits the hand inside the object. Re-measure on the
+                         * FINAL seat pose from the palm plane itself: any mesh
+                         * still reaching past the palm plane within the same
+                         * tuned footprint is penetration by definition. One
+                         * rigid push restores the surface-on-palm invariant
+                         * exactly (a translation reduces every support depth by
+                         * the push, so no iteration is needed). Engagement is
+                         * always WARN-logged: it means the primary depth stop
+                         * failed, and the root cause still needs the capture
+                         * line's seatDepthReason evidence.
+                         */
+                        const auto palmPlaneOvershoot = computeGrabSeatDepthStop(
+                            grabLocalMeshTriangles,
+                            desiredObjectWorld,
+                            pocket.palmCenterWorld,
+                            pocket.palmNormalWorld,
+                            g_rockConfig.rockGrabSeatDepthFootprintRadiusGameUnits,
+                            g_rockConfig.rockGrabSeatDepthMaxGameUnits);
+                        seatPenetrationBackstopReason = palmPlaneOvershoot.reason;
+                        constexpr float kSeatPenetrationBackstopThresholdGameUnits = 1.0f;
+                        if (palmPlaneOvershoot.valid &&
+                            palmPlaneOvershoot.depthGameUnits > kSeatPenetrationBackstopThresholdGameUnits) {
+                            seatPenetrationBackstopGameUnits =
+                                palmPlaneOvershoot.depthGameUnits + (std::max)(0.0f, g_rockConfig.rockGrabSeatDepthSkinGameUnits);
+                            grabPivotAWorld = grabPivotAWorld + pocket.palmNormalWorld * seatPenetrationBackstopGameUnits;
+                            desiredBodyWorld = grab_frame_math::shiftObjectToAlignGripWithPocket(
+                                seatBodyWorld,
+                                grabPivotAWorld,
+                                grabGripPoint);
+                            desiredObjectWorld = deriveNodeWorldFromBodyWorld(desiredBodyWorld, objectToBodyAtGrab);
+                            seatPoseChanged = true;
+                            seatPenetrationBackstopReason = "palmPlanePenetrationPushedOut";
+                            ROCK_LOG_WARN(Hand,
+                                "{} SEAT DEPTH BACKSTOP: final seat still reached {:.2f}gu past the palm plane -> pushed out {:.2f}gu "
+                                "(primary seatDepthReason={} samples={} depth={:.2f} offset={:.2f} overshootSamples={})",
+                                handName(),
+                                palmPlaneOvershoot.depthGameUnits,
+                                seatPenetrationBackstopGameUnits,
+                                seatDepthStop.reason,
+                                seatDepthStop.footprintSampleCount,
+                                seatDepthStop.depthGameUnits,
+                                seatDepthOffsetGameUnits,
+                                palmPlaneOvershoot.footprintSampleCount);
                         }
                     }
 
@@ -10049,7 +10205,7 @@ namespace rock
                         "{} THREE-PHASE GRAB CAPTURE: relation={} seat={} rotation={} phase={} reason={} touchContact={} stableTouch={} pocket=({:.1f},{:.1f},{:.1f}) "
                         "palm=({:.1f},{:.1f},{:.1f}) normal=({:.3f},{:.3f},{:.3f}) seed=({:.1f},{:.1f},{:.1f}) "
                         "grip=({:.1f},{:.1f},{:.1f}) gripLocal=({:.2f},{:.2f},{:.2f}) pivotB=({:.2f},{:.2f},{:.2f}) dist={:.1f} signedPalm={:.1f} "
-                        "fullHeldAuthority={} pivotAuthoritySource={} positionOnlyPatch={} normalTrusted={} support={} supportPivot={} supportConfidence={:.2f} supportSpan={:.2f} supportShift={:.2f} supportReason={} supportSamples={} supportMeshHits={} supportRejectOwner={} supportRejectDistance={} settledVisualRequired={} pullSeatSafety={} pullSeatDot={:.3f} pullSeatSigned={:.1f} pullSeatDist={:.1f} seatDepth={:.2f} seatDepthOffset={:.2f} seatDepthSamples={} seatDepthReason={} seatAlignDeg={:.1f} seatAlignReason={} pinchCenter={:.2f} inset={:.2f} insetSource={} looseWeaponPrimaryAttach={} attachReason={} attachVisible={}",
+                        "fullHeldAuthority={} pivotAuthoritySource={} positionOnlyPatch={} normalTrusted={} support={} supportPivot={} supportConfidence={:.2f} supportSpan={:.2f} supportShift={:.2f} supportReason={} supportSamples={} supportMeshHits={} supportRejectOwner={} supportRejectDistance={} settledVisualRequired={} pullSeatSafety={} pullSeatDot={:.3f} pullSeatSigned={:.1f} pullSeatDist={:.1f} seatDepth={:.2f} seatDepthOffset={:.2f} seatDepthSamples={} seatDepthReason={} seatAlignDeg={:.1f} seatAlignReason={} seatRollDeg={:.1f} seatRollReason={} seatBackstop={:.2f} seatBackstopReason={} pinchCenter={:.2f} inset={:.2f} insetSource={} looseWeaponPrimaryAttach={} attachReason={} attachVisible={}",
                         handName(),
                         relationMode,
                         grabSeatModeName(_grabFrame.seatMode),
@@ -10106,6 +10262,10 @@ namespace rock
                         seatDepthStop.reason,
                         seatAlignmentAngleDegrees,
                         seatAlignmentReason,
+                        seatRollAngleDegrees,
+                        seatRollReason,
+                        seatPenetrationBackstopGameUnits,
+                        seatPenetrationBackstopReason,
                         pinchCenterOffsetGameUnits,
                         gripArea.seedInsetGameUnits,
                         gripArea.fallbackReason,
@@ -11991,6 +12151,31 @@ namespace rock
                                                                   (reachedTouchMayPromote ? "threePhaseTouchReachedFrozenRelation" : "threePhaseTimeoutInsidePocket"));
                 if (_grabFrame.syntheticLooseWeaponPrimaryAttach) {
                     _grabFrame.hasSettledVisualHandRelation = true;
+                }
+                /*
+                 * Fallback visual settle: a rejected seated reacquire
+                 * (seatedRetargetRejectedKeepFrozen) still promotes to
+                 * TouchHeld, and this converging block never runs again once
+                 * held - without settling here the visual publish gate would
+                 * report awaitingSettledVisualRelation for the entire hold,
+                 * leaving the rendered hand frozen at the controller while
+                 * the motors keep driving the object (hand posed but never
+                 * locked; pushing the object slid it out of the hand). The
+                 * motors hold the frozen commanded relation (rawHandSpace),
+                 * so locking the visual hand onto that same relation is
+                 * strictly better than never locking. WARN-logged because it
+                 * also records that the seated reacquire failed and why.
+                 */
+                if (_grabFrame.requiresSettledVisualHandRelation &&
+                    !_grabFrame.hasSeatedPivotReacquire &&
+                    !_grabFrame.hasSettledVisualHandRelation) {
+                    _grabFrame.hasSettledVisualHandRelation = true;
+                    ROCK_LOG_WARN(Hand,
+                        "{} THREE-PHASE GRAB VISUAL SETTLE FALLBACK: TouchHeld promotion with unsatisfied settle requirement -> settling visual relation to frozen commanded seat (reacquire={} pivotAuthoritySource={} phase={})",
+                        handName(),
+                        timeoutReacquireReason,
+                        _grabFrame.pivotAuthoritySource,
+                        grab_three_phase::phaseName(previousAcquisitionPhase));
                 }
                 _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::TouchHeld;
                 _grabFrame.fadeInGrabConstraint = false;

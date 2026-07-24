@@ -2155,11 +2155,19 @@ namespace rock
         rockPullToObjectCenterEnabled = ini.GetBoolValue(SECTION, "bPullToObjectCenterEnabled", rockPullToObjectCenterEnabled);
         rockPullLongAxisPresentationEnabled = ini.GetBoolValue(SECTION, "bPullLongAxisPresentationEnabled", rockPullLongAxisPresentationEnabled);
         rockForceGrabSeatAlignmentEnabled = ini.GetBoolValue(SECTION, "bForceGrabSeatAlignmentEnabled", rockForceGrabSeatAlignmentEnabled);
+        rockGrabSeatRollAlignmentEnabled = ini.GetBoolValue(SECTION, "bGrabSeatRollAlignmentEnabled", rockGrabSeatRollAlignmentEnabled);
         rockPullPresentationMinElongationRatio =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fPullPresentationMinElongationRatio", rockPullPresentationMinElongationRatio));
         if (!std::isfinite(rockPullPresentationMinElongationRatio) || rockPullPresentationMinElongationRatio < 1.0f) {
             ROCK_LOG_WARN(Config, "Invalid fPullPresentationMinElongationRatio={} -- using 2.0", rockPullPresentationMinElongationRatio);
             rockPullPresentationMinElongationRatio = 2.0f;
+        }
+        rockGrabSeatRollMinSecondElongationRatio =
+            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabSeatRollMinSecondElongationRatio", rockGrabSeatRollMinSecondElongationRatio));
+        if (!std::isfinite(rockGrabSeatRollMinSecondElongationRatio) || rockGrabSeatRollMinSecondElongationRatio < 1.0f ||
+            rockGrabSeatRollMinSecondElongationRatio > 10.0f) {
+            ROCK_LOG_WARN(Config, "Invalid fGrabSeatRollMinSecondElongationRatio={} -- using 1.25", rockGrabSeatRollMinSecondElongationRatio);
+            rockGrabSeatRollMinSecondElongationRatio = 1.25f;
         }
         rockPullPresentationAngularGainPerSecond =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fPullPresentationAngularGainPerSecond", rockPullPresentationAngularGainPerSecond));
