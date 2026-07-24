@@ -515,23 +515,53 @@ namespace
         }
     }
 
-    bool invokeFrameCallbackSafely(RockProviderFrameCallback callback, const RockProviderFrameSnapshot* snapshot, void* userData)
+    struct FrameCallbackInvocationResult
     {
+        bool healthy{ true };
+        std::uint32_t exceptionCode{ 0 };
+        std::uintptr_t exceptionAddress{ 0 };
+    };
+
+#if defined(_MSC_VER)
+    int captureFrameCallbackException(
+        EXCEPTION_POINTERS* exception,
+        FrameCallbackInvocationResult* result) noexcept
+    {
+        if (result) {
+            result->healthy = false;
+            if (exception && exception->ExceptionRecord) {
+                result->exceptionCode =
+                    exception->ExceptionRecord->ExceptionCode;
+                result->exceptionAddress =
+                    reinterpret_cast<std::uintptr_t>(
+                        exception->ExceptionRecord->ExceptionAddress);
+            }
+        }
+        return EXCEPTION_EXECUTE_HANDLER;
+    }
+#endif
+
+    FrameCallbackInvocationResult invokeFrameCallbackSafely(
+        RockProviderFrameCallback callback,
+        const RockProviderFrameSnapshot* snapshot,
+        void* userData)
+    {
+        FrameCallbackInvocationResult result{};
         if (!callback) {
-            return true;
+            return result;
         }
 
 #if defined(_MSC_VER)
         __try {
             callback(snapshot, userData);
-            return true;
-        } __except (EXCEPTION_EXECUTE_HANDLER) {
-            return false;
+        } __except (captureFrameCallbackException(
+            GetExceptionInformation(),
+            &result)) {
         }
 #else
         callback(snapshot, userData);
-        return true;
 #endif
+        return result;
     }
 
     RockProviderResultV1 ROCK_PROVIDER_CALL apiRegisterFrameCallbackForOwnerV1(
@@ -5182,15 +5212,65 @@ namespace rock::provider
                 slot = s_callbacks[index];
             }
             if (slot.callback) {
-                bool callbackHealthy = true;
+                FrameCallbackInvocationResult callbackResult{};
                 try {
-                    callbackHealthy = invokeFrameCallbackSafely(slot.callback, &snapshot, slot.userData);
+                    callbackResult = invokeFrameCallbackSafely(
+                        slot.callback,
+                        &snapshot,
+                        slot.userData);
                 } catch (...) {
-                    callbackHealthy = false;
+                    callbackResult.healthy = false;
                 }
 
-                if (!callbackHealthy) {
-                    logger::error("ROCK provider frame callback token {} faulted; unregistering the callback.", slot.token);
+                if (!callbackResult.healthy) {
+                    HMODULE faultModule = nullptr;
+                    constexpr auto moduleFlags =
+                        GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                        GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT;
+                    const auto faultAddress =
+                        callbackResult.exceptionAddress;
+                    const bool hasFaultModule =
+                        faultAddress != 0 &&
+                        GetModuleHandleExA(
+                            moduleFlags,
+                            reinterpret_cast<LPCSTR>(faultAddress),
+                            &faultModule) != FALSE;
+                    if (hasFaultModule) {
+                        std::array<char, MAX_PATH> modulePath{};
+                        const auto pathLength = GetModuleFileNameA(
+                            faultModule,
+                            modulePath.data(),
+                            static_cast<DWORD>(modulePath.size()));
+                        const char* moduleName = modulePath.data();
+                        if (pathLength != 0) {
+                            if (const auto* slash =
+                                    std::strrchr(moduleName, '\\')) {
+                                moduleName = slash + 1;
+                            }
+                        } else {
+                            moduleName = "<unknown-module>";
+                        }
+                        const auto moduleBase =
+                            reinterpret_cast<std::uintptr_t>(
+                                faultModule);
+                        logger::error(
+                            "ROCK provider frame callback token {} faulted: "
+                            "exception=0x{:08X} instruction={}+0x{:X} "
+                            "(0x{:016X}); unregistering the callback.",
+                            slot.token,
+                            callbackResult.exceptionCode,
+                            moduleName,
+                            faultAddress - moduleBase,
+                            faultAddress);
+                    } else {
+                        logger::error(
+                            "ROCK provider frame callback token {} faulted: "
+                            "exception=0x{:08X} instruction=0x{:016X}; "
+                            "unregistering the callback.",
+                            slot.token,
+                            callbackResult.exceptionCode,
+                            faultAddress);
+                    }
                     if (slot.ownerToken != 0) {
                         clearOwnerStateAfterCallbackFault(slot.ownerToken);
                     } else {
