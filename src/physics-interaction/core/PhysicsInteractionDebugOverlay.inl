@@ -236,6 +236,7 @@
         const bool drawGrabTransformTelemetryAxes = drawGrabTransformTelemetry && g_rockConfig.rockDebugGrabTransformTelemetryAxes;
         const bool drawGrabTransformTelemetryText = drawGrabTransformTelemetry && g_rockConfig.rockDebugGrabTransformTelemetryText;
         const bool drawPerformanceProfilerOverlay = performance_profiler::overlayTextEnabled();
+        const bool drawVideoSyncMarker = g_rockConfig.rockDebugVideoSyncMarker;
         const bool drawWeaponAuthorityDebug = _twoHandedGrip.isGripping() && (g_rockConfig.rockDebugShowHandAxes || drawGrabPivots);
         // Authored support-grip diagnostics remain available through the
         // existing weapon-authority debug controls without coupling normal
@@ -257,7 +258,7 @@
             !drawFingerSweptArc && !drawPalmVectors && !drawGrabPockets && !drawRootFlattenedFingerSkeleton && !drawSkeletonBones && !drawGrabPocketNormal &&
             !drawGrabContactPatch && !drawHandBoneContacts && !drawGrabAuthorityProxy && !drawGrabForceTorque && !drawGrabTransformTelemetry && !drawPerformanceProfilerOverlay &&
             !drawWeaponAuthorityDebug && !drawNativeScopeActivation && !drawGrabSupportFrame && !drawWorldOriginDiagnostics && !drawCustomCalibrationOffset &&
-            !drawDynamicHandColliders && !drawAuthoredSupportGripDebug && !drawProviderOverlay) {
+            !drawDynamicHandColliders && !drawAuthoredSupportGripDebug && !drawProviderOverlay && !drawVideoSyncMarker) {
             debug::ClearFrame();
             return;
         }
@@ -279,7 +280,7 @@
         frame.drawColoredLines = providerOverlay && providerOverlay->lineCount > 0;
         frame.drawText = drawGrabTransformTelemetryText || drawGrabForceTorqueText || drawFingerSweptArcText || drawPerformanceProfilerOverlay ||
             drawDynamicHandColliders || drawNativeScopeActivation ||
-            drawAuthoredSupportGripDebug ||
+            drawAuthoredSupportGripDebug || drawVideoSyncMarker ||
             (providerOverlay && providerOverlay->textCount > 0);
         if (providerOverlay) {
             frame.coloredLineEntries = providerOverlay->lines.data();
@@ -487,6 +488,33 @@
             const RE::NiPoint3 delta = lhs - rhs;
             return std::sqrt(delta.x * delta.x + delta.y * delta.y + delta.z * delta.z);
         };
+
+        if (drawVideoSyncMarker) {
+            // VIDEO-SYNC marker: a per-frame counter drawn on screen AND logged on
+            // the same steady-clock microsecond base as OVERLAY_POINT/RENDER_READ,
+            // so an external headset recording aligns 1:1 with the probe lines
+            // (decode the on-screen counter per video frame, join on seq/t).
+            // Counter is process-lifetime monotonic and increments once per
+            // rendered frame at this publish phase. Text is deliberately large
+            // and high-contrast to survive capture compression.
+            static std::uint32_t s_videoSyncFrameCounter = 0;
+            ++s_videoSyncFrameCounter;
+            const auto syncMicroseconds = std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+            if (frame.drawText && frame.textCount < frame.textEntries.size()) {
+                auto& entry = frame.textEntries[frame.textCount++];
+                entry.x = g_rockConfig.rockDebugVideoSyncMarkerX;
+                entry.y = g_rockConfig.rockDebugVideoSyncMarkerY;
+                entry.size = g_rockConfig.rockDebugVideoSyncMarkerSize;
+                entry.color[0] = 1.0f;
+                entry.color[1] = 1.0f;
+                entry.color[2] = 0.0f;
+                entry.color[3] = 1.0f;
+                entry.worldAnchored = false;
+                std::snprintf(entry.text, sizeof(entry.text), "SYNC %07u", s_videoSyncFrameCounter);
+            }
+            ROCK_LOG_DEBUG(Hand, "VIDEO_SYNC: seq={} t={}us", s_videoSyncFrameCounter, syncMicroseconds);
+        }
 
         if (drawPerformanceProfilerOverlay) {
             performance_profiler::OverlayLines profilerLines{};
