@@ -47,8 +47,10 @@
             RE::NiMatrix3 target{};
             RE::NiMatrix3 object{};
             RE::NiMatrix3 handBody{};
+            RE::NiMatrix3 renderNode{};
             long long microseconds = 0;
             bool valid = false;
+            bool renderNodeValid = false;
         };
         static RotationStepState s_rotationStepState[2]{};
 
@@ -82,6 +84,44 @@
                 rotStepObject = grab_authority_source_clock::rotationDeltaDegrees(objectWorld.rotate, rotationState.object);
                 rotStepHandBody = grab_authority_source_clock::rotationDeltaDegrees(handBodyWorld.rotate, rotationState.handBody);
             }
+            // RENDER-READ probe fields: the scene-graph world transform the
+            // renderer consumes for the held object, paired with the post-solve
+            // body transform read in the same instant. Every prior stutter probe
+            // measured the drive/physics side only; whether the engine's actual
+            // render read matches it was never verified (2026-07-14 attempt
+            // history, open lead #2). Node resolution reuses the origin-
+            // diagnostics visual-source chain; fails closed to nodeOk=n when the
+            // body, refr, or node is unavailable. Runs before the shared
+            // rotation-state update so the step gap check still sees the
+            // previous frame's timestamp.
+            RE::NiPoint3 renderNodePosition{};
+            const char* renderNodeSource = "none";
+            float renderNodeBodyDistance = -1.0f;
+            float rotStepRenderNode = -1.0f;
+            float rotRenderNodeVsBody = -1.0f;
+            bool renderNodeOk = false;
+            {
+                origin_diagnostics::TargetOriginSample renderSample{};
+                const auto& savedState = hand.getSavedObjectState();
+                if (origin_diagnostics::sampleTarget(context.bhkWorld, hknp, savedState.bodyId, savedState.refr, nullptr, nullptr, 0.0f, renderSample) &&
+                    renderSample.visualSourceNode) {
+                    renderNodeOk = true;
+                    renderNodePosition = renderSample.visualSourceNode->world.translate;
+                    renderNodeSource = origin_diagnostics::visualSourceKindName(renderSample.visualSourceKind);
+                    if (objectOk) {
+                        renderNodeBodyDistance = origin_diagnostics::distance(renderNodePosition, objectWorld.translate);
+                        rotRenderNodeVsBody =
+                            grab_authority_source_clock::rotationDeltaDegrees(renderSample.visualSourceNode->world.rotate, objectWorld.rotate);
+                    }
+                    if (rotationState.renderNodeValid && (probeMicroseconds - rotationState.microseconds) < 50000) {
+                        rotStepRenderNode =
+                            grab_authority_source_clock::rotationDeltaDegrees(renderSample.visualSourceNode->world.rotate, rotationState.renderNode);
+                    }
+                    rotationState.renderNode = renderSample.visualSourceNode->world.rotate;
+                }
+                rotationState.renderNodeValid = renderNodeOk;
+            }
+
             rotationState.wand = rawHandWorld.rotate;
             rotationState.target = sample.appliedProxyTargetWorld.rotate;
             rotationState.object = objectWorld.rotate;
@@ -124,6 +164,23 @@
                 rotStepObject,
                 rotStepHandBody,
                 sample.transportVelocityGameUnitsPerSecond);
+
+            ROCK_LOG_DEBUG(Hand,
+                "{} RENDER_READ: t={}us flushSeq={} nodeOk={} node=({:.3f},{:.3f},{:.3f}) nodeSrc={} body=({:.3f},{:.3f},{:.3f}) d={:.3f} rotNode={:.3f} rotNB={:.3f}",
+                hand.handName(),
+                probeMicroseconds,
+                sample.flushSequence,
+                renderNodeOk ? "y" : "n",
+                renderNodePosition.x,
+                renderNodePosition.y,
+                renderNodePosition.z,
+                renderNodeSource,
+                objectWorld.translate.x,
+                objectWorld.translate.y,
+                objectWorld.translate.z,
+                renderNodeBodyDistance,
+                rotStepRenderNode,
+                rotRenderNodeVsBody);
         };
 
         if (probeRight) {
