@@ -666,18 +666,9 @@ namespace rock
             return false;
         }
 
-        const auto externalLeftCarryFlag = static_cast<std::uint32_t>(
-            frik::api::FRIKApi::RecoilContextFlag::ExternalLeftCarry);
-        const auto nativeKickAvailableFlag = static_cast<std::uint32_t>(
-            frik::api::FRIKApi::RecoilContextFlag::NativeKickNodeAvailable);
-        const auto physicalLeftHand = static_cast<std::uint32_t>(
-            frik::api::FRIKApi::Hand::Left);
         if (!self->_weaponNodeOwnershipBlockEngaged ||
             !self->_firingHandIsLeft ||
-            !self->isManualOwnershipActive() ||
-            (sample->contextFlags & externalLeftCarryFlag) == 0 ||
-            (sample->contextFlags & nativeKickAvailableFlag) == 0 ||
-            sample->physicalPrimaryHand != physicalLeftHand) {
+            !self->isManualOwnershipActive()) {
             return false;
         }
 

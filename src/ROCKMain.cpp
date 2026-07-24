@@ -614,6 +614,7 @@ namespace
         switch (static_cast<LE>(msg->type)) {
         case LE::kSkeletonReady:
             logger::info("ROCK: Received kSkeletonReady from FRIK.");
+            frik_visual_authority::resetPresentedHandNodeCache();
             bumpGeneration(s_skeletonGeneration);
             if (!authored_weapon_grip_capture::installHook()) {
                 logger::error(
@@ -633,6 +634,7 @@ namespace
 
         case LE::kSkeletonDestroying:
             logger::info("ROCK: Received kSkeletonDestroying from FRIK.");
+            frik_visual_authority::resetPresentedHandNodeCache();
             bumpGeneration(s_skeletonGeneration);
             authored_weapon_grip_capture::resetTransientState();
             s_physicsCreationRequested.store(false, std::memory_order_release);

@@ -160,22 +160,10 @@ namespace frik::api
             Offhand = 1u << 1,
         };
 
-        enum class RecoilContextFlag : std::uint32_t
-        {
-            NativeKickNodeAvailable = 1u << 0,
-            NativeKickActive = 1u << 1,
-            ScopeMenuOpen = 1u << 2,
-            PowerArmor = 1u << 3,
-            ExternalLeftCarry = 1u << 4,
-        };
-
         struct RecoilSample
         {
             std::uint32_t structSize = 0;
-            std::uint32_t contextFlags = 0;
-            std::uint64_t sequence = 0;
-            float deltaSeconds = 0.0f;
-            std::uint32_t physicalPrimaryHand = static_cast<std::uint32_t>(Hand::Right);
+            std::uint32_t reserved0[3] = {};
             RE::NiTransform nativeKickLocal{};
             std::uint32_t reserved[8] = {};
         };
@@ -197,7 +185,7 @@ namespace frik::api
             RecoilResponse* outResponse,
             void* userData) noexcept;
 
-        static_assert(sizeof(RecoilSample) == 128, "RecoilSample ABI changed");
+        static_assert(sizeof(RecoilSample) == 112, "RecoilSample ABI changed");
         static_assert(sizeof(RecoilResponse) == 112, "RecoilResponse ABI changed");
 
         enum class LifecycleEvent : std::uint32_t
@@ -247,8 +235,6 @@ namespace frik::api
         bool(FRIK_CALL* setHandPoseCustom)(const char* tag, Hand hand, const HandPoseData& handPose, bool forceTop);
 
         bool(FRIK_CALL* setHandPoseWithPriority)(const char* tag, Hand hand, HandPoseKind handPose, int priority);
-
-        RE::NiTransform(FRIK_CALL* getHandWorldTransform)(Hand hand);
 
         bool(FRIK_CALL* setHandPoseCustomWithPriority)(const char* tag, Hand hand, const HandPoseData& handPose, int priority);
 

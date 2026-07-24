@@ -7,6 +7,7 @@
 #include <string_view>
 
 #include "api/FRIKApi.h"
+#include "rock_support/Fo4VrRuntime.h"
 
 namespace rock::frik_visual_authority
 {
@@ -17,7 +18,6 @@ namespace rock::frik_visual_authority
     using FingerLocalTransformOverride = frik::api::FRIKApi::FingerLocalTransformOverride;
     using RecoilDelivery = frik::api::FRIKApi::RecoilDelivery;
     using RecoilHandMask = frik::api::FRIKApi::RecoilHandMask;
-    using RecoilContextFlag = frik::api::FRIKApi::RecoilContextFlag;
     using RecoilSample = frik::api::FRIKApi::RecoilSample;
     using RecoilResponse = frik::api::FRIKApi::RecoilResponse;
     using WeaponHandRecoilController = frik::api::FRIKApi::WeaponHandRecoilController;
@@ -51,6 +51,17 @@ namespace rock::frik_visual_authority
         inline std::array<CachedFingerLocalTransformPublication, kCachedHandPosePublicationCount> g_cachedFingerLocalTransformPublications{};
         inline std::size_t g_nextCachedHandPosePublication = 0;
         inline std::size_t g_nextCachedFingerLocalTransformPublication = 0;
+
+        struct PresentedHandNodeCache
+        {
+            // Non-owning game scene pointers. FRIK lifecycle messages reset
+            // this cache before the first-person skeleton can be destroyed.
+            RE::NiNode* skeleton = nullptr;
+            RE::NiNode* rightHand = nullptr;
+            RE::NiNode* leftHand = nullptr;
+        };
+
+        inline PresentedHandNodeCache g_presentedHandNodeCache{};
 
         using MirrorFingerLocalTransformsFn = bool(FRIK_CALL*)(Hand, const FingerLocalTransformOverride*, FingerLocalTransformOverride*);
 
@@ -530,9 +541,59 @@ namespace rock::frik_visual_authority
             frikApi->unregisterWeaponHandRecoilController(tag);
     }
 
+    inline void resetPresentedHandNodeCache()
+    {
+        detail::g_presentedHandNodeCache = {};
+    }
+
     [[nodiscard]] inline RE::NiTransform getHandWorldTransform(Hand hand)
     {
-        auto* frikApi = api();
-        return frikApi ? frikApi->getHandWorldTransform(hand) : RE::NiTransform();
+        RE::NiTransform identity{};
+        identity.MakeIdentity();
+        if (!isSkeletonReadyHint()) {
+            resetPresentedHandNodeCache();
+            return identity;
+        }
+
+        bool isLeft = false;
+        switch (hand) {
+        case Hand::Left:
+            isLeft = true;
+            break;
+        case Hand::Right:
+            break;
+        case Hand::Primary:
+        case Hand::Offhand: {
+            const auto* leftHandedMode = f4vr::getIniSetting("bLeftHandedMode:VR");
+            if (!leftHandedMode) {
+                return identity;
+            }
+            const bool primaryIsLeft = leftHandedMode->GetBinary();
+            isLeft = hand == Hand::Primary ? primaryIsLeft : !primaryIsLeft;
+            break;
+        }
+        default:
+            return identity;
+        }
+
+        auto* const skeleton = f4vr::getFirstPersonSkeleton();
+        auto& cache = detail::g_presentedHandNodeCache;
+        if (!skeleton) {
+            resetPresentedHandNodeCache();
+            return identity;
+        }
+        if (cache.skeleton != skeleton) {
+            cache = {};
+            cache.skeleton = skeleton;
+        }
+        if (!cache.rightHand) {
+            cache.rightHand = f4vr::findNode(skeleton, "RArm_Hand");
+        }
+        if (!cache.leftHand) {
+            cache.leftHand = f4vr::findNode(skeleton, "LArm_Hand");
+        }
+
+        const auto* const handNode = isLeft ? cache.leftHand : cache.rightHand;
+        return handNode ? handNode->world : identity;
     }
 }

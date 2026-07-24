@@ -67,6 +67,12 @@ Require-Text 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h' `
 Require-Text 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h' `
     'canBlockPrimaryHandWeaponPose\(\)[\s\S]*frikApi->blockPrimaryHandWeaponPose\s*!=\s*nullptr' `
     'ROCK must feature-detect primary weapon-pose blocking through the V5 table.'
+Require-Text 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h' `
+    'PresentedHandNodeCache[\s\S]*getHandWorldTransform\(Hand hand\)[\s\S]*isSkeletonReadyHint\(\)[\s\S]*getFirstPersonSkeleton\(\)[\s\S]*findNode\(skeleton,\s*"RArm_Hand"\)[\s\S]*findNode\(skeleton,\s*"LArm_Hand"\)[\s\S]*handNode->world' `
+    'ROCK must read final presented hands directly from the game first-person scene nodes.'
+Require-Text 'src/ROCKMain.cpp' `
+    'kSkeletonReady[\s\S]*resetPresentedHandNodeCache\(\)[\s\S]*kSkeletonDestroying[\s\S]*resetPresentedHandNodeCache\(\)' `
+    'Game hand-node caches must be invalidated at both hFRIK skeleton lifecycle edges.'
 
 Reject-ExternalText 'hFRIK/src/skeleton/HandPose.cpp' 'logger::(?:info|debug)\("Hand pose:' `
     'hFRIK must not retain log-only hand-pose override bookkeeping in the runtime hot path.'
@@ -82,6 +88,12 @@ Require-ExternalText 'hFRIK/src/api/FRIKApi.cpp' `
 Reject-ExternalText 'hFRIK/src/api/FRIKApi.cpp' `
     'FRIKAPI_BlockPrimaryHandWeaponPose|FRIKAPI_MirrorPrimaryWeaponFingerLocalTransforms' `
     'hFRIK must not retain duplicate direct-export paths for V5 table behavior or legacy mirroring.'
+Reject-ExternalText 'hFRIK/src/api/FRIKApi.h' `
+    'getHandWorldTransform' `
+    'hFRIK V5 must not wrap game-owned first-person hand transforms.'
+Reject-ExternalText 'ROCK/src/api/FRIKApi.h' `
+    'getHandWorldTransform' `
+    'ROCK must not retain the removed hFRIK hand-transform table entry.'
 Reject-ExternalText 'hFRIK/src/api/FRIKApi.h' `
     'using\s+HandPoses|setHandPoseCustomFingerPositionsWithPriority|kPowerArmorChanged|Fist\s*=' `
     'hFRIK V5 must not retain unused aliases, convenience calls, lifecycle events, or public fist exposure.'

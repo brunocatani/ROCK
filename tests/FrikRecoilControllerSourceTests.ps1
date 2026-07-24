@@ -66,6 +66,9 @@ Require-Text $hfrikRoot 'src/skeleton/Skeleton.cpp' `
     'handleLeftHandedWeaponNodesSwitch\(\);[\s\S]*prepareWeaponHandRecoilFrame\(\);[\s\S]*setArms\(false\);[\s\S]*setArms\(true\);' `
     'hFRIK must sample recoil exactly once before both arm passes.'
 Require-Text $hfrikRoot 'src/skeleton/Skeleton.cpp' `
+    'primaryWeaponKickbackRecoilNode[\s\S]*isFiniteTransform\(kickbackNode->local\)[\s\S]*kickbackNode->parent[\s\S]*isFiniteTransform\(kickbackNode->parent->world\)[\s\S]*return;[\s\S]*nativeKickLocal\s*=\s*kickbackNode->local[\s\S]*resolveWeaponHandRecoil' `
+    'hFRIK must validate the native kick frame internally before invoking external recoil controllers.'
+Require-Text $hfrikRoot 'src/skeleton/Skeleton.cpp' `
     'ScopedKickbackNeutralizer[\s\S]*_weaponHandRecoilResponseAccepted[\s\S]*dampenHand\(offsetNode,\s*isLeft\);[\s\S]*Update1StPersonArm' `
     'Accepted API recoil must replace native hand recoil while a declined frame retains the original dampen-and-arm pipeline.'
 Require-Text $hfrikRoot 'src/skeleton/Skeleton.cpp' `
@@ -82,11 +85,23 @@ Require-Text $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     '~TwoHandedGrip\(\)[\s\S]*unregisterWeaponHandRecoilController' `
     'ROCK must unregister the recoil callback before its instance storage is destroyed.'
 Require-Text $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'ExternalLeftCarry[\s\S]*NativeKickNodeAvailable[\s\S]*_weaponNodeOwnershipBlockEngaged[\s\S]*_firingHandIsLeft[\s\S]*isManualOwnershipActive\(\)[\s\S]*contextFlags[\s\S]*physicalPrimaryHand[\s\S]*RecoilHandMask::Primary[\s\S]*RecoilDelivery::Direct[\s\S]*nativeKickLocal' `
-    'ROCK may consume recoil only for a valid active physical-left firing carry and must preserve the native kick directly.'
+    '_weaponNodeOwnershipBlockEngaged[\s\S]*_firingHandIsLeft[\s\S]*isManualOwnershipActive\(\)[\s\S]*RecoilHandMask::Primary[\s\S]*RecoilDelivery::Direct[\s\S]*nativeKickLocal' `
+    'ROCK may consume recoil only for its active physical-left firing carry and must preserve the validated native kick directly.'
 Require-Text $Root 'src/ROCKMain.cpp' `
     'registerWeaponHandRecoilController\s*!=\s*nullptr[\s\S]*unregisterWeaponHandRecoilController\s*!=\s*nullptr' `
     'ROCK startup must fail closed when the matching V5 recoil-controller table is absent.'
+Require-Text $hfrikRoot 'src/api/FRIKApi.h' `
+    'struct\s+RecoilSample[\s\S]*structSize[\s\S]*reserved0\[3\][\s\S]*nativeKickLocal[\s\S]*sizeof\(RecoilSample\)\s*==\s*112' `
+    'hFRIK must expose only the solve-critical native kick sample.'
+Reject-Text $hfrikRoot 'src/api/FRIKApi.h' `
+    'RecoilContextFlag|contextFlags|physicalPrimaryHand|std::uint64_t\s+sequence|float\s+deltaSeconds' `
+    'hFRIK must not mirror game-derived context or redundant frame bookkeeping through recoil V5.'
+Reject-Text $Root 'src/api/FRIKApi.h' `
+    'RecoilContextFlag|contextFlags|physicalPrimaryHand|std::uint64_t\s+sequence|float\s+deltaSeconds' `
+    'ROCK must mirror the minimal solve-critical recoil sample.'
+Reject-Text $hfrikRoot 'src/skeleton/Skeleton.cpp' `
+    '_weaponHandRecoilSequence|RecoilContextFlag|physicalPrimaryHand' `
+    'hFRIK must keep physical-hand routing internal without rebuilding removed public recoil metadata.'
 Reject-Text $hfrikRoot 'src/api/FRIKApi.h' `
     'RecoilState|getWeaponHandRecoilState' `
     'hFRIK V5 must not expose unused recoil telemetry.'
