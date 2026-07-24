@@ -103,6 +103,8 @@ int main()
     ok = ok && offsetof(RockProviderApi, clearNativeAnimationRuntimeV1) == 81 * sizeof(void*);
     ok = ok && offsetof(RockProviderApi, setTouchGrabTargetsForScopeV1) == 82 * sizeof(void*);
     ok = ok && offsetof(RockProviderApi, requestTouchGrabYieldV1) == 85 * sizeof(void*);
+    ok = ok && offsetof(RockProviderWeaponPartGripStateV1, authoredSupportGrip) == 224;
+    ok = ok && offsetof(RockProviderWeaponPartPoseV1, actionRole) == 44;
     ok = ok && ROCK_PROVIDER_API_V1_NATIVE_ANIMATION_RUNTIME_CLEAR_TABLE_BYTES == 82 * sizeof(void*);
     ok = ok && ROCK_PROVIDER_API_V1_TOUCH_GRAB_TARGETS_TABLE_BYTES == sizeof(RockProviderApi);
     return ok ? 0 : 1;

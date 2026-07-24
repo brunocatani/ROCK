@@ -331,6 +331,10 @@ Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' 'originalMotion
     'A keyframed mechanism must enter dynamic motion only inside the dedicated mechanism path.'
 Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' 'originalMotionClass\s*==[\s\S]{0,180}Keyframed[\s\S]{0,180}SetMotionType\([\s\S]{0,120}KEYFRAMED' `
     'Mechanism release must restore the exact keyframed motion class.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'outReport\.authoredSupportGrip\s*=\s*grip\.authoredSupportGrip' `
+    'The public part-grip report must preserve ROCK-authored support-grip provenance.'
+Require-Text 'src/physics-interaction/core/PhysicsInteractionProvider.inl' 'outState\.authoredSupportGrip[\s\S]{0,120}report\.authoredSupportGrip[\s\S]*out\.actionRole[\s\S]{0,120}descriptor\.semantic\.actionRole' `
+    'ROCK V1 must publish exact authored-grip provenance and semantic action roles without consumer inference.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'tryTargetClass\([\s\S]{0,180}TargetClass::[\s\S]{0,80}Explicit\)\s*\|\|[\s\S]{0,180}tryTargetClass\([\s\S]{0,180}TargetClass::[\s\S]{0,80}Wildcard\)' `
     'Exact mechanism targets must be attempted before wildcard fixed-surface targets.'
 Require-Text 'src/physics-interaction/object/PhysicsBodyClassifier.h' 'motionType\s*==\s*BodyMotionType::Static[\s\S]{0,120}BodyRejectReason::StaticMotion' `

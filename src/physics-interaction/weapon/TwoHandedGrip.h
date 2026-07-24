@@ -239,6 +239,7 @@ namespace rock
         weapon_part_grip_report_policy::HandGripKind kind{ weapon_part_grip_report_policy::HandGripKind::None };
         bool active{ false };
         bool attachOnly{ false };
+        bool authoredSupportGrip{ false };
         std::uint64_t gripSequence{ 0 };
         std::uint64_t weaponGenerationKey{ 0 };
         std::uint32_t bodyId{ 0x7FFF'FFFFu };

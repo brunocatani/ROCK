@@ -106,6 +106,8 @@
             outState.gripKind = static_cast<::rock::provider::RockProviderWeaponPartGripKindV1>(report.kind);
             outState.active = report.active ? 1u : 0u;
             outState.attachOnly = report.attachOnly ? 1u : 0u;
+            outState.authoredSupportGrip =
+                report.authoredSupportGrip ? 1u : 0u;
             outState.gripSequence = report.gripSequence;
             outState.weaponGenerationKey = report.weaponGenerationKey;
             outState.bodyId = report.bodyId;
@@ -745,6 +747,8 @@
                 continue;
             }
             out.flags |= static_cast<std::uint32_t>(Flag::Valid);
+            out.actionRole = static_cast<std::uint32_t>(
+                descriptor.semantic.actionRole);
             auto* sourceNode = reinterpret_cast<RE::NiAVObject*>(
                 descriptor.sourceRootAddress);
             if (!sourceNode || !finiteNiTransform(sourceNode->world)) {

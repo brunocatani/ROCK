@@ -3561,6 +3561,7 @@ namespace rock
         }
 
         outReport.attachOnly = grip.attachOnly;
+        outReport.authoredSupportGrip = grip.authoredSupportGrip;
         outReport.gripSequence = grip.gripSequence;
         outReport.weaponGenerationKey = grip.weaponGenerationKey != 0 ? grip.weaponGenerationKey : _activeWeaponGenerationKey;
         outReport.bodyId = grip.contactBodyId;
