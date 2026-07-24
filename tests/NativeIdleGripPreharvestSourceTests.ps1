@@ -167,7 +167,7 @@ Reject-Text 'src/physics-interaction/weapon/LooseWeaponGripZone.cpp' `
     'native_idle_grip_preharvest::observeCandidate' `
     'Native preharvest scheduling must not become coupled to grip-zone projection or hover-haptic feature gates again.'
 Reject-Text $source `
-    'PAPER|PAPERRedux|PAPER_Redux' `
+    'PAPER' `
     'The narrow ROCK proof must not acquire a PAPER dependency.'
 
 if ($failures.Count -gt 0) {

@@ -2979,7 +2979,7 @@ namespace rock
          * Upgrade twin of providerPartAuthorityStillCurrent: a support grip
          * captured WITHOUT provider authority whose own part NOW resolves to
          * a matched provider target — a consumer armed its whitelist while
-         * the hand was already holding the part (PAPER_Redux: pulling the
+         * the hand was already holding the part (PAPER_Toolkit: pulling the
          * trigger mid-hold switches an authority grab to attach-only). The
          * caller releases the grip; the still-held grab recaptures within a
          * couple of frames under the new resolution, through the same

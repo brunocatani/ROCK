@@ -67,7 +67,7 @@ namespace
                       RockProviderNativeAnimationAuthorityStatusFlagV1::CaptureFault) ==
                   (1u << 6));
     // Public V1 part-kind / action-role values are a wire contract for
-    // external consumers (PAPER_Redux); pin every enumerator to the internal
+    // external consumers (PAPER_Toolkit); pin every enumerator to the internal
     // classification enums so a reorder breaks this build, not a consumer.
     static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartKindV1::Receiver) == static_cast<std::uint32_t>(WeaponPartKind::Receiver));
     static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartKindV1::Barrel) == static_cast<std::uint32_t>(WeaponPartKind::Barrel));
