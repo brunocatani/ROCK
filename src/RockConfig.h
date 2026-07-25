@@ -450,6 +450,11 @@ namespace rock
         float rockGrabPocketRadiusGameUnits = 9.0f;
         float rockGrabSeatDepthMaxGameUnits = 30.0f;
         float rockGrabSeatDepthFootprintRadiusGameUnits = 10.0f;
+        // Penetration backstop only, and only for plate-shaped objects: a
+        // narrow footprint bounds detectable tilt penetration to r*sin(theta),
+        // which is why the seating radius above cannot double as the safety
+        // check. Irregular shapes keep the seating radius.
+        float rockGrabSeatPenetrationBackstopFootprintRadiusGameUnits = 6.0f;
         float rockGrabSeatDepthSkinGameUnits = 0.5f;
         float rockGrabGripInsetGameUnits = 2.0f;
         float rockGrabGripMaxInsetGameUnits = 6.0f;

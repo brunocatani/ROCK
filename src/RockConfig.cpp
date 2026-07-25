@@ -505,6 +505,7 @@ namespace rock
         rockGrabPocketRadiusGameUnits = 9.0f;
         rockGrabSeatDepthMaxGameUnits = 30.0f;
         rockGrabSeatDepthFootprintRadiusGameUnits = 10.0f;
+        rockGrabSeatPenetrationBackstopFootprintRadiusGameUnits = 6.0f;
         rockGrabSeatDepthSkinGameUnits = 0.5f;
         rockGrabGripInsetGameUnits = 2.0f;
         rockGrabGripMaxInsetGameUnits = 6.0f;
@@ -1823,6 +1824,16 @@ namespace rock
             rockGrabSeatDepthFootprintRadiusGameUnits > 30.0f) {
             ROCK_LOG_WARN(Config, "Invalid fGrabSeatDepthFootprintRadiusGameUnits={} -- using 10.0", rockGrabSeatDepthFootprintRadiusGameUnits);
             rockGrabSeatDepthFootprintRadiusGameUnits = 10.0f;
+        }
+        rockGrabSeatPenetrationBackstopFootprintRadiusGameUnits =
+            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabSeatPenetrationBackstopFootprintRadiusGameUnits",
+                rockGrabSeatPenetrationBackstopFootprintRadiusGameUnits));
+        if (!std::isfinite(rockGrabSeatPenetrationBackstopFootprintRadiusGameUnits) ||
+            rockGrabSeatPenetrationBackstopFootprintRadiusGameUnits < 1.0f ||
+            rockGrabSeatPenetrationBackstopFootprintRadiusGameUnits > 30.0f) {
+            ROCK_LOG_WARN(Config, "Invalid fGrabSeatPenetrationBackstopFootprintRadiusGameUnits={} -- using 6.0",
+                rockGrabSeatPenetrationBackstopFootprintRadiusGameUnits);
+            rockGrabSeatPenetrationBackstopFootprintRadiusGameUnits = 6.0f;
         }
         rockGrabSeatDepthSkinGameUnits = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabSeatDepthSkinGameUnits", rockGrabSeatDepthSkinGameUnits));
         if (!std::isfinite(rockGrabSeatDepthSkinGameUnits) || rockGrabSeatDepthSkinGameUnits < 0.0f || rockGrabSeatDepthSkinGameUnits > 5.0f) {
