@@ -40,4 +40,12 @@ namespace rock::character_controller_runtime
     // arbitrary function, while a wrong member offset only yields implausible floats that the
     // caller's plausibility gate rejects. Fails closed, SEH-guarded, per-hop null gates.
     bool tryGetPlayerRoomAnchorPositionGameUnits(RE::NiPoint3& outPositionGameUnits) noexcept;
+
+    // Player ACTOR world position (TESObjectREFR::data.location), GAME UNITS -- the second room
+    // anchor candidate for the jag correction. Unlike the controller position above this advances on
+    // the game/render update rather than inside the physics step, which is the side of the clock
+    // boundary the camera follows. Which of the two actually carries the camera's per-frame staircase
+    // is decided by logged data, not by argument: both are sampled and logged every flush while
+    // iGrabLocomotionJagAnchor selects the one that drives the correction.
+    bool tryGetPlayerActorPositionGameUnits(RE::NiPoint3& outPositionGameUnits) noexcept;
 }

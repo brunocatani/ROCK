@@ -70,6 +70,27 @@ namespace rock::character_controller_runtime
         return ok;
     }
 
+    bool tryGetPlayerActorPositionGameUnits(RE::NiPoint3& outPositionGameUnits) noexcept
+    {
+        outPositionGameUnits = RE::NiPoint3{};
+        bool ok = false;
+
+        __try {
+            auto* player = RE::PlayerCharacter::GetSingleton();
+            if (player) {
+                const RE::NiPoint3 position = player->GetPosition();
+                if (std::isfinite(position.x) && std::isfinite(position.y) && std::isfinite(position.z)) {
+                    outPositionGameUnits = position;
+                    ok = true;
+                }
+            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            ok = false;
+        }
+
+        return ok;
+    }
+
     bool tryGetPlayerRoomAnchorPositionGameUnits(RE::NiPoint3& outPositionGameUnits) noexcept
     {
         outPositionGameUnits = RE::NiPoint3{};

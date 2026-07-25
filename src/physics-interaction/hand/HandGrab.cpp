@@ -5275,6 +5275,10 @@ namespace rock
          */
         _grabJagPreviousAnchorGameUnits = {};
         _grabJagLastCorrectionGameUnits = {};
+        _grabJagActorAnchorGameUnits = {};
+        _grabJagControllerAnchorGameUnits = {};
+        _grabJagActorAnchorValid = false;
+        _grabJagControllerAnchorValid = false;
         _grabJagLastQueuedSequence = 0;
         _grabJagAnchorReadFailures = 0;
         _grabJagClampCount = 0;
@@ -12755,12 +12759,33 @@ namespace rock
         }
         _grabJagLastQueuedSequence = _grabAuthorityProxyQueuedSequence;
 
-        RE::NiPoint3 anchor{};
-        if (!character_controller_runtime::tryGetPlayerRoomAnchorPositionGameUnits(anchor)) {
+        /*
+         * BOTH anchor candidates are sampled every flush regardless of which
+         * one drives the correction, and both are published to the probe. The
+         * first session showed the controller anchor delivering only 6-15% of
+         * the measured artifact -- consistent with it living inside the physics
+         * step, so its delta and v_room*dt share a clock and cancel. Which
+         * anchor actually carries the camera's per-frame staircase is settled
+         * by comparing the logged deltas against the logged camera, not by
+         * argument; sampling both means one session answers it even if the
+         * active selection is the wrong one.
+         */
+        RE::NiPoint3 actorAnchor{};
+        RE::NiPoint3 controllerAnchor{};
+        _grabJagActorAnchorValid = character_controller_runtime::tryGetPlayerActorPositionGameUnits(actorAnchor);
+        _grabJagControllerAnchorValid =
+            character_controller_runtime::tryGetPlayerRoomAnchorPositionGameUnits(controllerAnchor);
+        _grabJagActorAnchorGameUnits = actorAnchor;
+        _grabJagControllerAnchorGameUnits = controllerAnchor;
+
+        const bool useController = g_rockConfig.rockGrabLocomotionJagAnchor == 1;
+        const RE::NiPoint3 anchor = useController ? controllerAnchor : actorAnchor;
+        if (!(useController ? _grabJagControllerAnchorValid : _grabJagActorAnchorValid)) {
             if (++_grabJagAnchorReadFailures % kReadFailureTripCount == 0) {
                 ROCK_LOG_WARN(Hand,
-                    "{} hand LOCOMOTION JAG skipped: room anchor unreadable for {} frames",
+                    "{} hand LOCOMOTION JAG skipped: room anchor {} unreadable for {} frames",
                     handName(),
+                    useController ? "controller" : "actor",
                     _grabJagAnchorReadFailures);
             }
             invalidate();
@@ -12774,8 +12799,8 @@ namespace rock
          * a wrong member or a missed unit conversion must degrade into a logged
          * skip, never a garbage displacement of the held object.
          */
-        if (auto* player = RE::PlayerCharacter::GetSingleton()) {
-            const RE::NiPoint3 actor = player->GetPosition();
+        if (useController && _grabJagActorAnchorValid) {
+            const RE::NiPoint3& actor = actorAnchor;
             const RE::NiPoint3 offset{ anchor.x - actor.x, anchor.y - actor.y, anchor.z - actor.z };
             if (!std::isfinite(offset.x) || !std::isfinite(offset.y) || !std::isfinite(offset.z) ||
                 lengthSquared(offset) > kMaxAnchorToActorGameUnits * kMaxAnchorToActorGameUnits) {
@@ -13606,6 +13631,10 @@ namespace rock
         out.flushSequence = _grabAuthorityProxyFlushSequence;
         out.jagCorrectionGameUnits =
             _grabJagLastApplied ? vectorMagnitude(_grabJagLastCorrectionGameUnits) : -1.0f;
+        out.jagActorAnchorGameUnits = _grabJagActorAnchorGameUnits;
+        out.jagControllerAnchorGameUnits = _grabJagControllerAnchorGameUnits;
+        out.jagActorAnchorValid = _grabJagActorAnchorValid;
+        out.jagControllerAnchorValid = _grabJagControllerAnchorValid;
         return true;
     }
 

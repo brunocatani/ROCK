@@ -95,6 +95,12 @@ namespace rock
         // validation channel: it must be ~0 standing and ~0.4-0.65 gu at
         // sprint, and must never sit at the clamp.
         float jagCorrectionGameUnits = -1.0f;
+        // Both room-anchor candidates as sampled at the flush, so one session
+        // decides which one carries the camera's per-frame staircase.
+        RE::NiPoint3 jagActorAnchorGameUnits{};
+        RE::NiPoint3 jagControllerAnchorGameUnits{};
+        bool jagActorAnchorValid = false;
+        bool jagControllerAnchorValid = false;
     };
 
     struct GrabContactPatchDebugSnapshot
@@ -1032,6 +1038,12 @@ namespace rock
          */
         RE::NiPoint3 _grabJagPreviousAnchorGameUnits{};
         RE::NiPoint3 _grabJagLastCorrectionGameUnits{};
+        // Both anchor candidates, sampled every flush for the probe regardless
+        // of which one is selected. Delete the loser once the data decides.
+        RE::NiPoint3 _grabJagActorAnchorGameUnits{};
+        RE::NiPoint3 _grabJagControllerAnchorGameUnits{};
+        bool _grabJagActorAnchorValid = false;
+        bool _grabJagControllerAnchorValid = false;
         std::uint64_t _grabJagLastQueuedSequence = 0;
         std::uint32_t _grabJagAnchorReadFailures = 0;
         std::uint32_t _grabJagClampCount = 0;

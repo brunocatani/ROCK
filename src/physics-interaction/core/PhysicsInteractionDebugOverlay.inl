@@ -181,6 +181,32 @@
                 renderNodeBodyDistance,
                 rotStepRenderNode,
                 rotRenderNodeVsBody);
+
+            /*
+             * Anchor decision data. The jag correction needs the room anchor
+             * the CAMERA follows; the first session's controller anchor
+             * delivered only 6-15% of the measured artifact, consistent with
+             * its delta and v_room*dt sharing the physics clock and cancelling.
+             * Both candidates are logged every frame beside the camera (already
+             * in OVERLAY_POINT above), so differencing them offline names the
+             * anchor whose per-frame step actually tracks the camera's
+             * staircase -- regardless of which one drove the correction.
+             */
+            ROCK_LOG_DEBUG(Hand,
+                "{} JAG_ANCHOR: t={}us flushSeq={} active={} actorOk={} actor=({:.4f},{:.4f},{:.4f}) ccOk={} cc=({:.4f},{:.4f},{:.4f}) corr={:.4f}",
+                hand.handName(),
+                probeMicroseconds,
+                sample.flushSequence,
+                g_rockConfig.rockGrabLocomotionJagAnchor == 1 ? "controller" : "actor",
+                sample.jagActorAnchorValid ? "y" : "n",
+                sample.jagActorAnchorGameUnits.x,
+                sample.jagActorAnchorGameUnits.y,
+                sample.jagActorAnchorGameUnits.z,
+                sample.jagControllerAnchorValid ? "y" : "n",
+                sample.jagControllerAnchorGameUnits.x,
+                sample.jagControllerAnchorGameUnits.y,
+                sample.jagControllerAnchorGameUnits.z,
+                sample.jagCorrectionGameUnits);
         };
 
         if (probeRight) {

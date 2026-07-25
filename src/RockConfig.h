@@ -372,6 +372,16 @@ namespace rock
         bool rockGrabLocomotionJagCorrection = false;
         float rockGrabLocomotionJagMaxCorrectionGameUnits = 2.0f;
         float rockGrabLocomotionJagGain = 1.0f;
+        /*
+         * Room anchor: 0 = player actor position (game/render update), 1 =
+         * character-controller position (inside the physics step). The first
+         * session with the controller anchor delivered only 6-15% of the
+         * measured artifact, consistent with both correction terms sharing the
+         * physics clock and cancelling. Both anchors are sampled and logged
+         * every flush regardless of this setting; REMOVE the loser and this key
+         * once the logged deltas name which one carries the camera's staircase.
+         */
+        std::uint32_t rockGrabLocomotionJagAnchor = 0;
         // Opt-in bounded predictor-corrector on the commanded grab target:
         // smooths the commanded VELOCITY (removing the phase lock's accepted
         // substep-dt quantization -- the measured stick-locomotion along-track
