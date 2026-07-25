@@ -1385,7 +1385,7 @@ namespace rock
         return true;
     }
 
-    bool Hand::tryBuildSavedGrabCapture(const RE::NiTransform& proxyWorld, saved_grab_capture::HandCapture& outCapture) const
+    bool Hand::tryBuildSavedGrabCapture(RE::hknpWorld* world, const RE::NiTransform& proxyWorld, saved_grab_capture::HandCapture& outCapture) const
     {
         outCapture = {};
         auto* refr = getHeldRef();
@@ -1487,6 +1487,56 @@ namespace rock
         }
 
         /*
+         * Centre of mass from the held body's Havok motion. Offset authority is
+         * this binary's own reflection table: hknpMotion member
+         * 'centerOfMassAndMassFactor' at +0x00 (verified 2026-07-25). Mass
+         * distribution cannot be recovered from the render mesh, so this is
+         * captured as a first-class field rather than inferred later from the
+         * body frame.
+         *
+         * Gated, not trusted: a rigid body's centre of mass is always inside
+         * its own convex hull, so a COM outside the mesh bounds means the read
+         * is wrong. That flags the record instead of quietly feeding a bad
+         * label into a fit.
+         */
+        if (world && mesh.valid) {
+            if (auto* motion = havok_runtime::getBodyMotion(world, getSavedObjectState().bodyId)) {
+                const RE::NiPoint3 comWorld = hkVectorToNiPoint(motion->position);
+                if (std::isfinite(comWorld.x) && std::isfinite(comWorld.y) && std::isfinite(comWorld.z)) {
+                    const RE::NiPoint3 comLocal = transform_math::worldPointToLocal(meshNode->world, comWorld);
+                    auto& physics = outCapture.physics;
+                    physics.hasCenterOfMass = true;
+                    physics.comObjectLocal[0] = comLocal.x;
+                    physics.comObjectLocal[1] = comLocal.y;
+                    physics.comObjectLocal[2] = comLocal.z;
+
+                    const float comAxis[3]{ comLocal.x, comLocal.y, comLocal.z };
+                    bool insideBounds = true;
+                    for (std::size_t axis = 0; axis < 3; ++axis) {
+                        const float minBound = mesh.aabbMinObjectLocal[axis];
+                        const float maxBound = mesh.aabbMaxObjectLocal[axis];
+                        const float margin = (std::max)(0.25f * (maxBound - minBound), 0.5f);
+                        if (comAxis[axis] < minBound - margin || comAxis[axis] > maxBound + margin) {
+                            insideBounds = false;
+                            break;
+                        }
+                    }
+                    physics.comTrusted = insideBounds;
+                    if (!insideBounds) {
+                        ROCK_LOG_WARN(Hand,
+                            "{} saved grab capture: motion centre of mass ({:.2f},{:.2f},{:.2f}) falls outside the mesh bounds "
+                            "([{:.2f},{:.2f}] [{:.2f},{:.2f}] [{:.2f},{:.2f}]) -> recorded untrusted",
+                            handName(),
+                            comLocal.x, comLocal.y, comLocal.z,
+                            mesh.aabbMinObjectLocal[0], mesh.aabbMaxObjectLocal[0],
+                            mesh.aabbMinObjectLocal[1], mesh.aabbMaxObjectLocal[1],
+                            mesh.aabbMinObjectLocal[2], mesh.aabbMaxObjectLocal[2]);
+                    }
+                }
+            }
+        }
+
+        /*
          * Hand geometry: the palm and fingertip frames the collider set is
          * actually driving this frame, not a reconstruction. These are the
          * volumes the object must stay out of, so a solver fitted here is
@@ -1503,21 +1553,19 @@ namespace rock
             outCapture.palm.radius = twins.palm.radius;
             outCapture.palm.convexRadius = twins.palm.convexRadius;
         }
-        static constexpr std::array<const char*, saved_grab_capture::kFingerCount> kFingertipRoles{
-            "fingertipThumb", "fingertipIndex", "fingertipMiddle", "fingertipRing", "fingertipPinky"
-        };
-        for (std::size_t finger = 0; finger < twins.fingertips.size() && finger < kFingertipRoles.size(); ++finger) {
-            const auto& slot = twins.fingertips[finger];
-            if (!slot.valid) {
+        // Every driven segment, not only the fingertips: the non-penetration
+        // constraint a solver is fitted under applies to the whole hand volume.
+        for (const auto& segment : _boneColliders.segmentColliderFrames()) {
+            if (!segment.valid) {
                 continue;
             }
             saved_grab_capture::ColliderSlot capture{};
             capture.valid = true;
-            capture.role = kFingertipRoles[finger];
-            capture.frameProxyLocal = inProxyLocal(slot.target);
-            capture.length = slot.length;
-            capture.radius = slot.radius;
-            capture.convexRadius = slot.convexRadius;
+            capture.role = hand_collider_semantics::roleName(segment.role);
+            capture.frameProxyLocal = inProxyLocal(segment.target);
+            capture.length = segment.length;
+            capture.radius = segment.radius;
+            capture.convexRadius = segment.convexRadius;
             outCapture.fingerSegments.push_back(std::move(capture));
         }
 

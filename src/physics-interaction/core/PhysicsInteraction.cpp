@@ -6340,7 +6340,7 @@ namespace rock
          * owns the body-mass reader and the form identity.
          */
         saved_grab_capture::SavedGrabCaptureFile capture{};
-        if (hand.tryBuildSavedGrabCapture(proxyWorld, capture.capture)) {
+        if (hand.tryBuildSavedGrabCapture(hknpWorld, proxyWorld, capture.capture)) {
             capture.object = formRef;
             capture.objectName = file.objectName;
             capture.hand = isLeft ? "left" : "right";
@@ -6365,11 +6365,13 @@ namespace rock
 
             saved_grab_offset::saveCapture(capture);
             ROCK_LOG_INFO(Hand,
-                "Saved grab capture for {:08X} ({} hand): triangles={} mass={:.2f} shape={} seatReasons=[align={} roll={} depth={} backstop={}]",
+                "Saved grab capture for {:08X} ({} hand): triangles={} colliders={} mass={:.2f} com={} shape={} seatReasons=[align={} roll={} depth={} backstop={}]",
                 baseForm->GetFormID(),
                 isLeft ? "left" : "right",
                 capture.capture.mesh.triangleCount,
+                capture.capture.fingerSegments.size() + (capture.capture.palm.valid ? 1u : 0u),
                 capture.capture.physics.mass,
+                capture.capture.physics.hasCenterOfMass ? (capture.capture.physics.comTrusted ? "trusted" : "UNTRUSTED") : "none",
                 capture.capture.seat.shapeClass,
                 capture.capture.seat.alignmentReason,
                 capture.capture.seat.rollReason,

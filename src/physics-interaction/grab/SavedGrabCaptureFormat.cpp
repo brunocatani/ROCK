@@ -74,6 +74,9 @@ namespace rock::saved_grab_capture
                 { "bodyId", physics.bodyId },
                 { "mass", physics.mass },
                 { "bodyInObjectNode", frameToJson(physics.bodyInObjectNode) },
+                { "hasCenterOfMass", physics.hasCenterOfMass },
+                { "comTrusted", physics.comTrusted },
+                { "comObjectLocal", floatArrayToJson(physics.comObjectLocal) },
             };
         }
 

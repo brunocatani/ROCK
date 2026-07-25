@@ -823,6 +823,7 @@ namespace rock
         _latestPalmAnchorTarget = {};
         _hasLatestPalmAnchorTarget = false;
         _dynamicTwinTargets = {};
+        _segmentFrames = {};
         _canonicalDynamicTwinDimensions = {};
         _cachedSkeleton = nullptr;
         _cachedBoneTree = nullptr;
@@ -850,6 +851,7 @@ namespace rock
         _latestPalmAnchorTarget = {};
         _hasLatestPalmAnchorTarget = false;
         _dynamicTwinTargets = {};
+        _segmentFrames = {};
         _canonicalDynamicTwinDimensions = {};
         _cachedSkeleton = nullptr;
         _cachedBoneTree = nullptr;
@@ -935,6 +937,8 @@ namespace rock
             queueBodyTarget(palmAnchorBody, anchorFrame.transform, deltaTime, _palmAnchorDriveState, _palmAnchorPublicationIndex);
         }
 
+        PublishedSegmentFrames segmentFrames{};
+        std::size_t publishedSegmentCount = 0;
         for (auto& instance : _bodies) {
             if (!instance.body.isValid()) {
                 continue;
@@ -948,9 +952,19 @@ namespace rock
                         publishTwinSlot(twinTargets.fingertips[fingerIndex], frame);
                     }
                 }
+                if (publishedSegmentCount < segmentFrames.size()) {
+                    auto& published = segmentFrames[publishedSegmentCount++];
+                    published.valid = true;
+                    published.role = instance.role;
+                    published.target = frame.transform;
+                    published.length = frame.length;
+                    published.radius = frame.radius;
+                    published.convexRadius = frame.convexRadius;
+                }
                 queueBodyTarget(instance.body, frame.transform, deltaTime, instance.driveState, instance.publicationIndex);
             }
         }
+        _segmentFrames = segmentFrames;
 
         dynamic_hand_twin::applyCanonicalHandDimensions(
             twinTargets,

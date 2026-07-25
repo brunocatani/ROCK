@@ -594,6 +594,7 @@ namespace rock
          * which owns them. Frame thread only; one-shot on the save press.
          */
         bool tryBuildSavedGrabCapture(
+            RE::hknpWorld* world,
             const RE::NiTransform& proxyWorld,
             saved_grab_capture::HandCapture& outCapture) const;
         std::uint32_t getHandColliderBodyCount() const { return _boneColliders.getBodyCount(); }

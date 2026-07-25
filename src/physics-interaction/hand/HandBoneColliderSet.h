@@ -70,6 +70,28 @@ namespace rock
          * hull the keyframed twin uses for those dimensions.
          */
         const dynamic_hand_twin::TwinTargets& dynamicTwinTargets() const { return _dynamicTwinTargets; }
+
+        struct PublishedSegmentFrame
+        {
+            bool valid = false;
+            hand_collider_semantics::HandColliderRole role = hand_collider_semantics::HandColliderRole::PalmFace;
+            RE::NiTransform target{};
+            float length = 0.0f;
+            float radius = 0.0f;
+            float convexRadius = 0.0f;
+        };
+        using PublishedSegmentFrames =
+            std::array<PublishedSegmentFrame, hand_collider_semantics::kHandSegmentColliderBodyCountPerHand>;
+
+        /*
+         * Every driven segment collider frame from the last update, not only
+         * the palm and fingertips the dynamic twins mirror. Consumers that
+         * reason about the hand as a VOLUME - an object may not end up inside
+         * ANY segment, not just the two published for twinning - need the
+         * whole set. Main-thread publication, same contract as
+         * dynamicTwinTargets().
+         */
+        const PublishedSegmentFrames& segmentColliderFrames() const { return _segmentFrames; }
         RE::hknpShape* buildDynamicTwinShape(const dynamic_hand_twin::TwinSlotFrame& slotFrame, bool isPalm) const;
 
     private:
@@ -130,6 +152,7 @@ namespace rock
         RE::NiTransform _latestPalmAnchorTarget{};
         bool _hasLatestPalmAnchorTarget = false;
         dynamic_hand_twin::TwinTargets _dynamicTwinTargets{};
+        PublishedSegmentFrames _segmentFrames{};
         dynamic_hand_twin::TwinTargets _canonicalDynamicTwinDimensions{};
         PhysicsCallbackQuiescenceGate* _physicsCallbackGate = nullptr;
         const void* _cachedSkeleton = nullptr;

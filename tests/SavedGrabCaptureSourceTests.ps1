@@ -54,13 +54,20 @@ Require-Text 'src/physics-interaction/hand/HandGrab.cpp' '_grabFrame\.seatDiagno
 
 # --- Save gesture wiring ------------------------------------------------------
 
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'saved_grab_offset::save\(file\);[\s\S]*tryBuildSavedGrabCapture\(proxyWorld, capture\.capture\)[\s\S]*saved_grab_offset::saveCapture\(capture\)' 'The save gesture must write the ground-truth capture alongside the offset, or a verified pose arrives with no context to score it against.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'saved_grab_offset::save\(file\);[\s\S]*tryBuildSavedGrabCapture\(hknpWorld, proxyWorld, capture\.capture\)[\s\S]*saved_grab_offset::saveCapture\(capture\)' 'The save gesture must write the ground-truth capture alongside the offset, or a verified pose arrives with no context to score it against.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'readGrabEventBodyMass\(hknpWorld, heldBodyId\)' 'The capture must record the held body mass: mass is not derivable from the render mesh, and balance in the palm is one of the terms a pose solver has to explain.'
 
 # --- Write-only contract ------------------------------------------------------
 
 Reject-Text 'src/physics-interaction/grab/SavedGrabCaptureFormat.h' 'bool parse\(' 'Captures are write-only ground-truth records consumed offline; adding a runtime parse path would make them load-bearing for gameplay and put their size on the boot path.'
-Require-Text 'src/physics-interaction/grab/SavedGrabCaptureFormat.h' 'must NOT be verified against the FO4VR binary|has NOT been verified against the FO4VR binary' 'The physics capture must keep its unverified-centre-of-mass caveat: the Havok body frame is recorded as raw data and must not be read as a COM until the layout is confirmed from disassembly.'
+Require-Text 'src/physics-interaction/grab/SavedGrabCaptureFormat.h' "hkClassMember record at 142e93930 names hknpMotion\s*\*?\s*member 'centerOfMassAndMassFactor' at \+0x00" 'The centre-of-mass field must cite its offset authority in-place (this binary''s own hknpMotion reflection record), so a future reader can re-verify it instead of trusting a bare offset.'
+Require-Text 'src/physics-interaction/grab/SavedGrabCaptureFormat.h' 'bool comTrusted' 'The capture must carry a comTrusted flag: a wrong motion offset has to degrade into a flagged record, never a silently wrong label that gets fitted against.'
+
+# --- Hand volume and centre of mass ------------------------------------------
+
+Require-Text 'src/physics-interaction/hand/HandBoneColliderSet.cpp' 'PublishedSegmentFrames segmentFrames\{\}[\s\S]*published\.role = instance\.role;[\s\S]*_segmentFrames = segmentFrames;' 'The collider set must publish EVERY driven segment frame, not just the palm and fingertips the twins mirror: an object may not end up inside any segment, so the whole hand volume has to be observable.'
+Require-Text 'src/physics-interaction/hand/Hand.cpp' 'bool Hand::tryBuildSavedGrabCapture[\s\S]*_boneColliders\.segmentColliderFrames\(\)' 'The capture must record the full driven hand volume from the published segment frames.'
+Require-Text 'src/physics-interaction/hand/Hand.cpp' 'bool Hand::tryBuildSavedGrabCapture[\s\S]*getBodyMotion\(world, getSavedObjectState\(\)\.bodyId\)[\s\S]*physics\.comTrusted = insideBounds;[\s\S]*ROCK_LOG_WARN' 'The centre of mass must come from the held body motion and be gated on the mesh bounds, loudly flagging an implausible read - a rigid body COM is always inside its own hull, so outside means the offset is wrong.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'Saved grab capture boundary failed:'

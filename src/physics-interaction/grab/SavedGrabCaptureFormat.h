@@ -98,14 +98,29 @@ namespace rock::saved_grab_capture
         std::uint32_t bodyId{ 0 };
         // As reported by the runtime body (readGrabEventBodyMass).
         float mass{ 0.0f };
-        /*
-         * Havok body frame relative to the object node. hknp motion frames are
-         * commonly centre-of-mass centred, which would make this the COM
-         * offset - but that has NOT been verified against the FO4VR binary.
-         * Recorded as raw data; do not interpret it as a centre of mass in a
-         * solver until the layout is confirmed from disassembly.
-         */
+        // Havok body frame relative to the object node, recorded as raw data.
         Frame bodyInObjectNode;
+        /*
+         * Centre of mass in OBJECT-LOCAL space, from the held body's Havok
+         * motion. Mass distribution is not derivable from the render mesh, and
+         * "does it balance in the palm" is one of the terms a pose solver has
+         * to explain, so this is a first-class field rather than an inference
+         * from bodyInObjectNode.
+         *
+         * Offset authority: this binary's OWN reflection table, verified
+         * 2026-07-25 - the hkClassMember record at 142e93930 names hknpMotion
+         * member 'centerOfMassAndMassFactor' at +0x00 (xyz = world COM, w =
+         * mass factor). Corroborated by the same table's +0x20 packed inertia
+         * and +0x40/+0x50 velocities, both of which ROCK already depends on at
+         * runtime.
+         *
+         * comTrusted is false when the value fails the mesh-bounds
+         * plausibility gate. A wrong offset must degrade into a flagged record,
+         * never a silently wrong label that gets fitted against.
+         */
+        bool hasCenterOfMass{ false };
+        bool comTrusted{ false };
+        float comObjectLocal[3]{ 0.0f, 0.0f, 0.0f };
     };
 
     /*
