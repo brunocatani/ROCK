@@ -164,27 +164,6 @@ namespace rock::weapon_visual_authority_math
 namespace rock::native_scope_camera_follow_math
 {
     /*
-     * FO4VR's native scope activation anchor lives outside the equipped
-     * weapon tree. hFRIK aligns that anchor to its own final one-hand weapon
-     * frame, then ROCK may replace the weapon world transform for physical
-     * firing/support grips. Preserve the already-calibrated camera-to-weapon
-     * relationship while applying the same rigid world-frame change; this
-     * keeps native scope entry at the visible optic instead of the stale
-     * one-hand pose.
-     */
-    template <class Transform>
-    [[nodiscard]] inline Transform followWeaponWorldChange(
-        const Transform& weaponWorldBefore,
-        const Transform& weaponWorldAfter,
-        const Transform& scopeCameraWorldBefore)
-    {
-        const Transform scopeCameraWeaponLocal = transform_math::composeTransforms(
-            transform_math::invertTransform(weaponWorldBefore),
-            scopeCameraWorldBefore);
-        return transform_math::composeTransforms(weaponWorldAfter, scopeCameraWeaponLocal);
-    }
-
-    /*
      * Equipped weapon geometry uses +Y as the muzzle/forward axis. The rear
      * plane of the assembled sight is therefore its minimum-Y face; centering
      * the other two axes places FO4VR's native activation camera at the
@@ -203,48 +182,27 @@ namespace rock::native_scope_camera_follow_math
     }
 
     /*
-     * Keep hFRIK's native-scope axis calibration, but replace its
-     * controller-derived translation with ROCK's assembled sight anchor.
-     * The resulting frame follows every ROCK weapon-authority change while
-     * remaining tied to the visible optic for both pre-entry cone detection
-     * and the open native overlay.
-     */
-    template <class Transform, class Point>
-    [[nodiscard]] inline Transform followWeaponWorldChangeFromSightAnchor(
-        const Transform& weaponWorldBefore,
-        const Transform& weaponWorldAfter,
-        const Transform& scopeCameraWorldBefore,
-        const Point& sightAnchorWeaponLocal)
-    {
-        Transform scopeCameraWeaponLocal = transform_math::composeTransforms(
-            transform_math::invertTransform(weaponWorldBefore),
-            scopeCameraWorldBefore);
-        scopeCameraWeaponLocal.translate = sightAnchorWeaponLocal;
-        return transform_math::composeTransforms(weaponWorldAfter, scopeCameraWeaponLocal);
-    }
-
-    /*
      * Capture the engine-specific NiCamera axis/scale calibration once in the
      * equipped weapon frame, while replacing its controller-derived position
-     * with the generated optic's ocular (rear-center) point. This value is the
-     * complete rigid scope frame: later hand-role and ScopeMenu changes may
-     * move the weapon, but must never recapture a different camera rotation.
+     * with the resolved scope point. This value is the complete rigid scope
+     * frame: later hand-role and ScopeMenu changes may move the weapon, but
+     * must never recapture a different camera rotation.
      */
     template <class Transform, class Point>
-    [[nodiscard]] inline Transform captureRigidSightFrameWeaponLocal(
+    [[nodiscard]] inline Transform captureRigidAnchorFrameWeaponLocal(
         const Transform& weaponWorld,
         const Transform& nativeScopeCameraWorld,
-        const Point& sightAnchorWeaponLocal)
+        const Point& anchorWeaponLocal)
     {
         Transform scopeFrameWeaponLocal = transform_math::composeTransforms(
             transform_math::invertTransform(weaponWorld),
             nativeScopeCameraWorld);
-        scopeFrameWeaponLocal.translate = sightAnchorWeaponLocal;
+        scopeFrameWeaponLocal.translate = anchorWeaponLocal;
         return scopeFrameWeaponLocal;
     }
 
     template <class Transform>
-    [[nodiscard]] inline Transform resolveRigidSightFrameWorld(
+    [[nodiscard]] inline Transform resolveRigidAnchorFrameWorld(
         const Transform& weaponWorld,
         const Transform& scopeFrameWeaponLocal)
     {

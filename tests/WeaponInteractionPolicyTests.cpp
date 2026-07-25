@@ -10,12 +10,14 @@
 #include "physics-interaction/weapon/WeaponPartRuntime.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
+#include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
 
 #include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 
 namespace
 {
@@ -163,30 +165,13 @@ int main()
         scopeBefore.translate = { 12.0f, 24.0f, 35.0f };
         TestTransform weaponAfter = weaponBefore;
         weaponAfter.translate = { 17.0f, 16.0f, 32.0f };
-
-        const TestTransform scopeAfter = rock::native_scope_camera_follow_math::followWeaponWorldChange(
-            weaponBefore,
-            weaponAfter,
-            scopeBefore);
-        ok &= expectNear("native scope camera follows ROCK weapon translation x", scopeAfter.translate.x, 19.0f);
-        ok &= expectNear("native scope camera follows ROCK weapon translation y", scopeAfter.translate.y, 20.0f);
-        ok &= expectNear("native scope camera follows ROCK weapon translation z", scopeAfter.translate.z, 37.0f);
-
         weaponAfter.rotate.entry[0][0] = 0.0f;
         weaponAfter.rotate.entry[0][1] = 1.0f;
         weaponAfter.rotate.entry[1][0] = -1.0f;
         weaponAfter.rotate.entry[1][1] = 0.0f;
-        const TestTransform rotatedScopeAfter = rock::native_scope_camera_follow_math::followWeaponWorldChange(
-            weaponBefore,
-            weaponAfter,
-            scopeBefore);
         const TestTransform relativeBefore = rock::transform_math::composeTransforms(
             rock::transform_math::invertTransform(weaponBefore),
             scopeBefore);
-        const TestTransform relativeAfter = rock::transform_math::composeTransforms(
-            rock::transform_math::invertTransform(weaponAfter),
-            rotatedScopeAfter);
-        ok &= expectTransformNear("native scope camera preserves calibrated weapon-local frame", relativeAfter, relativeBefore);
 
         const TestVector3 sightBoundsMin{ -4.0f, 8.0f, 7.0f };
         const TestVector3 sightBoundsMax{ 6.0f, 38.0f, 15.0f };
@@ -195,7 +180,100 @@ int main()
         ok &= expectNear("native scope sight anchor uses rear forward plane", sightAnchor.y, 8.0f);
         ok &= expectNear("native scope sight anchor centers vertical bounds", sightAnchor.z, 11.0f);
 
-        const TestTransform anchoredScopeAfter = rock::native_scope_camera_follow_math::followWeaponWorldChangeFromSightAnchor(weaponBefore, weaponAfter, scopeBefore, sightAnchor);
+        const TestVector3 firingGripWeaponLocal{ -2.0f, 3.0f, 1.0f };
+        const TestVector3 fallbackOffsetWeaponLocal{ 1.5f, 12.0f, 7.0f };
+        const auto generatedResolution =
+            rock::native_scope_sight_anchor_policy::resolve(
+                false,
+                true,
+                sightAnchor,
+                true,
+                firingGripWeaponLocal,
+                fallbackOffsetWeaponLocal);
+        ok &= expectTrue("valid generated sight remains the preferred scope anchor",
+            generatedResolution.valid &&
+                generatedResolution.source ==
+                    rock::native_scope_sight_anchor_policy::AnchorSource::GeneratedSight);
+        ok &= expectNear("generated scope anchor keeps sight x", generatedResolution.weaponLocal.x, sightAnchor.x);
+        ok &= expectNear("generated scope anchor keeps sight y", generatedResolution.weaponLocal.y, sightAnchor.y);
+        ok &= expectNear("generated scope anchor keeps sight z", generatedResolution.weaponLocal.z, sightAnchor.z);
+
+        const auto missingGeometryResolution =
+            rock::native_scope_sight_anchor_policy::resolve(
+                false,
+                false,
+                TestVector3{},
+                true,
+                firingGripWeaponLocal,
+                fallbackOffsetWeaponLocal);
+        ok &= expectTrue("missing scope geometry selects the firing-grip fallback",
+            missingGeometryResolution.valid &&
+                missingGeometryResolution.source ==
+                    rock::native_scope_sight_anchor_policy::AnchorSource::FiringGripFallback);
+        ok &= expectNear("firing-grip fallback adds lateral offset", missingGeometryResolution.weaponLocal.x, -0.5f);
+        ok &= expectNear("firing-grip fallback adds forward offset", missingGeometryResolution.weaponLocal.y, 15.0f);
+        ok &= expectNear("firing-grip fallback adds vertical offset", missingGeometryResolution.weaponLocal.z, 8.0f);
+
+        const auto forcedFallbackResolution =
+            rock::native_scope_sight_anchor_policy::resolve(
+                true,
+                true,
+                sightAnchor,
+                true,
+                firingGripWeaponLocal,
+                fallbackOffsetWeaponLocal);
+        ok &= expectTrue("forced fallback bypasses an incorrectly accepted sight collider",
+            forcedFallbackResolution.valid &&
+                forcedFallbackResolution.source ==
+                    rock::native_scope_sight_anchor_policy::AnchorSource::FiringGripFallback);
+        const auto unavailableFallbackResolution =
+            rock::native_scope_sight_anchor_policy::resolve(
+                true,
+                true,
+                sightAnchor,
+                false,
+                TestVector3{},
+                fallbackOffsetWeaponLocal);
+        ok &= expectFalse("forced fallback fails closed without a current firing grip",
+            unavailableFallbackResolution.valid);
+        TestVector3 invalidGeneratedSight = sightAnchor;
+        invalidGeneratedSight.x =
+            (std::numeric_limits<float>::quiet_NaN)();
+        const auto invalidGeometryResolution =
+            rock::native_scope_sight_anchor_policy::resolve(
+                false,
+                true,
+                invalidGeneratedSight,
+                true,
+                firingGripWeaponLocal,
+                fallbackOffsetWeaponLocal);
+        ok &= expectTrue("non-finite generated sight falls back to the firing grip",
+            invalidGeometryResolution.valid &&
+                invalidGeometryResolution.source ==
+                    rock::native_scope_sight_anchor_policy::AnchorSource::FiringGripFallback);
+        TestVector3 invalidFallbackOffset = fallbackOffsetWeaponLocal;
+        invalidFallbackOffset.z =
+            (std::numeric_limits<float>::infinity)();
+        const auto invalidFallbackResolution =
+            rock::native_scope_sight_anchor_policy::resolve(
+                true,
+                false,
+                TestVector3{},
+                true,
+                firingGripWeaponLocal,
+                invalidFallbackOffset);
+        ok &= expectFalse("non-finite firing-grip offset fails closed",
+            invalidFallbackResolution.valid);
+
+        const TestTransform rigidSightFrameLocal =
+            rock::native_scope_camera_follow_math::captureRigidAnchorFrameWeaponLocal(
+                weaponBefore,
+                scopeBefore,
+                sightAnchor);
+        const TestTransform anchoredScopeAfter =
+            rock::native_scope_camera_follow_math::resolveRigidAnchorFrameWorld(
+                weaponAfter,
+                rigidSightFrameLocal);
         const TestTransform anchoredRelativeAfter = rock::transform_math::composeTransforms(rock::transform_math::invertTransform(weaponAfter), anchoredScopeAfter);
         ok &= expectNear("native scope camera replaces controller-relative lateral position", anchoredRelativeAfter.translate.x, sightAnchor.x);
         ok &= expectNear("native scope camera replaces controller-relative forward position", anchoredRelativeAfter.translate.y, sightAnchor.y);
@@ -207,7 +285,6 @@ int main()
             }
         }
 
-        const TestTransform rigidSightFrameLocal = rock::native_scope_camera_follow_math::captureRigidSightFrameWeaponLocal(weaponBefore, scopeBefore, sightAnchor);
         ok &= expectNear("rigid scope frame stores generated sight x", rigidSightFrameLocal.translate.x, sightAnchor.x);
         ok &= expectNear("rigid scope frame stores generated sight y", rigidSightFrameLocal.translate.y, sightAnchor.y);
         ok &= expectNear("rigid scope frame stores generated sight z", rigidSightFrameLocal.translate.z, sightAnchor.z);
@@ -223,7 +300,7 @@ int main()
             }(),
         };
         for (const TestTransform& handModeWeaponFrame : handModeWeaponFrames) {
-            const TestTransform rigidScopeWorld = rock::native_scope_camera_follow_math::resolveRigidSightFrameWorld(handModeWeaponFrame, rigidSightFrameLocal);
+            const TestTransform rigidScopeWorld = rock::native_scope_camera_follow_math::resolveRigidAnchorFrameWorld(handModeWeaponFrame, rigidSightFrameLocal);
             const TestTransform resolvedLocal = rock::transform_math::composeTransforms(rock::transform_math::invertTransform(handModeWeaponFrame), rigidScopeWorld);
             ok &= expectTransformNear("one-hand, two-hand, and left-hand modes preserve one rigid scope frame", resolvedLocal, rigidSightFrameLocal);
         }
@@ -269,7 +346,9 @@ int main()
         ok &= expectFalse("third consecutive active outside sample confirms scope exit", confirmedExit.decision);
 
         const TestTransform equippedSightBaseline =
-            rock::native_scope_camera_follow_math::followWeaponWorldChangeFromSightAnchor(weaponBefore, weaponBefore, scopeBefore, sightAnchor);
+            rock::native_scope_camera_follow_math::resolveRigidAnchorFrameWorld(
+                weaponBefore,
+                rigidSightFrameLocal);
         const TestVector3 expectedSightAnchorWorld = rock::transform_math::localPointToWorld(weaponBefore, sightAnchor);
         ok &= expectNear("equipped scope baseline uses sight world position x", equippedSightBaseline.translate.x, expectedSightAnchorWorld.x);
         ok &= expectNear("equipped scope baseline uses sight world position y", equippedSightBaseline.translate.y, expectedSightAnchorWorld.y);

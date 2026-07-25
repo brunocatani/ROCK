@@ -134,9 +134,18 @@ namespace rock
         bool rockAutoActivateScope = false;
         float rockManualScopeHoldSeconds = 0.30f;
 
+        // Used only when generated Scope/Sight geometry is unavailable, or
+        // explicitly forced for an incorrectly accepted optic collider. The
+        // configured point is relative to the firing-grip palm seat in the
+        // equipped Weapon node's local axes.
+        bool rockNativeScopeForceFiringGripFallback = false;
+        float rockNativeScopeFiringGripFallbackOffsetXGameUnits = 0.0f;
+        float rockNativeScopeFiringGripFallbackOffsetYGameUnits = 0.0f;
+        float rockNativeScopeFiringGripFallbackOffsetZGameUnits = 0.0f;
+
         // Fine tuning for FO4VR's game-native world_scope.nif overlay. These
         // offsets are applied in the calibrated model-root frame after ROCK
-        // anchors it to generated Sight geometry; they do not move the native
+        // anchors it to the resolved scope point; they do not move the native
         // activation camera or alter its entry detection.
         float rockNativeScopeOverlayOffsetXGameUnits = 0.0f;
         float rockNativeScopeOverlayOffsetYGameUnits = 0.0f;

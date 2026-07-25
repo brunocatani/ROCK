@@ -808,28 +808,54 @@
             return false;
         }
 
+        const NativeScopeResolvedAnchorSnapshot resolvedAnchor =
+            _twoHandedGrip.getNativeScopeResolvedAnchorSnapshot();
+        const native_scope_sight_anchor_policy::PublicationIdentity
+            resolvedIdentity{
+                .weaponGenerationKey = resolvedAnchor.weaponGenerationKey,
+                .equippedWeaponOwnershipKey =
+                    resolvedAnchor.equippedWeaponOwnershipKey,
+                .weaponFormID = resolvedAnchor.weaponFormID,
+            };
+        const native_scope_sight_anchor_policy::PublicationIdentity
+            publishedIdentity{
+                .weaponGenerationKey = anchor.weaponGenerationKey,
+                .equippedWeaponOwnershipKey =
+                    anchor.equippedWeaponOwnershipKey,
+                .weaponFormID = anchor.weaponFormID,
+            };
+        const bool resolvedAnchorMatchesPublication =
+            resolvedAnchor.valid &&
+            native_scope_sight_anchor_policy::matchesCurrentEquippedWeapon(
+                resolvedIdentity,
+                publishedIdentity);
+
         outState.weaponGenerationKey = anchor.weaponGenerationKey;
         outState.weaponFormId = anchor.weaponFormID;
         outState.nativeScopeOverlayIndex = anchor.nativeScopeOverlayIndex;
         outState.sightBodyCount = anchor.sightBodyCount;
         outState.anchorWeaponLocal = makeProviderPoint(
-            anchor.anchorWeaponLocal);
+            resolvedAnchorMatchesPublication ?
+                resolvedAnchor.anchorWeaponLocal :
+                anchor.anchorWeaponLocal);
         outState.sightBoundsWeaponLocal.min = makeProviderPoint(
             anchor.sightBoundsMinWeaponLocal);
         outState.sightBoundsWeaponLocal.max = makeProviderPoint(
             anchor.sightBoundsMaxWeaponLocal);
         outState.sightBoundsWeaponLocal.valid = anchor.valid ? 1u : 0u;
         outState.flags |= static_cast<std::uint32_t>(Flag::Available);
+        if (resolvedAnchorMatchesPublication || anchor.valid) {
+            outState.flags |= static_cast<std::uint32_t>(Flag::AnchorValid);
+        }
         if (anchor.valid) {
-            outState.flags |=
-                static_cast<std::uint32_t>(Flag::AnchorValid) |
-                static_cast<std::uint32_t>(Flag::BoundsValid);
+            outState.flags |= static_cast<std::uint32_t>(Flag::BoundsValid);
         }
         if (anchor.nativeScopeOverlayValid) {
             outState.flags |= static_cast<std::uint32_t>(
                 Flag::NativeOverlayValid);
         }
-        if (anchor.manualDirectTransitionRequired) {
+        if (anchor.manualDirectTransitionRequired &&
+            resolvedAnchorMatchesPublication) {
             outState.flags |= static_cast<std::uint32_t>(
                 Flag::ManualDirectTransitionRequired);
         }

@@ -209,6 +209,10 @@ namespace rock
         rockWeaponVisualReturnMaxAngleDegrees = 90.0f;
         rockAutoActivateScope = false;
         rockManualScopeHoldSeconds = 0.30f;
+        rockNativeScopeForceFiringGripFallback = false;
+        rockNativeScopeFiringGripFallbackOffsetXGameUnits = 0.0f;
+        rockNativeScopeFiringGripFallbackOffsetYGameUnits = 0.0f;
+        rockNativeScopeFiringGripFallbackOffsetZGameUnits = 0.0f;
         rockNativeScopeOverlayOffsetXGameUnits = 0.0f;
         rockNativeScopeOverlayOffsetYGameUnits = 0.0f;
         rockNativeScopeOverlayOffsetZGameUnits = 0.0f;
@@ -942,6 +946,32 @@ namespace rock
             0.30f,
             0.05f,
             2.0f);
+        rockNativeScopeForceFiringGripFallback =
+            ini.GetBoolValue(
+                NATIVE_SCOPES_SECTION,
+                "bNativeScopeForceFiringGripFallback",
+                rockNativeScopeForceFiringGripFallback);
+        rockNativeScopeFiringGripFallbackOffsetXGameUnits = readClampedFloat(ini,
+            NATIVE_SCOPES_SECTION,
+            "fNativeScopeFiringGripFallbackOffsetXGameUnits",
+            rockNativeScopeFiringGripFallbackOffsetXGameUnits,
+            0.0f,
+            -100.0f,
+            100.0f);
+        rockNativeScopeFiringGripFallbackOffsetYGameUnits = readClampedFloat(ini,
+            NATIVE_SCOPES_SECTION,
+            "fNativeScopeFiringGripFallbackOffsetYGameUnits",
+            rockNativeScopeFiringGripFallbackOffsetYGameUnits,
+            0.0f,
+            -100.0f,
+            100.0f);
+        rockNativeScopeFiringGripFallbackOffsetZGameUnits = readClampedFloat(ini,
+            NATIVE_SCOPES_SECTION,
+            "fNativeScopeFiringGripFallbackOffsetZGameUnits",
+            rockNativeScopeFiringGripFallbackOffsetZGameUnits,
+            0.0f,
+            -100.0f,
+            100.0f);
         rockNativeScopeOverlayOffsetXGameUnits = readClampedFloat(ini,
             NATIVE_SCOPES_SECTION,
             "fNativeScopeOverlayOffsetXGameUnits",

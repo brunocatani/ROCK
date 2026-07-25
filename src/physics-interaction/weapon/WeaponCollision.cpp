@@ -5323,7 +5323,7 @@ namespace rock
         nativeScopeSightAnchorSnapshot.nativeScopeOverlayValid = manualScopeTarget.overlayValid;
         nativeScopeSightAnchorSnapshot.nativeScopeOverlayIndex = manualScopeTarget.overlayIndex;
         nativeScopeSightAnchorSnapshot.manualDirectTransitionRequired =
-            nativeScopeSightAnchorSnapshot.valid && manualScopeTarget.directTransitionRequired;
+            manualScopeTarget.directTransitionRequired;
         std::uint32_t count = 0;
         beginWeaponBodyPublication();
         _weaponBodyCountAtomic.store(0, std::memory_order_release);

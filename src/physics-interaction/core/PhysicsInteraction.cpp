@@ -2031,7 +2031,20 @@ namespace rock
             .equippedWeaponOwnershipKey = _weaponCollision.getCurrentEquippedWeaponOwnershipKey(),
             .weaponFormID = _weaponCollision.getCurrentObservedEquippedWeaponFormID(),
         };
-        if (!snapshot.valid || !snapshot.manualDirectTransitionRequired || !snapshot.nativeScopeOverlayValid ||
+        const NativeScopeResolvedAnchorSnapshot resolvedAnchor =
+            _twoHandedGrip.getNativeScopeResolvedAnchorSnapshot();
+        const native_scope_sight_anchor_policy::PublicationIdentity
+            resolvedIdentity{
+                .weaponGenerationKey = resolvedAnchor.weaponGenerationKey,
+                .equippedWeaponOwnershipKey =
+                    resolvedAnchor.equippedWeaponOwnershipKey,
+                .weaponFormID = resolvedAnchor.weaponFormID,
+            };
+        if (!resolvedAnchor.valid ||
+            !native_scope_sight_anchor_policy::matchesCurrentEquippedWeapon(
+                resolvedIdentity,
+                currentIdentity) ||
+            !snapshot.manualDirectTransitionRequired || !snapshot.nativeScopeOverlayValid ||
             !native_scope_sight_anchor_policy::matchesCurrentEquippedWeapon(publishedIdentity, currentIdentity)) {
             return false;
         }

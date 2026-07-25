@@ -597,6 +597,38 @@
             const bool sightGeometryValid = weaponWorldValid && sightSnapshot.valid && sightGenerationMatches &&
                 finitePoint(sightSnapshot.anchorWeaponLocal) && finitePoint(sightSnapshot.sightBoundsMinWeaponLocal) &&
                 finitePoint(sightSnapshot.sightBoundsMaxWeaponLocal);
+            const NativeScopeResolvedAnchorSnapshot resolvedAnchorSnapshot =
+                _twoHandedGrip.getNativeScopeResolvedAnchorSnapshot();
+            const native_scope_sight_anchor_policy::PublicationIdentity
+                resolvedAnchorIdentity{
+                    .weaponGenerationKey =
+                        resolvedAnchorSnapshot.weaponGenerationKey,
+                    .equippedWeaponOwnershipKey =
+                        resolvedAnchorSnapshot.equippedWeaponOwnershipKey,
+                    .weaponFormID = resolvedAnchorSnapshot.weaponFormID,
+                };
+            const native_scope_sight_anchor_policy::PublicationIdentity
+                sightIdentity{
+                    .weaponGenerationKey = sightSnapshot.weaponGenerationKey,
+                    .equippedWeaponOwnershipKey =
+                        sightSnapshot.equippedWeaponOwnershipKey,
+                    .weaponFormID = sightSnapshot.weaponFormID,
+                };
+            const bool resolvedAnchorValid =
+                weaponWorldValid &&
+                resolvedAnchorSnapshot.valid &&
+                native_scope_sight_anchor_policy::
+                    matchesCurrentEquippedWeapon(
+                        resolvedAnchorIdentity,
+                        sightIdentity) &&
+                sightGenerationMatches &&
+                finitePoint(resolvedAnchorSnapshot.anchorWeaponLocal);
+            RE::NiPoint3 resolvedAnchorWorld{};
+            if (resolvedAnchorValid) {
+                resolvedAnchorWorld = transform_math::localPointToWorld(
+                    weaponNode->world,
+                    resolvedAnchorSnapshot.anchorWeaponLocal);
+            }
 
             RE::NiPoint3 sightAnchorWorld{};
             if (sightGeometryValid) {
@@ -640,9 +672,9 @@
                 rockTargetWorld = writeSnapshot.targetCameraWorld;
                 rockTargetValid = true;
                 targetFromRecordedWrite = true;
-            } else if (sightGeometryValid && (liveCameraValid || parentComposedCameraValid)) {
+            } else if (resolvedAnchorValid && (liveCameraValid || parentComposedCameraValid)) {
                 rockTargetWorld = liveCameraValid ? liveCameraWorld : parentComposedCameraWorld;
-                rockTargetWorld.translate = sightAnchorWorld;
+                rockTargetWorld.translate = resolvedAnchorWorld;
                 rockTargetValid = finiteNiTransform(rockTargetWorld);
             }
 
@@ -692,6 +724,19 @@
             if (sightGeometryValid) {
                 addTextLine(sightAnchorWorld, anchorColor, "GENERATED SIGHT REAR-CENTER");
             }
+            if (resolvedAnchorValid &&
+                resolvedAnchorSnapshot.source ==
+                    native_scope_sight_anchor_policy::AnchorSource::
+                        FiringGripFallback) {
+                addMarkerPoint(
+                    debug::MarkerOverlayRole::NativeScopeSightBounds,
+                    resolvedAnchorWorld,
+                    3.8f);
+                addTextLine(
+                    resolvedAnchorWorld,
+                    anchorColor,
+                    "FIRING GRIP FALLBACK ANCHOR");
+            }
             if (hmdFrameValid) {
                 const RE::NiPoint3 hmdForward = normalizeScopeVector(context.hmdForwardWorld, RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
                 addMarkerRay(
@@ -721,10 +766,24 @@
                 switch (source) {
                 case NativeScopeCameraWriteSource::None:
                     return "none";
-            case NativeScopeCameraWriteSource::PostFrikPresentationSync:
-                return "post-frik-presentation-sync";
+                case NativeScopeCameraWriteSource::PostFrikPresentationSync:
+                    return "post-frik-presentation-sync";
                 case NativeScopeCameraWriteSource::WeaponVisualAuthority:
                     return "weapon-visual-authority";
+                }
+                return "unknown";
+            };
+            const auto scopeAnchorSourceName = [](
+                native_scope_sight_anchor_policy::AnchorSource source) {
+                switch (source) {
+                case native_scope_sight_anchor_policy::AnchorSource::None:
+                    return "none";
+                case native_scope_sight_anchor_policy::AnchorSource::
+                    GeneratedSight:
+                    return "generated-sight";
+                case native_scope_sight_anchor_policy::AnchorSource::
+                    FiringGripFallback:
+                    return "firing-grip-fallback";
                 }
                 return "unknown";
             };
@@ -746,7 +805,7 @@
                 liveCameraValid ? "yes" : "no",
                 scopeCameraParent ? "yes" : "no",
                 hmdFrameValid ? "yes" : "no",
-                targetFromRecordedWrite ? "recorded-write" : (rockTargetValid ? "geometry" : "none"));
+                targetFromRecordedWrite ? "recorded-write" : (rockTargetValid ? "resolved-anchor" : "none"));
             addScreenTextLine(panelX, panelY, panelColor, panelLine);
             panelY += 14.0f;
 
@@ -761,6 +820,15 @@
             addScreenTextLine(panelX, panelY, panelColor, panelLine);
             panelY += 14.0f;
             std::snprintf(panelLine, sizeof(panelLine),
+                "resolved valid=%s source=%s anchorLocal=(%.2f,%.2f,%.2f)",
+                resolvedAnchorValid ? "yes" : "no",
+                scopeAnchorSourceName(resolvedAnchorSnapshot.source),
+                resolvedAnchorSnapshot.anchorWeaponLocal.x,
+                resolvedAnchorSnapshot.anchorWeaponLocal.y,
+                resolvedAnchorSnapshot.anchorWeaponLocal.z);
+            addScreenTextLine(panelX, panelY, panelColor, panelLine);
+            panelY += 14.0f;
+            std::snprintf(panelLine, sizeof(panelLine),
                 "generation: published=%016llX sight=%016llX",
                 static_cast<unsigned long long>(publishedWeaponGeneration),
                 static_cast<unsigned long long>(sightSnapshot.weaponGenerationKey));
@@ -768,7 +836,7 @@
             panelY += 14.0f;
 
             if (writeSnapshot.applySequence == 0) {
-                std::snprintf(panelLine, sizeof(panelLine), "write: never observed (no generated-sight camera write has applied while this diagnostic was enabled)");
+                std::snprintf(panelLine, sizeof(panelLine), "write: never observed (no resolved-anchor camera write has applied while this diagnostic was enabled)");
                 addScreenTextLine(panelX, panelY, panelColor, panelLine);
                 panelY += 14.0f;
             } else {
@@ -781,23 +849,24 @@
                 addScreenTextLine(panelX, panelY, panelColor, panelLine);
                 panelY += 14.0f;
                 std::snprintf(panelLine, sizeof(panelLine),
-                    "stages: capture=%s target=%s applied=%s readback=%s usedSightAnchor=%s",
+                    "stages: capture=%s target=%s applied=%s readback=%s anchorSource=%s",
                     writeSnapshot.captureValid ? "yes" : "no",
                     writeSnapshot.targetValid ? "yes" : "no",
                     writeSnapshot.writeApplied ? "yes" : "no",
                     writeSnapshot.immediateReadbackValid ? "yes" : "no",
-                    writeSnapshot.usedSightAnchor ? "yes" : "NO");
+                    scopeAnchorSourceName(writeSnapshot.anchorSource));
                 addScreenTextLine(panelX, panelY, panelColor, panelLine);
                 panelY += 14.0f;
             }
 
             if (activationSnapshot.evaluationSequence == 0) {
-                addScreenTextLine(panelX, panelY, panelColor, "cone: no valid generated-sight evaluation observed");
+                addScreenTextLine(panelX, panelY, panelColor, "cone: no valid resolved-anchor evaluation observed");
                 panelY += 14.0f;
             } else {
-                std::snprintf(panelLine, sizeof(panelLine), "cone seq=%llu state=%s native=%s ROCK=%s generation=%016llX",
+                std::snprintf(panelLine, sizeof(panelLine), "cone seq=%llu state=%s native=%s ROCK=%s anchor=%s generation=%016llX",
                     static_cast<unsigned long long>(activationSnapshot.evaluationSequence), activationSnapshot.nativeScopeAlreadyActive ? "exit" : "enter",
                     activationSnapshot.nativeGeometryDecision ? "inside" : "outside", activationSnapshot.rockGeometryDecision ? "inside" : "outside",
+                    scopeAnchorSourceName(activationSnapshot.anchorSource),
                     static_cast<unsigned long long>(activationSnapshot.weaponGenerationKey));
                 addScreenTextLine(panelX, panelY, panelColor, panelLine);
                 panelY += 14.0f;

@@ -13,6 +13,7 @@
 #include "physics-interaction/native/PhysicsUtils.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 #include "physics-interaction/weapon/EquippedWeaponHandlingSettings.h"
+#include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/WeaponInteraction.h"
 #include "physics-interaction/weapon/WeaponPartGripReportPolicy.h"
@@ -135,16 +136,33 @@ namespace rock
         bool targetValid{ false };
         bool writeApplied{ false };
         bool immediateReadbackValid{ false };
-        bool usedSightAnchor{ false };
+        native_scope_sight_anchor_policy::AnchorSource anchorSource{
+            native_scope_sight_anchor_policy::AnchorSource::None
+        };
         RE::NiTransform cameraWorldBefore{};
         RE::NiTransform targetCameraWorld{};
         RE::NiTransform immediateCameraWorldAfter{};
+    };
+
+    struct NativeScopeResolvedAnchorSnapshot
+    {
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint64_t equippedWeaponOwnershipKey{ 0 };
+        std::uint32_t weaponFormID{ 0 };
+        RE::NiPoint3 anchorWeaponLocal{};
+        native_scope_sight_anchor_policy::AnchorSource source{
+            native_scope_sight_anchor_policy::AnchorSource::None
+        };
+        bool valid{ false };
     };
 
     struct NativeScopeActivationDebugSnapshot
     {
         std::uint64_t evaluationSequence{ 0 };
         std::uint64_t weaponGenerationKey{ 0 };
+        native_scope_sight_anchor_policy::AnchorSource anchorSource{
+            native_scope_sight_anchor_policy::AnchorSource::None
+        };
         bool nativeGeometryDecision{ false };
         bool rockGeometryDecision{ false };
         bool nativeScopeAlreadyActive{ false };
@@ -447,6 +465,17 @@ namespace rock
 
         NativeScopeCameraDebugSnapshot getNativeScopeCameraDebugSnapshot() const { return _nativeScopeCameraDebugSnapshot; }
         NativeScopeActivationDebugSnapshot getNativeScopeActivationDebugSnapshot() const { return _nativeScopeActivationDebugSnapshot; }
+        NativeScopeResolvedAnchorSnapshot getNativeScopeResolvedAnchorSnapshot() const
+        {
+            return NativeScopeResolvedAnchorSnapshot{
+                .weaponGenerationKey = _nativeScopeAnchorGenerationKey,
+                .equippedWeaponOwnershipKey = _nativeScopeAnchorOwnershipKey,
+                .weaponFormID = _nativeScopeAnchorWeaponFormID,
+                .anchorWeaponLocal = _nativeScopeAnchorWeaponLocal,
+                .source = _nativeScopeAnchorSource,
+                .valid = _nativeScopeAnchorValid,
+            };
+        }
         bool getSelectedAuthoredGripPoseSnapshot(
             SelectedAuthoredGripPoseSnapshot& outSnapshot) const;
 
@@ -925,7 +954,7 @@ namespace rock
         bool captureNativeScopeRigidFrame(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, RE::NiNode* scopeCamera, const RE::NiTransform& nativeCameraWorld);
         bool captureNativeScopeOverlayCalibration(const RE::NiTransform& nativeCameraWorld, std::uint64_t currentWeaponGenerationKey);
         bool applyNativeScopeOverlayTarget(const RE::NiTransform& correctedCameraWorld, std::uint64_t currentWeaponGenerationKey);
-        void refreshNativeScopeSightAnchor(
+        void refreshNativeScopeAnchor(
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey,
             std::uint64_t currentEquippedWeaponOwnershipKey,
@@ -1025,15 +1054,20 @@ namespace rock
         std::array<scope_safe_hand_frame_math::HandAuthorityRoleMask, 2> _scopeDeferredHandAuthorityClears{};
         std::array<scope_safe_hand_frame_math::HandAuthorityRoleMask, 2> _scopeHandAuthorityPublishedThisFrame{};
 
-        // Cached once per generated weapon generation. The pointer is only an
-        // identity witness; the anchor itself is a value in weapon-root local
-        // space and is never derived from a retained transient engine object.
-        RE::NiNode* _nativeScopeSightAnchorWeaponNode{ nullptr };
-        std::uint64_t _nativeScopeSightAnchorGenerationKey{ 0 };
-        std::uint64_t _nativeScopeSightAnchorOwnershipKey{ 0 };
-        std::uint32_t _nativeScopeSightAnchorWeaponFormID{ 0 };
-        RE::NiPoint3 _nativeScopeSightAnchorWeaponLocal{};
-        bool _nativeScopeSightAnchorValid{ false };
+        // Generation-bound resolved anchor. Generated sight evidence remains
+        // preferred; malformed/missing optics use the current firing-grip
+        // origin plus the configured Weapon-local offset. The pointer is an
+        // identity witness only and is never dereferenced from this cache.
+        RE::NiNode* _nativeScopeAnchorWeaponNode{ nullptr };
+        std::uint64_t _nativeScopeAnchorGenerationKey{ 0 };
+        std::uint64_t _nativeScopeAnchorOwnershipKey{ 0 };
+        std::uint32_t _nativeScopeAnchorWeaponFormID{ 0 };
+        RE::NiPoint3 _nativeScopeAnchorWeaponLocal{};
+        native_scope_sight_anchor_policy::AnchorSource _nativeScopeAnchorSource{
+            native_scope_sight_anchor_policy::AnchorSource::None
+        };
+        bool _nativeScopeAnchorValid{ false };
+        bool _nativeScopeAnchorForceFiringGripFallback{ false };
         // Exit-only stabilization is generation-bound; entry remains immediate.
         std::uint64_t _nativeScopeExitDebounceGenerationKey{ 0 };
         std::uint32_t _nativeScopeExitOutsideFrames{ 0 };
