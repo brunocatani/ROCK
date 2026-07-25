@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <string>
 
+#include "physics-interaction/grab/SavedGrabCaptureFormat.h"
 #include "physics-interaction/grab/SavedGrabOffsetFormat.h"
 
 /*
@@ -64,4 +65,15 @@ namespace rock::saved_grab_offset
     // calling (frame) thread and writes on the writer thread. No-op when the
     // object ref is empty.
     void save(const SavedGrabOffsetFile& file);
+
+    /*
+     * Ground-truth capture companion for the offset just saved: the mesh, hand
+     * geometry, physics, contacts and computed seat that the saved pose was
+     * produced against, so the pose can be replayed and scored offline.
+     * Written to a 'captures' subdirectory (preload() would otherwise try to
+     * parse these as offset files), never cached, never read back by ROCK.
+     * Same threading contract as save(): frame thread only, disk write on the
+     * shared writer thread.
+     */
+    void saveCapture(const saved_grab_capture::SavedGrabCaptureFile& capture);
 }

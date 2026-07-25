@@ -11,6 +11,7 @@
 #include "physics-interaction/grab/GrabConstraint.h"
 #include "physics-interaction/grab/GrabHeldObject.h"
 #include "physics-interaction/grab/GrabMotionController.h"
+#include "physics-interaction/grab/SavedGrabCaptureFormat.h"
 #include "physics-interaction/hand/HandBoneColliderSet.h"
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/hand/HandInteractionStateMachine.h"
@@ -581,6 +582,20 @@ namespace rock
          * live finger data to capture).
          */
         bool tryGetLiveGrabFingerPoseSnapshot(GrabFingerPoseSnapshot& outSnapshot) const;
+
+        /*
+         * Ground-truth capture companion for the same save gesture: the mesh
+         * this hold was scored against, the driven hand collider geometry, the
+         * fingertip contacts the saved pose actually makes, and the seat ROCK
+         * itself committed - everything an offline pose solver needs to replay
+         * and score the user's verified pose without the game running. All
+         * frames are expressed in proxyWorld's local space, the same space the
+         * saved offset uses. Physics and identity are filled by the caller,
+         * which owns them. Frame thread only; one-shot on the save press.
+         */
+        bool tryBuildSavedGrabCapture(
+            const RE::NiTransform& proxyWorld,
+            saved_grab_capture::HandCapture& outCapture) const;
         std::uint32_t getHandColliderBodyCount() const { return _boneColliders.getBodyCount(); }
         std::uint32_t getHandColliderBodyIdAtomic(std::size_t index) const { return _boneColliders.getBodyIdAtomic(index); }
         bool isHandColliderBodyId(std::uint32_t bodyId) const { return _boneColliders.isColliderBodyIdAtomic(bodyId); }

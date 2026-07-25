@@ -10184,6 +10184,27 @@ namespace rock
                         pocket.valid ? pocket.crossPalmWorld : RE::NiPoint3{},
                         pocket.valid ? pocket.fingerForwardWorld : RE::NiPoint3{});
                     const RE::NiPoint3 supportFrameBinormalWorld = normalizeOrZero(crossProduct(supportFrameNormalWorld, supportFrameAxisWorld));
+                    /*
+                     * Seat diagnostics: the classification and every
+                     * correction outcome, kept past the log line so a saved
+                     * ground-truth capture can record the seat ROCK produced
+                     * for this grab next to the pose the user corrected it to.
+                     */
+                    _grabFrame.seatDiagnostics = GrabSeatDiagnostics{
+                        .acquisitionMode = sel.forcedArrival ? "forceGrab" : (grabbedFromPullCatch ? "pullCatch" : "closeGrab"),
+                        .shapeClass = seatPlateShape ? "plate" : (seatRodShape ? "rod" : (seatLongAxis.valid ? "compact" : "none")),
+                        .elongationRatio = seatLongAxis.elongationRatio,
+                        .secondElongationRatio = seatLongAxis.secondElongationRatio,
+                        .alignmentAngleDegrees = seatAlignmentAngleDegrees,
+                        .alignmentReason = seatAlignmentReason,
+                        .rollAngleDegrees = seatRollAngleDegrees,
+                        .rollReason = seatRollReason,
+                        .depthGameUnits = seatDepthStop.depthGameUnits,
+                        .depthOffsetGameUnits = seatDepthOffsetGameUnits,
+                        .depthReason = seatDepthStop.reason,
+                        .penetrationBackstopGameUnits = seatPenetrationBackstopGameUnits,
+                        .penetrationBackstopReason = seatPenetrationBackstopReason,
+                    };
                     _grabFrame.gripEvidenceLocal = transform_math::worldPointToLocal(objectWorldTransform, gripEvidencePointWorld);
                     _grabFrame.gripNormalLocal = transform_math::worldVectorToLocal(objectWorldTransform, gripNormalWorld);
                     storeGripSourceEvidence(_grabFrame,

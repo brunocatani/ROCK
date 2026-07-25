@@ -543,6 +543,32 @@ namespace rock
         RE::NiPoint3 v2{};
     };
 
+    /*
+     * What the capture-time seat machinery decided: the shape class it read
+     * from the mesh PCA, the ratios it classified from, and the outcome of
+     * every correction it applied. Kept so a saved ground-truth capture can be
+     * compared against the seat ROCK actually produced without re-running the
+     * grab - the before/after pair a pose solver has to close. Reason strings
+     * are static literals owned by the seat code; the frame never allocates.
+     */
+    struct GrabSeatDiagnostics
+    {
+        // "closeGrab" | "pullCatch" | "forceGrab" | "unknown"
+        const char* acquisitionMode = "unknown";
+        const char* shapeClass = "none";
+        float elongationRatio = 0.0f;
+        float secondElongationRatio = 0.0f;
+        float alignmentAngleDegrees = 0.0f;
+        const char* alignmentReason = "inactive";
+        float rollAngleDegrees = 0.0f;
+        const char* rollReason = "inactive";
+        float depthGameUnits = 0.0f;
+        float depthOffsetGameUnits = 0.0f;
+        const char* depthReason = "notEvaluated";
+        float penetrationBackstopGameUnits = 0.0f;
+        const char* penetrationBackstopReason = "inactive";
+    };
+
     struct ImmutableGrabCaptureTelemetry
     {
         /*
@@ -583,6 +609,7 @@ namespace rock
         const char* palmSeatPointMode = "none";
         const char* fingerEvidencePointMode = "none";
         RE::NiAVObject* gripSourceNode = nullptr;
+        GrabSeatDiagnostics seatDiagnostics{};
         bool valid = false;
         bool hasGripPoint = false;
         bool hasGripSourceNodePoint = false;
@@ -703,6 +730,7 @@ namespace rock
         std::vector<GrabLocalTriangle> localMeshTriangles;
         std::vector<GrabLocalTriangle> fingerPoseLocalMeshTriangles;
         RE::NiAVObject* heldNode = nullptr;
+        GrabSeatDiagnostics seatDiagnostics{};
         RE::NiAVObject* gripSourceNode = nullptr;
         bool hasMeshPoseData = false;
         bool hasGripPoint = false;
@@ -755,6 +783,7 @@ namespace rock
             captureTelemetry.pivotBBodyLocalGame = pivotBBodyLocalGame;
             captureTelemetry.pivotBConstraintLocalGame = pivotBConstraintLocalGame;
             captureTelemetry.sourceBodyId = sourceBodyId;
+            captureTelemetry.seatDiagnostics = seatDiagnostics;
             captureTelemetry.gripEvidenceTriangleIndex = gripEvidenceTriangleIndex;
             captureTelemetry.gripEvidenceShapeKey = gripEvidenceShapeKey;
             captureTelemetry.pocketToGripDistanceGameUnits = pocketToGripDistanceGameUnits;
@@ -855,6 +884,7 @@ namespace rock
             localMeshTriangles.clear();
             fingerPoseLocalMeshTriangles.clear();
             heldNode = nullptr;
+            seatDiagnostics = GrabSeatDiagnostics{};
             gripSourceNode = nullptr;
             hasMeshPoseData = false;
             hasGripPoint = false;

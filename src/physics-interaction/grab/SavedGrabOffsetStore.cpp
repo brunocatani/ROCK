@@ -1,5 +1,6 @@
 #include "physics-interaction/grab/SavedGrabOffsetStore.h"
 
+#include "physics-interaction/grab/SavedGrabCaptureFormat.h"
 #include "physics-interaction/PhysicsLog.h"
 
 #include "rock_support/ResourceUtils.h"
@@ -130,6 +131,30 @@ namespace rock::saved_grab_offset
                 return true;
             }
 
+            /*
+             * Ground-truth captures live in a SUBDIRECTORY, never beside the
+             * offsets: preload() parses every *.json in the offset directory
+             * as an offset file, and directory_iterator does not recurse, so
+             * a sibling capture would be counted as unreadable on every boot.
+             */
+            std::string capturePathForObject(const FormRef& object, const std::string& hand) const
+            {
+                char idText[16]{};
+                std::snprintf(idText, sizeof(idText), "%08X", object.localFormId);
+                const std::string handSuffix = hand.empty() ? std::string("hand") : sanitizeForFileName(hand);
+                return _directory + "\\captures\\" + sanitizeForFileName(object.plugin) + "_" + idText + "_" + handSuffix + ".capture.json";
+            }
+
+            void saveCapture(const saved_grab_capture::SavedGrabCaptureFile& capture)
+            {
+                if (capture.object.empty()) {
+                    return;
+                }
+                // Captures are write-only records; nothing caches or reads
+                // them back, so this only rides the existing writer thread.
+                enqueue(PendingWrite{ capturePathForObject(capture.object, capture.hand), saved_grab_capture::serialize(capture) });
+            }
+
             void save(const SavedGrabOffsetFile& file)
             {
                 if (file.object.empty()) {
@@ -141,9 +166,17 @@ namespace rock::saved_grab_offset
                     // Cache first, so the very next grab of this object
                     // (even before the writer thread finishes) sees it.
                     _cache[write.path] = file;
+                }
+                enqueue(std::move(write));
+            }
 
+        private:
+            void enqueue(PendingWrite write)
+            {
+                {
+                    std::lock_guard lock(_mutex);
                     // Latest-wins per file: replace a still-pending write of
-                    // the same object instead of queueing behind it.
+                    // the same path instead of queueing behind it.
                     bool replaced = false;
                     for (auto& pending : _queue) {
                         if (pending.path == write.path) {
@@ -160,7 +193,6 @@ namespace rock::saved_grab_offset
                 _wake.notify_one();
             }
 
-        private:
             void ensureWriterStarted()
             {
                 std::lock_guard lock(_mutex);
@@ -280,5 +312,10 @@ namespace rock::saved_grab_offset
     void save(const SavedGrabOffsetFile& file)
     {
         instance().save(file);
+    }
+
+    void saveCapture(const saved_grab_capture::SavedGrabCaptureFile& capture)
+    {
+        instance().saveCapture(capture);
     }
 }

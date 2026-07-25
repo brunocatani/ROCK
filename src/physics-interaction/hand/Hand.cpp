@@ -1385,6 +1385,255 @@ namespace rock
         return true;
     }
 
+    bool Hand::tryBuildSavedGrabCapture(const RE::NiTransform& proxyWorld, saved_grab_capture::HandCapture& outCapture) const
+    {
+        outCapture = {};
+        auto* refr = getHeldRef();
+        auto* rootNode = refr ? refr->Get3D() : nullptr;
+        if (!rootNode || !grab_three_phase::isFinite(proxyWorld) || !grab_three_phase::isFinite(rootNode->world)) {
+            return false;
+        }
+
+        auto storeFrame = [](const RE::NiTransform& transform) {
+            saved_grab_capture::Frame frame{};
+            frame.valid = true;
+            frame.translate[0] = transform.translate.x;
+            frame.translate[1] = transform.translate.y;
+            frame.translate[2] = transform.translate.z;
+            for (int row = 0; row < 3; ++row) {
+                for (int column = 0; column < 3; ++column) {
+                    frame.rotate[row * 3 + column] = transform.rotate.entry[row][column];
+                }
+            }
+            frame.scale = transform.scale;
+            return frame;
+        };
+        // Same helper the saved offset itself uses, so every frame in the
+        // capture lands in exactly the space the label is expressed in.
+        auto inProxyLocal = [&](const RE::NiTransform& world) {
+            return storeFrame(grab_frame_math::objectInGeneratedProxyLocalSpace(proxyWorld, world));
+        };
+        auto pointInProxyLocal = [&](const RE::NiPoint3& world, float (&out)[3]) {
+            const auto local = hand_bone_collider_geometry_math::generatedColliderWorldPointToLocal(proxyWorld, world);
+            out[0] = local.x;
+            out[1] = local.y;
+            out[2] = local.z;
+        };
+
+        outCapture.present = true;
+        outCapture.acquisition = _grabFrame.seatDiagnostics.acquisitionMode;
+        outCapture.objectProxyLocal = inProxyLocal(rootNode->world);
+        outCapture.objectScale = std::isfinite(rootNode->world.scale) && rootNode->world.scale > 0.0f ? rootNode->world.scale : 1.0f;
+
+        /*
+         * Mesh: the cached triangles the grab machinery scored, in the local
+         * space of the node they were extracted from. nodeInObjectRoot ties
+         * that space to the object root the saved pose is expressed for -
+         * without it a nested collidable node would silently misalign the
+         * mesh against the label.
+         */
+        auto* meshNode = _grabFrame.heldNode ? _grabFrame.heldNode : rootNode;
+        const auto& triangles = _grabFrame.localMeshTriangles;
+        auto& mesh = outCapture.mesh;
+        mesh.valid = !triangles.empty();
+        mesh.triangleCount = static_cast<std::uint32_t>(triangles.size());
+        mesh.nodeInObjectRoot = storeFrame(grab_frame_math::objectInGeneratedProxyLocalSpace(rootNode->world, meshNode->world));
+        if (mesh.valid) {
+            mesh.verticesObjectLocal.reserve(triangles.size() * 9);
+            RE::NiPoint3 aabbMin{ std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max() };
+            RE::NiPoint3 aabbMax{ std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest() };
+            double areaSum = 0.0;
+            double centroidAccum[3]{};
+            for (const auto& triangle : triangles) {
+                const RE::NiPoint3 vertices[3]{ triangle.v0, triangle.v1, triangle.v2 };
+                for (const auto& vertex : vertices) {
+                    mesh.verticesObjectLocal.push_back(vertex.x);
+                    mesh.verticesObjectLocal.push_back(vertex.y);
+                    mesh.verticesObjectLocal.push_back(vertex.z);
+                    aabbMin.x = (std::min)(aabbMin.x, vertex.x);
+                    aabbMin.y = (std::min)(aabbMin.y, vertex.y);
+                    aabbMin.z = (std::min)(aabbMin.z, vertex.z);
+                    aabbMax.x = (std::max)(aabbMax.x, vertex.x);
+                    aabbMax.y = (std::max)(aabbMax.y, vertex.y);
+                    aabbMax.z = (std::max)(aabbMax.z, vertex.z);
+                }
+                const RE::NiPoint3 edge0 = triangle.v1 - triangle.v0;
+                const RE::NiPoint3 edge1 = triangle.v2 - triangle.v0;
+                const RE::NiPoint3 cross{
+                    edge0.y * edge1.z - edge0.z * edge1.y,
+                    edge0.z * edge1.x - edge0.x * edge1.z,
+                    edge0.x * edge1.y - edge0.y * edge1.x,
+                };
+                const double area = 0.5 * std::sqrt((std::max)(0.0f, cross.x * cross.x + cross.y * cross.y + cross.z * cross.z));
+                if (!(area > 0.0)) {
+                    continue;
+                }
+                areaSum += area;
+                centroidAccum[0] += area * (triangle.v0.x + triangle.v1.x + triangle.v2.x) / 3.0;
+                centroidAccum[1] += area * (triangle.v0.y + triangle.v1.y + triangle.v2.y) / 3.0;
+                centroidAccum[2] += area * (triangle.v0.z + triangle.v1.z + triangle.v2.z) / 3.0;
+            }
+            mesh.aabbMinObjectLocal[0] = aabbMin.x;
+            mesh.aabbMinObjectLocal[1] = aabbMin.y;
+            mesh.aabbMinObjectLocal[2] = aabbMin.z;
+            mesh.aabbMaxObjectLocal[0] = aabbMax.x;
+            mesh.aabbMaxObjectLocal[1] = aabbMax.y;
+            mesh.aabbMaxObjectLocal[2] = aabbMax.z;
+            if (areaSum > 0.0) {
+                mesh.areaCentroidObjectLocal[0] = static_cast<float>(centroidAccum[0] / areaSum);
+                mesh.areaCentroidObjectLocal[1] = static_cast<float>(centroidAccum[1] / areaSum);
+                mesh.areaCentroidObjectLocal[2] = static_cast<float>(centroidAccum[2] / areaSum);
+            }
+        }
+
+        /*
+         * Hand geometry: the palm and fingertip frames the collider set is
+         * actually driving this frame, not a reconstruction. These are the
+         * volumes the object must stay out of, so a solver fitted here is
+         * fitted against the real hand. Mid-finger segments are not published
+         * by the twin targets; the fingertip contacts below carry the wrap
+         * evidence those segments would otherwise be needed for.
+         */
+        const auto& twins = dynamicTwinTargets();
+        if (twins.palm.valid) {
+            outCapture.palm.valid = true;
+            outCapture.palm.role = "palm";
+            outCapture.palm.frameProxyLocal = inProxyLocal(twins.palm.target);
+            outCapture.palm.length = twins.palm.length;
+            outCapture.palm.radius = twins.palm.radius;
+            outCapture.palm.convexRadius = twins.palm.convexRadius;
+        }
+        static constexpr std::array<const char*, saved_grab_capture::kFingerCount> kFingertipRoles{
+            "fingertipThumb", "fingertipIndex", "fingertipMiddle", "fingertipRing", "fingertipPinky"
+        };
+        for (std::size_t finger = 0; finger < twins.fingertips.size() && finger < kFingertipRoles.size(); ++finger) {
+            const auto& slot = twins.fingertips[finger];
+            if (!slot.valid) {
+                continue;
+            }
+            saved_grab_capture::ColliderSlot capture{};
+            capture.valid = true;
+            capture.role = kFingertipRoles[finger];
+            capture.frameProxyLocal = inProxyLocal(slot.target);
+            capture.length = slot.length;
+            capture.radius = slot.radius;
+            capture.convexRadius = slot.convexRadius;
+            outCapture.fingerSegments.push_back(std::move(capture));
+        }
+
+        GrabFingerPoseSnapshot fingerSnapshot{};
+        if (tryGetLiveGrabFingerPoseSnapshot(fingerSnapshot)) {
+            for (std::size_t finger = 0; finger < saved_grab_capture::kFingerCount; ++finger) {
+                outCapture.fingerCurls[finger] = fingerSnapshot.values[finger];
+            }
+            outCapture.hasFingerJointValues = fingerSnapshot.hasJointValues;
+            if (fingerSnapshot.hasJointValues) {
+                for (std::size_t joint = 0; joint < saved_grab_capture::kFingerJointValueCount; ++joint) {
+                    outCapture.fingerJointValues[joint] = fingerSnapshot.jointValues[joint];
+                }
+            }
+        }
+
+        /*
+         * Contacts: where each fingertip collider actually reaches the mesh in
+         * the saved pose. This is the numeric definition of "properly held"
+         * for this object - which fingers found surface, at what point, and
+         * against which normal - and it is the label a wrap-quality term gets
+         * fitted against.
+         */
+        if (mesh.valid && grab_three_phase::isFinite(meshNode->world)) {
+            const float meshScale = std::isfinite(meshNode->world.scale) && meshNode->world.scale > 0.0f ? meshNode->world.scale : 1.0f;
+            constexpr float kContactSkinGameUnits = 0.5f;
+            for (std::size_t finger = 0; finger < twins.fingertips.size() && finger < saved_grab_capture::kFingerCount; ++finger) {
+                const auto& slot = twins.fingertips[finger];
+                if (!slot.valid || !grab_three_phase::isFinite(slot.target)) {
+                    continue;
+                }
+                const RE::NiPoint3 tipLocal = transform_math::worldPointToLocal(meshNode->world, slot.target.translate);
+                float bestDistanceSquared = std::numeric_limits<float>::max();
+                RE::NiPoint3 bestPoint{};
+                RE::NiPoint3 bestNormal{};
+                for (const auto& triangle : triangles) {
+                    const TriangleData candidateTriangle{ triangle.v0, triangle.v1, triangle.v2 };
+                    float distanceSquared = 0.0f;
+                    const RE::NiPoint3 candidate = closestPointOnTriangleToPoint(tipLocal, candidateTriangle, distanceSquared);
+                    if (!std::isfinite(distanceSquared) || distanceSquared >= bestDistanceSquared) {
+                        continue;
+                    }
+                    bestDistanceSquared = distanceSquared;
+                    bestPoint = candidate;
+                    const RE::NiPoint3 edge0 = triangle.v1 - triangle.v0;
+                    const RE::NiPoint3 edge1 = triangle.v2 - triangle.v0;
+                    bestNormal = RE::NiPoint3{
+                        edge0.y * edge1.z - edge0.z * edge1.y,
+                        edge0.z * edge1.x - edge0.x * edge1.z,
+                        edge0.x * edge1.y - edge0.y * edge1.x,
+                    };
+                }
+                if (bestDistanceSquared == std::numeric_limits<float>::max()) {
+                    continue;
+                }
+                const float normalLength = std::sqrt((std::max)(0.0f,
+                    bestNormal.x * bestNormal.x + bestNormal.y * bestNormal.y + bestNormal.z * bestNormal.z));
+                auto& contact = outCapture.fingerContacts[finger];
+                contact.curl = outCapture.fingerCurls[finger];
+                contact.pointObjectLocal[0] = bestPoint.x;
+                contact.pointObjectLocal[1] = bestPoint.y;
+                contact.pointObjectLocal[2] = bestPoint.z;
+                if (normalLength > 0.000001f) {
+                    contact.normalObjectLocal[0] = bestNormal.x / normalLength;
+                    contact.normalObjectLocal[1] = bestNormal.y / normalLength;
+                    contact.normalObjectLocal[2] = bestNormal.z / normalLength;
+                }
+                const float gapGameUnits = std::sqrt((std::max)(0.0f, bestDistanceSquared)) * meshScale;
+                contact.touching = gapGameUnits <= slot.radius + kContactSkinGameUnits;
+            }
+        }
+
+        const auto& telemetry = _grabFrame.captureTelemetry;
+        const auto& diagnostics = telemetry.seatDiagnostics;
+        auto& seat = outCapture.seat;
+        seat.valid = _grabFrame.hasTelemetryCapture;
+        seat.objectProxyLocal = inProxyLocal(telemetry.desiredObjectWorld);
+        seat.shapeClass = diagnostics.shapeClass;
+        seat.elongationRatio = diagnostics.elongationRatio;
+        seat.secondElongationRatio = diagnostics.secondElongationRatio;
+        seat.alignmentAngleDegrees = diagnostics.alignmentAngleDegrees;
+        seat.alignmentReason = diagnostics.alignmentReason;
+        seat.rollAngleDegrees = diagnostics.rollAngleDegrees;
+        seat.rollReason = diagnostics.rollReason;
+        seat.depthGameUnits = diagnostics.depthGameUnits;
+        seat.depthOffsetGameUnits = diagnostics.depthOffsetGameUnits;
+        seat.depthReason = diagnostics.depthReason;
+        seat.penetrationBackstopGameUnits = diagnostics.penetrationBackstopGameUnits;
+        seat.penetrationBackstopReason = diagnostics.penetrationBackstopReason;
+        seat.gripPointObjectLocal[0] = telemetry.gripPointLocal.x;
+        seat.gripPointObjectLocal[1] = telemetry.gripPointLocal.y;
+        seat.gripPointObjectLocal[2] = telemetry.gripPointLocal.z;
+        pointInProxyLocal(telemetry.grabPivotWorld, seat.pivotProxyLocal);
+        seat.seatMode = grabSeatModeName(_grabFrame.seatMode);
+        seat.pivotAuthoritySource = telemetry.pivotAuthoritySource ? telemetry.pivotAuthoritySource : "none";
+
+        // Havok body relative to the object node, both frozen at the same
+        // instant at capture. Raw data only - see PhysicsCapture for why this
+        // must not be read as a centre of mass until the layout is verified.
+        outCapture.physics.bodyInObjectNode =
+            storeFrame(grab_frame_math::objectInGeneratedProxyLocalSpace(telemetry.objectNodeWorld, telemetry.bodyWorld));
+
+        auto& tuning = outCapture.tuning;
+        tuning.seatDepthMaxGameUnits = g_rockConfig.rockGrabSeatDepthMaxGameUnits;
+        tuning.seatDepthFootprintRadiusGameUnits = g_rockConfig.rockGrabSeatDepthFootprintRadiusGameUnits;
+        tuning.seatPenetrationBackstopFootprintRadiusGameUnits = g_rockConfig.rockGrabSeatPenetrationBackstopFootprintRadiusGameUnits;
+        tuning.seatDepthSkinGameUnits = g_rockConfig.rockGrabSeatDepthSkinGameUnits;
+        tuning.gripInsetGameUnits = g_rockConfig.rockGrabGripInsetGameUnits;
+        tuning.pullPresentationMinElongationRatio = g_rockConfig.rockPullPresentationMinElongationRatio;
+        tuning.pullPresentationGripAxisTiltDegrees = g_rockConfig.rockPullPresentationGripAxisTiltDegrees;
+        tuning.seatRollMinSecondElongationRatio = g_rockConfig.rockGrabSeatRollMinSecondElongationRatio;
+        tuning.pocketDepthGameUnits = g_rockConfig.rockGrabPocketDepthGameUnits;
+        tuning.pocketRadiusGameUnits = g_rockConfig.rockGrabPocketRadiusGameUnits;
+        return true;
+    }
+
     bool Hand::getGrabAuthorityProxyDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabAuthorityProxyDebugSnapshot& out) const
     {
         /*

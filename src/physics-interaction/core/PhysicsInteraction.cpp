@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <cstdint>
 #include <cstring>
+#include <ctime>
 #include <filesystem>
 #include <limits>
 #include <numbers>
@@ -6327,6 +6328,60 @@ namespace rock
         }
 
         saved_grab_offset::save(file);
+
+        /*
+         * Ground-truth capture companion. The offset records WHERE the object
+         * ends up; this records what it was posed against - the mesh ROCK
+         * scored, the hand colliders it was posed relative to, the physics,
+         * the contacts the pose actually makes, and the seat ROCK itself
+         * committed before the user corrected it. That is what makes a saved
+         * pose replayable and scorable offline instead of only reproducible
+         * in-game. Physics and identity are filled here because this scope
+         * owns the body-mass reader and the form identity.
+         */
+        saved_grab_capture::SavedGrabCaptureFile capture{};
+        if (hand.tryBuildSavedGrabCapture(proxyWorld, capture.capture)) {
+            capture.object = formRef;
+            capture.objectName = file.objectName;
+            capture.hand = isLeft ? "left" : "right";
+            capture.rockVersion = std::string(Version::NAME);
+
+            const std::time_t capturedAt = std::time(nullptr);
+            std::tm capturedUtc{};
+            if (gmtime_s(&capturedUtc, &capturedAt) == 0) {
+                char timeText[32]{};
+                if (std::strftime(timeText, sizeof(timeText), "%Y-%m-%dT%H:%M:%SZ", &capturedUtc) > 0) {
+                    capture.capturedUtc = timeText;
+                }
+            }
+
+            const std::uint32_t heldBodyId = hand.getSavedObjectState().bodyId.value;
+            capture.capture.physics.bodyId = heldBodyId;
+            const float heldMass = readGrabEventBodyMass(hknpWorld, heldBodyId);
+            if (std::isfinite(heldMass) && heldMass > 0.0f) {
+                capture.capture.physics.mass = heldMass;
+                capture.capture.physics.valid = true;
+            }
+
+            saved_grab_offset::saveCapture(capture);
+            ROCK_LOG_INFO(Hand,
+                "Saved grab capture for {:08X} ({} hand): triangles={} mass={:.2f} shape={} seatReasons=[align={} roll={} depth={} backstop={}]",
+                baseForm->GetFormID(),
+                isLeft ? "left" : "right",
+                capture.capture.mesh.triangleCount,
+                capture.capture.physics.mass,
+                capture.capture.seat.shapeClass,
+                capture.capture.seat.alignmentReason,
+                capture.capture.seat.rollReason,
+                capture.capture.seat.depthReason,
+                capture.capture.seat.penetrationBackstopReason);
+        } else {
+            ROCK_LOG_WARN(Hand,
+                "Saved grab offset: ground-truth capture unavailable for {} hand ({:08X}); the offset itself was still saved",
+                isLeft ? "left" : "right",
+                baseForm->GetFormID());
+        }
+
         ROCK_LOG_INFO(Hand,
             "Saved grab offset for {:08X} ({} hand, finger pose {})",
             baseForm->GetFormID(),
