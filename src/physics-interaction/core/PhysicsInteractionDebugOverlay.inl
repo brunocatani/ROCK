@@ -548,6 +548,7 @@
 
         if (drawNativeScopeActivation) {
             constexpr float kScopeAxisGuideLengthGameUnits = 80.0f;
+            constexpr float kScopeUpGuideLengthGameUnits = 28.0f;
             constexpr std::uint32_t kFreshScopeWriteMaxAgeFrames = 1;
 
             auto finitePoint = [](const RE::NiPoint3& point) {
@@ -565,6 +566,11 @@
                 return normalizeScopeVector(
                     transform_math::localVectorToWorld(transform, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }),
                     RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
+            };
+            auto scopeUpWorld = [&](const RE::NiTransform& transform) {
+                return normalizeScopeVector(
+                    transform_math::localVectorToWorld(transform, RE::NiPoint3{ 0.0f, 0.0f, 1.0f }),
+                    RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
             };
 
             const auto* playerNodes = f4vr::getPlayerNodes();
@@ -629,6 +635,38 @@
                     weaponNode->world,
                     resolvedAnchorSnapshot.anchorWeaponLocal);
             }
+            const NativeScopeCameraTargetPreviewSnapshot targetPreviewSnapshot =
+                _twoHandedGrip.getNativeScopeCameraTargetPreviewSnapshot();
+            const native_scope_sight_anchor_policy::PublicationIdentity
+                targetPreviewIdentity{
+                    .weaponGenerationKey =
+                        targetPreviewSnapshot.weaponGenerationKey,
+                    .equippedWeaponOwnershipKey =
+                        targetPreviewSnapshot.equippedWeaponOwnershipKey,
+                    .weaponFormID = targetPreviewSnapshot.weaponFormID,
+                };
+            const bool targetPreviewValid =
+                resolvedAnchorValid &&
+                targetPreviewSnapshot.valid &&
+                targetPreviewSnapshot.anchorSource ==
+                    resolvedAnchorSnapshot.source &&
+                native_scope_sight_anchor_policy::
+                    matchesCurrentEquippedWeapon(
+                        targetPreviewIdentity,
+                        resolvedAnchorIdentity) &&
+                finiteNiTransform(
+                    targetPreviewSnapshot.cameraWeaponLocal);
+            RE::NiTransform targetPreviewWorld{};
+            if (targetPreviewValid) {
+                targetPreviewWorld =
+                    native_scope_camera_follow_math::
+                        resolveRigidAnchorFrameWorld(
+                            weaponNode->world,
+                            targetPreviewSnapshot.cameraWeaponLocal);
+            }
+            const bool targetPreviewWorldValid =
+                targetPreviewValid &&
+                finiteNiTransform(targetPreviewWorld);
 
             RE::NiPoint3 sightAnchorWorld{};
             if (sightGeometryValid) {
@@ -667,16 +705,31 @@
                 writeSnapshot.framesSinceApply <= kFreshScopeWriteMaxAgeFrames;
             RE::NiTransform rockTargetWorld{};
             bool rockTargetValid = false;
+            bool targetFromResolvedPreview = false;
             bool targetFromRecordedWrite = false;
-            if (freshWrite && writeSnapshot.targetValid && finiteNiTransform(writeSnapshot.targetCameraWorld)) {
+            if (targetPreviewWorldValid) {
+                rockTargetWorld = targetPreviewWorld;
+                rockTargetValid = true;
+                targetFromResolvedPreview = true;
+            } else if (freshWrite && writeSnapshot.targetValid && finiteNiTransform(writeSnapshot.targetCameraWorld)) {
                 rockTargetWorld = writeSnapshot.targetCameraWorld;
                 rockTargetValid = true;
                 targetFromRecordedWrite = true;
-            } else if (resolvedAnchorValid && (liveCameraValid || parentComposedCameraValid)) {
+            } else if (
+                resolvedAnchorValid &&
+                resolvedAnchorSnapshot.source !=
+                    native_scope_sight_anchor_policy::AnchorSource::
+                        FiringGripFallback &&
+                (liveCameraValid || parentComposedCameraValid)) {
                 rockTargetWorld = liveCameraValid ? liveCameraWorld : parentComposedCameraWorld;
                 rockTargetWorld.translate = resolvedAnchorWorld;
                 rockTargetValid = finiteNiTransform(rockTargetWorld);
             }
+            const bool targetIsFallbackPreview =
+                targetFromResolvedPreview &&
+                targetPreviewSnapshot.anchorSource ==
+                    native_scope_sight_anchor_policy::AnchorSource::
+                        FiringGripFallback;
 
             const float liveColor[4]{ 1.0f, 0.12f, 0.08f, 1.0f };
             const float targetColor[4]{ 0.18f, 1.0f, 0.28f, 1.0f };
@@ -704,13 +757,54 @@
                     2.8f);
             }
             if (rockTargetValid) {
+                const RE::NiPoint3 targetAimWorld =
+                    rockTargetWorld.translate +
+                    scopeForwardWorld(rockTargetWorld) *
+                        kScopeAxisGuideLengthGameUnits;
+                const RE::NiPoint3 targetUpWorld =
+                    rockTargetWorld.translate +
+                    scopeUpWorld(rockTargetWorld) *
+                        kScopeUpGuideLengthGameUnits;
                 addAxisTransform(rockTargetWorld, debug::AxisOverlayRole::NativeScopeRockTarget, rockTargetWorld.translate, false);
                 addMarkerRay(
                     debug::MarkerOverlayRole::NativeScopeRockTarget,
                     rockTargetWorld.translate,
-                    rockTargetWorld.translate + scopeForwardWorld(rockTargetWorld) * kScopeAxisGuideLengthGameUnits,
+                    targetAimWorld,
                     4.0f);
-                addTextLine(rockTargetWorld.translate, targetColor, targetFromRecordedWrite ? "ROCK WRITE TARGET" : "ROCK GEOMETRY TARGET");
+                addMarkerPoint(
+                    debug::MarkerOverlayRole::NativeScopeRockTarget,
+                    targetAimWorld,
+                    2.8f);
+                addMarkerLine(
+                    debug::MarkerOverlayRole::NativeScopeRockTarget,
+                    rockTargetWorld.translate,
+                    targetUpWorld);
+                addMarkerPoint(
+                    debug::MarkerOverlayRole::NativeScopeRockTarget,
+                    targetUpWorld,
+                    2.4f);
+                addTextLine(
+                    rockTargetWorld.translate,
+                    targetColor,
+                    targetIsFallbackPreview ?
+                        "FALLBACK PREVIEW ORIGIN" :
+                        (targetFromResolvedPreview ?
+                                "ROCK PRE-ACTIVATION TARGET" :
+                                (targetFromRecordedWrite ?
+                                        "ROCK WRITE TARGET" :
+                                        "ROCK GEOMETRY TARGET")));
+                addTextLine(
+                    targetAimWorld,
+                    targetColor,
+                    targetIsFallbackPreview ?
+                        "FALLBACK AIM (+X)" :
+                        "TARGET AIM (+X)");
+                addTextLine(
+                    targetUpWorld,
+                    targetColor,
+                    targetIsFallbackPreview ?
+                        "FALLBACK UP (+Z)" :
+                        "TARGET UP (+Z)");
                 if (liveCameraValid) {
                     addMarkerLine(debug::MarkerOverlayRole::NativeScopeMismatch, liveCameraWorld.translate, rockTargetWorld.translate);
                 }
@@ -727,7 +821,8 @@
             if (resolvedAnchorValid &&
                 resolvedAnchorSnapshot.source ==
                     native_scope_sight_anchor_policy::AnchorSource::
-                        FiringGripFallback) {
+                        FiringGripFallback &&
+                !targetIsFallbackPreview) {
                 addMarkerPoint(
                     debug::MarkerOverlayRole::NativeScopeSightBounds,
                     resolvedAnchorWorld,
@@ -792,9 +887,10 @@
             float panelY = 18.0f;
             char panelLine[384]{};
             addScreenTextLine(panelX, panelY, panelColor,
-                "NATIVE SCOPE: RED=stored live GREEN=ROCK target ORANGE=immediate YELLOW=pre-write BLUE=parent/local CYAN=HMD");
+                "NATIVE SCOPE: RED=stored live GREEN=exact preview/write ORANGE=immediate YELLOW=pre-write BLUE=parent/local CYAN=HMD");
             panelY += 14.0f;
-        addScreenTextLine(panelX, panelY, panelColor, "Long RED/GREEN rays are camera +X guides; verified activation samples HMD/weapon +Y.");
+            addScreenTextLine(panelX, panelY, panelColor,
+                "GREEN tripod + long +X aim + short +Z up stay visible with ScopeMenu closed; activation samples HMD/weapon +Y.");
             panelY += 14.0f;
 
             std::snprintf(panelLine, sizeof(panelLine),
@@ -805,7 +901,13 @@
                 liveCameraValid ? "yes" : "no",
                 scopeCameraParent ? "yes" : "no",
                 hmdFrameValid ? "yes" : "no",
-                targetFromRecordedWrite ? "recorded-write" : (rockTargetValid ? "resolved-anchor" : "none"));
+                targetFromResolvedPreview ?
+                    "pre-activation-preview" :
+                    (targetFromRecordedWrite ?
+                            "recorded-write" :
+                            (rockTargetValid ?
+                                    "anchor-only" :
+                                    "none")));
             addScreenTextLine(panelX, panelY, panelColor, panelLine);
             panelY += 14.0f;
 
@@ -837,6 +939,14 @@
                 g_rockConfig.rockNativeScopeFiringGripFallbackPitchDegrees,
                 g_rockConfig.rockNativeScopeFiringGripFallbackYawDegrees,
                 g_rockConfig.rockNativeScopeFiringGripFallbackRollDegrees);
+            addScreenTextLine(panelX, panelY, panelColor, panelLine);
+            panelY += 14.0f;
+            std::snprintf(panelLine, sizeof(panelLine),
+                "preview: %s source=%s generation=%016llX scopeMenuIndependent=yes",
+                targetPreviewWorldValid ? "ready" : "pending-calibration",
+                scopeAnchorSourceName(targetPreviewSnapshot.anchorSource),
+                static_cast<unsigned long long>(
+                    targetPreviewSnapshot.weaponGenerationKey));
             addScreenTextLine(panelX, panelY, panelColor, panelLine);
             panelY += 14.0f;
             std::snprintf(panelLine, sizeof(panelLine),

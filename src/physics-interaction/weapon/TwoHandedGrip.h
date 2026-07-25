@@ -144,6 +144,24 @@ namespace rock
         RE::NiTransform immediateCameraWorldAfter{};
     };
 
+    /*
+     * Read-only view of the exact generation-bound camera target ROCK would
+     * publish from the current weapon transform. The debug overlay resolves
+     * this retained frame without touching the live camera, so ScopeMenu does
+     * not need to be open while tuning fallback position or rotation.
+     */
+    struct NativeScopeCameraTargetPreviewSnapshot
+    {
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint64_t equippedWeaponOwnershipKey{ 0 };
+        std::uint32_t weaponFormID{ 0 };
+        native_scope_sight_anchor_policy::AnchorSource anchorSource{
+            native_scope_sight_anchor_policy::AnchorSource::None
+        };
+        RE::NiTransform cameraWeaponLocal{};
+        bool valid{ false };
+    };
+
     struct NativeScopeResolvedAnchorSnapshot
     {
         std::uint64_t weaponGenerationKey{ 0 };
@@ -467,6 +485,27 @@ namespace rock
             AuthoredSupportGripDebugSnapshot& outSnapshot) const;
 
         NativeScopeCameraDebugSnapshot getNativeScopeCameraDebugSnapshot() const { return _nativeScopeCameraDebugSnapshot; }
+        NativeScopeCameraTargetPreviewSnapshot getNativeScopeCameraTargetPreviewSnapshot() const
+        {
+            const bool valid =
+                _nativeScopeRigidFrame.valid &&
+                _nativeScopeAnchorValid &&
+                _nativeScopeRigidFrame.weaponNodeIdentity ==
+                    _nativeScopeAnchorWeaponNode &&
+                _nativeScopeRigidFrame.weaponGenerationKey ==
+                    _nativeScopeAnchorGenerationKey;
+            return NativeScopeCameraTargetPreviewSnapshot{
+                .weaponGenerationKey =
+                    _nativeScopeRigidFrame.weaponGenerationKey,
+                .equippedWeaponOwnershipKey =
+                    _nativeScopeAnchorOwnershipKey,
+                .weaponFormID = _nativeScopeAnchorWeaponFormID,
+                .anchorSource = _nativeScopeAnchorSource,
+                .cameraWeaponLocal =
+                    _nativeScopeRigidFrame.cameraWeaponLocal,
+                .valid = valid,
+            };
+        }
         NativeScopeActivationDebugSnapshot getNativeScopeActivationDebugSnapshot() const { return _nativeScopeActivationDebugSnapshot; }
         NativeScopeResolvedAnchorSnapshot getNativeScopeResolvedAnchorSnapshot() const
         {

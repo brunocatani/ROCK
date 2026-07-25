@@ -72,6 +72,10 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' 'enum class Native
     'Native scope activation diagnostics must retain the verified cone decision.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' 'struct NativeScopeRigidFrameState[\s\S]*weaponGenerationKey[\s\S]*nativeCameraWeaponLocal[\s\S]*cameraWeaponLocal' `
     'Native scope presentation must retain immutable native calibration separately from its generation-bound tuned target.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' 'struct NativeScopeCameraTargetPreviewSnapshot[\s\S]*equippedWeaponOwnershipKey[\s\S]*anchorSource[\s\S]*cameraWeaponLocal[\s\S]*valid' `
+    'The diagnostic path must expose a pointer-free, identity-bound copy of the exact retained camera target.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' 'getNativeScopeCameraTargetPreviewSnapshot[\s\S]*_nativeScopeRigidFrame\.valid[\s\S]*_nativeScopeAnchorValid[\s\S]*_nativeScopeRigidFrame\.cameraWeaponLocal[\s\S]*\.valid\s*=\s*valid' `
+    'The exact preview must fail closed unless the retained target and resolved anchor still describe one weapon generation.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'captureNativeScopeRigidFrame[\s\S]*captureRigidAnchorFrameWeaponLocal[\s\S]*nativeCameraWeaponLocal[\s\S]*rebuildNativeScopeRigidFrameTarget[\s\S]*synchronizeNativeScopePresentationAfterFrikUpdate[\s\S]*resolveRigidAnchorFrameWorld[\s\S]*NativeScopeCameraWriteSource::PostFrikPresentationSync' `
     'Post-FRIK presentation must derive fallback tuning from one immutable native frame instead of recapturing or compounding it per hand mode.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'rebuildNativeScopeRigidFrameTarget[\s\S]*nativeCameraWeaponLocal[\s\S]*FiringGripFallback[\s\S]*applyWeaponLocalRotationOffset[\s\S]*cameraWeaponLocal' `
@@ -130,6 +134,12 @@ Require-Text $overlay 'getNativeScopeCameraDebugSnapshot\(\)[\s\S]*NativeScopePr
     'The overlay must expose the recorded pre-write and immediate-readback handoff stages.'
 Require-Text $overlay 'getNativeScopeResolvedAnchorSnapshot[\s\S]*FIRING GRIP FALLBACK ANCHOR[\s\S]*scopeAnchorSourceName[\s\S]*writeSnapshot\.anchorSource' `
     'The overlay must expose the selected generated-sight or firing-grip anchor used by the actual camera write.'
+Require-Text $overlay 'getNativeScopeCameraTargetPreviewSnapshot\(\)[\s\S]*matchesCurrentEquippedWeapon\([\s\S]*resolveRigidAnchorFrameWorld\([\s\S]*targetPreviewSnapshot\.cameraWeaponLocal[\s\S]*targetFromResolvedPreview\s*=\s*true' `
+    'The pre-activation visualizer must resolve the same identity-bound weapon-local target used by the camera writer.'
+Require-Text $overlay 'FALLBACK PREVIEW ORIGIN[\s\S]*FALLBACK AIM \(\+X\)[\s\S]*FALLBACK UP \(\+Z\)[\s\S]*scopeMenuIndependent=yes' `
+    'Fallback tuning must show a persistent origin, pointing direction, and roll-readable up guide while ScopeMenu is closed.'
+Reject-Text $overlay 'applyWeaponLocalRotationOffset\s*\(' `
+    'The visualizer must consume the retained production target instead of duplicating fallback rotation math.'
 Require-Text $overlay 'fallback tune:[\s\S]*rockNativeScopeFiringGripFallbackOffsetXGameUnits[\s\S]*rockNativeScopeFiringGripFallbackPitchDegrees[\s\S]*rockNativeScopeFiringGripFallbackYawDegrees[\s\S]*rockNativeScopeFiringGripFallbackRollDegrees' `
     'The in-game diagnostic panel must expose the active firing-grip fallback position and rotation tuning.'
 Require-Text $overlay 'scopeWriteSourceName[\s\S]*post-frik-presentation-sync[\s\S]*weapon-visual-authority[\s\S]*writeSnapshot\.writeSource' `
