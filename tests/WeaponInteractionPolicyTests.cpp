@@ -285,6 +285,74 @@ int main()
             }
         }
 
+        TestTransform fallbackCameraBase = rigidSightFrameLocal;
+        fallbackCameraBase.translate =
+            missingGeometryResolution.weaponLocal;
+        const TestTransform zeroFallbackRotation =
+            rock::native_scope_camera_follow_math::
+                applyWeaponLocalRotationOffset(
+                    fallbackCameraBase,
+                    0.0f,
+                    0.0f,
+                    0.0f);
+        ok &= expectTransformNear(
+            "zero fallback rotation preserves native camera calibration",
+            zeroFallbackRotation,
+            fallbackCameraBase);
+
+        const TestTransform pitchFallbackRotation =
+            rock::native_scope_camera_follow_math::
+                applyWeaponLocalRotationOffset(
+                    fallbackCameraBase,
+                    90.0f,
+                    0.0f,
+                    0.0f);
+        ok &= expectNear("fallback pitch keeps firing-grip anchor x", pitchFallbackRotation.translate.x, fallbackCameraBase.translate.x);
+        ok &= expectNear("fallback pitch keeps firing-grip anchor y", pitchFallbackRotation.translate.y, fallbackCameraBase.translate.y);
+        ok &= expectNear("fallback pitch keeps firing-grip anchor z", pitchFallbackRotation.translate.z, fallbackCameraBase.translate.z);
+        ok &= expectNear("fallback pitch preserves native camera scale", pitchFallbackRotation.scale, fallbackCameraBase.scale);
+        ok &= expectNear("fallback pitch rotates local Y toward Z", pitchFallbackRotation.rotate.entry[1][2], 1.0f);
+        ok &= expectNear("fallback pitch rotates local Z toward negative Y", pitchFallbackRotation.rotate.entry[2][1], -1.0f);
+
+        const TestTransform yawFallbackRotation =
+            rock::native_scope_camera_follow_math::
+                applyWeaponLocalRotationOffset(
+                    fallbackCameraBase,
+                    0.0f,
+                    90.0f,
+                    0.0f);
+        ok &= expectNear("fallback yaw rotates local X toward Y", yawFallbackRotation.rotate.entry[0][1], 1.0f);
+        ok &= expectNear("fallback yaw rotates local Y toward negative X", yawFallbackRotation.rotate.entry[1][0], -1.0f);
+
+        const TestTransform rollFallbackRotation =
+            rock::native_scope_camera_follow_math::
+                applyWeaponLocalRotationOffset(
+                    fallbackCameraBase,
+                    0.0f,
+                    0.0f,
+                    90.0f);
+        ok &= expectNear("fallback roll rotates local X toward negative Z", rollFallbackRotation.rotate.entry[0][2], -1.0f);
+        ok &= expectNear("fallback roll rotates local Z toward X", rollFallbackRotation.rotate.entry[2][0], 1.0f);
+
+        TestTransform calibratedFallbackCamera = fallbackCameraBase;
+        calibratedFallbackCamera.rotate =
+            yawFallbackRotation.rotate;
+        const TestTransform weaponAxisPitchFallback =
+            rock::native_scope_camera_follow_math::
+                applyWeaponLocalRotationOffset(
+                    calibratedFallbackCamera,
+                    90.0f,
+                    0.0f,
+                    0.0f);
+        ok &= expectNear("fallback pitch uses weapon X after nonidentity native calibration row0 x", weaponAxisPitchFallback.rotate.entry[0][0], 0.0f);
+        ok &= expectNear("fallback pitch uses weapon X after nonidentity native calibration row0 y", weaponAxisPitchFallback.rotate.entry[0][1], 0.0f);
+        ok &= expectNear("fallback pitch uses weapon X after nonidentity native calibration row0 z", weaponAxisPitchFallback.rotate.entry[0][2], 1.0f);
+        ok &= expectNear("fallback pitch uses weapon X after nonidentity native calibration row1 x", weaponAxisPitchFallback.rotate.entry[1][0], -1.0f);
+        ok &= expectNear("fallback pitch uses weapon X after nonidentity native calibration row2 y", weaponAxisPitchFallback.rotate.entry[2][1], -1.0f);
+        ok &= expectNear("weapon-axis fallback rotation never orbits the anchor x", weaponAxisPitchFallback.translate.x, fallbackCameraBase.translate.x);
+        ok &= expectNear("weapon-axis fallback rotation never orbits the anchor y", weaponAxisPitchFallback.translate.y, fallbackCameraBase.translate.y);
+        ok &= expectNear("weapon-axis fallback rotation never orbits the anchor z", weaponAxisPitchFallback.translate.z, fallbackCameraBase.translate.z);
+
         ok &= expectNear("rigid scope frame stores generated sight x", rigidSightFrameLocal.translate.x, sightAnchor.x);
         ok &= expectNear("rigid scope frame stores generated sight y", rigidSightFrameLocal.translate.y, sightAnchor.y);
         ok &= expectNear("rigid scope frame stores generated sight z", rigidSightFrameLocal.translate.z, sightAnchor.z);

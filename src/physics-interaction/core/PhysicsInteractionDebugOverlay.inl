@@ -829,6 +829,17 @@
             addScreenTextLine(panelX, panelY, panelColor, panelLine);
             panelY += 14.0f;
             std::snprintf(panelLine, sizeof(panelLine),
+                "fallback tune: force=%s offset=(%.2f,%.2f,%.2f) rotation[pitch,yaw,roll]=(%.2f,%.2f,%.2f)",
+                g_rockConfig.rockNativeScopeForceFiringGripFallback ? "yes" : "no",
+                g_rockConfig.rockNativeScopeFiringGripFallbackOffsetXGameUnits,
+                g_rockConfig.rockNativeScopeFiringGripFallbackOffsetYGameUnits,
+                g_rockConfig.rockNativeScopeFiringGripFallbackOffsetZGameUnits,
+                g_rockConfig.rockNativeScopeFiringGripFallbackPitchDegrees,
+                g_rockConfig.rockNativeScopeFiringGripFallbackYawDegrees,
+                g_rockConfig.rockNativeScopeFiringGripFallbackRollDegrees);
+            addScreenTextLine(panelX, panelY, panelColor, panelLine);
+            panelY += 14.0f;
+            std::snprintf(panelLine, sizeof(panelLine),
                 "generation: published=%016llX sight=%016llX",
                 static_cast<unsigned long long>(publishedWeaponGeneration),
                 static_cast<unsigned long long>(sightSnapshot.weaponGenerationKey));

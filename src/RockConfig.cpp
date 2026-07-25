@@ -213,6 +213,9 @@ namespace rock
         rockNativeScopeFiringGripFallbackOffsetXGameUnits = 0.0f;
         rockNativeScopeFiringGripFallbackOffsetYGameUnits = 0.0f;
         rockNativeScopeFiringGripFallbackOffsetZGameUnits = 0.0f;
+        rockNativeScopeFiringGripFallbackPitchDegrees = 0.0f;
+        rockNativeScopeFiringGripFallbackYawDegrees = 0.0f;
+        rockNativeScopeFiringGripFallbackRollDegrees = 0.0f;
         rockNativeScopeOverlayOffsetXGameUnits = 0.0f;
         rockNativeScopeOverlayOffsetYGameUnits = 0.0f;
         rockNativeScopeOverlayOffsetZGameUnits = 0.0f;
@@ -973,6 +976,27 @@ namespace rock
             0.0f,
             -100.0f,
             100.0f);
+        rockNativeScopeFiringGripFallbackPitchDegrees = readClampedFloat(ini,
+            NATIVE_SCOPES_SECTION,
+            "fNativeScopeFiringGripFallbackPitchDegrees",
+            rockNativeScopeFiringGripFallbackPitchDegrees,
+            0.0f,
+            -180.0f,
+            180.0f);
+        rockNativeScopeFiringGripFallbackYawDegrees = readClampedFloat(ini,
+            NATIVE_SCOPES_SECTION,
+            "fNativeScopeFiringGripFallbackYawDegrees",
+            rockNativeScopeFiringGripFallbackYawDegrees,
+            0.0f,
+            -180.0f,
+            180.0f);
+        rockNativeScopeFiringGripFallbackRollDegrees = readClampedFloat(ini,
+            NATIVE_SCOPES_SECTION,
+            "fNativeScopeFiringGripFallbackRollDegrees",
+            rockNativeScopeFiringGripFallbackRollDegrees,
+            0.0f,
+            -180.0f,
+            180.0f);
         rockNativeScopeOverlayOffsetXGameUnits = readClampedFloat(ini,
             NATIVE_SCOPES_SECTION,
             "fNativeScopeOverlayOffsetXGameUnits",

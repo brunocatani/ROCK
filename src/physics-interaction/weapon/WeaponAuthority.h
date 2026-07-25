@@ -159,6 +159,76 @@ namespace rock::weapon_visual_authority_math
     }
 }
 
+// ---- NativeScopeRotationMath.h ----
+
+namespace rock::native_scope_rotation_math
+{
+    /*
+     * Scope tuning consistently defines pitch about X, yaw about Z, and roll
+     * about Y. The caller decides which calibrated frame owns those axes:
+     * Weapon-local for the fallback camera and model-local for overlay tuning.
+     * The stored Ni basis composes pitch, then yaw, then roll.
+     */
+    template <class Transform>
+    [[nodiscard]] inline Transform makePitchYawRollLocal(
+        const float pitchDegrees,
+        const float yawDegrees,
+        const float rollDegrees)
+    {
+        constexpr float kDegreesToRadians = 0.017453292519943295769f;
+
+        const auto makePitchStored = [](const float radians) {
+            Transform result = transform_math::makeIdentityTransform<Transform>();
+            if (radians == 0.0f) {
+                return result;
+            }
+            const float cosine = std::cos(radians);
+            const float sine = std::sin(radians);
+            result.rotate.entry[1][1] = cosine;
+            result.rotate.entry[1][2] = sine;
+            result.rotate.entry[2][1] = -sine;
+            result.rotate.entry[2][2] = cosine;
+            return result;
+        };
+        const auto makeYawStored = [](const float radians) {
+            Transform result = transform_math::makeIdentityTransform<Transform>();
+            if (radians == 0.0f) {
+                return result;
+            }
+            const float cosine = std::cos(radians);
+            const float sine = std::sin(radians);
+            result.rotate.entry[0][0] = cosine;
+            result.rotate.entry[0][1] = sine;
+            result.rotate.entry[1][0] = -sine;
+            result.rotate.entry[1][1] = cosine;
+            return result;
+        };
+        const auto makeRollStored = [](const float radians) {
+            Transform result = transform_math::makeIdentityTransform<Transform>();
+            if (radians == 0.0f) {
+                return result;
+            }
+            const float cosine = std::cos(radians);
+            const float sine = std::sin(radians);
+            result.rotate.entry[0][0] = cosine;
+            result.rotate.entry[0][2] = -sine;
+            result.rotate.entry[2][0] = sine;
+            result.rotate.entry[2][2] = cosine;
+            return result;
+        };
+
+        const Transform pitch = makePitchStored(pitchDegrees * kDegreesToRadians);
+        const Transform yaw = makeYawStored(yawDegrees * kDegreesToRadians);
+        const Transform roll = makeRollStored(rollDegrees * kDegreesToRadians);
+
+        Transform result = transform_math::makeIdentityTransform<Transform>();
+        result.rotate = transform_math::multiplyStoredRotations(
+            transform_math::multiplyStoredRotations(pitch.rotate, yaw.rotate),
+            roll.rotate);
+        return result;
+    }
+}
+
 // ---- NativeScopeCameraFollowMath.h ----
 
 namespace rock::native_scope_camera_follow_math
@@ -199,6 +269,30 @@ namespace rock::native_scope_camera_follow_math
             nativeScopeCameraWorld);
         scopeFrameWeaponLocal.translate = anchorWeaponLocal;
         return scopeFrameWeaponLocal;
+    }
+
+    /*
+     * Apply a correction around the equipped Weapon axes without rotating the
+     * firing-grip anchor itself. Stored Ni axes require base * offset here;
+     * composing whole transforms would also orbit the anchor translation.
+     */
+    template <class Transform>
+    [[nodiscard]] inline Transform applyWeaponLocalRotationOffset(
+        const Transform& scopeFrameWeaponLocal,
+        const float pitchDegrees,
+        const float yawDegrees,
+        const float rollDegrees)
+    {
+        const Transform rotationOffset =
+            native_scope_rotation_math::makePitchYawRollLocal<Transform>(
+                pitchDegrees,
+                yawDegrees,
+                rollDegrees);
+        Transform result = scopeFrameWeaponLocal;
+        result.rotate = transform_math::multiplyStoredRotations(
+            scopeFrameWeaponLocal.rotate,
+            rotationOffset.rotate);
+        return result;
     }
 
     template <class Transform>
@@ -433,56 +527,11 @@ namespace rock::native_scope_overlay_follow_math
         const float yawDegrees,
         const float rollDegrees)
     {
-        constexpr float kDegreesToRadians = 0.017453292519943295769f;
-
-        const auto makePitchStored = [](const float radians) {
-            Transform result = transform_math::makeIdentityTransform<Transform>();
-            if (radians == 0.0f) {
-                return result;
-            }
-            const float cosine = std::cos(radians);
-            const float sine = std::sin(radians);
-            result.rotate.entry[1][1] = cosine;
-            result.rotate.entry[1][2] = sine;
-            result.rotate.entry[2][1] = -sine;
-            result.rotate.entry[2][2] = cosine;
-            return result;
-        };
-        const auto makeYawStored = [](const float radians) {
-            Transform result = transform_math::makeIdentityTransform<Transform>();
-            if (radians == 0.0f) {
-                return result;
-            }
-            const float cosine = std::cos(radians);
-            const float sine = std::sin(radians);
-            result.rotate.entry[0][0] = cosine;
-            result.rotate.entry[0][1] = sine;
-            result.rotate.entry[1][0] = -sine;
-            result.rotate.entry[1][1] = cosine;
-            return result;
-        };
-        const auto makeRollStored = [](const float radians) {
-            Transform result = transform_math::makeIdentityTransform<Transform>();
-            if (radians == 0.0f) {
-                return result;
-            }
-            const float cosine = std::cos(radians);
-            const float sine = std::sin(radians);
-            result.rotate.entry[0][0] = cosine;
-            result.rotate.entry[0][2] = -sine;
-            result.rotate.entry[2][0] = sine;
-            result.rotate.entry[2][2] = cosine;
-            return result;
-        };
-
-        const Transform pitch = makePitchStored(pitchDegrees * kDegreesToRadians);
-        const Transform yaw = makeYawStored(yawDegrees * kDegreesToRadians);
-        const Transform roll = makeRollStored(rollDegrees * kDegreesToRadians);
-
-        Transform fineTune = transform_math::makeIdentityTransform<Transform>();
-        fineTune.rotate = transform_math::multiplyStoredRotations(
-            transform_math::multiplyStoredRotations(pitch.rotate, yaw.rotate),
-            roll.rotate);
+        Transform fineTune =
+            native_scope_rotation_math::makePitchYawRollLocal<Transform>(
+                pitchDegrees,
+                yawDegrees,
+                rollDegrees);
         fineTune.translate.x = offsetXGameUnits;
         fineTune.translate.y = offsetYGameUnits;
         fineTune.translate.z = offsetZGameUnits;

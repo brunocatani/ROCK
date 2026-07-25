@@ -707,6 +707,41 @@ namespace rock
 
     void TwoHandedGrip::clearNativeScopeRigidFrame() { _nativeScopeRigidFrame = {}; }
 
+    bool TwoHandedGrip::rebuildNativeScopeRigidFrameTarget()
+    {
+        if (!_nativeScopeRigidFrame.valid ||
+            !_nativeScopeAnchorValid ||
+            _nativeScopeRigidFrame.weaponNodeIdentity !=
+                _nativeScopeAnchorWeaponNode ||
+            _nativeScopeRigidFrame.weaponGenerationKey !=
+                _nativeScopeAnchorGenerationKey) {
+            return false;
+        }
+
+        RE::NiTransform targetCameraWeaponLocal =
+            _nativeScopeRigidFrame.nativeCameraWeaponLocal;
+        targetCameraWeaponLocal.translate = _nativeScopeAnchorWeaponLocal;
+        if (_nativeScopeAnchorSource ==
+            native_scope_sight_anchor_policy::AnchorSource::
+                FiringGripFallback) {
+            targetCameraWeaponLocal =
+                native_scope_camera_follow_math::
+                    applyWeaponLocalRotationOffset(
+                        targetCameraWeaponLocal,
+                        _nativeScopeFallbackRotationDegrees.x,
+                        _nativeScopeFallbackRotationDegrees.y,
+                        _nativeScopeFallbackRotationDegrees.z);
+        }
+        if (!isFiniteTransform(targetCameraWeaponLocal) ||
+            std::abs(targetCameraWeaponLocal.scale) <= 0.0001f) {
+            return false;
+        }
+
+        _nativeScopeRigidFrame.cameraWeaponLocal =
+            targetCameraWeaponLocal;
+        return true;
+    }
+
     bool TwoHandedGrip::captureNativeScopeRigidFrame(RE::NiNode* weaponNode, const std::uint64_t currentWeaponGenerationKey, RE::NiNode* scopeCamera,
         const RE::NiTransform& nativeCameraWorld)
     {
@@ -721,9 +756,10 @@ namespace rock
             return false;
         }
 
-        const RE::NiTransform cameraWeaponLocal =
+        const RE::NiTransform nativeCameraWeaponLocal =
             native_scope_camera_follow_math::captureRigidAnchorFrameWeaponLocal(weaponNode->world, nativeCameraWorld, _nativeScopeAnchorWeaponLocal);
-        if (!isFiniteTransform(cameraWeaponLocal) || std::abs(cameraWeaponLocal.scale) <= 0.0001f) {
+        if (!isFiniteTransform(nativeCameraWeaponLocal) ||
+            std::abs(nativeCameraWeaponLocal.scale) <= 0.0001f) {
             return false;
         }
 
@@ -731,11 +767,17 @@ namespace rock
             .weaponGenerationKey = currentWeaponGenerationKey,
             .weaponNodeIdentity = weaponNode,
             .scopeCameraIdentity = scopeCamera,
-            .cameraWeaponLocal = cameraWeaponLocal,
+            .nativeCameraWeaponLocal = nativeCameraWeaponLocal,
+            .cameraWeaponLocal = nativeCameraWeaponLocal,
             .valid = true,
         };
+        if (!rebuildNativeScopeRigidFrameTarget()) {
+            clearNativeScopeRigidFrame();
+            return false;
+        }
         ROCK_LOG_DEBUG(Weapon, "TwoHandedGrip: native scope rigid frame captured generation={:016X} cameraLocal=({:.2f},{:.2f},{:.2f}) scale={:.3f}", currentWeaponGenerationKey,
-            cameraWeaponLocal.translate.x, cameraWeaponLocal.translate.y, cameraWeaponLocal.translate.z, cameraWeaponLocal.scale);
+            _nativeScopeRigidFrame.cameraWeaponLocal.translate.x, _nativeScopeRigidFrame.cameraWeaponLocal.translate.y,
+            _nativeScopeRigidFrame.cameraWeaponLocal.translate.z, _nativeScopeRigidFrame.cameraWeaponLocal.scale);
         return true;
     }
 
@@ -1009,6 +1051,11 @@ namespace rock
             g_rockConfig.rockNativeScopeFiringGripFallbackOffsetYGameUnits,
             g_rockConfig.rockNativeScopeFiringGripFallbackOffsetZGameUnits,
         };
+        const RE::NiPoint3 fallbackRotationDegrees{
+            g_rockConfig.rockNativeScopeFiringGripFallbackPitchDegrees,
+            g_rockConfig.rockNativeScopeFiringGripFallbackYawDegrees,
+            g_rockConfig.rockNativeScopeFiringGripFallbackRollDegrees,
+        };
 
         RE::NiPoint3 firingGripWeaponLocal{};
         bool firingGripFromCanonical = false;
@@ -1044,11 +1091,8 @@ namespace rock
             return;
         }
 
-        const bool selectionContextChanged =
-            !sameIdentity ||
-            _nativeScopeAnchorForceFiringGripFallback !=
-                forceFiringGripFallback;
-        if (selectionContextChanged) {
+        const bool identityChanged = !sameIdentity;
+        if (identityChanged) {
             clearNativeScopeOverlayAuthority(true);
             clearNativeScopeRigidFrame();
             _nativeScopeExitDebounceGenerationKey = 0;
@@ -1063,10 +1107,8 @@ namespace rock
             _nativeScopeAnchorSource =
                 native_scope_sight_anchor_policy::AnchorSource::None;
             _nativeScopeAnchorValid = false;
-            _nativeScopeAnchorForceFiringGripFallback =
-                forceFiringGripFallback;
+            _nativeScopeFallbackRotationDegrees = fallbackRotationDegrees;
         }
-
         if (!weaponNode || currentWeaponGenerationKey == 0 ||
             currentEquippedWeaponOwnershipKey == 0 ||
             currentEquippedWeaponFormID == 0) {
@@ -1107,6 +1149,7 @@ namespace rock
                 _nativeScopeAnchorSource =
                     native_scope_sight_anchor_policy::AnchorSource::None;
                 _nativeScopeAnchorValid = false;
+                _nativeScopeFallbackRotationDegrees = {};
                 clearNativeScopeOverlayAuthority(true);
                 clearNativeScopeRigidFrame();
                 _nativeScopeExitDebounceGenerationKey = 0;
@@ -1131,7 +1174,7 @@ namespace rock
             firingGripWeaponLocal,
             fallbackOffsetWeaponLocal);
         if (!resolved.valid) {
-            if (!selectionContextChanged && _nativeScopeAnchorValid) {
+            if (_nativeScopeAnchorValid) {
                 clearNativeScopeOverlayAuthority(true);
                 clearNativeScopeRigidFrame();
                 _nativeScopeExitDebounceGenerationKey = 0;
@@ -1141,6 +1184,8 @@ namespace rock
             _nativeScopeAnchorSource =
                 native_scope_sight_anchor_policy::AnchorSource::None;
             _nativeScopeAnchorValid = false;
+            _nativeScopeFallbackRotationDegrees =
+                fallbackRotationDegrees;
             ROCK_LOG_SAMPLE_DEBUG(Weapon,
                 g_rockConfig.rockLogSampleMilliseconds,
                 "TwoHandedGrip: native scope anchor unavailable generation={:016X} generatedSight={} firingGrip={} forced={}; leaving native camera untouched",
@@ -1151,17 +1196,51 @@ namespace rock
             return;
         }
 
-        if (!selectionContextChanged &&
+        const bool sameResolvedAnchor =
+            !identityChanged &&
             _nativeScopeAnchorValid &&
             _nativeScopeAnchorSource == resolved.source &&
             arePointsNearlyEqual(
                 _nativeScopeAnchorWeaponLocal,
-                resolved.weaponLocal)) {
+                resolved.weaponLocal);
+        const bool fallbackRotationChanged =
+            resolved.source ==
+                native_scope_sight_anchor_policy::AnchorSource::
+                    FiringGripFallback &&
+            !arePointsNearlyEqual(
+                _nativeScopeFallbackRotationDegrees,
+                fallbackRotationDegrees);
+        if (sameResolvedAnchor && !fallbackRotationChanged) {
             return;
         }
-        if (!selectionContextChanged) {
-            clearNativeScopeOverlayAuthority(true);
-            clearNativeScopeRigidFrame();
+
+        if (sameResolvedAnchor) {
+            _nativeScopeFallbackRotationDegrees =
+                fallbackRotationDegrees;
+            if (_nativeScopeRigidFrame.valid &&
+                !rebuildNativeScopeRigidFrameTarget()) {
+                clearNativeScopeOverlayAuthority(true);
+                clearNativeScopeRigidFrame();
+                ROCK_LOG_WARN(Weapon,
+                    "TwoHandedGrip: rejected invalid native scope fallback rotation pitch={:.2f} yaw={:.2f} roll={:.2f}",
+                    fallbackRotationDegrees.x,
+                    fallbackRotationDegrees.y,
+                    fallbackRotationDegrees.z);
+                return;
+            }
+            ROCK_LOG_DEBUG(Weapon,
+                "TwoHandedGrip: native scope firing-grip fallback rotation refreshed generation={:016X} pitch={:.2f} yaw={:.2f} roll={:.2f}",
+                currentWeaponGenerationKey,
+                fallbackRotationDegrees.x,
+                fallbackRotationDegrees.y,
+                fallbackRotationDegrees.z);
+            return;
+        }
+
+        if (!identityChanged) {
+            // Keep the immutable native camera/model calibration for this
+            // equipped instance. Rebuild only the derived target so live
+            // position/rotation tuning cannot compound ROCK's previous write.
             _nativeScopeExitDebounceGenerationKey = 0;
             _nativeScopeExitOutsideFrames = 0;
         }
@@ -1169,6 +1248,21 @@ namespace rock
         _nativeScopeAnchorWeaponLocal = resolved.weaponLocal;
         _nativeScopeAnchorSource = resolved.source;
         _nativeScopeAnchorValid = true;
+        _nativeScopeFallbackRotationDegrees =
+            fallbackRotationDegrees;
+        if (_nativeScopeRigidFrame.valid &&
+            !rebuildNativeScopeRigidFrameTarget()) {
+            clearNativeScopeOverlayAuthority(true);
+            clearNativeScopeRigidFrame();
+            ROCK_LOG_WARN(Weapon,
+                "TwoHandedGrip: native scope target rebuild failed generation={:016X} source={}",
+                currentWeaponGenerationKey,
+                resolved.source ==
+                        native_scope_sight_anchor_policy::AnchorSource::
+                            FiringGripFallback ?
+                    "firing-grip-fallback" :
+                    "generated-sight");
+        }
         if (resolved.source ==
             native_scope_sight_anchor_policy::AnchorSource::GeneratedSight) {
             ROCK_LOG_DEBUG(Weapon,
@@ -1186,7 +1280,7 @@ namespace rock
                 snapshot.sightBoundsMaxWeaponLocal.z);
         } else {
             ROCK_LOG_DEBUG(Weapon,
-                "TwoHandedGrip: native scope anchor generation={:016X} source=firing-grip-fallback origin={} gripLocal=({:.2f},{:.2f},{:.2f}) offset=({:.2f},{:.2f},{:.2f}) anchorLocal=({:.2f},{:.2f},{:.2f}) forced={}",
+                "TwoHandedGrip: native scope anchor generation={:016X} source=firing-grip-fallback origin={} gripLocal=({:.2f},{:.2f},{:.2f}) offset=({:.2f},{:.2f},{:.2f}) rotation=({:.2f},{:.2f},{:.2f}) anchorLocal=({:.2f},{:.2f},{:.2f}) forced={}",
                 currentWeaponGenerationKey,
                 firingGripFromCanonical ? "canonical" : "active-grip",
                 firingGripWeaponLocal.x,
@@ -1195,6 +1289,9 @@ namespace rock
                 fallbackOffsetWeaponLocal.x,
                 fallbackOffsetWeaponLocal.y,
                 fallbackOffsetWeaponLocal.z,
+                fallbackRotationDegrees.x,
+                fallbackRotationDegrees.y,
+                fallbackRotationDegrees.z,
                 _nativeScopeAnchorWeaponLocal.x,
                 _nativeScopeAnchorWeaponLocal.y,
                 _nativeScopeAnchorWeaponLocal.z,
@@ -1764,7 +1861,7 @@ namespace rock
         _nativeScopeAnchorSource =
             native_scope_sight_anchor_policy::AnchorSource::None;
         _nativeScopeAnchorValid = false;
-        _nativeScopeAnchorForceFiringGripFallback = false;
+        _nativeScopeFallbackRotationDegrees = {};
         _nativeScopeExitDebounceGenerationKey = 0;
         _nativeScopeExitOutsideFrames = 0;
         _nativeScopeCameraDebugSnapshot = {};

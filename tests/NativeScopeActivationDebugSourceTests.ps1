@@ -47,10 +47,10 @@ Require-Text 'src/RockConfig.h' 'rockAutoActivateScope\s*=\s*false[\s\S]*rockMan
     'Manual firing-hand hold activation must be the native-scope default.'
 Require-Text 'src/RockConfig.cpp' 'bAutoActivateScope[\s\S]*fManualScopeHoldSeconds' `
     'Native-scope activation mode and hold threshold must load from ROCK.ini.'
-Require-Text 'src/RockConfig.h' 'rockNativeScopeForceFiringGripFallback\s*=\s*false[\s\S]*rockNativeScopeFiringGripFallbackOffsetXGameUnits\s*=\s*0\.0f[\s\S]*rockNativeScopeFiringGripFallbackOffsetYGameUnits\s*=\s*0\.0f[\s\S]*rockNativeScopeFiringGripFallbackOffsetZGameUnits\s*=\s*0\.0f' `
-    'Missing-optic fallback must expose one force switch and three neutral Weapon-local firing-grip offsets.'
-Require-Text 'src/RockConfig.cpp' 'bNativeScopeForceFiringGripFallback[\s\S]*fNativeScopeFiringGripFallbackOffsetXGameUnits[\s\S]*fNativeScopeFiringGripFallbackOffsetYGameUnits[\s\S]*fNativeScopeFiringGripFallbackOffsetZGameUnits' `
-    'Firing-grip fallback controls must load from the NativeScopes section.'
+Require-Text 'src/RockConfig.h' 'rockNativeScopeForceFiringGripFallback\s*=\s*false[\s\S]*rockNativeScopeFiringGripFallbackOffsetXGameUnits\s*=\s*0\.0f[\s\S]*rockNativeScopeFiringGripFallbackOffsetYGameUnits\s*=\s*0\.0f[\s\S]*rockNativeScopeFiringGripFallbackOffsetZGameUnits\s*=\s*0\.0f[\s\S]*rockNativeScopeFiringGripFallbackPitchDegrees\s*=\s*0\.0f[\s\S]*rockNativeScopeFiringGripFallbackYawDegrees\s*=\s*0\.0f[\s\S]*rockNativeScopeFiringGripFallbackRollDegrees\s*=\s*0\.0f' `
+    'Missing-optic fallback must expose one force switch and a neutral six-degree-of-freedom Weapon-local firing-grip frame.'
+Require-Text 'src/RockConfig.cpp' 'bNativeScopeForceFiringGripFallback[\s\S]*fNativeScopeFiringGripFallbackOffsetXGameUnits[\s\S]*fNativeScopeFiringGripFallbackOffsetYGameUnits[\s\S]*fNativeScopeFiringGripFallbackOffsetZGameUnits[\s\S]*fNativeScopeFiringGripFallbackPitchDegrees[\s\S]*fNativeScopeFiringGripFallbackYawDegrees[\s\S]*fNativeScopeFiringGripFallbackRollDegrees' `
+    'Firing-grip fallback position and rotation controls must load from the NativeScopes section.'
 Require-Text 'data/config/ROCK.ini' 'bDebugDrawNativeScopeActivation\s*=\s*false' `
     'The development config template must keep the native-scope diagnostic disabled by default.'
 Require-Text 'data/mod/ROCK_Config/ROCK.ini' 'bDebugDrawNativeScopeActivation\s*=\s*false' `
@@ -62,18 +62,20 @@ Require-Text 'src/RockConfig.cpp' 'NATIVE_SCOPES_SECTION\s*=\s*"NativeScopes"[\s
 foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
     Require-Text $configPath '\[NativeScopes\][\s\S]*bAutoActivateScope\s*=\s*false[\s\S]*fManualScopeHoldSeconds\s*=\s*0\.30' `
         'Native scope templates must default to manual A/X hold activation.'
-    Require-Text $configPath '\[NativeScopes\][\s\S]*bNativeScopeForceFiringGripFallback\s*=\s*false[\s\S]*fNativeScopeFiringGripFallbackOffsetXGameUnits\s*=\s*0\.0[\s\S]*fNativeScopeFiringGripFallbackOffsetYGameUnits\s*=\s*0\.0[\s\S]*fNativeScopeFiringGripFallbackOffsetZGameUnits\s*=\s*0\.0' `
-        'Native scope templates must expose a neutral, opt-in-force firing-grip fallback.'
+    Require-Text $configPath '\[NativeScopes\][\s\S]*bNativeScopeForceFiringGripFallback\s*=\s*false[\s\S]*fNativeScopeFiringGripFallbackOffsetXGameUnits\s*=\s*0\.0[\s\S]*fNativeScopeFiringGripFallbackOffsetYGameUnits\s*=\s*0\.0[\s\S]*fNativeScopeFiringGripFallbackOffsetZGameUnits\s*=\s*0\.0[\s\S]*fNativeScopeFiringGripFallbackPitchDegrees\s*=\s*0\.0[\s\S]*fNativeScopeFiringGripFallbackYawDegrees\s*=\s*0\.0[\s\S]*fNativeScopeFiringGripFallbackRollDegrees\s*=\s*0\.0' `
+        'Native scope templates must expose a neutral, opt-in-force six-degree-of-freedom firing-grip fallback.'
     Require-Text $configPath '\[NativeScopes\][\s\S]*fNativeScopeOverlayOffsetXGameUnits\s*=\s*0\.0[\s\S]*fNativeScopeOverlayOffsetYGameUnits\s*=\s*0\.0[\s\S]*fNativeScopeOverlayOffsetZGameUnits\s*=\s*0\.0[\s\S]*fNativeScopeOverlayPitchDegrees\s*=\s*0\.0[\s\S]*fNativeScopeOverlayYawDegrees\s*=\s*0\.0[\s\S]*fNativeScopeOverlayRollDegrees\s*=\s*0\.0' `
         'Native scope overlay template tuning must default to a neutral additive transform.'
 }
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' 'enum class NativeScopeCameraWriteSource[\s\S]*PostFrikPresentationSync[\s\S]*WeaponVisualAuthority[\s\S]*struct NativeScopeActivationDebugSnapshot' `
     'Native scope activation diagnostics must retain the verified cone decision.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' 'struct NativeScopeRigidFrameState[\s\S]*weaponGenerationKey[\s\S]*cameraWeaponLocal' `
-    'Native scope presentation must retain a generation-bound weapon-local frame.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'captureNativeScopeRigidFrame[\s\S]*captureRigidAnchorFrameWeaponLocal[\s\S]*synchronizeNativeScopePresentationAfterFrikUpdate[\s\S]*resolveRigidAnchorFrameWorld[\s\S]*NativeScopeCameraWriteSource::PostFrikPresentationSync' `
-    'Post-FRIK presentation must reuse one immutable weapon-local resolved-anchor frame instead of recapturing per hand mode.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' 'struct NativeScopeRigidFrameState[\s\S]*weaponGenerationKey[\s\S]*nativeCameraWeaponLocal[\s\S]*cameraWeaponLocal' `
+    'Native scope presentation must retain immutable native calibration separately from its generation-bound tuned target.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'captureNativeScopeRigidFrame[\s\S]*captureRigidAnchorFrameWeaponLocal[\s\S]*nativeCameraWeaponLocal[\s\S]*rebuildNativeScopeRigidFrameTarget[\s\S]*synchronizeNativeScopePresentationAfterFrikUpdate[\s\S]*resolveRigidAnchorFrameWorld[\s\S]*NativeScopeCameraWriteSource::PostFrikPresentationSync' `
+    'Post-FRIK presentation must derive fallback tuning from one immutable native frame instead of recapturing or compounding it per hand mode.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'rebuildNativeScopeRigidFrameTarget[\s\S]*nativeCameraWeaponLocal[\s\S]*FiringGripFallback[\s\S]*applyWeaponLocalRotationOffset[\s\S]*cameraWeaponLocal' `
+    'Only the firing-grip fallback may add the configured weapon-axis camera rotation to immutable native calibration.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'tryResolveNativeScopeGeometryDecision[\s\S]*_nativeScopeAnchorGenerationKey\s*!=\s*currentWeaponGenerationKey[\s\S]*native_scope_activation_geometry::sample[\s\S]*native_scope_activation_geometry::isInsideCone' `
     'Native entry and exit must use the exact generation-matched resolved anchor and final weapon transform.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'refreshNativeScopeAnchor[\s\S]*rockNativeScopeForceFiringGripFallback[\s\S]*hasRightFiringHandCanonicalFrame[\s\S]*_primaryGripConfidence[\s\S]*native_scope_sight_anchor_policy::resolve[\s\S]*FiringGripFallback' `
@@ -128,6 +130,8 @@ Require-Text $overlay 'getNativeScopeCameraDebugSnapshot\(\)[\s\S]*NativeScopePr
     'The overlay must expose the recorded pre-write and immediate-readback handoff stages.'
 Require-Text $overlay 'getNativeScopeResolvedAnchorSnapshot[\s\S]*FIRING GRIP FALLBACK ANCHOR[\s\S]*scopeAnchorSourceName[\s\S]*writeSnapshot\.anchorSource' `
     'The overlay must expose the selected generated-sight or firing-grip anchor used by the actual camera write.'
+Require-Text $overlay 'fallback tune:[\s\S]*rockNativeScopeFiringGripFallbackOffsetXGameUnits[\s\S]*rockNativeScopeFiringGripFallbackPitchDegrees[\s\S]*rockNativeScopeFiringGripFallbackYawDegrees[\s\S]*rockNativeScopeFiringGripFallbackRollDegrees' `
+    'The in-game diagnostic panel must expose the active firing-grip fallback position and rotation tuning.'
 Require-Text $overlay 'scopeWriteSourceName[\s\S]*post-frik-presentation-sync[\s\S]*weapon-visual-authority[\s\S]*writeSnapshot\.writeSource' `
     'The in-game panel must distinguish presentation synchronization from final weapon authority.'
 Require-Text $overlay 'hmdPositionWorld[\s\S]*NativeScopeHmd[\s\S]*HMD->live[\s\S]*HMD->target' `

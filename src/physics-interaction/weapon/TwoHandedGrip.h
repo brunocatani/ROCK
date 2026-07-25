@@ -200,6 +200,9 @@ namespace rock
         std::uint64_t weaponGenerationKey{ 0 };
         RE::NiNode* weaponNodeIdentity{ nullptr };
         RE::NiNode* scopeCameraIdentity{ nullptr };
+        // Immutable native axis/scale calibration captured before ROCK writes.
+        RE::NiTransform nativeCameraWeaponLocal{};
+        // Resolved anchor plus any fallback-only weapon-axis correction.
         RE::NiTransform cameraWeaponLocal{};
         bool valid{ false };
     };
@@ -951,6 +954,7 @@ namespace rock
         void clearAllVisualReturns(const char* reason, bool logCancellation, bool restoreBlockers);
         void clearNativeScopeOverlayAuthority(bool restoreNativeLocal);
         void clearNativeScopeRigidFrame();
+        bool rebuildNativeScopeRigidFrameTarget();
         bool captureNativeScopeRigidFrame(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, RE::NiNode* scopeCamera, const RE::NiTransform& nativeCameraWorld);
         bool captureNativeScopeOverlayCalibration(const RE::NiTransform& nativeCameraWorld, std::uint64_t currentWeaponGenerationKey);
         bool applyNativeScopeOverlayTarget(const RE::NiTransform& correctedCameraWorld, std::uint64_t currentWeaponGenerationKey);
@@ -1067,7 +1071,7 @@ namespace rock
             native_scope_sight_anchor_policy::AnchorSource::None
         };
         bool _nativeScopeAnchorValid{ false };
-        bool _nativeScopeAnchorForceFiringGripFallback{ false };
+        RE::NiPoint3 _nativeScopeFallbackRotationDegrees{};
         // Exit-only stabilization is generation-bound; entry remains immediate.
         std::uint64_t _nativeScopeExitDebounceGenerationKey{ 0 };
         std::uint32_t _nativeScopeExitOutsideFrames{ 0 };

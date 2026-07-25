@@ -55,8 +55,10 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' 'struct NativeScop
     'The selected native-scope anchor must retain generation, ownership, and form identity across internal and provider readbacks.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'scopeAnchorMatchesAuthority[\s\S]*captureNativeScopeRigidFrame[\s\S]*rigidFrameMatchesAuthority[\s\S]*resolveRigidAnchorFrameWorld' `
     'Native-scope camera authority must resolve one generation-bound rigid selected-anchor frame for every weapon authority mode.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'rockNativeScopeFiringGripFallbackOffsetXGameUnits[\s\S]*hasRightFiringHandCanonicalFrame[\s\S]*_primaryGripLocal[\s\S]*FiringGripFallback[\s\S]*leaving native camera untouched' `
-    'Missing or forced-bad optic geometry must use the current firing-grip origin and fail closed when no such origin exists.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'rockNativeScopeFiringGripFallbackOffsetXGameUnits[\s\S]*rockNativeScopeFiringGripFallbackPitchDegrees[\s\S]*hasRightFiringHandCanonicalFrame[\s\S]*_primaryGripLocal[\s\S]*FiringGripFallback[\s\S]*leaving native camera untouched' `
+    'Missing or forced-bad optic geometry must use the current firing-grip frame and fail closed when no such origin exists.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'rebuildNativeScopeRigidFrameTarget[\s\S]*nativeCameraWeaponLocal[\s\S]*targetCameraWeaponLocal\.translate\s*=\s*_nativeScopeAnchorWeaponLocal[\s\S]*FiringGripFallback[\s\S]*applyWeaponLocalRotationOffset[\s\S]*cameraWeaponLocal\s*=' `
+    'Fallback position and rotation tuning must be rebuilt from immutable native calibration without orbiting or compounding the anchor.'
 Reject-Text 'src/physics-interaction/weapon/WeaponAuthority.h' 'followWeaponWorldChange\s*\(' `
     'Native-scope camera authority must not retain the controller-relative rigid-delta fallback.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'rootHandValid\s*=\s*!_scopeDriverFrameAuthorityActive\s*&&[\s\S]*tryGetRootFlattenedHandBoneTransform[\s\S]*captureDriverToHandLocal\(driverFrame\.world,\s*resolvedHandWorld\)' `
