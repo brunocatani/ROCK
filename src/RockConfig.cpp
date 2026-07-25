@@ -423,7 +423,9 @@ namespace rock
         rockGrabPhysicsRateMinForceScale = kDefaultGrabPhysicsRateMinForceScale;
         rockGrabPhysicsRateMaxForceScale = kDefaultGrabPhysicsRateMaxForceScale;
         rockGrabRoomVelocityFeedForward = false;
-        rockGrabLocomotionTransport = false;
+        rockGrabLocomotionJagCorrection = false;
+        rockGrabLocomotionJagMaxCorrectionGameUnits = 2.0f;
+        rockGrabLocomotionJagGain = 1.0f;
         rockGrabSmoothVelocityDrive = false;
         rockGrabSmoothVelocityCorrectorGain = 0.2f;
 
@@ -1531,8 +1533,22 @@ namespace rock
             ini.GetBoolValue(SECTION, "bGrabPhysicsRateForceScalingEnabled", rockGrabPhysicsRateForceScalingEnabled);
         rockGrabRoomVelocityFeedForward =
             ini.GetBoolValue(SECTION, "bGrabRoomVelocityFeedForward", rockGrabRoomVelocityFeedForward);
-        rockGrabLocomotionTransport =
-            ini.GetBoolValue(SECTION, "bGrabLocomotionTransport", rockGrabLocomotionTransport);
+        rockGrabLocomotionJagCorrection =
+            ini.GetBoolValue(SECTION, "bGrabLocomotionJagCorrection", rockGrabLocomotionJagCorrection);
+        rockGrabLocomotionJagMaxCorrectionGameUnits = readClampedFloat(ini,
+            SECTION,
+            "fGrabLocomotionJagMaxCorrectionGameUnits",
+            rockGrabLocomotionJagMaxCorrectionGameUnits,
+            2.0f,
+            0.0f,
+            35.0f);
+        rockGrabLocomotionJagGain = readClampedFloat(ini,
+            SECTION,
+            "fGrabLocomotionJagGain",
+            rockGrabLocomotionJagGain,
+            1.0f,
+            0.0f,
+            1.0f);
         rockGrabSmoothVelocityDrive =
             ini.GetBoolValue(SECTION, "bGrabSmoothVelocityDrive", rockGrabSmoothVelocityDrive);
         rockGrabSmoothVelocityCorrectorGain = readClampedFloat(ini,

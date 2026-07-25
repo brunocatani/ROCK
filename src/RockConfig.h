@@ -362,7 +362,16 @@ namespace rock
         float rockGrabPhysicsRateMinForceScale = 0.75f;
         float rockGrabPhysicsRateMaxForceScale = 1.35f;
         bool rockGrabRoomVelocityFeedForward = false;
-        bool rockGrabLocomotionTransport = false;
+        /*
+         * Held-object locomotion jag correction. Delivers, as POSITION, the
+         * per-frame room jag the motors measurably drop (exactly half of it;
+         * 2026-07-25 camera-relative decomposition). Identically zero standing
+         * and under even frame pacing -- see GrabLocomotionJag.h. Ships off
+         * until the speed-binned obj-cam roughness table confirms it.
+         */
+        bool rockGrabLocomotionJagCorrection = false;
+        float rockGrabLocomotionJagMaxCorrectionGameUnits = 2.0f;
+        float rockGrabLocomotionJagGain = 1.0f;
         // Opt-in bounded predictor-corrector on the commanded grab target:
         // smooths the commanded VELOCITY (removing the phase lock's accepted
         // substep-dt quantization -- the measured stick-locomotion along-track

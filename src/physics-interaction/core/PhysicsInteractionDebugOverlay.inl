@@ -130,7 +130,7 @@
             rotationState.valid = objectOk && handBodyOk;
 
             ROCK_LOG_DEBUG(Hand,
-                "{} OVERLAY_POINT: t={}us flushSeq={} wand=({:.3f},{:.3f},{:.3f}) appliedWand=({:.3f},{:.3f},{:.3f}) tgt=({:.3f},{:.3f},{:.3f}) objOk={} obj=({:.3f},{:.3f},{:.3f}) handOk={} handBody=({:.3f},{:.3f},{:.3f}) proxyOk={} proxy=({:.3f},{:.3f},{:.3f}) camOk={} cam=({:.3f},{:.3f},{:.3f}) rotWand={:.3f} rotTgt={:.3f} rotObj={:.3f} rotHand={:.3f} transp={:.1f}",
+                "{} OVERLAY_POINT: t={}us flushSeq={} wand=({:.3f},{:.3f},{:.3f}) appliedWand=({:.3f},{:.3f},{:.3f}) tgt=({:.3f},{:.3f},{:.3f}) objOk={} obj=({:.3f},{:.3f},{:.3f}) handOk={} handBody=({:.3f},{:.3f},{:.3f}) proxyOk={} proxy=({:.3f},{:.3f},{:.3f}) camOk={} cam=({:.3f},{:.3f},{:.3f}) rotWand={:.3f} rotTgt={:.3f} rotObj={:.3f} rotHand={:.3f} jag={:.4f}",
                 hand.handName(),
                 probeMicroseconds,
                 sample.flushSequence,
@@ -163,7 +163,7 @@
                 rotStepTarget,
                 rotStepObject,
                 rotStepHandBody,
-                sample.transportVelocityGameUnitsPerSecond);
+                sample.jagCorrectionGameUnits);
 
             ROCK_LOG_DEBUG(Hand,
                 "{} RENDER_READ: t={}us flushSeq={} nodeOk={} node=({:.3f},{:.3f},{:.3f}) nodeSrc={} body=({:.3f},{:.3f},{:.3f}) d={:.3f} rotNode={:.3f} rotNB={:.3f}",
