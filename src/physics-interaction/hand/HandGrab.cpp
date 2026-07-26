@@ -3709,6 +3709,27 @@ namespace rock
             return result;
         }
 
+        /*
+         * Grip-axis tilt is measured FROM the cross-palm axis, and that axis
+         * comes from the non-mirrored authored handspace convention
+         * (HandFrame.h): the live bone transform already carries handedness, so
+         * authored +Z is thumbward on one hand and pinkyward on the other. One
+         * shared tilt therefore rotates the target axis toward the fingers on
+         * one hand and away from them on the other - the config value cannot be
+         * hand-neutral, so the sign follows the hand here.
+         *
+         * Ground truth, 59 user-verified holds captured 2026-07-25, measured in
+         * this exact convention: right-hand rods sit at +34 deg (n=15, IQR
+         * +23..+45), left-hand rods at -29 deg (n=2). Same magnitude, mirrored
+         * sign, which is what this helper encodes.
+         */
+        [[nodiscard]] float gripAxisTiltRadiansForHand(bool isLeft)
+        {
+            const float degrees = isLeft ? -g_rockConfig.rockPullPresentationGripAxisTiltDegrees
+                                         : g_rockConfig.rockPullPresentationGripAxisTiltDegrees;
+            return degrees * 0.01745329252f;
+        }
+
         struct GrabMeshLongAxisResult
         {
             RE::NiPoint3 axisWorld{};
@@ -7401,8 +7422,7 @@ namespace rock
                  * way, so the natural long-object hold tilts a few degrees
                  * toward the fingers-forward X axis (Bruno-tuned via INI).
                  */
-                const float gripAxisTiltRadians =
-                    g_rockConfig.rockPullPresentationGripAxisTiltDegrees * 0.01745329252f;
+                const float gripAxisTiltRadians = gripAxisTiltRadiansForHand(_isLeft);
                 RE::NiPoint3 targetAxisWorld = normalizeOrZero(
                     transformHandspaceDirection(handWorldTransform,
                         RE::NiPoint3{ std::sin(gripAxisTiltRadians), 0.0f, std::cos(gripAxisTiltRadians) },
@@ -9883,9 +9903,8 @@ namespace rock
                         RE::NiPoint3 currentSecondAxisWorld = normalizeOrZero(seatLongAxis.secondAxisWorld);
                         if (seatRodShape) {
                             if (seatSwingAlignmentWanted) {
-                                // Same thumb-clearance tilt toward fingers-forward as the flight servo.
-                                const float gripAxisTiltRadians =
-                                    g_rockConfig.rockPullPresentationGripAxisTiltDegrees * 0.01745329252f;
+                                // Same hand-signed thumb-clearance tilt as the flight servo.
+                                const float gripAxisTiltRadians = gripAxisTiltRadiansForHand(_isLeft);
                                 RE::NiPoint3 targetAxisWorld = normalizeOrZero(
                                     pocket.crossPalmWorld * std::cos(gripAxisTiltRadians) +
                                     pocket.fingerForwardWorld * std::sin(gripAxisTiltRadians));
@@ -9967,55 +9986,22 @@ namespace rock
                                 seatAlignmentReason = "belowElongationGate";
                             }
                             if (seatRollAlignmentWanted) {
-                                if (seatPlateShape) {
-                                    /*
-                                     * Plate face swing: the minor principal
-                                     * axis IS the face normal (axis1 x axis2
-                                     * with both unit and orthogonal), and it
-                                     * stays exact for near-square plates where
-                                     * the in-plane pair is degenerate. Take it
-                                     * onto the palm normal by minimal arc about
-                                     * the grip point, so the pivot pair is
-                                     * untouched exactly as in the rod paths.
-                                     */
-                                    const RE::NiPoint3 plateNormalWorld =
-                                        normalizeOrZero(crossProduct(currentAxisWorld, currentSecondAxisWorld));
-                                    RE::NiPoint3 plateTargetWorld = normalizeOrZero(pocket.palmNormalWorld);
-                                    if (lengthSquared(plateNormalWorld) > 0.000001f &&
-                                        lengthSquared(plateTargetWorld) > 0.000001f) {
-                                        if (dotProduct(plateNormalWorld, plateTargetWorld) < 0.0f) {
-                                            // A plate has two faces; seat the one already facing the palm.
-                                            plateTargetWorld =
-                                                RE::NiPoint3{ -plateTargetWorld.x, -plateTargetWorld.y, -plateTargetWorld.z };
-                                        }
-                                        const RE::NiPoint3 plateAxisRaw = crossProduct(plateNormalWorld, plateTargetWorld);
-                                        const float plateSin = std::sqrt((std::max)(0.0f, lengthSquared(plateAxisRaw)));
-                                        const float plateCos =
-                                            std::clamp(dotProduct(plateNormalWorld, plateTargetWorld), -1.0f, 1.0f);
-                                        const float plateAngleRadians = std::atan2(plateSin, plateCos);
-                                        if (plateSin > 0.000001f && plateAngleRadians > 0.01f) {
-                                            const float invPlateSin = 1.0f / plateSin;
-                                            const RE::NiPoint3 plateAxis{
-                                                plateAxisRaw.x * invPlateSin,
-                                                plateAxisRaw.y * invPlateSin,
-                                                plateAxisRaw.z * invPlateSin,
-                                            };
-                                            seatBodyWorld = rotateTransformWorldAboutPoint(
-                                                seatBodyWorld, plateAxis, plateAngleRadians, grabGripPoint);
-                                            seatObjectWorld = rotateTransformWorldAboutPoint(
-                                                seatObjectWorld, plateAxis, plateAngleRadians, grabGripPoint);
-                                            seatRollAngleDegrees = plateAngleRadians * 57.29577951308232f;
-                                            seatRollReason = "plateFaceSeatAligned";
-                                            seatPoseChanged = true;
-                                        } else {
-                                            seatRollReason = "alreadyPlateAligned";
-                                        }
-                                    } else {
-                                        seatRollReason = "degeneratePlateAxes";
-                                    }
-                                } else {
-                                    seatRollReason = "belowSecondElongationGate";
-                                }
+                                /*
+                                 * Plates deliberately get NO face alignment.
+                                 * The intuition that a flat object should lie
+                                 * face-down on the palm is simply wrong for
+                                 * this hand: across 31 user-verified plate
+                                 * holds (2026-07-25 ground-truth captures) the
+                                 * mesh face normal sits 63 degrees off the palm
+                                 * normal, IQR 57..72 - plates are held by an
+                                 * EDGE or CORNER, and that is the intended
+                                 * grip, not an artifact. A face swing fought
+                                 * that preference on every plate, so the branch
+                                 * was removed rather than retuned. The plate
+                                 * CLASS is still resolved above because the
+                                 * penetration backstop uses it.
+                                 */
+                                seatRollReason = seatPlateShape ? "plateEdgeHoldNoFaceAlign" : "belowSecondElongationGate";
                             }
                         }
                     }
