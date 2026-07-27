@@ -387,6 +387,7 @@ namespace rock::provider
         EquippedWeaponHandlingAuthority = 1u << 27,
         DebugOverlayPublication = 1u << 28,
         PresentedHandFrames = 1u << 29,
+        EquippedWeaponHandRequest = 1u << 30,
     };
 
     enum class RockProviderFeatureBit2V1 : std::uint32_t
@@ -847,6 +848,7 @@ namespace rock::provider
         ApiFunctionTable = 60,
         TouchGrabTarget = 61,
         TouchGrabState = 62,
+        EquippedWeaponHandRequest = 63,
     };
 
     enum class RockProviderHandInteractionPhaseV1 : std::uint32_t
@@ -1917,6 +1919,31 @@ namespace rock::provider
     };
 
     /*
+     * Requests that ROCK assign the currently equipped weapon's firing grip
+     * to one exact physical hand. This does not select or equip an arbitrary
+     * inventory stack: weaponFormId and weaponGenerationKey are optional-zero
+     * identity guards for the weapon that is already equipped. The caller
+     * must own the active equipped-weapon handling lease; left-hand requests
+     * additionally require that lease to enable AmbidextrousHandoff. Call only
+     * on ROCK's animation owner thread. RequestQueued means the canonical
+     * native-right or persistent-left carry is armed but not yet settled;
+     * observe getEquippedWeaponHandlingStateV1 for the effective hand.
+     */
+    struct RockProviderEquippedWeaponHandRequestV1
+    {
+        std::uint32_t size{ sizeof(RockProviderEquippedWeaponHandRequestV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        RockProviderHand hand{ RockProviderHand::None };
+        std::uint32_t flags{ 0 };
+        std::uint32_t weaponFormId{ 0 };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t providerGeneration{ 0 };
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint64_t reserved[3]{};
+    };
+
+    /*
      * A consumer publishes one hand world target and/or an exact 15-bone
      * finger-local pose through ROCK's FRIK authority bridge. Set/clear only
      * from ROCK's animation/frame callbacks on the game thread; wrong-thread
@@ -2872,6 +2899,9 @@ namespace rock::provider
             std::uint64_t scopeToken,
             std::uint64_t targetId,
             std::uint32_t targetGeneration);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* requestEquippedWeaponHandV1)(
+            std::uint64_t ownerToken,
+            const RockProviderEquippedWeaponHandRequestV1* request);
 
         [[nodiscard]] static int initialize(
             const std::uint32_t minVersion = ROCK_PROVIDER_API_VERSION,
@@ -3025,6 +3055,8 @@ namespace rock::provider
         offsetof(RockProviderApi, clearNativeAnimationRuntimeV1) + sizeof(std::declval<RockProviderApi>().clearNativeAnimationRuntimeV1));
     inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_TOUCH_GRAB_TARGETS_TABLE_BYTES = static_cast<std::uint32_t>(
         offsetof(RockProviderApi, requestTouchGrabYieldV1) + sizeof(std::declval<RockProviderApi>().requestTouchGrabYieldV1));
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_EQUIPPED_WEAPON_HAND_REQUEST_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, requestEquippedWeaponHandV1) + sizeof(std::declval<RockProviderApi>().requestEquippedWeaponHandV1));
 
     [[nodiscard]] inline bool queryProviderLimitsV1(RockProviderLimitsV1& outLimits)
     {
@@ -3306,6 +3338,24 @@ namespace rock::provider
         return queryProviderLimitsV1(limits) && supportsEquippedWeaponHandlingAuthorityV1(limits);
     }
 
+    [[nodiscard]] inline bool supportsEquippedWeaponHandRequestV1(
+        const RockProviderLimitsV1& limits)
+    {
+        return providerApiTableSupportsV1(
+                   limits,
+                   ROCK_PROVIDER_API_V1_EQUIPPED_WEAPON_HAND_REQUEST_TABLE_BYTES) &&
+               hasFeatureBitV1(
+                   limits.featureBits,
+                   RockProviderFeatureBitV1::EquippedWeaponHandRequest);
+    }
+
+    [[nodiscard]] inline bool supportsEquippedWeaponHandRequestV1()
+    {
+        RockProviderLimitsV1 limits{};
+        return queryProviderLimitsV1(limits) &&
+               supportsEquippedWeaponHandRequestV1(limits);
+    }
+
     [[nodiscard]] inline bool supportsDebugOverlayPublicationV1(const RockProviderLimitsV1& limits)
     {
         return providerApiTableSupportsV1(limits, ROCK_PROVIDER_API_V1_DEBUG_OVERLAY_PUBLICATION_TABLE_BYTES) &&
@@ -3527,6 +3577,10 @@ namespace rock::provider
     static_assert(alignof(RockProviderEquippedWeaponHandlingStateV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderEquippedWeaponHandlingStateV1>);
     static_assert(std::is_trivially_copyable_v<RockProviderEquippedWeaponHandlingStateV1>);
+    static_assert(sizeof(RockProviderEquippedWeaponHandRequestV1) == 64);
+    static_assert(alignof(RockProviderEquippedWeaponHandRequestV1) == 8);
+    static_assert(std::is_standard_layout_v<RockProviderEquippedWeaponHandRequestV1>);
+    static_assert(std::is_trivially_copyable_v<RockProviderEquippedWeaponHandRequestV1>);
     static_assert(sizeof(RockProviderRawWandButtonStateV1) == 32);
     static_assert(alignof(RockProviderRawWandButtonStateV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderRawWandButtonStateV1>);
@@ -3579,7 +3633,7 @@ namespace rock::provider
     static_assert(alignof(RockProviderTouchGrabStateV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderTouchGrabStateV1>);
     static_assert(std::is_trivially_copyable_v<RockProviderTouchGrabStateV1>);
-    static_assert(sizeof(RockProviderApi) == 688);
+    static_assert(sizeof(RockProviderApi) == 696);
     static_assert(alignof(RockProviderApi) == 8);
     static_assert(
         offsetof(RockProviderApi, getProviderLimitsExtV1) == 54 * sizeof(void*));
@@ -3589,4 +3643,7 @@ namespace rock::provider
     static_assert(
         offsetof(RockProviderApi, requestTouchGrabYieldV1) ==
         85 * sizeof(void*));
+    static_assert(
+        offsetof(RockProviderApi, requestEquippedWeaponHandV1) ==
+        86 * sizeof(void*));
 }

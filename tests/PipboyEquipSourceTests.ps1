@@ -77,18 +77,18 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'A Pip-Boy left carry must survive the absent menu grab hold while preserving an armed physical detach path.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'inspectStack\(assignment\.handleId,\s*assignment\.stackId[\s\S]*equippedWeapon->formID\s*==\s*assignment\.formId[\s\S]*beginPersistentEquippedCarry[\s\S]*left-carry-resolve-timeout' `
+    'inspectStack\(\s*assignment\.handleId,\s*assignment\.stackId[\s\S]*equippedWeapon->formID\s*==\s*assignment\.formId[\s\S]*beginPersistentEquippedCarry[\s\S]*left-carry-resolve-timeout' `
     'Left carry acquisition must bind exact inventory and equipped-weapon identities and fail closed to right after a bounded retry.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'f4vr::isNodeVisible\(weaponNode\)[\s\S]*nativeOffsetSample\s*=\s*weaponNode->local[\s\S]*advanceNativeOffsetReadiness[\s\S]*beginPersistentEquippedCarry' `
     'Direct left carry must wait for a visible, stable hFRIK-owned offset and a reserved canonical-refresh frame before ownership transfer.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'resolveEquipMode\([\s\S]{0,260}handlingSettings\.externalAuthorityActive[\s\S]{0,180}handlingSettings\.pipboyTriggerHandEquipEnabled[\s\S]{0,180}_fixedFiringHandIsLeft[\s\S]{0,300}!pipboy_equip_policy::managesHandAssignment\(equipMode\)[\s\S]{0,700}consumeSelectionEvent\([\s\S]{0,700}clearPipboyWeaponHandAssignment\("native-right-preference",\s*true\)' `
+    'resolveEquipMode\([\s\S]{0,260}handlingSettings\.externalAuthorityActive[\s\S]{0,180}handlingSettings\.pipboyTriggerHandEquipEnabled[\s\S]{0,180}_fixedFiringHandIsLeft[\s\S]{0,300}pipboyAssignmentManaged\s*=[\s\S]{0,180}managesHandAssignment\(equipMode\)[\s\S]{0,700}consumeSelectionEvent\([\s\S]{0,900}clearEquippedWeaponHandAssignment\([\s\S]{0,120}"native-right-preference"[\s\S]{0,120}true\)' `
     'Native-right preference must drain stale selection intent, while fixed-left comes from ROCK and trigger-hand mode only from addon authority.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'commitRight\s*=\s*\[&\]\(const char\* reason\)[\s\S]{0,500}restoreNativeRightEquippedCarry\(reason\)[\s\S]{0,500}Hand::Right' `
+    'commitRight\s*=\s*\[&\]\(const char\* reason\)[\s\S]{0,900}restoreNativeRightEquippedCarry\(reason\)[\s\S]{0,1400}pipboy_equip_policy::Hand::Right' `
     'A fresh right-trigger assignment must restore native-right ownership before publishing the right side.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
@@ -100,7 +100,7 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'Native-right restoration must clear both persistent and surviving manual weapon ownership.'
 
 $physicsInteractionText = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/core/PhysicsInteraction.cpp')
-$assignmentServiceCall = $physicsInteractionText.IndexOf('servicePipboyWeaponHandAssignment(')
+$assignmentServiceCall = $physicsInteractionText.IndexOf('serviceEquippedWeaponHandAssignment(')
 $gripUpdateCall = if ($assignmentServiceCall -ge 0) {
     $physicsInteractionText.IndexOf('_twoHandedGrip.update(', $assignmentServiceCall)
 } else {

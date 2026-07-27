@@ -55,6 +55,9 @@ namespace rock::provider
     void setEquippedWeaponFiringHandIsLeft(bool isLeft);
     bool getEquippedWeaponHandlingAuthorityV1(
         RockProviderEquippedWeaponHandlingRequestV1& outRequest);
+    bool ownsEquippedWeaponHandlingAuthorityV1(
+        std::uint64_t ownerToken,
+        std::uint32_t requiredFlags);
     std::uint32_t currentHandInputSuppressionFlagsV1(RockProviderHand hand);
     std::uint32_t currentNativeAnimationAuthorityFlagsV1();
     void refreshNativeAnimationAuthorityLeasesV1();

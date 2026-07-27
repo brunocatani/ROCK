@@ -114,6 +114,8 @@ namespace rock
         constexpr float kRawParityFailRotationDegrees = 2.0f;
         constexpr int kRawParityWarnFrames = 2;
         constexpr int kRawParityFailFrames = 10;
+        constexpr std::uint16_t
+            kEquippedWeaponHandAssignmentMaximumResolveFrames = 180;
         constexpr std::array<std::string_view, 5> kWeaponCollisionWorkbenchExitMenuNames{
             "ExamineMenu",
             "PowerArmorModMenu",
@@ -1932,7 +1934,7 @@ namespace rock
         _equippedWeaponDropMomentumHandoffs = {};
         clearLooseGrenadeRuntimeState(false);
         _pendingEquippedWeaponPrimaryOnlyGripStart = {};
-        _pipboyWeaponHandAssignment = {};
+        _equippedWeaponHandAssignment = {};
         _lastPipboyWeaponSelectionSequence = 0;
         _equippedWeaponHandlingSettings = {};
         _fixedFiringHandIsLeft = false;
@@ -2520,7 +2522,7 @@ namespace rock
         const std::uint64_t currentWeaponGenerationKey = _weaponCollision.getCurrentWeaponGenerationKey();
         const std::uint64_t currentEquippedWeaponOwnershipKey = _weaponCollision.getCurrentEquippedWeaponOwnershipKey();
         reconcileEquippedWeaponHandlingMode();
-        servicePipboyWeaponHandAssignment(
+        serviceEquippedWeaponHandAssignment(
             weaponNode,
             currentWeaponGenerationKey,
             currentEquippedWeaponOwnershipKey,
@@ -3090,7 +3092,7 @@ namespace rock
                 supportAuthorityMode,
                 firingGripProximityAuthorityEnabled,
                 effectiveHandlingSettings);
-            reconcilePipboyWeaponHandAssignmentAfterGrip();
+            reconcileEquippedWeaponHandAssignmentAfterGrip();
             if (_twoHandedGrip.hasVisualAuthorityForHand(false)) {
                 _rightHand.cancelGrabVisualReturn("equipped-weapon-visual-authority");
             }
@@ -4152,9 +4154,9 @@ namespace rock
             return;
         }
 
-        if (_pipboyWeaponHandAssignment.pending ||
-            _pipboyWeaponHandAssignment.active) {
-            clearPipboyWeaponHandAssignment(
+        if (_equippedWeaponHandAssignment.pending ||
+            _equippedWeaponHandAssignment.active) {
+            clearEquippedWeaponHandAssignment(
                 "equipped-weapon-handling-mode-changed",
                 true);
         } else {
@@ -4191,8 +4193,8 @@ namespace rock
         // its effective ambidextrous policy comes from ROCK or the addon. The
         // fixed hand remains the fallback/default rather than fighting the
         // player's deliberate switch.
-        if (_pipboyWeaponHandAssignment.pending ||
-            _pipboyWeaponHandAssignment.active) {
+        if (_equippedWeaponHandAssignment.pending ||
+            _equippedWeaponHandAssignment.active) {
             _fixedLeftCarry = {};
             return;
         }
@@ -4279,79 +4281,194 @@ namespace rock
         }
     }
 
-    void PhysicsInteraction::clearPipboyWeaponHandAssignment(const char* reason, const bool clearUiAssignment)
+    ::rock::provider::RockProviderResultV1
+    PhysicsInteraction::requestProviderEquippedWeaponHandV1(
+        const std::uint64_t ownerToken,
+        const ::rock::provider::RockProviderEquippedWeaponHandRequestV1& request)
     {
-        if (_pipboyWeaponHandAssignment.pending || _pipboyWeaponHandAssignment.active) {
-            ROCK_LOG_INFO(Weapon,
-                "Pip-Boy weapon hand assignment cleared reason={} handle={} stack={} form={:08X}",
-                reason ? reason : "unknown",
-                _pipboyWeaponHandAssignment.handleId,
-                _pipboyWeaponHandAssignment.stackId,
-                _pipboyWeaponHandAssignment.formId);
+        using Result = ::rock::provider::RockProviderResultV1;
+        using Hand = ::rock::provider::RockProviderHand;
+
+        if (!_initialized) {
+            return Result::NotReady;
         }
-        _twoHandedGrip.restoreNativeRightEquippedCarry(reason);
-        if (clearUiAssignment) {
-            pipboy_equip_runtime::clearWeaponAssignment(
-                _pipboyWeaponHandAssignment.handleId,
-                _pipboyWeaponHandAssignment.stackId);
+        if (request.hand != Hand::Right && request.hand != Hand::Left) {
+            return Result::HandUnavailable;
         }
-        _pipboyWeaponHandAssignment = {};
+
+        const auto* equippedWeapon = currentEquippedWeaponForm();
+        if (!equippedWeapon) {
+            return Result::TargetUnavailable;
+        }
+        if (request.weaponFormId != 0 &&
+            request.weaponFormId != equippedWeapon->formID) {
+            return Result::TargetUnavailable;
+        }
+
+        const auto currentWeaponGenerationKey =
+            _weaponCollision.getCurrentWeaponGenerationKey();
+        if (request.weaponGenerationKey != 0 &&
+            request.weaponGenerationKey != currentWeaponGenerationKey) {
+            return Result::TargetUnavailable;
+        }
+
+        const bool requestedLeft = request.hand == Hand::Left;
+        if (requestedLeft &&
+            !TwoHandedGrip::canBeginPrimaryOnlyGripForHand(true)) {
+            return Result::HandUnavailable;
+        }
+
+        auto& existing = _equippedWeaponHandAssignment;
+        if (existing.source ==
+                EquippedWeaponHandAssignmentSource::Provider &&
+            existing.ownerToken == ownerToken &&
+            existing.formId == equippedWeapon->formID &&
+            existing.assignedLeft == requestedLeft &&
+            existing.requestedWeaponGenerationKey ==
+                request.weaponGenerationKey) {
+            return existing.active &&
+                           existing.effectiveLeft == requestedLeft ?
+                Result::Ok :
+                Result::RequestQueued;
+        }
+
+        clearEquippedWeaponHandAssignment(
+            "provider-hand-request-replaced",
+            true);
+        _equippedWeaponHandAssignment =
+            EquippedWeaponHandAssignmentState{
+                .source =
+                    EquippedWeaponHandAssignmentSource::Provider,
+                .pending = true,
+                .active = false,
+                .assignedLeft = requestedLeft,
+                .effectiveLeft = false,
+                .remainingResolveFrames =
+                    kEquippedWeaponHandAssignmentMaximumResolveFrames,
+                .formId = equippedWeapon->formID,
+                .ownerToken = ownerToken,
+                .requestedWeaponGenerationKey =
+                    request.weaponGenerationKey,
+            };
+        ROCK_LOG_INFO(
+            Weapon,
+            "Provider requested equipped weapon hand={} owner={:016X} form={:08X} generation={:016X}",
+            requestedLeft ? "left" : "right",
+            ownerToken,
+            equippedWeapon->formID,
+            request.weaponGenerationKey);
+        return Result::RequestQueued;
     }
 
-    void PhysicsInteraction::servicePipboyWeaponHandAssignment(
+    void PhysicsInteraction::clearEquippedWeaponHandAssignment(
+        const char* reason,
+        const bool clearUiAssignment)
+    {
+        const auto& assignment = _equippedWeaponHandAssignment;
+        if (assignment.pending || assignment.active) {
+            ROCK_LOG_INFO(
+                Weapon,
+                "{} weapon hand assignment cleared reason={} handle={} stack={} form={:08X} owner={:016X}",
+                assignment.source ==
+                        EquippedWeaponHandAssignmentSource::Provider ?
+                    "Provider" :
+                    "Pip-Boy",
+                reason ? reason : "unknown",
+                assignment.handleId,
+                assignment.stackId,
+                assignment.formId,
+                assignment.ownerToken);
+        }
+        _twoHandedGrip.restoreNativeRightEquippedCarry(reason);
+        if (clearUiAssignment &&
+            assignment.source ==
+                EquippedWeaponHandAssignmentSource::Pipboy) {
+            pipboy_equip_runtime::clearWeaponAssignment(
+                assignment.handleId,
+                assignment.stackId);
+        }
+        _equippedWeaponHandAssignment = {};
+    }
+
+    void PhysicsInteraction::serviceEquippedWeaponHandAssignment(
         RE::NiNode* weaponNode,
         const std::uint64_t currentWeaponGenerationKey,
         const std::uint64_t currentEquippedWeaponOwnershipKey,
         const bool menuInputActive,
         const EquippedWeaponHandlingSettings& handlingSettings)
     {
-        constexpr std::uint16_t kMaximumResolveFrames = 180;
         const auto equipMode = pipboy_equip_policy::resolveEquipMode(
             handlingSettings.externalAuthorityActive &&
                 handlingSettings.pipboyTriggerHandEquipEnabled,
             _fixedFiringHandIsLeft);
-        if (!pipboy_equip_policy::managesHandAssignment(equipMode)) {
-            pipboy_equip_runtime::setLeftHandEquipAvailable(false);
+        const bool pipboyAssignmentManaged =
+            pipboy_equip_policy::managesHandAssignment(equipMode);
+        const bool leftCarryAvailable =
+            TwoHandedGrip::canBeginPrimaryOnlyGripForHand(true);
+        pipboy_equip_runtime::setLeftHandEquipAvailable(
+            pipboyAssignmentManaged && leftCarryAvailable);
+
+        if (!pipboyAssignmentManaged) {
             pipboy_equip_runtime::SelectionEvent discardedEvent{};
             (void)pipboy_equip_runtime::consumeSelectionEvent(
                 _lastPipboyWeaponSelectionSequence,
                 discardedEvent);
-            if (_pipboyWeaponHandAssignment.pending || _pipboyWeaponHandAssignment.active) {
-                clearPipboyWeaponHandAssignment("native-right-preference", true);
+            if (_equippedWeaponHandAssignment.source ==
+                    EquippedWeaponHandAssignmentSource::Pipboy &&
+                (_equippedWeaponHandAssignment.pending ||
+                    _equippedWeaponHandAssignment.active)) {
+                clearEquippedWeaponHandAssignment(
+                    "native-right-preference",
+                    true);
             } else {
                 pipboy_equip_runtime::AssignmentSnapshot persisted{};
-                if (pipboy_equip_runtime::getAssignment(persisted) && persisted.active) {
+                if (pipboy_equip_runtime::getAssignment(persisted) &&
+                    persisted.active) {
                     pipboy_equip_runtime::clearWeaponAssignment();
                 }
             }
-            return;
-        }
-
-        const bool leftCarryAvailable = TwoHandedGrip::canBeginPrimaryOnlyGripForHand(true);
-        pipboy_equip_runtime::setLeftHandEquipAvailable(leftCarryAvailable);
-
-        pipboy_equip_runtime::SelectionEvent event{};
-        if (pipboy_equip_runtime::consumeSelectionEvent(_lastPipboyWeaponSelectionSequence, event)) {
-            const bool matchesCurrent =
-                (_pipboyWeaponHandAssignment.pending || _pipboyWeaponHandAssignment.active) &&
-                _pipboyWeaponHandAssignment.handleId == event.handleId &&
-                _pipboyWeaponHandAssignment.stackId == event.stackId;
-            if (!event.equipped) {
-                if (matchesCurrent) {
-                    clearPipboyWeaponHandAssignment("selected-stack-unequipped", false);
+        } else {
+            pipboy_equip_runtime::SelectionEvent event{};
+            if (pipboy_equip_runtime::consumeSelectionEvent(
+                    _lastPipboyWeaponSelectionSequence,
+                    event)) {
+                const bool matchesCurrent =
+                    _equippedWeaponHandAssignment.source ==
+                        EquippedWeaponHandAssignmentSource::Pipboy &&
+                    (_equippedWeaponHandAssignment.pending ||
+                        _equippedWeaponHandAssignment.active) &&
+                    _equippedWeaponHandAssignment.handleId ==
+                        event.handleId &&
+                    _equippedWeaponHandAssignment.stackId ==
+                        event.stackId;
+                if (!event.equipped) {
+                    if (matchesCurrent) {
+                        clearEquippedWeaponHandAssignment(
+                            "selected-stack-unequipped",
+                            false);
+                    }
+                } else {
+                    clearEquippedWeaponHandAssignment(
+                        "new-pipboy-selection",
+                        false);
+                    _equippedWeaponHandAssignment =
+                        EquippedWeaponHandAssignmentState{
+                            .source =
+                                EquippedWeaponHandAssignmentSource::
+                                    Pipboy,
+                            .pending = true,
+                            .active = false,
+                            .assignedLeft =
+                                event.requestedHand ==
+                                pipboy_equip_policy::Hand::Left,
+                            .effectiveLeft = false,
+                            .remainingResolveFrames =
+                                kEquippedWeaponHandAssignmentMaximumResolveFrames,
+                            .handleId = event.handleId,
+                            .stackId = event.stackId,
+                            .formId = event.formId,
+                        };
                 }
-            } else {
-                clearPipboyWeaponHandAssignment("new-pipboy-selection", false);
-                _pipboyWeaponHandAssignment = PipboyWeaponHandAssignmentState{
-                    .pending = true,
-                    .active = false,
-                    .assignedLeft = event.requestedHand == pipboy_equip_policy::Hand::Left,
-                    .effectiveLeft = false,
-                    .remainingResolveFrames = kMaximumResolveFrames,
-                    .handleId = event.handleId,
-                    .stackId = event.stackId,
-                    .formId = event.formId,
-                };
             }
         }
 
@@ -4359,33 +4476,88 @@ namespace rock
         // lifecycle while the inventory assignment remains valid. Rehydrate
         // from the hook-owned value snapshot instead of losing the selected
         // hand or retaining any engine pointer across the lifecycle.
-        if (!_pipboyWeaponHandAssignment.pending && !_pipboyWeaponHandAssignment.active) {
+        if (pipboyAssignmentManaged &&
+            !_equippedWeaponHandAssignment.pending &&
+            !_equippedWeaponHandAssignment.active) {
             pipboy_equip_runtime::AssignmentSnapshot persisted{};
-            if (pipboy_equip_runtime::getAssignment(persisted) && persisted.active) {
+            if (pipboy_equip_runtime::getAssignment(persisted) &&
+                persisted.active) {
                 const bool left = persisted.hand == pipboy_equip_policy::Hand::Left;
-                _pipboyWeaponHandAssignment = PipboyWeaponHandAssignmentState{
-                    .pending = left,
-                    .active = !left,
-                    .assignedLeft = left,
-                    .effectiveLeft = left,
-                    .remainingResolveFrames = kMaximumResolveFrames,
-                    .handleId = persisted.handleId,
-                    .stackId = persisted.stackId,
-                    .formId = persisted.formId,
-                };
+                _equippedWeaponHandAssignment =
+                    EquippedWeaponHandAssignmentState{
+                        .source =
+                            EquippedWeaponHandAssignmentSource::Pipboy,
+                        .pending = left,
+                        .active = !left,
+                        .assignedLeft = left,
+                        .effectiveLeft = left,
+                        .remainingResolveFrames =
+                            kEquippedWeaponHandAssignmentMaximumResolveFrames,
+                        .handleId = persisted.handleId,
+                        .stackId = persisted.stackId,
+                        .formId = persisted.formId,
+                    };
             }
         }
 
-        auto& assignment = _pipboyWeaponHandAssignment;
+        auto& assignment = _equippedWeaponHandAssignment;
         if (!assignment.pending && !assignment.active) {
             return;
         }
 
         _pendingEquippedWeaponPrimaryOnlyGripStart = {};
-        pipboy_equip_runtime::StackSnapshot stack{};
-        if (!pipboy_equip_runtime::inspectStack(assignment.handleId, assignment.stackId, stack) ||
-            !stack.resolved || !stack.weapon || !stack.equipped || stack.formId != assignment.formId) {
-            clearPipboyWeaponHandAssignment("selected-stack-no-longer-equipped", true);
+        if (assignment.source ==
+            EquippedWeaponHandAssignmentSource::Pipboy) {
+            pipboy_equip_runtime::StackSnapshot stack{};
+            if (!pipboy_equip_runtime::inspectStack(
+                    assignment.handleId,
+                    assignment.stackId,
+                    stack) ||
+                !stack.resolved || !stack.weapon || !stack.equipped ||
+                stack.formId != assignment.formId) {
+                clearEquippedWeaponHandAssignment(
+                    "selected-stack-no-longer-equipped",
+                    true);
+                return;
+            }
+        } else if (assignment.source ==
+                   EquippedWeaponHandAssignmentSource::Provider) {
+            std::uint32_t requiredFlags =
+                static_cast<std::uint32_t>(
+                    ::rock::provider::
+                        RockProviderEquippedWeaponHandlingFlagV1::
+                            FiringGripOwnership);
+            if (assignment.assignedLeft) {
+                requiredFlags |= static_cast<std::uint32_t>(
+                    ::rock::provider::
+                        RockProviderEquippedWeaponHandlingFlagV1::
+                            AmbidextrousHandoff);
+            }
+            if (!::rock::provider::
+                    ownsEquippedWeaponHandlingAuthorityV1(
+                        assignment.ownerToken,
+                        requiredFlags)) {
+                clearEquippedWeaponHandAssignment(
+                    "provider-hand-authority-lost",
+                    false);
+                return;
+            }
+            const auto* equippedWeapon = currentEquippedWeaponForm();
+            if (!equippedWeapon ||
+                equippedWeapon->formID != assignment.formId ||
+                (assignment.requestedWeaponGenerationKey != 0 &&
+                    currentWeaponGenerationKey != 0 &&
+                    currentWeaponGenerationKey !=
+                        assignment.requestedWeaponGenerationKey)) {
+                clearEquippedWeaponHandAssignment(
+                    "provider-hand-target-changed",
+                    false);
+                return;
+            }
+        } else {
+            clearEquippedWeaponHandAssignment(
+                "invalid-hand-assignment-source",
+                false);
             return;
         }
 
@@ -4396,12 +4568,13 @@ namespace rock
                 _twoHandedGrip.isPersistentEquippedCarryActive(),
                 _twoHandedGrip.isManualOwnershipActive())) {
             // Menu/lifecycle gates intentionally reset TwoHandedGrip. Preserve
-            // the exact inventory assignment and reacquire after native right
-            // carry has produced a fresh canonical frame.
+            // the exact hand assignment and reacquire after native right carry
+            // has produced a fresh canonical frame.
             assignment.active = false;
             assignment.pending = true;
             assignment.ownershipKey = 0;
-            assignment.remainingResolveFrames = kMaximumResolveFrames;
+            assignment.remainingResolveFrames =
+                kEquippedWeaponHandAssignmentMaximumResolveFrames;
             assignment.nativeOffsetGenerationKey = 0;
             assignment.nativeOffsetSampleValid = false;
             assignment.nativeOffsetReadinessLogged = false;
@@ -4421,19 +4594,38 @@ namespace rock
             assignment.active = true;
             assignment.effectiveLeft = false;
             assignment.ownershipKey = currentEquippedWeaponOwnershipKey;
-            pipboy_equip_runtime::publishWeaponAssignment(
-                assignment.handleId,
-                assignment.stackId,
-                assignment.formId,
-                pipboy_equip_policy::Hand::Right);
-            ROCK_LOG_INFO(Weapon,
-                "Pip-Boy weapon assigned to native right hand reason={} form={:08X}",
+            if (assignment.source ==
+                EquippedWeaponHandAssignmentSource::Pipboy) {
+                pipboy_equip_runtime::publishWeaponAssignment(
+                    assignment.handleId,
+                    assignment.stackId,
+                    assignment.formId,
+                    pipboy_equip_policy::Hand::Right);
+            }
+            ROCK_LOG_INFO(
+                Weapon,
+                "{} weapon assigned to native right hand reason={} form={:08X}",
+                assignment.source ==
+                        EquippedWeaponHandAssignmentSource::Provider ?
+                    "Provider" :
+                    "Pip-Boy",
                 reason ? reason : "unknown",
                 assignment.formId);
         };
 
         if (!assignment.assignedLeft || !leftCarryAvailable) {
-            commitRight(assignment.assignedLeft ? "left-carry-unavailable" : "right-trigger-selection");
+            if (assignment.assignedLeft &&
+                assignment.source ==
+                    EquippedWeaponHandAssignmentSource::Provider) {
+                clearEquippedWeaponHandAssignment(
+                    "provider-left-carry-unavailable",
+                    false);
+                return;
+            }
+            commitRight(
+                assignment.assignedLeft ?
+                    "left-carry-unavailable" :
+                    "right-hand-assignment");
             return;
         }
         if (menuInputActive) {
@@ -4482,8 +4674,13 @@ namespace rock
             if (!assignment.nativeOffsetReadinessLogged &&
                 previousMatchingFrames == 0 && assignment.matchingNativeOffsetFrames == 1) {
                 assignment.nativeOffsetReadinessLogged = true;
-                ROCK_LOG_INFO(Weapon,
-                    "Pip-Boy left-hand assignment observed visible native-right offset; reserving canonical refresh form={:08X}",
+                ROCK_LOG_INFO(
+                    Weapon,
+                    "{} left-hand assignment observed visible native-right offset; reserving canonical refresh form={:08X}",
+                    assignment.source ==
+                            EquippedWeaponHandAssignmentSource::Provider ?
+                        "Provider" :
+                        "Pip-Boy",
                     assignment.formId);
             }
         } else {
@@ -4499,12 +4696,22 @@ namespace rock
             assignment.active = true;
             assignment.effectiveLeft = true;
             assignment.ownershipKey = currentEquippedWeaponOwnershipKey;
-            pipboy_equip_runtime::publishWeaponAssignment(
-                assignment.handleId,
-                assignment.stackId,
-                assignment.formId,
-                pipboy_equip_policy::Hand::Left);
-            ROCK_LOG_INFO(Weapon, "Pip-Boy weapon assigned to left hand form={:08X}", assignment.formId);
+            if (assignment.source ==
+                EquippedWeaponHandAssignmentSource::Pipboy) {
+                pipboy_equip_runtime::publishWeaponAssignment(
+                    assignment.handleId,
+                    assignment.stackId,
+                    assignment.formId,
+                    pipboy_equip_policy::Hand::Left);
+            }
+            ROCK_LOG_INFO(
+                Weapon,
+                "{} weapon assigned to left hand form={:08X}",
+                assignment.source ==
+                        EquippedWeaponHandAssignmentSource::Provider ?
+                    "Provider" :
+                    "Pip-Boy",
+                assignment.formId);
             return;
         }
 
@@ -4512,16 +4719,28 @@ namespace rock
             --assignment.remainingResolveFrames;
         }
         if (assignment.remainingResolveFrames == 0) {
-            ROCK_LOG_WARN(Weapon,
-                "Pip-Boy left-hand assignment timed out waiting for a generation-bound canonical carry; falling back to right form={:08X}",
-                assignment.formId);
-            commitRight("left-carry-resolve-timeout");
+            if (assignment.source ==
+                EquippedWeaponHandAssignmentSource::Provider) {
+                ROCK_LOG_WARN(
+                    Weapon,
+                    "Provider left-hand assignment timed out waiting for a generation-bound canonical carry form={:08X}",
+                    assignment.formId);
+                clearEquippedWeaponHandAssignment(
+                    "provider-left-carry-resolve-timeout",
+                    false);
+            } else {
+                ROCK_LOG_WARN(
+                    Weapon,
+                    "Pip-Boy left-hand assignment timed out waiting for a generation-bound canonical carry; falling back to right form={:08X}",
+                    assignment.formId);
+                commitRight("left-carry-resolve-timeout");
+            }
         }
     }
 
-    void PhysicsInteraction::reconcilePipboyWeaponHandAssignmentAfterGrip()
+    void PhysicsInteraction::reconcileEquippedWeaponHandAssignmentAfterGrip()
     {
-        auto& assignment = _pipboyWeaponHandAssignment;
+        auto& assignment = _equippedWeaponHandAssignment;
         if (!assignment.active) {
             return;
         }
@@ -4534,13 +4753,23 @@ namespace rock
         // originally requested by an older Pip-Boy transaction.
         assignment.assignedLeft = currentLeft;
         assignment.effectiveLeft = currentLeft;
-        pipboy_equip_runtime::publishWeaponAssignment(
-            assignment.handleId,
-            assignment.stackId,
-            assignment.formId,
-            currentLeft ? pipboy_equip_policy::Hand::Left : pipboy_equip_policy::Hand::Right);
-        ROCK_LOG_INFO(Weapon,
-            "Pip-Boy weapon side tag followed firing-grip handoff hand={} form={:08X}",
+        if (assignment.source ==
+            EquippedWeaponHandAssignmentSource::Pipboy) {
+            pipboy_equip_runtime::publishWeaponAssignment(
+                assignment.handleId,
+                assignment.stackId,
+                assignment.formId,
+                currentLeft ?
+                    pipboy_equip_policy::Hand::Left :
+                    pipboy_equip_policy::Hand::Right);
+        }
+        ROCK_LOG_INFO(
+            Weapon,
+            "{} weapon hand assignment followed firing-grip handoff hand={} form={:08X}",
+            assignment.source ==
+                    EquippedWeaponHandAssignmentSource::Provider ?
+                "Provider" :
+                "Pip-Boy",
             currentLeft ? "left" : "right",
             assignment.formId);
     }
@@ -4636,7 +4865,7 @@ namespace rock
             collision_suppression_registry::globalCollisionSuppressionRegistry().clear();
         }
 
-        clearPipboyWeaponHandAssignment("physics-shutdown", false);
+        clearEquippedWeaponHandAssignment("physics-shutdown", false);
         _twoHandedGrip.reset();
         _pendingEquippedWeaponPrimaryOnlyGripStart = {};
         clearPendingForceGrabCommitsForOrigin(PendingForceGrabCommitOrigin::ProviderForceGrabCommand);

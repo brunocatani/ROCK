@@ -85,6 +85,7 @@ int main()
     ROCK_EXPECT_LAYOUT(RockProviderEquippedWeaponGripStateV1, 224, 8);
     ROCK_EXPECT_LAYOUT(RockProviderEquippedWeaponHandlingRequestV1, 128, 4);
     ROCK_EXPECT_LAYOUT(RockProviderEquippedWeaponHandlingStateV1, 88, 8);
+    ROCK_EXPECT_LAYOUT(RockProviderEquippedWeaponHandRequestV1, 64, 8);
     ROCK_EXPECT_LAYOUT(RockProviderHandVisualAuthorityRequestV1, 888, 4);
     ROCK_EXPECT_LAYOUT(RockProviderNativeAnimationRuntimePublicationV1, 64, 8);
     ROCK_EXPECT_LAYOUT(RockProviderDebugOverlayLineV1, 56, 4);
@@ -94,19 +95,21 @@ int main()
     ROCK_EXPECT_LAYOUT(RockProviderBodyContactV1, 128, 8);
     ROCK_EXPECT_LAYOUT(RockProviderTouchGrabTargetV1, 128, 8);
     ROCK_EXPECT_LAYOUT(RockProviderTouchGrabStateV1, 136, 8);
-    ROCK_EXPECT_LAYOUT(RockProviderApi, 688, 8);
+    ROCK_EXPECT_LAYOUT(RockProviderApi, 696, 8);
 #undef ROCK_EXPECT_LAYOUT
 
-    ok = ok && sizeof(RockProviderApi) == 86 * sizeof(void*);
+    ok = ok && sizeof(RockProviderApi) == 87 * sizeof(void*);
     ok = ok && alignof(RockProviderApi) == alignof(void*);
     ok = ok && offsetof(RockProviderApi, getProviderLimitsExtV1) == 54 * sizeof(void*);
     ok = ok && offsetof(RockProviderApi, clearNativeAnimationRuntimeV1) == 81 * sizeof(void*);
     ok = ok && offsetof(RockProviderApi, setTouchGrabTargetsForScopeV1) == 82 * sizeof(void*);
     ok = ok && offsetof(RockProviderApi, requestTouchGrabYieldV1) == 85 * sizeof(void*);
+    ok = ok && offsetof(RockProviderApi, requestEquippedWeaponHandV1) == 86 * sizeof(void*);
     ok = ok && offsetof(RockProviderWeaponPartGripStateV1, authoredSupportGrip) == 224;
     ok = ok && offsetof(RockProviderWeaponPartPoseV1, actionRole) == 44;
     ok = ok && ROCK_PROVIDER_API_V1_NATIVE_ANIMATION_RUNTIME_CLEAR_TABLE_BYTES == 82 * sizeof(void*);
-    ok = ok && ROCK_PROVIDER_API_V1_TOUCH_GRAB_TARGETS_TABLE_BYTES == sizeof(RockProviderApi);
+    ok = ok && ROCK_PROVIDER_API_V1_TOUCH_GRAB_TARGETS_TABLE_BYTES == 86 * sizeof(void*);
+    ok = ok && ROCK_PROVIDER_API_V1_EQUIPPED_WEAPON_HAND_REQUEST_TABLE_BYTES == sizeof(RockProviderApi);
     ok = ok &&
         static_cast<std::uint32_t>(
             RockProviderHandInputSuppressionFlagV1::SuppressNativeVats) ==

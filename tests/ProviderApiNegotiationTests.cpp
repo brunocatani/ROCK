@@ -15,6 +15,7 @@ namespace
     std::uint32_t g_baseCalls{ 0 };
     std::uint32_t g_extendedCalls{ 0 };
     std::uint32_t g_reportedTableBytes{ 0 };
+    std::uint32_t g_reportedFeatureBits{ 0 };
     std::uint32_t g_reportedFeatureBits2{ 0 };
     std::uint32_t g_baseReturnedBytes{ sizeof(RockProviderLimitsV1) };
 
@@ -26,8 +27,7 @@ namespace
         assert(outLimits->size == sizeof(RockProviderLimitsV1));
 
         RockProviderLimitsV1 limits{};
-        limits.featureBits = static_cast<std::uint32_t>(
-            RockProviderFeatureBitV1::FrameCallbacks);
+        limits.featureBits = g_reportedFeatureBits;
         limits.maxFrameCallbacks = 16;
         limits.providerApiByteSize = g_reportedTableBytes;
         const auto copyBytes = g_baseReturnedBytes < sizeof(limits) ?
@@ -69,6 +69,8 @@ namespace
         g_baseCalls = 0;
         g_extendedCalls = 0;
         g_reportedTableBytes = 0;
+        g_reportedFeatureBits = static_cast<std::uint32_t>(
+            RockProviderFeatureBitV1::FrameCallbacks);
         g_reportedFeatureBits2 = 0;
         g_baseReturnedBytes = sizeof(RockProviderLimitsV1);
     }
@@ -120,8 +122,14 @@ int main()
         static_cast<std::uint32_t>(
             RockProviderFeatureBit2V1::NativeVatsVansInputSuppression);
     RockProviderApi::negotiatedTableByteSize = sizeof(RockProviderApi);
+    RockProviderApi::negotiatedFeatureBits =
+        static_cast<std::uint32_t>(
+            RockProviderFeatureBitV1::EquippedWeaponHandRequest);
     RockProviderApi::negotiatedFeatureBits2 = allNewFeatureBits;
     g_reportedTableBytes = sizeof(RockProviderApi);
+    g_reportedFeatureBits =
+        static_cast<std::uint32_t>(
+            RockProviderFeatureBitV1::EquippedWeaponHandRequest);
     g_reportedFeatureBits2 = allNewFeatureBits;
     g_baseReturnedBytes = sizeof(RockProviderLimitsV1);
     assert(queryProviderLimitsExtV1(extendedLimits));
@@ -140,6 +148,17 @@ int main()
     assert(supportsOwnerFrameCallbacksV1());
     assert(supportsOffhandReservationLeasesV1());
     assert(supportsNativeVatsVansInputSuppressionV1());
+    assert(supportsEquippedWeaponHandRequestV1());
+
+    g_reportedFeatureBits = 0;
+    assert(!supportsEquippedWeaponHandRequestV1());
+    g_reportedFeatureBits =
+        static_cast<std::uint32_t>(
+            RockProviderFeatureBitV1::EquippedWeaponHandRequest);
+    g_reportedTableBytes =
+        ROCK_PROVIDER_API_V1_EQUIPPED_WEAPON_HAND_REQUEST_TABLE_BYTES - 1;
+    assert(!supportsEquippedWeaponHandRequestV1());
+    g_reportedTableBytes = sizeof(RockProviderApi);
 
     RockProviderApi::negotiatedFeatureBits2 &=
         ~static_cast<std::uint32_t>(

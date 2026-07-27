@@ -163,6 +163,9 @@ namespace rock
             ::rock::provider::RockProviderEquippedWeaponGripStateV1& outState) const;
         bool queryProviderEquippedWeaponHandlingStateV1(
             ::rock::provider::RockProviderEquippedWeaponHandlingStateV1& outState) const;
+        ::rock::provider::RockProviderResultV1 requestProviderEquippedWeaponHandV1(
+            std::uint64_t ownerToken,
+            const ::rock::provider::RockProviderEquippedWeaponHandRequestV1& request);
         void fillProviderWeaponPartGripStates(
             std::array<::rock::provider::RockProviderWeaponPartGripStateV1, 2>& outStates) const;
         void fillProviderHandInteractionStates(
@@ -330,14 +333,14 @@ namespace rock
             std::uint64_t currentEquippedWeaponOwnershipKey,
             bool menuInputActive);
 
-        void servicePipboyWeaponHandAssignment(
+        void serviceEquippedWeaponHandAssignment(
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey,
             std::uint64_t currentEquippedWeaponOwnershipKey,
             bool menuInputActive,
             const EquippedWeaponHandlingSettings& handlingSettings);
-        void reconcilePipboyWeaponHandAssignmentAfterGrip();
-        void clearPipboyWeaponHandAssignment(const char* reason, bool clearUiAssignment);
+        void reconcileEquippedWeaponHandAssignmentAfterGrip();
+        void clearEquippedWeaponHandAssignment(const char* reason, bool clearUiAssignment);
 
         void suppressRightHandCollisionForDominantWeapon(RE::hknpWorld* world);
 
@@ -633,8 +636,17 @@ namespace rock
         hand_collision_suppression_math::DelayedRestoreState _leftEquippedWeaponDropDelayedRestore{};
         weapon_debug_notification_policy::WeaponNotificationState _weaponDebugNotificationState{};
         PendingEquippedWeaponPrimaryOnlyGripStart _pendingEquippedWeaponPrimaryOnlyGripStart{};
-        struct PipboyWeaponHandAssignmentState
+        enum class EquippedWeaponHandAssignmentSource : std::uint8_t
         {
+            None = 0,
+            Pipboy = 1,
+            Provider = 2,
+        };
+        struct EquippedWeaponHandAssignmentState
+        {
+            EquippedWeaponHandAssignmentSource source{
+                EquippedWeaponHandAssignmentSource::None
+            };
             bool pending{ false };
             bool active{ false };
             bool assignedLeft{ false };
@@ -643,6 +655,8 @@ namespace rock
             std::uint32_t handleId{ 0 };
             std::uint32_t stackId{ 0 };
             std::uint32_t formId{ 0 };
+            std::uint64_t ownerToken{ 0 };
+            std::uint64_t requestedWeaponGenerationKey{ 0 };
             std::uint64_t ownershipKey{ 0 };
             std::uint64_t nativeOffsetGenerationKey{ 0 };
             bool nativeOffsetSampleValid{ false };
@@ -650,7 +664,7 @@ namespace rock
             std::uint8_t matchingNativeOffsetFrames{ 0 };
             RE::NiTransform nativeOffsetSample{};
         };
-        PipboyWeaponHandAssignmentState _pipboyWeaponHandAssignment{};
+        EquippedWeaponHandAssignmentState _equippedWeaponHandAssignment{};
         std::uint64_t _lastPipboyWeaponSelectionSequence{ 0 };
         struct FixedLeftCarryState
         {

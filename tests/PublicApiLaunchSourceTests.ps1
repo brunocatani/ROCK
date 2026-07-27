@@ -124,8 +124,8 @@ Require-Text 'src/api/ROCKProviderApi.h' 'ROCKAPI_GetDescriptorV1' `
     'The public SDK must declare the independent V1 descriptor accessor.'
 Require-Text 'src/exports.def' 'ROCKAPI_GetDescriptorV1' `
     'The provider descriptor must be exported independently of the function table.'
-Require-Text 'src/api/ROCKProviderApi.h' 'sizeof\(RockProviderApi\)\s*==\s*688' `
-    'The append-only V1 function table must retain its exact 86-slot x64 extent.'
+Require-Text 'src/api/ROCKProviderApi.h' 'sizeof\(RockProviderApi\)\s*==\s*696' `
+    'The append-only V1 function table must retain its exact 87-slot x64 extent.'
 Require-Text 'src/api/ROCKProviderApi.h' 'struct\s+RockProviderLimitsExtV1' `
     'Fixed capacities omitted by the legacy limits prefix must be discoverable through extended limits.'
 Require-Text 'src/api/ROCKProviderApi.h' 'RockProviderStructureIdV1[\s\S]*getPublicStructureSizeV1' `
@@ -237,6 +237,14 @@ Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_API_V1_EQUIPPED_WEAPON_H
     'Equipped-weapon policy consumers must negotiate both feature bit and appended table size.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'maxEquippedWeaponHandlingAuthorities\s*=\s*1[\s\S]*maxEquippedWeaponHandlingLeaseFrames\s*=[\s\S]*ROCK_PROVIDER_MAX_EQUIPPED_WEAPON_HANDLING_LEASE_FRAMES_V1' `
     'Provider limits must publish the single-owner authority capacity and maximum lease.'
+Require-Text 'src/api/ROCKProviderApi.h' 'EquippedWeaponHandRequest[\s\S]*RockProviderEquippedWeaponHandRequestV1[\s\S]*requestEquippedWeaponHandV1[\s\S]*ROCK_PROVIDER_API_V1_EQUIPPED_WEAPON_HAND_REQUEST_TABLE_BYTES[\s\S]*supportsEquippedWeaponHandRequestV1' `
+    'V1 must expose an append-only, feature-gated exact-hand request for the currently equipped weapon.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'apiRequestEquippedWeaponHandV1[\s\S]{0,500}onAnimationOwnerThread\(\)[\s\S]{0,1800}EquippedWeaponHandlingAuthority[\s\S]{0,1000}FiringGripOwnership[\s\S]{0,800}AmbidextrousHandoff[\s\S]{0,1000}requestProviderEquippedWeaponHandV1' `
+    'Exact-hand requests must remain game-thread-only and bound to the caller''s active handling authority.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'requestProviderEquippedWeaponHandV1[\s\S]{0,1800}currentEquippedWeaponForm\(\)[\s\S]{0,900}request\.weaponGenerationKey[\s\S]{0,1500}EquippedWeaponHandAssignmentSource::Provider' `
+    'Exact-hand requests must bind value identity before arming the canonical equipped-weapon assignment path.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'serviceEquippedWeaponHandAssignment\([\s\S]{0,16000}ownsEquippedWeaponHandlingAuthorityV1[\s\S]{0,12000}beginPersistentEquippedCarry' `
+    'Provider hand assignments must continuously revalidate authority and reuse ROCK''s canonical left-carry executor.'
 Require-Text 'src/api/ROCKProviderApi.h' 'DebugOverlayPublication[\s\S]*RockProviderDebugOverlayLineV1[\s\S]*RockProviderDebugOverlayTextV1[\s\S]*RockProviderDebugOverlayPublicationV1' `
     'API V1 must expose bounded owner-scoped debug overlay publication values.'
 Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_API_V1_DEBUG_OVERLAY_PUBLICATION_TABLE_BYTES[\s\S]*supportsDebugOverlayPublicationV1' `
@@ -431,7 +439,8 @@ $expectedProviderFunctions = [string[]]@(
     'setTouchGrabTargetsForScopeV1',
     'clearTouchGrabTargetsForScopeV1',
     'copyTouchGrabStatesForScopeV1',
-    'requestTouchGrabYieldV1'
+    'requestTouchGrabYieldV1',
+    'requestEquippedWeaponHandV1'
 )
 Require-SequenceEqual 'ROCKProviderApi function pointer order' (Get-ProviderFunctionNames $providerHeader) $expectedProviderFunctions
 
