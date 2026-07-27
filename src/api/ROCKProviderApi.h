@@ -422,6 +422,7 @@ namespace rock::provider
         WeaponClassificationEnrichment = 1u << 27,
         ExternalContactEnrichment = 1u << 28,
         TouchGrabTargets = 1u << 29,
+        NativeVatsVansInputSuppression = 1u << 30,
     };
 
     /*
@@ -633,6 +634,16 @@ namespace rock::provider
         SuppressHeldWeaponTriggerEquip = 1u << 2,
         SuppressGameplayCandidates = 1u << 3,
         SuppressOpenVrGameInput = 1u << 4,
+        /*
+         * The native primary-wand Pause binding has two independent actions:
+         * ordinary VATS opens on release, while V.A.N.S. starts from held
+         * samples after Bethesda's threshold. These flags suppress only their
+         * named phase. Set both to consume the complete gesture. The action is
+         * a single primary-wand path, so ROCK aggregates these two flags across
+         * active right- and left-hand suppression leases.
+         */
+        SuppressNativeVats = 1u << 5,
+        SuppressNativeVans = 1u << 6,
         SuppressConfigModeChord =
             static_cast<std::uint32_t>(SuppressNormalGrabPress) |
             static_cast<std::uint32_t>(SuppressGrabRelease) |
@@ -3415,6 +3426,13 @@ namespace rock::provider
         return providerSupportsFeature2V1(
             ROCK_PROVIDER_API_V1_INPUT_OBSERVABILITY_TABLE_BYTES,
             RockProviderFeatureBit2V1::InputSuppressionState);
+    }
+
+    [[nodiscard]] inline bool supportsNativeVatsVansInputSuppressionV1()
+    {
+        return providerSupportsFeature2V1(
+            ROCK_PROVIDER_API_V1_HAND_INPUT_SUPPRESSION_TABLE_BYTES,
+            RockProviderFeatureBit2V1::NativeVatsVansInputSuppression);
     }
 
     [[nodiscard]] inline bool supportsOffhandReservationLeasesV1()

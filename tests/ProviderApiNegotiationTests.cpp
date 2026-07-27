@@ -116,7 +116,9 @@ int main()
     const auto allNewFeatureBits =
         static_cast<std::uint32_t>(RockProviderFeatureBit2V1::ExtendedLimits) |
         static_cast<std::uint32_t>(RockProviderFeatureBit2V1::OwnerFrameCallbacks) |
-        static_cast<std::uint32_t>(RockProviderFeatureBit2V1::OffhandReservationLeases);
+        static_cast<std::uint32_t>(RockProviderFeatureBit2V1::OffhandReservationLeases) |
+        static_cast<std::uint32_t>(
+            RockProviderFeatureBit2V1::NativeVatsVansInputSuppression);
     RockProviderApi::negotiatedTableByteSize = sizeof(RockProviderApi);
     RockProviderApi::negotiatedFeatureBits2 = allNewFeatureBits;
     g_reportedTableBytes = sizeof(RockProviderApi);
@@ -137,6 +139,17 @@ int main()
     assert(supportsExtendedLimitsV1());
     assert(supportsOwnerFrameCallbacksV1());
     assert(supportsOffhandReservationLeasesV1());
+    assert(supportsNativeVatsVansInputSuppressionV1());
+
+    RockProviderApi::negotiatedFeatureBits2 &=
+        ~static_cast<std::uint32_t>(
+            RockProviderFeatureBit2V1::NativeVatsVansInputSuppression);
+    assert(!supportsNativeVatsVansInputSuppressionV1());
+    RockProviderApi::negotiatedFeatureBits2 = allNewFeatureBits;
+    RockProviderApi::negotiatedTableByteSize =
+        ROCK_PROVIDER_API_V1_HAND_INPUT_SUPPRESSION_TABLE_BYTES - 1;
+    assert(!supportsNativeVatsVansInputSuppressionV1());
+    RockProviderApi::negotiatedTableByteSize = sizeof(RockProviderApi);
 
     RockProviderApi::negotiatedFeatureBits2 &=
         ~static_cast<std::uint32_t>(
@@ -162,6 +175,7 @@ int main()
     assert(g_baseCalls == 2);
     assert(g_extendedCalls == 1);
     assert(supportsOffhandReservationLeasesV1());
+    assert(supportsNativeVatsVansInputSuppressionV1());
 
     resetClientState();
     return 0;

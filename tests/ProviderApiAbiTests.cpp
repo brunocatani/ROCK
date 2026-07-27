@@ -107,5 +107,17 @@ int main()
     ok = ok && offsetof(RockProviderWeaponPartPoseV1, actionRole) == 44;
     ok = ok && ROCK_PROVIDER_API_V1_NATIVE_ANIMATION_RUNTIME_CLEAR_TABLE_BYTES == 82 * sizeof(void*);
     ok = ok && ROCK_PROVIDER_API_V1_TOUCH_GRAB_TARGETS_TABLE_BYTES == sizeof(RockProviderApi);
+    ok = ok &&
+        static_cast<std::uint32_t>(
+            RockProviderHandInputSuppressionFlagV1::SuppressNativeVats) ==
+            (1u << 5);
+    ok = ok &&
+        static_cast<std::uint32_t>(
+            RockProviderHandInputSuppressionFlagV1::SuppressNativeVans) ==
+            (1u << 6);
+    ok = ok &&
+        static_cast<std::uint32_t>(
+            RockProviderFeatureBit2V1::NativeVatsVansInputSuppression) ==
+            (1u << 30);
     return ok ? 0 : 1;
 }

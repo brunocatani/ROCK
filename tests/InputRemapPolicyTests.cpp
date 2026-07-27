@@ -1,5 +1,6 @@
 #include "physics-interaction/input/InputRemapPolicy.h"
 #include "physics-interaction/input/ManualScopeInputPolicy.h"
+#include "physics-interaction/input/NativeVatsInputSuppressionPolicy.h"
 #include "physics-interaction/input/PipboyPauseGesturePolicy.h"
 
 #include <cstdio>
@@ -7,6 +8,7 @@
 namespace
 {
     namespace manual = rock::manual_scope_input_policy;
+    namespace nativeVats = rock::native_vats_input_suppression_policy;
     namespace pipboyGesture = rock::pipboy_pause_gesture_policy;
 
     bool expectTrue(const char* label, bool value)
@@ -341,6 +343,153 @@ int main()
         shouldInstallRawControllerHooks(false, true));
     ok &= expectFalse("disabled remap and automatic scope need no raw controller hook",
         shouldInstallRawControllerHooks(false, false));
+
+    nativeVats::RuntimeState nativeVatsState{};
+    auto nativeVatsDecision = nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{ .buttonDown = true });
+    ok &= expectTrue(
+        "unsuppressed VATS-button down reaches native V.A.N.S.",
+        nativeVatsDecision.forwardNative);
+    nativeVatsDecision = nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{ .released = true });
+    ok &= expectTrue(
+        "unsuppressed VATS-button release reaches ordinary VATS",
+        nativeVatsDecision.forwardNative);
+
+    nativeVats::reset(nativeVatsState);
+    nativeVatsDecision = nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{
+            .buttonDown = true,
+            .suppressVans = true,
+        });
+    ok &= expectFalse(
+        "V.A.N.S.-only suppression consumes button-down samples",
+        nativeVatsDecision.forwardNative);
+    ok &= expectTrue(
+        "V.A.N.S.-only suppression reports the held action",
+        nativeVatsDecision.vansSuppressed);
+    nativeVatsDecision = nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{ .buttonDown = true });
+    ok &= expectFalse(
+        "expired V.A.N.S. lease stays latched through the gesture",
+        nativeVatsDecision.forwardNative);
+    nativeVatsDecision = nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{ .released = true });
+    ok &= expectTrue(
+        "V.A.N.S.-only suppression preserves release-to-VATS",
+        nativeVatsDecision.forwardNative);
+    ok &= expectFalse(
+        "V.A.N.S. release rearms its hold latch",
+        nativeVatsState.suppressVansWhileDown);
+
+    nativeVats::reset(nativeVatsState);
+    nativeVatsDecision = nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{
+            .buttonDown = true,
+            .suppressVats = true,
+        });
+    ok &= expectTrue(
+        "VATS-only suppression preserves the native V.A.N.S. hold path",
+        nativeVatsDecision.forwardNative);
+    nativeVatsDecision = nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{ .buttonDown = true });
+    ok &= expectTrue(
+        "expired VATS lease keeps forwarding V.A.N.S. while release remains armed",
+        nativeVatsDecision.forwardNative);
+    nativeVatsDecision = nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{ .released = true });
+    ok &= expectFalse(
+        "VATS-only suppression consumes the ordinary release action",
+        nativeVatsDecision.forwardNative);
+    ok &= expectTrue(
+        "VATS-only suppression reports the release action",
+        nativeVatsDecision.vatsSuppressed);
+    ok &= expectFalse(
+        "suppressed VATS release rearms its release latch",
+        nativeVatsState.suppressVatsOnRelease);
+
+    nativeVatsDecision = nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{
+            .released = true,
+            .suppressVans = true,
+        });
+    ok &= expectTrue(
+        "V.A.N.S. suppression acquired on release cannot block ordinary VATS",
+        nativeVatsDecision.forwardNative);
+    nativeVatsDecision = nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{
+            .released = true,
+            .suppressVats = true,
+        });
+    ok &= expectFalse(
+        "VATS suppression acquired on release blocks that release",
+        nativeVatsDecision.forwardNative);
+
+    nativeVats::reset(nativeVatsState);
+    nativeVatsDecision = nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{
+            .buttonDown = true,
+            .suppressVats = true,
+            .suppressVans = true,
+        });
+    ok &= expectFalse(
+        "combined VATS and V.A.N.S. suppression consumes held samples",
+        nativeVatsDecision.forwardNative);
+    nativeVatsDecision = nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{ .released = true });
+    ok &= expectFalse(
+        "combined suppression consumes the later release after both leases expire",
+        nativeVatsDecision.forwardNative);
+
+    nativeVats::reset(nativeVatsState);
+    (void)nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{
+            .buttonDown = true,
+            .suppressVats = true,
+            .suppressVans = true,
+        });
+    nativeVatsDecision = nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{
+            .buttonDown = true,
+            .justPressed = true,
+        });
+    ok &= expectTrue(
+        "a newly observed press discards stale suppression from a lost release",
+        nativeVatsDecision.forwardNative);
+    ok &= expectFalse(
+        "new-press rearming clears the stale VATS release latch",
+        nativeVatsState.suppressVatsOnRelease);
+
+    nativeVats::reset(nativeVatsState);
+    nativeVatsDecision = nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{
+            .buttonDown = true,
+            .suppressAll = true,
+        });
+    ok &= expectFalse(
+        "broad OpenVR game-input suppression consumes V.A.N.S. hold samples",
+        nativeVatsDecision.forwardNative);
+    nativeVatsDecision = nativeVats::update(
+        nativeVatsState,
+        nativeVats::Input{ .released = true });
+    ok &= expectFalse(
+        "broad OpenVR game-input suppression latches through VATS release",
+        nativeVatsDecision.forwardNative);
 
     pipboyGesture::RuntimeState pipboyGestureState{};
     ok &= expectTrue("Pip-Boy/Pause hold duration clamps low values",

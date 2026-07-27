@@ -60,7 +60,7 @@ Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
     'The native reload dispatcher must enforce gameplay, menu, provider-lease, and weapon-drawn gates itself.'
 
 Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
-    'isAnyProviderOpenVrGameInputSuppressedAtDispatch[\s\S]{0,900}currentHandInputSuppressionFlagsV1\(hand\)[\s\S]{0,500}RockProviderHand::Right[\s\S]{0,160}RockProviderHand::Left' `
+    'currentProviderHandInputSuppressionFlagsAtDispatch[\s\S]{0,500}currentHandInputSuppressionFlagsV1\([\s\S]{0,120}RockProviderHand::Right[\s\S]{0,220}currentHandInputSuppressionFlagsV1\([\s\S]{0,120}RockProviderHand::Left[\s\S]{0,500}isAnyProviderOpenVrGameInputSuppressedAtDispatch' `
     'Reload dispatch must observe a Configurator/provider lease acquired before the later per-hand cache refresh in the same frame.'
 
 Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `

@@ -258,7 +258,8 @@ namespace
         static_cast<std::uint32_t>(RockProviderFeatureBit2V1::InputSampleMetadata) |
         static_cast<std::uint32_t>(RockProviderFeatureBit2V1::WeaponClassificationEnrichment) |
         static_cast<std::uint32_t>(RockProviderFeatureBit2V1::ExternalContactEnrichment) |
-        static_cast<std::uint32_t>(RockProviderFeatureBit2V1::TouchGrabTargets);
+        static_cast<std::uint32_t>(RockProviderFeatureBit2V1::TouchGrabTargets) |
+        static_cast<std::uint32_t>(RockProviderFeatureBit2V1::NativeVatsVansInputSuppression);
     constexpr std::uint32_t kImplementedForceGrabFlagsV1 =
         static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::UsePreferredGrabPointGame);
     constexpr std::uint32_t kImplementedForceReleaseFlagsV1 =
@@ -271,7 +272,9 @@ namespace
         static_cast<std::uint32_t>(RockProviderThrownDropFlagV1::UseVelocityHavok);
     constexpr std::uint32_t kImplementedHandInputSuppressionFlagsV1 =
         static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressConfigModeChord) |
-        static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressOpenVrGameInput);
+        static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressOpenVrGameInput) |
+        static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressNativeVats) |
+        static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressNativeVans);
     constexpr std::uint32_t kWeaponPartTargetMatcherFlagsV1 =
         static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchBodyId) |
         static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchSourceRoot) |

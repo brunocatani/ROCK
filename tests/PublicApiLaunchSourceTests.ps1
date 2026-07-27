@@ -185,6 +185,10 @@ Require-Text 'src/api/ROCKProviderApi.h' 'RockProviderHandInputSuppressionReques
     'v1 must expose owner-token hand input suppression lease requests.'
 Require-Text 'src/api/ROCKProviderApi.h' 'SuppressConfigModeChord' `
     'v1 must expose external config chord suppression flags.'
+Require-Text 'src/api/ROCKProviderApi.h' 'SuppressNativeVats[\s\S]{0,300}SuppressNativeVans' `
+    'v1 must expose independent native VATS-release and V.A.N.S.-hold suppression flags.'
+Require-Text 'src/api/ROCKProviderApi.h' 'NativeVatsVansInputSuppression[\s\S]*supportsNativeVatsVansInputSuppressionV1' `
+    'Consumers must be able to negotiate support for the new V1 suppression flags.'
 Require-Text 'src/api/ROCKProviderApi.h' 'setHandInputSuppressionV1' `
     'v1 function table must append hand input suppression lease setup.'
 Require-Text 'src/api/ROCKProviderApi.h' 'clearHandInputSuppressionV1' `

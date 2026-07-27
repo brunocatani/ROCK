@@ -2,6 +2,7 @@
 
 #include "physics-interaction/input/InputRemapPolicy.h"
 #include "physics-interaction/input/ManualScopeInputPolicy.h"
+#include "physics-interaction/input/NativeVatsInputSuppressionPolicy.h"
 #include "physics-interaction/input/PipboyPauseGesturePolicy.h"
 #include "physics-interaction/object/FarSelectionBlacklistPolicy.h"
 #include "physics-interaction/PhysicsLog.h"
@@ -19,6 +20,7 @@
 #include "RE/Bethesda/TESObjectREFRs.h"
 #include "RE/Bethesda/UI.h"
 
+#include <F4SE/F4SE.h>
 #include <REL/Relocation.h>
 #include "rock_support/VRControllers.h"
 #include <windows.h>
@@ -64,6 +66,16 @@ namespace rock::input_remap_runtime
          */
         constexpr std::uintptr_t kMenuOpenHandlerHandleEventFunctionOffset = 0x1326760;
         constexpr std::uintptr_t kMenuOpenHandlerHandleEventVTableSlotOffset = 0x2DCC850;
+        /*
+         * MenuOpenHandler calls this helper only after its semantic Pause,
+         * player/menu, and primary-wand VATS eligibility gates. The helper's
+         * button-down path starts V.A.N.S. at Bethesda's hold threshold; its
+         * release path opens ordinary VATS. There is one executable caller.
+         * Verified 2026-07-27 in FO4VR 1.2.72 at callsite RVA 0x1326990 and
+         * helper RVA 0xBEB280.
+         */
+        constexpr std::uintptr_t kNativeVatsVansDecisionFunctionOffset = 0x0BEB280;
+        constexpr std::uintptr_t kNativeVatsVansDecisionCallSiteOffset = 0x1326990;
         constexpr std::uintptr_t kMenuControlsSingletonOffset = 0x5A3B888;
         constexpr std::ptrdiff_t kMenuControlsPipboyHandlerOffset = 0x68;
         constexpr std::uintptr_t kPipboyHandlerVTableOffset = 0x2DCC778;
@@ -165,6 +177,7 @@ namespace rock::input_remap_runtime
         // Verified PipboyHandler slot-11 signature: (this, event) only; no cursor/unk tail like the PlayerControls handlers.
         using PipboyInputEventHandler_t = void (*)(void*, RE::InputEvent*);
         using MenuOpenInputEventHandler_t = void (*)(void*, RE::InputEvent*);
+        using NativeVatsVansDecision_t = void (*)(RE::ButtonEvent*);
 
         struct ControllerTracker
         {
@@ -196,8 +209,9 @@ namespace rock::input_remap_runtime
         std::atomic<bool> s_equippedWeaponLeftHandFiringActive{ false };
         manual_scope_input_policy::RuntimeState s_manualScopeInputState{};
         // MenuControls dispatches ButtonEvents serially on the frame/input
-        // thread; this gesture state is never read from worker callbacks.
+        // thread; these gesture states are never read from worker callbacks.
         pipboy_pause_gesture_policy::RuntimeState s_pipboyPauseGestureState{};
+        native_vats_input_suppression_policy::RuntimeState s_nativeVatsInputSuppressionState{};
         std::atomic<bool> s_manualScopeActivationRequested{ false };
         std::atomic<bool> s_hooksInstalled{ false };
         std::atomic<bool> s_readyWeaponEventHookInstalled{ false };
@@ -207,6 +221,8 @@ namespace rock::input_remap_runtime
         std::atomic<bool> s_pipboyEventHookInstalled{ false };
         std::atomic<bool> s_pipboyLightEventHookInstalled{ false };
         std::atomic<bool> s_menuOpenEventHookInstalled{ false };
+        std::atomic<bool> s_nativeVatsVansDecisionHookInstalled{ false };
+        std::atomic<bool> s_nativeVatsVansDecisionHookInstallFailed{ false };
         std::atomic<bool> s_meleeThrowFallbackPatchesApplied{ false };
         std::atomic<bool> s_menuInputGateRegistered{ false };
         std::atomic<bool> s_menuInputActive{ false };
@@ -229,6 +245,7 @@ namespace rock::input_remap_runtime
         PipboyInputEventHandler_t s_originalPipboyEventHandler = nullptr;
         NativeInputEventHandler_t s_originalPipboyLightEventHandler = nullptr;
         MenuOpenInputEventHandler_t s_originalMenuOpenEventHandler = nullptr;
+        NativeVatsVansDecision_t s_originalNativeVatsVansDecision = nullptr;
 
         void blockManualScopeInputUntilRelease()
         {
@@ -467,20 +484,24 @@ namespace rock::input_remap_runtime
                    s_providerOpenVrGameInputSuppressed[1].load(std::memory_order_acquire);
         }
 
+        [[nodiscard]] std::uint32_t currentProviderHandInputSuppressionFlagsAtDispatch()
+        {
+            return provider::currentHandInputSuppressionFlagsV1(
+                       provider::RockProviderHand::Right) |
+                   provider::currentHandInputSuppressionFlagsV1(
+                       provider::RockProviderHand::Left);
+        }
+
         [[nodiscard]] bool isAnyProviderOpenVrGameInputSuppressedAtDispatch()
         {
             if (isAnyProviderOpenVrGameInputSuppressed()) {
                 return true;
             }
 
-            const auto handSuppresses = [](const provider::RockProviderHand hand) {
-                return provider::hasHandInputSuppressionFlagV1(
-                    provider::currentHandInputSuppressionFlagsV1(hand),
-                    provider::RockProviderHandInputSuppressionFlagV1::
-                        SuppressOpenVrGameInput);
-            };
-            return handSuppresses(provider::RockProviderHand::Right) ||
-                   handSuppresses(provider::RockProviderHand::Left);
+            return provider::hasHandInputSuppressionFlagV1(
+                currentProviderHandInputSuppressionFlagsAtDispatch(),
+                provider::RockProviderHandInputSuppressionFlagV1::
+                    SuppressOpenVrGameInput);
         }
 
         [[nodiscard]] bool isCallerModule(const void* address, const wchar_t* moduleName)
@@ -1660,6 +1681,61 @@ namespace rock::input_remap_runtime
             return true;
         }
 
+        void hookedNativeVatsVansDecision(RE::ButtonEvent* button)
+        {
+            if (!button) {
+                if (s_originalNativeVatsVansDecision) {
+                    s_originalNativeVatsVansDecision(button);
+                }
+                return;
+            }
+
+            const std::uint32_t flags =
+                currentProviderHandInputSuppressionFlagsAtDispatch();
+            const bool suppressAll =
+                isAnyProviderOpenVrGameInputSuppressed() ||
+                provider::hasHandInputSuppressionFlagV1(
+                    flags,
+                    provider::RockProviderHandInputSuppressionFlagV1::
+                        SuppressOpenVrGameInput);
+            const auto decision =
+                native_vats_input_suppression_policy::update(
+                    s_nativeVatsInputSuppressionState,
+                    native_vats_input_suppression_policy::Input{
+                        .buttonDown = button->QPressed(),
+                        .justPressed = button->QJustPressed(),
+                        .released =
+                            !button->QPressed() &&
+                            button->QHeldDownSecs() >= 0.0f,
+                        .suppressVats =
+                            provider::hasHandInputSuppressionFlagV1(
+                                flags,
+                                provider::
+                                    RockProviderHandInputSuppressionFlagV1::
+                                        SuppressNativeVats),
+                        .suppressVans =
+                            provider::hasHandInputSuppressionFlagV1(
+                                flags,
+                                provider::
+                                    RockProviderHandInputSuppressionFlagV1::
+                                        SuppressNativeVans),
+                        .suppressAll = suppressAll,
+                    });
+
+            if (decision.forwardNative) {
+                if (s_originalNativeVatsVansDecision) {
+                    s_originalNativeVatsVansDecision(button);
+                }
+                return;
+            }
+
+            ROCK_LOG_SAMPLE_DEBUG(Input,
+                g_rockConfig.rockLogSampleMilliseconds,
+                "Suppressed native VATS input phase: reason={} heldSeconds={:.3f}",
+                decision.reason,
+                button->QHeldDownSecs());
+        }
+
         void hookedMenuOpenEventHandler(void* handler, RE::InputEvent* inputEvent)
         {
             auto* button = inputEvent ? inputEvent->As<RE::ButtonEvent>() : nullptr;
@@ -1848,6 +1924,78 @@ namespace rock::input_remap_runtime
             return openHookReady && lightHookReady && menuOpenHookReady;
         }
 
+        bool installNativeVatsVansInputSuppressionHook()
+        {
+            if (s_nativeVatsVansDecisionHookInstalled.load(
+                    std::memory_order_acquire)) {
+                return true;
+            }
+            if (s_nativeVatsVansDecisionHookInstallFailed.load(
+                    std::memory_order_acquire)) {
+                return false;
+            }
+
+            REL::Relocation<std::uintptr_t> callSite{
+                REL::Offset(kNativeVatsVansDecisionCallSiteOffset)
+            };
+            const auto callSiteAddress = callSite.address();
+            const auto* callBytes =
+                reinterpret_cast<const std::uint8_t*>(callSiteAddress);
+            if (!callBytes || callBytes[0] != 0xE8) {
+                ROCK_LOG_ERROR(Input,
+                    "Native VATS/V.A.N.S. suppression hook validation failed at 0x{:X}: expected CALL rel32",
+                    callSiteAddress);
+                s_nativeVatsVansDecisionHookInstallFailed.store(
+                    true,
+                    std::memory_order_release);
+                return false;
+            }
+
+            const auto relativeTarget =
+                *reinterpret_cast<const std::int32_t*>(callBytes + 1);
+            const auto decodedTarget =
+                callSiteAddress + 5u + relativeTarget;
+            const auto expectedTarget =
+                REL::Offset(kNativeVatsVansDecisionFunctionOffset).address();
+            if (decodedTarget != expectedTarget) {
+                ROCK_LOG_ERROR(Input,
+                    "Native VATS/V.A.N.S. suppression hook validation failed at 0x{:X}: target 0x{:X}, expected 0x{:X}",
+                    callSiteAddress,
+                    decodedTarget,
+                    expectedTarget);
+                s_nativeVatsVansDecisionHookInstallFailed.store(
+                    true,
+                    std::memory_order_release);
+                return false;
+            }
+
+            auto& trampoline = F4SE::GetTrampoline();
+            const auto original = trampoline.write_call<5>(
+                callSiteAddress,
+                &hookedNativeVatsVansDecision);
+            s_originalNativeVatsVansDecision =
+                reinterpret_cast<NativeVatsVansDecision_t>(original);
+            const bool installed =
+                s_originalNativeVatsVansDecision != nullptr;
+            s_nativeVatsVansDecisionHookInstalled.store(
+                installed,
+                std::memory_order_release);
+            if (!installed) {
+                ROCK_LOG_ERROR(Input,
+                    "Native VATS/V.A.N.S. suppression hook install returned a null original target");
+                s_nativeVatsVansDecisionHookInstallFailed.store(
+                    true,
+                    std::memory_order_release);
+                return false;
+            }
+
+            ROCK_LOG_INFO(Input,
+                "Installed native VATS/V.A.N.S. suppression hook at 0x{:X}; original=0x{:X}",
+                callSiteAddress,
+                original);
+            return true;
+        }
+
         bool writeMeleeThrowFallbackBranch(std::uintptr_t siteOffset, bool suppress, const char* label)
         {
             REL::Relocation<std::uintptr_t> site{ REL::Offset(siteOffset) };
@@ -1925,7 +2073,7 @@ namespace rock::input_remap_runtime
 
         bool updateNativeActionSuppressionHooks(const input_remap_policy::Settings& settings, const bool manualScopeEnabled)
         {
-            bool ready = true;
+            bool ready = installNativeVatsVansInputSuppressionHook();
             if (input_remap_policy::shouldInstallNativeActionSuppressionHook(settings.enabled, settings.suppressRightGrabGameInput)) {
                 ready = installReadyWeaponEventSuppressionHook() && ready;
             }
