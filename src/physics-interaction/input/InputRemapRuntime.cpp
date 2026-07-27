@@ -1708,12 +1708,14 @@ namespace rock::input_remap_runtime
                             !button->QPressed() &&
                             button->QHeldDownSecs() >= 0.0f,
                         .suppressVats =
+                            g_rockConfig.rockSuppressNativeVats ||
                             provider::hasHandInputSuppressionFlagV1(
                                 flags,
                                 provider::
                                     RockProviderHandInputSuppressionFlagV1::
                                         SuppressNativeVats),
                         .suppressVans =
+                            g_rockConfig.rockSuppressNativeVans ||
                             provider::hasHandInputSuppressionFlagV1(
                                 flags,
                                 provider::

@@ -66,6 +66,9 @@ namespace rock
         bool rockSuppressRightFavoritesGameInput = true;
         bool rockSuppressNativeReadyWeaponAutoReady = true;
         bool rockSuppressNativeMeleeThrowGameInput = true;
+        // Function-level controls; raw OpenVR button state remains untouched.
+        bool rockSuppressNativeVats = false;
+        bool rockSuppressNativeVans = false;
         bool rockSuppressPipboyGameInputWhileHolding = true;
         float rockPipboyPauseHoldSeconds = pipboy_pause_gesture_policy::kDefaultHoldSeconds;
         bool rockSuppressTakeEquipGameInputWhileHolding = true;

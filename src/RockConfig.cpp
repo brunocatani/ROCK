@@ -719,6 +719,8 @@ namespace rock
         rockSuppressRightFavoritesGameInput = ini.GetBoolValue(SECTION, "bSuppressRightFavoritesGameInput", rockSuppressRightFavoritesGameInput);
         rockSuppressNativeReadyWeaponAutoReady = ini.GetBoolValue(SECTION, "bSuppressNativeReadyWeaponAutoReady", rockSuppressNativeReadyWeaponAutoReady);
         rockSuppressNativeMeleeThrowGameInput = ini.GetBoolValue(SECTION, "bSuppressNativeMeleeThrowGameInput", rockSuppressNativeMeleeThrowGameInput);
+        rockSuppressNativeVats = ini.GetBoolValue(SECTION, "bSuppressNativeVats", rockSuppressNativeVats);
+        rockSuppressNativeVans = ini.GetBoolValue(SECTION, "bSuppressNativeVans", rockSuppressNativeVans);
         rockSuppressPipboyGameInputWhileHolding = ini.GetBoolValue(SECTION, "bSuppressPipboyGameInputWhileHolding", rockSuppressPipboyGameInputWhileHolding);
         rockPipboyPauseHoldSeconds = pipboy_pause_gesture_policy::sanitizedHoldSeconds(
             static_cast<float>(ini.GetDoubleValue(SECTION, "fPipboyPauseHoldSeconds", rockPipboyPauseHoldSeconds)));

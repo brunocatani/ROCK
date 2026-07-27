@@ -45,9 +45,25 @@ Require-Text 'src/api/ROCKProviderApi.cpp' `
     'kImplementedHandInputSuppressionFlagsV1[\s\S]{0,500}SuppressNativeVats[\s\S]{0,220}SuppressNativeVans' `
     'The provider must accept both new flags through the existing lease setter.'
 
+# ROCK.ini exposes the same two independent function-level controls without
+# routing through the raw OpenVR suppression path.
+Require-Text 'src/RockConfig.h' `
+    'rockSuppressNativeVats\s*=\s*false[\s\S]{0,180}rockSuppressNativeVans\s*=\s*false' `
+    'RockConfig must default both local native-action suppression controls off.'
+
+Require-Text 'src/RockConfig.cpp' `
+    'rockSuppressNativeVats\s*=\s*ini\.GetBoolValue\(SECTION,\s*"bSuppressNativeVats",\s*rockSuppressNativeVats\);[\s\S]{0,300}rockSuppressNativeVans\s*=\s*ini\.GetBoolValue\(SECTION,\s*"bSuppressNativeVans",\s*rockSuppressNativeVans\);' `
+    'RockConfig must load both local native-action suppression controls.'
+
+foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
+    Require-Text $configPath `
+        'bSuppressNativeVats\s*=\s*false[\s\S]{0,500}bSuppressNativeVans\s*=\s*false' `
+        'Shipped ROCK.ini must expose both native-action controls with safe defaults.'
+}
+
 Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
-    'hookedNativeVatsVansDecision[\s\S]{0,1800}SuppressOpenVrGameInput[\s\S]{0,600}native_vats_input_suppression_policy::update[\s\S]{0,1000}SuppressNativeVats[\s\S]{0,800}SuppressNativeVans' `
-    'The native helper hook must map broad, VATS-only, and V.A.N.S.-only leases into the pure gesture policy.'
+    'hookedNativeVatsVansDecision[\s\S]{0,1800}SuppressOpenVrGameInput[\s\S]{0,600}native_vats_input_suppression_policy::update[\s\S]{0,1000}\.suppressVats\s*=\s*g_rockConfig\.rockSuppressNativeVats\s*\|\|[\s\S]{0,500}SuppressNativeVats[\s\S]{0,500}\.suppressVans\s*=\s*g_rockConfig\.rockSuppressNativeVans\s*\|\|[\s\S]{0,500}SuppressNativeVans' `
+    'The native helper hook must combine local INI controls with broad, VATS-only, and V.A.N.S.-only provider leases.'
 
 # The policy is deliberately orthogonal: VATS-only forwards down samples so
 # V.A.N.S. remains available; V.A.N.S.-only forwards release so normal VATS
