@@ -43,6 +43,8 @@ namespace RE
 {
     class bhkWorld;
     class hknpWorld;
+    class NiAVObject;
+    class NiCollisionObject;
     class TESAmmo;
     class TESObjectREFR;
 }
@@ -251,6 +253,8 @@ namespace rock
         void restoreNativePlayerCollisionSuppression(RE::hknpWorld* hknp, const char* reason);
 
         void refreshNativePlayerCollisionSuppression(RE::hknpWorld* hknp, const char* context);
+
+        void refreshNativePlayerCollisionSuppressionFromPhysicsSubstep(RE::hknpWorld* hknp, const char* context);
 
         bool shouldSuppressNativePlayerCollisionBody(RE::bhkWorld* bhk, RE::hknpWorld* hknp, std::uint32_t bodyId) const;
 
@@ -716,7 +720,14 @@ namespace rock
         mutable DirectSkeletonBoneReader _providerPresentedPoseReader{};
 
         static constexpr std::size_t kNativePlayerCollisionSuppressionBodyCapacity = 64;
-        std::array<std::uint32_t, kNativePlayerCollisionSuppressionBodyCapacity> _nativePlayerCollisionSuppressedBodyIds{};
+        struct NativePlayerCollisionSuppressedBody
+        {
+            std::uint32_t bodyId = 0x7FFF'FFFFu;
+            std::uint32_t motionIndex = 0;
+            RE::NiCollisionObject* collisionObject = nullptr;
+            RE::NiAVObject* ownerNode = nullptr;
+        };
+        std::array<NativePlayerCollisionSuppressedBody, kNativePlayerCollisionSuppressionBodyCapacity> _nativePlayerCollisionSuppressedBodies{};
         std::uint32_t _nativePlayerCollisionSuppressedBodyCount = 0;
         std::uint32_t _nativePlayerCollisionSuppressionRefreshFrames = 0;
         bool _nativePlayerCollisionSuppressionOverflowLogged = false;

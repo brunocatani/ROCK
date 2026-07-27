@@ -182,12 +182,17 @@ namespace rock::collision_suppression_registry
     {
         bool readFailed = false;
         bool staleLeaseDiscarded = false;
+        bool leaseIdentityValid = false;
+        std::uint32_t leaseMotionIndex = 0;
+        RE::NiCollisionObject* leaseCollisionObject = nullptr;
+        RE::NiAVObject* leaseOwnerNode = nullptr;
     };
 
     class CollisionSuppressionRegistry
     {
     public:
         RuntimeSuppressionResult acquire(RE::hknpWorld* world, std::uint32_t bodyId, CollisionSuppressionOwner owner, const char* context);
+        RuntimeSuppressionResult refresh(RE::hknpWorld* world, std::uint32_t bodyId, CollisionSuppressionOwner owner, const char* context);
         RuntimeSuppressionResult release(RE::hknpWorld* world, std::uint32_t bodyId, CollisionSuppressionOwner owner, const char* context);
         void releaseOwner(RE::hknpWorld* world, CollisionSuppressionOwner owner, const char* context);
         bool hasLease(std::uint32_t bodyId, CollisionSuppressionOwner owner) const;

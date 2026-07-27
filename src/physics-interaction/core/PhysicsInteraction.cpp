@@ -4859,6 +4859,7 @@ namespace rock
             hand_collision_suppression_math::clear(_leftWeaponSupportCollisionSuppression);
             hand_collision_suppression_math::clear(_rightWeaponSupportCollisionSuppression);
             clearEquippedWeaponPostDropCollisionSuppressionState();
+            _nativePlayerCollisionSuppressedBodies = {};
             _nativePlayerCollisionSuppressedBodyCount = 0;
             _nativePlayerCollisionSuppressionRefreshFrames = 0;
             _nativePlayerCollisionSuppressionOverflowLogged = false;
@@ -4941,6 +4942,7 @@ namespace rock
         _leftWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
         _rightWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
         clearEquippedWeaponPostDropCollisionSuppressionState();
+        _nativePlayerCollisionSuppressedBodies = {};
         _nativePlayerCollisionSuppressedBodyCount = 0;
         _nativePlayerCollisionSuppressionRefreshFrames = 0;
         _nativePlayerCollisionSuppressionOverflowLogged = false;
@@ -5573,32 +5575,33 @@ namespace rock
             return;
         }
 
-        std::array<std::uint32_t, kNativePlayerCollisionSuppressionBodyCapacity> pending{};
+        auto cacheMutation = _generatedBodyStepDrive.callbackGate().pauseForMutation();
+        std::array<NativePlayerCollisionSuppressedBody, kNativePlayerCollisionSuppressionBodyCapacity> pending{};
         std::uint32_t pendingCount = 0;
 
-        auto keepPending = [&](std::uint32_t bodyId) {
+        auto keepPending = [&](const NativePlayerCollisionSuppressedBody& body) {
             if (pendingCount < pending.size()) {
-                pending[pendingCount++] = bodyId;
+                pending[pendingCount++] = body;
             }
         };
 
-        for (std::uint32_t i = 0; i < _nativePlayerCollisionSuppressedBodyCount && i < _nativePlayerCollisionSuppressedBodyIds.size(); ++i) {
-            const auto bodyId = _nativePlayerCollisionSuppressedBodyIds[i];
-            if (!contact_pipeline_policy::isValidBodyId(bodyId)) {
+        for (std::uint32_t i = 0; i < _nativePlayerCollisionSuppressedBodyCount && i < _nativePlayerCollisionSuppressedBodies.size(); ++i) {
+            const auto& body = _nativePlayerCollisionSuppressedBodies[i];
+            if (!contact_pipeline_policy::isValidBodyId(body.bodyId)) {
                 continue;
             }
 
             const auto releaseResult = collision_suppression_registry::globalCollisionSuppressionRegistry().release(
                 hknp,
-                bodyId,
+                body.bodyId,
                 collision_suppression_registry::CollisionSuppressionOwner::NativePlayerBody,
                 reason ? reason : "native-player-body");
             if (releaseResult.readFailed) {
-                keepPending(bodyId);
+                keepPending(body);
             }
         }
 
-        _nativePlayerCollisionSuppressedBodyIds = pending;
+        _nativePlayerCollisionSuppressedBodies = pending;
         _nativePlayerCollisionSuppressedBodyCount = pendingCount;
         _nativePlayerCollisionSuppressionRefreshFrames = pendingCount == 0 ? 0 : 30;
     }
@@ -5609,25 +5612,81 @@ namespace rock
             return;
         }
 
-        for (std::uint32_t i = 0; i < _nativePlayerCollisionSuppressedBodyCount && i < _nativePlayerCollisionSuppressedBodyIds.size(); ++i) {
-            const auto bodyId = _nativePlayerCollisionSuppressedBodyIds[i];
-            if (!contact_pipeline_policy::isValidBodyId(bodyId)) {
+        std::uint32_t retainedCount = 0;
+        for (std::uint32_t i = 0; i < _nativePlayerCollisionSuppressedBodyCount && i < _nativePlayerCollisionSuppressedBodies.size(); ++i) {
+            const auto body = _nativePlayerCollisionSuppressedBodies[i];
+            if (!contact_pipeline_policy::isValidBodyId(body.bodyId)) {
+                continue;
+            }
+
+            const auto refreshResult = collision_suppression_registry::globalCollisionSuppressionRegistry().refresh(
+                hknp,
+                body.bodyId,
+                collision_suppression_registry::CollisionSuppressionOwner::NativePlayerBody,
+                context ? context : "native-player-body-refresh");
+            if (refreshResult.readFailed || (refreshResult.valid && !refreshResult.staleLeaseDiscarded)) {
+                _nativePlayerCollisionSuppressedBodies[retainedCount++] = body;
+            }
+        }
+
+        for (std::uint32_t i = retainedCount; i < _nativePlayerCollisionSuppressedBodies.size(); ++i) {
+            _nativePlayerCollisionSuppressedBodies[i] = {};
+        }
+        _nativePlayerCollisionSuppressedBodyCount = retainedCount;
+    }
+
+    void PhysicsInteraction::refreshNativePlayerCollisionSuppressionFromPhysicsSubstep(RE::hknpWorld* hknp, const char* context)
+    {
+        if (!g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled || !hknp || _nativePlayerCollisionSuppressedBodyCount == 0) {
+            return;
+        }
+
+        for (std::uint32_t i = 0; i < _nativePlayerCollisionSuppressedBodyCount && i < _nativePlayerCollisionSuppressedBodies.size(); ++i) {
+            const auto& leasedBody = _nativePlayerCollisionSuppressedBodies[i];
+            if (!contact_pipeline_policy::isValidBodyId(leasedBody.bodyId)) {
+                continue;
+            }
+
+            const auto snapshot = havok_runtime::snapshotBody(hknp, RE::hknpBodyId{ leasedBody.bodyId });
+            if (!snapshot.valid) {
+                ROCK_LOG_SAMPLE_WARN(Hand,
+                    1000,
+                    "Native player collision suppression physics refresh skipped: bodyId={} context={} cannot snapshot body",
+                    leasedBody.bodyId,
+                    context ? context : "");
+                continue;
+            }
+
+            if (snapshot.motionIndex != leasedBody.motionIndex ||
+                snapshot.collisionObject != leasedBody.collisionObject ||
+                snapshot.ownerNode != leasedBody.ownerNode) {
+                ROCK_LOG_SAMPLE_WARN(Hand,
+                    1000,
+                    "Native player collision suppression physics refresh rejected recycled body: bodyId={} context={} oldMotion={} newMotion={} oldOwner={} newOwner={} oldCollision={} newCollision={}",
+                    leasedBody.bodyId,
+                    context ? context : "",
+                    leasedBody.motionIndex,
+                    snapshot.motionIndex,
+                    static_cast<const void*>(leasedBody.ownerNode),
+                    static_cast<const void*>(snapshot.ownerNode),
+                    static_cast<const void*>(leasedBody.collisionObject),
+                    static_cast<const void*>(snapshot.collisionObject));
                 continue;
             }
 
             std::uint32_t currentFilter = 0;
-            if (!body_collision::tryReadFilterInfo(hknp, RE::hknpBodyId{ bodyId }, currentFilter)) {
+            if (!body_collision::tryReadFilterInfo(hknp, RE::hknpBodyId{ leasedBody.bodyId }, currentFilter)) {
                 ROCK_LOG_SAMPLE_WARN(Hand,
                     1000,
-                    "Native player collision suppression refresh skipped: bodyId={} context={} cannot read filter",
-                    bodyId,
+                    "Native player collision suppression physics refresh skipped: bodyId={} context={} cannot read filter",
+                    leasedBody.bodyId,
                     context ? context : "");
                 continue;
             }
 
             const std::uint32_t refreshedFilter = currentFilter | collision_suppression_registry::kSuppressionNoCollideBit;
             if (refreshedFilter != currentFilter) {
-                body_collision::setFilterInfo(hknp, RE::hknpBodyId{ bodyId }, refreshedFilter);
+                body_collision::setFilterInfo(hknp, RE::hknpBodyId{ leasedBody.bodyId }, refreshedFilter);
             }
         }
     }
@@ -5643,6 +5702,7 @@ namespace rock
             return;
         }
 
+        auto cacheMutation = _generatedBodyStepDrive.callbackGate().pauseForMutation();
         refreshNativePlayerCollisionSuppression(hknp, "native-player-body-frame-refresh");
 
         if (_nativePlayerCollisionSuppressionRefreshFrames > 0) {
@@ -5729,21 +5789,21 @@ namespace rock
             _nativePlayerCollisionSuppressionOverflowLogged = false;
         }
 
-        std::array<std::uint32_t, kNativePlayerCollisionSuppressionBodyCapacity> next{};
+        std::array<NativePlayerCollisionSuppressedBody, kNativePlayerCollisionSuppressionBodyCapacity> next{};
         std::uint32_t nextCount = 0;
         auto nextContains = [&](std::uint32_t bodyId) {
             for (std::uint32_t i = 0; i < nextCount && i < next.size(); ++i) {
-                if (next[i] == bodyId) {
+                if (next[i].bodyId == bodyId) {
                     return true;
                 }
             }
             return false;
         };
-        auto appendNext = [&](std::uint32_t bodyId) {
-            if (!contact_pipeline_policy::isValidBodyId(bodyId) || nextContains(bodyId) || nextCount >= next.size()) {
+        auto appendNext = [&](const NativePlayerCollisionSuppressedBody& body) {
+            if (!contact_pipeline_policy::isValidBodyId(body.bodyId) || nextContains(body.bodyId) || nextCount >= next.size()) {
                 return;
             }
-            next[nextCount++] = bodyId;
+            next[nextCount++] = body;
         };
 
         for (std::uint32_t i = 0; i < scanContext.bodyCount && i < scanContext.bodyIds.size(); ++i) {
@@ -5753,28 +5813,42 @@ namespace rock
                 bodyId,
                 collision_suppression_registry::CollisionSuppressionOwner::NativePlayerBody,
                 "native-player-body");
-            if (acquireResult.valid) {
-                appendNext(bodyId);
+            if (acquireResult.valid && acquireResult.leaseIdentityValid) {
+                appendNext({
+                    bodyId,
+                    acquireResult.leaseMotionIndex,
+                    acquireResult.leaseCollisionObject,
+                    acquireResult.leaseOwnerNode,
+                });
+            } else if (acquireResult.valid) {
+                collision_suppression_registry::globalCollisionSuppressionRegistry().release(
+                    hknp,
+                    bodyId,
+                    collision_suppression_registry::CollisionSuppressionOwner::NativePlayerBody,
+                    "native-player-body-missing-identity");
+                ROCK_LOG_WARN(Hand,
+                    "Native player collision suppression acquisition rejected: bodyId={} lease identity unavailable",
+                    bodyId);
             }
         }
 
-        for (std::uint32_t i = 0; i < _nativePlayerCollisionSuppressedBodyCount && i < _nativePlayerCollisionSuppressedBodyIds.size(); ++i) {
-            const auto bodyId = _nativePlayerCollisionSuppressedBodyIds[i];
-            if (scanContext.contains(bodyId)) {
+        for (std::uint32_t i = 0; i < _nativePlayerCollisionSuppressedBodyCount && i < _nativePlayerCollisionSuppressedBodies.size(); ++i) {
+            const auto& body = _nativePlayerCollisionSuppressedBodies[i];
+            if (nextContains(body.bodyId)) {
                 continue;
             }
 
             const auto releaseResult = collision_suppression_registry::globalCollisionSuppressionRegistry().release(
                 hknp,
-                bodyId,
+                body.bodyId,
                 collision_suppression_registry::CollisionSuppressionOwner::NativePlayerBody,
                 "native-player-body-stale");
             if (releaseResult.readFailed) {
-                appendNext(bodyId);
+                appendNext(body);
             }
         }
 
-        _nativePlayerCollisionSuppressedBodyIds = next;
+        _nativePlayerCollisionSuppressedBodies = next;
         _nativePlayerCollisionSuppressedBodyCount = nextCount;
     }
 
@@ -5787,10 +5861,12 @@ namespace rock
 
         /*
          * This pre-collide callback runs inside the same native Havok step path
-         * used for generated body writes. It only reasserts bit 14 on cached
-         * native player bodies; registry ownership is not changed from here.
+         * used for generated body writes. It reasserts bit 14 only while the
+         * cached native identity still owns the lease. This callback only reads
+         * the cache; game-frame refresh owns stale-lease eviction under the
+         * callback quiescence gate.
          */
-        self->refreshNativePlayerCollisionSuppression(world, "native-player-body-pre-collide");
+        self->refreshNativePlayerCollisionSuppressionFromPhysicsSubstep(world, "native-player-body-pre-collide");
         self->driveGeneratedCollidersFromPhysicsSubstep(world, timing);
     }
 
