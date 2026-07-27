@@ -1870,7 +1870,7 @@ namespace rock::provider
 
     /*
      * leaseFrames must be non-zero and is clamped to the public maximum.
-     * A rolling lease fails closed to ROCK's fixed configured firing hand if
+     * A rolling lease returns to ROCK's configured fallback handling policy if
      * the addon stops publishing, unregisters, faults, or loses the provider.
      * Generation guards use the established optional-zero V1 contract.
      */

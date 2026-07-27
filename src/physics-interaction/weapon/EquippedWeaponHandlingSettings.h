@@ -4,6 +4,18 @@
 
 namespace rock
 {
+    struct RockEquippedWeaponHandlingBaseline
+    {
+        bool ambidextrousHandoffEnabled{ false };
+        float firingGripProximitySupportRadiusGameUnits{ 6.0f };
+        float firingGripPromotionRadiusGameUnits{ 5.0f };
+        float leftFiringAimYawDegrees{ 0.0f };
+        float leftFiringAimPitchDegrees{ 0.0f };
+        float leftFiringAimOffsetXGameUnits{ 0.0f };
+        float leftFiringAimOffsetYGameUnits{ 0.0f };
+        float leftFiringAimOffsetZGameUnits{ 0.0f };
+    };
+
     struct EquippedWeaponHandlingSettings
     {
         bool externalAuthorityActive{ false };
@@ -36,15 +48,31 @@ namespace rock
 
     [[nodiscard]] inline EquippedWeaponHandlingSettings
     makeEquippedWeaponHandlingSettings(
-        const float rockFiringGripProximitySupportRadiusGameUnits,
+        const RockEquippedWeaponHandlingBaseline& rockBaseline,
         const provider::RockProviderEquippedWeaponHandlingRequestV1* request)
     {
         EquippedWeaponHandlingSettings settings{};
+        settings.firingGripOwnershipEnabled =
+            rockBaseline.ambidextrousHandoffEnabled;
+        settings.ambidextrousHandoffEnabled =
+            rockBaseline.ambidextrousHandoffEnabled;
         // Near-firing-grip VisualOnlySupport is a ROCK weapon-support safety
         // contract, not ambidextrous ownership. ROCK supplies the baseline
         // radius; an active handling owner may replace only that tuning value.
         settings.firingGripProximitySupportRadiusGameUnits =
-            rockFiringGripProximitySupportRadiusGameUnits;
+            rockBaseline.firingGripProximitySupportRadiusGameUnits;
+        settings.firingGripPromotionRadiusGameUnits =
+            rockBaseline.firingGripPromotionRadiusGameUnits;
+        settings.leftFiringAimYawDegrees =
+            rockBaseline.leftFiringAimYawDegrees;
+        settings.leftFiringAimPitchDegrees =
+            rockBaseline.leftFiringAimPitchDegrees;
+        settings.leftFiringAimOffsetXGameUnits =
+            rockBaseline.leftFiringAimOffsetXGameUnits;
+        settings.leftFiringAimOffsetYGameUnits =
+            rockBaseline.leftFiringAimOffsetYGameUnits;
+        settings.leftFiringAimOffsetZGameUnits =
+            rockBaseline.leftFiringAimOffsetZGameUnits;
         if (!request) {
             return settings;
         }
@@ -91,5 +119,29 @@ namespace rock
         settings.equipVisualBridgeTimeoutSeconds = request->equipVisualBridgeTimeoutSeconds;
         settings.equipVisualBridgeBlendSeconds = request->equipVisualBridgeBlendSeconds;
         return settings;
+    }
+
+    [[nodiscard]] inline constexpr bool
+    requiresEquippedWeaponHandlingModeReconcile(
+        const EquippedWeaponHandlingSettings& previous,
+        const EquippedWeaponHandlingSettings& current,
+        const bool fixedFiringHandChanged) noexcept
+    {
+        if (fixedFiringHandChanged) {
+            return true;
+        }
+
+        // Request-source changes are intentionally ignored. A compatible
+        // addon-to-ROCK fallback keeps the same ROCK executor and can preserve
+        // its live handoff. Reconcile only when a state-owning capability is
+        // removed and the current manual state may no longer be legal.
+        return (previous.firingGripOwnershipEnabled &&
+                   !current.firingGripOwnershipEnabled) ||
+               (previous.primaryDetachEnabled &&
+                   !current.primaryDetachEnabled) ||
+               (previous.ambidextrousHandoffEnabled &&
+                   !current.ambidextrousHandoffEnabled) ||
+               (previous.pipboyTriggerHandEquipEnabled &&
+                   !current.pipboyTriggerHandEquipEnabled);
     }
 }

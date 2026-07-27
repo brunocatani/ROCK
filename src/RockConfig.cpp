@@ -28,6 +28,7 @@ namespace
     constexpr auto DEBUG_SECTION = "Debug";
     constexpr auto REALISTIC_WEAPONS_SECTION = "RealisticWeapons";
     constexpr auto WEAPON_HANDEDNESS_SECTION = "WeaponHandedness";
+    constexpr auto AMBIDEXTROUS_FIRING_SECTION = "AmbidextrousFiring";
     constexpr auto NATIVE_SCOPES_SECTION = "NativeScopes";
     constexpr auto EXPERIMENTAL_SECTION = "Experimental";
     constexpr int kDefaultWeaponCollisionSupportFitTargetPoints = 96;
@@ -172,6 +173,13 @@ namespace rock
         rockReverseFarGrabNormal = true;
 
         rockLeftHandedMode = false;
+        rockAmbidextrousFiringGripEnabled = true;
+        rockFiringGripPromotionRadius = 5.0f;
+        rockLeftFiringAimYawDegrees = 0.0f;
+        rockLeftFiringAimPitchDegrees = 0.0f;
+        rockLeftFiringAimOffsetXGameUnits = 0.0f;
+        rockLeftFiringAimOffsetYGameUnits = 0.0f;
+        rockLeftFiringAimOffsetZGameUnits = 0.0f;
         rockWeaponCollisionEnabled = true;
         rockWeaponCollisionBlocksProjectiles = false;
         rockWeaponCollisionBlocksSpells = false;
@@ -751,6 +759,58 @@ namespace rock
             WEAPON_HANDEDNESS_SECTION,
             "bLeftHandedMode",
             rockLeftHandedMode);
+        rockAmbidextrousFiringGripEnabled = ini.GetBoolValue(
+            AMBIDEXTROUS_FIRING_SECTION,
+            "bAmbidextrousFiringGripEnabled",
+            rockAmbidextrousFiringGripEnabled);
+        rockFiringGripPromotionRadius = readClampedFloat(
+            ini,
+            AMBIDEXTROUS_FIRING_SECTION,
+            "fFiringGripPromotionRadius",
+            rockFiringGripPromotionRadius,
+            5.0f,
+            0.25f,
+            30.0f);
+        rockLeftFiringAimYawDegrees = readClampedFloat(
+            ini,
+            AMBIDEXTROUS_FIRING_SECTION,
+            "fLeftFiringAimYawDegrees",
+            rockLeftFiringAimYawDegrees,
+            0.0f,
+            -30.0f,
+            30.0f);
+        rockLeftFiringAimPitchDegrees = readClampedFloat(
+            ini,
+            AMBIDEXTROUS_FIRING_SECTION,
+            "fLeftFiringAimPitchDegrees",
+            rockLeftFiringAimPitchDegrees,
+            0.0f,
+            -30.0f,
+            30.0f);
+        rockLeftFiringAimOffsetXGameUnits = readClampedFloat(
+            ini,
+            AMBIDEXTROUS_FIRING_SECTION,
+            "fLeftFiringAimOffsetXGameUnits",
+            rockLeftFiringAimOffsetXGameUnits,
+            0.0f,
+            -15.0f,
+            15.0f);
+        rockLeftFiringAimOffsetYGameUnits = readClampedFloat(
+            ini,
+            AMBIDEXTROUS_FIRING_SECTION,
+            "fLeftFiringAimOffsetYGameUnits",
+            rockLeftFiringAimOffsetYGameUnits,
+            0.0f,
+            -15.0f,
+            15.0f);
+        rockLeftFiringAimOffsetZGameUnits = readClampedFloat(
+            ini,
+            AMBIDEXTROUS_FIRING_SECTION,
+            "fLeftFiringAimOffsetZGameUnits",
+            rockLeftFiringAimOffsetZGameUnits,
+            0.0f,
+            -15.0f,
+            15.0f);
         rockWeaponCollisionEnabled = ini.GetBoolValue(SECTION, "bWeaponCollisionEnabled", rockWeaponCollisionEnabled);
         rockWeaponCollisionBlocksProjectiles = ini.GetBoolValue(SECTION, "bWeaponCollisionBlocksProjectiles", rockWeaponCollisionBlocksProjectiles);
         rockWeaponCollisionBlocksSpells = ini.GetBoolValue(SECTION, "bWeaponCollisionBlocksSpells", rockWeaponCollisionBlocksSpells);

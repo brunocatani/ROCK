@@ -4095,24 +4095,41 @@ namespace rock
         ::rock::provider::RockProviderEquippedWeaponHandlingRequestV1 request{};
         const bool externalAuthorityActive =
             ::rock::provider::getEquippedWeaponHandlingAuthorityV1(request);
+        const RockEquippedWeaponHandlingBaseline rockBaseline{
+            .ambidextrousHandoffEnabled =
+                g_rockConfig.rockAmbidextrousFiringGripEnabled,
+            .firingGripProximitySupportRadiusGameUnits =
+                g_rockConfig.rockFiringGripProximitySupportRadius,
+            .firingGripPromotionRadiusGameUnits =
+                g_rockConfig.rockFiringGripPromotionRadius,
+            .leftFiringAimYawDegrees =
+                g_rockConfig.rockLeftFiringAimYawDegrees,
+            .leftFiringAimPitchDegrees =
+                g_rockConfig.rockLeftFiringAimPitchDegrees,
+            .leftFiringAimOffsetXGameUnits =
+                g_rockConfig.rockLeftFiringAimOffsetXGameUnits,
+            .leftFiringAimOffsetYGameUnits =
+                g_rockConfig.rockLeftFiringAimOffsetYGameUnits,
+            .leftFiringAimOffsetZGameUnits =
+                g_rockConfig.rockLeftFiringAimOffsetZGameUnits,
+        };
         auto settings = makeEquippedWeaponHandlingSettings(
-            g_rockConfig.rockFiringGripProximitySupportRadius,
+            rockBaseline,
             externalAuthorityActive ? &request : nullptr);
 
         const bool fixedFiringHandIsLeft = g_rockConfig.rockLeftHandedMode;
-        if (!externalAuthorityActive && fixedFiringHandIsLeft) {
-            // Base ROCK needs only persistent firing-grip ownership to carry
-            // the weapon on the configured left hand. Detach, handoff, stash,
-            // grip-zone equip, and every realistic tuning remain addon-owned.
+        if (fixedFiringHandIsLeft) {
+            // The addon does not own ROCK's fixed-hand preference. Persistent
+            // left carry needs firing-grip ownership even when an active addon
+            // request explicitly disables dynamic ambidextrous handoff.
             settings.firingGripOwnershipEnabled = true;
         }
 
         if (_equippedWeaponHandlingModeInitialized) {
-            const bool externalAuthorityLost =
-                _equippedWeaponHandlingSettings.externalAuthorityActive &&
-                !settings.externalAuthorityActive;
-            if (externalAuthorityLost ||
-                fixedFiringHandIsLeft != _fixedFiringHandIsLeft) {
+            if (requiresEquippedWeaponHandlingModeReconcile(
+                    _equippedWeaponHandlingSettings,
+                    settings,
+                    fixedFiringHandIsLeft != _fixedFiringHandIsLeft)) {
                 _equippedWeaponHandlingModeReconcilePending = true;
             }
         }
@@ -4170,14 +4187,16 @@ namespace rock
         }
 
         // An addon-owned Pip-Boy selection is an explicit dynamic side choice.
-        // Likewise, any live addon manual state is preserved so the fixed hand
-        // acts only as the fallback/default while ambidextrous authority exists.
+        // Likewise, a live manual handoff is preserved regardless of whether
+        // its effective ambidextrous policy comes from ROCK or the addon. The
+        // fixed hand remains the fallback/default rather than fighting the
+        // player's deliberate switch.
         if (_pipboyWeaponHandAssignment.pending ||
             _pipboyWeaponHandAssignment.active) {
             _fixedLeftCarry = {};
             return;
         }
-        if (_equippedWeaponHandlingSettings.externalAuthorityActive &&
+        if (_equippedWeaponHandlingSettings.ambidextrousHandoffEnabled &&
             _twoHandedGrip.isManualOwnershipActive()) {
             _fixedLeftCarry = {};
             return;

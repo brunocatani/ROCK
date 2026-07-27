@@ -44,7 +44,7 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'Equipped weapons must always enter ROCK proximity support after explicit provider grab modes are resolved.'
 
 Require-Text 'src/physics-interaction/weapon/EquippedWeaponHandlingSettings.h' `
-    'Near-firing-grip VisualOnlySupport is a ROCK weapon-support safety[\s\S]{0,320}settings\.firingGripProximitySupportRadiusGameUnits\s*=\s*\r?\n\s*rockFiringGripProximitySupportRadiusGameUnits' `
+    'Near-firing-grip VisualOnlySupport is a ROCK weapon-support safety[\s\S]{0,320}settings\.firingGripProximitySupportRadiusGameUnits\s*=\s*\r?\n\s*rockBaseline\.firingGripProximitySupportRadiusGameUnits' `
     'ROCK must seed the support contract from its configured baseline radius.'
 Require-Text 'src/physics-interaction/weapon/EquippedWeaponHandlingSettings.h' `
     'if \(enabled\(provider::RockProviderEquippedWeaponHandlingFlagV1::FiringGripProximitySupport\)\)[\s\S]{0,240}request->firingGripProximitySupportRadiusGameUnits' `
@@ -64,7 +64,7 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'handlingSettings\.ambidextrousHandoffEnabled\s*&&\s*!primaryGripInput\.held\s*&&\s*tryPromoteSupportGripToFiringGrip' `
-    'Core VisualOnlySupport must never switch firing hands unless addon-owned ambidextrous handoff is active.'
+    'Core VisualOnlySupport must never switch firing hands unless the effective ROCK-or-addon ambidextrous policy is active.'
 
 Require-Text 'src/api/ROCKProviderApi.h' `
     'core VisualOnlySupport behavior itself remains always enabled[\s\S]*FiringGripProximitySupport[\s\S]*firingGripProximitySupportRadiusGameUnits' `

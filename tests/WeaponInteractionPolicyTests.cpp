@@ -726,35 +726,129 @@ int main()
     ok &= expectTrue("support grip continues to apply offhand visual authority",
         rock::weapon_support_authority_policy::supportGripAppliesSupportHandAuthority(rock::weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver));
 
-    const auto coreWeaponHandling = rock::makeEquippedWeaponHandlingSettings(7.0f, nullptr);
+    const rock::RockEquippedWeaponHandlingBaseline coreWeaponHandlingBaseline{
+        .ambidextrousHandoffEnabled = true,
+        .firingGripProximitySupportRadiusGameUnits = 7.0f,
+        .firingGripPromotionRadiusGameUnits = 5.5f,
+        .leftFiringAimYawDegrees = 1.5f,
+        .leftFiringAimPitchDegrees = -2.5f,
+        .leftFiringAimOffsetXGameUnits = 0.5f,
+        .leftFiringAimOffsetYGameUnits = -0.75f,
+        .leftFiringAimOffsetZGameUnits = 1.25f,
+    };
+    const auto coreWeaponHandling = rock::makeEquippedWeaponHandlingSettings(
+        coreWeaponHandlingBaseline,
+        nullptr);
     ok &= expectFalse("base ROCK has no external equipped-weapon authority",
         coreWeaponHandling.externalAuthorityActive);
     ok &= expectNear("base ROCK owns the proximity support radius",
         coreWeaponHandling.firingGripProximitySupportRadiusGameUnits,
         7.0f);
-    ok &= expectFalse("base ROCK visual-only support does not enable ambidextrous handoff",
+    ok &= expectTrue("base ROCK enables configured firing-grip ownership",
+        coreWeaponHandling.firingGripOwnershipEnabled);
+    ok &= expectTrue("base ROCK enables configured ambidextrous handoff",
         coreWeaponHandling.ambidextrousHandoffEnabled);
+    ok &= expectFalse("base ROCK ambidextrous mode does not enable realistic detach",
+        coreWeaponHandling.primaryDetachEnabled);
+    ok &= expectNear("base ROCK owns firing-grip promotion tuning",
+        coreWeaponHandling.firingGripPromotionRadiusGameUnits,
+        5.5f);
+    ok &= expectNear("base ROCK owns left firing aim yaw",
+        coreWeaponHandling.leftFiringAimYawDegrees,
+        1.5f);
+    ok &= expectNear("base ROCK owns left firing aim pitch",
+        coreWeaponHandling.leftFiringAimPitchDegrees,
+        -2.5f);
+    ok &= expectNear("base ROCK owns left firing aim offset X",
+        coreWeaponHandling.leftFiringAimOffsetXGameUnits,
+        0.5f);
+    ok &= expectNear("base ROCK owns left firing aim offset Y",
+        coreWeaponHandling.leftFiringAimOffsetYGameUnits,
+        -0.75f);
+    ok &= expectNear("base ROCK owns left firing aim offset Z",
+        coreWeaponHandling.leftFiringAimOffsetZGameUnits,
+        1.25f);
+
+    auto fixedOnlyBaseline = coreWeaponHandlingBaseline;
+    fixedOnlyBaseline.ambidextrousHandoffEnabled = false;
+    const auto fixedOnlyHandling = rock::makeEquippedWeaponHandlingSettings(
+        fixedOnlyBaseline,
+        nullptr);
+    ok &= expectFalse("disabled ROCK ambidextrous mode does not claim firing ownership",
+        fixedOnlyHandling.firingGripOwnershipEnabled);
+    ok &= expectFalse("disabled ROCK ambidextrous mode keeps handoff disabled",
+        fixedOnlyHandling.ambidextrousHandoffEnabled);
 
     rock::provider::RockProviderEquippedWeaponHandlingRequestV1 externalWeaponHandling{};
     externalWeaponHandling.flags = static_cast<std::uint32_t>(
         rock::provider::RockProviderEquippedWeaponHandlingFlagV1::FiringGripOwnership);
     externalWeaponHandling.firingGripProximitySupportRadiusGameUnits = 8.0f;
     auto externalHandling = rock::makeEquippedWeaponHandlingSettings(
-        7.0f,
+        coreWeaponHandlingBaseline,
         &externalWeaponHandling);
     ok &= expectTrue("an equipped-weapon request activates external authority",
         externalHandling.externalAuthorityActive);
+    ok &= expectFalse("an active addon request may suppress ROCK ambidextrous handoff",
+        externalHandling.ambidextrousHandoffEnabled);
     ok &= expectNear("external authority preserves ROCK's radius without an override",
         externalHandling.firingGripProximitySupportRadiusGameUnits,
         7.0f);
-    externalWeaponHandling.flags |= static_cast<std::uint32_t>(
-        rock::provider::RockProviderEquippedWeaponHandlingFlagV1::FiringGripProximitySupport);
+    externalWeaponHandling.flags |=
+        static_cast<std::uint32_t>(
+            rock::provider::RockProviderEquippedWeaponHandlingFlagV1::AmbidextrousHandoff) |
+        static_cast<std::uint32_t>(
+            rock::provider::RockProviderEquippedWeaponHandlingFlagV1::FiringGripProximitySupport);
+    externalWeaponHandling.firingGripPromotionRadiusGameUnits = 9.0f;
+    externalWeaponHandling.leftFiringAimYawDegrees = -4.0f;
     externalHandling = rock::makeEquippedWeaponHandlingSettings(
-        7.0f,
+        coreWeaponHandlingBaseline,
         &externalWeaponHandling);
+    ok &= expectTrue("an active addon request may enable handoff through the ROCK executor",
+        externalHandling.ambidextrousHandoffEnabled);
     ok &= expectNear("an active owner supplies proximity tuning",
         externalHandling.firingGripProximitySupportRadiusGameUnits,
         8.0f);
+    ok &= expectNear("an active owner supplies handoff promotion tuning",
+        externalHandling.firingGripPromotionRadiusGameUnits,
+        9.0f);
+    ok &= expectNear("an active owner supplies left firing aim tuning",
+        externalHandling.leftFiringAimYawDegrees,
+        -4.0f);
+
+    ok &= expectFalse("compatible addon activation does not tear down ROCK handoff",
+        rock::requiresEquippedWeaponHandlingModeReconcile(
+            coreWeaponHandling,
+            externalHandling,
+            false));
+    auto addonDetachHandling = externalHandling;
+    addonDetachHandling.primaryDetachEnabled = true;
+    ok &= expectTrue("removing addon detach capability reconciles manual weapon state",
+        rock::requiresEquippedWeaponHandlingModeReconcile(
+            addonDetachHandling,
+            coreWeaponHandling,
+            false));
+    ok &= expectTrue("an addon override that disables handoff reconciles the live switch",
+        rock::requiresEquippedWeaponHandlingModeReconcile(
+            coreWeaponHandling,
+            fixedOnlyHandling,
+            false));
+    ok &= expectFalse("gaining ROCK handoff capability does not require teardown",
+        rock::requiresEquippedWeaponHandlingModeReconcile(
+            fixedOnlyHandling,
+            coreWeaponHandling,
+            false));
+    ok &= expectTrue("changing the fixed firing hand always reconciles carry ownership",
+        rock::requiresEquippedWeaponHandlingModeReconcile(
+            coreWeaponHandling,
+            coreWeaponHandling,
+            true));
+    auto addonPipboyHandling = externalHandling;
+    addonPipboyHandling.pipboyTriggerHandEquipEnabled = true;
+    ok &= expectTrue("removing addon Pip-Boy hand assignment reconciles its carry",
+        rock::requiresEquippedWeaponHandlingModeReconcile(
+            addonPipboyHandling,
+            coreWeaponHandling,
+            false));
 
     using rock::weapon_support_authority_policy::canApplyFiringGripProximityAuthority;
     using rock::weapon_support_authority_policy::canPromoteSupportGripToFiringGrip;

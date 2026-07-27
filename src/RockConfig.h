@@ -96,6 +96,15 @@ namespace rock
         // ROCK-exclusive equipped-weapon hand preference. This never reads or
         // mutates Fallout 4 VR's native handedness/controller mapping.
         bool rockLeftHandedMode = false;
+        // ROCK-native firing-grip handoff. This remains independent from the
+        // addon-owned realistic detach/drop feature set.
+        bool rockAmbidextrousFiringGripEnabled = true;
+        float rockFiringGripPromotionRadius = 5.0f;
+        float rockLeftFiringAimYawDegrees = 0.0f;
+        float rockLeftFiringAimPitchDegrees = 0.0f;
+        float rockLeftFiringAimOffsetXGameUnits = 0.0f;
+        float rockLeftFiringAimOffsetYGameUnits = 0.0f;
+        float rockLeftFiringAimOffsetZGameUnits = 0.0f;
         bool rockWeaponCollisionEnabled = true;
         bool rockWeaponCollisionBlocksProjectiles = false;
         bool rockWeaponCollisionBlocksSpells = false;
