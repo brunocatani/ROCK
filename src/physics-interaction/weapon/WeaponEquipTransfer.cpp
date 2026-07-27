@@ -438,8 +438,6 @@ namespace rock::weapon_equip_transfer
         result.committed = equippedAfter.weapon == result.weapon &&
             (!stack.instanceData || equippedAfter.instanceData == stack.instanceData.get());
         if (!result.committed) {
-            held_weapon_instant_transition::discardCompletionPermit(
-                result.instantTransition);
             result.reason = EquipReason::EquippedIdentityMismatch;
             return result;
         }
@@ -453,8 +451,6 @@ namespace rock::weapon_equip_transfer
             (!stack.instanceData ||
                 equippedStack.instanceData.get() == stack.instanceData.get());
         if (!result.matchedEquippedStack) {
-            held_weapon_instant_transition::discardCompletionPermit(
-                result.instantTransition);
             result.reason = EquipReason::EquippedStackMismatch;
             return result;
         }

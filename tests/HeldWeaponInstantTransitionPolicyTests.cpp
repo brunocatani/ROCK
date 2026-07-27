@@ -43,67 +43,58 @@ int main()
 
     ActionTrace drawOnly{};
     recordAction(drawOnly, NativeAction::Draw);
-    ok &= expect("one final draw is a valid new-weapon trace",
-        isValidCompletionTrace(drawOnly));
+    ok &= expect("one intercepted draw is a valid new-weapon equip trace",
+        isValidEquipActionTrace(drawOnly));
 
     ActionTrace replacement{};
     recordAction(replacement, NativeAction::Sheathe);
     recordAction(replacement, NativeAction::Sheathe);
     recordAction(replacement, NativeAction::Draw);
-    ok &= expect("bounded replacement sheathes followed by one draw are valid",
-        isValidCompletionTrace(replacement) &&
+    ok &= expect("bounded replacement sheathes followed by one draw are a valid equip trace",
+        isValidEquipActionTrace(replacement) &&
             actionCount(replacement, NativeAction::Sheathe) == 2 &&
             actionCount(replacement, NativeAction::Draw) == 1);
 
     ActionTrace empty{};
-    ok &= expect("an empty trace cannot authorize direct completion",
-        !isValidCompletionTrace(empty));
+    ok &= expect("an empty trace cannot validate an intercepted equip",
+        !isValidEquipActionTrace(empty));
 
     ActionTrace sheatheOnly{};
     recordAction(sheatheOnly, NativeAction::Sheathe);
-    ok &= expect("a sheathe-only trace cannot authorize direct completion",
-        !isValidCompletionTrace(sheatheOnly));
+    ok &= expect("a sheathe-only trace cannot validate an intercepted equip",
+        !isValidEquipActionTrace(sheatheOnly));
 
     ActionTrace drawNotLast{};
     recordAction(drawNotLast, NativeAction::Draw);
     recordAction(drawNotLast, NativeAction::Sheathe);
     ok &= expect("draw must be the final intercepted action",
-        !isValidCompletionTrace(drawNotLast));
+        !isValidEquipActionTrace(drawNotLast));
 
     ActionTrace multipleDraws{};
     recordAction(multipleDraws, NativeAction::Draw);
     recordAction(multipleDraws, NativeAction::Draw);
     ok &= expect("multiple draw requests are ambiguous and rejected",
-        !isValidCompletionTrace(multipleDraws));
+        !isValidEquipActionTrace(multipleDraws));
 
     ActionTrace faulted = drawOnly;
     faulted.unexpectedCaller = true;
     ok &= expect("an unexpected scoped caller invalidates an otherwise valid trace",
-        !isValidCompletionTrace(faulted));
+        !isValidEquipActionTrace(faulted));
     faulted = drawOnly;
     faulted.playerMismatch = true;
-    ok &= expect("a scoped player mismatch invalidates direct completion",
-        !isValidCompletionTrace(faulted));
+    ok &= expect("a scoped player mismatch invalidates the equip trace",
+        !isValidEquipActionTrace(faulted));
     faulted = drawOnly;
     faulted.nestedScope = true;
-    ok &= expect("a nested transaction invalidates direct completion",
-        !isValidCompletionTrace(faulted));
+    ok &= expect("a nested transaction invalidates the equip trace",
+        !isValidEquipActionTrace(faulted));
 
     ActionTrace overflow{};
     for (std::size_t index = 0; index < kMaximumActionTraceEntries + 1; ++index) {
         recordAction(overflow, NativeAction::Sheathe);
     }
     ok &= expect("the fixed trace must fail closed on overflow",
-        overflow.overflow && !isValidCompletionTrace(overflow));
-
-    ok &= expect("only exact native sheathed/drawn states are stable",
-        isStableWeaponState(0) &&
-            isStableWeaponState(3) &&
-            !isStableWeaponState(1) &&
-            !isStableWeaponState(2) &&
-            !isStableWeaponState(4) &&
-            !isStableWeaponState(5) &&
-            !isStableWeaponState(6));
+        overflow.overflow && !isValidEquipActionTrace(overflow));
 
     return ok ? 0 : 1;
 }

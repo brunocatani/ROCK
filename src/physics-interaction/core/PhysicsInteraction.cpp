@@ -9467,28 +9467,6 @@ namespace rock
                             .blendSeconds = _equippedWeaponHandlingSettings.equipVisualBridgeBlendSeconds,
                         });
                     }
-                    held_weapon_instant_transition::CompletionResult completionResult{};
-                    if (equipResult.success) {
-                        completionResult =
-                            held_weapon_instant_transition::completeDrawForExactCurrent(
-                                equipResult.instantTransition,
-                                held_weapon_instant_transition::EquippedIdentity{
-                                    .formID = equipResult.observedEquippedFormID,
-                                    .instanceData = equipResult.observedEquippedInstanceData,
-                                    .equipIndex = equipResult.observedEquipIndex,
-                                });
-                        if (completionResult.success()) {
-                            _equippedWeaponTransition.synchronizeAfterInstantCompletion();
-                        } else {
-                            _equippedWeaponTransition.failHeldCompletion(
-                                held_weapon_instant_transition::completionCodeName(
-                                    completionResult.code));
-                        }
-                    }
-                    const bool equipFinalized =
-                        equipResult.success && completionResult.success();
-                    const std::uint32_t nativeStateAfterCompletion =
-                        static_cast<std::uint32_t>(player->weaponState);
                     if (heldFormID == 0 && equipResult.formID != 0) {
                         heldFormID = equipResult.formID;
                     }
@@ -9499,13 +9477,28 @@ namespace rock
                         hand.applyReleaseVelocitySnapshot(hknp, releaseOutcome.velocity);
                     }
                     dispatchHeldObjectEventByFormID(GrabEventType::Released, postEquipRef, heldFormID, primaryBodyId);
+                    const bool physicalCarryPendingArmed =
+                        equipResult.success && pendingGripStart.pending;
+                    if (physicalCarryPendingArmed) {
+                        pendingGripStart.targetWeaponFormID = equipResult.weapon ?
+                            equipResult.weapon->formID :
+                            equipResult.observedEquippedFormID;
+                        pendingGripStart.targetWeaponInstanceData =
+                            equipResult.requestedInstanceData;
+                        pendingGripStart.previousWeaponFormID =
+                            equipResult.previousEquippedFormID;
+                        pendingGripStart.previousWeaponInstanceData =
+                            equipResult.previousEquippedInstanceData;
+                        pendingGripStart.remainingSeconds = 10.0f;
+                        _pendingEquippedWeaponPrimaryOnlyGripStart = pendingGripStart;
+                    }
                     const auto& actionTrace = equipResult.instantTransition.actionTrace;
                     ROCK_LOG_INFO(Hand,
-                        "{} hand {} held weapon equip formID={:08X} finalized={} accepted={} committed={} equippedStackMatch={} equipReason={} requestReason={} transition={} readiness={} completion={} count={} stack={} stackEvidence={} stacks={}->{} mutations={} instanceMatch={} requestedInstance={:#x} observedInstance={:#x} transferred={} observedEquipped={:08X} equipIndex={} weaponState={}({})->{}({})->{}({}) traceCount={} traceSheathe={} traceDraw={} traceFaults=0x{:02X} nativeInstance={} nativeAncestorsVisible={} nativeLocalVisible={} immediateEquip={} visualBridge={}",
+                        "{} hand {} held weapon equip formID={:08X} success={} managerAccepted={} committed={} equippedStackMatch={} equipReason={} requestReason={} transition={} readiness={} count={} stack={} stackEvidence={} stacks={}->{} mutations={} instanceMatch={} requestedInstance={:#x} observedInstance={:#x} transferred={} observedEquipped={:08X} equipIndex={} weaponState={}({})->{}({}) traceCount={} traceSheathe={} traceDraw={} traceFaults=0x{:02X} nativeInstance={} nativeAncestorsVisible={} nativeLocalVisible={} immediateEquip={} visualBridge={} physicalCarryPending={} physicalCarryHand={}",
                         hand.handName(),
                         logAction ? logAction : "requested",
                         heldFormID,
-                        equipFinalized ? "yes" : "no",
+                        equipResult.success ? "yes" : "no",
                         equipResult.instantTransition.managerAccepted ? "yes" : "no",
                         equipResult.committed ? "yes" : "no",
                         equipResult.matchedEquippedStack ? "yes" : "no",
@@ -9516,8 +9509,6 @@ namespace rock
                             equipResult.instantTransition.code),
                         held_weapon_instant_transition::readinessReasonName(
                             instantReadiness.reason),
-                        held_weapon_instant_transition::completionCodeName(
-                            completionResult.code),
                         equipResult.count,
                         equipResult.stackID,
                         weapon_inventory_stack_selection_policy::evidenceName(
@@ -9535,9 +9526,6 @@ namespace rock
                         held_weapon_equip_state_policy::nativeWeaponStateName(nativeStateBeforeEquip),
                         nativeStateAfterEquip,
                         held_weapon_equip_state_policy::nativeWeaponStateName(nativeStateAfterEquip),
-                        nativeStateAfterCompletion,
-                        held_weapon_equip_state_policy::nativeWeaponStateName(
-                            nativeStateAfterCompletion),
                         actionTrace.count,
                         held_weapon_instant_transition_policy::actionCount(
                             actionTrace,
@@ -9554,20 +9542,9 @@ namespace rock
                         immediateVisual.ancestorPathVisible ? "yes" : "no",
                         immediateVisual.instanceLocallyVisible ? "yes" : "no",
                         equipResult.usedImmediateEquip ? "yes" : "no",
-                        equipBridgeStarted ? "yes" : "no");
-                    if (equipFinalized && pendingGripStart.pending) {
-                        pendingGripStart.targetWeaponFormID = equipResult.weapon ?
-                            equipResult.weapon->formID :
-                            equipResult.observedEquippedFormID;
-                        pendingGripStart.targetWeaponInstanceData =
-                            equipResult.requestedInstanceData;
-                        pendingGripStart.previousWeaponFormID =
-                            equipResult.previousEquippedFormID;
-                        pendingGripStart.previousWeaponInstanceData =
-                            equipResult.previousEquippedInstanceData;
-                        pendingGripStart.remainingSeconds = 10.0f;
-                        _pendingEquippedWeaponPrimaryOnlyGripStart = pendingGripStart;
-                    }
+                        equipBridgeStarted ? "yes" : "no",
+                        physicalCarryPendingArmed ? "yes" : "no",
+                        physicalCarryPendingArmed ? (isLeft ? "left" : "right") : "none");
                     input_remap_runtime::setHandHeldWeapon(isLeft, false);
                     clearGameplayCandidatesForHand(hand, isLeft);
                     return true;

@@ -33,14 +33,17 @@ function Reject-Text {
 }
 
 $nativePath = 'src/physics-interaction/native/HeldWeaponInstantTransition.cpp'
+$nativeHeaderPath = 'src/physics-interaction/native/HeldWeaponInstantTransition.h'
+$coordinatorPath = 'src/physics-interaction/weapon/EquippedWeaponTransitionCoordinator.cpp'
+$physicsPath = 'src/physics-interaction/core/PhysicsInteraction.cpp'
 
 Require-Text $nativePath `
-    'kPlayerDrawWeaponEntry\s*=\s*0x0F78D10[\s\S]*kEquipManagerDrawCallsite\s*=\s*0x0E107A1[\s\S]*kEquipManagerDrawReturn\s*=\s*0x0E107A7[\s\S]*kEquipManagerSheatheCallsite\s*=\s*0x0E10988[\s\S]*kEquipManagerSheatheReturn\s*=\s*0x0E1098E[\s\S]*kCompleteWeaponDraw\s*=\s*0x0DBE590' `
-    'The focused native owner must retain the independently verified FO4VR transition addresses.'
+    'kPlayerDrawWeaponEntry\s*=\s*0x0F78D10[\s\S]*kEquipManagerDrawCallsite\s*=\s*0x0E107A1[\s\S]*kEquipManagerDrawReturn\s*=\s*0x0E107A7[\s\S]*kEquipManagerSheatheCallsite\s*=\s*0x0E10988[\s\S]*kEquipManagerSheatheReturn\s*=\s*0x0E1098E' `
+    'The focused native owner must retain the independently verified FO4VR interceptor addresses.'
 
 Require-Text $nativePath `
-    'kExpectedPlayerDrawEntry[\s\S]*0x48, 0x89, 0x74, 0x24, 0x18[\s\S]*kExpectedEquipManagerVirtualCall[\s\S]*0xFF, 0x90, 0x48, 0x06, 0x00, 0x00[\s\S]*kExpectedCompleteWeaponDrawEntry[\s\S]*0x40, 0x53, 0x48, 0x83, 0xEC, 0x30' `
-    'Entry, caller, and completion addresses must be protected by exact runtime byte contracts.'
+    'kExpectedPlayerDrawEntry[\s\S]*0x48, 0x89, 0x74, 0x24, 0x18[\s\S]*kExpectedEquipManagerVirtualCall[\s\S]*0xFF, 0x90, 0x48, 0x06, 0x00, 0x00' `
+    'The interceptor entry and manager callsites must be protected by exact runtime byte contracts.'
 
 Require-Text $nativePath `
     'entry_trampoline_hook::install\([\s\S]{0,600}kPlayerDrawWeaponEntry[\s\S]{0,300}onDrawWeaponMagicHands' `
@@ -55,16 +58,20 @@ Require-Text $nativePath `
     'The native transaction must own exactly one silent immediate manager call inside the RAII scope.'
 
 Require-Text $nativePath `
-    'completeDrawForExactCurrent[\s\S]{0,1800}equippedIdentityMatches[\s\S]{0,900}CompleteWeaponDraw[\s\S]{0,500}stateAfter\s*!=\s*3' `
-    'Direct completion must consume typed evidence, revalidate exact identity, and require exact Drawn state.'
+    'equipImmediatelyWithoutActions[\s\S]{0,3200}isValidEquipActionTrace[\s\S]{0,500}ImmediateEquipCode::Accepted' `
+    'The immediate manager transaction must fail closed on its exact action trace before reporting acceptance.'
 
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'readinessFor\(player\)[\s\S]{0,3000}hand\.captureHeldReleaseMotion[\s\S]*beginHeldTransition[\s\S]{0,4000}completeDrawForExactCurrent[\s\S]{0,900}synchronizeAfterInstantCompletion' `
-    'Held equip must preflight before release, begin its bridge, then complete and synchronize the exact native weapon.'
+Require-Text $nativeHeaderPath `
+    'bool success\(\) const noexcept[\s\S]{0,160}return code == ImmediateEquipCode::Accepted;' `
+    'Immediate transaction success must depend on the validated manager transaction, not a later presentation permit.'
 
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'completionResult\.success\(\)[\s\S]{0,400}failHeldCompletion[\s\S]*equipFinalized[\s\S]{0,3000}pendingGripStart\.pending' `
-    'Completion failure must clear the bridge and manual hand ownership must wait for final success.'
+Require-Text $physicsPath `
+    'readinessFor\(player\)[\s\S]{0,3000}hand\.captureHeldReleaseMotion[\s\S]*beginHeldTransition[\s\S]{0,4000}equipResult\.success\s*&&\s*pendingGripStart\.pending[\s\S]{0,1600}_pendingEquippedWeaponPrimaryOnlyGripStart\s*=\s*pendingGripStart' `
+    'Held equip must preflight before release, retain its bridge, and arm the captured physical hand at exact transaction success.'
+
+Require-Text $coordinatorPath `
+    'equipped_weapon_transition_policy::advance[\s\S]{0,3000}RepairAction::RequestDraw[\s\S]{0,500}native_equipped_weapon_draw::submitExactCurrent[\s\S]*_bridge\.update' `
+    'Normal exact-current native draw recovery and bridge presentation must remain owned by the transition coordinator.'
 
 Require-Text 'src/physics-interaction/weapon/WeaponEquipTransfer.cpp' `
     'equipImmediatelyWithoutActions[\s\S]{0,1800}readEquippedWeaponSnapshot[\s\S]{0,900}findEquippedWeaponStack[\s\S]{0,700}ActivateRefThenInstantEquip' `
@@ -75,8 +82,14 @@ Reject-Text 'src/physics-interaction/weapon/WeaponEquipTransfer.cpp' `
     'Held weapon transfer must not bypass the scoped native transaction with a direct or queued manager call.'
 
 Reject-Text $nativePath `
-    '0x0DBE6D0|WeaponBeginDraw|WeaponBeginSheathe|PlayerFastEquipSound' `
-    'The held draw feature must not add sheathe completion or global animation/sound suppression.'
+    '0x0DBE590|0x0DBE6D0|CompleteWeaponDraw|WeaponBeginDraw|WeaponBeginSheathe|PlayerFastEquipSound' `
+    'The held equip transaction must not directly run native completion or add global animation/sound suppression.'
+
+foreach ($path in @($nativeHeaderPath, $nativePath, $physicsPath, $coordinatorPath)) {
+    Reject-Text $path `
+        'completionPermit|CompletionResult|CompletionCode|completeDrawForExactCurrent|synchronizeAfterInstantCompletion|failHeldCompletion' `
+        "Direct native completion surface must remain absent from $path."
+}
 
 Require-Text 'src/ROCKMain.cpp' `
     'Install held weapon instant-transition capability[\s\S]{0,300}held_weapon_instant_transition::install\(\)[\s\S]{0,300}Held trigger/grip-zone equip disabled' `

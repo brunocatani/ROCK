@@ -119,37 +119,6 @@ namespace rock
         return bridgeStarted;
     }
 
-    void EquippedWeaponTransitionCoordinator::synchronizeAfterInstantCompletion()
-    {
-        if (!_active || _waitingForExpectedIdentity || !_boundIdentity.valid()) {
-            return;
-        }
-
-        auto visual = equipped_weapon_visual_state::observe(
-            _boundIdentity.formID,
-            _supersededNativeInstanceNode);
-        _bridge.update(EquipVisualBridge::UpdateInput{
-            .deltaSeconds = 0.0f,
-            .advanceLifetime = false,
-            .presentModel = _bridge.hasStandbyModel(),
-            .nativeVisual = &visual,
-        });
-    }
-
-    void EquippedWeaponTransitionCoordinator::failHeldCompletion(const char* reason)
-    {
-        if (!_active) {
-            return;
-        }
-        _repairExhaustionLogged = true;
-        ROCK_LOG_WARN(Weapon,
-            "Equipped weapon transition instant completion failed source={} formID={:08X} reason={}",
-            sourceName(_source),
-            _boundIdentity.valid() ? _boundIdentity.formID : _expectedIdentity.formID,
-            reason ? reason : "unknown");
-        finish(reason ? reason : "instant-completion-failed", true);
-    }
-
     void EquippedWeaponTransitionCoordinator::requestCurrentWeaponReconcile(const Source source) noexcept
     {
         _requestedCurrentSource = source;
