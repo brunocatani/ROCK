@@ -87,8 +87,8 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'void TwoHandedG
     'Primary-hand release while scoped must defer hFRIK wrist cleanup instead of restoring against the collapsed root.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'void TwoHandedGrip::reset\(\)[\s\S]*clearSupportGripPose\(false\);[\s\S]*_scopeMenuOpenThisFrame\s*=\s*false;' `
     'Reset must preserve the active ScopeMenu flag until all hand-authority clears have been safely deferred.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'applyWeaponVisualAuthority\(weaponNode,\s*solved\.weaponWorldTransform\)[\s\S]*applyLockedHandVisualAuthority\(weaponNode,\s*applyPrimaryHandAuthority' `
-    'Full two-hand solve must publish weapon and native scope-camera authority before considering hidden hand IK.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'applyWeaponVisualAuthority\(weaponNode,\s*appliedWeaponWorld\)[\s\S]*applyLockedHandVisualAuthority\(weaponNode,\s*applyPrimaryHandAuthority' `
+    'Full two-hand solve must publish its final immediate-or-acquired weapon and native scope-camera authority before considering hidden hand IK.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'bool TwoHandedGrip::applyLockedHandVisualAuthority\([\s\S]*shouldPublishLockedHandVisualAuthority\(_scopeMenuOpenThisFrame\)[\s\S]*return true;[\s\S]*frik_visual_authority::isAvailable\(\)' `
     'Hidden ScopeMenu hand IK must be a successful no-op so it cannot revoke weapon ownership.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'shouldReuseRightFiringCanonicalGrip[\s\S]*_rightFiringGripCanonicalWeaponLocal[\s\S]*pre-scope-canonical' `

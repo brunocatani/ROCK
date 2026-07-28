@@ -30,7 +30,7 @@ namespace
 
     struct TestMatrix3
     {
-        float entry[3][3]{};
+        float entry[3][4]{};
     };
 
     struct TestTransform
@@ -95,6 +95,17 @@ namespace
         }
         return ok;
     }
+
+    TestMatrix3 makeAxisAngleRotation(
+        const TestVector3& axis,
+        float degrees)
+    {
+        return rock::weaponSolverAxisAngleStored<
+            TestMatrix3,
+            TestVector3>(
+            axis,
+            degrees * 0.01745329251994329577f);
+    }
 }
 
 int main()
@@ -156,6 +167,195 @@ int main()
         ok &= expectNear("support grip frozen solve preserves final hand/mesh relation x", virtualGripFromHand.x, finalGripFromHand.x);
         ok &= expectNear("support grip frozen solve preserves final hand/mesh relation y", virtualGripFromHand.y, finalGripFromHand.y);
         ok &= expectNear("support grip frozen solve preserves final hand/mesh relation z", virtualGripFromHand.z, finalGripFromHand.z);
+    }
+
+    {
+        TestTransform oneHandWeapon =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        const TestVector3 primaryGripLocal{ 2.0f, 1.0f, -1.0f };
+        const TestVector3 supportGripLocal{ 2.0f, 11.0f, -1.0f };
+        const TestVector3 primaryTarget{ 100.0f, 50.0f, 20.0f };
+        const TestVector3 supportTarget{ 110.0f, 50.0f, 20.0f };
+        oneHandWeapon.translate = { 98.0f, 49.0f, 21.0f };
+
+        rock::WeaponTwoHandedSolverInput<TestTransform, TestVector3>
+            solverInput{};
+        solverInput.weaponWorldTransform = oneHandWeapon;
+        solverInput.primaryGripLocal = primaryGripLocal;
+        solverInput.supportGripLocal = supportGripLocal;
+        solverInput.primaryTargetWorld = primaryTarget;
+        solverInput.supportTargetWorld = supportTarget;
+        solverInput.supportNormalLocal = { 0.0f, 0.0f, 1.0f };
+        solverInput.supportNormalTargetWorld = { 0.0f, 1.0f, 0.0f };
+        solverInput.useSupportNormalTwist = true;
+        solverInput.supportNormalTwistFactor = 0.5f;
+
+        const auto fullSolve =
+            rock::solveTwoHandedWeaponTransformFrikPivot(solverInput);
+        auto axisOnlyInput = solverInput;
+        axisOnlyInput.useSupportNormalTwist = false;
+        axisOnlyInput.supportNormalTwistFactor = 0.0f;
+        const auto axisOnlySolve =
+            rock::solveTwoHandedWeaponTransformFrikPivot(axisOnlyInput);
+        ok &= expectTrue(
+            "dynamic acquisition fixture full solve succeeds",
+            fullSolve.solved);
+        ok &= expectTrue(
+            "dynamic acquisition fixture axis solve succeeds",
+            axisOnlySolve.solved);
+
+        const float fullCorrectionRadians =
+            rock::weapon_support_acquisition_math::
+                rotationAngleRadians(fullSolve.rotationDelta);
+        const float twistContributionRadians =
+            rock::weapon_support_acquisition_math::
+                rotationDistanceRadians(
+                    axisOnlySolve.rotationDelta,
+                    fullSolve.rotationDelta);
+        ok &= expectTrue(
+            "dynamic acquisition composite includes support normal twist",
+            twistContributionRadians >
+                1.0f * 0.01745329251994329577f);
+
+        constexpr std::array<float, 5> kAcquisitionAlphas{
+            0.0f,
+            0.25f,
+            0.5f,
+            0.75f,
+            1.0f,
+        };
+        for (const float alpha : kAcquisitionAlphas) {
+            const auto acquired =
+                rock::weapon_support_acquisition_math::
+                    applyRotationAroundPrimaryPivot<
+                        TestTransform,
+                        TestVector3>(
+                        oneHandWeapon,
+                        fullSolve.rotationDelta,
+                        primaryGripLocal,
+                        primaryTarget,
+                        alpha);
+            ok &= expectTrue(
+                "dynamic acquisition partial solve stays valid",
+                acquired.valid);
+            const TestVector3 primaryWorld =
+                rock::transform_math::localPointToWorld(
+                    acquired.weaponWorldTransform,
+                    primaryGripLocal);
+            ok &= expectNear(
+                "dynamic acquisition keeps primary pivot x exact",
+                primaryWorld.x,
+                primaryTarget.x);
+            ok &= expectNear(
+                "dynamic acquisition keeps primary pivot y exact",
+                primaryWorld.y,
+                primaryTarget.y);
+            ok &= expectNear(
+                "dynamic acquisition keeps primary pivot z exact",
+                primaryWorld.z,
+                primaryTarget.z);
+            ok &= expectNear(
+                "dynamic acquisition slerps the complete correction",
+                acquired.appliedRotationRadians,
+                fullCorrectionRadians * alpha,
+                0.001f);
+            if (alpha == 0.0f) {
+                ok &= expectTransformNear(
+                    "dynamic acquisition alpha zero preserves one-hand frame",
+                    acquired.weaponWorldTransform,
+                    oneHandWeapon);
+            }
+            if (alpha == 1.0f) {
+                ok &= expectTransformNear(
+                    "dynamic acquisition alpha one matches full solver",
+                    acquired.weaponWorldTransform,
+                    fullSolve.weaponWorldTransform);
+            }
+        }
+
+        const TestVector3 movingPrimaryTarget{
+            primaryTarget.x + 7.0f,
+            primaryTarget.y - 4.0f,
+            primaryTarget.z + 3.0f,
+        };
+        const auto movingPrimaryAcquire =
+            rock::weapon_support_acquisition_math::
+                applyRotationAroundPrimaryPivot<
+                    TestTransform,
+                    TestVector3>(
+                    oneHandWeapon,
+                    fullSolve.rotationDelta,
+                    primaryGripLocal,
+                    movingPrimaryTarget,
+                    0.35f);
+        const TestVector3 movingPrimaryWorld =
+            rock::transform_math::localPointToWorld(
+                movingPrimaryAcquire.weaponWorldTransform,
+                primaryGripLocal);
+        ok &= expectNear(
+            "dynamic acquisition follows moving primary x immediately",
+            movingPrimaryWorld.x,
+            movingPrimaryTarget.x);
+        ok &= expectNear(
+            "dynamic acquisition follows moving primary y immediately",
+            movingPrimaryWorld.y,
+            movingPrimaryTarget.y);
+        ok &= expectNear(
+            "dynamic acquisition follows moving primary z immediately",
+            movingPrimaryWorld.z,
+            movingPrimaryTarget.z);
+
+        const TestMatrix3 almostFullTurn =
+            makeAxisAngleRotation(
+                TestVector3{ 0.0f, 0.0f, 1.0f },
+                350.0f);
+        const auto shortestArcAcquire =
+            rock::weapon_support_acquisition_math::
+                applyRotationAroundPrimaryPivot<
+                    TestTransform,
+                    TestVector3>(
+                    oneHandWeapon,
+                    almostFullTurn,
+                    primaryGripLocal,
+                    primaryTarget,
+                    0.5f);
+        ok &= expectNear(
+            "dynamic acquisition uses quaternion shortest arc",
+            shortestArcAcquire.appliedRotationRadians,
+            5.0f * 0.01745329251994329577f,
+            0.001f);
+
+        ok &= expectNear(
+            "dynamic acquisition smoothstep quarter",
+            rock::weapon_support_acquisition_math::smoothStepAlpha(
+                0.25f),
+            0.15625f);
+        ok &= expectNear(
+            "dynamic acquisition zero duration reaches endpoint",
+            rock::weapon_support_acquisition_math::
+                timedSmoothStepAlpha(0.0f, 0.0f),
+            1.0f);
+
+        TestMatrix3 invalidRotation = fullSolve.rotationDelta;
+        invalidRotation.entry[0][0] =
+            (std::numeric_limits<float>::quiet_NaN)();
+        const auto invalidAcquire =
+            rock::weapon_support_acquisition_math::
+                applyRotationAroundPrimaryPivot<
+                    TestTransform,
+                    TestVector3>(
+                    oneHandWeapon,
+                    invalidRotation,
+                    primaryGripLocal,
+                    primaryTarget,
+                    0.5f);
+        ok &= expectFalse(
+            "dynamic acquisition rejects non-finite correction",
+            invalidAcquire.valid);
+        ok &= expectTransformNear(
+            "dynamic acquisition non-finite correction fails closed",
+            invalidAcquire.weaponWorldTransform,
+            oneHandWeapon);
     }
 
     {
@@ -725,6 +925,36 @@ int main()
         rock::weapon_support_authority_policy::supportGripAppliesPrimaryHandAuthority(rock::weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver));
     ok &= expectTrue("support grip continues to apply offhand visual authority",
         rock::weapon_support_authority_policy::supportGripAppliesSupportHandAuthority(rock::weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver));
+    ok &= expectTrue("only a normal dynamic full-authority support grip uses synchronized acquisition",
+        rock::weapon_support_authority_policy::shouldUseDynamicSupportAcquisition(
+            rock::weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver,
+            false,
+            false,
+            false));
+    ok &= expectFalse("authored support bypasses synchronized dynamic acquisition",
+        rock::weapon_support_authority_policy::shouldUseDynamicSupportAcquisition(
+            rock::weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver,
+            true,
+            false,
+            false));
+    ok &= expectFalse("provider support bypasses synchronized dynamic acquisition",
+        rock::weapon_support_authority_policy::shouldUseDynamicSupportAcquisition(
+            rock::weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver,
+            false,
+            true,
+            false));
+    ok &= expectFalse("attach-only support bypasses synchronized dynamic acquisition",
+        rock::weapon_support_authority_policy::shouldUseDynamicSupportAcquisition(
+            rock::weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver,
+            false,
+            false,
+            true));
+    ok &= expectFalse("visual-only support never gains synchronized weapon acquisition",
+        rock::weapon_support_authority_policy::shouldUseDynamicSupportAcquisition(
+            rock::weapon_support_authority_policy::WeaponSupportAuthorityMode::VisualOnlySupport,
+            false,
+            false,
+            false));
 
     const rock::RockEquippedWeaponHandlingBaseline coreWeaponHandlingBaseline{
         .ambidextrousHandoffEnabled = true,

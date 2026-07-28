@@ -632,6 +632,35 @@ namespace rock
             float lastAlpha = 1.0f;
         };
 
+        /*
+         * Value-only acquisition transaction for a normal, non-authored
+         * support grip. It owns no scene/provider pointers: generation and
+         * grip-sequence witnesses make every later use fail closed if the
+         * weapon or captured part changes.
+         */
+        struct DynamicSupportAcquisitionState
+        {
+            bool active{ false };
+            bool durationInitialized{ false };
+            bool firstPublicationRecorded{ false };
+            bool supportHandIsLeft{ false };
+            std::uint64_t weaponGenerationKey{ 0 };
+            std::uint64_t gripSequence{ 0 };
+            RE::NiTransform primaryStartWorld{};
+            RE::NiTransform supportStartWorld{};
+            float elapsedSeconds{ 0.0f };
+            float durationSeconds{ 0.0f };
+            float rawAlpha{ 0.0f };
+            float easedAlpha{ 0.0f };
+            float fullCorrectionRadians{ 0.0f };
+            float axisCorrectionRadians{ 0.0f };
+            float twistContributionRadians{ 0.0f };
+            float initialSeatDistanceGameUnits{ 0.0f };
+            float lastAppliedRotationRadians{ 0.0f };
+            float lastPrimaryPivotError{ 0.0f };
+            float lastSupportTargetError{ 0.0f };
+        };
+
         struct ReturningHandVisualState
         {
             hand_visual_lerp_math::VisualReturnTransition<RE::NiTransform> transition{};
@@ -979,6 +1008,21 @@ namespace rock
         RE::NiAVObject* resolveCurrentSupportAttachmentRoot(const WeaponPartGrip& grip, RE::NiNode* weaponNode) const;
 
         void resetLockedHandVisualLerp();
+        void beginDynamicSupportAcquisition(
+            bool supportHandIsLeft,
+            const WeaponPartGrip& supportGrip,
+            const RE::NiTransform& primaryStartWorld,
+            const RE::NiTransform& supportStartWorld);
+        void clearDynamicSupportAcquisition(
+            const char* reason,
+            bool logCancellation);
+        [[nodiscard]] bool dynamicSupportAcquisitionMatches(
+            bool supportHandIsLeft,
+            const WeaponPartGrip& supportGrip) const;
+        RE::NiTransform resolveDynamicSupportAcquisitionHandTarget(
+            const RE::NiTransform& targetWorld,
+            bool primaryHand,
+            LockedHandVisualLerpState& visualState);
         void recordPublishedHandWorld(bool isLeft, const RE::NiTransform& appliedWorld);
         void beginHandVisualReturn(bool isLeft, const char* reason);
         void updateHandVisualReturns(float dt);
@@ -1159,6 +1203,7 @@ namespace rock
         bool _hasFiringHandWeaponLocal{ false };
 
         LockedHandVisualLerpState _primaryHandVisualLerp{};
+        DynamicSupportAcquisitionState _dynamicSupportAcquisition{};
 
         std::array<ReturningHandVisualState, 2> _returningHandVisuals{};
         std::array<RE::NiTransform, 2> _lastPublishedHandWorld{};

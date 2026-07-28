@@ -65,6 +65,18 @@ namespace rock::weapon_support_authority_policy
         return true;
     }
 
+    inline constexpr bool shouldUseDynamicSupportAcquisition(
+        WeaponSupportAuthorityMode mode,
+        bool authoredSupportGrip,
+        bool providerAuthorityActive,
+        bool attachOnly)
+    {
+        return mode == WeaponSupportAuthorityMode::FullTwoHandedSolver &&
+               !authoredSupportGrip &&
+               !providerAuthorityActive &&
+               !attachOnly;
+    }
+
     inline constexpr bool canPromoteSupportGripToFiringGrip(
         WeaponSupportAuthorityMode mode,
         bool authoredSupportGrip)
@@ -511,6 +523,7 @@ namespace rock::weapon_two_handed_grip_math
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace rock
 {
@@ -828,5 +841,255 @@ namespace rock
          * a second aiming convention.
          */
         return solveTwoHandedWeaponTransform(input);
+    }
+
+    namespace weapon_support_acquisition_math
+    {
+        inline float smoothStepAlpha(float rawAlpha)
+        {
+            if (!std::isfinite(rawAlpha)) {
+                return 0.0f;
+            }
+            const float alpha = std::clamp(rawAlpha, 0.0f, 1.0f);
+            return alpha * alpha * (3.0f - 2.0f * alpha);
+        }
+
+        inline float timedSmoothStepAlpha(float elapsedSeconds, float durationSeconds)
+        {
+            if (!std::isfinite(elapsedSeconds) || !std::isfinite(durationSeconds)) {
+                return 1.0f;
+            }
+            if (durationSeconds <= 0.0f) {
+                return 1.0f;
+            }
+            return smoothStepAlpha((std::max)(0.0f, elapsedSeconds) / durationSeconds);
+        }
+
+        template <class Vector>
+        inline bool isFiniteVector(const Vector& value)
+        {
+            return std::isfinite(value.x) &&
+                   std::isfinite(value.y) &&
+                   std::isfinite(value.z);
+        }
+
+        template <class Matrix>
+        inline bool isFiniteRotation(const Matrix& rotation)
+        {
+            for (int row = 0; row < 3; ++row) {
+                for (int column = 0; column < 3; ++column) {
+                    if (!std::isfinite(rotation.entry[row][column])) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        template <class Transform>
+        inline bool isFiniteTransform(const Transform& transform)
+        {
+            return isFiniteRotation(transform.rotate) &&
+                   isFiniteVector(transform.translate) &&
+                   std::isfinite(transform.scale);
+        }
+
+        inline bool normalizeQuaternion(float quaternion[4])
+        {
+            float lengthSquared = 0.0f;
+            for (int index = 0; index < 4; ++index) {
+                if (!std::isfinite(quaternion[index])) {
+                    return false;
+                }
+                lengthSquared += quaternion[index] * quaternion[index];
+            }
+            if (!std::isfinite(lengthSquared) || lengthSquared <= 0.000001f) {
+                return false;
+            }
+
+            const float inverseLength = 1.0f / std::sqrt(lengthSquared);
+            for (int index = 0; index < 4; ++index) {
+                quaternion[index] *= inverseLength;
+            }
+            return true;
+        }
+
+        template <class Matrix>
+        inline bool shortestArcSlerpFromIdentity(
+            const Matrix& fullRotationDelta,
+            float alpha,
+            Matrix& outPartialRotationDelta)
+        {
+            outPartialRotationDelta = transform_math::makeIdentityRotation<Matrix>();
+            if (!std::isfinite(alpha) || !isFiniteRotation(fullRotationDelta)) {
+                return false;
+            }
+
+            const float t = std::clamp(alpha, 0.0f, 1.0f);
+            if (t <= 0.0f) {
+                return true;
+            }
+            if (t >= 1.0f) {
+                outPartialRotationDelta = fullRotationDelta;
+                return true;
+            }
+
+            float target[4]{};
+            transform_math::niRowsToHavokQuaternion(fullRotationDelta, target);
+            if (!normalizeQuaternion(target)) {
+                return false;
+            }
+
+            float cosTheta = target[3];
+            if (cosTheta < 0.0f) {
+                for (float& component : target) {
+                    component = -component;
+                }
+                cosTheta = -cosTheta;
+            }
+            cosTheta = std::clamp(cosTheta, -1.0f, 1.0f);
+
+            float partial[4]{};
+            if (cosTheta > 0.9995f) {
+                partial[0] = target[0] * t;
+                partial[1] = target[1] * t;
+                partial[2] = target[2] * t;
+                partial[3] = 1.0f + (target[3] - 1.0f) * t;
+            } else {
+                const float theta = std::acos(cosTheta);
+                const float sinTheta = std::sin(theta);
+                if (!std::isfinite(sinTheta) || std::abs(sinTheta) <= 0.000001f) {
+                    return false;
+                }
+                const float identityWeight = std::sin((1.0f - t) * theta) / sinTheta;
+                const float targetWeight = std::sin(t * theta) / sinTheta;
+                partial[0] = target[0] * targetWeight;
+                partial[1] = target[1] * targetWeight;
+                partial[2] = target[2] * targetWeight;
+                partial[3] = identityWeight + target[3] * targetWeight;
+            }
+
+            if (!normalizeQuaternion(partial)) {
+                return false;
+            }
+            outPartialRotationDelta =
+                transform_math::havokQuaternionToNiRows<Matrix>(partial);
+            return isFiniteRotation(outPartialRotationDelta);
+        }
+
+        template <class Matrix>
+        inline float rotationDistanceRadians(
+            const Matrix& from,
+            const Matrix& to)
+        {
+            if (!isFiniteRotation(from) || !isFiniteRotation(to)) {
+                return (std::numeric_limits<float>::quiet_NaN)();
+            }
+
+            float fromQuaternion[4]{};
+            float toQuaternion[4]{};
+            transform_math::niRowsToHavokQuaternion(from, fromQuaternion);
+            transform_math::niRowsToHavokQuaternion(to, toQuaternion);
+            if (!normalizeQuaternion(fromQuaternion) ||
+                !normalizeQuaternion(toQuaternion)) {
+                return (std::numeric_limits<float>::quiet_NaN)();
+            }
+
+            const float dotValue = std::abs(
+                fromQuaternion[0] * toQuaternion[0] +
+                fromQuaternion[1] * toQuaternion[1] +
+                fromQuaternion[2] * toQuaternion[2] +
+                fromQuaternion[3] * toQuaternion[3]);
+            return 2.0f *
+                   std::acos(std::clamp(dotValue, 0.0f, 1.0f));
+        }
+
+        template <class Matrix>
+        inline float rotationAngleRadians(const Matrix& rotation)
+        {
+            return rotationDistanceRadians(
+                transform_math::makeIdentityRotation<Matrix>(),
+                rotation);
+        }
+
+        template <class Transform>
+        struct PivotPreservingRotationResult
+        {
+            Transform weaponWorldTransform{};
+            decltype(Transform{}.rotate) partialRotationDelta{};
+            float primaryError{ 0.0f };
+            float appliedRotationRadians{ 0.0f };
+            bool valid{ false };
+        };
+
+        /*
+         * Dynamic support acquisition ramps only the support-induced world
+         * rotation. Translation is re-solved from the live primary target at
+         * every alpha, so the firing grip never softens or drifts while the
+         * second hand gains steering authority.
+         */
+        template <class Transform, class Vector>
+        inline PivotPreservingRotationResult<Transform>
+        applyRotationAroundPrimaryPivot(
+            const Transform& oneHandWeaponWorld,
+            const decltype(Transform{}.rotate)& fullRotationDelta,
+            const Vector& primaryGripLocal,
+            const Vector& primaryTargetWorld,
+            float alpha)
+        {
+            PivotPreservingRotationResult<Transform> result{};
+            result.weaponWorldTransform = oneHandWeaponWorld;
+            result.partialRotationDelta =
+                transform_math::makeIdentityRotation<
+                    decltype(oneHandWeaponWorld.rotate)>();
+
+            if (!isFiniteTransform(oneHandWeaponWorld) ||
+                std::abs(oneHandWeaponWorld.scale) <= 0.0001f ||
+                !isFiniteRotation(fullRotationDelta) ||
+                !isFiniteVector(primaryGripLocal) ||
+                !isFiniteVector(primaryTargetWorld) ||
+                !std::isfinite(alpha) ||
+                !shortestArcSlerpFromIdentity(
+                    fullRotationDelta,
+                    alpha,
+                    result.partialRotationDelta)) {
+                return result;
+            }
+
+            result.weaponWorldTransform.rotate =
+                weaponSolverApplyWorldRotationToStoredBasis<
+                    decltype(oneHandWeaponWorld.rotate),
+                    Vector>(
+                    result.partialRotationDelta,
+                    oneHandWeaponWorld.rotate);
+
+            const Vector primaryAfterRotation =
+                transform_math::localPointToWorld(
+                    result.weaponWorldTransform,
+                    primaryGripLocal);
+            result.weaponWorldTransform.translate = weaponSolverAdd(
+                result.weaponWorldTransform.translate,
+                weaponSolverSub(primaryTargetWorld, primaryAfterRotation));
+
+            if (!isFiniteTransform(result.weaponWorldTransform)) {
+                result.weaponWorldTransform = oneHandWeaponWorld;
+                result.partialRotationDelta =
+                    transform_math::makeIdentityRotation<
+                        decltype(oneHandWeaponWorld.rotate)>();
+                return result;
+            }
+
+            const Vector primaryFinal = transform_math::localPointToWorld(
+                result.weaponWorldTransform,
+                primaryGripLocal);
+            result.primaryError = weaponSolverLength(
+                weaponSolverSub(primaryFinal, primaryTargetWorld));
+            result.appliedRotationRadians =
+                rotationAngleRadians(result.partialRotationDelta);
+            result.valid =
+                std::isfinite(result.primaryError) &&
+                std::isfinite(result.appliedRotationRadians);
+            return result;
+        }
     }
 }
