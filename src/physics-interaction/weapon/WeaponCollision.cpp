@@ -1942,7 +1942,7 @@ namespace rock
             return result;
         }
 
-        [[nodiscard]] bool weaponEmitterTransformFinite(const RE::NiTransform& transform)
+        [[nodiscard]] bool weaponTransformFinite(const RE::NiTransform& transform)
         {
             if (!std::isfinite(transform.translate.x) || !std::isfinite(transform.translate.y) ||
                 !std::isfinite(transform.translate.z) || !std::isfinite(transform.scale)) {
@@ -1963,15 +1963,15 @@ namespace rock
             const RE::NiAVObject* transformNode,
             const RE::NiAVObject* weaponRoot)
         {
-            if (!transformNode || !weaponRoot || !weaponEmitterTransformFinite(transformNode->world) ||
-                !weaponEmitterTransformFinite(weaponRoot->world) || std::abs(weaponRoot->world.scale) <= 0.000001f) {
+            if (!transformNode || !weaponRoot || !weaponTransformFinite(transformNode->world) ||
+                !weaponTransformFinite(weaponRoot->world) || std::abs(weaponRoot->world.scale) <= 0.000001f) {
                 return false;
             }
 
             const RE::NiTransform weaponLocal = transform_math::composeTransforms(
                 transform_math::invertTransform(weaponRoot->world),
                 transformNode->world);
-            if (!weaponEmitterTransformFinite(weaponLocal)) {
+            if (!weaponTransformFinite(weaponLocal)) {
                 return false;
             }
 
@@ -3055,6 +3055,141 @@ namespace rock
             outView.weaponGenerationKey = getCurrentWeaponGenerationKey();
             outView.sourceNodeCurrent = sourceNodeCurrent;
             return outView.weaponGenerationKey != 0;
+        }
+
+        return false;
+    }
+
+    bool WeaponCollision::tryFindCurrentWeaponSurfaceNearPoint(
+        const RE::NiAVObject* currentWeaponRoot,
+        const RE::NiPoint3& pointWorld,
+        float maxDistanceGameUnits,
+        WeaponSurfaceProximityWitness& outWitness) const
+    {
+        outWitness = {};
+        const std::uint64_t currentGeneration = getCurrentWeaponGenerationKey();
+        const auto pointFinite = [](const RE::NiPoint3& point) {
+            return std::isfinite(point.x) &&
+                   std::isfinite(point.y) &&
+                   std::isfinite(point.z);
+        };
+        if (!currentWeaponRoot ||
+            currentGeneration == 0 ||
+            !pointFinite(pointWorld) ||
+            !std::isfinite(maxDistanceGameUnits) ||
+            maxDistanceGameUnits < 0.0f) {
+            return false;
+        }
+
+        /*
+         * Authored-pose validity is a surface claim, not a part-AABB claim:
+         * animation-zero/default hands can land inside a broad receiver box
+         * while remaining nowhere near rendered weapon geometry. AABBs only
+         * reject unrelated parts before the exact cached-triangle test.
+         *
+         * This runs only at support-grip acquisition. It allocates nothing,
+         * scans the fixed active body bank, and exits on the first valid
+         * surface witness.
+         */
+        for (const auto& instance : activeWeaponBodies()) {
+            if (!instance.body.isValid()) {
+                continue;
+            }
+
+            const bool sourceNodeCurrent = instance.sourceNode &&
+                actor_equipment_grab::nodeContainsNode(
+                    const_cast<RE::NiAVObject*>(currentWeaponRoot),
+                    instance.sourceNode,
+                    64);
+            const bool useSourceFrame =
+                sourceNodeCurrent &&
+                !instance.generatedSourceLocalTrianglesGame.empty();
+            const RE::NiAVObject* surfaceRoot =
+                useSourceFrame ? instance.sourceNode : currentWeaponRoot;
+            const auto& localTriangles =
+                useSourceFrame ?
+                instance.generatedSourceLocalTrianglesGame :
+                instance.generatedLocalTrianglesGame;
+            const RE::NiPoint3& boundsMin =
+                useSourceFrame ?
+                instance.generatedSourceLocalMinGame :
+                instance.generatedLocalMinGame;
+            const RE::NiPoint3& boundsMax =
+                useSourceFrame ?
+                instance.generatedSourceLocalMaxGame :
+                instance.generatedLocalMaxGame;
+            if (!surfaceRoot ||
+                localTriangles.empty() ||
+                !weaponTransformFinite(surfaceRoot->world) ||
+                std::abs(surfaceRoot->world.scale) <= 0.000001f ||
+                !pointFinite(boundsMin) ||
+                !pointFinite(boundsMax) ||
+                boundsMin.x > boundsMax.x ||
+                boundsMin.y > boundsMax.y ||
+                boundsMin.z > boundsMax.z) {
+                continue;
+            }
+
+            const RE::NiPoint3 pointLocal =
+                weapon_collision_geometry_math::worldPointToLocal(
+                    surfaceRoot->world.rotate,
+                    surfaceRoot->world.translate,
+                    surfaceRoot->world.scale,
+                    pointWorld);
+            if (!pointFinite(pointLocal)) {
+                continue;
+            }
+
+            const float absoluteScale = std::abs(surfaceRoot->world.scale);
+            const float localRadius = maxDistanceGameUnits / absoluteScale;
+            const float boundsDistanceSquared =
+                weapon_interaction_probe_math::pointAabbDistanceSquared(
+                    pointLocal,
+                    boundsMin,
+                    boundsMax);
+            if (!std::isfinite(boundsDistanceSquared) ||
+                !weapon_interaction_probe_math::isWithinProbeRadiusSquared(
+                    boundsDistanceSquared,
+                    localRadius)) {
+                continue;
+            }
+
+            for (const auto& triangle : localTriangles) {
+                if (!pointFinite(triangle.v0) ||
+                    !pointFinite(triangle.v1) ||
+                    !pointFinite(triangle.v2)) {
+                    continue;
+                }
+
+                float surfaceDistanceSquared =
+                    (std::numeric_limits<float>::infinity)();
+                (void)closestPointOnTriangleToPoint(
+                    pointLocal,
+                    triangle,
+                    surfaceDistanceSquared);
+                if (!std::isfinite(surfaceDistanceSquared) ||
+                    surfaceDistanceSquared < 0.0f ||
+                    !weapon_interaction_probe_math::isWithinProbeRadiusSquared(
+                        surfaceDistanceSquared,
+                        localRadius)) {
+                    continue;
+                }
+
+                if (getCurrentWeaponGenerationKey() != currentGeneration) {
+                    outWitness = {};
+                    return false;
+                }
+                const float distanceGameUnits =
+                    std::sqrt(surfaceDistanceSquared) * absoluteScale;
+                if (!std::isfinite(distanceGameUnits)) {
+                    continue;
+                }
+                outWitness.distanceGameUnits = distanceGameUnits;
+                outWitness.bodyId = instance.body.getBodyId().value;
+                outWitness.weaponGenerationKey = currentGeneration;
+                outWitness.sourceNodeCurrent = useSourceFrame;
+                return true;
+            }
         }
 
         return false;

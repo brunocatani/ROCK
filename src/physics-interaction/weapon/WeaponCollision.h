@@ -139,6 +139,20 @@ namespace rock
             bool sourceNodeCurrent{ false };
         };
 
+        /*
+         * One-shot witness that a world-space point is within a caller-owned
+         * radius of the current generated weapon surface. The query consumes
+         * the cached source triangles synchronously and does not retain the
+         * weapon root or any source-node pointer.
+         */
+        struct WeaponSurfaceProximityWitness
+        {
+            float distanceGameUnits{ 0.0f };
+            std::uint32_t bodyId{ 0x7FFF'FFFFu };
+            std::uint64_t weaponGenerationKey{ 0 };
+            bool sourceNodeCurrent{ false };
+        };
+
         void init(RE::hknpWorld* world, void* bhkWorld);
 
         void shutdown();
@@ -204,6 +218,12 @@ namespace rock
             const RE::NiPoint3& probeWorldPoint,
             float probeRadiusGame,
             WeaponInteractionContact& outContact) const;
+
+        bool tryFindCurrentWeaponSurfaceNearPoint(
+            const RE::NiAVObject* currentWeaponRoot,
+            const RE::NiPoint3& pointWorld,
+            float maxDistanceGameUnits,
+            WeaponSurfaceProximityWitness& outWitness) const;
 
         bool tryGetSupportGripEvidenceView(
             std::uint32_t bodyId,

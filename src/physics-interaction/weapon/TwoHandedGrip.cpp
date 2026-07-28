@@ -2546,13 +2546,17 @@ namespace rock
 
         /*
          * Acquisition-only authored priority. A pure proximity probe snaps to
-         * the authored support relation. A physical/recent touch substitutes
-         * authored only when its small live palm probe is inside the yellow
-         * authored palm-seat radius; every other touch remains an unrestricted
-         * dynamic mesh grab. The final authored seat also selects visual-only
-         * versus full weapon authority. Provider AttachOnly remains PAPER/
-         * consumer glue. Once selected, the exact hand/weapon relation and 15
-         * finger locals are latched; later candidate changes cannot move it.
+         * an eligible authored support relation. Eligibility requires the
+         * resolved palm seat itself to have a current generated-mesh surface
+         * witness, so an animation-zero/default support hand cannot escape to
+         * an unrelated world-space pose. A physical/recent touch substitutes
+         * authored only when its small live palm probe is inside that authored
+         * palm-seat radius; every rejected authored candidate continues into
+         * the unrestricted dynamic mesh grab below. The final authored seat
+         * also selects visual-only versus full weapon authority. Provider
+         * AttachOnly remains PAPER/consumer glue. Once selected, the exact
+         * hand/weapon relation and 15 finger locals are latched; later
+         * candidate changes cannot move it.
          */
         const bool authoredWeaponIdentityMatches =
             _authoredSupportGripCandidate.weaponNode == weaponNode;
@@ -2602,6 +2606,26 @@ namespace rock
                 std::isfinite(authoredSupportPalmNormalWorld.z);
         }
 
+        WeaponCollision::WeaponSurfaceProximityWitness
+            authoredSupportSurfaceWitness{};
+        const bool authoredSeatWeaponSurfaceValid =
+            authoredSupportFrameValid &&
+            authoredWeaponIdentityMatches &&
+            authoredGenerationMatches &&
+            weaponCollision.tryFindCurrentWeaponSurfaceNearPoint(
+                weaponNode,
+                authoredSupportProximity.authoredPalmSeatWorld,
+                g_rockConfig.rockWeaponInteractionTouchRadius,
+                authoredSupportSurfaceWitness) &&
+            authoredSupportSurfaceWitness.weaponGenerationKey ==
+                decision.weaponGenerationKey &&
+            authoredSupportSurfaceWitness.weaponGenerationKey ==
+                _activeWeaponGenerationKey;
+        const float authoredSupportSurfaceDistance =
+            authoredSeatWeaponSurfaceValid ?
+            authoredSupportSurfaceWitness.distanceGameUnits :
+            (std::numeric_limits<float>::infinity)();
+
         bool authoredSupportAuthorityGateValid =
             !firingGripProximityAuthorityEnabled;
         auto authoredSupportAuthorityMode =
@@ -2650,6 +2674,8 @@ namespace rock
                         authoredSupportAuthorityGateValid,
                     .weaponIdentityMatches = authoredWeaponIdentityMatches,
                     .generationMatches = authoredGenerationMatches,
+                    .authoredSeatWeaponSurfaceValid =
+                        authoredSeatWeaponSurfaceValid,
                     .completeFingerPose =
                         authoredSupportFingerLocalTransformMask ==
                         kCompleteAuthoredFingerMask,
@@ -2697,7 +2723,7 @@ namespace rock
             }
 
             ROCK_LOG_INFO(Weapon,
-                "TwoHandedGrip: authored support grip captured hand={} weapon='{}' gripLocal=({:.3f},{:.3f},{:.3f}) touchToSeat={:.3f} touchRadius={:.3f} authoredSeatToFiringGrip={:.3f} seatLocal=({:.3f},{:.3f},{:.3f}) touchLocal=({:.3f},{:.3f},{:.3f}) frameError={:.4f} capture={} generation={:016X} acquisition={} authority={} priority=provider>authored>dynamic",
+                "TwoHandedGrip: authored support grip captured hand={} weapon='{}' gripLocal=({:.3f},{:.3f},{:.3f}) touchToSeat={:.3f} touchRadius={:.3f} surfaceDistance={:.3f} surfaceBody={} surfaceSourceCurrent={} authoredSeatToFiringGrip={:.3f} seatLocal=({:.3f},{:.3f},{:.3f}) touchLocal=({:.3f},{:.3f},{:.3f}) frameError={:.4f} capture={} generation={:016X} acquisition={} authority={} priority=provider>authored>dynamic",
                 isLeft ? "left" : "right",
                 weaponNode->name.c_str(),
                 grip.gripLocal.x,
@@ -2705,6 +2731,9 @@ namespace rock
                 grip.gripLocal.z,
                 authoredSupportTouchProbeDistance,
                 g_rockConfig.rockWeaponInteractionTouchRadius,
+                authoredSupportSurfaceDistance,
+                authoredSupportSurfaceWitness.bodyId,
+                authoredSupportSurfaceWitness.sourceNodeCurrent ? "yes" : "no",
                 authoredSupportPalmToFiringGripDistance,
                 authoredSupportPalmWeaponLocal.x,
                 authoredSupportPalmWeaponLocal.y,
@@ -2914,7 +2943,7 @@ namespace rock
         }
 
         ROCK_LOG_INFO(Weapon,
-            "TwoHandedGrip: part grip captured hand={} weapon='{}' gripLocal=({:.3f},{:.3f},{:.3f}) meshGrab={} sourceTriangles={} fingerTriangles={} cachedTriangles={} sourceNodeCurrent={} authoredSupport=NO acquisition={} authority={} provider={} attachOnly={} touchToAuthoredSeat={:.3f} touchRadius={:.3f} authoredSeatLocal=({:.3f},{:.3f},{:.3f}) touchProbeLocal=({:.3f},{:.3f},{:.3f}) frameError={:.4f} partKind={} pose={} generation={:016X}",
+            "TwoHandedGrip: part grip captured hand={} weapon='{}' gripLocal=({:.3f},{:.3f},{:.3f}) meshGrab={} sourceTriangles={} fingerTriangles={} cachedTriangles={} sourceNodeCurrent={} authoredSupport=NO acquisition={} authority={} provider={} attachOnly={} authoredCandidate={} authoredFrame={} authoredIdentity={} authoredGeneration={} authoredSurface={} surfaceDistance={:.3f} surfaceRadius={:.3f} authoredFingerMask=0x{:04X} touchToAuthoredSeat={:.3f} authoredSeatLocal=({:.3f},{:.3f},{:.3f}) touchProbeLocal=({:.3f},{:.3f},{:.3f}) frameError={:.4f} partKind={} pose={} generation={:016X}",
             isLeft ? "left" : "right",
             weaponNode->name.c_str(),
             grip.gripLocal.x,
@@ -2933,8 +2962,15 @@ namespace rock
                 "full",
             providerPartAuthority.active ? "yes" : "no",
             grip.attachOnly ? "yes" : "no",
-            authoredSupportTouchProbeDistance,
+            authoredSupportCandidateForHandValid ? "yes" : "no",
+            authoredSupportFrameValid ? "yes" : "no",
+            authoredWeaponIdentityMatches ? "yes" : "no",
+            authoredGenerationMatches ? "yes" : "no",
+            authoredSeatWeaponSurfaceValid ? "yes" : "no",
+            authoredSupportSurfaceDistance,
             g_rockConfig.rockWeaponInteractionTouchRadius,
+            authoredSupportFingerLocalTransformMask,
+            authoredSupportTouchProbeDistance,
             authoredSupportPalmWeaponLocal.x,
             authoredSupportPalmWeaponLocal.y,
             authoredSupportPalmWeaponLocal.z,

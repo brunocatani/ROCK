@@ -40,6 +40,7 @@ namespace rock::authored_weapon_grip_capture_policy
         bool captureValid{ false };
         bool weaponIdentityMatches{ false };
         bool generationMatches{ false };
+        bool authoredSeatWeaponSurfaceValid{ false };
         bool completeFingerPose{ false };
     };
 
@@ -93,6 +94,7 @@ namespace rock::authored_weapon_grip_capture_policy
                input.captureValid &&
                input.weaponIdentityMatches &&
                input.generationMatches &&
+               input.authoredSeatWeaponSurfaceValid &&
                input.completeFingerPose;
     }
 

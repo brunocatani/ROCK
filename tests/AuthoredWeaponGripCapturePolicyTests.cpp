@@ -113,6 +113,7 @@ int main()
         .captureValid = true,
         .weaponIdentityMatches = true,
         .generationMatches = true,
+        .authoredSeatWeaponSurfaceValid = true,
         .completeFingerPose = true,
     };
     static_assert(shouldUseAuthoredSupportGrip(supportEligible));
@@ -135,6 +136,18 @@ int main()
     static_assert([=] {
         auto input = supportEligible;
         input.completeFingerPose = false;
+        return !shouldUseAuthoredSupportGrip(input);
+    }());
+    static_assert([=] {
+        auto input = supportEligible;
+        input.authoredSeatWeaponSurfaceValid = false;
+        return !shouldUseAuthoredSupportGrip(input);
+    }());
+    static_assert([=] {
+        auto input = supportEligible;
+        input.proximityProbeAcquisition = false;
+        input.authoredSeatTouchAcquisition = true;
+        input.authoredSeatWeaponSurfaceValid = false;
         return !shouldUseAuthoredSupportGrip(input);
     }());
 
