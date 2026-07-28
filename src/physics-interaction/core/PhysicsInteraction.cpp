@@ -1229,6 +1229,40 @@ namespace rock
             return info;
         }
 
+        RE::EquippedWeaponData* getValidatedEquippedWeaponData()
+        {
+            auto* equipWeaponData = f4vr::getEquippedWeaponData();
+            if (!equipWeaponData) {
+                return nullptr;
+            }
+
+            const auto vtable =
+                *reinterpret_cast<const std::uintptr_t*>(
+                    equipWeaponData);
+            if (vtable !=
+                f4vr::EquippedWeaponData_vtable.address()) {
+                return nullptr;
+            }
+            return equipWeaponData;
+        }
+
+        RE::NiAVObject* getEquippedProjectileNode()
+        {
+            /*
+             * FO4VR 1.2.72 initializes EquippedWeaponData::fireNode (+0x30)
+             * during equip through its native ProjectileNode/P-ProjectileNode
+             * resolver and refreshes it with equipped-item updates. The
+             * separate muzzleFlash pointer (+0x28) is presentation state and
+             * may remain null until the weapon has fired, so provider data
+             * must never depend on it.
+             */
+            auto* equipWeaponData =
+                getValidatedEquippedWeaponData();
+            return equipWeaponData ?
+                equipWeaponData->fireNode :
+                nullptr;
+        }
+
         f4vr::MuzzleFlash* getEquippedMuzzleFlashNodes()
         {
             /*
@@ -1237,13 +1271,9 @@ namespace rock
              * must re-own the fire node from the current projectile node so the
              * muzzle origin remains at the barrel tip.
              */
-            const auto equipWeaponData = f4vr::getEquippedWeaponData();
+            const auto equipWeaponData =
+                getValidatedEquippedWeaponData();
             if (!equipWeaponData) {
-                return nullptr;
-            }
-
-            const auto vfunc = reinterpret_cast<std::uint64_t*>(equipWeaponData);
-            if ((*vfunc & 0xFFFF) != (f4vr::EquippedWeaponData_vfunc.get() & 0xFFFF)) {
                 return nullptr;
             }
 

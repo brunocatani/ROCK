@@ -138,7 +138,7 @@ namespace rock::fo4vr
     using IsActorUsingMelee = bool (*)(RE::Actor* actor);
     inline REL::Relocation<IsActorUsingMelee> CombatUtilities_IsActorUsingMelee{ REL::Offset(0x1133BB0) };
 
-    inline REL::Relocation<std::uint64_t> EquippedWeaponData_vfunc{ REL::Offset(0x2D7FCF8) };
+    inline REL::Relocation<std::uintptr_t> EquippedWeaponData_vtable{ REL::Offset(0x2D7FCF8) };
     inline REL::Relocation<std::uint64_t*> cloneAddr1{ REL::Offset(0x36FF560) };
     inline REL::Relocation<std::uint64_t*> cloneAddr2{ REL::Offset(0x36FF564) };
 

@@ -30,8 +30,24 @@ Require-Text 'src/api/ROCKProviderApi.h' `
     'ROCK V1 must consume only reserved grip-state storage for the muzzle snapshot and preserve the record size.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteractionProvider.inl' `
-    'queryProviderEquippedWeaponGripStateV1[\s\S]*getEquippedMuzzleFlashNodes\(\)[\s\S]*muzzle->projectileNode->world[\s\S]*rotate\.entry\[1\]\[0\][\s\S]*rotate\.entry\[1\]\[1\][\s\S]*rotate\.entry\[1\]\[2\][\s\S]*muzzleDirection\s*/=\s*directionLength[\s\S]*muzzleOriginGame[\s\S]*muzzleDirectionGame[\s\S]*MuzzleWorldValid' `
-    'The equipped-weapon query must publish the normalized projectile-node +Y axis and exact world barrel tip.'
+    'queryProviderEquippedWeaponGripStateV1[\s\S]*getEquippedProjectileNode\(\)[\s\S]*projectileNode->world[\s\S]*rotate\.entry\[1\]\[0\][\s\S]*rotate\.entry\[1\]\[1\][\s\S]*rotate\.entry\[1\]\[2\][\s\S]*muzzleDirection\s*/=\s*directionLength[\s\S]*muzzleOriginGame[\s\S]*muzzleDirectionGame[\s\S]*MuzzleWorldValid' `
+    'The equipped-weapon query must publish the normalized equip-time projectile-node +Y axis and exact world barrel tip.'
+
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'getValidatedEquippedWeaponData\(\)[\s\S]*vtable\s*!=\s*f4vr::EquippedWeaponData_vtable\.address\(\)[\s\S]*getEquippedProjectileNode\(\)[\s\S]*equipWeaponData->fireNode' `
+    'The provider must fail closed on the verified FO4VR equipped-data type and read Bethesda''s equip-time fire node.'
+
+Require-Text 'src/rock_support/Fo4VrRuntime.h' `
+    'EquippedWeaponData_vtable\s*\{\s*REL::Offset\(0x2D7FCF8\)\s*\}' `
+    'The equipped-data type gate must retain the FO4VR 1.2.72 vtable verified from raw constructor disassembly.'
+
+$providerText = Read-Source 'src/physics-interaction/core/PhysicsInteractionProvider.inl'
+if ($providerText -match 'getEquippedMuzzleFlashNodes|muzzleFlash') {
+    $failures.Add(
+        'src/physics-interaction/core/PhysicsInteractionProvider.inl: ' +
+        'Provider muzzle publication must not depend on first-shot ' +
+        'muzzle-flash presentation state.')
+}
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'getEquippedMuzzleFlashNodes\(\)[\s\S]*muzzle->fireNode->local\s*=\s*weapon_muzzle_authority_math::fireNodeLocalFromProjectileWorld\(muzzle->projectileNode->world\)' `

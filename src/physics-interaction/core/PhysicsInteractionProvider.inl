@@ -331,14 +331,16 @@
         }
 
         /*
-         * The equipped projectile node is ROCK's existing muzzle authority and
-         * the exact world transform copied to the fire node after weapon
-         * presentation. Publishing its +Y row keeps addons aligned with the
-         * barrel without exposing or retaining engine scene pointers.
+         * EquippedWeaponData::fireNode is Bethesda's equip-time projectile
+         * origin. It is valid before muzzle-flash presentation state exists,
+         * so publishing it makes the muzzle snapshot available as soon as the
+         * weapon is equipped instead of after its first shot.
          */
-        if (const auto* muzzle = getEquippedMuzzleFlashNodes();
-            muzzle && finiteNiTransform(muzzle->projectileNode->world)) {
-            const auto& projectileWorld = muzzle->projectileNode->world;
+        if (const auto* projectileNode =
+                getEquippedProjectileNode();
+            projectileNode &&
+            finiteNiTransform(projectileNode->world)) {
+            const auto& projectileWorld = projectileNode->world;
             RE::NiPoint3 muzzleDirection{
                 projectileWorld.rotate.entry[1][0],
                 projectileWorld.rotate.entry[1][1],

@@ -1909,7 +1909,8 @@ namespace rock::provider
      * reads fail closed. Scene pointers are identity witnesses for the current
      * frame and must never be retained. Hand transforms are exact ROCK targets
      * in Weapon local space. When MuzzleWorldValid is set, muzzleOriginGame is
-     * the current projectile-node barrel tip and muzzleDirectionGame is its
+     * the equipped weapon's native fire/projectile-node barrel tip, available
+     * from equip rather than first fire, and muzzleDirectionGame is its
      * normalized world-space +Y firing axis.
      */
     struct RockProviderEquippedWeaponGripStateV1
