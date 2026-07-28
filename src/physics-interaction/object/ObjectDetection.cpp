@@ -5,6 +5,7 @@
 #include "physics-interaction/object/PhysicsBodyClassifier.h"
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/native/HavokRuntime.h"
+#include "physics-interaction/native/PhysicsRayCast.h"
 #include "physics-interaction/native/PhysicsShapeCast.h"
 #include "RockConfig.h"
 #include "physics-interaction/hand/HandSelection.h"
@@ -821,13 +822,17 @@ namespace rock
         float clippedFarRange = farRange;
         RE::NiPoint3 rayEnd(handPos.x + direction.x * farRange, handPos.y + direction.y * farRange, handPos.z + direction.z * farRange);
 
-        RE::bhkPickData pickData;
-        pickData.SetStartEnd(handPos, rayEnd);
-
-        pickData.collisionFilter.filter = g_rockConfig.rockFarClipRayFilterInfo;
-
-        if (bhkWorld->PickObject(pickData) && pickData.HasHit()) {
-            clippedFarRange = (std::max)(0.0f, pickData.GetHitFraction() * farRange);
+        physics_ray_cast::ClosestSegmentResult rayResult{};
+        if (physics_ray_cast::castClosestSegment(
+                bhkWorld,
+                handPos,
+                rayEnd,
+                g_rockConfig.rockFarClipRayFilterInfo,
+                rayResult) &&
+            rayResult.hit) {
+            clippedFarRange = (std::max)(
+                0.0f,
+                rayResult.hitFraction * farRange);
         }
 
         RE::hknpAllHitsCollector collector;

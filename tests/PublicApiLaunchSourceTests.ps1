@@ -124,8 +124,8 @@ Require-Text 'src/api/ROCKProviderApi.h' 'ROCKAPI_GetDescriptorV1' `
     'The public SDK must declare the independent V1 descriptor accessor.'
 Require-Text 'src/exports.def' 'ROCKAPI_GetDescriptorV1' `
     'The provider descriptor must be exported independently of the function table.'
-Require-Text 'src/api/ROCKProviderApi.h' 'sizeof\(RockProviderApi\)\s*==\s*696' `
-    'The append-only V1 function table must retain its exact 87-slot x64 extent.'
+Require-Text 'src/api/ROCKProviderApi.h' 'sizeof\(RockProviderApi\)\s*==\s*704' `
+    'The append-only V1 function table must retain its exact 88-slot x64 extent.'
 Require-Text 'src/api/ROCKProviderApi.h' 'struct\s+RockProviderLimitsExtV1' `
     'Fixed capacities omitted by the legacy limits prefix must be discoverable through extended limits.'
 Require-Text 'src/api/ROCKProviderApi.h' 'RockProviderStructureIdV1[\s\S]*getPublicStructureSizeV1' `
@@ -239,6 +239,10 @@ Require-Text 'src/api/ROCKProviderApi.cpp' 'maxEquippedWeaponHandlingAuthorities
     'Provider limits must publish the single-owner authority capacity and maximum lease.'
 Require-Text 'src/api/ROCKProviderApi.h' 'EquippedWeaponHandRequest[\s\S]*RockProviderEquippedWeaponHandRequestV1[\s\S]*requestEquippedWeaponHandV1[\s\S]*ROCK_PROVIDER_API_V1_EQUIPPED_WEAPON_HAND_REQUEST_TABLE_BYTES[\s\S]*supportsEquippedWeaponHandRequestV1' `
     'V1 must expose an append-only, feature-gated exact-hand request for the currently equipped weapon.'
+Require-Text 'src/api/ROCKProviderApi.h' 'WorldRaycasts[\s\S]*RockProviderWorldRaycastRequestV1[\s\S]*RockProviderWorldRaycastResultV1[\s\S]*queryWorldRaycastV1[\s\S]*ROCK_PROVIDER_API_V1_WORLD_RAYCASTS_TABLE_BYTES[\s\S]*supportsWorldRaycastsV1' `
+    'V1 must expose an append-only, feature-gated, pointer-free world-raycast query.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'maxWorldRaycastsPerOwnerPerFrame\s*=\s*[\s\S]{0,100}ROCK_PROVIDER_MAX_WORLD_RAYCASTS_PER_OWNER_PER_FRAME_V1' `
+    'Extended limits must publish the per-owner per-frame raycast budget.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'apiRequestEquippedWeaponHandV1[\s\S]{0,500}onAnimationOwnerThread\(\)[\s\S]{0,1800}EquippedWeaponHandlingAuthority[\s\S]{0,1000}FiringGripOwnership[\s\S]{0,800}AmbidextrousHandoff[\s\S]{0,1000}requestProviderEquippedWeaponHandV1' `
     'Exact-hand requests must remain game-thread-only and bound to the caller''s active handling authority.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'requestProviderEquippedWeaponHandV1[\s\S]{0,1800}currentEquippedWeaponForm\(\)[\s\S]{0,900}request\.weaponGenerationKey[\s\S]{0,1500}EquippedWeaponHandAssignmentSource::Provider' `
@@ -440,7 +444,8 @@ $expectedProviderFunctions = [string[]]@(
     'clearTouchGrabTargetsForScopeV1',
     'copyTouchGrabStatesForScopeV1',
     'requestTouchGrabYieldV1',
-    'requestEquippedWeaponHandV1'
+    'requestEquippedWeaponHandV1',
+    'queryWorldRaycastV1'
 )
 Require-SequenceEqual 'ROCKProviderApi function pointer order' (Get-ProviderFunctionNames $providerHeader) $expectedProviderFunctions
 

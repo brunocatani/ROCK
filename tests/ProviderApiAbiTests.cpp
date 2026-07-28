@@ -79,6 +79,8 @@ int main()
     ROCK_EXPECT_LAYOUT(RockProviderPoint3, 12, 4);
     ROCK_EXPECT_LAYOUT(RockProviderBounds3, 32, 4);
     ROCK_EXPECT_LAYOUT(RockProviderWeaponEmitterV1, 208, 8);
+    ROCK_EXPECT_LAYOUT(RockProviderWorldRaycastRequestV1, 80, 4);
+    ROCK_EXPECT_LAYOUT(RockProviderWorldRaycastResultV1, 96, 8);
     ROCK_EXPECT_LAYOUT(RockProviderNativeAnimationAuthorityRequestV1, 64, 4);
     ROCK_EXPECT_LAYOUT(RockProviderNativeAnimationAuthorityStateV1, 64, 8);
     ROCK_EXPECT_LAYOUT(RockProviderAnimationPhaseContextV1, 72, 8);
@@ -95,21 +97,23 @@ int main()
     ROCK_EXPECT_LAYOUT(RockProviderBodyContactV1, 128, 8);
     ROCK_EXPECT_LAYOUT(RockProviderTouchGrabTargetV1, 128, 8);
     ROCK_EXPECT_LAYOUT(RockProviderTouchGrabStateV1, 136, 8);
-    ROCK_EXPECT_LAYOUT(RockProviderApi, 696, 8);
+    ROCK_EXPECT_LAYOUT(RockProviderApi, 704, 8);
 #undef ROCK_EXPECT_LAYOUT
 
-    ok = ok && sizeof(RockProviderApi) == 87 * sizeof(void*);
+    ok = ok && sizeof(RockProviderApi) == 88 * sizeof(void*);
     ok = ok && alignof(RockProviderApi) == alignof(void*);
     ok = ok && offsetof(RockProviderApi, getProviderLimitsExtV1) == 54 * sizeof(void*);
     ok = ok && offsetof(RockProviderApi, clearNativeAnimationRuntimeV1) == 81 * sizeof(void*);
     ok = ok && offsetof(RockProviderApi, setTouchGrabTargetsForScopeV1) == 82 * sizeof(void*);
     ok = ok && offsetof(RockProviderApi, requestTouchGrabYieldV1) == 85 * sizeof(void*);
     ok = ok && offsetof(RockProviderApi, requestEquippedWeaponHandV1) == 86 * sizeof(void*);
+    ok = ok && offsetof(RockProviderApi, queryWorldRaycastV1) == 87 * sizeof(void*);
     ok = ok && offsetof(RockProviderWeaponPartGripStateV1, authoredSupportGrip) == 224;
     ok = ok && offsetof(RockProviderWeaponPartPoseV1, actionRole) == 44;
     ok = ok && ROCK_PROVIDER_API_V1_NATIVE_ANIMATION_RUNTIME_CLEAR_TABLE_BYTES == 82 * sizeof(void*);
     ok = ok && ROCK_PROVIDER_API_V1_TOUCH_GRAB_TARGETS_TABLE_BYTES == 86 * sizeof(void*);
-    ok = ok && ROCK_PROVIDER_API_V1_EQUIPPED_WEAPON_HAND_REQUEST_TABLE_BYTES == sizeof(RockProviderApi);
+    ok = ok && ROCK_PROVIDER_API_V1_EQUIPPED_WEAPON_HAND_REQUEST_TABLE_BYTES == 87 * sizeof(void*);
+    ok = ok && ROCK_PROVIDER_API_V1_WORLD_RAYCASTS_TABLE_BYTES == sizeof(RockProviderApi);
     ok = ok &&
         static_cast<std::uint32_t>(
             RockProviderHandInputSuppressionFlagV1::SuppressNativeVats) ==
@@ -122,5 +126,9 @@ int main()
         static_cast<std::uint32_t>(
             RockProviderFeatureBit2V1::NativeVatsVansInputSuppression) ==
             (1u << 30);
+    ok = ok &&
+        static_cast<std::uint32_t>(
+            RockProviderFeatureBit2V1::WorldRaycasts) ==
+            (1u << 31);
     return ok ? 0 : 1;
 }

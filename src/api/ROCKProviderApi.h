@@ -76,6 +76,8 @@ namespace rock::provider
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_TOUCH_GRAB_TARGETS_V1 = 256;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_TOUCH_GRAB_SCOPES_V1 = 64;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_TOUCH_GRAB_TARGET_LEASE_FRAMES_V1 = 120;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WORLD_RAYCASTS_PER_OWNER_PER_FRAME_V1 = 8;
+    inline constexpr float ROCK_PROVIDER_MAX_WORLD_RAYCAST_DISTANCE_GAME_V1 = 8192.0f;
     inline constexpr std::uint16_t ROCK_PROVIDER_ALL_FINGER_LOCAL_TRANSFORMS_V1 = 0x7FFFu;
 
     /*
@@ -354,6 +356,7 @@ namespace rock::provider
         ScopeSightState = 1u << 22,
         InputObservability = 1u << 23,
         TouchGrabTargets = 1u << 24,
+        WorldRaycasts = 1u << 25,
     };
 
     enum class RockProviderFeatureBitV1 : std::uint32_t
@@ -424,6 +427,7 @@ namespace rock::provider
         ExternalContactEnrichment = 1u << 28,
         TouchGrabTargets = 1u << 29,
         NativeVatsVansInputSuppression = 1u << 30,
+        WorldRaycasts = 1u << 31,
     };
 
     /*
@@ -849,6 +853,8 @@ namespace rock::provider
         TouchGrabTarget = 61,
         TouchGrabState = 62,
         EquippedWeaponHandRequest = 63,
+        WorldRaycastRequest = 64,
+        WorldRaycastResult = 65,
     };
 
     enum class RockProviderHandInteractionPhaseV1 : std::uint32_t
@@ -1330,7 +1336,7 @@ namespace rock::provider
         std::uint32_t maxTouchGrabTargets{ 0 };
         std::uint32_t maxTouchGrabScopes{ 0 };
         std::uint32_t maxTouchGrabTargetLeaseFrames{ 0 };
-        std::uint32_t reserved[1]{};
+        std::uint32_t maxWorldRaycastsPerOwnerPerFrame{ 0 };
     };
 
     /*
@@ -1787,6 +1793,53 @@ namespace rock::provider
         RockProviderPoint3 forwardWeaponLocal{};
         char sourceName[ROCK_PROVIDER_MAX_EVIDENCE_NAME]{};
         std::uint32_t reserved[8]{};
+    };
+
+    enum class RockProviderWorldRaycastResultFlagV1 : std::uint32_t
+    {
+        None = 0,
+        Hit = 1u << 0,
+        NormalValid = 1u << 1,
+    };
+
+    /*
+     * Bounded, owner-scoped closest-hit world raycast. The direction is
+     * normalized by ROCK and maxDistanceGame is capped by the public limit.
+     * Generation guards use the established optional-zero V1 contract.
+     * Query only from ROCK's owner frame callback on the game thread.
+     *
+     * ROCK selects its validated far-world collision filter; consumers do not
+     * inject native filter bits or retain any Havok/world pointer. A miss is a
+     * successful query whose endpoint is start + direction * max distance.
+     */
+    struct RockProviderWorldRaycastRequestV1
+    {
+        std::uint32_t size{ sizeof(RockProviderWorldRaycastRequestV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        RockProviderPoint3 startGame{};
+        RockProviderPoint3 directionGame{};
+        float maxDistanceGame{ 0.0f };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t providerGeneration{ 0 };
+        std::uint32_t reserved[8]{};
+    };
+
+    struct RockProviderWorldRaycastResultV1
+    {
+        std::uint32_t size{ sizeof(RockProviderWorldRaycastResultV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint32_t hit{ 0 };
+        std::uint32_t flags{ 0 };
+        float hitFraction{ 1.0f };
+        float hitDistanceGame{ 0.0f };
+        RockProviderPoint3 hitPointGame{};
+        RockProviderPoint3 hitNormalGame{};
+        std::uint64_t frameIndex{ 0 };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t providerGeneration{ 0 };
+        std::uint32_t reserved[7]{};
     };
 
     /*
@@ -2902,6 +2955,10 @@ namespace rock::provider
         RockProviderResultV1(ROCK_PROVIDER_CALL* requestEquippedWeaponHandV1)(
             std::uint64_t ownerToken,
             const RockProviderEquippedWeaponHandRequestV1* request);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* queryWorldRaycastV1)(
+            std::uint64_t ownerToken,
+            const RockProviderWorldRaycastRequestV1* request,
+            RockProviderWorldRaycastResultV1* outResult);
 
         [[nodiscard]] static int initialize(
             const std::uint32_t minVersion = ROCK_PROVIDER_API_VERSION,
@@ -3057,6 +3114,8 @@ namespace rock::provider
         offsetof(RockProviderApi, requestTouchGrabYieldV1) + sizeof(std::declval<RockProviderApi>().requestTouchGrabYieldV1));
     inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_EQUIPPED_WEAPON_HAND_REQUEST_TABLE_BYTES = static_cast<std::uint32_t>(
         offsetof(RockProviderApi, requestEquippedWeaponHandV1) + sizeof(std::declval<RockProviderApi>().requestEquippedWeaponHandV1));
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_WORLD_RAYCASTS_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, queryWorldRaycastV1) + sizeof(std::declval<RockProviderApi>().queryWorldRaycastV1));
 
     [[nodiscard]] inline bool queryProviderLimitsV1(RockProviderLimitsV1& outLimits)
     {
@@ -3499,6 +3558,13 @@ namespace rock::provider
             RockProviderFeatureBit2V1::TouchGrabTargets);
     }
 
+    [[nodiscard]] inline bool supportsWorldRaycastsV1()
+    {
+        return providerSupportsFeature2V1(
+            ROCK_PROVIDER_API_V1_WORLD_RAYCASTS_TABLE_BYTES,
+            RockProviderFeatureBit2V1::WorldRaycasts);
+    }
+
     static_assert(std::is_standard_layout_v<RockProviderTransform>);
     static_assert(std::is_trivially_copyable_v<RockProviderTransform>);
     static_assert(sizeof(RockProviderConsumerRegistrationV1) == 104);
@@ -3621,6 +3687,14 @@ namespace rock::provider
     static_assert(alignof(RockProviderWeaponEmitterV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderWeaponEmitterV1>);
     static_assert(std::is_trivially_copyable_v<RockProviderWeaponEmitterV1>);
+    static_assert(sizeof(RockProviderWorldRaycastRequestV1) == 80);
+    static_assert(alignof(RockProviderWorldRaycastRequestV1) == 4);
+    static_assert(std::is_standard_layout_v<RockProviderWorldRaycastRequestV1>);
+    static_assert(std::is_trivially_copyable_v<RockProviderWorldRaycastRequestV1>);
+    static_assert(sizeof(RockProviderWorldRaycastResultV1) == 96);
+    static_assert(alignof(RockProviderWorldRaycastResultV1) == 8);
+    static_assert(std::is_standard_layout_v<RockProviderWorldRaycastResultV1>);
+    static_assert(std::is_trivially_copyable_v<RockProviderWorldRaycastResultV1>);
     static_assert(sizeof(RockProviderBodyContactV1) == 128);
     static_assert(alignof(RockProviderBodyContactV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderBodyContactV1>);
@@ -3633,7 +3707,7 @@ namespace rock::provider
     static_assert(alignof(RockProviderTouchGrabStateV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderTouchGrabStateV1>);
     static_assert(std::is_trivially_copyable_v<RockProviderTouchGrabStateV1>);
-    static_assert(sizeof(RockProviderApi) == 696);
+    static_assert(sizeof(RockProviderApi) == 704);
     static_assert(alignof(RockProviderApi) == 8);
     static_assert(
         offsetof(RockProviderApi, getProviderLimitsExtV1) == 54 * sizeof(void*));
@@ -3646,4 +3720,7 @@ namespace rock::provider
     static_assert(
         offsetof(RockProviderApi, requestEquippedWeaponHandV1) ==
         86 * sizeof(void*));
+    static_assert(
+        offsetof(RockProviderApi, queryWorldRaycastV1) ==
+        87 * sizeof(void*));
 }

@@ -157,6 +157,9 @@ namespace rock
         std::uint32_t copyProviderWeaponEmittersV1(
             ::rock::provider::RockProviderWeaponEmitterV1* outEmitters,
             std::uint32_t maxEmitters) const;
+        bool queryProviderWorldRaycastV1(
+            const ::rock::provider::RockProviderWorldRaycastRequestV1& request,
+            ::rock::provider::RockProviderWorldRaycastResultV1& outResult) const;
         std::uint32_t copyProviderBodyContacts(
             ::rock::provider::RockProviderBodyContactV1* outContacts,
             std::uint32_t maxContacts) const;

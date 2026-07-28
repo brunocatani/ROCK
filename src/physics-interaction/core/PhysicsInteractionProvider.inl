@@ -90,6 +90,83 @@
         outSnapshot.leftHandState = providerHandStateFlags(_leftHand, true);
         outSnapshot.offhandReservation = ::rock::provider::currentOffhandReservation();
     }
+
+    bool PhysicsInteraction::queryProviderWorldRaycastV1(
+        const ::rock::provider::RockProviderWorldRaycastRequestV1& request,
+        ::rock::provider::RockProviderWorldRaycastResultV1& outResult) const
+    {
+        const RE::NiPoint3 start{
+            request.startGame.x,
+            request.startGame.y,
+            request.startGame.z,
+        };
+        RE::NiPoint3 direction{
+            request.directionGame.x,
+            request.directionGame.y,
+            request.directionGame.z,
+        };
+        const float directionLengthSquared =
+            direction.x * direction.x +
+            direction.y * direction.y +
+            direction.z * direction.z;
+        if (!std::isfinite(directionLengthSquared) ||
+            directionLengthSquared <= 1.0e-8f) {
+            return false;
+        }
+        const float inverseDirectionLength =
+            1.0f / std::sqrt(directionLengthSquared);
+        direction.x *= inverseDirectionLength;
+        direction.y *= inverseDirectionLength;
+        direction.z *= inverseDirectionLength;
+
+        const RE::NiPoint3 end{
+            start.x + direction.x * request.maxDistanceGame,
+            start.y + direction.y * request.maxDistanceGame,
+            start.z + direction.z * request.maxDistanceGame,
+        };
+
+        physics_ray_cast::ClosestSegmentResult rayResult{};
+        if (!physics_ray_cast::castClosestSegment(
+                _cachedBhkWorld,
+                start,
+                end,
+                g_rockConfig.rockFarClipRayFilterInfo,
+                rayResult)) {
+            return false;
+        }
+
+        outResult.hit = rayResult.hit ? 1u : 0u;
+        outResult.flags = rayResult.hit ?
+            static_cast<std::uint32_t>(
+                ::rock::provider::RockProviderWorldRaycastResultFlagV1::Hit) :
+            0u;
+        outResult.hitFraction =
+            rayResult.hit ? rayResult.hitFraction : 1.0f;
+        outResult.hitDistanceGame =
+            outResult.hitFraction * request.maxDistanceGame;
+        outResult.hitPointGame = {
+            start.x + direction.x * outResult.hitDistanceGame,
+            start.y + direction.y * outResult.hitDistanceGame,
+            start.z + direction.z * outResult.hitDistanceGame,
+        };
+        if (rayResult.normalValid) {
+            outResult.flags |= static_cast<std::uint32_t>(
+                ::rock::provider::RockProviderWorldRaycastResultFlagV1::
+                    NormalValid);
+            outResult.hitNormalGame = {
+                rayResult.normalGame.x,
+                rayResult.normalGame.y,
+                rayResult.normalGame.z,
+            };
+        }
+        outResult.worldGeneration =
+            _worldGenerationAtomic.load(std::memory_order_acquire);
+        outResult.skeletonGeneration =
+            _skeletonGenerationAtomic.load(std::memory_order_acquire);
+        outResult.providerGeneration =
+            _providerGenerationAtomic.load(std::memory_order_acquire);
+        return true;
+    }
     void PhysicsInteraction::fillProviderWeaponPartGripStates(
         std::array<::rock::provider::RockProviderWeaponPartGripStateV1, 2>& outStates) const
     {

@@ -198,7 +198,8 @@ namespace
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::PlayerColliderDescriptors) |
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::ScopeSightState) |
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::InputObservability) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::TouchGrabTargets);
+        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::TouchGrabTargets) |
+        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::WorldRaycasts);
     constexpr std::uint32_t kProviderFeatureBitsV1 =
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::FrameCallbacks) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::LifecycleFields) |
@@ -260,7 +261,8 @@ namespace
         static_cast<std::uint32_t>(RockProviderFeatureBit2V1::WeaponClassificationEnrichment) |
         static_cast<std::uint32_t>(RockProviderFeatureBit2V1::ExternalContactEnrichment) |
         static_cast<std::uint32_t>(RockProviderFeatureBit2V1::TouchGrabTargets) |
-        static_cast<std::uint32_t>(RockProviderFeatureBit2V1::NativeVatsVansInputSuppression);
+        static_cast<std::uint32_t>(RockProviderFeatureBit2V1::NativeVatsVansInputSuppression) |
+        static_cast<std::uint32_t>(RockProviderFeatureBit2V1::WorldRaycasts);
     constexpr std::uint32_t kImplementedForceGrabFlagsV1 =
         static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::UsePreferredGrabPointGame);
     constexpr std::uint32_t kImplementedForceReleaseFlagsV1 =
@@ -299,6 +301,8 @@ namespace
         std::uint64_t token{ 0 };
         std::uint32_t grantedCapabilities{ 0 };
         std::uint32_t providerGeneration{ 0 };
+        std::uint64_t worldRaycastFrameIndex{ 0 };
+        std::uint32_t worldRaycastCount{ 0 };
         char modName[64]{};
     };
 
@@ -841,6 +845,14 @@ namespace
                std::isfinite(transform.translate[2]) &&
                std::isfinite(transform.scale) &&
                std::abs(transform.scale) > 0.000001f;
+    }
+
+    [[nodiscard]] bool finiteProviderPoint(
+        const RockProviderPoint3& point)
+    {
+        return std::isfinite(point.x) &&
+               std::isfinite(point.y) &&
+               std::isfinite(point.z);
     }
 
     [[nodiscard]] RE::NiTransform toNiTransform(const RockProviderTransform& source)
@@ -2186,6 +2198,8 @@ namespace
             ROCK_PROVIDER_MAX_TOUCH_GRAB_SCOPES_V1;
         limits.maxTouchGrabTargetLeaseFrames =
             ROCK_PROVIDER_MAX_TOUCH_GRAB_TARGET_LEASE_FRAMES_V1;
+        limits.maxWorldRaycastsPerOwnerPerFrame =
+            ROCK_PROVIDER_MAX_WORLD_RAYCASTS_PER_OWNER_PER_FRAME_V1;
 
         const auto copySize = (std::min<std::size_t>)(
             outLimits->size,
@@ -2325,6 +2339,10 @@ namespace
             return sizeof(RockProviderTouchGrabStateV1);
         case RockProviderStructureIdV1::EquippedWeaponHandRequest:
             return sizeof(RockProviderEquippedWeaponHandRequestV1);
+        case RockProviderStructureIdV1::WorldRaycastRequest:
+            return sizeof(RockProviderWorldRaycastRequestV1);
+        case RockProviderStructureIdV1::WorldRaycastResult:
+            return sizeof(RockProviderWorldRaycastResultV1);
         default:
             return 0;
         }
@@ -4070,6 +4088,88 @@ namespace
             RockProviderResultV1::NotReady;
     }
 
+    RockProviderResultV1 ROCK_PROVIDER_CALL apiQueryWorldRaycastV1(
+        const std::uint64_t ownerToken,
+        const RockProviderWorldRaycastRequestV1* request,
+        RockProviderWorldRaycastResultV1* outResult)
+    {
+        if (ownerToken == 0 || !request || !outResult) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        if (request->size != sizeof(RockProviderWorldRaycastRequestV1) ||
+            outResult->size != sizeof(RockProviderWorldRaycastResultV1)) {
+            return RockProviderResultV1::InvalidSize;
+        }
+        if (request->version != ROCK_PROVIDER_API_VERSION ||
+            outResult->version != ROCK_PROVIDER_API_VERSION) {
+            return RockProviderResultV1::UnsupportedVersion;
+        }
+        if (!finiteProviderPoint(request->startGame) ||
+            !finiteProviderPoint(request->directionGame) ||
+            !std::isfinite(request->maxDistanceGame) ||
+            request->maxDistanceGame <= 0.0f ||
+            request->maxDistanceGame >
+                ROCK_PROVIDER_MAX_WORLD_RAYCAST_DISTANCE_GAME_V1) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        const float directionLengthSquared =
+            request->directionGame.x * request->directionGame.x +
+            request->directionGame.y * request->directionGame.y +
+            request->directionGame.z * request->directionGame.z;
+        if (!std::isfinite(directionLengthSquared) ||
+            directionLengthSquared <= 1.0e-8f) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        if (!onAnimationOwnerThread()) {
+            return RockProviderResultV1::WrongThread;
+        }
+        const auto generationResult = validateGenerationGuards(
+            request->worldGeneration,
+            request->skeletonGeneration,
+            request->providerGeneration);
+        if (generationResult != RockProviderResultV1::Ok) {
+            return generationResult;
+        }
+        if (!apiIsProviderReady()) {
+            return RockProviderResultV1::NotReady;
+        }
+
+        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        if (!pi || !pi->isInitialized()) {
+            return RockProviderResultV1::NotReady;
+        }
+
+        const auto frameIndex = currentProviderFrameIndex();
+        {
+            std::scoped_lock lock(s_consumerMutex);
+            auto* slot = findConsumerSlotLocked(ownerToken);
+            if (!slot) {
+                return RockProviderResultV1::OwnerNotRegistered;
+            }
+            if (!hasConsumerCapabilityV1(
+                    slot->grantedCapabilities,
+                    RockProviderConsumerCapabilityV1::WorldRaycasts)) {
+                return RockProviderResultV1::PermissionDenied;
+            }
+            if (slot->worldRaycastFrameIndex != frameIndex) {
+                slot->worldRaycastFrameIndex = frameIndex;
+                slot->worldRaycastCount = 0;
+            }
+            if (slot->worldRaycastCount >=
+                ROCK_PROVIDER_MAX_WORLD_RAYCASTS_PER_OWNER_PER_FRAME_V1) {
+                return RockProviderResultV1::CapacityFull;
+            }
+            ++slot->worldRaycastCount;
+        }
+
+        *outResult = {};
+        outResult->frameIndex = frameIndex;
+        if (!pi->queryProviderWorldRaycastV1(*request, *outResult)) {
+            return RockProviderResultV1::WorldNotReady;
+        }
+        return RockProviderResultV1::Ok;
+    }
+
     RockProviderResultV1 ROCK_PROVIDER_CALL apiPublishDebugOverlayV1(
         const std::uint64_t ownerToken,
         const RockProviderDebugOverlayPublicationV1* publication)
@@ -5027,6 +5127,8 @@ namespace
             &apiRequestTouchGrabYieldV1,
         .requestEquippedWeaponHandV1 =
             &apiRequestEquippedWeaponHandV1,
+        .queryWorldRaycastV1 =
+            &apiQueryWorldRaycastV1,
     };
 
     constexpr RockProviderApiDescriptorV1 ROCK_PROVIDER_API_DESCRIPTOR{

@@ -73,6 +73,7 @@
 #include "physics-interaction/core/PhysicsHooks.h"
 #include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/native/PhysicsRecursiveWrappers.h"
+#include "physics-interaction/native/PhysicsRayCast.h"
 #include "physics-interaction/native/PhysicsScale.h"
 #include "physics-interaction/native/PhysicsUtils.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
