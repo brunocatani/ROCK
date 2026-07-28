@@ -491,6 +491,7 @@ namespace rock::provider
         WeaponWorldValid = 1u << 4,
         RightHandInWeaponValid = 1u << 5,
         LeftHandInWeaponValid = 1u << 6,
+        MuzzleWorldValid = 1u << 7,
     };
 
     /*
@@ -1907,7 +1908,9 @@ namespace rock::provider
      * from ROCK's animation/frame callbacks on the game thread; wrong-thread
      * reads fail closed. Scene pointers are identity witnesses for the current
      * frame and must never be retained. Hand transforms are exact ROCK targets
-     * in Weapon local space.
+     * in Weapon local space. When MuzzleWorldValid is set, muzzleOriginGame is
+     * the current projectile-node barrel tip and muzzleDirectionGame is its
+     * normalized world-space +Y firing axis.
      */
     struct RockProviderEquippedWeaponGripStateV1
     {
@@ -1920,7 +1923,9 @@ namespace rock::provider
         RockProviderTransform weaponWorld{};
         RockProviderTransform rightHandInWeapon{};
         RockProviderTransform leftHandInWeapon{};
-        std::uint32_t reserved[8]{};
+        RockProviderPoint3 muzzleOriginGame{};
+        RockProviderPoint3 muzzleDirectionGame{};
+        std::uint32_t reserved[2]{};
     };
 
     /*

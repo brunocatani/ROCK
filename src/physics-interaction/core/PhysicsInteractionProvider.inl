@@ -330,6 +330,33 @@
                 static_cast<std::uint32_t>(Flag::LeftHandInWeaponValid);
         }
 
+        /*
+         * The equipped projectile node is ROCK's existing muzzle authority and
+         * the exact world transform copied to the fire node after weapon
+         * presentation. Publishing its +Y row keeps addons aligned with the
+         * barrel without exposing or retaining engine scene pointers.
+         */
+        if (const auto* muzzle = getEquippedMuzzleFlashNodes();
+            muzzle && finiteNiTransform(muzzle->projectileNode->world)) {
+            const auto& projectileWorld = muzzle->projectileNode->world;
+            RE::NiPoint3 muzzleDirection{
+                projectileWorld.rotate.entry[1][0],
+                projectileWorld.rotate.entry[1][1],
+                projectileWorld.rotate.entry[1][2],
+            };
+            const float directionLength = muzzleDirection.Length();
+            if (std::isfinite(directionLength) &&
+                directionLength > 0.000001f) {
+                muzzleDirection /= directionLength;
+                outState.muzzleOriginGame =
+                    makeProviderPoint(projectileWorld.translate);
+                outState.muzzleDirectionGame =
+                    makeProviderPoint(muzzleDirection);
+                outState.flags |=
+                    static_cast<std::uint32_t>(Flag::MuzzleWorldValid);
+            }
+        }
+
         return true;
     }
 

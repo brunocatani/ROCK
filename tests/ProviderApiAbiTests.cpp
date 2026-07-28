@@ -110,6 +110,8 @@ int main()
     ok = ok && offsetof(RockProviderApi, queryWorldRaycastV1) == 87 * sizeof(void*);
     ok = ok && offsetof(RockProviderWeaponPartGripStateV1, authoredSupportGrip) == 224;
     ok = ok && offsetof(RockProviderWeaponPartPoseV1, actionRole) == 44;
+    ok = ok && offsetof(RockProviderEquippedWeaponGripStateV1, muzzleOriginGame) == 188;
+    ok = ok && offsetof(RockProviderEquippedWeaponGripStateV1, muzzleDirectionGame) == 200;
     ok = ok && ROCK_PROVIDER_API_V1_NATIVE_ANIMATION_RUNTIME_CLEAR_TABLE_BYTES == 82 * sizeof(void*);
     ok = ok && ROCK_PROVIDER_API_V1_TOUCH_GRAB_TARGETS_TABLE_BYTES == 86 * sizeof(void*);
     ok = ok && ROCK_PROVIDER_API_V1_EQUIPPED_WEAPON_HAND_REQUEST_TABLE_BYTES == 87 * sizeof(void*);
@@ -130,5 +132,9 @@ int main()
         static_cast<std::uint32_t>(
             RockProviderFeatureBit2V1::WorldRaycasts) ==
             (1u << 31);
+    ok = ok &&
+        static_cast<std::uint32_t>(
+            RockProviderEquippedWeaponGripStateFlagV1::MuzzleWorldValid) ==
+            (1u << 7);
     return ok ? 0 : 1;
 }
