@@ -7,6 +7,7 @@
 #include "physics-interaction/weapon/EquippedWeaponVisualState.h"
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 
 namespace RE
@@ -72,7 +73,7 @@ namespace rock
             // capture the pending primary-only grip start consumes.
             bool hasFiringHandWeaponLocal = false;
             RE::NiTransform firingHandWeaponLocal{};
-            float timeoutSeconds = 2.0f;
+            float timeoutSeconds = 1.0f;
             float blendSeconds = 0.15f;
         };
 
@@ -99,8 +100,15 @@ namespace rock
 
         // Per-frame pose glue and exact-native-instance presentation handoff.
         // The coordinator may keep the detached model as a hidden standby and
-        // re-present it in the same frame that a late native detach is seen.
+        // re-present it in the same frame that a late native detach is seen,
+        // but only inside the bridge's one absolute presentation lease.
         void update(const UpdateInput& input);
+
+        // Advances only the hard presentation lease while the coordinator is
+        // mutation-blocked by a menu, compatibility owner, or unavailable
+        // visual authority. This may release the bridge but performs no pose
+        // or native-visibility repair.
+        void advancePresentationLease(float deltaSeconds);
 
         // Ends the bounded late-detach watchdog and releases the hidden model.
         void releaseStandbyModel(const char* reason);
@@ -138,6 +146,9 @@ namespace rock
         void clearModel(const char* reason, bool detachFromParent);
         void clearHandPoseHandoff(const char* reason, bool logCompletion, bool discardPayload);
         void clear(const char* reason, bool detachFromParent, bool restoreNativeCull = true);
+        [[nodiscard]] bool advancePresentationLeaseImpl(
+            float deltaSeconds,
+            bool presentedForLogging);
 
         RE::NiPointer<RE::NiAVObject> _model;
         RE::NiPointer<RE::NiAVObject> _culledNativeInstance;
@@ -154,7 +165,8 @@ namespace rock
         float _elapsedSeconds = 0.0f;
         float _lifetimeSeconds = 0.0f;
         float _blendSeconds = 0.15f;
-        float _timeoutSeconds = 2.0f;
+        float _presentationLeaseSeconds = 1.0f;
+        std::chrono::steady_clock::time_point _presentationLeaseStartedAt{};
         std::uint32_t _weaponFormID = 0;
         bool _isLeftHand = false;
         bool _modelPresented = false;

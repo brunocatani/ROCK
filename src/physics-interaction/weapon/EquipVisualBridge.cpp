@@ -8,6 +8,7 @@
 #include "physics-interaction/grab/FrikWeaponOffsetCache.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
+#include "physics-interaction/weapon/EquipVisualBridgePolicy.h"
 #include "physics-interaction/weapon/LooseWeaponGripZone.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 #include "rock_support/Fo4VrRuntime.h"
@@ -18,7 +19,6 @@ namespace rock
     {
         constexpr std::uint64_t kAppCulledFlag = 0x1ull;
         constexpr int kSubtreeWalkBudget = 1024;
-        constexpr float kMinimumSafetyLifetimeSeconds = 12.0f;
         constexpr const char* kHandPoseHandoffTag = "ROCK_EquipPoseBridge";
         constexpr const char* kRightHandPoseBlockTag = "ROCK_EquipPoseBridgeRight";
         constexpr const char* kLeftHandPoseBlockTag = "ROCK_EquipPoseBridgeLeft";
@@ -226,7 +226,10 @@ namespace rock
         _elapsedSeconds = 0.0f;
         _lifetimeSeconds = 0.0f;
         _blendSeconds = input.blendSeconds;
-        _timeoutSeconds = (std::max)(input.timeoutSeconds, kMinimumSafetyLifetimeSeconds);
+        _presentationLeaseSeconds =
+            equip_visual_bridge_policy::effectivePresentationLeaseSeconds(
+                input.timeoutSeconds);
+        _presentationLeaseStartedAt = std::chrono::steady_clock::now();
         _modelPresented = true;
         _active = true;
 
@@ -265,8 +268,9 @@ namespace rock
          * live scene node.
          */
         const bool attachedNow = !model->parent && tryAttachToWorldRoot();
-        ROCK_LOG_INFO(Weapon, "EquipVisualBridge begin formID={:08X} hand={} attachedNow={} blend={:.2f}s timeout={:.2f}s target={} exactPoseHandoff={}",
-            _weaponFormID, _isLeftHand ? "left" : "right", attachedNow ? "yes" : "no", _blendSeconds, _timeoutSeconds,
+        ROCK_LOG_INFO(Weapon, "EquipVisualBridge begin formID={:08X} hand={} attachedNow={} blend={:.2f}s requestedTimeout={:.2f}s presentationLease={:.2f}s target={} exactPoseHandoff={}",
+            _weaponFormID, _isLeftHand ? "left" : "right", attachedNow ? "yes" : "no", _blendSeconds,
+            input.timeoutSeconds, _presentationLeaseSeconds,
             targetReason, _handPoseHandoffActive ? "yes" : "no");
         return true;
     }
@@ -329,6 +333,49 @@ namespace rock
             kHandPoseHandoffPriority);
     }
 
+    bool EquipVisualBridge::advancePresentationLeaseImpl(
+        const float deltaSeconds,
+        const bool presentedForLogging)
+    {
+        if (!_active) {
+            return false;
+        }
+
+        _lifetimeSeconds += (std::max)(0.0f, deltaSeconds);
+        const float wallLifetimeSeconds = std::chrono::duration<float>(
+            std::chrono::steady_clock::now() -
+            _presentationLeaseStartedAt).count();
+        _lifetimeSeconds = (std::max)(_lifetimeSeconds, wallLifetimeSeconds);
+        if (!equip_visual_bridge_policy::presentationLeaseExpired(
+                _lifetimeSeconds,
+                _presentationLeaseSeconds)) {
+            return false;
+        }
+
+        if (presentedForLogging) {
+            ROCK_LOG_WARN(Weapon,
+                "EquipVisualBridge presentation lease expired while visible formID={:08X} hand={} lease={:.3f}s; releasing visual-only model",
+                _weaponFormID,
+                _isLeftHand ? "left" : "right",
+                _presentationLeaseSeconds);
+        } else {
+            ROCK_LOG_INFO(Weapon,
+                "EquipVisualBridge standby lease expired formID={:08X} hand={} lease={:.3f}s",
+                _weaponFormID,
+                _isLeftHand ? "left" : "right",
+                _presentationLeaseSeconds);
+        }
+        clear("presentation-lease-expired", _parent != nullptr);
+        return true;
+    }
+
+    void EquipVisualBridge::advancePresentationLease(const float deltaSeconds)
+    {
+        static_cast<void>(advancePresentationLeaseImpl(
+            deltaSeconds,
+            _modelPresented && _model != nullptr));
+    }
+
     void EquipVisualBridge::update(const UpdateInput& input)
     {
         if (!_active) {
@@ -336,22 +383,13 @@ namespace rock
         }
 
         const float frameSeconds = (std::max)(0.0f, input.deltaSeconds);
-        if (input.advanceLifetime) {
-            _lifetimeSeconds += frameSeconds;
-            if (_lifetimeSeconds >= _timeoutSeconds) {
-                clear("safety-timeout", _parent != nullptr);
-                return;
-            }
+        const bool presentThisFrame = input.presentModel && _model != nullptr;
+        if (input.advanceLifetime &&
+            advancePresentationLeaseImpl(frameSeconds, presentThisFrame)) {
+            return;
         }
 
-        const bool wasModelPresented = _modelPresented;
-        _modelPresented = input.presentModel && _model != nullptr;
-        if (_modelPresented && !wasModelPresented) {
-            // A late native detach begins a fresh bounded recovery period. The
-            // coordinator remains the outer watchdog; this only prevents the
-            // bridge's independent safety lease from expiring mid-repair.
-            _lifetimeSeconds = 0.0f;
-        }
+        _modelPresented = presentThisFrame;
         synchronizeNativeInstanceCull(input.nativeVisual, _modelPresented);
 
         if (!_modelPresented) {
@@ -633,6 +671,7 @@ namespace rock
         _hasFiringHandWeaponLocal = false;
         _elapsedSeconds = 0.0f;
         _lifetimeSeconds = 0.0f;
+        _presentationLeaseStartedAt = {};
         _weaponFormID = 0;
         _isLeftHand = false;
         _modelPresented = false;

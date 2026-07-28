@@ -30,7 +30,7 @@ namespace rock::native_equipped_weapon_draw
             return result;
         }
 
-        result.stateBefore = static_cast<std::uint32_t>(player->weaponState);
+        result.stateBefore = f4vr::getNativeWeaponState(player);
         result.stateAfter = result.stateBefore;
         if (!held_weapon_equip_state_policy::isValidNativeWeaponState(result.stateBefore)) {
             result.result = SubmitResult::InvalidWeaponState;
@@ -42,7 +42,7 @@ namespace rock::native_equipped_weapon_draw
         }
 
         player->DrawWeaponMagicHands(true);
-        result.stateAfter = static_cast<std::uint32_t>(player->weaponState);
+        result.stateAfter = f4vr::getNativeWeaponState(player);
         result.result = SubmitResult::Submitted;
         return result;
     }

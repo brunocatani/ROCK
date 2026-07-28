@@ -226,11 +226,12 @@ namespace rock
             return;
         }
 
+        const float deltaSeconds = (std::max)(0.0f, input.deltaSeconds);
         if (!input.visualAuthorityAvailable || input.menuBlocking || input.compatibilityBlocking) {
+            _bridge.advancePresentationLease(deltaSeconds);
             return;
         }
 
-        const float deltaSeconds = (std::max)(0.0f, input.deltaSeconds);
         _activeSeconds += deltaSeconds;
 
         if (_waitingForExpectedIdentity) {

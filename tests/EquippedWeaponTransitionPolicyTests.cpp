@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/EquippedWeaponTransitionPolicy.h"
+#include "physics-interaction/weapon/EquipVisualBridgePolicy.h"
 
 #include <cstdio>
 
@@ -19,6 +20,20 @@ int main()
     using namespace rock::equipped_weapon_transition_policy;
 
     bool ok = true;
+
+    ok &= expect("the bridge must honor a shorter positive presentation lease",
+        rock::equip_visual_bridge_policy::effectivePresentationLeaseSeconds(0.4f) ==
+            0.4f);
+    ok &= expect("the bridge must clamp every long presentation lease to one second",
+        rock::equip_visual_bridge_policy::effectivePresentationLeaseSeconds(12.0f) ==
+            rock::equip_visual_bridge_policy::kMaximumPresentationLeaseSeconds);
+    ok &= expect("an invalid presentation lease must fail safe to the one-second maximum",
+        rock::equip_visual_bridge_policy::effectivePresentationLeaseSeconds(0.0f) ==
+            rock::equip_visual_bridge_policy::kMaximumPresentationLeaseSeconds);
+    ok &= expect("the bridge must remain available before its absolute lease expires",
+        !rock::equip_visual_bridge_policy::presentationLeaseExpired(0.999f, 12.0f));
+    ok &= expect("the bridge must expire at the one-second absolute maximum",
+        rock::equip_visual_bridge_policy::presentationLeaseExpired(1.0f, 12.0f));
 
     ok &= expect("an exact requested instance must match",
         matchesExpectedIdentity(0x1234, 0x2222, 0x1234, 0x2222, 0x1234, 0x1111));

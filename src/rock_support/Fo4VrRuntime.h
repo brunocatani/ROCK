@@ -157,6 +157,10 @@ namespace rock::fo4vr
     [[nodiscard]] RE::NiNode* getLeftHandNode() noexcept;
     [[nodiscard]] RE::NiNode* getRightHandNode() noexcept;
 
+    [[nodiscard]] std::uint32_t getNativeWeaponState(
+        const RE::Actor* actor) noexcept;
+    [[nodiscard]] std::uint32_t getNativeGunState(
+        const RE::Actor* actor) noexcept;
     [[nodiscard]] bool IsWeaponDrawn() noexcept;
     [[nodiscard]] bool isMeleeWeaponEquipped() noexcept;
     [[nodiscard]] bool isInPowerArmor() noexcept;

@@ -13,7 +13,6 @@
 #include <cstring>
 #include <ctime>
 #include <filesystem>
-#include <limits>
 #include <numbers>
 #include <optional>
 #include <span>
@@ -2062,7 +2061,8 @@ namespace rock
         auto* player = f4vr::getPlayer();
         const bool nativeWeaponAnimationActive =
             provider::currentNativeAnimationAuthorityFlagsV1() != 0 ||
-            (player && player->gunState == RE::GUN_STATE::kReloading);
+            f4vr::getNativeGunState(player) ==
+                static_cast<std::uint32_t>(RE::GUN_STATE::kReloading);
         _equippedWeaponTransition.update(
             EquippedWeaponTransitionCoordinator::FrameInput{
                 .deltaSeconds = runtime.deltaSeconds,
@@ -2070,9 +2070,7 @@ namespace rock
                 .localSkeletonReady = runtime.localSkeletonReady,
                 .menuBlocking = runtime.localMenuBlocking,
                 .compatibilityBlocking = runtime.compatibilityConfigBlocking,
-                .nativeWeaponState = player ?
-                    static_cast<std::uint32_t>(player->weaponState) :
-                    (std::numeric_limits<std::uint32_t>::max)(),
+                .nativeWeaponState = f4vr::getNativeWeaponState(player),
                 .nativeWeaponAnimationActive = nativeWeaponAnimationActive,
             });
     }
@@ -6072,7 +6070,7 @@ namespace rock
             return;
         }
 
-        const bool weaponDrawn = player->GetWeaponMagicDrawn();
+        const bool weaponDrawn = f4vr::IsWeaponDrawn();
         const std::uint32_t equippedWeaponFormId = currentEquippedWeaponFormId();
         const bool actorUsingMelee = weaponDrawn && f4vr::CombatUtilities_IsActorUsingMelee(legacyPlayer);
         if (!bare_fist_guard_policy::shouldRefreshWitness(
@@ -9333,9 +9331,8 @@ namespace rock
                     }
 
                     auto* player = RE::PlayerCharacter::GetSingleton();
-                    const std::uint32_t nativeStateBeforeEquip = player ?
-                        static_cast<std::uint32_t>(player->weaponState) :
-                        (std::numeric_limits<std::uint32_t>::max)();
+                    const std::uint32_t nativeStateBeforeEquip =
+                        f4vr::getNativeWeaponState(player);
                     if (!held_weapon_equip_state_policy::canBeginEquip(nativeStateBeforeEquip)) {
                         const bool triggerIntentRearmed =
                             held_weapon_equip_state_policy::shouldRearmTrigger(nativeStateBeforeEquip, triggeredByInput) &&
@@ -9434,7 +9431,8 @@ namespace rock
                         .heldRef = releaseOutcome.takeRetainedReference(),
                         .transitionReason = transitionReason,
                     });
-                    const std::uint32_t nativeStateAfterEquip = static_cast<std::uint32_t>(player->weaponState);
+                    const std::uint32_t nativeStateAfterEquip =
+                        f4vr::getNativeWeaponState(player);
                     const auto immediateVisual = equipResult.committed && equipResult.weapon ?
                         equipped_weapon_visual_state::observe(
                             equipResult.weapon->formID,

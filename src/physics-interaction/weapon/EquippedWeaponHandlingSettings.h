@@ -42,7 +42,7 @@ namespace rock
         float leftFiringAimOffsetXGameUnits{ 0.0f };
         float leftFiringAimOffsetYGameUnits{ 0.0f };
         float leftFiringAimOffsetZGameUnits{ 0.0f };
-        float equipVisualBridgeTimeoutSeconds{ 2.0f };
+        float equipVisualBridgeTimeoutSeconds{ 1.0f };
         float equipVisualBridgeBlendSeconds{ 0.15f };
     };
 

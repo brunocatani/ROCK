@@ -112,9 +112,25 @@ Require-Text 'src/physics-interaction/weapon/EquipVisualBridge.cpp' `
     'hideModelForNativeStandby[\s\S]*synchronizeNativeInstanceCull[\s\S]*restoreNativeInstanceCull' `
     'The visual bridge must retain a hidden standby and restore every exact-child cull.'
 
+Require-Text 'src/physics-interaction/weapon/EquipVisualBridgePolicy.h' `
+    'kMaximumPresentationLeaseSeconds\s*=\s*1\.0f[\s\S]{0,700}effectivePresentationLeaseSeconds[\s\S]{0,700}presentationLeaseExpired' `
+    'The visual-only bridge must have a testable one-second maximum presentation lease.'
+
+Require-Text 'src/physics-interaction/weapon/EquipVisualBridge.cpp' `
+    'effectivePresentationLeaseSeconds\([\s\S]{0,300}input\.timeoutSeconds[\s\S]{0,400}steady_clock::now\(\)[\s\S]{0,12000}advancePresentationLeaseImpl[\s\S]{0,900}wallLifetimeSeconds[\s\S]{0,500}presentationLeaseExpired\([\s\S]{0,900}presentation-lease-expired' `
+    'Bridge runtime must clamp the requested timeout and release the visual-only model against both frame and monotonic wall lifetime.'
+
+Reject-Text 'src/physics-interaction/weapon/EquipVisualBridge.cpp' `
+    'wasModelPresented[\s\S]{0,300}_lifetimeSeconds\s*=\s*0\.0f' `
+    'Late bridge re-presentation must not reset or extend the absolute one-second lease.'
+
+Require-Text 'src/physics-interaction/weapon/EquippedWeaponTransitionCoordinator.cpp' `
+    'const float deltaSeconds\s*=\s*\(std::max\)\(0\.0f,\s*input\.deltaSeconds\);[\s\S]{0,300}!input\.visualAuthorityAvailable\s*\|\|\s*input\.menuBlocking\s*\|\|\s*input\.compatibilityBlocking[\s\S]{0,200}_bridge\.advancePresentationLease\(deltaSeconds\);[\s\S]{0,100}return;' `
+    'Menu, compatibility, and visual-authority mutation blocks must still advance the hard bridge presentation lease.'
+
 Require-Text 'src/physics-interaction/weapon/EquipVisualBridge.cpp' `
     'native-standby-republish-failed[\s\S]{0,700}applyExternalHandWorldTransform' `
-    'The standby bridge must keep the authored finger and hand-transform payload alive until the equipped owner acquires it.'
+    'The standby bridge must keep the authored finger and hand-transform payload alive until the equipped owner acquires it or the absolute lease expires.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'const bool nativeWeaponAnimationActive\s*=[\s\S]{0,300}currentNativeAnimationAuthorityFlagsV1\(\)[\s\S]{0,300}GUN_STATE::kReloading[\s\S]{0,700}\.nativeWeaponAnimationActive' `

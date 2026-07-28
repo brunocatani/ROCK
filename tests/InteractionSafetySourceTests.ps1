@@ -95,6 +95,14 @@ $commandPolicy = Read-Source 'src/physics-interaction/api/InteractionCommandPoli
 $commandQueueHeader = Read-Source 'src/physics-interaction/api/InteractionCommandQueue.h'
 $providerSource = Read-Source 'src/api/ROCKProviderApi.cpp'
 $providerHeader = Read-Source 'src/api/ROCKProviderApi.h'
+$fo4vrRuntime = Read-Source 'src/rock_support/Fo4VrRuntime.cpp'
+$actorStatePolicy = Read-Source 'src/rock_support/Fo4VrActorStatePolicy.h'
+$nativeWeaponDraw = Read-Source 'src/physics-interaction/weapon/NativeEquippedWeaponDraw.cpp'
+$allRuntimeCpp = (
+    Get-ChildItem -LiteralPath (Join-Path $Root 'src') -Recurse -File -Filter '*.cpp' |
+        Sort-Object FullName |
+        ForEach-Object { Get-Content -Raw -LiteralPath $_.FullName }
+) -join "`n"
 
 # The menu hook owns one transaction, not a replayable FIFO. A repeated Pip-Boy
 # equip press is consumed while that transaction remains active.
@@ -252,6 +260,21 @@ Require-Text $providerCommands `
 
 # Bare fists are identified from runtime evidence, not broad hand-to-hand
 # weapon type, so real unarmed weapons remain supported.
+Require-Text $actorStatePolicy `
+    '0x140F78D10[\s\S]*?0x140E77090[\s\S]*?0x140E77100[\s\S]*?0x140FF2B90[\s\S]*?kWeaponStateStorageOffset\s*=\s*0x0C[\s\S]*?kWeaponStateShift\s*=\s*2[\s\S]*?kWeaponStateValueMask\s*=\s*0x7[\s\S]*?kGunStateShift\s*=\s*15[\s\S]*?kGunStateValueMask\s*=\s*0xF[\s\S]*?decodeWeaponState[\s\S]*?decodeGunState' `
+    'The FO4VR 1.2.72 actor-state policy must retain independent binary witnesses and both verified state layouts.'
+Require-Text $fo4vrRuntime `
+    'getNativeWeaponState\(const RE::Actor\* actor\)[\s\S]*?static_cast<const RE::ActorState\*>\(actor\)[\s\S]*?std::memcpy\([\s\S]*?kWeaponStateStorageOffset[\s\S]*?decodeWeaponState[\s\S]*?getNativeGunState\(const RE::Actor\* actor\)[\s\S]*?decodeGunState' `
+    'ROCK must decode native weapon and gun state from verified ActorState storage rather than shifted CommonLib bitfields.'
+Reject-Text $allRuntimeCpp `
+    '(?:->|\.)(?:weaponState|gunState)\b|GetWeaponMagicDrawn\s*\(' `
+    'ROCK runtime code must not read CommonLibF4VR weaponState, gunState, or GetWeaponMagicDrawn because that bitfield block is shifted on FO4VR 1.2.72.'
+Require-Text $physicsSource `
+    'updateEquippedWeaponTransition\(\)[\s\S]{0,500}getNativeGunState\(player\)[\s\S]{0,600}getNativeWeaponState\(player\)[\s\S]*?nativeStateBeforeEquip\s*=\s*[\s\S]{0,120}getNativeWeaponState\(player\)[\s\S]*?nativeStateAfterEquip\s*=\s*[\s\S]{0,120}getNativeWeaponState\(player\)' `
+    'Animation ownership, transition observation, admission, and post-equip diagnostics must all use verified native state accessors.'
+Require-Text $nativeWeaponDraw `
+    'stateBefore\s*=\s*f4vr::getNativeWeaponState\(player\)[\s\S]*?DrawWeaponMagicHands\(true\)[\s\S]*?stateAfter\s*=\s*f4vr::getNativeWeaponState\(player\)' `
+    'Bounded draw recovery must observe both sides of the native call through the verified weapon-state accessor.'
 Require-Text $bareFistPolicy `
     'shouldHolster[\s\S]*?rockEnabled\s*&&\s*witness\.weaponDrawn\s*&&\s*witness\.actorUsingMelee\s*&&\s*!witness\.realMeleeWeaponEquipped' `
     'Bare-fist policy must require drawn melee state with no real melee weapon equipped.'
@@ -260,7 +283,7 @@ Require-Text $physicsHeader `
     'PhysicsInteraction must own a central bare-fist state guard.'
 $fistGuard = Get-BoundedText $physicsSource 'void PhysicsInteraction::enforceNoBareFistState(' 'void PhysicsInteraction::clearLooseGrenadeImpactWatches(' 'bare-fist guard'
 Require-Text $fistGuard `
-    'GetWeaponMagicDrawn\(\)[\s\S]*?CombatUtilities_IsActorUsingMelee\(legacyPlayer\)[\s\S]*?isMeleeWeaponEquipped\(\)[\s\S]*?bare_fist_guard_policy::shouldHolster[\s\S]*?DrawWeaponMagicHands\(false\)' `
+    'IsWeaponDrawn\(\)[\s\S]*?CombatUtilities_IsActorUsingMelee\(legacyPlayer\)[\s\S]*?isMeleeWeaponEquipped\(\)[\s\S]*?bare_fist_guard_policy::shouldHolster[\s\S]*?DrawWeaponMagicHands\(false\)' `
     'Central bare-fist guard must holster only the verified drawn-fist fallback.'
 $mainUpdate = Get-BoundedText $physicsSource 'void PhysicsInteraction::update()' 'void PhysicsInteraction::clearLeftWeaponContact()' 'main interaction update'
 Require-OrderedTokens $mainUpdate @(

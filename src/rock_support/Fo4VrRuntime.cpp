@@ -1,5 +1,6 @@
 #include "rock_support/Fo4VrRuntime.h"
 
+#include "rock_support/Fo4VrActorStatePolicy.h"
 #include "rock_support/Logger.h"
 
 #include <RE/Bethesda/SendPapyrusEvent.h>
@@ -129,10 +130,42 @@ namespace rock::fo4vr
         return nodes->primaryWandNode;
     }
 
+    std::uint32_t getNativeWeaponState(const RE::Actor* actor) noexcept
+    {
+        if (!actor) {
+            return fo4vr_actor_state_policy::kInvalidWeaponState;
+        }
+
+        const auto* actorState = static_cast<const RE::ActorState*>(actor);
+        std::uint32_t actorStateStorage = 0;
+        std::memcpy(
+            &actorStateStorage,
+            reinterpret_cast<const std::byte*>(actorState) +
+                fo4vr_actor_state_policy::kWeaponStateStorageOffset,
+            sizeof(actorStateStorage));
+        return fo4vr_actor_state_policy::decodeWeaponState(actorStateStorage);
+    }
+
+    std::uint32_t getNativeGunState(const RE::Actor* actor) noexcept
+    {
+        if (!actor) {
+            return fo4vr_actor_state_policy::kInvalidGunState;
+        }
+
+        const auto* actorState = static_cast<const RE::ActorState*>(actor);
+        std::uint32_t actorStateStorage = 0;
+        std::memcpy(
+            &actorStateStorage,
+            reinterpret_cast<const std::byte*>(actorState) +
+                fo4vr_actor_state_policy::kWeaponStateStorageOffset,
+            sizeof(actorStateStorage));
+        return fo4vr_actor_state_policy::decodeGunState(actorStateStorage);
+    }
+
     bool IsWeaponDrawn() noexcept
     {
-        auto* player = getPlayer();
-        return player && player->GetWeaponMagicDrawn();
+        return fo4vr_actor_state_policy::isWeaponMagicDrawn(
+            getNativeWeaponState(getPlayer()));
     }
 
     bool isMeleeWeaponEquipped() noexcept
