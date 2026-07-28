@@ -65,12 +65,24 @@ Require-Text 'src/physics-interaction/weapon/NativeEquippedWeaponDraw.cpp' `
     'Native draw recovery must revalidate the exact current form, instance, and equip index before submission.'
 
 Require-Text 'src/physics-interaction/weapon/EquippedWeaponTransitionPolicy.h' `
-    'kMaximumDrawAttempts[\s\S]{0,10000}state\.drawAttempts < kMaximumDrawAttempts[\s\S]{0,500}RepairAction::RequestDraw[\s\S]{0,300}RepairAction::DrawExhausted' `
-    'Native draw recovery must remain bounded inside the shared transition policy.'
+    'kDrawRetryIntervalSeconds[\s\S]{0,200}kWantToDrawStallSeconds[\s\S]{0,200}kDrawRecoveryDeadlineSeconds[\s\S]{0,10000}unacknowledgedSeconds[\s\S]{0,300}kDrawRecoveryDeadlineSeconds[\s\S]{0,300}RepairAction::DrawExhausted[\s\S]{0,700}drawRequests[\s\S]{0,300}RepairAction::RequestDraw' `
+    'Native draw recovery must use a bounded, time-spaced, state-acknowledged window inside the shared transition policy.'
+
+Reject-Text 'src/physics-interaction/weapon/EquippedWeaponTransitionPolicy.h' `
+    'kMaximumDrawAttempts|kDrawSettleFrames|kWantToDrawStallFrames|drawSettleFramesRemaining|wantToDrawFrames' `
+    'Native draw recovery must not regress to a frame-count or void-submission attempt budget.'
 
 Require-Text 'src/physics-interaction/weapon/EquippedWeaponTransitionCoordinator.cpp' `
     'RepairAction::RequestDraw[\s\S]{0,500}native_equipped_weapon_draw::submitExactCurrent' `
     'Every draw retry must pass through the exact-identity transition coordinator.'
+
+Require-Text 'src/physics-interaction/weapon/EquippedWeaponTransitionCoordinator.cpp' `
+    'sampleDrawRecoveryWallDelta\(\)[\s\S]{0,300}!input\.visualAuthorityAvailable\s*\|\|\s*input\.menuBlocking\s*\|\|\s*input\.compatibilityBlocking[\s\S]{0,300}_drawRecoveryElapsedSeconds\s*\+=\s*\(std::max\)\([\s\S]{0,160}drawRecoveryWallDelta[\s\S]{0,5000}\.drawRecoveryElapsedSeconds\s*=\s*_drawRecoveryElapsedSeconds' `
+    'Draw recovery must combine eligible frame and monotonic elapsed time while pausing during mutation blocks.'
+
+Require-Text 'src/physics-interaction/weapon/EquippedWeaponTransitionCoordinator.cpp' `
+    'sampleDrawRecoveryWallDelta\(\)\s+noexcept[\s\S]{0,500}steady_clock::now\(\)[\s\S]{0,500}duration<float>' `
+    'Draw recovery must retain a monotonic-clock backstop instead of depending on frame count or frame rate.'
 
 Require-Text 'src/physics-interaction/weapon/EquippedWeaponTransitionCoordinator.cpp' `
     '!_observationInitialized[\s\S]{0,700}current\.valid\(\)[\s\S]{0,240}bindCurrentIdentity[\s\S]{0,240}initial-equipped-identity' `

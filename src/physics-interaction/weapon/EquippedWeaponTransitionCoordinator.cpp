@@ -85,6 +85,7 @@ namespace rock
         _policyState = {};
         _source = source;
         _activeSeconds = 0.0f;
+        resetDrawRecoveryClock(false);
         _active = true;
         _waitingForExpectedIdentity = true;
         _lateRecoveryWindowGranted = false;
@@ -227,12 +228,20 @@ namespace rock
         }
 
         const float deltaSeconds = (std::max)(0.0f, input.deltaSeconds);
+        const float drawRecoveryWallDelta =
+            sampleDrawRecoveryWallDelta();
         if (!input.visualAuthorityAvailable || input.menuBlocking || input.compatibilityBlocking) {
             _bridge.advancePresentationLease(deltaSeconds);
             return;
         }
 
         _activeSeconds += deltaSeconds;
+        if (!_waitingForExpectedIdentity &&
+            !input.nativeWeaponAnimationActive) {
+            _drawRecoveryElapsedSeconds += (std::max)(
+                deltaSeconds,
+                drawRecoveryWallDelta);
+        }
 
         if (_waitingForExpectedIdentity) {
             _bridge.update(EquipVisualBridge::UpdateInput{
@@ -309,6 +318,8 @@ namespace rock
         auto decision = equipped_weapon_transition_policy::advance(
             _policyState,
             equipped_weapon_transition_policy::FrameInput{
+                .drawRecoveryElapsedSeconds =
+                    _drawRecoveryElapsedSeconds,
                 .mutationAllowed = true,
                 .identityMatches = true,
                 .weaponExactlyDrawn = weaponExactlyDrawn,
@@ -320,6 +331,30 @@ namespace rock
                 .bridgeOwnsNativeInstanceCull = bridgeOwnsCull,
             });
 
+        using NativeWeaponState =
+            held_weapon_equip_state_policy::NativeWeaponState;
+        const auto nativeWeaponState =
+            static_cast<NativeWeaponState>(input.nativeWeaponState);
+        const bool nativeDrawAcknowledged =
+            weaponExactlyDrawn ||
+            nativeWeaponState == NativeWeaponState::WantToDraw ||
+            nativeWeaponState == NativeWeaponState::Drawing;
+        if (_drawExhaustionLogged &&
+            nativeDrawAcknowledged &&
+            !_policyState.drawRecoveryExhausted) {
+            ROCK_LOG_INFO(Weapon,
+                "Equipped weapon transition draw recovery resumed source={} formID={:08X} instance={:#x} state={}({}) requests={} elapsed={:.3f}s",
+                sourceName(_source),
+                _boundIdentity.formID,
+                _boundIdentity.instanceData,
+                input.nativeWeaponState,
+                held_weapon_equip_state_policy::nativeWeaponStateName(
+                    input.nativeWeaponState),
+                _policyState.drawRequests,
+                _drawRecoveryElapsedSeconds);
+            _drawExhaustionLogged = false;
+        }
+
         switch (decision.repair) {
         case equipped_weapon_transition_policy::RepairAction::RequestDraw: {
             const auto result = native_equipped_weapon_draw::submitExactCurrent(
@@ -329,12 +364,12 @@ namespace rock
                     .equipIndex = _boundIdentity.equipIndex,
                 });
             ROCK_LOG_INFO(Weapon,
-                "Equipped weapon transition draw recovery source={} formID={:08X} instance={:#x} attempt={}/{} state={}({})->{}({}) result={}",
+                "Equipped weapon transition draw recovery source={} formID={:08X} instance={:#x} request={} elapsed={:.3f}s state={}({})->{}({}) result={}",
                 sourceName(_source),
                 _boundIdentity.formID,
                 _boundIdentity.instanceData,
-                _policyState.drawAttempts,
-                equipped_weapon_transition_policy::kMaximumDrawAttempts,
+                _policyState.drawRequests,
+                _drawRecoveryElapsedSeconds,
                 result.stateBefore,
                 held_weapon_equip_state_policy::nativeWeaponStateName(result.stateBefore),
                 result.stateAfter,
@@ -343,22 +378,31 @@ namespace rock
             if (result.result == native_equipped_weapon_draw::SubmitResult::InvalidWeaponState ||
                 result.result == native_equipped_weapon_draw::SubmitResult::MissingPlayer ||
                 result.result == native_equipped_weapon_draw::SubmitResult::MissingEquippedWeapon) {
-                _policyState.drawAttempts =
-                    equipped_weapon_transition_policy::kMaximumDrawAttempts;
+                _policyState.drawRecoveryExhausted = true;
             }
             break;
         }
         case equipped_weapon_transition_policy::RepairAction::DrawExhausted:
             if (!_drawExhaustionLogged) {
                 _drawExhaustionLogged = true;
+                const float drawRecoveryWindowSeconds =
+                    (std::max)(
+                        0.0f,
+                        _drawRecoveryElapsedSeconds -
+                            _policyState.drawRecoveryWindowStartedAtSeconds);
                 ROCK_LOG_WARN(Weapon,
-                    "Equipped weapon transition draw recovery exhausted source={} formID={:08X} instance={:#x} weaponState={}({})",
+                    "Equipped weapon transition draw recovery exhausted source={} formID={:08X} instance={:#x} weaponState={}({}) requests={} elapsed={:.3f}s window={:.3f}s deadline={:.3f}s",
                     sourceName(_source),
                     _boundIdentity.formID,
                     _boundIdentity.instanceData,
                     input.nativeWeaponState,
                     held_weapon_equip_state_policy::nativeWeaponStateName(
-                        input.nativeWeaponState));
+                        input.nativeWeaponState),
+                    _policyState.drawRequests,
+                    _drawRecoveryElapsedSeconds,
+                    drawRecoveryWindowSeconds,
+                    equipped_weapon_transition_policy::
+                        kDrawRecoveryDeadlineSeconds);
             }
             break;
         case equipped_weapon_transition_policy::RepairAction::RestoreLocalVisibility: {
@@ -440,6 +484,7 @@ namespace rock
         _menuEntryNativeInstanceNode = 0;
         _supersededNativeInstanceNode = 0;
         _activeSeconds = 0.0f;
+        resetDrawRecoveryClock(false);
         _observationInitialized = false;
         _active = false;
         _waitingForExpectedIdentity = false;
@@ -470,6 +515,7 @@ namespace rock
         _menuEntryNativeInstanceNode = 0;
         _supersededNativeInstanceNode = 0;
         _activeSeconds = 0.0f;
+        resetDrawRecoveryClock(false);
         _observationInitialized = false;
         _active = false;
         _waitingForExpectedIdentity = false;
@@ -551,6 +597,7 @@ namespace rock
         _policyState = {};
         _source = source;
         _activeSeconds = 0.0f;
+        resetDrawRecoveryClock(true);
         _active = true;
         _waitingForExpectedIdentity = false;
         _lateRecoveryWindowGranted = false;
@@ -563,6 +610,31 @@ namespace rock
             identity.formID,
             identity.instanceData,
             identity.equipIndex);
+    }
+
+    void EquippedWeaponTransitionCoordinator::resetDrawRecoveryClock(
+        const bool armed) noexcept
+    {
+        _drawRecoveryElapsedSeconds = 0.0f;
+        _drawRecoveryLastUpdateAt =
+            std::chrono::steady_clock::now();
+        _drawRecoveryClockArmed = armed;
+    }
+
+    float EquippedWeaponTransitionCoordinator::sampleDrawRecoveryWallDelta() noexcept
+    {
+        const auto now = std::chrono::steady_clock::now();
+        if (!_drawRecoveryClockArmed) {
+            _drawRecoveryLastUpdateAt = now;
+            return 0.0f;
+        }
+
+        const float elapsedSeconds =
+            std::chrono::duration<float>(
+                now - _drawRecoveryLastUpdateAt)
+                .count();
+        _drawRecoveryLastUpdateAt = now;
+        return (std::max)(0.0f, elapsedSeconds);
     }
 
     void EquippedWeaponTransitionCoordinator::finish(
@@ -586,6 +658,7 @@ namespace rock
         _expectedIdentity = {};
         _supersededNativeInstanceNode = 0;
         _activeSeconds = 0.0f;
+        resetDrawRecoveryClock(false);
         _active = false;
         _waitingForExpectedIdentity = false;
         _lateRecoveryWindowGranted = false;

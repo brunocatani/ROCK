@@ -11,9 +11,9 @@ namespace rock::equipped_weapon_transition_policy
     constexpr std::uint8_t kAttachSettleFrames = 6;
     constexpr std::uint8_t kMaximumLocalVisibilityAttempts = 2;
     constexpr std::uint8_t kMaximumAttachAttempts = 2;
-    constexpr std::uint8_t kDrawSettleFrames = 6;
-    constexpr std::uint8_t kMaximumDrawAttempts = 3;
-    constexpr std::uint8_t kWantToDrawStallFrames = 45;
+    constexpr float kDrawRetryIntervalSeconds = 0.10f;
+    constexpr float kWantToDrawStallSeconds = 0.50f;
+    constexpr float kDrawRecoveryDeadlineSeconds = 1.00f;
 
     enum class RepairAction : std::uint8_t
     {
@@ -32,14 +32,18 @@ namespace rock::equipped_weapon_transition_policy
         std::uint8_t attachSettleFramesRemaining{ 0 };
         std::uint8_t localVisibilityAttempts{ 0 };
         std::uint8_t attachAttempts{ 0 };
-        std::uint8_t drawSettleFramesRemaining{ 0 };
-        std::uint8_t drawAttempts{ 0 };
-        std::uint8_t wantToDrawFrames{ 0 };
+        float drawRecoveryWindowStartedAtSeconds{ 0.0f };
+        float nextDrawRequestAtSeconds{ 0.0f };
+        std::uint32_t drawRequests{ 0 };
+        bool drawRecoveryWindowActive{ false };
+        bool wantToDrawObserved{ false };
+        bool drawRecoveryExhausted{ false };
         bool nativeHandoffObserved{ false };
     };
 
     struct FrameInput
     {
+        float drawRecoveryElapsedSeconds{ 0.0f };
         bool mutationAllowed{ false };
         bool identityMatches{ false };
         bool weaponExactlyDrawn{ false };
@@ -90,8 +94,11 @@ namespace rock::equipped_weapon_transition_policy
         if (!input.identityMatches) {
             state.stableFrames = 0;
             state.missingFrames = 0;
-            state.drawSettleFramesRemaining = 0;
-            state.wantToDrawFrames = 0;
+            state.drawRecoveryWindowStartedAtSeconds = 0.0f;
+            state.nextDrawRequestAtSeconds = 0.0f;
+            state.drawRecoveryWindowActive = false;
+            state.wantToDrawObserved = false;
+            state.drawRecoveryExhausted = false;
             return decision;
         }
 
@@ -109,49 +116,111 @@ namespace rock::equipped_weapon_transition_policy
                 return decision;
             }
 
-            if (state.drawSettleFramesRemaining > 0) {
-                --state.drawSettleFramesRemaining;
-            }
-
             using NativeWeaponState = held_weapon_equip_state_policy::NativeWeaponState;
             const auto nativeState = static_cast<NativeWeaponState>(input.nativeWeaponState);
-            if (nativeState == NativeWeaponState::WantToDraw) {
-                if (state.wantToDrawFrames < kWantToDrawStallFrames) {
-                    ++state.wantToDrawFrames;
-                }
-                if (state.wantToDrawFrames < kWantToDrawStallFrames ||
-                    state.drawSettleFramesRemaining > 0) {
-                    return decision;
-                }
-            } else if (nativeState == NativeWeaponState::Drawing) {
-                state.wantToDrawFrames = 0;
+            if (!held_weapon_equip_state_policy::isValidNativeWeaponState(
+                    input.nativeWeaponState)) {
+                state.drawRecoveryExhausted = true;
+                decision.repair = RepairAction::DrawExhausted;
                 return decision;
-            } else {
-                state.wantToDrawFrames = 0;
-                if (!held_weapon_equip_state_policy::shouldSubmitDrawFollowup(
-                        input.nativeWeaponState) ||
-                    state.drawSettleFramesRemaining > 0) {
-                    if (!held_weapon_equip_state_policy::isValidNativeWeaponState(
-                            input.nativeWeaponState)) {
-                        decision.repair = RepairAction::DrawExhausted;
-                    }
-                    return decision;
-                }
             }
 
-            if (state.drawAttempts < kMaximumDrawAttempts) {
-                ++state.drawAttempts;
-                state.drawSettleFramesRemaining = kDrawSettleFrames;
-                state.wantToDrawFrames = 0;
-                decision.repair = RepairAction::RequestDraw;
-            } else {
-                decision.repair = RepairAction::DrawExhausted;
+            // Drawing is an explicit native acknowledgment. Do not age it
+            // against the request window: the asynchronous animation owns
+            // progress until it reaches Drawn or returns to a retryable state.
+            if (nativeState == NativeWeaponState::Drawing) {
+                state.drawRecoveryWindowStartedAtSeconds = 0.0f;
+                state.nextDrawRequestAtSeconds =
+                    input.drawRecoveryElapsedSeconds;
+                state.drawRecoveryWindowActive = false;
+                state.wantToDrawObserved = false;
+                state.drawRecoveryExhausted = false;
+                return decision;
             }
+
+            if (nativeState == NativeWeaponState::WantToDraw) {
+                if (!state.wantToDrawObserved) {
+                    state.drawRecoveryWindowStartedAtSeconds =
+                        input.drawRecoveryElapsedSeconds;
+                    state.nextDrawRequestAtSeconds =
+                        input.drawRecoveryElapsedSeconds +
+                        kWantToDrawStallSeconds;
+                    state.drawRecoveryWindowActive = true;
+                    state.wantToDrawObserved = true;
+                    state.drawRecoveryExhausted = false;
+                    return decision;
+                }
+
+                const float wantToDrawElapsedSeconds =
+                    input.drawRecoveryElapsedSeconds -
+                    state.drawRecoveryWindowStartedAtSeconds;
+                if (state.drawRecoveryExhausted ||
+                    wantToDrawElapsedSeconds >=
+                        kDrawRecoveryDeadlineSeconds) {
+                    state.drawRecoveryExhausted = true;
+                    decision.repair = RepairAction::DrawExhausted;
+                    return decision;
+                }
+                if (input.drawRecoveryElapsedSeconds <
+                    state.nextDrawRequestAtSeconds) {
+                    return decision;
+                }
+
+                ++state.drawRequests;
+                state.nextDrawRequestAtSeconds =
+                    input.drawRecoveryElapsedSeconds +
+                    kWantToDrawStallSeconds;
+                decision.repair = RepairAction::RequestDraw;
+                return decision;
+            }
+
+            const bool returnedFromWantToDraw =
+                state.wantToDrawObserved;
+            state.wantToDrawObserved = false;
+            if (!held_weapon_equip_state_policy::shouldSubmitDrawFollowup(
+                    input.nativeWeaponState)) {
+                return decision;
+            }
+            if (returnedFromWantToDraw ||
+                !state.drawRecoveryWindowActive) {
+                state.drawRecoveryWindowStartedAtSeconds =
+                    input.drawRecoveryElapsedSeconds;
+                state.nextDrawRequestAtSeconds =
+                    input.drawRecoveryElapsedSeconds;
+                state.drawRecoveryWindowActive = true;
+                state.drawRecoveryExhausted = false;
+            }
+
+            const float unacknowledgedSeconds =
+                input.drawRecoveryElapsedSeconds -
+                state.drawRecoveryWindowStartedAtSeconds;
+            if (state.drawRecoveryExhausted ||
+                unacknowledgedSeconds >= kDrawRecoveryDeadlineSeconds) {
+                state.drawRecoveryExhausted = true;
+                decision.repair = RepairAction::DrawExhausted;
+                return decision;
+            }
+            if (input.drawRecoveryElapsedSeconds <
+                state.nextDrawRequestAtSeconds) {
+                return decision;
+            }
+
+            // DrawWeaponMagicHands(true) is a void submission. Requests are
+            // deliberately not counted as progress; only a native state
+            // advance to WantToDraw, Drawing, or Drawn resets this window.
+            ++state.drawRequests;
+            state.nextDrawRequestAtSeconds =
+                input.drawRecoveryElapsedSeconds +
+                kDrawRetryIntervalSeconds;
+            decision.repair = RepairAction::RequestDraw;
             return decision;
         }
 
-        state.drawSettleFramesRemaining = 0;
-        state.wantToDrawFrames = 0;
+        state.drawRecoveryWindowStartedAtSeconds = 0.0f;
+        state.nextDrawRequestAtSeconds = 0.0f;
+        state.drawRecoveryWindowActive = false;
+        state.wantToDrawObserved = false;
+        state.drawRecoveryExhausted = false;
 
         const bool exactInstanceRenderable =
             input.nativeInstanceFound &&

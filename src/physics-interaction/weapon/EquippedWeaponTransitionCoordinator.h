@@ -3,6 +3,7 @@
 #include "physics-interaction/weapon/EquipVisualBridge.h"
 #include "physics-interaction/weapon/EquippedWeaponTransitionPolicy.h"
 
+#include <chrono>
 #include <cstdint>
 
 namespace rock
@@ -121,6 +122,8 @@ namespace rock
             const char* reason,
             Identity previousIdentity = {},
             std::uintptr_t previousNativeInstanceNode = 0);
+        void resetDrawRecoveryClock(bool armed) noexcept;
+        [[nodiscard]] float sampleDrawRecoveryWallDelta() noexcept;
         void finish(const char* reason, bool releaseSceneGraph);
 
         EquipVisualBridge _bridge;
@@ -134,8 +137,11 @@ namespace rock
         Source _source{ Source::ObservedEquip };
         Source _requestedCurrentSource{ Source::MenuExit };
         float _activeSeconds{ 0.0f };
+        float _drawRecoveryElapsedSeconds{ 0.0f };
+        std::chrono::steady_clock::time_point _drawRecoveryLastUpdateAt{};
         bool _observationInitialized{ false };
         bool _active{ false };
+        bool _drawRecoveryClockArmed{ false };
         bool _waitingForExpectedIdentity{ false };
         bool _requestCurrentPending{ false };
         bool _wasMenuBlocking{ false };
