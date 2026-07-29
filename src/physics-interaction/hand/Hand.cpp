@@ -331,9 +331,6 @@ namespace rock
         _hasLastHeldHandPositionHavok = false;
         clearGrabHandCollisionSuppressionState();
         clearHeldLooseWeaponBodyCollisionSuppressionState();
-        // reset() is blocked above while held bodies still need cleanup, so any
-        // lease reaching here has already been restored through the release path.
-        clearHeldObjectCollisionLayerState();
     }
 
     void Hand::abandonHavokStateAfterWorldLoss()
@@ -392,10 +389,6 @@ namespace rock
         _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
         clearGrabHandCollisionSuppressionState();
         clearHeldLooseWeaponBodyCollisionSuppressionState();
-        // The held-object layer cannot be written back through a dead world, for
-        // the same reason the filters above cannot; those bodies are destroyed
-        // with the world being abandoned.
-        clearHeldObjectCollisionLayerState();
         _boneColliders.reset();
         _handBody.reset();
         _grabAuthorityProxyReleasePending.store(false, std::memory_order_release);

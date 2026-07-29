@@ -351,7 +351,6 @@ namespace rock
         rockBodyBoneCollidersEnabled = true;
         rockBodyBoneLegAndFootCollidersEnabled = false;
         rockBodyBoneCollisionStaticWorldEnabled = true;
-        rockHeldObjectIgnoresWeaponCollisionEnabled = true;
         rockBodyBoneColliderStandardRadiusScale = 1.0f;
         rockBodyBoneColliderStandardLengthScale = 1.0f;
         rockBodyBoneColliderStandardConvexRadiusScale = 1.0f;
@@ -1430,8 +1429,6 @@ namespace rock
         rockBodyBoneLegAndFootCollidersEnabled =
             ini.GetBoolValue(EXPERIMENTAL_SECTION, "bBodyBoneLegAndFootCollidersEnabled", rockBodyBoneLegAndFootCollidersEnabled);
         rockBodyBoneCollisionStaticWorldEnabled = ini.GetBoolValue(SECTION, "bBodyBoneCollisionStaticWorldEnabled", rockBodyBoneCollisionStaticWorldEnabled);
-        rockHeldObjectIgnoresWeaponCollisionEnabled =
-            ini.GetBoolValue(SECTION, "bHeldObjectIgnoresWeaponCollisionEnabled", rockHeldObjectIgnoresWeaponCollisionEnabled);
         auto readBodyBoneScale = [&](const char* key, float currentValue) {
             const auto value = static_cast<float>(ini.GetDoubleValue(SECTION, key, currentValue));
             if (!std::isfinite(value)) {

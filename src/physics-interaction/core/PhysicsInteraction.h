@@ -400,7 +400,6 @@ namespace rock
         std::uint64_t _expectedWeaponLayerMask = 0;
         std::uint64_t _expectedReloadLayerMask = 0;
         std::uint64_t _expectedBodyLayerMask = 0;
-        std::uint64_t _expectedHeldObjectLayerMask = 0;
         std::uint64_t _originalNativeCharacterControllerLayerMask = 0;
         std::uint64_t _expectedNativeCharacterControllerLayerMask = 0;
         bool _nativeCharacterControllerLayerPolicyCaptured = false;

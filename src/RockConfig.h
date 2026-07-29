@@ -294,14 +294,6 @@ namespace rock
         bool rockBodyBoneCollidersEnabled = true;
         bool rockBodyBoneLegAndFootCollidersEnabled = false;
         bool rockBodyBoneCollisionStaticWorldEnabled = true;
-        /*
-         * Moves a hand-held object onto ROCK_LAYER_HELD_OBJECT for the duration
-         * of the grab so it stops solving against the equipped weapon's
-         * generated hulls. Everything else the object collided with is
-         * preserved by that row. Disable to return held objects to their
-         * authored layer for the whole grab.
-         */
-        bool rockHeldObjectIgnoresWeaponCollisionEnabled = true;
         float rockBodyBoneColliderStandardRadiusScale = 1.0f;
         float rockBodyBoneColliderStandardLengthScale = 1.0f;
         float rockBodyBoneColliderStandardConvexRadiusScale = 1.0f;
