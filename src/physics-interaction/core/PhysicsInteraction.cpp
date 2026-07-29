@@ -2406,6 +2406,8 @@ namespace rock
                 g_rockConfig.rockWeaponCollisionBlocksSpells,
                 g_rockConfig.rockHandCollisionStaticWorldEnabled);
             const auto desiredBodyMask = collision_layer_policy::buildRockBodyExpectedMask(g_rockConfig.rockBodyBoneCollisionStaticWorldEnabled);
+            const auto desiredHeldObjectMask =
+                collision_layer_policy::buildRockHeldObjectExpectedMask(g_rockConfig.rockBodyBoneCollisionStaticWorldEnabled);
             const bool desiredNativeControllerPolicyEnabled = g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled;
             const bool nativeControllerPolicyModeChanged =
                 _nativeCharacterControllerLayerPolicyCaptured &&
@@ -2414,6 +2416,7 @@ namespace rock
                 !collision_layer_policy::matrixLayerMaskMatches(_expectedWeaponLayerMask, desiredWeaponMask) ||
                 !collision_layer_policy::matrixLayerMaskMatches(_expectedReloadLayerMask, desiredReloadMask) ||
                 !collision_layer_policy::matrixLayerMaskMatches(_expectedBodyLayerMask, desiredBodyMask) ||
+                !collision_layer_policy::matrixLayerMaskMatches(_expectedHeldObjectLayerMask, desiredHeldObjectMask) ||
                 nativeControllerPolicyModeChanged) {
                 ROCK_LOG_INFO(Config, "ROCK collision layer config changed; re-registering matrix policy");
                 _collisionLayerRegistered = false;
@@ -2433,11 +2436,14 @@ namespace rock
                     _expectedHandLayerMask != 0 && _expectedWeaponLayerMask != 0 &&
                     !collision_layer_policy::rockToolActorPairsMatch(matrix, _expectedHandLayerMask, _expectedWeaponLayerMask);
                 const bool bodyPairsDrifted = _expectedBodyLayerMask != 0 && !collision_layer_policy::rockBodyManagedPairsMatch(matrix, _expectedBodyLayerMask);
+                const bool heldObjectPairsDrifted =
+                    _expectedHeldObjectLayerMask != 0 &&
+                    !collision_layer_policy::rockHeldObjectPairsMatch(matrix, _expectedHeldObjectLayerMask);
                 const bool nativeControllerObjectPairsDrifted =
                     _nativeCharacterControllerLayerPolicyCaptured &&
                     !collision_layer_policy::nativeCharacterControllerObjectPairsMatch(matrix, _expectedNativeCharacterControllerLayerMask);
                 if (handMaskDrifted || weaponMaskDrifted || reloadMaskDrifted || bodyMaskDrifted || actorToolPairsDrifted || bodyPairsDrifted ||
-                    nativeControllerObjectPairsDrifted) {
+                    heldObjectPairsDrifted || nativeControllerObjectPairsDrifted) {
                     const auto currentNativeCharacterControllerMask =
                         _nativeCharacterControllerLayerPolicyCaptured ? matrix[collision_layer_policy::FO4_LAYER_CHARCONTROLLER] : 0;
                     ROCK_LOG_WARN(Config,
@@ -5292,6 +5298,8 @@ namespace rock
                 g_rockConfig.rockWeaponCollisionBlocksSpells,
                 g_rockConfig.rockHandCollisionStaticWorldEnabled);
         _expectedBodyLayerMask = collision_layer_policy::buildRockBodyExpectedMask(g_rockConfig.rockBodyBoneCollisionStaticWorldEnabled);
+        _expectedHeldObjectLayerMask =
+            collision_layer_policy::buildRockHeldObjectExpectedMask(g_rockConfig.rockBodyBoneCollisionStaticWorldEnabled);
         _expectedNativeCharacterControllerLayerMask =
             collision_layer_policy::nativeCharacterControllerExpectedMask(
                 _originalNativeCharacterControllerLayerMask,

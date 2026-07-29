@@ -74,6 +74,16 @@ namespace rock::collision_layer_policy
      * contact evidence.
      */
     inline constexpr std::uint32_t ROCK_LAYER_DYNAMIC_HAND_PROXY = 48;
+    /*
+     * A hand-held object keeps solving against the world, clutter and actors,
+     * but must never solve against the equipped weapon's generated hulls: the
+     * two are both driven from the player's own hands, so any contact between
+     * them is solver noise the player feels as jitter rather than physical
+     * interaction. Layers cannot express a single-object exception, so held
+     * bodies are moved onto this ROCK-owned row for the lifetime of the grab
+     * and their original filter is restored on release.
+     */
+    inline constexpr std::uint32_t ROCK_LAYER_HELD_OBJECT = 49;
 
     inline constexpr std::uint32_t FO4_LAYER_VANILLA_CONFIGURED_COUNT = 47;
     inline constexpr std::uint32_t FO4_LAYER_LAST_VANILLA_CONFIGURED = FO4_LAYER_DROPPINGPICK;
@@ -532,6 +542,68 @@ namespace rock::collision_layer_policy
         applyLayerExpectedMask(matrix, ROCK_LAYER_BODY, buildRockBodyExpectedMask(includeStaticWorld));
     }
 
+    /*
+     * Mirrors what an ordinary grabbable prop collides with, minus the ROCK
+     * weapon row. CHARCONTROLLER is deliberately excluded so the matrix agrees
+     * with the held-pair filtering PhysicsHooks already applies to the player
+     * controller's generated contacts instead of contradicting it: a held
+     * object is hand-driven, and the player's own capsule should not shove it.
+     * Query-only and non-collidable rows are excluded for the same reasons as
+     * the hand and weapon rows.
+     */
+    inline constexpr std::uint64_t buildRockHeldObjectExpectedMask(bool includeStaticWorld = true)
+    {
+        std::uint64_t mask = allConfiguredLayerBits();
+        mask = withoutLayer(mask, FO4_LAYER_UNIDENTIFIED);
+        if (!includeStaticWorld) {
+            mask = withoutLayer(mask, FO4_LAYER_STATIC);
+            mask = withoutLayer(mask, FO4_LAYER_ANIMSTATIC);
+        }
+        mask = withoutLayer(mask, FO4_LAYER_NONCOLLIDABLE);
+        mask = withoutLayer(mask, FO4_LAYER_CHARCONTROLLER);
+        mask = withoutLayer(mask, FO4_LAYER_CAMERASPHERE);
+        mask = withoutLayer(mask, FO4_LAYER_ITEMPICK);
+        mask = withoutLayer(mask, FO4_LAYER_LINEOFSIGHT);
+        mask = withoutLayer(mask, FO4_LAYER_PATHPICK);
+        mask = withoutLayer(mask, ROCK_LAYER_WEAPON);
+        mask = withLayer(mask, ROCK_LAYER_BODY);
+        return mask;
+    }
+
+    inline void applyRockHeldObjectLayerPolicy(std::uint64_t* matrix, bool includeStaticWorld = true)
+    {
+        applyLayerExpectedMask(matrix, ROCK_LAYER_HELD_OBJECT, buildRockHeldObjectExpectedMask(includeStaticWorld));
+    }
+
+    inline constexpr bool rockHeldObjectPairsMatch(const std::uint64_t* matrix, std::uint64_t expectedHeldObjectMask)
+    {
+        if (!matrix) {
+            return false;
+        }
+
+        for (std::uint32_t other = 0; other < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++other) {
+            if (!layerPairSymmetricMatches(matrix, ROCK_LAYER_HELD_OBJECT, other, maskEnablesLayer(expectedHeldObjectMask, other))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /*
+     * Swaps only the 7-bit layer field, preserving every other filter bit the
+     * body carried (including the suppression no-collide bit), so a held-object
+     * lease and a collision-suppression lease can coexist on the same body.
+     */
+    inline constexpr std::uint32_t withFilterLayer(std::uint32_t filterInfo, std::uint32_t layer)
+    {
+        return (filterInfo & ~FO4_LAYER_FILTER_MASK) | (layer & FO4_LAYER_FILTER_MASK);
+    }
+
+    inline constexpr std::uint32_t filterLayer(std::uint32_t filterInfo)
+    {
+        return filterInfo & FO4_LAYER_FILTER_MASK;
+    }
+
     inline constexpr std::uint64_t buildRockDynamicHandProxyExpectedMask()
     {
         std::uint64_t mask = 0;
@@ -584,5 +656,9 @@ namespace rock::collision_layer_policy
         applyRockReloadLayerPolicy(matrix, weaponBlocksProjectiles, weaponBlocksSpells, handStaticWorld);
         applyRockBodyLayerPolicy(matrix, bodyStaticWorld);
         applyRockDynamicHandProxyLayerPolicy(matrix);
+        // Applied after the weapon row so the held-object/weapon pair is
+        // cleared from both rows in one pass. Both masks independently exclude
+        // the other's layer, so the two rows agree regardless of order.
+        applyRockHeldObjectLayerPolicy(matrix, bodyStaticWorld);
     }
 }

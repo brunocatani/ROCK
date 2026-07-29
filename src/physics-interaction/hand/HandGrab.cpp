@@ -3,6 +3,7 @@
 #include "physics-interaction/body/BodyBoneColliderSet.h"
 #include "physics-interaction/native/HavokOffsets.h"
 
+#include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/native/BodyCollisionControl.h"
 #include "physics-interaction/grab/GrabCore.h"
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
@@ -5092,6 +5093,123 @@ namespace rock
             return;
         }
         clearGrabHandCollisionSuppressionState();
+    }
+
+    void Hand::clearHeldObjectCollisionLayerState()
+    {
+        for (auto& lease : _heldObjectLayerLeases) {
+            lease = {};
+        }
+        _heldObjectLayerLeaseCount = 0;
+    }
+
+    void Hand::applyHeldObjectCollisionLayer(RE::hknpWorld* world)
+    {
+        if (!g_rockConfig.rockHeldObjectIgnoresWeaponCollisionEnabled) {
+            return;
+        }
+        if (!world || _heldObjectLayerLeaseCount != 0) {
+            return;
+        }
+
+        for (const auto bodyId : _heldBodyIds) {
+            if (bodyId == INVALID_BODY_ID) {
+                continue;
+            }
+            if (_heldObjectLayerLeaseCount >= _heldObjectLayerLeases.size()) {
+                ROCK_LOG_WARN(Hand,
+                    "{} hand: held-object layer lease set full at {}; remaining held bodies keep their original layer",
+                    handName(),
+                    _heldObjectLayerLeases.size());
+                break;
+            }
+
+            std::uint32_t currentFilter = 0;
+            if (!body_collision::tryReadFilterInfo(world, RE::hknpBodyId{ bodyId }, currentFilter)) {
+                continue;
+            }
+
+            /*
+             * ROCK-owned rows are never rewritten. A held body already sitting on
+             * a ROCK layer is a generated collider owned by another subsystem
+             * (hand suite, weapon hull, body bones), and moving it would silently
+             * steal that subsystem's collision contract.
+             */
+            const std::uint32_t currentLayer = collision_layer_policy::filterLayer(currentFilter);
+            if (collision_layer_policy::isRockOwnedReusableLayer(currentLayer) ||
+                currentLayer == collision_layer_policy::ROCK_LAYER_HELD_OBJECT ||
+                currentLayer == collision_layer_policy::ROCK_LAYER_DYNAMIC_HAND_PROXY) {
+                continue;
+            }
+
+            const std::uint32_t heldFilter =
+                collision_layer_policy::withFilterLayer(currentFilter, collision_layer_policy::ROCK_LAYER_HELD_OBJECT);
+            if (heldFilter == currentFilter) {
+                continue;
+            }
+            if (!body_collision::setFilterInfo(world, RE::hknpBodyId{ bodyId }, heldFilter)) {
+                continue;
+            }
+
+            auto& lease = _heldObjectLayerLeases[_heldObjectLayerLeaseCount++];
+            lease.bodyId = bodyId;
+            lease.originalFilterInfo = currentFilter;
+            lease.active = true;
+        }
+
+        if (_heldObjectLayerLeaseCount > 0) {
+            ROCK_LOG_DEBUG(Hand,
+                "{} hand: held-object collision layer applied to {} body(s) on layer {}",
+                handName(),
+                _heldObjectLayerLeaseCount,
+                collision_layer_policy::ROCK_LAYER_HELD_OBJECT);
+        }
+    }
+
+    void Hand::restoreHeldObjectCollisionLayer(RE::hknpWorld* world)
+    {
+        if (_heldObjectLayerLeaseCount == 0) {
+            return;
+        }
+        if (!world) {
+            ROCK_LOG_WARN(Hand,
+                "{} hand: cannot restore held-object collision layer yet (no world); preserving {} lease(s)",
+                handName(),
+                _heldObjectLayerLeaseCount);
+            return;
+        }
+
+        std::uint32_t restored = 0;
+        for (auto& lease : _heldObjectLayerLeases) {
+            if (!lease.active || lease.bodyId == INVALID_BODY_ID) {
+                continue;
+            }
+
+            /*
+             * Only the layer field is returned. Anything else that changed the
+             * filter during the grab (a suppression no-collide lease, for
+             * example) keeps its own bits and its own restore path.
+             */
+            std::uint32_t currentFilter = 0;
+            const std::uint32_t originalLayer = collision_layer_policy::filterLayer(lease.originalFilterInfo);
+            const std::uint32_t restoredFilter =
+                body_collision::tryReadFilterInfo(world, RE::hknpBodyId{ lease.bodyId }, currentFilter) ?
+                    collision_layer_policy::withFilterLayer(currentFilter, originalLayer) :
+                    lease.originalFilterInfo;
+            if (body_collision::setFilterInfo(world, RE::hknpBodyId{ lease.bodyId }, restoredFilter)) {
+                ++restored;
+            } else {
+                ROCK_LOG_WARN(Hand,
+                    "{} hand: held-object layer restore failed for bodyId={}; body may remain on layer {}",
+                    handName(),
+                    lease.bodyId,
+                    collision_layer_policy::ROCK_LAYER_HELD_OBJECT);
+            }
+            lease = {};
+        }
+
+        ROCK_LOG_DEBUG(Hand, "{} hand: held-object collision layer restored on {} body(s)", handName(), restored);
+        _heldObjectLayerLeaseCount = 0;
     }
 
     void Hand::suppressBodyCollisionForHeldLooseWeapon(RE::hknpWorld* world, const BodyBoneColliderSet* bodyBoneColliders)
@@ -11108,6 +11226,7 @@ namespace rock
                 restoreGrabbedInertia(world, _savedObjectState);
             }
             restoreFailedGrabPrep();
+            restoreHeldObjectCollisionLayer(world);
             restoreHandCollisionAfterGrab(world);
             restoreBodyCollisionAfterHeldLooseWeapon(world);
             _savedObjectState.clear();
@@ -11196,6 +11315,10 @@ namespace rock
             _heldBodyIdsCount.store(count, std::memory_order_release);
             _isHoldingFlag.store(true, std::memory_order_release);
         }
+
+        // Applied once the held body set is final so every committed body moves
+        // onto the held-object row together.
+        applyHeldObjectCollisionLayer(world);
 
         if (g_rockConfig.rockGrabNearbyDampingEnabled) {
             object_physics_body_set::BodySetScanOptions dampingOptions{};
@@ -14585,6 +14708,13 @@ namespace rock
                                   hand_collision_suppression_math::beginDelayedRestore(
                                       _grabHandCollisionDelayedRestore, _grabHandCollisionSuppression, g_rockConfig.rockGrabReleaseHandCollisionDelaySeconds);
         restoreBodyCollisionAfterHeldLooseWeapon(world);
+        /*
+         * Never delayed with the hand suppression. The released object is world
+         * physics again the moment it leaves the hand, so it has to be back on
+         * its authored layer before the next solver step rather than a
+         * configurable number of seconds later.
+         */
+        restoreHeldObjectCollisionLayer(world);
         if (delayRestore) {
             ROCK_LOG_DEBUG(Hand,
                 "{} hand: grab hand collision restore delayed bodies={} firstBodyId={} seconds={:.3f}",

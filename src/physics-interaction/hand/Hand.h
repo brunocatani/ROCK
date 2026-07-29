@@ -326,6 +326,20 @@ namespace rock
         void suppressHandCollisionForGrab(RE::hknpWorld* world, const BodyBoneColliderSet* bodyBoneColliders);
         void restoreHandCollisionAfterGrab(RE::hknpWorld* world);
         void clearGrabHandCollisionSuppressionState();
+        /*
+         * Moves held bodies onto ROCK_LAYER_HELD_OBJECT so they stop solving
+         * against the equipped weapon's generated hulls, and puts their original
+         * filter back on release.
+         *
+         * This owns its own capture/restore instead of riding the grab lifecycle
+         * snapshot on purpose: makeRestorePlan deliberately does NOT restore the
+         * filter for LooseDynamic bodies or for a preserved converted drop, so a
+         * layer swap left to that path would strand the object on a ROCK-owned
+         * layer permanently and bake it into the save.
+         */
+        void applyHeldObjectCollisionLayer(RE::hknpWorld* world);
+        void restoreHeldObjectCollisionLayer(RE::hknpWorld* world);
+        void clearHeldObjectCollisionLayerState();
         void suppressBodyCollisionForHeldLooseWeapon(RE::hknpWorld* world, const BodyBoneColliderSet* bodyBoneColliders);
         void restoreBodyCollisionAfterHeldLooseWeapon(RE::hknpWorld* world);
         void clearHeldLooseWeaponBodyCollisionSuppressionState();
@@ -860,6 +874,16 @@ namespace rock
         hand_collision_suppression_math::SuppressionSet<kGrabCollisionSuppressionBodyCountPerHand> _grabHandCollisionSuppression{};
         hand_collision_suppression_math::SuppressionSet<kHeldLooseWeaponBodyCollisionSuppressionCapacity> _heldLooseWeaponBodyCollisionSuppression{};
         hand_collision_suppression_math::DelayedRestoreState _grabHandCollisionDelayedRestore{};
+
+        struct HeldObjectLayerLease
+        {
+            std::uint32_t bodyId = 0x7FFF'FFFF;
+            std::uint32_t originalFilterInfo = 0;
+            bool active = false;
+        };
+
+        std::array<HeldObjectLayerLease, 64> _heldObjectLayerLeases{};
+        std::uint32_t _heldObjectLayerLeaseCount = 0;
         std::atomic<std::uint32_t> _semanticContactFrameCounter{ 0 };
         std::atomic<std::uint32_t> _semanticContactValid{ 0 };
         std::atomic<std::uint32_t> _semanticContactSequence{ 0 };

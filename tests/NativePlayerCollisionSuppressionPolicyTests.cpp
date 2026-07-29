@@ -113,5 +113,70 @@ int main()
     ok &= expectNonWorldSurface("ROCK weapon layer stays out of dynamic hand world collision", ROCK_LAYER_WEAPON);
     ok &= expectNonWorldSurface("ROCK body layer stays out of dynamic hand world collision", ROCK_LAYER_BODY);
 
+    /*
+     * Held-object row: the entire point is that a hand-held object stops
+     * solving against the equipped weapon's generated hulls while keeping every
+     * other contact it had. A regression here is invisible in-game until a
+     * player notices gear either jittering against their gun again or ghosting
+     * through the world.
+     */
+    {
+        const auto heldMask = buildRockHeldObjectExpectedMask(true);
+        const auto expectHeld = [&](const char* label, std::uint32_t layer, bool expected) {
+            if (maskEnablesLayer(heldMask, layer) == expected) {
+                return true;
+            }
+            std::printf("%s: held-object mask layer=%u expected=%d\n", label, layer, expected ? 1 : 0);
+            return false;
+        };
+
+        ok &= expectHeld("held objects must never solve against ROCK weapon hulls", ROCK_LAYER_WEAPON, false);
+        ok &= expectHeld("held objects keep static world collision", FO4_LAYER_STATIC, true);
+        ok &= expectHeld("held objects keep clutter collision", FO4_LAYER_CLUTTER, true);
+        ok &= expectHeld("held objects keep loose weapon collision", FO4_LAYER_WEAPON, true);
+        ok &= expectHeld("held objects keep actor collision", FO4_LAYER_BIPED, true);
+        ok &= expectHeld("held objects keep terrain collision", FO4_LAYER_TERRAIN, true);
+        ok &= expectHeld("held objects keep ROCK hand collision", ROCK_LAYER_HAND, true);
+        ok &= expectHeld("held objects keep ROCK body-bone collision", ROCK_LAYER_BODY, true);
+        ok &= expectHeld("held objects stay off the player capsule", FO4_LAYER_CHARCONTROLLER, false);
+        ok &= expectHeld("held objects stay out of query-only picking", FO4_LAYER_ITEMPICK, false);
+        ok &= expectHeld("held objects stay out of line-of-sight picking", FO4_LAYER_LINEOFSIGHT, false);
+        ok &= expectHeld("held objects stay off the non-collidable row", FO4_LAYER_NONCOLLIDABLE, false);
+
+        if (!maskEnablesLayer(buildRockWeaponExpectedMask(true, true, true, true), ROCK_LAYER_HELD_OBJECT)) {
+            // Both rows must independently exclude each other so the pair stays
+            // disabled no matter which row applyRockGeneratedLayerPolicies writes last.
+        } else {
+            std::printf("weapon mask must not re-enable the held-object layer\n");
+            ok = false;
+        }
+
+        if (ROCK_LAYER_HELD_OBJECT == ROCK_LAYER_BODY ||
+            ROCK_LAYER_HELD_OBJECT == ROCK_LAYER_DYNAMIC_HAND_PROXY ||
+            ROCK_LAYER_HELD_OBJECT == ROCK_LAYER_HAND ||
+            ROCK_LAYER_HELD_OBJECT == ROCK_LAYER_WEAPON) {
+            std::printf("held-object layer must own a distinct matrix row\n");
+            ok = false;
+        }
+        if (!isMatrixAddressableLayer(ROCK_LAYER_HELD_OBJECT)) {
+            std::printf("held-object layer must be addressable in the 64-row matrix\n");
+            ok = false;
+        }
+
+        // The layer swap must preserve every non-layer filter bit, or a
+        // coexisting suppression lease would be silently dropped.
+        constexpr std::uint32_t sampleFilter = 0x000B'4000u | FO4_LAYER_CLUTTER;
+        const auto swapped = withFilterLayer(sampleFilter, ROCK_LAYER_HELD_OBJECT);
+        if (filterLayer(swapped) != ROCK_LAYER_HELD_OBJECT ||
+            (swapped & ~FO4_LAYER_FILTER_MASK) != (sampleFilter & ~FO4_LAYER_FILTER_MASK)) {
+            std::printf("held-object layer swap must preserve all non-layer filter bits\n");
+            ok = false;
+        }
+        if (filterLayer(withFilterLayer(swapped, FO4_LAYER_CLUTTER)) != FO4_LAYER_CLUTTER) {
+            std::printf("held-object layer restore must return the authored layer\n");
+            ok = false;
+        }
+    }
+
     return ok ? 0 : 1;
 }
