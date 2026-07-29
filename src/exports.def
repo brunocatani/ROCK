@@ -1,0 +1,7 @@
+LIBRARY	"ROCK"
+EXPORTS
+F4SEPlugin_Query
+F4SEPlugin_Load
+ROCKAPI_GetApi
+ROCKAPI_GetProviderApi
+ROCKAPI_GetDescriptorV1

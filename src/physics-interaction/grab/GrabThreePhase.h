@@ -1,0 +1,579 @@
+#pragma once
+
+/*
+ * Three-phase grab is the new generic-object authority layer. The old path let
+ * surface normals, contact patches, opposition contacts, raw ray hits, visible
+ * hand reverse solving, and multiple pivots all decide part of the same grab. This
+ * policy keeps those signals as evidence only: the generated/proxy authority
+ * frame builds a stable pocket, object evidence builds one grip area, and the
+ * dynamic native spring receives a body-local grip point plus a pocket target.
+ */
+
+#include "RE/NetImmerse/NiPoint.h"
+#include "RE/NetImmerse/NiTransform.h"
+#include "physics-interaction/TransformMath.h"
+#include "physics-interaction/hand/HandFrame.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <limits>
+
+namespace rock::grab_three_phase
+{
+    enum class AcquisitionPhase : std::uint8_t
+    {
+        Idle,
+        GravityPulling,
+        NearConverging,
+        SeatedPivotReacquire,
+        TouchHeld,
+    };
+
+    inline const char* phaseName(AcquisitionPhase phase)
+    {
+        switch (phase) {
+        case AcquisitionPhase::Idle:
+            return "Idle";
+        case AcquisitionPhase::GravityPulling:
+            return "GravityPulling";
+        case AcquisitionPhase::NearConverging:
+            return "NearConverging";
+        case AcquisitionPhase::SeatedPivotReacquire:
+            return "SeatedPivotReacquire";
+        case AcquisitionPhase::TouchHeld:
+            return "TouchHeld";
+        default:
+            return "Unknown";
+        }
+    }
+
+    inline float lengthSquared(const RE::NiPoint3& value)
+    {
+        return value.x * value.x + value.y * value.y + value.z * value.z;
+    }
+
+    inline float length(const RE::NiPoint3& value)
+    {
+        return std::sqrt((std::max)(0.0f, lengthSquared(value)));
+    }
+
+    inline float dot(const RE::NiPoint3& a, const RE::NiPoint3& b)
+    {
+        return a.x * b.x + a.y * b.y + a.z * b.z;
+    }
+
+    inline bool isFinite(const RE::NiPoint3& value)
+    {
+        return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+    }
+
+    inline bool isFinite(const RE::NiTransform& transform)
+    {
+        if (!isFinite(transform.translate) || !std::isfinite(transform.scale)) {
+            return false;
+        }
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                if (!std::isfinite(transform.rotate.entry[row][column])) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    inline RE::NiPoint3 normalizeOrZero(const RE::NiPoint3& value)
+    {
+        const float lenSq = lengthSquared(value);
+        if (!std::isfinite(lenSq) || lenSq <= 0.000001f) {
+            return RE::NiPoint3{};
+        }
+
+        const float invLen = 1.0f / std::sqrt(lenSq);
+        return RE::NiPoint3{ value.x * invLen, value.y * invLen, value.z * invLen };
+    }
+
+    inline RE::NiPoint3 normalizeOrFallback(const RE::NiPoint3& value, const RE::NiPoint3& fallback)
+    {
+        const float lenSq = lengthSquared(value);
+        if (!std::isfinite(lenSq) || lenSq <= 0.000001f) {
+            const float fallbackLenSq = lengthSquared(fallback);
+            if (!std::isfinite(fallbackLenSq) || fallbackLenSq <= 0.000001f) {
+                return RE::NiPoint3{ 0.0f, 0.0f, 1.0f };
+            }
+            const float invFallbackLen = 1.0f / std::sqrt(fallbackLenSq);
+            return RE::NiPoint3{ fallback.x * invFallbackLen, fallback.y * invFallbackLen, fallback.z * invFallbackLen };
+        }
+
+        const float invLen = 1.0f / std::sqrt(lenSq);
+        return RE::NiPoint3{ value.x * invLen, value.y * invLen, value.z * invLen };
+    }
+
+    inline RE::NiPoint3 cross(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs)
+    {
+        return RE::NiPoint3{
+            lhs.y * rhs.z - lhs.z * rhs.y,
+            lhs.z * rhs.x - lhs.x * rhs.z,
+            lhs.x * rhs.y - lhs.y * rhs.x,
+        };
+    }
+
+    inline RE::NiPoint3 rejectFromAxis(const RE::NiPoint3& value, const RE::NiPoint3& axis)
+    {
+        return value - axis * dot(value, axis);
+    }
+
+    inline RE::NiPoint3 orientToward(const RE::NiPoint3& value, const RE::NiPoint3& reference)
+    {
+        return dot(value, reference) < 0.0f ? RE::NiPoint3{ -value.x, -value.y, -value.z } : value;
+    }
+
+    struct GrabPocketFrame
+    {
+        RE::NiTransform basisWorld{};
+        RE::NiPoint3 palmCenterWorld{};
+        RE::NiPoint3 palmNormalWorld{};
+        RE::NiPoint3 fingerForwardWorld{};
+        RE::NiPoint3 crossPalmWorld{};
+        RE::NiPoint3 oppositeCrossPalmWorld{};
+        RE::NiPoint3 pocketCenterWorld{};
+        float pocketRadiusGameUnits = 0.0f;
+        float pocketDepthGameUnits = 0.0f;
+        bool valid = false;
+    };
+
+    inline GrabPocketFrame buildGrabPocketFrameWithPalmCenter(
+        const RE::NiTransform& basisWorld,
+        bool isLeft,
+        const RE::NiPoint3& palmCenterWorld,
+        float pocketDepthGameUnits,
+        float pocketRadiusGameUnits)
+    {
+        /*
+         * Dynamic grab callers pass the generated/proxy authority relation
+         * frame here. That row-view preserves the generated collider's local
+         * axes for pocket roll without letting the raw controller hand basis
+         * pull the pocket around a separate rotation origin. Legacy callers
+         * that still need authored handspace use buildGrabPocketFrame below.
+         */
+        GrabPocketFrame frame{};
+        frame.basisWorld = basisWorld;
+        frame.palmCenterWorld = palmCenterWorld;
+        frame.palmNormalWorld = normalizeOrFallback(computePalmNormalFromHandBasis(basisWorld, isLeft), RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
+        const RE::NiPoint3 basisFingerForwardWorld =
+            normalizeOrFallback(transformHandspaceDirection(basisWorld, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }, isLeft), RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
+        const RE::NiPoint3 basisCrossPalmWorld =
+            normalizeOrFallback(transformHandspaceDirection(basisWorld, RE::NiPoint3{ 0.0f, 0.0f, 1.0f }, isLeft), RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
+
+        const RE::NiPoint3 fallbackFingerForwardWorld =
+            orientToward(normalizeOrFallback(cross(basisCrossPalmWorld, frame.palmNormalWorld), basisFingerForwardWorld), basisFingerForwardWorld);
+        frame.fingerForwardWorld =
+            orientToward(normalizeOrFallback(rejectFromAxis(basisFingerForwardWorld, frame.palmNormalWorld), fallbackFingerForwardWorld), basisFingerForwardWorld);
+
+        RE::NiPoint3 crossPalmCandidate = rejectFromAxis(basisCrossPalmWorld, frame.palmNormalWorld);
+        crossPalmCandidate = rejectFromAxis(crossPalmCandidate, frame.fingerForwardWorld);
+        const RE::NiPoint3 fallbackCrossPalmWorld =
+            orientToward(normalizeOrFallback(cross(frame.palmNormalWorld, frame.fingerForwardWorld), basisCrossPalmWorld), basisCrossPalmWorld);
+        frame.crossPalmWorld = orientToward(normalizeOrFallback(crossPalmCandidate, fallbackCrossPalmWorld), basisCrossPalmWorld);
+        frame.oppositeCrossPalmWorld = RE::NiPoint3{ -frame.crossPalmWorld.x, -frame.crossPalmWorld.y, -frame.crossPalmWorld.z };
+        frame.pocketDepthGameUnits = (std::max)(0.0f, std::isfinite(pocketDepthGameUnits) ? pocketDepthGameUnits : 0.0f);
+        frame.pocketRadiusGameUnits = (std::max)(0.1f, std::isfinite(pocketRadiusGameUnits) ? pocketRadiusGameUnits : 9.0f);
+        frame.pocketCenterWorld = frame.palmCenterWorld + frame.palmNormalWorld * frame.pocketDepthGameUnits;
+        frame.valid = isFinite(basisWorld) && isFinite(frame.palmCenterWorld) && isFinite(frame.pocketCenterWorld) && lengthSquared(frame.palmNormalWorld) > 0.000001f;
+        return frame;
+    }
+
+    inline GrabPocketFrame buildGrabPocketFrame(const RE::NiTransform& handWorld, bool isLeft, float pocketDepthGameUnits, float pocketRadiusGameUnits)
+    {
+        /*
+         * Legacy helper for non-dynamic-grab callers that still consume the old
+         * authored handspace palm position. Dynamic grab must use
+         * buildGrabPocketFrameWithPalmCenter and pass an already-resolved palm
+         * authority point so the old INI pivot cannot become runtime authority.
+         */
+        return buildGrabPocketFrameWithPalmCenter(
+            handWorld,
+            isLeft,
+            computeGrabLegacyPalmPivotAWorldFromHandBasis(handWorld, isLeft),
+            pocketDepthGameUnits,
+            pocketRadiusGameUnits);
+    }
+
+    struct ObjectGripArea
+    {
+        RE::NiTransform objectBodyWorldAtCapture{};
+        RE::NiPoint3 contactSeedWorld{};
+        RE::NiPoint3 contactSeedBodyLocal{};
+        RE::NiPoint3 gripCenterWorld{};
+        RE::NiPoint3 gripCenterBodyLocal{};
+        RE::NiPoint3 centerOfMassWorld{};
+        float seedInsetGameUnits = 0.0f;
+        float confidence = 0.0f;
+        const char* source = "none";
+        const char* fallbackReason = "none";
+        bool valid = false;
+        bool centerOfMassValid = false;
+    };
+
+    struct GripAreaInput
+    {
+        RE::NiTransform objectBodyWorld{};
+        RE::NiPoint3 contactSeedWorld{};
+        RE::NiPoint3 centerOfMassWorld{};
+        RE::NiPoint3 interiorDirectionWorld{};
+        float preferredInsetGameUnits = 2.0f;
+        float maxInsetGameUnits = 6.0f;
+        bool centerOfMassValid = false;
+        bool interiorDirectionValid = false;
+        const char* source = "selection";
+    };
+
+    inline ObjectGripArea buildObjectGripArea(const GripAreaInput& input)
+    {
+        ObjectGripArea area{};
+        area.objectBodyWorldAtCapture = input.objectBodyWorld;
+        area.contactSeedWorld = input.contactSeedWorld;
+        area.centerOfMassWorld = input.centerOfMassWorld;
+        area.centerOfMassValid = input.centerOfMassValid;
+        area.source = input.source ? input.source : "selection";
+
+        if (!isFinite(input.objectBodyWorld) || !isFinite(input.contactSeedWorld)) {
+            area.fallbackReason = "nonFiniteInput";
+            return area;
+        }
+
+        RE::NiPoint3 seedToInterior{};
+        bool hasInteriorDirection = false;
+        if (input.centerOfMassValid && isFinite(input.centerOfMassWorld)) {
+            seedToInterior = input.centerOfMassWorld - input.contactSeedWorld;
+            hasInteriorDirection = true;
+            area.fallbackReason = "centerOfMassInterior";
+        } else if (input.interiorDirectionValid && isFinite(input.interiorDirectionWorld)) {
+            seedToInterior = input.interiorDirectionWorld;
+            hasInteriorDirection = true;
+            area.fallbackReason = "providedInteriorDirection";
+        } else {
+            area.fallbackReason = "noTrustedInteriorDirection";
+        }
+
+        const float seedToInteriorLength = length(seedToInterior);
+        const float requestedInset = std::isfinite(input.preferredInsetGameUnits) ? input.preferredInsetGameUnits : 2.0f;
+        const float requestedMaxInset = std::isfinite(input.maxInsetGameUnits) ? input.maxInsetGameUnits : 6.0f;
+        const float maxInset = (std::max)(0.0f, requestedMaxInset);
+
+        RE::NiPoint3 gripCenterWorld = input.contactSeedWorld;
+        if (hasInteriorDirection && seedToInteriorLength > 0.0001f && maxInset > 0.0f) {
+            const float inset = (std::min)({ seedToInteriorLength * 0.35f, (std::max)(0.0f, requestedInset), maxInset });
+            const RE::NiPoint3 inward = seedToInterior * (1.0f / seedToInteriorLength);
+            gripCenterWorld = input.contactSeedWorld + inward * inset;
+            area.seedInsetGameUnits = inset;
+        }
+
+        area.gripCenterWorld = gripCenterWorld;
+        area.contactSeedBodyLocal = transform_math::worldPointToLocal(input.objectBodyWorld, input.contactSeedWorld);
+        area.gripCenterBodyLocal = transform_math::worldPointToLocal(input.objectBodyWorld, gripCenterWorld);
+        area.confidence = input.centerOfMassValid ? 0.9f : (hasInteriorDirection ? 0.8f : 0.55f);
+        area.valid = isFinite(area.gripCenterWorld) && isFinite(area.gripCenterBodyLocal);
+        return area;
+    }
+
+    struct PhaseClassificationInput
+    {
+        GrabPocketFrame pocket{};
+        RE::NiPoint3 gripSeedWorld{};
+        bool hasFreshTouchContact = false;
+        bool isFarSelection = false;
+        bool programmaticArrival = false;
+        bool requireEvidenceForTouchHeld = false;
+        bool hasTouchHeldAuthorityEvidence = false;
+        float touchAcquireDistanceGameUnits = 4.0f;
+        float touchContactMaxDistanceGameUnits = 0.0f;
+        float nearConvergeDistanceGameUnits = 28.0f;
+        float behindPalmToleranceGameUnits = 1.5f;
+    };
+
+    struct PhaseClassificationResult
+    {
+        AcquisitionPhase phase = AcquisitionPhase::Idle;
+        float gripToPocketDistanceGameUnits = 0.0f;
+        float signedPalmDistanceGameUnits = 0.0f;
+        const char* reason = "none";
+        bool accepted = false;
+        bool frontHemisphere = false;
+    };
+
+    inline PhaseClassificationResult classifyAcquisitionPhase(const PhaseClassificationInput& input)
+    {
+        PhaseClassificationResult result{};
+        const float touchDistance =
+            (std::max)(0.1f, std::isfinite(input.touchAcquireDistanceGameUnits) ? input.touchAcquireDistanceGameUnits : 4.0f);
+        const float touchContactMaxDistance =
+            (input.touchContactMaxDistanceGameUnits > 0.0f && std::isfinite(input.touchContactMaxDistanceGameUnits)) ?
+                (std::max)(touchDistance, input.touchContactMaxDistanceGameUnits) :
+                touchDistance;
+        const float nearDistance = (std::max)(touchDistance, std::isfinite(input.nearConvergeDistanceGameUnits) ? input.nearConvergeDistanceGameUnits : 28.0f);
+        const float behindTolerance =
+            (std::max)(0.0f, std::isfinite(input.behindPalmToleranceGameUnits) ? input.behindPalmToleranceGameUnits : 1.5f);
+
+        if (!input.pocket.valid || !isFinite(input.gripSeedWorld)) {
+            result.reason = "invalidPocketOrGripSeed";
+            return result;
+        }
+
+        const RE::NiPoint3 toGripFromPocket = input.gripSeedWorld - input.pocket.palmCenterWorld;
+        result.gripToPocketDistanceGameUnits = length(toGripFromPocket);
+        result.signedPalmDistanceGameUnits = dot(input.gripSeedWorld - input.pocket.palmCenterWorld, input.pocket.palmNormalWorld);
+        result.frontHemisphere = result.signedPalmDistanceGameUnits >= -behindTolerance;
+
+        if (!result.frontHemisphere) {
+            /*
+             * A force-grab has already passed explicit target, distance, body,
+             * and hand-ownership validation. Bypass only this organic spatial
+             * rejection; front-side arrivals retain the normal phase classifier.
+             */
+            if (input.programmaticArrival) {
+                result.accepted = true;
+                result.phase = AcquisitionPhase::NearConverging;
+                result.reason = "programmaticArrivalBehindPalm";
+                return result;
+            }
+            result.reason = "behindPalm";
+            return result;
+        }
+
+        result.accepted = true;
+        const bool freshTouchWithinPocketEnvelope = input.hasFreshTouchContact && result.gripToPocketDistanceGameUnits <= touchContactMaxDistance;
+        const bool insideTouchEnvelope = result.gripToPocketDistanceGameUnits <= touchDistance;
+        const bool hasTouchHeldAuthority = !input.requireEvidenceForTouchHeld || input.hasTouchHeldAuthorityEvidence;
+        if ((freshTouchWithinPocketEnvelope || insideTouchEnvelope) && hasTouchHeldAuthority) {
+            result.phase = AcquisitionPhase::TouchHeld;
+            result.reason = freshTouchWithinPocketEnvelope ? "freshTouchContactInPocketEnvelope" : "insideTouchEnvelope";
+            return result;
+        }
+        if ((freshTouchWithinPocketEnvelope || insideTouchEnvelope) && input.requireEvidenceForTouchHeld && !hasTouchHeldAuthority) {
+            result.phase = AcquisitionPhase::NearConverging;
+            result.reason = "touchEnvelopeAwaitingAuthorityEvidence";
+            return result;
+        }
+
+        if (result.gripToPocketDistanceGameUnits <= nearDistance && !input.isFarSelection) {
+            result.phase = AcquisitionPhase::NearConverging;
+            result.reason = "insideNearEnvelope";
+            return result;
+        }
+
+        result.phase = AcquisitionPhase::GravityPulling;
+        result.reason = input.isFarSelection ? "farSelection" : "outsideNearEnvelope";
+        return result;
+    }
+
+    struct PullCatchSeatSafetyInput
+    {
+        bool grabbedFromPullCatch = false;
+        bool usingPinchPocket = false;
+        AcquisitionPhase capturePhase = AcquisitionPhase::Idle;
+        bool pocketValid = false;
+        bool stablePocketTouchContact = false;
+        bool pivotAuthorityNormalTrusted = false;
+        bool pivotAuthorityPositionOnly = false;
+        float gripToPocketDistanceGameUnits = std::numeric_limits<float>::max();
+        float signedPalmDistanceGameUnits = 0.0f;
+        float behindPalmToleranceGameUnits = 1.5f;
+        float touchAcquireDistanceGameUnits = 4.0f;
+        float pocketRadiusGameUnits = 9.0f;
+        RE::NiPoint3 palmNormalWorld{};
+        RE::NiPoint3 gripNormalWorld{};
+    };
+
+    struct PullCatchSeatSafetyDecision
+    {
+        bool allowImmediateTouchHeld = true;
+        bool requireSettledVisualRelation = false;
+        float normalDotPalm = 0.0f;
+        const char* reason = "notPullCatch";
+    };
+
+    inline PullCatchSeatSafetyDecision evaluatePullCatchSeatSafety(const PullCatchSeatSafetyInput& input)
+    {
+        PullCatchSeatSafetyDecision decision{};
+        if (!input.grabbedFromPullCatch) {
+            decision.reason = "notPullCatch";
+            return decision;
+        }
+        if (input.usingPinchPocket) {
+            decision.reason = "pinchPocket";
+            return decision;
+        }
+
+        decision.allowImmediateTouchHeld = false;
+        decision.requireSettledVisualRelation = true;
+
+        const RE::NiPoint3 palmNormal = normalizeOrZero(input.palmNormalWorld);
+        const RE::NiPoint3 gripNormal = normalizeOrZero(input.gripNormalWorld);
+        const bool hasPalmNormal = lengthSquared(palmNormal) > 0.000001f;
+        const bool hasGripNormal = lengthSquared(gripNormal) > 0.000001f;
+        decision.normalDotPalm = hasPalmNormal && hasGripNormal ? dot(gripNormal, palmNormal) : 0.0f;
+
+        if (!input.pocketValid ||
+            !std::isfinite(input.gripToPocketDistanceGameUnits) ||
+            !std::isfinite(input.signedPalmDistanceGameUnits) ||
+            !hasPalmNormal ||
+            !hasGripNormal) {
+            decision.reason = "pullCatchSeatMissingFrame";
+            return decision;
+        }
+
+        const float behindTolerance =
+            (std::max)(0.0f, std::isfinite(input.behindPalmToleranceGameUnits) ? input.behindPalmToleranceGameUnits : 1.5f);
+        if (input.signedPalmDistanceGameUnits < -behindTolerance) {
+            decision.reason = "pullCatchSeatBehindPalm";
+            return decision;
+        }
+
+        const float touchDistance =
+            (std::max)(0.1f, std::isfinite(input.touchAcquireDistanceGameUnits) ? input.touchAcquireDistanceGameUnits : 4.0f);
+        const float pocketRadius =
+            (std::max)(touchDistance, std::isfinite(input.pocketRadiusGameUnits) ? input.pocketRadiusGameUnits : 9.0f);
+        if (input.gripToPocketDistanceGameUnits > pocketRadius) {
+            decision.reason = "pullCatchSeatOutsidePocket";
+            return decision;
+        }
+
+        const bool inTouchRange = input.gripToPocketDistanceGameUnits <= touchDistance;
+        const bool contactInsidePocket = input.stablePocketTouchContact && input.gripToPocketDistanceGameUnits <= pocketRadius;
+        if (!inTouchRange && !contactInsidePocket) {
+            decision.reason = "pullCatchSeatAwaitingTouch";
+            return decision;
+        }
+
+        if (input.capturePhase != AcquisitionPhase::TouchHeld) {
+            decision.reason = "pullCatchSeatAlreadyConverging";
+            return decision;
+        }
+
+        if (input.pivotAuthorityPositionOnly) {
+            decision.reason = "pullCatchSeatPositionOnly";
+            return decision;
+        }
+        if (!input.pivotAuthorityNormalTrusted) {
+            decision.reason = "pullCatchSeatNormalUntrusted";
+            return decision;
+        }
+
+        constexpr float kMaxPalmFacingNormalDot = -0.10f;
+        if (decision.normalDotPalm > kMaxPalmFacingNormalDot) {
+            decision.reason = "pullCatchSeatNormalWrongSide";
+            return decision;
+        }
+
+        decision.allowImmediateTouchHeld = true;
+        decision.requireSettledVisualRelation = false;
+        decision.reason = "pullCatchSeatSafe";
+        return decision;
+    }
+
+    inline float computeAcquisitionVisualEnvelopeGameUnits(float touchDistanceGameUnits, float nearConvergeDistanceGameUnits, float configuredVisualStartDistanceGameUnits)
+    {
+        const float touchDistance = (std::max)(0.1f, std::isfinite(touchDistanceGameUnits) ? touchDistanceGameUnits : 4.0f);
+        const float nearDistance = (std::max)(touchDistance, std::isfinite(nearConvergeDistanceGameUnits) ? nearConvergeDistanceGameUnits : touchDistance);
+        const float configuredDistance =
+            (std::isfinite(configuredVisualStartDistanceGameUnits) && configuredVisualStartDistanceGameUnits > 0.0f) ?
+                configuredVisualStartDistanceGameUnits :
+                touchDistance;
+        return std::clamp((std::max)(touchDistance, configuredDistance), touchDistance, nearDistance);
+    }
+
+    struct ConvergencePromotionInput
+    {
+        bool hasGrabBody = false;
+        bool heldBodyColliding = false;
+        float gripErrorGameUnits = std::numeric_limits<float>::max();
+        float previousGripErrorGameUnits = std::numeric_limits<float>::max();
+        float deltaSeconds = 0.0f;
+        float elapsedSeconds = 0.0f;
+        float maxTimeSeconds = 0.0f;
+        float touchDistanceGameUnits = 4.0f;
+        float pocketRadiusGameUnits = 9.0f;
+        int stableInsidePocketFrames = 0;
+        int requiredStableInsidePocketFrames = 3;
+        float maxSeparatingSpeedGameUnitsPerSecond = 40.0f;
+    };
+
+    struct ConvergencePromotionDecision
+    {
+        bool reachedTouchRange = false;
+        bool insidePocket = false;
+        bool stableThisFrame = false;
+        bool timedOutInsidePocket = false;
+        int nextStableInsidePocketFrames = 0;
+        float separatingSpeedGameUnitsPerSecond = 0.0f;
+        const char* timeoutBlockReason = "none";
+    };
+
+    inline ConvergencePromotionDecision evaluateConvergencePromotion(const ConvergencePromotionInput& input)
+    {
+        ConvergencePromotionDecision decision{};
+        const float touchDistance = (std::max)(0.1f, std::isfinite(input.touchDistanceGameUnits) ? input.touchDistanceGameUnits : 4.0f);
+        const float pocketRadius = (std::max)(touchDistance, std::isfinite(input.pocketRadiusGameUnits) ? input.pocketRadiusGameUnits : 9.0f);
+        const float gripError =
+            std::isfinite(input.gripErrorGameUnits) ? input.gripErrorGameUnits : std::numeric_limits<float>::max();
+
+        decision.reachedTouchRange = input.hasGrabBody && gripError <= touchDistance;
+        decision.insidePocket = input.hasGrabBody && gripError <= pocketRadius;
+
+        const float deltaSeconds = (std::max)(0.0001f, std::isfinite(input.deltaSeconds) ? input.deltaSeconds : 0.0001f);
+        if (std::isfinite(input.previousGripErrorGameUnits)) {
+            decision.separatingSpeedGameUnitsPerSecond = (gripError - input.previousGripErrorGameUnits) / deltaSeconds;
+        }
+
+        const float maxSeparatingSpeed =
+            (std::max)(0.0f, std::isfinite(input.maxSeparatingSpeedGameUnitsPerSecond) ? input.maxSeparatingSpeedGameUnitsPerSecond : 40.0f);
+        decision.stableThisFrame =
+            decision.insidePocket &&
+            (input.heldBodyColliding ||
+                decision.reachedTouchRange ||
+                !std::isfinite(input.previousGripErrorGameUnits) ||
+                decision.separatingSpeedGameUnitsPerSecond <= maxSeparatingSpeed);
+
+        decision.nextStableInsidePocketFrames =
+            decision.stableThisFrame ? (std::max)(0, input.stableInsidePocketFrames) + 1 : 0;
+
+        const int requiredStableFrames = (std::max)(1, input.requiredStableInsidePocketFrames);
+        const bool timeoutElapsed =
+            input.maxTimeSeconds > 0.0f &&
+            std::isfinite(input.maxTimeSeconds) &&
+            std::isfinite(input.elapsedSeconds) &&
+            input.elapsedSeconds >= input.maxTimeSeconds;
+        decision.timedOutInsidePocket =
+            timeoutElapsed &&
+            decision.insidePocket &&
+            decision.nextStableInsidePocketFrames >= requiredStableFrames;
+
+        if (!timeoutElapsed) {
+            decision.timeoutBlockReason = "waitingForTimeout";
+        } else if (!decision.insidePocket) {
+            decision.timeoutBlockReason = "outsidePocket";
+        } else if (decision.nextStableInsidePocketFrames < requiredStableFrames) {
+            decision.timeoutBlockReason = "waitingForStablePocket";
+        } else {
+            decision.timeoutBlockReason = "promote";
+        }
+
+        return decision;
+    }
+
+    inline RE::NiTransform makeBodyTargetWithLocalGripAtPocket(RE::NiTransform targetBodyWorld,
+        const RE::NiPoint3& gripCenterBodyLocal,
+        const RE::NiPoint3& pocketCenterWorld)
+    {
+        const RE::NiPoint3 gripOffsetWorld = transform_math::localVectorToWorld(targetBodyWorld, gripCenterBodyLocal);
+        targetBodyWorld.translate = pocketCenterWorld - gripOffsetWorld;
+        return targetBodyWorld;
+    }
+
+    inline RE::NiTransform deriveNodeTargetFromBodyTarget(const RE::NiTransform& targetBodyWorld, const RE::NiTransform& bodyLocal)
+    {
+        return transform_math::composeTransforms(targetBodyWorld, transform_math::invertTransform(bodyLocal));
+    }
+}

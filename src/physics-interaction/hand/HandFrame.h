@@ -1,0 +1,228 @@
+#pragma once
+
+/*
+ * Hand frame helpers are grouped here because handspace convention, palm transform, and pointing direction define the same coordinate authority.
+ */
+
+
+// ---- HandspaceConvention.h ----
+
+namespace rock::handspace_convention
+{
+    /*
+     * ROCK root-flattened game hand frames use the active authored handspace convention:
+     * authored X = fingers, authored Y = palm depth, authored Z = signed cross-palm.
+     * The resolved game bone transform already carries handedness, so left/right
+     * conversion uses the same X/Y/-Z basis and does not apply an extra mirror.
+     * Authored +Z is the hand's local cross-palm axis; its anatomical direction
+     * can be thumbward on one hand and pinkyward on the other.
+     */
+    template <class Vector>
+    inline Vector makeVector(float x, float y, float z)
+    {
+        Vector result{};
+        result.x = x;
+        result.y = y;
+        result.z = z;
+        return result;
+    }
+
+    template <class Vector>
+    inline Vector authoredToRaw(Vector value)
+    {
+        return makeVector<Vector>(value.x, value.y, -value.z);
+    }
+
+    template <class Vector>
+    inline Vector authoredToRawForHand(Vector value, bool isLeft)
+    {
+        (void)isLeft;
+        return authoredToRaw(value);
+    }
+}
+
+// ---- PointingDirectionMath.h ----
+
+namespace rock::pointing_direction_math
+{
+    /*
+     * ROCK keeps the legacy pointing vector independent from palm-facing
+     * behavior. Object selection now uses fixed-angle selection directions.
+     */
+    template <class Vector>
+    inline Vector applyFarGrabNormalReversal(Vector direction, bool reverse)
+    {
+        if (reverse) {
+            direction.x *= -1.0f;
+            direction.y *= -1.0f;
+            direction.z *= -1.0f;
+        }
+
+        return direction;
+    }
+}
+
+// ---- PalmTransform.h ----
+
+#include <cmath>
+
+#include "RockConfig.h"
+#include "physics-interaction/hand/HandColliderTypes.h"
+#include "RE/NetImmerse/NiPoint.h"
+#include "RE/NetImmerse/NiTransform.h"
+
+namespace rock
+{
+    inline RE::NiPoint3 authoredHandspaceToRawHandspace(RE::NiPoint3 value)
+    {
+        return handspace_convention::authoredToRaw(value);
+    }
+
+    inline RE::NiPoint3 authoredHandspaceToRawHandspaceForHand(RE::NiPoint3 value, bool isLeft)
+    {
+        return handspace_convention::authoredToRawForHand(value, isLeft);
+    }
+
+    inline RE::NiPoint3 normalizeDirection(RE::NiPoint3 value)
+    {
+        const float lengthSquared = value.x * value.x + value.y * value.y + value.z * value.z;
+        if (lengthSquared <= 1.0e-8f) {
+            return RE::NiPoint3(0.0f, 0.0f, 1.0f);
+        }
+
+        const float inverseLength = 1.0f / std::sqrt(lengthSquared);
+        value.x *= inverseLength;
+        value.y *= inverseLength;
+        value.z *= inverseLength;
+        return value;
+    }
+
+    inline RE::NiPoint3 transformHandspaceLocalToWorld(const RE::NiTransform& handTransform, const RE::NiPoint3& localVector)
+    {
+        // FO4VR binary verification: NiAVObject world updates call the Bethesda transform
+        // compose helper at 0x1401A8D60, which applies child-local vectors through the
+        // parent's column basis. CommonLib's direct matrix-vector operator exposes the
+        // inverse direction for this use, so handspace offsets and directions must use
+        // the transposed matrix to match engine-authored nodes and ROCK's NiTransform path.
+        return handTransform.rotate.Transpose() * localVector;
+    }
+
+    inline RE::NiPoint3 transformHandspacePosition(const RE::NiTransform& handTransform, const RE::NiPoint3& localPosition, bool isLeft)
+    {
+        return handTransform.translate + transformHandspaceLocalToWorld(handTransform, authoredHandspaceToRawHandspaceForHand(localPosition, isLeft) * handTransform.scale);
+    }
+
+    inline RE::NiPoint3 transformHandspaceDirection(const RE::NiTransform& handTransform, const RE::NiPoint3& localDirection, bool isLeft)
+    {
+        return normalizeDirection(transformHandspaceLocalToWorld(handTransform, authoredHandspaceToRawHandspaceForHand(localDirection, isLeft)));
+    }
+
+    /*
+     * Legacy authored palm pivot retained for API palm-position compatibility,
+     * telemetry/debug tuning, two-handed grip, and non-dynamic helper paths.
+     * Dynamic object grabs use the generated hidden proxy authority frame.
+     */
+    inline RE::NiPoint3 computeGrabLegacyPalmPivotAHandspacePosition(bool isLeft)
+    {
+        return isLeft ? g_rockConfig.rockLeftGrabLegacyPalmPivotAHandspace : g_rockConfig.rockRightGrabLegacyPalmPivotAHandspace;
+    }
+
+    inline RE::NiPoint3 computeGrabLegacyPalmPivotAWorldFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
+    {
+        return transformHandspacePosition(handTransform, computeGrabLegacyPalmPivotAHandspacePosition(isLeft), isLeft);
+    }
+
+    inline RE::NiPoint3 computePalmNormalFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
+    {
+        /*
+         * Palm-facing grab/contact behavior uses the authored palm-depth normal.
+         * The live
+         * ROCK root-flattened game hand frame already carries left/right handedness,
+         * so applying a separate authored Z mirror sends palm evidence across the hand.
+         */
+        const RE::NiPoint3 authoredNormal = g_rockConfig.rockPalmNormalHandspace;
+        RE::NiPoint3 normal = transformHandspaceDirection(handTransform, authoredNormal, isLeft);
+        if (g_rockConfig.rockReversePalmNormal) {
+            normal.x *= -1.0f;
+            normal.y *= -1.0f;
+            normal.z *= -1.0f;
+        }
+        return normal;
+    }
+
+    inline RE::NiPoint3 computePointingVectorFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
+    {
+        return pointing_direction_math::applyFarGrabNormalReversal(
+            transformHandspaceDirection(handTransform, g_rockConfig.rockPointingVectorHandspace, isLeft), g_rockConfig.rockReverseFarGrabNormal);
+    }
+
+    inline RE::NiPoint3 computeSelectionDirectionFromHandBasis(const RE::NiTransform& handTransform, int angleDegrees, bool isLeft)
+    {
+        return transformHandspaceDirection(
+            handTransform,
+            selection_query_policy::selectionAimHandspaceVectorFromAngleDegrees<RE::NiPoint3>(angleDegrees),
+            isLeft);
+    }
+
+    inline RE::NiPoint3 computeCloseSelectionDirectionFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
+    {
+        return computeSelectionDirectionFromHandBasis(handTransform, g_rockConfig.rockCloseSelectionAngleDegrees, isLeft);
+    }
+
+    inline RE::NiPoint3 computeFarSelectionDirectionFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
+    {
+        return computeSelectionDirectionFromHandBasis(handTransform, g_rockConfig.rockFarSelectionAngleDegrees, isLeft);
+    }
+
+    inline RE::NiPoint3 computePinchDetectionDirectionFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
+    {
+        return transformHandspaceDirection(handTransform, g_rockConfig.rockGrabPinchDetectionDirectionHandspace, isLeft);
+    }
+
+    inline RE::NiPoint3 computeGrabAuthorityProxyOffsetLocalGame(bool isLeft)
+    {
+        return isLeft ? g_rockConfig.rockLeftGrabAuthorityProxyOffsetGameUnits : g_rockConfig.rockRightGrabAuthorityProxyOffsetGameUnits;
+    }
+
+    inline RE::NiPoint3 generatedProxyLocalVectorToWorld(const RE::NiTransform& proxyFrameWorld, const RE::NiPoint3& localVector)
+    {
+        return hand_bone_collider_geometry_math::generatedColliderLocalVectorToWorld(proxyFrameWorld, localVector);
+    }
+
+    inline RE::NiPoint3 generatedProxyLocalPointToWorld(const RE::NiTransform& proxyFrameWorld, const RE::NiPoint3& localPoint)
+    {
+        return proxyFrameWorld.translate + generatedProxyLocalVectorToWorld(proxyFrameWorld, localPoint);
+    }
+
+    inline RE::NiTransform makeGeneratedProxyAuthorityRelationFrame(const RE::NiTransform& proxyFrameWorld)
+    {
+        /*
+         * The hidden proxy body itself consumes the generated palm frame exactly
+         * as produced by the collider pipeline, with physical axes stored as
+         * columns. Grab relation math uses TransformMath's row-axis convention,
+         * so object/BODY relations and pocket orientation need this row-view of
+         * the same generated/proxy local space. Do not use this adapter for
+         * writing the physical proxy body transform.
+         */
+        RE::NiTransform result = proxyFrameWorld;
+        result.rotate = hand_bone_collider_geometry_math::transposeStoredRotation(proxyFrameWorld.rotate);
+        return result;
+    }
+
+    inline RE::NiTransform applyGrabAuthorityProxyLocalOffsetToFrame(const RE::NiTransform& proxyFrameWorld, bool isLeft)
+    {
+        /*
+         * This moves only the hidden grab authority proxy/seat point. The real
+         * generated palm/finger colliders remain bound to the flattened bone tree
+         * so contact evidence and collision behavior are not retuned by visual
+         * hand placement experiments.
+         */
+        RE::NiTransform result = proxyFrameWorld;
+        const RE::NiPoint3 localOffset = computeGrabAuthorityProxyOffsetLocalGame(isLeft);
+        if (std::isfinite(localOffset.x) && std::isfinite(localOffset.y) && std::isfinite(localOffset.z)) {
+            result.translate = result.translate + generatedProxyLocalVectorToWorld(proxyFrameWorld, localOffset);
+        }
+        return result;
+    }
+
+}

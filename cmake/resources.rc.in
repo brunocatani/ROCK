@@ -1,0 +1,3 @@
+#include "../src/resources.h"
+
+IDR_ROCK_INI				RCDATA "@ROOT_DIR@/data/config/ROCK.ini"

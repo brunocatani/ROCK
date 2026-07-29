@@ -1,0 +1,50 @@
+// Template for custom CMake user presets.
+// Set "COPY_PLUGIN_BASE_PATH" to your mod folder in MO2 or your Fallout 4 VR Data folder.
+// Support multiple paths separated by semicolons (i.e. "<path1>;<path2>").
+// Leave COMMON_LIB_F4VR_PATH empty to use the canonical workspace CommonLibF4VR.
+// Set it only when intentionally overriding that dependency.
+// Rename the file to 'CMakeUserPresets.json' (it is in .gitignore to keep it local to you).
+// Remove this comment block.
+// Fast plugin iteration copies ROCK.dll/ROCK.pdb to COPY_PLUGIN_BASE_PATH/F4SE/Plugins
+// without building test binaries or release archives.
+// Run:
+// cmake --preset custom-fast
+// cmake --build build-fast --config Release --target ROCK -- /m:1 /p:CL_MPCount=2
+
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "custom",
+      "cacheVariables": {
+        "POST_BUILD_COPY_PLUGIN": false,
+        "COPY_PLUGIN_BASE_PATH": "[MO2 modlist folder]/mods/[my mod] OR [Fallout 4 VR game path]/Data",
+        "COMMON_LIB_F4VR_PATH": ""
+      },
+      "inherits": "default"
+    },
+    {
+      "name": "custom-fast",
+      "cacheVariables": {
+        "POST_BUILD_COPY_PLUGIN": true,
+        "COPY_PLUGIN_BASE_PATH": "[MO2 modlist folder]/mods/[my mod] OR [Fallout 4 VR game path]/Data",
+        "COMMON_LIB_F4VR_PATH": ""
+      },
+      "inherits": "fast"
+    },
+    {
+      "name": "custom-tests",
+      "cacheVariables": {
+        "COMMON_LIB_F4VR_PATH": ""
+      },
+      "inherits": "tests"
+    },
+    {
+      "name": "custom-release",
+      "cacheVariables": {
+        "COMMON_LIB_F4VR_PATH": ""
+      },
+      "inherits": "release"
+    }
+  ]
+}

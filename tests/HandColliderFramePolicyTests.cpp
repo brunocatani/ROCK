@@ -1,0 +1,380 @@
+#include "physics-interaction/hand/HandColliderTypes.h"
+#include "physics-interaction/hand/HandFrame.h"
+#include "physics-interaction/TransformMath.h"
+
+#include "RE/NetImmerse/NiMatrix3.h"
+#include "RE/NetImmerse/NiPoint.h"
+#include "RE/NetImmerse/NiTransform.h"
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstdio>
+#include <string>
+#include <vector>
+
+namespace
+{
+    constexpr float kEpsilon = 0.001f;
+
+    bool expectNear(const char* label, float actual, float expected, float epsilon = kEpsilon)
+    {
+        const float delta = std::fabs(actual - expected);
+        if (delta <= epsilon) {
+            return true;
+        }
+
+        std::printf("%s expected %.5f got %.5f\n", label, expected, actual);
+        return false;
+    }
+
+    bool expectVectorNear(const char* label, const RE::NiPoint3& actual, const RE::NiPoint3& expected)
+    {
+        bool ok = true;
+        ok &= expectNear((std::string(label) + ".x").c_str(), actual.x, expected.x);
+        ok &= expectNear((std::string(label) + ".y").c_str(), actual.y, expected.y);
+        ok &= expectNear((std::string(label) + ".z").c_str(), actual.z, expected.z);
+        return ok;
+    }
+
+    bool expectMatrixNear(const char* label, const RE::NiMatrix3& actual, const RE::NiMatrix3& expected)
+    {
+        bool ok = true;
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                ok &= expectNear(
+                    (std::string(label) + "[" + std::to_string(row) + "][" + std::to_string(column) + "]").c_str(),
+                    actual.entry[row][column],
+                    expected.entry[row][column]);
+            }
+        }
+        return ok;
+    }
+
+    bool expectTransformNear(const char* label, const RE::NiTransform& actual, const RE::NiTransform& expected)
+    {
+        bool ok = true;
+        ok &= expectVectorNear((std::string(label) + ".translate").c_str(), actual.translate, expected.translate);
+        ok &= expectMatrixNear((std::string(label) + ".rotate").c_str(), actual.rotate, expected.rotate);
+        return ok;
+    }
+
+    float dot(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs)
+    {
+        return lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z;
+    }
+
+    RE::NiPoint3 cross(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs)
+    {
+        return RE::NiPoint3{
+            lhs.y * rhs.z - lhs.z * rhs.y,
+            lhs.z * rhs.x - lhs.x * rhs.z,
+            lhs.x * rhs.y - lhs.y * rhs.x,
+        };
+    }
+
+    float length(const RE::NiPoint3& value)
+    {
+        return std::sqrt(dot(value, value));
+    }
+
+    RE::NiPoint3 normalize(const RE::NiPoint3& value)
+    {
+        const float len = length(value);
+        if (len <= 0.000001f) {
+            return RE::NiPoint3{};
+        }
+        return RE::NiPoint3{ value.x / len, value.y / len, value.z / len };
+    }
+
+    bool expectUnitAxes(const char* label, const RE::NiPoint3& xAxis, const RE::NiPoint3& yAxis, const RE::NiPoint3& zAxis)
+    {
+        bool ok = true;
+        ok &= expectNear((std::string(label) + " x length").c_str(), length(xAxis), 1.0f);
+        ok &= expectNear((std::string(label) + " y length").c_str(), length(yAxis), 1.0f);
+        ok &= expectNear((std::string(label) + " z length").c_str(), length(zAxis), 1.0f);
+        ok &= expectNear((std::string(label) + " x dot y").c_str(), dot(xAxis, yAxis), 0.0f);
+        ok &= expectNear((std::string(label) + " y dot z").c_str(), dot(yAxis, zAxis), 0.0f);
+        ok &= expectNear((std::string(label) + " z dot x").c_str(), dot(zAxis, xAxis), 0.0f);
+        return ok;
+    }
+
+    RE::NiTransform identityTransform()
+    {
+        return rock::transform_math::makeIdentityTransform<RE::NiTransform>();
+    }
+
+    RE::NiPoint3 rotateLocal(const RE::NiMatrix3& matrix, const RE::NiPoint3& localAxis)
+    {
+        return rock::transform_math::rotateLocalVectorToWorld(matrix, localAxis);
+    }
+
+    RE::NiPoint3 matrixRow(const RE::NiMatrix3& matrix, int row)
+    {
+        return RE::NiPoint3{ matrix.entry[row][0], matrix.entry[row][1], matrix.entry[row][2] };
+    }
+
+    RE::NiPoint3 matrixColumn(const RE::NiMatrix3& matrix, int column)
+    {
+        return RE::NiPoint3{ matrix.entry[0][column], matrix.entry[1][column], matrix.entry[2][column] };
+    }
+
+    float maxAbsAxis(const std::vector<RE::NiPoint3>& points, char axis)
+    {
+        float result = 0.0f;
+        for (const auto& point : points) {
+            const float value = axis == 'x' ? point.x : axis == 'y' ? point.y : point.z;
+            result = std::max(result, std::fabs(value));
+        }
+        return result;
+    }
+}
+
+int main()
+{
+    bool ok = true;
+
+    {
+        ok &= expectVectorNear("authored palm depth maps to raw palm depth",
+            rock::authoredHandspaceToRawHandspace(RE::NiPoint3{ 0.0f, 1.0f, 0.0f }),
+            RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
+        ok &= expectVectorNear("authored signed cross-palm maps to raw signed cross-palm",
+            rock::authoredHandspaceToRawHandspace(RE::NiPoint3{ 0.0f, 0.0f, 1.0f }),
+            RE::NiPoint3{ 0.0f, 0.0f, -1.0f });
+        ok &= expectVectorNear("migrated palm normal preserves old raw direction",
+            rock::authoredHandspaceToRawHandspace(RE::NiPoint3{ 0.0f, 1.0f, 0.0f }),
+            RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
+        ok &= expectVectorNear("migrated right pivot preserves old raw point",
+            rock::authoredHandspaceToRawHandspace(RE::NiPoint3{ 6.0f, -2.0f, 0.2f }),
+            RE::NiPoint3{ 6.0f, -2.0f, -0.2f });
+        ok &= expectVectorNear("migrated left pivot preserves old raw point",
+            rock::authoredHandspaceToRawHandspace(RE::NiPoint3{ 6.0f, -2.0f, -0.2f }),
+            RE::NiPoint3{ 6.0f, -2.0f, 0.2f });
+        ok &= expectVectorNear("default palm normal uses authored palm depth",
+            rock::g_rockConfig.rockPalmNormalHandspace,
+            RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
+        ok &= expectVectorNear("default pointing vector uses authored palm depth",
+            rock::g_rockConfig.rockPointingVectorHandspace,
+            RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
+        ok &= expectNear("default close selection angle is -Y", static_cast<float>(rock::g_rockConfig.rockCloseSelectionAngleDegrees), 0.0f);
+        ok &= expectNear("default far selection angle is -Y", static_cast<float>(rock::g_rockConfig.rockFarSelectionAngleDegrees), 0.0f);
+        ok &= expectVectorNear("default right pivot uses migrated handspace",
+            rock::g_rockConfig.rockRightGrabLegacyPalmPivotAHandspace,
+            RE::NiPoint3{ 6.0f, -2.0f, 0.2f });
+        ok &= expectVectorNear("default left pivot uses migrated handspace",
+            rock::g_rockConfig.rockLeftGrabLegacyPalmPivotAHandspace,
+            RE::NiPoint3{ 6.0f, -2.0f, -0.2f });
+    }
+
+    {
+        ok &= expectVectorNear("selection angle 0 points -Y",
+            rock::selection_query_policy::selectionAimHandspaceVectorFromAngleDegrees<RE::NiPoint3>(0),
+            RE::NiPoint3{ 0.0f, -1.0f, 0.0f });
+        ok &= expectVectorNear("selection angle 45 blends +X and -Y",
+            rock::selection_query_policy::selectionAimHandspaceVectorFromAngleDegrees<RE::NiPoint3>(45),
+            normalize(RE::NiPoint3{ 1.0f, -1.0f, 0.0f }));
+        ok &= expectVectorNear("selection angle 90 points +X",
+            rock::selection_query_policy::selectionAimHandspaceVectorFromAngleDegrees<RE::NiPoint3>(90),
+            RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
+        ok &= expectVectorNear("invalid selection angle falls back to -Y",
+            rock::selection_query_policy::selectionAimHandspaceVectorFromAngleDegrees<RE::NiPoint3>(30),
+            RE::NiPoint3{ 0.0f, -1.0f, 0.0f });
+
+        const auto previousCloseAngle = rock::g_rockConfig.rockCloseSelectionAngleDegrees;
+        const auto previousFarAngle = rock::g_rockConfig.rockFarSelectionAngleDegrees;
+        rock::g_rockConfig.rockCloseSelectionAngleDegrees = 20;
+        rock::g_rockConfig.rockFarSelectionAngleDegrees = 75;
+        const auto identity = identityTransform();
+        ok &= expectVectorNear("close selection angle can differ",
+            rock::computeCloseSelectionDirectionFromHandBasis(identity, false),
+            rock::selection_query_policy::selectionAimHandspaceVectorFromAngleDegrees<RE::NiPoint3>(20));
+        ok &= expectVectorNear("far selection angle can differ",
+            rock::computeFarSelectionDirectionFromHandBasis(identity, false),
+            rock::selection_query_policy::selectionAimHandspaceVectorFromAngleDegrees<RE::NiPoint3>(75));
+        rock::g_rockConfig.rockCloseSelectionAngleDegrees = previousCloseAngle;
+        rock::g_rockConfig.rockFarSelectionAngleDegrees = previousFarAngle;
+    }
+
+    {
+        const RE::NiPoint3 xAxis = normalize(RE::NiPoint3{ 0.36f, -0.48f, 0.80f });
+        const RE::NiPoint3 yAxis = normalize(RE::NiPoint3{ -0.80f, 0.36f, 0.48f });
+        const RE::NiPoint3 zAxis = normalize(cross(xAxis, yAxis));
+        const RE::NiMatrix3 matrix =
+            rock::hand_bone_collider_geometry_math::matrixFromAxes<RE::NiMatrix3>(xAxis, yAxis, zAxis);
+
+        ok &= expectVectorNear("collider matrix column X", matrixColumn(matrix, 0), xAxis);
+        ok &= expectVectorNear("collider matrix column Y", matrixColumn(matrix, 1), yAxis);
+        ok &= expectVectorNear("collider matrix column Z", matrixColumn(matrix, 2), zAxis);
+
+        RE::NiTransform colliderFrame = identityTransform();
+        colliderFrame.rotate = matrix;
+        const RE::NiTransform grabFrame =
+            rock::hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(colliderFrame);
+        ok &= expectVectorNear("grab frame column X", matrixColumn(grabFrame.rotate, 0), xAxis);
+        ok &= expectVectorNear("grab frame column Y", matrixColumn(grabFrame.rotate, 1), yAxis);
+        ok &= expectVectorNear("grab frame column Z", matrixColumn(grabFrame.rotate, 2), zAxis);
+    }
+
+    {
+        RE::NiTransform hand = identityTransform();
+        hand.translate = RE::NiPoint3{ 10.0f, -5.0f, 2.0f };
+
+        std::array<RE::NiPoint3, 5> fingerBases{
+            RE::NiPoint3{ 18.0f, -7.0f, 2.0f },
+            RE::NiPoint3{ 20.0f, -5.0f, 2.0f },
+            RE::NiPoint3{ 20.0f, -3.0f, 2.0f },
+            RE::NiPoint3{ 18.0f, -1.0f, 2.0f },
+            RE::NiPoint3{ 16.0f, 1.0f, 2.0f },
+        };
+        const RE::NiPoint3 crossPalmDirection{ 0.0f, 0.0f, 1.0f };
+
+        const auto palm =
+            rock::hand_bone_collider_geometry_math::buildPalmAnchorFrame(hand, fingerBases, crossPalmDirection, 0.75f);
+        if (!palm.valid) {
+            std::printf("palm anchor frame was not valid\n");
+            ok = false;
+        } else {
+            ok &= expectUnitAxes("palm anchor", palm.xAxis, palm.yAxis, palm.zAxis);
+            ok &= expectVectorNear("palm depth axis is local Y", palm.palmDepthAxis, palm.yAxis);
+            ok &= expectVectorNear("cross-palm axis is local Z", palm.crossPalmAxis, palm.zAxis);
+            ok &= expectVectorNear("palm collider column X", matrixColumn(palm.transform.rotate, 0), palm.xAxis);
+            ok &= expectVectorNear("palm collider column Y", matrixColumn(palm.transform.rotate, 1), palm.yAxis);
+            ok &= expectVectorNear("palm collider column Z", matrixColumn(palm.transform.rotate, 2), palm.zAxis);
+
+            const RE::NiTransform grabPalm =
+                rock::hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palm.transform);
+            ok &= expectVectorNear("palm grab column X", matrixColumn(grabPalm.rotate, 0), palm.xAxis);
+            ok &= expectVectorNear("palm grab column Y", matrixColumn(grabPalm.rotate, 1), palm.yAxis);
+            ok &= expectVectorNear("palm grab column Z", matrixColumn(grabPalm.rotate, 2), palm.zAxis);
+        }
+    }
+
+    {
+        const auto palmBox = rock::hand_bone_collider_geometry_math::makePalmBoxHullPoints<RE::NiPoint3>(10.0f, 2.0f, 6.0f);
+        ok &= expectNear("palm box half X length", maxAbsAxis(palmBox, 'x'), 5.0f);
+        ok &= expectNear("palm box half Y depth", maxAbsAxis(palmBox, 'y'), 1.0f);
+        ok &= expectNear("palm box half Z cross-palm width", maxAbsAxis(palmBox, 'z'), 3.0f);
+    }
+
+    {
+        const RE::NiPoint3 xAxis{ 0.0f, 1.0f, 0.0f };
+        const RE::NiPoint3 yAxis{ 0.0f, 0.0f, 1.0f };
+        const RE::NiPoint3 zAxis{ 1.0f, 0.0f, 0.0f };
+        RE::NiTransform proxyFrame = identityTransform();
+        proxyFrame.translate = RE::NiPoint3{ 10.0f, 20.0f, 30.0f };
+        proxyFrame.rotate = rock::hand_bone_collider_geometry_math::matrixFromAxes<RE::NiMatrix3>(xAxis, yAxis, zAxis);
+
+        const RE::NiPoint3 generatedLocalYWorld =
+            rock::hand_bone_collider_geometry_math::generatedColliderLocalVectorToWorld(proxyFrame, RE::NiPoint3{ 0.0f, -2.0f, 0.0f });
+        ok &= expectVectorNear("generated collider local offset uses stored column Y", generatedLocalYWorld, RE::NiPoint3{ 0.0f, 0.0f, -2.0f });
+        ok &= expectVectorNear("generated collider world point returns stored column local Y",
+            rock::hand_bone_collider_geometry_math::generatedColliderWorldPointToLocal(proxyFrame, proxyFrame.translate + generatedLocalYWorld),
+            RE::NiPoint3{ 0.0f, -2.0f, 0.0f });
+
+        const RE::NiTransform relationFrame = rock::makeGeneratedProxyAuthorityRelationFrame(proxyFrame);
+        ok &= expectVectorNear("proxy relation row view preserves generated local Y",
+            rock::transform_math::localVectorToWorld(relationFrame, RE::NiPoint3{ 0.0f, -2.0f, 0.0f }),
+            generatedLocalYWorld);
+
+        rock::g_rockConfig.rockRightGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3{ 0.0f, -2.0f, 0.0f };
+        const RE::NiTransform rightOffset = rock::applyGrabAuthorityProxyLocalOffsetToFrame(proxyFrame, false);
+        ok &= expectVectorNear("right proxy offset uses stored column Y", rightOffset.translate, RE::NiPoint3{ 10.0f, 20.0f, 28.0f });
+
+        rock::g_rockConfig.rockLeftGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3{ 0.0f, -3.0f, 0.0f };
+        const RE::NiTransform leftOffset = rock::applyGrabAuthorityProxyLocalOffsetToFrame(proxyFrame, true);
+        ok &= expectVectorNear("left proxy offset uses stored column Y", leftOffset.translate, RE::NiPoint3{ 10.0f, 20.0f, 27.0f });
+    }
+
+    {
+        RE::NiTransform start = identityTransform();
+        RE::NiTransform end = identityTransform();
+        start.translate = RE::NiPoint3{ -1.0f, 2.0f, 3.0f };
+        end.translate = RE::NiPoint3{ 7.0f, 2.0f, 3.0f };
+
+        rock::hand_bone_collider_geometry_math::BoneColliderFrameInput<RE::NiTransform, RE::NiPoint3> input{};
+        input.start = start;
+        input.end = end;
+        input.radius = 0.5f;
+        input.convexRadius = 0.1f;
+
+        const auto segment = rock::hand_bone_collider_geometry_math::buildSegmentColliderFrame(input);
+        if (!segment.valid) {
+            std::printf("segment collider frame was not valid\n");
+            ok = false;
+        } else {
+            ok &= expectVectorNear("segment collider column X", matrixColumn(segment.transform.rotate, 0), segment.xAxis);
+            ok &= expectVectorNear("segment collider column Y", matrixColumn(segment.transform.rotate, 1), segment.yAxis);
+            ok &= expectVectorNear("segment collider column Z", matrixColumn(segment.transform.rotate, 2), segment.zAxis);
+
+            const RE::NiTransform grabSegment =
+                rock::hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(segment.transform);
+            ok &= expectVectorNear("segment grab column X", matrixColumn(grabSegment.rotate, 0), segment.xAxis);
+            ok &= expectVectorNear("segment grab column Y", matrixColumn(grabSegment.rotate, 1), segment.yAxis);
+            ok &= expectVectorNear("segment grab column Z", matrixColumn(grabSegment.rotate, 2), segment.zAxis);
+        }
+    }
+
+    {
+        /*
+         * Tip-segment extrapolation must follow the distal bone's own long
+         * axis (the rendered phalanx flexion), not continue the middle→distal
+         * segment straight. Convention detection happens on the previous bone.
+         */
+        RE::NiTransform middle = identityTransform();
+        RE::NiTransform distal = identityTransform();
+        middle.translate = RE::NiPoint3{ 0.0f, 0.0f, 0.0f };
+        distal.translate = RE::NiPoint3{ 4.0f, 0.0f, 0.0f };
+
+        // Distal joint curled 60 degrees: with the stored-rotation row
+        // convention the builder's local→world helper uses, this matrix maps
+        // local +X to (cos60, +sin60, 0) in world — the bent phalanx axis.
+        const float curl = 60.0f * 3.14159265f / 180.0f;
+        const RE::NiPoint3 curledX{ std::cos(curl), -std::sin(curl), 0.0f };
+        const RE::NiPoint3 curledY{ std::sin(curl), std::cos(curl), 0.0f };
+        const RE::NiPoint3 bentAxisWorld{ std::cos(curl), std::sin(curl), 0.0f };
+        distal.rotate = rock::hand_bone_collider_geometry_math::matrixFromAxes<RE::NiMatrix3>(
+            curledX, curledY, RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
+
+        rock::hand_bone_collider_geometry_math::BoneColliderFrameInput<RE::NiTransform, RE::NiPoint3> input{};
+        input.previous = middle;
+        input.start = distal;
+        input.end = identityTransform();
+        input.radius = 0.5f;
+        input.convexRadius = 0.1f;
+        input.extrapolateFromPrevious = true;
+        input.extrapolateAlongStartBoneAxis = true;
+        input.extrapolatedLengthScale = 0.65f;
+
+        const auto bent = rock::hand_bone_collider_geometry_math::buildSegmentColliderFrame(input);
+        if (!bent.valid) {
+            std::printf("bone-axis tip extrapolation frame was not valid\n");
+            ok = false;
+        } else {
+            ok &= expectNear("bone-axis tip length keeps parent scale", bent.length, 4.0f * 0.65f);
+            ok &= expectVectorNear("bone-axis tip follows distal flexion", bent.xAxis, bentAxisWorld);
+            const RE::NiPoint3 expectedCenter{
+                4.0f + bentAxisWorld.x * 4.0f * 0.65f * 0.5f,
+                bentAxisWorld.y * 4.0f * 0.65f * 0.5f,
+                0.0f,
+            };
+            ok &= expectVectorNear("bone-axis tip center sits on the bent segment", bent.transform.translate, expectedCenter);
+        }
+
+        // A straight distal joint must reproduce the legacy straight
+        // continuation exactly.
+        input.start.rotate = identityTransform().rotate;
+        const auto straight = rock::hand_bone_collider_geometry_math::buildSegmentColliderFrame(input);
+        input.extrapolateAlongStartBoneAxis = false;
+        const auto legacy = rock::hand_bone_collider_geometry_math::buildSegmentColliderFrame(input);
+        if (!straight.valid || !legacy.valid) {
+            std::printf("straight tip extrapolation frames were not valid\n");
+            ok = false;
+        } else {
+            ok &= expectNear("straight tip length matches legacy", straight.length, legacy.length);
+            ok &= expectVectorNear("straight tip axis matches legacy", straight.xAxis, legacy.xAxis);
+            ok &= expectVectorNear("straight tip center matches legacy", straight.transform.translate, legacy.transform.translate);
+        }
+    }
+
+    return ok ? 0 : 1;
+}
