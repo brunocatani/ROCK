@@ -94,6 +94,7 @@ Start with `SDK/ROCK/docs/PublicApi.md` and `SDK/ROCK/examples/MinimalProviderCo
 
 ## Credits
 
+- **[Asciimov](https://github.com/1001Bits)** - for all the support, with code and testing that made this mod production ready.
 - **[rollingrock](https://github.com/rollingrock)** - Creator of FRIK (Fallout 4 VR Body)
 - **[arthurhub](https://github.com/ArthurHub) (L.H.Adonis)** - For work on FRIK, CommonLibF4VR, and F4VR-CommonFramework
 - **[HIGGS](https://www.nexusmods.com/skyrimspecialedition/mods/43930)** by FlyingParticle - The Skyrim VR mod whose architecture and approach inspired ROCK's original direction
