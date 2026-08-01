@@ -551,12 +551,6 @@ namespace rock
      * grab - the before/after pair a pose solver has to close. Reason strings
      * are static literals owned by the seat code; the frame never allocates.
      */
-    /*
-     * Outcome of the grab pose SOLVE (GrabPoseObjective.h) that replaced the
-     * stacked seat corrections (swing/roll/depth-stop/backstop). One record
-     * per seat commit; the capture writer freezes it so offline analysis can
-     * pair the seat ROCK produced with the pose the user approved.
-     */
     struct GrabSeatDiagnostics
     {
         // "closeGrab" | "pullCatch" | "forceGrab" | "unknown"
@@ -564,19 +558,15 @@ namespace rock
         const char* shapeClass = "none";
         float elongationRatio = 0.0f;
         float secondElongationRatio = 0.0f;
-        // "solved" when the pose solve ran; otherwise why it was skipped and
-        // the seed pose was kept (fail-closed, never a partial correction).
-        const char* solveReason = "notEvaluated";
-        float solveRotationDegrees = 0.0f;
-        float solveTranslationGameUnits = 0.0f;
-        int solveIterations = 0;
-        float solveObjectiveScore = 0.0f;
-        float solveTermTouch = 0.0f;
-        float solveTermPalmProx = 0.0f;
-        float solveTermOverPen = 0.0f;
-        float solveTermWrap = 0.0f;
-        float solveTermRodAxis = 0.0f;
-        float solveTermGirth = 0.0f;
+        float alignmentAngleDegrees = 0.0f;
+        const char* alignmentReason = "inactive";
+        float rollAngleDegrees = 0.0f;
+        const char* rollReason = "inactive";
+        float depthGameUnits = 0.0f;
+        float depthOffsetGameUnits = 0.0f;
+        const char* depthReason = "notEvaluated";
+        float penetrationBackstopGameUnits = 0.0f;
+        const char* penetrationBackstopReason = "inactive";
     };
 
     struct ImmutableGrabCaptureTelemetry
@@ -739,15 +729,6 @@ namespace rock
         ImmutableGrabCaptureTelemetry captureTelemetry{};
         std::vector<GrabLocalTriangle> localMeshTriangles;
         std::vector<GrabLocalTriangle> fingerPoseLocalMeshTriangles;
-        /*
-         * Space the cached mesh triangles are expressed in, relative to the
-         * object ROOT node, captured when the cache was built. The held node's
-         * world drifts against the root during a hold (ROCK's own visual lock
-         * moves it), so recomputing this relation later from live node worlds
-         * double-counts that drift - it must be frozen at cache-build time.
-         */
-        RE::NiTransform meshCacheNodeInObjectRoot{};
-        bool hasMeshCacheNodeInObjectRoot = false;
         RE::NiAVObject* heldNode = nullptr;
         GrabSeatDiagnostics seatDiagnostics{};
         RE::NiAVObject* gripSourceNode = nullptr;
@@ -902,8 +883,6 @@ namespace rock
             captureTelemetry.clear();
             localMeshTriangles.clear();
             fingerPoseLocalMeshTriangles.clear();
-            meshCacheNodeInObjectRoot = RE::NiTransform();
-            hasMeshCacheNodeInObjectRoot = false;
             heldNode = nullptr;
             seatDiagnostics = GrabSeatDiagnostics{};
             gripSourceNode = nullptr;

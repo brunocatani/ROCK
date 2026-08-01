@@ -517,19 +517,10 @@ namespace rock
         rockGrabNearConvergeDistanceGameUnits = 28.0f;
         rockGrabPocketDepthGameUnits = 7.0f;
         rockGrabPocketRadiusGameUnits = 9.0f;
-        rockGrabPoseSolverWeightTouch = 145.2505f;
-        rockGrabPoseSolverWeightPalmProx = 12.9162f;
-        rockGrabPoseSolverWeightOverPen = 2.7735f;
-        rockGrabPoseSolverWeightWrap = 1.5205f;
-        rockGrabPoseSolverWeightRodAxis = 14.9627f;
-        rockGrabPoseSolverWeightGirth = 1.0850f;
-        rockGrabPoseSolverLambdaTranslate = 0.15f;
-        rockGrabPoseSolverLambdaRotate = 6.0f;
-        rockGrabPoseSolverPalmSlackGameUnits = 2.5f;
-        rockGrabPoseSolverPenetrationLimitGameUnits = 1.5f;
-        rockGrabPoseSolverGirthWrappableRadiusGameUnits = 3.0f;
-        rockGrabPoseSolverBehindPalmFootprintRadiusGameUnits = 6.0f;
-        rockGrabPoseSolverBehindPalmToleranceGameUnits = 2.0f;
+        rockGrabSeatDepthMaxGameUnits = 30.0f;
+        rockGrabSeatDepthFootprintRadiusGameUnits = 10.0f;
+        rockGrabSeatPenetrationBackstopFootprintRadiusGameUnits = 6.0f;
+        rockGrabSeatDepthSkinGameUnits = 0.5f;
         rockGrabGripInsetGameUnits = 2.0f;
         rockGrabGripMaxInsetGameUnits = 6.0f;
         rockGrabConvergeMaxTimeSeconds = 0.35f;
@@ -613,6 +604,7 @@ namespace rock
         rockPulledAngularDamping = 8.0f;
         rockPullToObjectCenterEnabled = true;
         rockPullLongAxisPresentationEnabled = true;
+        rockForceGrabSeatAlignmentEnabled = true;
         rockPullPresentationMinElongationRatio = 2.0f;
         rockPullPresentationAngularGainPerSecond = 6.0f;
         rockPullPresentationMaxAngularSpeedRadiansPerSecond = 8.0f;
@@ -1926,64 +1918,34 @@ namespace rock
             ROCK_LOG_WARN(Config, "Invalid fGrabPocketRadiusGameUnits={} -- using 9.0", rockGrabPocketRadiusGameUnits);
             rockGrabPocketRadiusGameUnits = 9.0f;
         }
-        /*
-         * Grab pose solver. A negative or non-finite weight silently corrupts
-         * the fitted objective, so each falls back to its fitted default.
-         */
-        const auto readSolverWeight = [&](const char* key, float& value, float fittedDefault) {
-            value = static_cast<float>(ini.GetDoubleValue(SECTION, key, value));
-            if (!std::isfinite(value) || value < 0.0f) {
-                ROCK_LOG_WARN(Config, "Invalid {}={} -- using fitted default {}", key, value, fittedDefault);
-                value = fittedDefault;
-            }
-        };
-        readSolverWeight("fGrabPoseSolverWeightTouch", rockGrabPoseSolverWeightTouch, 145.2505f);
-        readSolverWeight("fGrabPoseSolverWeightPalmProx", rockGrabPoseSolverWeightPalmProx, 12.9162f);
-        readSolverWeight("fGrabPoseSolverWeightOverPen", rockGrabPoseSolverWeightOverPen, 2.7735f);
-        readSolverWeight("fGrabPoseSolverWeightWrap", rockGrabPoseSolverWeightWrap, 1.5205f);
-        readSolverWeight("fGrabPoseSolverWeightRodAxis", rockGrabPoseSolverWeightRodAxis, 14.9627f);
-        readSolverWeight("fGrabPoseSolverWeightGirth", rockGrabPoseSolverWeightGirth, 1.0850f);
-        readSolverWeight("fGrabPoseSolverLambdaTranslate", rockGrabPoseSolverLambdaTranslate, 0.15f);
-        readSolverWeight("fGrabPoseSolverLambdaRotate", rockGrabPoseSolverLambdaRotate, 6.0f);
-        rockGrabPoseSolverPalmSlackGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabPoseSolverPalmSlackGameUnits", rockGrabPoseSolverPalmSlackGameUnits));
-        if (!std::isfinite(rockGrabPoseSolverPalmSlackGameUnits) ||
-            rockGrabPoseSolverPalmSlackGameUnits < 0.0f ||
-            rockGrabPoseSolverPalmSlackGameUnits > 10.0f) {
-            ROCK_LOG_WARN(Config, "Invalid fGrabPoseSolverPalmSlackGameUnits={} -- using 2.5", rockGrabPoseSolverPalmSlackGameUnits);
-            rockGrabPoseSolverPalmSlackGameUnits = 2.5f;
+        // Seat depth stop: 0 disables the correction entirely.
+        rockGrabSeatDepthMaxGameUnits = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabSeatDepthMaxGameUnits", rockGrabSeatDepthMaxGameUnits));
+        if (!std::isfinite(rockGrabSeatDepthMaxGameUnits) || rockGrabSeatDepthMaxGameUnits < 0.0f || rockGrabSeatDepthMaxGameUnits > 100.0f) {
+            ROCK_LOG_WARN(Config, "Invalid fGrabSeatDepthMaxGameUnits={} -- using 30.0", rockGrabSeatDepthMaxGameUnits);
+            rockGrabSeatDepthMaxGameUnits = 30.0f;
         }
-        rockGrabPoseSolverPenetrationLimitGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabPoseSolverPenetrationLimitGameUnits", rockGrabPoseSolverPenetrationLimitGameUnits));
-        if (!std::isfinite(rockGrabPoseSolverPenetrationLimitGameUnits) ||
-            rockGrabPoseSolverPenetrationLimitGameUnits < 0.1f ||
-            rockGrabPoseSolverPenetrationLimitGameUnits > 5.0f) {
-            ROCK_LOG_WARN(Config, "Invalid fGrabPoseSolverPenetrationLimitGameUnits={} -- using 1.5", rockGrabPoseSolverPenetrationLimitGameUnits);
-            rockGrabPoseSolverPenetrationLimitGameUnits = 1.5f;
+        rockGrabSeatDepthFootprintRadiusGameUnits =
+            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabSeatDepthFootprintRadiusGameUnits", rockGrabSeatDepthFootprintRadiusGameUnits));
+        if (!std::isfinite(rockGrabSeatDepthFootprintRadiusGameUnits) ||
+            rockGrabSeatDepthFootprintRadiusGameUnits < 1.0f ||
+            rockGrabSeatDepthFootprintRadiusGameUnits > 30.0f) {
+            ROCK_LOG_WARN(Config, "Invalid fGrabSeatDepthFootprintRadiusGameUnits={} -- using 10.0", rockGrabSeatDepthFootprintRadiusGameUnits);
+            rockGrabSeatDepthFootprintRadiusGameUnits = 10.0f;
         }
-        rockGrabPoseSolverGirthWrappableRadiusGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabPoseSolverGirthWrappableRadiusGameUnits", rockGrabPoseSolverGirthWrappableRadiusGameUnits));
-        if (!std::isfinite(rockGrabPoseSolverGirthWrappableRadiusGameUnits) ||
-            rockGrabPoseSolverGirthWrappableRadiusGameUnits < 0.5f ||
-            rockGrabPoseSolverGirthWrappableRadiusGameUnits > 10.0f) {
-            ROCK_LOG_WARN(Config, "Invalid fGrabPoseSolverGirthWrappableRadiusGameUnits={} -- using 3.0", rockGrabPoseSolverGirthWrappableRadiusGameUnits);
-            rockGrabPoseSolverGirthWrappableRadiusGameUnits = 3.0f;
+        rockGrabSeatPenetrationBackstopFootprintRadiusGameUnits =
+            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabSeatPenetrationBackstopFootprintRadiusGameUnits",
+                rockGrabSeatPenetrationBackstopFootprintRadiusGameUnits));
+        if (!std::isfinite(rockGrabSeatPenetrationBackstopFootprintRadiusGameUnits) ||
+            rockGrabSeatPenetrationBackstopFootprintRadiusGameUnits < 1.0f ||
+            rockGrabSeatPenetrationBackstopFootprintRadiusGameUnits > 30.0f) {
+            ROCK_LOG_WARN(Config, "Invalid fGrabSeatPenetrationBackstopFootprintRadiusGameUnits={} -- using 6.0",
+                rockGrabSeatPenetrationBackstopFootprintRadiusGameUnits);
+            rockGrabSeatPenetrationBackstopFootprintRadiusGameUnits = 6.0f;
         }
-        rockGrabPoseSolverBehindPalmFootprintRadiusGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabPoseSolverBehindPalmFootprintRadiusGameUnits", rockGrabPoseSolverBehindPalmFootprintRadiusGameUnits));
-        if (!std::isfinite(rockGrabPoseSolverBehindPalmFootprintRadiusGameUnits) ||
-            rockGrabPoseSolverBehindPalmFootprintRadiusGameUnits < 1.0f ||
-            rockGrabPoseSolverBehindPalmFootprintRadiusGameUnits > 30.0f) {
-            ROCK_LOG_WARN(Config, "Invalid fGrabPoseSolverBehindPalmFootprintRadiusGameUnits={} -- using 6.0", rockGrabPoseSolverBehindPalmFootprintRadiusGameUnits);
-            rockGrabPoseSolverBehindPalmFootprintRadiusGameUnits = 6.0f;
-        }
-        rockGrabPoseSolverBehindPalmToleranceGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabPoseSolverBehindPalmToleranceGameUnits", rockGrabPoseSolverBehindPalmToleranceGameUnits));
-        if (!std::isfinite(rockGrabPoseSolverBehindPalmToleranceGameUnits) ||
-            rockGrabPoseSolverBehindPalmToleranceGameUnits < 0.5f ||
-            rockGrabPoseSolverBehindPalmToleranceGameUnits > 10.0f) {
-            ROCK_LOG_WARN(Config, "Invalid fGrabPoseSolverBehindPalmToleranceGameUnits={} -- using 2.0", rockGrabPoseSolverBehindPalmToleranceGameUnits);
-            rockGrabPoseSolverBehindPalmToleranceGameUnits = 2.0f;
+        rockGrabSeatDepthSkinGameUnits = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabSeatDepthSkinGameUnits", rockGrabSeatDepthSkinGameUnits));
+        if (!std::isfinite(rockGrabSeatDepthSkinGameUnits) || rockGrabSeatDepthSkinGameUnits < 0.0f || rockGrabSeatDepthSkinGameUnits > 5.0f) {
+            ROCK_LOG_WARN(Config, "Invalid fGrabSeatDepthSkinGameUnits={} -- using 0.5", rockGrabSeatDepthSkinGameUnits);
+            rockGrabSeatDepthSkinGameUnits = 0.5f;
         }
         rockGrabGripInsetGameUnits = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabGripInsetGameUnits", rockGrabGripInsetGameUnits));
         if (!std::isfinite(rockGrabGripInsetGameUnits) || rockGrabGripInsetGameUnits < 0.0f) {
@@ -2344,6 +2306,8 @@ namespace rock
         rockPulledAngularDamping = static_cast<float>(ini.GetDoubleValue(SECTION, "fPulledAngularDamping", rockPulledAngularDamping));
         rockPullToObjectCenterEnabled = ini.GetBoolValue(SECTION, "bPullToObjectCenterEnabled", rockPullToObjectCenterEnabled);
         rockPullLongAxisPresentationEnabled = ini.GetBoolValue(SECTION, "bPullLongAxisPresentationEnabled", rockPullLongAxisPresentationEnabled);
+        rockForceGrabSeatAlignmentEnabled = ini.GetBoolValue(SECTION, "bForceGrabSeatAlignmentEnabled", rockForceGrabSeatAlignmentEnabled);
+        rockGrabSeatRollAlignmentEnabled = ini.GetBoolValue(SECTION, "bGrabSeatRollAlignmentEnabled", rockGrabSeatRollAlignmentEnabled);
         rockPullPresentationMinElongationRatio =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fPullPresentationMinElongationRatio", rockPullPresentationMinElongationRatio));
         if (!std::isfinite(rockPullPresentationMinElongationRatio) || rockPullPresentationMinElongationRatio < 1.0f) {

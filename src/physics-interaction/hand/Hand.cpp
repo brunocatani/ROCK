@@ -1427,25 +1427,17 @@ namespace rock
 
         /*
          * Mesh: the cached triangles the grab machinery scored, in the local
-         * space they were cached in. nodeInObjectRoot ties that space to the
-         * object root the saved pose is expressed for. It MUST come from the
-         * relation frozen at cache-build time: the held node's world drifts
-         * against the root during the hold (visual lock), so recomputing it
-         * here from live node worlds double-counts that drift and misaligns
-         * the mesh against the label (measured 2-45gu on real captures).
+         * space of the node they were extracted from. nodeInObjectRoot ties
+         * that space to the object root the saved pose is expressed for -
+         * without it a nested collidable node would silently misalign the
+         * mesh against the label.
          */
+        auto* meshNode = _grabFrame.heldNode ? _grabFrame.heldNode : rootNode;
         const auto& triangles = _grabFrame.localMeshTriangles;
         auto& mesh = outCapture.mesh;
         mesh.valid = !triangles.empty();
         mesh.triangleCount = static_cast<std::uint32_t>(triangles.size());
-        mesh.nodeInObjectRoot = _grabFrame.hasMeshCacheNodeInObjectRoot
-            ? storeFrame(_grabFrame.meshCacheNodeInObjectRoot)
-            : storeFrame(RE::NiTransform());
-        // Save-time world frame of the cached mesh locals: the root carries the
-        // pose, the frozen relation carries the cache nesting.
-        const RE::NiTransform meshCacheWorld = _grabFrame.hasMeshCacheNodeInObjectRoot
-            ? transform_math::composeTransforms(rootNode->world, _grabFrame.meshCacheNodeInObjectRoot)
-            : rootNode->world;
+        mesh.nodeInObjectRoot = storeFrame(grab_frame_math::objectInGeneratedProxyLocalSpace(rootNode->world, meshNode->world));
         if (mesh.valid) {
             mesh.verticesObjectLocal.reserve(triangles.size() * 9);
             RE::NiPoint3 aabbMin{ std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max() };
@@ -1511,7 +1503,7 @@ namespace rock
             if (auto* motion = havok_runtime::getBodyMotion(world, getSavedObjectState().bodyId)) {
                 const RE::NiPoint3 comWorld = hkVectorToNiPoint(motion->position);
                 if (std::isfinite(comWorld.x) && std::isfinite(comWorld.y) && std::isfinite(comWorld.z)) {
-                    const RE::NiPoint3 comLocal = transform_math::worldPointToLocal(meshCacheWorld, comWorld);
+                    const RE::NiPoint3 comLocal = transform_math::worldPointToLocal(meshNode->world, comWorld);
                     auto& physics = outCapture.physics;
                     physics.hasCenterOfMass = true;
                     physics.comObjectLocal[0] = comLocal.x;
@@ -1597,15 +1589,15 @@ namespace rock
          * against which normal - and it is the label a wrap-quality term gets
          * fitted against.
          */
-        if (mesh.valid && grab_three_phase::isFinite(meshCacheWorld)) {
-            const float meshScale = std::isfinite(meshCacheWorld.scale) && meshCacheWorld.scale > 0.0f ? meshCacheWorld.scale : 1.0f;
+        if (mesh.valid && grab_three_phase::isFinite(meshNode->world)) {
+            const float meshScale = std::isfinite(meshNode->world.scale) && meshNode->world.scale > 0.0f ? meshNode->world.scale : 1.0f;
             constexpr float kContactSkinGameUnits = 0.5f;
             for (std::size_t finger = 0; finger < twins.fingertips.size() && finger < saved_grab_capture::kFingerCount; ++finger) {
                 const auto& slot = twins.fingertips[finger];
                 if (!slot.valid || !grab_three_phase::isFinite(slot.target)) {
                     continue;
                 }
-                const RE::NiPoint3 tipLocal = transform_math::worldPointToLocal(meshCacheWorld, slot.target.translate);
+                const RE::NiPoint3 tipLocal = transform_math::worldPointToLocal(meshNode->world, slot.target.translate);
                 float bestDistanceSquared = std::numeric_limits<float>::max();
                 RE::NiPoint3 bestPoint{};
                 RE::NiPoint3 bestNormal{};
@@ -1654,17 +1646,15 @@ namespace rock
         seat.shapeClass = diagnostics.shapeClass;
         seat.elongationRatio = diagnostics.elongationRatio;
         seat.secondElongationRatio = diagnostics.secondElongationRatio;
-        seat.solveReason = diagnostics.solveReason;
-        seat.solveRotationDegrees = diagnostics.solveRotationDegrees;
-        seat.solveTranslationGameUnits = diagnostics.solveTranslationGameUnits;
-        seat.solveIterations = diagnostics.solveIterations;
-        seat.solveObjectiveScore = diagnostics.solveObjectiveScore;
-        seat.solveTermTouch = diagnostics.solveTermTouch;
-        seat.solveTermPalmProx = diagnostics.solveTermPalmProx;
-        seat.solveTermOverPen = diagnostics.solveTermOverPen;
-        seat.solveTermWrap = diagnostics.solveTermWrap;
-        seat.solveTermRodAxis = diagnostics.solveTermRodAxis;
-        seat.solveTermGirth = diagnostics.solveTermGirth;
+        seat.alignmentAngleDegrees = diagnostics.alignmentAngleDegrees;
+        seat.alignmentReason = diagnostics.alignmentReason;
+        seat.rollAngleDegrees = diagnostics.rollAngleDegrees;
+        seat.rollReason = diagnostics.rollReason;
+        seat.depthGameUnits = diagnostics.depthGameUnits;
+        seat.depthOffsetGameUnits = diagnostics.depthOffsetGameUnits;
+        seat.depthReason = diagnostics.depthReason;
+        seat.penetrationBackstopGameUnits = diagnostics.penetrationBackstopGameUnits;
+        seat.penetrationBackstopReason = diagnostics.penetrationBackstopReason;
         seat.gripPointObjectLocal[0] = telemetry.gripPointLocal.x;
         seat.gripPointObjectLocal[1] = telemetry.gripPointLocal.y;
         seat.gripPointObjectLocal[2] = telemetry.gripPointLocal.z;
@@ -1679,17 +1669,10 @@ namespace rock
             storeFrame(grab_frame_math::objectInGeneratedProxyLocalSpace(telemetry.objectNodeWorld, telemetry.bodyWorld));
 
         auto& tuning = outCapture.tuning;
-        tuning.solverWeightTouch = g_rockConfig.rockGrabPoseSolverWeightTouch;
-        tuning.solverWeightPalmProx = g_rockConfig.rockGrabPoseSolverWeightPalmProx;
-        tuning.solverWeightOverPen = g_rockConfig.rockGrabPoseSolverWeightOverPen;
-        tuning.solverWeightWrap = g_rockConfig.rockGrabPoseSolverWeightWrap;
-        tuning.solverWeightRodAxis = g_rockConfig.rockGrabPoseSolverWeightRodAxis;
-        tuning.solverWeightGirth = g_rockConfig.rockGrabPoseSolverWeightGirth;
-        tuning.solverLambdaTranslate = g_rockConfig.rockGrabPoseSolverLambdaTranslate;
-        tuning.solverLambdaRotate = g_rockConfig.rockGrabPoseSolverLambdaRotate;
-        tuning.solverPalmSlackGameUnits = g_rockConfig.rockGrabPoseSolverPalmSlackGameUnits;
-        tuning.solverPenetrationLimitGameUnits = g_rockConfig.rockGrabPoseSolverPenetrationLimitGameUnits;
-        tuning.solverGirthWrappableRadiusGameUnits = g_rockConfig.rockGrabPoseSolverGirthWrappableRadiusGameUnits;
+        tuning.seatDepthMaxGameUnits = g_rockConfig.rockGrabSeatDepthMaxGameUnits;
+        tuning.seatDepthFootprintRadiusGameUnits = g_rockConfig.rockGrabSeatDepthFootprintRadiusGameUnits;
+        tuning.seatPenetrationBackstopFootprintRadiusGameUnits = g_rockConfig.rockGrabSeatPenetrationBackstopFootprintRadiusGameUnits;
+        tuning.seatDepthSkinGameUnits = g_rockConfig.rockGrabSeatDepthSkinGameUnits;
         tuning.gripInsetGameUnits = g_rockConfig.rockGrabGripInsetGameUnits;
         tuning.pullPresentationMinElongationRatio = g_rockConfig.rockPullPresentationMinElongationRatio;
         tuning.pullPresentationGripAxisTiltDegrees = g_rockConfig.rockPullPresentationGripAxisTiltDegrees;

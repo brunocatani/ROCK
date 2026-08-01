@@ -4,7 +4,6 @@
 #include "physics-interaction/PhysicsBodyFrame.h"
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 #include "physics-interaction/grab/GrabCore.h"
-#include "physics-interaction/grab/GrabPoseObjective.h"
 #include "physics-interaction/grab/GrabFinger.h"
 #include "physics-interaction/grab/GrabTelemetry.h"
 #include "physics-interaction/grab/GrabThreePhase.h"
@@ -606,42 +605,6 @@ namespace rock
             RE::hknpWorld* world,
             const RE::NiTransform& proxyWorld,
             saved_grab_capture::HandCapture& outCapture) const;
-        /*
-         * One-shot grab pose solve (GrabPoseObjective.h) against the driven
-         * hand collider volume: minimal correction from the seed seat onto the
-         * valid-grasp manifold. Replaces the retired seat correction stack
-         * (swing/roll/depth-stop/backstop) for both the capture seat and the
-         * seated-pivot reacquire promotion. Fails closed: when the hand volume
-         * or shape model is unavailable the outcome reports why and the caller
-         * keeps the seed pose unchanged.
-         */
-        struct GrabSeatSolveOutcome
-        {
-            bool applied = false;
-            const char* reason = "notEvaluated";
-            RE::NiPoint3 pivotAWorld{};
-            RE::NiTransform desiredBodyWorld{};
-            RE::NiTransform desiredObjectWorld{};
-            grab_pose_objective::GraspShapeModel model{};
-            grab_pose_objective::SolveResult solve{};
-            // Wall-clock cost of the whole solve (model build + search) on the
-            // grab commit path. Logged every grab; a frame-budget overrun WARNs
-            // loudly so a regression here is evidence, never a mystery freeze.
-            float solveMicroseconds = 0.0f;
-        };
-        /*
-         * translationOnly: mid-hold re-seats (seated-pivot reacquire) must not
-         * rotate a HELD object (visible twitch) and must stay cheap enough to
-         * survive promotion churn - the full rotational solve is reserved for
-         * the one-shot capture seat.
-         */
-        GrabSeatSolveOutcome solveGrabSeat(
-            const std::vector<GrabLocalTriangle>& localMeshTriangles,
-            const RE::NiTransform& bodyWorldAtGrab,
-            const RE::NiTransform& objectToBodyLocal,
-            const RE::NiPoint3& gripPointWorldAtCapture,
-            const RE::NiPoint3& pivotAWorld,
-            bool translationOnly = false) const;
         std::uint32_t getHandColliderBodyCount() const { return _boneColliders.getBodyCount(); }
         std::uint32_t getHandColliderBodyIdAtomic(std::size_t index) const { return _boneColliders.getBodyIdAtomic(index); }
         bool isHandColliderBodyId(std::uint32_t bodyId) const { return _boneColliders.isColliderBodyIdAtomic(bodyId); }

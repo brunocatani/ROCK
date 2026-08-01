@@ -150,20 +150,15 @@ namespace rock::saved_grab_capture
         std::string shapeClass;
         float elongationRatio{ 0.0f };
         float secondElongationRatio{ 0.0f };
-        // Grab pose solve outcome (GrabPoseObjective.h): the seat is the
-        // solved minimal correction from the arrival pose, and these record
-        // what the solve did so a saved label explains the seat next to it.
-        std::string solveReason;
-        float solveRotationDegrees{ 0.0f };
-        float solveTranslationGameUnits{ 0.0f };
-        int solveIterations{ 0 };
-        float solveObjectiveScore{ 0.0f };
-        float solveTermTouch{ 0.0f };
-        float solveTermPalmProx{ 0.0f };
-        float solveTermOverPen{ 0.0f };
-        float solveTermWrap{ 0.0f };
-        float solveTermRodAxis{ 0.0f };
-        float solveTermGirth{ 0.0f };
+        float alignmentAngleDegrees{ 0.0f };
+        std::string alignmentReason;
+        float rollAngleDegrees{ 0.0f };
+        std::string rollReason;
+        float depthGameUnits{ 0.0f };
+        float depthOffsetGameUnits{ 0.0f };
+        std::string depthReason;
+        float penetrationBackstopGameUnits{ 0.0f };
+        std::string penetrationBackstopReason;
         float gripPointObjectLocal[3]{ 0.0f, 0.0f, 0.0f };
         float pivotProxyLocal[3]{ 0.0f, 0.0f, 0.0f };
         std::string seatMode;
@@ -174,17 +169,10 @@ namespace rock::saved_grab_capture
     // under one tuning can never be silently read as if it were another.
     struct TuningCapture
     {
-        float solverWeightTouch{ 0.0f };
-        float solverWeightPalmProx{ 0.0f };
-        float solverWeightOverPen{ 0.0f };
-        float solverWeightWrap{ 0.0f };
-        float solverWeightRodAxis{ 0.0f };
-        float solverWeightGirth{ 0.0f };
-        float solverLambdaTranslate{ 0.0f };
-        float solverLambdaRotate{ 0.0f };
-        float solverPalmSlackGameUnits{ 0.0f };
-        float solverPenetrationLimitGameUnits{ 0.0f };
-        float solverGirthWrappableRadiusGameUnits{ 0.0f };
+        float seatDepthMaxGameUnits{ 0.0f };
+        float seatDepthFootprintRadiusGameUnits{ 0.0f };
+        float seatPenetrationBackstopFootprintRadiusGameUnits{ 0.0f };
+        float seatDepthSkinGameUnits{ 0.0f };
         float gripInsetGameUnits{ 0.0f };
         float pullPresentationMinElongationRatio{ 0.0f };
         float pullPresentationGripAxisTiltDegrees{ 0.0f };
