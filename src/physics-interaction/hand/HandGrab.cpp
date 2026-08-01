@@ -53,6 +53,7 @@
 #include "physics-interaction/TransformMath.h"
 #include "rock_support/Fo4VrRuntime.h"
 
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -4846,10 +4847,25 @@ namespace rock
             return outcome;
         }
 
-        // Object mesh in world at the SEED seat - the pose the solve regularizes toward.
+        const auto solveStartTime = std::chrono::steady_clock::now();
+
+        /*
+         * Object mesh in world at the SEED seat - the pose the solve
+         * regularizes toward. Uniform-stride subsample to the density the
+         * objective was FITTED at (same formula as the offline harness).
+         * Running the solve on the full cache is not more faithful - it is
+         * unvalidated - and an uncapped count made the O(evals x capsules x
+         * triangles) search freeze the frame on every grab of a dense mesh.
+         */
+        const std::size_t sourceCount = localMeshTriangles.size();
+        const std::size_t solveCount = (std::min)(sourceCount, grab_pose_objective::kGrabPoseObjectiveMaxTriangles);
         std::vector<GrabLocalTriangle> worldTriangles;
-        worldTriangles.reserve(localMeshTriangles.size());
-        for (const auto& triangle : localMeshTriangles) {
+        worldTriangles.reserve(solveCount);
+        const double stride = static_cast<double>(sourceCount) / static_cast<double>(solveCount);
+        for (std::size_t i = 0; i < solveCount; ++i) {
+            const std::size_t index = (std::min)(sourceCount - 1,
+                static_cast<std::size_t>(static_cast<double>(i) * stride));
+            const auto& triangle = localMeshTriangles[index];
             worldTriangles.push_back(GrabLocalTriangle{
                 transform_math::localPointToWorld(outcome.desiredObjectWorld, triangle.v0),
                 transform_math::localPointToWorld(outcome.desiredObjectWorld, triangle.v1),
@@ -4888,6 +4904,19 @@ namespace rock
         solveConfig.lambdaTranslatePerGameUnitSq = g_rockConfig.rockGrabPoseSolverLambdaTranslate;
         solveConfig.lambdaRotatePerRadianSq = g_rockConfig.rockGrabPoseSolverLambdaRotate;
         outcome.solve = objective::solvePose(worldTriangles, outcome.model, hand, weights, constants, solveConfig);
+        outcome.solveMicroseconds = static_cast<float>(
+            std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - solveStartTime).count());
+        // A 90Hz frame is ~11ms. The solve is a one-shot, but a full frame of
+        // one-shot is still a felt hitch - overruns must be loud, not folklore.
+        if (outcome.solveMicroseconds > 8000.0f) {
+            ROCK_LOG_WARN(Hand,
+                "{} GRAB POSE SOLVE exceeded frame budget: {:.1f}ms (tris {} of {}, iters {}) - report this line",
+                handName(),
+                outcome.solveMicroseconds / 1000.0f,
+                solveCount,
+                sourceCount,
+                outcome.solve.iterations);
+        }
 
         /*
          * Apply the solved delta through the two channels the downstream
@@ -10269,7 +10298,7 @@ namespace rock
                         "{} THREE-PHASE GRAB CAPTURE: relation={} seat={} rotation={} phase={} reason={} touchContact={} stableTouch={} pocket=({:.1f},{:.1f},{:.1f}) "
                         "palm=({:.1f},{:.1f},{:.1f}) normal=({:.3f},{:.3f},{:.3f}) seed=({:.1f},{:.1f},{:.1f}) "
                         "grip=({:.1f},{:.1f},{:.1f}) gripLocal=({:.2f},{:.2f},{:.2f}) pivotB=({:.2f},{:.2f},{:.2f}) dist={:.1f} signedPalm={:.1f} "
-                        "fullHeldAuthority={} pivotAuthoritySource={} positionOnlyPatch={} normalTrusted={} support={} supportPivot={} supportConfidence={:.2f} supportSpan={:.2f} supportShift={:.2f} supportReason={} supportSamples={} supportMeshHits={} supportRejectOwner={} supportRejectDistance={} settledVisualRequired={} pullSeatSafety={} pullSeatDot={:.3f} pullSeatSigned={:.1f} pullSeatDist={:.1f} seatSolve={} seatSolveRot={:.1f} seatSolveTrans={:.2f} seatSolveIters={} seatSolveScore={:.2f} seatSolveTouch={:.2f} seatSolvePalmProx={:.2f} seatSolveOverPen={:.2f} seatSolveWrap={:.2f} seatSolveRodAxis={:.3f} seatSolveGirth={:.2f} seatShape={} seatRatio12={:.2f} seatRatio23={:.2f} pinchCenter={:.2f} inset={:.2f} insetSource={} looseWeaponPrimaryAttach={} attachReason={} attachVisible={}",
+                        "fullHeldAuthority={} pivotAuthoritySource={} positionOnlyPatch={} normalTrusted={} support={} supportPivot={} supportConfidence={:.2f} supportSpan={:.2f} supportShift={:.2f} supportReason={} supportSamples={} supportMeshHits={} supportRejectOwner={} supportRejectDistance={} settledVisualRequired={} pullSeatSafety={} pullSeatDot={:.3f} pullSeatSigned={:.1f} pullSeatDist={:.1f} seatSolve={} seatSolveRot={:.1f} seatSolveTrans={:.2f} seatSolveIters={} seatSolveUs={:.0f} seatSolveScore={:.2f} seatSolveTouch={:.2f} seatSolvePalmProx={:.2f} seatSolveOverPen={:.2f} seatSolveWrap={:.2f} seatSolveRodAxis={:.3f} seatSolveGirth={:.2f} seatShape={} seatRatio12={:.2f} seatRatio23={:.2f} pinchCenter={:.2f} inset={:.2f} insetSource={} looseWeaponPrimaryAttach={} attachReason={} attachVisible={}",
                         handName(),
                         relationMode,
                         grabSeatModeName(_grabFrame.seatMode),
@@ -10324,6 +10353,7 @@ namespace rock
                         seatSolve.solve.rotationDegrees,
                         seatSolve.solve.translationGameUnits,
                         seatSolve.solve.iterations,
+                        seatSolve.solveMicroseconds,
                         seatSolve.solve.objectiveScore,
                         seatSolve.solve.terms.touch,
                         seatSolve.solve.terms.palmProx,

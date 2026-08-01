@@ -624,6 +624,10 @@ namespace rock
             RE::NiTransform desiredObjectWorld{};
             grab_pose_objective::GraspShapeModel model{};
             grab_pose_objective::SolveResult solve{};
+            // Wall-clock cost of the whole solve (model build + search) on the
+            // grab commit path. Logged every grab; a frame-budget overrun WARNs
+            // loudly so a regression here is evidence, never a mystery freeze.
+            float solveMicroseconds = 0.0f;
         };
         GrabSeatSolveOutcome solveGrabSeat(
             const std::vector<GrabLocalTriangle>& localMeshTriangles,

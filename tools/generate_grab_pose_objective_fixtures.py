@@ -19,7 +19,7 @@ import json
 import math
 import os
 
-MAX_TRIS = 260
+MAX_TRIS = 130  # must match kGrabPoseObjectiveMaxTriangles (runtime solve density)
 PALM_SLACK = 2.5
 PEN_LIMIT = 1.5
 WRAP_CLAMP = 4.0

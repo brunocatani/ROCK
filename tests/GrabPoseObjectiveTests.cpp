@@ -12,6 +12,7 @@
 
 #include "GrabPoseObjectiveFixtures.h"
 
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -148,8 +149,41 @@ int main()
             ok &= expectNear(poseLabel + "girth", terms.girth, golden.terms->girth, termEpsilon(golden.terms->girth));
         }
 
+        // --- microbenchmark: where does the time go? ----------------------------
+        {
+            const auto context = objective::buildEvaluationContext(triangles, model);
+            objective::PoseDelta probe{};
+            probe.rotate = objective::axisAngle(RE::NiPoint3{ 1.0f, 1.0f, 0.0f }, 0.05f);
+            probe.translate = RE::NiPoint3{ 0.3f, -0.2f, 0.1f };
+            const auto benchStart = std::chrono::steady_clock::now();
+            float sink = 0.0f;
+            constexpr int kProbes = 2000;
+            for (int i = 0; i < kProbes; ++i) {
+                sink += objective::scorePoseWithContext(context, model, hand, probe).touch;
+            }
+            const auto benchMicros = std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - benchStart).count();
+            std::printf("%s eval: %.2f us/call (sink %.3f)\n",
+                fixture.name, static_cast<double>(benchMicros) / kProbes, sink);
+        }
+
         // --- solve invariants ---------------------------------------------------
+        const auto solveStart = std::chrono::steady_clock::now();
         const auto solved = objective::solvePose(triangles, model, hand);
+        const auto solveMicros = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - solveStart).count();
+        std::printf("%s solve: %lld us (%zu tris, %d iters)\n",
+            fixture.name, static_cast<long long>(solveMicros), fixture.triangleCount, solved.iterations);
+        /*
+         * The solve runs on the grab commit path. A 90Hz VR frame is ~11ms;
+         * measured worst on these fixtures is ~7.7ms (greedy search, 130-tri
+         * cap, squared-space kernels), so 9ms is the regression tripwire -
+         * the uncapped version shipped without this assert and froze the game
+         * for seconds on every grab. If in-game seatSolveUs shows this still
+         * costs a felt hitch, the next step is solving OFF the frame thread,
+         * not raising this number.
+         */
+        ok &= expectTrue(prefix + "solve fits the frame budget", solveMicros < 9000);
         const auto solvedAgain = objective::solvePose(triangles, model, hand);
         ok &= expectTrue(prefix + "solve deterministic",
             solved.pose.translate.x == solvedAgain.pose.translate.x &&

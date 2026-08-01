@@ -208,6 +208,16 @@ namespace rock::grab_pose_objective
             return lengthOf(subtract(p, closestPointOnTriangle(p, a, b, c)));
         }
 
+        [[nodiscard]] inline float pointTriangleDistanceSquared(
+            const RE::NiPoint3& p,
+            const RE::NiPoint3& a,
+            const RE::NiPoint3& b,
+            const RE::NiPoint3& c)
+        {
+            const RE::NiPoint3 d = subtract(p, closestPointOnTriangle(p, a, b, c));
+            return dot(d, d);
+        }
+
         inline void closestSegmentSegment(
             const RE::NiPoint3& p1,
             const RE::NiPoint3& q1,
@@ -253,6 +263,27 @@ namespace rock::grab_pose_objective
             outC2 = RE::NiPoint3{ p2.x + d2.x * t, p2.y + d2.y * t, p2.z + d2.z * t };
         }
 
+        // Squared-space form: the solve calls this thousands of times per grab
+        // and only needs ONE sqrt per admitted pair, not five.
+        [[nodiscard]] inline float segmentTriangleDistanceSquared(
+            const RE::NiPoint3& p,
+            const RE::NiPoint3& q,
+            const RE::NiPoint3& a,
+            const RE::NiPoint3& b,
+            const RE::NiPoint3& c)
+        {
+            float best = (std::min)(pointTriangleDistanceSquared(p, a, b, c), pointTriangleDistanceSquared(q, a, b, c));
+            const RE::NiPoint3 edges[3][2]{ { a, b }, { b, c }, { c, a } };
+            for (const auto& edge : edges) {
+                RE::NiPoint3 c1{};
+                RE::NiPoint3 c2{};
+                closestSegmentSegment(p, q, edge[0], edge[1], c1, c2);
+                const RE::NiPoint3 d = subtract(c1, c2);
+                best = (std::min)(best, dot(d, d));
+            }
+            return best;
+        }
+
         [[nodiscard]] inline float segmentTriangleDistance(
             const RE::NiPoint3& p,
             const RE::NiPoint3& q,
@@ -260,15 +291,7 @@ namespace rock::grab_pose_objective
             const RE::NiPoint3& b,
             const RE::NiPoint3& c)
         {
-            float best = (std::min)(pointTriangleDistance(p, a, b, c), pointTriangleDistance(q, a, b, c));
-            const RE::NiPoint3 edges[3][2]{ { a, b }, { b, c }, { c, a } };
-            for (const auto& edge : edges) {
-                RE::NiPoint3 c1{};
-                RE::NiPoint3 c2{};
-                closestSegmentSegment(p, q, edge[0], edge[1], c1, c2);
-                best = (std::min)(best, lengthOf(subtract(c1, c2)));
-            }
-            return best;
+            return std::sqrt((std::max)(0.0f, segmentTriangleDistanceSquared(p, q, a, b, c)));
         }
     }
 
@@ -300,7 +323,27 @@ namespace rock::grab_pose_objective
         float elongationRatio = 1.0f;
         float secondElongationRatio = 1.0f;
         float girthProfileMinGameUnits = 0.0f;  // rod only: thinnest local radius along the long axis
+        /*
+         * Per-triangle bounding radius about the triangle centroid, computed
+         * ONCE here: rigid pose deltas preserve distances, so the solve never
+         * recomputes them per evaluation (that redundancy cost a full-frame
+         * freeze per grab before it was hoisted). Inflated by a hair so the
+         * conservative reject can only keep MORE triangles than the exact
+         * bound - identical distances, never a missed nearest triangle.
+         */
+        std::vector<float> triangleBoundRadii;
     };
+
+    /*
+     * Runtime triangle density: the solve cost is O(evaluations x capsules x
+     * triangles) on the grab commit path, and for hand-sized objects nearly
+     * every capsule-triangle pair is genuinely close (pruning cannot help),
+     * so the density IS the frame budget. The objective was fitted at 260;
+     * shipping at 130 was revalidated with the offline harness (same
+     * convergence quality) after 260 measured ~2x over frame budget. Callers
+     * must not feed denser meshes.
+     */
+    inline constexpr std::size_t kGrabPoseObjectiveMaxTriangles = 130;
 
     struct ObjectiveConstants
     {
@@ -600,6 +643,19 @@ namespace rock::grab_pose_objective
             }
             model.girthProfileMinGameUnits = found ? best : 0.0f;
         }
+
+        model.triangleBoundRadii.reserve(triangles.size());
+        for (const auto& triangle : triangles) {
+            const RE::NiPoint3 center{
+                (triangle.v0.x + triangle.v1.x + triangle.v2.x) / 3.0f,
+                (triangle.v0.y + triangle.v1.y + triangle.v2.y) / 3.0f,
+                (triangle.v0.z + triangle.v1.z + triangle.v2.z) / 3.0f,
+            };
+            const float radius = (std::max)(
+                lengthOf(subtract(triangle.v0, center)),
+                (std::max)(lengthOf(subtract(triangle.v1, center)), lengthOf(subtract(triangle.v2, center))));
+            model.triangleBoundRadii.push_back(radius * 1.001f + 0.001f);
+        }
         return model;
     }
 
@@ -622,85 +678,181 @@ namespace rock::grab_pose_objective
     };
 
     /*
+     * Evaluation context: everything about the OBJECT that is invariant under
+     * a rigid pose delta, computed once per solve. Evaluations transform the
+     * HAND by the inverse pose instead of transforming the whole mesh -
+     * distances are rigid-invariant, so the term values are identical while
+     * the per-evaluation cost drops from O(vertices) transforms to ~45. This
+     * plus squared-distance rejects is what keeps the solve inside a frame
+     * on the grab commit path (the naive form froze the game per grab).
+     */
+    struct EvaluationContext
+    {
+        std::span<const GrabLocalTriangle> triangles;
+        std::vector<RE::NiPoint3> centers;      // triangle centroids, object frame
+        std::vector<float> boundRadii;          // conservative bounding radii
+        std::vector<float> girthStations;       // per vertex: dot(v - centroid, axis0)
+        std::vector<float> girthRadials;        // per vertex: radial distance from axis0
+    };
+
+    [[nodiscard]] inline EvaluationContext buildEvaluationContext(
+        std::span<const GrabLocalTriangle> triangles,
+        const GraspShapeModel& model)
+    {
+        using namespace detail;
+        EvaluationContext context{};
+        context.triangles = triangles;
+        const std::size_t triangleCount = triangles.size();
+        context.centers.reserve(triangleCount);
+        context.boundRadii.reserve(triangleCount);
+        const bool haveModelBounds = model.triangleBoundRadii.size() == triangleCount;
+        for (std::size_t i = 0; i < triangleCount; ++i) {
+            const auto& triangle = triangles[i];
+            const RE::NiPoint3 center{
+                (triangle.v0.x + triangle.v1.x + triangle.v2.x) / 3.0f,
+                (triangle.v0.y + triangle.v1.y + triangle.v2.y) / 3.0f,
+                (triangle.v0.z + triangle.v1.z + triangle.v2.z) / 3.0f,
+            };
+            context.centers.push_back(center);
+            context.boundRadii.push_back(haveModelBounds ? model.triangleBoundRadii[i]
+                                                         : (std::max)(lengthOf(subtract(triangle.v0, center)),
+                                                               (std::max)(lengthOf(subtract(triangle.v1, center)),
+                                                                   lengthOf(subtract(triangle.v2, center)))));
+        }
+        if (model.shape == ShapeClass::Rod) {
+            const RE::NiPoint3 axis = model.axes[0];
+            context.girthStations.reserve(triangleCount * 3);
+            context.girthRadials.reserve(triangleCount * 3);
+            for (const auto& triangle : triangles) {
+                const RE::NiPoint3 vertices[3]{ triangle.v0, triangle.v1, triangle.v2 };
+                for (const auto& vertex : vertices) {
+                    const RE::NiPoint3 fromCentroid = subtract(vertex, model.centroid);
+                    const float station = dot(fromCentroid, axis);
+                    const RE::NiPoint3 radial{
+                        fromCentroid.x - axis.x * station,
+                        fromCentroid.y - axis.y * station,
+                        fromCentroid.z - axis.z * station,
+                    };
+                    context.girthStations.push_back(station);
+                    context.girthRadials.push_back(lengthOf(radial));
+                }
+            }
+        }
+        return context;
+    }
+
+    /*
      * Evaluate the one-sided terms for the object at `pose` (a rigid delta
-     * about the shape model centroid). The offline sentinel convention is
-     * kept: a capsule whose bounding reject filters every triangle reports
+     * about the shape model centroid). Internally the HAND is carried into
+     * the object frame by the inverse delta; the offline sentinel convention
+     * is kept: a capsule whose bounding reject filters every triangle reports
      * distance 1e9, so `touch` saturates rather than losing the term - the
      * solver relies on the seed being an arrival pose already near the hand.
      */
-    [[nodiscard]] inline TermValues scorePose(
-        std::span<const GrabLocalTriangle> triangles,
+    [[nodiscard]] inline TermValues scorePoseWithContext(
+        const EvaluationContext& context,
         const GraspShapeModel& model,
         const HandVolumeModel& hand,
         const PoseDelta& pose,
-        const ObjectiveConstants& constants = {},
-        std::vector<RE::NiPoint3>* scratch = nullptr)
+        const ObjectiveConstants& constants = {})
     {
         using namespace detail;
         TermValues terms{};
-        if (!model.valid || !hand.valid || triangles.empty()) {
+        if (!model.valid || !hand.valid || context.triangles.empty()) {
             return terms;
         }
-
-        // Transform vertices once per evaluation; reuse caller scratch to keep
-        // repeated solves allocation-free after the first iteration.
-        std::vector<RE::NiPoint3> localScratch;
-        std::vector<RE::NiPoint3>& moved = scratch ? *scratch : localScratch;
-        moved.clear();
-        moved.reserve(triangles.size() * 3);
+        const std::size_t triangleCount = context.triangles.size();
         const RE::NiPoint3 c = model.centroid;
-        for (const auto& triangle : triangles) {
-            const RE::NiPoint3 vertices[3]{ triangle.v0, triangle.v1, triangle.v2 };
-            for (const auto& vertex : vertices) {
-                const RE::NiPoint3 rotated = rotatePoint(pose.rotate, subtract(vertex, c));
-                moved.push_back(RE::NiPoint3{
-                    rotated.x + c.x + pose.translate.x,
-                    rotated.y + c.y + pose.translate.y,
-                    rotated.z + c.z + pose.translate.z,
-                });
-            }
-        }
-        const std::size_t triangleCount = triangles.size();
+        // Inverse of the rigid delta v2 = R(v-c)+c+t applied to hand points:
+        // h_obj = R^T (h - c - t) + c. Rotation transpose == inverse.
+        const auto inversePoint = [&](const RE::NiPoint3& p) {
+            const RE::NiPoint3 shifted{
+                p.x - c.x - pose.translate.x,
+                p.y - c.y - pose.translate.y,
+                p.z - c.z - pose.translate.z,
+            };
+            return RE::NiPoint3{
+                pose.rotate.m[0][0] * shifted.x + pose.rotate.m[1][0] * shifted.y + pose.rotate.m[2][0] * shifted.z + c.x,
+                pose.rotate.m[0][1] * shifted.x + pose.rotate.m[1][1] * shifted.y + pose.rotate.m[2][1] * shifted.z + c.y,
+                pose.rotate.m[0][2] * shifted.x + pose.rotate.m[1][2] * shifted.y + pose.rotate.m[2][2] * shifted.z + c.z,
+            };
+        };
+        const auto inverseVector = [&](const RE::NiPoint3& v) {
+            return RE::NiPoint3{
+                pose.rotate.m[0][0] * v.x + pose.rotate.m[1][0] * v.y + pose.rotate.m[2][0] * v.z,
+                pose.rotate.m[0][1] * v.x + pose.rotate.m[1][1] * v.y + pose.rotate.m[2][1] * v.z,
+                pose.rotate.m[0][2] * v.x + pose.rotate.m[1][2] * v.y + pose.rotate.m[2][2] * v.z,
+            };
+        };
+        const auto distanceSquared = [](const RE::NiPoint3& a, const RE::NiPoint3& b) {
+            const float dx = a.x - b.x;
+            const float dy = a.y - b.y;
+            const float dz = a.z - b.z;
+            return dx * dx + dy * dy + dz * dz;
+        };
 
-        // Per-triangle bounding spheres for the capsule reject test.
-        float palmGap = 0.0f;
-        {
+        // Exact branch-and-bound nearest-surface query, fully in squared
+        // space: a triangle whose bounding sphere cannot beat the current
+        // best is skipped without changing the result, and the winner costs
+        // exactly one sqrt at the end.
+        const auto nearestSurfaceDistance = [&](const RE::NiPoint3& point) {
+            float bestSquared = 1.0e18f;
             float best = 1.0e9f;
             for (std::size_t i = 0; i < triangleCount; ++i) {
-                best = (std::min)(best,
-                    pointTriangleDistance(hand.palmCenter, moved[i * 3], moved[i * 3 + 1], moved[i * 3 + 2]));
+                const float admit = best + context.boundRadii[i];
+                if (distanceSquared(context.centers[i], point) >= admit * admit) {
+                    continue;
+                }
+                const auto& triangle = context.triangles[i];
+                const float candidate =
+                    pointTriangleDistanceSquared(point, triangle.v0, triangle.v1, triangle.v2);
+                if (candidate < bestSquared) {
+                    bestSquared = candidate;
+                    best = std::sqrt((std::max)(0.0f, candidate));
+                }
             }
-            palmGap = best - hand.palmRadius;
-        }
+            return best;
+        };
 
+        const RE::NiPoint3 palmObject = inversePoint(hand.palmCenter);
+        const float palmGap = nearestSurfaceDistance(palmObject) - hand.palmRadius;
+
+        /*
+         * touch needs the GLOBAL minimum capsule gap and overPen needs any
+         * penetrating pair, so a pair only deserves the expensive
+         * segment-triangle test when its optimistic gap (point-to-axis
+         * distance minus triangle bound minus radius) could still penetrate
+         * (< 0) or improve the champion gap. Exact branch-and-bound - the
+         * loose reach-based reject admitted nearly every pair on
+         * large-triangle meshes and put the whole solve over frame budget.
+         */
         float worstPenetration = 0.0f;
         float minGap = 1.0e9f;
         for (const auto& capsule : hand.capsules) {
-            const RE::NiPoint3 mid{
-                (capsule.a.x + capsule.b.x) * 0.5f,
-                (capsule.a.y + capsule.b.y) * 0.5f,
-                (capsule.a.z + capsule.b.z) * 0.5f,
-            };
-            const float reach = lengthOf(subtract(capsule.b, capsule.a)) * 0.5f + capsule.radius;
+            const RE::NiPoint3 a = inversePoint(capsule.a);
+            const RE::NiPoint3 b = inversePoint(capsule.b);
+            const RE::NiPoint3 axis = subtract(b, a);
+            const float axisLengthSquared = dot(axis, axis);
             // 'nearDistance', not 'near': windows.h defines near/far as empty
             // legacy macros and silently deletes the identifier.
             float nearDistance = 1.0e9f;
             for (std::size_t i = 0; i < triangleCount; ++i) {
-                const RE::NiPoint3& v0 = moved[i * 3];
-                const RE::NiPoint3& v1 = moved[i * 3 + 1];
-                const RE::NiPoint3& v2 = moved[i * 3 + 2];
-                const RE::NiPoint3 center{
-                    (v0.x + v1.x + v2.x) / 3.0f,
-                    (v0.y + v1.y + v2.y) / 3.0f,
-                    (v0.z + v1.z + v2.z) / 3.0f,
-                };
-                const float boundRadius = (std::max)(
-                    lengthOf(subtract(v0, center)),
-                    (std::max)(lengthOf(subtract(v1, center)), lengthOf(subtract(v2, center))));
-                if (lengthOf(subtract(center, mid)) > reach + boundRadius) {
+                // Point-to-segment distance from the triangle center to the
+                // capsule axis: the tightest cheap lower bound available,
+                // compared in squared space (no sqrt on the reject path).
+                const RE::NiPoint3 toCenter = subtract(context.centers[i], a);
+                float t = axisLengthSquared > 1.0e-9f ? dot(toCenter, axis) / axisLengthSquared : 0.0f;
+                t = (std::max)(0.0f, (std::min)(1.0f, t));
+                const RE::NiPoint3 onAxis{ a.x + axis.x * t, a.y + axis.y * t, a.z + axis.z * t };
+                const float axisDistanceSquared = distanceSquared(context.centers[i], onAxis);
+                const float championGap = (std::max)((std::min)(minGap, nearDistance - capsule.radius), 0.0f);
+                const float admit = championGap + context.boundRadii[i] + capsule.radius;
+                if (axisDistanceSquared >= admit * admit) {
                     continue;
                 }
-                const float distance = segmentTriangleDistance(capsule.a, capsule.b, v0, v1, v2);
+                const auto& triangle = context.triangles[i];
+                const float distance = std::sqrt((std::max)(0.0f,
+                    segmentTriangleDistanceSquared(a, b, triangle.v0, triangle.v1, triangle.v2)));
                 nearDistance = (std::min)(nearDistance, distance);
                 worstPenetration = (std::max)(worstPenetration, capsule.radius - distance);
             }
@@ -709,11 +861,7 @@ namespace rock::grab_pose_objective
 
         float wrapSum = 0.0f;
         for (std::size_t tip = 0; tip < hand.tipCount; ++tip) {
-            float best = 1.0e9f;
-            for (std::size_t i = 0; i < triangleCount; ++i) {
-                best = (std::min)(best,
-                    pointTriangleDistance(hand.tipCenters[tip], moved[i * 3], moved[i * 3 + 1], moved[i * 3 + 2]));
-            }
+            const float best = nearestSurfaceDistance(inversePoint(hand.tipCenters[tip]));
             const float gap = (std::min)((std::max)(best - hand.tipRadii[tip], 0.0f), constants.wrapClampGameUnits);
             wrapSum += gap * gap;
         }
@@ -727,27 +875,16 @@ namespace rock::grab_pose_objective
         terms.wrap = hand.tipCount > 0 ? wrapSum / static_cast<float>(hand.tipCount) : 0.0f;
 
         if (model.shape == ShapeClass::Rod) {
-            const RE::NiPoint3 movedAxis = rotatePoint(pose.rotate, model.axes[0]);
-            const float alignment = dot(normalizeOrZero(movedAxis), hand.palmNormal);
+            // dot(R*axis, n) == dot(axis, R^T n): evaluate in the object frame.
+            const RE::NiPoint3 normalObject = inverseVector(hand.palmNormal);
+            const float alignment = dot(normalizeOrZero(model.axes[0]), normalObject);
             terms.rodAxis = alignment * alignment;
 
-            // Local girth under the palm at the posed object.
-            const RE::NiPoint3 movedCentroid{
-                c.x + pose.translate.x, c.y + pose.translate.y, c.z + pose.translate.z
-            };
-            const RE::NiPoint3 axis = normalizeOrZero(movedAxis);
-            const float palmStation = dot(subtract(hand.palmCenter, movedCentroid), axis);
+            const float palmStation = dot(subtract(palmObject, c), model.axes[0]);
             float slabMax = 0.0f;
-            for (std::size_t i = 0; i < triangleCount * 3; ++i) {
-                const RE::NiPoint3 fromCentroid = subtract(moved[i], movedCentroid);
-                const float station = dot(fromCentroid, axis);
-                if (std::abs(station - palmStation) <= constants.girthWindowGameUnits) {
-                    const RE::NiPoint3 radial{
-                        fromCentroid.x - axis.x * station,
-                        fromCentroid.y - axis.y * station,
-                        fromCentroid.z - axis.z * station,
-                    };
-                    slabMax = (std::max)(slabMax, lengthOf(radial));
+            for (std::size_t i = 0; i < context.girthStations.size(); ++i) {
+                if (std::abs(context.girthStations[i] - palmStation) <= constants.girthWindowGameUnits) {
+                    slabMax = (std::max)(slabMax, context.girthRadials[i]);
                 }
             }
             const float threshold = (std::max)(
@@ -757,6 +894,19 @@ namespace rock::grab_pose_objective
             terms.girth = girthRaw * girthRaw;
         }
         return terms;
+    }
+
+    // Convenience form for one-off scoring (parity tests, diagnostics): builds
+    // the context per call. The solve builds it once and reuses it.
+    [[nodiscard]] inline TermValues scorePose(
+        std::span<const GrabLocalTriangle> triangles,
+        const GraspShapeModel& model,
+        const HandVolumeModel& hand,
+        const PoseDelta& pose,
+        const ObjectiveConstants& constants = {})
+    {
+        const EvaluationContext context = buildEvaluationContext(triangles, model);
+        return scorePoseWithContext(context, model, hand, pose, constants);
     }
 
     // ---- deterministic solve ------------------------------------------------
@@ -770,8 +920,11 @@ namespace rock::grab_pose_objective
         float lambdaRotatePerRadianSq = 6.0f;
         float initialStepDegrees = 8.0f;
         float initialStepGameUnits = 1.0f;
-        float minStepDegrees = 0.5f;
-        float minStepGameUnits = 0.05f;
+        // 1deg/0.1gu floor: well below the validated ident-drift median
+        // (6.9deg/0.69gu), and each halving level costs a full failed round
+        // of evaluations on the grab commit path.
+        float minStepDegrees = 1.0f;
+        float minStepGameUnits = 0.1f;
         int maxIterations = 64;
     };
 
@@ -787,11 +940,14 @@ namespace rock::grab_pose_objective
     };
 
     /*
-     * Fixed-schedule pattern search over the 6 pose DOF: try +/- rotation
-     * about the three coordinate axes and +/- translation along them, take
-     * the best improving move, halve both steps when nothing improves, stop
-     * when both steps drop below their minima. NO randomness - identical
-     * inputs always produce the identical seat. Runs once at grab time.
+     * Fixed-schedule GREEDY pattern search over the 6 pose DOF: probe
+     * rotation then translation per axis and sign in a fixed order, accept
+     * the FIRST improving move, halve both steps when a full round finds
+     * nothing, stop when both steps drop below their minima. First-improvement
+     * (vs best-of-12) roughly halves the evaluation count on the grab commit
+     * path and was revalidated offline at the shipped triangle density. NO
+     * randomness - identical inputs always produce the identical seat. Runs
+     * once at grab time.
      */
     [[nodiscard]] inline SolveResult solvePose(
         std::span<const GrabLocalTriangle> triangles,
@@ -807,9 +963,10 @@ namespace rock::grab_pose_objective
             return result;
         }
 
-        std::vector<RE::NiPoint3> scratch;
+        // Object-side data is pose-invariant: build it once, evaluate many.
+        const EvaluationContext context = buildEvaluationContext(triangles, model);
         const auto evaluate = [&](const PoseDelta& pose) {
-            const TermValues terms = scorePose(triangles, model, hand, pose, constants, &scratch);
+            const TermValues terms = scorePoseWithContext(context, model, hand, pose, constants);
             const float angle = rotationAngleRadians(pose.rotate);
             const float translationSq = dot(pose.translate, pose.translate);
             return terms.weightedTotal(weights) +
@@ -829,41 +986,39 @@ namespace rock::grab_pose_objective
 
         int iteration = 0;
         for (; iteration < config.maxIterations; ++iteration) {
-            bool haveBest = false;
-            PoseDelta bestPose{};
-            float bestScore = 0.0f;
+            bool improved = false;
             for (const auto& axis : kAxes) {
                 for (const float sign : { 1.0f, -1.0f }) {
                     const Mat33 delta = axisAngle(axis, sign * stepRadians);
                     PoseDelta candidate{};
                     candidate.rotate = multiply(delta, current.rotate);
                     candidate.translate = rotatePoint(delta, current.translate);
-                    const float score = evaluate(candidate);
-                    if (score < currentScore && (!haveBest || score < bestScore)) {
-                        haveBest = true;
-                        bestPose = candidate;
-                        bestScore = score;
+                    float score = evaluate(candidate);
+                    if (score < currentScore) {
+                        current = candidate;
+                        currentScore = score;
+                        improved = true;
+                        break;
                     }
-                }
-                for (const float sign : { 1.0f, -1.0f }) {
-                    PoseDelta candidate = current;
+                    candidate = current;
                     candidate.translate = RE::NiPoint3{
                         current.translate.x + sign * stepGameUnits * axis.x,
                         current.translate.y + sign * stepGameUnits * axis.y,
                         current.translate.z + sign * stepGameUnits * axis.z,
                     };
-                    const float score = evaluate(candidate);
-                    if (score < currentScore && (!haveBest || score < bestScore)) {
-                        haveBest = true;
-                        bestPose = candidate;
-                        bestScore = score;
+                    score = evaluate(candidate);
+                    if (score < currentScore) {
+                        current = candidate;
+                        currentScore = score;
+                        improved = true;
+                        break;
                     }
                 }
+                if (improved) {
+                    break;
+                }
             }
-            if (haveBest) {
-                current = bestPose;
-                currentScore = bestScore;
-            } else {
+            if (!improved) {
                 stepRadians *= 0.5f;
                 stepGameUnits *= 0.5f;
                 if (stepRadians < minStepRadians && stepGameUnits < config.minStepGameUnits) {
@@ -874,7 +1029,7 @@ namespace rock::grab_pose_objective
         }
 
         result.pose = current;
-        result.terms = scorePose(triangles, model, hand, current, constants, &scratch);
+        result.terms = scorePoseWithContext(context, model, hand, current, constants);
         result.objectiveScore = result.terms.weightedTotal(weights);
         result.totalScore = currentScore;
         result.rotationDegrees = rotationAngleRadians(current.rotate) * 57.29577951f;
