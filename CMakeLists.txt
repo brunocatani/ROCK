@@ -752,6 +752,14 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKProviderDebugOverlayRuntimeTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKProviderDebugOverlayRuntimeTests)
 
+  add_executable(ROCKProviderColliderVisualizationRuntimeTests
+    "${ROOT_DIR}/tests/ProviderColliderVisualizationRuntimeTests.cpp"
+    "${SOURCE_DIR}/api/ProviderColliderVisualizationRuntime.cpp"
+  )
+  target_compile_features(ROCKProviderColliderVisualizationRuntimeTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKProviderColliderVisualizationRuntimeTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKProviderColliderVisualizationRuntimeTests)
+
   add_executable(ROCKProviderApiAbiTests
     "${ROOT_DIR}/tests/ProviderApiAbiTests.cpp"
   )
@@ -825,6 +833,7 @@ if(BUILD_ROCK_TESTS)
     ROCKDebugOverlayFrameAdmissionTests
     ROCKDebugOverlayLineBatchTests
     ROCKProviderDebugOverlayRuntimeTests
+    ROCKProviderColliderVisualizationRuntimeTests
     ROCKProviderApiAbiTests
     ROCKProviderApiNegotiationTests
     ROCKProviderExternalBodyRegistryTests

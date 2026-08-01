@@ -221,6 +221,21 @@
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::DebugOverlayPublish);
 
+        provider_collider_visualization::Snapshot colliderFocus{};
+        if (provider_collider_visualization::copySnapshot(colliderFocus)) {
+            debug::Install();
+            debug::BodyOverlayFrame focusedFrame{};
+            focusedFrame.world = context.hknpWorld;
+            focusedFrame.drawRockBodies = true;
+            focusedFrame.entries[0] = debug::BodyOverlayEntry{
+                RE::hknpBodyId{ colliderFocus.bodyId },
+                debug::BodyOverlayRole::FocusedWeaponPart
+            };
+            focusedFrame.count = 1;
+            debug::PublishFrame(focusedFrame);
+            return;
+        }
+
         logGrabOverlayPointProbe(context);
 
         auto* hknp = context.hknpWorld;

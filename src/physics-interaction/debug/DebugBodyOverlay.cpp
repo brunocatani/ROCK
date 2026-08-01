@@ -934,6 +934,7 @@ namespace rock::debug
                    role == BodyOverlayRole::BodyTorsoSegment || role == BodyOverlayRole::BodyArmSegment ||
                    role == BodyOverlayRole::BodyLegSegment || role == BodyOverlayRole::BodyFootSegment ||
                    role == BodyOverlayRole::Weapon ||
+                   role == BodyOverlayRole::FocusedWeaponPart ||
                    role == BodyOverlayRole::RightGrabAuthorityProxy ||
                    role == BodyOverlayRole::LeftGrabAuthorityProxy ||
                    role == BodyOverlayRole::RightGrabPivotSourceCollider ||
@@ -1884,6 +1885,12 @@ namespace rock::debug
                 color[0] = 0.35f;
                 color[1] = 1.0f;
                 color[2] = 0.25f;
+                break;
+            case BodyOverlayRole::FocusedWeaponPart:
+                color[0] = 1.0f;
+                color[1] = 0.72f;
+                color[2] = 0.05f;
+                color[3] = 0.95f;
                 break;
             case BodyOverlayRole::RightGrabAuthorityProxy:
                 color[0] = 0.05f;

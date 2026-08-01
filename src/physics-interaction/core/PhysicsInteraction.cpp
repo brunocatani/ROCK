@@ -1,5 +1,6 @@
 #include "physics-interaction/core/PhysicsInteraction.h"
 
+#include "api/ProviderColliderVisualizationRuntime.h"
 #include "api/ProviderDebugOverlayRuntime.h"
 #include "api/ROCKProviderApiInternal.h"
 

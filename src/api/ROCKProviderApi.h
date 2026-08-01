@@ -65,6 +65,7 @@ namespace rock::provider
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DEBUG_OVERLAY_LINES_V1 = 2048;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DEBUG_OVERLAY_TEXT_V1 = 64;
     inline constexpr std::uint32_t ROCK_PROVIDER_DEBUG_OVERLAY_TEXT_CAPACITY_V1 = 128;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_COLLIDER_VISUALIZATION_OVERRIDE_LEASE_FRAMES_V1 = 120;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_PROVIDER_EVENTS_V1 = 256;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EXTERNAL_SCOPES_V1 = 256;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_HAND_HELD_BODIES_V1 = 8;
@@ -358,6 +359,7 @@ namespace rock::provider
         InputObservability = 1u << 23,
         TouchGrabTargets = 1u << 24,
         WorldRaycasts = 1u << 25,
+        ColliderVisualizationOverride = 1u << 26,
     };
 
     enum class RockProviderFeatureBitV1 : std::uint32_t
@@ -392,6 +394,7 @@ namespace rock::provider
         DebugOverlayPublication = 1u << 28,
         PresentedHandFrames = 1u << 29,
         EquippedWeaponHandRequest = 1u << 30,
+        ColliderVisualizationOverride = 1u << 31,
     };
 
     enum class RockProviderFeatureBit2V1 : std::uint32_t
@@ -857,6 +860,7 @@ namespace rock::provider
         EquippedWeaponHandRequest = 63,
         WorldRaycastRequest = 64,
         WorldRaycastResult = 65,
+        ColliderVisualizationRequest = 66,
     };
 
     enum class RockProviderHandInteractionPhaseV1 : std::uint32_t
@@ -918,6 +922,7 @@ namespace rock::provider
         HandVisual = 7,
         DebugOverlay = 8,
         WeaponPartTargets = 9,
+        ColliderVisualization = 10,
     };
 
     enum class RockProviderEquippedWeaponTransitionSourceV1 : std::uint32_t
@@ -1842,6 +1847,31 @@ namespace rock::provider
         std::uint32_t skeletonGeneration{ 0 };
         std::uint32_t providerGeneration{ 0 };
         std::uint32_t reserved[7]{};
+    };
+
+    /*
+     * Temporarily replaces ROCK's complete debug-overlay presentation with one
+     * exact collider from the active equipped-weapon generation. The body ID
+     * must occur in the matching frame snapshot weaponBodyIds array. The
+     * optional partKind is descriptive metadata only; body identity remains
+     * the authoritative selection key. Refresh from ROCK's owner frame
+     * callback while focus is desired. Clearing or lease invalidation restores
+     * the unchanged config-driven overlay on the next frame.
+     */
+    struct RockProviderColliderVisualizationRequestV1
+    {
+        std::uint32_t size{
+            sizeof(RockProviderColliderVisualizationRequestV1)
+        };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint32_t bodyId{ 0x7FFF'FFFF };
+        std::uint32_t partKind{ 0 };
+        std::uint32_t leaseFrames{ 0 };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t providerGeneration{ 0 };
+        std::uint32_t reserved[6]{};
     };
 
     /*
@@ -2966,6 +2996,11 @@ namespace rock::provider
             std::uint64_t ownerToken,
             const RockProviderWorldRaycastRequestV1* request,
             RockProviderWorldRaycastResultV1* outResult);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* setColliderVisualizationOverrideV1)(
+            std::uint64_t ownerToken,
+            const RockProviderColliderVisualizationRequestV1* request);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* clearColliderVisualizationOverrideV1)(
+            std::uint64_t ownerToken);
 
         [[nodiscard]] static int initialize(
             const std::uint32_t minVersion = ROCK_PROVIDER_API_VERSION,
@@ -3123,6 +3158,8 @@ namespace rock::provider
         offsetof(RockProviderApi, requestEquippedWeaponHandV1) + sizeof(std::declval<RockProviderApi>().requestEquippedWeaponHandV1));
     inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_WORLD_RAYCASTS_TABLE_BYTES = static_cast<std::uint32_t>(
         offsetof(RockProviderApi, queryWorldRaycastV1) + sizeof(std::declval<RockProviderApi>().queryWorldRaycastV1));
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_COLLIDER_VISUALIZATION_OVERRIDE_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, clearColliderVisualizationOverrideV1) + sizeof(std::declval<RockProviderApi>().clearColliderVisualizationOverrideV1));
 
     [[nodiscard]] inline bool queryProviderLimitsV1(RockProviderLimitsV1& outLimits)
     {
@@ -3572,6 +3609,24 @@ namespace rock::provider
             RockProviderFeatureBit2V1::WorldRaycasts);
     }
 
+    [[nodiscard]] inline bool supportsColliderVisualizationOverrideV1(
+        const RockProviderLimitsV1& limits)
+    {
+        return providerApiTableSupportsV1(
+                   limits,
+                   ROCK_PROVIDER_API_V1_COLLIDER_VISUALIZATION_OVERRIDE_TABLE_BYTES) &&
+               hasFeatureBitV1(
+                   limits.featureBits,
+                   RockProviderFeatureBitV1::ColliderVisualizationOverride);
+    }
+
+    [[nodiscard]] inline bool supportsColliderVisualizationOverrideV1()
+    {
+        RockProviderLimitsV1 limits{};
+        return queryProviderLimitsV1(limits) &&
+               supportsColliderVisualizationOverrideV1(limits);
+    }
+
     static_assert(std::is_standard_layout_v<RockProviderTransform>);
     static_assert(std::is_trivially_copyable_v<RockProviderTransform>);
     static_assert(sizeof(RockProviderConsumerRegistrationV1) == 104);
@@ -3702,6 +3757,10 @@ namespace rock::provider
     static_assert(alignof(RockProviderWorldRaycastResultV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderWorldRaycastResultV1>);
     static_assert(std::is_trivially_copyable_v<RockProviderWorldRaycastResultV1>);
+    static_assert(sizeof(RockProviderColliderVisualizationRequestV1) == 64);
+    static_assert(alignof(RockProviderColliderVisualizationRequestV1) == 8);
+    static_assert(std::is_standard_layout_v<RockProviderColliderVisualizationRequestV1>);
+    static_assert(std::is_trivially_copyable_v<RockProviderColliderVisualizationRequestV1>);
     static_assert(sizeof(RockProviderBodyContactV1) == 128);
     static_assert(alignof(RockProviderBodyContactV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderBodyContactV1>);
@@ -3714,7 +3773,7 @@ namespace rock::provider
     static_assert(alignof(RockProviderTouchGrabStateV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderTouchGrabStateV1>);
     static_assert(std::is_trivially_copyable_v<RockProviderTouchGrabStateV1>);
-    static_assert(sizeof(RockProviderApi) == 704);
+    static_assert(sizeof(RockProviderApi) == 720);
     static_assert(alignof(RockProviderApi) == 8);
     static_assert(
         offsetof(RockProviderApi, getProviderLimitsExtV1) == 54 * sizeof(void*));
@@ -3730,4 +3789,10 @@ namespace rock::provider
     static_assert(
         offsetof(RockProviderApi, queryWorldRaycastV1) ==
         87 * sizeof(void*));
+    static_assert(
+        offsetof(RockProviderApi, setColliderVisualizationOverrideV1) ==
+        88 * sizeof(void*));
+    static_assert(
+        offsetof(RockProviderApi, clearColliderVisualizationOverrideV1) ==
+        89 * sizeof(void*));
 }

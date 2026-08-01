@@ -124,12 +124,16 @@ int main()
     RockProviderApi::negotiatedTableByteSize = sizeof(RockProviderApi);
     RockProviderApi::negotiatedFeatureBits =
         static_cast<std::uint32_t>(
-            RockProviderFeatureBitV1::EquippedWeaponHandRequest);
+            RockProviderFeatureBitV1::EquippedWeaponHandRequest) |
+        static_cast<std::uint32_t>(
+            RockProviderFeatureBitV1::ColliderVisualizationOverride);
     RockProviderApi::negotiatedFeatureBits2 = allNewFeatureBits;
     g_reportedTableBytes = sizeof(RockProviderApi);
     g_reportedFeatureBits =
         static_cast<std::uint32_t>(
-            RockProviderFeatureBitV1::EquippedWeaponHandRequest);
+            RockProviderFeatureBitV1::EquippedWeaponHandRequest) |
+        static_cast<std::uint32_t>(
+            RockProviderFeatureBitV1::ColliderVisualizationOverride);
     g_reportedFeatureBits2 = allNewFeatureBits;
     g_baseReturnedBytes = sizeof(RockProviderLimitsV1);
     assert(queryProviderLimitsExtV1(extendedLimits));
@@ -149,6 +153,7 @@ int main()
     assert(supportsOffhandReservationLeasesV1());
     assert(supportsNativeVatsVansInputSuppressionV1());
     assert(supportsEquippedWeaponHandRequestV1());
+    assert(supportsColliderVisualizationOverrideV1());
 
     g_reportedFeatureBits = 0;
     assert(!supportsEquippedWeaponHandRequestV1());
@@ -158,6 +163,18 @@ int main()
     g_reportedTableBytes =
         ROCK_PROVIDER_API_V1_EQUIPPED_WEAPON_HAND_REQUEST_TABLE_BYTES - 1;
     assert(!supportsEquippedWeaponHandRequestV1());
+    g_reportedTableBytes = sizeof(RockProviderApi);
+
+    g_reportedFeatureBits &=
+        ~static_cast<std::uint32_t>(
+            RockProviderFeatureBitV1::ColliderVisualizationOverride);
+    assert(!supportsColliderVisualizationOverrideV1());
+    g_reportedFeatureBits |=
+        static_cast<std::uint32_t>(
+            RockProviderFeatureBitV1::ColliderVisualizationOverride);
+    g_reportedTableBytes =
+        ROCK_PROVIDER_API_V1_COLLIDER_VISUALIZATION_OVERRIDE_TABLE_BYTES - 1;
+    assert(!supportsColliderVisualizationOverrideV1());
     g_reportedTableBytes = sizeof(RockProviderApi);
 
     RockProviderApi::negotiatedFeatureBits2 &=
