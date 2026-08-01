@@ -73,8 +73,10 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'retainDriverFra
     'Only a still-requested manual scope may retain its driver-relative solver basis across ScopeMenu close/reopen pulses.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'rootHandValid\s*=\s*!_scopeDriverFrameAuthorityActive[\s\S]*resolveMode\([\s\S]*_scopeDriverFrameAuthorityActive' `
     'The latched scope-driver authority, not presentation visibility, must select the weapon-solver hand basis.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'shouldStartRootRebase\([\s\S]*_manualScopeActivationRequested[\s\S]*driverFrameAuthorityStoppedThisFrame[\s\S]*reconstructedHandValid[\s\S]*recentScopedHandAvailable[\s\S]*continuityHandWorld[\s\S]*rootRebaseLocalStart[\s\S]*interpolateRebaseTransform' `
-    'A real button release must select the restored hFRIK root immediately instead of rebasing from a stale hidden-scope hand.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'shouldStartRootRebase\([\s\S]*driverFrameAuthorityStoppedThisFrame[\s\S]*recentScopedHandAvailable[\s\S]*rootRebaseWorldStart\s*=\s*state\.lastHandWorld[\s\S]*interpolateRootHandoffWorld\([\s\S]*state\.rootRebaseWorldStart[\s\S]*rootHandWorld' `
+    'Scope exit must preserve the last published scoped hand in world space while the restored hFRIK root recovers.'
+Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'rootRebaseLocalStart|composeTransforms\(rootHandWorld,\s*rebase\)' `
+    'Scope exit must not compose a fixed local rebase onto every moving hFRIK root sample.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'activationStateChanged[\s\S]*SCOPE_TRANSITION_TRACE_FRAMES[\s\S]*SCOPE-TRANSITION[\s\S]*buttonRequested=[\s\S]*rendererActive=[\s\S]*rootToReconstructed=[\s\S]*rootToSolver=' `
     'A bounded button/renderer edge trace must distinguish UI state from root, driver, reconstructed, and solver hand-frame divergence.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'recentScopedHandAvailable\s*=\s*state\.hasLastHandWorld\s*&&[\s\S]*state\.consecutiveDriverMissFrames\s*<\s*SCOPE_DRIVER_MISS_GRACE_FRAMES;[\s\S]*state\.consecutiveDriverMissFrames\s*=\s*0;' `

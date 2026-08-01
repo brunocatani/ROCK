@@ -1330,21 +1330,15 @@ namespace rock
                 const bool recentScopedHandAvailable = state.hasLastHandWorld &&
                                                        state.consecutiveDriverMissFrames < SCOPE_DRIVER_MISS_GRACE_FRAMES;
                 if (scope_safe_hand_frame_math::shouldStartRootRebase(
-                        _manualScopeActivationRequested,
                         driverFrameAuthorityStoppedThisFrame,
-                        reconstructedHandValid,
                         recentScopedHandAvailable)) {
-                    // The previous ROCK output is the continuity authority.
-                    // hFRIK may resume non-scope damping from a stale internal
-                    // sample on this exact edge even though its driver is finite.
-                    const RE::NiTransform& continuityHandWorld = recentScopedHandAvailable ?
-                                                                      state.lastHandWorld :
-                                                                      reconstructedHandWorld;
-                    const RE::NiTransform rootRebaseLocalStart = transform_math::composeTransforms(
-                        transform_math::invertTransform(rootHandWorld),
-                        continuityHandWorld);
-                    if (isUsableHandAuthorityTransform(rootRebaseLocalStart)) {
-                        state.rootRebaseLocalStart = rootRebaseLocalStart;
+                    // hFRIK's restored root can recover through several world
+                    // samples while moving. Keep the last frame ROCK actually
+                    // published fixed as the handoff origin; a root-local
+                    // offset would inherit that recovery motion and look like
+                    // a fresh grab.
+                    if (isUsableHandAuthorityTransform(state.lastHandWorld)) {
+                        state.rootRebaseWorldStart = state.lastHandWorld;
                         state.rootRebaseElapsedSeconds = 0.0f;
                         state.rootRebaseActive = true;
                     }
@@ -1353,15 +1347,13 @@ namespace rock
 
                 RE::NiTransform resolvedHandWorld = rootHandWorld;
                 if (state.rootRebaseActive) {
-                    const RE::NiTransform identity = transform_math::makeIdentityTransform<RE::NiTransform>();
                     const float rebaseAlpha = scope_safe_hand_frame_math::rebaseAlpha(
                         state.rootRebaseElapsedSeconds,
                         SCOPE_ROOT_REBASE_DURATION_SECONDS);
-                    const RE::NiTransform rebase = scope_safe_hand_frame_math::interpolateRebaseTransform(
-                        state.rootRebaseLocalStart,
-                        identity,
+                    const RE::NiTransform rebasedHandWorld = scope_safe_hand_frame_math::interpolateRootHandoffWorld(
+                        state.rootRebaseWorldStart,
+                        rootHandWorld,
                         rebaseAlpha);
-                    const RE::NiTransform rebasedHandWorld = transform_math::composeTransforms(rootHandWorld, rebase);
                     if (isUsableHandAuthorityTransform(rebasedHandWorld)) {
                         resolvedHandWorld = rebasedHandWorld;
                     } else {

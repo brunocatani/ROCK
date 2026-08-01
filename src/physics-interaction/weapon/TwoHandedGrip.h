@@ -683,7 +683,7 @@ namespace rock
             RE::NiTransform driverToHandLocal{};
             RE::NiTransform currentHandWorld{};
             RE::NiTransform lastHandWorld{};
-            RE::NiTransform rootRebaseLocalStart{};
+            RE::NiTransform rootRebaseWorldStart{};
             float rootRebaseElapsedSeconds{ 0.0f };
             std::uint32_t consecutiveDriverMissFrames{ 0 };
             bool hasDriverToHandLocal{ false };
