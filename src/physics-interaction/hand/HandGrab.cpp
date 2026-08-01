@@ -9373,6 +9373,18 @@ namespace rock
             _grabFrame.hasMeshPoseData =
                 !_grabFrame.localMeshTriangles.empty() ||
                 !_grabFrame.fingerPoseLocalMeshTriangles.empty();
+            /*
+             * Freeze the mesh-cache space relative to the object root NOW,
+             * while both transforms are the ones the cache was built against.
+             * The held node's world drifts against the root during the hold
+             * (visual lock), so a save-time recomputation of this relation
+             * double-counts that drift and misaligns the captured mesh.
+             */
+            if (_grabFrame.hasMeshPoseData && rootNode && grab_three_phase::isFinite(rootNode->world)) {
+                _grabFrame.meshCacheNodeInObjectRoot =
+                    grab_frame_math::objectInGeneratedProxyLocalSpace(rootNode->world, objectWorldTransform);
+                _grabFrame.hasMeshCacheNodeInObjectRoot = true;
+            }
 
             RE::NiTransform desiredObjectWorld = objectWorldTransform;
             RE::NiTransform desiredBodyWorld = grabBodyWorldAtGrab;

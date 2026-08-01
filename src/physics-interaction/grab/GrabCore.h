@@ -729,6 +729,15 @@ namespace rock
         ImmutableGrabCaptureTelemetry captureTelemetry{};
         std::vector<GrabLocalTriangle> localMeshTriangles;
         std::vector<GrabLocalTriangle> fingerPoseLocalMeshTriangles;
+        /*
+         * Space the cached mesh triangles are expressed in, relative to the
+         * object ROOT node, captured when the cache was built. The held node's
+         * world drifts against the root during a hold (ROCK's own visual lock
+         * moves it), so recomputing this relation later from live node worlds
+         * double-counts that drift - it must be frozen at cache-build time.
+         */
+        RE::NiTransform meshCacheNodeInObjectRoot{};
+        bool hasMeshCacheNodeInObjectRoot = false;
         RE::NiAVObject* heldNode = nullptr;
         GrabSeatDiagnostics seatDiagnostics{};
         RE::NiAVObject* gripSourceNode = nullptr;
@@ -883,6 +892,8 @@ namespace rock
             captureTelemetry.clear();
             localMeshTriangles.clear();
             fingerPoseLocalMeshTriangles.clear();
+            meshCacheNodeInObjectRoot = RE::NiTransform();
+            hasMeshCacheNodeInObjectRoot = false;
             heldNode = nullptr;
             seatDiagnostics = GrabSeatDiagnostics{};
             gripSourceNode = nullptr;
