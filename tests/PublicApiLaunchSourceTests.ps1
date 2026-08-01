@@ -146,6 +146,10 @@ Require-Text 'src/api/ROCKProviderApi.h' 'struct\s+RockProviderLimitsV1' `
     'v1 must expose provider limits.'
 Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_MAX_CONSUMERS_V1\s*=\s*64' `
     'Public consumer registry capacity must be an explicit SDK limit.'
+Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_MAX_WEAPON_BODIES\s*=\s*8[\s\S]{0,400}ROCK_PROVIDER_MAX_WEAPON_EVIDENCE_DETAILS_V1\s*=\s*100' `
+    'The complete weapon evidence catalog must remain independent from the compact frame-snapshot body array.'
+Require-Text 'src/physics-interaction/core/PhysicsInteractionProvider.inl' 'getProviderWeaponEvidenceDetailCountV1[\s\S]{0,500}ROCK_PROVIDER_MAX_WEAPON_EVIDENCE_DETAILS_V1[\s\S]{0,700}copyProviderWeaponEvidenceDetailsV1[\s\S]{0,700}ROCK_PROVIDER_MAX_WEAPON_EVIDENCE_DETAILS_V1' `
+    'Weapon evidence count and copy queries must both enforce the advertised catalog bound.'
 Require-Text 'src/api/ROCKApi.cpp' 'ROCKAPI_GetProviderApi\(\)' `
     'ROCKAPI_GetApi must return the same table as ROCKAPI_GetProviderApi.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'kRockIssuedOwnerTokenNamespace\s*=\s*0xA000''0000''0000''0000ull' `

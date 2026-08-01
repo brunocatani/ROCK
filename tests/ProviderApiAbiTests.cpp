@@ -30,6 +30,12 @@ namespace
 
 int main()
 {
+    static_assert(ROCK_PROVIDER_MAX_WEAPON_BODIES == 8);
+    static_assert(ROCK_PROVIDER_MAX_WEAPON_EVIDENCE_DETAILS_V1 == 100);
+    static_assert(
+        ROCK_PROVIDER_MAX_WEAPON_EVIDENCE_DETAILS_V1 >
+        ROCK_PROVIDER_MAX_WEAPON_BODIES);
+
     bool ok = true;
 #define ROCK_EXPECT_LAYOUT(type, size, alignment) \
     ok = expectLayout<type>(#type, size, alignment) && ok

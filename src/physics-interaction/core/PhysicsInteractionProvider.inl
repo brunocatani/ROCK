@@ -408,7 +408,10 @@
 
     std::uint32_t PhysicsInteraction::getProviderWeaponEvidenceDetailCountV1() const
     {
-        return static_cast<std::uint32_t>(_weaponCollision.getProfileEvidenceDescriptors().size());
+        return (std::min)(
+            static_cast<std::uint32_t>(
+                _weaponCollision.getProfileEvidenceDescriptors().size()),
+            ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_EVIDENCE_DETAILS_V1);
     }
 
     std::uint32_t PhysicsInteraction::copyProviderWeaponEvidenceDetailsV1(
@@ -420,7 +423,11 @@
         }
 
         const auto descriptors = _weaponCollision.getProfileEvidenceDescriptors();
-        const std::uint32_t count = (std::min)(maxDetails, static_cast<std::uint32_t>(descriptors.size()));
+        const std::uint32_t count = (std::min)(
+            (std::min)(
+                maxDetails,
+                ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_EVIDENCE_DETAILS_V1),
+            static_cast<std::uint32_t>(descriptors.size()));
         for (std::uint32_t i = 0; i < count; ++i) {
             const auto& descriptor = descriptors[i];
             auto& out = outDetails[i];

@@ -35,8 +35,9 @@ namespace rock::provider
     inline constexpr std::uint32_t ROCK_PROVIDER_FRAME_SNAPSHOT_V1_SIZE = 256;
     inline constexpr std::uint32_t ROCK_PROVIDER_INTERACTION_COMMAND_RESULT_V1_PREFIX_SIZE = 112;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_BODIES = 8;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_EVIDENCE_DETAILS_V1 =
-        ROCK_PROVIDER_MAX_WEAPON_BODIES;
+    // Evidence describes the complete classified weapon-part catalog and is
+    // independent from the compact body array embedded in frame snapshots.
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_EVIDENCE_DETAILS_V1 = 100;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_EVIDENCE_POINTS_PER_DETAIL_V1 = 252;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EVIDENCE_NAME = 64;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EXTERNAL_BODIES_V1 = 2048;
