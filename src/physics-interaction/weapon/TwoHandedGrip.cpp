@@ -2896,7 +2896,6 @@ namespace rock
                 _authorityMode = authoredSupportAuthorityMode;
             }
             grip.authoredSupportGrip = true;
-            grip.authoredSupportTouchAcquired = authoredSeatTouchAcquisition;
             grip.authoredSupportCaptureSequence =
                 _authoredSupportGripCandidate.captureSequence;
             grip.attachmentRoot = weaponNode;
@@ -6654,17 +6653,13 @@ namespace rock
         }
 
         const WeaponPartGrip& supportGrip = partGrip(supportHandIsLeft);
-        // AttachOnly glue never inherits the firing grip. A pure probe-authored
-        // VisualOnlySupport seat stays presentation-only, while both dynamic
-        // touches and touch-acquired authored poses retain the handoff path.
-        // The distance gate below keeps every promotable support grip tied to
-        // the firing grip before promotion.
-        if (!supportGrip.active ||
-            supportGrip.attachOnly ||
-            !weapon_support_authority_policy::canPromoteSupportGripToFiringGrip(
-                _authorityMode,
-                supportGrip.authoredSupportGrip,
-                supportGrip.authoredSupportTouchAcquired)) {
+        // Pose selection (provider/authored/dynamic) and current transform
+        // authority (visual-only/full) are orthogonal to handoff capability.
+        // AttachOnly glue alone cannot inherit the firing grip. The distance
+        // gate below keeps every other promotable grip tied to the firing grip.
+        if (!weapon_support_authority_policy::canPromoteSupportGripToFiringGrip(
+                supportGrip.active,
+                supportGrip.attachOnly)) {
             return false;
         }
 

@@ -58,13 +58,17 @@ Require-Text 'src/physics-interaction/weapon/WeaponSupport.h' `
     'canApplyFiringGripProximityAuthority\(\s*bool providerGrabModeOverride\)[\s\S]{0,120}return !providerGrabModeOverride;' `
     'Core proximity support must be unconditional except for explicit provider grab modes.'
 
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'grip\.authoredSupportGrip\s*=\s*true;[\s\S]{0,180}grip\.authoredSupportTouchAcquired\s*=\s*authoredSeatTouchAcquisition' `
-    'Authored support capture must preserve independent touch provenance for handoff eligibility.'
+Require-Text 'src/physics-interaction/weapon/WeaponSupport.h' `
+    'canPromoteSupportGripToFiringGrip\([\s\S]{0,120}bool supportGripActive,[\s\S]{0,80}bool attachOnly\)[\s\S]{0,700}return supportGripActive && !attachOnly;' `
+    'Handoff eligibility must depend on an active non-AttachOnly grip, not its authored or dynamic pose source.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'tryPromoteSupportGripToFiringGrip[\s\S]*canPromoteSupportGripToFiringGrip\([\s\S]*_authorityMode,[\s\S]*supportGrip\.authoredSupportGrip,[\s\S]*supportGrip\.authoredSupportTouchAcquired' `
-    'Handoff promotion must distinguish a touch-acquired authored pose from a presentation-only authored probe.'
+    'tryPromoteSupportGripToFiringGrip[\s\S]*canPromoteSupportGripToFiringGrip\([\s\S]{0,160}supportGrip\.active,[\s\S]{0,100}supportGrip\.attachOnly\)[\s\S]{0,1200}firingGripPromotionRadiusGameUnits' `
+    'Handoff promotion must keep source-neutral grip eligibility followed by the firing-grip distance gate.'
+
+Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' `
+    'authoredSupportTouchAcquired' `
+    'Authored touch provenance must not remain as a second handoff-authority classification.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'handlingSettings\.ambidextrousHandoffEnabled\s*&&\s*!primaryGripInput\.held\s*&&\s*tryPromoteSupportGripToFiringGrip' `

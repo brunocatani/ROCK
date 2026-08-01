@@ -78,17 +78,16 @@ namespace rock::weapon_support_authority_policy
     }
 
     inline constexpr bool canPromoteSupportGripToFiringGrip(
-        WeaponSupportAuthorityMode mode,
-        bool authoredSupportGrip,
-        bool authoredSupportTouchAcquired)
+        bool supportGripActive,
+        bool attachOnly)
     {
-        // Authored describes the pose source, not the grip's handoff
-        // capability. A touch-acquired authored seat under the visual-only
-        // near-grip contract is still a real firing-grip handoff. Only a pure
-        // probe-authored seat must remain presentation-only.
-        return mode != WeaponSupportAuthorityMode::VisualOnlySupport ||
-               !authoredSupportGrip ||
-               authoredSupportTouchAcquired;
+        // Authored versus dynamic is pose selection, while VisualOnlySupport
+        // controls transform authority before a handoff. Neither changes an
+        // active grip's handoff capability. AttachOnly is the sole grip
+        // contract that may never inherit firing-grip ownership; promotion is
+        // still independently gated by ambidextrous mode, infrastructure, and
+        // firing-grip distance at the call site.
+        return supportGripActive && !attachOnly;
     }
 
     template <class Transform>
