@@ -1280,6 +1280,7 @@ namespace rock
         const bool driverFrameAuthorityWasActive = _scopeDriverFrameAuthorityActive;
         _scopeDriverFrameAuthorityActive = scope_safe_hand_frame_math::retainDriverFrameAuthority(
             _scopeMenuOpenThisFrame,
+            _manualScopeActivationRequested,
             isManualOwnershipActive(),
             driverFrameAuthorityWasActive);
         const bool driverFrameAuthorityStoppedThisFrame =
@@ -1328,7 +1329,11 @@ namespace rock
             if (resolutionMode == scope_safe_hand_frame_math::ResolutionMode::RootFlattened) {
                 const bool recentScopedHandAvailable = state.hasLastHandWorld &&
                                                        state.consecutiveDriverMissFrames < SCOPE_DRIVER_MISS_GRACE_FRAMES;
-                if (driverFrameAuthorityStoppedThisFrame && (reconstructedHandValid || recentScopedHandAvailable)) {
+                if (scope_safe_hand_frame_math::shouldStartRootRebase(
+                        _manualScopeActivationRequested,
+                        driverFrameAuthorityStoppedThisFrame,
+                        reconstructedHandValid,
+                        recentScopedHandAvailable)) {
                     // The previous ROCK output is the continuity authority.
                     // hFRIK may resume non-scope damping from a stale internal
                     // sample on this exact edge even though its driver is finite.

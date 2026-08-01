@@ -418,18 +418,34 @@ namespace rock::scope_safe_hand_frame_math
 
     /*
      * ScopeMenu visibility is presentation state, not weapon-solver
-     * ownership. Once a manual grip has crossed into the driver-reconstructed
-     * hand basis, retain that basis for the rest of the grip session. Letting
-     * a transient ScopeMenu close select the restored root for one frame moves
-     * the weapon/sight, which can immediately reopen the menu and create a
-     * self-sustaining root/driver oscillation.
+     * ownership. While the scope button remains requested, retain the driver
+     * basis across a transient ScopeMenu close so a presentation pulse cannot
+     * create a root/driver oscillation. A real button release is different:
+     * hFRIK has restored its visible root, and a still-active manual grip must
+     * not keep a stale hidden-scope driver authoritative for the exit frame.
      */
     [[nodiscard]] inline constexpr bool retainDriverFrameAuthority(
         bool scopeMenuOpen,
+        bool manualScopeActivationRequested,
         bool manualOwnershipActive,
         bool driverFrameAuthorityWasActive)
     {
-        return scopeMenuOpen || (manualOwnershipActive && driverFrameAuthorityWasActive);
+        return scopeMenuOpen ||
+               (manualScopeActivationRequested && manualOwnershipActive && driverFrameAuthorityWasActive);
+    }
+
+    [[nodiscard]] inline constexpr bool shouldStartRootRebase(
+        bool manualScopeActivationRequested,
+        bool driverFrameAuthorityStoppedThisFrame,
+        bool reconstructedHandValid,
+        bool recentScopedHandAvailable)
+    {
+        // The scoped frame is hidden, so it is useful continuity only while
+        // the user still requests the scope. On a real button release the
+        // restored visible root is authoritative immediately; blending from
+        // the hidden frame can stretch both arms and the weapon through space.
+        return manualScopeActivationRequested && driverFrameAuthorityStoppedThisFrame &&
+               (reconstructedHandValid || recentScopedHandAvailable);
     }
 
     [[nodiscard]] inline constexpr ResolutionMode resolveMode(
