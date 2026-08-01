@@ -1006,25 +1006,17 @@
                 panelY += 14.0f;
             }
 
-            if (activationSnapshot.evaluationSequence == 0) {
-                addScreenTextLine(panelX, panelY, panelColor, "cone: no valid resolved-anchor evaluation observed");
+            if (activationSnapshot.publicationSequence == 0) {
+                addScreenTextLine(panelX, panelY, panelColor, "scope input: no button/renderer sample observed");
                 panelY += 14.0f;
             } else {
-                std::snprintf(panelLine, sizeof(panelLine), "cone seq=%llu state=%s native=%s ROCK=%s anchor=%s generation=%016llX",
-                    static_cast<unsigned long long>(activationSnapshot.evaluationSequence), activationSnapshot.nativeScopeAlreadyActive ? "exit" : "enter",
-                    activationSnapshot.nativeGeometryDecision ? "inside" : "outside", activationSnapshot.rockGeometryDecision ? "inside" : "outside",
+                std::snprintf(panelLine, sizeof(panelLine), "scope input seq=%llu button=%s renderer=%s/%s anchor=%s generation=%016llX",
+                    static_cast<unsigned long long>(activationSnapshot.publicationSequence),
+                    activationSnapshot.manualInputRequested ? "held" : "released",
+                    activationSnapshot.rendererStateValid ? "valid" : "invalid",
+                    activationSnapshot.rendererActive ? "active" : "inactive",
                     scopeAnchorSourceName(activationSnapshot.anchorSource),
                     static_cast<unsigned long long>(activationSnapshot.weaponGenerationKey));
-                addScreenTextLine(panelX, panelY, panelColor, panelLine);
-                panelY += 14.0f;
-
-                const auto& sample = activationSnapshot.sample;
-                const auto& thresholds = activationSnapshot.thresholds;
-                const float hmdLimit = activationSnapshot.nativeScopeAlreadyActive ? thresholds.hmdExitDegrees : thresholds.hmdEnterDegrees;
-                const float weaponLimit = (activationSnapshot.nativeScopeAlreadyActive ? thresholds.weaponExitDegrees : thresholds.weaponEnterDegrees) * sample.weaponAngleWidening;
-                const float distanceLimit = activationSnapshot.nativeScopeAlreadyActive ? thresholds.distanceExitGameUnits : thresholds.distanceEnterGameUnits;
-                std::snprintf(panelLine, sizeof(panelLine), "sample: HMD=%.2f/%.2f deg weapon=%.2f/%.2f deg distance=%.2f/%.2f gu widen=%.3f", sample.hmdAngleDegrees, hmdLimit,
-                    sample.weaponAngleDegrees, weaponLimit, sample.distanceGameUnits, distanceLimit, sample.weaponAngleWidening);
                 addScreenTextLine(panelX, panelY, panelColor, panelLine);
                 panelY += 14.0f;
             }

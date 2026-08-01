@@ -141,9 +141,8 @@ namespace rock
         float rockWeaponVisualReturnMinAngleDegrees = 5.0f;
         float rockWeaponVisualReturnMaxAngleDegrees = 90.0f;
 
-        // False replaces FO4VR's generated-sight cone with a held firing-hand
-        // A/X gesture. A release before the threshold remains reload input.
-        bool rockAutoActivateScope = false;
+        // The held firing-hand A/X gesture is the sole native-scope activation
+        // path. A release before the threshold remains reload input.
         float rockManualScopeHoldSeconds = 0.30f;
 
         // Used only when generated Scope/Sight geometry is unavailable, or

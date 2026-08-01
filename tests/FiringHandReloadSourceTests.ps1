@@ -40,16 +40,15 @@ Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
     'shouldRouteFiringHandActivateReload[\s\S]{0,1400}isPrimaryWandInputEvent\(event\)[\s\S]{0,600}firingHandIsLeft\s*=\s*s_equippedWeaponLeftHandFiringActive' `
     'Runtime A-side reload routing must derive the event hand from primary-wand identity and compare it with live firing-hand ownership.'
 
-# Automatic X-side: the secondary wand accept button never produces an engine
-# event, so reload must still be dispatched from ROCK's raw press edge. Manual
-# scope mode consumes both physical A/X streams before classifying tap vs hold.
-Require-Text 'src/physics-interaction/input/InputRemapPolicy.h' `
-    'shouldDispatchSecondaryHandReloadPress[\s\S]{0,600}firingHandIsSecondaryHand\s*&&\s*input\.acceptButtonPressedEdge' `
-    'X-side reload policy must gate the raw accept-button press edge on secondary-hand firing-grip ownership.'
-
+# Button-only scope activation consumes both physical A/X streams before
+# classifying a short release as reload or a held gesture as scope ownership.
 Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
-    'updateFiringHandReloadInput[\s\S]{0,1600}consumeRawButtonState\(true,\s*input_remap_policy::kOpenVrAcceptButtonId\)[\s\S]{0,500}consumeRawButtonState\(false,\s*input_remap_policy::kOpenVrAcceptButtonId\)[\s\S]{0,5000}secondaryHandIsLeft\s*\?\s*leftAcceptState\s*:\s*rightAcceptState[\s\S]{0,1800}dispatchNativeReloadAction' `
-    'Runtime must drain both physical accept streams, preserve automatic secondary-wand reload, and dispatch the native reload action.'
+    'updateFiringHandReloadInput[\s\S]{0,1600}consumeRawButtonState\(true,\s*input_remap_policy::kOpenVrAcceptButtonId\)[\s\S]{0,500}consumeRawButtonState\(false,\s*input_remap_policy::kOpenVrAcceptButtonId\)[\s\S]{0,2400}manual_scope_input_policy::update[\s\S]{0,1600}dispatchNativeReloadAction' `
+    'Runtime must drain both physical accept streams and route the firing-hand tap/hold classifier to native reload dispatch.'
+
+Reject-Text 'src/physics-interaction/input/InputRemapPolicy.h' `
+    'shouldDispatchSecondaryHandReloadPress|SecondaryHandReloadInput' `
+    'The obsolete automatic-scope secondary-hand reload route must not remain beside the unified A/X classifier.'
 
 Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
     'updateFiringHandReloadInput[\s\S]{0,1800}consumeRawButtonState\(true,[\s\S]*consumeRawButtonState\(false,[\s\S]{0,600}isAnyProviderOpenVrGameInputSuppressed\(\)[\s\S]{0,300}blockManualScopeInputUntilRelease\(\)[\s\S]{0,120}return' `
@@ -80,8 +79,8 @@ Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
     'A firing-hand reload press must dispatch before same-button take/equip classification can consume it.'
 
 Require-Text 'tests/InputRemapPolicyTests.cpp' `
-    'right A cannot reload while the left hand owns the firing grip[\s\S]{0,3000}left X routes reload while the left hand owns the firing grip[\s\S]{0,600}left X cannot reload while the right hand owns the firing grip' `
-    'Policy tests must cover left-X acceptance during left firing plus both opposite-hand rejections.'
+    'support-hand A does not start a left-firing gesture[\s\S]{0,1000}left-firing X starts the same pending gesture' `
+    'Policy tests must cover physical firing-hand selection for the unified right-A/left-X gesture.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'Firing-hand reload source boundary failed:'

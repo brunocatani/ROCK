@@ -79,7 +79,6 @@ namespace rock::input_remap_policy
 
     struct ManualScopeActivateInput
     {
-        bool manualScopeEnabled{ false };
         bool rawInputCaptureAvailable{ false };
         bool gameplayInputAllowed{ true };
         bool menuInputActive{ false };
@@ -87,22 +86,6 @@ namespace rock::input_remap_policy
         bool primaryHandEvent{ false };
         bool firingHandIsPrimaryHand{ false };
         bool eventMatched{ false };
-    };
-
-    /*
-     * X-side reload input: the secondary wand's accept button never produces
-     * an engine event ROCK can hook (see shouldRouteFiringHandActivateReload),
-     * so the runtime polls ROCK's own raw OpenVR press edge for it once per
-     * frame and dispatches the native reload action directly.
-     */
-    struct SecondaryHandReloadInput
-    {
-        bool remapEnabled{ true };
-        bool gameplayInputAllowed{ true };
-        bool menuInputActive{ false };
-        bool weaponDrawn{ false };
-        bool firingHandIsSecondaryHand{ false };
-        bool acceptButtonPressedEdge{ false };
     };
 
     struct EquippedWeaponFiringGripInputGate
@@ -213,7 +196,7 @@ namespace rock::input_remap_policy
      * both controllers held their shared accept-button bit). The event's
      * physical hand therefore IS the primary-wand hand; reload routes only
      * while that same hand occupies the firing grip. A secondary-hand firing
-     * grip is fed by shouldDispatchSecondaryHandReloadPress instead.
+     * grip is handled by the raw A/X gesture classifier instead.
      */
     [[nodiscard]] constexpr bool shouldRouteFiringHandActivateReload(const NativeActivateReloadInput& input)
     {
@@ -223,26 +206,15 @@ namespace rock::input_remap_policy
     }
 
     /*
-     * In manual-scope mode the complete primary-wand A/X event is claimed by
-     * ROCK. Raw physical state decides later whether release means reload or
-     * whether the hold threshold converted the gesture into scope ownership.
+     * The complete primary-wand A/X event is claimed by ROCK. Raw physical
+     * state decides later whether release means reload or whether the hold
+     * threshold converted the gesture into scope ownership.
      */
     [[nodiscard]] constexpr bool shouldDeferFiringHandActivateForManualScope(const ManualScopeActivateInput& input)
     {
-        return input.manualScopeEnabled && input.rawInputCaptureAvailable && input.gameplayInputAllowed &&
+        return input.rawInputCaptureAvailable && input.gameplayInputAllowed &&
                !input.menuInputActive && input.weaponDrawn && input.primaryHandEvent &&
                input.firingHandIsPrimaryHand && input.eventMatched;
-    }
-
-    /*
-     * X-side route twin of the gate above, evaluated per frame from the raw
-     * press edge of the SECONDARY wand's accept button while that physical
-     * hand occupies the firing grip.
-     */
-    [[nodiscard]] constexpr bool shouldDispatchSecondaryHandReloadPress(const SecondaryHandReloadInput& input)
-    {
-        return input.remapEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.weaponDrawn &&
-               input.firingHandIsSecondaryHand && input.acceptButtonPressedEdge;
     }
 
     [[nodiscard]] constexpr bool shouldConsumeEquippedWeaponFiringGripInput(const EquippedWeaponFiringGripInputGate& input)
@@ -330,16 +302,6 @@ namespace rock::input_remap_policy
     [[nodiscard]] constexpr bool shouldInstallPipboyPauseArbitrationHooks(const bool remapEnabled)
     {
         return remapEnabled;
-    }
-
-    [[nodiscard]] constexpr bool shouldInstallActivateEventHook(const bool remapEnabled, const bool manualScopeEnabled)
-    {
-        return remapEnabled || manualScopeEnabled;
-    }
-
-    [[nodiscard]] constexpr bool shouldInstallRawControllerHooks(const bool remapEnabled, const bool manualScopeEnabled)
-    {
-        return remapEnabled || manualScopeEnabled;
     }
 
     [[nodiscard]] constexpr EdgeTransition evaluateEdgeTransition(bool hadPrevious, std::uint64_t previousPressed, std::uint64_t currentPressed)

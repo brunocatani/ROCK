@@ -50,6 +50,7 @@ namespace rock
         constexpr float RADIANS_TO_DEGREES = 57.295779513082320876f;
         constexpr std::uint32_t SCOPE_DRIVER_MISS_GRACE_FRAMES = 3;
         constexpr float SCOPE_ROOT_REBASE_DURATION_SECONDS = 0.075f;
+        constexpr std::uint32_t SCOPE_TRANSITION_TRACE_FRAMES = 6;
 
         /*
          * The part-carry two-anchor solve feeds its own rotation back as the
@@ -998,48 +999,6 @@ namespace rock
                areTransformsNearlyEqual(immediateScopeModelRootWorld, targetScopeModelRootWorld, 0.01f);
     }
 
-    bool TwoHandedGrip::tryResolveNativeScopeGeometryDecision(RE::NiNode* weaponNode, const std::uint64_t currentWeaponGenerationKey, RE::NiNode* hmdNode,
-        const RE::NiPoint3& hmdSampleOffsetLocal, const native_scope_activation_geometry::ConeThresholds& thresholds, const bool nativeScopeAlreadyActive,
-        const bool nativeGeometryDecision, bool& outRockGeometryDecision)
-    {
-        outRockGeometryDecision = nativeGeometryDecision;
-        if (!weaponNode || !hmdNode || currentWeaponGenerationKey == 0 || !_nativeScopeAnchorValid || _nativeScopeAnchorWeaponNode != weaponNode ||
-            _nativeScopeAnchorGenerationKey != currentWeaponGenerationKey || !isFiniteTransform(weaponNode->world) || !isFiniteTransform(hmdNode->world)) {
-            return false;
-        }
-
-        const native_scope_activation_geometry::ConeSample sample =
-            native_scope_activation_geometry::sample(weaponNode->world, _nativeScopeAnchorWeaponLocal, hmdNode->world, hmdSampleOffsetLocal, thresholds);
-        if (!sample.valid) {
-            return false;
-        }
-
-        constexpr std::uint32_t kNativeScopeExitConfirmationFrames = 3;
-        if (_nativeScopeExitDebounceGenerationKey != currentWeaponGenerationKey) {
-            _nativeScopeExitDebounceGenerationKey = currentWeaponGenerationKey;
-            _nativeScopeExitOutsideFrames = 0;
-        }
-        const bool insideCone = native_scope_activation_geometry::isInsideCone(sample, nativeScopeAlreadyActive, thresholds);
-        const native_scope_activation_geometry::ExitDebounceResult stabilizedDecision = native_scope_activation_geometry::stabilizeExitDecision(
-            insideCone,
-            nativeScopeAlreadyActive,
-            _nativeScopeExitOutsideFrames,
-            kNativeScopeExitConfirmationFrames);
-        _nativeScopeExitOutsideFrames = stabilizedDecision.consecutiveOutsideFrames;
-        outRockGeometryDecision = stabilizedDecision.decision;
-        _nativeScopeActivationDebugSnapshot = NativeScopeActivationDebugSnapshot{
-            .evaluationSequence = _nativeScopeActivationDebugSnapshot.evaluationSequence + 1,
-            .weaponGenerationKey = currentWeaponGenerationKey,
-            .anchorSource = _nativeScopeAnchorSource,
-            .nativeGeometryDecision = nativeGeometryDecision,
-            .rockGeometryDecision = outRockGeometryDecision,
-            .nativeScopeAlreadyActive = nativeScopeAlreadyActive,
-            .sample = sample,
-            .thresholds = thresholds,
-        };
-        return true;
-    }
-
     void TwoHandedGrip::refreshNativeScopeAnchor(
         RE::NiNode* weaponNode,
         std::uint64_t currentWeaponGenerationKey,
@@ -1098,9 +1057,6 @@ namespace rock
         if (identityChanged) {
             clearNativeScopeOverlayAuthority(true);
             clearNativeScopeRigidFrame();
-            _nativeScopeExitDebounceGenerationKey = 0;
-            _nativeScopeExitOutsideFrames = 0;
-
             _nativeScopeAnchorWeaponNode = weaponNode;
             _nativeScopeAnchorGenerationKey = currentWeaponGenerationKey;
             _nativeScopeAnchorOwnershipKey =
@@ -1155,8 +1111,6 @@ namespace rock
                 _nativeScopeFallbackRotationDegrees = {};
                 clearNativeScopeOverlayAuthority(true);
                 clearNativeScopeRigidFrame();
-                _nativeScopeExitDebounceGenerationKey = 0;
-                _nativeScopeExitOutsideFrames = 0;
                 ROCK_LOG_DEBUG(Weapon,
                     "TwoHandedGrip: rejected stale native scope sight anchor generation={:016X}->{:016X} ownership={:016X}->{:016X} form={:08X}->{:08X}",
                     snapshot.weaponGenerationKey,
@@ -1180,8 +1134,6 @@ namespace rock
             if (_nativeScopeAnchorValid) {
                 clearNativeScopeOverlayAuthority(true);
                 clearNativeScopeRigidFrame();
-                _nativeScopeExitDebounceGenerationKey = 0;
-                _nativeScopeExitOutsideFrames = 0;
             }
             _nativeScopeAnchorWeaponLocal = {};
             _nativeScopeAnchorSource =
@@ -1240,14 +1192,6 @@ namespace rock
             return;
         }
 
-        if (!identityChanged) {
-            // Keep the immutable native camera/model calibration for this
-            // equipped instance. Rebuild only the derived target so live
-            // position/rotation tuning cannot compound ROCK's previous write.
-            _nativeScopeExitDebounceGenerationKey = 0;
-            _nativeScopeExitOutsideFrames = 0;
-        }
-
         _nativeScopeAnchorWeaponLocal = resolved.weaponLocal;
         _nativeScopeAnchorSource = resolved.source;
         _nativeScopeAnchorValid = true;
@@ -1302,8 +1246,34 @@ namespace rock
         }
     }
 
-    void TwoHandedGrip::refreshScopeSafeHandFrames(const EquippedWeaponGripFrameInput& frameInput, float dt)
+    void TwoHandedGrip::refreshScopeSafeHandFrames(RE::NiNode* weaponNode, const EquippedWeaponGripFrameInput& frameInput, float dt)
     {
+        const bool activationStateChanged =
+            frameInput.manualScopeActivationRequested !=
+                _manualScopeActivationRequested ||
+            frameInput.nativeScopeRequestStateValid != _nativeScopeRequestStateValid ||
+            (frameInput.nativeScopeRequestStateValid &&
+                frameInput.nativeScopeRequestActive != _nativeScopeRequestActive);
+        _manualScopeActivationRequested =
+            frameInput.manualScopeActivationRequested;
+        _nativeScopeRequestStateValid = frameInput.nativeScopeRequestStateValid;
+        _nativeScopeRequestActive = frameInput.nativeScopeRequestStateValid &&
+                                    frameInput.nativeScopeRequestActive;
+        _nativeScopeActivationDebugSnapshot = NativeScopeActivationDebugSnapshot{
+            .publicationSequence =
+                _nativeScopeActivationDebugSnapshot.publicationSequence + 1,
+            .weaponGenerationKey = _nativeScopeAnchorGenerationKey,
+            .anchorSource = _nativeScopeAnchorSource,
+            .manualInputRequested = _manualScopeActivationRequested,
+            .rendererStateValid = _nativeScopeRequestStateValid,
+            .rendererActive = _nativeScopeRequestActive,
+        };
+        if (activationStateChanged) {
+            ++_nativeScopeTransitionTraceSequence;
+            _nativeScopeTransitionTraceFramesRemaining =
+                SCOPE_TRANSITION_TRACE_FRAMES;
+        }
+
         const bool scopeStateChanged = _scopeMenuOpenThisFrame != frameInput.scopeMenuOpen;
         _scopeMenuOpenThisFrame = frameInput.scopeMenuOpen;
         _scopeMenuClosedThisFrame = scopeStateChanged && !_scopeMenuOpenThisFrame;
@@ -1442,6 +1412,144 @@ namespace rock
 
         refreshHand(true, frameInput.leftHandDriverFrame);
         refreshHand(false, frameInput.rightHandDriverFrame);
+
+        if (_nativeScopeTransitionTraceFramesRemaining > 0) {
+            struct HandTrace
+            {
+                RE::NiTransform rootWorld{};
+                RE::NiTransform driverWorld{};
+                RE::NiTransform reconstructedWorld{};
+                RE::NiTransform solverWorld{};
+                bool rootValid{ false };
+                bool driverValid{ false };
+                bool reconstructedValid{ false };
+                bool solverValid{ false };
+                float rootToReconstructedDistance{ -1.0f };
+                float rootToSolverDistance{ -1.0f };
+            };
+
+            const auto distanceBetween = [](const RE::NiPoint3& left, const RE::NiPoint3& right) {
+                const RE::NiPoint3 delta = left - right;
+                const float distance = delta.Length();
+                return std::isfinite(distance) ? distance : -1.0f;
+            };
+            const auto captureHandTrace = [this, &distanceBetween](bool isLeft, const EquippedWeaponScopeHandDriverFrame& driverFrame) {
+                HandTrace trace{};
+                const ScopeSafeHandFrameState& state =
+                    _scopeSafeHandFrames[isLeft ? 0u : 1u];
+                trace.rootValid =
+                    tryGetRootFlattenedHandBoneTransform(isLeft, trace.rootWorld);
+                trace.driverValid = driverFrame.valid &&
+                                    isUsableHandAuthorityTransform(driverFrame.world);
+                if (trace.driverValid) {
+                    trace.driverWorld = driverFrame.world;
+                }
+                if (trace.driverValid && state.hasDriverToHandLocal) {
+                    trace.reconstructedWorld =
+                        scope_safe_hand_frame_math::resolveHandWorld(
+                            driverFrame.world,
+                            state.driverToHandLocal);
+                    trace.reconstructedValid =
+                        isUsableHandAuthorityTransform(trace.reconstructedWorld);
+                }
+                trace.solverValid = state.currentHandWorldValid;
+                if (trace.solverValid) {
+                    trace.solverWorld = state.currentHandWorld;
+                }
+                if (trace.rootValid && trace.reconstructedValid) {
+                    trace.rootToReconstructedDistance = distanceBetween(
+                        trace.rootWorld.translate,
+                        trace.reconstructedWorld.translate);
+                }
+                if (trace.rootValid && trace.solverValid) {
+                    trace.rootToSolverDistance = distanceBetween(
+                        trace.rootWorld.translate,
+                        trace.solverWorld.translate);
+                }
+                return trace;
+            };
+
+            const HandTrace leftTrace =
+                captureHandTrace(true, frameInput.leftHandDriverFrame);
+            const HandTrace rightTrace =
+                captureHandTrace(false, frameInput.rightHandDriverFrame);
+            RE::NiPoint3 weaponWorldPosition{};
+            const bool weaponWorldValid = weaponNode &&
+                                          isFiniteTransform(weaponNode->world);
+            if (weaponWorldValid) {
+                weaponWorldPosition = weaponNode->world.translate;
+            }
+            RE::NiPoint3 playerWorldOffset{};
+            bool playerWorldOffsetValid = false;
+            if (const auto* playerNodes = f4vr::getPlayerNodes();
+                playerNodes && playerNodes->playerworldnode &&
+                isFiniteTransform(playerNodes->playerworldnode->local)) {
+                playerWorldOffset =
+                    playerNodes->playerworldnode->local.translate;
+                playerWorldOffsetValid = true;
+            }
+
+            const std::uint32_t sampleIndex =
+                SCOPE_TRANSITION_TRACE_FRAMES -
+                _nativeScopeTransitionTraceFramesRemaining;
+            ROCK_LOG_INFO(Weapon,
+                "SCOPE-TRANSITION seq={} sample={}/{} buttonRequested={} rendererValid={} rendererActive={} menuOpen={} manual={} state={} driverAuthority={} weaponValid={} weapon=({:.2f},{:.2f},{:.2f}) playerOffsetValid={} playerOffset=({:.2f},{:.2f},{:.2f}) left[root={} driver={} reconstructed={} solver={} rootT=({:.2f},{:.2f},{:.2f}) driverT=({:.2f},{:.2f},{:.2f}) reconstructedT=({:.2f},{:.2f},{:.2f}) solverT=({:.2f},{:.2f},{:.2f}) rootToReconstructed={:.2f} rootToSolver={:.2f}] right[root={} driver={} reconstructed={} solver={} rootT=({:.2f},{:.2f},{:.2f}) driverT=({:.2f},{:.2f},{:.2f}) reconstructedT=({:.2f},{:.2f},{:.2f}) solverT=({:.2f},{:.2f},{:.2f}) rootToReconstructed={:.2f} rootToSolver={:.2f}]",
+                _nativeScopeTransitionTraceSequence,
+                sampleIndex,
+                SCOPE_TRANSITION_TRACE_FRAMES,
+                _manualScopeActivationRequested ? "yes" : "no",
+                frameInput.nativeScopeRequestStateValid ? "yes" : "no",
+                _nativeScopeRequestActive ? "yes" : "no",
+                _scopeMenuOpenThisFrame ? "yes" : "no",
+                isManualOwnershipActive() ? "yes" : "no",
+                static_cast<std::uint32_t>(_state),
+                _scopeDriverFrameAuthorityActive ? "yes" : "no",
+                weaponWorldValid ? "yes" : "no",
+                weaponWorldPosition.x,
+                weaponWorldPosition.y,
+                weaponWorldPosition.z,
+                playerWorldOffsetValid ? "yes" : "no",
+                playerWorldOffset.x,
+                playerWorldOffset.y,
+                playerWorldOffset.z,
+                leftTrace.rootValid ? "yes" : "no",
+                leftTrace.driverValid ? "yes" : "no",
+                leftTrace.reconstructedValid ? "yes" : "no",
+                leftTrace.solverValid ? "yes" : "no",
+                leftTrace.rootWorld.translate.x,
+                leftTrace.rootWorld.translate.y,
+                leftTrace.rootWorld.translate.z,
+                leftTrace.driverWorld.translate.x,
+                leftTrace.driverWorld.translate.y,
+                leftTrace.driverWorld.translate.z,
+                leftTrace.reconstructedWorld.translate.x,
+                leftTrace.reconstructedWorld.translate.y,
+                leftTrace.reconstructedWorld.translate.z,
+                leftTrace.solverWorld.translate.x,
+                leftTrace.solverWorld.translate.y,
+                leftTrace.solverWorld.translate.z,
+                leftTrace.rootToReconstructedDistance,
+                leftTrace.rootToSolverDistance,
+                rightTrace.rootValid ? "yes" : "no",
+                rightTrace.driverValid ? "yes" : "no",
+                rightTrace.reconstructedValid ? "yes" : "no",
+                rightTrace.solverValid ? "yes" : "no",
+                rightTrace.rootWorld.translate.x,
+                rightTrace.rootWorld.translate.y,
+                rightTrace.rootWorld.translate.z,
+                rightTrace.driverWorld.translate.x,
+                rightTrace.driverWorld.translate.y,
+                rightTrace.driverWorld.translate.z,
+                rightTrace.reconstructedWorld.translate.x,
+                rightTrace.reconstructedWorld.translate.y,
+                rightTrace.reconstructedWorld.translate.z,
+                rightTrace.solverWorld.translate.x,
+                rightTrace.solverWorld.translate.y,
+                rightTrace.solverWorld.translate.z,
+                rightTrace.rootToReconstructedDistance,
+                rightTrace.rootToSolverDistance);
+            --_nativeScopeTransitionTraceFramesRemaining;
+        }
     }
 
     bool TwoHandedGrip::tryGetSolverHandTransform(bool isLeft, RE::NiTransform& outTransform) const
@@ -1546,7 +1654,7 @@ namespace rock
             currentEquippedWeaponOwnershipKey,
             weaponCollision.getCurrentObservedEquippedWeaponFormID(),
             weaponCollision);
-        refreshScopeSafeHandFrames(frameInput, dt);
+        refreshScopeSafeHandFrames(weaponNode, frameInput, dt);
 
         if (!runtime_state::isLocalSkeletonReady() || !weaponNode) {
             clearAllVisualReturns("skeleton-or-weapon-unavailable", true, true);
@@ -1866,13 +1974,16 @@ namespace rock
             native_scope_sight_anchor_policy::AnchorSource::None;
         _nativeScopeAnchorValid = false;
         _nativeScopeFallbackRotationDegrees = {};
-        _nativeScopeExitDebounceGenerationKey = 0;
-        _nativeScopeExitOutsideFrames = 0;
         _nativeScopeCameraDebugSnapshot = {};
         _nativeScopeActivationDebugSnapshot = {};
         clearNativeScopeRigidFrame();
         _scopeSafeHandFrames = {};
         _scopeDriverFrameAuthorityActive = false;
+        _nativeScopeRequestStateValid = false;
+        _nativeScopeRequestActive = false;
+        _manualScopeActivationRequested = false;
+        _nativeScopeTransitionTraceSequence = 0;
+        _nativeScopeTransitionTraceFramesRemaining = 0;
         _scopeHandAuthorityPublishedThisFrame = {};
         clearPrimaryGripPose(_firingHandIsLeft);
         clearPrimaryDetachVisualAuthority(_firingHandIsLeft);

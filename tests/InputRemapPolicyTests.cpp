@@ -229,7 +229,6 @@ int main()
     ok &= expectFalse("unmatched activate event does not route reload", shouldRouteFiringHandActivateReload(unmatchedActivateReload));
 
     ManualScopeActivateInput manualActivate{
-        .manualScopeEnabled = true,
         .rawInputCaptureAvailable = true,
         .gameplayInputAllowed = true,
         .menuInputActive = false,
@@ -240,10 +239,6 @@ int main()
     };
     ok &= expectTrue("manual scope claims the complete primary firing-hand activate event",
         shouldDeferFiringHandActivateForManualScope(manualActivate));
-    auto automaticActivate = manualActivate;
-    automaticActivate.manualScopeEnabled = false;
-    ok &= expectFalse("automatic scope leaves primary activate on the existing reload route",
-        shouldDeferFiringHandActivateForManualScope(automaticActivate));
     auto missingRawCapture = manualActivate;
     missingRawCapture.rawInputCaptureAvailable = false;
     ok &= expectFalse("manual scope does not swallow reload when raw capture is unavailable",
@@ -252,28 +247,6 @@ int main()
     supportHandActivate.firingHandIsPrimaryHand = false;
     ok &= expectFalse("manual scope does not claim the support hand activate event",
         shouldDeferFiringHandActivateForManualScope(supportHandActivate));
-
-    SecondaryHandReloadInput secondaryReload{
-        .remapEnabled = true,
-        .gameplayInputAllowed = true,
-        .menuInputActive = false,
-        .weaponDrawn = true,
-        .firingHandIsSecondaryHand = true,
-        .acceptButtonPressedEdge = true,
-    };
-    ok &= expectTrue("left X routes reload while the left hand owns the firing grip", shouldDispatchSecondaryHandReloadPress(secondaryReload));
-    auto leftXWhileRightFiring = secondaryReload;
-    leftXWhileRightFiring.firingHandIsSecondaryHand = false;
-    ok &= expectFalse("left X cannot reload while the right hand owns the firing grip", shouldDispatchSecondaryHandReloadPress(leftXWhileRightFiring));
-    auto secondaryReloadNoEdge = secondaryReload;
-    secondaryReloadNoEdge.acceptButtonPressedEdge = false;
-    ok &= expectFalse("held left X does not repeat reload without a fresh press edge", shouldDispatchSecondaryHandReloadPress(secondaryReloadNoEdge));
-    auto secondaryReloadHolstered = secondaryReload;
-    secondaryReloadHolstered.weaponDrawn = false;
-    ok &= expectFalse("holstered weapon blocks secondary-hand reload press", shouldDispatchSecondaryHandReloadPress(secondaryReloadHolstered));
-    auto secondaryReloadMenu = secondaryReload;
-    secondaryReloadMenu.menuInputActive = true;
-    ok &= expectFalse("menu input blocks secondary-hand reload press", shouldDispatchSecondaryHandReloadPress(secondaryReloadMenu));
 
     EquippedWeaponFiringGripInputGate firingGripGate{
         .featureAvailable = true,
@@ -337,13 +310,6 @@ int main()
     ok &= expectFalse("disabled remap skips native hook install", shouldInstallNativeActionSuppressionHook(false, true));
     ok &= expectTrue("enabled remap installs mandatory Pip-Boy/Pause arbitration hooks", shouldInstallPipboyPauseArbitrationHooks(true));
     ok &= expectFalse("disabled remap leaves native Pip-Boy and Pause handlers untouched", shouldInstallPipboyPauseArbitrationHooks(false));
-    ok &= expectTrue("manual scope installs the activate event hook independently of general remapping",
-        shouldInstallActivateEventHook(false, true));
-    ok &= expectTrue("manual scope installs raw controller capture independently of general remapping",
-        shouldInstallRawControllerHooks(false, true));
-    ok &= expectFalse("disabled remap and automatic scope need no raw controller hook",
-        shouldInstallRawControllerHooks(false, false));
-
     nativeVats::RuntimeState nativeVatsState{};
     auto nativeVatsDecision = nativeVats::update(
         nativeVatsState,
@@ -611,7 +577,6 @@ int main()
 
     manual::RuntimeState manualState{};
     manual::Input manualInput{
-        .manualModeEnabled = true,
         .gameplayInputAllowed = true,
         .menuInputActive = false,
         .weaponDrawn = true,
@@ -698,10 +663,6 @@ int main()
     manualInput.rightButton.released = true;
     manualDecision = manual::update(manualState, manualInput);
     ok &= expectFalse("menu-cancelled gesture cannot replay as reload", manualDecision.dispatchReload);
-
-    manualInput.manualModeEnabled = false;
-    manualDecision = manual::update(manualState, manualInput);
-    ok &= expectManualScopeState("automatic mode clears all manual gesture state", manualDecision.state, manual::State::Idle);
 
     return ok ? 0 : 1;
 }

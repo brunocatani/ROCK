@@ -37,6 +37,8 @@ Require-Text 'src/physics-interaction/core/RockRuntimeState.cpp' 'localScopeMenu
     'Runtime state must sample FO4VR ScopeMenu explicitly instead of treating it as a generic blocking menu.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'scopeHandDriverNode\s*=\s*\[playerNodes\]\(bool isLeft\)[\s\S]*return isLeft\s*\?[\s\S]*SecondaryMeleeWeaponOffsetNode2\s*:[\s\S]*primaryWeaponOffsetNOde[\s\S]*scopeMenuOpen\s*=\s*runtime\.localScopeMenuOpen[\s\S]*leftHandDriverFrame\s*=\s*leftHandDriverFrame[\s\S]*rightHandDriverFrame\s*=\s*rightHandDriverFrame' `
     'Two-hand authority must receive fixed physical-left secondary and physical-right primary hFRIK driver frames together with explicit ScopeMenu state.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'nativeScopeRequestStateValid\s*=\s*tryReadNativeScopeRequestState\(nativeScopeRequestActive\)[\s\S]*manualScopeActivationRequested\s*=\s*input_remap_runtime::isManualScopeActivationRequested\(\)[\s\S]*manualScopeActivationRequested\s*=\s*manualScopeActivationRequested[\s\S]*nativeScopeRequestStateValid\s*=\s*nativeScopeRequestStateValid[\s\S]*nativeScopeRequestActive\s*=\s*nativeScopeRequestActive' `
+    'The physical button request and verified native renderer state must be sampled beside the UI signal for scope-transition diagnosis.'
 Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'isLeftHandedMode' `
     'Scope authority must not reinterpret ROCK controller identity through Fallout 4 VR native handedness.'
 
@@ -45,7 +47,7 @@ Require-Text 'src/physics-interaction/weapon/WeaponCollision.h' 'struct NativeSc
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'accumulatePartKind\(WeaponPartKind::Scope\)[\s\S]*accumulatePartKind\(WeaponPartKind::Sight\)[\s\S]*rearPlaneCenterFromSightBounds[\s\S]*_nativeScopeSightAnchorSnapshot\s*=\s*nativeScopeSightAnchorSnapshot' `
     'Native-scope placement must prefer validated native-overlay Scope geometry, retain Sight only as an evidence fallback, and publish its rear-center anchor with the weapon generation.'
 
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' '_hasSolvedWeaponTransform\s*=\s*false;[\s\S]*refreshNativeScopeAnchor\([\s\S]*currentWeaponGenerationKey,[\s\S]*currentEquippedWeaponOwnershipKey,[\s\S]*getCurrentObservedEquippedWeaponFormID\(\)[\s\S]*refreshScopeSafeHandFrames\(frameInput,\s*dt\);[\s\S]*if\s*\(!runtime_state::isLocalSkeletonReady\(\)\s*\|\|\s*!weaponNode\)' `
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' '_hasSolvedWeaponTransform\s*=\s*false;[\s\S]*refreshNativeScopeAnchor\([\s\S]*currentWeaponGenerationKey,[\s\S]*currentEquippedWeaponOwnershipKey,[\s\S]*getCurrentObservedEquippedWeaponFormID\(\)[\s\S]*refreshScopeSafeHandFrames\(weaponNode,\s*frameInput,\s*dt\);[\s\S]*if\s*\(!runtime_state::isLocalSkeletonReady\(\)\s*\|\|\s*!weaponNode\)' `
     'Scope anchor and hFRIK-driver calibration must refresh before the grip state machine and its early return.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'snapshot\.weaponGenerationKey\s*!=[\s\S]*matchesCurrentEquippedWeapon\([\s\S]*publishedIdentity,[\s\S]*currentIdentity[\s\S]*_nativeScopeAnchorWeaponNode\s*=\s*nullptr[\s\S]*native_scope_sight_anchor_policy::resolve[\s\S]*_nativeScopeAnchorValid\s*=\s*true' `
     'Native-scope geometry must reject publication races before selecting either generated geometry or the current firing-grip fallback.'
@@ -73,6 +75,8 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'rootHandValid\s
     'The latched scope-driver authority, not presentation visibility, must select the weapon-solver hand basis.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'driverFrameAuthorityStoppedThisFrame\s*&&\s*\(reconstructedHandValid\s*\|\|\s*recentScopedHandAvailable\)[\s\S]*continuityHandWorld[\s\S]*rootRebaseLocalStart[\s\S]*interpolateRebaseTransform' `
     'Scope exit must rebase smoothly from reconstructed or recent scoped authority to the restored hFRIK root hand.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'activationStateChanged[\s\S]*SCOPE_TRANSITION_TRACE_FRAMES[\s\S]*SCOPE-TRANSITION[\s\S]*buttonRequested=[\s\S]*rendererActive=[\s\S]*rootToReconstructed=[\s\S]*rootToSolver=' `
+    'A bounded button/renderer edge trace must distinguish UI state from root, driver, reconstructed, and solver hand-frame divergence.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'recentScopedHandAvailable\s*=\s*state\.hasLastHandWorld\s*&&[\s\S]*state\.consecutiveDriverMissFrames\s*<\s*SCOPE_DRIVER_MISS_GRACE_FRAMES;[\s\S]*state\.consecutiveDriverMissFrames\s*=\s*0;' `
     'Scope-exit history age must be checked before the normal root path resets its driver-miss counter.'
 Require-Text 'src/physics-interaction/weapon/WeaponAuthority.h' 'enum class HandAuthorityRole[\s\S]*DesiredHandAuthorityInput[\s\S]*desiredRolesForHand[\s\S]*DeferredClearAction[\s\S]*resolveDeferredClearAction' `

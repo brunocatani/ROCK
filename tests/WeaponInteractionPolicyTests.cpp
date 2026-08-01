@@ -573,46 +573,6 @@ int main()
             ok &= expectTransformNear("one-hand, two-hand, and left-hand modes preserve one rigid scope frame", resolvedLocal, rigidSightFrameLocal);
         }
 
-        const rock::native_scope_activation_geometry::ConeThresholds coneThresholds{};
-        TestTransform coneWeapon = rock::transform_math::makeIdentityTransform<TestTransform>();
-        TestTransform coneHmd = rock::transform_math::makeIdentityTransform<TestTransform>();
-        const TestVector3 zeroOffset{};
-        const auto centeredConeSample = rock::native_scope_activation_geometry::sample(coneWeapon, TestVector3{ 0.0f, 30.0f, 0.0f }, coneHmd, zeroOffset, coneThresholds);
-        ok &= expectTrue("generated sight rear-center produces a valid native cone sample", centeredConeSample.valid);
-        ok &= expectNear("native cone uses HMD-to-sight distance", centeredConeSample.distanceGameUnits, 30.0f);
-        ok &= expectNear("native cone uses HMD +Y", centeredConeSample.hmdAngleDegrees, 0.0f);
-        ok &= expectNear("native cone uses weapon +Y", centeredConeSample.weaponAngleDegrees, 0.0f);
-        ok &= expectNear("native cone preserves shipped widening formula", centeredConeSample.weaponAngleWidening, 4.0f);
-        ok &= expectTrue("centered generated sight enters native scope", rock::native_scope_activation_geometry::isInsideCone(centeredConeSample, false, coneThresholds));
-
-        const auto hysteresisDistanceSample = rock::native_scope_activation_geometry::sample(coneWeapon, TestVector3{ 0.0f, 39.0f, 0.0f }, coneHmd, zeroOffset, coneThresholds);
-        ok &= expectFalse("39 game units stays outside the strict enter distance",
-            rock::native_scope_activation_geometry::isInsideCone(hysteresisDistanceSample, false, coneThresholds));
-        ok &=
-            expectTrue("39 game units stays inside the wider exit distance", rock::native_scope_activation_geometry::isInsideCone(hysteresisDistanceSample, true, coneThresholds));
-        auto strictBoundarySample = centeredConeSample;
-        strictBoundarySample.distanceGameUnits = coneThresholds.distanceEnterGameUnits;
-        ok &= expectFalse("native enter boundary remains a strict comparison", rock::native_scope_activation_geometry::isInsideCone(strictBoundarySample, false, coneThresholds));
-
-        constexpr std::uint32_t exitConfirmationFrames = 3;
-        const auto immediateEntry = rock::native_scope_activation_geometry::stabilizeExitDecision(true, false, 0, exitConfirmationFrames);
-        ok &= expectTrue("native scope entry remains immediate", immediateEntry.decision);
-        ok &= expectTrue("entry clears pending outside samples", immediateEntry.consecutiveOutsideFrames == 0);
-        const auto inactiveOutside = rock::native_scope_activation_geometry::stabilizeExitDecision(false, false, 2, exitConfirmationFrames);
-        ok &= expectFalse("outside sample does not activate an inactive scope", inactiveOutside.decision);
-        ok &= expectTrue("inactive scope clears pending exit state", inactiveOutside.consecutiveOutsideFrames == 0);
-        const auto firstOutside = rock::native_scope_activation_geometry::stabilizeExitDecision(false, true, 0, exitConfirmationFrames);
-        ok &= expectTrue("first active outside sample is held", firstOutside.decision);
-        const auto recoveredInside = rock::native_scope_activation_geometry::stabilizeExitDecision(true, true, firstOutside.consecutiveOutsideFrames, exitConfirmationFrames);
-        ok &= expectTrue("inside sample cancels a pending scope exit", recoveredInside.decision);
-        ok &= expectTrue("inside recovery resets outside count", recoveredInside.consecutiveOutsideFrames == 0);
-        const auto secondOutside = rock::native_scope_activation_geometry::stabilizeExitDecision(
-            false, true, firstOutside.consecutiveOutsideFrames, exitConfirmationFrames);
-        ok &= expectTrue("second active outside sample is held", secondOutside.decision);
-        const auto confirmedExit = rock::native_scope_activation_geometry::stabilizeExitDecision(
-            false, true, secondOutside.consecutiveOutsideFrames, exitConfirmationFrames);
-        ok &= expectFalse("third consecutive active outside sample confirms scope exit", confirmedExit.decision);
-
         const TestTransform equippedSightBaseline =
             rock::native_scope_camera_follow_math::resolveRigidAnchorFrameWorld(
                 weaponBefore,

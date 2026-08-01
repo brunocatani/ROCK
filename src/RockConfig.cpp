@@ -215,7 +215,6 @@ namespace rock
         rockWeaponVisualReturnMaxDistance = 14.0f;
         rockWeaponVisualReturnMinAngleDegrees = 5.0f;
         rockWeaponVisualReturnMaxAngleDegrees = 90.0f;
-        rockAutoActivateScope = false;
         rockManualScopeHoldSeconds = 0.30f;
         rockNativeScopeForceFiringGripFallback = false;
         rockNativeScopeFiringGripFallbackOffsetXGameUnits = 0.0f;
@@ -1006,8 +1005,6 @@ namespace rock
             rockWeaponVisualReturnMinAngleDegrees,
             180.0f);
 
-        rockAutoActivateScope =
-            ini.GetBoolValue(NATIVE_SCOPES_SECTION, "bAutoActivateScope", rockAutoActivateScope);
         rockManualScopeHoldSeconds = readClampedFloat(ini,
             NATIVE_SCOPES_SECTION,
             "fManualScopeHoldSeconds",

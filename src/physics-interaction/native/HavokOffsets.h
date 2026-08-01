@@ -367,24 +367,11 @@ namespace rock::offsets
     /*
      * PlayerCharacter flag storage is independently witnessed in the scope
      * update at 0x140EF84AF and the state transition at 0x140EFAAF7. Bit 0x08
-     * is the native force-true branch immediately before the cone decision and
-     * must retain priority over ROCK's replacement geometry.
+     * is the native force-true branch immediately before the scope decision and
+     * must retain priority over ROCK's held-button state.
      */
     constexpr std::ptrdiff_t kPlayerCharacter_NativeScopeFlags = 0x12A1;
     constexpr std::uint8_t kPlayerCharacter_NativeScopeForceDecisionMask = 0x08;
-
-    /* Engine Setting objects; the live float value is the first four bytes. */
-    constexpr std::uintptr_t kSetting_HmdScopeOffsetX = 0x37CF468;
-    constexpr std::uintptr_t kSetting_HmdScopeOffsetY = 0x37CF480;
-    constexpr std::uintptr_t kSetting_HmdScopeOffsetZ = 0x37CF498;
-    constexpr std::uintptr_t kSetting_HmdScopeAngleEnterDegrees = 0x37CF4F8;
-    constexpr std::uintptr_t kSetting_HmdScopeAngleExitDegrees = 0x37CF528;
-    constexpr std::uintptr_t kSetting_WeaponScopeAngleEnterDegrees = 0x37CF540;
-    constexpr std::uintptr_t kSetting_WeaponScopeAngleExitDegrees = 0x37CF570;
-    constexpr std::uintptr_t kSetting_WeaponScopeDistanceEnter = 0x37CF5A0;
-    constexpr std::uintptr_t kSetting_WeaponScopeDistanceExit = 0x37CF5B8;
-    constexpr std::uintptr_t kSetting_ScopeWeaponAngleWideningFactor = 0x37CF5E8;
-    constexpr std::uintptr_t kSetting_ScopeWeaponAngleExponent = 0x37CF600;
 
     constexpr std::uintptr_t kData_CollisionFilterSingleton = 0x59429B8;
 

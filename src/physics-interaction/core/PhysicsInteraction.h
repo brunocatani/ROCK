@@ -95,8 +95,6 @@ namespace rock
 
         void synchronizeNativeScopePresentationAfterFrikUpdate();
 
-        bool tryResolveNativeScopeGeometryDecision(bool nativeGeometryDecision, bool& outRockGeometryDecision);
-
         [[nodiscard]] bool tryGetManualScopeDirectTransitionTarget(
             std::uint64_t& outWeaponGenerationKey,
             std::uint32_t& outNativeOverlayIndex) const;

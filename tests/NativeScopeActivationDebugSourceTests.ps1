@@ -43,10 +43,14 @@ Require-Text 'src/RockConfig.h' 'rockDebugDrawNativeScopeActivation\s*=\s*false'
     'Native-scope visualization must have a dedicated opt-in runtime gate.'
 Require-Text 'src/RockConfig.cpp' 'rockDebugDrawNativeScopeActivation\s*=\s*false[\s\S]*bDebugDrawNativeScopeActivation' `
     'The diagnostic gate must reset fail-closed and load from ROCK.ini.'
-Require-Text 'src/RockConfig.h' 'rockAutoActivateScope\s*=\s*false[\s\S]*rockManualScopeHoldSeconds\s*=\s*0\.30f' `
-    'Manual firing-hand hold activation must be the native-scope default.'
-Require-Text 'src/RockConfig.cpp' 'bAutoActivateScope[\s\S]*fManualScopeHoldSeconds' `
-    'Native-scope activation mode and hold threshold must load from ROCK.ini.'
+Require-Text 'src/RockConfig.h' 'sole native-scope activation[\s\S]*rockManualScopeHoldSeconds\s*=\s*0\.30f' `
+    'The firing-hand hold must be the sole native-scope activation contract.'
+Require-Text 'src/RockConfig.cpp' 'fManualScopeHoldSeconds' `
+    'The native-scope hold threshold must load from ROCK.ini.'
+Reject-Text 'src/RockConfig.h' 'rockAutoActivateScope' `
+    'The retired cone/button mode switch must not remain in runtime configuration.'
+Reject-Text 'src/RockConfig.cpp' 'bAutoActivateScope|rockAutoActivateScope' `
+    'The retired cone/button mode switch must not remain in config loading.'
 Require-Text 'src/RockConfig.h' 'rockNativeScopeForceFiringGripFallback\s*=\s*false[\s\S]*rockNativeScopeFiringGripFallbackOffsetXGameUnits\s*=\s*0\.0f[\s\S]*rockNativeScopeFiringGripFallbackOffsetYGameUnits\s*=\s*0\.0f[\s\S]*rockNativeScopeFiringGripFallbackOffsetZGameUnits\s*=\s*0\.0f[\s\S]*rockNativeScopeFiringGripFallbackPitchDegrees\s*=\s*0\.0f[\s\S]*rockNativeScopeFiringGripFallbackYawDegrees\s*=\s*0\.0f[\s\S]*rockNativeScopeFiringGripFallbackRollDegrees\s*=\s*0\.0f' `
     'Missing-optic fallback must expose one force switch and a neutral six-degree-of-freedom Weapon-local firing-grip frame.'
 Require-Text 'src/RockConfig.cpp' 'bNativeScopeForceFiringGripFallback[\s\S]*fNativeScopeFiringGripFallbackOffsetXGameUnits[\s\S]*fNativeScopeFiringGripFallbackOffsetYGameUnits[\s\S]*fNativeScopeFiringGripFallbackOffsetZGameUnits[\s\S]*fNativeScopeFiringGripFallbackPitchDegrees[\s\S]*fNativeScopeFiringGripFallbackYawDegrees[\s\S]*fNativeScopeFiringGripFallbackRollDegrees' `
@@ -60,16 +64,18 @@ Require-Text 'src/RockConfig.h' 'rockNativeScopeOverlayOffsetXGameUnits[\s\S]*ro
 Require-Text 'src/RockConfig.cpp' 'NATIVE_SCOPES_SECTION\s*=\s*"NativeScopes"[\s\S]*fNativeScopeOverlayOffsetXGameUnits[\s\S]*fNativeScopeOverlayOffsetYGameUnits[\s\S]*fNativeScopeOverlayOffsetZGameUnits[\s\S]*fNativeScopeOverlayPitchDegrees[\s\S]*fNativeScopeOverlayYawDegrees[\s\S]*fNativeScopeOverlayRollDegrees' `
     'Native scope overlay tuning must load from its independent NativeScopes INI section.'
 foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
-    Require-Text $configPath '\[NativeScopes\][\s\S]*bAutoActivateScope\s*=\s*false[\s\S]*fManualScopeHoldSeconds\s*=\s*0\.30' `
-        'Native scope templates must default to manual A/X hold activation.'
+    Require-Text $configPath '\[NativeScopes\][\s\S]*fManualScopeHoldSeconds\s*=\s*0\.30' `
+        'Native scope templates must expose the sole A/X hold threshold.'
+    Reject-Text $configPath 'bAutoActivateScope' `
+        'Native scope templates must not advertise the retired cone activation path.'
     Require-Text $configPath '\[NativeScopes\][\s\S]*bNativeScopeForceFiringGripFallback\s*=\s*false[\s\S]*fNativeScopeFiringGripFallbackOffsetXGameUnits\s*=\s*0\.0[\s\S]*fNativeScopeFiringGripFallbackOffsetYGameUnits\s*=\s*0\.0[\s\S]*fNativeScopeFiringGripFallbackOffsetZGameUnits\s*=\s*0\.0[\s\S]*fNativeScopeFiringGripFallbackPitchDegrees\s*=\s*0\.0[\s\S]*fNativeScopeFiringGripFallbackYawDegrees\s*=\s*0\.0[\s\S]*fNativeScopeFiringGripFallbackRollDegrees\s*=\s*0\.0' `
         'Native scope templates must expose a neutral, opt-in-force six-degree-of-freedom firing-grip fallback.'
     Require-Text $configPath '\[NativeScopes\][\s\S]*fNativeScopeOverlayOffsetXGameUnits\s*=\s*0\.0[\s\S]*fNativeScopeOverlayOffsetYGameUnits\s*=\s*0\.0[\s\S]*fNativeScopeOverlayOffsetZGameUnits\s*=\s*0\.0[\s\S]*fNativeScopeOverlayPitchDegrees\s*=\s*0\.0[\s\S]*fNativeScopeOverlayYawDegrees\s*=\s*0\.0[\s\S]*fNativeScopeOverlayRollDegrees\s*=\s*0\.0' `
         'Native scope overlay template tuning must default to a neutral additive transform.'
 }
 
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' 'enum class NativeScopeCameraWriteSource[\s\S]*PostFrikPresentationSync[\s\S]*WeaponVisualAuthority[\s\S]*struct NativeScopeActivationDebugSnapshot' `
-    'Native scope activation diagnostics must retain the verified cone decision.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' 'enum class NativeScopeCameraWriteSource[\s\S]*PostFrikPresentationSync[\s\S]*WeaponVisualAuthority[\s\S]*struct NativeScopeActivationDebugSnapshot[\s\S]*manualInputRequested[\s\S]*rendererStateValid[\s\S]*rendererActive' `
+    'Native scope diagnostics must expose the sole button request and verified renderer response.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' 'struct NativeScopeRigidFrameState[\s\S]*weaponGenerationKey[\s\S]*nativeCameraWeaponLocal[\s\S]*cameraWeaponLocal' `
     'Native scope presentation must retain immutable native calibration separately from its generation-bound tuned target.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' 'struct NativeScopeCameraTargetPreviewSnapshot[\s\S]*equippedWeaponOwnershipKey[\s\S]*anchorSource[\s\S]*cameraWeaponLocal[\s\S]*valid' `
@@ -80,30 +86,36 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'captureNativeSc
     'Post-FRIK presentation must derive fallback tuning from one immutable native frame instead of recapturing or compounding it per hand mode.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'rebuildNativeScopeRigidFrameTarget[\s\S]*nativeCameraWeaponLocal[\s\S]*FiringGripFallback[\s\S]*applyWeaponLocalRotationOffset[\s\S]*cameraWeaponLocal' `
     'Only the firing-grip fallback may add the configured weapon-axis camera rotation to immutable native calibration.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'tryResolveNativeScopeGeometryDecision[\s\S]*_nativeScopeAnchorGenerationKey\s*!=\s*currentWeaponGenerationKey[\s\S]*native_scope_activation_geometry::sample[\s\S]*native_scope_activation_geometry::isInsideCone' `
-    'Native entry and exit must use the exact generation-matched resolved anchor and final weapon transform.'
+Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'tryResolveNativeScopeGeometryDecision|native_scope_activation_geometry|isInsideCone|stabilizeExitDecision' `
+    'The retired ROCK cone solver and its exit debounce must not remain callable.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'refreshNativeScopeAnchor[\s\S]*rockNativeScopeForceFiringGripFallback[\s\S]*hasRightFiringHandCanonicalFrame[\s\S]*_primaryGripConfidence[\s\S]*native_scope_sight_anchor_policy::resolve[\s\S]*FiringGripFallback' `
     'Malformed optics must resolve from the generation-bound canonical or active firing grip, with an explicit forced-override path.'
 Reject-Text 'src/physics-interaction/weapon/WeaponAuthority.h' 'followWeaponWorldChange\s*\(' `
     'The controller-relative rigid-delta fallback must stay removed.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'isInsideCone[\s\S]*stabilizeExitDecision[\s\S]*kNativeScopeExitConfirmationFrames' `
-    'Native scope exit must reject transient outside samples without changing the cone or immediate entry decision.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'captureNativeScopeOverlayCalibration[\s\S]*ScopeParentNode[\s\S]*find1StChildNode\(scopeParent,\s*"world_scope\.nif"\)[\s\S]*captureModelRootCalibrationInCameraLocal[\s\S]*applyNativeScopeOverlayTarget[\s\S]*makeModelRootFineTuneLocal[\s\S]*resolveScopeModelRootWorld[\s\S]*resolveScopeParentWorldForModelRoot[\s\S]*worldTargetToParentLocal[\s\S]*updateTransformsDown\(scopeParent,\s*true\)' `
     'The rendered world-scope hierarchy must preserve native model orientation, apply INI tuning, and compensate the live NIF root transform at the generated sight.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'tryGetComposedNodeWorld\(scopeModelRoot,\s*immediateScopeModelRootWorld\)[\s\S]*areTransformsNearlyEqual\(immediateScopeModelRootWorld,\s*targetScopeModelRootWorld,\s*0\.01f\)' `
     'Every overlay write must immediately verify that the live world-scope model root reached its calibrated and tuned target.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'clearNativeScopeOverlayAuthority[\s\S]*lastAppliedScopeParentLocal[\s\S]*nativeScopeParentLocal[\s\S]*_nativeScopeOverlayCalibration\s*=\s*\{\}' `
     'ScopeParent authority must restore the captured native local only while ROCK still owns the last applied transform.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'tryReadNativeScopeRequestState[\s\S]*kSetting_HmdScopeOffsetY[\s\S]*kSetting_HmdScopeAngleEnterDegrees[\s\S]*kSetting_WeaponScopeAngleExitDegrees[\s\S]*kSetting_ScopeWeaponAngleExponent[\s\S]*tryResolveNativeScopeGeometryDecision' `
-    'The replacement cone must preserve the live native settings and current enter/exit state.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'tryReadNativeScopeRequestState[\s\S]*kFunc_NativeScopeRequestStateGet[\s\S]*kData_NativeScopeRendererState[\s\S]*manualScopeActivationRequested\s*=\s*input_remap_runtime::isManualScopeActivationRequested' `
+    'The button-only path must observe its verified renderer response beside the physical input request.'
+Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'tryResolveNativeScopeGeometryDecision|kSetting_HmdScopeOffset|kSetting_HmdScopeAngle|kSetting_WeaponScopeAngle|kSetting_WeaponScopeDistance|kSetting_ScopeWeaponAngle' `
+    'The retired cone solver and cone-setting reads must not remain in PhysicsInteraction.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'tryGetManualScopeDirectTransitionTarget[\s\S]*getNativeScopeResolvedAnchorSnapshot[\s\S]*resolvedAnchor\.valid[\s\S]*matchesCurrentEquippedWeapon\([\s\S]*resolvedIdentity,[\s\S]*currentIdentity' `
     'Unflagged scopes may transition only after either generated geometry or the firing-grip fallback resolved for the current equipped instance.'
 Require-Text 'src/physics-interaction/core/PhysicsInteractionProvider.inl' 'queryProviderScopeSightStateV1[\s\S]*resolvedAnchorMatchesPublication[\s\S]*resolvedAnchor\.anchorWeaponLocal[\s\S]*Flag::AnchorValid[\s\S]*Flag::BoundsValid' `
     'The V1 scope readback must expose the selected fallback anchor without claiming generated sight bounds exist.'
+Require-Text 'src/physics-interaction/core/PhysicsInteractionProvider.inl' 'rendererStateValid[\s\S]*rendererActive[\s\S]*Flag::Active[\s\S]*RockProviderScopeActivationSourceV1::ManualInput' `
+    'The V1 scope readback must publish verified renderer activity as manual input, its sole activation source.'
+Reject-Text 'src/physics-interaction/core/PhysicsInteractionProvider.inl' 'RockProviderScopeActivationSourceV1::NativeGeometry|RockProviderScopeActivationSourceV1::RockGeometry' `
+    'The provider must not publish retired native or ROCK geometry activation sources.'
 Require-Text 'src/ROCKMain.cpp' 'hookNativeScopeGeometryDecision[\s\S]*callBytes\[0\]\s*!=\s*0xE8[\s\S]*decodedTarget\s*!=\s*expectedTarget[\s\S]*kExpectedNativeDecisionTest[\s\S]*write_call<5>\(callSiteAddress,\s*&onNativeScopeGeometryDecision\)[\s\S]*kRockDecisionTest[\s\S]*REL::safe_write' `
     'The exact verified geometry call site and original target must be validated before patching.'
-Require-Text 'src/ROCKMain.cpp' 'bool onNativeScopeGeometryDecision[\s\S]*finalGeometryDecision\s*=\s*nativeGeometryDecision[\s\S]*nativeForceDecision[\s\S]*!g_rockConfig\.rockAutoActivateScope[\s\S]*isManualScopeActivationRequested[\s\S]*tryResolveNativeScopeGeometryDecision[\s\S]*s_originalNativeScopeStateTransition\(player,\s*finalGeometryDecision\)[\s\S]*manualScopeDecisionApplied\s*\?\s*true\s*:\s*finalGeometryDecision' `
-    'The hook must preserve Bethesda force priority, use held input instead of the cone in manual mode, and bypass cone-derived approach fade.'
+Require-Text 'src/ROCKMain.cpp' 'bool onNativeScopeGeometryDecision[\s\S]*finalGeometryDecision\s*=\s*nativeGeometryDecision[\s\S]*nativeForceDecision[\s\S]*finalGeometryDecision\s*=\s*input_remap_runtime::isManualScopeActivationRequested\(\)[\s\S]*buttonDecisionApplied\s*=\s*true[\s\S]*s_originalNativeScopeStateTransition\(player,\s*finalGeometryDecision\)[\s\S]*buttonDecisionApplied\s*\?\s*true\s*:\s*finalGeometryDecision' `
+    'The hook must preserve Bethesda force priority, discard ordinary cone results, and drive transitions only from held input.'
+Reject-Text 'src/ROCKMain.cpp' 'rockAutoActivateScope|tryResolveNativeScopeGeometryDecision' `
+    'The top-level scope hook must not retain a selectable cone path.'
 Require-Text 'src/ROCKMain.cpp' 'configureNativeWorldScopeForManualTarget[\s\S]*kFunc_NativeWorldScopeConfigure[\s\S]*kData_NativeWorldScopeSingleton[\s\S]*kData_NativeWorldScopePrimaryVtable[\s\S]*driveManualScopeTransitionFallback[\s\S]*nativeForceDecision[\s\S]*tryGetManualScopeDirectTransitionTarget[\s\S]*isManualScopeActivationRequested\(\)[\s\S]*configureNativeWorldScopeForManualTarget[\s\S]*s_originalNativeScopeStateTransition\(player,\s*true\)[\s\S]*s_originalNativeScopeStateTransition\(player,\s*false\)' `
     'Manual hold must validate and configure native WSScope before directly transitioning an unflagged magnified scope.'
 Require-Text 'src/physics-interaction/weapon/ManualScopeTargetPolicy.h' 'modelPath\.empty\(\)[\s\S]*recordName,\s*"scope"[\s\S]*modelPath,\s*"scope"' `
@@ -113,7 +125,7 @@ Require-Text 'src/physics-interaction/weapon/ManualScopeTargetPolicy.h' 'Structu
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'loadCompleteOmodModelTemplate[\s\S]*resolveEquippedManualScopeTarget[\s\S]*collectManualScopeStructuralMarkers[\s\S]*nativeScopeOverlayIndex' `
     'The equipped scope target must resolve structural NIF evidence and publish its ZOOM overlay with the collider generation.'
 Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' 'consumeRawButtonState\(true,\s*input_remap_policy::kOpenVrAcceptButtonId\)[\s\S]*consumeRawButtonState\(false,\s*input_remap_policy::kOpenVrAcceptButtonId\)[\s\S]*manual_scope_input_policy::update[\s\S]*decision\.scopeRequested[\s\S]*decision\.dispatchReload' `
-    'Manual scope and release-time reload must share one physical firing-hand A/X gesture classifier.'
+    'Button-only scope and release-time reload must share one physical firing-hand A/X gesture classifier.'
 Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' 'shouldDeferFiringHandActivateForManualScope\(inputEvent\)[\s\S]*markInputEventStopped\(inputEvent\)[\s\S]*return;' `
     'Primary-wand press-time reload must be deferred while manual scope classifies the hold.'
 Require-Text 'src/physics-interaction/native/HavokOffsets.h' 'kHookSite_NativeScopeGeometryDecision\s*=\s*0xEF851F[\s\S]*kPatchSite_NativeScopePostDecisionTest\s*=\s*0xEF8528[\s\S]*kFunc_NativeScopeStateTransition\s*=\s*0xEFAA60[\s\S]*kFunc_NativeWorldScopeConfigure\s*=\s*0xC8DC60[\s\S]*kData_NativeWorldScopeSingleton\s*=\s*0x5ACBF58[\s\S]*kData_NativeWorldScopePrimaryVtable\s*=\s*0x2D68718[\s\S]*kPlayerCharacter_NativeScopeForceDecisionMask\s*=\s*0x08' `
@@ -146,8 +158,8 @@ Require-Text $overlay 'scopeWriteSourceName[\s\S]*post-frik-presentation-sync[\s
     'The in-game panel must distinguish presentation synchronization from final weapon authority.'
 Require-Text $overlay 'hmdPositionWorld[\s\S]*NativeScopeHmd[\s\S]*HMD->live[\s\S]*HMD->target' `
     'The headset relationship to the live and intended activation anchors must be visible and quantified.'
-Require-Text $overlay 'getNativeScopeActivationDebugSnapshot[\s\S]*nativeGeometryDecision[\s\S]*rockGeometryDecision[\s\S]*hmdAngleDegrees[\s\S]*weaponAngleDegrees[\s\S]*weaponAngleWidening' `
-    'The verified native-cone sample, limits, and replacement decision must be visible at runtime.'
+Require-Text $overlay 'getNativeScopeActivationDebugSnapshot[\s\S]*scope input seq=[\s\S]*manualInputRequested[\s\S]*rendererStateValid[\s\S]*rendererActive' `
+    'The physical button request and renderer response must be visible at runtime.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'NativeScopeActivationDebugSourceTests failed:' -ForegroundColor Red

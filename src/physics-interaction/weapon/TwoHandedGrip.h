@@ -76,7 +76,13 @@ namespace rock
         bool rightHandHoldingObject{ false };
         bool leftReattachEligible{ false };
         bool rightReattachEligible{ false };
+        // Menu-open state and renderer-request state are deliberately separate.
+        // FO4VR may keep WSScope presentation alive outside an active sight;
+        // the renderer request is the authority for actual scope entry/exit.
         bool scopeMenuOpen{ false };
+        bool manualScopeActivationRequested{ false };
+        bool nativeScopeRequestStateValid{ false };
+        bool nativeScopeRequestActive{ false };
         EquippedWeaponScopeHandDriverFrame leftHandDriverFrame{};
         EquippedWeaponScopeHandDriverFrame rightHandDriverFrame{};
         // Grab state of the CURRENT firing hand (debounced release), read by
@@ -176,16 +182,14 @@ namespace rock
 
     struct NativeScopeActivationDebugSnapshot
     {
-        std::uint64_t evaluationSequence{ 0 };
+        std::uint64_t publicationSequence{ 0 };
         std::uint64_t weaponGenerationKey{ 0 };
         native_scope_sight_anchor_policy::AnchorSource anchorSource{
             native_scope_sight_anchor_policy::AnchorSource::None
         };
-        bool nativeGeometryDecision{ false };
-        bool rockGeometryDecision{ false };
-        bool nativeScopeAlreadyActive{ false };
-        native_scope_activation_geometry::ConeSample sample{};
-        native_scope_activation_geometry::ConeThresholds thresholds{};
+        bool manualInputRequested{ false };
+        bool rendererStateValid{ false };
+        bool rendererActive{ false };
     };
 
     struct SelectedAuthoredGripPoseSnapshot
@@ -393,9 +397,6 @@ namespace rock
             std::uint16_t fingerLocalTransformMask,
             std::uint64_t weaponGenerationKey,
             std::uint64_t captureSequence);
-
-        bool tryResolveNativeScopeGeometryDecision(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, RE::NiNode* hmdNode, const RE::NiPoint3& hmdSampleOffsetLocal,
-            const native_scope_activation_geometry::ConeThresholds& thresholds, bool nativeScopeAlreadyActive, bool nativeGeometryDecision, bool& outRockGeometryDecision);
 
         void reset();
 
@@ -1051,7 +1052,7 @@ namespace rock
             std::uint64_t currentEquippedWeaponOwnershipKey,
             std::uint32_t currentEquippedWeaponFormID,
             const WeaponCollision& weaponCollision);
-        void refreshScopeSafeHandFrames(const EquippedWeaponGripFrameInput& frameInput, float dt);
+        void refreshScopeSafeHandFrames(RE::NiNode* weaponNode, const EquippedWeaponGripFrameInput& frameInput, float dt);
         bool tryGetSolverHandTransform(bool isLeft, RE::NiTransform& outTransform) const;
         RE::NiTransform resolveLockedHandVisualTarget(
             const RE::NiTransform& targetWorld,
@@ -1136,6 +1137,15 @@ namespace rock
         // on this edge use the same deferred transaction as hidden-frame
         // clears so a same-frame handoff can publish its replacement first.
         bool _scopeMenuClosedThisFrame{ false };
+        // Bounded edge trace comparing the UI signal, verified renderer
+        // request, restored root hands, hFRIK drivers, and ROCK solver frames.
+        // This remains low-volume and makes future scope-transition reports
+        // diagnosable from one session without enabling per-frame telemetry.
+        bool _nativeScopeRequestStateValid{ false };
+        bool _nativeScopeRequestActive{ false };
+        bool _manualScopeActivationRequested{ false };
+        std::uint64_t _nativeScopeTransitionTraceSequence{ 0 };
+        std::uint32_t _nativeScopeTransitionTraceFramesRemaining{ 0 };
         // Latched across a manual grip session after its first scoped frame so
         // ScopeMenu presentation edges cannot reselect the weapon-solver basis.
         bool _scopeDriverFrameAuthorityActive{ false };
@@ -1159,9 +1169,6 @@ namespace rock
         };
         bool _nativeScopeAnchorValid{ false };
         RE::NiPoint3 _nativeScopeFallbackRotationDegrees{};
-        // Exit-only stabilization is generation-bound; entry remains immediate.
-        std::uint64_t _nativeScopeExitDebounceGenerationKey{ 0 };
-        std::uint32_t _nativeScopeExitOutsideFrames{ 0 };
         NativeScopeCameraDebugSnapshot _nativeScopeCameraDebugSnapshot{};
         NativeScopeActivationDebugSnapshot _nativeScopeActivationDebugSnapshot{};
         NativeScopeRigidFrameState _nativeScopeRigidFrame{};

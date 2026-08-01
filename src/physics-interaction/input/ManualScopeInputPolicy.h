@@ -31,7 +31,6 @@ namespace rock::manual_scope_input_policy
 
     struct Input
     {
-        bool manualModeEnabled{ false };
         bool gameplayInputAllowed{ false };
         bool menuInputActive{ false };
         bool weaponDrawn{ false };
@@ -92,12 +91,6 @@ namespace rock::manual_scope_input_policy
     [[nodiscard]] inline Decision update(RuntimeState& state, const Input& input)
     {
         Decision decision{};
-
-        if (!input.manualModeEnabled) {
-            reset(state);
-            decision.reason = "automatic-mode";
-            return decision;
-        }
 
         const bool gameplayEligible = input.gameplayInputAllowed && !input.menuInputActive && input.weaponDrawn;
         if (!gameplayEligible) {

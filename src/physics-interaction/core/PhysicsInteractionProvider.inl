@@ -968,26 +968,19 @@
 
         const bool menuOpen = _twoHandedGrip.isScopeMenuOpenThisFrame();
         if (menuOpen) {
-            outState.flags |=
-                static_cast<std::uint32_t>(Flag::MenuOpen) |
-                static_cast<std::uint32_t>(Flag::Active);
+            outState.flags |= static_cast<std::uint32_t>(Flag::MenuOpen);
         }
         const auto activation =
             _twoHandedGrip.getNativeScopeActivationDebugSnapshot();
-        outState.publicationSequence = activation.evaluationSequence;
-        if (menuOpen &&
+        outState.publicationSequence = activation.publicationSequence;
+        const bool active = activation.rendererStateValid ?
+                                activation.rendererActive :
+                                menuOpen;
+        if (active &&
             activation.weaponGenerationKey == anchor.weaponGenerationKey) {
-            if (activation.nativeScopeAlreadyActive ||
-                activation.nativeGeometryDecision) {
-                outState.activationSource =
-                    ::rock::provider::RockProviderScopeActivationSourceV1::NativeGeometry;
-            } else if (activation.rockGeometryDecision) {
-                outState.activationSource =
-                    ::rock::provider::RockProviderScopeActivationSourceV1::RockGeometry;
-            } else {
-                outState.activationSource =
-                    ::rock::provider::RockProviderScopeActivationSourceV1::ManualInput;
-            }
+            outState.flags |= static_cast<std::uint32_t>(Flag::Active);
+            outState.activationSource =
+                ::rock::provider::RockProviderScopeActivationSourceV1::ManualInput;
         }
 
         const auto descriptors =

@@ -421,19 +421,16 @@ namespace
     bool onNativeScopeGeometryDecision(RE::PlayerCharacter* player, const bool nativeGeometryDecision)
     {
         bool finalGeometryDecision = nativeGeometryDecision;
-        bool manualScopeDecisionApplied = false;
+        bool buttonDecisionApplied = false;
         std::uint8_t nativeScopeFlags = 0;
         const bool nativeForceDecision = rock::native_memory::tryReadField(player, rock::offsets::kPlayerCharacter_NativeScopeFlags, nativeScopeFlags) &&
             (nativeScopeFlags & rock::offsets::kPlayerCharacter_NativeScopeForceDecisionMask) != 0;
         if (!nativeForceDecision && s_pluginLoaded && s_frikAvailable && g_rockConfig.rockEnabled) {
-            if (!g_rockConfig.rockAutoActivateScope) {
-                // Manual mode replaces the cone completely. The raw physical
-                // firing-hand hold remains authoritative until release.
-                finalGeometryDecision = input_remap_runtime::isManualScopeActivationRequested();
-                manualScopeDecisionApplied = true;
-            } else if (s_physicsInteraction) {
-                (void)s_physicsInteraction->tryResolveNativeScopeGeometryDecision(nativeGeometryDecision, finalGeometryDecision);
-            }
+            // The native geometry callback remains installed only as the
+            // verified transition boundary. ROCK deliberately discards its
+            // cone result and feeds the held firing-hand button level instead.
+            finalGeometryDecision = input_remap_runtime::isManualScopeActivationRequested();
+            buttonDecisionApplied = true;
         }
 
         if (s_originalNativeScopeStateTransition) {
@@ -442,11 +439,11 @@ namespace
         /*
          * AL feeds only ROCK's patched post-call TEST below; the original
          * transition is void and already received finalGeometryDecision.
-         * Manual mode must skip Bethesda's cone-derived approach fade both
-         * while held and while idle, otherwise the cone would still darken
-         * the view despite no longer owning scope activation.
+         * Button-only activation must skip Bethesda's cone-derived approach
+         * fade both while held and while idle, otherwise the cone would still
+         * darken the view despite no longer owning scope activation.
          */
-        return manualScopeDecisionApplied ? true : finalGeometryDecision;
+        return buttonDecisionApplied ? true : finalGeometryDecision;
     }
 
     void driveManualScopeTransitionFallback()
@@ -468,7 +465,7 @@ namespace
         std::uint64_t targetWeaponGenerationKey = 0;
         std::uint32_t targetOverlayIndex = 0;
         const bool targetAvailable = s_pluginLoaded && s_frikAvailable && g_rockConfig.rockEnabled &&
-            !g_rockConfig.rockAutoActivateScope && s_physicsInteraction &&
+            s_physicsInteraction &&
             s_physicsInteraction->tryGetManualScopeDirectTransitionTarget(targetWeaponGenerationKey, targetOverlayIndex);
         const bool requested = targetAvailable &&
             input_remap_runtime::isManualScopeActivationRequested() &&
@@ -537,8 +534,8 @@ namespace
 
         /*
          * The caller uses its pre-hook BL value for the adjacent approach-fade
-         * branch. Our wrapper returns the replacement automatic decision in
-         * AL, or true in manual mode to bypass cone-derived approach fade.
+         * branch. Our wrapper returns true in AL while ROCK owns the decision
+         * so native cone-derived approach fade cannot survive as a second path.
          * Point the existing two-byte TEST at that explicit result.
          */
         constexpr std::array<std::uint8_t, 2> kRockDecisionTest{ 0x84, 0xC0 }; // TEST AL,AL
@@ -571,7 +568,7 @@ namespace
         }
 
         onFrameUpdate();
-        // Input classification runs inside onFrameUpdate. Apply the manual
+        // Input classification runs inside onFrameUpdate. Apply the button
         // scope level after it so an unflagged scope does not wait for a native
         // cone callback that Bethesda will never issue.
         driveManualScopeTransitionFallback();

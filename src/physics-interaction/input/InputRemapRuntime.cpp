@@ -1145,7 +1145,6 @@ namespace rock::input_remap_runtime
             constexpr bool primaryHandIsLeft = false;
             const bool firingHandIsLeft = s_equippedWeaponLeftHandFiringActive.load(std::memory_order_acquire);
             return input_remap_policy::shouldDeferFiringHandActivateForManualScope(input_remap_policy::ManualScopeActivateInput{
-                .manualScopeEnabled = !g_rockConfig.rockAutoActivateScope,
                 .rawInputCaptureAvailable = s_hooksInstalled.load(std::memory_order_acquire),
                 .gameplayInputAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire),
                 .menuInputActive = isInputBlockingMenuActive(),
@@ -2073,15 +2072,13 @@ namespace rock::input_remap_runtime
             return firstPatchOk && secondPatchOk;
         }
 
-        bool updateNativeActionSuppressionHooks(const input_remap_policy::Settings& settings, const bool manualScopeEnabled)
+        bool updateNativeActionSuppressionHooks(const input_remap_policy::Settings& settings)
         {
             bool ready = installNativeVatsVansInputSuppressionHook();
             if (input_remap_policy::shouldInstallNativeActionSuppressionHook(settings.enabled, settings.suppressRightGrabGameInput)) {
                 ready = installReadyWeaponEventSuppressionHook() && ready;
             }
-            if (input_remap_policy::shouldInstallActivateEventHook(settings.enabled, manualScopeEnabled)) {
-                ready = installActivateEventReloadHook() && ready;
-            }
+            ready = installActivateEventReloadHook() && ready;
             if (input_remap_policy::shouldInstallNativeActionSuppressionHook(settings.enabled, settings.suppressRightFavoritesGameInput)) {
                 ready = installFavoritesEventSuppressionHook() && ready;
             }
@@ -2168,12 +2165,7 @@ namespace rock::input_remap_runtime
         ensureMenuInputGateRegistered();
 
         const auto settings = makeSettings();
-        const bool manualScopeEnabled = !g_rockConfig.rockAutoActivateScope;
-        const bool nativeActionSuppressionReady = updateNativeActionSuppressionHooks(settings, manualScopeEnabled);
-
-        if (!input_remap_policy::shouldInstallRawControllerHooks(settings.enabled, manualScopeEnabled)) {
-            return nativeActionSuppressionReady;
-        }
+        const bool nativeActionSuppressionReady = updateNativeActionSuppressionHooks(settings);
 
         if (s_hooksInstalled.load(std::memory_order_acquire)) {
             return nativeActionSuppressionReady;
@@ -2314,89 +2306,52 @@ namespace rock::input_remap_runtime
             blockManualScopeInputUntilRelease();
             return;
         }
-        constexpr bool secondaryHandIsLeft = true;
         const bool firingHandIsLeft = s_equippedWeaponLeftHandFiringActive.load(std::memory_order_acquire);
 
-        if (!g_rockConfig.rockAutoActivateScope) {
-            const auto toManualButtonState = [](const RawButtonState& state) {
-                return manual_scope_input_policy::ButtonState{
-                    .available = state.available,
-                    .held = state.held,
-                    .pressed = state.pressed,
-                    .released = state.released,
-                };
+        const auto toManualButtonState = [](const RawButtonState& state) {
+            return manual_scope_input_policy::ButtonState{
+                .available = state.available,
+                .held = state.held,
+                .pressed = state.pressed,
+                .released = state.released,
             };
-            const auto previousState = s_manualScopeInputState.state;
-            const auto decision = manual_scope_input_policy::update(s_manualScopeInputState,
-                manual_scope_input_policy::Input{
-                    .manualModeEnabled = true,
-                    .gameplayInputAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire),
-                    .menuInputActive = isInputBlockingMenuActive(),
-                    .weaponDrawn = s_weaponDrawn.load(std::memory_order_acquire),
-                    .firingHandIsLeft = firingHandIsLeft,
-                    .leftButton = toManualButtonState(leftAcceptState),
-                    .rightButton = toManualButtonState(rightAcceptState),
-                    .deltaSeconds = deltaSeconds,
-                    .holdSeconds = g_rockConfig.rockManualScopeHoldSeconds,
-                });
-            s_manualScopeActivationRequested.store(decision.scopeRequested, std::memory_order_release);
+        };
+        const auto previousState = s_manualScopeInputState.state;
+        const auto decision = manual_scope_input_policy::update(s_manualScopeInputState,
+            manual_scope_input_policy::Input{
+                .gameplayInputAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire),
+                .menuInputActive = isInputBlockingMenuActive(),
+                .weaponDrawn = s_weaponDrawn.load(std::memory_order_acquire),
+                .firingHandIsLeft = firingHandIsLeft,
+                .leftButton = toManualButtonState(leftAcceptState),
+                .rightButton = toManualButtonState(rightAcceptState),
+                .deltaSeconds = deltaSeconds,
+                .holdSeconds = g_rockConfig.rockManualScopeHoldSeconds,
+            });
+        s_manualScopeActivationRequested.store(decision.scopeRequested, std::memory_order_release);
 
-            if (decision.state != previousState || decision.dispatchReload) {
-                ROCK_LOG_DEBUG(Input,
-                    "Manual scope input: hand={} state={}->{} scope={} reload={} reason={}",
-                    firingHandIsLeft ? "left-X" : "right-A",
-                    static_cast<std::uint32_t>(previousState),
-                    static_cast<std::uint32_t>(decision.state),
-                    decision.scopeRequested ? "held" : "off",
-                    decision.dispatchReload ? "dispatch" : "no",
-                    decision.reason);
-            }
-
-            if (decision.dispatchReload && dispatchNativeReloadAction()) {
-                ROCK_LOG_SAMPLE_DEBUG(Input,
-                    g_rockConfig.rockLogSampleMilliseconds,
-                    "Dispatched manual-scope short release to equipped weapon reload hand={}",
-                    firingHandIsLeft ? "left-X" : "right-A");
-            }
-            return;
+        if (decision.state != previousState || decision.dispatchReload) {
+            ROCK_LOG_DEBUG(Input,
+                "Manual scope input: hand={} state={}->{} scope={} reload={} reason={}",
+                firingHandIsLeft ? "left-X" : "right-A",
+                static_cast<std::uint32_t>(previousState),
+                static_cast<std::uint32_t>(decision.state),
+                decision.scopeRequested ? "held" : "off",
+                decision.dispatchReload ? "dispatch" : "no",
+                decision.reason);
         }
 
-        resetManualScopeInput();
-        const auto& acceptState = secondaryHandIsLeft ? leftAcceptState : rightAcceptState;
-        if (!acceptState.available || !acceptState.pressed) {
-            return;
-        }
-
-        const bool firingHandIsSecondaryHand = firingHandIsLeft == secondaryHandIsLeft;
-        const bool dispatch = input_remap_policy::shouldDispatchSecondaryHandReloadPress(input_remap_policy::SecondaryHandReloadInput{
-            .remapEnabled = g_rockConfig.rockInputRemapEnabled,
-            .gameplayInputAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire),
-            .menuInputActive = isInputBlockingMenuActive(),
-            .weaponDrawn = s_weaponDrawn.load(std::memory_order_acquire),
-            .firingHandIsSecondaryHand = firingHandIsSecondaryHand,
-            .acceptButtonPressedEdge = acceptState.pressed,
-        });
-
-        ROCK_LOG_SAMPLE_DEBUG(Input,
-            g_rockConfig.rockLogSampleMilliseconds,
-            "Reload press gate: hand={} firing={} weaponDrawn={} -> {}",
-            secondaryHandIsLeft ? "left-X" : "right-A",
-            firingHandIsLeft ? "left" : "right",
-            s_weaponDrawn.load(std::memory_order_acquire) ? "yes" : "no",
-            dispatch ? "dispatch" : "drop");
-
-        if (dispatch && dispatchNativeReloadAction()) {
+        if (decision.dispatchReload && dispatchNativeReloadAction()) {
             ROCK_LOG_SAMPLE_DEBUG(Input,
                 g_rockConfig.rockLogSampleMilliseconds,
-                "Dispatched secondary-hand accept press to equipped weapon reload hand={}",
-                secondaryHandIsLeft ? "left-X" : "right-A");
+                "Dispatched manual-scope short release to equipped weapon reload hand={}",
+                firingHandIsLeft ? "left-X" : "right-A");
         }
     }
 
     bool isManualScopeActivationRequested()
     {
-        return !g_rockConfig.rockAutoActivateScope &&
-               s_manualScopeActivationRequested.load(std::memory_order_acquire);
+        return s_manualScopeActivationRequested.load(std::memory_order_acquire);
     }
 
     bool isMenuInputActive()
