@@ -312,13 +312,13 @@ foreach ($path in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
 }
 
 # The presentation grip axis is not pure cross-palm Z (the thumb occupies that
-# line): both alignment sites must apply the configurable tilt toward X.
+# line): the flight servo must apply the configurable tilt toward X. The
+# seat-time counterpart was retired with the correction stack - at commit the
+# grab pose solve owns orientation, and the tilt preference is encoded in the
+# ground truth its rodAxis term was fitted against.
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
     'std::sin\(gripAxisTiltRadians\), 0\.0f, std::cos\(gripAxisTiltRadians\)' `
     'The pull-flight presentation servo must use the tilted grip axis.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
-    'pocket\.crossPalmWorld \* std::cos\(gripAxisTiltRadians\) \+\s*pocket\.fingerForwardWorld \* std::sin\(gripAxisTiltRadians\)' `
-    'The force-grab seat alignment must use the same tilted grip axis.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'Grab finger sweep source boundary failed:'

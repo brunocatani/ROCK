@@ -6718,7 +6718,7 @@ namespace rock
 
             saved_grab_offset::saveCapture(capture);
             ROCK_LOG_INFO(Hand,
-                "Saved grab capture for {:08X} ({} hand): triangles={} colliders={} mass={:.2f} com={} shape={} seatReasons=[align={} roll={} depth={} backstop={}]",
+                "Saved grab capture for {:08X} ({} hand): triangles={} colliders={} mass={:.2f} com={} shape={} seatSolve={} rot={:.1f} trans={:.2f}",
                 baseForm->GetFormID(),
                 isLeft ? "left" : "right",
                 capture.capture.mesh.triangleCount,
@@ -6726,10 +6726,9 @@ namespace rock
                 capture.capture.physics.mass,
                 capture.capture.physics.hasCenterOfMass ? (capture.capture.physics.comTrusted ? "trusted" : "UNTRUSTED") : "none",
                 capture.capture.seat.shapeClass,
-                capture.capture.seat.alignmentReason,
-                capture.capture.seat.rollReason,
-                capture.capture.seat.depthReason,
-                capture.capture.seat.penetrationBackstopReason);
+                capture.capture.seat.solveReason,
+                capture.capture.seat.solveRotationDegrees,
+                capture.capture.seat.solveTranslationGameUnits);
         } else {
             ROCK_LOG_WARN(Hand,
                 "Saved grab offset: ground-truth capture unavailable for {} hand ({:08X}); the offset itself was still saved",

@@ -52,7 +52,7 @@ Require-Text 'src/physics-interaction/hand/Hand.cpp' 'bool Hand::tryBuildSavedGr
 # --- Seat diagnostics survive later authority rewrites ------------------------
 
 Require-Text 'src/physics-interaction/grab/GrabCore.h' 'captureTelemetry\.seatDiagnostics = seatDiagnostics;' 'Seat diagnostics must be frozen into the immutable capture telemetry: the live frame can be rewritten by reacquire, and the capture describes the CAPTURE-time decision.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' '_grabFrame\.seatDiagnostics = GrabSeatDiagnostics\{[\s\S]*\.acquisitionMode =[\s\S]*\.shapeClass =[\s\S]*\.penetrationBackstopReason = seatPenetrationBackstopReason' 'Grab capture must record the acquisition mode, shape class and every seat correction outcome, so a ground-truth capture explains which decisions produced the seat it is paired with.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' '_grabFrame\.seatDiagnostics = GrabSeatDiagnostics\{[\s\S]*\.acquisitionMode =[\s\S]*\.shapeClass =[\s\S]*\.solveReason = seatSolve\.reason,[\s\S]*\.solveTermGirth = seatSolve\.solve\.terms\.girth,' 'Grab capture must record the acquisition mode, shape class and the full pose-solve outcome (reason, correction magnitude, term values), so a ground-truth capture explains which decisions produced the seat it is paired with.'
 
 # --- Save gesture wiring ------------------------------------------------------
 

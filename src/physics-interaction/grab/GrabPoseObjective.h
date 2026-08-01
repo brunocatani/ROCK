@@ -682,7 +682,9 @@ namespace rock::grab_pose_objective
                 (capsule.a.z + capsule.b.z) * 0.5f,
             };
             const float reach = lengthOf(subtract(capsule.b, capsule.a)) * 0.5f + capsule.radius;
-            float near = 1.0e9f;
+            // 'nearDistance', not 'near': windows.h defines near/far as empty
+            // legacy macros and silently deletes the identifier.
+            float nearDistance = 1.0e9f;
             for (std::size_t i = 0; i < triangleCount; ++i) {
                 const RE::NiPoint3& v0 = moved[i * 3];
                 const RE::NiPoint3& v1 = moved[i * 3 + 1];
@@ -699,10 +701,10 @@ namespace rock::grab_pose_objective
                     continue;
                 }
                 const float distance = segmentTriangleDistance(capsule.a, capsule.b, v0, v1, v2);
-                near = (std::min)(near, distance);
+                nearDistance = (std::min)(nearDistance, distance);
                 worstPenetration = (std::max)(worstPenetration, capsule.radius - distance);
             }
-            minGap = (std::min)(minGap, near - capsule.radius);
+            minGap = (std::min)(minGap, nearDistance - capsule.radius);
         }
 
         float wrapSum = 0.0f;

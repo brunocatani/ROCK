@@ -482,14 +482,25 @@ namespace rock
         float rockGrabNearConvergeDistanceGameUnits = 28.0f;
         float rockGrabPocketDepthGameUnits = 7.0f;
         float rockGrabPocketRadiusGameUnits = 9.0f;
-        float rockGrabSeatDepthMaxGameUnits = 30.0f;
-        float rockGrabSeatDepthFootprintRadiusGameUnits = 10.0f;
-        // Penetration backstop only, and only for plate-shaped objects: a
-        // narrow footprint bounds detectable tilt penetration to r*sin(theta),
-        // which is why the seating radius above cannot double as the safety
-        // check. Irregular shapes keep the seating radius.
-        float rockGrabSeatPenetrationBackstopFootprintRadiusGameUnits = 6.0f;
-        float rockGrabSeatDepthSkinGameUnits = 0.5f;
+        /*
+         * Grab pose solver (GrabPoseObjective.h): one-sided manifold objective
+         * + arrival-continuity regularizer, replacing the retired seat
+         * correction stack. Weight defaults are the 2026-08-01 fitted values
+         * (Docs/ROCK/docs/2026-07-26-grab-pose-objective-fit.md); changing
+         * them is a refit decision, not a feel tweak. The lambdas ARE feel
+         * knobs: higher = the solve stays closer to the arrival pose.
+         */
+        float rockGrabPoseSolverWeightTouch = 145.2505f;
+        float rockGrabPoseSolverWeightPalmProx = 12.9162f;
+        float rockGrabPoseSolverWeightOverPen = 2.7735f;
+        float rockGrabPoseSolverWeightWrap = 1.5205f;
+        float rockGrabPoseSolverWeightRodAxis = 14.9627f;
+        float rockGrabPoseSolverWeightGirth = 1.0850f;
+        float rockGrabPoseSolverLambdaTranslate = 0.15f;
+        float rockGrabPoseSolverLambdaRotate = 6.0f;
+        float rockGrabPoseSolverPalmSlackGameUnits = 2.5f;
+        float rockGrabPoseSolverPenetrationLimitGameUnits = 1.5f;
+        float rockGrabPoseSolverGirthWrappableRadiusGameUnits = 3.0f;
         float rockGrabGripInsetGameUnits = 2.0f;
         float rockGrabGripMaxInsetGameUnits = 6.0f;
         float rockGrabConvergeMaxTimeSeconds = 0.35f;
@@ -571,8 +582,8 @@ namespace rock
         float rockPulledAngularDamping = 8.0f;
         bool rockPullToObjectCenterEnabled = true;
         bool rockPullLongAxisPresentationEnabled = true;
-        bool rockForceGrabSeatAlignmentEnabled = true;
-        bool rockGrabSeatRollAlignmentEnabled = true;
+        // Shared shape-classification gates: the flight presentation servo and
+        // the grab pose solver read the same rod/plate thresholds.
         float rockPullPresentationMinElongationRatio = 2.0f;
         float rockGrabSeatRollMinSecondElongationRatio = 1.25f;
         float rockPullPresentationAngularGainPerSecond = 6.0f;
