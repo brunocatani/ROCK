@@ -722,12 +722,14 @@ int main()
             rock::scope_safe_hand_frame_math::retainDriverFrameAuthority(false, true, false, true));
         ok &= expectFalse("ordinary unscoped aiming does not acquire driver-frame authority",
             rock::scope_safe_hand_frame_math::retainDriverFrameAuthority(false, true, true, false));
-        ok &= expectTrue("scope exit preserves the last published scoped hand while the root recovers",
-            rock::scope_safe_hand_frame_math::shouldStartRootRebase(true, true));
+        ok &= expectFalse("button release never rebases the visible root from a stale hidden-scope hand",
+            rock::scope_safe_hand_frame_math::shouldStartRootRebase(false, true, true, true));
+        ok &= expectTrue("a non-release root handoff may preserve the last scoped hand continuously",
+            rock::scope_safe_hand_frame_math::shouldStartRootRebase(true, true, false, true));
         ok &= expectFalse("root rebase requires an actual driver-authority stop edge",
-            rock::scope_safe_hand_frame_math::shouldStartRootRebase(false, true));
-        ok &= expectFalse("root rebase rejects missing or stale published hand history",
-            rock::scope_safe_hand_frame_math::shouldStartRootRebase(true, false));
+            rock::scope_safe_hand_frame_math::shouldStartRootRebase(true, false, true, true));
+        ok &= expectFalse("root rebase requires a valid reconstructed or recent scoped hand",
+            rock::scope_safe_hand_frame_math::shouldStartRootRebase(true, true, false, false));
         ok &= expectTrue("locked hand IK publishes outside native scope", rock::scope_safe_hand_frame_math::shouldPublishLockedHandVisualAuthority(false));
         ok &= expectFalse("locked hand IK is suppressed while native scope hides the body", rock::scope_safe_hand_frame_math::shouldPublishLockedHandVisualAuthority(true));
         ok &= expectTrue("visible stable carry may refresh the right firing canonical", rock::scope_safe_hand_frame_math::canRefreshRightFiringCanonicalFrame(false, false));
@@ -844,19 +846,13 @@ int main()
         rebaseStart.rotate.entry[0][1] = 1.0f;
         rebaseStart.rotate.entry[1][0] = -1.0f;
         rebaseStart.rotate.entry[1][1] = 0.0f;
-        TestTransform movingRootWorld = rock::transform_math::makeIdentityTransform<TestTransform>();
-        movingRootWorld.translate = { 41.5f, -18.0f, 9.75f };
+        const TestTransform rebaseIdentity = rock::transform_math::makeIdentityTransform<TestTransform>();
         ok &= expectTransformNear("scope-exit rebase starts at the prior ROCK hand frame",
-            rock::scope_safe_hand_frame_math::interpolateRootHandoffWorld(rebaseStart, movingRootWorld, 0.0f),
+            rock::scope_safe_hand_frame_math::interpolateRebaseTransform(rebaseStart, rebaseIdentity, 0.0f),
             rebaseStart);
-        ok &= expectTransformNear("scope-exit rebase follows the current restored hFRIK root at completion",
-            rock::scope_safe_hand_frame_math::interpolateRootHandoffWorld(rebaseStart, movingRootWorld, 1.0f),
-            movingRootWorld);
-        const TestTransform movingRootMidpoint =
-            rock::scope_safe_hand_frame_math::interpolateRootHandoffWorld(rebaseStart, movingRootWorld, 0.5f);
-        ok &= expectNear("scope-exit world handoff smooths a moving root instead of composing its full delta",
-            movingRootMidpoint.translate.x,
-            21.5f);
+        ok &= expectTransformNear("scope-exit rebase finishes at the restored hFRIK root frame",
+            rock::scope_safe_hand_frame_math::interpolateRebaseTransform(rebaseStart, rebaseIdentity, 1.0f),
+            rebaseIdentity);
         ok &= expectNear("scope-exit rebase timing clamps at completion",
             rock::scope_safe_hand_frame_math::rebaseAlpha(0.10f, 0.075f),
             1.0f);

@@ -435,13 +435,17 @@ namespace rock::scope_safe_hand_frame_math
     }
 
     [[nodiscard]] inline constexpr bool shouldStartRootRebase(
+        bool manualScopeActivationRequested,
         bool driverFrameAuthorityStoppedThisFrame,
+        bool reconstructedHandValid,
         bool recentScopedHandAvailable)
     {
-        // Only the last frame ROCK actually published is safe continuity.
-        // The closure-frame driver can already contain hFRIK's restore spike,
-        // while a missing/stale history sample must fail closed to the root.
-        return driverFrameAuthorityStoppedThisFrame && recentScopedHandAvailable;
+        // The scoped frame is hidden, so it is useful continuity only while
+        // the user still requests the scope. On a real button release the
+        // restored visible root is authoritative immediately; blending from
+        // the hidden frame can stretch both arms and the weapon through space.
+        return manualScopeActivationRequested && driverFrameAuthorityStoppedThisFrame &&
+               (reconstructedHandValid || recentScopedHandAvailable);
     }
 
     [[nodiscard]] inline constexpr ResolutionMode resolveMode(
@@ -588,25 +592,22 @@ namespace rock::scope_safe_hand_frame_math
     }
 
     template <class Transform>
-    [[nodiscard]] inline Transform interpolateRootHandoffWorld(
-        const Transform& scopedWorldStart,
-        const Transform& currentRootWorld,
+    [[nodiscard]] inline Transform interpolateRebaseTransform(
+        const Transform& from,
+        const Transform& to,
         float alpha)
     {
         const float t = std::clamp(std::isfinite(alpha) ? alpha : 1.0f, 0.0f, 1.0f);
-        Transform result = currentRootWorld;
-        result.translate.x = scopedWorldStart.translate.x +
-                             (currentRootWorld.translate.x - scopedWorldStart.translate.x) * t;
-        result.translate.y = scopedWorldStart.translate.y +
-                             (currentRootWorld.translate.y - scopedWorldStart.translate.y) * t;
-        result.translate.z = scopedWorldStart.translate.z +
-                             (currentRootWorld.translate.z - scopedWorldStart.translate.z) * t;
-        result.scale = scopedWorldStart.scale + (currentRootWorld.scale - scopedWorldStart.scale) * t;
+        Transform result = to;
+        result.translate.x = from.translate.x + (to.translate.x - from.translate.x) * t;
+        result.translate.y = from.translate.y + (to.translate.y - from.translate.y) * t;
+        result.translate.z = from.translate.z + (to.translate.z - from.translate.z) * t;
+        result.scale = from.scale + (to.scale - from.scale) * t;
 
         float fromQuaternion[4]{};
         float toQuaternion[4]{};
-        transform_math::niRowsToHavokQuaternion(scopedWorldStart.rotate, fromQuaternion);
-        transform_math::niRowsToHavokQuaternion(currentRootWorld.rotate, toQuaternion);
+        transform_math::niRowsToHavokQuaternion(from.rotate, fromQuaternion);
+        transform_math::niRowsToHavokQuaternion(to.rotate, toQuaternion);
         const float dot = fromQuaternion[0] * toQuaternion[0] +
                           fromQuaternion[1] * toQuaternion[1] +
                           fromQuaternion[2] * toQuaternion[2] +

@@ -1248,6 +1248,9 @@ namespace rock
 
     void TwoHandedGrip::refreshScopeSafeHandFrames(RE::NiNode* weaponNode, const EquippedWeaponGripFrameInput& frameInput, float dt)
     {
+        // A final trace is valid only for the same update that produced its
+        // pre-solve sample. Early-return frames deliberately remain pre-only.
+        _nativeScopeTransitionFinalTracePending = false;
         const bool activationStateChanged =
             frameInput.manualScopeActivationRequested !=
                 _manualScopeActivationRequested ||
@@ -1330,15 +1333,21 @@ namespace rock
                 const bool recentScopedHandAvailable = state.hasLastHandWorld &&
                                                        state.consecutiveDriverMissFrames < SCOPE_DRIVER_MISS_GRACE_FRAMES;
                 if (scope_safe_hand_frame_math::shouldStartRootRebase(
+                        _manualScopeActivationRequested,
                         driverFrameAuthorityStoppedThisFrame,
+                        reconstructedHandValid,
                         recentScopedHandAvailable)) {
-                    // hFRIK's restored root can recover through several world
-                    // samples while moving. Keep the last frame ROCK actually
-                    // published fixed as the handoff origin; a root-local
-                    // offset would inherit that recovery motion and look like
-                    // a fresh grab.
-                    if (isUsableHandAuthorityTransform(state.lastHandWorld)) {
-                        state.rootRebaseWorldStart = state.lastHandWorld;
+                    // The previous ROCK output is the continuity authority.
+                    // hFRIK may resume non-scope damping from a stale internal
+                    // sample on this exact edge even though its driver is finite.
+                    const RE::NiTransform& continuityHandWorld = recentScopedHandAvailable ?
+                                                                      state.lastHandWorld :
+                                                                      reconstructedHandWorld;
+                    const RE::NiTransform rootRebaseLocalStart = transform_math::composeTransforms(
+                        transform_math::invertTransform(rootHandWorld),
+                        continuityHandWorld);
+                    if (isUsableHandAuthorityTransform(rootRebaseLocalStart)) {
+                        state.rootRebaseLocalStart = rootRebaseLocalStart;
                         state.rootRebaseElapsedSeconds = 0.0f;
                         state.rootRebaseActive = true;
                     }
@@ -1347,13 +1356,15 @@ namespace rock
 
                 RE::NiTransform resolvedHandWorld = rootHandWorld;
                 if (state.rootRebaseActive) {
+                    const RE::NiTransform identity = transform_math::makeIdentityTransform<RE::NiTransform>();
                     const float rebaseAlpha = scope_safe_hand_frame_math::rebaseAlpha(
                         state.rootRebaseElapsedSeconds,
                         SCOPE_ROOT_REBASE_DURATION_SECONDS);
-                    const RE::NiTransform rebasedHandWorld = scope_safe_hand_frame_math::interpolateRootHandoffWorld(
-                        state.rootRebaseWorldStart,
-                        rootHandWorld,
+                    const RE::NiTransform rebase = scope_safe_hand_frame_math::interpolateRebaseTransform(
+                        state.rootRebaseLocalStart,
+                        identity,
                         rebaseAlpha);
+                    const RE::NiTransform rebasedHandWorld = transform_math::composeTransforms(rootHandWorld, rebase);
                     if (isUsableHandAuthorityTransform(rebasedHandWorld)) {
                         resolvedHandWorld = rebasedHandWorld;
                     } else {
@@ -1545,8 +1556,170 @@ namespace rock
                 rightTrace.solverWorld.translate.z,
                 rightTrace.rootToReconstructedDistance,
                 rightTrace.rootToSolverDistance);
+            _nativeScopeTransitionFinalTraceSequence =
+                _nativeScopeTransitionTraceSequence;
+            _nativeScopeTransitionFinalTraceSample = sampleIndex;
+            _nativeScopeTransitionFinalTracePending = true;
             --_nativeScopeTransitionTraceFramesRemaining;
         }
+    }
+
+    void TwoHandedGrip::traceNativeScopeTransitionFinalState(RE::NiNode* weaponNode)
+    {
+        if (!_nativeScopeTransitionFinalTracePending) {
+            return;
+        }
+        _nativeScopeTransitionFinalTracePending = false;
+
+        struct HmdRelativeTrace
+        {
+            RE::NiPoint3 position{};
+            bool valid{ false };
+        };
+
+        const auto* playerNodes = f4vr::getPlayerNodes();
+        RE::NiTransform hmdWorld{};
+        const bool hmdWorldValid =
+            playerNodes && playerNodes->HmdNode &&
+            isFiniteTransform(playerNodes->HmdNode->world);
+        if (hmdWorldValid) {
+            hmdWorld = playerNodes->HmdNode->world;
+        }
+
+        const auto captureWorld = [&hmdWorld, hmdWorldValid](
+                                      const RE::NiTransform& world,
+                                      const bool worldValid) {
+            HmdRelativeTrace trace{};
+            if (!hmdWorldValid || !worldValid) {
+                return trace;
+            }
+            trace.position = transform_math::worldPointToLocal(
+                hmdWorld,
+                world.translate);
+            trace.valid = std::isfinite(trace.position.x) &&
+                          std::isfinite(trace.position.y) &&
+                          std::isfinite(trace.position.z);
+            return trace;
+        };
+        const auto captureNode = [&captureWorld](const RE::NiAVObject* node) {
+            return captureWorld(
+                node ? node->world : RE::NiTransform{},
+                node && isFiniteTransform(node->world));
+        };
+
+        RE::NiTransform scopeCameraWorld{};
+        bool scopeCameraWorldValid = false;
+        if (playerNodes && playerNodes->primaryWeaponScopeCamera) {
+            const auto* scopeCamera = playerNodes->primaryWeaponScopeCamera;
+            scopeCameraWorld = scopeCamera->world;
+            if (scopeCamera->parent &&
+                isFiniteTransform(scopeCamera->parent->world) &&
+                isFiniteTransform(scopeCamera->local)) {
+                scopeCameraWorld = transform_math::composeTransforms(
+                    scopeCamera->parent->world,
+                    scopeCamera->local);
+            }
+            scopeCameraWorldValid = isFiniteTransform(scopeCameraWorld);
+        }
+
+        RE::NiTransform leftRootWorld{};
+        RE::NiTransform rightRootWorld{};
+        const bool leftRootWorldValid =
+            tryGetRootFlattenedHandBoneTransform(true, leftRootWorld);
+        const bool rightRootWorldValid =
+            tryGetRootFlattenedHandBoneTransform(false, rightRootWorld);
+        const auto* playerCamera = f4vr::getPlayerCamera();
+        const bool cameraValuesValid =
+            playerCamera &&
+            std::isfinite(playerCamera->zoomInput) &&
+            std::isfinite(playerCamera->worldFOV) &&
+            std::isfinite(playerCamera->firstPersonFOV) &&
+            std::isfinite(playerCamera->fovAdjustCurrent) &&
+            std::isfinite(playerCamera->fovAdjustTarget) &&
+            std::isfinite(playerCamera->fovAdjustPerSec) &&
+            std::isfinite(playerCamera->fovAnimatorAdjust);
+
+        const HmdRelativeTrace weaponTrace = captureWorld(
+            weaponNode ? weaponNode->world : RE::NiTransform{},
+            weaponNode && isFiniteTransform(weaponNode->world));
+        const HmdRelativeTrace leftRootTrace = captureWorld(
+            leftRootWorld,
+            leftRootWorldValid);
+        const HmdRelativeTrace rightRootTrace = captureWorld(
+            rightRootWorld,
+            rightRootWorldValid);
+        const HmdRelativeTrace scopeCameraTrace = captureWorld(
+            scopeCameraWorld,
+            scopeCameraWorldValid);
+        const HmdRelativeTrace scopeParentTrace = captureNode(
+            playerNodes ? playerNodes->ScopeParentNode : nullptr);
+        const HmdRelativeTrace cameraRootTrace = captureNode(
+            playerCamera ? playerCamera->cameraRoot.get() : nullptr);
+        const HmdRelativeTrace roomTrace = captureNode(
+            playerNodes ? playerNodes->roomnode : nullptr);
+        const HmdRelativeTrace uprightHmdTrace = captureNode(
+            playerNodes ? playerNodes->UprightHmdNode : nullptr);
+        const HmdRelativeTrace skeletonRootTrace =
+            captureNode(f4vr::getRootNode());
+
+        ROCK_LOG_INFO(Weapon,
+            "SCOPE-VIEW-FINAL seq={} sample={}/{} buttonRequested={} rendererActive={} menuOpen={} driverAuthority={} state={} hmdValid={} hmdWorld=({:.2f},{:.2f},{:.2f}) weaponHmdValid={} weaponHmd=({:.2f},{:.2f},{:.2f}) leftRootHmdValid={} leftRootHmd=({:.2f},{:.2f},{:.2f}) rightRootHmdValid={} rightRootHmd=({:.2f},{:.2f},{:.2f}) scopeCameraHmdValid={} scopeCameraHmd=({:.2f},{:.2f},{:.2f}) scopeParentHmdValid={} scopeParentHmd=({:.2f},{:.2f},{:.2f}) cameraRootHmdValid={} cameraRootHmd=({:.2f},{:.2f},{:.2f}) roomHmdValid={} roomHmd=({:.2f},{:.2f},{:.2f}) uprightHmdValid={} uprightHmd=({:.2f},{:.2f},{:.2f}) skeletonRootHmdValid={} skeletonRootHmd=({:.2f},{:.2f},{:.2f}) cameraValuesValid={} zoomInput={:.4f} worldFov={:.4f} firstPersonFov={:.4f} fovAdjust=({:.4f},{:.4f},{:.4f},{:.4f})",
+            _nativeScopeTransitionFinalTraceSequence,
+            _nativeScopeTransitionFinalTraceSample,
+            SCOPE_TRANSITION_TRACE_FRAMES,
+            _manualScopeActivationRequested ? "yes" : "no",
+            _nativeScopeRequestActive ? "yes" : "no",
+            _scopeMenuOpenThisFrame ? "yes" : "no",
+            _scopeDriverFrameAuthorityActive ? "yes" : "no",
+            static_cast<std::uint32_t>(_state),
+            hmdWorldValid ? "yes" : "no",
+            hmdWorld.translate.x,
+            hmdWorld.translate.y,
+            hmdWorld.translate.z,
+            weaponTrace.valid ? "yes" : "no",
+            weaponTrace.position.x,
+            weaponTrace.position.y,
+            weaponTrace.position.z,
+            leftRootTrace.valid ? "yes" : "no",
+            leftRootTrace.position.x,
+            leftRootTrace.position.y,
+            leftRootTrace.position.z,
+            rightRootTrace.valid ? "yes" : "no",
+            rightRootTrace.position.x,
+            rightRootTrace.position.y,
+            rightRootTrace.position.z,
+            scopeCameraTrace.valid ? "yes" : "no",
+            scopeCameraTrace.position.x,
+            scopeCameraTrace.position.y,
+            scopeCameraTrace.position.z,
+            scopeParentTrace.valid ? "yes" : "no",
+            scopeParentTrace.position.x,
+            scopeParentTrace.position.y,
+            scopeParentTrace.position.z,
+            cameraRootTrace.valid ? "yes" : "no",
+            cameraRootTrace.position.x,
+            cameraRootTrace.position.y,
+            cameraRootTrace.position.z,
+            roomTrace.valid ? "yes" : "no",
+            roomTrace.position.x,
+            roomTrace.position.y,
+            roomTrace.position.z,
+            uprightHmdTrace.valid ? "yes" : "no",
+            uprightHmdTrace.position.x,
+            uprightHmdTrace.position.y,
+            uprightHmdTrace.position.z,
+            skeletonRootTrace.valid ? "yes" : "no",
+            skeletonRootTrace.position.x,
+            skeletonRootTrace.position.y,
+            skeletonRootTrace.position.z,
+            cameraValuesValid ? "yes" : "no",
+            cameraValuesValid ? playerCamera->zoomInput : 0.0f,
+            cameraValuesValid ? playerCamera->worldFOV : 0.0f,
+            cameraValuesValid ? playerCamera->firstPersonFOV : 0.0f,
+            cameraValuesValid ? playerCamera->fovAdjustCurrent : 0.0f,
+            cameraValuesValid ? playerCamera->fovAdjustTarget : 0.0f,
+            cameraValuesValid ? playerCamera->fovAdjustPerSec : 0.0f,
+            cameraValuesValid ? playerCamera->fovAnimatorAdjust : 0.0f);
     }
 
     bool TwoHandedGrip::tryGetSolverHandTransform(bool isLeft, RE::NiTransform& outTransform) const
@@ -1951,6 +2124,7 @@ namespace rock
         // before stale scoped roles are removed. This keeps hFRIK under one
         // continuous ROCK authority selection across scope and role edges.
         reconcileDeferredScopeHandAuthority(weaponNode);
+        traceNativeScopeTransitionFinalState(weaponNode);
     }
 
     void TwoHandedGrip::reset()
@@ -1981,6 +2155,9 @@ namespace rock
         _manualScopeActivationRequested = false;
         _nativeScopeTransitionTraceSequence = 0;
         _nativeScopeTransitionTraceFramesRemaining = 0;
+        _nativeScopeTransitionFinalTraceSequence = 0;
+        _nativeScopeTransitionFinalTraceSample = 0;
+        _nativeScopeTransitionFinalTracePending = false;
         _scopeHandAuthorityPublishedThisFrame = {};
         clearPrimaryGripPose(_firingHandIsLeft);
         clearPrimaryDetachVisualAuthority(_firingHandIsLeft);

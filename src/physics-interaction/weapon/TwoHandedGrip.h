@@ -683,7 +683,7 @@ namespace rock
             RE::NiTransform driverToHandLocal{};
             RE::NiTransform currentHandWorld{};
             RE::NiTransform lastHandWorld{};
-            RE::NiTransform rootRebaseWorldStart{};
+            RE::NiTransform rootRebaseLocalStart{};
             float rootRebaseElapsedSeconds{ 0.0f };
             std::uint32_t consecutiveDriverMissFrames{ 0 };
             bool hasDriverToHandLocal{ false };
@@ -1049,6 +1049,7 @@ namespace rock
             std::uint32_t currentEquippedWeaponFormID,
             const WeaponCollision& weaponCollision);
         void refreshScopeSafeHandFrames(RE::NiNode* weaponNode, const EquippedWeaponGripFrameInput& frameInput, float dt);
+        void traceNativeScopeTransitionFinalState(RE::NiNode* weaponNode);
         bool tryGetSolverHandTransform(bool isLeft, RE::NiTransform& outTransform) const;
         RE::NiTransform resolveLockedHandVisualTarget(
             const RE::NiTransform& targetWorld,
@@ -1142,6 +1143,9 @@ namespace rock
         bool _manualScopeActivationRequested{ false };
         std::uint64_t _nativeScopeTransitionTraceSequence{ 0 };
         std::uint32_t _nativeScopeTransitionTraceFramesRemaining{ 0 };
+        std::uint64_t _nativeScopeTransitionFinalTraceSequence{ 0 };
+        std::uint32_t _nativeScopeTransitionFinalTraceSample{ 0 };
+        bool _nativeScopeTransitionFinalTracePending{ false };
         // Latched across a manual grip session after its first scoped frame so
         // ScopeMenu presentation edges cannot reselect the weapon-solver basis.
         bool _scopeDriverFrameAuthorityActive{ false };
