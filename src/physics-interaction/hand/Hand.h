@@ -629,12 +629,19 @@ namespace rock
             // loudly so a regression here is evidence, never a mystery freeze.
             float solveMicroseconds = 0.0f;
         };
+        /*
+         * translationOnly: mid-hold re-seats (seated-pivot reacquire) must not
+         * rotate a HELD object (visible twitch) and must stay cheap enough to
+         * survive promotion churn - the full rotational solve is reserved for
+         * the one-shot capture seat.
+         */
         GrabSeatSolveOutcome solveGrabSeat(
             const std::vector<GrabLocalTriangle>& localMeshTriangles,
             const RE::NiTransform& bodyWorldAtGrab,
             const RE::NiTransform& objectToBodyLocal,
             const RE::NiPoint3& gripPointWorldAtCapture,
-            const RE::NiPoint3& pivotAWorld) const;
+            const RE::NiPoint3& pivotAWorld,
+            bool translationOnly = false) const;
         std::uint32_t getHandColliderBodyCount() const { return _boneColliders.getBodyCount(); }
         std::uint32_t getHandColliderBodyIdAtomic(std::size_t index) const { return _boneColliders.getBodyIdAtomic(index); }
         bool isHandColliderBodyId(std::uint32_t bodyId) const { return _boneColliders.isColliderBodyIdAtomic(bodyId); }

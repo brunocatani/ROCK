@@ -4758,7 +4758,8 @@ namespace rock
         const RE::NiTransform& bodyWorldAtGrab,
         const RE::NiTransform& objectToBodyLocal,
         const RE::NiPoint3& gripPointWorldAtCapture,
-        const RE::NiPoint3& pivotAWorld) const
+        const RE::NiPoint3& pivotAWorld,
+        bool translationOnly) const
     {
         namespace objective = grab_pose_objective;
         GrabSeatSolveOutcome outcome{};
@@ -4877,6 +4878,8 @@ namespace rock
             .palmSlackGameUnits = g_rockConfig.rockGrabPoseSolverPalmSlackGameUnits,
             .penetrationLimitGameUnits = g_rockConfig.rockGrabPoseSolverPenetrationLimitGameUnits,
             .girthWrappableRadiusGameUnits = g_rockConfig.rockGrabPoseSolverGirthWrappableRadiusGameUnits,
+            .behindPalmFootprintRadiusGameUnits = g_rockConfig.rockGrabPoseSolverBehindPalmFootprintRadiusGameUnits,
+            .behindPalmToleranceGameUnits = g_rockConfig.rockGrabPoseSolverBehindPalmToleranceGameUnits,
         };
         const objective::ShapeClassifyThresholds thresholds{
             .rodMinElongationRatio = g_rockConfig.rockPullPresentationMinElongationRatio,
@@ -4903,6 +4906,10 @@ namespace rock
         objective::SolveConfig solveConfig{};
         solveConfig.lambdaTranslatePerGameUnitSq = g_rockConfig.rockGrabPoseSolverLambdaTranslate;
         solveConfig.lambdaRotatePerRadianSq = g_rockConfig.rockGrabPoseSolverLambdaRotate;
+        if (translationOnly) {
+            solveConfig.enableRotation = false;
+            solveConfig.maxIterations = 24;
+        }
         outcome.solve = objective::solvePose(worldTriangles, outcome.model, hand, weights, constants, solveConfig);
         outcome.solveMicroseconds = static_cast<float>(
             std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - solveStartTime).count());
@@ -12051,20 +12058,52 @@ namespace rock
                                     transform_math::worldVectorToLocal(currentNodeWorld, promotedNormalWorld) :
                                     seatedPivot.normalNodeLocal;
                             /*
-                             * Pose solve, reacquire flavor: the promoted point re-seats
-                             * the object, so run the SAME solve the capture seat uses
-                             * (minimal correction onto the grasp manifold) - a reacquire
-                             * must never re-seat through weaker math than the capture,
-                             * or promotion would undo the capture-time seat quality.
-                             * Fail-closed: an unsolvable reacquire keeps the plain
-                             * promoted seat, same as the capture path keeps its seed.
+                             * Pose solve, reacquire flavor: TRANSLATION-ONLY (rotating
+                             * a held object is a visible twitch, and the rotational
+                             * candidates are most of the search cost - this path can
+                             * fire repeatedly mid-hold, which is exactly how the full
+                             * solve here dropped 90fps to 60 while dual-handing).
+                             * Churn cap: only the first few promotions of a hold pay
+                             * for a solve at all; a hold that keeps promoting is an
+                             * anomaly that must surface as evidence, not as frame
+                             * time. Fail-closed either way: the plain promoted seat.
                              */
-                            const auto reacquireSolve = solveGrabSeat(
-                                _grabFrame.localMeshTriangles,
-                                grabBodyWorld,
-                                _grabFrame.bodyLocal,
-                                promotedPointWorld,
-                                livePivotAWorld);
+                            constexpr std::uint32_t kMaxSolvedReacquiresPerHold = 4;
+                            GrabSeatSolveOutcome reacquireSolve{};
+                            if (_grabFrame.seatedPivotReacquireCount < kMaxSolvedReacquiresPerHold) {
+                                const auto reacquireSolveStart = std::chrono::steady_clock::now();
+                                reacquireSolve = solveGrabSeat(
+                                    _grabFrame.localMeshTriangles,
+                                    grabBodyWorld,
+                                    _grabFrame.bodyLocal,
+                                    promotedPointWorld,
+                                    livePivotAWorld,
+                                    /*translationOnly=*/true);
+                                const float reacquireSolveMicros = static_cast<float>(
+                                    std::chrono::duration_cast<std::chrono::microseconds>(
+                                        std::chrono::steady_clock::now() - reacquireSolveStart).count());
+                                ROCK_LOG_SAMPLE_DEBUG(Hand,
+                                    g_rockConfig.rockLogSampleMilliseconds,
+                                    "{} SEATED REACQUIRE SOLVE: reason={} trans={:.2f}gu us={:.0f} count={}",
+                                    handName(),
+                                    reacquireSolve.reason,
+                                    reacquireSolve.solve.translationGameUnits,
+                                    reacquireSolveMicros,
+                                    _grabFrame.seatedPivotReacquireCount);
+                            } else {
+                                reacquireSolve.reason = "reacquireChurnCap";
+                                reacquireSolve.pivotAWorld = livePivotAWorld;
+                                reacquireSolve.desiredBodyWorld = grab_frame_math::shiftObjectToAlignGripWithPocket(
+                                    grabBodyWorld, livePivotAWorld, promotedPointWorld);
+                                reacquireSolve.desiredObjectWorld =
+                                    deriveNodeWorldFromBodyWorld(reacquireSolve.desiredBodyWorld, _grabFrame.bodyLocal);
+                                ROCK_LOG_SAMPLE_WARN(Hand,
+                                    g_rockConfig.rockLogSampleMilliseconds,
+                                    "{} SEATED REACQUIRE CHURN: promotion #{} exceeded the solved-reacquire cap; "
+                                    "committing the plain promoted seat - repeated promotion on one hold needs a root cause",
+                                    handName(),
+                                    _grabFrame.seatedPivotReacquireCount);
+                            }
                             const RE::NiPoint3 seatPivotAWorld = reacquireSolve.pivotAWorld;
                             const float promotedPocketDistanceGameUnits = pointDistanceGameUnits(promotedPointWorld, seatPivotAWorld);
                             const RE::NiTransform desiredBodyWorldAtSeat = reacquireSolve.desiredBodyWorld;

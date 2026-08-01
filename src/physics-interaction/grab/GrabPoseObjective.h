@@ -354,6 +354,16 @@ namespace rock::grab_pose_objective
         float girthWindowGameUnits = 3.0f;        // slab half-width along the rod axis, centred on the palm
         float girthWrappableRadiusGameUnits = 3.0f;   // local radius a hand can power-grip
         float girthMinTolGameUnits = 0.5f;        // slack over the object's own thinnest station
+        /*
+         * behindPalm: an inside-grab is BURIED - mesh on the far side of the
+         * palm plane within a hand-sized footprint. Every verified hold reads
+         * <= 1.8gu there (curvature wrap), so beyond the tolerance this is a
+         * constraint violation, not a preference. Signed nearest-triangle
+         * tests were measured and rejected: 28/66 verified holds have tips
+         * legitimately tucked into concavities that read 'inside'.
+         */
+        float behindPalmFootprintRadiusGameUnits = 6.0f;
+        float behindPalmToleranceGameUnits = 2.0f;
     };
 
     /*
@@ -364,6 +374,10 @@ namespace rock::grab_pose_objective
     struct ObjectiveWeights
     {
         float touch = 145.2505f;
+        // CONSTRAINT weight, not fitted: behindPalm is zero on every verified
+        // hold by construction, so no fit can estimate it - it only exists to
+        // make buried/inside poses lose to any outside pose.
+        float behindPalm = 150.0f;
         float palmProx = 12.9162f;
         float overPen = 2.7735f;
         float wrap = 1.5205f;
@@ -664,6 +678,7 @@ namespace rock::grab_pose_objective
     struct TermValues
     {
         float touch = 0.0f;
+        float behindPalm = 0.0f;
         float palmProx = 0.0f;
         float overPen = 0.0f;
         float wrap = 0.0f;
@@ -672,7 +687,8 @@ namespace rock::grab_pose_objective
 
         [[nodiscard]] float weightedTotal(const ObjectiveWeights& weights) const
         {
-            return weights.touch * touch + weights.palmProx * palmProx + weights.overPen * overPen +
+            return weights.touch * touch + weights.behindPalm * behindPalm +
+                weights.palmProx * palmProx + weights.overPen * overPen +
                 weights.wrap * wrap + weights.rodAxis * rodAxis + weights.girth * girth;
         }
     };
@@ -815,7 +831,32 @@ namespace rock::grab_pose_objective
         };
 
         const RE::NiPoint3 palmObject = inversePoint(hand.palmCenter);
+        const RE::NiPoint3 normalObject = inverseVector(hand.palmNormal);
         const float palmGap = nearestSurfaceDistance(palmObject) - hand.palmRadius;
+
+        // Depth of mesh past the palm plane (opposite side from the object,
+        // normal points TOWARD it), inside the lateral footprint. O(vertices),
+        // no kernels - cheap enough to run every evaluation.
+        float behindPalmDepth = 0.0f;
+        for (const auto& triangle : context.triangles) {
+            const RE::NiPoint3 vertices[3]{ triangle.v0, triangle.v1, triangle.v2 };
+            for (const auto& vertex : vertices) {
+                const RE::NiPoint3 rel = subtract(vertex, palmObject);
+                const float axial = dot(rel, normalObject);
+                if (axial >= 0.0f) {
+                    continue;
+                }
+                const RE::NiPoint3 lateral{
+                    rel.x - normalObject.x * axial,
+                    rel.y - normalObject.y * axial,
+                    rel.z - normalObject.z * axial,
+                };
+                if (dot(lateral, lateral) <=
+                    constants.behindPalmFootprintRadiusGameUnits * constants.behindPalmFootprintRadiusGameUnits) {
+                    behindPalmDepth = (std::max)(behindPalmDepth, -axial);
+                }
+            }
+        }
 
         /*
          * touch needs the GLOBAL minimum capsule gap and overPen needs any
@@ -868,6 +909,8 @@ namespace rock::grab_pose_objective
 
         const float touchRaw = (std::max)(0.0f, minGap);
         terms.touch = touchRaw * touchRaw;
+        const float behindRaw = (std::max)(0.0f, behindPalmDepth - constants.behindPalmToleranceGameUnits);
+        terms.behindPalm = behindRaw * behindRaw;
         const float palmRaw = (std::max)(0.0f, palmGap - constants.palmSlackGameUnits);
         terms.palmProx = palmRaw * palmRaw;
         const float overRaw = (std::max)(0.0f, worstPenetration - constants.penetrationLimitGameUnits);
@@ -876,7 +919,6 @@ namespace rock::grab_pose_objective
 
         if (model.shape == ShapeClass::Rod) {
             // dot(R*axis, n) == dot(axis, R^T n): evaluate in the object frame.
-            const RE::NiPoint3 normalObject = inverseVector(hand.palmNormal);
             const float alignment = dot(normalizeOrZero(model.axes[0]), normalObject);
             terms.rodAxis = alignment * alignment;
 
@@ -926,6 +968,14 @@ namespace rock::grab_pose_objective
         float minStepDegrees = 1.0f;
         float minStepGameUnits = 0.1f;
         int maxIterations = 64;
+        /*
+         * Translation-only mode for mid-hold re-seats (seated-pivot
+         * reacquire): rotating a HELD object is a visible twitch, and the
+         * rotation candidates are two thirds of the search cost. The retired
+         * depth stop this replaces was translation-only for the same felt
+         * reason.
+         */
+        bool enableRotation = true;
     };
 
     struct SolveResult
@@ -989,16 +1039,18 @@ namespace rock::grab_pose_objective
             bool improved = false;
             for (const auto& axis : kAxes) {
                 for (const float sign : { 1.0f, -1.0f }) {
-                    const Mat33 delta = axisAngle(axis, sign * stepRadians);
                     PoseDelta candidate{};
-                    candidate.rotate = multiply(delta, current.rotate);
-                    candidate.translate = rotatePoint(delta, current.translate);
-                    float score = evaluate(candidate);
-                    if (score < currentScore) {
-                        current = candidate;
-                        currentScore = score;
-                        improved = true;
-                        break;
+                    if (config.enableRotation) {
+                        const Mat33 delta = axisAngle(axis, sign * stepRadians);
+                        candidate.rotate = multiply(delta, current.rotate);
+                        candidate.translate = rotatePoint(delta, current.translate);
+                        const float score = evaluate(candidate);
+                        if (score < currentScore) {
+                            current = candidate;
+                            currentScore = score;
+                            improved = true;
+                            break;
+                        }
                     }
                     candidate = current;
                     candidate.translate = RE::NiPoint3{
@@ -1006,10 +1058,10 @@ namespace rock::grab_pose_objective
                         current.translate.y + sign * stepGameUnits * axis.y,
                         current.translate.z + sign * stepGameUnits * axis.z,
                     };
-                    score = evaluate(candidate);
-                    if (score < currentScore) {
+                    const float translationScore = evaluate(candidate);
+                    if (translationScore < currentScore) {
                         current = candidate;
-                        currentScore = score;
+                        currentScore = translationScore;
                         improved = true;
                         break;
                     }

@@ -528,6 +528,8 @@ namespace rock
         rockGrabPoseSolverPalmSlackGameUnits = 2.5f;
         rockGrabPoseSolverPenetrationLimitGameUnits = 1.5f;
         rockGrabPoseSolverGirthWrappableRadiusGameUnits = 3.0f;
+        rockGrabPoseSolverBehindPalmFootprintRadiusGameUnits = 6.0f;
+        rockGrabPoseSolverBehindPalmToleranceGameUnits = 2.0f;
         rockGrabGripInsetGameUnits = 2.0f;
         rockGrabGripMaxInsetGameUnits = 6.0f;
         rockGrabConvergeMaxTimeSeconds = 0.35f;
@@ -1966,6 +1968,22 @@ namespace rock
             rockGrabPoseSolverGirthWrappableRadiusGameUnits > 10.0f) {
             ROCK_LOG_WARN(Config, "Invalid fGrabPoseSolverGirthWrappableRadiusGameUnits={} -- using 3.0", rockGrabPoseSolverGirthWrappableRadiusGameUnits);
             rockGrabPoseSolverGirthWrappableRadiusGameUnits = 3.0f;
+        }
+        rockGrabPoseSolverBehindPalmFootprintRadiusGameUnits =
+            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabPoseSolverBehindPalmFootprintRadiusGameUnits", rockGrabPoseSolverBehindPalmFootprintRadiusGameUnits));
+        if (!std::isfinite(rockGrabPoseSolverBehindPalmFootprintRadiusGameUnits) ||
+            rockGrabPoseSolverBehindPalmFootprintRadiusGameUnits < 1.0f ||
+            rockGrabPoseSolverBehindPalmFootprintRadiusGameUnits > 30.0f) {
+            ROCK_LOG_WARN(Config, "Invalid fGrabPoseSolverBehindPalmFootprintRadiusGameUnits={} -- using 6.0", rockGrabPoseSolverBehindPalmFootprintRadiusGameUnits);
+            rockGrabPoseSolverBehindPalmFootprintRadiusGameUnits = 6.0f;
+        }
+        rockGrabPoseSolverBehindPalmToleranceGameUnits =
+            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabPoseSolverBehindPalmToleranceGameUnits", rockGrabPoseSolverBehindPalmToleranceGameUnits));
+        if (!std::isfinite(rockGrabPoseSolverBehindPalmToleranceGameUnits) ||
+            rockGrabPoseSolverBehindPalmToleranceGameUnits < 0.5f ||
+            rockGrabPoseSolverBehindPalmToleranceGameUnits > 10.0f) {
+            ROCK_LOG_WARN(Config, "Invalid fGrabPoseSolverBehindPalmToleranceGameUnits={} -- using 2.0", rockGrabPoseSolverBehindPalmToleranceGameUnits);
+            rockGrabPoseSolverBehindPalmToleranceGameUnits = 2.0f;
         }
         rockGrabGripInsetGameUnits = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabGripInsetGameUnits", rockGrabGripInsetGameUnits));
         if (!std::isfinite(rockGrabGripInsetGameUnits) || rockGrabGripInsetGameUnits < 0.0f) {

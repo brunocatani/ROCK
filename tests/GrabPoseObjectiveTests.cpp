@@ -142,6 +142,7 @@ int main()
             const auto terms = objective::scorePose(triangles, model, hand, golden.pose);
             const std::string poseLabel = prefix + golden.label + ".";
             ok &= expectNear(poseLabel + "touch", terms.touch, golden.terms->touch, termEpsilon(golden.terms->touch));
+            ok &= expectNear(poseLabel + "behindPalm", terms.behindPalm, golden.terms->behindPalm, termEpsilon(golden.terms->behindPalm));
             ok &= expectNear(poseLabel + "palmProx", terms.palmProx, golden.terms->palmProx, termEpsilon(golden.terms->palmProx));
             ok &= expectNear(poseLabel + "overPen", terms.overPen, golden.terms->overPen, termEpsilon(golden.terms->overPen));
             ok &= expectNear(poseLabel + "wrap", terms.wrap, golden.terms->wrap, termEpsilon(golden.terms->wrap));

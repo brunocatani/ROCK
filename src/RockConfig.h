@@ -501,6 +501,11 @@ namespace rock
         float rockGrabPoseSolverPalmSlackGameUnits = 2.5f;
         float rockGrabPoseSolverPenetrationLimitGameUnits = 1.5f;
         float rockGrabPoseSolverGirthWrappableRadiusGameUnits = 3.0f;
+        // Inside-grab constraint: mesh past the palm plane beyond the
+        // tolerance marks a buried pose (measured: every verified hold reads
+        // <= 1.8gu there; buried poses read 5-8gu).
+        float rockGrabPoseSolverBehindPalmFootprintRadiusGameUnits = 6.0f;
+        float rockGrabPoseSolverBehindPalmToleranceGameUnits = 2.0f;
         float rockGrabGripInsetGameUnits = 2.0f;
         float rockGrabGripMaxInsetGameUnits = 6.0f;
         float rockGrabConvergeMaxTimeSeconds = 0.35f;

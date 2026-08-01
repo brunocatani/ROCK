@@ -26,6 +26,8 @@ WRAP_CLAMP = 4.0
 GIRTH_WINDOW = 3.0
 GIRTH_OK = 3.0
 GIRTH_MIN_TOL = 0.5
+BEHIND_PALM_FOOTPRINT = 6.0
+BEHIND_PALM_TOL = 2.0
 ROD_MIN_R12 = 2.0
 PLATE_MIN_R23 = 1.25
 
@@ -248,8 +250,20 @@ def score_terms(tris, centroid, axes, shape, girth_min, hand, rotation, translat
         gap = min(point_triangle_distance(tip, t) for t in moved) - radius
         wrap_sum += min(max(gap, 0.0), WRAP_CLAMP) ** 2
 
+    behind = 0.0
+    for t in moved:
+        for v in t:
+            rel = sub(v, hand["palm"])
+            axial = dot(rel, hand["palmNormal"])
+            if axial >= 0.0:
+                continue
+            lat = sub(rel, mul(hand["palmNormal"], axial))
+            if dot(lat, lat) <= BEHIND_PALM_FOOTPRINT * BEHIND_PALM_FOOTPRINT:
+                behind = max(behind, -axial)
+
     terms = dict(
         touch=max(0.0, min_gap) ** 2,
+        behindPalm=max(0.0, behind - BEHIND_PALM_TOL) ** 2,
         palmProx=max(0.0, palm_gap - PALM_SLACK) ** 2,
         overPen=max(0.0, worst_pen - PEN_LIMIT) ** 2,
         wrap=wrap_sum / max(1, len(hand["tips"])),
@@ -388,6 +402,7 @@ def emit(fixtures, out_path):
     lines.append("    struct FixtureTerms")
     lines.append("    {")
     lines.append("        float touch;")
+    lines.append("        float behindPalm;")
     lines.append("        float palmProx;")
     lines.append("        float overPen;")
     lines.append("        float wrap;")
@@ -457,7 +472,7 @@ def emit(fixtures, out_path):
             return "{ " + ", ".join(flt(x) for x in v) + " }"
 
         def terms(t):
-            return ("{ " + ", ".join(flt(t[k]) for k in ("touch", "palmProx", "overPen", "wrap", "rodAxis", "girth")) + " }")
+            return ("{ " + ", ".join(flt(t[k]) for k in ("touch", "behindPalm", "palmProx", "overPen", "wrap", "rodAxis", "girth")) + " }")
 
         lines.append("        Fixture{")
         lines.append(f"            \"{fixture['name']} ({fixture['hand_name']})\",")
