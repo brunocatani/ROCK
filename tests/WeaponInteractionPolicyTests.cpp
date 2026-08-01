@@ -1097,18 +1097,26 @@ int main()
     ok &= expectEqual("any weapon grab away from the firing grip takes full authority",
         resolveFiringGripProximityAuthorityMode(6.5f, 6.0f),
         WeaponSupportAuthorityMode::FullTwoHandedSolver);
-    ok &= expectFalse("authored visual-only support never promotes into firing authority",
+    ok &= expectFalse("probe-authored visual-only support remains presentation-only",
         canPromoteSupportGripToFiringGrip(
             WeaponSupportAuthorityMode::VisualOnlySupport,
+            true,
+            false));
+    ok &= expectTrue("touch-acquired authored visual-only support retains explicit handoff",
+        canPromoteSupportGripToFiringGrip(
+            WeaponSupportAuthorityMode::VisualOnlySupport,
+            true,
             true));
     ok &= expectTrue("dynamic touch visual-only support retains explicit handoff",
         canPromoteSupportGripToFiringGrip(
             WeaponSupportAuthorityMode::VisualOnlySupport,
+            false,
             false));
     ok &= expectTrue("full-authority support keeps its existing promotion contract",
         canPromoteSupportGripToFiringGrip(
             WeaponSupportAuthorityMode::FullTwoHandedSolver,
-            true));
+            true,
+            false));
 
     using rock::weapon_interaction_probe_math::isBetterProbeCandidate;
     using rock::weapon_interaction_probe_math::ProbeCandidateRank;

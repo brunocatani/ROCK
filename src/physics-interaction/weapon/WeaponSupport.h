@@ -79,14 +79,16 @@ namespace rock::weapon_support_authority_policy
 
     inline constexpr bool canPromoteSupportGripToFiringGrip(
         WeaponSupportAuthorityMode mode,
-        bool authoredSupportGrip)
+        bool authoredSupportGrip,
+        bool authoredSupportTouchAcquired)
     {
-        // A non-touch authored seat may be used for presentation under the
-        // visual-only pistol/near-grip contract, but it must never turn that
-        // acquisition into weapon authority. A true-touch dynamic visual grip
-        // retains the established explicit handoff path.
+        // Authored describes the pose source, not the grip's handoff
+        // capability. A touch-acquired authored seat under the visual-only
+        // near-grip contract is still a real firing-grip handoff. Only a pure
+        // probe-authored seat must remain presentation-only.
         return mode != WeaponSupportAuthorityMode::VisualOnlySupport ||
-               !authoredSupportGrip;
+               !authoredSupportGrip ||
+               authoredSupportTouchAcquired;
     }
 
     template <class Transform>

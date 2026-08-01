@@ -717,6 +717,10 @@ namespace rock
             WeaponPartKind partKind{ WeaponPartKind::Other };
             WeaponProviderPartAuthority providerPartAuthority{};
             bool authoredSupportGrip{ false };
+            // Authored pose provenance and touch/handoff capability are
+            // independent: a physical near-grip touch may adopt the authored
+            // pose while remaining eligible for ambidextrous promotion.
+            bool authoredSupportTouchAcquired{ false };
             std::uint64_t authoredSupportCaptureSequence{ 0 };
             /*
              * AttachOnly glue: the hand stays visually attached to the part

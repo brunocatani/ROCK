@@ -59,8 +59,12 @@ Require-Text 'src/physics-interaction/weapon/WeaponSupport.h' `
     'Core proximity support must be unconditional except for explicit provider grab modes.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'tryPromoteSupportGripToFiringGrip[\s\S]*canPromoteSupportGripToFiringGrip\([\s\S]*_authorityMode,[\s\S]*supportGrip\.authoredSupportGrip' `
-    'An authored visual-only grip must remain presentation-only instead of inheriting firing authority through handoff promotion.'
+    'grip\.authoredSupportGrip\s*=\s*true;[\s\S]{0,180}grip\.authoredSupportTouchAcquired\s*=\s*authoredSeatTouchAcquisition' `
+    'Authored support capture must preserve independent touch provenance for handoff eligibility.'
+
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'tryPromoteSupportGripToFiringGrip[\s\S]*canPromoteSupportGripToFiringGrip\([\s\S]*_authorityMode,[\s\S]*supportGrip\.authoredSupportGrip,[\s\S]*supportGrip\.authoredSupportTouchAcquired' `
+    'Handoff promotion must distinguish a touch-acquired authored pose from a presentation-only authored probe.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'handlingSettings\.ambidextrousHandoffEnabled\s*&&\s*!primaryGripInput\.held\s*&&\s*tryPromoteSupportGripToFiringGrip' `
