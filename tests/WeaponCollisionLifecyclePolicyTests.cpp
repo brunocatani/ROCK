@@ -155,21 +155,16 @@ int main()
         requiresDurableAnchorRecovery(false));
     ok &= expectFalse("existing durable housing forbids duplicate anchor recovery",
         requiresDurableAnchorRecovery(true));
-    using rock::weapon_omod_audit_policy::NativeAttachmentIdentityEvidence;
     ok &= expectTrue("fully absent attachment may use the native whole-model attach",
-        shouldAttemptWholeModelAttach(0, 6, false, NativeAttachmentIdentityEvidence::Absent));
+        shouldAttemptWholeModelAttach(0, 6, false));
     ok &= expectTrue("RU556 incidental one-of-six match retains native whole-model recovery",
-        shouldAttemptWholeModelAttach(1, 6, false, NativeAttachmentIdentityEvidence::Absent));
+        shouldAttemptWholeModelAttach(1, 6, false));
     ok &= expectTrue("sub-majority matches do not masquerade as a coherent partial attachment",
-        shouldAttemptWholeModelAttach(3, 6, false, NativeAttachmentIdentityEvidence::Absent));
+        shouldAttemptWholeModelAttach(3, 6, false));
     ok &= expectFalse("coherent partial attachment bypasses native whole-model duplication",
-        shouldAttemptWholeModelAttach(4, 6, false, NativeAttachmentIdentityEvidence::Absent));
+        shouldAttemptWholeModelAttach(4, 6, false));
     ok &= expectFalse("existing durable housing forbids native whole-model duplication",
-        shouldAttemptWholeModelAttach(1, 1, true, NativeAttachmentIdentityEvidence::Absent));
-    ok &= expectFalse("engine-tracked OMOD identity forbids native whole-model duplication",
-        shouldAttemptWholeModelAttach(0, 6, false, NativeAttachmentIdentityEvidence::Present));
-    ok &= expectFalse("unavailable native identity evidence fails closed",
-        shouldAttemptWholeModelAttach(0, 6, false, NativeAttachmentIdentityEvidence::Unavailable));
+        shouldAttemptWholeModelAttach(1, 1, true));
     ok &= expectFalse("empty template signature fails closed",
         templateSignatureIsPresent(0, 0));
     ok &= expectTrue("physics-bearing receiver may use a strict-superset raw geometry template",
