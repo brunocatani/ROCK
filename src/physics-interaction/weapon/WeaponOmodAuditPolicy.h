@@ -17,6 +17,13 @@ namespace rock::weapon_omod_audit_policy
         NodeNotFound,
     };
 
+    enum class NativeAttachmentIdentityEvidence : std::uint8_t
+    {
+        Unavailable,
+        Absent,
+        Present,
+    };
+
     struct CoverageInput
     {
         bool disabled = false;
@@ -95,15 +102,20 @@ namespace rock::weapon_omod_audit_policy
     [[nodiscard]] inline constexpr bool shouldAttemptWholeModelAttach(
         std::size_t matchedDistinctMeshCount,
         std::size_t distinctTemplateMeshCount,
-        bool durableAnchorPresent) noexcept
+        bool durableAnchorPresent,
+        NativeAttachmentIdentityEvidence nativeIdentityEvidence) noexcept
     {
         /*
          * A few reused mesh names are not evidence of a real partial subtree.
          * Only a coherent signature is safe to preserve while enriching the
-         * missing housing; otherwise use the native whole-model attach that
-         * retains the authored transform and connect-point behavior.
+         * missing housing. The engine's ordinary caller also rejects a native
+         * attach when the same OMOD form and rank already own geometry in the
+         * destination. Mirror that exact identity invariant here: unavailable
+         * evidence fails closed, and an existing attachment may receive only
+         * bounded housing enrichment rather than a second full model.
          */
-        return requiresDurableAnchorRecovery(durableAnchorPresent) &&
+        return nativeIdentityEvidence == NativeAttachmentIdentityEvidence::Absent &&
+               requiresDurableAnchorRecovery(durableAnchorPresent) &&
                !templateSignatureIsPresent(matchedDistinctMeshCount, distinctTemplateMeshCount);
     }
 

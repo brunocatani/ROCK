@@ -5999,38 +5999,110 @@ namespace rock
             return false;
         }
 
-        RE::NiNode* resolveOmodPhysicalCoverageRoot(
-            RE::NiNode* weaponRoot,
-            const std::uint32_t attachPointFormId)
+        struct OmodPhysicalCoverage
         {
+            RE::NiNode* mutationRoot{ nullptr };
+            std::vector<RE::NiAVObject*> evidenceRoots;
+        };
+
+        [[nodiscard]] bool isWithinOmodWeaponInstance(
+            const RE::NiAVObject* candidate,
+            const RE::NiAVObject* weaponRoot)
+        {
+            std::size_t depth = 0;
+            for (auto* cursor = candidate; cursor && depth < 64; cursor = cursor->parent, ++depth) {
+                if (cursor == weaponRoot) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        void appendOmodPhysicalCoverageRoot(
+            OmodPhysicalCoverage& coverage,
+            RE::NiAVObject* root)
+        {
+            if (!root || std::find(coverage.evidenceRoots.begin(), coverage.evidenceRoots.end(), root) != coverage.evidenceRoots.end()) {
+                return;
+            }
+            coverage.evidenceRoots.push_back(root);
+        }
+
+        OmodPhysicalCoverage resolveOmodPhysicalCoverage(
+            RE::NiNode* weaponRoot,
+            const std::uint32_t attachPointFormId,
+            const OmodAuditTokenSlot* tokenSlot,
+            const weapon_omod_audit_policy::NativeAttachmentIdentityEvidence nativeIdentityEvidence)
+        {
+            using IdentityEvidence = weapon_omod_audit_policy::NativeAttachmentIdentityEvidence;
+            OmodPhysicalCoverage coverage{};
             if (!weaponRoot) {
-                return nullptr;
+                return coverage;
             }
             const std::string_view connectPoint =
                 weapon_part_record_identity_policy::canonicalConnectPointForAttachPoint(attachPointFormId);
-            if (connectPoint.empty()) {
-                return weaponRoot;
-            }
-
-            const std::string connectPointName{ connectPoint };
-            const auto matches = collectWeaponAnimNodeMatches(weaponRoot, connectPointName.c_str());
-            for (const auto& match : matches) {
-                if (auto* node = match.node ? match.node->IsNode() : nullptr) {
-                    return node;
+            if (!connectPoint.empty()) {
+                const std::string connectPointName{ connectPoint };
+                const auto matches = collectWeaponAnimNodeMatches(weaponRoot, connectPointName.c_str());
+                for (const auto& match : matches) {
+                    if (auto* node = match.node ? match.node->IsNode() : nullptr) {
+                        const bool primaryCanonicalRoot = coverage.mutationRoot == nullptr;
+                        if (!coverage.mutationRoot) {
+                            coverage.mutationRoot = node;
+                        }
+                        if (nativeIdentityEvidence == IdentityEvidence::Present ||
+                            (nativeIdentityEvidence == IdentityEvidence::Unavailable && primaryCanonicalRoot)) {
+                            appendOmodPhysicalCoverageRoot(coverage, node);
+                        }
+                    }
                 }
             }
-            return weaponRoot;
+
+            /*
+             * A valid attached part is not guaranteed to remain under the
+             * first canonical P-* node. Authored nested providers can place it
+             * below a sibling slot or an animated receiver branch. The exact
+             * native form/rank marker makes every canonical sibling relevant;
+             * when the marker is absent, those siblings may belong to stale or
+             * different OMODs and are not presence evidence. Exact in-instance
+             * model-token branches remain corroborating evidence in every mode.
+             */
+            if (tokenSlot) {
+                for (const auto& match : tokenSlot->matches) {
+                    if (!match.node || !isWithinOmodWeaponInstance(match.node, weaponRoot)) {
+                        continue;
+                    }
+                    appendOmodPhysicalCoverageRoot(coverage, match.node);
+                    if (!coverage.mutationRoot) {
+                        coverage.mutationRoot = match.node->IsNode();
+                    }
+                }
+            }
+
+            if (coverage.evidenceRoots.empty() && nativeIdentityEvidence != IdentityEvidence::Absent) {
+                appendOmodPhysicalCoverageRoot(coverage, weaponRoot);
+            }
+            if (!coverage.mutationRoot) {
+                coverage.mutationRoot = weaponRoot;
+            }
+            return coverage;
         }
 
         std::size_t countPresentOmodPhysicalSignatureNames(
-            RE::NiAVObject* coverageRoot,
+            const OmodPhysicalCoverage& coverage,
             const OmodPhysicalTemplateSignature& signature,
             const char*& outFirstMatchedName)
         {
             outFirstMatchedName = nullptr;
             std::size_t matched = 0;
             for (const auto& meshName : signature.meshNames) {
-                if (!collectWeaponAnimNodeMatches(coverageRoot, meshName.c_str()).empty()) {
+                const bool namePresent = std::any_of(
+                    coverage.evidenceRoots.begin(),
+                    coverage.evidenceRoots.end(),
+                    [&meshName](RE::NiAVObject* root) {
+                        return !collectWeaponAnimNodeMatches(root, meshName.c_str()).empty();
+                    });
+                if (namePresent) {
                     ++matched;
                     if (!outFirstMatchedName) {
                         outFirstMatchedName = meshName.c_str();
@@ -6038,6 +6110,56 @@ namespace rock
                 }
             }
             return matched;
+        }
+
+        [[nodiscard]] bool omodPhysicalCoverageContainsName(
+            const OmodPhysicalCoverage& coverage,
+            const char* name)
+        {
+            return name && name[0] != '\0' && std::any_of(
+                coverage.evidenceRoots.begin(),
+                coverage.evidenceRoots.end(),
+                [name](RE::NiAVObject* root) {
+                    return !collectWeaponAnimNodeMatches(root, name).empty();
+                });
+        }
+
+        weapon_omod_audit_policy::NativeAttachmentIdentityEvidence queryNativeOmodAttachmentIdentity(
+            RE::NiNode* weaponRoot,
+            RE::BGSMod::Attachment::Mod* omod,
+            const char* rankSuffix)
+        {
+            using Evidence = weapon_omod_audit_policy::NativeAttachmentIdentityEvidence;
+            if (!weaponRoot || !omod || !niObjectRttiChainContains(weaponRoot, "BSFadeNode")) {
+                return Evidence::Unavailable;
+            }
+
+            /*
+             * Fallout4VR.exe 1.2.72 offset 0x3D930 is the identity guard used
+             * by an engine caller immediately before TryAttach3DRecurse. Raw
+             * disassembly verifies that it walks the destination BSFadeNode's
+             * flattened entries and compares ChildOrigin form ID (+0x28) and
+             * rank byte (+0x2C). The suffix contract matches the native attach:
+             * null means rank zero; otherwise the first ASCII digit is used.
+             */
+            using HasAttachedOmodIdentityFn = bool (*)(RE::NiNode*, RE::BGSMod::Attachment::Mod*, const char*);
+            static REL::Relocation<HasAttachedOmodIdentityFn> hasAttachedOmodIdentity{ REL::Offset(0x3D930) };
+            return hasAttachedOmodIdentity(weaponRoot, omod, rankSuffix) ? Evidence::Present : Evidence::Absent;
+        }
+
+        const char* nativeAttachmentIdentityEvidenceName(
+            const weapon_omod_audit_policy::NativeAttachmentIdentityEvidence evidence)
+        {
+            using Evidence = weapon_omod_audit_policy::NativeAttachmentIdentityEvidence;
+            switch (evidence) {
+            case Evidence::Absent:
+                return "absent";
+            case Evidence::Present:
+                return "present";
+            case Evidence::Unavailable:
+            default:
+                return "unavailable";
+            }
         }
 
         constexpr std::string_view kRockOmodEnrichmentPrefix = "ROCK-OMOD-Enrichment-";
@@ -7591,14 +7713,31 @@ namespace rock
                         continue;
                     }
 
-                    RE::NiNode* coverageRoot = resolveOmodPhysicalCoverageRoot(healTargetNode, record.attachPointFormId);
+                    char rankSuffixBuffer[8] = {};
+                    const char* rankSuffix = nullptr;
+                    if (record.modIndex != 0) {
+                        // Same suffix rule as the engine's own attach loop:
+                        // non-zero index entries get a "%u" node-name suffix.
+                        std::snprintf(rankSuffixBuffer, sizeof(rankSuffixBuffer), "%u", record.modIndex);
+                        rankSuffix = rankSuffixBuffer;
+                    }
+
+                    const auto nativeIdentityEvidence =
+                        queryNativeOmodAttachmentIdentity(healTargetNode, omod, rankSuffix);
+                    auto physicalCoverage = resolveOmodPhysicalCoverage(
+                        healTargetNode,
+                        record.attachPointFormId,
+                        &tokenSlots[candidateIndex],
+                        nativeIdentityEvidence);
+                    RE::NiNode* coverageRoot = physicalCoverage.mutationRoot;
                     const char* firstMatchedSignatureName = nullptr;
                     const std::size_t matchedSignatureNameCount = countPresentOmodPhysicalSignatureNames(
-                        coverageRoot,
+                        physicalCoverage,
                         templateSignature,
                         firstMatchedSignatureName);
-                    const bool durableAnchorPresent =
-                        !collectWeaponAnimNodeMatches(coverageRoot, templateSignature.durableAnchorName.c_str()).empty();
+                    const bool durableAnchorPresent = omodPhysicalCoverageContainsName(
+                        physicalCoverage,
+                        templateSignature.durableAnchorName.c_str());
                     const std::size_t requiredSignatureNameCount =
                         weapon_omod_audit_policy::requiredTemplateSignatureMatches(templateSignature.meshNames.size());
                     const bool coherentPhysicalSignaturePresent =
@@ -7610,7 +7749,7 @@ namespace rock
                         _omodSelfHealAttempted.insert(attemptKey);
                         ROCK_LOG_INFO(Weapon,
                             "OMOD-HEAL run={} omod={:08X} '{}' skipped: durable physical housing already present in slot "
-                            "matches={}/{} required={} coherent={} anchor='{}' example='{}' — no duplicate recovery needed",
+                            "matches={}/{} required={} coherent={} anchor='{}' example='{}' coverageRoots={} nativeIdentity={} — no duplicate recovery needed",
                             runIndex,
                             record.formId,
                             record.name,
@@ -7619,12 +7758,14 @@ namespace rock
                             requiredSignatureNameCount,
                             coherentPhysicalSignaturePresent ? "yes" : "no",
                             templateSignature.durableAnchorName,
-                            firstMatchedSignatureName ? firstMatchedSignatureName : "");
+                            firstMatchedSignatureName ? firstMatchedSignatureName : "",
+                            physicalCoverage.evidenceRoots.size(),
+                            nativeAttachmentIdentityEvidenceName(nativeIdentityEvidence));
                         continue;
                     }
 
                     ROCK_LOG_INFO(Weapon,
-                        "OMOD-HEAL run={} omod={:08X} '{}' confirmed incomplete: physical signature matches={}/{} required={} anchor='{}' anchorPresent={} - starting bounded recovery",
+                        "OMOD-HEAL run={} omod={:08X} '{}' confirmed incomplete: physical signature matches={}/{} required={} anchor='{}' anchorPresent={} coverageRoots={} nativeIdentity={} - starting bounded recovery",
                         runIndex,
                         record.formId,
                         record.name,
@@ -7632,16 +7773,9 @@ namespace rock
                         templateSignature.meshNames.size(),
                         requiredSignatureNameCount,
                         templateSignature.durableAnchorName,
-                        durableAnchorPresent ? "yes" : "no");
-
-                    char rankSuffixBuffer[8] = {};
-                    const char* rankSuffix = nullptr;
-                    if (record.modIndex != 0) {
-                        // Same suffix rule as the engine's own attach loop:
-                        // non-zero index entries get a "%u" node-name suffix.
-                        std::snprintf(rankSuffixBuffer, sizeof(rankSuffixBuffer), "%u", record.modIndex);
-                        rankSuffix = rankSuffixBuffer;
-                    }
+                        durableAnchorPresent ? "yes" : "no",
+                        physicalCoverage.evidenceRoots.size(),
+                        nativeAttachmentIdentityEvidenceName(nativeIdentityEvidence));
 
                     /*
                      * Never post-hide an engine attachment: the address-diff
@@ -7662,7 +7796,8 @@ namespace rock
                     const bool nativeWholeModelEligible = weapon_omod_audit_policy::shouldAttemptWholeModelAttach(
                         matchedSignatureNameCount,
                         templateSignature.meshNames.size(),
-                        durableAnchorPresent);
+                        durableAnchorPresent,
+                        nativeIdentityEvidence);
                     const bool nativeAttachNeeded = nativeWholeModelEligible &&
                         !recoveryTemplate->usesRawReceiverGeometry;
                     AuthoredOmodParentPathPreparation parentPathPreparation{};
@@ -7676,8 +7811,23 @@ namespace rock
                     bool attached = nativeAttachNeeded &&
                         tryAttach3DRecurse(omod, healTargetNode, rankSuffix, equippedInstanceData);
                     auto afterStats = summarizeWeaponAnimNodeSubtree(healTargetNode);
-                    bool anchorPresentAfterNative =
-                        !collectWeaponAnimNodeMatches(coverageRoot, templateSignature.durableAnchorName.c_str()).empty();
+                    auto postNativeIdentityEvidence = nativeIdentityEvidence;
+                    if (nativeAttachNeeded) {
+                        postNativeIdentityEvidence = queryNativeOmodAttachmentIdentity(healTargetNode, omod, rankSuffix);
+                    }
+                    auto postMutationCoverageEvidence = postNativeIdentityEvidence;
+                    if (afterStats.triShapeCount > beforeStats.triShapeCount) {
+                        postMutationCoverageEvidence = weapon_omod_audit_policy::NativeAttachmentIdentityEvidence::Present;
+                    }
+                    physicalCoverage = resolveOmodPhysicalCoverage(
+                        healTargetNode,
+                        record.attachPointFormId,
+                        &tokenSlots[candidateIndex],
+                        postMutationCoverageEvidence);
+                    coverageRoot = physicalCoverage.mutationRoot;
+                    bool anchorPresentAfterNative = omodPhysicalCoverageContainsName(
+                        physicalCoverage,
+                        templateSignature.durableAnchorName.c_str());
                     bool authoredPathCapturedAnchor = authoredParentPathPrepared && parentPathPreparation.container &&
                         !collectWeaponAnimNodeMatches(
                             parentPathPreparation.container.get(), templateSignature.durableAnchorName.c_str()).empty();
@@ -7692,8 +7842,19 @@ namespace rock
                          */
                         rollbackAuthoredOmodParentPath(parentPathPreparation);
                         afterStats = summarizeWeaponAnimNodeSubtree(healTargetNode);
-                        anchorPresentAfterNative =
-                            !collectWeaponAnimNodeMatches(coverageRoot, templateSignature.durableAnchorName.c_str()).empty();
+                        postMutationCoverageEvidence = postNativeIdentityEvidence;
+                        if (afterStats.triShapeCount > beforeStats.triShapeCount) {
+                            postMutationCoverageEvidence = weapon_omod_audit_policy::NativeAttachmentIdentityEvidence::Present;
+                        }
+                        physicalCoverage = resolveOmodPhysicalCoverage(
+                            healTargetNode,
+                            record.attachPointFormId,
+                            &tokenSlots[candidateIndex],
+                            postMutationCoverageEvidence);
+                        coverageRoot = physicalCoverage.mutationRoot;
+                        anchorPresentAfterNative = omodPhysicalCoverageContainsName(
+                            physicalCoverage,
+                            templateSignature.durableAnchorName.c_str());
                     }
                     std::string enrichmentParentName;
                     OmodPhysicalEnrichmentStage enrichmentStage = OmodPhysicalEnrichmentStage::NotAttempted;
@@ -7712,7 +7873,7 @@ namespace rock
                     selfHealSuccessCount += geometryAdded ? 1 : 0;
 
                     ROCK_LOG_INFO(Weapon,
-                        "OMOD-HEAL run={} omod={:08X} '{}' model='{}' suffix='{}' target='{}'/{:x} physicalTemplate={} nativeAttachAttempted={} attached={} geometryAdded={} durableAnchor='{}' restored={} authoredPathStage={} authoredPathProvider={:08X} authoredParent='{}' authoredAncestor='{}' authoredPathCapturedAnchor={} enrichmentStage={} enrichmentParent='{}' subtreeNodes {}->{} triShapes {}->{} visibleTriShapes {}->{}",
+                        "OMOD-HEAL run={} omod={:08X} '{}' model='{}' suffix='{}' target='{}'/{:x} physicalTemplate={} nativeIdentity={}->{} nativeAttachAttempted={} attached={} geometryAdded={} durableAnchor='{}' restored={} authoredPathStage={} authoredPathProvider={:08X} authoredParent='{}' authoredAncestor='{}' authoredPathCapturedAnchor={} enrichmentStage={} enrichmentParent='{}' subtreeNodes {}->{} triShapes {}->{} visibleTriShapes {}->{}",
                         runIndex,
                         record.formId,
                         record.name,
@@ -7721,8 +7882,15 @@ namespace rock
                         healTargetRootLabel,
                         reinterpret_cast<std::uintptr_t>(healTargetNode),
                         recoveryTemplate->usesRawReceiverGeometry ? "raw-receiver-geometry" : "complete-0xED",
+                        nativeAttachmentIdentityEvidenceName(nativeIdentityEvidence),
+                        nativeAttachmentIdentityEvidenceName(postNativeIdentityEvidence),
                         nativeAttachNeeded ? "yes" :
-                            (recoveryTemplate->usesRawReceiverGeometry ? "no-raw-receiver-anchor" : "no-coherent-partial-tree"),
+                            (recoveryTemplate->usesRawReceiverGeometry ? "no-raw-receiver-anchor" :
+                                (nativeIdentityEvidence == weapon_omod_audit_policy::NativeAttachmentIdentityEvidence::Present ?
+                                        "no-existing-native-identity" :
+                                        (nativeIdentityEvidence == weapon_omod_audit_policy::NativeAttachmentIdentityEvidence::Unavailable ?
+                                                "no-native-identity-evidence" :
+                                                "no-coherent-partial-tree"))),
                         attached ? "YES" : "no",
                         geometryAdded ? "YES" : "no",
                         templateSignature.durableAnchorName,
