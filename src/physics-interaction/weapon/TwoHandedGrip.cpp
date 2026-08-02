@@ -3760,6 +3760,7 @@ namespace rock
         query.supportRole = static_cast<std::uint32_t>(grip.supportRole);
         query.socketRole = static_cast<std::uint32_t>(grip.socketRole);
         query.actionRole = static_cast<std::uint32_t>(grip.actionRole);
+        query.sourceRoot = reinterpret_cast<std::uintptr_t>(grip.attachmentRoot);
         std::memcpy(query.sourceName, grip.sourceName.data(), grip.sourceName.size());
         query.sourceName[sizeof(query.sourceName) - 1] = '\0';
 
