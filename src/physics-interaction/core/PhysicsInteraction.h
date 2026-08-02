@@ -139,6 +139,9 @@ namespace rock
         }
         bool tryGetRootFlattenedHandTransform(bool isLeft, RE::NiTransform& outTransform) const;
         void fillProviderFrameSnapshot(::rock::provider::RockProviderFrameSnapshot& outSnapshot) const;
+        bool isProviderWeaponBodyCurrentV1(
+            std::uint64_t weaponGenerationKey,
+            std::uint32_t bodyId) const;
         bool queryProviderWeaponContactAtPoint(
             const ::rock::provider::RockProviderWeaponContactQuery& query,
             ::rock::provider::RockProviderWeaponContactResult& outResult) const;

@@ -91,6 +91,30 @@
         outSnapshot.offhandReservation = ::rock::provider::currentOffhandReservation();
     }
 
+    bool PhysicsInteraction::isProviderWeaponBodyCurrentV1(
+        const std::uint64_t weaponGenerationKey,
+        const std::uint32_t bodyId) const
+    {
+        // Collider focus originates from the complete evidence catalog, while
+        // the frame snapshot intentionally carries only a compact body prefix.
+        if (weaponGenerationKey == 0 || bodyId == 0x7FFF'FFFF) {
+            return false;
+        }
+        const auto snapshot =
+            _weaponCollision.getWeaponBodySnapshotAtomic();
+        if (snapshot.generationKey != weaponGenerationKey) {
+            return false;
+        }
+        for (std::uint32_t index = 0;
+             index < snapshot.count;
+             ++index) {
+            if (snapshot.bodyIds[index] == bodyId) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     bool PhysicsInteraction::queryProviderWorldRaycastV1(
         const ::rock::provider::RockProviderWorldRaycastRequestV1& request,
         ::rock::provider::RockProviderWorldRaycastResultV1& outResult) const

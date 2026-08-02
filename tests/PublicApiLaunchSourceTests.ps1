@@ -249,10 +249,12 @@ Require-Text 'src/api/ROCKProviderApi.h' 'ColliderVisualizationOverride[\s\S]*Ro
     'V1 must expose an append-only, feature-gated exact-collider visualization override.'
 Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' 'provider_collider_visualization::copySnapshot[\s\S]{0,900}FocusedWeaponPart[\s\S]{0,400}PublishFrame\(focusedFrame\)[\s\S]{0,100}return' `
     'Focused collider visualization must replace the complete config-driven overlay frame.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'apiSetColliderVisualizationOverrideV1[\s\S]{0,1200}onAnimationOwnerThread\(\)[\s\S]{0,1800}ColliderVisualizationOverride[\s\S]{0,1200}s_lastSnapshot\.weaponGenerationKey[\s\S]{0,900}s_lastSnapshot\.weaponBodyIds[\s\S]{0,600}provider_collider_visualization::set' `
-    'Collider focus requests must be owner-thread/capability gated and bind exact current weapon-body identity.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'provider_collider_visualization::prune\([\s\S]{0,500}snapshot\.weaponGenerationKey[\s\S]{0,250}snapshot\.weaponBodyIds' `
-    'Collider focus leases must invalidate against the current weapon generation and body set before callbacks.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'apiSetColliderVisualizationOverrideV1[\s\S]{0,1200}onAnimationOwnerThread\(\)[\s\S]{0,1800}ColliderVisualizationOverride[\s\S]{0,1200}s_lastSnapshot\.weaponGenerationKey[\s\S]{0,900}isProviderWeaponBodyCurrentV1[\s\S]{0,600}provider_collider_visualization::set' `
+    'Collider focus requests must be owner-thread/capability gated and bind exact identity from the complete current weapon-body catalog.'
+Require-Text 'src/physics-interaction/core/PhysicsInteractionProvider.inl' 'isProviderWeaponBodyCurrentV1[\s\S]{0,500}getWeaponBodySnapshotAtomic[\s\S]{0,500}snapshot\.bodyIds' `
+    'Collider focus identity validation must scan the complete generation-bound weapon body publication.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'copySnapshot\([\s\S]{0,300}isProviderWeaponBodyCurrentV1[\s\S]{0,500}provider_collider_visualization::prune\([\s\S]{0,500}colliderVisualizationBodyCurrent' `
+    'Collider focus leases must invalidate against the complete current weapon body set before callbacks.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'apiUnregisterConsumerV1[\s\S]{0,3500}provider_collider_visualization::clear\(ownerToken\)' `
     'Consumer teardown must release its exclusive collider focus override.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'maxWorldRaycastsPerOwnerPerFrame\s*=\s*[\s\S]{0,100}ROCK_PROVIDER_MAX_WORLD_RAYCASTS_PER_OWNER_PER_FRAME_V1' `

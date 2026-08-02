@@ -4212,6 +4212,10 @@ namespace
         if (!apiIsProviderReady()) {
             return RockProviderResultV1::NotReady;
         }
+        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        if (!pi) {
+            return RockProviderResultV1::NotReady;
+        }
         const auto capabilityResult = validateReadCapability(
             ownerToken,
             RockProviderConsumerCapabilityV1::
@@ -4227,15 +4231,11 @@ namespace
                     s_lastSnapshot.weaponGenerationKey) {
                 return RockProviderResultV1::TargetUnavailable;
             }
-            const auto bodyEnd =
-                std::begin(s_lastSnapshot.weaponBodyIds) +
-                s_lastSnapshot.weaponBodyCount;
-            if (std::find(
-                    std::begin(s_lastSnapshot.weaponBodyIds),
-                    bodyEnd,
-                    request->bodyId) == bodyEnd) {
-                return RockProviderResultV1::TargetInvalid;
-            }
+        }
+        if (!pi->isProviderWeaponBodyCurrentV1(
+                request->weaponGenerationKey,
+                request->bodyId)) {
+            return RockProviderResultV1::TargetInvalid;
         }
 
         return provider_collider_visualization::set(
@@ -5324,14 +5324,23 @@ namespace rock::provider
 
         provider_collider_visualization::Invalidation
             colliderVisualizationInvalidation{};
+        provider_collider_visualization::Snapshot
+            colliderVisualizationSnapshot{};
+        const bool colliderVisualizationActive =
+            provider_collider_visualization::copySnapshot(
+                colliderVisualizationSnapshot);
+        const bool colliderVisualizationBodyCurrent =
+            !colliderVisualizationActive ||
+            pi.isProviderWeaponBodyCurrentV1(
+                colliderVisualizationSnapshot.weaponGenerationKey,
+                colliderVisualizationSnapshot.bodyId);
         provider_collider_visualization::prune(
             snapshot.frameIndex,
             snapshot.worldGeneration,
             snapshot.skeletonGeneration,
             snapshot.providerGeneration,
             snapshot.weaponGenerationKey,
-            snapshot.weaponBodyIds,
-            snapshot.weaponBodyCount,
+            colliderVisualizationBodyCurrent,
             colliderVisualizationInvalidation);
         if (colliderVisualizationInvalidation.ownerToken != 0) {
             publishAuthorityLostEvent(

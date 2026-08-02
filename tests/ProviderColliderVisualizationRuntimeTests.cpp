@@ -4,7 +4,6 @@
 #undef NDEBUG
 #endif
 
-#include <array>
 #include <cassert>
 
 using namespace rock;
@@ -39,7 +38,6 @@ int main()
     assert(provider_collider_visualization::set(11, request, 100) ==
            RockProviderResultV1::OwnerConflict);
 
-    const std::array<std::uint32_t, 2> bodies{ 17, 22 };
     provider_collider_visualization::Invalidation invalidation{};
     provider_collider_visualization::prune(
         101,
@@ -47,8 +45,7 @@ int main()
         5,
         6,
         0x1234,
-        bodies.data(),
-        static_cast<std::uint32_t>(bodies.size()),
+        true,
         invalidation);
     assert(invalidation.ownerToken == 0);
     assert(provider_collider_visualization::hasOverride());
@@ -59,8 +56,7 @@ int main()
         5,
         6,
         0x1234,
-        bodies.data(),
-        static_cast<std::uint32_t>(bodies.size()),
+        true,
         invalidation);
     assert(invalidation.ownerToken == 10);
     assert(invalidation.reason ==
@@ -80,8 +76,7 @@ int main()
         5,
         6,
         0x1234,
-        bodies.data(),
-        static_cast<std::uint32_t>(bodies.size()),
+        true,
         invalidation);
     assert(invalidation.ownerToken == 0);
     provider_collider_visualization::prune(
@@ -91,23 +86,20 @@ int main()
         5,
         6,
         0x1234,
-        bodies.data(),
-        static_cast<std::uint32_t>(bodies.size()),
+        true,
         invalidation);
     assert(invalidation.ownerToken == 20);
 
     request.leaseFrames = 5;
     assert(provider_collider_visualization::set(30, request, 300) ==
            RockProviderResultV1::Ok);
-    const std::array<std::uint32_t, 1> differentBodies{ 22 };
     provider_collider_visualization::prune(
         300,
         4,
         5,
         6,
         0x1234,
-        differentBodies.data(),
-        static_cast<std::uint32_t>(differentBodies.size()),
+        false,
         invalidation);
     assert(invalidation.ownerToken == 30);
     assert(invalidation.reason ==

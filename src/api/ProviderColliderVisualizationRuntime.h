@@ -32,8 +32,7 @@ namespace rock::provider_collider_visualization
         std::uint32_t skeletonGeneration,
         std::uint32_t providerGeneration,
         std::uint64_t weaponGenerationKey,
-        const std::uint32_t* weaponBodyIds,
-        std::uint32_t weaponBodyCount,
+        bool weaponBodyCurrent,
         Invalidation& outInvalidation);
     void clear(std::uint64_t ownerToken);
     void clearAll(

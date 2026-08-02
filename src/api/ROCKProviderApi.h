@@ -1852,9 +1852,10 @@ namespace rock::provider
     /*
      * Temporarily replaces ROCK's complete debug-overlay presentation with one
      * exact collider from the active equipped-weapon generation. The body ID
-     * must occur in the matching frame snapshot weaponBodyIds array. The
-     * optional partKind is descriptive metadata only; body identity remains
-     * the authoritative selection key. Refresh from ROCK's owner frame
+     * must occur in ROCK's complete matching-generation weapon body catalog;
+     * it is not restricted to the compact weaponBodyIds frame-snapshot array.
+     * The optional partKind is descriptive metadata only; body identity
+     * remains the authoritative selection key. Refresh from ROCK's owner frame
      * callback while focus is desired. Clearing or lease invalidation restores
      * the unchanged config-driven overlay on the next frame.
      */

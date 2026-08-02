@@ -2,7 +2,6 @@
 
 #include "api/ProviderLeasePolicy.h"
 
-#include <algorithm>
 #include <atomic>
 #include <mutex>
 
@@ -25,15 +24,6 @@ namespace rock::provider_collider_visualization
         std::mutex s_mutex;
         std::atomic_bool s_active{ false };
 
-        [[nodiscard]] bool containsBody(
-            const std::uint32_t bodyId,
-            const std::uint32_t* bodyIds,
-            const std::uint32_t bodyCount)
-        {
-            return bodyIds &&
-                   std::find(bodyIds, bodyIds + bodyCount, bodyId) !=
-                       bodyIds + bodyCount;
-        }
     }
 
     provider::RockProviderResultV1 set(
@@ -78,8 +68,7 @@ namespace rock::provider_collider_visualization
         const std::uint32_t skeletonGeneration,
         const std::uint32_t providerGeneration,
         const std::uint64_t weaponGenerationKey,
-        const std::uint32_t* weaponBodyIds,
-        const std::uint32_t weaponBodyCount,
+        const bool weaponBodyCurrent,
         Invalidation& outInvalidation)
     {
         outInvalidation = {};
@@ -101,10 +90,7 @@ namespace rock::provider_collider_visualization
             (s_slot.providerGeneration != 0 &&
                 s_slot.providerGeneration != providerGeneration) ||
             s_slot.snapshot.weaponGenerationKey != weaponGenerationKey ||
-            !containsBody(
-                s_slot.snapshot.bodyId,
-                weaponBodyIds,
-                weaponBodyCount);
+            !weaponBodyCurrent;
         const bool expired = !provider_lease_policy::isActive(
             frameIndex,
             s_slot.expiresAfterFrame);
