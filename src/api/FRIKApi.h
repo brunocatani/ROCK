@@ -40,7 +40,9 @@
 #undef MAX_PATH
 #endif
 
+#include <cstddef>
 #include <cstdint>
+#include <type_traits>
 
 #include "RE/NetImmerse/NiPoint.h"
 #include "RE/NetImmerse/NiTransform.h"
@@ -73,7 +75,7 @@ namespace frik::api
 
 #define FRIK_CALL __cdecl
 
-    inline constexpr std::uint32_t FRIK_API_VERSION = 5;
+    inline constexpr std::uint32_t FRIK_API_VERSION = 6;
 
     struct FRIKApi
     {
@@ -131,6 +133,14 @@ namespace frik::api
             Active,
 
             Overriden,
+        };
+
+        enum class Feature : std::uint8_t
+        {
+            Flashlight,
+            WeaponPositioning,
+            Pipboy,
+            SmoothMovement,
         };
 
         struct OpenExternalModConfigData
@@ -234,6 +244,18 @@ namespace frik::api
 
         bool(FRIK_CALL* setHandPoseCustom)(const char* tag, Hand hand, const HandPoseData& handPose, bool forceTop);
 
+        bool(FRIK_CALL* blockFeature)(const char* tag, Feature feature, bool block);
+
+        bool(FRIK_CALL* isFeatureBlocked)(Feature feature);
+
+        int(FRIK_CALL* getConfigValue)(const char* caller, const char* section, const char* key, char* outBuf, int bufLen, const char* defaultValue);
+
+        bool(FRIK_CALL* hasConfigValueOverride)(const char* caller, const char* section, const char* key);
+
+        bool(FRIK_CALL* setConfigValueOverride)(const char* caller, const char* section, const char* key, const char* value);
+
+        bool(FRIK_CALL* clearConfigValueOverride)(const char* caller, const char* section, const char* key);
+
         bool(FRIK_CALL* setHandPoseWithPriority)(const char* tag, Hand hand, HandPoseKind handPose, int priority);
 
         bool(FRIK_CALL* setHandPoseCustomWithPriority)(const char* tag, Hand hand, const HandPoseData& handPose, int priority);
@@ -304,5 +326,10 @@ namespace frik::api
         inline static const FRIKApi* inst = nullptr;
     };
 
-    static_assert(FRIK_API_VERSION == 5, "ROCK requires the rolling FRIK API v5 visual-authority and recoil-controller contract");
+    inline constexpr std::size_t FRIK_API_FUNCTION_POINTER_SIZE = sizeof(decltype(FRIKApi::getVersion));
+    static_assert(std::is_standard_layout_v<FRIKApi>, "FRIKApi must remain standard-layout for its exported function table ABI");
+    static_assert(offsetof(FRIKApi, blockFeature) == 19 * FRIK_API_FUNCTION_POINTER_SIZE, "FRIK API v4 prefix layout changed");
+    static_assert(offsetof(FRIKApi, setHandPoseWithPriority) == 25 * FRIK_API_FUNCTION_POINTER_SIZE, "FRIK API v6 extension must follow the complete v4 prefix");
+    static_assert(sizeof(FRIKApi) == 35 * FRIK_API_FUNCTION_POINTER_SIZE, "FRIK API v6 function table layout changed");
+    static_assert(FRIK_API_VERSION == 6, "ROCK requires the rolling FRIK API v6 visual-authority and recoil-controller contract");
 }

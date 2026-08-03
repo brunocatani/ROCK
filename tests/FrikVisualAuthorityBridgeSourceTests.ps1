@@ -63,10 +63,10 @@ Require-Text 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h' `
     'ROCK must use hFRIK''s single bidirectional anatomical mirror export.'
 Require-Text 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h' `
     'blockPrimaryHandWeaponPose\(const char\* tag,\s*bool block\)[\s\S]*api\(\)[\s\S]*frikApi->blockPrimaryHandWeaponPose\(tag,\s*block\)' `
-    'ROCK must use the V5 function table for primary weapon-pose blocking.'
+    'ROCK must use the V6 function table for primary weapon-pose blocking.'
 Require-Text 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h' `
     'canBlockPrimaryHandWeaponPose\(\)[\s\S]*frikApi->blockPrimaryHandWeaponPose\s*!=\s*nullptr' `
-    'ROCK must feature-detect primary weapon-pose blocking through the V5 table.'
+    'ROCK must feature-detect primary weapon-pose blocking through the V6 table.'
 Require-Text 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h' `
     'PresentedHandNodeCache[\s\S]*getHandWorldTransform\(Hand hand\)[\s\S]*isSkeletonReadyHint\(\)[\s\S]*getFirstPersonSkeleton\(\)[\s\S]*findNode\(skeleton,\s*"RArm_Hand"\)[\s\S]*findNode\(skeleton,\s*"LArm_Hand"\)[\s\S]*handNode->world' `
     'ROCK must read final presented hands directly from the game first-person scene nodes.'
@@ -87,19 +87,19 @@ Require-ExternalText 'hFRIK/src/api/FRIKApi.cpp' `
     'hFRIK must expose the bidirectional anatomy-aware mirror export.'
 Reject-ExternalText 'hFRIK/src/api/FRIKApi.cpp' `
     'FRIKAPI_BlockPrimaryHandWeaponPose|FRIKAPI_MirrorPrimaryWeaponFingerLocalTransforms' `
-    'hFRIK must not retain duplicate direct-export paths for V5 table behavior or legacy mirroring.'
+    'hFRIK must not retain duplicate direct-export paths for V6 table behavior or legacy mirroring.'
 Reject-ExternalText 'hFRIK/src/api/FRIKApi.h' `
     'getHandWorldTransform' `
-    'hFRIK V5 must not wrap game-owned first-person hand transforms.'
+    'hFRIK V6 must not wrap game-owned first-person hand transforms.'
 Reject-ExternalText 'ROCK/src/api/FRIKApi.h' `
     'getHandWorldTransform' `
     'ROCK must not retain the removed hFRIK hand-transform table entry.'
 Reject-ExternalText 'hFRIK/src/api/FRIKApi.h' `
     'using\s+HandPoses|setHandPoseCustomFingerPositionsWithPriority|kPowerArmorChanged|Fist\s*=' `
-    'hFRIK V5 must not retain unused aliases, convenience calls, lifecycle events, or public fist exposure.'
+    'hFRIK V6 must not retain unused aliases, convenience calls, lifecycle events, or public fist exposure.'
 Reject-ExternalText 'ROCK/src/api/FRIKApi.h' `
     'using\s+HandPoses|setHandPoseCustomFingerPositionsWithPriority|kPowerArmorChanged|Fist\s*=' `
-    'ROCK must mirror the cleaned hFRIK V5 contract.'
+    'ROCK must mirror the cleaned hFRIK V6 contract.'
 Reject-ExternalText 'hFRIK/src/FRIK.cpp' `
     'logSkeletonInitializationBlocked|Dispatched kSkeleton|Loading menu is open, defer skeleton initialization|initialization delayed after release' `
     'hFRIK must keep skeleton readiness and lifecycle behavior free of added log-only scaffolding.'

@@ -37,16 +37,16 @@ function Reject-Text {
     }
 }
 
-Require-Text $hfrikRoot 'src/api/FRIKApi.h' 'FRIK_API_VERSION\s*=\s*5' `
-    'hFRIK recoil control must remain in the rolling V5 API contract.'
-Require-Text $Root 'src/api/FRIKApi.h' 'FRIK_API_VERSION\s*=\s*5' `
-    'ROCK must consume the rolling V5 FRIK API contract.'
+Require-Text $hfrikRoot 'src/api/FRIKApi.h' 'FRIK_API_VERSION\s*=\s*6' `
+    'hFRIK recoil control must remain in the rolling V6 API contract.'
+Require-Text $Root 'src/api/FRIKApi.h' 'FRIK_API_VERSION\s*=\s*6' `
+    'ROCK must consume the rolling V6 FRIK API contract.'
 Require-Text $hfrikRoot 'src/api/FRIKApi.h' `
     'getApiStructSize\(\)\s*!=\s*sizeof\(FRIKApi\)' `
-    'The rolling V5 consumer handshake must reject any mismatched function table.'
+    'The rolling V6 consumer handshake must reject any mismatched function table.'
 Require-Text $Root 'src/api/FRIKApi.h' `
     'getApiStructSize\(\)\s*!=\s*sizeof\(FRIKApi\)' `
-    'ROCK must require an exact rolling V5 function-table match before dereferencing members.'
+    'ROCK must require an exact rolling V6 function-table match before dereferencing members.'
 
 Reject-Text $hfrikRoot 'src/Config.h' 'rawWeaponRecoil' `
     'Raw weapon recoil must not remain user-configurable.'
@@ -89,13 +89,13 @@ Require-Text $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'ROCK may consume recoil only for its active physical-left firing carry and must preserve the validated native kick directly.'
 Require-Text $Root 'src/ROCKMain.cpp' `
     'registerWeaponHandRecoilController\s*!=\s*nullptr[\s\S]*unregisterWeaponHandRecoilController\s*!=\s*nullptr' `
-    'ROCK startup must fail closed when the matching V5 recoil-controller table is absent.'
+    'ROCK startup must fail closed when the matching V6 recoil-controller table is absent.'
 Require-Text $hfrikRoot 'src/api/FRIKApi.h' `
     'struct\s+RecoilSample[\s\S]*structSize[\s\S]*reserved0\[3\][\s\S]*nativeKickLocal[\s\S]*sizeof\(RecoilSample\)\s*==\s*112' `
     'hFRIK must expose only the solve-critical native kick sample.'
 Reject-Text $hfrikRoot 'src/api/FRIKApi.h' `
     'RecoilContextFlag|contextFlags|physicalPrimaryHand|std::uint64_t\s+sequence|float\s+deltaSeconds' `
-    'hFRIK must not mirror game-derived context or redundant frame bookkeeping through recoil V5.'
+    'hFRIK must not mirror game-derived context or redundant frame bookkeeping through recoil V6.'
 Reject-Text $Root 'src/api/FRIKApi.h' `
     'RecoilContextFlag|contextFlags|physicalPrimaryHand|std::uint64_t\s+sequence|float\s+deltaSeconds' `
     'ROCK must mirror the minimal solve-critical recoil sample.'
@@ -104,13 +104,13 @@ Reject-Text $hfrikRoot 'src/skeleton/Skeleton.cpp' `
     'hFRIK must keep physical-hand routing internal without rebuilding removed public recoil metadata.'
 Reject-Text $hfrikRoot 'src/api/FRIKApi.h' `
     'RecoilState|getWeaponHandRecoilState' `
-    'hFRIK V5 must not expose unused recoil telemetry.'
+    'hFRIK V6 must not expose unused recoil telemetry.'
 Reject-Text $hfrikRoot 'src/api/RecoilControllerRuntime.cpp' `
     'RecoilState|getWeaponHandRecoilState|g_lastRecoilState|g_hasLastRecoilState' `
     'hFRIK must not build or cache unused per-frame recoil telemetry.'
 Reject-Text $Root 'src/api/FRIKApi.h' `
     'RecoilState|getWeaponHandRecoilState' `
-    'ROCK must mirror the telemetry-free hFRIK V5 contract.'
+    'ROCK must mirror the telemetry-free hFRIK V6 contract.'
 Reject-Text $Root 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h' `
     'RecoilState|getWeaponHandRecoilState' `
     'ROCK must not retain an unused recoil telemetry bridge.'
