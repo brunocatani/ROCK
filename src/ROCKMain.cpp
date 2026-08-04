@@ -687,7 +687,7 @@ namespace
                 case 5:
                     logger::critical(
                         "ROCK: FRIKApi initialization FAILED (error 5). "
-                        "Loaded rolling FRIK API v6 contract does not exactly match this ROCK build. "
+                        "Loaded additive FRIK API v5 contract does not exactly match this ROCK build. "
                         "Deploy the matching rebuilt FRIK.dll. ROCK is now DISABLED.");
                     break;
                 default:
@@ -712,7 +712,7 @@ namespace
                 frikApi->unregisterWeaponHandRecoilController != nullptr;
             if (!hasRequiredFrikContract) {
                 logger::critical(
-                    "ROCK: FRIKApi v6 contract mismatch. Loaded FRIK.dll does not expose the canonical hand-pose, visual-authority, and recoil-controller contract required by this ROCK build. Deploy the matching rebuilt FRIK.dll. ROCK is now DISABLED.");
+                    "ROCK: FRIKApi v5 contract mismatch. Loaded FRIK.dll does not expose the canonical hand-pose, visual-authority, and recoil-controller contract required by this ROCK build. Deploy the matching rebuilt FRIK.dll. ROCK is now DISABLED.");
                 s_frikAvailable = false;
                 return;
             }

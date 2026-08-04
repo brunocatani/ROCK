@@ -75,7 +75,7 @@ namespace frik::api
 
 #define FRIK_CALL __cdecl
 
-    inline constexpr std::uint32_t FRIK_API_VERSION = 6;
+    inline constexpr std::uint32_t FRIK_API_VERSION = 5;
 
     struct FRIKApi
     {
@@ -329,7 +329,7 @@ namespace frik::api
     inline constexpr std::size_t FRIK_API_FUNCTION_POINTER_SIZE = sizeof(decltype(FRIKApi::getVersion));
     static_assert(std::is_standard_layout_v<FRIKApi>, "FRIKApi must remain standard-layout for its exported function table ABI");
     static_assert(offsetof(FRIKApi, blockFeature) == 19 * FRIK_API_FUNCTION_POINTER_SIZE, "FRIK API v4 prefix layout changed");
-    static_assert(offsetof(FRIKApi, setHandPoseWithPriority) == 25 * FRIK_API_FUNCTION_POINTER_SIZE, "FRIK API v6 extension must follow the complete v4 prefix");
-    static_assert(sizeof(FRIKApi) == 35 * FRIK_API_FUNCTION_POINTER_SIZE, "FRIK API v6 function table layout changed");
-    static_assert(FRIK_API_VERSION == 6, "ROCK requires the rolling FRIK API v6 visual-authority and recoil-controller contract");
+    static_assert(offsetof(FRIKApi, setHandPoseWithPriority) == 25 * FRIK_API_FUNCTION_POINTER_SIZE, "FRIK API v5 extension must follow the complete v4 prefix");
+    static_assert(sizeof(FRIKApi) == 35 * FRIK_API_FUNCTION_POINTER_SIZE, "FRIK API v5 function table layout changed");
+    static_assert(FRIK_API_VERSION == 5, "ROCK requires the additive FRIK API v5 visual-authority and recoil-controller contract");
 }

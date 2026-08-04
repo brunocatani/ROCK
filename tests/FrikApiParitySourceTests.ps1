@@ -68,8 +68,8 @@ function Assert-SequenceEqual {
 
 $rockVersion = Get-ApiVersion $rockHeader
 $hfrikVersion = Get-ApiVersion $hfrikHeader
-if ($rockVersion -ne 6 -or $hfrikVersion -ne 6) {
-    throw "Expected FRIK API version 6. ROCK=$rockVersion hFRIK=$hfrikVersion"
+if ($rockVersion -ne 5 -or $hfrikVersion -ne 5) {
+    throw "Expected FRIK API version 5. ROCK=$rockVersion hFRIK=$hfrikVersion"
 }
 
 $rockPoseValues = Get-HandPoseValues $rockHeader
