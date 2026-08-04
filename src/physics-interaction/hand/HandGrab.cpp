@@ -28,6 +28,7 @@
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/LooseWeaponGripZone.h"
+#include "physics-interaction/weapon/WeaponTypePolicy.h"
 #include "physics-interaction/object/SkinnedBodyResolver.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
@@ -795,7 +796,7 @@ namespace rock
 
         frik_visual_authority::HandPoseKind looseWeaponPrimaryAttachPoseKind(const RE::TESObjectWEAP* weapon)
         {
-            return weapon && weapon->IsMeleeWeapon() ?
+            return weapon && weapon_type_policy::isMelee(weapon->weaponData.type.get()) ?
                        frik_visual_authority::HandPoseKind::HoldingMelee :
                        frik_visual_authority::HandPoseKind::HoldingGun;
         }

@@ -10,6 +10,7 @@
 #include "physics-interaction/weapon/WeaponPartRuntime.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
+#include "physics-interaction/weapon/WeaponTypePolicy.h"
 #include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
 
 #include <array>
@@ -21,6 +22,22 @@
 
 namespace
 {
+    enum class TestWeaponType
+    {
+        kHandToHand = 0,
+        kOneHandSword = 1,
+        kOneHandDagger = 2,
+        kOneHandAxe = 3,
+        kOneHandMace = 4,
+        kTwoHandSword = 5,
+        kTwoHandAxe = 6,
+        kBow = 7,
+        kStaff = 8,
+        kGun = 9,
+        kGrenade = 10,
+        kMine = 11,
+    };
+
     struct TestVector3
     {
         float x{ 0.0f };
@@ -111,6 +128,11 @@ namespace
 int main()
 {
     bool ok = true;
+
+    ok &= expectTrue("one-hand sword is melee", rock::weapon_type_policy::isMelee(TestWeaponType::kOneHandSword));
+    ok &= expectTrue("two-hand axe is melee", rock::weapon_type_policy::isMelee(TestWeaponType::kTwoHandAxe));
+    ok &= expectFalse("gun does not bit-alias melee", rock::weapon_type_policy::isMelee(TestWeaponType::kGun));
+    ok &= expectFalse("grenade is not melee", rock::weapon_type_policy::isMelee(TestWeaponType::kGrenade));
 
     {
         TestTransform liveHandWorld = rock::transform_math::makeIdentityTransform<TestTransform>();

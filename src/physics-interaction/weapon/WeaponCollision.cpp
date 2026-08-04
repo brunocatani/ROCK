@@ -19,6 +19,7 @@
 #include "physics-interaction/weapon/WeaponOmodAuditPolicy.h"
 #include "physics-interaction/weapon/WeaponPartRecordIdentityPolicy.h"
 #include "physics-interaction/weapon/WeaponSemantics.h"
+#include "physics-interaction/weapon/WeaponTypePolicy.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/TransformMath.h"
 
@@ -1370,7 +1371,7 @@ namespace rock
                 return result;
             }
 
-            if (weapon->IsMeleeWeapon()) {
+            if (weapon_type_policy::isMelee(weapon->weaponData.type.get())) {
                 result.sizeClass = WeaponSizeClass::Melee;
                 result.source = WeaponClassificationSource::WeightFallback;
                 return result;
