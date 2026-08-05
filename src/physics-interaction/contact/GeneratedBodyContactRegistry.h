@@ -24,6 +24,7 @@ namespace rock::generated_body_contact_registry
     inline constexpr std::uint32_t kFlagPrimaryAnchor = 1u << 0;
     inline constexpr std::uint32_t kFlagSampledVelocity = 1u << 1;
     inline constexpr std::uint32_t kFlagPowerArmor = 1u << 2;
+    inline constexpr std::uint32_t kFlagSampledAngularVelocity = 1u << 3;
 
     struct Entry
     {
@@ -50,6 +51,9 @@ namespace rock::generated_body_contact_registry
         float sampledVelocityHavokX = 0.0f;
         float sampledVelocityHavokY = 0.0f;
         float sampledVelocityHavokZ = 0.0f;
+        float sampledAngularVelocityRadiansX = 0.0f;
+        float sampledAngularVelocityRadiansY = 0.0f;
+        float sampledAngularVelocityRadiansZ = 0.0f;
         float lengthGameUnits = 0.0f;
         float radiusGameUnits = 0.0f;
         float localMinGameX = 0.0f;
@@ -84,6 +88,14 @@ namespace rock::generated_body_contact_registry
                std::isfinite(entry.sampledVelocityHavokX) &&
                std::isfinite(entry.sampledVelocityHavokY) &&
                std::isfinite(entry.sampledVelocityHavokZ);
+    }
+
+    [[nodiscard]] inline bool hasFiniteSampledAngularVelocity(const Entry& entry) noexcept
+    {
+        return hasFlag(entry.flags, kFlagSampledAngularVelocity) &&
+               std::isfinite(entry.sampledAngularVelocityRadiansX) &&
+               std::isfinite(entry.sampledAngularVelocityRadiansY) &&
+               std::isfinite(entry.sampledAngularVelocityRadiansZ);
     }
 
     template <std::size_t Capacity>
@@ -221,6 +233,9 @@ namespace rock::generated_body_contact_registry
             std::atomic<float> sampledVelocityHavokX{ 0.0f };
             std::atomic<float> sampledVelocityHavokY{ 0.0f };
             std::atomic<float> sampledVelocityHavokZ{ 0.0f };
+            std::atomic<float> sampledAngularVelocityRadiansX{ 0.0f };
+            std::atomic<float> sampledAngularVelocityRadiansY{ 0.0f };
+            std::atomic<float> sampledAngularVelocityRadiansZ{ 0.0f };
             std::atomic<float> lengthGameUnits{ 0.0f };
             std::atomic<float> radiusGameUnits{ 0.0f };
             std::atomic<float> localMinGameX{ 0.0f };
@@ -270,6 +285,9 @@ namespace rock::generated_body_contact_registry
             slot.sampledVelocityHavokX.store(entry.sampledVelocityHavokX, std::memory_order_release);
             slot.sampledVelocityHavokY.store(entry.sampledVelocityHavokY, std::memory_order_release);
             slot.sampledVelocityHavokZ.store(entry.sampledVelocityHavokZ, std::memory_order_release);
+            slot.sampledAngularVelocityRadiansX.store(entry.sampledAngularVelocityRadiansX, std::memory_order_release);
+            slot.sampledAngularVelocityRadiansY.store(entry.sampledAngularVelocityRadiansY, std::memory_order_release);
+            slot.sampledAngularVelocityRadiansZ.store(entry.sampledAngularVelocityRadiansZ, std::memory_order_release);
             slot.lengthGameUnits.store(entry.lengthGameUnits, std::memory_order_release);
             slot.radiusGameUnits.store(entry.radiusGameUnits, std::memory_order_release);
             slot.localMinGameX.store(entry.localMinGameX, std::memory_order_release);
@@ -310,6 +328,9 @@ namespace rock::generated_body_contact_registry
             classification.sampledVelocityHavokX = slot.sampledVelocityHavokX.load(std::memory_order_acquire);
             classification.sampledVelocityHavokY = slot.sampledVelocityHavokY.load(std::memory_order_acquire);
             classification.sampledVelocityHavokZ = slot.sampledVelocityHavokZ.load(std::memory_order_acquire);
+            classification.sampledAngularVelocityRadiansX = slot.sampledAngularVelocityRadiansX.load(std::memory_order_acquire);
+            classification.sampledAngularVelocityRadiansY = slot.sampledAngularVelocityRadiansY.load(std::memory_order_acquire);
+            classification.sampledAngularVelocityRadiansZ = slot.sampledAngularVelocityRadiansZ.load(std::memory_order_acquire);
             classification.lengthGameUnits = slot.lengthGameUnits.load(std::memory_order_acquire);
             classification.radiusGameUnits = slot.radiusGameUnits.load(std::memory_order_acquire);
             classification.localMinGameX = slot.localMinGameX.load(std::memory_order_acquire);

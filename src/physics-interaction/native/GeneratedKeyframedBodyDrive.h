@@ -159,6 +159,86 @@ namespace rock
             return normalize(Quaternion{ values[0], values[1], values[2], values[3] });
         }
 
+        inline bool isFiniteRotation(const RE::NiMatrix3& matrix)
+        {
+            for (int row = 0; row < 3; ++row) {
+                for (int column = 0; column < 3; ++column) {
+                    if (!std::isfinite(matrix.entry[row][column])) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        inline Quaternion multiply(const Quaternion& lhs, const Quaternion& rhs)
+        {
+            return Quaternion{
+                lhs.w * rhs.x + lhs.x * rhs.w + lhs.y * rhs.z - lhs.z * rhs.y,
+                lhs.w * rhs.y - lhs.x * rhs.z + lhs.y * rhs.w + lhs.z * rhs.x,
+                lhs.w * rhs.z + lhs.x * rhs.y - lhs.y * rhs.x + lhs.z * rhs.w,
+                lhs.w * rhs.w - lhs.x * rhs.x - lhs.y * rhs.y - lhs.z * rhs.z,
+            };
+        }
+
+        inline Quaternion conjugate(const Quaternion& q)
+        {
+            return Quaternion{ -q.x, -q.y, -q.z, q.w };
+        }
+
+        template <class Point>
+        inline bool tryComputeSampledAngularVelocityRadians(
+            const RE::NiMatrix3& previousTargetRotation,
+            const RE::NiMatrix3& currentTargetRotation,
+            float sourceDeltaSeconds,
+            Point& outAngularVelocityRadians)
+        {
+            outAngularVelocityRadians = {};
+            if (!isFiniteRotation(previousTargetRotation) || !isFiniteRotation(currentTargetRotation)) {
+                return false;
+            }
+
+            const float sourceDelta = sanitizeSourceDeltaSeconds(sourceDeltaSeconds);
+            Quaternion delta = normalize(multiply(
+                matrixToQuaternion(currentTargetRotation),
+                conjugate(matrixToQuaternion(previousTargetRotation))));
+            if (!std::isfinite(delta.x) || !std::isfinite(delta.y) || !std::isfinite(delta.z) || !std::isfinite(delta.w)) {
+                return false;
+            }
+
+            /*
+             * FO4VR ComputeHardKeyFrame (Fallout4VR.exe+0x153A6A0) forms the
+             * world-space delta as target * conjugate(current), then negates
+             * the quaternion when w is negative so both rotation directions
+             * follow the shortest arc. Mirror that verified convention here;
+             * this is target-to-target motion evidence, not another body drive.
+             */
+            if (delta.w < 0.0f) {
+                delta.x = -delta.x;
+                delta.y = -delta.y;
+                delta.z = -delta.z;
+                delta.w = -delta.w;
+            }
+
+            const float vectorLengthSquared = delta.x * delta.x + delta.y * delta.y + delta.z * delta.z;
+            if (!std::isfinite(vectorLengthSquared)) {
+                return false;
+            }
+            if (vectorLengthSquared <= kTinyRotationRadians * kTinyRotationRadians) {
+                return true;
+            }
+
+            const float vectorLength = std::sqrt(vectorLengthSquared);
+            const float angleRadians = 2.0f * std::atan2(vectorLength, std::clamp(delta.w, 0.0f, 1.0f));
+            const float scale = angleRadians / (vectorLength * sourceDelta);
+            outAngularVelocityRadians.x = delta.x * scale;
+            outAngularVelocityRadians.y = delta.y * scale;
+            outAngularVelocityRadians.z = delta.z * scale;
+            return std::isfinite(outAngularVelocityRadians.x) &&
+                   std::isfinite(outAngularVelocityRadians.y) &&
+                   std::isfinite(outAngularVelocityRadians.z);
+        }
+
         inline RE::NiMatrix3 quaternionToMatrix(const Quaternion& q)
         {
             const Quaternion n = normalize(q);
@@ -328,10 +408,10 @@ namespace rock
      * queued target across Havok substeps so generated bodies do not coast for a
      * physics tick when render/skeleton sampling runs at a different cadence.
      * It still does not predict or hard-sync body velocities. It does keep the
-     * sampled target-to-target linear velocity separately so contact consumers
-     * can use the commanded collider motion, because Bethesda keyframed bodies
-     * can report little or no hknp motion velocity even while driveToKeyFrame is
-     * moving them through contacts.
+     * sampled target-to-target linear and angular velocity separately so contact
+     * consumers can use the commanded collider motion, because Bethesda
+     * keyframed bodies can report little or no hknp motion velocity even while
+     * driveToKeyFrame is moving them through contacts.
      */
     struct GeneratedKeyframedBodyDriveState
     {
@@ -339,6 +419,7 @@ namespace rock
         RE::NiTransform pendingTarget{};
         RE::NiTransform previousTarget{};
         RE::NiPoint3 sampledLinearVelocityHavok{};
+        RE::NiPoint3 sampledAngularVelocityRadians{};
         float sourceDeltaSeconds = havok_physics_timing::kFallbackPhysicsDeltaSeconds;
         float secondsSinceSourceSample = generated_keyframed_body_drive_math::kMaxStaleSeconds;
         float teleportDistanceGameUnits = 1000.0f;
@@ -349,6 +430,7 @@ namespace rock
         bool hasPreviousTarget = false;
         bool pendingTeleport = false;
         bool hasSampledLinearVelocityHavok = false;
+        bool hasSampledAngularVelocityRadians = false;
     };
 
     [[nodiscard]] inline bool hasGeneratedKeyframedBodyDriveTargetUnlocked(const GeneratedKeyframedBodyDriveState& state)
@@ -462,6 +544,8 @@ namespace rock
     {
         bool valid = false;
         RE::NiPoint3 velocityHavok{};
+        bool angularValid = false;
+        RE::NiPoint3 angularVelocityRadians{};
     };
 
     struct GeneratedKeyframedBodyDriveQueueResult
@@ -469,6 +553,8 @@ namespace rock
         bool queued = false;
         bool sampledVelocityValid = false;
         RE::NiPoint3 sampledLinearVelocityHavok{};
+        bool sampledAngularVelocityValid = false;
+        RE::NiPoint3 sampledAngularVelocityRadians{};
         std::uint64_t queuedSequence = 0;
     };
 

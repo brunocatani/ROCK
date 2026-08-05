@@ -186,6 +186,8 @@ namespace rock
 
         bool tryGetWeaponBodySampledVelocityAtomic(std::uint32_t bodyId, float* outVelocityHavok) const;
 
+        bool tryGetWeaponBodySampledAngularVelocityAtomic(std::uint32_t bodyId, float* outAngularVelocityRadians) const;
+
         bool tryGetWeaponContactDebugInfo(std::uint32_t bodyId, WeaponInteractionDebugInfo& outInfo) const;
 
         std::vector<WeaponCollisionProfileEvidenceDescriptor> getProfileEvidenceDescriptors() const;
@@ -533,6 +535,10 @@ namespace rock
         std::array<std::atomic<float>, MAX_WEAPON_BODIES> _weaponBodySampledVelocityHavokYAtomic;
         std::array<std::atomic<float>, MAX_WEAPON_BODIES> _weaponBodySampledVelocityHavokZAtomic;
         std::array<std::atomic<std::uint32_t>, MAX_WEAPON_BODIES> _weaponBodySampledVelocityValidAtomic;
+        std::array<std::atomic<float>, MAX_WEAPON_BODIES> _weaponBodySampledAngularVelocityRadiansXAtomic;
+        std::array<std::atomic<float>, MAX_WEAPON_BODIES> _weaponBodySampledAngularVelocityRadiansYAtomic;
+        std::array<std::atomic<float>, MAX_WEAPON_BODIES> _weaponBodySampledAngularVelocityRadiansZAtomic;
+        std::array<std::atomic<std::uint32_t>, MAX_WEAPON_BODIES> _weaponBodySampledAngularVelocityValidAtomic;
         std::atomic<std::uint32_t> _weaponBodyCountAtomic{ 0 };
         std::atomic<std::uint64_t> _weaponBodySetKeyAtomic{ 0 };
         std::atomic<std::uint64_t> _weaponBodyPublicationVersion{ 0 };

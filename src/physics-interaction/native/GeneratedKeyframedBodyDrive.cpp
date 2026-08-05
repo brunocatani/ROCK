@@ -313,6 +313,7 @@ namespace rock
             state.pendingTarget = {};
             state.previousTarget = {};
             state.sampledLinearVelocityHavok = {};
+            state.sampledAngularVelocityRadians = {};
             state.sourceDeltaSeconds = havok_physics_timing::kFallbackPhysicsDeltaSeconds;
             state.secondsSinceSourceSample = generated_keyframed_body_drive_math::kMaxStaleSeconds;
             state.teleportDistanceGameUnits = 1000.0f;
@@ -323,6 +324,7 @@ namespace rock
             state.hasPreviousTarget = false;
             state.pendingTeleport = false;
             state.hasSampledLinearVelocityHavok = false;
+            state.hasSampledAngularVelocityRadians = false;
         }
     }
 
@@ -359,6 +361,8 @@ namespace rock
         const RE::NiTransform referenceTarget = state.hasPendingTarget ? state.pendingTarget : state.previousTarget;
         state.hasSampledLinearVelocityHavok = false;
         state.sampledLinearVelocityHavok = {};
+        state.hasSampledAngularVelocityRadians = false;
+        state.sampledAngularVelocityRadians = {};
         if (hadReferenceTarget) {
             state.hasSampledLinearVelocityHavok = generated_keyframed_body_drive_math::tryComputeSampledLinearVelocityHavok(
                 referenceTarget.translate,
@@ -366,6 +370,11 @@ namespace rock
                 sanitizedSourceDelta,
                 gameToHavokScale(),
                 state.sampledLinearVelocityHavok);
+            state.hasSampledAngularVelocityRadians = generated_keyframed_body_drive_math::tryComputeSampledAngularVelocityRadians(
+                referenceTarget.rotate,
+                target.rotate,
+                sanitizedSourceDelta,
+                state.sampledAngularVelocityRadians);
         }
         result.sampledVelocityValid = state.hasSampledLinearVelocityHavok &&
                                       std::isfinite(state.sampledLinearVelocityHavok.x) &&
@@ -373,6 +382,13 @@ namespace rock
                                       std::isfinite(state.sampledLinearVelocityHavok.z);
         if (result.sampledVelocityValid) {
             result.sampledLinearVelocityHavok = state.sampledLinearVelocityHavok;
+        }
+        result.sampledAngularVelocityValid = state.hasSampledAngularVelocityRadians &&
+                                             std::isfinite(state.sampledAngularVelocityRadians.x) &&
+                                             std::isfinite(state.sampledAngularVelocityRadians.y) &&
+                                             std::isfinite(state.sampledAngularVelocityRadians.z);
+        if (result.sampledAngularVelocityValid) {
+            result.sampledAngularVelocityRadians = state.sampledAngularVelocityRadians;
         }
 
         if (!state.hasPreviousTarget) {
@@ -401,6 +417,11 @@ namespace rock
                          std::isfinite(snapshot.velocityHavok.x) &&
                          std::isfinite(snapshot.velocityHavok.y) &&
                          std::isfinite(snapshot.velocityHavok.z);
+        snapshot.angularVelocityRadians = state.sampledAngularVelocityRadians;
+        snapshot.angularValid = state.hasSampledAngularVelocityRadians &&
+                                std::isfinite(snapshot.angularVelocityRadians.x) &&
+                                std::isfinite(snapshot.angularVelocityRadians.y) &&
+                                std::isfinite(snapshot.angularVelocityRadians.z);
         return snapshot;
     }
 

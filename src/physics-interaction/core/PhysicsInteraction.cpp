@@ -1662,6 +1662,7 @@ namespace rock
         using generated_body_contact_registry::GeneratedBodyKind;
         using generated_body_contact_registry::kFlagPowerArmor;
         using generated_body_contact_registry::kFlagPrimaryAnchor;
+        using generated_body_contact_registry::kFlagSampledAngularVelocity;
         using generated_body_contact_registry::kFlagSampledVelocity;
 
         std::array<Entry, kGeneratedBodyContactRegistryCapacity> entries{};
@@ -1767,6 +1768,16 @@ namespace rock
                 entry.sampledVelocityHavokX = sampledVelocityHavok[0];
                 entry.sampledVelocityHavokY = sampledVelocityHavok[1];
                 entry.sampledVelocityHavokZ = sampledVelocityHavok[2];
+            }
+            float sampledAngularVelocityRadians[4]{};
+            if (_weaponCollision.tryGetWeaponBodySampledAngularVelocityAtomic(contact.bodyId, sampledAngularVelocityRadians) &&
+                std::isfinite(sampledAngularVelocityRadians[0]) &&
+                std::isfinite(sampledAngularVelocityRadians[1]) &&
+                std::isfinite(sampledAngularVelocityRadians[2])) {
+                entry.flags |= kFlagSampledAngularVelocity;
+                entry.sampledAngularVelocityRadiansX = sampledAngularVelocityRadians[0];
+                entry.sampledAngularVelocityRadiansY = sampledAngularVelocityRadians[1];
+                entry.sampledAngularVelocityRadiansZ = sampledAngularVelocityRadians[2];
             }
             addEntry(entry);
         }

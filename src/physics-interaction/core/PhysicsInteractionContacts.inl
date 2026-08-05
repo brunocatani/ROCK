@@ -525,6 +525,8 @@
             WeaponInteractionContact contact{};
             bool hasSampledVelocity = false;
             float sampledVelocityHavok[4]{};
+            bool hasSampledAngularVelocity = false;
+            float sampledAngularVelocityRadians[4]{};
         };
 
         Classification bodyAClassification{};
@@ -583,6 +585,13 @@
                 source.sampledVelocityHavok[1] = classification.sampledVelocityHavokY;
                 source.sampledVelocityHavok[2] = classification.sampledVelocityHavokZ;
                 source.sampledVelocityHavok[3] = 0.0f;
+            }
+            if (hasFiniteSampledAngularVelocity(classification)) {
+                source.hasSampledAngularVelocity = true;
+                source.sampledAngularVelocityRadians[0] = classification.sampledAngularVelocityRadiansX;
+                source.sampledAngularVelocityRadians[1] = classification.sampledAngularVelocityRadiansY;
+                source.sampledAngularVelocityRadians[2] = classification.sampledAngularVelocityRadiansZ;
+                source.sampledAngularVelocityRadians[3] = 0.0f;
             }
             return source;
         };
@@ -862,6 +871,13 @@
                 world, RE::hknpBodyId{ sourceBodyId });
             auto* targetMotion = havok_runtime::getBodyMotion(
                 world, RE::hknpBodyId{ targetBodyId });
+            if (const auto* weaponSource = weaponSourceFor(sourceBodyId);
+                weaponSource && weaponSource->valid && weaponSource->hasSampledAngularVelocity &&
+                havok_runtime::isFinite3(weaponSource->sampledAngularVelocityRadians)) {
+                std::copy_n(weaponSource->sampledAngularVelocityRadians, 4, contact.sourceAngularVelocityHavok);
+                contact.flags |= static_cast<std::uint32_t>(
+                    ::rock::provider::RockProviderExternalContactFlagV1::SourceAngularVelocityValid);
+            }
             if (sourceMotion) {
                 if ((contact.flags & static_cast<std::uint32_t>(
                         ::rock::provider::RockProviderExternalContactFlagV1::SourceVelocityValid)) == 0) {
@@ -873,16 +889,19 @@
                             ::rock::provider::RockProviderExternalContactFlagV1::SourceVelocityValid);
                     }
                 }
-                contact.sourceAngularVelocityHavok[0] = sourceMotion->angularVelocity.x;
-                contact.sourceAngularVelocityHavok[1] = sourceMotion->angularVelocity.y;
-                contact.sourceAngularVelocityHavok[2] = sourceMotion->angularVelocity.z;
+                if ((contact.flags & static_cast<std::uint32_t>(
+                        ::rock::provider::RockProviderExternalContactFlagV1::SourceAngularVelocityValid)) == 0) {
+                    contact.sourceAngularVelocityHavok[0] = sourceMotion->angularVelocity.x;
+                    contact.sourceAngularVelocityHavok[1] = sourceMotion->angularVelocity.y;
+                    contact.sourceAngularVelocityHavok[2] = sourceMotion->angularVelocity.z;
+                    if (havok_runtime::isFinite3(contact.sourceAngularVelocityHavok)) {
+                        contact.flags |= static_cast<std::uint32_t>(
+                            ::rock::provider::RockProviderExternalContactFlagV1::SourceAngularVelocityValid);
+                    }
+                }
                 contact.sourceCenterOfMassHavok[0] = sourceMotion->position.x;
                 contact.sourceCenterOfMassHavok[1] = sourceMotion->position.y;
                 contact.sourceCenterOfMassHavok[2] = sourceMotion->position.z;
-                if (havok_runtime::isFinite3(contact.sourceAngularVelocityHavok)) {
-                    contact.flags |= static_cast<std::uint32_t>(
-                        ::rock::provider::RockProviderExternalContactFlagV1::SourceAngularVelocityValid);
-                }
                 if (havok_runtime::isFinite3(contact.sourceCenterOfMassHavok)) {
                     contact.flags |= static_cast<std::uint32_t>(
                         ::rock::provider::RockProviderExternalContactFlagV1::SourceCenterOfMassValid);
