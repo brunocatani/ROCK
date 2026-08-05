@@ -14,6 +14,14 @@ function Require-Text {
     }
 }
 
+function Reject-Text {
+    param([string]$Path, [string]$Pattern, [string]$Message)
+    $text = Get-Content -Raw -LiteralPath (Join-Path $Root $Path)
+    if ($text -match $Pattern) {
+        $failures.Add("$Path`: $Message")
+    }
+}
+
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' `
     'baseEquipSlot\s*=\s*weapon->GetEquipSlot\(nullptr\)[\s\S]{0,260}effectiveEquipSlot\s*=\s*weapon->GetEquipSlot\(instanceData\)' `
     'Authored-grip family diagnostics must read both base and effective BGSEquipType behavior slots.'
@@ -33,6 +41,14 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'refreshAuthoredSupportGripActivationState\([\s\S]*true\);[\s\S]*\.activationZoneValid\s*=\s*authoredActivationZoneValid[\s\S]*\.authoredPoseSurfaceEvidenceValid\s*=[\s\S]*authoredPoseSurfaceEvidenceValid' `
     'Authored capture must force a current activation-zone and captured-pose evaluation.'
+
+Reject-Text 'src/physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.h' `
+    'semanticTargetEligible|semanticPass' `
+    'Weapon-part semantic metadata must not redefine geometric authored-cone membership.'
+
+Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'semanticTargetEligible' `
+    'Authored activation must not veto a passing cone because generated contact geometry also owns reload/action/socket metadata.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
     'rockDebugDrawAuthoredGripActivationZones[\s\S]*drawWireCone[\s\S]*ENFORCED AUTHORED ACTIVATION' `

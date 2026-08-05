@@ -2195,11 +2195,10 @@
                         labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -10.4f },
                         1.65f,
                         kCoordinateColor,
-                        "gates class=%d radial=%d direction=%d semantic=%d scope=%d stable=%d",
+                        "gates class=%d radial=%d direction=%d scope=%d stable=%d",
                         snapshot.classifierSupported ? 1 : 0,
                         snapshot.radialPass ? 1 : 0,
                         snapshot.directionPass ? 1 : 0,
-                        snapshot.semanticPass ? 1 : 0,
                         snapshot.scopePass ? 1 : 0,
                         snapshot.directionUsedLastStableSample ? 1 : 0);
                     addTextLineSized(

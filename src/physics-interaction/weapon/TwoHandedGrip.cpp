@@ -1917,7 +1917,6 @@ namespace rock
         refreshAuthoredSupportGripActivationState(
             weaponNode,
             currentWeaponGenerationKey,
-            decision,
             weaponCollision,
             false);
         const bool supportTouchingSupport = decision.kind == WeaponInteractionKind::SupportGrip;
@@ -2337,7 +2336,6 @@ namespace rock
     void TwoHandedGrip::refreshAuthoredSupportGripActivationState(
         RE::NiNode* weaponNode,
         const std::uint64_t currentWeaponGenerationKey,
-        const WeaponInteractionDecision& decision,
         const WeaponCollision& weaponCollision,
         const bool requirePoseEvidence)
     {
@@ -2530,12 +2528,6 @@ namespace rock
         const auto toActivationVector = [](const RE::NiPoint3& value) {
             return ActivationVec3{ value.x, value.y, value.z };
         };
-        const bool semanticTargetEligible =
-            decision.kind == WeaponInteractionKind::SupportGrip &&
-            decision.weaponGenerationKey == currentWeaponGenerationKey &&
-            decision.actionRole == WeaponActionRole::None &&
-            decision.reloadRole == WeaponReloadRole::None &&
-            decision.socketRole == WeaponSocketRole::None;
         const auto gate =
             authored_weapon_grip_activation_policy::evaluateDirectionGate(
                 authored_weapon_grip_activation_policy::DirectionGateInput{
@@ -2553,7 +2545,6 @@ namespace rock
                     .radialCapGameUnits = snapshot.radialCapGameUnits,
                     .lastStableDirectionValid =
                         _authoredSupportLastStableApproachDirectionValid,
-                    .semanticTargetEligible = semanticTargetEligible,
                     .rightFiringLeftSupportScope =
                         snapshot.canonicalAxesValid &&
                         !_firingHandIsLeft && supportHandIsLeft,
@@ -2571,7 +2562,6 @@ namespace rock
             gate.usedLastStableDirection;
         snapshot.radialPass = gate.radialPass;
         snapshot.directionPass = gate.directionPass;
-        snapshot.semanticPass = gate.semanticPass;
         snapshot.scopePass = gate.scopePass;
         snapshot.activationSpatialPass = gate.spatialPass;
         if (gate.directionValid &&
@@ -3255,7 +3245,6 @@ namespace rock
         refreshAuthoredSupportGripActivationState(
             weaponNode,
             decision.weaponGenerationKey,
-            decision,
             weaponCollision,
             true);
         const auto& authoredActivation =
@@ -3416,7 +3405,7 @@ namespace rock
 
         if (authoredSupportCandidateForHandValid) {
             ROCK_LOG_DEBUG(Weapon,
-                "TwoHandedGrip: authored support grip rejected; continuing to dynamic hand={} source={} family={} activation={} pose={} palm={} witnesses={}/6 mask={:02X} distance={:.3f} cap={:.3f} leftDot={:.3f} downDot={:.3f} class={} radial={} direction={} semantic={} scope={} provider={} attachOnly={} capture={} identity={} generation={} fingers={}",
+                "TwoHandedGrip: authored support grip rejected; continuing to dynamic hand={} source={} family={} activation={} pose={} palm={} witnesses={}/6 mask={:02X} distance={:.3f} cap={:.3f} leftDot={:.3f} downDot={:.3f} class={} radial={} direction={} scope={} provider={} attachOnly={} capture={} identity={} generation={} fingers={}",
                 isLeft ? "left" : "right",
                 decision.acquisitionSource ==
                         WeaponInteractionAcquisitionSource::PhysicalContact ?
@@ -3440,7 +3429,6 @@ namespace rock
                 authoredActivation.classifierSupported ? "pass" : "fail",
                 authoredActivation.radialPass ? "pass" : "fail",
                 authoredActivation.directionPass ? "pass" : "fail",
-                authoredActivation.semanticPass ? "pass" : "fail",
                 authoredActivation.scopePass ? "pass" : "fail",
                 providerPartAuthority.active ? "yes" : "no",
                 grip.attachOnly ? "yes" : "no",

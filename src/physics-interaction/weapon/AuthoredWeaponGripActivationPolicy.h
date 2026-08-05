@@ -104,7 +104,6 @@ namespace rock::authored_weapon_grip_activation_policy
         Vec3 lastStableDirectionWorld{};
         float radialCapGameUnits{ 0.0f };
         bool lastStableDirectionValid{ false };
-        bool semanticTargetEligible{ true };
         bool rightFiringLeftSupportScope{ true };
     };
 
@@ -120,7 +119,6 @@ namespace rock::authored_weapon_grip_activation_policy
         bool familySupported{ false };
         bool radialPass{ false };
         bool directionPass{ false };
-        bool semanticPass{ false };
         bool scopePass{ false };
         bool spatialPass{ false };
     };
@@ -138,7 +136,6 @@ namespace rock::authored_weapon_grip_activation_policy
             std::isfinite(input.radialCapGameUnits) &&
             input.radialCapGameUnits >= 0.0f &&
             result.radialDistanceGameUnits <= input.radialCapGameUnits;
-        result.semanticPass = input.semanticTargetEligible;
         result.scopePass = input.rightFiringLeftSupportScope;
 
         if (result.radialDistanceGameUnits >= kMinimumDirectionDistanceGameUnits) {
@@ -183,7 +180,6 @@ namespace rock::authored_weapon_grip_activation_policy
             result.familySupported &&
             result.radialPass &&
             result.directionPass &&
-            result.semanticPass &&
             result.scopePass;
         return result;
     }

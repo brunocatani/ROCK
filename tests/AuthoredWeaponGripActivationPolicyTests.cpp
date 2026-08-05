@@ -122,11 +122,11 @@ int main()
         .leftAxisWorld = left,
         .downAxisWorld = down,
         .radialCapGameUnits = 12.0f,
-        .semanticTargetEligible = false,
+        .rightFiringLeftSupportScope = false,
     });
     assert(result.radialPass);
     assert(result.directionPass);
-    assert(!result.semanticPass);
+    assert(!result.scopePass);
     assert(!result.spatialPass);
 
     return 0;

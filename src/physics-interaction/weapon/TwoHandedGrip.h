@@ -149,7 +149,6 @@ namespace rock
         bool directionUsedLastStableSample{ false };
         bool radialPass{ false };
         bool directionPass{ false };
-        bool semanticPass{ false };
         bool scopePass{ false };
         bool activationSpatialPass{ false };
         bool poseEvidencePass{ false };
@@ -929,7 +928,6 @@ namespace rock
         void refreshAuthoredSupportGripActivationState(
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey,
-            const WeaponInteractionDecision& decision,
             const WeaponCollision& weaponCollision,
             bool requirePoseEvidence);
 
