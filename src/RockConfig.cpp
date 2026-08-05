@@ -27,6 +27,7 @@ namespace
     constexpr auto SECTION = "PhysicsInteraction";
     constexpr auto DEBUG_SECTION = "Debug";
     constexpr auto REALISTIC_WEAPONS_SECTION = "RealisticWeapons";
+    constexpr auto PHYSICAL_MELEE_SECTION = "PhysicalMelee";
     constexpr auto WEAPON_HANDEDNESS_SECTION = "WeaponHandedness";
     constexpr auto AMBIDEXTROUS_FIRING_SECTION = "AmbidextrousFiring";
     constexpr auto NATIVE_SCOPES_SECTION = "NativeScopes";
@@ -180,6 +181,13 @@ namespace rock
         rockLeftFiringAimOffsetYGameUnits = 0.0f;
         rockLeftFiringAimOffsetZGameUnits = 0.0f;
         rockWeaponCollisionEnabled = true;
+        rockPhysicalMeleeEnabled = true;
+        rockPhysicalMeleeMinSourceSpeedGame = 400.0f;
+        rockPhysicalMeleeVirtualWeaponMass = 12.0f;
+        rockPhysicalMeleeDamageMultiplier = 1.0f;
+        rockPhysicalMeleeMaxNativeDamageMultiplier = 10.0f;
+        rockPhysicalMeleeSourceTargetCooldownSeconds = 0.20f;
+        rockPhysicalMeleeMaxDamageEventsPerFrame = 32;
         rockWeaponCollisionBlocksProjectiles = false;
         rockWeaponCollisionBlocksSpells = false;
         rockWeaponCollisionStaticWorldEnabled = true;
@@ -804,6 +812,58 @@ namespace rock
             -15.0f,
             15.0f);
         rockWeaponCollisionEnabled = ini.GetBoolValue(SECTION, "bWeaponCollisionEnabled", rockWeaponCollisionEnabled);
+        rockPhysicalMeleeEnabled = ini.GetBoolValue(
+            PHYSICAL_MELEE_SECTION,
+            "bEnabled",
+            rockPhysicalMeleeEnabled);
+        rockPhysicalMeleeMinSourceSpeedGame = readClampedFloat(
+            ini,
+            PHYSICAL_MELEE_SECTION,
+            "fMinSourceSpeedGame",
+            rockPhysicalMeleeMinSourceSpeedGame,
+            400.0f,
+            1.0f,
+            5000.0f);
+        rockPhysicalMeleeVirtualWeaponMass = readClampedFloat(
+            ini,
+            PHYSICAL_MELEE_SECTION,
+            "fVirtualWeaponMass",
+            rockPhysicalMeleeVirtualWeaponMass,
+            12.0f,
+            0.1f,
+            500.0f);
+        rockPhysicalMeleeDamageMultiplier = readClampedFloat(
+            ini,
+            PHYSICAL_MELEE_SECTION,
+            "fDamageMultiplier",
+            rockPhysicalMeleeDamageMultiplier,
+            1.0f,
+            0.0f,
+            100.0f);
+        rockPhysicalMeleeMaxNativeDamageMultiplier = readClampedFloat(
+            ini,
+            PHYSICAL_MELEE_SECTION,
+            "fMaxNativeDamageMultiplier",
+            rockPhysicalMeleeMaxNativeDamageMultiplier,
+            10.0f,
+            0.0f,
+            100.0f);
+        rockPhysicalMeleeSourceTargetCooldownSeconds = readClampedFloat(
+            ini,
+            PHYSICAL_MELEE_SECTION,
+            "fSourceTargetCooldownSeconds",
+            rockPhysicalMeleeSourceTargetCooldownSeconds,
+            0.20f,
+            0.0f,
+            5.0f);
+        rockPhysicalMeleeMaxDamageEventsPerFrame = static_cast<int>(ini.GetLongValue(
+            PHYSICAL_MELEE_SECTION,
+            "iMaxDamageEventsPerFrame",
+            rockPhysicalMeleeMaxDamageEventsPerFrame));
+        rockPhysicalMeleeMaxDamageEventsPerFrame = std::clamp(
+            rockPhysicalMeleeMaxDamageEventsPerFrame,
+            1,
+            256);
         rockWeaponCollisionBlocksProjectiles = ini.GetBoolValue(SECTION, "bWeaponCollisionBlocksProjectiles", rockWeaponCollisionBlocksProjectiles);
         rockWeaponCollisionBlocksSpells = ini.GetBoolValue(SECTION, "bWeaponCollisionBlocksSpells", rockWeaponCollisionBlocksSpells);
         rockWeaponCollisionStaticWorldEnabled = ini.GetBoolValue(SECTION, "bWeaponCollisionStaticWorldEnabled", rockWeaponCollisionStaticWorldEnabled);

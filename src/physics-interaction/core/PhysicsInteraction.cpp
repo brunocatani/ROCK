@@ -44,6 +44,7 @@
 #include "physics-interaction/grab/CustomOGA.h"
 #include "physics-interaction/grab/GrabEvent.h"
 #include "physics-interaction/grab/GrabTelemetry.h"
+#include "physics-interaction/melee/PhysicalMeleeRuntime.h"
 #include "physics-interaction/grab/GrabHeldObject.h"
 #include "physics-interaction/grab/GrabMassPolicy.h"
 #include "physics-interaction/grab/GrabNodeInfoMath.h"
@@ -1343,12 +1344,17 @@ namespace rock
          */
         installRefreshManifoldHook();
 
+        if (!physical_melee::initializeRuntime()) {
+            ROCK_LOG_CRITICAL(Melee, "ROCK physical melee native bridge failed verification; melee damage is disabled");
+        }
+
         ROCK_LOG_INFO(Init, "ROCK Physics Module v0.1 — created");
     }
 
     PhysicsInteraction::~PhysicsInteraction()
     {
         s_instance.store(nullptr, std::memory_order_release);
+        physical_melee::resetRuntime();
 
         _authoredPrimaryFiringGrip.reset("physics-destroyed", _twoHandedGrip);
 
@@ -1516,6 +1522,10 @@ namespace rock
             _skeletonGenerationAtomic.load(std::memory_order_acquire);
         const auto providerGeneration =
             _providerGenerationAtomic.load(std::memory_order_acquire);
+        const auto processingFrameIndex =
+            _palmClockGameFrameIndex.load(std::memory_order_acquire);
+        physical_melee::drainCompletedOutcomes(processingFrameIndex);
+        auto* bhkWorld = getPlayerBhkWorld();
         PendingImpactObservation observation{};
         while (_impactObservationQueue.tryPop(observation)) {
             // A contact callback can race a load/reset boundary. Never let an
@@ -1526,6 +1536,13 @@ namespace rock
                 observation.providerGeneration != providerGeneration) {
                 continue;
             }
+            physical_melee::processContactObservation(
+                bhkWorld,
+                observation.contact,
+                observation.worldGeneration,
+                observation.skeletonGeneration,
+                observation.providerGeneration,
+                processingFrameIndex);
             (void)::rock::provider::recordExternalContact(
                 observation.contact,
                 observation.worldGeneration,
@@ -4819,6 +4836,7 @@ namespace rock
 
     void PhysicsInteraction::shutdown(::rock::provider::RockProviderLifecycleReason reason)
     {
+        physical_melee::resetRuntime();
         debug::ShutdownShapePipeline();
         equipped_weapon_handling_runtime::reset();
         _equippedWeaponHandlingSettings = {};

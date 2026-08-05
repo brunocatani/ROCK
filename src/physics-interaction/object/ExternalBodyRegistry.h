@@ -183,6 +183,8 @@ namespace rock
             _contactCount = 0;
             _contactHead = 0;
             _nextContactSequence = 1;
+            _providerLatestEmittedSequence = 0;
+            _providerOverwrittenCount = 0;
             _impactEpisodes = {};
             _nextImpactId = 1;
             _nextEpisodeId = 1;
@@ -396,15 +398,52 @@ namespace rock
                 _contacts[index] = slot;
                 ++_contactCount;
             } else {
-                const auto evictedScopeIndex =
-                    _contacts[_contactHead].scopeIndex;
-                if (evictedScopeIndex < _scopes.size() &&
+                const auto& evicted = _contacts[_contactHead];
+                const auto evictedScopeIndex = evicted.scopeIndex;
+                if (evicted.record.parentOwnerToken == 0) {
+                    ++_providerOverwrittenCount;
+                } else if (evictedScopeIndex < _scopes.size() &&
                     _scopes[evictedScopeIndex].scopeToken != 0) {
                     ++_scopes[evictedScopeIndex].overwrittenCount;
                 }
                 _contacts[_contactHead] = slot;
                 _contactHead = (_contactHead + 1) % kMaxContacts;
             }
+            return true;
+        }
+
+        bool recordProviderContactV1(
+            ::rock::provider::RockProviderExternalContactRecordV1& contact)
+        {
+            if (contact.size != sizeof(contact) ||
+                contact.sourceBodyId == kInvalidBodyId ||
+                contact.targetExternalBodyId == kInvalidBodyId ||
+                contact.sourceBodyId == contact.targetExternalBodyId ||
+                contact.impactId == 0) {
+                return false;
+            }
+
+            contact.parentOwnerToken = 0;
+            contact.scopeToken = 0;
+            contact.sequence = _nextContactSequence++;
+            ContactSlot slot{};
+            slot.record = contact;
+            if (_contactCount < kMaxContacts) {
+                const auto index = (_contactHead + _contactCount) % kMaxContacts;
+                _contacts[index] = slot;
+                ++_contactCount;
+            } else {
+                const auto& evicted = _contacts[_contactHead];
+                if (evicted.record.parentOwnerToken == 0) {
+                    ++_providerOverwrittenCount;
+                } else if (evicted.scopeIndex < _scopes.size() &&
+                    _scopes[evicted.scopeIndex].scopeToken != 0) {
+                    ++_scopes[evicted.scopeIndex].overwrittenCount;
+                }
+                _contacts[_contactHead] = slot;
+                _contactHead = (_contactHead + 1) % kMaxContacts;
+            }
+            _providerLatestEmittedSequence = contact.sequence;
             return true;
         }
 
@@ -469,7 +508,9 @@ namespace rock
             std::uint32_t copied = 0;
             for (std::uint32_t i = 0; i < _contactCount && copied < maxContacts; ++i) {
                 const auto& record = contactAt(i).record;
-                if (record.parentOwnerToken != parentOwnerToken ||
+                const bool providerOwned =
+                    scopeToken == 0 && record.parentOwnerToken == 0;
+                if ((!providerOwned && record.parentOwnerToken != parentOwnerToken) ||
                     (scopeToken != 0 && record.scopeToken != scopeToken) ||
                     record.sequence <= afterSequence) {
                     continue;
@@ -851,8 +892,11 @@ namespace rock
         {
             for (std::uint32_t index = 0; index < _contactCount; ++index) {
                 const auto& record = contactAt(index).record;
-                if (record.parentOwnerToken == parentOwnerToken &&
-                    (scopeToken == 0 || record.scopeToken == scopeToken)) {
+                const bool providerOwned =
+                    scopeToken == 0 && record.parentOwnerToken == 0;
+                if (providerOwned ||
+                    (record.parentOwnerToken == parentOwnerToken &&
+                        (scopeToken == 0 || record.scopeToken == scopeToken))) {
                     return record.sequence;
                 }
             }
@@ -864,6 +908,9 @@ namespace rock
             const std::uint64_t scopeToken) const
         {
             std::uint64_t latest = 0;
+            if (scopeToken == 0) {
+                latest = _providerLatestEmittedSequence;
+            }
             for (const auto& scope : _scopes) {
                 if (scope.parentOwnerToken == parentOwnerToken &&
                     (scopeToken == 0 || scope.scopeToken == scopeToken)) {
@@ -878,6 +925,9 @@ namespace rock
             const std::uint64_t scopeToken) const
         {
             std::uint64_t count = 0;
+            if (scopeToken == 0) {
+                count = _providerOverwrittenCount;
+            }
             for (const auto& scope : _scopes) {
                 if (scope.parentOwnerToken == parentOwnerToken &&
                     (scopeToken == 0 || scope.scopeToken == scopeToken)) {
@@ -894,6 +944,8 @@ namespace rock
         std::uint32_t _contactCount{ 0 };
         std::uint32_t _contactHead{ 0 };
         std::uint64_t _nextContactSequence{ 1 };
+        std::uint64_t _providerLatestEmittedSequence{ 0 };
+        std::uint64_t _providerOverwrittenCount{ 0 };
         std::array<ImpactEpisodeEntry, kMaxContacts> _impactEpisodes{};
         std::uint64_t _nextImpactId{ 1 };
         std::uint64_t _nextEpisodeId{ 1 };

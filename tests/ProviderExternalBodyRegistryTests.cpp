@@ -56,6 +56,21 @@ namespace
         return result;
     }
 
+    RockProviderExternalContactRecordV1 providerMeleeContact()
+    {
+        RockProviderExternalContactRecordV1 result{};
+        result.impactId = 0x8000'0000'0000'0001ull;
+        result.sourceBodyId = 91;
+        result.targetExternalBodyId = 92;
+        result.sourceKind = RockProviderExternalSourceKind::Weapon;
+        result.quality = RockProviderExternalContactQuality::RawPoint;
+        result.targetActorFormId = 0x1234;
+        result.targetBodyPartIndex = 1;
+        result.sourceSurfaceRegion = RockProviderImpactSurfaceRegionV1::Edge;
+        result.contactPointHavok[0] = 2.0f;
+        return result;
+    }
+
     void testValidationAndScopeOwnership()
     {
         using RegistrationResult = ExternalBodyRegistry::RegistrationResult;
@@ -384,6 +399,50 @@ namespace
             RockProviderExternalContactFlagV1::TargetAnatomyValid)) != 0);
     }
 
+    void testProviderMeleeContactsAreVisibleWithoutConsumerBodyRegistration()
+    {
+        constexpr std::uint64_t ownerA = 0xA040;
+        constexpr std::uint64_t ownerB = 0xA041;
+        constexpr std::uint64_t scopeA = 0xB040;
+        auto registry = std::make_unique<ExternalBodyRegistry>();
+        assert(registry->registerBodiesForScope(ownerA, scopeA, nullptr, 0));
+
+        auto melee = providerMeleeContact();
+        assert(registry->recordProviderContactV1(melee));
+        assert(melee.sequence != 0);
+        assert(melee.parentOwnerToken == 0);
+        assert(melee.scopeToken == 0);
+
+        RockProviderExternalContactRecordV1 copied[2]{};
+        RockProviderExternalContactStreamStateV1 state{};
+        assert(registry->copyContactsSinceV1(ownerA, 0, 0, copied, 2, state) == 1);
+        assert(copied[0].impactId == melee.impactId);
+        assert(copied[0].targetActorFormId == melee.targetActorFormId);
+        assert(copied[0].targetBodyPartIndex == melee.targetBodyPartIndex);
+        assert(copied[0].sourceSurfaceRegion == melee.sourceSurfaceRegion);
+        assert(copied[0].contactPointHavok[0] == melee.contactPointHavok[0]);
+
+        state = {};
+        assert(registry->copyContactsSinceV1(ownerB, 0, 0, copied, 2, state) == 1);
+        state = {};
+        assert(registry->copyContactsSinceV1(ownerA, scopeA, 0, copied, 2, state) == 0);
+
+        registry->clearOwner(ownerA);
+        state = {};
+        assert(registry->copyContactsSinceV1(ownerB, 0, 0, copied, 2, state) == 1);
+
+        for (std::uint32_t index = 1; index <= ExternalBodyRegistry::kMaxContacts; ++index) {
+            auto next = providerMeleeContact();
+            next.impactId += index;
+            next.sourceBodyId += index * 2;
+            next.targetExternalBodyId += index * 2;
+            assert(registry->recordProviderContactV1(next));
+        }
+        state = {};
+        assert(registry->copyContactsSinceV1(ownerB, 0, melee.sequence, copied, 2, state) == 2);
+        assert(state.overwrittenCount == 1);
+    }
+
     void testCapacityFailureIsTransactional()
     {
         using RegistrationResult = ExternalBodyRegistry::RegistrationResult;
@@ -459,6 +518,7 @@ int main()
     testContactDemultiplexingAndRefresh();
     testContactPolicyAndScopedLossAccounting();
     testRichContactEvidenceAndEpisodeCoalescing();
+    testProviderMeleeContactsAreVisibleWithoutConsumerBodyRegistration();
     testCapacityFailureIsTransactional();
     return 0;
 }

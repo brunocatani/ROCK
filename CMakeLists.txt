@@ -260,6 +260,14 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKWeaponInteractionPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKWeaponInteractionPolicyTests)
 
+  add_executable(ROCKPhysicalMeleePolicyTests
+    "${ROOT_DIR}/tests/PhysicalMeleePolicyTests.cpp"
+    "${SOURCE_DIR}/physics-interaction/melee/PhysicalMeleePolicy.cpp"
+  )
+  target_compile_features(ROCKPhysicalMeleePolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKPhysicalMeleePolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKPhysicalMeleePolicyTests)
+
   add_executable(ROCKInteractionSafetyPolicyTests
     "${ROOT_DIR}/tests/InteractionSafetyPolicyTests.cpp"
   )
@@ -630,6 +638,7 @@ if(BUILD_ROCK_TESTS)
     ROCKGrabInputIntentPolicyTests
     ROCKInputRemapPolicyTests
     ROCKWeaponInteractionPolicyTests
+    ROCKPhysicalMeleePolicyTests
     ROCKInteractionSafetyPolicyTests
     ROCKGrabFingerLocalTransformPolicyTests
     ROCKGrabHapticPolicyTests

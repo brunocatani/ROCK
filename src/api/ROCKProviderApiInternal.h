@@ -51,6 +51,8 @@ namespace rock::provider
         std::uint32_t worldGeneration,
         std::uint32_t skeletonGeneration,
         std::uint32_t providerGeneration);
+    bool recordPhysicalMeleeContact(RockProviderExternalContactRecordV1& contact);
+    void recordPhysicalMeleeOutcome(const RockProviderImpactOutcomeV1& outcome);
     RockProviderOffhandReservation currentOffhandReservation();
     void setEquippedWeaponFiringHandIsLeft(bool isLeft);
     bool getEquippedWeaponHandlingAuthorityV1(

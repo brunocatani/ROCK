@@ -4787,7 +4787,12 @@ namespace
         for (std::uint32_t i = 0; i < s_impactOutcomeCount; ++i) {
             const auto& candidate = s_impactOutcomes[
                 (s_impactOutcomeHead + i) % s_impactOutcomes.size()];
-            if (candidate.submittingOwnerToken != ownerToken) {
+            // Owner token zero is reserved for ROCK's provider-owned physical
+            // melee lane. Every negotiated external-contact consumer may
+            // observe those outcomes; consumer-submitted outcomes remain
+            // private to their authenticated owner.
+            if (candidate.submittingOwnerToken != 0 &&
+                candidate.submittingOwnerToken != ownerToken) {
                 continue;
             }
             if (outStreamState->oldestRetainedSequence == 0) {
@@ -4812,7 +4817,8 @@ namespace
              ++i) {
             const auto& candidate = s_impactOutcomes[
                 (s_impactOutcomeHead + i) % s_impactOutcomes.size()];
-            if (candidate.submittingOwnerToken != ownerToken ||
+            if ((candidate.submittingOwnerToken != 0 &&
+                    candidate.submittingOwnerToken != ownerToken) ||
                 candidate.sequence <= afterSequence) {
                 continue;
             }
@@ -6162,6 +6168,38 @@ namespace rock::provider
             worldGeneration,
             skeletonGeneration,
             providerGeneration);
+    }
+
+    bool recordPhysicalMeleeContact(RockProviderExternalContactRecordV1& contact)
+    {
+        std::scoped_lock lock(s_externalBodyMutex);
+        return s_externalBodies.recordProviderContactV1(contact);
+    }
+
+    void recordPhysicalMeleeOutcome(const RockProviderImpactOutcomeV1& outcome)
+    {
+        if (outcome.size < sizeof(RockProviderImpactOutcomeV1) ||
+            outcome.impactId == 0) {
+            return;
+        }
+
+        std::scoped_lock lock(s_impactOutcomeMutex);
+        RockProviderImpactOutcomeV1 stored = outcome;
+        stored.size = sizeof(stored);
+        stored.version = ROCK_PROVIDER_API_VERSION;
+        stored.sequence = s_nextImpactOutcomeSequence++;
+        stored.submittingOwnerToken = 0;
+        if (s_impactOutcomeCount < s_impactOutcomes.size()) {
+            const auto index = (s_impactOutcomeHead + s_impactOutcomeCount) %
+                s_impactOutcomes.size();
+            s_impactOutcomes[index] = stored;
+            ++s_impactOutcomeCount;
+        } else {
+            s_impactOutcomes[s_impactOutcomeHead] = stored;
+            s_impactOutcomeHead = (s_impactOutcomeHead + 1) %
+                s_impactOutcomes.size();
+            ++s_impactOutcomeOverwriteCount;
+        }
     }
 
     RockProviderOffhandReservation currentOffhandReservation()

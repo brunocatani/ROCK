@@ -1390,8 +1390,15 @@
             routeHandMetadata = handSource && handSource->valid ? &handSource->metadata : nullptr;
         }
 
-        if (contactRoute.publishExternalContact) {
-            publishExternalContact(contactRoute.sourceBodyId, contactRoute.targetBodyId, contactRoute.providerSourceKind, contactRoute.providerSourceHand, routeHandMetadata);
+        const bool standaloneMeleeContact =
+            contactRoute.source.kind == contact_pipeline_policy::ContactEndpointKind::Weapon &&
+            (contactRoute.target.kind == contact_pipeline_policy::ContactEndpointKind::Actor ||
+                contactRoute.target.kind == contact_pipeline_policy::ContactEndpointKind::External);
+        if (contactRoute.publishExternalContact || standaloneMeleeContact) {
+            const auto sourceKind = standaloneMeleeContact ?
+                ::rock::provider::RockProviderExternalSourceKind::Weapon :
+                contactRoute.providerSourceKind;
+            publishExternalContact(contactRoute.sourceBodyId, contactRoute.targetBodyId, sourceKind, contactRoute.providerSourceHand, routeHandMetadata);
         }
 
         if (contactRoute.driveWeaponDynamicPush) {

@@ -347,7 +347,7 @@ Require-Text 'src/api/ROCKProviderApi.h' 'TouchGrabTargets[\s\S]*RockProviderTou
     'API V1 must expose bounded provider-scoped touch-grab targets and states.'
 Require-Text 'src/api/ROCKProviderApi.h' 'RockProviderImpactOutcomeV1[\s\S]*submitImpactOutcomeV1[\s\S]*copyImpactOutcomesSinceV1[\s\S]*ROCK_PROVIDER_API_V1_IMPACT_OUTCOMES_TABLE_BYTES' `
     'API V1 must expose append-only, owner-authenticated native impact outcome reporting.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'drainExternalContactObservations\(\)[\s\S]{0,900}observation\.worldGeneration != worldGeneration[\s\S]{0,300}observation\.providerGeneration != providerGeneration' `
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'drainExternalContactObservations\(\)[\s\S]{0,1400}observation\.worldGeneration != worldGeneration[\s\S]{0,300}observation\.providerGeneration != providerGeneration' `
     'Queued Havok impact observations must be rejected across world, skeleton, or provider generation changes.'
 Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_API_V1_TOUCH_GRAB_TARGETS_TABLE_BYTES[\s\S]*supportsTouchGrabTargetsV1' `
     'Touch-grab consumers must negotiate both the V1 feature bit and appended table extent.'
@@ -472,6 +472,21 @@ $expectedProviderFunctions = [string[]]@(
     'copyImpactOutcomesSinceV1'
 )
 Require-SequenceEqual 'ROCKProviderApi function pointer order' (Get-ProviderFunctionNames $providerHeader) $expectedProviderFunctions
+
+Require-Path 'src/physics-interaction/melee/PhysicalMeleeRuntime.cpp' 'ROCK must own its standalone physical melee runtime.'
+Require-Path 'src/physics-interaction/melee/NativeMeleeHitBridge.cpp' 'ROCK must own the verified FO4VR native melee bridge.'
+Require-Text 'src/physics-interaction/core/PhysicsInteractionContacts.inl' 'standaloneMeleeContact[\s\S]{0,240}ContactEndpointKind::Weapon[\s\S]{0,240}ContactEndpointKind::Actor' 'Weapon-to-actor contacts must be captured without an external SCISSORS registration.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'physical_melee::processContactObservation' 'ROCK must process physical melee contacts inside its own runtime.'
+Require-Text 'src/physics-interaction/melee/MeleeTargetResolver.cpp' 'FindReferenceFor3D' 'ROCK must resolve the contacted actor directly from the collided scene object.'
+Require-Text 'src/physics-interaction/melee/MeleeTargetResolver.cpp' 'bodyPartData->partArray[\s\S]{0,1800}BodyPartValid' 'ROCK must resolve exact BPTD anatomy from the contacted body node.'
+Require-Text 'src/physics-interaction/melee/MeleeTargetResolver.cpp' 'eligibleForPointFallback[\s\S]{0,10000}measuredContactPointHavok[\s\S]{0,5000}node->world\.translate' 'Standing NPC capsule contacts must fall back to the nearest physical BPTD skeleton node using the measured contact point.'
+Require-Text 'src/physics-interaction/melee/NativeMeleeHitBridge.cpp' 'kHitDataCtorOffset = 0x1042460[\s\S]{0,500}kLocationSelectionCallsiteOffset = 0x1042FB7[\s\S]{0,500}kImpactScalarHookOffset = 0x1042C7B' 'ROCK physical melee must retain the verified native construction, location, and scalar sites.'
+Require-Text 'src/physics-interaction/melee/NativeMeleeHitBridge.cpp' 'bytesMatch\(locationCallsite\.address\(\), kLocationSelectionCallsiteBytes\)[\s\S]{0,600}directCallTarget' 'ROCK native melee hooks must fail closed unless verified bytes and call targets match.'
+Require-Text 'src/physics-interaction/melee/NativeMeleeHitBridge.cpp' 'impactData\.location\.x[\s\S]{0,320}0xD0' 'ROCK must inject the measured point and exact BPTD part index into native HitData.'
+Require-Text 'src/physics-interaction/melee/PhysicalMeleeRuntime.cpp' 'recordPhysicalMeleeContact\(contact\)' 'ROCK must publish provider-owned locational collision records without consumer body registration.'
+Require-Text 'src/physics-interaction/object/ExternalBodyRegistry.h' 'recordProviderContactV1' 'The contact registry must accept provider-owned melee collision records.'
+Require-Text 'src/physics-interaction/object/ExternalBodyRegistry.h' 'const bool providerOwned' 'Provider-owned melee contacts must be available through aggregate contact reporting to every authenticated consumer.'
+Reject-Text 'src/physics-interaction/melee/PhysicalMeleeRuntime.cpp' 'ownerToken|isScissors|SCISSORS' 'ROCK melee must not depend on a SCISSORS owner or runtime.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'PublicApiLaunchSourceTests failed:' -ForegroundColor Red

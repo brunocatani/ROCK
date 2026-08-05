@@ -105,6 +105,13 @@ namespace rock
         float rockLeftFiringAimOffsetYGameUnits = 0.0f;
         float rockLeftFiringAimOffsetZGameUnits = 0.0f;
         bool rockWeaponCollisionEnabled = true;
+        bool rockPhysicalMeleeEnabled = true;
+        float rockPhysicalMeleeMinSourceSpeedGame = 400.0f;
+        float rockPhysicalMeleeVirtualWeaponMass = 12.0f;
+        float rockPhysicalMeleeDamageMultiplier = 1.0f;
+        float rockPhysicalMeleeMaxNativeDamageMultiplier = 10.0f;
+        float rockPhysicalMeleeSourceTargetCooldownSeconds = 0.20f;
+        int rockPhysicalMeleeMaxDamageEventsPerFrame = 32;
         bool rockWeaponCollisionBlocksProjectiles = false;
         bool rockWeaponCollisionBlocksSpells = false;
         bool rockWeaponCollisionStaticWorldEnabled = true;
