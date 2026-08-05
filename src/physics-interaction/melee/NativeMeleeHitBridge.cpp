@@ -27,22 +27,23 @@ namespace rock::physical_melee
         constexpr std::uintptr_t kInitializeWeaponHitDataOffset = 0x1042950;
         constexpr std::uintptr_t kGetEquippedWeaponOffset = 0x0E5F8B0;
         constexpr std::uintptr_t kActorHitMeOffset = 0x0E51760;
-        constexpr std::uintptr_t kLocationSelectionCallsiteOffset = 0x1042FB7;
-        constexpr std::uintptr_t kLocationSelectionFunctionOffset = 0x1044FF0;
+        constexpr std::uintptr_t kPreLimbCalculationHookOffset = 0x1045913;
+        constexpr std::uintptr_t kPreLimbCalculationReturnOffset = 0x104591B;
         constexpr std::uintptr_t kImpactScalarHookOffset = 0x1042C7B;
         constexpr std::uintptr_t kImpactScalarReturnOffset = 0x1042C82;
         constexpr std::uintptr_t kActorHitDispatcherCallsiteOffset = 0x0DB176D;
         constexpr std::uintptr_t kActorHitDispatcherFunctionOffset = 0x0E526D0;
         constexpr std::uintptr_t kActorValueMutationCallsiteOffset = 0x0E4BBA0;
         constexpr std::uintptr_t kActorValueMutationFunctionOffset = 0x0E483F0;
-        constexpr std::uint32_t kWeaponEquipIndex = 0;
         constexpr std::uint64_t kUnknownOutcomeAfterFrames = 300;
         constexpr std::size_t kPendingCapacity = 128;
         constexpr std::size_t kCompletedCapacity = 256;
         constexpr std::size_t kInjectionDepth = 8;
         constexpr std::size_t kDispatchDepth = 8;
 
-        constexpr std::array<std::uint8_t, 5> kLocationSelectionCallsiteBytes{ 0xE8, 0x34, 0x20, 0x00, 0x00 };
+        constexpr std::array<std::uint8_t, 8> kPreLimbCalculationBytes{
+            0x4C, 0x8B, 0xA4, 0x24, 0xD0, 0x02, 0x00, 0x00
+        };
         constexpr std::array<std::uint8_t, 7> kImpactScalarBytes{ 0x48, 0x8B, 0x47, 0x60, 0x48, 0x85, 0xC0 };
         constexpr std::array<std::uint8_t, 5> kActorHitDispatcherCallsiteBytes{ 0xE8, 0x5E, 0x0F, 0x0A, 0x00 };
         constexpr std::array<std::uint8_t, 5> kActorValueMutationCallsiteBytes{ 0xE8, 0x4B, 0xC8, 0xFF, 0xFF };
@@ -61,29 +62,33 @@ namespace rock::physical_melee
             RE::BGSObjectInstanceT<RE::TESObjectWEAP>*,
             std::uint32_t);
         using ActorHitMe_t = void (*)(RE::Actor*, RE::HitData&);
-        using SelectHitLocation_t = void (*)(RE::HitData*, void*);
         using ActorHitDispatcher_t = void (*)(RE::Actor*, RE::HitData*);
         using ActorValueMutation_t = void (*)(RE::Actor*, RE::ActorValueInfo*, float, float, RE::Actor*);
 
         struct HitInjectionContext
         {
             RE::HitData* hitData{ nullptr };
+            RE::Actor* target{ nullptr };
+            RE::BGSBodyPart* bodyPart{ nullptr };
+            RE::bhkNPCollisionObject* targetCollisionObject{ nullptr };
             float pointGame[3]{};
-            std::uint32_t bodyPartIndex{ 0xFFFF'FFFFu };
+            float normal[3]{};
+            float relativeVelocityGame[3]{};
             float multiplier{ 1.0f };
+            bool applied{ false };
         };
 
         struct PendingImpact
         {
             bool occupied{ false };
             RE::Actor* target{ nullptr };
-            std::uint32_t targetActorFormId{ 0 };
             std::uint32_t sourceWeaponFormId{ 0 };
-            std::uint32_t bodyPartIndex{ 0xFFFF'FFFFu };
+            std::uint32_t nativeDamageLimb{ 0xFFFF'FFFFu };
             std::uint32_t limbActorValueFormId{ 0 };
             std::uint32_t submitThreadId{ 0 };
             float pointGame[3]{};
             rock::provider::RockProviderImpactOutcomeV1 outcome{};
+            std::uint64_t bridgeEpoch{ 0 };
         };
 
         struct DispatchObservation
@@ -100,9 +105,9 @@ namespace rock::physical_melee
         thread_local std::uint32_t s_dispatchDepth = 0;
 
         std::atomic_bool s_bridgeInstalled{ false };
-        std::atomic<std::uintptr_t> s_originalSelectHitLocation{ 0 };
         std::atomic<std::uintptr_t> s_originalActorHitDispatcher{ 0 };
         std::atomic<std::uintptr_t> s_originalActorValueMutation{ 0 };
+        std::atomic<std::uint64_t> s_bridgeEpoch{ 1 };
 
         std::mutex s_outcomeMutex;
         std::array<PendingImpact, kPendingCapacity> s_pendingImpacts{};
@@ -154,6 +159,9 @@ namespace rock::physical_melee
         [[nodiscard]] bool insertPendingImpact(const PendingImpact& pending)
         {
             std::scoped_lock lock(s_outcomeMutex);
+            if (pending.bridgeEpoch != s_bridgeEpoch.load(std::memory_order_acquire)) {
+                return false;
+            }
             for (auto& slot : s_pendingImpacts) {
                 if (!slot.occupied) {
                     slot = pending;
@@ -198,8 +206,9 @@ namespace rock::physical_melee
             PendingImpact* best = nullptr;
             float bestDistance = kMaximumPointDistanceSquared;
             for (auto& slot : s_pendingImpacts) {
-                if (!slot.occupied || slot.target != target || slot.sourceWeaponFormId != weaponFormId ||
-                    slot.bodyPartIndex != bodyPartIndex) {
+                if (!slot.occupied || slot.bridgeEpoch != s_bridgeEpoch.load(std::memory_order_acquire) ||
+                    slot.target != target || slot.sourceWeaponFormId != weaponFormId ||
+                    slot.nativeDamageLimb != bodyPartIndex) {
                     continue;
                 }
                 const float distance = squaredDistance3(slot.pointGame, hitData->impactData.location);
@@ -218,6 +227,9 @@ namespace rock::physical_melee
 
         void finalizeDispatchObservation(DispatchObservation& observation)
         {
+            if (observation.pending.bridgeEpoch != s_bridgeEpoch.load(std::memory_order_acquire)) {
+                return;
+            }
             auto outcome = observation.pending.outcome;
             outcome.lifecycle =
                 (std::fabs(observation.healthDelta) > 0.000001f || std::fabs(observation.limbDelta) > 0.000001f) ?
@@ -243,6 +255,22 @@ namespace rock::physical_melee
             }
 
             std::scoped_lock lock(s_outcomeMutex);
+            if (observation.pending.bridgeEpoch != s_bridgeEpoch.load(std::memory_order_acquire)) {
+                return;
+            }
+            queueCompletedOutcomeLocked(outcome);
+        }
+
+        void queueAbnormalDispatchOutcome(const PendingImpact& pending)
+        {
+            auto outcome = pending.outcome;
+            outcome.lifecycle = rock::provider::RockProviderImpactOutcomeLifecycleV1::UnknownAfterSubmission;
+            outcome.flags |= static_cast<std::uint32_t>(
+                rock::provider::RockProviderImpactOutcomeFlagV1::SynchronousConsumer);
+            std::scoped_lock lock(s_outcomeMutex);
+            if (pending.bridgeEpoch != s_bridgeEpoch.load(std::memory_order_acquire)) {
+                return;
+            }
             queueCompletedOutcomeLocked(outcome);
         }
 
@@ -256,23 +284,77 @@ namespace rock::physical_melee
             return nativeScalar * injection->multiplier;
         }
 
-        void selectHitLocationHook(RE::HitData* hitData, void* context)
+        RE::BGSBodyPart* injectPreLimbCalculation(
+            RE::HitData* hitData,
+            RE::Actor* target,
+            RE::BGSBodyPart* nativeBodyPart)
         {
-            const auto original = reinterpret_cast<SelectHitLocation_t>(
-                s_originalSelectHitLocation.load(std::memory_order_acquire));
-            if (original) {
-                original(hitData, context);
-            }
-
             auto* injection = currentInjection();
-            if (!injection || injection->hitData != hitData || !hitData) {
-                return;
+            if (!injection || injection->hitData != hitData || injection->target != target ||
+                !hitData || !injection->bodyPart || !injection->targetCollisionObject) {
+                return nativeBodyPart;
             }
             hitData->impactData.location.x = injection->pointGame[0];
             hitData->impactData.location.y = injection->pointGame[1];
             hitData->impactData.location.z = injection->pointGame[2];
-            *reinterpret_cast<std::uint32_t*>(reinterpret_cast<std::byte*>(hitData) + 0xD0) = injection->bodyPartIndex;
+            hitData->impactData.normal.x = injection->normal[0];
+            hitData->impactData.normal.y = injection->normal[1];
+            hitData->impactData.normal.z = injection->normal[2];
+            hitData->impactData.velocity.x = injection->relativeVelocityGame[0];
+            hitData->impactData.velocity.y = injection->relativeVelocityGame[1];
+            hitData->impactData.velocity.z = injection->relativeVelocityGame[2];
+            hitData->impactData.colObj.reset(injection->targetCollisionObject);
+            // The native selector immediately writes bodyPart->data.type here.
+            // Clearing the sentinel makes that write authoritative and keeps
+            // HitData::damageLimb in the engine's LIMB_ENUM domain.
+            *reinterpret_cast<std::uint32_t*>(reinterpret_cast<std::byte*>(hitData) + 0xD0) = 0xFFFF'FFFFu;
+            injection->applied = true;
+            return injection->bodyPart;
         }
+
+#if defined(_MSC_VER)
+        RE::BGSBodyPart* injectPreLimbCalculationSafely(
+            RE::HitData* hitData,
+            RE::Actor* target,
+            RE::BGSBodyPart* nativeBodyPart)
+        {
+            __try {
+                return injectPreLimbCalculation(hitData, target, nativeBodyPart);
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                return nativeBodyPart;
+            }
+        }
+#else
+        RE::BGSBodyPart* injectPreLimbCalculationSafely(
+            RE::HitData* hitData,
+            RE::Actor* target,
+            RE::BGSBodyPart* nativeBodyPart)
+        {
+            return injectPreLimbCalculation(hitData, target, nativeBodyPart);
+        }
+#endif
+
+#if defined(_MSC_VER)
+        bool callActorHitDispatcherWithFinally(
+            ActorHitDispatcher_t original,
+            RE::Actor* target,
+            RE::HitData* hitData,
+            DispatchObservation* observation)
+        {
+            bool completed = false;
+            __try {
+                original(target, hitData);
+                completed = true;
+            } __finally {
+                --s_dispatchDepth;
+                s_dispatchStack[s_dispatchDepth] = nullptr;
+                if (!completed) {
+                    queueAbnormalDispatchOutcome(observation->pending);
+                }
+            }
+            return completed;
+        }
+#endif
 
         void actorHitDispatcherHook(RE::Actor* target, RE::HitData* hitData)
         {
@@ -292,10 +374,17 @@ namespace rock::physical_melee
             DispatchObservation observation{};
             observation.pending = pending;
             s_dispatchStack[s_dispatchDepth++] = &observation;
+#if defined(_MSC_VER)
+            const bool completed = callActorHitDispatcherWithFinally(original, target, hitData, &observation);
+            if (completed) {
+                finalizeDispatchObservation(observation);
+            }
+#else
             original(target, hitData);
             --s_dispatchDepth;
             s_dispatchStack[s_dispatchDepth] = nullptr;
             finalizeDispatchObservation(observation);
+#endif
         }
 
         void actorValueMutationHook(
@@ -327,6 +416,54 @@ namespace rock::physical_melee
                 ++observation->limbMutationCount;
             }
         }
+
+        class PreLimbCalculationHookCode final : public Xbyak::CodeGenerator
+        {
+        public:
+            PreLimbCalculationHookCode(std::uintptr_t helper, std::uintptr_t returnAddress)
+            {
+                // Original instruction displaced at Fallout4VR.exe+0x1045913.
+                mov(r12, ptr[rsp + 0x2D0]);
+                pushfq();
+                push(rax);
+                push(rcx);
+                push(rdx);
+                push(r8);
+                push(r9);
+                push(r10);
+                push(r11);
+                sub(rsp, 0x80);
+                movdqu(ptr[rsp + 0x20], xmm0);
+                movdqu(ptr[rsp + 0x30], xmm1);
+                movdqu(ptr[rsp + 0x40], xmm2);
+                movdqu(ptr[rsp + 0x50], xmm3);
+                movdqu(ptr[rsp + 0x60], xmm4);
+                movdqu(ptr[rsp + 0x70], xmm5);
+                mov(rcx, rsi);
+                mov(rdx, rbx);
+                mov(r8, r14);
+                mov(rax, helper);
+                call(rax);
+                mov(r14, rax);
+                movdqu(xmm0, ptr[rsp + 0x20]);
+                movdqu(xmm1, ptr[rsp + 0x30]);
+                movdqu(xmm2, ptr[rsp + 0x40]);
+                movdqu(xmm3, ptr[rsp + 0x50]);
+                movdqu(xmm4, ptr[rsp + 0x60]);
+                movdqu(xmm5, ptr[rsp + 0x70]);
+                add(rsp, 0x80);
+                pop(r11);
+                pop(r10);
+                pop(r9);
+                pop(r8);
+                pop(rdx);
+                pop(rcx);
+                pop(rax);
+                popfq();
+                jmp(ptr[rip]);
+                dq(returnAddress);
+            }
+        };
 
         class ImpactScalarHookCode final : public Xbyak::CodeGenerator
         {
@@ -393,19 +530,17 @@ namespace rock::physical_melee
 
         [[nodiscard]] bool preflightHooks()
         {
-            REL::Relocation<std::uintptr_t> locationCallsite{ REL::Offset(kLocationSelectionCallsiteOffset) };
+            REL::Relocation<std::uintptr_t> preLimbSite{ REL::Offset(kPreLimbCalculationHookOffset) };
             REL::Relocation<std::uintptr_t> scalarSite{ REL::Offset(kImpactScalarHookOffset) };
             REL::Relocation<std::uintptr_t> dispatcherCallsite{ REL::Offset(kActorHitDispatcherCallsiteOffset) };
             REL::Relocation<std::uintptr_t> mutationCallsite{ REL::Offset(kActorValueMutationCallsiteOffset) };
-            REL::Relocation<std::uintptr_t> locationFunction{ REL::Offset(kLocationSelectionFunctionOffset) };
             REL::Relocation<std::uintptr_t> dispatcherFunction{ REL::Offset(kActorHitDispatcherFunctionOffset) };
             REL::Relocation<std::uintptr_t> mutationFunction{ REL::Offset(kActorValueMutationFunctionOffset) };
 
-            return bytesMatch(locationCallsite.address(), kLocationSelectionCallsiteBytes) &&
+            return bytesMatch(preLimbSite.address(), kPreLimbCalculationBytes) &&
                    bytesMatch(scalarSite.address(), kImpactScalarBytes) &&
                    bytesMatch(dispatcherCallsite.address(), kActorHitDispatcherCallsiteBytes) &&
                    bytesMatch(mutationCallsite.address(), kActorValueMutationCallsiteBytes) &&
-                   directCallTarget(locationCallsite.address()) == locationFunction.address() &&
                    directCallTarget(dispatcherCallsite.address()) == dispatcherFunction.address() &&
                    directCallTarget(mutationCallsite.address()) == mutationFunction.address();
         }
@@ -434,10 +569,11 @@ namespace rock::physical_melee
         bool callGetEquippedWeaponSafely(
             GetEquippedWeapon_t function,
             RE::Actor* actor,
-            RE::BGSObjectInstanceT<RE::TESObjectWEAP>* outWeapon)
+            RE::BGSObjectInstanceT<RE::TESObjectWEAP>* outWeapon,
+            std::uint32_t equipIndex)
         {
             __try {
-                return function(actor, outWeapon, kWeaponEquipIndex) == outWeapon;
+                return function(actor, outWeapon, equipIndex) == outWeapon;
             } __except (EXCEPTION_EXECUTE_HANDLER) {
                 return false;
             }
@@ -448,10 +584,11 @@ namespace rock::physical_melee
             RE::HitData* hitData,
             RE::Actor* aggressor,
             RE::Actor* target,
-            RE::BGSObjectInstanceT<RE::TESObjectWEAP>* weapon)
+            RE::BGSObjectInstanceT<RE::TESObjectWEAP>* weapon,
+            std::uint32_t equipIndex)
         {
             __try {
-                function(hitData, aggressor, target, weapon, kWeaponEquipIndex, true);
+                function(hitData, aggressor, target, weapon, equipIndex, true);
                 return true;
             } __except (EXCEPTION_EXECUTE_HANDLER) {
                 return false;
@@ -468,10 +605,20 @@ namespace rock::physical_melee
             }
         }
 
-        RE::bhkNPCollisionObject* resolveSourceCollisionObjectSafely(RE::bhkWorld* bhkWorld, std::uint32_t sourceBodyId)
+        RE::bhkNPCollisionObject* resolveCollisionObjectSafely(RE::bhkWorld* bhkWorld, std::uint32_t bodyId)
         {
             __try {
-                return RE::bhkNPCollisionObject::Getbhk(bhkWorld, *reinterpret_cast<RE::hknpBodyId*>(&sourceBodyId));
+                return RE::bhkNPCollisionObject::Getbhk(bhkWorld, *reinterpret_cast<RE::hknpBodyId*>(&bodyId));
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                return nullptr;
+            }
+        }
+
+        RE::BGSBodyPart* resolveBodyPartSafely(RE::Actor* actor, std::uint32_t bodyPartIndex)
+        {
+            __try {
+                auto* data = actor && actor->race ? actor->race->bodyPartData : nullptr;
+                return data && bodyPartIndex < std::size(data->partArray) ? data->partArray[bodyPartIndex] : nullptr;
             } __except (EXCEPTION_EXECUTE_HANDLER) {
                 return nullptr;
             }
@@ -485,7 +632,7 @@ namespace rock::physical_melee
                 return false;
             }
             if (!isFinite3(input.contact->contactPointHavok) || !isFinite3(input.contact->contactNormalHavok) ||
-                !isFinite3(input.contact->sourceVelocityHavok)) {
+                !isFinite3(input.contact->sourceVelocityHavok) || !isFinite3(input.contact->targetVelocityHavok)) {
                 result.failure = NativeMeleeHitFailure::NonFiniteContact;
                 return false;
             }
@@ -496,23 +643,66 @@ namespace rock::physical_melee
                 return false;
             }
             const float inverseNormalLength = 1.0f / normalLength;
+            float sourcePointVelocity[3]{};
+            float targetPointVelocity[3]{};
+            auto pointVelocity = [&](const float* linear,
+                                     const float* angular,
+                                     const float* centerOfMass,
+                                     bool angularValid,
+                                     bool centerValid,
+                                     float* output) {
+                std::copy_n(linear, 3, output);
+                if (!angularValid || !centerValid || !isFinite3(angular) || !isFinite3(centerOfMass)) {
+                    return;
+                }
+                const float radius[3]{
+                    input.contact->contactPointHavok[0] - centerOfMass[0],
+                    input.contact->contactPointHavok[1] - centerOfMass[1],
+                    input.contact->contactPointHavok[2] - centerOfMass[2],
+                };
+                output[0] += angular[1] * radius[2] - angular[2] * radius[1];
+                output[1] += angular[2] * radius[0] - angular[0] * radius[2];
+                output[2] += angular[0] * radius[1] - angular[1] * radius[0];
+            };
+            const auto hasFlag = [&](rock::provider::RockProviderExternalContactFlagV1 flag) {
+                return (input.contact->flags & static_cast<std::uint32_t>(flag)) != 0;
+            };
+            pointVelocity(
+                input.contact->sourceVelocityHavok,
+                input.contact->sourceAngularVelocityHavok,
+                input.contact->sourceCenterOfMassHavok,
+                hasFlag(rock::provider::RockProviderExternalContactFlagV1::SourceAngularVelocityValid),
+                hasFlag(rock::provider::RockProviderExternalContactFlagV1::SourceCenterOfMassValid),
+                sourcePointVelocity);
+            pointVelocity(
+                input.contact->targetVelocityHavok,
+                input.contact->targetAngularVelocityHavok,
+                input.contact->targetCenterOfMassHavok,
+                hasFlag(rock::provider::RockProviderExternalContactFlagV1::TargetAngularVelocityValid),
+                hasFlag(rock::provider::RockProviderExternalContactFlagV1::TargetCenterOfMassValid),
+                targetPointVelocity);
             for (std::uint32_t i = 0; i < 3; ++i) {
                 result.contactPointGame[i] = input.contact->contactPointHavok[i] * input.havokToGameScale;
                 result.contactNormal[i] = input.contact->contactNormalHavok[i] * inverseNormalLength;
-                result.sourceVelocityGame[i] = input.contact->sourceVelocityHavok[i] * input.havokToGameScale;
+                result.relativeVelocityGame[i] =
+                    (sourcePointVelocity[i] - targetPointVelocity[i]) * input.havokToGameScale;
+            }
+            if (!isFinite3(result.relativeVelocityGame)) {
+                result.failure = NativeMeleeHitFailure::NonFiniteContact;
+                return false;
             }
 
 #if defined(_MSC_VER)
-            auto* collisionObject = resolveSourceCollisionObjectSafely(input.bhkWorld, input.contact->sourceBodyId);
+            auto* collisionObject = resolveCollisionObjectSafely(input.bhkWorld, input.contact->targetExternalBodyId);
 #else
-            RE::hknpBodyId sourceBodyId{ input.contact->sourceBodyId };
-            auto* collisionObject = RE::bhkNPCollisionObject::Getbhk(input.bhkWorld, sourceBodyId);
+            RE::hknpBodyId targetBodyId{ input.contact->targetExternalBodyId };
+            auto* collisionObject = RE::bhkNPCollisionObject::Getbhk(input.bhkWorld, targetBodyId);
 #endif
             if (!collisionObject) {
-                result.failure = NativeMeleeHitFailure::MissingSourceCollisionObject;
+                result.failure = NativeMeleeHitFailure::MissingTargetCollisionObject;
                 return false;
             }
-            result.sourceCollisionObject = reinterpret_cast<std::uintptr_t>(collisionObject);
+            result.targetCollisionObject = reinterpret_cast<std::uintptr_t>(collisionObject);
             return true;
         }
 
@@ -548,22 +738,29 @@ namespace rock::physical_melee
         }
 
         auto& trampoline = F4SE::GetTrampoline();
+        PreLimbCalculationHookCode preLimbHook{
+            reinterpret_cast<std::uintptr_t>(&injectPreLimbCalculationSafely),
+            REL::Relocation<std::uintptr_t>{ REL::Offset(kPreLimbCalculationReturnOffset) }.address()
+        };
+        preLimbHook.ready();
         ImpactScalarHookCode scalarHook{
             reinterpret_cast<std::uintptr_t>(&scaleNativeImpactScalar),
             REL::Relocation<std::uintptr_t>{ REL::Offset(kImpactScalarReturnOffset) }.address()
         };
         scalarHook.ready();
-        if (trampoline.free_size() < scalarHook.getSize() + 64) {
+        if (trampoline.free_size() < preLimbHook.getSize() + scalarHook.getSize() + 64) {
             logger::critical(
                 "ROCK: Native melee bridge install needs {} trampoline bytes but only {} remain.",
-                scalarHook.getSize() + 64,
+                preLimbHook.getSize() + scalarHook.getSize() + 64,
                 trampoline.free_size());
             return false;
         }
+        auto* preLimbRelay = static_cast<std::uint8_t*>(trampoline.allocate(preLimbHook.getSize()));
+        std::memcpy(preLimbRelay, preLimbHook.getCode(), preLimbHook.getSize());
         auto* scalarRelay = static_cast<std::uint8_t*>(trampoline.allocate(scalarHook.getSize()));
         std::memcpy(scalarRelay, scalarHook.getCode(), scalarHook.getSize());
 
-        REL::Relocation<std::uintptr_t> locationCallsite{ REL::Offset(kLocationSelectionCallsiteOffset) };
+        REL::Relocation<std::uintptr_t> preLimbSite{ REL::Offset(kPreLimbCalculationHookOffset) };
         REL::Relocation<std::uintptr_t> scalarSite{ REL::Offset(kImpactScalarHookOffset) };
         REL::Relocation<std::uintptr_t> dispatcherCallsite{ REL::Offset(kActorHitDispatcherCallsiteOffset) };
         REL::Relocation<std::uintptr_t> mutationCallsite{ REL::Offset(kActorValueMutationCallsiteOffset) };
@@ -571,16 +768,14 @@ namespace rock::physical_melee
         // Publish every verified original before exposing a patched callsite.
         // FO4VR can run actor/physics work on other threads during startup;
         // this avoids even a one-instruction window where a hook sees null.
-        s_originalSelectHitLocation.store(
-            REL::Relocation<std::uintptr_t>{ REL::Offset(kLocationSelectionFunctionOffset) }.address(),
-            std::memory_order_release);
         s_originalActorHitDispatcher.store(
             REL::Relocation<std::uintptr_t>{ REL::Offset(kActorHitDispatcherFunctionOffset) }.address(),
             std::memory_order_release);
         s_originalActorValueMutation.store(
             REL::Relocation<std::uintptr_t>{ REL::Offset(kActorValueMutationFunctionOffset) }.address(),
             std::memory_order_release);
-        (void)trampoline.write_call<5>(locationCallsite.address(), &selectHitLocationHook);
+        (void)trampoline.write_branch<5>(preLimbSite.address(), reinterpret_cast<std::uintptr_t>(preLimbRelay));
+        REL::safe_fill(preLimbSite.address() + 5, REL::NOP, 3);
         (void)trampoline.write_call<5>(dispatcherCallsite.address(), &actorHitDispatcherHook);
         (void)trampoline.write_call<5>(mutationCallsite.address(), &actorValueMutationHook);
         (void)trampoline.write_branch<5>(scalarSite.address(), reinterpret_cast<std::uintptr_t>(scalarRelay));
@@ -588,8 +783,8 @@ namespace rock::physical_melee
 
         s_bridgeInstalled.store(true, std::memory_order_release);
         logger::info(
-            "ROCK: Native melee bridge installed (location=+0x{:X}, scalar=+0x{:X}, dispatcher=+0x{:X}, mutation=+0x{:X}).",
-            kLocationSelectionCallsiteOffset,
+            "ROCK: Native melee bridge installed (preLimb=+0x{:X}, scalar=+0x{:X}, dispatcher=+0x{:X}, mutation=+0x{:X}).",
+            kPreLimbCalculationHookOffset,
             kImpactScalarHookOffset,
             kActorHitDispatcherCallsiteOffset,
             kActorValueMutationCallsiteOffset);
@@ -598,6 +793,7 @@ namespace rock::physical_melee
 
     void resetNativeMeleeHitBridge()
     {
+        s_bridgeEpoch.fetch_add(1, std::memory_order_acq_rel);
         std::scoped_lock lock(s_outcomeMutex);
         s_pendingImpacts.fill({});
         s_completedOutcomes.fill({});
@@ -657,16 +853,34 @@ namespace rock::physical_melee
             result.failure = NativeMeleeHitFailure::InvalidInput;
             return result;
         }
+        if (!weaponWitnessMatches(input.expectedWeapon, input.currentWeapon)) {
+            result.failure = NativeMeleeHitFailure::WeaponWitnessMismatch;
+            return result;
+        }
         if (!fillContactEvidence(input, result)) {
             return result;
         }
 
+#if defined(_MSC_VER)
+        auto* targetBodyPart = resolveBodyPartSafely(input.target, input.contact->targetBodyPartIndex);
+#else
+        auto* targetBodyPart = input.target->race && input.target->race->bodyPartData ?
+            input.target->race->bodyPartData->partArray[input.contact->targetBodyPartIndex] : nullptr;
+#endif
+        if (!targetBodyPart) {
+            result.failure = NativeMeleeHitFailure::MissingTargetBodyPart;
+            return result;
+        }
+        const auto nativeDamageLimb = static_cast<std::uint32_t>(targetBodyPart->data.type);
+
         RE::BGSObjectInstanceT<RE::TESObjectWEAP> equippedWeapon{ nullptr, nullptr };
         static REL::Relocation<GetEquippedWeapon_t> getEquippedWeapon{ REL::Offset(kGetEquippedWeaponOffset) };
 #if defined(_MSC_VER)
-        const bool weaponResolved = callGetEquippedWeaponSafely(getEquippedWeapon.get(), input.aggressor, &equippedWeapon);
+        const bool weaponResolved = callGetEquippedWeaponSafely(
+            getEquippedWeapon.get(), input.aggressor, &equippedWeapon, input.currentWeapon.equipIndex);
 #else
-        const bool weaponResolved = getEquippedWeapon(input.aggressor, &equippedWeapon, kWeaponEquipIndex) == &equippedWeapon;
+        const bool weaponResolved = getEquippedWeapon(
+            input.aggressor, &equippedWeapon, input.currentWeapon.equipIndex) == &equippedWeapon;
 #endif
         if (!weaponResolved || !equippedWeapon.object) {
             result.failure = NativeMeleeHitFailure::MissingEquippedWeapon;
@@ -674,6 +888,12 @@ namespace rock::physical_melee
         }
         if (equippedWeapon.object->GetFormID() != input.contact->sourceWeaponFormId) {
             result.failure = NativeMeleeHitFailure::EquippedWeaponMismatch;
+            return result;
+        }
+        if (input.expectedWeapon.instanceDataAddress != 0 &&
+            reinterpret_cast<std::uintptr_t>(equippedWeapon.instanceData.get()) !=
+                input.expectedWeapon.instanceDataAddress) {
+            result.failure = NativeMeleeHitFailure::WeaponWitnessMismatch;
             return result;
         }
 
@@ -697,8 +917,12 @@ namespace rock::physical_melee
 
         HitInjectionContext injection{};
         injection.hitData = hitData;
+        injection.target = input.target;
+        injection.bodyPart = targetBodyPart;
+        injection.targetCollisionObject = reinterpret_cast<RE::bhkNPCollisionObject*>(result.targetCollisionObject);
         std::copy_n(result.contactPointGame, 3, injection.pointGame);
-        injection.bodyPartIndex = input.contact->targetBodyPartIndex;
+        std::copy_n(result.contactNormal, 3, injection.normal);
+        std::copy_n(result.relativeVelocityGame, 3, injection.relativeVelocityGame);
         injection.multiplier = input.nativeDamageMultiplier;
 
         bool initialized = false;
@@ -706,9 +930,11 @@ namespace rock::physical_melee
             s_injectionStack[s_injectionDepth++] = &injection;
 #if defined(_MSC_VER)
             initialized = callInitializeWeaponHitDataSafely(
-                initializeWeaponHitData.get(), hitData, input.aggressor, input.target, &equippedWeapon);
+                initializeWeaponHitData.get(), hitData, input.aggressor, input.target, &equippedWeapon,
+                input.currentWeapon.equipIndex);
 #else
-            initializeWeaponHitData(hitData, input.aggressor, input.target, &equippedWeapon, kWeaponEquipIndex, true);
+            initializeWeaponHitData(
+                hitData, input.aggressor, input.target, &equippedWeapon, input.currentWeapon.equipIndex, true);
             initialized = true;
 #endif
             --s_injectionDepth;
@@ -717,6 +943,9 @@ namespace rock::physical_melee
 
         if (!initialized) {
             result.failure = NativeMeleeHitFailure::InitializeWeaponHitDataFailed;
+        } else if (!injection.applied ||
+            *reinterpret_cast<std::uint32_t*>(reinterpret_cast<std::byte*>(hitData) + 0xD0) != nativeDamageLimb) {
+            result.failure = NativeMeleeHitFailure::EvidenceInjectionFailed;
         } else {
             result.outcome.submittedHealthDamage = hitData->healthDamage;
             result.outcome.submittedLimbDamage = hitData->targetedLimbDamage;
@@ -725,13 +954,13 @@ namespace rock::physical_melee
             PendingImpact pending{};
             pending.occupied = true;
             pending.target = input.target;
-            pending.targetActorFormId = input.target->GetFormID();
             pending.sourceWeaponFormId = input.contact->sourceWeaponFormId;
-            pending.bodyPartIndex = input.contact->targetBodyPartIndex;
+            pending.nativeDamageLimb = nativeDamageLimb;
             pending.limbActorValueFormId = input.contact->targetLimbActorValueFormId;
             pending.submitThreadId = currentThreadId();
             std::copy_n(result.contactPointGame, 3, pending.pointGame);
             pending.outcome = result.outcome;
+            pending.bridgeEpoch = s_bridgeEpoch.load(std::memory_order_acquire);
 
             if (!insertPendingImpact(pending)) {
                 result.failure = NativeMeleeHitFailure::PendingQueueFull;
@@ -775,8 +1004,14 @@ namespace rock::physical_melee
             return "InvalidScale";
         case NativeMeleeHitFailure::NonFiniteContact:
             return "NonFiniteContact";
-        case NativeMeleeHitFailure::MissingSourceCollisionObject:
-            return "MissingSourceCollisionObject";
+        case NativeMeleeHitFailure::MissingTargetCollisionObject:
+            return "MissingTargetCollisionObject";
+        case NativeMeleeHitFailure::MissingTargetBodyPart:
+            return "MissingTargetBodyPart";
+        case NativeMeleeHitFailure::EvidenceInjectionFailed:
+            return "EvidenceInjectionFailed";
+        case NativeMeleeHitFailure::WeaponWitnessMismatch:
+            return "WeaponWitnessMismatch";
         case NativeMeleeHitFailure::MissingEquippedWeapon:
             return "MissingEquippedWeapon";
         case NativeMeleeHitFailure::EquippedWeaponMismatch:

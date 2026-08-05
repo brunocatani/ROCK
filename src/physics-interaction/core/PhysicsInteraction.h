@@ -19,6 +19,7 @@
 #include "physics-interaction/hand/DynamicHandCollision.h"
 #include "physics-interaction/contact/GeneratedBodyContactRegistry.h"
 #include "physics-interaction/contact/ImpactObservationQueue.h"
+#include "physics-interaction/melee/PhysicalMeleePolicy.h"
 #include "physics-interaction/collision/ContactActivityTracker.h"
 #include "physics-interaction/consume/MouthConsumeDetector.h"
 #include "physics-interaction/PhysicsLog.h"
@@ -477,6 +478,7 @@ namespace rock
             std::uint32_t worldGeneration{ 0 };
             std::uint32_t skeletonGeneration{ 0 };
             std::uint32_t providerGeneration{ 0 };
+            physical_melee::WeaponIdentityWitness weaponWitness{};
         };
         impact_observation::Queue<PendingImpactObservation, 1024>
             _impactObservationQueue;

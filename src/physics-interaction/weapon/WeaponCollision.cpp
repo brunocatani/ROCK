@@ -1451,6 +1451,7 @@ namespace rock
             identity.instanceDataAddress = reinterpret_cast<std::uintptr_t>(instanceData);
             identity.instanceKeywordDataAddress = reinterpret_cast<std::uintptr_t>(
                 instanceData ? instanceData->GetKeywordData() : nullptr);
+            identity.equipIndex = equipData->equipIndex.index;
             auto* equippedWeaponData = equipData->data ? static_cast<RE::EquippedWeaponData*>(equipData->data.get()) : nullptr;
             identity.equippedDataAddress = reinterpret_cast<std::uintptr_t>(equippedWeaponData);
             identity.equippedObjectAddress = reinterpret_cast<std::uintptr_t>(

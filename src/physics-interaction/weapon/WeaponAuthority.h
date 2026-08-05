@@ -976,6 +976,7 @@ namespace rock::weapon_generation_identity_policy
         std::uint32_t objectIndexDataCount{ 0 };
         std::uint32_t activeModCount{ 0 };
         std::uint32_t disabledModCount{ 0 };
+        std::uint32_t equipIndex{ 0 };
         std::uintptr_t equippedDataAddress{ 0 };
         std::uintptr_t equippedObjectAddress{ 0 };
         std::string_view displayName{};

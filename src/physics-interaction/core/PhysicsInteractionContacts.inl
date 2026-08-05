@@ -1028,61 +1028,41 @@
                 0.0f,
                 1.0f);
 
-            const auto partKind = static_cast<WeaponPartKind>(classification->partKind);
-            if (partKind == WeaponPartKind::Grip || partKind == WeaponPartKind::Foregrip) {
-                contact.sourceSurfaceRegion =
-                    ::rock::provider::RockProviderImpactSurfaceRegionV1::Grip;
-                contact.sourceSurfaceDamageCoefficient = 0.25f;
-                contact.sourceSurfaceConfidencePermille = 950;
-            } else if (partKind == WeaponPartKind::Stock) {
-                contact.sourceSurfaceRegion =
-                    ::rock::provider::RockProviderImpactSurfaceRegionV1::Pommel;
-                contact.sourceSurfaceDamageCoefficient = 0.60f;
-                contact.sourceSurfaceConfidencePermille = 850;
-            } else {
-                float nearestFace = 1.0f;
-                std::uint32_t nearestAxis = 0;
-                float normalizedFaceDistance[3]{};
-                for (std::uint32_t axis = 0; axis < 3; ++axis) {
-                    if (!std::isfinite(extent[axis]) || extent[axis] <= 0.001f) {
-                        normalizedFaceDistance[axis] = 1.0f;
-                        continue;
-                    }
-                    normalizedFaceDistance[axis] = (std::min)(
-                        std::abs(contact.sourceContactLocalGame[axis] - minimum[axis]),
-                        std::abs(maximum[axis] - contact.sourceContactLocalGame[axis])) /
-                        extent[axis];
-                    if (normalizedFaceDistance[axis] < nearestFace) {
-                        nearestFace = normalizedFaceDistance[axis];
-                        nearestAxis = axis;
-                    }
+            float nearestFace = 1.0f;
+            std::uint32_t nearestAxis = 0;
+            float normalizedFaceDistance[3]{};
+            for (std::uint32_t axis = 0; axis < 3; ++axis) {
+                if (!std::isfinite(extent[axis]) || extent[axis] <= 0.001f) {
+                    normalizedFaceDistance[axis] = 1.0f;
+                    continue;
                 }
-                std::uint32_t closeFaces = 0;
-                for (const float distance : normalizedFaceDistance) {
-                    if (distance <= nearestFace + 0.08f) {
-                        ++closeFaces;
-                    }
-                }
-                const bool atLongitudinalEnd = nearestAxis == majorAxis &&
-                    (contact.sourceSurfaceCoordinate <= 0.15f ||
-                        contact.sourceSurfaceCoordinate >= 0.85f);
-                if (atLongitudinalEnd) {
-                    contact.sourceSurfaceRegion =
-                        ::rock::provider::RockProviderImpactSurfaceRegionV1::Tip;
-                    contact.sourceSurfaceDamageCoefficient = 1.15f;
-                    contact.sourceSurfaceConfidencePermille = 650;
-                } else if (closeFaces >= 2) {
-                    contact.sourceSurfaceRegion =
-                        ::rock::provider::RockProviderImpactSurfaceRegionV1::Edge;
-                    contact.sourceSurfaceDamageCoefficient = 1.0f;
-                    contact.sourceSurfaceConfidencePermille = 700;
-                } else {
-                    contact.sourceSurfaceRegion =
-                        ::rock::provider::RockProviderImpactSurfaceRegionV1::Flat;
-                    contact.sourceSurfaceDamageCoefficient = 0.45f;
-                    contact.sourceSurfaceConfidencePermille = 650;
+                normalizedFaceDistance[axis] = (std::min)(
+                    std::abs(contact.sourceContactLocalGame[axis] - minimum[axis]),
+                    std::abs(maximum[axis] - contact.sourceContactLocalGame[axis])) /
+                    extent[axis];
+                if (normalizedFaceDistance[axis] < nearestFace) {
+                    nearestFace = normalizedFaceDistance[axis];
+                    nearestAxis = axis;
                 }
             }
+            std::uint32_t closeFaces = 0;
+            for (const float distance : normalizedFaceDistance) {
+                if (distance <= nearestFace + 0.08f) {
+                    ++closeFaces;
+                }
+            }
+            const auto impactProfile = physical_melee::classifyWeaponImpact(
+                static_cast<WeaponPartKind>(classification->partKind),
+                static_cast<WeaponSizeClass>(classification->weaponSizeClass),
+                physical_melee::WeaponImpactGeometry{
+                    .longitudinalCoordinate = contact.sourceSurfaceCoordinate,
+                    .majorAxis = majorAxis,
+                    .nearestAxis = nearestAxis,
+                    .closeFaceCount = closeFaces,
+                });
+            contact.sourceSurfaceRegion = impactProfile.region;
+            contact.sourceSurfaceDamageCoefficient = impactProfile.damageCoefficient;
+            contact.sourceSurfaceConfidencePermille = impactProfile.confidencePermille;
             contact.flags |= static_cast<std::uint32_t>(
                 ::rock::provider::RockProviderExternalContactFlagV1::SourceSurfaceClassified);
         };
@@ -1224,6 +1204,18 @@
                 _skeletonGenerationAtomic.load(std::memory_order_acquire);
             observation.providerGeneration =
                 _providerGenerationAtomic.load(std::memory_order_acquire);
+            if (const auto* weapon = classificationFor(sourceBodyId);
+                weapon && weapon->kind == GeneratedBodyKind::Weapon) {
+                observation.weaponWitness = physical_melee::WeaponIdentityWitness{
+                    .bodyGenerationKey = weapon->generationKey,
+                    .identityKey = weapon->weaponIdentityKey,
+                    .ownershipKey = weapon->weaponOwnershipKey,
+                    .instanceDataAddress = weapon->weaponInstanceDataAddress,
+                    .weaponFormId = weapon->weaponFormId,
+                    .collisionGeneration = contact.collisionGeneration,
+                    .equipIndex = weapon->weaponEquipIndex,
+                };
+            }
             (void)_impactObservationQueue.tryPush(observation);
         };
 

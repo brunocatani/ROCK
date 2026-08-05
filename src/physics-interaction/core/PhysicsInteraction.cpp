@@ -45,6 +45,7 @@
 #include "physics-interaction/grab/GrabEvent.h"
 #include "physics-interaction/grab/GrabTelemetry.h"
 #include "physics-interaction/melee/PhysicalMeleeRuntime.h"
+#include "physics-interaction/melee/WeaponImpactProfile.h"
 #include "physics-interaction/grab/GrabHeldObject.h"
 #include "physics-interaction/grab/GrabMassPolicy.h"
 #include "physics-interaction/grab/GrabNodeInfoMath.h"
@@ -1526,6 +1527,29 @@ namespace rock
             _palmClockGameFrameIndex.load(std::memory_order_acquire);
         physical_melee::drainCompletedOutcomes(processingFrameIndex);
         auto* bhkWorld = getPlayerBhkWorld();
+        auto* hknpWorld = bhkWorld ? getHknpWorld(bhkWorld) : nullptr;
+        const auto equippedWeapon = _weaponCollision.getEquippedWeaponClassification();
+        const auto& runtime = runtime_state::currentFrame();
+        physical_melee::beginContactFrame(physical_melee::ContactFrameContext{
+            .bhkWorld = bhkWorld,
+            .currentWeapon = physical_melee::WeaponIdentityWitness{
+                .bodyGenerationKey = _weaponCollision.getCurrentWeaponGenerationKey(),
+                .identityKey = weapon_generation_identity_policy::makeEquippedWeaponIdentityKey(equippedWeapon),
+                .ownershipKey = weapon_generation_identity_policy::makeEquippedWeaponOwnershipKey(equippedWeapon),
+                .instanceDataAddress = equippedWeapon.instanceDataAddress,
+                .weaponFormId = equippedWeapon.formID,
+                .collisionGeneration = _collisionGenerationAtomic.load(std::memory_order_acquire),
+                .equipIndex = equippedWeapon.equipIndex,
+            },
+            .worldGeneration = worldGeneration,
+            .skeletonGeneration = skeletonGeneration,
+            .providerGeneration = providerGeneration,
+            .processingFrameIndex = processingFrameIndex,
+            .damageSubmissionAllowed =
+                runtime.visualAuthorityAvailable && runtime.localSkeletonReady &&
+                !runtime.localMenuBlocking && !runtime.compatibilityConfigBlocking &&
+                bhkWorld && hknpWorld && physicsWritesAllowedForWorld(hknpWorld),
+        });
         PendingImpactObservation observation{};
         while (_impactObservationQueue.tryPop(observation)) {
             // A contact callback can race a load/reset boundary. Never let an
@@ -1537,18 +1561,15 @@ namespace rock
                 continue;
             }
             physical_melee::processContactObservation(
-                bhkWorld,
                 observation.contact,
-                observation.worldGeneration,
-                observation.skeletonGeneration,
-                observation.providerGeneration,
-                processingFrameIndex);
+                observation.weaponWitness);
             (void)::rock::provider::recordExternalContact(
                 observation.contact,
                 observation.worldGeneration,
                 observation.skeletonGeneration,
                 observation.providerGeneration);
         }
+        physical_melee::finishContactFrame();
 
         const auto dropped = _impactObservationQueue.droppedCount();
         if (dropped != _lastReportedDroppedImpactObservations) {
@@ -1613,6 +1634,9 @@ namespace rock
         addHandEntries(_rightHand, false);
         addHandEntries(_leftHand, true);
 
+        const auto currentWeapon = _weaponCollision.getEquippedWeaponClassification();
+        const auto currentWeaponOwnership =
+            weapon_generation_identity_policy::makeEquippedWeaponOwnershipKey(currentWeapon);
         const auto weaponSnapshot = _weaponCollision.getWeaponBodySnapshotAtomic();
         for (std::uint32_t i = 0; i < weaponSnapshot.count && i < MAX_WEAPON_COLLISION_BODIES; ++i) {
             WeaponInteractionContact contact{};
@@ -1630,7 +1654,12 @@ namespace rock
             entry.actionRole = static_cast<std::uint32_t>(contact.actionRole);
             entry.gripPose = static_cast<std::uint32_t>(contact.fallbackGripPose);
             entry.generationKey = contact.weaponGenerationKey;
-            entry.weaponFormId = _weaponCollision.getCurrentObservedEquippedWeaponFormID();
+            entry.weaponIdentityKey = _weaponCollision.getPublishedEquippedWeaponIdentityKey();
+            entry.weaponOwnershipKey = currentWeaponOwnership;
+            entry.weaponInstanceDataAddress = currentWeapon.instanceDataAddress;
+            entry.weaponFormId = _weaponCollision.getPublishedEquippedWeaponFormID();
+            entry.weaponEquipIndex = currentWeapon.equipIndex;
+            entry.weaponSizeClass = static_cast<std::uint32_t>(currentWeapon.sizeClass);
             entry.descriptorIndex = i;
 
             WeaponCollisionProfileEvidenceDescriptor descriptor{};

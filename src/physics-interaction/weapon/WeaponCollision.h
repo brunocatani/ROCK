@@ -203,6 +203,10 @@ namespace rock
 
         std::uint64_t getCurrentEquippedWeaponGenerationKey() const { return _cachedWeaponKey; }
 
+        std::uint64_t getPublishedEquippedWeaponIdentityKey() const { return _cachedWeaponIdentityKey; }
+
+        std::uint32_t getPublishedEquippedWeaponFormID() const { return _cachedWeaponFormID; }
+
         std::uint64_t getCurrentEquippedWeaponIdentityKey() const { return _observedEquippedWeaponIdentityKey; }
 
         std::uint64_t getCurrentEquippedWeaponOwnershipKey() const { return _observedEquippedWeaponOwnershipKey; }

@@ -25,6 +25,7 @@ namespace rock::physical_melee
         constexpr std::uint64_t kEpisodeGapFrames = 4;
         constexpr std::size_t kEpisodeCapacity = 128;
         constexpr std::size_t kCooldownCapacity = 128;
+        constexpr std::size_t kCandidateCapacity = 1024;
 
         struct EpisodeEntry
         {
@@ -44,6 +45,15 @@ namespace rock::physical_melee
             bool occupied{ false };
         };
 
+        struct Candidate
+        {
+            provider::RockProviderExternalContactRecordV1 contact{};
+            TargetResolution target{};
+            WeaponIdentityWitness expectedWeapon{};
+            Decision decision{};
+            bool baseEligible{ false };
+        };
+
         struct RuntimeState
         {
             bool bridgeReady{ false };
@@ -56,6 +66,9 @@ namespace rock::physical_melee
             std::uint32_t submittedThisFrame{ 0 };
             std::array<EpisodeEntry, kEpisodeCapacity> episodes{};
             std::array<CooldownEntry, kCooldownCapacity> cooldowns{};
+            ContactFrameContext frame{};
+            std::array<Candidate, kCandidateCapacity> candidates{};
+            std::size_t candidateCount{ 0 };
         };
 
         RuntimeState s_runtime{};
@@ -83,60 +96,62 @@ namespace rock::physical_melee
             if (targetActorFormId == 0 || entry.targetActorFormId != targetActorFormId) {
                 return false;
             }
-            return generationKey != 0 ? entry.weaponGenerationKey == generationKey :
-                                       entry.weaponGenerationKey == 0 && entry.weaponFormId == weaponFormId;
+            return generationKey != 0 ?
+                entry.weaponGenerationKey == generationKey &&
+                    weaponFormId != 0 && entry.weaponFormId == weaponFormId :
+                entry.weaponGenerationKey == 0 &&
+                    weaponFormId != 0 && entry.weaponFormId == weaponFormId;
         }
 
-        [[nodiscard]] std::pair<std::uint64_t, std::uint32_t> updateEpisode(
-            const provider::RockProviderExternalContactV1& contact,
-            std::uint32_t targetActorFormId)
+        [[nodiscard]] EpisodeEntry* findActiveEpisode(
+            const provider::RockProviderExternalContactRecordV1& contact,
+            std::uint64_t frameIndex)
+        {
+            for (auto& entry : s_runtime.episodes) {
+                if (entry.episodeId == 0 || !sameSourceTarget(
+                        contact.sourceWeaponGenerationKey,
+                        contact.sourceWeaponFormId,
+                        contact.targetActorFormId,
+                        entry)) {
+                    continue;
+                }
+                if (frameIndex >= entry.lastFrameIndex && frameIndex - entry.lastFrameIndex <= kEpisodeGapFrames) {
+                    return &entry;
+                }
+            }
+            return nullptr;
+        }
+
+        void commitEpisode(
+            const provider::RockProviderExternalContactRecordV1& contact,
+            std::uint64_t episodeId,
+            std::uint64_t frameIndex)
         {
             EpisodeEntry* empty = nullptr;
             EpisodeEntry* oldest = &s_runtime.episodes[0];
             for (auto& entry : s_runtime.episodes) {
-                if (entry.episodeId == 0) {
-                    if (!empty) {
-                        empty = &entry;
-                    }
-                    continue;
-                }
-                if (entry.lastFrameIndex < oldest->lastFrameIndex) {
-                    oldest = &entry;
-                }
-                if (!sameSourceTarget(
+                if (entry.episodeId != 0 && sameSourceTarget(
                         contact.sourceWeaponGenerationKey,
                         contact.sourceWeaponFormId,
-                        targetActorFormId,
+                        contact.targetActorFormId,
                         entry)) {
-                    continue;
+                    entry.lastFrameIndex = frameIndex;
+                    entry.episodeId = episodeId;
+                    return;
                 }
-                const bool continued = contact.frameIndex >= entry.lastFrameIndex &&
-                    contact.frameIndex - entry.lastFrameIndex <= kEpisodeGapFrames;
-                entry.lastFrameIndex = contact.frameIndex;
-                if (continued) {
-                    return {
-                        entry.episodeId,
-                        static_cast<std::uint32_t>(provider::RockProviderImpactEpisodeFlagV1::Continued)
-                    };
+                if (entry.episodeId == 0 && !empty) {
+                    empty = &entry;
+                } else if (entry.episodeId != 0 && entry.lastFrameIndex < oldest->lastFrameIndex) {
+                    oldest = &entry;
                 }
-                entry.episodeId = s_runtime.nextEpisodeId++;
-                return {
-                    entry.episodeId,
-                    static_cast<std::uint32_t>(provider::RockProviderImpactEpisodeFlagV1::Started)
-                };
             }
-
             auto* entry = empty ? empty : oldest;
             *entry = EpisodeEntry{
                 .weaponGenerationKey = contact.sourceWeaponGenerationKey,
                 .weaponFormId = contact.sourceWeaponFormId,
-                .targetActorFormId = targetActorFormId,
-                .lastFrameIndex = contact.frameIndex,
-                .episodeId = s_runtime.nextEpisodeId++,
-            };
-            return {
-                entry->episodeId,
-                static_cast<std::uint32_t>(provider::RockProviderImpactEpisodeFlagV1::Started)
+                .targetActorFormId = contact.targetActorFormId,
+                .lastFrameIndex = frameIndex,
+                .episodeId = episodeId,
             };
         }
 
@@ -153,8 +168,10 @@ namespace rock::physical_melee
                     continue;
                 }
                 const bool sourceMatches = contact.sourceWeaponGenerationKey != 0 ?
-                    entry.weaponGenerationKey == contact.sourceWeaponGenerationKey :
-                    entry.weaponGenerationKey == 0 && entry.weaponFormId == contact.sourceWeaponFormId;
+                    entry.weaponGenerationKey == contact.sourceWeaponGenerationKey &&
+                        entry.weaponFormId == contact.sourceWeaponFormId :
+                    entry.weaponGenerationKey == 0 &&
+                        entry.weaponFormId == contact.sourceWeaponFormId;
                 if (!sourceMatches) {
                     continue;
                 }
@@ -181,8 +198,10 @@ namespace rock::physical_melee
                     oldest = &entry;
                 }
                 const bool sourceMatches = contact.sourceWeaponGenerationKey != 0 ?
-                    entry.weaponGenerationKey == contact.sourceWeaponGenerationKey :
-                    entry.weaponGenerationKey == 0 && entry.weaponFormId == contact.sourceWeaponFormId;
+                    entry.weaponGenerationKey == contact.sourceWeaponGenerationKey &&
+                        entry.weaponFormId == contact.sourceWeaponFormId :
+                    entry.weaponGenerationKey == 0 &&
+                        entry.weaponFormId == contact.sourceWeaponFormId;
                 if (sourceMatches && entry.targetActorFormId == contact.targetActorFormId) {
                     entry.appliedAt = now;
                     return;
@@ -227,9 +246,6 @@ namespace rock::physical_melee
             record.skeletonGeneration = skeletonGeneration;
             record.providerGeneration = providerGeneration;
             record.impactId = kProviderImpactIdBit | s_runtime.nextImpactId++;
-            const auto [episodeId, episodeFlags] = updateEpisode(contact, target.actorFormId);
-            record.episodeId = episodeId;
-            record.episodeFlags = episodeFlags;
             record.sourceEndpointIndex = contact.sourceEndpointIndex;
             record.manifoldPointCount = contact.manifoldPointCount;
             record.selectedPointIndex = contact.selectedPointIndex;
@@ -357,6 +373,8 @@ namespace rock::physical_melee
         s_runtime.providerGeneration = 0;
         s_runtime.budgetFrameIndex = 0;
         s_runtime.submittedThisFrame = 0;
+        s_runtime.frame = {};
+        s_runtime.candidateCount = 0;
         resetNativeMeleeHitBridge();
     }
 
@@ -384,17 +402,33 @@ namespace rock::physical_melee
         }
     }
 
-    void processContactObservation(
-        RE::bhkWorld* bhkWorld,
-        const provider::RockProviderExternalContactV1& observation,
-        std::uint32_t worldGeneration,
-        std::uint32_t skeletonGeneration,
-        std::uint32_t providerGeneration,
-        std::uint64_t processingFrameIndex)
+    void beginContactFrame(const ContactFrameContext& context)
     {
-        resetForGenerations(worldGeneration, skeletonGeneration, providerGeneration);
-        const auto settings = currentSettings();
-        if (!settings.enabled || observation.sourceKind != provider::RockProviderExternalSourceKind::Weapon) {
+        resetForGenerations(
+            context.worldGeneration,
+            context.skeletonGeneration,
+            context.providerGeneration);
+        s_runtime.frame = context;
+        s_runtime.candidateCount = 0;
+        if (s_runtime.budgetFrameIndex != context.processingFrameIndex) {
+            s_runtime.budgetFrameIndex = context.processingFrameIndex;
+            s_runtime.submittedThisFrame = 0;
+        }
+    }
+
+    void processContactObservation(
+        const provider::RockProviderExternalContactV1& observation,
+        const WeaponIdentityWitness& expectedWeapon)
+    {
+        if (observation.sourceKind != provider::RockProviderExternalSourceKind::Weapon) {
+            return;
+        }
+        if (s_runtime.candidateCount >= s_runtime.candidates.size()) {
+            ROCK_LOG_SAMPLE_WARN(Melee,
+                g_rockConfig.rockLogSampleMilliseconds,
+                "Physical melee frame candidate buffer full; rich contact omitted sourceBody={} targetBody={}",
+                observation.sourceBodyId,
+                observation.targetExternalBodyId);
             return;
         }
 
@@ -403,116 +437,204 @@ namespace rock::physical_melee
             static_cast<std::uint32_t>(provider::RockProviderExternalContactFlagV1::ContactPointMeasured);
         const auto* measuredContactPoint =
             (observation.flags & contactPointFlags) == contactPointFlags ?
-            observation.contactPointHavok :
-            nullptr;
-        const auto target = resolveTarget(
-            bhkWorld,
+            observation.contactPointHavok : nullptr;
+
+        auto& candidate = s_runtime.candidates[s_runtime.candidateCount++];
+        candidate = {};
+        candidate.expectedWeapon = expectedWeapon;
+        candidate.target = resolveTarget(
+            s_runtime.frame.bhkWorld,
             observation.targetExternalBodyId,
             measuredContactPoint,
             physics_scale::havokToGame());
-        auto contact = makeRecord(
+        candidate.contact = makeRecord(
             observation,
-            target,
-            worldGeneration,
-            skeletonGeneration,
-            providerGeneration);
-        if (!provider::recordPhysicalMeleeContact(contact)) {
-            ROCK_LOG_SAMPLE_WARN(Melee,
+            candidate.target,
+            s_runtime.frame.worldGeneration,
+            s_runtime.frame.skeletonGeneration,
+            s_runtime.frame.providerGeneration);
+
+        if (!candidate.target.actorValid()) {
+            candidate.decision.reason = DecisionReason::MissingTargetActor;
+        } else {
+            candidate.decision = evaluate(
+                candidate.contact,
+                currentSettings(),
+                physics_scale::gameToHavok());
+            if (candidate.decision.accepted &&
+                !weaponWitnessMatches(candidate.expectedWeapon, s_runtime.frame.currentWeapon)) {
+                candidate.decision.accepted = false;
+                candidate.decision.reason = DecisionReason::WeaponWitnessMismatch;
+            } else if (candidate.decision.accepted && !s_runtime.frame.damageSubmissionAllowed) {
+                candidate.decision.accepted = false;
+                candidate.decision.reason = DecisionReason::RuntimeUnavailable;
+            }
+            candidate.baseEligible = candidate.decision.accepted;
+        }
+    }
+
+    void finishContactFrame()
+    {
+        const auto settings = currentSettings();
+        const auto frameIndex = s_runtime.frame.processingFrameIndex;
+        std::array<bool, kCandidateCapacity> handled{};
+
+        auto report = [](provider::RockProviderExternalContactRecordV1& contact) {
+            if (!provider::recordPhysicalMeleeContact(contact)) {
+                ROCK_LOG_SAMPLE_WARN(Melee,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "Physical melee collision report rejected actor={:08X} sourceBody={} targetBody={}",
+                    contact.targetActorFormId,
+                    contact.sourceBodyId,
+                    contact.targetExternalBodyId);
+            }
+        };
+        auto sameGroup = [](const Candidate& lhs, const Candidate& rhs) {
+            if (lhs.contact.targetActorFormId == 0 ||
+                lhs.contact.targetActorFormId != rhs.contact.targetActorFormId) {
+                return false;
+            }
+            return lhs.contact.sourceWeaponGenerationKey != 0 ?
+                lhs.contact.sourceWeaponGenerationKey == rhs.contact.sourceWeaponGenerationKey &&
+                    lhs.contact.sourceWeaponFormId == rhs.contact.sourceWeaponFormId :
+                rhs.contact.sourceWeaponGenerationKey == 0 &&
+                    lhs.contact.sourceWeaponFormId == rhs.contact.sourceWeaponFormId;
+        };
+        auto better = [](const Candidate& lhs, const Candidate& rhs) {
+            return isBetterImpactCandidate(
+                ImpactCandidateScore{
+                    .nativeDamageMultiplier = lhs.decision.nativeDamageMultiplier,
+                    .positiveImpulseSum = lhs.contact.contactPointWeightSum,
+                    .surfaceConfidencePermille = lhs.contact.sourceSurfaceConfidencePermille,
+                    .sourceBodyId = lhs.contact.sourceBodyId,
+                    .descriptorIndex = lhs.contact.sourceDescriptorIndex,
+                },
+                ImpactCandidateScore{
+                    .nativeDamageMultiplier = rhs.decision.nativeDamageMultiplier,
+                    .positiveImpulseSum = rhs.contact.contactPointWeightSum,
+                    .surfaceConfidencePermille = rhs.contact.sourceSurfaceConfidencePermille,
+                    .sourceBodyId = rhs.contact.sourceBodyId,
+                    .descriptorIndex = rhs.contact.sourceDescriptorIndex,
+                });
+        };
+
+        for (std::size_t i = 0; i < s_runtime.candidateCount; ++i) {
+            if (handled[i]) {
+                continue;
+            }
+            auto& first = s_runtime.candidates[i];
+            if (!first.baseEligible) {
+                handled[i] = true;
+                report(first.contact);
+                reject(first.contact, frameIndex, first.decision.reason, &first.decision);
+                continue;
+            }
+
+            std::size_t bestIndex = i;
+            for (std::size_t j = i + 1; j < s_runtime.candidateCount; ++j) {
+                if (!handled[j] && s_runtime.candidates[j].baseEligible &&
+                    sameGroup(first, s_runtime.candidates[j]) &&
+                    better(s_runtime.candidates[j], s_runtime.candidates[bestIndex])) {
+                    bestIndex = j;
+                }
+            }
+
+            auto* activeEpisode = findActiveEpisode(first.contact, frameIndex);
+            const auto episodeId = activeEpisode ? activeEpisode->episodeId : s_runtime.nextEpisodeId++;
+            for (std::size_t j = i; j < s_runtime.candidateCount; ++j) {
+                auto& grouped = s_runtime.candidates[j];
+                if (handled[j] || !grouped.baseEligible || !sameGroup(first, grouped)) {
+                    continue;
+                }
+                handled[j] = true;
+                grouped.contact.episodeId = episodeId;
+                grouped.contact.episodeFlags = static_cast<std::uint32_t>(
+                    activeEpisode ? provider::RockProviderImpactEpisodeFlagV1::Continued :
+                    j == bestIndex ? provider::RockProviderImpactEpisodeFlagV1::Started :
+                                     provider::RockProviderImpactEpisodeFlagV1::Continued);
+                report(grouped.contact);
+                if (activeEpisode) {
+                    reject(grouped.contact, frameIndex, DecisionReason::ContinuedEpisode, &grouped.decision);
+                } else if (j != bestIndex) {
+                    reject(grouped.contact, frameIndex, DecisionReason::SupersededCandidate, &grouped.decision);
+                }
+            }
+            if (activeEpisode) {
+                activeEpisode->lastFrameIndex = frameIndex;
+                continue;
+            }
+
+            auto& best = s_runtime.candidates[bestIndex];
+            const auto now = std::chrono::steady_clock::now();
+            if (s_runtime.submittedThisFrame >= settings.maxDamageEventsPerFrame) {
+                reject(best.contact, frameIndex, DecisionReason::FrameBudgetExceeded, &best.decision);
+                commitEpisode(best.contact, episodeId, frameIndex);
+                continue;
+            }
+            if (cooldownActive(best.contact, settings, now)) {
+                reject(best.contact, frameIndex, DecisionReason::CooldownActive, &best.decision);
+                commitEpisode(best.contact, episodeId, frameIndex);
+                continue;
+            }
+
+            auto* aggressor = static_cast<RE::Actor*>(RE::PlayerCharacter::GetSingleton());
+            if (!s_runtime.bridgeReady || !aggressor || aggressor == best.target.actor) {
+                reject(best.contact, frameIndex, DecisionReason::NativeSubmissionFailed, &best.decision);
+                continue;
+            }
+
+            ++s_runtime.submittedThisFrame;
+            const auto hit = applyNativeMeleeHit(NativeMeleeHitInput{
+                .bhkWorld = s_runtime.frame.bhkWorld,
+                .target = best.target.actor,
+                .aggressor = aggressor,
+                .contact = &best.contact,
+                .expectedWeapon = best.expectedWeapon,
+                .currentWeapon = s_runtime.frame.currentWeapon,
+                .submissionFrameIndex = frameIndex,
+                .nativeDamageMultiplier = best.decision.nativeDamageMultiplier,
+                .closingSpeedGame = best.decision.closingSpeedGame,
+                .havokToGameScale = physics_scale::havokToGame(),
+            });
+            if (!hit.submitted) {
+                auto outcome = makeOutcome(
+                    best.contact,
+                    frameIndex,
+                    provider::RockProviderImpactOutcomeLifecycleV1::Rejected,
+                    0x8000'0000u | static_cast<std::uint32_t>(hit.failure),
+                    &best.decision);
+                provider::recordPhysicalMeleeOutcome(outcome);
+                ROCK_LOG_SAMPLE_WARN(Melee,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "Physical melee native submission failed impact={} actor={:08X} body={} part={} reason={}",
+                    best.contact.impactId,
+                    best.contact.targetActorFormId,
+                    best.contact.targetExternalBodyId,
+                    best.contact.targetBodyPartIndex,
+                    nativeMeleeHitFailureName(hit.failure));
+                continue;
+            }
+
+            commitEpisode(best.contact, episodeId, frameIndex);
+            recordCooldown(best.contact, now);
+            auto submittedOutcome = hit.outcome;
+            if (hit.failure != NativeMeleeHitFailure::None) {
+                submittedOutcome.failureReason = 0x8000'0000u | static_cast<std::uint32_t>(hit.failure);
+            }
+            provider::recordPhysicalMeleeOutcome(submittedOutcome);
+            ROCK_LOG_SAMPLE_INFO(Melee,
                 g_rockConfig.rockLogSampleMilliseconds,
-                "Physical melee collision report rejected actor={:08X} sourceBody={} targetBody={}",
-                contact.targetActorFormId,
-                contact.sourceBodyId,
-                contact.targetExternalBodyId);
+                "Physical melee submitted impact={} actor={:08X} body={} node='{}' part={} surface={} coefficient={:.3f} multiplier={:.3f} speed={:.1f}",
+                best.contact.impactId,
+                best.contact.targetActorFormId,
+                best.contact.targetExternalBodyId,
+                best.contact.targetNodeName,
+                best.contact.targetBodyPartIndex,
+                static_cast<std::uint32_t>(best.contact.sourceSurfaceRegion),
+                best.contact.sourceSurfaceDamageCoefficient,
+                best.decision.nativeDamageMultiplier,
+                best.decision.closingSpeedGame);
         }
-        if (!target.actorValid()) {
-            reject(contact, processingFrameIndex, DecisionReason::MissingTargetActor);
-            return;
-        }
-
-        auto decision = evaluate(contact, settings, physics_scale::gameToHavok());
-        if (!decision.accepted) {
-            reject(contact, processingFrameIndex, decision.reason, &decision);
-            return;
-        }
-
-        if (s_runtime.budgetFrameIndex != processingFrameIndex) {
-            s_runtime.budgetFrameIndex = processingFrameIndex;
-            s_runtime.submittedThisFrame = 0;
-        }
-        if (s_runtime.submittedThisFrame >= settings.maxDamageEventsPerFrame) {
-            reject(contact, processingFrameIndex, DecisionReason::FrameBudgetExceeded, &decision);
-            return;
-        }
-
-        const auto now = std::chrono::steady_clock::now();
-        if (cooldownActive(contact, settings, now)) {
-            reject(contact, processingFrameIndex, DecisionReason::CooldownActive, &decision);
-            return;
-        }
-
-        auto* aggressor = static_cast<RE::Actor*>(RE::PlayerCharacter::GetSingleton());
-        if (!s_runtime.bridgeReady || !aggressor || aggressor == target.actor) {
-            reject(contact, processingFrameIndex, DecisionReason::NativeSubmissionFailed, &decision);
-            return;
-        }
-
-        ++s_runtime.submittedThisFrame;
-        const auto hit = applyNativeMeleeHit(NativeMeleeHitInput{
-            .bhkWorld = bhkWorld,
-            .target = target.actor,
-            .aggressor = aggressor,
-            .contact = &contact,
-            .submissionFrameIndex = processingFrameIndex,
-            .nativeDamageMultiplier = decision.nativeDamageMultiplier,
-            .closingSpeedGame = decision.closingSpeedGame,
-            .havokToGameScale = physics_scale::havokToGame(),
-        });
-        if (!hit.submitted) {
-            auto outcome = makeOutcome(
-                contact,
-                processingFrameIndex,
-                provider::RockProviderImpactOutcomeLifecycleV1::Rejected,
-                0x8000'0000u | static_cast<std::uint32_t>(hit.failure),
-                &decision);
-            provider::recordPhysicalMeleeOutcome(outcome);
-            ROCK_LOG_SAMPLE_WARN(Melee,
-                g_rockConfig.rockLogSampleMilliseconds,
-                "Physical melee native submission failed impact={} actor={:08X} body={} part={} reason={}",
-                contact.impactId,
-                contact.targetActorFormId,
-                contact.targetExternalBodyId,
-                contact.targetBodyPartIndex,
-                nativeMeleeHitFailureName(hit.failure));
-            return;
-        }
-
-        recordCooldown(contact, now);
-        auto submittedOutcome = hit.outcome;
-        if (hit.failure != NativeMeleeHitFailure::None) {
-            submittedOutcome.failureReason =
-                0x8000'0000u | static_cast<std::uint32_t>(hit.failure);
-        }
-        provider::recordPhysicalMeleeOutcome(submittedOutcome);
-        ROCK_LOG_SAMPLE_INFO(Melee,
-            g_rockConfig.rockLogSampleMilliseconds,
-            "Physical melee submitted impact={} actor={:08X} body={} node='{}' part={} zone={} side={} surface={} coefficient={:.3f} multiplier={:.3f} speed=({:.3f} hk/{:.1f} game) point=({:.1f},{:.1f},{:.1f}) normal=({:.3f},{:.3f},{:.3f})",
-            contact.impactId,
-            contact.targetActorFormId,
-            contact.targetExternalBodyId,
-            contact.targetNodeName,
-            contact.targetBodyPartIndex,
-            static_cast<std::uint32_t>(contact.targetZone),
-            static_cast<std::uint32_t>(contact.targetSide),
-            static_cast<std::uint32_t>(contact.sourceSurfaceRegion),
-            contact.sourceSurfaceDamageCoefficient,
-            decision.nativeDamageMultiplier,
-            decision.closingSpeedHavok,
-            decision.closingSpeedGame,
-            hit.contactPointGame[0],
-            hit.contactPointGame[1],
-            hit.contactPointGame[2],
-            hit.contactNormal[0],
-            hit.contactNormal[1],
-            hit.contactNormal[2]);
+        s_runtime.candidateCount = 0;
     }
 }

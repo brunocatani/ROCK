@@ -1,6 +1,7 @@
 #pragma once
 
 #include "api/ROCKProviderApi.h"
+#include "physics-interaction/melee/PhysicalMeleePolicy.h"
 
 #include <cstdint>
 
@@ -19,7 +20,10 @@ namespace rock::physical_melee
         InvalidInput,
         InvalidScale,
         NonFiniteContact,
-        MissingSourceCollisionObject,
+        MissingTargetCollisionObject,
+        MissingTargetBodyPart,
+        EvidenceInjectionFailed,
+        WeaponWitnessMismatch,
         MissingEquippedWeapon,
         EquippedWeaponMismatch,
         PendingQueueFull,
@@ -35,6 +39,8 @@ namespace rock::physical_melee
         RE::Actor* target{ nullptr };
         RE::Actor* aggressor{ nullptr };
         const provider::RockProviderExternalContactRecordV1* contact{ nullptr };
+        WeaponIdentityWitness expectedWeapon{};
+        WeaponIdentityWitness currentWeapon{};
         std::uint64_t submissionFrameIndex{ 0 };
         float nativeDamageMultiplier{ 1.0f };
         float closingSpeedGame{ 0.0f };
@@ -45,10 +51,10 @@ namespace rock::physical_melee
     {
         bool submitted{ false };
         NativeMeleeHitFailure failure{ NativeMeleeHitFailure::None };
-        std::uintptr_t sourceCollisionObject{ 0 };
+        std::uintptr_t targetCollisionObject{ 0 };
         float contactPointGame[3]{};
         float contactNormal[3]{};
-        float sourceVelocityGame[3]{};
+        float relativeVelocityGame[3]{};
         provider::RockProviderImpactOutcomeV1 outcome{};
     };
 

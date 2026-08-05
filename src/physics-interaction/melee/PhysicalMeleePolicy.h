@@ -38,6 +38,33 @@ namespace rock::physical_melee
         FrameBudgetExceeded,
         MissingTargetActor,
         NativeSubmissionFailed,
+        CollisionUnavailable,
+        TransitionSuppressed,
+        NonDamagingSource,
+        DamageMultiplierZero,
+        RuntimeUnavailable,
+        WeaponWitnessMismatch,
+        SupersededCandidate,
+    };
+
+    struct WeaponIdentityWitness
+    {
+        std::uint64_t bodyGenerationKey{ 0 };
+        std::uint64_t identityKey{ 0 };
+        std::uint64_t ownershipKey{ 0 };
+        std::uintptr_t instanceDataAddress{ 0 };
+        std::uint32_t weaponFormId{ 0 };
+        std::uint32_t collisionGeneration{ 0 };
+        std::uint32_t equipIndex{ 0 };
+    };
+
+    struct ImpactCandidateScore
+    {
+        float nativeDamageMultiplier{ 0.0f };
+        float positiveImpulseSum{ 0.0f };
+        std::uint32_t surfaceConfidencePermille{ 0 };
+        std::uint32_t sourceBodyId{ 0 };
+        std::uint32_t descriptorIndex{ 0 };
     };
 
     struct Decision
@@ -53,6 +80,12 @@ namespace rock::physical_melee
     };
 
     [[nodiscard]] Settings sanitizeSettings(Settings settings);
+    [[nodiscard]] bool weaponWitnessMatches(
+        const WeaponIdentityWitness& expected,
+        const WeaponIdentityWitness& current) noexcept;
+    [[nodiscard]] bool isBetterImpactCandidate(
+        const ImpactCandidateScore& candidate,
+        const ImpactCandidateScore& incumbent) noexcept;
     [[nodiscard]] Decision evaluate(
         const provider::RockProviderExternalContactRecordV1& contact,
         const Settings& settings,

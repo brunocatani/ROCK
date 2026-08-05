@@ -20,10 +20,6 @@ namespace rock::physical_melee
             return static_cast<std::uint32_t>(flag);
         }
 
-        constexpr std::uint32_t episodeFlag(provider::RockProviderImpactEpisodeFlagV1 flag)
-        {
-            return static_cast<std::uint32_t>(flag);
-        }
     }
 
     Settings sanitizeSettings(Settings settings)
@@ -38,7 +34,7 @@ namespace rock::physical_melee
         if (!std::isfinite(settings.damageMultiplier) || settings.damageMultiplier < 0.0f) {
             settings.damageMultiplier = defaults.damageMultiplier;
         }
-        if (!std::isfinite(settings.maxNativeDamageMultiplier) || settings.maxNativeDamageMultiplier < 0.0f) {
+        if (!std::isfinite(settings.maxNativeDamageMultiplier) || settings.maxNativeDamageMultiplier <= 0.0f) {
             settings.maxNativeDamageMultiplier = defaults.maxNativeDamageMultiplier;
         }
         if (!std::isfinite(settings.sourceTargetCooldownSeconds) || settings.sourceTargetCooldownSeconds < 0.0f) {
@@ -49,6 +45,40 @@ namespace rock::physical_melee
             1u,
             provider::ROCK_PROVIDER_MAX_EXTERNAL_CONTACTS_V1);
         return settings;
+    }
+
+    bool weaponWitnessMatches(
+        const WeaponIdentityWitness& expected,
+        const WeaponIdentityWitness& current) noexcept
+    {
+        return expected.bodyGenerationKey != 0 &&
+               expected.bodyGenerationKey == current.bodyGenerationKey &&
+               expected.identityKey != 0 && expected.identityKey == current.identityKey &&
+               expected.ownershipKey != 0 && expected.ownershipKey == current.ownershipKey &&
+               expected.instanceDataAddress == current.instanceDataAddress &&
+               expected.weaponFormId != 0 && expected.weaponFormId == current.weaponFormId &&
+               expected.collisionGeneration != 0 &&
+               expected.collisionGeneration == current.collisionGeneration &&
+               expected.equipIndex == current.equipIndex;
+    }
+
+    bool isBetterImpactCandidate(
+        const ImpactCandidateScore& candidate,
+        const ImpactCandidateScore& incumbent) noexcept
+    {
+        if (candidate.nativeDamageMultiplier != incumbent.nativeDamageMultiplier) {
+            return candidate.nativeDamageMultiplier > incumbent.nativeDamageMultiplier;
+        }
+        if (candidate.positiveImpulseSum != incumbent.positiveImpulseSum) {
+            return candidate.positiveImpulseSum > incumbent.positiveImpulseSum;
+        }
+        if (candidate.surfaceConfidencePermille != incumbent.surfaceConfidencePermille) {
+            return candidate.surfaceConfidencePermille > incumbent.surfaceConfidencePermille;
+        }
+        if (candidate.sourceBodyId != incumbent.sourceBodyId) {
+            return candidate.sourceBodyId < incumbent.sourceBodyId;
+        }
+        return candidate.descriptorIndex < incumbent.descriptorIndex;
     }
 
     Decision evaluate(
@@ -62,6 +92,14 @@ namespace rock::physical_melee
 
         if (!settings.enabled) {
             decision.reason = DecisionReason::Disabled;
+            return decision;
+        }
+        if ((contact.flags & contactFlag(provider::RockProviderExternalContactFlagV1::TransitionSuppressed)) != 0) {
+            decision.reason = DecisionReason::TransitionSuppressed;
+            return decision;
+        }
+        if ((contact.flags & contactFlag(provider::RockProviderExternalContactFlagV1::CollisionAvailable)) == 0) {
+            decision.reason = DecisionReason::CollisionUnavailable;
             return decision;
         }
         if (contact.sourceBodyId == kInvalidBodyId || contact.targetExternalBodyId == kInvalidBodyId ||
@@ -96,6 +134,10 @@ namespace rock::physical_melee
             decision.reason = DecisionReason::MissingSurfaceClassification;
             return decision;
         }
+        if (contact.sourceSurfaceDamageCoefficient == 0.0f) {
+            decision.reason = DecisionReason::NonDamagingSource;
+            return decision;
+        }
         if ((contact.flags & contactFlag(provider::RockProviderExternalContactFlagV1::TargetAnatomyValid)) == 0 ||
             (contact.targetAnatomyFlags & anatomyFlag(provider::RockProviderTargetAnatomyFlagV1::BodyPartValid)) == 0 ||
             contact.targetBodyPartIndex >= 26) {
@@ -104,10 +146,6 @@ namespace rock::physical_melee
         }
         if ((contact.targetAnatomyFlags & anatomyFlag(provider::RockProviderTargetAnatomyFlagV1::BodyPartAmbiguous)) != 0) {
             decision.reason = DecisionReason::AmbiguousTargetAnatomy;
-            return decision;
-        }
-        if ((contact.episodeFlags & episodeFlag(provider::RockProviderImpactEpisodeFlagV1::Started)) == 0) {
-            decision.reason = DecisionReason::ContinuedEpisode;
             return decision;
         }
         if (!std::isfinite(gameToHavokScale) || gameToHavokScale <= 0.0f) {
@@ -123,6 +161,10 @@ namespace rock::physical_melee
         decision.closingSpeedGame = contact.closingSpeedHavok / gameToHavokScale;
         decision.virtualMass = settings.virtualWeaponMass;
         decision.sourceSurfaceDamageCoefficient = contact.sourceSurfaceDamageCoefficient;
+        if (settings.damageMultiplier == 0.0f) {
+            decision.reason = DecisionReason::DamageMultiplierZero;
+            return decision;
+        }
         if (!std::isfinite(decision.closingSpeedGame) || decision.closingSpeedGame < settings.minSourceSpeedGame) {
             decision.reason = DecisionReason::SourceTooSlow;
             return decision;
@@ -168,6 +210,13 @@ namespace rock::physical_melee
         case DecisionReason::FrameBudgetExceeded: return "FrameBudgetExceeded";
         case DecisionReason::MissingTargetActor: return "MissingTargetActor";
         case DecisionReason::NativeSubmissionFailed: return "NativeSubmissionFailed";
+        case DecisionReason::CollisionUnavailable: return "CollisionUnavailable";
+        case DecisionReason::TransitionSuppressed: return "TransitionSuppressed";
+        case DecisionReason::NonDamagingSource: return "NonDamagingSource";
+        case DecisionReason::DamageMultiplierZero: return "DamageMultiplierZero";
+        case DecisionReason::RuntimeUnavailable: return "RuntimeUnavailable";
+        case DecisionReason::WeaponWitnessMismatch: return "WeaponWitnessMismatch";
+        case DecisionReason::SupersededCandidate: return "SupersededCandidate";
         default: return "Unknown";
         }
     }
