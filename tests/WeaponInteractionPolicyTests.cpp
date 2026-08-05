@@ -2,6 +2,7 @@
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 #include "physics-interaction/weapon/EquippedWeaponHandlingSettings.h"
+#include "physics-interaction/weapon/GunstockAlignmentPolicy.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"
 #include "physics-interaction/weapon/WeaponInteraction.h"
 #include "physics-interaction/weapon/WeaponAccessoryPartKindPolicy.h"
@@ -113,6 +114,19 @@ namespace
         return ok;
     }
 
+    bool expectVectorNear(
+        const char* label,
+        const TestVector3& actual,
+        const TestVector3& expected,
+        float tolerance = 0.0001f)
+    {
+        bool ok = true;
+        ok &= expectNear(label, actual.x, expected.x, tolerance);
+        ok &= expectNear(label, actual.y, expected.y, tolerance);
+        ok &= expectNear(label, actual.z, expected.z, tolerance);
+        return ok;
+    }
+
     TestMatrix3 makeAxisAngleRotation(
         const TestVector3& axis,
         float degrees)
@@ -128,6 +142,309 @@ namespace
 int main()
 {
     bool ok = true;
+
+    {
+        using Latch = rock::gunstock_alignment_policy::
+            DirectionLatch<TestVector3>;
+        Latch latch{};
+        for (std::uint32_t sample = 1;
+             sample < rock::gunstock_alignment_policy::
+                          kRequiredStableSamples;
+             ++sample) {
+            ok &= expectFalse(
+                "gunstock neutral direction waits for all stable samples",
+                rock::gunstock_alignment_policy::observeStableDirection(
+                    latch,
+                    TestVector3{ 0.0f, 1.0f, 0.0f }));
+        }
+        ok &= expectTrue(
+            "gunstock neutral direction latches on sixth stable sample",
+            rock::gunstock_alignment_policy::observeStableDirection(
+                latch,
+                TestVector3{ 0.0f, 1.0f, 0.0f }));
+        ok &= expectVectorNear(
+            "gunstock stable latch preserves normalized direction",
+            latch.neutralControllerLocal,
+            TestVector3{ 0.0f, 1.0f, 0.0f });
+
+        Latch divergent{};
+        (void)rock::gunstock_alignment_policy::observeStableDirection(
+            divergent,
+            TestVector3{ 0.0f, 1.0f, 0.0f });
+        (void)rock::gunstock_alignment_policy::observeStableDirection(
+            divergent,
+            TestVector3{ 0.0f, 1.0f, 0.0f });
+        ok &= expectFalse(
+            "gunstock divergent sample restarts instead of latching",
+            rock::gunstock_alignment_policy::observeStableDirection(
+                divergent,
+                TestVector3{ 1.0f, 0.0f, 0.0f }));
+        ok &= expectEqual(
+            "gunstock divergent sample restarts at one",
+            divergent.candidateSamples,
+            static_cast<std::uint32_t>(1));
+
+        const float nan = std::numeric_limits<float>::quiet_NaN();
+        ok &= expectFalse(
+            "gunstock rejects non-finite direction sample",
+            rock::gunstock_alignment_policy::observeStableDirection(
+                divergent,
+                TestVector3{ nan, 0.0f, 0.0f }));
+        ok &= expectEqual(
+            "gunstock invalid sample clears consecutive count",
+            divergent.candidateSamples,
+            static_cast<std::uint32_t>(0));
+    }
+
+    {
+        const TestVector3 controllerLocalBore =
+            rock::weaponSolverNormalize(
+                TestVector3{ 0.35f, 0.82f, -0.27f });
+        TestTransform controllerWorld =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        controllerWorld.rotate = makeAxisAngleRotation(
+            TestVector3{ 0.0f, 0.0f, 1.0f },
+            37.0f);
+        controllerWorld.translate = { 11.0f, -4.0f, 8.0f };
+
+        TestTransform projectileWorld =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        projectileWorld.rotate =
+            rock::weaponSolverRotationBetweenStored<
+                TestMatrix3,
+                TestVector3>(
+                TestVector3{ 0.0f, 1.0f, 0.0f },
+                rock::transform_math::localVectorToWorld(
+                    controllerWorld,
+                    controllerLocalBore));
+
+        TestVector3 capturedBore{};
+        ok &= expectTrue(
+            "gunstock captures projectile plus-Y in controller space",
+            rock::gunstock_alignment_policy::
+                tryCaptureControllerLocalBore(
+                    controllerWorld,
+                    projectileWorld,
+                    capturedBore));
+        ok &= expectVectorNear(
+            "gunstock controller-local capture is exact",
+            capturedBore,
+            controllerLocalBore,
+            0.0002f);
+
+        TestMatrix3 correction{};
+        ok &= expectTrue(
+            "gunstock builds finite world correction",
+            rock::gunstock_alignment_policy::tryBuildWorldCorrection<
+                TestTransform,
+                TestMatrix3,
+                TestVector3>(
+                controllerWorld,
+                capturedBore,
+                correction));
+        const TestVector3 correctedBore =
+            rock::weaponSolverApplyStoredWorldRotationToVector<
+                TestMatrix3,
+                TestVector3>(
+                correction,
+                rock::transform_math::localVectorToWorld(
+                    controllerWorld,
+                    capturedBore));
+        const TestVector3 controllerForward =
+            rock::weaponSolverNormalize(
+                rock::transform_math::localVectorToWorld(
+                    controllerWorld,
+                    TestVector3{ 0.0f, 1.0f, 0.0f }));
+        ok &= expectVectorNear(
+            "gunstock correction sends neutral bore to controller plus-Y",
+            rock::weaponSolverNormalize(correctedBore),
+            controllerForward,
+            0.0002f);
+
+        TestMatrix3 antiparallelCorrection{};
+        ok &= expectTrue(
+            "gunstock antiparallel correction remains finite",
+            rock::gunstock_alignment_policy::tryBuildWorldCorrection<
+                TestTransform,
+                TestMatrix3,
+                TestVector3>(
+                rock::transform_math::
+                    makeIdentityTransform<TestTransform>(),
+                TestVector3{ 0.0f, -1.0f, 0.0f },
+                antiparallelCorrection));
+        const TestVector3 correctedAntiparallel =
+            rock::weaponSolverApplyStoredWorldRotationToVector<
+                TestMatrix3,
+                TestVector3>(
+                antiparallelCorrection,
+                TestVector3{ 0.0f, -1.0f, 0.0f });
+        ok &= expectVectorNear(
+            "gunstock antiparallel correction resolves to plus-Y",
+            correctedAntiparallel,
+            TestVector3{ 0.0f, 1.0f, 0.0f },
+            0.0002f);
+
+        TestTransform unusableController = controllerWorld;
+        unusableController.scale = 0.0f;
+        ok &= expectFalse(
+            "gunstock rejects degenerate controller transforms",
+            rock::gunstock_alignment_policy::tryBuildWorldCorrection<
+                TestTransform,
+                TestMatrix3,
+                TestVector3>(
+                unusableController,
+                capturedBore,
+                correction));
+    }
+
+    {
+        TestTransform firingHand =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        firingHand.rotate = makeAxisAngleRotation(
+            TestVector3{ 1.0f, 0.0f, 0.0f },
+            17.0f);
+        firingHand.translate = { 10.0f, 20.0f, 30.0f };
+
+        TestTransform supportHand =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        supportHand.rotate = makeAxisAngleRotation(
+            TestVector3{ 0.0f, 1.0f, 0.0f },
+            -23.0f);
+        supportHand.translate = { 13.0f, 34.0f, 27.0f };
+
+        TestTransform weapon =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        weapon.rotate = makeAxisAngleRotation(
+            TestVector3{ 0.0f, 0.0f, 1.0f },
+            31.0f);
+        weapon.translate = { 12.0f, 25.0f, 29.0f };
+
+        const TestMatrix3 correction = makeAxisAngleRotation(
+            rock::weaponSolverNormalize(
+                TestVector3{ 0.4f, -0.2f, 0.7f }),
+            42.0f);
+        const TestTransform correctedFiring =
+            rock::gunstock_alignment_policy::rotateRigidlyAroundPivot<
+                TestTransform,
+                TestMatrix3,
+                TestVector3>(
+                firingHand,
+                correction,
+                firingHand.translate);
+        const TestTransform correctedSupport =
+            rock::gunstock_alignment_policy::rotateRigidlyAroundPivot<
+                TestTransform,
+                TestMatrix3,
+                TestVector3>(
+                supportHand,
+                correction,
+                firingHand.translate);
+        const TestTransform correctedWeapon =
+            rock::gunstock_alignment_policy::rotateRigidlyAroundPivot<
+                TestTransform,
+                TestMatrix3,
+                TestVector3>(
+                weapon,
+                correction,
+                firingHand.translate);
+
+        ok &= expectVectorNear(
+            "gunstock firing-hand pivot remains fixed",
+            correctedFiring.translate,
+            firingHand.translate);
+        ok &= expectTransformNear(
+            "gunstock rigid correction preserves firing-hand weapon relation",
+            rock::transform_math::composeTransforms(
+                rock::transform_math::invertTransform(correctedFiring),
+                correctedWeapon),
+            rock::transform_math::composeTransforms(
+                rock::transform_math::invertTransform(firingHand),
+                weapon));
+        ok &= expectTransformNear(
+            "gunstock rigid correction preserves firing/support relation",
+            rock::transform_math::composeTransforms(
+                rock::transform_math::invertTransform(correctedFiring),
+                correctedSupport),
+            rock::transform_math::composeTransforms(
+                rock::transform_math::invertTransform(firingHand),
+                supportHand));
+    }
+
+    {
+        TestTransform requested =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        requested.rotate = makeAxisAngleRotation(
+            TestVector3{ 1.0f, 0.0f, 0.0f },
+            19.0f);
+        requested.translate = { 2.0f, -3.0f, 4.0f };
+
+        TestTransform recoilDelta =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        recoilDelta.rotate = makeAxisAngleRotation(
+            TestVector3{ 0.0f, 1.0f, 0.0f },
+            -11.0f);
+        recoilDelta.translate = { 0.3f, -0.6f, 0.2f };
+        const TestTransform applied =
+            rock::transform_math::composeTransforms(
+                recoilDelta,
+                requested);
+        const TestTransform derivedDelta =
+            rock::gunstock_alignment_policy::deriveAppliedWorldDelta(
+                requested,
+                applied);
+
+        TestTransform desired =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        desired.rotate = makeAxisAngleRotation(
+            rock::weaponSolverNormalize(
+                TestVector3{ 0.2f, 0.7f, 0.4f }),
+            33.0f);
+        desired.translate = { -7.0f, 8.0f, 5.0f };
+        const TestTransform precompensated =
+            rock::gunstock_alignment_policy::precompensateWorldTarget(
+                derivedDelta,
+                desired);
+        ok &= expectTransformNear(
+            "gunstock precompensation survives noncommuting recoil delta",
+            rock::transform_math::composeTransforms(
+                recoilDelta,
+                precompensated),
+            desired);
+
+        const TestVector3 neutralBore =
+            rock::weaponSolverNormalize(
+                TestVector3{ 0.25f, 0.93f, 0.13f });
+        TestMatrix3 fixedCorrection{};
+        (void)rock::gunstock_alignment_policy::tryBuildWorldCorrection<
+            TestTransform,
+            TestMatrix3,
+            TestVector3>(
+            rock::transform_math::makeIdentityTransform<TestTransform>(),
+            neutralBore,
+            fixedCorrection);
+        const TestMatrix3 liveRecoil = makeAxisAngleRotation(
+            TestVector3{ 1.0f, 0.0f, 0.0f },
+            8.0f);
+        const TestVector3 liveBore =
+            rock::weaponSolverApplyStoredWorldRotationToVector<
+                TestMatrix3,
+                TestVector3>(
+                liveRecoil,
+                neutralBore);
+        const TestVector3 correctedLiveBore =
+            rock::weaponSolverNormalize(
+                rock::weaponSolverApplyStoredWorldRotationToVector<
+                    TestMatrix3,
+                    TestVector3>(
+                    fixedCorrection,
+                    liveBore));
+        ok &= expectFalse(
+            "gunstock fixed neutral correction does not erase live recoil",
+            rock::weaponSolverDot(
+                correctedLiveBore,
+                TestVector3{ 0.0f, 1.0f, 0.0f }) >
+                0.9999f);
+    }
 
     ok &= expectTrue("one-hand sword is melee", rock::weapon_type_policy::isMelee(TestWeaponType::kOneHandSword));
     ok &= expectTrue("two-hand axe is melee", rock::weapon_type_policy::isMelee(TestWeaponType::kTwoHandAxe));

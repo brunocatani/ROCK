@@ -28,6 +28,7 @@ namespace
     constexpr auto DEBUG_SECTION = "Debug";
     constexpr auto REALISTIC_WEAPONS_SECTION = "RealisticWeapons";
     constexpr auto WEAPON_HANDEDNESS_SECTION = "WeaponHandedness";
+    constexpr auto GUNSTOCK_SECTION = "Gunstock";
     constexpr auto AMBIDEXTROUS_FIRING_SECTION = "AmbidextrousFiring";
     constexpr auto NATIVE_SCOPES_SECTION = "NativeScopes";
     constexpr auto EXPERIMENTAL_SECTION = "Experimental";
@@ -173,6 +174,7 @@ namespace rock
         rockReverseFarGrabNormal = true;
 
         rockLeftHandedMode = false;
+        rockGunstockAlignBarrelToControllerForward = false;
         rockAmbidextrousFiringGripEnabled = true;
         rockFiringGripPromotionRadius = 5.0f;
         rockLeftFiringAimYawDegrees = 0.0f;
@@ -759,6 +761,10 @@ namespace rock
             WEAPON_HANDEDNESS_SECTION,
             "bLeftHandedMode",
             rockLeftHandedMode);
+        rockGunstockAlignBarrelToControllerForward = ini.GetBoolValue(
+            GUNSTOCK_SECTION,
+            "bAlignBarrelToControllerForward",
+            rockGunstockAlignBarrelToControllerForward);
         rockAmbidextrousFiringGripEnabled = ini.GetBoolValue(
             AMBIDEXTROUS_FIRING_SECTION,
             "bAmbidextrousFiringGripEnabled",

@@ -3082,6 +3082,22 @@ namespace rock
                 supportAuthorityMode,
                 firingGripProximityAuthorityEnabled,
                 effectiveHandlingSettings);
+            const bool gunstockNeutralSampleBlocked =
+                g_rockConfig.
+                    rockGunstockAlignBarrelToControllerForward &&
+                input_remap_runtime::isRawButtonPhysicallyHeld(
+                    _twoHandedGrip.isFiringHandLeft(),
+                    input_remap_policy::
+                        kOpenVrSteamVrTriggerButtonId);
+            (void)_twoHandedGrip.applyGunstockAlignment(
+                weaponNode,
+                g_rockConfig.
+                        rockGunstockAlignBarrelToControllerForward ?
+                    getEquippedProjectileNode() :
+                    nullptr,
+                currentWeaponGenerationKey,
+                gunstockNeutralSampleBlocked,
+                frame.reloadBoundaryActive || frame.menuBlocked);
             reconcileEquippedWeaponHandAssignmentAfterGrip();
             if (_twoHandedGrip.hasVisualAuthorityForHand(false)) {
                 _rightHand.cancelGrabVisualReturn("equipped-weapon-visual-authority");

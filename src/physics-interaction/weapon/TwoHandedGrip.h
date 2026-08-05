@@ -15,6 +15,7 @@
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 #include "physics-interaction/weapon/EquippedWeaponHandlingSettings.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.h"
+#include "physics-interaction/weapon/GunstockAlignmentPolicy.h"
 #include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/WeaponInteraction.h"
@@ -388,6 +389,20 @@ namespace rock
             RE::NiNode* weaponNode,
             const RE::NiTransform& solvedWeaponWorld,
             std::uint64_t currentWeaponGenerationKey);
+
+        /*
+         * Optional final gunstock correction. This runs only after authored
+         * and manual weapon/hand solves have completed, rotating the weapon
+         * and every participating hand as one rigid group around the firing
+         * hand. The neutral fire-node direction is latched before use so the
+         * correction does not erase recoil or animation motion.
+         */
+        bool applyGunstockAlignment(
+            RE::NiNode* weaponNode,
+            RE::NiAVObject* projectileNode,
+            std::uint64_t currentWeaponGenerationKey,
+            bool calibrationSampleBlocked,
+            bool authorityBlocked);
 
         /*
          * Binds Bethesda's exact RArm_Hand-in-Weapon relation to ROCK's
@@ -1012,6 +1027,9 @@ namespace rock
             const RE::NiTransform& solvedWeaponWorld,
             std::uint64_t authorityGenerationKey = 0);
 
+        void clearGunstockDedicatedHandAuthority();
+        void resetGunstockAlignment(const char* reason);
+
         bool applyFiringHandLockedVisual(RE::NiNode* weaponNode, float dt, const RE::NiTransform* liveHandWorld);
 
         bool applyPartGripLockedVisual(bool isLeft, RE::NiNode* weaponNode, float dt, const RE::NiTransform* liveHandWorld);
@@ -1158,6 +1176,23 @@ namespace rock
         bool _authoredPrimaryFingerPoseSuppressed{ false };
         bool _leftHandHoldingObjectForPose{ false };
         bool _rightHandHoldingObjectForPose{ false };
+
+        struct GunstockAlignmentState
+        {
+            // Comparison-only identity witness; never dereferenced from cache.
+            RE::NiNode* weaponNodeIdentity{ nullptr };
+            std::uint64_t weaponGenerationKey{ 0 };
+            std::uint64_t canonicalCaptureSequence{ 0 };
+            gunstock_alignment_policy::DirectionLatch<RE::NiPoint3>
+                directionLatch{};
+            bool firingHandIsLeft{ false };
+        };
+
+        GunstockAlignmentState _gunstockAlignment{};
+        std::array<bool, 2> _gunstockDedicatedHandAuthorityActive{};
+        std::array<bool, 2> _gunstockHandAuthorityActive{};
+        bool _gunstockWaitingLogged{ false };
+        bool _gunstockYieldLogged{ false };
 
         /*
          * Natural physical hand-bone-in-wand relations. They are refreshed
