@@ -29,6 +29,7 @@ namespace rock::physical_melee
     void beginContactFrame(const ContactFrameContext& context);
     void processContactObservation(
         const provider::RockProviderExternalContactV1& observation,
-        const WeaponIdentityWitness& expectedWeapon);
+        const WeaponIdentityWitness& expectedWeapon,
+        std::uint32_t targetCollisionLayer);
     void finishContactFrame();
 }

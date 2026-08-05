@@ -230,6 +230,16 @@ namespace rock::physical_melee
     {
         TargetResolution result{};
         result.bodyId = targetBodyId;
+        result.measuredContactPointValid = measuredContactPointHavok &&
+            std::isfinite(havokToGameScale) && havokToGameScale > 0.0f &&
+            std::isfinite(measuredContactPointHavok[0]) &&
+            std::isfinite(measuredContactPointHavok[1]) &&
+            std::isfinite(measuredContactPointHavok[2]);
+        if (result.measuredContactPointValid) {
+            result.measuredContactPointGame[0] = measuredContactPointHavok[0] * havokToGameScale;
+            result.measuredContactPointGame[1] = measuredContactPointHavok[1] * havokToGameScale;
+            result.measuredContactPointGame[2] = measuredContactPointHavok[2] * havokToGameScale;
+        }
         auto* collisionObject = resolveCollisionObject(bhkWorld, targetBodyId);
         if (!collisionObject) {
             return result;
@@ -253,11 +263,13 @@ namespace rock::physical_melee
             }
             result.stage = TargetResolutionStage::ReferenceResolved;
             auto* actor = static_cast<RE::Actor*>(reference);
-            if (actor->IsDead(false)) {
+            result.referenceFormId = actor->GetFormID();
+            result.referenceIsDead = actor->IsDead(false);
+            if (result.referenceIsDead) {
                 return result;
             }
             result.actor = actor;
-            result.actorFormId = actor->GetFormID();
+            result.actorFormId = result.referenceFormId;
             result.stage = TargetResolutionStage::LiveActorResolved;
 
             const char* sourceName = sceneObject->name.c_str();
@@ -296,21 +308,18 @@ namespace rock::physical_melee
                     ++matchCount;
                 }
             }
+            result.directMatchCount = matchCount;
 
-            const bool measuredPointValid = measuredContactPointHavok &&
-                std::isfinite(havokToGameScale) && havokToGameScale > 0.0f &&
-                std::isfinite(measuredContactPointHavok[0]) &&
-                std::isfinite(measuredContactPointHavok[1]) &&
-                std::isfinite(measuredContactPointHavok[2]);
             const char* fallbackNodeName = nullptr;
-            if (matchCount == 0 && measuredPointValid) {
+            if (matchCount == 0 && result.measuredContactPointValid) {
                 auto* actorRoot = actor->Get3D();
                 const RE::NiPoint3 pointGame{
-                    measuredContactPointHavok[0] * havokToGameScale,
-                    measuredContactPointHavok[1] * havokToGameScale,
-                    measuredContactPointHavok[2] * havokToGameScale,
+                    result.measuredContactPointGame[0],
+                    result.measuredContactPointGame[1],
+                    result.measuredContactPointGame[2],
                 };
                 float bestDistanceSquared = (std::numeric_limits<float>::max)();
+                float runnerUpDistanceSquared = (std::numeric_limits<float>::max)();
                 for (std::uint32_t i = 0; actorRoot && i < std::size(bodyPartData->partArray); ++i) {
                     auto* part = bodyPartData->partArray[i];
                     if (!part || !eligibleForPointFallback(i)) {
@@ -340,8 +349,10 @@ namespace rock::physical_melee
                     if (!partNodeName) {
                         continue;
                     }
+                    ++result.fallbackCandidateCount;
 
                     if (partDistanceSquared + 1.0f < bestDistanceSquared) {
+                        runnerUpDistanceSquared = bestDistanceSquared;
                         bestDistanceSquared = partDistanceSquared;
                         matchedIndex = i;
                         matchCount = 1;
@@ -349,6 +360,18 @@ namespace rock::physical_melee
                     } else if (std::fabs(partDistanceSquared - bestDistanceSquared) <= 1.0f) {
                         matchCount = 2;
                     }
+                    if (partDistanceSquared > bestDistanceSquared &&
+                        partDistanceSquared < runnerUpDistanceSquared) {
+                        runnerUpDistanceSquared = partDistanceSquared;
+                    }
+                }
+                if (std::isfinite(bestDistanceSquared) &&
+                    bestDistanceSquared < (std::numeric_limits<float>::max)()) {
+                    result.selectedNodeDistanceGame = std::sqrt(bestDistanceSquared);
+                }
+                if (std::isfinite(runnerUpDistanceSquared) &&
+                    runnerUpDistanceSquared < (std::numeric_limits<float>::max)()) {
+                    result.runnerUpNodeDistanceGame = std::sqrt(runnerUpDistanceSquared);
                 }
             }
             if (matchCount != 1 || matchedIndex >= std::size(bodyPartData->partArray)) {
@@ -360,6 +383,7 @@ namespace rock::physical_melee
 
             auto* part = bodyPartData->partArray[matchedIndex];
             if (fallbackNodeName) {
+                result.pointFallbackUsed = true;
                 const auto copied = (std::min)(
                     std::strlen(fallbackNodeName),
                     static_cast<std::size_t>(provider::ROCK_PROVIDER_MAX_EVIDENCE_NAME - 1));

@@ -1562,7 +1562,8 @@ namespace rock
             }
             physical_melee::processContactObservation(
                 observation.contact,
-                observation.weaponWitness);
+                observation.weaponWitness,
+                observation.targetCollisionLayer);
             (void)::rock::provider::recordExternalContact(
                 observation.contact,
                 observation.worldGeneration,
@@ -1579,6 +1580,78 @@ namespace rock
                 dropped - _lastReportedDroppedImpactObservations);
             _lastReportedDroppedImpactObservations = dropped;
         }
+        reportPhysicalMeleeContactCensus();
+    }
+
+    void PhysicsInteraction::reportPhysicalMeleeContactCensus()
+    {
+        if (!g_rockConfig.rockPhysicalMeleeEnabled || !_weaponCollision.hasWeaponBody()) {
+            return;
+        }
+
+        constexpr std::uint64_t kReportIntervalFrames = 180;
+        const auto frameIndex = _palmClockGameFrameIndex.load(std::memory_order_acquire);
+        if (frameIndex >= _lastPhysicalMeleeContactCensusFrame &&
+            frameIndex - _lastPhysicalMeleeContactCensusFrame < kReportIntervalFrames) {
+            return;
+        }
+        _lastPhysicalMeleeContactCensusFrame = frameIndex;
+
+        PhysicalMeleeContactCensusSnapshot current{};
+        current.callbacks = _physicalMeleeContactCallbacks.load(std::memory_order_acquire);
+        for (std::size_t i = 0; i < current.targetBuckets.size(); ++i) {
+            current.targetBuckets[i] =
+                _physicalMeleeContactTargetBuckets[i].load(std::memory_order_acquire);
+        }
+        current.published = _physicalMeleeContactsPublished.load(std::memory_order_acquire);
+        current.rawMeasured = _physicalMeleeContactsRawMeasured.load(std::memory_order_acquire);
+        current.queued = _physicalMeleeContactsQueued.load(std::memory_order_acquire);
+        current.queueRejected = _physicalMeleeContactQueueRejected.load(std::memory_order_acquire);
+
+        const auto delta = [](std::uint64_t value, std::uint64_t previous) {
+            return value >= previous ? value - previous : value;
+        };
+        const auto bucket = [](const PhysicalMeleeContactCensusSnapshot& snapshot,
+                                PhysicalMeleeContactBucket target) {
+            return snapshot.targetBuckets[static_cast<std::size_t>(target)];
+        };
+        const auto bucketDelta = [&](PhysicalMeleeContactBucket target) {
+            return delta(bucket(current, target), bucket(_lastPhysicalMeleeContactCensus, target));
+        };
+        const auto liveActorTotal =
+            bucket(current, PhysicalMeleeContactBucket::Biped) +
+            bucket(current, PhysicalMeleeContactBucket::BipedNoCharacterController);
+        const auto equippedWeapon = _weaponCollision.getEquippedWeaponClassification();
+
+        ROCK_LOG_INFO(Melee,
+            "Physical melee contact census frame={} weapon={:08X} bodies={} interval(callbacks={} biped={} charController={} deadbip={} bipedNoCC={} world={} dynamic={} external={} other={} published={} rawMeasured={} queued={} queueRejected={}) total(callbacks={} liveActor={} charController={} deadActor={} published={} queued={} queueRejected={}) last(sourceBody={} targetBody={} targetLayer={})",
+            frameIndex,
+            equippedWeapon.formID,
+            _weaponCollision.getWeaponBodyCount(),
+            delta(current.callbacks, _lastPhysicalMeleeContactCensus.callbacks),
+            bucketDelta(PhysicalMeleeContactBucket::Biped),
+            bucketDelta(PhysicalMeleeContactBucket::CharacterController),
+            bucketDelta(PhysicalMeleeContactBucket::DeadBiped),
+            bucketDelta(PhysicalMeleeContactBucket::BipedNoCharacterController),
+            bucketDelta(PhysicalMeleeContactBucket::WorldSurface),
+            bucketDelta(PhysicalMeleeContactBucket::DynamicProp),
+            bucketDelta(PhysicalMeleeContactBucket::RegisteredExternal),
+            bucketDelta(PhysicalMeleeContactBucket::Other),
+            delta(current.published, _lastPhysicalMeleeContactCensus.published),
+            delta(current.rawMeasured, _lastPhysicalMeleeContactCensus.rawMeasured),
+            delta(current.queued, _lastPhysicalMeleeContactCensus.queued),
+            delta(current.queueRejected, _lastPhysicalMeleeContactCensus.queueRejected),
+            current.callbacks,
+            liveActorTotal,
+            bucket(current, PhysicalMeleeContactBucket::CharacterController),
+            bucket(current, PhysicalMeleeContactBucket::DeadBiped),
+            current.published,
+            current.queued,
+            current.queueRejected,
+            _lastPhysicalMeleeSourceBody.load(std::memory_order_acquire),
+            _lastPhysicalMeleeTargetBody.load(std::memory_order_acquire),
+            _lastPhysicalMeleeTargetLayer.load(std::memory_order_acquire));
+        _lastPhysicalMeleeContactCensus = current;
     }
 
     void PhysicsInteraction::refreshGeneratedBodyContactRegistry()

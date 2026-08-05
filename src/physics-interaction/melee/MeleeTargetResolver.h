@@ -28,11 +28,21 @@ namespace rock::physical_melee
     {
         RE::Actor* actor{ nullptr };
         std::uint32_t actorFormId{ 0 };
+        std::uint32_t referenceFormId{ 0 };
         std::uint32_t bodyId{ 0x7FFF'FFFFu };
+        std::uint32_t collisionLayer{ 0xFFFF'FFFFu };
         RE::BGSBodyPart* bodyPart{ nullptr };
         std::uint32_t nativeDamageLimb{ 0xFFFF'FFFFu };
         TargetResolutionStage stage{ TargetResolutionStage::NotStarted };
         bool accessViolation{ false };
+        bool referenceIsDead{ false };
+        bool measuredContactPointValid{ false };
+        bool pointFallbackUsed{ false };
+        float measuredContactPointGame[3]{};
+        std::uint32_t directMatchCount{ 0 };
+        std::uint32_t fallbackCandidateCount{ 0 };
+        float selectedNodeDistanceGame{ -1.0f };
+        float runnerUpNodeDistanceGame{ -1.0f };
         std::uint32_t anatomyFlags{ 0 };
         std::uint32_t bodyPartIndex{ 0xFFFF'FFFFu };
         provider::RockProviderBodyZoneKind zone{ provider::RockProviderBodyZoneKind::Unknown };

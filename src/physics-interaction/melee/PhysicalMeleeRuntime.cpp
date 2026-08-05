@@ -69,6 +69,7 @@ namespace rock::physical_melee
             ContactFrameContext frame{};
             std::array<Candidate, kCandidateCapacity> candidates{};
             std::size_t candidateCount{ 0 };
+            std::chrono::steady_clock::time_point nextExactTraceAt{};
         };
 
         RuntimeState s_runtime{};
@@ -313,6 +314,57 @@ namespace rock::physical_melee
             return outcome;
         }
 
+        void logExactTrace(
+            const char* phase,
+            const provider::RockProviderExternalContactRecordV1& contact,
+            DecisionReason reason,
+            const Decision* decision,
+            const TargetResolution* target)
+        {
+            const auto now = std::chrono::steady_clock::now();
+            if (s_runtime.nextExactTraceAt.time_since_epoch().count() != 0 &&
+                now < s_runtime.nextExactTraceAt) {
+                return;
+            }
+            s_runtime.nextExactTraceAt = now + std::chrono::milliseconds(250);
+            const bool rawManifold = (contact.flags & static_cast<std::uint32_t>(
+                provider::RockProviderExternalContactFlagV1::RawManifoldValid)) != 0;
+            ROCK_LOG_INFO(Melee,
+                "Physical melee exact trace phase={} impact={} weapon={:08X} sourceBody={} sourcePart={} surface={} targetBody={} targetLayer={} reference={:08X} dead={} actor={:08X} resolver={} measuredPoint={} pointGame=({:.2f},{:.2f},{:.2f}) node='{}' directMatches={} fallbackCandidates={} fallbackUsed={} selectedDistance={:.2f} runnerUpDistance={:.2f} anatomyFlags=0x{:08X} bodyPart={} zone={} nativeLimb={} damageMult={:.3f} decision={} speed={:.1f} multiplier={:.3f} rawManifold={} accessViolation={}",
+                phase ? phase : "unknown",
+                contact.impactId,
+                contact.sourceWeaponFormId,
+                contact.sourceBodyId,
+                contact.sourcePartKind,
+                static_cast<std::uint32_t>(contact.sourceSurfaceRegion),
+                contact.targetExternalBodyId,
+                target ? target->collisionLayer : 0xFFFF'FFFFu,
+                target ? target->referenceFormId : 0u,
+                target && target->referenceIsDead ? "yes" : "no",
+                contact.targetActorFormId,
+                target ? targetResolutionStageName(target->stage) : "Unavailable",
+                target && target->measuredContactPointValid ? "yes" : "no",
+                target ? target->measuredContactPointGame[0] : 0.0f,
+                target ? target->measuredContactPointGame[1] : 0.0f,
+                target ? target->measuredContactPointGame[2] : 0.0f,
+                target ? target->nodeName : "",
+                target ? target->directMatchCount : 0u,
+                target ? target->fallbackCandidateCount : 0u,
+                target && target->pointFallbackUsed ? "yes" : "no",
+                target ? target->selectedNodeDistanceGame : -1.0f,
+                target ? target->runnerUpNodeDistanceGame : -1.0f,
+                target ? target->anatomyFlags : 0u,
+                contact.targetBodyPartIndex,
+                static_cast<std::uint32_t>(contact.targetZone),
+                target ? target->nativeDamageLimb : 0xFFFF'FFFFu,
+                contact.targetBodyPartDamageMultiplier,
+                decisionReasonName(reason),
+                decision ? decision->closingSpeedGame : 0.0f,
+                decision ? decision->nativeDamageMultiplier : 0.0f,
+                rawManifold ? "yes" : "no",
+                target && target->accessViolation ? "yes" : "no");
+        }
+
         void reject(
             const provider::RockProviderExternalContactRecordV1& contact,
             std::uint64_t submissionFrameIndex,
@@ -326,18 +378,7 @@ namespace rock::physical_melee
                 provider::RockProviderImpactOutcomeLifecycleV1::Rejected,
                 static_cast<std::uint32_t>(reason),
                 decision));
-            ROCK_LOG_SAMPLE_DEBUG(Melee,
-                g_rockConfig.rockLogSampleMilliseconds,
-                "Physical melee rejected impact={} actor={:08X} body={} part={} surface={} reason={} speed={:.1f} resolver={} accessViolation={}",
-                contact.impactId,
-                contact.targetActorFormId,
-                contact.targetExternalBodyId,
-                contact.targetBodyPartIndex,
-                static_cast<std::uint32_t>(contact.sourceSurfaceRegion),
-                decisionReasonName(reason),
-                decision ? decision->closingSpeedGame : 0.0f,
-                target ? targetResolutionStageName(target->stage) : "Unavailable",
-                target && target->accessViolation ? "yes" : "no");
+            logExactTrace("rejected", contact, reason, decision, target);
         }
 
         void resetForGenerations(
@@ -357,6 +398,7 @@ namespace rock::physical_melee
             s_runtime.cooldowns = {};
             s_runtime.budgetFrameIndex = 0;
             s_runtime.submittedThisFrame = 0;
+            s_runtime.nextExactTraceAt = {};
             resetNativeMeleeHitBridge();
         }
     }
@@ -378,6 +420,7 @@ namespace rock::physical_melee
         s_runtime.submittedThisFrame = 0;
         s_runtime.frame = {};
         s_runtime.candidateCount = 0;
+        s_runtime.nextExactTraceAt = {};
         resetNativeMeleeHitBridge();
     }
 
@@ -421,7 +464,8 @@ namespace rock::physical_melee
 
     void processContactObservation(
         const provider::RockProviderExternalContactV1& observation,
-        const WeaponIdentityWitness& expectedWeapon)
+        const WeaponIdentityWitness& expectedWeapon,
+        std::uint32_t targetCollisionLayer)
     {
         if (observation.sourceKind != provider::RockProviderExternalSourceKind::Weapon) {
             return;
@@ -450,6 +494,7 @@ namespace rock::physical_melee
             observation.targetExternalBodyId,
             measuredContactPoint,
             physics_scale::havokToGame());
+        candidate.target.collisionLayer = targetCollisionLayer;
         candidate.contact = makeRecord(
             observation,
             candidate.target,
@@ -627,6 +672,12 @@ namespace rock::physical_melee
                 submittedOutcome.failureReason = 0x8000'0000u | static_cast<std::uint32_t>(hit.failure);
             }
             provider::recordPhysicalMeleeOutcome(submittedOutcome);
+            logExactTrace(
+                "submitted",
+                best.contact,
+                DecisionReason::Accepted,
+                &best.decision,
+                &best.target);
             ROCK_LOG_SAMPLE_INFO(Melee,
                 g_rockConfig.rockLogSampleMilliseconds,
                 "Physical melee submitted impact={} actor={:08X} body={} node='{}' part={} surface={} coefficient={:.3f} multiplier={:.3f} speed={:.1f}",

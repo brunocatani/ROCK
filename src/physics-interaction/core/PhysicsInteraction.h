@@ -237,6 +237,7 @@ namespace rock
         void clearGeneratedBodyContactRegistry();
         void refreshGeneratedBodyContactRegistry();
         void drainExternalContactObservations();
+        void reportPhysicalMeleeContactCensus();
         bool rebuildGeneratedBodiesForLifecycle(RE::bhkWorld* bhk, RE::hknpWorld* hknp, const char* reason);
         void observeLifecycleFrame(RE::bhkWorld* bhk, RE::hknpWorld* hknp, ::rock::provider::RockProviderLifecycleReason reasonHint);
         bool physicsWritesAllowedForWorld(RE::hknpWorld* world) const;
@@ -478,11 +479,49 @@ namespace rock
             std::uint32_t worldGeneration{ 0 };
             std::uint32_t skeletonGeneration{ 0 };
             std::uint32_t providerGeneration{ 0 };
+            std::uint32_t targetCollisionLayer{ 0xFFFF'FFFFu };
             physical_melee::WeaponIdentityWitness weaponWitness{};
         };
         impact_observation::Queue<PendingImpactObservation, 1024>
             _impactObservationQueue;
         std::uint64_t _lastReportedDroppedImpactObservations{ 0 };
+
+        enum class PhysicalMeleeContactBucket : std::size_t
+        {
+            Biped = 0,
+            CharacterController,
+            DeadBiped,
+            BipedNoCharacterController,
+            WorldSurface,
+            DynamicProp,
+            RegisteredExternal,
+            Other,
+            Count,
+        };
+
+        struct PhysicalMeleeContactCensusSnapshot
+        {
+            std::uint64_t callbacks{ 0 };
+            std::array<std::uint64_t,
+                static_cast<std::size_t>(PhysicalMeleeContactBucket::Count)> targetBuckets{};
+            std::uint64_t published{ 0 };
+            std::uint64_t rawMeasured{ 0 };
+            std::uint64_t queued{ 0 };
+            std::uint64_t queueRejected{ 0 };
+        };
+
+        std::atomic<std::uint64_t> _physicalMeleeContactCallbacks{ 0 };
+        std::array<std::atomic<std::uint64_t>,
+            static_cast<std::size_t>(PhysicalMeleeContactBucket::Count)> _physicalMeleeContactTargetBuckets{};
+        std::atomic<std::uint64_t> _physicalMeleeContactsPublished{ 0 };
+        std::atomic<std::uint64_t> _physicalMeleeContactsRawMeasured{ 0 };
+        std::atomic<std::uint64_t> _physicalMeleeContactsQueued{ 0 };
+        std::atomic<std::uint64_t> _physicalMeleeContactQueueRejected{ 0 };
+        std::atomic<std::uint32_t> _lastPhysicalMeleeSourceBody{ 0x7FFF'FFFFu };
+        std::atomic<std::uint32_t> _lastPhysicalMeleeTargetBody{ 0x7FFF'FFFFu };
+        std::atomic<std::uint32_t> _lastPhysicalMeleeTargetLayer{ 0xFFFF'FFFFu };
+        PhysicalMeleeContactCensusSnapshot _lastPhysicalMeleeContactCensus{};
+        std::uint64_t _lastPhysicalMeleeContactCensusFrame{ 0 };
 
         std::atomic<std::uint32_t> _lastContactSourceRight{ 0xFFFFFFFF };
         std::atomic<std::uint32_t> _lastContactSourceLeft{ 0xFFFFFFFF };

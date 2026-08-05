@@ -732,6 +732,41 @@
         const auto endpointB = makeEndpoint(bodyIdB, bodyBLayer, bodyBIsRight, bodyBIsLeft, bodyBIsWeapon, bodyBIsRightHeld, bodyBIsLeftHeld, bodyBIsBody, bodyBIsExternal);
         const auto contactRoute = contact_pipeline_policy::classifyContact(endpointA, endpointB);
 
+        if (bodyAIsWeapon != bodyBIsWeapon) {
+            const auto& meleeSource = bodyAIsWeapon ? endpointA : endpointB;
+            const auto& meleeTarget = bodyAIsWeapon ? endpointB : endpointA;
+            auto targetBucket = PhysicalMeleeContactBucket::Other;
+            switch (meleeTarget.layer) {
+            case collision_layer_policy::FO4_LAYER_BIPED:
+                targetBucket = PhysicalMeleeContactBucket::Biped;
+                break;
+            case collision_layer_policy::FO4_LAYER_CHARCONTROLLER:
+                targetBucket = PhysicalMeleeContactBucket::CharacterController;
+                break;
+            case collision_layer_policy::FO4_LAYER_DEADBIP:
+                targetBucket = PhysicalMeleeContactBucket::DeadBiped;
+                break;
+            case collision_layer_policy::FO4_LAYER_BIPED_NO_CC:
+                targetBucket = PhysicalMeleeContactBucket::BipedNoCharacterController;
+                break;
+            default:
+                if (meleeTarget.kind == contact_pipeline_policy::ContactEndpointKind::WorldSurface) {
+                    targetBucket = PhysicalMeleeContactBucket::WorldSurface;
+                } else if (meleeTarget.kind == contact_pipeline_policy::ContactEndpointKind::DynamicProp) {
+                    targetBucket = PhysicalMeleeContactBucket::DynamicProp;
+                } else if (meleeTarget.kind == contact_pipeline_policy::ContactEndpointKind::External) {
+                    targetBucket = PhysicalMeleeContactBucket::RegisteredExternal;
+                }
+                break;
+            }
+            _physicalMeleeContactCallbacks.fetch_add(1, std::memory_order_relaxed);
+            _physicalMeleeContactTargetBuckets[static_cast<std::size_t>(targetBucket)].fetch_add(
+                1, std::memory_order_relaxed);
+            _lastPhysicalMeleeSourceBody.store(meleeSource.bodyId, std::memory_order_relaxed);
+            _lastPhysicalMeleeTargetBody.store(meleeTarget.bodyId, std::memory_order_relaxed);
+            _lastPhysicalMeleeTargetLayer.store(meleeTarget.layer, std::memory_order_release);
+        }
+
         auto handSourceFor = [&](std::uint32_t bodyId) -> const HandContactSource* {
             if (bodyARight.valid && bodyARight.metadata.bodyId == bodyId) {
                 return &bodyARight;
@@ -1163,6 +1198,9 @@
                         ::rock::provider::RockProviderExternalContactFlagV1::ContactPointMeasured);
                 contact.flags |= static_cast<std::uint32_t>(
                     ::rock::provider::RockProviderExternalContactFlagV1::RawManifoldValid);
+                if (sourceKind == ::rock::provider::RockProviderExternalSourceKind::Weapon) {
+                    _physicalMeleeContactsRawMeasured.fetch_add(1, std::memory_order_relaxed);
+                }
             } else {
                 tryFillAggregateContactPoint(sourceBodyId, externalBodyId, contact);
             }
@@ -1204,6 +1242,8 @@
                 _skeletonGenerationAtomic.load(std::memory_order_acquire);
             observation.providerGeneration =
                 _providerGenerationAtomic.load(std::memory_order_acquire);
+            observation.targetCollisionLayer =
+                externalBodyId == bodyIdA ? bodyALayer : bodyBLayer;
             if (const auto* weapon = classificationFor(sourceBodyId);
                 weapon && weapon->kind == GeneratedBodyKind::Weapon) {
                 observation.weaponWitness = physical_melee::WeaponIdentityWitness{
@@ -1216,7 +1256,12 @@
                     .equipIndex = weapon->weaponEquipIndex,
                 };
             }
-            (void)_impactObservationQueue.tryPush(observation);
+            const bool queued = _impactObservationQueue.tryPush(observation);
+            if (sourceKind == ::rock::provider::RockProviderExternalSourceKind::Weapon) {
+                _physicalMeleeContactsPublished.fetch_add(1, std::memory_order_relaxed);
+                (queued ? _physicalMeleeContactsQueued : _physicalMeleeContactQueueRejected)
+                    .fetch_add(1, std::memory_order_release);
+            }
         };
 
         auto recordBodyContactEvidence = [&]() {
