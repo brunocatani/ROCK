@@ -1810,6 +1810,7 @@ namespace rock
             frameInput.leftHandHoldingObject,
             frameInput.rightHandHoldingObject);
         _hasSolvedWeaponTransform = false;
+        _authoredSupportGripDebugSnapshot = {};
         _scopeHandAuthorityPublishedThisFrame = {};
         _firingGripReattachHoverInsideRadius = false;
         _firingGripReattachHoverHandIsLeft = _firingHandIsLeft;
@@ -1913,6 +1914,11 @@ namespace rock
         const WeaponInteractionContact& supportWeaponContact = supportHandIsLeft ? leftWeaponContact : rightWeaponContact;
         const WeaponInteractionRuntimeState& supportRuntimeState = supportHandIsLeft ? leftRuntimeState : rightRuntimeState;
         const WeaponInteractionDecision decision = routeWeaponInteraction(supportWeaponContact, supportRuntimeState);
+        refreshAuthoredSupportGripActivationDebug(
+            weaponNode,
+            currentWeaponGenerationKey,
+            decision,
+            weaponCollision);
         const bool supportTouchingSupport = decision.kind == WeaponInteractionKind::SupportGrip;
         RE::NiNode* interactionWeaponNode = sourceRootNodeOrFallback(decision.interactionRoot, weaponNode);
         const bool supportGripHeld = supportHandIsLeft ? stableFrameInput.leftGripHeld : stableFrameInput.rightGripHeld;
@@ -2131,6 +2137,11 @@ namespace rock
     {
         clearDynamicSupportAcquisition("reset", true);
         clearAuthoredSupportGripCandidate();
+        _authoredSupportGripDebugSnapshot = {};
+        _authoredSupportLastStableApproachDirectionWorld = {};
+        _authoredSupportLastStableDirectionGenerationKey = 0;
+        _authoredSupportLastStableDirectionCaptureSequence = 0;
+        _authoredSupportLastStableApproachDirectionValid = false;
         clearAllVisualReturns("reset", false, true);
         clearNativeScopeOverlayAuthority(true);
         _equippedWeaponDropRequest = {};
@@ -2318,14 +2329,46 @@ namespace rock
     bool TwoHandedGrip::getAuthoredSupportGripDebugSnapshot(
         AuthoredSupportGripDebugSnapshot& outSnapshot) const
     {
-        outSnapshot = {};
+        outSnapshot = _authoredSupportGripDebugSnapshot;
+        return outSnapshot.valid;
+    }
+
+    void TwoHandedGrip::refreshAuthoredSupportGripActivationDebug(
+        RE::NiNode* weaponNode,
+        const std::uint64_t currentWeaponGenerationKey,
+        const WeaponInteractionDecision& decision,
+        const WeaponCollision& weaponCollision)
+    {
+        _authoredSupportGripDebugSnapshot = {};
+        const bool debugEnabled =
+            g_rockConfig.rockDebugDrawAuthoredGripActivationZones ||
+            g_rockConfig.rockDebugShowHandAxes ||
+            g_rockConfig.rockDebugShowGrabPivots;
+        if (!debugEnabled) {
+            return;
+        }
+
         const auto& candidate = _authoredSupportGripCandidate;
-        if (!candidate.valid ||
-            !candidate.weaponNode ||
+        if (!weaponNode ||
+            !candidate.valid ||
+            candidate.weaponNode != weaponNode ||
             candidate.weaponGenerationKey == 0 ||
+            candidate.weaponGenerationKey != currentWeaponGenerationKey ||
             candidate.captureSequence == 0 ||
-            !isFiniteTransform(candidate.weaponNode->world)) {
-            return false;
+            !isFiniteTransform(weaponNode->world)) {
+            return;
+        }
+
+        if (_authoredSupportLastStableDirectionGenerationKey !=
+                candidate.weaponGenerationKey ||
+            _authoredSupportLastStableDirectionCaptureSequence !=
+                candidate.captureSequence) {
+            _authoredSupportLastStableApproachDirectionWorld = {};
+            _authoredSupportLastStableDirectionGenerationKey =
+                candidate.weaponGenerationKey;
+            _authoredSupportLastStableDirectionCaptureSequence =
+                candidate.captureSequence;
+            _authoredSupportLastStableApproachDirectionValid = false;
         }
 
         const bool supportHandIsLeft = !_firingHandIsLeft;
@@ -2334,54 +2377,270 @@ namespace rock
         std::uint16_t authoredSupportFingerLocalTransformMask = 0;
         if (!tryResolveAuthoredSupportGripCandidateForHand(
                 supportHandIsLeft,
-                candidate.weaponNode,
+                weaponNode,
                 candidate.weaponGenerationKey,
                 authoredSupportHandWeaponLocal,
                 authoredSupportFingerLocalTransforms,
                 authoredSupportFingerLocalTransformMask)) {
-            return false;
+            return;
         }
 
         RE::NiTransform liveSupportHandWorld{};
         if (!tryGetSolverHandTransform(supportHandIsLeft, liveSupportHandWorld)) {
-            return false;
+            return;
         }
 
         AuthoredSupportPalmSeatProximity proximity{};
         if (!resolveAuthoredSupportPalmSeatProximity(
-                candidate.weaponNode->world,
+                weaponNode->world,
                 liveSupportHandWorld,
                 authoredSupportHandWeaponLocal,
                 supportHandIsLeft,
                 proximity)) {
-            return false;
+            return;
         }
 
-        outSnapshot.weaponWorld = candidate.weaponNode->world;
-        outSnapshot.authoredPalmSeatWeaponLocal =
+        auto& snapshot = _authoredSupportGripDebugSnapshot;
+        snapshot.weaponWorld = weaponNode->world;
+        snapshot.authoredPalmSeatWeaponLocal =
             proximity.authoredPalmSeatWeaponLocal;
-        outSnapshot.authoredPalmSeatWorld =
-            proximity.authoredPalmSeatWorld;
-        outSnapshot.liveTouchProbeWeaponLocal =
+        snapshot.authoredPalmSeatWorld = proximity.authoredPalmSeatWorld;
+        snapshot.liveTouchProbeWeaponLocal =
             proximity.liveTouchProbeWeaponLocal;
-        outSnapshot.liveTouchProbeWorld =
-            proximity.liveTouchProbeWorld;
-        outSnapshot.weaponRelativeDistanceGameUnits =
+        snapshot.liveTouchProbeWorld = proximity.liveTouchProbeWorld;
+        snapshot.weaponRelativeDistanceGameUnits =
             proximity.weaponRelativeDistanceGameUnits;
-        outSnapshot.worldReadbackDistanceGameUnits =
+        snapshot.worldReadbackDistanceGameUnits =
             proximity.worldReadbackDistanceGameUnits;
-        outSnapshot.frameAgreementErrorGameUnits =
+        snapshot.frameAgreementErrorGameUnits =
             proximity.frameAgreementErrorGameUnits;
-        outSnapshot.touchRadiusGameUnits =
+        snapshot.touchRadiusGameUnits =
             g_rockConfig.rockWeaponInteractionTouchRadius;
-        outSnapshot.weaponGenerationKey = candidate.weaponGenerationKey;
-        outSnapshot.captureSequence = candidate.captureSequence;
-        outSnapshot.supportHandIsLeft = supportHandIsLeft;
-        outSnapshot.mirroredForRightSupport = !supportHandIsLeft;
-        outSnapshot.insideTouchRadius =
+        snapshot.radialCapGameUnits =
+            g_rockConfig.rockWeaponInteractionProbeRadius;
+        snapshot.weaponGenerationKey = candidate.weaponGenerationKey;
+        snapshot.captureSequence = candidate.captureSequence;
+        snapshot.supportHandIsLeft = supportHandIsLeft;
+        snapshot.mirroredForRightSupport = !supportHandIsLeft;
+        snapshot.insideTouchRadius =
             proximity.weaponRelativeDistanceGameUnits <=
-            outSnapshot.touchRadiusGameUnits;
-        return true;
+            snapshot.touchRadiusGameUnits;
+
+        const auto identity = weaponCollision.getEquippedWeaponClassification();
+        snapshot.weaponFormID = identity.formID;
+        snapshot.effectiveEquipSlotFormID =
+            identity.effectiveEquipSlotFormID;
+        snapshot.baseEquipSlotFormID = identity.baseEquipSlotFormID;
+        snapshot.effectiveEquipSlotUsesInstanceData =
+            identity.effectiveEquipSlotUsesInstanceData;
+        const bool meleeOrUnarmed =
+            identity.sizeClass == WeaponSizeClass::Melee;
+        const bool heavyGun = hasWeaponKeywordFlag(
+            identity.keywordFlags,
+            WeaponKeywordFlag::HeavyGun);
+        snapshot.weaponFamily =
+            authored_weapon_grip_activation_policy::resolveWeaponFamily(
+                authored_weapon_grip_activation_policy::WeaponFamilyInput{
+                    .effectiveEquipSlotFormID =
+                        identity.effectiveEquipSlotFormID,
+                    .equippedWeaponPresent = identity.hasEquippedWeapon,
+                    .meleeOrUnarmed = meleeOrUnarmed,
+                    .heavyGun = heavyGun,
+                });
+
+        const bool canonicalCurrent =
+            !_firingHandIsLeft &&
+            supportHandIsLeft &&
+            _hasRightFiringHandCanonicalWeaponLocal &&
+            _rightFiringHandCanonicalSource ==
+                RightFiringCanonicalSource::AuthoredAnimation &&
+            _rightFiringHandCanonicalWeaponNode == weaponNode &&
+            _rightFiringHandCanonicalGenerationKey ==
+                currentWeaponGenerationKey &&
+            isFiniteTransform(_rightFiringHandCanonicalWeaponLocal);
+        if (canonicalCurrent) {
+            const RE::NiTransform firingHandWorld =
+                transform_math::composeTransforms(
+                    weaponNode->world,
+                    _rightFiringHandCanonicalWeaponLocal);
+            const auto normalizeVector = [](const RE::NiPoint3& input,
+                                             RE::NiPoint3& output) {
+                output = {};
+                const float lengthSquared =
+                    input.x * input.x +
+                    input.y * input.y +
+                    input.z * input.z;
+                if (!std::isfinite(lengthSquared) ||
+                    lengthSquared <= 0.000001f) {
+                    return false;
+                }
+                const float inverseLength = 1.0f / std::sqrt(lengthSquared);
+                output = RE::NiPoint3{
+                    input.x * inverseLength,
+                    input.y * inverseLength,
+                    input.z * inverseLength,
+                };
+                return std::isfinite(output.x) &&
+                       std::isfinite(output.y) &&
+                       std::isfinite(output.z);
+            };
+            RE::NiPoint3 leftAxis{};
+            const bool leftAxisValid = normalizeVector(
+                computePalmNormalFromHandBasis(firingHandWorld, false),
+                leftAxis);
+            const RE::NiPoint3 thumbUp = transformHandspaceDirection(
+                firingHandWorld,
+                RE::NiPoint3{ 0.0f, 0.0f, 1.0f },
+                false);
+            const float thumbLeftProjection =
+                thumbUp.x * leftAxis.x +
+                thumbUp.y * leftAxis.y +
+                thumbUp.z * leftAxis.z;
+            RE::NiPoint3 orthogonalUp{
+                thumbUp.x - leftAxis.x * thumbLeftProjection,
+                thumbUp.y - leftAxis.y * thumbLeftProjection,
+                thumbUp.z - leftAxis.z * thumbLeftProjection,
+            };
+            RE::NiPoint3 normalizedUp{};
+            const bool upAxisValid =
+                leftAxisValid && normalizeVector(orthogonalUp, normalizedUp);
+            if (leftAxisValid && upAxisValid) {
+                snapshot.leftAxisWorld = leftAxis;
+                snapshot.downAxisWorld = RE::NiPoint3{
+                    -normalizedUp.x,
+                    -normalizedUp.y,
+                    -normalizedUp.z,
+                };
+                const RE::NiPoint3 referenceAxis{
+                    leftAxis.y * snapshot.downAxisWorld.z -
+                        leftAxis.z * snapshot.downAxisWorld.y,
+                    leftAxis.z * snapshot.downAxisWorld.x -
+                        leftAxis.x * snapshot.downAxisWorld.z,
+                    leftAxis.x * snapshot.downAxisWorld.y -
+                        leftAxis.y * snapshot.downAxisWorld.x,
+                };
+                snapshot.canonicalAxesValid = normalizeVector(
+                    referenceAxis,
+                    snapshot.referenceAxisWorld);
+            }
+        }
+
+        using ActivationVec3 =
+            authored_weapon_grip_activation_policy::Vec3;
+        const auto toActivationVector = [](const RE::NiPoint3& value) {
+            return ActivationVec3{ value.x, value.y, value.z };
+        };
+        const bool semanticTargetEligible =
+            decision.kind == WeaponInteractionKind::SupportGrip &&
+            decision.weaponGenerationKey == currentWeaponGenerationKey &&
+            decision.actionRole == WeaponActionRole::None &&
+            decision.reloadRole == WeaponReloadRole::None &&
+            decision.socketRole == WeaponSocketRole::None;
+        const auto gate =
+            authored_weapon_grip_activation_policy::evaluateDirectionGate(
+                authored_weapon_grip_activation_policy::DirectionGateInput{
+                    .weaponFamily = snapshot.weaponFamily,
+                    .authoredSeatWorld = toActivationVector(
+                        snapshot.authoredPalmSeatWorld),
+                    .liveProbeWorld = toActivationVector(
+                        snapshot.liveTouchProbeWorld),
+                    .leftAxisWorld = toActivationVector(
+                        snapshot.leftAxisWorld),
+                    .downAxisWorld = toActivationVector(
+                        snapshot.downAxisWorld),
+                    .lastStableDirectionWorld = toActivationVector(
+                        _authoredSupportLastStableApproachDirectionWorld),
+                    .radialCapGameUnits = snapshot.radialCapGameUnits,
+                    .lastStableDirectionValid =
+                        _authoredSupportLastStableApproachDirectionValid,
+                    .semanticTargetEligible = semanticTargetEligible,
+                    .rightFiringLeftSupportScope =
+                        snapshot.canonicalAxesValid &&
+                        !_firingHandIsLeft && supportHandIsLeft,
+                });
+        snapshot.approachDirectionWorld = RE::NiPoint3{
+            gate.approachDirectionWorld.x,
+            gate.approachDirectionWorld.y,
+            gate.approachDirectionWorld.z,
+        };
+        snapshot.leftDot = gate.leftDot;
+        snapshot.downDot = gate.downDot;
+        snapshot.selectedCone = gate.selectedCone;
+        snapshot.classifierSupported = gate.familySupported;
+        snapshot.directionUsedLastStableSample =
+            gate.usedLastStableDirection;
+        snapshot.radialPass = gate.radialPass;
+        snapshot.directionPass = gate.directionPass;
+        snapshot.semanticPass = gate.semanticPass;
+        snapshot.scopePass = gate.scopePass;
+        snapshot.diagnosticSpatialPass = gate.spatialPass;
+        if (gate.directionValid &&
+            gate.radialDistanceGameUnits >=
+                authored_weapon_grip_activation_policy::
+                    kMinimumDirectionDistanceGameUnits) {
+            _authoredSupportLastStableApproachDirectionWorld =
+                snapshot.approachDirectionWorld;
+            _authoredSupportLastStableApproachDirectionValid = true;
+        }
+
+        snapshot.poseLandmarksWorld[0] = snapshot.authoredPalmSeatWorld;
+        constexpr std::array<std::size_t, 5> kDistalFingerLocalIndices{
+            2, 5, 8, 11, 14
+        };
+        for (std::size_t fingerIndex = 0;
+             fingerIndex < kDistalFingerLocalIndices.size();
+             ++fingerIndex) {
+            const std::size_t distalIndex =
+                kDistalFingerLocalIndices[fingerIndex];
+            const std::size_t chainStart = distalIndex - 2;
+            RE::NiTransform fingerWeaponLocal =
+                transform_math::composeTransforms(
+                    authoredSupportHandWeaponLocal,
+                    authoredSupportFingerLocalTransforms[chainStart]);
+            fingerWeaponLocal = transform_math::composeTransforms(
+                fingerWeaponLocal,
+                authoredSupportFingerLocalTransforms[chainStart + 1]);
+            fingerWeaponLocal = transform_math::composeTransforms(
+                fingerWeaponLocal,
+                authoredSupportFingerLocalTransforms[distalIndex]);
+            snapshot.poseLandmarksWorld[fingerIndex + 1] =
+                transform_math::localPointToWorld(
+                    weaponNode->world,
+                    fingerWeaponLocal.translate);
+        }
+
+        std::array<WeaponCollision::WeaponSurfaceProximityWitness,
+            AuthoredSupportGripDebugSnapshot::kPoseLandmarkCount>
+            poseWitnesses{};
+        (void)weaponCollision.findCurrentWeaponSurfaceNearPoints(
+            weaponNode,
+            snapshot.poseLandmarksWorld,
+            snapshot.touchRadiusGameUnits,
+            poseWitnesses);
+        for (std::size_t landmarkIndex = 0;
+             landmarkIndex < poseWitnesses.size();
+             ++landmarkIndex) {
+            const auto& witness = poseWitnesses[landmarkIndex];
+            if (!witness.valid ||
+                witness.weaponGenerationKey != currentWeaponGenerationKey) {
+                continue;
+            }
+            snapshot.poseSurfaceWitnessMask |=
+                static_cast<std::uint8_t>(1u << landmarkIndex);
+            ++snapshot.poseSurfaceWitnessCount;
+            snapshot.poseSurfaceWitnessWorld[landmarkIndex] =
+                witness.closestPointWorld;
+            snapshot.poseSurfaceDistanceGameUnits[landmarkIndex] =
+                witness.distanceGameUnits;
+        }
+        snapshot.provisionalPoseEvidencePass =
+            (snapshot.poseSurfaceWitnessMask & 0x01u) != 0 &&
+            snapshot.poseSurfaceWitnessCount >= 3;
+        const auto& activeSupportGrip = partGrip(supportHandIsLeft);
+        snapshot.currentSupportGripActive = activeSupportGrip.active;
+        snapshot.currentAuthoredSupportGripActive =
+            activeSupportGrip.active && activeSupportGrip.authoredSupportGrip;
+        snapshot.valid = true;
     }
 
     void TwoHandedGrip::resetLockedHandVisualLerp()

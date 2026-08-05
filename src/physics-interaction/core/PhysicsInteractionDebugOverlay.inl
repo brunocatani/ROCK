@@ -279,10 +279,13 @@
         const bool drawPerformanceProfilerOverlay = performance_profiler::overlayTextEnabled();
         const bool drawVideoSyncMarker = g_rockConfig.rockDebugVideoSyncMarker;
         const bool drawWeaponAuthorityDebug = _twoHandedGrip.isGripping() && (g_rockConfig.rockDebugShowHandAxes || drawGrabPivots);
-        // Authored support-grip diagnostics remain available through the
-        // existing weapon-authority debug controls without coupling normal
-        // production behavior to a debug-overlay writer.
-        const bool drawAuthoredSupportGripDebug = drawWeaponAuthorityDebug;
+        const bool drawAuthoredGripActivationZones =
+            g_rockConfig.rockDebugDrawAuthoredGripActivationZones;
+        // The dedicated activation visualizer is intentionally admitted before
+        // a grip exists. Existing weapon-authority controls retain the compact
+        // authored-seat readback while the new flag adds full cone diagnostics.
+        const bool drawAuthoredSupportGripDebug =
+            drawWeaponAuthorityDebug || drawAuthoredGripActivationZones;
         const bool drawNativeScopeActivation = g_rockConfig.rockDebugDrawNativeScopeActivation;
         const bool drawWorldOriginDiagnostics = g_rockConfig.rockDebugWorldObjectOriginDiagnostics;
         const bool drawCustomCalibrationOffset = g_rockConfig.rockDebugCustomCalibrationOffset;
@@ -2031,6 +2034,184 @@
                     snapshot.liveTouchProbeWeaponLocal.y,
                     snapshot.liveTouchProbeWeaponLocal.z,
                     snapshot.frameAgreementErrorGameUnits);
+
+                if (drawAuthoredGripActivationZones) {
+                    const float axisLength = (std::min)(
+                        snapshot.radialCapGameUnits,
+                        12.0f);
+                    if (snapshot.canonicalAxesValid && axisLength > 0.0f) {
+                        const auto axisEnd = [&](const RE::NiPoint3& axis) {
+                            return RE::NiPoint3{
+                                snapshot.authoredPalmSeatWorld.x +
+                                    axis.x * axisLength,
+                                snapshot.authoredPalmSeatWorld.y +
+                                    axis.y * axisLength,
+                                snapshot.authoredPalmSeatWorld.z +
+                                    axis.z * axisLength,
+                            };
+                        };
+                        addMarkerLine(
+                            debug::MarkerOverlayRole::AuthoredGripActivationLeftAxis,
+                            snapshot.authoredPalmSeatWorld,
+                            axisEnd(snapshot.leftAxisWorld));
+                        addMarkerLine(
+                            debug::MarkerOverlayRole::AuthoredGripActivationDownAxis,
+                            snapshot.authoredPalmSeatWorld,
+                            axisEnd(snapshot.downAxisWorld));
+                        addMarkerLine(
+                            debug::MarkerOverlayRole::AuthoredGripActivationReferenceAxis,
+                            snapshot.authoredPalmSeatWorld,
+                            axisEnd(snapshot.referenceAxisWorld));
+
+                        const auto drawWireCone = [&](
+                            const RE::NiPoint3& axis,
+                            const RE::NiPoint3& tangentA,
+                            const RE::NiPoint3& tangentB) {
+                            constexpr std::size_t SegmentCount = 12;
+                            std::array<RE::NiPoint3, SegmentCount> rim{};
+                            for (std::size_t segment = 0;
+                                 segment < SegmentCount;
+                                 ++segment) {
+                                const float angle =
+                                    static_cast<float>(segment) *
+                                    2.0f * std::numbers::pi_v<float> /
+                                    static_cast<float>(SegmentCount);
+                                const float radialA = std::cos(angle) * axisLength;
+                                const float radialB = std::sin(angle) * axisLength;
+                                rim[segment] = RE::NiPoint3{
+                                    snapshot.authoredPalmSeatWorld.x +
+                                        axis.x * axisLength +
+                                        tangentA.x * radialA +
+                                        tangentB.x * radialB,
+                                    snapshot.authoredPalmSeatWorld.y +
+                                        axis.y * axisLength +
+                                        tangentA.y * radialA +
+                                        tangentB.y * radialB,
+                                    snapshot.authoredPalmSeatWorld.z +
+                                        axis.z * axisLength +
+                                        tangentA.z * radialA +
+                                        tangentB.z * radialB,
+                                };
+                            }
+                            for (std::size_t segment = 0;
+                                 segment < SegmentCount;
+                                 ++segment) {
+                                addMarkerLine(
+                                    debug::MarkerOverlayRole::AuthoredGripActivationAllowedCone,
+                                    rim[segment],
+                                    rim[(segment + 1) % SegmentCount]);
+                                if ((segment % (SegmentCount / 4)) == 0) {
+                                    addMarkerLine(
+                                        debug::MarkerOverlayRole::AuthoredGripActivationAllowedCone,
+                                        snapshot.authoredPalmSeatWorld,
+                                        rim[segment]);
+                                }
+                            }
+                        };
+                        if (snapshot.weaponFamily ==
+                                authored_weapon_grip_activation_policy::
+                                    WeaponFamily::OneHandGun ||
+                            snapshot.weaponFamily ==
+                                authored_weapon_grip_activation_policy::
+                                    WeaponFamily::TwoHandGun) {
+                            drawWireCone(
+                                snapshot.leftAxisWorld,
+                                snapshot.downAxisWorld,
+                                snapshot.referenceAxisWorld);
+                        }
+                        if (snapshot.weaponFamily ==
+                            authored_weapon_grip_activation_policy::
+                                WeaponFamily::TwoHandGun) {
+                            drawWireCone(
+                                snapshot.downAxisWorld,
+                                snapshot.leftAxisWorld,
+                                snapshot.referenceAxisWorld);
+                        }
+                    }
+
+                    const auto liveVectorRole =
+                        snapshot.diagnosticSpatialPass ?
+                        debug::MarkerOverlayRole::AuthoredGripActivationPass :
+                        debug::MarkerOverlayRole::AuthoredGripActivationFail;
+                    addMarkerLine(
+                        liveVectorRole,
+                        snapshot.authoredPalmSeatWorld,
+                        snapshot.liveTouchProbeWorld);
+
+                    for (std::size_t landmarkIndex = 0;
+                         landmarkIndex <
+                            AuthoredSupportGripDebugSnapshot::kPoseLandmarkCount;
+                         ++landmarkIndex) {
+                        const bool witnessValid =
+                            (snapshot.poseSurfaceWitnessMask &
+                                static_cast<std::uint8_t>(1u << landmarkIndex)) != 0;
+                        const auto witnessRole = witnessValid ?
+                            debug::MarkerOverlayRole::AuthoredGripActivationPass :
+                            debug::MarkerOverlayRole::AuthoredGripActivationFail;
+                        addMarkerPoint(
+                            witnessRole,
+                            snapshot.poseLandmarksWorld[landmarkIndex],
+                            landmarkIndex == 0 ? 2.4f : 1.7f);
+                        if (witnessValid) {
+                            addMarkerLine(
+                                witnessRole,
+                                snapshot.poseLandmarksWorld[landmarkIndex],
+                                snapshot.poseSurfaceWitnessWorld[landmarkIndex]);
+                        }
+                    }
+
+                    constexpr float kPassColor[4]{ 0.25f, 1.0f, 0.12f, 0.98f };
+                    constexpr float kFailColor[4]{ 1.0f, 0.18f, 0.08f, 0.98f };
+                    const float* verdictColor =
+                        snapshot.diagnosticSpatialPass ?
+                        kPassColor : kFailColor;
+                    addTextLineSized(
+                        labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -6.4f },
+                        1.75f,
+                        verdictColor,
+                        "ACTIVATION DIAGNOSTIC ONLY family=%s slot=%08X (%s) base=%08X",
+                        authored_weapon_grip_activation_policy::weaponFamilyName(
+                            snapshot.weaponFamily),
+                        snapshot.effectiveEquipSlotFormID,
+                        snapshot.effectiveEquipSlotUsesInstanceData ?
+                            "INSTANCE" : "BASE",
+                        snapshot.baseEquipSlotFormID);
+                    addTextLineSized(
+                        labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -8.4f },
+                        1.65f,
+                        verdictColor,
+                        "d=%.2f cap=%.2f leftDot=%.3f downDot=%.3f cone=%s spatial=%s",
+                        snapshot.weaponRelativeDistanceGameUnits,
+                        snapshot.radialCapGameUnits,
+                        snapshot.leftDot,
+                        snapshot.downDot,
+                        authored_weapon_grip_activation_policy::allowedConeName(
+                            snapshot.selectedCone),
+                        snapshot.diagnosticSpatialPass ? "PASS" : "FAIL");
+                    addTextLineSized(
+                        labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -10.4f },
+                        1.65f,
+                        kCoordinateColor,
+                        "gates class=%d radial=%d direction=%d semantic=%d scope=%d stable=%d",
+                        snapshot.classifierSupported ? 1 : 0,
+                        snapshot.radialPass ? 1 : 0,
+                        snapshot.directionPass ? 1 : 0,
+                        snapshot.semanticPass ? 1 : 0,
+                        snapshot.scopePass ? 1 : 0,
+                        snapshot.directionUsedLastStableSample ? 1 : 0);
+                    addTextLineSized(
+                        labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -12.4f },
+                        1.65f,
+                        kCoordinateColor,
+                        "pose witnesses=%u/6 mask=%02X provisional=%s current=%s",
+                        static_cast<unsigned>(snapshot.poseSurfaceWitnessCount),
+                        static_cast<unsigned>(snapshot.poseSurfaceWitnessMask),
+                        snapshot.provisionalPoseEvidencePass ? "PASS" : "FAIL",
+                        snapshot.currentSupportGripActive ?
+                            (snapshot.currentAuthoredSupportGripActive ?
+                                "AUTHORED" : "DYNAMIC") :
+                            "IDLE");
+                }
             }
         }
 

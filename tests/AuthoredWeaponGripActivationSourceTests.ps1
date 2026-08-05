@@ -1,0 +1,51 @@
+param(
+    [string]$Root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+$failures = [System.Collections.Generic.List[string]]::new()
+
+function Require-Text {
+    param([string]$Path, [string]$Pattern, [string]$Message)
+    $text = Get-Content -Raw -LiteralPath (Join-Path $Root $Path)
+    if ($text -notmatch $Pattern) {
+        $failures.Add("$Path`: $Message")
+    }
+}
+
+Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' `
+    'baseEquipSlot\s*=\s*weapon->GetEquipSlot\(nullptr\)[\s\S]{0,260}effectiveEquipSlot\s*=\s*weapon->GetEquipSlot\(instanceData\)' `
+    'Authored-grip family diagnostics must read both base and effective BGSEquipType behavior slots.'
+
+Require-Text 'src/physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.h' `
+    'kRightHandEquipSlotFormID\s*=\s*0x00013F42u[\s\S]{0,160}kBothHandsEquipSlotFormID\s*=\s*0x00013F45u' `
+    'The pure classifier must retain the locally verified RightHand and BothHands behavior-slot identities.'
+
+Require-Text 'src/physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.h' `
+    'WeaponFamily::OneHandGun[\s\S]*selectedCone\s*=\s*AllowedCone::Left[\s\S]*WeaponFamily::TwoHandGun[\s\S]*leftPass\s*\|\|\s*downPass' `
+    'One-hand weapons must expose LEFT only while two-hand weapons expose the LEFT/DOWN union.'
+
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'refreshAuthoredSupportGripActivationDebug\([\s\S]*evaluateDirectionGate\([\s\S]*findCurrentWeaponSurfaceNearPoints\(' `
+    'The debug snapshot must consume the shared policy and bounded captured-pose surface witnesses.'
+
+Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
+    'rockDebugDrawAuthoredGripActivationZones[\s\S]*drawWireCone[\s\S]*ACTIVATION DIAGNOSTIC ONLY' `
+    'The pre-grab overlay must be independently enabled and explicitly identify its diagnostic-only verdict.'
+
+foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
+    Require-Text $configPath `
+        'bDebugDrawAuthoredGripActivationZones\s*=\s*false' `
+        'The authored-grip activation visualizer must remain default-off.'
+}
+
+if ($failures.Count -gt 0) {
+    Write-Host 'Authored weapon-grip activation source boundary failed:'
+    foreach ($failure in $failures) {
+        Write-Host " - $failure"
+    }
+    exit 1
+}
+
+Write-Host 'Authored weapon-grip activation source boundary passed.'

@@ -2595,6 +2595,37 @@ namespace rock::debug
                 color[2] = 0.03f;
                 color[3] = 0.98f;
                 break;
+            case MarkerOverlayRole::AuthoredGripActivationLeftAxis:
+                color[0] = 0.05f;
+                color[1] = 0.9f;
+                color[2] = 1.0f;
+                color[3] = 0.98f;
+                break;
+            case MarkerOverlayRole::AuthoredGripActivationDownAxis:
+                color[0] = 1.0f;
+                color[1] = 0.15f;
+                color[2] = 0.85f;
+                color[3] = 0.98f;
+                break;
+            case MarkerOverlayRole::AuthoredGripActivationReferenceAxis:
+                color[0] = 0.68f;
+                color[1] = 0.68f;
+                color[2] = 0.72f;
+                color[3] = 0.9f;
+                break;
+            case MarkerOverlayRole::AuthoredGripActivationAllowedCone:
+            case MarkerOverlayRole::AuthoredGripActivationPass:
+                color[0] = 0.25f;
+                color[1] = 1.0f;
+                color[2] = 0.12f;
+                color[3] = 0.98f;
+                break;
+            case MarkerOverlayRole::AuthoredGripActivationFail:
+                color[0] = 1.0f;
+                color[1] = 0.12f;
+                color[2] = 0.05f;
+                color[3] = 0.98f;
+                break;
             case MarkerOverlayRole::RightRootFlattenedFingerSkeleton:
                 color[0] = 0.05f;
                 color[1] = 0.95f;

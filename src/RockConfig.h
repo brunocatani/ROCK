@@ -231,6 +231,7 @@ namespace rock
         int rockDebugMaxBodyBoneBodiesDrawn = 32;
         bool rockDebugDrawWeaponColliders = false;
         bool rockDebugDrawNativeScopeActivation = false;
+        bool rockDebugDrawAuthoredGripActivationZones = false;
         bool rockDebugDrawDynamicWeaponColliders = false;
         bool rockDebugDumpWeaponAnimNodes = false;
         int rockDebugMaxWeaponBodiesDrawn = 100;

@@ -247,7 +247,13 @@ namespace rock::debug
         LeftDynamicHandSolverResidual,
         AuthoredSupportGripPalmSeat,
         AuthoredSupportGripLiveSample,
-        AuthoredSupportGripError
+        AuthoredSupportGripError,
+        AuthoredGripActivationLeftAxis,
+        AuthoredGripActivationDownAxis,
+        AuthoredGripActivationReferenceAxis,
+        AuthoredGripActivationAllowedCone,
+        AuthoredGripActivationPass,
+        AuthoredGripActivationFail
     };
 
     enum class SkeletonOverlayRole : std::uint8_t

@@ -288,6 +288,7 @@ namespace rock
         rockDebugMaxBodyBoneBodiesDrawn = 32;
         rockDebugDrawWeaponColliders = false;
         rockDebugDrawNativeScopeActivation = false;
+        rockDebugDrawAuthoredGripActivationZones = false;
         rockDebugDrawDynamicWeaponColliders = false;
         rockDebugDumpWeaponAnimNodes = false;
         rockDebugMaxWeaponBodiesDrawn = 100;
@@ -1272,6 +1273,8 @@ namespace rock
         rockDebugDrawWeaponColliders = ini.GetBoolValue(SECTION, "bDebugDrawWeaponColliders", rockDebugDrawWeaponColliders);
         rockDebugDrawNativeScopeActivation =
             ini.GetBoolValue(SECTION, "bDebugDrawNativeScopeActivation", rockDebugDrawNativeScopeActivation);
+        rockDebugDrawAuthoredGripActivationZones =
+            ini.GetBoolValue(SECTION, "bDebugDrawAuthoredGripActivationZones", rockDebugDrawAuthoredGripActivationZones);
         rockDebugDrawDynamicWeaponColliders = ini.GetBoolValue(SECTION, "bDebugDrawDynamicWeaponColliders", rockDebugDrawDynamicWeaponColliders);
         rockDebugDumpWeaponAnimNodes = ini.GetBoolValue(SECTION, "bDebugDumpWeaponAnimNodes", rockDebugDumpWeaponAnimNodes);
         rockDebugMaxWeaponBodiesDrawn = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxWeaponBodiesDrawn", rockDebugMaxWeaponBodiesDrawn));

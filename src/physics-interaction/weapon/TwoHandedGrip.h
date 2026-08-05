@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 
@@ -13,6 +14,7 @@
 #include "physics-interaction/native/PhysicsUtils.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 #include "physics-interaction/weapon/EquippedWeaponHandlingSettings.h"
+#include "physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.h"
 #include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/WeaponInteraction.h"
@@ -104,20 +106,56 @@ namespace rock
     // for renderer visualization/readback.
     struct AuthoredSupportGripDebugSnapshot
     {
+        static constexpr std::size_t kPoseLandmarkCount = 6;
+
         RE::NiTransform weaponWorld{};
         RE::NiPoint3 authoredPalmSeatWeaponLocal{};
         RE::NiPoint3 authoredPalmSeatWorld{};
         RE::NiPoint3 liveTouchProbeWeaponLocal{};
         RE::NiPoint3 liveTouchProbeWorld{};
+        RE::NiPoint3 leftAxisWorld{};
+        RE::NiPoint3 downAxisWorld{};
+        RE::NiPoint3 referenceAxisWorld{};
+        RE::NiPoint3 approachDirectionWorld{};
+        std::array<RE::NiPoint3, kPoseLandmarkCount> poseLandmarksWorld{};
+        std::array<RE::NiPoint3, kPoseLandmarkCount> poseSurfaceWitnessWorld{};
+        std::array<float, kPoseLandmarkCount> poseSurfaceDistanceGameUnits{};
         float weaponRelativeDistanceGameUnits{ 0.0f };
         float worldReadbackDistanceGameUnits{ 0.0f };
         float frameAgreementErrorGameUnits{ 0.0f };
         float touchRadiusGameUnits{ 0.0f };
+        float radialCapGameUnits{ 0.0f };
+        float leftDot{ -1.0f };
+        float downDot{ -1.0f };
         std::uint64_t weaponGenerationKey{ 0 };
         std::uint64_t captureSequence{ 0 };
+        std::uint32_t weaponFormID{ 0 };
+        std::uint32_t effectiveEquipSlotFormID{ 0 };
+        std::uint32_t baseEquipSlotFormID{ 0 };
+        authored_weapon_grip_activation_policy::WeaponFamily weaponFamily{
+            authored_weapon_grip_activation_policy::WeaponFamily::Unknown
+        };
+        authored_weapon_grip_activation_policy::AllowedCone selectedCone{
+            authored_weapon_grip_activation_policy::AllowedCone::None
+        };
+        std::uint8_t poseSurfaceWitnessMask{ 0 };
+        std::uint8_t poseSurfaceWitnessCount{ 0 };
         bool supportHandIsLeft{ true };
         bool mirroredForRightSupport{ false };
         bool insideTouchRadius{ false };
+        bool effectiveEquipSlotUsesInstanceData{ false };
+        bool classifierSupported{ false };
+        bool canonicalAxesValid{ false };
+        bool directionUsedLastStableSample{ false };
+        bool radialPass{ false };
+        bool directionPass{ false };
+        bool semanticPass{ false };
+        bool scopePass{ false };
+        bool diagnosticSpatialPass{ false };
+        bool provisionalPoseEvidencePass{ false };
+        bool currentSupportGripActive{ false };
+        bool currentAuthoredSupportGripActive{ false };
+        bool valid{ false };
     };
 
     enum class NativeScopeCameraWriteSource : std::uint8_t
@@ -888,6 +926,11 @@ namespace rock
             RE::NiTransform& outHandWeaponLocal,
             std::array<RE::NiTransform, 15>& outFingerLocalTransforms,
             std::uint16_t& outFingerLocalTransformMask) const;
+        void refreshAuthoredSupportGripActivationDebug(
+            RE::NiNode* weaponNode,
+            std::uint64_t currentWeaponGenerationKey,
+            const WeaponInteractionDecision& decision,
+            const WeaponCollision& weaponCollision);
 
         /*
          * Reattach validates the hand first and only then commits; a takeover
@@ -1176,6 +1219,11 @@ namespace rock
 
         std::array<WeaponPartGrip, 2> _partGrips{};
         AuthoredSupportGripCandidate _authoredSupportGripCandidate{};
+        AuthoredSupportGripDebugSnapshot _authoredSupportGripDebugSnapshot{};
+        RE::NiPoint3 _authoredSupportLastStableApproachDirectionWorld{};
+        std::uint64_t _authoredSupportLastStableDirectionGenerationKey{ 0 };
+        std::uint64_t _authoredSupportLastStableDirectionCaptureSequence{ 0 };
+        bool _authoredSupportLastStableApproachDirectionValid{ false };
 
         /*
          * Monotonic capture sequences so API consumers can detect a re-grab

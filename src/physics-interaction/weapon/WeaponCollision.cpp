@@ -1464,6 +1464,22 @@ namespace rock
             identity.disabledModCount = objectInstanceWitness.disabledCount;
             if (const auto* weapon = asEquippedWeaponForm(weaponForm)) {
                 identity.instanceContentKey = makeEquippedWeaponInstanceContentKey(weapon, instanceData, objectInstanceExtra);
+                /*
+                 * FO4VR binary verification (2026-08-05): the TESObjectWEAP
+                 * BGSEquipType-subobject override at 0x14033FD70 returns
+                 * InstanceData::equipSlot (+0x70) whenever instanceData is
+                 * non-null, otherwise BGSEquipType::equipSlot (+0x08). Keep
+                 * both values for diagnostic provenance and classify authored
+                 * grip behavior from the effective runtime value.
+                 */
+                const auto* baseEquipSlot = weapon->GetEquipSlot(nullptr);
+                const auto* effectiveEquipSlot = weapon->GetEquipSlot(instanceData);
+                identity.baseEquipSlotFormID =
+                    baseEquipSlot ? baseEquipSlot->formID : 0;
+                identity.effectiveEquipSlotFormID =
+                    effectiveEquipSlot ? effectiveEquipSlot->formID : 0;
+                identity.effectiveEquipSlotUsesInstanceData =
+                    instanceData != nullptr;
                 float weightGame = instanceData ? instanceData->GetWeight() : -1.0f;
                 if (weightGame < 0.0f) {
                     weightGame = weapon->weaponData.weight;
@@ -3067,7 +3083,27 @@ namespace rock
         float maxDistanceGameUnits,
         WeaponSurfaceProximityWitness& outWitness) const
     {
-        outWitness = {};
+        const std::array<RE::NiPoint3, 1> points{ pointWorld };
+        std::array<WeaponSurfaceProximityWitness, 1> witnesses{};
+        const std::size_t witnessCount = findCurrentWeaponSurfaceNearPoints(
+            currentWeaponRoot,
+            points,
+            maxDistanceGameUnits,
+            witnesses);
+        outWitness = witnesses[0];
+        return witnessCount == 1 && outWitness.valid;
+    }
+
+    std::size_t WeaponCollision::findCurrentWeaponSurfaceNearPoints(
+        const RE::NiAVObject* currentWeaponRoot,
+        const std::span<const RE::NiPoint3> pointsWorld,
+        const float maxDistanceGameUnits,
+        const std::span<WeaponSurfaceProximityWitness> outWitnesses) const
+    {
+        constexpr std::size_t kMaximumPointCount = 16;
+        for (auto& witness : outWitnesses) {
+            witness = {};
+        }
         const std::uint64_t currentGeneration = getCurrentWeaponGenerationKey();
         const auto pointFinite = [](const RE::NiPoint3& point) {
             return std::isfinite(point.x) &&
@@ -3076,10 +3112,17 @@ namespace rock
         };
         if (!currentWeaponRoot ||
             currentGeneration == 0 ||
-            !pointFinite(pointWorld) ||
+            pointsWorld.empty() ||
+            pointsWorld.size() > kMaximumPointCount ||
+            outWitnesses.size() != pointsWorld.size() ||
             !std::isfinite(maxDistanceGameUnits) ||
             maxDistanceGameUnits < 0.0f) {
-            return false;
+            return 0;
+        }
+        for (const auto& pointWorld : pointsWorld) {
+            if (!pointFinite(pointWorld)) {
+                return 0;
+            }
         }
 
         /*
@@ -3088,9 +3131,9 @@ namespace rock
          * while remaining nowhere near rendered weapon geometry. AABBs only
          * reject unrelated parts before the exact cached-triangle test.
          *
-         * This runs only at support-grip acquisition. It allocates nothing,
-         * scans the fixed active body bank, and exits on the first valid
-         * surface witness.
+         * The bounded batch form is also used by the opt-in authored-grip
+         * visualizer. It allocates nothing, scans each current body/triangle
+         * bank once, and retains the true nearest witness per supplied point.
          */
         for (const auto& instance : activeWeaponBodies()) {
             if (!instance.body.isValid()) {
@@ -3131,27 +3174,37 @@ namespace rock
                 continue;
             }
 
-            const RE::NiPoint3 pointLocal =
-                weapon_collision_geometry_math::worldPointToLocal(
-                    surfaceRoot->world.rotate,
-                    surfaceRoot->world.translate,
-                    surfaceRoot->world.scale,
-                    pointWorld);
-            if (!pointFinite(pointLocal)) {
-                continue;
-            }
-
             const float absoluteScale = std::abs(surfaceRoot->world.scale);
             const float localRadius = maxDistanceGameUnits / absoluteScale;
-            const float boundsDistanceSquared =
-                weapon_interaction_probe_math::pointAabbDistanceSquared(
-                    pointLocal,
-                    boundsMin,
-                    boundsMax);
-            if (!std::isfinite(boundsDistanceSquared) ||
-                !weapon_interaction_probe_math::isWithinProbeRadiusSquared(
-                    boundsDistanceSquared,
-                    localRadius)) {
+            std::array<RE::NiPoint3, kMaximumPointCount> localPoints{};
+            std::array<bool, kMaximumPointCount> pointMayReachBody{};
+            bool anyPointMayReachBody = false;
+            for (std::size_t pointIndex = 0;
+                 pointIndex < pointsWorld.size();
+                 ++pointIndex) {
+                localPoints[pointIndex] =
+                    weapon_collision_geometry_math::worldPointToLocal(
+                        surfaceRoot->world.rotate,
+                        surfaceRoot->world.translate,
+                        surfaceRoot->world.scale,
+                        pointsWorld[pointIndex]);
+                if (!pointFinite(localPoints[pointIndex])) {
+                    continue;
+                }
+                const float boundsDistanceSquared =
+                    weapon_interaction_probe_math::pointAabbDistanceSquared(
+                        localPoints[pointIndex],
+                        boundsMin,
+                        boundsMax);
+                pointMayReachBody[pointIndex] =
+                    std::isfinite(boundsDistanceSquared) &&
+                    weapon_interaction_probe_math::isWithinProbeRadiusSquared(
+                        boundsDistanceSquared,
+                        localRadius);
+                anyPointMayReachBody =
+                    anyPointMayReachBody || pointMayReachBody[pointIndex];
+            }
+            if (!anyPointMayReachBody) {
                 continue;
             }
 
@@ -3162,38 +3215,65 @@ namespace rock
                     continue;
                 }
 
-                float surfaceDistanceSquared =
-                    (std::numeric_limits<float>::infinity)();
-                (void)closestPointOnTriangleToPoint(
-                    pointLocal,
-                    triangle,
-                    surfaceDistanceSquared);
-                if (!std::isfinite(surfaceDistanceSquared) ||
-                    surfaceDistanceSquared < 0.0f ||
-                    !weapon_interaction_probe_math::isWithinProbeRadiusSquared(
-                        surfaceDistanceSquared,
-                        localRadius)) {
-                    continue;
-                }
+                for (std::size_t pointIndex = 0;
+                     pointIndex < pointsWorld.size();
+                     ++pointIndex) {
+                    if (!pointMayReachBody[pointIndex]) {
+                        continue;
+                    }
+                    float surfaceDistanceSquared =
+                        (std::numeric_limits<float>::infinity)();
+                    const RE::NiPoint3 closestPointLocal =
+                        closestPointOnTriangleToPoint(
+                            localPoints[pointIndex],
+                            triangle,
+                            surfaceDistanceSquared);
+                    if (!std::isfinite(surfaceDistanceSquared) ||
+                        surfaceDistanceSquared < 0.0f ||
+                        !weapon_interaction_probe_math::isWithinProbeRadiusSquared(
+                            surfaceDistanceSquared,
+                            localRadius)) {
+                        continue;
+                    }
 
-                if (getCurrentWeaponGenerationKey() != currentGeneration) {
-                    outWitness = {};
-                    return false;
+                    const float distanceGameUnits =
+                        std::sqrt(surfaceDistanceSquared) * absoluteScale;
+                    auto& witness = outWitnesses[pointIndex];
+                    if (!std::isfinite(distanceGameUnits) ||
+                        (witness.valid &&
+                            distanceGameUnits >= witness.distanceGameUnits)) {
+                        continue;
+                    }
+                    witness.closestPointWorld =
+                        weapon_collision_geometry_math::localPointToWorld(
+                            surfaceRoot->world.rotate,
+                            surfaceRoot->world.translate,
+                            surfaceRoot->world.scale,
+                            closestPointLocal);
+                    witness.distanceGameUnits = distanceGameUnits;
+                    witness.bodyId = instance.body.getBodyId().value;
+                    witness.weaponGenerationKey = currentGeneration;
+                    witness.sourceNodeCurrent = useSourceFrame;
+                    witness.valid = pointFinite(witness.closestPointWorld);
                 }
-                const float distanceGameUnits =
-                    std::sqrt(surfaceDistanceSquared) * absoluteScale;
-                if (!std::isfinite(distanceGameUnits)) {
-                    continue;
-                }
-                outWitness.distanceGameUnits = distanceGameUnits;
-                outWitness.bodyId = instance.body.getBodyId().value;
-                outWitness.weaponGenerationKey = currentGeneration;
-                outWitness.sourceNodeCurrent = useSourceFrame;
-                return true;
             }
         }
 
-        return false;
+        if (getCurrentWeaponGenerationKey() != currentGeneration) {
+            for (auto& witness : outWitnesses) {
+                witness = {};
+            }
+            return 0;
+        }
+
+        std::size_t witnessCount = 0;
+        for (const auto& witness : outWitnesses) {
+            if (witness.valid &&
+                witness.weaponGenerationKey == currentGeneration) {
+                ++witnessCount;
+            }
+        }
+        return witnessCount;
     }
 
     std::vector<WeaponCollisionProfileEvidenceDescriptor> WeaponCollision::buildProfileEvidenceSnapshot(

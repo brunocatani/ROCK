@@ -976,10 +976,16 @@ namespace rock::weapon_generation_identity_policy
         std::uint32_t objectIndexDataCount{ 0 };
         std::uint32_t activeModCount{ 0 };
         std::uint32_t disabledModCount{ 0 };
+        // BGSEquipType behavior identity. The effective value is read through
+        // TESObjectWEAP's equip-slot virtual using the currently equipped
+        // instance data; baseEquipSlotFormID remains diagnostic provenance.
+        std::uint32_t effectiveEquipSlotFormID{ 0 };
+        std::uint32_t baseEquipSlotFormID{ 0 };
         std::uintptr_t equippedDataAddress{ 0 };
         std::uintptr_t equippedObjectAddress{ 0 };
         std::string_view displayName{};
         bool hasEquippedWeapon{ false };
+        bool effectiveEquipSlotUsesInstanceData{ false };
         WeaponSizeClass sizeClass{ WeaponSizeClass::Rifle };
         WeaponClassificationSource classificationSource{ WeaponClassificationSource::None };
         std::uint64_t keywordFlags{ 0 };

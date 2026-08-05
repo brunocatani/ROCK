@@ -147,10 +147,12 @@ namespace rock
          */
         struct WeaponSurfaceProximityWitness
         {
+            RE::NiPoint3 closestPointWorld{};
             float distanceGameUnits{ 0.0f };
             std::uint32_t bodyId{ 0x7FFF'FFFFu };
             std::uint64_t weaponGenerationKey{ 0 };
             bool sourceNodeCurrent{ false };
+            bool valid{ false };
         };
 
         void init(RE::hknpWorld* world, void* bhkWorld);
@@ -224,6 +226,12 @@ namespace rock
             const RE::NiPoint3& pointWorld,
             float maxDistanceGameUnits,
             WeaponSurfaceProximityWitness& outWitness) const;
+
+        std::size_t findCurrentWeaponSurfaceNearPoints(
+            const RE::NiAVObject* currentWeaponRoot,
+            std::span<const RE::NiPoint3> pointsWorld,
+            float maxDistanceGameUnits,
+            std::span<WeaponSurfaceProximityWitness> outWitnesses) const;
 
         bool tryGetSupportGripEvidenceView(
             std::uint32_t bodyId,
