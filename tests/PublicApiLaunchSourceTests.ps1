@@ -124,8 +124,8 @@ Require-Text 'src/api/ROCKProviderApi.h' 'ROCKAPI_GetDescriptorV1' `
     'The public SDK must declare the independent V1 descriptor accessor.'
 Require-Text 'src/exports.def' 'ROCKAPI_GetDescriptorV1' `
     'The provider descriptor must be exported independently of the function table.'
-Require-Text 'src/api/ROCKProviderApi.h' 'sizeof\(RockProviderApi\)\s*==\s*736' `
-    'The append-only V1 function table must retain its exact 92-slot x64 extent.'
+Require-Text 'src/api/ROCKProviderApi.h' 'sizeof\(RockProviderApi\)\s*==\s*720' `
+    'The append-only V1 function table must retain its exact 90-slot x64 extent.'
 Require-Text 'src/api/ROCKProviderApi.h' 'struct\s+RockProviderLimitsExtV1' `
     'Fixed capacities omitted by the legacy limits prefix must be discoverable through extended limits.'
 Require-Text 'src/api/ROCKProviderApi.h' 'RockProviderStructureIdV1[\s\S]*getPublicStructureSizeV1' `
@@ -345,10 +345,6 @@ Require-Text 'src/api/ROCKProviderApi.cpp' 'clearScope\(ownerToken, scopeToken\)
     'Clearing an unknown external-body scope must report target unavailability.'
 Require-Text 'src/api/ROCKProviderApi.h' 'TouchGrabTargets[\s\S]*RockProviderTouchGrabTargetV1[\s\S]*RockProviderTouchGrabStateV1' `
     'API V1 must expose bounded provider-scoped touch-grab targets and states.'
-Require-Text 'src/api/ROCKProviderApi.h' 'RockProviderImpactOutcomeV1[\s\S]*submitImpactOutcomeV1[\s\S]*copyImpactOutcomesSinceV1[\s\S]*ROCK_PROVIDER_API_V1_IMPACT_OUTCOMES_TABLE_BYTES' `
-    'API V1 must expose append-only, owner-authenticated native impact outcome reporting.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'drainExternalContactObservations\(\)[\s\S]{0,4000}observation\.worldGeneration != worldGeneration[\s\S]{0,300}observation\.providerGeneration != providerGeneration' `
-    'Queued Havok impact observations must be rejected across world, skeleton, or provider generation changes.'
 Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_API_V1_TOUCH_GRAB_TARGETS_TABLE_BYTES[\s\S]*supportsTouchGrabTargetsV1' `
     'Touch-grab consumers must negotiate both the V1 feature bit and appended table extent.'
 Require-Text 'src/api/ROCKProviderApi.h' 'maxTouchGrabTargets[\s\S]*maxTouchGrabScopes[\s\S]*maxTouchGrabTargetLeaseFrames' `
@@ -467,54 +463,9 @@ $expectedProviderFunctions = [string[]]@(
     'requestEquippedWeaponHandV1',
     'queryWorldRaycastV1',
     'setColliderVisualizationOverrideV1',
-    'clearColliderVisualizationOverrideV1',
-    'submitImpactOutcomeV1',
-    'copyImpactOutcomesSinceV1'
+    'clearColliderVisualizationOverrideV1'
 )
 Require-SequenceEqual 'ROCKProviderApi function pointer order' (Get-ProviderFunctionNames $providerHeader) $expectedProviderFunctions
-
-Require-Path 'src/physics-interaction/melee/PhysicalMeleeRuntime.cpp' 'ROCK must own its standalone physical melee runtime.'
-Require-Path 'src/physics-interaction/melee/NativeMeleeHitBridge.cpp' 'ROCK must own the verified FO4VR native melee bridge.'
-Require-Text 'src/physics-interaction/core/PhysicsInteractionContacts.inl' 'standaloneMeleeContact[\s\S]{0,240}ContactEndpointKind::Weapon[\s\S]{0,240}isStandaloneMeleeTarget' 'Weapon-to-actor contacts must be captured without an external SCISSORS registration.'
-Require-Text 'src/physics-interaction/collision/ContactPipelinePolicy.h' 'isStandaloneMeleeTarget[\s\S]{0,420}FO4_LAYER_CHARCONTROLLER' 'Standing NPC character-controller contacts must enter only the narrow standalone weapon-melee route.'
-Require-Text 'tests/WeaponInteractionPolicyTests.cpp' 'character controller remains globally unknown[\s\S]{0,800}weapon melee narrowly accepts character controller[\s\S]{0,800}unrelated unknown layer is not a melee target' 'Character-controller melee capture must not broaden global actor or unknown-layer routing.'
-Require-Text 'src/physics-interaction/collision/CollisionLayerPolicy.h' 'buildRockWeaponExpectedMask[\s\S]{0,800}includeCharacterController[\s\S]{0,1000}FO4_LAYER_CHARCONTROLLER' 'The generated weapon matrix must enable standing-actor controller contacts only when physical melee is enabled.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'buildRockWeaponExpectedMask[\s\S]{0,500}g_rockConfig\.rockPhysicalMeleeEnabled' 'Physical-melee configuration changes must re-register the weapon/controller matrix pair.'
-Require-Text 'tests/DynamicMovableStaticGrabPolicyTests.cpp' 'player self-collision with ROCK weapon is always suppressed[\s\S]{0,500}rockGeneratedSelf' 'Enabling weapon/controller melee must retain unconditional player-controller self-collision suppression.'
-Require-Text 'src/physics-interaction/core/PhysicsHooks.cpp' 'const bool playerController = isPlayerCharacterController\(controller\)[\s\S]{0,8000}evaluatePlayerControllerTargetBody[\s\S]{0,500}playerControllerFilterEnabled' 'The player controller hook must enforce ROCK-generated self filtering even when optional native object filtering is disabled.'
-Require-Text 'src/physics-interaction/native/CharacterControllerRuntime.cpp' 'kActorCurrentProcessOffset\s*=\s*0x300[\s\S]{0,300}kProcessMiddleHighOffset\s*=\s*0x08[\s\S]{0,300}kMiddleHighCharacterControllerOffset\s*=\s*0x3E8' 'Player-controller identity must use the verified FO4VR Actor/process/middle-high layout.'
-Require-Text 'src/physics-interaction/native/CharacterControllerRuntime.cpp' 'tryGetActorCharacterControllerRaw[\s\S]{0,2200}middleHighBytes\s*\+\s*kMiddleHighCharacterControllerOffset[\s\S]{0,1200}tryGetPlayerCharacterController[\s\S]{0,300}tryGetActorCharacterController' 'Every player-controller consumer must share the same verified raw FO4VR controller lookup.'
-Reject-Text 'src/physics-interaction/native/CharacterControllerRuntime.cpp' 'middleHigh->charController|charController\.get\(' 'ROCK must never use CommonLibF4VR''s flat-layout MiddleHighProcessData::charController member in FO4VR.'
-Require-Text 'src/physics-interaction/melee/PhysicalMeleeRuntime.cpp' 'referenceIsPlayer[\s\S]{0,200}discardPlayerSelf[\s\S]{0,8000}if \(first\.discardPlayerSelf\)' 'Player weapon/controller contacts must be dropped before melee reporting and arbitration.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'physical_melee::processContactObservation' 'ROCK must process physical melee contacts inside its own runtime.'
-Require-Text 'src/physics-interaction/melee/MeleeTargetResolver.cpp' 'FindReferenceFor3D' 'ROCK must resolve the contacted actor directly from the collided scene object.'
-Require-Text 'src/physics-interaction/melee/MeleeTargetResolver.cpp' 'bodyPartData->partArray[\s\S]{0,1800}BodyPartValid' 'ROCK must resolve exact BPTD anatomy from the contacted body node.'
-Require-Text 'src/physics-interaction/melee/PhysicalMeleeRuntime.cpp' 'tryGetExternalBodyRegistration[\s\S]{0,1200}resolveRegisteredTarget[\s\S]{0,1800}RegisteredTargetMismatch' 'A registered active-ragdoll body must use its authoritative actor/anatomy mapping and reject contradictory direct identity.'
-Require-Text 'src/physics-interaction/melee/MeleeTargetResolver.cpp' 'resolveRegisteredTarget[\s\S]{0,7000}ActorRagdollBone[\s\S]{0,7000}registration\.bodyPartIndex[\s\S]{0,7000}RegisteredBodyResolved' 'ROCK must revalidate registered ragdoll anatomy against the live actor BPTD before native damage.'
-Require-Text 'src/physics-interaction/melee/MeleeTargetResolver.cpp' 'eligibleForPointFallback[\s\S]{0,12000}measuredContactPointHavok[\s\S]{0,8000}node->world\.translate' 'Standing NPC capsule contacts must fall back to the nearest physical BPTD skeleton node using the measured contact point.'
-Require-Text 'src/physics-interaction/melee/MeleeTargetResolver.cpp' 'GetFormRace\(\)[\s\S]{0,300}bodyPartData[\s\S]{0,300}actor\s*\?\s*actor->race' 'Target anatomy must prefer the stable base-NPC race BPTD while retaining a bounded live-race fallback.'
-Require-Text 'src/physics-interaction/melee/MeleeTargetResolver.cpp' '__except\s*\(EXCEPTION_EXECUTE_HANDLER\)[\s\S]{0,500}accessViolation\s*=\s*true[\s\S]{0,300}clearAnatomy' 'An anatomy access violation must retain resolved actor identity and clear only partial anatomy evidence.'
-Reject-Text 'src/physics-interaction/melee/MeleeTargetResolver.cpp' '__except\s*\(EXCEPTION_EXECUTE_HANDLER\)[\s\S]{0,300}result\s*=\s*\{\}' 'An anatomy fault must never erase a successfully resolved target actor.'
-Require-Text 'src/physics-interaction/melee/NativeMeleeHitBridge.cpp' 'kHitDataCtorOffset = 0x1042460[\s\S]{0,500}kPreLimbCalculationHookOffset = 0x1045913[\s\S]{0,500}kImpactScalarHookOffset = 0x1042C7B' 'ROCK physical melee must retain the verified native construction, pre-limb-calculation, and scalar sites.'
-Require-Text 'src/physics-interaction/melee/NativeMeleeHitBridge.cpp' 'bytesMatch\(preLimbSite\.address\(\), kPreLimbCalculationBytes\)[\s\S]{0,600}directCallTarget' 'ROCK native melee hooks must fail closed unless verified bytes and call targets match.'
-Require-Text 'src/physics-interaction/melee/NativeMeleeHitBridge.cpp' 'injectPreLimbCalculation[\s\S]{0,1800}impactData\.location\.x[\s\S]{0,1200}impactData\.normal\.x[\s\S]{0,1200}impactData\.velocity\.x[\s\S]{0,1200}impactData\.colObj\.reset[\s\S]{0,1200}0xD0' 'ROCK must inject exact measured impact evidence before native targeted-limb damage is calculated.'
-Require-Text 'src/physics-interaction/melee/NativeMeleeHitBridge.cpp' 'callActorHitDispatcherWithFinally[\s\S]{0,1200}__finally[\s\S]{0,1200}s_dispatchStack\[s_dispatchDepth\] = nullptr' 'ROCK must unwind dispatcher observation TLS even across native exceptions.'
-Require-Text 'src/physics-interaction/melee/NativeMeleeHitBridge.cpp' 's_bridgeEpoch\.fetch_add' 'ROCK native melee reset must invalidate in-flight dispatch observations.'
-Require-Text 'src/physics-interaction/melee/PhysicalMeleeRuntime.cpp' 'targetBodyPart\s*=\s*best\.target\.bodyPart[\s\S]{0,300}targetNativeDamageLimb\s*=\s*best\.target\.nativeDamageLimb' 'Native dispatch must consume the exact BPTD entry selected by target resolution.'
-Reject-Text 'src/physics-interaction/melee/NativeMeleeHitBridge.cpp' 'input\.target->race|resolveBodyPartSafely' 'Native dispatch must not independently re-walk mutable actor race state after locational resolution.'
-Require-Text 'src/physics-interaction/melee/PhysicalMeleeRuntime.cpp' 'recordPhysicalMeleeContact\(contact\)' 'ROCK must publish provider-owned locational collision records without consumer body registration.'
-Require-Text 'src/physics-interaction/core/PhysicsInteractionContacts.inl' 'weaponWitness = physical_melee::WeaponIdentityWitness[\s\S]{0,900}ownershipKey[\s\S]{0,500}instanceDataAddress[\s\S]{0,500}equipIndex' 'Queued weapon contacts must retain exact generated-body, ownership, instance, and equip identity.'
-Require-Text 'src/physics-interaction/core/PhysicsInteractionContacts.inl' 'bodyAIsWeapon != bodyBIsWeapon[\s\S]{0,2400}FO4_LAYER_CHARCONTROLLER[\s\S]{0,2400}_physicalMeleeContactCallbacks\.fetch_add' 'Every generated-weapon callback must enter the collision-layer census, including character-controller contacts.'
-Require-Text 'src/physics-interaction/core/PhysicsInteractionContacts.inl' 'const bool queued = _impactObservationQueue\.tryPush[\s\S]{0,500}_physicalMeleeContactsQueued[\s\S]{0,300}_physicalMeleeContactQueueRejected' 'Standalone melee diagnostics must distinguish queued collision evidence from callback-to-game-thread loss.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'reportPhysicalMeleeContactCensus[\s\S]{0,8000}Physical melee contact census[\s\S]{0,2000}liveActor=[\s\S]{0,1000}targetLayer=' 'The game thread must emit an unsampled standalone-melee collision census with live-actor and target-layer evidence.'
-Require-Text 'src/physics-interaction/melee/MeleeTargetResolver.cpp' 'referenceFormId = actor->GetFormID[\s\S]{0,300}referenceIsDead[\s\S]{0,6000}fallbackCandidateCount[\s\S]{0,2000}selectedNodeDistanceGame' 'Target resolution diagnostics must retain dead/reference identity and measured anatomy-fallback quality.'
-Require-Text 'src/physics-interaction/melee/PhysicalMeleeRuntime.cpp' 'ROCK_LOG_INFO\(Melee,[\s\S]{0,800}Physical melee exact trace[\s\S]{0,2200}reference=[\s\S]{0,1200}pointGame=[\s\S]{0,1200}fallbackCandidates=[\s\S]{0,1200}bodyPart=' 'Standalone melee must log rate-limited exact target ownership, measured contact point, and selected anatomy outside the physics callback.'
-Require-Text 'src/physics-interaction/melee/PhysicalMeleeRuntime.cpp' 'beginContactFrame[\s\S]{0,12000}isBetterImpactCandidate[\s\S]{0,12000}SupersededCandidate' 'ROCK must arbitrate all eligible callbacks before committing a melee episode.'
-Require-Text 'src/physics-interaction/melee/PhysicalMeleePolicy.cpp' 'TransitionSuppressed[\s\S]{0,800}CollisionUnavailable[\s\S]{0,6000}NonDamagingSource' 'Melee damage must fail closed on lifecycle transitions, unavailable collision, and non-damaging weapon parts.'
-Require-Text 'src/physics-interaction/melee/PhysicalMeleePolicy.cpp' 'std::hypot\([\s\S]{0,200}closingSpeedHavok[\s\S]{0,200}tangentSpeedHavok[\s\S]{0,1200}relativePointSpeedGame' 'Melee eligibility and kinetic damage must use complete relative point speed so tangential and rotational weapon strikes remain direction-independent.'
-Require-Text 'src/physics-interaction/object/ExternalBodyRegistry.h' 'recordProviderContactV1' 'The contact registry must accept provider-owned melee collision records.'
-Require-Text 'src/physics-interaction/object/ExternalBodyRegistry.h' 'const bool providerOwned' 'Provider-owned melee contacts must be available through aggregate contact reporting to every authenticated consumer.'
-Reject-Text 'src/physics-interaction/melee/PhysicalMeleeRuntime.cpp' 'ownerToken|isScissors|SCISSORS' 'ROCK melee must not depend on a SCISSORS owner or runtime.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'PublicApiLaunchSourceTests failed:' -ForegroundColor Red

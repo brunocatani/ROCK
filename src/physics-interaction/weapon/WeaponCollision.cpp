@@ -1451,7 +1451,6 @@ namespace rock
             identity.instanceDataAddress = reinterpret_cast<std::uintptr_t>(instanceData);
             identity.instanceKeywordDataAddress = reinterpret_cast<std::uintptr_t>(
                 instanceData ? instanceData->GetKeywordData() : nullptr);
-            identity.equipIndex = equipData->equipIndex.index;
             auto* equippedWeaponData = equipData->data ? static_cast<RE::EquippedWeaponData*>(equipData->data.get()) : nullptr;
             identity.equippedDataAddress = reinterpret_cast<std::uintptr_t>(equippedWeaponData);
             identity.equippedObjectAddress = reinterpret_cast<std::uintptr_t>(
@@ -2999,60 +2998,6 @@ namespace rock
         return false;
     }
 
-    bool WeaponCollision::tryGetWeaponBodySampledAngularVelocityAtomic(std::uint32_t bodyId, float* outAngularVelocityRadians) const
-    {
-        if (!outAngularVelocityRadians) {
-            return false;
-        }
-        outAngularVelocityRadians[0] = 0.0f;
-        outAngularVelocityRadians[1] = 0.0f;
-        outAngularVelocityRadians[2] = 0.0f;
-        outAngularVelocityRadians[3] = 0.0f;
-        if (bodyId == INVALID_BODY_ID) {
-            return false;
-        }
-
-        for (int attempt = 0; attempt < 4; ++attempt) {
-            const std::uint64_t startVersion = _weaponBodyPublicationVersion.load(std::memory_order_acquire);
-            if ((startVersion & 1u) != 0) {
-                continue;
-            }
-
-            float wx = 0.0f;
-            float wy = 0.0f;
-            float wz = 0.0f;
-            bool found = false;
-            const std::uint32_t count = (std::min)(_weaponBodyCountAtomic.load(std::memory_order_acquire), static_cast<std::uint32_t>(MAX_WEAPON_BODIES));
-            for (std::uint32_t i = 0; i < count; ++i) {
-                if (_weaponBodyIdsAtomic[i].load(std::memory_order_acquire) != bodyId ||
-                    _weaponBodySampledAngularVelocityValidAtomic[i].load(std::memory_order_acquire) == 0) {
-                    continue;
-                }
-
-                wx = _weaponBodySampledAngularVelocityRadiansXAtomic[i].load(std::memory_order_acquire);
-                wy = _weaponBodySampledAngularVelocityRadiansYAtomic[i].load(std::memory_order_acquire);
-                wz = _weaponBodySampledAngularVelocityRadiansZAtomic[i].load(std::memory_order_acquire);
-                found = true;
-                break;
-            }
-
-            const std::uint64_t endVersion = _weaponBodyPublicationVersion.load(std::memory_order_acquire);
-            if (startVersion != endVersion || (endVersion & 1u) != 0) {
-                continue;
-            }
-            if (!found || !std::isfinite(wx) || !std::isfinite(wy) || !std::isfinite(wz)) {
-                return false;
-            }
-
-            outAngularVelocityRadians[0] = wx;
-            outAngularVelocityRadians[1] = wy;
-            outAngularVelocityRadians[2] = wz;
-            return true;
-        }
-
-        return false;
-    }
-
     bool WeaponCollision::tryGetWeaponContactDebugInfo(std::uint32_t bodyId, WeaponInteractionDebugInfo& outInfo) const
     {
         outInfo = {};
@@ -3295,10 +3240,6 @@ namespace rock
             descriptor.geometryRootName = interactionRoot ? safeNodeName(interactionRoot) : "";
             descriptor.sourceName = instance.sourceName;
             descriptor.semantic = instance.semantic;
-            descriptor.localCenterGame = makeWeaponEvidencePoint(
-                instance.generatedLocalCenterGame.x,
-                instance.generatedLocalCenterGame.y,
-                instance.generatedLocalCenterGame.z);
             descriptor.localBoundsGame = WeaponEvidenceBounds3{
                 .min = makeWeaponEvidencePoint(instance.generatedLocalMinGame.x, instance.generatedLocalMinGame.y, instance.generatedLocalMinGame.z),
                 .max = makeWeaponEvidencePoint(instance.generatedLocalMaxGame.x, instance.generatedLocalMaxGame.y, instance.generatedLocalMaxGame.z),
@@ -5485,18 +5426,6 @@ namespace rock
         for (auto& value : _weaponBodySampledVelocityValidAtomic) {
             value.store(0, std::memory_order_release);
         }
-        for (auto& value : _weaponBodySampledAngularVelocityRadiansXAtomic) {
-            value.store(0.0f, std::memory_order_release);
-        }
-        for (auto& value : _weaponBodySampledAngularVelocityRadiansYAtomic) {
-            value.store(0.0f, std::memory_order_release);
-        }
-        for (auto& value : _weaponBodySampledAngularVelocityRadiansZAtomic) {
-            value.store(0.0f, std::memory_order_release);
-        }
-        for (auto& value : _weaponBodySampledAngularVelocityValidAtomic) {
-            value.store(0, std::memory_order_release);
-        }
         {
             std::scoped_lock lock(_weaponEvidenceSnapshotMutex);
             _profileEvidenceSnapshot.clear();
@@ -5538,9 +5467,6 @@ namespace rock
             id.store(INVALID_BODY_ID, std::memory_order_release);
         }
         for (auto& value : _weaponBodySampledVelocityValidAtomic) {
-            value.store(0, std::memory_order_release);
-        }
-        for (auto& value : _weaponBodySampledAngularVelocityValidAtomic) {
             value.store(0, std::memory_order_release);
         }
         _weaponBodySetKeyAtomic.store(_cachedWeaponBodySetKey, std::memory_order_release);
@@ -7854,24 +7780,13 @@ namespace rock
             _weaponBodySampledVelocityHavokXAtomic[publicationIndex].store(0.0f, std::memory_order_release);
             _weaponBodySampledVelocityHavokYAtomic[publicationIndex].store(0.0f, std::memory_order_release);
             _weaponBodySampledVelocityHavokZAtomic[publicationIndex].store(0.0f, std::memory_order_release);
-        } else {
-            _weaponBodySampledVelocityHavokXAtomic[publicationIndex].store(queueResult.sampledLinearVelocityHavok.x, std::memory_order_release);
-            _weaponBodySampledVelocityHavokYAtomic[publicationIndex].store(queueResult.sampledLinearVelocityHavok.y, std::memory_order_release);
-            _weaponBodySampledVelocityHavokZAtomic[publicationIndex].store(queueResult.sampledLinearVelocityHavok.z, std::memory_order_release);
-            _weaponBodySampledVelocityValidAtomic[publicationIndex].store(1, std::memory_order_release);
+            return;
         }
 
-        if (!queueResult.sampledAngularVelocityValid) {
-            _weaponBodySampledAngularVelocityValidAtomic[publicationIndex].store(0, std::memory_order_release);
-            _weaponBodySampledAngularVelocityRadiansXAtomic[publicationIndex].store(0.0f, std::memory_order_release);
-            _weaponBodySampledAngularVelocityRadiansYAtomic[publicationIndex].store(0.0f, std::memory_order_release);
-            _weaponBodySampledAngularVelocityRadiansZAtomic[publicationIndex].store(0.0f, std::memory_order_release);
-        } else {
-            _weaponBodySampledAngularVelocityRadiansXAtomic[publicationIndex].store(queueResult.sampledAngularVelocityRadians.x, std::memory_order_release);
-            _weaponBodySampledAngularVelocityRadiansYAtomic[publicationIndex].store(queueResult.sampledAngularVelocityRadians.y, std::memory_order_release);
-            _weaponBodySampledAngularVelocityRadiansZAtomic[publicationIndex].store(queueResult.sampledAngularVelocityRadians.z, std::memory_order_release);
-            _weaponBodySampledAngularVelocityValidAtomic[publicationIndex].store(1, std::memory_order_release);
-        }
+        _weaponBodySampledVelocityHavokXAtomic[publicationIndex].store(queueResult.sampledLinearVelocityHavok.x, std::memory_order_release);
+        _weaponBodySampledVelocityHavokYAtomic[publicationIndex].store(queueResult.sampledLinearVelocityHavok.y, std::memory_order_release);
+        _weaponBodySampledVelocityHavokZAtomic[publicationIndex].store(queueResult.sampledLinearVelocityHavok.z, std::memory_order_release);
+        _weaponBodySampledVelocityValidAtomic[publicationIndex].store(1, std::memory_order_release);
     }
 
     void WeaponCollision::updateBodiesFromCurrentSourceTransforms(

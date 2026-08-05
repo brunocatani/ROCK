@@ -65,6 +65,7 @@ namespace rock
         bool rockSuppressRightGrabGameInput = true;
         bool rockSuppressRightFavoritesGameInput = true;
         bool rockSuppressNativeReadyWeaponAutoReady = true;
+        bool rockSuppressNativeMeleeThrowGameInput = true;
         // Function-level controls; raw OpenVR button state remains untouched.
         bool rockSuppressNativeVats = false;
         bool rockSuppressNativeVans = false;
@@ -105,13 +106,6 @@ namespace rock
         float rockLeftFiringAimOffsetYGameUnits = 0.0f;
         float rockLeftFiringAimOffsetZGameUnits = 0.0f;
         bool rockWeaponCollisionEnabled = true;
-        bool rockPhysicalMeleeEnabled = true;
-        float rockPhysicalMeleeMinSourceSpeedGame = 400.0f;
-        float rockPhysicalMeleeVirtualWeaponMass = 12.0f;
-        float rockPhysicalMeleeDamageMultiplier = 1.0f;
-        float rockPhysicalMeleeMaxNativeDamageMultiplier = 10.0f;
-        float rockPhysicalMeleeSourceTargetCooldownSeconds = 0.20f;
-        int rockPhysicalMeleeMaxDamageEventsPerFrame = 32;
         bool rockWeaponCollisionBlocksProjectiles = false;
         bool rockWeaponCollisionBlocksSpells = false;
         bool rockWeaponCollisionStaticWorldEnabled = true;
@@ -196,6 +190,11 @@ namespace rock
         float rockHandCollisionDynamicHapticMinApproachSpeedGameUnitsPerSecond = 3.0f;
         float rockHandCollisionDynamicHapticCooldownSeconds = 0.12f;
 
+        bool rockNativeMeleeSuppressionEnabled = true;
+        bool rockNativeMeleeFullSuppression = true;
+        bool rockNativeMeleeSuppressWeaponSwing = true;
+        bool rockNativeMeleeSuppressHitFrame = true;
+        bool rockNativeMeleeDebugLogging = false;
         bool rockNativeCharacterControllerObjectContactFilterEnabled = true;
 
         bool rockHighlightEnabled = true;

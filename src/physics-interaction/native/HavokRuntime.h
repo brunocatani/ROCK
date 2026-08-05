@@ -6,7 +6,6 @@
 #include <cstdint>
 
 #include "physics-interaction/PhysicsBodyFrame.h"
-#include "physics-interaction/contact/ContactSignalPointPolicy.h"
 
 #include "RE/Havok/hknpBodyId.h"
 #include "RE/NetImmerse/NiTransform.h"
@@ -35,6 +34,7 @@ namespace rock::havok_runtime
      * transform fallbacks.
      */
     inline constexpr std::uintptr_t kHknpWorldBodyHighWaterMarkOffset = 0x70;
+    inline constexpr std::uint32_t kMaxContactSignalPoints = 4;
     inline constexpr std::uint32_t kMaxMotionPropertiesSnapshotRecords = 16;
 
     struct BodySnapshot
@@ -55,6 +55,25 @@ namespace rock::havok_runtime
         RE::NiTransform transform{};
         body_frame::BodyFrameSource source{ body_frame::BodyFrameSource::Fallback };
         std::uint32_t motionIndex{ body_frame::kFreeMotionIndex };
+    };
+
+    struct ContactSignalPointResult
+    {
+        bool valid = false;
+        std::uint32_t pointCount = 0;
+        std::uint32_t selectedPointIndex = 0;
+        float contactPointWeightSum = 0.0f;
+        float contactPointHavok[4]{};
+        float contactNormalHavok[4]{};
+    };
+
+    struct ContactSignalPointSelectionInput
+    {
+        std::uint32_t pointCount = 0;
+        std::uint32_t contactIndex = 0;
+        float pointWeights[4]{};
+        float contactNormalHavok[4]{};
+        float contactPointsHavok[4][4]{};
     };
 
     struct MotionVelocityCaps
@@ -214,6 +233,75 @@ namespace rock::havok_runtime
         target[3] = source[3];
     }
 
+    inline bool selectContactSignalPoint(const ContactSignalPointSelectionInput& input, ContactSignalPointResult& outResult)
+    {
+        outResult = {};
+
+        const std::uint32_t pointCount = (std::min)(input.pointCount, kMaxContactSignalPoints);
+        if (pointCount == 0 || !isFinite3(input.contactNormalHavok)) {
+            return false;
+        }
+
+        const float normalLengthSquared = lengthSquared3(input.contactNormalHavok);
+        if (!std::isfinite(normalLengthSquared) || normalLengthSquared <= 0.000001f) {
+            return false;
+        }
+
+        const float invNormalLength = 1.0f / std::sqrt(normalLengthSquared);
+        outResult.contactNormalHavok[0] = input.contactNormalHavok[0] * invNormalLength;
+        outResult.contactNormalHavok[1] = input.contactNormalHavok[1] * invNormalLength;
+        outResult.contactNormalHavok[2] = input.contactNormalHavok[2] * invNormalLength;
+        outResult.contactNormalHavok[3] = input.contactNormalHavok[3];
+
+        float weightedPoint[4]{};
+        float totalWeight = 0.0f;
+        for (std::uint32_t i = 0; i < pointCount; ++i) {
+            const float weight = input.pointWeights[i];
+            if (!std::isfinite(weight) || weight <= 0.0f || !isFinite3(input.contactPointsHavok[i])) {
+                continue;
+            }
+
+            totalWeight += weight;
+            weightedPoint[0] += input.contactPointsHavok[i][0] * weight;
+            weightedPoint[1] += input.contactPointsHavok[i][1] * weight;
+            weightedPoint[2] += input.contactPointsHavok[i][2] * weight;
+            weightedPoint[3] += input.contactPointsHavok[i][3] * weight;
+        }
+
+        outResult.pointCount = pointCount;
+        outResult.contactPointWeightSum = totalWeight;
+
+        if (totalWeight > 0.0f) {
+            const float invWeight = 1.0f / totalWeight;
+            outResult.contactPointHavok[0] = weightedPoint[0] * invWeight;
+            outResult.contactPointHavok[1] = weightedPoint[1] * invWeight;
+            outResult.contactPointHavok[2] = weightedPoint[2] * invWeight;
+            outResult.contactPointHavok[3] = weightedPoint[3] * invWeight;
+            outResult.valid = true;
+            return true;
+        }
+
+        std::uint32_t selectedIndex = input.contactIndex < pointCount ? input.contactIndex : 0;
+        if (!isFinite3(input.contactPointsHavok[selectedIndex])) {
+            selectedIndex = pointCount;
+            for (std::uint32_t i = 0; i < pointCount; ++i) {
+                if (isFinite3(input.contactPointsHavok[i])) {
+                    selectedIndex = i;
+                    break;
+                }
+            }
+        }
+
+        if (selectedIndex >= pointCount) {
+            outResult = {};
+            return false;
+        }
+
+        outResult.selectedPointIndex = selectedIndex;
+        copyVector4(input.contactPointsHavok[selectedIndex], outResult.contactPointHavok);
+        outResult.valid = true;
+        return true;
+    }
     bool tryExtractContactSignalPoint(RE::hknpWorld* world, const void* contactSignalData, ContactSignalPointResult& outResult);
 
     void* allocateHavok(std::size_t size);

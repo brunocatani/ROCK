@@ -525,8 +525,6 @@
             WeaponInteractionContact contact{};
             bool hasSampledVelocity = false;
             float sampledVelocityHavok[4]{};
-            bool hasSampledAngularVelocity = false;
-            float sampledAngularVelocityRadians[4]{};
         };
 
         Classification bodyAClassification{};
@@ -585,13 +583,6 @@
                 source.sampledVelocityHavok[1] = classification.sampledVelocityHavokY;
                 source.sampledVelocityHavok[2] = classification.sampledVelocityHavokZ;
                 source.sampledVelocityHavok[3] = 0.0f;
-            }
-            if (hasFiniteSampledAngularVelocity(classification)) {
-                source.hasSampledAngularVelocity = true;
-                source.sampledAngularVelocityRadians[0] = classification.sampledAngularVelocityRadiansX;
-                source.sampledAngularVelocityRadians[1] = classification.sampledAngularVelocityRadiansY;
-                source.sampledAngularVelocityRadians[2] = classification.sampledAngularVelocityRadiansZ;
-                source.sampledAngularVelocityRadians[3] = 0.0f;
             }
             return source;
         };
@@ -741,41 +732,6 @@
         const auto endpointB = makeEndpoint(bodyIdB, bodyBLayer, bodyBIsRight, bodyBIsLeft, bodyBIsWeapon, bodyBIsRightHeld, bodyBIsLeftHeld, bodyBIsBody, bodyBIsExternal);
         const auto contactRoute = contact_pipeline_policy::classifyContact(endpointA, endpointB);
 
-        if (bodyAIsWeapon != bodyBIsWeapon) {
-            const auto& meleeSource = bodyAIsWeapon ? endpointA : endpointB;
-            const auto& meleeTarget = bodyAIsWeapon ? endpointB : endpointA;
-            auto targetBucket = PhysicalMeleeContactBucket::Other;
-            switch (meleeTarget.layer) {
-            case collision_layer_policy::FO4_LAYER_BIPED:
-                targetBucket = PhysicalMeleeContactBucket::Biped;
-                break;
-            case collision_layer_policy::FO4_LAYER_CHARCONTROLLER:
-                targetBucket = PhysicalMeleeContactBucket::CharacterController;
-                break;
-            case collision_layer_policy::FO4_LAYER_DEADBIP:
-                targetBucket = PhysicalMeleeContactBucket::DeadBiped;
-                break;
-            case collision_layer_policy::FO4_LAYER_BIPED_NO_CC:
-                targetBucket = PhysicalMeleeContactBucket::BipedNoCharacterController;
-                break;
-            default:
-                if (meleeTarget.kind == contact_pipeline_policy::ContactEndpointKind::WorldSurface) {
-                    targetBucket = PhysicalMeleeContactBucket::WorldSurface;
-                } else if (meleeTarget.kind == contact_pipeline_policy::ContactEndpointKind::DynamicProp) {
-                    targetBucket = PhysicalMeleeContactBucket::DynamicProp;
-                } else if (meleeTarget.kind == contact_pipeline_policy::ContactEndpointKind::External) {
-                    targetBucket = PhysicalMeleeContactBucket::RegisteredExternal;
-                }
-                break;
-            }
-            _physicalMeleeContactCallbacks.fetch_add(1, std::memory_order_relaxed);
-            _physicalMeleeContactTargetBuckets[static_cast<std::size_t>(targetBucket)].fetch_add(
-                1, std::memory_order_relaxed);
-            _lastPhysicalMeleeSourceBody.store(meleeSource.bodyId, std::memory_order_relaxed);
-            _lastPhysicalMeleeTargetBody.store(meleeTarget.bodyId, std::memory_order_relaxed);
-            _lastPhysicalMeleeTargetLayer.store(meleeTarget.layer, std::memory_order_release);
-        }
-
         auto handSourceFor = [&](std::uint32_t bodyId) -> const HandContactSource* {
             if (bodyARight.valid && bodyARight.metadata.bodyId == bodyId) {
                 return &bodyARight;
@@ -812,16 +768,6 @@
             return nullptr;
         };
 
-        auto classificationFor = [&](std::uint32_t bodyId) -> const Classification* {
-            if (bodyAClassification.valid && bodyAClassification.bodyId == bodyId) {
-                return &bodyAClassification;
-            }
-            if (bodyBClassification.valid && bodyBClassification.bodyId == bodyId) {
-                return &bodyBClassification;
-            }
-            return nullptr;
-        };
-
         auto fillSourceVelocity = [&](std::uint32_t sourceBodyId,
                                       ::rock::provider::RockProviderExternalSourceKind sourceKind,
                                       const HandColliderBodyMetadata* handMetadata,
@@ -854,271 +800,6 @@
             contact.sourceVelocityHavok[1] = motion->linearVelocity.y;
             contact.sourceVelocityHavok[2] = motion->linearVelocity.z;
             return havok_runtime::isFinite3(contact.sourceVelocityHavok);
-        };
-
-        auto enrichRelativeMotion = [&](std::uint32_t sourceBodyId,
-                                        std::uint32_t targetBodyId,
-                                        ::rock::provider::RockProviderExternalContactV1& contact) {
-            if (!world ||
-                (contact.flags & static_cast<std::uint32_t>(
-                    ::rock::provider::RockProviderExternalContactFlagV1::ContactPointValid)) == 0 ||
-                (contact.flags & static_cast<std::uint32_t>(
-                    ::rock::provider::RockProviderExternalContactFlagV1::ContactNormalValid)) == 0) {
-                return;
-            }
-
-            auto* sourceMotion = havok_runtime::getBodyMotion(
-                world, RE::hknpBodyId{ sourceBodyId });
-            auto* targetMotion = havok_runtime::getBodyMotion(
-                world, RE::hknpBodyId{ targetBodyId });
-            if (const auto* weaponSource = weaponSourceFor(sourceBodyId);
-                weaponSource && weaponSource->valid && weaponSource->hasSampledAngularVelocity &&
-                havok_runtime::isFinite3(weaponSource->sampledAngularVelocityRadians)) {
-                std::copy_n(weaponSource->sampledAngularVelocityRadians, 4, contact.sourceAngularVelocityHavok);
-                contact.flags |= static_cast<std::uint32_t>(
-                    ::rock::provider::RockProviderExternalContactFlagV1::SourceAngularVelocityValid);
-            }
-            if (sourceMotion) {
-                if ((contact.flags & static_cast<std::uint32_t>(
-                        ::rock::provider::RockProviderExternalContactFlagV1::SourceVelocityValid)) == 0) {
-                    contact.sourceVelocityHavok[0] = sourceMotion->linearVelocity.x;
-                    contact.sourceVelocityHavok[1] = sourceMotion->linearVelocity.y;
-                    contact.sourceVelocityHavok[2] = sourceMotion->linearVelocity.z;
-                    if (havok_runtime::isFinite3(contact.sourceVelocityHavok)) {
-                        contact.flags |= static_cast<std::uint32_t>(
-                            ::rock::provider::RockProviderExternalContactFlagV1::SourceVelocityValid);
-                    }
-                }
-                if ((contact.flags & static_cast<std::uint32_t>(
-                        ::rock::provider::RockProviderExternalContactFlagV1::SourceAngularVelocityValid)) == 0) {
-                    contact.sourceAngularVelocityHavok[0] = sourceMotion->angularVelocity.x;
-                    contact.sourceAngularVelocityHavok[1] = sourceMotion->angularVelocity.y;
-                    contact.sourceAngularVelocityHavok[2] = sourceMotion->angularVelocity.z;
-                    if (havok_runtime::isFinite3(contact.sourceAngularVelocityHavok)) {
-                        contact.flags |= static_cast<std::uint32_t>(
-                            ::rock::provider::RockProviderExternalContactFlagV1::SourceAngularVelocityValid);
-                    }
-                }
-                contact.sourceCenterOfMassHavok[0] = sourceMotion->position.x;
-                contact.sourceCenterOfMassHavok[1] = sourceMotion->position.y;
-                contact.sourceCenterOfMassHavok[2] = sourceMotion->position.z;
-                if (havok_runtime::isFinite3(contact.sourceCenterOfMassHavok)) {
-                    contact.flags |= static_cast<std::uint32_t>(
-                        ::rock::provider::RockProviderExternalContactFlagV1::SourceCenterOfMassValid);
-                }
-            }
-            if (targetMotion) {
-                contact.targetVelocityHavok[0] = targetMotion->linearVelocity.x;
-                contact.targetVelocityHavok[1] = targetMotion->linearVelocity.y;
-                contact.targetVelocityHavok[2] = targetMotion->linearVelocity.z;
-                contact.targetAngularVelocityHavok[0] = targetMotion->angularVelocity.x;
-                contact.targetAngularVelocityHavok[1] = targetMotion->angularVelocity.y;
-                contact.targetAngularVelocityHavok[2] = targetMotion->angularVelocity.z;
-                contact.targetCenterOfMassHavok[0] = targetMotion->position.x;
-                contact.targetCenterOfMassHavok[1] = targetMotion->position.y;
-                contact.targetCenterOfMassHavok[2] = targetMotion->position.z;
-                if (havok_runtime::isFinite3(contact.targetVelocityHavok)) {
-                    contact.flags |= static_cast<std::uint32_t>(
-                        ::rock::provider::RockProviderExternalContactFlagV1::TargetVelocityValid);
-                }
-                if (havok_runtime::isFinite3(contact.targetAngularVelocityHavok)) {
-                    contact.flags |= static_cast<std::uint32_t>(
-                        ::rock::provider::RockProviderExternalContactFlagV1::TargetAngularVelocityValid);
-                }
-                if (havok_runtime::isFinite3(contact.targetCenterOfMassHavok)) {
-                    contact.flags |= static_cast<std::uint32_t>(
-                        ::rock::provider::RockProviderExternalContactFlagV1::TargetCenterOfMassValid);
-                }
-            }
-
-            const bool sourceComValid = (contact.flags & static_cast<std::uint32_t>(
-                ::rock::provider::RockProviderExternalContactFlagV1::SourceCenterOfMassValid)) != 0;
-            const bool targetComValid = (contact.flags & static_cast<std::uint32_t>(
-                ::rock::provider::RockProviderExternalContactFlagV1::TargetCenterOfMassValid)) != 0;
-            if (sourceComValid && targetComValid) {
-                const float centerDirection[3]{
-                    contact.targetCenterOfMassHavok[0] - contact.sourceCenterOfMassHavok[0],
-                    contact.targetCenterOfMassHavok[1] - contact.sourceCenterOfMassHavok[1],
-                    contact.targetCenterOfMassHavok[2] - contact.sourceCenterOfMassHavok[2],
-                };
-                const float orientation = centerDirection[0] * contact.contactNormalHavok[0] +
-                    centerDirection[1] * contact.contactNormalHavok[1] +
-                    centerDirection[2] * contact.contactNormalHavok[2];
-                if (std::isfinite(orientation) && orientation < 0.0f) {
-                    contact.contactNormalHavok[0] = -contact.contactNormalHavok[0];
-                    contact.contactNormalHavok[1] = -contact.contactNormalHavok[1];
-                    contact.contactNormalHavok[2] = -contact.contactNormalHavok[2];
-                }
-            }
-
-            const auto pointVelocity = [&](const float* linear,
-                                           const float* angular,
-                                           const float* center,
-                                           bool angularValid,
-                                           bool centerValid,
-                                           float* outVelocity) {
-                outVelocity[0] = linear[0];
-                outVelocity[1] = linear[1];
-                outVelocity[2] = linear[2];
-                if (!angularValid || !centerValid) {
-                    return;
-                }
-                const float rx = contact.contactPointHavok[0] - center[0];
-                const float ry = contact.contactPointHavok[1] - center[1];
-                const float rz = contact.contactPointHavok[2] - center[2];
-                outVelocity[0] += angular[1] * rz - angular[2] * ry;
-                outVelocity[1] += angular[2] * rx - angular[0] * rz;
-                outVelocity[2] += angular[0] * ry - angular[1] * rx;
-            };
-
-            const bool sourceLinearValid = (contact.flags & static_cast<std::uint32_t>(
-                ::rock::provider::RockProviderExternalContactFlagV1::SourceVelocityValid)) != 0;
-            const bool targetLinearValid = (contact.flags & static_cast<std::uint32_t>(
-                ::rock::provider::RockProviderExternalContactFlagV1::TargetVelocityValid)) != 0;
-            if (!sourceLinearValid || !targetLinearValid) {
-                return;
-            }
-            float sourcePointVelocity[3]{};
-            float targetPointVelocity[3]{};
-            pointVelocity(contact.sourceVelocityHavok,
-                contact.sourceAngularVelocityHavok,
-                contact.sourceCenterOfMassHavok,
-                (contact.flags & static_cast<std::uint32_t>(
-                    ::rock::provider::RockProviderExternalContactFlagV1::SourceAngularVelocityValid)) != 0,
-                sourceComValid,
-                sourcePointVelocity);
-            pointVelocity(contact.targetVelocityHavok,
-                contact.targetAngularVelocityHavok,
-                contact.targetCenterOfMassHavok,
-                (contact.flags & static_cast<std::uint32_t>(
-                    ::rock::provider::RockProviderExternalContactFlagV1::TargetAngularVelocityValid)) != 0,
-                targetComValid,
-                targetPointVelocity);
-            const float relative[3]{
-                sourcePointVelocity[0] - targetPointVelocity[0],
-                sourcePointVelocity[1] - targetPointVelocity[1],
-                sourcePointVelocity[2] - targetPointVelocity[2],
-            };
-            const float projected = relative[0] * contact.contactNormalHavok[0] +
-                relative[1] * contact.contactNormalHavok[1] +
-                relative[2] * contact.contactNormalHavok[2];
-            const float speedSquared = relative[0] * relative[0] +
-                relative[1] * relative[1] + relative[2] * relative[2];
-            const float tangentSquared = (std::max)(0.0f, speedSquared - projected * projected);
-            if (std::isfinite(projected) && std::isfinite(tangentSquared)) {
-                contact.closingSpeedHavok = (std::max)(0.0f, projected);
-                contact.tangentSpeedHavok = std::sqrt(tangentSquared);
-                contact.flags |= static_cast<std::uint32_t>(
-                    ::rock::provider::RockProviderExternalContactFlagV1::RelativeVelocityValid);
-            }
-        };
-
-        auto enrichWeaponSurface = [&](std::uint32_t sourceBodyId,
-                                       ::rock::provider::RockProviderExternalContactV1& contact) {
-            const auto* classification = classificationFor(sourceBodyId);
-            if (!classification || classification->kind != GeneratedBodyKind::Weapon ||
-                (contact.flags & static_cast<std::uint32_t>(
-                    ::rock::provider::RockProviderExternalContactFlagV1::ContactPointValid)) == 0) {
-                return;
-            }
-
-            contact.sourceWeaponGenerationKey = classification->generationKey;
-            contact.sourceGeometryKey = classification->geometryKey;
-            contact.sourceWeaponFormId = classification->weaponFormId;
-            contact.sourceDescriptorIndex = classification->descriptorIndex;
-
-            RE::NiTransform sourceTransform{};
-            if (!havok_runtime::tryGetBodyArrayWorldTransform(
-                    world, RE::hknpBodyId{ sourceBodyId }, sourceTransform)) {
-                return;
-            }
-            const float pointGame[3]{
-                contact.contactPointHavok[0] * physics_scale::havokToGame(),
-                contact.contactPointHavok[1] * physics_scale::havokToGame(),
-                contact.contactPointHavok[2] * physics_scale::havokToGame(),
-            };
-            const float delta[3]{
-                pointGame[0] - sourceTransform.translate.x,
-                pointGame[1] - sourceTransform.translate.y,
-                pointGame[2] - sourceTransform.translate.z,
-            };
-            // NiTransform::rotate maps local to world; its orthonormal
-            // transpose maps the measured world point back into body-local
-            // weapon coordinates.
-            for (std::uint32_t axis = 0; axis < 3; ++axis) {
-                contact.sourceContactLocalGame[axis] =
-                    sourceTransform.rotate.entry[0][axis] * delta[0] +
-                    sourceTransform.rotate.entry[1][axis] * delta[1] +
-                    sourceTransform.rotate.entry[2][axis] * delta[2];
-            }
-            if (!havok_runtime::isFinite3(contact.sourceContactLocalGame)) {
-                return;
-            }
-            contact.flags |= static_cast<std::uint32_t>(
-                ::rock::provider::RockProviderExternalContactFlagV1::SourceLocalContactValid);
-
-            const float minimum[3]{ classification->localMinGameX,
-                classification->localMinGameY,
-                classification->localMinGameZ };
-            const float maximum[3]{ classification->localMaxGameX,
-                classification->localMaxGameY,
-                classification->localMaxGameZ };
-            float extent[3]{ maximum[0] - minimum[0],
-                maximum[1] - minimum[1],
-                maximum[2] - minimum[2] };
-            std::uint32_t majorAxis = 0;
-            if (extent[1] > extent[majorAxis]) {
-                majorAxis = 1;
-            }
-            if (extent[2] > extent[majorAxis]) {
-                majorAxis = 2;
-            }
-            if (!std::isfinite(extent[majorAxis]) || extent[majorAxis] <= 0.001f) {
-                return;
-            }
-            contact.sourceSurfaceCoordinate = std::clamp(
-                (contact.sourceContactLocalGame[majorAxis] - minimum[majorAxis]) /
-                    extent[majorAxis],
-                0.0f,
-                1.0f);
-
-            float nearestFace = 1.0f;
-            std::uint32_t nearestAxis = 0;
-            float normalizedFaceDistance[3]{};
-            for (std::uint32_t axis = 0; axis < 3; ++axis) {
-                if (!std::isfinite(extent[axis]) || extent[axis] <= 0.001f) {
-                    normalizedFaceDistance[axis] = 1.0f;
-                    continue;
-                }
-                normalizedFaceDistance[axis] = (std::min)(
-                    std::abs(contact.sourceContactLocalGame[axis] - minimum[axis]),
-                    std::abs(maximum[axis] - contact.sourceContactLocalGame[axis])) /
-                    extent[axis];
-                if (normalizedFaceDistance[axis] < nearestFace) {
-                    nearestFace = normalizedFaceDistance[axis];
-                    nearestAxis = axis;
-                }
-            }
-            std::uint32_t closeFaces = 0;
-            for (const float distance : normalizedFaceDistance) {
-                if (distance <= nearestFace + 0.08f) {
-                    ++closeFaces;
-                }
-            }
-            const auto impactProfile = physical_melee::classifyWeaponImpact(
-                static_cast<WeaponPartKind>(classification->partKind),
-                static_cast<WeaponSizeClass>(classification->weaponSizeClass),
-                physical_melee::WeaponImpactGeometry{
-                    .longitudinalCoordinate = contact.sourceSurfaceCoordinate,
-                    .majorAxis = majorAxis,
-                    .nearestAxis = nearestAxis,
-                    .closeFaceCount = closeFaces,
-                });
-            contact.sourceSurfaceRegion = impactProfile.region;
-            contact.sourceSurfaceDamageCoefficient = impactProfile.damageCoefficient;
-            contact.sourceSurfaceConfidencePermille = impactProfile.confidencePermille;
-            contact.flags |= static_cast<std::uint32_t>(
-                ::rock::provider::RockProviderExternalContactFlagV1::SourceSurfaceClassified);
         };
 
         auto tryFillAggregateContactPoint = [world](std::uint32_t sourceBodyId,
@@ -1186,7 +867,6 @@
             contact.quality = ::rock::provider::RockProviderExternalContactQuality::BodyPairOnly;
             contact.frameIndex =
                 _palmClockGameFrameIndex.load(std::memory_order_acquire);
-            contact.sourceEndpointIndex = sourceBodyId == bodyIdB ? 1u : 0u;
             contact.collisionGeneration =
                 _collisionGenerationAtomic.load(std::memory_order_acquire);
             if (fillSourceVelocity(sourceBodyId, sourceKind, handMetadata, contact)) {
@@ -1197,15 +877,6 @@
             if (ensureRawContactPoint()) {
                 contact.quality = ::rock::provider::RockProviderExternalContactQuality::RawPoint;
                 contact.contactPointWeightSum = rawContactPoint.contactPointWeightSum;
-                contact.manifoldPointCount = rawContactPoint.pointCount;
-                contact.selectedPointIndex = rawContactPoint.selectedPointIndex;
-                contact.nativeContactPointIndex = rawContactPoint.nativeContactPointIndex;
-                std::copy_n(&rawContactPoint.contactPointsHavok[0][0], 16,
-                    &contact.manifoldPointsHavok[0][0]);
-                std::copy_n(rawContactPoint.contactSeparationsHavok, 4,
-                    contact.manifoldSeparationsHavok);
-                std::copy_n(rawContactPoint.contactImpulses, 4,
-                    contact.manifoldImpulses);
                 std::copy_n(rawContactPoint.contactPointHavok, 4, contact.contactPointHavok);
                 std::copy_n(rawContactPoint.contactNormalHavok, 4, contact.contactNormalHavok);
                 contact.flags |=
@@ -1215,11 +886,6 @@
                         ::rock::provider::RockProviderExternalContactFlagV1::ContactNormalValid) |
                     static_cast<std::uint32_t>(
                         ::rock::provider::RockProviderExternalContactFlagV1::ContactPointMeasured);
-                contact.flags |= static_cast<std::uint32_t>(
-                    ::rock::provider::RockProviderExternalContactFlagV1::RawManifoldValid);
-                if (sourceKind == ::rock::provider::RockProviderExternalSourceKind::Weapon) {
-                    _physicalMeleeContactsRawMeasured.fetch_add(1, std::memory_order_relaxed);
-                }
             } else {
                 tryFillAggregateContactPoint(sourceBodyId, externalBodyId, contact);
             }
@@ -1236,11 +902,6 @@
                 }
             }
 
-            enrichRelativeMotion(sourceBodyId, externalBodyId, contact);
-            if (sourceKind == ::rock::provider::RockProviderExternalSourceKind::Weapon) {
-                enrichWeaponSurface(sourceBodyId, contact);
-            }
-
             const bool transitionSuppressed =
                 _dynamicHandCollision.isTransitionCollisionSuppressedAtomic();
             if (transitionSuppressed) {
@@ -1253,34 +914,11 @@
                     ::rock::provider::RockProviderExternalContactFlagV1::CollisionAvailable);
             }
 
-            PendingImpactObservation observation{};
-            observation.contact = contact;
-            observation.worldGeneration =
-                _worldGenerationAtomic.load(std::memory_order_acquire);
-            observation.skeletonGeneration =
-                _skeletonGenerationAtomic.load(std::memory_order_acquire);
-            observation.providerGeneration =
-                _providerGenerationAtomic.load(std::memory_order_acquire);
-            observation.targetCollisionLayer =
-                externalBodyId == bodyIdA ? bodyALayer : bodyBLayer;
-            if (const auto* weapon = classificationFor(sourceBodyId);
-                weapon && weapon->kind == GeneratedBodyKind::Weapon) {
-                observation.weaponWitness = physical_melee::WeaponIdentityWitness{
-                    .bodyGenerationKey = weapon->generationKey,
-                    .identityKey = weapon->weaponIdentityKey,
-                    .ownershipKey = weapon->weaponOwnershipKey,
-                    .instanceDataAddress = weapon->weaponInstanceDataAddress,
-                    .weaponFormId = weapon->weaponFormId,
-                    .collisionGeneration = contact.collisionGeneration,
-                    .equipIndex = weapon->weaponEquipIndex,
-                };
-            }
-            const bool queued = _impactObservationQueue.tryPush(observation);
-            if (sourceKind == ::rock::provider::RockProviderExternalSourceKind::Weapon) {
-                _physicalMeleeContactsPublished.fetch_add(1, std::memory_order_relaxed);
-                (queued ? _physicalMeleeContactsQueued : _physicalMeleeContactQueueRejected)
-                    .fetch_add(1, std::memory_order_release);
-            }
+            ::rock::provider::recordExternalContact(
+                contact,
+                _worldGenerationAtomic.load(std::memory_order_acquire),
+                _skeletonGenerationAtomic.load(std::memory_order_acquire),
+                _providerGenerationAtomic.load(std::memory_order_acquire));
         };
 
         auto recordBodyContactEvidence = [&]() {
@@ -1446,14 +1084,8 @@
             routeHandMetadata = handSource && handSource->valid ? &handSource->metadata : nullptr;
         }
 
-        const bool standaloneMeleeContact =
-            contactRoute.source.kind == contact_pipeline_policy::ContactEndpointKind::Weapon &&
-            contact_pipeline_policy::isStandaloneMeleeTarget(contactRoute.target);
-        if (contactRoute.publishExternalContact || standaloneMeleeContact) {
-            const auto sourceKind = standaloneMeleeContact ?
-                ::rock::provider::RockProviderExternalSourceKind::Weapon :
-                contactRoute.providerSourceKind;
-            publishExternalContact(contactRoute.sourceBodyId, contactRoute.targetBodyId, sourceKind, contactRoute.providerSourceHand, routeHandMetadata);
+        if (contactRoute.publishExternalContact) {
+            publishExternalContact(contactRoute.sourceBodyId, contactRoute.targetBodyId, contactRoute.providerSourceKind, contactRoute.providerSourceHand, routeHandMetadata);
         }
 
         if (contactRoute.driveWeaponDynamicPush) {

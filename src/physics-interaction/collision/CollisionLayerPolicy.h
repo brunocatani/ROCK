@@ -169,17 +169,14 @@ namespace rock::collision_layer_policy
     inline constexpr PlayerCharacterControllerContactPolicyDecision evaluatePlayerCharacterControllerContact(
         const PlayerCharacterControllerContactPolicyInput& input)
     {
+        if (!input.filterEnabled) {
+            return PlayerCharacterControllerContactPolicyDecision{ .suppress = false, .reason = "filterDisabled" };
+        }
         if (!input.playerController) {
             return PlayerCharacterControllerContactPolicyDecision{ .suppress = false, .reason = "nonPlayerController" };
         }
         if (!input.targetLayerKnown) {
             return PlayerCharacterControllerContactPolicyDecision{ .suppress = false, .reason = "unknownTargetLayer" };
-        }
-        if (isRockOwnedReusableLayer(input.targetLayer)) {
-            return PlayerCharacterControllerContactPolicyDecision{ .suppress = true, .reason = "rockGeneratedSelf" };
-        }
-        if (!input.filterEnabled) {
-            return PlayerCharacterControllerContactPolicyDecision{ .suppress = false, .reason = "filterDisabled" };
         }
         if (input.targetIsMovableStatic && isPlayerCharacterControllerSupportLayer(input.targetLayer)) {
             return PlayerCharacterControllerContactPolicyDecision{ .suppress = true, .reason = "movableStaticSupportLayer" };
@@ -356,12 +353,7 @@ namespace rock::collision_layer_policy
         return mask;
     }
 
-    inline constexpr std::uint64_t buildRockWeaponExpectedMask(
-        bool blocksProjectiles,
-        bool blocksSpells,
-        bool includeStaticWorld = true,
-        bool includeBodyLayer = false,
-        bool includeCharacterController = false)
+    inline constexpr std::uint64_t buildRockWeaponExpectedMask(bool blocksProjectiles, bool blocksSpells, bool includeStaticWorld = true, bool includeBodyLayer = false)
     {
         std::uint64_t mask = allConfiguredLayerBits();
         mask = withoutLayer(mask, FO4_LAYER_UNIDENTIFIED);
@@ -370,9 +362,7 @@ namespace rock::collision_layer_policy
             mask = withoutLayer(mask, FO4_LAYER_ANIMSTATIC);
         }
         mask = withoutLayer(mask, FO4_LAYER_NONCOLLIDABLE);
-        if (!includeCharacterController) {
-            mask = withoutLayer(mask, FO4_LAYER_CHARCONTROLLER);
-        }
+        mask = withoutLayer(mask, FO4_LAYER_CHARCONTROLLER);
         mask = withoutLayer(mask, ROCK_LAYER_WEAPON);
         mask = withoutLayer(mask, FO4_LAYER_CAMERASPHERE);
         mask = withoutLayer(mask, FO4_LAYER_ITEMPICK);
@@ -467,12 +457,7 @@ namespace rock::collision_layer_policy
             return false;
         }
 
-        constexpr std::uint32_t actorLayers[]{
-            FO4_LAYER_BIPED,
-            FO4_LAYER_DEADBIP,
-            FO4_LAYER_BIPED_NO_CC,
-            FO4_LAYER_CHARCONTROLLER,
-        };
+        constexpr std::uint32_t actorLayers[] = { FO4_LAYER_BIPED, FO4_LAYER_DEADBIP, FO4_LAYER_BIPED_NO_CC };
         for (const auto actorLayer : actorLayers) {
             if (!layerPairSymmetricMatches(matrix, ROCK_LAYER_HAND, actorLayer, maskEnablesLayer(expectedHandMask, actorLayer))) {
                 return false;
@@ -532,22 +517,9 @@ namespace rock::collision_layer_policy
         applyLayerExpectedMask(matrix, ROCK_LAYER_HAND, buildRockHandExpectedMask(includeWeaponLayer, includeStaticWorld));
     }
 
-    inline void applyRockWeaponLayerPolicy(
-        std::uint64_t* matrix,
-        bool blocksProjectiles,
-        bool blocksSpells,
-        bool includeStaticWorld = true,
-        bool includeCharacterController = false)
+    inline void applyRockWeaponLayerPolicy(std::uint64_t* matrix, bool blocksProjectiles, bool blocksSpells, bool includeStaticWorld = true)
     {
-        applyLayerExpectedMask(
-            matrix,
-            ROCK_LAYER_WEAPON,
-            buildRockWeaponExpectedMask(
-                blocksProjectiles,
-                blocksSpells,
-                includeStaticWorld,
-                false,
-                includeCharacterController));
+        applyLayerExpectedMask(matrix, ROCK_LAYER_WEAPON, buildRockWeaponExpectedMask(blocksProjectiles, blocksSpells, includeStaticWorld));
     }
 
     inline void applyRockReloadLayerPolicy(std::uint64_t* matrix, bool blocksProjectiles, bool blocksSpells, bool includeStaticWorld = true)
@@ -597,8 +569,7 @@ namespace rock::collision_layer_policy
         bool weaponStaticWorld,
         bool bodyStaticWorld,
         bool weaponBlocksProjectiles,
-        bool weaponBlocksSpells,
-        bool weaponCharacterControllerMelee)
+        bool weaponBlocksSpells)
     {
         /*
          * Runtime registration uses one aggregate helper because layer 47 is an
@@ -609,12 +580,7 @@ namespace rock::collision_layer_policy
         applyRockHandLayerPolicy(matrix, true, handStaticWorld);
         applyLayerExpectedMask(matrix,
             ROCK_LAYER_WEAPON,
-            buildRockWeaponExpectedMask(
-                weaponBlocksProjectiles,
-                weaponBlocksSpells,
-                weaponStaticWorld,
-                true,
-                weaponCharacterControllerMelee));
+            buildRockWeaponExpectedMask(weaponBlocksProjectiles, weaponBlocksSpells, weaponStaticWorld, true));
         applyRockReloadLayerPolicy(matrix, weaponBlocksProjectiles, weaponBlocksSpells, handStaticWorld);
         applyRockBodyLayerPolicy(matrix, bodyStaticWorld);
         applyRockDynamicHandProxyLayerPolicy(matrix);

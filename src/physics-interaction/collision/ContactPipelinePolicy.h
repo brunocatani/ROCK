@@ -197,22 +197,6 @@ namespace rock::contact_pipeline_policy
         return ContactEndpointKind::Unknown;
     }
 
-    /*
-     * A standing actor's hknp character controller is intentionally not a
-     * general Actor endpoint: hands and held objects must not inherit actor
-     * routing or dynamic-push behavior merely because they touch layer 30.
-     * Physical melee is the one narrow exception. Its game-thread resolver
-     * validates that the collided scene belongs to a live NPC before any
-     * locational report or native damage can be produced.
-     */
-    inline constexpr bool isStandaloneMeleeTarget(const ContactEndpoint& target)
-    {
-        return target.kind == ContactEndpointKind::Actor ||
-               target.kind == ContactEndpointKind::External ||
-               (target.kind == ContactEndpointKind::Unknown &&
-                   target.layer == collision_layer_policy::FO4_LAYER_CHARCONTROLLER);
-    }
-
     inline constexpr const char* routeName(ContactRoute route)
     {
         switch (route) {

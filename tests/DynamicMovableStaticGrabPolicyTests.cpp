@@ -311,15 +311,6 @@ int main()
         }),
         false,
         "nonPlayerController");
-    ok &= expectPlayerControllerDecision("player self-collision with ROCK weapon is always suppressed",
-        collision_layer_policy::evaluatePlayerCharacterControllerContact(collision_layer_policy::PlayerCharacterControllerContactPolicyInput{
-            .filterEnabled = false,
-            .playerController = true,
-            .targetLayerKnown = true,
-            .targetLayer = collision_layer_policy::ROCK_LAYER_WEAPON,
-        }),
-        true,
-        "rockGeneratedSelf");
 
     auto matrix = makeFullyEnabledMatrix();
     const auto originalControllerMask = matrix[collision_layer_policy::FO4_LAYER_CHARCONTROLLER];

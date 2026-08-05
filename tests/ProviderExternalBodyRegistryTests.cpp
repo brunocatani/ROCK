@@ -56,21 +56,6 @@ namespace
         return result;
     }
 
-    RockProviderExternalContactRecordV1 providerMeleeContact()
-    {
-        RockProviderExternalContactRecordV1 result{};
-        result.impactId = 0x8000'0000'0000'0001ull;
-        result.sourceBodyId = 91;
-        result.targetExternalBodyId = 92;
-        result.sourceKind = RockProviderExternalSourceKind::Weapon;
-        result.quality = RockProviderExternalContactQuality::RawPoint;
-        result.targetActorFormId = 0x1234;
-        result.targetBodyPartIndex = 1;
-        result.sourceSurfaceRegion = RockProviderImpactSurfaceRegionV1::Edge;
-        result.contactPointHavok[0] = 2.0f;
-        return result;
-    }
-
     void testValidationAndScopeOwnership()
     {
         using RegistrationResult = ExternalBodyRegistry::RegistrationResult;
@@ -94,16 +79,6 @@ namespace
         auto valid = body(scopeA, 100);
         assert(registry->registerBodiesForScope(ownerA, scopeA, &valid, 1));
         assert(registry->containsBody(100));
-
-        // BPTD legitimately uses zero multipliers for non-damageable zones;
-        // those bodies still need contact/anatomy reporting and native HitData
-        // must remain the authority for the zero-damage result.
-        auto zeroRegistry = std::make_unique<ExternalBodyRegistry>();
-        auto zeroDamageBody = body(scopeA, 102);
-        zeroDamageBody.bodyPartDamageMultiplier = 0.0f;
-        assert(zeroRegistry->registerBodiesForScope(
-            ownerA, scopeA, &zeroDamageBody, 1));
-        assert(zeroRegistry->containsBody(102));
 
         auto wrongScope = body(scopeB, 101);
         assert(!registry->registerBodiesForScope(ownerA, scopeA, &wrongScope, 1));
@@ -295,154 +270,6 @@ namespace
         assert(stateB.flags == 0);
     }
 
-    void testRichContactEvidenceAndEpisodeCoalescing()
-    {
-        constexpr std::uint64_t owner = 0xA025;
-        constexpr std::uint64_t scope = 0xB025;
-        constexpr std::uint32_t anatomyValid =
-            static_cast<std::uint32_t>(RockProviderTargetAnatomyFlagV1::BodyMapValid) |
-            static_cast<std::uint32_t>(RockProviderTargetAnatomyFlagV1::NodeNameValid) |
-            static_cast<std::uint32_t>(RockProviderTargetAnatomyFlagV1::BodyPartValid) |
-            static_cast<std::uint32_t>(RockProviderTargetAnatomyFlagV1::DamageMultiplierValid) |
-            static_cast<std::uint32_t>(RockProviderTargetAnatomyFlagV1::LimbActorValueValid);
-
-        auto registry = std::make_unique<ExternalBodyRegistry>();
-        auto target = body(scope, 450, 9);
-        target.actorFormId = 0xCAFE;
-        target.anatomyFlags = anatomyValid;
-        target.animationBoneCandidateCount = 2;
-        target.animationBoneCandidates[0] = 4;
-        target.animationBoneCandidates[1] = 7;
-        target.bodyPartIndex = 11;
-        target.targetZone = RockProviderBodyZoneKind::LeftUpperArm;
-        target.targetSide = RockProviderBodyZoneSide::Left;
-        target.bodyPartDamageMultiplier = 1.4f;
-        target.limbActorValueFormId = 0xBEEF;
-        target.nodeNameHash = 0x1122'3344'5566'7788ull;
-        target.nodeName[0] = 'L';
-        target.nodeName[1] = 'A';
-        target.nodeName[2] = 'r';
-        target.nodeName[3] = 'm';
-        assert(registry->registerBodiesForScope(owner, scope, &target, 1));
-
-        auto rich = contact(75, 450, 100, RockProviderExternalSourceKind::Weapon);
-        rich.flags =
-            static_cast<std::uint32_t>(RockProviderExternalContactFlagV1::RawManifoldValid) |
-            static_cast<std::uint32_t>(RockProviderExternalContactFlagV1::RelativeVelocityValid) |
-            static_cast<std::uint32_t>(RockProviderExternalContactFlagV1::SourceLocalContactValid) |
-            static_cast<std::uint32_t>(RockProviderExternalContactFlagV1::SourceSurfaceClassified);
-        rich.sourceEndpointIndex = 1;
-        rich.manifoldPointCount = 3;
-        rich.selectedPointIndex = 1;
-        rich.nativeContactPointIndex = 2;
-        rich.manifoldPointsHavok[1][0] = 1.25f;
-        rich.manifoldPointsHavok[1][1] = 2.5f;
-        rich.manifoldSeparationsHavok[1] = -0.125f;
-        rich.manifoldImpulses[1] = 6.5f;
-        rich.sourceAngularVelocityHavok[2] = 3.0f;
-        rich.targetVelocityHavok[0] = 0.5f;
-        rich.targetAngularVelocityHavok[1] = 0.25f;
-        rich.sourceCenterOfMassHavok[0] = 9.0f;
-        rich.targetCenterOfMassHavok[1] = 8.0f;
-        rich.sourceContactLocalGame[2] = 7.0f;
-        rich.closingSpeedHavok = 6.0f;
-        rich.tangentSpeedHavok = 1.5f;
-        rich.sourceSurfaceCoordinate = 0.9f;
-        rich.sourceSurfaceDamageCoefficient = 1.75f;
-        rich.sourceWeaponGenerationKey = 0x1234'5678ull;
-        rich.sourceGeometryKey = 0x8765'4321ull;
-        rich.sourceWeaponFormId = 0xABCD;
-        rich.sourceDescriptorIndex = 3;
-        rich.sourceSurfaceRegion = RockProviderImpactSurfaceRegionV1::Edge;
-        rich.sourceSurfaceConfidencePermille = 950;
-
-        assert(registry->recordContactV1(rich, 61, 62, 63));
-        rich.frameIndex = 102;
-        assert(registry->recordContactV1(rich, 61, 62, 63));
-        rich.frameIndex = 110;
-        assert(registry->recordContactV1(rich, 61, 62, 63));
-
-        std::array<RockProviderExternalContactRecordV1, 3> rows{};
-        RockProviderExternalContactStreamStateV1 state{};
-        assert(registry->copyContactsSinceV1(owner, scope, 0, rows.data(), 3, state) == 3);
-        assert(rows[0].impactId != 0);
-        assert(rows[1].impactId == rows[0].impactId + 1);
-        assert(rows[2].impactId == rows[1].impactId + 1);
-        assert(rows[0].episodeId != 0);
-        assert(rows[1].episodeId == rows[0].episodeId);
-        assert(rows[2].episodeId != rows[1].episodeId);
-        assert(rows[0].episodeFlags == static_cast<std::uint32_t>(RockProviderImpactEpisodeFlagV1::Started));
-        assert(rows[1].episodeFlags == static_cast<std::uint32_t>(RockProviderImpactEpisodeFlagV1::Continued));
-        assert(rows[2].episodeFlags == static_cast<std::uint32_t>(RockProviderImpactEpisodeFlagV1::Started));
-        assert(rows[0].manifoldPointCount == 3);
-        assert(rows[0].selectedPointIndex == 1);
-        assert(rows[0].nativeContactPointIndex == 2);
-        assert(rows[0].manifoldPointsHavok[1][0] == 1.25f);
-        assert(rows[0].manifoldSeparationsHavok[1] == -0.125f);
-        assert(rows[0].manifoldImpulses[1] == 6.5f);
-        assert(rows[0].closingSpeedHavok == 6.0f);
-        assert(rows[0].sourceSurfaceDamageCoefficient == 1.75f);
-        assert(rows[0].sourceSurfaceRegion == RockProviderImpactSurfaceRegionV1::Edge);
-        assert(rows[0].sourceWeaponFormId == 0xABCD);
-        assert(rows[0].targetActorFormId == 0xCAFE);
-        assert(rows[0].targetAnatomyFlags == anatomyValid);
-        assert(rows[0].targetAnimationBoneCandidateCount == 2);
-        assert(rows[0].targetAnimationBoneCandidates[1] == 7);
-        assert(rows[0].targetBodyPartIndex == 11);
-        assert(rows[0].targetZone == RockProviderBodyZoneKind::LeftUpperArm);
-        assert(rows[0].targetSide == RockProviderBodyZoneSide::Left);
-        assert(rows[0].targetBodyPartDamageMultiplier == 1.4f);
-        assert(rows[0].targetLimbActorValueFormId == 0xBEEF);
-        assert(rows[0].targetNodeNameHash == 0x1122'3344'5566'7788ull);
-        assert(rows[0].targetNodeName[0] == 'L');
-        assert((rows[0].flags & static_cast<std::uint32_t>(
-            RockProviderExternalContactFlagV1::TargetAnatomyValid)) != 0);
-    }
-
-    void testProviderMeleeContactsAreVisibleWithoutConsumerBodyRegistration()
-    {
-        constexpr std::uint64_t ownerA = 0xA040;
-        constexpr std::uint64_t ownerB = 0xA041;
-        constexpr std::uint64_t scopeA = 0xB040;
-        auto registry = std::make_unique<ExternalBodyRegistry>();
-        assert(registry->registerBodiesForScope(ownerA, scopeA, nullptr, 0));
-
-        auto melee = providerMeleeContact();
-        assert(registry->recordProviderContactV1(melee));
-        assert(melee.sequence != 0);
-        assert(melee.parentOwnerToken == 0);
-        assert(melee.scopeToken == 0);
-
-        RockProviderExternalContactRecordV1 copied[2]{};
-        RockProviderExternalContactStreamStateV1 state{};
-        assert(registry->copyContactsSinceV1(ownerA, 0, 0, copied, 2, state) == 1);
-        assert(copied[0].impactId == melee.impactId);
-        assert(copied[0].targetActorFormId == melee.targetActorFormId);
-        assert(copied[0].targetBodyPartIndex == melee.targetBodyPartIndex);
-        assert(copied[0].sourceSurfaceRegion == melee.sourceSurfaceRegion);
-        assert(copied[0].contactPointHavok[0] == melee.contactPointHavok[0]);
-
-        state = {};
-        assert(registry->copyContactsSinceV1(ownerB, 0, 0, copied, 2, state) == 1);
-        state = {};
-        assert(registry->copyContactsSinceV1(ownerA, scopeA, 0, copied, 2, state) == 0);
-
-        registry->clearOwner(ownerA);
-        state = {};
-        assert(registry->copyContactsSinceV1(ownerB, 0, 0, copied, 2, state) == 1);
-
-        for (std::uint32_t index = 1; index <= ExternalBodyRegistry::kMaxContacts; ++index) {
-            auto next = providerMeleeContact();
-            next.impactId += index;
-            next.sourceBodyId += index * 2;
-            next.targetExternalBodyId += index * 2;
-            assert(registry->recordProviderContactV1(next));
-        }
-        state = {};
-        assert(registry->copyContactsSinceV1(ownerB, 0, melee.sequence, copied, 2, state) == 2);
-        assert(state.overwrittenCount == 1);
-    }
-
     void testCapacityFailureIsTransactional()
     {
         using RegistrationResult = ExternalBodyRegistry::RegistrationResult;
@@ -517,8 +344,6 @@ int main()
     testValidationAndScopeOwnership();
     testContactDemultiplexingAndRefresh();
     testContactPolicyAndScopedLossAccounting();
-    testRichContactEvidenceAndEpisodeCoalescing();
-    testProviderMeleeContactsAreVisibleWithoutConsumerBodyRegistration();
     testCapacityFailureIsTransactional();
     return 0;
 }

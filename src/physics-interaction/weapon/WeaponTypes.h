@@ -381,7 +381,6 @@ namespace rock
         std::string geometryRootName;
         std::string sourceName;
         WeaponPartClassification semantic{};
-        WeaponEvidencePoint3 localCenterGame{};
         WeaponEvidenceBounds3 localBoundsGame{};
         std::vector<WeaponEvidencePoint3> localMeshPointsGame{};
         std::uint32_t pointCount{ 0 };

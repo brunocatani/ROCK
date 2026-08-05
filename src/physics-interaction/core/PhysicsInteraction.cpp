@@ -44,8 +44,6 @@
 #include "physics-interaction/grab/CustomOGA.h"
 #include "physics-interaction/grab/GrabEvent.h"
 #include "physics-interaction/grab/GrabTelemetry.h"
-#include "physics-interaction/melee/PhysicalMeleeRuntime.h"
-#include "physics-interaction/melee/WeaponImpactProfile.h"
 #include "physics-interaction/grab/GrabHeldObject.h"
 #include "physics-interaction/grab/GrabMassPolicy.h"
 #include "physics-interaction/grab/GrabNodeInfoMath.h"
@@ -1345,17 +1343,12 @@ namespace rock
          */
         installRefreshManifoldHook();
 
-        if (!physical_melee::initializeRuntime()) {
-            ROCK_LOG_CRITICAL(Melee, "ROCK physical melee native bridge failed verification; melee damage is disabled");
-        }
-
         ROCK_LOG_INFO(Init, "ROCK Physics Module v0.1 — created");
     }
 
     PhysicsInteraction::~PhysicsInteraction()
     {
         s_instance.store(nullptr, std::memory_order_release);
-        physical_melee::resetRuntime();
 
         _authoredPrimaryFiringGrip.reset("physics-destroyed", _twoHandedGrip);
 
@@ -1515,145 +1508,6 @@ namespace rock
         _generatedBodyContactRegistry.clear();
     }
 
-    void PhysicsInteraction::drainExternalContactObservations()
-    {
-        const auto worldGeneration =
-            _worldGenerationAtomic.load(std::memory_order_acquire);
-        const auto skeletonGeneration =
-            _skeletonGenerationAtomic.load(std::memory_order_acquire);
-        const auto providerGeneration =
-            _providerGenerationAtomic.load(std::memory_order_acquire);
-        const auto processingFrameIndex =
-            _palmClockGameFrameIndex.load(std::memory_order_acquire);
-        physical_melee::drainCompletedOutcomes(processingFrameIndex);
-        auto* bhkWorld = getPlayerBhkWorld();
-        auto* hknpWorld = bhkWorld ? getHknpWorld(bhkWorld) : nullptr;
-        const auto equippedWeapon = _weaponCollision.getEquippedWeaponClassification();
-        const auto& runtime = runtime_state::currentFrame();
-        physical_melee::beginContactFrame(physical_melee::ContactFrameContext{
-            .bhkWorld = bhkWorld,
-            .currentWeapon = physical_melee::WeaponIdentityWitness{
-                .bodyGenerationKey = _weaponCollision.getCurrentWeaponGenerationKey(),
-                .identityKey = weapon_generation_identity_policy::makeEquippedWeaponIdentityKey(equippedWeapon),
-                .ownershipKey = weapon_generation_identity_policy::makeEquippedWeaponOwnershipKey(equippedWeapon),
-                .instanceDataAddress = equippedWeapon.instanceDataAddress,
-                .weaponFormId = equippedWeapon.formID,
-                .collisionGeneration = _collisionGenerationAtomic.load(std::memory_order_acquire),
-                .equipIndex = equippedWeapon.equipIndex,
-            },
-            .worldGeneration = worldGeneration,
-            .skeletonGeneration = skeletonGeneration,
-            .providerGeneration = providerGeneration,
-            .processingFrameIndex = processingFrameIndex,
-            .damageSubmissionAllowed =
-                runtime.visualAuthorityAvailable && runtime.localSkeletonReady &&
-                !runtime.localMenuBlocking && !runtime.compatibilityConfigBlocking &&
-                bhkWorld && hknpWorld && physicsWritesAllowedForWorld(hknpWorld),
-        });
-        PendingImpactObservation observation{};
-        while (_impactObservationQueue.tryPop(observation)) {
-            // A contact callback can race a load/reset boundary. Never let an
-            // observation from the old world bind to a newly registered body
-            // that happens to reuse the same hknp body id.
-            if (observation.worldGeneration != worldGeneration ||
-                observation.skeletonGeneration != skeletonGeneration ||
-                observation.providerGeneration != providerGeneration) {
-                continue;
-            }
-            physical_melee::processContactObservation(
-                observation.contact,
-                observation.weaponWitness,
-                observation.targetCollisionLayer);
-            (void)::rock::provider::recordExternalContact(
-                observation.contact,
-                observation.worldGeneration,
-                observation.skeletonGeneration,
-                observation.providerGeneration);
-        }
-        physical_melee::finishContactFrame();
-
-        const auto dropped = _impactObservationQueue.droppedCount();
-        if (dropped != _lastReportedDroppedImpactObservations) {
-            ROCK_LOG_WARN(Contact,
-                "Impact observation queue overflowed: dropped={} delta={}",
-                dropped,
-                dropped - _lastReportedDroppedImpactObservations);
-            _lastReportedDroppedImpactObservations = dropped;
-        }
-        reportPhysicalMeleeContactCensus();
-    }
-
-    void PhysicsInteraction::reportPhysicalMeleeContactCensus()
-    {
-        if (!g_rockConfig.rockPhysicalMeleeEnabled || !_weaponCollision.hasWeaponBody()) {
-            return;
-        }
-
-        constexpr std::uint64_t kReportIntervalFrames = 180;
-        const auto frameIndex = _palmClockGameFrameIndex.load(std::memory_order_acquire);
-        if (frameIndex >= _lastPhysicalMeleeContactCensusFrame &&
-            frameIndex - _lastPhysicalMeleeContactCensusFrame < kReportIntervalFrames) {
-            return;
-        }
-        _lastPhysicalMeleeContactCensusFrame = frameIndex;
-
-        PhysicalMeleeContactCensusSnapshot current{};
-        current.callbacks = _physicalMeleeContactCallbacks.load(std::memory_order_acquire);
-        for (std::size_t i = 0; i < current.targetBuckets.size(); ++i) {
-            current.targetBuckets[i] =
-                _physicalMeleeContactTargetBuckets[i].load(std::memory_order_acquire);
-        }
-        current.published = _physicalMeleeContactsPublished.load(std::memory_order_acquire);
-        current.rawMeasured = _physicalMeleeContactsRawMeasured.load(std::memory_order_acquire);
-        current.queued = _physicalMeleeContactsQueued.load(std::memory_order_acquire);
-        current.queueRejected = _physicalMeleeContactQueueRejected.load(std::memory_order_acquire);
-
-        const auto delta = [](std::uint64_t value, std::uint64_t previous) {
-            return value >= previous ? value - previous : value;
-        };
-        const auto bucket = [](const PhysicalMeleeContactCensusSnapshot& snapshot,
-                                PhysicalMeleeContactBucket target) {
-            return snapshot.targetBuckets[static_cast<std::size_t>(target)];
-        };
-        const auto bucketDelta = [&](PhysicalMeleeContactBucket target) {
-            return delta(bucket(current, target), bucket(_lastPhysicalMeleeContactCensus, target));
-        };
-        const auto liveActorTotal =
-            bucket(current, PhysicalMeleeContactBucket::Biped) +
-            bucket(current, PhysicalMeleeContactBucket::BipedNoCharacterController);
-        const auto equippedWeapon = _weaponCollision.getEquippedWeaponClassification();
-
-        ROCK_LOG_INFO(Melee,
-            "Physical melee contact census frame={} weapon={:08X} bodies={} interval(callbacks={} biped={} charController={} deadbip={} bipedNoCC={} world={} dynamic={} external={} other={} published={} rawMeasured={} queued={} queueRejected={}) total(callbacks={} liveActor={} charController={} deadActor={} published={} queued={} queueRejected={}) last(sourceBody={} targetBody={} targetLayer={})",
-            frameIndex,
-            equippedWeapon.formID,
-            _weaponCollision.getWeaponBodyCount(),
-            delta(current.callbacks, _lastPhysicalMeleeContactCensus.callbacks),
-            bucketDelta(PhysicalMeleeContactBucket::Biped),
-            bucketDelta(PhysicalMeleeContactBucket::CharacterController),
-            bucketDelta(PhysicalMeleeContactBucket::DeadBiped),
-            bucketDelta(PhysicalMeleeContactBucket::BipedNoCharacterController),
-            bucketDelta(PhysicalMeleeContactBucket::WorldSurface),
-            bucketDelta(PhysicalMeleeContactBucket::DynamicProp),
-            bucketDelta(PhysicalMeleeContactBucket::RegisteredExternal),
-            bucketDelta(PhysicalMeleeContactBucket::Other),
-            delta(current.published, _lastPhysicalMeleeContactCensus.published),
-            delta(current.rawMeasured, _lastPhysicalMeleeContactCensus.rawMeasured),
-            delta(current.queued, _lastPhysicalMeleeContactCensus.queued),
-            delta(current.queueRejected, _lastPhysicalMeleeContactCensus.queueRejected),
-            current.callbacks,
-            liveActorTotal,
-            bucket(current, PhysicalMeleeContactBucket::CharacterController),
-            bucket(current, PhysicalMeleeContactBucket::DeadBiped),
-            current.published,
-            current.queued,
-            current.queueRejected,
-            _lastPhysicalMeleeSourceBody.load(std::memory_order_acquire),
-            _lastPhysicalMeleeTargetBody.load(std::memory_order_acquire),
-            _lastPhysicalMeleeTargetLayer.load(std::memory_order_acquire));
-        _lastPhysicalMeleeContactCensus = current;
-    }
-
     void PhysicsInteraction::refreshGeneratedBodyContactRegistry()
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GeneratedBodyContactRegistry);
@@ -1662,7 +1516,6 @@ namespace rock
         using generated_body_contact_registry::GeneratedBodyKind;
         using generated_body_contact_registry::kFlagPowerArmor;
         using generated_body_contact_registry::kFlagPrimaryAnchor;
-        using generated_body_contact_registry::kFlagSampledAngularVelocity;
         using generated_body_contact_registry::kFlagSampledVelocity;
 
         std::array<Entry, kGeneratedBodyContactRegistryCapacity> entries{};
@@ -1708,9 +1561,6 @@ namespace rock
         addHandEntries(_rightHand, false);
         addHandEntries(_leftHand, true);
 
-        const auto currentWeapon = _weaponCollision.getEquippedWeaponClassification();
-        const auto currentWeaponOwnership =
-            weapon_generation_identity_policy::makeEquippedWeaponOwnershipKey(currentWeapon);
         const auto weaponSnapshot = _weaponCollision.getWeaponBodySnapshotAtomic();
         for (std::uint32_t i = 0; i < weaponSnapshot.count && i < MAX_WEAPON_COLLISION_BODIES; ++i) {
             WeaponInteractionContact contact{};
@@ -1728,36 +1578,6 @@ namespace rock
             entry.actionRole = static_cast<std::uint32_t>(contact.actionRole);
             entry.gripPose = static_cast<std::uint32_t>(contact.fallbackGripPose);
             entry.generationKey = contact.weaponGenerationKey;
-            entry.weaponIdentityKey = _weaponCollision.getPublishedEquippedWeaponIdentityKey();
-            entry.weaponOwnershipKey = currentWeaponOwnership;
-            entry.weaponInstanceDataAddress = currentWeapon.instanceDataAddress;
-            entry.weaponFormId = _weaponCollision.getPublishedEquippedWeaponFormID();
-            entry.weaponEquipIndex = currentWeapon.equipIndex;
-            entry.weaponSizeClass = static_cast<std::uint32_t>(currentWeapon.sizeClass);
-            entry.descriptorIndex = i;
-
-            WeaponCollisionProfileEvidenceDescriptor descriptor{};
-            RE::NiAVObject* sourceNode = nullptr;
-            if (_weaponCollision.tryGetProfileEvidenceDescriptorForBodyId(
-                    contact.bodyId,
-                    descriptor,
-                    sourceNode) &&
-                descriptor.localBoundsGame.valid) {
-                entry.geometryKey = descriptor.weaponGenerationKey ^
-                    (static_cast<std::uint64_t>(descriptor.sourceRootAddress) << 1u) ^
-                    (static_cast<std::uint64_t>(descriptor.geometryRootAddress) >> 1u) ^
-                    static_cast<std::uint64_t>(descriptor.bodyId);
-                entry.localCenterGameX = descriptor.localCenterGame.x;
-                entry.localCenterGameY = descriptor.localCenterGame.y;
-                entry.localCenterGameZ = descriptor.localCenterGame.z;
-                entry.localMinGameX = descriptor.localBoundsGame.min.x - descriptor.localCenterGame.x;
-                entry.localMinGameY = descriptor.localBoundsGame.min.y - descriptor.localCenterGame.y;
-                entry.localMinGameZ = descriptor.localBoundsGame.min.z - descriptor.localCenterGame.z;
-                entry.localMaxGameX = descriptor.localBoundsGame.max.x - descriptor.localCenterGame.x;
-                entry.localMaxGameY = descriptor.localBoundsGame.max.y - descriptor.localCenterGame.y;
-                entry.localMaxGameZ = descriptor.localBoundsGame.max.z - descriptor.localCenterGame.z;
-            }
-            (void)sourceNode;
 
             float sampledVelocityHavok[4]{};
             if (_weaponCollision.tryGetWeaponBodySampledVelocityAtomic(contact.bodyId, sampledVelocityHavok) &&
@@ -1768,16 +1588,6 @@ namespace rock
                 entry.sampledVelocityHavokX = sampledVelocityHavok[0];
                 entry.sampledVelocityHavokY = sampledVelocityHavok[1];
                 entry.sampledVelocityHavokZ = sampledVelocityHavok[2];
-            }
-            float sampledAngularVelocityRadians[4]{};
-            if (_weaponCollision.tryGetWeaponBodySampledAngularVelocityAtomic(contact.bodyId, sampledAngularVelocityRadians) &&
-                std::isfinite(sampledAngularVelocityRadians[0]) &&
-                std::isfinite(sampledAngularVelocityRadians[1]) &&
-                std::isfinite(sampledAngularVelocityRadians[2])) {
-                entry.flags |= kFlagSampledAngularVelocity;
-                entry.sampledAngularVelocityRadiansX = sampledAngularVelocityRadians[0];
-                entry.sampledAngularVelocityRadiansY = sampledAngularVelocityRadians[1];
-                entry.sampledAngularVelocityRadiansZ = sampledAngularVelocityRadians[2];
             }
             addEntry(entry);
         }
@@ -2057,6 +1867,13 @@ namespace rock
             return;
         }
 
+        const bool nativeMeleeSuppressionHooksInstalled = installNativeMeleeSuppressionHooks();
+        if (!nativeMeleeSuppressionHooksInstalled && g_rockConfig.rockNativeMeleeSuppressionEnabled) {
+            ROCK_LOG_CRITICAL(Init, "Native melee suppression requested but hook installation failed; ROCK will continue without melee suppression");
+        } else if (nativeMeleeSuppressionHooksInstalled) {
+            enforceNativeMeleeRuntimeSuppression(true);
+        }
+
         ROCK_LOG_INFO(Init, "Initializing ROCK physics module...");
 
         auto* bhk = getPlayerBhkWorld();
@@ -2245,7 +2062,6 @@ namespace rock
     void PhysicsInteraction::update()
     {
         ensureWeaponCollisionWorkbenchExitMenuSinkRegistered();
-        drainExternalContactObservations();
 
         const auto& runtime = runtime_state::currentFrame();
         refreshEquippedWeaponHandlingSettings();
@@ -2271,7 +2087,8 @@ namespace rock
         if (_deltaTime <= 0.0f || _deltaTime > 0.1f) {
             _deltaTime = 1.0f / 90.0f;
         }
-        advancePhysicsHookFrameClock();
+        advanceNativeMeleeFrameClock();
+        enforceNativeMeleeRuntimeSuppression();
         enforceNativeGrabHapticRuntimeSuppression();
         _dynamicPushElapsedSeconds += _deltaTime;
         if (_dynamicPushCooldownUntil.size() > 512) {
@@ -2536,8 +2353,7 @@ namespace rock
                 g_rockConfig.rockWeaponCollisionBlocksProjectiles,
                 g_rockConfig.rockWeaponCollisionBlocksSpells,
                 g_rockConfig.rockWeaponCollisionStaticWorldEnabled,
-                true,
-                g_rockConfig.rockPhysicalMeleeEnabled);
+                true);
             const auto desiredReloadMask = collision_layer_policy::buildRockReloadExpectedMask(
                 g_rockConfig.rockWeaponCollisionBlocksProjectiles,
                 g_rockConfig.rockWeaponCollisionBlocksSpells,
@@ -4950,7 +4766,6 @@ namespace rock
 
     void PhysicsInteraction::shutdown(::rock::provider::RockProviderLifecycleReason reason)
     {
-        physical_melee::resetRuntime();
         debug::ShutdownShapePipeline();
         equipped_weapon_handling_runtime::reset();
         _equippedWeaponHandlingSettings = {};
@@ -5058,6 +4873,7 @@ namespace rock
         _completedPhysicsSolveSequence.store(0, std::memory_order_release);
         _equippedWeaponDropMomentumHandoffs = {};
         markGeneratedBodiesInvalidated();
+        clearNativeMeleePhysicalSwingLeases();
         collision_suppression_registry::globalCollisionSuppressionRegistry().clear();
         ::rock::provider::clearExternalBodiesForProviderLoss();
         clearLeftWeaponContact();
@@ -5418,8 +5234,7 @@ namespace rock
             g_rockConfig.rockWeaponCollisionStaticWorldEnabled,
             g_rockConfig.rockBodyBoneCollisionStaticWorldEnabled,
             g_rockConfig.rockWeaponCollisionBlocksProjectiles,
-            g_rockConfig.rockWeaponCollisionBlocksSpells,
-            g_rockConfig.rockPhysicalMeleeEnabled);
+            g_rockConfig.rockWeaponCollisionBlocksSpells);
         collision_layer_policy::applyNativeCharacterControllerObjectSuppressionPolicy(
             matrix,
             g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled,
@@ -5431,8 +5246,7 @@ namespace rock
                 g_rockConfig.rockWeaponCollisionBlocksProjectiles,
                 g_rockConfig.rockWeaponCollisionBlocksSpells,
                 g_rockConfig.rockWeaponCollisionStaticWorldEnabled,
-                true,
-                g_rockConfig.rockPhysicalMeleeEnabled);
+                true);
         _expectedReloadLayerMask =
             collision_layer_policy::buildRockReloadExpectedMask(
                 g_rockConfig.rockWeaponCollisionBlocksProjectiles,
@@ -5454,7 +5268,7 @@ namespace rock
                 (nativeControllerObjectPairsMatch ? "restored" : "bad");
 
         ROCK_LOG_INFO(Config,
-            "Registered ROCK collision layers: hand={} mask=0x{:016X}, weapon={} mask=0x{:016X}, reload={} mask=0x{:016X}, body={} mask=0x{:016X}, actorPairs(biped={},deadbip={},bipedNoCC={},charControllerMelee={}), bodyPairs(hand={},weapon={},self={},static={},animstatic={},clutter={},query={},charController={}), handStaticWorld={}, weaponStaticWorld={}, bodyStaticWorld={}, projectiles={}, spells={}, nativeBubbleObjects={}",
+            "Registered ROCK collision layers: hand={} mask=0x{:016X}, weapon={} mask=0x{:016X}, reload={} mask=0x{:016X}, body={} mask=0x{:016X}, actorPairs(biped={},deadbip={},bipedNoCC={}), bodyPairs(hand={},weapon={},self={},static={},animstatic={},clutter={},query={},charController={}), handStaticWorld={}, weaponStaticWorld={}, bodyStaticWorld={}, projectiles={}, spells={}, nativeBubbleObjects={}",
             collision_layer_policy::ROCK_LAYER_HAND,
             matrix[collision_layer_policy::ROCK_LAYER_HAND],
             collision_layer_policy::ROCK_LAYER_WEAPON,
@@ -5497,18 +5311,6 @@ namespace rock
                         collision_layer_policy::ROCK_LAYER_WEAPON,
                         collision_layer_policy::FO4_LAYER_BIPED_NO_CC,
                         collision_layer_policy::maskEnablesLayer(_expectedWeaponLayerMask, collision_layer_policy::FO4_LAYER_BIPED_NO_CC)) ?
-                "ok" :
-                "bad",
-            collision_layer_policy::layerPairSymmetricMatches(
-                matrix,
-                collision_layer_policy::ROCK_LAYER_HAND,
-                collision_layer_policy::FO4_LAYER_CHARCONTROLLER,
-                false) &&
-                    collision_layer_policy::layerPairSymmetricMatches(
-                        matrix,
-                        collision_layer_policy::ROCK_LAYER_WEAPON,
-                        collision_layer_policy::FO4_LAYER_CHARCONTROLLER,
-                        g_rockConfig.rockPhysicalMeleeEnabled) ?
                 "ok" :
                 "bad",
             collision_layer_policy::layerPairSymmetricMatches(

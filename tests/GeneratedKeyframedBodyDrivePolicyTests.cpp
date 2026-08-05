@@ -56,20 +56,6 @@ namespace
         return rock::transform_math::havokQuaternionToNiRows<RE::NiMatrix3>(quaternion);
     }
 
-    RE::NiMatrix3 rotationAroundAxis(const RE::NiPoint3& axis, float radians)
-    {
-        const float axisLength = std::sqrt(axis.x * axis.x + axis.y * axis.y + axis.z * axis.z);
-        const float halfAngle = radians * 0.5f;
-        const float vectorScale = std::sin(halfAngle) / axisLength;
-        const float quaternion[4]{
-            axis.x * vectorScale,
-            axis.y * vectorScale,
-            axis.z * vectorScale,
-            std::cos(halfAngle),
-        };
-        return rock::transform_math::havokQuaternionToNiRows<RE::NiMatrix3>(quaternion);
-    }
-
     float pointDistance(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs)
     {
         const float dx = rhs.x - lhs.x;
@@ -161,86 +147,6 @@ int main()
         ok &= expectNear("non-positive caps alpha", limited.limit.alpha, 1.0f, 0.001f);
         ok &= expectNear("non-positive caps translation unchanged", pointDistance(limited.target.translate, requested.translate), 0.0f, 0.001f);
         ok &= expectNear("non-positive caps rotation unchanged", rotationDistanceRadians(limited.target.rotate, requested.rotate), 0.0f, 0.001f);
-    }
-
-    {
-        constexpr float sampledDeltaSeconds = 0.1f;
-        RE::NiPoint3 positiveAngular{};
-        RE::NiPoint3 negativeAngular{};
-        const bool positiveValid = tryComputeSampledAngularVelocityRadians(
-            rotationAroundZ(0.0f),
-            rotationAroundZ(kPi * 0.5f),
-            sampledDeltaSeconds,
-            positiveAngular);
-        const bool negativeValid = tryComputeSampledAngularVelocityRadians(
-            rotationAroundZ(0.0f),
-            rotationAroundZ(-kPi * 0.5f),
-            sampledDeltaSeconds,
-            negativeAngular);
-
-        ok &= expectTrue("positive angular sample valid", positiveValid);
-        ok &= expectTrue("negative angular sample valid", negativeValid);
-        ok &= expectNear("positive swing angular x", positiveAngular.x, 0.0f, 0.001f);
-        ok &= expectNear("positive swing angular y", positiveAngular.y, 0.0f, 0.001f);
-        ok &= expectNear("positive swing angular z", positiveAngular.z, (kPi * 0.5f) / sampledDeltaSeconds, 0.001f);
-        ok &= expectNear("negative swing angular x", negativeAngular.x, 0.0f, 0.001f);
-        ok &= expectNear("negative swing angular y", negativeAngular.y, 0.0f, 0.001f);
-        ok &= expectNear("negative swing angular z", negativeAngular.z, -(kPi * 0.5f) / sampledDeltaSeconds, 0.001f);
-        ok &= expectNear("opposite swings preserve angular speed", std::fabs(positiveAngular.z), std::fabs(negativeAngular.z), 0.001f);
-
-        const RE::NiPoint3 leverHavok{ 1.0f, 0.0f, 0.0f };
-        const RE::NiPoint3 positivePointVelocity{
-            positiveAngular.y * leverHavok.z - positiveAngular.z * leverHavok.y,
-            positiveAngular.z * leverHavok.x - positiveAngular.x * leverHavok.z,
-            positiveAngular.x * leverHavok.y - positiveAngular.y * leverHavok.x,
-        };
-        const RE::NiPoint3 negativePointVelocity{
-            negativeAngular.y * leverHavok.z - negativeAngular.z * leverHavok.y,
-            negativeAngular.z * leverHavok.x - negativeAngular.x * leverHavok.z,
-            negativeAngular.x * leverHavok.y - negativeAngular.y * leverHavok.x,
-        };
-        ok &= expectNear("positive swing point closing speed", positivePointVelocity.y, (kPi * 0.5f) / sampledDeltaSeconds, 0.001f);
-        ok &= expectNear("negative swing point closing speed", -negativePointVelocity.y, (kPi * 0.5f) / sampledDeltaSeconds, 0.001f);
-    }
-
-    {
-        constexpr float sampledDeltaSeconds = 0.1f;
-        constexpr float shortestArcRadians = 20.0f * kPi / 180.0f;
-        RE::NiPoint3 forwardAcrossPi{};
-        RE::NiPoint3 reverseAcrossPi{};
-        const bool forwardValid = tryComputeSampledAngularVelocityRadians(
-            rotationAroundZ(170.0f * kPi / 180.0f),
-            rotationAroundZ(-170.0f * kPi / 180.0f),
-            sampledDeltaSeconds,
-            forwardAcrossPi);
-        const bool reverseValid = tryComputeSampledAngularVelocityRadians(
-            rotationAroundZ(-170.0f * kPi / 180.0f),
-            rotationAroundZ(170.0f * kPi / 180.0f),
-            sampledDeltaSeconds,
-            reverseAcrossPi);
-
-        ok &= expectTrue("forward shortest-arc sample valid", forwardValid);
-        ok &= expectTrue("reverse shortest-arc sample valid", reverseValid);
-        ok &= expectNear("forward shortest arc is positive", forwardAcrossPi.z, shortestArcRadians / sampledDeltaSeconds, 0.001f);
-        ok &= expectNear("reverse shortest arc is negative", reverseAcrossPi.z, -shortestArcRadians / sampledDeltaSeconds, 0.001f);
-    }
-
-    {
-        constexpr float sampledDeltaSeconds = 0.1f;
-        constexpr float angleRadians = kPi * 0.25f;
-        const RE::NiPoint3 axis{ 1.0f, 2.0f, 3.0f };
-        const float axisLength = std::sqrt(axis.x * axis.x + axis.y * axis.y + axis.z * axis.z);
-        RE::NiPoint3 obliqueAngular{};
-        const bool obliqueValid = tryComputeSampledAngularVelocityRadians(
-            rotationAroundAxis(axis, 0.0f),
-            rotationAroundAxis(axis, angleRadians),
-            sampledDeltaSeconds,
-            obliqueAngular);
-
-        ok &= expectTrue("oblique angular sample valid", obliqueValid);
-        ok &= expectNear("oblique angular x", obliqueAngular.x, axis.x * angleRadians / (axisLength * sampledDeltaSeconds), 0.001f);
-        ok &= expectNear("oblique angular y", obliqueAngular.y, axis.y * angleRadians / (axisLength * sampledDeltaSeconds), 0.001f);
-        ok &= expectNear("oblique angular z", obliqueAngular.z, axis.z * angleRadians / (axisLength * sampledDeltaSeconds), 0.001f);
     }
 
     return ok ? 0 : 1;

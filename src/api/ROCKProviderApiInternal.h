@@ -41,9 +41,6 @@ namespace rock::provider
     void clearExternalBodiesForProviderLoss();
     bool isExternalBodyId(std::uint32_t bodyId);
     bool isExternalBodyDynamicPushSuppressed(std::uint32_t bodyId);
-    bool tryGetExternalBodyRegistration(
-        std::uint32_t bodyId,
-        RockProviderExternalBodyRegistration& outBody);
     bool recordExternalHandContact(
         bool isLeft,
         std::uint32_t handBodyId,
@@ -54,8 +51,6 @@ namespace rock::provider
         std::uint32_t worldGeneration,
         std::uint32_t skeletonGeneration,
         std::uint32_t providerGeneration);
-    bool recordPhysicalMeleeContact(RockProviderExternalContactRecordV1& contact);
-    void recordPhysicalMeleeOutcome(const RockProviderImpactOutcomeV1& outcome);
     RockProviderOffhandReservation currentOffhandReservation();
     void setEquippedWeaponFiringHandIsLeft(bool isLeft);
     bool getEquippedWeaponHandlingAuthorityV1(
