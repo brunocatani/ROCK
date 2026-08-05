@@ -45,6 +45,7 @@ namespace rock::physical_melee
         RuntimeUnavailable,
         WeaponWitnessMismatch,
         SupersededCandidate,
+        RegisteredTargetMismatch,
     };
 
     struct WeaponIdentityWitness
@@ -74,6 +75,9 @@ namespace rock::physical_melee
         std::uint32_t targetBodyId{ 0x7FFF'FFFF };
         float closingSpeedHavok{ 0.0f };
         float closingSpeedGame{ 0.0f };
+        float tangentSpeedHavok{ 0.0f };
+        float relativePointSpeedHavok{ 0.0f };
+        float relativePointSpeedGame{ 0.0f };
         float virtualMass{ 0.0f };
         float sourceSurfaceDamageCoefficient{ 1.0f };
         float nativeDamageMultiplier{ 0.0f };

@@ -41,6 +41,9 @@ namespace rock::provider
     void clearExternalBodiesForProviderLoss();
     bool isExternalBodyId(std::uint32_t bodyId);
     bool isExternalBodyDynamicPushSuppressed(std::uint32_t bodyId);
+    bool tryGetExternalBodyRegistration(
+        std::uint32_t bodyId,
+        RockProviderExternalBodyRegistration& outBody);
     bool recordExternalHandContact(
         bool isLeft,
         std::uint32_t handBodyId,

@@ -49,6 +49,7 @@ namespace
         contact.targetAnatomyFlags = anatomyFlag(provider::RockProviderTargetAnatomyFlagV1::BodyPartValid);
         contact.episodeFlags = episodeFlag(provider::RockProviderImpactEpisodeFlagV1::Started);
         contact.closingSpeedHavok = 8.0f;
+        contact.tangentSpeedHavok = 0.0f;
         return contact;
     }
 
@@ -66,7 +67,20 @@ namespace
         return expect(decision.accepted, "exact locational weapon contact accepted") &&
                expect(decision.reason == physical_melee::DecisionReason::Accepted, "accepted reason") &&
                expect(std::fabs(decision.closingSpeedGame - 400.0f) < 0.01f, "speed converted to game units") &&
+               expect(std::fabs(decision.relativePointSpeedGame - 400.0f) < 0.01f, "relative point speed converted to game units") &&
                expect(std::fabs(decision.nativeDamageMultiplier - 1.0f) < 0.001f, "reference kinetic multiplier");
+    }
+
+    bool accepts_fast_tangential_edge_sweep()
+    {
+        auto contact = validContact();
+        contact.closingSpeedHavok = 0.0f;
+        contact.tangentSpeedHavok = 8.0f;
+
+        const auto decision = physical_melee::evaluate(contact, physical_melee::Settings{}, 0.02f);
+        return expect(decision.accepted, "fast tangential edge sweep accepted") &&
+               expect(std::fabs(decision.relativePointSpeedGame - 400.0f) < 0.01f, "tangential point speed used") &&
+               expect(std::fabs(decision.closingSpeedGame) < 0.01f, "closing component remains independently reported");
     }
 
     bool rejects_slow_contact()
@@ -224,6 +238,7 @@ int main()
 {
     bool ok = true;
     ok &= accepts_exact_locational_weapon_contact();
+    ok &= accepts_fast_tangential_edge_sweep();
     ok &= rejects_slow_contact();
     ok &= episode_flags_do_not_preempt_candidate_arbitration();
     ok &= rejects_missing_or_ambiguous_anatomy();

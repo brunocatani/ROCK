@@ -22,6 +22,7 @@ namespace rock::physical_melee
         LiveActorResolved,
         BodyPartDataResolved,
         AnatomyResolved,
+        RegisteredBodyResolved,
     };
 
     struct TargetResolution
@@ -36,8 +37,11 @@ namespace rock::physical_melee
         TargetResolutionStage stage{ TargetResolutionStage::NotStarted };
         bool accessViolation{ false };
         bool referenceIsDead{ false };
+        bool referenceIsPlayer{ false };
         bool measuredContactPointValid{ false };
         bool pointFallbackUsed{ false };
+        bool registeredBodyEvidence{ false };
+        bool registeredIdentityMismatch{ false };
         float measuredContactPointGame[3]{};
         std::uint32_t directMatchCount{ 0 };
         std::uint32_t fallbackCandidateCount{ 0 };
@@ -63,4 +67,7 @@ namespace rock::physical_melee
         std::uint32_t targetBodyId,
         const float* measuredContactPointHavok,
         float havokToGameScale) noexcept;
+
+    [[nodiscard]] TargetResolution resolveRegisteredTarget(
+        const provider::RockProviderExternalBodyRegistration& registration) noexcept;
 }

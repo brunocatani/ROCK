@@ -52,6 +52,7 @@ namespace rock::physical_melee
             WeaponIdentityWitness expectedWeapon{};
             Decision decision{};
             bool baseEligible{ false };
+            bool discardPlayerSelf{ false };
         };
 
         struct RuntimeState
@@ -221,6 +222,7 @@ namespace rock::physical_melee
         provider::RockProviderExternalContactRecordV1 makeRecord(
             const provider::RockProviderExternalContactV1& contact,
             const TargetResolution& target,
+            provider::RockProviderExternalBodyRole targetRole,
             std::uint32_t worldGeneration,
             std::uint32_t skeletonGeneration,
             std::uint32_t providerGeneration)
@@ -232,7 +234,7 @@ namespace rock::physical_melee
             record.bodyGeneration = contact.generation;
             record.sourceKind = contact.sourceKind;
             record.sourceHand = contact.sourceHand;
-            record.targetRole = provider::RockProviderExternalBodyRole::ActorRagdollBone;
+            record.targetRole = targetRole;
             record.quality = contact.quality;
             record.flags = contact.flags;
             std::copy_n(contact.sourceVelocityHavok, 3, record.sourceVelocityHavok);
@@ -330,7 +332,7 @@ namespace rock::physical_melee
             const bool rawManifold = (contact.flags & static_cast<std::uint32_t>(
                 provider::RockProviderExternalContactFlagV1::RawManifoldValid)) != 0;
             ROCK_LOG_INFO(Melee,
-                "Physical melee exact trace phase={} impact={} weapon={:08X} sourceBody={} sourcePart={} surface={} targetBody={} targetLayer={} reference={:08X} dead={} actor={:08X} resolver={} measuredPoint={} pointGame=({:.2f},{:.2f},{:.2f}) node='{}' directMatches={} fallbackCandidates={} fallbackUsed={} selectedDistance={:.2f} runnerUpDistance={:.2f} anatomyFlags=0x{:08X} bodyPart={} zone={} nativeLimb={} damageMult={:.3f} decision={} speed={:.1f} multiplier={:.3f} rawManifold={} accessViolation={}",
+                "Physical melee exact trace phase={} impact={} weapon={:08X} sourceBody={} sourcePart={} surface={} targetBody={} targetLayer={} targetRole={} registered={} identityMismatch={} reference={:08X} dead={} actor={:08X} resolver={} measuredPoint={} pointGame=({:.2f},{:.2f},{:.2f}) node='{}' directMatches={} fallbackCandidates={} fallbackUsed={} selectedDistance={:.2f} runnerUpDistance={:.2f} anatomyFlags=0x{:08X} bodyPart={} zone={} nativeLimb={} damageMult={:.3f} decision={} pointSpeed={:.1f} closingSpeed={:.1f} tangentSpeed={:.1f} multiplier={:.3f} rawManifold={} accessViolation={}",
                 phase ? phase : "unknown",
                 contact.impactId,
                 contact.sourceWeaponFormId,
@@ -339,6 +341,9 @@ namespace rock::physical_melee
                 static_cast<std::uint32_t>(contact.sourceSurfaceRegion),
                 contact.targetExternalBodyId,
                 target ? target->collisionLayer : 0xFFFF'FFFFu,
+                static_cast<std::uint32_t>(contact.targetRole),
+                target && target->registeredBodyEvidence ? "yes" : "no",
+                target && target->registeredIdentityMismatch ? "yes" : "no",
                 target ? target->referenceFormId : 0u,
                 target && target->referenceIsDead ? "yes" : "no",
                 contact.targetActorFormId,
@@ -359,7 +364,9 @@ namespace rock::physical_melee
                 target ? target->nativeDamageLimb : 0xFFFF'FFFFu,
                 contact.targetBodyPartDamageMultiplier,
                 decisionReasonName(reason),
+                decision ? decision->relativePointSpeedGame : 0.0f,
                 decision ? decision->closingSpeedGame : 0.0f,
+                decision ? decision->tangentSpeedHavok / physics_scale::gameToHavok() : 0.0f,
                 decision ? decision->nativeDamageMultiplier : 0.0f,
                 rawManifold ? "yes" : "no",
                 target && target->accessViolation ? "yes" : "no");
@@ -489,20 +496,50 @@ namespace rock::physical_melee
         auto& candidate = s_runtime.candidates[s_runtime.candidateCount++];
         candidate = {};
         candidate.expectedWeapon = expectedWeapon;
-        candidate.target = resolveTarget(
+        const auto directTarget = resolveTarget(
             s_runtime.frame.bhkWorld,
             observation.targetExternalBodyId,
             measuredContactPoint,
             physics_scale::havokToGame());
+        provider::RockProviderExternalBodyRegistration registration{};
+        const bool registeredRagdoll =
+            provider::tryGetExternalBodyRegistration(
+                observation.targetExternalBodyId,
+                registration) &&
+            registration.role == provider::RockProviderExternalBodyRole::ActorRagdollBone;
+        auto targetRole = provider::RockProviderExternalBodyRole::Unknown;
+        if (registeredRagdoll) {
+            candidate.target = resolveRegisteredTarget(registration);
+            candidate.target.referenceIsPlayer = directTarget.referenceIsPlayer;
+            candidate.target.measuredContactPointValid = directTarget.measuredContactPointValid;
+            std::copy_n(
+                directTarget.measuredContactPointGame,
+                3,
+                candidate.target.measuredContactPointGame);
+            if (directTarget.actorValid() && candidate.target.actorValid() &&
+                directTarget.actorFormId != candidate.target.actorFormId) {
+                candidate.target.registeredIdentityMismatch = true;
+            }
+            targetRole = registration.role;
+        } else {
+            candidate.target = directTarget;
+        }
         candidate.target.collisionLayer = targetCollisionLayer;
+        if (candidate.target.referenceIsPlayer) {
+            candidate.discardPlayerSelf = true;
+            return;
+        }
         candidate.contact = makeRecord(
             observation,
             candidate.target,
+            targetRole,
             s_runtime.frame.worldGeneration,
             s_runtime.frame.skeletonGeneration,
             s_runtime.frame.providerGeneration);
 
-        if (!candidate.target.actorValid()) {
+        if (candidate.target.registeredIdentityMismatch) {
+            candidate.decision.reason = DecisionReason::RegisteredTargetMismatch;
+        } else if (!candidate.target.actorValid()) {
             candidate.decision.reason = DecisionReason::MissingTargetActor;
         } else {
             candidate.decision = evaluate(
@@ -571,6 +608,10 @@ namespace rock::physical_melee
                 continue;
             }
             auto& first = s_runtime.candidates[i];
+            if (first.discardPlayerSelf) {
+                handled[i] = true;
+                continue;
+            }
             if (!first.baseEligible) {
                 handled[i] = true;
                 report(first.contact);
@@ -680,7 +721,7 @@ namespace rock::physical_melee
                 &best.target);
             ROCK_LOG_SAMPLE_INFO(Melee,
                 g_rockConfig.rockLogSampleMilliseconds,
-                "Physical melee submitted impact={} actor={:08X} body={} node='{}' part={} surface={} coefficient={:.3f} multiplier={:.3f} speed={:.1f}",
+                "Physical melee submitted impact={} actor={:08X} body={} node='{}' part={} surface={} coefficient={:.3f} multiplier={:.3f} pointSpeed={:.1f} closingSpeed={:.1f}",
                 best.contact.impactId,
                 best.contact.targetActorFormId,
                 best.contact.targetExternalBodyId,
@@ -689,6 +730,7 @@ namespace rock::physical_melee
                 static_cast<std::uint32_t>(best.contact.sourceSurfaceRegion),
                 best.contact.sourceSurfaceDamageCoefficient,
                 best.decision.nativeDamageMultiplier,
+                best.decision.relativePointSpeedGame,
                 best.decision.closingSpeedGame);
         }
         s_runtime.candidateCount = 0;

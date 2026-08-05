@@ -1448,8 +1448,7 @@
 
         const bool standaloneMeleeContact =
             contactRoute.source.kind == contact_pipeline_policy::ContactEndpointKind::Weapon &&
-            (contactRoute.target.kind == contact_pipeline_policy::ContactEndpointKind::Actor ||
-                contactRoute.target.kind == contact_pipeline_policy::ContactEndpointKind::External);
+            contact_pipeline_policy::isStandaloneMeleeTarget(contactRoute.target);
         if (contactRoute.publishExternalContact || standaloneMeleeContact) {
             const auto sourceKind = standaloneMeleeContact ?
                 ::rock::provider::RockProviderExternalSourceKind::Weapon :

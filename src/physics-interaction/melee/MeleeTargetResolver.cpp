@@ -4,6 +4,7 @@
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/TESBoundAnimObjects.h"
 #include "RE/Bethesda/TESBoundObjects.h"
+#include "RE/Bethesda/TESForms.h"
 #include "RE/Bethesda/bhkCharacterController.h"
 #include "rock_support/Fo4VrRuntime.h"
 
@@ -218,6 +219,7 @@ namespace rock::physical_melee
         case TargetResolutionStage::LiveActorResolved: return "LiveActorResolved";
         case TargetResolutionStage::BodyPartDataResolved: return "BodyPartDataResolved";
         case TargetResolutionStage::AnatomyResolved: return "AnatomyResolved";
+        case TargetResolutionStage::RegisteredBodyResolved: return "RegisteredBodyResolved";
         default: return "Unknown";
         }
     }
@@ -256,8 +258,9 @@ namespace rock::physical_melee
             result.stage = TargetResolutionStage::SceneObjectResolved;
             auto* reference = RE::TESObjectREFR::FindReferenceFor3D(sceneObject);
             auto* base = reference ? reference->GetObjectReference() : nullptr;
+            result.referenceIsPlayer = reference == RE::PlayerCharacter::GetSingleton();
             if (!reference || !base || !base->Is(RE::ENUM_FORM_ID::kNPC_) ||
-                reference == RE::PlayerCharacter::GetSingleton() || reference->IsDeleted() ||
+                result.referenceIsPlayer || reference->IsDeleted() ||
                 reference->IsDisabled()) {
                 return result;
             }
@@ -419,6 +422,140 @@ namespace rock::physical_melee
             // Identity is already useful evidence and may have been resolved
             // before a malformed/stale anatomy pointer faulted.  Do not erase
             // it and misreport the failure as MissingTargetActor.
+            result.accessViolation = true;
+            clearAnatomy(result);
+        }
+#endif
+        return result;
+    }
+
+    TargetResolution resolveRegisteredTarget(
+        const provider::RockProviderExternalBodyRegistration& registration) noexcept
+    {
+        TargetResolution result{};
+        result.bodyId = registration.bodyId;
+        result.registeredBodyEvidence = true;
+        if (registration.size != sizeof(registration) ||
+            registration.role != provider::RockProviderExternalBodyRole::ActorRagdollBone ||
+            registration.actorFormId == 0 || registration.bodyPartIndex >= 26u) {
+            return result;
+        }
+
+        const auto bodyPartValid = anatomyFlag(
+            provider::RockProviderTargetAnatomyFlagV1::BodyPartValid);
+        const auto bodyPartAmbiguous = anatomyFlag(
+            provider::RockProviderTargetAnatomyFlagV1::BodyPartAmbiguous);
+        if ((registration.anatomyFlags & bodyPartValid) == 0 ||
+            (registration.anatomyFlags & bodyPartAmbiguous) != 0) {
+            return result;
+        }
+
+#if defined(_MSC_VER)
+        __try {
+#endif
+            auto* actor = RE::TESForm::GetFormByID<RE::Actor>(registration.actorFormId);
+            auto* base = actor ? actor->GetObjectReference() : nullptr;
+            if (!actor || !base || !base->Is(RE::ENUM_FORM_ID::kNPC_) ||
+                actor == RE::PlayerCharacter::GetSingleton() || actor->IsDeleted() ||
+                actor->IsDisabled()) {
+                return result;
+            }
+            result.referenceFormId = actor->GetFormID();
+            result.referenceIsDead = actor->IsDead(false);
+            if (result.referenceFormId != registration.actorFormId || result.referenceIsDead) {
+                return result;
+            }
+            result.actor = actor;
+            result.actorFormId = result.referenceFormId;
+            result.stage = TargetResolutionStage::LiveActorResolved;
+
+            auto* bodyPartData = resolveBodyPartData(actor, static_cast<RE::TESNPC*>(base));
+            if (!bodyPartData || registration.bodyPartIndex >= std::size(bodyPartData->partArray)) {
+                return result;
+            }
+            result.stage = TargetResolutionStage::BodyPartDataResolved;
+            auto* part = bodyPartData->partArray[registration.bodyPartIndex];
+            if (!part) {
+                return result;
+            }
+
+            if ((registration.anatomyFlags & anatomyFlag(
+                    provider::RockProviderTargetAnatomyFlagV1::NodeNameValid)) != 0) {
+                char normalizedRegistration[256]{};
+                char normalizedNode[256]{};
+                char normalizedTarget[256]{};
+                (void)normalizeNodeName(
+                    registration.nodeName,
+                    normalizedRegistration,
+                    std::size(normalizedRegistration));
+                (void)normalizeNodeName(
+                    part->nodeName.c_str(),
+                    normalizedNode,
+                    std::size(normalizedNode));
+                (void)normalizeNodeName(
+                    part->targetName.c_str(),
+                    normalizedTarget,
+                    std::size(normalizedTarget));
+                if (normalizedRegistration[0] == '\0' ||
+                    (std::strcmp(normalizedRegistration, normalizedNode) != 0 &&
+                        std::strcmp(normalizedRegistration, normalizedTarget) != 0)) {
+                    return result;
+                }
+                const auto normalizedHash = hashNormalizedNodeName(normalizedRegistration);
+                if (registration.nodeNameHash != 0 &&
+                    registration.nodeNameHash != normalizedHash) {
+                    return result;
+                }
+                const auto copied = (std::min)(
+                    std::strlen(registration.nodeName),
+                    static_cast<std::size_t>(provider::ROCK_PROVIDER_MAX_EVIDENCE_NAME - 1));
+                std::memcpy(result.nodeName, registration.nodeName, copied);
+                result.nodeName[copied] = '\0';
+                result.nodeNameHash = normalizedHash;
+                result.anatomyFlags |= anatomyFlag(
+                    provider::RockProviderTargetAnatomyFlagV1::NodeNameValid);
+            } else {
+                const auto* nodeName = part->nodeName.c_str();
+                char normalizedNode[256]{};
+                if (nodeName && nodeName[0] != '\0' &&
+                    normalizeNodeName(nodeName, normalizedNode, std::size(normalizedNode)) != 0) {
+                    const auto copied = (std::min)(
+                        std::strlen(nodeName),
+                        static_cast<std::size_t>(provider::ROCK_PROVIDER_MAX_EVIDENCE_NAME - 1));
+                    std::memcpy(result.nodeName, nodeName, copied);
+                    result.nodeName[copied] = '\0';
+                    result.nodeNameHash = hashNormalizedNodeName(normalizedNode);
+                    result.anatomyFlags |= anatomyFlag(
+                        provider::RockProviderTargetAnatomyFlagV1::NodeNameValid);
+                }
+            }
+
+            result.anatomyFlags |= registration.anatomyFlags;
+            result.bodyPartIndex = registration.bodyPartIndex;
+            result.bodyPart = part;
+            result.nativeDamageLimb = static_cast<std::uint32_t>(part->data.type);
+            result.zone = bodyPartZone(result.bodyPartIndex);
+            result.side = bodyPartSide(result.bodyPartIndex);
+            result.bodyPartDamageMultiplier = 1.0f;
+            result.limbActorValueFormId = 0;
+            result.anatomyFlags &= ~(
+                anatomyFlag(provider::RockProviderTargetAnatomyFlagV1::DamageMultiplierValid) |
+                anatomyFlag(provider::RockProviderTargetAnatomyFlagV1::LimbActorValueValid));
+            if (std::isfinite(part->data.damageMult) && part->data.damageMult >= 0.0f) {
+                result.bodyPartDamageMultiplier = part->data.damageMult;
+                result.anatomyFlags |= anatomyFlag(
+                    provider::RockProviderTargetAnatomyFlagV1::DamageMultiplierValid);
+            }
+            if (part->data.actorValue) {
+                result.limbActorValueFormId = part->data.actorValue->GetFormID();
+                if (result.limbActorValueFormId != 0) {
+                    result.anatomyFlags |= anatomyFlag(
+                        provider::RockProviderTargetAnatomyFlagV1::LimbActorValueValid);
+                }
+            }
+            result.stage = TargetResolutionStage::RegisteredBodyResolved;
+#if defined(_MSC_VER)
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
             result.accessViolation = true;
             clearAnatomy(result);
         }

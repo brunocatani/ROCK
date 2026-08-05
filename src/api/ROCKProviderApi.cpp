@@ -6146,6 +6146,14 @@ namespace rock::provider
         return s_externalBodies.suppressesRockDynamicPushAtomic(bodyId);
     }
 
+    bool tryGetExternalBodyRegistration(
+        const std::uint32_t bodyId,
+        RockProviderExternalBodyRegistration& outBody)
+    {
+        std::scoped_lock lock(s_externalBodyMutex);
+        return s_externalBodies.tryGetBody(bodyId, outBody);
+    }
+
     bool recordExternalHandContact(bool isLeft, std::uint32_t handBodyId, std::uint32_t externalBodyId, std::uint64_t frameIndex)
     {
         std::scoped_lock lock(s_externalBodyMutex);

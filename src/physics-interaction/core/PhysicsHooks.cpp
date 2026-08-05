@@ -566,7 +566,8 @@ namespace rock
     collision_layer_policy::PlayerCharacterControllerContactPolicyDecision evaluatePlayerControllerTargetBody(
         RE::bhkWorld* bhkWorld,
         RE::hknpWorld* world,
-        std::uint32_t rawBodyId)
+        std::uint32_t rawBodyId,
+        bool objectFilterEnabled)
     {
         if (!world || rawBodyId == body_frame::kInvalidBodyId) {
             return collision_layer_policy::PlayerCharacterControllerContactPolicyDecision{ .suppress = false, .reason = "unknownTargetLayer" };
@@ -581,7 +582,7 @@ namespace rock
         const std::uint32_t layer = filterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
         return collision_layer_policy::evaluatePlayerCharacterControllerContact(
             collision_layer_policy::PlayerCharacterControllerContactPolicyInput{
-                .filterEnabled = true,
+                .filterEnabled = objectFilterEnabled,
                 .playerController = true,
                 .targetLayerKnown = true,
                 .targetLayer = layer,
@@ -744,7 +745,7 @@ namespace rock
 
         __try {
             const bool playerControllerFilterEnabled = g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled;
-            const bool playerController = playerControllerFilterEnabled && isPlayerCharacterController(controller);
+            const bool playerController = isPlayerCharacterController(controller);
             RE::bhkWorld* playerBhkWorld = playerController ? resolvePlayerBhkWorld() : nullptr;
             RE::hknpWorld* playerHknpWorld = playerBhkWorld ? havok_runtime::getHknpWorldFromBhk(playerBhkWorld) : nullptr;
             const bool playerControllerFilterActive = playerController && playerHknpWorld;
@@ -771,7 +772,8 @@ namespace rock
 
             const auto contactBuffers = held_grab_cc_policy::makeGeneratedContactBufferView(manifold, simplexInput);
             if (!contactBuffers.valid) {
-                if (playerControllerFilterActive && std::string_view(contactBuffers.reason) == "missingManifoldEntries") {
+                if (playerControllerFilterActive && playerControllerFilterEnabled &&
+                    std::string_view(contactBuffers.reason) == "missingManifoldEntries") {
                     const auto clearResult = held_grab_cc_policy::clearGeneratedConstraintOnlyContacts(contactBuffers);
                     if (clearResult.valid) {
                         ROCK_LOG_SAMPLE_DEBUG(CC,
@@ -822,7 +824,11 @@ namespace rock
                 }
 
                 if (playerControllerFilterActive) {
-                    const auto decision = evaluatePlayerControllerTargetBody(playerBhkWorld, playerHknpWorld, bodyId);
+                    const auto decision = evaluatePlayerControllerTargetBody(
+                        playerBhkWorld,
+                        playerHknpWorld,
+                        bodyId,
+                        playerControllerFilterEnabled);
                     if (decision.suppress) {
                         ++removedPlayerObjectPairs;
                         if (std::string_view(decision.reason) == "movableStaticSupportLayer") {

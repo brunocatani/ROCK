@@ -902,6 +902,48 @@ int main()
     ok &= expectTrue("right hand weapon contact drives support evidence", rightWeapon.drivesWeaponSupportContact);
     ok &= expectEqual("right hand remains contact source", rightWeapon.source.kind, ContactEndpointKind::RightHand);
 
+    const auto characterController = makeNonRockEndpoint(
+        200,
+        rock::collision_layer_policy::FO4_LAYER_CHARCONTROLLER);
+    ok &= expectEqual(
+        "character controller remains globally unknown",
+        characterController.kind,
+        ContactEndpointKind::Unknown);
+    ok &= expectTrue(
+        "weapon melee narrowly accepts character controller",
+        isStandaloneMeleeTarget(characterController));
+    ok &= expectFalse(
+        "hand routing does not treat character controller as actor",
+        canDriveDynamicPush(characterController.kind));
+    ok &= expectFalse(
+        "unrelated unknown layer is not a melee target",
+        isStandaloneMeleeTarget(makeNonRockEndpoint(201, 63)));
+    ok &= expectTrue(
+        "biped actor remains a melee target",
+        isStandaloneMeleeTarget(makeNonRockEndpoint(
+            202,
+            rock::collision_layer_policy::FO4_LAYER_BIPED)));
+    ok &= expectTrue(
+        "enabled melee weapon mask collides with character controllers",
+        rock::collision_layer_policy::maskEnablesLayer(
+            rock::collision_layer_policy::buildRockWeaponExpectedMask(
+                false,
+                false,
+                true,
+                true,
+                true),
+            rock::collision_layer_policy::FO4_LAYER_CHARCONTROLLER));
+    ok &= expectFalse(
+        "disabled melee weapon mask excludes character controllers",
+        rock::collision_layer_policy::maskEnablesLayer(
+            rock::collision_layer_policy::buildRockWeaponExpectedMask(
+                false,
+                false,
+                true,
+                true,
+                false),
+            rock::collision_layer_policy::FO4_LAYER_CHARCONTROLLER));
+
     using rock::weapon_two_handed_grip_math::canProcessNormalGrabInput;
     using rock::weapon_two_handed_grip_math::resolveSupportReleaseManualAction;
     using rock::weapon_two_handed_grip_math::SupportReleaseOwnershipInput;

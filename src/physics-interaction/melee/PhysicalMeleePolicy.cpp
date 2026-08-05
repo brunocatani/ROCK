@@ -152,25 +152,32 @@ namespace rock::physical_melee
             decision.reason = DecisionReason::InvalidScale;
             return decision;
         }
-        if (!std::isfinite(contact.closingSpeedHavok) || contact.closingSpeedHavok < 0.0f) {
+        if (!std::isfinite(contact.closingSpeedHavok) || contact.closingSpeedHavok < 0.0f ||
+            !std::isfinite(contact.tangentSpeedHavok) || contact.tangentSpeedHavok < 0.0f) {
             decision.reason = DecisionReason::NonFiniteInput;
             return decision;
         }
 
         decision.closingSpeedHavok = contact.closingSpeedHavok;
         decision.closingSpeedGame = contact.closingSpeedHavok / gameToHavokScale;
+        decision.tangentSpeedHavok = contact.tangentSpeedHavok;
+        decision.relativePointSpeedHavok = std::hypot(
+            contact.closingSpeedHavok,
+            contact.tangentSpeedHavok);
+        decision.relativePointSpeedGame = decision.relativePointSpeedHavok / gameToHavokScale;
         decision.virtualMass = settings.virtualWeaponMass;
         decision.sourceSurfaceDamageCoefficient = contact.sourceSurfaceDamageCoefficient;
         if (settings.damageMultiplier == 0.0f) {
             decision.reason = DecisionReason::DamageMultiplierZero;
             return decision;
         }
-        if (!std::isfinite(decision.closingSpeedGame) || decision.closingSpeedGame < settings.minSourceSpeedGame) {
+        if (!std::isfinite(decision.relativePointSpeedGame) ||
+            decision.relativePointSpeedGame < settings.minSourceSpeedGame) {
             decision.reason = DecisionReason::SourceTooSlow;
             return decision;
         }
 
-        const float normalizedSpeed = decision.closingSpeedGame / settings.minSourceSpeedGame;
+        const float normalizedSpeed = decision.relativePointSpeedGame / settings.minSourceSpeedGame;
         const float normalizedKineticEnergy =
             (settings.virtualWeaponMass / kReferenceWeaponMass) * normalizedSpeed * normalizedSpeed;
         float multiplier = normalizedKineticEnergy * settings.damageMultiplier * contact.sourceSurfaceDamageCoefficient;
@@ -217,6 +224,7 @@ namespace rock::physical_melee
         case DecisionReason::RuntimeUnavailable: return "RuntimeUnavailable";
         case DecisionReason::WeaponWitnessMismatch: return "WeaponWitnessMismatch";
         case DecisionReason::SupersededCandidate: return "SupersededCandidate";
+        case DecisionReason::RegisteredTargetMismatch: return "RegisteredTargetMismatch";
         default: return "Unknown";
         }
     }

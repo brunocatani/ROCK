@@ -2536,7 +2536,8 @@ namespace rock
                 g_rockConfig.rockWeaponCollisionBlocksProjectiles,
                 g_rockConfig.rockWeaponCollisionBlocksSpells,
                 g_rockConfig.rockWeaponCollisionStaticWorldEnabled,
-                true);
+                true,
+                g_rockConfig.rockPhysicalMeleeEnabled);
             const auto desiredReloadMask = collision_layer_policy::buildRockReloadExpectedMask(
                 g_rockConfig.rockWeaponCollisionBlocksProjectiles,
                 g_rockConfig.rockWeaponCollisionBlocksSpells,
@@ -5417,7 +5418,8 @@ namespace rock
             g_rockConfig.rockWeaponCollisionStaticWorldEnabled,
             g_rockConfig.rockBodyBoneCollisionStaticWorldEnabled,
             g_rockConfig.rockWeaponCollisionBlocksProjectiles,
-            g_rockConfig.rockWeaponCollisionBlocksSpells);
+            g_rockConfig.rockWeaponCollisionBlocksSpells,
+            g_rockConfig.rockPhysicalMeleeEnabled);
         collision_layer_policy::applyNativeCharacterControllerObjectSuppressionPolicy(
             matrix,
             g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled,
@@ -5429,7 +5431,8 @@ namespace rock
                 g_rockConfig.rockWeaponCollisionBlocksProjectiles,
                 g_rockConfig.rockWeaponCollisionBlocksSpells,
                 g_rockConfig.rockWeaponCollisionStaticWorldEnabled,
-                true);
+                true,
+                g_rockConfig.rockPhysicalMeleeEnabled);
         _expectedReloadLayerMask =
             collision_layer_policy::buildRockReloadExpectedMask(
                 g_rockConfig.rockWeaponCollisionBlocksProjectiles,
@@ -5451,7 +5454,7 @@ namespace rock
                 (nativeControllerObjectPairsMatch ? "restored" : "bad");
 
         ROCK_LOG_INFO(Config,
-            "Registered ROCK collision layers: hand={} mask=0x{:016X}, weapon={} mask=0x{:016X}, reload={} mask=0x{:016X}, body={} mask=0x{:016X}, actorPairs(biped={},deadbip={},bipedNoCC={}), bodyPairs(hand={},weapon={},self={},static={},animstatic={},clutter={},query={},charController={}), handStaticWorld={}, weaponStaticWorld={}, bodyStaticWorld={}, projectiles={}, spells={}, nativeBubbleObjects={}",
+            "Registered ROCK collision layers: hand={} mask=0x{:016X}, weapon={} mask=0x{:016X}, reload={} mask=0x{:016X}, body={} mask=0x{:016X}, actorPairs(biped={},deadbip={},bipedNoCC={},charControllerMelee={}), bodyPairs(hand={},weapon={},self={},static={},animstatic={},clutter={},query={},charController={}), handStaticWorld={}, weaponStaticWorld={}, bodyStaticWorld={}, projectiles={}, spells={}, nativeBubbleObjects={}",
             collision_layer_policy::ROCK_LAYER_HAND,
             matrix[collision_layer_policy::ROCK_LAYER_HAND],
             collision_layer_policy::ROCK_LAYER_WEAPON,
@@ -5494,6 +5497,18 @@ namespace rock
                         collision_layer_policy::ROCK_LAYER_WEAPON,
                         collision_layer_policy::FO4_LAYER_BIPED_NO_CC,
                         collision_layer_policy::maskEnablesLayer(_expectedWeaponLayerMask, collision_layer_policy::FO4_LAYER_BIPED_NO_CC)) ?
+                "ok" :
+                "bad",
+            collision_layer_policy::layerPairSymmetricMatches(
+                matrix,
+                collision_layer_policy::ROCK_LAYER_HAND,
+                collision_layer_policy::FO4_LAYER_CHARCONTROLLER,
+                false) &&
+                    collision_layer_policy::layerPairSymmetricMatches(
+                        matrix,
+                        collision_layer_policy::ROCK_LAYER_WEAPON,
+                        collision_layer_policy::FO4_LAYER_CHARCONTROLLER,
+                        g_rockConfig.rockPhysicalMeleeEnabled) ?
                 "ok" :
                 "bad",
             collision_layer_policy::layerPairSymmetricMatches(
