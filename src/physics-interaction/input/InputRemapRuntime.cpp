@@ -641,7 +641,6 @@ namespace rock::input_remap_runtime
                 .suppressRightGrabGameInput = g_rockConfig.rockSuppressRightGrabGameInput,
                 .suppressRightFavoritesGameInput = g_rockConfig.rockSuppressRightFavoritesGameInput,
                 .suppressRightTriggerGameInput = g_rockConfig.rockSuppressNativeReadyWeaponAutoReady,
-                .suppressNativeMeleeThrowGameInput = g_rockConfig.rockSuppressNativeMeleeThrowGameInput,
                 .suppressPipboyGameInputWhileHolding = g_rockConfig.rockSuppressPipboyGameInputWhileHolding,
             };
         }
@@ -1094,13 +1093,6 @@ namespace rock::input_remap_runtime
             });
         }
 
-        [[nodiscard]] bool shouldSuppressNativeMeleeThrowAction(const RE::InputEvent* event)
-        {
-            // FO4VR's verified MeleeThrow handler accepts its grenade/throw action from WandGrip.
-            return input_remap_policy::shouldSuppressNativeMeleeThrowAction(
-                makeNativeActionSuppressionInput(g_rockConfig.rockSuppressNativeMeleeThrowGameInput, eventNameMatches(event, kNativeEventWandGrip)));
-        }
-
         [[nodiscard]] bool shouldRouteFiringHandActivateReload(const RE::InputEvent* event)
         {
             const auto* button = event ? event->As<RE::ButtonEvent>() : nullptr;
@@ -1523,14 +1515,6 @@ namespace rock::input_remap_runtime
                 ROCK_LOG_SAMPLE_DEBUG(Input,
                     g_rockConfig.rockLogSampleMilliseconds,
                     "Suppressed native MeleeThrow input while provider OpenVR game-input suppression is active");
-                return;
-            }
-
-            if (shouldSuppressNativeMeleeThrowAction(inputEvent)) {
-                markInputEventStopped(inputEvent);
-                ROCK_LOG_SAMPLE_DEBUG(Input,
-                    g_rockConfig.rockLogSampleMilliseconds,
-                    "Suppressed native WandGrip MeleeThrow event while ROCK owns gameplay grab input");
                 return;
             }
 
@@ -2082,9 +2066,7 @@ namespace rock::input_remap_runtime
             if (input_remap_policy::shouldInstallNativeActionSuppressionHook(settings.enabled, settings.suppressRightFavoritesGameInput)) {
                 ready = installFavoritesEventSuppressionHook() && ready;
             }
-            if (input_remap_policy::shouldInstallNativeActionSuppressionHook(settings.enabled, settings.suppressNativeMeleeThrowGameInput)) {
-                ready = installMeleeThrowEventSuppressionHook() && ready;
-            }
+            ready = installMeleeThrowEventSuppressionHook() && ready;
             if (input_remap_policy::shouldInstallPipboyPauseArbitrationHooks(settings.enabled)) {
                 ready = installPipboyPauseArbitrationHooks() && ready;
             }

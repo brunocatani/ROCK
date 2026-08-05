@@ -65,7 +65,6 @@ namespace rock
         bool rockSuppressRightGrabGameInput = true;
         bool rockSuppressRightFavoritesGameInput = true;
         bool rockSuppressNativeReadyWeaponAutoReady = true;
-        bool rockSuppressNativeMeleeThrowGameInput = true;
         // Function-level controls; raw OpenVR button state remains untouched.
         bool rockSuppressNativeVats = false;
         bool rockSuppressNativeVans = false;
@@ -190,11 +189,6 @@ namespace rock
         float rockHandCollisionDynamicHapticMinApproachSpeedGameUnitsPerSecond = 3.0f;
         float rockHandCollisionDynamicHapticCooldownSeconds = 0.12f;
 
-        bool rockNativeMeleeSuppressionEnabled = true;
-        bool rockNativeMeleeFullSuppression = true;
-        bool rockNativeMeleeSuppressWeaponSwing = true;
-        bool rockNativeMeleeSuppressHitFrame = true;
-        bool rockNativeMeleeDebugLogging = false;
         bool rockNativeCharacterControllerObjectContactFilterEnabled = true;
 
         bool rockHighlightEnabled = true;

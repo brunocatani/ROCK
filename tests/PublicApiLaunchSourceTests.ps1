@@ -124,8 +124,8 @@ Require-Text 'src/api/ROCKProviderApi.h' 'ROCKAPI_GetDescriptorV1' `
     'The public SDK must declare the independent V1 descriptor accessor.'
 Require-Text 'src/exports.def' 'ROCKAPI_GetDescriptorV1' `
     'The provider descriptor must be exported independently of the function table.'
-Require-Text 'src/api/ROCKProviderApi.h' 'sizeof\(RockProviderApi\)\s*==\s*720' `
-    'The append-only V1 function table must retain its exact 90-slot x64 extent.'
+Require-Text 'src/api/ROCKProviderApi.h' 'sizeof\(RockProviderApi\)\s*==\s*736' `
+    'The append-only V1 function table must retain its exact 92-slot x64 extent.'
 Require-Text 'src/api/ROCKProviderApi.h' 'struct\s+RockProviderLimitsExtV1' `
     'Fixed capacities omitted by the legacy limits prefix must be discoverable through extended limits.'
 Require-Text 'src/api/ROCKProviderApi.h' 'RockProviderStructureIdV1[\s\S]*getPublicStructureSizeV1' `
@@ -345,6 +345,10 @@ Require-Text 'src/api/ROCKProviderApi.cpp' 'clearScope\(ownerToken, scopeToken\)
     'Clearing an unknown external-body scope must report target unavailability.'
 Require-Text 'src/api/ROCKProviderApi.h' 'TouchGrabTargets[\s\S]*RockProviderTouchGrabTargetV1[\s\S]*RockProviderTouchGrabStateV1' `
     'API V1 must expose bounded provider-scoped touch-grab targets and states.'
+Require-Text 'src/api/ROCKProviderApi.h' 'RockProviderImpactOutcomeV1[\s\S]*submitImpactOutcomeV1[\s\S]*copyImpactOutcomesSinceV1[\s\S]*ROCK_PROVIDER_API_V1_IMPACT_OUTCOMES_TABLE_BYTES' `
+    'API V1 must expose append-only, owner-authenticated native impact outcome reporting.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'drainExternalContactObservations\(\)[\s\S]{0,900}observation\.worldGeneration != worldGeneration[\s\S]{0,300}observation\.providerGeneration != providerGeneration' `
+    'Queued Havok impact observations must be rejected across world, skeleton, or provider generation changes.'
 Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_API_V1_TOUCH_GRAB_TARGETS_TABLE_BYTES[\s\S]*supportsTouchGrabTargetsV1' `
     'Touch-grab consumers must negotiate both the V1 feature bit and appended table extent.'
 Require-Text 'src/api/ROCKProviderApi.h' 'maxTouchGrabTargets[\s\S]*maxTouchGrabScopes[\s\S]*maxTouchGrabTargetLeaseFrames' `
@@ -463,7 +467,9 @@ $expectedProviderFunctions = [string[]]@(
     'requestEquippedWeaponHandV1',
     'queryWorldRaycastV1',
     'setColliderVisualizationOverrideV1',
-    'clearColliderVisualizationOverrideV1'
+    'clearColliderVisualizationOverrideV1',
+    'submitImpactOutcomeV1',
+    'copyImpactOutcomesSinceV1'
 )
 Require-SequenceEqual 'ROCKProviderApi function pointer order' (Get-ProviderFunctionNames $providerHeader) $expectedProviderFunctions
 

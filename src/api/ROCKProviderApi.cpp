@@ -145,6 +145,13 @@ namespace
 
     std::mutex s_externalBodyMutex;
     ExternalBodyRegistry s_externalBodies{};
+    std::mutex s_impactOutcomeMutex;
+    std::array<RockProviderImpactOutcomeV1,
+        ROCK_PROVIDER_MAX_IMPACT_OUTCOMES_V1> s_impactOutcomes{};
+    std::uint32_t s_impactOutcomeHead{ 0 };
+    std::uint32_t s_impactOutcomeCount{ 0 };
+    std::uint64_t s_nextImpactOutcomeSequence{ 1 };
+    std::uint64_t s_impactOutcomeOverwriteCount{ 0 };
     std::mutex s_touchGrabMutex;
     TouchGrabRegistry s_touchGrabTargets{};
 
@@ -2352,6 +2359,10 @@ namespace
             return sizeof(RockProviderWorldRaycastResultV1);
         case RockProviderStructureIdV1::ColliderVisualizationRequest:
             return sizeof(RockProviderColliderVisualizationRequestV1);
+        case RockProviderStructureIdV1::ImpactOutcome:
+            return sizeof(RockProviderImpactOutcomeV1);
+        case RockProviderStructureIdV1::ImpactOutcomeStreamState:
+            return sizeof(RockProviderImpactOutcomeStreamStateV1);
         default:
             return 0;
         }
@@ -4712,6 +4723,109 @@ namespace
         return RockProviderResultV1::Ok;
     }
 
+    RockProviderResultV1 ROCK_PROVIDER_CALL apiSubmitImpactOutcomeV1(
+        const std::uint64_t ownerToken,
+        const RockProviderImpactOutcomeV1* outcome)
+    {
+        if (ownerToken == 0 || !outcome ||
+            outcome->size < sizeof(RockProviderImpactOutcomeV1) ||
+            outcome->impactId == 0) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+
+        std::scoped_lock lock(s_consumerMutex, s_impactOutcomeMutex);
+        const auto ownerResult = validateRegisteredOwnerCapabilityLocked(
+            ownerToken,
+            RockProviderConsumerCapabilityV1::ExternalContacts);
+        if (ownerResult != RockProviderResultV1::Ok) {
+            return ownerResult;
+        }
+
+        RockProviderImpactOutcomeV1 stored = *outcome;
+        stored.size = sizeof(stored);
+        stored.version = ROCK_PROVIDER_API_VERSION;
+        stored.sequence = s_nextImpactOutcomeSequence++;
+        stored.submittingOwnerToken = ownerToken;
+        if (s_impactOutcomeCount < s_impactOutcomes.size()) {
+            const auto index = (s_impactOutcomeHead + s_impactOutcomeCount) %
+                s_impactOutcomes.size();
+            s_impactOutcomes[index] = stored;
+            ++s_impactOutcomeCount;
+        } else {
+            s_impactOutcomes[s_impactOutcomeHead] = stored;
+            s_impactOutcomeHead = (s_impactOutcomeHead + 1) %
+                s_impactOutcomes.size();
+            ++s_impactOutcomeOverwriteCount;
+        }
+        return RockProviderResultV1::Ok;
+    }
+
+    RockProviderResultV1 ROCK_PROVIDER_CALL apiCopyImpactOutcomesSinceV1(
+        const std::uint64_t ownerToken,
+        const std::uint64_t afterSequence,
+        RockProviderImpactOutcomeV1* outOutcomes,
+        const std::uint32_t maxOutcomes,
+        RockProviderImpactOutcomeStreamStateV1* outStreamState)
+    {
+        if (ownerToken == 0 || !outStreamState ||
+            outStreamState->size < sizeof(RockProviderImpactOutcomeStreamStateV1) ||
+            (maxOutcomes != 0 && !outOutcomes)) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+
+        std::scoped_lock lock(s_consumerMutex, s_impactOutcomeMutex);
+        const auto ownerResult = validateRegisteredOwnerCapabilityLocked(
+            ownerToken,
+            RockProviderConsumerCapabilityV1::ExternalContacts);
+        if (ownerResult != RockProviderResultV1::Ok) {
+            return ownerResult;
+        }
+
+        *outStreamState = {};
+        outStreamState->size = sizeof(*outStreamState);
+        outStreamState->overwrittenCount = s_impactOutcomeOverwriteCount;
+        for (std::uint32_t i = 0; i < s_impactOutcomeCount; ++i) {
+            const auto& candidate = s_impactOutcomes[
+                (s_impactOutcomeHead + i) % s_impactOutcomes.size()];
+            if (candidate.submittingOwnerToken != ownerToken) {
+                continue;
+            }
+            if (outStreamState->oldestRetainedSequence == 0) {
+                outStreamState->oldestRetainedSequence = candidate.sequence;
+            }
+            outStreamState->latestEmittedSequence = candidate.sequence;
+        }
+        if (afterSequence != 0 &&
+            outStreamState->oldestRetainedSequence != 0 &&
+            afterSequence + 1 < outStreamState->oldestRetainedSequence) {
+            outStreamState->flags |= static_cast<std::uint32_t>(
+                RockProviderExternalContactStreamFlagV1::GapBeforeFirstCopied);
+        }
+        if (s_impactOutcomeOverwriteCount != 0) {
+            outStreamState->flags |= static_cast<std::uint32_t>(
+                RockProviderExternalContactStreamFlagV1::RingOverwroteRecords);
+        }
+
+        std::uint32_t copied = 0;
+        for (std::uint32_t i = 0;
+             i < s_impactOutcomeCount && copied < maxOutcomes;
+             ++i) {
+            const auto& candidate = s_impactOutcomes[
+                (s_impactOutcomeHead + i) % s_impactOutcomes.size()];
+            if (candidate.submittingOwnerToken != ownerToken ||
+                candidate.sequence <= afterSequence) {
+                continue;
+            }
+            outOutcomes[copied++] = candidate;
+        }
+        outStreamState->copiedCount = copied;
+        if (copied != 0) {
+            outStreamState->firstCopiedSequence = outOutcomes[0].sequence;
+            outStreamState->lastCopiedSequence = outOutcomes[copied - 1].sequence;
+        }
+        return RockProviderResultV1::Ok;
+    }
+
     bool ROCK_PROVIDER_CALL apiSetOffhandInteractionReservation(std::uint64_t ownerToken, RockProviderOffhandReservation reservation)
     {
         if (ownerToken == 0 ||
@@ -5228,6 +5342,8 @@ namespace
             &apiSetColliderVisualizationOverrideV1,
         .clearColliderVisualizationOverrideV1 =
             &apiClearColliderVisualizationOverrideV1,
+        .submitImpactOutcomeV1 = &apiSubmitImpactOutcomeV1,
+        .copyImpactOutcomesSinceV1 = &apiCopyImpactOutcomesSinceV1,
     };
 
     constexpr RockProviderApiDescriptorV1 ROCK_PROVIDER_API_DESCRIPTOR{
@@ -5763,6 +5879,14 @@ namespace rock::provider
             s_externalBodies.clearAll();
         }
         {
+            std::scoped_lock lock(s_impactOutcomeMutex);
+            s_impactOutcomes = {};
+            s_impactOutcomeHead = 0;
+            s_impactOutcomeCount = 0;
+            s_nextImpactOutcomeSequence = 1;
+            s_impactOutcomeOverwriteCount = 0;
+        }
+        {
             std::scoped_lock lock(s_touchGrabMutex);
             s_touchGrabTargets.clearAll();
         }
@@ -6008,14 +6132,12 @@ namespace rock::provider
 
     bool isExternalBodyId(std::uint32_t bodyId)
     {
-        std::scoped_lock lock(s_externalBodyMutex);
-        return s_externalBodies.containsBody(bodyId);
+        return s_externalBodies.containsBodyAtomic(bodyId);
     }
 
     bool isExternalBodyDynamicPushSuppressed(std::uint32_t bodyId)
     {
-        std::scoped_lock lock(s_externalBodyMutex);
-        return s_externalBodies.suppressesRockDynamicPush(bodyId);
+        return s_externalBodies.suppressesRockDynamicPushAtomic(bodyId);
     }
 
     bool recordExternalHandContact(bool isLeft, std::uint32_t handBodyId, std::uint32_t externalBodyId, std::uint64_t frameIndex)

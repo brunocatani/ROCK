@@ -40,11 +40,22 @@ namespace rock::generated_body_contact_registry
         std::uint32_t side = 0;
         std::uint32_t flags = 0;
         std::uint64_t generationKey = 0;
+        std::uint64_t geometryKey = 0;
+        std::uint32_t weaponFormId = 0;
         float sampledVelocityHavokX = 0.0f;
         float sampledVelocityHavokY = 0.0f;
         float sampledVelocityHavokZ = 0.0f;
         float lengthGameUnits = 0.0f;
         float radiusGameUnits = 0.0f;
+        float localMinGameX = 0.0f;
+        float localMinGameY = 0.0f;
+        float localMinGameZ = 0.0f;
+        float localMaxGameX = 0.0f;
+        float localMaxGameY = 0.0f;
+        float localMaxGameZ = 0.0f;
+        float localCenterGameX = 0.0f;
+        float localCenterGameY = 0.0f;
+        float localCenterGameZ = 0.0f;
     };
 
     struct Classification : Entry
@@ -195,11 +206,22 @@ namespace rock::generated_body_contact_registry
             std::atomic<std::uint32_t> side{ 0 };
             std::atomic<std::uint32_t> flags{ 0 };
             std::atomic<std::uint64_t> generationKey{ 0 };
+            std::atomic<std::uint64_t> geometryKey{ 0 };
+            std::atomic<std::uint32_t> weaponFormId{ 0 };
             std::atomic<float> sampledVelocityHavokX{ 0.0f };
             std::atomic<float> sampledVelocityHavokY{ 0.0f };
             std::atomic<float> sampledVelocityHavokZ{ 0.0f };
             std::atomic<float> lengthGameUnits{ 0.0f };
             std::atomic<float> radiusGameUnits{ 0.0f };
+            std::atomic<float> localMinGameX{ 0.0f };
+            std::atomic<float> localMinGameY{ 0.0f };
+            std::atomic<float> localMinGameZ{ 0.0f };
+            std::atomic<float> localMaxGameX{ 0.0f };
+            std::atomic<float> localMaxGameY{ 0.0f };
+            std::atomic<float> localMaxGameZ{ 0.0f };
+            std::atomic<float> localCenterGameX{ 0.0f };
+            std::atomic<float> localCenterGameY{ 0.0f };
+            std::atomic<float> localCenterGameZ{ 0.0f };
         };
 
         void beginPublication() noexcept
@@ -228,11 +250,22 @@ namespace rock::generated_body_contact_registry
             slot.side.store(entry.side, std::memory_order_release);
             slot.flags.store(entry.flags, std::memory_order_release);
             slot.generationKey.store(entry.generationKey, std::memory_order_release);
+            slot.geometryKey.store(entry.geometryKey, std::memory_order_release);
+            slot.weaponFormId.store(entry.weaponFormId, std::memory_order_release);
             slot.sampledVelocityHavokX.store(entry.sampledVelocityHavokX, std::memory_order_release);
             slot.sampledVelocityHavokY.store(entry.sampledVelocityHavokY, std::memory_order_release);
             slot.sampledVelocityHavokZ.store(entry.sampledVelocityHavokZ, std::memory_order_release);
             slot.lengthGameUnits.store(entry.lengthGameUnits, std::memory_order_release);
             slot.radiusGameUnits.store(entry.radiusGameUnits, std::memory_order_release);
+            slot.localMinGameX.store(entry.localMinGameX, std::memory_order_release);
+            slot.localMinGameY.store(entry.localMinGameY, std::memory_order_release);
+            slot.localMinGameZ.store(entry.localMinGameZ, std::memory_order_release);
+            slot.localMaxGameX.store(entry.localMaxGameX, std::memory_order_release);
+            slot.localMaxGameY.store(entry.localMaxGameY, std::memory_order_release);
+            slot.localMaxGameZ.store(entry.localMaxGameZ, std::memory_order_release);
+            slot.localCenterGameX.store(entry.localCenterGameX, std::memory_order_release);
+            slot.localCenterGameY.store(entry.localCenterGameY, std::memory_order_release);
+            slot.localCenterGameZ.store(entry.localCenterGameZ, std::memory_order_release);
             slot.bodyId.store(entry.bodyId, std::memory_order_release);
         }
 
@@ -252,11 +285,22 @@ namespace rock::generated_body_contact_registry
             classification.side = slot.side.load(std::memory_order_acquire);
             classification.flags = slot.flags.load(std::memory_order_acquire);
             classification.generationKey = slot.generationKey.load(std::memory_order_acquire);
+            classification.geometryKey = slot.geometryKey.load(std::memory_order_acquire);
+            classification.weaponFormId = slot.weaponFormId.load(std::memory_order_acquire);
             classification.sampledVelocityHavokX = slot.sampledVelocityHavokX.load(std::memory_order_acquire);
             classification.sampledVelocityHavokY = slot.sampledVelocityHavokY.load(std::memory_order_acquire);
             classification.sampledVelocityHavokZ = slot.sampledVelocityHavokZ.load(std::memory_order_acquire);
             classification.lengthGameUnits = slot.lengthGameUnits.load(std::memory_order_acquire);
             classification.radiusGameUnits = slot.radiusGameUnits.load(std::memory_order_acquire);
+            classification.localMinGameX = slot.localMinGameX.load(std::memory_order_acquire);
+            classification.localMinGameY = slot.localMinGameY.load(std::memory_order_acquire);
+            classification.localMinGameZ = slot.localMinGameZ.load(std::memory_order_acquire);
+            classification.localMaxGameX = slot.localMaxGameX.load(std::memory_order_acquire);
+            classification.localMaxGameY = slot.localMaxGameY.load(std::memory_order_acquire);
+            classification.localMaxGameZ = slot.localMaxGameZ.load(std::memory_order_acquire);
+            classification.localCenterGameX = slot.localCenterGameX.load(std::memory_order_acquire);
+            classification.localCenterGameY = slot.localCenterGameY.load(std::memory_order_acquire);
+            classification.localCenterGameZ = slot.localCenterGameZ.load(std::memory_order_acquire);
             return classification;
         }
 

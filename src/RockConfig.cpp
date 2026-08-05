@@ -148,7 +148,6 @@ namespace rock
         rockSuppressRightGrabGameInput = true;
         rockSuppressRightFavoritesGameInput = true;
         rockSuppressNativeReadyWeaponAutoReady = true;
-        rockSuppressNativeMeleeThrowGameInput = true;
         rockSuppressPipboyGameInputWhileHolding = true;
         rockPipboyPauseHoldSeconds = pipboy_pause_gesture_policy::kDefaultHoldSeconds;
         rockSuppressTakeEquipGameInputWhileHolding = true;
@@ -247,11 +246,6 @@ namespace rock
         rockHandCollisionDynamicHapticMinApproachSpeedGameUnitsPerSecond = 3.0f;
         rockHandCollisionDynamicHapticCooldownSeconds = 0.12f;
 
-        rockNativeMeleeSuppressionEnabled = true;
-        rockNativeMeleeFullSuppression = true;
-        rockNativeMeleeSuppressWeaponSwing = true;
-        rockNativeMeleeSuppressHitFrame = true;
-        rockNativeMeleeDebugLogging = false;
         rockNativeCharacterControllerObjectContactFilterEnabled = true;
 
         rockHighlightEnabled = true;
@@ -725,7 +719,6 @@ namespace rock
         rockSuppressRightGrabGameInput = ini.GetBoolValue(SECTION, "bSuppressRightGrabGameInput", rockSuppressRightGrabGameInput);
         rockSuppressRightFavoritesGameInput = ini.GetBoolValue(SECTION, "bSuppressRightFavoritesGameInput", rockSuppressRightFavoritesGameInput);
         rockSuppressNativeReadyWeaponAutoReady = ini.GetBoolValue(SECTION, "bSuppressNativeReadyWeaponAutoReady", rockSuppressNativeReadyWeaponAutoReady);
-        rockSuppressNativeMeleeThrowGameInput = ini.GetBoolValue(SECTION, "bSuppressNativeMeleeThrowGameInput", rockSuppressNativeMeleeThrowGameInput);
         rockSuppressNativeVats = ini.GetBoolValue(SECTION, "bSuppressNativeVats", rockSuppressNativeVats);
         rockSuppressNativeVans = ini.GetBoolValue(SECTION, "bSuppressNativeVans", rockSuppressNativeVans);
         rockSuppressPipboyGameInputWhileHolding = ini.GetBoolValue(SECTION, "bSuppressPipboyGameInputWhileHolding", rockSuppressPipboyGameInputWhileHolding);
@@ -1199,11 +1192,6 @@ namespace rock
             0.0f,
             5.0f);
 
-        rockNativeMeleeSuppressionEnabled = ini.GetBoolValue(SECTION, "bNativeMeleeSuppressionEnabled", rockNativeMeleeSuppressionEnabled);
-        rockNativeMeleeFullSuppression = ini.GetBoolValue(SECTION, "bNativeMeleeFullSuppression", rockNativeMeleeFullSuppression);
-        rockNativeMeleeSuppressWeaponSwing = ini.GetBoolValue(SECTION, "bNativeMeleeSuppressWeaponSwing", rockNativeMeleeSuppressWeaponSwing);
-        rockNativeMeleeSuppressHitFrame = ini.GetBoolValue(SECTION, "bNativeMeleeSuppressHitFrame", rockNativeMeleeSuppressHitFrame);
-        rockNativeMeleeDebugLogging = ini.GetBoolValue(SECTION, "bNativeMeleeDebugLogging", rockNativeMeleeDebugLogging);
         rockNativeCharacterControllerObjectContactFilterEnabled = ini.GetBoolValue(
             SECTION, "bNativeCharacterControllerObjectContactFilterEnabled", rockNativeCharacterControllerObjectContactFilterEnabled);
 

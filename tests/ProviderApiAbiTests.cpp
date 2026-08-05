@@ -50,9 +50,11 @@ int main()
     ROCK_EXPECT_LAYOUT(RockProviderEventV1, 96, 8);
     ROCK_EXPECT_LAYOUT(RockProviderEventStreamStateV1, 56, 8);
     ROCK_EXPECT_LAYOUT(RockProviderEquippedWeaponStateV1, 96, 8);
-    ROCK_EXPECT_LAYOUT(RockProviderExternalBodyRegistration, 32, 8);
-    ROCK_EXPECT_LAYOUT(RockProviderExternalContactV1, 128, 8);
-    ROCK_EXPECT_LAYOUT(RockProviderExternalContactRecordV1, 152, 8);
+    ROCK_EXPECT_LAYOUT(RockProviderExternalBodyRegistration, 168, 8);
+    ROCK_EXPECT_LAYOUT(RockProviderExternalContactV1, 384, 8);
+    ROCK_EXPECT_LAYOUT(RockProviderExternalContactRecordV1, 552, 8);
+    ROCK_EXPECT_LAYOUT(RockProviderImpactOutcomeV1, 160, 8);
+    ROCK_EXPECT_LAYOUT(RockProviderImpactOutcomeStreamStateV1, 56, 8);
     ROCK_EXPECT_LAYOUT(RockProviderExternalContactStreamStateV1, 56, 8);
     ROCK_EXPECT_LAYOUT(RockProviderWeaponPartResolutionQueryV1, 128, 8);
     ROCK_EXPECT_LAYOUT(RockProviderWeaponPartResolutionResultV1, 72, 8);
@@ -104,10 +106,10 @@ int main()
     ROCK_EXPECT_LAYOUT(RockProviderBodyContactV1, 128, 8);
     ROCK_EXPECT_LAYOUT(RockProviderTouchGrabTargetV1, 128, 8);
     ROCK_EXPECT_LAYOUT(RockProviderTouchGrabStateV1, 136, 8);
-    ROCK_EXPECT_LAYOUT(RockProviderApi, 720, 8);
+    ROCK_EXPECT_LAYOUT(RockProviderApi, 736, 8);
 #undef ROCK_EXPECT_LAYOUT
 
-    ok = ok && sizeof(RockProviderApi) == 90 * sizeof(void*);
+    ok = ok && sizeof(RockProviderApi) == 92 * sizeof(void*);
     ok = ok && alignof(RockProviderApi) == alignof(void*);
     ok = ok && offsetof(RockProviderApi, getProviderLimitsExtV1) == 54 * sizeof(void*);
     ok = ok && offsetof(RockProviderApi, clearNativeAnimationRuntimeV1) == 81 * sizeof(void*);
@@ -117,6 +119,8 @@ int main()
     ok = ok && offsetof(RockProviderApi, queryWorldRaycastV1) == 87 * sizeof(void*);
     ok = ok && offsetof(RockProviderApi, setColliderVisualizationOverrideV1) == 88 * sizeof(void*);
     ok = ok && offsetof(RockProviderApi, clearColliderVisualizationOverrideV1) == 89 * sizeof(void*);
+    ok = ok && offsetof(RockProviderApi, submitImpactOutcomeV1) == 90 * sizeof(void*);
+    ok = ok && offsetof(RockProviderApi, copyImpactOutcomesSinceV1) == 91 * sizeof(void*);
     ok = ok && offsetof(RockProviderWeaponPartGripStateV1, authoredSupportGrip) == 224;
     ok = ok && offsetof(RockProviderWeaponPartPoseV1, actionRole) == 44;
     ok = ok && offsetof(RockProviderEquippedWeaponGripStateV1, muzzleOriginGame) == 188;
@@ -125,7 +129,8 @@ int main()
     ok = ok && ROCK_PROVIDER_API_V1_TOUCH_GRAB_TARGETS_TABLE_BYTES == 86 * sizeof(void*);
     ok = ok && ROCK_PROVIDER_API_V1_EQUIPPED_WEAPON_HAND_REQUEST_TABLE_BYTES == 87 * sizeof(void*);
     ok = ok && ROCK_PROVIDER_API_V1_WORLD_RAYCASTS_TABLE_BYTES == 88 * sizeof(void*);
-    ok = ok && ROCK_PROVIDER_API_V1_COLLIDER_VISUALIZATION_OVERRIDE_TABLE_BYTES == sizeof(RockProviderApi);
+    ok = ok && ROCK_PROVIDER_API_V1_COLLIDER_VISUALIZATION_OVERRIDE_TABLE_BYTES == 90 * sizeof(void*);
+    ok = ok && ROCK_PROVIDER_API_V1_IMPACT_OUTCOMES_TABLE_BYTES == sizeof(RockProviderApi);
     ok = ok &&
         static_cast<std::uint32_t>(
             RockProviderHandInputSuppressionFlagV1::SuppressNativeVats) ==

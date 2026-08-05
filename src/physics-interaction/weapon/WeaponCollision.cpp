@@ -3240,6 +3240,10 @@ namespace rock
             descriptor.geometryRootName = interactionRoot ? safeNodeName(interactionRoot) : "";
             descriptor.sourceName = instance.sourceName;
             descriptor.semantic = instance.semantic;
+            descriptor.localCenterGame = makeWeaponEvidencePoint(
+                instance.generatedLocalCenterGame.x,
+                instance.generatedLocalCenterGame.y,
+                instance.generatedLocalCenterGame.z);
             descriptor.localBoundsGame = WeaponEvidenceBounds3{
                 .min = makeWeaponEvidencePoint(instance.generatedLocalMinGame.x, instance.generatedLocalMinGame.y, instance.generatedLocalMinGame.z),
                 .max = makeWeaponEvidencePoint(instance.generatedLocalMaxGame.x, instance.generatedLocalMaxGame.y, instance.generatedLocalMaxGame.z),

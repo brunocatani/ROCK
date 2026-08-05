@@ -61,17 +61,22 @@ namespace rock::havok_runtime
     {
         bool valid = false;
         std::uint32_t pointCount = 0;
+        std::uint32_t nativeContactPointIndex = 0;
         std::uint32_t selectedPointIndex = 0;
         float contactPointWeightSum = 0.0f;
         float contactPointHavok[4]{};
         float contactNormalHavok[4]{};
+        float contactPointsHavok[kMaxContactSignalPoints][4]{};
+        float contactSeparationsHavok[kMaxContactSignalPoints]{};
+        float contactImpulses[kMaxContactSignalPoints]{};
     };
 
     struct ContactSignalPointSelectionInput
     {
         std::uint32_t pointCount = 0;
         std::uint32_t contactIndex = 0;
-        float pointWeights[4]{};
+        float contactSeparationsHavok[4]{};
+        float contactImpulses[4]{};
         float contactNormalHavok[4]{};
         float contactPointsHavok[4][4]{};
     };
@@ -253,35 +258,26 @@ namespace rock::havok_runtime
         outResult.contactNormalHavok[2] = input.contactNormalHavok[2] * invNormalLength;
         outResult.contactNormalHavok[3] = input.contactNormalHavok[3];
 
-        float weightedPoint[4]{};
-        float totalWeight = 0.0f;
+        std::uint32_t selectedIndex = input.contactIndex < pointCount ? input.contactIndex : 0;
+        float strongestImpulse = -1.0f;
+        float totalImpulse = 0.0f;
         for (std::uint32_t i = 0; i < pointCount; ++i) {
-            const float weight = input.pointWeights[i];
-            if (!std::isfinite(weight) || weight <= 0.0f || !isFinite3(input.contactPointsHavok[i])) {
-                continue;
+            copyVector4(input.contactPointsHavok[i], outResult.contactPointsHavok[i]);
+            outResult.contactSeparationsHavok[i] = input.contactSeparationsHavok[i];
+            outResult.contactImpulses[i] = input.contactImpulses[i];
+            if (std::isfinite(input.contactImpulses[i])) {
+                const float magnitude = std::abs(input.contactImpulses[i]);
+                totalImpulse += magnitude;
+                if (isFinite3(input.contactPointsHavok[i]) && magnitude > strongestImpulse) {
+                    strongestImpulse = magnitude;
+                    selectedIndex = i;
+                }
             }
-
-            totalWeight += weight;
-            weightedPoint[0] += input.contactPointsHavok[i][0] * weight;
-            weightedPoint[1] += input.contactPointsHavok[i][1] * weight;
-            weightedPoint[2] += input.contactPointsHavok[i][2] * weight;
-            weightedPoint[3] += input.contactPointsHavok[i][3] * weight;
         }
 
         outResult.pointCount = pointCount;
-        outResult.contactPointWeightSum = totalWeight;
-
-        if (totalWeight > 0.0f) {
-            const float invWeight = 1.0f / totalWeight;
-            outResult.contactPointHavok[0] = weightedPoint[0] * invWeight;
-            outResult.contactPointHavok[1] = weightedPoint[1] * invWeight;
-            outResult.contactPointHavok[2] = weightedPoint[2] * invWeight;
-            outResult.contactPointHavok[3] = weightedPoint[3] * invWeight;
-            outResult.valid = true;
-            return true;
-        }
-
-        std::uint32_t selectedIndex = input.contactIndex < pointCount ? input.contactIndex : 0;
+        outResult.nativeContactPointIndex = input.contactIndex;
+        outResult.contactPointWeightSum = totalImpulse;
         if (!isFinite3(input.contactPointsHavok[selectedIndex])) {
             selectedIndex = pointCount;
             for (std::uint32_t i = 0; i < pointCount; ++i) {

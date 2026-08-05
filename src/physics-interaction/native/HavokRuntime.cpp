@@ -41,7 +41,7 @@ namespace rock::havok_runtime
             std::uint32_t field0C = 0;
             float contactNormalHavok[4]{};
             float reserved20[4]{};
-            float normalImpulseHavok[4]{};
+            float contactSeparationsHavok[4]{};
             float contactPointsHavok[kMaxContactSignalPoints][4]{};
         };
         static_assert(offsetof(NativeContactSignalPointBuffer, contactNormalHavok) == 0x10);
@@ -955,9 +955,10 @@ namespace rock::havok_runtime
 
         const auto* signalBytes = static_cast<const std::uint8_t*>(contactSignalData);
         selection.contactIndex = signalBytes[0x18];
-        const auto* pointWeights = reinterpret_cast<const float*>(signalBytes + 0x30);
+        const auto* contactImpulses = reinterpret_cast<const float*>(signalBytes + 0x30);
         for (std::uint32_t i = 0; i < kMaxContactSignalPoints; ++i) {
-            selection.pointWeights[i] = pointWeights[i];
+            selection.contactSeparationsHavok[i] = native.contactSeparationsHavok[i];
+            selection.contactImpulses[i] = contactImpulses[i];
             copyVector4(native.contactPointsHavok[i], selection.contactPointsHavok[i]);
         }
         copyVector4(native.contactNormalHavok, selection.contactNormalHavok);

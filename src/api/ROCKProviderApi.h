@@ -42,6 +42,8 @@ namespace rock::provider
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EVIDENCE_NAME = 64;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EXTERNAL_BODIES_V1 = 2048;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EXTERNAL_CONTACTS_V1 = 512;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_IMPACT_OUTCOMES_V1 = 256;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_ANATOMY_BONE_CANDIDATES_V1 = 8;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_BODY_CONTACTS_V1 = 128;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_FRAME_CALLBACKS_V1 = 16;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_CONSUMERS_V1 = 64;
@@ -147,6 +149,59 @@ namespace rock::provider
         BodyPairOnly = 0,
         AggregateImpulse = 1,
         RawPoint = 2,
+    };
+
+    enum class RockProviderImpactSurfaceRegionV1 : std::uint32_t
+    {
+        Unknown = 0,
+        Tip = 1,
+        Edge = 2,
+        Flat = 3,
+        Haft = 4,
+        Guard = 5,
+        Pommel = 6,
+        Grip = 7,
+    };
+
+    enum class RockProviderTargetAnatomyFlagV1 : std::uint32_t
+    {
+        None = 0,
+        BodyMapValid = 1u << 0,
+        BodyMapAmbiguous = 1u << 1,
+        BodyMapTruncated = 1u << 2,
+        NodeNameValid = 1u << 3,
+        BodyPartValid = 1u << 4,
+        DamageMultiplierValid = 1u << 5,
+        LimbActorValueValid = 1u << 6,
+        BodyPartAmbiguous = 1u << 7,
+    };
+
+    enum class RockProviderImpactEpisodeFlagV1 : std::uint32_t
+    {
+        None = 0,
+        Started = 1u << 0,
+        Continued = 1u << 1,
+    };
+
+    enum class RockProviderImpactOutcomeLifecycleV1 : std::uint32_t
+    {
+        Rejected = 0,
+        Submitted = 1,
+        Consumed = 2,
+        Applied = 3,
+        CompletedWithoutMutation = 4,
+        UnknownAfterSubmission = 5,
+    };
+
+    enum class RockProviderImpactOutcomeFlagV1 : std::uint32_t
+    {
+        None = 0,
+        SynchronousConsumer = 1u << 0,
+        QueuedConsumer = 1u << 1,
+        HealthMutationObserved = 1u << 2,
+        LimbMutationObserved = 1u << 3,
+        MultipleLimbMutations = 1u << 4,
+        ExactComponentDelta = 1u << 5,
     };
 
     /*
@@ -861,6 +916,8 @@ namespace rock::provider
         WorldRaycastRequest = 64,
         WorldRaycastResult = 65,
         ColliderVisualizationRequest = 66,
+        ImpactOutcome = 67,
+        ImpactOutcomeStreamState = 68,
     };
 
     enum class RockProviderHandInteractionPhaseV1 : std::uint32_t
@@ -972,6 +1029,16 @@ namespace rock::provider
         ContactPointEstimated = 1u << 4,
         CollisionAvailable = 1u << 5,
         TransitionSuppressed = 1u << 6,
+        RawManifoldValid = 1u << 7,
+        SourceAngularVelocityValid = 1u << 8,
+        TargetVelocityValid = 1u << 9,
+        TargetAngularVelocityValid = 1u << 10,
+        SourceCenterOfMassValid = 1u << 11,
+        TargetCenterOfMassValid = 1u << 12,
+        RelativeVelocityValid = 1u << 13,
+        SourceLocalContactValid = 1u << 14,
+        SourceSurfaceClassified = 1u << 15,
+        TargetAnatomyValid = 1u << 16,
     };
 
     enum class RockProviderExternalContactStreamFlagV1 : std::uint32_t
@@ -2198,6 +2265,17 @@ namespace rock::provider
         RockProviderExternalBodyRole role{ RockProviderExternalBodyRole::Unknown };
         RockProviderExternalBodyContactPolicy contactPolicy{ RockProviderExternalBodyContactPolicy::None };
         RockProviderHand ownerHand{ RockProviderHand::None };
+        std::uint32_t actorFormId{ 0 };
+        std::uint32_t anatomyFlags{ 0 };
+        std::uint32_t animationBoneCandidateCount{ 0 };
+        std::int32_t animationBoneCandidates[ROCK_PROVIDER_MAX_ANATOMY_BONE_CANDIDATES_V1]{};
+        std::uint32_t bodyPartIndex{ 0xFFFF'FFFFu };
+        RockProviderBodyZoneKind targetZone{ RockProviderBodyZoneKind::Unknown };
+        RockProviderBodyZoneSide targetSide{ RockProviderBodyZoneSide::Center };
+        float bodyPartDamageMultiplier{ 1.0f };
+        std::uint32_t limbActorValueFormId{ 0 };
+        std::uint64_t nodeNameHash{ 0 };
+        char nodeName[ROCK_PROVIDER_MAX_EVIDENCE_NAME]{};
     };
 
     struct RockProviderExternalContactV1
@@ -2216,7 +2294,7 @@ namespace rock::provider
         float sourceVelocityHavok[4]{};
         float contactPointHavok[4]{};
         float contactNormalHavok[4]{};
-        // Sum of Bethesda contact point weights at contact-signal +0x30; this is not an impulse magnitude.
+        // Legacy aggregate alias: sum of the absolute native per-point impulse scalars at contact-signal +0x30.
         union
         {
             float contactPointWeightSum{ 0.0f };
@@ -2227,6 +2305,29 @@ namespace rock::provider
         std::uint32_t sourceSubRole{ 0 };
         std::uint32_t flags{ 0 };
         std::uint32_t collisionGeneration{ 0 };
+        std::uint32_t sourceEndpointIndex{ 0 };
+        std::uint32_t manifoldPointCount{ 0 };
+        std::uint32_t selectedPointIndex{ 0 };
+        std::uint32_t nativeContactPointIndex{ 0 };
+        float manifoldPointsHavok[4][4]{};
+        float manifoldSeparationsHavok[4]{};
+        float manifoldImpulses[4]{};
+        float sourceAngularVelocityHavok[4]{};
+        float targetVelocityHavok[4]{};
+        float targetAngularVelocityHavok[4]{};
+        float sourceCenterOfMassHavok[4]{};
+        float targetCenterOfMassHavok[4]{};
+        float sourceContactLocalGame[4]{};
+        float closingSpeedHavok{ 0.0f };
+        float tangentSpeedHavok{ 0.0f };
+        float sourceSurfaceCoordinate{ 0.0f };
+        float sourceSurfaceDamageCoefficient{ 1.0f };
+        std::uint64_t sourceWeaponGenerationKey{ 0 };
+        std::uint64_t sourceGeometryKey{ 0 };
+        std::uint32_t sourceWeaponFormId{ 0 };
+        std::uint32_t sourceDescriptorIndex{ 0xFFFF'FFFFu };
+        RockProviderImpactSurfaceRegionV1 sourceSurfaceRegion{ RockProviderImpactSurfaceRegionV1::Unknown };
+        std::uint32_t sourceSurfaceConfidencePermille{ 0 };
     };
 
     struct RockProviderHandInteractionStateV1
@@ -2337,7 +2438,87 @@ namespace rock::provider
         std::uint32_t worldGeneration{ 0 };
         std::uint32_t skeletonGeneration{ 0 };
         std::uint32_t providerGeneration{ 0 };
+        std::uint64_t impactId{ 0 };
+        std::uint64_t episodeId{ 0 };
+        std::uint32_t episodeFlags{ 0 };
+        std::uint32_t sourceEndpointIndex{ 0 };
+        std::uint32_t manifoldPointCount{ 0 };
+        std::uint32_t selectedPointIndex{ 0 };
+        std::uint32_t nativeContactPointIndex{ 0 };
+        float manifoldPointsHavok[4][4]{};
+        float manifoldSeparationsHavok[4]{};
+        float manifoldImpulses[4]{};
+        float sourceAngularVelocityHavok[3]{};
+        float targetVelocityHavok[3]{};
+        float targetAngularVelocityHavok[3]{};
+        float sourceCenterOfMassHavok[3]{};
+        float targetCenterOfMassHavok[3]{};
+        float sourceContactLocalGame[3]{};
+        float closingSpeedHavok{ 0.0f };
+        float tangentSpeedHavok{ 0.0f };
+        float sourceSurfaceCoordinate{ 0.0f };
+        float sourceSurfaceDamageCoefficient{ 1.0f };
+        std::uint64_t sourceWeaponGenerationKey{ 0 };
+        std::uint64_t sourceGeometryKey{ 0 };
+        std::uint32_t sourceWeaponFormId{ 0 };
+        std::uint32_t sourceDescriptorIndex{ 0xFFFF'FFFFu };
+        RockProviderImpactSurfaceRegionV1 sourceSurfaceRegion{ RockProviderImpactSurfaceRegionV1::Unknown };
+        std::uint32_t sourceSurfaceConfidencePermille{ 0 };
+        std::uint32_t targetActorFormId{ 0 };
+        std::uint32_t targetAnatomyFlags{ 0 };
+        std::uint32_t targetAnimationBoneCandidateCount{ 0 };
+        std::int32_t targetAnimationBoneCandidates[ROCK_PROVIDER_MAX_ANATOMY_BONE_CANDIDATES_V1]{};
+        std::uint32_t targetBodyPartIndex{ 0xFFFF'FFFFu };
+        RockProviderBodyZoneKind targetZone{ RockProviderBodyZoneKind::Unknown };
+        RockProviderBodyZoneSide targetSide{ RockProviderBodyZoneSide::Center };
+        float targetBodyPartDamageMultiplier{ 1.0f };
+        std::uint32_t targetLimbActorValueFormId{ 0 };
+        std::uint64_t targetNodeNameHash{ 0 };
+        char targetNodeName[ROCK_PROVIDER_MAX_EVIDENCE_NAME]{};
         std::uint32_t reserved[3]{};
+    };
+
+    struct RockProviderImpactOutcomeV1
+    {
+        std::uint32_t size{ sizeof(RockProviderImpactOutcomeV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint64_t sequence{ 0 };
+        std::uint64_t impactId{ 0 };
+        std::uint64_t episodeId{ 0 };
+        std::uint64_t contactSequence{ 0 };
+        std::uint64_t submittedFrameIndex{ 0 };
+        std::uint64_t completedFrameIndex{ 0 };
+        std::uint64_t submittingOwnerToken{ 0 };
+        std::uint32_t targetActorFormId{ 0 };
+        std::uint32_t targetBodyId{ 0x7FFF'FFFFu };
+        std::uint32_t sourceBodyId{ 0x7FFF'FFFFu };
+        std::uint32_t sourceWeaponFormId{ 0 };
+        std::uint32_t targetBodyPartIndex{ 0xFFFF'FFFFu };
+        RockProviderImpactSurfaceRegionV1 sourceSurfaceRegion{ RockProviderImpactSurfaceRegionV1::Unknown };
+        RockProviderImpactOutcomeLifecycleV1 lifecycle{ RockProviderImpactOutcomeLifecycleV1::Rejected };
+        std::uint32_t flags{ 0 };
+        std::uint32_t failureReason{ 0 };
+        float requestedNativeMultiplier{ 0.0f };
+        float submittedHealthDamage{ 0.0f };
+        float submittedLimbDamage{ 0.0f };
+        float observedHealthComponentDelta{ 0.0f };
+        float observedLimbComponentDelta{ 0.0f };
+        float sourceSurfaceDamageCoefficient{ 1.0f };
+        float closingSpeedGame{ 0.0f };
+        std::uint32_t reserved[8]{};
+    };
+
+    struct RockProviderImpactOutcomeStreamStateV1
+    {
+        std::uint32_t size{ sizeof(RockProviderImpactOutcomeStreamStateV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint64_t oldestRetainedSequence{ 0 };
+        std::uint64_t latestEmittedSequence{ 0 };
+        std::uint64_t firstCopiedSequence{ 0 };
+        std::uint64_t lastCopiedSequence{ 0 };
+        std::uint64_t overwrittenCount{ 0 };
+        std::uint32_t copiedCount{ 0 };
+        std::uint32_t flags{ 0 };
     };
 
     struct RockProviderExternalContactStreamStateV1
@@ -3002,6 +3183,15 @@ namespace rock::provider
             const RockProviderColliderVisualizationRequestV1* request);
         RockProviderResultV1(ROCK_PROVIDER_CALL* clearColliderVisualizationOverrideV1)(
             std::uint64_t ownerToken);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* submitImpactOutcomeV1)(
+            std::uint64_t ownerToken,
+            const RockProviderImpactOutcomeV1* outcome);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* copyImpactOutcomesSinceV1)(
+            std::uint64_t ownerToken,
+            std::uint64_t afterSequence,
+            RockProviderImpactOutcomeV1* outOutcomes,
+            std::uint32_t maxOutcomes,
+            RockProviderImpactOutcomeStreamStateV1* outStreamState);
 
         [[nodiscard]] static int initialize(
             const std::uint32_t minVersion = ROCK_PROVIDER_API_VERSION,
@@ -3161,6 +3351,8 @@ namespace rock::provider
         offsetof(RockProviderApi, queryWorldRaycastV1) + sizeof(std::declval<RockProviderApi>().queryWorldRaycastV1));
     inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_COLLIDER_VISUALIZATION_OVERRIDE_TABLE_BYTES = static_cast<std::uint32_t>(
         offsetof(RockProviderApi, clearColliderVisualizationOverrideV1) + sizeof(std::declval<RockProviderApi>().clearColliderVisualizationOverrideV1));
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_IMPACT_OUTCOMES_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, copyImpactOutcomesSinceV1) + sizeof(std::declval<RockProviderApi>().copyImpactOutcomesSinceV1));
 
     [[nodiscard]] inline bool queryProviderLimitsV1(RockProviderLimitsV1& outLimits)
     {
@@ -3737,8 +3929,8 @@ namespace rock::provider
     static_assert(alignof(RockProviderHandFrameV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderHandFrameV1>);
     static_assert(std::is_trivially_copyable_v<RockProviderHandFrameV1>);
-    static_assert(sizeof(RockProviderExternalBodyRegistration) == 32);
-    static_assert(sizeof(RockProviderExternalContactV1) == 128);
+    static_assert(sizeof(RockProviderExternalBodyRegistration) == 168);
+    static_assert(sizeof(RockProviderExternalContactV1) == 384);
     static_assert(alignof(RockProviderExternalContactV1) == 8);
     static_assert(sizeof(RockProviderPoint3) == 12);
     static_assert(sizeof(RockProviderBounds3) == 32);
@@ -3774,7 +3966,7 @@ namespace rock::provider
     static_assert(alignof(RockProviderTouchGrabStateV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderTouchGrabStateV1>);
     static_assert(std::is_trivially_copyable_v<RockProviderTouchGrabStateV1>);
-    static_assert(sizeof(RockProviderApi) == 720);
+    static_assert(sizeof(RockProviderApi) == 736);
     static_assert(alignof(RockProviderApi) == 8);
     static_assert(
         offsetof(RockProviderApi, getProviderLimitsExtV1) == 54 * sizeof(void*));
@@ -3796,4 +3988,10 @@ namespace rock::provider
     static_assert(
         offsetof(RockProviderApi, clearColliderVisualizationOverrideV1) ==
         89 * sizeof(void*));
+    static_assert(
+        offsetof(RockProviderApi, submitImpactOutcomeV1) ==
+        90 * sizeof(void*));
+    static_assert(
+        offsetof(RockProviderApi, copyImpactOutcomesSinceV1) ==
+        91 * sizeof(void*));
 }

@@ -18,6 +18,7 @@
 #include "physics-interaction/grenade/LooseGrenadeRuntime.h"
 #include "physics-interaction/hand/DynamicHandCollision.h"
 #include "physics-interaction/contact/GeneratedBodyContactRegistry.h"
+#include "physics-interaction/contact/ImpactObservationQueue.h"
 #include "physics-interaction/collision/ContactActivityTracker.h"
 #include "physics-interaction/consume/MouthConsumeDetector.h"
 #include "physics-interaction/PhysicsLog.h"
@@ -234,6 +235,7 @@ namespace rock
         void markGeneratedBodiesInvalidated();
         void clearGeneratedBodyContactRegistry();
         void refreshGeneratedBodyContactRegistry();
+        void drainExternalContactObservations();
         bool rebuildGeneratedBodiesForLifecycle(RE::bhkWorld* bhk, RE::hknpWorld* hknp, const char* reason);
         void observeLifecycleFrame(RE::bhkWorld* bhk, RE::hknpWorld* hknp, ::rock::provider::RockProviderLifecycleReason reasonHint);
         bool physicsWritesAllowedForWorld(RE::hknpWorld* world) const;
@@ -468,6 +470,17 @@ namespace rock
             MAX_WEAPON_COLLISION_BODIES +
             kBodyBoneColliderBodyCount;
         generated_body_contact_registry::Registry<kGeneratedBodyContactRegistryCapacity> _generatedBodyContactRegistry;
+
+        struct PendingImpactObservation
+        {
+            ::rock::provider::RockProviderExternalContactV1 contact{};
+            std::uint32_t worldGeneration{ 0 };
+            std::uint32_t skeletonGeneration{ 0 };
+            std::uint32_t providerGeneration{ 0 };
+        };
+        impact_observation::Queue<PendingImpactObservation, 1024>
+            _impactObservationQueue;
+        std::uint64_t _lastReportedDroppedImpactObservations{ 0 };
 
         std::atomic<std::uint32_t> _lastContactSourceRight{ 0xFFFFFFFF };
         std::atomic<std::uint32_t> _lastContactSourceLeft{ 0xFFFFFFFF };

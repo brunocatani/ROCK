@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 
@@ -78,6 +79,12 @@ namespace rock
                         ::rock::provider::RockProviderExternalBodyRegistration) ||
                     body.ownerToken != scopeToken ||
                     body.bodyId == kInvalidBodyId ||
+                    body.animationBoneCandidateCount >
+                        ::rock::provider::ROCK_PROVIDER_MAX_ANATOMY_BONE_CANDIDATES_V1 ||
+                    (body.bodyPartIndex != kInvalidIndex &&
+                        body.bodyPartIndex >= 26u) ||
+                    !std::isfinite(body.bodyPartDamageMultiplier) ||
+                    body.bodyPartDamageMultiplier < 0.0f ||
                     batchContainsDuplicateBody(bodies, i, body.bodyId)) {
                     return RegistrationResult::InvalidArgument;
                 }
@@ -121,6 +128,7 @@ namespace rock
                     .registration = bodies[i],
                 };
             }
+            publishAtomicBodyIndex();
             return RegistrationResult::Ok;
         }
 
@@ -140,6 +148,7 @@ namespace rock
                     scope = {};
                 }
             }
+            publishAtomicBodyIndex();
         }
 
         bool clearScope(
@@ -161,6 +170,7 @@ namespace rock
             if (scopeIndex != kInvalidIndex) {
                 _scopes[scopeIndex] = {};
             }
+            publishAtomicBodyIndex();
             return existed;
         }
 
@@ -173,11 +183,37 @@ namespace rock
             _contactCount = 0;
             _contactHead = 0;
             _nextContactSequence = 1;
+            _impactEpisodes = {};
+            _nextImpactId = 1;
+            _nextEpisodeId = 1;
+            publishAtomicBodyIndex();
         }
 
         [[nodiscard]] bool containsBody(const std::uint32_t bodyId) const
         {
             return findBody(bodyId) != nullptr;
+        }
+
+        /*
+         * Physics contact callbacks must never wait behind provider
+         * registration work. Registration publishes a sorted, atomic value
+         * snapshot; callback readers either observe one complete generation
+         * or conservatively report no match while a publication is in flight.
+         */
+        [[nodiscard]] bool containsBodyAtomic(const std::uint32_t bodyId) const noexcept
+        {
+            return findAtomicBodyPolicy(bodyId, nullptr);
+        }
+
+        [[nodiscard]] bool suppressesRockDynamicPushAtomic(
+            const std::uint32_t bodyId) const noexcept
+        {
+            std::uint32_t policy = 0;
+            if (!findAtomicBodyPolicy(bodyId, &policy)) {
+                return false;
+            }
+            return (policy & static_cast<std::uint32_t>(
+                                 ::rock::provider::RockProviderExternalBodyContactPolicy::SuppressRockDynamicPush)) != 0;
         }
 
         [[nodiscard]] bool suppressesRockDynamicPush(
@@ -256,6 +292,11 @@ namespace rock
             contact.targetRole = body->registration.role;
             contact.sequence = _nextContactSequence++;
 
+            const auto episode = updateImpactEpisode(
+                contact.sourceBodyId,
+                contact.targetExternalBodyId,
+                contact.frameIndex);
+
             ContactSlot slot{};
             slot.scopeIndex = body->scopeIndex;
             slot.legacy = contact;
@@ -286,6 +327,67 @@ namespace rock
             slot.record.worldGeneration = worldGeneration;
             slot.record.skeletonGeneration = skeletonGeneration;
             slot.record.providerGeneration = providerGeneration;
+            slot.record.impactId = _nextImpactId++;
+            slot.record.episodeId = episode.episodeId;
+            slot.record.episodeFlags = episode.flags;
+            slot.record.sourceEndpointIndex = contact.sourceEndpointIndex;
+            slot.record.manifoldPointCount = contact.manifoldPointCount;
+            slot.record.selectedPointIndex = contact.selectedPointIndex;
+            slot.record.nativeContactPointIndex = contact.nativeContactPointIndex;
+            std::copy_n(&contact.manifoldPointsHavok[0][0], 16,
+                &slot.record.manifoldPointsHavok[0][0]);
+            std::copy_n(contact.manifoldSeparationsHavok, 4,
+                slot.record.manifoldSeparationsHavok);
+            std::copy_n(contact.manifoldImpulses, 4,
+                slot.record.manifoldImpulses);
+            std::copy_n(contact.sourceAngularVelocityHavok, 3,
+                slot.record.sourceAngularVelocityHavok);
+            std::copy_n(contact.targetVelocityHavok, 3,
+                slot.record.targetVelocityHavok);
+            std::copy_n(contact.targetAngularVelocityHavok, 3,
+                slot.record.targetAngularVelocityHavok);
+            std::copy_n(contact.sourceCenterOfMassHavok, 3,
+                slot.record.sourceCenterOfMassHavok);
+            std::copy_n(contact.targetCenterOfMassHavok, 3,
+                slot.record.targetCenterOfMassHavok);
+            std::copy_n(contact.sourceContactLocalGame, 3,
+                slot.record.sourceContactLocalGame);
+            slot.record.closingSpeedHavok = contact.closingSpeedHavok;
+            slot.record.tangentSpeedHavok = contact.tangentSpeedHavok;
+            slot.record.sourceSurfaceCoordinate = contact.sourceSurfaceCoordinate;
+            slot.record.sourceSurfaceDamageCoefficient =
+                contact.sourceSurfaceDamageCoefficient;
+            slot.record.sourceWeaponGenerationKey =
+                contact.sourceWeaponGenerationKey;
+            slot.record.sourceGeometryKey = contact.sourceGeometryKey;
+            slot.record.sourceWeaponFormId = contact.sourceWeaponFormId;
+            slot.record.sourceDescriptorIndex = contact.sourceDescriptorIndex;
+            slot.record.sourceSurfaceRegion = contact.sourceSurfaceRegion;
+            slot.record.sourceSurfaceConfidencePermille =
+                contact.sourceSurfaceConfidencePermille;
+            slot.record.targetActorFormId = body->registration.actorFormId;
+            slot.record.targetAnatomyFlags = body->registration.anatomyFlags;
+            slot.record.targetAnimationBoneCandidateCount =
+                body->registration.animationBoneCandidateCount;
+            std::copy_n(body->registration.animationBoneCandidates,
+                ::rock::provider::ROCK_PROVIDER_MAX_ANATOMY_BONE_CANDIDATES_V1,
+                slot.record.targetAnimationBoneCandidates);
+            slot.record.targetBodyPartIndex = body->registration.bodyPartIndex;
+            slot.record.targetZone = body->registration.targetZone;
+            slot.record.targetSide = body->registration.targetSide;
+            slot.record.targetBodyPartDamageMultiplier =
+                body->registration.bodyPartDamageMultiplier;
+            slot.record.targetLimbActorValueFormId =
+                body->registration.limbActorValueFormId;
+            slot.record.targetNodeNameHash = body->registration.nodeNameHash;
+            std::copy_n(body->registration.nodeName,
+                ::rock::provider::ROCK_PROVIDER_MAX_EVIDENCE_NAME,
+                slot.record.targetNodeName);
+            if ((body->registration.anatomyFlags &
+                    static_cast<std::uint32_t>(::rock::provider::RockProviderTargetAnatomyFlagV1::BodyPartValid)) != 0) {
+                slot.record.flags |= static_cast<std::uint32_t>(
+                    ::rock::provider::RockProviderExternalContactFlagV1::TargetAnatomyValid);
+            }
             _scopes[body->scopeIndex].latestEmittedSequence =
                 contact.sequence;
 
@@ -410,6 +512,178 @@ namespace rock
             ::rock::provider::RockProviderExternalContactV1 legacy{};
             ::rock::provider::RockProviderExternalContactRecordV1 record{};
         };
+
+        struct ImpactEpisodeEntry
+        {
+            std::uint32_t sourceBodyId{ kInvalidBodyId };
+            std::uint32_t targetBodyId{ kInvalidBodyId };
+            std::uint64_t lastFrameIndex{ 0 };
+            std::uint64_t episodeId{ 0 };
+        };
+
+        struct ImpactEpisodeUpdate
+        {
+            std::uint64_t episodeId{ 0 };
+            std::uint32_t flags{ 0 };
+        };
+
+        [[nodiscard]] ImpactEpisodeUpdate updateImpactEpisode(
+            const std::uint32_t sourceBodyId,
+            const std::uint32_t targetBodyId,
+            const std::uint64_t frameIndex) noexcept
+        {
+            static constexpr std::uint64_t kEpisodeGapFrames = 4;
+            ImpactEpisodeEntry* empty = nullptr;
+            ImpactEpisodeEntry* oldest = &_impactEpisodes[0];
+            for (auto& entry : _impactEpisodes) {
+                if (entry.episodeId == 0) {
+                    if (!empty) {
+                        empty = &entry;
+                    }
+                    continue;
+                }
+                if (entry.lastFrameIndex < oldest->lastFrameIndex) {
+                    oldest = &entry;
+                }
+                if (entry.sourceBodyId != sourceBodyId ||
+                    entry.targetBodyId != targetBodyId) {
+                    continue;
+                }
+
+                const bool continued = frameIndex >= entry.lastFrameIndex &&
+                    frameIndex - entry.lastFrameIndex <= kEpisodeGapFrames;
+                entry.lastFrameIndex = frameIndex;
+                if (continued) {
+                    return {
+                        .episodeId = entry.episodeId,
+                        .flags = static_cast<std::uint32_t>(
+                            ::rock::provider::RockProviderImpactEpisodeFlagV1::Continued),
+                    };
+                }
+                entry.episodeId = _nextEpisodeId++;
+                return {
+                    .episodeId = entry.episodeId,
+                    .flags = static_cast<std::uint32_t>(
+                        ::rock::provider::RockProviderImpactEpisodeFlagV1::Started),
+                };
+            }
+
+            auto* entry = empty ? empty : oldest;
+            *entry = {
+                .sourceBodyId = sourceBodyId,
+                .targetBodyId = targetBodyId,
+                .lastFrameIndex = frameIndex,
+                .episodeId = _nextEpisodeId++,
+            };
+            return {
+                .episodeId = entry->episodeId,
+                .flags = static_cast<std::uint32_t>(
+                    ::rock::provider::RockProviderImpactEpisodeFlagV1::Started),
+            };
+        }
+
+        struct AtomicBodyIndexSlot
+        {
+            std::atomic<std::uint32_t> bodyId{ kInvalidBodyId };
+            std::atomic<std::uint32_t> contactPolicy{ 0 };
+        };
+
+        void publishAtomicBodyIndex() noexcept
+        {
+            struct BodyPolicy
+            {
+                std::uint32_t bodyId{ kInvalidBodyId };
+                std::uint32_t contactPolicy{ 0 };
+            };
+
+            std::array<BodyPolicy, kMaxBodies> sorted{};
+            for (std::uint32_t i = 0; i < _bodyCount; ++i) {
+                sorted[i].bodyId = _bodies[i].registration.bodyId;
+                sorted[i].contactPolicy = static_cast<std::uint32_t>(
+                    _bodies[i].registration.contactPolicy);
+            }
+            std::sort(sorted.begin(), sorted.begin() + _bodyCount,
+                [](const BodyPolicy& lhs, const BodyPolicy& rhs) {
+                    return lhs.bodyId < rhs.bodyId;
+                });
+
+            const auto version = _atomicBodyIndexVersion.load(
+                std::memory_order_relaxed);
+            _atomicBodyIndexVersion.store(
+                (version & ~1ull) + 1ull,
+                std::memory_order_release);
+            for (std::uint32_t i = 0; i < _bodyCount; ++i) {
+                _atomicBodyIndex[i].contactPolicy.store(
+                    sorted[i].contactPolicy,
+                    std::memory_order_relaxed);
+                _atomicBodyIndex[i].bodyId.store(
+                    sorted[i].bodyId,
+                    std::memory_order_relaxed);
+            }
+            for (std::uint32_t i = _bodyCount; i < kMaxBodies; ++i) {
+                _atomicBodyIndex[i].contactPolicy.store(
+                    0,
+                    std::memory_order_relaxed);
+                _atomicBodyIndex[i].bodyId.store(
+                    kInvalidBodyId,
+                    std::memory_order_relaxed);
+            }
+            _atomicBodyIndexCount.store(_bodyCount, std::memory_order_release);
+            const auto publishingVersion = _atomicBodyIndexVersion.load(
+                std::memory_order_relaxed);
+            _atomicBodyIndexVersion.store(
+                (publishingVersion | 1ull) + 1ull,
+                std::memory_order_release);
+        }
+
+        [[nodiscard]] bool findAtomicBodyPolicy(
+            const std::uint32_t bodyId,
+            std::uint32_t* outPolicy) const noexcept
+        {
+            if (bodyId == kInvalidBodyId) {
+                return false;
+            }
+            for (std::uint32_t attempt = 0; attempt < 4; ++attempt) {
+                const auto startVersion = _atomicBodyIndexVersion.load(
+                    std::memory_order_acquire);
+                if ((startVersion & 1ull) != 0) {
+                    continue;
+                }
+
+                std::uint32_t low = 0;
+                std::uint32_t high = (std::min)(
+                    _atomicBodyIndexCount.load(std::memory_order_acquire),
+                    kMaxBodies);
+                bool found = false;
+                std::uint32_t policy = 0;
+                while (low < high) {
+                    const auto mid = low + ((high - low) / 2u);
+                    const auto candidate = _atomicBodyIndex[mid].bodyId.load(
+                        std::memory_order_relaxed);
+                    if (candidate < bodyId) {
+                        low = mid + 1u;
+                    } else if (candidate > bodyId) {
+                        high = mid;
+                    } else {
+                        policy = _atomicBodyIndex[mid].contactPolicy.load(
+                            std::memory_order_relaxed);
+                        found = true;
+                        break;
+                    }
+                }
+
+                const auto endVersion = _atomicBodyIndexVersion.load(
+                    std::memory_order_acquire);
+                if (startVersion != endVersion || (endVersion & 1ull) != 0) {
+                    continue;
+                }
+                if (found && outPolicy) {
+                    *outPolicy = policy;
+                }
+                return found;
+            }
+            return false;
+        }
 
         [[nodiscard]] std::uint32_t findScopeIndex(
             const std::uint64_t parentOwnerToken,
@@ -620,5 +894,11 @@ namespace rock
         std::uint32_t _contactCount{ 0 };
         std::uint32_t _contactHead{ 0 };
         std::uint64_t _nextContactSequence{ 1 };
+        std::array<ImpactEpisodeEntry, kMaxContacts> _impactEpisodes{};
+        std::uint64_t _nextImpactId{ 1 };
+        std::uint64_t _nextEpisodeId{ 1 };
+        std::array<AtomicBodyIndexSlot, kMaxBodies> _atomicBodyIndex{};
+        std::atomic<std::uint32_t> _atomicBodyIndexCount{ 0 };
+        std::atomic<std::uint64_t> _atomicBodyIndexVersion{ 0 };
     };
 }

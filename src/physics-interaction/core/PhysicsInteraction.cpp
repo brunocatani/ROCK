@@ -1508,6 +1508,41 @@ namespace rock
         _generatedBodyContactRegistry.clear();
     }
 
+    void PhysicsInteraction::drainExternalContactObservations()
+    {
+        const auto worldGeneration =
+            _worldGenerationAtomic.load(std::memory_order_acquire);
+        const auto skeletonGeneration =
+            _skeletonGenerationAtomic.load(std::memory_order_acquire);
+        const auto providerGeneration =
+            _providerGenerationAtomic.load(std::memory_order_acquire);
+        PendingImpactObservation observation{};
+        while (_impactObservationQueue.tryPop(observation)) {
+            // A contact callback can race a load/reset boundary. Never let an
+            // observation from the old world bind to a newly registered body
+            // that happens to reuse the same hknp body id.
+            if (observation.worldGeneration != worldGeneration ||
+                observation.skeletonGeneration != skeletonGeneration ||
+                observation.providerGeneration != providerGeneration) {
+                continue;
+            }
+            (void)::rock::provider::recordExternalContact(
+                observation.contact,
+                observation.worldGeneration,
+                observation.skeletonGeneration,
+                observation.providerGeneration);
+        }
+
+        const auto dropped = _impactObservationQueue.droppedCount();
+        if (dropped != _lastReportedDroppedImpactObservations) {
+            ROCK_LOG_WARN(Contact,
+                "Impact observation queue overflowed: dropped={} delta={}",
+                dropped,
+                dropped - _lastReportedDroppedImpactObservations);
+            _lastReportedDroppedImpactObservations = dropped;
+        }
+    }
+
     void PhysicsInteraction::refreshGeneratedBodyContactRegistry()
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GeneratedBodyContactRegistry);
@@ -1578,6 +1613,31 @@ namespace rock
             entry.actionRole = static_cast<std::uint32_t>(contact.actionRole);
             entry.gripPose = static_cast<std::uint32_t>(contact.fallbackGripPose);
             entry.generationKey = contact.weaponGenerationKey;
+            entry.weaponFormId = _weaponCollision.getCurrentObservedEquippedWeaponFormID();
+            entry.descriptorIndex = i;
+
+            WeaponCollisionProfileEvidenceDescriptor descriptor{};
+            RE::NiAVObject* sourceNode = nullptr;
+            if (_weaponCollision.tryGetProfileEvidenceDescriptorForBodyId(
+                    contact.bodyId,
+                    descriptor,
+                    sourceNode) &&
+                descriptor.localBoundsGame.valid) {
+                entry.geometryKey = descriptor.weaponGenerationKey ^
+                    (static_cast<std::uint64_t>(descriptor.sourceRootAddress) << 1u) ^
+                    (static_cast<std::uint64_t>(descriptor.geometryRootAddress) >> 1u) ^
+                    static_cast<std::uint64_t>(descriptor.bodyId);
+                entry.localCenterGameX = descriptor.localCenterGame.x;
+                entry.localCenterGameY = descriptor.localCenterGame.y;
+                entry.localCenterGameZ = descriptor.localCenterGame.z;
+                entry.localMinGameX = descriptor.localBoundsGame.min.x - descriptor.localCenterGame.x;
+                entry.localMinGameY = descriptor.localBoundsGame.min.y - descriptor.localCenterGame.y;
+                entry.localMinGameZ = descriptor.localBoundsGame.min.z - descriptor.localCenterGame.z;
+                entry.localMaxGameX = descriptor.localBoundsGame.max.x - descriptor.localCenterGame.x;
+                entry.localMaxGameY = descriptor.localBoundsGame.max.y - descriptor.localCenterGame.y;
+                entry.localMaxGameZ = descriptor.localBoundsGame.max.z - descriptor.localCenterGame.z;
+            }
+            (void)sourceNode;
 
             float sampledVelocityHavok[4]{};
             if (_weaponCollision.tryGetWeaponBodySampledVelocityAtomic(contact.bodyId, sampledVelocityHavok) &&
@@ -1867,13 +1927,6 @@ namespace rock
             return;
         }
 
-        const bool nativeMeleeSuppressionHooksInstalled = installNativeMeleeSuppressionHooks();
-        if (!nativeMeleeSuppressionHooksInstalled && g_rockConfig.rockNativeMeleeSuppressionEnabled) {
-            ROCK_LOG_CRITICAL(Init, "Native melee suppression requested but hook installation failed; ROCK will continue without melee suppression");
-        } else if (nativeMeleeSuppressionHooksInstalled) {
-            enforceNativeMeleeRuntimeSuppression(true);
-        }
-
         ROCK_LOG_INFO(Init, "Initializing ROCK physics module...");
 
         auto* bhk = getPlayerBhkWorld();
@@ -2062,6 +2115,7 @@ namespace rock
     void PhysicsInteraction::update()
     {
         ensureWeaponCollisionWorkbenchExitMenuSinkRegistered();
+        drainExternalContactObservations();
 
         const auto& runtime = runtime_state::currentFrame();
         refreshEquippedWeaponHandlingSettings();
@@ -2087,8 +2141,7 @@ namespace rock
         if (_deltaTime <= 0.0f || _deltaTime > 0.1f) {
             _deltaTime = 1.0f / 90.0f;
         }
-        advanceNativeMeleeFrameClock();
-        enforceNativeMeleeRuntimeSuppression();
+        advancePhysicsHookFrameClock();
         enforceNativeGrabHapticRuntimeSuppression();
         _dynamicPushElapsedSeconds += _deltaTime;
         if (_dynamicPushCooldownUntil.size() > 512) {
@@ -4873,7 +4926,6 @@ namespace rock
         _completedPhysicsSolveSequence.store(0, std::memory_order_release);
         _equippedWeaponDropMomentumHandoffs = {};
         markGeneratedBodiesInvalidated();
-        clearNativeMeleePhysicalSwingLeases();
         collision_suppression_registry::globalCollisionSuppressionRegistry().clear();
         ::rock::provider::clearExternalBodiesForProviderLoss();
         clearLeftWeaponContact();
