@@ -33,8 +33,9 @@ namespace rock::authored_weapon_grip_capture_policy
 
     struct AuthoredSupportGripCandidateInput
     {
-        bool proximityProbeAcquisition{ false };
-        bool authoredSeatTouchAcquisition{ false };
+        bool interactionAcquisitionValid{ false };
+        bool activationZoneValid{ false };
+        bool authoredPoseSurfaceEvidenceValid{ false };
         bool providerAuthorityActive{ false };
         bool attachOnly{ false };
         bool captureValid{ false };
@@ -87,8 +88,9 @@ namespace rock::authored_weapon_grip_capture_policy
     [[nodiscard]] constexpr bool shouldUseAuthoredSupportGrip(
         const AuthoredSupportGripCandidateInput& input)
     {
-        return (input.proximityProbeAcquisition ||
-                   input.authoredSeatTouchAcquisition) &&
+        return input.interactionAcquisitionValid &&
+               input.activationZoneValid &&
+               input.authoredPoseSurfaceEvidenceValid &&
                !input.providerAuthorityActive &&
                !input.attachOnly &&
                input.captureValid &&

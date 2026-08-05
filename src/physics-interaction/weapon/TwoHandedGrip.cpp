@@ -1914,11 +1914,12 @@ namespace rock
         const WeaponInteractionContact& supportWeaponContact = supportHandIsLeft ? leftWeaponContact : rightWeaponContact;
         const WeaponInteractionRuntimeState& supportRuntimeState = supportHandIsLeft ? leftRuntimeState : rightRuntimeState;
         const WeaponInteractionDecision decision = routeWeaponInteraction(supportWeaponContact, supportRuntimeState);
-        refreshAuthoredSupportGripActivationDebug(
+        refreshAuthoredSupportGripActivationState(
             weaponNode,
             currentWeaponGenerationKey,
             decision,
-            weaponCollision);
+            weaponCollision,
+            false);
         const bool supportTouchingSupport = decision.kind == WeaponInteractionKind::SupportGrip;
         RE::NiNode* interactionWeaponNode = sourceRootNodeOrFallback(decision.interactionRoot, weaponNode);
         const bool supportGripHeld = supportHandIsLeft ? stableFrameInput.leftGripHeld : stableFrameInput.rightGripHeld;
@@ -2333,20 +2334,19 @@ namespace rock
         return outSnapshot.valid;
     }
 
-    void TwoHandedGrip::refreshAuthoredSupportGripActivationDebug(
+    void TwoHandedGrip::refreshAuthoredSupportGripActivationState(
         RE::NiNode* weaponNode,
         const std::uint64_t currentWeaponGenerationKey,
         const WeaponInteractionDecision& decision,
-        const WeaponCollision& weaponCollision)
+        const WeaponCollision& weaponCollision,
+        const bool requirePoseEvidence)
     {
         _authoredSupportGripDebugSnapshot = {};
-        const bool debugEnabled =
+        const bool collectPoseEvidence =
+            requirePoseEvidence ||
             g_rockConfig.rockDebugDrawAuthoredGripActivationZones ||
             g_rockConfig.rockDebugShowHandAxes ||
             g_rockConfig.rockDebugShowGrabPivots;
-        if (!debugEnabled) {
-            return;
-        }
 
         const auto& candidate = _authoredSupportGripCandidate;
         if (!weaponNode ||
@@ -2573,7 +2573,7 @@ namespace rock
         snapshot.directionPass = gate.directionPass;
         snapshot.semanticPass = gate.semanticPass;
         snapshot.scopePass = gate.scopePass;
-        snapshot.diagnosticSpatialPass = gate.spatialPass;
+        snapshot.activationSpatialPass = gate.spatialPass;
         if (gate.directionValid &&
             gate.radialDistanceGameUnits >=
                 authored_weapon_grip_activation_policy::
@@ -2583,59 +2583,61 @@ namespace rock
             _authoredSupportLastStableApproachDirectionValid = true;
         }
 
-        snapshot.poseLandmarksWorld[0] = snapshot.authoredPalmSeatWorld;
-        constexpr std::array<std::size_t, 5> kDistalFingerLocalIndices{
-            2, 5, 8, 11, 14
-        };
-        for (std::size_t fingerIndex = 0;
-             fingerIndex < kDistalFingerLocalIndices.size();
-             ++fingerIndex) {
-            const std::size_t distalIndex =
-                kDistalFingerLocalIndices[fingerIndex];
-            const std::size_t chainStart = distalIndex - 2;
-            RE::NiTransform fingerWeaponLocal =
-                transform_math::composeTransforms(
-                    authoredSupportHandWeaponLocal,
-                    authoredSupportFingerLocalTransforms[chainStart]);
-            fingerWeaponLocal = transform_math::composeTransforms(
-                fingerWeaponLocal,
-                authoredSupportFingerLocalTransforms[chainStart + 1]);
-            fingerWeaponLocal = transform_math::composeTransforms(
-                fingerWeaponLocal,
-                authoredSupportFingerLocalTransforms[distalIndex]);
-            snapshot.poseLandmarksWorld[fingerIndex + 1] =
-                transform_math::localPointToWorld(
-                    weaponNode->world,
-                    fingerWeaponLocal.translate);
-        }
-
-        std::array<WeaponCollision::WeaponSurfaceProximityWitness,
-            AuthoredSupportGripDebugSnapshot::kPoseLandmarkCount>
-            poseWitnesses{};
-        (void)weaponCollision.findCurrentWeaponSurfaceNearPoints(
-            weaponNode,
-            snapshot.poseLandmarksWorld,
-            snapshot.touchRadiusGameUnits,
-            poseWitnesses);
-        for (std::size_t landmarkIndex = 0;
-             landmarkIndex < poseWitnesses.size();
-             ++landmarkIndex) {
-            const auto& witness = poseWitnesses[landmarkIndex];
-            if (!witness.valid ||
-                witness.weaponGenerationKey != currentWeaponGenerationKey) {
-                continue;
+        if (collectPoseEvidence) {
+            snapshot.poseLandmarksWorld[0] = snapshot.authoredPalmSeatWorld;
+            constexpr std::array<std::size_t, 5> kDistalFingerLocalIndices{
+                2, 5, 8, 11, 14
+            };
+            for (std::size_t fingerIndex = 0;
+                 fingerIndex < kDistalFingerLocalIndices.size();
+                 ++fingerIndex) {
+                const std::size_t distalIndex =
+                    kDistalFingerLocalIndices[fingerIndex];
+                const std::size_t chainStart = distalIndex - 2;
+                RE::NiTransform fingerWeaponLocal =
+                    transform_math::composeTransforms(
+                        authoredSupportHandWeaponLocal,
+                        authoredSupportFingerLocalTransforms[chainStart]);
+                fingerWeaponLocal = transform_math::composeTransforms(
+                    fingerWeaponLocal,
+                    authoredSupportFingerLocalTransforms[chainStart + 1]);
+                fingerWeaponLocal = transform_math::composeTransforms(
+                    fingerWeaponLocal,
+                    authoredSupportFingerLocalTransforms[distalIndex]);
+                snapshot.poseLandmarksWorld[fingerIndex + 1] =
+                    transform_math::localPointToWorld(
+                        weaponNode->world,
+                        fingerWeaponLocal.translate);
             }
-            snapshot.poseSurfaceWitnessMask |=
-                static_cast<std::uint8_t>(1u << landmarkIndex);
-            ++snapshot.poseSurfaceWitnessCount;
-            snapshot.poseSurfaceWitnessWorld[landmarkIndex] =
-                witness.closestPointWorld;
-            snapshot.poseSurfaceDistanceGameUnits[landmarkIndex] =
-                witness.distanceGameUnits;
+
+            std::array<WeaponCollision::WeaponSurfaceProximityWitness,
+                AuthoredSupportGripDebugSnapshot::kPoseLandmarkCount>
+                poseWitnesses{};
+            (void)weaponCollision.findCurrentWeaponSurfaceNearPoints(
+                weaponNode,
+                snapshot.poseLandmarksWorld,
+                snapshot.touchRadiusGameUnits,
+                poseWitnesses);
+            for (std::size_t landmarkIndex = 0;
+                 landmarkIndex < poseWitnesses.size();
+                 ++landmarkIndex) {
+                const auto& witness = poseWitnesses[landmarkIndex];
+                if (!witness.valid ||
+                    witness.weaponGenerationKey != currentWeaponGenerationKey) {
+                    continue;
+                }
+                snapshot.poseSurfaceWitnessMask |=
+                    static_cast<std::uint8_t>(1u << landmarkIndex);
+                ++snapshot.poseSurfaceWitnessCount;
+                snapshot.poseSurfaceWitnessWorld[landmarkIndex] =
+                    witness.closestPointWorld;
+                snapshot.poseSurfaceDistanceGameUnits[landmarkIndex] =
+                    witness.distanceGameUnits;
+            }
+            snapshot.poseEvidencePass =
+                (snapshot.poseSurfaceWitnessMask & 0x01u) != 0 &&
+                snapshot.poseSurfaceWitnessCount >= 3;
         }
-        snapshot.provisionalPoseEvidencePass =
-            (snapshot.poseSurfaceWitnessMask & 0x01u) != 0 &&
-            snapshot.poseSurfaceWitnessCount >= 3;
         const auto& activeSupportGrip = partGrip(supportHandIsLeft);
         snapshot.currentSupportGripActive = activeSupportGrip.active;
         snapshot.currentAuthoredSupportGripActive =
@@ -3189,13 +3191,13 @@ namespace rock
         const RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(handTransform, isLeft);
 
         /*
-         * Acquisition-only authored priority. A pure proximity probe snaps to
-         * an eligible authored support relation. Eligibility requires the
-         * resolved palm seat itself to have a current generated-mesh surface
-         * witness, so an animation-zero/default support hand cannot escape to
-         * an unrelated world-space pose. A physical/recent touch substitutes
-         * authored only when its small live palm probe is inside that authored
-         * palm-seat radius; every rejected authored candidate continues into
+         * Acquisition-only authored priority. Physical contact and the
+         * proximity probe are equivalent entry sources: an eligible authored
+         * relation wins over both, but only inside the enforced family cone
+         * and radial cap. The captured palm plus at least two distal
+         * fingertips must also have current generated-mesh witnesses, so an
+         * animation-zero/default support hand cannot escape to an unrelated
+         * world-space pose. Every rejected authored candidate continues into
          * the unrestricted dynamic mesh grab below. The final authored seat
          * also selects visual-only versus full weapon authority. Provider
          * AttachOnly remains PAPER/consumer glue. Once selected, the exact
@@ -3250,24 +3252,33 @@ namespace rock
                 std::isfinite(authoredSupportPalmNormalWorld.z);
         }
 
-        WeaponCollision::WeaponSurfaceProximityWitness
-            authoredSupportSurfaceWitness{};
-        const bool authoredSeatWeaponSurfaceValid =
-            authoredSupportFrameValid &&
-            authoredWeaponIdentityMatches &&
-            authoredGenerationMatches &&
-            weaponCollision.tryFindCurrentWeaponSurfaceNearPoint(
-                weaponNode,
-                authoredSupportProximity.authoredPalmSeatWorld,
-                g_rockConfig.rockWeaponInteractionTouchRadius,
-                authoredSupportSurfaceWitness) &&
-            authoredSupportSurfaceWitness.weaponGenerationKey ==
+        refreshAuthoredSupportGripActivationState(
+            weaponNode,
+            decision.weaponGenerationKey,
+            decision,
+            weaponCollision,
+            true);
+        const auto& authoredActivation =
+            _authoredSupportGripDebugSnapshot;
+        const bool authoredActivationStateMatches =
+            authoredActivation.valid &&
+            authoredActivation.supportHandIsLeft == isLeft &&
+            authoredActivation.weaponGenerationKey ==
                 decision.weaponGenerationKey &&
-            authoredSupportSurfaceWitness.weaponGenerationKey ==
-                _activeWeaponGenerationKey;
+            authoredActivation.captureSequence ==
+                _authoredSupportGripCandidate.captureSequence;
+        const bool authoredActivationZoneValid =
+            authoredActivationStateMatches &&
+            authoredActivation.activationSpatialPass;
+        const bool authoredPoseSurfaceEvidenceValid =
+            authoredActivationStateMatches &&
+            authoredActivation.poseEvidencePass;
+        const bool authoredSeatWeaponSurfaceValid =
+            authoredActivationStateMatches &&
+            (authoredActivation.poseSurfaceWitnessMask & 0x01u) != 0;
         const float authoredSupportSurfaceDistance =
             authoredSeatWeaponSurfaceValid ?
-            authoredSupportSurfaceWitness.distanceGameUnits :
+            authoredActivation.poseSurfaceDistanceGameUnits[0] :
             (std::numeric_limits<float>::infinity)();
 
         bool authoredSupportAuthorityGateValid =
@@ -3294,22 +3305,21 @@ namespace rock
             }
         }
 
-        const bool authoredSeatTouchAcquisition =
+        const bool authoredInteractionAcquisitionValid =
             decision.acquisitionSource ==
-                WeaponInteractionAcquisitionSource::PhysicalContact &&
-            authoredSupportFrameValid &&
-            authoredSupportTouchProbeDistance <=
-                g_rockConfig.rockWeaponInteractionTouchRadius;
+                WeaponInteractionAcquisitionSource::PhysicalContact ||
+            decision.acquisitionSource ==
+                WeaponInteractionAcquisitionSource::ProximityProbe;
 
         constexpr std::uint16_t kCompleteAuthoredFingerMask = 0x7FFFu;
         const bool useAuthoredSupportGrip =
             authored_weapon_grip_capture_policy::shouldUseAuthoredSupportGrip(
                 authored_weapon_grip_capture_policy::AuthoredSupportGripCandidateInput{
-                    .proximityProbeAcquisition =
-                        decision.acquisitionSource ==
-                        WeaponInteractionAcquisitionSource::ProximityProbe,
-                    .authoredSeatTouchAcquisition =
-                        authoredSeatTouchAcquisition,
+                    .interactionAcquisitionValid =
+                        authoredInteractionAcquisitionValid,
+                    .activationZoneValid = authoredActivationZoneValid,
+                    .authoredPoseSurfaceEvidenceValid =
+                        authoredPoseSurfaceEvidenceValid,
                     .providerAuthorityActive = providerPartAuthority.active,
                     .attachOnly = grip.attachOnly,
                     .captureValid =
@@ -3367,17 +3377,23 @@ namespace rock
             }
 
             ROCK_LOG_INFO(Weapon,
-                "TwoHandedGrip: authored support grip captured hand={} weapon='{}' gripLocal=({:.3f},{:.3f},{:.3f}) touchToSeat={:.3f} touchRadius={:.3f} surfaceDistance={:.3f} surfaceBody={} surfaceSourceCurrent={} authoredSeatToFiringGrip={:.3f} seatLocal=({:.3f},{:.3f},{:.3f}) touchLocal=({:.3f},{:.3f},{:.3f}) frameError={:.4f} capture={} generation={:016X} acquisition={} authority={} priority=provider>authored>dynamic",
+                "TwoHandedGrip: authored support grip captured hand={} weapon='{}' gripLocal=({:.3f},{:.3f},{:.3f}) touchToSeat={:.3f} radialCap={:.3f} surfaceDistance={:.3f} poseWitnesses={}/6 poseMask={:02X} leftDot={:.3f} downDot={:.3f} cone={} authoredSeatToFiringGrip={:.3f} seatLocal=({:.3f},{:.3f},{:.3f}) touchLocal=({:.3f},{:.3f},{:.3f}) frameError={:.4f} capture={} generation={:016X} acquisition={} authority={} priority=provider>authored>dynamic",
                 isLeft ? "left" : "right",
                 weaponNode->name.c_str(),
                 grip.gripLocal.x,
                 grip.gripLocal.y,
                 grip.gripLocal.z,
                 authoredSupportTouchProbeDistance,
-                g_rockConfig.rockWeaponInteractionTouchRadius,
+                authoredActivation.radialCapGameUnits,
                 authoredSupportSurfaceDistance,
-                authoredSupportSurfaceWitness.bodyId,
-                authoredSupportSurfaceWitness.sourceNodeCurrent ? "yes" : "no",
+                static_cast<unsigned>(
+                    authoredActivation.poseSurfaceWitnessCount),
+                static_cast<unsigned>(
+                    authoredActivation.poseSurfaceWitnessMask),
+                authoredActivation.leftDot,
+                authoredActivation.downDot,
+                authored_weapon_grip_activation_policy::allowedConeName(
+                    authoredActivation.selectedCone),
                 authoredSupportPalmToFiringGripDistance,
                 authoredSupportPalmWeaponLocal.x,
                 authoredSupportPalmWeaponLocal.y,
@@ -3390,12 +3406,52 @@ namespace rock
                 _activeWeaponGenerationKey,
                 decision.acquisitionSource ==
                         WeaponInteractionAcquisitionSource::PhysicalContact ?
-                    "authored-seat-touch" :
+                    "physical-contact" :
                     "probe",
                 _authorityMode == weapon_support_authority_policy::WeaponSupportAuthorityMode::VisualOnlySupport ?
                     "visual-only" :
                     "full");
             return true;
+        }
+
+        if (authoredSupportCandidateForHandValid) {
+            ROCK_LOG_DEBUG(Weapon,
+                "TwoHandedGrip: authored support grip rejected; continuing to dynamic hand={} source={} family={} activation={} pose={} palm={} witnesses={}/6 mask={:02X} distance={:.3f} cap={:.3f} leftDot={:.3f} downDot={:.3f} class={} radial={} direction={} semantic={} scope={} provider={} attachOnly={} capture={} identity={} generation={} fingers={}",
+                isLeft ? "left" : "right",
+                decision.acquisitionSource ==
+                        WeaponInteractionAcquisitionSource::PhysicalContact ?
+                    "physical-contact" :
+                    (decision.acquisitionSource ==
+                            WeaponInteractionAcquisitionSource::ProximityProbe ?
+                        "probe" : "none"),
+                authored_weapon_grip_activation_policy::weaponFamilyName(
+                    authoredActivation.weaponFamily),
+                authoredActivationZoneValid ? "pass" : "fail",
+                authoredPoseSurfaceEvidenceValid ? "pass" : "fail",
+                authoredSeatWeaponSurfaceValid ? "pass" : "fail",
+                static_cast<unsigned>(
+                    authoredActivation.poseSurfaceWitnessCount),
+                static_cast<unsigned>(
+                    authoredActivation.poseSurfaceWitnessMask),
+                authoredActivation.weaponRelativeDistanceGameUnits,
+                authoredActivation.radialCapGameUnits,
+                authoredActivation.leftDot,
+                authoredActivation.downDot,
+                authoredActivation.classifierSupported ? "pass" : "fail",
+                authoredActivation.radialPass ? "pass" : "fail",
+                authoredActivation.directionPass ? "pass" : "fail",
+                authoredActivation.semanticPass ? "pass" : "fail",
+                authoredActivation.scopePass ? "pass" : "fail",
+                providerPartAuthority.active ? "yes" : "no",
+                grip.attachOnly ? "yes" : "no",
+                authoredSupportFrameValid &&
+                        authoredSupportAuthorityGateValid ?
+                    "pass" : "fail",
+                authoredWeaponIdentityMatches ? "pass" : "fail",
+                authoredGenerationMatches ? "pass" : "fail",
+                authoredSupportFingerLocalTransformMask ==
+                        kCompleteAuthoredFingerMask ?
+                    "pass" : "fail");
         }
 
         auto& fingerScratch = _fingerPoseSolveScratch->hands[isLeft ? 0u : 1u];

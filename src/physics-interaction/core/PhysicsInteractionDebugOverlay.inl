@@ -2130,7 +2130,7 @@
                     }
 
                     const auto liveVectorRole =
-                        snapshot.diagnosticSpatialPass ?
+                        snapshot.activationSpatialPass ?
                         debug::MarkerOverlayRole::AuthoredGripActivationPass :
                         debug::MarkerOverlayRole::AuthoredGripActivationFail;
                     addMarkerLine(
@@ -2162,14 +2162,17 @@
 
                     constexpr float kPassColor[4]{ 0.25f, 1.0f, 0.12f, 0.98f };
                     constexpr float kFailColor[4]{ 1.0f, 0.18f, 0.08f, 0.98f };
+                    const bool authoredActivationPass =
+                        snapshot.activationSpatialPass &&
+                        snapshot.poseEvidencePass;
                     const float* verdictColor =
-                        snapshot.diagnosticSpatialPass ?
+                        authoredActivationPass ?
                         kPassColor : kFailColor;
                     addTextLineSized(
                         labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -6.4f },
                         1.75f,
                         verdictColor,
-                        "ACTIVATION DIAGNOSTIC ONLY family=%s slot=%08X (%s) base=%08X",
+                        "ENFORCED AUTHORED ACTIVATION family=%s slot=%08X (%s) base=%08X",
                         authored_weapon_grip_activation_policy::weaponFamilyName(
                             snapshot.weaponFamily),
                         snapshot.effectiveEquipSlotFormID,
@@ -2187,7 +2190,7 @@
                         snapshot.downDot,
                         authored_weapon_grip_activation_policy::allowedConeName(
                             snapshot.selectedCone),
-                        snapshot.diagnosticSpatialPass ? "PASS" : "FAIL");
+                        snapshot.activationSpatialPass ? "PASS" : "FAIL");
                     addTextLineSized(
                         labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -10.4f },
                         1.65f,
@@ -2203,10 +2206,11 @@
                         labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -12.4f },
                         1.65f,
                         kCoordinateColor,
-                        "pose witnesses=%u/6 mask=%02X provisional=%s current=%s",
+                        "pose witnesses=%u/6 mask=%02X evidence=%s overall=%s current=%s",
                         static_cast<unsigned>(snapshot.poseSurfaceWitnessCount),
                         static_cast<unsigned>(snapshot.poseSurfaceWitnessMask),
-                        snapshot.provisionalPoseEvidencePass ? "PASS" : "FAIL",
+                        snapshot.poseEvidencePass ? "PASS" : "FAIL",
+                        authoredActivationPass ? "AUTHORED" : "DYNAMIC/NONE",
                         snapshot.currentSupportGripActive ?
                             (snapshot.currentAuthoredSupportGripActive ?
                                 "AUTHORED" : "DYNAMIC") :

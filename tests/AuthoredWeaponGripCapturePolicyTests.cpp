@@ -109,7 +109,9 @@ int main()
     static_assert(!shouldPublishAuthoredFiringFingerPose(true));
 
     constexpr AuthoredSupportGripCandidateInput supportEligible{
-        .proximityProbeAcquisition = true,
+        .interactionAcquisitionValid = true,
+        .activationZoneValid = true,
+        .authoredPoseSurfaceEvidenceValid = true,
         .captureValid = true,
         .weaponIdentityMatches = true,
         .generationMatches = true,
@@ -119,9 +121,18 @@ int main()
     static_assert(shouldUseAuthoredSupportGrip(supportEligible));
     static_assert([=] {
         auto input = supportEligible;
-        input.proximityProbeAcquisition = false;
-        input.authoredSeatTouchAcquisition = true;
-        return shouldUseAuthoredSupportGrip(input);
+        input.interactionAcquisitionValid = false;
+        return !shouldUseAuthoredSupportGrip(input);
+    }());
+    static_assert([=] {
+        auto input = supportEligible;
+        input.activationZoneValid = false;
+        return !shouldUseAuthoredSupportGrip(input);
+    }());
+    static_assert([=] {
+        auto input = supportEligible;
+        input.authoredPoseSurfaceEvidenceValid = false;
+        return !shouldUseAuthoredSupportGrip(input);
     }());
     static_assert([=] {
         auto input = supportEligible;
@@ -143,14 +154,6 @@ int main()
         input.authoredSeatWeaponSurfaceValid = false;
         return !shouldUseAuthoredSupportGrip(input);
     }());
-    static_assert([=] {
-        auto input = supportEligible;
-        input.proximityProbeAcquisition = false;
-        input.authoredSeatTouchAcquisition = true;
-        input.authoredSeatWeaponSurfaceValid = false;
-        return !shouldUseAuthoredSupportGrip(input);
-    }());
-
     constexpr AuthoredFiringGripProbeInput firingProbeEligible{
         .proximityProbeAcquisition = true,
         .authoredCanonicalAvailable = true,

@@ -27,12 +27,16 @@ Require-Text 'src/physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.
     'One-hand weapons must expose LEFT only while two-hand weapons expose the LEFT/DOWN union.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'refreshAuthoredSupportGripActivationDebug\([\s\S]*evaluateDirectionGate\([\s\S]*findCurrentWeaponSurfaceNearPoints\(' `
-    'The debug snapshot must consume the shared policy and bounded captured-pose surface witnesses.'
+    'refreshAuthoredSupportGripActivationState\([\s\S]*evaluateDirectionGate\([\s\S]*findCurrentWeaponSurfaceNearPoints\(' `
+    'The activation state must consume the shared policy and bounded captured-pose surface witnesses.'
+
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'refreshAuthoredSupportGripActivationState\([\s\S]*true\);[\s\S]*\.activationZoneValid\s*=\s*authoredActivationZoneValid[\s\S]*\.authoredPoseSurfaceEvidenceValid\s*=[\s\S]*authoredPoseSurfaceEvidenceValid' `
+    'Authored capture must force a current activation-zone and captured-pose evaluation.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
-    'rockDebugDrawAuthoredGripActivationZones[\s\S]*drawWireCone[\s\S]*ACTIVATION DIAGNOSTIC ONLY' `
-    'The pre-grab overlay must be independently enabled and explicitly identify its diagnostic-only verdict.'
+    'rockDebugDrawAuthoredGripActivationZones[\s\S]*drawWireCone[\s\S]*ENFORCED AUTHORED ACTIVATION' `
+    'The pre-grab overlay must be independently enabled and explicitly identify its enforced verdict.'
 
 foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
     Require-Text $configPath `

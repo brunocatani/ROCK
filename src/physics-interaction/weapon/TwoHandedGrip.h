@@ -151,8 +151,8 @@ namespace rock
         bool directionPass{ false };
         bool semanticPass{ false };
         bool scopePass{ false };
-        bool diagnosticSpatialPass{ false };
-        bool provisionalPoseEvidencePass{ false };
+        bool activationSpatialPass{ false };
+        bool poseEvidencePass{ false };
         bool currentSupportGripActive{ false };
         bool currentAuthoredSupportGripActive{ false };
         bool valid{ false };
@@ -926,11 +926,12 @@ namespace rock
             RE::NiTransform& outHandWeaponLocal,
             std::array<RE::NiTransform, 15>& outFingerLocalTransforms,
             std::uint16_t& outFingerLocalTransformMask) const;
-        void refreshAuthoredSupportGripActivationDebug(
+        void refreshAuthoredSupportGripActivationState(
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey,
             const WeaponInteractionDecision& decision,
-            const WeaponCollision& weaponCollision);
+            const WeaponCollision& weaponCollision,
+            bool requirePoseEvidence);
 
         /*
          * Reattach validates the hand first and only then commits; a takeover
