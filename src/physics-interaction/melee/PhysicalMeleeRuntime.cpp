@@ -317,7 +317,8 @@ namespace rock::physical_melee
             const provider::RockProviderExternalContactRecordV1& contact,
             std::uint64_t submissionFrameIndex,
             DecisionReason reason,
-            const Decision* decision = nullptr)
+            const Decision* decision = nullptr,
+            const TargetResolution* target = nullptr)
         {
             provider::recordPhysicalMeleeOutcome(makeOutcome(
                 contact,
@@ -327,14 +328,16 @@ namespace rock::physical_melee
                 decision));
             ROCK_LOG_SAMPLE_DEBUG(Melee,
                 g_rockConfig.rockLogSampleMilliseconds,
-                "Physical melee rejected impact={} actor={:08X} body={} part={} surface={} reason={} speed={:.1f}",
+                "Physical melee rejected impact={} actor={:08X} body={} part={} surface={} reason={} speed={:.1f} resolver={} accessViolation={}",
                 contact.impactId,
                 contact.targetActorFormId,
                 contact.targetExternalBodyId,
                 contact.targetBodyPartIndex,
                 static_cast<std::uint32_t>(contact.sourceSurfaceRegion),
                 decisionReasonName(reason),
-                decision ? decision->closingSpeedGame : 0.0f);
+                decision ? decision->closingSpeedGame : 0.0f,
+                target ? targetResolutionStageName(target->stage) : "Unavailable",
+                target && target->accessViolation ? "yes" : "no");
         }
 
         void resetForGenerations(
@@ -526,7 +529,7 @@ namespace rock::physical_melee
             if (!first.baseEligible) {
                 handled[i] = true;
                 report(first.contact);
-                reject(first.contact, frameIndex, first.decision.reason, &first.decision);
+                reject(first.contact, frameIndex, first.decision.reason, &first.decision, &first.target);
                 continue;
             }
 
@@ -554,9 +557,9 @@ namespace rock::physical_melee
                                      provider::RockProviderImpactEpisodeFlagV1::Continued);
                 report(grouped.contact);
                 if (activeEpisode) {
-                    reject(grouped.contact, frameIndex, DecisionReason::ContinuedEpisode, &grouped.decision);
+                    reject(grouped.contact, frameIndex, DecisionReason::ContinuedEpisode, &grouped.decision, &grouped.target);
                 } else if (j != bestIndex) {
-                    reject(grouped.contact, frameIndex, DecisionReason::SupersededCandidate, &grouped.decision);
+                    reject(grouped.contact, frameIndex, DecisionReason::SupersededCandidate, &grouped.decision, &grouped.target);
                 }
             }
             if (activeEpisode) {
@@ -567,19 +570,19 @@ namespace rock::physical_melee
             auto& best = s_runtime.candidates[bestIndex];
             const auto now = std::chrono::steady_clock::now();
             if (s_runtime.submittedThisFrame >= settings.maxDamageEventsPerFrame) {
-                reject(best.contact, frameIndex, DecisionReason::FrameBudgetExceeded, &best.decision);
+                reject(best.contact, frameIndex, DecisionReason::FrameBudgetExceeded, &best.decision, &best.target);
                 commitEpisode(best.contact, episodeId, frameIndex);
                 continue;
             }
             if (cooldownActive(best.contact, settings, now)) {
-                reject(best.contact, frameIndex, DecisionReason::CooldownActive, &best.decision);
+                reject(best.contact, frameIndex, DecisionReason::CooldownActive, &best.decision, &best.target);
                 commitEpisode(best.contact, episodeId, frameIndex);
                 continue;
             }
 
             auto* aggressor = static_cast<RE::Actor*>(RE::PlayerCharacter::GetSingleton());
             if (!s_runtime.bridgeReady || !aggressor || aggressor == best.target.actor) {
-                reject(best.contact, frameIndex, DecisionReason::NativeSubmissionFailed, &best.decision);
+                reject(best.contact, frameIndex, DecisionReason::NativeSubmissionFailed, &best.decision, &best.target);
                 continue;
             }
 
@@ -588,6 +591,8 @@ namespace rock::physical_melee
                 .bhkWorld = s_runtime.frame.bhkWorld,
                 .target = best.target.actor,
                 .aggressor = aggressor,
+                .targetBodyPart = best.target.bodyPart,
+                .targetNativeDamageLimb = best.target.nativeDamageLimb,
                 .contact = &best.contact,
                 .expectedWeapon = best.expectedWeapon,
                 .currentWeapon = s_runtime.frame.currentWeapon,

@@ -614,15 +614,6 @@ namespace rock::physical_melee
             }
         }
 
-        RE::BGSBodyPart* resolveBodyPartSafely(RE::Actor* actor, std::uint32_t bodyPartIndex)
-        {
-            __try {
-                auto* data = actor && actor->race ? actor->race->bodyPartData : nullptr;
-                return data && bodyPartIndex < std::size(data->partArray) ? data->partArray[bodyPartIndex] : nullptr;
-            } __except (EXCEPTION_EXECUTE_HANDLER) {
-                return nullptr;
-            }
-        }
 #endif
 
         [[nodiscard]] bool fillContactEvidence(const NativeMeleeHitInput& input, NativeMeleeHitResult& result)
@@ -853,6 +844,10 @@ namespace rock::physical_melee
             result.failure = NativeMeleeHitFailure::InvalidInput;
             return result;
         }
+        if (!input.targetBodyPart || input.targetNativeDamageLimb == 0xFFFF'FFFFu) {
+            result.failure = NativeMeleeHitFailure::MissingTargetBodyPart;
+            return result;
+        }
         if (!weaponWitnessMatches(input.expectedWeapon, input.currentWeapon)) {
             result.failure = NativeMeleeHitFailure::WeaponWitnessMismatch;
             return result;
@@ -861,17 +856,11 @@ namespace rock::physical_melee
             return result;
         }
 
-#if defined(_MSC_VER)
-        auto* targetBodyPart = resolveBodyPartSafely(input.target, input.contact->targetBodyPartIndex);
-#else
-        auto* targetBodyPart = input.target->race && input.target->race->bodyPartData ?
-            input.target->race->bodyPartData->partArray[input.contact->targetBodyPartIndex] : nullptr;
-#endif
-        if (!targetBodyPart) {
-            result.failure = NativeMeleeHitFailure::MissingTargetBodyPart;
-            return result;
-        }
-        const auto nativeDamageLimb = static_cast<std::uint32_t>(targetBodyPart->data.type);
+        // The resolver already selected an exact BPTD entry for this candidate.
+        // Consume that same witnessed entry instead of independently walking a
+        // second mutable Actor::race chain immediately before native dispatch.
+        auto* targetBodyPart = input.targetBodyPart;
+        const auto nativeDamageLimb = input.targetNativeDamageLimb;
 
         RE::BGSObjectInstanceT<RE::TESObjectWEAP> equippedWeapon{ nullptr, nullptr };
         static REL::Relocation<GetEquippedWeapon_t> getEquippedWeapon{ REL::Offset(kGetEquippedWeaponOffset) };

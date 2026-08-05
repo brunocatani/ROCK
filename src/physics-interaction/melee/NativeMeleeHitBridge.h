@@ -8,6 +8,7 @@
 namespace RE
 {
     class Actor;
+    class BGSBodyPart;
     class bhkWorld;
 }
 
@@ -38,6 +39,8 @@ namespace rock::physical_melee
         RE::bhkWorld* bhkWorld{ nullptr };
         RE::Actor* target{ nullptr };
         RE::Actor* aggressor{ nullptr };
+        RE::BGSBodyPart* targetBodyPart{ nullptr };
+        std::uint32_t targetNativeDamageLimb{ 0xFFFF'FFFFu };
         const provider::RockProviderExternalContactRecordV1* contact{ nullptr };
         WeaponIdentityWitness expectedWeapon{};
         WeaponIdentityWitness currentWeapon{};
