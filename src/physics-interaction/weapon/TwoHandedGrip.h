@@ -143,9 +143,9 @@ namespace rock
     };
 
     /*
-     * Frame-local diagnostics for the independent primary wrist +X
-     * correction. Pointer values are identity witnesses only; rendering
-     * consumes copied transforms after final muzzle authority.
+     * Frame-local diagnostics for the primary wrist +X correction and its
+     * optional wrist-space fine tune. Pointer values are identity witnesses
+     * only; rendering consumes copied transforms after final muzzle authority.
      */
     struct GunstockAlignmentDebugSnapshot
     {
@@ -180,6 +180,7 @@ namespace rock
         RE::NiMatrix3 correctionWorld{};
         RE::NiPoint3 pivotWorld{};
         RE::NiPoint3 wristForwardWorld{};
+        RE::NiPoint3 fineTunedTargetForwardWorld{};
         RE::NiPoint3 weaponRootForwardWorld{};
         RE::NiPoint3 unalignedLiveFireWorld{};
         RE::NiPoint3 neutralFireWorldBefore{};
@@ -190,6 +191,10 @@ namespace rock
         float unalignedAngleDegrees{ 0.0f };
         float correctionAngleRadians{ 0.0f };
         float correctionAngleDegrees{ 0.0f };
+        float fineTunePitchDegrees{ 0.0f };
+        float fineTuneYawDegrees{ 0.0f };
+        float fineTuneRollDegrees{ 0.0f };
+        float fineTuneTargetOffsetDegrees{ 0.0f };
         float neutralResidualDegrees{ 0.0f };
         float liveDeviationDegrees{ 0.0f };
         float finalWeaponPredictionErrorGameUnits{ 0.0f };
@@ -209,6 +214,7 @@ namespace rock
         bool correctionValid{ false };
         bool correctionAxisValid{ false };
         bool correctionUsedAntiparallelFallback{ false };
+        bool fineTuneActive{ false };
         bool predictionValid{ false };
         bool finalWeaponValid{ false };
         bool finalFireNodeValid{ false };
@@ -549,7 +555,8 @@ namespace rock
         /*
          * Final primary gunstock presentation. The already-solved weapon and
          * every participating posed hand rotate as one rigid group so the
-         * neutral bore follows the damped firing-wrist +X axis. The support
+         * neutral bore follows the damped firing-wrist +X axis, followed by
+         * optional wrist-space INI trim around the same pivot. The support
          * attach baseline remains upstream and is not recalibrated here.
          */
         bool applyGunstockAlignment(
@@ -1260,7 +1267,8 @@ namespace rock
             RE::NiTransform& outAlignmentHandWorld,
             RE::NiMatrix3& outCorrectionWorld,
             RE::NiPoint3& outPivotWorld,
-            float* outDirectionDot = nullptr) const;
+            float* outDirectionDot = nullptr,
+            bool* outFineTuneActive = nullptr) const;
 
         void reframeAuthoredSupportGripDebugSnapshot(
             const RE::NiTransform& finalWeaponWorld);

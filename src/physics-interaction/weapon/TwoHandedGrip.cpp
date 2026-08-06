@@ -54,6 +54,19 @@ namespace rock
         constexpr float SCOPE_ROOT_REBASE_DURATION_SECONDS = 0.075f;
         constexpr std::uint32_t SCOPE_TRANSITION_TRACE_FRAMES = 6;
 
+        gunstock_alignment_policy::FineTuneDegrees
+            configuredGunstockFineTune()
+        {
+            return {
+                .pitchDegrees =
+                    g_rockConfig.rockGunstockAlignmentPitchDegrees,
+                .yawDegrees =
+                    g_rockConfig.rockGunstockAlignmentYawDegrees,
+                .rollDegrees =
+                    g_rockConfig.rockGunstockAlignmentRollDegrees,
+            };
+        }
+
         /*
          * The part-carry two-anchor solve feeds its own rotation back as the
          * next frame's base, chaining several float matrix products per frame.
@@ -6960,11 +6973,15 @@ namespace rock
         RE::NiTransform& outAlignmentHandWorld,
         RE::NiMatrix3& outCorrectionWorld,
         RE::NiPoint3& outPivotWorld,
-        float* outDirectionDot) const
+        float* outDirectionDot,
+        bool* outFineTuneActive) const
     {
         outAlignmentHandWorld = {};
         outCorrectionWorld = {};
         outPivotWorld = {};
+        if (outFineTuneActive) {
+            *outFineTuneActive = false;
+        }
         if (!g_rockConfig.rockGunstockModeEnabled ||
             !weaponNode ||
             currentWeaponGenerationKey == 0 ||
@@ -6991,21 +7008,28 @@ namespace rock
 
         const RE::NiPoint3 localWristForward{ 1.0f, 0.0f, 0.0f };
         RE::NiPoint3 wristForwardWorld{};
+        const auto fineTune = configuredGunstockFineTune();
         if (!gunstock_alignment_policy::tryNormalizeDirection(
                 transform_math::localVectorToWorld(
                     outAlignmentHandWorld,
                     localWristForward),
                 wristForwardWorld) ||
-            !gunstock_alignment_policy::tryBuildWorldCorrection<
+            !gunstock_alignment_policy::tryBuildFineTunedWorldCorrection<
                 RE::NiTransform,
                 RE::NiMatrix3,
                 RE::NiPoint3>(
                 outAlignmentHandWorld,
                 _gunstockAlignment.directionLatch.neutralHandLocal,
                 wristForwardWorld,
+                fineTune,
                 outCorrectionWorld,
+                nullptr,
                 outDirectionDot)) {
             return false;
+        }
+        if (outFineTuneActive) {
+            *outFineTuneActive =
+                gunstock_alignment_policy::hasFineTune(fineTune);
         }
 
         outPivotWorld = driverWorld.translate;
@@ -7158,6 +7182,7 @@ namespace rock
         snapshot.predictedWeaponWorld = {};
         snapshot.predictedFireNodeWorld = {};
         snapshot.wristForwardWorld = {};
+        snapshot.fineTunedTargetForwardWorld = {};
         snapshot.weaponRootForwardWorld = {};
         snapshot.unalignedLiveFireWorld = {};
         snapshot.neutralFireWorldBefore = {};
@@ -7166,6 +7191,13 @@ namespace rock
         snapshot.unalignedAngleDegrees = 0.0f;
         snapshot.correctionAngleRadians = 0.0f;
         snapshot.correctionAngleDegrees = 0.0f;
+        const auto fineTune = configuredGunstockFineTune();
+        snapshot.fineTunePitchDegrees = fineTune.pitchDegrees;
+        snapshot.fineTuneYawDegrees = fineTune.yawDegrees;
+        snapshot.fineTuneRollDegrees = fineTune.rollDegrees;
+        snapshot.fineTuneTargetOffsetDegrees = 0.0f;
+        snapshot.fineTuneActive =
+            gunstock_alignment_policy::hasFineTune(fineTune);
         snapshot.neutralResidualDegrees = 0.0f;
 
         if (!snapshot.firingHandValid ||
@@ -7209,14 +7241,17 @@ namespace rock
 
         float directionDot = 1.0f;
         RE::NiMatrix3 correction{};
-        if (!gunstock_alignment_policy::tryBuildWorldCorrection<
+        RE::NiPoint3 fineTunedTarget{};
+        if (!gunstock_alignment_policy::tryBuildFineTunedWorldCorrection<
                 RE::NiTransform,
                 RE::NiMatrix3,
                 RE::NiPoint3>(
                 snapshot.firingHandWorld,
                 neutralLocal,
                 wristForward,
+                fineTune,
                 correction,
+                &fineTunedTarget,
                 &directionDot)) {
             return false;
         }
@@ -7274,11 +7309,19 @@ namespace rock
                 1.0f,
                 weaponSolverDot(
                     predictedNeutral,
+                    fineTunedTarget)));
+        const float fineTuneTargetOffsetDot = (std::max)(
+            -1.0f,
+            (std::min)(
+                1.0f,
+                weaponSolverDot(
+                    fineTunedTarget,
                     wristForward)));
         snapshot.correctionWorld = correction;
         snapshot.predictedWeaponWorld = predictedWeapon;
         snapshot.predictedFireNodeWorld = predictedFire;
         snapshot.wristForwardWorld = wristForward;
+        snapshot.fineTunedTargetForwardWorld = fineTunedTarget;
         snapshot.weaponRootForwardWorld = weaponRootForward;
         snapshot.unalignedLiveFireWorld = unalignedLiveFire;
         snapshot.neutralFireWorldBefore = neutralFireWorld;
@@ -7289,6 +7332,8 @@ namespace rock
         snapshot.correctionAngleRadians = correctionAngle;
         snapshot.correctionAngleDegrees =
             correctionAngle * radiansToDegrees;
+        snapshot.fineTuneTargetOffsetDegrees =
+            std::acos(fineTuneTargetOffsetDot) * radiansToDegrees;
         snapshot.neutralResidualDegrees =
             std::acos(neutralResidualDot) * radiansToDegrees;
         snapshot.correctionValid = true;
@@ -7550,7 +7595,9 @@ namespace rock
                 1.0f,
                 weaponSolverDot(
                     snapshot.finalLiveFireWorld,
-                    snapshot.wristForwardWorld)));
+                    snapshot.predictionValid ?
+                        snapshot.fineTunedTargetForwardWorld :
+                        snapshot.wristForwardWorld)));
         snapshot.liveDeviationDegrees =
             std::acos(liveDot) * radiansToDegrees;
         if (snapshot.predictionValid) {
@@ -7775,13 +7822,15 @@ namespace rock
         RE::NiMatrix3 correction{};
         RE::NiPoint3 pivotWorld{};
         float directionDot = 1.0f;
+        bool fineTuneActive = false;
         if (!tryResolveGunstockPrimaryGroupCorrection(
                 weaponNode,
                 currentWeaponGenerationKey,
                 alignmentHandWorld,
                 correction,
                 pivotWorld,
-                &directionDot)) {
+                &directionDot,
+                &fineTuneActive)) {
             resetGunstockAlignment("correction-invalid");
             return false;
         }
@@ -7952,7 +8001,7 @@ namespace rock
                     renderedFiringRelationRotationError);
             };
 
-        if (directionDot > 0.999999f) {
+        if (directionDot > 0.999999f && !fineTuneActive) {
             clearGunstockDedicatedHandAuthority();
             (void)publishAuthoredPrimaryFiringGripFingerPose(
                 _firingHandIsLeft);

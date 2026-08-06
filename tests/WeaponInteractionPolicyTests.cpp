@@ -394,6 +394,169 @@ int main()
             wristForward,
             0.0002f);
 
+        using FineTuneDegrees =
+            rock::gunstock_alignment_policy::FineTuneDegrees;
+        const FineTuneDegrees zeroFineTune{};
+        ok &= expectFalse(
+            "gunstock zero fine tune remains inactive",
+            rock::gunstock_alignment_policy::hasFineTune(
+                zeroFineTune));
+        TestMatrix3 zeroFineTunedCorrection{};
+        TestVector3 zeroFineTunedTarget{};
+        ok &= expectTrue(
+            "gunstock zero fine tune builds combined correction",
+            rock::gunstock_alignment_policy::
+                tryBuildFineTunedWorldCorrection<
+                    TestTransform,
+                    TestMatrix3,
+                    TestVector3>(
+                    firingHandWorld,
+                    capturedBore,
+                    wristForward,
+                    zeroFineTune,
+                    zeroFineTunedCorrection,
+                    &zeroFineTunedTarget));
+        TestTransform automaticCorrectionTransform =
+            rock::transform_math::makeIdentityTransform<
+                TestTransform>();
+        automaticCorrectionTransform.rotate = correction;
+        TestTransform zeroFineTunedCorrectionTransform =
+            rock::transform_math::makeIdentityTransform<
+                TestTransform>();
+        zeroFineTunedCorrectionTransform.rotate =
+            zeroFineTunedCorrection;
+        ok &= expectTransformNear(
+            "gunstock zero fine tune preserves automatic correction exactly",
+            zeroFineTunedCorrectionTransform,
+            automaticCorrectionTransform);
+        ok &= expectVectorNear(
+            "gunstock zero fine tune preserves wrist plus-X target",
+            zeroFineTunedTarget,
+            wristForward,
+            0.0002f);
+
+        const TestTransform identityHand =
+            rock::transform_math::makeIdentityTransform<
+                TestTransform>();
+        TestMatrix3 yawFineTune{};
+        ok &= expectTrue(
+            "gunstock yaw fine tune builds around firing-bone plus-Z",
+            rock::gunstock_alignment_policy::
+                tryBuildWorldFineTuneRotation<
+                    TestTransform,
+                    TestMatrix3,
+                    TestVector3>(
+                    identityHand,
+                    FineTuneDegrees{ .yawDegrees = 90.0f },
+                    yawFineTune));
+        ok &= expectVectorNear(
+            "gunstock positive yaw sends plus-X toward plus-Y",
+            rock::weaponSolverApplyStoredWorldRotationToVector<
+                TestMatrix3,
+                TestVector3>(
+                yawFineTune,
+                TestVector3{ 1.0f, 0.0f, 0.0f }),
+            TestVector3{ 0.0f, 1.0f, 0.0f },
+            0.0002f);
+
+        TestMatrix3 pitchFineTune{};
+        ok &= expectTrue(
+            "gunstock pitch fine tune builds around firing-bone plus-Y",
+            rock::gunstock_alignment_policy::
+                tryBuildWorldFineTuneRotation<
+                    TestTransform,
+                    TestMatrix3,
+                    TestVector3>(
+                    identityHand,
+                    FineTuneDegrees{ .pitchDegrees = 90.0f },
+                    pitchFineTune));
+        ok &= expectVectorNear(
+            "gunstock positive pitch sends plus-X toward minus-Z",
+            rock::weaponSolverApplyStoredWorldRotationToVector<
+                TestMatrix3,
+                TestVector3>(
+                pitchFineTune,
+                TestVector3{ 1.0f, 0.0f, 0.0f }),
+            TestVector3{ 0.0f, 0.0f, -1.0f },
+            0.0002f);
+
+        const FineTuneDegrees rollOnly{
+            .rollDegrees = 90.0f,
+        };
+        ok &= expectTrue(
+            "gunstock pure roll fine tune remains active with aligned bore",
+            rock::gunstock_alignment_policy::hasFineTune(rollOnly));
+        TestMatrix3 rollFineTune{};
+        ok &= expectTrue(
+            "gunstock roll fine tune builds around aligned plus-X",
+            rock::gunstock_alignment_policy::
+                tryBuildWorldFineTuneRotation<
+                    TestTransform,
+                    TestMatrix3,
+                    TestVector3>(
+                    identityHand,
+                    rollOnly,
+                    rollFineTune));
+        ok &= expectVectorNear(
+            "gunstock positive roll sends plus-Y toward plus-Z",
+            rock::weaponSolverApplyStoredWorldRotationToVector<
+                TestMatrix3,
+                TestVector3>(
+                rollFineTune,
+                TestVector3{ 0.0f, 1.0f, 0.0f }),
+            TestVector3{ 0.0f, 0.0f, 1.0f },
+            0.0002f);
+
+        const FineTuneDegrees combinedFineTune{
+            .pitchDegrees = 8.0f,
+            .yawDegrees = -11.0f,
+            .rollDegrees = 14.0f,
+        };
+        TestMatrix3 combinedCorrection{};
+        TestVector3 combinedTarget{};
+        ok &= expectTrue(
+            "gunstock composes fine tune after automatic alignment",
+            rock::gunstock_alignment_policy::
+                tryBuildFineTunedWorldCorrection<
+                    TestTransform,
+                    TestMatrix3,
+                    TestVector3>(
+                    firingHandWorld,
+                    capturedBore,
+                    wristForward,
+                    combinedFineTune,
+                    combinedCorrection,
+                    &combinedTarget));
+        const TestVector3 combinedCorrectedBore =
+            rock::weaponSolverNormalize(
+                rock::weaponSolverApplyStoredWorldRotationToVector<
+                    TestMatrix3,
+                    TestVector3>(
+                    combinedCorrection,
+                    rock::transform_math::localVectorToWorld(
+                        firingHandWorld,
+                        capturedBore)));
+        ok &= expectVectorNear(
+            "gunstock combined correction reaches fine-tuned target",
+            combinedCorrectedBore,
+            combinedTarget,
+            0.0002f);
+
+        const float invalidFineTuneValue =
+            std::numeric_limits<float>::quiet_NaN();
+        ok &= expectFalse(
+            "gunstock rejects non-finite fine tune",
+            rock::gunstock_alignment_policy::
+                tryBuildWorldFineTuneRotation<
+                    TestTransform,
+                    TestMatrix3,
+                    TestVector3>(
+                    identityHand,
+                    FineTuneDegrees{
+                        .pitchDegrees = invalidFineTuneValue,
+                    },
+                    rollFineTune));
+
         TestTransform movedDampedHandWorld =
             rock::transform_math::makeIdentityTransform<TestTransform>();
         movedDampedHandWorld.rotate = makeAxisAngleRotation(
@@ -553,6 +716,61 @@ int main()
             rock::transform_math::composeTransforms(
                 rock::transform_math::invertTransform(firingHand),
                 supportHand));
+
+        TestMatrix3 fineTuneCorrection{};
+        ok &= expectTrue(
+            "gunstock fine tune builds in the firing-grip frame",
+            rock::gunstock_alignment_policy::
+                tryBuildWorldFineTuneRotation<
+                    TestTransform,
+                    TestMatrix3,
+                    TestVector3>(
+                    firingHand,
+                    rock::gunstock_alignment_policy::FineTuneDegrees{
+                        .pitchDegrees = 6.0f,
+                        .yawDegrees = -9.0f,
+                        .rollDegrees = 12.0f,
+                    },
+                    fineTuneCorrection));
+        const TestTransform fineTunedFiring =
+            rock::gunstock_alignment_policy::rotateRigidlyAroundPivot<
+                TestTransform,
+                TestMatrix3,
+                TestVector3>(
+                firingHand,
+                fineTuneCorrection,
+                dampedDriverPivot);
+        const TestTransform fineTunedWeapon =
+            rock::gunstock_alignment_policy::rotateRigidlyAroundPivot<
+                TestTransform,
+                TestMatrix3,
+                TestVector3>(
+                weapon,
+                fineTuneCorrection,
+                dampedDriverPivot);
+        TestTransform pivotWitness =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        pivotWitness.translate = dampedDriverPivot;
+        const TestTransform fineTunedPivotWitness =
+            rock::gunstock_alignment_policy::rotateRigidlyAroundPivot<
+                TestTransform,
+                TestMatrix3,
+                TestVector3>(
+                pivotWitness,
+                fineTuneCorrection,
+                dampedDriverPivot);
+        ok &= expectVectorNear(
+            "gunstock fine tune keeps the damped-driver reference pivot fixed",
+            fineTunedPivotWitness.translate,
+            dampedDriverPivot);
+        ok &= expectTransformNear(
+            "gunstock fine tune preserves the firing-grip weapon relation",
+            rock::transform_math::composeTransforms(
+                rock::transform_math::invertTransform(fineTunedFiring),
+                fineTunedWeapon),
+            rock::transform_math::composeTransforms(
+                rock::transform_math::invertTransform(firingHand),
+                weapon));
     }
 
     {

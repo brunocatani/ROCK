@@ -642,7 +642,7 @@
                         snapshot.wristForwardWorld,
                         kDirectionLength,
                         wristForwardColor,
-                        "FIRING WRIST +X - GUNSTOCK TARGET");
+                        "FIRING WRIST +X - AUTOMATIC TARGET");
                     addDirectionRay(
                         debug::MarkerOverlayRole::
                             GunstockNeutralFireBefore,
@@ -663,7 +663,7 @@
                         snapshot.predictedNeutralFireWorld,
                         kDirectionLength,
                         predictedColor,
-                        "PREDICTED NEUTRAL FINAL");
+                        "PREDICTED FINE-TUNED NEUTRAL");
                     addDirectionRay(
                         debug::MarkerOverlayRole::
                             GunstockOppositeFire,
@@ -760,7 +760,7 @@
                         arcLabelAnchor,
                         1.55f,
                         rootColor,
-                        "CORRECTION %.2f deg%s",
+                        "AUTO CORRECTION %.2f deg%s",
                         snapshot.correctionAngleDegrees,
                         snapshot.correctionUsedAntiparallelFallback ?
                             " - 180 FALLBACK AXIS" :
@@ -874,7 +874,7 @@
                     };
                 addStatusLine(
                     0,
-                    "GUNSTOCK DEBUG behavior=%s eligible=%s state=%s hand=%s source=fire-node target=wrist+X",
+                    "GUNSTOCK DEBUG behavior=%s eligible=%s state=%s hand=%s source=fire-node autoTarget=wrist+X",
                     snapshot.behaviorEnabled ? "on" : "off",
                     snapshot.weaponEligible ? "yes" : "no",
                     stateName(snapshot.state),
@@ -896,24 +896,31 @@
                     gunstock_alignment_policy::kRequiredStableSamples);
                 addStatusLine(
                     3,
-                    "unaligned=%.2f correction=%.2f neutralResidual=%.3f deg",
+                    "fineTune pitch(+Y)=%.2f yaw(+Z)=%.2f roll(+X)=%.2f targetOffset=%.2f deg",
+                    snapshot.fineTunePitchDegrees,
+                    snapshot.fineTuneYawDegrees,
+                    snapshot.fineTuneRollDegrees,
+                    snapshot.fineTuneTargetOffsetDegrees);
+                addStatusLine(
+                    4,
+                    "unaligned=%.2f autoCorrection=%.2f predictedResidual=%.3f deg",
                     snapshot.unalignedAngleDegrees,
                     snapshot.correctionAngleDegrees,
                     snapshot.neutralResidualDegrees);
                 addStatusLine(
-                    4,
-                    "liveDeviation=%.2f deg recoil=%s finalError=%.4f gu",
+                    5,
+                    "liveResidual=%.2f deg recoil=%s finalError=%.4f gu",
                     snapshot.liveDeviationDegrees,
                     recoilWitnessName(snapshot.recoilWitness),
                     snapshot.finalWeaponPredictionErrorGameUnits);
                 addStatusLine(
-                    5,
+                    6,
                     "renderedRelation=%s error=(%.4f gu, %.3f deg)",
                     snapshot.renderedFiringRelationValid ? "valid" : "n/a",
                     snapshot.renderedFiringRelationPositionErrorGameUnits,
                     snapshot.renderedFiringRelationRotationErrorDegrees);
                 addStatusLine(
-                    6,
+                    7,
                     "yieldReason=%s gripState=%d dataAge=0%s",
                     yieldReasonName(snapshot.yieldReason),
                     static_cast<int>(snapshot.gripState),

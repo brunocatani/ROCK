@@ -175,6 +175,9 @@ namespace rock
 
         rockLeftHandedMode = false;
         rockGunstockModeEnabled = false;
+        rockGunstockAlignmentPitchDegrees = 0.0f;
+        rockGunstockAlignmentYawDegrees = 0.0f;
+        rockGunstockAlignmentRollDegrees = 0.0f;
         rockAmbidextrousFiringGripEnabled = true;
         rockFiringGripPromotionRadius = 5.0f;
         rockLeftFiringAimYawDegrees = 0.0f;
@@ -766,6 +769,30 @@ namespace rock
             GUNSTOCK_SECTION,
             "bAlignBarrelToControllerForward",
             rockGunstockModeEnabled);
+        rockGunstockAlignmentPitchDegrees = readClampedFloat(
+            ini,
+            GUNSTOCK_SECTION,
+            "fAlignmentPitchDegrees",
+            rockGunstockAlignmentPitchDegrees,
+            0.0f,
+            -180.0f,
+            180.0f);
+        rockGunstockAlignmentYawDegrees = readClampedFloat(
+            ini,
+            GUNSTOCK_SECTION,
+            "fAlignmentYawDegrees",
+            rockGunstockAlignmentYawDegrees,
+            0.0f,
+            -180.0f,
+            180.0f);
+        rockGunstockAlignmentRollDegrees = readClampedFloat(
+            ini,
+            GUNSTOCK_SECTION,
+            "fAlignmentRollDegrees",
+            rockGunstockAlignmentRollDegrees,
+            0.0f,
+            -180.0f,
+            180.0f);
         rockAmbidextrousFiringGripEnabled = ini.GetBoolValue(
             AMBIDEXTROUS_FIRING_SECTION,
             "bAmbidextrousFiringGripEnabled",

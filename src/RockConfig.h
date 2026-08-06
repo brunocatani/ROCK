@@ -100,6 +100,11 @@ namespace rock
         // attach consumes only post-capture motion, then final presentation
         // aligns the neutral bore to the damped firing-wrist +X axis.
         bool rockGunstockModeEnabled = false;
+        // Additive final-alignment trim in the untrimmed damped firing-wrist
+        // frame. Yaw is +Z, pitch is +Y, and roll is +X (the aligned bore).
+        float rockGunstockAlignmentPitchDegrees = 0.0f;
+        float rockGunstockAlignmentYawDegrees = 0.0f;
+        float rockGunstockAlignmentRollDegrees = 0.0f;
         // ROCK-native firing-grip handoff. This remains independent from the
         // addon-owned realistic detach/drop feature set.
         bool rockAmbidextrousFiringGripEnabled = true;

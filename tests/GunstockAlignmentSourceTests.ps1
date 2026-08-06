@@ -45,6 +45,14 @@ Require-Text 'src/RockConfig.cpp' `
     'The historical production key must load both gunstock stages without changing the external INI contract.'
 
 Require-Text 'src/RockConfig.h' `
+    'rockGunstockAlignmentPitchDegrees\s*=\s*0\.0f[\s\S]*rockGunstockAlignmentYawDegrees\s*=\s*0\.0f[\s\S]*rockGunstockAlignmentRollDegrees\s*=\s*0\.0f' `
+    'Gunstock fine tuning must remain zero-default so existing alignment is unchanged.'
+
+Require-Text 'src/RockConfig.cpp' `
+    'rockGunstockAlignmentPitchDegrees\s*=\s*0\.0f[\s\S]*rockGunstockAlignmentYawDegrees\s*=\s*0\.0f[\s\S]*rockGunstockAlignmentRollDegrees\s*=\s*0\.0f[\s\S]*"fAlignmentPitchDegrees"[\s\S]*-180\.0f,[\s\S]*180\.0f[\s\S]*"fAlignmentYawDegrees"[\s\S]*-180\.0f,[\s\S]*180\.0f[\s\S]*"fAlignmentRollDegrees"[\s\S]*-180\.0f,[\s\S]*180\.0f' `
+    'All three gunstock fine-tune axes must load as finite clamped degree values.'
+
+Require-Text 'src/RockConfig.h' `
     'rockDebugDrawGunstockAlignment\s*=\s*false' `
     'Gunstock diagnostics must remain independently opt-in.'
 
@@ -60,6 +68,9 @@ foreach ($iniPath in @(
         '\[Gunstock\][\s\S]*two independent stages[\s\S]*neutral fire-node[\s\S]*firing-wrist \+X[\s\S]*bAlignBarrelToControllerForward\s*=\s*false' `
         'Both shipped INIs must describe and expose the disabled-by-default support baseline and final wrist alignment.'
     Require-Text $iniPath `
+        '\[Gunstock\][\s\S]*same damped-driver pivot[\s\S]*yaw about bone \+Z[\s\S]*pitch about bone \+Y[\s\S]*roll about aligned \+X[\s\S]*fAlignmentPitchDegrees\s*=\s*0\.0[\s\S]*fAlignmentYawDegrees\s*=\s*0\.0[\s\S]*fAlignmentRollDegrees\s*=\s*0\.0' `
+        'Both shipped INIs must document and expose zero-default wrist-space fine tuning.'
+    Require-Text $iniPath `
         '\[PhysicsInteraction\][\s\S]*firing/support bone triads[\s\S]*support attach-baseline[\s\S]*bDebugDrawGunstockAlignment\s*=\s*false' `
         'Both shipped INIs must describe and expose the combined disabled-by-default visualizer.'
 }
@@ -67,6 +78,10 @@ foreach ($iniPath in @(
 Require-Text 'src/physics-interaction/weapon/GunstockAlignmentPolicy.h' `
     'kRequiredStableSamples\s*=\s*6[\s\S]*ModeToggleState[\s\S]*observeModeToggle[\s\S]*WeaponEligibilityState[\s\S]*observeWeaponEligibility[\s\S]*gunTypeWitnessObserved[\s\S]*validFireNodeObserved[\s\S]*gunTypeWitnessObserved\s*&&\s*validFireNodeObserved[\s\S]*isWeaponEligible[\s\S]*neutralHandLocal[\s\S]*tryCaptureHandLocalBore[\s\S]*localForward\s*\{\s*0\.0f,\s*1\.0f,\s*0\.0f\s*\}[\s\S]*tryBuildWorldCorrection[\s\S]*targetForwardWorld[\s\S]*rotateRigidlyAroundPivot[\s\S]*precompensateWorldTarget' `
     'The value-only policy must own live mode edges, generation-bound kGun-plus-fire-node eligibility, neutral +Y capture, wrist correction, rigid grouping, and recoil precompensation.'
+
+Require-Text 'src/physics-interaction/weapon/GunstockAlignmentPolicy.h' `
+    'struct\s+FineTuneDegrees[\s\S]*pitchDegrees[\s\S]*yawDegrees[\s\S]*rollDegrees[\s\S]*hasFineTune[\s\S]*tryBuildWorldFineTuneRotation[\s\S]*yawAxisWorld[\s\S]*fineTune\.yawDegrees[\s\S]*pitchAxisWorld[\s\S]*fineTune\.pitchDegrees[\s\S]*rollAxisWorld[\s\S]*fineTune\.rollDegrees[\s\S]*tryBuildFineTunedWorldCorrection[\s\S]*automaticCorrection[\s\S]*fineTuneWorld[\s\S]*weaponSolverApplyWorldRotationToStoredBasis' `
+    'The pure policy must compose yaw, pitch, then roll in the untrimmed wrist frame after automatic alignment.'
 
 Require-Text 'src/physics-interaction/weapon/WeaponSupport.h' `
     'tryCaptureGunstockSupportBaseline\([\s\S]*invertTransform\(supportInputWorld\)[\s\S]*supportGripTargetWorld[\s\S]*tryResolveGunstockSupportTarget\([\s\S]*supportInputWorld,[\s\S]*inputToGripTargetLocal' `
@@ -87,6 +102,10 @@ Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'tryResolveGunstockPhysicalFiringFrame[\s\S]*SecondaryMeleeWeaponOffsetNode2[\s\S]*primaryWeaponOffsetNOde[\s\S]*_leftNaturalBoneInDampedDriver[\s\S]*_rightNaturalBoneInDampedDriver[\s\S]*localWristForward\s*\{\s*1\.0f,\s*0\.0f,\s*0\.0f\s*\}[\s\S]*applyGunstockAlignment\([\s\S]*tryCaptureHandLocalBore\([\s\S]*tryResolveGunstockPrimaryGroupCorrection[\s\S]*rotateRigidlyAroundPivot[\s\S]*applyWeaponVisualAuthority' `
     'The runtime must reconstruct a clean damped wrist, target wrist +X, rotate the complete posed group, and publish the weapon coherently.'
+
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'configuredGunstockFineTune[\s\S]*rockGunstockAlignmentPitchDegrees[\s\S]*rockGunstockAlignmentYawDegrees[\s\S]*rockGunstockAlignmentRollDegrees[\s\S]*tryResolveGunstockPrimaryGroupCorrection[\s\S]*tryBuildFineTunedWorldCorrection[\s\S]*outFineTuneActive[\s\S]*applyGunstockAlignment[\s\S]*fineTuneActive[\s\S]*directionDot\s*>\s*0\.999999f\s*&&\s*!fineTuneActive' `
+    'Runtime alignment must compose configured fine tuning into the one rigid correction and never skip a pure-roll trim.'
 
 Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
     'tryGetGunstockTrackedFiringHandWorld\([\s\S]*input\.weaponNode,[\s\S]*input\.weaponGenerationKey,[\s\S]*trackedHandWorld\s*=\s*gunstockTrackedHandWorld' `
@@ -180,8 +199,8 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'The first support publication must retain the captured primary weapon transform before final group alignment.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' `
-    'struct\s+GunstockAlignmentDebugSnapshot[\s\S]*weaponNodeIdentity[\s\S]*fireNodeIdentity[\s\S]*dampedDriverWorld[\s\S]*firingHandWorld[\s\S]*renderedFiringHandWorld[\s\S]*weaponWorldBefore[\s\S]*finalFireNodeWorld[\s\S]*renderedFiringRelationPositionErrorGameUnits[\s\S]*weaponEligible[\s\S]*renderedFiringRelationValid[\s\S]*published' `
-    'The renderer bridge must retain separate damped-input and post-publication firing-hand witnesses with explicit relation validity.'
+    'struct\s+GunstockAlignmentDebugSnapshot[\s\S]*weaponNodeIdentity[\s\S]*fireNodeIdentity[\s\S]*dampedDriverWorld[\s\S]*firingHandWorld[\s\S]*renderedFiringHandWorld[\s\S]*weaponWorldBefore[\s\S]*finalFireNodeWorld[\s\S]*fineTunedTargetForwardWorld[\s\S]*fineTunePitchDegrees[\s\S]*fineTuneYawDegrees[\s\S]*fineTuneRollDegrees[\s\S]*renderedFiringRelationPositionErrorGameUnits[\s\S]*weaponEligible[\s\S]*renderedFiringRelationValid[\s\S]*published' `
+    'The renderer bridge must retain fine-tuned intent plus separate damped-input and post-publication firing-hand witnesses with explicit relation validity.'
 
 Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' `
     'controllerWorld|controllerValid|ControllerUnavailable' `
@@ -227,8 +246,12 @@ Require-Text 'src/physics-interaction/debug/DebugBodyOverlay.h' `
     'The bounded overlay must distinguish physical and rendered firing-hand bones while retaining final-alignment and support-baseline roles.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
-    'drawGunstockAlignment[\s\S]*getGunstockAlignmentDebugSnapshot[\s\S]*GunstockLeftHand[\s\S]*GunstockFiringHand[\s\S]*GunstockRenderedFiringHand[\s\S]*RENDERED FIRING HAND BONE[\s\S]*FIRING WRIST \+X - GUNSTOCK TARGET[\s\S]*ACTUAL FINAL LIVE FIRE \+Y[\s\S]*GunstockCorrectionArc[\s\S]*renderedRelation=[\s\S]*getGunstockSupportBaselineDebugSnapshot[\s\S]*GunstockSupportInputBone[\s\S]*GunstockCalibratedSupportBone[\s\S]*GunstockWeaponAfter[\s\S]*attachWeaponDelta' `
-    'The visualizer must render input/rendered firing bones, actual relation error, final wrist alignment, and support attach baseline together.'
+    'drawGunstockAlignment[\s\S]*getGunstockAlignmentDebugSnapshot[\s\S]*GunstockLeftHand[\s\S]*GunstockFiringHand[\s\S]*GunstockRenderedFiringHand[\s\S]*RENDERED FIRING HAND BONE[\s\S]*FIRING WRIST \+X - AUTOMATIC TARGET[\s\S]*PREDICTED FINE-TUNED NEUTRAL[\s\S]*ACTUAL FINAL LIVE FIRE \+Y[\s\S]*GunstockCorrectionArc[\s\S]*fineTune pitch\(\+Y\)[\s\S]*liveResidual=[\s\S]*renderedRelation=[\s\S]*getGunstockSupportBaselineDebugSnapshot[\s\S]*GunstockSupportInputBone[\s\S]*GunstockCalibratedSupportBone[\s\S]*GunstockWeaponAfter[\s\S]*attachWeaponDelta' `
+    'The visualizer must render input/rendered firing bones, configured fine-tuned intent, actual relation error, and support attach baseline together.'
+
+Require-Text 'tests/WeaponInteractionPolicyTests.cpp' `
+    'gunstock zero fine tune preserves automatic correction exactly[\s\S]*gunstock positive yaw sends plus-X toward plus-Y[\s\S]*gunstock positive pitch sends plus-X toward minus-Z[\s\S]*gunstock pure roll fine tune remains active with aligned bore[\s\S]*gunstock combined correction reaches fine-tuned target[\s\S]*gunstock fine tune keeps the damped-driver reference pivot fixed[\s\S]*gunstock fine tune preserves the firing-grip weapon relation' `
+    'Pure regressions must cover zero compatibility, axis signs, pure roll, target composition, fixed pivot, and firing-grip rigidity.'
 
 Reject-Text 'src/physics-interaction/debug/DebugBodyOverlay.h' `
     'GunstockFiringController|GunstockLeftController' `

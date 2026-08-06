@@ -12,6 +12,15 @@ namespace rock::gunstock_alignment_policy
     inline constexpr std::uint32_t kRequiredStableSamples = 6;
     inline constexpr float kStableSampleCosine = 0.9999904807f;  // 0.25 degrees.
     inline constexpr float kMinimumDirectionLength = 0.000001f;
+    inline constexpr float kDegreesToRadians =
+        0.01745329251994329577f;
+
+    struct FineTuneDegrees
+    {
+        float pitchDegrees{ 0.0f };
+        float yawDegrees{ 0.0f };
+        float rollDegrees{ 0.0f };
+    };
 
     enum class ModeToggleEdge : std::uint8_t
     {
@@ -135,6 +144,23 @@ namespace rock::gunstock_alignment_policy
                finiteVector(value.translate) &&
                std::isfinite(value.scale) &&
                std::abs(value.scale) > 0.0001f;
+    }
+
+    [[nodiscard]] inline bool finiteFineTune(
+        const FineTuneDegrees& value)
+    {
+        return std::isfinite(value.pitchDegrees) &&
+               std::isfinite(value.yawDegrees) &&
+               std::isfinite(value.rollDegrees);
+    }
+
+    [[nodiscard]] inline bool hasFineTune(
+        const FineTuneDegrees& value)
+    {
+        return finiteFineTune(value) &&
+               (value.pitchDegrees != 0.0f ||
+                   value.yawDegrees != 0.0f ||
+                   value.rollDegrees != 0.0f);
     }
 
     template <class Vector>
@@ -289,6 +315,134 @@ namespace rock::gunstock_alignment_policy
             expectedNeutralWorld,
             targetWorld);
         return finiteRotation(outCorrection);
+    }
+
+    /*
+     * Fine tuning is expressed in the untrimmed damped firing-wrist frame so
+     * the same INI values follow either physical firing hand. The extrinsic
+     * order is yaw about wrist +Z, pitch about wrist +Y, then roll about wrist
+     * +X. The caller composes this after automatic bore-to-+X alignment and
+     * applies the result around the existing damped-driver pivot; weapon and
+     * posed hands therefore retain their exact relative grip transforms.
+     */
+    template <class Transform, class Matrix, class Vector>
+    [[nodiscard]] inline bool tryBuildWorldFineTuneRotation(
+        const Transform& firingHandWorld,
+        const FineTuneDegrees& fineTune,
+        Matrix& outFineTuneWorld)
+    {
+        outFineTuneWorld =
+            transform_math::makeIdentityRotation<Matrix>();
+        if (!usableTransform(firingHandWorld) ||
+            !finiteFineTune(fineTune)) {
+            return false;
+        }
+
+        Vector rollAxisWorld{};
+        Vector pitchAxisWorld{};
+        Vector yawAxisWorld{};
+        if (!tryNormalizeDirection(
+                transform_math::localVectorToWorld(
+                    firingHandWorld,
+                    Vector{ 1.0f, 0.0f, 0.0f }),
+                rollAxisWorld) ||
+            !tryNormalizeDirection(
+                transform_math::localVectorToWorld(
+                    firingHandWorld,
+                    Vector{ 0.0f, 1.0f, 0.0f }),
+                pitchAxisWorld) ||
+            !tryNormalizeDirection(
+                transform_math::localVectorToWorld(
+                    firingHandWorld,
+                    Vector{ 0.0f, 0.0f, 1.0f }),
+                yawAxisWorld)) {
+            return false;
+        }
+
+        const auto appendWorldRotation =
+            [&outFineTuneWorld](
+                const Vector& axisWorld,
+                const float degrees) {
+                if (degrees == 0.0f) {
+                    return true;
+                }
+                const Matrix step =
+                    weaponSolverAxisAngleStored<Matrix, Vector>(
+                        axisWorld,
+                        degrees * kDegreesToRadians);
+                outFineTuneWorld =
+                    weaponSolverApplyWorldRotationToStoredBasis<
+                        Matrix,
+                        Vector>(step, outFineTuneWorld);
+                return finiteRotation(outFineTuneWorld);
+            };
+
+        return appendWorldRotation(
+                   yawAxisWorld,
+                   fineTune.yawDegrees) &&
+               appendWorldRotation(
+                   pitchAxisWorld,
+                   fineTune.pitchDegrees) &&
+               appendWorldRotation(
+                   rollAxisWorld,
+                   fineTune.rollDegrees);
+    }
+
+    template <class Transform, class Matrix, class Vector>
+    [[nodiscard]] inline bool tryBuildFineTunedWorldCorrection(
+        const Transform& firingHandWorld,
+        const Vector& neutralHandLocal,
+        const Vector& automaticTargetForwardWorld,
+        const FineTuneDegrees& fineTune,
+        Matrix& outCorrection,
+        Vector* outFineTunedTargetForwardWorld = nullptr,
+        float* outAutomaticDirectionDot = nullptr)
+    {
+        outCorrection =
+            transform_math::makeIdentityRotation<Matrix>();
+        if (outFineTunedTargetForwardWorld) {
+            *outFineTunedTargetForwardWorld = {};
+        }
+
+        Matrix automaticCorrection{};
+        Matrix fineTuneWorld{};
+        Vector automaticTarget{};
+        if (!tryNormalizeDirection(
+                automaticTargetForwardWorld,
+                automaticTarget) ||
+            !tryBuildWorldCorrection<Transform, Matrix, Vector>(
+                firingHandWorld,
+                neutralHandLocal,
+                automaticTarget,
+                automaticCorrection,
+                outAutomaticDirectionDot) ||
+            !tryBuildWorldFineTuneRotation<Transform, Matrix, Vector>(
+                firingHandWorld,
+                fineTune,
+                fineTuneWorld)) {
+            return false;
+        }
+
+        outCorrection =
+            weaponSolverApplyWorldRotationToStoredBasis<Matrix, Vector>(
+                fineTuneWorld,
+                automaticCorrection);
+        if (!finiteRotation(outCorrection)) {
+            return false;
+        }
+
+        if (outFineTunedTargetForwardWorld) {
+            const Vector fineTunedTarget =
+                weaponSolverApplyStoredWorldRotationToVector<
+                    Matrix,
+                    Vector>(fineTuneWorld, automaticTarget);
+            if (!tryNormalizeDirection(
+                    fineTunedTarget,
+                    *outFineTunedTargetForwardWorld)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     template <class Transform, class Matrix, class Vector>
