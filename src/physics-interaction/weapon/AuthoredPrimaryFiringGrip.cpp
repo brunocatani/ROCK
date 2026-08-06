@@ -125,8 +125,10 @@ namespace rock
         const AuthoredPrimaryFiringGripFrameInput& input,
         TwoHandedGrip& weaponAuthority)
     {
-        // A candidate is valid only across this pre-update/update pair. Clear
-        // first so every early return falls back to ordinary dynamic grabbing.
+        // The published candidate remains frame-scoped. Each eligible frame
+        // must republish either a fresh capture or the identity-bound stable
+        // snapshot, so every unrelated early return still falls back to the
+        // ordinary dynamic path.
         weaponAuthority.clearAuthoredSupportGripCandidate();
         const auto captureStatus =
             authored_weapon_grip_capture::queryPrimaryFiringGripCaptureStatus();
@@ -139,6 +141,7 @@ namespace rock
             if (!_nativeReloadWasActive) {
                 _captureSequenceFloor = captureStatus.captureSequence;
                 _supportCaptureSequenceFloor = supportCaptureStatus.captureSequence;
+                clearStableAuthoredSupportGripSnapshot();
             }
             _nativeReloadWasActive = true;
             endSession("native-reload-authority");
@@ -309,19 +312,31 @@ namespace rock
 
         const auto publishStableAuthoredSupportCandidate =
             [&](const std::uint64_t primaryGripCaptureSequence) {
-            constexpr std::uint16_t kCompleteFingerLocalTransformMask = 0x7FFFu;
             const auto& stable = _stableAuthoredSupportGrip;
-            if (!stable.valid ||
-                !input.weaponNode ||
-                stable.weaponNodeIdentity != input.weaponNode ||
-                currentWeaponKey == 0 ||
-                stable.weaponOwnershipKey != currentWeaponKey ||
-                input.weaponGenerationKey == 0 ||
-                stable.weaponGenerationKey != input.weaponGenerationKey ||
-                primaryGripCaptureSequence == 0 ||
-                stable.primaryGripCaptureSequence != primaryGripCaptureSequence ||
-                stable.fingerLocalTransformMask !=
-                    kCompleteFingerLocalTransformMask) {
+            if (!authored_weapon_grip_capture_policy::
+                    shouldReuseStableAuthoredSupportGrip(
+                        authored_weapon_grip_capture_policy::
+                            StableAuthoredSupportGripReuseInput{
+                                .snapshotValid = stable.valid,
+                                .weaponNodeValid = input.weaponNode != nullptr,
+                                .weaponNodeMatches =
+                                    stable.weaponNodeIdentity == input.weaponNode,
+                                .currentWeaponOwnershipKey = currentWeaponKey,
+                                .snapshotWeaponOwnershipKey =
+                                    stable.weaponOwnershipKey,
+                                .currentWeaponGenerationKey =
+                                    input.weaponGenerationKey,
+                                .snapshotWeaponGenerationKey =
+                                    stable.weaponGenerationKey,
+                                .currentPrimaryGripCaptureSequence =
+                                    primaryGripCaptureSequence,
+                                .snapshotPrimaryGripCaptureSequence =
+                                    stable.primaryGripCaptureSequence,
+                                .snapshotSupportGripCaptureSequence =
+                                    stable.supportCaptureSequence,
+                                .snapshotFingerLocalTransformMask =
+                                    stable.fingerLocalTransformMask,
+                            })) {
                 return false;
             }
 
@@ -523,7 +538,14 @@ namespace rock
         _active = true;
         _applyFailureLogged = false;
 
-        (void)publishLiveAuthoredSupportCandidate(resolvedCaptureSequence);
+        // A shot can temporarily suppress Bethesda's paired support-arm pass.
+        // Keep the candidate frame-fresh by republishing the last verified
+        // same-weapon snapshot instead of treating that animation gap as the
+        // permanent loss of authored support-grip capability.
+        if (!publishLiveAuthoredSupportCandidate(resolvedCaptureSequence)) {
+            (void)publishStableAuthoredSupportCandidate(
+                resolvedCaptureSequence);
+        }
 
         if (!_sessionLogged) {
             ROCK_LOG_INFO(Animation,

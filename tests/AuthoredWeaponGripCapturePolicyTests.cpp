@@ -170,6 +170,53 @@ int main()
         return !shouldUseAuthoredFiringGripProbe(input);
     }());
 
+    constexpr StableAuthoredSupportGripReuseInput stableSupportReusable{
+        .snapshotValid = true,
+        .weaponNodeValid = true,
+        .weaponNodeMatches = true,
+        .currentWeaponOwnershipKey = 11,
+        .snapshotWeaponOwnershipKey = 11,
+        .currentWeaponGenerationKey = 22,
+        .snapshotWeaponGenerationKey = 22,
+        .currentPrimaryGripCaptureSequence = 33,
+        .snapshotPrimaryGripCaptureSequence = 33,
+        .snapshotSupportGripCaptureSequence = 44,
+        .snapshotFingerLocalTransformMask =
+            kCompleteAuthoredSupportFingerLocalTransformMask,
+    };
+    static_assert(shouldReuseStableAuthoredSupportGrip(
+        stableSupportReusable));
+    static_assert([=] {
+        auto input = stableSupportReusable;
+        input.weaponNodeMatches = false;
+        return !shouldReuseStableAuthoredSupportGrip(input);
+    }());
+    static_assert([=] {
+        auto input = stableSupportReusable;
+        input.snapshotWeaponOwnershipKey = 12;
+        return !shouldReuseStableAuthoredSupportGrip(input);
+    }());
+    static_assert([=] {
+        auto input = stableSupportReusable;
+        input.snapshotWeaponGenerationKey = 23;
+        return !shouldReuseStableAuthoredSupportGrip(input);
+    }());
+    static_assert([=] {
+        auto input = stableSupportReusable;
+        input.snapshotPrimaryGripCaptureSequence = 34;
+        return !shouldReuseStableAuthoredSupportGrip(input);
+    }());
+    static_assert([=] {
+        auto input = stableSupportReusable;
+        input.snapshotSupportGripCaptureSequence = 0;
+        return !shouldReuseStableAuthoredSupportGrip(input);
+    }());
+    static_assert([=] {
+        auto input = stableSupportReusable;
+        input.snapshotFingerLocalTransformMask = 0x3FFFu;
+        return !shouldReuseStableAuthoredSupportGrip(input);
+    }());
+
     static_assert(kArms == (1u << 0));
     static_assert(kHands == (1u << 1));
     static_assert(kWeapon == (1u << 2));

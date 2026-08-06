@@ -11,6 +11,8 @@ namespace rock::authored_weapon_grip_capture_policy
     inline constexpr std::uint32_t kArms = 1u << 0;
     inline constexpr std::uint32_t kHands = 1u << 1;
     inline constexpr std::uint32_t kWeapon = 1u << 2;
+    inline constexpr std::uint16_t
+        kCompleteAuthoredSupportFingerLocalTransformMask = 0x7FFFu;
 
     struct AuthoredPrimaryFiringGripEligibility
     {
@@ -51,6 +53,21 @@ namespace rock::authored_weapon_grip_capture_policy
         bool providerAuthorityActive{ false };
         bool attachOnly{ false };
         bool authoredCanonicalAvailable{ false };
+    };
+
+    struct StableAuthoredSupportGripReuseInput
+    {
+        bool snapshotValid{ false };
+        bool weaponNodeValid{ false };
+        bool weaponNodeMatches{ false };
+        std::uint64_t currentWeaponOwnershipKey{ 0 };
+        std::uint64_t snapshotWeaponOwnershipKey{ 0 };
+        std::uint64_t currentWeaponGenerationKey{ 0 };
+        std::uint64_t snapshotWeaponGenerationKey{ 0 };
+        std::uint64_t currentPrimaryGripCaptureSequence{ 0 };
+        std::uint64_t snapshotPrimaryGripCaptureSequence{ 0 };
+        std::uint64_t snapshotSupportGripCaptureSequence{ 0 };
+        std::uint16_t snapshotFingerLocalTransformMask{ 0 };
     };
 
     [[nodiscard]] constexpr bool shouldApplyAuthoredPrimaryFiringGrip(
@@ -107,6 +124,32 @@ namespace rock::authored_weapon_grip_capture_policy
                !input.providerAuthorityActive &&
                !input.attachOnly &&
                input.authoredCanonicalAvailable;
+    }
+
+    /*
+     * Bethesda may omit the paired support-arm pass during transient firing
+     * animation frames. Reuse is safe only for the last fully validated pose
+     * while every equipped-weapon and canonical identity witness still
+     * matches; reload and weapon boundaries clear the snapshot separately.
+     */
+    [[nodiscard]] constexpr bool shouldReuseStableAuthoredSupportGrip(
+        const StableAuthoredSupportGripReuseInput& input) noexcept
+    {
+        return input.snapshotValid &&
+               input.weaponNodeValid &&
+               input.weaponNodeMatches &&
+               input.currentWeaponOwnershipKey != 0 &&
+               input.currentWeaponOwnershipKey ==
+                   input.snapshotWeaponOwnershipKey &&
+               input.currentWeaponGenerationKey != 0 &&
+               input.currentWeaponGenerationKey ==
+                   input.snapshotWeaponGenerationKey &&
+               input.currentPrimaryGripCaptureSequence != 0 &&
+               input.currentPrimaryGripCaptureSequence ==
+                   input.snapshotPrimaryGripCaptureSequence &&
+               input.snapshotSupportGripCaptureSequence != 0 &&
+               input.snapshotFingerLocalTransformMask ==
+                   kCompleteAuthoredSupportFingerLocalTransformMask;
     }
 
     template <class Transform, class Compose>

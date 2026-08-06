@@ -39,9 +39,10 @@ namespace rock
     // ROCK derives one generation-bound, modeler-authored primary grip and
     // inverts it onto hFRIK's live primary hand. The paired support relation
     // is captured while Bethesda's native right-primary topology is intact,
-    // then republished as an ephemeral proximity candidate while ROCK's
-    // physical left hand owns the weapon. Only acquisition can latch it, so
-    // unrestricted dynamic grabs remain intact.
+    // then republished as a frame-scoped candidate. A fully validated stable
+    // snapshot bridges transient firing-animation capture gaps only while all
+    // weapon/canonical identity witnesses match. Only acquisition can latch
+    // it, so unrestricted dynamic grabs remain intact.
     class AuthoredPrimaryFiringGripRuntime
     {
     public:
@@ -54,8 +55,9 @@ namespace rock
         struct StableAuthoredSupportGripSnapshot
         {
             // Non-owning identity witness only; never dereferenced. The value
-            // transforms remain usable across ROCK's physical-left reparent
-            // only while every weapon/canonical identity key still matches.
+            // transforms remain usable across transient native graph gaps and
+            // ROCK's physical-left reparent only while every weapon/canonical
+            // identity key still matches.
             RE::NiNode* weaponNodeIdentity{ nullptr };
             RE::NiTransform handWeaponLocal{};
             std::array<RE::NiTransform, 15> fingerLocalTransforms{};
