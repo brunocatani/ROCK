@@ -85,6 +85,10 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'The runtime must read firing-wrist +X, latch the neutral barrel, rotate the complete group toward that target, and publish the weapon last.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'supportGripPublishedThisFrame[\s\S]*HandAuthorityRole::[\s\S]*SupportGrip[\s\S]*_hasLastPublishedHandWorld\[supportIndex\][\s\S]*supportHandWorld\s*=\s*_lastPublishedHandWorld\[supportIndex\][\s\S]*else\s*\{[\s\S]*getHandWorldTransform' `
+    'Gunstock correction must rotate the exact same-frame support-grip target, using rendered hand readback only when no support role was published.'
+
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'leftManualFiringRecoil[\s\S]*deriveAppliedWorldDelta[\s\S]*precompensateWorldTarget[\s\S]*PRIMARY_GRIP_TAG[\s\S]*SUPPORT_GRIP_TAG' `
     'Left manual firing must derive and precompensate hFRIK recoil while existing grip-role tags remain reusable.'
 

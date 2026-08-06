@@ -6977,11 +6977,43 @@ namespace rock
             return true;
         }
 
+        const auto rolePublishedThisFrame = [this](
+                                                      const bool isLeft,
+                                                      const scope_safe_hand_frame_math::HandAuthorityRole role) {
+            return scope_safe_hand_frame_math::hasRole(
+                _scopeHandAuthorityPublishedThisFrame[isLeft ? 0u : 1u],
+                role);
+        };
+
         RE::NiTransform supportHandWorld{};
         if (supportHandParticipates) {
-            supportHandWorld =
-                frik_visual_authority::getHandWorldTransform(
-                    handFromBool(supportHandIsLeft));
+            const std::size_t supportIndex =
+                supportHandIsLeft ? 0u : 1u;
+            const bool supportGripPublishedThisFrame =
+                rolePublishedThisFrame(
+                    supportHandIsLeft,
+                    scope_safe_hand_frame_math::HandAuthorityRole::
+                        SupportGrip);
+
+            // Keep the support hand and weapon in one source frame. When the
+            // grip solve published a target this frame, hFRIK's rendered hand
+            // is post-IK output and may contain a reach residual. Feeding that
+            // output back into the rigid correction makes the residual look
+            // like the hand is sliding over the grabbed weapon part.
+            if (supportGripPublishedThisFrame) {
+                if (!_hasLastPublishedHandWorld[supportIndex] ||
+                    !isUsableHandAuthorityTransform(
+                        _lastPublishedHandWorld[supportIndex])) {
+                    clearGunstockDedicatedHandAuthority();
+                    return false;
+                }
+                supportHandWorld =
+                    _lastPublishedHandWorld[supportIndex];
+            } else {
+                supportHandWorld =
+                    frik_visual_authority::getHandWorldTransform(
+                        handFromBool(supportHandIsLeft));
+            }
             if (!isUsableHandAuthorityTransform(supportHandWorld)) {
                 clearGunstockDedicatedHandAuthority();
                 return false;
@@ -7033,14 +7065,6 @@ namespace rock
             bool reusedGripRole{ false };
             bool recoilPrecompensated{ false };
             bool applied{ false };
-        };
-
-        const auto rolePublishedThisFrame = [this](
-                                                      const bool isLeft,
-                                                      const scope_safe_hand_frame_math::HandAuthorityRole role) {
-            return scope_safe_hand_frame_math::hasRole(
-                _scopeHandAuthorityPublishedThisFrame[isLeft ? 0u : 1u],
-                role);
         };
 
         const auto applyHandCorrection = [this, &rolePublishedThisFrame](
