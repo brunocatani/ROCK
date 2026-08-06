@@ -349,93 +349,6 @@ int main()
     }
 
     {
-        const TestVector3 boreAxis{ 1.0f, 0.0f, 0.0f };
-        const TestVector3 localUp{ 0.0f, 0.0f, 1.0f };
-        const TestVector3 cantedWeaponUp =
-            rock::weaponSolverApplyStoredWorldRotationToVector<
-                TestMatrix3,
-                TestVector3>(
-                makeAxisAngleRotation(boreAxis, -45.0f),
-                localUp);
-        const TestVector3 rightNaturalHandUp =
-            rock::weaponSolverApplyStoredWorldRotationToVector<
-                TestMatrix3,
-                TestVector3>(
-                makeAxisAngleRotation(boreAxis, 20.0f),
-                localUp);
-        const TestVector3 leftNaturalHandUp =
-            rock::weaponSolverApplyStoredWorldRotationToVector<
-                TestMatrix3,
-                TestVector3>(
-                makeAxisAngleRotation(boreAxis, -10.0f),
-                localUp);
-        const TestVector3 expectedBisector = rock::weaponSolverNormalize(
-            rock::weaponSolverAdd(
-                rightNaturalHandUp,
-                leftNaturalHandUp));
-
-        TestMatrix3 authoredSupportTwist{};
-        float authoredSupportTwistRadians = 0.0f;
-        ok &= expectTrue(
-            "gunstock authored support builds projected hand-up bisector twist",
-            rock::gunstock_alignment_policy::
-                tryBuildProjectedUpBisectorTwist<
-                    TestMatrix3,
-                    TestVector3>(
-                    boreAxis,
-                    cantedWeaponUp,
-                    rightNaturalHandUp,
-                    leftNaturalHandUp,
-                    authoredSupportTwist,
-                    &authoredSupportTwistRadians));
-        ok &= expectTrue(
-            "gunstock authored support twist is non-identity for canted weapon",
-            std::abs(authoredSupportTwistRadians) > 0.1f);
-        ok &= expectVectorNear(
-            "gunstock authored support aligns weapon up to both-hand bisector",
-            rock::weaponSolverNormalize(
-                rock::weaponSolverApplyStoredWorldRotationToVector<
-                    TestMatrix3,
-                    TestVector3>(
-                    authoredSupportTwist,
-                    cantedWeaponUp)),
-            expectedBisector,
-            0.0002f);
-        ok &= expectVectorNear(
-            "gunstock authored support roll preserves aligned barrel axis",
-            rock::weaponSolverApplyStoredWorldRotationToVector<
-                TestMatrix3,
-                TestVector3>(
-                authoredSupportTwist,
-                boreAxis),
-            boreAxis,
-            0.0002f);
-
-        ok &= expectFalse(
-            "gunstock authored support rejects opposed hand-up axes",
-            rock::gunstock_alignment_policy::
-                tryBuildProjectedUpBisectorTwist<
-                    TestMatrix3,
-                    TestVector3>(
-                    boreAxis,
-                    cantedWeaponUp,
-                    localUp,
-                    TestVector3{ 0.0f, 0.0f, -1.0f },
-                    authoredSupportTwist));
-        ok &= expectFalse(
-            "gunstock authored support rejects hand-up parallel to barrel",
-            rock::gunstock_alignment_policy::
-                tryBuildProjectedUpBisectorTwist<
-                    TestMatrix3,
-                    TestVector3>(
-                    boreAxis,
-                    cantedWeaponUp,
-                    boreAxis,
-                    localUp,
-                    authoredSupportTwist));
-    }
-
-    {
         TestTransform firingHand =
             rock::transform_math::makeIdentityTransform<TestTransform>();
         firingHand.rotate = makeAxisAngleRotation(
@@ -461,7 +374,6 @@ int main()
             rock::weaponSolverNormalize(
                 TestVector3{ 0.4f, -0.2f, 0.7f }),
             42.0f);
-        const TestVector3 dampedDriverPivot{ 7.0f, 18.0f, 34.0f };
         const TestTransform correctedFiring =
             rock::gunstock_alignment_policy::rotateRigidlyAroundPivot<
                 TestTransform,
@@ -469,7 +381,7 @@ int main()
                 TestVector3>(
                 firingHand,
                 correction,
-                dampedDriverPivot);
+                firingHand.translate);
         const TestTransform correctedSupport =
             rock::gunstock_alignment_policy::rotateRigidlyAroundPivot<
                 TestTransform,
@@ -477,7 +389,7 @@ int main()
                 TestVector3>(
                 supportHand,
                 correction,
-                dampedDriverPivot);
+                firingHand.translate);
         const TestTransform correctedWeapon =
             rock::gunstock_alignment_policy::rotateRigidlyAroundPivot<
                 TestTransform,
@@ -485,29 +397,12 @@ int main()
                 TestVector3>(
                 weapon,
                 correction,
-                dampedDriverPivot);
-
-        const TestVector3 firingFromDriver{
-            firingHand.translate.x - dampedDriverPivot.x,
-            firingHand.translate.y - dampedDriverPivot.y,
-            firingHand.translate.z - dampedDriverPivot.z,
-        };
-        const TestVector3 rotatedFiringFromDriver =
-            rock::weaponSolverApplyStoredWorldRotationToVector<
-                TestMatrix3,
-                TestVector3>(
-                correction,
-                firingFromDriver);
-        const TestVector3 expectedFiringPosition{
-            dampedDriverPivot.x + rotatedFiringFromDriver.x,
-            dampedDriverPivot.y + rotatedFiringFromDriver.y,
-            dampedDriverPivot.z + rotatedFiringFromDriver.z,
-        };
+                firingHand.translate);
 
         ok &= expectVectorNear(
-            "gunstock firing hand orbits the damped physical driver",
+            "gunstock firing-hand pivot remains fixed",
             correctedFiring.translate,
-            expectedFiringPosition);
+            firingHand.translate);
         ok &= expectTransformNear(
             "gunstock rigid correction preserves firing-hand weapon relation",
             rock::transform_math::composeTransforms(
