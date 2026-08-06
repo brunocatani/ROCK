@@ -3057,8 +3057,6 @@ namespace rock
                 .manualScopeActivationRequested = manualScopeActivationRequested,
                 .nativeScopeRequestStateValid = nativeScopeRequestStateValid,
                 .nativeScopeRequestActive = nativeScopeRequestActive,
-                .gunstockAlignmentBlocked =
-                    frame.reloadBoundaryActive || frame.menuBlocked,
                 .leftHandDriverFrame = leftHandDriverFrame,
                 .rightHandDriverFrame = rightHandDriverFrame,
                 .primaryGripInput = primaryGripInput,
@@ -3084,33 +3082,6 @@ namespace rock
                 supportAuthorityMode,
                 firingGripProximityAuthorityEnabled,
                 effectiveHandlingSettings);
-            const bool gunstockNeutralSampleBlocked =
-                g_rockConfig.
-                    rockGunstockAlignBarrelToControllerForward &&
-                input_remap_runtime::isRawButtonPhysicallyHeld(
-                    _twoHandedGrip.isFiringHandLeft(),
-                    input_remap_policy::
-                        kOpenVrSteamVrTriggerButtonId);
-            RE::NiAVObject* gunstockProjectileNode =
-                (g_rockConfig.
-                         rockGunstockAlignBarrelToControllerForward ||
-                    g_rockConfig.rockDebugDrawGunstockAlignment) ?
-                getEquippedProjectileNode() :
-                nullptr;
-            _twoHandedGrip.prepareGunstockAlignmentDebugSnapshot(
-                weaponNode,
-                gunstockProjectileNode,
-                _weaponCollision.
-                    getCurrentObservedEquippedWeaponFormID(),
-                currentWeaponGenerationKey,
-                gunstockNeutralSampleBlocked,
-                frame.reloadBoundaryActive || frame.menuBlocked);
-            (void)_twoHandedGrip.applyGunstockAlignment(
-                weaponNode,
-                gunstockProjectileNode,
-                currentWeaponGenerationKey,
-                gunstockNeutralSampleBlocked,
-                frame.reloadBoundaryActive || frame.menuBlocked);
             reconcileEquippedWeaponHandAssignmentAfterGrip();
             if (_twoHandedGrip.hasVisualAuthorityForHand(false)) {
                 _rightHand.cancelGrabVisualReturn("equipped-weapon-visual-authority");
@@ -3438,10 +3409,6 @@ namespace rock
             if (f4vr::isNodeVisible(weaponNode)) {
                 applyFinalWeaponMuzzleAuthority();
             }
-            _twoHandedGrip.finalizeGunstockAlignmentDebugSnapshot(
-                weaponNode,
-                gunstockProjectileNode,
-                currentWeaponGenerationKey);
         }
         refreshGeneratedBodyContactRegistry();
         updateSelection(frame);

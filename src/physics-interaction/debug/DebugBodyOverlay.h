@@ -88,12 +88,11 @@ namespace rock::debug
         LeftGrabMotorSolverEffectiveBody,
         RightCustomCalibrationOffset,
         LeftCustomCalibrationOffset,
-        GunstockFiringController,
-        GunstockLeftHand,
-        GunstockFiringHand,
+        GunstockSupportInputBone,
+        GunstockCalibratedSupportBone,
+        GunstockGripTargetHand,
         GunstockWeaponBefore,
-        GunstockWeaponFinal,
-        GunstockFireNodeFinal
+        GunstockWeaponAfter
     };
 
     enum class AxisOverlaySource : std::uint8_t
@@ -260,15 +259,11 @@ namespace rock::debug
         AuthoredGripActivationAllowedCone,
         AuthoredGripActivationPass,
         AuthoredGripActivationFail,
-        GunstockWristForward,
-        GunstockNeutralFireBefore,
-        GunstockWeaponRootForward,
-        GunstockPredictedNeutral,
-        GunstockFinalLiveFire,
-        GunstockOppositeFire,
-        GunstockPivot,
-        GunstockCorrectionArc,
-        GunstockCorrectionAxis
+        GunstockPrimaryPivot,
+        GunstockSupportGripPoint,
+        GunstockSupportTargetPoint,
+        GunstockCapturedWeaponAxis,
+        GunstockCalibratedTargetAxis
     };
 
     enum class SkeletonOverlayRole : std::uint8_t

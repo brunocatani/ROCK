@@ -2,7 +2,6 @@
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 #include "physics-interaction/weapon/EquippedWeaponHandlingSettings.h"
-#include "physics-interaction/weapon/GunstockAlignmentPolicy.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"
 #include "physics-interaction/weapon/WeaponInteraction.h"
 #include "physics-interaction/weapon/WeaponAccessoryPartKindPolicy.h"
@@ -144,360 +143,256 @@ int main()
     bool ok = true;
 
     {
-        using Latch = rock::gunstock_alignment_policy::
-            DirectionLatch<TestVector3>;
-        Latch latch{};
-        for (std::uint32_t sample = 1;
-             sample < rock::gunstock_alignment_policy::
-                          kRequiredStableSamples;
-             ++sample) {
-            ok &= expectFalse(
-                "gunstock neutral direction waits for all stable samples",
-                rock::gunstock_alignment_policy::observeStableDirection(
-                    latch,
-                    TestVector3{ 0.0f, 1.0f, 0.0f }));
-        }
-        ok &= expectTrue(
-            "gunstock neutral direction latches on sixth stable sample",
-            rock::gunstock_alignment_policy::observeStableDirection(
-                latch,
-                TestVector3{ 0.0f, 1.0f, 0.0f }));
-        ok &= expectVectorNear(
-            "gunstock stable latch preserves normalized direction",
-            latch.neutralHandLocal,
-            TestVector3{ 0.0f, 1.0f, 0.0f });
-
-        Latch divergent{};
-        (void)rock::gunstock_alignment_policy::observeStableDirection(
-            divergent,
-            TestVector3{ 0.0f, 1.0f, 0.0f });
-        (void)rock::gunstock_alignment_policy::observeStableDirection(
-            divergent,
-            TestVector3{ 0.0f, 1.0f, 0.0f });
-        ok &= expectFalse(
-            "gunstock divergent sample restarts instead of latching",
-            rock::gunstock_alignment_policy::observeStableDirection(
-                divergent,
-                TestVector3{ 1.0f, 0.0f, 0.0f }));
-        ok &= expectEqual(
-            "gunstock divergent sample restarts at one",
-            divergent.candidateSamples,
-            static_cast<std::uint32_t>(1));
-
-        const float nan = std::numeric_limits<float>::quiet_NaN();
-        ok &= expectFalse(
-            "gunstock rejects non-finite direction sample",
-            rock::gunstock_alignment_policy::observeStableDirection(
-                divergent,
-                TestVector3{ nan, 0.0f, 0.0f }));
-        ok &= expectEqual(
-            "gunstock invalid sample clears consecutive count",
-            divergent.candidateSamples,
-            static_cast<std::uint32_t>(0));
-    }
-
-    {
-        const TestVector3 handLocalBore =
-            rock::weaponSolverNormalize(
-                TestVector3{ 0.35f, 0.82f, -0.27f });
-        TestTransform firingHandWorld =
+        TestTransform supportInputAtAttach =
             rock::transform_math::makeIdentityTransform<TestTransform>();
-        firingHandWorld.rotate = makeAxisAngleRotation(
-            TestVector3{ 0.0f, 0.0f, 1.0f },
+        supportInputAtAttach.rotate = makeAxisAngleRotation(
+            rock::weaponSolverNormalize(
+                TestVector3{ 0.3f, -0.4f, 0.8f }),
             37.0f);
-        firingHandWorld.translate = { 11.0f, -4.0f, 8.0f };
-        const TestVector3 wristForward =
-            rock::weaponSolverNormalize(
-                rock::transform_math::localVectorToWorld(
-                    firingHandWorld,
-                    TestVector3{ 1.0f, 0.0f, 0.0f }));
+        supportInputAtAttach.translate = { 11.0f, -4.0f, 8.0f };
 
-        TestTransform projectileWorld =
+        TestTransform supportGripTargetAtAttach =
             rock::transform_math::makeIdentityTransform<TestTransform>();
-        projectileWorld.rotate =
-            rock::weaponSolverRotationBetweenStored<
-                TestMatrix3,
-                TestVector3>(
-                TestVector3{ 0.0f, 1.0f, 0.0f },
-                rock::transform_math::localVectorToWorld(
-                    firingHandWorld,
-                    handLocalBore));
+        supportGripTargetAtAttach.rotate = makeAxisAngleRotation(
+            rock::weaponSolverNormalize(
+                TestVector3{ -0.2f, 0.9f, 0.3f }),
+            -24.0f);
+        supportGripTargetAtAttach.translate = { -7.0f, 13.0f, 5.0f };
 
-        TestVector3 capturedBore{};
+        TestTransform inputToGripTargetLocal{};
         ok &= expectTrue(
-            "gunstock captures projectile plus-Y in firing-hand space",
-            rock::gunstock_alignment_policy::
-                tryCaptureHandLocalBore(
-                    firingHandWorld,
-                    projectileWorld,
-                    capturedBore));
-        ok &= expectVectorNear(
-            "gunstock firing-hand-local capture is exact",
-            capturedBore,
-            handLocalBore,
-            0.0002f);
+            "gunstock captures damped support input to authored grip baseline",
+            rock::weapon_support_acquisition_math::
+                tryCaptureGunstockSupportBaseline(
+                    supportInputAtAttach,
+                    supportGripTargetAtAttach,
+                    inputToGripTargetLocal));
 
-        TestMatrix3 correction{};
+        TestTransform resolvedAttachTarget{};
         ok &= expectTrue(
-            "gunstock builds finite world correction",
-            rock::gunstock_alignment_policy::tryBuildWorldCorrection<
-                TestTransform,
-                TestMatrix3,
-                TestVector3>(
-                firingHandWorld,
-                capturedBore,
-                wristForward,
-                correction));
-        const TestVector3 correctedBore =
-            rock::weaponSolverApplyStoredWorldRotationToVector<
-                TestMatrix3,
-                TestVector3>(
-                correction,
-                rock::transform_math::localVectorToWorld(
-                    firingHandWorld,
-                    capturedBore));
-        ok &= expectVectorNear(
-            "gunstock correction sends neutral bore to firing wrist plus-X",
-            rock::weaponSolverNormalize(correctedBore),
-            wristForward,
-            0.0002f);
+            "gunstock resolves captured support baseline",
+            rock::weapon_support_acquisition_math::
+                tryResolveGunstockSupportTarget(
+                    supportInputAtAttach,
+                    inputToGripTargetLocal,
+                    resolvedAttachTarget));
+        ok &= expectTransformNear(
+            "gunstock unchanged support input reproduces exact authored target",
+            resolvedAttachTarget,
+            supportGripTargetAtAttach);
 
-        TestTransform movedDampedHandWorld =
+        TestTransform laterWorldDelta =
             rock::transform_math::makeIdentityTransform<TestTransform>();
-        movedDampedHandWorld.rotate = makeAxisAngleRotation(
+        laterWorldDelta.rotate = makeAxisAngleRotation(
             rock::weaponSolverNormalize(
-                TestVector3{ 0.2f, -0.5f, 0.8f }),
-            -28.0f);
-        movedDampedHandWorld.translate = { -7.0f, 13.0f, 4.0f };
-        const TestVector3 movedWristForward =
-            rock::weaponSolverNormalize(
-                rock::transform_math::localVectorToWorld(
-                    movedDampedHandWorld,
-                    TestVector3{ 1.0f, 0.0f, 0.0f }));
-        TestMatrix3 movedCorrection{};
+                TestVector3{ 0.7f, 0.1f, -0.5f }),
+            29.0f);
+        laterWorldDelta.translate = { 2.0f, -3.0f, 1.5f };
+        const TestTransform movedSupportInput =
+            rock::transform_math::composeTransforms(
+                laterWorldDelta,
+                supportInputAtAttach);
+        const TestTransform expectedMovedTarget =
+            rock::transform_math::composeTransforms(
+                laterWorldDelta,
+                supportGripTargetAtAttach);
+        TestTransform resolvedMovedTarget{};
         ok &= expectTrue(
-            "gunstock rebuilds the fixed correction in the moved damped hand frame",
-            rock::gunstock_alignment_policy::tryBuildWorldCorrection<
-                TestTransform,
-                TestMatrix3,
-                TestVector3>(
-                movedDampedHandWorld,
-                capturedBore,
-                movedWristForward,
-                movedCorrection));
-        const TestVector3 movedCorrectedBore =
-            rock::weaponSolverApplyStoredWorldRotationToVector<
-                TestMatrix3,
-                TestVector3>(
-                movedCorrection,
-                rock::transform_math::localVectorToWorld(
-                    movedDampedHandWorld,
-                    capturedBore));
-        ok &= expectVectorNear(
-            "gunstock hand-local correction follows damping without raw-controller input",
-            rock::weaponSolverNormalize(movedCorrectedBore),
-            movedWristForward,
-            0.0002f);
+            "gunstock resolves post-attach support delta",
+            rock::weapon_support_acquisition_math::
+                tryResolveGunstockSupportTarget(
+                    movedSupportInput,
+                    inputToGripTargetLocal,
+                    resolvedMovedTarget));
+        ok &= expectTransformNear(
+            "gunstock carries only the post-attach rigid support delta",
+            resolvedMovedTarget,
+            expectedMovedTarget);
 
-        TestMatrix3 antiparallelCorrection{};
-        ok &= expectTrue(
-            "gunstock antiparallel correction remains finite",
-            rock::gunstock_alignment_policy::tryBuildWorldCorrection<
-                TestTransform,
-                TestMatrix3,
-                TestVector3>(
-                rock::transform_math::
-                    makeIdentityTransform<TestTransform>(),
-                TestVector3{ -1.0f, 0.0f, 0.0f },
-                TestVector3{ 1.0f, 0.0f, 0.0f },
-                antiparallelCorrection));
-        const TestVector3 correctedAntiparallel =
-            rock::weaponSolverApplyStoredWorldRotationToVector<
-                TestMatrix3,
-                TestVector3>(
-                antiparallelCorrection,
-                TestVector3{ -1.0f, 0.0f, 0.0f });
-        ok &= expectVectorNear(
-            "gunstock antiparallel correction resolves to wrist plus-X",
-            correctedAntiparallel,
-            TestVector3{ 1.0f, 0.0f, 0.0f },
-            0.0002f);
-
-        TestTransform unusableHand = firingHandWorld;
-        unusableHand.scale = 0.0f;
+        TestTransform degenerateInput = supportInputAtAttach;
+        degenerateInput.scale = 0.0f;
         ok &= expectFalse(
-            "gunstock rejects degenerate firing-hand transforms",
-            rock::gunstock_alignment_policy::tryBuildWorldCorrection<
-                TestTransform,
-                TestMatrix3,
-                TestVector3>(
-                unusableHand,
-                capturedBore,
-                wristForward,
-                correction));
+            "gunstock rejects degenerate support input at capture",
+            rock::weapon_support_acquisition_math::
+                tryCaptureGunstockSupportBaseline(
+                    degenerateInput,
+                    supportGripTargetAtAttach,
+                    inputToGripTargetLocal));
 
+        TestTransform nonFiniteRelation = inputToGripTargetLocal;
+        nonFiniteRelation.translate.x =
+            (std::numeric_limits<float>::quiet_NaN)();
         ok &= expectFalse(
-            "gunstock rejects degenerate wrist-forward targets",
-            rock::gunstock_alignment_policy::tryBuildWorldCorrection<
-                TestTransform,
-                TestMatrix3,
-                TestVector3>(
-                firingHandWorld,
-                capturedBore,
-                TestVector3{},
-                correction));
+            "gunstock rejects non-finite captured support baseline",
+            rock::weapon_support_acquisition_math::
+                tryResolveGunstockSupportTarget(
+                    supportInputAtAttach,
+                    nonFiniteRelation,
+                    resolvedMovedTarget));
     }
 
     {
-        TestTransform firingHand =
+        TestTransform weaponWorld =
             rock::transform_math::makeIdentityTransform<TestTransform>();
-        firingHand.rotate = makeAxisAngleRotation(
-            TestVector3{ 1.0f, 0.0f, 0.0f },
-            17.0f);
-        firingHand.translate = { 10.0f, 20.0f, 30.0f };
-
-        TestTransform supportHand =
-            rock::transform_math::makeIdentityTransform<TestTransform>();
-        supportHand.rotate = makeAxisAngleRotation(
-            TestVector3{ 0.0f, 1.0f, 0.0f },
-            -23.0f);
-        supportHand.translate = { 13.0f, 34.0f, 27.0f };
-
-        TestTransform weapon =
-            rock::transform_math::makeIdentityTransform<TestTransform>();
-        weapon.rotate = makeAxisAngleRotation(
+        weaponWorld.rotate = makeAxisAngleRotation(
             TestVector3{ 0.0f, 0.0f, 1.0f },
-            31.0f);
-        weapon.translate = { 12.0f, 25.0f, 29.0f };
+            18.0f);
+        weaponWorld.translate = { 4.0f, -6.0f, 2.0f };
+        const TestVector3 primaryGripLocal{ 0.0f, 0.0f, 0.0f };
+        const TestVector3 supportGripLocal{ 0.0f, 12.0f, 0.0f };
+        const TestVector3 supportNormalLocal{ 1.0f, 0.0f, 0.0f };
+        const TestVector3 primaryTargetWorld =
+            rock::transform_math::localPointToWorld(
+                weaponWorld,
+                primaryGripLocal);
+        const TestVector3 supportGripWorld =
+            rock::transform_math::localPointToWorld(
+                weaponWorld,
+                supportGripLocal);
 
-        const TestMatrix3 correction = makeAxisAngleRotation(
-            rock::weaponSolverNormalize(
-                TestVector3{ 0.4f, -0.2f, 0.7f }),
-            42.0f);
-        const TestVector3 dampedDriverPivot{ 7.0f, 16.0f, 26.0f };
-        const TestTransform correctedFiring =
-            rock::gunstock_alignment_policy::rotateRigidlyAroundPivot<
-                TestTransform,
-                TestMatrix3,
-                TestVector3>(
-                firingHand,
-                correction,
-                dampedDriverPivot);
-        const TestTransform correctedSupport =
-            rock::gunstock_alignment_policy::rotateRigidlyAroundPivot<
-                TestTransform,
-                TestMatrix3,
-                TestVector3>(
-                supportHand,
-                correction,
-                dampedDriverPivot);
-        const TestTransform correctedWeapon =
-            rock::gunstock_alignment_policy::rotateRigidlyAroundPivot<
-                TestTransform,
-                TestMatrix3,
-                TestVector3>(
-                weapon,
-                correction,
-                dampedDriverPivot);
+        TestTransform supportGripHandWorld = weaponWorld;
+        supportGripHandWorld.translate = supportGripWorld;
+        TestTransform dampedSupportInput =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        dampedSupportInput.rotate = makeAxisAngleRotation(
+            TestVector3{ 0.0f, 1.0f, 0.0f },
+            -41.0f);
+        dampedSupportInput.translate = { 20.0f, 7.0f, -3.0f };
 
+        TestTransform inputToGripTargetLocal{};
+        TestTransform calibratedSupportTarget{};
         ok &= expectTrue(
-            "gunstock firing hand orbits the damped physical driver",
-            rock::weaponSolverLength(rock::weaponSolverSub(
-                correctedFiring.translate,
-                firingHand.translate)) > 0.1f);
+            "gunstock solver test captures authored hand target",
+            rock::weapon_support_acquisition_math::
+                tryCaptureGunstockSupportBaseline(
+                    dampedSupportInput,
+                    supportGripHandWorld,
+                    inputToGripTargetLocal));
+        ok &= expectTrue(
+            "gunstock solver test resolves authored hand target",
+            rock::weapon_support_acquisition_math::
+                tryResolveGunstockSupportTarget(
+                    dampedSupportInput,
+                    inputToGripTargetLocal,
+                    calibratedSupportTarget));
+
+        const TestVector3 lockedSupportTarget =
+            rock::makeLockedSupportGripTarget(
+                primaryTargetWorld,
+                calibratedSupportTarget.translate,
+                supportGripWorld,
+                rock::weaponSolverLength(
+                    rock::weaponSolverSub(
+                        supportGripWorld,
+                        primaryTargetWorld)),
+                0.001f);
+        rock::WeaponTwoHandedSolverInput<
+            TestTransform,
+            TestVector3> solverInput{};
+        solverInput.weaponWorldTransform = weaponWorld;
+        solverInput.primaryGripLocal = primaryGripLocal;
+        solverInput.supportGripLocal = supportGripLocal;
+        solverInput.primaryTargetWorld = primaryTargetWorld;
+        solverInput.supportTargetWorld = lockedSupportTarget;
+        solverInput.supportNormalLocal = supportNormalLocal;
+        solverInput.supportNormalTargetWorld =
+            rock::transform_math::localVectorToWorld(
+                calibratedSupportTarget,
+                supportNormalLocal);
+        solverInput.useSupportNormalTwist = true;
+        solverInput.supportNormalTwistFactor = 0.5f;
+
+        const auto attachSolve =
+            rock::solveTwoHandedWeaponTransformFrikPivot(solverInput);
+        ok &= expectTrue(
+            "gunstock calibrated attach target solves",
+            attachSolve.solved);
         ok &= expectTransformNear(
-            "gunstock rigid correction preserves firing-hand weapon relation",
-            rock::transform_math::composeTransforms(
-                rock::transform_math::invertTransform(correctedFiring),
-                correctedWeapon),
-            rock::transform_math::composeTransforms(
-                rock::transform_math::invertTransform(firingHand),
-                weapon));
-        ok &= expectTransformNear(
-            "gunstock rigid correction preserves firing/support relation",
-            rock::transform_math::composeTransforms(
-                rock::transform_math::invertTransform(correctedFiring),
-                correctedSupport),
-            rock::transform_math::composeTransforms(
-                rock::transform_math::invertTransform(firingHand),
-                supportHand));
+            "gunstock calibrated attach target leaves weapon unchanged",
+            attachSolve.weaponWorldTransform,
+            weaponWorld);
     }
 
     {
-        TestTransform requested =
+        const TestTransform weaponAtAttach =
             rock::transform_math::makeIdentityTransform<TestTransform>();
-        requested.rotate = makeAxisAngleRotation(
+        const TestVector3 primaryGripLocal{ 0.0f, 0.0f, 0.0f };
+        const TestVector3 supportGripLocal{ 0.0f, 10.0f, 0.0f };
+        const TestVector3 supportNormalLocal{ 1.0f, 0.0f, 0.0f };
+
+        TestTransform supportGripHandAtAttach = weaponAtAttach;
+        supportGripHandAtAttach.translate = supportGripLocal;
+        TestTransform supportInputAtAttach =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        supportInputAtAttach.rotate = makeAxisAngleRotation(
             TestVector3{ 1.0f, 0.0f, 0.0f },
-            19.0f);
-        requested.translate = { 2.0f, -3.0f, 4.0f };
+            45.0f);
+        supportInputAtAttach.translate = { 7.0f, 3.0f, -2.0f };
 
-        TestTransform recoilDelta =
+        TestTransform inputToGripTargetLocal{};
+        ok &= expectTrue(
+            "gunstock tandem test captures attach baseline",
+            rock::weapon_support_acquisition_math::
+                tryCaptureGunstockSupportBaseline(
+                    supportInputAtAttach,
+                    supportGripHandAtAttach,
+                    inputToGripTargetLocal));
+
+        TestTransform supportDelta =
             rock::transform_math::makeIdentityTransform<TestTransform>();
-        recoilDelta.rotate = makeAxisAngleRotation(
-            TestVector3{ 0.0f, 1.0f, 0.0f },
-            -11.0f);
-        recoilDelta.translate = { 0.3f, -0.6f, 0.2f };
-        const TestTransform applied =
+        supportDelta.rotate = makeAxisAngleRotation(
+            TestVector3{ 0.0f, 0.0f, 1.0f },
+            30.0f);
+        const TestTransform movedSupportInput =
             rock::transform_math::composeTransforms(
-                recoilDelta,
-                requested);
-        const TestTransform derivedDelta =
-            rock::gunstock_alignment_policy::deriveAppliedWorldDelta(
-                requested,
-                applied);
+                supportDelta,
+                supportInputAtAttach);
+        TestTransform movedCalibratedTarget{};
+        ok &= expectTrue(
+            "gunstock tandem test resolves moved support input",
+            rock::weapon_support_acquisition_math::
+                tryResolveGunstockSupportTarget(
+                    movedSupportInput,
+                    inputToGripTargetLocal,
+                    movedCalibratedTarget));
 
-        TestTransform desired =
-            rock::transform_math::makeIdentityTransform<TestTransform>();
-        desired.rotate = makeAxisAngleRotation(
-            rock::weaponSolverNormalize(
-                TestVector3{ 0.2f, 0.7f, 0.4f }),
-            33.0f);
-        desired.translate = { -7.0f, 8.0f, 5.0f };
-        const TestTransform precompensated =
-            rock::gunstock_alignment_policy::precompensateWorldTarget(
-                derivedDelta,
-                desired);
-        ok &= expectTransformNear(
-            "gunstock precompensation survives noncommuting recoil delta",
-            rock::transform_math::composeTransforms(
-                recoilDelta,
-                precompensated),
-            desired);
-
-        const TestVector3 neutralBore =
-            rock::weaponSolverNormalize(
-                TestVector3{ 0.25f, 0.93f, 0.13f });
-        TestMatrix3 fixedCorrection{};
-        (void)rock::gunstock_alignment_policy::tryBuildWorldCorrection<
+        rock::WeaponTwoHandedSolverInput<
             TestTransform,
-            TestMatrix3,
-            TestVector3>(
-            rock::transform_math::makeIdentityTransform<TestTransform>(),
-            neutralBore,
-            TestVector3{ 1.0f, 0.0f, 0.0f },
-            fixedCorrection);
-        const TestMatrix3 liveRecoil = makeAxisAngleRotation(
-            TestVector3{ 1.0f, 0.0f, 0.0f },
-            8.0f);
-        const TestVector3 liveBore =
-            rock::weaponSolverApplyStoredWorldRotationToVector<
-                TestMatrix3,
-                TestVector3>(
-                liveRecoil,
-                neutralBore);
-        const TestVector3 correctedLiveBore =
-            rock::weaponSolverNormalize(
-                rock::weaponSolverApplyStoredWorldRotationToVector<
-                    TestMatrix3,
-                    TestVector3>(
-                    fixedCorrection,
-                    liveBore));
-        ok &= expectFalse(
-            "gunstock fixed neutral correction does not erase live recoil",
-            rock::weaponSolverDot(
-                correctedLiveBore,
-                TestVector3{ 1.0f, 0.0f, 0.0f }) >
-                0.9999f);
+            TestVector3> solverInput{};
+        solverInput.weaponWorldTransform = weaponAtAttach;
+        solverInput.primaryGripLocal = primaryGripLocal;
+        solverInput.supportGripLocal = supportGripLocal;
+        solverInput.primaryTargetWorld = primaryGripLocal;
+        solverInput.supportTargetWorld =
+            rock::makeLockedSupportGripTarget(
+                primaryGripLocal,
+                movedCalibratedTarget.translate,
+                supportGripLocal,
+                10.0f,
+                0.001f);
+        solverInput.supportNormalLocal = supportNormalLocal;
+        solverInput.supportNormalTargetWorld =
+            rock::transform_math::localVectorToWorld(
+                movedCalibratedTarget,
+                supportNormalLocal);
+        solverInput.useSupportNormalTwist = true;
+        solverInput.supportNormalTwistFactor = 0.5f;
+
+        const auto movedSolve =
+            rock::solveTwoHandedWeaponTransformFrikPivot(solverInput);
+        ok &= expectTrue(
+            "gunstock post-attach tandem delta solves",
+            movedSolve.solved);
+        ok &= expectTransformNear(
+            "gunstock post-attach support delta drives existing tandem solver",
+            movedSolve.weaponWorldTransform,
+            supportDelta);
+        ok &= expectVectorNear(
+            "gunstock tandem delta keeps primary pivot fixed",
+            rock::transform_math::localPointToWorld(
+                movedSolve.weaponWorldTransform,
+                primaryGripLocal),
+            primaryGripLocal);
     }
 
     ok &= expectTrue("one-hand sword is melee", rock::weapon_type_policy::isMelee(TestWeaponType::kOneHandSword));

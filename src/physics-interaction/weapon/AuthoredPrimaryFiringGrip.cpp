@@ -438,15 +438,10 @@ namespace rock
         }
 
         const RE::NiTransform liveWeaponWorld = input.weaponNode->world;
-        RE::NiTransform trackedHandWorld =
+        const RE::NiTransform trackedHandWorld =
             frik_visual_authority::getHandWorldTransform(
                 frik_visual_authority::handFromBool(
                     input.rockFiringHandIsLeft));
-        RE::NiTransform gunstockTrackedHandWorld{};
-        if (weaponAuthority.tryGetGunstockTrackedFiringHandWorld(
-                gunstockTrackedHandWorld)) {
-            trackedHandWorld = gunstockTrackedHandWorld;
-        }
         if (!finiteTransform(liveWeaponWorld) || !finiteTransform(trackedHandWorld)) {
             weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
             endSession("live-transform-invalid");

@@ -281,8 +281,8 @@
         const bool drawWeaponAuthorityDebug = _twoHandedGrip.isGripping() && (g_rockConfig.rockDebugShowHandAxes || drawGrabPivots);
         const bool drawAuthoredGripActivationZones =
             g_rockConfig.rockDebugDrawAuthoredGripActivationZones;
-        const bool drawGunstockAlignment =
-            g_rockConfig.rockDebugDrawGunstockAlignment;
+        const bool drawGunstockSupportBaseline =
+            g_rockConfig.rockDebugDrawGunstockSupportBaseline;
         // The dedicated activation visualizer is intentionally admitted before
         // a grip exists. Existing weapon-authority controls retain the compact
         // authored-seat readback while the new flag adds full cone diagnostics.
@@ -304,7 +304,7 @@
             !drawFingerSweptArc && !drawPalmVectors && !drawGrabPockets && !drawRootFlattenedFingerSkeleton && !drawSkeletonBones && !drawGrabPocketNormal &&
             !drawGrabContactPatch && !drawHandBoneContacts && !drawGrabAuthorityProxy && !drawGrabForceTorque && !drawGrabTransformTelemetry && !drawPerformanceProfilerOverlay &&
             !drawWeaponAuthorityDebug && !drawNativeScopeActivation && !drawGrabSupportFrame && !drawWorldOriginDiagnostics && !drawCustomCalibrationOffset &&
-            !drawDynamicHandColliders && !drawAuthoredSupportGripDebug && !drawGunstockAlignment && !drawProviderOverlay && !drawVideoSyncMarker) {
+            !drawDynamicHandColliders && !drawAuthoredSupportGripDebug && !drawGunstockSupportBaseline && !drawProviderOverlay && !drawVideoSyncMarker) {
             debug::ClearFrame();
             return;
         }
@@ -317,16 +317,16 @@
         frame.drawTargetBodies = g_rockConfig.rockDebugShowTargetColliders;
         frame.drawAxes = g_rockConfig.rockDebugShowHandAxes || drawGrabTransformTelemetryAxes || drawGrabAuthorityProxy || drawGrabForceTorque ||
             drawCustomCalibrationOffset || drawNativeScopeActivation ||
-            drawAuthoredSupportGripDebug || drawGunstockAlignment;
+            drawAuthoredSupportGripDebug || drawGunstockSupportBaseline;
         frame.drawMarkers = drawGrabPivots || drawFingerProbes || drawFingerSweptArc || drawPalmVectors || drawGrabPockets || drawRootFlattenedFingerSkeleton ||
             drawGrabPocketNormal || drawGrabContactPatch || drawGrabForceTorque || drawHandBoneContacts || drawGrabAuthorityProxy || drawGrabTransformTelemetryAxes ||
             drawWeaponAuthorityDebug || drawNativeScopeActivation || drawGrabSupportFrame || drawWorldOriginDiagnostics || drawDynamicHandColliders ||
-            drawAuthoredSupportGripDebug || drawGunstockAlignment;
+            drawAuthoredSupportGripDebug || drawGunstockSupportBaseline;
         frame.drawSkeleton = drawSkeletonBones;
         frame.drawColoredLines = providerOverlay && providerOverlay->lineCount > 0;
         frame.drawText = drawGrabTransformTelemetryText || drawGrabForceTorqueText || drawFingerSweptArcText || drawPerformanceProfilerOverlay ||
             drawDynamicHandColliders || drawNativeScopeActivation ||
-            drawAuthoredSupportGripDebug || drawGunstockAlignment || drawVideoSyncMarker ||
+            drawAuthoredSupportGripDebug || drawGunstockSupportBaseline || drawVideoSyncMarker ||
             (providerOverlay && providerOverlay->textCount > 0);
         if (providerOverlay) {
             frame.coloredLineEntries = providerOverlay->lines.data();
@@ -535,45 +535,34 @@
             return std::sqrt(delta.x * delta.x + delta.y * delta.y + delta.z * delta.z);
         };
 
-        if (drawGunstockAlignment) {
+        if (drawGunstockSupportBaseline) {
             const auto snapshot =
-                _twoHandedGrip.getGunstockAlignmentDebugSnapshot();
+                _twoHandedGrip.
+                    getGunstockSupportBaselineDebugSnapshot();
             if (snapshot.published &&
-                snapshot.controllerValid &&
-                snapshot.weaponBeforeValid &&
-                snapshot.fireNodeBeforeValid) {
-                constexpr float kDirectionLength = 30.0f;
-                constexpr float kOppositeDirectionLength = 15.0f;
-                constexpr float kCorrectionArcRadius = 18.0f;
-                constexpr float kCorrectionAxisHalfLength = 5.0f;
-                constexpr int kCorrectionArcSegments = 16;
-                const RE::NiPoint3 labelOffset{ 0.0f, 0.0f, 1.4f };
-
-                const float wristForwardColor[4]{ 0.10f, 1.0f, 0.16f, 1.0f };
-                const float neutralColor[4]{ 1.0f, 0.42f, 0.04f, 1.0f };
-                const float rootColor[4]{ 1.0f, 0.86f, 0.05f, 0.98f };
-                const float predictedColor[4]{ 0.05f, 0.95f, 1.0f, 1.0f };
-                const float finalColor[4]{ 1.0f, 1.0f, 1.0f, 1.0f };
-                const float oppositeColor[4]{ 0.50f, 0.50f, 0.50f, 0.76f };
-                const float pivotColor[4]{ 1.0f, 0.12f, 0.92f, 1.0f };
-
-                addAxisTransform(
-                    snapshot.controllerWorld,
-                    debug::AxisOverlayRole::GunstockFiringController,
-                    {},
-                    false);
-                if (snapshot.leftHandValid &&
-                    !snapshot.firingHandIsLeft) {
+                snapshot.supportInputValid &&
+                snapshot.weaponBeforeValid) {
+                if (snapshot.supportInputValid) {
                     addAxisTransform(
-                        snapshot.leftHandWorld,
-                        debug::AxisOverlayRole::GunstockLeftHand,
+                        snapshot.supportInputWorld,
+                        debug::AxisOverlayRole::
+                            GunstockSupportInputBone,
                         {},
                         false);
                 }
-                if (snapshot.firingHandValid) {
+                if (snapshot.calibratedSupportValid) {
                     addAxisTransform(
-                        snapshot.firingHandWorld,
-                        debug::AxisOverlayRole::GunstockFiringHand,
+                        snapshot.calibratedSupportWorld,
+                        debug::AxisOverlayRole::
+                            GunstockCalibratedSupportBone,
+                        {},
+                        false);
+                }
+                if (snapshot.supportGripHandValid) {
+                    addAxisTransform(
+                        snapshot.supportGripHandWorld,
+                        debug::AxisOverlayRole::
+                            GunstockGripTargetHand,
                         {},
                         false);
                 }
@@ -582,279 +571,57 @@
                     debug::AxisOverlayRole::GunstockWeaponBefore,
                     {},
                     false);
-                if (snapshot.finalWeaponValid) {
+                if (snapshot.weaponAfterValid) {
                     addAxisTransform(
-                        snapshot.finalWeaponWorld,
-                        debug::AxisOverlayRole::GunstockWeaponFinal,
+                        snapshot.weaponWorldAfter,
+                        debug::AxisOverlayRole::GunstockWeaponAfter,
                         {},
                         false);
                 }
-                if (snapshot.finalFireNodeValid) {
-                    addAxisTransform(
-                        snapshot.finalFireNodeWorld,
-                        debug::AxisOverlayRole::GunstockFireNodeFinal,
-                        {},
-                        false);
-                }
-
-                const auto addDirectionRay =
-                    [&](const debug::MarkerOverlayRole role,
-                        const RE::NiPoint3& direction,
-                        const float length,
-                        const float color[4],
-                        const char* label) {
-                        const RE::NiPoint3 end = weaponSolverAdd(
-                            snapshot.pivotWorld,
-                            weaponSolverScale(direction, length));
-                        addMarker(
-                            role,
-                            end,
-                            snapshot.pivotWorld,
-                            1.25f,
-                            true,
-                            true);
-                        addTextLineSized(
-                            weaponSolverAdd(end, labelOffset),
-                            1.55f,
-                            color,
-                            "%s",
-                            label);
-                    };
 
                 addMarkerPoint(
-                    debug::MarkerOverlayRole::GunstockPivot,
-                    snapshot.pivotWorld,
+                    debug::MarkerOverlayRole::GunstockPrimaryPivot,
+                    snapshot.primaryTargetWorld,
                     2.2f);
-                if (snapshot.predictionValid) {
-                    addDirectionRay(
-                        debug::MarkerOverlayRole::
-                            GunstockWristForward,
-                        snapshot.wristForwardWorld,
-                        kDirectionLength,
-                        wristForwardColor,
-                        "FIRING WRIST +X - GUNSTOCK FORWARD");
-                    addDirectionRay(
-                        debug::MarkerOverlayRole::
-                            GunstockNeutralFireBefore,
-                        snapshot.neutralFireWorldBefore,
-                        kDirectionLength,
-                        neutralColor,
-                        "UNALIGNED NEUTRAL FIRE +Y");
-                    addDirectionRay(
-                        debug::MarkerOverlayRole::
-                            GunstockWeaponRootForward,
-                        snapshot.weaponRootForwardWorld,
-                        kDirectionLength,
-                        rootColor,
-                        "WEAPON ROOT +Y - DIAGNOSTIC ONLY");
-                    addDirectionRay(
-                        debug::MarkerOverlayRole::
-                            GunstockPredictedNeutral,
-                        snapshot.predictedNeutralFireWorld,
-                        kDirectionLength,
-                        predictedColor,
-                        "PREDICTED NEUTRAL FINAL");
-                    addDirectionRay(
-                        debug::MarkerOverlayRole::
-                            GunstockOppositeFire,
-                        weaponSolverScale(
-                            snapshot.unalignedLiveFireWorld,
-                            -1.0f),
-                        kOppositeDirectionLength,
-                        oppositeColor,
-                        "FIRE NODE -Y SIGN CHECK");
-                }
-                if (snapshot.finalFireNodeValid) {
-                    addDirectionRay(
-                        debug::MarkerOverlayRole::
-                            GunstockFinalLiveFire,
-                        snapshot.finalLiveFireWorld,
-                        kDirectionLength,
-                        finalColor,
-                        "ACTUAL FINAL LIVE FIRE +Y");
-                }
+                addMarkerPoint(
+                    debug::MarkerOverlayRole::GunstockSupportGripPoint,
+                    snapshot.supportGripWorld,
+                    1.8f);
+                addMarkerPoint(
+                    debug::MarkerOverlayRole::GunstockSupportTargetPoint,
+                    snapshot.supportTargetWorld,
+                    1.8f);
+                addMarkerLine(
+                    debug::MarkerOverlayRole::
+                        GunstockCapturedWeaponAxis,
+                    snapshot.primaryTargetWorld,
+                    snapshot.supportGripWorld);
+                addMarkerLine(
+                    debug::MarkerOverlayRole::
+                        GunstockCalibratedTargetAxis,
+                    snapshot.primaryTargetWorld,
+                    snapshot.supportTargetWorld);
 
-                if (snapshot.predictionValid &&
-                    snapshot.correctionAxisValid &&
-                    snapshot.correctionAngleRadians > 0.0001f) {
-                    RE::NiPoint3 previous = weaponSolverAdd(
-                        snapshot.pivotWorld,
-                        weaponSolverScale(
-                            snapshot.neutralFireWorldBefore,
-                            kCorrectionArcRadius));
-                    for (int segment = 1;
-                         segment <= kCorrectionArcSegments;
-                         ++segment) {
-                        const float segmentAngle =
-                            snapshot.correctionAngleRadians *
-                            (static_cast<float>(segment) /
-                                static_cast<float>(
-                                    kCorrectionArcSegments));
-                        const RE::NiMatrix3 segmentRotation =
-                            weaponSolverAxisAngleStored<
-                                RE::NiMatrix3,
-                                RE::NiPoint3>(
-                                snapshot.correctionAxisWorld,
-                                segmentAngle);
-                        const RE::NiPoint3 segmentDirection =
-                            weaponSolverApplyStoredWorldRotationToVector<
-                                RE::NiMatrix3,
-                                RE::NiPoint3>(
-                                segmentRotation,
-                                snapshot.neutralFireWorldBefore);
-                        const RE::NiPoint3 current = weaponSolverAdd(
-                            snapshot.pivotWorld,
-                            weaponSolverScale(
-                                segmentDirection,
-                                kCorrectionArcRadius));
-                        addMarkerLine(
-                            debug::MarkerOverlayRole::
-                                GunstockCorrectionArc,
-                            previous,
-                            current);
-                        previous = current;
-                    }
-
-                    addMarkerLine(
-                        debug::MarkerOverlayRole::
-                            GunstockCorrectionAxis,
-                        weaponSolverSub(
-                            snapshot.pivotWorld,
-                            weaponSolverScale(
-                                snapshot.correctionAxisWorld,
-                                kCorrectionAxisHalfLength)),
-                        weaponSolverAdd(
-                            snapshot.pivotWorld,
-                            weaponSolverScale(
-                                snapshot.correctionAxisWorld,
-                                kCorrectionAxisHalfLength)));
-
-                    const RE::NiMatrix3 midRotation =
-                        weaponSolverAxisAngleStored<
-                            RE::NiMatrix3,
-                            RE::NiPoint3>(
-                            snapshot.correctionAxisWorld,
-                            snapshot.correctionAngleRadians * 0.5f);
-                    const RE::NiPoint3 midDirection =
-                        weaponSolverApplyStoredWorldRotationToVector<
-                            RE::NiMatrix3,
-                            RE::NiPoint3>(
-                            midRotation,
-                            snapshot.neutralFireWorldBefore);
-                    const RE::NiPoint3 arcLabelAnchor = weaponSolverAdd(
-                        snapshot.pivotWorld,
-                        weaponSolverScale(
-                            midDirection,
-                            kCorrectionArcRadius + 2.0f));
-                    addTextLineSized(
-                        arcLabelAnchor,
-                        1.55f,
-                        rootColor,
-                        "CORRECTION %.2f deg%s",
-                        snapshot.correctionAngleDegrees,
-                        snapshot.correctionUsedAntiparallelFallback ?
-                            " - 180 FALLBACK AXIS" :
-                            "");
-                }
-
-                const auto stateName = [](const GunstockAlignmentDebugState state) {
-                    switch (state) {
-                    case GunstockAlignmentDebugState::DisabledPreview:
-                        return "disabled-preview";
-                    case GunstockAlignmentDebugState::Waiting:
-                        return "waiting";
-                    case GunstockAlignmentDebugState::Latched:
-                        return "latched";
-                    case GunstockAlignmentDebugState::Active:
-                        return "active";
-                    case GunstockAlignmentDebugState::Yielded:
-                        return "yielded";
-                    case GunstockAlignmentDebugState::Invalid:
-                    default:
-                        return "invalid";
-                    }
+                const float activeColor[4]{
+                    0.55f, 1.0f, 0.58f, 0.96f
                 };
-                const auto yieldReasonName = [](
-                                                 const GunstockAlignmentDebugYieldReason reason) {
-                    switch (reason) {
-                    case GunstockAlignmentDebugYieldReason::None:
-                        return "none";
-                    case GunstockAlignmentDebugYieldReason::AlignmentDisabled:
-                        return "alignment-disabled";
-                    case GunstockAlignmentDebugYieldReason::WeaponOrFireNodeUnavailable:
-                        return "weapon-or-fire-node-unavailable";
-                    case GunstockAlignmentDebugYieldReason::SkeletonUnavailable:
-                        return "skeleton-unavailable";
-                    case GunstockAlignmentDebugYieldReason::FrikUnavailable:
-                        return "frik-unavailable";
-                    case GunstockAlignmentDebugYieldReason::WeaponHidden:
-                        return "weapon-hidden";
-                    case GunstockAlignmentDebugYieldReason::ControllerUnavailable:
-                        return "controller-unavailable";
-                    case GunstockAlignmentDebugYieldReason::AuthorityBlocked:
-                        return "reload-or-menu-authority";
-                    case GunstockAlignmentDebugYieldReason::ScopeTransition:
-                        return "scope-transition";
-                    case GunstockAlignmentDebugYieldReason::PartCarry:
-                        return "part-carry";
-                    case GunstockAlignmentDebugYieldReason::WeaponVisualReturn:
-                        return "weapon-visual-return";
-                    case GunstockAlignmentDebugYieldReason::HandVisualReturn:
-                        return "hand-visual-return";
-                    case GunstockAlignmentDebugYieldReason::FiringHandHoldingObject:
-                        return "firing-hand-holding-object";
-                    case GunstockAlignmentDebugYieldReason::NeutralSampleBlocked:
-                        return "trigger-blocks-neutral-sample";
-                    case GunstockAlignmentDebugYieldReason::NeutralSampleCollecting:
-                        return "collecting-neutral-samples";
-                    case GunstockAlignmentDebugYieldReason::RuntimeAuthorityUnavailable:
-                        return "runtime-authority-unavailable";
-                    default:
-                        return "unknown";
-                    }
+                const float inactiveColor[4]{
+                    1.0f, 0.82f, 0.12f, 0.96f
                 };
-                const auto recoilWitnessName = [](
-                                                  const GunstockAlignmentDebugRecoilWitness witness) {
-                    switch (witness) {
-                    case GunstockAlignmentDebugRecoilWitness::Regular:
-                        return "regular";
-                    case GunstockAlignmentDebugRecoilWitness::Controlled:
-                        return "controlled";
-                    case GunstockAlignmentDebugRecoilWitness::None:
-                    default:
-                        return "none";
-                    }
-                };
-
-                const float statusActiveColor[4]{ 0.55f, 1.0f, 0.58f, 0.96f };
-                const float statusWaitingColor[4]{ 1.0f, 0.82f, 0.12f, 0.96f };
-                const float statusInvalidColor[4]{ 1.0f, 0.18f, 0.12f, 0.98f };
-                const float statusPreviewColor[4]{ 0.20f, 0.92f, 1.0f, 0.96f };
-                const float* statusColor = statusActiveColor;
-                switch (snapshot.state) {
-                case GunstockAlignmentDebugState::DisabledPreview:
-                    statusColor = statusPreviewColor;
-                    break;
-                case GunstockAlignmentDebugState::Waiting:
-                case GunstockAlignmentDebugState::Yielded:
-                case GunstockAlignmentDebugState::Latched:
-                    statusColor = statusWaitingColor;
-                    break;
-                case GunstockAlignmentDebugState::Invalid:
-                    statusColor = statusInvalidColor;
-                    break;
-                case GunstockAlignmentDebugState::Active:
-                default:
-                    break;
-                }
-
-                RE::NiPoint3 statusAnchor = weaponSolverAdd(
-                    snapshot.controllerWorld.translate,
-                    RE::NiPoint3{ 0.0f, 0.0f, 16.0f });
+                const float* statusColor =
+                    snapshot.baselineActive ?
+                    activeColor :
+                    inactiveColor;
+                RE::NiPoint3 statusAnchor =
+                    snapshot.supportInputWorld.translate;
+                statusAnchor.z += 16.0f;
                 const auto addStatusLine =
-                    [&](const int line, const char* format, auto&&... args) {
+                    [&](const int line,
+                        const char* format,
+                        auto&&... args) {
                         RE::NiPoint3 lineAnchor = statusAnchor;
-                        lineAnchor.z += static_cast<float>(line) * 2.2f;
+                        lineAnchor.z +=
+                            static_cast<float>(line) * 2.2f;
                         addTextLineSized(
                             lineAnchor,
                             1.55f,
@@ -864,45 +631,33 @@
                     };
                 addStatusLine(
                     0,
-                    "GUNSTOCK DEBUG behavior=%s state=%s hand=%s source=fire-node target=wrist+X",
+                    "GUNSTOCK SUPPORT BASELINE behavior=%s baseline=%s hand=%s frame=%s",
                     snapshot.behaviorEnabled ? "on" : "off",
-                    stateName(snapshot.state),
-                    snapshot.firingHandIsLeft ? "left" : "right");
+                    snapshot.baselineActive ? "active" : "inactive",
+                    snapshot.supportHandIsLeft ? "left" : "right",
+                    snapshot.attachPublication ? "attach" : "tandem");
                 addStatusLine(
                     1,
-                    "weapon=%08X generation=%016llX capture=%llu seq=%llu",
-                    snapshot.weaponFormID,
+                    "generation=%016llX grip=%llu seq=%llu",
                     static_cast<unsigned long long>(
                         snapshot.weaponGenerationKey),
                     static_cast<unsigned long long>(
-                        snapshot.canonicalCaptureSequence),
+                        snapshot.gripSequence),
                     static_cast<unsigned long long>(
                         snapshot.publicationSequence));
                 addStatusLine(
                     2,
-                    "targetAxis=wrist+X fireAxis=+Y candidate=%u/%u pivot=hand",
-                    snapshot.candidateSamples,
-                    gunstock_alignment_policy::kRequiredStableSamples);
+                    "currentWeaponDelta=%.4f gu / %.3f deg",
+                    snapshot.appliedTranslationGameUnits,
+                    snapshot.appliedRotationDegrees);
                 addStatusLine(
                     3,
-                    "unaligned=%.2f correction=%.2f neutralResidual=%.3f deg",
-                    snapshot.unalignedAngleDegrees,
-                    snapshot.correctionAngleDegrees,
-                    snapshot.neutralResidualDegrees);
+                    "attachWeaponDelta=%.5f gu / %.4f deg",
+                    snapshot.attachTranslationGameUnits,
+                    snapshot.attachRotationDegrees);
                 addStatusLine(
                     4,
-                    "liveDeviation=%.2f deg recoil=%s finalError=%.4f gu",
-                    snapshot.liveDeviationDegrees,
-                    recoilWitnessName(snapshot.recoilWitness),
-                    snapshot.finalWeaponPredictionErrorGameUnits);
-                addStatusLine(
-                    5,
-                    "yieldReason=%s gripState=%d dataAge=0%s",
-                    yieldReasonName(snapshot.yieldReason),
-                    static_cast<int>(snapshot.gripState),
-                    snapshot.correctionUsedAntiparallelFallback ?
-                        " fallbackAxis=yes" :
-                        "");
+                    "yellow=weapon grip axis cyan=calibrated support target; no axis convention forced");
             }
         }
 

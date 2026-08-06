@@ -96,10 +96,10 @@ namespace rock
         // ROCK-exclusive equipped-weapon hand preference. This never reads or
         // mutates Fallout 4 VR's native handedness/controller mapping.
         bool rockLeftHandedMode = false;
-        // Final rigid correction for physical gunstocks. The projectile-node
-        // +Y axis is aligned to the firing wrist's local +X axis only after
-        // all authored/manual hand and weapon solves have completed.
-        bool rockGunstockAlignBarrelToControllerForward = false;
+        // Physical-gunstock support calibration. The primary hand keeps the
+        // weapon transform on support attach; the support solver consumes only
+        // motion after its captured support-input-to-grip baseline.
+        bool rockGunstockModeEnabled = false;
         // ROCK-native firing-grip handoff. This remains independent from the
         // addon-owned realistic detach/drop feature set.
         bool rockAmbidextrousFiringGripEnabled = true;
@@ -236,7 +236,7 @@ namespace rock
         bool rockDebugDrawWeaponColliders = false;
         bool rockDebugDrawNativeScopeActivation = false;
         bool rockDebugDrawAuthoredGripActivationZones = false;
-        bool rockDebugDrawGunstockAlignment = false;
+        bool rockDebugDrawGunstockSupportBaseline = false;
         bool rockDebugDrawDynamicWeaponColliders = false;
         bool rockDebugDumpWeaponAnimNodes = false;
         int rockDebugMaxWeaponBodiesDrawn = 100;

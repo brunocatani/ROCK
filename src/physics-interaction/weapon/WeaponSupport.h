@@ -895,6 +895,69 @@ namespace rock
                    std::isfinite(transform.scale);
         }
 
+        template <class Transform>
+        inline bool isUsableTransform(const Transform& transform)
+        {
+            return isFiniteTransform(transform) &&
+                   std::abs(transform.scale) > 0.0001f;
+        }
+
+        /*
+         * Physical gunstocks need the damped support-hand input to contribute only
+         * motion that happens after the grip is captured. The visual grip
+         * target remains authored/mesh-relative to the weapon, while this
+         * frozen relation calibrates the current damped support-hand input onto
+         * that target. Resolving the same input therefore reproduces the target
+         * exactly; a later support-hand delta is carried through rigidly without
+         * imposing an attach-time weapon correction or assuming controller
+         * axes match the authored wrist axes.
+         */
+        template <class Transform>
+        inline bool tryCaptureGunstockSupportBaseline(
+            const Transform& supportInputWorld,
+            const Transform& supportGripTargetWorld,
+            Transform& outInputToGripTargetLocal)
+        {
+            outInputToGripTargetLocal = {};
+            if (!isUsableTransform(supportInputWorld) ||
+                !isUsableTransform(supportGripTargetWorld)) {
+                return false;
+            }
+
+            const Transform relation = transform_math::composeTransforms(
+                transform_math::invertTransform(supportInputWorld),
+                supportGripTargetWorld);
+            if (!isUsableTransform(relation)) {
+                return false;
+            }
+
+            outInputToGripTargetLocal = relation;
+            return true;
+        }
+
+        template <class Transform>
+        inline bool tryResolveGunstockSupportTarget(
+            const Transform& supportInputWorld,
+            const Transform& inputToGripTargetLocal,
+            Transform& outSupportTargetWorld)
+        {
+            outSupportTargetWorld = {};
+            if (!isUsableTransform(supportInputWorld) ||
+                !isUsableTransform(inputToGripTargetLocal)) {
+                return false;
+            }
+
+            const Transform target = transform_math::composeTransforms(
+                supportInputWorld,
+                inputToGripTargetLocal);
+            if (!isUsableTransform(target)) {
+                return false;
+            }
+
+            outSupportTargetWorld = target;
+            return true;
+        }
+
         inline bool normalizeQuaternion(float quaternion[4])
         {
             float lengthSquared = 0.0f;
