@@ -81,8 +81,37 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'Neutral calibration must be blocked by physical trigger state while correction authority yields across animation/menu boundaries.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'applyGunstockAlignment\([\s\S]*getHandWorldTransform[\s\S]*localWristForward\s*\{\s*1\.0f,\s*0\.0f,\s*0\.0f\s*\}[\s\S]*directionLatch\.latched[\s\S]*tryCaptureHandLocalBore\([\s\S]*firingHandWorld[\s\S]*tryBuildWorldCorrection<[\s\S]*firingHandWorld[\s\S]*wristForwardWorld[\s\S]*rotateRigidlyAroundPivot[\s\S]*applyWeaponVisualAuthority' `
-    'The runtime must derive its fixed correction entirely from the already-damped firing-hand frame, rotate the complete group, and publish the weapon last.'
+    'tryResolveGunstockPhysicalFiringFrame[\s\S]*SecondaryMeleeWeaponOffsetNode2[\s\S]*primaryWeaponOffsetNOde[\s\S]*_leftNaturalBoneInDampedDriver[\s\S]*_rightNaturalBoneInDampedDriver[\s\S]*tryResolveGunstockPrimaryGroupCorrection[\s\S]*localWristForward\s*\{\s*1\.0f,\s*0\.0f,\s*0\.0f\s*\}[\s\S]*applyGunstockAlignment\([\s\S]*tryCaptureHandLocalBore\([\s\S]*alignmentHandWorld[\s\S]*tryResolveGunstockPrimaryGroupCorrection[\s\S]*rotateRigidlyAroundPivot[\s\S]*applyWeaponVisualAuthority' `
+    'The runtime must reconstruct a clean wrist from hFRIK damping, aim at wrist +X, rotate the complete group around the damped driver, and publish the weapon last.'
+
+Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
+    'tryGetGunstockTrackedFiringHandWorld\([\s\S]*trackedHandWorld\s*=\s*gunstockTrackedHandWorld' `
+    'Authored primary weapon alignment must consume the clean gunstock tracking frame instead of previous presented-hand readback.'
+
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'refreshAuthoredSupportGripActivationState[\s\S]*activationWeaponWorld[\s\S]*tryResolveGunstockPrimaryGroupCorrection[\s\S]*resolveAuthoredSupportPalmSeatProximity\([\s\S]*activationWeaponWorld[\s\S]*surfaceQueryLandmarksWorld[\s\S]*findCurrentWeaponSurfaceNearPoints[\s\S]*reframeAuthoredSupportGripDebugSnapshot' `
+    'Authored support seats and cones must use the gunstock-presented frame while surface queries remain in the live collision frame.'
+
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'applyGunstockAlignment[\s\S]*projectileWitnessUsable[\s\S]*!directionLatch\.latched[\s\S]*projectile witness unavailable during firing animation; retaining and publishing the latched correction[\s\S]*publishAuthoredPrimaryFiringGripFingerPose' `
+    'Transient firing-node loss must retain the latched correction and exact authored firing-hand finger pose.'
+
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'firingGripPublishedThisFrame[\s\S]*_lastPublishedHandWorld\[firingIndex\][\s\S]*authoredRightCanonicalCurrent[\s\S]*_rightFiringHandCanonicalWeaponLocal[\s\S]*firingGroupHandWorld[\s\S]*pivotWorld[\s\S]*firingRelationError' `
+    'Gunstock must rotate the exact posed firing-hand target with the weapon and retain a sampled rigid-relation witness.'
+
+Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' `
+    'struct\s+GunstockAlignmentState[\s\S]{0,500}canonicalCaptureSequence' `
+    'A firing-animation capture sequence must not be part of gunstock weapon-session identity.'
+
+$gunstockYield = [regex]::Match(
+    (Read-Source 'src/physics-interaction/weapon/TwoHandedGrip.cpp'),
+    '(?ms)TwoHandedGrip::currentGunstockAlignmentYieldReason\s*\(.*?^\s{4}bool\s+TwoHandedGrip::tryResolveGunstockPhysicalFiringFrame')
+if (-not $gunstockYield.Success) {
+    $failures.Add('src/physics-interaction/weapon/TwoHandedGrip.cpp: Could not isolate gunstock yield policy.')
+} elseif ($gunstockYield.Value -match 'isWeaponVisualReturnActive|isHandVisualReturnActive') {
+    $failures.Add('src/physics-interaction/weapon/TwoHandedGrip.cpp: Gunstock must compose after weapon and hand returns instead of exposing an unaligned frame.')
+}
 
 $gunstockApply = [regex]::Match(
     (Read-Source 'src/physics-interaction/weapon/TwoHandedGrip.cpp'),
@@ -123,8 +152,8 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'Behavior-off diagnostics must compute a read-only correction preview and final live readback.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'prepareGunstockAlignmentDebugSnapshot[\s\S]*getHandWorldTransform\([\s\S]*handFromBool\(_firingHandIsLeft\)[\s\S]*if\s*\(_firingHandIsLeft\)[\s\S]*snapshot\.leftHandWorld\s*=\s*firingHandWorld[\s\S]*if\s*\(!_firingHandIsLeft\)[\s\S]*getHandWorldTransform\([\s\S]*handFromBool\(true\)[\s\S]*snapshot\.leftHandWorld\s*=\s*leftHandWorld[\s\S]*snapshot\.leftHandValid\s*=\s*true' `
-    'The gunstock snapshot must capture the left hand from the same hFRIK hand-bone authority as the firing-hand triad and reuse the firing sample when left-handed.'
+    'prepareGunstockAlignmentDebugSnapshot[\s\S]*tryResolveGunstockPhysicalFiringFrame\([\s\S]*snapshot\.firingHandWorld\s*=\s*firingHandWorld[\s\S]*snapshot\.pivotWorld\s*=\s*firingDriverWorld\.translate[\s\S]*if\s*\(_firingHandIsLeft\)[\s\S]*snapshot\.leftHandWorld\s*=\s*firingHandWorld[\s\S]*if\s*\(!_firingHandIsLeft\)[\s\S]*getHandWorldTransform\([\s\S]*handFromBool\(true\)[\s\S]*snapshot\.leftHandWorld\s*=\s*leftHandWorld' `
+    'The snapshot must show the clean firing wrist and damped-driver pivot while retaining the left hand-bone diagnostic.'
 
 Require-Text 'src/physics-interaction/debug/DebugBodyOverlay.h' `
     'GunstockFiringController[\s\S]*GunstockLeftHand[\s\S]*GunstockFireNodeFinal[\s\S]*GunstockWristForward[\s\S]*GunstockCorrectionArc[\s\S]*GunstockCorrectionAxis' `
@@ -151,8 +180,8 @@ Reject-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
     'Gunstock diagnostics must not present controller +Y as the alignment target.'
 
 Require-Text 'tests/WeaponInteractionPolicyTests.cpp' `
-    'gunstock neutral direction latches on sixth stable sample[\s\S]*gunstock correction sends neutral bore to firing wrist plus-X[\s\S]*gunstock rigid correction preserves firing-hand weapon relation[\s\S]*gunstock precompensation survives noncommuting recoil delta[\s\S]*gunstock fixed neutral correction does not erase live recoil' `
-    'Pure regression tests must lock calibration, rigid grouping, recoil precompensation, and live-recoil preservation.'
+    'gunstock neutral direction latches on sixth stable sample[\s\S]*gunstock correction sends neutral bore to firing wrist plus-X[\s\S]*gunstock firing hand orbits the damped physical driver[\s\S]*gunstock rigid correction preserves firing-hand weapon relation[\s\S]*gunstock precompensation survives noncommuting recoil delta[\s\S]*gunstock fixed neutral correction does not erase live recoil' `
+    'Pure regression tests must lock calibration, damped-driver grouping, recoil precompensation, and live-recoil preservation.'
 
 Reject-Text 'src/api/ROCKProviderApi.h' `
     'Gunstock' `

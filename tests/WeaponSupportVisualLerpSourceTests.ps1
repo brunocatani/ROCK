@@ -48,7 +48,7 @@ Require-Text 'src/physics-interaction/weapon/WeaponSupport.h' 'shouldUseDynamicS
     'Synchronized acquisition must be eligible only for normal non-authored full-authority support grips.'
 Require-Text 'src/physics-interaction/weapon/WeaponSupport.h' 'shortestArcSlerpFromIdentity[\s\S]*applyRotationAroundPrimaryPivot[\s\S]*localPointToWorld\([\s\S]*primaryGripLocal[\s\S]*primaryTargetWorld' `
     'Dynamic acquisition math must shortest-arc slerp the composite correction and re-solve translation from the live primary pivot.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'shouldUseDynamicSupportAcquisition\([\s\S]{0,600}supportGrip\.authoredSupportGrip[\s\S]{0,300}supportGrip\.providerPartAuthority\.active[\s\S]{0,300}supportGrip\.attachOnly[\s\S]{0,6000}beginDynamicSupportAcquisition\([\s\S]{0,500}updateFullWeaponAuthorityGrip\(weaponNode,\s*0\.0f\)' `
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'shouldUseDynamicSupportAcquisition\([\s\S]{0,600}supportGrip\.authoredSupportGrip[\s\S]{0,300}supportGrip\.providerPartAuthority\.active[\s\S]{0,300}supportGrip\.attachOnly[\s\S]{0,6000}beginDynamicSupportAcquisition\([\s\S]{0,900}updateFullWeaponAuthorityGrip\(weaponNode,\s*0\.0f\)' `
     'A successful normal dynamic capture must start its witnessed transaction and publish exact alpha zero before transitionToGripping returns.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'solverInput\.supportTargetWorld\s*=\s*dynamicAcquisition\s*\?[\s\S]{0,300}lockedSupportControllerTarget[\s\S]*applyRotationAroundPrimaryPivot' `
     'Dynamic acquisition must solve the complete locked target before applying one partial composite rotation.'

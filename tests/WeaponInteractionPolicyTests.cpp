@@ -374,6 +374,7 @@ int main()
             rock::weaponSolverNormalize(
                 TestVector3{ 0.4f, -0.2f, 0.7f }),
             42.0f);
+        const TestVector3 dampedDriverPivot{ 7.0f, 16.0f, 26.0f };
         const TestTransform correctedFiring =
             rock::gunstock_alignment_policy::rotateRigidlyAroundPivot<
                 TestTransform,
@@ -381,7 +382,7 @@ int main()
                 TestVector3>(
                 firingHand,
                 correction,
-                firingHand.translate);
+                dampedDriverPivot);
         const TestTransform correctedSupport =
             rock::gunstock_alignment_policy::rotateRigidlyAroundPivot<
                 TestTransform,
@@ -389,7 +390,7 @@ int main()
                 TestVector3>(
                 supportHand,
                 correction,
-                firingHand.translate);
+                dampedDriverPivot);
         const TestTransform correctedWeapon =
             rock::gunstock_alignment_policy::rotateRigidlyAroundPivot<
                 TestTransform,
@@ -397,12 +398,13 @@ int main()
                 TestVector3>(
                 weapon,
                 correction,
-                firingHand.translate);
+                dampedDriverPivot);
 
-        ok &= expectVectorNear(
-            "gunstock firing-hand pivot remains fixed",
-            correctedFiring.translate,
-            firingHand.translate);
+        ok &= expectTrue(
+            "gunstock firing hand orbits the damped physical driver",
+            rock::weaponSolverLength(rock::weaponSolverSub(
+                correctedFiring.translate,
+                firingHand.translate)) > 0.1f);
         ok &= expectTransformNear(
             "gunstock rigid correction preserves firing-hand weapon relation",
             rock::transform_math::composeTransforms(

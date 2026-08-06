@@ -86,6 +86,9 @@ namespace rock
         bool manualScopeActivationRequested{ false };
         bool nativeScopeRequestStateValid{ false };
         bool nativeScopeRequestActive{ false };
+        // The same animation/menu boundary that gates the final gunstock
+        // write must also gate the pre-solve authored support-seat frame.
+        bool gunstockAlignmentBlocked{ false };
         EquippedWeaponScopeHandDriverFrame leftHandDriverFrame{};
         EquippedWeaponScopeHandDriverFrame rightHandDriverFrame{};
         // Grab state of the CURRENT firing hand (debounced release), read by
@@ -498,10 +501,11 @@ namespace rock
         /*
          * Optional final gunstock correction. This runs only after authored
          * and manual weapon/hand solves have completed, rotating the weapon
-         * and every participating hand as one rigid group around the firing
-         * hand. The neutral fire-node direction is latched in the already-
-         * damped firing-hand frame so the correction preserves hFRIK hand
-         * damping without erasing recoil or animation motion.
+         * and every participating hand as one rigid group around hFRIK's
+         * damped firing-controller driver. The neutral fire-node direction is
+         * latched in a clean physical wrist frame captured before ROCK hand
+         * authority, so the correction preserves damping without feeding the
+         * previous presented pose back into the next frame.
          */
         bool applyGunstockAlignment(
             RE::NiNode* weaponNode,
@@ -509,6 +513,15 @@ namespace rock
             std::uint64_t currentWeaponGenerationKey,
             bool calibrationSampleBlocked,
             bool authorityBlocked);
+
+        /*
+         * Supplies the uncontaminated, damped physical firing-wrist frame to
+         * the authored primary alignment pass while gunstock mode is enabled.
+         * This prevents the preceding frame's additive hand presentation from
+         * becoming the next frame's controller input.
+         */
+        bool tryGetGunstockTrackedFiringHandWorld(
+            RE::NiTransform& outHandWorld) const;
 
         void prepareGunstockAlignmentDebugSnapshot(
             RE::NiNode* weaponNode,
@@ -1156,6 +1169,18 @@ namespace rock
         void resetGunstockAlignment(const char* reason);
         [[nodiscard]] GunstockAlignmentDebugYieldReason
             currentGunstockAlignmentYieldReason(bool authorityBlocked) const;
+        bool tryResolveGunstockPhysicalFiringFrame(
+            RE::NiTransform& outHandWorld,
+            RE::NiTransform& outDriverWorld) const;
+        bool tryResolveGunstockPrimaryGroupCorrection(
+            RE::NiNode* weaponNode,
+            std::uint64_t currentWeaponGenerationKey,
+            RE::NiTransform& outAlignmentHandWorld,
+            RE::NiMatrix3& outCorrectionWorld,
+            RE::NiPoint3& outPivotWorld,
+            float* outDirectionDot = nullptr) const;
+        void reframeAuthoredSupportGripDebugSnapshot(
+            const RE::NiTransform& finalWeaponWorld);
         bool populateGunstockAlignmentDebugPrediction(
             const RE::NiPoint3& neutralHandLocal);
 
@@ -1311,7 +1336,6 @@ namespace rock
             // Comparison-only identity witness; never dereferenced from cache.
             RE::NiNode* weaponNodeIdentity{ nullptr };
             std::uint64_t weaponGenerationKey{ 0 };
-            std::uint64_t canonicalCaptureSequence{ 0 };
             gunstock_alignment_policy::DirectionLatch<RE::NiPoint3>
                 directionLatch{};
             bool firingHandIsLeft{ false };
@@ -1325,17 +1349,24 @@ namespace rock
         std::array<bool, 2> _gunstockHandAuthorityActive{};
         bool _gunstockWaitingLogged{ false };
         bool _gunstockYieldLogged{ false };
+        bool _gunstockProjectileWitnessMissingLogged{ false };
+        bool _gunstockAlignmentBlockedThisFrame{ false };
 
         /*
-         * Natural physical hand-bone-in-wand relations. They are refreshed
-         * only while ROCK has no visual authority for that hand and are
-         * deliberately not weapon-generation keyed. The firing and support
-         * mirrors consume these anatomy frames instead of a locked hand pose.
+         * Natural physical hand-bone relations in the raw wand and hFRIK's
+         * damped driver. They are refreshed only while ROCK has no visual
+         * authority for that hand and are deliberately not weapon-generation
+         * keyed. Presentation code consumes these anatomy frames instead of
+         * feeding a locked hand pose back into controller tracking.
          */
         RE::NiTransform _rightNaturalBoneInWand{};
         RE::NiTransform _leftNaturalBoneInWand{};
+        RE::NiTransform _rightNaturalBoneInDampedDriver{};
+        RE::NiTransform _leftNaturalBoneInDampedDriver{};
         bool _hasRightNaturalBoneInWand{ false };
         bool _hasLeftNaturalBoneInWand{ false };
+        bool _hasRightNaturalBoneInDampedDriver{ false };
+        bool _hasLeftNaturalBoneInDampedDriver{ false };
 
         std::array<ScopeSafeHandFrameState, 2> _scopeSafeHandFrames{};
         bool _scopeMenuOpenThisFrame{ false };
