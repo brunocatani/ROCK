@@ -164,7 +164,7 @@ int main()
                 TestVector3{ 0.0f, 1.0f, 0.0f }));
         ok &= expectVectorNear(
             "gunstock stable latch preserves normalized direction",
-            latch.neutralControllerLocal,
+            latch.neutralHandLocal,
             TestVector3{ 0.0f, 1.0f, 0.0f });
 
         Latch divergent{};
@@ -197,25 +197,19 @@ int main()
     }
 
     {
-        const TestVector3 controllerLocalBore =
+        const TestVector3 handLocalBore =
             rock::weaponSolverNormalize(
                 TestVector3{ 0.35f, 0.82f, -0.27f });
-        TestTransform controllerWorld =
+        TestTransform firingHandWorld =
             rock::transform_math::makeIdentityTransform<TestTransform>();
-        controllerWorld.rotate = makeAxisAngleRotation(
+        firingHandWorld.rotate = makeAxisAngleRotation(
             TestVector3{ 0.0f, 0.0f, 1.0f },
             37.0f);
-        controllerWorld.translate = { 11.0f, -4.0f, 8.0f };
-
-        TestTransform firingWristWorld =
-            rock::transform_math::makeIdentityTransform<TestTransform>();
-        firingWristWorld.rotate = makeAxisAngleRotation(
-            TestVector3{ 0.0f, 0.0f, 1.0f },
-            -19.0f);
+        firingHandWorld.translate = { 11.0f, -4.0f, 8.0f };
         const TestVector3 wristForward =
             rock::weaponSolverNormalize(
                 rock::transform_math::localVectorToWorld(
-                    firingWristWorld,
+                    firingHandWorld,
                     TestVector3{ 1.0f, 0.0f, 0.0f }));
 
         TestTransform projectileWorld =
@@ -226,21 +220,21 @@ int main()
                 TestVector3>(
                 TestVector3{ 0.0f, 1.0f, 0.0f },
                 rock::transform_math::localVectorToWorld(
-                    controllerWorld,
-                    controllerLocalBore));
+                    firingHandWorld,
+                    handLocalBore));
 
         TestVector3 capturedBore{};
         ok &= expectTrue(
-            "gunstock captures projectile plus-Y in controller space",
+            "gunstock captures projectile plus-Y in firing-hand space",
             rock::gunstock_alignment_policy::
-                tryCaptureControllerLocalBore(
-                    controllerWorld,
+                tryCaptureHandLocalBore(
+                    firingHandWorld,
                     projectileWorld,
                     capturedBore));
         ok &= expectVectorNear(
-            "gunstock controller-local capture is exact",
+            "gunstock firing-hand-local capture is exact",
             capturedBore,
-            controllerLocalBore,
+            handLocalBore,
             0.0002f);
 
         TestMatrix3 correction{};
@@ -250,7 +244,7 @@ int main()
                 TestTransform,
                 TestMatrix3,
                 TestVector3>(
-                controllerWorld,
+                firingHandWorld,
                 capturedBore,
                 wristForward,
                 correction));
@@ -260,12 +254,49 @@ int main()
                 TestVector3>(
                 correction,
                 rock::transform_math::localVectorToWorld(
-                    controllerWorld,
+                    firingHandWorld,
                     capturedBore));
         ok &= expectVectorNear(
             "gunstock correction sends neutral bore to firing wrist plus-X",
             rock::weaponSolverNormalize(correctedBore),
             wristForward,
+            0.0002f);
+
+        TestTransform movedDampedHandWorld =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        movedDampedHandWorld.rotate = makeAxisAngleRotation(
+            rock::weaponSolverNormalize(
+                TestVector3{ 0.2f, -0.5f, 0.8f }),
+            -28.0f);
+        movedDampedHandWorld.translate = { -7.0f, 13.0f, 4.0f };
+        const TestVector3 movedWristForward =
+            rock::weaponSolverNormalize(
+                rock::transform_math::localVectorToWorld(
+                    movedDampedHandWorld,
+                    TestVector3{ 1.0f, 0.0f, 0.0f }));
+        TestMatrix3 movedCorrection{};
+        ok &= expectTrue(
+            "gunstock rebuilds the fixed correction in the moved damped hand frame",
+            rock::gunstock_alignment_policy::tryBuildWorldCorrection<
+                TestTransform,
+                TestMatrix3,
+                TestVector3>(
+                movedDampedHandWorld,
+                capturedBore,
+                movedWristForward,
+                movedCorrection));
+        const TestVector3 movedCorrectedBore =
+            rock::weaponSolverApplyStoredWorldRotationToVector<
+                TestMatrix3,
+                TestVector3>(
+                movedCorrection,
+                rock::transform_math::localVectorToWorld(
+                    movedDampedHandWorld,
+                    capturedBore));
+        ok &= expectVectorNear(
+            "gunstock hand-local correction follows damping without raw-controller input",
+            rock::weaponSolverNormalize(movedCorrectedBore),
+            movedWristForward,
             0.0002f);
 
         TestMatrix3 antiparallelCorrection{};
@@ -292,15 +323,15 @@ int main()
             TestVector3{ 1.0f, 0.0f, 0.0f },
             0.0002f);
 
-        TestTransform unusableController = controllerWorld;
-        unusableController.scale = 0.0f;
+        TestTransform unusableHand = firingHandWorld;
+        unusableHand.scale = 0.0f;
         ok &= expectFalse(
-            "gunstock rejects degenerate controller transforms",
+            "gunstock rejects degenerate firing-hand transforms",
             rock::gunstock_alignment_policy::tryBuildWorldCorrection<
                 TestTransform,
                 TestMatrix3,
                 TestVector3>(
-                unusableController,
+                unusableHand,
                 capturedBore,
                 wristForward,
                 correction));
@@ -311,7 +342,7 @@ int main()
                 TestTransform,
                 TestMatrix3,
                 TestVector3>(
-                controllerWorld,
+                firingHandWorld,
                 capturedBore,
                 TestVector3{},
                 correction));

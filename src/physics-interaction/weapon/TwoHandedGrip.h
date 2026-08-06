@@ -165,7 +165,7 @@ namespace rock
         TwoHandedState gripState{ TwoHandedState::Inactive };
 
         RE::NiTransform controllerWorld{};
-        RE::NiTransform leftControllerWorld{};
+        RE::NiTransform leftHandWorld{};
         RE::NiTransform firingHandWorld{};
         RE::NiTransform weaponWorldBefore{};
         RE::NiTransform predictedWeaponWorld{};
@@ -193,9 +193,8 @@ namespace rock
         bool behaviorEnabled{ false };
         bool firingHandIsLeft{ false };
         bool controllerValid{ false };
-        bool leftControllerValid{ false };
+        bool leftHandValid{ false };
         bool firingHandValid{ false };
-        bool pivotUsesControllerFallback{ false };
         bool weaponBeforeValid{ false };
         bool fireNodeBeforeValid{ false };
         bool correctionValid{ false };
@@ -500,8 +499,9 @@ namespace rock
          * Optional final gunstock correction. This runs only after authored
          * and manual weapon/hand solves have completed, rotating the weapon
          * and every participating hand as one rigid group around the firing
-         * hand. The neutral fire-node direction is latched before use so the
-         * correction does not erase recoil or animation motion.
+         * hand. The neutral fire-node direction is latched in the already-
+         * damped firing-hand frame so the correction preserves hFRIK hand
+         * damping without erasing recoil or animation motion.
          */
         bool applyGunstockAlignment(
             RE::NiNode* weaponNode,
@@ -1157,7 +1157,7 @@ namespace rock
         [[nodiscard]] GunstockAlignmentDebugYieldReason
             currentGunstockAlignmentYieldReason(bool authorityBlocked) const;
         bool populateGunstockAlignmentDebugPrediction(
-            const RE::NiPoint3& neutralControllerLocal);
+            const RE::NiPoint3& neutralHandLocal);
 
         bool applyFiringHandLockedVisual(RE::NiNode* weaponNode, float dt, const RE::NiTransform* liveHandWorld);
 

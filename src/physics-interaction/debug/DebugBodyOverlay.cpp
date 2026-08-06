@@ -2005,8 +2005,8 @@ namespace rock::debug
             case AxisOverlayRole::LeftCustomCalibrationOffset:
                 return kColliderAxisLength;
             case AxisOverlayRole::GunstockFiringController:
-            case AxisOverlayRole::GunstockLeftController:
                 return 14.0f;
+            case AxisOverlayRole::GunstockLeftHand:
             case AxisOverlayRole::GunstockFiringHand:
                 return 10.0f;
             case AxisOverlayRole::GunstockWeaponBefore:
@@ -2086,7 +2086,7 @@ namespace rock::debug
             case AxisOverlayRole::LeftCustomCalibrationOffset:
                 return 0.92f;
             case AxisOverlayRole::GunstockFiringController:
-            case AxisOverlayRole::GunstockLeftController:
+            case AxisOverlayRole::GunstockLeftHand:
             case AxisOverlayRole::GunstockFiringHand:
             case AxisOverlayRole::GunstockWeaponFinal:
             case AxisOverlayRole::GunstockFireNodeFinal:

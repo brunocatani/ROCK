@@ -65,8 +65,8 @@ foreach ($iniPath in @(
 }
 
 Require-Text 'src/physics-interaction/weapon/GunstockAlignmentPolicy.h' `
-    'kRequiredStableSamples\s*=\s*6[\s\S]*kStableSampleCosine[\s\S]*tryCaptureControllerLocalBore[\s\S]*localForward\s*\{\s*0\.0f,\s*1\.0f,\s*0\.0f\s*\}[\s\S]*tryBuildWorldCorrection[\s\S]*targetForwardWorld[\s\S]*rotateRigidlyAroundPivot[\s\S]*precompensateWorldTarget' `
-    'The value-only policy must latch six stable projectile +Y samples, accept an explicit world target, build one rigid correction, and retain recoil precompensation.'
+    'kRequiredStableSamples\s*=\s*6[\s\S]*kStableSampleCosine[\s\S]*neutralHandLocal[\s\S]*tryCaptureHandLocalBore[\s\S]*localForward\s*\{\s*0\.0f,\s*1\.0f,\s*0\.0f\s*\}[\s\S]*tryBuildWorldCorrection[\s\S]*targetForwardWorld[\s\S]*rotateRigidlyAroundPivot[\s\S]*precompensateWorldTarget' `
+    'The value-only policy must latch six stable projectile +Y samples in firing-hand space, build one rigid correction, and retain recoil precompensation.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     '_twoHandedGrip\.update\([\s\S]*getEquippedProjectileNode\(\)[\s\S]*_twoHandedGrip\.applyGunstockAlignment\([\s\S]*reconcileEquippedWeaponHandAssignmentAfterGrip\(\)[\s\S]*_weaponCollision\.update' `
@@ -81,8 +81,17 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'Neutral calibration must be blocked by physical trigger state while correction authority yields across animation/menu boundaries.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'applyGunstockAlignment\([\s\S]*getHandWorldTransform[\s\S]*localWristForward\s*\{\s*1\.0f,\s*0\.0f,\s*0\.0f\s*\}[\s\S]*directionLatch\.latched[\s\S]*tryCaptureControllerLocalBore[\s\S]*tryBuildWorldCorrection[\s\S]*wristForwardWorld[\s\S]*rotateRigidlyAroundPivot[\s\S]*applyWeaponVisualAuthority' `
-    'The runtime must read firing-wrist +X, latch the neutral barrel, rotate the complete group toward that target, and publish the weapon last.'
+    'applyGunstockAlignment\([\s\S]*getHandWorldTransform[\s\S]*localWristForward\s*\{\s*1\.0f,\s*0\.0f,\s*0\.0f\s*\}[\s\S]*directionLatch\.latched[\s\S]*tryCaptureHandLocalBore\([\s\S]*firingHandWorld[\s\S]*tryBuildWorldCorrection<[\s\S]*firingHandWorld[\s\S]*wristForwardWorld[\s\S]*rotateRigidlyAroundPivot[\s\S]*applyWeaponVisualAuthority' `
+    'The runtime must derive its fixed correction entirely from the already-damped firing-hand frame, rotate the complete group, and publish the weapon last.'
+
+$gunstockApply = [regex]::Match(
+    (Read-Source 'src/physics-interaction/weapon/TwoHandedGrip.cpp'),
+    '(?ms)bool\s+TwoHandedGrip::applyGunstockAlignment\s*\(.*?^\s{4}bool\s+TwoHandedGrip::applyWeaponVisualAuthority')
+if (-not $gunstockApply.Success) {
+    $failures.Add('src/physics-interaction/weapon/TwoHandedGrip.cpp: Could not isolate the gunstock alignment implementation.')
+} elseif ($gunstockApply.Value -match 'SecondaryWandNode|primaryWandNode|firingController|controllerWorld') {
+    $failures.Add('src/physics-interaction/weapon/TwoHandedGrip.cpp: Production gunstock correction must not mix raw controller transforms back into the damped firing-hand frame.')
+}
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'supportGripPublishedThisFrame[\s\S]*HandAuthorityRole::[\s\S]*SupportGrip[\s\S]*_hasLastPublishedHandWorld\[supportIndex\][\s\S]*supportHandWorld\s*=\s*_lastPublishedHandWorld\[supportIndex\][\s\S]*else\s*\{[\s\S]*getHandWorldTransform' `
@@ -97,7 +106,7 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'Native/tracked hand correction must use and explicitly clear a dedicated authority tag.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' `
-    'struct\s+GunstockAlignmentDebugSnapshot[\s\S]*std::uintptr_t\s+weaponNodeIdentity[\s\S]*std::uintptr_t\s+fireNodeIdentity[\s\S]*controllerWorld[\s\S]*leftControllerWorld[\s\S]*weaponWorldBefore[\s\S]*finalFireNodeWorld[\s\S]*leftControllerValid[\s\S]*published' `
+    'struct\s+GunstockAlignmentDebugSnapshot[\s\S]*std::uintptr_t\s+weaponNodeIdentity[\s\S]*std::uintptr_t\s+fireNodeIdentity[\s\S]*controllerWorld[\s\S]*leftHandWorld[\s\S]*weaponWorldBefore[\s\S]*finalFireNodeWorld[\s\S]*leftHandValid[\s\S]*published' `
     'The renderer bridge must be a value-only coherent snapshot with non-dereferenced identity witnesses.'
 
 $gunstockSnapshot = [regex]::Match(
@@ -114,16 +123,28 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'Behavior-off diagnostics must compute a read-only correction preview and final live readback.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'prepareGunstockAlignmentDebugSnapshot[\s\S]*SecondaryWandNode[\s\S]*snapshot\.leftControllerWorld\s*=\s*leftController->world[\s\S]*snapshot\.leftControllerValid\s*=\s*true' `
-    'The gunstock snapshot must capture the physical left controller independently of firing-hand selection.'
+    'prepareGunstockAlignmentDebugSnapshot[\s\S]*getHandWorldTransform\([\s\S]*handFromBool\(_firingHandIsLeft\)[\s\S]*if\s*\(_firingHandIsLeft\)[\s\S]*snapshot\.leftHandWorld\s*=\s*firingHandWorld[\s\S]*if\s*\(!_firingHandIsLeft\)[\s\S]*getHandWorldTransform\([\s\S]*handFromBool\(true\)[\s\S]*snapshot\.leftHandWorld\s*=\s*leftHandWorld[\s\S]*snapshot\.leftHandValid\s*=\s*true' `
+    'The gunstock snapshot must capture the left hand from the same hFRIK hand-bone authority as the firing-hand triad and reuse the firing sample when left-handed.'
 
 Require-Text 'src/physics-interaction/debug/DebugBodyOverlay.h' `
-    'GunstockFiringController[\s\S]*GunstockLeftController[\s\S]*GunstockFireNodeFinal[\s\S]*GunstockWristForward[\s\S]*GunstockCorrectionArc[\s\S]*GunstockCorrectionAxis' `
+    'GunstockFiringController[\s\S]*GunstockLeftHand[\s\S]*GunstockFireNodeFinal[\s\S]*GunstockWristForward[\s\S]*GunstockCorrectionArc[\s\S]*GunstockCorrectionAxis' `
     'The existing bounded overlay must own explicit gunstock axis, ray, pivot, and correction-arc roles.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
-    'drawGunstockAlignment[\s\S]*getGunstockAlignmentDebugSnapshot[\s\S]*kCorrectionArcSegments\s*=\s*16[\s\S]*leftControllerValid[\s\S]*!snapshot\.firingHandIsLeft[\s\S]*GunstockLeftController[\s\S]*FIRING WRIST \+X - GUNSTOCK FORWARD[\s\S]*ACTUAL FINAL LIVE FIRE \+Y[\s\S]*neutralResidual[\s\S]*liveDeviation[\s\S]*dataAge=0' `
+    'drawGunstockAlignment[\s\S]*getGunstockAlignmentDebugSnapshot[\s\S]*kCorrectionArcSegments\s*=\s*16[\s\S]*leftHandValid[\s\S]*!snapshot\.firingHandIsLeft[\s\S]*GunstockLeftHand[\s\S]*FIRING WRIST \+X - GUNSTOCK FORWARD[\s\S]*ACTUAL FINAL LIVE FIRE \+Y[\s\S]*neutralResidual[\s\S]*liveDeviation[\s\S]*dataAge=0' `
     'The visualizer must render bounded tripods, comparison rays, a fixed correction arc, and current-frame status.'
+
+Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' `
+    'leftControllerWorld|leftControllerValid' `
+    'The gunstock snapshot must not retain the superseded left-controller diagnostic sample.'
+
+Reject-Text 'src/physics-interaction/debug/DebugBodyOverlay.h' `
+    'GunstockLeftController' `
+    'The gunstock overlay must not retain the superseded left-controller triad role.'
+
+Reject-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
+    'leftControllerWorld|leftControllerValid|GunstockLeftController' `
+    'The gunstock visualizer must draw the left hand-bone triad instead of the superseded left-controller triad.'
 
 Reject-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
     'CONTROLLER \+Y - GUNSTOCK FORWARD|controllerAxis=\+Y' `

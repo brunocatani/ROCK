@@ -562,11 +562,11 @@
                     debug::AxisOverlayRole::GunstockFiringController,
                     {},
                     false);
-                if (snapshot.leftControllerValid &&
+                if (snapshot.leftHandValid &&
                     !snapshot.firingHandIsLeft) {
                     addAxisTransform(
-                        snapshot.leftControllerWorld,
-                        debug::AxisOverlayRole::GunstockLeftController,
+                        snapshot.leftHandWorld,
+                        debug::AxisOverlayRole::GunstockLeftHand,
                         {},
                         false);
                 }
@@ -880,12 +880,9 @@
                         snapshot.publicationSequence));
                 addStatusLine(
                     2,
-                    "targetAxis=wrist+X fireAxis=+Y candidate=%u/%u pivot=%s",
+                    "targetAxis=wrist+X fireAxis=+Y candidate=%u/%u pivot=hand",
                     snapshot.candidateSamples,
-                    gunstock_alignment_policy::kRequiredStableSamples,
-                    snapshot.pivotUsesControllerFallback ?
-                        "controller" :
-                        "hand");
+                    gunstock_alignment_policy::kRequiredStableSamples);
                 addStatusLine(
                     3,
                     "unaligned=%.2f correction=%.2f neutralResidual=%.3f deg",

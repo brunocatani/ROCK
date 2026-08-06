@@ -17,7 +17,7 @@ namespace rock::gunstock_alignment_policy
     struct DirectionLatch
     {
         Vector candidateSum{};
-        Vector neutralControllerLocal{};
+        Vector neutralHandLocal{};
         std::uint32_t candidateSamples{ 0 };
         bool latched{ false };
     };
@@ -115,7 +115,7 @@ namespace rock::gunstock_alignment_policy
 
         if (!tryNormalizeDirection(
                 state.candidateSum,
-                state.neutralControllerLocal)) {
+                state.neutralHandLocal)) {
             resetCandidate(state);
             return false;
         }
@@ -127,17 +127,20 @@ namespace rock::gunstock_alignment_policy
     /*
      * EquippedWeaponData::fireNode is ROCK's authoritative projectile frame.
      * Its stored local +Y axis is the same direction published by the provider
-     * muzzle snapshot. Capture it in controller space only while the weapon is
-     * neutral; the latched value must not follow live recoil.
+     * muzzle snapshot. Capture it in the already-presented firing-hand frame
+     * only while the weapon is neutral. That frame already contains hFRIK's
+     * hand damping, so the fixed additive correction follows the damped hand
+     * without mixing a raw wand sample back into the final authority target.
+     * The latched value must not follow live recoil.
      */
     template <class Transform, class Vector>
-    [[nodiscard]] inline bool tryCaptureControllerLocalBore(
-        const Transform& controllerWorld,
+    [[nodiscard]] inline bool tryCaptureHandLocalBore(
+        const Transform& firingHandWorld,
         const Transform& projectileWorld,
-        Vector& outControllerLocalBore)
+        Vector& outHandLocalBore)
     {
-        outControllerLocalBore = {};
-        if (!usableTransform(controllerWorld) ||
+        outHandLocalBore = {};
+        if (!usableTransform(firingHandWorld) ||
             !usableTransform(projectileWorld)) {
             return false;
         }
@@ -145,31 +148,31 @@ namespace rock::gunstock_alignment_policy
         const Vector localForward{ 0.0f, 1.0f, 0.0f };
         const Vector boreWorld =
             transform_math::localVectorToWorld(projectileWorld, localForward);
-        const Vector boreControllerLocal =
+        const Vector boreHandLocal =
             transform_math::worldVectorToLocal(
-                controllerWorld,
+                firingHandWorld,
                 boreWorld);
         return tryNormalizeDirection(
-            boreControllerLocal,
-            outControllerLocalBore);
+            boreHandLocal,
+            outHandLocalBore);
     }
 
     template <class Transform, class Matrix, class Vector>
     [[nodiscard]] inline bool tryBuildWorldCorrection(
-        const Transform& controllerWorld,
-        const Vector& neutralControllerLocal,
+        const Transform& firingHandWorld,
+        const Vector& neutralHandLocal,
         const Vector& targetForwardWorld,
         Matrix& outCorrection,
         float* outDirectionDot = nullptr)
     {
         outCorrection = transform_math::makeIdentityRotation<Matrix>();
-        if (!usableTransform(controllerWorld)) {
+        if (!usableTransform(firingHandWorld)) {
             return false;
         }
 
         Vector neutralLocal{};
         if (!tryNormalizeDirection(
-                neutralControllerLocal,
+                neutralHandLocal,
                 neutralLocal)) {
             return false;
         }
@@ -178,7 +181,7 @@ namespace rock::gunstock_alignment_policy
         Vector targetWorld{};
         if (!tryNormalizeDirection(
                 transform_math::localVectorToWorld(
-                    controllerWorld,
+                    firingHandWorld,
                     neutralLocal),
                 expectedNeutralWorld) ||
             !tryNormalizeDirection(
