@@ -3089,12 +3089,23 @@ namespace rock
                     _twoHandedGrip.isFiringHandLeft(),
                     input_remap_policy::
                         kOpenVrSteamVrTriggerButtonId);
+            RE::NiAVObject* gunstockProjectileNode =
+                (g_rockConfig.
+                         rockGunstockAlignBarrelToControllerForward ||
+                    g_rockConfig.rockDebugDrawGunstockAlignment) ?
+                getEquippedProjectileNode() :
+                nullptr;
+            _twoHandedGrip.prepareGunstockAlignmentDebugSnapshot(
+                weaponNode,
+                gunstockProjectileNode,
+                _weaponCollision.
+                    getCurrentObservedEquippedWeaponFormID(),
+                currentWeaponGenerationKey,
+                gunstockNeutralSampleBlocked,
+                frame.reloadBoundaryActive || frame.menuBlocked);
             (void)_twoHandedGrip.applyGunstockAlignment(
                 weaponNode,
-                g_rockConfig.
-                        rockGunstockAlignBarrelToControllerForward ?
-                    getEquippedProjectileNode() :
-                    nullptr,
+                gunstockProjectileNode,
                 currentWeaponGenerationKey,
                 gunstockNeutralSampleBlocked,
                 frame.reloadBoundaryActive || frame.menuBlocked);
@@ -3425,6 +3436,10 @@ namespace rock
             if (f4vr::isNodeVisible(weaponNode)) {
                 applyFinalWeaponMuzzleAuthority();
             }
+            _twoHandedGrip.finalizeGunstockAlignmentDebugSnapshot(
+                weaponNode,
+                gunstockProjectileNode,
+                currentWeaponGenerationKey);
         }
         refreshGeneratedBodyContactRegistry();
         updateSelection(frame);

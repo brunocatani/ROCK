@@ -2004,6 +2004,16 @@ namespace rock::debug
             case AxisOverlayRole::RightCustomCalibrationOffset:
             case AxisOverlayRole::LeftCustomCalibrationOffset:
                 return kColliderAxisLength;
+            case AxisOverlayRole::GunstockFiringController:
+                return 14.0f;
+            case AxisOverlayRole::GunstockFiringHand:
+                return 10.0f;
+            case AxisOverlayRole::GunstockWeaponBefore:
+                return 12.0f;
+            case AxisOverlayRole::GunstockWeaponFinal:
+                return 14.0f;
+            case AxisOverlayRole::GunstockFireNodeFinal:
+                return 16.0f;
             case AxisOverlayRole::TargetBody:
                 return kTargetAxisLength;
             }
@@ -2074,6 +2084,13 @@ namespace rock::debug
             case AxisOverlayRole::RightCustomCalibrationOffset:
             case AxisOverlayRole::LeftCustomCalibrationOffset:
                 return 0.92f;
+            case AxisOverlayRole::GunstockFiringController:
+            case AxisOverlayRole::GunstockFiringHand:
+            case AxisOverlayRole::GunstockWeaponFinal:
+            case AxisOverlayRole::GunstockFireNodeFinal:
+                return 0.98f;
+            case AxisOverlayRole::GunstockWeaponBefore:
+                return 0.58f;
             default:
                 return 1.0f;
             }
@@ -2625,6 +2642,55 @@ namespace rock::debug
                 color[1] = 0.12f;
                 color[2] = 0.05f;
                 color[3] = 0.98f;
+                break;
+            case MarkerOverlayRole::GunstockControllerForward:
+                color[0] = 0.10f;
+                color[1] = 1.0f;
+                color[2] = 0.16f;
+                color[3] = 1.0f;
+                break;
+            case MarkerOverlayRole::GunstockNeutralFireBefore:
+                color[0] = 1.0f;
+                color[1] = 0.42f;
+                color[2] = 0.04f;
+                color[3] = 1.0f;
+                break;
+            case MarkerOverlayRole::GunstockWeaponRootForward:
+            case MarkerOverlayRole::GunstockCorrectionArc:
+                color[0] = 1.0f;
+                color[1] = 0.86f;
+                color[2] = 0.05f;
+                color[3] = 0.96f;
+                break;
+            case MarkerOverlayRole::GunstockPredictedNeutral:
+                color[0] = 0.05f;
+                color[1] = 0.95f;
+                color[2] = 1.0f;
+                color[3] = 1.0f;
+                break;
+            case MarkerOverlayRole::GunstockFinalLiveFire:
+                color[0] = 1.0f;
+                color[1] = 1.0f;
+                color[2] = 1.0f;
+                color[3] = 1.0f;
+                break;
+            case MarkerOverlayRole::GunstockOppositeFire:
+                color[0] = 0.42f;
+                color[1] = 0.42f;
+                color[2] = 0.42f;
+                color[3] = 0.72f;
+                break;
+            case MarkerOverlayRole::GunstockPivot:
+                color[0] = 1.0f;
+                color[1] = 0.12f;
+                color[2] = 0.92f;
+                color[3] = 1.0f;
+                break;
+            case MarkerOverlayRole::GunstockCorrectionAxis:
+                color[0] = 0.82f;
+                color[1] = 0.32f;
+                color[2] = 1.0f;
+                color[3] = 0.95f;
                 break;
             case MarkerOverlayRole::RightRootFlattenedFingerSkeleton:
                 color[0] = 0.05f;
