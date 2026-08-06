@@ -77,8 +77,12 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'Final alignment must run after the support/tandem solve and before downstream collision, with debug finalization after muzzle authority.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'isRawButtonPhysicallyHeld\([\s\S]*kOpenVrSteamVrTriggerButtonId[\s\S]*gunstockNeutralSampleBlocked[\s\S]*frame\.reloadBoundaryActive\s*\|\|\s*frame\.menuBlocked' `
-    'Neutral calibration must be blocked by physical trigger state while final authority yields at reload/menu boundaries.'
+    'gunstockPresentationBlocked\s*=\s*frame\.menuBlocked[\s\S]*gunstockNeutralSampleBlocked\s*=[\s\S]*isRawButtonPhysicallyHeld\([\s\S]*kOpenVrSteamVrTriggerButtonId\)[\s\S]*\|\|\s*frame\.reloadBoundaryActive[\s\S]*prepareGunstockAlignmentDebugSnapshot\([\s\S]*gunstockNeutralSampleBlocked,\s*frame\.menuBlocked\)[\s\S]*applyGunstockAlignment\([\s\S]*gunstockNeutralSampleBlocked,\s*frame\.menuBlocked\)' `
+    'Trigger and arms/hands animation authority must block only neutral calibration while the final latched presentation yields only at hard menu authority.'
+
+Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'gunstock(?:Alignment|Presentation)Blocked\s*=\s*frame\.reloadBoundaryActive|gunstockNeutralSampleBlocked,\s*frame\.reloadBoundaryActive' `
+    'Arms/hands animation authority must never suppress an already-latched gunstock presentation.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'tryResolveGunstockPhysicalFiringFrame[\s\S]*SecondaryMeleeWeaponOffsetNode2[\s\S]*primaryWeaponOffsetNOde[\s\S]*_leftNaturalBoneInDampedDriver[\s\S]*_rightNaturalBoneInDampedDriver[\s\S]*localWristForward\s*\{\s*1\.0f,\s*0\.0f,\s*0\.0f\s*\}[\s\S]*applyGunstockAlignment\([\s\S]*tryCaptureHandLocalBore\([\s\S]*tryResolveGunstockPrimaryGroupCorrection[\s\S]*rotateRigidlyAroundPivot[\s\S]*applyWeaponVisualAuthority' `
@@ -117,9 +121,22 @@ $gunstockYield = [regex]::Match(
     '(?ms)TwoHandedGrip::currentGunstockAlignmentYieldReason\s*\(.*?^\s{4}bool\s+TwoHandedGrip::tryResolveGunstockPhysicalFiringFrame')
 if (-not $gunstockYield.Success) {
     $failures.Add('src/physics-interaction/weapon/TwoHandedGrip.cpp: Could not isolate gunstock yield policy.')
-} elseif ($gunstockYield.Value -match 'isWeaponVisualReturnActive|isHandVisualReturnActive') {
-    $failures.Add('src/physics-interaction/weapon/TwoHandedGrip.cpp: Final alignment must compose after weapon and hand returns instead of exposing an unaligned frame.')
+} else {
+    if ($gunstockYield.Value -match 'isWeaponVisualReturnActive|isHandVisualReturnActive') {
+        $failures.Add('src/physics-interaction/weapon/TwoHandedGrip.cpp: Final alignment must compose after weapon and hand returns instead of exposing an unaligned frame.')
+    }
+    if ($gunstockYield.Value -match '_scopeMenuOpenThisFrame|_scopeMenuClosedThisFrame|ScopeTransition') {
+        $failures.Add('src/physics-interaction/weapon/TwoHandedGrip.cpp: Scope presentation must retain an already-latched gunstock correction.')
+    }
 }
+
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'neutralSampleBlocked\s*=\s*calibrationSampleBlocked\s*\|\|\s*_scopeMenuOpenThisFrame\s*\|\|\s*_scopeMenuClosedThisFrame[\s\S]*if \(!directionLatch\.latched\)[\s\S]*if \(neutralSampleBlocked\)[\s\S]*gunstock retaining latched presentation while neutral sampling is blocked[\s\S]*tryResolveGunstockPrimaryGroupCorrection' `
+    'Scope/firing instability must stop only pre-latch sampling and the latched correction must continue through that boundary.'
+
+Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' `
+    '(?m)^\s*ScopeTransition\s*,' `
+    'The debug contract must not retain a stale scope-yield state after scope continuity is enforced.'
 
 $gunstockApply = [regex]::Match(
     (Read-Source 'src/physics-interaction/weapon/TwoHandedGrip.cpp'),

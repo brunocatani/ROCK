@@ -787,9 +787,7 @@
                     case GunstockAlignmentDebugYieldReason::DampedDriverUnavailable:
                         return "damped-driver-unavailable";
                     case GunstockAlignmentDebugYieldReason::AuthorityBlocked:
-                        return "reload-or-menu-authority";
-                    case GunstockAlignmentDebugYieldReason::ScopeTransition:
-                        return "scope-transition";
+                        return "presentation-authority-blocked";
                     case GunstockAlignmentDebugYieldReason::PartCarry:
                         return "part-carry";
                     case GunstockAlignmentDebugYieldReason::WeaponVisualReturn:

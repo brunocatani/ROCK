@@ -3057,8 +3057,7 @@ namespace rock
                 .manualScopeActivationRequested = manualScopeActivationRequested,
                 .nativeScopeRequestStateValid = nativeScopeRequestStateValid,
                 .nativeScopeRequestActive = nativeScopeRequestActive,
-                .gunstockAlignmentBlocked =
-                    frame.reloadBoundaryActive || frame.menuBlocked,
+                .gunstockPresentationBlocked = frame.menuBlocked,
                 .leftHandDriverFrame = leftHandDriverFrame,
                 .rightHandDriverFrame = rightHandDriverFrame,
                 .primaryGripInput = primaryGripInput,
@@ -3086,10 +3085,11 @@ namespace rock
                 effectiveHandlingSettings);
             const bool gunstockNeutralSampleBlocked =
                 g_rockConfig.rockGunstockModeEnabled &&
-                input_remap_runtime::isRawButtonPhysicallyHeld(
-                    _twoHandedGrip.isFiringHandLeft(),
-                    input_remap_policy::
-                        kOpenVrSteamVrTriggerButtonId);
+                (input_remap_runtime::isRawButtonPhysicallyHeld(
+                     _twoHandedGrip.isFiringHandLeft(),
+                     input_remap_policy::
+                         kOpenVrSteamVrTriggerButtonId) ||
+                    frame.reloadBoundaryActive);
             RE::NiAVObject* gunstockProjectileNode =
                 (g_rockConfig.rockGunstockModeEnabled ||
                     g_rockConfig.rockDebugDrawGunstockAlignment) ?
@@ -3102,13 +3102,13 @@ namespace rock
                     getCurrentObservedEquippedWeaponFormID(),
                 currentWeaponGenerationKey,
                 gunstockNeutralSampleBlocked,
-                frame.reloadBoundaryActive || frame.menuBlocked);
+                frame.menuBlocked);
             (void)_twoHandedGrip.applyGunstockAlignment(
                 weaponNode,
                 gunstockProjectileNode,
                 currentWeaponGenerationKey,
                 gunstockNeutralSampleBlocked,
-                frame.reloadBoundaryActive || frame.menuBlocked);
+                frame.menuBlocked);
             reconcileEquippedWeaponHandAssignmentAfterGrip();
             if (_twoHandedGrip.hasVisualAuthorityForHand(false)) {
                 _rightHand.cancelGrabVisualReturn("equipped-weapon-visual-authority");

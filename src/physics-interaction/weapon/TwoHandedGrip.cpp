@@ -1831,7 +1831,7 @@ namespace rock
     {
         _handlingSettings = handlingSettings;
         _gunstockAlignmentBlockedThisFrame =
-            frameInput.gunstockAlignmentBlocked;
+            frameInput.gunstockPresentationBlocked;
         setGrabbedObjectHandPoseOwnership(
             frameInput.leftHandHoldingObject,
             frameInput.rightHandHoldingObject);
@@ -6601,6 +6601,7 @@ namespace rock
         _gunstockAlignment = {};
         _gunstockWaitingLogged = false;
         _gunstockYieldLogged = false;
+        _gunstockLatchedContinuityLogged = false;
         _gunstockProjectileWitnessMissingLogged = false;
         if (hadState) {
             ROCK_LOG_DEBUG(
@@ -6620,9 +6621,6 @@ namespace rock
 
         if (authorityBlocked) {
             return GunstockAlignmentDebugYieldReason::AuthorityBlocked;
-        }
-        if (_scopeMenuOpenThisFrame || _scopeMenuClosedThisFrame) {
-            return GunstockAlignmentDebugYieldReason::ScopeTransition;
         }
         if (_state == TwoHandedState::PartCarry) {
             return GunstockAlignmentDebugYieldReason::PartCarry;
@@ -7154,6 +7152,10 @@ namespace rock
             return;
         }
 
+        const bool neutralSampleBlocked =
+            calibrationSampleBlocked ||
+            _scopeMenuOpenThisFrame ||
+            _scopeMenuClosedThisFrame;
         snapshot.yieldReason =
             currentGunstockAlignmentYieldReason(authorityBlocked);
         if (snapshot.yieldReason !=
@@ -7164,7 +7166,7 @@ namespace rock
         if (!runtimeIdentityMatches ||
             !_gunstockAlignment.directionLatch.latched) {
             snapshot.state = GunstockAlignmentDebugState::Waiting;
-            snapshot.yieldReason = calibrationSampleBlocked ?
+            snapshot.yieldReason = neutralSampleBlocked ?
                 GunstockAlignmentDebugYieldReason::NeutralSampleBlocked :
                 GunstockAlignmentDebugYieldReason::NeutralSampleCollecting;
             return;
@@ -7353,6 +7355,13 @@ namespace rock
 
         const bool projectileWitnessUsable =
             projectileNode && isFiniteTransform(projectileNode->world);
+        const bool neutralSampleBlocked =
+            calibrationSampleBlocked ||
+            _scopeMenuOpenThisFrame ||
+            _scopeMenuClosedThisFrame;
+        if (!neutralSampleBlocked) {
+            _gunstockLatchedContinuityLogged = false;
+        }
 
         const bool supportHandIsLeft = !_firingHandIsLeft;
         const bool supportHandParticipates =
@@ -7401,7 +7410,7 @@ namespace rock
                 return false;
             }
             _gunstockProjectileWitnessMissingLogged = false;
-            if (calibrationSampleBlocked) {
+            if (neutralSampleBlocked) {
                 gunstock_alignment_policy::resetCandidate(directionLatch);
                 if (!_gunstockWaitingLogged) {
                     _gunstockWaitingLogged = true;
@@ -7447,6 +7456,18 @@ namespace rock
             }
         } else {
             _gunstockProjectileWitnessMissingLogged = false;
+        }
+
+        if (neutralSampleBlocked &&
+            !_gunstockLatchedContinuityLogged) {
+            _gunstockLatchedContinuityLogged = true;
+            ROCK_LOG_DEBUG(
+                Weapon,
+                "TwoHandedGrip: gunstock retaining latched presentation while neutral sampling is blocked state={} scope={} firingHand={}",
+                static_cast<int>(_state),
+                _scopeMenuOpenThisFrame ? "open" :
+                    (_scopeMenuClosedThisFrame ? "closing" : "closed"),
+                _firingHandIsLeft ? "left" : "right");
         }
 
         RE::NiMatrix3 correction{};

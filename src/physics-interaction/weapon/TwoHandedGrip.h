@@ -86,9 +86,9 @@ namespace rock
         bool manualScopeActivationRequested{ false };
         bool nativeScopeRequestStateValid{ false };
         bool nativeScopeRequestActive{ false };
-        // The same animation/menu boundary that gates the final primary-axis
-        // correction also gates neutral-bore sampling.
-        bool gunstockAlignmentBlocked{ false };
+        // Hard presentation boundary only. Arms/hands animation authority
+        // blocks new neutral-bore samples but must not drop a latched pose.
+        bool gunstockPresentationBlocked{ false };
         EquippedWeaponScopeHandDriverFrame leftHandDriverFrame{};
         EquippedWeaponScopeHandDriverFrame rightHandDriverFrame{};
         // Grab state of the CURRENT firing hand (debounced release), read by
@@ -125,7 +125,6 @@ namespace rock
         WeaponHidden,
         DampedDriverUnavailable,
         AuthorityBlocked,
-        ScopeTransition,
         PartCarry,
         WeaponVisualReturn,
         HandVisualReturn,
@@ -1399,6 +1398,7 @@ namespace rock
         std::array<bool, 2> _gunstockHandAuthorityActive{};
         bool _gunstockWaitingLogged{ false };
         bool _gunstockYieldLogged{ false };
+        bool _gunstockLatchedContinuityLogged{ false };
         bool _gunstockProjectileWitnessMissingLogged{ false };
         bool _gunstockAlignmentBlockedThisFrame{ false };
 
