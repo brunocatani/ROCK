@@ -165,6 +165,7 @@ namespace rock
         TwoHandedState gripState{ TwoHandedState::Inactive };
 
         RE::NiTransform controllerWorld{};
+        RE::NiTransform leftControllerWorld{};
         RE::NiTransform firingHandWorld{};
         RE::NiTransform weaponWorldBefore{};
         RE::NiTransform predictedWeaponWorld{};
@@ -192,6 +193,7 @@ namespace rock
         bool behaviorEnabled{ false };
         bool firingHandIsLeft{ false };
         bool controllerValid{ false };
+        bool leftControllerValid{ false };
         bool firingHandValid{ false };
         bool pivotUsesControllerFallback{ false };
         bool weaponBeforeValid{ false };

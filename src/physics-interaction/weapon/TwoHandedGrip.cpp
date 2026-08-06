@@ -6568,11 +6568,19 @@ namespace rock
         }
 
         auto* playerNodes = f4vr::getPlayerNodes();
+        RE::NiNode* leftController =
+            playerNodes ? playerNodes->SecondaryWandNode : nullptr;
         RE::NiNode* firingController = playerNodes ?
             (_firingHandIsLeft ?
-                    playerNodes->SecondaryWandNode :
+                    leftController :
                     playerNodes->primaryWandNode) :
             nullptr;
+
+        if (leftController &&
+            isFiniteTransform(leftController->world)) {
+            snapshot.leftControllerWorld = leftController->world;
+            snapshot.leftControllerValid = true;
+        }
         if (!firingController ||
             !isFiniteTransform(firingController->world)) {
             snapshot.yieldReason =

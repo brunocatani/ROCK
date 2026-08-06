@@ -97,7 +97,7 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'Native/tracked hand correction must use and explicitly clear a dedicated authority tag.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' `
-    'struct\s+GunstockAlignmentDebugSnapshot[\s\S]*std::uintptr_t\s+weaponNodeIdentity[\s\S]*std::uintptr_t\s+fireNodeIdentity[\s\S]*controllerWorld[\s\S]*weaponWorldBefore[\s\S]*finalFireNodeWorld[\s\S]*published' `
+    'struct\s+GunstockAlignmentDebugSnapshot[\s\S]*std::uintptr_t\s+weaponNodeIdentity[\s\S]*std::uintptr_t\s+fireNodeIdentity[\s\S]*controllerWorld[\s\S]*leftControllerWorld[\s\S]*weaponWorldBefore[\s\S]*finalFireNodeWorld[\s\S]*leftControllerValid[\s\S]*published' `
     'The renderer bridge must be a value-only coherent snapshot with non-dereferenced identity witnesses.'
 
 $gunstockSnapshot = [regex]::Match(
@@ -113,12 +113,16 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'populateGunstockAlignmentDebugPrediction[\s\S]*prepareGunstockAlignmentDebugSnapshot[\s\S]*AlignmentDisabled[\s\S]*finalizeGunstockAlignmentDebugSnapshot[\s\S]*finalLiveFireWorld' `
     'Behavior-off diagnostics must compute a read-only correction preview and final live readback.'
 
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'prepareGunstockAlignmentDebugSnapshot[\s\S]*SecondaryWandNode[\s\S]*snapshot\.leftControllerWorld\s*=\s*leftController->world[\s\S]*snapshot\.leftControllerValid\s*=\s*true' `
+    'The gunstock snapshot must capture the physical left controller independently of firing-hand selection.'
+
 Require-Text 'src/physics-interaction/debug/DebugBodyOverlay.h' `
-    'GunstockFiringController[\s\S]*GunstockFireNodeFinal[\s\S]*GunstockWristForward[\s\S]*GunstockCorrectionArc[\s\S]*GunstockCorrectionAxis' `
+    'GunstockFiringController[\s\S]*GunstockLeftController[\s\S]*GunstockFireNodeFinal[\s\S]*GunstockWristForward[\s\S]*GunstockCorrectionArc[\s\S]*GunstockCorrectionAxis' `
     'The existing bounded overlay must own explicit gunstock axis, ray, pivot, and correction-arc roles.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
-    'drawGunstockAlignment[\s\S]*getGunstockAlignmentDebugSnapshot[\s\S]*kCorrectionArcSegments\s*=\s*16[\s\S]*FIRING WRIST \+X - GUNSTOCK FORWARD[\s\S]*ACTUAL FINAL LIVE FIRE \+Y[\s\S]*neutralResidual[\s\S]*liveDeviation[\s\S]*dataAge=0' `
+    'drawGunstockAlignment[\s\S]*getGunstockAlignmentDebugSnapshot[\s\S]*kCorrectionArcSegments\s*=\s*16[\s\S]*leftControllerValid[\s\S]*!snapshot\.firingHandIsLeft[\s\S]*GunstockLeftController[\s\S]*FIRING WRIST \+X - GUNSTOCK FORWARD[\s\S]*ACTUAL FINAL LIVE FIRE \+Y[\s\S]*neutralResidual[\s\S]*liveDeviation[\s\S]*dataAge=0' `
     'The visualizer must render bounded tripods, comparison rays, a fixed correction arc, and current-frame status.'
 
 Reject-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `

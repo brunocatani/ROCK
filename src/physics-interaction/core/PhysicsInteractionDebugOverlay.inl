@@ -562,6 +562,14 @@
                     debug::AxisOverlayRole::GunstockFiringController,
                     {},
                     false);
+                if (snapshot.leftControllerValid &&
+                    !snapshot.firingHandIsLeft) {
+                    addAxisTransform(
+                        snapshot.leftControllerWorld,
+                        debug::AxisOverlayRole::GunstockLeftController,
+                        {},
+                        false);
+                }
                 if (snapshot.firingHandValid) {
                     addAxisTransform(
                         snapshot.firingHandWorld,

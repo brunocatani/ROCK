@@ -89,6 +89,7 @@ namespace rock::debug
         RightCustomCalibrationOffset,
         LeftCustomCalibrationOffset,
         GunstockFiringController,
+        GunstockLeftController,
         GunstockFiringHand,
         GunstockWeaponBefore,
         GunstockWeaponFinal,
