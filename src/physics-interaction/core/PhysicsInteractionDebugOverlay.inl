@@ -572,6 +572,21 @@
                         {},
                         false);
                 }
+                if (snapshot.renderedFiringHandValid) {
+                    addAxisTransform(
+                        snapshot.renderedFiringHandWorld,
+                        debug::AxisOverlayRole::
+                            GunstockRenderedFiringHand,
+                        {},
+                        false);
+                    addTextLineSized(
+                        weaponSolverAdd(
+                            snapshot.renderedFiringHandWorld.translate,
+                            labelOffset),
+                        1.45f,
+                        finalColor,
+                        "RENDERED FIRING HAND BONE");
+                }
                 addAxisTransform(
                     snapshot.weaponWorldBefore,
                     debug::AxisOverlayRole::GunstockWeaponBefore,
@@ -776,6 +791,8 @@
                         return "none";
                     case GunstockAlignmentDebugYieldReason::AlignmentDisabled:
                         return "alignment-disabled";
+                    case GunstockAlignmentDebugYieldReason::WeaponNotEligible:
+                        return "weapon-not-eligible";
                     case GunstockAlignmentDebugYieldReason::WeaponOrFireNodeUnavailable:
                         return "weapon-or-fire-node-unavailable";
                     case GunstockAlignmentDebugYieldReason::SkeletonUnavailable:
@@ -857,8 +874,9 @@
                     };
                 addStatusLine(
                     0,
-                    "GUNSTOCK DEBUG behavior=%s state=%s hand=%s source=fire-node target=wrist+X",
+                    "GUNSTOCK DEBUG behavior=%s eligible=%s state=%s hand=%s source=fire-node target=wrist+X",
                     snapshot.behaviorEnabled ? "on" : "off",
+                    snapshot.weaponEligible ? "yes" : "no",
                     stateName(snapshot.state),
                     snapshot.firingHandIsLeft ? "left" : "right");
                 addStatusLine(
@@ -890,6 +908,12 @@
                     snapshot.finalWeaponPredictionErrorGameUnits);
                 addStatusLine(
                     5,
+                    "renderedRelation=%s error=(%.4f gu, %.3f deg)",
+                    snapshot.renderedFiringRelationValid ? "valid" : "n/a",
+                    snapshot.renderedFiringRelationPositionErrorGameUnits,
+                    snapshot.renderedFiringRelationRotationErrorDegrees);
+                addStatusLine(
+                    6,
                     "yieldReason=%s gripState=%d dataAge=0%s",
                     yieldReasonName(snapshot.yieldReason),
                     static_cast<int>(snapshot.gripState),

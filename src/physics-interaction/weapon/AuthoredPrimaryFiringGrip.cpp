@@ -444,6 +444,8 @@ namespace rock
                     input.rockFiringHandIsLeft));
         RE::NiTransform gunstockTrackedHandWorld{};
         if (weaponAuthority.tryGetGunstockTrackedFiringHandWorld(
+                input.weaponNode,
+                input.weaponGenerationKey,
                 gunstockTrackedHandWorld)) {
             trackedHandWorld = gunstockTrackedHandWorld;
         }

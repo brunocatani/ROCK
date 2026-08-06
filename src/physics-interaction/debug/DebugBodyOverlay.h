@@ -90,6 +90,7 @@ namespace rock::debug
         LeftCustomCalibrationOffset,
         GunstockLeftHand,
         GunstockFiringHand,
+        GunstockRenderedFiringHand,
         GunstockSupportInputBone,
         GunstockCalibratedSupportBone,
         GunstockGripTargetHand,

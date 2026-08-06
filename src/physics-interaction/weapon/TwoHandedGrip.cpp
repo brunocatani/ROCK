@@ -1307,7 +1307,7 @@ namespace rock
         }
 
         const float frameDeltaSeconds = std::isfinite(dt) && dt > 0.0f ? (std::min)(dt, 0.1f) : (1.0f / 90.0f);
-        const auto refreshHand = [this, driverFrameAuthorityStoppedThisFrame, frameDeltaSeconds](bool isLeft, const EquippedWeaponScopeHandDriverFrame& driverFrame) {
+        const auto refreshHand = [this, weaponNode, driverFrameAuthorityStoppedThisFrame, frameDeltaSeconds](bool isLeft, const EquippedWeaponScopeHandDriverFrame& driverFrame) {
             ScopeSafeHandFrameState& state = _scopeSafeHandFrames[isLeft ? 0u : 1u];
             state.currentHandWorldValid = false;
 
@@ -1389,6 +1389,9 @@ namespace rock
 
                 const bool preserveGunstockPhysicalRelation =
                     g_rockConfig.rockGunstockModeEnabled &&
+                    _gunstockWeaponEligibility.eligible &&
+                    _gunstockWeaponEligibility.weaponNodeIdentity ==
+                        reinterpret_cast<std::uintptr_t>(weaponNode) &&
                     isLeft == _firingHandIsLeft &&
                     (isLeft ?
                             _hasLeftNaturalBoneInDampedDriver :
@@ -1430,7 +1433,10 @@ namespace rock
         refreshHand(true, frameInput.leftHandDriverFrame);
         refreshHand(false, frameInput.rightHandDriverFrame);
 
-        if (g_rockConfig.rockGunstockModeEnabled) {
+        if (g_rockConfig.rockGunstockModeEnabled &&
+            _gunstockWeaponEligibility.eligible &&
+            _gunstockWeaponEligibility.weaponNodeIdentity ==
+                reinterpret_cast<std::uintptr_t>(weaponNode)) {
             RE::NiTransform physicalFiringHandWorld{};
             RE::NiTransform firingDriverWorld{};
             if (tryResolveGunstockPhysicalFiringFrame(
@@ -1816,6 +1822,8 @@ namespace rock
 
     void TwoHandedGrip::update(
         RE::NiNode* weaponNode,
+        RE::NiAVObject* observedGunstockFireNode,
+        const bool observedGunstockGunType,
         const WeaponInteractionContact& leftWeaponContact,
         const WeaponInteractionContact& rightWeaponContact,
         const EquippedWeaponGripFrameInput& frameInput,
@@ -1830,6 +1838,11 @@ namespace rock
         const EquippedWeaponHandlingSettings& handlingSettings)
     {
         _handlingSettings = handlingSettings;
+        observeGunstockWeaponEligibility(
+            weaponNode,
+            observedGunstockFireNode,
+            observedGunstockGunType,
+            currentWeaponGenerationKey);
         _gunstockAlignmentBlockedThisFrame =
             frameInput.gunstockPresentationBlocked;
         setGrabbedObjectHandPoseOwnership(
@@ -1932,6 +1945,15 @@ namespace rock
          * weapon interaction probes - see the header note.)
          */
         (void)publishLeftFiringFeedForwardWeaponPose(weaponNode);
+
+        if (!reconcileGunstockModeState(weaponNode)) {
+            ROCK_LOG_WARN(
+                Weapon,
+                "TwoHandedGrip: clearing support authority because the gunstock mode-edge transaction could not establish a valid support baseline");
+            transitionToInactive(false);
+            reconcileDeferredScopeHandAuthority(weaponNode);
+            return;
+        }
 
         /*
          * Support-side routing follows the CURRENT firing hand: the support
@@ -2164,6 +2186,8 @@ namespace rock
     void TwoHandedGrip::reset()
     {
         resetGunstockAlignment("reset");
+        _gunstockModeToggle = {};
+        _gunstockWeaponEligibility = {};
         _gunstockAlignmentBlockedThisFrame = false;
         clearDynamicSupportAcquisition("reset", true);
         clearAuthoredSupportGripCandidate();
@@ -3932,44 +3956,18 @@ namespace rock
         _lockedGripSeparationWorld = std::sqrt(dot(primaryToSupportWorld, primaryToSupportWorld));
 
         WeaponPartGrip& supportGrip = partGrip(supportHandIsLeft);
-        bool gunstockBaselineActive = false;
-        if (g_rockConfig.rockGunstockModeEnabled &&
-            _authorityMode == weapon_support_authority_policy::
-                                  WeaponSupportAuthorityMode::
-                                      FullTwoHandedSolver) {
-            const RE::NiTransform supportGripTargetWorld =
-                resolvePartGripHandWorld(supportGrip, weaponNode);
-            RE::NiTransform inputToGripTargetLocal{};
-            if (!weapon_support_acquisition_math::
-                    tryCaptureGunstockSupportBaseline(
-                        supportCaptureHandWorld,
-                        supportGripTargetWorld,
-                        inputToGripTargetLocal)) {
-                ROCK_LOG_WARN(Weapon,
-                    "TwoHandedGrip: gunstock support grip start failed closed because the attach baseline was invalid hand={} authored={} provider={} generation={:016X}",
-                    supportHandIsLeft ? "left" : "right",
-                    supportGrip.authoredSupportGrip ? "yes" : "no",
-                    supportGrip.providerPartAuthority.active ? "yes" : "no",
-                    _activeWeaponGenerationKey);
-                transitionToInactive(false);
-                return;
-            }
-
-            supportGrip.gunstockBaseline.inputToGripTargetLocal =
-                inputToGripTargetLocal;
-            supportGrip.gunstockBaseline.weaponWorldAtCapture =
-                weaponNode->world;
-            supportGrip.gunstockBaseline.active = true;
-            supportGrip.gunstockBaseline.firstPublicationPending = true;
-            gunstockBaselineActive = true;
-            ROCK_LOG_INFO(Weapon,
-                "TwoHandedGrip: gunstock support baseline captured hand={} authored={} provider={} grip={} generation={:016X}; primary weapon transform retained at attach",
-                supportHandIsLeft ? "left" : "right",
-                supportGrip.authoredSupportGrip ? "yes" : "no",
-                supportGrip.providerPartAuthority.active ? "yes" : "no",
-                supportGrip.gripSequence,
-                _activeWeaponGenerationKey);
+        if (!initializeGunstockSupportRole(
+                weaponNode,
+                supportHandIsLeft,
+                supportCaptureHandWorld,
+                "support-attach")) {
+            transitionToInactive(false);
+            return;
         }
+        const bool gunstockBaselineActive =
+            isGunstockSupportBaselineActive(
+                supportHandIsLeft,
+                supportGrip);
 
         const bool useDynamicSupportAcquisition =
             !gunstockBaselineActive &&
@@ -4282,6 +4280,10 @@ namespace rock
         }
 
         grip.weaponGenerationKey = currentWeaponGenerationKey;
+        // The support input-to-target relation belongs to the old collision
+        // generation. The game-thread reconciliation step recaptures it from
+        // current transforms only after the new generation is eligible.
+        grip.gunstockBaseline = {};
         grip.contactBodyId = bestDescriptor.bodyId;
         grip.attachmentRoot = bestSourceNode ? bestSourceNode : grip.attachmentRoot;
         grip.partKind = bestDescriptor.semantic.partKind;
@@ -4370,7 +4372,13 @@ namespace rock
         const bool primaryHandIsLeft = _firingHandIsLeft;
         WeaponPartGrip& supportGrip = partGrip(supportHandIsLeft);
         const bool gunstockBaselineActive =
-            supportGrip.gunstockBaseline.active;
+            isGunstockSupportBaselineActive(
+                supportHandIsLeft,
+                supportGrip);
+        if (supportGrip.gunstockBaseline.active &&
+            !gunstockBaselineActive) {
+            supportGrip.gunstockBaseline = {};
+        }
 
         bool dynamicAcquisition =
             dynamicSupportAcquisitionMatches(
@@ -4852,6 +4860,10 @@ namespace rock
         clearDynamicSupportAcquisition(
             "transition-to-part-carry",
             true);
+        // PartCarry has no firing/support role split. Any prior support
+        // calibration is stale after the weapon is driven by part grips and
+        // must be recaptured if a firing grip later re-establishes Gripping.
+        clearGunstockSupportBaselines();
         beginHandVisualReturn(_firingHandIsLeft, "primary-detach-part-carry");
         clearPrimaryGripPose(_firingHandIsLeft);
         _primaryHandVisualLerp = {};
@@ -5649,6 +5661,21 @@ namespace rock
                     // gets the same release-defer window as a fresh support grab.
                     _supportGripAgeFrames = 0;
                     _freshSupportGripDeferLogged = false;
+                    RE::NiTransform supportInputWorld{};
+                    if (!tryGetSolverHandTransform(
+                            newSupportHandIsLeft,
+                            supportInputWorld) ||
+                        !initializeGunstockSupportRole(
+                            weaponNode,
+                            newSupportHandIsLeft,
+                            supportInputWorld,
+                            "part-carry-firing-grip-reattach")) {
+                        ROCK_LOG_WARN(
+                            Weapon,
+                            "TwoHandedGrip: part-carry reattach failed closed because the new support role could not be initialized");
+                        transitionToInactive(false);
+                        return;
+                    }
                     updateFullWeaponAuthorityGrip(weaponNode, dt);
                 } else {
                     if (!_firingHandIsLeft && ownsWeaponTransform()) {
@@ -6573,6 +6600,247 @@ namespace rock
             currentWeaponGenerationKey);
     }
 
+    void TwoHandedGrip::observeGunstockWeaponEligibility(
+        RE::NiNode* weaponNode,
+        RE::NiAVObject* observedFireNode,
+        const bool observedGunType,
+        const std::uint64_t currentWeaponGenerationKey)
+    {
+        const bool featureOrDebugActive =
+            g_rockConfig.rockGunstockModeEnabled ||
+            g_rockConfig.rockDebugDrawGunstockAlignment;
+        const bool validFireNodeObserved =
+            observedFireNode &&
+            isFiniteTransform(observedFireNode->world);
+        gunstock_alignment_policy::observeWeaponEligibility(
+            _gunstockWeaponEligibility,
+            reinterpret_cast<std::uintptr_t>(weaponNode),
+            currentWeaponGenerationKey,
+            featureOrDebugActive,
+            observedGunType,
+            validFireNodeObserved);
+    }
+
+    bool TwoHandedGrip::isGunstockWeaponEligible(
+        const RE::NiNode* weaponNode,
+        const std::uint64_t currentWeaponGenerationKey) const
+    {
+        return gunstock_alignment_policy::isWeaponEligible(
+            _gunstockWeaponEligibility,
+            reinterpret_cast<std::uintptr_t>(weaponNode),
+            currentWeaponGenerationKey);
+    }
+
+    bool TwoHandedGrip::isGunstockWeaponGenerationEligible(
+        const std::uint64_t currentWeaponGenerationKey) const
+    {
+        return _gunstockWeaponEligibility.eligible &&
+               currentWeaponGenerationKey != 0 &&
+               _gunstockWeaponEligibility.weaponGenerationKey ==
+                   currentWeaponGenerationKey;
+    }
+
+    bool TwoHandedGrip::isGunstockSupportBaselineActive(
+        const bool supportHandIsLeft,
+        const WeaponPartGrip& supportGrip) const
+    {
+        const auto& baseline = supportGrip.gunstockBaseline;
+        return g_rockConfig.rockGunstockModeEnabled &&
+               isGunstockWeaponGenerationEligible(
+                   supportGrip.weaponGenerationKey) &&
+               supportGrip.active &&
+               baseline.active &&
+               baseline.supportHandIsLeft == supportHandIsLeft &&
+               baseline.weaponGenerationKey != 0 &&
+               baseline.weaponGenerationKey ==
+                   supportGrip.weaponGenerationKey &&
+               baseline.gripSequence != 0 &&
+               baseline.gripSequence == supportGrip.gripSequence;
+    }
+
+    bool TwoHandedGrip::initializeGunstockSupportRole(
+        RE::NiNode* weaponNode,
+        const bool supportHandIsLeft,
+        const RE::NiTransform& supportInputWorld,
+        const char* reason)
+    {
+        WeaponPartGrip& supportGrip = partGrip(supportHandIsLeft);
+        if (!g_rockConfig.rockGunstockModeEnabled ||
+            _authorityMode != weapon_support_authority_policy::
+                                  WeaponSupportAuthorityMode::
+                                      FullTwoHandedSolver ||
+            !isGunstockWeaponGenerationEligible(
+                supportGrip.weaponGenerationKey)) {
+            supportGrip.gunstockBaseline = {};
+            return true;
+        }
+        if (!weaponNode ||
+            !supportGrip.active ||
+            supportGrip.weaponGenerationKey == 0 ||
+            supportGrip.gripSequence == 0) {
+            return false;
+        }
+        if (isGunstockSupportBaselineActive(
+                supportHandIsLeft,
+                supportGrip)) {
+            return true;
+        }
+
+        supportGrip.gunstockBaseline = {};
+        const RE::NiTransform supportGripTargetWorld =
+            resolvePartGripHandWorld(supportGrip, weaponNode);
+        RE::NiTransform inputToGripTargetLocal{};
+        if (!weapon_support_acquisition_math::
+                tryCaptureGunstockSupportBaseline(
+                    supportInputWorld,
+                    supportGripTargetWorld,
+                    inputToGripTargetLocal)) {
+            ROCK_LOG_WARN(
+                Weapon,
+                "TwoHandedGrip: gunstock support-role initialization failed hand={} authored={} provider={} grip={} generation={:016X} reason={}",
+                supportHandIsLeft ? "left" : "right",
+                supportGrip.authoredSupportGrip ? "yes" : "no",
+                supportGrip.providerPartAuthority.active ? "yes" : "no",
+                supportGrip.gripSequence,
+                supportGrip.weaponGenerationKey,
+                reason ? reason : "unknown");
+            return false;
+        }
+
+        supportGrip.gunstockBaseline = {
+            .inputToGripTargetLocal = inputToGripTargetLocal,
+            .weaponWorldAtCapture = weaponNode->world,
+            .weaponGenerationKey = supportGrip.weaponGenerationKey,
+            .gripSequence = supportGrip.gripSequence,
+            .supportHandIsLeft = supportHandIsLeft,
+            .active = true,
+            .firstPublicationPending = true,
+        };
+        ROCK_LOG_INFO(
+            Weapon,
+            "TwoHandedGrip: gunstock support baseline captured hand={} authored={} provider={} grip={} generation={:016X} reason={}; primary weapon transform retained at attach",
+            supportHandIsLeft ? "left" : "right",
+            supportGrip.authoredSupportGrip ? "yes" : "no",
+            supportGrip.providerPartAuthority.active ? "yes" : "no",
+            supportGrip.gripSequence,
+            supportGrip.weaponGenerationKey,
+            reason ? reason : "unknown");
+        return true;
+    }
+
+    void TwoHandedGrip::clearGunstockSupportBaselines()
+    {
+        for (auto& grip : _partGrips) {
+            grip.gunstockBaseline = {};
+        }
+    }
+
+    bool TwoHandedGrip::reconcileGunstockModeState(
+        RE::NiNode* weaponNode)
+    {
+        const bool enabled = g_rockConfig.rockGunstockModeEnabled;
+        const auto edge = gunstock_alignment_policy::observeModeToggle(
+            _gunstockModeToggle,
+            enabled);
+
+        if (edge == gunstock_alignment_policy::ModeToggleEdge::Disabled) {
+            const bool supportHandIsLeft = !_firingHandIsLeft;
+            WeaponPartGrip& supportGrip = partGrip(supportHandIsLeft);
+            RE::NiTransform primaryStartWorld =
+                frik_visual_authority::getHandWorldTransform(
+                    handFromBool(_firingHandIsLeft));
+            RE::NiTransform supportStartWorld =
+                frik_visual_authority::getHandWorldTransform(
+                    handFromBool(supportHandIsLeft));
+            const std::size_t primaryIndex =
+                _firingHandIsLeft ? 0u : 1u;
+            const std::size_t supportIndex =
+                supportHandIsLeft ? 0u : 1u;
+            if (!isUsableHandAuthorityTransform(primaryStartWorld) &&
+                _hasLastPublishedHandWorld[primaryIndex]) {
+                primaryStartWorld =
+                    _lastPublishedHandWorld[primaryIndex];
+            }
+            if (!isUsableHandAuthorityTransform(supportStartWorld) &&
+                _hasLastPublishedHandWorld[supportIndex]) {
+                supportStartWorld =
+                    _lastPublishedHandWorld[supportIndex];
+            }
+
+            resetGunstockAlignment("config-disabled-edge");
+            clearGunstockSupportBaselines();
+            if (_state == TwoHandedState::Gripping &&
+                _authorityMode == weapon_support_authority_policy::
+                                      WeaponSupportAuthorityMode::
+                                          FullTwoHandedSolver &&
+                supportGrip.active &&
+                isUsableHandAuthorityTransform(primaryStartWorld) &&
+                isUsableHandAuthorityTransform(supportStartWorld)) {
+                beginDynamicSupportAcquisition(
+                    supportHandIsLeft,
+                    supportGrip,
+                    primaryStartWorld,
+                    supportStartWorld);
+                _rotationBlend = 0.0f;
+            }
+            ROCK_LOG_INFO(
+                Weapon,
+                "TwoHandedGrip: gunstock mode disabled; final alignment and support baselines cleared with ordinary support acquisition rebased from the rendered hands");
+            return true;
+        }
+
+        if (edge == gunstock_alignment_policy::ModeToggleEdge::Enabled) {
+            resetGunstockAlignment("config-enabled-edge");
+            clearDynamicSupportAcquisition(
+                "gunstock-mode-enabled",
+                true);
+            clearGunstockSupportBaselines();
+            ROCK_LOG_INFO(
+                Weapon,
+                "TwoHandedGrip: gunstock mode enabled; awaiting one generation-bound firearm/support transaction");
+        }
+
+        if (!enabled) {
+            clearGunstockSupportBaselines();
+            return true;
+        }
+
+        if (_state != TwoHandedState::Gripping ||
+            _authorityMode != weapon_support_authority_policy::
+                                  WeaponSupportAuthorityMode::
+                                      FullTwoHandedSolver) {
+            return true;
+        }
+
+        const bool supportHandIsLeft = !_firingHandIsLeft;
+        WeaponPartGrip& supportGrip = partGrip(supportHandIsLeft);
+        if (!supportGrip.active ||
+            !isGunstockWeaponGenerationEligible(
+                supportGrip.weaponGenerationKey)) {
+            supportGrip.gunstockBaseline = {};
+            return true;
+        }
+        if (isGunstockSupportBaselineActive(
+                supportHandIsLeft,
+                supportGrip)) {
+            return true;
+        }
+
+        RE::NiTransform supportInputWorld{};
+        if (!tryGetSolverHandTransform(
+                supportHandIsLeft,
+                supportInputWorld)) {
+            return false;
+        }
+        return initializeGunstockSupportRole(
+            _activeWeaponNode ? _activeWeaponNode : weaponNode,
+            supportHandIsLeft,
+            supportInputWorld,
+            edge == gunstock_alignment_policy::ModeToggleEdge::Enabled ?
+                "mode-enabled-live-grip" :
+                "eligibility-or-generation-rebase");
+    }
+
     void TwoHandedGrip::clearGunstockDedicatedHandAuthority()
     {
         for (std::size_t index = 0; index <
@@ -6667,10 +6935,15 @@ namespace rock
     }
 
     bool TwoHandedGrip::tryGetGunstockTrackedFiringHandWorld(
+        RE::NiNode* weaponNode,
+        const std::uint64_t currentWeaponGenerationKey,
         RE::NiTransform& outHandWorld) const
     {
         outHandWorld = {};
         if (!g_rockConfig.rockGunstockModeEnabled ||
+            !isGunstockWeaponEligible(
+                weaponNode,
+                currentWeaponGenerationKey) ||
             !runtime_state::isLocalSkeletonReady()) {
             return false;
         }
@@ -6695,6 +6968,9 @@ namespace rock
         if (!g_rockConfig.rockGunstockModeEnabled ||
             !weaponNode ||
             currentWeaponGenerationKey == 0 ||
+            !isGunstockWeaponEligible(
+                weaponNode,
+                currentWeaponGenerationKey) ||
             _gunstockAlignment.weaponNodeIdentity != weaponNode ||
             _gunstockAlignment.weaponGenerationKey !=
                 currentWeaponGenerationKey ||
@@ -7051,9 +7327,17 @@ namespace rock
         snapshot.weaponFormID = currentWeaponFormID;
         snapshot.behaviorEnabled =
             g_rockConfig.rockGunstockModeEnabled;
+        snapshot.weaponEligible = isGunstockWeaponEligible(
+            weaponNode,
+            currentWeaponGenerationKey);
         snapshot.firingHandIsLeft = _firingHandIsLeft;
         snapshot.gripState = _state;
 
+        if (!snapshot.weaponEligible) {
+            snapshot.yieldReason =
+                GunstockAlignmentDebugYieldReason::WeaponNotEligible;
+            return;
+        }
         if (!weaponNode ||
             !projectileNode ||
             currentWeaponGenerationKey == 0 ||
@@ -7233,6 +7517,17 @@ namespace rock
         snapshot.finalFireNodeWorld = projectileNode->world;
         snapshot.finalWeaponValid = true;
         snapshot.finalFireNodeValid = true;
+        if (!snapshot.renderedFiringHandValid) {
+            const RE::NiTransform renderedFiringHandWorld =
+                frik_visual_authority::getHandWorldTransform(
+                    handFromBool(_firingHandIsLeft));
+            if (isUsableHandAuthorityTransform(
+                    renderedFiringHandWorld)) {
+                snapshot.renderedFiringHandWorld =
+                    renderedFiringHandWorld;
+                snapshot.renderedFiringHandValid = true;
+            }
+        }
         snapshot.alignmentAppliedThisFrame =
             _gunstockAlignmentAppliedThisFrame;
 
@@ -7327,6 +7622,13 @@ namespace rock
 
         if (!g_rockConfig.rockGunstockModeEnabled) {
             resetGunstockAlignment("disabled");
+            return false;
+        }
+
+        if (!isGunstockWeaponEligible(
+                weaponNode,
+                currentWeaponGenerationKey)) {
+            resetGunstockAlignment("weapon-not-eligible");
             return false;
         }
 
@@ -7500,15 +7802,6 @@ namespace rock
                     RADIANS_TO_DEGREES);
         }
 
-        if (directionDot > 0.999999f) {
-            clearGunstockDedicatedHandAuthority();
-            (void)publishAuthoredPrimaryFiringGripFingerPose(
-                _firingHandIsLeft);
-            reframeAuthoredSupportGripDebugSnapshot(weaponNode->world);
-            _gunstockAlignmentAppliedThisFrame = true;
-            return true;
-        }
-
         const auto rolePublishedThisFrame = [this](
                                                       const bool isLeft,
                                                       const scope_safe_hand_frame_math::HandAuthorityRole role) {
@@ -7577,6 +7870,98 @@ namespace rock
             return false;
         }
 
+        const RE::NiTransform weaponWorldBeforeCorrection =
+            weaponNode->world;
+        const auto captureRenderedFiringRelation =
+            [this,
+                weaponNode,
+                &weaponWorldBeforeCorrection,
+                &firingGroupHandWorld,
+                firingGroupSource,
+                projectileWitnessUsable]() {
+                const RE::NiTransform renderedFiringHandWorld =
+                    frik_visual_authority::getHandWorldTransform(
+                        handFromBool(_firingHandIsLeft));
+                const bool renderedFiringHandValid =
+                    isUsableHandAuthorityTransform(
+                        renderedFiringHandWorld);
+
+                float renderedFiringRelationPositionError = -1.0f;
+                float renderedFiringRelationRotationError = -1.0f;
+                bool renderedFiringRelationValid = false;
+                if (renderedFiringHandValid) {
+                    const RE::NiTransform firingInWeaponBefore =
+                        transform_math::composeTransforms(
+                            transform_math::invertTransform(
+                                weaponWorldBeforeCorrection),
+                            firingGroupHandWorld);
+                    const RE::NiTransform renderedFiringInWeaponAfter =
+                        transform_math::composeTransforms(
+                            transform_math::invertTransform(
+                                weaponNode->world),
+                            renderedFiringHandWorld);
+                    if (isFiniteTransform(firingInWeaponBefore) &&
+                        isFiniteTransform(renderedFiringInWeaponAfter)) {
+                        renderedFiringRelationPositionError =
+                            weaponSolverLength(
+                                weaponSolverSub(
+                                    renderedFiringInWeaponAfter.translate,
+                                    firingInWeaponBefore.translate));
+                        renderedFiringRelationRotationError =
+                            hand_visual_lerp_math::rotationDistanceDegrees(
+                                firingInWeaponBefore,
+                                renderedFiringInWeaponAfter);
+                        renderedFiringRelationValid =
+                            std::isfinite(
+                                renderedFiringRelationPositionError) &&
+                            std::isfinite(
+                                renderedFiringRelationRotationError);
+                    }
+                }
+
+                if (g_rockConfig.rockDebugDrawGunstockAlignment) {
+                    auto& snapshot = _gunstockAlignmentDebugSnapshot;
+                    snapshot.renderedFiringHandWorld =
+                        renderedFiringHandValid ?
+                        renderedFiringHandWorld :
+                        RE::NiTransform{};
+                    snapshot.renderedFiringHandValid =
+                        renderedFiringHandValid;
+                    snapshot.renderedFiringRelationValid =
+                        renderedFiringRelationValid;
+                    if (renderedFiringRelationValid) {
+                        snapshot.
+                            renderedFiringRelationPositionErrorGameUnits =
+                            renderedFiringRelationPositionError;
+                        snapshot.
+                            renderedFiringRelationRotationErrorDegrees =
+                            renderedFiringRelationRotationError;
+                    }
+                }
+                ROCK_LOG_SAMPLE_DEBUG(
+                    Weapon,
+                    2000,
+                    "TwoHandedGrip: gunstock group source={} pivot=damped-driver projectileWitness={} weaponReturn={} handReturn={} renderedRelationValid={} renderedFiringRelationError=({:.4f}gu,{:.3f}deg)",
+                    firingGroupSource,
+                    projectileWitnessUsable ? "live" : "latched",
+                    isWeaponVisualReturnActive() ? "active" : "inactive",
+                    isHandVisualReturnActive(_firingHandIsLeft) ?
+                        "active" : "inactive",
+                    renderedFiringRelationValid ? "yes" : "no",
+                    renderedFiringRelationPositionError,
+                    renderedFiringRelationRotationError);
+            };
+
+        if (directionDot > 0.999999f) {
+            clearGunstockDedicatedHandAuthority();
+            (void)publishAuthoredPrimaryFiringGripFingerPose(
+                _firingHandIsLeft);
+            reframeAuthoredSupportGripDebugSnapshot(weaponNode->world);
+            captureRenderedFiringRelation();
+            _gunstockAlignmentAppliedThisFrame = true;
+            return true;
+        }
+
         RE::NiTransform supportHandWorld{};
         if (supportHandParticipates) {
             const std::size_t supportIndex =
@@ -7620,8 +8005,6 @@ namespace rock
                 firingGroupHandWorld,
                 correction,
                 pivotWorld);
-        const RE::NiTransform weaponWorldBeforeCorrection =
-            weaponNode->world;
         const RE::NiTransform correctedWeaponWorld =
             gunstock_alignment_policy::rotateRigidlyAroundPivot<
                 RE::NiTransform,
@@ -7705,7 +8088,17 @@ namespace rock
                     }
                     recoilRequestedWorld =
                         _lastPublishedHandWorld[index];
-                    recoilAppliedWorld = originalWorld;
+                    // hFRIK applies controlled recoil synchronously inside
+                    // the same primary-role publication. Read the rendered
+                    // hand bone now; the requested target is not evidence of
+                    // the transform that recoil actually produced.
+                    recoilAppliedWorld =
+                        frik_visual_authority::getHandWorldTransform(
+                            handFromBool(isLeft));
+                    if (!isUsableHandAuthorityTransform(
+                            recoilAppliedWorld)) {
+                        return false;
+                    }
                 } else {
                     recoilRequestedWorld = originalWorld;
                     if (!frik_visual_authority::applyExternalHandWorldTransform(
@@ -7873,34 +8266,7 @@ namespace rock
             _firingHandIsLeft);
         reframeAuthoredSupportGripDebugSnapshot(weaponNode->world);
 
-        const RE::NiTransform firingInWeaponBefore =
-            transform_math::composeTransforms(
-                transform_math::invertTransform(
-                    weaponWorldBeforeCorrection),
-                firingGroupHandWorld);
-        const RE::NiTransform firingInWeaponAfter =
-            transform_math::composeTransforms(
-                transform_math::invertTransform(correctedWeaponWorld),
-                correctedFiringHandWorld);
-        const float firingRelationPositionError = weaponSolverLength(
-            weaponSolverSub(
-                firingInWeaponAfter.translate,
-                firingInWeaponBefore.translate));
-        const float firingRelationRotationError =
-            hand_visual_lerp_math::rotationDistanceDegrees(
-                firingInWeaponBefore,
-                firingInWeaponAfter);
-        ROCK_LOG_SAMPLE_DEBUG(
-            Weapon,
-            2000,
-            "TwoHandedGrip: gunstock group source={} pivot=damped-driver projectileWitness={} weaponReturn={} handReturn={} firingRelationError=({:.4f}gu,{:.3f}deg)",
-            firingGroupSource,
-            projectileWitnessUsable ? "live" : "latched",
-            isWeaponVisualReturnActive() ? "active" : "inactive",
-            isHandVisualReturnActive(_firingHandIsLeft) ?
-                "active" : "inactive",
-            firingRelationPositionError,
-            firingRelationRotationError);
+        captureRenderedFiringRelation();
         _gunstockAlignmentAppliedThisFrame = true;
         return true;
     }

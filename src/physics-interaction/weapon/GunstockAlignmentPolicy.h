@@ -13,6 +13,91 @@ namespace rock::gunstock_alignment_policy
     inline constexpr float kStableSampleCosine = 0.9999904807f;  // 0.25 degrees.
     inline constexpr float kMinimumDirectionLength = 0.000001f;
 
+    enum class ModeToggleEdge : std::uint8_t
+    {
+        None,
+        Enabled,
+        Disabled,
+    };
+
+    struct ModeToggleState
+    {
+        bool initialized{ false };
+        bool enabled{ false };
+    };
+
+    [[nodiscard]] inline ModeToggleEdge observeModeToggle(
+        ModeToggleState& state,
+        const bool enabled)
+    {
+        if (!state.initialized) {
+            state.initialized = true;
+            state.enabled = enabled;
+            return ModeToggleEdge::None;
+        }
+        if (state.enabled == enabled) {
+            return ModeToggleEdge::None;
+        }
+
+        state.enabled = enabled;
+        return enabled ? ModeToggleEdge::Enabled : ModeToggleEdge::Disabled;
+    }
+
+    /*
+     * Both gunstock stages consume this one value-only witness. A native gun
+     * type observation together with a valid native fire node establishes
+     * firearm eligibility for its exact weapon root and collision generation.
+     * Eligibility remains latched across transient firing-animation node loss,
+     * but never crosses an identity boundary or a frame where behavior and
+     * diagnostics are both disabled.
+     */
+    struct WeaponEligibilityState
+    {
+        std::uintptr_t weaponNodeIdentity{ 0 };
+        std::uint64_t weaponGenerationKey{ 0 };
+        bool eligible{ false };
+    };
+
+    inline void observeWeaponEligibility(
+        WeaponEligibilityState& state,
+        const std::uintptr_t weaponNodeIdentity,
+        const std::uint64_t weaponGenerationKey,
+        const bool featureOrDebugActive,
+        const bool gunTypeWitnessObserved,
+        const bool validFireNodeObserved)
+    {
+        if (!featureOrDebugActive ||
+            weaponNodeIdentity == 0 ||
+            weaponGenerationKey == 0) {
+            state = {};
+            return;
+        }
+
+        if (state.weaponNodeIdentity != weaponNodeIdentity ||
+            state.weaponGenerationKey != weaponGenerationKey) {
+            state = {
+                .weaponNodeIdentity = weaponNodeIdentity,
+                .weaponGenerationKey = weaponGenerationKey,
+                .eligible = false,
+            };
+        }
+        if (gunTypeWitnessObserved && validFireNodeObserved) {
+            state.eligible = true;
+        }
+    }
+
+    [[nodiscard]] inline bool isWeaponEligible(
+        const WeaponEligibilityState& state,
+        const std::uintptr_t weaponNodeIdentity,
+        const std::uint64_t weaponGenerationKey)
+    {
+        return state.eligible &&
+               weaponNodeIdentity != 0 &&
+               state.weaponNodeIdentity == weaponNodeIdentity &&
+               weaponGenerationKey != 0 &&
+               state.weaponGenerationKey == weaponGenerationKey;
+    }
+
     template <class Vector>
     struct DirectionLatch
     {

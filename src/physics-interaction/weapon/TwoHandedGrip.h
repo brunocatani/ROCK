@@ -119,6 +119,7 @@ namespace rock
     {
         None,
         AlignmentDisabled,
+        WeaponNotEligible,
         WeaponOrFireNodeUnavailable,
         SkeletonUnavailable,
         FrikUnavailable,
@@ -169,6 +170,7 @@ namespace rock
         RE::NiTransform dampedDriverWorld{};
         RE::NiTransform leftHandWorld{};
         RE::NiTransform firingHandWorld{};
+        RE::NiTransform renderedFiringHandWorld{};
         RE::NiTransform weaponWorldBefore{};
         RE::NiTransform predictedWeaponWorld{};
         RE::NiTransform finalWeaponWorld{};
@@ -191,12 +193,17 @@ namespace rock
         float neutralResidualDegrees{ 0.0f };
         float liveDeviationDegrees{ 0.0f };
         float finalWeaponPredictionErrorGameUnits{ 0.0f };
+        float renderedFiringRelationPositionErrorGameUnits{ 0.0f };
+        float renderedFiringRelationRotationErrorDegrees{ 0.0f };
 
         bool behaviorEnabled{ false };
+        bool weaponEligible{ false };
         bool firingHandIsLeft{ false };
         bool dampedDriverValid{ false };
         bool leftHandValid{ false };
         bool firingHandValid{ false };
+        bool renderedFiringHandValid{ false };
+        bool renderedFiringRelationValid{ false };
         bool weaponBeforeValid{ false };
         bool fireNodeBeforeValid{ false };
         bool correctionValid{ false };
@@ -503,6 +510,8 @@ namespace rock
 
         void update(
             RE::NiNode* weaponNode,
+            RE::NiAVObject* observedGunstockFireNode,
+            bool observedGunstockGunType,
             const WeaponInteractionContact& leftWeaponContact,
             const WeaponInteractionContact& rightWeaponContact,
             const EquippedWeaponGripFrameInput& frameInput,
@@ -553,6 +562,8 @@ namespace rock
         // Supplies the uncontaminated damped wrist frame to the authored
         // primary solve so the prior corrected hand is never reused as input.
         bool tryGetGunstockTrackedFiringHandWorld(
+            RE::NiNode* weaponNode,
+            std::uint64_t currentWeaponGenerationKey,
             RE::NiTransform& outHandWorld) const;
 
         void prepareGunstockAlignmentDebugSnapshot(
@@ -924,6 +935,9 @@ namespace rock
         {
             RE::NiTransform inputToGripTargetLocal{};
             RE::NiTransform weaponWorldAtCapture{};
+            std::uint64_t weaponGenerationKey{ 0 };
+            std::uint64_t gripSequence{ 0 };
+            bool supportHandIsLeft{ false };
             bool active{ false };
             bool firstPublicationPending{ false };
         };
@@ -1214,6 +1228,26 @@ namespace rock
             std::uint64_t authorityGenerationKey = 0);
 
         void clearGunstockDedicatedHandAuthority();
+        void observeGunstockWeaponEligibility(
+            RE::NiNode* weaponNode,
+            RE::NiAVObject* observedFireNode,
+            bool observedGunType,
+            std::uint64_t currentWeaponGenerationKey);
+        [[nodiscard]] bool isGunstockWeaponEligible(
+            const RE::NiNode* weaponNode,
+            std::uint64_t currentWeaponGenerationKey) const;
+        [[nodiscard]] bool isGunstockWeaponGenerationEligible(
+            std::uint64_t currentWeaponGenerationKey) const;
+        [[nodiscard]] bool isGunstockSupportBaselineActive(
+            bool supportHandIsLeft,
+            const WeaponPartGrip& supportGrip) const;
+        bool initializeGunstockSupportRole(
+            RE::NiNode* weaponNode,
+            bool supportHandIsLeft,
+            const RE::NiTransform& supportInputWorld,
+            const char* reason);
+        void clearGunstockSupportBaselines();
+        bool reconcileGunstockModeState(RE::NiNode* weaponNode);
         void resetGunstockAlignment(const char* reason);
         [[nodiscard]] GunstockAlignmentDebugYieldReason
             currentGunstockAlignmentYieldReason(bool authorityBlocked) const;
@@ -1391,6 +1425,9 @@ namespace rock
         };
 
         GunstockAlignmentState _gunstockAlignment{};
+        gunstock_alignment_policy::ModeToggleState _gunstockModeToggle{};
+        gunstock_alignment_policy::WeaponEligibilityState
+            _gunstockWeaponEligibility{};
         GunstockAlignmentDebugSnapshot _gunstockAlignmentDebugSnapshot{};
         std::uint64_t _gunstockAlignmentDebugSequence{ 0 };
         bool _gunstockAlignmentAppliedThisFrame{ false };

@@ -2008,6 +2008,7 @@ namespace rock::debug
                 return 14.0f;
             case AxisOverlayRole::GunstockLeftHand:
             case AxisOverlayRole::GunstockFiringHand:
+            case AxisOverlayRole::GunstockRenderedFiringHand:
             case AxisOverlayRole::GunstockCalibratedSupportBone:
             case AxisOverlayRole::GunstockGripTargetHand:
                 return 10.0f;
@@ -2091,6 +2092,7 @@ namespace rock::debug
             case AxisOverlayRole::GunstockSupportInputBone:
             case AxisOverlayRole::GunstockLeftHand:
             case AxisOverlayRole::GunstockFiringHand:
+            case AxisOverlayRole::GunstockRenderedFiringHand:
             case AxisOverlayRole::GunstockCalibratedSupportBone:
             case AxisOverlayRole::GunstockGripTargetHand:
             case AxisOverlayRole::GunstockWeaponFinal:

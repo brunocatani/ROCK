@@ -3045,6 +3045,29 @@ namespace rock
                 tryReadNativeScopeRequestState(nativeScopeRequestActive);
             const bool manualScopeActivationRequested =
                 input_remap_runtime::isManualScopeActivationRequested();
+            const bool gunstockObservationActive =
+                g_rockConfig.rockGunstockModeEnabled ||
+                g_rockConfig.rockDebugDrawGunstockAlignment;
+            RE::NiAVObject* gunstockProjectileNode =
+                gunstockObservationActive ?
+                getEquippedProjectileNode() :
+                nullptr;
+            /*
+             * FO4VR 1.2.72 binary verification (2026-08-06): native
+             * TESObjectWEAP paths at 0x14033FF00 and 0x140334260 read the type
+             * byte at object +0x2CF; the native type-label table's index 9 is
+             * referenced by CombatBehaviorTreeGun. Pair that kGun witness with
+             * the collision observer's form boundary before it may establish
+             * generation-latched gunstock eligibility.
+             */
+            const bool gunstockGunTypeObserved =
+                gunstockObservationActive &&
+                observedEquippedWeapon &&
+                currentWeaponGenerationKey != 0 &&
+                _weaponCollision.getCurrentObservedEquippedWeaponFormID() ==
+                    observedEquippedWeapon->formID &&
+                observedEquippedWeapon->weaponData.type ==
+                    RE::WEAPON_TYPE::kGun;
 
             const EquippedWeaponGripFrameInput gripFrameInput{
                 .leftGripHeld = gripPressed,
@@ -3071,6 +3094,8 @@ namespace rock
                 primaryDetachFeatureAvailable;
             _twoHandedGrip.update(
                 weaponNode,
+                gunstockProjectileNode,
+                gunstockGunTypeObserved,
                 leftWeaponContact,
                 rightWeaponContact,
                 gripFrameInput,
@@ -3090,11 +3115,6 @@ namespace rock
                      input_remap_policy::
                          kOpenVrSteamVrTriggerButtonId) ||
                     frame.reloadBoundaryActive);
-            RE::NiAVObject* gunstockProjectileNode =
-                (g_rockConfig.rockGunstockModeEnabled ||
-                    g_rockConfig.rockDebugDrawGunstockAlignment) ?
-                getEquippedProjectileNode() :
-                nullptr;
             _twoHandedGrip.prepareGunstockAlignmentDebugSnapshot(
                 weaponNode,
                 gunstockProjectileNode,

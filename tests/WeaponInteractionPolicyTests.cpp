@@ -144,6 +144,138 @@ int main()
     bool ok = true;
 
     {
+        using namespace rock::gunstock_alignment_policy;
+
+        ModeToggleState toggle{};
+        ok &= expectEqual(
+            "gunstock initial mode observation has no edge",
+            observeModeToggle(toggle, false),
+            ModeToggleEdge::None);
+        ok &= expectEqual(
+            "gunstock live enable produces one edge",
+            observeModeToggle(toggle, true),
+            ModeToggleEdge::Enabled);
+        ok &= expectEqual(
+            "gunstock stable enabled mode has no repeated edge",
+            observeModeToggle(toggle, true),
+            ModeToggleEdge::None);
+        ok &= expectEqual(
+            "gunstock live disable produces one edge",
+            observeModeToggle(toggle, false),
+            ModeToggleEdge::Disabled);
+
+        constexpr std::uintptr_t firstWeapon = 0x1000u;
+        constexpr std::uintptr_t secondWeapon = 0x2000u;
+        constexpr std::uint64_t firstGeneration = 0xA1u;
+        constexpr std::uint64_t secondGeneration = 0xB2u;
+        WeaponEligibilityState eligibility{};
+        observeWeaponEligibility(
+            eligibility,
+            firstWeapon,
+            firstGeneration,
+            true,
+            false,
+            true);
+        ok &= expectFalse(
+            "gunstock fire node alone does not classify thrown weapons as firearms",
+            isWeaponEligible(
+                eligibility,
+                firstWeapon,
+                firstGeneration));
+        observeWeaponEligibility(
+            eligibility,
+            firstWeapon,
+            firstGeneration,
+            true,
+            true,
+            false);
+        ok &= expectFalse(
+            "gunstock gun type alone waits for a native fire-node witness",
+            isWeaponEligible(
+                eligibility,
+                firstWeapon,
+                firstGeneration));
+        observeWeaponEligibility(
+            eligibility,
+            firstWeapon,
+            firstGeneration,
+            true,
+            true,
+            true);
+        ok &= expectTrue(
+            "gunstock gun type plus valid fire node establishes generation eligibility",
+            isWeaponEligible(
+                eligibility,
+                firstWeapon,
+                firstGeneration));
+        observeWeaponEligibility(
+            eligibility,
+            firstWeapon,
+            firstGeneration,
+            true,
+            false,
+            false);
+        ok &= expectTrue(
+            "gunstock eligibility survives transient fire-node loss",
+            isWeaponEligible(
+                eligibility,
+                firstWeapon,
+                firstGeneration));
+        observeWeaponEligibility(
+            eligibility,
+            secondWeapon,
+            secondGeneration,
+            true,
+            false,
+            true);
+        ok &= expectFalse(
+            "gunstock replacement thrown weapon cannot inherit firearm eligibility",
+            isWeaponEligible(
+                eligibility,
+                secondWeapon,
+                secondGeneration));
+        observeWeaponEligibility(
+            eligibility,
+            secondWeapon,
+            secondGeneration,
+            true,
+            true,
+            false);
+        ok &= expectFalse(
+            "gunstock eligibility never crosses weapon generations",
+            isWeaponEligible(
+                eligibility,
+                secondWeapon,
+                secondGeneration));
+        observeWeaponEligibility(
+            eligibility,
+            secondWeapon,
+            secondGeneration,
+            true,
+            true,
+            true);
+        ok &= expectTrue(
+            "gunstock replacement weapon requires its own fire node",
+            isWeaponEligible(
+                eligibility,
+                secondWeapon,
+                secondGeneration));
+        observeWeaponEligibility(
+            eligibility,
+            secondWeapon,
+            secondGeneration,
+            false,
+            false,
+            false);
+        ok &= expectFalse(
+            "gunstock fully inactive state clears eligibility",
+            isWeaponEligible(
+                eligibility,
+                secondWeapon,
+                secondGeneration));
+    }
+
+    {
         using Latch = rock::gunstock_alignment_policy::
             DirectionLatch<TestVector3>;
         Latch latch{};
