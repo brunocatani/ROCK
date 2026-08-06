@@ -206,6 +206,84 @@ namespace rock::gunstock_alignment_policy
         return finiteRotation(outCorrection);
     }
 
+    /*
+     * Authored support grips deliberately rotate the support wrist into the
+     * animation's contact pose. A physical gunstock cannot reproduce that
+     * wrist roll, so use the two damped natural hand-bone +Z axes as the
+     * desired weapon-up direction. Only their projections perpendicular to
+     * the already-aligned bore participate: the resulting correction is a
+     * pure twist around the bore and therefore cannot disturb forward aim.
+     */
+    template <class Matrix, class Vector>
+    [[nodiscard]] inline bool tryBuildProjectedUpBisectorTwist(
+        const Vector& boreAxisWorld,
+        const Vector& currentWeaponUpWorld,
+        const Vector& rightNaturalHandUpWorld,
+        const Vector& leftNaturalHandUpWorld,
+        Matrix& outCorrection,
+        float* outSignedAngleRadians = nullptr)
+    {
+        outCorrection = transform_math::makeIdentityRotation<Matrix>();
+        if (outSignedAngleRadians) {
+            *outSignedAngleRadians = 0.0f;
+        }
+
+        Vector boreAxis{};
+        if (!tryNormalizeDirection(boreAxisWorld, boreAxis)) {
+            return false;
+        }
+
+        const auto projectAndNormalize = [&boreAxis](
+                                             const Vector& value,
+                                             Vector& outProjected) {
+            return tryNormalizeDirection(
+                weaponSolverProjectOntoPlane(value, boreAxis),
+                outProjected);
+        };
+
+        Vector currentUp{};
+        Vector rightUp{};
+        Vector leftUp{};
+        if (!projectAndNormalize(currentWeaponUpWorld, currentUp) ||
+            !projectAndNormalize(rightNaturalHandUpWorld, rightUp) ||
+            !projectAndNormalize(leftNaturalHandUpWorld, leftUp)) {
+            return false;
+        }
+
+        Vector targetUp{};
+        if (!tryNormalizeDirection(
+                weaponSolverAdd(rightUp, leftUp),
+                targetUp)) {
+            // Opposed projected hand axes do not define a stable bisector.
+            return false;
+        }
+
+        const float cosine = (std::max)(
+            -1.0f,
+            (std::min)(
+                1.0f,
+                weaponSolverDot(currentUp, targetUp)));
+        const float sine = weaponSolverDot(
+            boreAxis,
+            weaponSolverCross(currentUp, targetUp));
+        const float signedAngle = std::atan2(sine, cosine);
+        if (!std::isfinite(signedAngle)) {
+            return false;
+        }
+
+        outCorrection = weaponSolverAxisAngleStored<Matrix, Vector>(
+            boreAxis,
+            signedAngle);
+        if (!finiteRotation(outCorrection)) {
+            outCorrection = transform_math::makeIdentityRotation<Matrix>();
+            return false;
+        }
+        if (outSignedAngleRadians) {
+            *outSignedAngleRadians = signedAngle;
+        }
+        return true;
+    }
+
     template <class Transform, class Matrix, class Vector>
     [[nodiscard]] inline Transform rotateRigidlyAroundPivot(
         const Transform& value,

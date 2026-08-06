@@ -86,6 +86,10 @@ namespace rock
         bool manualScopeActivationRequested{ false };
         bool nativeScopeRequestStateValid{ false };
         bool nativeScopeRequestActive{ false };
+        // True while an external native animation owner or a blocking menu
+        // owns the weapon/arm presentation. Gunstock uses the same frame value
+        // for final authority and authored support-seat prediction.
+        bool gunstockAlignmentBlocked{ false };
         EquippedWeaponScopeHandDriverFrame leftHandDriverFrame{};
         EquippedWeaponScopeHandDriverFrame rightHandDriverFrame{};
         // Grab state of the CURRENT firing hand (debounced release), read by
@@ -498,10 +502,12 @@ namespace rock
         /*
          * Optional final gunstock correction. This runs only after authored
          * and manual weapon/hand solves have completed, rotating the weapon
-         * and every participating hand as one rigid group around the firing
-         * hand. The neutral fire-node direction is latched in the already-
-         * damped firing-hand frame so the correction preserves hFRIK hand
-         * damping without erasing recoil or animation motion.
+         * and every participating hand as one rigid group around the damped
+         * firing-controller driver. The neutral fire-node direction is latched
+         * in the already-damped firing-hand frame so the correction preserves hFRIK hand
+         * damping without erasing recoil or animation motion. Authored support
+         * grips add a bore-axis-only roll correction toward the bisector of
+         * both damped natural hand-bone +Z axes.
          */
         bool applyGunstockAlignment(
             RE::NiNode* weaponNode,
@@ -1156,6 +1162,15 @@ namespace rock
         void resetGunstockAlignment(const char* reason);
         [[nodiscard]] GunstockAlignmentDebugYieldReason
             currentGunstockAlignmentYieldReason(bool authorityBlocked) const;
+        bool tryResolveGunstockPrimaryGroupCorrection(
+            RE::NiNode* weaponNode,
+            std::uint64_t currentWeaponGenerationKey,
+            const RE::NiTransform& firingHandWorld,
+            RE::NiMatrix3& outCorrectionWorld,
+            RE::NiPoint3& outPivotWorld,
+            float* outDirectionDot = nullptr) const;
+        void reframeAuthoredSupportGripDebugSnapshot(
+            const RE::NiTransform& finalWeaponWorld);
         bool populateGunstockAlignmentDebugPrediction(
             const RE::NiPoint3& neutralHandLocal);
 
@@ -1311,7 +1326,6 @@ namespace rock
             // Comparison-only identity witness; never dereferenced from cache.
             RE::NiNode* weaponNodeIdentity{ nullptr };
             std::uint64_t weaponGenerationKey{ 0 };
-            std::uint64_t canonicalCaptureSequence{ 0 };
             gunstock_alignment_policy::DirectionLatch<RE::NiPoint3>
                 directionLatch{};
             bool firingHandIsLeft{ false };
@@ -1325,6 +1339,7 @@ namespace rock
         std::array<bool, 2> _gunstockHandAuthorityActive{};
         bool _gunstockWaitingLogged{ false };
         bool _gunstockYieldLogged{ false };
+        bool _gunstockAlignmentBlockedThisFrame{ false };
 
         /*
          * Natural physical hand-bone-in-wand relations. They are refreshed
@@ -1334,8 +1349,12 @@ namespace rock
          */
         RE::NiTransform _rightNaturalBoneInWand{};
         RE::NiTransform _leftNaturalBoneInWand{};
+        RE::NiTransform _rightNaturalBoneInDampedDriver{};
+        RE::NiTransform _leftNaturalBoneInDampedDriver{};
         bool _hasRightNaturalBoneInWand{ false };
         bool _hasLeftNaturalBoneInWand{ false };
+        bool _hasRightNaturalBoneInDampedDriver{ false };
+        bool _hasLeftNaturalBoneInDampedDriver{ false };
 
         std::array<ScopeSafeHandFrameState, 2> _scopeSafeHandFrames{};
         bool _scopeMenuOpenThisFrame{ false };

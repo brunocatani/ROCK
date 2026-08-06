@@ -3057,6 +3057,8 @@ namespace rock
                 .manualScopeActivationRequested = manualScopeActivationRequested,
                 .nativeScopeRequestStateValid = nativeScopeRequestStateValid,
                 .nativeScopeRequestActive = nativeScopeRequestActive,
+                .gunstockAlignmentBlocked =
+                    frame.reloadBoundaryActive || frame.menuBlocked,
                 .leftHandDriverFrame = leftHandDriverFrame,
                 .rightHandDriverFrame = rightHandDriverFrame,
                 .primaryGripInput = primaryGripInput,
