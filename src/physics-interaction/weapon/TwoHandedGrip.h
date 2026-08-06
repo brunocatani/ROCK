@@ -15,6 +15,7 @@
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 #include "physics-interaction/weapon/EquippedWeaponHandlingSettings.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.h"
+#include "physics-interaction/weapon/GunstockAlignmentPolicy.h"
 #include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/WeaponInteraction.h"
@@ -85,6 +86,9 @@ namespace rock
         bool manualScopeActivationRequested{ false };
         bool nativeScopeRequestStateValid{ false };
         bool nativeScopeRequestActive{ false };
+        // The same animation/menu boundary that gates the final primary-axis
+        // correction also gates neutral-bore sampling.
+        bool gunstockAlignmentBlocked{ false };
         EquippedWeaponScopeHandDriverFrame leftHandDriverFrame{};
         EquippedWeaponScopeHandDriverFrame rightHandDriverFrame{};
         // Grab state of the CURRENT firing hand (debounced release), read by
@@ -99,6 +103,111 @@ namespace rock
         RE::NiTransform leftRequestedHandWorld{};
         RE::NiPoint3 rightGripWorld{};
         RE::NiPoint3 leftGripWorld{};
+    };
+
+    enum class GunstockAlignmentDebugState : std::uint8_t
+    {
+        Invalid,
+        DisabledPreview,
+        Waiting,
+        Latched,
+        Active,
+        Yielded,
+    };
+
+    enum class GunstockAlignmentDebugYieldReason : std::uint8_t
+    {
+        None,
+        AlignmentDisabled,
+        WeaponOrFireNodeUnavailable,
+        SkeletonUnavailable,
+        FrikUnavailable,
+        WeaponHidden,
+        DampedDriverUnavailable,
+        AuthorityBlocked,
+        ScopeTransition,
+        PartCarry,
+        WeaponVisualReturn,
+        HandVisualReturn,
+        FiringHandHoldingObject,
+        NeutralSampleBlocked,
+        NeutralSampleCollecting,
+        RuntimeAuthorityUnavailable,
+    };
+
+    enum class GunstockAlignmentDebugRecoilWitness : std::uint8_t
+    {
+        None,
+        Regular,
+        Controlled,
+    };
+
+    /*
+     * Frame-local diagnostics for the independent primary wrist +X
+     * correction. Pointer values are identity witnesses only; rendering
+     * consumes copied transforms after final muzzle authority.
+     */
+    struct GunstockAlignmentDebugSnapshot
+    {
+        std::uint64_t publicationSequence{ 0 };
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint64_t canonicalCaptureSequence{ 0 };
+        std::uintptr_t weaponNodeIdentity{ 0 };
+        std::uintptr_t fireNodeIdentity{ 0 };
+        std::uint32_t weaponFormID{ 0 };
+        std::uint32_t candidateSamples{ 0 };
+        GunstockAlignmentDebugState state{
+            GunstockAlignmentDebugState::Invalid
+        };
+        GunstockAlignmentDebugYieldReason yieldReason{
+            GunstockAlignmentDebugYieldReason::None
+        };
+        GunstockAlignmentDebugRecoilWitness recoilWitness{
+            GunstockAlignmentDebugRecoilWitness::None
+        };
+        TwoHandedState gripState{ TwoHandedState::Inactive };
+
+        RE::NiTransform dampedDriverWorld{};
+        RE::NiTransform leftHandWorld{};
+        RE::NiTransform firingHandWorld{};
+        RE::NiTransform weaponWorldBefore{};
+        RE::NiTransform predictedWeaponWorld{};
+        RE::NiTransform finalWeaponWorld{};
+        RE::NiTransform fireNodeWorldBefore{};
+        RE::NiTransform predictedFireNodeWorld{};
+        RE::NiTransform finalFireNodeWorld{};
+        RE::NiMatrix3 correctionWorld{};
+        RE::NiPoint3 pivotWorld{};
+        RE::NiPoint3 wristForwardWorld{};
+        RE::NiPoint3 weaponRootForwardWorld{};
+        RE::NiPoint3 unalignedLiveFireWorld{};
+        RE::NiPoint3 neutralFireWorldBefore{};
+        RE::NiPoint3 predictedNeutralFireWorld{};
+        RE::NiPoint3 finalLiveFireWorld{};
+        RE::NiPoint3 correctionAxisWorld{};
+
+        float unalignedAngleDegrees{ 0.0f };
+        float correctionAngleRadians{ 0.0f };
+        float correctionAngleDegrees{ 0.0f };
+        float neutralResidualDegrees{ 0.0f };
+        float liveDeviationDegrees{ 0.0f };
+        float finalWeaponPredictionErrorGameUnits{ 0.0f };
+
+        bool behaviorEnabled{ false };
+        bool firingHandIsLeft{ false };
+        bool dampedDriverValid{ false };
+        bool leftHandValid{ false };
+        bool firingHandValid{ false };
+        bool weaponBeforeValid{ false };
+        bool fireNodeBeforeValid{ false };
+        bool correctionValid{ false };
+        bool correctionAxisValid{ false };
+        bool correctionUsedAntiparallelFallback{ false };
+        bool predictionValid{ false };
+        bool finalWeaponValid{ false };
+        bool finalFireNodeValid{ false };
+        bool alignmentAppliedThisFrame{ false };
+        bool published{ false };
     };
 
     /*
@@ -428,6 +537,43 @@ namespace rock
             RE::NiNode* weaponNode,
             const RE::NiTransform& solvedWeaponWorld,
             std::uint64_t currentWeaponGenerationKey);
+
+        /*
+         * Final primary gunstock presentation. The already-solved weapon and
+         * every participating posed hand rotate as one rigid group so the
+         * neutral bore follows the damped firing-wrist +X axis. The support
+         * attach baseline remains upstream and is not recalibrated here.
+         */
+        bool applyGunstockAlignment(
+            RE::NiNode* weaponNode,
+            RE::NiAVObject* projectileNode,
+            std::uint64_t currentWeaponGenerationKey,
+            bool calibrationSampleBlocked,
+            bool authorityBlocked);
+
+        // Supplies the uncontaminated damped wrist frame to the authored
+        // primary solve so the prior corrected hand is never reused as input.
+        bool tryGetGunstockTrackedFiringHandWorld(
+            RE::NiTransform& outHandWorld) const;
+
+        void prepareGunstockAlignmentDebugSnapshot(
+            RE::NiNode* weaponNode,
+            RE::NiAVObject* projectileNode,
+            std::uint32_t currentWeaponFormID,
+            std::uint64_t currentWeaponGenerationKey,
+            bool calibrationSampleBlocked,
+            bool authorityBlocked);
+
+        void finalizeGunstockAlignmentDebugSnapshot(
+            RE::NiNode* weaponNode,
+            RE::NiAVObject* projectileNode,
+            std::uint64_t currentWeaponGenerationKey);
+
+        [[nodiscard]] GunstockAlignmentDebugSnapshot
+            getGunstockAlignmentDebugSnapshot() const
+        {
+            return _gunstockAlignmentDebugSnapshot;
+        }
 
         [[nodiscard]] GunstockSupportBaselineDebugSnapshot
             getGunstockSupportBaselineDebugSnapshot() const
@@ -1068,8 +1214,25 @@ namespace rock
             const RE::NiTransform& solvedWeaponWorld,
             std::uint64_t authorityGenerationKey = 0);
 
+        void clearGunstockDedicatedHandAuthority();
+        void resetGunstockAlignment(const char* reason);
+        [[nodiscard]] GunstockAlignmentDebugYieldReason
+            currentGunstockAlignmentYieldReason(bool authorityBlocked) const;
+        bool tryResolveGunstockPhysicalFiringFrame(
+            RE::NiTransform& outHandWorld,
+            RE::NiTransform& outDriverWorld) const;
+        bool tryResolveGunstockPrimaryGroupCorrection(
+            RE::NiNode* weaponNode,
+            std::uint64_t currentWeaponGenerationKey,
+            RE::NiTransform& outAlignmentHandWorld,
+            RE::NiMatrix3& outCorrectionWorld,
+            RE::NiPoint3& outPivotWorld,
+            float* outDirectionDot = nullptr) const;
+
         void reframeAuthoredSupportGripDebugSnapshot(
             const RE::NiTransform& finalWeaponWorld);
+        bool populateGunstockAlignmentDebugPrediction(
+            const RE::NiPoint3& neutralHandLocal);
 
         bool applyFiringHandLockedVisual(RE::NiNode* weaponNode, float dt, const RE::NiTransform* liveHandWorld);
 
@@ -1218,19 +1381,45 @@ namespace rock
         bool _leftHandHoldingObjectForPose{ false };
         bool _rightHandHoldingObjectForPose{ false };
 
+        struct GunstockAlignmentState
+        {
+            // Comparison-only identity witness; never dereferenced from cache.
+            RE::NiNode* weaponNodeIdentity{ nullptr };
+            std::uint64_t weaponGenerationKey{ 0 };
+            gunstock_alignment_policy::DirectionLatch<RE::NiPoint3>
+                directionLatch{};
+            bool firingHandIsLeft{ false };
+        };
+
+        GunstockAlignmentState _gunstockAlignment{};
+        GunstockAlignmentDebugSnapshot _gunstockAlignmentDebugSnapshot{};
+        std::uint64_t _gunstockAlignmentDebugSequence{ 0 };
+        bool _gunstockAlignmentAppliedThisFrame{ false };
+        std::array<bool, 2> _gunstockDedicatedHandAuthorityActive{};
+        std::array<bool, 2> _gunstockHandAuthorityActive{};
+        bool _gunstockWaitingLogged{ false };
+        bool _gunstockYieldLogged{ false };
+        bool _gunstockProjectileWitnessMissingLogged{ false };
+        bool _gunstockAlignmentBlockedThisFrame{ false };
+
         GunstockSupportBaselineDebugSnapshot
             _gunstockSupportBaselineDebugSnapshot{};
         std::uint64_t _gunstockSupportBaselineDebugSequence{ 0 };
 
         /*
-         * Natural physical hand-bone relations in the raw wand. They are
-         * refreshed only while ROCK has no visual authority for that hand and
-         * are deliberately not weapon-generation keyed.
+         * Natural physical hand-bone relations in the raw wand and hFRIK's
+         * damped driver. They are refreshed only while ROCK has no visual
+         * authority for that hand and are deliberately not weapon-generation
+         * keyed so final alignment never consumes ROCK's previous output.
          */
         RE::NiTransform _rightNaturalBoneInWand{};
         RE::NiTransform _leftNaturalBoneInWand{};
+        RE::NiTransform _rightNaturalBoneInDampedDriver{};
+        RE::NiTransform _leftNaturalBoneInDampedDriver{};
         bool _hasRightNaturalBoneInWand{ false };
         bool _hasLeftNaturalBoneInWand{ false };
+        bool _hasRightNaturalBoneInDampedDriver{ false };
+        bool _hasLeftNaturalBoneInDampedDriver{ false };
 
         std::array<ScopeSafeHandFrameState, 2> _scopeSafeHandFrames{};
         bool _scopeMenuOpenThisFrame{ false };
