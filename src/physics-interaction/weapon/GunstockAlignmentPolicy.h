@@ -158,6 +158,7 @@ namespace rock::gunstock_alignment_policy
     [[nodiscard]] inline bool tryBuildWorldCorrection(
         const Transform& controllerWorld,
         const Vector& neutralControllerLocal,
+        const Vector& targetForwardWorld,
         Matrix& outCorrection,
         float* outDirectionDot = nullptr)
     {
@@ -173,19 +174,16 @@ namespace rock::gunstock_alignment_policy
             return false;
         }
 
-        const Vector localForward{ 0.0f, 1.0f, 0.0f };
         Vector expectedNeutralWorld{};
-        Vector controllerForwardWorld{};
+        Vector targetWorld{};
         if (!tryNormalizeDirection(
                 transform_math::localVectorToWorld(
                     controllerWorld,
                     neutralLocal),
                 expectedNeutralWorld) ||
             !tryNormalizeDirection(
-                transform_math::localVectorToWorld(
-                    controllerWorld,
-                    localForward),
-                controllerForwardWorld)) {
+                targetForwardWorld,
+                targetWorld)) {
             return false;
         }
 
@@ -195,13 +193,13 @@ namespace rock::gunstock_alignment_policy
                 1.0f,
                 weaponSolverDot(
                     expectedNeutralWorld,
-                    controllerForwardWorld)));
+                    targetWorld)));
         if (outDirectionDot) {
             *outDirectionDot = directionDot;
         }
         outCorrection = weaponSolverRotationBetweenStored<Matrix, Vector>(
             expectedNeutralWorld,
-            controllerForwardWorld);
+            targetWorld);
         return finiteRotation(outCorrection);
     }
 

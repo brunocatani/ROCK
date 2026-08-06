@@ -259,7 +259,7 @@ namespace rock::debug
         AuthoredGripActivationAllowedCone,
         AuthoredGripActivationPass,
         AuthoredGripActivationFail,
-        GunstockControllerForward,
+        GunstockWristForward,
         GunstockNeutralFireBefore,
         GunstockWeaponRootForward,
         GunstockPredictedNeutral,

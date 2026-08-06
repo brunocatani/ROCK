@@ -2643,7 +2643,7 @@ namespace rock::debug
                 color[2] = 0.05f;
                 color[3] = 0.98f;
                 break;
-            case MarkerOverlayRole::GunstockControllerForward:
+            case MarkerOverlayRole::GunstockWristForward:
                 color[0] = 0.10f;
                 color[1] = 1.0f;
                 color[2] = 0.16f;

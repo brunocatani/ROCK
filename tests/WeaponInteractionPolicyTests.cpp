@@ -207,6 +207,17 @@ int main()
             37.0f);
         controllerWorld.translate = { 11.0f, -4.0f, 8.0f };
 
+        TestTransform firingWristWorld =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        firingWristWorld.rotate = makeAxisAngleRotation(
+            TestVector3{ 0.0f, 0.0f, 1.0f },
+            -19.0f);
+        const TestVector3 wristForward =
+            rock::weaponSolverNormalize(
+                rock::transform_math::localVectorToWorld(
+                    firingWristWorld,
+                    TestVector3{ 1.0f, 0.0f, 0.0f }));
+
         TestTransform projectileWorld =
             rock::transform_math::makeIdentityTransform<TestTransform>();
         projectileWorld.rotate =
@@ -241,6 +252,7 @@ int main()
                 TestVector3>(
                 controllerWorld,
                 capturedBore,
+                wristForward,
                 correction));
         const TestVector3 correctedBore =
             rock::weaponSolverApplyStoredWorldRotationToVector<
@@ -250,15 +262,10 @@ int main()
                 rock::transform_math::localVectorToWorld(
                     controllerWorld,
                     capturedBore));
-        const TestVector3 controllerForward =
-            rock::weaponSolverNormalize(
-                rock::transform_math::localVectorToWorld(
-                    controllerWorld,
-                    TestVector3{ 0.0f, 1.0f, 0.0f }));
         ok &= expectVectorNear(
-            "gunstock correction sends neutral bore to controller plus-Y",
+            "gunstock correction sends neutral bore to firing wrist plus-X",
             rock::weaponSolverNormalize(correctedBore),
-            controllerForward,
+            wristForward,
             0.0002f);
 
         TestMatrix3 antiparallelCorrection{};
@@ -270,18 +277,19 @@ int main()
                 TestVector3>(
                 rock::transform_math::
                     makeIdentityTransform<TestTransform>(),
-                TestVector3{ 0.0f, -1.0f, 0.0f },
+                TestVector3{ -1.0f, 0.0f, 0.0f },
+                TestVector3{ 1.0f, 0.0f, 0.0f },
                 antiparallelCorrection));
         const TestVector3 correctedAntiparallel =
             rock::weaponSolverApplyStoredWorldRotationToVector<
                 TestMatrix3,
                 TestVector3>(
                 antiparallelCorrection,
-                TestVector3{ 0.0f, -1.0f, 0.0f });
+                TestVector3{ -1.0f, 0.0f, 0.0f });
         ok &= expectVectorNear(
-            "gunstock antiparallel correction resolves to plus-Y",
+            "gunstock antiparallel correction resolves to wrist plus-X",
             correctedAntiparallel,
-            TestVector3{ 0.0f, 1.0f, 0.0f },
+            TestVector3{ 1.0f, 0.0f, 0.0f },
             0.0002f);
 
         TestTransform unusableController = controllerWorld;
@@ -294,6 +302,18 @@ int main()
                 TestVector3>(
                 unusableController,
                 capturedBore,
+                wristForward,
+                correction));
+
+        ok &= expectFalse(
+            "gunstock rejects degenerate wrist-forward targets",
+            rock::gunstock_alignment_policy::tryBuildWorldCorrection<
+                TestTransform,
+                TestMatrix3,
+                TestVector3>(
+                controllerWorld,
+                capturedBore,
+                TestVector3{},
                 correction));
     }
 
@@ -421,6 +441,7 @@ int main()
             TestVector3>(
             rock::transform_math::makeIdentityTransform<TestTransform>(),
             neutralBore,
+            TestVector3{ 1.0f, 0.0f, 0.0f },
             fixedCorrection);
         const TestMatrix3 liveRecoil = makeAxisAngleRotation(
             TestVector3{ 1.0f, 0.0f, 0.0f },
@@ -442,7 +463,7 @@ int main()
             "gunstock fixed neutral correction does not erase live recoil",
             rock::weaponSolverDot(
                 correctedLiveBore,
-                TestVector3{ 0.0f, 1.0f, 0.0f }) >
+                TestVector3{ 1.0f, 0.0f, 0.0f }) >
                 0.9999f);
     }
 

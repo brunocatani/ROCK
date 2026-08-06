@@ -65,8 +65,8 @@ foreach ($iniPath in @(
 }
 
 Require-Text 'src/physics-interaction/weapon/GunstockAlignmentPolicy.h' `
-    'kRequiredStableSamples\s*=\s*6[\s\S]*kStableSampleCosine[\s\S]*tryCaptureControllerLocalBore[\s\S]*localForward\s*\{\s*0\.0f,\s*1\.0f,\s*0\.0f\s*\}[\s\S]*tryBuildWorldCorrection[\s\S]*rotateRigidlyAroundPivot[\s\S]*precompensateWorldTarget' `
-    'The value-only policy must latch six stable projectile +Y samples, build one rigid correction, and retain recoil precompensation.'
+    'kRequiredStableSamples\s*=\s*6[\s\S]*kStableSampleCosine[\s\S]*tryCaptureControllerLocalBore[\s\S]*localForward\s*\{\s*0\.0f,\s*1\.0f,\s*0\.0f\s*\}[\s\S]*tryBuildWorldCorrection[\s\S]*targetForwardWorld[\s\S]*rotateRigidlyAroundPivot[\s\S]*precompensateWorldTarget' `
+    'The value-only policy must latch six stable projectile +Y samples, accept an explicit world target, build one rigid correction, and retain recoil precompensation.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     '_twoHandedGrip\.update\([\s\S]*getEquippedProjectileNode\(\)[\s\S]*_twoHandedGrip\.applyGunstockAlignment\([\s\S]*reconcileEquippedWeaponHandAssignmentAfterGrip\(\)[\s\S]*_weaponCollision\.update' `
@@ -81,8 +81,8 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'Neutral calibration must be blocked by physical trigger state while correction authority yields across animation/menu boundaries.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'applyGunstockAlignment\([\s\S]*directionLatch\.latched[\s\S]*tryCaptureControllerLocalBore[\s\S]*tryBuildWorldCorrection[\s\S]*getHandWorldTransform[\s\S]*rotateRigidlyAroundPivot[\s\S]*applyWeaponVisualAuthority' `
-    'The runtime must latch first, read final hands, rotate the complete group, and publish the weapon last.'
+    'applyGunstockAlignment\([\s\S]*getHandWorldTransform[\s\S]*localWristForward\s*\{\s*1\.0f,\s*0\.0f,\s*0\.0f\s*\}[\s\S]*directionLatch\.latched[\s\S]*tryCaptureControllerLocalBore[\s\S]*tryBuildWorldCorrection[\s\S]*wristForwardWorld[\s\S]*rotateRigidlyAroundPivot[\s\S]*applyWeaponVisualAuthority' `
+    'The runtime must read firing-wrist +X, latch the neutral barrel, rotate the complete group toward that target, and publish the weapon last.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'leftManualFiringRecoil[\s\S]*deriveAppliedWorldDelta[\s\S]*precompensateWorldTarget[\s\S]*PRIMARY_GRIP_TAG[\s\S]*SUPPORT_GRIP_TAG' `
@@ -110,15 +110,19 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'Behavior-off diagnostics must compute a read-only correction preview and final live readback.'
 
 Require-Text 'src/physics-interaction/debug/DebugBodyOverlay.h' `
-    'GunstockFiringController[\s\S]*GunstockFireNodeFinal[\s\S]*GunstockControllerForward[\s\S]*GunstockCorrectionArc[\s\S]*GunstockCorrectionAxis' `
+    'GunstockFiringController[\s\S]*GunstockFireNodeFinal[\s\S]*GunstockWristForward[\s\S]*GunstockCorrectionArc[\s\S]*GunstockCorrectionAxis' `
     'The existing bounded overlay must own explicit gunstock axis, ray, pivot, and correction-arc roles.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
-    'drawGunstockAlignment[\s\S]*getGunstockAlignmentDebugSnapshot[\s\S]*kCorrectionArcSegments\s*=\s*16[\s\S]*CONTROLLER \+Y - GUNSTOCK FORWARD[\s\S]*ACTUAL FINAL LIVE FIRE \+Y[\s\S]*neutralResidual[\s\S]*liveDeviation[\s\S]*dataAge=0' `
+    'drawGunstockAlignment[\s\S]*getGunstockAlignmentDebugSnapshot[\s\S]*kCorrectionArcSegments\s*=\s*16[\s\S]*FIRING WRIST \+X - GUNSTOCK FORWARD[\s\S]*ACTUAL FINAL LIVE FIRE \+Y[\s\S]*neutralResidual[\s\S]*liveDeviation[\s\S]*dataAge=0' `
     'The visualizer must render bounded tripods, comparison rays, a fixed correction arc, and current-frame status.'
 
+Reject-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
+    'CONTROLLER \+Y - GUNSTOCK FORWARD|controllerAxis=\+Y' `
+    'Gunstock diagnostics must not present controller +Y as the alignment target.'
+
 Require-Text 'tests/WeaponInteractionPolicyTests.cpp' `
-    'gunstock neutral direction latches on sixth stable sample[\s\S]*gunstock correction sends neutral bore to controller plus-Y[\s\S]*gunstock rigid correction preserves firing-hand weapon relation[\s\S]*gunstock precompensation survives noncommuting recoil delta[\s\S]*gunstock fixed neutral correction does not erase live recoil' `
+    'gunstock neutral direction latches on sixth stable sample[\s\S]*gunstock correction sends neutral bore to firing wrist plus-X[\s\S]*gunstock rigid correction preserves firing-hand weapon relation[\s\S]*gunstock precompensation survives noncommuting recoil delta[\s\S]*gunstock fixed neutral correction does not erase live recoil' `
     'Pure regression tests must lock calibration, rigid grouping, recoil precompensation, and live-recoil preservation.'
 
 Reject-Text 'src/api/ROCKProviderApi.h' `

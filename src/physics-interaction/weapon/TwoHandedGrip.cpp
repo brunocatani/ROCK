@@ -6373,7 +6373,7 @@ namespace rock
         snapshot.correctionWorld = {};
         snapshot.predictedWeaponWorld = {};
         snapshot.predictedFireNodeWorld = {};
-        snapshot.controllerForwardWorld = {};
+        snapshot.wristForwardWorld = {};
         snapshot.weaponRootForwardWorld = {};
         snapshot.unalignedLiveFireWorld = {};
         snapshot.neutralFireWorldBefore = {};
@@ -6385,22 +6385,24 @@ namespace rock
         snapshot.neutralResidualDegrees = 0.0f;
 
         if (!snapshot.controllerValid ||
+            !snapshot.firingHandValid ||
             !snapshot.weaponBeforeValid ||
             !snapshot.fireNodeBeforeValid) {
             return false;
         }
 
         const RE::NiPoint3 localForward{ 0.0f, 1.0f, 0.0f };
-        RE::NiPoint3 controllerForward{};
+        const RE::NiPoint3 localWristForward{ 1.0f, 0.0f, 0.0f };
+        RE::NiPoint3 wristForward{};
         RE::NiPoint3 weaponRootForward{};
         RE::NiPoint3 unalignedLiveFire{};
         RE::NiPoint3 neutralLocal{};
         RE::NiPoint3 neutralFireWorld{};
         if (!gunstock_alignment_policy::tryNormalizeDirection(
                 transform_math::localVectorToWorld(
-                    snapshot.controllerWorld,
-                    localForward),
-                controllerForward) ||
+                    snapshot.firingHandWorld,
+                    localWristForward),
+                wristForward) ||
             !gunstock_alignment_policy::tryNormalizeDirection(
                 transform_math::localVectorToWorld(
                     snapshot.weaponWorldBefore,
@@ -6430,6 +6432,7 @@ namespace rock
                 RE::NiPoint3>(
                 snapshot.controllerWorld,
                 neutralLocal,
+                wristForward,
                 correction,
                 &directionDot)) {
             return false;
@@ -6469,7 +6472,7 @@ namespace rock
             (std::min)(1.0f, directionDot));
         const float correctionAngle = std::acos(clampedDot);
         RE::NiPoint3 correctionAxis =
-            weaponSolverCross(neutralFireWorld, controllerForward);
+            weaponSolverCross(neutralFireWorld, wristForward);
         if (weaponSolverLength(correctionAxis) >
             gunstock_alignment_policy::kMinimumDirectionLength) {
             correctionAxis = weaponSolverNormalize(correctionAxis);
@@ -6488,11 +6491,11 @@ namespace rock
                 1.0f,
                 weaponSolverDot(
                     predictedNeutral,
-                    controllerForward)));
+                    wristForward)));
         snapshot.correctionWorld = correction;
         snapshot.predictedWeaponWorld = predictedWeapon;
         snapshot.predictedFireNodeWorld = predictedFire;
-        snapshot.controllerForwardWorld = controllerForward;
+        snapshot.wristForwardWorld = wristForward;
         snapshot.weaponRootForwardWorld = weaponRootForward;
         snapshot.unalignedLiveFireWorld = unalignedLiveFire;
         snapshot.neutralFireWorldBefore = neutralFireWorld;
@@ -6737,7 +6740,7 @@ namespace rock
                 1.0f,
                 weaponSolverDot(
                     snapshot.finalLiveFireWorld,
-                    snapshot.controllerForwardWorld)));
+                    snapshot.wristForwardWorld)));
         snapshot.liveDeviationDegrees =
             std::acos(liveDot) * radiansToDegrees;
         if (snapshot.predictionValid) {
@@ -6876,7 +6879,27 @@ namespace rock
             return false;
         }
 
+        const auto firingHand = handFromBool(_firingHandIsLeft);
+        const RE::NiTransform firingHandWorld =
+            frik_visual_authority::getHandWorldTransform(firingHand);
+        if (!isUsableHandAuthorityTransform(firingHandWorld)) {
+            clearGunstockDedicatedHandAuthority();
+            return false;
+        }
+
+        const RE::NiPoint3 localWristForward{ 1.0f, 0.0f, 0.0f };
+        RE::NiPoint3 wristForwardWorld{};
+        if (!gunstock_alignment_policy::tryNormalizeDirection(
+                transform_math::localVectorToWorld(
+                    firingHandWorld,
+                    localWristForward),
+                wristForwardWorld)) {
+            resetGunstockAlignment("firing-wrist-forward-invalid");
+            return false;
+        }
+
         auto& directionLatch = _gunstockAlignment.directionLatch;
+        bool latchedThisFrame = false;
         if (!directionLatch.latched) {
             if (calibrationSampleBlocked) {
                 gunstock_alignment_policy::resetCandidate(directionLatch);
@@ -6914,21 +6937,7 @@ namespace rock
             }
 
             _gunstockWaitingLogged = false;
-            const float neutralDot = (std::max)(
-                -1.0f,
-                (std::min)(
-                    1.0f,
-                    directionLatch.neutralControllerLocal.y));
-            ROCK_LOG_INFO(
-                Weapon,
-                "TwoHandedGrip: gunstock neutral bore latched firingHand={} generation={:016X} samples={} controllerLocal=({:.4f},{:.4f},{:.4f}) correctionDegrees={:.2f}",
-                _firingHandIsLeft ? "left" : "right",
-                currentWeaponGenerationKey,
-                directionLatch.candidateSamples,
-                directionLatch.neutralControllerLocal.x,
-                directionLatch.neutralControllerLocal.y,
-                directionLatch.neutralControllerLocal.z,
-                std::acos(neutralDot) * RADIANS_TO_DEGREES);
+            latchedThisFrame = true;
         }
 
         RE::NiMatrix3 correction{};
@@ -6939,24 +6948,33 @@ namespace rock
                 RE::NiPoint3>(
                 firingController->world,
                 directionLatch.neutralControllerLocal,
+                wristForwardWorld,
                 correction,
                 &directionDot)) {
             resetGunstockAlignment("correction-invalid");
             return false;
         }
 
+        if (latchedThisFrame) {
+            ROCK_LOG_INFO(
+                Weapon,
+                "TwoHandedGrip: gunstock neutral bore latched firingHand={} generation={:016X} samples={} controllerLocal=({:.4f},{:.4f},{:.4f}) target=wrist+X correctionDegrees={:.2f}",
+                _firingHandIsLeft ? "left" : "right",
+                currentWeaponGenerationKey,
+                directionLatch.candidateSamples,
+                directionLatch.neutralControllerLocal.x,
+                directionLatch.neutralControllerLocal.y,
+                directionLatch.neutralControllerLocal.z,
+                std::acos((std::max)(
+                    -1.0f,
+                    (std::min)(1.0f, directionDot))) *
+                    RADIANS_TO_DEGREES);
+        }
+
         if (directionDot > 0.999999f) {
             clearGunstockDedicatedHandAuthority();
             _gunstockAlignmentAppliedThisFrame = true;
             return true;
-        }
-
-        const auto firingHand = handFromBool(_firingHandIsLeft);
-        const RE::NiTransform firingHandWorld =
-            frik_visual_authority::getHandWorldTransform(firingHand);
-        if (!isUsableHandAuthorityTransform(firingHandWorld)) {
-            clearGunstockDedicatedHandAuthority();
-            return false;
         }
 
         RE::NiTransform supportHandWorld{};

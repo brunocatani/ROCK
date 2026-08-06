@@ -549,7 +549,7 @@
                 constexpr int kCorrectionArcSegments = 16;
                 const RE::NiPoint3 labelOffset{ 0.0f, 0.0f, 1.4f };
 
-                const float controllerColor[4]{ 0.10f, 1.0f, 0.16f, 1.0f };
+                const float wristForwardColor[4]{ 0.10f, 1.0f, 0.16f, 1.0f };
                 const float neutralColor[4]{ 1.0f, 0.42f, 0.04f, 1.0f };
                 const float rootColor[4]{ 1.0f, 0.86f, 0.05f, 0.98f };
                 const float predictedColor[4]{ 0.05f, 0.95f, 1.0f, 1.0f };
@@ -620,11 +620,11 @@
                 if (snapshot.predictionValid) {
                     addDirectionRay(
                         debug::MarkerOverlayRole::
-                            GunstockControllerForward,
-                        snapshot.controllerForwardWorld,
+                            GunstockWristForward,
+                        snapshot.wristForwardWorld,
                         kDirectionLength,
-                        controllerColor,
-                        "CONTROLLER +Y - GUNSTOCK FORWARD");
+                        wristForwardColor,
+                        "FIRING WRIST +X - GUNSTOCK FORWARD");
                     addDirectionRay(
                         debug::MarkerOverlayRole::
                             GunstockNeutralFireBefore,
@@ -856,7 +856,7 @@
                     };
                 addStatusLine(
                     0,
-                    "GUNSTOCK DEBUG behavior=%s state=%s hand=%s source=fire-node",
+                    "GUNSTOCK DEBUG behavior=%s state=%s hand=%s source=fire-node target=wrist+X",
                     snapshot.behaviorEnabled ? "on" : "off",
                     stateName(snapshot.state),
                     snapshot.firingHandIsLeft ? "left" : "right");
@@ -872,7 +872,7 @@
                         snapshot.publicationSequence));
                 addStatusLine(
                     2,
-                    "controllerAxis=+Y fireAxis=+Y candidate=%u/%u pivot=%s",
+                    "targetAxis=wrist+X fireAxis=+Y candidate=%u/%u pivot=%s",
                     snapshot.candidateSamples,
                     gunstock_alignment_policy::kRequiredStableSamples,
                     snapshot.pivotUsesControllerFallback ?

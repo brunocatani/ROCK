@@ -174,7 +174,7 @@ namespace rock
         RE::NiTransform finalFireNodeWorld{};
         RE::NiMatrix3 correctionWorld{};
         RE::NiPoint3 pivotWorld{};
-        RE::NiPoint3 controllerForwardWorld{};
+        RE::NiPoint3 wristForwardWorld{};
         RE::NiPoint3 weaponRootForwardWorld{};
         RE::NiPoint3 unalignedLiveFireWorld{};
         RE::NiPoint3 neutralFireWorldBefore{};
