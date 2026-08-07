@@ -814,6 +814,44 @@ int main()
                 precompensated),
             desired);
 
+        TestTransform negativePitchFineTune =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        negativePitchFineTune.rotate = makeAxisAngleRotation(
+            TestVector3{ 0.0f, 1.0f, 0.0f },
+            -10.0f);
+        negativePitchFineTune.translate = { -4.0f, 6.0f, 3.0f };
+        TestTransform palmAnimationLocalDelta =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        palmAnimationLocalDelta.rotate = makeAxisAngleRotation(
+            rock::weaponSolverNormalize(
+                TestVector3{ 0.3f, 0.4f, 0.8f }),
+            7.0f);
+        palmAnimationLocalDelta.translate = { 0.1f, -0.2f, 0.05f };
+        const TestTransform presentedHand =
+            rock::transform_math::composeTransforms(
+                applied,
+                palmAnimationLocalDelta);
+        const TestTransform derivedPresentationLocalDelta =
+            rock::gunstock_alignment_policy::deriveAppliedLocalDelta(
+                applied,
+                presentedHand);
+        const TestTransform recoilRecoveredFineTuneRequest =
+            rock::gunstock_alignment_policy::precompensateWorldTarget(
+                derivedDelta,
+                negativePitchFineTune);
+        const TestTransform recoveredFineTuneRequest =
+            rock::gunstock_alignment_policy::precompensateLocalTarget(
+                derivedPresentationLocalDelta,
+                recoilRecoveredFineTuneRequest);
+        ok &= expectTransformNear(
+            "gunstock presented-hand recovery preserves negative-ten-degree fine tune",
+            rock::transform_math::composeTransforms(
+                rock::transform_math::composeTransforms(
+                    recoilDelta,
+                    recoveredFineTuneRequest),
+                palmAnimationLocalDelta),
+            negativePitchFineTune);
+
         const TestVector3 neutralBore =
             rock::weaponSolverNormalize(
                 TestVector3{ 0.25f, 0.93f, 0.13f });
@@ -1568,6 +1606,85 @@ int main()
             const TestTransform resolvedLocal = rock::transform_math::composeTransforms(rock::transform_math::invertTransform(handModeWeaponFrame), rigidScopeWorld);
             ok &= expectTransformNear("one-hand, two-hand, and left-hand modes preserve one rigid scope frame", resolvedLocal, rigidSightFrameLocal);
         }
+
+        TestTransform boreFrameWeaponLocal =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        boreFrameWeaponLocal.rotate.entry[1][1] = 0.0f;
+        boreFrameWeaponLocal.rotate.entry[1][2] = 1.0f;
+        boreFrameWeaponLocal.rotate.entry[2][1] = -1.0f;
+        boreFrameWeaponLocal.rotate.entry[2][2] = 0.0f;
+        const TestTransform gunstockScopeFrameLocal =
+            rock::native_scope_camera_follow_math::
+                alignOpticalAxesToBore(
+                    rigidSightFrameLocal,
+                    boreFrameWeaponLocal);
+        ok &= expectNear(
+            "gunstock scope alignment preserves sight anchor x",
+            gunstockScopeFrameLocal.translate.x,
+            rigidSightFrameLocal.translate.x);
+        ok &= expectNear(
+            "gunstock scope alignment preserves sight anchor y",
+            gunstockScopeFrameLocal.translate.y,
+            rigidSightFrameLocal.translate.y);
+        ok &= expectNear(
+            "gunstock scope alignment preserves sight anchor z",
+            gunstockScopeFrameLocal.translate.z,
+            rigidSightFrameLocal.translate.z);
+        ok &= expectNear(
+            "gunstock scope alignment preserves native scale",
+            gunstockScopeFrameLocal.scale,
+            rigidSightFrameLocal.scale);
+
+        const TestTransform gunstockScopeWorld =
+            rock::native_scope_camera_follow_math::
+                resolveRigidAnchorFrameWorld(
+                    weaponAfter,
+                    gunstockScopeFrameLocal);
+        const TestTransform finalBoreWorld =
+            rock::transform_math::composeTransforms(
+                weaponAfter,
+                boreFrameWeaponLocal);
+        const TestVector3 gunstockScopeForwardWorld =
+            rock::transform_math::localVectorToWorld(
+                gunstockScopeWorld,
+                TestVector3{ 1.0f, 0.0f, 0.0f });
+        const TestVector3 finalBoreForwardWorld =
+            rock::transform_math::localVectorToWorld(
+                finalBoreWorld,
+                TestVector3{ 0.0f, 1.0f, 0.0f });
+        ok &= expectNear(
+            "gunstock scope camera optical plus-X follows final bore plus-Y x",
+            gunstockScopeForwardWorld.x,
+            finalBoreForwardWorld.x);
+        ok &= expectNear(
+            "gunstock scope camera optical plus-X follows final bore plus-Y y",
+            gunstockScopeForwardWorld.y,
+            finalBoreForwardWorld.y);
+        ok &= expectNear(
+            "gunstock scope camera optical plus-X follows final bore plus-Y z",
+            gunstockScopeForwardWorld.z,
+            finalBoreForwardWorld.z);
+
+        const TestVector3 gunstockScopeUpWorld =
+            rock::transform_math::localVectorToWorld(
+                gunstockScopeWorld,
+                TestVector3{ 0.0f, 0.0f, 1.0f });
+        const TestVector3 finalBoreUpWorld =
+            rock::transform_math::localVectorToWorld(
+                finalBoreWorld,
+                TestVector3{ 0.0f, 0.0f, 1.0f });
+        ok &= expectNear(
+            "gunstock scope camera up follows final bore plus-Z x",
+            gunstockScopeUpWorld.x,
+            finalBoreUpWorld.x);
+        ok &= expectNear(
+            "gunstock scope camera up follows final bore plus-Z y",
+            gunstockScopeUpWorld.y,
+            finalBoreUpWorld.y);
+        ok &= expectNear(
+            "gunstock scope camera up follows final bore plus-Z z",
+            gunstockScopeUpWorld.z,
+            finalBoreUpWorld.z);
 
         const TestTransform equippedSightBaseline =
             rock::native_scope_camera_follow_math::resolveRigidAnchorFrameWorld(

@@ -732,27 +732,8 @@ namespace rock
             AuthoredSupportGripDebugSnapshot& outSnapshot) const;
 
         NativeScopeCameraDebugSnapshot getNativeScopeCameraDebugSnapshot() const { return _nativeScopeCameraDebugSnapshot; }
-        NativeScopeCameraTargetPreviewSnapshot getNativeScopeCameraTargetPreviewSnapshot() const
-        {
-            const bool valid =
-                _nativeScopeRigidFrame.valid &&
-                _nativeScopeAnchorValid &&
-                _nativeScopeRigidFrame.weaponNodeIdentity ==
-                    _nativeScopeAnchorWeaponNode &&
-                _nativeScopeRigidFrame.weaponGenerationKey ==
-                    _nativeScopeAnchorGenerationKey;
-            return NativeScopeCameraTargetPreviewSnapshot{
-                .weaponGenerationKey =
-                    _nativeScopeRigidFrame.weaponGenerationKey,
-                .equippedWeaponOwnershipKey =
-                    _nativeScopeAnchorOwnershipKey,
-                .weaponFormID = _nativeScopeAnchorWeaponFormID,
-                .anchorSource = _nativeScopeAnchorSource,
-                .cameraWeaponLocal =
-                    _nativeScopeRigidFrame.cameraWeaponLocal,
-                .valid = valid,
-            };
-        }
+        NativeScopeCameraTargetPreviewSnapshot
+            getNativeScopeCameraTargetPreviewSnapshot() const;
         NativeScopeActivationDebugSnapshot getNativeScopeActivationDebugSnapshot() const { return _nativeScopeActivationDebugSnapshot; }
         NativeScopeResolvedAnchorSnapshot getNativeScopeResolvedAnchorSnapshot() const
         {
@@ -1232,7 +1213,12 @@ namespace rock
         bool applyWeaponVisualAuthority(
             RE::NiNode* weaponNode,
             const RE::NiTransform& solvedWeaponWorld,
-            std::uint64_t authorityGenerationKey = 0);
+            std::uint64_t authorityGenerationKey = 0,
+            bool alignScopeToGunstockBore = false);
+
+        bool tryResolveNativeScopeCameraWeaponLocal(
+            bool alignToGunstockBore,
+            RE::NiTransform& outCameraWeaponLocal) const;
 
         void clearGunstockDedicatedHandAuthority();
         void observeGunstockWeaponEligibility(
@@ -1429,7 +1415,10 @@ namespace rock
             std::uint64_t weaponGenerationKey{ 0 };
             gunstock_alignment_policy::DirectionLatch<RE::NiPoint3>
                 directionLatch{};
+            // Immutable neutral projectile/fire-node frame in Weapon space.
+            RE::NiTransform boreFrameWeaponLocal{};
             bool firingHandIsLeft{ false };
+            bool hasBoreFrameWeaponLocal{ false };
         };
 
         GunstockAlignmentState _gunstockAlignment{};
