@@ -1997,6 +1997,23 @@ namespace rock
         _twoHandedGrip.synchronizeNativeScopePresentationAfterFrikUpdate(weaponNode, _weaponCollision.getCurrentWeaponGenerationKey());
     }
 
+    void PhysicsInteraction::finalizeGunstockPresentationAfterNativeAnimation()
+    {
+        if (!_initialized.load(std::memory_order_acquire) ||
+            !g_rockConfig.rockGunstockModeEnabled ||
+            !runtime_state::isLocalSkeletonReady() ||
+            (provider::currentNativeAnimationAuthorityFlagsV1() &
+                authored_weapon_grip_capture_policy::kWeapon) == 0) {
+            return;
+        }
+
+        auto* weaponNode = resolveEquippedWeaponInteractionNode();
+        (void)_twoHandedGrip.
+            finalizeGunstockPresentationAfterNativeWeaponAnimation(
+                weaponNode,
+                _weaponCollision.getCurrentWeaponGenerationKey());
+    }
+
     bool PhysicsInteraction::tryGetManualScopeDirectTransitionTarget(
         std::uint64_t& outWeaponGenerationKey,
         std::uint32_t& outNativeOverlayIndex) const

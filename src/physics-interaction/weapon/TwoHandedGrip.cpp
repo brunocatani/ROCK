@@ -53,10 +53,6 @@ namespace rock
         constexpr std::uint32_t SCOPE_DRIVER_MISS_GRACE_FRAMES = 3;
         constexpr float SCOPE_ROOT_REBASE_DURATION_SECONDS = 0.075f;
         constexpr std::uint32_t SCOPE_TRANSITION_TRACE_FRAMES = 6;
-        constexpr float GUNSTOCK_PRESENTED_HAND_POSITION_TOLERANCE_GAME_UNITS =
-            0.25f;
-        constexpr float GUNSTOCK_PRESENTED_HAND_ROTATION_TOLERANCE_DEGREES =
-            0.5f;
 
         gunstock_alignment_policy::FineTuneDegrees
             configuredGunstockFineTune()
@@ -766,69 +762,20 @@ namespace rock
         return true;
     }
 
-    bool TwoHandedGrip::tryResolveNativeScopeCameraWeaponLocal(
-        const bool alignToGunstockBore,
-        RE::NiTransform& outCameraWeaponLocal) const
-    {
-        outCameraWeaponLocal = {};
-        if (!_nativeScopeRigidFrame.valid ||
-            !isFiniteTransform(
-                _nativeScopeRigidFrame.cameraWeaponLocal)) {
-            return false;
-        }
-
-        outCameraWeaponLocal =
-            _nativeScopeRigidFrame.cameraWeaponLocal;
-        if (!alignToGunstockBore) {
-            return true;
-        }
-        if (!_gunstockAlignment.directionLatch.latched ||
-            !_gunstockAlignment.hasBoreFrameWeaponLocal ||
-            !isFiniteTransform(
-                _gunstockAlignment.boreFrameWeaponLocal)) {
-            return false;
-        }
-
-        outCameraWeaponLocal =
-            native_scope_camera_follow_math::
-                alignOpticalAxesToBore(
-                    outCameraWeaponLocal,
-                    _gunstockAlignment.boreFrameWeaponLocal);
-        if (_nativeScopeAnchorSource ==
-            native_scope_sight_anchor_policy::AnchorSource::
-                FiringGripFallback) {
-            outCameraWeaponLocal =
-                native_scope_camera_follow_math::
-                    applyWeaponLocalRotationOffset(
-                        outCameraWeaponLocal,
-                        _nativeScopeFallbackRotationDegrees.x,
-                        _nativeScopeFallbackRotationDegrees.y,
-                        _nativeScopeFallbackRotationDegrees.z);
-        }
-        return isFiniteTransform(outCameraWeaponLocal) &&
-               std::abs(outCameraWeaponLocal.scale) > 0.0001f;
-    }
-
     NativeScopeCameraTargetPreviewSnapshot
         TwoHandedGrip::getNativeScopeCameraTargetPreviewSnapshot() const
     {
-        const bool identityValid =
+        const bool valid =
             _nativeScopeRigidFrame.valid &&
             _nativeScopeAnchorValid &&
             _nativeScopeRigidFrame.weaponNodeIdentity ==
                 _nativeScopeAnchorWeaponNode &&
             _nativeScopeRigidFrame.weaponGenerationKey ==
-                _nativeScopeAnchorGenerationKey;
-        // Preserve the last captured target in an invalid diagnostic snapshot,
-        // matching the pre-gunstock preview contract. A valid gunstock preview
-        // replaces only its orientation through the resolver below.
-        RE::NiTransform cameraWeaponLocal =
-            _nativeScopeRigidFrame.cameraWeaponLocal;
-        const bool targetValid =
-            identityValid &&
-            tryResolveNativeScopeCameraWeaponLocal(
-                _gunstockAlignmentAppliedThisFrame,
-                cameraWeaponLocal);
+                _nativeScopeAnchorGenerationKey &&
+            isFiniteTransform(
+                _nativeScopeRigidFrame.cameraWeaponLocal) &&
+            std::abs(_nativeScopeRigidFrame.cameraWeaponLocal.scale) >
+                0.0001f;
         return NativeScopeCameraTargetPreviewSnapshot{
             .weaponGenerationKey =
                 _nativeScopeRigidFrame.weaponGenerationKey,
@@ -836,8 +783,9 @@ namespace rock
                 _nativeScopeAnchorOwnershipKey,
             .weaponFormID = _nativeScopeAnchorWeaponFormID,
             .anchorSource = _nativeScopeAnchorSource,
-            .cameraWeaponLocal = cameraWeaponLocal,
-            .valid = targetValid,
+            .cameraWeaponLocal =
+                _nativeScopeRigidFrame.cameraWeaponLocal,
+            .valid = valid,
         };
     }
 
@@ -1930,6 +1878,7 @@ namespace rock
         const EquippedWeaponHandlingSettings& handlingSettings)
     {
         _handlingSettings = handlingSettings;
+        _gunstockFramePresentation = {};
         observeGunstockWeaponEligibility(
             weaponNode,
             observedGunstockFireNode,
@@ -6961,6 +6910,7 @@ namespace rock
             _gunstockDedicatedHandAuthorityActive[1];
         clearGunstockDedicatedHandAuthority();
         _gunstockAlignment = {};
+        _gunstockFramePresentation = {};
         _gunstockWaitingLogged = false;
         _gunstockYieldLogged = false;
         _gunstockLatchedContinuityLogged = false;
@@ -7858,16 +7808,6 @@ namespace rock
                 gunstock_alignment_policy::resetCandidate(directionLatch);
                 return false;
             }
-            const RE::NiTransform boreFrameWeaponLocal =
-                transform_math::composeTransforms(
-                    transform_math::invertTransform(
-                        weaponNode->world),
-                    projectileNode->world);
-            if (!isFiniteTransform(boreFrameWeaponLocal) ||
-                std::abs(boreFrameWeaponLocal.scale) <= 0.0001f) {
-                gunstock_alignment_policy::resetCandidate(directionLatch);
-                return false;
-            }
 
             const bool latched =
                 gunstock_alignment_policy::observeStableDirection(
@@ -7883,10 +7823,6 @@ namespace rock
                 }
                 return false;
             }
-
-            _gunstockAlignment.boreFrameWeaponLocal =
-                boreFrameWeaponLocal;
-            _gunstockAlignment.hasBoreFrameWeaponLocal = true;
 
             _gunstockWaitingLogged = false;
             latchedThisFrame = true;
@@ -8098,11 +8034,22 @@ namespace rock
             if (!applyWeaponVisualAuthority(
                     weaponNode,
                     weaponNode->world,
-                    currentWeaponGenerationKey,
-                    true)) {
+                    currentWeaponGenerationKey)) {
                 clearGunstockDedicatedHandAuthority();
                 return false;
             }
+            _gunstockFramePresentation = GunstockFramePresentationState{
+                .weaponNodeIdentity = weaponNode,
+                .weaponGenerationKey = currentWeaponGenerationKey,
+                .runtimeFrameIndex =
+                    runtime_state::currentFrame().frameIndex,
+                .correctionWorld = correction,
+                .pivotWorld = pivotWorld,
+                .sourceWeaponWorld = weaponWorldBeforeCorrection,
+                .correctedWeaponWorld = weaponNode->world,
+                .firingHandIsLeft = _firingHandIsLeft,
+                .valid = true,
+            };
             clearGunstockDedicatedHandAuthority();
             (void)publishAuthoredPrimaryFiringGripFingerPose(
                 _firingHandIsLeft);
@@ -8182,61 +8129,19 @@ namespace rock
             return false;
         }
 
-        const auto readPresentedHandError = [](
-                                                const bool isLeft,
-                                                const RE::NiTransform& desiredWorld,
-                                                RE::NiTransform& outPresentedWorld,
-                                                float& outPositionError,
-                                                float& outRotationError) {
-            outPresentedWorld = {};
-            outPositionError = -1.0f;
-            outRotationError = -1.0f;
-            if (!tryGetRootFlattenedHandBoneTransform(
-                    isLeft,
-                    outPresentedWorld) ||
-                !isUsableHandAuthorityTransform(
-                    outPresentedWorld)) {
-                return false;
-            }
-
-            outPositionError = weaponSolverLength(
-                weaponSolverSub(
-                    outPresentedWorld.translate,
-                    desiredWorld.translate));
-            outRotationError =
-                hand_visual_lerp_math::rotationDistanceDegrees(
-                    desiredWorld,
-                    outPresentedWorld);
-            return std::isfinite(outPositionError) &&
-                   std::isfinite(outRotationError);
-        };
-
-        const auto presentedHandMatchesTarget = [](
-                                                    const float positionError,
-                                                    const float rotationError) {
-            return positionError <=
-                       GUNSTOCK_PRESENTED_HAND_POSITION_TOLERANCE_GAME_UNITS &&
-                   rotationError <=
-                       GUNSTOCK_PRESENTED_HAND_ROTATION_TOLERANCE_DEGREES;
-        };
-
         struct AppliedHandCorrection
         {
             const char* tag{ nullptr };
             RE::NiTransform originalWorld{};
             RE::NiTransform recoilWorldDelta{};
-            RE::NiTransform presentationLocalDelta{};
             bool isLeft{ false };
             bool reusedGripRole{ false };
             bool recoilPrecompensated{ false };
-            bool presentationPrecompensated{ false };
             bool applied{ false };
         };
 
         const auto applyHandCorrection = [this,
-                                             &rolePublishedThisFrame,
-                                             &readPresentedHandError,
-                                             &presentedHandMatchesTarget](
+                                             &rolePublishedThisFrame](
                                              const bool isLeft,
                                              const bool firingRole,
                                              const RE::NiTransform& originalWorld,
@@ -8262,46 +8167,6 @@ namespace rock
                     hand);
                 _gunstockDedicatedHandAuthorityActive[index] = false;
             }
-
-            const auto restoreCurrentPublication = [&]() {
-                RE::NiTransform restoreRequest = originalWorld;
-                if (out.recoilPrecompensated &&
-                    isUsableHandAuthorityTransform(
-                        out.recoilWorldDelta)) {
-                    restoreRequest =
-                        gunstock_alignment_policy::
-                            precompensateWorldTarget(
-                                out.recoilWorldDelta,
-                                originalWorld);
-                }
-                if (out.presentationPrecompensated &&
-                    isUsableHandAuthorityTransform(
-                        out.presentationLocalDelta)) {
-                    restoreRequest =
-                        gunstock_alignment_policy::
-                            precompensateLocalTarget(
-                                out.presentationLocalDelta,
-                                restoreRequest);
-                }
-                if (isUsableHandAuthorityTransform(restoreRequest)) {
-                    (void)frik_visual_authority::
-                        applyExternalHandWorldTransform(
-                            out.tag,
-                            hand,
-                            restoreRequest,
-                            GRIP_HAND_POSE_PRIORITY);
-                }
-                if (out.reusedGripRole) {
-                    recordPublishedHandWorld(isLeft, originalWorld);
-                } else {
-                    (void)frik_visual_authority::
-                        clearExternalHandWorldTransform(
-                            GUNSTOCK_ALIGNMENT_TAG,
-                            hand);
-                    _gunstockDedicatedHandAuthorityActive[index] = false;
-                }
-                _gunstockHandAuthorityActive[index] = false;
-            };
 
             RE::NiTransform requestedWorld = desiredWorld;
             bool recoilProbeApplied = false;
@@ -8413,112 +8278,12 @@ namespace rock
                 _gunstockDedicatedHandAuthorityActive[index] = true;
             }
 
-            // The FRIK API request is not the rendered contract: controlled
-            // recoil and the active palm pose are applied inside hFRIK after
-            // the requested world transform. Verify the actual full-body hand
-            // root before moving the weapon. A deterministic residual is
-            // inverted once so automatic alignment and the additive INI trim
-            // reach the same final presented transform.
-            RE::NiTransform presentedWorld{};
-            float initialPositionError = -1.0f;
-            float initialRotationError = -1.0f;
-            if (!readPresentedHandError(
-                    isLeft,
-                    desiredWorld,
-                    presentedWorld,
-                    initialPositionError,
-                    initialRotationError)) {
-                restoreCurrentPublication();
-                ROCK_LOG_SAMPLE_WARN(
-                    Weapon,
-                    2000,
-                    "TwoHandedGrip: gunstock rejected hand/weapon split because the presented {} hand root could not be verified",
-                    isLeft ? "left" : "right");
-                return false;
-            }
-
-            float finalPositionError = initialPositionError;
-            float finalRotationError = initialRotationError;
-            if (!presentedHandMatchesTarget(
-                    finalPositionError,
-                    finalRotationError)) {
-                RE::NiTransform worldAdjustedRequested = requestedWorld;
-                if (out.recoilPrecompensated) {
-                    worldAdjustedRequested =
-                        transform_math::composeTransforms(
-                            out.recoilWorldDelta,
-                            requestedWorld);
-                }
-                const RE::NiTransform presentedLocalDelta =
-                    gunstock_alignment_policy::deriveAppliedLocalDelta(
-                        worldAdjustedRequested,
-                        presentedWorld);
-                if (!isUsableHandAuthorityTransform(
-                        presentedLocalDelta)) {
-                    restoreCurrentPublication();
-                    return false;
-                }
-                out.presentationLocalDelta = presentedLocalDelta;
-                out.presentationPrecompensated = true;
-                RE::NiTransform recoveredRequest = desiredWorld;
-                if (out.recoilPrecompensated) {
-                    recoveredRequest =
-                        gunstock_alignment_policy::
-                            precompensateWorldTarget(
-                                out.recoilWorldDelta,
-                                recoveredRequest);
-                }
-                recoveredRequest =
-                    gunstock_alignment_policy::precompensateLocalTarget(
-                        presentedLocalDelta,
-                        recoveredRequest);
-                if (!isUsableHandAuthorityTransform(recoveredRequest)) {
-                    restoreCurrentPublication();
-                    return false;
-                }
-
-                if (!frik_visual_authority::
-                        applyExternalHandWorldTransform(
-                            out.tag,
-                            hand,
-                            recoveredRequest,
-                            GRIP_HAND_POSE_PRIORITY) ||
-                    !readPresentedHandError(
-                        isLeft,
-                        desiredWorld,
-                        presentedWorld,
-                        finalPositionError,
-                        finalRotationError) ||
-                    !presentedHandMatchesTarget(
-                        finalPositionError,
-                        finalRotationError)) {
-                    restoreCurrentPublication();
-                    ROCK_LOG_SAMPLE_WARN(
-                        Weapon,
-                        2000,
-                        "TwoHandedGrip: gunstock rejected unresolved presented-hand residual hand={} initial=({:.4f}gu,{:.3f}deg) final=({:.4f}gu,{:.3f}deg)",
-                        isLeft ? "left" : "right",
-                        initialPositionError,
-                        initialRotationError,
-                        finalPositionError,
-                        finalRotationError);
-                    return false;
-                }
-
-                ROCK_LOG_SAMPLE_DEBUG(
-                    Weapon,
-                    2000,
-                    "TwoHandedGrip: gunstock recovered presented-hand residual hand={} initial=({:.4f}gu,{:.3f}deg) final=({:.4f}gu,{:.3f}deg)",
-                    isLeft ? "left" : "right",
-                    initialPositionError,
-                    initialRotationError,
-                    finalPositionError,
-                    finalRotationError);
-            }
-
             if (out.reusedGripRole) {
-                // Record the verified presented target, not a private inverse
-                // request used to cancel hFRIK's post-publication transform.
+                // Keep the role's logical target coherent with the weapon.
+                // hFRIK applies this request synchronously, then its recoil
+                // and hand-pose stages may move the presented wrist away from
+                // the requested root. Publication success, rather than exact
+                // root-tree equality, is the authority contract here.
                 recordPublishedHandWorld(isLeft, desiredWorld);
             }
             _gunstockHandAuthorityActive[index] = true;
@@ -8537,12 +8302,6 @@ namespace rock
                     gunstock_alignment_policy::precompensateWorldTarget(
                         applied.recoilWorldDelta,
                         applied.originalWorld);
-            }
-            if (applied.presentationPrecompensated) {
-                restoreTarget =
-                    gunstock_alignment_policy::precompensateLocalTarget(
-                        applied.presentationLocalDelta,
-                        restoreTarget);
             }
             (void)frik_visual_authority::applyExternalHandWorldTransform(
                 applied.tag,
@@ -8588,71 +8347,28 @@ namespace rock
             return false;
         }
 
-        // A support-hand publication asks hFRIK to refresh the whole hand-pose
-        // tree. Revalidate both final roots after every participant has
-        // published so the weapon commit cannot race a cross-hand animation
-        // refresh performed later in this same transaction.
-        const auto finalPresentedHandMatches = [&readPresentedHandError,
-                                                   &presentedHandMatchesTarget](
-                                                  const bool isLeft,
-                                                  const RE::NiTransform& desiredWorld,
-                                                  float& outPositionError,
-                                                  float& outRotationError) {
-            RE::NiTransform presentedWorld{};
-            return readPresentedHandError(
-                       isLeft,
-                       desiredWorld,
-                       presentedWorld,
-                       outPositionError,
-                       outRotationError) &&
-                   presentedHandMatchesTarget(
-                       outPositionError,
-                       outRotationError);
-        };
-        float finalFiringPositionError = -1.0f;
-        float finalFiringRotationError = -1.0f;
-        float finalSupportPositionError = -1.0f;
-        float finalSupportRotationError = -1.0f;
-        const bool firingHandCommitReady =
-            finalPresentedHandMatches(
-                _firingHandIsLeft,
-                correctedFiringHandWorld,
-                finalFiringPositionError,
-                finalFiringRotationError);
-        const bool supportHandCommitReady =
-            !supportHandParticipates ||
-            finalPresentedHandMatches(
-                supportHandIsLeft,
-                correctedSupportHandWorld,
-                finalSupportPositionError,
-                finalSupportRotationError);
-        if (!firingHandCommitReady || !supportHandCommitReady) {
-            restoreHandCorrection(supportCorrection);
-            restoreHandCorrection(firingCorrection);
-            clearGunstockDedicatedHandAuthority();
-            ROCK_LOG_SAMPLE_WARN(
-                Weapon,
-                2000,
-                "TwoHandedGrip: gunstock rejected final hand/weapon transaction firingReady={} firingError=({:.4f}gu,{:.3f}deg) supportReady={} supportError=({:.4f}gu,{:.3f}deg)",
-                firingHandCommitReady ? "yes" : "no",
-                finalFiringPositionError,
-                finalFiringRotationError,
-                supportHandCommitReady ? "yes" : "no",
-                finalSupportPositionError,
-                finalSupportRotationError);
-            return false;
-        }
-
         if (!applyWeaponVisualAuthority(
                 weaponNode,
                 correctedWeaponWorld,
-                currentWeaponGenerationKey,
-                true)) {
+                currentWeaponGenerationKey)) {
             restoreHandCorrection(supportCorrection);
             restoreHandCorrection(firingCorrection);
             clearGunstockDedicatedHandAuthority();
             return false;
         }
+
+        _gunstockFramePresentation = GunstockFramePresentationState{
+            .weaponNodeIdentity = weaponNode,
+            .weaponGenerationKey = currentWeaponGenerationKey,
+            .runtimeFrameIndex =
+                runtime_state::currentFrame().frameIndex,
+            .correctionWorld = correction,
+            .pivotWorld = pivotWorld,
+            .sourceWeaponWorld = weaponWorldBeforeCorrection,
+            .correctedWeaponWorld = weaponNode->world,
+            .firingHandIsLeft = _firingHandIsLeft,
+            .valid = true,
+        };
 
         if (g_rockConfig.rockDebugDrawGunstockAlignment) {
             _gunstockAlignmentDebugSnapshot.recoilWitness =
@@ -8671,11 +8387,376 @@ namespace rock
         _gunstockAlignmentAppliedThisFrame = true;
         return true;
     }
+
+    bool TwoHandedGrip::finalizeGunstockPresentationAfterNativeWeaponAnimation(
+        RE::NiNode* weaponNode,
+        const std::uint64_t currentWeaponGenerationKey)
+    {
+        auto& frameState = _gunstockFramePresentation;
+        const bool nativeWeaponAnimationActive =
+            (provider::currentNativeAnimationAuthorityFlagsV1() &
+                authored_weapon_grip_capture_policy::kWeapon) != 0;
+        if (!g_rockConfig.rockGunstockModeEnabled ||
+            !nativeWeaponAnimationActive ||
+            !runtime_state::isLocalSkeletonReady() ||
+            !frik_visual_authority::isAvailable() ||
+            !weaponNode ||
+            currentWeaponGenerationKey == 0 ||
+            !f4vr::isNodeVisible(weaponNode) ||
+            !isFiniteTransform(weaponNode->world) ||
+            !frameState.valid ||
+            frameState.finalizedAfterNativeAnimation ||
+            frameState.runtimeFrameIndex !=
+                runtime_state::currentFrame().frameIndex ||
+            frameState.weaponNodeIdentity != weaponNode ||
+            frameState.weaponGenerationKey !=
+                currentWeaponGenerationKey ||
+            frameState.firingHandIsLeft != _firingHandIsLeft ||
+            !_gunstockAlignment.directionLatch.latched) {
+            return false;
+        }
+
+        /*
+         * Some animation providers preserve ROCK's final weapon themselves.
+         * Treat that as an already-complete transaction: applying the cached
+         * correction a second time would rotate both weapon and hands twice.
+         * Republish the retained scope frame because the animation may still
+         * have restored its camera hierarchy.
+         */
+        if (areTransformsNearlyEqual(
+                weaponNode->world,
+                frameState.correctedWeaponWorld)) {
+            if (!applyWeaponVisualAuthority(
+                    weaponNode,
+                    frameState.correctedWeaponWorld,
+                    currentWeaponGenerationKey)) {
+                return false;
+            }
+            frameState.finalizedAfterNativeAnimation = true;
+            return true;
+        }
+
+        /*
+         * PAPER has already authored the complete arm/hand/finger pose into
+         * both its source tree and hFRIK's visible root flattened tree.
+         * Calling FRIK's external-hand API here would restore default arm
+         * locals, rerun IK, and republish the ordinary hand-pose stack over
+         * that animation. Move only each visible Hand root in parent space:
+         * the wrist absorbs the gunstock correction, while every authored
+         * finger local and the rest of the arm clip stay intact. The matching
+         * flattened `world` entries are rotated as a frame-local presentation
+         * overlay; their authored graph locals remain untouched for the next
+         * native/hFRIK frame.
+         */
+        using BoneTree = f4vr::BSFlattenedBoneTree;
+        constexpr int kMaxPostAnimationFlattenedTransforms = 768;
+        const auto validBoneTree = [](const BoneTree* tree) {
+            return tree && tree->transforms && tree->numTransforms > 0 &&
+                tree->numTransforms <=
+                    kMaxPostAnimationFlattenedTransforms;
+        };
+        const auto transformNameEquals = [](const BoneTree::BoneTransforms& transform,
+                                             const char* name) {
+            const char* transformName = transform.name.c_str();
+            return transformName && name &&
+                _stricmp(transformName, name) == 0;
+        };
+        const auto findTransformIndex = [&transformNameEquals](
+                                            const BoneTree& tree,
+                                            const char* name) {
+            for (int index = 0; index < tree.numTransforms; ++index) {
+                const auto& transform = tree.transforms[index];
+                if (transform.refNode &&
+                    transformNameEquals(transform, name)) {
+                    return index;
+                }
+            }
+            return -1;
+        };
+        const auto belongsToRigidGroup = [&transformNameEquals](
+                                              const BoneTree& tree,
+                                              int index,
+                                              const int leftHandIndex,
+                                              const int rightHandIndex,
+                                              const RE::NiNode* currentWeapon) {
+            for (int depth = 0;
+                 index >= 0 && index < tree.numTransforms &&
+                 depth < tree.numTransforms;
+                 ++depth) {
+                const auto& transform = tree.transforms[index];
+                if (index == leftHandIndex || index == rightHandIndex ||
+                    transform.refNode == currentWeapon ||
+                    transformNameEquals(transform, "Weapon") ||
+                    transformNameEquals(transform, "WeaponLeft")) {
+                    return true;
+                }
+                const int parentIndex = transform.parPos;
+                if (parentIndex == index) {
+                    break;
+                }
+                index = parentIndex;
+            }
+            return false;
+        };
+        const auto validateFlattenedOverlay = [&belongsToRigidGroup](
+                                                   const BoneTree& tree,
+                                                   const int leftHandIndex,
+                                                   const int rightHandIndex,
+                                                   const RE::NiNode* currentWeapon) {
+            bool found = false;
+            for (int index = 0; index < tree.numTransforms; ++index) {
+                if (!belongsToRigidGroup(
+                        tree,
+                        index,
+                        leftHandIndex,
+                        rightHandIndex,
+                        currentWeapon)) {
+                    continue;
+                }
+                found = true;
+                if (!isFiniteTransform(tree.transforms[index].world)) {
+                    return false;
+                }
+            }
+            return found;
+        };
+        const auto applyFlattenedOverlay = [&belongsToRigidGroup,
+                                               &frameState](
+                                               BoneTree& tree,
+                                               const int leftHandIndex,
+                                               const int rightHandIndex,
+                                               const RE::NiNode* currentWeapon) {
+            for (int index = 0; index < tree.numTransforms; ++index) {
+                auto& transform = tree.transforms[index];
+                if (!belongsToRigidGroup(
+                        tree,
+                        index,
+                        leftHandIndex,
+                        rightHandIndex,
+                        currentWeapon)) {
+                    continue;
+                }
+                transform.world =
+                    gunstock_alignment_policy::rotateRigidlyAroundPivot<
+                        RE::NiTransform,
+                        RE::NiMatrix3,
+                        RE::NiPoint3>(
+                        transform.world,
+                        frameState.correctionWorld,
+                        frameState.pivotWorld);
+            }
+        };
+
+        BoneTree* visibleBoneTree = f4vr::getFlattenedBoneTree();
+        if (!validBoneTree(visibleBoneTree)) {
+            return false;
+        }
+        const int leftHandTransformIndex =
+            findTransformIndex(*visibleBoneTree, "LArm_Hand");
+        const int rightHandTransformIndex =
+            findTransformIndex(*visibleBoneTree, "RArm_Hand");
+        if (leftHandTransformIndex < 0 || rightHandTransformIndex < 0 ||
+            !validateFlattenedOverlay(
+                *visibleBoneTree,
+                leftHandTransformIndex,
+                rightHandTransformIndex,
+                weaponNode)) {
+            ROCK_LOG_SAMPLE_WARN(
+                Weapon,
+                2000,
+                "TwoHandedGrip: gunstock post-animation transaction skipped because the visible flattened hand tree was unavailable");
+            return false;
+        }
+
+        BoneTree* firstPersonBoneTree = f4vr::getFirstPersonBoneTree();
+        const bool firstPersonWeaponOverlayReady =
+            firstPersonBoneTree &&
+            firstPersonBoneTree != visibleBoneTree &&
+            validBoneTree(firstPersonBoneTree) &&
+            validateFlattenedOverlay(
+                *firstPersonBoneTree,
+                -1,
+                -1,
+                weaponNode);
+
+        struct PostAnimationHandCorrection
+        {
+            RE::NiNode* node{ nullptr };
+            RE::NiTransform originalLocal{};
+            RE::NiTransform originalWorld{};
+            RE::NiTransform correctedWorld{};
+        };
+
+        const auto prepareHand = [&frameState, visibleBoneTree](
+                                     const int transformIndex,
+                                     PostAnimationHandCorrection& out) {
+            out = {};
+            if (transformIndex < 0 ||
+                transformIndex >= visibleBoneTree->numTransforms) {
+                return false;
+            }
+            out.node =
+                visibleBoneTree->transforms[transformIndex].refNode;
+            if (!out.node || !out.node->parent ||
+                !isFiniteTransform(out.node->local) ||
+                !isFiniteTransform(out.node->world) ||
+                !isFiniteTransform(out.node->parent->world)) {
+                return false;
+            }
+            out.originalLocal = out.node->local;
+            out.originalWorld = out.node->world;
+            if (!isUsableHandAuthorityTransform(out.originalWorld)) {
+                return false;
+            }
+            out.correctedWorld =
+                gunstock_alignment_policy::rotateRigidlyAroundPivot<
+                    RE::NiTransform,
+                    RE::NiMatrix3,
+                    RE::NiPoint3>(
+                    out.originalWorld,
+                    frameState.correctionWorld,
+                    frameState.pivotWorld);
+            if (!isUsableHandAuthorityTransform(out.correctedWorld)) {
+                return false;
+            }
+            return true;
+        };
+
+        PostAnimationHandCorrection leftHand{};
+        PostAnimationHandCorrection rightHand{};
+        if (!prepareHand(leftHandTransformIndex, leftHand) ||
+            !prepareHand(rightHandTransformIndex, rightHand) ||
+            leftHand.node == rightHand.node) {
+            ROCK_LOG_SAMPLE_WARN(
+                Weapon,
+                2000,
+                "TwoHandedGrip: gunstock post-animation transaction skipped because a visible authored reload hand root was unavailable");
+            return false;
+        }
+
+        const RE::NiTransform postAnimationWeaponWorld =
+            weaponNode->world;
+        const RE::NiTransform correctedPostAnimationWeaponWorld =
+            gunstock_alignment_policy::rotateRigidlyAroundPivot<
+                RE::NiTransform,
+                RE::NiMatrix3,
+                RE::NiPoint3>(
+                postAnimationWeaponWorld,
+                frameState.correctionWorld,
+                frameState.pivotWorld);
+        if (!isFiniteTransform(correctedPostAnimationWeaponWorld)) {
+            return false;
+        }
+
+        const char* ignoredWeaponNodeName =
+            weaponNode->name.c_str();
+        const auto applyHand = [ignoredWeaponNodeName](
+                                   PostAnimationHandCorrection& handState) {
+            const RE::NiTransform correctedLocal =
+                weapon_visual_authority_math::worldTargetToParentLocal(
+                    handState.node->parent->world,
+                    handState.correctedWorld);
+            if (!isFiniteTransform(correctedLocal)) {
+                return false;
+            }
+            handState.node->local = correctedLocal;
+            f4vr::updateTransformsDown(
+                handState.node,
+                true,
+                ignoredWeaponNodeName);
+            return areTransformsNearlyEqual(
+                handState.node->world,
+                handState.correctedWorld,
+                0.01f);
+        };
+
+        const auto rollbackHand = [ignoredWeaponNodeName](
+                                      const PostAnimationHandCorrection& handState) {
+            if (!handState.node) {
+                return;
+            }
+            handState.node->local = handState.originalLocal;
+            f4vr::updateTransformsDown(
+                handState.node,
+                true,
+                ignoredWeaponNodeName);
+        };
+
+        if (!applyHand(leftHand) || !applyHand(rightHand)) {
+            rollbackHand(rightHand);
+            rollbackHand(leftHand);
+            ROCK_LOG_SAMPLE_WARN(
+                Weapon,
+                2000,
+                "TwoHandedGrip: gunstock post-animation direct hand reframe failed; weapon remained under native animation authority");
+            return false;
+        }
+
+        if (!applyWeaponVisualAuthority(
+                weaponNode,
+                correctedPostAnimationWeaponWorld,
+                currentWeaponGenerationKey)) {
+            rollbackHand(rightHand);
+            rollbackHand(leftHand);
+            return false;
+        }
+
+        // Scene-node propagation does not update BSFlattenedBoneTree's
+        // presentation cache. Rotate the complete visible hand/weapon group
+        // there as well, and mirror the Weapon branch in PAPER's source tree
+        // when that separate tree is available. Locals deliberately remain
+        // the authored animation data.
+        applyFlattenedOverlay(
+            *visibleBoneTree,
+            leftHandTransformIndex,
+            rightHandTransformIndex,
+            weaponNode);
+        if (firstPersonWeaponOverlayReady) {
+            applyFlattenedOverlay(
+                *firstPersonBoneTree,
+                -1,
+                -1,
+                weaponNode);
+        }
+
+        const float sourcePositionError = weaponSolverLength(
+            weaponSolverSub(
+                postAnimationWeaponWorld.translate,
+                frameState.sourceWeaponWorld.translate));
+        const float sourceRotationError =
+            hand_visual_lerp_math::rotationDistanceDegrees(
+                frameState.sourceWeaponWorld,
+                postAnimationWeaponWorld);
+        const float finalPositionError = weaponSolverLength(
+            weaponSolverSub(
+                weaponNode->world.translate,
+                frameState.correctedWeaponWorld.translate));
+        const float finalRotationError =
+            hand_visual_lerp_math::rotationDistanceDegrees(
+                frameState.correctedWeaponWorld,
+                weaponNode->world);
+        ROCK_LOG_SAMPLE_DEBUG(
+            Weapon,
+            2000,
+            "TwoHandedGrip: gunstock reapplied after native Weapon animation sourceError=({:.4f}gu,{:.3f}deg) finalError=({:.4f}gu,{:.3f}deg)",
+            sourcePositionError,
+            sourceRotationError,
+            finalPositionError,
+            finalRotationError);
+
+        frameState.correctedWeaponWorld = weaponNode->world;
+        frameState.finalizedAfterNativeAnimation = true;
+        _lastSolvedWeaponTransform = weaponNode->world;
+        _hasSolvedWeaponTransform = true;
+        reframeAuthoredSupportGripDebugSnapshot(weaponNode->world);
+        _gunstockAlignmentAppliedThisFrame = true;
+        return true;
+    }
+
     bool TwoHandedGrip::applyWeaponVisualAuthority(
         RE::NiNode* weaponNode,
         const RE::NiTransform& solvedWeaponWorld,
-        const std::uint64_t authorityGenerationKey,
-        const bool alignScopeToGunstockBore)
+        const std::uint64_t authorityGenerationKey)
     {
         if (!weaponNode) {
             return false;
@@ -8705,12 +8786,12 @@ namespace rock
 
         const bool rigidFrameMatchesAuthority = _nativeScopeRigidFrame.valid && _nativeScopeRigidFrame.weaponGenerationKey == effectiveGenerationKey &&
             _nativeScopeRigidFrame.weaponNodeIdentity == weaponNode && _nativeScopeRigidFrame.scopeCameraIdentity == scopeCameraFollow.camera;
-        RE::NiTransform cameraWeaponLocal{};
         const bool scopeTargetReady =
             rigidFrameMatchesAuthority &&
-            tryResolveNativeScopeCameraWeaponLocal(
-                alignScopeToGunstockBore,
-                cameraWeaponLocal);
+            isFiniteTransform(
+                _nativeScopeRigidFrame.cameraWeaponLocal) &&
+            std::abs(_nativeScopeRigidFrame.cameraWeaponLocal.scale) >
+                0.0001f;
         const NativeScopeCameraFollowResult scopeCameraResult =
             scopeTargetReady ?
                 applyNativeScopeCameraWorldTarget(
@@ -8718,10 +8799,33 @@ namespace rock
                     native_scope_camera_follow_math::
                         resolveRigidAnchorFrameWorld(
                             weaponNode->world,
-                            cameraWeaponLocal)) :
+                            _nativeScopeRigidFrame.cameraWeaponLocal)) :
                 NativeScopeCameraFollowResult{};
         if (scopeCameraResult.targetValid && scopeCameraResult.writeApplied) {
             (void)applyNativeScopeOverlayTarget(scopeCameraResult.targetCameraWorld, effectiveGenerationKey);
+        }
+        if (g_rockConfig.rockDebugDrawNativeScopeActivation &&
+            scopeTargetReady &&
+            scopeCameraResult.immediateReadbackValid) {
+            const RE::NiTransform immediateCameraWeaponLocal =
+                transform_math::composeTransforms(
+                    transform_math::invertTransform(weaponNode->world),
+                    scopeCameraResult.immediateCameraWorldAfter);
+            const float rigidPositionError = weaponSolverLength(
+                weaponSolverSub(
+                    immediateCameraWeaponLocal.translate,
+                    _nativeScopeRigidFrame.cameraWeaponLocal.translate));
+            const float rigidRotationError =
+                hand_visual_lerp_math::rotationDistanceDegrees(
+                    _nativeScopeRigidFrame.cameraWeaponLocal,
+                    immediateCameraWeaponLocal);
+            ROCK_LOG_SAMPLE_DEBUG(
+                Weapon,
+                2000,
+                "TwoHandedGrip: native scope retained weapon-local frame relationError=({:.4f}gu,{:.3f}deg) generation={:016X}",
+                rigidPositionError,
+                rigidRotationError,
+                effectiveGenerationKey);
         }
         _lastRenderedWeaponWorld = weaponNode->world;
         _hasLastRenderedWeaponWorld = isFiniteTransform(_lastRenderedWeaponWorld);

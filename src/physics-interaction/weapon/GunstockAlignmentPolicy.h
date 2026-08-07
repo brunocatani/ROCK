@@ -484,29 +484,4 @@ namespace rock::gunstock_alignment_policy
             desiredAppliedWorld);
     }
 
-    /*
-     * hFRIK applies an authored palm pose after arm IK in the solved hand's
-     * local frame. Keep that right-side residual separate from controlled
-     * recoil's left/world delta so both can be inverted without assuming that
-     * the transforms commute.
-     */
-    template <class Transform>
-    [[nodiscard]] inline Transform deriveAppliedLocalDelta(
-        const Transform& requestedWorld,
-        const Transform& appliedWorld)
-    {
-        return transform_math::composeTransforms(
-            transform_math::invertTransform(requestedWorld),
-            appliedWorld);
-    }
-
-    template <class Transform>
-    [[nodiscard]] inline Transform precompensateLocalTarget(
-        const Transform& appliedLocalDelta,
-        const Transform& desiredAppliedWorld)
-    {
-        return transform_math::composeTransforms(
-            desiredAppliedWorld,
-            transform_math::invertTransform(appliedLocalDelta));
-    }
 }

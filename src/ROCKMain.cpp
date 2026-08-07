@@ -576,6 +576,11 @@ namespace
         rock::provider::dispatchAnimationPhaseCallbacksV1(
             rock::provider::RockProviderAnimationPhaseV1::AfterRock,
             runtime_state::currentFrame().deltaSeconds);
+        if (s_pluginLoaded && s_frikAvailable && g_rockConfig.rockEnabled &&
+            s_physicsInteraction) {
+            s_physicsInteraction->
+                finalizeGunstockPresentationAfterNativeAnimation();
+        }
         rock::provider::dispatchAnimationPhaseCallbacksV1(
             rock::provider::RockProviderAnimationPhaseV1::Complete,
             runtime_state::currentFrame().deltaSeconds);

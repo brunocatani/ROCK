@@ -95,6 +95,10 @@ namespace rock
 
         void synchronizeNativeScopePresentationAfterFrikUpdate();
 
+        // Called after provider AfterRock callbacks. Only full native Weapon
+        // animation authority can consume the frame-local gunstock correction.
+        void finalizeGunstockPresentationAfterNativeAnimation();
+
         [[nodiscard]] bool tryGetManualScopeDirectTransitionTarget(
             std::uint64_t& outWeaponGenerationKey,
             std::uint32_t& outNativeOverlayIndex) const;

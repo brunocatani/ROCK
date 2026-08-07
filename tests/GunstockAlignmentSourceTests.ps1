@@ -76,8 +76,12 @@ foreach ($iniPath in @(
 }
 
 Require-Text 'src/physics-interaction/weapon/GunstockAlignmentPolicy.h' `
-    'kRequiredStableSamples\s*=\s*6[\s\S]*ModeToggleState[\s\S]*observeModeToggle[\s\S]*WeaponEligibilityState[\s\S]*observeWeaponEligibility[\s\S]*gunTypeWitnessObserved[\s\S]*validFireNodeObserved[\s\S]*gunTypeWitnessObserved\s*&&\s*validFireNodeObserved[\s\S]*isWeaponEligible[\s\S]*neutralHandLocal[\s\S]*tryCaptureHandLocalBore[\s\S]*localForward\s*\{\s*0\.0f,\s*1\.0f,\s*0\.0f\s*\}[\s\S]*tryBuildWorldCorrection[\s\S]*targetForwardWorld[\s\S]*rotateRigidlyAroundPivot[\s\S]*precompensateWorldTarget[\s\S]*deriveAppliedLocalDelta[\s\S]*precompensateLocalTarget' `
-    'The value-only policy must own live mode edges, generation-bound kGun-plus-fire-node eligibility, neutral +Y capture, wrist correction, rigid grouping, and separate world-recoil/local-presentation precompensation.'
+    'kRequiredStableSamples\s*=\s*6[\s\S]*ModeToggleState[\s\S]*observeModeToggle[\s\S]*WeaponEligibilityState[\s\S]*observeWeaponEligibility[\s\S]*gunTypeWitnessObserved[\s\S]*validFireNodeObserved[\s\S]*gunTypeWitnessObserved\s*&&\s*validFireNodeObserved[\s\S]*isWeaponEligible[\s\S]*neutralHandLocal[\s\S]*tryCaptureHandLocalBore[\s\S]*localForward\s*\{\s*0\.0f,\s*1\.0f,\s*0\.0f\s*\}[\s\S]*tryBuildWorldCorrection[\s\S]*targetForwardWorld[\s\S]*rotateRigidlyAroundPivot[\s\S]*deriveAppliedWorldDelta[\s\S]*precompensateWorldTarget' `
+    'The value-only policy must own mode edges, firearm eligibility, neutral +Y capture, wrist correction, rigid grouping, and controlled-recoil precompensation.'
+
+Reject-Text 'src/physics-interaction/weapon/GunstockAlignmentPolicy.h' `
+    'deriveAppliedLocalDelta|precompensateLocalTarget' `
+    'Gunstock alignment must not infer an unobservable same-frame palm residual from root-tree readback.'
 
 Require-Text 'src/physics-interaction/weapon/GunstockAlignmentPolicy.h' `
     'struct\s+FineTuneDegrees[\s\S]*pitchDegrees[\s\S]*yawDegrees[\s\S]*rollDegrees[\s\S]*hasFineTune[\s\S]*tryBuildWorldFineTuneRotation[\s\S]*yawAxisWorld[\s\S]*fineTune\.yawDegrees[\s\S]*pitchAxisWorld[\s\S]*fineTune\.pitchDegrees[\s\S]*rollAxisWorld[\s\S]*fineTune\.rollDegrees[\s\S]*tryBuildFineTunedWorldCorrection[\s\S]*automaticCorrection[\s\S]*fineTuneWorld[\s\S]*weaponSolverApplyWorldRotationToStoredBasis' `
@@ -108,12 +112,16 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'Runtime alignment must compose configured fine tuning into the one rigid correction and never skip a pure-roll trim.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'directionDot\s*>\s*0\.999999f\s*&&\s*!fineTuneActive[\s\S]*applyWeaponVisualAuthority\([\s\S]*weaponNode->world,[\s\S]*currentWeaponGenerationKey,[\s\S]*true\)[\s\S]*correctedWeaponWorld[\s\S]*applyWeaponVisualAuthority\([\s\S]*correctedWeaponWorld,[\s\S]*currentWeaponGenerationKey,[\s\S]*true\)' `
-    'Final gunstock scope authority must publish both when the weapon needs a correction and when the bore is already aligned.'
+    'directionDot\s*>\s*0\.999999f\s*&&\s*!fineTuneActive[\s\S]*applyWeaponVisualAuthority\([\s\S]*weaponNode->world,[\s\S]*currentWeaponGenerationKey\)[\s\S]*correctedWeaponWorld[\s\S]*applyWeaponVisualAuthority\([\s\S]*correctedWeaponWorld,[\s\S]*currentWeaponGenerationKey\)' `
+    'Final gunstock weapon/scope authority must publish both when the weapon needs a correction and when the bore is already aligned.'
 
-Require-Text 'src/physics-interaction/weapon/WeaponAuthority.h' `
-    'camera \+X[\s\S]*bore \+Y[\s\S]*bore''s \+Z as up[\s\S]*alignOpticalAxesToBore[\s\S]*boreFrameWeaponLocal\.rotate\.entry\[1\]\[column\][\s\S]*-boreFrameWeaponLocal\.rotate\.entry\[0\]\[column\][\s\S]*boreFrameWeaponLocal\.rotate\.entry\[2\]\[column\]' `
-    'Gunstock scopes must use the final bore as optical authority without changing the retained sight anchor or scale.'
+Reject-Text 'src/physics-interaction/weapon/WeaponAuthority.h' `
+    'alignOpticalAxesToBore|camera \+X[\s\S]*bore \+Y' `
+    'Gunstock scopes must not replace the captured native camera calibration with an unverified axis mapping.'
+
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'applyWeaponVisualAuthority[\s\S]*_nativeScopeRigidFrame\.cameraWeaponLocal[\s\S]*resolveRigidAnchorFrameWorld\([\s\S]*weaponNode->world,[\s\S]*_nativeScopeRigidFrame\.cameraWeaponLocal[\s\S]*native scope retained weapon-local frame relationError' `
+    'The final weapon writer must transport the retained camera frame rigidly and diagnose its immediate weapon-local relation.'
 
 Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
     'tryGetGunstockTrackedFiringHandWorld\([\s\S]*input\.weaponNode,[\s\S]*input\.weaponGenerationKey,[\s\S]*trackedHandWorld\s*=\s*gunstockTrackedHandWorld' `
@@ -140,12 +148,39 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'Left manual firing must derive recoil from synchronous presented full-body hand readback even when the existing primary role tag is reused.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'GUNSTOCK_PRESENTED_HAND_POSITION_TOLERANCE_GAME_UNITS[\s\S]*GUNSTOCK_PRESENTED_HAND_ROTATION_TOLERANCE_DEGREES[\s\S]*readPresentedHandError[\s\S]*tryGetRootFlattenedHandBoneTransform[\s\S]*presentedHandMatchesTarget[\s\S]*applyHandCorrection[\s\S]*applyExternalHandWorldTransform[\s\S]*readPresentedHandError[\s\S]*worldAdjustedRequested[\s\S]*deriveAppliedLocalDelta[\s\S]*precompensateWorldTarget[\s\S]*precompensateLocalTarget[\s\S]*recoveredRequest[\s\S]*applyExternalHandWorldTransform[\s\S]*recordPublishedHandWorld\(isLeft, desiredWorld\)' `
-    'The complete automatic-plus-fine-tune hand target must be verified at the presented bone and recovered with separate noncommuting world/local residuals.'
+    'applyHandCorrection[\s\S]*applyExternalHandWorldTransform\([\s\S]*out\.tag[\s\S]*requestedWorld[\s\S]*if \(out\.reusedGripRole\)[\s\S]*recordPublishedHandWorld\(isLeft, desiredWorld\)[\s\S]*applyWeaponVisualAuthority\([\s\S]*correctedWeaponWorld' `
+    'A successful external hand-authority publication must commit the same rigid weapon target without a synchronous root-tree acknowledgement requirement.'
+
+Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'readPresentedHandError|presentedHandMatchesTarget|finalPresentedHandMatches|worldAdjustedRequested|recoveredRequest' `
+    'The weapon transaction must never be vetoed by same-frame root-tree readback of an external FRIK request.'
+
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' `
+    'struct\s+GunstockFramePresentationState[\s\S]*runtimeFrameIndex[\s\S]*correctionWorld[\s\S]*pivotWorld[\s\S]*sourceWeaponWorld[\s\S]*correctedWeaponWorld[\s\S]*finalizedAfterNativeAnimation[\s\S]*valid' `
+    'The normal gunstock pass must retain a bounded same-frame correction transaction for a later native Weapon writer.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'finalPresentedHandMatches[\s\S]*correctedFiringHandWorld[\s\S]*correctedSupportHandWorld[\s\S]*restoreHandCorrection\(supportCorrection\)[\s\S]*restoreHandCorrection\(firingCorrection\)[\s\S]*applyWeaponVisualAuthority\([\s\S]*correctedWeaponWorld' `
-    'Both presented hands must pass a final same-transaction validation before the aligned weapon is committed.'
+    'finalizeGunstockPresentationAfterNativeWeaponAnimation[\s\S]*kWeapon[\s\S]*runtimeFrameIndex[\s\S]*areTransformsNearlyEqual\([\s\S]*correctedWeaponWorld[\s\S]*getFlattenedBoneTree[\s\S]*LArm_Hand[\s\S]*RArm_Hand[\s\S]*refNode[\s\S]*rotateRigidlyAroundPivot[\s\S]*leftHand[\s\S]*rightHand[\s\S]*correctedPostAnimationWeaponWorld[\s\S]*worldTargetToParentLocal[\s\S]*updateTransformsDown[\s\S]*applyWeaponVisualAuthority[\s\S]*applyFlattenedOverlay' `
+    'Only native Weapon animations may consume the exact frame-local correction, with idempotence and a direct rigid visible two-hand/weapon reframe synchronized into flattened presentation worlds.'
+
+$postAnimationFinalize = [regex]::Match(
+    (Read-Source 'src/physics-interaction/weapon/TwoHandedGrip.cpp'),
+    '(?ms)bool\s+TwoHandedGrip::finalizeGunstockPresentationAfterNativeWeaponAnimation\s*\(.*?^\s{4}bool\s+TwoHandedGrip::applyWeaponVisualAuthority')
+if (-not $postAnimationFinalize.Success) {
+    $failures.Add('src/physics-interaction/weapon/TwoHandedGrip.cpp: Could not isolate the post-animation gunstock finalizer.')
+} elseif ($postAnimationFinalize.Value -match 'applyExternalHandWorldTransform|recordPublishedHandWorld') {
+    $failures.Add('src/physics-interaction/weapon/TwoHandedGrip.cpp: The post-animation finalizer must preserve authored hand/finger locals directly instead of rerunning FRIK arm IK or feeding animation back into the next solver frame.')
+} elseif ($postAnimationFinalize.Value -match 'resolveFirstPersonHandNode') {
+    $failures.Add('src/physics-interaction/weapon/TwoHandedGrip.cpp: The post-animation finalizer must reframe hFRIK''s visible root hand nodes, not the hidden first-person tracking hands.')
+}
+
+Require-Text 'src/ROCKMain.cpp' `
+    'dispatchAnimationPhaseCallbacksV1\([\s\S]*AfterRock[\s\S]*finalizeGunstockPresentationAfterNativeAnimation\(\)[\s\S]*dispatchAnimationPhaseCallbacksV1\([\s\S]*Complete' `
+    'The full-reload correction must run after animation AfterRock publication and before the Complete phase.'
+
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'finalizeGunstockPresentationAfterNativeAnimation[\s\S]*currentNativeAnimationAuthorityFlagsV1\(\)[\s\S]*kWeapon[\s\S]*resolveEquippedWeaponInteractionNode\(\)[\s\S]*finalizeGunstockPresentationAfterNativeWeaponAnimation' `
+    'The post-animation bridge must fail closed unless the current animation lease authors Weapon.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'GUNSTOCK_ALIGNMENT_TAG\s*=[\s\S]*"ROCK_GunstockAlignment"[\s\S]*clearGunstockDedicatedHandAuthority[\s\S]*clearExternalHandWorldTransform' `
@@ -270,8 +305,8 @@ Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
     'The visualizer must render input/rendered firing bones, configured fine-tuned intent, actual relation error, and support attach baseline together.'
 
 Require-Text 'tests/WeaponInteractionPolicyTests.cpp' `
-    'gunstock zero fine tune preserves automatic correction exactly[\s\S]*gunstock positive yaw sends plus-X toward plus-Y[\s\S]*gunstock positive pitch sends plus-X toward minus-Z[\s\S]*gunstock pure roll fine tune remains active with aligned bore[\s\S]*gunstock combined correction reaches fine-tuned target[\s\S]*gunstock fine tune keeps the damped-driver reference pivot fixed[\s\S]*gunstock fine tune preserves the firing-grip weapon relation[\s\S]*gunstock scope camera optical plus-X follows final bore plus-Y[\s\S]*gunstock scope camera up follows final bore plus-Z' `
-    'Pure regressions must cover zero compatibility, axis signs, pure roll, target composition, fixed pivot, firing-grip rigidity, and final optical-axis authority.'
+    'gunstock zero fine tune preserves automatic correction exactly[\s\S]*gunstock positive yaw sends plus-X toward plus-Y[\s\S]*gunstock positive pitch sends plus-X toward minus-Z[\s\S]*gunstock pure roll fine tune remains active with aligned bore[\s\S]*gunstock combined correction reaches fine-tuned target[\s\S]*gunstock fine tune keeps the damped-driver reference pivot fixed[\s\S]*gunstock fine tune preserves the firing-grip weapon relation[\s\S]*gunstock fine-tuned weapon preserves retained rigid scope frame' `
+    'Pure regressions must cover zero compatibility, axis signs, pure roll, target composition, fixed pivot, firing-grip rigidity, and rigid fine-tuned scope transport.'
 
 Reject-Text 'src/physics-interaction/debug/DebugBodyOverlay.h' `
     'GunstockFiringController|GunstockLeftController' `
@@ -282,8 +317,8 @@ Reject-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
     'Gunstock diagnostics must use bone triads and wrist +X, not controller-axis tripods.'
 
 Require-Text 'tests/WeaponInteractionPolicyTests.cpp' `
-    'gunstock live enable produces one edge[\s\S]*gunstock fire node alone does not classify thrown weapons as firearms[\s\S]*gunstock gun type plus valid fire node establishes generation eligibility[\s\S]*gunstock eligibility survives transient fire-node loss[\s\S]*gunstock eligibility never crosses weapon generations[\s\S]*gunstock neutral direction latches on sixth stable sample[\s\S]*gunstock correction sends neutral bore to firing wrist plus-X[\s\S]*gunstock rigid correction preserves firing-hand weapon relation[\s\S]*gunstock precompensation survives noncommuting recoil delta[\s\S]*gunstock presented-hand recovery preserves negative-ten-degree fine tune[\s\S]*unchanged support input reproduces exact authored target[\s\S]*calibrated attach target leaves weapon unchanged[\s\S]*post-attach support delta drives existing tandem solver' `
-    'Pure regressions must cover mode edges, eligibility lifetime, final alignment, recoil continuity, presented-hand fine-tune recovery, support attach identity, and tandem delta.'
+    'gunstock live enable produces one edge[\s\S]*gunstock fire node alone does not classify thrown weapons as firearms[\s\S]*gunstock gun type plus valid fire node establishes generation eligibility[\s\S]*gunstock eligibility survives transient fire-node loss[\s\S]*gunstock eligibility never crosses weapon generations[\s\S]*gunstock neutral direction latches on sixth stable sample[\s\S]*gunstock correction sends neutral bore to firing wrist plus-X[\s\S]*gunstock rigid correction preserves firing-hand weapon relation[\s\S]*gunstock precompensation survives noncommuting recoil delta[\s\S]*gunstock post-animation correction preserves authored left-hand relation[\s\S]*gunstock post-animation correction preserves authored right-hand relation[\s\S]*unchanged support input reproduces exact authored target[\s\S]*calibrated attach target leaves weapon unchanged[\s\S]*post-attach support delta drives existing tandem solver' `
+    'Pure regressions must cover mode edges, eligibility lifetime, final alignment, recoil continuity, full-reload rigid hand relations, support attach identity, and tandem delta.'
 
 Reject-Text 'src/api/ROCKProviderApi.h' `
     'Gunstock' `

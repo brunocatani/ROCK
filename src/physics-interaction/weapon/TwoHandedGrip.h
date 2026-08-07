@@ -566,6 +566,17 @@ namespace rock
             bool calibrationSampleBlocked,
             bool authorityBlocked);
 
+        /*
+         * Full native reloads publish their authored Weapon transform again
+         * in the provider AfterRock phase. Reapply only the correction that
+         * this frame's normal gunstock pass already validated, rotating the
+         * post-animation weapon and animated hands as one rigid group. Arms-
+         * and-hands-only bolt animations deliberately do not use this path.
+         */
+        bool finalizeGunstockPresentationAfterNativeWeaponAnimation(
+            RE::NiNode* weaponNode,
+            std::uint64_t currentWeaponGenerationKey);
+
         // Supplies the uncontaminated damped wrist frame to the authored
         // primary solve so the prior corrected hand is never reused as input.
         bool tryGetGunstockTrackedFiringHandWorld(
@@ -1213,12 +1224,7 @@ namespace rock
         bool applyWeaponVisualAuthority(
             RE::NiNode* weaponNode,
             const RE::NiTransform& solvedWeaponWorld,
-            std::uint64_t authorityGenerationKey = 0,
-            bool alignScopeToGunstockBore = false);
-
-        bool tryResolveNativeScopeCameraWeaponLocal(
-            bool alignToGunstockBore,
-            RE::NiTransform& outCameraWeaponLocal) const;
+            std::uint64_t authorityGenerationKey = 0);
 
         void clearGunstockDedicatedHandAuthority();
         void observeGunstockWeaponEligibility(
@@ -1415,13 +1421,26 @@ namespace rock
             std::uint64_t weaponGenerationKey{ 0 };
             gunstock_alignment_policy::DirectionLatch<RE::NiPoint3>
                 directionLatch{};
-            // Immutable neutral projectile/fire-node frame in Weapon space.
-            RE::NiTransform boreFrameWeaponLocal{};
             bool firingHandIsLeft{ false };
-            bool hasBoreFrameWeaponLocal{ false };
+        };
+
+        struct GunstockFramePresentationState
+        {
+            // Comparison-only identity witness; never dereferenced from cache.
+            RE::NiNode* weaponNodeIdentity{ nullptr };
+            std::uint64_t weaponGenerationKey{ 0 };
+            std::uint64_t runtimeFrameIndex{ 0 };
+            RE::NiMatrix3 correctionWorld{};
+            RE::NiPoint3 pivotWorld{};
+            RE::NiTransform sourceWeaponWorld{};
+            RE::NiTransform correctedWeaponWorld{};
+            bool firingHandIsLeft{ false };
+            bool finalizedAfterNativeAnimation{ false };
+            bool valid{ false };
         };
 
         GunstockAlignmentState _gunstockAlignment{};
+        GunstockFramePresentationState _gunstockFramePresentation{};
         gunstock_alignment_policy::ModeToggleState _gunstockModeToggle{};
         gunstock_alignment_policy::WeaponEligibilityState
             _gunstockWeaponEligibility{};

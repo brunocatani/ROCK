@@ -303,33 +303,6 @@ namespace rock::native_scope_camera_follow_math
         return transform_math::composeTransforms(weaponWorld, scopeFrameWeaponLocal);
     }
 
-    /*
-     * Gunstock presentation removes the authored hand-to-bore rotation that
-     * the ordinary native camera calibration deliberately retains. In this
-     * mode the optical camera is part of the latched projectile/fire-node
-     * frame: camera +X is the view direction, bore +Y is the barrel, and both
-     * use the bore's +Z as up. Keep the resolved anchor and native scale, but
-     * replace only that obsolete authored rotation. The resulting camera axes
-     * remain expressed in Weapon space so the final weapon solve transports
-     * the complete scope frame rigidly.
-     */
-    template <class Transform>
-    [[nodiscard]] inline Transform alignOpticalAxesToBore(
-        const Transform& scopeFrameWeaponLocal,
-        const Transform& boreFrameWeaponLocal)
-    {
-        Transform result = scopeFrameWeaponLocal;
-        result.rotate = {};
-        for (int column = 0; column < 3; ++column) {
-            result.rotate.entry[0][column] =
-                boreFrameWeaponLocal.rotate.entry[1][column];
-            result.rotate.entry[1][column] =
-                -boreFrameWeaponLocal.rotate.entry[0][column];
-            result.rotate.entry[2][column] =
-                boreFrameWeaponLocal.rotate.entry[2][column];
-        }
-        return result;
-    }
 }
 
 // ---- NativeScopeOverlayFollowMath.h ----
