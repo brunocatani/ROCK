@@ -2454,6 +2454,95 @@ int main()
         shouldAttemptPhysicalDrop(false));
     ok &= expectFalse("selected stash never falls through to physical drop",
         shouldAttemptPhysicalDrop(true));
+    const ShoulderRetrievalInput retrievableShoulderWeapon{
+        .stashActive = true,
+        .handlingEnabled = true,
+        .identityMatches = true,
+        .nativePresentationRetrievable = true,
+        .menuInputActive = false,
+        .handDisabled = false,
+        .handEmpty = true,
+        .handCanOwnFiringGrip = true,
+        .detectorConfirmed = true,
+        .sameShoulderZone = true,
+        .gripPhysicallyHeld = true,
+    };
+    ok &= expectTrue("empty hand can retrieve exact weapon from its stored shoulder",
+        canRetrieveShoulderStashedWeapon(retrievableShoulderWeapon));
+    auto blockedShoulderRetrieval = retrievableShoulderWeapon;
+    blockedShoulderRetrieval.stashActive = false;
+    ok &= expectFalse("inactive shoulder stash cannot retrieve",
+        canRetrieveShoulderStashedWeapon(blockedShoulderRetrieval));
+    blockedShoulderRetrieval = retrievableShoulderWeapon;
+    blockedShoulderRetrieval.handlingEnabled = false;
+    ok &= expectFalse("handling authority loss blocks shoulder retrieval",
+        canRetrieveShoulderStashedWeapon(blockedShoulderRetrieval));
+    blockedShoulderRetrieval = retrievableShoulderWeapon;
+    blockedShoulderRetrieval.identityMatches = false;
+    ok &= expectFalse("changed equipped instance cannot retrieve",
+        canRetrieveShoulderStashedWeapon(blockedShoulderRetrieval));
+    blockedShoulderRetrieval = retrievableShoulderWeapon;
+    blockedShoulderRetrieval.nativePresentationRetrievable = false;
+    ok &= expectFalse("drawn native presentation is not shoulder retrieval",
+        canRetrieveShoulderStashedWeapon(blockedShoulderRetrieval));
+    blockedShoulderRetrieval = retrievableShoulderWeapon;
+    blockedShoulderRetrieval.menuInputActive = true;
+    ok &= expectFalse("menu blocks shoulder retrieval",
+        canRetrieveShoulderStashedWeapon(blockedShoulderRetrieval));
+    blockedShoulderRetrieval = retrievableShoulderWeapon;
+    blockedShoulderRetrieval.handDisabled = true;
+    ok &= expectFalse("disabled reaching hand cannot retrieve",
+        canRetrieveShoulderStashedWeapon(blockedShoulderRetrieval));
+    blockedShoulderRetrieval = retrievableShoulderWeapon;
+    blockedShoulderRetrieval.handEmpty = false;
+    ok &= expectFalse("occupied reaching hand cannot retrieve",
+        canRetrieveShoulderStashedWeapon(blockedShoulderRetrieval));
+    blockedShoulderRetrieval = retrievableShoulderWeapon;
+    blockedShoulderRetrieval.handCanOwnFiringGrip = false;
+    ok &= expectFalse("hand without firing-grip authority cannot retrieve",
+        canRetrieveShoulderStashedWeapon(blockedShoulderRetrieval));
+    blockedShoulderRetrieval = retrievableShoulderWeapon;
+    blockedShoulderRetrieval.detectorConfirmed = false;
+    ok &= expectFalse("unsettled shoulder reach cannot retrieve",
+        canRetrieveShoulderStashedWeapon(blockedShoulderRetrieval));
+    blockedShoulderRetrieval = retrievableShoulderWeapon;
+    blockedShoulderRetrieval.sameShoulderZone = false;
+    ok &= expectFalse("opposite shoulder cannot retrieve",
+        canRetrieveShoulderStashedWeapon(blockedShoulderRetrieval));
+    blockedShoulderRetrieval = retrievableShoulderWeapon;
+    blockedShoulderRetrieval.gripPhysicallyHeld = false;
+    ok &= expectFalse("reach without a physical grip squeeze cannot retrieve",
+        canRetrieveShoulderStashedWeapon(blockedShoulderRetrieval));
+    ok &= expectEqual("right-only shoulder reach selects right hand",
+        selectShoulderRetrievalHand(
+            ShoulderRetrievalCandidate{ .eligible = true, .confidence = 0.5f },
+            ShoulderRetrievalCandidate{},
+            true),
+        SourceHand::Right);
+    ok &= expectEqual("left-only shoulder reach selects left hand",
+        selectShoulderRetrievalHand(
+            ShoulderRetrievalCandidate{},
+            ShoulderRetrievalCandidate{ .eligible = true, .confidence = 0.5f },
+            false),
+        SourceHand::Left);
+    ok &= expectEqual("higher-confidence simultaneous reach selects left",
+        selectShoulderRetrievalHand(
+            ShoulderRetrievalCandidate{ .eligible = true, .confidence = 0.5f },
+            ShoulderRetrievalCandidate{ .eligible = true, .confidence = 0.8f },
+            false),
+        SourceHand::Left);
+    ok &= expectEqual("simultaneous tie favors the physical stashing hand",
+        selectShoulderRetrievalHand(
+            ShoulderRetrievalCandidate{ .eligible = true, .confidence = 0.8f },
+            ShoulderRetrievalCandidate{ .eligible = true, .confidence = 0.8f },
+            true),
+        SourceHand::Left);
+    ok &= expectEqual("no eligible reach selects no hand",
+        selectShoulderRetrievalHand(
+            ShoulderRetrievalCandidate{},
+            ShoulderRetrievalCandidate{},
+            false),
+        SourceHand::None);
     ok &= expectTrue("successful physical drop commits collider retirement",
         physicalDropCommitted(PhysicalDropCommitInput{ .dropSucceeded = true }));
     ok &= expectTrue("unresolved dropped reference still commits collider retirement",

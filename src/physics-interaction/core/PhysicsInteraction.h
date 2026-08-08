@@ -341,6 +341,13 @@ namespace rock
 
         void refreshEquippedWeaponHandlingSettings();
         void reconcileEquippedWeaponHandlingMode();
+        void clearEquippedWeaponShoulderSheath(const char* reason);
+        void serviceEquippedWeaponShoulderSheathRetrieval(
+            const PhysicsFrameContext& frame,
+            bool handlingEnabled,
+            bool menuInputActive,
+            std::uint32_t observedWeaponFormID,
+            std::uintptr_t observedWeaponInstanceData);
         void serviceFixedWeaponHand(
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey,
@@ -509,6 +516,20 @@ namespace rock
         // It is bound to the live equipped instance and revalidates the same
         // spatial candidate on every open-grip frame.
         std::array<EquippedWeaponStashCommitLease, 2> _equippedWeaponStashCommitLeases{};
+        struct EquippedWeaponShoulderSheathState
+        {
+            bool active{ false };
+            bool stashedByLeftHand{ false };
+            std::uint32_t weaponFormID{ 0 };
+            std::uintptr_t weaponInstanceData{ 0 };
+            std::uint32_t equipIndex{ 0 };
+            body_zone::BodyZoneKind zone{ body_zone::BodyZoneKind::Unknown };
+        };
+        // The equipped instance remains equipped while native presentation is
+        // sheathed. Retrieval owns independent per-hand dwell so either empty
+        // physical hand can claim the same stored shoulder in ambidextrous mode.
+        EquippedWeaponShoulderSheathState _equippedWeaponShoulderSheath{};
+        std::array<shoulder_stash::RuntimeState, 2> _equippedWeaponSheathRetrievalStates{};
         std::array<mouth_consume::RuntimeState, 2> _mouthConsumeStates{};
         feedback_haptics::FeedbackHaptics _feedbackHaptics;
 
@@ -557,6 +578,7 @@ namespace rock
         std::array<PendingForceGrabCommit, 2> _pendingForceGrabCommits{};
         std::array<HeldWeaponTriggerEquipIntent, 2> _heldWeaponTriggerEquipIntents{};
         std::array<bool, 2> _forceGrabCommittedThisFrame{};
+        std::array<bool, 2> _equippedWeaponUnsheathCommittedThisFrame{};
         bare_fist_guard_policy::RecheckState _bareFistGuardState{};
         std::array<ArmedLooseGrenadeFuseState, kArmedLooseGrenadeFuseCapacity> _armedLooseGrenadeFuses{};
         std::array<std::atomic<std::uint32_t>, kArmedLooseGrenadeFuseCapacity> _armedLooseGrenadeImpactBodyIds{};

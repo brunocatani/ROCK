@@ -107,19 +107,6 @@ namespace rock::weapon_equip_transfer
         RE::NiPointer<RE::NiAVObject> detachedWorldModel{};
     };
 
-    enum class UnequipReason : std::uint8_t
-    {
-        NotAttempted = 0,
-        MissingPlayer,
-        MissingEquipManager,
-        MissingEquippedWeapon,
-        MissingInventoryList,
-        InventoryStackNotFound,
-        MissingEquipSlot,
-        UnequipObjectFailed,
-        Unequipped,
-    };
-
     struct EquippedDropInput
     {
         RE::NiPoint3 dropLoc{};
@@ -144,31 +131,8 @@ namespace rock::weapon_equip_transfer
         RE::NiPointer<RE::TESObjectREFR> droppedRef{};
     };
 
-    struct EquippedUnequipInput
-    {
-        bool playSounds{ true };
-    };
-
-    /*
-     * Unequip stows the weapon into the already-owned inventory stack, so
-     * unlike drop it never creates a world reference. On failure the weapon
-     * simply stays equipped -- callers fail closed by doing nothing.
-     */
-    struct EquippedUnequipResult
-    {
-        bool attempted{ false };
-        bool success{ false };
-        bool matchedInstanceData{ false };
-        UnequipReason reason{ UnequipReason::NotAttempted };
-        std::uint32_t formID{ 0 };
-        std::uint32_t stackID{ 0 };
-        RE::TESObjectWEAP* weapon{ nullptr };
-    };
-
     [[nodiscard]] const char* equipReasonName(EquipReason reason) noexcept;
     [[nodiscard]] const char* dropReasonName(DropReason reason) noexcept;
-    [[nodiscard]] const char* unequipReasonName(UnequipReason reason) noexcept;
     [[nodiscard]] EquipResult transferHeldWeaponToPlayerAndEquip(EquipInput input) noexcept;
     [[nodiscard]] EquippedDropResult dropEquippedWeaponFromPlayer(const EquippedDropInput& input) noexcept;
-    [[nodiscard]] EquippedUnequipResult unequipEquippedWeaponFromPlayer(const EquippedUnequipInput& input) noexcept;
 }

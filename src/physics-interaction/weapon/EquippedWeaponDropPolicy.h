@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <cstdint>
 
 namespace rock::equipped_weapon_drop_policy
@@ -70,6 +71,66 @@ namespace rock::equipped_weapon_drop_policy
         // restoring the equipped weapon is safer than converting the same
         // gesture into a destructive world drop.
         return !stashCommitSelected;
+    }
+
+    struct ShoulderRetrievalInput
+    {
+        bool stashActive{ false };
+        bool handlingEnabled{ false };
+        bool identityMatches{ false };
+        bool nativePresentationRetrievable{ false };
+        bool menuInputActive{ false };
+        bool handDisabled{ false };
+        bool handEmpty{ false };
+        bool handCanOwnFiringGrip{ false };
+        bool detectorConfirmed{ false };
+        bool sameShoulderZone{ false };
+        bool gripPhysicallyHeld{ false };
+    };
+
+    [[nodiscard]] inline constexpr bool canRetrieveShoulderStashedWeapon(
+        const ShoulderRetrievalInput& input) noexcept
+    {
+        return input.stashActive &&
+               input.handlingEnabled &&
+               input.identityMatches &&
+               input.nativePresentationRetrievable &&
+               !input.menuInputActive &&
+               !input.handDisabled &&
+               input.handEmpty &&
+               input.handCanOwnFiringGrip &&
+               input.detectorConfirmed &&
+               input.sameShoulderZone &&
+               input.gripPhysicallyHeld;
+    }
+
+    struct ShoulderRetrievalCandidate
+    {
+        bool eligible{ false };
+        float confidence{ 0.0f };
+    };
+
+    [[nodiscard]] inline SourceHand selectShoulderRetrievalHand(
+        const ShoulderRetrievalCandidate& right,
+        const ShoulderRetrievalCandidate& left,
+        const bool stashedByLeftHand) noexcept
+    {
+        if (right.eligible != left.eligible) {
+            return left.eligible ? SourceHand::Left : SourceHand::Right;
+        }
+        if (!right.eligible) {
+            return SourceHand::None;
+        }
+
+        const float rightConfidence = std::isfinite(right.confidence) ? right.confidence : 0.0f;
+        const float leftConfidence = std::isfinite(left.confidence) ? left.confidence : 0.0f;
+        if (rightConfidence != leftConfidence) {
+            return leftConfidence > rightConfidence ? SourceHand::Left : SourceHand::Right;
+        }
+
+        // A same-frame tie is rare but must remain deterministic. Favor the
+        // hand that physically placed the weapon instead of a fixed side.
+        return stashedByLeftHand ? SourceHand::Left : SourceHand::Right;
     }
 
     struct PhysicalDropCommitInput

@@ -7,30 +7,68 @@
 
 namespace rock::native_equipped_weapon_draw
 {
-    Result submitExactCurrent(const Identity& expected) noexcept
+    namespace
     {
-        Result result{};
-        auto* player = f4vr::getPlayer();
-        if (!player) {
-            result.result = SubmitResult::MissingPlayer;
-            return result;
-        }
+        struct ExactCurrent
+        {
+            RE::PlayerCharacter* player{ nullptr };
+            SubmitResult result{ SubmitResult::MissingPlayer };
+        };
 
+        [[nodiscard]] ExactCurrent resolveExactCurrent(
+            const Identity& expected) noexcept
+        {
+            ExactCurrent current{};
+            current.player = f4vr::getPlayer();
+            if (!current.player) {
+                return current;
+            }
+
+            Identity observed{};
+            if (!captureCurrentIdentity(observed)) {
+                current.result = SubmitResult::MissingEquippedWeapon;
+                return current;
+            }
+            if (observed.formID != expected.formID ||
+                observed.instanceData != expected.instanceData ||
+                observed.equipIndex != expected.equipIndex) {
+                current.result = SubmitResult::IdentityChanged;
+                return current;
+            }
+
+            current.result = SubmitResult::Submitted;
+            return current;
+        }
+    }
+
+    bool captureCurrentIdentity(Identity& outIdentity) noexcept
+    {
+        outIdentity = {};
         auto* equipped = f4vr::getEquippedWeaponItem();
         auto* object = equipped ? equipped->item.object : nullptr;
         auto* instanceData = equipped ? equipped->item.instanceData.get() : nullptr;
         if (!object || object->formType != RE::ENUM_FORM_ID::kWEAP) {
-            result.result = SubmitResult::MissingEquippedWeapon;
-            return result;
+            return false;
         }
-        if (object->formID != expected.formID ||
-            reinterpret_cast<std::uintptr_t>(instanceData) != expected.instanceData ||
-            equipped->equipIndex.index != expected.equipIndex) {
-            result.result = SubmitResult::IdentityChanged;
+
+        outIdentity = Identity{
+            .formID = object->formID,
+            .instanceData = reinterpret_cast<std::uintptr_t>(instanceData),
+            .equipIndex = equipped->equipIndex.index,
+        };
+        return true;
+    }
+
+    Result submitExactCurrent(const Identity& expected) noexcept
+    {
+        Result result{};
+        const auto current = resolveExactCurrent(expected);
+        result.result = current.result;
+        if (current.result != SubmitResult::Submitted) {
             return result;
         }
 
-        result.stateBefore = f4vr::getNativeWeaponState(player);
+        result.stateBefore = f4vr::getNativeWeaponState(current.player);
         result.stateAfter = result.stateBefore;
         if (!held_weapon_equip_state_policy::isValidNativeWeaponState(result.stateBefore)) {
             result.result = SubmitResult::InvalidWeaponState;
@@ -41,8 +79,34 @@ namespace rock::native_equipped_weapon_draw
             return result;
         }
 
-        player->DrawWeaponMagicHands(true);
-        result.stateAfter = f4vr::getNativeWeaponState(player);
+        current.player->DrawWeaponMagicHands(true);
+        result.stateAfter = f4vr::getNativeWeaponState(current.player);
+        result.result = SubmitResult::Submitted;
+        return result;
+    }
+
+    Result submitSheatheExactCurrent(const Identity& expected) noexcept
+    {
+        Result result{};
+        const auto current = resolveExactCurrent(expected);
+        result.result = current.result;
+        if (current.result != SubmitResult::Submitted) {
+            return result;
+        }
+
+        result.stateBefore = f4vr::getNativeWeaponState(current.player);
+        result.stateAfter = result.stateBefore;
+        if (!held_weapon_equip_state_policy::isValidNativeWeaponState(result.stateBefore)) {
+            result.result = SubmitResult::InvalidWeaponState;
+            return result;
+        }
+        if (!held_weapon_equip_state_policy::shouldSubmitSheatheFollowup(result.stateBefore)) {
+            result.result = SubmitResult::AlreadySheathingOrSheathed;
+            return result;
+        }
+
+        current.player->DrawWeaponMagicHands(false);
+        result.stateAfter = f4vr::getNativeWeaponState(current.player);
         result.result = SubmitResult::Submitted;
         return result;
     }
@@ -54,6 +118,8 @@ namespace rock::native_equipped_weapon_draw
             return "submitted";
         case SubmitResult::AlreadyDrawingOrDrawn:
             return "already-drawing-or-drawn";
+        case SubmitResult::AlreadySheathingOrSheathed:
+            return "already-sheathing-or-sheathed";
         case SubmitResult::MissingPlayer:
             return "missing-player";
         case SubmitResult::MissingEquippedWeapon:

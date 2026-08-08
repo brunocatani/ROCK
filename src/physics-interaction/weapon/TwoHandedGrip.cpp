@@ -4933,6 +4933,41 @@ namespace rock
         return !isLeft || leftFiringInfrastructureAvailable();
     }
 
+    bool TwoHandedGrip::tryBuildCurrentLeftFiringGripCapture(
+        RE::NiNode* weaponNode,
+        const std::uint64_t currentWeaponGenerationKey,
+        const std::uint64_t currentEquippedWeaponOwnershipKey,
+        RE::NiTransform& outFiringHandWeaponLocal,
+        RE::NiPoint3& outFiringGripWeaponLocal) const
+    {
+        outFiringHandWeaponLocal = {};
+        outFiringGripWeaponLocal = {};
+        if (!canBeginPrimaryOnlyGripForHand(true) ||
+            !hasRightFiringHandCanonicalFrame(
+                weaponNode,
+                currentWeaponGenerationKey,
+                currentEquippedWeaponOwnershipKey)) {
+            return false;
+        }
+
+        RE::NiTransform rightHandWorld{};
+        RE::NiTransform leftHandWorld{};
+        if (!tryGetSolverHandTransform(false, rightHandWorld) ||
+            !tryGetSolverHandTransform(true, leftHandWorld) ||
+            !tryBuildMirroredLeftFiringHandWeaponLocal(
+                _rightFiringHandCanonicalWeaponLocal,
+                _rightFiringGripCanonicalWeaponLocal,
+                rightHandWorld,
+                leftHandWorld,
+                outFiringHandWeaponLocal,
+                true)) {
+            return false;
+        }
+
+        outFiringGripWeaponLocal = _rightFiringGripCanonicalWeaponLocal;
+        return true;
+    }
+
     bool TwoHandedGrip::beginPrimaryOnlyGrip(
         RE::NiNode* weaponNode,
         std::uint64_t currentWeaponGenerationKey,
@@ -5007,18 +5042,14 @@ namespace rock
             return false;
         }
 
-        RE::NiTransform rightHandWorld{};
-        RE::NiTransform leftHandWorld{};
         RE::NiTransform mirroredLeftHold{};
-        if (!tryGetSolverHandTransform(false, rightHandWorld) ||
-            !tryGetSolverHandTransform(true, leftHandWorld) ||
-            !tryBuildMirroredLeftFiringHandWeaponLocal(
-                _rightFiringHandCanonicalWeaponLocal,
-                _rightFiringGripCanonicalWeaponLocal,
-                rightHandWorld,
-                leftHandWorld,
+        RE::NiPoint3 firingGripWeaponLocal{};
+        if (!tryBuildCurrentLeftFiringGripCapture(
+                weaponNode,
+                currentWeaponGenerationKey,
+                currentEquippedWeaponOwnershipKey,
                 mirroredLeftHold,
-                true)) {
+                firingGripWeaponLocal)) {
             return false;
         }
 
@@ -5028,7 +5059,7 @@ namespace rock
                 currentEquippedWeaponOwnershipKey,
                 true,
                 &mirroredLeftHold,
-                &_rightFiringGripCanonicalWeaponLocal)) {
+                &firingGripWeaponLocal)) {
             return false;
         }
 

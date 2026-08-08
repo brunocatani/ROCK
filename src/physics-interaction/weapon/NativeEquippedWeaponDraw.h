@@ -15,6 +15,7 @@ namespace rock::native_equipped_weapon_draw
     {
         Submitted = 0,
         AlreadyDrawingOrDrawn,
+        AlreadySheathingOrSheathed,
         MissingPlayer,
         MissingEquippedWeapon,
         IdentityChanged,
@@ -28,6 +29,8 @@ namespace rock::native_equipped_weapon_draw
         std::uint32_t stateAfter{ 0 };
     };
 
+    [[nodiscard]] bool captureCurrentIdentity(Identity& outIdentity) noexcept;
     [[nodiscard]] Result submitExactCurrent(const Identity& expected) noexcept;
+    [[nodiscard]] Result submitSheatheExactCurrent(const Identity& expected) noexcept;
     [[nodiscard]] const char* submitResultName(SubmitResult result) noexcept;
 }

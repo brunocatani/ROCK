@@ -61,7 +61,7 @@ Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'Held equip must not submit an uncoordinated native draw from the transfer callsite.'
 
 Require-Text 'src/physics-interaction/weapon/NativeEquippedWeaponDraw.cpp' `
-    'object->formID != expected\.formID[\s\S]{0,300}instanceData\) != expected\.instanceData[\s\S]{0,300}equipIndex\.index != expected\.equipIndex[\s\S]{0,1200}DrawWeaponMagicHands\(true\)' `
+    'captureCurrentIdentity\(observed\)[\s\S]*?observed\.formID != expected\.formID[\s\S]*?observed\.instanceData != expected\.instanceData[\s\S]*?observed\.equipIndex != expected\.equipIndex[\s\S]*?DrawWeaponMagicHands\(true\)' `
     'Native draw recovery must revalidate the exact current form, instance, and equip index before submission.'
 
 Require-Text 'src/physics-interaction/weapon/EquippedWeaponTransitionPolicy.h' `
@@ -88,9 +88,9 @@ Require-Text 'src/physics-interaction/weapon/EquippedWeaponTransitionCoordinator
     '!_observationInitialized[\s\S]{0,700}current\.valid\(\)[\s\S]{0,240}bindCurrentIdentity[\s\S]{0,240}initial-equipped-identity' `
     'An already-equipped weapon discovered on initial load must enter mandatory presentation recovery.'
 
-Reject-Text 'src/physics-interaction/weapon/EquippedWeaponTransitionCoordinator.cpp' `
-    'presentationExpected|holstered-presentation-preserved' `
-    'ROCK must not retain an equipped-but-intentionally-holstered presentation branch.'
+Require-Text 'src/physics-interaction/weapon/EquippedWeaponTransitionCoordinator.cpp' `
+    'currentMatchesIntentionalShoulderSheath[\s\S]{0,500}current\.formID\s*==\s*input\.shoulderSheathFormID[\s\S]{0,500}current\.instanceData\s*==\s*input\.shoulderSheathInstanceData[\s\S]{0,500}current\.equipIndex\s*==\s*input\.shoulderSheathEquipIndex[\s\S]{0,500}isShoulderStashedPresentationState' `
+    'Presentation recovery may yield only to the exact equipped instance ROCK deliberately shoulder-sheathed.'
 
 Reject-Text 'src/physics-interaction/weapon/EquippedWeaponTransitionPolicy.h' `
     'presentationExpected' `
@@ -145,7 +145,7 @@ Require-Text 'src/physics-interaction/weapon/EquipVisualBridge.cpp' `
     'The standby bridge must keep the authored finger and hand-transform payload alive until the equipped owner acquires it or the absolute lease expires.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'const bool nativeWeaponAnimationActive\s*=[\s\S]{0,300}currentNativeAnimationAuthorityFlagsV1\(\)[\s\S]{0,300}GUN_STATE::kReloading[\s\S]{0,700}\.nativeWeaponAnimationActive' `
+    'const bool nativeWeaponAnimationActive\s*=[\s\S]*?currentNativeAnimationAuthorityFlagsV1\(\)[\s\S]*?GUN_STATE::kReloading[\s\S]*?\.nativeWeaponAnimationActive' `
     'Equip recovery must yield during provider-owned and base-game reload presentation windows.'
 
 Require-Text 'src/physics-interaction/weapon/EquippedWeaponTransitionCoordinator.cpp' `

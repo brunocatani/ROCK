@@ -796,6 +796,13 @@ namespace rock
         // eligible. Native Fallout/FRIK handedness is deliberately irrelevant.
         static bool canBeginPrimaryOnlyGripForHand(bool isLeft);
 
+        bool tryBuildCurrentLeftFiringGripCapture(
+            RE::NiNode* weaponNode,
+            std::uint64_t currentWeaponGenerationKey,
+            std::uint64_t currentEquippedWeaponOwnershipKey,
+            RE::NiTransform& outFiringHandWeaponLocal,
+            RE::NiPoint3& outFiringGripWeaponLocal) const;
+
         /*
          * Mirrors FRIK's canonical right-hand per-weapon hold into the left
          * controller/hand basis. Both inputs are weapon-root-local, so the

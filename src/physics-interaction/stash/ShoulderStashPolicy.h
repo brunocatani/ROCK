@@ -93,8 +93,8 @@ namespace rock::shoulder_stash_notification_policy
         return message;
     }
 
-    // Stow keeps a distinct verb from Collected: the weapon was already owned
-    // and is only being unequipped, not added to the inventory.
+    // Stow keeps a distinct verb from Collected: the weapon remains equipped
+    // and only its native presentation is sheathed.
     [[nodiscard]] inline std::string formatStowedNotification(std::string_view itemName, std::uint32_t formID)
     {
         std::string message = "Stowed ";

@@ -82,6 +82,42 @@ namespace rock::held_weapon_equip_state_policy
         }
     }
 
+    /*
+     * FO4VR PlayerCharacter::DrawWeaponMagicHands(false) returns immediately
+     * only for Sheathed/Sheathing. Raw 1.2.72 disassembly at 0x140F78D10
+     * shows that WantToDraw, Drawing, Drawn, and WantToSheathe all submit
+     * native state 5, so a physical stash can safely reverse an in-flight
+     * draw without removing the equipped inventory instance.
+     */
+    [[nodiscard]] inline constexpr bool shouldSubmitSheatheFollowup(
+        const std::uint32_t nativeState) noexcept
+    {
+        switch (static_cast<NativeWeaponState>(nativeState)) {
+        case NativeWeaponState::WantToDraw:
+        case NativeWeaponState::Drawing:
+        case NativeWeaponState::Drawn:
+        case NativeWeaponState::WantToSheathe:
+            return true;
+        case NativeWeaponState::Sheathed:
+        case NativeWeaponState::Sheathing:
+        default:
+            return false;
+        }
+    }
+
+    [[nodiscard]] inline constexpr bool isShoulderStashedPresentationState(
+        const std::uint32_t nativeState) noexcept
+    {
+        switch (static_cast<NativeWeaponState>(nativeState)) {
+        case NativeWeaponState::Sheathed:
+        case NativeWeaponState::WantToSheathe:
+        case NativeWeaponState::Sheathing:
+            return true;
+        default:
+            return false;
+        }
+    }
+
     [[nodiscard]] inline constexpr const char* nativeWeaponStateName(const std::uint32_t nativeState) noexcept
     {
         switch (static_cast<NativeWeaponState>(nativeState)) {

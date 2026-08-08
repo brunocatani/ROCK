@@ -116,8 +116,10 @@ int main()
     using rock::held_weapon_equip_state_policy::EquipReadiness;
     using rock::held_weapon_equip_state_policy::classifyForEquip;
     using rock::held_weapon_equip_state_policy::isValidNativeWeaponState;
+    using rock::held_weapon_equip_state_policy::isShoulderStashedPresentationState;
     using rock::held_weapon_equip_state_policy::shouldRearmTrigger;
     using rock::held_weapon_equip_state_policy::shouldSubmitDrawFollowup;
+    using rock::held_weapon_equip_state_policy::shouldSubmitSheatheFollowup;
     ok &= expectEqual("sheathed state permits equip", classifyForEquip(0), EquipReadiness::Stable);
     ok &= expectEqual("drawn state permits replacement equip", classifyForEquip(3), EquipReadiness::Stable);
     ok &= expectEqual("want-draw state defers equip", classifyForEquip(1), EquipReadiness::Transitioning);
@@ -135,6 +137,20 @@ int main()
     ok &= expectTrue("want-sheathe native weapon accepts draw reversal", shouldSubmitDrawFollowup(4));
     ok &= expectTrue("sheathing native weapon accepts draw reversal", shouldSubmitDrawFollowup(5));
     ok &= expectFalse("unknown native weapon state rejects draw recovery", shouldSubmitDrawFollowup(6));
+    ok &= expectFalse("sheathed native weapon rejects duplicate sheathe", shouldSubmitSheatheFollowup(0));
+    ok &= expectTrue("want-draw native weapon accepts sheathe reversal", shouldSubmitSheatheFollowup(1));
+    ok &= expectTrue("drawing native weapon accepts sheathe reversal", shouldSubmitSheatheFollowup(2));
+    ok &= expectTrue("drawn native weapon accepts sheathe", shouldSubmitSheatheFollowup(3));
+    ok &= expectTrue("want-sheathe native weapon accepts final sheathe", shouldSubmitSheatheFollowup(4));
+    ok &= expectFalse("sheathing native weapon rejects duplicate sheathe", shouldSubmitSheatheFollowup(5));
+    ok &= expectFalse("unknown native weapon state rejects sheathe", shouldSubmitSheatheFollowup(6));
+    ok &= expectTrue("sheathed presentation is shoulder retrievable", isShoulderStashedPresentationState(0));
+    ok &= expectFalse("want-draw presentation is not shoulder retrievable", isShoulderStashedPresentationState(1));
+    ok &= expectFalse("drawing presentation is not shoulder retrievable", isShoulderStashedPresentationState(2));
+    ok &= expectFalse("drawn presentation is not shoulder retrievable", isShoulderStashedPresentationState(3));
+    ok &= expectTrue("want-sheathe presentation is shoulder retrievable", isShoulderStashedPresentationState(4));
+    ok &= expectTrue("sheathing presentation is shoulder retrievable", isShoulderStashedPresentationState(5));
+    ok &= expectFalse("unknown presentation is not shoulder retrievable", isShoulderStashedPresentationState(6));
     ok &= expectTrue("last known native weapon state is valid", isValidNativeWeaponState(5));
     ok &= expectFalse("state outside the FO4VR weapon enum is invalid", isValidNativeWeaponState(6));
 

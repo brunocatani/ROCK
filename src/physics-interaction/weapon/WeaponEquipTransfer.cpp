@@ -254,30 +254,6 @@ namespace rock::weapon_equip_transfer
         }
     }
 
-    const char* unequipReasonName(UnequipReason reason) noexcept
-    {
-        switch (reason) {
-        case UnequipReason::MissingPlayer:
-            return "missing-player";
-        case UnequipReason::MissingEquipManager:
-            return "missing-equip-manager";
-        case UnequipReason::MissingEquippedWeapon:
-            return "missing-equipped-weapon";
-        case UnequipReason::MissingInventoryList:
-            return "missing-inventory-list";
-        case UnequipReason::InventoryStackNotFound:
-            return "inventory-stack-not-found";
-        case UnequipReason::MissingEquipSlot:
-            return "missing-equip-slot";
-        case UnequipReason::UnequipObjectFailed:
-            return "unequip-object-failed";
-        case UnequipReason::Unequipped:
-            return "unequipped";
-        default:
-            return "not-attempted";
-        }
-    }
-
     EquipResult transferHeldWeaponToPlayerAndEquip(EquipInput input) noexcept
     {
         EquipResult result{};
@@ -521,67 +497,4 @@ namespace rock::weapon_equip_transfer
         return result;
     }
 
-    EquippedUnequipResult unequipEquippedWeaponFromPlayer(const EquippedUnequipInput& input) noexcept
-    {
-        EquippedUnequipResult result{};
-
-        auto* player = RE::PlayerCharacter::GetSingleton();
-        if (!player) {
-            result.reason = UnequipReason::MissingPlayer;
-            return result;
-        }
-
-        auto* equipManager = RE::ActorEquipManager::GetSingleton();
-        if (!equipManager) {
-            result.reason = UnequipReason::MissingEquipManager;
-            return result;
-        }
-
-        const auto equipped = readEquippedWeaponSnapshot();
-        result.weapon = equipped.weapon;
-        result.formID = equipped.weapon ? equipped.weapon->GetFormID() : 0;
-        if (!equipped.weapon) {
-            result.reason = UnequipReason::MissingEquippedWeapon;
-            return result;
-        }
-
-        if (!player->inventoryList) {
-            result.reason = UnequipReason::MissingInventoryList;
-            return result;
-        }
-
-        const auto stack = findEquippedWeaponStack(player, equipped.weapon, equipped.instanceData);
-        if (!stack.found || stack.count == 0) {
-            result.reason = UnequipReason::InventoryStackNotFound;
-            return result;
-        }
-        if (!stack.equipSlot) {
-            result.reason = UnequipReason::MissingEquipSlot;
-            return result;
-        }
-
-        result.attempted = true;
-        result.stackID = stack.stackID;
-        result.matchedInstanceData = stack.matchedInstanceData;
-
-        RE::BGSObjectInstance objectInstance(equipped.weapon, stack.instanceData.get());
-        const bool unequipped = equipManager->UnequipObject(player,
-            &objectInstance,
-            1,
-            stack.equipSlot,
-            stack.stackID,
-            true,
-            false,
-            input.playSounds,
-            true,
-            nullptr);
-        if (!unequipped) {
-            result.reason = UnequipReason::UnequipObjectFailed;
-            return result;
-        }
-
-        result.success = true;
-        result.reason = UnequipReason::Unequipped;
-        return result;
-    }
 }
