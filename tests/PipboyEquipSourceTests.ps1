@@ -48,6 +48,12 @@ Require-Text 'src/physics-interaction/weapon/PipboyEquipRuntime.cpp' `
     'hookedUseItem\([\s\S]*s_originalUseItem\(handleId,\s*stackId,\s*actionSucceeded,\s*secondaryResult\)' `
     'The Pip-Boy selection wrapper must always chain the displaced native UseItem call.'
 Require-Text 'src/physics-interaction/weapon/PipboyEquipRuntime.cpp' `
+    'hookedUseItem[\s\S]{0,900}stack\.throwableWeapon' `
+    'Native throwable selection must return before ROCK publishes firearm hand assignment.'
+Require-Text 'src/physics-interaction/weapon/PipboyEquipRuntime.cpp' `
+    'inspectStack[\s\S]{0,1200}WEAPON_TYPE::kGrenade[\s\S]{0,180}WEAPON_TYPE::kMine[\s\S]{0,300}throwableWeapon' `
+    'Pip-Boy stack inspection must classify native grenades and mines as throwable weapons.'
+Require-Text 'src/physics-interaction/weapon/PipboyEquipRuntime.cpp' `
     's_equipMode[\s\S]{0,300}EquipMode::NativeRight[\s\S]*configuredEquipMode\(\)[\s\S]*hookedUpdateData\([\s\S]{0,700}!pipboy_equip_policy::managesHandAssignment\(configuredEquipMode\(\)\)[\s\S]*hookedUseItem\([\s\S]{0,700}!pipboy_equip_policy::managesHandAssignment\(equipMode\)' `
     'Native-right mode must pass through row updates and item use, while ROCK publishes fixed-left or addon trigger mode explicitly.'
 Reject-Text 'src/physics-interaction/weapon/PipboyEquipRuntime.cpp' `

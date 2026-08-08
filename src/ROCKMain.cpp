@@ -15,7 +15,6 @@
 #include "physics-interaction/debug/DebugBodyOverlay.h"
 #include "physics-interaction/grab/FrikWeaponOffsetCache.h"
 #include "physics-interaction/grab/SavedGrabOffsetStore.h"
-#include "physics-interaction/grenade/LooseGrenadeRuntime.h"
 #include "physics-interaction/input/DebugControllerRuntime.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/native/HavokOffsets.h"
@@ -836,11 +835,6 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
 
     logger::info("ROCK: Allocate trampoline (2048 bytes)...");
     F4SE::AllocTrampoline(2048);
-
-    logger::info("ROCK: Install loose grenade equip hook...");
-    if (!rock::loose_grenade_runtime::installEquipHook()) {
-        return false;
-    }
 
     logger::info("ROCK: Install held weapon instant-transition capability...");
     if (!rock::held_weapon_instant_transition::install()) {

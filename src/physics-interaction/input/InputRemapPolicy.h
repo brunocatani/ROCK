@@ -140,6 +140,14 @@ namespace rock::input_remap_policy
      */
     inline constexpr int kOpenVrAcceptButtonId = 7;
 
+    /*
+     * OpenVR k_EButton_ApplicationMenu: physical right B on the supported
+     * controller layouts. ROCK owns this button for grenade quick draw while
+     * the main feature is enabled; the native VATS/V.A.N.S. phases are
+     * suppressed separately at their verified game helper.
+     */
+    inline constexpr int kOpenVrGrenadeQuickDrawButtonId = 1;
+
     [[nodiscard]] constexpr bool isAllowedGrabButtonId(int buttonId)
     {
         return isValidButtonId(buttonId) && buttonId != kOpenVrSteamVrTriggerButtonId;

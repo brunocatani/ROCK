@@ -12,7 +12,7 @@ namespace rock
 {
     enum class PendingForceGrabCommitOrigin : std::uint8_t
     {
-        LooseGrenadeMenuEquip = 0,
+        LooseGrenadeQuickDraw = 0,
         ProviderForceGrabCommand = 1,
     };
 
@@ -24,8 +24,8 @@ namespace rock
     };
 
     /*
-     * Shared deferred state for the force-grab API (loose-grenade menu
-     * auto-equip and the Provider SDK's force-grab command): both spawn or
+     * Shared deferred state for the force-grab API (loose-grenade quick draw
+     * and the Provider SDK's force-grab command): both spawn or
      * target an object and must attach it to the hand, but freezing the
      * grab-authority relation on the same tick reads whatever hand transform
      * happens to exist that instant. This carries the request across the
@@ -39,7 +39,7 @@ namespace rock
     {
         bool active{ false };
         bool isLeft{ false };
-        PendingForceGrabCommitOrigin origin{ PendingForceGrabCommitOrigin::LooseGrenadeMenuEquip };
+        PendingForceGrabCommitOrigin origin{ PendingForceGrabCommitOrigin::LooseGrenadeQuickDraw };
         PendingForceGrabCommitPhase phase{ PendingForceGrabCommitPhase::WaitingForSettle };
 
         RE::ObjectRefHandle targetHandle{};
@@ -52,7 +52,7 @@ namespace rock
         float elapsedTotalSeconds{ 0.0f };
         float maxTotalSeconds{ 1.5f };
 
-        // LooseGrenadeMenuEquip bookkeeping.
+        // LooseGrenadeQuickDraw bookkeeping.
         std::uint64_t grenadeRequestId{ 0 };
         loose_grenade_runtime::GrenadeRuntimeData grenadeRuntime{};
 

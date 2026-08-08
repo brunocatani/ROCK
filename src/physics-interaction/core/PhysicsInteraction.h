@@ -286,7 +286,7 @@ namespace rock
         bool hasActiveLooseGrenadeCommit() const;
         bool isPendingForceGrabTarget(RE::TESObjectREFR* ref) const;
         void pruneInactiveProviderForceGrabCommits();
-        void servicePendingLooseGrenadeEquip(const PhysicsFrameContext& frame);
+        void serviceLooseGrenadeQuickDraw(const PhysicsFrameContext& frame);
         void servicePendingForceGrabCommits(const PhysicsFrameContext& frame);
         void clearPendingForceGrabCommitsForOrigin(PendingForceGrabCommitOrigin origin);
         void updateSavedGrabOffsetGesture(const PhysicsFrameContext& frame);
@@ -305,7 +305,7 @@ namespace rock
         bool armHeldLooseGrenade(Hand& hand, const PhysicsFrameContext& frame);
         void updateLooseGrenadeFuses(const PhysicsFrameContext& frame);
         void clearLooseGrenadeImpactWatches();
-        void clearLooseGrenadeRuntimeState(bool clearPendingEquipRequest);
+        void clearLooseGrenadeRuntimeState();
         void enforceNoBareFistState(bool forceRecheck);
 
         std::size_t applyProviderWeaponPartDrives(

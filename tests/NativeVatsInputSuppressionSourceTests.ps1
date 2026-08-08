@@ -59,11 +59,14 @@ foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini
     Require-Text $configPath `
         'bSuppressNativeVats\s*=\s*false[\s\S]{0,500}bSuppressNativeVans\s*=\s*false' `
         'Shipped ROCK.ini must expose both native-action controls with safe defaults.'
+    Require-Text $configPath `
+        'automatically suppresses ordinary VATS while ROCK is enabled[\s\S]{0,500}automatically suppresses V\.A\.N\.S\. while ROCK is enabled' `
+        'Shipped ROCK.ini must explain automatic VATS/V.A.N.S. ownership for grenade quick draw.'
 }
 
 Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
-    'hookedNativeVatsVansDecision[\s\S]{0,1800}SuppressOpenVrGameInput[\s\S]{0,600}native_vats_input_suppression_policy::update[\s\S]{0,1000}\.suppressVats\s*=\s*g_rockConfig\.rockSuppressNativeVats\s*\|\|[\s\S]{0,500}SuppressNativeVats[\s\S]{0,500}\.suppressVans\s*=\s*g_rockConfig\.rockSuppressNativeVans\s*\|\|[\s\S]{0,500}SuppressNativeVans' `
-    'The native helper hook must combine local INI controls with broad, VATS-only, and V.A.N.S.-only provider leases.'
+    'hookedNativeVatsVansDecision[\s\S]{0,1800}SuppressOpenVrGameInput[\s\S]{0,600}grenadeQuickDrawOwnsButton\s*=\s*g_rockConfig\.rockEnabled[\s\S]{0,500}native_vats_input_suppression_policy::update[\s\S]{0,1000}\.suppressVats\s*=\s*grenadeQuickDrawOwnsButton\s*\|\|[\s\S]{0,250}g_rockConfig\.rockSuppressNativeVats\s*\|\|[\s\S]{0,500}SuppressNativeVats[\s\S]{0,500}\.suppressVans\s*=\s*grenadeQuickDrawOwnsButton\s*\|\|[\s\S]{0,250}g_rockConfig\.rockSuppressNativeVans\s*\|\|[\s\S]{0,500}SuppressNativeVans' `
+    'The native helper hook must combine automatic quick-draw ownership, local INI controls, and provider leases.'
 
 # The policy is deliberately orthogonal: VATS-only forwards down samples so
 # V.A.N.S. remains available; V.A.N.S.-only forwards release so normal VATS

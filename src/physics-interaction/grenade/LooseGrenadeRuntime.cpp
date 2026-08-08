@@ -1,11 +1,7 @@
 #include "physics-interaction/grenade/LooseGrenadeRuntime.h"
 
-#include "physics-interaction/PhysicsLog.h"
-#include "physics-interaction/native/EntryTrampolineHook.h"
-
 #include "RockConfig.h"
 
-#include "RE/Bethesda/Actor.h"
 #include "RE/Bethesda/BGSMod.h"
 #include "RE/Bethesda/BGSInventoryItem.h"
 #include "RE/Bethesda/BSExtraData.h"
@@ -16,78 +12,25 @@
 #include "RE/Bethesda/TESForms.h"
 #include "RE/Bethesda/TESObjectREFRs.h"
 
-#include <REL/Relocation.h>
-#include <windows.h>
-
-#include <array>
 #include <atomic>
 #include <cmath>
-#include <cstddef>
-#include <cstring>
-#include <limits>
-#include <mutex>
 
 namespace rock::loose_grenade_runtime
 {
     namespace
     {
-        using EquipObject_t = bool (*)(
-            RE::ActorEquipManager*,
-            RE::Actor*,
-            const RE::BGSObjectInstance&,
-            std::uint32_t,
-            std::uint32_t,
-            const RE::BGSEquipSlot*,
-            bool,
-            bool,
-            bool,
-            bool,
-            bool);
-
-        constexpr std::uintptr_t kFuncActorEquipManagerEquipObject = 0x0E6FEA0;
         constexpr std::uint32_t kInvalidStackId = 0xFFFF'FFFFu;
-        constexpr std::array<std::uint8_t, 17> kActorEquipManagerEquipObjectExpectedPrefix{
-            0x4C, 0x8B, 0xDC,
-            0x49, 0x89, 0x53, 0x10,
-            0x55,
-            0x56,
-            0x41, 0x54,
-            0x41, 0x57,
-            0x49, 0x8D, 0x6B, 0xD9,
-        };
 
         struct InventoryStackMatch
         {
             bool found{ false };
-            bool exactRequestedStack{ false };
             bool exactInstanceData{ false };
+            bool equipped{ false };
             std::uint32_t stackId{ kInvalidStackId };
             std::uint32_t count{ 0 };
         };
 
-        EquipObject_t s_originalEquipObject = nullptr;
-        std::atomic<bool> s_equipHookInstalled{ false };
-        std::mutex s_pendingEquipMutex;
-        PendingEquipRequest s_pendingEquipRequest{};
-        std::uint64_t s_nextRequestId{ 1 };
-        thread_local bool t_insideEquipHook = false;
-
-        class EquipHookReentryGuard
-        {
-        public:
-            EquipHookReentryGuard() noexcept
-            {
-                t_insideEquipHook = true;
-            }
-
-            ~EquipHookReentryGuard() noexcept
-            {
-                t_insideEquipHook = false;
-            }
-
-            EquipHookReentryGuard(const EquipHookReentryGuard&) = delete;
-            EquipHookReentryGuard& operator=(const EquipHookReentryGuard&) = delete;
-        };
+        std::atomic<std::uint64_t> s_nextRequestId{ 1 };
 
         [[nodiscard]] RE::TESObjectWEAP::InstanceData* weaponInstanceData(
             RE::TESObjectWEAP* weapon,
@@ -297,16 +240,13 @@ namespace rock::loose_grenade_runtime
             return true;
         }
 
-        [[nodiscard]] InventoryStackMatch findInventoryStack(
+        [[nodiscard]] InventoryStackMatch findExactInventoryStack(
             RE::PlayerCharacter* player,
             RE::TESObjectWEAP* weapon,
             const RE::BSTSmartPointer<RE::TBO_InstanceData>& instanceData,
             std::uint32_t requestedStackId) noexcept
         {
-            InventoryStackMatch fallback{};
-            InventoryStackMatch firstCandidate{};
-            std::uint32_t candidateCount = 0;
-            if (!player || !weapon || !player->inventoryList) {
+            if (!player || !weapon || requestedStackId == kInvalidStackId || !player->inventoryList) {
                 return {};
             }
 
@@ -318,8 +258,7 @@ namespace rock::loose_grenade_runtime
 
                 std::uint32_t stackId = 0;
                 for (auto* stack = inventoryItem.stackData.get(); stack; stack = stack->nextStack.get(), ++stackId) {
-                    const auto count = stack->GetCount();
-                    if (count == 0) {
+                    if (stackId != requestedStackId) {
                         continue;
                     }
 
@@ -330,164 +269,17 @@ namespace rock::loose_grenade_runtime
                         }
                     }
 
-                    InventoryStackMatch candidate{
+                    return InventoryStackMatch{
                         .found = true,
-                        .exactRequestedStack = requestedStackId != kInvalidStackId && stackId == requestedStackId,
-                        .exactInstanceData = instanceData && stackInstanceData.get() == instanceData.get(),
+                        .exactInstanceData = stackInstanceData.get() == instanceData.get(),
+                        .equipped = stack->IsEquipped(),
                         .stackId = stackId,
-                        .count = count,
+                        .count = stack->GetCount(),
                     };
-
-                    if (candidate.exactRequestedStack) {
-                        return candidate;
-                    }
-                    if (candidate.exactInstanceData) {
-                        fallback = candidate;
-                    }
-                    if (!firstCandidate.found) {
-                        firstCandidate = candidate;
-                    }
-                    ++candidateCount;
                 }
-            }
-
-            if (fallback.found) {
-                return fallback;
-            }
-            if (!instanceData && candidateCount == 1) {
-                return firstCandidate;
             }
             return {};
         }
-
-        [[nodiscard]] bool enqueuePendingEquipRequest(
-            RE::TESObjectWEAP* weapon,
-            const RE::BSTSmartPointer<RE::TBO_InstanceData>& instanceData,
-            std::uint32_t stackId,
-            const GrenadeRuntimeData& runtime)
-        {
-            std::scoped_lock lock(s_pendingEquipMutex);
-            if (s_pendingEquipRequest.active) {
-                return false;
-            }
-
-            s_pendingEquipRequest = PendingEquipRequest{
-                .active = true,
-                .requestId = s_nextRequestId++,
-                .weapon = weapon,
-                .instanceData = instanceData,
-                .stackId = stackId,
-                .runtime = runtime,
-            };
-            return true;
-        }
-
-        [[nodiscard]] bool shouldInterceptEquip(
-            RE::Actor* actor,
-            const RE::BGSObjectInstance& object,
-            std::uint32_t number,
-            RE::TESObjectWEAP*& outWeapon,
-            GrenadeRuntimeData& outRuntime) noexcept
-        {
-            outWeapon = nullptr;
-            outRuntime = {};
-            if (t_insideEquipHook || !g_rockConfig.rockEnabled || number == 0) {
-                return false;
-            }
-
-            auto* player = RE::PlayerCharacter::GetSingleton();
-            if (!player || actor != player || !object.object) {
-                return false;
-            }
-
-            auto* weapon = object.object->As<RE::TESObjectWEAP>();
-            if (!isGrenadeWeapon(weapon)) {
-                return false;
-            }
-
-            outWeapon = weapon;
-            static_cast<void>(resolveGrenadeRuntimeData(weapon, object.instanceData.get(), outRuntime));
-            return true;
-        }
-
-        bool hookedEquipObject(
-            RE::ActorEquipManager* manager,
-            RE::Actor* actor,
-            const RE::BGSObjectInstance& object,
-            std::uint32_t stackId,
-            std::uint32_t number,
-            const RE::BGSEquipSlot* slot,
-            bool queueEquip,
-            bool forceEquip,
-            bool playSounds,
-            bool applyNow,
-            bool locked)
-        {
-            RE::TESObjectWEAP* weapon = nullptr;
-            GrenadeRuntimeData runtime{};
-            if (shouldInterceptEquip(actor, object, number, weapon, runtime)) {
-                if (!runtime.projectile || !runtime.explosion ||
-                    (runtime.detonationMode == GrenadeDetonationMode::TimedFuse &&
-                        (!std::isfinite(runtime.fuseSeconds) || runtime.fuseSeconds <= 0.0f))) {
-                    ROCK_LOG_WARN(Hand,
-                        "Blocked grenade equip because ROCK could not resolve projectile/explosion/fuse data: weapon={:08X} stack={}",
-                        weapon ? weapon->GetFormID() : 0,
-                        stackId);
-                    return false;
-                }
-
-                if (enqueuePendingEquipRequest(weapon, object.instanceData, stackId, runtime)) {
-                    ROCK_LOG_INFO(Hand,
-                        "Queued loose grenade equip interception: weapon={:08X} projectile={:08X} explosion={:08X} stack={} mode={} fuse={:.3f}s",
-                        weapon ? weapon->GetFormID() : 0,
-                        runtime.projectile ? runtime.projectile->GetFormID() : 0,
-                        runtime.explosion ? runtime.explosion->GetFormID() : 0,
-                        stackId,
-                        detonationModeName(runtime.detonationMode),
-                        runtime.fuseSeconds);
-                    return true;
-                }
-
-                /*
-                 * The first request remains authoritative through its attach
-                 * terminal state. Report duplicate menu presses as handled so
-                 * native equip cannot run, but never preserve them for replay.
-                 */
-                ROCK_LOG_INFO(Hand,
-                    "Ignored duplicate loose grenade equip while one transaction is active: weapon={:08X} stack={}",
-                    weapon ? weapon->GetFormID() : 0,
-                    stackId);
-                return true;
-            }
-
-            if (!s_originalEquipObject) {
-                return false;
-            }
-
-            const EquipHookReentryGuard reentryGuard;
-            const bool result = s_originalEquipObject(manager, actor, object, stackId, number, slot, queueEquip, forceEquip, playSounds, applyNow, locked);
-            return result;
-        }
-
-    }
-
-    bool installEquipHook()
-    {
-        if (s_equipHookInstalled.load(std::memory_order_acquire)) {
-            return true;
-        }
-
-        void* original = reinterpret_cast<void*>(s_originalEquipObject);
-        const bool installed = entry_trampoline_hook::install(
-            "ActorEquipManager::EquipObject loose grenade interception",
-            kFuncActorEquipManagerEquipObject,
-            kActorEquipManagerEquipObjectExpectedPrefix.data(),
-            kActorEquipManagerEquipObjectExpectedPrefix.size(),
-            reinterpret_cast<void*>(&hookedEquipObject),
-            original);
-        s_originalEquipObject = reinterpret_cast<EquipObject_t>(original);
-        s_equipHookInstalled.store(installed && s_originalEquipObject != nullptr, std::memory_order_release);
-        return s_equipHookInstalled.load(std::memory_order_acquire);
     }
 
     bool isGrenadeWeapon(const RE::TESObjectWEAP* weapon) noexcept
@@ -532,51 +324,119 @@ namespace rock::loose_grenade_runtime
         return resolveGrenadeRuntimeDataForSources(weapon, instanceData.get(), objectInstanceExtra, outRuntime);
     }
 
-    bool copyPendingEquipRequest(PendingEquipRequest& outRequest)
+    EquippedGrenadeSelectionStatus resolveEquippedGrenadeSelection(
+        EquippedGrenadeSelection& outSelection) noexcept
     {
-        std::scoped_lock lock(s_pendingEquipMutex);
-        if (!s_pendingEquipRequest.active) {
-            outRequest = {};
-            return false;
+        outSelection = {};
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        if (!player || !player->inventoryList) {
+            return EquippedGrenadeSelectionStatus::PlayerUnavailable;
         }
 
-        outRequest = s_pendingEquipRequest;
-        return true;
+        RE::TESObjectWEAP* selectedWeapon = nullptr;
+        RE::BSTSmartPointer<RE::TBO_InstanceData> selectedInstanceData{};
+        RE::BSTSmartPointer<RE::ExtraDataList> selectedExtraList{};
+        std::uint32_t selectedStackId = kInvalidStackId;
+        std::uint32_t equippedGrenadeStackCount = 0;
+
+        {
+            const RE::BSAutoReadLock inventoryLock{ player->inventoryList->rwLock };
+            for (auto& inventoryItem : player->inventoryList->data) {
+                auto* weapon = inventoryItem.object ? inventoryItem.object->As<RE::TESObjectWEAP>() : nullptr;
+                if (!isGrenadeWeapon(weapon)) {
+                    continue;
+                }
+
+                std::uint32_t stackId = 0;
+                for (auto* stack = inventoryItem.stackData.get(); stack; stack = stack->nextStack.get(), ++stackId) {
+                    if (stack->GetCount() == 0 || !stack->IsEquipped()) {
+                        continue;
+                    }
+
+                    ++equippedGrenadeStackCount;
+                    if (equippedGrenadeStackCount > 1) {
+                        continue;
+                    }
+
+                    selectedWeapon = weapon;
+                    selectedExtraList = stack->extra;
+                    selectedStackId = stackId;
+                    if (selectedExtraList) {
+                        if (const auto* instanceExtra = selectedExtraList->GetByType<RE::ExtraInstanceData>()) {
+                            selectedInstanceData = instanceExtra->data;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (equippedGrenadeStackCount == 0) {
+            return EquippedGrenadeSelectionStatus::NoneEquipped;
+        }
+        if (equippedGrenadeStackCount != 1 || !selectedWeapon || selectedStackId == kInvalidStackId) {
+            return EquippedGrenadeSelectionStatus::AmbiguousEquipped;
+        }
+
+        const auto* objectInstanceExtra =
+            selectedExtraList ? selectedExtraList->GetByType<RE::BGSObjectInstanceExtra>() : nullptr;
+        GrenadeRuntimeData runtime{};
+        if (!resolveGrenadeRuntimeDataForSources(
+                selectedWeapon,
+                selectedInstanceData.get(),
+                objectInstanceExtra,
+                runtime)) {
+            return EquippedGrenadeSelectionStatus::InvalidRuntimeData;
+        }
+
+        /*
+         * FO4VR 1.2.72 raw disassembly establishes the native selection
+         * contract used here: BGSInventoryItem::Stack stores next/extra/count/
+         * flags at +0x10/+0x18/+0x20/+0x24 (constructor 0x1401AD6A0), and both
+         * Pip-Boy equip state (0x140C1E9A0) and native equipped-stack traversal
+         * (0x1401B1740) test flags & 7. Resolve that exact selected stack only
+         * on the B-button edge; no persistent cache can become stale.
+         */
+        outSelection = EquippedGrenadeSelection{
+            .requestId = s_nextRequestId.fetch_add(1, std::memory_order_relaxed),
+            .weapon = selectedWeapon,
+            .instanceData = selectedInstanceData,
+            .stackId = selectedStackId,
+            .runtime = runtime,
+        };
+        return EquippedGrenadeSelectionStatus::Selected;
     }
 
-    bool hasPendingEquipRequest()
+    const char* selectionStatusName(EquippedGrenadeSelectionStatus status) noexcept
     {
-        std::scoped_lock lock(s_pendingEquipMutex);
-        return s_pendingEquipRequest.active;
-    }
-
-    void discardPendingEquipRequest(std::uint64_t requestId)
-    {
-        std::scoped_lock lock(s_pendingEquipMutex);
-        if (s_pendingEquipRequest.active && s_pendingEquipRequest.requestId == requestId) {
-            s_pendingEquipRequest = {};
+        switch (status) {
+        case EquippedGrenadeSelectionStatus::Selected:
+            return "selected";
+        case EquippedGrenadeSelectionStatus::PlayerUnavailable:
+            return "player-unavailable";
+        case EquippedGrenadeSelectionStatus::NoneEquipped:
+            return "none-equipped";
+        case EquippedGrenadeSelectionStatus::AmbiguousEquipped:
+            return "ambiguous-equipped";
+        case EquippedGrenadeSelectionStatus::InvalidRuntimeData:
+            return "invalid-runtime-data";
+        default:
+            return "unknown";
         }
     }
 
-    void clearPendingEquipRequest()
-    {
-        std::scoped_lock lock(s_pendingEquipMutex);
-        s_pendingEquipRequest = {};
-    }
-
-    DropResult dropPendingEquipRequestToWorld(
-        const PendingEquipRequest& request,
+    DropResult dropEquippedGrenadeSelectionToWorld(
+        const EquippedGrenadeSelection& selection,
         const RE::NiPoint3& dropLocation)
     {
         DropResult result{};
-        result.stackId = request.stackId;
+        result.stackId = selection.stackId;
         auto* player = RE::PlayerCharacter::GetSingleton();
         if (!player) {
             result.reason = "missing-player";
             return result;
         }
-        if (!request.active || !request.weapon) {
-            result.reason = "missing-request";
+        if (selection.requestId == 0 || !selection.weapon) {
+            result.reason = "missing-selection";
             return result;
         }
         if (!player->inventoryList) {
@@ -584,13 +444,24 @@ namespace rock::loose_grenade_runtime
             return result;
         }
 
-        const auto stack = findInventoryStack(player, request.weapon, request.instanceData, request.stackId);
-        if (!stack.found || stack.count == 0 || stack.stackId == kInvalidStackId) {
-            result.reason = "inventory-stack-not-found";
+        const auto stack = findExactInventoryStack(
+            player,
+            selection.weapon,
+            selection.instanceData,
+            selection.stackId);
+        if (!stack.found || !stack.exactInstanceData || !stack.equipped ||
+            stack.count == 0 || stack.stackId == kInvalidStackId) {
+            result.reason = "selection-changed";
             return result;
         }
 
-        RE::TESObjectREFR::RemoveItemData removeData(request.weapon, 1);
+        /*
+         * The native count modifier at 0x1401B01E0 changes only stack+0x20;
+         * it does not clear the equipped bits at +0x24 while the stack still
+         * has items. KDropping exactly one therefore preserves Bethesda's
+         * selected grenade until its final inventory count is consumed.
+         */
+        RE::TESObjectREFR::RemoveItemData removeData(selection.weapon, 1);
         removeData.reason = RE::ITEM_REMOVE_REASON::KDropping;
         removeData.dropLoc = &dropLocation;
         removeData.stackData.push_back(stack.stackId);

@@ -316,7 +316,7 @@ namespace rock::pipboy_equip_runtime
             }
 
             StackSnapshot stack{};
-            if (!inspectStack(handleId, stackId, stack) || !stack.resolved || !stack.weapon) {
+            if (!inspectStack(handleId, stackId, stack) || !stack.resolved || !stack.weapon || stack.throwableWeapon) {
                 return;
             }
 
@@ -456,10 +456,17 @@ namespace rock::pipboy_equip_runtime
             return false;
         }
 
+        const bool isWeapon = item->object->Is(RE::ENUM_FORM_ID::kWEAP);
+        auto* weapon = isWeapon ? static_cast<RE::TESObjectWEAP*>(item->object) : nullptr;
+        const bool throwableWeapon =
+            weapon &&
+            (weapon->weaponData.type == RE::WEAPON_TYPE::kGrenade ||
+                weapon->weaponData.type == RE::WEAPON_TYPE::kMine);
         outSnapshot = StackSnapshot{
             .formId = item->object->formID,
             .resolved = true,
-            .weapon = item->object->Is(RE::ENUM_FORM_ID::kWEAP),
+            .weapon = isWeapon,
+            .throwableWeapon = throwableWeapon,
             .equipped = stack->IsEquipped(),
         };
         return true;

@@ -32,6 +32,7 @@ namespace rock::pipboy_equip_runtime
         std::uint32_t formId{ 0 };
         bool resolved{ false };
         bool weapon{ false };
+        bool throwableWeapon{ false };
         bool equipped{ false };
     };
 

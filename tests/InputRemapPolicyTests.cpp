@@ -63,6 +63,7 @@ int main()
 
     ok &= expectTrue("normal grab button id is accepted", isAllowedGrabButtonId(2));
     ok &= expectFalse("SteamVR trigger button id is reserved and rejected for grab", isAllowedGrabButtonId(kOpenVrSteamVrTriggerButtonId));
+    ok &= expectTrue("grenade quick draw owns OpenVR button 1", buttonMask(kOpenVrGrenadeQuickDrawButtonId) == (std::uint64_t{ 1 } << 1));
 
     settings.grabButtonId = kOpenVrSteamVrTriggerButtonId;
     const auto triggerGrabDecision = evaluate(Input{

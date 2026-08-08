@@ -1697,6 +1697,9 @@ namespace rock::input_remap_runtime
                     flags,
                     provider::RockProviderHandInputSuppressionFlagV1::
                         SuppressOpenVrGameInput);
+            // While ROCK gameplay is active, physical right B belongs to
+            // grenade quick draw for the complete press/hold/release gesture.
+            const bool grenadeQuickDrawOwnsButton = g_rockConfig.rockEnabled;
             const auto decision =
                 native_vats_input_suppression_policy::update(
                     s_nativeVatsInputSuppressionState,
@@ -1707,6 +1710,7 @@ namespace rock::input_remap_runtime
                             !button->QPressed() &&
                             button->QHeldDownSecs() >= 0.0f,
                         .suppressVats =
+                            grenadeQuickDrawOwnsButton ||
                             g_rockConfig.rockSuppressNativeVats ||
                             provider::hasHandInputSuppressionFlagV1(
                                 flags,
@@ -1714,6 +1718,7 @@ namespace rock::input_remap_runtime
                                     RockProviderHandInputSuppressionFlagV1::
                                         SuppressNativeVats),
                         .suppressVans =
+                            grenadeQuickDrawOwnsButton ||
                             g_rockConfig.rockSuppressNativeVans ||
                             provider::hasHandInputSuppressionFlagV1(
                                 flags,

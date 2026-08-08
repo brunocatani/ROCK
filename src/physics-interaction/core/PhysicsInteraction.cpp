@@ -1953,7 +1953,7 @@ namespace rock
         _bareFistGuardState = {};
         _completedPhysicsSolveSequence.store(0, std::memory_order_release);
         _equippedWeaponDropMomentumHandoffs = {};
-        clearLooseGrenadeRuntimeState(false);
+        clearLooseGrenadeRuntimeState();
         _pendingEquippedWeaponPrimaryOnlyGripStart = {};
         _equippedWeaponHandAssignment = {};
         _lastPipboyWeaponSelectionSequence = 0;
@@ -4842,10 +4842,6 @@ namespace rock
         pipboy_equip_runtime::setLeftHandEquipAvailable(false);
         _authoredPrimaryFiringGrip.reset("physics-shutdown", _twoHandedGrip);
         if (!_initialized) {
-            // The global equip hook can accept a request while physics init is
-            // deferred. Destruction/provider loss must not replay that request
-            // into a later PhysicsInteraction instance.
-            loose_grenade_runtime::clearPendingEquipRequest();
             return;
         }
 
@@ -4926,7 +4922,7 @@ namespace rock
         _twoHandedGrip.reset();
         _pendingEquippedWeaponPrimaryOnlyGripStart = {};
         clearPendingForceGrabCommitsForOrigin(PendingForceGrabCommitOrigin::ProviderForceGrabCommand);
-        clearLooseGrenadeRuntimeState(true);
+        clearLooseGrenadeRuntimeState();
         clearEquippedWeaponFiringGripInputState();
         _bodyContactRuntime.reset();
         _shoulderStashStates = {};
@@ -6197,7 +6193,7 @@ namespace rock
                     commit.providerResultTemplate.state = provider::RockProviderInteractionCommandStateV1::Cancelled;
                     commit.providerResultTemplate.failure = provider::RockProviderInteractionFailureV1::ProviderNotReady;
                     provider::completeInteractionCommandV1(commit.providerResultTemplate);
-                } else if (origin == PendingForceGrabCommitOrigin::LooseGrenadeMenuEquip) {
+                } else if (origin == PendingForceGrabCommitOrigin::LooseGrenadeQuickDraw) {
                     const auto targetRefPtr = commit.targetHandle.get();
                     auto* targetRef = targetRefPtr.get();
                     if (targetRef && !loose_grenade_runtime::returnDroppedReferenceToInventory(targetRef)) {
@@ -6206,19 +6202,15 @@ namespace rock
                             targetRef->GetFormID(),
                             commit.grenadeRequestId);
                     }
-                    loose_grenade_runtime::discardPendingEquipRequest(commit.grenadeRequestId);
                 }
                 commit = {};
             }
         }
     }
 
-    void PhysicsInteraction::clearLooseGrenadeRuntimeState(bool clearPendingEquipRequest)
+    void PhysicsInteraction::clearLooseGrenadeRuntimeState()
     {
-        clearPendingForceGrabCommitsForOrigin(PendingForceGrabCommitOrigin::LooseGrenadeMenuEquip);
-        if (clearPendingEquipRequest) {
-            loose_grenade_runtime::clearPendingEquipRequest();
-        }
+        clearPendingForceGrabCommitsForOrigin(PendingForceGrabCommitOrigin::LooseGrenadeQuickDraw);
         _armedLooseGrenadeFuses = {};
         clearLooseGrenadeImpactWatches();
     }
@@ -6304,63 +6296,61 @@ namespace rock
         }
     }
 
-    void PhysicsInteraction::servicePendingLooseGrenadeEquip(const PhysicsFrameContext& frame)
+    void PhysicsInteraction::serviceLooseGrenadeQuickDraw(const PhysicsFrameContext& frame)
     {
-        constexpr float kPendingLooseGrenadeForceGrabMaxDistanceGame = 96.0f;
+        constexpr float kLooseGrenadeQuickDrawMaxDistanceGame = 96.0f;
+
+        const auto buttonState = input_remap_runtime::consumeRawButtonState(
+            false,
+            input_remap_policy::kOpenVrGrenadeQuickDrawButtonId);
+        if (!g_rockConfig.rockEnabled || !buttonState.available || !buttonState.pressed) {
+            return;
+        }
 
         if (!frame.worldReady || !frame.bhkWorld || !frame.hknpWorld) {
+            ROCK_LOG_WARN(Hand, "Ignored grenade quick draw because the physics world is unavailable");
             return;
         }
 
         pruneInactiveProviderForceGrabCommits();
 
-        loose_grenade_runtime::PendingEquipRequest request{};
-        if (!loose_grenade_runtime::copyPendingEquipRequest(request)) {
+        if (handHoldsLooseGrenade(_rightHand) || handHoldsLooseGrenade(_leftHand) ||
+            hasActiveLooseGrenadeCommit()) {
+            ROCK_LOG_INFO(Hand, "Ignored grenade quick draw because a loose grenade is already held or attaching");
             return;
         }
 
-        for (const auto& activeCommit : _pendingForceGrabCommits) {
-            if (!activeCommit.active || !activeCommit.targetIsLooseGrenade) {
-                continue;
-            }
-            if (activeCommit.origin == PendingForceGrabCommitOrigin::LooseGrenadeMenuEquip &&
-                activeCommit.grenadeRequestId == request.requestId) {
-                return;
-            }
-
-            loose_grenade_runtime::discardPendingEquipRequest(request.requestId);
-            ROCK_LOG_INFO(Hand,
-                "Ignored loose grenade menu equip because another grenade force-grab transaction is active: request={}",
-                request.requestId);
+        loose_grenade_runtime::EquippedGrenadeSelection equippedSelection{};
+        const auto equippedStatus =
+            loose_grenade_runtime::resolveEquippedGrenadeSelection(equippedSelection);
+        if (equippedStatus != loose_grenade_runtime::EquippedGrenadeSelectionStatus::Selected) {
+            f4vr::showNotification(
+                equippedStatus == loose_grenade_runtime::EquippedGrenadeSelectionStatus::NoneEquipped ?
+                    "ROCK: No grenade is selected." :
+                    "ROCK: The selected grenade cannot be drawn.");
+            ROCK_LOG_WARN(Hand,
+                "Grenade quick draw could not resolve one native equipped stack: status={}",
+                loose_grenade_runtime::selectionStatusName(equippedStatus));
             return;
         }
 
-        const bool grenadeAlreadyHeld = handHoldsLooseGrenade(_rightHand) || handHoldsLooseGrenade(_leftHand);
         const std::uint32_t rightBlockers = forceGrabHandBlockerMask(_rightHand, false, frame.right.disabled, true);
         const std::uint32_t leftBlockers = forceGrabHandBlockerMask(_leftHand, true, frame.left.disabled, true);
-        const auto selection = force_grab_policy::selectGrenadeHand(
-            grenadeAlreadyHeld,
+        const auto handSelection = force_grab_policy::selectGrenadeHand(
+            false,
             rightBlockers == 0,
             leftBlockers == 0);
-        if (selection.failure == force_grab_policy::GrenadeSelectionFailure::GrenadeAlreadyHeld) {
-            loose_grenade_runtime::discardPendingEquipRequest(request.requestId);
-            ROCK_LOG_INFO(Hand,
-                "Ignored loose grenade menu equip because a grenade is already held: request={}",
-                request.requestId);
-            return;
-        }
-        if (selection.failure == force_grab_policy::GrenadeSelectionFailure::HandsBlocked) {
-            loose_grenade_runtime::discardPendingEquipRequest(request.requestId);
-            f4vr::showNotification("ROCK: Cannot draw grenade - both hands are blocked.");
+        if (handSelection.failure == force_grab_policy::GrenadeSelectionFailure::HandsBlocked) {
+            f4vr::showNotification("ROCK: Cannot draw grenade - both hands are occupied.");
             ROCK_LOG_WARN(Hand,
-                "Blocked loose grenade menu equip before inventory removal: request={} rightBlockers=0x{:02X} leftBlockers=0x{:02X}",
-                request.requestId,
+                "Blocked grenade quick draw before inventory removal: request={} rightBlockers=0x{:02X} leftBlockers=0x{:02X}",
+                equippedSelection.requestId,
                 rightBlockers,
                 leftBlockers);
             return;
         }
 
-        const bool isLeft = selection.hand == force_grab_policy::HandChoice::Left;
+        const bool isLeft = handSelection.hand == force_grab_policy::HandChoice::Left;
         auto& commit = _pendingForceGrabCommits[isLeft ? 1u : 0u];
         const auto& handInput = isLeft ? frame.left : frame.right;
 
@@ -6375,16 +6365,16 @@ namespace rock
         RE::NiPoint3 dropLocation = handInput.grabAnchorWorld;
         dropLocation.z -= kLooseGrenadeSpawnHandClearanceGameUnits;
 
-        const auto dropResult = loose_grenade_runtime::dropPendingEquipRequestToWorld(
-            request,
+        const auto dropResult = loose_grenade_runtime::dropEquippedGrenadeSelectionToWorld(
+            equippedSelection,
             dropLocation);
         if (!dropResult.success) {
-            loose_grenade_runtime::discardPendingEquipRequest(request.requestId);
+            f4vr::showNotification("ROCK: The selected grenade could not be drawn.");
             ROCK_LOG_WARN(Hand,
-                "Loose grenade menu drop failed: weapon={:08X} request={} stack={} reason={}",
-                request.weapon ? request.weapon->GetFormID() : 0,
-                request.requestId,
-                request.stackId,
+                "Grenade quick-draw inventory drop failed: weapon={:08X} request={} stack={} reason={}",
+                equippedSelection.weapon ? equippedSelection.weapon->GetFormID() : 0,
+                equippedSelection.requestId,
+                equippedSelection.stackId,
                 dropResult.reason ? dropResult.reason : "unknown");
             return;
         }
@@ -6392,21 +6382,21 @@ namespace rock
         commit = PendingForceGrabCommit{
             .active = true,
             .isLeft = isLeft,
-            .origin = PendingForceGrabCommitOrigin::LooseGrenadeMenuEquip,
+            .origin = PendingForceGrabCommitOrigin::LooseGrenadeQuickDraw,
             .phase = PendingForceGrabCommitPhase::WaitingForReference,
             .targetHandle = dropResult.handle,
             .targetIsLooseGrenade = true,
             .preferredBodyId = INVALID_BODY_ID,
-            .maxDistanceGame = kPendingLooseGrenadeForceGrabMaxDistanceGame,
-            .grenadeRequestId = request.requestId,
-            .grenadeRuntime = request.runtime,
+            .maxDistanceGame = kLooseGrenadeQuickDrawMaxDistanceGame,
+            .grenadeRequestId = equippedSelection.requestId,
+            .grenadeRuntime = equippedSelection.runtime,
         };
         ROCK_LOG_INFO(Hand,
-            "Loose grenade menu drop created ref={:08X} weapon={:08X} stack={} request={} hand={}",
+            "Grenade quick draw created ref={:08X} weapon={:08X} stack={} request={} hand={}",
             dropResult.droppedRef ? dropResult.droppedRef->GetFormID() : 0,
-            request.weapon ? request.weapon->GetFormID() : 0,
+            equippedSelection.weapon ? equippedSelection.weapon->GetFormID() : 0,
             dropResult.stackId,
-            request.requestId,
+            equippedSelection.requestId,
             isLeft ? "left" : "right");
     }
 
@@ -6432,7 +6422,6 @@ namespace rock
                     commit.providerResultTemplate.failure = providerFailure;
                     provider::completeInteractionCommandV1(commit.providerResultTemplate);
                 } else {
-                    loose_grenade_runtime::discardPendingEquipRequest(commit.grenadeRequestId);
                     const bool returnedToInventory = targetRef && loose_grenade_runtime::returnDroppedReferenceToInventory(targetRef);
                     if (targetRef) {
                         f4vr::showNotification(returnedToInventory ?
@@ -6599,10 +6588,9 @@ namespace rock
             dispatchGrabCommittedEvent(commit.isLeft, heldRef, primaryBodyId, frame.hknpWorld);
             input_remap_runtime::setHandHeldWeapon(commit.isLeft, (commit.isLeft ? _leftHand : _rightHand).isHoldingLooseWeapon());
 
-            if (commit.origin == PendingForceGrabCommitOrigin::LooseGrenadeMenuEquip) {
-                loose_grenade_runtime::discardPendingEquipRequest(commit.grenadeRequestId);
+            if (commit.origin == PendingForceGrabCommitOrigin::LooseGrenadeQuickDraw) {
                 ROCK_LOG_INFO(Hand,
-                    "Loose grenade menu drop force-grabbed: ref={:08X} body={} request={}",
+                    "Grenade quick draw force-grabbed: ref={:08X} body={} request={}",
                     heldRef ? heldRef->GetFormID() : 0,
                     primaryBodyId,
                     commit.grenadeRequestId);
@@ -7943,8 +7931,7 @@ namespace rock
             if (targetIsLooseGrenade &&
                 (handHoldsLooseGrenade(_rightHand) ||
                     handHoldsLooseGrenade(_leftHand) ||
-                    hasActiveLooseGrenadeCommit() ||
-                    loose_grenade_runtime::hasPendingEquipRequest())) {
+                    hasActiveLooseGrenadeCommit())) {
                 complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::HandBusy);
                 continue;
             }
@@ -8564,7 +8551,7 @@ namespace rock
         publishHandInputOwnership(_rightHand, false);
         publishHandInputOwnership(_leftHand, true);
         processProviderInteractionCommands(frame);
-        servicePendingLooseGrenadeEquip(frame);
+        serviceLooseGrenadeQuickDraw(frame);
         servicePendingForceGrabCommits(frame);
         updateSavedGrabOffsetGesture(frame);
         serviceEquippedWeaponDropMomentumHandoff(frame);

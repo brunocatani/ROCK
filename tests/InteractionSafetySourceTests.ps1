@@ -104,24 +104,30 @@ $allRuntimeCpp = (
         ForEach-Object { Get-Content -Raw -LiteralPath $_.FullName }
 ) -join "`n"
 
-# The menu hook owns one transaction, not a replayable FIFO. A repeated Pip-Boy
-# equip press is consumed while that transaction remains active.
-Require-Text $grenadeSource `
-    'PendingEquipRequest\s+s_pendingEquipRequest\s*\{\s*\}\s*;' `
-    'Loose grenade equip interception must keep exactly one named pending request.'
-Reject-Text $grenadeSource `
-    'std::array\s*<\s*PendingEquipRequest' `
-    'Loose grenade equip interception must not retain the old pending-request FIFO.'
-Require-Text $grenadeSource `
-    'enqueuePendingEquipRequest[\s\S]*?if\s*\(s_pendingEquipRequest\.active\)\s*\{\s*return false;[\s\S]*?s_pendingEquipRequest\s*=\s*PendingEquipRequest' `
-    'The single pending grenade transaction must reject replacement while active.'
+# Pip-Boy grenade selection must remain native. Quick draw resolves the exact
+# equipped stack on one B-button edge, with no hook-owned queue or stale cache.
+Reject-Text $allRuntimeCpp `
+    'installEquipHook|hookedEquipObject|PendingEquipRequest|s_pendingEquipRequest' `
+    'The retired grenade equip interception and pending-request state must not return.'
 
-$equipHook = Get-BoundedText $grenadeSource 'bool hookedEquipObject(' 'bool installEquipHook()' 'loose grenade equip hook'
-Require-Text $equipHook `
-    'if\s*\(enqueuePendingEquipRequest[\s\S]*?return true;[\s\S]*?Ignored duplicate loose grenade equip[\s\S]*?return true;' `
-    'Duplicate intercepted grenade equip presses must be reported handled without native equip or replay.'
+$equippedSelection = Get-BoundedText $grenadeSource 'EquippedGrenadeSelectionStatus resolveEquippedGrenadeSelection(' 'const char* selectionStatusName(' 'equipped grenade selection'
+Require-OrderedTokens $equippedSelection @(
+    'BSAutoReadLock inventoryLock',
+    'isGrenadeWeapon(weapon)',
+    'stack->GetCount() == 0 || !stack->IsEquipped()',
+    'equippedGrenadeStackCount != 1',
+    'resolveGrenadeRuntimeDataForSources(',
+    's_nextRequestId.fetch_add'
+) 'Quick draw must resolve exactly one native-equipped grenade stack and its runtime data only on demand.'
 
-$dropRequest = Get-BoundedText $grenadeSource 'DropResult dropPendingEquipRequestToWorld(' 'bool createExplosionAtReference(' 'loose grenade inventory drop'
+$dropRequest = Get-BoundedText $grenadeSource 'DropResult dropEquippedGrenadeSelectionToWorld(' 'bool createExplosionAtReference(' 'loose grenade inventory drop'
+Require-OrderedTokens $dropRequest @(
+    'findExactInventoryStack(',
+    '!stack.exactInstanceData',
+    '!stack.equipped',
+    'RemoveItemData removeData(selection.weapon, 1);',
+    'result.handle = player->RemoveItem(removeData);'
+) 'Inventory removal must revalidate the exact still-equipped stack before dropping one selected grenade.'
 Require-OrderedTokens $dropRequest @(
     'result.handle = player->RemoveItem(removeData);',
     'if (!result.handle)',
@@ -131,19 +137,23 @@ Require-OrderedTokens $dropRequest @(
     'result.reason = "dropped-reference-pending";'
 ) 'A valid RemoveItem handle with a not-yet-resolved reference must remain an asynchronous pending transaction.'
 
-# Hand selection is decided for both hands before inventory is removed. Right is
-# preferred, but the role-driven occupancy policy must permit left-hand fallback.
-$grenadeService = Get-BoundedText $physicsSource 'void PhysicsInteraction::servicePendingLooseGrenadeEquip(' 'void PhysicsInteraction::servicePendingForceGrabCommits(' 'loose grenade service'
+# One fresh physical right-B edge owns quick draw. Hand selection is decided for
+# both hands before inventory removal; right is preferred with left fallback.
+$grenadeService = Get-BoundedText $physicsSource 'void PhysicsInteraction::serviceLooseGrenadeQuickDraw(' 'void PhysicsInteraction::servicePendingForceGrabCommits(' 'loose grenade quick-draw service'
 Require-OrderedTokens $grenadeService @(
+    'consumeRawButtonState(',
+    'input_remap_policy::kOpenVrGrenadeQuickDrawButtonId',
+    '!buttonState.pressed',
+    'resolveEquippedGrenadeSelection(equippedSelection)',
     'rightBlockers = forceGrabHandBlockerMask',
     'leftBlockers = forceGrabHandBlockerMask',
     'force_grab_policy::selectGrenadeHand',
     'GrenadeSelectionFailure::HandsBlocked',
-    'Cannot draw grenade - both hands are blocked.',
-    'dropPendingEquipRequestToWorld'
+    'Cannot draw grenade - both hands are occupied.',
+    'dropEquippedGrenadeSelectionToWorld'
 ) 'Loose grenade service must choose an available hand and reject blocked hands before inventory removal.'
 Require-Text $grenadeService `
-    'const bool isLeft\s*=\s*selection\.hand\s*==\s*force_grab_policy::HandChoice::Left;[\s\S]*?_pendingForceGrabCommits\[isLeft\s*\?\s*1u\s*:\s*0u\][\s\S]*?handInput\s*=\s*isLeft\s*\?\s*frame\.left\s*:\s*frame\.right' `
+    'const bool isLeft\s*=\s*handSelection\.hand\s*==\s*force_grab_policy::HandChoice::Left;[\s\S]*?_pendingForceGrabCommits\[isLeft\s*\?\s*1u\s*:\s*0u\][\s\S]*?handInput\s*=\s*isLeft\s*\?\s*frame\.left\s*:\s*frame\.right' `
     'The selected grenade hand must drive both the commit slot and spawn anchor.'
 Require-Text $forceGrabPolicy `
     'if\s*\(rightAvailable\)[\s\S]*?HandChoice::Right[\s\S]*?if\s*\(leftAvailable\)[\s\S]*?HandChoice::Left[\s\S]*?GrenadeSelectionFailure::HandsBlocked' `
@@ -245,18 +255,18 @@ Require-Text $commitService `
     'PendingForceGrabCommitOrigin::ProviderForceGrabCommand\s*&&[\s\S]*?!provider::isInteractionCommandActiveV1' `
     'Deferred provider force-grab commits must revalidate liveness before mutating hand/physics state.'
 Require-Text $physicsSource `
-    'void PhysicsInteraction::init\(\)[\s\S]*?clearLooseGrenadeRuntimeState\(false\);' `
-    'Initialization must preserve a legitimate menu request queued while physics creation was deferred.'
+    'void PhysicsInteraction::init\(\)[\s\S]*?clearLooseGrenadeRuntimeState\(\);' `
+    'Initialization must clear only runtime-owned grenade commits and fuse state.'
 Require-Text $physicsSource `
-    'void PhysicsInteraction::shutdown[\s\S]*?clearLooseGrenadeRuntimeState\(true\);' `
-    'Shutdown must clear the global grenade request so it cannot replay into a later runtime instance.'
+    'void PhysicsInteraction::shutdown[\s\S]*?clearLooseGrenadeRuntimeState\(\);' `
+    'Shutdown must roll back runtime-owned grenade commits without any global equip request.'
 
 # Grenades are globally single-flight even though ordinary API force-grabs can
 # proceed independently per hand.
 $providerCommands = Get-BoundedText $physicsSource 'void PhysicsInteraction::processProviderInteractionCommands(' 'std::size_t PhysicsInteraction::applyProviderWeaponPartDrives(' 'provider interaction command processing'
 Require-Text $providerCommands `
-    'targetIsLooseGrenade\s*=\s*loose_grenade_runtime::isGrenadeRef\(targetRef\)[\s\S]*?handHoldsLooseGrenade\(_rightHand\)[\s\S]*?handHoldsLooseGrenade\(_leftHand\)[\s\S]*?hasActiveLooseGrenadeCommit\(\)[\s\S]*?loose_grenade_runtime::hasPendingEquipRequest\(\)[\s\S]*?RockProviderInteractionFailureV1::HandBusy' `
-    'API grenade grabs must reject while any hand holds a grenade or any menu/API grenade transaction is pending.'
+    'targetIsLooseGrenade\s*=\s*loose_grenade_runtime::isGrenadeRef\(targetRef\)[\s\S]*?handHoldsLooseGrenade\(_rightHand\)[\s\S]*?handHoldsLooseGrenade\(_leftHand\)[\s\S]*?hasActiveLooseGrenadeCommit\(\)[\s\S]*?RockProviderInteractionFailureV1::HandBusy' `
+    'API grenade grabs must reject while any hand holds a grenade or a grenade attach is active.'
 
 # Bare fists are identified from runtime evidence, not broad hand-to-hand
 # weapon type, so real unarmed weapons remain supported.

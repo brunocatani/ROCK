@@ -38,13 +38,21 @@ namespace rock::loose_grenade_runtime
         GrenadeDetonationMode detonationMode{ GrenadeDetonationMode::TimedFuse };
     };
 
-    struct PendingEquipRequest
+    enum class EquippedGrenadeSelectionStatus : std::uint8_t
     {
-        bool active{ false };
+        Selected,
+        PlayerUnavailable,
+        NoneEquipped,
+        AmbiguousEquipped,
+        InvalidRuntimeData
+    };
+
+    struct EquippedGrenadeSelection
+    {
         std::uint64_t requestId{ 0 };
         RE::TESObjectWEAP* weapon{ nullptr };
         RE::BSTSmartPointer<RE::TBO_InstanceData> instanceData{};
-        std::uint32_t stackId{ 0 };
+        std::uint32_t stackId{ 0xFFFF'FFFFu };
         GrenadeRuntimeData runtime{};
     };
 
@@ -57,8 +65,6 @@ namespace rock::loose_grenade_runtime
         std::uint32_t stackId{ 0 };
     };
 
-    [[nodiscard]] bool installEquipHook();
-
     [[nodiscard]] bool isGrenadeWeapon(const RE::TESObjectWEAP* weapon) noexcept;
     [[nodiscard]] bool isGrenadeRef(RE::TESObjectREFR* ref) noexcept;
     [[nodiscard]] GrenadeKind classifyGrenadeRef(RE::TESObjectREFR* ref) noexcept;
@@ -70,13 +76,11 @@ namespace rock::loose_grenade_runtime
         RE::TESObjectREFR* ref,
         GrenadeRuntimeData& outRuntime) noexcept;
 
-    [[nodiscard]] bool copyPendingEquipRequest(PendingEquipRequest& outRequest);
-    [[nodiscard]] bool hasPendingEquipRequest();
-    void discardPendingEquipRequest(std::uint64_t requestId);
-    void clearPendingEquipRequest();
-
-    [[nodiscard]] DropResult dropPendingEquipRequestToWorld(
-        const PendingEquipRequest& request,
+    [[nodiscard]] EquippedGrenadeSelectionStatus resolveEquippedGrenadeSelection(
+        EquippedGrenadeSelection& outSelection) noexcept;
+    [[nodiscard]] const char* selectionStatusName(EquippedGrenadeSelectionStatus status) noexcept;
+    [[nodiscard]] DropResult dropEquippedGrenadeSelectionToWorld(
+        const EquippedGrenadeSelection& selection,
         const RE::NiPoint3& dropLocation);
 
     [[nodiscard]] bool createExplosionAtReference(RE::TESObjectREFR* ref, RE::BGSExplosion* explosion);
