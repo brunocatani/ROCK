@@ -391,15 +391,15 @@ namespace rock
 
         if (baseForm->Is(RE::ENUM_FORM_ID::kMSTT) && hasDynamicMovableStaticBodyEvidence(hknpWorld, bodyId)) {
             const bool targetIsCar = fo4vr::isExplodableCar(baseForm);
-            const auto carGrabDecision = car_interaction_policy::evaluateGrab(car_interaction_policy::GrabPolicyInput{
+            const auto carSelectionDecision = car_interaction_policy::evaluateSelection(car_interaction_policy::GrabPolicyInput{
                 .targetIsCar = targetIsCar,
                 .playerInPowerArmor = targetIsCar && fo4vr::isInPowerArmor(),
-            });
-            if (!carGrabDecision.allowed) {
-                return { .kind = grab_target::Kind::DynamicMovableStatic, .reason = carGrabDecision.reason, .grabbable = false };
+            }, isFarSelection);
+            if (!carSelectionDecision.allowed) {
+                return { .kind = grab_target::Kind::DynamicMovableStatic, .reason = carSelectionDecision.reason, .grabbable = false };
             }
             if (targetIsCar) {
-                return { .kind = grab_target::Kind::DynamicMovableStatic, .reason = carGrabDecision.reason, .grabbable = true };
+                return { .kind = grab_target::Kind::DynamicMovableStatic, .reason = carSelectionDecision.reason, .grabbable = true };
             }
             return { .kind = grab_target::Kind::DynamicMovableStatic, .reason = "dynamic-mstt-body", .grabbable = true };
         }

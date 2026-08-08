@@ -17,6 +17,7 @@
 #include "physics-interaction/grab/TouchGrabRuntime.h"
 #include "physics-interaction/grenade/LooseGrenadeRuntime.h"
 #include "physics-interaction/hand/DynamicHandCollision.h"
+#include "physics-interaction/object/DynamicWorldCarCollision.h"
 #include "physics-interaction/contact/GeneratedBodyContactRegistry.h"
 #include "physics-interaction/collision/ContactActivityTracker.h"
 #include "physics-interaction/consume/MouthConsumeDetector.h"
@@ -275,6 +276,7 @@ namespace rock
         static void onCustomGrabAuthorityAfterSolve(void* userData, RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
 
         void updateSelection(const PhysicsFrameContext& frame);
+        void prepareDynamicWorldCarCollisionForGrab(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, RE::TESObjectREFR* ref);
         GrabReleaseContext makeGrabReleaseContext(const Hand& hand, bool isLeft) const;
         GrabSharedObjectContext makeGrabSharedObjectContext(const Hand& hand, bool isLeft) const;
 
@@ -405,6 +407,9 @@ namespace rock
         std::uint64_t _expectedWeaponLayerMask = 0;
         std::uint64_t _expectedReloadLayerMask = 0;
         std::uint64_t _expectedBodyLayerMask = 0;
+        std::uint64_t _expectedDynamicHandProxyLayerMask = 0;
+        std::uint64_t _expectedDynamicWorldCarClutterLayerMask = 0;
+        std::uint64_t _expectedDynamicWorldCarLargeClutterLayerMask = 0;
         std::uint64_t _originalNativeCharacterControllerLayerMask = 0;
         std::uint64_t _expectedNativeCharacterControllerLayerMask = 0;
         bool _nativeCharacterControllerLayerPolicyCaptured = false;
@@ -436,6 +441,7 @@ namespace rock
         bool _equippedWeaponHandlingModeReconcilePending{ false };
         AuthoredPrimaryFiringGripRuntime _authoredPrimaryFiringGrip;
         DynamicHandCollisionRuntime _dynamicHandCollision;
+        DynamicWorldCarCollisionRuntime _dynamicWorldCarCollision;
 
         mutable std::mutex _ownedObjectsMutex;
         std::unordered_map<std::uint32_t, std::uint32_t> _ownedObjects;

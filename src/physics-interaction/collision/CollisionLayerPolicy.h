@@ -68,12 +68,21 @@ namespace rock::collision_layer_policy
     inline constexpr std::uint32_t ROCK_LAYER_RELOAD = ROCK_LAYER_HAND;
     /*
      * Dynamic hand proxy bodies live on their own extended row so they collide
-     * ONLY with static world-surface layers:
-     * no clutter, actors, projectiles, or other ROCK layers, and never each
-     * other. The proxy is a solver-side visual-stop driver, not gameplay
-     * contact evidence.
+     * only with static world-surface layers and explicitly tagged car bodies.
+     * Native clutter stays excluded: car identity is carried by the dedicated
+     * rows below, never inferred from the shared clutter layers in the solver.
+     * The proxy is a solver-side visual-stop driver, not gameplay contact
+     * evidence.
      */
     inline constexpr std::uint32_t ROCK_LAYER_DYNAMIC_HAND_PROXY = 48;
+    /*
+     * ExplodableCar movable statics temporarily move onto one of these rows
+     * while a close hand selection owns them. Keeping separate rows preserves
+     * the native CLUTTER vs CLUTTER_LARGE collision contracts while exposing
+     * only those tagged bodies to the dynamic-hand solver proxy.
+     */
+    inline constexpr std::uint32_t ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER = 49;
+    inline constexpr std::uint32_t ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER = 50;
 
     inline constexpr std::uint32_t FO4_LAYER_VANILLA_CONFIGURED_COUNT = 47;
     inline constexpr std::uint32_t FO4_LAYER_LAST_VANILLA_CONFIGURED = FO4_LAYER_DROPPINGPICK;
@@ -99,10 +108,40 @@ namespace rock::collision_layer_policy
         case FO4_LAYER_DEBRIS_LARGE:
         case FO4_LAYER_SHELLCASING:
         case FO4_LAYER_CLUTTER_LARGE:
+        case ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER:
+        case ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER:
             return true;
         default:
             return false;
         }
+    }
+
+    inline constexpr bool isDynamicWorldCarLayer(std::uint32_t layer)
+    {
+        return layer == ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER ||
+               layer == ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER;
+    }
+
+    inline constexpr std::uint32_t dynamicWorldCarLayerForNativeLayer(std::uint32_t layer)
+    {
+        if (layer == FO4_LAYER_CLUTTER) {
+            return ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER;
+        }
+        if (layer == FO4_LAYER_CLUTTER_LARGE) {
+            return ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER;
+        }
+        return FO4_LAYER_UNIDENTIFIED;
+    }
+
+    inline constexpr std::uint32_t nativeLayerForDynamicWorldCarLayer(std::uint32_t layer)
+    {
+        if (layer == ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER) {
+            return FO4_LAYER_CLUTTER;
+        }
+        if (layer == ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER) {
+            return FO4_LAYER_CLUTTER_LARGE;
+        }
+        return FO4_LAYER_UNIDENTIFIED;
     }
 
     inline constexpr bool isActorOrBipedLayer(std::uint32_t layer)
@@ -567,12 +606,57 @@ namespace rock::collision_layer_policy
                 mask = withLayer(mask, layer);
             }
         }
+        mask = withLayer(mask, ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER);
+        mask = withLayer(mask, ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER);
+        return mask;
+    }
+
+    inline constexpr std::uint64_t buildRockDynamicWorldCarExpectedMask(
+        std::uint64_t nativeSourceMask,
+        std::uint32_t nativeSourceLayer)
+    {
+        if (nativeSourceLayer != FO4_LAYER_CLUTTER && nativeSourceLayer != FO4_LAYER_CLUTTER_LARGE) {
+            return 0;
+        }
+
+        std::uint64_t mask = withoutLayer(nativeSourceMask, ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER);
+        mask = withoutLayer(mask, ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER);
+        mask = withoutLayer(mask, ROCK_LAYER_DYNAMIC_HAND_PROXY);
+
+        const auto sameCarLayer = dynamicWorldCarLayerForNativeLayer(nativeSourceLayer);
+        const auto peerNativeLayer = nativeSourceLayer == FO4_LAYER_CLUTTER ? FO4_LAYER_CLUTTER_LARGE : FO4_LAYER_CLUTTER;
+        const auto peerCarLayer = dynamicWorldCarLayerForNativeLayer(peerNativeLayer);
+        if (maskEnablesLayer(nativeSourceMask, nativeSourceLayer)) {
+            mask = withLayer(mask, sameCarLayer);
+        }
+        if (maskEnablesLayer(nativeSourceMask, peerNativeLayer)) {
+            mask = withLayer(mask, peerCarLayer);
+        }
+
+        mask = withLayer(mask, ROCK_LAYER_DYNAMIC_HAND_PROXY);
+        mask = withLayer(mask, FO4_LAYER_CHARCONTROLLER);
         return mask;
     }
 
     inline void applyRockDynamicHandProxyLayerPolicy(std::uint64_t* matrix)
     {
         applyLayerExpectedMask(matrix, ROCK_LAYER_DYNAMIC_HAND_PROXY, buildRockDynamicHandProxyExpectedMask());
+    }
+
+    inline void applyRockDynamicWorldCarLayerPolicies(std::uint64_t* matrix)
+    {
+        if (!matrix) {
+            return;
+        }
+
+        const auto nativeClutterMask = matrix[FO4_LAYER_CLUTTER];
+        const auto nativeLargeClutterMask = matrix[FO4_LAYER_CLUTTER_LARGE];
+        applyLayerExpectedMask(matrix,
+            ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER,
+            buildRockDynamicWorldCarExpectedMask(nativeClutterMask, FO4_LAYER_CLUTTER));
+        applyLayerExpectedMask(matrix,
+            ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER,
+            buildRockDynamicWorldCarExpectedMask(nativeLargeClutterMask, FO4_LAYER_CLUTTER_LARGE));
     }
 
     inline void applyNativeCharacterControllerObjectSuppressionPolicy(std::uint64_t* matrix, bool suppressDynamicObjects, std::uint64_t originalCharacterControllerMask)
@@ -611,5 +695,6 @@ namespace rock::collision_layer_policy
         applyRockReloadLayerPolicy(matrix, weaponBlocksProjectiles, weaponBlocksSpells, handStaticWorld);
         applyRockBodyLayerPolicy(matrix, bodyStaticWorld);
         applyRockDynamicHandProxyLayerPolicy(matrix);
+        applyRockDynamicWorldCarLayerPolicies(matrix);
     }
 }

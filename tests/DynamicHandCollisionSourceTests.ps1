@@ -338,13 +338,26 @@ Require-Text 'src/physics-interaction/native/GeneratedKeyframedBodyDrive.h' `
     'const GeneratedBodyDriveMode& mode = \{\}' `
     'driveGeneratedKeyframedBody must default to keyframe placement for existing callers.'
 
-# The proxy layer must remain world-surface-only and applied with the other
-# generated rows.
+# The proxy layer must remain limited to world surfaces and the two explicit
+# car-only rows; native clutter must never be admitted directly.
 Require-OrderedText 'src/physics-interaction/collision/CollisionLayerPolicy.h' @(
     'ROCK_LAYER_DYNAMIC_HAND_PROXY = 48',
+    'ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER = 49',
+    'ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER = 50',
     'buildRockDynamicHandProxyExpectedMask\(\)',
-    'isWorldSurfaceLayer\(layer\)'
-) 'Dynamic hand proxy layer must be 48 with a world-surface-only mask.'
+    'isWorldSurfaceLayer\(layer\)',
+    'withLayer\(mask, ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER\)',
+    'withLayer\(mask, ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER\)'
+) 'Dynamic hand proxy layer must include only world surfaces and explicit car rows.'
+Require-Text 'src/physics-interaction/object/DynamicWorldCarCollision.cpp' `
+    'isExplodableCarReference[\s\S]*dynamicWorldCarLayerForNativeLayer[\s\S]*setFilterInfo' `
+    'Only verified ExplodableCar references may be tagged onto dynamic-world car layers.'
+Require-Text 'src/physics-interaction/object/DynamicWorldCarCollision.cpp' `
+    'currentFilterInfo != tagged\.taggedFilterInfo[\s\S]*resolveBodyToRef[\s\S]*tagged\.originalFilterInfo' `
+    'Car filter restoration must verify both current filter ownership and native body identity.'
+Require-Text 'src/physics-interaction/object/DynamicWorldCarCollision.cpp' `
+    'DynamicWorldCarCollisionRuntime::restoreSlot[\s\S]*restoreTaggedBodiesForReference\(bhkWorld, hknpWorld, ref, seedBodyId, reason\)' `
+    'Car teardown must restore the native layer even if another owner changed non-layer filter bits.'
 Require-OrderedText 'src/physics-interaction/collision/CollisionLayerPolicy.h' @(
     'inline void applyRockGeneratedLayerPolicies\(',
     'applyRockDynamicHandProxyLayerPolicy\(matrix\);'

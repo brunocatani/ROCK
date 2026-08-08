@@ -58,6 +58,7 @@
 #include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/input/GrabInputIntentPolicy.h"
 #include "physics-interaction/object/ObjectDetection.h"
+#include "physics-interaction/object/CarInteractionPolicy.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
 #include "physics-interaction/stash/ShoulderStashDetector.h"
 #include "physics-interaction/stash/ShoulderStashPolicy.h"
@@ -2171,6 +2172,11 @@ namespace rock
             _pendingEquippedWeaponPrimaryOnlyGripStart = {};
             auto* snapshotBhk = getPlayerBhkWorld();
             auto* snapshotHknp = snapshotBhk ? getHknpWorld(snapshotBhk) : nullptr;
+            if (snapshotBhk && snapshotHknp) {
+                _dynamicWorldCarCollision.restoreAll(snapshotBhk, snapshotHknp, "menu-blocked");
+            } else {
+                _dynamicWorldCarCollision.abandon();
+            }
             observeLifecycleFrame(snapshotBhk, snapshotHknp, ::rock::provider::RockProviderLifecycleReason::MenuBlocked);
             restoreHeldMassMovementSlowdown("menu-blocked");
             _shoulderStashStates = {};
@@ -2193,6 +2199,7 @@ namespace rock
 
         auto* bhk = getPlayerBhkWorld();
         if (!bhk) {
+            _dynamicWorldCarCollision.abandon();
             if (_initialized) {
                 ROCK_LOG_WARN(Update, "bhkWorld became null — shutting down");
                 shutdown();
@@ -2217,6 +2224,7 @@ namespace rock
 
         auto* hknp = getHknpWorld(bhk);
         if (!hknp) {
+            _dynamicWorldCarCollision.abandon();
             _cachedHknpWorld = nullptr;
             observeLifecycleFrame(bhk, nullptr, ::rock::provider::RockProviderLifecycleReason::WorldUnavailable);
             _twoHandedGrip.reset();
@@ -2362,6 +2370,7 @@ namespace rock
 
         if (_collisionLayerRegistered &&
             (_expectedHandLayerMask != 0 || _expectedWeaponLayerMask != 0 || _expectedReloadLayerMask != 0 || _expectedBodyLayerMask != 0 ||
+                _expectedDynamicHandProxyLayerMask != 0 || _expectedDynamicWorldCarClutterLayerMask != 0 || _expectedDynamicWorldCarLargeClutterLayerMask != 0 ||
                 _nativeCharacterControllerLayerPolicyCaptured)) {
             const auto desiredHandMask = collision_layer_policy::buildRockHandExpectedMask(true, g_rockConfig.rockHandCollisionStaticWorldEnabled);
             const auto desiredWeaponMask = collision_layer_policy::buildRockWeaponExpectedMask(
@@ -2393,10 +2402,19 @@ namespace rock
                 const auto currentWeaponMask = matrix[collision_layer_policy::ROCK_LAYER_WEAPON];
                 const auto currentReloadMask = matrix[collision_layer_policy::ROCK_LAYER_RELOAD];
                 const auto currentBodyMask = matrix[collision_layer_policy::ROCK_LAYER_BODY];
+                const auto currentDynamicHandProxyMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_HAND_PROXY];
+                const auto currentDynamicWorldCarClutterMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER];
+                const auto currentDynamicWorldCarLargeClutterMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER];
                 const bool handMaskDrifted = _expectedHandLayerMask != 0 && !collision_layer_policy::matrixLayerMaskMatches(currentHandMask, _expectedHandLayerMask);
                 const bool weaponMaskDrifted = _expectedWeaponLayerMask != 0 && !collision_layer_policy::matrixLayerMaskMatches(currentWeaponMask, _expectedWeaponLayerMask);
                 const bool reloadMaskDrifted = _expectedReloadLayerMask != 0 && !collision_layer_policy::matrixLayerMaskMatches(currentReloadMask, _expectedReloadLayerMask);
                 const bool bodyMaskDrifted = _expectedBodyLayerMask != 0 && !collision_layer_policy::bodyManagedLayerMaskMatches(currentBodyMask, _expectedBodyLayerMask);
+                const bool dynamicHandProxyMaskDrifted = _expectedDynamicHandProxyLayerMask != 0 &&
+                    !collision_layer_policy::matrixLayerMaskMatches(currentDynamicHandProxyMask, _expectedDynamicHandProxyLayerMask);
+                const bool dynamicWorldCarClutterMaskDrifted = _expectedDynamicWorldCarClutterLayerMask != 0 &&
+                    !collision_layer_policy::matrixLayerMaskMatches(currentDynamicWorldCarClutterMask, _expectedDynamicWorldCarClutterLayerMask);
+                const bool dynamicWorldCarLargeClutterMaskDrifted = _expectedDynamicWorldCarLargeClutterLayerMask != 0 &&
+                    !collision_layer_policy::matrixLayerMaskMatches(currentDynamicWorldCarLargeClutterMask, _expectedDynamicWorldCarLargeClutterLayerMask);
                 const bool actorToolPairsDrifted =
                     _expectedHandLayerMask != 0 && _expectedWeaponLayerMask != 0 &&
                     !collision_layer_policy::rockToolActorPairsMatch(matrix, _expectedHandLayerMask, _expectedWeaponLayerMask);
@@ -2404,12 +2422,13 @@ namespace rock
                 const bool nativeControllerObjectPairsDrifted =
                     _nativeCharacterControllerLayerPolicyCaptured &&
                     !collision_layer_policy::nativeCharacterControllerObjectPairsMatch(matrix, _expectedNativeCharacterControllerLayerMask);
-                if (handMaskDrifted || weaponMaskDrifted || reloadMaskDrifted || bodyMaskDrifted || actorToolPairsDrifted || bodyPairsDrifted ||
+                if (handMaskDrifted || weaponMaskDrifted || reloadMaskDrifted || bodyMaskDrifted || dynamicHandProxyMaskDrifted ||
+                    dynamicWorldCarClutterMaskDrifted || dynamicWorldCarLargeClutterMaskDrifted || actorToolPairsDrifted || bodyPairsDrifted ||
                     nativeControllerObjectPairsDrifted) {
                     const auto currentNativeCharacterControllerMask =
                         _nativeCharacterControllerLayerPolicyCaptured ? matrix[collision_layer_policy::FO4_LAYER_CHARCONTROLLER] : 0;
                     ROCK_LOG_WARN(Config,
-                        "ROCK configured layer mask drift detected; hand expected=0x{:016X} current=0x{:016X}, weapon expected=0x{:016X} current=0x{:016X}, reload expected=0x{:016X} current=0x{:016X}, body expected=0x{:016X} current=0x{:016X}, nativeController expected=0x{:016X} current=0x{:016X}, actorToolPairs={}, bodyManagedPairs={}, nativeControllerObjects={}; re-registering",
+                        "ROCK configured layer mask drift detected; hand expected=0x{:016X} current=0x{:016X}, weapon expected=0x{:016X} current=0x{:016X}, reload expected=0x{:016X} current=0x{:016X}, body expected=0x{:016X} current=0x{:016X}, dynamicProxy expected=0x{:016X} current=0x{:016X}, carClutter expected=0x{:016X} current=0x{:016X}, carLarge expected=0x{:016X} current=0x{:016X}, nativeController expected=0x{:016X} current=0x{:016X}, actorToolPairs={}, bodyManagedPairs={}, nativeControllerObjects={}; re-registering",
                         collision_layer_policy::matrixAddressableMask(_expectedHandLayerMask),
                         collision_layer_policy::matrixAddressableMask(currentHandMask),
                         collision_layer_policy::matrixAddressableMask(_expectedWeaponLayerMask),
@@ -2418,6 +2437,12 @@ namespace rock
                         collision_layer_policy::matrixAddressableMask(currentReloadMask),
                         collision_layer_policy::matrixAddressableMask(_expectedBodyLayerMask),
                         collision_layer_policy::matrixAddressableMask(currentBodyMask),
+                        collision_layer_policy::matrixAddressableMask(_expectedDynamicHandProxyLayerMask),
+                        collision_layer_policy::matrixAddressableMask(currentDynamicHandProxyMask),
+                        collision_layer_policy::matrixAddressableMask(_expectedDynamicWorldCarClutterLayerMask),
+                        collision_layer_policy::matrixAddressableMask(currentDynamicWorldCarClutterMask),
+                        collision_layer_policy::matrixAddressableMask(_expectedDynamicWorldCarLargeClutterLayerMask),
+                        collision_layer_policy::matrixAddressableMask(currentDynamicWorldCarLargeClutterMask),
                         collision_layer_policy::matrixAddressableMask(_expectedNativeCharacterControllerLayerMask),
                         collision_layer_policy::matrixAddressableMask(currentNativeCharacterControllerMask),
                         actorToolPairsDrifted ? "drifted" : "ok",
@@ -3488,6 +3513,26 @@ namespace rock
          */
 
         updateGrabInput(frame);
+        auto selectedCloseCarTarget = [&](const Hand& hand, const HandFrameInput& handInput) {
+            DynamicWorldCarTarget target{};
+            if (handInput.disabled || hand.isHolding() || !hand.hasSelection()) {
+                return target;
+            }
+            const auto& selection = hand.getSelection();
+            if (selection.isFarSelection || !selection.refr || !fo4vr::isExplodableCar(selection.refr->GetObjectReference())) {
+                return target;
+            }
+            target.ref = selection.refr;
+            target.seedBodyId = selection.bodyId.value;
+            return target;
+        };
+        _dynamicWorldCarCollision.update(
+            frame.bhkWorld,
+            frame.hknpWorld,
+            std::array<DynamicWorldCarTarget, 2>{
+                selectedCloseCarTarget(_rightHand, frame.right),
+                selectedCloseCarTarget(_leftHand, frame.left),
+            });
         updateHeldMassMovementSlowdown(hknp, frame.deltaSeconds);
         synchronizeContactEvidenceOwnership(rightHandWeaponAuthorityActive, leftSupportGripActive, rightPartGripActive);
 
@@ -4864,6 +4909,7 @@ namespace rock
 
         if (worldValid) {
             auto* hknp = getHknpWorld(_cachedBhkWorld);
+            _dynamicWorldCarCollision.restoreAll(_cachedBhkWorld, hknp, "shutdown");
             _touchGrabRuntime.releaseAll(
                 _cachedBhkWorld,
                 hknp,
@@ -4894,6 +4940,7 @@ namespace rock
             destroyBodyBoneCollisions(_cachedBhkWorld);
             destroyHandCollisions(_cachedBhkWorld);
         } else {
+            _dynamicWorldCarCollision.abandon();
             _touchGrabRuntime.abandonAll(
                 provider::RockProviderTouchGrabReleaseReasonV1::
                     WorldLost);
@@ -4951,6 +4998,9 @@ namespace rock
         _expectedWeaponLayerMask = 0;
         _expectedReloadLayerMask = 0;
         _expectedBodyLayerMask = 0;
+        _expectedDynamicHandProxyLayerMask = 0;
+        _expectedDynamicWorldCarClutterLayerMask = 0;
+        _expectedDynamicWorldCarLargeClutterLayerMask = 0;
         _originalNativeCharacterControllerLayerMask = 0;
         _expectedNativeCharacterControllerLayerMask = 0;
         _nativeCharacterControllerLayerPolicyCaptured = false;
@@ -5283,6 +5333,9 @@ namespace rock
         ROCK_LOG_DEBUG(Config, "Layer {} pre-set mask=0x{:016X}", collision_layer_policy::ROCK_LAYER_WEAPON, matrix[collision_layer_policy::ROCK_LAYER_WEAPON]);
         ROCK_LOG_DEBUG(Config, "Layer {} pre-set mask=0x{:016X}", collision_layer_policy::ROCK_LAYER_RELOAD, matrix[collision_layer_policy::ROCK_LAYER_RELOAD]);
         ROCK_LOG_DEBUG(Config, "Layer {} pre-set mask=0x{:016X}", collision_layer_policy::ROCK_LAYER_BODY, matrix[collision_layer_policy::ROCK_LAYER_BODY]);
+        ROCK_LOG_DEBUG(Config, "Layer {} pre-set mask=0x{:016X}", collision_layer_policy::ROCK_LAYER_DYNAMIC_HAND_PROXY, matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_HAND_PROXY]);
+        ROCK_LOG_DEBUG(Config, "Layer {} pre-set mask=0x{:016X}", collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER, matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER]);
+        ROCK_LOG_DEBUG(Config, "Layer {} pre-set mask=0x{:016X}", collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER, matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER]);
         ROCK_LOG_DEBUG(Config, "Layer {} pre-set mask=0x{:016X}", collision_layer_policy::FO4_LAYER_CHARCONTROLLER, matrix[collision_layer_policy::FO4_LAYER_CHARCONTROLLER]);
 
         if (!_nativeCharacterControllerLayerPolicyCaptured) {
@@ -5315,6 +5368,9 @@ namespace rock
                 g_rockConfig.rockWeaponCollisionBlocksSpells,
                 g_rockConfig.rockHandCollisionStaticWorldEnabled);
         _expectedBodyLayerMask = collision_layer_policy::buildRockBodyExpectedMask(g_rockConfig.rockBodyBoneCollisionStaticWorldEnabled);
+        _expectedDynamicHandProxyLayerMask = collision_layer_policy::buildRockDynamicHandProxyExpectedMask();
+        _expectedDynamicWorldCarClutterLayerMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER];
+        _expectedDynamicWorldCarLargeClutterLayerMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER];
         _expectedNativeCharacterControllerLayerMask =
             collision_layer_policy::nativeCharacterControllerExpectedMask(
                 _originalNativeCharacterControllerLayerMask,
@@ -6087,6 +6143,28 @@ namespace rock
         }
     }
 
+    void PhysicsInteraction::prepareDynamicWorldCarCollisionForGrab(
+        RE::bhkWorld* bhkWorld,
+        RE::hknpWorld* hknpWorld,
+        RE::TESObjectREFR* ref)
+    {
+        if (!ref) {
+            return;
+        }
+        auto* baseObject = ref->GetObjectReference();
+        const bool targetIsCar = fo4vr::isExplodableCar(baseObject);
+        if (!targetIsCar) {
+            return;
+        }
+        const auto decision = car_interaction_policy::evaluateGrab(car_interaction_policy::GrabPolicyInput{
+            .targetIsCar = targetIsCar,
+            .playerInPowerArmor = fo4vr::isInPowerArmor(),
+        });
+        if (decision.allowed) {
+            _dynamicWorldCarCollision.restoreReference(bhkWorld, hknpWorld, ref, "grab-commit");
+        }
+    }
+
     GrabReleaseContext PhysicsInteraction::makeGrabReleaseContext(const Hand& hand, bool isLeft) const
     {
         const Hand& peer = isLeft ? _rightHand : _leftHand;
@@ -6531,6 +6609,7 @@ namespace rock
             commit.phase = PendingForceGrabCommitPhase::AcquireAndCommitExactTarget;
 
             const auto sharedContext = makeGrabSharedObjectContext(hand, commit.isLeft);
+            prepareDynamicWorldCarCollisionForGrab(frame.bhkWorld, frame.hknpWorld, targetRef);
             const bool grabbed = hand.grabSelectedObject(frame.hknpWorld,
                 handInput.rawHandWorld,
                 g_rockConfig.rockGrabLinearTau,
@@ -9172,6 +9251,7 @@ namespace rock
 
                 const auto sharedContext = makeGrabSharedObjectContext(hand, isLeft);
                 const bool grabbedFromPullCatchCommit = hand.hasPendingPullCatchCommit();
+                prepareDynamicWorldCarCollisionForGrab(frame.bhkWorld, hknp, hand.getSelection().refr);
                 bool grabbed = hand.grabSelectedObject(hknp,
                     transform,
                     g_rockConfig.rockGrabLinearTau,

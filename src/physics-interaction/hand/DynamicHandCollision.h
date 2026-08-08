@@ -38,7 +38,8 @@ namespace rock
      * role-frame publications the keyframed colliders are driven with, never
      * from dynamic-body readback, so rendering cannot feed back into physics.
      * The twins are not gameplay contact
-     * evidence and collide only with static world-surface layers.
+     * evidence and collide only with static world-surface layers plus the
+     * dedicated rows used by explicitly identified car bodies.
      *
      * Threading: updateFrame runs on the main game thread; the drive flush runs
      * on the physics step thread and publishes fixed per-body telemetry through

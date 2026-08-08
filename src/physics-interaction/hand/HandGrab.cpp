@@ -25,6 +25,7 @@
 #include "physics-interaction/grab/GrabLocomotionJag.h"
 #include "physics-interaction/grab/MeshGrab.h"
 #include "physics-interaction/object/MechanicalConnectedBodySet.h"
+#include "physics-interaction/object/CarInteractionPolicy.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/LooseWeaponGripZone.h"
@@ -7530,6 +7531,20 @@ namespace rock
         }
 
         auto* baseObj = sel.refr->GetObjectReference();
+        const bool selectedObjectIsCar = fo4vr::isExplodableCar(baseObj);
+        const auto carGrabDecision = car_interaction_policy::evaluateGrab(car_interaction_policy::GrabPolicyInput{
+            .targetIsCar = selectedObjectIsCar,
+            .playerInPowerArmor = selectedObjectIsCar && fo4vr::isInPowerArmor(),
+        });
+        if (!carGrabDecision.allowed) {
+            ROCK_LOG_DEBUG(Hand,
+                "{} hand GRAB blocked: formID={:08X} reason={}",
+                handName(),
+                sel.refr->GetFormID(),
+                carGrabDecision.reason);
+            clearGrabExternalHandWorldTransform(_isLeft);
+            return false;
+        }
         std::string objName = "(unnamed)";
         if (baseObj) {
             auto nameView = RE::TESFullName::GetFullName(*baseObj, false);

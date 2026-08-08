@@ -209,6 +209,16 @@ int main()
             .targetIsCar = true,
             .playerInPowerArmor = true,
         }).allowed);
+    ok &= expectTrue("close car selection remains available for dynamic-world collision outside power armor",
+        car_interaction_policy::evaluateSelection(car_interaction_policy::GrabPolicyInput{
+            .targetIsCar = true,
+            .playerInPowerArmor = false,
+        }, false).allowed);
+    ok &= expectFalse("far car selection remains blocked outside power armor",
+        car_interaction_policy::evaluateSelection(car_interaction_policy::GrabPolicyInput{
+            .targetIsCar = true,
+            .playerInPowerArmor = false,
+        }, true).allowed);
     ok &= expectTrue("non-car movable static grab is unaffected outside power armor",
         car_interaction_policy::evaluateGrab(car_interaction_policy::GrabPolicyInput{
             .targetIsCar = false,
@@ -398,6 +408,51 @@ int main()
         collision_layer_policy::isNativeCharacterControllerObjectSuppressionLayer(collision_layer_policy::ROCK_LAYER_WEAPON));
     ok &= expectFalse("native controller object suppression does not manage ROCK body layer",
         collision_layer_policy::isNativeCharacterControllerObjectSuppressionLayer(collision_layer_policy::ROCK_LAYER_BODY));
+
+    ok &= expectTrue("clutter cars map to a dedicated dynamic-world layer",
+        collision_layer_policy::dynamicWorldCarLayerForNativeLayer(collision_layer_policy::FO4_LAYER_CLUTTER) ==
+            collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER);
+    ok &= expectTrue("large-clutter cars map to a distinct dynamic-world layer",
+        collision_layer_policy::dynamicWorldCarLayerForNativeLayer(collision_layer_policy::FO4_LAYER_CLUTTER_LARGE) ==
+            collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER);
+    ok &= expectTrue("car clutter layer restores to native clutter",
+        collision_layer_policy::nativeLayerForDynamicWorldCarLayer(collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER) ==
+            collision_layer_policy::FO4_LAYER_CLUTTER);
+    ok &= expectTrue("car large-clutter layer restores to native large clutter",
+        collision_layer_policy::nativeLayerForDynamicWorldCarLayer(collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER) ==
+            collision_layer_policy::FO4_LAYER_CLUTTER_LARGE);
+
+    CollisionMatrix dynamicCarMatrix{};
+    collision_layer_policy::setPair(dynamicCarMatrix.data(), collision_layer_policy::FO4_LAYER_CLUTTER, collision_layer_policy::FO4_LAYER_CLUTTER, true);
+    collision_layer_policy::setPair(dynamicCarMatrix.data(), collision_layer_policy::FO4_LAYER_CLUTTER, collision_layer_policy::FO4_LAYER_CLUTTER_LARGE, true);
+    collision_layer_policy::setPair(dynamicCarMatrix.data(), collision_layer_policy::FO4_LAYER_CLUTTER, collision_layer_policy::FO4_LAYER_STATIC, true);
+    collision_layer_policy::setPair(dynamicCarMatrix.data(), collision_layer_policy::FO4_LAYER_CLUTTER, collision_layer_policy::FO4_LAYER_ITEMPICK, true);
+    collision_layer_policy::setPair(dynamicCarMatrix.data(), collision_layer_policy::FO4_LAYER_CLUTTER_LARGE, collision_layer_policy::FO4_LAYER_CLUTTER_LARGE, true);
+    collision_layer_policy::setPair(dynamicCarMatrix.data(), collision_layer_policy::FO4_LAYER_CLUTTER_LARGE, collision_layer_policy::FO4_LAYER_ANIMSTATIC, true);
+    collision_layer_policy::setPair(dynamicCarMatrix.data(), collision_layer_policy::FO4_LAYER_CLUTTER_LARGE, collision_layer_policy::FO4_LAYER_ITEMPICK, true);
+    collision_layer_policy::applyRockDynamicHandProxyLayerPolicy(dynamicCarMatrix.data());
+    collision_layer_policy::applyRockDynamicWorldCarLayerPolicies(dynamicCarMatrix.data());
+
+    ok &= expectLayerPair("dynamic hand proxy still excludes ordinary clutter", dynamicCarMatrix,
+        collision_layer_policy::ROCK_LAYER_DYNAMIC_HAND_PROXY, collision_layer_policy::FO4_LAYER_CLUTTER, false);
+    ok &= expectLayerPair("dynamic hand proxy still excludes ordinary large clutter", dynamicCarMatrix,
+        collision_layer_policy::ROCK_LAYER_DYNAMIC_HAND_PROXY, collision_layer_policy::FO4_LAYER_CLUTTER_LARGE, false);
+    ok &= expectLayerPair("dynamic hand proxy includes tagged clutter cars", dynamicCarMatrix,
+        collision_layer_policy::ROCK_LAYER_DYNAMIC_HAND_PROXY, collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER, true);
+    ok &= expectLayerPair("dynamic hand proxy includes tagged large-clutter cars", dynamicCarMatrix,
+        collision_layer_policy::ROCK_LAYER_DYNAMIC_HAND_PROXY, collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER, true);
+    ok &= expectLayerPair("tagged clutter car preserves native static collision", dynamicCarMatrix,
+        collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER, collision_layer_policy::FO4_LAYER_STATIC, true);
+    ok &= expectLayerPair("tagged large-clutter car preserves native animstatic collision", dynamicCarMatrix,
+        collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER, collision_layer_policy::FO4_LAYER_ANIMSTATIC, true);
+    ok &= expectLayerPair("tagged car layers preserve native clutter cross-collision", dynamicCarMatrix,
+        collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER, collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER, true);
+    ok &= expectLayerPair("tagged clutter car remains visible to selection queries", dynamicCarMatrix,
+        collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER, collision_layer_policy::FO4_LAYER_ITEMPICK, true);
+    ok &= expectLayerPair("tagged car preserves native player-controller collision", dynamicCarMatrix,
+        collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, true);
+    ok &= expectLayerPair("tagged clutter car does not inherit unrelated actor collision", dynamicCarMatrix,
+        collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER, collision_layer_policy::FO4_LAYER_BIPED, false);
 
     collision_layer_policy::applyNativeCharacterControllerObjectSuppressionPolicy(matrix.data(), false, originalControllerMask);
     ok &= expectLayerPair("disabled native controller policy restores clutter", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_CLUTTER, true);
