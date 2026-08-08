@@ -2,6 +2,7 @@
 
 #include "rock_support/Fo4VrActorStatePolicy.h"
 #include "rock_support/Logger.h"
+#include "physics-interaction/object/CarInteractionPolicy.h"
 
 #include <RE/Bethesda/SendPapyrusEvent.h>
 
@@ -15,13 +16,13 @@ namespace rock::fo4vr
 {
     namespace
     {
-        [[nodiscard]] bool hasKeyword(const RE::TESObjectARMO* armor, const std::uint32_t keywordFormId) noexcept
+        [[nodiscard]] bool hasKeyword(const RE::BGSKeywordForm* keywordForm, const std::uint32_t keywordFormId) noexcept
         {
-            if (!armor || !armor->keywords) {
+            if (!keywordForm || !keywordForm->keywords) {
                 return false;
             }
-            for (std::uint32_t index = 0; index < armor->numKeywords; ++index) {
-                const auto* keyword = armor->keywords[index];
+            for (std::uint32_t index = 0; index < keywordForm->numKeywords; ++index) {
+                const auto* keyword = keywordForm->keywords[index];
                 if (keyword && keyword->formID == keywordFormId) {
                     return true;
                 }
@@ -214,6 +215,16 @@ namespace rock::fo4vr
         }
         const auto* armor = static_cast<const RE::TESObjectARMO*>(equippedForm);
         return hasKeyword(armor, kPowerArmorKeywordFormId) || hasKeyword(armor, kPowerArmorFrameKeywordFormId);
+    }
+
+    bool isExplodableCar(const RE::TESBoundObject* baseForm) noexcept
+    {
+        if (!baseForm || !baseForm->Is(RE::ENUM_FORM_ID::kMSTT)) {
+            return false;
+        }
+
+        const auto* movableStatic = static_cast<const RE::BGSMovableStatic*>(baseForm);
+        return hasKeyword(movableStatic, car_interaction_policy::kExplodableCarKeywordFormId);
     }
 
     RE::Setting* getIniSetting(const char* name) noexcept

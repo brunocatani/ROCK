@@ -5326,7 +5326,7 @@ namespace rock
             collision_layer_policy::nativeCharacterControllerObjectPairsMatch(matrix, _expectedNativeCharacterControllerLayerMask);
         const char* nativeControllerObjectStatus =
             _nativeCharacterControllerLayerPolicyEnabled ?
-                (nativeControllerObjectPairsMatch ? "blocked" : "bad") :
+                (nativeControllerObjectPairsMatch ? "body-filtered" : "bad") :
                 (nativeControllerObjectPairsMatch ? "restored" : "bad");
 
         ROCK_LOG_INFO(Config,

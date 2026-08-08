@@ -2,6 +2,7 @@
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/grab/GrabInteractionPolicy.h"
 #include "physics-interaction/object/FarSelectionBlacklistPolicy.h"
+#include "physics-interaction/object/CarInteractionPolicy.h"
 #include "physics-interaction/grab/GrabHeldObject.h"
 
 #include <array>
@@ -198,6 +199,21 @@ int main()
     ok &= expectTrue("detached gore requires hand pocket", grab_target::requiresHandPocketGrab(grab_target::Kind::DetachedGore));
     ok &= expectTrue("dead actor bodies require hand pocket", grab_target::requiresHandPocketGrab(grab_target::Kind::DeadActorBody));
     ok &= expectFalse("ordinary loose objects may use normal grab evidence", grab_target::requiresHandPocketGrab(grab_target::Kind::LooseObject));
+    ok &= expectFalse("car grab is blocked outside power armor",
+        car_interaction_policy::evaluateGrab(car_interaction_policy::GrabPolicyInput{
+            .targetIsCar = true,
+            .playerInPowerArmor = false,
+        }).allowed);
+    ok &= expectTrue("car grab is allowed in power armor",
+        car_interaction_policy::evaluateGrab(car_interaction_policy::GrabPolicyInput{
+            .targetIsCar = true,
+            .playerInPowerArmor = true,
+        }).allowed);
+    ok &= expectTrue("non-car movable static grab is unaffected outside power armor",
+        car_interaction_policy::evaluateGrab(car_interaction_policy::GrabPolicyInput{
+            .targetIsCar = false,
+            .playerInPowerArmor = false,
+        }).allowed);
     ok &= expectFalse("dynamic movable statics cannot be far selected", grab_target::canUseFarSelection(grab_target::Kind::DynamicMovableStatic));
     ok &= expectFalse("detached gore cannot be far selected", grab_target::canUseFarSelection(grab_target::Kind::DetachedGore));
     ok &= expectFalse("dead actor bodies cannot be far selected", grab_target::canUseFarSelection(grab_target::Kind::DeadActorBody));
@@ -301,6 +317,52 @@ int main()
         true,
         "movableStaticSupportLayer");
 
+    ok &= expectPlayerControllerDecision("car on clutter keeps native player collision",
+        collision_layer_policy::evaluatePlayerCharacterControllerContact(collision_layer_policy::PlayerCharacterControllerContactPolicyInput{
+            .filterEnabled = true,
+            .playerController = true,
+            .targetLayerKnown = true,
+            .targetLayer = collision_layer_policy::FO4_LAYER_CLUTTER,
+            .targetIsMovableStatic = true,
+            .targetIsCar = true,
+        }),
+        false,
+        "carCollision");
+
+    ok &= expectPlayerControllerDecision("car on large clutter keeps native player collision",
+        collision_layer_policy::evaluatePlayerCharacterControllerContact(collision_layer_policy::PlayerCharacterControllerContactPolicyInput{
+            .filterEnabled = true,
+            .playerController = true,
+            .targetLayerKnown = true,
+            .targetLayer = collision_layer_policy::FO4_LAYER_CLUTTER_LARGE,
+            .targetIsMovableStatic = true,
+            .targetIsCar = true,
+        }),
+        false,
+        "carCollision");
+
+    ok &= expectPlayerControllerDecision("ordinary clutter remains suppressed by body-aware filtering",
+        collision_layer_policy::evaluatePlayerCharacterControllerContact(collision_layer_policy::PlayerCharacterControllerContactPolicyInput{
+            .filterEnabled = true,
+            .playerController = true,
+            .targetLayerKnown = true,
+            .targetLayer = collision_layer_policy::FO4_LAYER_CLUTTER,
+        }),
+        true,
+        "nonSupportLayer");
+
+    ok &= expectPlayerControllerDecision("car identity overrides movable-static support suppression",
+        collision_layer_policy::evaluatePlayerCharacterControllerContact(collision_layer_policy::PlayerCharacterControllerContactPolicyInput{
+            .filterEnabled = true,
+            .playerController = true,
+            .targetLayerKnown = true,
+            .targetLayer = collision_layer_policy::FO4_LAYER_STATIC,
+            .targetIsMovableStatic = true,
+            .targetIsCar = true,
+        }),
+        false,
+        "carCollision");
+
     ok &= expectPlayerControllerDecision("dynamic movable static flag does not suppress non-player controllers",
         collision_layer_policy::evaluatePlayerCharacterControllerContact(collision_layer_policy::PlayerCharacterControllerContactPolicyInput{
             .filterEnabled = true,
@@ -318,12 +380,12 @@ int main()
     const auto expectedSuppressedControllerMask =
         collision_layer_policy::nativeCharacterControllerExpectedMask(originalControllerMask, true);
 
-    ok &= expectLayerPair("native controller no longer hits clutter", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_CLUTTER, false);
+    ok &= expectLayerPair("native controller exposes clutter to body-aware car filtering", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_CLUTTER, true);
     ok &= expectLayerPair("native controller no longer hits weapon objects", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_WEAPON, false);
     ok &= expectLayerPair("native controller no longer hits small debris", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_DEBRIS_SMALL, false);
     ok &= expectLayerPair("native controller no longer hits large debris", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_DEBRIS_LARGE, false);
     ok &= expectLayerPair("native controller no longer hits shell casings", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_SHELLCASING, false);
-    ok &= expectLayerPair("native controller no longer hits large clutter", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_CLUTTER_LARGE, false);
+    ok &= expectLayerPair("native controller exposes large clutter to body-aware car filtering", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_CLUTTER_LARGE, true);
     ok &= expectLayerPair("native controller preserves static support", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_STATIC, true);
     ok &= expectLayerPair("native controller preserves animstatic support", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_ANIMSTATIC, true);
     ok &= expectLayerPair("native controller preserves terrain support", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_TERRAIN, true);

@@ -3,12 +3,14 @@
 #include "physics-interaction/grab/GrabInteractionPolicy.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
 #include "physics-interaction/object/PhysicsBodyClassifier.h"
+#include "physics-interaction/object/CarInteractionPolicy.h"
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/native/PhysicsRayCast.h"
 #include "physics-interaction/native/PhysicsShapeCast.h"
 #include "RockConfig.h"
 #include "physics-interaction/hand/HandSelection.h"
+#include "rock_support/Fo4VrRuntime.h"
 
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/TESBoundObjects.h"
@@ -388,6 +390,17 @@ namespace rock
         }
 
         if (baseForm->Is(RE::ENUM_FORM_ID::kMSTT) && hasDynamicMovableStaticBodyEvidence(hknpWorld, bodyId)) {
+            const bool targetIsCar = fo4vr::isExplodableCar(baseForm);
+            const auto carGrabDecision = car_interaction_policy::evaluateGrab(car_interaction_policy::GrabPolicyInput{
+                .targetIsCar = targetIsCar,
+                .playerInPowerArmor = targetIsCar && fo4vr::isInPowerArmor(),
+            });
+            if (!carGrabDecision.allowed) {
+                return { .kind = grab_target::Kind::DynamicMovableStatic, .reason = carGrabDecision.reason, .grabbable = false };
+            }
+            if (targetIsCar) {
+                return { .kind = grab_target::Kind::DynamicMovableStatic, .reason = carGrabDecision.reason, .grabbable = true };
+            }
             return { .kind = grab_target::Kind::DynamicMovableStatic, .reason = "dynamic-mstt-body", .grabbable = true };
         }
 

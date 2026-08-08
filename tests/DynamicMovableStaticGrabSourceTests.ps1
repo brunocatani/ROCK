@@ -72,6 +72,16 @@ Require-Text 'src/physics-interaction/object/ObjectDetection.cpp' 'baseForm->Is\
     'MSTT selection must be accepted only when the selected body evidence is dynamic.'
 Require-Text 'src/physics-interaction/object/ObjectDetection.cpp' 'dynamic-mstt-body' `
     'Dynamic MSTT selection needs a stable classification reason for runtime diagnostics.'
+Require-Text 'src/physics-interaction/object/ObjectDetection.cpp' 'isExplodableCar\(baseForm\)[\s\S]*isInPowerArmor\(\)[\s\S]*carGrabDecision\.reason' `
+    'Explodable cars must be rejected as grab targets unless the player is in power armor.'
+Require-Text 'src/physics-interaction/object/CarInteractionPolicy.h' 'car-requires-power-armor' `
+    'The car grab policy needs a stable non-power-armor rejection reason.'
+Require-Text 'src/physics-interaction/core/PhysicsHooks.cpp' 'targetIsCar\s*=\s*targetIdentity\.isCar' `
+    'Player-controller contact policy must receive the resolved car identity.'
+Require-Text 'src/physics-interaction/collision/CollisionLayerPolicy.h' 'targetIsCar[\s\S]*carCollision' `
+    'Car contacts must have an explicit native-collision preservation decision.'
+Require-Text 'src/rock_support/Fo4VrRuntime.cpp' 'BGSMovableStatic[\s\S]*kExplodableCarKeywordFormId' `
+    'Car identity must use the Fallout4.esm ExplodableCar keyword on movable statics.'
 Require-Text 'src/physics-interaction/object/ObjectDetection.cpp' 'motionType == physics_body_classifier::BodyMotionType::Dynamic' `
     'Dynamic MSTT evidence must use resolved hknp motion type, not just form type.'
 Reject-FunctionBodyText 'src/physics-interaction/object/ObjectDetection.cpp' 'isLooseGrabbableBaseType' 'RE::ENUM_FORM_ID::kMSTT' `

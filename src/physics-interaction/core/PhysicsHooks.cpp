@@ -13,6 +13,7 @@
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/native/HavokTimingFixPolicy.h"
 #include "physics-interaction/native/NativeGrabHapticSuppressionPolicy.h"
+#include "rock_support/Fo4VrRuntime.h"
 
 #include "RockConfig.h"
 
@@ -1399,10 +1400,23 @@ namespace rock
         return cell ? cell->GetbhkWorld() : nullptr;
     }
 
-    bool isMovableStaticPlayerContactTarget(RE::bhkWorld* bhkWorld, RE::hknpWorld* world, RE::hknpBodyId bodyId, std::uint32_t layer)
+    struct PlayerContactTargetIdentity
     {
-        if (!bhkWorld || !world || !collision_layer_policy::isPlayerCharacterControllerSupportLayer(layer)) {
-            return false;
+        bool isMovableStatic = false;
+        bool isCar = false;
+    };
+
+    PlayerContactTargetIdentity resolvePlayerContactTargetIdentity(
+        RE::bhkWorld* bhkWorld,
+        RE::hknpWorld* world,
+        RE::hknpBodyId bodyId,
+        std::uint32_t layer)
+    {
+        const bool requiresFormIdentity =
+            collision_layer_policy::isPlayerCharacterControllerSupportLayer(layer) ||
+            collision_layer_policy::isNativeCharacterControllerBodyFilteredLayer(layer);
+        if (!bhkWorld || !world || !requiresFormIdentity) {
+            return {};
         }
 
         /*
@@ -1414,7 +1428,13 @@ namespace rock
          */
         auto* ref = resolveBodyToRef(bhkWorld, world, bodyId);
         auto* baseForm = ref ? ref->GetObjectReference() : nullptr;
-        return baseForm && baseForm->Is(RE::ENUM_FORM_ID::kMSTT);
+        if (!baseForm || !baseForm->Is(RE::ENUM_FORM_ID::kMSTT)) {
+            return {};
+        }
+        return PlayerContactTargetIdentity{
+            .isMovableStatic = true,
+            .isCar = fo4vr::isExplodableCar(baseForm),
+        };
     }
 
     collision_layer_policy::PlayerCharacterControllerContactPolicyDecision evaluatePlayerControllerTargetBody(
@@ -1433,13 +1453,15 @@ namespace rock
         }
 
         const std::uint32_t layer = filterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
+        const auto targetIdentity = resolvePlayerContactTargetIdentity(bhkWorld, world, bodyId, layer);
         return collision_layer_policy::evaluatePlayerCharacterControllerContact(
             collision_layer_policy::PlayerCharacterControllerContactPolicyInput{
                 .filterEnabled = true,
                 .playerController = true,
                 .targetLayerKnown = true,
                 .targetLayer = layer,
-                .targetIsMovableStatic = isMovableStaticPlayerContactTarget(bhkWorld, world, bodyId, layer),
+                .targetIsMovableStatic = targetIdentity.isMovableStatic,
+                .targetIsCar = targetIdentity.isCar,
             });
     }
 
@@ -1783,6 +1805,7 @@ namespace rock
             int removedPlayerNonSupportPairs = 0;
             int removedPlayerMovableStaticPairs = 0;
             int preservedPlayerSupportPairs = 0;
+            int preservedPlayerCarPairs = 0;
             int preservedUnknownTargetPairs = 0;
             const auto filterResult = held_grab_cc_policy::filterGeneratedContactBuffers(contactBuffers, [&](std::uint32_t bodyId) {
                 if (heldFilterActive) {
@@ -1812,6 +1835,8 @@ namespace rock
                     }
                     if (std::string_view(decision.reason) == "supportLayer") {
                         ++preservedPlayerSupportPairs;
+                    } else if (std::string_view(decision.reason) == "carCollision") {
+                        ++preservedPlayerCarPairs;
                     } else if (std::string_view(decision.reason) == "unknownTargetLayer") {
                         ++preservedUnknownTargetPairs;
                     }
@@ -1823,7 +1848,7 @@ namespace rock
                 if (filterResult.removedPairCount > 0) {
                     ROCK_LOG_SAMPLE_DEBUG(CC,
                         g_rockConfig.rockLogSampleMilliseconds,
-                        "Filtered {} character-controller contacts before original listener kept={} originalPairs={} heldRemoved={} playerObjectRemoved={} playerNonSupportRemoved={} playerMovableStaticRemoved={} playerSupportPreserved={} playerUnknownPreserved={}",
+                        "Filtered {} character-controller contacts before original listener kept={} originalPairs={} heldRemoved={} playerObjectRemoved={} playerNonSupportRemoved={} playerMovableStaticRemoved={} playerSupportPreserved={} playerCarPreserved={} playerUnknownPreserved={}",
                         filterResult.removedPairCount,
                         filterResult.keptPairCount,
                         filterResult.originalPairCount,
@@ -1832,14 +1857,16 @@ namespace rock
                         removedPlayerNonSupportPairs,
                         removedPlayerMovableStaticPairs,
                         preservedPlayerSupportPairs,
+                        preservedPlayerCarPairs,
                         preservedUnknownTargetPairs);
                 } else if (g_rockConfig.rockDebugVerboseLogging) {
                     ROCK_LOG_SAMPLE_DEBUG(CC,
                         g_rockConfig.rockLogSampleMilliseconds,
-                        "Character-controller pre-filter kept native contacts originalPairs={} reason={} playerSupportPreserved={} playerUnknownPreserved={}",
+                        "Character-controller pre-filter kept native contacts originalPairs={} reason={} playerSupportPreserved={} playerCarPreserved={} playerUnknownPreserved={}",
                         filterResult.originalPairCount,
                         filterResult.reason,
                         preservedPlayerSupportPairs,
+                        preservedPlayerCarPairs,
                         preservedUnknownTargetPairs);
                 }
             }

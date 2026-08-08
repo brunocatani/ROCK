@@ -164,6 +164,7 @@ namespace rock::fo4vr
     [[nodiscard]] bool IsWeaponDrawn() noexcept;
     [[nodiscard]] bool isMeleeWeaponEquipped() noexcept;
     [[nodiscard]] bool isInPowerArmor() noexcept;
+    [[nodiscard]] bool isExplodableCar(const RE::TESBoundObject* baseForm) noexcept;
     [[nodiscard]] RE::Setting* getIniSetting(const char* name) noexcept;
 
     void showNotification(const std::string& text);
