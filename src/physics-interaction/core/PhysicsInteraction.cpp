@@ -891,7 +891,7 @@ namespace rock
 
         RE::TESObjectWEAP* currentEquippedWeaponForm()
         {
-            auto* equipData = f4vr::getEquippedItem();
+            auto* equipData = f4vr::getEquippedWeaponItem();
             auto* weaponForm = equipData ? equipData->item.object : nullptr;
             if (!weaponForm || weaponForm->formType != RE::ENUM_FORM_ID::kWEAP) {
                 return nullptr;
@@ -902,7 +902,7 @@ namespace rock
 
         RE::TBO_InstanceData* currentEquippedWeaponInstanceData(const RE::TESObjectWEAP* expectedWeapon)
         {
-            auto* equipData = f4vr::getEquippedItem();
+            auto* equipData = f4vr::getEquippedWeaponItem();
             if (!expectedWeapon || !equipData) {
                 return nullptr;
             }
@@ -1192,7 +1192,7 @@ namespace rock
             WeaponInteractionDebugInfo info{};
             info.weaponNodeName = weaponDiagnosticNodeName(weaponNode);
 
-            auto* equipData = f4vr::getEquippedItem();
+            auto* equipData = f4vr::getEquippedWeaponItem();
             auto* weaponForm = equipData ? equipData->item.object : nullptr;
             if (weaponForm) {
                 info.weaponFormId = weaponForm->formID;

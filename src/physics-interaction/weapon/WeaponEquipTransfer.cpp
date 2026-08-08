@@ -56,7 +56,7 @@ namespace rock::weapon_equip_transfer
         [[nodiscard]] EquippedWeaponSnapshot readEquippedWeaponSnapshot() noexcept
         {
             EquippedWeaponSnapshot snapshot{};
-            auto* equipData = f4vr::getEquippedItem();
+            auto* equipData = f4vr::getEquippedWeaponItem();
             auto* weaponForm = equipData ? equipData->item.object : nullptr;
             snapshot.weapon = asWeaponForm(weaponForm);
             snapshot.instanceData = equipData ? equipData->item.instanceData.get() : nullptr;

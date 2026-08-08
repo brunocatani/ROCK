@@ -149,7 +149,7 @@ namespace rock::fo4vr
     [[nodiscard]] BSFlattenedBoneTree* getFlattenedBoneTree() noexcept;
     [[nodiscard]] RE::NiNode* getFirstPersonSkeleton() noexcept;
     [[nodiscard]] BSFlattenedBoneTree* getFirstPersonBoneTree() noexcept;
-    [[nodiscard]] RE::EquippedItem* getEquippedItem() noexcept;
+    [[nodiscard]] RE::EquippedItem* getEquippedWeaponItem() noexcept;
     [[nodiscard]] RE::EquippedWeaponData* getEquippedWeaponData() noexcept;
     [[nodiscard]] RE::NiNode* getWeaponNode() noexcept;
     [[nodiscard]] RE::PlayerCamera* getPlayerCamera() noexcept;

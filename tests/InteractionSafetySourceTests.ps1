@@ -96,6 +96,7 @@ $commandQueueHeader = Read-Source 'src/physics-interaction/api/InteractionComman
 $providerSource = Read-Source 'src/api/ROCKProviderApi.cpp'
 $providerHeader = Read-Source 'src/api/ROCKProviderApi.h'
 $fo4vrRuntime = Read-Source 'src/rock_support/Fo4VrRuntime.cpp'
+$fo4vrRuntimeHeader = Read-Source 'src/rock_support/Fo4VrRuntime.h'
 $actorStatePolicy = Read-Source 'src/rock_support/Fo4VrActorStatePolicy.h'
 $nativeWeaponDraw = Read-Source 'src/physics-interaction/weapon/NativeEquippedWeaponDraw.cpp'
 $allRuntimeCpp = (
@@ -109,6 +110,29 @@ $allRuntimeCpp = (
 Reject-Text $allRuntimeCpp `
     'installEquipHook|hookedEquipObject|PendingEquipRequest|s_pendingEquipRequest' `
     'The retired grenade equip interception and pending-request state must not return.'
+
+# FO4VR exposes the selected grenade or mine through equippedItems[0] when no
+# hand-held weapon is equipped. Filter that native selection once, before any
+# presentation, collision, equip-transfer, or hand-occupancy consumer sees it.
+$equippedWeaponItemBoundary = Get-BoundedText $fo4vrRuntime 'RE::EquippedItem* getEquippedWeaponItem()' 'RE::EquippedWeaponData* getEquippedWeaponData()' 'equipped hand-weapon item boundary'
+Require-OrderedTokens $equippedWeaponItemBoundary @(
+    'middleHigh->equippedItems[0]',
+    'object->formType != RE::ENUM_FORM_ID::kWEAP',
+    'weapon->weaponData.type.get()',
+    'weaponType == RE::WEAPON_TYPE::kGrenade',
+    'weaponType == RE::WEAPON_TYPE::kMine',
+    'return nullptr;',
+    'return equippedItem;'
+) 'The equipped hand-weapon boundary must fail closed for native grenade and mine selection records.'
+Require-Text $fo4vrRuntime `
+    'getEquippedWeaponData\(\)[\s\S]*?getEquippedWeaponItem\(\)' `
+    'EquippedWeaponData access must inherit the throwable exclusion boundary.'
+Require-Text $fo4vrRuntimeHeader `
+    'RE::EquippedItem\*\s+getEquippedWeaponItem\(\)\s+noexcept' `
+    'The runtime API must expose the explicit equipped hand-weapon boundary.'
+Reject-Text ($allRuntimeCpp + "`n" + $fo4vrRuntimeHeader) `
+    '\bgetEquippedItem\s*\(' `
+    'Runtime consumers must not bypass throwable filtering through the retired raw equipped-item helper.'
 
 $equippedSelection = Get-BoundedText $grenadeSource 'EquippedGrenadeSelectionStatus resolveEquippedGrenadeSelection(' 'const char* selectionStatusName(' 'equipped grenade selection'
 Require-OrderedTokens $equippedSelection @(

@@ -79,19 +79,36 @@ namespace rock::fo4vr
         return reinterpret_cast<BSFlattenedBoneTree*>(skeleton->children[0]->IsNode());
     }
 
-    RE::EquippedItem* getEquippedItem() noexcept
+    RE::EquippedItem* getEquippedWeaponItem() noexcept
     {
         auto* player = getPlayer();
         auto* middleHigh = player && player->currentProcess ? player->currentProcess->middleHigh : nullptr;
         if (!middleHigh || middleHigh->equippedItems.empty()) {
             return nullptr;
         }
-        return std::addressof(middleHigh->equippedItems[0]);
+
+        auto* equippedItem = std::addressof(middleHigh->equippedItems[0]);
+        auto* object = equippedItem->item.object;
+        if (!object || object->formType != RE::ENUM_FORM_ID::kWEAP) {
+            return nullptr;
+        }
+
+        const auto* weapon = static_cast<const RE::TESObjectWEAP*>(object);
+        const auto weaponType = weapon->weaponData.type.get();
+        if (weaponType == RE::WEAPON_TYPE::kGrenade ||
+            weaponType == RE::WEAPON_TYPE::kMine) {
+            // FO4VR keeps the selected throwable in equippedItems[0] when no
+            // hand weapon is equipped. It is inventory selection state, not a
+            // weapon presentation/occupancy identity for ROCK's hand systems.
+            return nullptr;
+        }
+
+        return equippedItem;
     }
 
     RE::EquippedWeaponData* getEquippedWeaponData() noexcept
     {
-        auto* equippedItem = getEquippedItem();
+        auto* equippedItem = getEquippedWeaponItem();
         return equippedItem && equippedItem->data ?
             static_cast<RE::EquippedWeaponData*>(equippedItem->data.get()) : nullptr;
     }

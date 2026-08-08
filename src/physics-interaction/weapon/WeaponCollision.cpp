@@ -1079,7 +1079,7 @@ namespace rock
                 *outComposition = {};
             }
             auto* player = f4vr::getPlayer();
-            auto* equipData = f4vr::getEquippedItem();
+            auto* equipData = f4vr::getEquippedWeaponItem();
             auto* weaponForm = equipData ? equipData->item.object : nullptr;
             auto* instanceData = equipData ? equipData->item.instanceData.get() : nullptr;
             const RE::BGSObjectInstanceExtra* objectInstanceExtra =
@@ -1142,7 +1142,7 @@ namespace rock
         {
             EquippedManualScopeTarget target{};
             auto* player = f4vr::getPlayer();
-            auto* equipData = f4vr::getEquippedItem();
+            auto* equipData = f4vr::getEquippedWeaponItem();
             auto* weaponForm = equipData ? equipData->item.object : nullptr;
             auto* equippedInstanceData = equipData ? equipData->item.instanceData.get() : nullptr;
             const RE::BGSObjectInstanceExtra* objectInstanceExtra =
@@ -1438,7 +1438,7 @@ namespace rock
             weapon_generation_identity_policy::EquippedWeaponGenerationIdentity identity{};
 
             auto* player = f4vr::getPlayer();
-            auto* equipData = f4vr::getEquippedItem();
+            auto* equipData = f4vr::getEquippedWeaponItem();
             auto* weaponForm = equipData ? equipData->item.object : nullptr;
             auto* instanceData = equipData ? equipData->item.instanceData.get() : nullptr;
             if (!weaponForm || weaponForm->formType != RE::ENUM_FORM_ID::kWEAP) {
@@ -5639,7 +5639,7 @@ namespace rock
         _lastOmodDumpGenerationKey = _cachedWeaponBodySetKey;
 
         auto* player = f4vr::getPlayer();
-        auto* equipData = f4vr::getEquippedItem();
+        auto* equipData = f4vr::getEquippedWeaponItem();
         auto* weaponForm = equipData ? equipData->item.object : nullptr;
         auto* equippedInstanceData = equipData ? equipData->item.instanceData.get() : nullptr;
         ROCK_LOG_INFO(Weapon,
@@ -6946,7 +6946,7 @@ namespace rock
         result.ran = true;
 
         auto* player = f4vr::getPlayer();
-        auto* equipData = f4vr::getEquippedItem();
+        auto* equipData = f4vr::getEquippedWeaponItem();
         auto* weaponForm = equipData ? equipData->item.object : nullptr;
         auto* equippedInstanceData = equipData ? equipData->item.instanceData.get() : nullptr;
 
