@@ -249,6 +249,18 @@ namespace
         logger::info("ROCK: PhysicsInteraction destroyed.");
     }
 
+    void clearUnavailableRuntimeInputState()
+    {
+        authored_weapon_grip_capture::setEnabled(false);
+        pipboy_equip_runtime::setLeftHandEquipAvailable(false);
+        input_remap_runtime::setGameplayInputAllowed(false);
+        input_remap_runtime::setWeaponDrawn(false);
+        input_remap_runtime::setHandHeldWeapon(false, false);
+        input_remap_runtime::setHandHeldWeapon(true, false);
+        input_remap_runtime::setEquippedWeaponFiringGripInputActive(false);
+        input_remap_runtime::setEquippedWeaponPrimaryDetached(false);
+    }
+
     void onFrameUpdate()
     {
         performance_profiler::refreshSettings(
@@ -258,19 +270,20 @@ namespace
             g_rockConfig.rockPerformanceProfilerOverlayText);
         performance_profiler::FrameScope profilerFrame;
 
-        if (!s_pluginLoaded || !s_frikAvailable) {
-            authored_weapon_grip_capture::setEnabled(false);
-            pipboy_equip_runtime::setLeftHandEquipAvailable(false);
-            input_remap_runtime::setGameplayInputAllowed(false);
-            input_remap_runtime::setWeaponDrawn(false);
-            input_remap_runtime::setHandHeldWeapon(false, false);
-            input_remap_runtime::setHandHeldWeapon(true, false);
-            input_remap_runtime::setEquippedWeaponFiringGripInputActive(false);
-            input_remap_runtime::setEquippedWeaponPrimaryDetached(false);
+        if (!s_pluginLoaded) {
+            clearUnavailableRuntimeInputState();
             return;
         }
 
         g_rockConfig.processPendingConfigReload();
+        advanceNativeMeleeFrameClock();
+        enforceNativeMeleeRuntimeSuppression();
+
+        if (!s_frikAvailable) {
+            clearUnavailableRuntimeInputState();
+            return;
+        }
+
         input_remap_runtime::installInputRemapHooks();
 
         const bool menuInputActive = input_remap_runtime::isMenuInputActive();

@@ -1,9 +1,26 @@
 #pragma once
 
+#include <bit>
 #include <cstdint>
 
 namespace rock::native_melee_suppression
 {
+    /*
+     * This master switch is a permanent recovery contract, not a temporary
+     * compatibility path. Every current and future ROCK melee-hit suppression
+     * boundary must call native behavior when it is disabled, and every owned
+     * runtime override must be restored or safely relinquished.
+     */
+    inline constexpr char kVelocityCheckSetting[] = "bMeleeVelocityCheck:VRInput";
+    inline constexpr char kLinearVelocityThresholdSetting[] = "fMeleeLinearVelocityThreshold:VRInput";
+    inline constexpr char kAngularVelocityThresholdSetting[] = "fMeleeAngularVelocityThreshold:VRInput";
+    inline constexpr float kSuppressedVelocityThreshold = 1.0e9f;
+
+    [[nodiscard]] constexpr bool sameRuntimeFloatBits(float left, float right) noexcept
+    {
+        return std::bit_cast<std::uint32_t>(left) == std::bit_cast<std::uint32_t>(right);
+    }
+
     /*
      * ROCK suppresses player native melee at the verified FO4VR swing and
      * impact boundaries: the animation-event handlers, the PlayerCharacter
@@ -90,6 +107,25 @@ namespace rock::native_melee_suppression
         NativeMeleeInputGateAction action = NativeMeleeInputGateAction::CallNative;
         const char* reason = "native";
     };
+
+    struct NativeMeleeRuntimeSettingPolicyInput
+    {
+        bool hooksInstalled = false;
+        bool rockEnabled = false;
+        bool suppressionEnabled = false;
+        bool fullSuppression = true;
+    };
+
+    [[nodiscard]] constexpr bool shouldSuppressNativeMeleeRuntimeSettings(const NativeMeleeRuntimeSettingPolicyInput& input) noexcept
+    {
+        return input.hooksInstalled && input.rockEnabled && input.suppressionEnabled && input.fullSuppression;
+    }
+
+    [[nodiscard]] constexpr bool shouldRestoreNativeMeleeRuntimeSettings(
+        bool previouslyApplied, const NativeMeleeRuntimeSettingPolicyInput& input) noexcept
+    {
+        return previouslyApplied && !shouldSuppressNativeMeleeRuntimeSettings(input);
+    }
 
     inline bool isPhysicalSwingLeaseActive(std::uint64_t currentFrame, std::uint64_t expiresAtFrame)
     {

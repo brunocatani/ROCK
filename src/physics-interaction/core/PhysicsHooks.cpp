@@ -63,10 +63,6 @@ namespace rock
         constexpr std::uint64_t kNativeMeleePhysicalSwingLeaseFrames = 24;
         constexpr std::uint64_t kNativeMeleeRuntimeSettingCheckIntervalFrames = 90;
         constexpr std::uint64_t kNativeGrabHapticRuntimeSettingCheckIntervalFrames = 90;
-        constexpr char kNativeMeleeVelocityCheckSetting[] = "bMeleeVelocityCheck:VRInput";
-        constexpr char kNativeMeleeLinearVelocityThresholdSetting[] = "fMeleeLinearVelocityThreshold:VRInput";
-        constexpr char kNativeMeleeAngularVelocityThresholdSetting[] = "fMeleeAngularVelocityThreshold:VRInput";
-        constexpr float kNativeMeleeSuppressedVelocityThreshold = 1.0e9f;
         constexpr std::array<std::uint8_t, 14> kVrMeleeImpactExpectedPrefix{
             0x48, 0x8B, 0xC4,
             0x4C, 0x89, 0x40, 0x18,
@@ -88,6 +84,7 @@ namespace rock
             bool missingLogged = false;
             bool typeMismatchLogged = false;
             bool confirmedLogged = false;
+            bool applied = false;
             std::atomic<std::uint32_t> reapplyCount{ 0 };
         };
 
@@ -99,6 +96,7 @@ namespace rock
             bool missingLogged = false;
             bool typeMismatchLogged = false;
             bool confirmedLogged = false;
+            bool applied = false;
             std::atomic<std::uint32_t> reapplyCount{ 0 };
         };
 
@@ -127,6 +125,9 @@ namespace rock
         };
 
         static std::atomic<std::uint64_t> g_nativeMeleeRuntimeSettingNextCheckFrame{ 0 };
+        // Runtime-setting ownership is mutated only by initialization and the
+        // main-frame update. Hook callbacks read config, never this lease state.
+        static bool g_nativeMeleeRuntimeSuppressionRequested = false;
         static NativeBinaryRuntimeSettingState g_nativeMeleeVelocityCheckState;
         static NativeFloatRuntimeSettingState g_nativeMeleeLinearThresholdState;
         static NativeFloatRuntimeSettingState g_nativeMeleeAngularThresholdState;
@@ -368,12 +369,6 @@ namespace rock
             return matchesCommonLib || matchesNative;
         }
 
-        bool shouldSuppressNativeVrMeleeVelocity()
-        {
-            return g_nativeMeleeSuppressionHooksInstalled.load(std::memory_order_acquire) && g_rockConfig.rockEnabled && g_rockConfig.rockNativeMeleeSuppressionEnabled &&
-                   g_rockConfig.rockNativeMeleeFullSuppression;
-        }
-
         native_melee_suppression::NativeMeleeInputEvent classifyNativeMeleeInputEvent(const RE::InputEvent* event)
         {
             if (!event) {
@@ -467,6 +462,10 @@ namespace rock
             const bool currentValue = setting->GetBinary();
             if (currentValue != desiredValue) {
                 setting->SetBinary(desiredValue);
+                if (setting->GetBinary() != desiredValue) {
+                    ROCK_LOG_ERROR(Combat, "Failed to apply FO4VR native VR melee {} setting '{}'", label, settingName);
+                    return false;
+                }
                 const auto reapplyCount = state.reapplyCount.fetch_add(1, std::memory_order_relaxed) + 1;
                 if (reapplyCount == 1 || g_rockConfig.rockNativeMeleeDebugLogging || reapplyCount % 30 == 0) {
                     ROCK_LOG_WARN(Combat,
@@ -478,7 +477,6 @@ namespace rock
                         reapplyCount);
                 }
                 state.confirmedLogged = true;
-                return true;
             }
 
             if (!state.confirmedLogged) {
@@ -486,6 +484,7 @@ namespace rock
                 state.confirmedLogged = true;
             }
 
+            state.applied = true;
             return true;
         }
 
@@ -513,6 +512,11 @@ namespace rock
             const float currentValue = setting->GetFloat();
             if (!std::isfinite(currentValue) || currentValue < desiredMinimum) {
                 setting->SetFloat(desiredMinimum);
+                const float appliedValue = setting->GetFloat();
+                if (!std::isfinite(appliedValue) || appliedValue < desiredMinimum) {
+                    ROCK_LOG_ERROR(Combat, "Failed to apply FO4VR native VR melee {} setting '{}'", label, settingName);
+                    return false;
+                }
                 const auto reapplyCount = state.reapplyCount.fetch_add(1, std::memory_order_relaxed) + 1;
                 if (reapplyCount == 1 || g_rockConfig.rockNativeMeleeDebugLogging || reapplyCount % 30 == 0) {
                     ROCK_LOG_WARN(Combat,
@@ -524,7 +528,6 @@ namespace rock
                         reapplyCount);
                 }
                 state.confirmedLogged = true;
-                return true;
             }
 
             if (!state.confirmedLogged) {
@@ -532,7 +535,108 @@ namespace rock
                 state.confirmedLogged = true;
             }
 
+            state.applied = true;
             return true;
+        }
+
+        template <class State>
+        void releaseNativeMeleeRuntimeSettingOwnership(State& state)
+        {
+            state.originalCaptured = false;
+            state.applied = false;
+            state.confirmedLogged = false;
+            state.reapplyCount.store(0, std::memory_order_relaxed);
+        }
+
+        bool restoreNativeMeleeBinarySetting(
+            NativeBinaryRuntimeSettingState& state, const char* settingName, bool appliedValue, const char* label)
+        {
+            if (!state.originalCaptured || !state.applied) {
+                return true;
+            }
+
+            auto* setting = resolveNativeMeleeRuntimeSetting(state.setting, settingName, state.missingLogged);
+            if (!setting) {
+                return false;
+            }
+
+            if (setting->GetType() != RE::Setting::SETTING_TYPE::kBinary) {
+                if (!state.typeMismatchLogged) {
+                    state.typeMismatchLogged = true;
+                    ROCK_LOG_ERROR(Combat, "Native VR melee suppression found non-binary setting '{}' while restoring", settingName);
+                }
+                return false;
+            }
+
+            const bool currentValue = setting->GetBinary();
+            if (currentValue == appliedValue) {
+                if (currentValue != state.originalValue) {
+                    setting->SetBinary(state.originalValue);
+                    if (setting->GetBinary() != state.originalValue) {
+                        ROCK_LOG_ERROR(Combat, "Failed to restore FO4VR native VR melee {} setting '{}'", label, settingName);
+                        return false;
+                    }
+                }
+                ROCK_LOG_INFO(Combat,
+                    "Restored FO4VR native VR melee {} setting '{}' to {}",
+                    label,
+                    settingName,
+                    state.originalValue ? "true" : "false");
+            } else {
+                ROCK_LOG_INFO(Combat,
+                    "Released FO4VR native VR melee {} setting '{}' without overwrite because its live value changed outside ROCK",
+                    label,
+                    settingName);
+            }
+
+            releaseNativeMeleeRuntimeSettingOwnership(state);
+            return true;
+        }
+
+        bool restoreNativeMeleeFloatSetting(
+            NativeFloatRuntimeSettingState& state, const char* settingName, float appliedValue, const char* label)
+        {
+            if (!state.originalCaptured || !state.applied) {
+                return true;
+            }
+
+            auto* setting = resolveNativeMeleeRuntimeSetting(state.setting, settingName, state.missingLogged);
+            if (!setting) {
+                return false;
+            }
+
+            if (setting->GetType() != RE::Setting::SETTING_TYPE::kFloat) {
+                if (!state.typeMismatchLogged) {
+                    state.typeMismatchLogged = true;
+                    ROCK_LOG_ERROR(Combat, "Native VR melee suppression found non-float setting '{}' while restoring", settingName);
+                }
+                return false;
+            }
+
+            const float currentValue = setting->GetFloat();
+            if (currentValue == appliedValue) {
+                if (!native_melee_suppression::sameRuntimeFloatBits(currentValue, state.originalValue)) {
+                    setting->SetFloat(state.originalValue);
+                    if (!native_melee_suppression::sameRuntimeFloatBits(setting->GetFloat(), state.originalValue)) {
+                        ROCK_LOG_ERROR(Combat, "Failed to restore FO4VR native VR melee {} setting '{}'", label, settingName);
+                        return false;
+                    }
+                }
+                ROCK_LOG_INFO(Combat, "Restored FO4VR native VR melee {} setting '{}' to {:.3f}", label, settingName, state.originalValue);
+            } else {
+                ROCK_LOG_INFO(Combat,
+                    "Released FO4VR native VR melee {} setting '{}' without overwrite because its live value changed outside ROCK",
+                    label,
+                    settingName);
+            }
+
+            releaseNativeMeleeRuntimeSettingOwnership(state);
+            return true;
+        }
+
+        [[nodiscard]] bool nativeMeleeRuntimeSuppressionApplied()
+        {
+            return g_nativeMeleeVelocityCheckState.applied || g_nativeMeleeLinearThresholdState.applied || g_nativeMeleeAngularThresholdState.applied;
         }
 
         RE::Setting* resolveNativeGrabHapticRuntimeSetting(RE::Setting*& cachedSetting, const char* settingName, bool& missingLogged)
@@ -1056,22 +1160,51 @@ namespace rock
          * bypasses the gate on some builds and causes cooldown-paced false melee
          * swings.
          */
-        const auto currentFrame = g_nativeMeleeFrameClock.load(std::memory_order_acquire);
-        if (!shouldSuppressNativeVrMeleeVelocity()) {
+        const native_melee_suppression::NativeMeleeRuntimeSettingPolicyInput input{
+            .hooksInstalled = g_nativeMeleeSuppressionHooksInstalled.load(std::memory_order_acquire),
+            .rockEnabled = g_rockConfig.rockEnabled,
+            .suppressionEnabled = g_rockConfig.rockNativeMeleeSuppressionEnabled,
+            .fullSuppression = g_rockConfig.rockNativeMeleeFullSuppression,
+        };
+        const bool shouldSuppress = native_melee_suppression::shouldSuppressNativeMeleeRuntimeSettings(input);
+        const bool shouldRestore = native_melee_suppression::shouldRestoreNativeMeleeRuntimeSettings(nativeMeleeRuntimeSuppressionApplied(), input);
+        const bool requestChanged = g_nativeMeleeRuntimeSuppressionRequested != shouldSuppress;
+        g_nativeMeleeRuntimeSuppressionRequested = shouldSuppress;
+        if (!shouldSuppress && !shouldRestore) {
             return;
         }
 
+        const auto currentFrame = g_nativeMeleeFrameClock.load(std::memory_order_acquire);
         const auto nextCheckFrame = g_nativeMeleeRuntimeSettingNextCheckFrame.load(std::memory_order_acquire);
-        if (!forceCheck && currentFrame < nextCheckFrame) {
+        if (!forceCheck && !requestChanged && currentFrame < nextCheckFrame) {
             return;
         }
         g_nativeMeleeRuntimeSettingNextCheckFrame.store(currentFrame + kNativeMeleeRuntimeSettingCheckIntervalFrames, std::memory_order_release);
 
-        enforceNativeMeleeBinarySetting(g_nativeMeleeVelocityCheckState, kNativeMeleeVelocityCheckSetting, true, "velocity gate");
-        enforceNativeMeleeFloatMinimumSetting(
-            g_nativeMeleeLinearThresholdState, kNativeMeleeLinearVelocityThresholdSetting, kNativeMeleeSuppressedVelocityThreshold, "linear threshold");
-        enforceNativeMeleeFloatMinimumSetting(
-            g_nativeMeleeAngularThresholdState, kNativeMeleeAngularVelocityThresholdSetting, kNativeMeleeSuppressedVelocityThreshold, "angular threshold");
+        if (shouldSuppress) {
+            enforceNativeMeleeBinarySetting(
+                g_nativeMeleeVelocityCheckState, native_melee_suppression::kVelocityCheckSetting, true, "velocity gate");
+            enforceNativeMeleeFloatMinimumSetting(g_nativeMeleeLinearThresholdState,
+                native_melee_suppression::kLinearVelocityThresholdSetting,
+                native_melee_suppression::kSuppressedVelocityThreshold,
+                "linear threshold");
+            enforceNativeMeleeFloatMinimumSetting(g_nativeMeleeAngularThresholdState,
+                native_melee_suppression::kAngularVelocityThresholdSetting,
+                native_melee_suppression::kSuppressedVelocityThreshold,
+                "angular threshold");
+            return;
+        }
+
+        restoreNativeMeleeBinarySetting(
+            g_nativeMeleeVelocityCheckState, native_melee_suppression::kVelocityCheckSetting, true, "velocity gate");
+        restoreNativeMeleeFloatSetting(g_nativeMeleeLinearThresholdState,
+            native_melee_suppression::kLinearVelocityThresholdSetting,
+            native_melee_suppression::kSuppressedVelocityThreshold,
+            "linear threshold");
+        restoreNativeMeleeFloatSetting(g_nativeMeleeAngularThresholdState,
+            native_melee_suppression::kAngularVelocityThresholdSetting,
+            native_melee_suppression::kSuppressedVelocityThreshold,
+            "angular threshold");
     }
 
     void enforceNativeGrabHapticRuntimeSuppression(bool forceCheck)

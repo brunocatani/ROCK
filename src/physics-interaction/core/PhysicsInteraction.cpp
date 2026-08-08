@@ -2104,8 +2104,6 @@ namespace rock
         if (_deltaTime <= 0.0f || _deltaTime > 0.1f) {
             _deltaTime = 1.0f / 90.0f;
         }
-        advanceNativeMeleeFrameClock();
-        enforceNativeMeleeRuntimeSuppression();
         enforceNativeGrabHapticRuntimeSuppression();
         _dynamicPushElapsedSeconds += _deltaTime;
         if (_dynamicPushCooldownUntil.size() > 512) {
