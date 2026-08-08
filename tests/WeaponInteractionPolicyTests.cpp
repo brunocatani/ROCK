@@ -2006,6 +2006,7 @@ int main()
 
     const rock::RockEquippedWeaponHandlingBaseline coreWeaponHandlingBaseline{
         .ambidextrousHandoffEnabled = true,
+        .equippedWeaponShoulderStashEnabled = true,
         .firingGripProximitySupportRadiusGameUnits = 7.0f,
         .firingGripPromotionRadiusGameUnits = 5.5f,
         .leftFiringAimYawDegrees = 1.5f,
@@ -2026,8 +2027,10 @@ int main()
         coreWeaponHandling.firingGripOwnershipEnabled);
     ok &= expectTrue("base ROCK enables configured ambidextrous handoff",
         coreWeaponHandling.ambidextrousHandoffEnabled);
-    ok &= expectFalse("base ROCK ambidextrous mode does not enable realistic detach",
+    ok &= expectTrue("base ROCK stash enables its required primary detach path",
         coreWeaponHandling.primaryDetachEnabled);
+    ok &= expectTrue("base ROCK owns equipped-weapon shoulder stash",
+        coreWeaponHandling.equippedWeaponShoulderStashEnabled);
     ok &= expectNear("base ROCK owns firing-grip promotion tuning",
         coreWeaponHandling.firingGripPromotionRadiusGameUnits,
         5.5f);
@@ -2047,15 +2050,29 @@ int main()
         coreWeaponHandling.leftFiringAimOffsetZGameUnits,
         1.25f);
 
-    auto fixedOnlyBaseline = coreWeaponHandlingBaseline;
-    fixedOnlyBaseline.ambidextrousHandoffEnabled = false;
+    auto stashOnlyBaseline = coreWeaponHandlingBaseline;
+    stashOnlyBaseline.ambidextrousHandoffEnabled = false;
+    const auto stashOnlyHandling = rock::makeEquippedWeaponHandlingSettings(
+        stashOnlyBaseline,
+        nullptr);
+    ok &= expectTrue("ROCK stash retains firing ownership with ambidextrous handoff off",
+        stashOnlyHandling.firingGripOwnershipEnabled);
+    ok &= expectTrue("ROCK stash retains primary detach with ambidextrous handoff off",
+        stashOnlyHandling.primaryDetachEnabled);
+    ok &= expectFalse("disabled ROCK ambidextrous mode keeps handoff disabled",
+        stashOnlyHandling.ambidextrousHandoffEnabled);
+
+    auto fixedOnlyBaseline = stashOnlyBaseline;
+    fixedOnlyBaseline.equippedWeaponShoulderStashEnabled = false;
     const auto fixedOnlyHandling = rock::makeEquippedWeaponHandlingSettings(
         fixedOnlyBaseline,
         nullptr);
-    ok &= expectFalse("disabled ROCK ambidextrous mode does not claim firing ownership",
+    ok &= expectFalse("disabled ROCK handoff and stash release firing ownership",
         fixedOnlyHandling.firingGripOwnershipEnabled);
-    ok &= expectFalse("disabled ROCK ambidextrous mode keeps handoff disabled",
-        fixedOnlyHandling.ambidextrousHandoffEnabled);
+    ok &= expectFalse("disabled ROCK stash releases primary detach",
+        fixedOnlyHandling.primaryDetachEnabled);
+    ok &= expectFalse("disabled ROCK stash remains disabled",
+        fixedOnlyHandling.equippedWeaponShoulderStashEnabled);
 
     rock::provider::RockProviderEquippedWeaponHandlingRequestV1 externalWeaponHandling{};
     externalWeaponHandling.flags = static_cast<std::uint32_t>(
@@ -2066,6 +2083,10 @@ int main()
         &externalWeaponHandling);
     ok &= expectTrue("an equipped-weapon request activates external authority",
         externalHandling.externalAuthorityActive);
+    ok &= expectTrue("an addon lease cannot suppress ROCK shoulder stash",
+        externalHandling.equippedWeaponShoulderStashEnabled);
+    ok &= expectTrue("an addon lease cannot suppress ROCK stash detach infrastructure",
+        externalHandling.primaryDetachEnabled);
     ok &= expectFalse("an active addon request may suppress ROCK ambidextrous handoff",
         externalHandling.ambidextrousHandoffEnabled);
     ok &= expectNear("external authority preserves ROCK's radius without an override",
@@ -2098,12 +2119,13 @@ int main()
             coreWeaponHandling,
             externalHandling,
             false));
-    auto addonDetachHandling = externalHandling;
+    auto addonDetachHandling = fixedOnlyHandling;
+    addonDetachHandling.firingGripOwnershipEnabled = true;
     addonDetachHandling.primaryDetachEnabled = true;
     ok &= expectTrue("removing addon detach capability reconciles manual weapon state",
         rock::requiresEquippedWeaponHandlingModeReconcile(
             addonDetachHandling,
-            coreWeaponHandling,
+            fixedOnlyHandling,
             false));
     ok &= expectTrue("an addon override that disables handoff reconciles the live switch",
         rock::requiresEquippedWeaponHandlingModeReconcile(
@@ -2115,6 +2137,22 @@ int main()
             fixedOnlyHandling,
             coreWeaponHandling,
             false));
+
+    rock::provider::RockProviderEquippedWeaponHandlingRequestV1 legacyStashRequest{};
+    legacyStashRequest.flags =
+        static_cast<std::uint32_t>(
+            rock::provider::RockProviderEquippedWeaponHandlingFlagV1::FiringGripOwnership) |
+        static_cast<std::uint32_t>(
+            rock::provider::RockProviderEquippedWeaponHandlingFlagV1::PrimaryDetach) |
+        static_cast<std::uint32_t>(
+            rock::provider::RockProviderEquippedWeaponHandlingFlagV1::EquippedWeaponShoulderStash);
+    const auto legacyStashHandling = rock::makeEquippedWeaponHandlingSettings(
+        fixedOnlyBaseline,
+        &legacyStashRequest);
+    ok &= expectFalse("legacy provider stash bit cannot enable ROCK shoulder stash",
+        legacyStashHandling.equippedWeaponShoulderStashEnabled);
+    ok &= expectTrue("legacy provider detach remains available to its other handling paths",
+        legacyStashHandling.primaryDetachEnabled);
     ok &= expectTrue("changing the fixed firing hand always reconciles carry ownership",
         rock::requiresEquippedWeaponHandlingModeReconcile(
             coreWeaponHandling,

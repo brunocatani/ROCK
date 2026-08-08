@@ -66,8 +66,8 @@ foreach ($legacyPath in @(
 
 foreach ($configSource in @('src/RockConfig.cpp', 'src/RockConfig.h')) {
     Reject-Text $configSource `
-        'rock(?:RealisticWeaponHandlingEnabled|GrabbedWeaponGripZone\w+|WeaponGripHaptic\w+|WeaponFiringGrip\w+|WeaponSupportGripHaptic\w+|EquippedWeaponShoulderStashEnabled|GripZoneHover\w+|GrabbedWeaponEquipBridge\w+|MenuTriggerHandEquipEnabled|EquipPreferredHandLeft)' `
-        'Base ROCK config must not regain addon-owned realistic detach, grip-zone, stash, haptic, bridge, or Pip-Boy settings.'
+        'rock(?:RealisticWeaponHandlingEnabled|GrabbedWeaponGripZone\w+|WeaponGripHaptic\w+|WeaponFiringGrip\w+|WeaponSupportGripHaptic\w+|GripZoneHover\w+|GrabbedWeaponEquipBridge\w+|MenuTriggerHandEquipEnabled|EquipPreferredHandLeft)' `
+        'Base ROCK config must not regain addon-owned realistic detach, grip-zone, haptic, bridge, or Pip-Boy settings.'
 }
 
 Require-Text 'src/RockConfig.h' `
@@ -97,8 +97,12 @@ foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini
         ([regex]::Matches($ambidextrousSection, '(?m)^fLeftFiringAim\w+\s*=\s*0\.0\s*$')).Count -ne 5) {
         $failures.Add("$configPath`: [AmbidextrousFiring] must expose exactly the ROCK baseline switch, promotion radius, and five zeroed left-hold trims.")
     }
-    if ($configText -match '(?m)^(?:bRealisticWeaponHandlingEnabled|fGrabbedWeaponGripZone\w+|fWeapon(?:Firing|Support)?GripHaptic\w+|bGripZoneHoverHapticsEnabled|bEquippedWeaponShoulderStashEnabled|bGrabbedWeaponEquipBridgeEnabled|bMenuTriggerHandEquipEnabled)\s*=') {
-        $failures.Add("$configPath`: addon-owned realistic detach, grip-zone, haptic, stash, bridge, and Pip-Boy options must remain absent from ROCK.")
+    $physicsSection = Read-IniSection $configPath 'PhysicsInteraction'
+    if ($physicsSection -notmatch '(?m)^bEquippedWeaponShoulderStashEnabled\s*=\s*true\s*$') {
+        $failures.Add("$configPath`: [PhysicsInteraction] must expose ROCK's enabled equipped-weapon shoulder stash switch.")
+    }
+    if ($configText -match '(?m)^(?:bRealisticWeaponHandlingEnabled|fGrabbedWeaponGripZone\w+|fWeapon(?:Firing|Support)?GripHaptic\w+|bGripZoneHoverHapticsEnabled|bGrabbedWeaponEquipBridgeEnabled|bMenuTriggerHandEquipEnabled)\s*=') {
+        $failures.Add("$configPath`: addon-owned realistic detach, grip-zone, haptic, bridge, and Pip-Boy options must remain absent from ROCK.")
     }
 }
 
@@ -109,14 +113,14 @@ Require-Text 'src/api/ROCKProviderApi.h' `
     'rolling lease returns to ROCK''s configured fallback handling policy' `
     'The V1 lease contract must describe fallback to ROCK configuration rather than a hard-coded firing hand.'
 Require-Text 'src/physics-interaction/weapon/EquippedWeaponHandlingSettings.h' `
-    'RockEquippedWeaponHandlingBaseline[\s\S]*ambidextrousHandoffEnabled[\s\S]*firingGripPromotionRadiusGameUnits[\s\S]*leftFiringAimOffsetZGameUnits[\s\S]*makeEquippedWeaponHandlingSettings[\s\S]*settings\.firingGripOwnershipEnabled\s*=[\s\S]{0,120}rockBaseline\.ambidextrousHandoffEnabled[\s\S]*externalAuthorityActive\s*=\s*true[\s\S]*AmbidextrousHandoff[\s\S]*leftFiringAimOffsetGameUnits' `
-    'ROCK must seed standalone handoff ownership/tuning and let one validated V1 request replace the policy snapshot.'
+    'RockEquippedWeaponHandlingBaseline[\s\S]*ambidextrousHandoffEnabled[\s\S]*equippedWeaponShoulderStashEnabled[\s\S]*makeEquippedWeaponHandlingSettings[\s\S]*settings\.firingGripOwnershipEnabled\s*=[\s\S]{0,180}rockBaseline\.equippedWeaponShoulderStashEnabled[\s\S]*settings\.primaryDetachEnabled\s*=[\s\S]{0,120}rockBaseline\.equippedWeaponShoulderStashEnabled[\s\S]*externalAuthorityActive\s*=\s*true[\s\S]*AmbidextrousHandoff[\s\S]*leftFiringAimOffsetGameUnits' `
+    'ROCK must retain shoulder-stash ownership/detach infrastructure while applying one validated V1 addon policy snapshot.'
 Require-Text 'src/physics-interaction/weapon/EquippedWeaponHandlingSettings.h' `
     'requiresEquippedWeaponHandlingModeReconcile[\s\S]*fixedFiringHandChanged[\s\S]*previous\.firingGripOwnershipEnabled[\s\S]*previous\.primaryDetachEnabled[\s\S]*previous\.ambidextrousHandoffEnabled[\s\S]*previous\.pipboyTriggerHandEquipEnabled' `
     'Mode reconciliation must follow removed effective capabilities rather than the raw presence of an addon lease.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'getEquippedWeaponHandlingAuthorityV1\(request\)[\s\S]*RockEquippedWeaponHandlingBaseline[\s\S]*rockAmbidextrousFiringGripEnabled[\s\S]*makeEquippedWeaponHandlingSettings[\s\S]*if \(fixedFiringHandIsLeft\)[\s\S]*settings\.firingGripOwnershipEnabled\s*=\s*true[\s\S]*requiresEquippedWeaponHandlingModeReconcile' `
-    'ROCK must build its native baseline before the addon overlay, preserve fixed-left ownership under either source, and reconcile effective capability loss.'
+    'getEquippedWeaponHandlingAuthorityV1\(request\)[\s\S]*RockEquippedWeaponHandlingBaseline[\s\S]*rockAmbidextrousFiringGripEnabled[\s\S]*rockEquippedWeaponShoulderStashEnabled[\s\S]*makeEquippedWeaponHandlingSettings[\s\S]*if \(fixedFiringHandIsLeft\)[\s\S]*settings\.firingGripOwnershipEnabled\s*=\s*true[\s\S]*requiresEquippedWeaponHandlingModeReconcile' `
+    'ROCK must build its native handoff/stash baseline before the addon overlay, preserve fixed-left ownership, and reconcile effective capability loss.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'if \(_equippedWeaponHandlingSettings\.ambidextrousHandoffEnabled\s*&&\s*_twoHandedGrip\.isManualOwnershipActive\(\)\)' `
     'Fixed-left fallback must preserve a deliberate handoff from either ROCK or the addon instead of checking external ownership.'

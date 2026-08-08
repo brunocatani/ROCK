@@ -455,6 +455,10 @@ namespace rock
         float rockGrabThrowMaxAngularVelocityRadiansPerSecond = 18.0f;
         float rockGrabReleaseHandCollisionDelaySeconds = 0.10f;
         bool rockShoulderStashEnabled = true;
+        // Equipped weapons remain equipped and use the native sheath/draw
+        // transition. This switch also enables the minimum manual ownership
+        // and primary-detach capabilities required to carry one to the zone.
+        bool rockEquippedWeaponShoulderStashEnabled = true;
         bool rockShoulderStashUseBodyZoneColliders = true;
         bool rockShoulderStashUseHmdBackVolume = true;
         float rockShoulderStashEnterPaddingGameUnits = 5.0f;

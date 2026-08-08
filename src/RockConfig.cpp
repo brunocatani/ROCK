@@ -486,6 +486,7 @@ namespace rock
         rockGrabThrowMaxAngularVelocityRadiansPerSecond = kDefaultGrabThrowMaxAngularVelocityRadiansPerSecond;
         rockGrabReleaseHandCollisionDelaySeconds = 0.10f;
         rockShoulderStashEnabled = true;
+        rockEquippedWeaponShoulderStashEnabled = true;
         rockShoulderStashUseBodyZoneColliders = true;
         rockShoulderStashUseHmdBackVolume = true;
         rockShoulderStashEnterPaddingGameUnits = 5.0f;
@@ -2392,6 +2393,10 @@ namespace rock
         };
 
         rockShoulderStashEnabled = ini.GetBoolValue(SECTION, "bShoulderStashEnabled", rockShoulderStashEnabled);
+        rockEquippedWeaponShoulderStashEnabled = ini.GetBoolValue(
+            SECTION,
+            "bEquippedWeaponShoulderStashEnabled",
+            rockEquippedWeaponShoulderStashEnabled);
         rockShoulderStashUseBodyZoneColliders =
             ini.GetBoolValue(SECTION, "bShoulderStashUseBodyZoneColliders", rockShoulderStashUseBodyZoneColliders);
         rockShoulderStashUseHmdBackVolume =

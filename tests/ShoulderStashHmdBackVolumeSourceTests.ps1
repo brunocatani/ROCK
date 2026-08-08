@@ -56,10 +56,10 @@ Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'Equipped-weapon stash candidate acquisition must retain the configured anti-throw speed gate.'
 Require-Text 'src/physics-interaction/weapon/EquippedWeaponDropPolicy.h' `
     'equippedWeaponShoulderStashAvailable[\s\S]{0,240}primaryDetachEnabled\s*&&\s*shoulderStashConfigured' `
-    'Equipped-weapon shoulder stash must require addon-owned detach authority and its own setting.'
+    'Equipped-weapon shoulder stash must require effective detach capability and ROCK''s own setting.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'equippedWeaponShoulderStashActive\s*=\s*[\s\S]{0,220}equippedWeaponShoulderStashAvailable\(\s*_equippedWeaponHandlingSettings\.primaryDetachEnabled,\s*_equippedWeaponHandlingSettings\.equippedWeaponShoulderStashEnabled\s*\)' `
-    'Runtime must derive one effective equipped-weapon stash gate from the leased addon policy.'
+    'Runtime must derive one effective equipped-weapon stash gate from ROCK''s handling settings.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'stashCarryHand\s*=\s*equippedWeaponShoulderStashActive\s*\?[\s\S]{0,500}SourceHand::None' `
     'Disabled equipped-weapon stash must skip carry-hand acquisition.'
@@ -68,10 +68,13 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'Disabled equipped-weapon stash must clear both dwell and fast-release commit-lease state.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'stashCommitSelected\s*=[\s\S]{0,180}equippedWeaponShoulderStashActive\s*&&[\s\S]{0,180}confirmedForCommit' `
-    'Final equipped-weapon sheath commit must use the same addon authority gate.'
+    'Final equipped-weapon sheath commit must use the same ROCK-owned authority gate.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'RockEquippedWeaponHandlingBaseline[\s\S]{0,240}equippedWeaponShoulderStashEnabled\s*=[\s\r\n]+\s*g_rockConfig\.rockEquippedWeaponShoulderStashEnabled' `
+    'The equipped-weapon handling baseline must consume ROCK''s shoulder stash switch.'
 Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'g_rockConfig\.rockEquippedWeaponShoulderStashEnabled|g_rockConfig\.rockRealisticWeaponHandlingEnabled' `
-    'The detector must not retain removed ROCK-owned immersive-weapon config gates.'
+    'g_rockConfig\.rockRealisticWeaponHandlingEnabled' `
+    'The focused ROCK sheath feature must not restore the obsolete realistic-weapons master switch.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'shouldArmEquippedWeaponFastReleaseCommitLease[\s\S]*?currentEquippedWeaponOwnershipKey[\s\S]*?equippedWeaponFastReleaseCommitLeaseIsUsable' `
     'Fast release may bridge the release debounce only through an ownership-bound, spatially revalidated commit lease.'
@@ -115,6 +118,18 @@ Reject-Text 'src/physics-interaction/weapon/WeaponEquipTransfer.h' `
     'EquippedUnequip|UnequipReason|unequipEquippedWeaponFromPlayer' `
     'The superseded inventory-unequip shoulder path must stay removed.'
 
+Require-Text 'src/RockConfig.h' `
+    'rockEquippedWeaponShoulderStashEnabled\s*=\s*true' `
+    'RockConfig must default the standalone equipped-weapon sheath feature on.'
+Require-Text 'src/RockConfig.cpp' `
+    'GetBoolValue\(\s*SECTION,\s*"bEquippedWeaponShoulderStashEnabled"' `
+    'RockConfig must load equipped-weapon shoulder stash from [PhysicsInteraction].'
+Require-Text 'data/config/ROCK.ini' `
+    '(?m)^bEquippedWeaponShoulderStashEnabled\s*=\s*true\s*$' `
+    'The reference INI must expose ROCK''s standalone equipped-weapon sheath switch.'
+Require-Text 'data/mod/ROCK_Config/ROCK.ini' `
+    '(?m)^bEquippedWeaponShoulderStashEnabled\s*=\s*true\s*$' `
+    'The packaged INI must expose ROCK''s standalone equipped-weapon sheath switch.'
 Require-Text 'src/RockConfig.h' `
     'rockShoulderStashHmdBackRightOffsetGameUnits\s*=\s*RE::NiPoint3\(14\.0f,\s*-18\.0f,\s*-6\.85f\)' `
     'RockConfig header default should match the behind-shoulder HMD right volume.'

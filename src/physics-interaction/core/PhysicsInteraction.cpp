@@ -4300,6 +4300,8 @@ namespace rock
         const RockEquippedWeaponHandlingBaseline rockBaseline{
             .ambidextrousHandoffEnabled =
                 g_rockConfig.rockAmbidextrousFiringGripEnabled,
+            .equippedWeaponShoulderStashEnabled =
+                g_rockConfig.rockEquippedWeaponShoulderStashEnabled,
             .firingGripProximitySupportRadiusGameUnits =
                 g_rockConfig.rockFiringGripProximitySupportRadius,
             .firingGripPromotionRadiusGameUnits =

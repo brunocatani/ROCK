@@ -516,6 +516,9 @@ namespace rock::provider
         // Replaces ROCK's configured radius while this authority lease lives;
         // the core VisualOnlySupport behavior itself remains always enabled.
         FiringGripProximitySupport = 1u << 5,
+        // Retained in V1 for source/ABI compatibility. Equipped-weapon
+        // shoulder sheath/retrieval is configured and owned by ROCK; this
+        // request bit is accepted for older consumers but has no behavior.
         EquippedWeaponShoulderStash = 1u << 6,
         PipboyTriggerHandEquip = 1u << 7,
         // Retained in V1 for source/ABI compatibility. The visual bridge and

@@ -7,6 +7,7 @@ namespace rock
     struct RockEquippedWeaponHandlingBaseline
     {
         bool ambidextrousHandoffEnabled{ false };
+        bool equippedWeaponShoulderStashEnabled{ false };
         float firingGripProximitySupportRadiusGameUnits{ 6.0f };
         float firingGripPromotionRadiusGameUnits{ 5.0f };
         float leftFiringAimYawDegrees{ 0.0f };
@@ -53,9 +54,14 @@ namespace rock
     {
         EquippedWeaponHandlingSettings settings{};
         settings.firingGripOwnershipEnabled =
-            rockBaseline.ambidextrousHandoffEnabled;
+            rockBaseline.ambidextrousHandoffEnabled ||
+            rockBaseline.equippedWeaponShoulderStashEnabled;
+        settings.primaryDetachEnabled =
+            rockBaseline.equippedWeaponShoulderStashEnabled;
         settings.ambidextrousHandoffEnabled =
             rockBaseline.ambidextrousHandoffEnabled;
+        settings.equippedWeaponShoulderStashEnabled =
+            rockBaseline.equippedWeaponShoulderStashEnabled;
         // Near-firing-grip VisualOnlySupport is a ROCK weapon-support safety
         // contract, not ambidextrous ownership. ROCK supplies the baseline
         // radius; an active handling owner may replace only that tuning value.
@@ -84,18 +90,21 @@ namespace rock
                 flag);
         };
         settings.externalAuthorityActive = true;
-        settings.firingGripOwnershipEnabled = enabled(
-            provider::RockProviderEquippedWeaponHandlingFlagV1::FiringGripOwnership);
-        settings.primaryDetachEnabled = enabled(
-            provider::RockProviderEquippedWeaponHandlingFlagV1::PrimaryDetach);
+        // Shoulder sheath/retrieval is a ROCK-owned capability. An addon may
+        // add handling capabilities, but its lease cannot suppress the
+        // ownership/detach infrastructure required by ROCK's configured path.
+        settings.firingGripOwnershipEnabled =
+            settings.firingGripOwnershipEnabled || enabled(
+                provider::RockProviderEquippedWeaponHandlingFlagV1::FiringGripOwnership);
+        settings.primaryDetachEnabled =
+            settings.primaryDetachEnabled || enabled(
+                provider::RockProviderEquippedWeaponHandlingFlagV1::PrimaryDetach);
         settings.ambidextrousHandoffEnabled = enabled(
             provider::RockProviderEquippedWeaponHandlingFlagV1::AmbidextrousHandoff);
         settings.gripZoneEquipEnabled = enabled(
             provider::RockProviderEquippedWeaponHandlingFlagV1::GripZoneEquip);
         settings.gripZoneHoverHapticsEnabled = enabled(
             provider::RockProviderEquippedWeaponHandlingFlagV1::GripZoneHoverHaptics);
-        settings.equippedWeaponShoulderStashEnabled = enabled(
-            provider::RockProviderEquippedWeaponHandlingFlagV1::EquippedWeaponShoulderStash);
         settings.pipboyTriggerHandEquipEnabled = enabled(
             provider::RockProviderEquippedWeaponHandlingFlagV1::PipboyTriggerHandEquip);
         settings.gripZoneEquipRadiusGameUnits = request->gripZoneEquipRadiusGameUnits;
