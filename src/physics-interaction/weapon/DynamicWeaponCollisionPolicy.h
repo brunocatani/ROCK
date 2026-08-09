@@ -208,4 +208,88 @@ namespace rock::dynamic_weapon_collision_policy
         const float cosine = std::clamp((matchingAxisDotSum - 1.0f) * 0.5f, -1.0f, 1.0f);
         return std::acos(cosine) * 57.29577951308232f;
     }
+
+    inline RE::NiTransform makeBoundedContactAnchor(
+        const RE::NiTransform& liveProxyBodyWorld,
+        const RE::NiTransform& requestedProxyBodyWorld,
+        float maxTranslationBiasGameUnits,
+        float maxRotationBiasDegrees)
+    {
+        const float translation = translationDeltaGameUnits(
+            liveProxyBodyWorld,
+            requestedProxyBodyWorld);
+        const float rotation = rotationDeltaDegrees(
+            liveProxyBodyWorld,
+            requestedProxyBodyWorld);
+        float alpha = 1.0f;
+        if (std::isfinite(translation) && translation > 0.0001f &&
+            std::isfinite(maxTranslationBiasGameUnits) && maxTranslationBiasGameUnits >= 0.0f) {
+            alpha = (std::min)(alpha, maxTranslationBiasGameUnits / translation);
+        }
+        if (std::isfinite(rotation) && rotation > 0.0001f &&
+            std::isfinite(maxRotationBiasDegrees) && maxRotationBiasDegrees >= 0.0f) {
+            alpha = (std::min)(alpha, maxRotationBiasDegrees / rotation);
+        }
+        alpha = std::clamp(alpha, 0.0f, 1.0f);
+        RE::NiTransform result = requestedProxyBodyWorld;
+        result.translate = RE::NiPoint3{
+            liveProxyBodyWorld.translate.x +
+                (requestedProxyBodyWorld.translate.x - liveProxyBodyWorld.translate.x) * alpha,
+            liveProxyBodyWorld.translate.y +
+                (requestedProxyBodyWorld.translate.y - liveProxyBodyWorld.translate.y) * alpha,
+            liveProxyBodyWorld.translate.z +
+                (requestedProxyBodyWorld.translate.z - liveProxyBodyWorld.translate.z) * alpha,
+        };
+        result.scale = liveProxyBodyWorld.scale +
+                       (requestedProxyBodyWorld.scale - liveProxyBodyWorld.scale) * alpha;
+
+        float fromQuaternion[4]{};
+        float toQuaternion[4]{};
+        transform_math::niRowsToHavokQuaternion(
+            liveProxyBodyWorld.rotate,
+            fromQuaternion);
+        transform_math::niRowsToHavokQuaternion(
+            requestedProxyBodyWorld.rotate,
+            toQuaternion);
+        const float quaternionDot =
+            fromQuaternion[0] * toQuaternion[0] +
+            fromQuaternion[1] * toQuaternion[1] +
+            fromQuaternion[2] * toQuaternion[2] +
+            fromQuaternion[3] * toQuaternion[3];
+        if (quaternionDot < 0.0f) {
+            for (int component = 0; component < 4; ++component) {
+                toQuaternion[component] = -toQuaternion[component];
+            }
+        }
+        float blendedQuaternion[4]{};
+        for (int component = 0; component < 4; ++component) {
+            blendedQuaternion[component] =
+                fromQuaternion[component] +
+                (toQuaternion[component] - fromQuaternion[component]) * alpha;
+        }
+        result.rotate = transform_math::havokQuaternionToNiRows<RE::NiMatrix3>(
+            blendedQuaternion);
+        return result;
+    }
+
+    inline RE::NiTransform advanceSurfaceCoupledTarget(
+        const RE::NiTransform& previousRawProxyBodyWorld,
+        const RE::NiTransform& currentRawProxyBodyWorld,
+        const RE::NiTransform& previousRequestedProxyBodyWorld,
+        const RE::NiTransform& previousLiveProxyBodyWorld,
+        float maxTranslationBiasGameUnits,
+        float maxRotationBiasDegrees)
+    {
+        const RE::NiTransform boundedContactAnchor = makeBoundedContactAnchor(
+            previousLiveProxyBodyWorld,
+            previousRequestedProxyBodyWorld,
+            maxTranslationBiasGameUnits,
+            maxRotationBiasDegrees);
+        const RE::NiTransform currentRelativeToPreviousIntent = transform_math::composeTransforms(
+            transform_math::invertTransform(previousRawProxyBodyWorld),
+            currentRawProxyBodyWorld);
+        return transform_math::composeTransforms(
+            boundedContactAnchor,
+            currentRelativeToPreviousIntent);
+    }
 }

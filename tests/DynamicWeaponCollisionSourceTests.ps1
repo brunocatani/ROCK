@@ -161,8 +161,17 @@ Require-Order $contacts @(
     'recordWorldSurfaceManifoldProcessedCallback\('
 ) 'Processed-manifold admission must validate the native record and exact proxy/world pair before publication.'
 Require-Pattern $runtimeSource `
-    'snapshot\.contactActive\s*&&[\s\S]*!snapshot\.teleported' `
-    'Visual correction must require an actual active contact and reject teleport recovery samples.'
+    '\(snapshot\.contactActive\s*\|\|\s*_surfaceCouplingActive\)\s*&&[\s\S]*!snapshot\.teleported' `
+    'Visual correction must require active contact or bounded release recovery and reject teleport samples.'
+Require-Pattern $runtimeSource `
+    'advanceSurfaceCoupledTarget\([\s\S]*_previousRawProxyBodyTarget[\s\S]*rawRequestedBodyTarget[\s\S]*snapshot\.requestedProxyBodyWorld[\s\S]*snapshot\.liveProxyBodyWorld' `
+    'Established contact must discard accumulated absolute pose debt while preserving current controller deltas.'
+Require-Pattern $runtimePolicy `
+    'advanceSurfaceCoupledTarget\([\s\S]*makeBoundedContactAnchor\([\s\S]*invertTransform\(previousRawProxyBodyWorld\)[\s\S]*currentRawProxyBodyWorld' `
+    'Surface coupling must advance from the solver anchor by only the newest collision-free intent delta.'
+Require-Pattern $runtimeSource `
+    'rawIntentMoving[\s\S]*advanceSurfaceCoupledTarget\([\s\S]*snapshot\.liveProxyBodyWorld,[\s\S]*snapshot\.liveProxyBodyWorld,[\s\S]*0\.0f,[\s\S]*0\.0f[\s\S]*_surfaceCouplingIdleSeconds\s*=\s*0\.0f' `
+    'Released surface coupling must preserve controller deltas until motion pauses instead of immediately driving back into the obstacle.'
 Require-Pattern $runtimeSource `
     'correctionWithinSafetyEnvelope[\s\S]*rockWeaponCollisionDynamicMaxVisualCorrectionGameUnits[\s\S]*kMaxVisualCorrectionRotationDegrees' `
     'Physics-resolved visual correction must retain a finite fail-closed safety envelope.'

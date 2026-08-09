@@ -44,6 +44,7 @@ namespace rock
             bool physicsSnapshotIdentityCurrent{ false };
             bool physicsSnapshotContactActive{ false };
             bool physicsSnapshotTeleported{ false };
+            bool surfaceCouplingActive{ false };
             bool contactActive{ false };
             bool visualCorrectionActive{ false };
             std::uint32_t bodyId{ 0x7FFF'FFFFu };
@@ -186,6 +187,10 @@ namespace rock
         void* _frameBhkWorld{ nullptr };
         RE::NiNode* _frameWeaponNode{ nullptr };
         RE::NiTransform _frameRequestedWeaponWorld{};
+        RE::NiTransform _previousRawProxyBodyTarget{};
+        bool _previousRawProxyBodyTargetValid{ false };
+        bool _surfaceCouplingActive{ false };
+        float _surfaceCouplingIdleSeconds{ 0.0f };
         DebugSnapshot _debugSnapshot{};
 
         std::atomic<bool> _enabledAtomic{ false };
