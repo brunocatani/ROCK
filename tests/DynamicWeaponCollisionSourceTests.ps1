@@ -154,8 +154,8 @@ Require-Pattern 'src/physics-interaction/native/HavokOffsets.h' `
     'kFunc_MotionCinfo_DeriveFromBodyCinfos\s*=\s*0x17A3A90' `
     'The verified FO4VR dynamic mass-property derivation RVA must remain explicit.'
 Require-Pattern 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' `
-    'motionType\s*==\s*BethesdaMotionType::Dynamic[\s\S]*deriveMotionCinfo\(generatedMotionCinfo, bodyCinfo, 1\)' `
-    'Dynamic generated bodies must derive mass, center of mass, and inertia before insertion.'
+    'motionType\s*==\s*BethesdaMotionType::Dynamic[\s\S]*deriveMotionCinfo\(generatedMotionCinfo, bodyCinfo, 1\)[\s\S]*kUseWorldDefaultMotionPropertiesId' `
+    'Dynamic generated bodies must derive mass properties and restore the default motion-properties sentinel before insertion.'
 
 # The dormant overlay flag is now the primary in-game shape/contact diagnostic.
 Require-Pattern 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `

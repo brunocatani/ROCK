@@ -154,6 +154,7 @@ namespace rock
 
     using EnableBodyFlags_t = void (*)(void*, std::uint32_t, std::uint32_t, std::uint32_t);
     constexpr std::uint16_t kGeneratedSystemLocalMaterialIndex = 0;
+    constexpr std::uint16_t kUseWorldDefaultMotionPropertiesId = 0xFFFF;
     constexpr std::uint32_t kInvalidGeneratedId = 0x7FFF'FFFF;
     constexpr std::uint32_t kStaticLocalMotionIndex = kInvalidGeneratedId;
 
@@ -413,12 +414,21 @@ namespace rock
              * leaves those shape-dependent values uninitialized for a dynamic
              * solver body. Raw disassembly: 0x141E4DC58 calls 0x1417A3A90 with
              * (motionCinfo, bodyCinfo, 1).
+             *
+             * That derivation writes motion-properties ID 2 at cinfo+0x00.
+             * Bethesda's caller immediately replaces it with 0xFFFF at
+             * 0x141E4DC5D. The generated system does not own a local motion-
+             * properties array, so retaining ID 2 makes hknpPhysicsSystem index
+             * a null array to address 0x80 during insertion. Preserve the native
+             * one-body postcondition and select the world's default properties.
              */
             using DeriveMotionCinfo_t = void (*)(void*, void*, std::int32_t);
             static REL::Relocation<DeriveMotionCinfo_t> deriveMotionCinfo{
                 REL::Offset(offsets::kFunc_MotionCinfo_DeriveFromBodyCinfos)
             };
             deriveMotionCinfo(generatedMotionCinfo, bodyCinfo, 1);
+            *reinterpret_cast<std::uint16_t*>(generatedMotionCinfo) =
+                kUseWorldDefaultMotionPropertiesId;
         }
 
         {
