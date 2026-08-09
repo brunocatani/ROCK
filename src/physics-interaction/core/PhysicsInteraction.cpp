@@ -64,6 +64,7 @@
 #include "physics-interaction/stash/ShoulderStashPolicy.h"
 #include "physics-interaction/stash/ShoulderStashTransfer.h"
 #include "physics-interaction/weapon/LooseWeaponGripZone.h"
+#include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
 #include "physics-interaction/weapon/EquippedWeaponHandlingRuntime.h"
 #include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
 #include "physics-interaction/weapon/NativeIdleGripPreharvest.h"
@@ -3685,10 +3686,34 @@ namespace rock
                     currentWeaponGenerationKey,
                     _weaponCollision);
             if (dynamicWeaponFrame.applyVisualCorrection) {
-                (void)_twoHandedGrip.applyWeaponCollisionResolvedAuthority(
+                const bool visualPublishSucceeded = _twoHandedGrip.applyWeaponCollisionResolvedAuthority(
                     weaponNode,
                     dynamicWeaponFrame.resolvedWeaponWorld,
                     currentWeaponGenerationKey);
+                const float immediateTranslationError =
+                    visualPublishSucceeded && weaponNode ?
+                        dynamic_weapon_collision_policy::translationDeltaGameUnits(
+                            weaponNode->world,
+                            dynamicWeaponFrame.resolvedWeaponWorld) :
+                        -1.0f;
+                const float immediateRotationError =
+                    visualPublishSucceeded && weaponNode ?
+                        dynamic_weapon_collision_policy::rotationDeltaDegrees(
+                            weaponNode->world,
+                            dynamicWeaponFrame.resolvedWeaponWorld) :
+                        -1.0f;
+                if (g_rockConfig.rockDebugDrawDynamicWeaponColliders) {
+                    ROCK_LOG_SAMPLE_INFO(
+                        Weapon,
+                        500,
+                        "DWC visual publication: bodyActive={} publishSucceeded={} immediateError=({:.3f}gu,{:.3f}deg) requestedCorrection=({:.3f}gu,{:.3f}deg)",
+                        dynamicWeaponFrame.proxyActive,
+                        visualPublishSucceeded,
+                        immediateTranslationError,
+                        immediateRotationError,
+                        dynamicWeaponFrame.translationCorrectionGameUnits,
+                        dynamicWeaponFrame.rotationCorrectionDegrees);
+                }
             }
             if (weaponNode) {
                 performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::WeaponCollisionTransforms);

@@ -3676,6 +3676,27 @@
                         snapshot.visualCorrectionActive ? "ACTIVE" : "IDLE",
                         static_cast<unsigned long long>(
                             snapshot.solveSequence));
+                    labelAnchor.z -= 3.0f;
+                    addTextLineSized(
+                        labelAnchor,
+                        1.45f,
+                        proxyColor,
+                        "callbacks pair/world/raw/admit=%llu/%llu/%llu/%llu",
+                        static_cast<unsigned long long>(snapshot.proxyPairCallbackSequence),
+                        static_cast<unsigned long long>(snapshot.worldSurfaceCallbackSequence),
+                        static_cast<unsigned long long>(snapshot.rawPointCallbackSequence),
+                        static_cast<unsigned long long>(snapshot.admittedContactSequence));
+                    labelAnchor.z -= 3.0f;
+                    addTextLineSized(
+                        labelAnchor,
+                        1.45f,
+                        proxyColor,
+                        "snapshot read/valid/id/contact/tele=%s/%s/%s/%s/%s",
+                        snapshot.physicsSnapshotReadable ? "Y" : "N",
+                        snapshot.physicsSnapshotValid ? "Y" : "N",
+                        snapshot.physicsSnapshotIdentityCurrent ? "Y" : "N",
+                        snapshot.physicsSnapshotContactActive ? "Y" : "N",
+                        snapshot.physicsSnapshotTeleported ? "Y" : "N");
                 } else {
                     addScreenTextLine(
                         20.0f,

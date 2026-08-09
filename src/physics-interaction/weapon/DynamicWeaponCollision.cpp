@@ -134,24 +134,61 @@ namespace rock
         }
 
         PhysicsSnapshot snapshot{};
-        const bool snapshotCurrent =
-            readPhysicsSnapshot(snapshot) &&
+        const bool snapshotReadable = readPhysicsSnapshot(snapshot);
+        const bool snapshotIdentityCurrent =
+            snapshotReadable &&
             snapshot.valid &&
             snapshot.world == reinterpret_cast<std::uintptr_t>(frame.hknpWorld) &&
             snapshot.bodyId == _body.getBodyId().value &&
-            snapshot.generationKey == _createdGenerationKey &&
+            snapshot.generationKey == _createdGenerationKey;
+        const bool snapshotCurrent =
+            snapshotIdentityCurrent &&
             snapshot.contactActive &&
             !snapshot.teleported;
 
         _debugSnapshot = {};
         _debugSnapshot.valid = true;
+        _debugSnapshot.physicsSnapshotReadable = snapshotReadable;
+        _debugSnapshot.physicsSnapshotValid = snapshotReadable && snapshot.valid;
+        _debugSnapshot.physicsSnapshotIdentityCurrent = snapshotIdentityCurrent;
+        _debugSnapshot.physicsSnapshotContactActive = snapshotReadable && snapshot.contactActive;
+        _debugSnapshot.physicsSnapshotTeleported = snapshotReadable && snapshot.teleported;
         _debugSnapshot.bodyId = _body.getBodyId().value;
         _debugSnapshot.generationKey = _createdGenerationKey;
+        _debugSnapshot.proxyPairCallbackSequence = _proxyPairCallbackSequenceAtomic.load(std::memory_order_acquire);
+        _debugSnapshot.worldSurfaceCallbackSequence = _worldSurfaceCallbackSequenceAtomic.load(std::memory_order_acquire);
+        _debugSnapshot.rawPointCallbackSequence = _rawPointCallbackSequenceAtomic.load(std::memory_order_acquire);
+        _debugSnapshot.admittedContactSequence = _contactSequenceAtomic.load(std::memory_order_acquire);
         _debugSnapshot.centerWeaponLocal = _createdCenterWeaponLocal;
         _debugSnapshot.halfExtentsWeaponLocal = _createdHalfExtentsWeaponLocal;
         _debugSnapshot.requestedWeaponWorld = _frameRequestedWeaponWorld;
 
+        const auto logPipelineStage = [&](const char* stage) {
+            if (!g_rockConfig.rockDebugDrawDynamicWeaponColliders) {
+                return;
+            }
+            ROCK_LOG_SAMPLE_INFO(
+                Weapon,
+                500,
+                "DWC pipeline: stage={} body={} callbacks(pair/world/raw/admit)={}/{}/{}/{} snapshot(read/valid/identity/contact/teleport)={}/{}/{}/{}/{} correction=({:.2f}gu,{:.2f}deg) visual={}",
+                stage,
+                _debugSnapshot.bodyId,
+                _debugSnapshot.proxyPairCallbackSequence,
+                _debugSnapshot.worldSurfaceCallbackSequence,
+                _debugSnapshot.rawPointCallbackSequence,
+                _debugSnapshot.admittedContactSequence,
+                _debugSnapshot.physicsSnapshotReadable,
+                _debugSnapshot.physicsSnapshotValid,
+                _debugSnapshot.physicsSnapshotIdentityCurrent,
+                _debugSnapshot.physicsSnapshotContactActive,
+                _debugSnapshot.physicsSnapshotTeleported,
+                result.translationCorrectionGameUnits,
+                result.rotationCorrectionDegrees,
+                result.applyVisualCorrection);
+        };
+
         if (!snapshotCurrent) {
+            logPipelineStage("snapshot-gate");
             return result;
         }
 
@@ -172,6 +209,7 @@ namespace rock
         if (!dynamic_weapon_collision_policy::isFiniteTransform(sampledRequestedWeaponWorld) ||
             !dynamic_weapon_collision_policy::isFiniteTransform(sampledLiveWeaponWorld) ||
             !dynamic_weapon_collision_policy::isFiniteTransform(resolvedWeaponWorld)) {
+            logPipelineStage("transform-gate");
             return result;
         }
 
@@ -204,6 +242,7 @@ namespace rock
                 snapshot.bodyId,
                 result.translationCorrectionGameUnits,
                 result.rotationCorrectionDegrees);
+            logPipelineStage("safety-gate");
             return result;
         }
 
@@ -215,6 +254,7 @@ namespace rock
             result.resolvedWeaponWorld = resolvedWeaponWorld;
             _debugSnapshot.visualCorrectionActive = true;
         }
+        logPipelineStage(correctionVisible ? "publish-requested" : "visibility-gate");
         return result;
     }
 
@@ -456,15 +496,26 @@ namespace rock
         return bodyId != kInvalidBodyId && _bodyIdAtomic.load(std::memory_order_acquire) == bodyId;
     }
 
-    void DynamicWeaponCollisionRuntime::recordWorldSurfaceContact(
+    void DynamicWeaponCollisionRuntime::recordWorldSurfaceContactCallback(
         RE::hknpWorld* world,
         const std::uint32_t proxyBodyId,
         const std::uint32_t otherBodyId,
-        const std::uint32_t otherLayer)
+        const bool otherLayerRead,
+        const std::uint32_t otherLayer,
+        const bool rawContactPointValid)
     {
-        if (!world || !isProxyBodyIdAtomic(proxyBodyId) || !collision_layer_policy::isWorldSurfaceLayer(otherLayer)) {
+        if (!world || !isProxyBodyIdAtomic(proxyBodyId)) {
             return;
         }
+        _proxyPairCallbackSequenceAtomic.fetch_add(1, std::memory_order_release);
+        if (!otherLayerRead || !collision_layer_policy::isWorldSurfaceLayer(otherLayer)) {
+            return;
+        }
+        _worldSurfaceCallbackSequenceAtomic.fetch_add(1, std::memory_order_release);
+        if (!rawContactPointValid) {
+            return;
+        }
+        _rawPointCallbackSequenceAtomic.fetch_add(1, std::memory_order_release);
         _contactWorldAtomic.store(reinterpret_cast<std::uintptr_t>(world), std::memory_order_relaxed);
         _contactProxyBodyIdAtomic.store(proxyBodyId, std::memory_order_relaxed);
         _contactOtherBodyIdAtomic.store(otherBodyId, std::memory_order_relaxed);
@@ -520,6 +571,9 @@ namespace rock
         _divergenceDwellSeconds = 0.0f;
         _contactGraceSolves = 0;
         _consumedContactSequence = 0;
+        _proxyPairCallbackSequenceAtomic.store(0, std::memory_order_release);
+        _worldSurfaceCallbackSequenceAtomic.store(0, std::memory_order_release);
+        _rawPointCallbackSequenceAtomic.store(0, std::memory_order_release);
         _contactSequenceAtomic.store(0, std::memory_order_release);
         _contactWorldAtomic.store(0, std::memory_order_release);
         _contactProxyBodyIdAtomic.store(kInvalidBodyId, std::memory_order_release);

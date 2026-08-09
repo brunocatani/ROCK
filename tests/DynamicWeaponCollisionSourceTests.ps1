@@ -110,7 +110,7 @@ Require-Order $contacts @(
     'tryReadFilterInfo\(',
     'isWorldSurfaceLayer\(otherLayer\)',
     'ensureRawContactPoint\(\)',
-    'recordWorldSurfaceContact\(',
+    'recordWorldSurfaceContactCallback\(',
     'shouldSkipContactSignalBeforeLayerRead\('
 ) 'A raw proxy/world contact point must be captured before the normal gameplay-contact prefilter discards layer 51.'
 Require-Pattern $runtimeSource `
@@ -161,8 +161,19 @@ Require-Pattern 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' `
     'The generated-body wrapper must document and preserve the dynamic-safe constructor profile.'
 
 # The dormant overlay flag is now the primary in-game shape/contact diagnostic.
+# A surviving runtime mismatch must distinguish callback admission, snapshot
+# admission, and immediate visual-authority readback without hot-path log spam.
+Require-Pattern $runtimeHeader `
+    '_proxyPairCallbackSequenceAtomic[\s\S]*_worldSurfaceCallbackSequenceAtomic[\s\S]*_rawPointCallbackSequenceAtomic[\s\S]*_contactSequenceAtomic' `
+    'Dynamic weapon diagnostics must retain separate callback-stage counters.'
+Require-Pattern $runtimeSource `
+    'rockDebugDrawDynamicWeaponColliders[\s\S]*ROCK_LOG_SAMPLE_INFO\([\s\S]*DWC pipeline:[\s\S]*snapshot\(read/valid/identity/contact/teleport\)' `
+    'Dynamic weapon pipeline diagnostics must be debug-gated and rate-limited.'
+Require-Pattern $interaction `
+    'applyWeaponCollisionResolvedAuthority[\s\S]*immediateTranslationError[\s\S]*immediateRotationError[\s\S]*DWC visual publication' `
+    'Dynamic weapon visual publication must expose immediate node readback evidence.'
 Require-Pattern 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
-    'rockDebugDrawDynamicWeaponColliders[\s\S]*proxyBodyIdForDebug\(\)[\s\S]*DWC BOX' `
+    'rockDebugDrawDynamicWeaponColliders[\s\S]*proxyBodyIdForDebug\(\)[\s\S]*DWC BOX[\s\S]*callbacks pair/world/raw/admit[\s\S]*snapshot read/valid/id/contact/tele' `
     'The dedicated debug flag must draw the proxy body and its contact/correction telemetry.'
 
 if ($failures.Count -gt 0) {

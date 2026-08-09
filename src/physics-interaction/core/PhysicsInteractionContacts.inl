@@ -518,22 +518,23 @@
             const std::uint32_t otherBodyId =
                 bodyAIsDynamicWeaponProxy ? bodyIdB : bodyIdA;
             std::uint32_t otherFilterInfo = 0;
-            if (havok_runtime::tryReadFilterInfo(
-                    world,
-                    RE::hknpBodyId{ otherBodyId },
-                    otherFilterInfo)) {
-                const std::uint32_t otherLayer =
-                    otherFilterInfo &
-                    collision_layer_policy::FO4_LAYER_FILTER_MASK;
-                if (collision_layer_policy::isWorldSurfaceLayer(otherLayer) &&
-                    ensureRawContactPoint()) {
-                    _dynamicWeaponCollision.recordWorldSurfaceContact(
-                        world,
-                        proxyBodyId,
-                        otherBodyId,
-                        otherLayer);
-                }
-            }
+            const bool otherLayerRead = havok_runtime::tryReadFilterInfo(
+                world,
+                RE::hknpBodyId{ otherBodyId },
+                otherFilterInfo);
+            const std::uint32_t otherLayer =
+                otherFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
+            const bool rawContactPointValid =
+                otherLayerRead &&
+                collision_layer_policy::isWorldSurfaceLayer(otherLayer) &&
+                ensureRawContactPoint();
+            _dynamicWeaponCollision.recordWorldSurfaceContactCallback(
+                world,
+                proxyBodyId,
+                otherBodyId,
+                otherLayerRead,
+                otherLayer,
+                rawContactPointValid);
         }
 
         const auto rightId = _rightHand.getCollisionBodyId().value;

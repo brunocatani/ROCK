@@ -39,6 +39,11 @@ namespace rock
         struct DebugSnapshot
         {
             bool valid{ false };
+            bool physicsSnapshotReadable{ false };
+            bool physicsSnapshotValid{ false };
+            bool physicsSnapshotIdentityCurrent{ false };
+            bool physicsSnapshotContactActive{ false };
+            bool physicsSnapshotTeleported{ false };
             bool contactActive{ false };
             bool visualCorrectionActive{ false };
             std::uint32_t bodyId{ 0x7FFF'FFFFu };
@@ -47,6 +52,10 @@ namespace rock
             std::uint32_t contactGraceSolves{ 0 };
             std::uint64_t generationKey{ 0 };
             std::uint64_t solveSequence{ 0 };
+            std::uint64_t proxyPairCallbackSequence{ 0 };
+            std::uint64_t worldSurfaceCallbackSequence{ 0 };
+            std::uint64_t rawPointCallbackSequence{ 0 };
+            std::uint64_t admittedContactSequence{ 0 };
             RE::NiPoint3 centerWeaponLocal{};
             RE::NiPoint3 halfExtentsWeaponLocal{};
             RE::NiTransform requestedWeaponWorld{};
@@ -85,11 +94,13 @@ namespace rock
         void samplePostSolve(RE::hknpWorld* world, std::uint64_t solveSequence);
 
         bool isProxyBodyIdAtomic(std::uint32_t bodyId) const;
-        void recordWorldSurfaceContact(
+        void recordWorldSurfaceContactCallback(
             RE::hknpWorld* world,
             std::uint32_t proxyBodyId,
             std::uint32_t otherBodyId,
-            std::uint32_t otherLayer);
+            bool otherLayerRead,
+            std::uint32_t otherLayer,
+            bool rawContactPointValid);
 
         void retireAll(void* bhkWorld);
         void abandonHavokStateAfterWorldLoss();
@@ -173,6 +184,9 @@ namespace rock
         std::atomic<bool> _enabledAtomic{ false };
         std::atomic<std::uint32_t> _bodyIdAtomic{ 0x7FFF'FFFFu };
         std::atomic<bool> _rebuildRequestedAtomic{ false };
+        std::atomic<std::uint64_t> _proxyPairCallbackSequenceAtomic{ 0 };
+        std::atomic<std::uint64_t> _worldSurfaceCallbackSequenceAtomic{ 0 };
+        std::atomic<std::uint64_t> _rawPointCallbackSequenceAtomic{ 0 };
         std::atomic<std::uint64_t> _contactSequenceAtomic{ 0 };
         std::atomic<std::uintptr_t> _contactWorldAtomic{ 0 };
         std::atomic<std::uint32_t> _contactProxyBodyIdAtomic{ 0x7FFF'FFFFu };
