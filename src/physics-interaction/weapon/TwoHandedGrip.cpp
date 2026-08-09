@@ -1377,6 +1377,7 @@ namespace rock
                 state.hasLastHandWorld,
                 state.consecutiveDriverMissFrames,
                 SCOPE_DRIVER_MISS_GRACE_FRAMES);
+
             if (resolutionMode == scope_safe_hand_frame_math::ResolutionMode::RootFlattened) {
                 const bool recentScopedHandAvailable = state.hasLastHandWorld &&
                                                        state.consecutiveDriverMissFrames < SCOPE_DRIVER_MISS_GRACE_FRAMES;
@@ -1684,8 +1685,7 @@ namespace rock
             _weaponVisualIntentObserverContext,
             weaponNode,
             requestedWeaponWorld,
-            currentWeaponGenerationKey,
-            false);
+            currentWeaponGenerationKey);
     }
 
     void TwoHandedGrip::traceNativeScopeTransitionFinalState(RE::NiNode* weaponNode)
@@ -3168,21 +3168,6 @@ namespace rock
         f4vr::updateTransformsDown(_activeWeaponNode, true);
         _lastRenderedWeaponWorld = _activeWeaponNode->world;
         _hasLastRenderedWeaponWorld = true;
-        if (_weaponVisualIntentObserver) {
-            /*
-             * The return overlay begins after this frame's normal return
-             * update slot. Publish its exact start pose now and mark the
-             * authority-source handoff as a raw-motion baseline reset. The
-             * collision clutch must not interpret the replaced native pose as
-             * one frame of controller travel into or away from a wall.
-             */
-            _weaponVisualIntentObserver(
-                _weaponVisualIntentObserverContext,
-                _activeWeaponNode,
-                _lastRenderedWeaponWorld,
-                _activeWeaponGenerationKey,
-                true);
-        }
         ROCK_LOG_DEBUG(Weapon,
             "TwoHandedGrip: weapon return started reason={} distance={:.2f}gu angle={:.1f}deg duration={:.3f}s",
             reason ? reason : "unknown",
@@ -8923,8 +8908,7 @@ namespace rock
                 _weaponVisualIntentObserverContext,
                 weaponNode,
                 solvedWeaponWorld,
-                effectiveGenerationKey,
-                false);
+                effectiveGenerationKey);
         }
         const bool scopeAnchorMatchesAuthority =
             _nativeScopeAnchorValid && _nativeScopeAnchorWeaponNode == weaponNode && _nativeScopeAnchorGenerationKey == effectiveGenerationKey;

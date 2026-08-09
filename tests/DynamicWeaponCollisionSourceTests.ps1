@@ -94,7 +94,7 @@ Require-Pattern $runtimeSource `
 # weapon writers publish collision-free intent, then one bypass publication
 # applies the solved pose without observing itself.
 Require-Pattern 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'notifyVisualIntentObserver\s*&&\s*_weaponVisualIntentObserver[\s\S]*_weaponVisualIntentObserver\([\s\S]*effectiveGenerationKey,[\s\S]*false\)[\s\S]*applyWeaponCollisionResolvedAuthority[\s\S]*applyWeaponVisualAuthority\([\s\S]*false\s*\)' `
+    'notifyVisualIntentObserver\s*&&\s*_weaponVisualIntentObserver[\s\S]*_weaponVisualIntentObserver\([\s\S]*applyWeaponCollisionResolvedAuthority[\s\S]*applyWeaponVisualAuthority\([\s\S]*false\s*\)' `
     'Weapon visual authority must separate collision-free intent observation from the solved bypass publication.'
 Require-Order $interaction @(
     '_twoHandedGrip\.beginWeaponCollisionPresentationFrame\(',
@@ -180,8 +180,8 @@ Require-Order $contacts @(
     'recordWorldSurfaceManifoldProcessedCallback\('
 ) 'Processed-manifold admission must validate the native record and exact proxy/world pair before publication.'
 Require-Pattern $runtimeSource `
-    '\(snapshot\.contactActive\s*\|\|\s*_surfaceClutchActive\)[\s\S]*!snapshot\.teleported' `
-    'Visual correction must require contact or its bounded recovery clutch and reject teleport samples.'
+    'snapshot\.contactActive\s*&&[\s\S]*!snapshot\.teleported' `
+    'Visual correction must require an actual active contact and reject teleport recovery samples.'
 Require-Pattern $runtimeSource `
     'correctionWithinSafetyEnvelope[\s\S]*rockWeaponCollisionDynamicMaxVisualCorrectionGameUnits[\s\S]*kMaxVisualCorrectionRotationDegrees' `
     'Physics-resolved visual correction must retain a finite fail-closed safety envelope.'
@@ -244,47 +244,6 @@ Require-Pattern $runtimeHeader `
 Require-Pattern $runtimeSource `
     'rockDebugDrawDynamicWeaponColliders[\s\S]*ROCK_LOG_SAMPLE_INFO\([\s\S]*DWC pipeline:[\s\S]*snapshot\(read/valid/identity/contact/teleport\)' `
     'Dynamic weapon pipeline diagnostics must be debug-gated and rate-limited.'
-Reject-Pattern $runtimeSource `
-    'DWC recovery trace:|rawTargetStep|_frameVisualIntentObserved' `
-    'The completed recovery/input diagnostic must not remain in the dynamic weapon hot path.'
-Reject-Pattern $runtimeHeader `
-    '_frameVisualIntentObserved' `
-    'The completed intent-source diagnostic state must not remain in the runtime object.'
-Reject-Pattern $weaponAuthority `
-    'DWC hand input trace:|DynamicCollisionHandInputTrace|_weaponCollisionHandAuthorityLiveAtFrameStart' `
-    'The completed hand-input trace must be replaced by the production collision-presentation witness.'
-Require-Order $runtimeSource @(
-    'rawRequestedBodyTarget\s*=\s*dynamic_weapon_collision_policy::makeProxyBodyTarget',
-    '_frameResetRawMotionBaseline',
-    '_previousRawProxyBodyTarget\s*=\s*rawRequestedBodyTarget',
-    'readPhysicsSnapshot\(snapshot\)',
-    'snapshotIdentityCurrent\s*&&\s*snapshot\.contactActive',
-    'makeBoundedContactAnchor\(',
-    'advanceSurfaceCoupledTarget\(',
-    'recoverSurfaceCoupledTarget\(',
-    'queueGeneratedKeyframedBodyTarget\('
-) 'Dynamic weapon input must discard accumulated contact debt before queueing, then use continuous recovery after contact.'
-Require-Pattern $weaponAuthority `
-    'void TwoHandedGrip::beginWeaponVisualReturn[\s\S]*_activeWeaponNode->local\s*=\s*startLocal[\s\S]*updateTransformsDown\(_activeWeaponNode,\s*true\)[\s\S]*_weaponVisualIntentObserver\([\s\S]*_lastRenderedWeaponWorld,[\s\S]*_activeWeaponGenerationKey,[\s\S]*true\)' `
-    'A same-frame weapon-return handoff must publish its continuous start pose and explicitly reset dynamic collision raw-motion history.'
-Require-Pattern $runtimeSource `
-    'captureVisualIntent\([\s\S]*resetMotionBaseline[\s\S]*_frameResetRawMotionBaseline\s*=[\s\S]*_frameResetRawMotionBaseline\s*\|\|\s*resetMotionBaseline' `
-    'Dynamic weapon intent capture must retain a handoff reset until finishFrame consumes the final observed pose.'
-Require-Pattern $runtimePolicy `
-    'recoverSurfaceCoupledTarget\([\s\S]*1\.0f\s*-\s*std::exp2[\s\S]*recoveryDotRawStep\s*<\s*0\.0f[\s\S]*rawStepLength\s*\*\s*motionFraction[\s\S]*blendTransforms' `
-    'Surface-clutch recovery must converge every timed frame while bounding recovery that opposes current withdrawal.'
-Require-Pattern $runtimeSource `
-    'targetConverged[\s\S]*liveConverged[\s\S]*_surfaceClutchActive\s*=\s*false[\s\S]*requestedBodyTarget\s*=\s*rawRequestedBodyTarget' `
-    'The surface clutch must release only after both its drive target and live body converge to raw intent.'
-Require-Pattern $runtimeSource `
-    '_surfaceClutchActive\s*\?[\s\S]*sampledLiveWeaponWorld[\s\S]*safetyTranslationCorrectionGameUnits\s*=\s*_surfaceClutchActive\s*\?[\s\S]*snapshot\.liveProxyBodyWorld[\s\S]*requestedBodyTarget' `
-    'An active clutch must present the live body while applying the visual safety envelope to solver correction, not intentional controller separation.'
-Reject-Pattern $runtimeHeader `
-    'IdleSeconds|Stillness|adhesionTrace' `
-    'Surface recovery must not depend on an idle timer, stillness gate, or retired diagnostic trace state.'
-Reject-Pattern $runtimeSource `
-    'surfaceClutchIdle|surfaceCouplingIdle|DWC adhesion trace|traceSurfaceAdhesion' `
-    'Surface recovery must remain continuous and the completed adhesion trace must not remain in the hot path.'
 Require-Pattern $interaction `
     'applyWeaponCollisionResolvedAuthority[\s\S]*immediateTranslationError[\s\S]*immediateRotationError[\s\S]*DWC visual publication' `
     'Dynamic weapon visual publication must expose immediate node readback evidence.'

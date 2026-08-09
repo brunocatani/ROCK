@@ -27,10 +27,6 @@ namespace rock
         constexpr std::uint32_t kRebuildBodyCollisionState = 0u;
         constexpr std::uint32_t kContactGraceSolves = 3;
         constexpr float kMaxVisualCorrectionRotationDegrees = 85.0f;
-        constexpr float kSurfaceContactTranslationBiasGameUnits = 0.25f;
-        constexpr float kSurfaceContactRotationBiasDegrees = 0.5f;
-        constexpr float kSurfaceRecoveryHalfLifeSeconds = 0.2f;
-        constexpr float kSurfaceRecoveryMaxOpposingRawMotionFraction = 0.25f;
 
         std::uint32_t dynamicWeaponProxyFilterInfo()
         {
@@ -45,7 +41,6 @@ namespace rock
             const float z = lhs.z - rhs.z;
             return std::sqrt(x * x + y * y + z * z);
         }
-
     }
 
     void DynamicWeaponCollisionRuntime::beginFrame(
@@ -63,7 +58,6 @@ namespace rock
         _frameWeaponNode = weaponNode;
         _frameGenerationKey = weaponGenerationKey;
         _frameRequestedWeaponWorld = {};
-        _frameResetRawMotionBaseline = false;
         _frameAcceptingIntent = enabled && world && bhkWorld && weaponNode && weaponGenerationKey != 0;
         _frameHasIntent =
             _frameAcceptingIntent &&
@@ -81,24 +75,18 @@ namespace rock
         void* context,
         RE::NiNode* weaponNode,
         const RE::NiTransform& requestedWeaponWorld,
-        const std::uint64_t weaponGenerationKey,
-        const bool resetMotionBaseline)
+        const std::uint64_t weaponGenerationKey)
     {
         auto* runtime = static_cast<DynamicWeaponCollisionRuntime*>(context);
         if (runtime) {
-            runtime->captureVisualIntent(
-                weaponNode,
-                requestedWeaponWorld,
-                weaponGenerationKey,
-                resetMotionBaseline);
+            runtime->captureVisualIntent(weaponNode, requestedWeaponWorld, weaponGenerationKey);
         }
     }
 
     void DynamicWeaponCollisionRuntime::captureVisualIntent(
         RE::NiNode* weaponNode,
         const RE::NiTransform& requestedWeaponWorld,
-        const std::uint64_t weaponGenerationKey,
-        const bool resetMotionBaseline)
+        const std::uint64_t weaponGenerationKey)
     {
         if (!_frameAcceptingIntent || weaponNode != _frameWeaponNode || weaponGenerationKey != _frameGenerationKey ||
             !dynamic_weapon_collision_policy::isFiniteTransform(requestedWeaponWorld)) {
@@ -106,8 +94,6 @@ namespace rock
         }
         _frameRequestedWeaponWorld = requestedWeaponWorld;
         _frameHasIntent = true;
-        _frameResetRawMotionBaseline =
-            _frameResetRawMotionBaseline || resetMotionBaseline;
     }
 
     DynamicWeaponCollisionRuntime::FrameResult DynamicWeaponCollisionRuntime::finishFrame(
@@ -140,24 +126,16 @@ namespace rock
         }
 
         result.proxyActive = true;
-        const RE::NiTransform rawRequestedBodyTarget = dynamic_weapon_collision_policy::makeProxyBodyTarget(
+        const RE::NiTransform requestedBodyTarget = dynamic_weapon_collision_policy::makeProxyBodyTarget(
             _frameRequestedWeaponWorld,
             _createdCenterWeaponLocal);
-        if (_frameResetRawMotionBaseline) {
-            /*
-             * A visual-authority handoff can replace the collision-free pose
-             * source without representing physical controller motion. Rebase
-             * the raw delta origin so the clutch follows the return overlay on
-             * subsequent frames instead of interpreting the source switch as
-             * a one-frame wall drive.
-             */
-            _previousRawProxyBodyTarget = rawRequestedBodyTarget;
-            _previousRawProxyBodyTargetValid = true;
-            ROCK_LOG_DEBUG(
-                Weapon,
-                "Dynamic weapon raw intent motion baseline reset: body={} generation={:016X}",
-                _body.getBodyId().value,
-                _createdGenerationKey);
+        const auto queueResult = queueGeneratedKeyframedBodyTarget(
+            _driveState,
+            requestedBodyTarget,
+            frame.deltaSeconds,
+            g_rockConfig.rockWeaponCollisionDynamicDivergenceTeleportGameUnits);
+        if (!queueResult.queued) {
+            _rebuildRequestedAtomic.store(true, std::memory_order_release);
         }
 
         PhysicsSnapshot snapshot{};
@@ -168,97 +146,9 @@ namespace rock
             snapshot.world == reinterpret_cast<std::uintptr_t>(frame.hknpWorld) &&
             snapshot.bodyId == _body.getBodyId().value &&
             snapshot.generationKey == _createdGenerationKey;
-
-        if (!snapshotIdentityCurrent || snapshot.teleported) {
-            _surfaceClutchActive = false;
-            _surfaceClutchTargetValid = false;
-        }
-
-        RE::NiTransform requestedBodyTarget = rawRequestedBodyTarget;
-        if (snapshotIdentityCurrent && snapshot.contactActive) {
-            const RE::NiTransform contactAnchor = dynamic_weapon_collision_policy::makeBoundedContactAnchor(
-                snapshot.liveProxyBodyWorld,
-                snapshot.requestedProxyBodyWorld,
-                kSurfaceContactTranslationBiasGameUnits,
-                kSurfaceContactRotationBiasDegrees);
-            requestedBodyTarget = _previousRawProxyBodyTargetValid ?
-                dynamic_weapon_collision_policy::advanceSurfaceCoupledTarget(
-                    _previousRawProxyBodyTarget,
-                    rawRequestedBodyTarget,
-                    contactAnchor) :
-                contactAnchor;
-            _surfaceClutchActive = dynamic_weapon_collision_policy::isFiniteTransform(requestedBodyTarget);
-            _surfaceClutchTargetValid = _surfaceClutchActive;
-            if (_surfaceClutchTargetValid) {
-                _surfaceClutchProxyBodyTarget = requestedBodyTarget;
-            } else {
-                requestedBodyTarget = rawRequestedBodyTarget;
-            }
-        } else if (snapshotIdentityCurrent &&
-                   _surfaceClutchActive &&
-                   _surfaceClutchTargetValid &&
-                   _previousRawProxyBodyTargetValid) {
-            /*
-             * Preserve the collision-local offset while following every raw
-             * controller delta, then remove that offset continuously. Recovery
-             * never waits for controller stillness. When it points against the
-             * user's current translation, it can consume at most one quarter
-             * of that motion, so withdrawal remains immediate and monotonic.
-             */
-            const RE::NiTransform followedTarget = dynamic_weapon_collision_policy::advanceSurfaceCoupledTarget(
-                _previousRawProxyBodyTarget,
-                rawRequestedBodyTarget,
-                _surfaceClutchProxyBodyTarget);
-            const auto recovery = dynamic_weapon_collision_policy::recoverSurfaceCoupledTarget(
-                followedTarget,
-                _previousRawProxyBodyTarget,
-                rawRequestedBodyTarget,
-                frame.deltaSeconds,
-                kSurfaceRecoveryHalfLifeSeconds,
-                kSurfaceRecoveryMaxOpposingRawMotionFraction);
-            requestedBodyTarget = recovery.target;
-            if (!dynamic_weapon_collision_policy::isFiniteTransform(requestedBodyTarget)) {
-                _surfaceClutchActive = false;
-                _surfaceClutchTargetValid = false;
-                requestedBodyTarget = rawRequestedBodyTarget;
-            } else {
-                _surfaceClutchProxyBodyTarget = requestedBodyTarget;
-                const bool targetConverged =
-                    dynamic_weapon_collision_policy::translationDeltaGameUnits(
-                        requestedBodyTarget,
-                        rawRequestedBodyTarget) <= g_rockConfig.rockWeaponCollisionDynamicRenderMinTranslationGameUnits &&
-                    dynamic_weapon_collision_policy::rotationDeltaDegrees(
-                        requestedBodyTarget,
-                        rawRequestedBodyTarget) <= g_rockConfig.rockWeaponCollisionDynamicRenderMinRotationDegrees;
-                const bool liveConverged =
-                    dynamic_weapon_collision_policy::translationDeltaGameUnits(
-                        snapshot.liveProxyBodyWorld,
-                        rawRequestedBodyTarget) <= g_rockConfig.rockWeaponCollisionDynamicRenderMinTranslationGameUnits &&
-                    dynamic_weapon_collision_policy::rotationDeltaDegrees(
-                        snapshot.liveProxyBodyWorld,
-                        rawRequestedBodyTarget) <= g_rockConfig.rockWeaponCollisionDynamicRenderMinRotationDegrees;
-                if (targetConverged && liveConverged) {
-                    _surfaceClutchActive = false;
-                    _surfaceClutchTargetValid = false;
-                    requestedBodyTarget = rawRequestedBodyTarget;
-                }
-            }
-        }
-
-        const auto queueResult = queueGeneratedKeyframedBodyTarget(
-            _driveState,
-            requestedBodyTarget,
-            frame.deltaSeconds,
-            g_rockConfig.rockWeaponCollisionDynamicDivergenceTeleportGameUnits);
-        _previousRawProxyBodyTarget = rawRequestedBodyTarget;
-        _previousRawProxyBodyTargetValid = true;
-        if (!queueResult.queued) {
-            _rebuildRequestedAtomic.store(true, std::memory_order_release);
-        }
-
         const bool snapshotCurrent =
             snapshotIdentityCurrent &&
-            (snapshot.contactActive || _surfaceClutchActive) &&
+            snapshot.contactActive &&
             !snapshot.teleported;
 
         _debugSnapshot = {};
@@ -268,7 +158,6 @@ namespace rock
         _debugSnapshot.physicsSnapshotIdentityCurrent = snapshotIdentityCurrent;
         _debugSnapshot.physicsSnapshotContactActive = snapshotReadable && snapshot.contactActive;
         _debugSnapshot.physicsSnapshotTeleported = snapshotReadable && snapshot.teleported;
-        _debugSnapshot.surfaceClutchActive = _surfaceClutchActive;
         _debugSnapshot.bodyId = _body.getBodyId().value;
         _debugSnapshot.generationKey = _createdGenerationKey;
         _debugSnapshot.proxyPairCallbackSequence = _proxyPairCallbackSequenceAtomic.load(std::memory_order_acquire);
@@ -287,7 +176,7 @@ namespace rock
             ROCK_LOG_SAMPLE_INFO(
                 Weapon,
                 500,
-                "DWC pipeline: stage={} body={} callbacks(pair/world/raw/manifold/admit)={}/{}/{}/{}/{} snapshot(read/valid/identity/contact/teleport)={}/{}/{}/{}/{} clutch={} correction=({:.2f}gu,{:.2f}deg) visual={}",
+                "DWC pipeline: stage={} body={} callbacks(pair/world/raw/manifold/admit)={}/{}/{}/{}/{} snapshot(read/valid/identity/contact/teleport)={}/{}/{}/{}/{} correction=({:.2f}gu,{:.2f}deg) visual={}",
                 stage,
                 _debugSnapshot.bodyId,
                 _debugSnapshot.proxyPairCallbackSequence,
@@ -300,7 +189,6 @@ namespace rock
                 _debugSnapshot.physicsSnapshotIdentityCurrent,
                 _debugSnapshot.physicsSnapshotContactActive,
                 _debugSnapshot.physicsSnapshotTeleported,
-                _debugSnapshot.surfaceClutchActive,
                 result.translationCorrectionGameUnits,
                 result.rotationCorrectionDegrees,
                 result.applyVisualCorrection);
@@ -319,14 +207,12 @@ namespace rock
             snapshot.liveProxyBodyWorld,
             _createdCenterWeaponLocal,
             snapshot.weaponScale);
-        const RE::NiTransform resolvedWeaponWorld = _surfaceClutchActive ?
-            sampledLiveWeaponWorld :
-            dynamic_weapon_collision_policy::resolveCurrentIntentFromSample(
-                snapshot.requestedProxyBodyWorld,
-                snapshot.liveProxyBodyWorld,
-                _createdCenterWeaponLocal,
-                snapshot.weaponScale,
-                _frameRequestedWeaponWorld);
+        const RE::NiTransform resolvedWeaponWorld = dynamic_weapon_collision_policy::resolveCurrentIntentFromSample(
+            snapshot.requestedProxyBodyWorld,
+            snapshot.liveProxyBodyWorld,
+            _createdCenterWeaponLocal,
+            snapshot.weaponScale,
+            _frameRequestedWeaponWorld);
         if (!dynamic_weapon_collision_policy::isFiniteTransform(sampledRequestedWeaponWorld) ||
             !dynamic_weapon_collision_policy::isFiniteTransform(sampledLiveWeaponWorld) ||
             !dynamic_weapon_collision_policy::isFiniteTransform(resolvedWeaponWorld)) {
@@ -340,7 +226,7 @@ namespace rock
         result.rotationCorrectionDegrees = dynamic_weapon_collision_policy::rotationDeltaDegrees(
             resolvedWeaponWorld,
             _frameRequestedWeaponWorld);
-        _debugSnapshot.contactActive = snapshot.contactActive;
+        _debugSnapshot.contactActive = true;
         _debugSnapshot.otherBodyId = snapshot.otherBodyId;
         _debugSnapshot.otherLayer = snapshot.otherLayer;
         _debugSnapshot.contactGraceSolves = snapshot.contactGraceSolves;
@@ -350,34 +236,19 @@ namespace rock
         _debugSnapshot.translationCorrectionGameUnits = result.translationCorrectionGameUnits;
         _debugSnapshot.rotationCorrectionDegrees = result.rotationCorrectionDegrees;
 
-        const float safetyTranslationCorrectionGameUnits = _surfaceClutchActive ?
-            dynamic_weapon_collision_policy::translationDeltaGameUnits(
-                snapshot.liveProxyBodyWorld,
-                requestedBodyTarget) :
-            result.translationCorrectionGameUnits;
-        const float safetyRotationCorrectionDegrees = _surfaceClutchActive ?
-            dynamic_weapon_collision_policy::rotationDeltaDegrees(
-                snapshot.liveProxyBodyWorld,
-                requestedBodyTarget) :
-            result.rotationCorrectionDegrees;
         const bool correctionWithinSafetyEnvelope =
             std::isfinite(result.translationCorrectionGameUnits) &&
             std::isfinite(result.rotationCorrectionDegrees) &&
-            std::isfinite(safetyTranslationCorrectionGameUnits) &&
-            std::isfinite(safetyRotationCorrectionDegrees) &&
-            safetyTranslationCorrectionGameUnits <= g_rockConfig.rockWeaponCollisionDynamicMaxVisualCorrectionGameUnits &&
-            safetyRotationCorrectionDegrees <= kMaxVisualCorrectionRotationDegrees;
+            result.translationCorrectionGameUnits <= g_rockConfig.rockWeaponCollisionDynamicMaxVisualCorrectionGameUnits &&
+            result.rotationCorrectionDegrees <= kMaxVisualCorrectionRotationDegrees;
         if (!correctionWithinSafetyEnvelope) {
             ROCK_LOG_SAMPLE_WARN(
                 Weapon,
                 1000,
-                "Dynamic weapon visual correction rejected: body={} requested=({:.2f}gu,{:.2f}deg) solver=({:.2f}gu,{:.2f}deg) clutch={}",
+                "Dynamic weapon visual correction rejected: body={} translation={:.2f}gu rotation={:.2f}deg",
                 snapshot.bodyId,
                 result.translationCorrectionGameUnits,
-                result.rotationCorrectionDegrees,
-                safetyTranslationCorrectionGameUnits,
-                safetyRotationCorrectionDegrees,
-                _surfaceClutchActive);
+                result.rotationCorrectionDegrees);
             logPipelineStage("safety-gate");
             return result;
         }
@@ -498,11 +369,6 @@ namespace rock
         _created = true;
         _rebuildRequestedAtomic.store(false, std::memory_order_release);
         initializeGeneratedKeyframedBodyDriveState(_driveState, initialTarget);
-        _previousRawProxyBodyTarget = initialTarget;
-        _surfaceClutchProxyBodyTarget = initialTarget;
-        _previousRawProxyBodyTargetValid = true;
-        _surfaceClutchTargetValid = false;
-        _surfaceClutchActive = false;
         if (!placeGeneratedKeyframedBodyImmediately(_body, initialTarget)) {
             retireProxyLocked(frame.bhkWorld);
             return false;
@@ -761,11 +627,6 @@ namespace rock
         _divergenceDwellSeconds = 0.0f;
         _contactGraceSolves = 0;
         _consumedContactSequence = 0;
-        _previousRawProxyBodyTarget = {};
-        _surfaceClutchProxyBodyTarget = {};
-        _previousRawProxyBodyTargetValid = false;
-        _surfaceClutchTargetValid = false;
-        _surfaceClutchActive = false;
         _proxyPairCallbackSequenceAtomic.store(0, std::memory_order_release);
         _worldSurfaceCallbackSequenceAtomic.store(0, std::memory_order_release);
         _rawPointCallbackSequenceAtomic.store(0, std::memory_order_release);
@@ -809,7 +670,6 @@ namespace rock
         _frameBhkWorld = nullptr;
         _frameWeaponNode = nullptr;
         _frameRequestedWeaponWorld = {};
-        _frameResetRawMotionBaseline = false;
         _debugSnapshot = {};
         if (bodyId != kInvalidBodyId) {
             ROCK_LOG_WARN(

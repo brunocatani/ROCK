@@ -44,7 +44,6 @@ namespace rock
             bool physicsSnapshotIdentityCurrent{ false };
             bool physicsSnapshotContactActive{ false };
             bool physicsSnapshotTeleported{ false };
-            bool surfaceClutchActive{ false };
             bool contactActive{ false };
             bool visualCorrectionActive{ false };
             std::uint32_t bodyId{ 0x7FFF'FFFFu };
@@ -82,8 +81,7 @@ namespace rock
             void* context,
             RE::NiNode* weaponNode,
             const RE::NiTransform& requestedWeaponWorld,
-            std::uint64_t weaponGenerationKey,
-            bool resetMotionBaseline);
+            std::uint64_t weaponGenerationKey);
 
         FrameResult finishFrame(
             const PhysicsFrameContext& frame,
@@ -146,8 +144,7 @@ namespace rock
         void captureVisualIntent(
             RE::NiNode* weaponNode,
             const RE::NiTransform& requestedWeaponWorld,
-            std::uint64_t weaponGenerationKey,
-            bool resetMotionBaseline);
+            std::uint64_t weaponGenerationKey);
         bool ensureProxyBody(
             const PhysicsFrameContext& frame,
             const WeaponCollision& weaponCollision,
@@ -190,12 +187,6 @@ namespace rock
         void* _frameBhkWorld{ nullptr };
         RE::NiNode* _frameWeaponNode{ nullptr };
         RE::NiTransform _frameRequestedWeaponWorld{};
-        bool _frameResetRawMotionBaseline{ false };
-        RE::NiTransform _previousRawProxyBodyTarget{};
-        RE::NiTransform _surfaceClutchProxyBodyTarget{};
-        bool _previousRawProxyBodyTargetValid{ false };
-        bool _surfaceClutchTargetValid{ false };
-        bool _surfaceClutchActive{ false };
         DebugSnapshot _debugSnapshot{};
 
         std::atomic<bool> _enabledAtomic{ false };
