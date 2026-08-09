@@ -42,6 +42,36 @@ namespace rock
             return (std::isfinite(value) ? value : 0.0f) * (std::isfinite(multiplier) ? multiplier : 1.0f);
         }
 
+        float signedTranslationStepTowardContactError(
+            const RE::NiTransform& previousRequested,
+            const RE::NiTransform& currentRequested,
+            const RE::NiTransform& liveBody)
+        {
+            const RE::NiPoint3 contactError{
+                currentRequested.translate.x - liveBody.translate.x,
+                currentRequested.translate.y - liveBody.translate.y,
+                currentRequested.translate.z - liveBody.translate.z,
+            };
+            const float contactErrorLength = std::sqrt(
+                contactError.x * contactError.x +
+                contactError.y * contactError.y +
+                contactError.z * contactError.z);
+            if (!std::isfinite(contactErrorLength) || contactErrorLength <= 0.0001f) {
+                return 0.0f;
+            }
+
+            const RE::NiPoint3 requestedStep{
+                currentRequested.translate.x - previousRequested.translate.x,
+                currentRequested.translate.y - previousRequested.translate.y,
+                currentRequested.translate.z - previousRequested.translate.z,
+            };
+            return
+                (requestedStep.x * contactError.x +
+                    requestedStep.y * contactError.y +
+                    requestedStep.z * contactError.z) /
+                contactErrorLength;
+        }
+
         GrabConstraintMotorTuning buildWeaponGripConstraintTuning(const float bodyMass)
         {
             const float effectiveMotorMass = grab_motion_controller::effectiveMotorMass(
@@ -706,6 +736,7 @@ namespace rock
             driveResult.hasRequestedTargetGameTransform;
         _physicsRequestedTargetValid = driveResult.hasRequestedTargetGameTransform;
         if (_physicsRequestedTargetValid) {
+            _physicsRequestedAuthorityTarget = driveResult.requestedTargetGameTransform;
             _physicsRequestedTarget = dynamic_weapon_collision_policy::makeContactBodyTargetFromGripAuthority(
                 driveResult.requestedTargetGameTransform,
                 _createdCenterWeaponLocal,
@@ -770,6 +801,74 @@ namespace rock
         snapshot.requestedProxyBodyWorld = _physicsRequestedTarget;
         snapshot.liveProxyBodyWorld = liveBodyWorld;
         publishPhysicsSnapshot(snapshot);
+
+        if (g_rockConfig.rockDebugDrawDynamicWeaponColliders) {
+            const float requestedStepTranslation = _physicsPreviousRequestedTargetValid ?
+                dynamic_weapon_collision_policy::translationDeltaGameUnits(
+                    _physicsPreviousRequestedTarget,
+                    _physicsRequestedTarget) :
+                0.0f;
+            const float requestedStepRotation = _physicsPreviousRequestedTargetValid ?
+                dynamic_weapon_collision_policy::rotationDeltaDegrees(
+                    _physicsPreviousRequestedTarget,
+                    _physicsRequestedTarget) :
+                0.0f;
+            const float signedPressStep = _physicsPreviousRequestedTargetValid ?
+                signedTranslationStepTowardContactError(
+                    _physicsPreviousRequestedTarget,
+                    _physicsRequestedTarget,
+                    liveBodyWorld) :
+                0.0f;
+            const float contactTranslationError = dynamic_weapon_collision_policy::translationDeltaGameUnits(
+                _physicsRequestedTarget,
+                liveBodyWorld);
+            const float contactRotationError = dynamic_weapon_collision_policy::rotationDeltaDegrees(
+                _physicsRequestedTarget,
+                liveBodyWorld);
+
+            RE::NiTransform liveAuthorityWorld{};
+            const bool authorityReadable = havok_runtime::tryResolveLiveBodyWorldTransform(
+                world,
+                _authorityProxy.getBodyId(),
+                liveAuthorityWorld);
+            const float authorityTranslationError = authorityReadable ?
+                dynamic_weapon_collision_policy::translationDeltaGameUnits(
+                    _physicsRequestedAuthorityTarget,
+                    liveAuthorityWorld) :
+                -1.0f;
+            const float authorityRotationError = authorityReadable ?
+                dynamic_weapon_collision_policy::rotationDeltaDegrees(
+                    _physicsRequestedAuthorityTarget,
+                    liveAuthorityWorld) :
+                -1.0f;
+            const auto* linearMotor = _authorityConstraint.linearMotor;
+            const auto* angularMotor = _authorityConstraint.angularMotor;
+
+            ROCK_LOG_SAMPLE_INFO(
+                Weapon,
+                500,
+                "DWC motor trace: contact={} newCallback={} intentStep=({:.3f}gu,{:.2f}deg) signedPress={:.3f}gu contactError=({:.2f}gu,{:.2f}deg) authority(read/error)={}/({:.3f}gu,{:.2f}deg) tau=({:.4f},{:.4f}) recovery=({:.2f}/{:.2f},{:.2f}/{:.2f}) force=({:.1f},{:.1f})",
+                snapshot.contactActive,
+                newMatchingContact,
+                requestedStepTranslation,
+                requestedStepRotation,
+                signedPressStep,
+                contactTranslationError,
+                contactRotationError,
+                authorityReadable,
+                authorityTranslationError,
+                authorityRotationError,
+                linearMotor ? linearMotor->tau : -1.0f,
+                angularMotor ? angularMotor->tau : -1.0f,
+                linearMotor ? linearMotor->proportionalRecoveryVelocity : -1.0f,
+                linearMotor ? linearMotor->constantRecoveryVelocity : -1.0f,
+                angularMotor ? angularMotor->proportionalRecoveryVelocity : -1.0f,
+                angularMotor ? angularMotor->constantRecoveryVelocity : -1.0f,
+                linearMotor ? linearMotor->maxForce : -1.0f,
+                angularMotor ? angularMotor->maxForce : -1.0f);
+        }
+        _physicsPreviousRequestedTarget = _physicsRequestedTarget;
+        _physicsPreviousRequestedTargetValid = true;
         _physicsDriveTeleported = false;
     }
 
@@ -886,7 +985,10 @@ namespace rock
         _droveThisSubstep = false;
         _physicsRequestedTargetValid = false;
         _physicsDriveTeleported = false;
+        _physicsRequestedAuthorityTarget = {};
         _physicsRequestedTarget = {};
+        _physicsPreviousRequestedTarget = {};
+        _physicsPreviousRequestedTargetValid = false;
         _contactGraceSolves = 0;
         _consumedContactSequence = 0;
         _proxyPairCallbackSequenceAtomic.store(0, std::memory_order_release);

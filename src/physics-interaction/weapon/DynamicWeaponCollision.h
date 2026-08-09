@@ -177,7 +177,10 @@ namespace rock
         bool _droveThisSubstep{ false };
         bool _physicsRequestedTargetValid{ false };
         bool _physicsDriveTeleported{ false };
+        RE::NiTransform _physicsRequestedAuthorityTarget{};
         RE::NiTransform _physicsRequestedTarget{};
+        RE::NiTransform _physicsPreviousRequestedTarget{};
+        bool _physicsPreviousRequestedTargetValid{ false };
         std::uint64_t _consumedContactSequence{ 0 };
         std::uint32_t _contactGraceSolves{ 0 };
 
