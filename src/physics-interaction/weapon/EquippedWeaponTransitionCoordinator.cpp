@@ -595,6 +595,10 @@ namespace rock
         if (!identity.valid()) {
             return;
         }
+        const bool completesSuppressedHeldDraw =
+            _waitingForExpectedIdentity &&
+            (source == Source::HeldTriggerEquip ||
+                source == Source::HeldGripZoneEquip);
         const bool startsNewTransition = !_active ||
             !_boundIdentity.valid() ||
             _boundIdentity != identity ||
@@ -641,6 +645,36 @@ namespace rock
             identity.formID,
             identity.instanceData,
             identity.equipIndex);
+
+        if (completesSuppressedHeldDraw) {
+            /*
+             * The scoped EquipManager transaction deliberately suppressed
+             * its synchronous draw action after committing this exact held
+             * weapon. Submit the coordinator-owned replacement now, while
+             * the identity is still exact, so clip acceleration is armed at
+             * the real draw boundary. The normal timed policy remains only
+             * as bounded recovery if native state does not acknowledge it.
+             */
+            const auto result =
+                native_equipped_weapon_draw::submitExactCurrent(
+                    native_equipped_weapon_draw::Identity{
+                        .formID = _boundIdentity.formID,
+                        .instanceData = _boundIdentity.instanceData,
+                        .equipIndex = _boundIdentity.equipIndex,
+                    });
+            ROCK_LOG_INFO(Weapon,
+                "Equipped weapon transition initial held draw source={} formID={:08X} instance={:#x} state={}({})->{}({}) result={}",
+                sourceName(_source),
+                _boundIdentity.formID,
+                _boundIdentity.instanceData,
+                result.stateBefore,
+                held_weapon_equip_state_policy::nativeWeaponStateName(
+                    result.stateBefore),
+                result.stateAfter,
+                held_weapon_equip_state_policy::nativeWeaponStateName(
+                    result.stateAfter),
+                native_equipped_weapon_draw::submitResultName(result.result));
+        }
     }
 
     void EquippedWeaponTransitionCoordinator::resetDrawRecoveryClock(

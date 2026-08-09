@@ -73,6 +73,10 @@ Require-Text $coordinatorPath `
     'equipped_weapon_transition_policy::advance[\s\S]{0,3000}RepairAction::RequestDraw[\s\S]{0,500}native_equipped_weapon_draw::submitExactCurrent[\s\S]*_bridge\.update' `
     'Normal exact-current native draw recovery and bridge presentation must remain owned by the transition coordinator.'
 
+Require-Text $coordinatorPath `
+    'bindCurrentIdentity\([\s\S]{0,900}completesSuppressedHeldDraw\s*=\s*_waitingForExpectedIdentity[\s\S]{0,300}Source::HeldTriggerEquip[\s\S]{0,180}Source::HeldGripZoneEquip[\s\S]{0,2600}if\s*\(completesSuppressedHeldDraw\)[\s\S]{0,1200}native_equipped_weapon_draw::submitExactCurrent' `
+    'Trigger and grip-zone auto-equip must replace the transaction-suppressed draw immediately at exact identity bind.'
+
 Require-Text 'src/physics-interaction/weapon/WeaponEquipTransfer.cpp' `
     'equipImmediatelyWithoutActions[\s\S]{0,1800}readEquippedWeaponSnapshot[\s\S]{0,900}findEquippedWeaponStack[\s\S]{0,700}ActivateRefThenInstantEquip' `
     'Transfer success must require the scoped manager call, exact equipped identity, and exact equipped stack.'

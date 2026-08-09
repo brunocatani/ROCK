@@ -25,6 +25,7 @@ function Reject-Text {
 $source = 'src/physics-interaction/weapon/WeaponTransitionAnimationAcceleration.cpp'
 $policy = 'src/physics-interaction/weapon/WeaponTransitionAnimationAccelerationPolicy.h'
 $nativeDraw = 'src/physics-interaction/weapon/NativeEquippedWeaponDraw.cpp'
+$coordinator = 'src/physics-interaction/weapon/EquippedWeaponTransitionCoordinator.cpp'
 $physics = 'src/physics-interaction/core/PhysicsInteraction.cpp'
 $main = 'src/ROCKMain.cpp'
 
@@ -64,6 +65,9 @@ Require-Text $policy `
 Require-Text $nativeDraw `
     'requestAnimationAcceleration\([\s\S]{0,500}Direction::Draw\)[\s\S]{0,180}DrawWeaponMagicHands\(true\)[\s\S]*requestAnimationAcceleration\([\s\S]{0,500}Direction::Sheathe\)[\s\S]{0,180}DrawWeaponMagicHands\(false\)' `
     'ROCK-owned draw and sheathe submissions must arm acceleration before native action submission.'
+Require-Text $coordinator `
+    'completesSuppressedHeldDraw[\s\S]{0,300}Source::HeldTriggerEquip[\s\S]{0,180}Source::HeldGripZoneEquip[\s\S]{0,3000}native_equipped_weapon_draw::submitExactCurrent' `
+    'Both held trigger-equip and RIW grip-zone auto-equip must enter the accelerated exact-current draw boundary immediately.'
 Require-Text $physics `
     'updateEquippedWeaponTransition\(\)[\s\S]{0,1000}weapon_transition_animation_acceleration::service[\s\S]{0,900}runtimeAllowed[\s\S]{0,500}localMenuBlocking[\s\S]{0,500}compatibilityConfigBlocking' `
     'The main frame must service exact identity and runtime cancellation before transition coordination.'
