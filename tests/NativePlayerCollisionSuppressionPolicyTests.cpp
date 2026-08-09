@@ -40,24 +40,6 @@ namespace
         return false;
     }
 
-    bool expectControllerObjectBodyFiltered(const char* label, std::uint32_t layer)
-    {
-        if (rock::collision_layer_policy::isNativeCharacterControllerBodyFilteredLayer(layer)) {
-            return true;
-        }
-        std::printf("%s expected native character controller body filtering for layer=%u\n", label, layer);
-        return false;
-    }
-
-    bool expectControllerObjectNotBodyFiltered(const char* label, std::uint32_t layer)
-    {
-        if (!rock::collision_layer_policy::isNativeCharacterControllerBodyFilteredLayer(layer)) {
-            return true;
-        }
-        std::printf("%s expected no native character controller body filtering for layer=%u\n", label, layer);
-        return false;
-    }
-
     bool expectWorldSurface(const char* label, std::uint32_t layer)
     {
         if (rock::collision_layer_policy::isWorldSurfaceLayer(layer)) {
@@ -96,15 +78,12 @@ int main()
     ok &= expectPreserved("ordinary clutter is not a native player body layer", FO4_LAYER_CLUTTER);
     ok &= expectPreserved("ordinary weapon is not a native player body layer", FO4_LAYER_WEAPON);
 
-    ok &= expectControllerObjectPreserved("clutter stays matrix-enabled for body-aware car filtering", FO4_LAYER_CLUTTER);
+    ok &= expectControllerObjectSuppressed("character controller suppresses ordinary clutter", FO4_LAYER_CLUTTER);
     ok &= expectControllerObjectSuppressed("character controller suppresses weapon objects", FO4_LAYER_WEAPON);
     ok &= expectControllerObjectSuppressed("character controller suppresses small debris", FO4_LAYER_DEBRIS_SMALL);
     ok &= expectControllerObjectSuppressed("character controller suppresses large debris", FO4_LAYER_DEBRIS_LARGE);
     ok &= expectControllerObjectSuppressed("character controller suppresses shell casings", FO4_LAYER_SHELLCASING);
-    ok &= expectControllerObjectPreserved("large clutter stays matrix-enabled for body-aware car filtering", FO4_LAYER_CLUTTER_LARGE);
-    ok &= expectControllerObjectBodyFiltered("clutter uses body-aware character-controller filtering", FO4_LAYER_CLUTTER);
-    ok &= expectControllerObjectBodyFiltered("large clutter uses body-aware character-controller filtering", FO4_LAYER_CLUTTER_LARGE);
-    ok &= expectControllerObjectNotBodyFiltered("weapon remains matrix-filtered instead of body-filtered", FO4_LAYER_WEAPON);
+    ok &= expectControllerObjectSuppressed("character controller suppresses ordinary large clutter", FO4_LAYER_CLUTTER_LARGE);
 
     ok &= expectControllerObjectPreserved("character controller keeps static support out of object suppression", FO4_LAYER_STATIC);
     ok &= expectControllerObjectPreserved("character controller keeps animstatic support out of object suppression", FO4_LAYER_ANIMSTATIC);
@@ -113,6 +92,8 @@ int main()
     ok &= expectControllerObjectPreserved("character controller keeps ROCK hand layer out of object suppression", ROCK_LAYER_HAND);
     ok &= expectControllerObjectPreserved("character controller keeps ROCK weapon layer out of object suppression", ROCK_LAYER_WEAPON);
     ok &= expectControllerObjectPreserved("character controller keeps ROCK body layer out of object suppression", ROCK_LAYER_BODY);
+    ok &= expectControllerObjectPreserved("car clutter layer stays outside native clutter suppression", ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER);
+    ok &= expectControllerObjectPreserved("car large-clutter layer stays outside native clutter suppression", ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER);
 
     ok &= expectWorldSurface("static is a dynamic hand world surface", FO4_LAYER_STATIC);
     ok &= expectWorldSurface("animstatic is a dynamic hand world surface", FO4_LAYER_ANIMSTATIC);

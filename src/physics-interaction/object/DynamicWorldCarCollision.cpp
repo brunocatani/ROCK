@@ -300,6 +300,23 @@ namespace rock
         RE::hknpWorld* hknpWorld,
         const std::array<DynamicWorldCarTarget, 2>& desiredTargets)
     {
+        reconcileTargets(bhkWorld, hknpWorld, desiredTargets, false);
+    }
+
+    void DynamicWorldCarCollisionRuntime::synchronizeNearbyTargets(
+        RE::bhkWorld* bhkWorld,
+        RE::hknpWorld* hknpWorld,
+        std::span<const DynamicWorldCarTarget> desiredTargets)
+    {
+        reconcileTargets(bhkWorld, hknpWorld, desiredTargets, true);
+    }
+
+    void DynamicWorldCarCollisionRuntime::reconcileTargets(
+        RE::bhkWorld* bhkWorld,
+        RE::hknpWorld* hknpWorld,
+        std::span<const DynamicWorldCarTarget> desiredTargets,
+        bool restoreMissingTargets)
+    {
         if (!bhkWorld || !hknpWorld) {
             abandon();
             return;
@@ -321,17 +338,23 @@ namespace rock
             }
             const auto retained = slot.handle.get();
             auto* ref = retained.get();
-            if (!ref || !desiredContains(ref) || !slotStillOwnsTags(bhkWorld, hknpWorld, slot)) {
-                (void)restoreSlot(bhkWorld, hknpWorld, slot, ref ? "selection-changed" : "reference-lost");
+            if (!ref || (restoreMissingTargets && !desiredContains(ref)) || !slotStillOwnsTags(bhkWorld, hknpWorld, slot)) {
+                (void)restoreSlot(bhkWorld,
+                    hknpWorld,
+                    slot,
+                    !ref ? "reference-lost" : (restoreMissingTargets ? "left-nearby-set" : "tag-ownership-lost"));
             }
         }
 
-        for (const auto& target : desiredTargets) {
+        for (std::size_t targetIndex = 0; targetIndex < desiredTargets.size(); ++targetIndex) {
+            const auto& target = desiredTargets[targetIndex];
             if (!isExplodableCarReference(target.ref)) {
                 continue;
             }
-            const bool duplicateDesired = &target != &desiredTargets.front() &&
-                desiredTargets.front().ref == target.ref;
+            const bool duplicateDesired = std::any_of(
+                desiredTargets.begin(),
+                desiredTargets.begin() + static_cast<std::ptrdiff_t>(targetIndex),
+                [&](const DynamicWorldCarTarget& previous) { return previous.ref == target.ref; });
             if (duplicateDesired) {
                 continue;
             }

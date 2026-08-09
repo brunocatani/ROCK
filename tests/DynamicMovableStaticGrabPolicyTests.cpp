@@ -390,12 +390,12 @@ int main()
     const auto expectedSuppressedControllerMask =
         collision_layer_policy::nativeCharacterControllerExpectedMask(originalControllerMask, true);
 
-    ok &= expectLayerPair("native controller exposes clutter to body-aware car filtering", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_CLUTTER, true);
+    ok &= expectLayerPair("native controller excludes ordinary clutter at the matrix", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_CLUTTER, false);
     ok &= expectLayerPair("native controller no longer hits weapon objects", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_WEAPON, false);
     ok &= expectLayerPair("native controller no longer hits small debris", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_DEBRIS_SMALL, false);
     ok &= expectLayerPair("native controller no longer hits large debris", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_DEBRIS_LARGE, false);
     ok &= expectLayerPair("native controller no longer hits shell casings", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_SHELLCASING, false);
-    ok &= expectLayerPair("native controller exposes large clutter to body-aware car filtering", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_CLUTTER_LARGE, true);
+    ok &= expectLayerPair("native controller excludes ordinary large clutter at the matrix", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_CLUTTER_LARGE, false);
     ok &= expectLayerPair("native controller preserves static support", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_STATIC, true);
     ok &= expectLayerPair("native controller preserves animstatic support", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_ANIMSTATIC, true);
     ok &= expectLayerPair("native controller preserves terrain support", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_TERRAIN, true);
@@ -430,6 +430,10 @@ int main()
     collision_layer_policy::setPair(dynamicCarMatrix.data(), collision_layer_policy::FO4_LAYER_CLUTTER_LARGE, collision_layer_policy::FO4_LAYER_CLUTTER_LARGE, true);
     collision_layer_policy::setPair(dynamicCarMatrix.data(), collision_layer_policy::FO4_LAYER_CLUTTER_LARGE, collision_layer_policy::FO4_LAYER_ANIMSTATIC, true);
     collision_layer_policy::setPair(dynamicCarMatrix.data(), collision_layer_policy::FO4_LAYER_CLUTTER_LARGE, collision_layer_policy::FO4_LAYER_ITEMPICK, true);
+    collision_layer_policy::setPair(dynamicCarMatrix.data(), collision_layer_policy::FO4_LAYER_CLUTTER, collision_layer_policy::ROCK_LAYER_HAND, true);
+    collision_layer_policy::setPair(dynamicCarMatrix.data(), collision_layer_policy::FO4_LAYER_CLUTTER, collision_layer_policy::ROCK_LAYER_WEAPON, true);
+    collision_layer_policy::setPair(dynamicCarMatrix.data(), collision_layer_policy::FO4_LAYER_CLUTTER, collision_layer_policy::ROCK_LAYER_BODY, true);
+    collision_layer_policy::setPair(dynamicCarMatrix.data(), collision_layer_policy::FO4_LAYER_CLUTTER_LARGE, collision_layer_policy::ROCK_LAYER_BODY, true);
     collision_layer_policy::applyRockDynamicHandProxyLayerPolicy(dynamicCarMatrix.data());
     collision_layer_policy::applyRockDynamicWorldCarLayerPolicies(dynamicCarMatrix.data());
 
@@ -453,6 +457,14 @@ int main()
         collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, true);
     ok &= expectLayerPair("tagged clutter car does not inherit unrelated actor collision", dynamicCarMatrix,
         collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER, collision_layer_policy::FO4_LAYER_BIPED, false);
+    ok &= expectLayerPair("tagged car does not inherit generated hand collision", dynamicCarMatrix,
+        collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER, collision_layer_policy::ROCK_LAYER_HAND, false);
+    ok &= expectLayerPair("tagged car does not inherit generated weapon collision", dynamicCarMatrix,
+        collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER, collision_layer_policy::ROCK_LAYER_WEAPON, false);
+    ok &= expectLayerPair("tagged car does not inherit generated body or leg collision", dynamicCarMatrix,
+        collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER, collision_layer_policy::ROCK_LAYER_BODY, false);
+    ok &= expectLayerPair("tagged large car does not inherit generated body or leg collision", dynamicCarMatrix,
+        collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER, collision_layer_policy::ROCK_LAYER_BODY, false);
 
     collision_layer_policy::applyNativeCharacterControllerObjectSuppressionPolicy(matrix.data(), false, originalControllerMask);
     ok &= expectLayerPair("disabled native controller policy restores clutter", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_CLUTTER, true);

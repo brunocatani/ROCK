@@ -358,6 +358,21 @@ Require-Text 'src/physics-interaction/object/DynamicWorldCarCollision.cpp' `
 Require-Text 'src/physics-interaction/object/DynamicWorldCarCollision.cpp' `
     'DynamicWorldCarCollisionRuntime::restoreSlot[\s\S]*restoreTaggedBodiesForReference\(bhkWorld, hknpWorld, ref, seedBodyId, reason\)' `
     'Car teardown must restore the native layer even if another owner changed non-layer filter bits.'
+Require-Text 'src/physics-interaction/collision/CollisionLayerPolicy.h' `
+    'nativeCharacterControllerObjectSuppressionLayerMask[\s\S]*FO4_LAYER_CLUTTER[\s\S]*FO4_LAYER_CLUTTER_LARGE[\s\S]*originalMask & ~nativeCharacterControllerObjectSuppressionLayerMask' `
+    'Ordinary clutter and large clutter must be rejected at the character-controller matrix.'
+Reject-Text 'src/physics-interaction/collision/CollisionLayerPolicy.h' `
+    'nativeCharacterControllerBodyFilteredLayerMask|isNativeCharacterControllerBodyFilteredLayer' `
+    'Native clutter must not be globally re-enabled for a late per-body character-controller filter.'
+Require-Text 'src/physics-interaction/collision/CollisionLayerPolicy.h' `
+    'buildRockDynamicWorldCarExpectedMask[\s\S]*withoutLayer\(mask, ROCK_LAYER_HAND\)[\s\S]*withoutLayer\(mask, ROCK_LAYER_WEAPON\)[\s\S]*withoutLayer\(mask, ROCK_LAYER_BODY\)' `
+    'Car-only rows must not inherit generated hand, weapon, body, or leg collision.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'kNearbyCarCollisionRadiusGameUnits[\s\S]*isExplodableCar[\s\S]*synchronizeNearbyTargets' `
+    'Verified nearby cars must be proactively tagged before player contact.'
+Require-Text 'src/physics-interaction/core/PhysicsHooks.cpp' `
+    'isDynamicWorldCarLayer\(layer\)[\s\S]*targetIsCar = targetIdentity\.isCar' `
+    'Character-controller contact identity must be evaluated only on dedicated car rows.'
 Require-OrderedText 'src/physics-interaction/collision/CollisionLayerPolicy.h' @(
     'inline void applyRockGeneratedLayerPolicies\(',
     'applyRockDynamicHandProxyLayerPolicy\(matrix\);'

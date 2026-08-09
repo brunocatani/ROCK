@@ -345,27 +345,12 @@ namespace rock::collision_layer_policy
 
     inline constexpr std::uint64_t nativeCharacterControllerObjectSuppressionLayerMask()
     {
-        return layerBitOrZero(FO4_LAYER_WEAPON) |
+        return layerBitOrZero(FO4_LAYER_CLUTTER) |
+               layerBitOrZero(FO4_LAYER_WEAPON) |
                layerBitOrZero(FO4_LAYER_DEBRIS_SMALL) |
                layerBitOrZero(FO4_LAYER_DEBRIS_LARGE) |
-               layerBitOrZero(FO4_LAYER_SHELLCASING);
-    }
-
-    inline constexpr std::uint64_t nativeCharacterControllerBodyFilteredLayerMask()
-    {
-        /*
-         * These pairs must reach the per-body contact filter so cars can keep
-         * native controller collision. Non-car clutter contacts are still
-         * removed before the native listener processes them.
-         */
-        return layerBitOrZero(FO4_LAYER_CLUTTER) |
+               layerBitOrZero(FO4_LAYER_SHELLCASING) |
                layerBitOrZero(FO4_LAYER_CLUTTER_LARGE);
-    }
-
-    inline constexpr std::uint64_t nativeCharacterControllerManagedLayerMask()
-    {
-        return nativeCharacterControllerObjectSuppressionLayerMask() |
-               nativeCharacterControllerBodyFilteredLayerMask();
     }
 
     inline constexpr bool isNativeCharacterControllerObjectSuppressionLayer(std::uint32_t layer)
@@ -373,17 +358,9 @@ namespace rock::collision_layer_policy
         return maskEnablesLayer(nativeCharacterControllerObjectSuppressionLayerMask(), layer);
     }
 
-    inline constexpr bool isNativeCharacterControllerBodyFilteredLayer(std::uint32_t layer)
-    {
-        return maskEnablesLayer(nativeCharacterControllerBodyFilteredLayerMask(), layer);
-    }
-
     inline constexpr std::uint64_t nativeCharacterControllerExpectedMask(std::uint64_t originalMask, bool suppressDynamicObjects)
     {
-        return suppressDynamicObjects ?
-            ((originalMask & ~nativeCharacterControllerObjectSuppressionLayerMask()) |
-                nativeCharacterControllerBodyFilteredLayerMask()) :
-            originalMask;
+        return suppressDynamicObjects ? (originalMask & ~nativeCharacterControllerObjectSuppressionLayerMask()) : originalMask;
     }
 
     inline constexpr std::uint64_t buildRockHandExpectedMask(bool includeWeaponLayer, bool includeStaticWorld = true)
@@ -502,7 +479,7 @@ namespace rock::collision_layer_policy
             return false;
         }
 
-        const auto managedMask = nativeCharacterControllerManagedLayerMask();
+        const auto managedMask = nativeCharacterControllerObjectSuppressionLayerMask();
         for (std::uint32_t other = 0; other < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++other) {
             if (!maskEnablesLayer(managedMask, other)) {
                 continue;
@@ -619,7 +596,17 @@ namespace rock::collision_layer_policy
             return 0;
         }
 
-        std::uint64_t mask = withoutLayer(nativeSourceMask, ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER);
+        /*
+         * The source clutter rows have already been touched symmetrically by
+         * ROCK's generated hand/weapon/body policies. Preserve only vanilla
+         * row semantics here; inheriting those generated bits makes body/leg
+         * colliders push cars and causes the collision watchdog to oscillate.
+         */
+        std::uint64_t mask = nativeSourceMask & allConfiguredLayerBits();
+        mask = withoutLayer(mask, ROCK_LAYER_HAND);
+        mask = withoutLayer(mask, ROCK_LAYER_WEAPON);
+        mask = withoutLayer(mask, ROCK_LAYER_BODY);
+        mask = withoutLayer(mask, ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER);
         mask = withoutLayer(mask, ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER);
         mask = withoutLayer(mask, ROCK_LAYER_DYNAMIC_HAND_PROXY);
 
@@ -665,7 +652,7 @@ namespace rock::collision_layer_policy
             return;
         }
 
-        const auto managedMask = nativeCharacterControllerManagedLayerMask();
+        const auto managedMask = nativeCharacterControllerObjectSuppressionLayerMask();
         const auto expectedMask = nativeCharacterControllerExpectedMask(originalCharacterControllerMask, suppressDynamicObjects);
         for (std::uint32_t other = 0; other < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++other) {
             if (maskEnablesLayer(managedMask, other)) {

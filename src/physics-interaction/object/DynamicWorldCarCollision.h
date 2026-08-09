@@ -5,6 +5,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 
 namespace RE
 {
@@ -23,10 +24,17 @@ namespace rock
     class DynamicWorldCarCollisionRuntime
     {
     public:
+        static constexpr std::size_t kMaxTrackedTargets = 64;
+
         void update(
             RE::bhkWorld* bhkWorld,
             RE::hknpWorld* hknpWorld,
             const std::array<DynamicWorldCarTarget, 2>& desiredTargets);
+
+        void synchronizeNearbyTargets(
+            RE::bhkWorld* bhkWorld,
+            RE::hknpWorld* hknpWorld,
+            std::span<const DynamicWorldCarTarget> desiredTargets);
 
         void restoreReference(
             RE::bhkWorld* bhkWorld,
@@ -38,7 +46,6 @@ namespace rock
         void abandon() noexcept;
 
     private:
-        static constexpr std::size_t kMaxTrackedTargets = 2;
         static constexpr std::size_t kMaxBodiesPerTarget = 64;
 
         struct TaggedBody
@@ -61,6 +68,11 @@ namespace rock
 
         [[nodiscard]] bool slotMatchesReference(const TargetSlot& slot, RE::TESObjectREFR* ref) const;
         [[nodiscard]] bool slotStillOwnsTags(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const TargetSlot& slot) const;
+        void reconcileTargets(
+            RE::bhkWorld* bhkWorld,
+            RE::hknpWorld* hknpWorld,
+            std::span<const DynamicWorldCarTarget> desiredTargets,
+            bool restoreMissingTargets);
         bool tagReference(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const DynamicWorldCarTarget& target, TargetSlot& outSlot);
         std::size_t restoreTaggedBodiesForReference(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, RE::TESObjectREFR* ref, std::uint32_t seedBodyId, const char* reason);
         std::size_t restoreSlot(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, TargetSlot& slot, const char* reason);

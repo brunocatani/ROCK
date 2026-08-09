@@ -1414,7 +1414,7 @@ namespace rock
     {
         const bool requiresFormIdentity =
             collision_layer_policy::isPlayerCharacterControllerSupportLayer(layer) ||
-            collision_layer_policy::isNativeCharacterControllerBodyFilteredLayer(layer);
+            collision_layer_policy::isDynamicWorldCarLayer(layer);
         if (!bhkWorld || !world || !requiresFormIdentity) {
             return {};
         }
