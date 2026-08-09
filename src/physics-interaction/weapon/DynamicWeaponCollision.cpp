@@ -429,6 +429,32 @@ namespace rock
         _rebuildRequestedAtomic.store(false, std::memory_order_release);
         const float bodyMass = dynamic_weapon_collision_policy::sanitizeWeaponMass(weaponIdentity.weightGame);
         _body.setMass(bodyMass);
+        const auto motionAfterMass = havok_runtime::snapshotBody(frame.hknpWorld, _body.getBodyId());
+        if (motionAfterMass.valid && motionAfterMass.motion) {
+            const auto* packedMotion = reinterpret_cast<const std::int16_t*>(
+                reinterpret_cast<const char*>(motionAfterMass.motion) + MOTION_PACKED_INERTIA_OFFSET);
+            ROCK_LOG_INFO(
+                Weapon,
+                "Dynamic weapon motion audit: body={} motion={} packedInertia=[{},{},{}] inverseInertia=[{:.6f},{:.6f},{:.6f}] packedInverseMass={} inverseMass={:.6f} requestedMass={:.3f}",
+                _body.getBodyId().value,
+                motionAfterMass.motionIndex,
+                packedMotion[0],
+                packedMotion[1],
+                packedMotion[2],
+                unpackBfloat16(packedMotion[0]),
+                unpackBfloat16(packedMotion[1]),
+                unpackBfloat16(packedMotion[2]),
+                packedMotion[3],
+                unpackBfloat16(packedMotion[3]),
+                bodyMass);
+        } else {
+            ROCK_LOG_WARN(
+                Weapon,
+                "Dynamic weapon motion audit unavailable: body={} readable={} motion={}",
+                _body.getBodyId().value,
+                motionAfterMass.valid,
+                motionAfterMass.motion != nullptr);
+        }
         if (!placeGeneratedKeyframedBodyImmediately(_body, initialContactTarget)) {
             retireProxyLocked(frame.bhkWorld);
             return false;

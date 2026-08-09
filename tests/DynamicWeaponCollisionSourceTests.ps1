@@ -108,6 +108,9 @@ Require-Pattern $runtimePolicy `
 Require-Pattern $runtimeSource `
     'getEquippedWeaponClassification\(\)[\s\S]*sanitizeWeaponMass\(weaponIdentity\.weightGame\)[\s\S]*_body\.setMass\(bodyMass\)' `
     'The generated contact box must use sanitized equipped-weapon mass rather than the wrapper default.'
+Require-Pattern $runtimeSource `
+    '_body\.setMass\(bodyMass\)[\s\S]*snapshotBody\(frame\.hknpWorld,\s*_body\.getBodyId\(\)\)[\s\S]*MOTION_PACKED_INERTIA_OFFSET[\s\S]*Dynamic weapon motion audit:[\s\S]*packedInertia=[\s\S]*inverseInertia=[\s\S]*packedInverseMass=[\s\S]*requestedMass=' `
+    'The runtime diagnostic must expose the generated contact body inertia and inverse mass after authored mass assignment.'
 
 # One-way publication is the core anti-feedback invariant: all native/ROCK
 # weapon writers publish collision-free intent, then one bypass publication
