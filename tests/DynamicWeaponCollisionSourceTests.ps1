@@ -108,9 +108,15 @@ Require-Pattern $runtimePolicy `
 Require-Pattern $runtimeSource `
     'getEquippedWeaponClassification\(\)[\s\S]*sanitizeWeaponMass\(weaponIdentity\.weightGame\)[\s\S]*_body\.setMass\(bodyMass\)' `
     'The generated contact box must use sanitized equipped-weapon mass rather than the wrapper default.'
+Require-Pattern $runtimePolicy `
+    'makeBoxMassProperties\([\s\S]*massOverThree[\s\S]*inertiaX[\s\S]*inertiaY[\s\S]*inertiaZ[\s\S]*result\.inverseInertia[\s\S]*result\.inverseMass' `
+    'The generated contact box must derive local principal inertia and inverse mass from its physical Havok dimensions.'
 Require-Pattern $runtimeSource `
-    '_body\.setMass\(bodyMass\)[\s\S]*snapshotBody\(frame\.hknpWorld,\s*_body\.getBodyId\(\)\)[\s\S]*MOTION_PACKED_INERTIA_OFFSET[\s\S]*Dynamic weapon motion audit:[\s\S]*packedInertia=[\s\S]*inverseInertia=[\s\S]*packedInverseMass=[\s\S]*requestedMass=' `
-    'The runtime diagnostic must expose the generated contact body inertia and inverse mass after authored mass assignment.'
+    '_body\.setMass\(bodyMass\)[\s\S]*applyWeaponBoxMassProperties\([\s\S]*frame\.hknpWorld[\s\S]*_body\.getBodyId\(\)[\s\S]*geometry[\s\S]*scale[\s\S]*padding[\s\S]*bodyMass' `
+    'The generated contact box must replace the wrapper default tensor after assigning authored weapon mass.'
+Require-Pattern $runtimeSource `
+    'applyWeaponBoxMassProperties\([\s\S]*makeBoxMassProperties\([\s\S]*normalizeInverseInertiaAxesForGrab\([\s\S]*snapshotBody\(world,\s*bodyId\)[\s\S]*MOTION_PACKED_INERTIA_OFFSET[\s\S]*rebuildMotionMassProperties\(world,\s*initialMotion\.motionIndex\)[\s\S]*snapshotBody\(world,\s*bodyId\)[\s\S]*rebuiltPacked\[0\]\s*=\s*desiredPackedInertia\[0\][\s\S]*rebuiltPacked\[3\]\s*=\s*desiredPackedMass[\s\S]*Dynamic weapon box mass properties:' `
+    'The runtime must rebuild and then reapply the box tensor and authored mass through the verified hknp motion path.'
 
 # One-way publication is the core anti-feedback invariant: all native/ROCK
 # weapon writers publish collision-free intent, then one bypass publication

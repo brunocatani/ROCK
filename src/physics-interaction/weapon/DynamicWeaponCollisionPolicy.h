@@ -30,6 +30,14 @@ namespace rock::dynamic_weapon_collision_policy
         bool valid{ false };
     };
 
+    struct BoxMassProperties
+    {
+        RE::NiPoint3 halfExtentsHavok{};
+        RE::NiPoint3 inverseInertia{};
+        float inverseMass{ 0.0f };
+        bool valid{ false };
+    };
+
     struct AttachedHandSelection
     {
         bool left{ false };
@@ -103,6 +111,80 @@ namespace rock::dynamic_weapon_collision_policy
         return result;
     }
 
+    inline RE::NiPoint3 makeBoxHalfExtentsHavok(
+        const BoxGeometry& geometry,
+        float weaponScale,
+        float paddingGameUnits,
+        float gameToHavokScale)
+    {
+        const float scale = std::abs(weaponScale);
+        const float padding = (std::max)(0.0f, paddingGameUnits);
+        return RE::NiPoint3{
+            (geometry.halfExtentsWeaponLocal.x * scale + padding) * gameToHavokScale,
+            (geometry.halfExtentsWeaponLocal.y * scale + padding) * gameToHavokScale,
+            (geometry.halfExtentsWeaponLocal.z * scale + padding) * gameToHavokScale,
+        };
+    }
+
+    inline BoxMassProperties makeBoxMassProperties(
+        const BoxGeometry& geometry,
+        float weaponScale,
+        float paddingGameUnits,
+        float gameToHavokScale,
+        float mass)
+    {
+        BoxMassProperties result{};
+        if (!geometry.valid || !std::isfinite(weaponScale) || std::abs(weaponScale) <= 0.0001f ||
+            !std::isfinite(paddingGameUnits) || !std::isfinite(gameToHavokScale) || gameToHavokScale <= 0.0f ||
+            !std::isfinite(mass) || mass <= 0.0f) {
+            return result;
+        }
+
+        result.halfExtentsHavok = makeBoxHalfExtentsHavok(
+            geometry,
+            weaponScale,
+            paddingGameUnits,
+            gameToHavokScale);
+        if (!isFinitePoint(result.halfExtentsHavok) ||
+            result.halfExtentsHavok.x <= 0.0f ||
+            result.halfExtentsHavok.y <= 0.0f ||
+            result.halfExtentsHavok.z <= 0.0f) {
+            return result;
+        }
+
+        // A solid box with half-extents h has principal moments
+        // I_x = m/3 * (h_y^2 + h_z^2), and cyclic permutations.
+        // hknp stores the inverse principal moments in the motion's local axes.
+        const float massOverThree = mass / 3.0f;
+        const float inertiaX = massOverThree *
+                               (result.halfExtentsHavok.y * result.halfExtentsHavok.y +
+                                   result.halfExtentsHavok.z * result.halfExtentsHavok.z);
+        const float inertiaY = massOverThree *
+                               (result.halfExtentsHavok.x * result.halfExtentsHavok.x +
+                                   result.halfExtentsHavok.z * result.halfExtentsHavok.z);
+        const float inertiaZ = massOverThree *
+                               (result.halfExtentsHavok.x * result.halfExtentsHavok.x +
+                                   result.halfExtentsHavok.y * result.halfExtentsHavok.y);
+        if (!std::isfinite(inertiaX) || !std::isfinite(inertiaY) || !std::isfinite(inertiaZ) ||
+            inertiaX <= 0.0f || inertiaY <= 0.0f || inertiaZ <= 0.0f) {
+            return result;
+        }
+
+        result.inverseInertia = RE::NiPoint3{
+            1.0f / inertiaX,
+            1.0f / inertiaY,
+            1.0f / inertiaZ,
+        };
+        result.inverseMass = 1.0f / mass;
+        result.valid = isFinitePoint(result.inverseInertia) &&
+                       result.inverseInertia.x > 0.0f &&
+                       result.inverseInertia.y > 0.0f &&
+                       result.inverseInertia.z > 0.0f &&
+                       std::isfinite(result.inverseMass) &&
+                       result.inverseMass > 0.0f;
+        return result;
+    }
+
     inline std::array<RE::NiPoint3, 8> makeBoxCornerPointsHavok(
         const BoxGeometry& geometry,
         float weaponScale,
@@ -110,13 +192,11 @@ namespace rock::dynamic_weapon_collision_policy
         float gameToHavokScale)
     {
         std::array<RE::NiPoint3, 8> result{};
-        const float scale = std::abs(weaponScale);
-        const float padding = (std::max)(0.0f, paddingGameUnits);
-        const RE::NiPoint3 half{
-            (geometry.halfExtentsWeaponLocal.x * scale + padding) * gameToHavokScale,
-            (geometry.halfExtentsWeaponLocal.y * scale + padding) * gameToHavokScale,
-            (geometry.halfExtentsWeaponLocal.z * scale + padding) * gameToHavokScale,
-        };
+        const RE::NiPoint3 half = makeBoxHalfExtentsHavok(
+            geometry,
+            weaponScale,
+            paddingGameUnits,
+            gameToHavokScale);
 
         std::size_t index = 0;
         for (int x = -1; x <= 1; x += 2) {

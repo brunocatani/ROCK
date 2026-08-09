@@ -5,6 +5,7 @@
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/core/PhysicsFrameContext.h"
 #include "physics-interaction/grab/GrabAuthorityProxy.h"
+#include "physics-interaction/grab/GrabInertiaPolicy.h"
 #include "physics-interaction/grab/GrabMotionController.h"
 #include "physics-interaction/native/HavokConvexShapeBuilder.h"
 #include "physics-interaction/native/HavokMaterialRegistry.h"
@@ -85,6 +86,128 @@ namespace rock
                         g_rockConfig.rockGrabLooseWeaponSharedConstraintAngularForceMultiplier :
                         1.0f),
             };
+        }
+
+        bool applyWeaponBoxMassProperties(
+            RE::hknpWorld* world,
+            RE::hknpBodyId bodyId,
+            const dynamic_weapon_collision_policy::BoxGeometry& geometry,
+            const float weaponScale,
+            const float paddingGameUnits,
+            const float bodyMass)
+        {
+            const auto boxMassProperties = dynamic_weapon_collision_policy::makeBoxMassProperties(
+                geometry,
+                weaponScale,
+                paddingGameUnits,
+                physics_scale::gameToHavok(),
+                bodyMass);
+            if (!boxMassProperties.valid) {
+                ROCK_LOG_ERROR(
+                    Weapon,
+                    "Dynamic weapon box mass properties invalid: body={} scale={:.3f} padding={:.3f} mass={:.3f}",
+                    bodyId.value,
+                    weaponScale,
+                    paddingGameUnits,
+                    bodyMass);
+                return false;
+            }
+
+            const auto normalizedInertia = grab_inertia_policy::normalizeInverseInertiaAxesForGrab(
+                boxMassProperties.inverseInertia.x,
+                boxMassProperties.inverseInertia.y,
+                boxMassProperties.inverseInertia.z,
+                g_rockConfig.rockGrabMaxInertiaRatio,
+                g_rockConfig.rockGrabMinInertia);
+            if (!normalizedInertia.valid) {
+                ROCK_LOG_ERROR(Weapon, "Dynamic weapon box inertia normalization failed: body={}", bodyId.value);
+                return false;
+            }
+
+            const auto initialMotion = havok_runtime::snapshotBody(world, bodyId);
+            if (!initialMotion.valid || !initialMotion.motion) {
+                ROCK_LOG_ERROR(
+                    Weapon,
+                    "Dynamic weapon box motion unavailable for mass properties: body={} readable={} motion={}",
+                    bodyId.value,
+                    initialMotion.valid,
+                    initialMotion.motion != nullptr);
+                return false;
+            }
+
+            auto* initialPacked = reinterpret_cast<std::int16_t*>(
+                reinterpret_cast<char*>(initialMotion.motion) + MOTION_PACKED_INERTIA_OFFSET);
+            const std::int16_t desiredPackedInertia[3] = {
+                repackBfloat16(normalizedInertia.normalized[0]),
+                repackBfloat16(normalizedInertia.normalized[1]),
+                repackBfloat16(normalizedInertia.normalized[2]),
+            };
+            const std::int16_t desiredPackedMass = initialPacked[3];
+            if (desiredPackedInertia[0] <= 0 || desiredPackedInertia[1] <= 0 || desiredPackedInertia[2] <= 0 ||
+                desiredPackedMass <= 0) {
+                ROCK_LOG_ERROR(
+                    Weapon,
+                    "Dynamic weapon box packed mass properties invalid: body={} inertia=[{},{},{}] inverseMass={}",
+                    bodyId.value,
+                    desiredPackedInertia[0],
+                    desiredPackedInertia[1],
+                    desiredPackedInertia[2],
+                    desiredPackedMass);
+                return false;
+            }
+
+            initialPacked[0] = desiredPackedInertia[0];
+            initialPacked[1] = desiredPackedInertia[1];
+            initialPacked[2] = desiredPackedInertia[2];
+            if (!havok_runtime::rebuildMotionMassProperties(world, initialMotion.motionIndex)) {
+                ROCK_LOG_ERROR(
+                    Weapon,
+                    "Dynamic weapon box mass-properties rebuild failed: body={} motion={}",
+                    bodyId.value,
+                    initialMotion.motionIndex);
+                return false;
+            }
+
+            const auto rebuiltMotion = havok_runtime::snapshotBody(world, bodyId);
+            if (!rebuiltMotion.valid || !rebuiltMotion.motion || rebuiltMotion.motionIndex != initialMotion.motionIndex) {
+                ROCK_LOG_ERROR(
+                    Weapon,
+                    "Dynamic weapon box motion changed during mass-properties rebuild: body={} before={} after={} readable={}",
+                    bodyId.value,
+                    initialMotion.motionIndex,
+                    rebuiltMotion.motionIndex,
+                    rebuiltMotion.valid && rebuiltMotion.motion);
+                return false;
+            }
+
+            auto* rebuiltPacked = reinterpret_cast<std::int16_t*>(
+                reinterpret_cast<char*>(rebuiltMotion.motion) + MOTION_PACKED_INERTIA_OFFSET);
+            rebuiltPacked[0] = desiredPackedInertia[0];
+            rebuiltPacked[1] = desiredPackedInertia[1];
+            rebuiltPacked[2] = desiredPackedInertia[2];
+            rebuiltPacked[3] = desiredPackedMass;
+
+            ROCK_LOG_INFO(
+                Weapon,
+                "Dynamic weapon box mass properties: body={} motion={} halfHavok=({:.4f},{:.4f},{:.4f}) physicalInverseInertia=({:.6f},{:.6f},{:.6f}) appliedInverseInertia=({:.6f},{:.6f},{:.6f}) packed=[{},{},{}] inverseMass={:.6f} ratio={:.2f}->{:.2f}",
+                bodyId.value,
+                rebuiltMotion.motionIndex,
+                boxMassProperties.halfExtentsHavok.x,
+                boxMassProperties.halfExtentsHavok.y,
+                boxMassProperties.halfExtentsHavok.z,
+                boxMassProperties.inverseInertia.x,
+                boxMassProperties.inverseInertia.y,
+                boxMassProperties.inverseInertia.z,
+                unpackBfloat16(rebuiltPacked[0]),
+                unpackBfloat16(rebuiltPacked[1]),
+                unpackBfloat16(rebuiltPacked[2]),
+                rebuiltPacked[0],
+                rebuiltPacked[1],
+                rebuiltPacked[2],
+                unpackBfloat16(rebuiltPacked[3]),
+                normalizedInertia.originalRatio,
+                normalizedInertia.normalizedRatio);
+            return true;
         }
     }
 
@@ -429,31 +552,15 @@ namespace rock
         _rebuildRequestedAtomic.store(false, std::memory_order_release);
         const float bodyMass = dynamic_weapon_collision_policy::sanitizeWeaponMass(weaponIdentity.weightGame);
         _body.setMass(bodyMass);
-        const auto motionAfterMass = havok_runtime::snapshotBody(frame.hknpWorld, _body.getBodyId());
-        if (motionAfterMass.valid && motionAfterMass.motion) {
-            const auto* packedMotion = reinterpret_cast<const std::int16_t*>(
-                reinterpret_cast<const char*>(motionAfterMass.motion) + MOTION_PACKED_INERTIA_OFFSET);
-            ROCK_LOG_INFO(
-                Weapon,
-                "Dynamic weapon motion audit: body={} motion={} packedInertia=[{},{},{}] inverseInertia=[{:.6f},{:.6f},{:.6f}] packedInverseMass={} inverseMass={:.6f} requestedMass={:.3f}",
-                _body.getBodyId().value,
-                motionAfterMass.motionIndex,
-                packedMotion[0],
-                packedMotion[1],
-                packedMotion[2],
-                unpackBfloat16(packedMotion[0]),
-                unpackBfloat16(packedMotion[1]),
-                unpackBfloat16(packedMotion[2]),
-                packedMotion[3],
-                unpackBfloat16(packedMotion[3]),
-                bodyMass);
-        } else {
-            ROCK_LOG_WARN(
-                Weapon,
-                "Dynamic weapon motion audit unavailable: body={} readable={} motion={}",
-                _body.getBodyId().value,
-                motionAfterMass.valid,
-                motionAfterMass.motion != nullptr);
+        if (!applyWeaponBoxMassProperties(
+                frame.hknpWorld,
+                _body.getBodyId(),
+                geometry,
+                scale,
+                padding,
+                bodyMass)) {
+            retireProxyLocked(frame.bhkWorld);
+            return false;
         }
         if (!placeGeneratedKeyframedBodyImmediately(_body, initialContactTarget)) {
             retireProxyLocked(frame.bhkWorld);

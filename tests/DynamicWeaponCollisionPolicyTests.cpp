@@ -75,6 +75,17 @@ int main()
     }
     ok &= expectPoint("scaled padded Havok half extents", cornerMax, RE::NiPoint3{ 4.1f, 0.7f, 0.5f });
 
+    const auto boxMassProperties = makeBoxMassProperties(geometry, 2.0f, 1.0f, 0.1f, 10.0f);
+    ok &= boxMassProperties.valid;
+    ok &= expectPoint("box mass half extents", boxMassProperties.halfExtentsHavok, cornerMax);
+    ok &= expectPoint(
+        "box inverse principal inertia",
+        boxMassProperties.inverseInertia,
+        RE::NiPoint3{ 0.405405f, 0.017585f, 0.017341f });
+    ok &= expectNear("box inverse mass", boxMassProperties.inverseMass, 0.1f);
+    ok &= !makeBoxMassProperties(geometry, 2.0f, 1.0f, 0.1f, 0.0f).valid;
+    ok &= !makeBoxMassProperties(geometry, 0.0f, 1.0f, 0.1f, 10.0f).valid;
+
     ok &= expectNear("invalid weapon mass falls back", sanitizeWeaponMass((std::numeric_limits<float>::quiet_NaN)()), 2.0f);
     ok &= expectNear("zero weapon mass falls back", sanitizeWeaponMass(0.0f), 2.0f);
     ok &= expectNear("tiny weapon mass stays physical", sanitizeWeaponMass(0.05f), 0.1f);
