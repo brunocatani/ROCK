@@ -33,11 +33,11 @@ namespace rock
      * The bridge re-attaches that orphaned model under the world root, glues
      * it to the equipping hand's wand transform and blends it toward the pose
      * the weapon will actually stabilize at. Once the exact native instance
-     * is stable, the model is parked off-scene as a bounded standby. If a late
-     * stale WeaponDetach event removes the new native graph, the coordinator
-     * can re-present this model in the same ROCK frame while the exact native
-     * attach is repaired. Every exit restores any native child cull and
-     * deterministically releases both scene references and pose authority.
+     * is stable, model ownership is released terminally. Native attach repair
+     * remains available after handoff, but it can never re-present the loose
+     * model during a later sheath, unequip, drop, throw, or animation. Every
+     * exit restores any native child cull and deterministically releases both
+     * scene references and pose authority.
      *
      * Blend target. begin() re-runs the shared loose-grip resolver against
      * the filewatch-published hFRIK cache. Both hands therefore converge
@@ -99,9 +99,9 @@ namespace rock
         bool begin(const BeginInput& input);
 
         // Per-frame pose glue and exact-native-instance presentation handoff.
-        // The coordinator may keep the detached model as a hidden standby and
-        // re-present it in the same frame that a late native detach is seen,
-        // but only inside the bridge's one absolute presentation lease.
+        // presentModel=false is a terminal visual handoff: it releases the
+        // loose model immediately while allowing the independent temporary
+        // hand-pose payload to survive until its equipped owner acquires it.
         void update(const UpdateInput& input);
 
         // Advances only the hard presentation lease while the coordinator is
@@ -110,8 +110,8 @@ namespace rock
         // or native-visibility repair.
         void advancePresentationLease(float deltaSeconds);
 
-        // Ends the bounded late-detach watchdog and releases the hidden model.
-        void releaseStandbyModel(const char* reason);
+        // Ends the bridge and releases any remaining visual/pose ownership.
+        void release(const char* reason);
 
         // Detach from the (still valid) scene graph and release.
         void shutdown();
@@ -121,7 +121,7 @@ namespace rock
         void abandonSceneGraph();
 
         [[nodiscard]] bool isActive() const noexcept { return _active; }
-        [[nodiscard]] bool hasStandbyModel() const noexcept { return _model != nullptr; }
+        [[nodiscard]] bool hasVisualModel() const noexcept { return _model != nullptr; }
         [[nodiscard]] bool isModelPresented() const noexcept { return _modelPresented; }
         [[nodiscard]] bool ownsNativeInstanceCull(const RE::NiAVObject* node) const noexcept;
         [[nodiscard]] bool isHandPoseHandoffActive() const noexcept { return _handPoseHandoffActive; }
@@ -142,7 +142,6 @@ namespace rock
             const equipped_weapon_visual_state::Snapshot* nativeVisual,
             bool bridgePresented);
         void restoreNativeInstanceCull();
-        void hideModelForNativeStandby(const char* reason);
         void clearModel(const char* reason, bool detachFromParent);
         void clearHandPoseHandoff(const char* reason, bool logCompletion, bool discardPayload);
         void clear(const char* reason, bool detachFromParent, bool restoreNativeCull = true);

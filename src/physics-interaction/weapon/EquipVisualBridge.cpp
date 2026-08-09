@@ -360,7 +360,7 @@ namespace rock
                 _presentationLeaseSeconds);
         } else {
             ROCK_LOG_INFO(Weapon,
-                "EquipVisualBridge standby lease expired formID={:08X} hand={} lease={:.3f}s",
+                "EquipVisualBridge lease expired after visual handoff formID={:08X} hand={} lease={:.3f}s",
                 _weaponFormID,
                 _isLeftHand ? "left" : "right",
                 _presentationLeaseSeconds);
@@ -393,10 +393,13 @@ namespace rock
         synchronizeNativeInstanceCull(input.nativeVisual, _modelPresented);
 
         if (!_modelPresented) {
-            hideModelForNativeStandby("native-stable");
+            // A false presentation decision is terminal for the loose model.
+            // Keeping it as a hidden standby allowed later native graph loss
+            // during sheath/drop/throw to resurrect an equip-only phantom.
+            clearModel("presentation-ended", _parent != nullptr);
             if (_handPoseHandoffActive) {
                 if (!publishHandPoseHandoff()) {
-                    clearHandPoseHandoff("native-standby-republish-failed", true, false);
+                    clearHandPoseHandoff("native-handoff-republish-failed", true, false);
                 } else if (_hasFiringHandWeaponLocal &&
                            input.nativeVisual &&
                            input.nativeVisual->weaponRoot &&
@@ -410,7 +413,7 @@ namespace rock
                             handFromBool(_isLeftHand),
                             handWorld,
                             kHandPoseHandoffPriority)) {
-                        clearHandPoseHandoff("native-standby-hand-transform-failed", true, false);
+                        clearHandPoseHandoff("native-handoff-hand-transform-failed", true, false);
                     }
                 }
             }
@@ -550,28 +553,7 @@ namespace rock
         _culledNativeInstanceWasVisible = false;
     }
 
-    void EquipVisualBridge::hideModelForNativeStandby(const char* reason)
-    {
-        auto* model = _model.get();
-        if (!model || !_parent) {
-            return;
-        }
-        if (model->parent != _parent) {
-            clear(reason ? reason : "standby-parent-changed", false);
-            return;
-        }
-
-        RE::NiPointer<RE::NiAVObject> detached;
-        _parent->DetachChild(model, detached);
-        _parent = nullptr;
-        ROCK_LOG_DEBUG(Weapon,
-            "EquipVisualBridge model parked as recovery standby reason={} formID={:08X} elapsed={:.3f}s",
-            reason ? reason : "unknown",
-            _weaponFormID,
-            _elapsedSeconds);
-    }
-
-    void EquipVisualBridge::releaseStandbyModel(const char* reason)
+    void EquipVisualBridge::release(const char* reason)
     {
         if (!_active) {
             return;

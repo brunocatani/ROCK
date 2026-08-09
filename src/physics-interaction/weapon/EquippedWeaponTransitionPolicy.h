@@ -236,10 +236,13 @@ namespace rock::equipped_weapon_transition_policy
             }
 
             if (state.stableFrames >= kStableFramesBeforeNativeHandoff) {
-                state.nativeHandoffObserved = true;
-                decision.handoffBridgeToNative = input.bridgeModelAvailable;
+                if (!state.nativeHandoffObserved) {
+                    state.nativeHandoffObserved = true;
+                    decision.handoffBridgeToNative = input.bridgeModelAvailable;
+                }
             } else {
-                decision.presentBridgeModel = input.bridgeModelAvailable;
+                decision.presentBridgeModel =
+                    input.bridgeModelAvailable && !state.nativeHandoffObserved;
             }
             return decision;
         }
@@ -251,7 +254,10 @@ namespace rock::equipped_weapon_transition_policy
         if (state.attachSettleFramesRemaining > 0) {
             --state.attachSettleFramesRemaining;
         }
-        decision.presentBridgeModel = input.bridgeModelAvailable;
+        // Native recovery remains active after the equip handoff, but the
+        // loose-model bridge is equip-only and may never be resurrected.
+        decision.presentBridgeModel =
+            input.bridgeModelAvailable && !state.nativeHandoffObserved;
 
         if (!input.mutationAllowed || state.missingFrames < kMissingFramesBeforeRepair ||
             state.attachSettleFramesRemaining > 0) {

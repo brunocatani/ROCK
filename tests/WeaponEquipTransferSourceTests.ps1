@@ -121,8 +121,16 @@ Require-Text 'src/physics-interaction/weapon/NativeEquippedWeaponAttach.cpp' `
     'Native attach recovery must validate FO4VR 1.2.72, exact current identity, verified bytes, and the wrapper void ABI.'
 
 Require-Text 'src/physics-interaction/weapon/EquipVisualBridge.cpp' `
-    'hideModelForNativeStandby[\s\S]*synchronizeNativeInstanceCull[\s\S]*restoreNativeInstanceCull' `
-    'The visual bridge must retain a hidden standby and restore every exact-child cull.'
+    'if \(!_modelPresented\)[\s\S]{0,500}clearModel\("presentation-ended", _parent != nullptr\)' `
+    'Ending equip presentation must release the loose visual model terminally.'
+
+Reject-Text 'src/physics-interaction/weapon/EquipVisualBridge.cpp' `
+    'hideModelForNativeStandby|releaseStandbyModel|recovery standby|native-standby' `
+    'The equip-only phantom must never remain as a hidden standby for later drop, throw, sheath, or unequip transitions.'
+
+Require-Text 'src/physics-interaction/weapon/EquippedWeaponTransitionPolicy.h' `
+    'state\.nativeHandoffObserved[\s\S]{0,700}decision\.presentBridgeModel\s*=\s*input\.bridgeModelAvailable\s*&&\s*!state\.nativeHandoffObserved' `
+    'Native repair may continue after equip handoff, but policy must prohibit phantom re-presentation.'
 
 Require-Text 'src/physics-interaction/weapon/EquipVisualBridgePolicy.h' `
     'kMaximumPresentationLeaseSeconds\s*=\s*1\.0f[\s\S]{0,700}effectivePresentationLeaseSeconds[\s\S]{0,700}presentationLeaseExpired' `
@@ -141,8 +149,8 @@ Require-Text 'src/physics-interaction/weapon/EquippedWeaponTransitionCoordinator
     'Menu, compatibility, and visual-authority mutation blocks must still advance the hard bridge presentation lease.'
 
 Require-Text 'src/physics-interaction/weapon/EquipVisualBridge.cpp' `
-    'native-standby-republish-failed[\s\S]{0,700}applyExternalHandWorldTransform' `
-    'The standby bridge must keep the authored finger and hand-transform payload alive until the equipped owner acquires it or the absolute lease expires.'
+    'clearModel\("presentation-ended"[\s\S]{0,700}native-handoff-republish-failed[\s\S]{0,700}applyExternalHandWorldTransform' `
+    'Visual handoff must release the phantom while keeping the authored finger and hand-transform payload alive until the equipped owner acquires it or the absolute lease expires.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'const bool nativeWeaponAnimationActive\s*=[\s\S]*?currentNativeAnimationAuthorityFlagsV1\(\)[\s\S]*?GUN_STATE::kReloading[\s\S]*?\.nativeWeaponAnimationActive' `
@@ -150,7 +158,7 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
 
 Require-Text 'src/physics-interaction/weapon/EquippedWeaponTransitionCoordinator.cpp' `
     'nativeWeaponAnimationActive[\s\S]{0,700}completeHandPoseHandoff[\s\S]{0,500}presentModel\s*=\s*false' `
-    'The transition coordinator must park the phantom and release its hand pose during native weapon animation authority.'
+    'The transition coordinator must retire the phantom and release its hand pose during native weapon animation authority.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'const auto previousNativeInstanceNode\s*=[\s\S]{0,400}equipped_weapon_visual_state::observe[\s\S]*\.previousNativeInstanceNode\s*=[\s\S]{0,180}previousNativeInstanceNode' `

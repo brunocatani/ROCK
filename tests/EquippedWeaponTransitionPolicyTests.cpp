@@ -105,11 +105,11 @@ int main()
         .nativeWeaponState = 3,
         .bridgeModelAvailable = true,
     });
-    ok &= expect("a late native detach must immediately restore the standby bridge",
-        lateDetachOne.presentBridgeModel &&
+    ok &= expect("a late native detach must not resurrect the completed equip bridge",
+        !lateDetachOne.presentBridgeModel &&
             lateDetachOne.repair == RepairAction::None);
-    ok &= expect("two missing frames must request one exact native attach",
-        lateDetachTwo.presentBridgeModel &&
+    ok &= expect("two missing frames must repair native attachment without a phantom",
+        !lateDetachTwo.presentBridgeModel &&
             lateDetachTwo.repair == RepairAction::QueueNativeAttach &&
             stableState.attachAttempts == 1 &&
             stableState.attachSettleFramesRemaining == kAttachSettleFrames);

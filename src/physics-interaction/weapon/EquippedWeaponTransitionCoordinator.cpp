@@ -107,7 +107,7 @@ namespace rock
             _bridge.update(EquipVisualBridge::UpdateInput{
                 .deltaSeconds = 0.0f,
                 .advanceLifetime = false,
-                .presentModel = _bridge.hasStandbyModel(),
+                .presentModel = _bridge.hasVisualModel(),
                 .nativeVisual = &immediateVisual,
             });
         }
@@ -194,7 +194,7 @@ namespace rock
             } else if (!_waitingForExpectedIdentity && current.valid() &&
                 !currentMatchesIntentionalShoulderSheath) {
                 if (_bridge.isActive() && _boundIdentity.valid() && current != _boundIdentity) {
-                    _bridge.releaseStandbyModel("equipped-weapon-changed");
+                    _bridge.release("equipped-weapon-changed");
                 }
                 const auto previousNativeInstanceNode =
                     _menuEntryCaptured && previous == _menuEntryIdentity ?
@@ -278,7 +278,7 @@ namespace rock
             _bridge.update(EquipVisualBridge::UpdateInput{
                 .deltaSeconds = deltaSeconds,
                 .advanceLifetime = true,
-                .presentModel = _bridge.hasStandbyModel(),
+                .presentModel = _bridge.hasVisualModel(),
                 .nativeVisual = nullptr,
             });
             if (_activeSeconds >= kTransitionWatchdogSeconds) {
@@ -355,7 +355,7 @@ namespace rock
                 .identityMatches = true,
                 .weaponExactlyDrawn = weaponExactlyDrawn,
                 .nativeWeaponState = input.nativeWeaponState,
-                .bridgeModelAvailable = _bridge.hasStandbyModel(),
+                .bridgeModelAvailable = _bridge.hasVisualModel(),
                 .nativeInstanceFound = exactNativeInstanceIsCurrent,
                 .nativeAncestorPathVisible = visual.ancestorPathVisible,
                 .nativeInstanceLocallyVisible = visual.instanceLocallyVisible,
@@ -680,7 +680,7 @@ namespace rock
             reason,
             _drawExhaustionLogged || _repairExhaustionLogged);
         if (releaseSceneGraph) {
-            _bridge.releaseStandbyModel(reason);
+            _bridge.release(reason);
         } else {
             _bridge.abandonSceneGraph();
         }
