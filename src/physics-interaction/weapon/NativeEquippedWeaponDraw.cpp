@@ -1,6 +1,7 @@
 #include "physics-interaction/weapon/NativeEquippedWeaponDraw.h"
 
 #include "physics-interaction/weapon/HeldWeaponEquipStatePolicy.h"
+#include "physics-interaction/weapon/WeaponTransitionAnimationAcceleration.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 #include "RE/Bethesda/Actor.h"
@@ -39,6 +40,24 @@ namespace rock::native_equipped_weapon_draw
             current.result = SubmitResult::Submitted;
             return current;
         }
+
+        void requestAnimationAcceleration(
+            RE::PlayerCharacter* player,
+            const Identity& identity,
+            const weapon_transition_animation_acceleration_policy::Direction
+                direction) noexcept
+        {
+            (void)weapon_transition_animation_acceleration::request(
+                weapon_transition_animation_acceleration::RequestInput{
+                    .player = player,
+                    .identity = {
+                        .formID = identity.formID,
+                        .instanceData = identity.instanceData,
+                        .equipIndex = identity.equipIndex,
+                    },
+                    .direction = direction,
+                });
+        }
     }
 
     bool captureCurrentIdentity(Identity& outIdentity) noexcept
@@ -75,10 +94,23 @@ namespace rock::native_equipped_weapon_draw
             return result;
         }
         if (!held_weapon_equip_state_policy::shouldSubmitDrawFollowup(result.stateBefore)) {
+            if (result.stateBefore == static_cast<std::uint32_t>(
+                    held_weapon_equip_state_policy::NativeWeaponState::
+                        Drawing)) {
+                requestAnimationAcceleration(
+                    current.player,
+                    expected,
+                    weapon_transition_animation_acceleration_policy::
+                        Direction::Draw);
+            }
             result.result = SubmitResult::AlreadyDrawingOrDrawn;
             return result;
         }
 
+        requestAnimationAcceleration(
+            current.player,
+            expected,
+            weapon_transition_animation_acceleration_policy::Direction::Draw);
         current.player->DrawWeaponMagicHands(true);
         result.stateAfter = f4vr::getNativeWeaponState(current.player);
         result.result = SubmitResult::Submitted;
@@ -101,10 +133,24 @@ namespace rock::native_equipped_weapon_draw
             return result;
         }
         if (!held_weapon_equip_state_policy::shouldSubmitSheatheFollowup(result.stateBefore)) {
+            if (result.stateBefore == static_cast<std::uint32_t>(
+                    held_weapon_equip_state_policy::NativeWeaponState::
+                        Sheathing)) {
+                requestAnimationAcceleration(
+                    current.player,
+                    expected,
+                    weapon_transition_animation_acceleration_policy::
+                        Direction::Sheathe);
+            }
             result.result = SubmitResult::AlreadySheathingOrSheathed;
             return result;
         }
 
+        requestAnimationAcceleration(
+            current.player,
+            expected,
+            weapon_transition_animation_acceleration_policy::
+                Direction::Sheathe);
         current.player->DrawWeaponMagicHands(false);
         result.stateAfter = f4vr::getNativeWeaponState(current.player);
         result.result = SubmitResult::Submitted;

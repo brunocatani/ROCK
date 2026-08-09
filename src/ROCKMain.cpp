@@ -24,6 +24,7 @@
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/PipboyEquipRuntime.h"
+#include "physics-interaction/weapon/WeaponTransitionAnimationAcceleration.h"
 
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/TESForms.h"
@@ -250,6 +251,8 @@ namespace
 
     void clearUnavailableRuntimeInputState()
     {
+        weapon_transition_animation_acceleration::cancel(
+            "rock-runtime-unavailable");
         authored_weapon_grip_capture::setEnabled(false);
         pipboy_equip_runtime::setLeftHandEquipAvailable(false);
         input_remap_runtime::setGameplayInputAllowed(false);
@@ -839,6 +842,11 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
     logger::info("ROCK: Install held weapon instant-transition capability...");
     if (!rock::held_weapon_instant_transition::install()) {
         logger::warn("ROCK: Held trigger/grip-zone equip disabled because the exact native transition contract is unavailable.");
+    }
+
+    logger::info("ROCK: Install scoped weapon transition animation acceleration...");
+    if (!rock::weapon_transition_animation_acceleration::install()) {
+        logger::warn("ROCK: Weapon draw/sheath animation acceleration unavailable; native timing remains unchanged.");
     }
 
     logger::info("ROCK: Install Pip-Boy trigger-hand equip hooks...");

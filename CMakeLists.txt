@@ -584,6 +584,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKHeldWeaponInstantTransitionPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKHeldWeaponInstantTransitionPolicyTests)
 
+  add_executable(ROCKWeaponTransitionAnimationAccelerationPolicyTests
+    "${ROOT_DIR}/tests/WeaponTransitionAnimationAccelerationPolicyTests.cpp"
+  )
+  target_compile_features(ROCKWeaponTransitionAnimationAccelerationPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKWeaponTransitionAnimationAccelerationPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKWeaponTransitionAnimationAccelerationPolicyTests)
+
   add_executable(ROCKWeaponInventoryStackSelectionPolicyTests
     "${ROOT_DIR}/tests/WeaponInventoryStackSelectionPolicyTests.cpp"
   )
@@ -689,6 +696,7 @@ if(BUILD_ROCK_TESTS)
     ROCKPipboyEquipPolicyTests
     ROCKEquippedWeaponTransitionPolicyTests
     ROCKHeldWeaponInstantTransitionPolicyTests
+    ROCKWeaponTransitionAnimationAccelerationPolicyTests
     ROCKWeaponInventoryStackSelectionPolicyTests
     ROCKAuthoredWeaponGripCapturePolicyTests
     ROCKAuthoredWeaponGripActivationPolicyTests

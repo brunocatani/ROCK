@@ -68,6 +68,7 @@
 #include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
 #include "physics-interaction/weapon/NativeIdleGripPreharvest.h"
 #include "physics-interaction/weapon/NativeEquippedWeaponDraw.h"
+#include "physics-interaction/weapon/WeaponTransitionAnimationAcceleration.h"
 #include "physics-interaction/weapon/PipboyEquipRuntime.h"
 #include "physics-interaction/weapon/HeldWeaponEquipStatePolicy.h"
 #include "physics-interaction/weapon/WeaponEquipTransfer.h"
@@ -2066,9 +2067,34 @@ namespace rock
     {
         const auto& runtime = runtime_state::currentFrame();
         auto* player = f4vr::getPlayer();
+        const std::uint32_t nativeGunState =
+            f4vr::getNativeGunState(player);
+        const std::uint32_t nativeWeaponState =
+            f4vr::getNativeWeaponState(player);
+        native_equipped_weapon_draw::Identity currentIdentity{};
+        const bool currentIdentityCaptured =
+            native_equipped_weapon_draw::captureCurrentIdentity(
+                currentIdentity);
+        weapon_transition_animation_acceleration::service(
+            weapon_transition_animation_acceleration::ServiceInput{
+                .player = player,
+                .identity = currentIdentityCaptured ?
+                    weapon_transition_animation_acceleration::Identity{
+                        .formID = currentIdentity.formID,
+                        .instanceData = currentIdentity.instanceData,
+                        .equipIndex = currentIdentity.equipIndex,
+                    } :
+                    weapon_transition_animation_acceleration::Identity{},
+                .nativeWeaponState = nativeWeaponState,
+                .runtimeAllowed =
+                    runtime.visualAuthorityAvailable &&
+                    runtime.localSkeletonReady &&
+                    !runtime.localMenuBlocking &&
+                    !runtime.compatibilityConfigBlocking,
+            });
         const bool nativeWeaponAnimationActive =
             provider::currentNativeAnimationAuthorityFlagsV1() != 0 ||
-            f4vr::getNativeGunState(player) ==
+            nativeGunState ==
                 static_cast<std::uint32_t>(RE::GUN_STATE::kReloading);
         _equippedWeaponTransition.update(
             EquippedWeaponTransitionCoordinator::FrameInput{
@@ -2077,7 +2103,7 @@ namespace rock
                 .localSkeletonReady = runtime.localSkeletonReady,
                 .menuBlocking = runtime.localMenuBlocking,
                 .compatibilityBlocking = runtime.compatibilityConfigBlocking,
-                .nativeWeaponState = f4vr::getNativeWeaponState(player),
+                .nativeWeaponState = nativeWeaponState,
                 .intentionalShoulderSheathActive =
                     _equippedWeaponShoulderSheath.active,
                 .shoulderSheathFormID =
@@ -5414,6 +5440,7 @@ namespace rock
 
     void PhysicsInteraction::shutdown(::rock::provider::RockProviderLifecycleReason reason)
     {
+        weapon_transition_animation_acceleration::cancel("physics-shutdown");
         debug::ShutdownShapePipeline();
         equipped_weapon_handling_runtime::reset();
         _equippedWeaponHandlingSettings = {};

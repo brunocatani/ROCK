@@ -103,7 +103,7 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'captureCurrentIdentity[\s\S]*?submitSheatheExactCurrent\(sheathIdentity\)[\s\S]*?_equippedWeaponShoulderSheath\s*=[\s\S]*?weaponInstanceData\s*=\s*sheathIdentity\.instanceData[\s\S]*?equipIndex\s*=\s*sheathIdentity\.equipIndex[\s\S]*?zone\s*=\s*stashDecision\.zone' `
     'Shoulder stash must sheath and retain the exact equipped identity plus the confirmed shoulder zone.'
 Require-Text 'src/physics-interaction/weapon/NativeEquippedWeaponDraw.cpp' `
-    'resolveExactCurrent\(expected\)[\s\S]{0,900}shouldSubmitSheatheFollowup[\s\S]{0,500}DrawWeaponMagicHands\(false\)[\s\S]{0,300}getNativeWeaponState\(current\.player\)' `
+    'resolveExactCurrent\(expected\)[\s\S]{0,900}shouldSubmitSheatheFollowup[\s\S]{0,1000}DrawWeaponMagicHands\(false\)[\s\S]{0,300}getNativeWeaponState\(current\.player\)' `
     'Native sheath must revalidate exact identity and observe both sides of the verified FO4VR state transition.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'serviceEquippedWeaponShoulderSheathRetrieval[\s\S]*?observedWeaponFormID\s*==\s*currentIdentity\.formID[\s\S]*?decision\.zone\s*==\s*_equippedWeaponShoulderSheath\.zone[\s\S]*?isRawButtonPhysicallyHeld[\s\S]*?selectShoulderRetrievalHand[\s\S]*?submitExactCurrent\(\s*currentIdentity\s*\)' `
