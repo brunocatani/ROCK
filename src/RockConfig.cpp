@@ -195,7 +195,6 @@ namespace rock
         rockWeaponCollisionDynamicInverseInertiaMultiplier = kDefaultWeaponCollisionDynamicInverseInertiaMultiplier;
         rockWeaponCollisionDynamicMaxLinearVelocityHavok = 15.0f;
         rockWeaponCollisionDynamicMaxAngularVelocityRadians = 35.0f;
-        rockWeaponCollisionDynamicContactPressMaxVelocityHavok = 1.0f;
         rockWeaponCollisionDynamicDivergenceTeleportGameUnits = 80.0f;
         rockWeaponCollisionDynamicDivergenceTeleportDwellSeconds = 0.3f;
         rockWeaponCollisionDynamicRenderMinTranslationGameUnits = 0.05f;
@@ -891,13 +890,6 @@ namespace rock
             35.0f,
             0.0f,
             500.0f);
-        rockWeaponCollisionDynamicContactPressMaxVelocityHavok = readClampedFloat(ini,
-            SECTION,
-            "fWeaponCollisionDynamicContactPressMaxVelocityHavok",
-            rockWeaponCollisionDynamicContactPressMaxVelocityHavok,
-            1.0f,
-            0.0f,
-            50.0f);
         rockWeaponCollisionDynamicDivergenceTeleportGameUnits = readClampedFloat(ini,
             SECTION,
             "fWeaponCollisionDynamicDivergenceTeleportGameUnits",

@@ -123,7 +123,6 @@ namespace rock
         float rockWeaponCollisionDynamicInverseInertiaMultiplier = 1.2f;
         float rockWeaponCollisionDynamicMaxLinearVelocityHavok = 15.0f;
         float rockWeaponCollisionDynamicMaxAngularVelocityRadians = 35.0f;
-        float rockWeaponCollisionDynamicContactPressMaxVelocityHavok = 1.0f;
         float rockWeaponCollisionDynamicDivergenceTeleportGameUnits = 80.0f;
         float rockWeaponCollisionDynamicDivergenceTeleportDwellSeconds = 0.3f;
         float rockWeaponCollisionDynamicRenderMinTranslationGameUnits = 0.05f;

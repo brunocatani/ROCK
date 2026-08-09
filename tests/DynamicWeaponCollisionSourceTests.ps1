@@ -236,6 +236,17 @@ Require-Order $interaction @(
 Require-Pattern $runtimeSource `
     'makeGripAuthorityTarget\(_frameRequestedWeaponWorld\)[\s\S]*queueGeneratedKeyframedBodyTarget\([\s\S]*_authorityDriveState[\s\S]*driveGeneratedKeyframedBody\([\s\S]*_authorityProxy[\s\S]*_authorityDriveState[\s\S]*makeContactBodyTargetFromGripAuthority' `
     'Pre-solve authority must drive the hidden keyframed grip proxy, not the colliding dynamic box.'
+Require-Pattern $runtimeSource `
+    'updateWeaponGripConstraintContactTau\([\s\S]*rockGrabLinearTau[\s\S]*rockGrabLooseWeaponSharedConstraintLinearTauMultiplier[\s\S]*rockGrabAngularTau[\s\S]*rockGrabLooseWeaponSharedConstraintAngularTauMultiplier[\s\S]*rockGrabTauMin[\s\S]*rockGrabLooseWeaponSharedConstraintCollisionTauMultiplier[\s\S]*advanceToward\([\s\S]*linearMotor->tau[\s\S]*advanceToward\([\s\S]*angularMotor->tau[\s\S]*_contactGraceSolves\s*>\s*0' `
+    'Active weapon/world contact must soften both grip motors through the established loose-weapon tau policy.'
+Reject-Pattern $runtimeSource `
+    'updateWeaponGripConstraintContactTau\([\s\S]{0,400}(requestedTarget|proportionalRecoveryVelocity|constantRecoveryVelocity|maxForce)\s*=' `
+    'Contact authority adaptation must not mutate targets, recovery velocities, or force limits.'
+foreach ($path in @('src/RockConfig.h', 'src/RockConfig.cpp', 'data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
+    Reject-Pattern $path `
+        'WeaponCollisionDynamicContactPressMaxVelocityHavok' `
+        "$path must not retain the unused direct-velocity weapon contact cap after the constraint architecture replacement."
+}
 Reject-Pattern $runtimeSource `
     '\.dynamicVelocity\s*=\s*true' `
     'The contact box must not retain the center-driven dynamic-velocity authority path.'

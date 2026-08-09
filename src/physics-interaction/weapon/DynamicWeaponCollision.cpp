@@ -118,6 +118,46 @@ namespace rock
             };
         }
 
+        void updateWeaponGripConstraintContactTau(
+            ActiveConstraint& constraint,
+            const bool contactActive,
+            const float deltaTime)
+        {
+            if (!constraint.linearMotor || !constraint.angularMotor) {
+                return;
+            }
+
+            const float baseLinearTau = grab_motion_controller::safePositive(
+                scaleFiniteValue(
+                    g_rockConfig.rockGrabLinearTau,
+                    g_rockConfig.rockGrabLooseWeaponSharedConstraintLinearTauMultiplier),
+                0.03f);
+            const float baseAngularTau = grab_motion_controller::safePositive(
+                scaleFiniteValue(
+                    g_rockConfig.rockGrabAngularTau,
+                    g_rockConfig.rockGrabLooseWeaponSharedConstraintAngularTauMultiplier),
+                baseLinearTau);
+            const float collisionTau = grab_motion_controller::safePositive(
+                scaleFiniteValue(
+                    g_rockConfig.rockGrabTauMin,
+                    g_rockConfig.rockGrabLooseWeaponSharedConstraintCollisionTauMultiplier),
+                baseLinearTau);
+            const float linearTarget = contactActive ? collisionTau : baseLinearTau;
+            const float angularTarget = contactActive ? collisionTau : baseAngularTau;
+
+            constraint.linearMotor->tau = grab_motion_controller::advanceToward(
+                constraint.linearMotor->tau,
+                linearTarget,
+                g_rockConfig.rockGrabTauLerpSpeed,
+                deltaTime);
+            constraint.angularMotor->tau = grab_motion_controller::advanceToward(
+                constraint.angularMotor->tau,
+                angularTarget,
+                g_rockConfig.rockGrabTauLerpSpeed,
+                deltaTime);
+            constraint.currentTau = constraint.linearMotor->tau;
+        }
+
         bool applyWeaponBoxMassProperties(
             RE::hknpWorld* world,
             RE::hknpBodyId bodyId,
@@ -730,6 +770,15 @@ namespace rock
             clearPublishedPhysicsSnapshot();
             return;
         }
+
+        // The hidden authority remains exact, while active world contact uses
+        // the same shared-authority motor policy as ROCK's loose held weapons.
+        // Only tau changes; targets, recovery velocities, and force limits stay
+        // owned by the existing grip constraint.
+        updateWeaponGripConstraintContactTau(
+            _authorityConstraint,
+            _contactGraceSolves > 0,
+            driveResult.driveDeltaSeconds);
 
         _droveThisSubstep =
             driveResult.driven &&
