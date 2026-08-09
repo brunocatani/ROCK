@@ -413,6 +413,8 @@ namespace rock
         bool linearLimitExceeded = false;
         bool angularLimitExceeded = false;
         bool hasLiveBodyTransform = false;
+        bool hasRequestedTargetGameTransform = false;
+        bool hasCommandedTargetGameTransform = false;
         bool hasSampledTargetLinearVelocityHavok = false;
         /*
          * targetGamePosition is the COMMANDED target: velocity-limited toward
@@ -428,6 +430,9 @@ namespace rock
         RE::NiPoint3 targetHavokPosition{};
         RE::NiPoint3 liveBodyGamePosition{};
         RE::NiPoint3 sampledTargetLinearVelocityHavok{};
+        RE::NiTransform requestedTargetGameTransform{};
+        RE::NiTransform commandedTargetGameTransform{};
+        RE::NiTransform liveBodyGameTransform{};
         RE::NiPoint3 targetAxisXWorld{};
         RE::NiPoint3 targetAxisYWorld{};
         RE::NiPoint3 targetAxisZWorld{};

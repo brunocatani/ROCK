@@ -2768,6 +2768,61 @@ namespace rock
         return _weaponBodyCountAtomic.load(std::memory_order_acquire);
     }
 
+    bool WeaponCollision::getApproximateBoundsSnapshot(ApproximateBoundsSnapshot& outSnapshot) const
+    {
+        outSnapshot = {};
+        outSnapshot.generationKey = getCurrentWeaponGenerationKey();
+        if (outSnapshot.generationKey == 0) {
+            return false;
+        }
+
+        const auto finitePoint = [](const RE::NiPoint3& point) {
+            return std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z);
+        };
+        bool sampled = false;
+        for (const auto& instance : activeWeaponBodies()) {
+            if (!instance.body.isValid() || !finitePoint(instance.generatedLocalMinGame) || !finitePoint(instance.generatedLocalMaxGame)) {
+                continue;
+            }
+            if (instance.generatedLocalMaxGame.x < instance.generatedLocalMinGame.x ||
+                instance.generatedLocalMaxGame.y < instance.generatedLocalMinGame.y ||
+                instance.generatedLocalMaxGame.z < instance.generatedLocalMinGame.z) {
+                continue;
+            }
+
+            if (!sampled) {
+                outSnapshot.minWeaponLocal = instance.generatedLocalMinGame;
+                outSnapshot.maxWeaponLocal = instance.generatedLocalMaxGame;
+                sampled = true;
+            } else {
+                outSnapshot.minWeaponLocal.x = (std::min)(outSnapshot.minWeaponLocal.x, instance.generatedLocalMinGame.x);
+                outSnapshot.minWeaponLocal.y = (std::min)(outSnapshot.minWeaponLocal.y, instance.generatedLocalMinGame.y);
+                outSnapshot.minWeaponLocal.z = (std::min)(outSnapshot.minWeaponLocal.z, instance.generatedLocalMinGame.z);
+                outSnapshot.maxWeaponLocal.x = (std::max)(outSnapshot.maxWeaponLocal.x, instance.generatedLocalMaxGame.x);
+                outSnapshot.maxWeaponLocal.y = (std::max)(outSnapshot.maxWeaponLocal.y, instance.generatedLocalMaxGame.y);
+                outSnapshot.maxWeaponLocal.z = (std::max)(outSnapshot.maxWeaponLocal.z, instance.generatedLocalMaxGame.z);
+            }
+            ++outSnapshot.sourceBodyCount;
+        }
+
+        if (!sampled || outSnapshot.sourceBodyCount == 0) {
+            outSnapshot = {};
+            return false;
+        }
+        outSnapshot.centerWeaponLocal = RE::NiPoint3{
+            (outSnapshot.minWeaponLocal.x + outSnapshot.maxWeaponLocal.x) * 0.5f,
+            (outSnapshot.minWeaponLocal.y + outSnapshot.maxWeaponLocal.y) * 0.5f,
+            (outSnapshot.minWeaponLocal.z + outSnapshot.maxWeaponLocal.z) * 0.5f,
+        };
+        outSnapshot.halfExtentsWeaponLocal = RE::NiPoint3{
+            (outSnapshot.maxWeaponLocal.x - outSnapshot.minWeaponLocal.x) * 0.5f,
+            (outSnapshot.maxWeaponLocal.y - outSnapshot.minWeaponLocal.y) * 0.5f,
+            (outSnapshot.maxWeaponLocal.z - outSnapshot.minWeaponLocal.z) * 0.5f,
+        };
+        outSnapshot.valid = finitePoint(outSnapshot.centerWeaponLocal) && finitePoint(outSnapshot.halfExtentsWeaponLocal);
+        return outSnapshot.valid;
+    }
+
     WeaponCollision::ReleaseGeometrySnapshot WeaponCollision::getCurrentWeaponReleaseGeometry(
         const RE::NiPoint3& gripWorldPoint,
         const RE::NiTransform& capturedWeaponWorld) const

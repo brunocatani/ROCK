@@ -352,6 +352,7 @@ namespace rock
         };
 
         std::uint32_t generatedLocalMotionIndex = kStaticLocalMotionIndex;
+        void* generatedMotionCinfo = nullptr;
         if (motionType != BethesdaMotionType::Static) {
             auto* motionCinfoArray = reinterpret_cast<char*>(_systemData) + offsets::kSysData_MotionCinfos;
             const auto motionIndexBeforeAppend = *reinterpret_cast<std::int32_t*>(motionCinfoArray + 0x08);
@@ -374,6 +375,7 @@ namespace rock
 
             static REL::Relocation<MotionCinfoCtor_t> motionCinfoCtor{ REL::Offset(offsets::kFunc_MotionCinfo_Ctor) };
             motionCinfoCtor(motionCinfo);
+            generatedMotionCinfo = motionCinfo;
             generatedLocalMotionIndex = static_cast<std::uint32_t>(motionIndexBeforeAppend);
         }
 
@@ -401,6 +403,22 @@ namespace rock
             *reinterpret_cast<std::uint32_t*>(ci + 0x14) = filterInfo;
             *reinterpret_cast<const char**>(ci + 0x20) = name;
             *reinterpret_cast<std::uintptr_t*>(ci + 0x28) = 0;
+        }
+
+        if (motionType == BethesdaMotionType::Dynamic && generatedMotionCinfo && bodyCinfo) {
+            /*
+             * FO4VR's own one-body wrapper construction derives the motion's
+             * center of mass, inverse mass, and inertia from the populated body
+             * cinfo before the system is inserted. A default hknpMotionCinfo
+             * leaves those shape-dependent values uninitialized for a dynamic
+             * solver body. Raw disassembly: 0x141E4DC58 calls 0x1417A3A90 with
+             * (motionCinfo, bodyCinfo, 1).
+             */
+            using DeriveMotionCinfo_t = void (*)(void*, void*, std::int32_t);
+            static REL::Relocation<DeriveMotionCinfo_t> deriveMotionCinfo{
+                REL::Offset(offsets::kFunc_MotionCinfo_DeriveFromBodyCinfos)
+            };
+            deriveMotionCinfo(generatedMotionCinfo, bodyCinfo, 1);
         }
 
         {

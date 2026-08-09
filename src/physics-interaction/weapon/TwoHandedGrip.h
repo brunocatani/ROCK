@@ -506,6 +506,12 @@ namespace rock
     class TwoHandedGrip
     {
     public:
+        using WeaponVisualIntentObserver = void (*)(
+            void* context,
+            RE::NiNode* weaponNode,
+            const RE::NiTransform& requestedWeaponWorld,
+            std::uint64_t weaponGenerationKey);
+
         TwoHandedGrip();
         ~TwoHandedGrip();
 
@@ -656,6 +662,21 @@ namespace rock
             std::uint64_t captureSequence);
 
         void reset();
+
+        void setWeaponVisualIntentObserver(
+            void* context,
+            WeaponVisualIntentObserver observer)
+        {
+            _weaponVisualIntentObserverContext = context;
+            _weaponVisualIntentObserver = observer;
+        }
+
+        // Republishes a physics-resolved visual pose without feeding that
+        // correction back into the next dynamic-weapon drive target.
+        bool applyWeaponCollisionResolvedAuthority(
+            RE::NiNode* weaponNode,
+            const RE::NiTransform& resolvedWeaponWorld,
+            std::uint64_t authorityGenerationKey);
 
         bool isGripping() const { return _state == TwoHandedState::Gripping || _state == TwoHandedState::PartCarry; }
 
@@ -1245,7 +1266,8 @@ namespace rock
         bool applyWeaponVisualAuthority(
             RE::NiNode* weaponNode,
             const RE::NiTransform& solvedWeaponWorld,
-            std::uint64_t authorityGenerationKey = 0);
+            std::uint64_t authorityGenerationKey = 0,
+            bool notifyVisualIntentObserver = true);
 
         void clearGunstockDedicatedHandAuthority();
         void observeGunstockWeaponEligibility(
@@ -1600,6 +1622,8 @@ namespace rock
         RE::NiNode* _activeWeaponNode{ nullptr };
         std::uint64_t _activeWeaponGenerationKey{ 0 };
         std::uint64_t _activeEquippedWeaponOwnershipKey{ 0 };
+        void* _weaponVisualIntentObserverContext{ nullptr };
+        WeaponVisualIntentObserver _weaponVisualIntentObserver{ nullptr };
         equipped_weapon_manual_ownership_policy::GripReleaseDebounceState _primaryReleaseDebounce{};
         bool _persistentEquippedCarryActive{ false };
         bool _persistentEquippedCarryDetachArmed{ false };

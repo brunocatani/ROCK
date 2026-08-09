@@ -193,6 +193,8 @@ namespace rock::offsets
 
     constexpr std::uintptr_t kFunc_MotionCinfo_Ctor = 0x17A2FC0;
 
+    constexpr std::uintptr_t kFunc_MotionCinfo_DeriveFromBodyCinfos = 0x17A3A90;
+
     constexpr std::uintptr_t kData_HavokGameToHavokScale = 0x5A38628;
 
     constexpr std::uintptr_t kData_HavokToGameScale = 0x3718110;

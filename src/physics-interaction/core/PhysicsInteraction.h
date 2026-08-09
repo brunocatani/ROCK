@@ -35,6 +35,7 @@
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 #include "physics-interaction/weapon/EquippedWeaponTransitionCoordinator.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
+#include "physics-interaction/weapon/DynamicWeaponCollision.h"
 #include "physics-interaction/weapon/WeaponCollision.h"
 #include "physics-interaction/weapon/WeaponDebug.h"
 #include "physics-interaction/weapon/BareFistGuardPolicy.h"
@@ -423,6 +424,7 @@ namespace rock
         std::uint64_t _expectedReloadLayerMask = 0;
         std::uint64_t _expectedBodyLayerMask = 0;
         std::uint64_t _expectedDynamicHandProxyLayerMask = 0;
+        std::uint64_t _expectedDynamicWeaponProxyLayerMask = 0;
         std::uint64_t _expectedDynamicWorldCarClutterLayerMask = 0;
         std::uint64_t _expectedDynamicWorldCarLargeClutterLayerMask = 0;
         std::uint64_t _originalNativeCharacterControllerLayerMask = 0;
@@ -439,6 +441,7 @@ namespace rock
         BodyBoneColliderSet _bodyBoneColliders;
 
         WeaponCollision _weaponCollision;
+        DynamicWeaponCollisionRuntime _dynamicWeaponCollision;
 
         EquippedWeaponTransitionCoordinator _equippedWeaponTransition;
 

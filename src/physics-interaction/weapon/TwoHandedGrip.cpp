@@ -8829,13 +8829,21 @@ namespace rock
     bool TwoHandedGrip::applyWeaponVisualAuthority(
         RE::NiNode* weaponNode,
         const RE::NiTransform& solvedWeaponWorld,
-        const std::uint64_t authorityGenerationKey)
+        const std::uint64_t authorityGenerationKey,
+        const bool notifyVisualIntentObserver)
     {
         if (!weaponNode) {
             return false;
         }
 
         const std::uint64_t effectiveGenerationKey = authorityGenerationKey != 0 ? authorityGenerationKey : _activeWeaponGenerationKey;
+        if (notifyVisualIntentObserver && _weaponVisualIntentObserver) {
+            _weaponVisualIntentObserver(
+                _weaponVisualIntentObserverContext,
+                weaponNode,
+                solvedWeaponWorld,
+                effectiveGenerationKey);
+        }
         const bool scopeAnchorMatchesAuthority =
             _nativeScopeAnchorValid && _nativeScopeAnchorWeaponNode == weaponNode && _nativeScopeAnchorGenerationKey == effectiveGenerationKey;
 
@@ -8908,6 +8916,18 @@ namespace rock
                 scopeTargetReady ? _nativeScopeAnchorSource : native_scope_sight_anchor_policy::AnchorSource::None);
         }
         return true;
+    }
+
+    bool TwoHandedGrip::applyWeaponCollisionResolvedAuthority(
+        RE::NiNode* weaponNode,
+        const RE::NiTransform& resolvedWeaponWorld,
+        const std::uint64_t authorityGenerationKey)
+    {
+        return applyWeaponVisualAuthority(
+            weaponNode,
+            resolvedWeaponWorld,
+            authorityGenerationKey,
+            false);
     }
 
     bool TwoHandedGrip::applyFiringHandLockedVisual(RE::NiNode* weaponNode, float dt, const RE::NiTransform* liveHandWorld)

@@ -189,6 +189,16 @@ namespace rock
         rockWeaponCollisionBlocksProjectiles = false;
         rockWeaponCollisionBlocksSpells = false;
         rockWeaponCollisionStaticWorldEnabled = true;
+        rockWeaponCollisionDynamicBoxEnabled = false;
+        rockWeaponCollisionDynamicBoxPaddingGameUnits = 0.5f;
+        rockWeaponCollisionDynamicMaxLinearVelocityHavok = 15.0f;
+        rockWeaponCollisionDynamicMaxAngularVelocityRadians = 35.0f;
+        rockWeaponCollisionDynamicContactPressMaxVelocityHavok = 1.0f;
+        rockWeaponCollisionDynamicDivergenceTeleportGameUnits = 80.0f;
+        rockWeaponCollisionDynamicDivergenceTeleportDwellSeconds = 0.3f;
+        rockWeaponCollisionDynamicRenderMinTranslationGameUnits = 0.05f;
+        rockWeaponCollisionDynamicRenderMinRotationDegrees = 0.25f;
+        rockWeaponCollisionDynamicMaxVisualCorrectionGameUnits = 60.0f;
         rockWeaponCollisionGroupingMode = weapon_collision_grouping_policy::kDefaultWeaponCollisionGroupingMode;
         rockWeaponCollisionVisualStabilizationFrames = kDefaultWeaponCollisionVisualStabilizationFrames;
         rockWeaponCollisionConvexRadius = 0.01f;
@@ -850,6 +860,70 @@ namespace rock
         rockWeaponCollisionBlocksProjectiles = ini.GetBoolValue(SECTION, "bWeaponCollisionBlocksProjectiles", rockWeaponCollisionBlocksProjectiles);
         rockWeaponCollisionBlocksSpells = ini.GetBoolValue(SECTION, "bWeaponCollisionBlocksSpells", rockWeaponCollisionBlocksSpells);
         rockWeaponCollisionStaticWorldEnabled = ini.GetBoolValue(SECTION, "bWeaponCollisionStaticWorldEnabled", rockWeaponCollisionStaticWorldEnabled);
+        rockWeaponCollisionDynamicBoxEnabled = ini.GetBoolValue(SECTION, "bWeaponCollisionDynamicBoxEnabled", rockWeaponCollisionDynamicBoxEnabled);
+        rockWeaponCollisionDynamicBoxPaddingGameUnits = readClampedFloat(ini,
+            SECTION,
+            "fWeaponCollisionDynamicBoxPaddingGameUnits",
+            rockWeaponCollisionDynamicBoxPaddingGameUnits,
+            0.5f,
+            0.0f,
+            20.0f);
+        rockWeaponCollisionDynamicMaxLinearVelocityHavok = readClampedFloat(ini,
+            SECTION,
+            "fWeaponCollisionDynamicMaxLinearVelocityHavok",
+            rockWeaponCollisionDynamicMaxLinearVelocityHavok,
+            15.0f,
+            0.0f,
+            200.0f);
+        rockWeaponCollisionDynamicMaxAngularVelocityRadians = readClampedFloat(ini,
+            SECTION,
+            "fWeaponCollisionDynamicMaxAngularVelocityRadians",
+            rockWeaponCollisionDynamicMaxAngularVelocityRadians,
+            35.0f,
+            0.0f,
+            500.0f);
+        rockWeaponCollisionDynamicContactPressMaxVelocityHavok = readClampedFloat(ini,
+            SECTION,
+            "fWeaponCollisionDynamicContactPressMaxVelocityHavok",
+            rockWeaponCollisionDynamicContactPressMaxVelocityHavok,
+            1.0f,
+            0.0f,
+            50.0f);
+        rockWeaponCollisionDynamicDivergenceTeleportGameUnits = readClampedFloat(ini,
+            SECTION,
+            "fWeaponCollisionDynamicDivergenceTeleportGameUnits",
+            rockWeaponCollisionDynamicDivergenceTeleportGameUnits,
+            80.0f,
+            0.0f,
+            1000.0f);
+        rockWeaponCollisionDynamicDivergenceTeleportDwellSeconds = readClampedFloat(ini,
+            SECTION,
+            "fWeaponCollisionDynamicDivergenceTeleportDwellSeconds",
+            rockWeaponCollisionDynamicDivergenceTeleportDwellSeconds,
+            0.3f,
+            0.0f,
+            5.0f);
+        rockWeaponCollisionDynamicRenderMinTranslationGameUnits = readClampedFloat(ini,
+            SECTION,
+            "fWeaponCollisionDynamicRenderMinTranslationGameUnits",
+            rockWeaponCollisionDynamicRenderMinTranslationGameUnits,
+            0.05f,
+            0.0f,
+            10.0f);
+        rockWeaponCollisionDynamicRenderMinRotationDegrees = readClampedFloat(ini,
+            SECTION,
+            "fWeaponCollisionDynamicRenderMinRotationDegrees",
+            rockWeaponCollisionDynamicRenderMinRotationDegrees,
+            0.25f,
+            0.0f,
+            45.0f);
+        rockWeaponCollisionDynamicMaxVisualCorrectionGameUnits = readClampedFloat(ini,
+            SECTION,
+            "fWeaponCollisionDynamicMaxVisualCorrectionGameUnits",
+            rockWeaponCollisionDynamicMaxVisualCorrectionGameUnits,
+            60.0f,
+            1.0f,
+            500.0f);
         rockWeaponCollisionGroupingMode = static_cast<int>(ini.GetLongValue(SECTION, "iWeaponCollisionGroupingMode", rockWeaponCollisionGroupingMode));
         const auto sanitizedWeaponCollisionGroupingMode = weapon_collision_grouping_policy::sanitizeWeaponCollisionGroupingMode(rockWeaponCollisionGroupingMode);
         if (static_cast<int>(sanitizedWeaponCollisionGroupingMode) != rockWeaponCollisionGroupingMode) {

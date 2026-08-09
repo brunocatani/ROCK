@@ -501,6 +501,41 @@
             return hasRawContactPoint;
         };
 
+        /*
+         * The dynamic weapon proxy is intentionally absent from the normal
+         * generated-body contact registry: it is solver/visual feedback, not
+         * hand, gameplay, or provider contact evidence. Capture only a real
+         * proxy-vs-world callback before the ordinary registry prefilter can
+         * discard this pair.
+         */
+        const bool bodyAIsDynamicWeaponProxy =
+            _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdA);
+        const bool bodyBIsDynamicWeaponProxy =
+            _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdB);
+        if (bodyAIsDynamicWeaponProxy != bodyBIsDynamicWeaponProxy) {
+            const std::uint32_t proxyBodyId =
+                bodyAIsDynamicWeaponProxy ? bodyIdA : bodyIdB;
+            const std::uint32_t otherBodyId =
+                bodyAIsDynamicWeaponProxy ? bodyIdB : bodyIdA;
+            std::uint32_t otherFilterInfo = 0;
+            if (havok_runtime::tryReadFilterInfo(
+                    world,
+                    RE::hknpBodyId{ otherBodyId },
+                    otherFilterInfo)) {
+                const std::uint32_t otherLayer =
+                    otherFilterInfo &
+                    collision_layer_policy::FO4_LAYER_FILTER_MASK;
+                if (collision_layer_policy::isWorldSurfaceLayer(otherLayer) &&
+                    ensureRawContactPoint()) {
+                    _dynamicWeaponCollision.recordWorldSurfaceContact(
+                        world,
+                        proxyBodyId,
+                        otherBodyId,
+                        otherLayer);
+                }
+            }
+        }
+
         const auto rightId = _rightHand.getCollisionBodyId().value;
         const auto leftId = _leftHand.getCollisionBodyId().value;
 

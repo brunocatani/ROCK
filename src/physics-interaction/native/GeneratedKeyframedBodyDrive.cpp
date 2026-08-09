@@ -133,6 +133,8 @@ namespace rock
             const RE::hkTransformf& targetHavok,
             GeneratedKeyframedBodyDriveResult& result)
         {
+            result.hasCommandedTargetGameTransform = true;
+            result.commandedTargetGameTransform = target;
             result.targetGamePosition = target.translate;
             result.targetHavokPosition = havokTranslationToGamePoint(targetHavok);
         }
@@ -145,6 +147,7 @@ namespace rock
             GeneratedKeyframedBodyDriveResult& result)
         {
             result.hasLiveBodyTransform = true;
+            result.liveBodyGameTransform = liveTransform;
             result.liveBodyGamePosition = liveTransform.translate;
             result.liveBodyFrameSource = frameSource;
             result.motionIndex = motionIndex;
@@ -544,6 +547,8 @@ namespace rock
         const bool hardSyncForVelocity = false;
         const bool immediatePlacement = state.pendingTeleport || hardSyncForVelocity;
         const RE::NiTransform requestedTarget = immediatePlacement ? selectGeneratedImmediatePlacementTarget(state) : selectGeneratedDriveTarget(state, timing);
+        result.hasRequestedTargetGameTransform = true;
+        result.requestedTargetGameTransform = requestedTarget;
         result.requestedTargetGamePosition = requestedTarget.translate;
         RE::NiTransform target = requestedTarget;
         RE::hkTransformf targetHavok = makeHavokTransform(target);

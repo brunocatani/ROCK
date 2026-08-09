@@ -83,6 +83,13 @@ namespace rock::collision_layer_policy
      */
     inline constexpr std::uint32_t ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER = 49;
     inline constexpr std::uint32_t ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER = 50;
+    /*
+     * The dynamic weapon proxy is deliberately world-only. Layer-44 generated
+     * hulls remain the sole weapon contact/evidence path for hands, actors,
+     * projectiles, and dynamic props; this row exists only so one dynamic body
+     * can be solver-clipped by static level geometry without double impulses.
+     */
+    inline constexpr std::uint32_t ROCK_LAYER_DYNAMIC_WEAPON_PROXY = 51;
 
     inline constexpr std::uint32_t FO4_LAYER_VANILLA_CONFIGURED_COUNT = 47;
     inline constexpr std::uint32_t FO4_LAYER_LAST_VANILLA_CONFIGURED = FO4_LAYER_DROPPINGPICK;
@@ -588,6 +595,17 @@ namespace rock::collision_layer_policy
         return mask;
     }
 
+    inline constexpr std::uint64_t buildRockDynamicWeaponProxyExpectedMask()
+    {
+        std::uint64_t mask = 0;
+        for (std::uint32_t layer = 0; layer < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++layer) {
+            if (isWorldSurfaceLayer(layer)) {
+                mask = withLayer(mask, layer);
+            }
+        }
+        return mask;
+    }
+
     inline constexpr std::uint64_t buildRockDynamicWorldCarExpectedMask(
         std::uint64_t nativeSourceMask,
         std::uint32_t nativeSourceLayer)
@@ -609,6 +627,7 @@ namespace rock::collision_layer_policy
         mask = withoutLayer(mask, ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER);
         mask = withoutLayer(mask, ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER);
         mask = withoutLayer(mask, ROCK_LAYER_DYNAMIC_HAND_PROXY);
+        mask = withoutLayer(mask, ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
 
         const auto sameCarLayer = dynamicWorldCarLayerForNativeLayer(nativeSourceLayer);
         const auto peerNativeLayer = nativeSourceLayer == FO4_LAYER_CLUTTER ? FO4_LAYER_CLUTTER_LARGE : FO4_LAYER_CLUTTER;
@@ -628,6 +647,11 @@ namespace rock::collision_layer_policy
     inline void applyRockDynamicHandProxyLayerPolicy(std::uint64_t* matrix)
     {
         applyLayerExpectedMask(matrix, ROCK_LAYER_DYNAMIC_HAND_PROXY, buildRockDynamicHandProxyExpectedMask());
+    }
+
+    inline void applyRockDynamicWeaponProxyLayerPolicy(std::uint64_t* matrix)
+    {
+        applyLayerExpectedMask(matrix, ROCK_LAYER_DYNAMIC_WEAPON_PROXY, buildRockDynamicWeaponProxyExpectedMask());
     }
 
     inline void applyRockDynamicWorldCarLayerPolicies(std::uint64_t* matrix)
@@ -682,6 +706,7 @@ namespace rock::collision_layer_policy
         applyRockReloadLayerPolicy(matrix, weaponBlocksProjectiles, weaponBlocksSpells, handStaticWorld);
         applyRockBodyLayerPolicy(matrix, bodyStaticWorld);
         applyRockDynamicHandProxyLayerPolicy(matrix);
+        applyRockDynamicWeaponProxyLayerPolicy(matrix);
         applyRockDynamicWorldCarLayerPolicies(matrix);
     }
 }

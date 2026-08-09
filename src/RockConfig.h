@@ -118,6 +118,16 @@ namespace rock
         bool rockWeaponCollisionBlocksProjectiles = false;
         bool rockWeaponCollisionBlocksSpells = false;
         bool rockWeaponCollisionStaticWorldEnabled = true;
+        bool rockWeaponCollisionDynamicBoxEnabled = false;
+        float rockWeaponCollisionDynamicBoxPaddingGameUnits = 0.5f;
+        float rockWeaponCollisionDynamicMaxLinearVelocityHavok = 15.0f;
+        float rockWeaponCollisionDynamicMaxAngularVelocityRadians = 35.0f;
+        float rockWeaponCollisionDynamicContactPressMaxVelocityHavok = 1.0f;
+        float rockWeaponCollisionDynamicDivergenceTeleportGameUnits = 80.0f;
+        float rockWeaponCollisionDynamicDivergenceTeleportDwellSeconds = 0.3f;
+        float rockWeaponCollisionDynamicRenderMinTranslationGameUnits = 0.05f;
+        float rockWeaponCollisionDynamicRenderMinRotationDegrees = 0.25f;
+        float rockWeaponCollisionDynamicMaxVisualCorrectionGameUnits = 60.0f;
         int rockWeaponCollisionGroupingMode = weapon_collision_grouping_policy::kDefaultWeaponCollisionGroupingMode;
         int rockWeaponCollisionVisualStabilizationFrames = 8;
         float rockWeaponCollisionConvexRadius = 0.01f;

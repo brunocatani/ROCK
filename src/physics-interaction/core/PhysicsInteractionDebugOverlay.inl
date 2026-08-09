@@ -273,6 +273,8 @@
         const bool drawHandBoneContacts = g_rockConfig.rockDebugDrawHandBoneContacts;
         const bool drawGrabAuthorityProxy = g_rockConfig.rockDebugDrawGrabAuthorityProxy;
         const bool drawDynamicHandColliders = g_rockConfig.rockDebugDrawDynamicHandColliders;
+        const bool drawDynamicWeaponColliders =
+            g_rockConfig.rockDebugDrawDynamicWeaponColliders;
         const bool drawGrabTransformTelemetry = g_rockConfig.rockDebugGrabTransformTelemetry;
         const bool drawGrabTransformTelemetryAxes = drawGrabTransformTelemetry && g_rockConfig.rockDebugGrabTransformTelemetryAxes;
         const bool drawGrabTransformTelemetryText = drawGrabTransformTelemetry && g_rockConfig.rockDebugGrabTransformTelemetryText;
@@ -304,7 +306,7 @@
             !drawFingerSweptArc && !drawPalmVectors && !drawGrabPockets && !drawRootFlattenedFingerSkeleton && !drawSkeletonBones && !drawGrabPocketNormal &&
             !drawGrabContactPatch && !drawHandBoneContacts && !drawGrabAuthorityProxy && !drawGrabForceTorque && !drawGrabTransformTelemetry && !drawPerformanceProfilerOverlay &&
             !drawWeaponAuthorityDebug && !drawNativeScopeActivation && !drawGrabSupportFrame && !drawWorldOriginDiagnostics && !drawCustomCalibrationOffset &&
-            !drawDynamicHandColliders && !drawAuthoredSupportGripDebug && !drawGunstockAlignment && !drawProviderOverlay && !drawVideoSyncMarker) {
+            !drawDynamicHandColliders && !drawDynamicWeaponColliders && !drawAuthoredSupportGripDebug && !drawGunstockAlignment && !drawProviderOverlay && !drawVideoSyncMarker) {
             debug::ClearFrame();
             return;
         }
@@ -313,7 +315,7 @@
 
         debug::BodyOverlayFrame frame{};
         frame.world = hknp;
-        frame.drawRockBodies = drawRockColliderBodies || drawGrabAuthorityProxy || drawGrabPivotSourceCollider || drawDynamicHandColliders;
+        frame.drawRockBodies = drawRockColliderBodies || drawGrabAuthorityProxy || drawGrabPivotSourceCollider || drawDynamicHandColliders || drawDynamicWeaponColliders;
         frame.drawTargetBodies = g_rockConfig.rockDebugShowTargetColliders;
         frame.drawAxes = g_rockConfig.rockDebugShowHandAxes || drawGrabTransformTelemetryAxes || drawGrabAuthorityProxy || drawGrabForceTorque ||
             drawCustomCalibrationOffset || drawNativeScopeActivation ||
@@ -325,7 +327,7 @@
         frame.drawSkeleton = drawSkeletonBones;
         frame.drawColoredLines = providerOverlay && providerOverlay->lineCount > 0;
         frame.drawText = drawGrabTransformTelemetryText || drawGrabForceTorqueText || drawFingerSweptArcText || drawPerformanceProfilerOverlay ||
-            drawDynamicHandColliders || drawNativeScopeActivation ||
+            drawDynamicHandColliders || drawDynamicWeaponColliders || drawNativeScopeActivation ||
             drawAuthoredSupportGripDebug || drawGunstockAlignment || drawVideoSyncMarker ||
             (providerOverlay && providerOverlay->textCount > 0);
         if (providerOverlay) {
@@ -3640,6 +3642,46 @@
                                 twin.approachSpeedGameUnitsPerSecond);
                         }
                     }
+                }
+            }
+
+            if (drawDynamicWeaponColliders) {
+                addBody(
+                    _dynamicWeaponCollision.proxyBodyIdForDebug(),
+                    debug::BodyOverlayRole::DynamicWeaponProxy);
+
+                DynamicWeaponCollisionRuntime::DebugSnapshot snapshot{};
+                constexpr float proxyColor[4]{ 1.0f, 0.24f, 0.08f, 0.96f };
+                if (_dynamicWeaponCollision.getDebugSnapshot(snapshot)) {
+                    RE::NiPoint3 labelAnchor =
+                        snapshot.requestedWeaponWorld.translate;
+                    labelAnchor.z += 8.0f;
+                    addTextLineSized(
+                        labelAnchor,
+                        2.0f,
+                        proxyColor,
+                        "DWC BOX body=%u contact=%s layer=%u grace=%u",
+                        snapshot.bodyId,
+                        snapshot.contactActive ? "YES" : "NO",
+                        snapshot.otherLayer,
+                        snapshot.contactGraceSolves);
+                    labelAnchor.z -= 3.0f;
+                    addTextLineSized(
+                        labelAnchor,
+                        1.7f,
+                        proxyColor,
+                        "corr=%.2fgu %.2fdeg visual=%s solve=%llu",
+                        snapshot.translationCorrectionGameUnits,
+                        snapshot.rotationCorrectionDegrees,
+                        snapshot.visualCorrectionActive ? "ACTIVE" : "IDLE",
+                        static_cast<unsigned long long>(
+                            snapshot.solveSequence));
+                } else {
+                    addScreenTextLine(
+                        20.0f,
+                        90.0f,
+                        proxyColor,
+                        "DWC BOX INACTIVE (enable dynamic box + equip drawn weapon)");
                 }
             }
 

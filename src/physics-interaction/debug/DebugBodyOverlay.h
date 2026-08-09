@@ -30,6 +30,7 @@ namespace rock::debug
         BodyLegSegment,
         BodyFootSegment,
         Weapon,
+        DynamicWeaponProxy,
         FocusedWeaponPart,
         RightGrabAuthorityProxy,
         LeftGrabAuthorityProxy,

@@ -155,6 +155,17 @@ namespace rock
             bool valid{ false };
         };
 
+        struct ApproximateBoundsSnapshot
+        {
+            bool valid{ false };
+            std::uint64_t generationKey{ 0 };
+            RE::NiPoint3 minWeaponLocal{};
+            RE::NiPoint3 maxWeaponLocal{};
+            RE::NiPoint3 centerWeaponLocal{};
+            RE::NiPoint3 halfExtentsWeaponLocal{};
+            std::uint32_t sourceBodyCount{ 0 };
+        };
+
         void init(RE::hknpWorld* world, void* bhkWorld);
 
         void shutdown();
@@ -167,6 +178,8 @@ namespace rock
         bool hasWeaponBody() const;
 
         std::uint32_t getWeaponBodyCount() const;
+
+        bool getApproximateBoundsSnapshot(ApproximateBoundsSnapshot& outSnapshot) const;
 
         // One-frame, read-only release geometry query. The caller must consume
         // this before destroyWeaponBody retires the equipped body bank.
