@@ -113,7 +113,22 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'Retrieval must evaluate both physical hands and carry the selected hand into equipped-weapon ownership.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'pendingPrimaryStartMatchesCurrentWeapon[\s\S]*?tryBuildCurrentLeftFiringGripCapture[\s\S]*?beginPrimaryOnlyGrip' `
-    'A left-hand unsheath must lazily build the canonical mirrored firing-grip capture before ownership begins.'
+    'A left-hand unsheath must retain the canonical lazy fallback when no pre-sheath transfer frame is available.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'submitEquippedWeaponShoulderSheath[\s\S]{0,1800}tryCaptureLeftFiringGripTransfer[\s\S]{0,2200}hasLeftFiringGripTransfer\s*=[\s\r\n]+\s*hasLeftFiringGripTransfer' `
+    'Sheathing must capture and retain a left firing-grip frame before native presentation clears live ownership.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'PendingEquippedWeaponPrimaryOnlyGripStart\{[\s\S]{0,500}\.committedTransfer\s*=\s*true[\s\S]{0,700}\.hasFiringHandWeaponLocal\s*=\s*retrieveWithLeftHand\s*&&[\s\S]{0,180}hasLeftFiringGripTransfer' `
+    'An accepted shoulder draw must become a durable selected-hand transfer carrying the pre-sheath left frame.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'shouldStartPendingPrimaryOnlyGrip\([\s\S]{0,320}committedTransfer[\s\S]{0,6000}beginPrimaryOnlyGrip\([\s\S]{0,700}committedTransfer' `
+    'Committed shoulder retrieval must start without a still-held squeeze and protect the carry until physical grip input resumes.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'tryCaptureLeftFiringGripTransfer[\s\S]{0,1500}activeLeftCaptureCurrent[\s\S]{0,900}tryBuildCurrentLeftFiringGripCapture' `
+    'Left transfer capture must prefer the active left carry and fall back to the current native-right canonical.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'bool\s+TwoHandedGrip::beginPrimaryOnlyGrip\([\s\S]{0,700}retainUntilPhysicalGrip[\s\S]{0,3200}_persistentEquippedCarryActive\s*=\s*true[\s\S]{0,200}_persistentEquippedCarryDetachArmed\s*=\s*false' `
+    'A delayed committed transfer must not interpret an already-released draw squeeze as a weapon drop.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     '_equippedWeaponSheathCommittedThisFrame\[handIndex\]\s*\|\|[\s\S]{0,120}_equippedWeaponUnsheathCommittedThisFrame\[handIndex\][\s\S]{0,900}readGrabButtonState\(isLeft,\s*grabButton\)[\s\S]{0,500}clearSelectionState\(false\)' `
     'Both sheath release and retrieval squeeze must be consumed and excluded from normal world-grab selection in their commit frame.'

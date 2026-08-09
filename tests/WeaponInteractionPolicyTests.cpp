@@ -2371,6 +2371,28 @@ int main()
             .ownershipModeEnabled = true,
             .primaryPoseBlockerAvailable = true,
         }));
+    ok &= expectTrue("committed shoulder retrieval survives release while the weapon node resolves",
+        shouldKeepPendingPrimaryOnlyStart(PendingPrimaryOnlyStartInput{
+            .pending = true,
+            .gripHeld = false,
+            .committedTransfer = true,
+            .ownershipModeEnabled = true,
+            .primaryPoseBlockerAvailable = true,
+        }));
+    ok &= expectFalse("committed shoulder retrieval still fails closed without pose authority",
+        shouldKeepPendingPrimaryOnlyStart(PendingPrimaryOnlyStartInput{
+            .pending = true,
+            .gripHeld = false,
+            .committedTransfer = true,
+            .ownershipModeEnabled = true,
+            .primaryPoseBlockerAvailable = false,
+        }));
+    ok &= expectTrue("committed shoulder retrieval starts after squeeze release",
+        shouldStartPendingPrimaryOnlyGrip(true, false, true));
+    ok &= expectFalse("ordinary held-weapon transfer does not start after squeeze release",
+        shouldStartPendingPrimaryOnlyGrip(true, false, false));
+    ok &= expectFalse("committed transfer cannot start on a different equipped identity",
+        shouldStartPendingPrimaryOnlyGrip(false, true, true));
     ok &= expectTrue("pending trigger-equip grip is retained for visual-only sidearm release",
         shouldKeepPendingPrimaryOnlyStart(PendingPrimaryOnlyStartInput{
             .pending = true,

@@ -4968,13 +4968,51 @@ namespace rock
         return true;
     }
 
+    bool TwoHandedGrip::tryCaptureLeftFiringGripTransfer(
+        RE::NiNode* weaponNode,
+        const std::uint64_t currentWeaponGenerationKey,
+        const std::uint64_t currentEquippedWeaponOwnershipKey,
+        RE::NiTransform& outFiringHandWeaponLocal,
+        RE::NiPoint3& outFiringGripWeaponLocal) const
+    {
+        outFiringHandWeaponLocal = {};
+        outFiringGripWeaponLocal = {};
+
+        const bool activeLeftCaptureCurrent =
+            isManualOwnershipActive() &&
+            _firingHandIsLeft &&
+            _activeWeaponNode == weaponNode &&
+            currentEquippedWeaponOwnershipKey != 0 &&
+            _activeEquippedWeaponOwnershipKey ==
+                currentEquippedWeaponOwnershipKey &&
+            _hasFiringHandWeaponLocal &&
+            isFiniteTransform(_primaryHandWeaponLocal) &&
+            _primaryGripConfidence > 0.0f &&
+            std::isfinite(_primaryGripLocal.x) &&
+            std::isfinite(_primaryGripLocal.y) &&
+            std::isfinite(_primaryGripLocal.z);
+        if (activeLeftCaptureCurrent) {
+            outFiringHandWeaponLocal = _primaryHandWeaponLocal;
+            outFiringGripWeaponLocal = _primaryGripLocal;
+            return true;
+        }
+
+        return tryBuildCurrentLeftFiringGripCapture(
+            weaponNode,
+            currentWeaponGenerationKey,
+            currentEquippedWeaponOwnershipKey,
+            outFiringHandWeaponLocal,
+            outFiringGripWeaponLocal);
+    }
+
     bool TwoHandedGrip::beginPrimaryOnlyGrip(
         RE::NiNode* weaponNode,
         std::uint64_t currentWeaponGenerationKey,
         std::uint64_t currentEquippedWeaponOwnershipKey,
         const bool firingHandIsLeft,
         const RE::NiTransform* capturedFiringHandWeaponLocal,
-        const RE::NiPoint3* capturedFiringGripWeaponLocal)
+        const RE::NiPoint3* capturedFiringGripWeaponLocal,
+        const bool retainUntilPhysicalGrip)
     {
         if (!weaponNode || currentEquippedWeaponOwnershipKey == 0 || _state != TwoHandedState::Inactive ||
             !canBeginPrimaryOnlyGripForHand(firingHandIsLeft)) {
@@ -5025,6 +5063,10 @@ namespace rock
         _hapticEvents.firingGripAttached = true;
         _hapticEvents.firingGripAttachedHandIsLeft = _firingHandIsLeft;
         _firingGripSequence = ++_gripCaptureSequence;
+        if (retainUntilPhysicalGrip) {
+            _persistentEquippedCarryActive = true;
+            _persistentEquippedCarryDetachArmed = false;
+        }
         return true;
     }
 

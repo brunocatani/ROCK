@@ -2854,6 +2854,9 @@ namespace rock
                     equipped_weapon_manual_ownership_policy::PendingPrimaryOnlyStartInput{
                         .pending = _pendingEquippedWeaponPrimaryOnlyGripStart.pending,
                         .gripHeld = input_remap_runtime::isRawButtonPhysicallyHeld(firingHandIsLeft, g_rockConfig.rockGrabButtonID),
+                        .committedTransfer =
+                            _pendingEquippedWeaponPrimaryOnlyGripStart.
+                                committedTransfer,
                         .ownershipModeEnabled = _equippedWeaponHandlingSettings.firingGripOwnershipEnabled,
                         .primaryPoseBlockerAvailable = primaryPoseBlockerAvailable,
                     })) {
@@ -2878,16 +2881,26 @@ namespace rock
             bool primaryOnlyGripStartedThisFrame = false;
             if (firingGripOwnershipFeatureAvailable && !inputBlockingMenuActive && !_twoHandedGrip.isManualOwnershipActive()) {
                 const auto& primaryState = readPrimaryGrabState();
-                if (_pendingEquippedWeaponPrimaryOnlyGripStart.pending && !primaryState.held) {
+                if (_pendingEquippedWeaponPrimaryOnlyGripStart.pending &&
+                    !primaryState.held &&
+                    !_pendingEquippedWeaponPrimaryOnlyGripStart.
+                        committedTransfer) {
                     _pendingEquippedWeaponPrimaryOnlyGripStart = {};
                 }
 
+                const bool pendingPrimaryOnlyStartRequested =
+                    equipped_weapon_manual_ownership_policy::
+                        shouldStartPendingPrimaryOnlyGrip(
+                            pendingPrimaryStartMatchesCurrentWeapon,
+                            primaryState.held,
+                            _pendingEquippedWeaponPrimaryOnlyGripStart.
+                                committedTransfer);
                 const bool primaryOnlyStartRequested =
                     weaponNode != nullptr &&
                     currentEquippedWeaponOwnershipKey != 0 &&
-                    primaryState.held &&
-                    ((primaryDetachFeatureAvailable && primaryState.pressed) ||
-                        pendingPrimaryStartMatchesCurrentWeapon);
+                    ((primaryDetachFeatureAvailable && primaryState.held &&
+                         primaryState.pressed) ||
+                        pendingPrimaryOnlyStartRequested);
                 if (pendingPrimaryStartMatchesCurrentWeapon &&
                     _pendingEquippedWeaponPrimaryOnlyGripStart.isLeft &&
                     (!_pendingEquippedWeaponPrimaryOnlyGripStart.hasFiringHandWeaponLocal ||
@@ -2912,6 +2925,10 @@ namespace rock
                         _pendingEquippedWeaponPrimaryOnlyGripStart.hasFiringGripWeaponLocal ?
                     &_pendingEquippedWeaponPrimaryOnlyGripStart.firingGripWeaponLocal :
                     nullptr;
+                const bool committedTransfer =
+                    pendingPrimaryStartMatchesCurrentWeapon &&
+                    _pendingEquippedWeaponPrimaryOnlyGripStart.
+                        committedTransfer;
                 if (primaryOnlyStartRequested &&
                     _twoHandedGrip.beginPrimaryOnlyGrip(
                         weaponNode,
@@ -2919,7 +2936,8 @@ namespace rock
                         currentEquippedWeaponOwnershipKey,
                         firingHandIsLeft,
                         capturedFiringHandWeaponLocal,
-                        capturedFiringGripWeaponLocal)) {
+                        capturedFiringGripWeaponLocal,
+                        committedTransfer)) {
                     primaryOnlyGripStartedThisFrame = true;
                     _pendingEquippedWeaponPrimaryOnlyGripStart = {};
                     primaryGripInput = EquippedWeaponPrimaryGripInput{
@@ -3335,7 +3353,10 @@ namespace rock
                     observedEquippedWeaponFormID,
                     observedEquippedWeaponInstanceData,
                     nativeShoulderSheathSourceHand,
-                    equippedWeaponStashCommitDecisions[sheathHandIndex]);
+                    equippedWeaponStashCommitDecisions[sheathHandIndex],
+                    weaponNode,
+                    currentWeaponGenerationKey,
+                    currentEquippedWeaponOwnershipKey);
             }
             const auto equippedWeaponDropRequest = _twoHandedGrip.consumeEquippedWeaponDropRequest();
             if (equippedWeaponDropRequest.requested) {
@@ -3380,7 +3401,10 @@ namespace rock
                             observedEquippedWeaponInstanceData,
                             sourceHand,
                             equippedWeaponStashCommitDecisions[
-                                sourceHandIndex]);
+                                sourceHandIndex],
+                            weaponNode,
+                            currentWeaponGenerationKey,
+                            currentEquippedWeaponOwnershipKey);
                     }
                     const bool physicalDropRequested =
                         equipped_weapon_drop_policy::shouldAttemptPhysicalDrop(stashCommitSelected);
@@ -4383,7 +4407,10 @@ namespace rock
         const std::uint32_t observedWeaponFormID,
         const std::uintptr_t observedWeaponInstanceData,
         const equipped_weapon_drop_policy::SourceHand sourceHand,
-        const shoulder_stash::Decision& stashDecision)
+        const shoulder_stash::Decision& stashDecision,
+        RE::NiNode* weaponNode,
+        const std::uint64_t currentWeaponGenerationKey,
+        const std::uint64_t currentEquippedWeaponOwnershipKey)
     {
         const bool stashHandIsLeft =
             equipped_weapon_drop_policy::isLeft(sourceHand);
@@ -4396,6 +4423,16 @@ namespace rock
             identityCaptured &&
             sheathIdentity.formID == observedWeaponFormID &&
             sheathIdentity.instanceData == observedWeaponInstanceData;
+        RE::NiTransform leftFiringHandWeaponLocal{};
+        RE::NiPoint3 leftFiringGripWeaponLocal{};
+        const bool hasLeftFiringGripTransfer =
+            identityMatchesObserved &&
+            _twoHandedGrip.tryCaptureLeftFiringGripTransfer(
+                weaponNode,
+                currentWeaponGenerationKey,
+                currentEquippedWeaponOwnershipKey,
+                leftFiringHandWeaponLocal,
+                leftFiringGripWeaponLocal);
         native_equipped_weapon_draw::Result sheathResult{};
         sheathResult.result = identityCaptured ?
             native_equipped_weapon_draw::SubmitResult::IdentityChanged :
@@ -4427,16 +4464,23 @@ namespace rock
                     .weaponInstanceData = sheathIdentity.instanceData,
                     .equipIndex = sheathIdentity.equipIndex,
                     .zone = stashDecision.zone,
+                    .hasLeftFiringGripTransfer =
+                        hasLeftFiringGripTransfer,
+                    .leftFiringHandWeaponLocal =
+                        leftFiringHandWeaponLocal,
+                    .leftFiringGripWeaponLocal =
+                        leftFiringGripWeaponLocal,
                 };
             _equippedWeaponSheathRetrievalStates = {};
             ROCK_LOG_INFO(Weapon,
-                "Equipped weapon shoulder sheathed formID={:08X} instance={:#x} equipIndex={} sourceHand={} zone={} confidence={:.2f} state={}({})->{}({}) result={}",
+                "Equipped weapon shoulder sheathed formID={:08X} instance={:#x} equipIndex={} sourceHand={} zone={} confidence={:.2f} leftTransfer={} state={}({})->{}({}) result={}",
                 sheathIdentity.formID,
                 sheathIdentity.instanceData,
                 sheathIdentity.equipIndex,
                 equipped_weapon_drop_policy::sourceHandName(sourceHand),
                 body_zone::bodyZoneName(stashDecision.zone),
                 stashDecision.confidence,
+                hasLeftFiringGripTransfer ? "captured" : "unavailable",
                 sheathResult.stateBefore,
                 held_weapon_equip_state_policy::nativeWeaponStateName(
                     sheathResult.stateBefore),
@@ -4716,6 +4760,19 @@ namespace rock
                 .targetWeaponFormID = currentIdentity.formID,
                 .targetWeaponInstanceData = currentIdentity.instanceData,
                 .remainingSeconds = 10.0f,
+                .committedTransfer = true,
+                .hasFiringHandWeaponLocal = retrieveWithLeftHand &&
+                    _equippedWeaponShoulderSheath.
+                        hasLeftFiringGripTransfer,
+                .firingHandWeaponLocal =
+                    _equippedWeaponShoulderSheath.
+                        leftFiringHandWeaponLocal,
+                .hasFiringGripWeaponLocal = retrieveWithLeftHand &&
+                    _equippedWeaponShoulderSheath.
+                        hasLeftFiringGripTransfer,
+                .firingGripWeaponLocal =
+                    _equippedWeaponShoulderSheath.
+                        leftFiringGripWeaponLocal,
             };
         _equippedWeaponUnsheathCommittedThisFrame[handIndex] = true;
         if (g_rockConfig.rockShoulderStashHapticsEnabled) {

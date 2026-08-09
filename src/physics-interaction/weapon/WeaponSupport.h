@@ -212,6 +212,10 @@ namespace rock::equipped_weapon_manual_ownership_policy
     {
         bool pending{ false };
         bool gripHeld{ false };
+        // A native draw accepted from a physical shoulder retrieval is an
+        // already-committed transfer. It must survive the user releasing the
+        // initiating squeeze while the equipped node becomes observable.
+        bool committedTransfer{ false };
         bool ownershipModeEnabled{ true };
         bool primaryPoseBlockerAvailable{ true };
     };
@@ -267,11 +271,22 @@ namespace rock::equipped_weapon_manual_ownership_policy
 
     [[nodiscard]] inline constexpr bool shouldKeepPendingPrimaryOnlyStart(const PendingPrimaryOnlyStartInput& input) noexcept
     {
-        // Keep trigger-equip's already-held grip alive across equipped weapon node/collision generation latency.
+        // Trigger-equip remains coupled to its held grip. A committed native
+        // draw instead owns a durable hand-transfer intent until it starts or
+        // its exact equipped identity/timeout invalidates it.
         return input.pending &&
-               input.gripHeld &&
+               (input.gripHeld || input.committedTransfer) &&
                input.ownershipModeEnabled &&
                input.primaryPoseBlockerAvailable;
+    }
+
+    [[nodiscard]] inline constexpr bool shouldStartPendingPrimaryOnlyGrip(
+        bool pendingMatchesCurrentWeapon,
+        bool gripHeld,
+        bool committedTransfer) noexcept
+    {
+        return pendingMatchesCurrentWeapon &&
+               (gripHeld || committedTransfer);
     }
 
     [[nodiscard]] inline constexpr bool canPreserveManualOwnership(

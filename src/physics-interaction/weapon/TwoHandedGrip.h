@@ -772,7 +772,8 @@ namespace rock
             std::uint64_t currentEquippedWeaponOwnershipKey,
             bool firingHandIsLeft,
             const RE::NiTransform* capturedFiringHandWeaponLocal,
-            const RE::NiPoint3* capturedFiringGripWeaponLocal);
+            const RE::NiPoint3* capturedFiringGripWeaponLocal,
+            bool retainUntilPhysicalGrip = false);
 
         /*
          * Pip-Boy left-hand assignment starts without a physical grab hold.
@@ -797,6 +798,19 @@ namespace rock
         static bool canBeginPrimaryOnlyGripForHand(bool isLeft);
 
         bool tryBuildCurrentLeftFiringGripCapture(
+            RE::NiNode* weaponNode,
+            std::uint64_t currentWeaponGenerationKey,
+            std::uint64_t currentEquippedWeaponOwnershipKey,
+            RE::NiTransform& outFiringHandWeaponLocal,
+            RE::NiPoint3& outFiringGripWeaponLocal) const;
+
+        /*
+         * Captures a left-hand transfer frame before a native transition can
+         * clear manual ownership or retire the current collision generation.
+         * An active left carry is copied directly; native-right carry falls
+         * back to the canonical mirrored frame for the same equipped owner.
+         */
+        bool tryCaptureLeftFiringGripTransfer(
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey,
             std::uint64_t currentEquippedWeaponOwnershipKey,

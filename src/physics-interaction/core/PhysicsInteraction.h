@@ -345,7 +345,10 @@ namespace rock
             std::uint32_t observedWeaponFormID,
             std::uintptr_t observedWeaponInstanceData,
             equipped_weapon_drop_policy::SourceHand sourceHand,
-            const shoulder_stash::Decision& stashDecision);
+            const shoulder_stash::Decision& stashDecision,
+            RE::NiNode* weaponNode,
+            std::uint64_t currentWeaponGenerationKey,
+            std::uint64_t currentEquippedWeaponOwnershipKey);
         void clearEquippedWeaponShoulderSheath(const char* reason);
         void serviceEquippedWeaponShoulderSheathRetrieval(
             const PhysicsFrameContext& frame,
@@ -529,6 +532,9 @@ namespace rock
             std::uintptr_t weaponInstanceData{ 0 };
             std::uint32_t equipIndex{ 0 };
             body_zone::BodyZoneKind zone{ body_zone::BodyZoneKind::Unknown };
+            bool hasLeftFiringGripTransfer{ false };
+            RE::NiTransform leftFiringHandWeaponLocal{};
+            RE::NiPoint3 leftFiringGripWeaponLocal{};
         };
         // The equipped instance remains equipped while native presentation is
         // sheathed. Retrieval owns independent per-hand dwell so either empty
@@ -565,6 +571,7 @@ namespace rock
             std::uint32_t previousWeaponFormID{ 0 };
             std::uintptr_t previousWeaponInstanceData{ 0 };
             float remainingSeconds{ 0.0f };
+            bool committedTransfer{ false };
             bool hasFiringHandWeaponLocal{ false };
             RE::NiTransform firingHandWeaponLocal{};
             bool hasFiringGripWeaponLocal{ false };
