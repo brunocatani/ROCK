@@ -225,6 +225,15 @@ Require-Pattern $runtimeHeader `
 Require-Pattern $runtimeSource `
     'rockDebugDrawDynamicWeaponColliders[\s\S]*ROCK_LOG_SAMPLE_INFO\([\s\S]*DWC pipeline:[\s\S]*snapshot\(read/valid/identity/contact/teleport\)' `
     'Dynamic weapon pipeline diagnostics must be debug-gated and rate-limited.'
+Require-Pattern $runtimeSource `
+    'rockDebugDrawDynamicWeaponColliders[\s\S]*DWC recovery trace:[\s\S]*rawStep=[\s\S]*error\(raw-command/command-live/raw-live/queue\)[\s\S]*recovery\(active/alphaT/alphaR/opposed\)' `
+    'Surface-recovery diagnosis must expose observed intent, raw motion, commanded motion, live motion, queue lag, and recovery throttling.'
+Require-Pattern $weaponAuthority `
+    'DWC hand input trace:[\s\S]*priorCollision\(L/R\)[\s\S]*rootRecon' `
+    'Two-hand diagnosis must correlate prior collision presentation with root-hand and unaffected driver-frame inputs.'
+Require-Pattern $weaponAuthority `
+    '_weaponCollisionHandAuthorityLiveAtFrameStart\s*=\s*[\r\n\s]*_weaponCollisionHandAuthorityLive' `
+    'Two-hand diagnosis must latch the previous render interval before clearing collision hand authority.'
 Require-Order $runtimeSource @(
     'rawRequestedBodyTarget\s*=\s*dynamic_weapon_collision_policy::makeProxyBodyTarget',
     '_frameResetRawMotionBaseline',

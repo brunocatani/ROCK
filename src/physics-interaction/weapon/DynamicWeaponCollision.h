@@ -190,6 +190,7 @@ namespace rock
         RE::NiNode* _frameWeaponNode{ nullptr };
         RE::NiTransform _frameRequestedWeaponWorld{};
         bool _frameResetRawMotionBaseline{ false };
+        bool _frameVisualIntentObserved{ false };
         RE::NiTransform _previousRawProxyBodyTarget{};
         RE::NiTransform _surfaceClutchProxyBodyTarget{};
         bool _previousRawProxyBodyTargetValid{ false };

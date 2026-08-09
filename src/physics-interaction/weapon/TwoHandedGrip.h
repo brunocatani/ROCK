@@ -1624,6 +1624,10 @@ namespace rock
         // survives only through the render interval that follows post-solve;
         // beginWeaponCollisionPresentationFrame clears it before next intent.
         std::array<bool, 2> _weaponCollisionHandAuthorityLive{};
+        // Diagnostic witness captured before those tags are cleared. It
+        // identifies hand inputs whose current skeleton pose may still be the
+        // previous render interval's collision-corrected output.
+        std::array<bool, 2> _weaponCollisionHandAuthorityLiveAtFrameStart{};
         ReturningWeaponVisualState _returningWeaponVisual{};
         RE::NiTransform _lastRenderedWeaponWorld{};
         bool _hasLastRenderedWeaponWorld{ false };
