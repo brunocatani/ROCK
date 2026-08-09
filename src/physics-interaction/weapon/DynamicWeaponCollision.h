@@ -75,7 +75,8 @@ namespace rock
             void* bhkWorld,
             RE::NiNode* weaponNode,
             std::uint64_t weaponGenerationKey,
-            bool enabled);
+            bool enabled,
+            bool suppressDefaultNativeIntent);
 
         static void observeWeaponVisualIntent(
             void* context,
@@ -190,7 +191,6 @@ namespace rock
         RE::NiNode* _frameWeaponNode{ nullptr };
         RE::NiTransform _frameRequestedWeaponWorld{};
         bool _frameResetRawMotionBaseline{ false };
-        bool _frameVisualIntentObserved{ false };
         RE::NiTransform _previousRawProxyBodyTarget{};
         RE::NiTransform _surfaceClutchProxyBodyTarget{};
         bool _previousRawProxyBodyTargetValid{ false };

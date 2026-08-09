@@ -468,6 +468,36 @@ namespace rock::scope_safe_hand_frame_math
                    ResolutionMode::Unavailable;
     }
 
+    [[nodiscard]] inline constexpr ResolutionMode resolveCollisionIsolatedMode(
+        bool collisionPresentationWasLive,
+        bool scopeDriverFrameAuthorityActive,
+        bool rootHandValid,
+        bool reconstructedHandValid,
+        bool hasLastHandWorld,
+        std::uint32_t consecutiveDriverMissFrames,
+        std::uint32_t maxDriverMissGraceFrames)
+    {
+        /*
+         * ROCK runs after FRIK's skeleton pass. If the previous render interval
+         * retained collision hand authority, the current root already contains
+         * that presentation result even after its tag is cleared. Reconstruct
+         * from the unaffected physical driver or fail closed; root and history
+         * would both feed collision output back into the next drive target.
+         */
+        if (collisionPresentationWasLive) {
+            return reconstructedHandValid ?
+                       ResolutionMode::DriverReconstructed :
+                       ResolutionMode::Unavailable;
+        }
+        return resolveMode(
+            scopeDriverFrameAuthorityActive,
+            rootHandValid,
+            reconstructedHandValid,
+            hasLastHandWorld,
+            consecutiveDriverMissFrames,
+            maxDriverMissGraceFrames);
+    }
+
     [[nodiscard]] inline constexpr bool shouldPublishLockedHandVisualAuthority(bool scopeMenuOpen)
     {
         // hFRIK's hands are deliberately hidden in this state, and its arm IK

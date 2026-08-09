@@ -98,13 +98,14 @@ Require-Pattern 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'Weapon visual authority must separate collision-free intent observation from the solved bypass publication.'
 Require-Order $interaction @(
     '_twoHandedGrip\.beginWeaponCollisionPresentationFrame\(',
+    'previousWeaponCollisionPresentationWasLive\(',
     '_dynamicWeaponCollision\.beginFrame\(',
     '_twoHandedGrip\.update\(',
     '_twoHandedGrip\.applyGunstockAlignment\(',
     '_dynamicWeaponCollision\.finishFrame\(',
     'applyWeaponCollisionResolvedAuthority\(',
     '_weaponCollision\.updateBodiesFromCurrentSourceTransforms\('
-) 'Previous-frame collision hand authority must clear before dynamic weapon intent starts, with post-solve resolution remaining before layer-44 hull transforms.'
+) 'Previous-frame collision hand presentation must be witnessed and cleared before dynamic intent capture, with post-solve resolution remaining before layer-44 hull transforms.'
 Require-Pattern $runtimePolicy `
     'selectAttachedHands\([\s\S]*partCarry[\s\S]*firingGripOccupied[\s\S]*leftPartGripActive[\s\S]*rightPartGripActive[\s\S]*firingHandIsActuallyLeft' `
     'Collision hand coupling must select the native/manual firing hand and active part-grip hands without moving a free hand.'
@@ -124,8 +125,8 @@ Require-Order $weaponAuthority @(
     'applyWeaponVisualAuthority\('
 ) 'Collision correction must clear the prior render frame before intent, retain attached hands through the current render interval, and publish the exact weapon pose last.'
 Require-Pattern $weaponAuthority `
-    'Retain the high-priority result through rendering[\s\S]*next PhysicsInteraction frame clears this tag before any[\s\S]*controller/grip intent is sampled' `
-    'The source must document the render-lifetime and next-intent anti-feedback invariant proven by the two-hand authority trace.'
+    'Retain the high-priority result through rendering[\s\S]*retained witness[\s\S]*unaffected hand driver[\s\S]*FRIK''s current root was produced[\s\S]*cannot be sampled' `
+    'The source must document why post-FRIK tag clearing requires driver-reconstructed input isolation.'
 Reject-Pattern $weaponAuthority `
     'bool TwoHandedGrip::applyWeaponCollisionResolvedAuthority\([\s\S]*?clearExternalHandWorldTransform\([\s\S]*?bool TwoHandedGrip::applyFiringHandLockedVisual' `
     'Post-solve collision publication must not clear its hand tag in the same method; that synchronously restores lower-priority two-hand targets before rendering.'
@@ -133,8 +134,26 @@ Require-Pattern $weaponAuthority `
     'WEAPON_COLLISION_HAND_PRIORITY\s*=\s*110[\s\S]*GRIP_HAND_POSE_PRIORITY\s*=\s*100|GRIP_HAND_POSE_PRIORITY\s*=\s*100[\s\S]*WEAPON_COLLISION_HAND_PRIORITY\s*=\s*110' `
     'The collision hand authority must outrank normal grip targets only through the final presentation interval.'
 Require-Pattern $weaponAuthority `
-    'void TwoHandedGrip::reset\(\)[\s\S]{0,600}WEAPON_COLLISION_HAND_TAG[\s\S]{0,500}Hand::Left[\s\S]{0,500}WEAPON_COLLISION_HAND_TAG[\s\S]{0,500}Hand::Right[\s\S]{0,300}_weaponCollisionHandAuthorityLive\s*=\s*\{\}' `
-    'Lifecycle reset must defensively clear collision hand authority and its per-hand live state.'
+    'void TwoHandedGrip::reset\(\)[\s\S]{0,600}WEAPON_COLLISION_HAND_TAG[\s\S]{0,500}Hand::Left[\s\S]{0,500}WEAPON_COLLISION_HAND_TAG[\s\S]{0,500}Hand::Right[\s\S]{0,300}_weaponCollisionHandAuthorityLive\s*=\s*\{\}[\s\S]{0,200}_weaponCollisionHandPresentationFromPreviousFrame\s*=\s*\{\}' `
+    'Lifecycle reset must defensively clear collision hand authority and its previous-presentation witness.'
+Require-Pattern $weaponAuthority `
+    '_weaponCollisionHandPresentationFromPreviousFrame\s*=\s*[\r\n\s]*_weaponCollisionHandAuthorityLive' `
+    'The presentation boundary must capture the retained collision-hand witness before clearing its tags.'
+Require-Pattern $weaponAuthority `
+    'resolveCollisionIsolatedMode\([\s\S]*_weaponCollisionHandPresentationFromPreviousFrame\[handIndex\][\s\S]*_scopeDriverFrameAuthorityActive' `
+    'A retained collision hand must force physical-driver reconstruction instead of feeding the collision-corrected root back into the solver.'
+Require-Pattern $interaction `
+    'suppressDefaultNativeWeaponIntent\s*=\s*[\r\n\s]*_twoHandedGrip\.previousWeaponCollisionPresentationWasLive\(\)[\s\S]*_dynamicWeaponCollision\.beginFrame\([\s\S]*suppressDefaultNativeWeaponIntent' `
+    'A collision-contaminated native weapon pose must not remain as the fallback frame intent when isolated driver reconstruction fails.'
+Require-Pattern $runtimeSource `
+    '_frameHasIntent\s*=[\s\S]*_frameAcceptingIntent\s*&&[\s\S]*!suppressDefaultNativeIntent\s*&&[\s\S]*isFiniteTransform\(weaponNode->world\)' `
+    'Dynamic collision must accept the native weapon pose by default only when no prior collision presentation can contaminate it.'
+Require-Pattern $weaponAuthority `
+    'publishCollisionIsolatedRightNativeWeaponIntent\([\s\S]*_weaponCollisionHandPresentationFromPreviousFrame\[1\][\s\S]*_firingHandIsLeft[\s\S]*ownsWeaponTransform\(\)[\s\S]*weaponNode->parent\s*!=\s*rightHand[\s\S]*tryGetSolverHandTransform\(false,[\s\S]*composeTransforms\([\s\S]*physicalRightHandWorld,[\s\S]*weaponNode->local[\s\S]*_weaponVisualIntentObserver\(' `
+    'Native right-hand carry must preserve the current weapon-local animation on a collision-isolated physical hand basis.'
+Require-Pattern $weaponAuthority `
+    'refreshRightNativeCanonicalFrame\([\s\S]*_weaponCollisionHandPresentationFromPreviousFrame\[1\][\s\S]*isManualOwnershipActive\(\)' `
+    'Previous collision presentation must never poison the passive native right-hand canonical calibration.'
 
 # Visual correction is admitted only by a genuine proxy/world callback. The
 # legacy key-3 point path remains intact while the proxy-specific key-2 path
@@ -225,15 +244,15 @@ Require-Pattern $runtimeHeader `
 Require-Pattern $runtimeSource `
     'rockDebugDrawDynamicWeaponColliders[\s\S]*ROCK_LOG_SAMPLE_INFO\([\s\S]*DWC pipeline:[\s\S]*snapshot\(read/valid/identity/contact/teleport\)' `
     'Dynamic weapon pipeline diagnostics must be debug-gated and rate-limited.'
-Require-Pattern $runtimeSource `
-    'rockDebugDrawDynamicWeaponColliders[\s\S]*DWC recovery trace:[\s\S]*rawStep=[\s\S]*error\(raw-command/command-live/raw-live/queue\)[\s\S]*recovery\(active/alphaT/alphaR/opposed\)' `
-    'Surface-recovery diagnosis must expose observed intent, raw motion, commanded motion, live motion, queue lag, and recovery throttling.'
-Require-Pattern $weaponAuthority `
-    'DWC hand input trace:[\s\S]*priorCollision\(L/R\)[\s\S]*rootRecon' `
-    'Two-hand diagnosis must correlate prior collision presentation with root-hand and unaffected driver-frame inputs.'
-Require-Pattern $weaponAuthority `
-    '_weaponCollisionHandAuthorityLiveAtFrameStart\s*=\s*[\r\n\s]*_weaponCollisionHandAuthorityLive' `
-    'Two-hand diagnosis must latch the previous render interval before clearing collision hand authority.'
+Reject-Pattern $runtimeSource `
+    'DWC recovery trace:|rawTargetStep|_frameVisualIntentObserved' `
+    'The completed recovery/input diagnostic must not remain in the dynamic weapon hot path.'
+Reject-Pattern $runtimeHeader `
+    '_frameVisualIntentObserved' `
+    'The completed intent-source diagnostic state must not remain in the runtime object.'
+Reject-Pattern $weaponAuthority `
+    'DWC hand input trace:|DynamicCollisionHandInputTrace|_weaponCollisionHandAuthorityLiveAtFrameStart' `
+    'The completed hand-input trace must be replaced by the production collision-presentation witness.'
 Require-Order $runtimeSource @(
     'rawRequestedBodyTarget\s*=\s*dynamic_weapon_collision_policy::makeProxyBodyTarget',
     '_frameResetRawMotionBaseline',

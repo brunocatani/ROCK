@@ -71,8 +71,8 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'SCOPE_DRIVER_MI
     'The last valid scoped hand frame fallback must be explicitly bounded across driver loss.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'retainDriverFrameAuthority\([\s\S]*_manualScopeActivationRequested[\s\S]*isManualOwnershipActive\(\)[\s\S]*driverFrameAuthorityWasActive[\s\S]*driverFrameAuthorityStoppedThisFrame' `
     'Only a still-requested manual scope may retain its driver-relative solver basis across ScopeMenu close/reopen pulses.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'rootHandValid\s*=\s*!_scopeDriverFrameAuthorityActive[\s\S]*resolveMode\([\s\S]*_scopeDriverFrameAuthorityActive' `
-    'The latched scope-driver authority, not presentation visibility, must select the weapon-solver hand basis.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'rootHandValid\s*=\s*!_scopeDriverFrameAuthorityActive[\s\S]*resolveCollisionIsolatedMode\([\s\S]*_weaponCollisionHandPresentationFromPreviousFrame[\s\S]*_scopeDriverFrameAuthorityActive' `
+    'The weapon solver must combine latched scope authority with previous-frame collision-presentation isolation.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'shouldStartRootRebase\([\s\S]*_manualScopeActivationRequested[\s\S]*driverFrameAuthorityStoppedThisFrame[\s\S]*reconstructedHandValid[\s\S]*recentScopedHandAvailable[\s\S]*continuityHandWorld[\s\S]*rootRebaseLocalStart[\s\S]*interpolateRebaseTransform' `
     'A real button release must select the restored hFRIK root immediately instead of rebasing from a stale hidden-scope hand.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'activationStateChanged[\s\S]*SCOPE_TRANSITION_TRACE_FRAMES[\s\S]*SCOPE-TRANSITION[\s\S]*buttonRequested=[\s\S]*rendererActive=[\s\S]*rootToReconstructed=[\s\S]*rootToSolver=' `

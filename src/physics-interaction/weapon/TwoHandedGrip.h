@@ -672,9 +672,17 @@ namespace rock
             _weaponVisualIntentObserver = observer;
         }
 
-        // Releases the previous render frame's collision-only hand authority
-        // before any current-frame controller/grip intent is sampled.
+        // Captures which hands retained collision presentation through the
+        // previous render interval, then releases those tags. FRIK has already
+        // updated the current skeleton, so input selection uses that witness to
+        // avoid reading the collision-corrected roots back as physical intent.
         void beginWeaponCollisionPresentationFrame();
+
+        bool previousWeaponCollisionPresentationWasLive() const
+        {
+            return _weaponCollisionHandPresentationFromPreviousFrame[0] ||
+                   _weaponCollisionHandPresentationFromPreviousFrame[1];
+        }
 
         // Republishes a physics-resolved visual pose without feeding that
         // correction back into the next dynamic-weapon drive target.
@@ -1396,6 +1404,9 @@ namespace rock
             std::uint32_t currentEquippedWeaponFormID,
             const WeaponCollision& weaponCollision);
         void refreshScopeSafeHandFrames(RE::NiNode* weaponNode, const EquippedWeaponGripFrameInput& frameInput, float dt);
+        void publishCollisionIsolatedRightNativeWeaponIntent(
+            RE::NiNode* weaponNode,
+            std::uint64_t currentWeaponGenerationKey);
         void traceNativeScopeTransitionFinalState(RE::NiNode* weaponNode);
         bool tryGetSolverHandTransform(bool isLeft, RE::NiTransform& outTransform) const;
         RE::NiTransform resolveLockedHandVisualTarget(
@@ -1621,13 +1632,12 @@ namespace rock
         std::array<RE::NiTransform, 2> _lastPublishedHandWorld{};
         std::array<bool, 2> _hasLastPublishedHandWorld{};
         // Per physical hand (left index 0, right index 1). A collision target
-        // survives only through the render interval that follows post-solve;
-        // beginWeaponCollisionPresentationFrame clears it before next intent.
+        // survives only through the render interval that follows post-solve.
         std::array<bool, 2> _weaponCollisionHandAuthorityLive{};
-        // Diagnostic witness captured before those tags are cleared. It
-        // identifies hand inputs whose current skeleton pose may still be the
-        // previous render interval's collision-corrected output.
-        std::array<bool, 2> _weaponCollisionHandAuthorityLiveAtFrameStart{};
+        // Captured before those tags are cleared. Because ROCK runs after FRIK,
+        // this identifies current root/weapon poses that already include the
+        // previous render interval's collision presentation.
+        std::array<bool, 2> _weaponCollisionHandPresentationFromPreviousFrame{};
         ReturningWeaponVisualState _returningWeaponVisual{};
         RE::NiTransform _lastRenderedWeaponWorld{};
         bool _hasLastRenderedWeaponWorld{ false };

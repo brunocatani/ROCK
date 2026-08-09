@@ -1295,22 +1295,6 @@ namespace rock
 
     void TwoHandedGrip::refreshScopeSafeHandFrames(RE::NiNode* weaponNode, const EquippedWeaponGripFrameInput& frameInput, float dt)
     {
-        struct DynamicCollisionHandInputTrace
-        {
-            scope_safe_hand_frame_math::ResolutionMode mode{
-                scope_safe_hand_frame_math::ResolutionMode::Unavailable
-            };
-            RE::NiTransform rootWorld{};
-            RE::NiTransform driverWorld{};
-            RE::NiTransform reconstructedWorld{};
-            RE::NiTransform solverWorld{};
-            bool rootValid{ false };
-            bool driverValid{ false };
-            bool reconstructedValid{ false };
-            bool solverValid{ false };
-        };
-        std::array<DynamicCollisionHandInputTrace, 2> dynamicCollisionInputTrace{};
-
         // A final trace is valid only for the same update that produced its
         // pre-solve sample. Early-return frames deliberately remain pre-only.
         _nativeScopeTransitionFinalTracePending = false;
@@ -1367,9 +1351,9 @@ namespace rock
         }
 
         const float frameDeltaSeconds = std::isfinite(dt) && dt > 0.0f ? (std::min)(dt, 0.1f) : (1.0f / 90.0f);
-        const auto refreshHand = [this, weaponNode, driverFrameAuthorityStoppedThisFrame, frameDeltaSeconds, &dynamicCollisionInputTrace](bool isLeft, const EquippedWeaponScopeHandDriverFrame& driverFrame) {
-            ScopeSafeHandFrameState& state = _scopeSafeHandFrames[isLeft ? 0u : 1u];
-            auto& collisionTrace = dynamicCollisionInputTrace[isLeft ? 0u : 1u];
+        const auto refreshHand = [this, weaponNode, driverFrameAuthorityStoppedThisFrame, frameDeltaSeconds](bool isLeft, const EquippedWeaponScopeHandDriverFrame& driverFrame) {
+            const std::size_t handIndex = isLeft ? 0u : 1u;
+            ScopeSafeHandFrameState& state = _scopeSafeHandFrames[handIndex];
             state.currentHandWorldValid = false;
 
             RE::NiTransform rootHandWorld{};
@@ -1385,21 +1369,14 @@ namespace rock
                     state.driverToHandLocal);
                 reconstructedHandValid = isUsableHandAuthorityTransform(reconstructedHandWorld);
             }
-            const auto resolutionMode = scope_safe_hand_frame_math::resolveMode(
+            const auto resolutionMode = scope_safe_hand_frame_math::resolveCollisionIsolatedMode(
+                _weaponCollisionHandPresentationFromPreviousFrame[handIndex],
                 _scopeDriverFrameAuthorityActive,
                 rootHandValid,
                 reconstructedHandValid,
                 state.hasLastHandWorld,
                 state.consecutiveDriverMissFrames,
                 SCOPE_DRIVER_MISS_GRACE_FRAMES);
-            collisionTrace.mode = resolutionMode;
-            collisionTrace.rootWorld = rootHandWorld;
-            collisionTrace.driverWorld = driverFrame.world;
-            collisionTrace.reconstructedWorld = reconstructedHandWorld;
-            collisionTrace.rootValid = rootHandValid;
-            collisionTrace.driverValid = driverValid;
-            collisionTrace.reconstructedValid = reconstructedHandValid;
-
             if (resolutionMode == scope_safe_hand_frame_math::ResolutionMode::RootFlattened) {
                 const bool recentScopedHandAvailable = state.hasLastHandWorld &&
                                                        state.consecutiveDriverMissFrames < SCOPE_DRIVER_MISS_GRACE_FRAMES;
@@ -1472,8 +1449,6 @@ namespace rock
                         state.hasDriverToHandLocal = true;
                     }
                 }
-                collisionTrace.solverWorld = state.currentHandWorld;
-                collisionTrace.solverValid = state.currentHandWorldValid;
                 return;
             }
 
@@ -1484,8 +1459,6 @@ namespace rock
                 state.currentHandWorldValid = true;
                 state.lastHandWorld = reconstructedHandWorld;
                 state.hasLastHandWorld = true;
-                collisionTrace.solverWorld = state.currentHandWorld;
-                collisionTrace.solverValid = state.currentHandWorldValid;
                 return;
             }
 
@@ -1500,58 +1473,10 @@ namespace rock
             } else if (_scopeDriverFrameAuthorityActive) {
                 state.consecutiveDriverMissFrames = SCOPE_DRIVER_MISS_GRACE_FRAMES;
             }
-            collisionTrace.solverWorld = state.currentHandWorld;
-            collisionTrace.solverValid = state.currentHandWorldValid;
         };
 
         refreshHand(true, frameInput.leftHandDriverFrame);
         refreshHand(false, frameInput.rightHandDriverFrame);
-
-        if (g_rockConfig.rockWeaponCollisionDynamicBoxEnabled &&
-            g_rockConfig.rockDebugDrawDynamicWeaponColliders &&
-            (_weaponCollisionHandAuthorityLiveAtFrameStart[0] ||
-                _weaponCollisionHandAuthorityLiveAtFrameStart[1])) {
-            const auto& left = dynamicCollisionInputTrace[0];
-            const auto& right = dynamicCollisionInputTrace[1];
-            const auto rootToReconstructed = [](const DynamicCollisionHandInputTrace& trace) {
-                return trace.rootValid && trace.reconstructedValid ?
-                    weaponSolverLength(weaponSolverSub(
-                        trace.rootWorld.translate,
-                        trace.reconstructedWorld.translate)) :
-                    -1.0f;
-            };
-            ROCK_LOG_SAMPLE_INFO(
-                Weapon,
-                250,
-                "DWC hand input trace: state={} priorCollision(L/R)={}/{} L(mode={} valid(r/d/x/s)={}/{}/{}/{} root=({:.2f},{:.2f},{:.2f}) driver=({:.2f},{:.2f},{:.2f}) rootRecon={:.2f}) R(mode={} valid(r/d/x/s)={}/{}/{}/{} root=({:.2f},{:.2f},{:.2f}) driver=({:.2f},{:.2f},{:.2f}) rootRecon={:.2f})",
-                static_cast<std::uint32_t>(_state),
-                _weaponCollisionHandAuthorityLiveAtFrameStart[0],
-                _weaponCollisionHandAuthorityLiveAtFrameStart[1],
-                static_cast<std::uint32_t>(left.mode),
-                left.rootValid,
-                left.driverValid,
-                left.reconstructedValid,
-                left.solverValid,
-                left.rootWorld.translate.x,
-                left.rootWorld.translate.y,
-                left.rootWorld.translate.z,
-                left.driverWorld.translate.x,
-                left.driverWorld.translate.y,
-                left.driverWorld.translate.z,
-                rootToReconstructed(left),
-                static_cast<std::uint32_t>(right.mode),
-                right.rootValid,
-                right.driverValid,
-                right.reconstructedValid,
-                right.solverValid,
-                right.rootWorld.translate.x,
-                right.rootWorld.translate.y,
-                right.rootWorld.translate.z,
-                right.driverWorld.translate.x,
-                right.driverWorld.translate.y,
-                right.driverWorld.translate.z,
-                rootToReconstructed(right));
-        }
 
         if (g_rockConfig.rockGunstockModeEnabled &&
             _gunstockWeaponEligibility.eligible &&
@@ -1712,6 +1637,55 @@ namespace rock
             _nativeScopeTransitionFinalTracePending = true;
             --_nativeScopeTransitionTraceFramesRemaining;
         }
+    }
+
+    void TwoHandedGrip::publishCollisionIsolatedRightNativeWeaponIntent(
+        RE::NiNode* weaponNode,
+        const std::uint64_t currentWeaponGenerationKey)
+    {
+        if (!_weaponCollisionHandPresentationFromPreviousFrame[1] ||
+            !_weaponVisualIntentObserver ||
+            !weaponNode ||
+            currentWeaponGenerationKey == 0 ||
+            _firingHandIsLeft ||
+            ownsWeaponTransform() ||
+            !isFiniteTransform(weaponNode->local)) {
+            return;
+        }
+
+        RE::NiNode* rightHand = resolveFirstPersonHandNode(false);
+        if (!rightHand || weaponNode->parent != rightHand) {
+            return;
+        }
+
+        RE::NiTransform physicalRightHandWorld{};
+        if (!tryGetSolverHandTransform(false, physicalRightHandWorld) ||
+            !isUsableHandAuthorityTransform(physicalRightHandWorld)) {
+            return;
+        }
+
+        const RE::NiTransform requestedWeaponWorld =
+            transform_math::composeTransforms(
+                physicalRightHandWorld,
+                weaponNode->local);
+        if (!isFiniteTransform(requestedWeaponWorld)) {
+            return;
+        }
+
+        /*
+         * FRIK has already authored this frame's weapon-local animation, but
+         * its parent hand still contains the previous collision presentation.
+         * Preserve the native local animation while replacing only that parent
+         * basis with the collision-isolated physical hand. Later ROCK-owned
+         * grip, return, and gunstock publications naturally supersede this
+         * default intent through the same observer.
+         */
+        _weaponVisualIntentObserver(
+            _weaponVisualIntentObserverContext,
+            weaponNode,
+            requestedWeaponWorld,
+            currentWeaponGenerationKey,
+            false);
     }
 
     void TwoHandedGrip::traceNativeScopeTransitionFinalState(RE::NiNode* weaponNode)
@@ -1997,6 +1971,10 @@ namespace rock
             reconcileDeferredScopeHandAuthority(weaponNode);
             return;
         }
+
+        publishCollisionIsolatedRightNativeWeaponIntent(
+            weaponNode,
+            currentWeaponGenerationKey);
 
         refreshNaturalHandInWandFrames();
         refreshAuthoredSupportRightMirror();
@@ -2313,7 +2291,7 @@ namespace rock
             WEAPON_COLLISION_HAND_TAG,
             frik_visual_authority::Hand::Right);
         _weaponCollisionHandAuthorityLive = {};
-        _weaponCollisionHandAuthorityLiveAtFrameStart = {};
+        _weaponCollisionHandPresentationFromPreviousFrame = {};
         resetGunstockAlignment("reset");
         _gunstockModeToggle = {};
         _gunstockWeaponEligibility = {};
@@ -9040,7 +9018,7 @@ namespace rock
 
     void TwoHandedGrip::beginWeaponCollisionPresentationFrame()
     {
-        _weaponCollisionHandAuthorityLiveAtFrameStart =
+        _weaponCollisionHandPresentationFromPreviousFrame =
             _weaponCollisionHandAuthorityLive;
         const bool leftCleared = clearWeaponCollisionHandAuthority(true);
         const bool rightCleared = clearWeaponCollisionHandAuthority(false);
@@ -9138,8 +9116,10 @@ namespace rock
                  * Retain the high-priority result through rendering. Clearing
                  * it here synchronously reselects the live priority-100 firing
                  * and support targets, erasing the collision correction. The
-                 * next PhysicsInteraction frame clears this tag before any
-                 * controller/grip intent is sampled, preventing feedback.
+                 * next PhysicsInteraction frame clears this tag, then uses the
+                 * retained witness to reconstruct physical intent from the
+                 * unaffected hand driver. FRIK's current root was produced
+                 * before ROCK's clear and therefore cannot be sampled here.
                  */
                 pulse.retained = pulse.applied;
                 if (pulse.retained) {
@@ -9560,7 +9540,8 @@ namespace rock
          * offsets (e.g. the UMP's large forward offset) silently missing
          * from the mirrored left hold ("worked before by coincidence").
          */
-        if (isManualOwnershipActive() || _weaponNodeOwnershipBlockEngaged ||
+        if (_weaponCollisionHandPresentationFromPreviousFrame[1] ||
+            isManualOwnershipActive() || _weaponNodeOwnershipBlockEngaged ||
             !scope_safe_hand_frame_math::canRefreshRightFiringCanonicalFrame(_scopeMenuOpenThisFrame, _scopeSafeHandFrames[1].rootRebaseActive) || !weaponNode ||
             currentWeaponGenerationKey == 0 || !isFiniteTransform(weaponNode->world)) {
             return;

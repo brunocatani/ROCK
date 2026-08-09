@@ -2617,6 +2617,8 @@ namespace rock
 
         const std::uint64_t currentWeaponGenerationKey = _weaponCollision.getCurrentWeaponGenerationKey();
         const std::uint64_t currentEquippedWeaponOwnershipKey = _weaponCollision.getCurrentEquippedWeaponOwnershipKey();
+        const bool suppressDefaultNativeWeaponIntent =
+            _twoHandedGrip.previousWeaponCollisionPresentationWasLive();
         _dynamicWeaponCollision.beginFrame(
             runtime.frameIndex,
             hknp,
@@ -2627,7 +2629,8 @@ namespace rock
                 g_rockConfig.rockWeaponCollisionDynamicBoxEnabled &&
                 runtime.weaponDrawn &&
                 !frame.menuBlocked &&
-                physicsWritesAllowedForWorld(frame.hknpWorld));
+                physicsWritesAllowedForWorld(frame.hknpWorld),
+            suppressDefaultNativeWeaponIntent);
         reconcileEquippedWeaponHandlingMode();
         serviceEquippedWeaponHandAssignment(
             weaponNode,

@@ -1788,6 +1788,18 @@ int main()
             ResolutionMode::Unavailable);
         ok &= expectEqual("ordinary aiming never substitutes the scope driver for a missing canonical hand frame",
             rock::scope_safe_hand_frame_math::resolveMode(false, false, true, true, 0, 3), ResolutionMode::Unavailable);
+        ok &= expectEqual("prior collision presentation reconstructs from the physical driver even while unscoped",
+            rock::scope_safe_hand_frame_math::resolveCollisionIsolatedMode(true, false, true, true, true, 0, 3),
+            ResolutionMode::DriverReconstructed);
+        ok &= expectEqual("prior collision presentation never falls back to a contaminated root or cached output",
+            rock::scope_safe_hand_frame_math::resolveCollisionIsolatedMode(true, false, true, false, true, 0, 3),
+            ResolutionMode::Unavailable);
+        ok &= expectEqual("ordinary frames retain the visible-root policy",
+            rock::scope_safe_hand_frame_math::resolveCollisionIsolatedMode(false, false, true, true, true, 0, 3),
+            ResolutionMode::RootFlattened);
+        ok &= expectEqual("ordinary scoped frames retain bounded last-known continuity",
+            rock::scope_safe_hand_frame_math::resolveCollisionIsolatedMode(false, true, false, false, true, 0, 3),
+            ResolutionMode::LastKnown);
         ok &= expectTrue("open ScopeMenu selects driver-frame weapon authority",
             rock::scope_safe_hand_frame_math::retainDriverFrameAuthority(true, false, false, false));
         ok &= expectTrue("held scope button retains driver-frame authority across a transient ScopeMenu close",
