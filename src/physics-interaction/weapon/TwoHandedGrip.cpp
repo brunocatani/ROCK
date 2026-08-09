@@ -2236,6 +2236,7 @@ namespace rock
         (void)frik_visual_authority::clearExternalHandWorldTransform(
             WEAPON_COLLISION_HAND_TAG,
             frik_visual_authority::Hand::Right);
+        _weaponCollisionHandAuthorityLive = {};
         resetGunstockAlignment("reset");
         _gunstockModeToggle = {};
         _gunstockWeaponEligibility = {};
@@ -8928,6 +8929,38 @@ namespace rock
         return true;
     }
 
+    bool TwoHandedGrip::clearWeaponCollisionHandAuthority(const bool isLeft)
+    {
+        const std::size_t index = isLeft ? 0u : 1u;
+        if (!_weaponCollisionHandAuthorityLive[index]) {
+            return true;
+        }
+        if (!frik_visual_authority::isAvailable() ||
+            !frik_visual_authority::clearExternalHandWorldTransform(
+                WEAPON_COLLISION_HAND_TAG,
+                handFromBool(isLeft))) {
+            return false;
+        }
+        _weaponCollisionHandAuthorityLive[index] = false;
+        return true;
+    }
+
+    void TwoHandedGrip::beginWeaponCollisionPresentationFrame()
+    {
+        const bool leftCleared = clearWeaponCollisionHandAuthority(true);
+        const bool rightCleared = clearWeaponCollisionHandAuthority(false);
+        if (!leftCleared || !rightCleared) {
+            ROCK_LOG_SAMPLE_WARN(
+                Weapon,
+                1000,
+                "TwoHandedGrip: previous-frame dynamic weapon collision hand authority clear failed left={} right={} live(L/R)={}/{}",
+                leftCleared ? "ok" : "failed",
+                rightCleared ? "ok" : "failed",
+                _weaponCollisionHandAuthorityLive[0],
+                _weaponCollisionHandAuthorityLive[1]);
+        }
+    }
+
     bool TwoHandedGrip::applyWeaponCollisionResolvedAuthority(
         RE::NiNode* weaponNode,
         const RE::NiTransform& resolvedWeaponWorld,
@@ -8956,7 +8989,7 @@ namespace rock
             bool requested{ false };
             bool targetValid{ false };
             bool applied{ false };
-            bool cleared{ false };
+            bool retained{ false };
         };
         std::array<CollisionHandPulse, 2> pulses{
             CollisionHandPulse{
@@ -9007,27 +9040,26 @@ namespace rock
                         pulse.targetWorld,
                         WEAPON_COLLISION_HAND_PRIORITY);
                 /*
-                 * hFRIK applies the selected external transform synchronously.
-                 * Remove this high-priority request immediately after the
-                 * presentation write so next frame's controller/IK solve and
-                 * dynamic-weapon intent cannot read collision correction back
-                 * as player input. The visible node retains this frame's write;
-                 * the normal grip/native authority resumes on hFRIK's next pass.
+                 * Retain the high-priority result through rendering. Clearing
+                 * it here synchronously reselects the live priority-100 firing
+                 * and support targets, erasing the collision correction. The
+                 * next PhysicsInteraction frame clears this tag before any
+                 * controller/grip intent is sampled, preventing feedback.
                  */
-                pulse.cleared =
-                    frik_visual_authority::clearExternalHandWorldTransform(
-                        WEAPON_COLLISION_HAND_TAG,
-                        hand);
+                pulse.retained = pulse.applied;
+                if (pulse.retained) {
+                    _weaponCollisionHandAuthorityLive[
+                        pulse.isLeft ? 0u : 1u] = true;
+                }
                 handPulsesSucceeded =
-                    handPulsesSucceeded && pulse.applied && pulse.cleared;
+                    handPulsesSucceeded && pulse.applied && pulse.retained;
             }
         } else {
             for (const auto& pulse : pulses) {
                 if (pulse.requested) {
-                    (void)frik_visual_authority::
-                        clearExternalHandWorldTransform(
-                            WEAPON_COLLISION_HAND_TAG,
-                            handFromBool(pulse.isLeft));
+                    handPulsesSucceeded =
+                        clearWeaponCollisionHandAuthority(pulse.isLeft) &&
+                        handPulsesSucceeded;
                 }
             }
         }
@@ -9047,17 +9079,17 @@ namespace rock
             ROCK_LOG_SAMPLE_WARN(
                 Weapon,
                 1000,
-                "TwoHandedGrip: dynamic weapon collision group publication incomplete weapon={} hands={} left(req/target/apply/clear)={}/{}/{}/{} right(req/target/apply/clear)={}/{}/{}/{} state={} firingHand={}",
+                "TwoHandedGrip: dynamic weapon collision group publication incomplete weapon={} hands={} left(req/target/apply/live)={}/{}/{}/{} right(req/target/apply/live)={}/{}/{}/{} state={} firingHand={}",
                 weaponPublished ? "ok" : "failed",
                 handPulsesSucceeded ? "ok" : "failed",
                 pulses[0].requested,
                 pulses[0].targetValid,
                 pulses[0].applied,
-                pulses[0].cleared,
+                pulses[0].retained,
                 pulses[1].requested,
                 pulses[1].targetValid,
                 pulses[1].applied,
-                pulses[1].cleared,
+                pulses[1].retained,
                 static_cast<int>(_state),
                 _firingHandIsLeft ? "left" : "right");
         }

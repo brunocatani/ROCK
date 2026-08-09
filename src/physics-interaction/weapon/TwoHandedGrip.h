@@ -671,6 +671,10 @@ namespace rock
             _weaponVisualIntentObserver = observer;
         }
 
+        // Releases the previous render frame's collision-only hand authority
+        // before any current-frame controller/grip intent is sampled.
+        void beginWeaponCollisionPresentationFrame();
+
         // Republishes a physics-resolved visual pose without feeding that
         // correction back into the next dynamic-weapon drive target.
         bool applyWeaponCollisionResolvedAuthority(
@@ -1065,6 +1069,8 @@ namespace rock
 
         WeaponPartGrip& partGrip(bool isLeft) { return _partGrips[isLeft ? 0u : 1u]; }
         const WeaponPartGrip& partGrip(bool isLeft) const { return _partGrips[isLeft ? 0u : 1u]; }
+
+        bool clearWeaponCollisionHandAuthority(bool isLeft);
 
         void transitionToTouching(RE::NiNode* weaponNode, const WeaponInteractionDecision& decision);
         void transitionToGripping(
@@ -1613,6 +1619,10 @@ namespace rock
         std::array<ReturningHandVisualState, 2> _returningHandVisuals{};
         std::array<RE::NiTransform, 2> _lastPublishedHandWorld{};
         std::array<bool, 2> _hasLastPublishedHandWorld{};
+        // Per physical hand (left index 0, right index 1). A collision target
+        // survives only through the render interval that follows post-solve;
+        // beginWeaponCollisionPresentationFrame clears it before next intent.
+        std::array<bool, 2> _weaponCollisionHandAuthorityLive{};
         ReturningWeaponVisualState _returningWeaponVisual{};
         RE::NiTransform _lastRenderedWeaponWorld{};
         bool _hasLastRenderedWeaponWorld{ false };
