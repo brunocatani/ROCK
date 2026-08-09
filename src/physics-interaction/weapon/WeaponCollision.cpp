@@ -61,6 +61,9 @@ namespace rock
         constexpr float MIN_HULL_DIAGONAL_GAME_UNITS = 0.5f;
         constexpr std::size_t MAX_GENERATED_CHILD_CONVEXES_PER_SOURCE = 16;
         constexpr std::size_t GENERATED_WEAPON_BODY_CREATION_BATCH = 8;
+        constexpr float GENERATED_RECAPTURE_WEAPON_CENTER_DRIFT_GAME = 0.25f;
+        constexpr float GENERATED_RECAPTURE_SOURCE_CENTER_DRIFT_GAME = 0.10f;
+        constexpr std::size_t MAX_GENERATED_RECAPTURE_DETAIL_ROWS = 8;
 
         struct QuantizedPointKey
         {
@@ -2546,6 +2549,257 @@ namespace rock
         _generatedSourceCache = {};
     }
 
+    void WeaponCollision::recordGeneratedRecaptureDiagnostic(
+        const std::uint64_t equippedKey,
+        const std::uint64_t identityKey,
+        const std::uint64_t ownershipKey,
+        const std::uint32_t weaponFormID,
+        const std::vector<GeneratedHullSource>& sources)
+    {
+        if (equippedKey == 0 || identityKey == 0 || ownershipKey == 0 ||
+            weaponFormID == 0 || sources.empty()) {
+            return;
+        }
+
+        const auto pointDistance = [](const RE::NiPoint3& lhs, const RE::NiPoint3& rhs) {
+            const float dx = lhs.x - rhs.x;
+            const float dy = lhs.y - rhs.y;
+            const float dz = lhs.z - rhs.z;
+            return std::sqrt(dx * dx + dy * dy + dz * dz);
+        };
+        const auto captureCurrent = [&](const std::uint32_t comparisonSequence) {
+            GeneratedRecaptureDiagnostic captured{};
+            captured.valid = true;
+            captured.equippedKey = equippedKey;
+            captured.identityKey = identityKey;
+            captured.ownershipKey = ownershipKey;
+            captured.weaponFormID = weaponFormID;
+            captured.comparisonSequence = comparisonSequence;
+            captured.sources.reserve(sources.size());
+            for (const auto& source : sources) {
+                captured.sources.push_back(GeneratedRecaptureDiagnosticSource{
+                    .sourceGroupId = source.sourceGroupId,
+                    .sourceRootAddress = reinterpret_cast<std::uintptr_t>(source.sourceRoot),
+                    .driveRootAddress = reinterpret_cast<std::uintptr_t>(source.driveRoot),
+                    .sourceName = source.sourceName,
+                    .weaponLocalCenter = source.localCenterGame,
+                    .sourceLocalCenter = source.sourceLocalCenterGame,
+                    .sourceLocalTriangleCount = source.sourceLocalTrianglesGame.size(),
+                });
+            }
+            _generatedRecaptureDiagnostic = std::move(captured);
+        };
+
+        const bool sameExactIdentity =
+            _generatedRecaptureDiagnostic.valid &&
+            _generatedRecaptureDiagnostic.equippedKey == equippedKey &&
+            _generatedRecaptureDiagnostic.identityKey == identityKey &&
+            _generatedRecaptureDiagnostic.ownershipKey == ownershipKey &&
+            _generatedRecaptureDiagnostic.weaponFormID == weaponFormID;
+        if (!sameExactIdentity) {
+            captureCurrent(0);
+            ROCK_LOG_DEBUG(Weapon,
+                "Generated weapon recapture diagnostic baseline captured key={:016X} identity={:016X} ownership={:016X} formID={:08X} sources={}",
+                equippedKey,
+                identityKey,
+                ownershipKey,
+                weaponFormID,
+                sources.size());
+            return;
+        }
+
+        if (!_generatedRecaptureDiagnostic.sawUndrawnInterval) {
+            const auto comparisonSequence = _generatedRecaptureDiagnostic.comparisonSequence;
+            captureCurrent(comparisonSequence);
+            return;
+        }
+
+        struct DriftRow
+        {
+            const GeneratedRecaptureDiagnosticSource* baseline{ nullptr };
+            const GeneratedHullSource* current{ nullptr };
+            float weaponCenterDeltaGame{ 0.0f };
+            float sourceCenterDeltaGame{ 0.0f };
+            bool sourcePointerStable{ false };
+            bool rootPointerStable{ false };
+            bool triangleCountStable{ false };
+        };
+
+        std::vector<DriftRow> driftRows;
+        driftRows.reserve(sources.size());
+        std::size_t matchedSourceCount = 0;
+        std::size_t sameSourcePointerCount = 0;
+        std::size_t treeReplacementCount = 0;
+        std::size_t hierarchyFrameDriftCount = 0;
+        std::size_t sourceGeometryDriftCount = 0;
+        float maximumWeaponCenterDeltaGame = 0.0f;
+        float maximumSourceCenterDeltaGame = 0.0f;
+        const char* maximumWeaponCenterDeltaSource = "none";
+
+        for (const auto& current : sources) {
+            const GeneratedRecaptureDiagnosticSource* baseline = nullptr;
+            if (current.sourceGroupId != 0) {
+                const auto exact = std::find_if(
+                    _generatedRecaptureDiagnostic.sources.begin(),
+                    _generatedRecaptureDiagnostic.sources.end(),
+                    [&](const GeneratedRecaptureDiagnosticSource& candidate) {
+                        return candidate.sourceGroupId == current.sourceGroupId;
+                    });
+                if (exact != _generatedRecaptureDiagnostic.sources.end()) {
+                    baseline = &*exact;
+                }
+            }
+            if (!baseline) {
+                const auto sameName = std::find_if(
+                    _generatedRecaptureDiagnostic.sources.begin(),
+                    _generatedRecaptureDiagnostic.sources.end(),
+                    [&](const GeneratedRecaptureDiagnosticSource& candidate) {
+                        return candidate.sourceName == current.sourceName;
+                    });
+                if (sameName != _generatedRecaptureDiagnostic.sources.end()) {
+                    baseline = &*sameName;
+                }
+            }
+            if (!baseline) {
+                ++treeReplacementCount;
+                continue;
+            }
+
+            ++matchedSourceCount;
+            DriftRow row{};
+            row.baseline = baseline;
+            row.current = &current;
+            row.weaponCenterDeltaGame = pointDistance(
+                baseline->weaponLocalCenter,
+                current.localCenterGame);
+            row.sourceCenterDeltaGame = pointDistance(
+                baseline->sourceLocalCenter,
+                current.sourceLocalCenterGame);
+            row.sourcePointerStable =
+                baseline->sourceGroupId != 0 &&
+                baseline->sourceGroupId == current.sourceGroupId;
+            row.rootPointerStable =
+                baseline->sourceRootAddress ==
+                    reinterpret_cast<std::uintptr_t>(current.sourceRoot) &&
+                baseline->driveRootAddress ==
+                    reinterpret_cast<std::uintptr_t>(current.driveRoot);
+            row.triangleCountStable =
+                baseline->sourceLocalTriangleCount ==
+                    current.sourceLocalTrianglesGame.size();
+            if (row.sourcePointerStable) {
+                ++sameSourcePointerCount;
+            }
+            if (!row.sourcePointerStable || !row.rootPointerStable) {
+                ++treeReplacementCount;
+            }
+
+            const bool sourceGeometryDrifted =
+                row.sourceCenterDeltaGame >
+                    GENERATED_RECAPTURE_SOURCE_CENTER_DRIFT_GAME ||
+                !row.triangleCountStable;
+            if (sourceGeometryDrifted) {
+                ++sourceGeometryDriftCount;
+            } else if (row.sourcePointerStable && row.rootPointerStable &&
+                       row.weaponCenterDeltaGame >
+                           GENERATED_RECAPTURE_WEAPON_CENTER_DRIFT_GAME) {
+                ++hierarchyFrameDriftCount;
+            }
+
+            maximumSourceCenterDeltaGame = (std::max)(
+                maximumSourceCenterDeltaGame,
+                row.sourceCenterDeltaGame);
+            if (row.weaponCenterDeltaGame > maximumWeaponCenterDeltaGame) {
+                maximumWeaponCenterDeltaGame = row.weaponCenterDeltaGame;
+                maximumWeaponCenterDeltaSource = current.sourceName.c_str();
+            }
+            driftRows.push_back(row);
+        }
+
+        const std::size_t unmatchedBaselineCount =
+            _generatedRecaptureDiagnostic.sources.size() > matchedSourceCount ?
+                _generatedRecaptureDiagnostic.sources.size() - matchedSourceCount :
+                0;
+        treeReplacementCount += unmatchedBaselineCount;
+        const char* classification = "stable";
+        if (treeReplacementCount != 0 &&
+            (hierarchyFrameDriftCount != 0 || sourceGeometryDriftCount != 0)) {
+            classification = "mixed";
+        } else if (treeReplacementCount != 0) {
+            classification = "tree-replaced";
+        } else if (sourceGeometryDriftCount != 0 && hierarchyFrameDriftCount != 0) {
+            classification = "mixed";
+        } else if (sourceGeometryDriftCount != 0) {
+            classification = "source-geometry-drift";
+        } else if (hierarchyFrameDriftCount != 0) {
+            classification = "hierarchy-frame-drift";
+        }
+
+        ++_generatedRecaptureDiagnostic.comparisonSequence;
+        _generatedRecaptureDiagnostic.sawUndrawnInterval = false;
+        ROCK_LOG_INFO(Weapon,
+            "Generated weapon post-undraw recapture diagnostic: sequence={} classification={} key={:016X} identity={:016X} ownership={:016X} formID={:08X} baselineSources={} currentSources={} matched={} sameSourcePointers={} treeChanges={} hierarchyFrameDrift={} sourceGeometryDrift={} maxWeaponCenterDelta={:.3f} maxWeaponCenterSource='{}' maxSourceLocalCenterDelta={:.3f}",
+            _generatedRecaptureDiagnostic.comparisonSequence,
+            classification,
+            equippedKey,
+            identityKey,
+            ownershipKey,
+            weaponFormID,
+            _generatedRecaptureDiagnostic.sources.size(),
+            sources.size(),
+            matchedSourceCount,
+            sameSourcePointerCount,
+            treeReplacementCount,
+            hierarchyFrameDriftCount,
+            sourceGeometryDriftCount,
+            maximumWeaponCenterDeltaGame,
+            maximumWeaponCenterDeltaSource,
+            maximumSourceCenterDeltaGame);
+
+        std::sort(
+            driftRows.begin(),
+            driftRows.end(),
+            [](const DriftRow& lhs, const DriftRow& rhs) {
+                return lhs.weaponCenterDeltaGame > rhs.weaponCenterDeltaGame;
+            });
+        std::size_t detailCount = 0;
+        for (const auto& row : driftRows) {
+            if (!row.baseline || !row.current ||
+                (row.weaponCenterDeltaGame <=
+                     GENERATED_RECAPTURE_WEAPON_CENTER_DRIFT_GAME &&
+                    row.sourceCenterDeltaGame <=
+                        GENERATED_RECAPTURE_SOURCE_CENTER_DRIFT_GAME &&
+                    row.sourcePointerStable && row.rootPointerStable &&
+                    row.triangleCountStable)) {
+                continue;
+            }
+            ROCK_LOG_TRACE(Weapon,
+                "Generated weapon recapture drift[{}]: source='{}' sourcePointerStable={} rootPointersStable={} triangles={}->{} weaponCenterDelta={:.3f} sourceLocalCenterDelta={:.3f} weaponCenter=({:.3f},{:.3f},{:.3f})->({:.3f},{:.3f},{:.3f}) sourceLocalCenter=({:.3f},{:.3f},{:.3f})->({:.3f},{:.3f},{:.3f})",
+                detailCount,
+                row.current->sourceName,
+                row.sourcePointerStable ? "yes" : "no",
+                row.rootPointerStable ? "yes" : "no",
+                row.baseline->sourceLocalTriangleCount,
+                row.current->sourceLocalTrianglesGame.size(),
+                row.weaponCenterDeltaGame,
+                row.sourceCenterDeltaGame,
+                row.baseline->weaponLocalCenter.x,
+                row.baseline->weaponLocalCenter.y,
+                row.baseline->weaponLocalCenter.z,
+                row.current->localCenterGame.x,
+                row.current->localCenterGame.y,
+                row.current->localCenterGame.z,
+                row.baseline->sourceLocalCenter.x,
+                row.baseline->sourceLocalCenter.y,
+                row.baseline->sourceLocalCenter.z,
+                row.current->sourceLocalCenterGame.x,
+                row.current->sourceLocalCenterGame.y,
+                row.current->sourceLocalCenterGame.z);
+            if (++detailCount >= MAX_GENERATED_RECAPTURE_DETAIL_ROWS) {
+                break;
+            }
+        }
+    }
+
     void WeaponCollision::resetVisualSourceUnavailableRetention()
     {
         _visualSourceUnavailableRetainIdentityKey = 0;
@@ -3990,6 +4244,7 @@ namespace rock
         clearGeneratedSourceCompletenessTracking();
         clearPendingWeaponVisualRebuild();
         clearGeneratedSourceCache();
+        _generatedRecaptureDiagnostic = {};
         clearPendingGeneratedWeaponBuild(world, false);
         _usingReplacementWeaponBodies = false;
         _driveRebuildRequested.store(false, std::memory_order_release);
@@ -4030,6 +4285,7 @@ namespace rock
         clearGeneratedSourceCompletenessTracking();
         clearPendingWeaponVisualRebuild();
         clearGeneratedSourceCache();
+        _generatedRecaptureDiagnostic = {};
         clearPendingGeneratedWeaponBuild(_cachedWorld, true);
         _cachedWorld = nullptr;
         _cachedBhkWorld = nullptr;
@@ -4060,6 +4316,7 @@ namespace rock
             clearWeaponBodyInstance(instance, true);
         }
         _pendingGeneratedWeaponBuild = {};
+        _generatedRecaptureDiagnostic = {};
         _usingReplacementWeaponBodies = false;
         _cachedWorld = nullptr;
         _cachedBhkWorld = nullptr;
@@ -4112,6 +4369,7 @@ namespace rock
                 ROCK_LOG_INFO(Weapon, "WeaponCollision disabled via hot reload - destroying generated weapon bodies");
                 destroyWeaponBody(world);
             }
+            _generatedRecaptureDiagnostic = {};
             clearCurrentWeaponState();
             return;
         }
@@ -4128,10 +4386,14 @@ namespace rock
                 clearAtomicBodyIds();
             }
             _cachedWorld = world;
+            _generatedRecaptureDiagnostic = {};
             clearCurrentWeaponState();
         }
 
         if (!weaponDrawn) {
+            if (_generatedRecaptureDiagnostic.valid) {
+                _generatedRecaptureDiagnostic.sawUndrawnInterval = true;
+            }
             if (hasWeaponBody()) {
                 ROCK_LOG_INFO(Weapon, "Weapon no longer drawn - destroying generated weapon bodies");
                 destroyWeaponBody(world);
@@ -4381,6 +4643,12 @@ namespace rock
                     const float maxGeneratedSourceDistanceGame = resolveMaxGeneratedSourceDistanceGame(observedSizeClass);
                     generatedCount = findGeneratedWeaponShapeSources(weaponNode, observedKey, generatedSources, maxGeneratedSourceDistanceGame);
                     generatedSummary = summarizeGeneratedSources(generatedSources);
+                    recordGeneratedRecaptureDiagnostic(
+                        observedKey,
+                        observedIdentityKey,
+                        observedOwnershipKey,
+                        observedFormID,
+                        generatedSources);
                 }
 
                 const bool hasBuildableSource = std::any_of(generatedSources.begin(), generatedSources.end(), [](const GeneratedHullSource& source) {
