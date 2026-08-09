@@ -291,123 +291,171 @@
     void PhysicsInteraction::subscribeContactEvents(RE::hknpWorld* world)
     {
         if (!world) {
-            ROCK_LOG_ERROR(Init, "Contact event subscription skipped because world is null");
+            ROCK_LOG_ERROR(Init, "Physics event subscriptions skipped because world is null");
             return;
         }
 
-        void* signal = world->GetEventSignal(RE::hknpEventType::kContact);
-        if (!signal) {
-            ROCK_LOG_ERROR(Init, "Failed to get contact event signal");
-            return;
-        }
+        /*
+         * FO4VR raw producers identify event key 2 as
+         * hknpManifoldProcessedEvent and key 3 as hknpContactImpulseEvent.
+         * Both use the same signal/delegate ABI and participant IDs at
+         * event+0x08/+0x0C. Keep distinct bridges because their payloads and
+         * admission semantics are intentionally different.
+         */
+        constexpr auto kManifoldProcessedEventType = static_cast<RE::hknpEventType::Enum>(2);
 
-        auto* currentWorld = s_contactEventBridge.world.load(std::memory_order_acquire);
-        auto* currentSignal = s_contactEventBridge.signal.load(std::memory_order_acquire);
-        const auto currentSnapshot = contact_signal_subscription_policy::ContactSignalSubscriptionSnapshot{
-            .world = reinterpret_cast<std::uintptr_t>(currentWorld),
-            .signal = reinterpret_cast<std::uintptr_t>(currentSignal),
-            .active = currentWorld != nullptr && currentSignal != nullptr,
-        };
-        const auto plan = contact_signal_subscription_policy::planSubscription(
-            currentSnapshot,
-            reinterpret_cast<std::uintptr_t>(world),
-            reinterpret_cast<std::uintptr_t>(signal),
-            s_contactEventBridge.hasRetainedNativeSlot(world, signal));
-
-        if (plan.action == contact_signal_subscription_policy::ContactSignalSubscriptionAction::IgnoreNullSignal) {
-            ROCK_LOG_ERROR(Init, "Contact event subscription skipped because world or signal is null");
-            return;
-        }
-
-        if (plan.action == contact_signal_subscription_policy::ContactSignalSubscriptionAction::AlreadySubscribed) {
-            _contactEventSignal.store(signal, std::memory_order_release);
-            _contactEventWorld.store(world, std::memory_order_release);
-            s_contactEventBridge.signal.store(signal, std::memory_order_release);
-            s_contactEventBridge.world.store(world, std::memory_order_release);
-            s_contactEventBridge.instance.store(this, std::memory_order_release);
-            const auto epoch = s_contactEventBridge.subscriptionEpoch.load(std::memory_order_acquire);
-            if (!s_contactEventBridge.rememberRetainedNativeSlot(world, signal, epoch)) {
-                ROCK_LOG_WARN(Init, "Contact event retained-slot table full while reusing bridge slot; future duplicate suppression may be degraded");
+        auto subscribeBridge = [&](const RE::hknpEventType::Enum eventType,
+                                   ContactEventSubscriptionBridge& bridge,
+                                   std::atomic<RE::hknpWorld*>& localWorld,
+                                   std::atomic<void*>& localSignal,
+                                   const char* eventName) {
+            void* signal = world->GetEventSignal(eventType);
+            if (!signal) {
+                ROCK_LOG_ERROR(Init, "Failed to get {} event signal", eventName);
+                return;
             }
-            ROCK_LOG_DEBUG(Init, "Contact event signal already subscribed for current world; reusing native bridge slot");
-            return;
-        }
 
-        if (plan.replaceExistingRuntimeStateWithoutUnsubscribe) {
+            auto* currentWorld = bridge.world.load(std::memory_order_acquire);
+            auto* currentSignal = bridge.signal.load(std::memory_order_acquire);
+            const auto currentSnapshot = contact_signal_subscription_policy::ContactSignalSubscriptionSnapshot{
+                .world = reinterpret_cast<std::uintptr_t>(currentWorld),
+                .signal = reinterpret_cast<std::uintptr_t>(currentSignal),
+                .active = currentWorld != nullptr && currentSignal != nullptr,
+            };
+            const auto plan = contact_signal_subscription_policy::planSubscription(
+                currentSnapshot,
+                reinterpret_cast<std::uintptr_t>(world),
+                reinterpret_cast<std::uintptr_t>(signal),
+                bridge.hasRetainedNativeSlot(world, signal));
+
+            if (plan.action == contact_signal_subscription_policy::ContactSignalSubscriptionAction::IgnoreNullSignal) {
+                ROCK_LOG_ERROR(Init, "{} event subscription skipped because world or signal is null", eventName);
+                return;
+            }
+
+            localSignal.store(signal, std::memory_order_release);
+            localWorld.store(world, std::memory_order_release);
+            bridge.signal.store(signal, std::memory_order_release);
+            bridge.world.store(world, std::memory_order_release);
+            bridge.instance.store(this, std::memory_order_release);
+
+            if (plan.action == contact_signal_subscription_policy::ContactSignalSubscriptionAction::AlreadySubscribed) {
+                const auto epoch = bridge.subscriptionEpoch.load(std::memory_order_acquire);
+                if (!bridge.rememberRetainedNativeSlot(world, signal, epoch)) {
+                    ROCK_LOG_WARN(
+                        Init,
+                        "{} event retained-slot table full while reusing bridge slot; future duplicate suppression may be degraded",
+                        eventName);
+                }
+                ROCK_LOG_DEBUG(Init, "{} event signal already subscribed for current world; reusing native bridge slot", eventName);
+                return;
+            }
+
+            if (plan.replaceExistingRuntimeStateWithoutUnsubscribe) {
+                ROCK_LOG_INFO(
+                    Init,
+                    "Replacing {} event bridge state without native unsubscribe (action={})",
+                    eventName,
+                    static_cast<std::uint32_t>(plan.action));
+            }
+
+            ContactEventCallbackInfo cbInfo{};
+            cbInfo.fn = reinterpret_cast<void*>(&PhysicsInteraction::onContactCallback);
+            cbInfo.ctx = 0;
+
+            typedef void subscribe_ext_t(void* signal, void* userData, void* callbackInfo);
+            static REL::Relocation<subscribe_ext_t> subscribeExt{ REL::Offset(offsets::kFunc_SubscribeContactEvent) };
+            subscribeExt(signal, static_cast<void*>(&bridge), &cbInfo);
+
+            const auto epoch = bridge.subscriptionEpoch.fetch_add(1, std::memory_order_acq_rel) + 1;
+            if (!bridge.rememberRetainedNativeSlot(world, signal, epoch)) {
+                ROCK_LOG_WARN(
+                    Init,
+                    "{} event retained-slot table full after native subscription; future duplicate suppression may be degraded",
+                    eventName);
+            }
             ROCK_LOG_INFO(
                 Init,
-                "Replacing contact event bridge state without native unsubscribe (action={})",
+                "Subscribed {} event bridge slot (epoch={}, action={})",
+                eventName,
+                epoch,
                 static_cast<std::uint32_t>(plan.action));
-        }
+        };
 
-        ContactEventCallbackInfo cbInfo{};
-        cbInfo.fn = reinterpret_cast<void*>(&PhysicsInteraction::onContactCallback);
-        cbInfo.ctx = 0;
-
-        typedef void subscribe_ext_t(void* signal, void* userData, void* callbackInfo);
-        static REL::Relocation<subscribe_ext_t> subscribeExt{ REL::Offset(offsets::kFunc_SubscribeContactEvent) };
-        subscribeExt(signal, static_cast<void*>(&s_contactEventBridge), &cbInfo);
-
-        _contactEventSignal.store(signal, std::memory_order_release);
-        _contactEventWorld.store(world, std::memory_order_release);
-        s_contactEventBridge.signal.store(signal, std::memory_order_release);
-        s_contactEventBridge.world.store(world, std::memory_order_release);
-        s_contactEventBridge.instance.store(this, std::memory_order_release);
-        const auto epoch = s_contactEventBridge.subscriptionEpoch.fetch_add(1, std::memory_order_acq_rel) + 1;
-        if (!s_contactEventBridge.rememberRetainedNativeSlot(world, signal, epoch)) {
-            ROCK_LOG_WARN(Init, "Contact event retained-slot table full after native subscription; future duplicate suppression may be degraded");
-        }
-        ROCK_LOG_INFO(
-            Init,
-            "Subscribed contact event bridge slot (epoch={}, action={})",
-            epoch,
-            static_cast<std::uint32_t>(plan.action));
+        subscribeBridge(
+            RE::hknpEventType::kContact,
+            s_contactEventBridge,
+            _contactEventWorld,
+            _contactEventSignal,
+            "contact-impulse");
+        subscribeBridge(
+            kManifoldProcessedEventType,
+            s_manifoldProcessedEventBridge,
+            _manifoldProcessedEventWorld,
+            _manifoldProcessedEventSignal,
+            "manifold-processed");
     }
 
     void PhysicsInteraction::unsubscribeContactEvents(RE::hknpWorld* liveWorld)
     {
-        auto* localWorld = _contactEventWorld.exchange(nullptr, std::memory_order_acq_rel);
-        void* localSignal = _contactEventSignal.exchange(nullptr, std::memory_order_acq_rel);
+        auto deactivateBridge = [&](ContactEventSubscriptionBridge& bridge,
+                                    std::atomic<RE::hknpWorld*>& localWorldAtomic,
+                                    std::atomic<void*>& localSignalAtomic,
+                                    const char* eventName) {
+            auto* localWorld = localWorldAtomic.exchange(nullptr, std::memory_order_acq_rel);
+            void* localSignal = localSignalAtomic.exchange(nullptr, std::memory_order_acq_rel);
 
-        auto* expectedInstance = this;
-        const bool deactivatedCurrentInstance = s_contactEventBridge.instance.compare_exchange_strong(
-            expectedInstance,
-            nullptr,
-            std::memory_order_acq_rel,
-            std::memory_order_acquire);
+            auto* expectedInstance = this;
+            const bool deactivatedCurrentInstance = bridge.instance.compare_exchange_strong(
+                expectedInstance,
+                nullptr,
+                std::memory_order_acq_rel,
+                std::memory_order_acquire);
 
-        auto* bridgeWorld = s_contactEventBridge.world.load(std::memory_order_acquire);
-        void* bridgeSignal = s_contactEventBridge.signal.load(std::memory_order_acquire);
-        const auto bridgeSnapshot = contact_signal_subscription_policy::ContactSignalSubscriptionSnapshot{
-            .world = reinterpret_cast<std::uintptr_t>(bridgeWorld),
-            .signal = reinterpret_cast<std::uintptr_t>(bridgeSignal),
-            .active = bridgeWorld != nullptr && bridgeSignal != nullptr,
-        };
+            auto* bridgeWorld = bridge.world.load(std::memory_order_acquire);
+            void* bridgeSignal = bridge.signal.load(std::memory_order_acquire);
+            const auto bridgeSnapshot = contact_signal_subscription_policy::ContactSignalSubscriptionSnapshot{
+                .world = reinterpret_cast<std::uintptr_t>(bridgeWorld),
+                .signal = reinterpret_cast<std::uintptr_t>(bridgeSignal),
+                .active = bridgeWorld != nullptr && bridgeSignal != nullptr,
+            };
 
-        if (!contact_signal_subscription_policy::isActiveSubscription(bridgeSnapshot)) {
-            return;
-        }
+            if (!contact_signal_subscription_policy::isActiveSubscription(bridgeSnapshot)) {
+                return;
+            }
 
-        const bool retainNativeSlot = contact_signal_subscription_policy::shouldRetainNativeSlotAfterDeactivation(
-            bridgeSnapshot);
-        if (retainNativeSlot) {
+            if (contact_signal_subscription_policy::shouldRetainNativeSlotAfterDeactivation(bridgeSnapshot)) {
+                ROCK_LOG_INFO(
+                    Init,
+                    "Deactivated {} event bridge; native slots retained for hknpWorld cleanup (instanceCleared={}, world={}, signal={}, liveWorld={})",
+                    eventName,
+                    deactivatedCurrentInstance ? "yes" : "no",
+                    static_cast<const void*>(bridgeWorld),
+                    bridgeSignal,
+                    static_cast<const void*>(liveWorld));
+                return;
+            }
+
             ROCK_LOG_INFO(
                 Init,
-                "Deactivated contact event bridge; native slots retained for hknpWorld cleanup (instanceCleared={}, world={}, signal={}, liveWorld={})",
+                "Deactivated {} event bridge with no active native slot (instanceCleared={}, localWorld={}, localSignal={}, liveWorld={})",
+                eventName,
                 deactivatedCurrentInstance ? "yes" : "no",
-                static_cast<const void*>(bridgeWorld),
-                bridgeSignal,
+                static_cast<const void*>(localWorld),
+                localSignal,
                 static_cast<const void*>(liveWorld));
-            return;
-        }
+        };
 
-        ROCK_LOG_INFO(
-            Init,
-            "Deactivated contact event bridge with no active native slot (instanceCleared={}, localWorld={}, localSignal={}, liveWorld={})",
-            deactivatedCurrentInstance ? "yes" : "no",
-            static_cast<const void*>(localWorld),
-            localSignal,
-            static_cast<const void*>(liveWorld));
+        deactivateBridge(
+            s_contactEventBridge,
+            _contactEventWorld,
+            _contactEventSignal,
+            "contact-impulse");
+        deactivateBridge(
+            s_manifoldProcessedEventBridge,
+            _manifoldProcessedEventWorld,
+            _manifoldProcessedEventSignal,
+            "manifold-processed");
     }
 
     void PhysicsInteraction::onContactCallback(void* userData, void** worldPtrHolder, void* contactEventData)
@@ -429,7 +477,9 @@
     {
         if (!s_hooksEnabled.load(std::memory_order_acquire))
             return;
-        if (userData != static_cast<void*>(&s_contactEventBridge)) {
+        const bool contactImpulseRoute = userData == static_cast<void*>(&s_contactEventBridge);
+        const bool manifoldProcessedRoute = userData == static_cast<void*>(&s_manifoldProcessedEventBridge);
+        if (!contactImpulseRoute && !manifoldProcessedRoute) {
             return;
         }
 
@@ -454,7 +504,12 @@
                 return;
             }
 
-            self->handleContactEvent(reinterpret_cast<RE::hknpWorld*>(acceptance.effectiveWorld), contactEventData);
+            auto* world = reinterpret_cast<RE::hknpWorld*>(acceptance.effectiveWorld);
+            if (manifoldProcessedRoute) {
+                self->handleManifoldProcessedEvent(world, contactEventData);
+            } else {
+                self->handleContactEvent(world, contactEventData);
+            }
         }
     }
 
@@ -468,6 +523,63 @@
                 sehLogCounter);
         }
         s_hooksEnabled.store(false, std::memory_order_release);
+    }
+
+    void PhysicsInteraction::handleManifoldProcessedEvent(RE::hknpWorld* world, void* eventData)
+    {
+        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::NativeContactCallback);
+
+        if (!world || !eventData) {
+            return;
+        }
+
+        /*
+         * FO4VR 0x1418028B0 and 0x141802A40 independently construct this
+         * exact 0xB0-byte key-2 record. Only the common header and participant
+         * IDs are needed here; the solved pose remains owned by ROCK's
+         * post-solve body sample rather than the pre-solve manifold payload.
+         */
+        constexpr std::uint16_t kExpectedRecordSize = 0xB0;
+        constexpr std::uint16_t kManifoldProcessedEventKey = 2;
+        auto* data = static_cast<const std::uint8_t*>(eventData);
+        const auto recordSize = *reinterpret_cast<const std::uint16_t*>(data + 0x00);
+        const auto eventKey = *reinterpret_cast<const std::uint16_t*>(data + 0x04);
+        if (recordSize != kExpectedRecordSize || eventKey != kManifoldProcessedEventKey) {
+            return;
+        }
+
+        const auto bodyIdA = *reinterpret_cast<const std::uint32_t*>(data + 0x08);
+        const auto bodyIdB = *reinterpret_cast<const std::uint32_t*>(data + 0x0C);
+        if (!contact_pipeline_policy::isValidBodyId(bodyIdA) ||
+            !contact_pipeline_policy::isValidBodyId(bodyIdB) ||
+            bodyIdA == bodyIdB) {
+            return;
+        }
+        if (!havok_runtime::bodySlotLooksReadable(world, RE::hknpBodyId{ bodyIdA }) ||
+            !havok_runtime::bodySlotLooksReadable(world, RE::hknpBodyId{ bodyIdB })) {
+            return;
+        }
+
+        const bool bodyAIsProxy = _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdA);
+        const bool bodyBIsProxy = _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdB);
+        if (bodyAIsProxy == bodyBIsProxy) {
+            return;
+        }
+
+        const auto proxyBodyId = bodyAIsProxy ? bodyIdA : bodyIdB;
+        const auto otherBodyId = bodyAIsProxy ? bodyIdB : bodyIdA;
+        std::uint32_t otherFilterInfo = 0;
+        const bool otherLayerRead = havok_runtime::tryReadFilterInfo(
+            world,
+            RE::hknpBodyId{ otherBodyId },
+            otherFilterInfo);
+        const auto otherLayer = otherFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
+        _dynamicWeaponCollision.recordWorldSurfaceManifoldProcessedCallback(
+            world,
+            proxyBodyId,
+            otherBodyId,
+            otherLayerRead,
+            otherLayer);
     }
 
     void PhysicsInteraction::handleContactEvent(RE::hknpWorld* world, void* contactEventData)

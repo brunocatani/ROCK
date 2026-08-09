@@ -55,6 +55,7 @@ namespace rock
             std::uint64_t proxyPairCallbackSequence{ 0 };
             std::uint64_t worldSurfaceCallbackSequence{ 0 };
             std::uint64_t rawPointCallbackSequence{ 0 };
+            std::uint64_t processedManifoldCallbackSequence{ 0 };
             std::uint64_t admittedContactSequence{ 0 };
             RE::NiPoint3 centerWeaponLocal{};
             RE::NiPoint3 halfExtentsWeaponLocal{};
@@ -101,6 +102,12 @@ namespace rock
             bool otherLayerRead,
             std::uint32_t otherLayer,
             bool rawContactPointValid);
+        void recordWorldSurfaceManifoldProcessedCallback(
+            RE::hknpWorld* world,
+            std::uint32_t proxyBodyId,
+            std::uint32_t otherBodyId,
+            bool otherLayerRead,
+            std::uint32_t otherLayer);
 
         void retireAll(void* bhkWorld);
         void abandonHavokStateAfterWorldLoss();
@@ -187,6 +194,7 @@ namespace rock
         std::atomic<std::uint64_t> _proxyPairCallbackSequenceAtomic{ 0 };
         std::atomic<std::uint64_t> _worldSurfaceCallbackSequenceAtomic{ 0 };
         std::atomic<std::uint64_t> _rawPointCallbackSequenceAtomic{ 0 };
+        std::atomic<std::uint64_t> _processedManifoldCallbackSequenceAtomic{ 0 };
         std::atomic<std::uint64_t> _contactSequenceAtomic{ 0 };
         std::atomic<std::uintptr_t> _contactWorldAtomic{ 0 };
         std::atomic<std::uint32_t> _contactProxyBodyIdAtomic{ 0x7FFF'FFFFu };

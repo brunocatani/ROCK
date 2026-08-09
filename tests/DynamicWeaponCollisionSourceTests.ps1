@@ -103,8 +103,10 @@ Require-Order $interaction @(
     '_weaponCollision\.updateBodiesFromCurrentSourceTransforms\('
 ) 'Dynamic weapon intent must start before visual writers and resolve once before layer-44 hull transforms.'
 
-# Visual correction is admitted only by a genuine proxy/world callback. Merely
-# seeing a solver residual is not sufficient evidence that a wall caused it.
+# Visual correction is admitted only by a genuine proxy/world callback. The
+# legacy key-3 point path remains intact while the proxy-specific key-2 path
+# treats a validated processed manifold as contact evidence. Merely seeing a
+# solver residual is not sufficient evidence that a wall caused it.
 Require-Order $contacts @(
     'isProxyBodyIdAtomic\(bodyIdA\)',
     'tryReadFilterInfo\(',
@@ -113,6 +115,18 @@ Require-Order $contacts @(
     'recordWorldSurfaceContactCallback\(',
     'shouldSkipContactSignalBeforeLayerRead\('
 ) 'A raw proxy/world contact point must be captured before the normal gameplay-contact prefilter discards layer 51.'
+Require-Order $contacts @(
+    'kManifoldProcessedEventType\s*=\s*static_cast<RE::hknpEventType::Enum>\(2\)',
+    's_manifoldProcessedEventBridge',
+    'handleManifoldProcessedEvent\(world,\s*contactEventData\)'
+) 'The verified key-2 signal must own a distinct retained bridge and callback route.'
+Require-Order $contacts @(
+    'handleManifoldProcessedEvent\(',
+    'recordSize\s*!=\s*kExpectedRecordSize\s*\|\|\s*eventKey\s*!=\s*kManifoldProcessedEventKey',
+    'isProxyBodyIdAtomic\(bodyIdA\)',
+    'tryReadFilterInfo\(',
+    'recordWorldSurfaceManifoldProcessedCallback\('
+) 'Processed-manifold admission must validate the native record and exact proxy/world pair before publication.'
 Require-Pattern $runtimeSource `
     'snapshot\.contactActive\s*&&[\s\S]*!snapshot\.teleported' `
     'Visual correction must require an actual active contact and reject teleport recovery samples.'
@@ -162,12 +176,18 @@ Require-Pattern 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' `
 Require-Pattern 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' `
     'kGeneratedBodyRuntimeFlags\s*=\s*0x0802''0000[\s\S]{0,250}kRebuildBodyCollisionState\s*=\s*0[\s\S]*setFilterInfo\(world,\s*bodyId,\s*filterInfo,\s*1\);[\s\S]{0,1000}enableFlags\(world,\s*bodyId\.value,\s*kGeneratedBodyRuntimeFlags,\s*kRebuildBodyCollisionState\);' `
     'Generated weapon bodies must publish filter and modifier eligibility with one native collision-state rebuild.'
+Require-Pattern $runtimeSource `
+    'kRaiseManifoldProcessedEvents\s*=\s*0x40u[\s\S]*enableBodyFlags\([\s\S]{0,200}kRaiseManifoldProcessedEvents,[\s\S]{0,100}kRebuildBodyCollisionState\)[\s\S]*flaggedBody\.body->flags\s*&\s*kRaiseManifoldProcessedEvents' `
+    'Only the dynamic weapon proxy must opt into key-2 processed-manifold events through the verified mode-0 body flag path.'
+Reject-Pattern 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' `
+    'kGeneratedBodyRuntimeFlags\s*=\s*0x0*4020000' `
+    'Processed-manifold event opt-in must not leak into the shared generated-body defaults.'
 
 # The dormant overlay flag is now the primary in-game shape/contact diagnostic.
 # A surviving runtime mismatch must distinguish callback admission, snapshot
 # admission, and immediate visual-authority readback without hot-path log spam.
 Require-Pattern $runtimeHeader `
-    '_proxyPairCallbackSequenceAtomic[\s\S]*_worldSurfaceCallbackSequenceAtomic[\s\S]*_rawPointCallbackSequenceAtomic[\s\S]*_contactSequenceAtomic' `
+    '_proxyPairCallbackSequenceAtomic[\s\S]*_worldSurfaceCallbackSequenceAtomic[\s\S]*_rawPointCallbackSequenceAtomic[\s\S]*_processedManifoldCallbackSequenceAtomic[\s\S]*_contactSequenceAtomic' `
     'Dynamic weapon diagnostics must retain separate callback-stage counters.'
 Require-Pattern $runtimeSource `
     'rockDebugDrawDynamicWeaponColliders[\s\S]*ROCK_LOG_SAMPLE_INFO\([\s\S]*DWC pipeline:[\s\S]*snapshot\(read/valid/identity/contact/teleport\)' `
@@ -176,7 +196,7 @@ Require-Pattern $interaction `
     'applyWeaponCollisionResolvedAuthority[\s\S]*immediateTranslationError[\s\S]*immediateRotationError[\s\S]*DWC visual publication' `
     'Dynamic weapon visual publication must expose immediate node readback evidence.'
 Require-Pattern 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
-    'rockDebugDrawDynamicWeaponColliders[\s\S]*proxyBodyIdForDebug\(\)[\s\S]*DWC BOX[\s\S]*callbacks pair/world/raw/admit[\s\S]*snapshot read/valid/id/contact/tele' `
+    'rockDebugDrawDynamicWeaponColliders[\s\S]*proxyBodyIdForDebug\(\)[\s\S]*DWC BOX[\s\S]*callbacks pair/world/raw/manifold/admit[\s\S]*snapshot read/valid/id/contact/tele' `
     'The dedicated debug flag must draw the proxy body and its contact/correction telemetry.'
 
 if ($failures.Count -gt 0) {

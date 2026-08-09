@@ -23,6 +23,8 @@ namespace rock
     {
         constexpr std::uint32_t kInvalidBodyId = 0x7FFF'FFFFu;
         constexpr std::uint32_t kDynamicWeaponCollisionGroup = 0x000Du;
+        constexpr std::uint32_t kRaiseManifoldProcessedEvents = 0x40u;
+        constexpr std::uint32_t kRebuildBodyCollisionState = 0u;
         constexpr std::uint32_t kContactGraceSolves = 3;
         constexpr float kMaxVisualCorrectionRotationDegrees = 85.0f;
 
@@ -158,6 +160,7 @@ namespace rock
         _debugSnapshot.proxyPairCallbackSequence = _proxyPairCallbackSequenceAtomic.load(std::memory_order_acquire);
         _debugSnapshot.worldSurfaceCallbackSequence = _worldSurfaceCallbackSequenceAtomic.load(std::memory_order_acquire);
         _debugSnapshot.rawPointCallbackSequence = _rawPointCallbackSequenceAtomic.load(std::memory_order_acquire);
+        _debugSnapshot.processedManifoldCallbackSequence = _processedManifoldCallbackSequenceAtomic.load(std::memory_order_acquire);
         _debugSnapshot.admittedContactSequence = _contactSequenceAtomic.load(std::memory_order_acquire);
         _debugSnapshot.centerWeaponLocal = _createdCenterWeaponLocal;
         _debugSnapshot.halfExtentsWeaponLocal = _createdHalfExtentsWeaponLocal;
@@ -170,12 +173,13 @@ namespace rock
             ROCK_LOG_SAMPLE_INFO(
                 Weapon,
                 500,
-                "DWC pipeline: stage={} body={} callbacks(pair/world/raw/admit)={}/{}/{}/{} snapshot(read/valid/identity/contact/teleport)={}/{}/{}/{}/{} correction=({:.2f}gu,{:.2f}deg) visual={}",
+                "DWC pipeline: stage={} body={} callbacks(pair/world/raw/manifold/admit)={}/{}/{}/{}/{} snapshot(read/valid/identity/contact/teleport)={}/{}/{}/{}/{} correction=({:.2f}gu,{:.2f}deg) visual={}",
                 stage,
                 _debugSnapshot.bodyId,
                 _debugSnapshot.proxyPairCallbackSequence,
                 _debugSnapshot.worldSurfaceCallbackSequence,
                 _debugSnapshot.rawPointCallbackSequence,
+                _debugSnapshot.processedManifoldCallbackSequence,
                 _debugSnapshot.admittedContactSequence,
                 _debugSnapshot.physicsSnapshotReadable,
                 _debugSnapshot.physicsSnapshotValid,
@@ -324,6 +328,33 @@ namespace rock
             return false;
         }
 
+        const auto proxyBodyId = _body.getBodyId();
+        _bodyIdAtomic.store(proxyBodyId.value, std::memory_order_release);
+        const bool processedManifoldFlagEnabled = havok_runtime::enableBodyFlags(
+            frame.hknpWorld,
+            proxyBodyId.value,
+            kRaiseManifoldProcessedEvents,
+            kRebuildBodyCollisionState);
+        const auto flaggedBody = havok_runtime::snapshotBody(frame.hknpWorld, proxyBodyId);
+        const bool processedManifoldFlagPublished =
+            processedManifoldFlagEnabled &&
+            flaggedBody.valid &&
+            flaggedBody.body &&
+            (flaggedBody.body->flags & kRaiseManifoldProcessedEvents) == kRaiseManifoldProcessedEvents;
+        if (!processedManifoldFlagPublished) {
+            ROCK_LOG_ERROR(
+                Weapon,
+                "Dynamic weapon box {} failed processed-manifold event opt-in: enabled={} readable={} flags=0x{:08X}",
+                proxyBodyId.value,
+                processedManifoldFlagEnabled,
+                flaggedBody.valid && flaggedBody.body,
+                flaggedBody.body ? flaggedBody.body->flags : 0u);
+            _bodyIdAtomic.store(kInvalidBodyId, std::memory_order_release);
+            _body.retireDeferred(frame.bhkWorld);
+            havok_ref_count::release(shape);
+            return false;
+        }
+
         _shape = shape;
         _createdWorld = frame.hknpWorld;
         _createdBhkWorld = frame.bhkWorld;
@@ -334,7 +365,6 @@ namespace rock
         _createdPaddingGameUnits = padding;
         _created = true;
         _rebuildRequestedAtomic.store(false, std::memory_order_release);
-        _bodyIdAtomic.store(_body.getBodyId().value, std::memory_order_release);
         initializeGeneratedKeyframedBodyDriveState(_driveState, initialTarget);
         if (!placeGeneratedKeyframedBodyImmediately(_body, initialTarget)) {
             retireProxyLocked(frame.bhkWorld);
@@ -523,6 +553,29 @@ namespace rock
         _contactSequenceAtomic.fetch_add(1, std::memory_order_release);
     }
 
+    void DynamicWeaponCollisionRuntime::recordWorldSurfaceManifoldProcessedCallback(
+        RE::hknpWorld* world,
+        const std::uint32_t proxyBodyId,
+        const std::uint32_t otherBodyId,
+        const bool otherLayerRead,
+        const std::uint32_t otherLayer)
+    {
+        if (!world || !isProxyBodyIdAtomic(proxyBodyId)) {
+            return;
+        }
+        _proxyPairCallbackSequenceAtomic.fetch_add(1, std::memory_order_release);
+        if (!otherLayerRead || !collision_layer_policy::isWorldSurfaceLayer(otherLayer)) {
+            return;
+        }
+        _worldSurfaceCallbackSequenceAtomic.fetch_add(1, std::memory_order_release);
+        _processedManifoldCallbackSequenceAtomic.fetch_add(1, std::memory_order_release);
+        _contactWorldAtomic.store(reinterpret_cast<std::uintptr_t>(world), std::memory_order_relaxed);
+        _contactProxyBodyIdAtomic.store(proxyBodyId, std::memory_order_relaxed);
+        _contactOtherBodyIdAtomic.store(otherBodyId, std::memory_order_relaxed);
+        _contactOtherLayerAtomic.store(otherLayer, std::memory_order_relaxed);
+        _contactSequenceAtomic.fetch_add(1, std::memory_order_release);
+    }
+
     void DynamicWeaponCollisionRuntime::retireProxyLocked(void* bhkWorld)
     {
         const auto bodyId = _bodyIdAtomic.exchange(kInvalidBodyId, std::memory_order_acq_rel);
@@ -574,6 +627,7 @@ namespace rock
         _proxyPairCallbackSequenceAtomic.store(0, std::memory_order_release);
         _worldSurfaceCallbackSequenceAtomic.store(0, std::memory_order_release);
         _rawPointCallbackSequenceAtomic.store(0, std::memory_order_release);
+        _processedManifoldCallbackSequenceAtomic.store(0, std::memory_order_release);
         _contactSequenceAtomic.store(0, std::memory_order_release);
         _contactWorldAtomic.store(0, std::memory_order_release);
         _contactProxyBodyIdAtomic.store(kInvalidBodyId, std::memory_order_release);

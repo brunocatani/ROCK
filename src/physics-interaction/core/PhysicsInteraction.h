@@ -413,6 +413,7 @@ namespace rock
         static void onContactCallbackException();
 
         void handleContactEvent(RE::hknpWorld* world, void* contactEventData);
+        void handleManifoldProcessedEvent(RE::hknpWorld* world, void* eventData);
         bool isHandContactEvidenceSuppressed(bool isLeft) const;
         void clearContactEvidenceForHand(bool isLeft);
         void synchronizeContactEvidenceOwnership(bool rightHandWeaponAuthorityActive, bool leftSupportGripActive, bool rightPartGripActive);
@@ -488,6 +489,8 @@ namespace rock
         std::atomic<int> _contactLogCounter{ 0 };
         std::atomic<RE::hknpWorld*> _contactEventWorld{ nullptr };
         std::atomic<void*> _contactEventSignal{ nullptr };
+        std::atomic<RE::hknpWorld*> _manifoldProcessedEventWorld{ nullptr };
+        std::atomic<void*> _manifoldProcessedEventSignal{ nullptr };
         contact_activity_tracker::ContactActivityTracker _handContactActivity;
         body_contact_runtime::BodyContactRuntime _bodyContactRuntime;
 

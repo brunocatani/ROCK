@@ -554,6 +554,7 @@ namespace rock
         };
 
         ContactEventSubscriptionBridge s_contactEventBridge;
+        ContactEventSubscriptionBridge s_manifoldProcessedEventBridge;
 
         struct GrabButtonState
         {
