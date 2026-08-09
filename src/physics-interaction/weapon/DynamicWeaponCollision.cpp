@@ -113,10 +113,21 @@ namespace rock
                 return false;
             }
 
+            const float inverseInertiaMultiplier =
+                g_rockConfig.rockWeaponCollisionDynamicInverseInertiaMultiplier;
+            if (!std::isfinite(inverseInertiaMultiplier) || inverseInertiaMultiplier <= 0.0f) {
+                ROCK_LOG_ERROR(
+                    Weapon,
+                    "Dynamic weapon inverse-inertia multiplier invalid: body={} multiplier={}",
+                    bodyId.value,
+                    inverseInertiaMultiplier);
+                return false;
+            }
+
             const auto normalizedInertia = grab_inertia_policy::normalizeInverseInertiaAxesForGrab(
-                boxMassProperties.inverseInertia.x,
-                boxMassProperties.inverseInertia.y,
-                boxMassProperties.inverseInertia.z,
+                boxMassProperties.inverseInertia.x * inverseInertiaMultiplier,
+                boxMassProperties.inverseInertia.y * inverseInertiaMultiplier,
+                boxMassProperties.inverseInertia.z * inverseInertiaMultiplier,
                 g_rockConfig.rockGrabMaxInertiaRatio,
                 g_rockConfig.rockGrabMinInertia);
             if (!normalizedInertia.valid) {
@@ -189,7 +200,7 @@ namespace rock
 
             ROCK_LOG_INFO(
                 Weapon,
-                "Dynamic weapon box mass properties: body={} motion={} halfHavok=({:.4f},{:.4f},{:.4f}) physicalInverseInertia=({:.6f},{:.6f},{:.6f}) appliedInverseInertia=({:.6f},{:.6f},{:.6f}) packed=[{},{},{}] inverseMass={:.6f} ratio={:.2f}->{:.2f}",
+                "Dynamic weapon box mass properties: body={} motion={} halfHavok=({:.4f},{:.4f},{:.4f}) physicalInverseInertia=({:.6f},{:.6f},{:.6f}) multiplier={:.3f} appliedInverseInertia=({:.6f},{:.6f},{:.6f}) packed=[{},{},{}] inverseMass={:.6f} ratio={:.2f}->{:.2f}",
                 bodyId.value,
                 rebuiltMotion.motionIndex,
                 boxMassProperties.halfExtentsHavok.x,
@@ -198,6 +209,7 @@ namespace rock
                 boxMassProperties.inverseInertia.x,
                 boxMassProperties.inverseInertia.y,
                 boxMassProperties.inverseInertia.z,
+                inverseInertiaMultiplier,
                 unpackBfloat16(rebuiltPacked[0]),
                 unpackBfloat16(rebuiltPacked[1]),
                 unpackBfloat16(rebuiltPacked[2]),

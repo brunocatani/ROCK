@@ -120,6 +120,7 @@ namespace rock
         bool rockWeaponCollisionStaticWorldEnabled = true;
         bool rockWeaponCollisionDynamicBoxEnabled = false;
         float rockWeaponCollisionDynamicBoxPaddingGameUnits = 0.5f;
+        float rockWeaponCollisionDynamicInverseInertiaMultiplier = 1.2f;
         float rockWeaponCollisionDynamicMaxLinearVelocityHavok = 15.0f;
         float rockWeaponCollisionDynamicMaxAngularVelocityRadians = 35.0f;
         float rockWeaponCollisionDynamicContactPressMaxVelocityHavok = 1.0f;

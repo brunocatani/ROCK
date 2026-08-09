@@ -38,6 +38,7 @@ namespace
     constexpr int kDefaultWeaponCollisionVisualStabilizationFrames = 8;
     constexpr int kMaxWeaponCollisionVisualStabilizationFrames = 60;
     constexpr float kDefaultWeaponCollisionSupportFitMaxErrorGameUnits = 0.5f;
+    constexpr float kDefaultWeaponCollisionDynamicInverseInertiaMultiplier = 1.2f;
     constexpr float kDefaultGrabLooseWeaponSharedConstraintLinearTauMultiplier = 1.0f;
     constexpr float kDefaultGrabLooseWeaponSharedConstraintAngularTauMultiplier = 1.0f;
     constexpr float kDefaultGrabLooseWeaponSharedConstraintCollisionTauMultiplier = 1.0f;
@@ -191,6 +192,7 @@ namespace rock
         rockWeaponCollisionStaticWorldEnabled = true;
         rockWeaponCollisionDynamicBoxEnabled = false;
         rockWeaponCollisionDynamicBoxPaddingGameUnits = 0.5f;
+        rockWeaponCollisionDynamicInverseInertiaMultiplier = kDefaultWeaponCollisionDynamicInverseInertiaMultiplier;
         rockWeaponCollisionDynamicMaxLinearVelocityHavok = 15.0f;
         rockWeaponCollisionDynamicMaxAngularVelocityRadians = 35.0f;
         rockWeaponCollisionDynamicContactPressMaxVelocityHavok = 1.0f;
@@ -868,6 +870,13 @@ namespace rock
             0.5f,
             0.0f,
             20.0f);
+        rockWeaponCollisionDynamicInverseInertiaMultiplier = readClampedFloat(ini,
+            SECTION,
+            "fWeaponCollisionDynamicInverseInertiaMultiplier",
+            rockWeaponCollisionDynamicInverseInertiaMultiplier,
+            kDefaultWeaponCollisionDynamicInverseInertiaMultiplier,
+            0.25f,
+            4.0f);
         rockWeaponCollisionDynamicMaxLinearVelocityHavok = readClampedFloat(ini,
             SECTION,
             "fWeaponCollisionDynamicMaxLinearVelocityHavok",

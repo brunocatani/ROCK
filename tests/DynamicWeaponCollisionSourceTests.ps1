@@ -64,7 +64,16 @@ foreach ($ini in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
     Require-Pattern $ini `
         '(?m)^bWeaponCollisionDynamicBoxEnabled\s*=\s*false\s*$' `
         "$ini must ship the experimental dynamic box disabled."
+    Require-Pattern $ini `
+        '(?m)^fWeaponCollisionDynamicInverseInertiaMultiplier\s*=\s*1\.2\s*$' `
+        "$ini must ship the qualified dynamic-box rotational compliance multiplier."
 }
+Require-Pattern 'src/RockConfig.h' `
+    'rockWeaponCollisionDynamicInverseInertiaMultiplier\s*=\s*1\.2f' `
+    'The compiled dynamic-box rotational compliance default must match the qualified runtime value.'
+Require-Pattern 'src/RockConfig.cpp' `
+    'fWeaponCollisionDynamicInverseInertiaMultiplier[\s\S]*kDefaultWeaponCollisionDynamicInverseInertiaMultiplier[\s\S]*0\.25f[\s\S]*4\.0f' `
+    'The dynamic-box rotational compliance setting must load through a finite positive range.'
 Require-Pattern $layers `
     'ROCK_LAYER_DYNAMIC_WEAPON_PROXY\s*=\s*51' `
     'The dynamic weapon proxy must retain its dedicated layer-51 row.'
@@ -117,6 +126,9 @@ Require-Pattern $runtimeSource `
 Require-Pattern $runtimeSource `
     'applyWeaponBoxMassProperties\([\s\S]*makeBoxMassProperties\([\s\S]*normalizeInverseInertiaAxesForGrab\([\s\S]*snapshotBody\(world,\s*bodyId\)[\s\S]*MOTION_PACKED_INERTIA_OFFSET[\s\S]*rebuildMotionMassProperties\(world,\s*initialMotion\.motionIndex\)[\s\S]*snapshotBody\(world,\s*bodyId\)[\s\S]*rebuiltPacked\[0\]\s*=\s*desiredPackedInertia\[0\][\s\S]*rebuiltPacked\[3\]\s*=\s*desiredPackedMass[\s\S]*Dynamic weapon box mass properties:' `
     'The runtime must rebuild and then reapply the box tensor and authored mass through the verified hknp motion path.'
+Require-Pattern $runtimeSource `
+    'rockWeaponCollisionDynamicInverseInertiaMultiplier[\s\S]*boxMassProperties\.inverseInertia\.x\s*\*\s*inverseInertiaMultiplier[\s\S]*boxMassProperties\.inverseInertia\.y\s*\*\s*inverseInertiaMultiplier[\s\S]*boxMassProperties\.inverseInertia\.z\s*\*\s*inverseInertiaMultiplier[\s\S]*multiplier=\{:\.3f\}' `
+    'Dynamic weapon tuning must scale only the generated box inverse inertia and expose the applied multiplier.'
 
 # One-way publication is the core anti-feedback invariant: all native/ROCK
 # weapon writers publish collision-free intent, then one bypass publication
