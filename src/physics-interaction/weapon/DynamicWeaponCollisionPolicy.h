@@ -208,4 +208,165 @@ namespace rock::dynamic_weapon_collision_policy
         const float cosine = std::clamp((matchingAxisDotSum - 1.0f) * 0.5f, -1.0f, 1.0f);
         return std::acos(cosine) * 57.29577951308232f;
     }
+
+    inline RE::NiTransform blendTransforms(
+        const RE::NiTransform& from,
+        const RE::NiTransform& to,
+        float translationAlpha,
+        float rotationAlpha)
+    {
+        translationAlpha = std::clamp(translationAlpha, 0.0f, 1.0f);
+        rotationAlpha = std::clamp(rotationAlpha, 0.0f, 1.0f);
+
+        RE::NiTransform result = from;
+        result.translate = RE::NiPoint3{
+            from.translate.x + (to.translate.x - from.translate.x) * translationAlpha,
+            from.translate.y + (to.translate.y - from.translate.y) * translationAlpha,
+            from.translate.z + (to.translate.z - from.translate.z) * translationAlpha,
+        };
+        result.scale = from.scale + (to.scale - from.scale) * translationAlpha;
+
+        float fromQuaternion[4]{};
+        float toQuaternion[4]{};
+        transform_math::niRowsToHavokQuaternion(from.rotate, fromQuaternion);
+        transform_math::niRowsToHavokQuaternion(to.rotate, toQuaternion);
+        const float quaternionDot =
+            fromQuaternion[0] * toQuaternion[0] +
+            fromQuaternion[1] * toQuaternion[1] +
+            fromQuaternion[2] * toQuaternion[2] +
+            fromQuaternion[3] * toQuaternion[3];
+        if (quaternionDot < 0.0f) {
+            for (int component = 0; component < 4; ++component) {
+                toQuaternion[component] = -toQuaternion[component];
+            }
+        }
+
+        float blendedQuaternion[4]{};
+        for (int component = 0; component < 4; ++component) {
+            blendedQuaternion[component] =
+                fromQuaternion[component] +
+                (toQuaternion[component] - fromQuaternion[component]) * rotationAlpha;
+        }
+        result.rotate = transform_math::havokQuaternionToNiRows<RE::NiMatrix3>(blendedQuaternion);
+        return result;
+    }
+
+    inline RE::NiTransform makeBoundedContactAnchor(
+        const RE::NiTransform& liveProxyBodyWorld,
+        const RE::NiTransform& requestedProxyBodyWorld,
+        float maxTranslationBiasGameUnits,
+        float maxRotationBiasDegrees)
+    {
+        const float translation = translationDeltaGameUnits(liveProxyBodyWorld, requestedProxyBodyWorld);
+        const float rotation = rotationDeltaDegrees(liveProxyBodyWorld, requestedProxyBodyWorld);
+        float alpha = 1.0f;
+        if (std::isfinite(translation) && translation > 0.0001f &&
+            std::isfinite(maxTranslationBiasGameUnits) && maxTranslationBiasGameUnits >= 0.0f) {
+            alpha = (std::min)(alpha, maxTranslationBiasGameUnits / translation);
+        }
+        if (std::isfinite(rotation) && rotation > 0.0001f &&
+            std::isfinite(maxRotationBiasDegrees) && maxRotationBiasDegrees >= 0.0f) {
+            alpha = (std::min)(alpha, maxRotationBiasDegrees / rotation);
+        }
+        return blendTransforms(liveProxyBodyWorld, requestedProxyBodyWorld, alpha, alpha);
+    }
+
+    inline RE::NiTransform advanceSurfaceCoupledTarget(
+        const RE::NiTransform& previousRawProxyBodyWorld,
+        const RE::NiTransform& currentRawProxyBodyWorld,
+        const RE::NiTransform& previousCoupledProxyBodyWorld)
+    {
+        const RE::NiTransform currentRelativeToPreviousIntent = transform_math::composeTransforms(
+            transform_math::invertTransform(previousRawProxyBodyWorld),
+            currentRawProxyBodyWorld);
+        return transform_math::composeTransforms(
+            previousCoupledProxyBodyWorld,
+            currentRelativeToPreviousIntent);
+    }
+
+    struct SurfaceRecoveryResult
+    {
+        RE::NiTransform target{};
+        float translationAlpha{ 0.0f };
+        float rotationAlpha{ 0.0f };
+        bool translationOpposedRawMotion{ false };
+    };
+
+    inline SurfaceRecoveryResult recoverSurfaceCoupledTarget(
+        const RE::NiTransform& followedCoupledProxyBodyWorld,
+        const RE::NiTransform& previousRawProxyBodyWorld,
+        const RE::NiTransform& currentRawProxyBodyWorld,
+        float deltaSeconds,
+        float recoveryHalfLifeSeconds,
+        float maxOpposingRawMotionFraction)
+    {
+        SurfaceRecoveryResult result{};
+        result.target = followedCoupledProxyBodyWorld;
+        if (!isFiniteTransform(followedCoupledProxyBodyWorld) ||
+            !isFiniteTransform(previousRawProxyBodyWorld) ||
+            !isFiniteTransform(currentRawProxyBodyWorld) ||
+            !std::isfinite(deltaSeconds) || deltaSeconds <= 0.0f ||
+            !std::isfinite(recoveryHalfLifeSeconds) || recoveryHalfLifeSeconds <= 0.0f) {
+            return result;
+        }
+
+        const float clampedDeltaSeconds = std::clamp(deltaSeconds, 0.0f, 0.1f);
+        const float recoveryAlpha = std::clamp(
+            1.0f - std::exp2(-clampedDeltaSeconds / recoveryHalfLifeSeconds),
+            0.0f,
+            1.0f);
+        result.translationAlpha = recoveryAlpha;
+        result.rotationAlpha = recoveryAlpha;
+
+        const RE::NiPoint3 rawStep{
+            currentRawProxyBodyWorld.translate.x - previousRawProxyBodyWorld.translate.x,
+            currentRawProxyBodyWorld.translate.y - previousRawProxyBodyWorld.translate.y,
+            currentRawProxyBodyWorld.translate.z - previousRawProxyBodyWorld.translate.z,
+        };
+        const RE::NiPoint3 recoveryDirection{
+            currentRawProxyBodyWorld.translate.x - followedCoupledProxyBodyWorld.translate.x,
+            currentRawProxyBodyWorld.translate.y - followedCoupledProxyBodyWorld.translate.y,
+            currentRawProxyBodyWorld.translate.z - followedCoupledProxyBodyWorld.translate.z,
+        };
+        const float rawStepLength = std::sqrt(
+            rawStep.x * rawStep.x + rawStep.y * rawStep.y + rawStep.z * rawStep.z);
+        const float translationError = std::sqrt(
+            recoveryDirection.x * recoveryDirection.x +
+            recoveryDirection.y * recoveryDirection.y +
+            recoveryDirection.z * recoveryDirection.z);
+        const float recoveryDotRawStep =
+            recoveryDirection.x * rawStep.x +
+            recoveryDirection.y * rawStep.y +
+            recoveryDirection.z * rawStep.z;
+        const float motionFraction = std::clamp(maxOpposingRawMotionFraction, 0.0f, 1.0f);
+        if (recoveryDotRawStep < 0.0f && rawStepLength > 0.0001f && translationError > 0.0001f) {
+            result.translationOpposedRawMotion = true;
+            result.translationAlpha = (std::min)(
+                result.translationAlpha,
+                (rawStepLength * motionFraction) / translationError);
+        }
+
+        const float rawRotationStep = rotationDeltaDegrees(
+            previousRawProxyBodyWorld,
+            currentRawProxyBodyWorld);
+        const float rotationError = rotationDeltaDegrees(
+            followedCoupledProxyBodyWorld,
+            currentRawProxyBodyWorld);
+        if (std::isfinite(rawRotationStep) && rawRotationStep > 0.0001f &&
+            std::isfinite(rotationError) && rotationError > 0.0001f) {
+            // Rotation direction is intentionally not inferred from Euler axes.
+            // Bound recovery during meaningful controller rotation, then use
+            // normal exponential convergence as soon as that motion subsides.
+            result.rotationAlpha = (std::min)(
+                result.rotationAlpha,
+                (rawRotationStep * motionFraction) / rotationError);
+        }
+
+        result.target = blendTransforms(
+            followedCoupledProxyBodyWorld,
+            currentRawProxyBodyWorld,
+            result.translationAlpha,
+            result.rotationAlpha);
+        return result;
+    }
 }

@@ -44,6 +44,7 @@ namespace rock
             bool physicsSnapshotIdentityCurrent{ false };
             bool physicsSnapshotContactActive{ false };
             bool physicsSnapshotTeleported{ false };
+            bool surfaceClutchActive{ false };
             bool contactActive{ false };
             bool visualCorrectionActive{ false };
             std::uint32_t bodyId{ 0x7FFF'FFFFu };
@@ -153,12 +154,6 @@ namespace rock
         void clearPublishedPhysicsSnapshot();
         void publishPhysicsSnapshot(const PhysicsSnapshot& snapshot);
         bool readPhysicsSnapshot(PhysicsSnapshot& outSnapshot) const;
-        void traceSurfaceAdhesion(
-            const PhysicsSnapshot& snapshot,
-            bool snapshotIdentityCurrent,
-            const RE::NiTransform& requestedBodyTarget,
-            const GeneratedKeyframedBodyDriveQueueResult& queueResult);
-        void resetSurfaceAdhesionTrace();
         static void storeAtomicTransform(AtomicTransform& target, const RE::NiTransform& value);
         static RE::NiTransform loadAtomicTransform(const AtomicTransform& source);
 
@@ -192,14 +187,12 @@ namespace rock
         void* _frameBhkWorld{ nullptr };
         RE::NiNode* _frameWeaponNode{ nullptr };
         RE::NiTransform _frameRequestedWeaponWorld{};
+        RE::NiTransform _previousRawProxyBodyTarget{};
+        RE::NiTransform _surfaceClutchProxyBodyTarget{};
+        bool _previousRawProxyBodyTargetValid{ false };
+        bool _surfaceClutchTargetValid{ false };
+        bool _surfaceClutchActive{ false };
         DebugSnapshot _debugSnapshot{};
-        bool _adhesionTracePreviousTargetValid{ false };
-        bool _adhesionTracePreviousLiveValid{ false };
-        bool _adhesionTraceContactWasActive{ false };
-        bool _adhesionTraceDirectionValid{ false };
-        RE::NiTransform _adhesionTracePreviousTarget{};
-        RE::NiTransform _adhesionTracePreviousLive{};
-        RE::NiPoint3 _adhesionTraceBlockDirection{};
 
         std::atomic<bool> _enabledAtomic{ false };
         std::atomic<std::uint32_t> _bodyIdAtomic{ 0x7FFF'FFFFu };

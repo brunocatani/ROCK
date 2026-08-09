@@ -3660,9 +3660,10 @@
                         labelAnchor,
                         2.0f,
                         proxyColor,
-                        "DWC BOX body=%u contact=%s layer=%u grace=%u",
+                        "DWC BOX body=%u contact=%s clutch=%s layer=%u grace=%u",
                         snapshot.bodyId,
                         snapshot.contactActive ? "YES" : "NO",
+                        snapshot.surfaceClutchActive ? "YES" : "NO",
                         snapshot.otherLayer,
                         snapshot.contactGraceSolves);
                     labelAnchor.z -= 3.0f;
