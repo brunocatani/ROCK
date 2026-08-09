@@ -43,7 +43,7 @@ int main()
                 true,
                 Direction::Sheathe,
                 state(NativeWeaponState::Drawn)));
-    ok &= expect("another actor's animation channel must never be accelerated",
+    ok &= expect("a clip outside the transition activation registry must never be accelerated",
         !shouldAccelerateSample(
             false,
             Direction::Draw,
@@ -107,6 +107,8 @@ int main()
             kLeaseTimeoutSeconds) == LifecycleAction::Cancel);
     ok &= expect("the finite acceleration multiplier is positive and bounded",
         kAcceleratedSpeedMultiplier == 100.0f);
+    ok &= expect("the transition timestep receives the configured multiplier",
+        scaleTransitionTimestep(0.01f) == 1.0f);
 
     return ok ? 0 : 1;
 }

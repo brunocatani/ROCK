@@ -23,6 +23,12 @@ namespace rock::weapon_transition_animation_acceleration_policy
         Cancel,
     };
 
+    [[nodiscard]] inline constexpr float scaleTransitionTimestep(
+        const float timestep) noexcept
+    {
+        return timestep * kAcceleratedSpeedMultiplier;
+    }
+
     [[nodiscard]] inline constexpr std::uint32_t transitionState(
         const Direction direction) noexcept
     {
@@ -54,11 +60,12 @@ namespace rock::weapon_transition_animation_acceleration_policy
     }
 
     [[nodiscard]] inline constexpr bool shouldAccelerateSample(
-        const bool ownerMatches,
+        const bool registeredTransitionClip,
         const Direction direction,
         const std::uint32_t nativeState) noexcept
     {
-        return ownerMatches && nativeState == transitionState(direction);
+        return registeredTransitionClip &&
+               nativeState == transitionState(direction);
     }
 
     [[nodiscard]] inline constexpr LifecycleAction classifyLifecycle(

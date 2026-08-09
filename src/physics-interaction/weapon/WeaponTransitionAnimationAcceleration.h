@@ -33,6 +33,8 @@ namespace rock::weapon_transition_animation_acceleration
         MissingInput,
         WrongThread,
         UnencodablePlayer,
+        MissingGraphManager,
+        MissingGraphCharacters,
     };
 
     struct RequestInput
@@ -53,12 +55,12 @@ namespace rock::weapon_transition_animation_acceleration
     };
 
     // Optional FO4VR 1.2.72 capability. A failed or partial install remains
-    // inert and leaves native weapon animation speed untouched.
+    // inert and leaves native clip time advancement untouched.
     [[nodiscard]] bool install() noexcept;
 
-    // Game-thread request/service API. The animation evaluator may run on a
-    // different engine thread; it consumes only the atomic encoded lease and
-    // writes the output field owned by the channel currently being evaluated.
+    // Game-thread request/service API. Animation callbacks may run on a
+    // different engine thread; they consume only bounded atomic snapshots of
+    // the lease, player graph characters, and clips activated by that lease.
     [[nodiscard]] RequestResult request(const RequestInput& input) noexcept;
     void service(const ServiceInput& input) noexcept;
     void cancel(const char* reason) noexcept;
