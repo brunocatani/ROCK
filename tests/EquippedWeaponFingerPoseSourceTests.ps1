@@ -58,9 +58,10 @@ Require-Text 'src/physics-interaction/weapon/WeaponCollision.h' `
 Require-OrderedText 'src/physics-interaction/weapon/WeaponCollision.cpp' @(
     'tryGetSupportGripEvidenceView\(',
     'instance\.body\.getBodyId\(\)\.value != bodyId',
+    'tryResolveDescendantWorldTransform\(',
     'generatedSourceLocalTrianglesGame',
     'outView\.localTriangles = std::span<const TriangleData>',
-    'outView\.localToWorld = driveRoot->world',
+    'outView\.localToWorld = localToWorld',
     'outView\.weaponGenerationKey = getCurrentWeaponGenerationKey\(\)'
 ) 'Support grip evidence must stay body-specific, local, transformed, and generation validated.'
 Reject-Text 'src/physics-interaction/weapon/WeaponCollision.h' `

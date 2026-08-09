@@ -1976,6 +1976,74 @@ namespace rock
             return true;
         }
 
+        constexpr std::size_t kMaximumWeaponLocalHierarchyDepth = 64;
+
+        [[nodiscard]] bool tryResolveDescendantLocalTransform(
+            const RE::NiAVObject* ancestor,
+            const RE::NiAVObject* descendant,
+            RE::NiTransform& outDescendantLocal)
+        {
+            /*
+             * The accelerated shoulder draw can complete between scene-graph
+             * propagation passes. The weapon root is already current then,
+             * while descendant world transforms can still describe the sheath
+             * pose. Local transforms remain the hierarchy authority, so compose
+             * the bounded parent path instead of mixing those two world epochs.
+             */
+            outDescendantLocal = transform_math::makeIdentityTransform<RE::NiTransform>();
+            if (!ancestor || !descendant) {
+                return false;
+            }
+
+            std::array<const RE::NiAVObject*, kMaximumWeaponLocalHierarchyDepth> reversePath{};
+            std::size_t pathLength = 0;
+            auto* cursor = descendant;
+            while (cursor && cursor != ancestor) {
+                if (pathLength >= reversePath.size() || !weaponTransformFinite(cursor->local)) {
+                    outDescendantLocal = {};
+                    return false;
+                }
+                reversePath[pathLength++] = cursor;
+                cursor = cursor->parent;
+            }
+            if (cursor != ancestor) {
+                outDescendantLocal = {};
+                return false;
+            }
+
+            while (pathLength != 0) {
+                outDescendantLocal = transform_math::composeTransforms(
+                    outDescendantLocal,
+                    reversePath[--pathLength]->local);
+            }
+            if (!weaponTransformFinite(outDescendantLocal)) {
+                outDescendantLocal = {};
+                return false;
+            }
+            return true;
+        }
+
+        [[nodiscard]] bool tryResolveDescendantWorldTransform(
+            const RE::NiAVObject* ancestor,
+            const RE::NiTransform& ancestorWorld,
+            const RE::NiAVObject* descendant,
+            RE::NiTransform& outDescendantWorld)
+        {
+            RE::NiTransform descendantLocal{};
+            if (!weaponTransformFinite(ancestorWorld) ||
+                !tryResolveDescendantLocalTransform(ancestor, descendant, descendantLocal)) {
+                outDescendantWorld = {};
+                return false;
+            }
+
+            outDescendantWorld = transform_math::composeTransforms(ancestorWorld, descendantLocal);
+            if (!weaponTransformFinite(outDescendantWorld)) {
+                outDescendantWorld = {};
+                return false;
+            }
+            return true;
+        }
+
         bool updateWeaponEmitterTransform(
             WeaponEmitterDescriptor& descriptor,
             const RE::NiAVObject* transformNode,
@@ -3214,22 +3282,33 @@ namespace rock
             if (!instance.body.isValid() || instance.body.getBodyId().value != bodyId || instance.generatedLocalTrianglesGame.empty()) {
                 continue;
             }
+            RE::NiTransform localToWorld{};
             const bool sourceNodeCurrent = instance.sourceNode && currentWeaponRoot &&
-                actor_equipment_grab::nodeContainsNode(const_cast<RE::NiAVObject*>(currentWeaponRoot), instance.sourceNode, 64);
-            const RE::NiAVObject* driveRoot = sourceNodeCurrent ? instance.sourceNode : (currentWeaponRoot ? currentWeaponRoot : instance.driveNode);
-            if (!driveRoot) {
+                tryResolveDescendantWorldTransform(
+                    currentWeaponRoot,
+                    currentWeaponRoot->world,
+                    instance.sourceNode,
+                    localToWorld);
+            if (!sourceNodeCurrent) {
+                const RE::NiAVObject* fallbackRoot = currentWeaponRoot ? currentWeaponRoot : instance.driveNode;
+                if (!fallbackRoot) {
+                    continue;
+                }
+                localToWorld = fallbackRoot->world;
+            }
+            if (!weaponTransformFinite(localToWorld)) {
                 continue;
             }
 
             const auto& localTriangles = sourceNodeCurrent && !instance.generatedSourceLocalTrianglesGame.empty() ?
                 instance.generatedSourceLocalTrianglesGame :
                 instance.generatedLocalTrianglesGame;
-            if (localTriangles.empty() || !std::isfinite(driveRoot->world.scale) || std::abs(driveRoot->world.scale) <= 0.000001f) {
+            if (localTriangles.empty() || !std::isfinite(localToWorld.scale) || std::abs(localToWorld.scale) <= 0.000001f) {
                 continue;
             }
 
             outView.localTriangles = std::span<const TriangleData>(localTriangles.data(), localTriangles.size());
-            outView.localToWorld = driveRoot->world;
+            outView.localToWorld = localToWorld;
             outView.weaponGenerationKey = getCurrentWeaponGenerationKey();
             outView.sourceNodeCurrent = sourceNodeCurrent;
             return outView.weaponGenerationKey != 0;
@@ -3301,16 +3380,19 @@ namespace rock
                 continue;
             }
 
+            RE::NiTransform surfaceWorld = currentWeaponRoot->world;
             const bool sourceNodeCurrent = instance.sourceNode &&
-                actor_equipment_grab::nodeContainsNode(
-                    const_cast<RE::NiAVObject*>(currentWeaponRoot),
+                tryResolveDescendantWorldTransform(
+                    currentWeaponRoot,
+                    currentWeaponRoot->world,
                     instance.sourceNode,
-                    64);
+                    surfaceWorld);
             const bool useSourceFrame =
                 sourceNodeCurrent &&
                 !instance.generatedSourceLocalTrianglesGame.empty();
-            const RE::NiAVObject* surfaceRoot =
-                useSourceFrame ? instance.sourceNode : currentWeaponRoot;
+            if (!useSourceFrame) {
+                surfaceWorld = currentWeaponRoot->world;
+            }
             const auto& localTriangles =
                 useSourceFrame ?
                 instance.generatedSourceLocalTrianglesGame :
@@ -3323,10 +3405,9 @@ namespace rock
                 useSourceFrame ?
                 instance.generatedSourceLocalMaxGame :
                 instance.generatedLocalMaxGame;
-            if (!surfaceRoot ||
-                localTriangles.empty() ||
-                !weaponTransformFinite(surfaceRoot->world) ||
-                std::abs(surfaceRoot->world.scale) <= 0.000001f ||
+            if (localTriangles.empty() ||
+                !weaponTransformFinite(surfaceWorld) ||
+                std::abs(surfaceWorld.scale) <= 0.000001f ||
                 !pointFinite(boundsMin) ||
                 !pointFinite(boundsMax) ||
                 boundsMin.x > boundsMax.x ||
@@ -3335,7 +3416,7 @@ namespace rock
                 continue;
             }
 
-            const float absoluteScale = std::abs(surfaceRoot->world.scale);
+            const float absoluteScale = std::abs(surfaceWorld.scale);
             const float localRadius = maxDistanceGameUnits / absoluteScale;
             std::array<RE::NiPoint3, kMaximumPointCount> localPoints{};
             std::array<bool, kMaximumPointCount> pointMayReachBody{};
@@ -3345,9 +3426,9 @@ namespace rock
                  ++pointIndex) {
                 localPoints[pointIndex] =
                     weapon_collision_geometry_math::worldPointToLocal(
-                        surfaceRoot->world.rotate,
-                        surfaceRoot->world.translate,
-                        surfaceRoot->world.scale,
+                        surfaceWorld.rotate,
+                        surfaceWorld.translate,
+                        surfaceWorld.scale,
                         pointsWorld[pointIndex]);
                 if (!pointFinite(localPoints[pointIndex])) {
                     continue;
@@ -3407,9 +3488,9 @@ namespace rock
                     }
                     witness.closestPointWorld =
                         weapon_collision_geometry_math::localPointToWorld(
-                            surfaceRoot->world.rotate,
-                            surfaceRoot->world.translate,
-                            surfaceRoot->world.scale,
+                            surfaceWorld.rotate,
+                            surfaceWorld.translate,
+                            surfaceWorld.scale,
                             closestPointLocal);
                     witness.distanceGameUnits = distanceGameUnits;
                     witness.bodyId = instance.body.getBodyId().value;
@@ -3808,13 +3889,20 @@ namespace rock
                 continue;
             }
 
+            RE::NiTransform probeWorld = packageDriveRoot->world;
             const bool sourceNodeCurrent = instance.sourceNode &&
-                actor_equipment_grab::nodeContainsNode(const_cast<RE::NiAVObject*>(packageDriveRoot), instance.sourceNode, 64);
-            const RE::NiAVObject* probeRoot = sourceNodeCurrent ? instance.sourceNode : packageDriveRoot;
+                tryResolveDescendantWorldTransform(
+                    packageDriveRoot,
+                    packageDriveRoot->world,
+                    instance.sourceNode,
+                    probeWorld);
+            if (!sourceNodeCurrent) {
+                probeWorld = packageDriveRoot->world;
+            }
             const RE::NiPoint3 probeLocal = weapon_collision_geometry_math::worldPointToLocal(
-                probeRoot->world.rotate,
-                probeRoot->world.translate,
-                probeRoot->world.scale,
+                probeWorld.rotate,
+                probeWorld.translate,
+                probeWorld.scale,
                 probeWorldPoint);
             const RE::NiPoint3& boundsMin = sourceNodeCurrent ? instance.generatedSourceLocalMinGame : instance.generatedLocalMinGame;
             const RE::NiPoint3& boundsMax = sourceNodeCurrent ? instance.generatedSourceLocalMaxGame : instance.generatedLocalMaxGame;
@@ -4938,7 +5026,7 @@ namespace rock
              * already-baked shape. Logged here to make that divergence
              * directly visible instead of inferred.
              */
-            const float sourceNodeScale = source.sourceRoot ? source.sourceRoot->world.scale : 1.0f;
+            const float sourceNodeScale = source.sourceNodeScale;
             ROCK_LOG_TRACE(Weapon,
                 "Generated weapon mesh selected[{}]: category={} source='{}' driveRoot='{}' sourceRoot='{}' points={} center=({:.2f},{:.2f},{:.2f}) boundsMin=({:.2f},{:.2f},{:.2f}) boundsMax=({:.2f},{:.2f},{:.2f}) sourceLocalCenter=({:.2f},{:.2f},{:.2f}) sourceLocalBoundsMin=({:.2f},{:.2f},{:.2f}) sourceLocalBoundsMax=({:.2f},{:.2f},{:.2f}) sourceNodeScale={:.4f} weaponRootScale={:.4f}",
                 i,
@@ -5054,6 +5142,16 @@ namespace rock
             extractedTriangles += static_cast<std::uint32_t>(added);
             candidateExtractedSourceGroups.insert(sourceGroupId);
 
+            RE::NiTransform sourceInWeapon{};
+            const bool sourceInWeaponAvailable =
+                tryResolveDescendantLocalTransform(sourceRoot, node, sourceInWeapon);
+            RE::NiTransform sourceWorldForDrive = node->world;
+            if (sourceInWeaponAvailable) {
+                sourceWorldForDrive = transform_math::composeTransforms(
+                    weaponRootTransform,
+                    sourceInWeapon);
+            }
+
             std::vector<RE::NiPoint3> localPoints;
             localPoints.reserve(triangles.size() * 3);
             std::vector<TriangleData> localTriangles;
@@ -5061,14 +5159,20 @@ namespace rock
             std::vector<TriangleData> sourceLocalTriangles;
             sourceLocalTriangles.reserve(triangles.size());
             for (const auto& triangle : triangles) {
-                TriangleData localTriangle{};
-                localTriangle.v0 = weapon_collision_geometry_math::worldPointToLocal(weaponRootTransform.rotate, weaponRootTransform.translate, weaponRootTransform.scale, triangle.v0);
-                localTriangle.v1 = weapon_collision_geometry_math::worldPointToLocal(weaponRootTransform.rotate, weaponRootTransform.translate, weaponRootTransform.scale, triangle.v1);
-                localTriangle.v2 = weapon_collision_geometry_math::worldPointToLocal(weaponRootTransform.rotate, weaponRootTransform.translate, weaponRootTransform.scale, triangle.v2);
                 TriangleData sourceLocalTriangle{};
                 sourceLocalTriangle.v0 = weapon_collision_geometry_math::worldPointToLocal(node->world.rotate, node->world.translate, node->world.scale, triangle.v0);
                 sourceLocalTriangle.v1 = weapon_collision_geometry_math::worldPointToLocal(node->world.rotate, node->world.translate, node->world.scale, triangle.v1);
                 sourceLocalTriangle.v2 = weapon_collision_geometry_math::worldPointToLocal(node->world.rotate, node->world.translate, node->world.scale, triangle.v2);
+                TriangleData localTriangle{};
+                if (sourceInWeaponAvailable) {
+                    localTriangle.v0 = transform_math::localPointToWorld(sourceInWeapon, sourceLocalTriangle.v0);
+                    localTriangle.v1 = transform_math::localPointToWorld(sourceInWeapon, sourceLocalTriangle.v1);
+                    localTriangle.v2 = transform_math::localPointToWorld(sourceInWeapon, sourceLocalTriangle.v2);
+                } else {
+                    localTriangle.v0 = weapon_collision_geometry_math::worldPointToLocal(weaponRootTransform.rotate, weaponRootTransform.translate, weaponRootTransform.scale, triangle.v0);
+                    localTriangle.v1 = weapon_collision_geometry_math::worldPointToLocal(weaponRootTransform.rotate, weaponRootTransform.translate, weaponRootTransform.scale, triangle.v1);
+                    localTriangle.v2 = weapon_collision_geometry_math::worldPointToLocal(weaponRootTransform.rotate, weaponRootTransform.translate, weaponRootTransform.scale, triangle.v2);
+                }
                 localPoints.push_back(localTriangle.v0);
                 localPoints.push_back(localTriangle.v1);
                 localPoints.push_back(localTriangle.v2);
@@ -5171,16 +5275,21 @@ namespace rock
                 source.localCenterGame = weapon_collision_geometry_math::pointCenter(cluster);
                 source.sourceLocalPointsGame.reserve(cluster.size());
                 for (const auto& point : cluster) {
-                    const RE::NiPoint3 pointWorld = weapon_collision_geometry_math::localPointToWorld(
-                        weaponRootTransform.rotate,
-                        weaponRootTransform.translate,
-                        weaponRootTransform.scale,
-                        point);
-                    source.sourceLocalPointsGame.push_back(weapon_collision_geometry_math::worldPointToLocal(
-                        node->world.rotate,
-                        node->world.translate,
-                        node->world.scale,
-                        pointWorld));
+                    if (sourceInWeaponAvailable) {
+                        source.sourceLocalPointsGame.push_back(
+                            transform_math::worldPointToLocal(sourceInWeapon, point));
+                    } else {
+                        const RE::NiPoint3 pointWorld = weapon_collision_geometry_math::localPointToWorld(
+                            weaponRootTransform.rotate,
+                            weaponRootTransform.translate,
+                            weaponRootTransform.scale,
+                            point);
+                        source.sourceLocalPointsGame.push_back(weapon_collision_geometry_math::worldPointToLocal(
+                            node->world.rotate,
+                            node->world.translate,
+                            node->world.scale,
+                            pointWorld));
+                    }
                 }
                 source.sourceLocalCenterGame = weapon_collision_geometry_math::pointCenter(source.sourceLocalPointsGame);
                 const auto bounds = pointCloudBounds(cluster);
@@ -5194,7 +5303,7 @@ namespace rock
                 source.sourceLocalTrianglesGame = sourceLocalTriangles;
                 source.driveRoot = sourceRoot;
                 source.sourceRoot = node;
-                source.sourceNodeScale = node->world.scale;
+                source.sourceNodeScale = sourceWorldForDrive.scale;
                 source.sourceGroupId = sourceGroupId;
                 source.sourceName = safeNodeName(node);
                 if (clusters.size() > 1) {
@@ -5407,7 +5516,20 @@ namespace rock
             }
 
             instance.body.createNiNode("ROCK_WeaponMeshCollision");
-            const RE::NiTransform driveRootTransform = instance.sourceNode ? instance.sourceNode->world : (instance.driveNode ? instance.driveNode->world : makeIdentityTransform());
+            RE::NiTransform driveRootTransform =
+                instance.sourceNode ?
+                    instance.sourceNode->world :
+                    (instance.driveNode ? instance.driveNode->world : makeIdentityTransform());
+            if (instance.sourceNode && instance.driveNode) {
+                RE::NiTransform hierarchyWorld{};
+                if (tryResolveDescendantWorldTransform(
+                        instance.driveNode,
+                        instance.driveNode->world,
+                        instance.sourceNode,
+                        hierarchyWorld)) {
+                    driveRootTransform = hierarchyWorld;
+                }
+            }
             const RE::NiPoint3 initialCenterGame = instance.sourceNode ? source.sourceLocalCenterGame : source.localCenterGame;
             const RE::NiTransform initialTransform = makeGeneratedBodyWorldTransform(driveRootTransform, initialCenterGame);
             if (!placeGeneratedKeyframedBodyImmediately(instance.body, initialTransform)) {
@@ -8082,8 +8204,14 @@ namespace rock
                 }
             }
 
-            const bool useSourceNode = instance.sourceNode && actor_equipment_grab::nodeContainsNode(packageDriveNode, instance.sourceNode, 64);
-            const RE::NiTransform& driveWorld = useSourceNode ? instance.sourceNode->world : packageWorld;
+            RE::NiTransform sourceWorld{};
+            const bool useSourceNode = instance.sourceNode &&
+                tryResolveDescendantWorldTransform(
+                    packageDriveNode,
+                    packageWorld,
+                    instance.sourceNode,
+                    sourceWorld);
+            const RE::NiTransform& driveWorld = useSourceNode ? sourceWorld : packageWorld;
             const RE::NiPoint3& centerGame = useSourceNode ? instance.generatedSourceLocalCenterGame : instance.generatedLocalCenterGame;
             const RE::NiTransform generatedTransform = makeGeneratedBodyWorldTransform(driveWorld, centerGame);
             queueBodyTarget(instance, generatedTransform, sourceDeltaSeconds);
