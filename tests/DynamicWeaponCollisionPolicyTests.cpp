@@ -111,54 +111,6 @@ int main()
         currentRequested);
     ok &= expectNear("one-way rotation correction", rotationDeltaDegrees(resolvedRotation, sampledLive), 0.0f, 0.05f);
 
-    RE::NiTransform blockedRawIntent = rock::transform_math::makeIdentityTransform<RE::NiTransform>();
-    blockedRawIntent.translate = RE::NiPoint3{ 10.0f, 0.0f, 0.0f };
-    RE::NiTransform blockedRequested = blockedRawIntent;
-    RE::NiTransform blockedLive = blockedRawIntent;
-    blockedLive.translate = RE::NiPoint3{ 0.0f, 0.0f, 0.0f };
-    RE::NiTransform deeperRawIntent = blockedRawIntent;
-    deeperRawIntent.translate.x = 11.0f;
-    const RE::NiTransform coupledPush = advanceSurfaceCoupledTarget(
-        blockedRawIntent,
-        deeperRawIntent,
-        blockedRequested,
-        blockedLive,
-        0.25f,
-        0.5f);
-    ok &= expectPoint(
-        "surface coupling discards accumulated push debt",
-        coupledPush.translate,
-        RE::NiPoint3{ 1.25f, 0.0f, 0.0f });
-
-    RE::NiTransform retreatRawIntent = blockedRawIntent;
-    retreatRawIntent.translate.x = 9.0f;
-    const RE::NiTransform coupledRetreat = advanceSurfaceCoupledTarget(
-        blockedRawIntent,
-        retreatRawIntent,
-        blockedRequested,
-        blockedLive,
-        0.25f,
-        0.5f);
-    ok &= expectPoint(
-        "surface coupling preserves immediate retreat",
-        coupledRetreat.translate,
-        RE::NiPoint3{ -0.75f, 0.0f, 0.0f });
-
-    RE::NiTransform rotationalRequest = rock::transform_math::makeIdentityTransform<RE::NiTransform>();
-    rotationalRequest.rotate = rotationZ90();
-    const RE::NiTransform boundedRotationalAnchor = makeBoundedContactAnchor(
-        rock::transform_math::makeIdentityTransform<RE::NiTransform>(),
-        rotationalRequest,
-        0.25f,
-        0.5f);
-    ok &= expectNear(
-        "surface coupling bounds rotational contact bias",
-        rotationDeltaDegrees(
-            boundedRotationalAnchor,
-            rock::transform_math::makeIdentityTransform<RE::NiTransform>()),
-        0.5f,
-        0.05f);
-
     const auto nativeOneHand = selectAttachedHands(false, false, true, false, false);
     ok &= !nativeOneHand.left && nativeOneHand.right;
     const auto leftPrimaryOnly = selectAttachedHands(false, true, true, false, false);
