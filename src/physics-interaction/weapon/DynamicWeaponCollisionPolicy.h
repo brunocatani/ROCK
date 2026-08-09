@@ -164,6 +164,20 @@ namespace rock::dynamic_weapon_collision_policy
         return result;
     }
 
+    inline RE::NiTransform makeContactBodyInGripAuthoritySpace(
+        const RE::NiPoint3& centerWeaponLocal,
+        float weaponScale)
+    {
+        RE::NiTransform result = transform_math::makeIdentityTransform<RE::NiTransform>();
+        const float scale = std::abs(weaponScale);
+        result.translate = RE::NiPoint3{
+            centerWeaponLocal.x * scale,
+            centerWeaponLocal.y * scale,
+            centerWeaponLocal.z * scale,
+        };
+        return result;
+    }
+
     inline RE::NiTransform reconstructWeaponRoot(
         const RE::NiTransform& proxyBodyWorld,
         const RE::NiPoint3& centerWeaponLocal,

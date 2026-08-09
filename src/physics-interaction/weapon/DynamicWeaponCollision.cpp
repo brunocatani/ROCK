@@ -4,7 +4,6 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/core/PhysicsFrameContext.h"
-#include "physics-interaction/grab/GrabCore.h"
 #include "physics-interaction/grab/GrabAuthorityProxy.h"
 #include "physics-interaction/grab/GrabMotionController.h"
 #include "physics-interaction/native/HavokConvexShapeBuilder.h"
@@ -482,8 +481,15 @@ namespace rock
             return false;
         }
 
+        // Both generated bodies are authored with the same physical rotation.
+        // Their constraint relation therefore contains only the weapon-local
+        // grip-to-box-center offset. Passing these two generated-column frames
+        // through the visual-object/proxy adapter invents a world-dependent
+        // relative rotation and twists the box sideways when the motor engages.
         const RE::NiTransform desiredBodyTransformAuthoritySpace =
-            grab_frame_math::objectInGeneratedProxyLocalSpace(initialAuthorityTarget, initialContactTarget);
+            dynamic_weapon_collision_policy::makeContactBodyInGripAuthoritySpace(
+                geometry.centerWeaponLocal,
+                scale);
         const auto motorTuning = buildWeaponGripConstraintTuning(bodyMass);
         _authorityConstraint = createGrabConstraint(
             frame.hknpWorld,

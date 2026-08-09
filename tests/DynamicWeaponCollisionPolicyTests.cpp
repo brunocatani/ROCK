@@ -91,11 +91,20 @@ int main()
         gripAuthorityTarget,
         geometry.centerWeaponLocal,
         weaponRoot.scale);
+    const RE::NiTransform bodyInGripAuthority = makeContactBodyInGripAuthoritySpace(
+        geometry.centerWeaponLocal,
+        weaponRoot.scale);
     const RE::NiTransform reconstructed = reconstructWeaponRoot(bodyTarget, geometry.centerWeaponLocal, weaponRoot.scale);
     ok &= expectPoint("body center target", bodyTarget.translate, RE::NiPoint3{ 98.0f, 70.0f, -23.0f });
     ok &= expectPoint("grip authority stays at weapon root", gripAuthorityTarget.translate, weaponRoot.translate);
     ok &= expectPoint("grip authority reconstructs contact center", bodyTargetFromGrip.translate, bodyTarget.translate);
     ok &= expectNear("grip authority reconstructs contact rotation", rotationDeltaDegrees(bodyTargetFromGrip, bodyTarget), 0.0f, 0.05f);
+    ok &= expectPoint("grip authority relation preserves center offset", bodyInGripAuthority.translate, RE::NiPoint3{ 20.0f, 2.0f, 2.0f });
+    ok &= expectNear(
+        "grip authority relation has identity rotation",
+        rotationDeltaDegrees(bodyInGripAuthority, rock::transform_math::makeIdentityTransform<RE::NiTransform>()),
+        0.0f,
+        0.05f);
     ok &= expectPoint("reconstructed root", reconstructed.translate, weaponRoot.translate);
     ok &= expectNear("reconstructed rotation", rotationDeltaDegrees(reconstructed, weaponRoot), 0.0f, 0.05f);
 

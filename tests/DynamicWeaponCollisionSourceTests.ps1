@@ -97,11 +97,14 @@ Require-Pattern $runtimeSource `
     'buildProxyShape\(\)[\s\S]*noContactFilterInfo\(\)[\s\S]*BethesdaMotionType::Keyframed[\s\S]*ROCK_WeaponGripAuthorityProxy[\s\S]*hasNoContactFilterInfo' `
     'The grip authority must be a verified noncolliding keyframed proxy.'
 Require-Pattern $runtimeSource `
-    'makeGripAuthorityTarget\(requestedWeaponWorld\)[\s\S]*objectInGeneratedProxyLocalSpace\(initialAuthorityTarget,\s*initialContactTarget\)[\s\S]*createGrabConstraint\([\s\S]*_authorityProxy\.getBodyId\(\)[\s\S]*_body\.getBodyId\(\)[\s\S]*initialAuthorityTarget[\s\S]*requestedWeaponWorld\.translate[\s\S]*desiredBodyTransformAuthoritySpace' `
+    'makeGripAuthorityTarget\(requestedWeaponWorld\)[\s\S]*makeContactBodyInGripAuthoritySpace\([\s\S]*geometry\.centerWeaponLocal,[\s\S]*scale\)[\s\S]*createGrabConstraint\([\s\S]*_authorityProxy\.getBodyId\(\)[\s\S]*_body\.getBodyId\(\)[\s\S]*initialAuthorityTarget[\s\S]*requestedWeaponWorld\.translate[\s\S]*desiredBodyTransformAuthoritySpace' `
     'The finite constraint must place its hidden authority origin at the firing grip while preserving the offset contact-box frame.'
 Reject-Pattern $runtimeSource `
-    'identityRelation' `
-    'The grip authority must not collapse back to the old collider-center identity relation.'
+    'objectInGeneratedProxyLocalSpace\(initialAuthorityTarget,\s*initialContactTarget\)|identityRelation' `
+    'The grip authority relation must not reintroduce mixed-frame rotation or the old collider-center identity relation.'
+Require-Pattern $runtimePolicy `
+    'makeContactBodyInGripAuthoritySpace\([\s\S]*makeIdentityTransform<RE::NiTransform>\(\)[\s\S]*centerWeaponLocal\.x\s*\*\s*scale[\s\S]*centerWeaponLocal\.y\s*\*\s*scale[\s\S]*centerWeaponLocal\.z\s*\*\s*scale' `
+    'The generated-body relation must preserve identity rotation and contain only the scaled grip-to-center translation.'
 Require-Pattern $runtimeSource `
     'getEquippedWeaponClassification\(\)[\s\S]*sanitizeWeaponMass\(weaponIdentity\.weightGame\)[\s\S]*_body\.setMass\(bodyMass\)' `
     'The generated contact box must use sanitized equipped-weapon mass rather than the wrapper default.'
