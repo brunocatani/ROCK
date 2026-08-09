@@ -72,6 +72,16 @@ function Reject-Text {
 
 # Canonical free-hand world collision uses dynamic velocity-driven proxies.
 
+# The shared wrapper must not run FO4VR's keyframed initializer over dynamic
+# twins. That routine zeros inverse mass, allowing tracked bodies to move while
+# preventing the solver from displacing hands at static-world contact.
+Reject-Text 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' `
+    'deriveMotionCinfo\s*\(' `
+    'Dynamic hand twins must retain the motion-cinfo constructor inverse mass.'
+Require-Text 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' `
+    '0x1417A3A90 is initializeAsKeyFramed[\s\S]{0,500}motionCinfoCtor\(motionCinfo\);' `
+    'The shared body wrapper must preserve the dynamic-safe native constructor profile.'
+
 # Live-world teardown must use deferred retirement (2026-07-08 UAF lesson).
 Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
     'body\.retireDeferred\(' `

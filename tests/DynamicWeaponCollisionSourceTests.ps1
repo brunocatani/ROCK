@@ -148,14 +148,17 @@ Reject-Pattern $runtimeSource `
     '_body\.destroy\(' `
     'The dynamic weapon body must never use immediate live-world destruction.'
 
-# FO4VR's verified one-body construction derives dynamic mass properties from
-# the populated body cinfo. A default motion cinfo is not a valid dynamic body.
-Require-Pattern 'src/physics-interaction/native/HavokOffsets.h' `
-    'kFunc_MotionCinfo_DeriveFromBodyCinfos\s*=\s*0x17A3A90' `
-    'The verified FO4VR dynamic mass-property derivation RVA must remain explicit.'
+# FO4VR 0x1417A3A90 is initializeAsKeyFramed. It zeros motion-cinfo inverse
+# mass, so it must never contaminate the shared velocity-driven body wrapper.
+Reject-Pattern 'src/physics-interaction/native/HavokOffsets.h' `
+    'kFunc_MotionCinfo_DeriveFromBodyCinfos' `
+    'The keyframed initializer must not remain mislabeled as dynamic mass derivation.'
+Reject-Pattern 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' `
+    'deriveMotionCinfo\s*\(' `
+    'Dynamic weapon bodies must retain the native motion-cinfo constructor inverse mass.'
 Require-Pattern 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' `
-    'motionType\s*==\s*BethesdaMotionType::Dynamic[\s\S]*deriveMotionCinfo\(generatedMotionCinfo, bodyCinfo, 1\)[\s\S]*kUseWorldDefaultMotionPropertiesId' `
-    'Dynamic generated bodies must derive mass properties and restore the default motion-properties sentinel before insertion.'
+    '0x1417A3A90 is initializeAsKeyFramed[\s\S]{0,500}motionCinfoCtor\(motionCinfo\);' `
+    'The generated-body wrapper must document and preserve the dynamic-safe constructor profile.'
 
 # The dormant overlay flag is now the primary in-game shape/contact diagnostic.
 Require-Pattern 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
