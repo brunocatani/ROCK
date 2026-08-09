@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/WeaponCollision.h"
+#include "physics-interaction/weapon/WeaponRecaptureFramePolicy.h"
 
 #include "physics-interaction/actor/ActorEquipmentGrab.h"
 #include "physics-interaction/native/BodyCollisionControl.h"
@@ -1987,11 +1988,12 @@ namespace rock
             RE::NiTransform& outDescendantLocal)
         {
             /*
-             * The accelerated shoulder draw can complete between scene-graph
-             * propagation passes. The weapon root is already current then,
-             * while descendant world transforms can still describe the sheath
-             * pose. Local transforms remain the hierarchy authority, so compose
-             * the bounded parent path instead of mixing those two world epochs.
+             * Descendant world transforms can belong to a different scene-graph
+             * propagation epoch than the current weapon root. Compose the
+             * bounded parent path so callers receive one coherent local frame.
+             * Shoulder draw can also leave that coherent frame in presentation
+             * space; post-undraw callers remove that separately with a validated
+             * source-frame correction.
              */
             outDescendantLocal = transform_math::makeIdentityTransform<RE::NiTransform>();
             if (!ancestor || !descendant) {
@@ -2030,13 +2032,25 @@ namespace rock
             const RE::NiAVObject* ancestor,
             const RE::NiTransform& ancestorWorld,
             const RE::NiAVObject* descendant,
-            RE::NiTransform& outDescendantWorld)
+            RE::NiTransform& outDescendantWorld,
+            const RE::NiTransform* descendantFrameCorrection = nullptr)
         {
             RE::NiTransform descendantLocal{};
             if (!weaponTransformFinite(ancestorWorld) ||
                 !tryResolveDescendantLocalTransform(ancestor, descendant, descendantLocal)) {
                 outDescendantWorld = {};
                 return false;
+            }
+
+            if (descendantFrameCorrection) {
+                if (!weaponTransformFinite(*descendantFrameCorrection) ||
+                    std::abs(descendantFrameCorrection->scale) <= 0.0001f) {
+                    outDescendantWorld = {};
+                    return false;
+                }
+                descendantLocal = weapon_recapture_frame_policy::applyPostUndrawFrameCorrection(
+                    *descendantFrameCorrection,
+                    descendantLocal);
             }
 
             outDescendantWorld = transform_math::composeTransforms(ancestorWorld, descendantLocal);
@@ -2549,16 +2563,16 @@ namespace rock
         _generatedSourceCache = {};
     }
 
-    void WeaponCollision::recordGeneratedRecaptureDiagnostic(
+    bool WeaponCollision::recordAndApplyGeneratedRecaptureAuthority(
         const std::uint64_t equippedKey,
         const std::uint64_t identityKey,
         const std::uint64_t ownershipKey,
         const std::uint32_t weaponFormID,
-        const std::vector<GeneratedHullSource>& sources)
+        std::vector<GeneratedHullSource>& sources)
     {
         if (equippedKey == 0 || identityKey == 0 || ownershipKey == 0 ||
             weaponFormID == 0 || sources.empty()) {
-            return;
+            return false;
         }
 
         const auto pointDistance = [](const RE::NiPoint3& lhs, const RE::NiPoint3& rhs) {
@@ -2584,7 +2598,18 @@ namespace rock
                     .sourceName = source.sourceName,
                     .weaponLocalCenter = source.localCenterGame,
                     .sourceLocalCenter = source.sourceLocalCenterGame,
+                    .sourceLocalMin = source.sourceLocalMinGame,
+                    .sourceLocalMax = source.sourceLocalMaxGame,
+                    .sourceInWeapon = source.sourceInWeapon,
+                    .weaponLocalPoints = source.localPointsGame,
+                    .weaponLocalTriangles = source.localTrianglesGame,
+                    .childWeaponLocalPointClouds = source.childLocalPointCloudsGame,
+                    .weaponLocalMin = source.localMinGame,
+                    .weaponLocalMax = source.localMaxGame,
+                    .sourceLocalPointCount = source.sourceLocalPointsGame.size(),
                     .sourceLocalTriangleCount = source.sourceLocalTrianglesGame.size(),
+                    .sourceNodeScale = source.sourceNodeScale,
+                    .sourceInWeaponAvailable = source.sourceInWeaponAvailable,
                 });
             }
             _generatedRecaptureDiagnostic = std::move(captured);
@@ -2605,24 +2630,28 @@ namespace rock
                 ownershipKey,
                 weaponFormID,
                 sources.size());
-            return;
+            return false;
         }
 
         if (!_generatedRecaptureDiagnostic.sawUndrawnInterval) {
             const auto comparisonSequence = _generatedRecaptureDiagnostic.comparisonSequence;
             captureCurrent(comparisonSequence);
-            return;
+            return false;
         }
 
         struct DriftRow
         {
             const GeneratedRecaptureDiagnosticSource* baseline{ nullptr };
-            const GeneratedHullSource* current{ nullptr };
+            GeneratedHullSource* current{ nullptr };
             float weaponCenterDeltaGame{ 0.0f };
             float sourceCenterDeltaGame{ 0.0f };
+            float sourceBoundsDeltaGame{ 0.0f };
             bool sourcePointerStable{ false };
             bool rootPointerStable{ false };
+            bool pointCountStable{ false };
             bool triangleCountStable{ false };
+            bool sourceScaleStable{ false };
+            bool frameCorrectionAvailable{ false };
         };
 
         std::vector<DriftRow> driftRows;
@@ -2636,14 +2665,15 @@ namespace rock
         float maximumSourceCenterDeltaGame = 0.0f;
         const char* maximumWeaponCenterDeltaSource = "none";
 
-        for (const auto& current : sources) {
+        for (auto& current : sources) {
             const GeneratedRecaptureDiagnosticSource* baseline = nullptr;
             if (current.sourceGroupId != 0) {
                 const auto exact = std::find_if(
                     _generatedRecaptureDiagnostic.sources.begin(),
                     _generatedRecaptureDiagnostic.sources.end(),
                     [&](const GeneratedRecaptureDiagnosticSource& candidate) {
-                        return candidate.sourceGroupId == current.sourceGroupId;
+                        return candidate.sourceGroupId == current.sourceGroupId &&
+                               candidate.sourceName == current.sourceName;
                     });
                 if (exact != _generatedRecaptureDiagnostic.sources.end()) {
                     baseline = &*exact;
@@ -2675,6 +2705,9 @@ namespace rock
             row.sourceCenterDeltaGame = pointDistance(
                 baseline->sourceLocalCenter,
                 current.sourceLocalCenterGame);
+            row.sourceBoundsDeltaGame = (std::max)(
+                pointDistance(baseline->sourceLocalMin, current.sourceLocalMinGame),
+                pointDistance(baseline->sourceLocalMax, current.sourceLocalMaxGame));
             row.sourcePointerStable =
                 baseline->sourceGroupId != 0 &&
                 baseline->sourceGroupId == current.sourceGroupId;
@@ -2686,6 +2719,20 @@ namespace rock
             row.triangleCountStable =
                 baseline->sourceLocalTriangleCount ==
                     current.sourceLocalTrianglesGame.size();
+            row.pointCountStable =
+                baseline->sourceLocalPointCount ==
+                current.sourceLocalPointsGame.size();
+            row.sourceScaleStable =
+                std::isfinite(baseline->sourceNodeScale) &&
+                std::isfinite(current.sourceNodeScale) &&
+                std::abs(baseline->sourceNodeScale - current.sourceNodeScale) <= 0.001f;
+            row.frameCorrectionAvailable =
+                baseline->sourceInWeaponAvailable &&
+                current.sourceInWeaponAvailable &&
+                weaponTransformFinite(baseline->sourceInWeapon) &&
+                weaponTransformFinite(current.sourceInWeapon) &&
+                std::abs(baseline->sourceInWeapon.scale) > 0.0001f &&
+                std::abs(current.sourceInWeapon.scale) > 0.0001f;
             if (row.sourcePointerStable) {
                 ++sameSourcePointerCount;
             }
@@ -2696,7 +2743,11 @@ namespace rock
             const bool sourceGeometryDrifted =
                 row.sourceCenterDeltaGame >
                     GENERATED_RECAPTURE_SOURCE_CENTER_DRIFT_GAME ||
-                !row.triangleCountStable;
+                row.sourceBoundsDeltaGame >
+                    GENERATED_RECAPTURE_SOURCE_CENTER_DRIFT_GAME ||
+                !row.pointCountStable ||
+                !row.triangleCountStable ||
+                !row.sourceScaleStable;
             if (sourceGeometryDrifted) {
                 ++sourceGeometryDriftCount;
             } else if (row.sourcePointerStable && row.rootPointerStable &&
@@ -2734,12 +2785,29 @@ namespace rock
             classification = "hierarchy-frame-drift";
         }
 
+        const bool frameAuthorityEligible =
+            hierarchyFrameDriftCount != 0 &&
+            treeReplacementCount == 0 &&
+            sourceGeometryDriftCount == 0 &&
+            matchedSourceCount == sources.size() &&
+            matchedSourceCount == _generatedRecaptureDiagnostic.sources.size() &&
+            std::all_of(
+                driftRows.begin(),
+                driftRows.end(),
+                [](const DriftRow& row) {
+                    return row.baseline && row.current &&
+                           row.sourcePointerStable && row.rootPointerStable &&
+                           row.pointCountStable && row.triangleCountStable &&
+                           row.sourceScaleStable && row.frameCorrectionAvailable;
+                });
+
         ++_generatedRecaptureDiagnostic.comparisonSequence;
         _generatedRecaptureDiagnostic.sawUndrawnInterval = false;
         ROCK_LOG_INFO(Weapon,
-            "Generated weapon post-undraw recapture diagnostic: sequence={} classification={} key={:016X} identity={:016X} ownership={:016X} formID={:08X} baselineSources={} currentSources={} matched={} sameSourcePointers={} treeChanges={} hierarchyFrameDrift={} sourceGeometryDrift={} maxWeaponCenterDelta={:.3f} maxWeaponCenterSource='{}' maxSourceLocalCenterDelta={:.3f}",
+            "Generated weapon post-undraw recapture diagnostic: sequence={} classification={} frameAuthorityEligible={} key={:016X} identity={:016X} ownership={:016X} formID={:08X} baselineSources={} currentSources={} matched={} sameSourcePointers={} treeChanges={} hierarchyFrameDrift={} sourceGeometryDrift={} maxWeaponCenterDelta={:.3f} maxWeaponCenterSource='{}' maxSourceLocalCenterDelta={:.3f}",
             _generatedRecaptureDiagnostic.comparisonSequence,
             classification,
+            frameAuthorityEligible ? "yes" : "no",
             equippedKey,
             identityKey,
             ownershipKey,
@@ -2798,6 +2866,47 @@ namespace rock
                 break;
             }
         }
+
+        if (!frameAuthorityEligible) {
+            return false;
+        }
+
+        std::vector<RE::NiTransform> frameCorrections;
+        frameCorrections.reserve(driftRows.size());
+        for (const auto& row : driftRows) {
+            const RE::NiTransform correction = weapon_recapture_frame_policy::makePostUndrawFrameCorrection(
+                row.baseline->sourceInWeapon,
+                row.current->sourceInWeapon);
+            if (!weaponTransformFinite(correction) ||
+                std::abs(correction.scale) <= 0.0001f) {
+                ROCK_LOG_WARN(Weapon,
+                    "Generated weapon post-undraw frame authority rejected: source='{}' produced an invalid correction",
+                    row.current->sourceName);
+                return false;
+            }
+            frameCorrections.push_back(correction);
+        }
+
+        for (std::size_t i = 0; i < driftRows.size(); ++i) {
+            auto& current = *driftRows[i].current;
+            const auto& baseline = *driftRows[i].baseline;
+            current.postUndrawFrameCorrection = frameCorrections[i];
+            current.postUndrawFrameCorrectionValid = true;
+            current.localPointsGame = baseline.weaponLocalPoints;
+            current.localTrianglesGame = baseline.weaponLocalTriangles;
+            current.childLocalPointCloudsGame = baseline.childWeaponLocalPointClouds;
+            current.localCenterGame = baseline.weaponLocalCenter;
+            current.localMinGame = baseline.weaponLocalMin;
+            current.localMaxGame = baseline.weaponLocalMax;
+        }
+
+        ROCK_LOG_INFO(Weapon,
+            "Generated weapon post-undraw frame authority restored: sequence={} sources={} key={:016X} formID={:08X}",
+            _generatedRecaptureDiagnostic.comparisonSequence,
+            driftRows.size(),
+            equippedKey,
+            weaponFormID);
+        return true;
     }
 
     void WeaponCollision::resetVisualSourceUnavailableRetention()
@@ -3542,7 +3651,10 @@ namespace rock
                     currentWeaponRoot,
                     currentWeaponRoot->world,
                     instance.sourceNode,
-                    localToWorld);
+                    localToWorld,
+                    instance.generatedSourceFrameCorrectionValid ?
+                        &instance.generatedSourceFrameCorrection :
+                        nullptr);
             if (!sourceNodeCurrent) {
                 const RE::NiAVObject* fallbackRoot = currentWeaponRoot ? currentWeaponRoot : instance.driveNode;
                 if (!fallbackRoot) {
@@ -3640,7 +3752,10 @@ namespace rock
                     currentWeaponRoot,
                     currentWeaponRoot->world,
                     instance.sourceNode,
-                    surfaceWorld);
+                    surfaceWorld,
+                    instance.generatedSourceFrameCorrectionValid ?
+                        &instance.generatedSourceFrameCorrection :
+                        nullptr);
             const bool useSourceFrame =
                 sourceNodeCurrent &&
                 !instance.generatedSourceLocalTrianglesGame.empty();
@@ -4149,7 +4264,10 @@ namespace rock
                     packageDriveRoot,
                     packageDriveRoot->world,
                     instance.sourceNode,
-                    probeWorld);
+                    probeWorld,
+                    instance.generatedSourceFrameCorrectionValid ?
+                        &instance.generatedSourceFrameCorrection :
+                        nullptr);
             if (!sourceNodeCurrent) {
                 probeWorld = packageDriveRoot->world;
             }
@@ -4642,13 +4760,13 @@ namespace rock
                     performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::WeaponColliderBuild);
                     const float maxGeneratedSourceDistanceGame = resolveMaxGeneratedSourceDistanceGame(observedSizeClass);
                     generatedCount = findGeneratedWeaponShapeSources(weaponNode, observedKey, generatedSources, maxGeneratedSourceDistanceGame);
-                    generatedSummary = summarizeGeneratedSources(generatedSources);
-                    recordGeneratedRecaptureDiagnostic(
+                    recordAndApplyGeneratedRecaptureAuthority(
                         observedKey,
                         observedIdentityKey,
                         observedOwnershipKey,
                         observedFormID,
                         generatedSources);
+                    generatedSummary = summarizeGeneratedSources(generatedSources);
                 }
 
                 const bool hasBuildableSource = std::any_of(generatedSources.begin(), generatedSources.end(), [](const GeneratedHullSource& source) {
@@ -5571,6 +5689,8 @@ namespace rock
                 source.sourceLocalTrianglesGame = sourceLocalTriangles;
                 source.driveRoot = sourceRoot;
                 source.sourceRoot = node;
+                source.sourceInWeapon = sourceInWeapon;
+                source.sourceInWeaponAvailable = sourceInWeaponAvailable;
                 source.sourceNodeScale = sourceWorldForDrive.scale;
                 source.sourceGroupId = sourceGroupId;
                 source.sourceName = safeNodeName(node);
@@ -5755,6 +5875,8 @@ namespace rock
             instance.shape = shape;
             instance.driveNode = source.driveRoot ? source.driveRoot : source.sourceRoot;
             instance.sourceNode = source.sourceRoot;
+            instance.generatedSourceFrameCorrection = source.postUndrawFrameCorrection;
+            instance.generatedSourceFrameCorrectionValid = source.postUndrawFrameCorrectionValid;
             instance.sourceName = source.sourceName;
             instance.sourceRootName = source.sourceRoot ? safeNodeName(source.sourceRoot) : "";
             instance.generatedLocalCenterGame = source.localCenterGame;
@@ -5794,7 +5916,10 @@ namespace rock
                         instance.driveNode,
                         instance.driveNode->world,
                         instance.sourceNode,
-                        hierarchyWorld)) {
+                        hierarchyWorld,
+                        instance.generatedSourceFrameCorrectionValid ?
+                            &instance.generatedSourceFrameCorrection :
+                            nullptr)) {
                     driveRootTransform = hierarchyWorld;
                 }
             }
@@ -5979,6 +6104,7 @@ namespace rock
         instance.shape = nullptr;
         instance.driveNode = nullptr;
         instance.sourceNode = nullptr;
+        instance.generatedSourceFrameCorrection = {};
         instance.sourceName.clear();
         instance.sourceRootName.clear();
         instance.generatedLocalCenterGame = {};
@@ -5994,6 +6120,7 @@ namespace rock
         instance.generatedPointCount = 0;
         instance.semantic = {};
         instance.ownsShapeRef = false;
+        instance.generatedSourceFrameCorrectionValid = false;
         clearGeneratedKeyframedBodyDriveState(instance.driveState);
         instance.publicationIndex = INVALID_BODY_ID;
     }
@@ -8478,7 +8605,10 @@ namespace rock
                     packageDriveNode,
                     packageWorld,
                     instance.sourceNode,
-                    sourceWorld);
+                    sourceWorld,
+                    instance.generatedSourceFrameCorrectionValid ?
+                        &instance.generatedSourceFrameCorrection :
+                        nullptr);
             const RE::NiTransform& driveWorld = useSourceNode ? sourceWorld : packageWorld;
             const RE::NiPoint3& centerGame = useSourceNode ? instance.generatedSourceLocalCenterGame : instance.generatedLocalCenterGame;
             const RE::NiTransform generatedTransform = makeGeneratedBodyWorldTransform(driveWorld, centerGame);

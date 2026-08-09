@@ -332,9 +332,13 @@ namespace rock
             RE::NiPoint3 sourceLocalMaxGame{};
             RE::NiAVObject* driveRoot{ nullptr };
             RE::NiAVObject* sourceRoot{ nullptr };
+            RE::NiTransform sourceInWeapon{};
+            RE::NiTransform postUndrawFrameCorrection{};
             std::uintptr_t sourceGroupId{ 0 };
             std::string sourceName;
             WeaponPartClassification semantic{};
+            bool sourceInWeaponAvailable{ false };
+            bool postUndrawFrameCorrectionValid{ false };
             /*
              * NiTransform::scale of sourceRoot, captured at extraction time.
              * sourceLocalPointsGame/sourceLocalCenterGame are computed by
@@ -355,6 +359,7 @@ namespace rock
             const RE::hknpShape* shape{ nullptr };
             RE::NiAVObject* driveNode{ nullptr };
             RE::NiAVObject* sourceNode{ nullptr };
+            RE::NiTransform generatedSourceFrameCorrection{};
             std::string sourceName;
             std::string sourceRootName;
             RE::NiPoint3 generatedLocalCenterGame{};
@@ -370,6 +375,7 @@ namespace rock
             std::uint32_t generatedPointCount{ 0 };
             WeaponPartClassification semantic{};
             bool ownsShapeRef{ false };
+            bool generatedSourceFrameCorrectionValid{ false };
             GeneratedKeyframedBodyDriveState driveState{};
             std::uint32_t publicationIndex{ INVALID_BODY_ID };
         };
@@ -416,7 +422,18 @@ namespace rock
             std::string sourceName;
             RE::NiPoint3 weaponLocalCenter{};
             RE::NiPoint3 sourceLocalCenter{};
+            RE::NiPoint3 sourceLocalMin{};
+            RE::NiPoint3 sourceLocalMax{};
+            RE::NiTransform sourceInWeapon{};
+            std::vector<RE::NiPoint3> weaponLocalPoints;
+            std::vector<TriangleData> weaponLocalTriangles;
+            std::vector<std::vector<RE::NiPoint3>> childWeaponLocalPointClouds;
+            RE::NiPoint3 weaponLocalMin{};
+            RE::NiPoint3 weaponLocalMax{};
+            std::size_t sourceLocalPointCount{ 0 };
             std::size_t sourceLocalTriangleCount{ 0 };
+            float sourceNodeScale{ 1.0f };
+            bool sourceInWeaponAvailable{ false };
         };
 
         struct GeneratedRecaptureDiagnostic
@@ -530,12 +547,12 @@ namespace rock
         void clearGeneratedSourceCompletenessTracking();
         void clearPendingWeaponVisualRebuild();
         void clearGeneratedSourceCache();
-        void recordGeneratedRecaptureDiagnostic(
+        bool recordAndApplyGeneratedRecaptureAuthority(
             std::uint64_t equippedKey,
             std::uint64_t identityKey,
             std::uint64_t ownershipKey,
             std::uint32_t weaponFormID,
-            const std::vector<GeneratedHullSource>& sources);
+            std::vector<GeneratedHullSource>& sources);
         void resetVisualSourceUnavailableRetention();
         bool canRetainCurrentWeaponBodiesForVisualSourceMiss(std::uint64_t observedIdentityKey, RE::NiAVObject* currentWeaponRoot, int retainFrameLimit);
         bool generatedSourceCacheMatches(std::uint64_t equippedKey, std::uint64_t visualKey) const;
