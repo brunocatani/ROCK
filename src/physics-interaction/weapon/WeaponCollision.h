@@ -166,6 +166,47 @@ namespace rock
             std::uint32_t sourceBodyCount{ 0 };
         };
 
+        enum class CompoundGeometrySnapshotFailure : std::uint8_t
+        {
+            None,
+            NoGeneration,
+            NoActiveBodies,
+            MissingPointCloud,
+            NonFinitePoint,
+            DegeneratePointCloud,
+            BodyCountChanged,
+            GenerationChanged,
+            InvalidBounds,
+        };
+
+        struct CompoundGeometryChildSnapshot
+        {
+            std::vector<RE::NiPoint3> pointsWeaponLocal;
+            RE::NiPoint3 centerWeaponLocal{};
+        };
+
+        /*
+         * Creation-only copy of the active layer-44 hull geometry in one
+         * weapon-root-local basis. Dynamic weapon collision consumes this
+         * synchronously while replacing its body; no source node, body, or
+         * borrowed hknp shape escapes the call.
+         */
+        struct CompoundGeometrySnapshot
+        {
+            bool valid{ false };
+            CompoundGeometrySnapshotFailure failure{ CompoundGeometrySnapshotFailure::None };
+            std::uint64_t generationKey{ 0 };
+            RE::NiPoint3 minWeaponLocal{};
+            RE::NiPoint3 maxWeaponLocal{};
+            RE::NiPoint3 centerWeaponLocal{};
+            RE::NiPoint3 halfExtentsWeaponLocal{};
+            std::vector<CompoundGeometryChildSnapshot> children;
+            std::size_t sourcePointCount{ 0 };
+            std::uint32_t sourceBodyCount{ 0 };
+            std::uint32_t failedSourceIndex{ 0xFFFF'FFFFu };
+            std::uint32_t failedBodyId{ 0x7FFF'FFFFu };
+        };
+
         void init(RE::hknpWorld* world, void* bhkWorld);
 
         void shutdown();
@@ -180,6 +221,8 @@ namespace rock
         std::uint32_t getWeaponBodyCount() const;
 
         bool getApproximateBoundsSnapshot(ApproximateBoundsSnapshot& outSnapshot) const;
+
+        bool getCompoundGeometrySnapshot(CompoundGeometrySnapshot& outSnapshot) const;
 
         // One-frame, read-only release geometry query. The caller must consume
         // this before destroyWeaponBody retires the equipped body bank.

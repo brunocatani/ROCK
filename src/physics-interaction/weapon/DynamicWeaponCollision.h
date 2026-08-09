@@ -9,6 +9,7 @@
 
 #include <array>
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 
 namespace RE
@@ -60,6 +61,8 @@ namespace rock
             std::uint64_t rawPointCallbackSequence{ 0 };
             std::uint64_t processedManifoldCallbackSequence{ 0 };
             std::uint64_t admittedContactSequence{ 0 };
+            std::uint32_t compoundChildCount{ 0 };
+            std::size_t compoundPointCount{ 0 };
             RE::NiPoint3 centerWeaponLocal{};
             RE::NiPoint3 halfExtentsWeaponLocal{};
             RE::NiTransform requestedWeaponWorld{};
@@ -172,7 +175,9 @@ namespace rock
         RE::NiPoint3 _createdCenterWeaponLocal{};
         RE::NiPoint3 _createdHalfExtentsWeaponLocal{};
         float _createdWeaponScale{ 1.0f };
-        float _createdPaddingGameUnits{ 0.0f };
+        float _createdInertiaEnvelopePaddingGameUnits{ 0.0f };
+        std::uint32_t _createdCompoundChildCount{ 0 };
+        std::size_t _createdCompoundPointCount{ 0 };
         bool _created{ false };
         bool _droveThisSubstep{ false };
         bool _physicsRequestedTargetValid{ false };

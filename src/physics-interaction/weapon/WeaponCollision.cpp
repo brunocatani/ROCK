@@ -2824,6 +2824,111 @@ namespace rock
         return outSnapshot.valid;
     }
 
+    bool WeaponCollision::getCompoundGeometrySnapshot(CompoundGeometrySnapshot& outSnapshot) const
+    {
+        outSnapshot = {};
+        outSnapshot.generationKey = getCurrentWeaponGenerationKey();
+        if (outSnapshot.generationKey == 0) {
+            outSnapshot.failure = CompoundGeometrySnapshotFailure::NoGeneration;
+            return false;
+        }
+
+        const std::uint32_t expectedBodyCount = getWeaponBodyCount();
+        if (expectedBodyCount == 0) {
+            outSnapshot.failure = CompoundGeometrySnapshotFailure::NoActiveBodies;
+            return false;
+        }
+
+        outSnapshot.children.reserve(expectedBodyCount);
+        const auto finitePoint = [](const RE::NiPoint3& point) {
+            return std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z);
+        };
+        auto fail = [&](const CompoundGeometrySnapshotFailure failure,
+                        const std::uint32_t sourceIndex,
+                        const std::uint32_t bodyId) {
+            outSnapshot.failure = failure;
+            outSnapshot.failedSourceIndex = sourceIndex;
+            outSnapshot.failedBodyId = bodyId;
+            return false;
+        };
+
+        bool sampledPoint = false;
+        std::uint32_t sourceIndex = 0;
+        for (const auto& instance : activeWeaponBodies()) {
+            if (!instance.body.isValid()) {
+                continue;
+            }
+
+            const std::uint32_t bodyId = instance.body.getBodyId().value;
+            const auto& points = instance.generatedLocalPointsGame;
+            if (points.empty()) {
+                return fail(CompoundGeometrySnapshotFailure::MissingPointCloud, sourceIndex, bodyId);
+            }
+            for (const auto& point : points) {
+                if (!finitePoint(point)) {
+                    return fail(CompoundGeometrySnapshotFailure::NonFinitePoint, sourceIndex, bodyId);
+                }
+            }
+            if (!pointCloudCanBuildHull(points)) {
+                return fail(CompoundGeometrySnapshotFailure::DegeneratePointCloud, sourceIndex, bodyId);
+            }
+
+            CompoundGeometryChildSnapshot child{};
+            child.centerWeaponLocal = weapon_collision_geometry_math::pointCenter(points);
+            if (!finitePoint(child.centerWeaponLocal)) {
+                return fail(CompoundGeometrySnapshotFailure::NonFinitePoint, sourceIndex, bodyId);
+            }
+            child.pointsWeaponLocal = points;
+            outSnapshot.sourcePointCount += points.size();
+
+            for (const auto& point : points) {
+                if (!sampledPoint) {
+                    outSnapshot.minWeaponLocal = point;
+                    outSnapshot.maxWeaponLocal = point;
+                    sampledPoint = true;
+                } else {
+                    outSnapshot.minWeaponLocal = weapon_collision_geometry_math::pointMin(outSnapshot.minWeaponLocal, point);
+                    outSnapshot.maxWeaponLocal = weapon_collision_geometry_math::pointMax(outSnapshot.maxWeaponLocal, point);
+                }
+            }
+
+            outSnapshot.children.push_back(std::move(child));
+            ++outSnapshot.sourceBodyCount;
+            ++sourceIndex;
+        }
+
+        if (!sampledPoint || outSnapshot.sourceBodyCount == 0) {
+            return fail(CompoundGeometrySnapshotFailure::NoActiveBodies, sourceIndex, INVALID_BODY_ID);
+        }
+        if (outSnapshot.sourceBodyCount != expectedBodyCount) {
+            return fail(CompoundGeometrySnapshotFailure::BodyCountChanged, sourceIndex, INVALID_BODY_ID);
+        }
+        if (getCurrentWeaponGenerationKey() != outSnapshot.generationKey) {
+            return fail(CompoundGeometrySnapshotFailure::GenerationChanged, sourceIndex, INVALID_BODY_ID);
+        }
+
+        outSnapshot.centerWeaponLocal = RE::NiPoint3{
+            (outSnapshot.minWeaponLocal.x + outSnapshot.maxWeaponLocal.x) * 0.5f,
+            (outSnapshot.minWeaponLocal.y + outSnapshot.maxWeaponLocal.y) * 0.5f,
+            (outSnapshot.minWeaponLocal.z + outSnapshot.maxWeaponLocal.z) * 0.5f,
+        };
+        outSnapshot.halfExtentsWeaponLocal = RE::NiPoint3{
+            (outSnapshot.maxWeaponLocal.x - outSnapshot.minWeaponLocal.x) * 0.5f,
+            (outSnapshot.maxWeaponLocal.y - outSnapshot.minWeaponLocal.y) * 0.5f,
+            (outSnapshot.maxWeaponLocal.z - outSnapshot.minWeaponLocal.z) * 0.5f,
+        };
+        if (!finitePoint(outSnapshot.centerWeaponLocal) || !finitePoint(outSnapshot.halfExtentsWeaponLocal) ||
+            outSnapshot.halfExtentsWeaponLocal.x < 0.0f ||
+            outSnapshot.halfExtentsWeaponLocal.y < 0.0f ||
+            outSnapshot.halfExtentsWeaponLocal.z < 0.0f) {
+            return fail(CompoundGeometrySnapshotFailure::InvalidBounds, sourceIndex, INVALID_BODY_ID);
+        }
+
+        outSnapshot.failure = CompoundGeometrySnapshotFailure::None;
+        outSnapshot.valid = true;
+        return true;
+    }
+
     WeaponCollision::ReleaseGeometrySnapshot WeaponCollision::getCurrentWeaponReleaseGeometry(
         const RE::NiPoint3& gripWorldPoint,
         const RE::NiTransform& capturedWeaponWorld) const

@@ -50,6 +50,9 @@ function Require-Order {
 $runtimeHeader = 'src/physics-interaction/weapon/DynamicWeaponCollision.h'
 $runtimeSource = 'src/physics-interaction/weapon/DynamicWeaponCollision.cpp'
 $runtimePolicy = 'src/physics-interaction/weapon/DynamicWeaponCollisionPolicy.h'
+$weaponCollisionHeader = 'src/physics-interaction/weapon/WeaponCollision.h'
+$weaponCollisionSource = 'src/physics-interaction/weapon/WeaponCollision.cpp'
+$compoundBuilder = 'src/physics-interaction/native/HavokCompoundShapeBuilder.cpp'
 $weaponAuthority = 'src/physics-interaction/weapon/TwoHandedGrip.cpp'
 $interaction = 'src/physics-interaction/core/PhysicsInteraction.cpp'
 $contacts = 'src/physics-interaction/core/PhysicsInteractionContacts.inl'
@@ -59,21 +62,21 @@ $layers = 'src/physics-interaction/collision/CollisionLayerPolicy.h'
 # existing layer-44 weapon hulls continue to own gameplay contact evidence.
 Require-Pattern 'src/RockConfig.h' `
     'rockWeaponCollisionDynamicBoxEnabled\s*=\s*false' `
-    'The dynamic weapon box must default disabled in compiled configuration.'
+    'Dynamic weapon collision must default disabled in compiled configuration.'
 foreach ($ini in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
     Require-Pattern $ini `
         '(?m)^bWeaponCollisionDynamicBoxEnabled\s*=\s*false\s*$' `
-        "$ini must ship the experimental dynamic box disabled."
+        "$ini must ship experimental dynamic weapon collision disabled."
     Require-Pattern $ini `
         '(?m)^fWeaponCollisionDynamicInverseInertiaMultiplier\s*=\s*1\.2\s*$' `
-        "$ini must ship the qualified dynamic-box rotational compliance multiplier."
+        "$ini must ship the qualified dynamic-weapon rotational compliance multiplier."
 }
 Require-Pattern 'src/RockConfig.h' `
     'rockWeaponCollisionDynamicInverseInertiaMultiplier\s*=\s*1\.2f' `
-    'The compiled dynamic-box rotational compliance default must match the qualified runtime value.'
+    'The compiled dynamic-weapon rotational compliance default must match the qualified runtime value.'
 Require-Pattern 'src/RockConfig.cpp' `
     'fWeaponCollisionDynamicInverseInertiaMultiplier[\s\S]*kDefaultWeaponCollisionDynamicInverseInertiaMultiplier[\s\S]*0\.25f[\s\S]*4\.0f' `
-    'The dynamic-box rotational compliance setting must load through a finite positive range.'
+    'The dynamic-weapon rotational compliance setting must load through a finite positive range.'
 Require-Pattern $layers `
     'ROCK_LAYER_DYNAMIC_WEAPON_PROXY\s*=\s*51' `
     'The dynamic weapon proxy must retain its dedicated layer-51 row.'
@@ -84,9 +87,9 @@ Require-Pattern $layers `
     'applyRockGeneratedLayerPolicies[\s\S]*applyRockDynamicWeaponProxyLayerPolicy\(matrix\)' `
     'Layer 51 must be registered with the other generated collision rows.'
 
-# World contact remains exactly one approximate convex box, not one dynamic
-# operation per member of the shared layer-44 multi-hull system. A second tiny
-# body is permitted only as the noncolliding keyframed constraint authority.
+# World contact remains exactly one dynamic body whose shape is one fixed-child
+# compound assembled from the shared layer-44 hull geometry. A second tiny body
+# is permitted only as the noncolliding keyframed constraint authority.
 Require-Pattern $runtimeHeader `
     'BethesdaPhysicsBody\s+_body' `
     'The dynamic weapon runtime must own one explicit world-contact body.'
@@ -95,19 +98,34 @@ Require-Pattern $runtimeHeader `
     'The dynamic weapon runtime must own one noncolliding authority body and one finite constraint.'
 Reject-Pattern $runtimeHeader `
     'std::array\s*<\s*BethesdaPhysicsBody|std::vector\s*<\s*BethesdaPhysicsBody' `
-    'The single-collider runtime must not expand into a body bank.'
+    'The one-body compound runtime must not expand into a body bank.'
 Require-Pattern $runtimeSource `
-    'makeBoxCornerPointsHavok[\s\S]*std::vector<RE::NiPoint3> pointCloud\(corners\.begin\(\), corners\.end\(\)\)[\s\S]*buildConvexShapeFromLocalHavokPoints' `
-    'The single box must be built from the bounded eight-corner point cloud.'
+    'getCompoundGeometrySnapshot\(compoundGeometry\)[\s\S]*makeCompoundChildFrame\([\s\S]*makeCompoundChildPointHavok\([\s\S]*buildConvexShapeFromLocalHavokPoints\([\s\S]*buildStaticCompoundShape\(compoundChildren\)' `
+    'The dynamic body must be built as one fixed compound from generation-bound weapon-local convex children.'
+Reject-Pattern $runtimeSource `
+    'makeBoxCornerPointsHavok|ROCK_DynamicWeaponBox' `
+    'The superseded eight-corner box shape path must not survive beside the compound geometry provider.'
 Require-Pattern $runtimeSource `
-    'BethesdaMotionType::Dynamic[\s\S]*ROCK_DynamicWeaponBox' `
-    'The world-contact box must be a real dynamic Bethesda body.'
+    'buildStaticCompoundShape\(compoundChildren\)[\s\S]*BethesdaMotionType::Dynamic[\s\S]*ROCK_DynamicWeaponCompound' `
+    'The fixed compound must remain the shape of one real dynamic Bethesda body.'
+Require-Pattern $weaponCollisionHeader `
+    'CompoundGeometrySnapshotFailure[\s\S]*CompoundGeometryChildSnapshot[\s\S]*pointsWeaponLocal[\s\S]*CompoundGeometrySnapshot[\s\S]*getCompoundGeometrySnapshot' `
+    'WeaponCollision must expose an owned, generation-bound weapon-local geometry snapshot.'
+Require-Pattern $weaponCollisionSource `
+    'getCompoundGeometrySnapshot\([\s\S]*getCurrentWeaponGenerationKey\(\)[\s\S]*getWeaponBodyCount\(\)[\s\S]*generatedLocalPointsGame[\s\S]*pointCloudCanBuildHull[\s\S]*sourceBodyCount\s*!=\s*expectedBodyCount[\s\S]*GenerationChanged[\s\S]*outSnapshot\.valid\s*=\s*true' `
+    'The compound snapshot must reject incomplete, degenerate, or generation-changing layer-44 geometry.'
+Require-Pattern $runtimeSource `
+    'class OwnedShapeBatch[\s\S]*~OwnedShapeBatch\(\)[\s\S]*havok_ref_count::release\(shape\)[\s\S]*childShapeReferences\.take\(childShape\)' `
+    'Temporary child convex references must have deterministic RAII cleanup on every build exit.'
+Require-Pattern $compoundBuilder `
+    'setShape\([\s\S]*constructStaticCompound\([\s\S]*releaseTemporaryInstanceShapeReferences\(instances\)' `
+    'The native compound builder must retain child instances and balance temporary references.'
 Require-Pattern $runtimeSource `
     'buildProxyShape\(\)[\s\S]*noContactFilterInfo\(\)[\s\S]*BethesdaMotionType::Keyframed[\s\S]*ROCK_WeaponGripAuthorityProxy[\s\S]*hasNoContactFilterInfo' `
     'The grip authority must be a verified noncolliding keyframed proxy.'
 Require-Pattern $runtimeSource `
     'makeGripAuthorityTarget\(requestedWeaponWorld\)[\s\S]*makeContactBodyInGripAuthoritySpace\([\s\S]*geometry\.centerWeaponLocal,[\s\S]*scale\)[\s\S]*createGrabConstraint\([\s\S]*_authorityProxy\.getBodyId\(\)[\s\S]*_body\.getBodyId\(\)[\s\S]*initialAuthorityTarget[\s\S]*requestedWeaponWorld\.translate[\s\S]*desiredBodyTransformAuthoritySpace' `
-    'The finite constraint must place its hidden authority origin at the firing grip while preserving the offset contact-box frame.'
+    'The finite constraint must place its hidden authority origin at the firing grip while preserving the offset contact-body frame.'
 Reject-Pattern $runtimeSource `
     'objectInGeneratedProxyLocalSpace\(initialAuthorityTarget,\s*initialContactTarget\)|identityRelation' `
     'The grip authority relation must not reintroduce mixed-frame rotation or the old collider-center identity relation.'
@@ -116,19 +134,19 @@ Require-Pattern $runtimePolicy `
     'The generated-body relation must preserve identity rotation and contain only the scaled grip-to-center translation.'
 Require-Pattern $runtimeSource `
     'getEquippedWeaponClassification\(\)[\s\S]*sanitizeWeaponMass\(weaponIdentity\.weightGame\)[\s\S]*_body\.setMass\(bodyMass\)' `
-    'The generated contact box must use sanitized equipped-weapon mass rather than the wrapper default.'
+    'The generated compound contact body must use sanitized equipped-weapon mass rather than the wrapper default.'
 Require-Pattern $runtimePolicy `
-    'makeBoxMassProperties\([\s\S]*massOverThree[\s\S]*inertiaX[\s\S]*inertiaY[\s\S]*inertiaZ[\s\S]*result\.inverseInertia[\s\S]*result\.inverseMass' `
-    'The generated contact box must derive local principal inertia and inverse mass from its physical Havok dimensions.'
+    'makeBoundingBoxMassProperties\([\s\S]*massOverThree[\s\S]*inertiaX[\s\S]*inertiaY[\s\S]*inertiaZ[\s\S]*result\.inverseInertia[\s\S]*result\.inverseMass' `
+    'The compound body must retain the qualified bounding-envelope principal inertia and inverse mass.'
 Require-Pattern $runtimeSource `
-    '_body\.setMass\(bodyMass\)[\s\S]*applyWeaponBoxMassProperties\([\s\S]*frame\.hknpWorld[\s\S]*_body\.getBodyId\(\)[\s\S]*geometry[\s\S]*scale[\s\S]*padding[\s\S]*bodyMass' `
-    'The generated contact box must replace the wrapper default tensor after assigning authored weapon mass.'
+    '_body\.setMass\(bodyMass\)[\s\S]*applyWeaponEnvelopeMassProperties\([\s\S]*frame\.hknpWorld[\s\S]*_body\.getBodyId\(\)[\s\S]*geometry[\s\S]*scale[\s\S]*inertiaEnvelopePadding[\s\S]*bodyMass' `
+    'The generated compound must replace the wrapper default tensor after assigning authored weapon mass.'
 Require-Pattern $runtimeSource `
-    'applyWeaponBoxMassProperties\([\s\S]*makeBoxMassProperties\([\s\S]*normalizeInverseInertiaAxesForGrab\([\s\S]*snapshotBody\(world,\s*bodyId\)[\s\S]*MOTION_PACKED_INERTIA_OFFSET[\s\S]*rebuildMotionMassProperties\(world,\s*initialMotion\.motionIndex\)[\s\S]*snapshotBody\(world,\s*bodyId\)[\s\S]*rebuiltPacked\[0\]\s*=\s*desiredPackedInertia\[0\][\s\S]*rebuiltPacked\[3\]\s*=\s*desiredPackedMass[\s\S]*Dynamic weapon box mass properties:' `
-    'The runtime must rebuild and then reapply the box tensor and authored mass through the verified hknp motion path.'
+    'applyWeaponEnvelopeMassProperties\([\s\S]*makeBoundingBoxMassProperties\([\s\S]*normalizeInverseInertiaAxesForGrab\([\s\S]*snapshotBody\(world,\s*bodyId\)[\s\S]*MOTION_PACKED_INERTIA_OFFSET[\s\S]*rebuildMotionMassProperties\(world,\s*initialMotion\.motionIndex\)[\s\S]*snapshotBody\(world,\s*bodyId\)[\s\S]*rebuiltPacked\[0\]\s*=\s*desiredPackedInertia\[0\][\s\S]*rebuiltPacked\[3\]\s*=\s*desiredPackedMass[\s\S]*Dynamic weapon compound envelope mass properties:' `
+    'The runtime must rebuild and then reapply the bounding-envelope tensor and authored mass through the verified hknp motion path.'
 Require-Pattern $runtimeSource `
-    'rockWeaponCollisionDynamicInverseInertiaMultiplier[\s\S]*boxMassProperties\.inverseInertia\.x\s*\*\s*inverseInertiaMultiplier[\s\S]*boxMassProperties\.inverseInertia\.y\s*\*\s*inverseInertiaMultiplier[\s\S]*boxMassProperties\.inverseInertia\.z\s*\*\s*inverseInertiaMultiplier[\s\S]*multiplier=\{:\.3f\}' `
-    'Dynamic weapon tuning must scale only the generated box inverse inertia and expose the applied multiplier.'
+    'rockWeaponCollisionDynamicInverseInertiaMultiplier[\s\S]*envelopeMassProperties\.inverseInertia\.x\s*\*\s*inverseInertiaMultiplier[\s\S]*envelopeMassProperties\.inverseInertia\.y\s*\*\s*inverseInertiaMultiplier[\s\S]*envelopeMassProperties\.inverseInertia\.z\s*\*\s*inverseInertiaMultiplier[\s\S]*multiplier=\{:\.3f\}' `
+    'Dynamic weapon tuning must scale only the qualified envelope inverse inertia and expose the applied multiplier.'
 
 # One-way publication is the core anti-feedback invariant: all native/ROCK
 # weapon writers publish collision-free intent, then one bypass publication
@@ -235,7 +253,7 @@ Require-Order $interaction @(
 ) 'The dynamic weapon body must drive inside the generated pre-solve callback.'
 Require-Pattern $runtimeSource `
     'makeGripAuthorityTarget\(_frameRequestedWeaponWorld\)[\s\S]*queueGeneratedKeyframedBodyTarget\([\s\S]*_authorityDriveState[\s\S]*driveGeneratedKeyframedBody\([\s\S]*_authorityProxy[\s\S]*_authorityDriveState[\s\S]*makeContactBodyTargetFromGripAuthority' `
-    'Pre-solve authority must drive the hidden keyframed grip proxy, not the colliding dynamic box.'
+    'Pre-solve authority must drive the hidden keyframed grip proxy, not the colliding compound body.'
 Require-Pattern $runtimeSource `
     'updateWeaponGripConstraintContactTau\([\s\S]*rockGrabLinearTau[\s\S]*rockGrabLooseWeaponSharedConstraintLinearTauMultiplier[\s\S]*rockGrabAngularTau[\s\S]*rockGrabLooseWeaponSharedConstraintAngularTauMultiplier[\s\S]*rockGrabTauMin[\s\S]*rockGrabLooseWeaponSharedConstraintCollisionTauMultiplier[\s\S]*advanceToward\([\s\S]*linearMotor->tau[\s\S]*advanceToward\([\s\S]*angularMotor->tau[\s\S]*_contactGraceSolves\s*>\s*0' `
     'Active weapon/world contact must soften both grip motors through the established loose-weapon tau policy.'
@@ -249,10 +267,10 @@ foreach ($path in @('src/RockConfig.h', 'src/RockConfig.cpp', 'data/config/ROCK.
 }
 Reject-Pattern $runtimeSource `
     '\.dynamicVelocity\s*=\s*true' `
-    'The contact box must not retain the center-driven dynamic-velocity authority path.'
+    'The compound contact body must not retain the center-driven dynamic-velocity authority path.'
 Require-Pattern $runtimeSource `
     'samplePostSolve\([\s\S]*tryResolveLiveBodyWorldTransform\(world,\s*_body\.getBodyId\(\)' `
-    'Post-solve publication must sample the solver-owned contact box.'
+    'Post-solve publication must sample the solver-owned compound contact body.'
 Require-Order $interaction @(
     '_completedPhysicsSolveSequence\.fetch_add\(',
     '_dynamicWeaponCollision\.samplePostSolve\(',
@@ -314,8 +332,8 @@ Require-Pattern $interaction `
     'applyWeaponCollisionResolvedAuthority[\s\S]*immediateTranslationError[\s\S]*immediateRotationError[\s\S]*DWC visual publication' `
     'Dynamic weapon visual publication must expose immediate node readback evidence.'
 Require-Pattern 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
-    'rockDebugDrawDynamicWeaponColliders[\s\S]*proxyBodyIdForDebug\(\)[\s\S]*DWC ACTIVE[\s\S]*addScreenTextLine\(20\.0f,\s*90\.0f[\s\S]*DWC BOX[\s\S]*authorityBody[\s\S]*gripPivot[\s\S]*callbacks pair/world/raw/manifold/admit[\s\S]*snapshot read/valid/id/contact/tele' `
-    'The dedicated debug flag must draw the contact box and expose authority, pivot, callback, and snapshot telemetry.'
+    'rockDebugDrawDynamicWeaponColliders[\s\S]*proxyBodyIdForDebug\(\)[\s\S]*DWC ACTIVE[\s\S]*addScreenTextLine\(20\.0f,\s*90\.0f[\s\S]*DWC COMPOUND[\s\S]*authorityBody[\s\S]*children=%u points=%llu[\s\S]*gripPivot[\s\S]*callbacks pair/world/raw/manifold/admit[\s\S]*snapshot read/valid/id/contact/tele' `
+    'The dedicated debug flag must draw the compound and expose geometry, authority, pivot, callback, and snapshot telemetry.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'Dynamic weapon collision source boundary failed:'

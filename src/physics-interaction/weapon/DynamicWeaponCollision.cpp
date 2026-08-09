@@ -7,6 +7,7 @@
 #include "physics-interaction/grab/GrabAuthorityProxy.h"
 #include "physics-interaction/grab/GrabInertiaPolicy.h"
 #include "physics-interaction/grab/GrabMotionController.h"
+#include "physics-interaction/native/HavokCompoundShapeBuilder.h"
 #include "physics-interaction/native/HavokConvexShapeBuilder.h"
 #include "physics-interaction/native/HavokMaterialRegistry.h"
 #include "physics-interaction/native/HavokRefCount.h"
@@ -30,6 +31,53 @@ namespace rock
         constexpr std::uint32_t kRebuildBodyCollisionState = 0u;
         constexpr std::uint32_t kContactGraceSolves = 3;
         constexpr float kMaxVisualCorrectionRotationDegrees = 85.0f;
+
+        class OwnedShapeBatch
+        {
+        public:
+            OwnedShapeBatch() = default;
+            OwnedShapeBatch(const OwnedShapeBatch&) = delete;
+            OwnedShapeBatch& operator=(const OwnedShapeBatch&) = delete;
+
+            ~OwnedShapeBatch()
+            {
+                for (const auto* shape : _shapes) {
+                    havok_ref_count::release(shape);
+                }
+            }
+
+            void reserve(const std::size_t count) { _shapes.reserve(count); }
+            void take(const RE::hknpShape* shape) { _shapes.push_back(shape); }
+
+        private:
+            std::vector<const RE::hknpShape*> _shapes;
+        };
+
+        const char* compoundSnapshotFailureName(const WeaponCollision::CompoundGeometrySnapshotFailure failure)
+        {
+            using Failure = WeaponCollision::CompoundGeometrySnapshotFailure;
+            switch (failure) {
+            case Failure::None:
+                return "none";
+            case Failure::NoGeneration:
+                return "no-generation";
+            case Failure::NoActiveBodies:
+                return "no-active-bodies";
+            case Failure::MissingPointCloud:
+                return "missing-point-cloud";
+            case Failure::NonFinitePoint:
+                return "nonfinite-point";
+            case Failure::DegeneratePointCloud:
+                return "degenerate-point-cloud";
+            case Failure::BodyCountChanged:
+                return "body-count-changed";
+            case Failure::GenerationChanged:
+                return "generation-changed";
+            case Failure::InvalidBounds:
+                return "invalid-bounds";
+            }
+            return "unknown";
+        }
 
         std::uint32_t dynamicWeaponProxyFilterInfo()
         {
@@ -158,24 +206,24 @@ namespace rock
             constraint.currentTau = constraint.linearMotor->tau;
         }
 
-        bool applyWeaponBoxMassProperties(
+        bool applyWeaponEnvelopeMassProperties(
             RE::hknpWorld* world,
             RE::hknpBodyId bodyId,
-            const dynamic_weapon_collision_policy::BoxGeometry& geometry,
+            const dynamic_weapon_collision_policy::BoundingBoxGeometry& geometry,
             const float weaponScale,
             const float paddingGameUnits,
             const float bodyMass)
         {
-            const auto boxMassProperties = dynamic_weapon_collision_policy::makeBoxMassProperties(
+            const auto envelopeMassProperties = dynamic_weapon_collision_policy::makeBoundingBoxMassProperties(
                 geometry,
                 weaponScale,
                 paddingGameUnits,
                 physics_scale::gameToHavok(),
                 bodyMass);
-            if (!boxMassProperties.valid) {
+            if (!envelopeMassProperties.valid) {
                 ROCK_LOG_ERROR(
                     Weapon,
-                    "Dynamic weapon box mass properties invalid: body={} scale={:.3f} padding={:.3f} mass={:.3f}",
+                    "Dynamic weapon compound envelope mass properties invalid: body={} scale={:.3f} padding={:.3f} mass={:.3f}",
                     bodyId.value,
                     weaponScale,
                     paddingGameUnits,
@@ -195,13 +243,13 @@ namespace rock
             }
 
             const auto normalizedInertia = grab_inertia_policy::normalizeInverseInertiaAxesForGrab(
-                boxMassProperties.inverseInertia.x * inverseInertiaMultiplier,
-                boxMassProperties.inverseInertia.y * inverseInertiaMultiplier,
-                boxMassProperties.inverseInertia.z * inverseInertiaMultiplier,
+                envelopeMassProperties.inverseInertia.x * inverseInertiaMultiplier,
+                envelopeMassProperties.inverseInertia.y * inverseInertiaMultiplier,
+                envelopeMassProperties.inverseInertia.z * inverseInertiaMultiplier,
                 g_rockConfig.rockGrabMaxInertiaRatio,
                 g_rockConfig.rockGrabMinInertia);
             if (!normalizedInertia.valid) {
-                ROCK_LOG_ERROR(Weapon, "Dynamic weapon box inertia normalization failed: body={}", bodyId.value);
+                ROCK_LOG_ERROR(Weapon, "Dynamic weapon compound envelope inertia normalization failed: body={}", bodyId.value);
                 return false;
             }
 
@@ -209,7 +257,7 @@ namespace rock
             if (!initialMotion.valid || !initialMotion.motion) {
                 ROCK_LOG_ERROR(
                     Weapon,
-                    "Dynamic weapon box motion unavailable for mass properties: body={} readable={} motion={}",
+                    "Dynamic weapon compound motion unavailable for mass properties: body={} readable={} motion={}",
                     bodyId.value,
                     initialMotion.valid,
                     initialMotion.motion != nullptr);
@@ -228,7 +276,7 @@ namespace rock
                 desiredPackedMass <= 0) {
                 ROCK_LOG_ERROR(
                     Weapon,
-                    "Dynamic weapon box packed mass properties invalid: body={} inertia=[{},{},{}] inverseMass={}",
+                    "Dynamic weapon compound packed mass properties invalid: body={} inertia=[{},{},{}] inverseMass={}",
                     bodyId.value,
                     desiredPackedInertia[0],
                     desiredPackedInertia[1],
@@ -243,7 +291,7 @@ namespace rock
             if (!havok_runtime::rebuildMotionMassProperties(world, initialMotion.motionIndex)) {
                 ROCK_LOG_ERROR(
                     Weapon,
-                    "Dynamic weapon box mass-properties rebuild failed: body={} motion={}",
+                    "Dynamic weapon compound mass-properties rebuild failed: body={} motion={}",
                     bodyId.value,
                     initialMotion.motionIndex);
                 return false;
@@ -253,7 +301,7 @@ namespace rock
             if (!rebuiltMotion.valid || !rebuiltMotion.motion || rebuiltMotion.motionIndex != initialMotion.motionIndex) {
                 ROCK_LOG_ERROR(
                     Weapon,
-                    "Dynamic weapon box motion changed during mass-properties rebuild: body={} before={} after={} readable={}",
+                    "Dynamic weapon compound motion changed during mass-properties rebuild: body={} before={} after={} readable={}",
                     bodyId.value,
                     initialMotion.motionIndex,
                     rebuiltMotion.motionIndex,
@@ -270,15 +318,15 @@ namespace rock
 
             ROCK_LOG_INFO(
                 Weapon,
-                "Dynamic weapon box mass properties: body={} motion={} halfHavok=({:.4f},{:.4f},{:.4f}) physicalInverseInertia=({:.6f},{:.6f},{:.6f}) multiplier={:.3f} appliedInverseInertia=({:.6f},{:.6f},{:.6f}) packed=[{},{},{}] inverseMass={:.6f} ratio={:.2f}->{:.2f}",
+                "Dynamic weapon compound envelope mass properties: body={} motion={} halfHavok=({:.4f},{:.4f},{:.4f}) physicalInverseInertia=({:.6f},{:.6f},{:.6f}) multiplier={:.3f} appliedInverseInertia=({:.6f},{:.6f},{:.6f}) packed=[{},{},{}] inverseMass={:.6f} ratio={:.2f}->{:.2f}",
                 bodyId.value,
                 rebuiltMotion.motionIndex,
-                boxMassProperties.halfExtentsHavok.x,
-                boxMassProperties.halfExtentsHavok.y,
-                boxMassProperties.halfExtentsHavok.z,
-                boxMassProperties.inverseInertia.x,
-                boxMassProperties.inverseInertia.y,
-                boxMassProperties.inverseInertia.z,
+                envelopeMassProperties.halfExtentsHavok.x,
+                envelopeMassProperties.halfExtentsHavok.y,
+                envelopeMassProperties.halfExtentsHavok.z,
+                envelopeMassProperties.inverseInertia.x,
+                envelopeMassProperties.inverseInertia.y,
+                envelopeMassProperties.inverseInertia.z,
                 inverseInertiaMultiplier,
                 unpackBfloat16(rebuiltPacked[0]),
                 unpackBfloat16(rebuiltPacked[1]),
@@ -416,6 +464,8 @@ namespace rock
         _debugSnapshot.rawPointCallbackSequence = _rawPointCallbackSequenceAtomic.load(std::memory_order_acquire);
         _debugSnapshot.processedManifoldCallbackSequence = _processedManifoldCallbackSequenceAtomic.load(std::memory_order_acquire);
         _debugSnapshot.admittedContactSequence = _contactSequenceAtomic.load(std::memory_order_acquire);
+        _debugSnapshot.compoundChildCount = _createdCompoundChildCount;
+        _debugSnapshot.compoundPointCount = _createdCompoundPointCount;
         _debugSnapshot.centerWeaponLocal = _createdCenterWeaponLocal;
         _debugSnapshot.halfExtentsWeaponLocal = _createdHalfExtentsWeaponLocal;
         _debugSnapshot.requestedWeaponWorld = _frameRequestedWeaponWorld;
@@ -529,13 +579,16 @@ namespace rock
             !dynamic_weapon_collision_policy::isFiniteTransform(requestedWeaponWorld)) {
             return false;
         }
-        const auto geometry = dynamic_weapon_collision_policy::makeBoxGeometry(bounds.minWeaponLocal, bounds.maxWeaponLocal);
-        if (!geometry.valid) {
+        const auto approximateGeometry = dynamic_weapon_collision_policy::makeBoundingBoxGeometry(bounds.minWeaponLocal, bounds.maxWeaponLocal);
+        if (!approximateGeometry.valid) {
             return false;
         }
 
         const float scale = std::abs(requestedWeaponWorld.scale);
-        const float padding = g_rockConfig.rockWeaponCollisionDynamicBoxPaddingGameUnits;
+        // The serialized key retains its original Box name so the active test
+        // configuration is not silently disabled. It now affects only the
+        // already-qualified bounding-envelope inertia, never child geometry.
+        const float inertiaEnvelopePadding = g_rockConfig.rockWeaponCollisionDynamicBoxPaddingGameUnits;
         const bool bodyMatches =
             _created &&
             _body.isValid() &&
@@ -545,7 +598,7 @@ namespace rock
             _createdBhkWorld == frame.bhkWorld &&
             _createdGenerationKey == bounds.generationKey &&
             std::abs(_createdWeaponScale - scale) <= 0.0001f &&
-            std::abs(_createdPaddingGameUnits - padding) <= 0.0001f &&
+            std::abs(_createdInertiaEnvelopePaddingGameUnits - inertiaEnvelopePadding) <= 0.0001f &&
             !_rebuildRequestedAtomic.load(std::memory_order_acquire);
         if (bodyMatches) {
             return true;
@@ -556,24 +609,127 @@ namespace rock
             return false;
         }
 
+        WeaponCollision::CompoundGeometrySnapshot compoundGeometry{};
+        if (!weaponCollision.getCompoundGeometrySnapshot(compoundGeometry) ||
+            !compoundGeometry.valid ||
+            compoundGeometry.generationKey != bounds.generationKey ||
+            compoundGeometry.generationKey != _frameGenerationKey) {
+            ROCK_LOG_SAMPLE_WARN(
+                Weapon,
+                1000,
+                "Dynamic weapon compound snapshot rejected: stage={} generation={:016X} expected={:016X} source={}/{} body={}",
+                compoundSnapshotFailureName(compoundGeometry.failure),
+                compoundGeometry.generationKey,
+                _frameGenerationKey,
+                compoundGeometry.failedSourceIndex,
+                compoundGeometry.sourceBodyCount,
+                compoundGeometry.failedBodyId);
+            return false;
+        }
+        const auto geometry = dynamic_weapon_collision_policy::makeBoundingBoxGeometry(
+            compoundGeometry.minWeaponLocal,
+            compoundGeometry.maxWeaponLocal);
+        if (!geometry.valid || compoundGeometry.children.empty()) {
+            ROCK_LOG_SAMPLE_WARN(
+                Weapon,
+                1000,
+                "Dynamic weapon compound snapshot rejected: stage=invalid-envelope generation={:016X} children={} points={}",
+                compoundGeometry.generationKey,
+                compoundGeometry.children.size(),
+                compoundGeometry.sourcePointCount);
+            return false;
+        }
+
         auto structuralMutation = _physicsCallbackGate ?
             _physicsCallbackGate->pauseForMutation() :
             PhysicsCallbackQuiescenceGate::MutationLease{};
-        if (_created) {
-            retireProxyLocked(frame.bhkWorld);
+
+        RE::hknpShape* shape = nullptr;
+        {
+            OwnedShapeBatch childShapeReferences;
+            childShapeReferences.reserve(compoundGeometry.children.size());
+            std::vector<havok_compound_shape_builder::CompoundChild> compoundChildren;
+            compoundChildren.reserve(compoundGeometry.children.size());
+            std::vector<RE::NiPoint3> centeredChildPoints;
+            const float gameToHavokScale = physics_scale::gameToHavok();
+            const float convexRadius = (std::max)(0.0f, g_rockConfig.rockWeaponCollisionConvexRadius);
+
+            for (std::size_t childIndex = 0; childIndex < compoundGeometry.children.size(); ++childIndex) {
+                const auto& sourceChild = compoundGeometry.children[childIndex];
+                const auto childFrame = dynamic_weapon_collision_policy::makeCompoundChildFrame(
+                    sourceChild.centerWeaponLocal,
+                    geometry.centerWeaponLocal,
+                    scale,
+                    gameToHavokScale);
+                if (!childFrame.valid) {
+                    ROCK_LOG_ERROR(
+                        Weapon,
+                        "Dynamic weapon compound build failed: stage=child-frame generation={:016X} child={} center=({:.3f},{:.3f},{:.3f})",
+                        compoundGeometry.generationKey,
+                        childIndex,
+                        sourceChild.centerWeaponLocal.x,
+                        sourceChild.centerWeaponLocal.y,
+                        sourceChild.centerWeaponLocal.z);
+                    return false;
+                }
+
+                centeredChildPoints.clear();
+                centeredChildPoints.reserve(sourceChild.pointsWeaponLocal.size());
+                for (const auto& point : sourceChild.pointsWeaponLocal) {
+                    centeredChildPoints.push_back(dynamic_weapon_collision_policy::makeCompoundChildPointHavok(
+                        point,
+                        sourceChild.centerWeaponLocal,
+                        childFrame.pointScaleHavok));
+                }
+
+                auto* childShape = havok_convex_shape_builder::buildConvexShapeFromLocalHavokPoints(
+                    centeredChildPoints,
+                    convexRadius);
+                if (!childShape) {
+                    ROCK_LOG_ERROR(
+                        Weapon,
+                        "Dynamic weapon compound build failed: stage=child-convex generation={:016X} child={} points={}",
+                        compoundGeometry.generationKey,
+                        childIndex,
+                        centeredChildPoints.size());
+                    return false;
+                }
+                childShapeReferences.take(childShape);
+
+                havok_compound_shape_builder::CompoundChild compoundChild{};
+                compoundChild.shape = childShape;
+                compoundChild.transform.translation = {
+                    childFrame.translationHavok.x,
+                    childFrame.translationHavok.y,
+                    childFrame.translationHavok.z,
+                    1.0f,
+                };
+                compoundChildren.push_back(compoundChild);
+            }
+
+            shape = havok_compound_shape_builder::buildStaticCompoundShape(compoundChildren);
+        }
+        if (!shape) {
+            ROCK_LOG_ERROR(
+                Weapon,
+                "Dynamic weapon compound build failed: stage=compound-constructor generation={:016X} children={} points={}",
+                compoundGeometry.generationKey,
+                compoundGeometry.children.size(),
+                compoundGeometry.sourcePointCount);
+            return false;
+        }
+        if (weaponCollision.getCurrentWeaponGenerationKey() != compoundGeometry.generationKey) {
+            ROCK_LOG_WARN(
+                Weapon,
+                "Dynamic weapon compound build discarded: stage=generation-changed built={:016X} current={:016X}",
+                compoundGeometry.generationKey,
+                weaponCollision.getCurrentWeaponGenerationKey());
+            havok_ref_count::release(shape);
+            return false;
         }
 
-        const auto corners = dynamic_weapon_collision_policy::makeBoxCornerPointsHavok(
-            geometry,
-            scale,
-            padding,
-            physics_scale::gameToHavok());
-        std::vector<RE::NiPoint3> pointCloud(corners.begin(), corners.end());
-        auto* shape = havok_convex_shape_builder::buildConvexShapeFromLocalHavokPoints(
-            pointCloud,
-            (std::max)(0.0f, g_rockConfig.rockWeaponCollisionConvexRadius));
-        if (!shape) {
-            return false;
+        if (_created) {
+            retireProxyLocked(frame.bhkWorld);
         }
 
         RE::NiTransform initialContactTarget = dynamic_weapon_collision_policy::makeProxyBodyTarget(
@@ -590,7 +746,13 @@ namespace rock
                 dynamicWeaponProxyFilterInfo(),
                 generatedMaterial,
                 BethesdaMotionType::Dynamic,
-                "ROCK_DynamicWeaponBox")) {
+                "ROCK_DynamicWeaponCompound")) {
+            ROCK_LOG_ERROR(
+                Weapon,
+                "Dynamic weapon compound build failed: stage=body-create generation={:016X} children={} points={}",
+                compoundGeometry.generationKey,
+                compoundGeometry.children.size(),
+                compoundGeometry.sourcePointCount);
             havok_ref_count::release(shape);
             return false;
         }
@@ -611,7 +773,7 @@ namespace rock
         if (!processedManifoldFlagPublished) {
             ROCK_LOG_ERROR(
                 Weapon,
-                "Dynamic weapon box {} failed processed-manifold event opt-in: enabled={} readable={} flags=0x{:08X}",
+                "Dynamic weapon compound {} failed processed-manifold event opt-in: enabled={} readable={} flags=0x{:08X}",
                 proxyBodyId.value,
                 processedManifoldFlagEnabled,
                 flaggedBody.valid && flaggedBody.body,
@@ -625,21 +787,23 @@ namespace rock
         _shape = shape;
         _createdWorld = frame.hknpWorld;
         _createdBhkWorld = frame.bhkWorld;
-        _createdGenerationKey = bounds.generationKey;
+        _createdGenerationKey = compoundGeometry.generationKey;
         _createdCenterWeaponLocal = geometry.centerWeaponLocal;
         _createdHalfExtentsWeaponLocal = geometry.halfExtentsWeaponLocal;
         _createdWeaponScale = scale;
-        _createdPaddingGameUnits = padding;
+        _createdInertiaEnvelopePaddingGameUnits = inertiaEnvelopePadding;
+        _createdCompoundChildCount = static_cast<std::uint32_t>(compoundGeometry.children.size());
+        _createdCompoundPointCount = compoundGeometry.sourcePointCount;
         _created = true;
         _rebuildRequestedAtomic.store(false, std::memory_order_release);
         const float bodyMass = dynamic_weapon_collision_policy::sanitizeWeaponMass(weaponIdentity.weightGame);
         _body.setMass(bodyMass);
-        if (!applyWeaponBoxMassProperties(
+        if (!applyWeaponEnvelopeMassProperties(
                 frame.hknpWorld,
                 _body.getBodyId(),
                 geometry,
                 scale,
-                padding,
+                inertiaEnvelopePadding,
                 bodyMass)) {
             retireProxyLocked(frame.bhkWorld);
             return false;
@@ -698,9 +862,9 @@ namespace rock
 
         // Both generated bodies are authored with the same physical rotation.
         // Their constraint relation therefore contains only the weapon-local
-        // grip-to-box-center offset. Passing these two generated-column frames
+        // grip-to-contact-body-center offset. Passing these two generated-column frames
         // through the visual-object/proxy adapter invents a world-dependent
-        // relative rotation and twists the box sideways when the motor engages.
+        // relative rotation and twists the compound sideways when the motor engages.
         const RE::NiTransform desiredBodyTransformAuthoritySpace =
             dynamic_weapon_collision_policy::makeContactBodyInGripAuthoritySpace(
                 geometry.centerWeaponLocal,
@@ -726,11 +890,13 @@ namespace rock
 
         ROCK_LOG_INFO(
             Weapon,
-            "Dynamic weapon grip-constrained box created: contactBody={} authorityBody={} constraint={} generation={:016X} authority=grip center=({:.2f},{:.2f},{:.2f}) half=({:.2f},{:.2f},{:.2f}) scale={:.3f} mass={:.2f} forces=({:.1f},{:.1f}) padding={:.2f} layer={}",
+            "Dynamic weapon grip-constrained compound created: contactBody={} authorityBody={} constraint={} generation={:016X} children={} points={} authority=grip center=({:.2f},{:.2f},{:.2f}) envelopeHalf=({:.2f},{:.2f},{:.2f}) scale={:.3f} mass={:.2f} forces=({:.1f},{:.1f}) inertiaPadding={:.2f} layer={}",
             _body.getBodyId().value,
             _authorityProxy.getBodyId().value,
             _authorityConstraint.constraintId,
             _createdGenerationKey,
+            _createdCompoundChildCount,
+            _createdCompoundPointCount,
             _createdCenterWeaponLocal.x,
             _createdCenterWeaponLocal.y,
             _createdCenterWeaponLocal.z,
@@ -741,7 +907,7 @@ namespace rock
             bodyMass,
             motorTuning.linearMaxForce,
             motorTuning.angularMaxForce,
-            _createdPaddingGameUnits,
+            _createdInertiaEnvelopePaddingGameUnits,
             collision_layer_policy::ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
         return true;
     }
@@ -1010,7 +1176,7 @@ namespace rock
         if (bodyId != kInvalidBodyId && liveOwnerMatches) {
             ROCK_LOG_INFO(
                 Weapon,
-                "Dynamic weapon grip-constrained box retired: contactBody={} authorityBody={} constraint={}",
+                "Dynamic weapon grip-constrained compound retired: contactBody={} authorityBody={} constraint={}",
                 bodyId,
                 authorityBodyId,
                 constraintId);
@@ -1029,7 +1195,9 @@ namespace rock
         _createdCenterWeaponLocal = {};
         _createdHalfExtentsWeaponLocal = {};
         _createdWeaponScale = 1.0f;
-        _createdPaddingGameUnits = 0.0f;
+        _createdInertiaEnvelopePaddingGameUnits = 0.0f;
+        _createdCompoundChildCount = 0;
+        _createdCompoundPointCount = 0;
         _created = false;
         _droveThisSubstep = false;
         _physicsRequestedTargetValid = false;
@@ -1091,7 +1259,7 @@ namespace rock
         if (bodyId != kInvalidBodyId) {
             ROCK_LOG_WARN(
                 Weapon,
-                "Dynamic weapon grip-constrained box abandoned after Havok world loss: contactBody={} authorityBody={} constraint={}",
+                "Dynamic weapon grip-constrained compound abandoned after Havok world loss: contactBody={} authorityBody={} constraint={}",
                 bodyId,
                 authorityBodyId,
                 constraintId);

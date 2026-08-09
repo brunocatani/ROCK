@@ -6,12 +6,11 @@
 #include "RE/NetImmerse/NiTransform.h"
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 
 namespace rock::dynamic_weapon_collision_policy
 {
-    inline constexpr float kMinimumBoxHalfExtentGameUnits = 0.25f;
+    inline constexpr float kMinimumBoundingBoxHalfExtentGameUnits = 0.25f;
     inline constexpr float kFallbackWeaponMass = 2.0f;
     inline constexpr float kMaximumWeaponMass = 50.0f;
 
@@ -23,18 +22,25 @@ namespace rock::dynamic_weapon_collision_policy
         return std::clamp(weaponWeightGame, 0.1f, kMaximumWeaponMass);
     }
 
-    struct BoxGeometry
+    struct BoundingBoxGeometry
     {
         RE::NiPoint3 centerWeaponLocal{};
         RE::NiPoint3 halfExtentsWeaponLocal{};
         bool valid{ false };
     };
 
-    struct BoxMassProperties
+    struct BoundingBoxMassProperties
     {
         RE::NiPoint3 halfExtentsHavok{};
         RE::NiPoint3 inverseInertia{};
         float inverseMass{ 0.0f };
+        bool valid{ false };
+    };
+
+    struct CompoundChildFrame
+    {
+        RE::NiPoint3 translationHavok{};
+        float pointScaleHavok{ 0.0f };
         bool valid{ false };
     };
 
@@ -89,9 +95,9 @@ namespace rock::dynamic_weapon_collision_policy
         return true;
     }
 
-    inline BoxGeometry makeBoxGeometry(const RE::NiPoint3& boundsMin, const RE::NiPoint3& boundsMax)
+    inline BoundingBoxGeometry makeBoundingBoxGeometry(const RE::NiPoint3& boundsMin, const RE::NiPoint3& boundsMax)
     {
-        BoxGeometry result{};
+        BoundingBoxGeometry result{};
         if (!isFinitePoint(boundsMin) || !isFinitePoint(boundsMax) ||
             boundsMax.x < boundsMin.x || boundsMax.y < boundsMin.y || boundsMax.z < boundsMin.z) {
             return result;
@@ -103,16 +109,16 @@ namespace rock::dynamic_weapon_collision_policy
             (boundsMin.z + boundsMax.z) * 0.5f,
         };
         result.halfExtentsWeaponLocal = RE::NiPoint3{
-            (std::max)((boundsMax.x - boundsMin.x) * 0.5f, kMinimumBoxHalfExtentGameUnits),
-            (std::max)((boundsMax.y - boundsMin.y) * 0.5f, kMinimumBoxHalfExtentGameUnits),
-            (std::max)((boundsMax.z - boundsMin.z) * 0.5f, kMinimumBoxHalfExtentGameUnits),
+            (std::max)((boundsMax.x - boundsMin.x) * 0.5f, kMinimumBoundingBoxHalfExtentGameUnits),
+            (std::max)((boundsMax.y - boundsMin.y) * 0.5f, kMinimumBoundingBoxHalfExtentGameUnits),
+            (std::max)((boundsMax.z - boundsMin.z) * 0.5f, kMinimumBoundingBoxHalfExtentGameUnits),
         };
         result.valid = isFinitePoint(result.centerWeaponLocal) && isFinitePoint(result.halfExtentsWeaponLocal);
         return result;
     }
 
-    inline RE::NiPoint3 makeBoxHalfExtentsHavok(
-        const BoxGeometry& geometry,
+    inline RE::NiPoint3 makeBoundingBoxHalfExtentsHavok(
+        const BoundingBoxGeometry& geometry,
         float weaponScale,
         float paddingGameUnits,
         float gameToHavokScale)
@@ -126,21 +132,21 @@ namespace rock::dynamic_weapon_collision_policy
         };
     }
 
-    inline BoxMassProperties makeBoxMassProperties(
-        const BoxGeometry& geometry,
+    inline BoundingBoxMassProperties makeBoundingBoxMassProperties(
+        const BoundingBoxGeometry& geometry,
         float weaponScale,
         float paddingGameUnits,
         float gameToHavokScale,
         float mass)
     {
-        BoxMassProperties result{};
+        BoundingBoxMassProperties result{};
         if (!geometry.valid || !std::isfinite(weaponScale) || std::abs(weaponScale) <= 0.0001f ||
             !std::isfinite(paddingGameUnits) || !std::isfinite(gameToHavokScale) || gameToHavokScale <= 0.0f ||
             !std::isfinite(mass) || mass <= 0.0f) {
             return result;
         }
 
-        result.halfExtentsHavok = makeBoxHalfExtentsHavok(
+        result.halfExtentsHavok = makeBoundingBoxHalfExtentsHavok(
             geometry,
             weaponScale,
             paddingGameUnits,
@@ -185,32 +191,41 @@ namespace rock::dynamic_weapon_collision_policy
         return result;
     }
 
-    inline std::array<RE::NiPoint3, 8> makeBoxCornerPointsHavok(
-        const BoxGeometry& geometry,
+    inline CompoundChildFrame makeCompoundChildFrame(
+        const RE::NiPoint3& childCenterWeaponLocal,
+        const RE::NiPoint3& aggregateCenterWeaponLocal,
         float weaponScale,
-        float paddingGameUnits,
         float gameToHavokScale)
     {
-        std::array<RE::NiPoint3, 8> result{};
-        const RE::NiPoint3 half = makeBoxHalfExtentsHavok(
-            geometry,
-            weaponScale,
-            paddingGameUnits,
-            gameToHavokScale);
-
-        std::size_t index = 0;
-        for (int x = -1; x <= 1; x += 2) {
-            for (int y = -1; y <= 1; y += 2) {
-                for (int z = -1; z <= 1; z += 2) {
-                    result[index++] = RE::NiPoint3{
-                        half.x * static_cast<float>(x),
-                        half.y * static_cast<float>(y),
-                        half.z * static_cast<float>(z),
-                    };
-                }
-            }
+        CompoundChildFrame result{};
+        if (!isFinitePoint(childCenterWeaponLocal) || !isFinitePoint(aggregateCenterWeaponLocal) ||
+            !std::isfinite(weaponScale) || std::abs(weaponScale) <= 0.0001f ||
+            !std::isfinite(gameToHavokScale) || gameToHavokScale <= 0.0f) {
+            return result;
         }
+
+        result.pointScaleHavok = std::abs(weaponScale) * gameToHavokScale;
+        result.translationHavok = RE::NiPoint3{
+            (childCenterWeaponLocal.x - aggregateCenterWeaponLocal.x) * result.pointScaleHavok,
+            (childCenterWeaponLocal.y - aggregateCenterWeaponLocal.y) * result.pointScaleHavok,
+            (childCenterWeaponLocal.z - aggregateCenterWeaponLocal.z) * result.pointScaleHavok,
+        };
+        result.valid = isFinitePoint(result.translationHavok) &&
+                       std::isfinite(result.pointScaleHavok) &&
+                       result.pointScaleHavok > 0.0f;
         return result;
+    }
+
+    inline RE::NiPoint3 makeCompoundChildPointHavok(
+        const RE::NiPoint3& pointWeaponLocal,
+        const RE::NiPoint3& childCenterWeaponLocal,
+        float pointScaleHavok)
+    {
+        return RE::NiPoint3{
+            (pointWeaponLocal.x - childCenterWeaponLocal.x) * pointScaleHavok,
+            (pointWeaponLocal.y - childCenterWeaponLocal.y) * pointScaleHavok,
+            (pointWeaponLocal.z - childCenterWeaponLocal.z) * pointScaleHavok,
+        };
     }
 
     inline RE::NiTransform makeProxyBodyTarget(

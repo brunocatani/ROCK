@@ -3672,10 +3672,12 @@
                         labelAnchor,
                         2.0f,
                         proxyColor,
-                        "DWC BOX contactBody=%u authorityBody=%u constraint=%u contact=%s",
+                        "DWC COMPOUND contactBody=%u authorityBody=%u constraint=%u children=%u points=%llu contact=%s",
                         snapshot.bodyId,
                         snapshot.authorityBodyId,
                         snapshot.constraintId,
+                        snapshot.compoundChildCount,
+                        static_cast<unsigned long long>(snapshot.compoundPointCount),
                         snapshot.contactActive ? "YES" : "NO");
                     labelAnchor.z -= 3.0f;
                     addTextLineSized(
@@ -3717,7 +3719,7 @@
                         20.0f,
                         90.0f,
                         proxyColor,
-                        "DWC BOX INACTIVE (enable dynamic box + equip drawn weapon)");
+                        "DWC COMPOUND INACTIVE (enable dynamic collision + equip drawn weapon)");
                 }
             }
 

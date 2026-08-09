@@ -59,32 +59,48 @@ int main()
         }
     }
 
-    const auto geometry = makeBoxGeometry(
+    const auto geometry = makeBoundingBoxGeometry(
         RE::NiPoint3{ -10.0f, -2.0f, -1.0f },
         RE::NiPoint3{ 30.0f, 4.0f, 3.0f });
     ok &= geometry.valid;
     ok &= expectPoint("box center", geometry.centerWeaponLocal, RE::NiPoint3{ 10.0f, 1.0f, 1.0f });
     ok &= expectPoint("box half extents", geometry.halfExtentsWeaponLocal, RE::NiPoint3{ 20.0f, 3.0f, 2.0f });
 
-    const auto corners = makeBoxCornerPointsHavok(geometry, 2.0f, 1.0f, 0.1f);
-    RE::NiPoint3 cornerMax{};
-    for (const auto& corner : corners) {
-        cornerMax.x = (std::max)(cornerMax.x, std::fabs(corner.x));
-        cornerMax.y = (std::max)(cornerMax.y, std::fabs(corner.y));
-        cornerMax.z = (std::max)(cornerMax.z, std::fabs(corner.z));
-    }
-    ok &= expectPoint("scaled padded Havok half extents", cornerMax, RE::NiPoint3{ 4.1f, 0.7f, 0.5f });
+    const auto envelopeHalfExtents = makeBoundingBoxHalfExtentsHavok(geometry, 2.0f, 1.0f, 0.1f);
+    ok &= expectPoint("scaled padded Havok half extents", envelopeHalfExtents, RE::NiPoint3{ 4.1f, 0.7f, 0.5f });
 
-    const auto boxMassProperties = makeBoxMassProperties(geometry, 2.0f, 1.0f, 0.1f, 10.0f);
-    ok &= boxMassProperties.valid;
-    ok &= expectPoint("box mass half extents", boxMassProperties.halfExtentsHavok, cornerMax);
+    const auto envelopeMassProperties = makeBoundingBoxMassProperties(geometry, 2.0f, 1.0f, 0.1f, 10.0f);
+    ok &= envelopeMassProperties.valid;
+    ok &= expectPoint("bounding envelope mass half extents", envelopeMassProperties.halfExtentsHavok, envelopeHalfExtents);
     ok &= expectPoint(
-        "box inverse principal inertia",
-        boxMassProperties.inverseInertia,
+        "bounding envelope inverse principal inertia",
+        envelopeMassProperties.inverseInertia,
         RE::NiPoint3{ 0.405405f, 0.017585f, 0.017341f });
-    ok &= expectNear("box inverse mass", boxMassProperties.inverseMass, 0.1f);
-    ok &= !makeBoxMassProperties(geometry, 2.0f, 1.0f, 0.1f, 0.0f).valid;
-    ok &= !makeBoxMassProperties(geometry, 0.0f, 1.0f, 0.1f, 10.0f).valid;
+    ok &= expectNear("bounding envelope inverse mass", envelopeMassProperties.inverseMass, 0.1f);
+    ok &= !makeBoundingBoxMassProperties(geometry, 2.0f, 1.0f, 0.1f, 0.0f).valid;
+    ok &= !makeBoundingBoxMassProperties(geometry, 0.0f, 1.0f, 0.1f, 10.0f).valid;
+
+    const auto compoundFrame = makeCompoundChildFrame(
+        RE::NiPoint3{ -5.0f, 2.0f, 3.0f },
+        geometry.centerWeaponLocal,
+        2.0f,
+        0.1f);
+    ok &= compoundFrame.valid;
+    ok &= expectNear("compound point scale", compoundFrame.pointScaleHavok, 0.2f);
+    ok &= expectPoint("compound child translation", compoundFrame.translationHavok, RE::NiPoint3{ -3.0f, 0.2f, 0.4f });
+    ok &= expectPoint(
+        "compound centered point",
+        makeCompoundChildPointHavok(
+            RE::NiPoint3{ -4.0f, 0.0f, 6.0f },
+            RE::NiPoint3{ -5.0f, 2.0f, 3.0f },
+            compoundFrame.pointScaleHavok),
+        RE::NiPoint3{ 0.2f, -0.4f, 0.6f });
+    ok &= !makeCompoundChildFrame(
+               RE::NiPoint3{},
+               RE::NiPoint3{},
+               0.0f,
+               0.1f)
+               .valid;
 
     ok &= expectNear("invalid weapon mass falls back", sanitizeWeaponMass((std::numeric_limits<float>::quiet_NaN)()), 2.0f);
     ok &= expectNear("zero weapon mass falls back", sanitizeWeaponMass(0.0f), 2.0f);
