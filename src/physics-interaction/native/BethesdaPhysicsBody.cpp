@@ -156,6 +156,8 @@ namespace rock
     constexpr std::uint16_t kGeneratedSystemLocalMaterialIndex = 0;
     constexpr std::uint32_t kInvalidGeneratedId = 0x7FFF'FFFF;
     constexpr std::uint32_t kStaticLocalMotionIndex = kInvalidGeneratedId;
+    constexpr std::uint32_t kGeneratedBodyRuntimeFlags = 0x0802'0000;
+    constexpr std::uint32_t kRebuildBodyCollisionState = 0;
 
     static std::uint16_t generatedInitialQualityId(BethesdaMotionType motionType)
     {
@@ -524,11 +526,19 @@ namespace rock
 
         applyGeneratedBodyMotionType(world, _collisionObject, bodyId, motionType);
 
+        /*
+         * Batch the filter write with the flag publication below. FO4VR's
+         * enable-flags mode zero runs 0x14153C5A0 after changing body+0x40;
+         * raw disassembly shows that path invalidates cached collision state
+         * and queues the live body for recomputation. Skipping it leaves a
+         * newly inserted body physically solvable while filtered collision
+         * modifiers can retain the pre-setup eligibility state.
+         */
         havok_runtime::setFilterInfo(world, bodyId, filterInfo, 1);
 
         {
             static REL::Relocation<EnableBodyFlags_t> enableFlags{ REL::Offset(offsets::kFunc_EnableBodyFlags) };
-            enableFlags(world, bodyId.value, 0x08020000, 1);
+            enableFlags(world, bodyId.value, kGeneratedBodyRuntimeFlags, kRebuildBodyCollisionState);
         }
 
         havok_runtime::activateBody(world, bodyId.value);

@@ -159,6 +159,9 @@ Reject-Pattern 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' `
 Require-Pattern 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' `
     '0x1417A3A90 is initializeAsKeyFramed[\s\S]{0,500}motionCinfoCtor\(motionCinfo\);' `
     'The generated-body wrapper must document and preserve the dynamic-safe constructor profile.'
+Require-Pattern 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' `
+    'kGeneratedBodyRuntimeFlags\s*=\s*0x0802''0000[\s\S]{0,250}kRebuildBodyCollisionState\s*=\s*0[\s\S]*setFilterInfo\(world,\s*bodyId,\s*filterInfo,\s*1\);[\s\S]{0,1000}enableFlags\(world,\s*bodyId\.value,\s*kGeneratedBodyRuntimeFlags,\s*kRebuildBodyCollisionState\);' `
+    'Generated weapon bodies must publish filter and modifier eligibility with one native collision-state rebuild.'
 
 # The dormant overlay flag is now the primary in-game shape/contact diagnostic.
 # A surviving runtime mismatch must distinguish callback admission, snapshot
