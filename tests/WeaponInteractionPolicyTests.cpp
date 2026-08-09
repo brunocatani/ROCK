@@ -2027,7 +2027,7 @@ int main()
         coreWeaponHandling.firingGripOwnershipEnabled);
     ok &= expectTrue("base ROCK enables configured ambidextrous handoff",
         coreWeaponHandling.ambidextrousHandoffEnabled);
-    ok &= expectTrue("base ROCK stash enables its required primary detach path",
+    ok &= expectFalse("base ROCK shoulder stash never enables physical detach",
         coreWeaponHandling.primaryDetachEnabled);
     ok &= expectTrue("base ROCK owns equipped-weapon shoulder stash",
         coreWeaponHandling.equippedWeaponShoulderStashEnabled);
@@ -2055,9 +2055,9 @@ int main()
     const auto stashOnlyHandling = rock::makeEquippedWeaponHandlingSettings(
         stashOnlyBaseline,
         nullptr);
-    ok &= expectTrue("ROCK stash retains firing ownership with ambidextrous handoff off",
+    ok &= expectFalse("ROCK stash does not create firing ownership with handoff off",
         stashOnlyHandling.firingGripOwnershipEnabled);
-    ok &= expectTrue("ROCK stash retains primary detach with ambidextrous handoff off",
+    ok &= expectFalse("ROCK stash does not create physical detach with handoff off",
         stashOnlyHandling.primaryDetachEnabled);
     ok &= expectFalse("disabled ROCK ambidextrous mode keeps handoff disabled",
         stashOnlyHandling.ambidextrousHandoffEnabled);
@@ -2085,7 +2085,7 @@ int main()
         externalHandling.externalAuthorityActive);
     ok &= expectTrue("an addon lease cannot suppress ROCK shoulder stash",
         externalHandling.equippedWeaponShoulderStashEnabled);
-    ok &= expectTrue("an addon lease cannot suppress ROCK stash detach infrastructure",
+    ok &= expectFalse("ROCK stash cannot add detach to a non-detach addon lease",
         externalHandling.primaryDetachEnabled);
     ok &= expectFalse("an active addon request may suppress ROCK ambidextrous handoff",
         externalHandling.ambidextrousHandoffEnabled);
@@ -2467,14 +2467,35 @@ int main()
     using namespace rock::equipped_weapon_drop_policy;
     ok &= expectEqual("support release normally drops from left hand", sourceForSupportRelease(false), SourceHand::Left);
     ok &= expectEqual("same-frame primary release drops from right hand", sourceForSupportRelease(true), SourceHand::Right);
-    ok &= expectTrue("equipped shoulder stash is available when realistic handling and its setting are enabled",
-        equippedWeaponShoulderStashAvailable(true, true));
-    ok &= expectFalse("realistic handling off fully disables equipped shoulder stash",
-        equippedWeaponShoulderStashAvailable(false, true));
-    ok &= expectFalse("equipped shoulder stash setting remains authoritative under realistic handling",
-        equippedWeaponShoulderStashAvailable(true, false));
-    ok &= expectFalse("equipped shoulder stash stays disabled when both gates are off",
-        equippedWeaponShoulderStashAvailable(false, false));
+    ok &= expectTrue("ROCK shoulder stash is available without realistic detach",
+        equippedWeaponShoulderStashAvailable(true));
+    ok &= expectFalse("ROCK shoulder stash setting remains authoritative",
+        equippedWeaponShoulderStashAvailable(false));
+
+    const NativeShoulderSheathInput nativeShoulderSheath{
+        .handlingEnabled = true,
+        .primaryDetachEnabled = false,
+        .weaponAvailable = true,
+        .menuInputActive = false,
+        .handDisabled = false,
+        .handEmpty = true,
+        .detectorConfirmed = true,
+        .gripReleased = true,
+    };
+    ok &= expectTrue("confirmed in-zone release uses ROCK native shoulder sheath",
+        canCommitNativeShoulderSheath(nativeShoulderSheath));
+    auto blockedNativeShoulderSheath = nativeShoulderSheath;
+    blockedNativeShoulderSheath.detectorConfirmed = false;
+    ok &= expectFalse("ordinary grab release outside the shoulder never detaches",
+        canCommitNativeShoulderSheath(blockedNativeShoulderSheath));
+    blockedNativeShoulderSheath = nativeShoulderSheath;
+    blockedNativeShoulderSheath.gripReleased = false;
+    ok &= expectFalse("grab press alone never sheaths or detaches the weapon",
+        canCommitNativeShoulderSheath(blockedNativeShoulderSheath));
+    blockedNativeShoulderSheath = nativeShoulderSheath;
+    blockedNativeShoulderSheath.primaryDetachEnabled = true;
+    ok &= expectFalse("provider detach mode cannot double-run the native shoulder gesture",
+        canCommitNativeShoulderSheath(blockedNativeShoulderSheath));
 
     ok &= expectEqual("primary-only carry stashes from the firing hand",
         resolveEquippedWeaponStashCarryHand(true, false, false, false, false),

@@ -36,10 +36,37 @@ namespace rock::equipped_weapon_drop_policy
     }
 
     [[nodiscard]] inline constexpr bool equippedWeaponShoulderStashAvailable(
-        bool primaryDetachEnabled,
         bool shoulderStashConfigured) noexcept
     {
-        return primaryDetachEnabled && shoulderStashConfigured;
+        return shoulderStashConfigured;
+    }
+
+    struct NativeShoulderSheathInput
+    {
+        bool handlingEnabled{ false };
+        bool primaryDetachEnabled{ false };
+        bool weaponAvailable{ false };
+        bool menuInputActive{ false };
+        bool handDisabled{ false };
+        bool handEmpty{ false };
+        bool detectorConfirmed{ false };
+        bool gripReleased{ false };
+    };
+
+    [[nodiscard]] inline constexpr bool canCommitNativeShoulderSheath(
+        const NativeShoulderSheathInput& input) noexcept
+    {
+        // This is the ROCK-owned native-attached gesture. Provider-owned
+        // realistic detach continues through the manual carry/drop request so
+        // the two modes can never interpret the same ordinary release twice.
+        return input.handlingEnabled &&
+               !input.primaryDetachEnabled &&
+               input.weaponAvailable &&
+               !input.menuInputActive &&
+               !input.handDisabled &&
+               input.handEmpty &&
+               input.detectorConfirmed &&
+               input.gripReleased;
     }
 
     /*

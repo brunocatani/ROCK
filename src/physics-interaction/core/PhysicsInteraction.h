@@ -341,6 +341,11 @@ namespace rock
 
         void refreshEquippedWeaponHandlingSettings();
         void reconcileEquippedWeaponHandlingMode();
+        bool submitEquippedWeaponShoulderSheath(
+            std::uint32_t observedWeaponFormID,
+            std::uintptr_t observedWeaponInstanceData,
+            equipped_weapon_drop_policy::SourceHand sourceHand,
+            const shoulder_stash::Decision& stashDecision);
         void clearEquippedWeaponShoulderSheath(const char* reason);
         void serviceEquippedWeaponShoulderSheathRetrieval(
             const PhysicsFrameContext& frame,
@@ -578,6 +583,7 @@ namespace rock
         std::array<PendingForceGrabCommit, 2> _pendingForceGrabCommits{};
         std::array<HeldWeaponTriggerEquipIntent, 2> _heldWeaponTriggerEquipIntents{};
         std::array<bool, 2> _forceGrabCommittedThisFrame{};
+        std::array<bool, 2> _equippedWeaponSheathCommittedThisFrame{};
         std::array<bool, 2> _equippedWeaponUnsheathCommittedThisFrame{};
         bare_fist_guard_policy::RecheckState _bareFistGuardState{};
         std::array<ArmedLooseGrenadeFuseState, kArmedLooseGrenadeFuseCapacity> _armedLooseGrenadeFuses{};

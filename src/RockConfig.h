@@ -456,8 +456,8 @@ namespace rock
         float rockGrabReleaseHandCollisionDelaySeconds = 0.10f;
         bool rockShoulderStashEnabled = true;
         // Equipped weapons remain equipped and use the native sheath/draw
-        // transition. This switch also enables the minimum manual ownership
-        // and primary-detach capabilities required to carry one to the zone.
+        // transition. This ROCK-owned shoulder gesture is independent of an
+        // addon's physical detach/drop capability.
         bool rockEquippedWeaponShoulderStashEnabled = true;
         bool rockShoulderStashUseBodyZoneColliders = true;
         bool rockShoulderStashUseHmdBackVolume = true;

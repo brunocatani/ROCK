@@ -54,10 +54,11 @@ namespace rock
     {
         EquippedWeaponHandlingSettings settings{};
         settings.firingGripOwnershipEnabled =
-            rockBaseline.ambidextrousHandoffEnabled ||
-            rockBaseline.equippedWeaponShoulderStashEnabled;
-        settings.primaryDetachEnabled =
-            rockBaseline.equippedWeaponShoulderStashEnabled;
+            rockBaseline.ambidextrousHandoffEnabled;
+        // ROCK's native shoulder gesture never grants physical-detach
+        // authority. Only an explicit handling-provider lease may turn a grab
+        // release into an equipped-weapon world drop.
+        settings.primaryDetachEnabled = false;
         settings.ambidextrousHandoffEnabled =
             rockBaseline.ambidextrousHandoffEnabled;
         settings.equippedWeaponShoulderStashEnabled =
@@ -91,8 +92,8 @@ namespace rock
         };
         settings.externalAuthorityActive = true;
         // Shoulder sheath/retrieval is a ROCK-owned capability. An addon may
-        // add handling capabilities, but its lease cannot suppress the
-        // ownership/detach infrastructure required by ROCK's configured path.
+        // add handling capabilities, but its lease cannot suppress ROCK's
+        // configured native shoulder path.
         settings.firingGripOwnershipEnabled =
             settings.firingGripOwnershipEnabled || enabled(
                 provider::RockProviderEquippedWeaponHandlingFlagV1::FiringGripOwnership);
