@@ -1484,6 +1484,7 @@ namespace rock
                 if (weightGame < 0.0f) {
                     weightGame = weapon->weaponData.weight;
                 }
+                identity.weightGame = std::isfinite(weightGame) && weightGame > 0.0f ? weightGame : 0.0f;
                 const auto classification = classifyEquippedWeapon(weapon, weightGame);
                 identity.sizeClass = classification.sizeClass;
                 identity.classificationSource = classification.source;

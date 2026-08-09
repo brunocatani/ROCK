@@ -75,20 +75,33 @@ Require-Pattern $layers `
     'applyRockGeneratedLayerPolicies[\s\S]*applyRockDynamicWeaponProxyLayerPolicy\(matrix\)' `
     'Layer 51 must be registered with the other generated collision rows.'
 
-# Stage one is exactly one approximate convex box, not one dynamic operation
-# per member of the shared layer-44 multi-hull system that failed previously.
+# World contact remains exactly one approximate convex box, not one dynamic
+# operation per member of the shared layer-44 multi-hull system. A second tiny
+# body is permitted only as the noncolliding keyframed constraint authority.
 Require-Pattern $runtimeHeader `
     'BethesdaPhysicsBody\s+_body' `
-    'The dynamic weapon runtime must own one explicit body.'
+    'The dynamic weapon runtime must own one explicit world-contact body.'
+Require-Pattern $runtimeHeader `
+    'BethesdaPhysicsBody\s+_authorityProxy[\s\S]*ActiveConstraint\s+_authorityConstraint' `
+    'The dynamic weapon runtime must own one noncolliding authority body and one finite constraint.'
 Reject-Pattern $runtimeHeader `
     'std::array\s*<\s*BethesdaPhysicsBody|std::vector\s*<\s*BethesdaPhysicsBody' `
-    'The stage-one runtime must not expand into a dynamic body bank.'
+    'The single-collider runtime must not expand into a body bank.'
 Require-Pattern $runtimeSource `
     'makeBoxCornerPointsHavok[\s\S]*std::vector<RE::NiPoint3> pointCloud\(corners\.begin\(\), corners\.end\(\)\)[\s\S]*buildConvexShapeFromLocalHavokPoints' `
     'The single box must be built from the bounded eight-corner point cloud.'
 Require-Pattern $runtimeSource `
     'BethesdaMotionType::Dynamic[\s\S]*ROCK_DynamicWeaponBox' `
-    'The stage-one proxy must be a real dynamic Bethesda body.'
+    'The world-contact box must be a real dynamic Bethesda body.'
+Require-Pattern $runtimeSource `
+    'buildProxyShape\(\)[\s\S]*noContactFilterInfo\(\)[\s\S]*BethesdaMotionType::Keyframed[\s\S]*ROCK_WeaponGripAuthorityProxy[\s\S]*hasNoContactFilterInfo' `
+    'The grip authority must be a verified noncolliding keyframed proxy.'
+Require-Pattern $runtimeSource `
+    'createGrabConstraint\([\s\S]*_authorityProxy\.getBodyId\(\)[\s\S]*_body\.getBodyId\(\)[\s\S]*requestedWeaponWorld\.translate[\s\S]*identityRelation' `
+    'The finite constraint must act between the hidden authority and contact box at the firing-grip/root pivot.'
+Require-Pattern $runtimeSource `
+    'getEquippedWeaponClassification\(\)[\s\S]*sanitizeWeaponMass\(weaponIdentity\.weightGame\)[\s\S]*_body\.setMass\(bodyMass\)' `
+    'The generated contact box must use sanitized equipped-weapon mass rather than the wrapper default.'
 
 # One-way publication is the core anti-feedback invariant: all native/ROCK
 # weapon writers publish collision-free intent, then one bypass publication
@@ -193,23 +206,35 @@ Require-Order $interaction @(
     '_dynamicWeaponCollision\.flushPendingPhysicsDrive\(world, timing\);',
     '_dynamicHandCollision\.flushPendingPhysicsDrive\(world, timing\);'
 ) 'The dynamic weapon body must drive inside the generated pre-solve callback.'
+Require-Pattern $runtimeSource `
+    'queueGeneratedKeyframedBodyTarget\([\s\S]*_authorityDriveState[\s\S]*driveGeneratedKeyframedBody\([\s\S]*_authorityProxy[\s\S]*_authorityDriveState' `
+    'Pre-solve authority must drive the hidden keyframed grip proxy, not the colliding dynamic box.'
+Reject-Pattern $runtimeSource `
+    '\.dynamicVelocity\s*=\s*true' `
+    'The contact box must not retain the center-driven dynamic-velocity authority path.'
+Require-Pattern $runtimeSource `
+    'samplePostSolve\([\s\S]*tryResolveLiveBodyWorldTransform\(world,\s*_body\.getBodyId\(\)' `
+    'Post-solve publication must sample the solver-owned contact box.'
 Require-Order $interaction @(
     '_completedPhysicsSolveSequence\.fetch_add\(',
     '_dynamicWeaponCollision\.samplePostSolve\(',
     '_dynamicHandCollision\.samplePostSolveDeviations\('
 ) 'The dynamic weapon correction snapshot must be sampled on the post-solve callback clock.'
+Require-Order $runtimeSource @(
+    'void DynamicWeaponCollisionRuntime::retireProxyLocked\(',
+    'destroyGrabConstraint\(_createdWorld,\s*_authorityConstraint\)',
+    '_body\.retireDeferred\(bhkWorld\)',
+    '_authorityProxy\.retireDeferred\(bhkWorld\)'
+) 'Live-world teardown must remove the constraint before deferred retirement of both generated bodies.'
 Require-Pattern $runtimeSource `
-    'retireProxyLocked[\s\S]*_body\.retireDeferred\(' `
-    'Live-world dynamic weapon teardown must use deferred body retirement.'
-Require-Pattern $runtimeSource `
-    'liveOwnerMatches[\s\S]*bhkWorld\s*==\s*_createdBhkWorld[\s\S]*_body\.retireDeferred\(bhkWorld\)' `
-    'Native retirement must require proof that the supplied world still owns the proxy.'
+    'liveOwnerMatches[\s\S]*bhkWorld\s*==\s*_createdBhkWorld[\s\S]*destroyGrabConstraint\(_createdWorld,[\s\S]*_body\.retireDeferred\(bhkWorld\)[\s\S]*_authorityProxy\.retireDeferred\(bhkWorld\)' `
+    'Native constraint/body retirement must require proof that the supplied world still owns the generated state.'
 Reject-Pattern $runtimeSource `
     'bhkWorld\s*\?\s*bhkWorld\s*:\s*_createdBhkWorld' `
     'Teardown must not fall back to a cached world after live-world ownership is uncertain.'
 Require-Pattern $runtimeSource `
-    'abandonHavokStateAfterWorldLoss[\s\S]*_body\.reset\(\)' `
-    'Stale-world cleanup must abandon wrapper state without native removal.'
+    'abandonHavokStateAfterWorldLoss[\s\S]*destroyGrabConstraint\(nullptr,\s*_authorityConstraint\)[\s\S]*_body\.reset\(\)[\s\S]*_authorityProxy\.reset\(\)' `
+    'Stale-world cleanup must retire constraint payloads and abandon both wrappers without native removal.'
 Reject-Pattern $runtimeSource `
     '_body\.destroy\(' `
     'The dynamic weapon body must never use immediate live-world destruction.'
@@ -221,7 +246,7 @@ Reject-Pattern 'src/physics-interaction/native/HavokOffsets.h' `
     'The keyframed initializer must not remain mislabeled as dynamic mass derivation.'
 Reject-Pattern 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' `
     'deriveMotionCinfo\s*\(' `
-    'Dynamic weapon bodies must retain the native motion-cinfo constructor inverse mass.'
+    'Generated dynamic bodies must not pass through the keyframed initializer mislabeled as mass derivation.'
 Require-Pattern 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' `
     '0x1417A3A90 is initializeAsKeyFramed[\s\S]{0,500}motionCinfoCtor\(motionCinfo\);' `
     'The generated-body wrapper must document and preserve the dynamic-safe constructor profile.'
@@ -248,8 +273,8 @@ Require-Pattern $interaction `
     'applyWeaponCollisionResolvedAuthority[\s\S]*immediateTranslationError[\s\S]*immediateRotationError[\s\S]*DWC visual publication' `
     'Dynamic weapon visual publication must expose immediate node readback evidence.'
 Require-Pattern 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
-    'rockDebugDrawDynamicWeaponColliders[\s\S]*proxyBodyIdForDebug\(\)[\s\S]*DWC BOX[\s\S]*callbacks pair/world/raw/manifold/admit[\s\S]*snapshot read/valid/id/contact/tele' `
-    'The dedicated debug flag must draw the proxy body and its contact/correction telemetry.'
+    'rockDebugDrawDynamicWeaponColliders[\s\S]*proxyBodyIdForDebug\(\)[\s\S]*DWC BOX[\s\S]*authorityBody[\s\S]*gripPivot[\s\S]*callbacks pair/world/raw/manifold/admit[\s\S]*snapshot read/valid/id/contact/tele' `
+    'The dedicated debug flag must draw the contact box and expose authority, pivot, callback, and snapshot telemetry.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'Dynamic weapon collision source boundary failed:'

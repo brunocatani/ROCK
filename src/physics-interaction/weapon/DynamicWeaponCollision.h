@@ -2,6 +2,7 @@
 
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
+#include "physics-interaction/grab/GrabConstraint.h"
 
 #include "RE/Havok/hknpBodyId.h"
 #include "RE/NetImmerse/NiTransform.h"
@@ -47,6 +48,8 @@ namespace rock
             bool contactActive{ false };
             bool visualCorrectionActive{ false };
             std::uint32_t bodyId{ 0x7FFF'FFFFu };
+            std::uint32_t authorityBodyId{ 0x7FFF'FFFFu };
+            std::uint32_t constraintId{ 0x7FFF'FFFFu };
             std::uint32_t otherBodyId{ 0x7FFF'FFFFu };
             std::uint32_t otherLayer{ 0 };
             std::uint32_t contactGraceSolves{ 0 };
@@ -159,8 +162,10 @@ namespace rock
 
         PhysicsCallbackQuiescenceGate* _physicsCallbackGate{ nullptr };
         BethesdaPhysicsBody _body{};
+        BethesdaPhysicsBody _authorityProxy{};
+        ActiveConstraint _authorityConstraint{};
         const RE::hknpShape* _shape{ nullptr };
-        GeneratedKeyframedBodyDriveState _driveState{};
+        GeneratedKeyframedBodyDriveState _authorityDriveState{};
         RE::hknpWorld* _createdWorld{ nullptr };
         void* _createdBhkWorld{ nullptr };
         std::uint64_t _createdGenerationKey{ 0 };
@@ -171,11 +176,8 @@ namespace rock
         bool _created{ false };
         bool _droveThisSubstep{ false };
         bool _physicsRequestedTargetValid{ false };
-        bool _physicsLiveTargetValid{ false };
         bool _physicsDriveTeleported{ false };
         RE::NiTransform _physicsRequestedTarget{};
-        RE::NiTransform _physicsLiveTarget{};
-        float _divergenceDwellSeconds{ 0.0f };
         std::uint64_t _consumedContactSequence{ 0 };
         std::uint32_t _contactGraceSolves{ 0 };
 

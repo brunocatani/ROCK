@@ -4,6 +4,8 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/core/PhysicsFrameContext.h"
+#include "physics-interaction/grab/GrabAuthorityProxy.h"
+#include "physics-interaction/grab/GrabMotionController.h"
 #include "physics-interaction/native/HavokConvexShapeBuilder.h"
 #include "physics-interaction/native/HavokMaterialRegistry.h"
 #include "physics-interaction/native/HavokRefCount.h"
@@ -34,12 +36,55 @@ namespace rock
                    (collision_layer_policy::ROCK_LAYER_DYNAMIC_WEAPON_PROXY & collision_layer_policy::FO4_LAYER_FILTER_MASK);
         }
 
-        float pointDistance(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs)
+        float scaleFiniteValue(const float value, const float multiplier)
         {
-            const float x = lhs.x - rhs.x;
-            const float y = lhs.y - rhs.y;
-            const float z = lhs.z - rhs.z;
-            return std::sqrt(x * x + y * y + z * z);
+            return (std::isfinite(value) ? value : 0.0f) * (std::isfinite(multiplier) ? multiplier : 1.0f);
+        }
+
+        GrabConstraintMotorTuning buildWeaponGripConstraintTuning(const float bodyMass)
+        {
+            const float effectiveMotorMass = grab_motion_controller::effectiveMotorMass(
+                bodyMass,
+                g_rockConfig.rockGrabEffectiveMotorMassFloorEnabled,
+                g_rockConfig.rockGrabEffectiveMotorMassFloor);
+            const float linearBudget = (std::max)(0.0f, scaleFiniteValue(
+                g_rockConfig.rockGrabConstraintMaxForce,
+                g_rockConfig.rockGrabLooseWeaponSharedConstraintMaxForceMultiplier));
+            const float linearMaxForce = grab_motion_controller::capForceByMass(
+                linearBudget,
+                effectiveMotorMass,
+                g_rockConfig.rockGrabMaxForceToMassRatio);
+
+            return GrabConstraintMotorTuning{
+                .linearTau = scaleFiniteValue(
+                    g_rockConfig.rockGrabLinearTau,
+                    g_rockConfig.rockGrabLooseWeaponSharedConstraintLinearTauMultiplier),
+                .linearDamping = scaleFiniteValue(
+                    g_rockConfig.rockGrabLinearDamping,
+                    g_rockConfig.rockGrabLooseWeaponSharedConstraintLinearDampingMultiplier),
+                .linearProportionalRecovery = scaleFiniteValue(
+                    g_rockConfig.rockGrabLinearProportionalRecovery,
+                    g_rockConfig.rockGrabLooseWeaponSharedConstraintLinearRecoveryMultiplier),
+                .linearConstantRecovery = scaleFiniteValue(
+                    g_rockConfig.rockGrabLinearConstantRecovery,
+                    g_rockConfig.rockGrabLooseWeaponSharedConstraintLinearRecoveryMultiplier),
+                .linearMaxForce = linearMaxForce,
+                .angularTau = scaleFiniteValue(
+                    g_rockConfig.rockGrabAngularTau,
+                    g_rockConfig.rockGrabLooseWeaponSharedConstraintAngularTauMultiplier),
+                .angularDamping = scaleFiniteValue(
+                    g_rockConfig.rockGrabAngularDamping,
+                    g_rockConfig.rockGrabLooseWeaponSharedConstraintAngularDampingMultiplier),
+                .angularProportionalRecovery = scaleFiniteValue(
+                    g_rockConfig.rockGrabAngularProportionalRecovery,
+                    g_rockConfig.rockGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier),
+                .angularConstantRecovery = scaleFiniteValue(
+                    g_rockConfig.rockGrabAngularConstantRecovery,
+                    g_rockConfig.rockGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier),
+                .angularMaxForce = linearMaxForce * (std::isfinite(g_rockConfig.rockGrabLooseWeaponSharedConstraintAngularForceMultiplier) ?
+                        g_rockConfig.rockGrabLooseWeaponSharedConstraintAngularForceMultiplier :
+                        1.0f),
+            };
         }
     }
 
@@ -126,11 +171,12 @@ namespace rock
         }
 
         result.proxyActive = true;
-        const RE::NiTransform requestedBodyTarget = dynamic_weapon_collision_policy::makeProxyBodyTarget(
+        RE::NiTransform requestedBodyTarget = dynamic_weapon_collision_policy::makeProxyBodyTarget(
             _frameRequestedWeaponWorld,
             _createdCenterWeaponLocal);
+        requestedBodyTarget.scale = 1.0f;
         const auto queueResult = queueGeneratedKeyframedBodyTarget(
-            _driveState,
+            _authorityDriveState,
             requestedBodyTarget,
             frame.deltaSeconds,
             g_rockConfig.rockWeaponCollisionDynamicDivergenceTeleportGameUnits);
@@ -159,6 +205,8 @@ namespace rock
         _debugSnapshot.physicsSnapshotContactActive = snapshotReadable && snapshot.contactActive;
         _debugSnapshot.physicsSnapshotTeleported = snapshotReadable && snapshot.teleported;
         _debugSnapshot.bodyId = _body.getBodyId().value;
+        _debugSnapshot.authorityBodyId = _authorityProxy.getBodyId().value;
+        _debugSnapshot.constraintId = _authorityConstraint.constraintId;
         _debugSnapshot.generationKey = _createdGenerationKey;
         _debugSnapshot.proxyPairCallbackSequence = _proxyPairCallbackSequenceAtomic.load(std::memory_order_acquire);
         _debugSnapshot.worldSurfaceCallbackSequence = _worldSurfaceCallbackSequenceAtomic.load(std::memory_order_acquire);
@@ -176,9 +224,11 @@ namespace rock
             ROCK_LOG_SAMPLE_INFO(
                 Weapon,
                 500,
-                "DWC pipeline: stage={} body={} callbacks(pair/world/raw/manifold/admit)={}/{}/{}/{}/{} snapshot(read/valid/identity/contact/teleport)={}/{}/{}/{}/{} correction=({:.2f}gu,{:.2f}deg) visual={}",
+                "DWC pipeline: stage={} contactBody={} authorityBody={} constraint={} callbacks(pair/world/raw/manifold/admit)={}/{}/{}/{}/{} snapshot(read/valid/identity/contact/teleport)={}/{}/{}/{}/{} gripPivotError={:.2f}gu angularYield={:.2f}deg visual={}",
                 stage,
                 _debugSnapshot.bodyId,
+                _debugSnapshot.authorityBodyId,
+                _debugSnapshot.constraintId,
                 _debugSnapshot.proxyPairCallbackSequence,
                 _debugSnapshot.worldSurfaceCallbackSequence,
                 _debugSnapshot.rawPointCallbackSequence,
@@ -286,6 +336,8 @@ namespace rock
         const bool bodyMatches =
             _created &&
             _body.isValid() &&
+            _authorityProxy.isValid() &&
+            _authorityConstraint.isValid() &&
             _createdWorld == frame.hknpWorld &&
             _createdBhkWorld == frame.bhkWorld &&
             _createdGenerationKey == bounds.generationKey &&
@@ -294,6 +346,11 @@ namespace rock
             !_rebuildRequestedAtomic.load(std::memory_order_acquire);
         if (bodyMatches) {
             return true;
+        }
+
+        const auto weaponIdentity = weaponCollision.getEquippedWeaponClassification();
+        if (!weaponIdentity.hasEquippedWeapon) {
+            return false;
         }
 
         auto structuralMutation = _physicsCallbackGate ?
@@ -316,15 +373,17 @@ namespace rock
             return false;
         }
 
-        const RE::NiTransform initialTarget = dynamic_weapon_collision_policy::makeProxyBodyTarget(
+        RE::NiTransform initialTarget = dynamic_weapon_collision_policy::makeProxyBodyTarget(
             requestedWeaponWorld,
             geometry.centerWeaponLocal);
+        initialTarget.scale = 1.0f;
+        const auto generatedMaterial = havok_material_registry::registerGeneratedBodyMaterial(frame.hknpWorld);
         if (!_body.create(
                 frame.hknpWorld,
                 frame.bhkWorld,
                 shape,
                 dynamicWeaponProxyFilterInfo(),
-                havok_material_registry::registerGeneratedBodyMaterial(frame.hknpWorld),
+                generatedMaterial,
                 BethesdaMotionType::Dynamic,
                 "ROCK_DynamicWeaponBox")) {
             havok_ref_count::release(shape);
@@ -368,16 +427,86 @@ namespace rock
         _createdPaddingGameUnits = padding;
         _created = true;
         _rebuildRequestedAtomic.store(false, std::memory_order_release);
-        initializeGeneratedKeyframedBodyDriveState(_driveState, initialTarget);
+        const float bodyMass = dynamic_weapon_collision_policy::sanitizeWeaponMass(weaponIdentity.weightGame);
+        _body.setMass(bodyMass);
         if (!placeGeneratedKeyframedBodyImmediately(_body, initialTarget)) {
+            retireProxyLocked(frame.bhkWorld);
+            return false;
+        }
+
+        auto* authorityShape = grab_authority_proxy::buildProxyShape();
+        if (!authorityShape) {
+            ROCK_LOG_ERROR(Weapon, "Dynamic weapon grip authority creation failed: anchor shape unavailable contactBody={}", proxyBodyId.value);
+            retireProxyLocked(frame.bhkWorld);
+            return false;
+        }
+        const bool authorityCreated = _authorityProxy.create(
+            frame.hknpWorld,
+            frame.bhkWorld,
+            authorityShape,
+            grab_authority_proxy::noContactFilterInfo(),
+            generatedMaterial,
+            BethesdaMotionType::Keyframed,
+            "ROCK_WeaponGripAuthorityProxy");
+        havok_ref_count::release(authorityShape);
+        if (!authorityCreated) {
+            ROCK_LOG_ERROR(Weapon, "Dynamic weapon grip authority creation failed: anchor body unavailable contactBody={}", proxyBodyId.value);
+            retireProxyLocked(frame.bhkWorld);
+            return false;
+        }
+        if (!placeGeneratedKeyframedBodyImmediately(_authorityProxy, initialTarget)) {
+            ROCK_LOG_ERROR(
+                Weapon,
+                "Dynamic weapon grip authority creation failed: initial anchor placement failed contactBody={} authorityBody={}",
+                proxyBodyId.value,
+                _authorityProxy.getBodyId().value);
+            retireProxyLocked(frame.bhkWorld);
+            return false;
+        }
+        initializeGeneratedKeyframedBodyDriveState(_authorityDriveState, initialTarget);
+
+        std::uint32_t authorityFilterInfo = 0;
+        const bool authorityFilterReadable = havok_runtime::tryReadFilterInfo(
+            frame.hknpWorld,
+            _authorityProxy.getBodyId(),
+            authorityFilterInfo);
+        if (!authorityFilterReadable || !grab_authority_proxy::hasNoContactFilterInfo(authorityFilterInfo)) {
+            ROCK_LOG_ERROR(
+                Weapon,
+                "Dynamic weapon grip authority creation failed: no-contact policy invalid read={} filter=0x{:08X} authorityBody={}",
+                authorityFilterReadable,
+                authorityFilterInfo,
+                _authorityProxy.getBodyId().value);
+            retireProxyLocked(frame.bhkWorld);
+            return false;
+        }
+
+        const RE::NiTransform identityRelation = transform_math::makeIdentityTransform<RE::NiTransform>();
+        const auto motorTuning = buildWeaponGripConstraintTuning(bodyMass);
+        _authorityConstraint = createGrabConstraint(
+            frame.hknpWorld,
+            _authorityProxy.getBodyId(),
+            _body.getBodyId(),
+            initialTarget,
+            requestedWeaponWorld.translate,
+            identityRelation,
+            motorTuning);
+        if (!_authorityConstraint.isValid()) {
+            ROCK_LOG_ERROR(
+                Weapon,
+                "Dynamic weapon grip authority creation failed: constraint unavailable contactBody={} authorityBody={}",
+                proxyBodyId.value,
+                _authorityProxy.getBodyId().value);
             retireProxyLocked(frame.bhkWorld);
             return false;
         }
 
         ROCK_LOG_INFO(
             Weapon,
-            "Dynamic weapon box created: body={} generation={:016X} center=({:.2f},{:.2f},{:.2f}) half=({:.2f},{:.2f},{:.2f}) scale={:.3f} padding={:.2f} layer={}",
+            "Dynamic weapon grip-constrained box created: contactBody={} authorityBody={} constraint={} generation={:016X} center=({:.2f},{:.2f},{:.2f}) half=({:.2f},{:.2f},{:.2f}) scale={:.3f} mass={:.2f} forces=({:.1f},{:.1f}) padding={:.2f} layer={}",
             _body.getBodyId().value,
+            _authorityProxy.getBodyId().value,
+            _authorityConstraint.constraintId,
             _createdGenerationKey,
             _createdCenterWeaponLocal.x,
             _createdCenterWeaponLocal.y,
@@ -386,6 +515,9 @@ namespace rock
             _createdHalfExtentsWeaponLocal.y,
             _createdHalfExtentsWeaponLocal.z,
             _createdWeaponScale,
+            bodyMass,
+            motorTuning.linearMaxForce,
+            motorTuning.angularMaxForce,
             _createdPaddingGameUnits,
             collision_layer_policy::ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
         return true;
@@ -395,45 +527,20 @@ namespace rock
         RE::hknpWorld* world,
         const havok_physics_timing::PhysicsTimingSample& timing)
     {
-        if (!_enabledAtomic.load(std::memory_order_acquire) || !world || !_created || _createdWorld != world || !_body.isValid()) {
+        if (!_enabledAtomic.load(std::memory_order_acquire) || !world || !_created || _createdWorld != world ||
+            !_body.isValid() || !_authorityProxy.isValid() || !_authorityConstraint.isValid()) {
             return;
-        }
-
-        const float divergenceThreshold = g_rockConfig.rockWeaponCollisionDynamicDivergenceTeleportGameUnits;
-        GeneratedBodyDriveMode mode{
-            .dynamicVelocity = true,
-            .divergenceTeleportGameUnits =
-                _divergenceDwellSeconds >= g_rockConfig.rockWeaponCollisionDynamicDivergenceTeleportDwellSeconds ?
-                    divergenceThreshold :
-                    0.0f,
-        };
-        if (_contactGraceSolves > 0 && _physicsRequestedTargetValid && _physicsLiveTargetValid &&
-            g_rockConfig.rockWeaponCollisionDynamicContactPressMaxVelocityHavok > 0.0f) {
-            const RE::NiPoint3 press{
-                _physicsRequestedTarget.translate.x - _physicsLiveTarget.translate.x,
-                _physicsRequestedTarget.translate.y - _physicsLiveTarget.translate.y,
-                _physicsRequestedTarget.translate.z - _physicsLiveTarget.translate.z,
-            };
-            const float length = std::sqrt(press.x * press.x + press.y * press.y + press.z * press.z);
-            if (std::isfinite(length) && length > 0.25f) {
-                mode.hasContactPressDirection = true;
-                mode.contactPressDirection[0] = press.x / length;
-                mode.contactPressDirection[1] = press.y / length;
-                mode.contactPressDirection[2] = press.z / length;
-                mode.contactPressMaxVelocityHavok = g_rockConfig.rockWeaponCollisionDynamicContactPressMaxVelocityHavok;
-            }
         }
 
         const auto driveResult = driveGeneratedKeyframedBody(
             world,
-            _body,
-            _driveState,
+            _authorityProxy,
+            _authorityDriveState,
             timing,
-            "DynamicWeaponBox",
+            "DynamicWeaponGripAuthority",
             0,
             g_rockConfig.rockWeaponCollisionDynamicMaxLinearVelocityHavok,
-            g_rockConfig.rockWeaponCollisionDynamicMaxAngularVelocityRadians,
-            mode);
+            g_rockConfig.rockWeaponCollisionDynamicMaxAngularVelocityRadians);
         if (driveResult.shouldRequestRebuild()) {
             _rebuildRequestedAtomic.store(true, std::memory_order_release);
             _droveThisSubstep = false;
@@ -447,21 +554,8 @@ namespace rock
         _physicsRequestedTargetValid = driveResult.hasRequestedTargetGameTransform;
         _physicsRequestedTarget = driveResult.requestedTargetGameTransform;
         _physicsDriveTeleported = driveResult.teleported;
-        if (driveResult.hasLiveBodyTransform) {
-            _physicsLiveTarget = driveResult.liveBodyGameTransform;
-            _physicsLiveTargetValid = true;
-        }
-
-        const float requestedGap = driveResult.hasLiveBodyTransform && driveResult.hasRequestedTargetGameTransform ?
-            pointDistance(driveResult.liveBodyGameTransform.translate, driveResult.requestedTargetGameTransform.translate) :
-            0.0f;
         if (driveResult.teleported) {
-            _divergenceDwellSeconds = 0.0f;
             _contactGraceSolves = 0;
-        } else if (std::isfinite(requestedGap) && divergenceThreshold > 0.0f && requestedGap > divergenceThreshold) {
-            _divergenceDwellSeconds += std::clamp(driveResult.driveDeltaSeconds, 0.0f, 0.1f);
-        } else {
-            _divergenceDwellSeconds = 0.0f;
         }
     }
 
@@ -480,9 +574,6 @@ namespace rock
             clearPublishedPhysicsSnapshot();
             return;
         }
-        _physicsLiveTarget = liveBodyWorld;
-        _physicsLiveTargetValid = true;
-
         const auto contactSequence = _contactSequenceAtomic.load(std::memory_order_acquire);
         bool newMatchingContact = false;
         std::uint32_t otherBodyId = kInvalidBodyId;
@@ -582,25 +673,41 @@ namespace rock
     void DynamicWeaponCollisionRuntime::retireProxyLocked(void* bhkWorld)
     {
         const auto bodyId = _bodyIdAtomic.exchange(kInvalidBodyId, std::memory_order_acq_rel);
+        const auto authorityBodyId = _authorityProxy.isValid() ? _authorityProxy.getBodyId().value : kInvalidBodyId;
+        const auto constraintId = _authorityConstraint.constraintId;
         const bool liveOwnerMatches =
             _created &&
-            _body.isValid() &&
             bhkWorld &&
             bhkWorld == _createdBhkWorld;
         if (liveOwnerMatches) {
-            _body.retireDeferred(bhkWorld);
+            destroyGrabConstraint(_createdWorld, _authorityConstraint);
+            if (_body.isValid()) {
+                _body.retireDeferred(bhkWorld);
+            }
+            if (_authorityProxy.isValid()) {
+                _authorityProxy.retireDeferred(bhkWorld);
+            }
         } else {
-            if (_created && _body.isValid()) {
+            destroyGrabConstraint(nullptr, _authorityConstraint);
+            if (_created && (_body.isValid() || _authorityProxy.isValid())) {
                 ROCK_LOG_WARN(
                     Weapon,
-                    "Dynamic weapon box owner changed before retirement; abandoning native body without mutating an unverified world: body={}",
-                    bodyId);
+                    "Dynamic weapon authority owner changed before retirement; abandoning native state without mutating an unverified world: contactBody={} authorityBody={} constraint={}",
+                    bodyId,
+                    authorityBodyId,
+                    constraintId);
             }
             _body.reset();
+            _authorityProxy.reset();
         }
         clearLocalProxyStateLocked();
         if (bodyId != kInvalidBodyId && liveOwnerMatches) {
-            ROCK_LOG_INFO(Weapon, "Dynamic weapon box retired: body={}", bodyId);
+            ROCK_LOG_INFO(
+                Weapon,
+                "Dynamic weapon grip-constrained box retired: contactBody={} authorityBody={} constraint={}",
+                bodyId,
+                authorityBodyId,
+                constraintId);
         }
     }
 
@@ -620,11 +727,8 @@ namespace rock
         _created = false;
         _droveThisSubstep = false;
         _physicsRequestedTargetValid = false;
-        _physicsLiveTargetValid = false;
         _physicsDriveTeleported = false;
         _physicsRequestedTarget = {};
-        _physicsLiveTarget = {};
-        _divergenceDwellSeconds = 0.0f;
         _contactGraceSolves = 0;
         _consumedContactSequence = 0;
         _proxyPairCallbackSequenceAtomic.store(0, std::memory_order_release);
@@ -637,7 +741,7 @@ namespace rock
         _contactOtherBodyIdAtomic.store(kInvalidBodyId, std::memory_order_release);
         _contactOtherLayerAtomic.store(0, std::memory_order_release);
         _rebuildRequestedAtomic.store(false, std::memory_order_release);
-        clearGeneratedKeyframedBodyDriveState(_driveState);
+        clearGeneratedKeyframedBodyDriveState(_authorityDriveState);
         clearPublishedPhysicsSnapshot();
     }
 
@@ -659,7 +763,11 @@ namespace rock
             _physicsCallbackGate->pauseForMutation() :
             PhysicsCallbackQuiescenceGate::MutationLease{};
         const auto bodyId = _bodyIdAtomic.exchange(kInvalidBodyId, std::memory_order_acq_rel);
+        const auto authorityBodyId = _authorityProxy.isValid() ? _authorityProxy.getBodyId().value : kInvalidBodyId;
+        const auto constraintId = _authorityConstraint.constraintId;
+        destroyGrabConstraint(nullptr, _authorityConstraint);
         _body.reset();
+        _authorityProxy.reset();
         clearLocalProxyStateLocked();
         _enabledAtomic.store(false, std::memory_order_release);
         _frameAcceptingIntent = false;
@@ -674,8 +782,10 @@ namespace rock
         if (bodyId != kInvalidBodyId) {
             ROCK_LOG_WARN(
                 Weapon,
-                "Dynamic weapon box abandoned after Havok world loss: body={}",
-                bodyId);
+                "Dynamic weapon grip-constrained box abandoned after Havok world loss: contactBody={} authorityBody={} constraint={}",
+                bodyId,
+                authorityBodyId,
+                constraintId);
         }
     }
 

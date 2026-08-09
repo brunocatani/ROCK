@@ -3,6 +3,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <limits>
 #include <string>
 
 namespace
@@ -73,6 +74,12 @@ int main()
         cornerMax.z = (std::max)(cornerMax.z, std::fabs(corner.z));
     }
     ok &= expectPoint("scaled padded Havok half extents", cornerMax, RE::NiPoint3{ 4.1f, 0.7f, 0.5f });
+
+    ok &= expectNear("invalid weapon mass falls back", sanitizeWeaponMass((std::numeric_limits<float>::quiet_NaN)()), 2.0f);
+    ok &= expectNear("zero weapon mass falls back", sanitizeWeaponMass(0.0f), 2.0f);
+    ok &= expectNear("tiny weapon mass stays physical", sanitizeWeaponMass(0.05f), 0.1f);
+    ok &= expectNear("authored weapon mass is preserved", sanitizeWeaponMass(12.5f), 12.5f);
+    ok &= expectNear("weapon mass matches loose-grab ceiling", sanitizeWeaponMass(75.0f), 50.0f);
 
     RE::NiTransform weaponRoot = rock::transform_math::makeIdentityTransform<RE::NiTransform>();
     weaponRoot.rotate = rotationZ90();

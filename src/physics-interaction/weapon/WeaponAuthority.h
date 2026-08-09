@@ -1015,6 +1015,7 @@ namespace rock::weapon_generation_identity_policy
         std::uintptr_t equippedDataAddress{ 0 };
         std::uintptr_t equippedObjectAddress{ 0 };
         std::string_view displayName{};
+        float weightGame{ 0.0f };
         bool hasEquippedWeapon{ false };
         bool effectiveEquipSlotUsesInstanceData{ false };
         WeaponSizeClass sizeClass{ WeaponSizeClass::Rifle };

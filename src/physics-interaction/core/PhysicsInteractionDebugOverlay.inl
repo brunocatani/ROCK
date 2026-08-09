@@ -3660,19 +3660,21 @@
                         labelAnchor,
                         2.0f,
                         proxyColor,
-                        "DWC BOX body=%u contact=%s layer=%u grace=%u",
+                        "DWC BOX contactBody=%u authorityBody=%u constraint=%u contact=%s",
                         snapshot.bodyId,
-                        snapshot.contactActive ? "YES" : "NO",
-                        snapshot.otherLayer,
-                        snapshot.contactGraceSolves);
+                        snapshot.authorityBodyId,
+                        snapshot.constraintId,
+                        snapshot.contactActive ? "YES" : "NO");
                     labelAnchor.z -= 3.0f;
                     addTextLineSized(
                         labelAnchor,
                         1.7f,
                         proxyColor,
-                        "corr=%.2fgu %.2fdeg visual=%s solve=%llu",
+                        "gripPivot=%.2fgu yield=%.2fdeg layer=%u grace=%u visual=%s solve=%llu",
                         snapshot.translationCorrectionGameUnits,
                         snapshot.rotationCorrectionDegrees,
+                        snapshot.otherLayer,
+                        snapshot.contactGraceSolves,
                         snapshot.visualCorrectionActive ? "ACTIVE" : "IDLE",
                         static_cast<unsigned long long>(
                             snapshot.solveSequence));

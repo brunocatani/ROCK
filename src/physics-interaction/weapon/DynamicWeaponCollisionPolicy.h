@@ -12,6 +12,16 @@
 namespace rock::dynamic_weapon_collision_policy
 {
     inline constexpr float kMinimumBoxHalfExtentGameUnits = 0.25f;
+    inline constexpr float kFallbackWeaponMass = 2.0f;
+    inline constexpr float kMaximumWeaponMass = 50.0f;
+
+    inline float sanitizeWeaponMass(float weaponWeightGame)
+    {
+        if (!std::isfinite(weaponWeightGame) || weaponWeightGame <= 0.0f) {
+            return kFallbackWeaponMass;
+        }
+        return std::clamp(weaponWeightGame, 0.1f, kMaximumWeaponMass);
+    }
 
     struct BoxGeometry
     {
