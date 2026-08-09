@@ -510,7 +510,8 @@ namespace rock
             void* context,
             RE::NiNode* weaponNode,
             const RE::NiTransform& requestedWeaponWorld,
-            std::uint64_t weaponGenerationKey);
+            std::uint64_t weaponGenerationKey,
+            bool resetMotionBaseline);
 
         TwoHandedGrip();
         ~TwoHandedGrip();

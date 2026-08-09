@@ -67,6 +67,9 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'worldTargetToParentLocal\(nativeParent->world,\s*startWorld\)[\s\S]*releaseFiringHandWeaponNodeOwnership\(_activeWeaponNode\)[\s\S]*_activeWeaponNode->parent\s*!=\s*nativeParent[\s\S]*nativeBaselineLocal' `
     'Weapon return must restore native right-hand topology before converging in native parent-local space.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'void TwoHandedGrip::beginWeaponVisualReturn[\s\S]*_lastRenderedWeaponWorld\s*=\s*_activeWeaponNode->world[\s\S]*_weaponVisualIntentObserver\([\s\S]*_lastRenderedWeaponWorld,[\s\S]*_activeWeaponGenerationKey,[\s\S]*true\)' `
+    'Weapon return must publish its exact same-frame start pose as an explicit dynamic-collision motion-baseline handoff.'
 Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'void TwoHandedGrip::beginWeaponVisualReturn[\s\S]{0,5000}frik_visual_authority::blockPrimaryWeaponNodeOwnership' `
     'Weapon return must not engage hFRIK external-left-carry topology as a transform-write blocker.'

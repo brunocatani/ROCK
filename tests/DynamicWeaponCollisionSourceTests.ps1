@@ -94,7 +94,7 @@ Require-Pattern $runtimeSource `
 # weapon writers publish collision-free intent, then one bypass publication
 # applies the solved pose without observing itself.
 Require-Pattern 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'notifyVisualIntentObserver\s*&&\s*_weaponVisualIntentObserver[\s\S]*_weaponVisualIntentObserver\([\s\S]*applyWeaponCollisionResolvedAuthority[\s\S]*applyWeaponVisualAuthority\([\s\S]*false\s*\)' `
+    'notifyVisualIntentObserver\s*&&\s*_weaponVisualIntentObserver[\s\S]*_weaponVisualIntentObserver\([\s\S]*effectiveGenerationKey,[\s\S]*false\)[\s\S]*applyWeaponCollisionResolvedAuthority[\s\S]*applyWeaponVisualAuthority\([\s\S]*false\s*\)' `
     'Weapon visual authority must separate collision-free intent observation from the solved bypass publication.'
 Require-Order $interaction @(
     '_twoHandedGrip\.beginWeaponCollisionPresentationFrame\(',
@@ -227,6 +227,8 @@ Require-Pattern $runtimeSource `
     'Dynamic weapon pipeline diagnostics must be debug-gated and rate-limited.'
 Require-Order $runtimeSource @(
     'rawRequestedBodyTarget\s*=\s*dynamic_weapon_collision_policy::makeProxyBodyTarget',
+    '_frameResetRawMotionBaseline',
+    '_previousRawProxyBodyTarget\s*=\s*rawRequestedBodyTarget',
     'readPhysicsSnapshot\(snapshot\)',
     'snapshotIdentityCurrent\s*&&\s*snapshot\.contactActive',
     'makeBoundedContactAnchor\(',
@@ -234,6 +236,12 @@ Require-Order $runtimeSource @(
     'recoverSurfaceCoupledTarget\(',
     'queueGeneratedKeyframedBodyTarget\('
 ) 'Dynamic weapon input must discard accumulated contact debt before queueing, then use continuous recovery after contact.'
+Require-Pattern $weaponAuthority `
+    'void TwoHandedGrip::beginWeaponVisualReturn[\s\S]*_activeWeaponNode->local\s*=\s*startLocal[\s\S]*updateTransformsDown\(_activeWeaponNode,\s*true\)[\s\S]*_weaponVisualIntentObserver\([\s\S]*_lastRenderedWeaponWorld,[\s\S]*_activeWeaponGenerationKey,[\s\S]*true\)' `
+    'A same-frame weapon-return handoff must publish its continuous start pose and explicitly reset dynamic collision raw-motion history.'
+Require-Pattern $runtimeSource `
+    'captureVisualIntent\([\s\S]*resetMotionBaseline[\s\S]*_frameResetRawMotionBaseline\s*=[\s\S]*_frameResetRawMotionBaseline\s*\|\|\s*resetMotionBaseline' `
+    'Dynamic weapon intent capture must retain a handoff reset until finishFrame consumes the final observed pose.'
 Require-Pattern $runtimePolicy `
     'recoverSurfaceCoupledTarget\([\s\S]*1\.0f\s*-\s*std::exp2[\s\S]*recoveryDotRawStep\s*<\s*0\.0f[\s\S]*rawStepLength\s*\*\s*motionFraction[\s\S]*blendTransforms' `
     'Surface-clutch recovery must converge every timed frame while bounding recovery that opposes current withdrawal.'

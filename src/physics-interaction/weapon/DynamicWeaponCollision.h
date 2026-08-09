@@ -81,7 +81,8 @@ namespace rock
             void* context,
             RE::NiNode* weaponNode,
             const RE::NiTransform& requestedWeaponWorld,
-            std::uint64_t weaponGenerationKey);
+            std::uint64_t weaponGenerationKey,
+            bool resetMotionBaseline);
 
         FrameResult finishFrame(
             const PhysicsFrameContext& frame,
@@ -144,7 +145,8 @@ namespace rock
         void captureVisualIntent(
             RE::NiNode* weaponNode,
             const RE::NiTransform& requestedWeaponWorld,
-            std::uint64_t weaponGenerationKey);
+            std::uint64_t weaponGenerationKey,
+            bool resetMotionBaseline);
         bool ensureProxyBody(
             const PhysicsFrameContext& frame,
             const WeaponCollision& weaponCollision,
@@ -187,6 +189,7 @@ namespace rock
         void* _frameBhkWorld{ nullptr };
         RE::NiNode* _frameWeaponNode{ nullptr };
         RE::NiTransform _frameRequestedWeaponWorld{};
+        bool _frameResetRawMotionBaseline{ false };
         RE::NiTransform _previousRawProxyBodyTarget{};
         RE::NiTransform _surfaceClutchProxyBodyTarget{};
         bool _previousRawProxyBodyTargetValid{ false };

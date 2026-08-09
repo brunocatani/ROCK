@@ -61,6 +61,7 @@ namespace rock
         _frameBhkWorld = bhkWorld;
         _frameWeaponNode = weaponNode;
         _frameGenerationKey = weaponGenerationKey;
+        _frameResetRawMotionBaseline = false;
         _frameAcceptingIntent = enabled && world && bhkWorld && weaponNode && weaponGenerationKey != 0;
         _frameHasIntent =
             _frameAcceptingIntent &&
@@ -77,18 +78,24 @@ namespace rock
         void* context,
         RE::NiNode* weaponNode,
         const RE::NiTransform& requestedWeaponWorld,
-        const std::uint64_t weaponGenerationKey)
+        const std::uint64_t weaponGenerationKey,
+        const bool resetMotionBaseline)
     {
         auto* runtime = static_cast<DynamicWeaponCollisionRuntime*>(context);
         if (runtime) {
-            runtime->captureVisualIntent(weaponNode, requestedWeaponWorld, weaponGenerationKey);
+            runtime->captureVisualIntent(
+                weaponNode,
+                requestedWeaponWorld,
+                weaponGenerationKey,
+                resetMotionBaseline);
         }
     }
 
     void DynamicWeaponCollisionRuntime::captureVisualIntent(
         RE::NiNode* weaponNode,
         const RE::NiTransform& requestedWeaponWorld,
-        const std::uint64_t weaponGenerationKey)
+        const std::uint64_t weaponGenerationKey,
+        const bool resetMotionBaseline)
     {
         if (!_frameAcceptingIntent || weaponNode != _frameWeaponNode || weaponGenerationKey != _frameGenerationKey ||
             !dynamic_weapon_collision_policy::isFiniteTransform(requestedWeaponWorld)) {
@@ -96,6 +103,8 @@ namespace rock
         }
         _frameRequestedWeaponWorld = requestedWeaponWorld;
         _frameHasIntent = true;
+        _frameResetRawMotionBaseline =
+            _frameResetRawMotionBaseline || resetMotionBaseline;
     }
 
     DynamicWeaponCollisionRuntime::FrameResult DynamicWeaponCollisionRuntime::finishFrame(
@@ -131,6 +140,22 @@ namespace rock
         const RE::NiTransform rawRequestedBodyTarget = dynamic_weapon_collision_policy::makeProxyBodyTarget(
             _frameRequestedWeaponWorld,
             _createdCenterWeaponLocal);
+        if (_frameResetRawMotionBaseline) {
+            /*
+             * A visual-authority handoff can replace the collision-free pose
+             * source without representing physical controller motion. Rebase
+             * the raw delta origin so the clutch follows the return overlay on
+             * subsequent frames instead of interpreting the source switch as
+             * a one-frame wall drive.
+             */
+            _previousRawProxyBodyTarget = rawRequestedBodyTarget;
+            _previousRawProxyBodyTargetValid = true;
+            ROCK_LOG_DEBUG(
+                Weapon,
+                "Dynamic weapon raw intent motion baseline reset: body={} generation={:016X}",
+                _body.getBodyId().value,
+                _createdGenerationKey);
+        }
 
         PhysicsSnapshot snapshot{};
         const bool snapshotReadable = readPhysicsSnapshot(snapshot);
@@ -781,6 +806,7 @@ namespace rock
         _frameBhkWorld = nullptr;
         _frameWeaponNode = nullptr;
         _frameRequestedWeaponWorld = {};
+        _frameResetRawMotionBaseline = false;
         _debugSnapshot = {};
         if (bodyId != kInvalidBodyId) {
             ROCK_LOG_WARN(
