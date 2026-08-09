@@ -13,6 +13,7 @@
 #include "RockUtils.h"
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
+#include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
 #include "physics-interaction/weapon/EquippedWeaponHandlingRuntime.h"
 #include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
@@ -42,9 +43,12 @@ namespace rock
         constexpr const char* GUNSTOCK_ALIGNMENT_TAG =
             "ROCK_GunstockAlignment";
         constexpr const char* RETURN_HAND_TAG = "ROCK_WeaponReturn";
+        constexpr const char* WEAPON_COLLISION_HAND_TAG =
+            "ROCK_WeaponCollisionHand";
         constexpr const char* WEAPON_NODE_OWNERSHIP_TAG = "ROCK_LeftFiringCarry";
         constexpr const char* WEAPON_RECOIL_CONTROLLER_TAG = "ROCK_LeftFiringRecoil";
         constexpr int GRIP_HAND_POSE_PRIORITY = 100;
+        constexpr int WEAPON_COLLISION_HAND_PRIORITY = 110;
         constexpr int RETURN_HAND_VISUAL_PRIORITY = 85;
         constexpr float SUPPORT_NORMAL_TWIST_FACTOR = 0.5f;
         constexpr float DYNAMIC_SUPPORT_MINIMUM_SMOOTHED_ROTATION_RADIANS =
@@ -2226,6 +2230,12 @@ namespace rock
 
     void TwoHandedGrip::reset()
     {
+        (void)frik_visual_authority::clearExternalHandWorldTransform(
+            WEAPON_COLLISION_HAND_TAG,
+            frik_visual_authority::Hand::Left);
+        (void)frik_visual_authority::clearExternalHandWorldTransform(
+            WEAPON_COLLISION_HAND_TAG,
+            frik_visual_authority::Hand::Right);
         resetGunstockAlignment("reset");
         _gunstockModeToggle = {};
         _gunstockWeaponEligibility = {};
@@ -8923,11 +8933,135 @@ namespace rock
         const RE::NiTransform& resolvedWeaponWorld,
         const std::uint64_t authorityGenerationKey)
     {
-        return applyWeaponVisualAuthority(
+        if (!weaponNode ||
+            !isFiniteTransform(weaponNode->world) ||
+            !isFiniteTransform(resolvedWeaponWorld)) {
+            return false;
+        }
+
+        const RE::NiTransform requestedWeaponWorld = weaponNode->world;
+        const auto attachedHands =
+            dynamic_weapon_collision_policy::selectAttachedHands(
+                _state == TwoHandedState::PartCarry,
+                _state == TwoHandedState::Gripping ||
+                    _state == TwoHandedState::PrimaryOnly,
+                _firingHandIsLeft,
+                partGrip(true).active,
+                partGrip(false).active);
+
+        struct CollisionHandPulse
+        {
+            RE::NiTransform targetWorld{};
+            bool isLeft{ false };
+            bool requested{ false };
+            bool targetValid{ false };
+            bool applied{ false };
+            bool cleared{ false };
+        };
+        std::array<CollisionHandPulse, 2> pulses{
+            CollisionHandPulse{
+                .isLeft = true,
+                .requested = attachedHands.left,
+            },
+            CollisionHandPulse{
+                .isLeft = false,
+                .requested = attachedHands.right,
+            },
+        };
+
+        const bool anyHandRequested = attachedHands.left || attachedHands.right;
+        bool handTargetsReady =
+            !anyHandRequested || frik_visual_authority::isAvailable();
+        for (auto& pulse : pulses) {
+            if (!pulse.requested) {
+                continue;
+            }
+            RE::NiTransform requestedHandWorld{};
+            const bool requestedHandValid =
+                tryGetRootFlattenedHandBoneTransform(
+                    pulse.isLeft,
+                    requestedHandWorld);
+            pulse.targetWorld =
+                dynamic_weapon_collision_policy::reframeAttachedHand(
+                    requestedWeaponWorld,
+                    resolvedWeaponWorld,
+                    requestedHandWorld);
+            pulse.targetValid =
+                requestedHandValid &&
+                isUsableHandAuthorityTransform(requestedHandWorld) &&
+                isUsableHandAuthorityTransform(pulse.targetWorld);
+            handTargetsReady = handTargetsReady && pulse.targetValid;
+        }
+
+        bool handPulsesSucceeded = handTargetsReady;
+        if (handTargetsReady) {
+            for (auto& pulse : pulses) {
+                if (!pulse.requested) {
+                    continue;
+                }
+                const auto hand = handFromBool(pulse.isLeft);
+                pulse.applied =
+                    frik_visual_authority::applyExternalHandWorldTransform(
+                        WEAPON_COLLISION_HAND_TAG,
+                        hand,
+                        pulse.targetWorld,
+                        WEAPON_COLLISION_HAND_PRIORITY);
+                /*
+                 * hFRIK applies the selected external transform synchronously.
+                 * Remove this high-priority request immediately after the
+                 * presentation write so next frame's controller/IK solve and
+                 * dynamic-weapon intent cannot read collision correction back
+                 * as player input. The visible node retains this frame's write;
+                 * the normal grip/native authority resumes on hFRIK's next pass.
+                 */
+                pulse.cleared =
+                    frik_visual_authority::clearExternalHandWorldTransform(
+                        WEAPON_COLLISION_HAND_TAG,
+                        hand);
+                handPulsesSucceeded =
+                    handPulsesSucceeded && pulse.applied && pulse.cleared;
+            }
+        } else {
+            for (const auto& pulse : pulses) {
+                if (pulse.requested) {
+                    (void)frik_visual_authority::
+                        clearExternalHandWorldTransform(
+                            WEAPON_COLLISION_HAND_TAG,
+                            handFromBool(pulse.isLeft));
+                }
+            }
+        }
+
+        /*
+         * A firing-hand pulse can propagate through the weapon's native parent
+         * chain. Publish the solver-authoritative weapon last so the final
+         * rendered weapon pose is exact while both hands keep the rigid
+         * pre-collision weapon-local relationship captured above.
+         */
+        const bool weaponPublished = applyWeaponVisualAuthority(
             weaponNode,
             resolvedWeaponWorld,
             authorityGenerationKey,
             false);
+        if (!weaponPublished || !handPulsesSucceeded) {
+            ROCK_LOG_SAMPLE_WARN(
+                Weapon,
+                1000,
+                "TwoHandedGrip: dynamic weapon collision group publication incomplete weapon={} hands={} left(req/target/apply/clear)={}/{}/{}/{} right(req/target/apply/clear)={}/{}/{}/{} state={} firingHand={}",
+                weaponPublished ? "ok" : "failed",
+                handPulsesSucceeded ? "ok" : "failed",
+                pulses[0].requested,
+                pulses[0].targetValid,
+                pulses[0].applied,
+                pulses[0].cleared,
+                pulses[1].requested,
+                pulses[1].targetValid,
+                pulses[1].applied,
+                pulses[1].cleared,
+                static_cast<int>(_state),
+                _firingHandIsLeft ? "left" : "right");
+        }
+        return weaponPublished && handPulsesSucceeded;
     }
 
     bool TwoHandedGrip::applyFiringHandLockedVisual(RE::NiNode* weaponNode, float dt, const RE::NiTransform* liveHandWorld)

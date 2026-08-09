@@ -20,6 +20,37 @@ namespace rock::dynamic_weapon_collision_policy
         bool valid{ false };
     };
 
+    struct AttachedHandSelection
+    {
+        bool left{ false };
+        bool right{ false };
+    };
+
+    inline AttachedHandSelection selectAttachedHands(
+        const bool partCarry,
+        const bool firingGripOccupied,
+        const bool firingHandIsLeft,
+        const bool leftPartGripActive,
+        const bool rightPartGripActive)
+    {
+        AttachedHandSelection result{
+            .left = leftPartGripActive,
+            .right = rightPartGripActive,
+        };
+        if (!partCarry) {
+            const bool firingHandIsActuallyLeft =
+                firingGripOccupied && firingHandIsLeft;
+            if (firingHandIsActuallyLeft) {
+                result.left = true;
+            } else {
+                // Passive/native equipped carry is always captured from the
+                // physical right firing hand in ROCK's current topology.
+                result.right = true;
+            }
+        }
+        return result;
+    }
+
     inline bool isFinitePoint(const RE::NiPoint3& point)
     {
         return std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z);
@@ -143,6 +174,19 @@ namespace rock::dynamic_weapon_collision_policy
             transform_math::invertTransform(sampledRequestedWeaponWorld),
             currentRequestedWeaponWorld);
         return transform_math::composeTransforms(sampledLiveWeaponWorld, currentRelativeToSample);
+    }
+
+    inline RE::NiTransform reframeAttachedHand(
+        const RE::NiTransform& requestedWeaponWorld,
+        const RE::NiTransform& resolvedWeaponWorld,
+        const RE::NiTransform& requestedHandWorld)
+    {
+        const RE::NiTransform handWeaponLocal = transform_math::composeTransforms(
+            transform_math::invertTransform(requestedWeaponWorld),
+            requestedHandWorld);
+        return transform_math::composeTransforms(
+            resolvedWeaponWorld,
+            handWeaponLocal);
     }
 
     inline float translationDeltaGameUnits(const RE::NiTransform& lhs, const RE::NiTransform& rhs)

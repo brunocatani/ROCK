@@ -49,6 +49,8 @@ function Require-Order {
 
 $runtimeHeader = 'src/physics-interaction/weapon/DynamicWeaponCollision.h'
 $runtimeSource = 'src/physics-interaction/weapon/DynamicWeaponCollision.cpp'
+$runtimePolicy = 'src/physics-interaction/weapon/DynamicWeaponCollisionPolicy.h'
+$weaponAuthority = 'src/physics-interaction/weapon/TwoHandedGrip.cpp'
 $interaction = 'src/physics-interaction/core/PhysicsInteraction.cpp'
 $contacts = 'src/physics-interaction/core/PhysicsInteractionContacts.inl'
 $layers = 'src/physics-interaction/collision/CollisionLayerPolicy.h'
@@ -102,6 +104,27 @@ Require-Order $interaction @(
     'applyWeaponCollisionResolvedAuthority\(',
     '_weaponCollision\.updateBodiesFromCurrentSourceTransforms\('
 ) 'Dynamic weapon intent must start before visual writers and resolve once before layer-44 hull transforms.'
+Require-Pattern $runtimePolicy `
+    'selectAttachedHands\([\s\S]*partCarry[\s\S]*firingGripOccupied[\s\S]*leftPartGripActive[\s\S]*rightPartGripActive[\s\S]*firingHandIsActuallyLeft' `
+    'Collision hand coupling must select the native/manual firing hand and active part-grip hands without moving a free hand.'
+Require-Pattern $runtimePolicy `
+    'reframeAttachedHand\([\s\S]*invertTransform\(requestedWeaponWorld\)[\s\S]*requestedHandWorld[\s\S]*resolvedWeaponWorld[\s\S]*handWeaponLocal' `
+    'Attached IK hands must preserve their exact pre-collision weapon-local relation under the resolved weapon pose.'
+Require-Order $weaponAuthority @(
+    'applyWeaponCollisionResolvedAuthority\(',
+    'selectAttachedHands\(',
+    'tryGetRootFlattenedHandBoneTransform\(',
+    'reframeAttachedHand\(',
+    'applyExternalHandWorldTransform\(',
+    'clearExternalHandWorldTransform\(',
+    'applyWeaponVisualAuthority\('
+) 'Collision correction must pulse attached IK hands, clear next-frame ownership, and publish the exact weapon pose last.'
+Require-Pattern $weaponAuthority `
+    'WEAPON_COLLISION_HAND_PRIORITY\s*=\s*110[\s\S]*GRIP_HAND_POSE_PRIORITY\s*=\s*100|GRIP_HAND_POSE_PRIORITY\s*=\s*100[\s\S]*WEAPON_COLLISION_HAND_PRIORITY\s*=\s*110' `
+    'The collision hand pulse must outrank normal grip targets for only the final presentation write.'
+Require-Pattern $weaponAuthority `
+    'void TwoHandedGrip::reset\(\)[\s\S]{0,600}WEAPON_COLLISION_HAND_TAG[\s\S]{0,500}Hand::Left[\s\S]{0,500}WEAPON_COLLISION_HAND_TAG[\s\S]{0,500}Hand::Right' `
+    'Lifecycle reset must defensively clear collision hand authority for both physical hands.'
 
 # Visual correction is admitted only by a genuine proxy/world callback. The
 # legacy key-3 point path remains intact while the proxy-specific key-2 path

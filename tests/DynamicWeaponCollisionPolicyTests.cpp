@@ -111,5 +111,43 @@ int main()
         currentRequested);
     ok &= expectNear("one-way rotation correction", rotationDeltaDegrees(resolvedRotation, sampledLive), 0.0f, 0.05f);
 
+    const auto nativeOneHand = selectAttachedHands(false, false, true, false, false);
+    ok &= !nativeOneHand.left && nativeOneHand.right;
+    const auto leftPrimaryOnly = selectAttachedHands(false, true, true, false, false);
+    ok &= leftPrimaryOnly.left && !leftPrimaryOnly.right;
+    const auto rightTwoHand = selectAttachedHands(false, true, false, true, false);
+    ok &= rightTwoHand.left && rightTwoHand.right;
+    const auto partCarryBoth = selectAttachedHands(true, false, false, true, true);
+    ok &= partCarryBoth.left && partCarryBoth.right;
+    const auto partCarryLeftOnly = selectAttachedHands(true, false, true, true, false);
+    ok &= partCarryLeftOnly.left && !partCarryLeftOnly.right;
+
+    RE::NiTransform requestedWeapon = rock::transform_math::makeIdentityTransform<RE::NiTransform>();
+    requestedWeapon.translate = RE::NiPoint3{ 10.0f, 20.0f, 30.0f };
+    RE::NiTransform requestedHand = requestedWeapon;
+    requestedHand.translate = RE::NiPoint3{ 12.0f, 23.0f, 34.0f };
+    RE::NiTransform resolvedWeapon = requestedWeapon;
+    resolvedWeapon.rotate = rotationZ90();
+    resolvedWeapon.translate = RE::NiPoint3{ 5.0f, 7.0f, 11.0f };
+    const RE::NiTransform reframedHand = reframeAttachedHand(
+        requestedWeapon,
+        resolvedWeapon,
+        requestedHand);
+    const RE::NiTransform requestedHandWeaponLocal = rock::transform_math::composeTransforms(
+        rock::transform_math::invertTransform(requestedWeapon),
+        requestedHand);
+    const RE::NiTransform reframedHandWeaponLocal = rock::transform_math::composeTransforms(
+        rock::transform_math::invertTransform(resolvedWeapon),
+        reframedHand);
+    ok &= expectPoint(
+        "collision-reframed hand keeps weapon-local offset",
+        reframedHandWeaponLocal.translate,
+        requestedHandWeaponLocal.translate);
+    ok &= expectNear(
+        "collision-reframed hand keeps weapon-local rotation",
+        rotationDeltaDegrees(reframedHandWeaponLocal, requestedHandWeaponLocal),
+        0.0f,
+        0.05f);
+
     return ok ? 0 : 1;
 }
