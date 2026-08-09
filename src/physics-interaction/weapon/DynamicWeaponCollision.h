@@ -153,6 +153,12 @@ namespace rock
         void clearPublishedPhysicsSnapshot();
         void publishPhysicsSnapshot(const PhysicsSnapshot& snapshot);
         bool readPhysicsSnapshot(PhysicsSnapshot& outSnapshot) const;
+        void traceSurfaceAdhesion(
+            const PhysicsSnapshot& snapshot,
+            bool snapshotIdentityCurrent,
+            const RE::NiTransform& requestedBodyTarget,
+            const GeneratedKeyframedBodyDriveQueueResult& queueResult);
+        void resetSurfaceAdhesionTrace();
         static void storeAtomicTransform(AtomicTransform& target, const RE::NiTransform& value);
         static RE::NiTransform loadAtomicTransform(const AtomicTransform& source);
 
@@ -187,6 +193,13 @@ namespace rock
         RE::NiNode* _frameWeaponNode{ nullptr };
         RE::NiTransform _frameRequestedWeaponWorld{};
         DebugSnapshot _debugSnapshot{};
+        bool _adhesionTracePreviousTargetValid{ false };
+        bool _adhesionTracePreviousLiveValid{ false };
+        bool _adhesionTraceContactWasActive{ false };
+        bool _adhesionTraceDirectionValid{ false };
+        RE::NiTransform _adhesionTracePreviousTarget{};
+        RE::NiTransform _adhesionTracePreviousLive{};
+        RE::NiPoint3 _adhesionTraceBlockDirection{};
 
         std::atomic<bool> _enabledAtomic{ false };
         std::atomic<std::uint32_t> _bodyIdAtomic{ 0x7FFF'FFFFu };

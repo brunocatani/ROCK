@@ -225,6 +225,12 @@ Require-Pattern $runtimeHeader `
 Require-Pattern $runtimeSource `
     'rockDebugDrawDynamicWeaponColliders[\s\S]*ROCK_LOG_SAMPLE_INFO\([\s\S]*DWC pipeline:[\s\S]*snapshot\(read/valid/identity/contact/teleport\)' `
     'Dynamic weapon pipeline diagnostics must be debug-gated and rate-limited.'
+Require-Pattern $runtimeSource `
+    'traceSurfaceAdhesion\(snapshot, snapshotIdentityCurrent, requestedBodyTarget, queueResult\)[\s\S]*rockDebugDrawDynamicWeaponColliders[\s\S]*ROCK_LOG_SAMPLE_INFO\([\s\S]*DWC adhesion trace:[\s\S]*rawStepAlong[\s\S]*targetVelocityAlong[\s\S]*liveStepAlong[\s\S]*debt\(current/sample\)[\s\S]*queueLagAlong[\s\S]*rotation\(rawStep/currentLive/sampleLive\)' `
+    'Surface-adhesion diagnosis must rate-limit one trace that distinguishes penetration debt, retreat, drive lag, and rotation mismatch without changing the target.'
+Require-Pattern $runtimeSource `
+    'contactBegan[\s\S]*_adhesionTraceBlockDirection[\s\S]*rawStepAlong\s*<\s*-0\.01f[\s\S]*pressCapEligible' `
+    'Surface-adhesion diagnosis must retain the established block direction so withdrawal is distinguishable from press-cap eligibility.'
 Require-Pattern $interaction `
     'applyWeaponCollisionResolvedAuthority[\s\S]*immediateTranslationError[\s\S]*immediateRotationError[\s\S]*DWC visual publication' `
     'Dynamic weapon visual publication must expose immediate node readback evidence.'

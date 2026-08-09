@@ -41,6 +41,20 @@ namespace rock
             const float z = lhs.z - rhs.z;
             return std::sqrt(x * x + y * y + z * z);
         }
+
+        RE::NiPoint3 pointDelta(const RE::NiPoint3& from, const RE::NiPoint3& to)
+        {
+            return RE::NiPoint3{
+                to.x - from.x,
+                to.y - from.y,
+                to.z - from.z,
+            };
+        }
+
+        float pointDot(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs)
+        {
+            return lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z;
+        }
     }
 
     void DynamicWeaponCollisionRuntime::beginFrame(
@@ -165,6 +179,7 @@ namespace rock
         _debugSnapshot.centerWeaponLocal = _createdCenterWeaponLocal;
         _debugSnapshot.halfExtentsWeaponLocal = _createdHalfExtentsWeaponLocal;
         _debugSnapshot.requestedWeaponWorld = _frameRequestedWeaponWorld;
+        traceSurfaceAdhesion(snapshot, snapshotIdentityCurrent, requestedBodyTarget, queueResult);
 
         const auto logPipelineStage = [&](const char* stage) {
             if (!g_rockConfig.rockDebugDrawDynamicWeaponColliders) {
@@ -260,6 +275,142 @@ namespace rock
         }
         logPipelineStage(correctionVisible ? "publish-requested" : "visibility-gate");
         return result;
+    }
+
+    void DynamicWeaponCollisionRuntime::traceSurfaceAdhesion(
+        const PhysicsSnapshot& snapshot,
+        const bool snapshotIdentityCurrent,
+        const RE::NiTransform& requestedBodyTarget,
+        const GeneratedKeyframedBodyDriveQueueResult& queueResult)
+    {
+        if (!g_rockConfig.rockDebugDrawDynamicWeaponColliders) {
+            resetSurfaceAdhesionTrace();
+            return;
+        }
+
+        const bool snapshotUsable =
+            snapshotIdentityCurrent &&
+            !snapshot.teleported &&
+            dynamic_weapon_collision_policy::isFiniteTransform(requestedBodyTarget) &&
+            dynamic_weapon_collision_policy::isFiniteTransform(snapshot.requestedProxyBodyWorld) &&
+            dynamic_weapon_collision_policy::isFiniteTransform(snapshot.liveProxyBodyWorld);
+        if (!snapshotUsable) {
+            _adhesionTracePreviousTarget = requestedBodyTarget;
+            _adhesionTracePreviousTargetValid = dynamic_weapon_collision_policy::isFiniteTransform(requestedBodyTarget);
+            _adhesionTracePreviousLiveValid = false;
+            _adhesionTraceContactWasActive = false;
+            _adhesionTraceDirectionValid = false;
+            return;
+        }
+
+        const bool contactBegan = snapshot.contactActive && !_adhesionTraceContactWasActive;
+        if (contactBegan) {
+            _adhesionTraceDirectionValid = false;
+        }
+
+        const RE::NiPoint3 sampledDeficit = pointDelta(
+            snapshot.liveProxyBodyWorld.translate,
+            snapshot.requestedProxyBodyWorld.translate);
+        const float sampledDeficitLength = pointDistance(
+            snapshot.liveProxyBodyWorld.translate,
+            snapshot.requestedProxyBodyWorld.translate);
+        if (snapshot.contactActive && !_adhesionTraceDirectionValid &&
+            std::isfinite(sampledDeficitLength) && sampledDeficitLength > 0.25f) {
+            const float inverseLength = 1.0f / sampledDeficitLength;
+            _adhesionTraceBlockDirection = RE::NiPoint3{
+                sampledDeficit.x * inverseLength,
+                sampledDeficit.y * inverseLength,
+                sampledDeficit.z * inverseLength,
+            };
+            _adhesionTraceDirectionValid = true;
+        }
+
+        const bool targetStepValid = _adhesionTracePreviousTargetValid && _adhesionTraceDirectionValid;
+        const bool liveStepValid = _adhesionTracePreviousLiveValid && _adhesionTraceDirectionValid;
+        const RE::NiPoint3 rawTargetStep = targetStepValid ?
+            pointDelta(_adhesionTracePreviousTarget.translate, requestedBodyTarget.translate) :
+            RE::NiPoint3{};
+        const RE::NiPoint3 liveStep = liveStepValid ?
+            pointDelta(_adhesionTracePreviousLive.translate, snapshot.liveProxyBodyWorld.translate) :
+            RE::NiPoint3{};
+        const RE::NiPoint3 currentDeficit = pointDelta(
+            snapshot.liveProxyBodyWorld.translate,
+            requestedBodyTarget.translate);
+        const RE::NiPoint3 queueLag = pointDelta(
+            snapshot.requestedProxyBodyWorld.translate,
+            requestedBodyTarget.translate);
+
+        const float rawStepAlong = targetStepValid ? pointDot(rawTargetStep, _adhesionTraceBlockDirection) : 0.0f;
+        const float liveStepAlong = liveStepValid ? pointDot(liveStep, _adhesionTraceBlockDirection) : 0.0f;
+        const float currentDebtAlong = _adhesionTraceDirectionValid ? pointDot(currentDeficit, _adhesionTraceBlockDirection) : 0.0f;
+        const float sampledDebtAlong = _adhesionTraceDirectionValid ? pointDot(sampledDeficit, _adhesionTraceBlockDirection) : 0.0f;
+        const float queueLagAlong = _adhesionTraceDirectionValid ? pointDot(queueLag, _adhesionTraceBlockDirection) : 0.0f;
+        const float targetVelocityAlong =
+            _adhesionTraceDirectionValid && queueResult.sampledVelocityValid ?
+                pointDot(queueResult.sampledLinearVelocityHavok, _adhesionTraceBlockDirection) :
+                0.0f;
+        const float rawRotationStepDegrees = _adhesionTracePreviousTargetValid ?
+            dynamic_weapon_collision_policy::rotationDeltaDegrees(requestedBodyTarget, _adhesionTracePreviousTarget) :
+            0.0f;
+        const float currentLiveRotationGapDegrees = dynamic_weapon_collision_policy::rotationDeltaDegrees(
+            requestedBodyTarget,
+            snapshot.liveProxyBodyWorld);
+        const float sampledLiveRotationGapDegrees = dynamic_weapon_collision_policy::rotationDeltaDegrees(
+            snapshot.requestedProxyBodyWorld,
+            snapshot.liveProxyBodyWorld);
+        const bool retreating = targetStepValid && rawStepAlong < -0.01f;
+        const bool pressCapEligible =
+            snapshot.contactActive &&
+            g_rockConfig.rockWeaponCollisionDynamicContactPressMaxVelocityHavok > 0.0f;
+
+        ROCK_LOG_SAMPLE_INFO(
+            Weapon,
+            250,
+            "DWC adhesion trace: body={} contact={} grace={} dirValid={} retreat={} pressCapEligible={} rawStepAlong={:.3f}gu targetVelocityAlong={:.3f}hkv liveStepAlong={:.3f}gu debt(current/sample)=({:.2f}/{:.2f})gu queueLagAlong={:.2f}gu rotation(rawStep/currentLive/sampleLive)=({:.2f}/{:.2f}/{:.2f})deg rawTarget=({:.2f},{:.2f},{:.2f}) sampledTarget=({:.2f},{:.2f},{:.2f}) live=({:.2f},{:.2f},{:.2f}) dir=({:.3f},{:.3f},{:.3f})",
+            snapshot.bodyId,
+            snapshot.contactActive,
+            snapshot.contactGraceSolves,
+            _adhesionTraceDirectionValid,
+            retreating,
+            pressCapEligible,
+            rawStepAlong,
+            targetVelocityAlong,
+            liveStepAlong,
+            currentDebtAlong,
+            sampledDebtAlong,
+            queueLagAlong,
+            rawRotationStepDegrees,
+            currentLiveRotationGapDegrees,
+            sampledLiveRotationGapDegrees,
+            requestedBodyTarget.translate.x,
+            requestedBodyTarget.translate.y,
+            requestedBodyTarget.translate.z,
+            snapshot.requestedProxyBodyWorld.translate.x,
+            snapshot.requestedProxyBodyWorld.translate.y,
+            snapshot.requestedProxyBodyWorld.translate.z,
+            snapshot.liveProxyBodyWorld.translate.x,
+            snapshot.liveProxyBodyWorld.translate.y,
+            snapshot.liveProxyBodyWorld.translate.z,
+            _adhesionTraceBlockDirection.x,
+            _adhesionTraceBlockDirection.y,
+            _adhesionTraceBlockDirection.z);
+
+        _adhesionTracePreviousTarget = requestedBodyTarget;
+        _adhesionTracePreviousTargetValid = true;
+        _adhesionTracePreviousLive = snapshot.liveProxyBodyWorld;
+        _adhesionTracePreviousLiveValid = true;
+        _adhesionTraceContactWasActive = snapshot.contactActive;
+    }
+
+    void DynamicWeaponCollisionRuntime::resetSurfaceAdhesionTrace()
+    {
+        _adhesionTracePreviousTargetValid = false;
+        _adhesionTracePreviousLiveValid = false;
+        _adhesionTraceContactWasActive = false;
+        _adhesionTraceDirectionValid = false;
+        _adhesionTracePreviousTarget = {};
+        _adhesionTracePreviousLive = {};
+        _adhesionTraceBlockDirection = {};
     }
 
     bool DynamicWeaponCollisionRuntime::ensureProxyBody(
@@ -635,6 +786,7 @@ namespace rock
         _contactOtherLayerAtomic.store(0, std::memory_order_release);
         _rebuildRequestedAtomic.store(false, std::memory_order_release);
         clearGeneratedKeyframedBodyDriveState(_driveState);
+        resetSurfaceAdhesionTrace();
         clearPublishedPhysicsSnapshot();
     }
 
