@@ -3653,6 +3653,18 @@
                 DynamicWeaponCollisionRuntime::DebugSnapshot snapshot{};
                 constexpr float proxyColor[4]{ 1.0f, 0.24f, 0.08f, 0.96f };
                 if (_dynamicWeaponCollision.getDebugSnapshot(snapshot)) {
+                    char panelLine[256]{};
+                    std::snprintf(
+                        panelLine,
+                        sizeof(panelLine),
+                        "DWC ACTIVE body=%u authority=%u constraint=%u contact=%s pivot=%.1fgu yield=%.1fdeg",
+                        snapshot.bodyId,
+                        snapshot.authorityBodyId,
+                        snapshot.constraintId,
+                        snapshot.contactActive ? "YES" : "NO",
+                        snapshot.translationCorrectionGameUnits,
+                        snapshot.rotationCorrectionDegrees);
+                    addScreenTextLine(20.0f, 90.0f, proxyColor, panelLine);
                     RE::NiPoint3 labelAnchor =
                         snapshot.requestedWeaponWorld.translate;
                     labelAnchor.z += 8.0f;

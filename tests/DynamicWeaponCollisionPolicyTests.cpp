@@ -86,8 +86,16 @@ int main()
     weaponRoot.translate = RE::NiPoint3{ 100.0f, 50.0f, -25.0f };
     weaponRoot.scale = 2.0f;
     const RE::NiTransform bodyTarget = makeProxyBodyTarget(weaponRoot, geometry.centerWeaponLocal);
+    const RE::NiTransform gripAuthorityTarget = makeGripAuthorityTarget(weaponRoot);
+    const RE::NiTransform bodyTargetFromGrip = makeContactBodyTargetFromGripAuthority(
+        gripAuthorityTarget,
+        geometry.centerWeaponLocal,
+        weaponRoot.scale);
     const RE::NiTransform reconstructed = reconstructWeaponRoot(bodyTarget, geometry.centerWeaponLocal, weaponRoot.scale);
     ok &= expectPoint("body center target", bodyTarget.translate, RE::NiPoint3{ 98.0f, 70.0f, -23.0f });
+    ok &= expectPoint("grip authority stays at weapon root", gripAuthorityTarget.translate, weaponRoot.translate);
+    ok &= expectPoint("grip authority reconstructs contact center", bodyTargetFromGrip.translate, bodyTarget.translate);
+    ok &= expectNear("grip authority reconstructs contact rotation", rotationDeltaDegrees(bodyTargetFromGrip, bodyTarget), 0.0f, 0.05f);
     ok &= expectPoint("reconstructed root", reconstructed.translate, weaponRoot.translate);
     ok &= expectNear("reconstructed rotation", rotationDeltaDegrees(reconstructed, weaponRoot), 0.0f, 0.05f);
 

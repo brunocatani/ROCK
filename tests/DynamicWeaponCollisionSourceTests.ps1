@@ -97,8 +97,11 @@ Require-Pattern $runtimeSource `
     'buildProxyShape\(\)[\s\S]*noContactFilterInfo\(\)[\s\S]*BethesdaMotionType::Keyframed[\s\S]*ROCK_WeaponGripAuthorityProxy[\s\S]*hasNoContactFilterInfo' `
     'The grip authority must be a verified noncolliding keyframed proxy.'
 Require-Pattern $runtimeSource `
-    'createGrabConstraint\([\s\S]*_authorityProxy\.getBodyId\(\)[\s\S]*_body\.getBodyId\(\)[\s\S]*requestedWeaponWorld\.translate[\s\S]*identityRelation' `
-    'The finite constraint must act between the hidden authority and contact box at the firing-grip/root pivot.'
+    'makeGripAuthorityTarget\(requestedWeaponWorld\)[\s\S]*objectInGeneratedProxyLocalSpace\(initialAuthorityTarget,\s*initialContactTarget\)[\s\S]*createGrabConstraint\([\s\S]*_authorityProxy\.getBodyId\(\)[\s\S]*_body\.getBodyId\(\)[\s\S]*initialAuthorityTarget[\s\S]*requestedWeaponWorld\.translate[\s\S]*desiredBodyTransformAuthoritySpace' `
+    'The finite constraint must place its hidden authority origin at the firing grip while preserving the offset contact-box frame.'
+Reject-Pattern $runtimeSource `
+    'identityRelation' `
+    'The grip authority must not collapse back to the old collider-center identity relation.'
 Require-Pattern $runtimeSource `
     'getEquippedWeaponClassification\(\)[\s\S]*sanitizeWeaponMass\(weaponIdentity\.weightGame\)[\s\S]*_body\.setMass\(bodyMass\)' `
     'The generated contact box must use sanitized equipped-weapon mass rather than the wrapper default.'
@@ -207,7 +210,7 @@ Require-Order $interaction @(
     '_dynamicHandCollision\.flushPendingPhysicsDrive\(world, timing\);'
 ) 'The dynamic weapon body must drive inside the generated pre-solve callback.'
 Require-Pattern $runtimeSource `
-    'queueGeneratedKeyframedBodyTarget\([\s\S]*_authorityDriveState[\s\S]*driveGeneratedKeyframedBody\([\s\S]*_authorityProxy[\s\S]*_authorityDriveState' `
+    'makeGripAuthorityTarget\(_frameRequestedWeaponWorld\)[\s\S]*queueGeneratedKeyframedBodyTarget\([\s\S]*_authorityDriveState[\s\S]*driveGeneratedKeyframedBody\([\s\S]*_authorityProxy[\s\S]*_authorityDriveState[\s\S]*makeContactBodyTargetFromGripAuthority' `
     'Pre-solve authority must drive the hidden keyframed grip proxy, not the colliding dynamic box.'
 Reject-Pattern $runtimeSource `
     '\.dynamicVelocity\s*=\s*true' `
@@ -273,7 +276,7 @@ Require-Pattern $interaction `
     'applyWeaponCollisionResolvedAuthority[\s\S]*immediateTranslationError[\s\S]*immediateRotationError[\s\S]*DWC visual publication' `
     'Dynamic weapon visual publication must expose immediate node readback evidence.'
 Require-Pattern 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
-    'rockDebugDrawDynamicWeaponColliders[\s\S]*proxyBodyIdForDebug\(\)[\s\S]*DWC BOX[\s\S]*authorityBody[\s\S]*gripPivot[\s\S]*callbacks pair/world/raw/manifold/admit[\s\S]*snapshot read/valid/id/contact/tele' `
+    'rockDebugDrawDynamicWeaponColliders[\s\S]*proxyBodyIdForDebug\(\)[\s\S]*DWC ACTIVE[\s\S]*addScreenTextLine\(20\.0f,\s*90\.0f[\s\S]*DWC BOX[\s\S]*authorityBody[\s\S]*gripPivot[\s\S]*callbacks pair/world/raw/manifold/admit[\s\S]*snapshot read/valid/id/contact/tele' `
     'The dedicated debug flag must draw the contact box and expose authority, pivot, callback, and snapshot telemetry.'
 
 if ($failures.Count -gt 0) {

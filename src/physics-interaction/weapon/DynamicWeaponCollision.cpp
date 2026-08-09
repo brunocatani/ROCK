@@ -4,6 +4,7 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/core/PhysicsFrameContext.h"
+#include "physics-interaction/grab/GrabCore.h"
 #include "physics-interaction/grab/GrabAuthorityProxy.h"
 #include "physics-interaction/grab/GrabMotionController.h"
 #include "physics-interaction/native/HavokConvexShapeBuilder.h"
@@ -171,13 +172,11 @@ namespace rock
         }
 
         result.proxyActive = true;
-        RE::NiTransform requestedBodyTarget = dynamic_weapon_collision_policy::makeProxyBodyTarget(
-            _frameRequestedWeaponWorld,
-            _createdCenterWeaponLocal);
-        requestedBodyTarget.scale = 1.0f;
+        const RE::NiTransform requestedAuthorityTarget =
+            dynamic_weapon_collision_policy::makeGripAuthorityTarget(_frameRequestedWeaponWorld);
         const auto queueResult = queueGeneratedKeyframedBodyTarget(
             _authorityDriveState,
-            requestedBodyTarget,
+            requestedAuthorityTarget,
             frame.deltaSeconds,
             g_rockConfig.rockWeaponCollisionDynamicDivergenceTeleportGameUnits);
         if (!queueResult.queued) {
@@ -373,10 +372,12 @@ namespace rock
             return false;
         }
 
-        RE::NiTransform initialTarget = dynamic_weapon_collision_policy::makeProxyBodyTarget(
+        RE::NiTransform initialContactTarget = dynamic_weapon_collision_policy::makeProxyBodyTarget(
             requestedWeaponWorld,
             geometry.centerWeaponLocal);
-        initialTarget.scale = 1.0f;
+        initialContactTarget.scale = 1.0f;
+        const RE::NiTransform initialAuthorityTarget =
+            dynamic_weapon_collision_policy::makeGripAuthorityTarget(requestedWeaponWorld);
         const auto generatedMaterial = havok_material_registry::registerGeneratedBodyMaterial(frame.hknpWorld);
         if (!_body.create(
                 frame.hknpWorld,
@@ -429,7 +430,7 @@ namespace rock
         _rebuildRequestedAtomic.store(false, std::memory_order_release);
         const float bodyMass = dynamic_weapon_collision_policy::sanitizeWeaponMass(weaponIdentity.weightGame);
         _body.setMass(bodyMass);
-        if (!placeGeneratedKeyframedBodyImmediately(_body, initialTarget)) {
+        if (!placeGeneratedKeyframedBodyImmediately(_body, initialContactTarget)) {
             retireProxyLocked(frame.bhkWorld);
             return false;
         }
@@ -454,7 +455,7 @@ namespace rock
             retireProxyLocked(frame.bhkWorld);
             return false;
         }
-        if (!placeGeneratedKeyframedBodyImmediately(_authorityProxy, initialTarget)) {
+        if (!placeGeneratedKeyframedBodyImmediately(_authorityProxy, initialAuthorityTarget)) {
             ROCK_LOG_ERROR(
                 Weapon,
                 "Dynamic weapon grip authority creation failed: initial anchor placement failed contactBody={} authorityBody={}",
@@ -463,7 +464,7 @@ namespace rock
             retireProxyLocked(frame.bhkWorld);
             return false;
         }
-        initializeGeneratedKeyframedBodyDriveState(_authorityDriveState, initialTarget);
+        initializeGeneratedKeyframedBodyDriveState(_authorityDriveState, initialAuthorityTarget);
 
         std::uint32_t authorityFilterInfo = 0;
         const bool authorityFilterReadable = havok_runtime::tryReadFilterInfo(
@@ -481,15 +482,16 @@ namespace rock
             return false;
         }
 
-        const RE::NiTransform identityRelation = transform_math::makeIdentityTransform<RE::NiTransform>();
+        const RE::NiTransform desiredBodyTransformAuthoritySpace =
+            grab_frame_math::objectInGeneratedProxyLocalSpace(initialAuthorityTarget, initialContactTarget);
         const auto motorTuning = buildWeaponGripConstraintTuning(bodyMass);
         _authorityConstraint = createGrabConstraint(
             frame.hknpWorld,
             _authorityProxy.getBodyId(),
             _body.getBodyId(),
-            initialTarget,
+            initialAuthorityTarget,
             requestedWeaponWorld.translate,
-            identityRelation,
+            desiredBodyTransformAuthoritySpace,
             motorTuning);
         if (!_authorityConstraint.isValid()) {
             ROCK_LOG_ERROR(
@@ -503,7 +505,7 @@ namespace rock
 
         ROCK_LOG_INFO(
             Weapon,
-            "Dynamic weapon grip-constrained box created: contactBody={} authorityBody={} constraint={} generation={:016X} center=({:.2f},{:.2f},{:.2f}) half=({:.2f},{:.2f},{:.2f}) scale={:.3f} mass={:.2f} forces=({:.1f},{:.1f}) padding={:.2f} layer={}",
+            "Dynamic weapon grip-constrained box created: contactBody={} authorityBody={} constraint={} generation={:016X} authority=grip center=({:.2f},{:.2f},{:.2f}) half=({:.2f},{:.2f},{:.2f}) scale={:.3f} mass={:.2f} forces=({:.1f},{:.1f}) padding={:.2f} layer={}",
             _body.getBodyId().value,
             _authorityProxy.getBodyId().value,
             _authorityConstraint.constraintId,
@@ -552,7 +554,12 @@ namespace rock
             driveResult.driven &&
             driveResult.hasRequestedTargetGameTransform;
         _physicsRequestedTargetValid = driveResult.hasRequestedTargetGameTransform;
-        _physicsRequestedTarget = driveResult.requestedTargetGameTransform;
+        if (_physicsRequestedTargetValid) {
+            _physicsRequestedTarget = dynamic_weapon_collision_policy::makeContactBodyTargetFromGripAuthority(
+                driveResult.requestedTargetGameTransform,
+                _createdCenterWeaponLocal,
+                _createdWeaponScale);
+        }
         _physicsDriveTeleported = driveResult.teleported;
         if (driveResult.teleported) {
             _contactGraceSolves = 0;

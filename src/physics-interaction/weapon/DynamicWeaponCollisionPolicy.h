@@ -143,6 +143,27 @@ namespace rock::dynamic_weapon_collision_policy
         return result;
     }
 
+    inline RE::NiTransform makeGripAuthorityTarget(const RE::NiTransform& weaponRootWorld)
+    {
+        RE::NiTransform result = weaponRootWorld;
+        result.rotate = transform_math::transposeRotation(weaponRootWorld.rotate);
+        result.scale = 1.0f;
+        return result;
+    }
+
+    inline RE::NiTransform makeContactBodyTargetFromGripAuthority(
+        const RE::NiTransform& gripAuthorityWorld,
+        const RE::NiPoint3& centerWeaponLocal,
+        float weaponScale)
+    {
+        RE::NiTransform weaponRootWorld = gripAuthorityWorld;
+        weaponRootWorld.rotate = transform_math::transposeRotation(gripAuthorityWorld.rotate);
+        weaponRootWorld.scale = weaponScale;
+        RE::NiTransform result = makeProxyBodyTarget(weaponRootWorld, centerWeaponLocal);
+        result.scale = 1.0f;
+        return result;
+    }
+
     inline RE::NiTransform reconstructWeaponRoot(
         const RE::NiTransform& proxyBodyWorld,
         const RE::NiPoint3& centerWeaponLocal,
