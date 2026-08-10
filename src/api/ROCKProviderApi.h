@@ -1611,9 +1611,7 @@ namespace rock::provider
      * start in handPartLocalSpace; composing it with the part's current world
      * transform yields the glued hand target, so a consumer driving the part
      * via setWeaponPartDriveTargetsV1 can also derive controller-to-part
-     * displacement from it. sourceRoot and handPartLocal describe visual hand
-     * provenance only; authoredSupportGrip can remain physically weapon-root
-     * authoritative while exposing an articulated PartSourceLocal hand frame.
+     * displacement from it.
      */
     struct RockProviderWeaponPartGripStateV1
     {

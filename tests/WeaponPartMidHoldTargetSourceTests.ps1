@@ -18,12 +18,10 @@ $gripRuntime = 'src/physics-interaction/weapon/TwoHandedGrip.cpp'
 
 Require-Text $gripRuntime 'capturePartGrip\([\s\S]*grip\.attachmentRoot\s*=\s*supportAttachmentRoot' `
     'Part-grip capture must retain the concrete scene source root for provider re-resolution.'
-Require-Text $gripRuntime 'providerPartTargetNewlyMatchesGrip\([\s\S]*currentHandVisualSourceRoot\s*=\s*resolveCurrentHandVisualSourceRoot[\s\S]*query\.sourceRoot\s*=\s*reinterpret_cast<std::uintptr_t>\([\s\S]*currentHandVisualSourceRoot\s*\?[\s\S]*currentHandVisualSourceRoot\s*:[\s\S]*grip\.attachmentRoot[\s\S]*resolveWeaponPartTargetV1\(query, resolution\)' `
-    'A mid-hold provider target query must use the same validated visual source identity published by the grip report.'
-Require-Text $gripRuntime 'getHandGripReport\([\s\S]*currentHandVisualSourceRoot\s*=\s*resolveCurrentHandVisualSourceRoot[\s\S]*outReport\.sourceRoot\s*=\s*reinterpret_cast<std::uintptr_t>\([\s\S]*useHandVisualSourceFrame\s*\?[\s\S]*currentHandVisualSourceRoot\s*:[\s\S]*grip\.attachmentRoot' `
-    'Provider grip reports must expose a validated pump visual source while preserving the captured physical source for ordinary grips.'
-Require-Text $gripRuntime 'getHandGripReport\([\s\S]*outReport\.authoredSupportGrip\s*=\s*grip\.authoredSupportGrip' `
-    'A pump visual source must not erase authored physical-grip provenance.'
+Require-Text $gripRuntime 'providerPartTargetNewlyMatchesGrip\([\s\S]*query\.sourceRoot\s*=\s*reinterpret_cast<std::uintptr_t>\(grip\.attachmentRoot\)[\s\S]*resolveWeaponPartTargetV1\(query, resolution\)' `
+    'A mid-hold provider target query must include the captured source root before resolving source-root targets.'
+Require-Text $gripRuntime 'getHandGripReport\([\s\S]*outReport\.sourceRoot\s*=\s*reinterpret_cast<std::uintptr_t>\(grip\.attachmentRoot\)' `
+    'Provider grip reports and mid-hold target re-resolution must publish the same captured source-root identity.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'WeaponPartMidHoldTargetSourceTests failed:' -ForegroundColor Red
