@@ -80,8 +80,9 @@ Reject-Text 'src/physics-interaction/weapon/WeaponCollision.h' `
     'The retired world-triangle copy API must not return.'
 
 # Grip-point selection inspects the contacted part exactly. All five fingers
-# share one weapon-local candidate pool ranked against the seated finger
-# envelope and capped at 2,048 before one shared BVH solve.
+# share one weapon-local candidate pool. Per-finger baked sweep lanes reserve
+# bounded coverage before deterministic global fill, then one shared BVH solve
+# remains capped at 2,048 triangles.
 Require-OrderedText 'src/physics-interaction/weapon/TwoHandedGrip.cpp' @(
     'tryGetSupportGripEvidenceView\(decision\.bodyId, weaponNode, evidenceView\)',
     'TransformedSupportGripTriangleView worldEvidence',
@@ -92,7 +93,7 @@ Require-OrderedText 'src/physics-interaction/weapon/TwoHandedGrip.cpp' @(
     'findSupportGripEvidenceViews\(',
     'selectNearestSupportGripFingerTriangles\(',
     'compositeEvidenceViews',
-    'seatedReferencePointsWorld',
+    'fingerReferenceSet',
     'grab_finger_pose_runtime::\s*kMaxFingerPoseCandidateTriangles',
     'solveFrozenMeshFingerPose\(',
     'fingerScratch\.localTriangles',
@@ -103,12 +104,20 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'Disabling mesh finger posing must skip composite candidate ranking while preserving contacted-part grip selection.'
 Require-OrderedText 'src/physics-interaction/weapon/TwoHandedGrip.cpp' @(
     'deterministicOrdinal',
-    'referencePointsWeaponLocal',
+    'localReferences',
     'sourceToWeapon',
-    'minimumDistanceSquared',
-    'rankingScratch\.size\(\) < boundedLimit',
-    'std::sort\(rankingScratch\.begin\(\), rankingScratch\.end\(\), rankedSupportGripTriangleLess\)'
-) 'Composite evidence must use deterministic globally bounded ranking in one weapon-local frame.'
+    'laneMinimumDistanceSquared',
+    'retainNearest\(',
+    'laneCursors',
+    'kSupportGripGlobalRankingIndex'
+) 'Composite evidence must use deterministic per-lane bounded ranking and global fill in one weapon-local frame.'
+Require-OrderedText 'src/physics-interaction/weapon/TwoHandedGrip.cpp' @(
+    'makeBakedCalibratedFingerCurve<',
+    'kSweepSamples\s*=\s*7',
+    'rotateAroundUnitAxis\(',
+    'appendLanePoint\(',
+    'selectNearestSupportGripFingerTriangles\('
+) 'Each finger lane must rank geometry against sampled calibrated closing-arc coverage.'
 Require-Text 'src/physics-interaction/grab/GrabFinger.h' `
     'constexpr std::size_t kMaxFingerPoseCandidateTriangles\s*=\s*2048' `
     'The aggregate equipped-hand triangle ceiling must remain 2,048.'
@@ -144,14 +153,29 @@ Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
     'solveFrozenMeshFingerPose\(' `
     'Regular loose grabs must use the same shared frozen-mesh solver boundary.'
 
-# Physical equipped grips cache a complete one-shot result. Any missing lane
-# invalidates the whole mesh pose and publishes one fully closed hand.
+# Physical equipped grips accept either five direct lane contacts or one local
+# thumb-index/thumb-pinky containment witness with a stable opposition pose.
+# All other incomplete solves publish one fully closed hand.
 Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'BARREL_WRAP_POSE|HANDGUARD_CLAMP_POSE|FOREGRIP_POSE|PUMP_GRIP_POSE|MAGWELL_HOLD_POSE|RECEIVER_SUPPORT_POSE|poseValuesForGrip' `
     'Retired six-mode canned weapon poses must stay removed.'
 Require-Text 'src/physics-interaction/grab/GrabFinger.h' `
     'kCompleteFingerContactMask\s*=\s*0x1F[\s\S]*contactValidMask[\s\S]*hasCompleteFingerContactEvidence\(' `
     'The solver must expose an explicit five-lane completion witness.'
+Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
+    'findLocalOppositionPocketEvidence\(',
+    'directEndpointMask\s*==\s*0',
+    'rayTriangleIntersection\(',
+    'probeCapsuleTriangleIntersection\(',
+    'gripDistance\s*<=\s*maxGripDistance'
+) 'Weapon opposition recovery must require direct endpoint evidence and a local pad-to-pad mesh crossing.'
+Require-OrderedText 'src/physics-interaction/weapon/TwoHandedGrip.cpp' @(
+    'hasCompleteFingerContactEvidence\(',
+    'findLocalOppositionPocketEvidence\(',
+    'applyStableWeaponOppositionPose\(',
+    'completeDirectFingerEvidence\s*\|\|',
+    'SupportGripPoseFallback::FullyClosed'
+) 'Only complete direct evidence or a validated stable opposition pocket may avoid the fully closed fallback.'
 Require-OrderedText 'src/physics-interaction/weapon/TwoHandedGrip.cpp' @(
     'hasCompleteFingerContactEvidence\(',
     'SupportGripPoseFallback::FullyClosed',

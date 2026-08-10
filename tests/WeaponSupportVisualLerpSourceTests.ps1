@@ -52,10 +52,16 @@ Require-Text 'src/physics-interaction/weapon/WeaponSupport.h' 'shortestArcSlerpF
     'Dynamic acquisition math must shortest-arc slerp the composite correction and re-solve translation from the live primary pivot.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'shouldUseDynamicSupportAcquisition\([\s\S]{0,600}supportGrip\.authoredSupportGrip[\s\S]{0,300}supportGrip\.providerPartAuthority\.active[\s\S]{0,300}supportGrip\.attachOnly[\s\S]{0,6000}beginDynamicSupportAcquisition\([\s\S]{0,900}updateFullWeaponAuthorityGrip\(weaponNode,\s*0\.0f\)' `
     'A successful normal dynamic capture must start its witnessed transaction and publish exact alpha zero before transitionToGripping returns.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'useDynamicSupportAcquisition[\s\S]*initializeDynamicSupportBaseline\([\s\S]*supportCaptureHandWorld[\s\S]*supportBaselineAttachPublication[\s\S]*weaponWorldAtCapture' `
-    'Normal dynamic support must capture a persistent input-to-seat baseline and force an exact zero-delta first weapon publication.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'useDynamicSupportAcquisition[\s\S]*initializeDynamicSupportBaseline\([\s\S]*supportBaselineAttachPublication[\s\S]*weaponWorldAtCapture' `
+    'Normal dynamic support must capture paired driver-to-seat baselines and force an exact zero-delta first weapon publication.'
 Require-Text 'src/physics-interaction/weapon/WeaponSupport.h' 'tryCaptureSupportInputBaseline\([\s\S]*invertTransform\(supportInputWorld\)[\s\S]*supportGripTargetWorld[\s\S]*tryResolveSupportInputTarget\(' `
     'Dynamic and gunstock support must share one rigid post-capture input calibration primitive.'
+Require-Text 'src/physics-interaction/weapon/WeaponSupport.h' 'tryCaptureDynamicSupportDriverBaseline\([\s\S]*primaryDriverWorld[\s\S]*primaryGripTargetWorld[\s\S]*supportDriverWorld[\s\S]*supportGripTargetWorld[\s\S]*tryResolveDynamicSupportDriverTargets\(' `
+    'Normal dynamic support must capture both physical driver relations as one transaction.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' '_currentHandDriverFrames\[0\]\s*=\s*frameInput\.leftHandDriverFrame[\s\S]*_currentHandDriverFrames\[1\]\s*=\s*frameInput\.rightHandDriverFrame[\s\S]*tryResolveDynamicSupportDriverTargets\([\s\S]*calibratedPrimaryTransform[\s\S]*computeGrabLegacyPalmPivotAWorldFromHandBasis\([\s\S]*tryCaptureDynamicSupportDriverBaseline\([\s\S]*pairedDynamicDrivers\s*=\s*true' `
+    'Dynamic solver inputs must come from paired frame-scoped drivers, not ROCK-rendered hand roots.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'tryResolveDynamicSupportDriverTargets\([\s\S]*calibratedPrimaryTransform[\s\S]*applyLockedHandVisualAuthority\(weaponNode,\s*applyPrimaryHandAuthority,\s*true,\s*dt,\s*&primaryTransform,\s*&supportTransform\)' `
+    'Controller-isolated transforms must steer the weapon while original rendered transforms remain visual interpolation starts only.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'const bool useDynamicSupportAcquisition\s*=[\s\S]*!gunstockBaselineActive[\s\S]*if \(gunstockBaselineActive\)[\s\S]*updateFullWeaponAuthorityGrip\(weaponNode,\s*0\.0f\)[\s\S]*else if \(useDynamicSupportAcquisition\)' `
     'Gunstock baseline capture must publish separately from, and never enter, normal synchronized dynamic acquisition.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'solverInput\.supportTargetWorld\s*=\s*dynamicAcquisition\s*\?[\s\S]{0,300}lockedSupportControllerTarget[\s\S]*applyRotationAroundPrimaryPivot' `

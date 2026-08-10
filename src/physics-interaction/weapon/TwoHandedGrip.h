@@ -994,12 +994,14 @@ namespace rock
         struct SupportInputBaselineState
         {
             RE::NiTransform inputToGripTargetLocal{};
+            RE::NiTransform primaryInputToGripTargetLocal{};
             RE::NiTransform weaponWorldAtCapture{};
             std::uint64_t weaponGenerationKey{ 0 };
             std::uint64_t gripSequence{ 0 };
             bool supportHandIsLeft{ false };
             SupportInputBaselineKind kind{ SupportInputBaselineKind::None };
             bool active{ false };
+            bool pairedDynamicDrivers{ false };
             bool firstPublicationPending{ false };
         };
 
@@ -1324,7 +1326,6 @@ namespace rock
         bool initializeDynamicSupportBaseline(
             RE::NiNode* weaponNode,
             bool supportHandIsLeft,
-            const RE::NiTransform& supportInputWorld,
             const char* reason);
         bool initializeSupportInputBaseline(
             RE::NiNode* weaponNode,
@@ -1571,6 +1572,10 @@ namespace rock
         bool _hasLeftNaturalBoneInDampedDriver{ false };
 
         std::array<ScopeSafeHandFrameState, 2> _scopeSafeHandFrames{};
+        // Frame-scoped hFRIK/controller drivers captured by
+        // PhysicsInteraction before ROCK publishes any hand visuals.
+        std::array<EquippedWeaponScopeHandDriverFrame, 2>
+            _currentHandDriverFrames{};
         bool _scopeMenuOpenThisFrame{ false };
         // True only for the first visible frame after ScopeMenu. Role clears
         // on this edge use the same deferred transaction as hidden-frame

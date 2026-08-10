@@ -1548,6 +1548,218 @@ namespace rock::grab_finger_pose_runtime
                pose.contactValidMask == kCompleteFingerContactMask;
     }
 
+    enum class OppositionPocketKind : std::uint8_t
+    {
+        None = 0,
+        ThumbIndex = 1,
+        ThumbPinky = 2,
+    };
+
+    struct OppositionPocketEvidence
+    {
+        RE::NiPoint3 surfacePointWorld{};
+        float fingerGapGameUnits = 0.0f;
+        float gripToSurfaceDistanceGameUnits =
+            (std::numeric_limits<float>::infinity)();
+        std::uint8_t endpointMask = 0;
+        std::uint8_t directEndpointMask = 0;
+        std::size_t opposedFingerIndex = 0;
+        OppositionPocketKind kind = OppositionPocketKind::None;
+        bool valid = false;
+    };
+
+    [[nodiscard]] inline const char* oppositionPocketKindName(
+        OppositionPocketKind kind)
+    {
+        switch (kind) {
+        case OppositionPocketKind::ThumbIndex:
+            return "thumb-index";
+        case OppositionPocketKind::ThumbPinky:
+            return "thumb-pinky";
+        case OppositionPocketKind::None:
+        default:
+            return "none";
+        }
+    }
+
+    /*
+     * Weapon parts are not eligible for the regular whole-object pinch-size
+     * test: a small slide or control often belongs to a much larger weapon.
+     * This local witness instead requires the selected weapon surface to cross
+     * the live pad-to-pad segment near the captured grip point, plus at least
+     * one direct endpoint contact from the calibrated sweep. It can therefore
+     * authorize one coherent opposition pose without treating an arbitrary
+     * four-of-five contact mask as complete evidence.
+     */
+    [[nodiscard]] inline OppositionPocketEvidence
+        findLocalOppositionPocketEvidence(
+            const std::vector<TriangleData>& worldTriangles,
+            const root_flattened_finger_skeleton_runtime::Snapshot& snapshot,
+            const RE::NiPoint3& gripPointWorld,
+            std::uint8_t directContactMask,
+            float minFingerGapGameUnits,
+            float maxFingerGapGameUnits,
+            float maxGripToSurfaceDistanceGameUnits,
+            float segmentProbeRadiusGameUnits = 0.5f)
+    {
+        OppositionPocketEvidence best{};
+        const auto finitePoint = [](const RE::NiPoint3& point) {
+            return std::isfinite(point.x) &&
+                   std::isfinite(point.y) &&
+                   std::isfinite(point.z);
+        };
+        if (!snapshot.valid || worldTriangles.empty() ||
+            !finitePoint(gripPointWorld)) {
+            return best;
+        }
+
+        const float minGap = (std::max)(
+            0.0f,
+            std::isfinite(minFingerGapGameUnits) ?
+                minFingerGapGameUnits :
+                1.0f);
+        const float maxGap = (std::max)(
+            minGap,
+            std::isfinite(maxFingerGapGameUnits) ?
+                maxFingerGapGameUnits :
+                12.0f);
+        const float maxGripDistance = (std::max)(
+            0.0f,
+            std::isfinite(maxGripToSurfaceDistanceGameUnits) ?
+                maxGripToSurfaceDistanceGameUnits :
+                8.0f);
+        const float probeRadius = std::clamp(
+            std::isfinite(segmentProbeRadiusGameUnits) ?
+                segmentProbeRadiusGameUnits :
+                0.5f,
+            0.0f,
+            2.0f);
+
+        const auto evaluatePair = [&](
+                                      const std::size_t opposedFinger,
+                                      const OppositionPocketKind kind) {
+            OppositionPocketEvidence candidate{};
+            if (opposedFinger >= snapshot.fingers.size() ||
+                !snapshot.fingers[0].valid ||
+                !snapshot.fingers[opposedFinger].valid) {
+                return candidate;
+            }
+            const std::uint8_t endpointMask =
+                static_cast<std::uint8_t>(
+                    (1u << 0u) | (1u << opposedFinger));
+            const std::uint8_t directEndpointMask =
+                static_cast<std::uint8_t>(
+                    directContactMask & endpointMask);
+            if (directEndpointMask == 0) {
+                return candidate;
+            }
+
+            const RE::NiPoint3 thumbPad =
+                snapshot.fingers[0].points[2];
+            const RE::NiPoint3 opposedPad =
+                snapshot.fingers[opposedFinger].points[2];
+            if (!finitePoint(thumbPad) ||
+                !finitePoint(opposedPad)) {
+                return candidate;
+            }
+            const RE::NiPoint3 segment = opposedPad - thumbPad;
+            const float gapSquared =
+                grab_finger_pose_math::lengthSquared(segment);
+            if (!std::isfinite(gapSquared) ||
+                gapSquared <= 0.000001f) {
+                return candidate;
+            }
+            const float gap = std::sqrt(gapSquared);
+            if (gap < minGap || gap > maxGap) {
+                return candidate;
+            }
+            const RE::NiPoint3 direction = segment * (1.0f / gap);
+
+            float bestGripDistance =
+                (std::numeric_limits<float>::infinity)();
+            RE::NiPoint3 bestSurfacePoint{};
+            for (const auto& triangle : worldTriangles) {
+                const grab_finger_pose_math::Triangle<RE::NiPoint3>
+                    mathTriangle{
+                        triangle.v0,
+                        triangle.v1,
+                        triangle.v2,
+                    };
+                float travel = 0.0f;
+                RE::NiPoint3 surfacePoint{};
+                if (grab_finger_pose_math::rayTriangleIntersection(
+                        thumbPad,
+                        direction,
+                        mathTriangle,
+                        gap,
+                        travel)) {
+                    surfacePoint = thumbPad + direction * travel;
+                } else if (probeRadius > 0.0f &&
+                           grab_finger_pose_math::
+                               probeCapsuleTriangleIntersection(
+                                   thumbPad,
+                                   direction,
+                                   mathTriangle,
+                                   gap,
+                                   probeRadius,
+                                   travel,
+                                   &surfacePoint)) {
+                    // The bounded capsule admits near-tangent mesh contact,
+                    // while the grip-distance gate below keeps it local.
+                } else {
+                    continue;
+                }
+
+                const float gripDistanceSquared =
+                    grab_finger_pose_math::lengthSquared(
+                        grab_finger_pose_math::sub(
+                            gripPointWorld,
+                            surfacePoint));
+                if (!std::isfinite(gripDistanceSquared)) {
+                    continue;
+                }
+                const float gripDistance =
+                    std::sqrt(gripDistanceSquared);
+                if (gripDistance <= maxGripDistance &&
+                    gripDistance < bestGripDistance) {
+                    bestGripDistance = gripDistance;
+                    bestSurfacePoint = surfacePoint;
+                }
+            }
+
+            if (!std::isfinite(bestGripDistance)) {
+                return candidate;
+            }
+            candidate.surfacePointWorld = bestSurfacePoint;
+            candidate.fingerGapGameUnits = gap;
+            candidate.gripToSurfaceDistanceGameUnits =
+                bestGripDistance;
+            candidate.endpointMask = endpointMask;
+            candidate.directEndpointMask = directEndpointMask;
+            candidate.opposedFingerIndex = opposedFinger;
+            candidate.kind = kind;
+            candidate.valid = true;
+            return candidate;
+        };
+
+        const auto thumbIndex = evaluatePair(
+            1,
+            OppositionPocketKind::ThumbIndex);
+        const auto thumbPinky = evaluatePair(
+            4,
+            OppositionPocketKind::ThumbPinky);
+        if (thumbIndex.valid) {
+            best = thumbIndex;
+        }
+        if (thumbPinky.valid &&
+            (!best.valid ||
+                thumbPinky.gripToSurfaceDistanceGameUnits <
+                    best.gripToSurfaceDistanceGameUnits)) {
+            best = thumbPinky;
+        }
+        return best;
+    }
+
     /*
      * The arc zero reference reconstructed from the COMMANDED hand model:
      * chain bone origins of hFRIK's authored fully-open pose in hand-bone

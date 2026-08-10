@@ -345,6 +345,83 @@ int main()
         chain.valid = true;
     }
 
+    const std::vector<rock::TriangleData> oppositionMesh{
+        rock::TriangleData{
+            RE::NiPoint3{ 0.0f, -2.0f, -2.0f },
+            RE::NiPoint3{ 0.0f, 2.0f, -2.0f },
+            RE::NiPoint3{ 0.0f, 0.0f, 2.0f },
+        },
+    };
+    auto thumbIndexPocketSnapshot = liveFingerSnapshot;
+    thumbIndexPocketSnapshot.fingers[0].points[2] =
+        RE::NiPoint3{ -3.0f, 0.0f, 0.0f };
+    thumbIndexPocketSnapshot.fingers[1].points[2] =
+        RE::NiPoint3{ 3.0f, 0.0f, 0.0f };
+    const auto thumbIndexPocket = findLocalOppositionPocketEvidence(
+        oppositionMesh,
+        thumbIndexPocketSnapshot,
+        RE::NiPoint3{ 0.0f, 0.0f, 0.0f },
+        0x01,
+        1.0f,
+        12.0f,
+        4.0f);
+    ok &= expectBool(
+        "local thumb-index pocket accepts a crossed nearby weapon surface",
+        thumbIndexPocket.valid &&
+            thumbIndexPocket.kind == OppositionPocketKind::ThumbIndex,
+        true);
+    ok &= expectBool(
+        "local opposition pocket records only direct endpoint evidence",
+        thumbIndexPocket.directEndpointMask == 0x01 &&
+            thumbIndexPocket.endpointMask == 0x03,
+        true);
+    ok &= expectBool(
+        "local opposition pocket rejects a crossed surface without direct endpoint evidence",
+        findLocalOppositionPocketEvidence(
+            oppositionMesh,
+            thumbIndexPocketSnapshot,
+            RE::NiPoint3{ 0.0f, 0.0f, 0.0f },
+            0x00,
+            1.0f,
+            12.0f,
+            4.0f)
+            .valid,
+        false);
+    ok &= expectBool(
+        "local opposition pocket rejects a surface outside the captured grip neighborhood",
+        findLocalOppositionPocketEvidence(
+            oppositionMesh,
+            thumbIndexPocketSnapshot,
+            RE::NiPoint3{ 0.0f, 20.0f, 0.0f },
+            0x01,
+            1.0f,
+            12.0f,
+            4.0f)
+            .valid,
+        false);
+
+    auto thumbPinkyPocketSnapshot = liveFingerSnapshot;
+    thumbPinkyPocketSnapshot.fingers[0].points[2] =
+        RE::NiPoint3{ -5.0f, 0.0f, 0.0f };
+    thumbPinkyPocketSnapshot.fingers[1].points[2] =
+        RE::NiPoint3{ -5.0f, 5.0f, 0.0f };
+    thumbPinkyPocketSnapshot.fingers[4].points[2] =
+        RE::NiPoint3{ 5.0f, 0.0f, 0.0f };
+    const auto thumbPinkyPocket = findLocalOppositionPocketEvidence(
+        oppositionMesh,
+        thumbPinkyPocketSnapshot,
+        RE::NiPoint3{ 0.0f, 0.0f, 0.0f },
+        0x10,
+        1.0f,
+        24.0f,
+        4.0f);
+    ok &= expectBool(
+        "local thumb-pinky pocket accepts a crossed nearby weapon surface",
+        thumbPinkyPocket.valid &&
+            thumbPinkyPocket.kind == OppositionPocketKind::ThumbPinky &&
+            thumbPinkyPocket.opposedFingerIndex == 4,
+        true);
+
     RE::NiPoint3 padCenter{};
     ok &= expectBool("pad center uses distal chain point",
         computeFingerPadCenter(liveFingerSnapshot.fingers[1], padCenter),

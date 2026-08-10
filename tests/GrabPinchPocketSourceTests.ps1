@@ -85,8 +85,8 @@ Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'if \(pinchFingerPose\)
     'TouchHeld pinch finger solve must post-process the final stored pose.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'applyPinchFingerPosePolicy\(fingerPose, _grabFrame, g_rockConfig\.rockGrabFingerMinValue' `
     'Pinch finger pose must be post-processed into fixed thumb/index curves and closed other fingers.'
-Require-Text 'src/physics-interaction/grab/GrabPinchPocket.h' 'buildStablePinchFingerPose[\s\S]*jointValues\[0\][\s\S]*jointValues\[2\]' `
-    'Pinch finger pose must publish a stable whole-thumb joint shape instead of raw mesh-solver curl.'
+Require-Text 'src/physics-interaction/grab/GrabPinchPocket.h' 'buildStableOppositionFingerPose[\s\S]*jointValues\[0\][\s\S]*jointValues\[2\][\s\S]*buildStablePinchFingerPose[\s\S]*buildStableOppositionFingerPose' `
+    'Pinch finger pose must publish the stable whole-thumb opposition shape instead of raw mesh-solver curl.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'buildStablePinchFingerPose[\s\S]*surfaceAimTargetValid\[finger\] = 0[\s\S]*pose\.solved = true' `
     'Pinch pose must clear raw mesh-solver thumb/index aim instead of installing object-local mesh-follow targets.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'useThumbIndexCurveOnlyPose\(fingerPose\)[\s\S]*captureSurfaceAimObjectLocal\(fingerPose, targetObjectWorld\)' `

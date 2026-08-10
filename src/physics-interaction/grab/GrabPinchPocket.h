@@ -314,33 +314,60 @@ namespace rock::grab_pinch_pocket_policy
         return (std::max)(thinHalfWidth, std::clamp(finiteOr(configuredSurfaceInsetGameUnits, kDefaultSurfaceInsetGameUnits), 0.0f, 8.0f));
     }
 
-    [[nodiscard]] inline StablePinchFingerPose buildStablePinchFingerPose(Config rawConfig, float minFingerValue)
+    [[nodiscard]] inline StablePinchFingerPose buildStableOppositionFingerPose(
+        Config rawConfig,
+        float minFingerValue,
+        std::size_t opposedFingerIndex)
     {
         const Config config = sanitizeConfig(rawConfig);
         const float minValue = std::clamp(finiteOr(minFingerValue, 0.2f), 0.0f, 1.0f);
         const float pinchValue = std::clamp(config.thumbIndexMaxOpenValue, minValue, 1.0f);
         const float otherValue = std::clamp(config.otherFingerCurlValue, 0.0f, 1.0f);
+        const std::size_t opposedFinger =
+            std::clamp(opposedFingerIndex,
+                static_cast<std::size_t>(1),
+                static_cast<std::size_t>(4));
 
         StablePinchFingerPose pose{};
-        pose.values = { pinchValue, pinchValue, otherValue, otherValue, otherValue };
+        pose.values = { otherValue, otherValue, otherValue, otherValue, otherValue };
+        pose.values[0] = pinchValue;
+        pose.values[opposedFinger] = pinchValue;
 
         const float pinchClosed = 1.0f - pinchValue;
         pose.jointValues[0] = std::clamp(pinchValue + pinchClosed * 0.30f, minValue, 1.0f);
         pose.jointValues[1] = std::clamp(pinchValue + pinchClosed * 0.12f, minValue, 1.0f);
         pose.jointValues[2] = std::clamp(pinchValue, minValue, 1.0f);
 
-        pose.jointValues[3] = std::clamp(pinchValue + pinchClosed * 0.20f, minValue, 1.0f);
-        pose.jointValues[4] = std::clamp(pinchValue, minValue, 1.0f);
-        pose.jointValues[5] = std::clamp(pinchValue - pinchClosed * 0.08f, minValue, 1.0f);
-
         const float otherClosed = 1.0f - otherValue;
-        for (std::size_t finger = 2; finger < pose.values.size(); ++finger) {
+        for (std::size_t finger = 1; finger < pose.values.size(); ++finger) {
             const std::size_t base = finger * 3;
             pose.jointValues[base + 0] = std::clamp(otherValue + otherClosed * 0.25f, 0.0f, 1.0f);
             pose.jointValues[base + 1] = std::clamp(otherValue, 0.0f, 1.0f);
             pose.jointValues[base + 2] = std::clamp(otherValue - otherClosed * 0.15f, 0.0f, 1.0f);
         }
 
+        const std::size_t opposedBase = opposedFinger * 3;
+        pose.jointValues[opposedBase + 0] =
+            std::clamp(
+                pinchValue + pinchClosed * 0.20f,
+                minValue,
+                1.0f);
+        pose.jointValues[opposedBase + 1] =
+            std::clamp(pinchValue, minValue, 1.0f);
+        pose.jointValues[opposedBase + 2] =
+            std::clamp(
+                pinchValue - pinchClosed * 0.08f,
+                minValue,
+                1.0f);
+
         return pose;
+    }
+
+    [[nodiscard]] inline StablePinchFingerPose buildStablePinchFingerPose(Config rawConfig, float minFingerValue)
+    {
+        return buildStableOppositionFingerPose(
+            rawConfig,
+            minFingerValue,
+            1);
     }
 }

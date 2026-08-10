@@ -6,6 +6,7 @@
 #include "physics-interaction/hand/HandSkeleton.h"
 #include "physics-interaction/hand/HandVisual.h"
 #include "physics-interaction/grab/GrabFinger.h"
+#include "physics-interaction/grab/GrabPinchPocket.h"
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
@@ -57,6 +58,83 @@ namespace rock
         constexpr std::uint32_t SCOPE_DRIVER_MISS_GRACE_FRAMES = 3;
         constexpr float SCOPE_ROOT_REBASE_DURATION_SECONDS = 0.075f;
         constexpr std::uint32_t SCOPE_TRANSITION_TRACE_FRAMES = 6;
+        constexpr float WEAPON_OPPOSITION_MAX_FINGER_GAP_GAME_UNITS =
+            24.0f;
+        constexpr float WEAPON_OPPOSITION_SEGMENT_PROBE_RADIUS_GAME_UNITS =
+            0.5f;
+
+        grab_pinch_pocket_policy::Config
+            currentWeaponOppositionPocketConfig()
+        {
+            return grab_pinch_pocket_policy::sanitizeConfig(
+                grab_pinch_pocket_policy::Config{
+                    .enabled =
+                        g_rockConfig.rockGrabPinchPocketEnabled,
+                    .compactMaxExtentGameUnits =
+                        g_rockConfig.
+                            rockGrabPinchCompactMaxExtentGameUnits,
+                    .thinRodMaxLengthGameUnits =
+                        g_rockConfig.
+                            rockGrabPinchThinRodMaxLengthGameUnits,
+                    .thinRodMaxCrossSectionGameUnits =
+                        g_rockConfig.
+                            rockGrabPinchThinRodMaxCrossSectionGameUnits,
+                    .maxPocketDistanceGameUnits =
+                        g_rockConfig.
+                            rockGrabPinchMaxPocketDistanceGameUnits,
+                    .minFingerGapGameUnits =
+                        g_rockConfig.
+                            rockGrabPinchMinFingerGapGameUnits,
+                    .maxFingerGapGameUnits =
+                        g_rockConfig.
+                            rockGrabPinchMaxFingerGapGameUnits,
+                    .thumbIndexMaxOpenValue =
+                        g_rockConfig.
+                            rockGrabPinchThumbIndexMaxOpenValue,
+                    .otherFingerCurlValue =
+                        g_rockConfig.
+                            rockGrabPinchOtherFingerCurlValue,
+                    .surfaceInsetGameUnits =
+                        g_rockConfig.
+                            rockGrabPinchSurfaceInsetGameUnits,
+                    .detectionDirectionHandspace =
+                        g_rockConfig.
+                            rockGrabPinchDetectionDirectionHandspace,
+                    .detectionAxisBlend =
+                        g_rockConfig.
+                            rockGrabPinchDetectionAxisBlend,
+                });
+        }
+
+        void applyStableWeaponOppositionPose(
+            grab_finger_pose_runtime::SolvedGrabFingerPose& pose,
+            const grab_pinch_pocket_policy::Config& config,
+            const std::size_t opposedFingerIndex)
+        {
+            const auto stable =
+                grab_pinch_pocket_policy::
+                    buildStableOppositionFingerPose(
+                        config,
+                        g_rockConfig.rockGrabFingerMinValue,
+                        opposedFingerIndex);
+            pose.values = stable.values;
+            pose.jointValues = stable.jointValues;
+            pose.surfaceAimTarget = {};
+            pose.surfaceAimNormal = {};
+            pose.surfaceAimTargetValid = {};
+            pose.surfaceAimNormalValid = {};
+            pose.surfaceAimTargetObjectLocal = {};
+            pose.surfaceAimNormalObjectLocal = {};
+            pose.surfaceAimTargetObjectLocalValid = {};
+            pose.surfaceAimNormalObjectLocalValid = {};
+            pose.contactArcRotationRadians = {};
+            pose.contactArcRotationValid = {};
+            pose.hasObjectLocalSurfaceAim = false;
+            pose.usedAlternateThumbCurve = false;
+            pose.usedAlternateThumbSurfaceHit = false;
+            pose.hasJointValues = true;
+            pose.solved = true;
+        }
 
         gunstock_alignment_policy::FineTuneDegrees
             configuredGunstockFineTune()
@@ -308,6 +386,29 @@ namespace rock
             return lhs.distanceSquared < rhs.distanceSquared;
         }
 
+        inline constexpr std::size_t
+            kSupportGripFingerLaneCount = 5;
+        inline constexpr std::size_t
+            kSupportGripFingerLaneReferenceCapacity = 10;
+        inline constexpr std::size_t
+            kSupportGripGlobalRankingIndex =
+                kSupportGripFingerLaneCount;
+
+        struct SupportGripFingerReferenceSet
+        {
+            RE::NiPoint3 seatPointWorld{};
+            std::array<
+                std::array<
+                    RE::NiPoint3,
+                    kSupportGripFingerLaneReferenceCapacity>,
+                kSupportGripFingerLaneCount>
+                lanePointsWorld{};
+            std::array<std::size_t,
+                kSupportGripFingerLaneCount>
+                lanePointCounts{};
+            bool seatPointValid{ false };
+        };
+
         struct TransformedSupportGripTriangleView
         {
             std::span<const TriangleData> localTriangles{};
@@ -329,40 +430,100 @@ namespace rock
         void selectNearestSupportGripFingerTriangles(
             std::span<const WeaponCollision::SupportGripEvidenceView> evidenceViews,
             const RE::NiTransform& weaponWorld,
-            std::span<const RE::NiPoint3> seatedReferencePointsWorld,
+            const SupportGripFingerReferenceSet& referenceSet,
             std::size_t maxTriangles,
-            std::vector<RankedSupportGripTriangle>& rankingScratch,
+            std::array<std::vector<RankedSupportGripTriangle>,
+                kSupportGripFingerLaneCount + 1>& rankingScratch,
             std::vector<TriangleData>& outTriangles)
         {
-            rankingScratch.clear();
+            for (auto& ranking : rankingScratch) {
+                ranking.clear();
+            }
             outTriangles.clear();
             const std::size_t boundedLimit = (std::min)(maxTriangles, grab_finger_pose_runtime::kMaxFingerPoseCandidateTriangles);
             if (boundedLimit == 0 ||
                 evidenceViews.empty() ||
-                seatedReferencePointsWorld.empty() ||
+                !referenceSet.seatPointValid ||
                 !weapon_support_acquisition_math::isUsableTransform(
                     weaponWorld)) {
                 return;
             }
 
-            std::array<RE::NiPoint3, 16> referencePointsWeaponLocal{};
-            const std::size_t referencePointCount = (std::min)(
-                seatedReferencePointsWorld.size(),
-                referencePointsWeaponLocal.size());
-            for (std::size_t index = 0;
-                 index < referencePointCount;
-                 ++index) {
-                referencePointsWeaponLocal[index] =
-                    transform_math::worldPointToLocal(
-                        weaponWorld,
-                        seatedReferencePointsWorld[index]);
-                if (!grab_finger_pose_runtime::isFinitePoint(
-                        referencePointsWeaponLocal[index])) {
+            SupportGripFingerReferenceSet localReferences{};
+            localReferences.seatPointWorld =
+                transform_math::worldPointToLocal(
+                    weaponWorld,
+                    referenceSet.seatPointWorld);
+            localReferences.seatPointValid =
+                grab_finger_pose_runtime::isFinitePoint(
+                    localReferences.seatPointWorld);
+            if (!localReferences.seatPointValid) {
+                return;
+            }
+            for (std::size_t lane = 0;
+                 lane < kSupportGripFingerLaneCount;
+                 ++lane) {
+                const std::size_t count = (std::min)(
+                    referenceSet.lanePointCounts[lane],
+                    kSupportGripFingerLaneReferenceCapacity);
+                for (std::size_t point = 0; point < count; ++point) {
+                    const RE::NiPoint3 localPoint =
+                        transform_math::worldPointToLocal(
+                            weaponWorld,
+                            referenceSet.lanePointsWorld[lane][point]);
+                    if (!grab_finger_pose_runtime::isFinitePoint(
+                            localPoint)) {
+                        continue;
+                    }
+                    localReferences.lanePointsWorld[lane]
+                        [localReferences.lanePointCounts[lane]++] =
+                        localPoint;
+                }
+                if (localReferences.lanePointCounts[lane] >
+                    kSupportGripFingerLaneReferenceCapacity) {
                     return;
                 }
             }
 
-            rankingScratch.reserve(boundedLimit);
+            const std::size_t laneLimit = (std::max)(
+                static_cast<std::size_t>(1),
+                (boundedLimit + kSupportGripFingerLaneCount - 1) /
+                    kSupportGripFingerLaneCount);
+            for (std::size_t lane = 0;
+                 lane < kSupportGripFingerLaneCount;
+                 ++lane) {
+                rankingScratch[lane].reserve(laneLimit);
+            }
+            rankingScratch[kSupportGripGlobalRankingIndex].reserve(
+                boundedLimit);
+
+            const auto retainNearest = [](
+                                           std::vector<RankedSupportGripTriangle>& ranking,
+                                           const std::size_t limit,
+                                           const RankedSupportGripTriangle& candidate) {
+                if (ranking.size() < limit) {
+                    ranking.push_back(candidate);
+                    std::push_heap(
+                        ranking.begin(),
+                        ranking.end(),
+                        rankedSupportGripTriangleLess);
+                    return;
+                }
+                if (rankedSupportGripTriangleLess(
+                        candidate,
+                        ranking.front())) {
+                    std::pop_heap(
+                        ranking.begin(),
+                        ranking.end(),
+                        rankedSupportGripTriangleLess);
+                    ranking.back() = candidate;
+                    std::push_heap(
+                        ranking.begin(),
+                        ranking.end(),
+                        rankedSupportGripTriangleLess);
+                }
+            };
+
             std::uint64_t deterministicOrdinal = 0;
             for (const auto& evidenceView : evidenceViews) {
                 if (evidenceView.localTriangles.empty() ||
@@ -403,60 +564,118 @@ namespace rock
                             sourceToWeapon,
                             sourceTriangle.v2),
                     };
-                    float minimumDistanceSquared =
+                    float globalMinimumDistanceSquared =
                         (std::numeric_limits<float>::infinity)();
-                    for (std::size_t referenceIndex = 0;
-                         referenceIndex < referencePointCount;
-                         ++referenceIndex) {
-                        float distanceSquared = 0.0f;
-                        (void)closestPointOnTriangleToPoint(
-                            referencePointsWeaponLocal[referenceIndex],
-                            weaponLocalTriangle,
-                            distanceSquared);
-                        if (std::isfinite(distanceSquared)) {
-                            minimumDistanceSquared = (std::min)(
-                                minimumDistanceSquared,
+                    (void)closestPointOnTriangleToPoint(
+                        localReferences.seatPointWorld,
+                        weaponLocalTriangle,
+                        globalMinimumDistanceSquared);
+                    for (std::size_t lane = 0;
+                         lane < kSupportGripFingerLaneCount;
+                         ++lane) {
+                        float laneMinimumDistanceSquared =
+                            (std::numeric_limits<float>::infinity)();
+                        for (std::size_t referenceIndex = 0;
+                             referenceIndex <
+                                 localReferences.lanePointCounts[lane];
+                             ++referenceIndex) {
+                            float distanceSquared = 0.0f;
+                            (void)closestPointOnTriangleToPoint(
+                                localReferences.lanePointsWorld[lane]
+                                    [referenceIndex],
+                                weaponLocalTriangle,
                                 distanceSquared);
+                            if (std::isfinite(distanceSquared)) {
+                                laneMinimumDistanceSquared = (std::min)(
+                                    laneMinimumDistanceSquared,
+                                    distanceSquared);
+                            }
+                        }
+                        if (std::isfinite(laneMinimumDistanceSquared)) {
+                            globalMinimumDistanceSquared = (std::min)(
+                                globalMinimumDistanceSquared,
+                                laneMinimumDistanceSquared);
+                            retainNearest(
+                                rankingScratch[lane],
+                                laneLimit,
+                                RankedSupportGripTriangle{
+                                    .distanceSquared =
+                                        laneMinimumDistanceSquared,
+                                    .deterministicOrdinal = ordinal,
+                                    .weaponLocalTriangle =
+                                        weaponLocalTriangle,
+                                });
                         }
                     }
-                    if (!std::isfinite(minimumDistanceSquared)) {
-                        continue;
-                    }
-
-                    const RankedSupportGripTriangle candidate{
-                        .distanceSquared = minimumDistanceSquared,
-                        .deterministicOrdinal = ordinal,
-                        .weaponLocalTriangle = weaponLocalTriangle,
-                    };
-                    if (rankingScratch.size() < boundedLimit) {
-                        rankingScratch.push_back(candidate);
-                        std::push_heap(
-                            rankingScratch.begin(),
-                            rankingScratch.end(),
-                            rankedSupportGripTriangleLess);
-                        continue;
-                    }
-
-                    if (rankedSupportGripTriangleLess(
-                            candidate,
-                            rankingScratch.front())) {
-                        std::pop_heap(
-                            rankingScratch.begin(),
-                            rankingScratch.end(),
-                            rankedSupportGripTriangleLess);
-                        rankingScratch.back() = candidate;
-                        std::push_heap(
-                            rankingScratch.begin(),
-                            rankingScratch.end(),
-                            rankedSupportGripTriangleLess);
+                    if (std::isfinite(globalMinimumDistanceSquared)) {
+                        retainNearest(
+                            rankingScratch[
+                                kSupportGripGlobalRankingIndex],
+                            boundedLimit,
+                            RankedSupportGripTriangle{
+                                .distanceSquared =
+                                    globalMinimumDistanceSquared,
+                                .deterministicOrdinal = ordinal,
+                                .weaponLocalTriangle =
+                                    weaponLocalTriangle,
+                            });
                     }
                 }
             }
 
-            std::sort(rankingScratch.begin(), rankingScratch.end(), rankedSupportGripTriangleLess);
-            outTriangles.reserve(rankingScratch.size());
-            for (const auto& ranked : rankingScratch) {
+            for (auto& ranking : rankingScratch) {
+                std::sort(
+                    ranking.begin(),
+                    ranking.end(),
+                    rankedSupportGripTriangleLess);
+            }
+            std::vector<std::uint64_t> selectedOrdinals{};
+            selectedOrdinals.reserve(boundedLimit);
+            outTriangles.reserve(boundedLimit);
+            const auto appendUnique = [&](
+                                          const RankedSupportGripTriangle& ranked) {
+                if (outTriangles.size() >= boundedLimit ||
+                    std::find(
+                        selectedOrdinals.begin(),
+                        selectedOrdinals.end(),
+                        ranked.deterministicOrdinal) !=
+                        selectedOrdinals.end()) {
+                    return false;
+                }
+                selectedOrdinals.push_back(
+                    ranked.deterministicOrdinal);
                 outTriangles.push_back(ranked.weaponLocalTriangle);
+                return true;
+            };
+
+            std::array<std::size_t,
+                kSupportGripFingerLaneCount>
+                laneCursors{};
+            bool laneCandidateRemaining = true;
+            while (outTriangles.size() < boundedLimit &&
+                   laneCandidateRemaining) {
+                laneCandidateRemaining = false;
+                for (std::size_t lane = 0;
+                     lane < kSupportGripFingerLaneCount &&
+                     outTriangles.size() < boundedLimit;
+                     ++lane) {
+                    auto& cursor = laneCursors[lane];
+                    const auto& ranking = rankingScratch[lane];
+                    while (cursor < ranking.size()) {
+                        laneCandidateRemaining = true;
+                        const auto& candidate = ranking[cursor++];
+                        if (appendUnique(candidate)) {
+                            break;
+                        }
+                    }
+                }
+            }
+            for (const auto& ranked :
+                 rankingScratch[kSupportGripGlobalRankingIndex]) {
+                if (outTriangles.size() >= boundedLimit) {
+                    break;
+                }
+                (void)appendUnique(ranked);
             }
         }
 
@@ -711,7 +930,9 @@ namespace rock
     {
         struct HandScratch
         {
-            std::vector<RankedSupportGripTriangle> ranking;
+            std::array<std::vector<RankedSupportGripTriangle>,
+                kSupportGripFingerLaneCount + 1>
+                rankings;
             std::vector<TriangleData> localTriangles;
             std::vector<TriangleData> worldTriangles;
             grab_finger_pose_runtime::FingerPoseTriangleSpatialIndex spatialIndex;
@@ -2006,6 +2227,8 @@ namespace rock
         const EquippedWeaponHandlingSettings& handlingSettings)
     {
         _handlingSettings = handlingSettings;
+        _currentHandDriverFrames[0] = frameInput.leftHandDriverFrame;
+        _currentHandDriverFrames[1] = frameInput.rightHandDriverFrame;
         _gunstockFramePresentation = {};
         observeGunstockWeaponEligibility(
             weaponNode,
@@ -3732,7 +3955,9 @@ namespace rock
         }
 
         auto& fingerScratch = _fingerPoseSolveScratch->hands[isLeft ? 0u : 1u];
-        fingerScratch.ranking.clear();
+        for (auto& ranking : fingerScratch.rankings) {
+            ranking.clear();
+        }
         fingerScratch.localTriangles.clear();
         fingerScratch.worldTriangles.clear();
         fingerScratch.spatialIndex.clear();
@@ -3827,29 +4052,129 @@ namespace rock
                 resolveLiveFingerSkeletonSnapshot(
                     isLeft,
                     capturedFingerSnapshot);
-        std::array<RE::NiPoint3, 16> seatedReferencePointsWorld{};
-        std::size_t seatedReferencePointCount = 1;
-        seatedReferencePointsWorld[0] = gripWorldPoint;
+        SupportGripFingerReferenceSet fingerReferenceSet{};
+        fingerReferenceSet.seatPointWorld = gripWorldPoint;
+        fingerReferenceSet.seatPointValid =
+            grab_finger_pose_runtime::isFinitePoint(gripWorldPoint);
         if (capturedFingerSnapshotValid) {
             const RE::NiTransform rawToSeatedWorld =
                 transform_math::composeTransforms(
                     adjustedHandTransform,
                     transform_math::invertTransform(handTransform));
-            for (const auto& finger :
-                 capturedFingerSnapshot.fingers) {
-                if (!finger.valid) {
+            const auto liveLandmarks =
+                root_flattened_finger_skeleton_runtime::
+                    buildLandmarkSet(capturedFingerSnapshot);
+            std::array<RE::NiPoint3,
+                kSupportGripFingerLaneCount>
+                commandedOpenDirectionsWorld{};
+            const bool commandedDirectionsValid =
+                grab_finger_pose_runtime::
+                    resolveCommandedOpenDirectionsWorld(
+                        isLeft,
+                        adjustedHandTransform,
+                        commandedOpenDirectionsWorld);
+            const RE::NiPoint3 seatedSweepNormal =
+                liveLandmarks.valid ?
+                transform_math::localVectorToWorld(
+                    rawToSeatedWorld,
+                    liveLandmarks.palmNormalWorld) :
+                RE::NiPoint3{};
+            const auto appendLanePoint = [&fingerReferenceSet](
+                                             const std::size_t lane,
+                                             const RE::NiPoint3& pointWorld) {
+                if (lane >= kSupportGripFingerLaneCount ||
+                    !grab_finger_pose_runtime::isFinitePoint(
+                        pointWorld)) {
+                    return;
+                }
+                auto& count =
+                    fingerReferenceSet.lanePointCounts[lane];
+                if (count >=
+                    kSupportGripFingerLaneReferenceCapacity) {
+                    return;
+                }
+                fingerReferenceSet.lanePointsWorld[lane][count++] =
+                    pointWorld;
+            };
+
+            for (std::size_t finger = 0;
+                 finger < capturedFingerSnapshot.fingers.size();
+                 ++finger) {
+                const auto& chain =
+                    capturedFingerSnapshot.fingers[finger];
+                if (!chain.valid) {
                     continue;
                 }
-                for (const auto& pointWorld : finger.points) {
-                    if (seatedReferencePointCount >=
-                        seatedReferencePointsWorld.size()) {
-                        break;
-                    }
-                    seatedReferencePointsWorld[
-                        seatedReferencePointCount++] =
+                for (const auto& pointWorld : chain.points) {
+                    appendLanePoint(
+                        finger,
                         transform_math::localPointToWorld(
                             rawToSeatedWorld,
-                            pointWorld);
+                            pointWorld));
+                }
+
+                if (!liveLandmarks.valid ||
+                    !commandedDirectionsValid ||
+                    finger >= liveLandmarks.fingers.size() ||
+                    !liveLandmarks.fingers[finger].valid ||
+                    !std::isfinite(
+                        liveLandmarks.fingers[finger].length) ||
+                    liveLandmarks.fingers[finger].length <=
+                        0.0001f) {
+                    continue;
+                }
+                const RE::NiPoint3 seatedBase =
+                    transform_math::localPointToWorld(
+                        rawToSeatedWorld,
+                        liveLandmarks.fingers[finger].base);
+                const auto sweepCurve =
+                    grab_finger_pose_math::
+                        makeBakedCalibratedFingerCurve<
+                            RE::NiPoint3>(
+                            finger,
+                            isLeft,
+                            capturedFingerSnapshot.inPowerArmor,
+                            seatedBase,
+                            seatedSweepNormal,
+                            commandedOpenDirectionsWorld[finger],
+                            liveLandmarks.fingers[finger].length);
+                const auto* tipProbe =
+                    sweepCurve.probeCount > 0 ?
+                    &sweepCurve.probes[0] :
+                    nullptr;
+                if (!tipProbe || tipProbe->sampleCount == 0 ||
+                    tipProbe->sampleCount >
+                        tipProbe->samples.size()) {
+                    continue;
+                }
+                constexpr std::size_t kSweepSamples = 7;
+                const RE::NiPoint3 curveNormal =
+                    grab_finger_pose_runtime::normalizedOrFallback(
+                        sweepCurve.normal,
+                        seatedSweepNormal);
+                const RE::NiPoint3 curveZero =
+                    grab_finger_pose_runtime::normalizedOrFallback(
+                        sweepCurve.zeroAngleVector,
+                        commandedOpenDirectionsWorld[finger]);
+                for (std::size_t sample = 0;
+                     sample < kSweepSamples;
+                     ++sample) {
+                    const std::size_t row =
+                        sample * (tipProbe->sampleCount - 1) /
+                        (kSweepSamples - 1);
+                    const auto& baked = tipProbe->samples[row];
+                    const RE::NiPoint3 arm =
+                        grab_finger_pose_math::rotateAroundUnitAxis(
+                            curveZero,
+                            curveNormal,
+                            baked.angleRadians);
+                    appendLanePoint(
+                        finger,
+                        grab_finger_pose_math::add(
+                            sweepCurve.center,
+                            grab_finger_pose_math::scale(
+                                arm,
+                                baked.reachLength)));
                 }
             }
         }
@@ -3896,12 +4221,10 @@ namespace rock
                     compositeEvidenceViews.data(),
                     compositeEvidenceViewCount),
                 weaponNode->world,
-                std::span<const RE::NiPoint3>(
-                    seatedReferencePointsWorld.data(),
-                    seatedReferencePointCount),
+                fingerReferenceSet,
                 grab_finger_pose_runtime::
                     kMaxFingerPoseCandidateTriangles,
-                fingerScratch.ranking,
+                fingerScratch.rankings,
                 fingerScratch.localTriangles);
         }
         performance_profiler::observeValue(
@@ -3975,10 +4298,63 @@ namespace rock
                 performance_profiler::ValueMetric::EquippedWeaponFingerPoseTriangleTests,
                 meshFingerPose.spatialTriangleTestCount);
             if (meshFingerPose.solved) {
-                const bool completeFingerEvidence =
+                const bool completeDirectFingerEvidence =
                     grab_finger_pose_runtime::
                         hasCompleteFingerContactEvidence(
                             meshFingerPose);
+                const auto oppositionConfig =
+                    currentWeaponOppositionPocketConfig();
+                const auto oppositionPocket =
+                    !completeDirectFingerEvidence &&
+                            oppositionConfig.enabled &&
+                            frozenSolve.liveFingerSnapshotValid ?
+                        grab_finger_pose_runtime::
+                            findLocalOppositionPocketEvidence(
+                                fingerScratch.worldTriangles,
+                                frozenSolve.liveFingerSnapshot,
+                                frozenGripPoint,
+                                meshFingerPose.contactValidMask,
+                                oppositionConfig.
+                                    minFingerGapGameUnits,
+                                (std::max)(
+                                    oppositionConfig.
+                                        maxFingerGapGameUnits,
+                                    WEAPON_OPPOSITION_MAX_FINGER_GAP_GAME_UNITS),
+                                oppositionConfig.
+                                    maxPocketDistanceGameUnits,
+                                (std::min)(
+                                    WEAPON_OPPOSITION_SEGMENT_PROBE_RADIUS_GAME_UNITS,
+                                    (std::max)(
+                                        0.0f,
+                                        g_rockConfig.
+                                            rockGrabFingerSweepContactRadiusGameUnits))) :
+                        grab_finger_pose_runtime::
+                            OppositionPocketEvidence{};
+                if (oppositionPocket.valid) {
+                    applyStableWeaponOppositionPose(
+                        meshFingerPose,
+                        oppositionConfig,
+                        oppositionPocket.opposedFingerIndex);
+                    ROCK_LOG_INFO(
+                        Weapon,
+                        "TwoHandedGrip: local opposition pocket accepted hand={} kind={} directMask=0x{:02X} endpointMask=0x{:02X} directEndpoints=0x{:02X} gap={:.3f} gripSurfaceDistance={:.3f}",
+                        isLeft ? "left" : "right",
+                        grab_finger_pose_runtime::
+                            oppositionPocketKindName(
+                                oppositionPocket.kind),
+                        static_cast<unsigned>(
+                            meshFingerPose.contactValidMask),
+                        static_cast<unsigned>(
+                            oppositionPocket.endpointMask),
+                        static_cast<unsigned>(
+                            oppositionPocket.directEndpointMask),
+                        oppositionPocket.fingerGapGameUnits,
+                        oppositionPocket.
+                            gripToSurfaceDistanceGameUnits);
+                }
+                const bool completeFingerEvidence =
+                    completeDirectFingerEvidence ||
+                    oppositionPocket.valid;
                 if (completeFingerEvidence) {
                     meshFingerPosePtr = &meshFingerPose;
                 } else {
@@ -3996,7 +4372,7 @@ namespace rock
                         sourceTriangleCount,
                         meshFingerPose.candidateTriangleCount);
                 }
-                if (completeFingerEvidence &&
+                if (completeDirectFingerEvidence &&
                     frozenSolve.liveFingerSnapshotValid &&
                     grab_finger_pose_runtime::buildSurfaceContactSplayValues(
                         meshFingerPose,
@@ -4323,7 +4699,6 @@ namespace rock
             !initializeDynamicSupportBaseline(
                 weaponNode,
                 supportHandIsLeft,
-                supportCaptureHandWorld,
                 "support-attach")) {
             ROCK_LOG_WARN(
                 Weapon,
@@ -4776,28 +5151,64 @@ namespace rock
             return;
         }
 
+        RE::NiTransform calibratedPrimaryTransform = primaryTransform;
         RE::NiTransform calibratedSupportTransform = supportTransform;
+        bool inputBaselineResolved = true;
+        if (dynamicBaselineActive) {
+            const auto& primaryDriver =
+                _currentHandDriverFrames[
+                    primaryHandIsLeft ? 0u : 1u];
+            const auto& supportDriver =
+                _currentHandDriverFrames[
+                    supportHandIsLeft ? 0u : 1u];
+            inputBaselineResolved =
+                primaryDriver.valid &&
+                supportDriver.valid &&
+                weapon_support_acquisition_math::
+                    tryResolveDynamicSupportDriverTargets(
+                        primaryDriver.world,
+                        supportGrip.supportInputBaseline.
+                            primaryInputToGripTargetLocal,
+                        supportDriver.world,
+                        supportGrip.supportInputBaseline.
+                            inputToGripTargetLocal,
+                        calibratedPrimaryTransform,
+                        calibratedSupportTransform);
+        } else if (gunstockBaselineActive) {
+            inputBaselineResolved =
+                weapon_support_acquisition_math::
+                    tryResolveSupportInputTarget(
+                        supportTransform,
+                        supportGrip.supportInputBaseline.
+                            inputToGripTargetLocal,
+                        calibratedSupportTransform);
+        }
         if (supportInputBaselineActive &&
-            !weapon_support_acquisition_math::
-                tryResolveSupportInputTarget(
-                    supportTransform,
-                    supportGrip.supportInputBaseline.
-                        inputToGripTargetLocal,
-                    calibratedSupportTransform)) {
+            !inputBaselineResolved) {
             _hasSolvedWeaponTransform = false;
             ROCK_LOG_WARN(Weapon,
-                "TwoHandedGrip: clearing support grip because its captured input baseline became invalid mode={} hand={} grip={} generation={:016X}",
+                "TwoHandedGrip: clearing support grip because its captured input baseline became invalid mode={} hand={} grip={} generation={:016X} primaryDriver={} supportDriver={}",
                 gunstockBaselineActive ? "gunstock" : "dynamic",
                 supportHandIsLeft ? "left" : "right",
                 supportGrip.gripSequence,
-                supportGrip.weaponGenerationKey);
+                supportGrip.weaponGenerationKey,
+                _currentHandDriverFrames[
+                    primaryHandIsLeft ? 0u : 1u]
+                        .valid ?
+                    "valid" :
+                    "missing",
+                _currentHandDriverFrames[
+                    supportHandIsLeft ? 0u : 1u]
+                        .valid ?
+                    "valid" :
+                    "missing");
             transitionToInactive(false);
             return;
         }
 
         const RE::NiPoint3 primaryController =
             computeGrabLegacyPalmPivotAWorldFromHandBasis(
-                primaryTransform,
+                calibratedPrimaryTransform,
                 primaryHandIsLeft);
         const RE::NiPoint3 supportController =
             computeGrabLegacyPalmPivotAWorldFromHandBasis(
@@ -6140,7 +6551,6 @@ namespace rock
                         !initializeDynamicSupportBaseline(
                             weaponNode,
                             newSupportHandIsLeft,
-                            supportInputWorld,
                             "part-carry-firing-grip-reattach")) {
                         ROCK_LOG_WARN(
                             Weapon,
@@ -7161,6 +7571,8 @@ namespace rock
         return supportGrip.active &&
                baseline.active &&
                baseline.kind == kind &&
+               (kind != SupportInputBaselineKind::Dynamic ||
+                   baseline.pairedDynamicDrivers) &&
                baseline.supportHandIsLeft == supportHandIsLeft &&
                baseline.weaponGenerationKey != 0 &&
                baseline.weaponGenerationKey ==
@@ -7243,24 +7655,88 @@ namespace rock
     bool TwoHandedGrip::initializeDynamicSupportBaseline(
         RE::NiNode* weaponNode,
         const bool supportHandIsLeft,
-        const RE::NiTransform& supportInputWorld,
         const char* reason)
     {
-        const WeaponPartGrip& supportGrip = partGrip(supportHandIsLeft);
+        WeaponPartGrip& supportGrip = partGrip(supportHandIsLeft);
         if (_authorityMode != weapon_support_authority_policy::
                                   WeaponSupportAuthorityMode::
                                       FullTwoHandedSolver ||
             supportGrip.authoredSupportGrip ||
             supportGrip.providerPartAuthority.active ||
-            supportGrip.attachOnly) {
+            supportGrip.attachOnly ||
+            !weaponNode ||
+            !supportGrip.active ||
+            !supportGrip.hasHandWeaponLocal ||
+            !_hasFiringHandWeaponLocal ||
+            supportGrip.weaponGenerationKey == 0 ||
+            supportGrip.gripSequence == 0) {
             return false;
         }
-        return initializeSupportInputBaseline(
-            weaponNode,
-            supportHandIsLeft,
-            supportInputWorld,
-            SupportInputBaselineKind::Dynamic,
-            reason);
+        if (isDynamicSupportBaselineActive(
+                supportHandIsLeft,
+                supportGrip)) {
+            return true;
+        }
+
+        const bool primaryHandIsLeft = !supportHandIsLeft;
+        const auto& primaryDriver =
+            _currentHandDriverFrames[
+                primaryHandIsLeft ? 0u : 1u];
+        const auto& supportDriver =
+            _currentHandDriverFrames[
+                supportHandIsLeft ? 0u : 1u];
+        const RE::NiTransform primaryGripTargetWorld =
+            weapon_visual_authority_math::weaponLocalFrameToWorld(
+                weaponNode->world,
+                _primaryHandWeaponLocal);
+        const RE::NiTransform supportGripTargetWorld =
+            resolvePartGripHandWorld(supportGrip, weaponNode);
+        RE::NiTransform primaryDriverToTargetLocal{};
+        RE::NiTransform supportDriverToTargetLocal{};
+        if (!primaryDriver.valid ||
+            !supportDriver.valid ||
+            !weapon_support_acquisition_math::
+                tryCaptureDynamicSupportDriverBaseline(
+                    primaryDriver.world,
+                    primaryGripTargetWorld,
+                    supportDriver.world,
+                    supportGripTargetWorld,
+                    primaryDriverToTargetLocal,
+                    supportDriverToTargetLocal)) {
+            supportGrip.supportInputBaseline = {};
+            ROCK_LOG_WARN(
+                Weapon,
+                "TwoHandedGrip: dynamic driver baseline capture failed hand={} primaryDriver={} supportDriver={} grip={} generation={:016X} reason={}",
+                supportHandIsLeft ? "left" : "right",
+                primaryDriver.valid ? "valid" : "missing",
+                supportDriver.valid ? "valid" : "missing",
+                supportGrip.gripSequence,
+                supportGrip.weaponGenerationKey,
+                reason ? reason : "unknown");
+            return false;
+        }
+
+        supportGrip.supportInputBaseline = {
+            .inputToGripTargetLocal = supportDriverToTargetLocal,
+            .primaryInputToGripTargetLocal =
+                primaryDriverToTargetLocal,
+            .weaponWorldAtCapture = weaponNode->world,
+            .weaponGenerationKey = supportGrip.weaponGenerationKey,
+            .gripSequence = supportGrip.gripSequence,
+            .supportHandIsLeft = supportHandIsLeft,
+            .kind = SupportInputBaselineKind::Dynamic,
+            .active = true,
+            .pairedDynamicDrivers = true,
+            .firstPublicationPending = true,
+        };
+        ROCK_LOG_INFO(
+            Weapon,
+            "TwoHandedGrip: paired dynamic driver baseline captured hand={} grip={} generation={:016X} reason={}; rendered hands excluded from solver input",
+            supportHandIsLeft ? "left" : "right",
+            supportGrip.gripSequence,
+            supportGrip.weaponGenerationKey,
+            reason ? reason : "unknown");
+        return true;
     }
 
     bool TwoHandedGrip::initializeGunstockSupportRole(
@@ -7358,7 +7834,6 @@ namespace rock
                 if (!initializeDynamicSupportBaseline(
                         weaponNode,
                         supportHandIsLeft,
-                        supportStartWorld,
                         "gunstock-mode-disabled")) {
                     ROCK_LOG_WARN(
                         Weapon,

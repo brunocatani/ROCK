@@ -209,6 +209,30 @@ int main()
     ok &= expectTrue("pinch thumb distal does not over-chase", pinchPose.jointValues[2] >= 0.45f);
     ok &= expectTrue("pinch thumb curls as a chain", pinchPose.jointValues[0] > pinchPose.jointValues[1] && pinchPose.jointValues[1] > pinchPose.jointValues[2]);
 
+    const auto pinkyOppositionPose =
+        buildStableOppositionFingerPose(
+            poseConfig,
+            0.20f,
+            4);
+    ok &= expectNear(
+        "pinky opposition keeps thumb at stable endpoint value",
+        pinkyOppositionPose.values[0],
+        0.45f);
+    ok &= expectNear(
+        "pinky opposition keeps pinky at stable endpoint value",
+        pinkyOppositionPose.values[4],
+        0.45f);
+    ok &= expectNear(
+        "pinky opposition closes inner fingers coherently",
+        pinkyOppositionPose.values[1],
+        0.20f);
+    ok &= expectTrue(
+        "pinky opposition articulates the pinky endpoint chain",
+        pinkyOppositionPose.jointValues[12] >
+                pinkyOppositionPose.jointValues[13] &&
+            pinkyOppositionPose.jointValues[13] >
+                pinkyOppositionPose.jointValues[14]);
+
     poseConfig.thumbIndexMaxOpenValue = 0.05f;
     const auto clampedPinchPose = buildStablePinchFingerPose(poseConfig, 0.30f);
     ok &= expectNear("pinch pose respects minimum thumb/index value", clampedPinchPose.values[0], 0.30f);

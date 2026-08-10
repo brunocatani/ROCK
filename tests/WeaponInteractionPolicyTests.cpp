@@ -1002,6 +1002,125 @@ int main()
     }
 
     {
+        TestTransform primaryDriver =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        primaryDriver.rotate = makeAxisAngleRotation(
+            TestVector3{ 0.0f, 0.0f, 1.0f },
+            14.0f);
+        primaryDriver.translate = { 2.0f, -5.0f, 7.0f };
+        TestTransform supportDriver =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        supportDriver.rotate = makeAxisAngleRotation(
+            TestVector3{ 0.0f, 1.0f, 0.0f },
+            -31.0f);
+        supportDriver.translate = { -4.0f, 12.0f, 3.0f };
+
+        TestTransform primaryTarget =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        primaryTarget.rotate = makeAxisAngleRotation(
+            TestVector3{ 1.0f, 0.0f, 0.0f },
+            22.0f);
+        primaryTarget.translate = { 8.0f, 1.0f, -2.0f };
+        TestTransform supportTarget =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        supportTarget.rotate = makeAxisAngleRotation(
+            rock::weaponSolverNormalize(
+                TestVector3{ 0.3f, 0.7f, -0.2f }),
+            -19.0f);
+        supportTarget.translate = { -9.0f, 6.0f, 11.0f };
+
+        TestTransform primaryRelation{};
+        TestTransform supportRelation{};
+        ok &= expectTrue(
+            "dynamic support captures both controller-driver relations atomically",
+            rock::weapon_support_acquisition_math::
+                tryCaptureDynamicSupportDriverBaseline(
+                    primaryDriver,
+                    primaryTarget,
+                    supportDriver,
+                    supportTarget,
+                    primaryRelation,
+                    supportRelation));
+
+        TestTransform resolvedPrimary{};
+        TestTransform resolvedSupport{};
+        ok &= expectTrue(
+            "dynamic support resolves both controller-driver targets atomically",
+            rock::weapon_support_acquisition_math::
+                tryResolveDynamicSupportDriverTargets(
+                    primaryDriver,
+                    primaryRelation,
+                    supportDriver,
+                    supportRelation,
+                    resolvedPrimary,
+                    resolvedSupport));
+        ok &= expectTransformNear(
+            "unchanged primary driver reproduces captured primary target",
+            resolvedPrimary,
+            primaryTarget);
+        ok &= expectTransformNear(
+            "unchanged support driver reproduces captured support target",
+            resolvedSupport,
+            supportTarget);
+
+        TestTransform primaryDelta =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        primaryDelta.rotate = makeAxisAngleRotation(
+            TestVector3{ 0.0f, 1.0f, 0.0f },
+            9.0f);
+        primaryDelta.translate = { 3.0f, 0.0f, -1.0f };
+        TestTransform supportDelta =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        supportDelta.rotate = makeAxisAngleRotation(
+            TestVector3{ 1.0f, 0.0f, 0.0f },
+            -12.0f);
+        supportDelta.translate = { -2.0f, 4.0f, 0.5f };
+        const TestTransform movedPrimaryDriver =
+            rock::transform_math::composeTransforms(
+                primaryDelta,
+                primaryDriver);
+        const TestTransform movedSupportDriver =
+            rock::transform_math::composeTransforms(
+                supportDelta,
+                supportDriver);
+        ok &= expectTrue(
+            "dynamic support resolves independent post-capture driver deltas",
+            rock::weapon_support_acquisition_math::
+                tryResolveDynamicSupportDriverTargets(
+                    movedPrimaryDriver,
+                    primaryRelation,
+                    movedSupportDriver,
+                    supportRelation,
+                    resolvedPrimary,
+                    resolvedSupport));
+        ok &= expectTransformNear(
+            "primary target follows only primary driver delta",
+            resolvedPrimary,
+            rock::transform_math::composeTransforms(
+                primaryDelta,
+                primaryTarget));
+        ok &= expectTransformNear(
+            "support target follows only support driver delta",
+            resolvedSupport,
+            rock::transform_math::composeTransforms(
+                supportDelta,
+                supportTarget));
+
+        TestTransform invalidSupportDriver = supportDriver;
+        invalidSupportDriver.scale = 0.0f;
+        ok &= expectFalse(
+            "dynamic support fails closed when either current driver is invalid",
+            rock::weapon_support_acquisition_math::
+                tryResolveDynamicSupportDriverTargets(
+                    primaryDriver,
+                    primaryRelation,
+                    invalidSupportDriver,
+                    supportRelation,
+                    resolvedPrimary,
+                    resolvedSupport));
+    }
+
+    {
         TestTransform weaponWorld =
             rock::transform_math::makeIdentityTransform<TestTransform>();
         weaponWorld.rotate = makeAxisAngleRotation(

@@ -1004,6 +1004,71 @@ namespace rock
             return true;
         }
 
+        /*
+         * Ordinary dynamic support is a two-controller transaction. Both
+         * controller/driver inputs are calibrated onto their current locked
+         * hand targets at capture, then resolved together on every later
+         * frame. Keeping this pair atomic prevents either rendered hand from
+         * becoming solver input after ROCK publishes its locked-hand visual.
+         */
+        template <class Transform>
+        inline bool tryCaptureDynamicSupportDriverBaseline(
+            const Transform& primaryDriverWorld,
+            const Transform& primaryGripTargetWorld,
+            const Transform& supportDriverWorld,
+            const Transform& supportGripTargetWorld,
+            Transform& outPrimaryDriverToTargetLocal,
+            Transform& outSupportDriverToTargetLocal)
+        {
+            outPrimaryDriverToTargetLocal = {};
+            outSupportDriverToTargetLocal = {};
+            Transform primaryRelation{};
+            Transform supportRelation{};
+            if (!tryCaptureSupportInputBaseline(
+                    primaryDriverWorld,
+                    primaryGripTargetWorld,
+                    primaryRelation) ||
+                !tryCaptureSupportInputBaseline(
+                    supportDriverWorld,
+                    supportGripTargetWorld,
+                    supportRelation)) {
+                return false;
+            }
+
+            outPrimaryDriverToTargetLocal = primaryRelation;
+            outSupportDriverToTargetLocal = supportRelation;
+            return true;
+        }
+
+        template <class Transform>
+        inline bool tryResolveDynamicSupportDriverTargets(
+            const Transform& primaryDriverWorld,
+            const Transform& primaryDriverToTargetLocal,
+            const Transform& supportDriverWorld,
+            const Transform& supportDriverToTargetLocal,
+            Transform& outPrimaryTargetWorld,
+            Transform& outSupportTargetWorld)
+        {
+            outPrimaryTargetWorld = {};
+            outSupportTargetWorld = {};
+            Transform primaryTarget{};
+            Transform supportTarget{};
+            if (!tryResolveSupportInputTarget(
+                    primaryDriverWorld,
+                    primaryDriverToTargetLocal,
+                    primaryTarget) ||
+                !tryResolveSupportInputTarget(
+                    supportDriverWorld,
+                    supportDriverToTargetLocal,
+                    supportTarget)) {
+                return false;
+            }
+
+            outPrimaryTargetWorld = primaryTarget;
+            outSupportTargetWorld = supportTarget;
+            return true;
+        }
+
         template <class Matrix>
         inline bool shortestArcSlerpFromIdentity(
             const Matrix& fullRotationDelta,
