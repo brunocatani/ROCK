@@ -171,9 +171,11 @@ namespace rock
             None,
             NoGeneration,
             NoActiveBodies,
+            MissingShape,
             MissingPointCloud,
             NonFinitePoint,
             DegeneratePointCloud,
+            SourceTransformUnavailable,
             BodyCountChanged,
             GenerationChanged,
             InvalidBounds,
@@ -181,15 +183,21 @@ namespace rock
 
         struct CompoundGeometryChildSnapshot
         {
-            std::vector<RE::NiPoint3> pointsWeaponLocal;
-            RE::NiPoint3 centerWeaponLocal{};
+            const RE::hknpShape* shape{ nullptr };
+            RE::NiTransform shapeInWeapon{};
+        };
+
+        struct CompoundChildPoseSnapshot
+        {
+            RE::NiTransform shapeInWeapon{};
         };
 
         /*
-         * Creation-only copy of the active layer-44 hull geometry in one
-         * weapon-root-local basis. Dynamic weapon collision consumes this
-         * synchronously while replacing its body; no source node, body, or
-         * borrowed hknp shape escapes the call.
+         * Creation-only view of the active layer-44 hull geometry in one
+         * weapon-root-local basis. Dynamic weapon collision consumes every
+         * borrowed child shape synchronously while its native constructor
+         * acquires independent references; no source node, body, or borrowed
+         * hknp shape survives the call.
          */
         struct CompoundGeometrySnapshot
         {
@@ -223,6 +231,12 @@ namespace rock
         bool getApproximateBoundsSnapshot(ApproximateBoundsSnapshot& outSnapshot) const;
 
         bool getCompoundGeometrySnapshot(CompoundGeometrySnapshot& outSnapshot) const;
+
+        bool getCompoundChildPoseSnapshot(
+            const RE::NiAVObject* currentWeaponRoot,
+            std::uint64_t expectedGenerationKey,
+            std::span<CompoundChildPoseSnapshot> outChildren,
+            std::size_t& outChildCount) const;
 
         // One-frame, read-only release geometry query. The caller must consume
         // this before destroyWeaponBody retires the equipped body bank.
@@ -485,6 +499,10 @@ namespace rock
         static bool bankHasWeaponBody(const WeaponBodyBank& bank);
         static std::uint32_t bankWeaponBodyCount(const WeaponBodyBank& bank);
         static RE::NiAVObject* resolvePackageDriveNode(const WeaponBodyBank& bank, RE::NiAVObject* fallbackWeaponNode);
+        static bool resolveCompoundChildPose(
+            const WeaponBodyInstance& instance,
+            const RE::NiAVObject* packageDriveNode,
+            CompoundChildPoseSnapshot& outPose);
         static weapon_generated_source_completeness_policy::GeneratedSourceCompleteness summarizeGeneratedSources(const std::vector<GeneratedHullSource>& sources);
         std::size_t createGeneratedWeaponBodiesInBank(
             RE::hknpWorld* world,

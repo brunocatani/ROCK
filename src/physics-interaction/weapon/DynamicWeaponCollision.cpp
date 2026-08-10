@@ -8,7 +8,6 @@
 #include "physics-interaction/grab/GrabInertiaPolicy.h"
 #include "physics-interaction/grab/GrabMotionController.h"
 #include "physics-interaction/native/HavokCompoundShapeBuilder.h"
-#include "physics-interaction/native/HavokConvexShapeBuilder.h"
 #include "physics-interaction/native/HavokMaterialRegistry.h"
 #include "physics-interaction/native/HavokRefCount.h"
 #include "physics-interaction/native/HavokRuntime.h"
@@ -32,27 +31,6 @@ namespace rock
         constexpr std::uint32_t kContactGraceSolves = 3;
         constexpr float kMaxVisualCorrectionRotationDegrees = 85.0f;
 
-        class OwnedShapeBatch
-        {
-        public:
-            OwnedShapeBatch() = default;
-            OwnedShapeBatch(const OwnedShapeBatch&) = delete;
-            OwnedShapeBatch& operator=(const OwnedShapeBatch&) = delete;
-
-            ~OwnedShapeBatch()
-            {
-                for (const auto* shape : _shapes) {
-                    havok_ref_count::release(shape);
-                }
-            }
-
-            void reserve(const std::size_t count) { _shapes.reserve(count); }
-            void take(const RE::hknpShape* shape) { _shapes.push_back(shape); }
-
-        private:
-            std::vector<const RE::hknpShape*> _shapes;
-        };
-
         const char* compoundSnapshotFailureName(const WeaponCollision::CompoundGeometrySnapshotFailure failure)
         {
             using Failure = WeaponCollision::CompoundGeometrySnapshotFailure;
@@ -63,12 +41,16 @@ namespace rock
                 return "no-generation";
             case Failure::NoActiveBodies:
                 return "no-active-bodies";
+            case Failure::MissingShape:
+                return "missing-shape";
             case Failure::MissingPointCloud:
                 return "missing-point-cloud";
             case Failure::NonFinitePoint:
                 return "nonfinite-point";
             case Failure::DegeneratePointCloud:
                 return "degenerate-point-cloud";
+            case Failure::SourceTransformUnavailable:
+                return "source-transform-unavailable";
             case Failure::BodyCountChanged:
                 return "body-count-changed";
             case Failure::GenerationChanged:
@@ -77,6 +59,57 @@ namespace rock
                 return "invalid-bounds";
             }
             return "unknown";
+        }
+
+        bool makeCompoundChildTransform(
+            const RE::NiTransform& shapeInWeapon,
+            const RE::NiPoint3& aggregateCenterWeaponLocal,
+            const float weaponScale,
+            havok_compound_shape_builder::ChildTransform& outTransform)
+        {
+            outTransform = {};
+            if (!dynamic_weapon_collision_policy::isFiniteTransform(shapeInWeapon) ||
+                std::abs(shapeInWeapon.scale - 1.0f) > 0.0001f) {
+                return false;
+            }
+
+            const auto childFrame = dynamic_weapon_collision_policy::makeCompoundChildFrame(
+                shapeInWeapon.translate,
+                aggregateCenterWeaponLocal,
+                weaponScale,
+                physics_scale::gameToHavok());
+            if (!childFrame.valid) {
+                return false;
+            }
+
+            // NiTransform stores each local basis axis as a row. hkTransformf
+            // stores those same axes as columns, so each Ni row maps directly
+            // to one native child-transform column.
+            outTransform.column0 = {
+                shapeInWeapon.rotate.entry[0][0],
+                shapeInWeapon.rotate.entry[0][1],
+                shapeInWeapon.rotate.entry[0][2],
+                0.0f,
+            };
+            outTransform.column1 = {
+                shapeInWeapon.rotate.entry[1][0],
+                shapeInWeapon.rotate.entry[1][1],
+                shapeInWeapon.rotate.entry[1][2],
+                0.0f,
+            };
+            outTransform.column2 = {
+                shapeInWeapon.rotate.entry[2][0],
+                shapeInWeapon.rotate.entry[2][1],
+                shapeInWeapon.rotate.entry[2][2],
+                0.0f,
+            };
+            outTransform.translation = {
+                childFrame.translationHavok.x,
+                childFrame.translationHavok.y,
+                childFrame.translationHavok.z,
+                1.0f,
+            };
+            return true;
         }
 
         std::uint32_t dynamicWeaponProxyFilterInfo()
@@ -423,6 +456,20 @@ namespace rock
             return result;
         }
 
+        if (!queueCompoundChildTransforms(
+                weaponCollision,
+                weaponNode,
+                std::abs(_frameRequestedWeaponWorld.scale))) {
+            _rebuildRequestedAtomic.store(true, std::memory_order_release);
+            ROCK_LOG_SAMPLE_WARN(
+                Weapon,
+                1000,
+                "Dynamic weapon live compound pose rejected: generation={:016X} children={}",
+                _createdGenerationKey,
+                _createdCompoundChildCount);
+            return result;
+        }
+
         result.proxyActive = true;
         const RE::NiTransform requestedAuthorityTarget =
             dynamic_weapon_collision_policy::makeGripAuthorityTarget(_frameRequestedWeaponWorld);
@@ -568,6 +615,45 @@ namespace rock
         return result;
     }
 
+    bool DynamicWeaponCollisionRuntime::queueCompoundChildTransforms(
+        const WeaponCollision& weaponCollision,
+        const RE::NiAVObject* weaponNode,
+        const float weaponScale)
+    {
+        if (!_created || !weaponNode || !static_cast<bool>(_compoundShape) ||
+            !std::isfinite(weaponScale) || weaponScale <= 0.0001f) {
+            return false;
+        }
+
+        std::scoped_lock poseLock(_compoundPoseMutex);
+        if (_compoundPoseScratch.size() != _createdCompoundChildCount ||
+            _pendingCompoundChildTransforms.size() != _createdCompoundChildCount) {
+            return false;
+        }
+
+        std::size_t childCount = 0;
+        if (!weaponCollision.getCompoundChildPoseSnapshot(
+                weaponNode,
+                _createdGenerationKey,
+                _compoundPoseScratch,
+                childCount) ||
+            childCount != _createdCompoundChildCount) {
+            return false;
+        }
+
+        for (std::size_t i = 0; i < childCount; ++i) {
+            if (!makeCompoundChildTransform(
+                    _compoundPoseScratch[i].shapeInWeapon,
+                    _createdCenterWeaponLocal,
+                    weaponScale,
+                    _pendingCompoundChildTransforms[i])) {
+                return false;
+            }
+        }
+        ++_queuedCompoundPoseSequence;
+        return true;
+    }
+
     bool DynamicWeaponCollisionRuntime::ensureProxyBody(
         const PhysicsFrameContext& frame,
         const WeaponCollision& weaponCollision,
@@ -594,6 +680,7 @@ namespace rock
             _body.isValid() &&
             _authorityProxy.isValid() &&
             _authorityConstraint.isValid() &&
+            static_cast<bool>(_compoundShape) &&
             _createdWorld == frame.hknpWorld &&
             _createdBhkWorld == frame.bhkWorld &&
             _createdGenerationKey == bounds.generationKey &&
@@ -644,72 +731,32 @@ namespace rock
             _physicsCallbackGate->pauseForMutation() :
             PhysicsCallbackQuiescenceGate::MutationLease{};
 
-        RE::hknpShape* shape = nullptr;
-        {
-            OwnedShapeBatch childShapeReferences;
-            childShapeReferences.reserve(compoundGeometry.children.size());
-            std::vector<havok_compound_shape_builder::CompoundChild> compoundChildren;
-            compoundChildren.reserve(compoundGeometry.children.size());
-            std::vector<RE::NiPoint3> centeredChildPoints;
-            const float gameToHavokScale = physics_scale::gameToHavok();
-            const float convexRadius = (std::max)(0.0f, g_rockConfig.rockWeaponCollisionConvexRadius);
-
-            for (std::size_t childIndex = 0; childIndex < compoundGeometry.children.size(); ++childIndex) {
-                const auto& sourceChild = compoundGeometry.children[childIndex];
-                const auto childFrame = dynamic_weapon_collision_policy::makeCompoundChildFrame(
-                    sourceChild.centerWeaponLocal,
+        std::vector<havok_compound_shape_builder::CompoundChild> compoundChildren;
+        compoundChildren.reserve(compoundGeometry.children.size());
+        for (std::size_t childIndex = 0; childIndex < compoundGeometry.children.size(); ++childIndex) {
+            const auto& sourceChild = compoundGeometry.children[childIndex];
+            havok_compound_shape_builder::CompoundChild compoundChild{};
+            compoundChild.shape = sourceChild.shape;
+            if (!makeCompoundChildTransform(
+                    sourceChild.shapeInWeapon,
                     geometry.centerWeaponLocal,
                     scale,
-                    gameToHavokScale);
-                if (!childFrame.valid) {
-                    ROCK_LOG_ERROR(
-                        Weapon,
-                        "Dynamic weapon compound build failed: stage=child-frame generation={:016X} child={} center=({:.3f},{:.3f},{:.3f})",
-                        compoundGeometry.generationKey,
-                        childIndex,
-                        sourceChild.centerWeaponLocal.x,
-                        sourceChild.centerWeaponLocal.y,
-                        sourceChild.centerWeaponLocal.z);
-                    return false;
-                }
-
-                centeredChildPoints.clear();
-                centeredChildPoints.reserve(sourceChild.pointsWeaponLocal.size());
-                for (const auto& point : sourceChild.pointsWeaponLocal) {
-                    centeredChildPoints.push_back(dynamic_weapon_collision_policy::makeCompoundChildPointHavok(
-                        point,
-                        sourceChild.centerWeaponLocal,
-                        childFrame.pointScaleHavok));
-                }
-
-                auto* childShape = havok_convex_shape_builder::buildConvexShapeFromLocalHavokPoints(
-                    centeredChildPoints,
-                    convexRadius);
-                if (!childShape) {
-                    ROCK_LOG_ERROR(
-                        Weapon,
-                        "Dynamic weapon compound build failed: stage=child-convex generation={:016X} child={} points={}",
-                        compoundGeometry.generationKey,
-                        childIndex,
-                        centeredChildPoints.size());
-                    return false;
-                }
-                childShapeReferences.take(childShape);
-
-                havok_compound_shape_builder::CompoundChild compoundChild{};
-                compoundChild.shape = childShape;
-                compoundChild.transform.translation = {
-                    childFrame.translationHavok.x,
-                    childFrame.translationHavok.y,
-                    childFrame.translationHavok.z,
-                    1.0f,
-                };
-                compoundChildren.push_back(compoundChild);
+                    compoundChild.transform)) {
+                ROCK_LOG_ERROR(
+                    Weapon,
+                    "Dynamic weapon compound build failed: stage=child-pose generation={:016X} child={} center=({:.3f},{:.3f},{:.3f})",
+                    compoundGeometry.generationKey,
+                    childIndex,
+                    sourceChild.shapeInWeapon.translate.x,
+                    sourceChild.shapeInWeapon.translate.y,
+                    sourceChild.shapeInWeapon.translate.z);
+                return false;
             }
-
-            shape = havok_compound_shape_builder::buildStaticCompoundShape(compoundChildren);
+            compoundChildren.push_back(compoundChild);
         }
-        if (!shape) {
+
+        havok_compound_shape_builder::DynamicCompoundShape pendingCompoundShape;
+        if (!pendingCompoundShape.create(compoundChildren)) {
             ROCK_LOG_ERROR(
                 Weapon,
                 "Dynamic weapon compound build failed: stage=compound-constructor generation={:016X} children={} points={}",
@@ -724,13 +771,15 @@ namespace rock
                 "Dynamic weapon compound build discarded: stage=generation-changed built={:016X} current={:016X}",
                 compoundGeometry.generationKey,
                 weaponCollision.getCurrentWeaponGenerationKey());
-            havok_ref_count::release(shape);
             return false;
         }
 
         if (_created) {
             retireProxyLocked(frame.bhkWorld);
         }
+
+        _compoundShape = std::move(pendingCompoundShape);
+        auto* shape = _compoundShape.get();
 
         RE::NiTransform initialContactTarget = dynamic_weapon_collision_policy::makeProxyBodyTarget(
             requestedWeaponWorld,
@@ -753,7 +802,7 @@ namespace rock
                 compoundGeometry.generationKey,
                 compoundGeometry.children.size(),
                 compoundGeometry.sourcePointCount);
-            havok_ref_count::release(shape);
+            _compoundShape.reset();
             return false;
         }
 
@@ -780,11 +829,10 @@ namespace rock
                 flaggedBody.body ? flaggedBody.body->flags : 0u);
             _bodyIdAtomic.store(kInvalidBodyId, std::memory_order_release);
             _body.retireDeferred(frame.bhkWorld);
-            havok_ref_count::release(shape);
+            _compoundShape.reset();
             return false;
         }
 
-        _shape = shape;
         _createdWorld = frame.hknpWorld;
         _createdBhkWorld = frame.bhkWorld;
         _createdGenerationKey = compoundGeometry.generationKey;
@@ -795,6 +843,17 @@ namespace rock
         _createdCompoundChildCount = static_cast<std::uint32_t>(compoundGeometry.children.size());
         _createdCompoundPointCount = compoundGeometry.sourcePointCount;
         _created = true;
+        {
+            std::scoped_lock poseLock(_compoundPoseMutex);
+            _compoundPoseScratch.resize(compoundGeometry.children.size());
+            _pendingCompoundChildTransforms.resize(compoundGeometry.children.size());
+            for (std::size_t i = 0; i < compoundGeometry.children.size(); ++i) {
+                _compoundPoseScratch[i].shapeInWeapon = compoundGeometry.children[i].shapeInWeapon;
+                _pendingCompoundChildTransforms[i] = compoundChildren[i].transform;
+            }
+            _queuedCompoundPoseSequence = 1;
+            _consumedCompoundPoseSequence = 1;
+        }
         _rebuildRequestedAtomic.store(false, std::memory_order_release);
         const float bodyMass = dynamic_weapon_collision_policy::sanitizeWeaponMass(weaponIdentity.weightGame);
         _body.setMass(bodyMass);
@@ -919,6 +978,36 @@ namespace rock
         if (!_enabledAtomic.load(std::memory_order_acquire) || !world || !_created || _createdWorld != world ||
             !_body.isValid() || !_authorityProxy.isValid() || !_authorityConstraint.isValid()) {
             return;
+        }
+
+        {
+            std::scoped_lock poseLock(_compoundPoseMutex);
+            if (_queuedCompoundPoseSequence != _consumedCompoundPoseSequence) {
+                const auto updateResult = _compoundShape.updateTransforms(_pendingCompoundChildTransforms);
+                if (!updateResult.succeeded) {
+                    _rebuildRequestedAtomic.store(true, std::memory_order_release);
+                    _droveThisSubstep = false;
+                    clearPublishedPhysicsSnapshot();
+                    ROCK_LOG_SAMPLE_WARN(
+                        Weapon,
+                        1000,
+                        "Dynamic weapon live compound update failed: generation={:016X} children={}",
+                        _createdGenerationKey,
+                        _createdCompoundChildCount);
+                    return;
+                }
+                _consumedCompoundPoseSequence = _queuedCompoundPoseSequence;
+                if (updateResult.changedChildCount > 0 && g_rockConfig.rockDebugDrawDynamicWeaponColliders) {
+                    ROCK_LOG_SAMPLE_INFO(
+                        Weapon,
+                        500,
+                        "Dynamic weapon live compound updated: body={} generation={:016X} changed={}/{}",
+                        _body.getBodyId().value,
+                        _createdGenerationKey,
+                        updateResult.changedChildCount,
+                        _createdCompoundChildCount);
+                }
+            }
         }
 
         const auto driveResult = driveGeneratedKeyframedBody(
@@ -1185,10 +1274,14 @@ namespace rock
 
     void DynamicWeaponCollisionRuntime::clearLocalProxyStateLocked()
     {
-        if (_shape) {
-            havok_ref_count::release(_shape);
+        {
+            std::scoped_lock poseLock(_compoundPoseMutex);
+            _compoundPoseScratch.clear();
+            _pendingCompoundChildTransforms.clear();
+            _queuedCompoundPoseSequence = 0;
+            _consumedCompoundPoseSequence = 0;
+            _compoundShape.reset();
         }
-        _shape = nullptr;
         _createdWorld = nullptr;
         _createdBhkWorld = nullptr;
         _createdGenerationKey = 0;

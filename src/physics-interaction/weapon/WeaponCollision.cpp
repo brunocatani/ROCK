@@ -3312,6 +3312,13 @@ namespace rock
             return false;
         }
 
+        const auto& bank = activeWeaponBodies();
+        const RE::NiAVObject* packageDriveNode = resolvePackageDriveNode(bank, nullptr);
+        if (!packageDriveNode) {
+            outSnapshot.failure = CompoundGeometrySnapshotFailure::SourceTransformUnavailable;
+            return false;
+        }
+
         outSnapshot.children.reserve(expectedBodyCount);
         const auto finitePoint = [](const RE::NiPoint3& point) {
             return std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z);
@@ -3327,12 +3334,15 @@ namespace rock
 
         bool sampledPoint = false;
         std::uint32_t sourceIndex = 0;
-        for (const auto& instance : activeWeaponBodies()) {
+        for (const auto& instance : bank) {
             if (!instance.body.isValid()) {
                 continue;
             }
 
             const std::uint32_t bodyId = instance.body.getBodyId().value;
+            if (!instance.shape) {
+                return fail(CompoundGeometrySnapshotFailure::MissingShape, sourceIndex, bodyId);
+            }
             const auto& points = instance.generatedLocalPointsGame;
             if (points.empty()) {
                 return fail(CompoundGeometrySnapshotFailure::MissingPointCloud, sourceIndex, bodyId);
@@ -3347,11 +3357,12 @@ namespace rock
             }
 
             CompoundGeometryChildSnapshot child{};
-            child.centerWeaponLocal = weapon_collision_geometry_math::pointCenter(points);
-            if (!finitePoint(child.centerWeaponLocal)) {
-                return fail(CompoundGeometrySnapshotFailure::NonFinitePoint, sourceIndex, bodyId);
+            child.shape = instance.shape;
+            CompoundChildPoseSnapshot pose{};
+            if (!resolveCompoundChildPose(instance, packageDriveNode, pose)) {
+                return fail(CompoundGeometrySnapshotFailure::SourceTransformUnavailable, sourceIndex, bodyId);
             }
-            child.pointsWeaponLocal = points;
+            child.shapeInWeapon = pose.shapeInWeapon;
             outSnapshot.sourcePointCount += points.size();
 
             for (const auto& point : points) {
@@ -3399,6 +3410,82 @@ namespace rock
 
         outSnapshot.failure = CompoundGeometrySnapshotFailure::None;
         outSnapshot.valid = true;
+        return true;
+    }
+
+    bool WeaponCollision::resolveCompoundChildPose(
+        const WeaponBodyInstance& instance,
+        const RE::NiAVObject* packageDriveNode,
+        CompoundChildPoseSnapshot& outPose)
+    {
+        outPose = {};
+        if (!packageDriveNode || !instance.shape) {
+            return false;
+        }
+
+        RE::NiTransform sourceInWeapon = transform_math::makeIdentityTransform<RE::NiTransform>();
+        RE::NiPoint3 shapeCenterWeaponLocal = instance.generatedLocalCenterGame;
+        if (instance.sourceNode) {
+            if (!tryResolveDescendantLocalTransform(packageDriveNode, instance.sourceNode, sourceInWeapon)) {
+                return false;
+            }
+            if (instance.generatedSourceFrameCorrectionValid) {
+                sourceInWeapon = weapon_recapture_frame_policy::applyPostUndrawFrameCorrection(
+                    instance.generatedSourceFrameCorrection,
+                    sourceInWeapon);
+            }
+            if (!weaponTransformFinite(sourceInWeapon)) {
+                return false;
+            }
+            shapeCenterWeaponLocal = transform_math::localPointToWorld(
+                sourceInWeapon,
+                instance.generatedSourceLocalCenterGame);
+        }
+
+        outPose.shapeInWeapon = sourceInWeapon;
+        outPose.shapeInWeapon.translate = shapeCenterWeaponLocal;
+        // Generated layer-44 shapes already bake their absolute source scale.
+        // The dynamic compound supplies only the live relative pose, exactly
+        // matching the per-part keyframed body convention.
+        outPose.shapeInWeapon.scale = 1.0f;
+        return weaponTransformFinite(outPose.shapeInWeapon);
+    }
+
+    bool WeaponCollision::getCompoundChildPoseSnapshot(
+        const RE::NiAVObject* currentWeaponRoot,
+        const std::uint64_t expectedGenerationKey,
+        std::span<CompoundChildPoseSnapshot> outChildren,
+        std::size_t& outChildCount) const
+    {
+        outChildCount = 0;
+        if (!currentWeaponRoot || expectedGenerationKey == 0 ||
+            getCurrentWeaponGenerationKey() != expectedGenerationKey) {
+            return false;
+        }
+
+        const auto& bank = activeWeaponBodies();
+        const std::uint32_t expectedBodyCount = getWeaponBodyCount();
+        if (expectedBodyCount == 0 || outChildren.size() < expectedBodyCount) {
+            return false;
+        }
+
+        for (const auto& instance : bank) {
+            if (!instance.body.isValid()) {
+                continue;
+            }
+            if (outChildCount >= outChildren.size() ||
+                !resolveCompoundChildPose(instance, currentWeaponRoot, outChildren[outChildCount])) {
+                outChildCount = 0;
+                return false;
+            }
+            ++outChildCount;
+        }
+
+        if (outChildCount != expectedBodyCount ||
+            getCurrentWeaponGenerationKey() != expectedGenerationKey) {
+            outChildCount = 0;
+            return false;
+        }
         return true;
     }
 

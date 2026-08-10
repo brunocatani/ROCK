@@ -97,6 +97,10 @@ namespace rock::offsets
 
     constexpr std::uintptr_t kFunc_StaticCompoundShape_Ctor = 0x1E9C950;
 
+    constexpr std::uintptr_t kFunc_DynamicCompoundShape_Ctor = 0x16E42B0;
+
+    constexpr std::uintptr_t kFunc_DynamicCompoundShape_UpdateInstances = 0x16E4850;
+
     constexpr std::uintptr_t kFunc_ShapeInstance_SetShape = 0x16E1780;
 
     constexpr std::uintptr_t kFunc_ShapeInstance_SetTransform = 0x16E1840;

@@ -2,7 +2,9 @@
 
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
+#include "physics-interaction/native/HavokCompoundShapeBuilder.h"
 #include "physics-interaction/grab/GrabConstraint.h"
+#include "physics-interaction/weapon/WeaponCollision.h"
 
 #include "RE/Havok/hknpBodyId.h"
 #include "RE/NetImmerse/NiTransform.h"
@@ -11,6 +13,8 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <mutex>
+#include <vector>
 
 namespace RE
 {
@@ -23,7 +27,6 @@ namespace rock
 {
     class PhysicsCallbackQuiescenceGate;
     struct PhysicsFrameContext;
-    class WeaponCollision;
 
     class DynamicWeaponCollisionRuntime
     {
@@ -155,6 +158,10 @@ namespace rock
             const PhysicsFrameContext& frame,
             const WeaponCollision& weaponCollision,
             const RE::NiTransform& requestedWeaponWorld);
+        bool queueCompoundChildTransforms(
+            const WeaponCollision& weaponCollision,
+            const RE::NiAVObject* weaponNode,
+            float weaponScale);
         void retireProxyLocked(void* bhkWorld);
         void clearLocalProxyStateLocked();
         void clearPublishedPhysicsSnapshot();
@@ -167,7 +174,12 @@ namespace rock
         BethesdaPhysicsBody _body{};
         BethesdaPhysicsBody _authorityProxy{};
         ActiveConstraint _authorityConstraint{};
-        const RE::hknpShape* _shape{ nullptr };
+        havok_compound_shape_builder::DynamicCompoundShape _compoundShape{};
+        mutable std::mutex _compoundPoseMutex;
+        std::vector<WeaponCollision::CompoundChildPoseSnapshot> _compoundPoseScratch;
+        std::vector<havok_compound_shape_builder::ChildTransform> _pendingCompoundChildTransforms;
+        std::uint64_t _queuedCompoundPoseSequence{ 0 };
+        std::uint64_t _consumedCompoundPoseSequence{ 0 };
         GeneratedKeyframedBodyDriveState _authorityDriveState{};
         RE::hknpWorld* _createdWorld{ nullptr };
         void* _createdBhkWorld{ nullptr };
