@@ -2606,6 +2606,8 @@ namespace rock
                     .weaponLocalPoints = source.localPointsGame,
                     .weaponLocalTriangles = source.localTrianglesGame,
                     .childWeaponLocalPointClouds = source.childLocalPointCloudsGame,
+                    .sourceLocalPoints = source.sourceLocalPointsGame,
+                    .sourceLocalTriangles = source.sourceLocalTrianglesGame,
                     .weaponLocalMin = source.localMinGame,
                     .weaponLocalMax = source.localMaxGame,
                     .sourceLocalPointCount = source.sourceLocalPointsGame.size(),
@@ -2648,10 +2650,12 @@ namespace rock
             float weaponCenterDeltaGame{ 0.0f };
             float sourceCenterDeltaGame{ 0.0f };
             float sourceBoundsDeltaGame{ 0.0f };
+            float maximumSourceTriangleVertexDeltaGame{ 0.0f };
             bool sourcePointerStable{ false };
             bool rootPointerStable{ false };
-            bool pointCountStable{ false };
+            bool dedupPointCountStable{ false };
             bool triangleCountStable{ false };
+            bool sourceGeometryStable{ false };
             bool sourceScaleStable{ false };
             bool frameCorrectionAvailable{ false };
         };
@@ -2665,6 +2669,7 @@ namespace rock
         std::size_t sourceGeometryDriftCount = 0;
         float maximumWeaponCenterDeltaGame = 0.0f;
         float maximumSourceCenterDeltaGame = 0.0f;
+        float maximumSourceTriangleVertexDeltaGame = 0.0f;
         const char* maximumWeaponCenterDeltaSource = "none";
 
         for (auto& current : sources) {
@@ -2721,9 +2726,32 @@ namespace rock
             row.triangleCountStable =
                 baseline->sourceLocalTriangleCount ==
                     current.sourceLocalTrianglesGame.size();
-            row.pointCountStable =
+            row.dedupPointCountStable =
                 baseline->sourceLocalPointCount ==
                 current.sourceLocalPointsGame.size();
+            if (row.triangleCountStable &&
+                baseline->sourceLocalTriangles.size() == current.sourceLocalTrianglesGame.size()) {
+                for (std::size_t triangleIndex = 0;
+                     triangleIndex < current.sourceLocalTrianglesGame.size();
+                     ++triangleIndex) {
+                    const auto& authoritativeTriangle = baseline->sourceLocalTriangles[triangleIndex];
+                    const auto& currentTriangle = current.sourceLocalTrianglesGame[triangleIndex];
+                    row.maximumSourceTriangleVertexDeltaGame = (std::max)({
+                        row.maximumSourceTriangleVertexDeltaGame,
+                        pointDistance(authoritativeTriangle.v0, currentTriangle.v0),
+                        pointDistance(authoritativeTriangle.v1, currentTriangle.v1),
+                        pointDistance(authoritativeTriangle.v2, currentTriangle.v2),
+                    });
+                }
+            } else {
+                row.maximumSourceTriangleVertexDeltaGame =
+                    (std::numeric_limits<float>::infinity)();
+            }
+            row.sourceGeometryStable =
+                row.triangleCountStable &&
+                std::isfinite(row.maximumSourceTriangleVertexDeltaGame) &&
+                row.maximumSourceTriangleVertexDeltaGame <=
+                    GENERATED_RECAPTURE_SOURCE_CENTER_DRIFT_GAME;
             row.sourceScaleStable =
                 std::isfinite(baseline->sourceNodeScale) &&
                 std::isfinite(current.sourceNodeScale) &&
@@ -2743,12 +2771,7 @@ namespace rock
             }
 
             const bool sourceGeometryDrifted =
-                row.sourceCenterDeltaGame >
-                    GENERATED_RECAPTURE_SOURCE_CENTER_DRIFT_GAME ||
-                row.sourceBoundsDeltaGame >
-                    GENERATED_RECAPTURE_SOURCE_CENTER_DRIFT_GAME ||
-                !row.pointCountStable ||
-                !row.triangleCountStable ||
+                !row.sourceGeometryStable ||
                 !row.sourceScaleStable;
             if (sourceGeometryDrifted) {
                 ++sourceGeometryDriftCount;
@@ -2761,6 +2784,9 @@ namespace rock
             maximumSourceCenterDeltaGame = (std::max)(
                 maximumSourceCenterDeltaGame,
                 row.sourceCenterDeltaGame);
+            maximumSourceTriangleVertexDeltaGame = (std::max)(
+                maximumSourceTriangleVertexDeltaGame,
+                row.maximumSourceTriangleVertexDeltaGame);
             if (row.weaponCenterDeltaGame > maximumWeaponCenterDeltaGame) {
                 maximumWeaponCenterDeltaGame = row.weaponCenterDeltaGame;
                 maximumWeaponCenterDeltaSource = current.sourceName.c_str();
@@ -2799,14 +2825,14 @@ namespace rock
                 [](const DriftRow& row) {
                     return row.baseline && row.current &&
                            row.sourcePointerStable && row.rootPointerStable &&
-                           row.pointCountStable && row.triangleCountStable &&
-                           row.sourceScaleStable && row.frameCorrectionAvailable;
+                           row.sourceGeometryStable && row.sourceScaleStable &&
+                           row.frameCorrectionAvailable;
                 });
 
         ++_generatedRecaptureDiagnostic.comparisonSequence;
         _generatedRecaptureDiagnostic.sawUndrawnInterval = false;
         ROCK_LOG_INFO(Weapon,
-            "Generated weapon post-undraw recapture diagnostic: sequence={} classification={} frameAuthorityEligible={} key={:016X} identity={:016X} ownership={:016X} formID={:08X} baselineSources={} currentSources={} matched={} sameSourcePointers={} treeChanges={} hierarchyFrameDrift={} sourceGeometryDrift={} maxWeaponCenterDelta={:.3f} maxWeaponCenterSource='{}' maxSourceLocalCenterDelta={:.3f}",
+            "Generated weapon post-undraw recapture diagnostic: sequence={} classification={} frameAuthorityEligible={} key={:016X} identity={:016X} ownership={:016X} formID={:08X} baselineSources={} currentSources={} matched={} sameSourcePointers={} treeChanges={} hierarchyFrameDrift={} sourceGeometryDrift={} maxWeaponCenterDelta={:.3f} maxWeaponCenterSource='{}' maxSourceLocalCenterDelta={:.3f} maxSourceLocalTriangleDelta={:.3f}",
             _generatedRecaptureDiagnostic.comparisonSequence,
             classification,
             frameAuthorityEligible ? "yes" : "no",
@@ -2823,7 +2849,8 @@ namespace rock
             sourceGeometryDriftCount,
             maximumWeaponCenterDeltaGame,
             maximumWeaponCenterDeltaSource,
-            maximumSourceCenterDeltaGame);
+            maximumSourceCenterDeltaGame,
+            maximumSourceTriangleVertexDeltaGame);
 
         std::sort(
             driftRows.begin(),
@@ -2839,19 +2866,26 @@ namespace rock
                     row.sourceCenterDeltaGame <=
                         GENERATED_RECAPTURE_SOURCE_CENTER_DRIFT_GAME &&
                     row.sourcePointerStable && row.rootPointerStable &&
-                    row.triangleCountStable)) {
+                    row.sourceGeometryStable && row.sourceScaleStable &&
+                    row.dedupPointCountStable)) {
                 continue;
             }
             ROCK_LOG_TRACE(Weapon,
-                "Generated weapon recapture drift[{}]: source='{}' sourcePointerStable={} rootPointersStable={} triangles={}->{} weaponCenterDelta={:.3f} sourceLocalCenterDelta={:.3f} weaponCenter=({:.3f},{:.3f},{:.3f})->({:.3f},{:.3f},{:.3f}) sourceLocalCenter=({:.3f},{:.3f},{:.3f})->({:.3f},{:.3f},{:.3f})",
+                "Generated weapon recapture drift[{}]: source='{}' sourcePointerStable={} rootPointersStable={} dedupPoints={}->{} triangles={}->{} sourceGeometryStable={} sourceScaleStable={} weaponCenterDelta={:.3f} sourceLocalCenterDelta={:.3f} sourceLocalBoundsDelta={:.3f} sourceLocalTriangleDelta={:.3f} weaponCenter=({:.3f},{:.3f},{:.3f})->({:.3f},{:.3f},{:.3f}) sourceLocalCenter=({:.3f},{:.3f},{:.3f})->({:.3f},{:.3f},{:.3f})",
                 detailCount,
                 row.current->sourceName,
                 row.sourcePointerStable ? "yes" : "no",
                 row.rootPointerStable ? "yes" : "no",
+                row.baseline->sourceLocalPointCount,
+                row.current->sourceLocalPointsGame.size(),
                 row.baseline->sourceLocalTriangleCount,
                 row.current->sourceLocalTrianglesGame.size(),
+                row.sourceGeometryStable ? "yes" : "no",
+                row.sourceScaleStable ? "yes" : "no",
                 row.weaponCenterDeltaGame,
                 row.sourceCenterDeltaGame,
+                row.sourceBoundsDeltaGame,
+                row.maximumSourceTriangleVertexDeltaGame,
                 row.baseline->weaponLocalCenter.x,
                 row.baseline->weaponLocalCenter.y,
                 row.baseline->weaponLocalCenter.z,
@@ -2900,6 +2934,12 @@ namespace rock
             current.localCenterGame = baseline.weaponLocalCenter;
             current.localMinGame = baseline.weaponLocalMin;
             current.localMaxGame = baseline.weaponLocalMax;
+            current.sourceLocalPointsGame = baseline.sourceLocalPoints;
+            current.sourceLocalTrianglesGame = baseline.sourceLocalTriangles;
+            current.sourceLocalCenterGame = baseline.sourceLocalCenter;
+            current.sourceLocalMinGame = baseline.sourceLocalMin;
+            current.sourceLocalMaxGame = baseline.sourceLocalMax;
+            current.sourceNodeScale = baseline.sourceNodeScale;
         }
 
         ROCK_LOG_INFO(Weapon,

@@ -428,6 +428,8 @@ namespace rock
             std::vector<RE::NiPoint3> weaponLocalPoints;
             std::vector<TriangleData> weaponLocalTriangles;
             std::vector<std::vector<RE::NiPoint3>> childWeaponLocalPointClouds;
+            std::vector<RE::NiPoint3> sourceLocalPoints;
+            std::vector<TriangleData> sourceLocalTriangles;
             RE::NiPoint3 weaponLocalMin{};
             RE::NiPoint3 weaponLocalMax{};
             std::size_t sourceLocalPointCount{ 0 };
