@@ -26,6 +26,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <limits>
@@ -62,6 +63,8 @@ namespace rock
             24.0f;
         constexpr float WEAPON_OPPOSITION_SEGMENT_PROBE_RADIUS_GAME_UNITS =
             0.5f;
+        constexpr std::size_t WEAPON_PRESENTATION_MAX_DEPTH = 128;
+        constexpr std::size_t WEAPON_PRESENTATION_MAX_OBJECTS = 8192;
 
         grab_pinch_pocket_policy::Config
             currentWeaponOppositionPocketConfig()
@@ -225,6 +228,156 @@ namespace rock
         {
             return isFiniteRotation(transform.rotate) && std::isfinite(transform.translate.x) && std::isfinite(transform.translate.y) &&
                    std::isfinite(transform.translate.z) && std::isfinite(transform.scale);
+        }
+
+        bool isInvertibleTransform(const RE::NiTransform& transform)
+        {
+            return isFiniteTransform(transform) &&
+                std::abs(transform.scale) > 0.0001f;
+        }
+
+        bool validateWeaponPresentationSubtree(
+            RE::NiAVObject* object,
+            const RE::NiTransform& presentationWorldDelta,
+            const std::size_t depth,
+            std::size_t& objectCount)
+        {
+            if (!object || depth > WEAPON_PRESENTATION_MAX_DEPTH ||
+                objectCount >= WEAPON_PRESENTATION_MAX_OBJECTS ||
+                !isFiniteTransform(object->world)) {
+                return false;
+            }
+            ++objectCount;
+
+            const RE::NiTransform reframedWorld =
+                weapon_visual_authority_math::applyPresentationWorldDelta(
+                    presentationWorldDelta,
+                    object->world);
+            if (!isFiniteTransform(reframedWorld)) {
+                return false;
+            }
+
+            auto* node = object->IsNode();
+            if (!node) {
+                return true;
+            }
+            for (const auto& child : node->children) {
+                if (child && !validateWeaponPresentationSubtree(
+                                 child.get(),
+                                 presentationWorldDelta,
+                                 depth + 1,
+                                 objectCount)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        void applyWeaponPresentationDeltaToDescendants(
+            RE::NiNode* parent,
+            const RE::NiTransform& presentationWorldDelta)
+        {
+            for (const auto& child : parent->children) {
+                if (!child) {
+                    continue;
+                }
+                child->world =
+                    weapon_visual_authority_math::applyPresentationWorldDelta(
+                        presentationWorldDelta,
+                        child->world);
+                if (auto* childNode = child->IsNode()) {
+                    applyWeaponPresentationDeltaToDescendants(
+                        childNode,
+                        presentationWorldDelta);
+                }
+            }
+        }
+
+        bool tryResolveWeaponRootLocal(
+            const RE::NiNode* parent,
+            const RE::NiTransform& weaponWorld,
+            RE::NiTransform& outWeaponLocal)
+        {
+            if (!isFiniteTransform(weaponWorld)) {
+                return false;
+            }
+
+            outWeaponLocal = weaponWorld;
+            if (parent) {
+                if (!isInvertibleTransform(parent->world)) {
+                    return false;
+                }
+                outWeaponLocal =
+                    weapon_visual_authority_math::worldTargetToParentLocal(
+                        parent->world,
+                        weaponWorld);
+            }
+            return isFiniteTransform(outWeaponLocal);
+        }
+
+        bool restoreWeaponRootPreservingPresentedDescendants(
+            RE::NiNode* weaponNode,
+            const RE::NiTransform& weaponWorld)
+        {
+            if (!weaponNode) {
+                return false;
+            }
+
+            RE::NiTransform weaponLocal{};
+            if (!tryResolveWeaponRootLocal(
+                    weaponNode->parent,
+                    weaponWorld,
+                    weaponLocal)) {
+                return false;
+            }
+            weaponNode->local = weaponLocal;
+            weaponNode->world = weaponWorld;
+            return true;
+        }
+
+        bool moveWeaponPresentationRigidly(
+            RE::NiNode* weaponNode,
+            const RE::NiTransform& solvedWeaponWorld)
+        {
+            if (!weaponNode || !isInvertibleTransform(weaponNode->world) ||
+                !isFiniteTransform(solvedWeaponWorld)) {
+                return false;
+            }
+
+            RE::NiTransform weaponLocal{};
+            if (!tryResolveWeaponRootLocal(
+                    weaponNode->parent,
+                    solvedWeaponWorld,
+                    weaponLocal)) {
+                return false;
+            }
+
+            const RE::NiTransform oldWeaponWorld = weaponNode->world;
+            const RE::NiTransform presentationWorldDelta =
+                weapon_visual_authority_math::makePresentationWorldDelta(
+                    oldWeaponWorld,
+                    solvedWeaponWorld);
+            if (!isFiniteTransform(presentationWorldDelta)) {
+                return false;
+            }
+
+            // Validate the entire bounded tree before the first write so an
+            // invalid modded node cannot leave a partially moved presentation.
+            std::size_t objectCount = 0;
+            if (!validateWeaponPresentationSubtree(
+                    weaponNode,
+                    presentationWorldDelta,
+                    0,
+                    objectCount)) {
+                return false;
+            }
+
+            weaponNode->local = weaponLocal;
+            weaponNode->world = solvedWeaponWorld;
+            applyWeaponPresentationDeltaToDescendants(
+                weaponNode,
+                presentationWorldDelta);
+            return true;
         }
 
         bool areTransformsNearlyEqual(const RE::NiTransform& lhs, const RE::NiTransform& rhs, const float epsilon = 0.001f)
@@ -734,16 +887,9 @@ namespace rock
         void restoreScopeHandAuthorityCleanupVisuals(const ScopeHandAuthorityCleanupVisualSnapshot& snapshot)
         {
             if (snapshot.weaponValid && snapshot.weapon) {
-                if (snapshot.weapon->parent) {
-                    snapshot.weapon->local = weapon_visual_authority_math::worldTargetToParentLocal(
-                        snapshot.weapon->parent->world,
-                        snapshot.weaponWorld);
-                    f4vr::updateTransformsDown(snapshot.weapon, true);
-                } else {
-                    snapshot.weapon->local = snapshot.weaponWorld;
-                    snapshot.weapon->world = snapshot.weaponWorld;
-                    f4vr::updateTransformsDown(snapshot.weapon, false);
-                }
+                (void)restoreWeaponRootPreservingPresentedDescendants(
+                    snapshot.weapon,
+                    snapshot.weaponWorld);
             }
 
             if (snapshot.scopeCameraValid && snapshot.scopeCamera) {
@@ -3460,9 +3606,14 @@ namespace rock
                 .maxAngleDegrees = g_rockConfig.rockWeaponVisualReturnMaxAngleDegrees,
             });
         returnState.localTransition.durationInitialized = true;
+        if (!moveWeaponPresentationRigidly(_activeWeaponNode, startWorld)) {
+            ROCK_LOG_SAMPLE_WARN(
+                Weapon,
+                2000,
+                "TwoHandedGrip: weapon return rejected an invalid presentation subtree");
+            return;
+        }
         _returningWeaponVisual = returnState;
-        _activeWeaponNode->local = startLocal;
-        f4vr::updateTransformsDown(_activeWeaponNode, true);
         _lastRenderedWeaponWorld = _activeWeaponNode->world;
         _hasLastRenderedWeaponWorld = true;
         ROCK_LOG_DEBUG(Weapon,
@@ -9808,13 +9959,12 @@ namespace rock
             (void)captureNativeScopeOverlayCalibration(scopeCameraFollow.cameraWorldBefore, effectiveGenerationKey);
         }
 
-        if (weaponNode->parent) {
-            weaponNode->local = weapon_visual_authority_math::worldTargetToParentLocal(weaponNode->parent->world, solvedWeaponWorld);
-            f4vr::updateTransformsDown(weaponNode, true);
-        } else {
-            weaponNode->local = solvedWeaponWorld;
-            weaponNode->world = solvedWeaponWorld;
-            f4vr::updateTransformsDown(weaponNode, false);
+        if (!moveWeaponPresentationRigidly(weaponNode, solvedWeaponWorld)) {
+            ROCK_LOG_SAMPLE_WARN(
+                Weapon,
+                2000,
+                "TwoHandedGrip: rejected weapon visual authority because the root or bounded presentation subtree was invalid");
+            return false;
         }
 
         const bool rigidFrameMatchesAuthority = _nativeScopeRigidFrame.valid && _nativeScopeRigidFrame.weaponGenerationKey == effectiveGenerationKey &&
@@ -11026,13 +11176,24 @@ namespace rock
          * for the game's own left-handed mode, minus the mirrored offsets.
          */
         const RE::NiTransform worldBefore = weaponNode->world;
+        RE::NiTransform localInLeftHand{};
+        if (!tryResolveWeaponRootLocal(
+                leftHand,
+                worldBefore,
+                localInLeftHand)) {
+            ROCK_LOG_SAMPLE_WARN(
+                Weapon,
+                2000,
+                "TwoHandedGrip: left-firing weapon reparent rejected an invalid target frame");
+            return;
+        }
         RE::NiPointer<RE::NiAVObject> detached;
         if (weaponNode->parent) {
             weaponNode->parent->DetachChild(weaponNode, detached);
         }
         leftHand->AttachChild(weaponNode, true);
-        weaponNode->local = weapon_visual_authority_math::worldTargetToParentLocal(leftHand->world, worldBefore);
-        f4vr::updateTransformsDown(weaponNode, true);
+        weaponNode->local = localInLeftHand;
+        weaponNode->world = worldBefore;
         _weaponNodeReparentedToLeftHand = true;
         ROCK_LOG_INFO(Weapon, "TwoHandedGrip: equipped weapon node re-parented under LArm_Hand for left-firing carry");
     }
@@ -11044,14 +11205,25 @@ namespace rock
             RE::NiNode* rightHand = resolveFirstPersonHandNode(false);
             if (node && rightHand && node->parent != rightHand) {
                 const RE::NiTransform worldBefore = node->world;
-                RE::NiPointer<RE::NiAVObject> detached;
-                if (node->parent) {
-                    node->parent->DetachChild(node, detached);
+                RE::NiTransform localInRightHand{};
+                if (!tryResolveWeaponRootLocal(
+                        rightHand,
+                        worldBefore,
+                        localInRightHand)) {
+                    ROCK_LOG_SAMPLE_WARN(
+                        Weapon,
+                        2000,
+                        "TwoHandedGrip: right-hand weapon reparent rejected an invalid target frame");
+                } else {
+                    RE::NiPointer<RE::NiAVObject> detached;
+                    if (node->parent) {
+                        node->parent->DetachChild(node, detached);
+                    }
+                    rightHand->AttachChild(node, true);
+                    node->local = localInRightHand;
+                    node->world = worldBefore;
+                    ROCK_LOG_INFO(Weapon, "TwoHandedGrip: equipped weapon node re-parented back under RArm_Hand");
                 }
-                rightHand->AttachChild(node, true);
-                node->local = weapon_visual_authority_math::worldTargetToParentLocal(rightHand->world, worldBefore);
-                f4vr::updateTransformsDown(node, true);
-                ROCK_LOG_INFO(Weapon, "TwoHandedGrip: equipped weapon node re-parented back under RArm_Hand");
             }
             _weaponNodeReparentedToLeftHand = false;
         }

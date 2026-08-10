@@ -157,6 +157,43 @@ namespace rock::weapon_visual_authority_math
     {
         return transform_math::composeTransforms(weaponWorld, weaponLocalFrame);
     }
+
+    template <class Transform>
+    [[nodiscard]] inline Transform makePresentationWorldDelta(
+        const Transform& oldWeaponWorld,
+        const Transform& newWeaponWorld)
+    {
+        /*
+         * Native animation and OMOD controllers have already evaluated the
+         * descendant's presentation world. Preserve that exact weapon-relative
+         * frame while ROCK moves the weapon root; descendant locals remain
+         * native/controller-owned and are deliberately not consulted here.
+         */
+        return transform_math::composeTransforms(
+            newWeaponWorld,
+            transform_math::invertTransform(oldWeaponWorld));
+    }
+
+    template <class Transform>
+    [[nodiscard]] inline Transform applyPresentationWorldDelta(
+        const Transform& presentationWorldDelta,
+        const Transform& presentationWorld)
+    {
+        return transform_math::composeTransforms(
+            presentationWorldDelta,
+            presentationWorld);
+    }
+
+    template <class Transform>
+    [[nodiscard]] inline Transform reframePresentationWorld(
+        const Transform& oldWeaponWorld,
+        const Transform& newWeaponWorld,
+        const Transform& presentationWorld)
+    {
+        return applyPresentationWorldDelta(
+            makePresentationWorldDelta(oldWeaponWorld, newWeaponWorld),
+            presentationWorld);
+    }
 }
 
 // ---- NativeScopeRotationMath.h ----

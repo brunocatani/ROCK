@@ -1630,6 +1630,76 @@ int main()
     }
 
     {
+        TestTransform oldWeaponWorld =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        oldWeaponWorld.translate = { 8.0f, -3.0f, 4.0f };
+        oldWeaponWorld.rotate = makeAxisAngleRotation(
+            TestVector3{ 0.0f, 0.0f, 1.0f },
+            25.0f);
+        oldWeaponWorld.scale = 1.2f;
+
+        TestTransform newWeaponWorld =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        newWeaponWorld.translate = { -6.0f, 12.0f, 2.0f };
+        newWeaponWorld.rotate = makeAxisAngleRotation(
+            TestVector3{ 1.0f, 0.0f, 0.0f },
+            -35.0f);
+        newWeaponWorld.scale = 0.85f;
+
+        TestTransform animatedPresentationWorld =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        animatedPresentationWorld.translate = { 15.0f, 7.0f, -2.0f };
+        animatedPresentationWorld.rotate = makeAxisAngleRotation(
+            TestVector3{ 0.0f, 1.0f, 0.0f },
+            48.0f);
+        animatedPresentationWorld.scale = 0.9f;
+
+        const TestTransform presentationWorldDelta =
+            rock::weapon_visual_authority_math::makePresentationWorldDelta(
+                oldWeaponWorld,
+                newWeaponWorld);
+        const TestTransform reframedPresentationWorld =
+            rock::weapon_visual_authority_math::applyPresentationWorldDelta(
+                presentationWorldDelta,
+                animatedPresentationWorld);
+        const TestTransform directReframedPresentationWorld =
+            rock::weapon_visual_authority_math::reframePresentationWorld(
+                oldWeaponWorld,
+                newWeaponWorld,
+                animatedPresentationWorld);
+        ok &= expectTransformNear(
+            "weapon presentation precomputed delta matches direct reframe",
+            reframedPresentationWorld,
+            directReframedPresentationWorld);
+
+        const TestTransform oldWeaponRelativePresentation =
+            rock::transform_math::composeTransforms(
+                rock::transform_math::invertTransform(oldWeaponWorld),
+                animatedPresentationWorld);
+        const TestTransform newWeaponRelativePresentation =
+            rock::transform_math::composeTransforms(
+                rock::transform_math::invertTransform(newWeaponWorld),
+                reframedPresentationWorld);
+        ok &= expectTransformNear(
+            "weapon presentation reframe preserves evaluated root-relative world",
+            newWeaponRelativePresentation,
+            oldWeaponRelativePresentation);
+
+        TestTransform staleAuthoredLocal =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        staleAuthoredLocal.translate = { 100.0f, 200.0f, 300.0f };
+        const TestTransform staleLocalRebuild =
+            rock::transform_math::composeTransforms(
+                newWeaponWorld,
+                staleAuthoredLocal);
+        ok &= expectTrue(
+            "weapon presentation reframe ignores stale descendant local",
+            std::fabs(
+                reframedPresentationWorld.translate.x -
+                staleLocalRebuild.translate.x) > 1.0f);
+    }
+
+    {
         TestTransform weaponBefore = rock::transform_math::makeIdentityTransform<TestTransform>();
         weaponBefore.translate = { 10.0f, 20.0f, 30.0f };
         TestTransform scopeBefore = rock::transform_math::makeIdentityTransform<TestTransform>();
