@@ -55,6 +55,18 @@ namespace rock::authored_weapon_grip_capture_policy
         bool authoredCanonicalAvailable{ false };
     };
 
+    struct AuthoredSupportHandVisualAnchorInput
+    {
+        bool authoredSupportGrip{ false };
+        bool pumpSemantic{ false };
+        bool sourceRootValid{ false };
+        bool sourceRootIsWeaponRoot{ false };
+        bool sourceRootBelongsToWeapon{ false };
+        bool weaponGenerationMatches{ false };
+        bool sourceWorldValid{ false };
+        bool authoredHandWorldValid{ false };
+    };
+
     struct StableAuthoredSupportGripReuseInput
     {
         bool snapshotValid{ false };
@@ -127,6 +139,25 @@ namespace rock::authored_weapon_grip_capture_policy
     }
 
     /*
+     * Pump animation may move the authored support surface independently of
+     * the weapon root. Only the rendered hand follows this frame: the
+     * physical authored grip remains weapon-root-local so native pump motion
+     * cannot feed back into the two-handed weapon solver.
+     */
+    [[nodiscard]] constexpr bool shouldCaptureAuthoredSupportHandVisualAnchor(
+        const AuthoredSupportHandVisualAnchorInput& input) noexcept
+    {
+        return input.authoredSupportGrip &&
+               input.pumpSemantic &&
+               input.sourceRootValid &&
+               !input.sourceRootIsWeaponRoot &&
+               input.sourceRootBelongsToWeapon &&
+               input.weaponGenerationMatches &&
+               input.sourceWorldValid &&
+               input.authoredHandWorldValid;
+    }
+
+    /*
      * Bethesda may omit the paired support-arm pass during transient firing
      * animation frames. Reuse is safe only for the last fully validated pose
      * while every equipped-weapon and canonical identity witness still
@@ -190,6 +221,25 @@ namespace rock::authored_weapon_grip_capture_policy
         Compose&& compose)
     {
         return compose(primaryHandInWeapon, supportHandInPrimaryHand);
+    }
+
+    template <class Transform, class Compose, class Invert>
+    [[nodiscard]] constexpr Transform captureAuthoredSupportHandVisualSourceLocal(
+        const Transform& sourceWorld,
+        const Transform& authoredHandWorld,
+        Compose&& compose,
+        Invert&& invert)
+    {
+        return compose(invert(sourceWorld), authoredHandWorld);
+    }
+
+    template <class Transform, class Compose>
+    [[nodiscard]] constexpr Transform resolveAuthoredSupportHandVisualWorld(
+        const Transform& sourceWorld,
+        const Transform& handVisualSourceLocal,
+        Compose&& compose)
+    {
+        return compose(sourceWorld, handVisualSourceLocal);
     }
 
     [[nodiscard]] constexpr char asciiLower(const char value)

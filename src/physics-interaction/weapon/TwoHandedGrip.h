@@ -471,9 +471,10 @@ namespace rock
      * Value snapshot of what one physical hand currently holds on the equipped
      * weapon, published to the provider API each frame. sourceRoot is a
      * non-owning engine pointer valid only within the reported
-     * weaponGenerationKey; handPartLocal is the hand frame captured at grip
-     * start, in part-source-local space when handPartLocalIsSourceLocal is set
-     * and weapon-root-local space otherwise.
+     * weaponGenerationKey; handPartLocal is the visual hand frame captured at
+     * grip start, in part-source-local space when handPartLocalIsSourceLocal is
+     * set and weapon-root-local space otherwise. This visual provenance does
+     * not transfer the grip's physical weapon authority to sourceRoot.
      */
     struct HandGripReport
     {
@@ -1005,10 +1006,12 @@ namespace rock
 
         /*
          * One hand's captured part grip on the equipped weapon. Both
-         * weapon-root-local and authored-source-local frames are stored so the
-         * grip survives moving mod parts. attachmentRoot is a non-owning engine
-         * pointer and must be validated against the current weapon tree
-         * (resolveCurrentSupportAttachmentRoot) before every dereference.
+         * weapon-root-local and dynamic source-local frames are stored so the
+         * grip survives moving mod parts. An authored pump may additionally
+         * carry a visual-only source frame while its physical grip remains
+         * weapon-root-local. Both source pointers are non-owning engine
+         * references and must be validated against the current weapon tree
+         * before every dereference.
          */
         struct WeaponPartGrip
         {
@@ -1020,11 +1023,15 @@ namespace rock
             RE::NiPoint3 normalSourceLocal{};
             RE::NiTransform handWeaponLocal{};
             RE::NiTransform handSourceLocal{};
+            RE::NiTransform handVisualSourceLocal{};
             RE::NiTransform attachmentWeaponLocal{};
             bool hasHandWeaponLocal{ false };
             bool hasSourceFrames{ false };
+            bool hasHandVisualSourceFrame{ false };
             bool hasAttachmentWeaponLocal{ false };
             RE::NiAVObject* attachmentRoot{ nullptr };
+            // Visual-only pump anchor; never participates in grip/normal solve.
+            RE::NiAVObject* handVisualSourceRoot{ nullptr };
             WeaponGripPoseId gripPose{ WeaponGripPoseId::BarrelWrap };
             WeaponPartKind partKind{ WeaponPartKind::Other };
             WeaponProviderPartAuthority providerPartAuthority{};
@@ -1397,6 +1404,15 @@ namespace rock
         RE::NiTransform resolvePartGripHandWorld(const WeaponPartGrip& grip, RE::NiNode* weaponNode) const;
 
         RE::NiAVObject* resolveCurrentSupportAttachmentRoot(const WeaponPartGrip& grip, RE::NiNode* weaponNode) const;
+
+        RE::NiAVObject* resolveCurrentHandVisualSourceRoot(const WeaponPartGrip& grip, RE::NiNode* weaponNode) const;
+
+        bool captureAuthoredSupportHandVisualAnchor(
+            WeaponPartGrip& grip,
+            RE::NiNode* weaponNode,
+            RE::NiAVObject* sourceRoot,
+            const RE::NiTransform& authoredHandWorld,
+            const char* reason) const;
 
         void resetLockedHandVisualLerp();
         void beginDynamicSupportAcquisition(

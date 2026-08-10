@@ -1971,6 +1971,22 @@ namespace rock
 
     RE::NiTransform TwoHandedGrip::resolvePartGripHandWorld(const WeaponPartGrip& grip, RE::NiNode* weaponNode) const
     {
+        if (auto* visualSourceRoot = resolveCurrentHandVisualSourceRoot(grip, weaponNode)) {
+            const RE::NiTransform handWorld =
+                authored_weapon_grip_capture_policy::
+                    resolveAuthoredSupportHandVisualWorld(
+                        visualSourceRoot->world,
+                        grip.handVisualSourceLocal,
+                        [](const RE::NiTransform& parent,
+                           const RE::NiTransform& child) {
+                            return transform_math::composeTransforms(
+                                parent,
+                                child);
+                        });
+            if (isFiniteTransform(handWorld)) {
+                return handWorld;
+            }
+        }
         if (auto* supportAttachmentRoot = resolveCurrentSupportAttachmentRoot(grip, weaponNode)) {
             return transform_math::composeTransforms(supportAttachmentRoot->world, grip.handSourceLocal);
         }
@@ -1986,6 +2002,113 @@ namespace rock
             return nullptr;
         }
         return actor_equipment_grab::nodeContainsNode(weaponNode, grip.attachmentRoot, 64) ? grip.attachmentRoot : nullptr;
+    }
+
+    RE::NiAVObject* TwoHandedGrip::resolveCurrentHandVisualSourceRoot(
+        const WeaponPartGrip& grip,
+        RE::NiNode* weaponNode) const
+    {
+        if (!grip.hasHandVisualSourceFrame ||
+            !grip.handVisualSourceRoot ||
+            !weaponNode ||
+            weaponNode != _activeWeaponNode ||
+            grip.weaponGenerationKey == 0 ||
+            grip.weaponGenerationKey != _activeWeaponGenerationKey ||
+            grip.handVisualSourceRoot == weaponNode ||
+            !actor_equipment_grab::nodeContainsNode(
+                weaponNode,
+                grip.handVisualSourceRoot,
+                64)) {
+            return nullptr;
+        }
+        return isFiniteTransform(grip.handVisualSourceRoot->world) &&
+                       std::abs(grip.handVisualSourceRoot->world.scale) >
+                           0.0001f ?
+                   grip.handVisualSourceRoot :
+                   nullptr;
+    }
+
+    bool TwoHandedGrip::captureAuthoredSupportHandVisualAnchor(
+        WeaponPartGrip& grip,
+        RE::NiNode* weaponNode,
+        RE::NiAVObject* sourceRoot,
+        const RE::NiTransform& authoredHandWorld,
+        const char* reason) const
+    {
+        grip.handVisualSourceRoot = nullptr;
+        grip.handVisualSourceLocal = {};
+        grip.hasHandVisualSourceFrame = false;
+
+        const bool pumpSemantic =
+            grip.partKind == WeaponPartKind::Pump ||
+            grip.supportRole == WeaponSupportGripRole::PumpGrip ||
+            grip.actionRole == WeaponActionRole::Pump;
+        const bool sourceRootBelongsToWeapon =
+            sourceRoot &&
+            weaponNode &&
+            sourceRoot != weaponNode &&
+            actor_equipment_grab::nodeContainsNode(
+                weaponNode,
+                sourceRoot,
+                64);
+        const bool sourceWorldValid =
+            sourceRootBelongsToWeapon &&
+            isFiniteTransform(sourceRoot->world) &&
+            std::abs(sourceRoot->world.scale) > 0.0001f;
+        if (!authored_weapon_grip_capture_policy::
+                shouldCaptureAuthoredSupportHandVisualAnchor(
+                    authored_weapon_grip_capture_policy::
+                        AuthoredSupportHandVisualAnchorInput{
+                            .authoredSupportGrip =
+                                grip.authoredSupportGrip,
+                            .pumpSemantic = pumpSemantic,
+                            .sourceRootValid = sourceRoot != nullptr,
+                            .sourceRootIsWeaponRoot =
+                                sourceRoot == weaponNode,
+                            .sourceRootBelongsToWeapon =
+                                sourceRootBelongsToWeapon,
+                            .weaponGenerationMatches =
+                                grip.weaponGenerationKey != 0 &&
+                                grip.weaponGenerationKey ==
+                                    _activeWeaponGenerationKey,
+                            .sourceWorldValid = sourceWorldValid,
+                            .authoredHandWorldValid =
+                                isUsableHandAuthorityTransform(
+                                    authoredHandWorld),
+                        })) {
+            return false;
+        }
+
+        const RE::NiTransform handVisualSourceLocal =
+            authored_weapon_grip_capture_policy::
+                captureAuthoredSupportHandVisualSourceLocal(
+                    sourceRoot->world,
+                    authoredHandWorld,
+                    [](const RE::NiTransform& parent,
+                       const RE::NiTransform& child) {
+                        return transform_math::composeTransforms(
+                            parent,
+                            child);
+                    },
+                    [](const RE::NiTransform& transform) {
+                        return transform_math::invertTransform(
+                            transform);
+                    });
+        if (!isUsableHandAuthorityTransform(handVisualSourceLocal)) {
+            return false;
+        }
+
+        grip.handVisualSourceRoot = sourceRoot;
+        grip.handVisualSourceLocal = handVisualSourceLocal;
+        grip.hasHandVisualSourceFrame = true;
+        ROCK_LOG_INFO(
+            Weapon,
+            "TwoHandedGrip: authored pump visual anchor captured hand={} source='{}' generation={:016X} reason={}; physical authority remains weapon-root-local",
+            (&grip == &_partGrips[0]) ? "left" : "right",
+            grip.sourceName.data(),
+            grip.weaponGenerationKey,
+            reason ? reason : "unknown");
+        return true;
     }
 
     void TwoHandedGrip::update(
@@ -3631,6 +3754,13 @@ namespace rock
             grip.hasSourceFrames = false;
             grip.hasAttachmentWeaponLocal = false;
 
+            (void)captureAuthoredSupportHandVisualAnchor(
+                grip,
+                weaponNode,
+                supportAttachmentRoot,
+                authoredSupportHandWorld,
+                "acquisition");
+
             // hFRIK requires the role-tagged numeric pose to exist before the
             // exact per-joint local override can win at the same priority.
             setSupportGripPose(isLeft, nullptr, nullptr);
@@ -4546,7 +4676,14 @@ namespace rock
         query.supportRole = static_cast<std::uint32_t>(grip.supportRole);
         query.socketRole = static_cast<std::uint32_t>(grip.socketRole);
         query.actionRole = static_cast<std::uint32_t>(grip.actionRole);
-        query.sourceRoot = reinterpret_cast<std::uintptr_t>(grip.attachmentRoot);
+        RE::NiAVObject* const currentHandVisualSourceRoot =
+            resolveCurrentHandVisualSourceRoot(
+                grip,
+                _activeWeaponNode);
+        query.sourceRoot = reinterpret_cast<std::uintptr_t>(
+            currentHandVisualSourceRoot ?
+                currentHandVisualSourceRoot :
+                grip.attachmentRoot);
         std::memcpy(query.sourceName, grip.sourceName.data(), grip.sourceName.size());
         query.sourceName[sizeof(query.sourceName) - 1] = '\0';
 
@@ -4646,7 +4783,6 @@ namespace rock
         // current transforms only after the new generation is eligible.
         grip.supportInputBaseline = {};
         grip.contactBodyId = bestDescriptor.bodyId;
-        grip.attachmentRoot = bestSourceNode ? bestSourceNode : grip.attachmentRoot;
         grip.partKind = bestDescriptor.semantic.partKind;
         grip.reloadRole = bestDescriptor.semantic.reloadRole;
         grip.supportRole = bestDescriptor.semantic.supportGripRole;
@@ -4658,6 +4794,29 @@ namespace rock
         const auto copyLength = (std::min)(bestDescriptor.sourceName.size(), grip.sourceName.size() - 1);
         std::memcpy(grip.sourceName.data(), bestDescriptor.sourceName.data(), copyLength);
         grip.sourceName[copyLength] = '\0';
+
+        if (grip.authoredSupportGrip) {
+            // Collision/source identity is rebound independently from the
+            // authored physical frame. The latter remains rooted at the
+            // current weapon across every generation boundary.
+            grip.attachmentRoot = _activeWeaponNode;
+            const RE::NiTransform authoredHandWorld =
+                _activeWeaponNode && grip.hasHandWeaponLocal ?
+                weapon_support_authority_policy::
+                    buildVisualOnlySupportHandWorld(
+                        _activeWeaponNode->world,
+                        grip.handWeaponLocal) :
+                RE::NiTransform{};
+            (void)captureAuthoredSupportHandVisualAnchor(
+                grip,
+                _activeWeaponNode,
+                bestSourceNode,
+                authoredHandWorld,
+                "generation-rebind");
+        } else {
+            grip.attachmentRoot =
+                bestSourceNode ? bestSourceNode : grip.attachmentRoot;
+        }
 
         if (grip.providerPartAuthority.active) {
             grip.providerPartAuthority.weaponGenerationKey = currentWeaponGenerationKey;
@@ -5548,15 +5707,32 @@ namespace rock
         outReport.supportRole = static_cast<std::uint32_t>(grip.supportRole);
         outReport.socketRole = static_cast<std::uint32_t>(grip.socketRole);
         outReport.actionRole = static_cast<std::uint32_t>(grip.actionRole);
-        outReport.sourceRoot = reinterpret_cast<std::uintptr_t>(grip.attachmentRoot);
+        RE::NiAVObject* const currentHandVisualSourceRoot =
+            resolveCurrentHandVisualSourceRoot(
+                grip,
+                _activeWeaponNode);
+        const bool useHandVisualSourceFrame =
+            currentHandVisualSourceRoot != nullptr;
+        outReport.sourceRoot = reinterpret_cast<std::uintptr_t>(
+            useHandVisualSourceFrame ?
+                currentHandVisualSourceRoot :
+                grip.attachmentRoot);
         if (grip.providerPartAuthority.active) {
             outReport.providerOwnerToken = grip.providerPartAuthority.ownerToken;
             outReport.providerGroupId = grip.providerPartAuthority.groupId;
             outReport.providerGrabMode = grip.providerPartAuthority.grabMode;
         }
-        outReport.hasHandPartLocal = grip.hasSourceFrames || grip.hasHandWeaponLocal;
-        outReport.handPartLocalIsSourceLocal = grip.hasSourceFrames;
-        outReport.handPartLocal = grip.hasSourceFrames ? grip.handSourceLocal : grip.handWeaponLocal;
+        outReport.hasHandPartLocal =
+            useHandVisualSourceFrame ||
+            grip.hasSourceFrames ||
+            grip.hasHandWeaponLocal;
+        outReport.handPartLocalIsSourceLocal =
+            useHandVisualSourceFrame || grip.hasSourceFrames;
+        outReport.handPartLocal = useHandVisualSourceFrame ?
+            grip.handVisualSourceLocal :
+            (grip.hasSourceFrames ?
+                grip.handSourceLocal :
+                grip.handWeaponLocal);
         outReport.sourceName = grip.sourceName;
         outReport.omodFormId = grip.omodFormId;
         outReport.attachPointFormId = grip.attachPointFormId;
