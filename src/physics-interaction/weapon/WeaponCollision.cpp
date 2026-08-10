@@ -5643,8 +5643,20 @@ namespace rock
             ++visitedShapes;
 
             std::vector<TriangleData> triangles;
+            std::vector<TriangleData> directSourceLocalTriangles;
             const bool skinned = isSkinned(triShape);
-            const int added = skinned ? extractTrianglesFromSkinnedTriShape(triShape, triangles) : extractTrianglesFromTriShape(triShape, triangles);
+            const int added = skinned ?
+                                  extractTrianglesFromSkinnedTriShape(
+                                      triShape,
+                                      triangles,
+                                      nullptr,
+                                      false,
+                                      &directSourceLocalTriangles) :
+                                  extractTrianglesFromTriShape(
+                                      triShape,
+                                      triangles,
+                                      nullptr,
+                                      &directSourceLocalTriangles);
             if (added <= 0) {
                 ROCK_LOG_TRACE(Weapon, "{}generated mesh source skipped '{}': no extractable triangles", std::string(depth * 2, ' '), safeNodeName(node));
                 return;
@@ -5668,11 +5680,24 @@ namespace rock
             localTriangles.reserve(triangles.size());
             std::vector<TriangleData> sourceLocalTriangles;
             sourceLocalTriangles.reserve(triangles.size());
-            for (const auto& triangle : triangles) {
+            const bool hasDirectSourceLocalTriangles =
+                directSourceLocalTriangles.size() == triangles.size();
+            for (std::size_t triangleIndex = 0; triangleIndex < triangles.size(); ++triangleIndex) {
+                const auto& triangle = triangles[triangleIndex];
                 TriangleData sourceLocalTriangle{};
-                sourceLocalTriangle.v0 = weapon_collision_geometry_math::worldPointToLocal(node->world.rotate, node->world.translate, node->world.scale, triangle.v0);
-                sourceLocalTriangle.v1 = weapon_collision_geometry_math::worldPointToLocal(node->world.rotate, node->world.translate, node->world.scale, triangle.v1);
-                sourceLocalTriangle.v2 = weapon_collision_geometry_math::worldPointToLocal(node->world.rotate, node->world.translate, node->world.scale, triangle.v2);
+                if (hasDirectSourceLocalTriangles) {
+                    /*
+                     * Preserve the extractor's native local vertices. Reversing
+                     * already-transformed world vertices loses enough float
+                     * precision in distant cells to look like mesh mutation and
+                     * incorrectly reject an otherwise valid shoulder restore.
+                     */
+                    sourceLocalTriangle = directSourceLocalTriangles[triangleIndex];
+                } else {
+                    sourceLocalTriangle.v0 = weapon_collision_geometry_math::worldPointToLocal(node->world.rotate, node->world.translate, node->world.scale, triangle.v0);
+                    sourceLocalTriangle.v1 = weapon_collision_geometry_math::worldPointToLocal(node->world.rotate, node->world.translate, node->world.scale, triangle.v1);
+                    sourceLocalTriangle.v2 = weapon_collision_geometry_math::worldPointToLocal(node->world.rotate, node->world.translate, node->world.scale, triangle.v2);
+                }
                 TriangleData localTriangle{};
                 if (sourceInWeaponAvailable) {
                     localTriangle.v0 = transform_math::localPointToWorld(sourceInWeapon, sourceLocalTriangle.v0);

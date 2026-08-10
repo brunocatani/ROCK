@@ -411,7 +411,8 @@ namespace rock
     inline int extractTrianglesFromDynamicTriShape(
         RE::BSTriShape* triShape,
         std::vector<TriangleData>& outTriangles,
-        std::vector<GrabSurfaceTriangleData>* outSurfaceTriangles = nullptr)
+        std::vector<GrabSurfaceTriangleData>* outSurfaceTriangles = nullptr,
+        std::vector<TriangleData>* outLocalTriangles = nullptr)
     {
         [[maybe_unused]] const char* shapeName = triShape->name.c_str() ? triShape->name.c_str() : "(null)";
 
@@ -460,14 +461,18 @@ namespace rock
                 continue;
             }
 
-            TriangleData tri;
-            tri.v0 = readDynamicVertexPosition(verts + i0 * dynamicStride);
-            tri.v1 = readDynamicVertexPosition(verts + i1 * dynamicStride);
-            tri.v2 = readDynamicVertexPosition(verts + i2 * dynamicStride);
-            tri.applyTransform(worldTransform);
+            TriangleData localTriangle;
+            localTriangle.v0 = readDynamicVertexPosition(verts + i0 * dynamicStride);
+            localTriangle.v1 = readDynamicVertexPosition(verts + i1 * dynamicStride);
+            localTriangle.v2 = readDynamicVertexPosition(verts + i2 * dynamicStride);
+            TriangleData worldTriangle = localTriangle;
+            worldTriangle.applyTransform(worldTransform);
 
-            outTriangles.push_back(tri);
-            appendSurfaceTriangle(outSurfaceTriangles, tri, triShape, i, GrabSurfaceSourceKind::Dynamic);
+            outTriangles.push_back(worldTriangle);
+            if (outLocalTriangles) {
+                outLocalTriangles->push_back(localTriangle);
+            }
+            appendSurfaceTriangle(outSurfaceTriangles, worldTriangle, triShape, i, GrabSurfaceSourceKind::Dynamic);
             added++;
         }
 
@@ -477,10 +482,11 @@ namespace rock
     inline int extractTrianglesFromTriShape(
         RE::BSTriShape* triShape,
         std::vector<TriangleData>& outTriangles,
-        std::vector<GrabSurfaceTriangleData>* outSurfaceTriangles = nullptr)
+        std::vector<GrabSurfaceTriangleData>* outSurfaceTriangles = nullptr,
+        std::vector<TriangleData>* outLocalTriangles = nullptr)
     {
         if (isDynamicTriShape(triShape)) {
-            return extractTrianglesFromDynamicTriShape(triShape, outTriangles, outSurfaceTriangles);
+            return extractTrianglesFromDynamicTriShape(triShape, outTriangles, outSurfaceTriangles, outLocalTriangles);
         }
 
         TriShapeRawGeometry geometry;
@@ -513,14 +519,18 @@ namespace rock
             if (i0 >= geometry.numVertices || i1 >= geometry.numVertices || i2 >= geometry.numVertices)
                 continue;
 
-            TriangleData tri;
-            tri.v0 = readVertexPosition(verts + i0 * vtxStride, posOffset, fullPrecision);
-            tri.v1 = readVertexPosition(verts + i1 * vtxStride, posOffset, fullPrecision);
-            tri.v2 = readVertexPosition(verts + i2 * vtxStride, posOffset, fullPrecision);
+            TriangleData localTriangle;
+            localTriangle.v0 = readVertexPosition(verts + i0 * vtxStride, posOffset, fullPrecision);
+            localTriangle.v1 = readVertexPosition(verts + i1 * vtxStride, posOffset, fullPrecision);
+            localTriangle.v2 = readVertexPosition(verts + i2 * vtxStride, posOffset, fullPrecision);
 
-            tri.applyTransform(worldTransform);
-            outTriangles.push_back(tri);
-            appendSurfaceTriangle(outSurfaceTriangles, tri, triShape, i, GrabSurfaceSourceKind::Static);
+            TriangleData worldTriangle = localTriangle;
+            worldTriangle.applyTransform(worldTransform);
+            outTriangles.push_back(worldTriangle);
+            if (outLocalTriangles) {
+                outLocalTriangles->push_back(localTriangle);
+            }
+            appendSurfaceTriangle(outSurfaceTriangles, worldTriangle, triShape, i, GrabSurfaceSourceKind::Static);
             added++;
         }
         return added;
@@ -539,7 +549,8 @@ namespace rock
         RE::BSTriShape* triShape,
         std::vector<TriangleData>& outTriangles,
         std::vector<GrabSurfaceTriangleData>* outSurfaceTriangles = nullptr,
-        bool allowPositionOnlySkinnedSurface = false)
+        bool allowPositionOnlySkinnedSurface = false,
+        std::vector<TriangleData>* outLocalTriangles = nullptr)
     {
         [[maybe_unused]] const char* shapeName = triShape->name.c_str() ? triShape->name.c_str() : "(null)";
         const bool dynamicSkinned = isDynamicTriShape(triShape);
@@ -770,6 +781,10 @@ namespace rock
             boneCount, vtxStride, skinOffset, fullPrecision ? 1 : 0, dynamicSkinned ? 1 : 0);
 
         std::vector<RE::NiPoint3> worldVerts(numVerts);
+        std::vector<RE::NiPoint3> dynamicLocalVerts;
+        if (dynamicSkinned && outLocalTriangles) {
+            dynamicLocalVerts.resize(numVerts);
+        }
         std::vector<std::uint8_t> worldVertexValid(numVerts, 0);
         std::vector<std::uint8_t> vertexSkinInfluencesValid(numVerts, 0);
         std::vector<std::array<GrabSurfaceVertexInfluence, 4>> vertexInfluences(numVerts);
@@ -851,6 +866,9 @@ namespace rock
                     ++invalidSkinnedVertices;
                     continue;
                 }
+                if (outLocalTriangles) {
+                    dynamicLocalVerts[vi] = dynamicLocal;
+                }
                 worldVerts[vi] = dynamicWorld;
             } else {
                 if (!missingWeightedBone && validWeight > 0.00001f && std::isfinite(wx) && std::isfinite(wy) && std::isfinite(wz)) {
@@ -896,6 +914,13 @@ namespace rock
             tri.v2 = worldVerts[i2];
 
             outTriangles.push_back(tri);
+            if (dynamicSkinned && outLocalTriangles) {
+                outLocalTriangles->push_back(TriangleData{
+                    .v0 = dynamicLocalVerts[i0],
+                    .v1 = dynamicLocalVerts[i1],
+                    .v2 = dynamicLocalVerts[i2],
+                });
+            }
             std::array<std::array<GrabSurfaceVertexInfluence, 4>, 3> skinInfluences{};
             skinInfluences[0] = vertexInfluences[i0];
             skinInfluences[1] = vertexInfluences[i1];
