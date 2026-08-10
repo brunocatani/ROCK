@@ -984,13 +984,21 @@ namespace rock
             bool rootRebaseActive{ false };
         };
 
-        struct GunstockSupportBaselineState
+        enum class SupportInputBaselineKind : std::uint8_t
+        {
+            None = 0,
+            Dynamic = 1,
+            Gunstock = 2,
+        };
+
+        struct SupportInputBaselineState
         {
             RE::NiTransform inputToGripTargetLocal{};
             RE::NiTransform weaponWorldAtCapture{};
             std::uint64_t weaponGenerationKey{ 0 };
             std::uint64_t gripSequence{ 0 };
             bool supportHandIsLeft{ false };
+            SupportInputBaselineKind kind{ SupportInputBaselineKind::None };
             bool active{ false };
             bool firstPublicationPending{ false };
         };
@@ -1054,7 +1062,8 @@ namespace rock
             bool hasFingerSplay{ false };
             bool hasFingerLocalTransforms{ false };
             LockedHandVisualLerpState visualLerp{};
-            GunstockSupportBaselineState gunstockBaseline{};
+            SupportInputBaselineState supportInputBaseline{};
+            float surfaceSeatRotationRadians{ 0.0f };
         };
 
         struct AuthoredSupportGripCandidate
@@ -1260,10 +1269,18 @@ namespace rock
 
         void releasePartGrip(bool isLeft, const char* reason, bool smoothHandReturn = false);
 
+        enum class SupportGripPoseFallback : std::uint8_t
+        {
+            SelectedClose = 0,
+            FullyClosed = 1,
+        };
+
         void setSupportGripPose(
             bool isLeft,
             const grab_finger_pose_runtime::SolvedGrabFingerPose* meshFingerPose,
-            const std::array<float, 5>* capturedSplayRadians);
+            const std::array<float, 5>* capturedSplayRadians,
+            SupportGripPoseFallback fallback =
+                SupportGripPoseFallback::SelectedClose);
 
         void clearSupportGripPose(bool isLeft);
 
@@ -1297,11 +1314,30 @@ namespace rock
         [[nodiscard]] bool isGunstockSupportBaselineActive(
             bool supportHandIsLeft,
             const WeaponPartGrip& supportGrip) const;
+        [[nodiscard]] bool isDynamicSupportBaselineActive(
+            bool supportHandIsLeft,
+            const WeaponPartGrip& supportGrip) const;
+        [[nodiscard]] bool isSupportInputBaselineActive(
+            bool supportHandIsLeft,
+            const WeaponPartGrip& supportGrip,
+            SupportInputBaselineKind kind) const;
+        bool initializeDynamicSupportBaseline(
+            RE::NiNode* weaponNode,
+            bool supportHandIsLeft,
+            const RE::NiTransform& supportInputWorld,
+            const char* reason);
+        bool initializeSupportInputBaseline(
+            RE::NiNode* weaponNode,
+            bool supportHandIsLeft,
+            const RE::NiTransform& supportInputWorld,
+            SupportInputBaselineKind kind,
+            const char* reason);
         bool initializeGunstockSupportRole(
             RE::NiNode* weaponNode,
             bool supportHandIsLeft,
             const RE::NiTransform& supportInputWorld,
             const char* reason);
+        void clearSupportInputBaselines();
         void clearGunstockSupportBaselines();
         bool reconcileGunstockModeState(RE::NiNode* weaponNode);
         void resetGunstockAlignment(const char* reason);

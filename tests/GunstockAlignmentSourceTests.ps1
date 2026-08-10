@@ -88,7 +88,7 @@ Require-Text 'src/physics-interaction/weapon/GunstockAlignmentPolicy.h' `
     'The pure policy must compose yaw, pitch, then roll in the untrimmed wrist frame after automatic alignment.'
 
 Require-Text 'src/physics-interaction/weapon/WeaponSupport.h' `
-    'tryCaptureGunstockSupportBaseline\([\s\S]*invertTransform\(supportInputWorld\)[\s\S]*supportGripTargetWorld[\s\S]*tryResolveGunstockSupportTarget\([\s\S]*supportInputWorld,[\s\S]*inputToGripTargetLocal' `
+    'tryCaptureSupportInputBaseline\([\s\S]*invertTransform\(supportInputWorld\)[\s\S]*supportGripTargetWorld[\s\S]*tryResolveSupportInputTarget\([\s\S]*supportInputWorld,[\s\S]*inputToGripTargetLocal' `
     'The support policy must freeze input-to-grip relation and resolve only later support motion through it.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
@@ -226,7 +226,7 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'Grip capture must return the exact damped support sample used by acquisition.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'initializeGunstockSupportRole\([\s\S]*rockGunstockModeEnabled[\s\S]*FullTwoHandedSolver[\s\S]*isGunstockWeaponGenerationEligible\([\s\S]*tryCaptureGunstockSupportBaseline\([\s\S]*supportInputWorld,[\s\S]*supportGripTargetWorld,[\s\S]*weaponWorldAtCapture\s*=\s*weaponNode->world[\s\S]*weaponGenerationKey\s*=\s*supportGrip\.weaponGenerationKey[\s\S]*gripSequence\s*=\s*supportGrip\.gripSequence[\s\S]*firstPublicationPending\s*=\s*true' `
+    'initializeSupportInputBaseline\([\s\S]*tryCaptureSupportInputBaseline\([\s\S]*supportInputWorld,[\s\S]*supportGripTargetWorld,[\s\S]*weaponWorldAtCapture\s*=\s*weaponNode->world[\s\S]*weaponGenerationKey\s*=\s*supportGrip\.weaponGenerationKey[\s\S]*gripSequence\s*=\s*supportGrip\.gripSequence[\s\S]*kind\s*=\s*kind[\s\S]*firstPublicationPending\s*=\s*true[\s\S]*initializeGunstockSupportRole\([\s\S]*rockGunstockModeEnabled[\s\S]*FullTwoHandedSolver[\s\S]*isGunstockWeaponGenerationEligible\(' `
     'The centralized support-role initializer must require shared firearm eligibility and bind the damped input, weapon transform, generation, and grip sequence atomically.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
@@ -246,11 +246,11 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'Gunstock attach must bypass absolute acquisition blending and publish one immediate baseline transaction.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'calibratedSupportTransform\s*=\s*supportTransform[\s\S]*tryResolveGunstockSupportTarget\([\s\S]*inputToGripTargetLocal[\s\S]*computeGrabLegacyPalmPivotAWorldFromHandBasis\([\s\S]*calibratedSupportTransform[\s\S]*supportNormalTargetWorld\s*=\s*computePalmNormalFromHandBasis\([\s\S]*calibratedSupportTransform' `
+    'calibratedSupportTransform\s*=\s*supportTransform[\s\S]*tryResolveSupportInputTarget\([\s\S]*inputToGripTargetLocal[\s\S]*computeGrabLegacyPalmPivotAWorldFromHandBasis\([\s\S]*calibratedSupportTransform[\s\S]*supportNormalTargetWorld\s*=\s*computePalmNormalFromHandBasis\([\s\S]*calibratedSupportTransform' `
     'The tandem solver must receive position and twist from the calibrated support target.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'gunstockAttachPublication[\s\S]*appliedWeaponWorld\s*=[\s\S]*weaponWorldAtCapture[\s\S]*applyWeaponVisualAuthority\(weaponNode, appliedWeaponWorld\)[\s\S]*applyLockedHandVisualAuthority\([\s\S]*firstPublicationPending\s*=\s*false' `
+    'supportBaselineAttachPublication[\s\S]*appliedWeaponWorld\s*=[\s\S]*weaponWorldAtCapture[\s\S]*applyWeaponVisualAuthority\(weaponNode, appliedWeaponWorld\)[\s\S]*applyLockedHandVisualAuthority\([\s\S]*firstPublicationPending\s*=\s*false' `
     'The first support publication must retain the captured primary weapon transform before final group alignment.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' `

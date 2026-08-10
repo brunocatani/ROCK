@@ -448,6 +448,38 @@ namespace rock::weapon_two_handed_grip_math
         return weaponSolverSub(targetGripPointWorld, handSeatCorrection);
     }
 
+    /*
+     * General form of the frozen finger-pose relation. The live skeleton stays
+     * in rawHandWorld while the mesh is moved by rawHandWorld * inverse(seatedHandWorld).
+     * Translation-only seats reduce to virtualizeMeshForTranslatedHandSeat;
+     * bounded surface-aligned seats additionally preserve the exact rotational
+     * hand/mesh relation without moving a live scene node.
+     */
+    template <class Transform>
+    inline Transform virtualizeMeshForSeatedHand(
+        const Transform& meshWorldTransform,
+        const Transform& rawHandWorld,
+        const Transform& seatedHandWorld)
+    {
+        return transform_math::composeTransforms(
+            transform_math::composeTransforms(
+                rawHandWorld,
+                transform_math::invertTransform(seatedHandWorld)),
+            meshWorldTransform);
+    }
+
+    template <class Transform, class Vector>
+    inline Vector virtualizeWorldPointForSeatedHand(
+        const Vector& pointWorld,
+        const Transform& rawHandWorld,
+        const Transform& seatedHandWorld)
+    {
+        const Transform seatedToRawWorld = transform_math::composeTransforms(
+            rawHandWorld,
+            transform_math::invertTransform(seatedHandWorld));
+        return transform_math::localPointToWorld(seatedToRawWorld, pointWorld);
+    }
+
     inline bool canStartSupportGrip(bool touchingSupportPart, bool gripPressed, bool supportHandHoldingObject)
     {
         return touchingSupportPart && gripPressed && !supportHandHoldingObject;
@@ -918,17 +950,16 @@ namespace rock
         }
 
         /*
-         * Physical gunstocks need the damped support-hand input to contribute only
-         * motion that happens after the grip is captured. The visual grip
-         * target remains authored/mesh-relative to the weapon, while this
-         * frozen relation calibrates the current damped support-hand input onto
-         * that target. Resolving the same input therefore reproduces the target
-         * exactly; a later support-hand delta is carried through rigidly without
-         * imposing an attach-time weapon correction or assuming controller
-         * axes match the authored wrist axes.
+         * A support-input baseline makes the support hand contribute only motion
+         * that happens after capture. It is shared by ordinary dynamic support
+         * and physical gunstocks: the visual grip target remains mesh-relative
+         * to the weapon, while this frozen relation calibrates the current hand
+         * input onto that target. Resolving the same input reproduces the target
+         * exactly, without attach-time weapon correction or assumptions about
+         * controller versus authored wrist axes.
          */
         template <class Transform>
-        inline bool tryCaptureGunstockSupportBaseline(
+        inline bool tryCaptureSupportInputBaseline(
             const Transform& supportInputWorld,
             const Transform& supportGripTargetWorld,
             Transform& outInputToGripTargetLocal)
@@ -951,7 +982,7 @@ namespace rock
         }
 
         template <class Transform>
-        inline bool tryResolveGunstockSupportTarget(
+        inline bool tryResolveSupportInputTarget(
             const Transform& supportInputWorld,
             const Transform& inputToGripTargetLocal,
             Transform& outSupportTargetWorld)
@@ -971,6 +1002,113 @@ namespace rock
 
             outSupportTargetWorld = target;
             return true;
+        }
+
+        template <class Matrix>
+        inline bool shortestArcSlerpFromIdentity(
+            const Matrix& fullRotationDelta,
+            float alpha,
+            Matrix& outPartialRotationDelta);
+
+        template <class Matrix>
+        inline float rotationAngleRadians(const Matrix& rotation);
+
+        template <class Transform, class Vector>
+        struct SurfaceAlignedHandFrameResult
+        {
+            Transform handWorld{};
+            float appliedRotationRadians{ 0.0f };
+            bool usedSurfaceNormal{ false };
+            bool valid{ false };
+        };
+
+        /*
+         * Rotate the support hand, never the weapon, around the captured palm
+         * pivot. The palm-facing axis targets the inward surface direction
+         * (-surfaceNormal), shortest-arc rotation is bounded, and the pivot is
+         * translated onto the selected mesh point exactly.
+         */
+        template <class Transform, class Vector>
+        inline SurfaceAlignedHandFrameResult<Transform, Vector>
+        alignHandFrameToGripSurface(
+            const Transform& handWorld,
+            const Vector& palmPivotWorld,
+            const Vector& palmNormalWorld,
+            const Vector& targetGripPointWorld,
+            const Vector& surfaceNormalWorld,
+            float maxCorrectionRadians)
+        {
+            SurfaceAlignedHandFrameResult<Transform, Vector> result{};
+            result.handWorld = handWorld;
+            if (!isUsableTransform(handWorld) ||
+                !isFiniteVector(palmPivotWorld) ||
+                !isFiniteVector(targetGripPointWorld)) {
+                return result;
+            }
+
+            auto seatWithoutRotation = [&]() {
+                result.handWorld.translate = weaponSolverAdd(
+                    result.handWorld.translate,
+                    weaponSolverSub(targetGripPointWorld, palmPivotWorld));
+                result.valid = isUsableTransform(result.handWorld);
+            };
+
+            const float palmLength = weaponSolverLength(palmNormalWorld);
+            const float surfaceLength = weaponSolverLength(surfaceNormalWorld);
+            if (!std::isfinite(maxCorrectionRadians) ||
+                maxCorrectionRadians <= 0.0f ||
+                palmLength <= 0.0001f ||
+                surfaceLength <= 0.0001f) {
+                seatWithoutRotation();
+                return result;
+            }
+
+            const Vector currentPalmNormal = weaponSolverNormalize(palmNormalWorld);
+            const Vector desiredPalmNormal = weaponSolverScale(
+                weaponSolverNormalize(surfaceNormalWorld),
+                -1.0f);
+            const auto fullRotation = weaponSolverRotationBetweenStored<
+                decltype(handWorld.rotate),
+                Vector>(currentPalmNormal, desiredPalmNormal);
+            const float fullAngle = rotationAngleRadians(fullRotation);
+            if (!std::isfinite(fullAngle)) {
+                seatWithoutRotation();
+                return result;
+            }
+
+            decltype(handWorld.rotate) boundedRotation =
+                transform_math::makeIdentityRotation<decltype(handWorld.rotate)>();
+            const float alpha = fullAngle > 0.000001f ?
+                std::clamp(maxCorrectionRadians / fullAngle, 0.0f, 1.0f) :
+                0.0f;
+            if (fullAngle > 0.000001f &&
+                !shortestArcSlerpFromIdentity(
+                    fullRotation,
+                    alpha,
+                    boundedRotation)) {
+                seatWithoutRotation();
+                return result;
+            }
+
+            result.handWorld.rotate =
+                weaponSolverApplyWorldRotationToStoredBasis<
+                    decltype(handWorld.rotate),
+                    Vector>(boundedRotation, handWorld.rotate);
+            const Vector originFromPalm = weaponSolverSub(
+                handWorld.translate,
+                palmPivotWorld);
+            result.handWorld.translate = weaponSolverAdd(
+                targetGripPointWorld,
+                weaponSolverApplyStoredWorldRotationToVector<
+                    decltype(handWorld.rotate),
+                    Vector>(boundedRotation, originFromPalm));
+            result.appliedRotationRadians =
+                rotationAngleRadians(boundedRotation);
+            result.usedSurfaceNormal = fullAngle > 0.000001f;
+            result.valid =
+                isUsableTransform(result.handWorld) &&
+                std::isfinite(result.appliedRotationRadians);
+            return result;
         }
 
         inline bool normalizeQuaternion(float quaternion[4])

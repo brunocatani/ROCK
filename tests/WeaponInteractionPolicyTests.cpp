@@ -933,7 +933,7 @@ int main()
         ok &= expectTrue(
             "gunstock captures damped support input to authored grip baseline",
             rock::weapon_support_acquisition_math::
-                tryCaptureGunstockSupportBaseline(
+                tryCaptureSupportInputBaseline(
                     supportInputAtAttach,
                     supportGripTargetAtAttach,
                     inputToGripTargetLocal));
@@ -942,7 +942,7 @@ int main()
         ok &= expectTrue(
             "gunstock resolves captured support baseline",
             rock::weapon_support_acquisition_math::
-                tryResolveGunstockSupportTarget(
+                tryResolveSupportInputTarget(
                     supportInputAtAttach,
                     inputToGripTargetLocal,
                     resolvedAttachTarget));
@@ -970,7 +970,7 @@ int main()
         ok &= expectTrue(
             "gunstock resolves post-attach support delta",
             rock::weapon_support_acquisition_math::
-                tryResolveGunstockSupportTarget(
+                tryResolveSupportInputTarget(
                     movedSupportInput,
                     inputToGripTargetLocal,
                     resolvedMovedTarget));
@@ -984,7 +984,7 @@ int main()
         ok &= expectFalse(
             "gunstock rejects degenerate support input at capture",
             rock::weapon_support_acquisition_math::
-                tryCaptureGunstockSupportBaseline(
+                tryCaptureSupportInputBaseline(
                     degenerateInput,
                     supportGripTargetAtAttach,
                     inputToGripTargetLocal));
@@ -995,7 +995,7 @@ int main()
         ok &= expectFalse(
             "gunstock rejects non-finite captured support baseline",
             rock::weapon_support_acquisition_math::
-                tryResolveGunstockSupportTarget(
+                tryResolveSupportInputTarget(
                     supportInputAtAttach,
                     nonFiniteRelation,
                     resolvedMovedTarget));
@@ -1034,14 +1034,14 @@ int main()
         ok &= expectTrue(
             "gunstock solver test captures authored hand target",
             rock::weapon_support_acquisition_math::
-                tryCaptureGunstockSupportBaseline(
+                tryCaptureSupportInputBaseline(
                     dampedSupportInput,
                     supportGripHandWorld,
                     inputToGripTargetLocal));
         ok &= expectTrue(
             "gunstock solver test resolves authored hand target",
             rock::weapon_support_acquisition_math::
-                tryResolveGunstockSupportTarget(
+                tryResolveSupportInputTarget(
                     dampedSupportInput,
                     inputToGripTargetLocal,
                     calibratedSupportTarget));
@@ -1103,7 +1103,7 @@ int main()
         ok &= expectTrue(
             "gunstock tandem test captures attach baseline",
             rock::weapon_support_acquisition_math::
-                tryCaptureGunstockSupportBaseline(
+                tryCaptureSupportInputBaseline(
                     supportInputAtAttach,
                     supportGripHandAtAttach,
                     inputToGripTargetLocal));
@@ -1121,7 +1121,7 @@ int main()
         ok &= expectTrue(
             "gunstock tandem test resolves moved support input",
             rock::weapon_support_acquisition_math::
-                tryResolveGunstockSupportTarget(
+                tryResolveSupportInputTarget(
                     movedSupportInput,
                     inputToGripTargetLocal,
                     movedCalibratedTarget));
@@ -1225,6 +1225,100 @@ int main()
         ok &= expectNear("support grip frozen solve preserves final hand/mesh relation x", virtualGripFromHand.x, finalGripFromHand.x);
         ok &= expectNear("support grip frozen solve preserves final hand/mesh relation y", virtualGripFromHand.y, finalGripFromHand.y);
         ok &= expectNear("support grip frozen solve preserves final hand/mesh relation z", virtualGripFromHand.z, finalGripFromHand.z);
+    }
+
+    {
+        TestTransform rawHandWorld =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        rawHandWorld.translate = { 10.0f, -5.0f, 3.0f };
+        const TestVector3 palmPivotWorld{ 12.0f, -5.0f, 3.0f };
+        const TestVector3 palmNormalWorld{ 1.0f, 0.0f, 0.0f };
+        const TestVector3 surfaceNormalWorld{ 0.0f, -1.0f, 0.0f };
+        const TestVector3 targetGripPointWorld{ 30.0f, 9.0f, -4.0f };
+        constexpr float kThirtyDegreesRadians =
+            0.52359877559829887308f;
+
+        const auto seated =
+            rock::weapon_support_acquisition_math::
+                alignHandFrameToGripSurface<
+                    TestTransform,
+                    TestVector3>(
+                    rawHandWorld,
+                    palmPivotWorld,
+                    palmNormalWorld,
+                    targetGripPointWorld,
+                    surfaceNormalWorld,
+                    kThirtyDegreesRadians);
+        ok &= expectTrue(
+            "support surface seat produces a finite hand frame",
+            seated.valid);
+        ok &= expectNear(
+            "support surface seat clamps wrist swing",
+            seated.appliedRotationRadians,
+            kThirtyDegreesRadians);
+
+        const TestVector3 rawOriginToPalm =
+            rock::weaponSolverSub(
+                palmPivotWorld,
+                rawHandWorld.translate);
+        const TestVector3 seatedPalmPoint =
+            rock::weaponSolverAdd(
+                seated.handWorld.translate,
+                rock::weaponSolverApplyStoredWorldRotationToVector<
+                    TestMatrix3,
+                    TestVector3>(
+                    seated.handWorld.rotate,
+                    rawOriginToPalm));
+        ok &= expectVectorNear(
+            "support surface seat preserves exact palm contact pivot",
+            seatedPalmPoint,
+            targetGripPointWorld);
+
+        const TestVector3 seatedPalmNormal =
+            rock::weaponSolverNormalize(
+                rock::weaponSolverApplyStoredWorldRotationToVector<
+                    TestMatrix3,
+                    TestVector3>(
+                    seated.handWorld.rotate,
+                    palmNormalWorld));
+        ok &= expectNear(
+            "support surface seat rotates palm toward inward normal",
+            rock::weaponSolverDot(
+                seatedPalmNormal,
+                TestVector3{ 0.0f, 1.0f, 0.0f }),
+            0.5f);
+
+        TestTransform weaponWorld =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        weaponWorld.rotate = makeAxisAngleRotation(
+            rock::weaponSolverNormalize(
+                TestVector3{ 0.2f, 0.7f, -0.4f }),
+            23.0f);
+        weaponWorld.translate = { -40.0f, 70.0f, 18.0f };
+        weaponWorld.scale = 1.3f;
+        const TestVector3 meshPointLocal{ 4.0f, -3.0f, 2.0f };
+        const TestVector3 originalMeshPointWorld =
+            rock::transform_math::localPointToWorld(
+                weaponWorld,
+                meshPointLocal);
+        const TestTransform virtualWeaponWorld =
+            rock::weapon_two_handed_grip_math::
+                virtualizeMeshForSeatedHand(
+                    weaponWorld,
+                    rawHandWorld,
+                    seated.handWorld);
+        const TestVector3 virtualMeshPointWorld =
+            rock::transform_math::localPointToWorld(
+                virtualWeaponWorld,
+                meshPointLocal);
+        ok &= expectVectorNear(
+            "full surface seat virtualization preserves hand-mesh relation",
+            rock::transform_math::worldPointToLocal(
+                rawHandWorld,
+                virtualMeshPointWorld),
+            rock::transform_math::worldPointToLocal(
+                seated.handWorld,
+                originalMeshPointWorld));
     }
 
     {

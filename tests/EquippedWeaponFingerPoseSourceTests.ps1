@@ -49,50 +49,66 @@ function Reject-Text {
     }
 }
 
-# The contacted generated body owns the evidence. WeaponCollision lends a
-# frame-scoped local view and transform; it must not rebuild/copy every cached
-# triangle into a temporary world-space vector at grip time.
+# The contacted generated body owns the grip point. Finger posing additionally
+# borrows deduplicated frame-scoped views from the whole equipped weapon.
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.h' `
-    'struct SupportGripEvidenceView[\s\S]*std::span<const TriangleData> localTriangles[\s\S]*RE::NiTransform localToWorld[\s\S]*weaponGenerationKey' `
-    'Equipped finger posing must consume a generation-tagged, part-local triangle view.'
+    'struct SupportGripEvidenceView[\s\S]*std::span<const TriangleData> localTriangles[\s\S]*RE::NiTransform localToWorld[\s\S]*sourceGroupId[\s\S]*bodyId[\s\S]*weaponGenerationKey[\s\S]*findSupportGripEvidenceViews\(' `
+    'Equipped finger posing must consume generation-tagged, source-identifiable local triangle views.'
 Require-OrderedText 'src/physics-interaction/weapon/WeaponCollision.cpp' @(
-    'tryGetSupportGripEvidenceView\(',
-    'instance\.body\.getBodyId\(\)\.value != bodyId',
+    'tryBuildSupportGripEvidenceView\(',
     'tryResolveDescendantWorldTransform\(',
     'generatedSourceLocalTrianglesGame',
     'outView\.localTriangles = std::span<const TriangleData>',
     'outView\.localToWorld = localToWorld',
+    'outView\.sourceGroupId',
     'outView\.weaponGenerationKey = getCurrentWeaponGenerationKey\(\)'
-) 'Support grip evidence must stay body-specific, local, transformed, and generation validated.'
+) 'Support grip evidence views must stay local, transformed, source-identifiable, and generation validated.'
+Require-OrderedText 'src/physics-interaction/weapon/WeaponCollision.cpp' @(
+    'tryGetSupportGripEvidenceView\(',
+    'instance\.body\.getBodyId\(\)\.value != bodyId',
+    'tryBuildSupportGripEvidenceView\('
+) 'Grip-point evidence must remain tied to the contacted body.'
+Require-OrderedText 'src/physics-interaction/weapon/WeaponCollision.cpp' @(
+    'findSupportGripEvidenceViews\(',
+    'seenSourceGroups',
+    'tryBuildSupportGripEvidenceView\(',
+    'std::find\(',
+    'outViews\[viewCount\+\+\] = view'
+) 'Finger evidence must enumerate and deduplicate equipped-weapon render sources.'
 Reject-Text 'src/physics-interaction/weapon/WeaponCollision.h' `
     'tryBuildSupportGripEvidenceTriangles' `
     'The retired world-triangle copy API must not return.'
 
-# Grip-point selection may inspect the contacted part exactly, but all five
-# fingers share one nearest-surface candidate pool capped at 2,048. The one BVH
-# is then shared by the full hand solve; there is no per-finger cap multiplication.
+# Grip-point selection inspects the contacted part exactly. All five fingers
+# share one weapon-local candidate pool ranked against the seated finger
+# envelope and capped at 2,048 before one shared BVH solve.
 Require-OrderedText 'src/physics-interaction/weapon/TwoHandedGrip.cpp' @(
     'tryGetSupportGripEvidenceView\(decision\.bodyId, weaponNode, evidenceView\)',
     'TransformedSupportGripTriangleView worldEvidence',
-    'findClosestGrabPoint\(',
-    'cachedTrianglesFound && g_rockConfig\.rockGrabMeshFingerPoseEnabled',
+    'findClosestGrabPoint\('
+) 'Equipped physical grip-point selection must remain tied to the contacted part.'
+Require-OrderedText 'src/physics-interaction/weapon/TwoHandedGrip.cpp' @(
+    'resolveLiveFingerSkeletonSnapshot\(',
+    'findSupportGripEvidenceViews\(',
     'selectNearestSupportGripFingerTriangles\(',
-    'evidenceView\.localTriangles',
-    'grab_finger_pose_runtime::kMaxFingerPoseCandidateTriangles',
+    'compositeEvidenceViews',
+    'seatedReferencePointsWorld',
+    'grab_finger_pose_runtime::\s*kMaxFingerPoseCandidateTriangles',
     'solveFrozenMeshFingerPose\(',
     'fingerScratch\.localTriangles',
     'fingerScratch\.spatialIndex'
-) 'Equipped physical grips must select one bounded part-local pool and solve it through one shared BVH.'
+) 'Equipped physical grips must select one bounded weapon-wide pool against the seated hand and solve it through one shared BVH.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'cachedTrianglesFound && g_rockConfig\.rockGrabMeshFingerPoseEnabled[\s\S]{0,400}selectNearestSupportGripFingerTriangles\(' `
-    'Disabling mesh finger posing must also skip bounded-pool ranking while preserving exact grip-point selection.'
+    'if \(g_rockConfig\.rockGrabMeshFingerPoseEnabled\)[\s\S]{0,2500}selectNearestSupportGripFingerTriangles\(' `
+    'Disabling mesh finger posing must skip composite candidate ranking while preserving contacted-part grip selection.'
 Require-OrderedText 'src/physics-interaction/weapon/TwoHandedGrip.cpp' @(
-    'if \(sourceTriangles\.size\(\) <= boundedLimit\)',
-    'outTriangles\.reserve\(sourceTriangles\.size\(\)\)',
-    'outTriangles\.push_back\(triangle\)',
-    'return;',
-    'rankingScratch\.reserve\(boundedLimit\)'
-) 'Under-cap contacted parts must bypass heap ranking while oversized parts retain nearest-surface selection.'
+    'deterministicOrdinal',
+    'referencePointsWeaponLocal',
+    'sourceToWeapon',
+    'minimumDistanceSquared',
+    'rankingScratch\.size\(\) < boundedLimit',
+    'std::sort\(rankingScratch\.begin\(\), rankingScratch\.end\(\), rankedSupportGripTriangleLess\)'
+) 'Composite evidence must use deterministic globally bounded ranking in one weapon-local frame.'
 Require-Text 'src/physics-interaction/grab/GrabFinger.h' `
     'constexpr std::size_t kMaxFingerPoseCandidateTriangles\s*=\s*2048' `
     'The aggregate equipped-hand triangle ceiling must remain 2,048.'
@@ -105,15 +121,16 @@ if ($equippedSharedSolveCount -ne 1) {
     $failures.Add("Equipped weapon finger posing must have exactly one shared solve site at grip capture; found $equippedSharedSolveCount.")
 }
 
-# The support hand is translated onto the selected point after capture. Move
-# the evidence by the inverse translation for the one-shot solve so the live
-# skeleton observes the exact final hand/weapon relation before publication.
+# The support hand is minimally surface-aligned and seated while the weapon
+# remains unchanged. Move the evidence by the full inverse hand-seat relation
+# for the one-shot solve so the live skeleton observes that exact relation.
 Require-OrderedText 'src/physics-interaction/weapon/TwoHandedGrip.cpp' @(
-    'alignHandFrameToGripPoint\(handTransform, palmPos, gripWorldPoint\)',
-    'virtualizeMeshForTranslatedHandSeat\(',
-    'virtualizeGripPointForTranslatedHandSeat\(',
+    'alignHandFrameToGripSurface<',
+    'grip\.surfaceSeatRotationRadians',
+    'virtualizeMeshForSeatedHand\(',
+    'virtualizeWorldPointForSeatedHand\(',
     'solveFrozenMeshFingerPose\('
-) 'Equipped finger solving must evaluate the final translated hand/weapon relation up front.'
+) 'Equipped finger solving must evaluate the final bounded surface-seated hand/weapon relation up front.'
 Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
     'solveFrozenMeshFingerPose\(',
     'buildFromLocalTriangles\(boundedLocalTriangles\)',
@@ -127,19 +144,26 @@ Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
     'solveFrozenMeshFingerPose\(' `
     'Regular loose grabs must use the same shared frozen-mesh solver boundary.'
 
-# Physical equipped grips cache the one-shot result. Semantic part categories
-# remain metadata only and may never select one of the retired canned poses.
+# Physical equipped grips cache a complete one-shot result. Any missing lane
+# invalidates the whole mesh pose and publishes one fully closed hand.
 Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'BARREL_WRAP_POSE|HANDGUARD_CLAMP_POSE|FOREGRIP_POSE|PUMP_GRIP_POSE|MAGWELL_HOLD_POSE|RECEIVER_SUPPORT_POSE|poseValuesForGrip' `
     'Retired six-mode canned weapon poses must stay removed.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'rockSelectedCloseFingerAnimValue[\s\S]{0,500}expandFingerCurlsToJointValues\(fallbackCurls\)' `
-    'An unavailable mesh solve must use the same uniform selected-close fallback as regular grabs.'
+Require-Text 'src/physics-interaction/grab/GrabFinger.h' `
+    'kCompleteFingerContactMask\s*=\s*0x1F[\s\S]*contactValidMask[\s\S]*hasCompleteFingerContactEvidence\(' `
+    'The solver must expose an explicit five-lane completion witness.'
+Require-OrderedText 'src/physics-interaction/weapon/TwoHandedGrip.cpp' @(
+    'hasCompleteFingerContactEvidence\(',
+    'SupportGripPoseFallback::FullyClosed',
+    'fallbackValue\s*=\s*0\.0f',
+    'whole-hand-closed'
+) 'Any incomplete equipped mesh solve must discard partial curls and publish one fully closed hand.'
 Require-OrderedText 'src/physics-interaction/weapon/TwoHandedGrip.cpp' @(
     'meshFingerPose = frozenSolve\.pose',
+    'hasCompleteFingerContactEvidence\(',
     'meshFingerPosePtr = &meshFingerPose',
     'buildSurfaceContactSplayValues\(',
-    'setSupportGripPose\(isLeft, meshFingerPosePtr, capturedFingerSplayRadiansPtr\)',
+    'SupportGripPoseFallback::FullyClosed',
     'grip\.active = true'
 ) 'Equipped physical grips must cache the solved pose before activating hand authority.'
 Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `

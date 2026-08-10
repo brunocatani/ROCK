@@ -3760,6 +3760,64 @@ namespace rock
         return false;
     }
 
+    bool WeaponCollision::tryBuildSupportGripEvidenceView(
+        const WeaponBodyInstance& instance,
+        const RE::NiAVObject* currentWeaponRoot,
+        SupportGripEvidenceView& outView) const
+    {
+        outView = {};
+        if (!instance.body.isValid() ||
+            instance.generatedLocalTrianglesGame.empty()) {
+            return false;
+        }
+
+        RE::NiTransform localToWorld{};
+        const bool sourceNodeCurrent = instance.sourceNode && currentWeaponRoot &&
+            tryResolveDescendantWorldTransform(
+                currentWeaponRoot,
+                currentWeaponRoot->world,
+                instance.sourceNode,
+                localToWorld,
+                instance.generatedSourceFrameCorrectionValid ?
+                    &instance.generatedSourceFrameCorrection :
+                    nullptr);
+        if (!sourceNodeCurrent) {
+            const RE::NiAVObject* fallbackRoot = currentWeaponRoot ?
+                currentWeaponRoot :
+                instance.driveNode;
+            if (!fallbackRoot) {
+                return false;
+            }
+            localToWorld = fallbackRoot->world;
+        }
+        if (!weaponTransformFinite(localToWorld)) {
+            return false;
+        }
+
+        const auto& localTriangles =
+            sourceNodeCurrent &&
+                !instance.generatedSourceLocalTrianglesGame.empty() ?
+            instance.generatedSourceLocalTrianglesGame :
+            instance.generatedLocalTrianglesGame;
+        if (localTriangles.empty() ||
+            !std::isfinite(localToWorld.scale) ||
+            std::abs(localToWorld.scale) <= 0.000001f) {
+            return false;
+        }
+
+        outView.localTriangles = std::span<const TriangleData>(
+            localTriangles.data(),
+            localTriangles.size());
+        outView.localToWorld = localToWorld;
+        outView.sourceGroupId = instance.generatedSourceGroupId != 0 ?
+            instance.generatedSourceGroupId :
+            reinterpret_cast<std::uintptr_t>(instance.sourceNode);
+        outView.bodyId = instance.body.getBodyId().value;
+        outView.weaponGenerationKey = getCurrentWeaponGenerationKey();
+        outView.sourceNodeCurrent = sourceNodeCurrent;
+        return outView.weaponGenerationKey != 0;
+    }
+
     bool WeaponCollision::tryGetSupportGripEvidenceView(
         std::uint32_t bodyId,
         const RE::NiAVObject* currentWeaponRoot,
@@ -3771,45 +3829,63 @@ namespace rock
         }
 
         for (const auto& instance : activeWeaponBodies()) {
-            if (!instance.body.isValid() || instance.body.getBodyId().value != bodyId || instance.generatedLocalTrianglesGame.empty()) {
+            if (!instance.body.isValid() ||
+                instance.body.getBodyId().value != bodyId) {
                 continue;
             }
-            RE::NiTransform localToWorld{};
-            const bool sourceNodeCurrent = instance.sourceNode && currentWeaponRoot &&
-                tryResolveDescendantWorldTransform(
-                    currentWeaponRoot,
-                    currentWeaponRoot->world,
-                    instance.sourceNode,
-                    localToWorld,
-                    instance.generatedSourceFrameCorrectionValid ?
-                        &instance.generatedSourceFrameCorrection :
-                        nullptr);
-            if (!sourceNodeCurrent) {
-                const RE::NiAVObject* fallbackRoot = currentWeaponRoot ? currentWeaponRoot : instance.driveNode;
-                if (!fallbackRoot) {
-                    continue;
-                }
-                localToWorld = fallbackRoot->world;
-            }
-            if (!weaponTransformFinite(localToWorld)) {
-                continue;
-            }
-
-            const auto& localTriangles = sourceNodeCurrent && !instance.generatedSourceLocalTrianglesGame.empty() ?
-                instance.generatedSourceLocalTrianglesGame :
-                instance.generatedLocalTrianglesGame;
-            if (localTriangles.empty() || !std::isfinite(localToWorld.scale) || std::abs(localToWorld.scale) <= 0.000001f) {
-                continue;
-            }
-
-            outView.localTriangles = std::span<const TriangleData>(localTriangles.data(), localTriangles.size());
-            outView.localToWorld = localToWorld;
-            outView.weaponGenerationKey = getCurrentWeaponGenerationKey();
-            outView.sourceNodeCurrent = sourceNodeCurrent;
-            return outView.weaponGenerationKey != 0;
+            return tryBuildSupportGripEvidenceView(
+                instance,
+                currentWeaponRoot,
+                outView);
         }
 
         return false;
+    }
+
+    std::size_t WeaponCollision::findSupportGripEvidenceViews(
+        const RE::NiAVObject* currentWeaponRoot,
+        std::span<SupportGripEvidenceView> outViews) const
+    {
+        for (auto& view : outViews) {
+            view = {};
+        }
+        if (outViews.empty()) {
+            return 0;
+        }
+
+        std::array<std::uintptr_t, MAX_WEAPON_BODIES> seenSourceGroups{};
+        std::size_t seenSourceCount = 0;
+        std::size_t viewCount = 0;
+        for (const auto& instance : activeWeaponBodies()) {
+            SupportGripEvidenceView view{};
+            if (!tryBuildSupportGripEvidenceView(
+                    instance,
+                    currentWeaponRoot,
+                    view)) {
+                continue;
+            }
+
+            const std::uintptr_t sourceGroup = view.sourceGroupId;
+            const bool duplicate = sourceGroup != 0 &&
+                std::find(
+                    seenSourceGroups.begin(),
+                    seenSourceGroups.begin() + seenSourceCount,
+                    sourceGroup) !=
+                    seenSourceGroups.begin() + seenSourceCount;
+            if (duplicate) {
+                continue;
+            }
+            if (sourceGroup != 0 &&
+                seenSourceCount < seenSourceGroups.size()) {
+                seenSourceGroups[seenSourceCount++] = sourceGroup;
+            }
+
+            outViews[viewCount++] = view;
+            if (viewCount >= outViews.size()) {
+                break;
+            }
+        }
+        return viewCount;
     }
 
     bool WeaponCollision::tryFindCurrentWeaponSurfaceNearPoint(
@@ -6104,6 +6180,7 @@ namespace rock
             instance.generatedSourceLocalTrianglesGame = source.sourceLocalTrianglesGame;
             instance.generatedPointCount = static_cast<std::uint32_t>(
                 (std::min)(source.localPointsGame.size(), static_cast<std::size_t>((std::numeric_limits<std::uint32_t>::max)())));
+            instance.generatedSourceGroupId = source.sourceGroupId;
             instance.semantic = source.semantic;
             instance.ownsShapeRef = true;
             clearGeneratedKeyframedBodyDriveState(instance.driveState);
@@ -6331,6 +6408,7 @@ namespace rock
         instance.generatedSourceLocalPointsGame.clear();
         instance.generatedSourceLocalTrianglesGame.clear();
         instance.generatedPointCount = 0;
+        instance.generatedSourceGroupId = 0;
         instance.semantic = {};
         instance.ownsShapeRef = false;
         instance.generatedSourceFrameCorrectionValid = false;

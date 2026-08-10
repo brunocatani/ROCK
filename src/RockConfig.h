@@ -147,6 +147,8 @@ namespace rock
         float rockWeaponSupportGripHandLerpTimeMax = 0.20f;
         float rockWeaponSupportGripHandLerpMinDistance = 1.0f;
         float rockWeaponSupportGripHandLerpMaxDistance = 14.0f;
+        bool rockWeaponSupportSurfaceSeatEnabled = true;
+        float rockWeaponSupportSurfaceSeatMaxDegrees = 35.0f;
         bool rockWeaponVisualReturnEnabled = true;
         float rockWeaponVisualReturnTimeMin = 0.12f;
         float rockWeaponVisualReturnTimeMax = 0.20f;

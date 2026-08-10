@@ -146,26 +146,30 @@ int main()
         correctionStrengthForFinger(0, 0.25f, 0.8f), 0.8f);
     ok &= expectFloat("finger correction uses surface aim strength",
         correctionStrengthForFinger(3, 0.25f, 0.8f), 0.25f);
-    ok &= expectFloat("non-thumb proximal surface target correction is disabled",
-        surfaceAimSegmentCorrectionWeight(2, 0), 0.0f);
-    ok &= expectFloat("non-thumb distal surface target correction is disabled",
-        surfaceAimSegmentCorrectionWeight(2, 2), 0.0f);
+    ok &= expectFloat("middle proximal surface target correction is bounded",
+        surfaceAimSegmentCorrectionWeight(2, 0), 0.05f);
+    ok &= expectFloat("middle distal surface target correction is bounded",
+        surfaceAimSegmentCorrectionWeight(2, 2), 0.20f);
     ok &= expectFloat("thumb surface target correction keeps proximal limit",
         surfaceAimSegmentCorrectionWeight(0, 0), 0.08f);
     ok &= expectFloat("thumb surface aim correction hard-caps at five degrees",
         boundedSurfaceAimCorrectionRadians(1.0f, 1.0f, 0.5f, 0, 2), kMaxSurfaceAimCorrectionRadians);
-    ok &= expectFloat("non-thumb surface aim correction skips disabled distal segment",
-        boundedSurfaceAimCorrectionRadians(1.0f, 1.0f, 0.5f, 2, 2), 0.0f);
-    ok &= expectFloat("bounded surface aim correction skips disabled proximal segment",
-        boundedSurfaceAimCorrectionRadians(1.0f, 1.0f, 0.5f, 2, 0), 0.0f);
+    ok &= expectFloat("middle distal surface aim correction keeps global cap",
+        boundedSurfaceAimCorrectionRadians(1.0f, 1.0f, 0.5f, 2, 2), kMaxSurfaceAimCorrectionRadians);
+    ok &= expectFloat("middle proximal surface aim correction keeps segment bound",
+        boundedSurfaceAimCorrectionRadians(1.0f, 1.0f, 0.5f, 2, 0), 0.025f);
     ok &= expectBool("alternate thumb skips shared surface aim",
         shouldApplySurfaceAimCorrection(0, true), false);
     ok &= expectBool("primary thumb keeps shared surface aim",
         shouldApplySurfaceAimCorrection(0, false), true);
     ok &= expectBool("curve-only thumb skips shared surface aim",
         shouldApplySurfaceAimCorrection(0, false, false), false);
-    ok &= expectBool("non-thumb red target local correction is disabled",
+    ok &= expectBool("alternate-plane transaction skips middle surface aim",
         shouldApplySurfaceAimCorrection(2, true, false), false);
+    ok &= expectBool("middle surface target local correction is enabled",
+        shouldApplySurfaceAimCorrection(2, false, false), true);
+    ok &= expectBool("index remains curve-only",
+        shouldApplySurfaceAimCorrection(1, false, true), false);
     ok &= expectBool("alternate thumb local correction needs a surface hit",
         shouldApplyAlternateThumbLocalCorrection(true, false), false);
     ok &= expectBool("alternate thumb local correction accepts real surface hit",
@@ -447,6 +451,16 @@ int main()
         thumbIndexCurveOnly.surfaceAimTargetObjectLocalValid[1] == 0, true);
     ok &= expectBool("curve-only thumb-index preserves other object-local aim state",
         thumbIndexCurveOnly.hasObjectLocalSurfaceAim, true);
+
+    SolvedGrabFingerPose completeEvidence{};
+    completeEvidence.solved = true;
+    completeEvidence.contactValidMask = kCompleteFingerContactMask;
+    ok &= expectBool("all five contact lanes complete the mesh hand transaction",
+        hasCompleteFingerContactEvidence(completeEvidence), true);
+    completeEvidence.contactValidMask &=
+        static_cast<std::uint8_t>(~(1u << 3));
+    ok &= expectBool("one missing contact lane invalidates the mesh hand transaction",
+        hasCompleteFingerContactEvidence(completeEvidence), false);
 
     rock::root_flattened_finger_skeleton_runtime::Snapshot padProbeSnapshot = liveFingerSnapshot;
     for (auto& chain : padProbeSnapshot.fingers) {

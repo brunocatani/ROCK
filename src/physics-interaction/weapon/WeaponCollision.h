@@ -135,6 +135,8 @@ namespace rock
         {
             std::span<const TriangleData> localTriangles{};
             RE::NiTransform localToWorld{};
+            std::uintptr_t sourceGroupId{ 0 };
+            std::uint32_t bodyId{ 0x7FFF'FFFFu };
             std::uint64_t weaponGenerationKey{ 0 };
             bool sourceNodeCurrent{ false };
         };
@@ -308,6 +310,10 @@ namespace rock
             const RE::NiAVObject* currentWeaponRoot,
             SupportGripEvidenceView& outView) const;
 
+        std::size_t findSupportGripEvidenceViews(
+            const RE::NiAVObject* currentWeaponRoot,
+            std::span<SupportGripEvidenceView> outViews) const;
+
         BethesdaPhysicsBody& getWeaponBody();
 
         void destroyWeaponBody(RE::hknpWorld* world);
@@ -387,6 +393,7 @@ namespace rock
             std::vector<RE::NiPoint3> generatedSourceLocalPointsGame{};
             std::vector<TriangleData> generatedSourceLocalTrianglesGame{};
             std::uint32_t generatedPointCount{ 0 };
+            std::uintptr_t generatedSourceGroupId{ 0 };
             WeaponPartClassification semantic{};
             bool ownsShapeRef{ false };
             bool generatedSourceFrameCorrectionValid{ false };
@@ -499,6 +506,10 @@ namespace rock
         static bool bankHasWeaponBody(const WeaponBodyBank& bank);
         static std::uint32_t bankWeaponBodyCount(const WeaponBodyBank& bank);
         static RE::NiAVObject* resolvePackageDriveNode(const WeaponBodyBank& bank, RE::NiAVObject* fallbackWeaponNode);
+        bool tryBuildSupportGripEvidenceView(
+            const WeaponBodyInstance& instance,
+            const RE::NiAVObject* currentWeaponRoot,
+            SupportGripEvidenceView& outView) const;
         static bool resolveCompoundChildPose(
             const WeaponBodyInstance& instance,
             const RE::NiAVObject* packageDriveNode,

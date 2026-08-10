@@ -219,6 +219,8 @@ namespace rock
         rockWeaponSupportGripHandLerpTimeMax = 0.20f;
         rockWeaponSupportGripHandLerpMinDistance = 1.0f;
         rockWeaponSupportGripHandLerpMaxDistance = 14.0f;
+        rockWeaponSupportSurfaceSeatEnabled = true;
+        rockWeaponSupportSurfaceSeatMaxDegrees = 35.0f;
         rockWeaponVisualReturnEnabled = true;
         rockWeaponVisualReturnTimeMin = 0.12f;
         rockWeaponVisualReturnTimeMax = 0.20f;
@@ -1037,6 +1039,18 @@ namespace rock
             14.0f,
             rockWeaponSupportGripHandLerpMinDistance,
             120.0f);
+        rockWeaponSupportSurfaceSeatEnabled = ini.GetBoolValue(
+            SECTION,
+            "bWeaponSupportSurfaceSeatEnabled",
+            rockWeaponSupportSurfaceSeatEnabled);
+        rockWeaponSupportSurfaceSeatMaxDegrees = readClampedFloat(
+            ini,
+            SECTION,
+            "fWeaponSupportSurfaceSeatMaxDegrees",
+            rockWeaponSupportSurfaceSeatMaxDegrees,
+            35.0f,
+            0.0f,
+            75.0f);
         rockWeaponVisualReturnEnabled = ini.GetBoolValue(SECTION, "bWeaponVisualReturnEnabled", rockWeaponVisualReturnEnabled);
         rockWeaponVisualReturnTimeMin = readClampedFloat(ini,
             SECTION,
