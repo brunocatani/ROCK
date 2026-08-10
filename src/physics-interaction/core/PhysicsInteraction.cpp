@@ -3691,6 +3691,88 @@ namespace rock
                     weaponNode,
                     currentWeaponGenerationKey,
                     _weaponCollision);
+            if (dynamicWeaponFrame.contactEpisodeStarted &&
+                g_rockConfig.rockDebugDrawDynamicWeaponColliders) {
+                auto* otherRef = resolveBodyToRef(
+                    frame.bhkWorld,
+                    frame.hknpWorld,
+                    RE::hknpBodyId{ dynamicWeaponFrame.otherBodyId });
+                const auto* otherBase = otherRef ? otherRef->GetObjectReference() : nullptr;
+                const auto otherNameView = otherBase ?
+                    RE::TESFullName::GetFullName(*otherBase, false) :
+                    std::string_view{};
+                const std::string otherName = otherNameView.empty() ?
+                    std::string("(unresolved)") :
+                    std::string(otherNameView);
+                const char* otherType = otherBase ?
+                    otherBase->GetFormTypeString() :
+                    "unresolved";
+
+                WeaponCollision::WeaponSurfaceProximityWitness partWitness{};
+                WeaponInteractionDebugInfo partInfo{};
+                constexpr float kContactPartSearchRadiusGameUnits = 24.0f;
+                const bool partWitnessValid =
+                    dynamicWeaponFrame.rawContactPointValid &&
+                    _weaponCollision.tryFindCurrentWeaponSurfaceNearPoint(
+                        weaponNode,
+                        dynamicWeaponFrame.rawContactPointGame,
+                        kContactPartSearchRadiusGameUnits,
+                        partWitness);
+                const bool partInfoValid =
+                    partWitnessValid &&
+                    _weaponCollision.tryGetWeaponContactDebugInfo(
+                        partWitness.bodyId,
+                        partInfo);
+
+                ROCK_LOG_INFO(
+                    Weapon,
+                    "DWC contact witness: episode={} solveAge={} generation={:016X} weaponForm={:08X} other(body/layer/motion/ref/form/type/name)=({}/{}/{}/{:p}/{:08X}/{}/{}) native(collObj/owner)=({:p}/{:p}) raw(valid/proxyWasA/points/index/weight)={}/{}/{}/{}/{:.3f} pointGame=({:.2f},{:.2f},{:.2f}) normalRaw=({:.3f},{:.3f},{:.3f}) nearestPart(valid/body/source/distance/current)={}/{}/{}/{:.3f}/{}",
+                    dynamicWeaponFrame.contactEpisode,
+                    dynamicWeaponFrame.contactSolveAge,
+                    currentWeaponGenerationKey,
+                    _weaponCollision.getCurrentObservedEquippedWeaponFormID(),
+                    dynamicWeaponFrame.otherBodyId,
+                    dynamicWeaponFrame.otherLayer,
+                    dynamicWeaponFrame.otherMotionIndex,
+                    static_cast<void*>(otherRef),
+                    otherRef ? otherRef->GetFormID() : 0,
+                    otherType,
+                    otherName,
+                    reinterpret_cast<void*>(dynamicWeaponFrame.otherCollisionObject),
+                    reinterpret_cast<void*>(dynamicWeaponFrame.otherOwnerNode),
+                    dynamicWeaponFrame.rawContactPointValid,
+                    dynamicWeaponFrame.rawContactProxyWasBodyA,
+                    dynamicWeaponFrame.rawContactPointCount,
+                    dynamicWeaponFrame.rawContactPointIndex,
+                    dynamicWeaponFrame.rawContactPointWeightSum,
+                    dynamicWeaponFrame.rawContactPointGame.x,
+                    dynamicWeaponFrame.rawContactPointGame.y,
+                    dynamicWeaponFrame.rawContactPointGame.z,
+                    dynamicWeaponFrame.rawContactNormalHavok.x,
+                    dynamicWeaponFrame.rawContactNormalHavok.y,
+                    dynamicWeaponFrame.rawContactNormalHavok.z,
+                    partWitnessValid,
+                    partWitnessValid ? partWitness.bodyId : 0x7FFF'FFFFu,
+                    partInfoValid ? partInfo.sourceName : std::string("(unresolved)"),
+                    partWitnessValid ? partWitness.distanceGameUnits : -1.0f,
+                    partWitnessValid && partWitness.sourceNodeCurrent);
+                ROCK_LOG_INFO(
+                    Weapon,
+                    "DWC contact transforms: episode={} requestedBody=({:.2f},{:.2f},{:.2f}) liveBody=({:.2f},{:.2f},{:.2f}) otherReadable={} otherBody=({:.2f},{:.2f},{:.2f}) correction=({:.2f}gu,{:.2f}deg)",
+                    dynamicWeaponFrame.contactEpisode,
+                    dynamicWeaponFrame.requestedContactBodyWorld.translate.x,
+                    dynamicWeaponFrame.requestedContactBodyWorld.translate.y,
+                    dynamicWeaponFrame.requestedContactBodyWorld.translate.z,
+                    dynamicWeaponFrame.liveContactBodyWorld.translate.x,
+                    dynamicWeaponFrame.liveContactBodyWorld.translate.y,
+                    dynamicWeaponFrame.liveContactBodyWorld.translate.z,
+                    dynamicWeaponFrame.otherBodyWorldValid,
+                    dynamicWeaponFrame.otherBodyWorld.translate.x,
+                    dynamicWeaponFrame.otherBodyWorld.translate.y,
+                    dynamicWeaponFrame.otherBodyWorld.translate.z,
+                    dynamicWeaponFrame.translationCorrectionGameUnits,
+                    dynamicWeaponFrame.rotationCorrectionDegrees);
+            }
             if (dynamicWeaponFrame.applyVisualCorrection) {
                 const bool visualPublishSucceeded = _twoHandedGrip.applyWeaponCollisionResolvedAuthority(
                     weaponNode,

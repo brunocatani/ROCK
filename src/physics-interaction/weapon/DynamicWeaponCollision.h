@@ -23,6 +23,11 @@ namespace RE
     class hknpWorld;
 }
 
+namespace rock::havok_runtime
+{
+    struct ContactSignalPointResult;
+}
+
 namespace rock
 {
     class PhysicsCallbackQuiescenceGate;
@@ -35,8 +40,27 @@ namespace rock
         {
             bool proxyActive{ false };
             bool applyVisualCorrection{ false };
+            bool contactEpisodeStarted{ false };
+            bool rawContactPointValid{ false };
+            bool rawContactProxyWasBodyA{ false };
+            bool otherBodyWorldValid{ false };
+            std::uint32_t otherBodyId{ 0x7FFF'FFFFu };
+            std::uint32_t otherLayer{ 0 };
+            std::uint32_t otherMotionIndex{ 0x7FFF'FFFFu };
+            std::uint32_t rawContactPointCount{ 0 };
+            std::uint32_t rawContactPointIndex{ 0 };
+            std::uint64_t contactEpisode{ 0 };
+            std::uint64_t contactSolveAge{ 0 };
+            std::uintptr_t otherCollisionObject{ 0 };
+            std::uintptr_t otherOwnerNode{ 0 };
+            float rawContactPointWeightSum{ 0.0f };
+            RE::NiPoint3 rawContactPointGame{};
+            RE::NiPoint3 rawContactNormalHavok{};
             RE::NiTransform requestedWeaponWorld{};
             RE::NiTransform resolvedWeaponWorld{};
+            RE::NiTransform requestedContactBodyWorld{};
+            RE::NiTransform liveContactBodyWorld{};
+            RE::NiTransform otherBodyWorld{};
             float translationCorrectionGameUnits{ 0.0f };
             float rotationCorrectionDegrees{ 0.0f };
         };
@@ -111,7 +135,8 @@ namespace rock
             std::uint32_t otherBodyId,
             bool otherLayerRead,
             std::uint32_t otherLayer,
-            bool rawContactPointValid);
+            bool proxyWasBodyA,
+            const havok_runtime::ContactSignalPointResult* rawContactPoint);
         void recordWorldSurfaceManifoldProcessedCallback(
             RE::hknpWorld* world,
             std::uint32_t proxyBodyId,
@@ -150,6 +175,32 @@ namespace rock
             RE::NiTransform liveProxyBodyWorld{};
         };
 
+        struct ContactDiagnosticSnapshot
+        {
+            bool valid{ false };
+            bool rawContactPointValid{ false };
+            bool rawContactProxyWasBodyA{ false };
+            bool otherBodyWorldValid{ false };
+            std::uintptr_t world{ 0 };
+            std::uint32_t bodyId{ 0x7FFF'FFFFu };
+            std::uint32_t otherBodyId{ 0x7FFF'FFFFu };
+            std::uint32_t otherLayer{ 0 };
+            std::uint32_t otherMotionIndex{ 0x7FFF'FFFFu };
+            std::uint32_t rawContactPointCount{ 0 };
+            std::uint32_t rawContactPointIndex{ 0 };
+            std::uint64_t generationKey{ 0 };
+            std::uint64_t contactEpisode{ 0 };
+            std::uint64_t contactSolveAge{ 0 };
+            std::uintptr_t otherCollisionObject{ 0 };
+            std::uintptr_t otherOwnerNode{ 0 };
+            float rawContactPointWeightSum{ 0.0f };
+            RE::NiPoint3 rawContactPointGame{};
+            RE::NiPoint3 rawContactNormalHavok{};
+            RE::NiTransform requestedProxyBodyWorld{};
+            RE::NiTransform liveProxyBodyWorld{};
+            RE::NiTransform otherBodyWorld{};
+        };
+
         void captureVisualIntent(
             RE::NiNode* weaponNode,
             const RE::NiTransform& requestedWeaponWorld,
@@ -167,6 +218,9 @@ namespace rock
         void clearPublishedPhysicsSnapshot();
         void publishPhysicsSnapshot(const PhysicsSnapshot& snapshot);
         bool readPhysicsSnapshot(PhysicsSnapshot& outSnapshot) const;
+        void clearContactDiagnosticSnapshot();
+        void publishContactDiagnosticSnapshot(const ContactDiagnosticSnapshot& snapshot);
+        bool readContactDiagnosticSnapshot(ContactDiagnosticSnapshot& outSnapshot) const;
         static void storeAtomicTransform(AtomicTransform& target, const RE::NiTransform& value);
         static RE::NiTransform loadAtomicTransform(const AtomicTransform& source);
 
@@ -200,6 +254,11 @@ namespace rock
         bool _physicsPreviousRequestedTargetValid{ false };
         std::uint64_t _consumedContactSequence{ 0 };
         std::uint32_t _contactGraceSolves{ 0 };
+        std::uint64_t _contactEpisode{ 0 };
+        std::uint64_t _reportedContactEpisode{ 0 };
+        std::uint64_t _postSolveSamplesSinceCreate{ 0 };
+        std::uint64_t _lastEpisodeRawWitnessSequence{ 0 };
+        std::uint32_t _activeContactOtherBodyId{ 0x7FFF'FFFFu };
 
         bool _frameAcceptingIntent{ false };
         bool _frameHasIntent{ false };
@@ -223,6 +282,14 @@ namespace rock
         std::atomic<std::uint32_t> _contactProxyBodyIdAtomic{ 0x7FFF'FFFFu };
         std::atomic<std::uint32_t> _contactOtherBodyIdAtomic{ 0x7FFF'FFFFu };
         std::atomic<std::uint32_t> _contactOtherLayerAtomic{ 0 };
+        std::atomic<std::uint32_t> _rawContactOtherBodyIdAtomic{ 0x7FFF'FFFFu };
+        std::atomic<std::uint32_t> _rawContactPointCountAtomic{ 0 };
+        std::atomic<std::uint32_t> _rawContactPointIndexAtomic{ 0 };
+        std::atomic<float> _rawContactPointWeightSumAtomic{ 0.0f };
+        std::array<std::atomic<float>, 3> _rawContactPointHavokAtomic{};
+        std::array<std::atomic<float>, 3> _rawContactNormalHavokAtomic{};
+        std::atomic<bool> _rawContactProxyWasBodyAAtomic{ false };
+        std::atomic<std::uint64_t> _rawContactWitnessSequenceAtomic{ 0 };
 
         std::atomic<std::uint64_t> _snapshotVersionAtomic{ 0 };
         std::atomic<bool> _snapshotValidAtomic{ false };
@@ -238,5 +305,29 @@ namespace rock
         std::atomic<float> _snapshotWeaponScaleAtomic{ 1.0f };
         AtomicTransform _snapshotRequestedProxyBodyWorld{};
         AtomicTransform _snapshotLiveProxyBodyWorld{};
+
+        std::atomic<std::uint64_t> _contactDiagnosticVersionAtomic{ 0 };
+        std::atomic<bool> _contactDiagnosticValidAtomic{ false };
+        std::atomic<bool> _contactDiagnosticRawPointValidAtomic{ false };
+        std::atomic<bool> _contactDiagnosticProxyWasBodyAAtomic{ false };
+        std::atomic<bool> _contactDiagnosticOtherWorldValidAtomic{ false };
+        std::atomic<std::uintptr_t> _contactDiagnosticWorldAtomic{ 0 };
+        std::atomic<std::uint32_t> _contactDiagnosticBodyIdAtomic{ 0x7FFF'FFFFu };
+        std::atomic<std::uint32_t> _contactDiagnosticOtherBodyIdAtomic{ 0x7FFF'FFFFu };
+        std::atomic<std::uint32_t> _contactDiagnosticOtherLayerAtomic{ 0 };
+        std::atomic<std::uint32_t> _contactDiagnosticOtherMotionIndexAtomic{ 0x7FFF'FFFFu };
+        std::atomic<std::uint32_t> _contactDiagnosticRawPointCountAtomic{ 0 };
+        std::atomic<std::uint32_t> _contactDiagnosticRawPointIndexAtomic{ 0 };
+        std::atomic<std::uint64_t> _contactDiagnosticGenerationKeyAtomic{ 0 };
+        std::atomic<std::uint64_t> _contactDiagnosticEpisodeAtomic{ 0 };
+        std::atomic<std::uint64_t> _contactDiagnosticSolveAgeAtomic{ 0 };
+        std::atomic<std::uintptr_t> _contactDiagnosticOtherCollisionObjectAtomic{ 0 };
+        std::atomic<std::uintptr_t> _contactDiagnosticOtherOwnerNodeAtomic{ 0 };
+        std::atomic<float> _contactDiagnosticRawPointWeightSumAtomic{ 0.0f };
+        std::array<std::atomic<float>, 3> _contactDiagnosticRawPointGameAtomic{};
+        std::array<std::atomic<float>, 3> _contactDiagnosticRawNormalHavokAtomic{};
+        AtomicTransform _contactDiagnosticRequestedProxyBodyWorld{};
+        AtomicTransform _contactDiagnosticLiveProxyBodyWorld{};
+        AtomicTransform _contactDiagnosticOtherBodyWorld{};
     };
 }

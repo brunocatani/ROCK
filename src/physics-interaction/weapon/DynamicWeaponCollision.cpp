@@ -517,6 +517,38 @@ namespace rock
         _debugSnapshot.halfExtentsWeaponLocal = _createdHalfExtentsWeaponLocal;
         _debugSnapshot.requestedWeaponWorld = _frameRequestedWeaponWorld;
 
+        ContactDiagnosticSnapshot contactDiagnostic{};
+        const bool contactDiagnosticCurrent =
+            g_rockConfig.rockDebugDrawDynamicWeaponColliders &&
+            readContactDiagnosticSnapshot(contactDiagnostic) &&
+            contactDiagnostic.valid &&
+            contactDiagnostic.world == reinterpret_cast<std::uintptr_t>(frame.hknpWorld) &&
+            contactDiagnostic.bodyId == _body.getBodyId().value &&
+            contactDiagnostic.generationKey == _createdGenerationKey;
+        if (contactDiagnosticCurrent &&
+            contactDiagnostic.contactEpisode > _reportedContactEpisode) {
+            _reportedContactEpisode = contactDiagnostic.contactEpisode;
+            result.contactEpisodeStarted = true;
+            result.rawContactPointValid = contactDiagnostic.rawContactPointValid;
+            result.rawContactProxyWasBodyA = contactDiagnostic.rawContactProxyWasBodyA;
+            result.otherBodyWorldValid = contactDiagnostic.otherBodyWorldValid;
+            result.otherBodyId = contactDiagnostic.otherBodyId;
+            result.otherLayer = contactDiagnostic.otherLayer;
+            result.otherMotionIndex = contactDiagnostic.otherMotionIndex;
+            result.rawContactPointCount = contactDiagnostic.rawContactPointCount;
+            result.rawContactPointIndex = contactDiagnostic.rawContactPointIndex;
+            result.contactEpisode = contactDiagnostic.contactEpisode;
+            result.contactSolveAge = contactDiagnostic.contactSolveAge;
+            result.otherCollisionObject = contactDiagnostic.otherCollisionObject;
+            result.otherOwnerNode = contactDiagnostic.otherOwnerNode;
+            result.rawContactPointWeightSum = contactDiagnostic.rawContactPointWeightSum;
+            result.rawContactPointGame = contactDiagnostic.rawContactPointGame;
+            result.rawContactNormalHavok = contactDiagnostic.rawContactNormalHavok;
+            result.requestedContactBodyWorld = contactDiagnostic.requestedProxyBodyWorld;
+            result.liveContactBodyWorld = contactDiagnostic.liveProxyBodyWorld;
+            result.otherBodyWorld = contactDiagnostic.otherBodyWorld;
+        }
+
         const auto logPipelineStage = [&](const char* stage) {
             if (!g_rockConfig.rockDebugDrawDynamicWeaponColliders) {
                 return;
@@ -1067,6 +1099,7 @@ namespace rock
             clearPublishedPhysicsSnapshot();
             return;
         }
+        ++_postSolveSamplesSinceCreate;
         const auto contactSequence = _contactSequenceAtomic.load(std::memory_order_acquire);
         bool newMatchingContact = false;
         std::uint32_t otherBodyId = kInvalidBodyId;
@@ -1081,6 +1114,14 @@ namespace rock
                 contactWorld == reinterpret_cast<std::uintptr_t>(world) &&
                 contactProxy == _body.getBodyId().value &&
                 collision_layer_policy::isWorldSurfaceLayer(otherLayer);
+        }
+        const bool contactWasActive = _contactGraceSolves > 0;
+        const bool contactEpisodeStarted =
+            newMatchingContact &&
+            (!contactWasActive || _activeContactOtherBodyId != otherBodyId);
+        if (contactEpisodeStarted) {
+            ++_contactEpisode;
+            _activeContactOtherBodyId = otherBodyId;
         }
         if (_physicsDriveTeleported) {
             _contactGraceSolves = 0;
@@ -1105,6 +1146,69 @@ namespace rock
         snapshot.requestedProxyBodyWorld = _physicsRequestedTarget;
         snapshot.liveProxyBodyWorld = liveBodyWorld;
         publishPhysicsSnapshot(snapshot);
+
+        if (contactEpisodeStarted &&
+            g_rockConfig.rockDebugDrawDynamicWeaponColliders) {
+            ContactDiagnosticSnapshot diagnostic{};
+            diagnostic.valid = true;
+            diagnostic.world = reinterpret_cast<std::uintptr_t>(world);
+            diagnostic.bodyId = _body.getBodyId().value;
+            diagnostic.otherBodyId = otherBodyId;
+            diagnostic.otherLayer = otherLayer;
+            diagnostic.generationKey = _createdGenerationKey;
+            diagnostic.contactEpisode = _contactEpisode;
+            diagnostic.contactSolveAge = _postSolveSamplesSinceCreate;
+            diagnostic.requestedProxyBodyWorld = _physicsRequestedTarget;
+            diagnostic.liveProxyBodyWorld = liveBodyWorld;
+
+            const auto otherBodySnapshot = havok_runtime::snapshotBody(
+                world,
+                RE::hknpBodyId{ otherBodyId });
+            diagnostic.otherMotionIndex = otherBodySnapshot.motionIndex;
+            diagnostic.otherCollisionObject = reinterpret_cast<std::uintptr_t>(
+                otherBodySnapshot.collisionObject);
+            diagnostic.otherOwnerNode = reinterpret_cast<std::uintptr_t>(
+                otherBodySnapshot.ownerNode);
+            diagnostic.otherBodyWorldValid =
+                havok_runtime::tryResolveLiveBodyWorldTransform(
+                    world,
+                    RE::hknpBodyId{ otherBodyId },
+                    diagnostic.otherBodyWorld) &&
+                dynamic_weapon_collision_policy::isFiniteTransform(
+                    diagnostic.otherBodyWorld);
+
+            const auto rawWitnessSequence =
+                _rawContactWitnessSequenceAtomic.load(std::memory_order_acquire);
+            const auto rawOtherBodyId =
+                _rawContactOtherBodyIdAtomic.load(std::memory_order_relaxed);
+            diagnostic.rawContactPointValid =
+                rawWitnessSequence != 0 &&
+                rawWitnessSequence != _lastEpisodeRawWitnessSequence &&
+                rawOtherBodyId == otherBodyId;
+            _lastEpisodeRawWitnessSequence = rawWitnessSequence;
+            if (diagnostic.rawContactPointValid) {
+                diagnostic.rawContactPointCount =
+                    _rawContactPointCountAtomic.load(std::memory_order_relaxed);
+                diagnostic.rawContactPointIndex =
+                    _rawContactPointIndexAtomic.load(std::memory_order_relaxed);
+                diagnostic.rawContactPointWeightSum =
+                    _rawContactPointWeightSumAtomic.load(std::memory_order_relaxed);
+                diagnostic.rawContactProxyWasBodyA =
+                    _rawContactProxyWasBodyAAtomic.load(std::memory_order_relaxed);
+                const float pointScale = physics_scale::havokToGame();
+                diagnostic.rawContactPointGame = RE::NiPoint3{
+                    _rawContactPointHavokAtomic[0].load(std::memory_order_relaxed) * pointScale,
+                    _rawContactPointHavokAtomic[1].load(std::memory_order_relaxed) * pointScale,
+                    _rawContactPointHavokAtomic[2].load(std::memory_order_relaxed) * pointScale,
+                };
+                diagnostic.rawContactNormalHavok = RE::NiPoint3{
+                    _rawContactNormalHavokAtomic[0].load(std::memory_order_relaxed),
+                    _rawContactNormalHavokAtomic[1].load(std::memory_order_relaxed),
+                    _rawContactNormalHavokAtomic[2].load(std::memory_order_relaxed),
+                };
+            }
+            publishContactDiagnosticSnapshot(diagnostic);
+        }
 
         if (g_rockConfig.rockDebugDrawDynamicWeaponColliders) {
             const float requestedStepTranslation = _physicsPreviousRequestedTargetValid ?
@@ -1187,7 +1291,8 @@ namespace rock
         const std::uint32_t otherBodyId,
         const bool otherLayerRead,
         const std::uint32_t otherLayer,
-        const bool rawContactPointValid)
+        const bool proxyWasBodyA,
+        const havok_runtime::ContactSignalPointResult* rawContactPoint)
     {
         if (!world || !isProxyBodyIdAtomic(proxyBodyId)) {
             return;
@@ -1197,10 +1302,22 @@ namespace rock
             return;
         }
         _worldSurfaceCallbackSequenceAtomic.fetch_add(1, std::memory_order_release);
-        if (!rawContactPointValid) {
+        if (!rawContactPoint || !rawContactPoint->valid) {
             return;
         }
         _rawPointCallbackSequenceAtomic.fetch_add(1, std::memory_order_release);
+        if (g_rockConfig.rockDebugDrawDynamicWeaponColliders) {
+            _rawContactOtherBodyIdAtomic.store(otherBodyId, std::memory_order_relaxed);
+            _rawContactPointCountAtomic.store(rawContactPoint->pointCount, std::memory_order_relaxed);
+            _rawContactPointIndexAtomic.store(rawContactPoint->selectedPointIndex, std::memory_order_relaxed);
+            _rawContactPointWeightSumAtomic.store(rawContactPoint->contactPointWeightSum, std::memory_order_relaxed);
+            for (std::size_t axis = 0; axis < 3; ++axis) {
+                _rawContactPointHavokAtomic[axis].store(rawContactPoint->contactPointHavok[axis], std::memory_order_relaxed);
+                _rawContactNormalHavokAtomic[axis].store(rawContactPoint->contactNormalHavok[axis], std::memory_order_relaxed);
+            }
+            _rawContactProxyWasBodyAAtomic.store(proxyWasBodyA, std::memory_order_relaxed);
+            _rawContactWitnessSequenceAtomic.fetch_add(1, std::memory_order_release);
+        }
         _contactWorldAtomic.store(reinterpret_cast<std::uintptr_t>(world), std::memory_order_relaxed);
         _contactProxyBodyIdAtomic.store(proxyBodyId, std::memory_order_relaxed);
         _contactOtherBodyIdAtomic.store(otherBodyId, std::memory_order_relaxed);
@@ -1301,6 +1418,11 @@ namespace rock
         _physicsPreviousRequestedTargetValid = false;
         _contactGraceSolves = 0;
         _consumedContactSequence = 0;
+        _contactEpisode = 0;
+        _reportedContactEpisode = 0;
+        _postSolveSamplesSinceCreate = 0;
+        _lastEpisodeRawWitnessSequence = 0;
+        _activeContactOtherBodyId = kInvalidBodyId;
         _proxyPairCallbackSequenceAtomic.store(0, std::memory_order_release);
         _worldSurfaceCallbackSequenceAtomic.store(0, std::memory_order_release);
         _rawPointCallbackSequenceAtomic.store(0, std::memory_order_release);
@@ -1310,9 +1432,20 @@ namespace rock
         _contactProxyBodyIdAtomic.store(kInvalidBodyId, std::memory_order_release);
         _contactOtherBodyIdAtomic.store(kInvalidBodyId, std::memory_order_release);
         _contactOtherLayerAtomic.store(0, std::memory_order_release);
+        _rawContactOtherBodyIdAtomic.store(kInvalidBodyId, std::memory_order_release);
+        _rawContactPointCountAtomic.store(0, std::memory_order_release);
+        _rawContactPointIndexAtomic.store(0, std::memory_order_release);
+        _rawContactPointWeightSumAtomic.store(0.0f, std::memory_order_release);
+        for (std::size_t axis = 0; axis < 3; ++axis) {
+            _rawContactPointHavokAtomic[axis].store(0.0f, std::memory_order_release);
+            _rawContactNormalHavokAtomic[axis].store(0.0f, std::memory_order_release);
+        }
+        _rawContactProxyWasBodyAAtomic.store(false, std::memory_order_release);
+        _rawContactWitnessSequenceAtomic.store(0, std::memory_order_release);
         _rebuildRequestedAtomic.store(false, std::memory_order_release);
         clearGeneratedKeyframedBodyDriveState(_authorityDriveState);
         clearPublishedPhysicsSnapshot();
+        clearContactDiagnosticSnapshot();
     }
 
     void DynamicWeaponCollisionRuntime::retireAll(void* bhkWorld)
@@ -1449,6 +1582,96 @@ namespace rock
             candidate.requestedProxyBodyWorld = loadAtomicTransform(_snapshotRequestedProxyBodyWorld);
             candidate.liveProxyBodyWorld = loadAtomicTransform(_snapshotLiveProxyBodyWorld);
             const auto after = _snapshotVersionAtomic.load(std::memory_order_acquire);
+            if (before == after && (after & 1u) == 0) {
+                outSnapshot = candidate;
+                return candidate.valid;
+            }
+        }
+        outSnapshot = {};
+        return false;
+    }
+
+    void DynamicWeaponCollisionRuntime::clearContactDiagnosticSnapshot()
+    {
+        ContactDiagnosticSnapshot snapshot{};
+        publishContactDiagnosticSnapshot(snapshot);
+    }
+
+    void DynamicWeaponCollisionRuntime::publishContactDiagnosticSnapshot(
+        const ContactDiagnosticSnapshot& snapshot)
+    {
+        _contactDiagnosticVersionAtomic.fetch_add(1, std::memory_order_acq_rel);
+        _contactDiagnosticValidAtomic.store(snapshot.valid, std::memory_order_relaxed);
+        _contactDiagnosticRawPointValidAtomic.store(snapshot.rawContactPointValid, std::memory_order_relaxed);
+        _contactDiagnosticProxyWasBodyAAtomic.store(snapshot.rawContactProxyWasBodyA, std::memory_order_relaxed);
+        _contactDiagnosticOtherWorldValidAtomic.store(snapshot.otherBodyWorldValid, std::memory_order_relaxed);
+        _contactDiagnosticWorldAtomic.store(snapshot.world, std::memory_order_relaxed);
+        _contactDiagnosticBodyIdAtomic.store(snapshot.bodyId, std::memory_order_relaxed);
+        _contactDiagnosticOtherBodyIdAtomic.store(snapshot.otherBodyId, std::memory_order_relaxed);
+        _contactDiagnosticOtherLayerAtomic.store(snapshot.otherLayer, std::memory_order_relaxed);
+        _contactDiagnosticOtherMotionIndexAtomic.store(snapshot.otherMotionIndex, std::memory_order_relaxed);
+        _contactDiagnosticRawPointCountAtomic.store(snapshot.rawContactPointCount, std::memory_order_relaxed);
+        _contactDiagnosticRawPointIndexAtomic.store(snapshot.rawContactPointIndex, std::memory_order_relaxed);
+        _contactDiagnosticGenerationKeyAtomic.store(snapshot.generationKey, std::memory_order_relaxed);
+        _contactDiagnosticEpisodeAtomic.store(snapshot.contactEpisode, std::memory_order_relaxed);
+        _contactDiagnosticSolveAgeAtomic.store(snapshot.contactSolveAge, std::memory_order_relaxed);
+        _contactDiagnosticOtherCollisionObjectAtomic.store(snapshot.otherCollisionObject, std::memory_order_relaxed);
+        _contactDiagnosticOtherOwnerNodeAtomic.store(snapshot.otherOwnerNode, std::memory_order_relaxed);
+        _contactDiagnosticRawPointWeightSumAtomic.store(snapshot.rawContactPointWeightSum, std::memory_order_relaxed);
+        _contactDiagnosticRawPointGameAtomic[0].store(snapshot.rawContactPointGame.x, std::memory_order_relaxed);
+        _contactDiagnosticRawPointGameAtomic[1].store(snapshot.rawContactPointGame.y, std::memory_order_relaxed);
+        _contactDiagnosticRawPointGameAtomic[2].store(snapshot.rawContactPointGame.z, std::memory_order_relaxed);
+        _contactDiagnosticRawNormalHavokAtomic[0].store(snapshot.rawContactNormalHavok.x, std::memory_order_relaxed);
+        _contactDiagnosticRawNormalHavokAtomic[1].store(snapshot.rawContactNormalHavok.y, std::memory_order_relaxed);
+        _contactDiagnosticRawNormalHavokAtomic[2].store(snapshot.rawContactNormalHavok.z, std::memory_order_relaxed);
+        storeAtomicTransform(_contactDiagnosticRequestedProxyBodyWorld, snapshot.requestedProxyBodyWorld);
+        storeAtomicTransform(_contactDiagnosticLiveProxyBodyWorld, snapshot.liveProxyBodyWorld);
+        storeAtomicTransform(_contactDiagnosticOtherBodyWorld, snapshot.otherBodyWorld);
+        _contactDiagnosticVersionAtomic.fetch_add(1, std::memory_order_release);
+    }
+
+    bool DynamicWeaponCollisionRuntime::readContactDiagnosticSnapshot(
+        ContactDiagnosticSnapshot& outSnapshot) const
+    {
+        for (int attempt = 0; attempt < 4; ++attempt) {
+            const auto before = _contactDiagnosticVersionAtomic.load(std::memory_order_acquire);
+            if ((before & 1u) != 0) {
+                continue;
+            }
+
+            ContactDiagnosticSnapshot candidate{};
+            candidate.valid = _contactDiagnosticValidAtomic.load(std::memory_order_relaxed);
+            candidate.rawContactPointValid = _contactDiagnosticRawPointValidAtomic.load(std::memory_order_relaxed);
+            candidate.rawContactProxyWasBodyA = _contactDiagnosticProxyWasBodyAAtomic.load(std::memory_order_relaxed);
+            candidate.otherBodyWorldValid = _contactDiagnosticOtherWorldValidAtomic.load(std::memory_order_relaxed);
+            candidate.world = _contactDiagnosticWorldAtomic.load(std::memory_order_relaxed);
+            candidate.bodyId = _contactDiagnosticBodyIdAtomic.load(std::memory_order_relaxed);
+            candidate.otherBodyId = _contactDiagnosticOtherBodyIdAtomic.load(std::memory_order_relaxed);
+            candidate.otherLayer = _contactDiagnosticOtherLayerAtomic.load(std::memory_order_relaxed);
+            candidate.otherMotionIndex = _contactDiagnosticOtherMotionIndexAtomic.load(std::memory_order_relaxed);
+            candidate.rawContactPointCount = _contactDiagnosticRawPointCountAtomic.load(std::memory_order_relaxed);
+            candidate.rawContactPointIndex = _contactDiagnosticRawPointIndexAtomic.load(std::memory_order_relaxed);
+            candidate.generationKey = _contactDiagnosticGenerationKeyAtomic.load(std::memory_order_relaxed);
+            candidate.contactEpisode = _contactDiagnosticEpisodeAtomic.load(std::memory_order_relaxed);
+            candidate.contactSolveAge = _contactDiagnosticSolveAgeAtomic.load(std::memory_order_relaxed);
+            candidate.otherCollisionObject = _contactDiagnosticOtherCollisionObjectAtomic.load(std::memory_order_relaxed);
+            candidate.otherOwnerNode = _contactDiagnosticOtherOwnerNodeAtomic.load(std::memory_order_relaxed);
+            candidate.rawContactPointWeightSum = _contactDiagnosticRawPointWeightSumAtomic.load(std::memory_order_relaxed);
+            candidate.rawContactPointGame = RE::NiPoint3{
+                _contactDiagnosticRawPointGameAtomic[0].load(std::memory_order_relaxed),
+                _contactDiagnosticRawPointGameAtomic[1].load(std::memory_order_relaxed),
+                _contactDiagnosticRawPointGameAtomic[2].load(std::memory_order_relaxed),
+            };
+            candidate.rawContactNormalHavok = RE::NiPoint3{
+                _contactDiagnosticRawNormalHavokAtomic[0].load(std::memory_order_relaxed),
+                _contactDiagnosticRawNormalHavokAtomic[1].load(std::memory_order_relaxed),
+                _contactDiagnosticRawNormalHavokAtomic[2].load(std::memory_order_relaxed),
+            };
+            candidate.requestedProxyBodyWorld = loadAtomicTransform(_contactDiagnosticRequestedProxyBodyWorld);
+            candidate.liveProxyBodyWorld = loadAtomicTransform(_contactDiagnosticLiveProxyBodyWorld);
+            candidate.otherBodyWorld = loadAtomicTransform(_contactDiagnosticOtherBodyWorld);
+
+            const auto after = _contactDiagnosticVersionAtomic.load(std::memory_order_acquire);
             if (before == after && (after & 1u) == 0) {
                 outSnapshot = candidate;
                 return candidate.valid;

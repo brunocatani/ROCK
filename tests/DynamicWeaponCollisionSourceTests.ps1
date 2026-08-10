@@ -347,6 +347,21 @@ Require-Pattern $runtimeSource `
 Require-Pattern $runtimeSource `
     'signedTranslationStepTowardContactError\([\s\S]*_physicsPreviousRequestedTarget[\s\S]*_physicsRequestedTarget[\s\S]*liveBodyWorld[\s\S]*DWC motor trace:[\s\S]*intentStep=[\s\S]*signedPress=[\s\S]*contactError=[\s\S]*authority\(read/error\)=[\s\S]*tau=[\s\S]*recovery=[\s\S]*force=' `
     'Sustained-contact diagnostics must distinguish continued press from retreat and expose authority tracking plus live motor state.'
+Require-Order $runtimeSource @(
+    '_rawContactOtherBodyIdAtomic\.store\(otherBodyId',
+    '_rawContactPointHavokAtomic\[axis\]\.store\(',
+    '_rawContactWitnessSequenceAtomic\.fetch_add\(1',
+    '_contactSequenceAtomic\.fetch_add\(1'
+) 'Raw contact position and normal must publish before the callback sequence release.'
+Require-Pattern $runtimeSource `
+    'contactEpisodeStarted[\s\S]*_contactEpisode[\s\S]*snapshotBody\([\s\S]*otherBodyId[\s\S]*rawContactPointGame[\s\S]*publishContactDiagnosticSnapshot\(diagnostic\)' `
+    'Each distinct world-contact episode must retain bounded body identity and raw point evidence in the post-solve snapshot.'
+Require-Pattern $runtimeSource `
+    'contactEpisodeStarted\s*&&[\s\S]*rockDebugDrawDynamicWeaponColliders[\s\S]*publishContactDiagnosticSnapshot\(diagnostic\)' `
+    'Extended contact evidence must publish only for a distinct episode while dynamic-collider diagnostics are enabled.'
+Require-Pattern $interaction `
+    'contactEpisodeStarted[\s\S]*resolveBodyToRef\([\s\S]*tryFindCurrentWeaponSurfaceNearPoint\([\s\S]*tryGetWeaponContactDebugInfo\([\s\S]*DWC contact witness:[\s\S]*DWC contact transforms:' `
+    'The main-thread diagnostic must resolve the contacted reference and nearest live weapon part once per contact episode.'
 Require-Pattern $interaction `
     'applyWeaponCollisionResolvedAuthority[\s\S]*immediateTranslationError[\s\S]*immediateRotationError[\s\S]*DWC visual publication' `
     'Dynamic weapon visual publication must expose immediate node readback evidence.'

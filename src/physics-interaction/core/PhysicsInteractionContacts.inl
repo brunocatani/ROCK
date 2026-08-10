@@ -646,7 +646,8 @@
                 otherBodyId,
                 otherLayerRead,
                 otherLayer,
-                rawContactPointValid);
+                bodyAIsDynamicWeaponProxy,
+                rawContactPointValid ? &rawContactPoint : nullptr);
         }
 
         const auto rightId = _rightHand.getCollisionBodyId().value;
