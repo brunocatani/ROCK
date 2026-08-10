@@ -1022,6 +1022,176 @@ namespace rock::weapon_collision_geometry_math
         });
         return result;
     }
+
+    constexpr std::size_t kMaxDetachedComponentAnalysisSources = 512;
+
+    struct DetachedComponentInput
+    {
+        std::array<float, 3> min{};
+        std::array<float, 3> max{};
+        std::uintptr_t coherenceGroup{ 0 };
+        bool assembledAnchor = false;
+    };
+
+    enum class DetachedComponentVerdict : std::uint8_t
+    {
+        NoFilteringNeeded,
+        Filtered,
+        FailOpenInvalidInput,
+        FailOpenSourceLimit,
+        FailOpenNoAssembledAnchor
+    };
+
+    struct DetachedComponentFilterResult
+    {
+        DetachedComponentVerdict verdict{ DetachedComponentVerdict::NoFilteringNeeded };
+        std::vector<std::size_t> excludedIndices;
+        std::size_t componentCount{ 0 };
+        std::size_t assembledAnchorComponentCount{ 0 };
+        std::size_t excludedComponentCount{ 0 };
+        float minimumExcludedGap{ 0.0f };
+    };
+
+    inline bool detachedComponentBoundsValid(const DetachedComponentInput& input)
+    {
+        for (std::size_t axis = 0; axis < 3; ++axis) {
+            if (!std::isfinite(input.min[axis]) || !std::isfinite(input.max[axis]) || input.max[axis] < input.min[axis]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    inline float detachedComponentBoundsGapSquared(const DetachedComponentInput& lhs, const DetachedComponentInput& rhs)
+    {
+        float gapSquared = 0.0f;
+        for (std::size_t axis = 0; axis < 3; ++axis) {
+            const float gap = (std::max)(0.0f, (std::max)(lhs.min[axis] - rhs.max[axis], rhs.min[axis] - lhs.max[axis]));
+            gapSquared += gap * gap;
+        }
+        return gapSquared;
+    }
+
+    /*
+     * A weapon's authored source centers are not a safe rejection signal: long
+     * barrels, stocks, and attachments can legitimately be far from the root
+     * origin. Build connectivity from source AABBs instead. Only an entire
+     * non-anchor component with a large empty gap to every assembled component
+     * is rejected. Ambiguous inventories fail open so collider fidelity wins.
+     */
+    inline DetachedComponentFilterResult findDetachedSourceComponentIndices(
+        const std::vector<DetachedComponentInput>& inputs,
+        float componentJoinTolerance,
+        float minimumDetachedGap)
+    {
+        DetachedComponentFilterResult result{};
+        if (inputs.empty()) {
+            return result;
+        }
+        if (inputs.size() > kMaxDetachedComponentAnalysisSources) {
+            result.verdict = DetachedComponentVerdict::FailOpenSourceLimit;
+            return result;
+        }
+        if (!std::isfinite(componentJoinTolerance) || !std::isfinite(minimumDetachedGap) ||
+            componentJoinTolerance < 0.0f || minimumDetachedGap < componentJoinTolerance) {
+            result.verdict = DetachedComponentVerdict::FailOpenInvalidInput;
+            return result;
+        }
+        if (std::any_of(inputs.begin(), inputs.end(), [](const DetachedComponentInput& input) {
+                return !detachedComponentBoundsValid(input);
+            })) {
+            result.verdict = DetachedComponentVerdict::FailOpenInvalidInput;
+            return result;
+        }
+
+        std::vector<std::size_t> parents(inputs.size());
+        for (std::size_t i = 0; i < parents.size(); ++i) {
+            parents[i] = i;
+        }
+        auto findRoot = [&parents](std::size_t index) {
+            while (parents[index] != index) {
+                parents[index] = parents[parents[index]];
+                index = parents[index];
+            }
+            return index;
+        };
+        const float joinToleranceSquared = componentJoinTolerance * componentJoinTolerance;
+        for (std::size_t lhs = 0; lhs < inputs.size(); ++lhs) {
+            for (std::size_t rhs = lhs + 1; rhs < inputs.size(); ++rhs) {
+                const bool sameAuthoredSource = inputs[lhs].coherenceGroup != 0 &&
+                    inputs[lhs].coherenceGroup == inputs[rhs].coherenceGroup;
+                if (!sameAuthoredSource && detachedComponentBoundsGapSquared(inputs[lhs], inputs[rhs]) > joinToleranceSquared) {
+                    continue;
+                }
+                const auto lhsRoot = findRoot(lhs);
+                const auto rhsRoot = findRoot(rhs);
+                if (lhsRoot != rhsRoot) {
+                    parents[rhsRoot] = lhsRoot;
+                }
+            }
+        }
+
+        std::vector<std::size_t> roots(inputs.size());
+        std::vector<std::uint8_t> rootPresent(inputs.size(), 0);
+        std::vector<std::uint8_t> assembledAnchorComponent(inputs.size(), 0);
+        for (std::size_t i = 0; i < inputs.size(); ++i) {
+            roots[i] = findRoot(i);
+            rootPresent[roots[i]] = 1;
+            if (inputs[i].assembledAnchor) {
+                assembledAnchorComponent[roots[i]] = 1;
+            }
+        }
+        result.componentCount = static_cast<std::size_t>(std::count(rootPresent.begin(), rootPresent.end(), std::uint8_t{ 1 }));
+        result.assembledAnchorComponentCount =
+            static_cast<std::size_t>(std::count(assembledAnchorComponent.begin(), assembledAnchorComponent.end(), std::uint8_t{ 1 }));
+        if (result.componentCount <= 1) {
+            return result;
+        }
+        if (result.assembledAnchorComponentCount == 0) {
+            result.verdict = DetachedComponentVerdict::FailOpenNoAssembledAnchor;
+            return result;
+        }
+
+        const float minimumDetachedGapSquared = minimumDetachedGap * minimumDetachedGap;
+        float minimumExcludedGapSquared = (std::numeric_limits<float>::max)();
+        for (std::size_t componentRoot = 0; componentRoot < rootPresent.size(); ++componentRoot) {
+            if (!rootPresent[componentRoot] || assembledAnchorComponent[componentRoot]) {
+                continue;
+            }
+
+            float nearestAnchorGapSquared = (std::numeric_limits<float>::max)();
+            for (std::size_t sourceIndex = 0; sourceIndex < inputs.size(); ++sourceIndex) {
+                if (roots[sourceIndex] != componentRoot) {
+                    continue;
+                }
+                for (std::size_t anchorIndex = 0; anchorIndex < inputs.size(); ++anchorIndex) {
+                    if (!assembledAnchorComponent[roots[anchorIndex]]) {
+                        continue;
+                    }
+                    nearestAnchorGapSquared = (std::min)(nearestAnchorGapSquared,
+                        detachedComponentBoundsGapSquared(inputs[sourceIndex], inputs[anchorIndex]));
+                }
+            }
+            if (nearestAnchorGapSquared < minimumDetachedGapSquared) {
+                continue;
+            }
+
+            ++result.excludedComponentCount;
+            minimumExcludedGapSquared = (std::min)(minimumExcludedGapSquared, nearestAnchorGapSquared);
+            for (std::size_t sourceIndex = 0; sourceIndex < inputs.size(); ++sourceIndex) {
+                if (roots[sourceIndex] == componentRoot) {
+                    result.excludedIndices.push_back(sourceIndex);
+                }
+            }
+        }
+
+        if (!result.excludedIndices.empty()) {
+            std::sort(result.excludedIndices.begin(), result.excludedIndices.end());
+            result.minimumExcludedGap = std::sqrt(minimumExcludedGapSquared);
+            result.verdict = DetachedComponentVerdict::Filtered;
+        }
+        return result;
+    }
 }
 
 // ---- WeaponInteractionProbeMath.h ----

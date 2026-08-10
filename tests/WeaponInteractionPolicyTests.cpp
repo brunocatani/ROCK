@@ -3070,6 +3070,53 @@ int main()
             std::find(balancedSelection.begin(), balancedSelection.end(), 2) != balancedSelection.end());
         ok &= expectFalse("balanced hull selection does not spend structural capacity on cosmetic ammunition",
             std::find(balancedSelection.begin(), balancedSelection.end(), 4) != balancedSelection.end());
+
+        const std::vector<DetachedComponentInput> basReloadMagazineInputs{
+            { .min = { -8.0f, -4.0f, -6.0f }, .max = { 8.0f, 4.0f, 6.0f }, .assembledAnchor = true },
+            { .min = { -3.0f, -6.0f, -12.0f }, .max = { 3.0f, 1.0f, -4.0f } },
+            { .min = { -4.0f, -28.0f, -122.0f }, .max = { 4.0f, -14.0f, -108.0f } },
+            { .min = { -2.0f, -25.0f, -116.0f }, .max = { 2.0f, -18.0f, -110.0f } },
+        };
+        const auto basReloadMagazineFilter = findDetachedSourceComponentIndices(basReloadMagazineInputs, 2.0f, 24.0f);
+        ok &= expectEqual("remote reload magazine component is rejected before collider budgeting",
+            basReloadMagazineFilter.verdict,
+            DetachedComponentVerdict::Filtered);
+        ok &= expectEqual("remote reload magazine component rejects every member", basReloadMagazineFilter.excludedIndices.size(), std::size_t{ 2 });
+        ok &= expectTrue("remote reload magazine shell is rejected",
+            std::find(basReloadMagazineFilter.excludedIndices.begin(), basReloadMagazineFilter.excludedIndices.end(), 2) !=
+                basReloadMagazineFilter.excludedIndices.end());
+        ok &= expectTrue("remote reload magazine ammunition is rejected",
+            std::find(basReloadMagazineFilter.excludedIndices.begin(), basReloadMagazineFilter.excludedIndices.end(), 3) !=
+                basReloadMagazineFilter.excludedIndices.end());
+        ok &= expectTrue("remote reload magazine has a measured empty separation",
+            basReloadMagazineFilter.minimumExcludedGap >= 24.0f);
+
+        auto nearbyMagazineInputs = basReloadMagazineInputs;
+        nearbyMagazineInputs[2].min = { -3.0f, -5.0f, -27.0f };
+        nearbyMagazineInputs[2].max = { 3.0f, 1.0f, -19.0f };
+        nearbyMagazineInputs[3].min = { -2.0f, -4.0f, -25.0f };
+        nearbyMagazineInputs[3].max = { 2.0f, 0.0f, -21.0f };
+        const auto nearbyMagazineFilter = findDetachedSourceComponentIndices(nearbyMagazineInputs, 2.0f, 24.0f);
+        ok &= expectTrue("nearby disconnected magazine fails open for authored mesh gaps", nearbyMagazineFilter.excludedIndices.empty());
+
+        auto distantStructuralInputs = basReloadMagazineInputs;
+        distantStructuralInputs[2].assembledAnchor = true;
+        const auto distantStructuralFilter = findDetachedSourceComponentIndices(distantStructuralInputs, 2.0f, 24.0f);
+        ok &= expectTrue("distant structural weapon geometry is never rejected by origin distance", distantStructuralFilter.excludedIndices.empty());
+
+        auto coherentAuthoredSourceInputs = basReloadMagazineInputs;
+        coherentAuthoredSourceInputs[0].coherenceGroup = 17;
+        coherentAuthoredSourceInputs[2].coherenceGroup = 17;
+        const auto coherentAuthoredSourceFilter = findDetachedSourceComponentIndices(coherentAuthoredSourceInputs, 2.0f, 24.0f);
+        ok &= expectTrue("spatial policy does not split hulls from one authored source", coherentAuthoredSourceFilter.excludedIndices.empty());
+
+        auto ambiguousInputs = basReloadMagazineInputs;
+        ambiguousInputs[0].assembledAnchor = false;
+        const auto ambiguousFilter = findDetachedSourceComponentIndices(ambiguousInputs, 2.0f, 24.0f);
+        ok &= expectEqual("inventory without assembled anchor evidence fails open",
+            ambiguousFilter.verdict,
+            DetachedComponentVerdict::FailOpenNoAssembledAnchor);
+        ok &= expectTrue("ambiguous inventory preserves all sources", ambiguousFilter.excludedIndices.empty());
     }
 
     return ok ? 0 : 1;

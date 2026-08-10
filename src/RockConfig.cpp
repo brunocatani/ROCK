@@ -208,11 +208,6 @@ namespace rock
         rockWeaponCollisionSupportFitMaxErrorGameUnits = kDefaultWeaponCollisionSupportFitMaxErrorGameUnits;
         rockWeaponCollisionMaxLinearVelocity = 50.0f;
         rockWeaponCollisionMaxAngularVelocity = 100.0f;
-        rockWeaponCollisionMaxSourceDistanceEnabled = true;
-        rockWeaponCollisionMaxSourceDistanceMelee = 90.0f;
-        rockWeaponCollisionMaxSourceDistancePistol = 20.0f;
-        rockWeaponCollisionMaxSourceDistanceRifle = 45.0f;
-        rockWeaponCollisionMaxSourceDistanceHeavy = 70.0f;
         rockWeaponSizeClassPistolMaxWeight = 6.0f;
         rockWeaponSizeClassRifleMaxWeight = 20.0f;
         rockWeaponInteractionTouchRadius = 2.0f;
@@ -969,36 +964,6 @@ namespace rock
             static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponCollisionMaxLinearVelocity", rockWeaponCollisionMaxLinearVelocity));
         rockWeaponCollisionMaxAngularVelocity =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponCollisionMaxAngularVelocity", rockWeaponCollisionMaxAngularVelocity));
-        rockWeaponCollisionMaxSourceDistanceEnabled =
-            ini.GetBoolValue(SECTION, "bWeaponCollisionMaxSourceDistanceEnabled", rockWeaponCollisionMaxSourceDistanceEnabled);
-        rockWeaponCollisionMaxSourceDistanceMelee = readClampedFloat(ini,
-            SECTION,
-            "fWeaponCollisionMaxSourceDistanceMelee",
-            rockWeaponCollisionMaxSourceDistanceMelee,
-            90.0f,
-            1.0f,
-            500.0f);
-        rockWeaponCollisionMaxSourceDistancePistol = readClampedFloat(ini,
-            SECTION,
-            "fWeaponCollisionMaxSourceDistancePistol",
-            rockWeaponCollisionMaxSourceDistancePistol,
-            20.0f,
-            1.0f,
-            500.0f);
-        rockWeaponCollisionMaxSourceDistanceRifle = readClampedFloat(ini,
-            SECTION,
-            "fWeaponCollisionMaxSourceDistanceRifle",
-            rockWeaponCollisionMaxSourceDistanceRifle,
-            45.0f,
-            1.0f,
-            500.0f);
-        rockWeaponCollisionMaxSourceDistanceHeavy = readClampedFloat(ini,
-            SECTION,
-            "fWeaponCollisionMaxSourceDistanceHeavy",
-            rockWeaponCollisionMaxSourceDistanceHeavy,
-            70.0f,
-            1.0f,
-            500.0f);
         rockWeaponSizeClassPistolMaxWeight = readClampedFloat(ini,
             SECTION,
             "fWeaponSizeClassPistolMaxWeight",

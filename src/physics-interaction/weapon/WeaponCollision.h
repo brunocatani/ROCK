@@ -528,8 +528,7 @@ namespace rock
         std::size_t findGeneratedWeaponShapeSources(
             RE::NiAVObject* weaponNode,
             std::uint64_t equippedWeaponKey,
-            std::vector<GeneratedHullSource>& outSources,
-            float maxSourceDistanceGame);
+            std::vector<GeneratedHullSource>& outSources);
 
         void findGeneratedWeaponShapeSourcesRecursive(RE::NiAVObject* node, RE::NiAVObject* sourceRoot, const RE::NiTransform& weaponRootTransform,
             int depth,
@@ -538,8 +537,6 @@ namespace rock
             std::uint32_t& extractedTriangles,
             const std::unordered_set<std::uintptr_t>& claimedSourceGroups,
             std::unordered_set<std::uintptr_t>& candidateExtractedSourceGroups,
-            float maxSourceDistanceGame,
-            std::uint32_t& culledForDistance,
             std::uint32_t& culledForEffectGeometry);
         RE::NiTransform makeGeneratedBodyWorldTransform(const RE::NiTransform& weaponRootTransform, const RE::NiPoint3& localCenterGame) const;
         bool weaponCollisionSettingsChanged() const;
@@ -618,6 +615,8 @@ namespace rock
         std::uint64_t _weaponBodySetEpoch{ 0 };
         weapon_generated_source_completeness_policy::GeneratedSourceCompleteness _cachedGeneratedSourceCompleteness{};
         GeneratedSourceCache _generatedSourceCache{};
+        std::uint64_t _detachedSourceExclusionEquippedKey{ 0 };
+        std::unordered_set<std::uintptr_t> _detachedSourceExclusionGroups;
         GeneratedRecaptureDiagnostic _generatedRecaptureDiagnostic{};
         PendingGeneratedWeaponBuild _pendingGeneratedWeaponBuild{};
         RE::hknpWorld* _cachedWorld{ nullptr };

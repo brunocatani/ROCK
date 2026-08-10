@@ -65,6 +65,10 @@ namespace rock
         constexpr float GENERATED_RECAPTURE_WEAPON_CENTER_DRIFT_GAME = 0.25f;
         constexpr float GENERATED_RECAPTURE_SOURCE_CENTER_DRIFT_GAME = 0.10f;
         constexpr std::size_t MAX_GENERATED_RECAPTURE_DETAIL_ROWS = 8;
+        constexpr float GENERATED_SOURCE_COMPONENT_JOIN_TOLERANCE_GAME = 2.0f;
+        constexpr float GENERATED_SOURCE_DETACHED_COMPONENT_MIN_GAP_GAME = 24.0f;
+        constexpr std::size_t MAX_CACHED_DETACHED_SOURCE_GROUPS =
+            weapon_collision_geometry_math::kMaxDetachedComponentAnalysisSources;
 
         struct QuantizedPointKey
         {
@@ -1391,24 +1395,6 @@ namespace rock
             return result;
         }
 
-        float resolveMaxGeneratedSourceDistanceGame(WeaponSizeClass sizeClass)
-        {
-            if (!g_rockConfig.rockWeaponCollisionMaxSourceDistanceEnabled) {
-                return 0.0f;
-            }
-            switch (sizeClass) {
-            case WeaponSizeClass::Melee:
-                return g_rockConfig.rockWeaponCollisionMaxSourceDistanceMelee;
-            case WeaponSizeClass::Pistol:
-                return g_rockConfig.rockWeaponCollisionMaxSourceDistancePistol;
-            case WeaponSizeClass::Heavy:
-                return g_rockConfig.rockWeaponCollisionMaxSourceDistanceHeavy;
-            case WeaponSizeClass::Rifle:
-            default:
-                return g_rockConfig.rockWeaponCollisionMaxSourceDistanceRifle;
-            }
-        }
-
         std::uint64_t makeEquippedWeaponInstanceContentKey(
             const RE::TESObjectWEAP* weapon,
             const RE::TBO_InstanceData* instanceData,
@@ -1610,6 +1596,22 @@ namespace rock
                 coverage.priority,
                 coverage.cosmetic
             };
+        }
+
+        bool isAssembledWeaponComponentAnchor(WeaponPartKind partKind)
+        {
+            switch (partKind) {
+            case WeaponPartKind::Magazine:
+            case WeaponPartKind::Shell:
+            case WeaponPartKind::Round:
+            case WeaponPartKind::LaserCell:
+            case WeaponPartKind::CosmeticAmmo:
+            case WeaponPartKind::Other:
+            case WeaponPartKind::Count:
+                return false;
+            default:
+                return true;
+            }
         }
 
         void addUniqueWeaponMeshRootCandidate(std::vector<WeaponMeshRootCandidate>& candidates, RE::NiAVObject* root, const char* label)
@@ -4362,6 +4364,8 @@ namespace rock
         clearGeneratedSourceCompletenessTracking();
         clearPendingWeaponVisualRebuild();
         clearGeneratedSourceCache();
+        _detachedSourceExclusionEquippedKey = 0;
+        _detachedSourceExclusionGroups.clear();
         _generatedRecaptureDiagnostic = {};
         clearPendingGeneratedWeaponBuild(world, false);
         _usingReplacementWeaponBodies = false;
@@ -4403,6 +4407,8 @@ namespace rock
         clearGeneratedSourceCompletenessTracking();
         clearPendingWeaponVisualRebuild();
         clearGeneratedSourceCache();
+        _detachedSourceExclusionEquippedKey = 0;
+        _detachedSourceExclusionGroups.clear();
         _generatedRecaptureDiagnostic = {};
         clearPendingGeneratedWeaponBuild(_cachedWorld, true);
         _cachedWorld = nullptr;
@@ -4504,6 +4510,8 @@ namespace rock
                 clearAtomicBodyIds();
             }
             _cachedWorld = world;
+            _detachedSourceExclusionEquippedKey = 0;
+            _detachedSourceExclusionGroups.clear();
             _generatedRecaptureDiagnostic = {};
             clearCurrentWeaponState();
         }
@@ -4523,8 +4531,7 @@ namespace rock
         std::uint64_t observedIdentityKey = 0;
         std::uint64_t observedOwnershipKey = 0;
         std::uint32_t observedFormID = 0;
-        WeaponSizeClass observedSizeClass{ WeaponSizeClass::Rifle };
-        const std::uint64_t observedKey = getEquippedWeaponIdentityKey(&observedIdentityKey, &observedOwnershipKey, &observedSizeClass, &observedFormID);
+        const std::uint64_t observedKey = getEquippedWeaponIdentityKey(&observedIdentityKey, &observedOwnershipKey, nullptr, &observedFormID);
         if (observedKey == 0) {
             if (hasWeaponBody()) {
                 ROCK_LOG_INFO(Weapon, "Weapon identity unavailable - destroying generated weapon bodies");
@@ -4758,8 +4765,7 @@ namespace rock
                         generatedCount);
                 } else {
                     performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::WeaponColliderBuild);
-                    const float maxGeneratedSourceDistanceGame = resolveMaxGeneratedSourceDistanceGame(observedSizeClass);
-                    generatedCount = findGeneratedWeaponShapeSources(weaponNode, observedKey, generatedSources, maxGeneratedSourceDistanceGame);
+                    generatedCount = findGeneratedWeaponShapeSources(weaponNode, observedKey, generatedSources);
                     recordAndApplyGeneratedRecaptureAuthority(
                         observedKey,
                         observedIdentityKey,
@@ -5126,8 +5132,7 @@ namespace rock
     std::size_t WeaponCollision::findGeneratedWeaponShapeSources(
         RE::NiAVObject* weaponNode,
         std::uint64_t equippedWeaponKey,
-        std::vector<GeneratedHullSource>& outSources,
-        float maxSourceDistanceGame)
+        std::vector<GeneratedHullSource>& outSources)
     {
         outSources.clear();
         if (!weaponNode) {
@@ -5150,12 +5155,16 @@ namespace rock
          */
         RE::NiAVObject* packageDriveRoot = weaponNode;
         const RE::NiTransform packageDriveRootTransform = packageDriveRoot->world;
+        if (_detachedSourceExclusionEquippedKey != equippedWeaponKey) {
+            _detachedSourceExclusionEquippedKey = equippedWeaponKey;
+            _detachedSourceExclusionGroups.clear();
+            _detachedSourceExclusionGroups.reserve(64);
+        }
         std::unordered_set<std::uintptr_t> claimedSourceGroups;
         claimedSourceGroups.reserve(256);
         std::size_t acceptedCandidateCount = 0;
         std::uint32_t totalVisitedShapes = 0;
         std::uint32_t totalExtractedTriangles = 0;
-        std::uint32_t totalCulledForDistance = 0;
         std::uint32_t totalCulledForEffectGeometry = 0;
         const auto groupingMode = weapon_collision_grouping_policy::sanitizeWeaponCollisionGroupingMode(g_rockConfig.rockWeaponCollisionGroupingMode);
         for (const auto& candidate : candidates) {
@@ -5164,7 +5173,6 @@ namespace rock
             candidateExtractedSourceGroups.reserve(64);
             std::uint32_t visitedShapes = 0;
             std::uint32_t extractedTriangles = 0;
-            std::uint32_t culledForDistance = 0;
             std::uint32_t culledForEffectGeometry = 0;
             findGeneratedWeaponShapeSourcesRecursive(
                 candidate.root,
@@ -5176,10 +5184,7 @@ namespace rock
                 extractedTriangles,
                 claimedSourceGroups,
                 candidateExtractedSourceGroups,
-                maxSourceDistanceGame,
-                culledForDistance,
                 culledForEffectGeometry);
-            totalCulledForDistance += culledForDistance;
             totalCulledForEffectGeometry += culledForEffectGeometry;
 
             ROCK_LOG_DEBUG(Weapon,
@@ -5303,6 +5308,95 @@ namespace rock
                     evidence.laserEmitter,
                     evidence.flashlightEmitter);
             }
+        }
+
+        const std::size_t cachedDetachedSourceCount = std::erase_if(outSources, [&](const GeneratedHullSource& source) {
+            return source.sourceGroupId != 0 && _detachedSourceExclusionGroups.contains(source.sourceGroupId);
+        });
+        if (cachedDetachedSourceCount != 0) {
+            ROCK_LOG_SAMPLE_INFO(Weapon,
+                g_rockConfig.rockLogSampleMilliseconds,
+                "Generated weapon detached component cache: excluded {} source(s) for equippedKey={:016X} cachedGroups={}",
+                cachedDetachedSourceCount,
+                equippedWeaponKey,
+                _detachedSourceExclusionGroups.size());
+        }
+
+        if (!outSources.empty()) {
+            std::vector<weapon_collision_geometry_math::DetachedComponentInput> componentInputs;
+            componentInputs.reserve(outSources.size());
+            for (const auto& source : outSources) {
+                componentInputs.push_back(weapon_collision_geometry_math::DetachedComponentInput{
+                    .min = pointToArray(source.localMinGame),
+                    .max = pointToArray(source.localMaxGame),
+                    .coherenceGroup = source.sourceGroupId,
+                    .assembledAnchor = isAssembledWeaponComponentAnchor(source.semantic.partKind),
+                });
+            }
+
+            const auto componentFilter = weapon_collision_geometry_math::findDetachedSourceComponentIndices(
+                componentInputs,
+                GENERATED_SOURCE_COMPONENT_JOIN_TOLERANCE_GAME,
+                GENERATED_SOURCE_DETACHED_COMPONENT_MIN_GAP_GAME);
+            if (componentFilter.verdict == weapon_collision_geometry_math::DetachedComponentVerdict::Filtered) {
+                std::vector<std::uint8_t> excluded(outSources.size(), 0);
+                std::size_t newlyCachedGroups = 0;
+                const std::string representativeName = outSources[componentFilter.excludedIndices.front()].sourceName;
+                for (const auto sourceIndex : componentFilter.excludedIndices) {
+                    if (sourceIndex >= outSources.size()) {
+                        continue;
+                    }
+                    excluded[sourceIndex] = 1;
+                    const auto sourceGroupId = outSources[sourceIndex].sourceGroupId;
+                    if (sourceGroupId != 0 &&
+                        _detachedSourceExclusionGroups.size() < MAX_CACHED_DETACHED_SOURCE_GROUPS) {
+                        newlyCachedGroups += _detachedSourceExclusionGroups.insert(sourceGroupId).second ? 1u : 0u;
+                    }
+                }
+
+                std::vector<GeneratedHullSource> retainedSources;
+                retainedSources.reserve(outSources.size() - componentFilter.excludedIndices.size());
+                for (std::size_t sourceIndex = 0; sourceIndex < outSources.size(); ++sourceIndex) {
+                    if (!excluded[sourceIndex]) {
+                        retainedSources.push_back(std::move(outSources[sourceIndex]));
+                    }
+                }
+                const auto excludedSourceCount = outSources.size() - retainedSources.size();
+                outSources = std::move(retainedSources);
+                ROCK_LOG_INFO(Weapon,
+                    "Generated weapon detached component filter: excludedComponents={} excludedSources={} retainedSources={} components={} anchorComponents={} nearestGap={:.2f} joinTolerance={:.2f} minimumGap={:.2f} newlyCachedGroups={} cachedGroups={} representative='{}' equippedKey={:016X}",
+                    componentFilter.excludedComponentCount,
+                    excludedSourceCount,
+                    outSources.size(),
+                    componentFilter.componentCount,
+                    componentFilter.assembledAnchorComponentCount,
+                    componentFilter.minimumExcludedGap,
+                    GENERATED_SOURCE_COMPONENT_JOIN_TOLERANCE_GAME,
+                    GENERATED_SOURCE_DETACHED_COMPONENT_MIN_GAP_GAME,
+                    newlyCachedGroups,
+                    _detachedSourceExclusionGroups.size(),
+                    representativeName,
+                    equippedWeaponKey);
+            } else if (componentFilter.verdict == weapon_collision_geometry_math::DetachedComponentVerdict::FailOpenInvalidInput ||
+                       componentFilter.verdict == weapon_collision_geometry_math::DetachedComponentVerdict::FailOpenSourceLimit ||
+                       componentFilter.verdict == weapon_collision_geometry_math::DetachedComponentVerdict::FailOpenNoAssembledAnchor) {
+                ROCK_LOG_SAMPLE_WARN(Weapon,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "Generated weapon detached component filter failed open: verdict={} sources={} components={} anchorComponents={} equippedKey={:016X}",
+                    static_cast<int>(componentFilter.verdict),
+                    outSources.size(),
+                    componentFilter.componentCount,
+                    componentFilter.assembledAnchorComponentCount,
+                    equippedWeaponKey);
+            }
+        }
+
+        if (outSources.empty()) {
+            ROCK_LOG_SAMPLE_WARN(Weapon,
+                g_rockConfig.rockLogSampleMilliseconds,
+                "Generated weapon mesh source scan: no collider sources remain after detached-component exclusions equippedKey={:016X}",
+                equippedWeaponKey);
+            return 0;
         }
 
         auto generatedSourceConvexCount = [](const GeneratedHullSource& source) {
@@ -5453,14 +5547,6 @@ namespace rock
             totalExtractedTriangles,
             outSources.size());
 
-        if (totalCulledForDistance > 0) {
-            ROCK_LOG_WARN(Weapon,
-                "Generated weapon mesh distance filter: culled {} source(s) beyond {:.2f} game units from weapon origin root='{}' (likely misplaced/detached attachment geometry, e.g. laser/holosight nodes authored off-mesh)",
-                totalCulledForDistance,
-                maxSourceDistanceGame,
-                safeNodeName(packageDriveRoot));
-        }
-
         if (totalCulledForEffectGeometry > 0) {
             ROCK_LOG_INFO(Weapon,
                 "Generated weapon effect geometry filter: excluded {} visual-only shape(s) from collision root='{}' policy=effect-shader+billboard+role-name",
@@ -5480,8 +5566,6 @@ namespace rock
         std::uint32_t& extractedTriangles,
         const std::unordered_set<std::uintptr_t>& claimedSourceGroups,
         std::unordered_set<std::uintptr_t>& candidateExtractedSourceGroups,
-        float maxSourceDistanceGame,
-        std::uint32_t& culledForDistance,
         std::uint32_t& culledForEffectGeometry)
     {
         if (!node || depth > 15) {
@@ -5572,27 +5656,6 @@ namespace rock
                 ROCK_LOG_TRACE(Weapon, "{}generated mesh source skipped '{}': degenerate point cloud points={}", std::string(depth * 2, ' '), safeNodeName(node),
                     localPoints.size());
                 return;
-            }
-
-            if (maxSourceDistanceGame > 0.0f) {
-                /*
-                 * Distance is measured from the weapon-root origin (0,0,0 in this
-                 * already-converted local space), not from the individual node's
-                 * own transform, so it catches geometry whose NiNode was authored
-                 * detached/displaced from the weapon mesh (common for laser and
-                 * holosight attachments) before any hull/Havok work is spent on it.
-                 */
-                const float centerDistanceGame = weapon_collision_geometry_math::pointCenter(localPoints).Length();
-                if (centerDistanceGame > maxSourceDistanceGame) {
-                    ++culledForDistance;
-                    ROCK_LOG_TRACE(Weapon,
-                        "{}generated mesh source skipped '{}': centerDistance={:.2f} exceeds maxSourceDistance={:.2f} game units from weapon origin",
-                        std::string(depth * 2, ' '),
-                        safeNodeName(node),
-                        centerDistanceGame,
-                        maxSourceDistanceGame);
-                    return;
-                }
             }
 
             /*
@@ -5721,8 +5784,6 @@ namespace rock
                         extractedTriangles,
                         claimedSourceGroups,
                         candidateExtractedSourceGroups,
-                        maxSourceDistanceGame,
-                        culledForDistance,
                         culledForEffectGeometry);
                 }
             }

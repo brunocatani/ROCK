@@ -65,11 +65,8 @@ namespace rock
 
     /*
      * Coarse physical size class for the whole equipped weapon, distinct from
-     * WeaponPartKind (which classifies individual nodes). Used to pick a
-     * generated-collision max-distance-from-origin budget: legitimate long/heavy
-     * weapons need a larger allowance than a pistol, so one flat radius cannot
-     * safely reject misplaced/detached attachment geometry (e.g. laser or
-     * holosight NiNodes authored off-mesh) on every weapon at once.
+     * WeaponPartKind (which classifies individual nodes). Published as equipped
+     * weapon identity evidence and consumed by size-sensitive interaction policy.
      */
     enum class WeaponSizeClass : std::uint8_t
     {

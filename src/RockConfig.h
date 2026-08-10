@@ -136,11 +136,6 @@ namespace rock
         float rockWeaponCollisionSupportFitMaxErrorGameUnits = 0.5f;
         float rockWeaponCollisionMaxLinearVelocity = 50.0f;
         float rockWeaponCollisionMaxAngularVelocity = 100.0f;
-        bool rockWeaponCollisionMaxSourceDistanceEnabled = true;
-        float rockWeaponCollisionMaxSourceDistanceMelee = 90.0f;
-        float rockWeaponCollisionMaxSourceDistancePistol = 20.0f;
-        float rockWeaponCollisionMaxSourceDistanceRifle = 45.0f;
-        float rockWeaponCollisionMaxSourceDistanceHeavy = 70.0f;
         float rockWeaponSizeClassPistolMaxWeight = 6.0f;
         float rockWeaponSizeClassRifleMaxWeight = 20.0f;
         float rockWeaponInteractionTouchRadius = 2.0f;
