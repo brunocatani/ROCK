@@ -1,5 +1,4 @@
 #include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
-#include "physics-interaction/weapon/WeaponRecaptureFramePolicy.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 
 #include <cmath>
@@ -69,54 +68,6 @@ int main()
 
     const auto envelopeHalfExtents = makeBoundingBoxHalfExtentsHavok(geometry, 2.0f, 1.0f, 0.1f);
     ok &= expectPoint("scaled padded Havok half extents", envelopeHalfExtents, RE::NiPoint3{ 4.1f, 0.7f, 0.5f });
-
-    RE::NiTransform authoritativeSourceInWeapon{};
-    authoritativeSourceInWeapon.rotate = rotationZ90();
-    authoritativeSourceInWeapon.translate = { 2.0f, 7.0f, -3.0f };
-    authoritativeSourceInWeapon.scale = 1.0f;
-    RE::NiTransform shoulderPresentationOffset{};
-    shoulderPresentationOffset.rotate = rotationZ90();
-    shoulderPresentationOffset.translate = { 5.0f, -4.0f, 2.0f };
-    shoulderPresentationOffset.scale = 1.0f;
-    const RE::NiTransform contaminatedSourceInWeapon = rock::transform_math::composeTransforms(
-        shoulderPresentationOffset,
-        authoritativeSourceInWeapon);
-    const RE::NiTransform postUndrawCorrection =
-        rock::weapon_recapture_frame_policy::makePostUndrawFrameCorrection(
-            authoritativeSourceInWeapon,
-            contaminatedSourceInWeapon);
-    const RE::NiTransform restoredSourceInWeapon =
-        rock::weapon_recapture_frame_policy::applyPostUndrawFrameCorrection(
-            postUndrawCorrection,
-            contaminatedSourceInWeapon);
-    ok &= expectPoint(
-        "post-undraw restored source translation",
-        restoredSourceInWeapon.translate,
-        authoritativeSourceInWeapon.translate);
-    const RE::NiPoint3 authoredProbe{ 1.5f, -2.0f, 0.75f };
-    ok &= expectPoint(
-        "post-undraw restored source orientation",
-        rock::transform_math::localPointToWorld(restoredSourceInWeapon, authoredProbe),
-        rock::transform_math::localPointToWorld(authoritativeSourceInWeapon, authoredProbe));
-
-    RE::NiTransform livePartAnimation{};
-    livePartAnimation.rotate = rotationZ90();
-    livePartAnimation.translate = { 0.0f, 1.25f, 0.0f };
-    livePartAnimation.scale = 1.0f;
-    const RE::NiTransform authoritativeAnimatedSource = rock::transform_math::composeTransforms(
-        authoritativeSourceInWeapon,
-        livePartAnimation);
-    const RE::NiTransform contaminatedAnimatedSource = rock::transform_math::composeTransforms(
-        shoulderPresentationOffset,
-        authoritativeAnimatedSource);
-    const RE::NiTransform restoredAnimatedSource =
-        rock::weapon_recapture_frame_policy::applyPostUndrawFrameCorrection(
-            postUndrawCorrection,
-            contaminatedAnimatedSource);
-    ok &= expectPoint(
-        "post-undraw correction preserves live part animation",
-        rock::transform_math::localPointToWorld(restoredAnimatedSource, authoredProbe),
-        rock::transform_math::localPointToWorld(authoritativeAnimatedSource, authoredProbe));
 
     const auto envelopeMassProperties = makeBoundingBoxMassProperties(geometry, 2.0f, 1.0f, 0.1f, 10.0f);
     ok &= envelopeMassProperties.valid;

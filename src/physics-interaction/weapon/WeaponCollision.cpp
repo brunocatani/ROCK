@@ -1,5 +1,4 @@
 #include "physics-interaction/weapon/WeaponCollision.h"
-#include "physics-interaction/weapon/WeaponRecaptureFramePolicy.h"
 
 #include "physics-interaction/actor/ActorEquipmentGrab.h"
 #include "physics-interaction/native/BodyCollisionControl.h"
@@ -2034,25 +2033,13 @@ namespace rock
             const RE::NiAVObject* ancestor,
             const RE::NiTransform& ancestorWorld,
             const RE::NiAVObject* descendant,
-            RE::NiTransform& outDescendantWorld,
-            const RE::NiTransform* descendantFrameCorrection = nullptr)
+            RE::NiTransform& outDescendantWorld)
         {
             RE::NiTransform descendantLocal{};
             if (!weaponTransformFinite(ancestorWorld) ||
                 !tryResolveDescendantLocalTransform(ancestor, descendant, descendantLocal)) {
                 outDescendantWorld = {};
                 return false;
-            }
-
-            if (descendantFrameCorrection) {
-                if (!weaponTransformFinite(*descendantFrameCorrection) ||
-                    std::abs(descendantFrameCorrection->scale) <= 0.0001f) {
-                    outDescendantWorld = {};
-                    return false;
-                }
-                descendantLocal = weapon_recapture_frame_policy::applyPostUndrawFrameCorrection(
-                    *descendantFrameCorrection,
-                    descendantLocal);
             }
 
             outDescendantWorld = transform_math::composeTransforms(ancestorWorld, descendantLocal);
@@ -2565,16 +2552,16 @@ namespace rock
         _generatedSourceCache = {};
     }
 
-    bool WeaponCollision::recordAndApplyGeneratedRecaptureAuthority(
+    void WeaponCollision::recordGeneratedRecaptureDiagnostic(
         const std::uint64_t equippedKey,
         const std::uint64_t identityKey,
         const std::uint64_t ownershipKey,
         const std::uint32_t weaponFormID,
-        std::vector<GeneratedHullSource>& sources)
+        const std::vector<GeneratedHullSource>& sources)
     {
         if (equippedKey == 0 || identityKey == 0 || ownershipKey == 0 ||
             weaponFormID == 0 || sources.empty()) {
-            return false;
+            return;
         }
 
         const auto pointDistance = [](const RE::NiPoint3& lhs, const RE::NiPoint3& rhs) {
@@ -2602,18 +2589,10 @@ namespace rock
                     .sourceLocalCenter = source.sourceLocalCenterGame,
                     .sourceLocalMin = source.sourceLocalMinGame,
                     .sourceLocalMax = source.sourceLocalMaxGame,
-                    .sourceInWeapon = source.sourceInWeapon,
-                    .weaponLocalPoints = source.localPointsGame,
-                    .weaponLocalTriangles = source.localTrianglesGame,
-                    .childWeaponLocalPointClouds = source.childLocalPointCloudsGame,
-                    .sourceLocalPoints = source.sourceLocalPointsGame,
                     .sourceLocalTriangles = source.sourceLocalTrianglesGame,
-                    .weaponLocalMin = source.localMinGame,
-                    .weaponLocalMax = source.localMaxGame,
                     .sourceLocalPointCount = source.sourceLocalPointsGame.size(),
                     .sourceLocalTriangleCount = source.sourceLocalTrianglesGame.size(),
                     .sourceNodeScale = source.sourceNodeScale,
-                    .sourceInWeaponAvailable = source.sourceInWeaponAvailable,
                 });
             }
             _generatedRecaptureDiagnostic = std::move(captured);
@@ -2634,19 +2613,19 @@ namespace rock
                 ownershipKey,
                 weaponFormID,
                 sources.size());
-            return false;
+            return;
         }
 
         if (!_generatedRecaptureDiagnostic.sawUndrawnInterval) {
             const auto comparisonSequence = _generatedRecaptureDiagnostic.comparisonSequence;
             captureCurrent(comparisonSequence);
-            return false;
+            return;
         }
 
         struct DriftRow
         {
             const GeneratedRecaptureDiagnosticSource* baseline{ nullptr };
-            GeneratedHullSource* current{ nullptr };
+            const GeneratedHullSource* current{ nullptr };
             float weaponCenterDeltaGame{ 0.0f };
             float sourceCenterDeltaGame{ 0.0f };
             float sourceBoundsDeltaGame{ 0.0f };
@@ -2657,7 +2636,6 @@ namespace rock
             bool triangleCountStable{ false };
             bool sourceGeometryStable{ false };
             bool sourceScaleStable{ false };
-            bool frameCorrectionAvailable{ false };
         };
 
         std::vector<DriftRow> driftRows;
@@ -2672,7 +2650,7 @@ namespace rock
         float maximumSourceTriangleVertexDeltaGame = 0.0f;
         const char* maximumWeaponCenterDeltaSource = "none";
 
-        for (auto& current : sources) {
+        for (const auto& current : sources) {
             const GeneratedRecaptureDiagnosticSource* baseline = nullptr;
             if (current.sourceGroupId != 0) {
                 const auto exact = std::find_if(
@@ -2756,13 +2734,6 @@ namespace rock
                 std::isfinite(baseline->sourceNodeScale) &&
                 std::isfinite(current.sourceNodeScale) &&
                 std::abs(baseline->sourceNodeScale - current.sourceNodeScale) <= 0.001f;
-            row.frameCorrectionAvailable =
-                baseline->sourceInWeaponAvailable &&
-                current.sourceInWeaponAvailable &&
-                weaponTransformFinite(baseline->sourceInWeapon) &&
-                weaponTransformFinite(current.sourceInWeapon) &&
-                std::abs(baseline->sourceInWeapon.scale) > 0.0001f &&
-                std::abs(current.sourceInWeapon.scale) > 0.0001f;
             if (row.sourcePointerStable) {
                 ++sameSourcePointerCount;
             }
@@ -2813,8 +2784,7 @@ namespace rock
             classification = "hierarchy-frame-drift";
         }
 
-        const bool frameAuthorityEligible =
-            hierarchyFrameDriftCount != 0 &&
+        const bool liveSourceContinuityValid =
             treeReplacementCount == 0 &&
             sourceGeometryDriftCount == 0 &&
             matchedSourceCount == sources.size() &&
@@ -2825,17 +2795,16 @@ namespace rock
                 [](const DriftRow& row) {
                     return row.baseline && row.current &&
                            row.sourcePointerStable && row.rootPointerStable &&
-                           row.sourceGeometryStable && row.sourceScaleStable &&
-                           row.frameCorrectionAvailable;
+                           row.sourceGeometryStable && row.sourceScaleStable;
                 });
 
         ++_generatedRecaptureDiagnostic.comparisonSequence;
         _generatedRecaptureDiagnostic.sawUndrawnInterval = false;
         ROCK_LOG_INFO(Weapon,
-            "Generated weapon post-undraw recapture diagnostic: sequence={} classification={} frameAuthorityEligible={} key={:016X} identity={:016X} ownership={:016X} formID={:08X} baselineSources={} currentSources={} matched={} sameSourcePointers={} treeChanges={} hierarchyFrameDrift={} sourceGeometryDrift={} maxWeaponCenterDelta={:.3f} maxWeaponCenterSource='{}' maxSourceLocalCenterDelta={:.3f} maxSourceLocalTriangleDelta={:.3f}",
+            "Generated weapon post-undraw recapture diagnostic: sequence={} classification={} liveSourceContinuity={} key={:016X} identity={:016X} ownership={:016X} formID={:08X} baselineSources={} currentSources={} matched={} sameSourcePointers={} treeChanges={} hierarchyFrameDrift={} sourceGeometryDrift={} maxWeaponCenterDelta={:.3f} maxWeaponCenterSource='{}' maxSourceLocalCenterDelta={:.3f} maxSourceLocalTriangleDelta={:.3f}",
             _generatedRecaptureDiagnostic.comparisonSequence,
             classification,
-            frameAuthorityEligible ? "yes" : "no",
+            liveSourceContinuityValid ? "yes" : "no",
             equippedKey,
             identityKey,
             ownershipKey,
@@ -2903,52 +2872,14 @@ namespace rock
             }
         }
 
-        if (!frameAuthorityEligible) {
-            return false;
-        }
-
-        std::vector<RE::NiTransform> frameCorrections;
-        frameCorrections.reserve(driftRows.size());
-        for (const auto& row : driftRows) {
-            const RE::NiTransform correction = weapon_recapture_frame_policy::makePostUndrawFrameCorrection(
-                row.baseline->sourceInWeapon,
-                row.current->sourceInWeapon);
-            if (!weaponTransformFinite(correction) ||
-                std::abs(correction.scale) <= 0.0001f) {
-                ROCK_LOG_WARN(Weapon,
-                    "Generated weapon post-undraw frame authority rejected: source='{}' produced an invalid correction",
-                    row.current->sourceName);
-                return false;
-            }
-            frameCorrections.push_back(correction);
-        }
-
-        for (std::size_t i = 0; i < driftRows.size(); ++i) {
-            auto& current = *driftRows[i].current;
-            const auto& baseline = *driftRows[i].baseline;
-            current.postUndrawFrameCorrection = frameCorrections[i];
-            current.postUndrawFrameCorrectionValid = true;
-            current.localPointsGame = baseline.weaponLocalPoints;
-            current.localTrianglesGame = baseline.weaponLocalTriangles;
-            current.childLocalPointCloudsGame = baseline.childWeaponLocalPointClouds;
-            current.localCenterGame = baseline.weaponLocalCenter;
-            current.localMinGame = baseline.weaponLocalMin;
-            current.localMaxGame = baseline.weaponLocalMax;
-            current.sourceLocalPointsGame = baseline.sourceLocalPoints;
-            current.sourceLocalTrianglesGame = baseline.sourceLocalTriangles;
-            current.sourceLocalCenterGame = baseline.sourceLocalCenter;
-            current.sourceLocalMinGame = baseline.sourceLocalMin;
-            current.sourceLocalMaxGame = baseline.sourceLocalMax;
-            current.sourceNodeScale = baseline.sourceNodeScale;
-        }
-
-        ROCK_LOG_INFO(Weapon,
-            "Generated weapon post-undraw frame authority restored: sequence={} sources={} key={:016X} formID={:08X}",
-            _generatedRecaptureDiagnostic.comparisonSequence,
-            driftRows.size(),
-            equippedKey,
-            weaponFormID);
-        return true;
+        /*
+         * The comparison is diagnostic only. Every generated shape preserves
+         * native source-local geometry and both keyframed bodies and the live
+         * dynamic compound resolve the current descendant-local transform on
+         * every update. Applying a correction captured from one draw-animation
+         * frame would become stale as the visible part finishes moving and
+         * would separate collision from the rendered mesh.
+         */
     }
 
     void WeaponCollision::resetVisualSourceUnavailableRetention()
@@ -3429,11 +3360,6 @@ namespace rock
             if (!tryResolveDescendantLocalTransform(packageDriveNode, instance.sourceNode, sourceInWeapon)) {
                 return false;
             }
-            if (instance.generatedSourceFrameCorrectionValid) {
-                sourceInWeapon = weapon_recapture_frame_policy::applyPostUndrawFrameCorrection(
-                    instance.generatedSourceFrameCorrection,
-                    sourceInWeapon);
-            }
             if (!weaponTransformFinite(sourceInWeapon)) {
                 return false;
             }
@@ -3777,10 +3703,7 @@ namespace rock
                 currentWeaponRoot,
                 currentWeaponRoot->world,
                 instance.sourceNode,
-                localToWorld,
-                instance.generatedSourceFrameCorrectionValid ?
-                    &instance.generatedSourceFrameCorrection :
-                    nullptr);
+                localToWorld);
         if (!sourceNodeCurrent) {
             const RE::NiAVObject* fallbackRoot = currentWeaponRoot ?
                 currentWeaponRoot :
@@ -3957,10 +3880,7 @@ namespace rock
                     currentWeaponRoot,
                     currentWeaponRoot->world,
                     instance.sourceNode,
-                    surfaceWorld,
-                    instance.generatedSourceFrameCorrectionValid ?
-                        &instance.generatedSourceFrameCorrection :
-                        nullptr);
+                    surfaceWorld);
             const bool useSourceFrame =
                 sourceNodeCurrent &&
                 !instance.generatedSourceLocalTrianglesGame.empty();
@@ -4446,13 +4366,22 @@ namespace rock
         WeaponInteractionContact& outContact) const
     {
         outContact = {};
-        if (!weaponNode || getCurrentWeaponGenerationKey() == 0 || probeRadiusGame <= 0.0f) {
+        const std::uint64_t currentGeneration = getCurrentWeaponGenerationKey();
+        const auto pointFinite = [](const RE::NiPoint3& point) {
+            return std::isfinite(point.x) &&
+                   std::isfinite(point.y) &&
+                   std::isfinite(point.z);
+        };
+        if (!weaponNode || currentGeneration == 0 ||
+            !pointFinite(probeWorldPoint) ||
+            !std::isfinite(probeRadiusGame) || probeRadiusGame <= 0.0f) {
             return false;
         }
 
         weapon_interaction_probe_math::ProbeCandidateRank bestRank{};
         const WeaponBodyInstance* bestInstance = nullptr;
-        int candidateCount = 0;
+        int boundsCandidateCount = 0;
+        int surfaceCandidateCount = 0;
         const RE::NiAVObject* packageDriveRoot = resolvePackageDriveNode(activeWeaponBodies(), const_cast<RE::NiAVObject*>(weaponNode));
         if (!packageDriveRoot) {
             return false;
@@ -4469,33 +4398,98 @@ namespace rock
                     packageDriveRoot,
                     packageDriveRoot->world,
                     instance.sourceNode,
-                    probeWorld,
-                    instance.generatedSourceFrameCorrectionValid ?
-                        &instance.generatedSourceFrameCorrection :
-                        nullptr);
+                    probeWorld);
             if (!sourceNodeCurrent) {
                 probeWorld = packageDriveRoot->world;
             }
+            const bool useSourceFrame =
+                sourceNodeCurrent &&
+                !instance.generatedSourceLocalTrianglesGame.empty();
+            if (!useSourceFrame) {
+                probeWorld = packageDriveRoot->world;
+            }
+            const auto& localTriangles =
+                useSourceFrame ?
+                instance.generatedSourceLocalTrianglesGame :
+                instance.generatedLocalTrianglesGame;
+            const RE::NiPoint3& boundsMin =
+                useSourceFrame ?
+                instance.generatedSourceLocalMinGame :
+                instance.generatedLocalMinGame;
+            const RE::NiPoint3& boundsMax =
+                useSourceFrame ?
+                instance.generatedSourceLocalMaxGame :
+                instance.generatedLocalMaxGame;
+            if (localTriangles.empty() ||
+                !weaponTransformFinite(probeWorld) ||
+                std::abs(probeWorld.scale) <= 0.000001f ||
+                !pointFinite(boundsMin) || !pointFinite(boundsMax) ||
+                boundsMin.x > boundsMax.x ||
+                boundsMin.y > boundsMax.y ||
+                boundsMin.z > boundsMax.z) {
+                continue;
+            }
+
+            const float absoluteScale = std::abs(probeWorld.scale);
+            const float localRadius = probeRadiusGame / absoluteScale;
             const RE::NiPoint3 probeLocal = weapon_collision_geometry_math::worldPointToLocal(
                 probeWorld.rotate,
                 probeWorld.translate,
                 probeWorld.scale,
                 probeWorldPoint);
-            const RE::NiPoint3& boundsMin = sourceNodeCurrent ? instance.generatedSourceLocalMinGame : instance.generatedLocalMinGame;
-            const RE::NiPoint3& boundsMax = sourceNodeCurrent ? instance.generatedSourceLocalMaxGame : instance.generatedLocalMaxGame;
-
-            const float distanceSquared = weapon_interaction_probe_math::pointAabbDistanceSquared(
-                probeLocal,
-                boundsMin,
-                boundsMax);
-            if (!weapon_interaction_probe_math::isWithinProbeRadiusSquared(distanceSquared, probeRadiusGame)) {
+            if (!pointFinite(probeLocal)) {
                 continue;
             }
 
-            ++candidateCount;
+            const float boundsDistanceSquared = weapon_interaction_probe_math::pointAabbDistanceSquared(
+                probeLocal,
+                boundsMin,
+                boundsMax);
+            if (!std::isfinite(boundsDistanceSquared) ||
+                !weapon_interaction_probe_math::isWithinProbeRadiusSquared(
+                    boundsDistanceSquared,
+                    localRadius)) {
+                continue;
+            }
+
+            ++boundsCandidateCount;
+            float minimumSurfaceDistanceSquaredLocal =
+                (std::numeric_limits<float>::infinity)();
+            for (const auto& triangle : localTriangles) {
+                if (!pointFinite(triangle.v0) ||
+                    !pointFinite(triangle.v1) ||
+                    !pointFinite(triangle.v2)) {
+                    continue;
+                }
+                float surfaceDistanceSquaredLocal =
+                    (std::numeric_limits<float>::infinity)();
+                (void)closestPointOnTriangleToPoint(
+                    probeLocal,
+                    triangle,
+                    surfaceDistanceSquaredLocal);
+                if (std::isfinite(surfaceDistanceSquaredLocal) &&
+                    surfaceDistanceSquaredLocal >= 0.0f) {
+                    minimumSurfaceDistanceSquaredLocal = (std::min)(
+                        minimumSurfaceDistanceSquaredLocal,
+                        surfaceDistanceSquaredLocal);
+                }
+            }
+            if (!std::isfinite(minimumSurfaceDistanceSquaredLocal) ||
+                !weapon_interaction_probe_math::isWithinProbeRadiusSquared(
+                    minimumSurfaceDistanceSquaredLocal,
+                    localRadius)) {
+                continue;
+            }
+
+            ++surfaceCandidateCount;
+            const float scaleSquared = absoluteScale * absoluteScale;
             const weapon_interaction_probe_math::ProbeCandidateRank rank{
-                .distanceSquaredGame = distanceSquared,
-                .aabbDiagonalSquaredGame = weapon_interaction_probe_math::aabbDiagonalSquared(boundsMin, boundsMax),
+                .distanceSquaredGame =
+                    minimumSurfaceDistanceSquaredLocal * scaleSquared,
+                .aabbDiagonalSquaredGame =
+                    weapon_interaction_probe_math::aabbDiagonalSquared(
+                        boundsMin,
+                        boundsMax) * scaleSquared,
                 .semanticPriority = instance.semantic.priority,
             };
             if (bestInstance && !weapon_interaction_probe_math::isBetterProbeCandidate(rank, bestRank)) {
@@ -4506,19 +4500,20 @@ namespace rock
             bestInstance = &instance;
         }
 
-        if (!bestInstance) {
+        if (!bestInstance || getCurrentWeaponGenerationKey() != currentGeneration) {
             return false;
         }
 
         ROCK_LOG_SAMPLE_DEBUG(Weapon,
             g_rockConfig.rockLogSampleMilliseconds,
-            "WeaponInteractionProbe ranked: part={} bodyId={} dist={:.2f} diag={:.1f} priority={} candidates={}",
+            "WeaponInteractionProbe exact surface ranked: part={} bodyId={} dist={:.2f} diag={:.1f} priority={} boundsCandidates={} surfaceCandidates={}",
             static_cast<int>(bestInstance->semantic.partKind),
             bestInstance->body.getBodyId().value,
             std::sqrt(bestRank.distanceSquaredGame),
             std::sqrt(bestRank.aabbDiagonalSquaredGame),
             bestInstance->semantic.priority,
-            candidateCount);
+            boundsCandidateCount,
+            surfaceCandidateCount);
 
         outContact.valid = true;
         outContact.bodyId = bestInstance->body.getBodyId().value;
@@ -4530,7 +4525,7 @@ namespace rock
         outContact.fallbackGripPose = bestInstance->semantic.fallbackGripPose;
         outContact.interactionRoot = const_cast<RE::NiAVObject*>(packageDriveRoot);
         outContact.sourceRoot = bestInstance->sourceNode;
-        outContact.weaponGenerationKey = getCurrentWeaponGenerationKey();
+        outContact.weaponGenerationKey = currentGeneration;
         outContact.probeDistanceGame = std::sqrt(bestRank.distanceSquaredGame);
         return true;
     }
@@ -4969,7 +4964,7 @@ namespace rock
                 } else {
                     performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::WeaponColliderBuild);
                     generatedCount = findGeneratedWeaponShapeSources(weaponNode, observedKey, generatedSources);
-                    recordAndApplyGeneratedRecaptureAuthority(
+                    recordGeneratedRecaptureDiagnostic(
                         observedKey,
                         observedIdentityKey,
                         observedOwnershipKey,
@@ -6164,8 +6159,6 @@ namespace rock
             instance.shape = shape;
             instance.driveNode = source.driveRoot ? source.driveRoot : source.sourceRoot;
             instance.sourceNode = source.sourceRoot;
-            instance.generatedSourceFrameCorrection = source.postUndrawFrameCorrection;
-            instance.generatedSourceFrameCorrectionValid = source.postUndrawFrameCorrectionValid;
             instance.sourceName = source.sourceName;
             instance.sourceRootName = source.sourceRoot ? safeNodeName(source.sourceRoot) : "";
             instance.generatedLocalCenterGame = source.localCenterGame;
@@ -6206,10 +6199,7 @@ namespace rock
                         instance.driveNode,
                         instance.driveNode->world,
                         instance.sourceNode,
-                        hierarchyWorld,
-                        instance.generatedSourceFrameCorrectionValid ?
-                            &instance.generatedSourceFrameCorrection :
-                            nullptr)) {
+                        hierarchyWorld)) {
                     driveRootTransform = hierarchyWorld;
                 }
             }
@@ -6394,7 +6384,6 @@ namespace rock
         instance.shape = nullptr;
         instance.driveNode = nullptr;
         instance.sourceNode = nullptr;
-        instance.generatedSourceFrameCorrection = {};
         instance.sourceName.clear();
         instance.sourceRootName.clear();
         instance.generatedLocalCenterGame = {};
@@ -6411,7 +6400,6 @@ namespace rock
         instance.generatedSourceGroupId = 0;
         instance.semantic = {};
         instance.ownsShapeRef = false;
-        instance.generatedSourceFrameCorrectionValid = false;
         clearGeneratedKeyframedBodyDriveState(instance.driveState);
         instance.publicationIndex = INVALID_BODY_ID;
     }
@@ -8896,10 +8884,7 @@ namespace rock
                     packageDriveNode,
                     packageWorld,
                     instance.sourceNode,
-                    sourceWorld,
-                    instance.generatedSourceFrameCorrectionValid ?
-                        &instance.generatedSourceFrameCorrection :
-                        nullptr);
+                    sourceWorld);
             const RE::NiTransform& driveWorld = useSourceNode ? sourceWorld : packageWorld;
             const RE::NiPoint3& centerGame = useSourceNode ? instance.generatedSourceLocalCenterGame : instance.generatedLocalCenterGame;
             const RE::NiTransform generatedTransform = makeGeneratedBodyWorldTransform(driveWorld, centerGame);

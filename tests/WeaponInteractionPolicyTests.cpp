@@ -2298,19 +2298,19 @@ int main()
 
     using rock::weapon_interaction_probe_math::isBetterProbeCandidate;
     using rock::weapon_interaction_probe_math::ProbeCandidateRank;
-    ok &= expectTrue("closer weapon part wins outside dual containment",
+    ok &= expectTrue("closer exact weapon surface always wins",
         isBetterProbeCandidate(
             ProbeCandidateRank{ .distanceSquaredGame = 4.0f, .aabbDiagonalSquaredGame = 1225.0f, .semanticPriority = 62 },
             ProbeCandidateRank{ .distanceSquaredGame = 9.0f, .aabbDiagonalSquaredGame = 82.0f, .semanticPriority = 95 }));
-    ok &= expectFalse("farther weapon part loses outside dual containment",
+    ok &= expectFalse("farther exact weapon surface always loses",
         isBetterProbeCandidate(
             ProbeCandidateRank{ .distanceSquaredGame = 9.0f, .aabbDiagonalSquaredGame = 82.0f, .semanticPriority = 95 },
             ProbeCandidateRank{ .distanceSquaredGame = 4.0f, .aabbDiagonalSquaredGame = 1225.0f, .semanticPriority = 62 }));
-    ok &= expectTrue("contained tiny part beats the engulfing receiver hull",
+    ok &= expectTrue("smaller part breaks an exact surface-distance tie",
         isBetterProbeCandidate(
             ProbeCandidateRank{ .distanceSquaredGame = 0.0f, .aabbDiagonalSquaredGame = 82.0f, .semanticPriority = 95 },
             ProbeCandidateRank{ .distanceSquaredGame = 0.0f, .aabbDiagonalSquaredGame = 1225.0f, .semanticPriority = 62 }));
-    ok &= expectTrue("containment tolerance lets a near-miss tiny part beat the engulfing hull",
+    ok &= expectFalse("tiny overlapping AABB cannot beat a closer rendered surface",
         isBetterProbeCandidate(
             ProbeCandidateRank{ .distanceSquaredGame = 0.81f, .aabbDiagonalSquaredGame = 82.0f, .semanticPriority = 95 },
             ProbeCandidateRank{ .distanceSquaredGame = 0.0f, .aabbDiagonalSquaredGame = 1225.0f, .semanticPriority = 62 }));

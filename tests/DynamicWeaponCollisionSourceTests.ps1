@@ -133,8 +133,11 @@ Require-Pattern $compoundBuilder `
     'RUNTIME_VR_1_2_72[\s\S]*kFunc_DynamicCompoundShape_Ctor[\s\S]*kFunc_DynamicCompoundShape_UpdateInstances[\s\S]*native API validation' `
     'The new FO4VR RVAs must fail closed behind exact executable identity and live entry-byte validation.'
 Require-Pattern $weaponCollisionSource `
-    'resolveCompoundChildPose\([\s\S]*tryResolveDescendantLocalTransform\([\s\S]*applyPostUndrawFrameCorrection[\s\S]*generatedSourceLocalCenterGame[\s\S]*shapeInWeapon\.scale\s*=\s*1\.0f' `
-    'Live compound poses must use the same corrected source hierarchy and baked-scale convention as keyframed parts.'
+    'resolveCompoundChildPose\([\s\S]*tryResolveDescendantLocalTransform\([\s\S]*generatedSourceLocalCenterGame[\s\S]*shapeInWeapon\.scale\s*=\s*1\.0f' `
+    'Live compound poses must use the current source hierarchy and baked-scale convention shared by keyframed parts.'
+Reject-Pattern $weaponCollisionSource `
+    'postUndrawFrameCorrection|generatedSourceFrameCorrection|applyPostUndrawFrameCorrection' `
+    'A fixed transform sampled during draw animation must never offset live compound children from rendered parts.'
 Require-Pattern $runtimeSource `
     'buildProxyShape\(\)[\s\S]*noContactFilterInfo\(\)[\s\S]*BethesdaMotionType::Keyframed[\s\S]*ROCK_WeaponGripAuthorityProxy[\s\S]*hasNoContactFilterInfo' `
     'The grip authority must be a verified noncolliding keyframed proxy.'

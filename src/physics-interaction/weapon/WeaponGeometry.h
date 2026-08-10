@@ -1228,18 +1228,12 @@ namespace rock::weapon_interaction_probe_math
     }
 
     /*
-     * Part AABBs overlap: a tiny foregrip or bolt sits inside the fat
-     * receiver/handguard box, so nearest-AABB alone ties at zero and the
-     * build-order winner is usually the big part. When the palm is inside
-     * (or within the containment tolerance of) more than one box, the most
-     * specific part must win: smallest AABB diagonal first, then the
-     * semantic priority (Foregrip 95 > Receiver 62 > Other 10) as the
-     * name-based tie-break. Outside dual containment, plain distance ranks,
-     * with the same specificity ordering breaking exact distance ties.
-     * Diagonal is used instead of volume so flat authored parts (rails,
-     * plates) do not degenerate to zero and beat everything.
+     * Part AABBs are broadphase only. The runtime rank receives exact cached
+     * triangle-surface distance, so a tiny part whose box overlaps the palm
+     * cannot steal an unrelated grab. Specificity and semantics break only an
+     * exact surface-distance tie. Diagonal is used instead of volume so flat
+     * authored parts do not degenerate to zero and beat everything.
      */
-    inline constexpr float kProbeContainmentToleranceGameUnits = 1.0f;
 
     struct ProbeCandidateRank
     {
@@ -1250,13 +1244,8 @@ namespace rock::weapon_interaction_probe_math
 
     inline constexpr bool isBetterProbeCandidate(const ProbeCandidateRank& candidate, const ProbeCandidateRank& best)
     {
-        constexpr float toleranceSquared = kProbeContainmentToleranceGameUnits * kProbeContainmentToleranceGameUnits;
-        const bool candidateContained = candidate.distanceSquaredGame <= toleranceSquared;
-        const bool bestContained = best.distanceSquaredGame <= toleranceSquared;
-        if (!candidateContained || !bestContained) {
-            if (candidate.distanceSquaredGame != best.distanceSquaredGame) {
-                return candidate.distanceSquaredGame < best.distanceSquaredGame;
-            }
+        if (candidate.distanceSquaredGame != best.distanceSquaredGame) {
+            return candidate.distanceSquaredGame < best.distanceSquaredGame;
         }
         if (candidate.aabbDiagonalSquaredGame != best.aabbDiagonalSquaredGame) {
             return candidate.aabbDiagonalSquaredGame < best.aabbDiagonalSquaredGame;
