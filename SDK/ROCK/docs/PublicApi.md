@@ -1,128 +1,60 @@
-# ROCK Public API
+# Public API overview
 
-ROCK exposes one v1 C ABI table from `ROCK.dll`:
+ROCK exposes one append-only V1 provider table from `ROCK.dll`. Its purpose is to let independent FO4VR F4SE plugins observe and cooperate with the canonical hand/object/weapon runtime without sharing C++ implementation objects or creating duplicate physics/animation ownership paths.
 
-- `ROCKProviderApi.h`: the public API for FO4VR F4SE plugins.
-- `ROCKApi.h`: an alias header for the same v1 API table.
+## What the SDK exposes
 
-The API is POD/value ABI and avoids private ROCK headers. It is the stable SDK surface for frame snapshots, hand frames, detailed weapon evidence, body contacts, external body registration, owner-filtered external contact polling, offhand reservation, and queued interaction commands.
+### Runtime and hand state
 
-## Initialization
+Coherent frame/lifecycle snapshots; primary/offhand identity; physics and presented hand frames; interaction phase/target/held-body state; provider event cursors; raw wand state; input suppression state; semantic hand contacts; generated player collider descriptors; and hand collision availability.
 
-Include the SDK header shipped at:
+### Weapon state
 
-```text
-SDK/ROCK/include/ROCKProviderApi.h
-```
+Compact and detailed weapon collision evidence; local point clouds; point queries; semantic classification; complete emitter state; grip/muzzle state; equipped transition state; installed composition; scope/sight state; weapon-part resolution, poses, and applied drive results; authored grip poses; and exact current weapon/body generation identity.
 
-Initialize after `ROCK.dll` is loaded:
+### External integration
 
-```cpp
-#include "ROCKProviderApi.h"
+Owner/scoped external body registration and enriched contact cursors let a consumer route contacts against bodies it owns. Registration transfers no lifetime or mutation ownership.
 
-using rock::provider::RockProviderApi;
+### Interaction and input control
 
-bool initRock()
-{
-    const int err = RockProviderApi::initialize(rock::provider::ROCK_PROVIDER_API_VERSION);
-    return err == 0 && RockProviderApi::inst;
-}
-```
+Queued force grab, physical release, thrown drop, and cancellation; per-hand input suppression leases; offhand reservation leases; semantic weapon-part targets/drives; and exact-hand equipped-weapon requests under explicit handling authority.
 
-`RockProviderApi::initialize` returns:
+### Animation and visuals
 
-- `0`: initialized.
-- `1`: `ROCK.dll` is not loaded.
-- `2`: `ROCKAPI_GetProviderApi` was not exported.
-- `3`: ROCK returned no provider table.
-- `4`: the provider table is below the requested minimum version.
+Native animation authority, animation phase callbacks, native animation runtime publication, hand/finger visual authority, equipped-weapon handling policy, bounded stereo debug overlays, and exact collider visualization focus.
 
-Consumers may call read-only queries from ordinary F4SE plugin code, but frame-sensitive decisions should be made from a ROCK provider frame callback. Runtime writes and control calls must be treated as ROCK-owned work and should use a ROCK-issued owner token.
+### Touch mechanisms and world queries
 
-## Consumer Ownership
+Scoped fixed-anchor, limited-hinge, and limited-prismatic touch targets support climbable surfaces and physical controls. Owner-callback-only world raycasts provide a bounded provider-filtered query path.
 
-API v1 uses ROCK-issued owner tokens:
+## Discovery model
 
-```cpp
-rock::provider::RockProviderConsumerRegistrationV1 registration{};
-registration.version = rock::provider::ROCK_PROVIDER_API_VERSION;
-std::snprintf(registration.modName, sizeof(registration.modName), "MyPlugin");
-registration.requestedCapabilities =
-    static_cast<std::uint32_t>(rock::provider::RockProviderConsumerCapabilityV1::FrameSnapshots) |
-    static_cast<std::uint32_t>(rock::provider::RockProviderConsumerCapabilityV1::ExternalBodies) |
-    static_cast<std::uint32_t>(rock::provider::RockProviderConsumerCapabilityV1::ExternalContacts) |
-    static_cast<std::uint32_t>(rock::provider::RockProviderConsumerCapabilityV1::InteractionCommands);
+Use `RockProviderApi::initialize`. It prefers the safe immutable descriptor, verifies requested API/table extent, and exposes the returned table through `RockProviderApi::inst`. Then query limits/features and register a consumer for capabilities.
 
-rock::provider::RockProviderConsumerHandleV1 handle{};
-const auto result = RockProviderApi::inst->registerConsumerV1(&registration, &handle);
-```
+The three layers serve different purposes:
 
-Use `handle.ownerToken` for provider write/control calls. `handle.grantedCapabilities` is authoritative; unsupported requested capabilities are not granted.
+- table extent prevents reading a function pointer beyond an older table;
+- feature bits describe behavior implemented by the loaded provider;
+- granted capabilities authorize this owner to call stateful families.
 
-Call `unregisterConsumerV1(ownerToken)` during plugin shutdown. Unregistering clears that owner's external bodies and offhand reservation.
+## Read versus write surfaces
 
-Sibling plugins should register and must not invent global owner tokens.
+Value snapshots and synchronized discovery queries do not give mutation authority. Stateful publications and commands always require a registered owner and capability. Live scene/physics readbacks and all stateful writes are game-thread-only and belong in an owner callback unless the header explicitly says otherwise.
 
-## Provider Limits And Features
+## Scope and replace semantics
 
-Call `getProviderLimitsV1` to discover current limits and feature bits. Do not hardcode queue or buffer sizes beyond the values returned by ROCK.
+Most multi-entry writer surfaces replace the caller's current set transactionally. Scope tokens let one consumer own multiple independently replaceable sets. A zero-count set is commonly an explicit scope clear; the dedicated clear function is preferred when it makes intent clearer.
 
-Implemented v1 feature bits:
+## Safety summary
 
-- `FrameCallbacks`
-- `LifecycleFields`
-- `HandFrames`
-- `WeaponEvidence`
-- `BodyContacts`
-- `ExternalContacts`
-- `ConsumerRegistrationV1`
-- `OwnerFilteredExternalContactsV1`
-- `InteractionCommandQueue`
-- `ForceGrabCommand`
-- `ForceReleaseCommand`
-- `ThrownDropCommand`
+- Fail closed when lifecycle gates or provider state are absent.
+- Bind requests to current generation identity.
+- Never retain/dereference legacy pointer witnesses.
+- Respect returned limits and copy counts.
+- Treat rolling leases as per-frame/short-lived ownership.
+- Treat command admission separately from command completion.
+- Clear scopes/authorities before destroying their backing state.
+- Unregister owner callbacks before unregistering the consumer.
 
-## Frame And Lifecycle Rules
-
-Use `registerFrameCallback` to receive `RockProviderFrameSnapshot` from a ROCK-owned update point. The snapshot includes world pointers as integer addresses, provider readiness, menu/config blocking, lifecycle flags, world/skeleton/provider generations, weapon body IDs, hand transforms, hand state flags, and the current offhand reservation.
-
-Before writing physics or visuals, check the lifecycle flags:
-
-- `PhysicsWriteAllowed` must be set for physics-affecting work.
-- `VisualWriteAllowed` must be set for visual authority work.
-- Treat missing world, missing skeleton, provider loss, menu blocking, config blocking, and transition flags as fail-closed conditions.
-
-Generation fields are guards. Cache them only long enough to validate same-frame or queued work.
-
-## External Bodies And Contacts
-
-Register external hknp body IDs with `registerExternalBodiesV1` using the ROCK-issued owner token. Bodies are replaced per owner; explicit clear/unregister drops the owner's registrations and pending contacts.
-
-Use `getExternalContactSnapshotForOwnerV1` for integrations. It returns only contacts targeting bodies registered by that owner.
-
-## Offhand Reservation
-
-`setOffhandInteractionReservation` should use a registered owner token and should release the reservation by setting `Normal` when finished. Lease priority and expiry are not public in v1.
-
-## Interaction Commands
-
-Interaction commands are queued through ROCK and executed from ROCK-owned update points. Provider API calls validate owner token, capability, struct shape, and queue capacity, then enqueue work; they do not mutate hand/grab state immediately.
-
-To force grab a target, register with `InteractionCommands`, fill `RockProviderForceGrabRequestV1`, and call `requestForceGrabV1`. Poll the returned command id with `getInteractionCommandResultV1` until it reports `Succeeded`, `Rejected`, or `Cancelled`.
-
-Initial force-grab scope:
-
-- Explicit `Left` or `Right` hand only.
-- Live loose-object / loose-weapon references only.
-- Near force grab only. Targets beyond `maxDistanceGame`, or beyond ROCK's near-grab range when `maxDistanceGame` is zero, are rejected.
-- Busy hands, invalid targets, stale generation guards, already-owned targets, missing bodies, and blocked physics writes fail closed.
-
-Successful force grabs enter ROCK's existing dynamic grab path. Finger posing, grab settling, haptics, object ownership, and release behavior are therefore the same systems used by normal grabs.
-
-To force release a held object, fill `RockProviderForceReleaseRequestV1` and call `requestForceReleaseV1`. The selected hand must be `Left` or `Right`. If a target ref, form id, or body id is supplied, the held object must match before ROCK releases it. A force release with no velocity flags is a gentle physical drop: ROCK detaches through the normal release path but does not reuse captured controller throw history.
-
-Set `RockProviderForceReleaseFlagV1::UseVelocityHavok` to apply caller-supplied `linearVelocityHavok` and `angularVelocityRadiansPerSecond` after detach. The supplied force-release velocities are trusted and only finite-checked; ROCK does not clamp them.
-
-To request a thrown drop, fill `RockProviderThrownDropRequestV1` and call `requestThrownDropV1`. Without `UseVelocityHavok`, ROCK captures the current held release motion before detaching. If `UseVelocityHavok` is set, ROCK applies the supplied linear and angular Havok velocities through the same release velocity path after detach. The supplied thrown-drop velocities are trusted and only finite-checked; ROCK does not clamp them.
-
-Successful force release and thrown drop commands use ROCK's existing `Hand::releaseGrabbedObject` path. Collision restore, body lifecycle restore, claim release, release messages, hand pose cleanup, and release events therefore match normal releases.
+Continue with `GettingStarted.md`, `RuntimeContract.md`, and `ApiIndex.md`.

@@ -1,11 +1,21 @@
-# ROCK API Version Matrix
+# API version matrix
 
-Minimum ROCK mod version for this matrix: `0.5.0`.
+Minimum provider mod version represented by this SDK snapshot: `0.5.0`.
 
-| API | Public status | Surface |
-| --- | --- | --- |
-| v1 | Current | Frame snapshots, hand frames, detailed weapon evidence, body contacts, external body registration, owner-filtered external contact polling, offhand reservation, consumer registration, ROCK-issued owner tokens, capability grants, provider limits, feature bits, and queued force-grab / force-release / thrown-drop interaction commands. |
+| API | Status | Binary contract | Current surface |
+| --- | --- | --- | --- |
+| V1 | Current | Append-only, 90 x64 function pointers / 720 bytes | Complete public hand, weapon, contact, input, animation, authority, command, scoped publication, touch-grab, raycast, and diagnostic surface. |
 
-`ROCKProviderApi.h` and `ROCKApi.h` both describe the same v1 ABI table. `ROCKAPI_GetProviderApi` and `ROCKAPI_GetApi` return that same table.
+## Compatibility rules
 
-Public force grab is implemented as a queued v1 interaction command that executes through ROCK's existing dynamic grab path. Public force release and thrown drop are queued v1 interaction commands that execute through ROCK's existing release path. Force release defaults to a gentle non-throw physical drop and can accept trusted Havok linear/angular release velocity; thrown drop can use captured release motion or trusted caller-supplied Havok velocity.
+`ROCK_PROVIDER_API_VERSION` remains `1` while new functions are appended and structures are prefix-extended. A V1 version match alone does not prove that a newer slot exists.
+
+Consumers requiring a newer family should initialize with its named `ROCK_PROVIDER_API_V1_*_TABLE_BYTES` constant. Consumers supporting multiple provider revisions can initialize V1 without a minimum extent and then use `getProviderLimitsV1`/`getProviderLimitsExtV1` plus the inline `supports...V1` helpers.
+
+The safe descriptor is the only supported way to require a nonzero minimum table extent. Legacy provider-table discovery remains available for consumers that use only the original V1 prefix.
+
+Public structures carry `size`/`version` where extensibility requires it. Initialize structures with their default constructor, preserve zeroed reserved fields, and use `getPublicStructureSizeV1` when adapting to another header revision.
+
+## Provider and game versions
+
+The SDK provider mod version and the API version are separate values. The example F4SE plugins additionally gate FO4VR identity and `Fallout4VR.exe` file version `1.2.72.0`; they do not confuse that executable version with F4SEVR's loader compatibility runtime.

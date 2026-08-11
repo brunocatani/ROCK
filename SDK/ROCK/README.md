@@ -1,25 +1,41 @@
 # ROCK SDK
 
-This SDK is the public v1 ABI surface for FO4VR F4SE integrations with ROCK.
+ROCK SDK V1 is the public in-process C++ ABI for FO4VR F4SE plugins that need coherent access to ROCK's hand, collision, weapon, input, animation, interaction, and diagnostic systems.
 
-## Files
+The current append-only V1 table contains 90 function slots. It supports read-only observation, owner-scoped registration, queued interaction commands, bounded control authorities, scoped publications, semantic contact streams, touch mechanisms, raycasts, and shared VR diagnostics without exposing private ROCK runtime classes.
 
-- `include/ROCKProviderApi.h` is the canonical header.
-- `include/ROCKApi.h` is an alias header for the same v1 table.
-- `docs/PublicApi.md` documents initialization, ownership, lifecycle, and feature discovery.
-- `docs/VersionMatrix.md` records the public API version contract.
-- `examples/MinimalProviderConsumer.cpp` shows registration, a frame callback, and owner-filtered contact polling.
+## Start here
 
-## ABI Contract
+1. Read `docs/GettingStarted.md` and integrate `include/ROCKProviderApi.h`.
+2. Read `docs/RuntimeContract.md` before calling any frame-sensitive or stateful surface.
+3. Choose only the capabilities your mod needs from `docs/DiscoveryAndCapabilities.md`.
+4. Use `docs/ApiIndex.md` for the exact 90-slot map and `docs/FeatureGuide.md` for task-oriented guidance.
+5. Build or adapt one of the generic plugins under `examples/`.
 
-ROCK v1 exposes one POD/value function table from `ROCK.dll`. Consumers should include only SDK headers and must not depend on private ROCK source headers.
+## Package map
 
-The provider API version remains `ROCK_PROVIDER_API_VERSION == 1` until the public launch contract changes.
+| Path | Contents |
+| --- | --- |
+| `include/ROCKProviderApi.h` | Canonical public V1 declarations, values, table guards, discovery helper, and support helpers. |
+| `include/ROCKApi.h` | Alias header for the same provider table/version. |
+| `docs/PublicApi.md` | Architectural overview and API-family map. |
+| `docs/GettingStarted.md` | Initialization, result codes, registration, callbacks, and teardown. |
+| `docs/RuntimeContract.md` | Threading, lifecycle, generation, pointer, lease, cursor, and command rules. |
+| `docs/DiscoveryAndCapabilities.md` | Descriptor, table extent, 27 capabilities, 62 feature bits, and limits. |
+| `docs/ApiIndex.md` | Every V1 function pointer in ABI slot order. |
+| `docs/FeatureGuide.md` | What users can build with each subsystem. |
+| `docs/Recipes.md` | Focused call patterns for common integrations. |
+| `docs/VersionMatrix.md` | API/provider compatibility policy. |
+| `examples/` | Four complete buildable F4SE DLLs plus a compact integration fragment. |
 
-Use `RockProviderApi::initialize(rock::provider::ROCK_PROVIDER_API_VERSION)`, then query `getProviderLimitsV1` and feature bits before using optional surfaces.
+## ABI contract
 
-## Ownership
+The boundary is POD/value-oriented and C-exported from `ROCK.dll`. Consumers include only SDK headers, discover the table dynamically, and never link or reach into ROCK's private implementation.
 
-Register with `registerConsumerV1` and use the returned ROCK-issued owner token for write/control calls. Do not invent global owner tokens. `unregisterConsumerV1` releases that owner's external bodies, offhand reservation, and queued interaction commands.
+V1 evolves by appending function pointers and extending structures through sized prefixes. `ROCK_PROVIDER_API_VERSION` therefore remains `1` while the table grows. Compatibility requires API version, table byte extent, feature support, and owner capability grant—not the version number alone.
 
-ROCK v1 exposes queued force grab, force release, and thrown drop through `requestForceGrabV1`, `getInteractionCommandResultV1`, `requestForceReleaseV1`, and `requestThrownDropV1`. Force release defaults to a gentle non-throw drop; force release and thrown drop can apply trusted caller-supplied Havok velocity when their `UseVelocityHavok` flag is set.
+The authoritative signatures and enum values are in `ROCKProviderApi.h`. Documentation and examples are mechanically checked against that header, and example plugins are compiled in ROCK's test configuration.
+
+## Ownership in one paragraph
+
+Register with `registerConsumerV1`, retain the returned owner token for the current registration lifetime, and use it for every stateful call. Refresh leases only while active, clear feature state when it stops, unregister callbacks, then unregister the consumer. ROCK revokes remaining owner resources on unregister/provider loss, but deterministic cleanup is still the consumer's responsibility.
