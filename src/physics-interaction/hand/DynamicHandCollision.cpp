@@ -27,6 +27,8 @@ namespace rock
         constexpr const char* RIGHT_DYNAMIC_HAND_TAG = "ROCK_DynamicHand_Right";
         constexpr const char* LEFT_DYNAMIC_HAND_TAG = "ROCK_DynamicHand_Left";
         constexpr std::uint32_t kDynamicHandProxyCollisionGroup = 0x000C;
+        constexpr std::uint32_t kRaiseManifoldProcessedEvents = 0x40u;
+        constexpr std::uint32_t kRebuildBodyCollisionState = 0u;
         constexpr int kSurfaceLatchVisualPriority = 100;
         /*
          * Post-solve solver-residual thresholds separating "tracking freely"
@@ -425,11 +427,32 @@ namespace rock
         const hand_semantic_contact_state::SemanticContactVector* contactPointGame,
         const hand_semantic_contact_state::SemanticContactVector* contactNormalGame) noexcept
     {
-        (void)_surfaceContacts.record(
-            source,
-            otherBodyId,
-            contactPointGame,
-            contactNormalGame);
+        _surfaceImpulsePairSequenceAtomic.fetch_add(1, std::memory_order_release);
+        _surfaceEligiblePairSequenceAtomic.fetch_add(1, std::memory_order_release);
+        if (_surfaceContacts.record(
+                source,
+                otherBodyId,
+                contactPointGame,
+                contactNormalGame)) {
+            _surfaceContactPublishSequenceAtomic.fetch_add(1, std::memory_order_release);
+        }
+    }
+
+    void DynamicHandCollisionRuntime::recordSurfaceManifoldProcessedCallback(
+        const dynamic_hand_surface_contact_state::ContactSource& source,
+        const std::uint32_t otherBodyId,
+        const bool otherLayerRead,
+        const std::uint32_t otherLayer) noexcept
+    {
+        _surfaceProcessedPairSequenceAtomic.fetch_add(1, std::memory_order_release);
+        if (!otherLayerRead ||
+            !collision_layer_policy::isDynamicHandProxySurfaceLayer(otherLayer)) {
+            return;
+        }
+        _surfaceEligiblePairSequenceAtomic.fetch_add(1, std::memory_order_release);
+        if (_surfaceContacts.record(source, otherBodyId, nullptr, nullptr)) {
+            _surfaceContactPublishSequenceAtomic.fetch_add(1, std::memory_order_release);
+        }
     }
 
     hand_semantic_contact_state::SemanticContactCollection
@@ -621,12 +644,50 @@ namespace rock
             return false;
         }
 
+        const auto proxyBodyId = slot.body.getBodyId();
+        const bool surfaceContactSource = bodyIndex < kFirstForearmSlot;
+        bool processedManifoldEventsEnabled = false;
+        if (surfaceContactSource) {
+            /*
+             * FO4VR's manifold event producers at 0x1418028B0 and
+             * 0x141802A40 both gate their key-2 record on bit 0x40. Publish
+             * that verified body flag only on palm/fingertip twins; forearm
+             * contacts remain collision feedback and never seed a grab.
+             */
+            const bool processedManifoldFlagEnabled = havok_runtime::enableBodyFlags(
+                frame.hknpWorld,
+                proxyBodyId.value,
+                kRaiseManifoldProcessedEvents,
+                kRebuildBodyCollisionState);
+            const auto flaggedBody = havok_runtime::snapshotBody(
+                frame.hknpWorld,
+                proxyBodyId);
+            const bool processedManifoldFlagPublished =
+                processedManifoldFlagEnabled &&
+                flaggedBody.valid &&
+                flaggedBody.body &&
+                (flaggedBody.body->flags & kRaiseManifoldProcessedEvents) ==
+                    kRaiseManifoldProcessedEvents;
+            processedManifoldEventsEnabled = processedManifoldFlagPublished;
+            if (!processedManifoldFlagPublished) {
+                ROCK_LOG_ERROR(
+                    Hand,
+                    "{} dynamic hand twin {} failed processed-manifold event opt-in: body={} enabled={} readable={} flags=0x{:08X}",
+                    isLeft ? "Left" : "Right",
+                    bodyIndex,
+                    proxyBodyId.value,
+                    processedManifoldFlagEnabled,
+                    flaggedBody.valid && flaggedBody.body,
+                    flaggedBody.body ? flaggedBody.body->flags : 0u);
+            }
+        }
+
         slot.shape = shape;
         slot.createdWorld = frame.hknpWorld;
         slot.createdBhkWorld = frame.bhkWorld;
         slot.createdGeometryGeneration = geometryGeneration;
         slot.created = true;
-        slot.bodyIdAtomic.store(slot.body.getBodyId().value, std::memory_order_release);
+        slot.bodyIdAtomic.store(proxyBodyId.value, std::memory_order_release);
         slot.rebuildRequestedAtomic.store(false, std::memory_order_release);
         clearPhysicsContactState(slot);
 
@@ -634,13 +695,14 @@ namespace rock
         (void)placeGeneratedKeyframedBodyImmediately(slot.body, twinFrame.target);
 
         ROCK_LOG_INFO(Hand,
-            "{} dynamic hand twin created: slot={} bodyId={} length={:.2f} radius={:.2f} layer={}",
+            "{} dynamic hand twin created: slot={} bodyId={} length={:.2f} radius={:.2f} layer={} manifoldEvents={}",
             isLeft ? "Left" : "Right",
             bodyIndex,
             slot.body.getBodyId().value,
             twinFrame.length,
             twinFrame.radius,
-            collision_layer_policy::ROCK_LAYER_DYNAMIC_HAND_PROXY);
+            collision_layer_policy::ROCK_LAYER_DYNAMIC_HAND_PROXY,
+            processedManifoldEventsEnabled ? "yes" : "no");
         return true;
     }
 
@@ -751,6 +813,10 @@ namespace rock
         retireAll(nullptr);
         _telemetrySnapshot = {};
         _pendingHapticEvents = {};
+        _surfaceImpulsePairSequenceAtomic.store(0, std::memory_order_release);
+        _surfaceProcessedPairSequenceAtomic.store(0, std::memory_order_release);
+        _surfaceEligiblePairSequenceAtomic.store(0, std::memory_order_release);
+        _surfaceContactPublishSequenceAtomic.store(0, std::memory_order_release);
         _telemetryUpdateSequence = 0;
         _logCounter = 0;
         _transitionState = {};
@@ -774,6 +840,14 @@ namespace rock
         _pendingHapticEvents = {};
         dynamic_hand_collision_telemetry::Snapshot telemetry{};
         telemetry.updateSequence = ++_telemetryUpdateSequence;
+        telemetry.surfaceImpulsePairSequence =
+            _surfaceImpulsePairSequenceAtomic.load(std::memory_order_acquire);
+        telemetry.surfaceProcessedPairSequence =
+            _surfaceProcessedPairSequenceAtomic.load(std::memory_order_acquire);
+        telemetry.surfaceEligiblePairSequence =
+            _surfaceEligiblePairSequenceAtomic.load(std::memory_order_acquire);
+        telemetry.surfaceContactPublishSequence =
+            _surfaceContactPublishSequenceAtomic.load(std::memory_order_acquire);
         telemetry.runtimeEnabled = g_rockConfig.rockHandCollisionDynamicDrive;
         telemetry.worldReady = frame.worldReady;
         telemetry.menuBlocked = frame.menuBlocked;
@@ -818,7 +892,7 @@ namespace rock
         if (++_logCounter >= 360) {
             _logCounter = 0;
             ROCK_LOG_DEBUG(Hand,
-                "DynamicHandCollision active: twinsPerHand={} maxLinVelHk={:.1f} divergenceTeleport={:.1f} minDeviation={:.3f} smoothingSpeed={:.1f} haptics={} priority={} palmCreated R={} L={}",
+                "DynamicHandCollision active: twinsPerHand={} maxLinVelHk={:.1f} divergenceTeleport={:.1f} minDeviation={:.3f} smoothingSpeed={:.1f} haptics={} priority={} palmCreated R={} L={} surfaceCallbacks(impulse/manifold/eligible/published)={}/{}/{}/{}",
                 kBodiesPerHand,
                 g_rockConfig.rockHandCollisionDynamicMaxLinearVelocityHavok,
                 g_rockConfig.rockHandCollisionDynamicDivergenceTeleportGameUnits,
@@ -827,7 +901,11 @@ namespace rock
                 g_rockConfig.rockHandCollisionDynamicHapticsEnabled ? "yes" : "no",
                 g_rockConfig.rockHandCollisionDynamicVisualPriority,
                 _hands[0].bodies[kPalmSlot].created ? "yes" : "no",
-                _hands[1].bodies[kPalmSlot].created ? "yes" : "no");
+                _hands[1].bodies[kPalmSlot].created ? "yes" : "no",
+                telemetry.surfaceImpulsePairSequence,
+                telemetry.surfaceProcessedPairSequence,
+                telemetry.surfaceEligiblePairSequence,
+                telemetry.surfaceContactPublishSequence);
         }
 
         const auto handTargetsStable = [&](bool isLeft, const HandFrameInput& handInput, const Hand& hand) {

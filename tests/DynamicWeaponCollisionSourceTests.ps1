@@ -336,7 +336,7 @@ Require-Pattern 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' `
     'Generated weapon bodies must publish filter and modifier eligibility with one native collision-state rebuild.'
 Require-Pattern $runtimeSource `
     'kRaiseManifoldProcessedEvents\s*=\s*0x40u[\s\S]*enableBodyFlags\([\s\S]{0,200}kRaiseManifoldProcessedEvents,[\s\S]{0,100}kRebuildBodyCollisionState\)[\s\S]*flaggedBody\.body->flags\s*&\s*kRaiseManifoldProcessedEvents' `
-    'Only the dynamic weapon proxy must opt into key-2 processed-manifold events through the verified mode-0 body flag path.'
+    'The dynamic weapon proxy must opt into key-2 processed-manifold events through the verified mode-0 body flag path.'
 Reject-Pattern 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' `
     'kGeneratedBodyRuntimeFlags\s*=\s*0x0*4020000' `
     'Processed-manifold event opt-in must not leak into the shared generated-body defaults.'

@@ -130,6 +130,10 @@ namespace rock::dynamic_hand_collision_telemetry
     {
         std::array<HandSample, 2> hands{};
         std::uint64_t updateSequence = 0;
+        std::uint64_t surfaceImpulsePairSequence = 0;
+        std::uint64_t surfaceProcessedPairSequence = 0;
+        std::uint64_t surfaceEligiblePairSequence = 0;
+        std::uint64_t surfaceContactPublishSequence = 0;
         bool runtimeEnabled = false;
         bool worldReady = false;
         bool menuBlocked = false;

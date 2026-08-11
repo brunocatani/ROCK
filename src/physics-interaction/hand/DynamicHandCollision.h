@@ -108,6 +108,11 @@ namespace rock
             std::uint32_t otherBodyId,
             const hand_semantic_contact_state::SemanticContactVector* contactPointGame,
             const hand_semantic_contact_state::SemanticContactVector* contactNormalGame) noexcept;
+        void recordSurfaceManifoldProcessedCallback(
+            const dynamic_hand_surface_contact_state::ContactSource& source,
+            std::uint32_t otherBodyId,
+            bool otherLayerRead,
+            std::uint32_t otherLayer) noexcept;
         [[nodiscard]] hand_semantic_contact_state::SemanticContactCollection collectFreshSurfaceContacts(
             bool isLeft,
             std::uint32_t maximumAgeFrames) const noexcept;
@@ -294,6 +299,10 @@ namespace rock
 
         std::array<HandSlots, 2> _hands{};
         dynamic_hand_surface_contact_state::State _surfaceContacts{};
+        std::atomic<std::uint64_t> _surfaceImpulsePairSequenceAtomic{ 0 };
+        std::atomic<std::uint64_t> _surfaceProcessedPairSequenceAtomic{ 0 };
+        std::atomic<std::uint64_t> _surfaceEligiblePairSequenceAtomic{ 0 };
+        std::atomic<std::uint64_t> _surfaceContactPublishSequenceAtomic{ 0 };
         dynamic_hand_collision_telemetry::Snapshot _telemetrySnapshot{};
         dynamic_hand_collision_telemetry::HapticEvents _pendingHapticEvents{};
         std::uint64_t _telemetryUpdateSequence = 0;

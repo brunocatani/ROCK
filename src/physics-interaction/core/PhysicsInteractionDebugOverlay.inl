@@ -3617,6 +3617,15 @@
                             static_cast<unsigned int>(handSample.entryContactMask),
                             handSample.contactEntryApproachSpeedGameUnitsPerSecond,
                             handSample.teleportRecoverySecondsRemaining);
+                        labelAnchor.z -= 2.5f;
+                        addTextLineSized(labelAnchor,
+                            1.55f,
+                            handColor,
+                            "SURF I/M/E/P=%llu/%llu/%llu/%llu",
+                            static_cast<unsigned long long>(telemetry.surfaceImpulsePairSequence),
+                            static_cast<unsigned long long>(telemetry.surfaceProcessedPairSequence),
+                            static_cast<unsigned long long>(telemetry.surfaceEligiblePairSequence),
+                            static_cast<unsigned long long>(telemetry.surfaceContactPublishSequence));
 
                         const auto requestedRole = handSample.isLeft ?
                             debug::MarkerOverlayRole::LeftDynamicHandRequestedDeviation :

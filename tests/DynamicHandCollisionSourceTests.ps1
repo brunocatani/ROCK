@@ -409,6 +409,21 @@ Require-OrderedText 'src/physics-interaction/core/PhysicsInteractionContacts.inl
     'recordSurfaceContactCallback\(',
     '_generatedBodyContactRegistry\.tryClassify\('
 ) 'Dynamic surface evidence must publish before the ordinary generated-body prefilter discards proxy pairs.'
+Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
+    'kRaiseManifoldProcessedEvents\s*=\s*0x40u[\s\S]*bodyIndex\s*<\s*kFirstForearmSlot[\s\S]*enableBodyFlags\([\s\S]{0,250}kRaiseManifoldProcessedEvents[\s\S]{0,150}kRebuildBodyCollisionState[\s\S]*flaggedBody\.body->flags\s*&\s*kRaiseManifoldProcessedEvents' `
+    'Palm and fingertip twins must opt into the verified key-2 processed-manifold event path without flagging forearms.'
+Require-OrderedText 'src/physics-interaction/core/PhysicsInteractionContacts.inl' @(
+    'handleManifoldProcessedEvent\(',
+    'tryClassifySurfaceContactSourceAtomic\(',
+    'recordSurfaceManifoldProcessedCallback\(',
+    'recordObstacleManifoldProcessedCallback\('
+) 'Processed manifolds must publish dynamic-hand surface evidence while preserving the dynamic-weapon route.'
+Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
+    'recordSurfaceManifoldProcessedCallback\([\s\S]*isDynamicHandProxySurfaceLayer\(otherLayer\)[\s\S]*_surfaceContacts\.record\(source, otherBodyId, nullptr, nullptr\)' `
+    'Processed hand manifolds must validate the surface layer before publishing point-free latch evidence.'
+Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
+    'surfaceCallbacks\(impulse/manifold/eligible/published\)' `
+    'The rate-limited dynamic-hand trace must distinguish callback, layer, and publication failures.'
 Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'beginSurfaceLatch\(',
     'tryResolveLiveBodyWorldTransform\(',

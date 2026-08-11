@@ -560,26 +560,64 @@
             return;
         }
 
-        const bool bodyAIsProxy = _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdA);
-        const bool bodyBIsProxy = _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdB);
-        if (bodyAIsProxy == bodyBIsProxy) {
-            return;
+        /*
+         * Palm/fingertip twins opt into this recurring key-2 path because the
+         * solver does not reliably emit key-3 impulse records for persistent
+         * static-world contacts. The dedicated classifier excludes forearms.
+         */
+        dynamic_hand_surface_contact_state::ContactSource dynamicHandSourceA{};
+        dynamic_hand_surface_contact_state::ContactSource dynamicHandSourceB{};
+        const bool bodyAIsDynamicHandSurfaceSource =
+            _dynamicHandCollision.tryClassifySurfaceContactSourceAtomic(
+                bodyIdA,
+                dynamicHandSourceA);
+        const bool bodyBIsDynamicHandSurfaceSource =
+            _dynamicHandCollision.tryClassifySurfaceContactSourceAtomic(
+                bodyIdB,
+                dynamicHandSourceB);
+        if (bodyAIsDynamicHandSurfaceSource !=
+            bodyBIsDynamicHandSurfaceSource) {
+            const auto& source = bodyAIsDynamicHandSurfaceSource ?
+                dynamicHandSourceA :
+                dynamicHandSourceB;
+            const auto otherBodyId = bodyAIsDynamicHandSurfaceSource ?
+                bodyIdB :
+                bodyIdA;
+            std::uint32_t otherFilterInfo = 0;
+            const bool otherLayerRead = havok_runtime::tryReadFilterInfo(
+                world,
+                RE::hknpBodyId{ otherBodyId },
+                otherFilterInfo);
+            const auto otherLayer =
+                otherFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
+            _dynamicHandCollision.recordSurfaceManifoldProcessedCallback(
+                source,
+                otherBodyId,
+                otherLayerRead,
+                otherLayer);
         }
 
-        const auto proxyBodyId = bodyAIsProxy ? bodyIdA : bodyIdB;
-        const auto otherBodyId = bodyAIsProxy ? bodyIdB : bodyIdA;
-        std::uint32_t otherFilterInfo = 0;
-        const bool otherLayerRead = havok_runtime::tryReadFilterInfo(
-            world,
-            RE::hknpBodyId{ otherBodyId },
-            otherFilterInfo);
-        const auto otherLayer = otherFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
-        _dynamicWeaponCollision.recordObstacleManifoldProcessedCallback(
-            world,
-            proxyBodyId,
-            otherBodyId,
-            otherLayerRead,
-            otherLayer);
+        const bool bodyAIsWeaponProxy =
+            _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdA);
+        const bool bodyBIsWeaponProxy =
+            _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdB);
+        if (bodyAIsWeaponProxy != bodyBIsWeaponProxy) {
+            const auto proxyBodyId = bodyAIsWeaponProxy ? bodyIdA : bodyIdB;
+            const auto otherBodyId = bodyAIsWeaponProxy ? bodyIdB : bodyIdA;
+            std::uint32_t otherFilterInfo = 0;
+            const bool otherLayerRead = havok_runtime::tryReadFilterInfo(
+                world,
+                RE::hknpBodyId{ otherBodyId },
+                otherFilterInfo);
+            const auto otherLayer =
+                otherFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
+            _dynamicWeaponCollision.recordObstacleManifoldProcessedCallback(
+                world,
+                proxyBodyId,
+                otherBodyId,
+                otherLayerRead,
+                otherLayer);
+        }
     }
 
     void PhysicsInteraction::handleContactEvent(RE::hknpWorld* world, void* contactEventData)
