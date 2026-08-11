@@ -110,6 +110,13 @@ function Require-SequenceEqual {
 Require-Path 'SDK/ROCK/include/ROCKProviderApi.h' 'Public SDK must ship the provider header.'
 Require-Path 'SDK/ROCK/include/ROCKApi.h' 'Public SDK must ship the API alias header.'
 Require-Path 'SDK/ROCK/examples/MinimalProviderConsumer.cpp' 'A minimal provider consumer example must be packaged with the SDK.'
+Require-Path 'SDK/ROCK/examples/CMakeLists.txt' 'Buildable provider consumer examples must be packaged with the SDK.'
+Require-Path 'SDK/ROCK/examples/common/ExampleRuntime.cpp' 'Examples must share a production-shaped F4SE lifecycle runtime.'
+Require-Path 'SDK/ROCK/examples/cmake/VerifyFo4VrLoader.cmake' 'Example bootstraps must have a build-enforced FO4VR loader gate.'
+Require-Path 'SDK/ROCK/examples/mods/HandStateMonitor.cpp' 'The SDK must include a generic hand-state example plugin.'
+Require-Path 'SDK/ROCK/examples/mods/WeaponInspector.cpp' 'The SDK must include a generic weapon-inspection example plugin.'
+Require-Path 'SDK/ROCK/examples/mods/SurfaceClimber.cpp' 'The SDK must include a generic touch-grab surface example plugin.'
+Require-Path 'SDK/ROCK/examples/mods/ContactVisualizer.cpp' 'The SDK must include a generic contact-visualization example plugin.'
 
 Require-FilesEqual 'src/api/ROCKProviderApi.h' 'SDK/ROCK/include/ROCKProviderApi.h' `
     'SDK provider header must stay byte-for-byte synced with the source ABI header.'

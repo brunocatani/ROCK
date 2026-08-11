@@ -234,6 +234,11 @@ option(BUILD_ROCK_TESTS "Build ROCK focused regression tests" OFF)
 if(BUILD_ROCK_TESTS)
   enable_testing()
 
+  add_subdirectory(
+    "${ROOT_DIR}/SDK/ROCK/examples"
+    "${BUILD_DIR}/sdk-examples"
+  )
+
   function(add_rock_test TARGET_NAME)
     add_test(NAME ${TARGET_NAME} COMMAND $<TARGET_FILE:${TARGET_NAME}>)
     set_tests_properties(${TARGET_NAME} PROPERTIES LABELS "policy")
@@ -869,6 +874,7 @@ if(BUILD_ROCK_TESTS)
 
   add_dependencies(
     ROCKPolicyTestBinaries
+    ROCKSDKExamplePlugins
     ROCKDebugOverlayFrameAdmissionTests
     ROCKDebugOverlayLineBatchTests
     ROCKProviderDebugOverlayRuntimeTests
