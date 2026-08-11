@@ -394,6 +394,39 @@ Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @(
     '_dynamicHandCollision\.flushPendingPhysicsDrive\(world, timing\);'
 ) 'Dynamic hand proxy drive must flush in the generated collider physics substep.'
 
+# Fixed-surface grabs use a separate bounded contact channel. Palm and
+# fingertips are eligible; the forearm and ordinary loose-object semantic set
+# remain excluded.
+Require-Text 'src/physics-interaction/hand/DynamicHandSurfaceContactState.h' `
+    'collectFresh[\s\S]*atomic_flag writer[\s\S]*sequence' `
+    'Dynamic surface contact publication must be bounded and non-blocking on the physics callback.'
+Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
+    'for \(std::size_t slot = 0; slot < kFirstForearmSlot; \+\+slot\)' `
+    'Only dynamic palm and fingertip twins may seed fixed-surface grabs.'
+Require-OrderedText 'src/physics-interaction/core/PhysicsInteractionContacts.inl' @(
+    'tryClassifySurfaceContactSourceAtomic\(',
+    'isDynamicHandProxySurfaceLayer\(',
+    'recordSurfaceContactCallback\(',
+    '_generatedBodyContactRegistry\.tryClassify\('
+) 'Dynamic surface evidence must publish before the ordinary generated-body prefilter discards proxy pairs.'
+Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
+    'beginSurfaceLatch\(',
+    'tryResolveLiveBodyWorldTransform\(',
+    'invertTransform\(targetWorld\)',
+    'composeTransforms\(',
+    'candidate\.active = true'
+) 'Surface latch acquisition must capture the presented hand and live proxy transforms relative to the target body.'
+Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
+    'if \(handSlots\.surfaceLatch\.active\)',
+    'targetSnapshot\.body == latch\.targetBodyIdentity',
+    'latch\.lastProxyWorld\[bodyIndex\]',
+    'const RE::NiTransform& driveTarget',
+    'queueGeneratedKeyframedBodyTarget\('
+) 'A held surface latch must follow target-body motion and drive every proxy from the captured rigid relationship.'
+Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
+    'kSurfaceLatchVisualPriority[\s\S]*applyExternalHandWorldTransform\(' `
+    'Surface latches must hold the rendered hand through the existing FRIK visual authority bridge.'
+
 if ($failures.Count -gt 0) {
     Write-Host 'Dynamic hand collision source boundary failed:'
     foreach ($failure in $failures) {

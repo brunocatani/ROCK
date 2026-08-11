@@ -3,6 +3,7 @@
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/grab/GrabAuthorityProxy.h"
 #include "physics-interaction/grab/TouchGrabMath.h"
+#include "physics-interaction/hand/DynamicHandCollision.h"
 #include "physics-interaction/native/HavokMaterialRegistry.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/HavokRefCount.h"
@@ -452,7 +453,8 @@ namespace rock
         const std::uint32_t skeletonGeneration,
         const std::uint32_t providerGeneration,
         const std::uint32_t collisionGeneration,
-        const TargetClass targetClass)
+        const TargetClass targetClass,
+        const ContactSource contactSource)
     {
         if (!bhkWorld || !hknpWorld || !contact.valid ||
             contact.isLeft != isLeft ||
@@ -505,6 +507,12 @@ namespace rock
         if (match.yieldRequested) {
             return false;
         }
+        const bool fixedAnchor =
+            match.target.kind ==
+            provider::RockProviderTouchGrabKindV1::FixedAnchor;
+        if ((contactSource == ContactSource::DynamicSurface) != fixedAnchor) {
+            return false;
+        }
         const bool wildcardRequested =
             targetClass == TargetClass::Wildcard;
         if (match.wildcard != wildcardRequested) {
@@ -553,7 +561,8 @@ namespace rock
                     *active,
                     isLeft,
                     contact,
-                    hknpWorld)) {
+                    hknpWorld,
+                    contactSource)) {
                 return false;
             }
             publishState(
@@ -618,7 +627,8 @@ namespace rock
                 *active,
                 isLeft,
                 contact,
-                hknpWorld)) {
+                hknpWorld,
+                contactSource)) {
             releaseTarget(
                 *active,
                 bhkWorld,
@@ -783,7 +793,8 @@ namespace rock
         ActiveTarget& active,
         const bool isLeft,
         const hand_semantic_contact_state::SemanticContactRecord& contact,
-        RE::hknpWorld* world)
+        RE::hknpWorld* world,
+        const ContactSource contactSource)
     {
         HandAttachment* attachment = nullptr;
         std::size_t activeHands = 0;
@@ -823,8 +834,20 @@ namespace rock
         }
 
         std::uint32_t constraintId = kInvalidConstraintId;
-        if (active.target.kind !=
+        bool surfaceLatch = false;
+        if (active.target.kind ==
             provider::RockProviderTouchGrabKindV1::FixedAnchor) {
+            if (contactSource != ContactSource::DynamicSurface ||
+                !_dynamicHandCollision ||
+                !_dynamicHandCollision->beginSurfaceLatch(
+                    isLeft,
+                    contact.handBodyId,
+                    active.bodyId,
+                    world)) {
+                return false;
+            }
+            surfaceLatch = true;
+        } else {
             RE::NiTransform handBodyWorld{};
             RE::NiTransform targetBodyWorld{};
             if (!havok_runtime::tryResolveLiveBodyWorldTransform(
@@ -856,6 +879,7 @@ namespace rock
         attachment->isLeft = isLeft;
         attachment->handBodyId = contact.handBodyId;
         attachment->constraintId = constraintId;
+        attachment->surfaceLatch = surfaceLatch;
         attachment->hasContactPoint = hasContactPoint;
         attachment->contactPointGame = contactPoint;
         attachment->hasContactNormal =
@@ -998,6 +1022,33 @@ namespace rock
                     collisionGeneration,
                     bodySnapshot.valid);
                 continue;
+            }
+
+            if (active.target.kind ==
+                    provider::RockProviderTouchGrabKindV1::FixedAnchor) {
+                const bool latchMissing = std::any_of(
+                    active.hands.begin(),
+                    active.hands.end(),
+                    [&](const HandAttachment& hand) {
+                        return hand.active && hand.surfaceLatch &&
+                               (!_dynamicHandCollision ||
+                                   !_dynamicHandCollision->isSurfaceLatchActive(
+                                       hand.isLeft));
+                    });
+                if (latchMissing) {
+                    auto structuralMutation = _physicsCallbackGate ?
+                        _physicsCallbackGate->pauseForMutation() :
+                        PhysicsCallbackQuiescenceGate::MutationLease{};
+                    releaseTarget(
+                        active,
+                        bhkWorld,
+                        hknpWorld,
+                        provider::RockProviderTouchGrabReleaseReasonV1::
+                            TargetInvalid,
+                        collisionGeneration,
+                        true);
+                    continue;
+                }
             }
 
             const float coordinate =
@@ -1202,6 +1253,9 @@ namespace rock
             destroyConstraint(
                 hknpWorld,
                 hand.constraintId);
+            if (hand.surfaceLatch && _dynamicHandCollision) {
+                _dynamicHandCollision->endSurfaceLatch(isLeft);
+            }
             hand = {};
             break;
         }
@@ -1294,6 +1348,9 @@ namespace rock
         }
         for (auto& hand : active.hands) {
             destroyConstraint(world, hand.constraintId);
+            if (hand.surfaceLatch && _dynamicHandCollision) {
+                _dynamicHandCollision->endSurfaceLatch(hand.isLeft);
+            }
             hand = {};
         }
         destroyConstraint(
@@ -1410,6 +1467,9 @@ namespace rock
                 continue;
             }
             for (auto& hand : active.hands) {
+                if (hand.surfaceLatch && _dynamicHandCollision) {
+                    _dynamicHandCollision->endSurfaceLatch(hand.isLeft);
+                }
                 hand = {};
             }
             active.mechanismConstraintId =

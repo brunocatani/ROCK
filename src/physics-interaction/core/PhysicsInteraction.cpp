@@ -1333,6 +1333,7 @@ namespace rock
         _rightHand.setPhysicsCallbackGate(generatedBodyCallbackGate);
         _leftHand.setPhysicsCallbackGate(generatedBodyCallbackGate);
         _touchGrabRuntime.setPhysicsCallbackGate(generatedBodyCallbackGate);
+        _touchGrabRuntime.setDynamicHandCollisionRuntime(&_dynamicHandCollision);
         _bodyBoneColliders.setPhysicsCallbackGate(generatedBodyCallbackGate);
         _dynamicHandCollision.setPhysicsCallbackGate(generatedBodyCallbackGate);
         _weaponCollision.setPhysicsCallbackGate(generatedBodyCallbackGate);
@@ -9757,26 +9758,46 @@ namespace rock
                 const auto contacts =
                     hand.collectFreshSemanticContacts(
                         kTouchGrabContactFreshnessFrames);
+                const auto surfaceContacts =
+                    _dynamicHandCollision.collectFreshSurfaceContacts(
+                        isLeft,
+                        kTouchGrabContactFreshnessFrames);
                 const auto tryTargetClass =
                     [&](const TouchGrabRuntime::TargetClass
                             targetClass) {
-                        for (std::size_t index = 0;
-                             index < contacts.count;
-                             ++index) {
-                            if (_touchGrabRuntime.tryAcquire(
-                                    isLeft,
-                                    contacts.records[index],
-                                    frame.bhkWorld,
-                                    frame.hknpWorld,
-                                    worldGeneration,
-                                    skeletonGeneration,
-                                    providerGeneration,
-                                    collisionGeneration,
-                                    targetClass)) {
-                                return true;
-                            }
+                        const auto tryContacts =
+                            [&](const hand_semantic_contact_state::
+                                    SemanticContactCollection& candidates,
+                                const TouchGrabRuntime::ContactSource source) {
+                                for (std::size_t index = 0;
+                                     index < candidates.count;
+                                     ++index) {
+                                    if (_touchGrabRuntime.tryAcquire(
+                                            isLeft,
+                                            candidates.records[index],
+                                            frame.bhkWorld,
+                                            frame.hknpWorld,
+                                            worldGeneration,
+                                            skeletonGeneration,
+                                            providerGeneration,
+                                            collisionGeneration,
+                                            targetClass,
+                                            source)) {
+                                        return true;
+                                    }
+                                }
+                                return false;
+                            };
+                        if (tryContacts(
+                                contacts,
+                                TouchGrabRuntime::ContactSource::
+                                    SemanticHand)) {
+                            return true;
                         }
-                        return false;
+                        return tryContacts(
+                            surfaceContacts,
+                            TouchGrabRuntime::ContactSource::
+                                DynamicSurface);
                     };
                 const bool touchGrabAcquired =
                     tryTargetClass(

@@ -71,8 +71,9 @@ namespace rock::collision_layer_policy
      * only with static world-surface layers and explicitly tagged car bodies.
      * Native clutter stays excluded: car identity is carried by the dedicated
      * rows below, never inferred from the shared clutter layers in the solver.
-     * The proxy is a solver-side visual-stop driver, not gameplay contact
-     * evidence.
+     * The proxy is a solver-side visual-stop driver, not ordinary generated
+     * gameplay contact evidence. A separate bounded callback channel may use
+     * its palm/fingertip pairs for provider-scoped fixed-surface latches.
      */
     inline constexpr std::uint32_t ROCK_LAYER_DYNAMIC_HAND_PROXY = 48;
     /*
@@ -178,6 +179,11 @@ namespace rock::collision_layer_policy
     }
 
     inline constexpr bool isDynamicWeaponProxyObstacleLayer(std::uint32_t layer)
+    {
+        return isWorldSurfaceLayer(layer) || isDynamicWorldCarLayer(layer);
+    }
+
+    inline constexpr bool isDynamicHandProxySurfaceLayer(std::uint32_t layer)
     {
         return isWorldSurfaceLayer(layer) || isDynamicWorldCarLayer(layer);
     }

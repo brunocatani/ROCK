@@ -1,6 +1,7 @@
 #pragma once
 
 #include "physics-interaction/hand/DynamicHandCollisionFeedbackPolicy.h"
+#include "physics-interaction/hand/DynamicHandSurfaceContactState.h"
 #include "physics-interaction/hand/DynamicHandCollisionTransitionPolicy.h"
 #include "physics-interaction/hand/DynamicHandCollisionTelemetry.h"
 #include "physics-interaction/hand/DynamicHandTwinTargets.h"
@@ -16,6 +17,11 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+
+namespace RE
+{
+    class NiCollisionObject;
+}
 
 namespace rock
 {
@@ -33,13 +39,17 @@ namespace rock
      * (true multi-plane contact); the rendered FRIK hand follows the COMBINED
      * position deviation (sequential projection over per-body deviations, then
      * exponential smoothing against solver contact noise). Authority is
-     * strictly one-directional (wand/skeleton targets -> twins -> render): the
-     * twin targets come from the same HandBoneColliderSet/BodyBoneColliderSet
-     * role-frame publications the keyframed colliders are driven with, never
-     * from dynamic-body readback, so rendering cannot feed back into physics.
-     * The twins are not gameplay contact
-     * evidence and collide only with static world-surface layers plus the
-     * dedicated rows used by explicitly identified car bodies.
+     * During ordinary tracking authority is strictly one-directional
+     * (wand/skeleton targets -> twins -> render): twin targets come from the
+     * same HandBoneColliderSet/BodyBoneColliderSet role-frame publications the
+     * keyframed colliders are driven with. A fixed-surface latch captures one
+     * solved-pose readback, then drives both twins and rendering from immutable
+     * target-local relationships so no render-to-physics feedback loop exists.
+     * The twins are not ordinary gameplay contact evidence and collide only
+     * with static world-surface layers plus the dedicated rows used by
+     * explicitly identified car bodies. Palm/fingertip callbacks publish into
+     * a separate bounded channel consumed exclusively by provider-registered
+     * fixed-surface grabs.
      *
      * Threading: updateFrame runs on the main game thread; the drive flush runs
      * on the physics step thread and publishes fixed per-body telemetry through
@@ -89,6 +99,31 @@ namespace rock
                 std::memory_order_acquire);
         }
         [[nodiscard]] dynamic_hand_collision_telemetry::HapticEvents consumeHapticEvents();
+
+        [[nodiscard]] bool tryClassifySurfaceContactSourceAtomic(
+            std::uint32_t bodyId,
+            dynamic_hand_surface_contact_state::ContactSource& outSource) const noexcept;
+        void recordSurfaceContactCallback(
+            const dynamic_hand_surface_contact_state::ContactSource& source,
+            std::uint32_t otherBodyId,
+            const hand_semantic_contact_state::SemanticContactVector* contactPointGame,
+            const hand_semantic_contact_state::SemanticContactVector* contactNormalGame) noexcept;
+        [[nodiscard]] hand_semantic_contact_state::SemanticContactCollection collectFreshSurfaceContacts(
+            bool isLeft,
+            std::uint32_t maximumAgeFrames) const noexcept;
+
+        /*
+         * Fixed-surface ownership does not constrain or mutate the target.
+         * Instead the hand and all live dynamic twins retain their transforms
+         * relative to that target until TouchGrabRuntime ends the latch.
+         */
+        [[nodiscard]] bool beginSurfaceLatch(
+            bool isLeft,
+            std::uint32_t sourceBodyId,
+            std::uint32_t targetBodyId,
+            RE::hknpWorld* world);
+        void endSurfaceLatch(bool isLeft) noexcept;
+        [[nodiscard]] bool isSurfaceLatchActive(bool isLeft) const noexcept;
 
         /*
          * Debug-overlay accessor; main thread only (creation/retire happen on
@@ -155,6 +190,9 @@ namespace rock
             void* createdBhkWorld = nullptr;
             std::uint64_t createdGeometryGeneration = 0;
             bool created = false;
+            std::atomic<std::uint32_t> bodyIdAtomic{
+                hand_semantic_contact_state::kInvalidBodyId
+            };
             /*
              * Physics-thread-only handshake between the pre-collide drive and
              * the after-solve deviation sample of the same substep. Two targets
@@ -199,9 +237,26 @@ namespace rock
 
         struct HandSlots
         {
+            struct SurfaceLatch
+            {
+                bool active = false;
+                std::uint32_t targetBodyId =
+                    hand_semantic_contact_state::kInvalidBodyId;
+                RE::hknpBody* targetBodyIdentity = nullptr;
+                RE::NiCollisionObject* targetCollisionIdentity = nullptr;
+                RE::NiTransform handInTargetBody{};
+                RE::NiTransform lastHandWorld{};
+                std::array<RE::NiTransform, kBodiesPerHand> proxyInTargetBody{};
+                std::array<RE::NiTransform, kBodiesPerHand> lastProxyWorld{};
+                std::array<bool, kBodiesPerHand> proxyRelationshipValid{};
+            };
+
             std::array<ProxySlot, kBodiesPerHand> bodies{};
             RE::NiPoint3 appliedDeviation{};
             bool visualActive = false;
+            RE::NiTransform lastPresentedHandWorld{};
+            bool lastPresentedHandWorldValid = false;
+            SurfaceLatch surfaceLatch{};
             /*
              * Post-teleport visual recovery: while this window is open the
              * render-side filter uses a slow eased glide instead of the snappy
@@ -238,6 +293,7 @@ namespace rock
             float deltaSeconds);
 
         std::array<HandSlots, 2> _hands{};
+        dynamic_hand_surface_contact_state::State _surfaceContacts{};
         dynamic_hand_collision_telemetry::Snapshot _telemetrySnapshot{};
         dynamic_hand_collision_telemetry::HapticEvents _pendingHapticEvents{};
         std::uint64_t _telemetryUpdateSequence = 0;

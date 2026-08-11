@@ -355,6 +355,14 @@ Require-Text 'src/api/ROCKProviderApi.cpp' 'unregisterConsumer[\s\S]*s_touchGrab
     'Unregistering a consumer must revoke all of its touch-grab targets.'
 Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' 'if\s*\(match\.yieldRequested\)\s*\{\s*return false;' `
     'A target with pending native yield must reject every new hand acquisition.'
+Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' '\(contactSource\s*==\s*ContactSource::DynamicSurface\)\s*!=\s*fixedAnchor' `
+    'Only FixedAnchor targets may consume dynamic surface contact evidence.'
+Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' 'FixedAnchor[\s\S]{0,260}beginSurfaceLatch\(' `
+    'FixedAnchor acquisition must latch the dynamic hand runtime to the resolved target body.'
+Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' 'hand\.surfaceLatch[\s\S]{0,180}endSurfaceLatch\(' `
+    'Every fixed-surface hand release must clear dynamic hand latch ownership.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'collectFreshSurfaceContacts\([\s\S]*ContactSource::[\s\S]{0,80}DynamicSurface' `
+    'Grip-edge touch acquisition must consume the dedicated dynamic surface contact channel.'
 Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' 'if\s*\(active\.target\.kind\s*!=[\s\S]{0,180}FixedAnchor\)\s*\{\s*havok_runtime::activateBody' `
     'FixedAnchor ownership must not activate or otherwise drive the matched body.'
 Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' 'restoreTarget\s*&&\s*world\s*&&[\s\S]{0,180}active\.target\.kind\s*!=[\s\S]{0,180}FixedAnchor[\s\S]{0,500}SetLinearVelocity' `

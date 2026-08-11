@@ -614,6 +614,66 @@
         };
 
         /*
+         * Dynamic palm/fingertip twins remain outside the ordinary generated
+         * body registry. Publish only their world-surface pairs into the
+         * dedicated fixed-anchor channel before the normal prefilter discards
+         * them. Forearm twins are deliberately not grab triggers.
+         */
+        dynamic_hand_surface_contact_state::ContactSource dynamicHandSourceA{};
+        dynamic_hand_surface_contact_state::ContactSource dynamicHandSourceB{};
+        const bool bodyAIsDynamicHandSurfaceSource =
+            _dynamicHandCollision.tryClassifySurfaceContactSourceAtomic(
+                bodyIdA,
+                dynamicHandSourceA);
+        const bool bodyBIsDynamicHandSurfaceSource =
+            _dynamicHandCollision.tryClassifySurfaceContactSourceAtomic(
+                bodyIdB,
+                dynamicHandSourceB);
+        if (bodyAIsDynamicHandSurfaceSource !=
+            bodyBIsDynamicHandSurfaceSource) {
+            const auto& source = bodyAIsDynamicHandSurfaceSource ?
+                dynamicHandSourceA :
+                dynamicHandSourceB;
+            const std::uint32_t otherBodyId =
+                bodyAIsDynamicHandSurfaceSource ? bodyIdB : bodyIdA;
+            std::uint32_t otherFilterInfo = 0;
+            const bool otherLayerRead = havok_runtime::tryReadFilterInfo(
+                world,
+                RE::hknpBodyId{ otherBodyId },
+                otherFilterInfo);
+            const std::uint32_t otherLayer =
+                otherFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
+            if (otherLayerRead &&
+                collision_layer_policy::isDynamicHandProxySurfaceLayer(
+                    otherLayer)) {
+                hand_semantic_contact_state::SemanticContactVector pointGame{};
+                hand_semantic_contact_state::SemanticContactVector normalGame{};
+                const hand_semantic_contact_state::SemanticContactVector* point = nullptr;
+                const hand_semantic_contact_state::SemanticContactVector* normal = nullptr;
+                if (ensureRawContactPoint()) {
+                    const float scale = havokToGameScale();
+                    pointGame = {
+                        rawContactPoint.contactPointHavok[0] * scale,
+                        rawContactPoint.contactPointHavok[1] * scale,
+                        rawContactPoint.contactPointHavok[2] * scale
+                    };
+                    normalGame = {
+                        rawContactPoint.contactNormalHavok[0],
+                        rawContactPoint.contactNormalHavok[1],
+                        rawContactPoint.contactNormalHavok[2]
+                    };
+                    point = &pointGame;
+                    normal = &normalGame;
+                }
+                _dynamicHandCollision.recordSurfaceContactCallback(
+                    source,
+                    otherBodyId,
+                    point,
+                    normal);
+            }
+        }
+
+        /*
          * The dynamic weapon proxy is intentionally absent from the normal
          * generated-body contact registry: it is solver/visual feedback, not
          * hand, gameplay, or provider contact evidence. Capture only a real

@@ -21,12 +21,15 @@ namespace RE
 
 namespace rock
 {
+    class DynamicHandCollisionRuntime;
+
     /*
      * TouchGrabRuntime is intentionally separate from Hand's loose-object
      * state machine. Only provider-registered targets enter this path:
      * mechanisms receive one stock limited joint plus finite hand attachment,
-     * while FixedAnchor records touch ownership without changing the target.
-     * This keeps ordinary static/keyframed selection rejection unchanged.
+     * while FixedAnchor latches the rendered hand and dynamic hand twins
+     * relative to the touched target without changing that target. This keeps
+     * ordinary static/keyframed selection rejection unchanged.
      */
     class TouchGrabRuntime
     {
@@ -37,8 +40,19 @@ namespace rock
             Wildcard,
         };
 
+        enum class ContactSource : std::uint8_t
+        {
+            SemanticHand,
+            DynamicSurface,
+        };
+
         void setPhysicsCallbackGate(
             PhysicsCallbackQuiescenceGate* gate) noexcept;
+        void setDynamicHandCollisionRuntime(
+            DynamicHandCollisionRuntime* runtime) noexcept
+        {
+            _dynamicHandCollision = runtime;
+        }
 
         [[nodiscard]] bool isHandActive(bool isLeft) const noexcept;
 
@@ -51,7 +65,8 @@ namespace rock
             std::uint32_t skeletonGeneration,
             std::uint32_t providerGeneration,
             std::uint32_t collisionGeneration,
-            TargetClass targetClass);
+            TargetClass targetClass,
+            ContactSource contactSource);
 
         void service(
             RE::bhkWorld* bhkWorld,
@@ -94,6 +109,7 @@ namespace rock
             std::uint32_t constraintId = kInvalidId;
             bool hasContactPoint = false;
             bool hasContactNormal = false;
+            bool surfaceLatch = false;
             RE::NiPoint3 contactPointGame{};
             RE::NiPoint3 contactNormalGame{};
         };
@@ -137,7 +153,8 @@ namespace rock
             ActiveTarget& active,
             bool isLeft,
             const hand_semantic_contact_state::SemanticContactRecord& contact,
-            RE::hknpWorld* world);
+            RE::hknpWorld* world,
+            ContactSource contactSource);
         [[nodiscard]] bool createMechanism(
             ActiveTarget& active,
             RE::bhkWorld* bhkWorld,
@@ -165,6 +182,7 @@ namespace rock
 
         std::array<ActiveTarget, kMaximumActiveTargets> _targets{};
         PhysicsCallbackQuiescenceGate* _physicsCallbackGate = nullptr;
+        DynamicHandCollisionRuntime* _dynamicHandCollision = nullptr;
         RE::bhkWorld* _activeBhkWorld = nullptr;
         RE::hknpWorld* _activeHknpWorld = nullptr;
         std::uint32_t _worldGeneration = 0;

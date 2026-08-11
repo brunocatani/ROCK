@@ -827,6 +827,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKTouchGrabMathTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKTouchGrabMathTests)
 
+  add_executable(ROCKDynamicHandSurfaceContactStateTests
+    "${ROOT_DIR}/tests/DynamicHandSurfaceContactStateTests.cpp"
+  )
+  target_compile_features(ROCKDynamicHandSurfaceContactStateTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKDynamicHandSurfaceContactStateTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKDynamicHandSurfaceContactStateTests)
+
   add_executable(ROCKProviderLeasePolicyTests
     "${ROOT_DIR}/tests/ProviderLeasePolicyTests.cpp"
   )
@@ -871,6 +878,7 @@ if(BUILD_ROCK_TESTS)
     ROCKProviderExternalBodyRegistryTests
     ROCKProviderTouchGrabRegistryTests
     ROCKTouchGrabMathTests
+    ROCKDynamicHandSurfaceContactStateTests
     ROCKProviderLeasePolicyTests
     ROCKDebugOverlayShapeGeometryTests
     ROCKDebugOverlayShapePipelineTests

@@ -154,7 +154,7 @@ namespace rock::provider
      * loose-object grab. Limited mechanisms may name one live dynamic or
      * keyframed body. FixedAnchor may additionally match a bounded collision
      * layer/motion mask without changing that body's motion type; this is the
-     * observation/ownership primitive needed by future climbing consumers.
+     * hand-to-surface latch primitive used by climbing consumers.
      */
     enum class RockProviderTouchGrabKindV1 : std::uint32_t
     {
@@ -2639,8 +2639,12 @@ namespace rock::provider
      * the original motion class before publishing Latched/Yielded/Invalidated.
      *
      * FixedAnchor either names one body or uses MatchAnyBody plus a nonzero
-     * allowedLayerMask. It records hand/contact ownership only: ROCK never
-     * changes, activates, constrains, or writes velocity to the matched body.
+     * allowedLayerMask. A dynamic palm/fingertip touch plus grip locks the
+     * rendered hand and its dynamic proxy bodies relative to the matched body
+     * until grip release. ROCK never changes, activates, constrains, or writes
+     * velocity to the matched body. Held state reports the resolved bodyId,
+     * active hand mask, and contact point/normal when the manifold supplies
+     * them; referenceFormId/referenceNativeHandle remain provider-authored.
      * Exact body registrations are resolved before wildcard registrations.
      * One wildcard descriptor owns at most one resolved body concurrently;
      * publish disjoint right/left wildcard descriptors when a consumer needs
