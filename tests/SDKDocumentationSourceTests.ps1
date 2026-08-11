@@ -24,9 +24,73 @@ foreach ($requiredPath in @(
         (Join-Path $examplesRoot 'mods/HandStateMonitor.cpp'),
         (Join-Path $examplesRoot 'mods/WeaponInspector.cpp'),
         (Join-Path $examplesRoot 'mods/SurfaceClimber.cpp'),
-        (Join-Path $examplesRoot 'mods/ContactVisualizer.cpp'))) {
+        (Join-Path $examplesRoot 'mods/ContactVisualizer.cpp'),
+        (Join-Path $examplesRoot 'mods/CapabilityReporter.cpp'),
+        (Join-Path $examplesRoot 'mods/InputChordLease.cpp'),
+        (Join-Path $examplesRoot 'mods/WeaponCatalogDumper.cpp'),
+        (Join-Path $examplesRoot 'mods/MuzzleRayVisualizer.cpp'),
+        (Join-Path $examplesRoot 'mods/AnimationObserver.cpp'),
+        (Join-Path $examplesRoot 'mods/WeaponPartDriver.cpp'),
+        (Join-Path $examplesRoot 'mods/TouchMechanism.cpp'),
+        (Join-Path $examplesRoot 'mods/ColliderFocus.cpp'),
+        (Join-Path $examplesRoot 'mods/ExternalContactSensor.cpp'),
+        (Join-Path $examplesRoot 'mods/ForceGrabCommand.cpp'),
+        (Join-Path $examplesRoot 'mods/OffhandLease.cpp'),
+        (Join-Path $examplesRoot 'mods/EquippedHandPolicy.cpp'),
+        (Join-Path $examplesRoot 'mods/VisualHandOffset.cpp'))) {
     if (-not (Test-Path -LiteralPath $requiredPath)) {
         $failures.Add("Missing required SDK artifact: $requiredPath")
+    }
+}
+
+$exampleCmakePath = Join-Path $examplesRoot 'CMakeLists.txt'
+if (Test-Path -LiteralPath $exampleCmakePath) {
+    $exampleCmake = Get-Content -Raw -LiteralPath $exampleCmakePath
+    $exampleSources = Get-ChildItem -LiteralPath (Join-Path $examplesRoot 'mods') -File -Filter '*.cpp'
+    if ($exampleSources.Count -lt 17) {
+        $failures.Add("Expected at least 17 buildable example plugins; found $($exampleSources.Count)")
+    }
+    foreach ($exampleSource in $exampleSources) {
+        if ($exampleCmake -notmatch [regex]::Escape($exampleSource.Name)) {
+            $failures.Add("Example source is not wired into CMake: $($exampleSource.Name)")
+        }
+    }
+}
+
+$mutatingExamples = @{
+    'mods/WeaponPartDriver.cpp' = @(
+        'clearWeaponPartDriveTargetsV1',
+        'clearWeaponPartTargetsV1',
+        'kEnableDemoMotion = false')
+    'mods/TouchMechanism.cpp' = @(
+        'clearTouchGrabTargetsForScopeV1',
+        'kEnableMechanism = false')
+    'mods/ColliderFocus.cpp' = @(
+        'clearColliderVisualizationOverrideV1',
+        'kEnableFocus = false')
+    'mods/ExternalContactSensor.cpp' = @(
+        'clearExternalBodiesForScopeV1',
+        'kEnableSensor = false')
+    'mods/OffhandLease.cpp' = @(
+        'releaseOffhandReservationV1',
+        'kEnableReservation = false')
+    'mods/EquippedHandPolicy.cpp' = @(
+        'clearEquippedWeaponHandlingAuthorityV1',
+        'kEnableLeftHandPolicy = false')
+    'mods/VisualHandOffset.cpp' = @(
+        'clearHandVisualAuthorityV1',
+        'kEnableVisualOffset = false')
+}
+foreach ($entry in $mutatingExamples.GetEnumerator()) {
+    $path = Join-Path $examplesRoot $entry.Key
+    if (-not (Test-Path -LiteralPath $path)) {
+        continue
+    }
+    $text = Get-Content -Raw -LiteralPath $path
+    foreach ($requiredText in $entry.Value) {
+        if ($text -notmatch [regex]::Escape($requiredText)) {
+            $failures.Add("$($entry.Key) is missing safety contract '$requiredText'")
+        }
     }
 }
 

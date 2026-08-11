@@ -100,6 +100,45 @@ add_rock_sdk_example(
 add_rock_sdk_example(
   ROCKSDKContactVisualizer
   "${CMAKE_CURRENT_LIST_DIR}/mods/ContactVisualizer.cpp")
+add_rock_sdk_example(
+  ROCKSDKCapabilityReporter
+  "${CMAKE_CURRENT_LIST_DIR}/mods/CapabilityReporter.cpp")
+add_rock_sdk_example(
+  ROCKSDKInputChordLease
+  "${CMAKE_CURRENT_LIST_DIR}/mods/InputChordLease.cpp")
+add_rock_sdk_example(
+  ROCKSDKWeaponCatalogDumper
+  "${CMAKE_CURRENT_LIST_DIR}/mods/WeaponCatalogDumper.cpp")
+add_rock_sdk_example(
+  ROCKSDKMuzzleRayVisualizer
+  "${CMAKE_CURRENT_LIST_DIR}/mods/MuzzleRayVisualizer.cpp")
+add_rock_sdk_example(
+  ROCKSDKAnimationObserver
+  "${CMAKE_CURRENT_LIST_DIR}/mods/AnimationObserver.cpp")
+add_rock_sdk_example(
+  ROCKSDKWeaponPartDriver
+  "${CMAKE_CURRENT_LIST_DIR}/mods/WeaponPartDriver.cpp")
+add_rock_sdk_example(
+  ROCKSDKTouchMechanism
+  "${CMAKE_CURRENT_LIST_DIR}/mods/TouchMechanism.cpp")
+add_rock_sdk_example(
+  ROCKSDKColliderFocus
+  "${CMAKE_CURRENT_LIST_DIR}/mods/ColliderFocus.cpp")
+add_rock_sdk_example(
+  ROCKSDKExternalContactSensor
+  "${CMAKE_CURRENT_LIST_DIR}/mods/ExternalContactSensor.cpp")
+add_rock_sdk_example(
+  ROCKSDKForceGrabCommand
+  "${CMAKE_CURRENT_LIST_DIR}/mods/ForceGrabCommand.cpp")
+add_rock_sdk_example(
+  ROCKSDKOffhandLease
+  "${CMAKE_CURRENT_LIST_DIR}/mods/OffhandLease.cpp")
+add_rock_sdk_example(
+  ROCKSDKEquippedHandPolicy
+  "${CMAKE_CURRENT_LIST_DIR}/mods/EquippedHandPolicy.cpp")
+add_rock_sdk_example(
+  ROCKSDKVisualHandOffset
+  "${CMAKE_CURRENT_LIST_DIR}/mods/VisualHandOffset.cpp")
 
 add_custom_target(ROCKSDKExamplePlugins)
 add_dependencies(ROCKSDKExamplePlugins
@@ -107,4 +146,17 @@ add_dependencies(ROCKSDKExamplePlugins
   ROCKSDKWeaponInspector
   ROCKSDKSurfaceClimber
   ROCKSDKContactVisualizer
+  ROCKSDKCapabilityReporter
+  ROCKSDKInputChordLease
+  ROCKSDKWeaponCatalogDumper
+  ROCKSDKMuzzleRayVisualizer
+  ROCKSDKAnimationObserver
+  ROCKSDKWeaponPartDriver
+  ROCKSDKTouchMechanism
+  ROCKSDKColliderFocus
+  ROCKSDKExternalContactSensor
+  ROCKSDKForceGrabCommand
+  ROCKSDKOffhandLease
+  ROCKSDKEquippedHandPolicy
+  ROCKSDKVisualHandOffset
 )

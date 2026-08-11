@@ -68,6 +68,55 @@ Use two `FixedAnchor` wildcard descriptors, one with `AllowRightHand` and one wi
 
 Avoid one `AllowTwoHands` wildcard when each hand must be able to resolve a different surface: one wildcard descriptor owns at most one resolved body.
 
+## Drive one gripped weapon part
+
+Publish a non-exclusive target once for the current weapon generation so the
+selected part gains `AttachOnly` grip behavior without disabling ordinary grip
+behavior on every unmatched part:
+
+```cpp
+RockProviderWeaponPartTargetV1 target{};
+target.flags =
+    static_cast<std::uint32_t>(
+        RockProviderWeaponPartTargetFlagV1::MatchBodyId) |
+    static_cast<std::uint32_t>(
+        RockProviderWeaponPartTargetFlagV1::NonExclusive);
+target.grabMode = RockProviderWeaponPartGrabModeV1::AttachOnly;
+target.weaponGenerationKey = snapshot.weaponGenerationKey;
+target.bodyId = selectedPose.bodyId;
+target.groupId = 1;
+target.priority = 100;
+
+(void)RockProviderApi::inst->setWeaponPartTargetsV1(
+    ownerToken, &target, 1);
+```
+
+While the matching `getWeaponPartGripStateV1` report is active, refresh a
+short drive lease from your bounded motion solver:
+
+```cpp
+RockProviderWeaponPartDriveTargetV1 drive{};
+drive.flags = static_cast<std::uint32_t>(
+    RockProviderWeaponPartTargetFlagV1::MatchBodyId);
+drive.driveSpace = RockProviderWeaponPartDriveSpaceV1::WeaponRootLocal;
+drive.weaponGenerationKey = snapshot.weaponGenerationKey;
+drive.bodyId = selectedPose.bodyId;
+drive.groupId = 1;
+drive.priority = 100;
+drive.leaseFrames = 2;
+drive.targetTransform = solvedWeaponRootLocalPose;
+
+(void)RockProviderApi::inst->setWeaponPartDriveTargetsV1(
+    ownerToken, &drive, 1);
+```
+
+Read `copyWeaponPartDriveApplicationResultsV1` inside the owner callback when
+you need to distinguish applied, rejected, or superseded drives. Stop refreshing
+and call `clearWeaponPartDriveTargetsV1` as soon as the grip, weapon generation,
+motion path, or activation policy is no longer current. Clear the retained part
+targets before shutdown. The complete buildable pattern is
+`examples/mods/WeaponPartDriver.cpp`.
+
 ## Run a bounded world raycast
 
 ```cpp
