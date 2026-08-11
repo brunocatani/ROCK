@@ -1,3 +1,4 @@
+#include "physics-interaction/grab/GlobalSurfaceGrabPolicy.h"
 #include "physics-interaction/hand/DynamicHandSurfaceContactState.h"
 
 #include <limits>
@@ -76,5 +77,63 @@ int main()
     assert(!state.record(invalid, 503, &point, &normal));
     assert(!state.record(palm, hand_semantic_contact_state::kInvalidBodyId, &point, &normal));
     assert(!state.record(palm, palm.bodyId, &point, &normal));
+
+    using namespace rock::collision_layer_policy;
+    using namespace rock::global_surface_grab_policy;
+    assert(shouldUseFallback(
+        true,
+        false,
+        true,
+        true,
+        FO4_LAYER_STATIC));
+    assert(shouldUseFallback(
+        true,
+        false,
+        true,
+        true,
+        FO4_LAYER_ANIMSTATIC));
+    assert(shouldUseFallback(
+        true,
+        false,
+        true,
+        true,
+        FO4_LAYER_TREES));
+    assert(!shouldUseFallback(
+        false,
+        false,
+        true,
+        true,
+        FO4_LAYER_STATIC));
+    assert(!shouldUseFallback(
+        true,
+        true,
+        true,
+        true,
+        FO4_LAYER_STATIC));
+    assert(!shouldUseFallback(
+        true,
+        false,
+        false,
+        true,
+        FO4_LAYER_STATIC));
+    assert(!shouldUseFallback(
+        true,
+        false,
+        true,
+        false,
+        FO4_LAYER_STATIC));
+    assert(!shouldUseFallback(
+        true,
+        false,
+        true,
+        true,
+        FO4_LAYER_CLUTTER));
+    assert(maskEnablesLayer(allowedLayerMask(), FO4_LAYER_STATIC));
+    assert(maskEnablesLayer(allowedLayerMask(), FO4_LAYER_TERRAIN));
+    assert(maskEnablesLayer(
+        allowedLayerMask(),
+        ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER));
+    assert(!maskEnablesLayer(allowedLayerMask(), FO4_LAYER_CLUTTER));
+    assert(targetIdForHand(false) != targetIdForHand(true));
     return 0;
 }

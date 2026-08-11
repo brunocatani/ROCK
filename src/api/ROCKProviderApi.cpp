@@ -4978,6 +4978,8 @@ namespace
         const RockProviderHandInteractionStateV1& right) noexcept
     {
         return left.targetKind == right.targetKind &&
+               left.reservedTargetIdentity ==
+                   right.reservedTargetIdentity &&
                left.targetFormId == right.targetFormId &&
                left.primaryBodyId == right.primaryBodyId &&
                sameHeldBodies(left, right);
@@ -5011,7 +5013,13 @@ namespace
             static_cast<std::uint32_t>(
                 RockProviderHandInteractionFlagV1::LooseObject) |
             static_cast<std::uint32_t>(
-                RockProviderHandInteractionFlagV1::LooseWeapon);
+                RockProviderHandInteractionFlagV1::LooseWeapon) |
+            static_cast<std::uint32_t>(
+                RockProviderHandInteractionFlagV1::TouchGrab) |
+            static_cast<std::uint32_t>(
+                RockProviderHandInteractionFlagV1::FixedSurfaceLatch) |
+            static_cast<std::uint32_t>(
+                RockProviderHandInteractionFlagV1::GlobalSurfaceLatch);
         return handGripActive(left) == handGripActive(right) &&
                (left.flags & gripFlags) == (right.flags & gripFlags) &&
                sameHandTarget(left, right);
@@ -5389,8 +5397,22 @@ namespace rock::provider
                     currentHand.phase =
                         RockProviderHandInteractionPhaseV1::Releasing;
                     currentHand.targetKind = previousHand.targetKind;
+                    currentHand.reservedTargetIdentity =
+                        previousHand.reservedTargetIdentity;
                     currentHand.targetFormId = previousHand.targetFormId;
                     currentHand.primaryBodyId = previousHand.primaryBodyId;
+                    constexpr std::uint32_t touchGrabClassificationFlags =
+                        static_cast<std::uint32_t>(
+                            RockProviderHandInteractionFlagV1::TouchGrab) |
+                        static_cast<std::uint32_t>(
+                            RockProviderHandInteractionFlagV1::
+                                FixedSurfaceLatch) |
+                        static_cast<std::uint32_t>(
+                            RockProviderHandInteractionFlagV1::
+                                GlobalSurfaceLatch);
+                    currentHand.flags |=
+                        previousHand.flags &
+                        touchGrabClassificationFlags;
                     currentHand.heldBodyCount = previousHand.heldBodyCount;
                     std::copy(
                         std::begin(previousHand.heldBodyIds),

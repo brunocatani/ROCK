@@ -1,6 +1,7 @@
 #include "physics-interaction/grab/TouchGrabRuntime.h"
 
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/grab/GlobalSurfaceGrabPolicy.h"
 #include "physics-interaction/grab/GrabAuthorityProxy.h"
 #include "physics-interaction/grab/TouchGrabMath.h"
 #include "physics-interaction/hand/DynamicHandCollision.h"
@@ -89,6 +90,38 @@ namespace rock
             default:
                 return provider::TouchGrabMotionClassV1::Other;
             }
+        }
+
+        [[nodiscard]] provider::RockProviderTouchGrabTargetV1
+        makeGlobalSurfaceTarget(
+            const bool isLeft,
+            const std::uint32_t worldGeneration,
+            const std::uint32_t skeletonGeneration,
+            const std::uint32_t providerGeneration)
+        {
+            using Flag = provider::RockProviderTouchGrabTargetFlagV1;
+            provider::RockProviderTouchGrabTargetV1 target{};
+            target.targetId =
+                global_surface_grab_policy::targetIdForHand(isLeft);
+            target.targetGeneration =
+                global_surface_grab_policy::kTargetGeneration;
+            target.kind =
+                provider::RockProviderTouchGrabKindV1::FixedAnchor;
+            target.flags =
+                static_cast<std::uint32_t>(Flag::AllowRightHand) |
+                static_cast<std::uint32_t>(Flag::AllowLeftHand) |
+                static_cast<std::uint32_t>(Flag::AllowTwoHands) |
+                static_cast<std::uint32_t>(Flag::MatchAnyBody) |
+                static_cast<std::uint32_t>(Flag::MatchStaticMotion) |
+                static_cast<std::uint32_t>(Flag::MatchKeyframedMotion) |
+                static_cast<std::uint32_t>(Flag::MatchDynamicMotion);
+            target.allowedLayerMask =
+                global_surface_grab_policy::allowedLayerMask();
+            target.leaseFrames = 1;
+            target.worldGeneration = worldGeneration;
+            target.skeletonGeneration = skeletonGeneration;
+            target.providerGeneration = providerGeneration;
+            return target;
         }
 
         [[nodiscard]] bool sameRuntimeContract(
@@ -370,6 +403,25 @@ namespace rock
         return findTargetForHand(isLeft) != nullptr;
     }
 
+    bool TouchGrabRuntime::getHandReport(
+        const bool isLeft,
+        HandReport& outReport) const noexcept
+    {
+        outReport = {};
+        const auto* active = findTargetForHand(isLeft);
+        if (!active) {
+            return false;
+        }
+        outReport.globalSurface = active->globalSurface;
+        outReport.kind = active->target.kind;
+        outReport.bodyId = active->bodyId;
+        outReport.referenceFormId =
+            active->target.referenceFormId;
+        outReport.referenceNativeHandle =
+            active->target.referenceNativeHandle;
+        return true;
+    }
+
     TouchGrabRuntime::ActiveTarget* TouchGrabRuntime::findTarget(
         const std::uint64_t ownerToken,
         const std::uint64_t scopeToken,
@@ -426,6 +478,7 @@ namespace rock
         ActiveTarget& active) noexcept
     {
         active.active = false;
+        active.globalSurface = false;
         active.ownerToken = 0;
         active.scopeToken = 0;
         active.target = {};
@@ -493,7 +546,8 @@ namespace rock
             provider::RockProviderHand::Right;
         const std::uint32_t layer =
             snapshot.collisionFilterInfo & 0x7Fu;
-        if (!provider::resolveTouchGrabTargetV1(
+        const bool providerMatched =
+            provider::resolveTouchGrabTargetV1(
                 bodyId.value,
                 layer,
                 eligibilityMotionClass,
@@ -501,8 +555,32 @@ namespace rock
                 worldGeneration,
                 skeletonGeneration,
                 providerGeneration,
-                match)) {
-            return false;
+                match);
+        if (!providerMatched) {
+            if (!global_surface_grab_policy::shouldUseFallback(
+                    _globalSurfaceGrabEnabled,
+                    providerMatched,
+                    targetClass == TargetClass::Wildcard,
+                    contactSource == ContactSource::DynamicSurface,
+                    layer)) {
+                return false;
+            }
+            match.matched = true;
+            match.wildcard = true;
+            match.ownerToken =
+                global_surface_grab_policy::kOwnerToken;
+            match.scopeToken =
+                global_surface_grab_policy::kScopeToken;
+            match.target = makeGlobalSurfaceTarget(
+                isLeft,
+                worldGeneration,
+                skeletonGeneration,
+                providerGeneration);
+            if (targetOnBody && targetOnBody->globalSurface) {
+                match.ownerToken = targetOnBody->ownerToken;
+                match.scopeToken = targetOnBody->scopeToken;
+                match.target = targetOnBody->target;
+            }
         }
         if (match.yieldRequested) {
             return false;
@@ -580,6 +658,7 @@ namespace rock
         }
         resetTarget(*active);
         active->active = true;
+        active->globalSurface = !providerMatched;
         active->ownerToken = match.ownerToken;
         active->scopeToken = match.scopeToken;
         active->target = match.target;
@@ -942,58 +1021,75 @@ namespace rock
             if (!active.active) {
                 continue;
             }
-            provider::TouchGrabTargetMatchV1 current{};
-            if (!provider::currentTouchGrabTargetV1(
-                    active.ownerToken,
-                    active.scopeToken,
-                    active.target.targetId,
-                    active.target.targetGeneration,
-                    worldGeneration,
-                    skeletonGeneration,
-                    providerGeneration,
-                    current)) {
-                auto structuralMutation = _physicsCallbackGate ?
-                    _physicsCallbackGate->pauseForMutation() :
-                    PhysicsCallbackQuiescenceGate::MutationLease{};
-                releaseTarget(
-                    active,
-                    bhkWorld,
-                    hknpWorld,
-                    provider::RockProviderTouchGrabReleaseReasonV1::
-                        TargetRemoved,
-                    collisionGeneration,
-                    true);
-                continue;
-            }
-            if (current.yieldRequested) {
-                auto structuralMutation = _physicsCallbackGate ?
-                    _physicsCallbackGate->pauseForMutation() :
-                    PhysicsCallbackQuiescenceGate::MutationLease{};
-                releaseTarget(
-                    active,
-                    bhkWorld,
-                    hknpWorld,
-                    provider::RockProviderTouchGrabReleaseReasonV1::
-                        OwnerYield,
-                    collisionGeneration,
-                    true);
-                continue;
-            }
-            if (!sameRuntimeContract(
-                    active.target,
-                    current.target)) {
-                auto structuralMutation = _physicsCallbackGate ?
-                    _physicsCallbackGate->pauseForMutation() :
-                    PhysicsCallbackQuiescenceGate::MutationLease{};
-                releaseTarget(
-                    active,
-                    bhkWorld,
-                    hknpWorld,
-                    provider::RockProviderTouchGrabReleaseReasonV1::
-                        TargetInvalid,
-                    collisionGeneration,
-                    true);
-                continue;
+            if (active.globalSurface) {
+                if (!_globalSurfaceGrabEnabled) {
+                    auto structuralMutation = _physicsCallbackGate ?
+                        _physicsCallbackGate->pauseForMutation() :
+                        PhysicsCallbackQuiescenceGate::MutationLease{};
+                    releaseTarget(
+                        active,
+                        bhkWorld,
+                        hknpWorld,
+                        provider::RockProviderTouchGrabReleaseReasonV1::
+                            TargetRemoved,
+                        collisionGeneration,
+                        true);
+                    continue;
+                }
+            } else {
+                provider::TouchGrabTargetMatchV1 current{};
+                if (!provider::currentTouchGrabTargetV1(
+                        active.ownerToken,
+                        active.scopeToken,
+                        active.target.targetId,
+                        active.target.targetGeneration,
+                        worldGeneration,
+                        skeletonGeneration,
+                        providerGeneration,
+                        current)) {
+                    auto structuralMutation = _physicsCallbackGate ?
+                        _physicsCallbackGate->pauseForMutation() :
+                        PhysicsCallbackQuiescenceGate::MutationLease{};
+                    releaseTarget(
+                        active,
+                        bhkWorld,
+                        hknpWorld,
+                        provider::RockProviderTouchGrabReleaseReasonV1::
+                            TargetRemoved,
+                        collisionGeneration,
+                        true);
+                    continue;
+                }
+                if (current.yieldRequested) {
+                    auto structuralMutation = _physicsCallbackGate ?
+                        _physicsCallbackGate->pauseForMutation() :
+                        PhysicsCallbackQuiescenceGate::MutationLease{};
+                    releaseTarget(
+                        active,
+                        bhkWorld,
+                        hknpWorld,
+                        provider::RockProviderTouchGrabReleaseReasonV1::
+                            OwnerYield,
+                        collisionGeneration,
+                        true);
+                    continue;
+                }
+                if (!sameRuntimeContract(
+                        active.target,
+                        current.target)) {
+                    auto structuralMutation = _physicsCallbackGate ?
+                        _physicsCallbackGate->pauseForMutation() :
+                        PhysicsCallbackQuiescenceGate::MutationLease{};
+                    releaseTarget(
+                        active,
+                        bhkWorld,
+                        hknpWorld,
+                        provider::RockProviderTouchGrabReleaseReasonV1::
+                            TargetInvalid,
+                        collisionGeneration,
+                        true);
+                    continue;
+                }
             }
 
             const auto bodySnapshot = havok_runtime::snapshotBody(
@@ -1218,10 +1314,12 @@ namespace rock
             }
             break;
         }
-        provider::publishTouchGrabStateV1(
-            active.ownerToken,
-            active.scopeToken,
-            state);
+        if (!active.globalSurface) {
+            provider::publishTouchGrabStateV1(
+                active.ownerToken,
+                active.scopeToken,
+                state);
+        }
     }
 
     void TouchGrabRuntime::releaseHand(
@@ -1397,7 +1495,8 @@ namespace rock
 
         provider::RockProviderTouchGrabPhaseV1 phase =
             provider::RockProviderTouchGrabPhaseV1::Invalidated;
-        if (reason ==
+        if (!active.globalSurface &&
+            reason ==
             provider::RockProviderTouchGrabReleaseReasonV1::
                 OwnerYield) {
             phase =
@@ -1424,7 +1523,8 @@ namespace rock
             reason,
             0.0f,
             collisionGeneration);
-        if (reason ==
+        if (!active.globalSurface &&
+            reason ==
             provider::RockProviderTouchGrabReleaseReasonV1::
                 OwnerYield) {
             provider::acknowledgeTouchGrabYieldV1(

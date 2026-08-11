@@ -3876,6 +3876,17 @@ namespace rock
             if (!pulse.fire) {
                 continue;
             }
+            TouchGrabRuntime::HandReport touchGrabReport{};
+            const bool surfaceGrabOwnsFeedback =
+                g_rockConfig.rockSurfaceGrabHapticsEnabled &&
+                _touchGrabRuntime.getHandReport(
+                    pulse.isLeft,
+                    touchGrabReport) &&
+                touchGrabReport.kind ==
+                    provider::RockProviderTouchGrabKindV1::FixedAnchor;
+            if (surfaceGrabOwnsFeedback) {
+                continue;
+            }
             (void)_feedbackHaptics.queue(
                 pulse.isLeft ? feedback_haptics::FeedbackHand::Left : feedback_haptics::FeedbackHand::Right,
                 g_rockConfig.rockHandCollisionDynamicHapticDurationSeconds,
@@ -9420,6 +9431,8 @@ namespace rock
         const auto collisionGeneration =
             _collisionGenerationAtomic.load(
                 std::memory_order_acquire);
+        _touchGrabRuntime.setGlobalSurfaceGrabEnabled(
+            g_rockConfig.rockGlobalSurfaceGrabEnabled);
         _touchGrabRuntime.service(
             frame.bhkWorld,
             frame.hknpWorld,
@@ -9807,6 +9820,23 @@ namespace rock
                         TouchGrabRuntime::TargetClass::
                             Wildcard);
                 if (touchGrabAcquired) {
+                    TouchGrabRuntime::HandReport touchGrabReport{};
+                    if (g_rockConfig.rockSurfaceGrabHapticsEnabled &&
+                        _touchGrabRuntime.getHandReport(
+                            isLeft,
+                            touchGrabReport) &&
+                        touchGrabReport.kind ==
+                            provider::RockProviderTouchGrabKindV1::
+                                FixedAnchor) {
+                        (void)_feedbackHaptics.queue(
+                            isLeft ?
+                                feedback_haptics::FeedbackHand::Left :
+                                feedback_haptics::FeedbackHand::Right,
+                            g_rockConfig.
+                                rockSurfaceGrabHapticDurationSeconds,
+                            g_rockConfig.
+                                rockSurfaceGrabHapticIntensity);
+                    }
                     if (hand.hasSelection()) {
                         hand.clearSelectionState(false);
                     }

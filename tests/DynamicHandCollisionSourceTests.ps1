@@ -427,6 +427,57 @@ Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
     'kSurfaceLatchVisualPriority[\s\S]*applyExternalHandWorldTransform\(' `
     'Surface latches must hold the rendered hand through the existing FRIK visual authority bridge.'
 
+# The opt-in API remains authoritative, while the shipped INI enables a
+# built-in world-surface fallback for direct play and testing.
+foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
+    Require-Text $configPath `
+        'bGlobalSurfaceGrabEnabled\s*=\s*true' `
+        "$configPath must globally enable fixed-surface grabs."
+}
+Require-Text 'src/RockConfig.h' `
+    'rockGlobalSurfaceGrabEnabled\s*=\s*true' `
+    'The compiled global surface-grab default must remain enabled when an older INI lacks the key.'
+Require-Text 'src/RockConfig.cpp' `
+    'GetBoolValue\(SECTION,\s*"bGlobalSurfaceGrabEnabled",\s*rockGlobalSurfaceGrabEnabled\)' `
+    'The global surface-grab switch must load through the normal ROCK INI path.'
+Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @(
+    'setGlobalSurfaceGrabEnabled\(',
+    '_touchGrabRuntime\.service\('
+) 'INI surface-grab state must update before active latch validation and acquisition.'
+Require-Text 'src/physics-interaction/grab/GlobalSurfaceGrabPolicy.h' `
+    'enabled\s*&&[\s\S]*!providerMatched[\s\S]*wildcardPass[\s\S]*dynamicSurfaceContact[\s\S]*isDynamicHandProxySurfaceLayer' `
+    'The global path must be a dynamic-surface wildcard fallback that never overrides a provider match.'
+Require-OrderedText 'src/physics-interaction/grab/TouchGrabRuntime.cpp' @(
+    'resolveTouchGrabTargetV1\(',
+    'if \(!providerMatched\)',
+    'shouldUseFallback\(',
+    'makeGlobalSurfaceTarget\('
+) 'Provider-authored touch targets must resolve before global fallback synthesis.'
+Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' `
+    'active\.globalSurface[\s\S]*_globalSurfaceGrabEnabled[\s\S]*releaseTarget\(' `
+    'Disabling the INI setting must retire active global latches through normal cleanup.'
+
+# A successful fixed-surface latch owns the feedback for that hand. Its
+# one-shot confirmation is intentionally stronger and longer than the dynamic
+# touch pulse, and both values remain user-tunable.
+foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
+    Require-Text $configPath `
+        'bSurfaceGrabHapticsEnabled\s*=\s*true[\s\S]*fSurfaceGrabHapticDurationSeconds\s*=\s*0\.075[\s\S]*fSurfaceGrabHapticIntensity\s*=\s*0\.85' `
+        "$configPath must ship the distinct surface-latch confirmation pulse."
+}
+Require-Text 'src/RockConfig.h' `
+    'rockSurfaceGrabHapticsEnabled\s*=\s*true[\s\S]{0,180}rockSurfaceGrabHapticDurationSeconds\s*=\s*0\.075f[\s\S]{0,180}rockSurfaceGrabHapticIntensity\s*=\s*0\.85f' `
+    'The compiled surface-latch pulse must remain stronger and longer than the touch maximum.'
+Require-Text 'src/RockConfig.cpp' `
+    'bSurfaceGrabHapticsEnabled[\s\S]{0,500}fSurfaceGrabHapticDurationSeconds[\s\S]{0,500}fSurfaceGrabHapticIntensity' `
+    'Surface-latch haptic controls must load through the normal ROCK INI path.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'if \(touchGrabAcquired\)[\s\S]{0,900}getHandReport\([\s\S]{0,240}FixedAnchor[\s\S]{0,400}_feedbackHaptics\.queue\(' `
+    'Fixed-surface acquisition must queue its confirmation only after the latch succeeds.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'dynamicHandHapticEvents[\s\S]{0,700}surfaceGrabOwnsFeedback[\s\S]{0,400}FixedAnchor[\s\S]{0,300}continue;[\s\S]{0,200}_feedbackHaptics\.queue\(' `
+    'An active fixed-surface latch must suppress the lower-strength touch pulse before mixer delivery.'
+
 if ($failures.Count -gt 0) {
     Write-Host 'Dynamic hand collision source boundary failed:'
     foreach ($failure in $failures) {

@@ -25,8 +25,9 @@ namespace rock
 
     /*
      * TouchGrabRuntime is intentionally separate from Hand's loose-object
-     * state machine. Only provider-registered targets enter this path:
-     * mechanisms receive one stock limited joint plus finite hand attachment,
+     * state machine. Provider targets retain first authority; the optional
+     * built-in surface policy supplies only a FixedAnchor wildcard fallback.
+     * Mechanisms receive one stock limited joint plus finite hand attachment,
      * while FixedAnchor latches the rendered hand and dynamic hand twins
      * relative to the touched target without changing that target. This keeps
      * ordinary static/keyframed selection rejection unchanged.
@@ -46,6 +47,17 @@ namespace rock
             DynamicSurface,
         };
 
+        struct HandReport
+        {
+            bool globalSurface = false;
+            provider::RockProviderTouchGrabKindV1 kind{
+                provider::RockProviderTouchGrabKindV1::FixedAnchor
+            };
+            std::uint32_t bodyId = 0x7FFF'FFFFu;
+            std::uint32_t referenceFormId = 0;
+            std::uint32_t referenceNativeHandle = 0;
+        };
+
         void setPhysicsCallbackGate(
             PhysicsCallbackQuiescenceGate* gate) noexcept;
         void setDynamicHandCollisionRuntime(
@@ -53,8 +65,15 @@ namespace rock
         {
             _dynamicHandCollision = runtime;
         }
+        void setGlobalSurfaceGrabEnabled(const bool enabled) noexcept
+        {
+            _globalSurfaceGrabEnabled = enabled;
+        }
 
         [[nodiscard]] bool isHandActive(bool isLeft) const noexcept;
+        [[nodiscard]] bool getHandReport(
+            bool isLeft,
+            HandReport& outReport) const noexcept;
 
         [[nodiscard]] bool tryAcquire(
             bool isLeft,
@@ -117,6 +136,7 @@ namespace rock
         struct ActiveTarget
         {
             bool active = false;
+            bool globalSurface = false;
             std::uint64_t ownerToken = 0;
             std::uint64_t scopeToken = 0;
             provider::RockProviderTouchGrabTargetV1 target{};
@@ -183,6 +203,7 @@ namespace rock
         std::array<ActiveTarget, kMaximumActiveTargets> _targets{};
         PhysicsCallbackQuiescenceGate* _physicsCallbackGate = nullptr;
         DynamicHandCollisionRuntime* _dynamicHandCollision = nullptr;
+        bool _globalSurfaceGrabEnabled = false;
         RE::bhkWorld* _activeBhkWorld = nullptr;
         RE::hknpWorld* _activeHknpWorld = nullptr;
         std::uint32_t _worldGeneration = 0;

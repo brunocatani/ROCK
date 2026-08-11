@@ -894,6 +894,9 @@ namespace rock::provider
         CollisionAvailable = 1u << 9,
         TransitionSuppressed = 1u << 10,
         HeldBodyListTruncated = 1u << 11,
+        TouchGrab = 1u << 12,
+        FixedSurfaceLatch = 1u << 13,
+        GlobalSurfaceLatch = 1u << 14,
     };
 
     enum class RockProviderEventKindV1 : std::uint32_t
@@ -2241,8 +2244,10 @@ namespace rock::provider
         RockProviderHandInteractionPhaseV1 phase{ RockProviderHandInteractionPhaseV1::Idle };
         RockProviderBodyContactTargetKind targetKind{ RockProviderBodyContactTargetKind::Unknown };
         std::uint32_t flags{ 0 };
+        // TouchGrab states zero-extend referenceNativeHandle here; zero means unavailable.
         std::uint64_t reservedTargetIdentity{ 0 };
         std::uint32_t targetFormId{ 0 };
+        // For TouchGrab, always identifies the target, including global world surfaces.
         std::uint32_t primaryBodyId{ 0x7FFF'FFFF };
         std::uint32_t heldBodyCount{ 0 };
         std::uint32_t heldBodyIds[ROCK_PROVIDER_MAX_HAND_HELD_BODIES_V1]{};

@@ -367,6 +367,14 @@ Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' 'if\s*\(active\
     'FixedAnchor ownership must not activate or otherwise drive the matched body.'
 Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' 'restoreTarget\s*&&\s*world\s*&&[\s\S]{0,180}active\.target\.kind\s*!=[\s\S]{0,180}FixedAnchor[\s\S]{0,500}SetLinearVelocity' `
     'FixedAnchor release must not write velocity or motion state to the matched body.'
+Require-Text 'src/api/ROCKProviderApi.h' 'TouchGrab\s*=\s*1u\s*<<\s*12[\s\S]*FixedSurfaceLatch\s*=\s*1u\s*<<\s*13[\s\S]*GlobalSurfaceLatch\s*=\s*1u\s*<<\s*14' `
+    'Hand-interaction state must distinguish touch grabs, fixed surface latches, and the INI global mode.'
+Require-Text 'src/physics-interaction/core/PhysicsInteractionProvider.inl' '_touchGrabRuntime\.getHandReport\([\s\S]*Phase::Holding[\s\S]*reservedTargetIdentity[\s\S]*referenceNativeHandle[\s\S]*targetFormId[\s\S]*primaryBodyId[\s\S]*TargetKind::WorldSurface[\s\S]*Flag::TouchGrab[\s\S]*Flag::FixedSurfaceLatch[\s\S]*Flag::GlobalSurfaceLatch' `
+    'The public hand state must identify every active surface latch and its resolved target body.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'sameHandTarget[\s\S]{0,500}reservedTargetIdentity[\s\S]{0,300}primaryBodyId' `
+    'Touch-grab native identity and body changes must advance the public target sequence.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'Releasing[\s\S]{0,1500}touchGrabClassificationFlags[\s\S]{0,700}previousHand\.flags' `
+    'The one-frame release state must retain touch-grab and global-surface classification.'
 Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' 'originalMotionClass\s*==[\s\S]{0,180}Keyframed[\s\S]{0,180}SetMotionType\([\s\S]{0,120}DYNAMIC' `
     'A keyframed mechanism must enter dynamic motion only inside the dedicated mechanism path.'
 Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' 'originalMotionClass\s*==[\s\S]{0,180}Keyframed[\s\S]{0,180}SetMotionType\([\s\S]{0,120}KEYFRAMED' `

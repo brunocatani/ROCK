@@ -382,6 +382,7 @@ namespace rock
         rockBodyBoneColliderZoneScaleOverrides = "";
         rockBodyBoneColliderRadiusScaleOverrides = "";
         rockHandCollisionStaticWorldEnabled = true;
+        rockGlobalSurfaceGrabEnabled = true;
         rockHandBoneColliderRadiusScaleOverrides = "";
         rockHandPalmColliderDimensionScaleOverrides = "";
         rockHandBoneCollidersRequirePalmAnchor = true;
@@ -639,6 +640,9 @@ namespace rock
         rockSelectionLockHapticIntensity = 0.15f;
         rockSelectionLockReleaseHapticIntensity = 0.10f;
         rockSelectionLockReleaseHapticDurationSeconds = 0.02f;
+        rockSurfaceGrabHapticsEnabled = true;
+        rockSurfaceGrabHapticDurationSeconds = 0.075f;
+        rockSurfaceGrabHapticIntensity = 0.85f;
         rockHeldImpactHapticsEnabled = true;
         rockHeldImpactHapticDurationSeconds = 0.035f;
         rockHeldImpactHapticBaseIntensity = 0.12f;
@@ -1552,6 +1556,7 @@ namespace rock
         rockBodyBoneColliderZoneScaleOverrides = ini.GetValue(SECTION, "sBodyBoneColliderZoneScaleOverrides", rockBodyBoneColliderZoneScaleOverrides.c_str());
         rockBodyBoneColliderRadiusScaleOverrides = ini.GetValue(SECTION, "sBodyBoneColliderRadiusScaleOverrides", rockBodyBoneColliderRadiusScaleOverrides.c_str());
         rockHandCollisionStaticWorldEnabled = ini.GetBoolValue(SECTION, "bHandCollisionStaticWorldEnabled", rockHandCollisionStaticWorldEnabled);
+        rockGlobalSurfaceGrabEnabled = ini.GetBoolValue(SECTION, "bGlobalSurfaceGrabEnabled", rockGlobalSurfaceGrabEnabled);
         rockHandBoneColliderRadiusScaleOverrides = ini.GetValue(SECTION, "sHandBoneColliderRadiusScaleOverrides", rockHandBoneColliderRadiusScaleOverrides.c_str());
         rockHandPalmColliderDimensionScaleOverrides =
             ini.GetValue(SECTION, "sHandPalmColliderDimensionScaleOverrides", rockHandPalmColliderDimensionScaleOverrides.c_str());
@@ -2506,6 +2511,10 @@ namespace rock
         readClampedFloat("fSelectionLockHapticIntensity", rockSelectionLockHapticIntensity, 0.15f, 0.0f, 1.0f);
         readClampedFloat("fSelectionLockReleaseHapticIntensity", rockSelectionLockReleaseHapticIntensity, 0.10f, 0.0f, 1.0f);
         readClampedFloat("fSelectionLockReleaseHapticDurationSeconds", rockSelectionLockReleaseHapticDurationSeconds, 0.02f, 0.0f, 0.2f);
+        rockSurfaceGrabHapticsEnabled =
+            ini.GetBoolValue(SECTION, "bSurfaceGrabHapticsEnabled", rockSurfaceGrabHapticsEnabled);
+        readClampedFloat("fSurfaceGrabHapticDurationSeconds", rockSurfaceGrabHapticDurationSeconds, 0.075f, 0.0f, 0.2f);
+        readClampedFloat("fSurfaceGrabHapticIntensity", rockSurfaceGrabHapticIntensity, 0.85f, 0.0f, 1.0f);
         rockHeldImpactHapticsEnabled = ini.GetBoolValue(SECTION, "bHeldImpactHapticsEnabled", rockHeldImpactHapticsEnabled);
         readClampedFloat("fHeldImpactHapticDurationSeconds", rockHeldImpactHapticDurationSeconds, 0.035f, 0.0f, 0.2f);
         readClampedFloat("fHeldImpactHapticBaseIntensity", rockHeldImpactHapticBaseIntensity, 0.12f, 0.0f, 1.0f);

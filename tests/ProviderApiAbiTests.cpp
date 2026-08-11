@@ -121,6 +121,18 @@ int main()
     ok = ok && offsetof(RockProviderWeaponPartPoseV1, actionRole) == 44;
     ok = ok && offsetof(RockProviderEquippedWeaponGripStateV1, muzzleOriginGame) == 188;
     ok = ok && offsetof(RockProviderEquippedWeaponGripStateV1, muzzleDirectionGame) == 200;
+    ok = ok &&
+        static_cast<std::uint32_t>(
+            RockProviderHandInteractionFlagV1::TouchGrab) ==
+            (1u << 12);
+    ok = ok &&
+        static_cast<std::uint32_t>(
+            RockProviderHandInteractionFlagV1::FixedSurfaceLatch) ==
+            (1u << 13);
+    ok = ok &&
+        static_cast<std::uint32_t>(
+            RockProviderHandInteractionFlagV1::GlobalSurfaceLatch) ==
+            (1u << 14);
     ok = ok && ROCK_PROVIDER_API_V1_NATIVE_ANIMATION_RUNTIME_CLEAR_TABLE_BYTES == 82 * sizeof(void*);
     ok = ok && ROCK_PROVIDER_API_V1_TOUCH_GRAB_TARGETS_TABLE_BYTES == 86 * sizeof(void*);
     ok = ok && ROCK_PROVIDER_API_V1_EQUIPPED_WEAPON_HAND_REQUEST_TABLE_BYTES == 87 * sizeof(void*);

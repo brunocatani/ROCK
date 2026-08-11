@@ -328,6 +328,7 @@ namespace rock
         std::string rockBodyBoneColliderZoneScaleOverrides = "";
         std::string rockBodyBoneColliderRadiusScaleOverrides = "";
         bool rockHandCollisionStaticWorldEnabled = true;
+        bool rockGlobalSurfaceGrabEnabled = true;
         std::string rockHandBoneColliderRadiusScaleOverrides = "";
         std::string rockHandPalmColliderDimensionScaleOverrides = "";
         bool rockHandBoneCollidersRequirePalmAnchor = true;
@@ -614,6 +615,9 @@ namespace rock
         float rockSelectionLockHapticIntensity = 0.15f;
         float rockSelectionLockReleaseHapticIntensity = 0.10f;
         float rockSelectionLockReleaseHapticDurationSeconds = 0.02f;
+        bool rockSurfaceGrabHapticsEnabled = true;
+        float rockSurfaceGrabHapticDurationSeconds = 0.075f;
+        float rockSurfaceGrabHapticIntensity = 0.85f;
         bool rockHeldImpactHapticsEnabled = true;
         float rockHeldImpactHapticDurationSeconds = 0.035f;
         float rockHeldImpactHapticBaseIntensity = 0.12f;

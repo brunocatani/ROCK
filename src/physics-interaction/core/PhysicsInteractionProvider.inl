@@ -675,8 +675,16 @@
             state.hand = isLeft ?
                 ::rock::provider::RockProviderHand::Left :
                 ::rock::provider::RockProviderHand::Right;
-            state.phase = phaseForState(hand.getState());
-            if (state.phase == Phase::Idle && hand.isTouching()) {
+            TouchGrabRuntime::HandReport touchGrabReport{};
+            const bool touchGrabActive =
+                _touchGrabRuntime.getHandReport(
+                    isLeft,
+                    touchGrabReport);
+            state.phase = touchGrabActive ?
+                Phase::Holding :
+                phaseForState(hand.getState());
+            if (!touchGrabActive &&
+                state.phase == Phase::Idle && hand.isTouching()) {
                 state.phase = Phase::Touching;
             }
             state.flags = static_cast<std::uint32_t>(Flag::Valid);
@@ -686,7 +694,31 @@
                 state.flags |= static_cast<std::uint32_t>(Flag::Offhand);
             }
 
-            if (hand.isHolding()) {
+            if (touchGrabActive) {
+                state.reservedTargetIdentity =
+                    touchGrabReport.referenceNativeHandle;
+                state.targetFormId =
+                    touchGrabReport.referenceFormId;
+                state.primaryBodyId = touchGrabReport.bodyId;
+                state.targetKind =
+                    touchGrabReport.kind ==
+                            ::rock::provider::
+                                RockProviderTouchGrabKindV1::FixedAnchor ?
+                    TargetKind::WorldSurface :
+                    TargetKind::DynamicProp;
+                state.flags |= static_cast<std::uint32_t>(
+                    Flag::TouchGrab);
+                if (touchGrabReport.kind ==
+                    ::rock::provider::
+                        RockProviderTouchGrabKindV1::FixedAnchor) {
+                    state.flags |= static_cast<std::uint32_t>(
+                        Flag::FixedSurfaceLatch);
+                }
+                if (touchGrabReport.globalSurface) {
+                    state.flags |= static_cast<std::uint32_t>(
+                        Flag::GlobalSurfaceLatch);
+                }
+            } else if (hand.isHolding()) {
                 auto* heldRef = hand.getHeldRef();
                 state.targetFormId = heldRef ? heldRef->GetFormID() : 0;
                 state.primaryBodyId = hand.getSavedObjectState().bodyId.value;
