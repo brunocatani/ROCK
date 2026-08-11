@@ -4,8 +4,15 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$Root = [System.IO.Path]::GetFullPath($Root)
 
 $failures = [System.Collections.Generic.List[string]]::new()
+$rpsSdkRoot = if ($env:RPS_SDK_ROOT) {
+    [System.IO.Path]::GetFullPath($env:RPS_SDK_ROOT)
+} else {
+    [System.IO.Path]::GetFullPath((Join-Path (Split-Path $Root -Parent) 'RPS_SDK'))
+}
+$rockSdkRoot = Join-Path $rpsSdkRoot 'SDK/ROCK'
 
 function Require-Path {
     param(
@@ -56,24 +63,37 @@ function Reject-Text {
     }
 }
 
-function Require-FilesEqual {
+function Require-SdkPath {
     param(
-        [string]$LeftRelativePath,
-        [string]$RightRelativePath,
+        [string]$RelativePath,
         [string]$Message
     )
 
-    $leftPath = Join-Path $Root $LeftRelativePath
-    $rightPath = Join-Path $Root $RightRelativePath
-    if (-not (Test-Path -LiteralPath $leftPath) -or -not (Test-Path -LiteralPath $rightPath)) {
-        $failures.Add("$LeftRelativePath / $RightRelativePath`: missing file for sync check")
+    $path = Join-Path $rockSdkRoot $RelativePath
+    if (-not (Test-Path -LiteralPath $path)) {
+        $failures.Add("RPS_SDK/SDK/ROCK/$RelativePath`: $Message")
+    }
+}
+
+function Require-SdkFileEqual {
+    param(
+        [string]$SourceRelativePath,
+        [string]$SdkRelativePath,
+        [string]$Message
+    )
+
+    $sourcePath = Join-Path $Root $SourceRelativePath
+    $sdkPath = Join-Path $rockSdkRoot $SdkRelativePath
+    if (-not (Test-Path -LiteralPath $sourcePath) -or
+        -not (Test-Path -LiteralPath $sdkPath)) {
+        $failures.Add("$SourceRelativePath / RPS_SDK/SDK/ROCK/$SdkRelativePath`: missing file for sync check")
         return
     }
 
-    $left = Get-Content -Raw -LiteralPath $leftPath
-    $right = Get-Content -Raw -LiteralPath $rightPath
-    if ($left -cne $right) {
-        $failures.Add("$LeftRelativePath / $RightRelativePath`: $Message")
+    $source = Get-Content -Raw -LiteralPath $sourcePath
+    $sdk = Get-Content -Raw -LiteralPath $sdkPath
+    if ($source -cne $sdk) {
+        $failures.Add("$SourceRelativePath / RPS_SDK/SDK/ROCK/$SdkRelativePath`: $Message")
     }
 }
 
@@ -107,33 +127,15 @@ function Require-SequenceEqual {
     }
 }
 
-Require-Path 'SDK/ROCK/include/ROCKProviderApi.h' 'Public SDK must ship the provider header.'
-Require-Path 'SDK/ROCK/include/ROCKApi.h' 'Public SDK must ship the API alias header.'
-Require-Path 'SDK/ROCK/examples/MinimalProviderConsumer.cpp' 'A minimal provider consumer example must be packaged with the SDK.'
-Require-Path 'SDK/ROCK/examples/CMakeLists.txt' 'Buildable provider consumer examples must be packaged with the SDK.'
-Require-Path 'SDK/ROCK/examples/common/ExampleRuntime.cpp' 'Examples must share a production-shaped F4SE lifecycle runtime.'
-Require-Path 'SDK/ROCK/examples/cmake/VerifyFo4VrLoader.cmake' 'Example bootstraps must have a build-enforced FO4VR loader gate.'
-Require-Path 'SDK/ROCK/examples/mods/HandStateMonitor.cpp' 'The SDK must include a generic hand-state example plugin.'
-Require-Path 'SDK/ROCK/examples/mods/WeaponInspector.cpp' 'The SDK must include a generic weapon-inspection example plugin.'
-Require-Path 'SDK/ROCK/examples/mods/SurfaceClimber.cpp' 'The SDK must include a generic touch-grab surface example plugin.'
-Require-Path 'SDK/ROCK/examples/mods/ContactVisualizer.cpp' 'The SDK must include a generic contact-visualization example plugin.'
-Require-Path 'SDK/ROCK/examples/mods/CapabilityReporter.cpp' 'The SDK must include a provider-discovery example plugin.'
-Require-Path 'SDK/ROCK/examples/mods/InputChordLease.cpp' 'The SDK must include an input lease example plugin.'
-Require-Path 'SDK/ROCK/examples/mods/WeaponCatalogDumper.cpp' 'The SDK must include a weapon-catalog example plugin.'
-Require-Path 'SDK/ROCK/examples/mods/MuzzleRayVisualizer.cpp' 'The SDK must include a world-raycast example plugin.'
-Require-Path 'SDK/ROCK/examples/mods/AnimationObserver.cpp' 'The SDK must include an animation-phase example plugin.'
-Require-Path 'SDK/ROCK/examples/mods/WeaponPartDriver.cpp' 'The SDK must include a weapon-part drive example plugin.'
-Require-Path 'SDK/ROCK/examples/mods/TouchMechanism.cpp' 'The SDK must include a limited-mechanism example plugin.'
-Require-Path 'SDK/ROCK/examples/mods/ColliderFocus.cpp' 'The SDK must include a collider-focus example plugin.'
-Require-Path 'SDK/ROCK/examples/mods/ExternalContactSensor.cpp' 'The SDK must include an external-contact example plugin.'
-Require-Path 'SDK/ROCK/examples/mods/ForceGrabCommand.cpp' 'The SDK must include an interaction-command example plugin.'
-Require-Path 'SDK/ROCK/examples/mods/OffhandLease.cpp' 'The SDK must include an offhand-reservation example plugin.'
-Require-Path 'SDK/ROCK/examples/mods/EquippedHandPolicy.cpp' 'The SDK must include an equipped-hand policy example plugin.'
-Require-Path 'SDK/ROCK/examples/mods/VisualHandOffset.cpp' 'The SDK must include a visual-authority example plugin.'
+Require-SdkPath 'include/ROCKProviderApi.h' 'Independent public SDK must ship the provider header.'
+Require-SdkPath 'include/ROCKApi.h' 'Independent public SDK must ship the API alias header.'
+Require-SdkPath 'docs/PublicApi.md' 'Independent public SDK must ship its API documentation.'
+Require-SdkPath 'examples/CMakeLists.txt' 'Independent public SDK must ship buildable consumers.'
+Require-SdkPath 'examples/cmake/VerifyFo4VrLoader.cmake' 'Independent examples must retain the build-enforced FO4VR loader gate.'
 
-Require-FilesEqual 'src/api/ROCKProviderApi.h' 'SDK/ROCK/include/ROCKProviderApi.h' `
+Require-SdkFileEqual 'src/api/ROCKProviderApi.h' 'include/ROCKProviderApi.h' `
     'SDK provider header must stay byte-for-byte synced with the source ABI header.'
-Require-FilesEqual 'src/api/ROCKApi.h' 'SDK/ROCK/include/ROCKApi.h' `
+Require-SdkFileEqual 'src/api/ROCKApi.h' 'include/ROCKApi.h' `
     'SDK API alias header must stay byte-for-byte synced with the source ABI header.'
 
 Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_API_VERSION\s*=\s*1' `
@@ -178,12 +180,14 @@ Require-Text 'src/api/ROCKProviderApi.cpp' 's_externalBodies\.clearOwner\(ownerT
     'Unregistering a consumer must release that owner external-body state.'
 Require-Text 'src/physics-interaction/object/ExternalBodyRegistry.h' 'copyContactsForOwnerV1' `
     'Owner-filtered contact polling must be implemented in the external-body registry.'
-Require-Text 'cmake/package.cmake' 'SDK/ROCK' `
-    'Release packaging must include the SDK directory.'
-Require-Text 'cmake/package.cmake' 'src/api/ROCKProviderApi\.h' `
-    'Release packaging must copy the source provider ABI header into the SDK include directory.'
-Require-Text 'cmake/package.cmake' 'src/api/ROCKApi\.h' `
-    'Release packaging must copy the API alias header into the SDK include directory.'
+Require-Text 'cmake/package.cmake' 'RPS_SDK_ROOT' `
+    'Release packaging must consume the independent RPS_SDK repository.'
+Require-Text 'cmake/package.cmake' 'file\(SHA256[\s\S]*SOURCE_HEADER_HASH[\s\S]*SDK_HEADER_HASH' `
+    'Release packaging must reject drift between runtime and independent SDK headers.'
+Require-Text 'cmake/package.cmake' 'file\(COPY "\$\{ROCK_PUBLIC_SDK_DIR\}"' `
+    'Release packaging must copy the independently owned ROCK SDK tree.'
+Reject-Text 'cmake/package.cmake' 'ROOT_DIR\}/SDK/ROCK' `
+    'Release packaging must not consume the removed embedded SDK copy.'
 
 Require-Text 'src/api/ROCKProviderApi.h' 'InteractionCommands' `
     'v1 must expose the interaction command consumer capability.'

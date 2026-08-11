@@ -182,6 +182,33 @@ string(REPLACE "/Ob2" "/Ob3" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}
 option(POST_BUILD_COPY_PLUGIN "Copy ROCK.dll and ROCK.pdb to configured mod root after building." OFF)
 set(COPY_PLUGIN_BASE_PATH "" CACHE STRING "Semicolon-separated mod roots that contain F4SE/Plugins.")
 option(ROCK_PACKAGE_RELEASE "Package Release builds into a .7z archive after ROCK is built." ON)
+option(BUILD_ROCK_TESTS "Build ROCK focused regression tests" OFF)
+set(RPS_SDK_ROOT "" CACHE PATH "Path to the independent RPS_SDK repository.")
+
+if(RPS_SDK_ROOT STREQUAL "")
+  get_filename_component(
+    RPS_SDK_ROOT
+    "${ROOT_DIR}/../RPS_SDK"
+    ABSOLUTE
+  )
+  set(RPS_SDK_ROOT "${RPS_SDK_ROOT}" CACHE PATH "Path to the independent RPS_SDK repository." FORCE)
+endif()
+set(ROCK_PUBLIC_SDK_DIR "${RPS_SDK_ROOT}/SDK/ROCK")
+
+if(BUILD_ROCK_TESTS OR ROCK_PACKAGE_RELEASE)
+  foreach(ROCK_REQUIRED_SDK_PATH IN ITEMS
+      "${RPS_SDK_ROOT}/CMakeLists.txt"
+      "${RPS_SDK_ROOT}/tests/RockSdkContractTests.ps1"
+      "${ROCK_PUBLIC_SDK_DIR}/include/ROCKProviderApi.h"
+      "${ROCK_PUBLIC_SDK_DIR}/include/ROCKApi.h"
+      "${ROCK_PUBLIC_SDK_DIR}/examples/CMakeLists.txt")
+    if(NOT EXISTS "${ROCK_REQUIRED_SDK_PATH}")
+      message(FATAL_ERROR
+        ">> Independent RPS_SDK is incomplete at '${RPS_SDK_ROOT}'; missing '${ROCK_REQUIRED_SDK_PATH}'.")
+    endif()
+  endforeach()
+  message(">>> Using independent ROCK SDK from: '${ROCK_PUBLIC_SDK_DIR}'")
+endif()
 
 if(POST_BUILD_COPY_PLUGIN)
   if(DEFINED COPY_PLUGIN_BASE_PATH AND NOT COPY_PLUGIN_BASE_PATH STREQUAL "")
@@ -220,6 +247,7 @@ if(ROCK_PACKAGE_RELEASE)
             -DPROJECT_FRIENDLY_NAME=${FRIENDLY_NAME}
             -DPROJECT_VERSION=${PROJECT_VERSION}
             -DROOT_DIR=${ROOT_DIR}
+            "-DRPS_SDK_ROOT=${RPS_SDK_ROOT}"
             -DBUILD_DIR=${BUILD_DIR}
             -DTARGET_FILE="$<TARGET_FILE:${PROJECT_NAME}>"
             -DTARGET_PDB_FILE="$<TARGET_PDB_FILE:${PROJECT_NAME}>"
@@ -230,12 +258,11 @@ else()
   message(">>> Release package post build command disabled")
 endif()
 
-option(BUILD_ROCK_TESTS "Build ROCK focused regression tests" OFF)
 if(BUILD_ROCK_TESTS)
   enable_testing()
 
   add_subdirectory(
-    "${ROOT_DIR}/SDK/ROCK/examples"
+    "${ROCK_PUBLIC_SDK_DIR}/examples"
     "${BUILD_DIR}/sdk-examples"
   )
 
@@ -895,6 +922,19 @@ if(BUILD_ROCK_TESTS)
 
   find_program(ROCK_POWERSHELL_EXECUTABLE NAMES pwsh powershell)
   if(ROCK_POWERSHELL_EXECUTABLE)
+    add_test(
+      NAME RpsSdkRockContractTests
+      COMMAND "${ROCK_POWERSHELL_EXECUTABLE}"
+              -NoProfile
+              -ExecutionPolicy Bypass
+              -File "${RPS_SDK_ROOT}/tests/RockSdkContractTests.ps1"
+              -Root "${RPS_SDK_ROOT}"
+    )
+    set_tests_properties(
+      RpsSdkRockContractTests
+      PROPERTIES LABELS "source-boundary"
+    )
+
     file(GLOB ROCK_SOURCE_BOUNDARY_TESTS CONFIGURE_DEPENDS "${ROOT_DIR}/tests/*SourceTests.ps1")
     foreach(ROCK_SOURCE_BOUNDARY_TEST IN LISTS ROCK_SOURCE_BOUNDARY_TESTS)
       get_filename_component(ROCK_SOURCE_BOUNDARY_TEST_NAME "${ROCK_SOURCE_BOUNDARY_TEST}" NAME_WE)
@@ -906,7 +946,12 @@ if(BUILD_ROCK_TESTS)
                 -File "${ROCK_SOURCE_BOUNDARY_TEST}"
                 -Root "${ROOT_DIR}"
       )
-      set_tests_properties(${ROCK_SOURCE_BOUNDARY_TEST_NAME} PROPERTIES LABELS "source-boundary")
+      set_tests_properties(
+        ${ROCK_SOURCE_BOUNDARY_TEST_NAME}
+        PROPERTIES
+          LABELS "source-boundary"
+          ENVIRONMENT "RPS_SDK_ROOT=${RPS_SDK_ROOT}"
+      )
     endforeach()
   else()
     message(WARNING "PowerShell was not found; ROCK source-boundary .ps1 tests will not be registered in this configure.")

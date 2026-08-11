@@ -54,7 +54,8 @@ Create the `ROCK_Config` folder if it does not already exist. The release archiv
 - F4SE VR
 - FRIK Experimental release, installed separately: `https://github.com/brunocatani/hFRIK/releases/tag/frik-experimental`
 - CMake, Visual Studio 2022, and vcpkg for local builds
-- ArthurHub CommonLibF4VR. This is ROCK's only external C++ source-project dependency; the workspace checkout at `libraries_and_tools/CommonLibF4VR` is used by default and `COMMON_LIB_F4VR_PATH` can override it.
+- ArthurHub CommonLibF4VR. This is the ROCK runtime plugin's only external C++ source-project dependency; the workspace checkout at `libraries_and_tools/CommonLibF4VR` is used by default and `COMMON_LIB_F4VR_PATH` can override it.
+- The independent `RPS_SDK` repository for SDK example tests and release packaging. A sibling checkout is discovered automatically; `RPS_SDK_ROOT` can override its location.
 
 ROCK does not require F4VR-CommonFramework. The logging, FO4VR runtime, menu, resource, and controller support it needs is ROCK-owned under `src/rock_support/`. The small OpenVR SDK ABI used for controller input and haptics is vendored under `third_party/openvr/`, so it is not downloaded or built as another source project.
 
@@ -84,13 +85,19 @@ ctest --test-dir build-tests -C Release --output-on-failure -j 4
 
 ## Public API
 
-ROCK ships a public SDK for FO4VR F4SE plugins under `SDK/ROCK`.
+ROCK's public FO4VR F4SE SDK is maintained in the independent `RPS_SDK`
+repository. In this workspace it is the sibling project at `../RPS_SDK`, with
+the ROCK module under `SDK/ROCK`.
 
-- `SDK/ROCK/include/ROCKProviderApi.h` is the stable provider API for integrations.
-- `SDK/ROCK/include/ROCKApi.h` is an alias for the same v1 API table.
+- `../RPS_SDK/SDK/ROCK/include/ROCKProviderApi.h` is the stable provider API for integrations.
+- `../RPS_SDK/SDK/ROCK/include/ROCKApi.h` is an alias for the same v1 API table.
 - API v1 includes ROCK-issued owner tokens, capability grants, provider limits, feature bits, owner-filtered external contacts, and queued interaction commands.
 
-Start with `SDK/ROCK/docs/PublicApi.md` and `SDK/ROCK/examples/MinimalProviderConsumer.cpp`. Public force grab, force release, and thrown drop run through a bounded ROCK-owned command queue from safe update points. Force release defaults to a gentle non-throw drop, while force release and thrown drop can apply trusted caller-supplied Havok velocity.
+Start with `../RPS_SDK/SDK/ROCK/docs/PublicApi.md` and
+`../RPS_SDK/SDK/ROCK/examples/MinimalProviderConsumer.cpp`. ROCK test builds
+compile the independent example catalog and reject any drift between its public
+headers and ROCK's runtime ABI headers. Release packaging also consumes that
+verified independent SDK tree.
 
 ## Credits
 
