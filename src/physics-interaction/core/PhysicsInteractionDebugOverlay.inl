@@ -3697,9 +3697,9 @@
                         labelAnchor,
                         1.45f,
                         proxyColor,
-                        "callbacks pair/world/raw/manifold/admit=%llu/%llu/%llu/%llu/%llu",
+                        "callbacks pair/obstacle/raw/manifold/admit=%llu/%llu/%llu/%llu/%llu",
                         static_cast<unsigned long long>(snapshot.proxyPairCallbackSequence),
-                        static_cast<unsigned long long>(snapshot.worldSurfaceCallbackSequence),
+                        static_cast<unsigned long long>(snapshot.obstacleCallbackSequence),
                         static_cast<unsigned long long>(snapshot.rawPointCallbackSequence),
                         static_cast<unsigned long long>(snapshot.processedManifoldCallbackSequence),
                         static_cast<unsigned long long>(snapshot.admittedContactSequence));

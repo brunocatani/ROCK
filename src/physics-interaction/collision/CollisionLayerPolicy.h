@@ -84,10 +84,10 @@ namespace rock::collision_layer_policy
     inline constexpr std::uint32_t ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER = 49;
     inline constexpr std::uint32_t ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER = 50;
     /*
-     * The dynamic weapon proxy is deliberately world-only. Layer-44 generated
-     * hulls remain the sole weapon contact/evidence path for hands, actors,
-     * projectiles, and dynamic props; this row exists only so one dynamic body
-     * can be solver-clipped by static level geometry without double impulses.
+     * The dynamic weapon proxy is deliberately limited to solver obstacles:
+     * static world surfaces and explicitly tagged ExplodableCar bodies.
+     * Layer-44 generated hulls remain the sole weapon contact/evidence path
+     * for hands, actors, projectiles, and ordinary dynamic props.
      */
     inline constexpr std::uint32_t ROCK_LAYER_DYNAMIC_WEAPON_PROXY = 51;
 
@@ -175,6 +175,11 @@ namespace rock::collision_layer_policy
         default:
             return false;
         }
+    }
+
+    inline constexpr bool isDynamicWeaponProxyObstacleLayer(std::uint32_t layer)
+    {
+        return isWorldSurfaceLayer(layer) || isDynamicWorldCarLayer(layer);
     }
 
     /*
@@ -599,7 +604,7 @@ namespace rock::collision_layer_policy
     {
         std::uint64_t mask = 0;
         for (std::uint32_t layer = 0; layer < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++layer) {
-            if (isWorldSurfaceLayer(layer)) {
+            if (isDynamicWeaponProxyObstacleLayer(layer)) {
                 mask = withLayer(mask, layer);
             }
         }
@@ -640,6 +645,7 @@ namespace rock::collision_layer_policy
         }
 
         mask = withLayer(mask, ROCK_LAYER_DYNAMIC_HAND_PROXY);
+        mask = withLayer(mask, ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
         mask = withLayer(mask, FO4_LAYER_CHARCONTROLLER);
         return mask;
     }

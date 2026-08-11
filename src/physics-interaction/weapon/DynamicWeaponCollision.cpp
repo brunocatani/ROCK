@@ -507,7 +507,7 @@ namespace rock
         _debugSnapshot.constraintId = _authorityConstraint.constraintId;
         _debugSnapshot.generationKey = _createdGenerationKey;
         _debugSnapshot.proxyPairCallbackSequence = _proxyPairCallbackSequenceAtomic.load(std::memory_order_acquire);
-        _debugSnapshot.worldSurfaceCallbackSequence = _worldSurfaceCallbackSequenceAtomic.load(std::memory_order_acquire);
+        _debugSnapshot.obstacleCallbackSequence = _obstacleCallbackSequenceAtomic.load(std::memory_order_acquire);
         _debugSnapshot.rawPointCallbackSequence = _rawPointCallbackSequenceAtomic.load(std::memory_order_acquire);
         _debugSnapshot.processedManifoldCallbackSequence = _processedManifoldCallbackSequenceAtomic.load(std::memory_order_acquire);
         _debugSnapshot.admittedContactSequence = _contactSequenceAtomic.load(std::memory_order_acquire);
@@ -556,13 +556,13 @@ namespace rock
             ROCK_LOG_SAMPLE_INFO(
                 Weapon,
                 500,
-                "DWC pipeline: stage={} contactBody={} authorityBody={} constraint={} callbacks(pair/world/raw/manifold/admit)={}/{}/{}/{}/{} snapshot(read/valid/identity/contact/teleport)={}/{}/{}/{}/{} gripPivotError={:.2f}gu angularYield={:.2f}deg visual={}",
+                "DWC pipeline: stage={} contactBody={} authorityBody={} constraint={} callbacks(pair/obstacle/raw/manifold/admit)={}/{}/{}/{}/{} snapshot(read/valid/identity/contact/teleport)={}/{}/{}/{}/{} gripPivotError={:.2f}gu angularYield={:.2f}deg visual={}",
                 stage,
                 _debugSnapshot.bodyId,
                 _debugSnapshot.authorityBodyId,
                 _debugSnapshot.constraintId,
                 _debugSnapshot.proxyPairCallbackSequence,
-                _debugSnapshot.worldSurfaceCallbackSequence,
+                _debugSnapshot.obstacleCallbackSequence,
                 _debugSnapshot.rawPointCallbackSequence,
                 _debugSnapshot.processedManifoldCallbackSequence,
                 _debugSnapshot.admittedContactSequence,
@@ -1113,7 +1113,7 @@ namespace rock
             newMatchingContact =
                 contactWorld == reinterpret_cast<std::uintptr_t>(world) &&
                 contactProxy == _body.getBodyId().value &&
-                collision_layer_policy::isWorldSurfaceLayer(otherLayer);
+                collision_layer_policy::isDynamicWeaponProxyObstacleLayer(otherLayer);
         }
         const bool contactWasActive = _contactGraceSolves > 0;
         const bool contactEpisodeStarted =
@@ -1285,7 +1285,7 @@ namespace rock
         return bodyId != kInvalidBodyId && _bodyIdAtomic.load(std::memory_order_acquire) == bodyId;
     }
 
-    void DynamicWeaponCollisionRuntime::recordWorldSurfaceContactCallback(
+    void DynamicWeaponCollisionRuntime::recordObstacleContactCallback(
         RE::hknpWorld* world,
         const std::uint32_t proxyBodyId,
         const std::uint32_t otherBodyId,
@@ -1298,10 +1298,10 @@ namespace rock
             return;
         }
         _proxyPairCallbackSequenceAtomic.fetch_add(1, std::memory_order_release);
-        if (!otherLayerRead || !collision_layer_policy::isWorldSurfaceLayer(otherLayer)) {
+        if (!otherLayerRead || !collision_layer_policy::isDynamicWeaponProxyObstacleLayer(otherLayer)) {
             return;
         }
-        _worldSurfaceCallbackSequenceAtomic.fetch_add(1, std::memory_order_release);
+        _obstacleCallbackSequenceAtomic.fetch_add(1, std::memory_order_release);
         if (!rawContactPoint || !rawContactPoint->valid) {
             return;
         }
@@ -1325,7 +1325,7 @@ namespace rock
         _contactSequenceAtomic.fetch_add(1, std::memory_order_release);
     }
 
-    void DynamicWeaponCollisionRuntime::recordWorldSurfaceManifoldProcessedCallback(
+    void DynamicWeaponCollisionRuntime::recordObstacleManifoldProcessedCallback(
         RE::hknpWorld* world,
         const std::uint32_t proxyBodyId,
         const std::uint32_t otherBodyId,
@@ -1336,10 +1336,10 @@ namespace rock
             return;
         }
         _proxyPairCallbackSequenceAtomic.fetch_add(1, std::memory_order_release);
-        if (!otherLayerRead || !collision_layer_policy::isWorldSurfaceLayer(otherLayer)) {
+        if (!otherLayerRead || !collision_layer_policy::isDynamicWeaponProxyObstacleLayer(otherLayer)) {
             return;
         }
-        _worldSurfaceCallbackSequenceAtomic.fetch_add(1, std::memory_order_release);
+        _obstacleCallbackSequenceAtomic.fetch_add(1, std::memory_order_release);
         _processedManifoldCallbackSequenceAtomic.fetch_add(1, std::memory_order_release);
         _contactWorldAtomic.store(reinterpret_cast<std::uintptr_t>(world), std::memory_order_relaxed);
         _contactProxyBodyIdAtomic.store(proxyBodyId, std::memory_order_relaxed);
@@ -1424,7 +1424,7 @@ namespace rock
         _lastEpisodeRawWitnessSequence = 0;
         _activeContactOtherBodyId = kInvalidBodyId;
         _proxyPairCallbackSequenceAtomic.store(0, std::memory_order_release);
-        _worldSurfaceCallbackSequenceAtomic.store(0, std::memory_order_release);
+        _obstacleCallbackSequenceAtomic.store(0, std::memory_order_release);
         _rawPointCallbackSequenceAtomic.store(0, std::memory_order_release);
         _processedManifoldCallbackSequenceAtomic.store(0, std::memory_order_release);
         _contactSequenceAtomic.store(0, std::memory_order_release);

@@ -58,8 +58,8 @@ $interaction = 'src/physics-interaction/core/PhysicsInteraction.cpp'
 $contacts = 'src/physics-interaction/core/PhysicsInteractionContacts.inl'
 $layers = 'src/physics-interaction/collision/CollisionLayerPolicy.h'
 
-# The experiment must remain opt-in and use a new world-only matrix row. The
-# existing layer-44 weapon hulls continue to own gameplay contact evidence.
+# The experiment must remain opt-in and use a dedicated obstacle-only matrix
+# row. Layer-44 weapon hulls continue to own gameplay contact evidence.
 Require-Pattern 'src/RockConfig.h' `
     'rockWeaponCollisionDynamicBoxEnabled\s*=\s*false' `
     'Dynamic weapon collision must default disabled in compiled configuration.'
@@ -81,8 +81,11 @@ Require-Pattern $layers `
     'ROCK_LAYER_DYNAMIC_WEAPON_PROXY\s*=\s*51' `
     'The dynamic weapon proxy must retain its dedicated layer-51 row.'
 Require-Pattern $layers `
-    'buildRockDynamicWeaponProxyExpectedMask\(\)[\s\S]*isWorldSurfaceLayer\(layer\)[\s\S]*return mask' `
-    'The dynamic weapon proxy row must be authored exclusively from world-surface layers.'
+    'isDynamicWeaponProxyObstacleLayer\(std::uint32_t layer\)[\s\S]*isWorldSurfaceLayer\(layer\)[\s\S]*isDynamicWorldCarLayer\(layer\)[\s\S]*buildRockDynamicWeaponProxyExpectedMask\(\)[\s\S]*isDynamicWeaponProxyObstacleLayer\(layer\)[\s\S]*return mask' `
+    'The dynamic weapon proxy row must be authored exclusively from world surfaces and explicitly tagged car layers.'
+Require-Pattern $layers `
+    'buildRockDynamicWorldCarExpectedMask[\s\S]*withLayer\(mask, ROCK_LAYER_DYNAMIC_HAND_PROXY\)[\s\S]*withLayer\(mask, ROCK_LAYER_DYNAMIC_WEAPON_PROXY\)[\s\S]*withLayer\(mask, FO4_LAYER_CHARCONTROLLER\)' `
+    'Tagged car rows must symmetrically admit both dynamic solver proxies without exposing generated gameplay colliders.'
 Require-Pattern $layers `
     'applyRockGeneratedLayerPolicies[\s\S]*applyRockDynamicWeaponProxyLayerPolicy\(matrix\)' `
     'Layer 51 must be registered with the other generated collision rows.'
@@ -231,18 +234,18 @@ Require-Pattern $weaponAuthority `
     'refreshRightNativeCanonicalFrame\([\s\S]*_weaponCollisionHandPresentationFromPreviousFrame\[1\][\s\S]*isManualOwnershipActive\(\)' `
     'Previous collision presentation must never poison the passive native right-hand canonical calibration.'
 
-# Visual correction is admitted only by a genuine proxy/world callback. The
+# Visual correction is admitted only by a genuine proxy/obstacle callback. The
 # legacy key-3 point path remains intact while the proxy-specific key-2 path
 # treats a validated processed manifold as contact evidence. Merely seeing a
-# solver residual is not sufficient evidence that a wall caused it.
+# solver residual is not sufficient evidence that an admitted obstacle caused it.
 Require-Order $contacts @(
     'isProxyBodyIdAtomic\(bodyIdA\)',
     'tryReadFilterInfo\(',
-    'isWorldSurfaceLayer\(otherLayer\)',
+    'isDynamicWeaponProxyObstacleLayer\(otherLayer\)',
     'ensureRawContactPoint\(\)',
-    'recordWorldSurfaceContactCallback\(',
+    'recordObstacleContactCallback\(',
     'shouldSkipContactSignalBeforeLayerRead\('
-) 'A raw proxy/world contact point must be captured before the normal gameplay-contact prefilter discards layer 51.'
+) 'A raw proxy/obstacle contact point must be captured before the normal gameplay-contact prefilter discards layer 51.'
 Require-Order $contacts @(
     'kManifoldProcessedEventType\s*=\s*static_cast<RE::hknpEventType::Enum>\(2\)',
     's_manifoldProcessedEventBridge',
@@ -253,8 +256,8 @@ Require-Order $contacts @(
     'recordSize\s*!=\s*kExpectedRecordSize\s*\|\|\s*eventKey\s*!=\s*kManifoldProcessedEventKey',
     'isProxyBodyIdAtomic\(bodyIdA\)',
     'tryReadFilterInfo\(',
-    'recordWorldSurfaceManifoldProcessedCallback\('
-) 'Processed-manifold admission must validate the native record and exact proxy/world pair before publication.'
+    'recordObstacleManifoldProcessedCallback\('
+) 'Processed-manifold admission must validate the native record and exact proxy/obstacle pair before publication.'
 Require-Pattern $runtimeSource `
     'snapshot\.contactActive\s*&&[\s\S]*!snapshot\.teleported' `
     'Visual correction must require an actual active contact and reject teleport recovery samples.'
@@ -342,7 +345,7 @@ Reject-Pattern 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' `
 # A surviving runtime mismatch must distinguish callback admission, snapshot
 # admission, and immediate visual-authority readback without hot-path log spam.
 Require-Pattern $runtimeHeader `
-    '_proxyPairCallbackSequenceAtomic[\s\S]*_worldSurfaceCallbackSequenceAtomic[\s\S]*_rawPointCallbackSequenceAtomic[\s\S]*_processedManifoldCallbackSequenceAtomic[\s\S]*_contactSequenceAtomic' `
+    '_proxyPairCallbackSequenceAtomic[\s\S]*_obstacleCallbackSequenceAtomic[\s\S]*_rawPointCallbackSequenceAtomic[\s\S]*_processedManifoldCallbackSequenceAtomic[\s\S]*_contactSequenceAtomic' `
     'Dynamic weapon diagnostics must retain separate callback-stage counters.'
 Require-Pattern $runtimeSource `
     'rockDebugDrawDynamicWeaponColliders[\s\S]*ROCK_LOG_SAMPLE_INFO\([\s\S]*DWC pipeline:[\s\S]*snapshot\(read/valid/identity/contact/teleport\)' `
@@ -369,7 +372,7 @@ Require-Pattern $interaction `
     'applyWeaponCollisionResolvedAuthority[\s\S]*immediateTranslationError[\s\S]*immediateRotationError[\s\S]*DWC visual publication' `
     'Dynamic weapon visual publication must expose immediate node readback evidence.'
 Require-Pattern 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
-    'rockDebugDrawDynamicWeaponColliders[\s\S]*proxyBodyIdForDebug\(\)[\s\S]*DWC ACTIVE[\s\S]*addScreenTextLine\(20\.0f,\s*90\.0f[\s\S]*DWC COMPOUND[\s\S]*authorityBody[\s\S]*children=%u points=%llu[\s\S]*gripPivot[\s\S]*callbacks pair/world/raw/manifold/admit[\s\S]*snapshot read/valid/id/contact/tele' `
+    'rockDebugDrawDynamicWeaponColliders[\s\S]*proxyBodyIdForDebug\(\)[\s\S]*DWC ACTIVE[\s\S]*addScreenTextLine\(20\.0f,\s*90\.0f[\s\S]*DWC COMPOUND[\s\S]*authorityBody[\s\S]*children=%u points=%llu[\s\S]*gripPivot[\s\S]*callbacks pair/obstacle/raw/manifold/admit[\s\S]*snapshot read/valid/id/contact/tele' `
     'The dedicated debug flag must draw the compound and expose geometry, authority, pivot, callback, and snapshot telemetry.'
 
 if ($failures.Count -gt 0) {

@@ -52,12 +52,24 @@ int main()
     constexpr auto dynamicWeaponMask = rock::collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask();
     for (std::uint32_t layer = 0; layer < rock::collision_layer_policy::FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++layer) {
         const bool enabled = rock::collision_layer_policy::maskEnablesLayer(dynamicWeaponMask, layer);
-        const bool expected = rock::collision_layer_policy::isWorldSurfaceLayer(layer);
+        const bool expected = rock::collision_layer_policy::isDynamicWeaponProxyObstacleLayer(layer);
         if (enabled != expected) {
             std::printf("dynamic weapon layer mismatch at row %u expected=%d actual=%d\n", layer, expected ? 1 : 0, enabled ? 1 : 0);
             ok = false;
         }
     }
+    ok &= !rock::collision_layer_policy::maskEnablesLayer(
+        dynamicWeaponMask,
+        rock::collision_layer_policy::FO4_LAYER_CLUTTER);
+    ok &= !rock::collision_layer_policy::maskEnablesLayer(
+        dynamicWeaponMask,
+        rock::collision_layer_policy::FO4_LAYER_CLUTTER_LARGE);
+    ok &= rock::collision_layer_policy::maskEnablesLayer(
+        dynamicWeaponMask,
+        rock::collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER);
+    ok &= rock::collision_layer_policy::maskEnablesLayer(
+        dynamicWeaponMask,
+        rock::collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER);
 
     const auto geometry = makeBoundingBoxGeometry(
         RE::NiPoint3{ -10.0f, -2.0f, -1.0f },

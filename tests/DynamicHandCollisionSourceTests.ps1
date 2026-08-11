@@ -375,8 +375,8 @@ Reject-Text 'src/physics-interaction/collision/CollisionLayerPolicy.h' `
     'nativeCharacterControllerBodyFilteredLayerMask|isNativeCharacterControllerBodyFilteredLayer' `
     'Native clutter must not be globally re-enabled for a late per-body character-controller filter.'
 Require-Text 'src/physics-interaction/collision/CollisionLayerPolicy.h' `
-    'buildRockDynamicWorldCarExpectedMask[\s\S]*withoutLayer\(mask, ROCK_LAYER_HAND\)[\s\S]*withoutLayer\(mask, ROCK_LAYER_WEAPON\)[\s\S]*withoutLayer\(mask, ROCK_LAYER_BODY\)' `
-    'Car-only rows must not inherit generated hand, weapon, body, or leg collision.'
+    'buildRockDynamicWorldCarExpectedMask[\s\S]*withoutLayer\(mask, ROCK_LAYER_HAND\)[\s\S]*withoutLayer\(mask, ROCK_LAYER_WEAPON\)[\s\S]*withoutLayer\(mask, ROCK_LAYER_BODY\)[\s\S]*withLayer\(mask, ROCK_LAYER_DYNAMIC_HAND_PROXY\)[\s\S]*withLayer\(mask, ROCK_LAYER_DYNAMIC_WEAPON_PROXY\)' `
+    'Car-only rows must reject generated gameplay colliders while admitting both dedicated solver proxies.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'kNearbyCarCollisionRadiusGameUnits[\s\S]*isExplodableCar[\s\S]*synchronizeNearbyTargets' `
     'Verified nearby cars must be proactively tagged before player contact.'

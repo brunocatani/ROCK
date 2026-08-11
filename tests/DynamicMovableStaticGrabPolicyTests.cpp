@@ -435,6 +435,7 @@ int main()
     collision_layer_policy::setPair(dynamicCarMatrix.data(), collision_layer_policy::FO4_LAYER_CLUTTER, collision_layer_policy::ROCK_LAYER_BODY, true);
     collision_layer_policy::setPair(dynamicCarMatrix.data(), collision_layer_policy::FO4_LAYER_CLUTTER_LARGE, collision_layer_policy::ROCK_LAYER_BODY, true);
     collision_layer_policy::applyRockDynamicHandProxyLayerPolicy(dynamicCarMatrix.data());
+    collision_layer_policy::applyRockDynamicWeaponProxyLayerPolicy(dynamicCarMatrix.data());
     collision_layer_policy::applyRockDynamicWorldCarLayerPolicies(dynamicCarMatrix.data());
 
     ok &= expectLayerPair("dynamic hand proxy still excludes ordinary clutter", dynamicCarMatrix,
@@ -445,6 +446,14 @@ int main()
         collision_layer_policy::ROCK_LAYER_DYNAMIC_HAND_PROXY, collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER, true);
     ok &= expectLayerPair("dynamic hand proxy includes tagged large-clutter cars", dynamicCarMatrix,
         collision_layer_policy::ROCK_LAYER_DYNAMIC_HAND_PROXY, collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER, true);
+    ok &= expectLayerPair("dynamic weapon proxy still excludes ordinary clutter", dynamicCarMatrix,
+        collision_layer_policy::ROCK_LAYER_DYNAMIC_WEAPON_PROXY, collision_layer_policy::FO4_LAYER_CLUTTER, false);
+    ok &= expectLayerPair("dynamic weapon proxy still excludes ordinary large clutter", dynamicCarMatrix,
+        collision_layer_policy::ROCK_LAYER_DYNAMIC_WEAPON_PROXY, collision_layer_policy::FO4_LAYER_CLUTTER_LARGE, false);
+    ok &= expectLayerPair("dynamic weapon proxy includes tagged clutter cars", dynamicCarMatrix,
+        collision_layer_policy::ROCK_LAYER_DYNAMIC_WEAPON_PROXY, collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER, true);
+    ok &= expectLayerPair("dynamic weapon proxy includes tagged large-clutter cars", dynamicCarMatrix,
+        collision_layer_policy::ROCK_LAYER_DYNAMIC_WEAPON_PROXY, collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER, true);
     ok &= expectLayerPair("tagged clutter car preserves native static collision", dynamicCarMatrix,
         collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER, collision_layer_policy::FO4_LAYER_STATIC, true);
     ok &= expectLayerPair("tagged large-clutter car preserves native animstatic collision", dynamicCarMatrix,

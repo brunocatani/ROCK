@@ -574,7 +574,7 @@
             RE::hknpBodyId{ otherBodyId },
             otherFilterInfo);
         const auto otherLayer = otherFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
-        _dynamicWeaponCollision.recordWorldSurfaceManifoldProcessedCallback(
+        _dynamicWeaponCollision.recordObstacleManifoldProcessedCallback(
             world,
             proxyBodyId,
             otherBodyId,
@@ -617,8 +617,9 @@
          * The dynamic weapon proxy is intentionally absent from the normal
          * generated-body contact registry: it is solver/visual feedback, not
          * hand, gameplay, or provider contact evidence. Capture only a real
-         * proxy-vs-world callback before the ordinary registry prefilter can
-         * discard this pair.
+         * proxy-vs-obstacle callback before the ordinary registry prefilter can
+         * discard this pair. Obstacles are static world surfaces or bodies that
+         * the car runtime has explicitly moved onto a dedicated car-only row.
          */
         const bool bodyAIsDynamicWeaponProxy =
             _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdA);
@@ -638,9 +639,9 @@
                 otherFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
             const bool rawContactPointValid =
                 otherLayerRead &&
-                collision_layer_policy::isWorldSurfaceLayer(otherLayer) &&
+                collision_layer_policy::isDynamicWeaponProxyObstacleLayer(otherLayer) &&
                 ensureRawContactPoint();
-            _dynamicWeaponCollision.recordWorldSurfaceContactCallback(
+            _dynamicWeaponCollision.recordObstacleContactCallback(
                 world,
                 proxyBodyId,
                 otherBodyId,

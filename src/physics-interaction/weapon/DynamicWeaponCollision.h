@@ -84,7 +84,7 @@ namespace rock
             std::uint64_t generationKey{ 0 };
             std::uint64_t solveSequence{ 0 };
             std::uint64_t proxyPairCallbackSequence{ 0 };
-            std::uint64_t worldSurfaceCallbackSequence{ 0 };
+            std::uint64_t obstacleCallbackSequence{ 0 };
             std::uint64_t rawPointCallbackSequence{ 0 };
             std::uint64_t processedManifoldCallbackSequence{ 0 };
             std::uint64_t admittedContactSequence{ 0 };
@@ -129,7 +129,7 @@ namespace rock
         void samplePostSolve(RE::hknpWorld* world, std::uint64_t solveSequence);
 
         bool isProxyBodyIdAtomic(std::uint32_t bodyId) const;
-        void recordWorldSurfaceContactCallback(
+        void recordObstacleContactCallback(
             RE::hknpWorld* world,
             std::uint32_t proxyBodyId,
             std::uint32_t otherBodyId,
@@ -137,7 +137,7 @@ namespace rock
             std::uint32_t otherLayer,
             bool proxyWasBodyA,
             const havok_runtime::ContactSignalPointResult* rawContactPoint);
-        void recordWorldSurfaceManifoldProcessedCallback(
+        void recordObstacleManifoldProcessedCallback(
             RE::hknpWorld* world,
             std::uint32_t proxyBodyId,
             std::uint32_t otherBodyId,
@@ -274,7 +274,7 @@ namespace rock
         std::atomic<std::uint32_t> _bodyIdAtomic{ 0x7FFF'FFFFu };
         std::atomic<bool> _rebuildRequestedAtomic{ false };
         std::atomic<std::uint64_t> _proxyPairCallbackSequenceAtomic{ 0 };
-        std::atomic<std::uint64_t> _worldSurfaceCallbackSequenceAtomic{ 0 };
+        std::atomic<std::uint64_t> _obstacleCallbackSequenceAtomic{ 0 };
         std::atomic<std::uint64_t> _rawPointCallbackSequenceAtomic{ 0 };
         std::atomic<std::uint64_t> _processedManifoldCallbackSequenceAtomic{ 0 };
         std::atomic<std::uint64_t> _contactSequenceAtomic{ 0 };
