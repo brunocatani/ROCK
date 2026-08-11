@@ -53,5 +53,14 @@ int main()
     static_assert(sameClipPath("Actors/Character/SREP/WPNIdleReady.hkx", "actors\\character\\srep\\wpnidleready.HKX"));
     static_assert(!sameClipPath("SREP/WPNIdleReady.hkx", "SVD/WPNIdleReady.hkx"));
 
+    static_assert(persistenceSampleTimeSeconds(10.0f, 0) == 0.0f);
+    static_assert(persistenceSampleTimeSeconds(10.0f, 2) == 4.0f);
+    static_assert(persistenceSampleTimeSeconds(10.0f, 4) == 8.0f);
+    static_assert(stableForPersistence(5, 2.0f, 0.01f, 0.1f, 0.01f, 0.2f, 0.0001f));
+    static_assert(!stableForPersistence(4, 2.0f, 0.01f, 0.1f, 0.01f, 0.2f, 0.0001f));
+    static_assert(!stableForPersistence(5, 2.0f, 0.06f, 0.1f, 0.01f, 0.2f, 0.0001f));
+    static_assert(!stableForPersistence(5, 2.0f, 0.01f, 0.6f, 0.01f, 0.2f, 0.0001f));
+    static_assert(!stableForPersistence(5, 2.0f, 0.01f, 0.1f, 0.01f, 1.1f, 0.0001f));
+
     return 0;
 }

@@ -66,6 +66,7 @@ if(NOT F4SE_SUPPORT_XBYAK OR ENABLE_FALLOUT_F4 OR ENABLE_FALLOUT_NG OR NOT ENABL
 endif()
 
 add_subdirectory(${COMMON_LIB_F4VR_PATH_SELECTED} "CommonLibF4" EXCLUDE_FROM_ALL)
+find_package(nlohmann_json CONFIG REQUIRED)
 
 set(ROCK_OPENVR_ROOT "${ROOT_DIR}/third_party/openvr")
 if(NOT EXISTS "${ROCK_OPENVR_ROOT}/openvr.h" OR NOT EXISTS "${ROCK_OPENVR_ROOT}/openvr_api.lib")
@@ -118,6 +119,7 @@ target_include_directories(${PROJECT_NAME}
 target_link_libraries(${PROJECT_NAME}
   PRIVATE
     CommonLibF4::CommonLibF4
+    nlohmann_json::nlohmann_json
     ROCK::OpenVR
     d3d11.lib
     dxgi.lib
@@ -650,6 +652,15 @@ if(BUILD_ROCK_TESTS)
   target_compile_features(ROCKNativeIdleGripPreharvestPolicyTests PRIVATE cxx_std_23)
   target_include_directories(ROCKNativeIdleGripPreharvestPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKNativeIdleGripPreharvestPolicyTests)
+
+  add_executable(ROCKAuthoredWeaponGripCacheFormatTests
+    "${ROOT_DIR}/tests/AuthoredWeaponGripCacheFormatTests.cpp"
+    "${SOURCE_DIR}/physics-interaction/weapon/AuthoredWeaponGripCacheFormat.cpp"
+  )
+  target_compile_features(ROCKAuthoredWeaponGripCacheFormatTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKAuthoredWeaponGripCacheFormatTests PRIVATE ${SOURCE_DIR})
+  target_link_libraries(ROCKAuthoredWeaponGripCacheFormatTests PRIVATE nlohmann_json::nlohmann_json)
+  add_rock_test(ROCKAuthoredWeaponGripCacheFormatTests)
 
   add_executable(ROCKAuthoredWeaponGripAuthorityPolicyTests
     "${ROOT_DIR}/tests/AuthoredWeaponGripAuthorityPolicyTests.cpp"

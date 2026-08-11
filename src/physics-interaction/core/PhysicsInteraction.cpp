@@ -3974,13 +3974,16 @@ namespace rock
         native_idle_grip_preharvest::observeEquippedWeapon(
             equippedGenerationMatchesForm ? equippedWeapon : nullptr,
             equippedGenerationMatchesForm ? weaponNode : nullptr,
-            equippedGenerationMatchesForm ? currentEquippedWeaponInstanceData(equippedWeapon) : nullptr);
+            equippedGenerationMatchesForm ? currentEquippedWeaponInstanceData(equippedWeapon) : nullptr,
+            equippedGenerationMatchesForm ? _weaponCollision.getCurrentEquippedWeaponInstanceContentKey() : 0);
 
         _authoredPrimaryFiringGrip.update(AuthoredPrimaryFiringGripFrameInput{
             .weaponNode = weaponNode,
             .weapon = equippedWeapon,
             .weaponOwnershipKey = weaponOwnershipKey,
             .weaponGenerationKey = weaponGenerationKey,
+            .weaponInstanceContentKey = equippedGenerationMatchesForm ? _weaponCollision.getCurrentEquippedWeaponInstanceContentKey() : 0,
+            .weaponInstanceContentKnown = equippedGenerationMatchesForm,
             .runtimeInitialized = _initialized.load(std::memory_order_acquire),
             .visualAuthorityAvailable = runtime.visualAuthorityAvailable,
             .localSkeletonReady = runtime.localSkeletonReady,

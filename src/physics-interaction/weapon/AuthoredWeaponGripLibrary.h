@@ -22,8 +22,14 @@ namespace rock::authored_weapon_grip_library
     {
         Unknown,
         LiveEquippedGraph,
+        PersistedNativeIdle,
         NativeIdlePreharvest,
     };
+
+    [[nodiscard]] constexpr bool isNativeIdleAuthority(const CaptureSource source) noexcept
+    {
+        return source == CaptureSource::PersistedNativeIdle || source == CaptureSource::NativeIdlePreharvest;
+    }
 
     struct FiringFingerPose
     {
@@ -47,6 +53,8 @@ namespace rock::authored_weapon_grip_library
     struct WeaponVariantIdentity
     {
         std::uint64_t key{ 0 };
+        std::uint64_t instanceContentKey{ 0 };
+        bool instanceContentKnown{ false };
     };
 
     /*
@@ -55,14 +63,18 @@ namespace rock::authored_weapon_grip_library
      * frame-valid; they must never retain the NiAVObject solely to re-identify
      * the variant later.
      */
-    [[nodiscard]] WeaponVariantIdentity identifyWeaponVariant(const RE::NiAVObject* weaponRoot) noexcept;
+    [[nodiscard]] WeaponVariantIdentity identifyWeaponVariant(
+        const RE::NiAVObject* weaponRoot,
+        std::uint64_t instanceContentKey = 0,
+        bool instanceContentKnown = false) noexcept;
 
     /*
      * Main-thread, process-local library of Bethesda's exact
      * RArm_Hand-in-Weapon relation. Entries are keyed by runtime weapon form,
-     * power-armor topology, and the P-Grip child used by hFRIK to distinguish
-     * stock variants. Storage is fixed and bounded: publication and lookup do
-     * not allocate in the animation or interaction hot paths.
+     * deterministic equipped-instance content when available, power-armor
+     * topology, and the P-Grip child used by hFRIK to distinguish stock
+     * variants. Storage is fixed and bounded: publication and lookup do not
+     * allocate in the animation or interaction hot paths.
      */
     [[nodiscard]] bool publish(const RE::TESObjectWEAP* weapon, const RE::NiAVObject* weaponRoot, bool inPowerArmor, const RE::NiTransform& rightHandWeaponLocal,
         std::uint64_t captureSequence, CaptureSource source, const FiringFingerPose* rightFiringFingerPose = nullptr);
@@ -72,4 +84,5 @@ namespace rock::authored_weapon_grip_library
         const FiringFingerPose* rightFiringFingerPose = nullptr);
 
     [[nodiscard]] LookupResult find(const RE::TESObjectWEAP* weapon, const RE::NiAVObject* weaponRoot, bool inPowerArmor);
+    [[nodiscard]] LookupResult findResolvedVariant(const RE::TESObjectWEAP* weapon, WeaponVariantIdentity variant, bool inPowerArmor);
 }

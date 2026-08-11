@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -10,6 +11,14 @@ namespace rock::native_idle_grip_preharvest_policy
     inline constexpr std::size_t kFirstPersonGraphIndex = 1;
     inline constexpr std::uint32_t kAnimationResourceStateMask = 0x70000000u;
     inline constexpr unsigned kAnimationResourceStateShift = 28;
+    inline constexpr std::array<float, 5> kPersistenceSampleFractions{ 0.0f, 0.2f, 0.4f, 0.6f, 0.8f };
+    inline constexpr float kMinimumPersistenceDurationSeconds = 0.05f;
+    inline constexpr float kMaximumPersistenceDurationSeconds = 600.0f;
+    inline constexpr float kMaximumStableHandTranslationDelta = 0.05f;
+    inline constexpr float kMaximumStableHandRotationDeltaDegrees = 0.5f;
+    inline constexpr float kMaximumStableFingerTranslationDelta = 0.02f;
+    inline constexpr float kMaximumStableFingerRotationDeltaDegrees = 1.0f;
+    inline constexpr float kMaximumStableScaleDelta = 0.001f;
 
     enum class IdleClipPriority : std::uint8_t
     {
@@ -160,5 +169,29 @@ namespace rock::native_idle_grip_preharvest_policy
             }
         }
         return true;
+    }
+
+    [[nodiscard]] constexpr float persistenceSampleTimeSeconds(const float durationSeconds, const std::size_t sampleIndex) noexcept
+    {
+        return sampleIndex < kPersistenceSampleFractions.size() ? durationSeconds * kPersistenceSampleFractions[sampleIndex] : 0.0f;
+    }
+
+    [[nodiscard]] constexpr bool stableForPersistence(
+        const std::size_t sampleCount,
+        const float durationSeconds,
+        const float maxHandTranslationDelta,
+        const float maxHandRotationDeltaDegrees,
+        const float maxFingerTranslationDelta,
+        const float maxFingerRotationDeltaDegrees,
+        const float maxScaleDelta) noexcept
+    {
+        return sampleCount == kPersistenceSampleFractions.size() &&
+               durationSeconds >= kMinimumPersistenceDurationSeconds &&
+               durationSeconds <= kMaximumPersistenceDurationSeconds &&
+               maxHandTranslationDelta <= kMaximumStableHandTranslationDelta &&
+               maxHandRotationDeltaDegrees <= kMaximumStableHandRotationDeltaDegrees &&
+               maxFingerTranslationDelta <= kMaximumStableFingerTranslationDelta &&
+               maxFingerRotationDeltaDegrees <= kMaximumStableFingerRotationDeltaDegrees &&
+               maxScaleDelta <= kMaximumStableScaleDelta;
     }
 }

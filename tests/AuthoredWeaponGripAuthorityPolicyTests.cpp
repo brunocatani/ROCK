@@ -12,12 +12,13 @@ int main()
     static_assert(publicationHasRequiredFingerPose(true, true));
     static_assert(!publicationHasRequiredFingerPose(true, false));
 
-    static_assert(shouldAcceptPublication(false, false, false));
-    static_assert(shouldAcceptPublication(false, true, false));
-    static_assert(shouldAcceptPublication(true, false, false));
-    static_assert(shouldAcceptPublication(true, false, true));
-    static_assert(shouldAcceptPublication(true, true, true));
-    static_assert(!shouldAcceptPublication(true, true, false));
+    static_assert(shouldAcceptPublication(false, PublicationAuthority::FreshNativeIdle, PublicationAuthority::LiveEquippedGraph));
+    static_assert(shouldAcceptPublication(true, PublicationAuthority::LiveEquippedGraph, PublicationAuthority::LiveEquippedGraph));
+    static_assert(shouldAcceptPublication(true, PublicationAuthority::LiveEquippedGraph, PublicationAuthority::PersistedNativeIdle));
+    static_assert(shouldAcceptPublication(true, PublicationAuthority::PersistedNativeIdle, PublicationAuthority::FreshNativeIdle));
+    static_assert(shouldAcceptPublication(true, PublicationAuthority::FreshNativeIdle, PublicationAuthority::FreshNativeIdle));
+    static_assert(!shouldAcceptPublication(true, PublicationAuthority::FreshNativeIdle, PublicationAuthority::PersistedNativeIdle));
+    static_assert(!shouldAcceptPublication(true, PublicationAuthority::PersistedNativeIdle, PublicationAuthority::LiveEquippedGraph));
 
     static_assert(selectLookup(true, true, false, 2, 3) == LookupSelection::ExactVariant);
     static_assert(selectLookup(true, false, true, 1, 2) == LookupSelection::SoleNativeIdleVariant);

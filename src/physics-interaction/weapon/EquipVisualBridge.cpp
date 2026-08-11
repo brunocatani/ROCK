@@ -234,7 +234,7 @@ namespace rock
         _active = true;
 
         if (authoredLookup.found &&
-            authoredLookup.source == authored_weapon_grip_library::CaptureSource::NativeIdlePreharvest &&
+            authored_weapon_grip_library::isNativeIdleAuthority(authoredLookup.source) &&
             buildPhysicalHandFingerPose(
                 _isLeftHand,
                 authoredLookup.rightFiringFingerPose,

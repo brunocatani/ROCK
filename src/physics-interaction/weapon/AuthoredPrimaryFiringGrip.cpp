@@ -229,8 +229,12 @@ namespace rock
             return;
         }
 
-        const auto authoredLookup = authored_weapon_grip_library::find(input.weapon, input.weaponNode, input.inPowerArmor);
-        const bool harvestedRelationAvailable = authoredLookup.found && authoredLookup.source == authored_weapon_grip_library::CaptureSource::NativeIdlePreharvest;
+        const auto variant = authored_weapon_grip_library::identifyWeaponVariant(
+            input.weaponNode,
+            input.weaponInstanceContentKey,
+            input.weaponInstanceContentKnown);
+        const auto authoredLookup = authored_weapon_grip_library::findResolvedVariant(input.weapon, variant, input.inPowerArmor);
+        const bool harvestedRelationAvailable = authoredLookup.found && authored_weapon_grip_library::isNativeIdleAuthority(authoredLookup.source);
         const auto* rightFingerPose = harvestedRelationAvailable && authoredLookup.rightFiringFingerPose.complete() ? &authoredLookup.rightFiringFingerPose : nullptr;
         if (rightFingerPose && _mirroredFingerPoseCaptureSequence != authoredLookup.captureSequence) {
             _mirroredLeftFingerPose = {};
@@ -524,9 +528,9 @@ namespace rock
         }
 
         if (!harvestedRelationAvailable &&
-            !authored_weapon_grip_library::publish(
+            !authored_weapon_grip_library::publishResolvedVariant(
                 input.weapon,
-                input.weaponNode,
+                variant,
                 input.inPowerArmor,
                 authoredPrimaryHandInWeapon,
                 resolvedCaptureSequence,

@@ -7,6 +7,14 @@ namespace rock::authored_weapon_grip_authority_policy
 {
     inline constexpr std::uint16_t kCompleteFiringFingerMask = 0x7FFF;
 
+    enum class PublicationAuthority : std::uint8_t
+    {
+        Unknown,
+        LiveEquippedGraph,
+        PersistedNativeIdle,
+        FreshNativeIdle,
+    };
+
     [[nodiscard]] constexpr bool completeFiringFingerPose(const std::uint16_t enabledMask) noexcept { return enabledMask == kCompleteFiringFingerMask; }
 
     [[nodiscard]] constexpr bool publicationHasRequiredFingerPose(const bool nativeIdlePreharvest, const bool completeFingerPose) noexcept
@@ -20,9 +28,12 @@ namespace rock::authored_weapon_grip_authority_policy
      * frames cannot replace that stable authored relation or erase its exact
      * finger pose.
      */
-    [[nodiscard]] constexpr bool shouldAcceptPublication(const bool sameIdentity, const bool existingIsNativeIdlePreharvest, const bool incomingIsNativeIdlePreharvest) noexcept
+    [[nodiscard]] constexpr bool shouldAcceptPublication(
+        const bool sameIdentity,
+        const PublicationAuthority existing,
+        const PublicationAuthority incoming) noexcept
     {
-        return !sameIdentity || !existingIsNativeIdlePreharvest || incomingIsNativeIdlePreharvest;
+        return !sameIdentity || static_cast<std::uint8_t>(incoming) >= static_cast<std::uint8_t>(existing);
     }
 
     enum class LookupSelection : std::uint8_t

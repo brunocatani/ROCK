@@ -24,6 +24,7 @@
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/PipboyEquipRuntime.h"
+#include "physics-interaction/weapon/AuthoredWeaponGripCacheStore.h"
 #include "physics-interaction/weapon/WeaponTransitionAnimationAcceleration.h"
 
 #include "RE/Bethesda/PlayerCharacter.h"
@@ -740,6 +741,7 @@ namespace
             g_rockConfig.load();
             rock::frik_weapon_offset_cache::preload();
             rock::saved_grab_offset::preload();
+            rock::authored_weapon_grip_cache::preload();
             rock::installHavokTimingFixHook();
             runtime_state::initialize();
             logger::info("ROCK: Config loaded (rockEnabled={}).", g_rockConfig.rockEnabled);

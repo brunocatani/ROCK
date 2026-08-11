@@ -281,6 +281,8 @@ namespace rock
 
         std::uint64_t getCurrentEquippedWeaponOwnershipKey() const { return _observedEquippedWeaponOwnershipKey; }
 
+        std::uint64_t getCurrentEquippedWeaponInstanceContentKey() const { return _observedEquippedWeaponInstanceContentKey; }
+
         std::uint32_t getCurrentObservedEquippedWeaponFormID() const { return _observedEquippedWeaponFormID; }
 
         weapon_generation_identity_policy::EquippedWeaponGenerationIdentity getEquippedWeaponClassification() const;
@@ -599,7 +601,8 @@ namespace rock
             std::uint64_t* outIdentityKey = nullptr,
             std::uint64_t* outOwnershipKey = nullptr,
             WeaponSizeClass* outSizeClass = nullptr,
-            std::uint32_t* outFormID = nullptr) const;
+            std::uint32_t* outFormID = nullptr,
+            std::uint64_t* outInstanceContentKey = nullptr) const;
         std::uint64_t getWeaponVisualCompositionKey(RE::NiAVObject* weaponNode, WeaponVisualKeyStats& stats) const;
 
         void maybeDumpWeaponAnimNodeDiagnostics(RE::NiAVObject* updateWeaponNode, std::uint64_t observedKey);
@@ -630,6 +633,10 @@ namespace rock
         // Consumers use it to reject the one-frame old-generation/new-form
         // overlap during direct Pip-Boy equipment changes.
         std::uint32_t _observedEquippedWeaponFormID{ 0 };
+        // Deterministic equipped-object-instance content witness. This excludes
+        // transient engine pointer identity and is safe to combine with a
+        // stable form identity for persisted authored-pose lookups.
+        std::uint64_t _observedEquippedWeaponInstanceContentKey{ 0 };
         std::uint64_t _cachedWeaponBodySetKey{ 0 };
         std::uint64_t _weaponBodySetEpoch{ 0 };
         weapon_generated_source_completeness_policy::GeneratedSourceCompleteness _cachedGeneratedSourceCompleteness{};

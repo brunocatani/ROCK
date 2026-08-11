@@ -95,7 +95,7 @@ Require-Text $source `
     'sampledFingerMask[\s\S]*referenceFingerMask[\s\S]*missingFingerMask[\s\S]*outRightFiringFingerPose\.complete\(\)[\s\S]*IncompleteFiringFingerPose[\s\S]*CaptureSource::NativeIdlePreharvest,\s*&rightFiringFingerPose' `
     'Only a complete finite 15-bone pose may become an authoritative harvested grip publication; partial poses must fail extraction.'
 Require-Text 'src/physics-interaction/weapon/AuthoredWeaponGripLibrary.cpp' `
-    'publicationHasRequiredFingerPose\(source\s*==\s*CaptureSource::NativeIdlePreharvest,\s*validFingerPose\)' `
+    'publicationHasRequiredFingerPose\(isNativeIdleAuthority\(source\),\s*validFingerPose\)' `
     'The authored-grip cache itself must reject a native-idle authority entry without a complete finite finger pose.'
 Require-Text $source `
     'PopulateGraphProjectsToLoad[\s\S]*graphProjects\.size\(\)\s*<\s*2[\s\S]*createBackgroundSimpleManager' `
@@ -131,11 +131,11 @@ Require-Text $source `
     'authored_weapon_grip_library::publishResolvedVariant[\s\S]{0,300}CaptureSource::NativeIdlePreharvest' `
     'The proof must publish only through ROCK''s bounded authored-grip cache with explicit preharvest provenance.'
 Require-Text $source `
-    'shouldStartNativeIdleHarvest\([\s\S]*existing\.found[\s\S]*existing\.source\s*==\s*authored_weapon_grip_library::CaptureSource::NativeIdlePreharvest[\s\S]*existing\.usedVariantFallback[\s\S]*candidate\.variant\.key' `
+    'shouldStartNativeIdleHarvest\([\s\S]*existing\.found[\s\S]*isNativeIdleAuthority\(existing\.source\)[\s\S]*existing\.usedVariantFallback[\s\S]*candidate\.variant\.key' `
     'A prior live fallback or a different resolved stock variant must not suppress the exact native-idle harvest.'
 Require-Text $source `
-    'describeEquippedCandidate[\s\S]*candidate\.instanceData\s*=\s*RE::BSTSmartPointer<RE::TBO_InstanceData>\(instanceData\)[\s\S]*identifyWeaponVariant\(weaponRoot\)[\s\S]*CandidateOrigin::EquippedWeapon' `
-    'Direct inventory equip must capture stable instance data and a value-only variant identity without retaining the scene node.'
+    'describeEquippedCandidate[\s\S]*candidate\.instanceData\s*=\s*RE::BSTSmartPointer<RE::TBO_InstanceData>\(instanceData\)[\s\S]*identifyWeaponVariant\(weaponRoot,\s*instanceContentKey,\s*true\)[\s\S]*CandidateOrigin::EquippedWeapon' `
+    'Direct inventory equip must capture stable instance data plus an exact deterministic instance-content identity without retaining the scene node.'
 Require-Text $source `
     'void\s+observeCandidate\(RE::NiPointer<RE::TESObjectREFR>\s+candidate\)[\s\S]{0,700}advanceAndCanStart\(state\)[\s\S]{0,300}candidate\.get\(\)[\s\S]{0,220}RE::NiPointer<RE::NiAVObject>\s+weaponRoot' `
     'Loose preharvest must own the candidate across native job progress and retain the resolved scene root while copying its variant.'
@@ -160,6 +160,24 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' `
     'observedFormID[\s\S]*getEquippedWeaponIdentityKey\([\s\S]*&observedFormID[\s\S]*_observedEquippedWeaponFormID\s*=\s*observedFormID[\s\S]*outFormID[\s\S]*\*outFormID\s*=\s*identity\.formID' `
     'The collision observer must publish the form ID paired with its stable generation witness.'
+Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' `
+    'observedInstanceContentKey[\s\S]*getEquippedWeaponIdentityKey\([\s\S]*&observedInstanceContentKey[\s\S]*_observedEquippedWeaponInstanceContentKey\s*=\s*observedInstanceContentKey[\s\S]*outInstanceContentKey[\s\S]*\*outInstanceContentKey\s*=\s*identity\.instanceContentKey' `
+    'The collision observer must expose the already-computed deterministic object-instance content witness to authored grip consumers.'
+Require-Text $source `
+    'guardedSampleTracks\([\s\S]*timeSeconds[\s\S]*sample\(animation,\s*timeSeconds[\s\S]*guardedSampleTracks\(sampleTracks,\s*animation,\s*0\.0f[\s\S]*kPersistenceSampleFractions[\s\S]*persistenceSampleTimeSeconds[\s\S]*stableForPersistence' `
+    'Persistence qualification must retain the verified bounded time sampler while selecting time zero as the runtime pose.'
+Require-Text $source `
+    'PopulateGraphProjectsToLoad[\s\S]*graphProfileKey\(graphProjects[\s\S]*hydrateCachedPose\(state\)[\s\S]*releaseJob\(state\)[\s\S]*createBackgroundSimpleManager' `
+    'An exact persisted hit must publish and release the empty holder before any full background graph load begins.'
+Require-Text $source `
+    'makeJobCacheKey[\s\S]*CandidateOrigin::EquippedWeapon[\s\S]*variant\.instanceContentKnown[\s\S]*persistFreshPose[\s\S]*diagnostics\.stableForPersistence[\s\S]*authored_weapon_grip_cache::save' `
+    'Only a multi-sample-stable, exact equipped-weapon identity may enter the persisted cache.'
+Require-Text 'src/ROCKMain.cpp' `
+    'authored_weapon_grip_cache::preload\(\)' `
+    'Persisted grip records must be loaded once during normal ROCK startup before gameplay lookups.'
+Require-Text 'src/physics-interaction/weapon/AuthoredWeaponGripCacheStore.cpp' `
+    'kMaximumPendingWrites\s*=\s*64[\s\S]*kMaximumCachedEntries[\s\S]*std::thread[\s\S]*writerLoop[\s\S]*serialize\(write\.record\)[\s\S]*\.tmp[\s\S]*MoveFileExW[\s\S]*MOVEFILE_REPLACE_EXISTING[\s\S]*MOVEFILE_WRITE_THROUGH' `
+    'Disk persistence must remain bounded, off the gameplay thread, and atomically replaced.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'incomingRightFingerMask[\s\S]*incomingLeftFingerMask[\s\S]*fingerPoseBoundary[\s\S]*_rightFiringFingerLocalTransformMask\s*!=\s*incomingRightFingerMask[\s\S]*_leftFiringFingerLocalTransformMask\s*!=\s*incomingLeftFingerMask[\s\S]*sourceBoundary[\s\S]*fingerPoseBoundary' `
     'Canonical pose diagnostics must expose the live-fallback to exact-finger-pose boundary without relying on a source-name change.'
