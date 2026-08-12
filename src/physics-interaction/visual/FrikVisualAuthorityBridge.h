@@ -384,6 +384,14 @@ namespace rock::frik_visual_authority
         return frikApi && frikApi->clearHandPose && frikApi->clearHandPose(tag, hand);
     }
 
+    [[nodiscard]] inline bool isHandPoseTagActive(const char* tag, Hand hand)
+    {
+        auto* frikApi = api();
+        return frikApi && tag && frikApi->getHandPoseSetTagState &&
+               frikApi->getHandPoseSetTagState(tag, hand) ==
+                   HandPoseTagState::Active;
+    }
+
     [[nodiscard]] inline bool setHandPoseCustomWithPriority(const char* tag, Hand hand, const HandPoseData& handPose, int priority)
     {
         auto* frikApi = api();

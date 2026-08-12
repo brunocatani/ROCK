@@ -620,9 +620,9 @@ namespace rock
 
         /*
          * The dynamic twins reuse the exact hull construction of their
-         * keyframed counterparts: the palm-anchor box hull or the fingertip
+         * keyframed counterparts: the palm-anchor box hull or a finger-segment
          * capsule hull for the published dimensions. buildShapeForRole only
-         * branches on palm-vs-segment, so any Tip role selects the segment
+         * branches on palm-vs-segment, so any finger role selects the segment
          * path.
          */
         RoleFrameResult frame{};
@@ -761,12 +761,16 @@ namespace rock
                 destroy(bhkWorld, palmAnchorBody);
                 return false;
             }
-            if (hand_collider_semantics::isFingerRole(role) &&
-                hand_collider_semantics::segmentForRole(role) == HandFingerSegment::Tip) {
+            if (hand_collider_semantics::isFingerRole(role)) {
                 const auto fingerIndex =
                     static_cast<std::size_t>(hand_collider_semantics::fingerForRole(role));
-                if (fingerIndex < canonicalTwinTargets.fingertips.size()) {
-                    publishCanonicalTwinSlot(canonicalTwinTargets.fingertips[fingerIndex], frame);
+                const auto segmentIndex =
+                    static_cast<std::size_t>(hand_collider_semantics::segmentForRole(role));
+                if (fingerIndex < canonicalTwinTargets.fingers.size() &&
+                    segmentIndex < canonicalTwinTargets.fingers[fingerIndex].size()) {
+                    publishCanonicalTwinSlot(
+                        canonicalTwinTargets.fingers[fingerIndex][segmentIndex],
+                        frame);
                 }
             }
             ++createdCount;
@@ -945,11 +949,14 @@ namespace rock
             }
             RoleFrameResult frame{};
             if (makeRoleFrame(lookup, isLeft, instance.role, frame)) {
-                if (hand_collider_semantics::isFingerRole(instance.role) &&
-                    hand_collider_semantics::segmentForRole(instance.role) == HandFingerSegment::Tip) {
+                if (hand_collider_semantics::isFingerRole(instance.role)) {
                     const auto fingerIndex = static_cast<std::size_t>(hand_collider_semantics::fingerForRole(instance.role));
-                    if (fingerIndex < twinTargets.fingertips.size()) {
-                        publishTwinSlot(twinTargets.fingertips[fingerIndex], frame);
+                    const auto segmentIndex = static_cast<std::size_t>(hand_collider_semantics::segmentForRole(instance.role));
+                    if (fingerIndex < twinTargets.fingers.size() &&
+                        segmentIndex < twinTargets.fingers[fingerIndex].size()) {
+                        publishTwinSlot(
+                            twinTargets.fingers[fingerIndex][segmentIndex],
+                            frame);
                     }
                 }
                 if (publishedSegmentCount < segmentFrames.size()) {

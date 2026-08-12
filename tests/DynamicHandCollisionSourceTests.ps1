@@ -101,9 +101,10 @@ Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
     'Dynamic hand twins must build shapes through the shared collider hull construction.'
 Require-OrderedText 'src/physics-interaction/hand/HandBoneColliderSet.cpp' @(
     'publishTwinSlot\(twinTargets\.palm',
-    'HandFingerSegment::Tip',
+    'hand_collider_semantics::isFingerRole\(instance\.role\)',
+    'publishTwinSlot\(\s*twinTargets\.fingers\[fingerIndex\]\[segmentIndex\]',
     '_dynamicTwinTargets = twinTargets;'
-) 'HandBoneColliderSet must publish palm anchor and fingertip twin frames every update.'
+) 'HandBoneColliderSet must publish the palm and all 15 finger-segment twin frames every update.'
 Require-OrderedText 'src/physics-interaction/body/BodyBoneColliderSet.cpp' @(
     'makeDescriptorFrame\(',
     'collectForearmTwinMergeSource\(forearmTwinMergeSources, descriptor, frame\);',
@@ -144,7 +145,10 @@ Require-OrderedText 'src/physics-interaction/hand/HandBoneColliderSet.cpp' @(
     '_canonicalDynamicTwinDimensions = canonicalTwinTargets;',
     'applyCanonicalHandDimensions\(',
     '_dynamicTwinTargets = twinTargets;'
-) 'Palm and fingertip twins must retain generation-canonical dimensions while publishing live rigid targets.'
+) 'Palm and all finger twins must retain generation-canonical dimensions while publishing live rigid targets.'
+Require-Text 'src/physics-interaction/hand/DynamicHandCollisionTelemetry.h' `
+    'kFingerSlotCount\s*=\s*[\s\S]*kHandFingerCount\s*\*[\s\S]*kHandFingerSegmentCount[\s\S]*kBodiesPerHand\s*=\s*kFirstForearmSlot\s*\+[\s\S]*static_assert\(static_cast<std::size_t>\(TwinRole::Forearm\)\s*\+\s*1\s*==\s*kBodiesPerHand\)' `
+    'Dynamic hand telemetry and storage must account for all 15 finger segments plus palm and forearm.'
 Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
     'slot\.createdGeometryGeneration == geometryGeneration' `
     'Real source/tuning geometry generations must still rebuild dynamic twins once.'
@@ -164,6 +168,40 @@ Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @(
     '_dynamicHandCollision\.updateFrame\(',
     '_bodyBoneColliders,'
 ) 'Body forearm frames must publish before dynamic hand collision consumes them in the same game frame.'
+
+# Finger residuals must be evaluated against immutable pre-correction intent.
+# Only helpful anatomical motion may replace the established tip pushback;
+# base/middle probes must never multiply the rigid whole-hand correction.
+Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
+    'candidate\.intentFramesInHand\[linearIndex\]',
+    'candidate\.curlProbeTravelInHand\[linearIndex\]',
+    'candidate\.active = true'
+) 'Surface finger response must capture stable hand-local intent and calibrated curl travel on contact entry.'
+Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
+    'handSlots\.surfaceFingerResponse\.intentFramesInHand',
+    'composeTransforms\(\s*handInput\.rawHandWorld',
+    'queueGeneratedKeyframedBodyTarget\('
+) 'Contacted finger twins must chase immutable intent composed with the raw tracked hand, not corrected presentation.'
+Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
+    'updateSurfaceFingerResponse\(',
+    'isFingerTipSlot\(',
+    'rigidPrimary \|\| unresolvedLegacyTip',
+    'combineTwinDeviations\('
+) 'Helpful curl must replace only its fingertip rigid fallback before whole-hand deviation combination.'
+Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
+    'const bool rigidPrimary = bodyIndex == kPalmSlot \|\|[\s\S]{0,180}bodyIndex >= kFirstForearmSlot' `
+    'Palm and forearm must remain the only unconditional rigid-hand collision channels.'
+Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
+    'setHandPoseCustomWithPriority\([\s\S]{0,400}rockHandCollisionDynamicVisualPriority' `
+    'Surface finger response must use the existing priority-arbitrated FRIK pose authority.'
+Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
+    'setHandPoseCustomWithPriority\(',
+    'isHandPoseTagActive\(',
+    'response\.lastHelpfulDynamicSlotMask = 0'
+) 'Fingertip rigid fallback may be suppressed only while the surface finger pose actually owns hFRIK authority.'
+Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
+    'clearSurfaceFingerResponse\(_hands\[0\], false\)[\s\S]*clearSurfaceFingerResponse\(_hands\[1\], true\)' `
+    'World/menu shutdown must deterministically release both surface finger pose claims.'
 
 # Render-follow pipeline: combine per-body deviations, smooth (rest twitch), gate.
 Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
@@ -401,7 +439,7 @@ Require-Text 'src/physics-interaction/hand/DynamicHandSurfaceContactState.h' `
     'collectFresh[\s\S]*atomic_flag writer[\s\S]*sequence' `
     'Dynamic surface contact publication must be bounded and non-blocking on the physics callback.'
 Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'for \(std::size_t slot = 0; slot < kFirstForearmSlot; \+\+slot\)' `
+    'for \(std::size_t slot = 0; slot < kBodiesPerHand; \+\+slot\)[\s\S]{0,180}isSurfaceGrabSourceSlot\(slot\)' `
     'Only dynamic palm and fingertip twins may seed fixed-surface grabs.'
 Require-OrderedText 'src/physics-interaction/core/PhysicsInteractionContacts.inl' @(
     'tryClassifySurfaceContactSourceAtomic\(',
@@ -410,7 +448,7 @@ Require-OrderedText 'src/physics-interaction/core/PhysicsInteractionContacts.inl
     '_generatedBodyContactRegistry\.tryClassify\('
 ) 'Dynamic surface evidence must publish before the ordinary generated-body prefilter discards proxy pairs.'
 Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'kRaiseManifoldProcessedEvents\s*=\s*0x40u[\s\S]*bodyIndex\s*<\s*kFirstForearmSlot[\s\S]*enableBodyFlags\([\s\S]{0,250}kRaiseManifoldProcessedEvents[\s\S]{0,150}kRebuildBodyCollisionState[\s\S]*flaggedBody\.body->flags\s*&\s*kRaiseManifoldProcessedEvents' `
+    'kRaiseManifoldProcessedEvents\s*=\s*0x40u[\s\S]*isSurfaceGrabSourceSlot\([\s\S]*enableBodyFlags\([\s\S]{0,350}kRaiseManifoldProcessedEvents[\s\S]{0,200}kRebuildBodyCollisionState[\s\S]*flaggedBody\.body->flags\s*&\s*kRaiseManifoldProcessedEvents' `
     'Palm and fingertip twins must opt into the verified key-2 processed-manifold event path without flagging forearms.'
 Require-OrderedText 'src/physics-interaction/core/PhysicsInteractionContacts.inl' @(
     'handleManifoldProcessedEvent\(',
@@ -435,7 +473,7 @@ Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'if \(handSlots\.surfaceLatch\.active\)',
     'targetSnapshot\.body == latch\.targetBodyIdentity',
     'latch\.lastProxyWorld\[bodyIndex\]',
-    'const RE::NiTransform& driveTarget',
+    'RE::NiTransform driveTarget',
     'queueGeneratedKeyframedBodyTarget\('
 ) 'A held surface latch must follow target-body motion and drive every proxy from the captured rigid relationship.'
 Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
@@ -449,6 +487,25 @@ foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini
         'bGlobalSurfaceGrabEnabled\s*=\s*true' `
         "$configPath must globally enable fixed-surface grabs."
 }
+foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
+    Require-Text $configPath `
+        'bHandCollisionSurfaceFingerResponseEnabled\s*=\s*true[\s\S]*fHandCollisionSurfaceFingerProbeClosureOpenUnits[\s\S]*fHandCollisionSurfaceFingerResponseGain[\s\S]*fHandCollisionSurfaceFingerMaximumClosureOpenUnits[\s\S]*fHandCollisionSurfaceFingerMinimumHelpfulTravelGameUnits[\s\S]*fHandCollisionSurfaceFingerSmoothingSpeed[\s\S]*fHandCollisionSurfaceFingerReleaseDelaySeconds' `
+        "$configPath must ship the globally enabled, bounded experimental surface finger response."
+}
+Require-Text 'src/RockConfig.h' `
+    'rockHandCollisionSurfaceFingerResponseEnabled\s*=\s*true' `
+    'Older INIs must inherit the enabled surface finger response default.'
+Require-Text 'src/RockConfig.cpp' `
+    'GetBoolValue\(\s*SECTION,\s*"bHandCollisionSurfaceFingerResponseEnabled"' `
+    'The surface finger feature switch must load through the ROCK INI path.'
+Require-OrderedText 'src/RockConfig.cpp' @(
+    'fHandCollisionSurfaceFingerProbeClosureOpenUnits',
+    'fHandCollisionSurfaceFingerResponseGain',
+    'fHandCollisionSurfaceFingerMaximumClosureOpenUnits',
+    'fHandCollisionSurfaceFingerMinimumHelpfulTravelGameUnits',
+    'fHandCollisionSurfaceFingerSmoothingSpeed',
+    'fHandCollisionSurfaceFingerReleaseDelaySeconds'
+) 'Every bounded surface finger control must load through the ROCK INI path.'
 Require-Text 'src/RockConfig.h' `
     'rockGlobalSurfaceGrabEnabled\s*=\s*true' `
     'The compiled global surface-grab default must remain enabled when an older INI lacks the key.'

@@ -24,7 +24,12 @@
 namespace rock::dynamic_hand_collision_telemetry
 {
     inline constexpr std::size_t kPalmSlot = 0;
-    inline constexpr std::size_t kFirstForearmSlot = 1 + hand_collider_semantics::kHandFingerCount;
+    inline constexpr std::size_t kFirstFingerSlot = kPalmSlot + 1;
+    inline constexpr std::size_t kFingerSlotCount =
+        hand_collider_semantics::kHandFingerCount *
+        hand_collider_semantics::kHandFingerSegmentCount;
+    inline constexpr std::size_t kFirstForearmSlot =
+        kFirstFingerSlot + kFingerSlotCount;
     inline constexpr std::size_t kForearmSlot = kFirstForearmSlot;
     inline constexpr std::size_t kBodiesPerHand = kFirstForearmSlot + dynamic_hand_twin::kForearmSegmentCountPerHand;
     inline constexpr std::uint32_t kInvalidBodyId = 0x7FFF'FFFF;
@@ -32,13 +37,71 @@ namespace rock::dynamic_hand_collision_telemetry
     enum class TwinRole : std::uint8_t
     {
         Palm = 0,
+        ThumbBase,
+        ThumbMiddle,
         ThumbTip,
+        IndexBase,
+        IndexMiddle,
         IndexTip,
+        MiddleBase,
+        MiddleMiddle,
         MiddleTip,
+        RingBase,
+        RingMiddle,
         RingTip,
+        PinkyBase,
+        PinkyMiddle,
         PinkyTip,
         Forearm,
     };
+
+    [[nodiscard]] constexpr bool isFingerSlot(
+        const std::size_t bodyIndex) noexcept
+    {
+        return bodyIndex >= kFirstFingerSlot && bodyIndex < kFirstForearmSlot;
+    }
+
+    [[nodiscard]] constexpr std::size_t fingerIndexForBodyIndex(
+        const std::size_t bodyIndex) noexcept
+    {
+        return isFingerSlot(bodyIndex) ?
+            (bodyIndex - kFirstFingerSlot) /
+                hand_collider_semantics::kHandFingerSegmentCount :
+            hand_collider_semantics::kHandFingerCount;
+    }
+
+    [[nodiscard]] constexpr std::size_t fingerSegmentIndexForBodyIndex(
+        const std::size_t bodyIndex) noexcept
+    {
+        return isFingerSlot(bodyIndex) ?
+            (bodyIndex - kFirstFingerSlot) %
+                hand_collider_semantics::kHandFingerSegmentCount :
+            hand_collider_semantics::kHandFingerSegmentCount;
+    }
+
+    [[nodiscard]] constexpr std::size_t bodyIndexForFingerSegment(
+        const std::size_t fingerIndex,
+        const std::size_t segmentIndex) noexcept
+    {
+        return kFirstFingerSlot +
+               fingerIndex * hand_collider_semantics::kHandFingerSegmentCount +
+               segmentIndex;
+    }
+
+    [[nodiscard]] constexpr bool isFingerTipSlot(
+        const std::size_t bodyIndex) noexcept
+    {
+        return isFingerSlot(bodyIndex) &&
+               fingerSegmentIndexForBodyIndex(bodyIndex) ==
+                   static_cast<std::size_t>(
+                       hand_collider_semantics::HandFingerSegment::Tip);
+    }
+
+    [[nodiscard]] constexpr bool isSurfaceGrabSourceSlot(
+        const std::size_t bodyIndex) noexcept
+    {
+        return bodyIndex == kPalmSlot || isFingerTipSlot(bodyIndex);
+    }
 
     [[nodiscard]] constexpr TwinRole roleForBodyIndex(std::size_t bodyIndex) noexcept
     {
@@ -50,16 +113,36 @@ namespace rock::dynamic_hand_collision_telemetry
         switch (role) {
         case TwinRole::Palm:
             return "PALM";
+        case TwinRole::ThumbBase:
+            return "THB0";
+        case TwinRole::ThumbMiddle:
+            return "THB1";
         case TwinRole::ThumbTip:
-            return "THMB";
+            return "THB2";
+        case TwinRole::IndexBase:
+            return "IDX0";
+        case TwinRole::IndexMiddle:
+            return "IDX1";
         case TwinRole::IndexTip:
-            return "INDX";
+            return "IDX2";
+        case TwinRole::MiddleBase:
+            return "MID0";
+        case TwinRole::MiddleMiddle:
+            return "MID1";
         case TwinRole::MiddleTip:
-            return "MIDL";
+            return "MID2";
+        case TwinRole::RingBase:
+            return "RNG0";
+        case TwinRole::RingMiddle:
+            return "RNG1";
         case TwinRole::RingTip:
-            return "RING";
+            return "RNG2";
+        case TwinRole::PinkyBase:
+            return "PNK0";
+        case TwinRole::PinkyMiddle:
+            return "PNK1";
         case TwinRole::PinkyTip:
-            return "PNKY";
+            return "PNK2";
         case TwinRole::Forearm:
             return "FARM";
         }
@@ -106,6 +189,8 @@ namespace rock::dynamic_hand_collision_telemetry
     struct HandSample
     {
         std::array<TwinSample, kBodiesPerHand> twins{};
+        std::array<float, hand_collider_semantics::kHandFingerCount>
+            surfaceFingerOpenValues{ 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
         RE::NiPoint3 combinedContactDeviationWorldGame{};
         RE::NiPoint3 appliedVisualDeviationWorldGame{};
 
@@ -113,6 +198,7 @@ namespace rock::dynamic_hand_collision_telemetry
         std::uint32_t contactMask = 0;
         std::uint32_t contactCount = 0;
         std::uint32_t entryContactMask = 0;
+        std::uint32_t surfaceFingerHelpfulSlotMask = 0;
         float combinedContactDeviationGameUnits = 0.0f;
         float appliedVisualDeviationGameUnits = 0.0f;
         float contactEntryApproachSpeedGameUnitsPerSecond = 0.0f;
@@ -124,6 +210,7 @@ namespace rock::dynamic_hand_collision_telemetry
         bool visualAuthorityAvailable = false;
         bool visualActive = false;
         bool anyContact = false;
+        bool surfaceFingerResponseActive = false;
     };
 
     struct Snapshot

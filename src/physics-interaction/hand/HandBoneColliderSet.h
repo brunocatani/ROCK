@@ -64,8 +64,8 @@ namespace rock
         bool tryGetPalmAnchorTarget(RE::NiTransform& outTarget) const;
 
         /*
-         * Stage A dynamic-twin publication (main thread only): the exact palm
-         * anchor and fingertip role frames this set drives its keyframed bodies
+         * Dynamic-twin publication (main thread only): the exact palm anchor
+         * and all 15 finger role frames this set drives its keyframed bodies
          * with, refreshed every update. buildDynamicTwinShape builds the same
          * hull the keyframed twin uses for those dimensions.
          */
@@ -84,12 +84,10 @@ namespace rock
             std::array<PublishedSegmentFrame, hand_collider_semantics::kHandSegmentColliderBodyCountPerHand>;
 
         /*
-         * Every driven segment collider frame from the last update, not only
-         * the palm and fingertips the dynamic twins mirror. Consumers that
-         * reason about the hand as a VOLUME - an object may not end up inside
-         * ANY segment, not just the two published for twinning - need the
-         * whole set. Main-thread publication, same contract as
-         * dynamicTwinTargets().
+         * Every driven segment collider frame from the last update. Consumers
+         * that reason about the hand as a VOLUME - an object may not end up
+         * inside ANY segment - need the whole set. Main-thread publication,
+         * same contract as dynamicTwinTargets().
          */
         const PublishedSegmentFrames& segmentColliderFrames() const { return _segmentFrames; }
         RE::hknpShape* buildDynamicTwinShape(const dynamic_hand_twin::TwinSlotFrame& slotFrame, bool isPalm) const;

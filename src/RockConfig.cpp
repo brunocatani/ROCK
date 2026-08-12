@@ -259,6 +259,13 @@ namespace rock
         rockHandCollisionDynamicHapticSpeedScale = 0.006f;
         rockHandCollisionDynamicHapticMinApproachSpeedGameUnitsPerSecond = 3.0f;
         rockHandCollisionDynamicHapticCooldownSeconds = 0.12f;
+        rockHandCollisionSurfaceFingerResponseEnabled = true;
+        rockHandCollisionSurfaceFingerProbeClosureOpenUnits = 0.10f;
+        rockHandCollisionSurfaceFingerResponseGain = 1.0f;
+        rockHandCollisionSurfaceFingerMaximumClosureOpenUnits = 0.85f;
+        rockHandCollisionSurfaceFingerMinimumHelpfulTravelGameUnits = 0.01f;
+        rockHandCollisionSurfaceFingerSmoothingSpeed = 30.0f;
+        rockHandCollisionSurfaceFingerReleaseDelaySeconds = 0.12f;
 
         rockNativeMeleeSuppressionEnabled = true;
         rockNativeMeleeFullSuppression = true;
@@ -1292,6 +1299,52 @@ namespace rock
             0.12f,
             0.0f,
             5.0f);
+        rockHandCollisionSurfaceFingerResponseEnabled = ini.GetBoolValue(
+            SECTION,
+            "bHandCollisionSurfaceFingerResponseEnabled",
+            rockHandCollisionSurfaceFingerResponseEnabled);
+        rockHandCollisionSurfaceFingerProbeClosureOpenUnits = readClampedFloat(ini,
+            SECTION,
+            "fHandCollisionSurfaceFingerProbeClosureOpenUnits",
+            rockHandCollisionSurfaceFingerProbeClosureOpenUnits,
+            0.10f,
+            0.01f,
+            0.50f);
+        rockHandCollisionSurfaceFingerResponseGain = readClampedFloat(ini,
+            SECTION,
+            "fHandCollisionSurfaceFingerResponseGain",
+            rockHandCollisionSurfaceFingerResponseGain,
+            1.0f,
+            0.0f,
+            4.0f);
+        rockHandCollisionSurfaceFingerMaximumClosureOpenUnits = readClampedFloat(ini,
+            SECTION,
+            "fHandCollisionSurfaceFingerMaximumClosureOpenUnits",
+            rockHandCollisionSurfaceFingerMaximumClosureOpenUnits,
+            0.85f,
+            0.0f,
+            1.0f);
+        rockHandCollisionSurfaceFingerMinimumHelpfulTravelGameUnits = readClampedFloat(ini,
+            SECTION,
+            "fHandCollisionSurfaceFingerMinimumHelpfulTravelGameUnits",
+            rockHandCollisionSurfaceFingerMinimumHelpfulTravelGameUnits,
+            0.01f,
+            0.0001f,
+            1.0f);
+        rockHandCollisionSurfaceFingerSmoothingSpeed = readClampedFloat(ini,
+            SECTION,
+            "fHandCollisionSurfaceFingerSmoothingSpeed",
+            rockHandCollisionSurfaceFingerSmoothingSpeed,
+            30.0f,
+            0.0f,
+            240.0f);
+        rockHandCollisionSurfaceFingerReleaseDelaySeconds = readClampedFloat(ini,
+            SECTION,
+            "fHandCollisionSurfaceFingerReleaseDelaySeconds",
+            rockHandCollisionSurfaceFingerReleaseDelaySeconds,
+            0.12f,
+            0.0f,
+            2.0f);
 
         rockNativeMeleeSuppressionEnabled = ini.GetBoolValue(SECTION, "bNativeMeleeSuppressionEnabled", rockNativeMeleeSuppressionEnabled);
         rockNativeMeleeFullSuppression = ini.GetBoolValue(SECTION, "bNativeMeleeFullSuppression", rockNativeMeleeFullSuppression);

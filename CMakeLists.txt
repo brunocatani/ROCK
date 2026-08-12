@@ -329,6 +329,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKDynamicHandCollisionFeedbackPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKDynamicHandCollisionFeedbackPolicyTests)
 
+  add_executable(ROCKSurfaceFingerCollisionPolicyTests
+    "${ROOT_DIR}/tests/SurfaceFingerCollisionPolicyTests.cpp"
+  )
+  target_compile_features(ROCKSurfaceFingerCollisionPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKSurfaceFingerCollisionPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKSurfaceFingerCollisionPolicyTests)
+
   add_executable(ROCKGrabContactEvidencePolicyTests
     "${ROOT_DIR}/tests/GrabContactEvidencePolicyTests.cpp"
   )
@@ -705,6 +712,7 @@ if(BUILD_ROCK_TESTS)
     ROCKGrabFingerLocalTransformPolicyTests
     ROCKGrabHapticPolicyTests
     ROCKDynamicHandCollisionFeedbackPolicyTests
+    ROCKSurfaceFingerCollisionPolicyTests
     ROCKGrabContactEvidencePolicyTests
     ROCKHandSemanticContactPolicyTests
     ROCKGrabContactPatchClusterPolicyTests

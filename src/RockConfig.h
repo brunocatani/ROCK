@@ -185,7 +185,7 @@ namespace rock
         float rockNativeScopeOverlayRollDegrees = 0.0f;
 
         /*
-         * Canonical free-hand world collision: dynamic palm/fingertip proxy
+         * Canonical free-hand world collision: dynamic palm/finger proxy
          * bodies are solver-clipped by static world surfaces and drive the
          * rendered hand through one-way visual authority.
          */
@@ -205,6 +205,13 @@ namespace rock
         float rockHandCollisionDynamicHapticSpeedScale = 0.006f;
         float rockHandCollisionDynamicHapticMinApproachSpeedGameUnitsPerSecond = 3.0f;
         float rockHandCollisionDynamicHapticCooldownSeconds = 0.12f;
+        bool rockHandCollisionSurfaceFingerResponseEnabled = true;
+        float rockHandCollisionSurfaceFingerProbeClosureOpenUnits = 0.10f;
+        float rockHandCollisionSurfaceFingerResponseGain = 1.0f;
+        float rockHandCollisionSurfaceFingerMaximumClosureOpenUnits = 0.85f;
+        float rockHandCollisionSurfaceFingerMinimumHelpfulTravelGameUnits = 0.01f;
+        float rockHandCollisionSurfaceFingerSmoothingSpeed = 30.0f;
+        float rockHandCollisionSurfaceFingerReleaseDelaySeconds = 0.12f;
 
         bool rockNativeMeleeSuppressionEnabled = true;
         bool rockNativeMeleeFullSuppression = true;

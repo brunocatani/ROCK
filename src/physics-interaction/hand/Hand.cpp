@@ -1540,9 +1540,7 @@ namespace rock
          * Hand geometry: the palm and fingertip frames the collider set is
          * actually driving this frame, not a reconstruction. These are the
          * volumes the object must stay out of, so a solver fitted here is
-         * fitted against the real hand. Mid-finger segments are not published
-         * by the twin targets; the fingertip contacts below carry the wrap
-         * evidence those segments would otherwise be needed for.
+         * fitted against the real hand.
          */
         const auto& twins = dynamicTwinTargets();
         if (twins.palm.valid) {
@@ -1592,8 +1590,13 @@ namespace rock
         if (mesh.valid && grab_three_phase::isFinite(meshNode->world)) {
             const float meshScale = std::isfinite(meshNode->world.scale) && meshNode->world.scale > 0.0f ? meshNode->world.scale : 1.0f;
             constexpr float kContactSkinGameUnits = 0.5f;
-            for (std::size_t finger = 0; finger < twins.fingertips.size() && finger < saved_grab_capture::kFingerCount; ++finger) {
-                const auto& slot = twins.fingertips[finger];
+            constexpr auto tipSegment = static_cast<std::size_t>(
+                hand_collider_semantics::HandFingerSegment::Tip);
+            for (std::size_t finger = 0;
+                 finger < twins.fingers.size() &&
+                 finger < saved_grab_capture::kFingerCount;
+                 ++finger) {
+                const auto& slot = twins.fingers[finger][tipSegment];
                 if (!slot.valid || !grab_three_phase::isFinite(slot.target)) {
                     continue;
                 }

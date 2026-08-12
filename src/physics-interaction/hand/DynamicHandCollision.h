@@ -5,6 +5,7 @@
 #include "physics-interaction/hand/DynamicHandCollisionTransitionPolicy.h"
 #include "physics-interaction/hand/DynamicHandCollisionTelemetry.h"
 #include "physics-interaction/hand/DynamicHandTwinTargets.h"
+#include "physics-interaction/hand/SurfaceFingerCollisionPolicy.h"
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
 #include "physics-interaction/native/HavokPhysicsTiming.h"
@@ -27,19 +28,22 @@ namespace rock
 {
     class BodyBoneColliderSet;
     class Hand;
+    enum class HandState : std::uint8_t;
     struct PhysicsFrameContext;
     struct HandFrameInput;
 
     /*
-     * Dynamic world collision uses DYNAMIC twins of the palm anchor, five
-     * fingertip colliders, and one merged ForeArm1->Hand proxy per side. They
-     * chase their published role frames with engine hard-keyframe velocities
-     * every physics substep, on the world-only
-     * extended layer. Static world clips their velocity inside the solver
+     * Dynamic world collision uses DYNAMIC twins of the palm anchor, all 15
+     * finger-segment colliders, and one merged ForeArm1->Hand proxy per side.
+     * They chase their published role frames with engine hard-keyframe
+     * velocities every physics substep, on the world-only extended layer.
+     * Static world clips their velocity inside the solver
      * (true multi-plane contact); the rendered FRIK hand follows the COMBINED
-     * position deviation (sequential projection over per-body deviations, then
-     * exponential smoothing against solver contact noise). Authority is
-     * During ordinary tracking authority is strictly one-directional
+     * position deviation (sequential projection over palm/forearm deviations,
+     * with unresolved fingertip contacts retaining the legacy rigid fallback).
+     * Finger-segment residuals independently drive a bounded anatomical curl
+     * pose when that curl moves the contacted segment toward the solver-safe
+     * position. During ordinary tracking authority is strictly one-directional
      * (wand/skeleton targets -> twins -> render): twin targets come from the
      * same HandBoneColliderSet/BodyBoneColliderSet role-frame publications the
      * keyframed colliders are driven with. A fixed-surface latch captures one
@@ -253,6 +257,27 @@ namespace rock
 
         struct HandSlots
         {
+            struct SurfaceFingerResponse
+            {
+                std::array<RE::NiTransform,
+                    hand_collider_semantics::kHandFingerRoleCount>
+                    intentFramesInHand{};
+                std::array<RE::NiPoint3,
+                    hand_collider_semantics::kHandFingerRoleCount>
+                    curlProbeTravelInHand{};
+                std::array<bool,
+                    hand_collider_semantics::kHandFingerRoleCount>
+                    intentValid{};
+                std::array<float, hand_collider_semantics::kHandFingerCount>
+                    baselineOpenValues{ 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
+                std::array<float, hand_collider_semantics::kHandFingerCount>
+                    currentOpenValues{ 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
+                std::uint32_t lastHelpfulDynamicSlotMask = 0;
+                float noContactSeconds = 0.0f;
+                bool active = false;
+                bool posePublished = false;
+            };
+
             struct SurfaceLatch
             {
                 bool active = false;
@@ -273,6 +298,7 @@ namespace rock
             RE::NiTransform lastPresentedHandWorld{};
             bool lastPresentedHandWorldValid = false;
             SurfaceLatch surfaceLatch{};
+            SurfaceFingerResponse surfaceFingerResponse{};
             /*
              * Post-teleport visual recovery: while this window is open the
              * render-side filter uses a slow eased glide instead of the snappy
@@ -298,6 +324,22 @@ namespace rock
         void retireSlot(ProxySlot& slot, void* bhkWorld);
         void retireHand(HandSlots& handSlots, void* bhkWorld, bool isLeft);
         void clearVisual(HandSlots& handSlots, bool isLeft);
+        void clearSurfaceFingerResponse(HandSlots& handSlots, bool isLeft);
+        [[nodiscard]] bool captureSurfaceFingerResponse(
+            HandSlots& handSlots,
+            bool isLeft,
+            HandState handState,
+            const RE::NiTransform& rawHandWorld,
+            const dynamic_hand_twin::TwinTargets& handTwins);
+        [[nodiscard]] std::uint32_t updateSurfaceFingerResponse(
+            HandSlots& handSlots,
+            bool isLeft,
+            HandState handState,
+            const RE::NiTransform& rawHandWorld,
+            const dynamic_hand_twin::TwinTargets& handTwins,
+            const dynamic_hand_collision_telemetry::HandSample& handTelemetry,
+            float deltaSeconds,
+            bool freezeCurrentPose);
         void applyTransitionCollisionSuppression(RE::hknpWorld* world, bool suppressCollision);
         static void publishPhysicsTelemetry(ProxySlot& slot, const PhysicsTelemetrySample& sample);
         [[nodiscard]] static bool readPhysicsTelemetry(const ProxySlot& slot, PhysicsTelemetrySample& outSample, std::uint64_t& outSequence);
