@@ -466,8 +466,24 @@ Require-OrderedText 'src/physics-interaction/grab/TouchGrabRuntime.cpp' @(
     'resolveTouchGrabTargetV1\(',
     'if \(!providerMatched\)',
     'shouldUseFallback\(',
-    'makeGlobalSurfaceTarget\('
+    'makeGlobalSurfaceTarget\(',
+    'canFollowUnclassifiedMotion\('
 ) 'Provider-authored touch targets must resolve before global fallback synthesis.'
+Reject-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' `
+    '!snapshot\.valid\s*\|\|\s*motionClass\s*==\s*provider::TouchGrabMotionClassV1::Other' `
+    'Noncanonical motion-property handles must not be rejected before the non-mutating global FixedAnchor fallback is resolved.'
+Require-Text 'src/physics-interaction/grab/GlobalSurfaceGrabPolicy.h' `
+    'canFollowUnclassifiedMotion[\s\S]{0,220}globalSurfaceFallback\s*&&\s*fixedAnchor' `
+    'Only a built-in global FixedAnchor may follow a body whose motion-property handle is not classified.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'Touch grab edge gated:[\s\S]{0,900}touchGrabPhysicsWritesAllowed' `
+    'A rejected grip edge must identify the orchestration gate that blocked acquisition.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'Touch grab attempt rejected:[\s\S]{0,900}latchFailure' `
+    'A failed contact candidate must report its target and surface-latch rejection stage.'
+Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
+    'SurfaceLatchFailure::PrerequisiteUnavailable[\s\S]*SurfaceLatchFailure::ContactSourceMismatch[\s\S]*SurfaceLatchFailure::HandTransformUnavailable[\s\S]*SurfaceLatchFailure::TargetTransformUnavailable[\s\S]*SurfaceLatchFailure::SourceProxyUnavailable' `
+    'Surface latch diagnostics must distinguish every acquisition prerequisite without hot-path retry logging.'
 Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' `
     'active\.globalSurface[\s\S]*_globalSurfaceGrabEnabled[\s\S]*releaseTarget\(' `
     'Disabling the INI setting must retire active global latches through normal cleanup.'

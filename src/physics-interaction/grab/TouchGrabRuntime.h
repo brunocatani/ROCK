@@ -58,6 +58,38 @@ namespace rock
             std::uint32_t referenceNativeHandle = 0;
         };
 
+        enum class AttemptFailure : std::uint8_t
+        {
+            NoCandidates,
+            InvalidInput,
+            SnapshotUnavailable,
+            TargetUnavailable,
+            YieldRequested,
+            MotionUnsupported,
+            ContactKindMismatch,
+            TargetClassMismatch,
+            WorldMismatch,
+            TargetConflict,
+            CapacityFull,
+            MechanismCreationFailed,
+            HandAttachmentFailed,
+        };
+
+        struct AttemptReport
+        {
+            AttemptFailure failure{ AttemptFailure::NoCandidates };
+            TargetClass targetClass{ TargetClass::Explicit };
+            ContactSource contactSource{ ContactSource::SemanticHand };
+            provider::TouchGrabMotionClassV1 motionClass{
+                provider::TouchGrabMotionClassV1::Other
+            };
+            std::uint32_t bodyId = 0x7FFF'FFFFu;
+            std::uint32_t collisionLayer = 0xFFFF'FFFFu;
+            std::uint32_t motionIndex = 0xFFFF'FFFFu;
+            std::uint16_t motionPropertiesId = 0xFFFFu;
+            std::uint8_t surfaceLatchFailure = 0;
+        };
+
         void setPhysicsCallbackGate(
             PhysicsCallbackQuiescenceGate* gate) noexcept;
         void setDynamicHandCollisionRuntime(
@@ -74,6 +106,14 @@ namespace rock
         [[nodiscard]] bool getHandReport(
             bool isLeft,
             HandReport& outReport) const noexcept;
+        void beginAttemptDiagnostics() noexcept
+        {
+            _lastAttemptReport = {};
+        }
+        [[nodiscard]] AttemptReport getAttemptReport() const noexcept
+        {
+            return _lastAttemptReport;
+        }
 
         [[nodiscard]] bool tryAcquire(
             bool isLeft,
@@ -209,5 +249,6 @@ namespace rock
         std::uint32_t _worldGeneration = 0;
         std::uint32_t _skeletonGeneration = 0;
         std::uint32_t _providerGeneration = 0;
+        AttemptReport _lastAttemptReport{};
     };
 }

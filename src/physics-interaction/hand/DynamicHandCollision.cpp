@@ -467,27 +467,38 @@ namespace rock
         const bool isLeft,
         const std::uint32_t sourceBodyId,
         const std::uint32_t targetBodyId,
-        RE::hknpWorld* world)
+        RE::hknpWorld* world,
+        SurfaceLatchFailure* outFailure)
     {
+        if (outFailure) {
+            *outFailure = SurfaceLatchFailure::None;
+        }
+        const auto reject = [&](const SurfaceLatchFailure failure) {
+            if (outFailure) {
+                *outFailure = failure;
+            }
+            return false;
+        };
+
         if (!g_rockConfig.rockHandCollisionDynamicDrive ||
             !frik_visual_authority::isAvailable() ||
             !world || targetBodyId == hand_semantic_contact_state::kInvalidBodyId ||
             sourceBodyId == hand_semantic_contact_state::kInvalidBodyId ||
             sourceBodyId == targetBodyId) {
-            return false;
+            return reject(SurfaceLatchFailure::PrerequisiteUnavailable);
         }
 
         dynamic_hand_surface_contact_state::ContactSource source{};
         if (!tryClassifySurfaceContactSourceAtomic(sourceBodyId, source) ||
             source.isLeft != isLeft) {
-            return false;
+            return reject(SurfaceLatchFailure::ContactSourceMismatch);
         }
 
         auto& handSlots = _hands[handIndex(isLeft)];
         if (handSlots.surfaceLatch.active ||
             !handSlots.lastPresentedHandWorldValid ||
             !isFiniteTransform(handSlots.lastPresentedHandWorld)) {
-            return false;
+            return reject(SurfaceLatchFailure::HandTransformUnavailable);
         }
 
         const auto targetSnapshot = havok_runtime::snapshotBody(
@@ -500,7 +511,7 @@ namespace rock
                 RE::hknpBodyId{ targetBodyId },
                 targetWorld) ||
             !isFiniteTransform(targetWorld)) {
-            return false;
+            return reject(SurfaceLatchFailure::TargetTransformUnavailable);
         }
 
         HandSlots::SurfaceLatch candidate{};
@@ -537,7 +548,7 @@ namespace rock
                              slot.body.getBodyId().value == sourceBodyId;
         }
         if (!sourceCaptured || !isFiniteTransform(candidate.handInTargetBody)) {
-            return false;
+            return reject(SurfaceLatchFailure::SourceProxyUnavailable);
         }
 
         candidate.active = true;

@@ -128,6 +128,9 @@ int main()
         true,
         true,
         FO4_LAYER_CLUTTER));
+    assert(canFollowUnclassifiedMotion(true, true));
+    assert(!canFollowUnclassifiedMotion(false, true));
+    assert(!canFollowUnclassifiedMotion(true, false));
     assert(maskEnablesLayer(allowedLayerMask(), FO4_LAYER_STATIC));
     assert(maskEnablesLayer(allowedLayerMask(), FO4_LAYER_TERRAIN));
     assert(maskEnablesLayer(

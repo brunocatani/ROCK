@@ -9756,6 +9756,8 @@ namespace rock
                 handState == HandState::Idle ||
                 handState == HandState::SelectedClose ||
                 handState == HandState::SelectedFar;
+            const bool touchGrabPhysicsWritesAllowed =
+                physicsWritesAllowedForWorld(frame.hknpWorld);
             const bool canTryTouchGrab =
                 rawGrabInput.pressed &&
                 rawGrabInput.held &&
@@ -9767,8 +9769,26 @@ namespace rock
                 !hand.hasActivePullCatchIntent() &&
                 !hand.hasPendingActorEquipmentDropHandoff() &&
                 !_pendingForceGrabCommits[handIndex].active &&
-                physicsWritesAllowedForWorld(frame.hknpWorld);
+                touchGrabPhysicsWritesAllowed;
+            if (rawGrabInput.pressed && !canTryTouchGrab) {
+                ROCK_LOG_INFO(
+                    Hand,
+                    "Touch grab edge gated: hand={} held={} worldReady={} menuBlocked={} menuInput={} holding={} handState={} stateAvailable={} pullCatch={} actorDrop={} forceCommit={} physicsWrites={}",
+                    isLeft ? "left" : "right",
+                    rawGrabInput.held,
+                    frame.worldReady,
+                    frame.menuBlocked,
+                    input_remap_runtime::isMenuInputActive(),
+                    hand.isHolding(),
+                    static_cast<std::uint32_t>(handState),
+                    touchGrabStateAvailable,
+                    hand.hasActivePullCatchIntent(),
+                    hand.hasPendingActorEquipmentDropHandoff(),
+                    _pendingForceGrabCommits[handIndex].active,
+                    touchGrabPhysicsWritesAllowed);
+            }
             if (canTryTouchGrab) {
+                _touchGrabRuntime.beginAttemptDiagnostics();
                 constexpr std::uint32_t
                     kTouchGrabContactFreshnessFrames = 4;
                 const auto contacts =
@@ -9858,6 +9878,23 @@ namespace rock
                         "touch-grab-acquired");
                     return;
                 }
+                const auto attempt =
+                    _touchGrabRuntime.getAttemptReport();
+                ROCK_LOG_INFO(
+                    Hand,
+                    "Touch grab attempt rejected: hand={} semanticContacts={} surfaceContacts={} failure={} targetClass={} source={} body={} layer={} motionClass={} motionProperties={} motionIndex={} latchFailure={}",
+                    isLeft ? "left" : "right",
+                    contacts.count,
+                    surfaceContacts.count,
+                    static_cast<std::uint32_t>(attempt.failure),
+                    static_cast<std::uint32_t>(attempt.targetClass),
+                    static_cast<std::uint32_t>(attempt.contactSource),
+                    attempt.bodyId,
+                    attempt.collisionLayer,
+                    static_cast<std::uint32_t>(attempt.motionClass),
+                    attempt.motionPropertiesId,
+                    attempt.motionIndex,
+                    attempt.surfaceLatchFailure);
             }
 
             if (triggerEquipIntent.pending) {

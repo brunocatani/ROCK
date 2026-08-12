@@ -27,6 +27,20 @@ namespace rock::global_surface_grab_policy
                    collisionLayer);
     }
 
+    /*
+     * A built-in FixedAnchor only follows the target body's live transform; it
+     * never changes motion properties, velocities, activation, or constraints
+     * on that body. That makes noncanonical Havok motion-property handles safe
+     * for this one path. Provider mechanisms still require a classified motion
+     * type because their creation and restoration mutate target state.
+     */
+    [[nodiscard]] inline constexpr bool canFollowUnclassifiedMotion(
+        const bool globalSurfaceFallback,
+        const bool fixedAnchor) noexcept
+    {
+        return globalSurfaceFallback && fixedAnchor;
+    }
+
     [[nodiscard]] inline constexpr std::uint64_t targetIdForHand(
         const bool isLeft) noexcept
     {

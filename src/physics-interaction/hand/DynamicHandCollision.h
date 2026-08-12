@@ -117,6 +117,16 @@ namespace rock
             bool isLeft,
             std::uint32_t maximumAgeFrames) const noexcept;
 
+        enum class SurfaceLatchFailure : std::uint8_t
+        {
+            None,
+            PrerequisiteUnavailable,
+            ContactSourceMismatch,
+            HandTransformUnavailable,
+            TargetTransformUnavailable,
+            SourceProxyUnavailable,
+        };
+
         /*
          * Fixed-surface ownership does not constrain or mutate the target.
          * Instead the hand and all live dynamic twins retain their transforms
@@ -126,7 +136,8 @@ namespace rock
             bool isLeft,
             std::uint32_t sourceBodyId,
             std::uint32_t targetBodyId,
-            RE::hknpWorld* world);
+            RE::hknpWorld* world,
+            SurfaceLatchFailure* outFailure = nullptr);
         void endSurfaceLatch(bool isLeft) noexcept;
         [[nodiscard]] bool isSurfaceLatchActive(bool isLeft) const noexcept;
 

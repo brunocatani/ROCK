@@ -509,6 +509,12 @@ namespace rock
         const TargetClass targetClass,
         const ContactSource contactSource)
     {
+        _lastAttemptReport = {
+            .failure = AttemptFailure::InvalidInput,
+            .targetClass = targetClass,
+            .contactSource = contactSource,
+            .bodyId = contact.otherBodyId,
+        };
         if (!bhkWorld || !hknpWorld || !contact.valid ||
             contact.isLeft != isLeft ||
             contact.handBodyId == kInvalidId ||
@@ -521,10 +527,16 @@ namespace rock
         const auto snapshot =
             havok_runtime::snapshotBody(hknpWorld, bodyId);
         const auto motionClass = classifyMotion(snapshot);
-        if (!snapshot.valid ||
-            motionClass == provider::TouchGrabMotionClassV1::Other) {
+        _lastAttemptReport.failure = AttemptFailure::SnapshotUnavailable;
+        _lastAttemptReport.motionClass = motionClass;
+        if (!snapshot.valid || !snapshot.body) {
             return false;
         }
+        _lastAttemptReport.collisionLayer =
+            snapshot.collisionFilterInfo & 0x7Fu;
+        _lastAttemptReport.motionIndex = snapshot.motionIndex;
+        _lastAttemptReport.motionPropertiesId =
+            snapshot.body->motionPropertiesId;
 
         ActiveTarget* targetOnBody = nullptr;
         for (auto& candidate : _targets) {
@@ -563,6 +575,8 @@ namespace rock
                     targetClass == TargetClass::Wildcard,
                     contactSource == ContactSource::DynamicSurface,
                     layer)) {
+                _lastAttemptReport.failure =
+                    AttemptFailure::TargetUnavailable;
                 return false;
             }
             match.matched = true;
@@ -583,17 +597,29 @@ namespace rock
             }
         }
         if (match.yieldRequested) {
+            _lastAttemptReport.failure = AttemptFailure::YieldRequested;
             return false;
         }
         const bool fixedAnchor =
             match.target.kind ==
             provider::RockProviderTouchGrabKindV1::FixedAnchor;
+        if (motionClass == provider::TouchGrabMotionClassV1::Other &&
+            !global_surface_grab_policy::canFollowUnclassifiedMotion(
+                !providerMatched,
+                fixedAnchor)) {
+            _lastAttemptReport.failure = AttemptFailure::MotionUnsupported;
+            return false;
+        }
         if ((contactSource == ContactSource::DynamicSurface) != fixedAnchor) {
+            _lastAttemptReport.failure =
+                AttemptFailure::ContactKindMismatch;
             return false;
         }
         const bool wildcardRequested =
             targetClass == TargetClass::Wildcard;
         if (match.wildcard != wildcardRequested) {
+            _lastAttemptReport.failure =
+                AttemptFailure::TargetClassMismatch;
             return false;
         }
 
@@ -609,6 +635,7 @@ namespace rock
                 worldGeneration != _worldGeneration ||
                 skeletonGeneration != _skeletonGeneration ||
                 providerGeneration != _providerGeneration)) {
+            _lastAttemptReport.failure = AttemptFailure::WorldMismatch;
             return false;
         }
 
@@ -618,6 +645,7 @@ namespace rock
             match.target.targetId,
             match.target.targetGeneration);
         if (targetOnBody && active != targetOnBody) {
+            _lastAttemptReport.failure = AttemptFailure::TargetConflict;
             return false;
         }
         if (active) {
@@ -630,6 +658,7 @@ namespace rock
                     match.target.flags,
                     provider::RockProviderTouchGrabTargetFlagV1::
                         AllowTwoHands)) {
+                _lastAttemptReport.failure = AttemptFailure::TargetConflict;
                 return false;
             }
             auto structuralMutation = _physicsCallbackGate ?
@@ -641,6 +670,8 @@ namespace rock
                     contact,
                     hknpWorld,
                     contactSource)) {
+                _lastAttemptReport.failure =
+                    AttemptFailure::HandAttachmentFailed;
                 return false;
             }
             publishState(
@@ -654,6 +685,7 @@ namespace rock
 
         active = firstFreeTarget();
         if (!active) {
+            _lastAttemptReport.failure = AttemptFailure::CapacityFull;
             return false;
         }
         resetTarget(*active);
@@ -700,6 +732,8 @@ namespace rock
                     TargetInvalid,
                 collisionGeneration,
                 true);
+            _lastAttemptReport.failure =
+                AttemptFailure::MechanismCreationFailed;
             return false;
         }
         if (!attachHand(
@@ -716,6 +750,8 @@ namespace rock
                     TargetInvalid,
                 collisionGeneration,
                 true);
+            _lastAttemptReport.failure =
+                AttemptFailure::HandAttachmentFailed;
             return false;
         }
 
@@ -917,12 +953,18 @@ namespace rock
         if (active.target.kind ==
             provider::RockProviderTouchGrabKindV1::FixedAnchor) {
             if (contactSource != ContactSource::DynamicSurface ||
-                !_dynamicHandCollision ||
-                !_dynamicHandCollision->beginSurfaceLatch(
+                !_dynamicHandCollision) {
+                return false;
+            }
+            DynamicHandCollisionRuntime::SurfaceLatchFailure latchFailure{};
+            if (!_dynamicHandCollision->beginSurfaceLatch(
                     isLeft,
                     contact.handBodyId,
                     active.bodyId,
-                    world)) {
+                    world,
+                    &latchFailure)) {
+                _lastAttemptReport.surfaceLatchFailure =
+                    static_cast<std::uint8_t>(latchFailure);
                 return false;
             }
             surfaceLatch = true;
