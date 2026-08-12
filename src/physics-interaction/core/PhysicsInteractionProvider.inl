@@ -718,6 +718,33 @@
                     state.flags |= static_cast<std::uint32_t>(
                         Flag::GlobalSurfaceLatch);
                 }
+                state.surfaceGripMode =
+                    touchGrabReport.surfaceGripMode;
+                if (touchGrabReport.hasSurfaceAnchor) {
+                    state.surfaceAnchorGame = {
+                        touchGrabReport.surfaceAnchorGame.x,
+                        touchGrabReport.surfaceAnchorGame.y,
+                        touchGrabReport.surfaceAnchorGame.z
+                    };
+                    state.flags |= static_cast<std::uint32_t>(
+                        Flag::SurfaceAnchorValid);
+                }
+                if (touchGrabReport.surfaceGripMode ==
+                    ::rock::provider::RockProviderSurfaceGripModeV1::
+                        MeshAnchor) {
+                    state.flags |= static_cast<std::uint32_t>(
+                        Flag::MeshSurfaceAnchor);
+                } else if (touchGrabReport.surfaceGripMode ==
+                           ::rock::provider::
+                               RockProviderSurfaceGripModeV1::
+                                   CollisionFallback) {
+                    state.flags |= static_cast<std::uint32_t>(
+                        Flag::MeshCollisionFallback);
+                }
+                if (touchGrabReport.meshFingerPose) {
+                    state.flags |= static_cast<std::uint32_t>(
+                        Flag::MeshFingerPose);
+                }
             } else if (hand.isHolding()) {
                 auto* heldRef = hand.getHeldRef();
                 state.targetFormId = heldRef ? heldRef->GetFormID() : 0;

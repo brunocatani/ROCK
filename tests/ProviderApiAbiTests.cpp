@@ -122,6 +122,12 @@ int main()
     ok = ok && offsetof(RockProviderEquippedWeaponGripStateV1, muzzleOriginGame) == 188;
     ok = ok && offsetof(RockProviderEquippedWeaponGripStateV1, muzzleDirectionGame) == 200;
     ok = ok &&
+        offsetof(RockProviderHandInteractionStateV1, surfaceAnchorGame) == 144;
+    ok = ok &&
+        offsetof(RockProviderHandInteractionStateV1, surfaceGripMode) == 156;
+    ok = ok &&
+        offsetof(RockProviderTouchGrabStateV1, surfaceGripMode) == 52;
+    ok = ok &&
         static_cast<std::uint32_t>(
             RockProviderHandInteractionFlagV1::TouchGrab) ==
             (1u << 12);
@@ -133,6 +139,43 @@ int main()
         static_cast<std::uint32_t>(
             RockProviderHandInteractionFlagV1::GlobalSurfaceLatch) ==
             (1u << 14);
+    ok = ok &&
+        static_cast<std::uint32_t>(
+            RockProviderHandInteractionFlagV1::SurfaceAnchorValid) ==
+            (1u << 15);
+    ok = ok &&
+        static_cast<std::uint32_t>(
+            RockProviderHandInteractionFlagV1::MeshSurfaceAnchor) ==
+            (1u << 16);
+    ok = ok &&
+        static_cast<std::uint32_t>(
+            RockProviderHandInteractionFlagV1::MeshFingerPose) ==
+            (1u << 17);
+    ok = ok &&
+        static_cast<std::uint32_t>(
+            RockProviderHandInteractionFlagV1::MeshCollisionFallback) ==
+            (1u << 18);
+    ok = ok &&
+        static_cast<std::uint32_t>(
+            RockProviderTouchGrabStateFlagV1::MeshSurfaceAnchor) ==
+            (1u << 6);
+    ok = ok &&
+        static_cast<std::uint32_t>(
+            RockProviderTouchGrabStateFlagV1::MeshFingerPose) ==
+            (1u << 7);
+    ok = ok &&
+        static_cast<std::uint32_t>(
+            RockProviderTouchGrabStateFlagV1::MeshCollisionFallback) ==
+            (1u << 8);
+    ok = ok &&
+        static_cast<std::uint32_t>(
+            RockProviderSurfaceGripModeV1::CollisionAnchor) == 0;
+    ok = ok &&
+        static_cast<std::uint32_t>(
+            RockProviderSurfaceGripModeV1::MeshAnchor) == 1;
+    ok = ok &&
+        static_cast<std::uint32_t>(
+            RockProviderSurfaceGripModeV1::CollisionFallback) == 2;
     ok = ok && ROCK_PROVIDER_API_V1_NATIVE_ANIMATION_RUNTIME_CLEAR_TABLE_BYTES == 82 * sizeof(void*);
     ok = ok && ROCK_PROVIDER_API_V1_TOUCH_GRAB_TARGETS_TABLE_BYTES == 86 * sizeof(void*);
     ok = ok && ROCK_PROVIDER_API_V1_EQUIPPED_WEAPON_HAND_REQUEST_TABLE_BYTES == 87 * sizeof(void*);

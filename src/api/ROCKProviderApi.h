@@ -208,6 +208,16 @@ namespace rock::provider
         FixedAnchor = 1u << 3,
         OriginalMotionKeyframed = 1u << 4,
         OriginalMotionDynamic = 1u << 5,
+        MeshSurfaceAnchor = 1u << 6,
+        MeshFingerPose = 1u << 7,
+        MeshCollisionFallback = 1u << 8,
+    };
+
+    enum class RockProviderSurfaceGripModeV1 : std::uint32_t
+    {
+        CollisionAnchor = 0,
+        MeshAnchor = 1,
+        CollisionFallback = 2,
     };
 
     enum class RockProviderTouchGrabHandMaskV1 : std::uint32_t
@@ -897,6 +907,10 @@ namespace rock::provider
         TouchGrab = 1u << 12,
         FixedSurfaceLatch = 1u << 13,
         GlobalSurfaceLatch = 1u << 14,
+        SurfaceAnchorValid = 1u << 15,
+        MeshSurfaceAnchor = 1u << 16,
+        MeshFingerPose = 1u << 17,
+        MeshCollisionFallback = 1u << 18,
     };
 
     enum class RockProviderEventKindV1 : std::uint32_t
@@ -2261,7 +2275,10 @@ namespace rock::provider
         std::uint32_t skeletonGeneration{ 0 };
         std::uint32_t providerGeneration{ 0 };
         std::uint32_t collisionGeneration{ 0 };
-        std::uint32_t reserved[4]{};
+        RockProviderPoint3 surfaceAnchorGame{};
+        RockProviderSurfaceGripModeV1 surfaceGripMode{
+            RockProviderSurfaceGripModeV1::CollisionAnchor
+        };
     };
 
     struct RockProviderEventV1
@@ -2702,7 +2719,9 @@ namespace rock::provider
         std::uint32_t referenceNativeHandle{ 0 };
         std::uint32_t activeHandMask{ 0 };
         std::uint32_t flags{ 0 };
-        std::uint32_t reserved0{ 0 };
+        RockProviderSurfaceGripModeV1 surfaceGripMode{
+            RockProviderSurfaceGripModeV1::CollisionAnchor
+        };
         float currentCoordinate{ 0.0f };
         float coordinateVelocity{ 0.0f };
         RockProviderPoint3 contactPointGame{};

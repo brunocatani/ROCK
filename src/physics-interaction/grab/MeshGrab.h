@@ -1160,6 +1160,128 @@ namespace rock
         extractAllSurfaceTrianglesWithScenegraphVisitor(root, outTriangles, outSurfaceTriangles, stats, grabNodeNameBlacklist, allowPositionOnlySkinnedSurface);
     }
 
+    struct BoundedSurfaceMeshExtraction
+    {
+        MeshExtractionStats stats{};
+        std::uint32_t candidateShapes = 0;
+        std::uint32_t examinedTriangles = 0;
+        bool shapeBudgetExceeded = false;
+        bool triangleBudgetExceeded = false;
+
+        [[nodiscard]] bool hasTriangles() const noexcept
+        {
+            return stats.totalTriangles() != 0;
+        }
+    };
+
+    inline void extractBoundedSurfaceTrianglesRecursive(
+        RE::NiAVObject* root,
+        std::vector<TriangleData>& outTriangles,
+        std::vector<GrabSurfaceTriangleData>& outSurfaceTriangles,
+        int maxDepth,
+        std::uint32_t maxShapes,
+        std::uint32_t maxTriangles,
+        BoundedSurfaceMeshExtraction& result,
+        std::string_view grabNodeNameBlacklist = {},
+        bool allowPositionOnlySkinnedSurface = false)
+    {
+        if (!root || maxDepth <= 0 || maxShapes == 0 || maxTriangles == 0) {
+            return;
+        }
+        if (root->flags.flags & 1) {
+            return;
+        }
+        if (shouldSkipMeshExtractionNode(
+                root,
+                grabNodeNameBlacklist,
+                &result.stats)) {
+            return;
+        }
+
+        if (auto* triShape = root->IsTriShape()) {
+            if (result.candidateShapes >= maxShapes) {
+                result.shapeBudgetExceeded = true;
+                return;
+            }
+            ++result.candidateShapes;
+
+            TriShapeRawGeometry geometry{};
+            if (!readTriShapeRawGeometry(triShape, geometry)) {
+                ++result.stats.emptyShapes;
+                return;
+            }
+            const std::uint32_t remaining =
+                result.examinedTriangles < maxTriangles ?
+                maxTriangles - result.examinedTriangles :
+                0;
+            if (geometry.numTriangles > remaining) {
+                result.triangleBudgetExceeded = true;
+                return;
+            }
+
+            result.examinedTriangles += geometry.numTriangles;
+            extractSurfaceTrianglesFromTriShape(
+                triShape,
+                outTriangles,
+                outSurfaceTriangles,
+                &result.stats,
+                allowPositionOnlySkinnedSurface);
+            return;
+        }
+
+        auto* node = root->IsNode();
+        if (!node) {
+            return;
+        }
+        auto& children = node->GetRuntimeData().children;
+        for (auto index = decltype(children.size()){ 0 };
+             index < children.size();
+             ++index) {
+            if (result.candidateShapes >= maxShapes) {
+                result.shapeBudgetExceeded = true;
+                return;
+            }
+            auto* child = children[index].get();
+            if (!child) {
+                continue;
+            }
+            extractBoundedSurfaceTrianglesRecursive(
+                child,
+                outTriangles,
+                outSurfaceTriangles,
+                maxDepth - 1,
+                maxShapes,
+                maxTriangles,
+                result,
+                grabNodeNameBlacklist,
+                allowPositionOnlySkinnedSurface);
+        }
+    }
+
+    inline BoundedSurfaceMeshExtraction extractBoundedSurfaceTriangles(
+        RE::NiAVObject* root,
+        std::vector<TriangleData>& outTriangles,
+        std::vector<GrabSurfaceTriangleData>& outSurfaceTriangles,
+        int maxDepth,
+        std::uint32_t maxShapes,
+        std::uint32_t maxTriangles,
+        std::string_view grabNodeNameBlacklist = {},
+        bool allowPositionOnlySkinnedSurface = false)
+    {
+        BoundedSurfaceMeshExtraction result{};
+        extractBoundedSurfaceTrianglesRecursive(
+            root,
+            outTriangles,
+            outSurfaceTriangles,
+            maxDepth,
+            maxShapes,
+            maxTriangles,
+            result,
+            grabNodeNameBlacklist,
+            allowPositionOnlySkinnedSurface);
+        return result;
+    }
+
     inline float dot(const RE::NiPoint3& a, const RE::NiPoint3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 
     inline RE::NiPoint3 cross(const RE::NiPoint3& a, const RE::NiPoint3& b) { return RE::NiPoint3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x); }

@@ -391,6 +391,10 @@ namespace rock
         rockBodyBoneColliderRadiusScaleOverrides = "";
         rockHandCollisionStaticWorldEnabled = true;
         rockGlobalSurfaceGrabEnabled = true;
+        rockExperimentalSurfaceMeshGrabEnabled = false;
+        rockExperimentalSurfaceMeshGrabMaxProjectionDistanceGameUnits = 48.0f;
+        rockExperimentalSurfaceMeshGrabMaxTriangles = 20000;
+        rockExperimentalSurfaceMeshGrabMaxPatchTriangles = 2048;
         rockHandBoneColliderRadiusScaleOverrides = "";
         rockHandPalmColliderDimensionScaleOverrides = "";
         rockHandBoneCollidersRequirePalmAnchor = true;
@@ -1618,6 +1622,43 @@ namespace rock
         rockBodyBoneColliderRadiusScaleOverrides = ini.GetValue(SECTION, "sBodyBoneColliderRadiusScaleOverrides", rockBodyBoneColliderRadiusScaleOverrides.c_str());
         rockHandCollisionStaticWorldEnabled = ini.GetBoolValue(SECTION, "bHandCollisionStaticWorldEnabled", rockHandCollisionStaticWorldEnabled);
         rockGlobalSurfaceGrabEnabled = ini.GetBoolValue(SECTION, "bGlobalSurfaceGrabEnabled", rockGlobalSurfaceGrabEnabled);
+        rockExperimentalSurfaceMeshGrabEnabled =
+            ini.GetBoolValue(
+                EXPERIMENTAL_SECTION,
+                "bExperimentalSurfaceMeshGrabEnabled",
+                rockExperimentalSurfaceMeshGrabEnabled);
+        rockExperimentalSurfaceMeshGrabMaxProjectionDistanceGameUnits =
+            static_cast<float>(ini.GetDoubleValue(
+                EXPERIMENTAL_SECTION,
+                "fExperimentalSurfaceMeshGrabMaxProjectionDistanceGameUnits",
+                rockExperimentalSurfaceMeshGrabMaxProjectionDistanceGameUnits));
+        if (!std::isfinite(
+                rockExperimentalSurfaceMeshGrabMaxProjectionDistanceGameUnits)) {
+            rockExperimentalSurfaceMeshGrabMaxProjectionDistanceGameUnits =
+                48.0f;
+        }
+        rockExperimentalSurfaceMeshGrabMaxProjectionDistanceGameUnits =
+            std::clamp(
+                rockExperimentalSurfaceMeshGrabMaxProjectionDistanceGameUnits,
+                1.0f,
+                128.0f);
+        rockExperimentalSurfaceMeshGrabMaxTriangles = std::clamp(
+            static_cast<int>(ini.GetLongValue(
+                EXPERIMENTAL_SECTION,
+                "iExperimentalSurfaceMeshGrabMaxTriangles",
+                rockExperimentalSurfaceMeshGrabMaxTriangles)),
+            256,
+            100000);
+        rockExperimentalSurfaceMeshGrabMaxPatchTriangles = std::clamp(
+            static_cast<int>(ini.GetLongValue(
+                EXPERIMENTAL_SECTION,
+                "iExperimentalSurfaceMeshGrabMaxPatchTriangles",
+                rockExperimentalSurfaceMeshGrabMaxPatchTriangles)),
+            64,
+            2048);
+        rockExperimentalSurfaceMeshGrabMaxPatchTriangles = std::min(
+            rockExperimentalSurfaceMeshGrabMaxPatchTriangles,
+            rockExperimentalSurfaceMeshGrabMaxTriangles);
         rockHandBoneColliderRadiusScaleOverrides = ini.GetValue(SECTION, "sHandBoneColliderRadiusScaleOverrides", rockHandBoneColliderRadiusScaleOverrides.c_str());
         rockHandPalmColliderDimensionScaleOverrides =
             ini.GetValue(SECTION, "sHandPalmColliderDimensionScaleOverrides", rockHandPalmColliderDimensionScaleOverrides.c_str());

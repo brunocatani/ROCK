@@ -29,6 +29,8 @@ namespace rock
         constexpr const char* LEFT_DYNAMIC_HAND_TAG = "ROCK_DynamicHand_Left";
         constexpr const char* SURFACE_FINGER_POSE_TAG =
             "ROCK_SurfaceFingerCollision";
+        constexpr const char* SURFACE_MESH_GRAB_POSE_TAG =
+            "ROCK_SurfaceMeshGrab";
         constexpr std::uint32_t kDynamicHandProxyCollisionGroup = 0x000C;
         constexpr std::uint32_t kRaiseManifoldProcessedEvents = 0x40u;
         constexpr std::uint32_t kRebuildBodyCollisionState = 0u;
@@ -582,6 +584,7 @@ namespace rock
         const std::uint32_t sourceBodyId,
         const std::uint32_t targetBodyId,
         RE::hknpWorld* world,
+        const SurfaceLatchPresentation* presentation,
         SurfaceLatchFailure* outFailure)
     {
         if (outFailure) {
@@ -632,13 +635,31 @@ namespace rock
         candidate.targetBodyId = targetBodyId;
         candidate.targetBodyIdentity = targetSnapshot.body;
         candidate.targetCollisionIdentity = targetSnapshot.collisionObject;
-        candidate.lastHandWorld = handSlots.lastPresentedHandWorld;
+        const bool meshPresentationRequested =
+            presentation && presentation->valid &&
+            isFiniteTransform(presentation->handWorld) &&
+            isFinitePoint(presentation->meshAnchorWorld) &&
+            isFinitePoint(presentation->meshNormalWorld) &&
+            std::isfinite(
+                presentation->shellToMeshDistanceGameUnits) &&
+            presentation->shellToMeshDistanceGameUnits >= 0.0f;
+        candidate.lastHandWorld = meshPresentationRequested ?
+            presentation->handWorld :
+            handSlots.lastPresentedHandWorld;
         const auto targetInverse = transform_math::invertTransform(targetWorld);
         candidate.handInTargetBody = transform_math::composeTransforms(
             targetInverse,
             candidate.lastHandWorld);
 
         bool sourceCaptured = false;
+        /*
+         * Mesh authority moves only the presented hand. The dynamic twins keep
+         * their already-solved shell transforms relative to the target, so the
+         * oversized Havok shell remains a collision guard without becoming the
+         * visible/API grab anchor. Translating the twins into the render mesh
+         * would require body-wide no-collide and would discard nearby-world
+         * collision fidelity while latched.
+         */
         for (std::size_t bodyIndex = 0; bodyIndex < kBodiesPerHand; ++bodyIndex) {
             const auto& slot = handSlots.bodies[bodyIndex];
             if (!slot.created || slot.createdWorld != world) {
@@ -665,16 +686,45 @@ namespace rock
             return reject(SurfaceLatchFailure::SourceProxyUnavailable);
         }
 
+        const bool meshAuthorityAccepted = meshPresentationRequested;
+
+        if (meshAuthorityAccepted) {
+            candidate.meshAuthoritative = true;
+            candidate.meshAnchorWorld = presentation->meshAnchorWorld;
+            candidate.meshNormalWorld = presentation->meshNormalWorld;
+            candidate.meshAnchorInTargetBody =
+                transform_math::worldPointToLocal(
+                    targetWorld,
+                    presentation->meshAnchorWorld);
+            candidate.meshNormalInTargetBody =
+                transform_math::worldVectorToLocal(
+                    targetWorld,
+                    presentation->meshNormalWorld);
+            candidate.shellToMeshDistanceGameUnits =
+                presentation->shellToMeshDistanceGameUnits;
+            candidate.meshFingerJointValues =
+                presentation->fingerJointValues;
+            candidate.meshFingerContactMask =
+                presentation->fingerContactMask;
+            candidate.meshFingerPoseValid =
+                presentation->fingerPoseValid;
+            clearSurfaceFingerResponse(handSlots, isLeft);
+        }
+
         candidate.active = true;
         handSlots.surfaceLatch = candidate;
         handSlots.appliedDeviation = {};
         handSlots.teleportRecoverySecondsRemaining = 0.0f;
         ROCK_LOG_INFO(
             Hand,
-            "Dynamic surface latch acquired: hand={} sourceBody={} targetBody={}",
+            "Dynamic surface latch acquired: hand={} sourceBody={} targetBody={} authority={} gap={:.2f}gu fingerPose={} contactMask=0x{:02X}",
             isLeft ? "left" : "right",
             sourceBodyId,
-            targetBodyId);
+            targetBodyId,
+            meshAuthorityAccepted ? "mesh" : "collision",
+            candidate.shellToMeshDistanceGameUnits,
+            candidate.meshFingerPoseValid ? "yes" : "no",
+            candidate.meshFingerContactMask);
         return true;
     }
 
@@ -686,6 +736,9 @@ namespace rock
             return;
         }
         const auto targetBodyId = handSlots.surfaceLatch.targetBodyId;
+        const bool meshAuthoritative =
+            handSlots.surfaceLatch.meshAuthoritative;
+        clearSurfaceMeshPose(handSlots, isLeft);
         handSlots.surfaceLatch = {};
         handSlots.appliedDeviation = {};
         handSlots.teleportRecoverySecondsRemaining = 0.0f;
@@ -697,15 +750,47 @@ namespace rock
         }
         ROCK_LOG_INFO(
             Hand,
-            "Dynamic surface latch released: hand={} targetBody={}",
+            "Dynamic surface latch released: hand={} targetBody={} authority={}",
             isLeft ? "left" : "right",
-            targetBodyId);
+            targetBodyId,
+            meshAuthoritative ? "mesh" : "collision");
     }
 
     bool DynamicHandCollisionRuntime::isSurfaceLatchActive(
         const bool isLeft) const noexcept
     {
         return _hands[handIndex(isLeft)].surfaceLatch.active;
+    }
+
+    bool DynamicHandCollisionRuntime::isSurfaceLatchMeshAuthoritative(
+        const bool isLeft) const noexcept
+    {
+        const auto& latch = _hands[handIndex(isLeft)].surfaceLatch;
+        return latch.active && latch.meshAuthoritative;
+    }
+
+    bool DynamicHandCollisionRuntime::isSurfaceLatchMeshFingerPoseActive(
+        const bool isLeft) const noexcept
+    {
+        const auto& latch = _hands[handIndex(isLeft)].surfaceLatch;
+        return latch.active && latch.meshAuthoritative &&
+               latch.meshFingerPoseValid && latch.meshPosePublished &&
+               frik_visual_authority::isHandPoseTagActive(
+                   SURFACE_MESH_GRAB_POSE_TAG,
+                   frik_visual_authority::handFromBool(isLeft));
+    }
+
+    bool DynamicHandCollisionRuntime::getLastPresentedHandWorld(
+        const bool isLeft,
+        RE::NiTransform& outHandWorld) const noexcept
+    {
+        const auto& handSlots = _hands[handIndex(isLeft)];
+        if (!handSlots.lastPresentedHandWorldValid ||
+            !isFiniteTransform(handSlots.lastPresentedHandWorld)) {
+            return false;
+        }
+        outHandWorld = handSlots.lastPresentedHandWorld;
+        return true;
     }
 
     bool DynamicHandCollisionRuntime::ensureSlotCreated(ProxySlot& slot,
@@ -869,6 +954,7 @@ namespace rock
 
     void DynamicHandCollisionRuntime::retireHand(HandSlots& handSlots, void* bhkWorld, bool isLeft)
     {
+        clearSurfaceMeshPose(handSlots, isLeft);
         clearVisual(handSlots, isLeft);
         clearSurfaceFingerResponse(handSlots, isLeft);
         for (auto& slot : handSlots.bodies) {
@@ -905,6 +991,18 @@ namespace rock
                 frik_visual_authority::handFromBool(isLeft));
         }
         handSlots.surfaceFingerResponse = {};
+    }
+
+    void DynamicHandCollisionRuntime::clearSurfaceMeshPose(
+        HandSlots& handSlots,
+        const bool isLeft)
+    {
+        if (handSlots.surfaceLatch.meshPosePublished) {
+            (void)frik_visual_authority::clearHandPose(
+                SURFACE_MESH_GRAB_POSE_TAG,
+                frik_visual_authority::handFromBool(isLeft));
+        }
+        handSlots.surfaceLatch.meshPosePublished = false;
     }
 
     bool DynamicHandCollisionRuntime::captureSurfaceFingerResponse(
@@ -1546,6 +1644,16 @@ namespace rock
                     latch.lastHandWorld = transform_math::composeTransforms(
                         targetWorld,
                         latch.handInTargetBody);
+                    if (latch.meshAuthoritative) {
+                        latch.meshAnchorWorld =
+                            transform_math::localPointToWorld(
+                                targetWorld,
+                                latch.meshAnchorInTargetBody);
+                        latch.meshNormalWorld =
+                            transform_math::localVectorToWorld(
+                                targetWorld,
+                                latch.meshNormalInTargetBody);
+                    }
                     for (std::size_t bodyIndex = 0;
                          bodyIndex < kBodiesPerHand;
                          ++bodyIndex) {
@@ -1690,8 +1798,10 @@ namespace rock
                 handSlots.surfaceLatch.active &&
                 visuallyOwnedByStrongerSystem;
             std::uint32_t helpfulFingerSlotMask = 0;
-            if (!visuallyOwnedByStrongerSystem &&
-                handTelemetry.visualAuthorityAvailable) {
+            if (handSlots.surfaceLatch.meshAuthoritative) {
+                clearSurfaceFingerResponse(handSlots, isLeft);
+            } else if (!visuallyOwnedByStrongerSystem &&
+                       handTelemetry.visualAuthorityAvailable) {
                 helpfulFingerSlotMask = updateSurfaceFingerResponse(
                     handSlots,
                     isLeft,
@@ -1745,8 +1855,7 @@ namespace rock
 
             if (handSlots.surfaceLatch.active) {
                 if (latchAuthorityBlocked) {
-                    handSlots.surfaceLatch = {};
-                    clearVisual(handSlots, isLeft);
+                    endSurfaceLatch(isLeft);
                     updateHandHaptic(
                         handSlots,
                         handTelemetry,
@@ -1768,10 +1877,28 @@ namespace rock
                     handSlots.surfaceLatch.lastHandWorld;
                 if (!handTelemetry.visualAuthorityAvailable ||
                     !isFiniteTransform(latchTarget)) {
-                    handSlots.surfaceLatch = {};
-                    clearVisual(handSlots, isLeft);
+                    endSurfaceLatch(isLeft);
                     handTelemetry.visualActive = handSlots.visualActive;
                     return;
+                }
+                auto& latch = handSlots.surfaceLatch;
+                if (latch.meshAuthoritative &&
+                    latch.meshFingerPoseValid) {
+                    if (frik_visual_authority::setHandPoseCustomWithPriority(
+                            SURFACE_MESH_GRAB_POSE_TAG,
+                            frik_visual_authority::handFromBool(isLeft),
+                            frik_visual_authority::
+                                makeHandPoseDataFromJointValues(
+                                    latch.meshFingerJointValues),
+                            kSurfaceLatchVisualPriority)) {
+                        latch.meshPosePublished = true;
+                    } else {
+                        ROCK_LOG_SAMPLE_WARN(
+                            Hand,
+                            2000,
+                            "{} surface mesh finger pose apply failed",
+                            isLeft ? "Left" : "Right");
+                    }
                 }
                 if (frik_visual_authority::applyExternalHandWorldTransform(
                         dynamicHandTag(isLeft),
@@ -1787,8 +1914,7 @@ namespace rock
                         2000,
                         "{} dynamic surface latch render apply failed",
                         isLeft ? "Left" : "Right");
-                    handSlots.surfaceLatch = {};
-                    clearVisual(handSlots, isLeft);
+                    endSurfaceLatch(isLeft);
                 }
                 handTelemetry.visualActive = handSlots.visualActive;
                 return;

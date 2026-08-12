@@ -381,7 +381,7 @@ Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' 'if\s*\(match\.
     'A target with pending native yield must reject every new hand acquisition.'
 Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' '\(contactSource\s*==\s*ContactSource::DynamicSurface\)\s*!=\s*fixedAnchor' `
     'Only FixedAnchor targets may consume dynamic surface contact evidence.'
-Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' 'FixedAnchor[\s\S]{0,500}beginSurfaceLatch\(' `
+Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' 'FixedAnchor[\s\S]{0,5000}beginSurfaceLatch\(' `
     'FixedAnchor acquisition must latch the dynamic hand runtime to the resolved target body.'
 Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' 'hand\.surfaceLatch[\s\S]{0,180}endSurfaceLatch\(' `
     'Every fixed-surface hand release must clear dynamic hand latch ownership.'
@@ -397,7 +397,7 @@ Require-Text 'src/physics-interaction/core/PhysicsInteractionProvider.inl' '_tou
     'The public hand state must identify every active surface latch and its resolved target body.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'sameHandTarget[\s\S]{0,500}reservedTargetIdentity[\s\S]{0,300}primaryBodyId' `
     'Touch-grab native identity and body changes must advance the public target sequence.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'Releasing[\s\S]{0,1500}touchGrabClassificationFlags[\s\S]{0,700}previousHand\.flags' `
+Require-Text 'src/api/ROCKProviderApi.cpp' 'Releasing[\s\S]{0,1500}touchGrabClassificationFlags[\s\S]{0,1500}previousHand\.flags' `
     'The one-frame release state must retain touch-grab and global-surface classification.'
 Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' 'originalMotionClass\s*==[\s\S]{0,180}Keyframed[\s\S]{0,180}SetMotionType\([\s\S]{0,120}DYNAMIC' `
     'A keyframed mechanism must enter dynamic motion only inside the dedicated mechanism path.'

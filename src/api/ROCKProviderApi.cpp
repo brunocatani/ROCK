@@ -5409,10 +5409,26 @@ namespace rock::provider
                                 FixedSurfaceLatch) |
                         static_cast<std::uint32_t>(
                             RockProviderHandInteractionFlagV1::
-                                GlobalSurfaceLatch);
+                                GlobalSurfaceLatch) |
+                        static_cast<std::uint32_t>(
+                            RockProviderHandInteractionFlagV1::
+                                SurfaceAnchorValid) |
+                        static_cast<std::uint32_t>(
+                            RockProviderHandInteractionFlagV1::
+                                MeshSurfaceAnchor) |
+                        static_cast<std::uint32_t>(
+                            RockProviderHandInteractionFlagV1::
+                                MeshFingerPose) |
+                        static_cast<std::uint32_t>(
+                            RockProviderHandInteractionFlagV1::
+                                MeshCollisionFallback);
                     currentHand.flags |=
                         previousHand.flags &
                         touchGrabClassificationFlags;
+                    currentHand.surfaceAnchorGame =
+                        previousHand.surfaceAnchorGame;
+                    currentHand.surfaceGripMode =
+                        previousHand.surfaceGripMode;
                     currentHand.heldBodyCount = previousHand.heldBodyCount;
                     std::copy(
                         std::begin(previousHand.heldBodyIds),

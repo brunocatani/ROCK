@@ -132,6 +132,18 @@ namespace rock
             SourceProxyUnavailable,
         };
 
+        struct SurfaceLatchPresentation
+        {
+            RE::NiTransform handWorld{};
+            RE::NiPoint3 meshAnchorWorld{};
+            RE::NiPoint3 meshNormalWorld{};
+            std::array<float, 15> fingerJointValues{};
+            float shellToMeshDistanceGameUnits = 0.0f;
+            std::uint8_t fingerContactMask = 0;
+            bool valid = false;
+            bool fingerPoseValid = false;
+        };
+
         /*
          * Fixed-surface ownership does not constrain or mutate the target.
          * Instead the hand and all live dynamic twins retain their transforms
@@ -142,9 +154,17 @@ namespace rock
             std::uint32_t sourceBodyId,
             std::uint32_t targetBodyId,
             RE::hknpWorld* world,
+            const SurfaceLatchPresentation* presentation = nullptr,
             SurfaceLatchFailure* outFailure = nullptr);
         void endSurfaceLatch(bool isLeft) noexcept;
         [[nodiscard]] bool isSurfaceLatchActive(bool isLeft) const noexcept;
+        [[nodiscard]] bool isSurfaceLatchMeshAuthoritative(
+            bool isLeft) const noexcept;
+        [[nodiscard]] bool isSurfaceLatchMeshFingerPoseActive(
+            bool isLeft) const noexcept;
+        [[nodiscard]] bool getLastPresentedHandWorld(
+            bool isLeft,
+            RE::NiTransform& outHandWorld) const noexcept;
 
         /*
          * Debug-overlay accessor; main thread only (creation/retire happen on
@@ -297,6 +317,16 @@ namespace rock
                 std::array<RE::NiTransform, kBodiesPerHand> proxyInTargetBody{};
                 std::array<RE::NiTransform, kBodiesPerHand> lastProxyWorld{};
                 std::array<bool, kBodiesPerHand> proxyRelationshipValid{};
+                RE::NiPoint3 meshAnchorWorld{};
+                RE::NiPoint3 meshNormalWorld{};
+                RE::NiPoint3 meshAnchorInTargetBody{};
+                RE::NiPoint3 meshNormalInTargetBody{};
+                std::array<float, 15> meshFingerJointValues{};
+                float shellToMeshDistanceGameUnits = 0.0f;
+                std::uint8_t meshFingerContactMask = 0;
+                bool meshAuthoritative = false;
+                bool meshFingerPoseValid = false;
+                bool meshPosePublished = false;
             };
 
             std::array<ProxySlot, kBodiesPerHand> bodies{};
@@ -332,6 +362,7 @@ namespace rock
         void retireHand(HandSlots& handSlots, void* bhkWorld, bool isLeft);
         void clearVisual(HandSlots& handSlots, bool isLeft);
         void clearSurfaceFingerResponse(HandSlots& handSlots, bool isLeft);
+        void clearSurfaceMeshPose(HandSlots& handSlots, bool isLeft);
         [[nodiscard]] bool captureSurfaceFingerResponse(
             HandSlots& handSlots,
             bool isLeft,

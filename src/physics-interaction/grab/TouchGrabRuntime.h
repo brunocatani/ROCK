@@ -50,12 +50,18 @@ namespace rock
         struct HandReport
         {
             bool globalSurface = false;
+            bool hasSurfaceAnchor = false;
+            bool meshFingerPose = false;
             provider::RockProviderTouchGrabKindV1 kind{
                 provider::RockProviderTouchGrabKindV1::FixedAnchor
+            };
+            provider::RockProviderSurfaceGripModeV1 surfaceGripMode{
+                provider::RockProviderSurfaceGripModeV1::CollisionAnchor
             };
             std::uint32_t bodyId = 0x7FFF'FFFFu;
             std::uint32_t referenceFormId = 0;
             std::uint32_t referenceNativeHandle = 0;
+            RE::NiPoint3 surfaceAnchorGame{};
         };
 
         enum class AttemptFailure : std::uint8_t
@@ -88,6 +94,7 @@ namespace rock
             std::uint32_t motionIndex = 0xFFFF'FFFFu;
             std::uint16_t motionPropertiesId = 0xFFFFu;
             std::uint8_t surfaceLatchFailure = 0;
+            std::uint8_t surfaceMeshFailure = 0;
         };
 
         void setPhysicsCallbackGate(
@@ -169,8 +176,17 @@ namespace rock
             bool hasContactPoint = false;
             bool hasContactNormal = false;
             bool surfaceLatch = false;
+            bool meshFingerPose = false;
+            bool contactRelativeToTarget = false;
+            provider::RockProviderSurfaceGripModeV1 surfaceGripMode{
+                provider::RockProviderSurfaceGripModeV1::CollisionAnchor
+            };
             RE::NiPoint3 contactPointGame{};
             RE::NiPoint3 contactNormalGame{};
+            RE::NiPoint3 contactPointInTargetBody{};
+            RE::NiPoint3 contactNormalInTargetBody{};
+            float shellToMeshDistanceGameUnits = 0.0f;
+            std::uint8_t meshFingerContactMask = 0;
         };
 
         struct ActiveTarget

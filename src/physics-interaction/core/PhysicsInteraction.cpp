@@ -9882,7 +9882,7 @@ namespace rock
                     _touchGrabRuntime.getAttemptReport();
                 ROCK_LOG_INFO(
                     Hand,
-                    "Touch grab attempt rejected: hand={} semanticContacts={} surfaceContacts={} failure={} targetClass={} source={} body={} layer={} motionClass={} motionProperties={} motionIndex={} latchFailure={}",
+                    "Touch grab attempt rejected: hand={} semanticContacts={} surfaceContacts={} failure={} targetClass={} source={} body={} layer={} motionClass={} motionProperties={} motionIndex={} latchFailure={} meshFailure={}",
                     isLeft ? "left" : "right",
                     contacts.count,
                     surfaceContacts.count,
@@ -9894,7 +9894,8 @@ namespace rock
                     static_cast<std::uint32_t>(attempt.motionClass),
                     attempt.motionPropertiesId,
                     attempt.motionIndex,
-                    attempt.surfaceLatchFailure);
+                    attempt.surfaceLatchFailure,
+                    attempt.surfaceMeshFailure);
             }
 
             if (triggerEquipIntent.pending) {
