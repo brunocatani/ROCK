@@ -191,6 +191,8 @@ namespace rock::dynamic_hand_collision_telemetry
         std::array<TwinSample, kBodiesPerHand> twins{};
         std::array<float, hand_collider_semantics::kHandFingerCount>
             surfaceFingerOpenValues{ 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
+        std::array<std::int8_t, hand_collider_semantics::kHandFingerCount>
+            surfaceFingerDirections{};
         RE::NiPoint3 combinedContactDeviationWorldGame{};
         RE::NiPoint3 appliedVisualDeviationWorldGame{};
 

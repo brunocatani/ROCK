@@ -206,10 +206,11 @@ namespace rock
         float rockHandCollisionDynamicHapticMinApproachSpeedGameUnitsPerSecond = 3.0f;
         float rockHandCollisionDynamicHapticCooldownSeconds = 0.12f;
         bool rockHandCollisionSurfaceFingerResponseEnabled = true;
-        float rockHandCollisionSurfaceFingerProbeClosureOpenUnits = 0.10f;
+        float rockHandCollisionSurfaceFingerProbeDeltaOpenUnits = 0.10f;
         float rockHandCollisionSurfaceFingerResponseGain = 1.0f;
-        float rockHandCollisionSurfaceFingerMaximumClosureOpenUnits = 0.85f;
+        float rockHandCollisionSurfaceFingerMaximumDeflectionOpenUnits = 0.85f;
         float rockHandCollisionSurfaceFingerMinimumHelpfulTravelGameUnits = 0.01f;
+        float rockHandCollisionSurfaceFingerDirectionSwitchHysteresisFraction = 0.10f;
         float rockHandCollisionSurfaceFingerSmoothingSpeed = 30.0f;
         float rockHandCollisionSurfaceFingerReleaseDelaySeconds = 0.12f;
 

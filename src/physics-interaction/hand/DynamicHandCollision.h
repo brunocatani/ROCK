@@ -41,9 +41,10 @@ namespace rock
      * (true multi-plane contact); the rendered FRIK hand follows the COMBINED
      * position deviation (sequential projection over palm/forearm deviations,
      * with unresolved fingertip contacts retaining the legacy rigid fallback).
-     * Finger-segment residuals independently drive a bounded anatomical curl
-     * pose when that curl moves the contacted segment toward the solver-safe
-     * position. During ordinary tracking authority is strictly one-directional
+     * Finger-segment residuals independently drive bounded anatomical flexion
+     * or extension, choosing the direction that best moves all contacted
+     * phalanxes toward their solver-safe positions. During ordinary tracking
+     * authority is strictly one-directional
      * (wand/skeleton targets -> twins -> render): twin targets come from the
      * same HandBoneColliderSet/BodyBoneColliderSet role-frame publications the
      * keyframed colliders are driven with. A fixed-surface latch captures one
@@ -264,7 +265,10 @@ namespace rock
                     intentFramesInHand{};
                 std::array<RE::NiPoint3,
                     hand_collider_semantics::kHandFingerRoleCount>
-                    curlProbeTravelInHand{};
+                    closingProbeTravelInHand{};
+                std::array<RE::NiPoint3,
+                    hand_collider_semantics::kHandFingerRoleCount>
+                    openingProbeTravelInHand{};
                 std::array<bool,
                     hand_collider_semantics::kHandFingerRoleCount>
                     intentValid{};
@@ -272,6 +276,9 @@ namespace rock
                     baselineOpenValues{ 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
                 std::array<float, hand_collider_semantics::kHandFingerCount>
                     currentOpenValues{ 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
+                std::array<std::int8_t,
+                    hand_collider_semantics::kHandFingerCount>
+                    lastDirections{};
                 std::uint32_t lastHelpfulDynamicSlotMask = 0;
                 float noContactSeconds = 0.0f;
                 bool active = false;

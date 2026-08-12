@@ -174,9 +174,19 @@ Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @(
 # base/middle probes must never multiply the rigid whole-hand correction.
 Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'candidate\.intentFramesInHand\[linearIndex\]',
-    'candidate\.curlProbeTravelInHand\[linearIndex\]',
+    'candidate\.closingProbeTravelInHand\[linearIndex\]',
+    'candidate\.openingProbeTravelInHand\[linearIndex\]',
     'candidate\.active = true'
-) 'Surface finger response must capture stable hand-local intent and calibrated curl travel on contact entry.'
+) 'Surface finger response must capture stable hand-local intent and calibrated opening/closing travel on contact entry.'
+Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
+    'closingProbeTravelGameUnits',
+    'openingProbeTravelGameUnits',
+    'surface_finger_collision_policy::solve\(',
+    'response\.lastDirections'
+) 'Every contact must evaluate both anatomical directions against the solver-safe displacement.'
+Require-Text 'src/physics-interaction/hand/SurfaceFingerCollisionPolicy.h' `
+    'baselineCost[\s\S]*evaluateDirection[\s\S]*closing\.valid && opening\.valid[\s\S]*directionSwitchHysteresisFraction[\s\S]*selected->direction' `
+    'Conflicting phalanx contacts must choose one coherent per-finger direction with switch hysteresis.'
 Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'handSlots\.surfaceFingerResponse\.intentFramesInHand',
     'composeTransforms\(\s*handInput\.rawHandWorld',
@@ -489,7 +499,7 @@ foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini
 }
 foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
     Require-Text $configPath `
-        'bHandCollisionSurfaceFingerResponseEnabled\s*=\s*true[\s\S]*fHandCollisionSurfaceFingerProbeClosureOpenUnits[\s\S]*fHandCollisionSurfaceFingerResponseGain[\s\S]*fHandCollisionSurfaceFingerMaximumClosureOpenUnits[\s\S]*fHandCollisionSurfaceFingerMinimumHelpfulTravelGameUnits[\s\S]*fHandCollisionSurfaceFingerSmoothingSpeed[\s\S]*fHandCollisionSurfaceFingerReleaseDelaySeconds' `
+        'bHandCollisionSurfaceFingerResponseEnabled\s*=\s*true[\s\S]*fHandCollisionSurfaceFingerProbeDeltaOpenUnits[\s\S]*fHandCollisionSurfaceFingerResponseGain[\s\S]*fHandCollisionSurfaceFingerMaximumDeflectionOpenUnits[\s\S]*fHandCollisionSurfaceFingerMinimumHelpfulTravelGameUnits[\s\S]*fHandCollisionSurfaceFingerDirectionSwitchHysteresisFraction[\s\S]*fHandCollisionSurfaceFingerSmoothingSpeed[\s\S]*fHandCollisionSurfaceFingerReleaseDelaySeconds' `
         "$configPath must ship the globally enabled, bounded experimental surface finger response."
 }
 Require-Text 'src/RockConfig.h' `
@@ -499,10 +509,11 @@ Require-Text 'src/RockConfig.cpp' `
     'GetBoolValue\(\s*SECTION,\s*"bHandCollisionSurfaceFingerResponseEnabled"' `
     'The surface finger feature switch must load through the ROCK INI path.'
 Require-OrderedText 'src/RockConfig.cpp' @(
-    'fHandCollisionSurfaceFingerProbeClosureOpenUnits',
+    'fHandCollisionSurfaceFingerProbeDeltaOpenUnits',
     'fHandCollisionSurfaceFingerResponseGain',
-    'fHandCollisionSurfaceFingerMaximumClosureOpenUnits',
+    'fHandCollisionSurfaceFingerMaximumDeflectionOpenUnits',
     'fHandCollisionSurfaceFingerMinimumHelpfulTravelGameUnits',
+    'fHandCollisionSurfaceFingerDirectionSwitchHysteresisFraction',
     'fHandCollisionSurfaceFingerSmoothingSpeed',
     'fHandCollisionSurfaceFingerReleaseDelaySeconds'
 ) 'Every bounded surface finger control must load through the ROCK INI path.'

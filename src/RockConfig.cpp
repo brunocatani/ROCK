@@ -260,10 +260,11 @@ namespace rock
         rockHandCollisionDynamicHapticMinApproachSpeedGameUnitsPerSecond = 3.0f;
         rockHandCollisionDynamicHapticCooldownSeconds = 0.12f;
         rockHandCollisionSurfaceFingerResponseEnabled = true;
-        rockHandCollisionSurfaceFingerProbeClosureOpenUnits = 0.10f;
+        rockHandCollisionSurfaceFingerProbeDeltaOpenUnits = 0.10f;
         rockHandCollisionSurfaceFingerResponseGain = 1.0f;
-        rockHandCollisionSurfaceFingerMaximumClosureOpenUnits = 0.85f;
+        rockHandCollisionSurfaceFingerMaximumDeflectionOpenUnits = 0.85f;
         rockHandCollisionSurfaceFingerMinimumHelpfulTravelGameUnits = 0.01f;
+        rockHandCollisionSurfaceFingerDirectionSwitchHysteresisFraction = 0.10f;
         rockHandCollisionSurfaceFingerSmoothingSpeed = 30.0f;
         rockHandCollisionSurfaceFingerReleaseDelaySeconds = 0.12f;
 
@@ -1303,10 +1304,10 @@ namespace rock
             SECTION,
             "bHandCollisionSurfaceFingerResponseEnabled",
             rockHandCollisionSurfaceFingerResponseEnabled);
-        rockHandCollisionSurfaceFingerProbeClosureOpenUnits = readClampedFloat(ini,
+        rockHandCollisionSurfaceFingerProbeDeltaOpenUnits = readClampedFloat(ini,
             SECTION,
-            "fHandCollisionSurfaceFingerProbeClosureOpenUnits",
-            rockHandCollisionSurfaceFingerProbeClosureOpenUnits,
+            "fHandCollisionSurfaceFingerProbeDeltaOpenUnits",
+            rockHandCollisionSurfaceFingerProbeDeltaOpenUnits,
             0.10f,
             0.01f,
             0.50f);
@@ -1317,10 +1318,10 @@ namespace rock
             1.0f,
             0.0f,
             4.0f);
-        rockHandCollisionSurfaceFingerMaximumClosureOpenUnits = readClampedFloat(ini,
+        rockHandCollisionSurfaceFingerMaximumDeflectionOpenUnits = readClampedFloat(ini,
             SECTION,
-            "fHandCollisionSurfaceFingerMaximumClosureOpenUnits",
-            rockHandCollisionSurfaceFingerMaximumClosureOpenUnits,
+            "fHandCollisionSurfaceFingerMaximumDeflectionOpenUnits",
+            rockHandCollisionSurfaceFingerMaximumDeflectionOpenUnits,
             0.85f,
             0.0f,
             1.0f);
@@ -1331,6 +1332,13 @@ namespace rock
             0.01f,
             0.0001f,
             1.0f);
+        rockHandCollisionSurfaceFingerDirectionSwitchHysteresisFraction = readClampedFloat(ini,
+            SECTION,
+            "fHandCollisionSurfaceFingerDirectionSwitchHysteresisFraction",
+            rockHandCollisionSurfaceFingerDirectionSwitchHysteresisFraction,
+            0.10f,
+            0.0f,
+            0.5f);
         rockHandCollisionSurfaceFingerSmoothingSpeed = readClampedFloat(ini,
             SECTION,
             "fHandCollisionSurfaceFingerSmoothingSpeed",
