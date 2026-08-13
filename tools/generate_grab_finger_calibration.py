@@ -574,7 +574,7 @@ def generate_profile(bones: list[HandBonePoseData], is_left: bool, in_power_armo
 
 def generate_header(hfrik_root: pathlib.Path) -> str:
     source_files = [
-        ("main_projects/hFRIK/src/skeleton/HandPose.cpp", hfrik_root / "src/skeleton/HandPose.cpp"),
+        ("main_projects/hFRIK/src/skeleton/HandPoseMath.cpp", hfrik_root / "src/skeleton/HandPoseMath.cpp"),
         ("main_projects/hFRIK/src/skeleton/HandPoseData.cpp", hfrik_root / "src/skeleton/HandPoseData.cpp"),
     ]
     source_paths = [path for _, path in source_files]

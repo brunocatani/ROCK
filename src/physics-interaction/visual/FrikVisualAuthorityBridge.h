@@ -6,21 +6,21 @@
 #include <cstddef>
 #include <string_view>
 
-#include "api/FRIKApi.h"
+#include "api/FRIKApiV2.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 namespace rock::frik_visual_authority
 {
-    using Hand = frik::api::FRIKApi::Hand;
-    using HandPoseKind = frik::api::FRIKApi::HandPoseKind;
-    using HandPoseTagState = frik::api::FRIKApi::HandPoseTagState;
-    using HandPoseData = frik::api::FRIKApi::HandPoseData;
-    using FingerLocalTransformOverride = frik::api::FRIKApi::FingerLocalTransformOverride;
-    using RecoilDelivery = frik::api::FRIKApi::RecoilDelivery;
-    using RecoilHandMask = frik::api::FRIKApi::RecoilHandMask;
-    using RecoilSample = frik::api::FRIKApi::RecoilSample;
-    using RecoilResponse = frik::api::FRIKApi::RecoilResponse;
-    using WeaponHandRecoilController = frik::api::FRIKApi::WeaponHandRecoilController;
+    using Hand = frik::api::FRIKApiV2::Hand;
+    using HandPoseKind = frik::api::FRIKApiV2::HandPoseKind;
+    using HandPoseTagState = frik::api::FRIKApiV2::HandPoseTagState;
+    using HandPoseData = frik::api::FRIKApiV2::HandPoseData;
+    using FingerLocalTransformOverride = frik::api::FRIKApiV2::FingerLocalTransformOverride;
+    using RecoilDelivery = frik::api::FRIKApiV2::RecoilDelivery;
+    using RecoilHandMask = frik::api::FRIKApiV2::RecoilHandMask;
+    using RecoilSample = frik::api::FRIKApiV2::RecoilSample;
+    using RecoilResponse = frik::api::FRIKApiV2::RecoilResponse;
+    using WeaponHandRecoilController = frik::api::FRIKApiV2::WeaponHandRecoilController;
 
     namespace detail
     {
@@ -63,26 +63,6 @@ namespace rock::frik_visual_authority
 
         inline PresentedHandNodeCache g_presentedHandNodeCache{};
 
-        using MirrorFingerLocalTransformsFn = bool(FRIK_CALL*)(Hand, const FingerLocalTransformOverride*, FingerLocalTransformOverride*);
-
-        [[nodiscard]] inline MirrorFingerLocalTransformsFn mirrorFingerLocalTransformsExport()
-        {
-            static MirrorFingerLocalTransformsFn fn = nullptr;
-            static bool attemptedWithLoadedFrik = false;
-            if (!fn) {
-                const auto frikDll = GetModuleHandleA("FRIK.dll");
-                if (!frikDll) {
-                    return nullptr;
-                }
-                if (attemptedWithLoadedFrik) {
-                    return nullptr;
-                }
-                attemptedWithLoadedFrik = true;
-                fn = reinterpret_cast<MirrorFingerLocalTransformsFn>(GetProcAddress(frikDll, "FRIKAPI_MirrorFingerLocalTransforms"));
-            }
-            return fn;
-        }
-
         [[nodiscard]] inline bool makeCacheableTagView(const char* tag, std::string_view& outTag)
         {
             if (!tag) {
@@ -104,8 +84,8 @@ namespace rock::frik_visual_authority
         }
 
         [[nodiscard]] inline bool sameFingerPoseData(
-            const frik::api::FRIKApi::FingerPoseData& lhs,
-            const frik::api::FRIKApi::FingerPoseData& rhs)
+            const frik::api::FRIKApiV2::FingerPoseData& lhs,
+            const frik::api::FRIKApiV2::FingerPoseData& rhs)
         {
             return lhs.prox == rhs.prox &&
                    lhs.mid == rhs.mid &&
@@ -247,7 +227,7 @@ namespace rock::frik_visual_authority
         }
 
         [[nodiscard]] inline bool cachedHandPosePublicationStillActive(
-            const frik::api::FRIKApi* frikApi,
+            const frik::api::FRIKApiV2* frikApi,
             const char* tag,
             Hand hand)
         {
@@ -257,7 +237,7 @@ namespace rock::frik_visual_authority
         }
 
         [[nodiscard]] inline bool shouldSkipCachedHandPosePublication(
-            const frik::api::FRIKApi* frikApi,
+            const frik::api::FRIKApiV2* frikApi,
             const char* tag,
             Hand hand,
             const HandPoseData& handPose,
@@ -274,7 +254,7 @@ namespace rock::frik_visual_authority
                    sameHandPoseData(entry->pose, handPose) && cachedHandPosePublicationStillActive(frikApi, tag, hand);
         }
 
-        [[nodiscard]] inline bool shouldSkipCachedFingerLocalTransformPublication(const frik::api::FRIKApi* frikApi, const char* tag, Hand hand,
+        [[nodiscard]] inline bool shouldSkipCachedFingerLocalTransformPublication(const frik::api::FRIKApiV2* frikApi, const char* tag, Hand hand,
             const FingerLocalTransformOverride& transforms, int priority, std::string_view& outTagView)
         {
             if (!makeCacheableTagView(tag, outTagView)) {
@@ -349,9 +329,9 @@ namespace rock::frik_visual_authority
         };
     }
 
-    [[nodiscard]] inline const frik::api::FRIKApi* api()
+    [[nodiscard]] inline const frik::api::FRIKApiV2* api()
     {
-        return frik::api::FRIKApi::inst;
+        return frik::api::FRIKApiV2::inst;
     }
 
     [[nodiscard]] inline Hand handFromBool(bool isLeft)
@@ -395,7 +375,7 @@ namespace rock::frik_visual_authority
     [[nodiscard]] inline bool setHandPoseCustomWithPriority(const char* tag, Hand hand, const HandPoseData& handPose, int priority)
     {
         auto* frikApi = api();
-        if (!frikApi || !frikApi->setHandPoseCustomWithPriority) {
+        if (!frikApi || !frikApi->setHandPoseCustom) {
             detail::invalidateCachedHandPosePublication(tag, hand);
             return false;
         }
@@ -405,7 +385,7 @@ namespace rock::frik_visual_authority
             return true;
         }
 
-        const bool published = frikApi->setHandPoseCustomWithPriority(tag, hand, handPose, priority);
+        const bool published = frikApi->setHandPoseCustom(tag, hand, handPose, priority);
         if (published) {
             // Updating the scalar pose replaces hFRIK's tagged entry and
             // clears any local-transform payload previously attached to it.
@@ -425,19 +405,19 @@ namespace rock::frik_visual_authority
         detail::invalidateCachedHandPosePublication(tag, hand);
         detail::invalidateCachedFingerLocalTransformPublication(tag, hand);
         auto* frikApi = api();
-        return frikApi && frikApi->setHandPoseWithPriority && frikApi->setHandPoseWithPriority(tag, hand, handPose, priority);
+        return frikApi && frikApi->setHandPose && frikApi->setHandPose(tag, hand, handPose, priority);
     }
 
     [[nodiscard]] inline bool applyExternalHandWorldTransform(const char* tag, Hand hand, const RE::NiTransform& worldTarget, int priority)
     {
         auto* frikApi = api();
-        return frikApi && frikApi->applyExternalHandWorldTransform && frikApi->applyExternalHandWorldTransform(tag, hand, worldTarget, priority);
+        return frikApi && frikApi->setHandWorldTransform && frikApi->setHandWorldTransform(tag, hand, worldTarget, priority);
     }
 
     [[nodiscard]] inline bool clearExternalHandWorldTransform(const char* tag, Hand hand)
     {
         auto* frikApi = api();
-        return frikApi && frikApi->clearExternalHandWorldTransform && frikApi->clearExternalHandWorldTransform(tag, hand);
+        return frikApi && frikApi->clearHandWorldTransform && frikApi->clearHandWorldTransform(tag, hand);
     }
 
     [[nodiscard]] inline bool setHandPoseCustomLocalTransformsWithPriority(
@@ -447,7 +427,7 @@ namespace rock::frik_visual_authority
         int priority)
     {
         auto* frikApi = api();
-        if (!frikApi || !frikApi->setHandPoseCustomLocalTransformsWithPriority || !overrideData) {
+        if (!frikApi || !frikApi->setHandPoseCustomLocalTransforms || !overrideData) {
             detail::invalidateCachedFingerLocalTransformPublication(tag, hand);
             return false;
         }
@@ -457,7 +437,7 @@ namespace rock::frik_visual_authority
             return true;
         }
 
-        const bool published = frikApi->setHandPoseCustomLocalTransformsWithPriority(tag, hand, overrideData, priority);
+        const bool published = frikApi->setHandPoseCustomLocalTransforms(tag, hand, overrideData, priority);
         if (published && !tagView.empty()) {
             detail::rememberCachedFingerLocalTransformPublication(tagView, hand, *overrideData, priority);
         } else if (!published) {
@@ -499,10 +479,9 @@ namespace rock::frik_visual_authority
 
     [[nodiscard]] inline bool mirrorFingerLocalTransforms(Hand sourceHand, const FingerLocalTransformOverride& sourceTransforms, FingerLocalTransformOverride& outTargetTransforms)
     {
-        if (const auto fn = detail::mirrorFingerLocalTransformsExport()) {
-            return fn(sourceHand, &sourceTransforms, &outTargetTransforms);
-        }
-        return false;
+        const auto* frikApi = api();
+        return frikApi && frikApi->mirrorFingerLocalTransforms &&
+               frikApi->mirrorFingerLocalTransforms(sourceHand, &sourceTransforms, &outTargetTransforms);
     }
 
     [[nodiscard]] inline bool mirrorPrimaryWeaponFingerLocalTransforms(const FingerLocalTransformOverride& rightTransforms, FingerLocalTransformOverride& outLeftTransforms)
@@ -512,10 +491,15 @@ namespace rock::frik_visual_authority
 
     [[nodiscard]] inline bool canMirrorPrimaryWeaponFingerLocalTransforms()
     {
-        return detail::mirrorFingerLocalTransformsExport() != nullptr;
+        const auto* frikApi = api();
+        return frikApi && frikApi->mirrorFingerLocalTransforms != nullptr;
     }
 
-    [[nodiscard]] inline bool canMirrorFingerLocalTransforms() { return detail::mirrorFingerLocalTransformsExport() != nullptr; }
+    [[nodiscard]] inline bool canMirrorFingerLocalTransforms()
+    {
+        const auto* frikApi = api();
+        return frikApi && frikApi->mirrorFingerLocalTransforms != nullptr;
+    }
 
     [[nodiscard]] inline bool blockPrimaryWeaponNodeOwnership(const char* tag, bool block)
     {

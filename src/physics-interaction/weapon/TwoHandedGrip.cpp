@@ -1022,7 +1022,7 @@ namespace rock
                     meshFingerPose.solved,
                     true,
                     api && api->getHandPoseLocalTransformsForPose != nullptr,
-                    api && api->setHandPoseCustomLocalTransformsWithPriority != nullptr);
+                    api && api->setHandPoseCustomLocalTransforms != nullptr);
             if (!canPublish) {
                 ROCK_LOG_DEBUG(Weapon,
                     "TwoHandedGrip: full-hand local transform override skipped hand={} enabled={} api={} baselineApi={} publishApi={}",
@@ -1030,7 +1030,7 @@ namespace rock
                     g_rockConfig.rockGrabMeshLocalTransformPoseEnabled ? "yes" : "no",
                     api ? "yes" : "no",
                     (api && api->getHandPoseLocalTransformsForPose) ? "yes" : "no",
-                    (api && api->setHandPoseCustomLocalTransformsWithPriority) ? "yes" : "no");
+                    (api && api->setHandPoseCustomLocalTransforms) ? "yes" : "no");
                 return false;
             }
 
@@ -1116,14 +1116,14 @@ namespace rock
     }
 
     bool FRIK_CALL TwoHandedGrip::controlWeaponHandRecoil(
-        const frik::api::FRIKApi::RecoilSample* const sample,
-        frik::api::FRIKApi::RecoilResponse* const outResponse,
+        const frik::api::FRIKApiV2::RecoilSample* const sample,
+        frik::api::FRIKApiV2::RecoilResponse* const outResponse,
         void* const userData) noexcept
     {
         const auto* const self = static_cast<const TwoHandedGrip*>(userData);
         if (!self ||
             !sample ||
-            sample->structSize < sizeof(frik::api::FRIKApi::RecoilSample) ||
+            sample->structSize < sizeof(frik::api::FRIKApiV2::RecoilSample) ||
             !outResponse) {
             return false;
         }
@@ -1135,10 +1135,10 @@ namespace rock
         }
 
         *outResponse = {};
-        outResponse->structSize = sizeof(frik::api::FRIKApi::RecoilResponse);
+        outResponse->structSize = sizeof(frik::api::FRIKApiV2::RecoilResponse);
         outResponse->handMask = static_cast<std::uint32_t>(
-            frik::api::FRIKApi::RecoilHandMask::Primary);
-        outResponse->delivery = frik::api::FRIKApi::RecoilDelivery::Direct;
+            frik::api::FRIKApiV2::RecoilHandMask::Primary);
+        outResponse->delivery = frik::api::FRIKApiV2::RecoilDelivery::Direct;
         outResponse->controlledKickLocal = sample->nativeKickLocal;
         return true;
     }

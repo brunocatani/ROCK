@@ -4166,7 +4166,7 @@ namespace rock::grab_finger_local_transform_runtime
                 fingerPose.solved,
                 true,
                 api && api->getHandPoseLocalTransformsForPose != nullptr,
-                api && api->setHandPoseCustomLocalTransformsWithPriority != nullptr);
+                api && api->setHandPoseCustomLocalTransforms != nullptr);
         if (!canPublish) {
             clearLocalTransformOverride(tag, hand, priority, state);
             return false;
