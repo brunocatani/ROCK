@@ -1426,11 +1426,22 @@ namespace rock
         const auto& targetOpenValues = anyFingerContact || freezeCurrentPose ?
             solve.targetOpenValues :
             response.baselineOpenValues;
+        constexpr std::uint32_t kFingerSlotMask =
+            ((1u << static_cast<std::uint32_t>(kFirstForearmSlot)) - 1u) &
+            ~((1u << static_cast<std::uint32_t>(
+                   dynamic_hand_collision_telemetry::kFirstFingerSlot)) - 1u);
+        const bool dynamicInteractionFingerContact =
+            ((handTelemetry.otherHandContactMask |
+                 handTelemetry.weaponContactMask) &
+                kFingerSlotMask) != 0;
         response.currentOpenValues =
             surface_finger_collision_policy::advanceOpenValues(
                 response.currentOpenValues,
                 targetOpenValues,
-                g_rockConfig.rockHandCollisionSurfaceFingerSmoothingSpeed,
+                dynamicInteractionFingerContact ?
+                    0.0f :
+                    g_rockConfig.
+                        rockHandCollisionSurfaceFingerSmoothingSpeed,
                 deltaSeconds);
         if (response.lastDirections != previousDirections) {
             ROCK_LOG_SAMPLE_DEBUG(
@@ -2120,10 +2131,11 @@ namespace rock
                 handSlots.teleportRecoverySecondsRemaining = recoveryDuration;
             }
             const float frameDt = std::clamp(std::isfinite(frame.deltaSeconds) ? frame.deltaSeconds : (1.0f / 90.0f), 0.0f, 0.1f);
-            float smoothingSpeed = g_rockConfig.rockHandCollisionDynamicRenderFollowSmoothingSpeed;
+            float smoothingSpeed = 0.0f;
             if (handSlots.teleportRecoverySecondsRemaining > 0.0f) {
                 handSlots.teleportRecoverySecondsRemaining = std::max(0.0f, handSlots.teleportRecoverySecondsRemaining - frameDt);
                 const float recoverySpeed = 3.0f / std::max(recoveryDuration, 0.05f);
+                smoothingSpeed = g_rockConfig.rockHandCollisionDynamicRenderFollowSmoothingSpeed;
                 smoothingSpeed = smoothingSpeed > 0.0f ? std::min(smoothingSpeed, recoverySpeed) : recoverySpeed;
             }
 

@@ -29,7 +29,6 @@ namespace rock
         constexpr std::uint32_t kRaiseManifoldProcessedEvents = 0x40u;
         constexpr std::uint32_t kRebuildBodyCollisionState = 0u;
         constexpr std::uint32_t kContactGraceSolves = 3;
-        constexpr float kMaxVisualCorrectionRotationDegrees = 85.0f;
 
         const char* compoundSnapshotFailureName(const WeaponCollision::CompoundGeometrySnapshotFailure failure)
         {
@@ -492,7 +491,6 @@ namespace rock
             snapshot.generationKey == _createdGenerationKey;
         const bool snapshotCurrent =
             snapshotIdentityCurrent &&
-            snapshot.contactActive &&
             !snapshot.teleported;
 
         _debugSnapshot = {};
@@ -618,20 +616,18 @@ namespace rock
         _debugSnapshot.translationCorrectionGameUnits = result.translationCorrectionGameUnits;
         _debugSnapshot.rotationCorrectionDegrees = result.rotationCorrectionDegrees;
 
-        const bool correctionWithinSafetyEnvelope =
+        const bool correctionFinite =
             std::isfinite(result.translationCorrectionGameUnits) &&
-            std::isfinite(result.rotationCorrectionDegrees) &&
-            result.translationCorrectionGameUnits <= g_rockConfig.rockWeaponCollisionDynamicMaxVisualCorrectionGameUnits &&
-            result.rotationCorrectionDegrees <= kMaxVisualCorrectionRotationDegrees;
-        if (!correctionWithinSafetyEnvelope) {
+            std::isfinite(result.rotationCorrectionDegrees);
+        if (!correctionFinite) {
             ROCK_LOG_SAMPLE_WARN(
                 Weapon,
                 1000,
-                "Dynamic weapon visual correction rejected: body={} translation={:.2f}gu rotation={:.2f}deg",
+                "Dynamic weapon visual correction rejected as non-finite: body={} translation={:.2f}gu rotation={:.2f}deg",
                 snapshot.bodyId,
                 result.translationCorrectionGameUnits,
                 result.rotationCorrectionDegrees);
-            logPipelineStage("safety-gate");
+            logPipelineStage("finite-gate");
             return result;
         }
 

@@ -213,14 +213,20 @@ Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
     'clearSurfaceFingerResponse\(_hands\[0\], false\)[\s\S]*clearSurfaceFingerResponse\(_hands\[1\], true\)' `
     'World/menu shutdown must deterministically release both surface finger pose claims.'
 
-# Render-follow pipeline: combine per-body deviations, smooth (rest twitch), gate.
+# Render-follow pipeline: combine per-body deviations, apply normal contact
+# exactly, and reserve smoothing for explicit teleport recovery only.
 Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'sanitizeHandTargetResponseScale\(twinFrame->handTargetResponseScale\)',
     'handTargetCorrectionWorldGame',
     'combineTwinDeviations\(',
+    'float smoothingSpeed = 0\.0f',
+    'teleportRecoverySecondsRemaining > 0\.0f',
     'smoothAppliedDeviation\(',
     'applyExternalHandWorldTransform\('
-) 'Dynamic hand render-follow must map forearm leverage, combine contacts, smooth, then apply the deviation.'
+) 'Dynamic hand render-follow must map forearm leverage, combine contacts, and smooth only teleport recovery before publication.'
+Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
+    'dynamicInteractionFingerContact[\s\S]{0,500}dynamicInteractionFingerContact\s*\?[\s\S]{0,80}0\.0f[\s\S]{0,120}rockHandCollisionSurfaceFingerSmoothingSpeed' `
+    'Hand/hand and hand/weapon finger contacts must publish their collision pose without presentation lag.'
 Require-OrderedText 'src/physics-interaction/body/BodyBoneColliderSet.cpp' @(
     'shoulderBone = isLeft \? "LArm_UpperArm" : "RArm_UpperArm"',
     'forearmHandTargetResponseScale\(',

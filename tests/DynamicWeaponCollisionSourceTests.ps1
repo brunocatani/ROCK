@@ -234,10 +234,9 @@ Require-Pattern $weaponAuthority `
     'refreshRightNativeCanonicalFrame\([\s\S]*_weaponCollisionHandPresentationFromPreviousFrame\[1\][\s\S]*isManualOwnershipActive\(\)' `
     'Previous collision presentation must never poison the passive native right-hand canonical calibration.'
 
-# Visual correction is admitted only by a genuine proxy/obstacle callback. The
-# legacy key-3 point path remains intact while the proxy-specific key-2 path
-# treats a validated processed manifold as contact evidence. Merely seeing a
-# solver residual is not sufficient evidence that an admitted obstacle caused it.
+# Contact callbacks remain authoritative diagnostics and motor-tuning input.
+# Presentation authority comes from the current post-solve body snapshot so a
+# missed/expired callback cannot leave the mesh separated from its collider.
 Require-Order $contacts @(
     'isProxyBodyIdAtomic\(bodyIdA\)',
     'tryReadFilterInfo\(',
@@ -259,11 +258,17 @@ Require-Order $contacts @(
     'recordObstacleManifoldProcessedCallback\('
 ) 'Processed-manifold admission must validate the native record and exact proxy/obstacle pair before publication.'
 Require-Pattern $runtimeSource `
-    'snapshot\.contactActive\s*&&[\s\S]*!snapshot\.teleported' `
-    'Visual correction must require an actual active contact and reject teleport recovery samples.'
+    'snapshotIdentityCurrent\s*&&[\s\S]{0,100}!snapshot\.teleported' `
+    'Every current non-teleport post-solve sample must be eligible to own weapon presentation.'
+Reject-Pattern $runtimeSource `
+    'snapshotIdentityCurrent\s*&&[\s\S]{0,100}snapshot\.contactActive' `
+    'Presentation must not depend on the short-lived contact callback grace flag.'
 Require-Pattern $runtimeSource `
-    'correctionWithinSafetyEnvelope[\s\S]*rockWeaponCollisionDynamicMaxVisualCorrectionGameUnits[\s\S]*kMaxVisualCorrectionRotationDegrees' `
-    'Physics-resolved visual correction must retain a finite fail-closed safety envelope.'
+    'correctionFinite[\s\S]*std::isfinite\(result\.translationCorrectionGameUnits\)[\s\S]*std::isfinite\(result\.rotationCorrectionDegrees\)' `
+    'Physics-resolved visual correction must reject only corrupt non-finite deltas.'
+Reject-Pattern $runtimeSource `
+    'correctionWithinSafetyEnvelope|kMaxVisualCorrectionRotationDegrees' `
+    'A finite solver pose must not be discarded by an arbitrary visual distance or angle limit.'
 
 # The proxy participates in the same callback-clock drive and deterministic
 # live/stale-world cleanup contract as the existing generated bodies.

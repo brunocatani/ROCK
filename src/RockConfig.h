@@ -127,7 +127,6 @@ namespace rock
         float rockWeaponCollisionDynamicDivergenceTeleportDwellSeconds = 0.3f;
         float rockWeaponCollisionDynamicRenderMinTranslationGameUnits = 0.05f;
         float rockWeaponCollisionDynamicRenderMinRotationDegrees = 0.25f;
-        float rockWeaponCollisionDynamicMaxVisualCorrectionGameUnits = 60.0f;
         int rockWeaponCollisionGroupingMode = weapon_collision_grouping_policy::kDefaultWeaponCollisionGroupingMode;
         int rockWeaponCollisionVisualStabilizationFrames = 8;
         float rockWeaponCollisionConvexRadius = 0.01f;

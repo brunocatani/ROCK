@@ -199,7 +199,6 @@ namespace rock
         rockWeaponCollisionDynamicDivergenceTeleportDwellSeconds = 0.3f;
         rockWeaponCollisionDynamicRenderMinTranslationGameUnits = 0.05f;
         rockWeaponCollisionDynamicRenderMinRotationDegrees = 0.25f;
-        rockWeaponCollisionDynamicMaxVisualCorrectionGameUnits = 60.0f;
         rockWeaponCollisionGroupingMode = weapon_collision_grouping_policy::kDefaultWeaponCollisionGroupingMode;
         rockWeaponCollisionVisualStabilizationFrames = kDefaultWeaponCollisionVisualStabilizationFrames;
         rockWeaponCollisionConvexRadius = 0.01f;
@@ -932,13 +931,6 @@ namespace rock
             0.25f,
             0.0f,
             45.0f);
-        rockWeaponCollisionDynamicMaxVisualCorrectionGameUnits = readClampedFloat(ini,
-            SECTION,
-            "fWeaponCollisionDynamicMaxVisualCorrectionGameUnits",
-            rockWeaponCollisionDynamicMaxVisualCorrectionGameUnits,
-            60.0f,
-            1.0f,
-            500.0f);
         rockWeaponCollisionGroupingMode = static_cast<int>(ini.GetLongValue(SECTION, "iWeaponCollisionGroupingMode", rockWeaponCollisionGroupingMode));
         const auto sanitizedWeaponCollisionGroupingMode = weapon_collision_grouping_policy::sanitizeWeaponCollisionGroupingMode(rockWeaponCollisionGroupingMode);
         if (static_cast<int>(sanitizedWeaponCollisionGroupingMode) != rockWeaponCollisionGroupingMode) {
