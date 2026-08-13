@@ -15,12 +15,37 @@ namespace rock::dynamic_weapon_collision_policy
     inline constexpr float kFallbackWeaponMass = 2.0f;
     inline constexpr float kMaximumWeaponMass = 50.0f;
     inline constexpr std::int32_t kMaximumProcessedManifoldContactPoints = 4;
+    inline constexpr float kProcessedManifoldContactRetentionSeconds = 0.35f;
+    inline constexpr float kFallbackContactRetentionDeltaSeconds = 1.0f / 90.0f;
 
     inline constexpr bool hasSolvedProcessedManifoldContact(
         const std::int32_t pointCount)
     {
         return pointCount > 0 &&
                pointCount <= kMaximumProcessedManifoldContactPoints;
+    }
+
+    inline float advanceProcessedManifoldContactRetention(
+        const float currentSeconds,
+        const bool positivePointWitness,
+        const bool teleported,
+        const float deltaSeconds)
+    {
+        if (teleported) {
+            return 0.0f;
+        }
+        if (positivePointWitness) {
+            return kProcessedManifoldContactRetentionSeconds;
+        }
+
+        const float retainedSeconds = std::isfinite(currentSeconds) ?
+            (std::max)(0.0f, currentSeconds) :
+            0.0f;
+        const float elapsedSeconds =
+            std::isfinite(deltaSeconds) && deltaSeconds > 0.000001f ?
+            std::clamp(deltaSeconds, 0.0f, 0.1f) :
+            kFallbackContactRetentionDeltaSeconds;
+        return (std::max)(0.0f, retainedSeconds - elapsedSeconds);
     }
 
     inline float sanitizeWeaponMass(float weaponWeightGame)

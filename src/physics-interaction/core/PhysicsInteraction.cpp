@@ -6897,7 +6897,8 @@ namespace rock
         _leftHand.observeCustomGrabAuthorityAfterSolve(world, timing);
         _dynamicWeaponCollision.samplePostSolve(
             world,
-            completedSolveSequence);
+            completedSolveSequence,
+            timing);
         _dynamicHandCollision.samplePostSolveDeviations(world);
         const auto gameFrameIndex = _palmClockGameFrameIndex.load(std::memory_order_acquire);
         const auto gameDeltaSeconds = _palmClockGameDeltaSeconds.load(std::memory_order_acquire);

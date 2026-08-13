@@ -80,7 +80,7 @@ namespace rock
             std::uint32_t constraintId{ 0x7FFF'FFFFu };
             std::uint32_t otherBodyId{ 0x7FFF'FFFFu };
             std::uint32_t otherLayer{ 0 };
-            std::uint32_t contactGraceSolves{ 0 };
+            float contactRetentionSeconds{ 0.0f };
             std::uint64_t generationKey{ 0 };
             std::uint64_t solveSequence{ 0 };
             std::uint64_t proxyPairCallbackSequence{ 0 };
@@ -126,7 +126,10 @@ namespace rock
         void flushPendingPhysicsDrive(
             RE::hknpWorld* world,
             const havok_physics_timing::PhysicsTimingSample& timing);
-        void samplePostSolve(RE::hknpWorld* world, std::uint64_t solveSequence);
+        void samplePostSolve(
+            RE::hknpWorld* world,
+            std::uint64_t solveSequence,
+            const havok_physics_timing::PhysicsTimingSample& timing);
 
         bool isProxyBodyIdAtomic(std::uint32_t bodyId) const;
         void recordObstacleContactCallback(
@@ -168,7 +171,7 @@ namespace rock
             std::uint32_t bodyId{ 0x7FFF'FFFFu };
             std::uint32_t otherBodyId{ 0x7FFF'FFFFu };
             std::uint32_t otherLayer{ 0 };
-            std::uint32_t contactGraceSolves{ 0 };
+            float contactRetentionSeconds{ 0.0f };
             std::uint64_t generationKey{ 0 };
             std::uint64_t solveSequence{ 0 };
             float weaponScale{ 1.0f };
@@ -254,7 +257,7 @@ namespace rock
         RE::NiTransform _physicsPreviousRequestedTarget{};
         bool _physicsPreviousRequestedTargetValid{ false };
         std::uint64_t _consumedContactSequence{ 0 };
-        std::uint32_t _contactGraceSolves{ 0 };
+        float _contactRetentionSeconds{ 0.0f };
         std::uint64_t _contactEpisode{ 0 };
         std::uint64_t _reportedContactEpisode{ 0 };
         std::uint64_t _postSolveSamplesSinceCreate{ 0 };
@@ -300,7 +303,7 @@ namespace rock
         std::atomic<std::uint32_t> _snapshotBodyIdAtomic{ 0x7FFF'FFFFu };
         std::atomic<std::uint32_t> _snapshotOtherBodyIdAtomic{ 0x7FFF'FFFFu };
         std::atomic<std::uint32_t> _snapshotOtherLayerAtomic{ 0 };
-        std::atomic<std::uint32_t> _snapshotContactGraceAtomic{ 0 };
+        std::atomic<float> _snapshotContactRetentionSecondsAtomic{ 0.0f };
         std::atomic<std::uint64_t> _snapshotGenerationKeyAtomic{ 0 };
         std::atomic<std::uint64_t> _snapshotSolveSequenceAtomic{ 0 };
         std::atomic<float> _snapshotWeaponScaleAtomic{ 1.0f };

@@ -266,6 +266,15 @@ Require-Pattern $runtimePolicy `
 Require-Pattern $runtimeSource `
     '_processedManifoldCallbackSequenceAtomic\.fetch_add\(1[\s\S]*hasSolvedProcessedManifoldContact\([\s\S]*manifoldPointCount\)[\s\S]*_contactSequenceAtomic\.fetch_add\(1' `
     'Point-free and terminal processed-manifold records must remain diagnostic and never refresh the contact witness.'
+Require-Pattern $runtimePolicy `
+    'kProcessedManifoldContactRetentionSeconds\s*=\s*0\.35f[\s\S]*advanceProcessedManifoldContactRetention\([\s\S]*teleported[\s\S]*positivePointWitness[\s\S]*retainedSeconds\s*-\s*elapsedSeconds' `
+    'Positive manifold authority must use a solver-rate-independent, teleport-safe retention window.'
+Require-Pattern $runtimeSource `
+    '_contactRetentionSeconds\s*=\s*[\s\S]*advanceProcessedManifoldContactRetention\([\s\S]*newMatchingContact[\s\S]*_physicsDriveTeleported[\s\S]*driveDeltaSeconds\(timing\)[\s\S]*snapshot\.contactActive\s*=\s*_contactRetentionSeconds\s*>\s*0\.0f' `
+    'Post-solve authority must bridge positive-contact callback bursts using physics time.'
+Reject-Pattern $runtimeSource `
+    'kContactGraceSolves|_contactGraceSolves' `
+    'Dynamic weapon contact authority must not expire through a solver-rate-dependent tick count.'
 Require-Pattern $runtimeSource `
     'snapshotIdentityCurrent\s*&&[\s\S]{0,100}!snapshot\.teleported' `
     'Every current non-teleport post-solve sample must be eligible to own weapon presentation.'
@@ -291,7 +300,7 @@ Require-Order $runtimeSource @(
     'driveGeneratedKeyframedBody\('
 ) 'The native child tree and owner notifications must refresh before the authority body drives into the pre-collide step.'
 Require-Pattern $runtimeSource `
-    'updateWeaponGripConstraintContactTau\([\s\S]*rockGrabLinearTau[\s\S]*rockGrabLooseWeaponSharedConstraintLinearTauMultiplier[\s\S]*rockGrabAngularTau[\s\S]*rockGrabLooseWeaponSharedConstraintAngularTauMultiplier[\s\S]*rockGrabTauMin[\s\S]*rockGrabLooseWeaponSharedConstraintCollisionTauMultiplier[\s\S]*advanceToward\([\s\S]*linearMotor->tau[\s\S]*advanceToward\([\s\S]*angularMotor->tau[\s\S]*_contactGraceSolves\s*>\s*0' `
+    'updateWeaponGripConstraintContactTau\([\s\S]*rockGrabLinearTau[\s\S]*rockGrabLooseWeaponSharedConstraintLinearTauMultiplier[\s\S]*rockGrabAngularTau[\s\S]*rockGrabLooseWeaponSharedConstraintAngularTauMultiplier[\s\S]*rockGrabTauMin[\s\S]*rockGrabLooseWeaponSharedConstraintCollisionTauMultiplier[\s\S]*advanceToward\([\s\S]*linearMotor->tau[\s\S]*advanceToward\([\s\S]*angularMotor->tau[\s\S]*_contactRetentionSeconds\s*>\s*0\.0f' `
     'Active weapon/world contact must soften both grip motors through the established loose-weapon tau policy.'
 Reject-Pattern $runtimeSource `
     'updateWeaponGripConstraintContactTau\([\s\S]{0,400}(requestedTarget|proportionalRecoveryVelocity|constantRecoveryVelocity|maxForce)\s*=' `

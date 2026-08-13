@@ -3805,11 +3805,11 @@ namespace rock
                         labelAnchor,
                         1.7f,
                         proxyColor,
-                        "gripPivot=%.2fgu yield=%.2fdeg layer=%u grace=%u visual=%s solve=%llu",
+                        "gripPivot=%.2fgu yield=%.2fdeg layer=%u retention=%.3fs visual=%s solve=%llu",
                         snapshot.translationCorrectionGameUnits,
                         snapshot.rotationCorrectionDegrees,
                         snapshot.otherLayer,
-                        snapshot.contactGraceSolves,
+                        snapshot.contactRetentionSeconds,
                         snapshot.visualCorrectionActive ? "ACTIVE" : "IDLE",
                         static_cast<unsigned long long>(
                             snapshot.solveSequence));

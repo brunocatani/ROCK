@@ -55,6 +55,46 @@ int main()
     ok &= hasSolvedProcessedManifoldContact(4);
     ok &= !hasSolvedProcessedManifoldContact(5);
 
+    float contactRetention = advanceProcessedManifoldContactRetention(
+        0.0f,
+        true,
+        false,
+        1.0f / 90.0f);
+    ok &= expectNear(
+        "positive manifold starts contact retention",
+        contactRetention,
+        kProcessedManifoldContactRetentionSeconds);
+    for (int solve = 0; solve < 31; ++solve) {
+        contactRetention = advanceProcessedManifoldContactRetention(
+            contactRetention,
+            false,
+            false,
+            1.0f / 90.0f);
+    }
+    ok &= contactRetention > 0.0f;
+    contactRetention = advanceProcessedManifoldContactRetention(
+        contactRetention,
+        false,
+        false,
+        1.0f / 90.0f);
+    ok &= expectNear("contact retention expires by physics time", contactRetention, 0.0f);
+    ok &= expectNear(
+        "point-free manifold cannot start retention",
+        advanceProcessedManifoldContactRetention(0.0f, false, false, 1.0f / 90.0f),
+        0.0f);
+    ok &= expectNear(
+        "positive manifold refreshes retention",
+        advanceProcessedManifoldContactRetention(0.01f, true, false, 0.1f),
+        kProcessedManifoldContactRetentionSeconds);
+    ok &= expectNear(
+        "teleport clears retained contact",
+        advanceProcessedManifoldContactRetention(
+            kProcessedManifoldContactRetentionSeconds,
+            true,
+            true,
+            1.0f / 90.0f),
+        0.0f);
+
     constexpr auto dynamicWeaponMask = rock::collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask();
     for (std::uint32_t layer = 0; layer < rock::collision_layer_policy::FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++layer) {
         const bool enabled = rock::collision_layer_policy::maskEnablesLayer(dynamicWeaponMask, layer);

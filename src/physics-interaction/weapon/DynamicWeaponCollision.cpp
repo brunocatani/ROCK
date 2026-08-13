@@ -28,7 +28,6 @@ namespace rock
         constexpr std::uint32_t kDynamicWeaponCollisionGroup = 0x000Du;
         constexpr std::uint32_t kRaiseManifoldProcessedEvents = 0x40u;
         constexpr std::uint32_t kRebuildBodyCollisionState = 0u;
-        constexpr std::uint32_t kContactGraceSolves = 3;
 
         const char* compoundSnapshotFailureName(const WeaponCollision::CompoundGeometrySnapshotFailure failure)
         {
@@ -554,7 +553,7 @@ namespace rock
             ROCK_LOG_SAMPLE_INFO(
                 Weapon,
                 500,
-                "DWC pipeline: stage={} contactBody={} authorityBody={} constraint={} callbacks(pair/obstacle/raw/manifold/admit)={}/{}/{}/{}/{} snapshot(read/valid/identity/contact/teleport)={}/{}/{}/{}/{} gripPivotError={:.2f}gu angularYield={:.2f}deg visual={}",
+                "DWC pipeline: stage={} contactBody={} authorityBody={} constraint={} callbacks(pair/obstacle/raw/manifold/admit)={}/{}/{}/{}/{} snapshot(read/valid/identity/contact/teleport)={}/{}/{}/{}/{} retention={:.3f}s gripPivotError={:.2f}gu angularYield={:.2f}deg visual={}",
                 stage,
                 _debugSnapshot.bodyId,
                 _debugSnapshot.authorityBodyId,
@@ -569,6 +568,7 @@ namespace rock
                 _debugSnapshot.physicsSnapshotIdentityCurrent,
                 _debugSnapshot.physicsSnapshotContactActive,
                 _debugSnapshot.physicsSnapshotTeleported,
+                _debugSnapshot.contactRetentionSeconds,
                 result.translationCorrectionGameUnits,
                 result.rotationCorrectionDegrees,
                 result.applyVisualCorrection);
@@ -609,7 +609,7 @@ namespace rock
         _debugSnapshot.contactActive = snapshot.contactActive;
         _debugSnapshot.otherBodyId = snapshot.otherBodyId;
         _debugSnapshot.otherLayer = snapshot.otherLayer;
-        _debugSnapshot.contactGraceSolves = snapshot.contactGraceSolves;
+        _debugSnapshot.contactRetentionSeconds = snapshot.contactRetentionSeconds;
         _debugSnapshot.solveSequence = snapshot.solveSequence;
         _debugSnapshot.liveWeaponWorld = sampledLiveWeaponWorld;
         _debugSnapshot.resolvedWeaponWorld = resolvedWeaponWorld;
@@ -636,9 +636,9 @@ namespace rock
          * while FO4VR reports a positive-point processed manifold. Key-2 also
          * emits zero-point and terminal (-1) records; admitting those records
          * exposes ordinary soft-motor tracking lag as free-space weapon
-         * motion. The solve-count grace keeps the final contacted pose alive
-         * across callback/solve ordering without converting residual lag into
-         * collision evidence.
+         * motion. The positive-witness retention keeps the contacted pose
+         * continuous across callback bursts without allowing point-free
+         * records or residual lag to start visual authority.
          */
         const bool correctionVisible =
             snapshot.contactActive &&
@@ -1076,7 +1076,7 @@ namespace rock
         // owned by the existing grip constraint.
         updateWeaponGripConstraintContactTau(
             _authorityConstraint,
-            _contactGraceSolves > 0,
+            _contactRetentionSeconds > 0.0f,
             driveResult.driveDeltaSeconds);
 
         _droveThisSubstep =
@@ -1092,11 +1092,14 @@ namespace rock
         }
         _physicsDriveTeleported = driveResult.teleported;
         if (driveResult.teleported) {
-            _contactGraceSolves = 0;
+            _contactRetentionSeconds = 0.0f;
         }
     }
 
-    void DynamicWeaponCollisionRuntime::samplePostSolve(RE::hknpWorld* world, const std::uint64_t solveSequence)
+    void DynamicWeaponCollisionRuntime::samplePostSolve(
+        RE::hknpWorld* world,
+        const std::uint64_t solveSequence,
+        const havok_physics_timing::PhysicsTimingSample& timing)
     {
         if (!_enabledAtomic.load(std::memory_order_acquire) || !world || !_created || _createdWorld != world ||
             !_body.isValid() || !_droveThisSubstep || !_physicsRequestedTargetValid) {
@@ -1107,7 +1110,7 @@ namespace rock
         RE::NiTransform liveBodyWorld{};
         if (!havok_runtime::tryResolveLiveBodyWorldTransform(world, _body.getBodyId(), liveBodyWorld) ||
             !dynamic_weapon_collision_policy::isFiniteTransform(liveBodyWorld)) {
-            _contactGraceSolves = 0;
+            _contactRetentionSeconds = 0.0f;
             clearPublishedPhysicsSnapshot();
             return;
         }
@@ -1127,7 +1130,7 @@ namespace rock
                 contactProxy == _body.getBodyId().value &&
                 collision_layer_policy::isDynamicWeaponProxyObstacleLayer(otherLayer);
         }
-        const bool contactWasActive = _contactGraceSolves > 0;
+        const bool contactWasActive = _contactRetentionSeconds > 0.0f;
         const bool contactEpisodeStarted =
             newMatchingContact &&
             (!contactWasActive || _activeContactOtherBodyId != otherBodyId);
@@ -1135,23 +1138,22 @@ namespace rock
             ++_contactEpisode;
             _activeContactOtherBodyId = otherBodyId;
         }
-        if (_physicsDriveTeleported) {
-            _contactGraceSolves = 0;
-        } else if (newMatchingContact) {
-            _contactGraceSolves = kContactGraceSolves;
-        } else if (_contactGraceSolves > 0) {
-            --_contactGraceSolves;
-        }
+        _contactRetentionSeconds =
+            dynamic_weapon_collision_policy::advanceProcessedManifoldContactRetention(
+                _contactRetentionSeconds,
+                newMatchingContact,
+                _physicsDriveTeleported,
+                havok_physics_timing::driveDeltaSeconds(timing));
 
         PhysicsSnapshot snapshot{};
         snapshot.valid = true;
-        snapshot.contactActive = _contactGraceSolves > 0;
+        snapshot.contactActive = _contactRetentionSeconds > 0.0f;
         snapshot.teleported = _physicsDriveTeleported;
         snapshot.world = reinterpret_cast<std::uintptr_t>(world);
         snapshot.bodyId = _body.getBodyId().value;
         snapshot.otherBodyId = newMatchingContact ? otherBodyId : _snapshotOtherBodyIdAtomic.load(std::memory_order_relaxed);
         snapshot.otherLayer = newMatchingContact ? otherLayer : _snapshotOtherLayerAtomic.load(std::memory_order_relaxed);
-        snapshot.contactGraceSolves = _contactGraceSolves;
+        snapshot.contactRetentionSeconds = _contactRetentionSeconds;
         snapshot.generationKey = _createdGenerationKey;
         snapshot.solveSequence = solveSequence;
         snapshot.weaponScale = _createdWeaponScale;
@@ -1433,7 +1435,7 @@ namespace rock
         _physicsRequestedTarget = {};
         _physicsPreviousRequestedTarget = {};
         _physicsPreviousRequestedTargetValid = false;
-        _contactGraceSolves = 0;
+        _contactRetentionSeconds = 0.0f;
         _consumedContactSequence = 0;
         _contactEpisode = 0;
         _reportedContactEpisode = 0;
@@ -1562,7 +1564,7 @@ namespace rock
         _snapshotBodyIdAtomic.store(snapshot.bodyId, std::memory_order_relaxed);
         _snapshotOtherBodyIdAtomic.store(snapshot.otherBodyId, std::memory_order_relaxed);
         _snapshotOtherLayerAtomic.store(snapshot.otherLayer, std::memory_order_relaxed);
-        _snapshotContactGraceAtomic.store(snapshot.contactGraceSolves, std::memory_order_relaxed);
+        _snapshotContactRetentionSecondsAtomic.store(snapshot.contactRetentionSeconds, std::memory_order_relaxed);
         _snapshotGenerationKeyAtomic.store(snapshot.generationKey, std::memory_order_relaxed);
         _snapshotSolveSequenceAtomic.store(snapshot.solveSequence, std::memory_order_relaxed);
         _snapshotWeaponScaleAtomic.store(snapshot.weaponScale, std::memory_order_relaxed);
@@ -1592,7 +1594,7 @@ namespace rock
             candidate.bodyId = _snapshotBodyIdAtomic.load(std::memory_order_relaxed);
             candidate.otherBodyId = _snapshotOtherBodyIdAtomic.load(std::memory_order_relaxed);
             candidate.otherLayer = _snapshotOtherLayerAtomic.load(std::memory_order_relaxed);
-            candidate.contactGraceSolves = _snapshotContactGraceAtomic.load(std::memory_order_relaxed);
+            candidate.contactRetentionSeconds = _snapshotContactRetentionSecondsAtomic.load(std::memory_order_relaxed);
             candidate.generationKey = _snapshotGenerationKeyAtomic.load(std::memory_order_relaxed);
             candidate.solveSequence = _snapshotSolveSequenceAtomic.load(std::memory_order_relaxed);
             candidate.weaponScale = _snapshotWeaponScaleAtomic.load(std::memory_order_relaxed);
