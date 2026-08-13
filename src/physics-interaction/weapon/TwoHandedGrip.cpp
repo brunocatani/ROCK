@@ -2536,6 +2536,17 @@ namespace rock
             } else {
                 _touchFrames++;
                 if (_touchFrames > TOUCH_TIMEOUT_FRAMES) {
+                    ROCK_LOG_INFO(
+                        Weapon,
+                        "TwoHandedGrip: touch contact timed out firingHand={} supportHand={} decision={} contactValid={} body={} part={} source={} generation={:016X}",
+                        _firingHandIsLeft ? "left" : "right",
+                        supportHandIsLeft ? "left" : "right",
+                        static_cast<int>(decision.kind),
+                        supportWeaponContact.valid,
+                        supportWeaponContact.bodyId,
+                        static_cast<int>(supportWeaponContact.partKind),
+                        static_cast<int>(supportWeaponContact.acquisitionSource),
+                        supportWeaponContact.weaponGenerationKey);
                     _state = TwoHandedState::Inactive;
                     break;
                 }
