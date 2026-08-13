@@ -141,7 +141,7 @@ Require-Text 'src/ROCKMain.cpp' 's_originalGameLoopFunc\(rcx\);[\s\S]*synchroniz
 Reject-Text 'src/ROCKMain.cpp' 'prepareNativeScopeCameraForGameUpdate|finalizeNativeScopeOverlayAfterGameUpdate' `
     'The disproven pre/post displaced-call scope handoff must not remain.'
 
-$overlay = 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl'
+$overlay = 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp'
 Require-Text $overlay 'drawNativeScopeActivation\s*=\s*g_rockConfig\.rockDebugDrawNativeScopeActivation' `
     'Overlay publication must be independently gated by the native-scope diagnostic setting.'
 Require-Text $overlay 'primaryWeaponScopeCamera[\s\S]*scopeCamera->world[\s\S]*composeTransforms\(scopeCameraParent->world,\s*scopeCamera->local\)' `

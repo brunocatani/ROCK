@@ -50,7 +50,7 @@ Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'semanticTargetEligible' `
     'Authored activation must not veto a passing cone because generated contact geometry also owns reload/action/socket metadata.'
 
-Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
+Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp' `
     'rockDebugDrawAuthoredGripActivationZones[\s\S]*drawWireCone[\s\S]*ENFORCED AUTHORED ACTIVATION' `
     'The pre-grab overlay must be independently enabled and explicitly identify its enforced verdict.'
 

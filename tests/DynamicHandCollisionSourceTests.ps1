@@ -278,7 +278,7 @@ Reject-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
 
 # Debug visualization must consume the same telemetry snapshot intended for a
 # later API adapter, rather than re-reading live bodies through a second path.
-Require-OrderedText 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' @(
+Require-OrderedText 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp' @(
     'if \(drawDynamicHandColliders\)',
     'getTelemetrySnapshot\(telemetry\)',
     'requestedGapGameUnits',
@@ -363,7 +363,7 @@ Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
 
 # The twins get their own visualization flag, independent of the keyframed
 # collider debug draws.
-Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
+Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp' `
     'if \(drawDynamicHandColliders\)' `
     'Dynamic hand twins must draw behind their own bDebugDrawDynamicHandColliders flag.'
 

@@ -1,4 +1,5 @@
 #include "physics-interaction/core/PhysicsInteraction.h"
+#include "physics-interaction/core/PhysicsInteractionTransformValidation.h"
 
 #include "api/ProviderColliderVisualizationRuntime.h"
 #include "api/ProviderDebugOverlayRuntime.h"
@@ -480,10 +481,6 @@ namespace rock
         constexpr int kRawParitySummaryFrames = 300;
         constexpr int kRawParityLagFrames = 5;
         constexpr float kRawParityLagSlack = 0.05f;
-        DirectSkeletonBoneReader s_directSkeletonBoneReader;
-        std::uint32_t s_directSkeletonBoneLogCounter = 0;
-        bool s_worldOriginDiagnosticsEnabledLogged = false;
-
         struct ContactEventCallbackInfo
         {
             void* fn = nullptr;
@@ -832,69 +829,6 @@ namespace rock
             return std::acos(dot) * (180.0f / std::numbers::pi_v<float>);
         }
 
-        bool startsWith(std::string_view value, std::string_view prefix)
-        {
-            return value.size() >= prefix.size() && value.substr(0, prefix.size()) == prefix;
-        }
-
-        debug::SkeletonOverlayRole skeletonOverlayRoleForBone(std::string_view name)
-        {
-            if (startsWith(name, "RArm_Finger")) {
-                return debug::SkeletonOverlayRole::RightFinger;
-            }
-            if (startsWith(name, "LArm_Finger")) {
-                return debug::SkeletonOverlayRole::LeftFinger;
-            }
-            if (startsWith(name, "RArm_")) {
-                return debug::SkeletonOverlayRole::RightArm;
-            }
-            if (startsWith(name, "LArm_")) {
-                return debug::SkeletonOverlayRole::LeftArm;
-            }
-            if (startsWith(name, "RLeg_")) {
-                return debug::SkeletonOverlayRole::RightLeg;
-            }
-            if (startsWith(name, "LLeg_")) {
-                return debug::SkeletonOverlayRole::LeftLeg;
-            }
-            if (name == "Head" || name == "Neck") {
-                return debug::SkeletonOverlayRole::Head;
-            }
-            return debug::SkeletonOverlayRole::Core;
-        }
-
-        std::string_view trimView(std::string_view value)
-        {
-            while (!value.empty() && (value.front() == ' ' || value.front() == '\t')) {
-                value.remove_prefix(1);
-            }
-            while (!value.empty() && (value.back() == ' ' || value.back() == '\t')) {
-                value.remove_suffix(1);
-            }
-            return value;
-        }
-
-        bool skeletonLogFilterMatches(std::string_view filter, std::string_view boneName)
-        {
-            filter = trimView(filter);
-            if (filter.empty()) {
-                return false;
-            }
-
-            while (!filter.empty()) {
-                const std::size_t comma = filter.find(',');
-                const std::string_view token = trimView(filter.substr(0, comma));
-                if (token == boneName) {
-                    return true;
-                }
-                if (comma == std::string_view::npos) {
-                    break;
-                }
-                filter.remove_prefix(comma + 1);
-            }
-            return false;
-        }
-
         RE::TESObjectWEAP* currentEquippedWeaponForm()
         {
             auto* equipData = f4vr::getEquippedWeaponItem();
@@ -950,22 +884,6 @@ namespace rock
             result.translate.z = source.translate[2];
             result.scale = source.scale;
             return result;
-        }
-
-        bool finiteNiTransform(const RE::NiTransform& transform)
-        {
-            for (int row = 0; row < 3; ++row) {
-                for (int column = 0; column < 3; ++column) {
-                    if (!std::isfinite(transform.rotate.entry[row][column])) {
-                        return false;
-                    }
-                }
-            }
-            return std::isfinite(transform.translate.x) &&
-                   std::isfinite(transform.translate.y) &&
-                   std::isfinite(transform.translate.z) &&
-                   std::isfinite(transform.scale) &&
-                   std::abs(transform.scale) > 0.0001f;
         }
 
         bool approximatelySameWeaponLocalOffset(
@@ -6948,7 +6866,6 @@ namespace rock
         BethesdaPhysicsBody::serviceRetiredDeferredPayloads();
     }
 
-#include "physics-interaction/core/PhysicsInteractionDebugOverlay.inl"
     void PhysicsInteraction::updateSelection(const PhysicsFrameContext& frame)
     {
         if (!runtime_state::isLocalSkeletonReady()) {

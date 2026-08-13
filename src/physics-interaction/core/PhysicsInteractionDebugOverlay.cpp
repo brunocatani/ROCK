@@ -1,5 +1,117 @@
+#include "physics-interaction/core/PhysicsInteraction.h"
+#include "physics-interaction/core/PhysicsInteractionTransformValidation.h"
+
+#include "api/ProviderColliderVisualizationRuntime.h"
+#include "api/ProviderDebugOverlayRuntime.h"
+
+#include <algorithm>
+#include <array>
+#include <chrono>
+#include <cmath>
+#include <cstdio>
+#include <cstdint>
+#include <numbers>
+#include <string_view>
+#include <utility>
+
+#include "physics-interaction/PhysicsBodyFrame.h"
+#include "physics-interaction/TransformMath.h"
+#include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
+#include "physics-interaction/debug/DebugBodyOverlay.h"
+#include "physics-interaction/debug/DebugOverlayPolicy.h"
+#include "physics-interaction/debug/PhysicsWorldOriginDiagnostics.h"
+#include "physics-interaction/grab/CustomOGA.h"
+#include "physics-interaction/grab/GrabPinchPocket.h"
+#include "physics-interaction/grab/GrabTelemetry.h"
+#include "physics-interaction/grab/GrabThreePhase.h"
+#include "physics-interaction/hand/HandFrame.h"
+#include "physics-interaction/native/PhysicsUtils.h"
+#include "physics-interaction/performance/PerformanceProfiler.h"
+#include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
+#include "physics-interaction/weapon/LooseWeaponGripZone.h"
+#include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
+#include "physics-interaction/weapon/WeaponAuthority.h"
+#include "physics-interaction/weapon/WeaponSupport.h"
+
+#include "RockConfig.h"
+#include "RockUtils.h"
+#include "rock_support/Fo4VrRuntime.h"
+
+namespace rock
+{
+    namespace
+    {
+        DirectSkeletonBoneReader s_directSkeletonBoneReader;
+        std::uint32_t s_directSkeletonBoneLogCounter = 0;
+        bool s_worldOriginDiagnosticsEnabledLogged = false;
+
+        bool startsWith(std::string_view value, std::string_view prefix)
+        {
+            return value.size() >= prefix.size() && value.substr(0, prefix.size()) == prefix;
+        }
+
+        debug::SkeletonOverlayRole skeletonOverlayRoleForBone(std::string_view name)
+        {
+            if (startsWith(name, "RArm_Finger")) {
+                return debug::SkeletonOverlayRole::RightFinger;
+            }
+            if (startsWith(name, "LArm_Finger")) {
+                return debug::SkeletonOverlayRole::LeftFinger;
+            }
+            if (startsWith(name, "RArm_")) {
+                return debug::SkeletonOverlayRole::RightArm;
+            }
+            if (startsWith(name, "LArm_")) {
+                return debug::SkeletonOverlayRole::LeftArm;
+            }
+            if (startsWith(name, "RLeg_")) {
+                return debug::SkeletonOverlayRole::RightLeg;
+            }
+            if (startsWith(name, "LLeg_")) {
+                return debug::SkeletonOverlayRole::LeftLeg;
+            }
+            if (name == "Head" || name == "Neck") {
+                return debug::SkeletonOverlayRole::Head;
+            }
+            return debug::SkeletonOverlayRole::Core;
+        }
+
+        std::string_view trimView(std::string_view value)
+        {
+            while (!value.empty() && (value.front() == ' ' || value.front() == '\t')) {
+                value.remove_prefix(1);
+            }
+            while (!value.empty() && (value.back() == ' ' || value.back() == '\t')) {
+                value.remove_suffix(1);
+            }
+            return value;
+        }
+
+        bool skeletonLogFilterMatches(std::string_view filter, std::string_view boneName)
+        {
+            filter = trimView(filter);
+            if (filter.empty()) {
+                return false;
+            }
+
+            while (!filter.empty()) {
+                const std::size_t comma = filter.find(',');
+                const std::string_view token = trimView(filter.substr(0, comma));
+                if (token == boneName) {
+                    return true;
+                }
+                if (comma == std::string_view::npos) {
+                    break;
+                }
+                filter.remove_prefix(comma + 1);
+            }
+            return false;
+        }
+    }
+
 /*
- * Debug overlay publishing is split from the runtime frame loop because it is diagnostic fan-out over many subsystems, not interaction authority. The fragment remains in this translation unit so existing helper visibility and behavior stay unchanged.
+ * Debug overlay publishing is isolated from the runtime frame loop because it
+ * is diagnostic fan-out over many subsystems, not interaction authority.
  */
     /*
      * OVERLAY-POINT probe: once per game frame, at the same frame phase where the
@@ -3823,3 +3935,4 @@
 
         debug::PublishFrame(frame);
     }
+}

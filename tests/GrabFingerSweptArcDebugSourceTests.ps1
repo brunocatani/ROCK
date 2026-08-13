@@ -58,7 +58,7 @@ Require-Text 'src/physics-interaction/hand/HandGrab.cpp' '\.captureSweepDebug\s*
 Require-Text 'src/physics-interaction/grab/GrabFinger.h' 'options\.captureSweepDebug\s*\?\s*&result\.sweepDebug\s*:\s*nullptr' 'The shared one-shot solver must gate capture payload construction on its explicit debug option.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' '_grabFingerSweepDebugObjectWorld\s*=\s*targetObjectWorld' 'Captured object-local arcs must track the commanded held-object transform.'
 
-$overlayPath = Join-Path $Root 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl'
+$overlayPath = Join-Path $Root 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp'
 $overlayText = Get-Content -Raw -LiteralPath $overlayPath
 $sweepStart = $overlayText.IndexOf('if (drawFingerSweptArc)')
 $legacyStart = $overlayText.IndexOf('if (drawFingerProbes)', $sweepStart + 1)
@@ -74,15 +74,15 @@ if ($sweepStart -lt 0 -or $legacyStart -le $sweepStart) {
     }
 }
 
-Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' 'GrabFingerSweepTip' 'Overlay must draw the actual Tip arc.'
-Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' 'GrabFingerSweepOuter' 'Overlay must draw the actual Outer arc.'
-Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' 'GrabFingerSweepInner' 'Overlay must draw the actual Inner arc.'
-Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' 'GrabFingerSweepPivot' 'Overlay must draw the proximal pivot independently from distal probe paths.'
-Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' 'GrabFingerSweepAuthoredOpen' 'Overlay must mark the authored-open 1.0 row independently from sweep start.'
-Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' 'PROXIMAL PIVOT' 'Overlay must label the true finger rotation origin.'
-Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' 'SWEEP START' 'Overlay must label the actual 2.0 sweep start.'
-Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' 'fingerSweepDebugStateName' 'Overlay must label hit, fallback, reach, close-limit, and over-open states.'
-Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' 'release and grab again \(pinch is intentionally excluded\)' 'Overlay must explain missing one-shot capture and pinch exclusion.'
+Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp' 'GrabFingerSweepTip' 'Overlay must draw the actual Tip arc.'
+Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp' 'GrabFingerSweepOuter' 'Overlay must draw the actual Outer arc.'
+Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp' 'GrabFingerSweepInner' 'Overlay must draw the actual Inner arc.'
+Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp' 'GrabFingerSweepPivot' 'Overlay must draw the proximal pivot independently from distal probe paths.'
+Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp' 'GrabFingerSweepAuthoredOpen' 'Overlay must mark the authored-open 1.0 row independently from sweep start.'
+Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp' 'PROXIMAL PIVOT' 'Overlay must label the true finger rotation origin.'
+Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp' 'SWEEP START' 'Overlay must label the actual 2.0 sweep start.'
+Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp' 'fingerSweepDebugStateName' 'Overlay must label hit, fallback, reach, close-limit, and over-open states.'
+Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp' 'release and grab again \(pinch is intentionally excluded\)' 'Overlay must explain missing one-shot capture and pinch exclusion.'
 Reject-Text 'src/physics-interaction/debug/DebugBodyOverlay.cpp' 'case MarkerOverlayRole::GrabFingerSweepTip:[\s\S]{0,250}color\[3\]\s*=\s*0\.0f' 'Swept-arc probe colors must remain visible.'
 
 if ($failures.Count -gt 0) {

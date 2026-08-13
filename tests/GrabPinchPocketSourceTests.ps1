@@ -99,7 +99,7 @@ Reject-Text 'src/physics-interaction/grab/GrabFinger.h' 'usedPinchThumbOppositio
     'Pinch thumb must not keep a separate mesh-follow/opposition correction path.'
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'usedPinchThumbOpposition|applyPinchThumbOppositionCorrection|shouldApplyPinchThumbLocalCorrection|pinchThumbSegmentCorrectionStrength' `
     'Hand grab must not re-enable the old pinch thumb mesh-follow path.'
-Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' 'drawGrabPockets[\s\S]*LeftPalmPocketCenter[\s\S]*LeftPinchPocketCenter[\s\S]*LeftPinchDetectionDirection' `
+Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp' 'drawGrabPockets[\s\S]*LeftPalmPocketCenter[\s\S]*LeftPinchPocketCenter[\s\S]*LeftPinchDetectionDirection' `
     'Debug overlay must expose per-hand palm and pinch pocket markers.'
 Require-Text 'CMakeLists.txt' 'ROCKGrabPinchPocketPolicyTests' `
     'Pinch-pocket policy tests must be part of ROCKPolicyTestBinaries.'

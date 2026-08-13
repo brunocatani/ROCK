@@ -271,7 +271,7 @@ Require-Text 'src/api/ROCKProviderApi.h' 'WorldRaycasts[\s\S]*RockProviderWorldR
     'V1 must expose an append-only, feature-gated, pointer-free world-raycast query.'
 Require-Text 'src/api/ROCKProviderApi.h' 'ColliderVisualizationOverride[\s\S]*RockProviderColliderVisualizationRequestV1[\s\S]*setColliderVisualizationOverrideV1[\s\S]*clearColliderVisualizationOverrideV1[\s\S]*ROCK_PROVIDER_API_V1_COLLIDER_VISUALIZATION_OVERRIDE_TABLE_BYTES[\s\S]*supportsColliderVisualizationOverrideV1' `
     'V1 must expose an append-only, feature-gated exact-collider visualization override.'
-Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' 'provider_collider_visualization::copySnapshot[\s\S]{0,900}FocusedWeaponPart[\s\S]{0,400}PublishFrame\(focusedFrame\)[\s\S]{0,100}return' `
+Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp' 'provider_collider_visualization::copySnapshot[\s\S]{0,900}FocusedWeaponPart[\s\S]{0,400}PublishFrame\(focusedFrame\)[\s\S]{0,100}return' `
     'Focused collider visualization must replace the complete config-driven overlay frame.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'apiSetColliderVisualizationOverrideV1[\s\S]{0,1200}onAnimationOwnerThread\(\)[\s\S]{0,1800}ColliderVisualizationOverride[\s\S]{0,1200}s_lastSnapshot\.weaponGenerationKey[\s\S]{0,900}isProviderWeaponBodyCurrentV1[\s\S]{0,600}provider_collider_visualization::set' `
     'Collider focus requests must be owner-thread/capability gated and bind exact identity from the complete current weapon-body catalog.'
@@ -299,7 +299,7 @@ Require-Text 'src/api/ROCKProviderApi.cpp' 'apiPublishDebugOverlayV1[\s\S]*valid
     'Debug overlay publication must remain registered-owner and capability gated.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'unregisterConsumer[\s\S]*provider_debug_overlay::clear\(ownerToken\)' `
     'Unregistering a consumer must clear its debug overlay publication.'
-Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' 'provider_debug_overlay::hasContent[\s\S]*static provider_debug_overlay::Snapshot[\s\S]*provider_debug_overlay::copySnapshot[\s\S]*drawProviderOverlay[\s\S]*coloredLineEntries[\s\S]*RockProviderDebugOverlayTextFlagV1::WorldAnchored' `
+Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp' 'provider_debug_overlay::hasContent[\s\S]*static provider_debug_overlay::Snapshot[\s\S]*provider_debug_overlay::copySnapshot[\s\S]*drawProviderOverlay[\s\S]*coloredLineEntries[\s\S]*RockProviderDebugOverlayTextFlagV1::WorldAnchored' `
     'The existing ROCK stereo renderer must consume copied provider lines and text.'
 Require-Text 'src/api/ROCKProviderApi.h' 'PresentedVisual[\s\S]*PresentedHandFrames[\s\S]*ROCK_PROVIDER_API_V1_PRESENTED_HAND_FRAMES_TABLE_BYTES[\s\S]*supportsPresentedHandFramesV1' `
     'API V1 must distinguish the final hFRIK-presented hand from ROCK''s root-flattened authority frame.'

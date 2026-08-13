@@ -376,7 +376,7 @@ Require-Pattern $interaction `
 Require-Pattern $interaction `
     'applyWeaponCollisionResolvedAuthority[\s\S]*immediateTranslationError[\s\S]*immediateRotationError[\s\S]*DWC visual publication' `
     'Dynamic weapon visual publication must expose immediate node readback evidence.'
-Require-Pattern 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
+Require-Pattern 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp' `
     'rockDebugDrawDynamicWeaponColliders[\s\S]*proxyBodyIdForDebug\(\)[\s\S]*DWC ACTIVE[\s\S]*addScreenTextLine\(20\.0f,\s*90\.0f[\s\S]*DWC COMPOUND[\s\S]*authorityBody[\s\S]*children=%u points=%llu[\s\S]*gripPivot[\s\S]*callbacks pair/obstacle/raw/manifold/admit[\s\S]*snapshot read/valid/id/contact/tele' `
     'The dedicated debug flag must draw the compound and expose geometry, authority, pivot, callback, and snapshot telemetry.'
 

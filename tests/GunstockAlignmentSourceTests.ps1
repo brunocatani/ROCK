@@ -300,7 +300,7 @@ Require-Text 'src/physics-interaction/debug/DebugBodyOverlay.h' `
     'GunstockLeftHand[\s\S]*GunstockFiringHand[\s\S]*GunstockRenderedFiringHand[\s\S]*GunstockSupportInputBone[\s\S]*GunstockFireNodeFinal[\s\S]*GunstockWeaponAfter[\s\S]*GunstockWristForward[\s\S]*GunstockCorrectionArc[\s\S]*GunstockSupportTargetPoint' `
     'The bounded overlay must distinguish physical and rendered firing-hand bones while retaining final-alignment and support-baseline roles.'
 
-Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
+Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp' `
     'drawGunstockAlignment[\s\S]*getGunstockAlignmentDebugSnapshot[\s\S]*GunstockLeftHand[\s\S]*GunstockFiringHand[\s\S]*GunstockRenderedFiringHand[\s\S]*RENDERED FIRING HAND BONE[\s\S]*FIRING WRIST \+X - AUTOMATIC TARGET[\s\S]*PREDICTED FINE-TUNED NEUTRAL[\s\S]*ACTUAL FINAL LIVE FIRE \+Y[\s\S]*GunstockCorrectionArc[\s\S]*fineTune pitch\(\+Y\)[\s\S]*liveResidual=[\s\S]*renderedRelation=[\s\S]*getGunstockSupportBaselineDebugSnapshot[\s\S]*GunstockSupportInputBone[\s\S]*GunstockCalibratedSupportBone[\s\S]*GunstockWeaponAfter[\s\S]*attachWeaponDelta' `
     'The visualizer must render input/rendered firing bones, configured fine-tuned intent, actual relation error, and support attach baseline together.'
 
@@ -312,7 +312,7 @@ Reject-Text 'src/physics-interaction/debug/DebugBodyOverlay.h' `
     'GunstockFiringController|GunstockLeftController' `
     'Gunstock diagnostics must not retain controller-triad roles.'
 
-Reject-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' `
+Reject-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp' `
     'GunstockFiringController|GunstockLeftController|CONTROLLER \+Y - GUNSTOCK FORWARD|controllerAxis=\+Y' `
     'Gunstock diagnostics must use bone triads and wrist +X, not controller-axis tripods.'
 
