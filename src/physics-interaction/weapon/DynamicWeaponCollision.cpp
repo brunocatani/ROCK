@@ -827,7 +827,8 @@ namespace rock
                 dynamicWeaponProxyFilterInfo(),
                 generatedMaterial,
                 BethesdaMotionType::Dynamic,
-                "ROCK_DynamicWeaponCompound")) {
+                "ROCK_DynamicWeaponCompound",
+                kTrackedDynamicBodyCreationOptions)) {
             ROCK_LOG_ERROR(
                 Weapon,
                 "Dynamic weapon compound build failed: stage=body-create generation={:016X} children={} points={}",

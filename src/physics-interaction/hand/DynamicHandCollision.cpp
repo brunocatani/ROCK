@@ -31,7 +31,9 @@ namespace rock
             "ROCK_SurfaceFingerCollision";
         constexpr const char* SURFACE_MESH_GRAB_POSE_TAG =
             "ROCK_SurfaceMeshGrab";
-        constexpr std::uint32_t kDynamicHandProxyCollisionGroup = 0x000C;
+        constexpr std::uint32_t kDynamicRightHandProxyCollisionGroup = 0x000C;
+        constexpr std::uint32_t kDynamicLeftHandProxyCollisionGroup = 0x000E;
+        static_assert(kDynamicRightHandProxyCollisionGroup != kDynamicLeftHandProxyCollisionGroup);
         constexpr std::uint32_t kRaiseManifoldProcessedEvents = 0x40u;
         constexpr std::uint32_t kRebuildBodyCollisionState = 0u;
         constexpr int kSurfaceLatchVisualPriority = 100;
@@ -137,8 +139,11 @@ namespace rock
             bool isLeft,
             bool suppressCollision = false)
         {
+            const auto collisionGroup = isLeft ?
+                kDynamicLeftHandProxyCollisionGroup :
+                kDynamicRightHandProxyCollisionGroup;
             const auto baseFilter =
-                (kDynamicHandProxyCollisionGroup << 16) |
+                (collisionGroup << 16) |
                 (collision_layer_policy::dynamicHandProxyLayerForHand(isLeft) &
                     collision_layer_policy::FO4_LAYER_FILTER_MASK);
             return suppressCollision ?
@@ -889,16 +894,18 @@ namespace rock
             return false;
         }
 
+        const auto expectedFilterInfo = dynamicHandProxyFilterInfo(
+            isLeft,
+            _transitionCollisionSuppressed);
         if (!slot.body.create(
                 frame.hknpWorld,
                 frame.bhkWorld,
                 shape,
-                dynamicHandProxyFilterInfo(
-                    isLeft,
-                    _transitionCollisionSuppressed),
+                expectedFilterInfo,
                 havok_material_registry::registerGeneratedBodyMaterial(frame.hknpWorld),
                 BethesdaMotionType::Dynamic,
-                (isLeft ? kLeftTwinNames : kRightTwinNames)[bodyIndex])) {
+                (isLeft ? kLeftTwinNames : kRightTwinNames)[bodyIndex],
+                kTrackedDynamicBodyCreationOptions)) {
             ROCK_LOG_SAMPLE_WARN(Hand,
                 5000,
                 "{} dynamic hand twin {}: body creation failed",
@@ -909,6 +916,21 @@ namespace rock
         }
 
         const auto proxyBodyId = slot.body.getBodyId();
+        const auto createdBody = havok_runtime::snapshotBody(frame.hknpWorld, proxyBodyId);
+        if (!createdBody.valid || createdBody.collisionFilterInfo != expectedFilterInfo) {
+            ROCK_LOG_ERROR(
+                Hand,
+                "{} dynamic hand twin {} filter publication failed: body={} requested=0x{:08X} observed=0x{:08X} readable={}",
+                isLeft ? "Left" : "Right",
+                bodyIndex,
+                proxyBodyId.value,
+                expectedFilterInfo,
+                createdBody.collisionFilterInfo,
+                createdBody.valid ? "yes" : "no");
+            slot.body.retireDeferred(frame.bhkWorld);
+            havok_ref_count::release(shape);
+            return false;
+        }
         const bool surfaceContactSource =
             dynamic_hand_collision_telemetry::isSurfaceGrabSourceSlot(
                 bodyIndex);
@@ -961,13 +983,14 @@ namespace rock
         (void)placeGeneratedKeyframedBodyImmediately(slot.body, twinFrame.target);
 
         ROCK_LOG_INFO(Hand,
-            "{} dynamic hand twin created: slot={} bodyId={} length={:.2f} radius={:.2f} layer={} manifoldEvents={}",
+            "{} dynamic hand twin created: slot={} bodyId={} length={:.2f} radius={:.2f} layer={} group={} manifoldEvents={}",
             isLeft ? "Left" : "Right",
             bodyIndex,
             slot.body.getBodyId().value,
             twinFrame.length,
             twinFrame.radius,
-            collision_layer_policy::ROCK_LAYER_DYNAMIC_HAND_PROXY,
+            collision_layer_policy::dynamicHandProxyLayerForHand(isLeft),
+            expectedFilterInfo >> 16,
             processedManifoldEventsEnabled ? "yes" : "no");
         return true;
     }

@@ -18,6 +18,32 @@ namespace rock
         Keyframed = 2
     };
 
+    enum class BethesdaGeneratedBodyQuality : std::uint8_t
+    {
+        Default = 0,
+        ForcedLinearCollisionLookAhead = 1,
+    };
+
+    struct BethesdaPhysicsBodyCreationOptions
+    {
+        float collisionLookAheadDistanceHavok = 0.0f;
+        BethesdaGeneratedBodyQuality bodyQuality = BethesdaGeneratedBodyQuality::Default;
+    };
+
+    /*
+     * FO4VR 1.2.72 hknpBody initialization at 0x1415616F0 copies body-cinfo
+     * +0x1C to the runtime body's collision-look-ahead field (+0x3C) and
+     * cinfo +0x50 to its body-quality byte (+0x7E). The native quality-library
+     * initializer at 0x1417F2160 gives profile 1 both REQUEST (0x800) and
+     * FORCE (0x1000) linear collision look-ahead. A 0.10 Havok-unit horizon
+     * covers the observed 15-unit/s generated-motion cap across a 1/270 s
+     * solve with margin, without expanding unrelated generated bodies.
+     */
+    inline constexpr BethesdaPhysicsBodyCreationOptions kTrackedDynamicBodyCreationOptions{
+        0.10f,
+        BethesdaGeneratedBodyQuality::ForcedLinearCollisionLookAhead,
+    };
+
     struct RetiredBethesdaPhysicsBodyPayload
     {
         void* collisionObject = nullptr;
@@ -39,7 +65,7 @@ namespace rock
         BethesdaPhysicsBody& operator=(BethesdaPhysicsBody&&) = delete;
 
         bool create(RE::hknpWorld* world, void* bhkWorld, RE::hknpShape* shape, std::uint32_t filterInfo, RE::hknpMaterialId materialId, BethesdaMotionType motionType,
-            const char* name = "ROCK_Body");
+            const char* name = "ROCK_Body", const BethesdaPhysicsBodyCreationOptions& options = {});
 
         void destroy(void* bhkWorld);
 

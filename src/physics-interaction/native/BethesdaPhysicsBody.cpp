@@ -8,6 +8,7 @@
 #include "RE/Havok/hknpBody.h"
 
 #include <array>
+#include <cmath>
 #include <intrin.h>
 #include <mutex>
 #include <windows.h>
@@ -159,7 +160,7 @@ namespace rock
     constexpr std::uint32_t kGeneratedBodyRuntimeFlags = 0x0802'0000;
     constexpr std::uint32_t kRebuildBodyCollisionState = 0;
 
-    static std::uint16_t generatedInitialQualityId(BethesdaMotionType motionType)
+    static std::uint16_t generatedInitialMotionPropertiesId(BethesdaMotionType motionType)
     {
         /*
          * Generated wrapper bodies enter FO4VR through hknpPhysicsSystemData,
@@ -243,6 +244,42 @@ namespace rock
         return false;
     }
 
+    static bool validateGeneratedBodyCollisionProfile(
+        RE::hknpWorld* world,
+        RE::hknpBodyId bodyId,
+        const BethesdaPhysicsBodyCreationOptions& options)
+    {
+        if (options.bodyQuality == BethesdaGeneratedBodyQuality::Default &&
+            options.collisionLookAheadDistanceHavok == 0.0f) {
+            return true;
+        }
+
+        const auto snapshot = havok_runtime::snapshotBody(world, bodyId);
+        if (!snapshot.valid || !snapshot.body) {
+            ROCK_LOG_ERROR(BethesdaBody, "Generated body {} collision profile is not readable", bodyId.value);
+            return false;
+        }
+
+        const auto expectedQuality = static_cast<std::uint8_t>(options.bodyQuality);
+        const auto observedQuality = snapshot.body->qualityId;
+        const float observedLookAhead = snapshot.body->translation[3];
+        if (observedQuality != expectedQuality ||
+            !std::isfinite(observedLookAhead) ||
+            std::abs(observedLookAhead - options.collisionLookAheadDistanceHavok) > 0.0001f) {
+            ROCK_LOG_ERROR(
+                BethesdaBody,
+                "Generated body {} collision profile mismatch: requestedQuality={} observedQuality={} requestedLookAhead={:.4f} observedLookAhead={:.4f}",
+                bodyId.value,
+                expectedQuality,
+                observedQuality,
+                options.collisionLookAheadDistanceHavok,
+                observedLookAhead);
+            return false;
+        }
+
+        return true;
+    }
+
     static bool applyGeneratedBodyMaterial(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::hknpMaterialId materialId)
     {
         /*
@@ -305,7 +342,7 @@ namespace rock
     }
 
     bool BethesdaPhysicsBody::create(RE::hknpWorld* world, void* bhkWorld, RE::hknpShape* shape, std::uint32_t filterInfo, RE::hknpMaterialId materialId,
-        BethesdaMotionType motionType, const char* name)
+        BethesdaMotionType motionType, const char* name, const BethesdaPhysicsBodyCreationOptions& options)
     {
         if (_created) {
             ROCK_LOG_WARN(BethesdaBody, "create() called on already-created body — destroy first");
@@ -313,6 +350,15 @@ namespace rock
         }
         if (!world || !bhkWorld || !shape) {
             ROCK_LOG_ERROR(BethesdaBody, "create() null params: world={} bhkWorld={} shape={}", (void*)world, bhkWorld, (void*)shape);
+            return false;
+        }
+        if (!std::isfinite(options.collisionLookAheadDistanceHavok) ||
+            options.collisionLookAheadDistanceHavok < 0.0f) {
+            ROCK_LOG_ERROR(
+                BethesdaBody,
+                "create() invalid collision look-ahead for '{}': {:.4f}",
+                name ? name : "(null)",
+                options.collisionLookAheadDistanceHavok);
             return false;
         }
 
@@ -406,11 +452,13 @@ namespace rock
             *reinterpret_cast<RE::hknpShape**>(ci + 0x00) = shape;
             *reinterpret_cast<std::uint32_t*>(ci + 0x08) = kInvalidGeneratedId;
             *reinterpret_cast<std::uint32_t*>(ci + 0x0C) = generatedLocalMotionIndex;
-            *reinterpret_cast<std::uint16_t*>(ci + 0x10) = generatedInitialQualityId(motionType);
+            *reinterpret_cast<std::uint16_t*>(ci + 0x10) = generatedInitialMotionPropertiesId(motionType);
             *reinterpret_cast<std::uint16_t*>(ci + 0x12) = kGeneratedSystemLocalMaterialIndex;
             *reinterpret_cast<std::uint32_t*>(ci + 0x14) = filterInfo;
+            *reinterpret_cast<float*>(ci + 0x1C) = options.collisionLookAheadDistanceHavok;
             *reinterpret_cast<const char**>(ci + 0x20) = name;
             *reinterpret_cast<std::uintptr_t*>(ci + 0x28) = 0;
+            *reinterpret_cast<std::uint8_t*>(ci + 0x50) = static_cast<std::uint8_t>(options.bodyQuality);
         }
 
         {
@@ -515,6 +563,11 @@ namespace rock
         }
 
         if (!validateGeneratedBodyMotion(world, bodyId, motionType)) {
+            destroy(bhkWorld);
+            return false;
+        }
+
+        if (!validateGeneratedBodyCollisionProfile(world, bodyId, options)) {
             destroy(bhkWorld);
             return false;
         }

@@ -61,6 +61,21 @@ Require-Pattern $layers `
 Require-Pattern $handSource `
     'dynamicHandProxyFilterInfo\([\s\S]*bool isLeft[\s\S]*dynamicHandProxyLayerForHand\(isLeft\)' `
     'Dynamic twin creation and transition restoration must preserve the side-specific stable row.'
+Require-Pattern $handSource `
+    'kDynamicRightHandProxyCollisionGroup\s*=\s*0x000C[\s\S]*kDynamicLeftHandProxyCollisionGroup\s*=\s*0x000E[\s\S]*static_assert\(kDynamicRightHandProxyCollisionGroup\s*!=\s*kDynamicLeftHandProxyCollisionGroup\)[\s\S]*isLeft\s*\?[\s\S]*kDynamicLeftHandProxyCollisionGroup[\s\S]*kDynamicRightHandProxyCollisionGroup' `
+    'Opposing hands must use distinct nonzero Havok groups so FO4VR does not route them through same-system rejection.'
+Require-Pattern 'src/physics-interaction/native/BethesdaPhysicsBody.h' `
+    'kTrackedDynamicBodyCreationOptions[\s\S]*0\.10f[\s\S]*ForcedLinearCollisionLookAhead' `
+    'Tracked dynamic contact bodies must use the verified bounded continuous-collision profile.'
+Require-Pattern 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' `
+    'ci\s*\+\s*0x1C[\s\S]*collisionLookAheadDistanceHavok[\s\S]*ci\s*\+\s*0x50[\s\S]*bodyQuality[\s\S]*validateGeneratedBodyCollisionProfile' `
+    'Generated-body creation must publish and validate FO4VR collision look-ahead and body-quality fields.'
+Require-Pattern $handSource `
+    'BethesdaMotionType::Dynamic,[\s\S]{0,200}kTrackedDynamicBodyCreationOptions' `
+    'Dynamic hand twins must opt into the tracked continuous-collision profile.'
+Require-Pattern 'src/physics-interaction/weapon/DynamicWeaponCollision.cpp' `
+    'BethesdaMotionType::Dynamic,[\s\S]{0,200}kTrackedDynamicBodyCreationOptions' `
+    'The dynamic weapon contact compound must opt into the tracked continuous-collision profile.'
 
 # These offsets and identity gates were independently derived from raw FO4VR
 # 1.2.72 disassembly. A source-only regression makes accidental removal fail
