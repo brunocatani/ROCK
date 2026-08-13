@@ -362,11 +362,11 @@ Require-Pattern $runtimeSource `
     'signedTranslationStepTowardContactError\([\s\S]*_physicsPreviousRequestedTarget[\s\S]*_physicsRequestedTarget[\s\S]*liveBodyWorld[\s\S]*DWC motor trace:[\s\S]*intentStep=[\s\S]*signedPress=[\s\S]*contactError=[\s\S]*authority\(read/error\)=[\s\S]*tau=[\s\S]*recovery=[\s\S]*force=' `
     'Sustained-contact diagnostics must distinguish continued press from retreat and expose authority tracking plus live motor state.'
 Require-Pattern $runtimeSource `
-    '_debugSnapshot\.contactActive\s*=\s*snapshot\.contactActive[\s\S]*correctionAboveVisibilityThreshold[\s\S]*correctionVisible\s*=\s*[\r\n\s]*snapshot\.contactActive\s*&&\s*correctionAboveVisibilityThreshold[\s\S]*DWC tracking-only divergence suppressed' `
-    'Dynamic weapon presentation must reject ordinary proxy tracking lag unless the post-solve contact/grace signal is active.'
+    '_debugSnapshot\.contactActive\s*=\s*snapshot\.contactActive[\s\S]*const bool correctionVisible\s*=\s*[\r\n\s]*result\.translationCorrectionGameUnits\s*>=[\s\S]*result\.rotationCorrectionDegrees\s*>=[\s\S]*result\.applyVisualCorrection\s*=\s*true' `
+    'Dynamic weapon diagnostics must preserve the callback signal while every visible post-solve collider delta owns presentation.'
 Reject-Pattern $runtimeSource `
-    '_debugSnapshot\.contactActive\s*=\s*true' `
-    'Dynamic weapon diagnostics must not report every readable proxy sample as collision-active.'
+    'correctionVisible\s*=\s*[\r\n\s]*snapshot\.contactActive\s*&&|DWC tracking-only divergence suppressed|"contact-gate"' `
+    'Dynamic weapon presentation must not be vetoed by the short-lived contact callback grace signal.'
 Require-Pattern $weaponAuthority `
     'case TwoHandedState::Touching:[\s\S]*_touchFrames\s*>\s*TOUCH_TIMEOUT_FRAMES[\s\S]*TwoHandedGrip: touch contact timed out[\s\S]*_state\s*=\s*TwoHandedState::Inactive' `
     'Support-touch churn must retain an edge-only timeout diagnostic that exposes the lost acquisition witness.'

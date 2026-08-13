@@ -631,40 +631,27 @@ namespace rock
             return result;
         }
 
-        const bool correctionAboveVisibilityThreshold =
-            result.translationCorrectionGameUnits >= g_rockConfig.rockWeaponCollisionDynamicRenderMinTranslationGameUnits ||
-            result.rotationCorrectionDegrees >= g_rockConfig.rockWeaponCollisionDynamicRenderMinRotationDegrees;
         /*
-         * A driven keyframed proxy normally trails its requested target while
-         * the player or weapon moves. That tracking error is not collision
-         * response. Publishing it without an admitted-contact episode feeds
-         * ordinary locomotion lag into the weapon and attached-hand visual
-         * authorities; persistent FRIK V2 hand claims make that feedback
-         * visible as walking wobble. The post-solve contact signal (including
-         * its short solve-count grace) is the sole authority for applying the
-         * sampled displacement as a visual collision correction.
+         * A current post-solve compound-body sample is the authoritative
+         * weapon pose. Contact callbacks remain useful diagnostics and motor
+         * tuning input, but their solve-count grace can expire while Havok is
+         * still holding the body away from the requested pose. Gating visual
+         * publication on that transient signal separates the rendered weapon
+         * from its collider.
+         *
+         * Ordinary controller/IK feedback is isolated before it reaches the
+         * weapon authority target, so publishing this finite solver delta
+         * cannot reintroduce the former FRIK hand-to-weapon feedback loop.
          */
         const bool correctionVisible =
-            snapshot.contactActive && correctionAboveVisibilityThreshold;
-        if (!snapshot.contactActive && correctionAboveVisibilityThreshold) {
-            ROCK_LOG_SAMPLE_INFO(
-                Weapon,
-                1000,
-                "DWC tracking-only divergence suppressed: body={} solve={} correction=({:.3f}gu,{:.3f}deg)",
-                snapshot.bodyId,
-                snapshot.solveSequence,
-                result.translationCorrectionGameUnits,
-                result.rotationCorrectionDegrees);
-        }
+            result.translationCorrectionGameUnits >= g_rockConfig.rockWeaponCollisionDynamicRenderMinTranslationGameUnits ||
+            result.rotationCorrectionDegrees >= g_rockConfig.rockWeaponCollisionDynamicRenderMinRotationDegrees;
         if (correctionVisible) {
             result.applyVisualCorrection = true;
             result.resolvedWeaponWorld = resolvedWeaponWorld;
             _debugSnapshot.visualCorrectionActive = true;
         }
-        logPipelineStage(
-            correctionVisible ?
-                "publish-requested" :
-                (snapshot.contactActive ? "visibility-gate" : "contact-gate"));
+        logPipelineStage(correctionVisible ? "publish-requested" : "visibility-gate");
         return result;
     }
 
