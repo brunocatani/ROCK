@@ -10132,19 +10132,29 @@ namespace rock
             if (!pulse.requested) {
                 continue;
             }
-            RE::NiTransform requestedHandWorld{};
-            const bool requestedHandValid =
-                tryGetRootFlattenedHandBoneTransform(
+            /*
+             * FRIK V2 consumes this claim during its next skeleton frame. Its
+             * current root therefore still contains the previous collision
+             * claim even though beginWeaponCollisionPresentationFrame cleared
+             * the tag from the API table. Reusing that root would compound the
+             * new weapon correction onto the previous one. The scope-safe
+             * frame was already reconstructed from the unaffected hand driver
+             * when the previous-presentation witness was set, so it is the
+             * collision-free physical input for this publication.
+             */
+            RE::NiTransform physicalHandWorld{};
+            const bool physicalHandValid =
+                tryGetSolverHandTransform(
                     pulse.isLeft,
-                    requestedHandWorld);
+                    physicalHandWorld);
             pulse.targetWorld =
                 dynamic_weapon_collision_policy::reframeAttachedHand(
                     requestedWeaponWorld,
                     resolvedWeaponWorld,
-                    requestedHandWorld);
+                    physicalHandWorld);
             pulse.targetValid =
-                requestedHandValid &&
-                isUsableHandAuthorityTransform(requestedHandWorld) &&
+                physicalHandValid &&
+                isUsableHandAuthorityTransform(physicalHandWorld) &&
                 isUsableHandAuthorityTransform(pulse.targetWorld);
             handTargetsReady = handTargetsReady && pulse.targetValid;
         }
@@ -10163,13 +10173,14 @@ namespace rock
                         pulse.targetWorld,
                         WEAPON_COLLISION_HAND_PRIORITY);
                 /*
-                 * Retain the high-priority result through rendering. Clearing
-                 * it here synchronously reselects the live priority-100 firing
-                 * and support targets, erasing the collision correction. The
-                 * next PhysicsInteraction frame clears this tag, then uses the
-                 * retained witness to reconstruct physical intent from the
-                 * unaffected hand driver. FRIK's current root was produced
-                 * before ROCK's clear and therefore cannot be sampled here.
+                 * Retain the high-priority result through FRIK's next skeleton
+                 * solve. Clearing it here would hand that solve back to the
+                 * live priority-100 firing and support targets, erasing the
+                 * collision correction. The next PhysicsInteraction frame
+                 * clears this tag, then uses the retained witness to reconstruct
+                 * physical intent from the unaffected hand driver. FRIK's
+                 * current root contains the previous collision authority and
+                 * therefore cannot be sampled for the next target.
                  */
                 pulse.retained = pulse.applied;
                 if (pulse.retained) {

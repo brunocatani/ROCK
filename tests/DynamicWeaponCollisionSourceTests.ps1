@@ -197,18 +197,21 @@ Require-Order $weaponAuthority @(
     'clearWeaponCollisionHandAuthority\(false\)',
     'applyWeaponCollisionResolvedAuthority\(',
     'selectAttachedHands\(',
-    'tryGetRootFlattenedHandBoneTransform\(',
+    'tryGetSolverHandTransform\(',
     'reframeAttachedHand\(',
     'applyExternalHandWorldTransform\(',
     '_weaponCollisionHandAuthorityLive',
     'applyWeaponVisualAuthority\('
-) 'Collision correction must clear the prior render frame before intent, retain attached hands through the current render interval, and publish the exact weapon pose last.'
+) 'Collision correction must clear the prior claim before intent, derive attached hands from collision-isolated physical input, retain them through the next FRIK solve, and publish the exact weapon pose last.'
 Require-Pattern $weaponAuthority `
-    'Retain the high-priority result through rendering[\s\S]*retained witness[\s\S]*unaffected hand driver[\s\S]*FRIK''s current root was produced[\s\S]*cannot be sampled' `
-    'The source must document why post-FRIK tag clearing requires driver-reconstructed input isolation.'
+    'FRIK V2 consumes this claim during its next skeleton frame[\s\S]*current root therefore still contains the previous collision[\s\S]*claim[\s\S]*scope-safe[\s\S]*frame was already reconstructed from the unaffected hand driver[\s\S]*collision-free physical input' `
+    'The source must document why deferred FRIK V2 claims require driver-reconstructed input isolation.'
+Reject-Pattern $weaponAuthority `
+    'bool TwoHandedGrip::applyWeaponCollisionResolvedAuthority\([\s\S]*?tryGetRootFlattenedHandBoneTransform\([\s\S]*?bool TwoHandedGrip::applyFiringHandLockedVisual' `
+    'Collision correction must never feed FRIK''s previous collision-solved hand root back into its next IK target.'
 Reject-Pattern $weaponAuthority `
     'bool TwoHandedGrip::applyWeaponCollisionResolvedAuthority\([\s\S]*?clearExternalHandWorldTransform\([\s\S]*?bool TwoHandedGrip::applyFiringHandLockedVisual' `
-    'Post-solve collision publication must not clear its hand tag in the same method; that synchronously restores lower-priority two-hand targets before rendering.'
+    'Post-solve collision publication must not clear its hand tag in the same method; FRIK V2 must retain it for the next skeleton solve.'
 Require-Pattern $weaponAuthority `
     'WEAPON_COLLISION_HAND_PRIORITY\s*=\s*110[\s\S]*GRIP_HAND_POSE_PRIORITY\s*=\s*100|GRIP_HAND_POSE_PRIORITY\s*=\s*100[\s\S]*WEAPON_COLLISION_HAND_PRIORITY\s*=\s*110' `
     'The collision hand authority must outrank normal grip targets only through the final presentation interval.'
