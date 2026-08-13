@@ -14,6 +14,7 @@
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 
 #include "RE/NetImmerse/NiTransform.h"
+#include "physics-interaction/TransformMath.h"
 
 namespace rock
 {
@@ -344,7 +345,8 @@ namespace rock::root_flattened_finger_skeleton_runtime
         const DirectSkeletonBoneSnapshot& boneSnapshot,
         bool isLeft,
         Snapshot& outSnapshot,
-        std::string* outMissingBoneName = nullptr);
+        std::string* outMissingBoneName = nullptr,
+        const RE::NiTransform* collisionIsolatedHandWorld = nullptr);
     bool resolveLiveFingerSkeletonSnapshot(bool isLeft, Snapshot& outSnapshot, std::string* outMissingBoneName = nullptr);
 }
 
@@ -355,6 +357,82 @@ namespace rock::root_flattened_finger_skeleton_runtime
 
 namespace rock
 {
+    namespace collision_isolated_hand_frame_math
+    {
+        template <class Transform>
+        [[nodiscard]] inline bool isUsableTransform(const Transform& transform)
+        {
+            if (!std::isfinite(transform.translate.x) ||
+                !std::isfinite(transform.translate.y) ||
+                !std::isfinite(transform.translate.z) ||
+                !std::isfinite(transform.scale) ||
+                transform.scale <= 0.0001f) {
+                return false;
+            }
+            for (int row = 0; row < 3; ++row) {
+                for (int column = 0; column < 3; ++column) {
+                    if (!std::isfinite(transform.rotate.entry[row][column])) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        template <class Transform>
+        [[nodiscard]] inline Transform captureDriverToHandLocal(
+            const Transform& driverWorld,
+            const Transform& handWorld)
+        {
+            return transform_math::composeTransforms(
+                transform_math::invertTransform(driverWorld),
+                handWorld);
+        }
+
+        template <class Transform>
+        [[nodiscard]] inline Transform reconstructHandWorld(
+            const Transform& driverWorld,
+            const Transform& driverToHandLocal)
+        {
+            return transform_math::composeTransforms(
+                driverWorld,
+                driverToHandLocal);
+        }
+
+        template <class Transform>
+        [[nodiscard]] inline Transform rebaseRootDerivedWorldTransform(
+            const Transform& rootHandWorld,
+            const Transform& collisionIsolatedHandWorld,
+            const Transform& rootDerivedWorld)
+        {
+            const Transform rootToCollisionIsolated =
+                transform_math::composeTransforms(
+                    collisionIsolatedHandWorld,
+                    transform_math::invertTransform(rootHandWorld));
+            return transform_math::composeTransforms(
+                rootToCollisionIsolated,
+                rootDerivedWorld);
+        }
+
+        template <class Transform>
+        [[nodiscard]] inline bool relationWithinCalibrationRange(
+            const Transform& relation,
+            float maxTranslationGameUnits = 40.0f)
+        {
+            if (!isUsableTransform(relation) ||
+                !std::isfinite(maxTranslationGameUnits) ||
+                maxTranslationGameUnits <= 0.0f) {
+                return false;
+            }
+            const float distanceSquared =
+                relation.translate.x * relation.translate.x +
+                relation.translate.y * relation.translate.y +
+                relation.translate.z * relation.translate.z;
+            return std::isfinite(distanceSquared) &&
+                   distanceSquared <= maxTranslationGameUnits * maxTranslationGameUnits;
+        }
+    }
+
     struct HandFrame
     {
         RE::NiTransform transform{};
@@ -367,23 +445,186 @@ namespace rock
     {
     public:
         /*
-         * ROCK's collision, palm selection, grab math, and debug axes use one
-         * root flattened hand-frame convention. Scene nodes from another tree
-         * are not returned as authority because mixing node conventions makes
-         * grab frames disagree with the generated collider bodies.
+         * FRIK V2 consumes persistent hand-world targets on its next skeleton
+         * frame. While one of ROCK's targets is published, the root-flattened
+         * hand is presentation output and cannot be reused as physics input.
+         * Capture the stable wand-to-hand relationship only while the hand is
+         * unmodified, then reconstruct the physical hand from the unaffected
+         * controller wand until all persistent publications are cleared.
          */
-        HandFrame resolve(bool isLeft, bool hasRootFlattenedHand, const RE::NiTransform& rootFlattenedHandWorld) const
+        HandFrame resolve(
+            bool isLeft,
+            bool hasRootFlattenedHand,
+            const RE::NiTransform& rootFlattenedHandWorld,
+            const void* sourceSkeleton,
+            const void* sourceBoneTree,
+            bool persistentWorldAuthorityPublished,
+            bool hasDriverWorld,
+            const RE::NiTransform& driverWorld)
         {
-            if (!hasRootFlattenedHand) {
+            auto& state = _states[isLeft ? 0u : 1u];
+            if (state.sourceSkeleton != sourceSkeleton ||
+                state.sourceBoneTree != sourceBoneTree) {
+                state = {};
+                state.sourceSkeleton = sourceSkeleton;
+                state.sourceBoneTree = sourceBoneTree;
+            }
+
+            if (!hasRootFlattenedHand ||
+                !sourceSkeleton ||
+                !sourceBoneTree ||
+                !collision_isolated_hand_frame_math::isUsableTransform(
+                    rootFlattenedHandWorld)) {
+                return {};
+            }
+
+            if (!persistentWorldAuthorityPublished) {
+                if (hasDriverWorld &&
+                    collision_isolated_hand_frame_math::isUsableTransform(
+                        driverWorld)) {
+                    const RE::NiTransform driverToHandLocal =
+                        collision_isolated_hand_frame_math::
+                            captureDriverToHandLocal(
+                                driverWorld,
+                                rootFlattenedHandWorld);
+                    if (collision_isolated_hand_frame_math::
+                            relationWithinCalibrationRange(
+                                driverToHandLocal)) {
+                        state.driverToHandLocal = driverToHandLocal;
+                        state.hasDriverToHandLocal = true;
+                    }
+                }
+
+                return HandFrame{
+                    rootFlattenedHandWorld,
+                    nullptr,
+                    isLeft ?
+                        "left-root-flattened-hand-bone" :
+                        "right-root-flattened-hand-bone",
+                    true
+                };
+            }
+
+            if (!hasDriverWorld ||
+                !state.hasDriverToHandLocal ||
+                !collision_isolated_hand_frame_math::isUsableTransform(
+                    driverWorld)) {
+                return {};
+            }
+
+            const RE::NiTransform reconstructedHandWorld =
+                collision_isolated_hand_frame_math::reconstructHandWorld(
+                    driverWorld,
+                    state.driverToHandLocal);
+            if (!collision_isolated_hand_frame_math::isUsableTransform(
+                    reconstructedHandWorld)) {
                 return {};
             }
 
             return HandFrame{
-                rootFlattenedHandWorld,
+                reconstructedHandWorld,
                 nullptr,
-                isLeft ? "left-root-flattened-hand-bone" : "right-root-flattened-hand-bone",
+                isLeft ?
+                    "left-controller-reconstructed-hand" :
+                    "right-controller-reconstructed-hand",
                 true
             };
         }
+
+        void reset()
+        {
+            _states = {};
+        }
+
+    private:
+        struct DriverCalibration
+        {
+            RE::NiTransform driverToHandLocal{};
+            const void* sourceSkeleton = nullptr;
+            const void* sourceBoneTree = nullptr;
+            bool hasDriverToHandLocal = false;
+        };
+
+        std::array<DriverCalibration, 2> _states{};
     };
+
+    namespace collision_isolated_hand_frame_runtime
+    {
+        struct PublishedHandFrame
+        {
+            RE::NiTransform world{};
+            const void* sourceSkeleton = nullptr;
+            const void* sourceBoneTree = nullptr;
+            bool persistentWorldAuthorityPublishedAtFrameInput = false;
+            bool valid = false;
+        };
+
+        /*
+         * PhysicsInteraction publishes one coherent game-thread snapshot per
+         * hand before any collision/grab consumer runs. Root-finger readers use
+         * it only when their captured skeleton identity matches, so a lifecycle
+         * swap cannot retain stale scene data.
+         */
+        inline std::array<PublishedHandFrame, 2> g_publishedHandFrames{};
+
+        inline void publish(
+            bool isLeft,
+            const RE::NiTransform& world,
+            const void* sourceSkeleton,
+            const void* sourceBoneTree,
+            bool persistentWorldAuthorityPublishedAtFrameInput)
+        {
+            auto& entry = g_publishedHandFrames[isLeft ? 0u : 1u];
+            if (!sourceSkeleton ||
+                !sourceBoneTree ||
+                !collision_isolated_hand_frame_math::isUsableTransform(world)) {
+                entry = {};
+                return;
+            }
+            entry.world = world;
+            entry.sourceSkeleton = sourceSkeleton;
+            entry.sourceBoneTree = sourceBoneTree;
+            entry.persistentWorldAuthorityPublishedAtFrameInput =
+                persistentWorldAuthorityPublishedAtFrameInput;
+            entry.valid = true;
+        }
+
+        inline void clear(bool isLeft)
+        {
+            g_publishedHandFrames[isLeft ? 0u : 1u] = {};
+        }
+
+        inline void reset()
+        {
+            g_publishedHandFrames = {};
+        }
+
+        [[nodiscard]] inline bool
+            hadPersistentWorldAuthorityAtFrameInput(bool isLeft)
+        {
+            const auto& entry =
+                g_publishedHandFrames[isLeft ? 0u : 1u];
+            return entry.valid &&
+                   entry.persistentWorldAuthorityPublishedAtFrameInput;
+        }
+
+        [[nodiscard]] inline bool tryGet(
+            bool isLeft,
+            const void* sourceSkeleton,
+            const void* sourceBoneTree,
+            RE::NiTransform& outWorld)
+        {
+            const auto& entry =
+                g_publishedHandFrames[isLeft ? 0u : 1u];
+            if (!entry.valid ||
+                !sourceSkeleton ||
+                !sourceBoneTree ||
+                entry.sourceSkeleton != sourceSkeleton ||
+                entry.sourceBoneTree != sourceBoneTree) {
+                return false;
+            }
+            outWorld = entry.world;
+            return true;
+        }
+    }
 }

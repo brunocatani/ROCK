@@ -32,13 +32,29 @@ PhysicsFrameContext PhysicsInteraction::buildFrameContext(RE::bhkWorld* bhk, RE:
         HandFrameInput input{};
         input.isLeft = isLeft;
         const bool rootHandReady = _handBoneCache.isReady();
-        input.disabled = (isLeft ? s_leftHandDisabled.load(std::memory_order_acquire) : s_rightHandDisabled.load(std::memory_order_acquire)) || !rootHandReady;
-        if (!rootHandReady) {
+        const auto interactionHandFrame =
+            rootHandReady ?
+            getInteractionHandFrame(isLeft) :
+            HandFrame{};
+        input.disabled =
+            (isLeft ?
+                    s_leftHandDisabled.load(std::memory_order_acquire) :
+                    s_rightHandDisabled.load(std::memory_order_acquire)) ||
+            !interactionHandFrame.valid;
+        if (input.disabled) {
+            collision_isolated_hand_frame_runtime::clear(isLeft);
             return input;
         }
 
-        input.rawHandWorld = getInteractionHandTransform(isLeft);
-        input.handNode = getInteractionHandNode(isLeft);
+        input.rawHandWorld = interactionHandFrame.transform;
+        input.handNode = interactionHandFrame.node;
+        collision_isolated_hand_frame_runtime::publish(
+            isLeft,
+            input.rawHandWorld,
+            _handBoneCache.getSkeleton(),
+            _handBoneCache.getBoneTree(),
+            frik_visual_authority::hasPublishedExternalHandWorldTransform(
+                frik_visual_authority::handFromBool(isLeft)));
         input.grabAnchorWorld = input.rawHandWorld.translate;
         RE::NiTransform closeSelectionBasisWorld = input.rawHandWorld;
         if (frame.worldReady) {

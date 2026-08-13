@@ -26,6 +26,7 @@ namespace rock::frik_visual_authority
     {
         constexpr std::size_t kCachedHandPosePublicationCount = 8;
         constexpr std::size_t kCachedHandPoseTagCapacity = 64;
+        constexpr std::size_t kTrackedHandWorldPublicationCount = 16;
 
         struct CachedHandPosePublication
         {
@@ -51,6 +52,25 @@ namespace rock::frik_visual_authority
         inline std::array<CachedFingerLocalTransformPublication, kCachedHandPosePublicationCount> g_cachedFingerLocalTransformPublications{};
         inline std::size_t g_nextCachedHandPosePublication = 0;
         inline std::size_t g_nextCachedFingerLocalTransformPublication = 0;
+
+        struct TrackedHandWorldPublication
+        {
+            std::array<char, kCachedHandPoseTagCapacity> tag{};
+            std::size_t tagLength = 0;
+            Hand hand = Hand::Left;
+            bool valid = false;
+        };
+
+        /*
+         * FRIK API V2 retains accepted hand-world publications until their
+         * tag is cleared. ROCK must remember every physical-hand tag so its
+         * next physics frame does not read the resulting IK pose back as a
+         * fresh controller target. All callers run on the game update thread;
+         * lifecycle reset explicitly clears this non-owning publication state.
+         */
+        inline std::array<TrackedHandWorldPublication, kTrackedHandWorldPublicationCount>
+            g_trackedHandWorldPublications{};
+        inline std::array<bool, 2> g_untrackedHandWorldPublicationOverflow{};
 
         struct PresentedHandNodeCache
         {
@@ -81,6 +101,100 @@ namespace rock::frik_visual_authority
         [[nodiscard]] inline std::string_view cachedTagView(const CachedFingerLocalTransformPublication& entry)
         {
             return std::string_view(entry.tag.data(), entry.tagLength);
+        }
+
+        [[nodiscard]] inline std::string_view cachedTagView(const TrackedHandWorldPublication& entry)
+        {
+            return std::string_view(entry.tag.data(), entry.tagLength);
+        }
+
+        [[nodiscard]] inline bool physicalHandIndex(Hand hand, std::size_t& outIndex)
+        {
+            if (hand == Hand::Left) {
+                outIndex = 0;
+                return true;
+            }
+            if (hand == Hand::Right) {
+                outIndex = 1;
+                return true;
+            }
+            return false;
+        }
+
+        [[nodiscard]] inline TrackedHandWorldPublication* findTrackedHandWorldPublication(
+            std::string_view tag,
+            Hand hand)
+        {
+            for (auto& entry : g_trackedHandWorldPublications) {
+                if (entry.valid && entry.hand == hand && cachedTagView(entry) == tag) {
+                    return &entry;
+                }
+            }
+            return nullptr;
+        }
+
+        inline void rememberTrackedHandWorldPublication(const char* tag, Hand hand)
+        {
+            std::string_view tagView;
+            std::size_t handIndex = 0;
+            if (!makeCacheableTagView(tag, tagView) ||
+                !physicalHandIndex(hand, handIndex)) {
+                return;
+            }
+
+            if (findTrackedHandWorldPublication(tagView, hand)) {
+                return;
+            }
+
+            for (auto& entry : g_trackedHandWorldPublications) {
+                if (!entry.valid) {
+                    entry.tag.fill('\0');
+                    std::copy(tagView.begin(), tagView.end(), entry.tag.begin());
+                    entry.tagLength = tagView.size();
+                    entry.hand = hand;
+                    entry.valid = true;
+                    return;
+                }
+            }
+
+            // Fail closed: if an unexpected caller exhausts the fixed hot-path
+            // registry, keep that physical hand on its controller-derived frame
+            // until the next explicit skeleton lifecycle reset.
+            g_untrackedHandWorldPublicationOverflow[handIndex] = true;
+        }
+
+        inline void invalidateTrackedHandWorldPublication(const char* tag, Hand hand)
+        {
+            std::string_view tagView;
+            if (!makeCacheableTagView(tag, tagView)) {
+                return;
+            }
+            if (auto* entry = findTrackedHandWorldPublication(tagView, hand)) {
+                entry->valid = false;
+            }
+        }
+
+        [[nodiscard]] inline bool hasTrackedHandWorldPublication(Hand hand)
+        {
+            std::size_t handIndex = 0;
+            if (!physicalHandIndex(hand, handIndex)) {
+                return false;
+            }
+            if (g_untrackedHandWorldPublicationOverflow[handIndex]) {
+                return true;
+            }
+            for (const auto& entry : g_trackedHandWorldPublications) {
+                if (entry.valid && entry.hand == hand) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        inline void resetTrackedHandWorldPublications()
+        {
+            g_trackedHandWorldPublications = {};
+            g_untrackedHandWorldPublicationOverflow = {};
         }
 
         [[nodiscard]] inline bool sameFingerPoseData(
@@ -411,13 +525,32 @@ namespace rock::frik_visual_authority
     [[nodiscard]] inline bool applyExternalHandWorldTransform(const char* tag, Hand hand, const RE::NiTransform& worldTarget, int priority)
     {
         auto* frikApi = api();
-        return frikApi && frikApi->setHandWorldTransform && frikApi->setHandWorldTransform(tag, hand, worldTarget, priority);
+        const bool published =
+            frikApi &&
+            frikApi->setHandWorldTransform &&
+            frikApi->setHandWorldTransform(tag, hand, worldTarget, priority);
+        if (published) {
+            detail::rememberTrackedHandWorldPublication(tag, hand);
+        }
+        return published;
     }
 
     [[nodiscard]] inline bool clearExternalHandWorldTransform(const char* tag, Hand hand)
     {
         auto* frikApi = api();
-        return frikApi && frikApi->clearHandWorldTransform && frikApi->clearHandWorldTransform(tag, hand);
+        const bool cleared =
+            frikApi &&
+            frikApi->clearHandWorldTransform &&
+            frikApi->clearHandWorldTransform(tag, hand);
+        if (cleared) {
+            detail::invalidateTrackedHandWorldPublication(tag, hand);
+        }
+        return cleared;
+    }
+
+    [[nodiscard]] inline bool hasPublishedExternalHandWorldTransform(Hand hand)
+    {
+        return detail::hasTrackedHandWorldPublication(hand);
     }
 
     [[nodiscard]] inline bool setHandPoseCustomLocalTransformsWithPriority(
@@ -536,6 +669,7 @@ namespace rock::frik_visual_authority
     inline void resetPresentedHandNodeCache()
     {
         detail::g_presentedHandNodeCache = {};
+        detail::resetTrackedHandWorldPublications();
     }
 
     [[nodiscard]] inline RE::NiTransform getHandWorldTransform(Hand hand)

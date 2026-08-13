@@ -37,7 +37,8 @@ namespace rock::root_flattened_finger_skeleton_runtime
         const DirectSkeletonBoneSnapshot& boneSnapshot,
         bool isLeft,
         Snapshot& outSnapshot,
-        std::string* outMissingBoneName)
+        std::string* outMissingBoneName,
+        const RE::NiTransform* collisionIsolatedHandWorld)
     {
         outSnapshot = Snapshot{};
         if (outMissingBoneName) {
@@ -60,9 +61,28 @@ namespace rock::root_flattened_finger_skeleton_runtime
             return false;
         }
 
+        const bool rebaseToCollisionIsolatedHand =
+            collisionIsolatedHandWorld &&
+            collision_isolated_hand_frame_math::isUsableTransform(
+                handNode->world) &&
+            collision_isolated_hand_frame_math::isUsableTransform(
+                *collisionIsolatedHandWorld);
+        RE::NiTransform rootToCollisionIsolated{};
+        if (rebaseToCollisionIsolatedHand) {
+            rootToCollisionIsolated = transform_math::composeTransforms(
+                *collisionIsolatedHandWorld,
+                transform_math::invertTransform(handNode->world));
+        }
+        const RE::NiTransform& palmAuthorityWorld =
+            rebaseToCollisionIsolatedHand ?
+            *collisionIsolatedHandWorld :
+            handNode->world;
+
         outSnapshot.inPowerArmor = boneSnapshot.inPowerArmor;
         outSnapshot.palmNormalWorld = normalizedOrFallback(
-            debug_axis_math::rotateNiLocalToWorld(handNode->world.rotate, RE::NiPoint3(0.0f, 0.0f, -1.0f)),
+            debug_axis_math::rotateNiLocalToWorld(
+                palmAuthorityWorld.rotate,
+                RE::NiPoint3(0.0f, 0.0f, -1.0f)),
             RE::NiPoint3(0.0f, 0.0f, -1.0f));
         outSnapshot.palmNormalValid = true;
 
@@ -80,7 +100,15 @@ namespace rock::root_flattened_finger_skeleton_runtime
                     outSnapshot = Snapshot{};
                     return false;
                 }
-                chain.points[segment] = node->world.translate;
+                if (rebaseToCollisionIsolatedHand) {
+                    chain.points[segment] =
+                        transform_math::composeTransforms(
+                            rootToCollisionIsolated,
+                            node->world)
+                            .translate;
+                } else {
+                    chain.points[segment] = node->world.translate;
+                }
             }
             chain.valid = true;
         }
@@ -102,10 +130,20 @@ namespace rock::root_flattened_finger_skeleton_runtime
             }
             return false;
         }
+        RE::NiTransform collisionIsolatedHandWorld{};
+        const RE::NiTransform* collisionIsolatedHandWorldPtr =
+            collision_isolated_hand_frame_runtime::tryGet(
+                isLeft,
+                boneSnapshot.skeleton,
+                boneSnapshot.boneTree,
+                collisionIsolatedHandWorld) ?
+            &collisionIsolatedHandWorld :
+            nullptr;
         return buildFingerSkeletonSnapshot(
             boneSnapshot,
             isLeft,
             outSnapshot,
-            outMissingBoneName);
+            outMissingBoneName,
+            collisionIsolatedHandWorldPtr);
     }
 }

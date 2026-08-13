@@ -1800,8 +1800,18 @@ namespace rock
             state.currentHandWorldValid = false;
 
             RE::NiTransform rootHandWorld{};
-            const bool rootHandValid = !_scopeDriverFrameAuthorityActive &&
-                                       tryGetRootFlattenedHandBoneTransform(isLeft, rootHandWorld);
+            const bool persistentRockHandWorldPublished =
+                frik_visual_authority::
+                    hasPublishedExternalHandWorldTransform(
+                        handFromBool(isLeft)) ||
+                collision_isolated_hand_frame_runtime::
+                    hadPersistentWorldAuthorityAtFrameInput(isLeft);
+            const bool rootHandValid =
+                !_scopeDriverFrameAuthorityActive &&
+                !persistentRockHandWorldPublished &&
+                tryGetRootFlattenedHandBoneTransform(
+                    isLeft,
+                    rootHandWorld);
             const bool driverValid = driverFrame.valid &&
                                      isUsableHandAuthorityTransform(driverFrame.world);
             RE::NiTransform reconstructedHandWorld{};
@@ -1813,7 +1823,8 @@ namespace rock
                 reconstructedHandValid = isUsableHandAuthorityTransform(reconstructedHandWorld);
             }
             const auto resolutionMode = scope_safe_hand_frame_math::resolveCollisionIsolatedMode(
-                _weaponCollisionHandPresentationFromPreviousFrame[handIndex],
+                _weaponCollisionHandPresentationFromPreviousFrame[handIndex] ||
+                    persistentRockHandWorldPublished,
                 _scopeDriverFrameAuthorityActive,
                 rootHandValid,
                 reconstructedHandValid,

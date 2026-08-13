@@ -1675,26 +1675,56 @@ namespace rock
         return false;
     }
 
-    RE::NiTransform PhysicsInteraction::getInteractionHandTransform(bool isLeft) const
+    HandFrame PhysicsInteraction::getInteractionHandFrame(bool isLeft)
     {
         const bool cacheReady = _handBoneCache.isReady();
-        const auto frame = _handFrameResolver.resolve(isLeft, cacheReady, cacheReady ? _handBoneCache.getWorldTransform(isLeft) : RE::NiTransform());
+        auto* const driverNode =
+            isLeft ?
+            f4vr::getLeftHandNode() :
+            f4vr::getRightHandNode();
+        const bool persistentWorldAuthorityPublished =
+            frik_visual_authority::hasPublishedExternalHandWorldTransform(
+                frik_visual_authority::handFromBool(isLeft));
+        const std::size_t handIndex = isLeft ? 0u : 1u;
+        if (_persistentFrikHandInputIsolationActive[handIndex] !=
+            persistentWorldAuthorityPublished) {
+            _persistentFrikHandInputIsolationActive[handIndex] =
+                persistentWorldAuthorityPublished;
+            ROCK_LOG_INFO(Hand,
+                "{} collision-isolated controller input {} for persistent FRIK V2 hand authority",
+                isLeft ? "Left" : "Right",
+                persistentWorldAuthorityPublished ? "engaged" : "released");
+        }
+        const HandFrame frame = _handFrameResolver.resolve(
+            isLeft,
+            cacheReady,
+            cacheReady ?
+                _handBoneCache.getWorldTransform(isLeft) :
+                RE::NiTransform{},
+            cacheReady ? _handBoneCache.getSkeleton() : nullptr,
+            cacheReady ? _handBoneCache.getBoneTree() : nullptr,
+            persistentWorldAuthorityPublished,
+            driverNode != nullptr,
+            driverNode ? driverNode->world : RE::NiTransform{});
+        if (persistentWorldAuthorityPublished && !frame.valid) {
+            ROCK_LOG_SAMPLE_WARN(Hand,
+                g_rockConfig.rockLogSampleMilliseconds,
+                "{} persistent FRIK V2 hand authority failed closed because controller reconstruction is unavailable cacheReady={} driverReady={}",
+                isLeft ? "Left" : "Right",
+                cacheReady ? "yes" : "no",
+                driverNode ? "yes" : "no");
+        }
+        return frame;
+    }
+
+    RE::NiTransform PhysicsInteraction::getInteractionHandTransform(bool isLeft)
+    {
+        const auto frame = getInteractionHandFrame(isLeft);
         if (frame.valid) {
             return frame.transform;
         }
 
         return RE::NiTransform();
-    }
-
-    RE::NiNode* PhysicsInteraction::getInteractionHandNode(bool isLeft) const
-    {
-        const bool cacheReady = _handBoneCache.isReady();
-        const auto frame = _handFrameResolver.resolve(isLeft, cacheReady, cacheReady ? _handBoneCache.getWorldTransform(isLeft) : RE::NiTransform());
-        if (frame.valid) {
-            return frame.node;
-        }
-
-        return nullptr;
     }
 
     void PhysicsInteraction::sampleHandTransformParity()
@@ -5713,6 +5743,9 @@ namespace rock
         _hasPrevPositions = false;
         _heldMassMovementLogCounter = 0;
         _handBoneCache.reset();
+        _handFrameResolver.reset();
+        collision_isolated_hand_frame_runtime::reset();
+        _persistentFrikHandInputIsolationActive = {};
         _handCacheResolveLogCounter = 0;
         _paritySummaryCounter = 0;
         _parityEnabledLogged = false;
@@ -6208,12 +6241,25 @@ namespace rock
             return false;
         }
 
-        const RE::NiTransform rightRollAuthorityWorld = getInteractionHandTransform(false);
-        const RE::NiTransform leftRollAuthorityWorld = getInteractionHandTransform(true);
+        const HandFrame rightHandFrame = getInteractionHandFrame(false);
+        const HandFrame leftHandFrame = getInteractionHandFrame(true);
+        if (!rightHandFrame.valid || !leftHandFrame.valid) {
+            ROCK_LOG_WARN(Hand,
+                "Cannot create hand collisions: collision-isolated hand frame unavailable right={} left={}",
+                rightHandFrame.valid ? "ready" : "missing",
+                leftHandFrame.valid ? "ready" : "missing");
+            return false;
+        }
 
-        const bool rightOk = _rightHand.createCollision(world, bhkWorld, rightRollAuthorityWorld);
+        const bool rightOk = _rightHand.createCollision(
+            world,
+            bhkWorld,
+            rightHandFrame.transform);
 
-        const bool leftOk = _leftHand.createCollision(world, bhkWorld, leftRollAuthorityWorld);
+        const bool leftOk = _leftHand.createCollision(
+            world,
+            bhkWorld,
+            leftHandFrame.transform);
 
         if (!rightOk || !leftOk) {
             ROCK_LOG_ERROR(Hand, "Hand collision creation failed (rightOk={}, leftOk={})", rightOk, leftOk);

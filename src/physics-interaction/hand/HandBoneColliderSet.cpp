@@ -389,13 +389,11 @@ namespace rock
             ROCK_LOG_WARN(Hand, "{} hand bone colliders disabled: missing hand bone", isLeft ? "Left" : "Right");
             return false;
         }
+        const RE::NiTransform rootFlattenedHandWorld = outLookup.hand;
 
         outLookup.rollAuthorityWorld = rollAuthorityWorld;
 
         outLookup.hasForearm3 = findSnapshotBone(bonesByName, isLeft ? "LArm_ForeArm3" : "RArm_ForeArm3", outLookup.forearm3);
-        outLookup.crossPalmDirection = normalizeOr(
-            debug_axis_math::rotateNiLocalToWorld(outLookup.hand.rotate, RE::NiPoint3(0.0f, 0.0f, 1.0f)),
-            RE::NiPoint3(0.0f, 0.0f, 1.0f));
 
         bool allFingerBones = true;
         for (std::size_t fingerIndex = 0; fingerIndex < hand_collider_semantics::kHandFingerCount; ++fingerIndex) {
@@ -413,12 +411,52 @@ namespace rock
                 }
             }
             outLookup.fingerValid[fingerIndex] = fingerValid;
-            outLookup.fingerBases[fingerIndex] = fingerValid ? outLookup.fingers[fingerIndex][0].translate : outLookup.hand.translate;
         }
 
         if (g_rockConfig.rockHandBoneCollidersRequireAllFingerBones && !allFingerBones) {
             return false;
         }
+
+        if (!collision_isolated_hand_frame_math::isUsableTransform(
+                rootFlattenedHandWorld) ||
+            !collision_isolated_hand_frame_math::isUsableTransform(
+                rollAuthorityWorld)) {
+            return false;
+        }
+
+        const RE::NiTransform rootToCollisionIsolated =
+            transform_math::composeTransforms(
+                rollAuthorityWorld,
+                transform_math::invertTransform(rootFlattenedHandWorld));
+        const auto rebaseRootDerivedTransform =
+            [&rootToCollisionIsolated](RE::NiTransform& transform) {
+                transform = transform_math::composeTransforms(
+                    rootToCollisionIsolated,
+                    transform);
+            };
+
+        outLookup.hand = rollAuthorityWorld;
+        if (outLookup.hasForearm3) {
+            rebaseRootDerivedTransform(outLookup.forearm3);
+        }
+        for (std::size_t fingerIndex = 0;
+             fingerIndex < hand_collider_semantics::kHandFingerCount;
+             ++fingerIndex) {
+            if (outLookup.fingerValid[fingerIndex]) {
+                for (auto& fingerBone : outLookup.fingers[fingerIndex]) {
+                    rebaseRootDerivedTransform(fingerBone);
+                }
+                outLookup.fingerBases[fingerIndex] =
+                    outLookup.fingers[fingerIndex][0].translate;
+            } else {
+                outLookup.fingerBases[fingerIndex] = outLookup.hand.translate;
+            }
+        }
+        outLookup.crossPalmDirection = normalizeOr(
+            debug_axis_math::rotateNiLocalToWorld(
+                outLookup.hand.rotate,
+                RE::NiPoint3(0.0f, 0.0f, 1.0f)),
+            RE::NiPoint3(0.0f, 0.0f, 1.0f));
 
         outLookup.valid = true;
         return true;

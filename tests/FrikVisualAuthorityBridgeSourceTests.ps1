@@ -70,6 +70,24 @@ Require-Text 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h' `
 Require-Text 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h' `
     'PresentedHandNodeCache[\s\S]*getHandWorldTransform\(Hand hand\)[\s\S]*isSkeletonReadyHint\(\)[\s\S]*getFirstPersonSkeleton\(\)[\s\S]*findNode\(skeleton,\s*"RArm_Hand"\)[\s\S]*findNode\(skeleton,\s*"LArm_Hand"\)[\s\S]*handNode->world' `
     'ROCK must read final presented hands directly from the game first-person scene nodes.'
+Require-Text 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h' `
+    'g_trackedHandWorldPublications[\s\S]*rememberTrackedHandWorldPublication\(tag,\s*hand\)[\s\S]*invalidateTrackedHandWorldPublication\(tag,\s*hand\)[\s\S]*resetTrackedHandWorldPublications\(\)' `
+    'Persistent FRIK V2 hand-world publications must be tracked per tag and cleared at lifecycle reset.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'getInteractionHandFrame[\s\S]*getLeftHandNode\(\)[\s\S]*getRightHandNode\(\)[\s\S]*hasPublishedExternalHandWorldTransform[\s\S]*_handFrameResolver\.resolve' `
+    'Shared collision and grab input must reconstruct published FRIK hands from the unaffected controller driver.'
+Require-Text 'src/physics-interaction/core/PhysicsInteractionFrame.inl' `
+    'getInteractionHandFrame\(isLeft\)[\s\S]*collision_isolated_hand_frame_runtime::publish' `
+    'The coherent physics frame must publish its collision-isolated hand transform for finger consumers.'
+Require-Text 'src/physics-interaction/hand/HandBoneColliderSet.cpp' `
+    'rootFlattenedHandWorld[\s\S]*rootToCollisionIsolated[\s\S]*outLookup\.hand\s*=\s*rollAuthorityWorld[\s\S]*rebaseRootDerivedTransform\(fingerBone\)' `
+    'Generated palm and finger colliders must rebase root-derived geometry onto the collision-isolated hand.'
+Require-Text 'src/physics-interaction/hand/RootFlattenedFingerSkeletonRuntime.cpp' `
+    'collision_isolated_hand_frame_runtime::tryGet[\s\S]*collisionIsolatedHandWorldPtr' `
+    'Live finger snapshots must consume the same collision-isolated hand frame as the generated colliders.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'persistentRockHandWorldPublished[\s\S]*hasPublishedExternalHandWorldTransform[\s\S]*resolveCollisionIsolatedMode' `
+    'Weapon solving must reject root-hand feedback while any persistent ROCK hand-world publication exists.'
 Require-Text 'src/ROCKMain.cpp' `
     'kSkeletonReady[\s\S]*resetPresentedHandNodeCache\(\)[\s\S]*kSkeletonDestroying[\s\S]*resetPresentedHandNodeCache\(\)' `
     'Game hand-node caches must be invalidated at both hFRIK skeleton lifecycle edges.'

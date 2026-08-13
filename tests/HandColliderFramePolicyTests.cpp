@@ -1,5 +1,9 @@
 #include "physics-interaction/hand/HandColliderTypes.h"
 #include "physics-interaction/hand/HandFrame.h"
+#ifdef MEM_RELEASE
+#undef MEM_RELEASE
+#endif
+#include "physics-interaction/hand/HandSkeleton.h"
 #include "physics-interaction/TransformMath.h"
 
 #include "RE/NetImmerse/NiMatrix3.h"
@@ -373,6 +377,115 @@ int main()
             ok &= expectNear("straight tip length matches legacy", straight.length, legacy.length);
             ok &= expectVectorNear("straight tip axis matches legacy", straight.xAxis, legacy.xAxis);
             ok &= expectVectorNear("straight tip center matches legacy", straight.transform.translate, legacy.transform.translate);
+        }
+    }
+
+    {
+        /*
+         * FRIK V2 keeps the published hand transform until clear. Once the
+         * root hand contains that presentation output, collision/grab input
+         * must continue from the unaffected controller driver and the last
+         * clean driver-to-hand calibration.
+         */
+        rock::HandFrameResolver resolver;
+        const void* skeleton = reinterpret_cast<const void*>(0x1234);
+
+        RE::NiTransform driverWorld = identityTransform();
+        driverWorld.translate = RE::NiPoint3{ 100.0f, 10.0f, 2.0f };
+        RE::NiTransform cleanRootHandWorld = identityTransform();
+        cleanRootHandWorld.translate = RE::NiPoint3{ 110.0f, 12.0f, 5.0f };
+
+        const auto cleanFrame = resolver.resolve(
+            false,
+            true,
+            cleanRootHandWorld,
+            skeleton,
+            skeleton,
+            false,
+            true,
+            driverWorld);
+        if (!cleanFrame.valid) {
+            std::printf("clean root hand frame was not valid\n");
+            ok = false;
+        } else {
+            ok &= expectTransformNear(
+                "clean root hand remains authoritative",
+                cleanFrame.transform,
+                cleanRootHandWorld);
+        }
+
+        RE::NiTransform movedDriverWorld = driverWorld;
+        movedDriverWorld.translate = RE::NiPoint3{ 106.0f, 8.0f, 4.0f };
+        RE::NiTransform contaminatedRootHandWorld = cleanRootHandWorld;
+        contaminatedRootHandWorld.translate = RE::NiPoint3{ 400.0f, -250.0f, 90.0f };
+        const auto isolatedFrame = resolver.resolve(
+            false,
+            true,
+            contaminatedRootHandWorld,
+            skeleton,
+            skeleton,
+            true,
+            true,
+            movedDriverWorld);
+        RE::NiTransform expectedIsolatedHandWorld = identityTransform();
+        expectedIsolatedHandWorld.translate = RE::NiPoint3{ 116.0f, 10.0f, 7.0f };
+        if (!isolatedFrame.valid) {
+            std::printf("controller-reconstructed hand frame was not valid\n");
+            ok = false;
+        } else {
+            ok &= expectTransformNear(
+                "persistent presentation ignores contaminated root",
+                isolatedFrame.transform,
+                expectedIsolatedHandWorld);
+        }
+
+        RE::NiTransform rootDerivedFingerWorld = contaminatedRootHandWorld;
+        rootDerivedFingerWorld.translate = RE::NiPoint3{ 405.0f, -248.0f, 91.0f };
+        const RE::NiTransform isolatedFingerWorld =
+            rock::collision_isolated_hand_frame_math::
+                rebaseRootDerivedWorldTransform(
+                    contaminatedRootHandWorld,
+                    expectedIsolatedHandWorld,
+                    rootDerivedFingerWorld);
+        RE::NiTransform expectedIsolatedFingerWorld = expectedIsolatedHandWorld;
+        expectedIsolatedFingerWorld.translate = RE::NiPoint3{ 121.0f, 12.0f, 8.0f };
+        ok &= expectTransformNear(
+            "finger geometry rebases with physical hand",
+            isolatedFingerWorld,
+            expectedIsolatedFingerWorld);
+
+        resolver.reset();
+        const auto uncalibratedPersistentFrame = resolver.resolve(
+            false,
+            true,
+            contaminatedRootHandWorld,
+            skeleton,
+            skeleton,
+            true,
+            true,
+            movedDriverWorld);
+        if (uncalibratedPersistentFrame.valid) {
+            std::printf("uncalibrated persistent frame did not fail closed\n");
+            ok = false;
+        }
+
+        rock::collision_isolated_hand_frame_runtime::reset();
+        rock::collision_isolated_hand_frame_runtime::publish(
+            false,
+            expectedIsolatedHandWorld,
+            skeleton,
+            skeleton,
+            true);
+        if (!rock::collision_isolated_hand_frame_runtime::
+                hadPersistentWorldAuthorityAtFrameInput(false)) {
+            std::printf("frame-start persistent authority witness was not retained\n");
+            ok = false;
+        }
+        rock::collision_isolated_hand_frame_runtime::clear(false);
+        if (rock::collision_isolated_hand_frame_runtime::
+                hadPersistentWorldAuthorityAtFrameInput(false)) {
+            std::printf("cleared frame-start authority witness remained active\n");
+            ok = false;
         }
     }
 

@@ -224,9 +224,9 @@ namespace rock
 
         void sampleHandTransformParity();
 
-        RE::NiTransform getInteractionHandTransform(bool isLeft) const;
+        HandFrame getInteractionHandFrame(bool isLeft);
 
-        RE::NiNode* getInteractionHandNode(bool isLeft) const;
+        RE::NiTransform getInteractionHandTransform(bool isLeft);
 
         RE::bhkWorld* getPlayerBhkWorld() const;
 
@@ -435,6 +435,7 @@ namespace rock
         bool _nativeCharacterControllerLayerPolicyEnabled = false;
         HandBoneCache _handBoneCache;
         HandFrameResolver _handFrameResolver;
+        std::array<bool, 2> _persistentFrikHandInputIsolationActive{};
 
         Hand _rightHand{ false };
         Hand _leftHand{ true };
