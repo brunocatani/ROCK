@@ -1298,7 +1298,7 @@ namespace rock
             return;
         }
         _proxyPairCallbackSequenceAtomic.fetch_add(1, std::memory_order_release);
-        if (!otherLayerRead || !collision_layer_policy::isDynamicWeaponProxyObstacleLayer(otherLayer)) {
+        if (!otherLayerRead || !collision_layer_policy::isDynamicWeaponProxySolverObstacleLayer(otherLayer)) {
             return;
         }
         _obstacleCallbackSequenceAtomic.fetch_add(1, std::memory_order_release);
@@ -1336,7 +1336,7 @@ namespace rock
             return;
         }
         _proxyPairCallbackSequenceAtomic.fetch_add(1, std::memory_order_release);
-        if (!otherLayerRead || !collision_layer_policy::isDynamicWeaponProxyObstacleLayer(otherLayer)) {
+        if (!otherLayerRead || !collision_layer_policy::isDynamicWeaponProxySolverObstacleLayer(otherLayer)) {
             return;
         }
         _obstacleCallbackSequenceAtomic.fetch_add(1, std::memory_order_release);

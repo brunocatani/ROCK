@@ -911,6 +911,9 @@ namespace rock::provider
         MeshSurfaceAnchor = 1u << 16,
         MeshFingerPose = 1u << 17,
         MeshCollisionFallback = 1u << 18,
+        DynamicOtherHandContact = 1u << 19,
+        DynamicWeaponContact = 1u << 20,
+        DynamicWeaponPairSuppressed = 1u << 21,
     };
 
     enum class RockProviderEventKindV1 : std::uint32_t
@@ -1130,6 +1133,11 @@ namespace rock::provider
         TransitionSuppressed = 1u << 4,
         MenuSuppressed = 1u << 5,
         HandDisabled = 1u << 6,
+        DynamicInteractionsEnabled = 1u << 7,
+        DynamicOtherHandContact = 1u << 8,
+        DynamicWeaponContact = 1u << 9,
+        DynamicWeaponPairSuppressed = 1u << 10,
+        DynamicPairFilterReady = 1u << 11,
     };
 
     enum class RockProviderInputAvailabilityReasonV1 : std::uint32_t
@@ -2596,6 +2604,10 @@ namespace rock::provider
         std::uint32_t worldGeneration{ 0 };
         std::uint32_t skeletonGeneration{ 0 };
         std::uint32_t providerGeneration{ 0 };
+        // reserved[0] = contacted dynamic-twin slot mask for the other hand.
+        // reserved[1] = contacted dynamic-twin slot mask for the weapon proxy.
+        // reserved[2] = stable dynamic interaction collision layer (48/52).
+        // reserved[3] = active exact hand/weapon pair-suppression lease count.
         std::uint32_t reserved[6]{};
     };
 

@@ -190,7 +190,7 @@ namespace rock
         rockWeaponCollisionBlocksProjectiles = false;
         rockWeaponCollisionBlocksSpells = false;
         rockWeaponCollisionStaticWorldEnabled = true;
-        rockWeaponCollisionDynamicBoxEnabled = false;
+        rockWeaponCollisionDynamicBoxEnabled = true;
         rockWeaponCollisionDynamicBoxPaddingGameUnits = 0.5f;
         rockWeaponCollisionDynamicInverseInertiaMultiplier = kDefaultWeaponCollisionDynamicInverseInertiaMultiplier;
         rockWeaponCollisionDynamicMaxLinearVelocityHavok = 15.0f;
@@ -244,6 +244,7 @@ namespace rock
         rockNativeScopeOverlayRollDegrees = 0.0f;
 
         rockHandCollisionDynamicDrive = true;
+        rockHandDynamicInteractionsEnabled = true;
         rockHandCollisionDynamicMaxLinearVelocityHavok = 15.0f;
         rockHandCollisionDynamicContactPressMaxVelocityHavok = 1.0f;
         rockHandCollisionDynamicDivergenceTeleportGameUnits = 40.0f;
@@ -1209,6 +1210,10 @@ namespace rock
             180.0f);
 
         rockHandCollisionDynamicDrive = ini.GetBoolValue(SECTION, "bHandCollisionDynamicDrive", rockHandCollisionDynamicDrive);
+        rockHandDynamicInteractionsEnabled = ini.GetBoolValue(
+            SECTION,
+            "bHandDynamicInteractionsEnabled",
+            rockHandDynamicInteractionsEnabled);
         rockHandCollisionDynamicMaxLinearVelocityHavok = readClampedFloat(ini,
             SECTION,
             "fHandCollisionDynamicMaxLinearVelocityHavok",

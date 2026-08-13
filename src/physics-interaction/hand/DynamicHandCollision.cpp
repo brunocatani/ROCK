@@ -133,11 +133,14 @@ namespace rock
             return isLeft ? 1u : 0u;
         }
 
-        std::uint32_t dynamicHandProxyFilterInfo(bool suppressCollision = false)
+        std::uint32_t dynamicHandProxyFilterInfo(
+            bool isLeft,
+            bool suppressCollision = false)
         {
             const auto baseFilter =
                 (kDynamicHandProxyCollisionGroup << 16) |
-                (collision_layer_policy::ROCK_LAYER_DYNAMIC_HAND_PROXY & collision_layer_policy::FO4_LAYER_FILTER_MASK);
+                (collision_layer_policy::dynamicHandProxyLayerForHand(isLeft) &
+                    collision_layer_policy::FO4_LAYER_FILTER_MASK);
             return suppressCollision ?
                 (baseFilter | collision_suppression_registry::kSuppressionNoCollideBit) :
                 baseFilter;
@@ -488,6 +491,55 @@ namespace rock
         const auto events = _pendingHapticEvents;
         _pendingHapticEvents = {};
         return events;
+    }
+
+    bool DynamicHandCollisionRuntime::tryClassifyDynamicBodyContactSourceAtomic(
+        const std::uint32_t bodyId,
+        DynamicBodyContactSource& outSource) const noexcept
+    {
+        outSource = {};
+        if (bodyId == hand_semantic_contact_state::kInvalidBodyId) {
+            return false;
+        }
+        for (std::size_t hand = 0; hand < _hands.size(); ++hand) {
+            for (std::size_t slot = 0; slot < kBodiesPerHand; ++slot) {
+                if (_hands[hand].bodies[slot].bodyIdAtomic.load(
+                        std::memory_order_acquire) != bodyId) {
+                    continue;
+                }
+                outSource.valid = true;
+                outSource.isLeft = hand == 1;
+                outSource.slot = static_cast<std::uint8_t>(slot);
+                outSource.bodyId = bodyId;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void DynamicHandCollisionRuntime::recordDynamicBodyContactCallback(
+        const DynamicBodyContactSource& source,
+        const bool otherIsHand,
+        const bool otherIsWeapon) noexcept
+    {
+        if (!source.valid || source.slot >= kBodiesPerHand ||
+            !_dynamicInteractionsEnabledAtomic.load(
+                std::memory_order_acquire)) {
+            return;
+        }
+        const std::uint32_t slotBit =
+            1u << static_cast<std::uint32_t>(source.slot);
+        auto& hand = _hands[source.isLeft ? 1u : 0u];
+        if (otherIsHand) {
+            hand.pendingOtherHandContactMaskAtomic.fetch_or(
+                slotBit,
+                std::memory_order_release);
+        }
+        if (otherIsWeapon) {
+            hand.pendingWeaponContactMaskAtomic.fetch_or(
+                slotBit,
+                std::memory_order_release);
+        }
     }
 
     bool DynamicHandCollisionRuntime::tryClassifySurfaceContactSourceAtomic(
@@ -841,7 +893,9 @@ namespace rock
                 frame.hknpWorld,
                 frame.bhkWorld,
                 shape,
-                dynamicHandProxyFilterInfo(_transitionCollisionSuppressed),
+                dynamicHandProxyFilterInfo(
+                    isLeft,
+                    _transitionCollisionSuppressed),
                 havok_material_registry::registerGeneratedBodyMaterial(frame.hknpWorld),
                 BethesdaMotionType::Dynamic,
                 (isLeft ? kLeftTwinNames : kRightTwinNames)[bodyIndex])) {
@@ -1434,8 +1488,13 @@ namespace rock
         auto structuralMutation = _physicsCallbackGate ?
             _physicsCallbackGate->pauseForMutation() :
             PhysicsCallbackQuiescenceGate::MutationLease{};
-        const auto filterInfo = dynamicHandProxyFilterInfo(suppressCollision);
-        for (auto& handSlots : _hands) {
+        for (std::size_t handIndexValue = 0;
+             handIndexValue < _hands.size();
+             ++handIndexValue) {
+            auto& handSlots = _hands[handIndexValue];
+            const auto filterInfo = dynamicHandProxyFilterInfo(
+                handIndexValue == 1,
+                suppressCollision);
             for (auto& slot : handSlots.bodies) {
                 if (!slot.created || !slot.body.isValid() || slot.createdWorld != world) {
                     continue;
@@ -1467,6 +1526,10 @@ namespace rock
     void DynamicHandCollisionRuntime::reset()
     {
         retireAll(nullptr);
+        auto pairStateMutation = _physicsCallbackGate ?
+            _physicsCallbackGate->pauseForMutation() :
+            PhysicsCallbackQuiescenceGate::MutationLease{};
+        _weaponPairLeases.abandonWorld();
         _telemetrySnapshot = {};
         _pendingHapticEvents = {};
         _surfaceImpulsePairSequenceAtomic.store(0, std::memory_order_release);
@@ -1478,6 +1541,27 @@ namespace rock
         _transitionState = {};
         _transitionCollisionSuppressed = false;
         _transitionCollisionSuppressedAtomic.store(false, std::memory_order_release);
+        _dynamicInteractionsEnabledAtomic.store(false, std::memory_order_release);
+        _desiredWeaponBodyIdAtomic.store(
+            hand_semantic_contact_state::kInvalidBodyId,
+            std::memory_order_release);
+        _pairFilterReadyAtomic.store(false, std::memory_order_release);
+        for (std::size_t hand = 0; hand < _hands.size(); ++hand) {
+            _weaponOwnedAtomic[hand].store(false, std::memory_order_release);
+            _suppressedWeaponPairCountAtomic[hand].store(
+                0,
+                std::memory_order_release);
+            _hands[hand].pendingOtherHandContactMaskAtomic.store(
+                0,
+                std::memory_order_release);
+            _hands[hand].pendingWeaponContactMaskAtomic.store(
+                0,
+                std::memory_order_release);
+            _hands[hand].otherHandContactMask = 0;
+            _hands[hand].weaponContactMask = 0;
+            _hands[hand].otherHandContactGraceFrames = 0;
+            _hands[hand].weaponContactGraceFrames = 0;
+        }
     }
 
     void DynamicHandCollisionRuntime::updateFrame(const PhysicsFrameContext& frame,
@@ -1485,8 +1569,9 @@ namespace rock
         const Hand& rightHand,
         const Hand& leftHand,
         const BodyBoneColliderSet& bodyBoneColliders,
-        bool rightHandWeaponEquipped,
-        bool leftSupportGripActive,
+        bool rightHandWeaponOwned,
+        bool leftHandWeaponOwned,
+        std::uint32_t dynamicWeaponBodyId,
         bool rightVisualReturnActive,
         bool leftVisualReturnActive)
     {
@@ -1510,6 +1595,67 @@ namespace rock
         telemetry.physicsWritesAllowed = physicsWritesAllowed;
         telemetry.hands[0].isLeft = false;
         telemetry.hands[1].isLeft = true;
+
+        const bool dynamicInteractionsEnabled =
+            g_rockConfig.rockHandDynamicInteractionsEnabled &&
+            g_rockConfig.rockHandCollisionDynamicDrive;
+        _dynamicInteractionsEnabledAtomic.store(
+            dynamicInteractionsEnabled,
+            std::memory_order_release);
+        _desiredWeaponBodyIdAtomic.store(
+            dynamicWeaponBodyId,
+            std::memory_order_release);
+        _weaponOwnedAtomic[0].store(
+            rightHandWeaponOwned,
+            std::memory_order_release);
+        _weaponOwnedAtomic[1].store(
+            leftHandWeaponOwned,
+            std::memory_order_release);
+
+        constexpr std::uint8_t kInteractionContactGraceFrames = 2;
+        for (std::size_t hand = 0; hand < _hands.size(); ++hand) {
+            auto& slots = _hands[hand];
+            const auto updateContactMask = [](
+                                               std::atomic<std::uint32_t>& pending,
+                                               std::uint32_t& current,
+                                               std::uint8_t& grace) {
+                const std::uint32_t observed = pending.exchange(
+                    0,
+                    std::memory_order_acq_rel);
+                if (observed != 0) {
+                    current = observed;
+                    grace = kInteractionContactGraceFrames;
+                } else if (grace > 0) {
+                    --grace;
+                } else {
+                    current = 0;
+                }
+            };
+            updateContactMask(
+                slots.pendingOtherHandContactMaskAtomic,
+                slots.otherHandContactMask,
+                slots.otherHandContactGraceFrames);
+            updateContactMask(
+                slots.pendingWeaponContactMaskAtomic,
+                slots.weaponContactMask,
+                slots.weaponContactGraceFrames);
+            auto& handTelemetry = telemetry.hands[hand];
+            handTelemetry.dynamicInteractionsEnabled =
+                dynamicInteractionsEnabled;
+            handTelemetry.pairFilterReady =
+                _pairFilterReadyAtomic.load(std::memory_order_acquire);
+            handTelemetry.otherHandContactMask =
+                slots.otherHandContactMask;
+            handTelemetry.weaponContactMask = slots.weaponContactMask;
+            handTelemetry.suppressedWeaponPairCount =
+                _suppressedWeaponPairCountAtomic[hand].load(
+                    std::memory_order_acquire);
+            handTelemetry.weaponPairSuppressed =
+                handTelemetry.suppressedWeaponPairCount != 0;
+            handTelemetry.dynamicInteractionLayer =
+                collision_layer_policy::dynamicHandProxyLayerForHand(
+                    hand == 1);
+        }
 
         if (!g_rockConfig.rockHandCollisionDynamicDrive) {
             const auto hasCreatedTwin = [](const HandSlots& handSlots) {
@@ -2009,8 +2155,8 @@ namespace rock
             handTelemetry.visualActive = handSlots.visualActive;
         };
 
-        updateHand(false, frame.right, rightHand, rightHandWeaponEquipped, rightVisualReturnActive);
-        updateHand(true, frame.left, leftHand, leftSupportGripActive, leftVisualReturnActive);
+        updateHand(false, frame.right, rightHand, rightHandWeaponOwned, rightVisualReturnActive);
+        updateHand(true, frame.left, leftHand, leftHandWeaponOwned, leftVisualReturnActive);
         telemetry.transitionCollisionSuppressed =
             _transitionCollisionSuppressed;
         _telemetrySnapshot = telemetry;
@@ -2019,6 +2165,51 @@ namespace rock
     void DynamicHandCollisionRuntime::flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::DynamicHandCollisionPhysicsDrive);
+
+        std::array<HavokPairCollisionLeaseSet::DesiredPair,
+            HavokPairCollisionLeaseSet::kMaximumPairs>
+            desiredPairs{};
+        std::size_t desiredPairCount = 0;
+        const bool interactionsEnabled =
+            _dynamicInteractionsEnabledAtomic.load(
+                std::memory_order_acquire);
+        const std::uint32_t weaponBodyId =
+            _desiredWeaponBodyIdAtomic.load(std::memory_order_acquire);
+        if (interactionsEnabled && world &&
+            weaponBodyId != hand_semantic_contact_state::kInvalidBodyId) {
+            for (std::size_t hand = 0; hand < _hands.size(); ++hand) {
+                if (!_weaponOwnedAtomic[hand].load(
+                        std::memory_order_acquire)) {
+                    continue;
+                }
+                for (const auto& slot : _hands[hand].bodies) {
+                    const std::uint32_t handBodyId =
+                        slot.bodyIdAtomic.load(std::memory_order_acquire);
+                    if (handBodyId ==
+                            hand_semantic_contact_state::kInvalidBodyId ||
+                        desiredPairCount >= desiredPairs.size()) {
+                        continue;
+                    }
+                    desiredPairs[desiredPairCount++] = {
+                        .bodyA = handBodyId,
+                        .bodyB = weaponBodyId,
+                        .ownerGroup = static_cast<std::uint8_t>(hand),
+                    };
+                }
+            }
+        }
+        const auto pairResult = _weaponPairLeases.reconcile(
+            world,
+            desiredPairs.data(),
+            desiredPairCount);
+        _pairFilterReadyAtomic.store(
+            pairResult.filterAvailable,
+            std::memory_order_release);
+        for (std::size_t hand = 0; hand < _hands.size(); ++hand) {
+            _suppressedWeaponPairCountAtomic[hand].store(
+                pairResult.activePairsByOwnerGroup[hand],
+                std::memory_order_release);
+        }
 
         if (!g_rockConfig.rockHandCollisionDynamicDrive || !world) {
             return;

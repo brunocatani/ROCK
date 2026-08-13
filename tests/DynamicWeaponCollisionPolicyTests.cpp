@@ -71,6 +71,42 @@ int main()
         dynamicWeaponMask,
         rock::collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER);
 
+    constexpr auto interactiveWeaponMask =
+        rock::collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask(
+            true);
+    constexpr auto rightHandMask =
+        rock::collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
+            false,
+            true);
+    constexpr auto leftHandMask =
+        rock::collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
+            true,
+            true);
+    ok &= rock::collision_layer_policy::maskEnablesLayer(
+        rightHandMask,
+        rock::collision_layer_policy::ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY);
+    ok &= rock::collision_layer_policy::maskEnablesLayer(
+        rightHandMask,
+        rock::collision_layer_policy::ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
+    ok &= !rock::collision_layer_policy::maskEnablesLayer(
+        rightHandMask,
+        rock::collision_layer_policy::ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY);
+    ok &= rock::collision_layer_policy::maskEnablesLayer(
+        leftHandMask,
+        rock::collision_layer_policy::ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY);
+    ok &= rock::collision_layer_policy::maskEnablesLayer(
+        leftHandMask,
+        rock::collision_layer_policy::ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
+    ok &= !rock::collision_layer_policy::maskEnablesLayer(
+        leftHandMask,
+        rock::collision_layer_policy::ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY);
+    ok &= rock::collision_layer_policy::maskEnablesLayer(
+        interactiveWeaponMask,
+        rock::collision_layer_policy::ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY);
+    ok &= rock::collision_layer_policy::maskEnablesLayer(
+        interactiveWeaponMask,
+        rock::collision_layer_policy::ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY);
+
     const auto geometry = makeBoundingBoxGeometry(
         RE::NiPoint3{ -10.0f, -2.0f, -1.0f },
         RE::NiPoint3{ 30.0f, 4.0f, 3.0f });

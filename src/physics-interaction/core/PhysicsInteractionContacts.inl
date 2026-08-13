@@ -560,6 +560,44 @@
             return;
         }
 
+        DynamicHandCollisionRuntime::DynamicBodyContactSource
+            dynamicBodySourceA{};
+        DynamicHandCollisionRuntime::DynamicBodyContactSource
+            dynamicBodySourceB{};
+        const bool bodyAIsDynamicHand =
+            _dynamicHandCollision.tryClassifyDynamicBodyContactSourceAtomic(
+                bodyIdA,
+                dynamicBodySourceA);
+        const bool bodyBIsDynamicHand =
+            _dynamicHandCollision.tryClassifyDynamicBodyContactSourceAtomic(
+                bodyIdB,
+                dynamicBodySourceB);
+        const bool bodyAIsDynamicWeapon =
+            _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdA);
+        const bool bodyBIsDynamicWeapon =
+            _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdB);
+        if (bodyAIsDynamicHand && bodyBIsDynamicHand &&
+            dynamicBodySourceA.isLeft != dynamicBodySourceB.isLeft) {
+            _dynamicHandCollision.recordDynamicBodyContactCallback(
+                dynamicBodySourceA,
+                true,
+                false);
+            _dynamicHandCollision.recordDynamicBodyContactCallback(
+                dynamicBodySourceB,
+                true,
+                false);
+        } else if (bodyAIsDynamicHand && bodyBIsDynamicWeapon) {
+            _dynamicHandCollision.recordDynamicBodyContactCallback(
+                dynamicBodySourceA,
+                false,
+                true);
+        } else if (bodyBIsDynamicHand && bodyAIsDynamicWeapon) {
+            _dynamicHandCollision.recordDynamicBodyContactCallback(
+                dynamicBodySourceB,
+                false,
+                true);
+        }
+
         /*
          * Palm/fingertip twins opt into this recurring key-2 path because the
          * solver does not reliably emit key-3 impulse records for persistent
@@ -651,6 +689,44 @@
             return hasRawContactPoint;
         };
 
+        DynamicHandCollisionRuntime::DynamicBodyContactSource
+            dynamicBodySourceA{};
+        DynamicHandCollisionRuntime::DynamicBodyContactSource
+            dynamicBodySourceB{};
+        const bool bodyAIsDynamicHand =
+            _dynamicHandCollision.tryClassifyDynamicBodyContactSourceAtomic(
+                bodyIdA,
+                dynamicBodySourceA);
+        const bool bodyBIsDynamicHand =
+            _dynamicHandCollision.tryClassifyDynamicBodyContactSourceAtomic(
+                bodyIdB,
+                dynamicBodySourceB);
+        const bool bodyAIsDynamicWeapon =
+            _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdA);
+        const bool bodyBIsDynamicWeapon =
+            _dynamicWeaponCollision.isProxyBodyIdAtomic(bodyIdB);
+        if (bodyAIsDynamicHand && bodyBIsDynamicHand &&
+            dynamicBodySourceA.isLeft != dynamicBodySourceB.isLeft) {
+            _dynamicHandCollision.recordDynamicBodyContactCallback(
+                dynamicBodySourceA,
+                true,
+                false);
+            _dynamicHandCollision.recordDynamicBodyContactCallback(
+                dynamicBodySourceB,
+                true,
+                false);
+        } else if (bodyAIsDynamicHand && bodyBIsDynamicWeapon) {
+            _dynamicHandCollision.recordDynamicBodyContactCallback(
+                dynamicBodySourceA,
+                false,
+                true);
+        } else if (bodyBIsDynamicHand && bodyAIsDynamicWeapon) {
+            _dynamicHandCollision.recordDynamicBodyContactCallback(
+                dynamicBodySourceB,
+                false,
+                true);
+        }
+
         /*
          * Dynamic palm/fingertip twins remain outside the ordinary generated
          * body registry. Publish only their world-surface pairs into the
@@ -737,7 +813,7 @@
                 otherFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
             const bool rawContactPointValid =
                 otherLayerRead &&
-                collision_layer_policy::isDynamicWeaponProxyObstacleLayer(otherLayer) &&
+                collision_layer_policy::isDynamicWeaponProxySolverObstacleLayer(otherLayer) &&
                 ensureRawContactPoint();
             _dynamicWeaponCollision.recordObstacleContactCallback(
                 world,

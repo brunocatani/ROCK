@@ -9,6 +9,7 @@
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
 #include "physics-interaction/native/HavokPhysicsTiming.h"
+#include "physics-interaction/native/HavokPairCollisionFilter.h"
 #include "physics-interaction/native/PhysicsCallbackQuiescenceGate.h"
 
 #include "RE/Havok/hknpShape.h"
@@ -74,8 +75,9 @@ namespace rock
             const Hand& rightHand,
             const Hand& leftHand,
             const BodyBoneColliderSet& bodyBoneColliders,
-            bool rightHandWeaponEquipped,
-            bool leftSupportGripActive,
+            bool rightHandWeaponOwned,
+            bool leftHandWeaponOwned,
+            std::uint32_t dynamicWeaponBodyId,
             bool rightVisualReturnActive,
             bool leftVisualReturnActive);
         void flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
@@ -104,6 +106,24 @@ namespace rock
                 std::memory_order_acquire);
         }
         [[nodiscard]] dynamic_hand_collision_telemetry::HapticEvents consumeHapticEvents();
+
+        struct DynamicBodyContactSource
+        {
+            bool valid{ false };
+            bool isLeft{ false };
+            std::uint8_t slot{ 0 };
+            std::uint32_t bodyId{
+                hand_semantic_contact_state::kInvalidBodyId
+            };
+        };
+
+        [[nodiscard]] bool tryClassifyDynamicBodyContactSourceAtomic(
+            std::uint32_t bodyId,
+            DynamicBodyContactSource& outSource) const noexcept;
+        void recordDynamicBodyContactCallback(
+            const DynamicBodyContactSource& source,
+            bool otherIsHand,
+            bool otherIsWeapon) noexcept;
 
         [[nodiscard]] bool tryClassifySurfaceContactSourceAtomic(
             std::uint32_t bodyId,
@@ -347,6 +367,12 @@ namespace rock
             std::atomic<std::uint64_t> contactEntrySequenceAtomic{ 0 };
             std::atomic<float> contactEntryApproachSpeedAtomic{ 0.0f };
             std::atomic<std::uint32_t> contactEntryMaskAtomic{ 0 };
+            std::atomic<std::uint32_t> pendingOtherHandContactMaskAtomic{ 0 };
+            std::atomic<std::uint32_t> pendingWeaponContactMaskAtomic{ 0 };
+            std::uint32_t otherHandContactMask{ 0 };
+            std::uint32_t weaponContactMask{ 0 };
+            std::uint8_t otherHandContactGraceFrames{ 0 };
+            std::uint8_t weaponContactGraceFrames{ 0 };
             dynamic_hand_collision_feedback::ContactPulseState hapticState{};
         };
 
@@ -402,5 +428,14 @@ namespace rock
         dynamic_hand_collision_transition::State _transitionState{};
         bool _transitionCollisionSuppressed = false;
         std::atomic<bool> _transitionCollisionSuppressedAtomic{ false };
+        std::atomic<bool> _dynamicInteractionsEnabledAtomic{ false };
+        std::atomic<std::uint32_t> _desiredWeaponBodyIdAtomic{
+            hand_semantic_contact_state::kInvalidBodyId
+        };
+        std::array<std::atomic<bool>, 2> _weaponOwnedAtomic{};
+        std::atomic<bool> _pairFilterReadyAtomic{ false };
+        std::array<std::atomic<std::uint32_t>, 2>
+            _suppressedWeaponPairCountAtomic{};
+        HavokPairCollisionLeaseSet _weaponPairLeases{};
     };
 }

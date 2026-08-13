@@ -118,7 +118,7 @@ namespace rock
         bool rockWeaponCollisionBlocksProjectiles = false;
         bool rockWeaponCollisionBlocksSpells = false;
         bool rockWeaponCollisionStaticWorldEnabled = true;
-        bool rockWeaponCollisionDynamicBoxEnabled = false;
+        bool rockWeaponCollisionDynamicBoxEnabled = true;
         float rockWeaponCollisionDynamicBoxPaddingGameUnits = 0.5f;
         float rockWeaponCollisionDynamicInverseInertiaMultiplier = 1.2f;
         float rockWeaponCollisionDynamicMaxLinearVelocityHavok = 15.0f;
@@ -190,6 +190,7 @@ namespace rock
          * rendered hand through one-way visual authority.
          */
         bool rockHandCollisionDynamicDrive = true;
+        bool rockHandDynamicInteractionsEnabled = true;
         float rockHandCollisionDynamicMaxLinearVelocityHavok = 15.0f;
         float rockHandCollisionDynamicContactPressMaxVelocityHavok = 1.0f;
         float rockHandCollisionDynamicDivergenceTeleportGameUnits = 40.0f;

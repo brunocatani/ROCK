@@ -29,6 +29,29 @@ namespace rock::offsets
     constexpr std::uintptr_t kHknpWorld_MotionPropertiesLibraryPtr = 0x5D0;
 
     /*
+     * FO4VR 1.2.72 hknpConstraintCollisionFilter ownership and counted-pair
+     * contract. Blind raw-disassembly verification on 2026-08-12 established:
+     * world+0x560/0x568 are the constraint-added/removed signal heads; each
+     * 0x20-byte slot stores tagged-next, owner, and callback at +0x08/+0x10/
+     * +0x18. The owner is the derived pair filter only when its vtable, type
+     * byte, reciprocal world pointer, and both signal callbacks agree.
+     * Pair add/remove sort the two body IDs, reference-count the key in the
+     * table at filter+0x18, and invalidate the affected collision caches.
+     */
+    constexpr std::uintptr_t kHknpWorld_ConstraintAddedSignal = 0x560;
+    constexpr std::uintptr_t kHknpWorld_ConstraintRemovedSignal = 0x568;
+    constexpr std::uintptr_t kSignalSlot_NextTagged = 0x08;
+    constexpr std::uintptr_t kSignalSlot_Owner = 0x10;
+    constexpr std::uintptr_t kSignalSlot_Callback = 0x18;
+    constexpr std::uintptr_t kConstraintCollisionFilter_Type = 0x10;
+    constexpr std::uintptr_t kConstraintCollisionFilter_World = 0x30;
+    constexpr std::uintptr_t kVtable_ConstraintCollisionFilter = 0x2E06258;
+    constexpr std::uintptr_t kFunc_ConstraintFilterOnConstraintAdded = 0x17ED740;
+    constexpr std::uintptr_t kFunc_ConstraintFilterOnConstraintRemoved = 0x17ED7D0;
+    constexpr std::uintptr_t kFunc_PairCollisionFilterDisablePair = 0x196DE70;
+    constexpr std::uintptr_t kFunc_PairCollisionFilterEnablePair = 0x196DF80;
+
+    /*
      * FO4VR's world reader-writer lock (BSReadWriteLock: u32 owner thread id,
      * u32 state). Engine mutation wrappers write-lock it (raw-disasm verified in
      * bhkWorld::RemovePhysicsSystemInstance @0x1DFAD00: rbx=[bhkWorld+0x60],

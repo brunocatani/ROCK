@@ -425,6 +425,7 @@ namespace rock
         std::uint64_t _expectedReloadLayerMask = 0;
         std::uint64_t _expectedBodyLayerMask = 0;
         std::uint64_t _expectedDynamicHandProxyLayerMask = 0;
+        std::uint64_t _expectedDynamicLeftHandProxyLayerMask = 0;
         std::uint64_t _expectedDynamicWeaponProxyLayerMask = 0;
         std::uint64_t _expectedDynamicWorldCarClutterLayerMask = 0;
         std::uint64_t _expectedDynamicWorldCarLargeClutterLayerMask = 0;

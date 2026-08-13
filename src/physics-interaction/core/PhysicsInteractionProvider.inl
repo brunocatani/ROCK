@@ -824,6 +824,21 @@
                     state.flags |= static_cast<std::uint32_t>(
                         Flag::TransitionSuppressed);
                 }
+                if ((collisionState.flags & static_cast<std::uint32_t>(
+                         ::rock::provider::RockProviderHandCollisionAvailabilityFlagV1::DynamicOtherHandContact)) != 0) {
+                    state.flags |= static_cast<std::uint32_t>(
+                        Flag::DynamicOtherHandContact);
+                }
+                if ((collisionState.flags & static_cast<std::uint32_t>(
+                         ::rock::provider::RockProviderHandCollisionAvailabilityFlagV1::DynamicWeaponContact)) != 0) {
+                    state.flags |= static_cast<std::uint32_t>(
+                        Flag::DynamicWeaponContact);
+                }
+                if ((collisionState.flags & static_cast<std::uint32_t>(
+                         ::rock::provider::RockProviderHandCollisionAvailabilityFlagV1::DynamicWeaponPairSuppressed)) != 0) {
+                    state.flags |= static_cast<std::uint32_t>(
+                        Flag::DynamicWeaponPairSuppressed);
+                }
             }
             state.worldGeneration = worldGeneration;
             state.skeletonGeneration = skeletonGeneration;
@@ -1562,6 +1577,31 @@
                 outState.flags |= static_cast<std::uint32_t>(
                     Flag::HandDisabled);
             }
+            if (handTelemetry.dynamicInteractionsEnabled) {
+                outState.flags |= static_cast<std::uint32_t>(
+                    Flag::DynamicInteractionsEnabled);
+            }
+            if (handTelemetry.pairFilterReady) {
+                outState.flags |= static_cast<std::uint32_t>(
+                    Flag::DynamicPairFilterReady);
+            }
+            if (handTelemetry.otherHandContactMask != 0) {
+                outState.flags |= static_cast<std::uint32_t>(
+                    Flag::DynamicOtherHandContact);
+            }
+            if (handTelemetry.weaponContactMask != 0) {
+                outState.flags |= static_cast<std::uint32_t>(
+                    Flag::DynamicWeaponContact);
+            }
+            if (handTelemetry.weaponPairSuppressed) {
+                outState.flags |= static_cast<std::uint32_t>(
+                    Flag::DynamicWeaponPairSuppressed);
+            }
+            outState.reserved[0] = handTelemetry.otherHandContactMask;
+            outState.reserved[1] = handTelemetry.weaponContactMask;
+            outState.reserved[2] = handTelemetry.dynamicInteractionLayer;
+            outState.reserved[3] =
+                handTelemetry.suppressedWeaponPairCount;
             if (outState.handBodyCount != 0 && telemetry.worldReady &&
                 telemetry.physicsWritesAllowed && !telemetry.menuBlocked &&
                 !telemetry.transitionCollisionSuppressed &&

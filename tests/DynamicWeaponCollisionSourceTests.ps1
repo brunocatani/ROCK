@@ -58,15 +58,15 @@ $interaction = 'src/physics-interaction/core/PhysicsInteraction.cpp'
 $contacts = 'src/physics-interaction/core/PhysicsInteractionContacts.inl'
 $layers = 'src/physics-interaction/collision/CollisionLayerPolicy.h'
 
-# The experiment must remain opt-in and use a dedicated obstacle-only matrix
-# row. Layer-44 weapon hulls continue to own gameplay contact evidence.
+# The validated dynamic compound and hand-interaction graph ship enabled.
+# Layer-44 weapon hulls continue to own ordinary gameplay contact evidence.
 Require-Pattern 'src/RockConfig.h' `
-    'rockWeaponCollisionDynamicBoxEnabled\s*=\s*false' `
-    'Dynamic weapon collision must default disabled in compiled configuration.'
+    'rockWeaponCollisionDynamicBoxEnabled\s*=\s*true' `
+    'Dynamic weapon collision must default enabled in compiled configuration.'
 foreach ($ini in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
     Require-Pattern $ini `
-        '(?m)^bWeaponCollisionDynamicBoxEnabled\s*=\s*false\s*$' `
-        "$ini must ship experimental dynamic weapon collision disabled."
+        '(?m)^bWeaponCollisionDynamicBoxEnabled\s*=\s*true\s*$' `
+        "$ini must ship dynamic weapon collision enabled."
     Require-Pattern $ini `
         '(?m)^fWeaponCollisionDynamicInverseInertiaMultiplier\s*=\s*1\.2\s*$' `
         "$ini must ship the qualified dynamic-weapon rotational compliance multiplier."
@@ -81,13 +81,13 @@ Require-Pattern $layers `
     'ROCK_LAYER_DYNAMIC_WEAPON_PROXY\s*=\s*51' `
     'The dynamic weapon proxy must retain its dedicated layer-51 row.'
 Require-Pattern $layers `
-    'isDynamicWeaponProxyObstacleLayer\(std::uint32_t layer\)[\s\S]*isWorldSurfaceLayer\(layer\)[\s\S]*isDynamicWorldCarLayer\(layer\)[\s\S]*buildRockDynamicWeaponProxyExpectedMask\(\)[\s\S]*isDynamicWeaponProxyObstacleLayer\(layer\)[\s\S]*return mask' `
-    'The dynamic weapon proxy row must be authored exclusively from world surfaces and explicitly tagged car layers.'
+    'isDynamicWeaponProxyObstacleLayer\(std::uint32_t layer\)[\s\S]*isWorldSurfaceLayer\(layer\)[\s\S]*isDynamicWorldCarLayer\(layer\)[\s\S]*buildRockDynamicWeaponProxyExpectedMask\([\s\S]*interactionsEnabled[\s\S]*ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY[\s\S]*ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY' `
+    'The dynamic weapon proxy row must retain world/car obstacles and explicitly gate both dynamic hands.'
 Require-Pattern $layers `
-    'buildRockDynamicWorldCarExpectedMask[\s\S]*withLayer\(mask, ROCK_LAYER_DYNAMIC_HAND_PROXY\)[\s\S]*withLayer\(mask, ROCK_LAYER_DYNAMIC_WEAPON_PROXY\)[\s\S]*withLayer\(mask, FO4_LAYER_CHARCONTROLLER\)' `
-    'Tagged car rows must symmetrically admit both dynamic solver proxies without exposing generated gameplay colliders.'
+    'buildRockDynamicWorldCarExpectedMask[\s\S]*withLayer\(mask, ROCK_LAYER_DYNAMIC_HAND_PROXY\)[\s\S]*withLayer\(mask, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY\)[\s\S]*withLayer\(mask, ROCK_LAYER_DYNAMIC_WEAPON_PROXY\)[\s\S]*withLayer\(mask, FO4_LAYER_CHARCONTROLLER\)' `
+    'Tagged car rows must symmetrically admit both hands and the dynamic weapon without exposing generated gameplay colliders.'
 Require-Pattern $layers `
-    'applyRockGeneratedLayerPolicies[\s\S]*applyRockDynamicWeaponProxyLayerPolicy\(matrix\)' `
+    'applyRockGeneratedLayerPolicies[\s\S]*applyRockDynamicWeaponProxyLayerPolicy\([\s\S]*dynamicHandInteractionsEnabled' `
     'Layer 51 must be registered with the other generated collision rows.'
 
 # World contact remains exactly one dynamic body whose child instances follow
@@ -241,7 +241,7 @@ Require-Pattern $weaponAuthority `
 Require-Order $contacts @(
     'isProxyBodyIdAtomic\(bodyIdA\)',
     'tryReadFilterInfo\(',
-    'isDynamicWeaponProxyObstacleLayer\(otherLayer\)',
+    'isDynamicWeaponProxySolverObstacleLayer\(otherLayer\)',
     'ensureRawContactPoint\(\)',
     'recordObstacleContactCallback\(',
     'shouldSkipContactSignalBeforeLayerRead\('

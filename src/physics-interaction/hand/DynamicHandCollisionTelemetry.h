@@ -201,6 +201,10 @@ namespace rock::dynamic_hand_collision_telemetry
         std::uint32_t contactCount = 0;
         std::uint32_t entryContactMask = 0;
         std::uint32_t surfaceFingerHelpfulSlotMask = 0;
+        std::uint32_t otherHandContactMask = 0;
+        std::uint32_t weaponContactMask = 0;
+        std::uint32_t suppressedWeaponPairCount = 0;
+        std::uint32_t dynamicInteractionLayer = 0;
         float combinedContactDeviationGameUnits = 0.0f;
         float appliedVisualDeviationGameUnits = 0.0f;
         float contactEntryApproachSpeedGameUnitsPerSecond = 0.0f;
@@ -213,6 +217,9 @@ namespace rock::dynamic_hand_collision_telemetry
         bool visualActive = false;
         bool anyContact = false;
         bool surfaceFingerResponseActive = false;
+        bool dynamicInteractionsEnabled = false;
+        bool pairFilterReady = false;
+        bool weaponPairSuppressed = false;
     };
 
     struct Snapshot

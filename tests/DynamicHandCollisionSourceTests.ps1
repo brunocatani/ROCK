@@ -396,17 +396,21 @@ Require-Text 'src/physics-interaction/native/GeneratedKeyframedBodyDrive.h' `
     'const GeneratedBodyDriveMode& mode = \{\}' `
     'driveGeneratedKeyframedBody must default to keyframe placement for existing callers.'
 
-# The proxy layer must remain limited to world surfaces and the two explicit
-# car-only rows; native clutter must never be admitted directly.
+# Each hand keeps a stable row. Both retain world/car collision while the
+# experimental graph gates only the opposite hand and weapon edges.
 Require-OrderedText 'src/physics-interaction/collision/CollisionLayerPolicy.h' @(
     'ROCK_LAYER_DYNAMIC_HAND_PROXY = 48',
     'ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER = 49',
     'ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER = 50',
-    'buildRockDynamicHandProxyExpectedMask\(\)',
+    'ROCK_LAYER_DYNAMIC_WEAPON_PROXY = 51',
+    'ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY = 52',
+    'buildRockDynamicHandProxyExpectedMask\(',
     'isWorldSurfaceLayer\(layer\)',
     'withLayer\(mask, ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER\)',
-    'withLayer\(mask, ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER\)'
-) 'Dynamic hand proxy layer must include only world surfaces and explicit car rows.'
+    'withLayer\(mask, ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER\)',
+    'interactionsEnabled',
+    'ROCK_LAYER_DYNAMIC_WEAPON_PROXY'
+) 'Dynamic hand proxy rows must preserve world/car collision and explicitly gate cross-owner interaction edges.'
 Require-Text 'src/physics-interaction/object/DynamicWorldCarCollision.cpp' `
     'isExplodableCarReference[\s\S]*dynamicWorldCarLayerForNativeLayer[\s\S]*setFilterInfo' `
     'Only verified ExplodableCar references may be tagged onto dynamic-world car layers.'
@@ -423,8 +427,8 @@ Reject-Text 'src/physics-interaction/collision/CollisionLayerPolicy.h' `
     'nativeCharacterControllerBodyFilteredLayerMask|isNativeCharacterControllerBodyFilteredLayer' `
     'Native clutter must not be globally re-enabled for a late per-body character-controller filter.'
 Require-Text 'src/physics-interaction/collision/CollisionLayerPolicy.h' `
-    'buildRockDynamicWorldCarExpectedMask[\s\S]*withoutLayer\(mask, ROCK_LAYER_HAND\)[\s\S]*withoutLayer\(mask, ROCK_LAYER_WEAPON\)[\s\S]*withoutLayer\(mask, ROCK_LAYER_BODY\)[\s\S]*withLayer\(mask, ROCK_LAYER_DYNAMIC_HAND_PROXY\)[\s\S]*withLayer\(mask, ROCK_LAYER_DYNAMIC_WEAPON_PROXY\)' `
-    'Car-only rows must reject generated gameplay colliders while admitting both dedicated solver proxies.'
+    'buildRockDynamicWorldCarExpectedMask[\s\S]*withoutLayer\(mask, ROCK_LAYER_HAND\)[\s\S]*withoutLayer\(mask, ROCK_LAYER_WEAPON\)[\s\S]*withoutLayer\(mask, ROCK_LAYER_BODY\)[\s\S]*withLayer\(mask, ROCK_LAYER_DYNAMIC_HAND_PROXY\)[\s\S]*withLayer\(mask, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY\)[\s\S]*withLayer\(mask, ROCK_LAYER_DYNAMIC_WEAPON_PROXY\)' `
+    'Car-only rows must reject generated gameplay colliders while admitting both hands and the weapon solver proxy.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'kNearbyCarCollisionRadiusGameUnits[\s\S]*isExplodableCar[\s\S]*synchronizeNearbyTargets' `
     'Verified nearby cars must be proactively tagged before player contact.'
@@ -433,8 +437,9 @@ Require-Text 'src/physics-interaction/core/PhysicsHooks.cpp' `
     'Character-controller contact identity must be evaluated only on dedicated car rows.'
 Require-OrderedText 'src/physics-interaction/collision/CollisionLayerPolicy.h' @(
     'inline void applyRockGeneratedLayerPolicies\(',
-    'applyRockDynamicHandProxyLayerPolicy\(matrix\);'
-) 'Dynamic hand proxy layer row must be applied with the other generated layer rows.'
+    'applyRockDynamicHandProxyLayerPolicies\(',
+    'dynamicHandInteractionsEnabled'
+) 'Both dynamic hand rows must be applied with the other generated layer rows.'
 
 # The proxy drive flush must run beside the other generated collider flushes.
 Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @(
