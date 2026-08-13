@@ -1332,6 +1332,12 @@ namespace rock
             _rawContactProxyWasBodyAAtomic.store(proxyWasBodyA, std::memory_order_relaxed);
             _rawContactWitnessSequenceAtomic.fetch_add(1, std::memory_order_release);
         }
+        // Dynamic-hand proxy contacts remain part of the Havok solve and the
+        // callback diagnostics, but they must not replace a world/car witness
+        // used to publish collision-resolved weapon presentation.
+        if (!collision_layer_policy::isDynamicWeaponProxyObstacleLayer(otherLayer)) {
+            return;
+        }
         _contactWorldAtomic.store(reinterpret_cast<std::uintptr_t>(world), std::memory_order_relaxed);
         _contactProxyBodyIdAtomic.store(proxyBodyId, std::memory_order_relaxed);
         _contactOtherBodyIdAtomic.store(otherBodyId, std::memory_order_relaxed);
@@ -1358,6 +1364,9 @@ namespace rock
         _processedManifoldCallbackSequenceAtomic.fetch_add(1, std::memory_order_release);
         if (!dynamic_weapon_collision_policy::hasSolvedProcessedManifoldContact(
                 manifoldPointCount)) {
+            return;
+        }
+        if (!collision_layer_policy::isDynamicWeaponProxyObstacleLayer(otherLayer)) {
             return;
         }
         _contactWorldAtomic.store(reinterpret_cast<std::uintptr_t>(world), std::memory_order_relaxed);

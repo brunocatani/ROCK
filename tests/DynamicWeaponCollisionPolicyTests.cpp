@@ -116,6 +116,14 @@ int main()
     ok &= rock::collision_layer_policy::maskEnablesLayer(
         dynamicWeaponMask,
         rock::collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER);
+    ok &= rock::collision_layer_policy::isDynamicWeaponProxySolverObstacleLayer(
+        rock::collision_layer_policy::ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY);
+    ok &= rock::collision_layer_policy::isDynamicWeaponProxySolverObstacleLayer(
+        rock::collision_layer_policy::ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY);
+    ok &= !rock::collision_layer_policy::isDynamicWeaponProxyObstacleLayer(
+        rock::collision_layer_policy::ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY);
+    ok &= !rock::collision_layer_policy::isDynamicWeaponProxyObstacleLayer(
+        rock::collision_layer_policy::ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY);
 
     constexpr auto interactiveWeaponMask =
         rock::collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask(

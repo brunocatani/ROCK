@@ -266,6 +266,12 @@ Require-Pattern $runtimePolicy `
 Require-Pattern $runtimeSource `
     '_processedManifoldCallbackSequenceAtomic\.fetch_add\(1[\s\S]*hasSolvedProcessedManifoldContact\([\s\S]*manifoldPointCount\)[\s\S]*_contactSequenceAtomic\.fetch_add\(1' `
     'Point-free and terminal processed-manifold records must remain diagnostic and never refresh the contact witness.'
+Require-Pattern $runtimeSource `
+    '_rawPointCallbackSequenceAtomic\.fetch_add\(1[\s\S]*isDynamicWeaponProxyObstacleLayer\(otherLayer\)[\s\S]*_contactWorldAtomic\.store[\s\S]*_contactSequenceAtomic\.fetch_add\(1' `
+    'Solver-only dynamic-hand contacts must remain diagnostic and never overwrite the raw-callback presentation witness.'
+Require-Pattern $runtimeSource `
+    '_processedManifoldCallbackSequenceAtomic\.fetch_add\(1[\s\S]*hasSolvedProcessedManifoldContact\([\s\S]*isDynamicWeaponProxyObstacleLayer\(otherLayer\)[\s\S]*_contactWorldAtomic\.store[\s\S]*_contactSequenceAtomic\.fetch_add\(1' `
+    'Solver-only dynamic-hand manifolds must never overwrite a world/car presentation witness.'
 Require-Pattern $runtimePolicy `
     'kProcessedManifoldContactRetentionSeconds\s*=\s*0\.35f[\s\S]*advanceProcessedManifoldContactRetention\([\s\S]*teleported[\s\S]*positivePointWitness[\s\S]*retainedSeconds\s*-\s*elapsedSeconds' `
     'Positive manifold authority must use a solver-rate-independent, teleport-safe retention window.'
