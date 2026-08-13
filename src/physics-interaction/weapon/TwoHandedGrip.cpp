@@ -10108,16 +10108,16 @@ namespace rock
 
     bool TwoHandedGrip::applyWeaponCollisionResolvedAuthority(
         RE::NiNode* weaponNode,
+        const RE::NiTransform& requestedWeaponWorld,
         const RE::NiTransform& resolvedWeaponWorld,
         const std::uint64_t authorityGenerationKey)
     {
         if (!weaponNode ||
-            !isFiniteTransform(weaponNode->world) ||
+            !isFiniteTransform(requestedWeaponWorld) ||
             !isFiniteTransform(resolvedWeaponWorld)) {
             return false;
         }
 
-        const RE::NiTransform requestedWeaponWorld = weaponNode->world;
         const auto attachedHands =
             dynamic_weapon_collision_policy::selectAttachedHands(
                 _state == TwoHandedState::PartCarry,
@@ -10162,7 +10162,10 @@ namespace rock
              * new weapon correction onto the previous one. The scope-safe
              * frame was already reconstructed from the unaffected hand driver
              * when the previous-presentation witness was set, so it is the
-             * collision-free physical input for this publication.
+             * collision-free physical input for this publication. The weapon
+             * basis is likewise the explicit intent captured before physics;
+             * weaponNode->world can already contain the previous deferred
+             * hand claim and must never be used as the requested basis.
              */
             RE::NiTransform physicalHandWorld{};
             const bool physicalHandValid =

@@ -39,7 +39,7 @@ namespace rock
         struct FrameResult
         {
             bool proxyActive{ false };
-            bool applyVisualCorrection{ false };
+            bool publishVisualAuthority{ false };
             bool contactEpisodeStarted{ false };
             bool rawContactPointValid{ false };
             bool rawContactProxyWasBodyA{ false };

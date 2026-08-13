@@ -204,6 +204,15 @@ Require-Order $weaponAuthority @(
     'applyWeaponVisualAuthority\('
 ) 'Collision correction must clear the prior claim before intent, derive attached hands from collision-isolated physical input, retain them through the next FRIK solve, and publish the exact weapon pose last.'
 Require-Pattern $weaponAuthority `
+    'applyWeaponCollisionResolvedAuthority\([\s\S]*const RE::NiTransform& requestedWeaponWorld[\s\S]*const RE::NiTransform& resolvedWeaponWorld[\s\S]*reframeAttachedHand\([\s\S]*requestedWeaponWorld[\s\S]*resolvedWeaponWorld' `
+    'Deferred FRIK hand authority must reframe from the explicit collision-free weapon intent rather than the previously rendered scene node.'
+Reject-Pattern $weaponAuthority `
+    'applyWeaponCollisionResolvedAuthority\([\s\S]*?requestedWeaponWorld\s*=\s*weaponNode->world[\s\S]*?bool TwoHandedGrip::applyFiringHandLockedVisual' `
+    'Deferred collision authority must never derive its requested weapon basis from a scene node contaminated by the previous FRIK claim.'
+Require-Pattern $interaction `
+    'applyWeaponCollisionResolvedAuthority\([\s\S]{0,250}dynamicWeaponFrame\.requestedWeaponWorld[\s\S]{0,250}dynamicWeaponFrame\.resolvedWeaponWorld' `
+    'The collision-free intent and physics-resolved pose must cross the presentation boundary together.'
+Require-Pattern $weaponAuthority `
     'FRIK V2 consumes this claim during its next skeleton frame[\s\S]*current root therefore still contains the previous collision[\s\S]*claim[\s\S]*scope-safe[\s\S]*frame was already reconstructed from the unaffected hand driver[\s\S]*collision-free physical input' `
     'The source must document why deferred FRIK V2 claims require driver-reconstructed input isolation.'
 Reject-Pattern $weaponAuthority `
@@ -380,14 +389,14 @@ Require-Pattern $runtimeSource `
     'signedTranslationStepTowardContactError\([\s\S]*_physicsPreviousRequestedTarget[\s\S]*_physicsRequestedTarget[\s\S]*liveBodyWorld[\s\S]*DWC motor trace:[\s\S]*intentStep=[\s\S]*signedPress=[\s\S]*contactError=[\s\S]*authority\(read/error\)=[\s\S]*tau=[\s\S]*recovery=[\s\S]*force=' `
     'Sustained-contact diagnostics must distinguish continued press from retreat and expose authority tracking plus live motor state.'
 Require-Pattern $runtimeSource `
-    '_debugSnapshot\.contactActive\s*=\s*snapshot\.contactActive[\s\S]*const bool correctionVisible\s*=\s*[\r\n\s]*snapshot\.contactActive\s*&&[\s\S]*result\.translationCorrectionGameUnits\s*>=[\s\S]*result\.rotationCorrectionDegrees\s*>=[\s\S]*result\.applyVisualCorrection\s*=\s*true' `
-    'A visible post-solve collider delta may own presentation only during a positive-point contact episode.'
+    '_debugSnapshot\.contactActive\s*=\s*snapshot\.contactActive[\s\S]*const bool correctionVisible\s*=[\s\S]*result\.translationCorrectionGameUnits\s*>=[\s\S]*result\.rotationCorrectionDegrees\s*>=[\s\S]*result\.publishVisualAuthority\s*=\s*true[\s\S]*result\.resolvedWeaponWorld\s*=\s*correctionVisible\s*\?[\s\S]*resolvedWeaponWorld\s*:[\s\S]*_frameRequestedWeaponWorld' `
+    'Every current post-solve sample must retain presentation authority while the deadband selects resolved collider motion or collision-free intent.'
 Require-Pattern $runtimeSource `
-    '"contact-witness-gate"' `
-    'Runtime telemetry must distinguish rejected free-space lag from sub-threshold contacted correction.'
+    'FRIK V2 consumes tagged hand transforms during its next skeleton[\s\S]*continuous presentation owner[\s\S]*must never release the owner or freeze a displaced[\s\S]*collider' `
+    'The source must document why deferred FRIK consumption requires continuous weapon presentation ownership.'
 Reject-Pattern $runtimeSource `
-    'correctionVisible\s*=\s*[\r\n\s]*result\.translationCorrectionGameUnits' `
-    'Free-space soft-motor tracking lag must never own weapon presentation.'
+    'correctionVisible\s*=\s*[\r\n\s]*snapshot\.contactActive\s*&&|"contact-witness-gate"' `
+    'Transient callback contact must not gate continuous collider-to-weapon presentation.'
 Require-Pattern $weaponAuthority `
     'case TwoHandedState::Touching:[\s\S]*_touchFrames\s*>\s*TOUCH_TIMEOUT_FRAMES[\s\S]*TwoHandedGrip: touch contact timed out[\s\S]*_state\s*=\s*TwoHandedState::Inactive' `
     'Support-touch churn must retain an edge-only timeout diagnostic that exposes the lost acquisition witness.'

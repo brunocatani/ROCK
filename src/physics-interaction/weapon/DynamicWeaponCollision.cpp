@@ -571,7 +571,7 @@ namespace rock
                 _debugSnapshot.contactRetentionSeconds,
                 result.translationCorrectionGameUnits,
                 result.rotationCorrectionDegrees,
-                result.applyVisualCorrection);
+                result.publishVisualAuthority);
         };
 
         if (!snapshotCurrent) {
@@ -631,30 +631,28 @@ namespace rock
             return result;
         }
 
-        /*
-         * The finite post-solve compound-body delta owns presentation only
-         * while FO4VR reports a positive-point processed manifold. Key-2 also
-         * emits zero-point and terminal (-1) records; admitting those records
-         * exposes ordinary soft-motor tracking lag as free-space weapon
-         * motion. The positive-witness retention keeps the contacted pose
-         * continuous across callback bursts without allowing point-free
-         * records or residual lag to start visual authority.
-         */
         const bool correctionVisible =
-            snapshot.contactActive &&
             (result.translationCorrectionGameUnits >= g_rockConfig.rockWeaponCollisionDynamicRenderMinTranslationGameUnits ||
                 result.rotationCorrectionDegrees >= g_rockConfig.rockWeaponCollisionDynamicRenderMinRotationDegrees);
-        if (correctionVisible) {
-            result.applyVisualCorrection = true;
-            result.resolvedWeaponWorld = resolvedWeaponWorld;
-            _debugSnapshot.visualCorrectionActive = true;
-        }
+        /*
+         * FRIK V2 consumes tagged hand transforms during its next skeleton
+         * frame. Releasing this publication whenever the collider is out of
+         * contact (or merely inside the render deadband) switches the attached
+         * hand and weapon between delayed FRIK output and physics output. Keep
+         * one continuous presentation owner for every current post-solve
+         * sample. The configured deadband may suppress a microscopic collider
+         * delta, but it must never release the owner or freeze a displaced
+         * collider while hand/world contact continues to move it.
+         */
+        result.publishVisualAuthority = true;
+        result.resolvedWeaponWorld = correctionVisible ?
+            resolvedWeaponWorld :
+            _frameRequestedWeaponWorld;
+        _debugSnapshot.visualCorrectionActive = correctionVisible;
         logPipelineStage(
-            !snapshot.contactActive ?
-                "contact-witness-gate" :
             correctionVisible ?
-                "publish-requested" :
-                "visibility-gate");
+                "publish-resolved" :
+                "publish-intent");
         return result;
     }
 

@@ -3750,9 +3750,10 @@ namespace rock
                     dynamicWeaponFrame.translationCorrectionGameUnits,
                     dynamicWeaponFrame.rotationCorrectionDegrees);
             }
-            if (dynamicWeaponFrame.applyVisualCorrection) {
+            if (dynamicWeaponFrame.publishVisualAuthority) {
                 const bool visualPublishSucceeded = _twoHandedGrip.applyWeaponCollisionResolvedAuthority(
                     weaponNode,
+                    dynamicWeaponFrame.requestedWeaponWorld,
                     dynamicWeaponFrame.resolvedWeaponWorld,
                     currentWeaponGenerationKey);
                 const float immediateTranslationError =

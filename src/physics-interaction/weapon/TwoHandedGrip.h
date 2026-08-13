@@ -687,6 +687,7 @@ namespace rock
         // correction back into the next dynamic-weapon drive target.
         bool applyWeaponCollisionResolvedAuthority(
             RE::NiNode* weaponNode,
+            const RE::NiTransform& requestedWeaponWorld,
             const RE::NiTransform& resolvedWeaponWorld,
             std::uint64_t authorityGenerationKey);
 
