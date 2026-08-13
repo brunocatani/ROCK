@@ -7,12 +7,21 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 
 namespace rock::dynamic_weapon_collision_policy
 {
     inline constexpr float kMinimumBoundingBoxHalfExtentGameUnits = 0.25f;
     inline constexpr float kFallbackWeaponMass = 2.0f;
     inline constexpr float kMaximumWeaponMass = 50.0f;
+    inline constexpr std::int32_t kMaximumProcessedManifoldContactPoints = 4;
+
+    inline constexpr bool hasSolvedProcessedManifoldContact(
+        const std::int32_t pointCount)
+    {
+        return pointCount > 0 &&
+               pointCount <= kMaximumProcessedManifoldContactPoints;
+    }
 
     inline float sanitizeWeaponMass(float weaponWeightGame)
     {

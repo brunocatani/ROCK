@@ -550,6 +550,8 @@
 
         const auto bodyIdA = *reinterpret_cast<const std::uint32_t*>(data + 0x08);
         const auto bodyIdB = *reinterpret_cast<const std::uint32_t*>(data + 0x0C);
+        const auto manifoldPointCount =
+            *reinterpret_cast<const std::int32_t*>(data + 0x30);
         if (!contact_pipeline_policy::isValidBodyId(bodyIdA) ||
             !contact_pipeline_policy::isValidBodyId(bodyIdB) ||
             bodyIdA == bodyIdB) {
@@ -654,7 +656,8 @@
                 proxyBodyId,
                 otherBodyId,
                 otherLayerRead,
-                otherLayer);
+                otherLayer,
+                manifoldPointCount);
         }
     }
 

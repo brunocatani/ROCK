@@ -237,9 +237,8 @@ Require-Pattern $weaponAuthority `
     'refreshRightNativeCanonicalFrame\([\s\S]*_weaponCollisionHandPresentationFromPreviousFrame\[1\][\s\S]*isManualOwnershipActive\(\)' `
     'Previous collision presentation must never poison the passive native right-hand canonical calibration.'
 
-# Contact callbacks remain authoritative diagnostics and motor-tuning input.
-# Presentation authority comes from the current post-solve body snapshot so a
-# missed/expired callback cannot leave the mesh separated from its collider.
+# Contact callbacks identify positive-point solved manifolds; the current
+# post-solve body snapshot owns the actual collision-resolved pose.
 Require-Order $contacts @(
     'isProxyBodyIdAtomic\(bodyIdA\)',
     'tryReadFilterInfo\(',
@@ -256,16 +255,20 @@ Require-Order $contacts @(
 Require-Order $contacts @(
     'handleManifoldProcessedEvent\(',
     'recordSize\s*!=\s*kExpectedRecordSize\s*\|\|\s*eventKey\s*!=\s*kManifoldProcessedEventKey',
+    'manifoldPointCount\s*=',
     'isProxyBodyIdAtomic\(bodyIdA\)',
     'tryReadFilterInfo\(',
     'recordObstacleManifoldProcessedCallback\('
-) 'Processed-manifold admission must validate the native record and exact proxy/obstacle pair before publication.'
+) 'Processed-manifold admission must retain the verified point count and validate the exact proxy/obstacle pair.'
+Require-Pattern $runtimePolicy `
+    'hasSolvedProcessedManifoldContact\([\s\S]*pointCount\s*>\s*0[\s\S]*pointCount\s*<=\s*kMaximumProcessedManifoldContactPoints' `
+    'Only FO4VR key-2 records with one to four solved manifold points may become contact evidence.'
+Require-Pattern $runtimeSource `
+    '_processedManifoldCallbackSequenceAtomic\.fetch_add\(1[\s\S]*hasSolvedProcessedManifoldContact\([\s\S]*manifoldPointCount\)[\s\S]*_contactSequenceAtomic\.fetch_add\(1' `
+    'Point-free and terminal processed-manifold records must remain diagnostic and never refresh the contact witness.'
 Require-Pattern $runtimeSource `
     'snapshotIdentityCurrent\s*&&[\s\S]{0,100}!snapshot\.teleported' `
     'Every current non-teleport post-solve sample must be eligible to own weapon presentation.'
-Reject-Pattern $runtimeSource `
-    'snapshotIdentityCurrent\s*&&[\s\S]{0,100}snapshot\.contactActive' `
-    'Presentation must not depend on the short-lived contact callback grace flag.'
 Require-Pattern $runtimeSource `
     'correctionFinite[\s\S]*std::isfinite\(result\.translationCorrectionGameUnits\)[\s\S]*std::isfinite\(result\.rotationCorrectionDegrees\)' `
     'Physics-resolved visual correction must reject only corrupt non-finite deltas.'
@@ -362,11 +365,14 @@ Require-Pattern $runtimeSource `
     'signedTranslationStepTowardContactError\([\s\S]*_physicsPreviousRequestedTarget[\s\S]*_physicsRequestedTarget[\s\S]*liveBodyWorld[\s\S]*DWC motor trace:[\s\S]*intentStep=[\s\S]*signedPress=[\s\S]*contactError=[\s\S]*authority\(read/error\)=[\s\S]*tau=[\s\S]*recovery=[\s\S]*force=' `
     'Sustained-contact diagnostics must distinguish continued press from retreat and expose authority tracking plus live motor state.'
 Require-Pattern $runtimeSource `
-    '_debugSnapshot\.contactActive\s*=\s*snapshot\.contactActive[\s\S]*const bool correctionVisible\s*=\s*[\r\n\s]*result\.translationCorrectionGameUnits\s*>=[\s\S]*result\.rotationCorrectionDegrees\s*>=[\s\S]*result\.applyVisualCorrection\s*=\s*true' `
-    'Dynamic weapon diagnostics must preserve the callback signal while every visible post-solve collider delta owns presentation.'
+    '_debugSnapshot\.contactActive\s*=\s*snapshot\.contactActive[\s\S]*const bool correctionVisible\s*=\s*[\r\n\s]*snapshot\.contactActive\s*&&[\s\S]*result\.translationCorrectionGameUnits\s*>=[\s\S]*result\.rotationCorrectionDegrees\s*>=[\s\S]*result\.applyVisualCorrection\s*=\s*true' `
+    'A visible post-solve collider delta may own presentation only during a positive-point contact episode.'
+Require-Pattern $runtimeSource `
+    '"contact-witness-gate"' `
+    'Runtime telemetry must distinguish rejected free-space lag from sub-threshold contacted correction.'
 Reject-Pattern $runtimeSource `
-    'correctionVisible\s*=\s*[\r\n\s]*snapshot\.contactActive\s*&&|DWC tracking-only divergence suppressed|"contact-gate"' `
-    'Dynamic weapon presentation must not be vetoed by the short-lived contact callback grace signal.'
+    'correctionVisible\s*=\s*[\r\n\s]*result\.translationCorrectionGameUnits' `
+    'Free-space soft-motor tracking lag must never own weapon presentation.'
 Require-Pattern $weaponAuthority `
     'case TwoHandedState::Touching:[\s\S]*_touchFrames\s*>\s*TOUCH_TIMEOUT_FRAMES[\s\S]*TwoHandedGrip: touch contact timed out[\s\S]*_state\s*=\s*TwoHandedState::Inactive' `
     'Support-touch churn must retain an edge-only timeout diagnostic that exposes the lost acquisition witness.'

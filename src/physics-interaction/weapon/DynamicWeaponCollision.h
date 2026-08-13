@@ -142,7 +142,8 @@ namespace rock
             std::uint32_t proxyBodyId,
             std::uint32_t otherBodyId,
             bool otherLayerRead,
-            std::uint32_t otherLayer);
+            std::uint32_t otherLayer,
+            std::int32_t manifoldPointCount);
 
         void retireAll(void* bhkWorld);
         void abandonHavokStateAfterWorldLoss();

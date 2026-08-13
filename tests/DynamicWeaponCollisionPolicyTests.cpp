@@ -49,6 +49,12 @@ int main()
     using namespace rock::dynamic_weapon_collision_policy;
     bool ok = true;
 
+    ok &= !hasSolvedProcessedManifoldContact(-1);
+    ok &= !hasSolvedProcessedManifoldContact(0);
+    ok &= hasSolvedProcessedManifoldContact(1);
+    ok &= hasSolvedProcessedManifoldContact(4);
+    ok &= !hasSolvedProcessedManifoldContact(5);
+
     constexpr auto dynamicWeaponMask = rock::collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask();
     for (std::uint32_t layer = 0; layer < rock::collision_layer_policy::FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++layer) {
         const bool enabled = rock::collision_layer_policy::maskEnablesLayer(dynamicWeaponMask, layer);

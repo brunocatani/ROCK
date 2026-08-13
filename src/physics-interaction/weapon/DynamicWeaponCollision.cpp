@@ -632,26 +632,29 @@ namespace rock
         }
 
         /*
-         * A current post-solve compound-body sample is the authoritative
-         * weapon pose. Contact callbacks remain useful diagnostics and motor
-         * tuning input, but their solve-count grace can expire while Havok is
-         * still holding the body away from the requested pose. Gating visual
-         * publication on that transient signal separates the rendered weapon
-         * from its collider.
-         *
-         * Ordinary controller/IK feedback is isolated before it reaches the
-         * weapon authority target, so publishing this finite solver delta
-         * cannot reintroduce the former FRIK hand-to-weapon feedback loop.
+         * The finite post-solve compound-body delta owns presentation only
+         * while FO4VR reports a positive-point processed manifold. Key-2 also
+         * emits zero-point and terminal (-1) records; admitting those records
+         * exposes ordinary soft-motor tracking lag as free-space weapon
+         * motion. The solve-count grace keeps the final contacted pose alive
+         * across callback/solve ordering without converting residual lag into
+         * collision evidence.
          */
         const bool correctionVisible =
-            result.translationCorrectionGameUnits >= g_rockConfig.rockWeaponCollisionDynamicRenderMinTranslationGameUnits ||
-            result.rotationCorrectionDegrees >= g_rockConfig.rockWeaponCollisionDynamicRenderMinRotationDegrees;
+            snapshot.contactActive &&
+            (result.translationCorrectionGameUnits >= g_rockConfig.rockWeaponCollisionDynamicRenderMinTranslationGameUnits ||
+                result.rotationCorrectionDegrees >= g_rockConfig.rockWeaponCollisionDynamicRenderMinRotationDegrees);
         if (correctionVisible) {
             result.applyVisualCorrection = true;
             result.resolvedWeaponWorld = resolvedWeaponWorld;
             _debugSnapshot.visualCorrectionActive = true;
         }
-        logPipelineStage(correctionVisible ? "publish-requested" : "visibility-gate");
+        logPipelineStage(
+            !snapshot.contactActive ?
+                "contact-witness-gate" :
+            correctionVisible ?
+                "publish-requested" :
+                "visibility-gate");
         return result;
     }
 
@@ -1339,7 +1342,8 @@ namespace rock
         const std::uint32_t proxyBodyId,
         const std::uint32_t otherBodyId,
         const bool otherLayerRead,
-        const std::uint32_t otherLayer)
+        const std::uint32_t otherLayer,
+        const std::int32_t manifoldPointCount)
     {
         if (!world || !isProxyBodyIdAtomic(proxyBodyId)) {
             return;
@@ -1350,6 +1354,10 @@ namespace rock
         }
         _obstacleCallbackSequenceAtomic.fetch_add(1, std::memory_order_release);
         _processedManifoldCallbackSequenceAtomic.fetch_add(1, std::memory_order_release);
+        if (!dynamic_weapon_collision_policy::hasSolvedProcessedManifoldContact(
+                manifoldPointCount)) {
+            return;
+        }
         _contactWorldAtomic.store(reinterpret_cast<std::uintptr_t>(world), std::memory_order_relaxed);
         _contactProxyBodyIdAtomic.store(proxyBodyId, std::memory_order_relaxed);
         _contactOtherBodyIdAtomic.store(otherBodyId, std::memory_order_relaxed);
