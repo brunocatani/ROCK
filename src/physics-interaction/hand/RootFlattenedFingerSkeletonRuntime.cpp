@@ -33,24 +33,26 @@ namespace rock::root_flattened_finger_skeleton_runtime
         }
     }
 
-    bool resolveLiveFingerSkeletonSnapshot(bool isLeft, Snapshot& outSnapshot, std::string* outMissingBoneName)
+    bool buildFingerSkeletonSnapshot(
+        const DirectSkeletonBoneSnapshot& boneSnapshot,
+        bool isLeft,
+        Snapshot& outSnapshot,
+        std::string* outMissingBoneName)
     {
         outSnapshot = Snapshot{};
         if (outMissingBoneName) {
             outMissingBoneName->clear();
         }
-
-        DirectSkeletonBoneSnapshot snapshot{};
-        if (!rootFlattenedFingerReader().capture(skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
-                skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
-                snapshot)) {
+        if (!boneSnapshot.valid) {
             if (outMissingBoneName) {
                 *outMissingBoneName = "rootFlattenedBoneTree";
             }
             return false;
         }
 
-        const auto* handNode = findSnapshotBone(snapshot, isLeft ? "LArm_Hand" : "RArm_Hand");
+        const auto* handNode = findSnapshotBone(
+            boneSnapshot,
+            isLeft ? "LArm_Hand" : "RArm_Hand");
         if (!handNode) {
             if (outMissingBoneName) {
                 *outMissingBoneName = isLeft ? "LArm_Hand" : "RArm_Hand";
@@ -58,7 +60,7 @@ namespace rock::root_flattened_finger_skeleton_runtime
             return false;
         }
 
-        outSnapshot.inPowerArmor = snapshot.inPowerArmor;
+        outSnapshot.inPowerArmor = boneSnapshot.inPowerArmor;
         outSnapshot.palmNormalWorld = normalizedOrFallback(
             debug_axis_math::rotateNiLocalToWorld(handNode->world.rotate, RE::NiPoint3(0.0f, 0.0f, -1.0f)),
             RE::NiPoint3(0.0f, 0.0f, -1.0f));
@@ -68,7 +70,9 @@ namespace rock::root_flattened_finger_skeleton_runtime
             auto& chain = outSnapshot.fingers[finger];
             for (std::size_t segment = 0; segment < chain.points.size(); ++segment) {
                 const char* name = fingerBoneName(isLeft, finger, segment);
-                const auto* node = name ? findSnapshotBone(snapshot, name) : nullptr;
+                const auto* node = name ?
+                    findSnapshotBone(boneSnapshot, name) :
+                    nullptr;
                 if (!node) {
                     if (outMissingBoneName) {
                         *outMissingBoneName = name ? name : "invalidFingerBone";
@@ -83,5 +87,25 @@ namespace rock::root_flattened_finger_skeleton_runtime
 
         outSnapshot.valid = true;
         return true;
+    }
+
+    bool resolveLiveFingerSkeletonSnapshot(bool isLeft, Snapshot& outSnapshot, std::string* outMissingBoneName)
+    {
+        DirectSkeletonBoneSnapshot boneSnapshot{};
+        if (!rootFlattenedFingerReader().capture(
+                skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
+                skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
+                boneSnapshot)) {
+            outSnapshot = Snapshot{};
+            if (outMissingBoneName) {
+                *outMissingBoneName = "rootFlattenedBoneTree";
+            }
+            return false;
+        }
+        return buildFingerSkeletonSnapshot(
+            boneSnapshot,
+            isLeft,
+            outSnapshot,
+            outMissingBoneName);
     }
 }

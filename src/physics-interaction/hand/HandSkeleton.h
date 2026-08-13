@@ -340,6 +340,11 @@ namespace rock::root_flattened_finger_skeleton_runtime
         return set;
     }
 
+    bool buildFingerSkeletonSnapshot(
+        const DirectSkeletonBoneSnapshot& boneSnapshot,
+        bool isLeft,
+        Snapshot& outSnapshot,
+        std::string* outMissingBoneName = nullptr);
     bool resolveLiveFingerSkeletonSnapshot(bool isLeft, Snapshot& outSnapshot, std::string* outMissingBoneName = nullptr);
 }
 

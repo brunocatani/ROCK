@@ -1011,6 +1011,7 @@ namespace rock
             bool isLeft,
             const grab_finger_pose_runtime::SolvedGrabFingerPose& meshFingerPose,
             const frik_visual_authority::HandPoseData& handPose,
+            const DirectSkeletonBoneSnapshot* capturedFingerSnapshot,
             std::array<RE::NiTransform, 15>& outLocalTransforms,
             std::uint16_t& outMask)
         {
@@ -1055,7 +1056,8 @@ namespace rock
                         .thumbSurfaceSafetyMarginGameUnits = g_rockConfig.rockGrabThumbSurfaceSafetyMarginGameUnits,
                     },
                     corrected,
-                    &failureReason)) {
+                    &failureReason,
+                    capturedFingerSnapshot)) {
                 ROCK_LOG_WARN(Weapon,
                     "TwoHandedGrip: full-hand local transform override failed hand={} reason={}",
                     isLeft ? "left" : "right",
@@ -4196,11 +4198,27 @@ namespace rock
             grip.hasAttachmentWeaponLocal = true;
         }
 
+        /*
+         * Capture the root-flattened fingers once for this transaction. The
+         * compact sweep snapshot and any exact-local thumb/surface correction
+         * must describe the same pre-authority hand, not two scene reads split
+         * by grip publication.
+         */
+        DirectSkeletonBoneSnapshot capturedFingerBoneSnapshot{};
+        const bool capturedFingerBoneSnapshotValid =
+            rootFlattenedTwoHandedReader().capture(
+                skeleton_bone_debug_math::DebugSkeletonBoneMode::
+                    HandsAndForearmsOnly,
+                skeleton_bone_debug_math::DebugSkeletonBoneSource::
+                    GameRootFlattenedBoneTree,
+                capturedFingerBoneSnapshot);
         root_flattened_finger_skeleton_runtime::Snapshot
             capturedFingerSnapshot{};
         const bool capturedFingerSnapshotValid =
+            capturedFingerBoneSnapshotValid &&
             root_flattened_finger_skeleton_runtime::
-                resolveLiveFingerSkeletonSnapshot(
+                buildFingerSkeletonSnapshot(
+                    capturedFingerBoneSnapshot,
                     isLeft,
                     capturedFingerSnapshot);
         SupportGripFingerReferenceSet fingerReferenceSet{};
@@ -4415,7 +4433,13 @@ namespace rock
             auto fingerPoseTargets = grab_finger_pose_runtime::makeSharedGripPoseTarget(frozenGripPoint, frozenGripNormal);
             fingerPoseTargets.useSeatPointForMissingTargets = false;
             fingerPoseTargets.useWholeMeshForMissingTargets = true;
-            const auto frozenSolve = grab_finger_pose_runtime::solveFrozenMeshFingerPose(
+            /*
+             * Equipped support keeps the indexed frozen base, but owns its
+             * presentation policy. Loose-grab thumb/index clearing and generic
+             * pad-probe refinement erased useful weapon-surface opposition.
+             */
+            auto frozenSolve =
+                grab_finger_pose_runtime::solveFrozenMeshFingerPoseBase(
                 fingerScratch.localTriangles,
                 frozenMeshWorld,
                 handTransform,
@@ -4439,6 +4463,9 @@ namespace rock
                 capturedFingerSnapshotValid ?
                     &capturedFingerSnapshot :
                     nullptr);
+            grab_finger_pose_runtime::captureSurfaceAimObjectLocal(
+                frozenSolve.pose,
+                frozenMeshWorld);
             spatialIndexBuilt = frozenSolve.spatialIndexBuilt;
             commandedOpenDirectionsValid = frozenSolve.commandedOpenDirectionsValid;
             meshFingerPose = frozenSolve.pose;
@@ -4583,6 +4610,9 @@ namespace rock
                     isLeft,
                     *meshFingerPosePtr,
                     handPose,
+                    capturedFingerBoneSnapshotValid ?
+                        &capturedFingerBoneSnapshot :
+                        nullptr,
                     localTransforms,
                     localTransformMask)) {
                 grip.fingerLocalTransforms = localTransforms;

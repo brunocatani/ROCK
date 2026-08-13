@@ -3893,14 +3893,13 @@ namespace rock::grab_finger_local_transform_runtime
         return nullptr;
     }
 
-    [[nodiscard]] inline bool resolveLiveFingerTransforms(bool isLeft, std::array<LiveFingerTransform, 15>& outNodes)
+    [[nodiscard]] inline bool resolveFingerTransforms(
+        const DirectSkeletonBoneSnapshot& snapshot,
+        bool isLeft,
+        std::array<LiveFingerTransform, 15>& outNodes)
     {
         outNodes = {};
-
-        DirectSkeletonBoneSnapshot snapshot{};
-        if (!rootFlattenedFingerReader().capture(skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
-                skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
-                snapshot)) {
+        if (!snapshot.valid) {
             return false;
         }
 
@@ -3923,13 +3922,27 @@ namespace rock::grab_finger_local_transform_runtime
         return true;
     }
 
+    [[nodiscard]] inline bool resolveLiveFingerTransforms(bool isLeft, std::array<LiveFingerTransform, 15>& outNodes)
+    {
+        DirectSkeletonBoneSnapshot snapshot{};
+        if (!rootFlattenedFingerReader().capture(
+                skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
+                skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
+                snapshot)) {
+            outNodes = {};
+            return false;
+        }
+        return resolveFingerTransforms(snapshot, isLeft, outNodes);
+    }
+
     [[nodiscard]] inline bool buildSurfaceCorrectedLocalTransforms(
         bool isLeft,
         const grab_finger_pose_runtime::SolvedGrabFingerPose& fingerPose,
         const frik_visual_authority::FingerLocalTransformOverride& baseline,
         Options options,
         frik_visual_authority::FingerLocalTransformOverride& outTransforms,
-        const char** outFailureReason = nullptr)
+        const char** outFailureReason = nullptr,
+        const DirectSkeletonBoneSnapshot* capturedFingerSnapshot = nullptr)
     {
         if (outFailureReason) {
             *outFailureReason = "none";
@@ -3972,7 +3985,15 @@ namespace rock::grab_finger_local_transform_runtime
 
         std::array<LiveFingerTransform, 15> liveNodes{};
         const bool needsLiveNodes = wantsSurfaceCorrection || wantsAlternateThumbPlaneCorrection;
-        if (needsLiveNodes && !resolveLiveFingerTransforms(isLeft, liveNodes)) {
+        const bool liveNodesResolved =
+            !needsLiveNodes ||
+            (capturedFingerSnapshot && capturedFingerSnapshot->valid ?
+                    resolveFingerTransforms(
+                        *capturedFingerSnapshot,
+                        isLeft,
+                        liveNodes) :
+                    resolveLiveFingerTransforms(isLeft, liveNodes));
+        if (!liveNodesResolved) {
             if (outFailureReason) {
                 *outFailureReason = "live-root-finger-transforms";
             }
@@ -4173,12 +4194,11 @@ namespace rock::grab_finger_local_transform_runtime
 // ---- GrabFingerFrozenMeshRuntime.h ----
 
 /*
- * Regular object grabs and equipped-weapon part grips must not assemble their
- * own subtly different argument lists around the calibrated solver. This
- * shared one-shot boundary owns the authored-open anchor, bounded local BVH,
- * thumb/index surface policy, pad refinement, and object-local surface capture.
- * Callers remain responsible only for presenting the mesh in the final frozen
- * hand/object relation and for caching/publishing the returned pose.
+ * The indexed frozen-mesh base owns the common authored-open anchor, bounded
+ * local BVH, and calibrated sweep solve. Regular loose grabs layer their
+ * thumb/index and pad-probe presentation policy on top. Equipped weapons use
+ * the base directly because their multi-part surfaces and weapon-specific
+ * opposition contract are not equivalent to a freely held object.
  */
 namespace rock::grab_finger_pose_runtime
 {
@@ -4260,7 +4280,7 @@ namespace rock::grab_finger_pose_runtime
     }
 
     template <class TriangleContainer>
-    inline FrozenMeshFingerPoseSolveResult solveFrozenMeshFingerPose(
+    inline FrozenMeshFingerPoseSolveResult solveFrozenMeshFingerPoseBase(
         const TriangleContainer& boundedLocalTriangles,
         const RE::NiTransform& frozenMeshWorldTransform,
         const RE::NiTransform& handWorldTransform,
@@ -4315,6 +4335,34 @@ namespace rock::grab_finger_pose_runtime
             options.captureSweepDebug ? &result.sweepDebug : nullptr,
             FingerPoseMeshRelation::AlreadyAtCommandedSeat);
 
+        return result;
+    }
+
+    template <class TriangleContainer>
+    inline FrozenMeshFingerPoseSolveResult solveFrozenMeshFingerPose(
+        const TriangleContainer& boundedLocalTriangles,
+        const RE::NiTransform& frozenMeshWorldTransform,
+        const RE::NiTransform& handWorldTransform,
+        bool isLeft,
+        const RE::NiPoint3& grabAnchorWorld,
+        const GrabFingerPoseTargetSet& poseTargets,
+        FingerPoseTriangleSpatialIndex& spatialIndex,
+        std::vector<TriangleData>& worldTriangleScratch,
+        const FrozenMeshFingerPoseSolveOptions& options,
+        const root_flattened_finger_skeleton_runtime::Snapshot*
+            capturedFingerSnapshot = nullptr)
+    {
+        auto result = solveFrozenMeshFingerPoseBase(
+            boundedLocalTriangles,
+            frozenMeshWorldTransform,
+            handWorldTransform,
+            isLeft,
+            grabAnchorWorld,
+            poseTargets,
+            spatialIndex,
+            worldTriangleScratch,
+            options,
+            capturedFingerSnapshot);
         useThumbIndexCurveOnlyPose(result.pose);
         if (result.liveFingerSnapshotValid) {
             (void)refineGrabFingerPoseWithPadProbes(

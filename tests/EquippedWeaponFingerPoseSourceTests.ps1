@@ -89,16 +89,17 @@ Require-OrderedText 'src/physics-interaction/weapon/TwoHandedGrip.cpp' @(
     'findClosestGrabPoint\('
 ) 'Equipped physical grip-point selection must remain tied to the contacted part.'
 Require-OrderedText 'src/physics-interaction/weapon/TwoHandedGrip.cpp' @(
-    'resolveLiveFingerSkeletonSnapshot\(',
+    'rootFlattenedTwoHandedReader\(\)\.capture\(',
+    'buildFingerSkeletonSnapshot\(',
     'findSupportGripEvidenceViews\(',
     'selectNearestSupportGripFingerTriangles\(',
     'compositeEvidenceViews',
     'fingerReferenceSet',
     'grab_finger_pose_runtime::\s*kMaxFingerPoseCandidateTriangles',
-    'solveFrozenMeshFingerPose\(',
+    'solveFrozenMeshFingerPoseBase\(',
     'fingerScratch\.localTriangles',
     'fingerScratch\.spatialIndex'
-) 'Equipped physical grips must select one bounded weapon-wide pool against the seated hand and solve it through one shared BVH.'
+) 'Equipped physical grips must capture one hand snapshot, select one bounded weapon-wide pool, and use the indexed frozen base.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'if \(g_rockConfig\.rockGrabMeshFingerPoseEnabled\)[\s\S]{0,2500}selectNearestSupportGripFingerTriangles\(' `
     'Disabling mesh finger posing must skip composite candidate ranking while preserving contacted-part grip selection.'
@@ -125,10 +126,13 @@ Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'solveGrabFingerPoseFromTriangles\(' `
     'Equipped grips must not bypass the shared indexed frozen-mesh boundary.'
 $twoHandedGripText = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp')
-$equippedSharedSolveCount = [regex]::Matches($twoHandedGripText, 'solveFrozenMeshFingerPose\(').Count
-if ($equippedSharedSolveCount -ne 1) {
-    $failures.Add("Equipped weapon finger posing must have exactly one shared solve site at grip capture; found $equippedSharedSolveCount.")
+$equippedBaseSolveCount = [regex]::Matches($twoHandedGripText, 'solveFrozenMeshFingerPoseBase\(').Count
+if ($equippedBaseSolveCount -ne 1) {
+    $failures.Add("Equipped weapon finger posing must have exactly one indexed base solve at grip capture; found $equippedBaseSolveCount.")
 }
+Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'solveFrozenMeshFingerPose\(' `
+    'Equipped weapons must not re-enter the regular loose-grab presentation wrapper.'
 
 # The support hand is minimally surface-aligned and seated while the weapon
 # remains unchanged. Move the evidence by the full inverse hand-seat relation
@@ -138,20 +142,47 @@ Require-OrderedText 'src/physics-interaction/weapon/TwoHandedGrip.cpp' @(
     'grip\.surfaceSeatRotationRadians',
     'virtualizeMeshForSeatedHand\(',
     'virtualizeWorldPointForSeatedHand\(',
-    'solveFrozenMeshFingerPose\('
+    'solveFrozenMeshFingerPoseBase\(',
+    'captureSurfaceAimObjectLocal\('
 ) 'Equipped finger solving must evaluate the final bounded surface-seated hand/weapon relation up front.'
 Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
-    'solveFrozenMeshFingerPose\(',
+    'solveFrozenMeshFingerPoseBase\(',
     'buildFromLocalTriangles\(boundedLocalTriangles\)',
     'resolveCommandedOpenDirectionsWorld\(',
     'FingerPoseMeshRelation::AlreadyAtCommandedSeat',
+    'solveFrozenMeshFingerPose\(',
+    'solveFrozenMeshFingerPoseBase\(',
     'useThumbIndexCurveOnlyPose\(result\.pose\)',
     'refineGrabFingerPoseWithPadProbes\(',
     'captureSurfaceAimObjectLocal\(result\.pose, frozenMeshWorldTransform\)'
-) 'Loose and equipped regular grips must share calibrated anchors, BVH queries, thumb/index policy, pad refinement, and local surface capture.'
+) 'Regular loose grabs must layer their thumb/index and pad policy over the shared indexed frozen base.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
     'solveFrozenMeshFingerPose\(' `
     'Regular loose grabs must use the same shared frozen-mesh solver boundary.'
+Require-OrderedText 'src/physics-interaction/weapon/TwoHandedGrip.cpp' @(
+    'solveFrozenMeshFingerPoseBase\(',
+    'captureSurfaceAimObjectLocal\(',
+    'buildFullHandLocalTransformsForMeshPose\(',
+    'capturedFingerBoneSnapshotValid',
+    '&capturedFingerBoneSnapshot'
+) 'Equipped posing must preserve direct sweep surface evidence and reuse its one captured hand snapshot for exact-local opposition.'
+Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'useThumbIndexCurveOnlyPose\(|refineGrabFingerPoseWithPadProbes\(' `
+    'Equipped weapon posing must not duplicate regular loose-grab presentation policy.'
+Require-OrderedText 'src/physics-interaction/hand/RootFlattenedFingerSkeletonRuntime.cpp' @(
+    'buildFingerSkeletonSnapshot\(',
+    'boneSnapshot\.valid',
+    'findSnapshotBone\(\s*boneSnapshot',
+    'resolveLiveFingerSkeletonSnapshot\(',
+    'buildFingerSkeletonSnapshot\('
+) 'Compact finger landmarks must be derivable from the same direct bone snapshot used by exact-local posing.'
+Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
+    'resolveFingerTransforms\(',
+    'const DirectSkeletonBoneSnapshot& snapshot',
+    'buildSurfaceCorrectedLocalTransforms\(',
+    'const DirectSkeletonBoneSnapshot\* capturedFingerSnapshot',
+    'resolveFingerTransforms\(\s*\*capturedFingerSnapshot'
+) 'Exact-local finger correction must accept the capture transaction snapshot instead of forcing a second scene read.'
 
 # Physical equipped grips accept either five direct lane contacts or one local
 # thumb-index/thumb-pinky containment witness with a stable opposition pose.

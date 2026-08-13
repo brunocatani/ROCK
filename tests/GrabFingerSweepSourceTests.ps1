@@ -122,16 +122,18 @@ Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
     '_grabFingerTriangleIndex'
 ) 'Regular grab commit must solve one object-local endpoint against the frozen target relation.'
 Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
-    'solveFrozenMeshFingerPose\(',
+    'solveFrozenMeshFingerPoseBase\(',
     'rebuildBoundedWorldTriangles\(',
     'buildFromLocalTriangles\(boundedLocalTriangles\)',
     'resolveCommandedOpenDirectionsWorld\(',
     'solveGrabFingerPoseFromTriangles\(',
     'FingerPoseMeshRelation::AlreadyAtCommandedSeat',
+    'solveFrozenMeshFingerPose\(',
+    'solveFrozenMeshFingerPoseBase\(',
     'useThumbIndexCurveOnlyPose\(result\.pose\)',
     'refineGrabFingerPoseWithPadProbes\(',
     'captureSurfaceAimObjectLocal\(result\.pose, frozenMeshWorldTransform\)'
-) 'The shared frozen-mesh boundary must own the indexed solve, calibrated anchors, refinement, and object-local capture.'
+) 'The frozen base must own indexed calibrated solving while the regular-grab wrapper owns its refinement and object-local capture.'
 
 # The index must own a bounded object-local BVH and perform exact closest-point
 # tests with a fixed query stack; no allocation or full candidate scan is
