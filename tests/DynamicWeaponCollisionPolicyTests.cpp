@@ -148,6 +148,21 @@ int main()
         divergenceRecovery.dwellSeconds,
         0.0f);
 
+    {
+        const auto actorDriftBit =
+            rock::collision_layer_policy::layerBitOrZero(
+                rock::collision_layer_policy::FO4_LAYER_BIPED);
+        constexpr std::uint64_t expectedCarMask = 0x001F21417E1B7FFFULL;
+        ok &= rock::collision_layer_policy::dynamicWorldCarManagedLayerMaskMatches(
+            expectedCarMask & ~actorDriftBit,
+            expectedCarMask);
+        ok &= !rock::collision_layer_policy::dynamicWorldCarManagedLayerMaskMatches(
+            expectedCarMask &
+                ~rock::collision_layer_policy::layerBitOrZero(
+                    rock::collision_layer_policy::FO4_LAYER_STATIC),
+            expectedCarMask);
+    }
+
     constexpr auto dynamicWeaponMask = rock::collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask();
     for (std::uint32_t layer = 0; layer < rock::collision_layer_policy::FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++layer) {
         const bool enabled = rock::collision_layer_policy::maskEnablesLayer(dynamicWeaponMask, layer);
@@ -384,6 +399,36 @@ int main()
         rotationDeltaDegrees(reframedHandWeaponLocal, requestedHandWeaponLocal),
         0.0f,
         0.05f);
+
+    const RE::NiTransform reconstructedPresentedWeapon =
+        reconstructPresentedWeaponFromDeferredHand(
+            reframedHand,
+            reframedHandWeaponLocal);
+    ok &= expectPoint(
+        "deferred hand reconstructs matching weapon translation",
+        reconstructedPresentedWeapon.translate,
+        resolvedWeapon.translate);
+    ok &= expectNear(
+        "deferred hand reconstructs matching weapon rotation",
+        rotationDeltaDegrees(reconstructedPresentedWeapon, resolvedWeapon),
+        0.0f,
+        0.05f);
+
+    RE::NiTransform locomotionPresentedHand = reframedHand;
+    locomotionPresentedHand.translate.x += 4.0f;
+    locomotionPresentedHand.translate.y -= 2.0f;
+    const RE::NiTransform locomotionPresentedWeapon =
+        reconstructPresentedWeaponFromDeferredHand(
+            locomotionPresentedHand,
+            reframedHandWeaponLocal);
+    ok &= expectPoint(
+        "deferred weapon follows presented-hand locomotion",
+        locomotionPresentedWeapon.translate,
+        RE::NiPoint3{
+            resolvedWeapon.translate.x + 4.0f,
+            resolvedWeapon.translate.y - 2.0f,
+            resolvedWeapon.translate.z,
+        });
 
     return ok ? 0 : 1;
 }
