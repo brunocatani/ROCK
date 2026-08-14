@@ -109,6 +109,8 @@ namespace rock
                 .advanceLifetime = false,
                 .presentModel = _bridge.hasVisualModel(),
                 .nativeVisual = &immediateVisual,
+                .sourceSchedulerSequence =
+                    bridgeInput.sourceSchedulerSequence,
             });
         }
 
@@ -280,6 +282,8 @@ namespace rock
                 .advanceLifetime = true,
                 .presentModel = _bridge.hasVisualModel(),
                 .nativeVisual = nullptr,
+                .sourceSchedulerSequence =
+                    input.sourceSchedulerSequence,
             });
             if (_activeSeconds >= kTransitionWatchdogSeconds) {
                 finish("expected-identity-timeout", true);
@@ -310,6 +314,8 @@ namespace rock
                 .advanceLifetime = true,
                 .presentModel = false,
                 .nativeVisual = &visual,
+                .sourceSchedulerSequence =
+                    input.sourceSchedulerSequence,
             });
             if (_activeSeconds >= kTransitionWatchdogSeconds) {
                 finish("native-weapon-animation-timeout", true);
@@ -490,6 +496,7 @@ namespace rock
             .advanceLifetime = true,
             .presentModel = decision.presentBridgeModel && !decision.handoffBridgeToNative,
             .nativeVisual = &visual,
+            .sourceSchedulerSequence = input.sourceSchedulerSequence,
         });
         if (_activeSeconds >= kTransitionWatchdogSeconds) {
             finish("watchdog-complete", true);

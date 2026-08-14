@@ -47,6 +47,10 @@ Reject-File 'src/physics-interaction/grab/HeldPlayerSpaceRegistry.h' `
     'The held player-space central writer was removed; do not reintroduce it.'
 Reject-File 'src/physics-interaction/grab/HeldPlayerSpaceRegistry.cpp' `
     'The held player-space central writer was removed; do not reintroduce it.'
+Reject-File 'src/physics-interaction/grab/GrabLocomotionJag.h' `
+    'Held-object actor/controller anchor translation was removed; do not reintroduce it.'
+Reject-File 'tests/GrabLocomotionJagPolicyTests.cpp' `
+    'The deleted locomotion-jag policy must not return as a dormant alternative path.'
 
 $sourceFiles = @(
     'src/RockConfig.h',
@@ -59,7 +63,12 @@ $sourceFiles = @(
     'src/physics-interaction/hand/Hand.h',
     'src/physics-interaction/hand/HandGrab.cpp',
     'src/physics-interaction/grab/GrabHeldObject.h',
-    'src/physics-interaction/native/HavokOffsets.h'
+    'src/physics-interaction/grab/GrabAuthoritySourceClockResampler.h',
+    'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp',
+    'src/physics-interaction/native/CharacterControllerRuntime.h',
+    'src/physics-interaction/native/CharacterControllerRuntime.cpp',
+    'src/physics-interaction/native/HavokOffsets.h',
+    'src/physics-interaction/weapon/EquippedWeaponDropMomentum.h'
 )
 
 foreach ($file in $sourceFiles) {
@@ -73,13 +82,24 @@ foreach ($file in $sourceFiles) {
         'The locomotion stutter probe was removed; the resampler policy tests own that diagnostic purpose.'
     Reject-Text $file 'ApplyMovementDelta' `
         'The ApplyMovementDelta hook was removed with the aligned-room correction and probe.'
+    Reject-Text $file 'GrabLocomotionJag|grabJag|jagCorrection|jagActor|jagController' `
+        'Held-object translation from player actor/controller anchor deltas was removed.'
+    Reject-Text $file 'GrabRoomVelocityFeedForward|applyRoomVelocityFeedForward|roomFeedForward|tryGetPlayerLocomotionVelocityRawGameUnits' `
+        'Player-controller velocity must never be added ahead of the queued grab target.'
+    Reject-Text $file 'tryGetPlayerRoomAnchorPositionGameUnits' `
+        'The player controller room-anchor reader had no owner after compensation removal and must stay absent.'
+    Reject-Text $file 'playerVelocityHavok|applyHeldMotionCompensation|HeldMotionCompensationResult' `
+        'Release composition and body sampling must not retain dormant player-compensation APIs.'
 }
 
 # Packaged INIs must not carry the removed keys back.
 foreach ($ini in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
-    Reject-Text $ini 'GrabPlayerSpace|GrabLocomotionAuthority|GrabAlignedRoom|LocomotionStutterProbe|GrabVelocityDamping|GrabResidualVelocityDamping' `
+    Reject-Text $ini 'GrabPlayerSpace|GrabLocomotionAuthority|GrabAlignedRoom|LocomotionStutterProbe|GrabVelocityDamping|GrabResidualVelocityDamping|GrabRoomVelocityFeedForward|GrabLocomotionJag' `
         'Removed compensation/probe settings must not reappear in packaged INIs.'
 }
+
+Reject-Text 'CMakeLists.txt' 'GrabLocomotionJagPolicyTests' `
+    'The removed jag policy target must not remain in the normal test graph.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'LocomotionCompensationRemovalSourceTests failed:' -ForegroundColor Red

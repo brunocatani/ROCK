@@ -462,8 +462,8 @@ int main()
         contaminatedRootHandWorld.translate = RE::NiPoint3{ 400.0f, -250.0f, 90.0f };
         const auto isolatedFrame = resolver.resolve(
             false,
-            true,
-            contaminatedRootHandWorld,
+            false,
+            RE::NiTransform{},
             skeleton,
             skeleton,
             true,
@@ -520,8 +520,8 @@ int main()
         resolver.reset();
         const auto uncalibratedPersistentFrame = resolver.resolve(
             false,
-            true,
-            contaminatedRootHandWorld,
+            false,
+            RE::NiTransform{},
             skeleton,
             skeleton,
             true,

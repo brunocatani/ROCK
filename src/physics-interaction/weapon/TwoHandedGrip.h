@@ -529,6 +529,7 @@ namespace rock
             const WeaponInteractionContact& rightWeaponContact,
             const EquippedWeaponGripFrameInput& frameInput,
             float dt,
+            std::uint64_t sourceSchedulerSequence,
             std::uint64_t currentWeaponGenerationKey,
             std::uint64_t currentEquippedWeaponOwnershipKey,
             const WeaponCollision& weaponCollision,
@@ -681,6 +682,13 @@ namespace rock
         void refreshWeaponCollisionHandAuthorityBeforeFrik(
             const RE::NiTransform& firingWandWorld,
             bool firingWandValid,
+            std::uint64_t currentWeaponGenerationKey,
+            bool firingHandIsLeft,
+            std::uint64_t currentSchedulerSequence);
+
+        void refreshRetainedHandVisualAuthoritiesBeforeFrik(
+            const EquippedWeaponScopeHandDriverFrame& leftHandDriver,
+            const EquippedWeaponScopeHandDriverFrame& rightHandDriver,
             std::uint64_t currentWeaponGenerationKey,
             bool firingHandIsLeft,
             std::uint64_t currentSchedulerSequence);
@@ -1605,6 +1613,7 @@ namespace rock
         // PhysicsInteraction before ROCK publishes any hand visuals.
         std::array<EquippedWeaponScopeHandDriverFrame, 2>
             _currentHandDriverFrames{};
+        std::uint64_t _currentSourceSchedulerSequence = 0;
         bool _scopeMenuOpenThisFrame{ false };
         // True only for the first visible frame after ScopeMenu. Role clears
         // on this edge use the same deferred transaction as hidden-frame
@@ -1719,6 +1728,36 @@ namespace rock
         };
         std::array<PreFrikWeaponHandAuthority, 2>
             _preFrikWeaponHandAuthority{};
+        enum class RetainedHandAuthorityKind : std::uint8_t
+        {
+            PrimaryGrip,
+            SupportGrip,
+            GunstockAlignment,
+            Return,
+            Count,
+        };
+        struct PreFrikRetainedHandAuthority
+        {
+            RE::NiTransform driverToHandLocal{};
+            std::uint64_t weaponGenerationKey = 0;
+            std::uint64_t sourceSchedulerSequence = 0;
+            bool firingHandIsLeft = false;
+            bool valid = false;
+        };
+        static constexpr std::size_t kRetainedHandAuthorityKindCount =
+            static_cast<std::size_t>(RetainedHandAuthorityKind::Count);
+        std::array<
+            std::array<PreFrikRetainedHandAuthority,
+                kRetainedHandAuthorityKindCount>,
+            2>
+            _preFrikRetainedHandAuthorities{};
+        void recordPreFrikRetainedHandAuthority(
+            RetainedHandAuthorityKind kind,
+            bool isLeft,
+            const RE::NiTransform& targetWorld);
+        void clearPreFrikRetainedHandAuthority(
+            RetainedHandAuthorityKind kind,
+            bool isLeft);
         // Captured at the frame boundary. Because ROCK runs after FRIK, this
         // identifies root/weapon poses that include collision presentation.
         std::array<bool, 2> _weaponCollisionHandPresentationFromPreviousFrame{};

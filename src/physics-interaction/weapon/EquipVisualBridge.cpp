@@ -7,6 +7,7 @@
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/grab/FrikWeaponOffsetCache.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
+#include "physics-interaction/visual/PreFrikHandAuthorityPolicy.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/EquipVisualBridgePolicy.h"
 #include "physics-interaction/weapon/LooseWeaponGripZone.h"
@@ -249,11 +250,10 @@ namespace rock
                     model->world,
                     _firingHandWeaponLocal);
                 if (!isFiniteTransform(handWorld) ||
-                    !frik_visual_authority::applyExternalHandWorldTransform(
-                        kHandPoseHandoffTag,
-                        handFromBool(_isLeftHand),
+                    !publishHandWorldHandoff(
+                        model,
                         handWorld,
-                        kHandPoseHandoffPriority)) {
+                        input.sourceSchedulerSequence)) {
                     clearHandPoseHandoff("initial-hand-transform-publish-failed", false, false);
                 }
             }
@@ -408,11 +408,10 @@ namespace rock
                         input.nativeVisual->weaponRoot->world,
                         _firingHandWeaponLocal);
                     if (!isFiniteTransform(handWorld) ||
-                        !frik_visual_authority::applyExternalHandWorldTransform(
-                            kHandPoseHandoffTag,
-                            handFromBool(_isLeftHand),
+                        !publishHandWorldHandoff(
+                            input.nativeVisual->weaponRoot,
                             handWorld,
-                            kHandPoseHandoffPriority)) {
+                            input.sourceSchedulerSequence)) {
                         clearHandPoseHandoff("native-handoff-hand-transform-failed", true, false);
                     }
                 }
@@ -500,11 +499,10 @@ namespace rock
                     handoffWeaponWorld,
                     _firingHandWeaponLocal);
                 if (!isFiniteTransform(handWorld) ||
-                    !frik_visual_authority::applyExternalHandWorldTransform(
-                        kHandPoseHandoffTag,
-                        handFromBool(_isLeftHand),
+                    !publishHandWorldHandoff(
+                        model,
                         handWorld,
-                        kHandPoseHandoffPriority)) {
+                        input.sourceSchedulerSequence)) {
                     clearHandPoseHandoff("hand-transform-publish-failed", true, false);
                 }
             }
@@ -514,6 +512,86 @@ namespace rock
     bool EquipVisualBridge::ownsNativeInstanceCull(const RE::NiAVObject* node) const noexcept
     {
         return node && _culledNativeInstance.get() == node;
+    }
+
+    bool EquipVisualBridge::publishHandWorldHandoff(
+        RE::NiAVObject* anchor,
+        const RE::NiTransform& handWorld,
+        const std::uint64_t sourceSchedulerSequence)
+    {
+        if (!anchor ||
+            sourceSchedulerSequence == 0 ||
+            !isFiniteTransform(anchor->world) ||
+            !isFiniteTransform(handWorld) ||
+            !frik_visual_authority::applyExternalHandWorldTransform(
+                kHandPoseHandoffTag,
+                handFromBool(_isLeftHand),
+                handWorld,
+                kHandPoseHandoffPriority)) {
+            _preFrikHandWorldAnchor.reset();
+            _preFrikAnchorToHandLocal = {};
+            _preFrikSourceSchedulerSequence = 0;
+            _preFrikHandWorldAuthorityValid = false;
+            return false;
+        }
+
+        _preFrikHandWorldAnchor.reset(anchor);
+        _preFrikAnchorToHandLocal =
+            prefrik_hand_authority_policy::captureDriverToTargetLocal(
+                anchor->world,
+                handWorld);
+        _preFrikSourceSchedulerSequence = sourceSchedulerSequence;
+        _preFrikHandWorldAuthorityValid =
+            prefrik_hand_authority_policy::isUsableTransform(
+                _preFrikAnchorToHandLocal);
+        return _preFrikHandWorldAuthorityValid;
+    }
+
+    void EquipVisualBridge::refreshHandVisualAuthorityBeforeFrik(
+        const std::uint64_t schedulerSequence)
+    {
+        const auto hand = handFromBool(_isLeftHand);
+        if (!frik_visual_authority::hasPublishedExternalHandWorldTransform(
+                kHandPoseHandoffTag,
+                hand)) {
+            _preFrikHandWorldAnchor.reset();
+            _preFrikAnchorToHandLocal = {};
+            _preFrikSourceSchedulerSequence = 0;
+            _preFrikHandWorldAuthorityValid = false;
+            return;
+        }
+
+        auto* anchor = _preFrikHandWorldAnchor.get();
+        const bool sourceOwned =
+            _active &&
+            _handPoseHandoffActive &&
+            _preFrikHandWorldAuthorityValid &&
+            anchor &&
+            prefrik_hand_authority_policy::isImmediateSuccessor(
+                _preFrikSourceSchedulerSequence,
+                schedulerSequence) &&
+            prefrik_hand_authority_policy::isUsableTransform(anchor->world);
+        const RE::NiTransform refreshedHandWorld = sourceOwned ?
+            prefrik_hand_authority_policy::reconstructTargetWorld(
+                anchor->world,
+                _preFrikAnchorToHandLocal) :
+            RE::NiTransform{};
+        if (!sourceOwned ||
+            !prefrik_hand_authority_policy::isUsableTransform(
+                refreshedHandWorld) ||
+            !frik_visual_authority::applyExternalHandWorldTransform(
+                kHandPoseHandoffTag,
+                hand,
+                refreshedHandWorld,
+                kHandPoseHandoffPriority)) {
+            (void)frik_visual_authority::clearExternalHandWorldTransform(
+                kHandPoseHandoffTag,
+                hand);
+            _preFrikHandWorldAnchor.reset();
+            _preFrikAnchorToHandLocal = {};
+            _preFrikSourceSchedulerSequence = 0;
+            _preFrikHandWorldAuthorityValid = false;
+        }
     }
 
     void EquipVisualBridge::synchronizeNativeInstanceCull(
@@ -583,6 +661,15 @@ namespace rock
     void EquipVisualBridge::clearModel(const char* reason, const bool detachFromParent)
     {
         auto* model = _model.get();
+        if (model && _preFrikHandWorldAnchor.get() == model) {
+            (void)frik_visual_authority::clearExternalHandWorldTransform(
+                kHandPoseHandoffTag,
+                handFromBool(_isLeftHand));
+            _preFrikHandWorldAnchor.reset();
+            _preFrikAnchorToHandLocal = {};
+            _preFrikSourceSchedulerSequence = 0;
+            _preFrikHandWorldAuthorityValid = false;
+        }
         if (detachFromParent && model && _parent && model->parent == _parent) {
             RE::NiPointer<RE::NiAVObject> detached;
             _parent->DetachChild(model, detached);
@@ -622,6 +709,10 @@ namespace rock
 
         _handPoseHandoffActive = false;
         _handPoseBlockEngaged = false;
+        _preFrikHandWorldAnchor.reset();
+        _preFrikAnchorToHandLocal = {};
+        _preFrikSourceSchedulerSequence = 0;
+        _preFrikHandWorldAuthorityValid = false;
         if (discardPayload) {
             _handoffFingerLocalTransforms = {};
             _handoffFingerLocalTransformMask = 0;

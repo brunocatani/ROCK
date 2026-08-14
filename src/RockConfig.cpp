@@ -457,11 +457,6 @@ namespace rock
         rockGrabPhysicsRateForceScaleExponent = kDefaultGrabPhysicsRateForceScaleExponent;
         rockGrabPhysicsRateMinForceScale = kDefaultGrabPhysicsRateMinForceScale;
         rockGrabPhysicsRateMaxForceScale = kDefaultGrabPhysicsRateMaxForceScale;
-        rockGrabRoomVelocityFeedForward = false;
-        rockGrabLocomotionJagCorrection = false;
-        rockGrabLocomotionJagMaxCorrectionGameUnits = 2.0f;
-        rockGrabLocomotionJagGain = 1.0f;
-        rockGrabLocomotionJagAnchor = 0;
         rockGrabSmoothVelocityDrive = false;
         rockGrabSmoothVelocityCorrectorGain = 0.2f;
 
@@ -1789,28 +1784,6 @@ namespace rock
             100.0f);
         rockGrabPhysicsRateForceScalingEnabled =
             ini.GetBoolValue(SECTION, "bGrabPhysicsRateForceScalingEnabled", rockGrabPhysicsRateForceScalingEnabled);
-        rockGrabRoomVelocityFeedForward =
-            ini.GetBoolValue(SECTION, "bGrabRoomVelocityFeedForward", rockGrabRoomVelocityFeedForward);
-        rockGrabLocomotionJagCorrection =
-            ini.GetBoolValue(SECTION, "bGrabLocomotionJagCorrection", rockGrabLocomotionJagCorrection);
-        rockGrabLocomotionJagMaxCorrectionGameUnits = readClampedFloat(ini,
-            SECTION,
-            "fGrabLocomotionJagMaxCorrectionGameUnits",
-            rockGrabLocomotionJagMaxCorrectionGameUnits,
-            2.0f,
-            0.0f,
-            35.0f);
-        rockGrabLocomotionJagGain = readClampedFloat(ini,
-            SECTION,
-            "fGrabLocomotionJagGain",
-            rockGrabLocomotionJagGain,
-            1.0f,
-            0.0f,
-            1.0f);
-        rockGrabLocomotionJagAnchor = static_cast<std::uint32_t>(std::clamp(
-            ini.GetLongValue(SECTION, "iGrabLocomotionJagAnchor", static_cast<long>(rockGrabLocomotionJagAnchor)),
-            0L,
-            1L));
         rockGrabSmoothVelocityDrive =
             ini.GetBoolValue(SECTION, "bGrabSmoothVelocityDrive", rockGrabSmoothVelocityDrive);
         rockGrabSmoothVelocityCorrectorGain = readClampedFloat(ini,

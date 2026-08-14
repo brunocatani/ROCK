@@ -1682,19 +1682,27 @@ namespace rock
             isLeft ?
             f4vr::getLeftHandNode() :
             f4vr::getRightHandNode();
-        const bool persistentWorldAuthorityPublished =
-            frik_visual_authority::hasPublishedExternalHandWorldTransform(
-                frik_visual_authority::handFromBool(isLeft));
         const std::size_t handIndex = isLeft ? 0u : 1u;
-        if (_persistentFrikHandInputIsolationActive[handIndex] !=
-            persistentWorldAuthorityPublished) {
-            _persistentFrikHandInputIsolationActive[handIndex] =
-                persistentWorldAuthorityPublished;
-            ROCK_LOG_INFO(Hand,
-                "{} collision-isolated controller input {} for persistent FRIK V2 hand authority",
-                isLeft ? "Left" : "Right",
-                persistentWorldAuthorityPublished ? "engaged" : "released");
+        if (_currentPreFrikSchedulerSequence == 0 ||
+            _persistentFrikHandInputIsolationSequence[handIndex] !=
+                _currentPreFrikSchedulerSequence) {
+            _persistentFrikHandInputIsolationSequence[handIndex] =
+                _currentPreFrikSchedulerSequence;
+            const bool sampledPersistentWorldAuthority =
+                frik_visual_authority::hasPublishedExternalHandWorldTransform(
+                    frik_visual_authority::handFromBool(isLeft));
+            if (_persistentFrikHandInputIsolationActive[handIndex] !=
+                sampledPersistentWorldAuthority) {
+                _persistentFrikHandInputIsolationActive[handIndex] =
+                    sampledPersistentWorldAuthority;
+                ROCK_LOG_INFO(Hand,
+                    "{} collision-isolated controller input {} for persistent FRIK V2 hand authority",
+                    isLeft ? "Left" : "Right",
+                    sampledPersistentWorldAuthority ? "engaged" : "released");
+            }
         }
+        const bool persistentWorldAuthorityPublished =
+            _persistentFrikHandInputIsolationActive[handIndex];
         const HandFrame frame = _handFrameResolver.resolve(
             isLeft,
             cacheReady,
@@ -1793,6 +1801,17 @@ namespace rock
                 leftWandWorld,
                 leftRawHandWorld);
 
+        _rightHand.refreshGrabVisualAuthorityBeforeFrik(
+            schedulerSequence,
+            rightRawHandValid,
+            rightRawHandWorld);
+        _leftHand.refreshGrabVisualAuthorityBeforeFrik(
+            schedulerSequence,
+            leftRawHandValid,
+            leftRawHandWorld);
+        _equippedWeaponTransition.refreshHandVisualAuthorityBeforeFrik(
+            schedulerSequence);
+
         _dynamicHandCollision.refreshContactVisualAuthorityBeforeFrik(
             schedulerSequence,
             rightRawHandValid,
@@ -1802,7 +1821,33 @@ namespace rock
             g_rockConfig.
                 rockHandCollisionDynamicDivergenceTeleportGameUnits);
 
+        const auto captureWeaponHandDriver = [](RE::NiNode* node) {
+            EquippedWeaponScopeHandDriverFrame result{};
+            if (node && finiteNiTransform(node->world)) {
+                result.valid = true;
+                result.world = node->world;
+            }
+            return result;
+        };
+        auto* playerNodes = f4vr::getPlayerNodes();
+        const EquippedWeaponScopeHandDriverFrame leftWeaponHandDriver =
+            captureWeaponHandDriver(
+                playerNodes ?
+                    playerNodes->SecondaryMeleeWeaponOffsetNode2 :
+                    nullptr);
+        const EquippedWeaponScopeHandDriverFrame rightWeaponHandDriver =
+            captureWeaponHandDriver(
+                playerNodes ?
+                    playerNodes->primaryWeaponOffsetNOde :
+                    nullptr);
+
         const bool firingHandIsLeft = _twoHandedGrip.isFiringHandLeft();
+        _twoHandedGrip.refreshRetainedHandVisualAuthoritiesBeforeFrik(
+            leftWeaponHandDriver,
+            rightWeaponHandDriver,
+            _weaponCollision.getCurrentWeaponGenerationKey(),
+            firingHandIsLeft,
+            schedulerSequence);
         _twoHandedGrip.refreshWeaponCollisionHandAuthorityBeforeFrik(
             firingHandIsLeft ? leftWandWorld : rightWandWorld,
             firingHandIsLeft ? leftWandValid : rightWandValid,
@@ -2413,6 +2458,8 @@ namespace rock
                 .shoulderSheathEquipIndex =
                     _equippedWeaponShoulderSheath.equipIndex,
                 .nativeWeaponAnimationActive = nativeWeaponAnimationActive,
+                .sourceSchedulerSequence =
+                    _currentPreFrikSchedulerSequence,
             });
     }
 
@@ -3652,6 +3699,7 @@ namespace rock
                 rightWeaponContact,
                 gripFrameInput,
                 frame.deltaSeconds,
+                _currentPreFrikSchedulerSequence,
                 currentWeaponGenerationKey,
                 currentEquippedWeaponOwnershipKey,
                 _weaponCollision,
@@ -4155,14 +4203,6 @@ namespace rock
         }
         refreshGeneratedBodyContactRegistry();
         updateSelection(frame);
-
-        /*
-         * ROCK applies player/room-space compensation before held-object grab
-         * constraints are updated. That keeps the constraint target from solving
-         * against a stale body velocity and removes the apparent held-object
-         * teleport/stutter caused by compensating after the grab loop has already
-         * written the frame target.
-         */
 
         updateGrabInput(frame);
         auto selectedCloseCarTarget = [&](const Hand& hand, const HandFrameInput& handInput) {
@@ -6249,6 +6289,7 @@ namespace rock
         _currentPreFrikSchedulerSequence = 0;
         collision_isolated_hand_frame_runtime::reset();
         _persistentFrikHandInputIsolationActive = {};
+        _persistentFrikHandInputIsolationSequence = {};
         _handCacheResolveLogCounter = 0;
         _paritySummaryCounter = 0;
         _parityEnabledLogged = false;
@@ -8348,7 +8389,6 @@ namespace rock
         // Histories are world-space hand velocities; no player-space addend exists anymore.
         const auto release = equipped_weapon_drop_momentum::composeReleaseVelocity(
             history,
-            RE::NiPoint3{},
             equipped_weapon_drop_momentum::ReleaseVelocitySettings{
                 .controllerDerivedEnabled = g_rockConfig.rockGrabControllerDerivedThrowVelocityEnabled,
                 .throwMultiplier = g_rockConfig.rockThrowVelocityMultiplier,
@@ -11087,6 +11127,8 @@ namespace rock
                             .weapon = equipResult.weapon,
                             .hasFiringHandWeaponLocal = pendingGripStart.hasFiringHandWeaponLocal,
                             .firingHandWeaponLocal = pendingGripStart.firingHandWeaponLocal,
+                            .sourceSchedulerSequence =
+                                _currentPreFrikSchedulerSequence,
                             .timeoutSeconds = _equippedWeaponHandlingSettings.equipVisualBridgeTimeoutSeconds,
                             .blendSeconds = _equippedWeaponHandlingSettings.equipVisualBridgeBlendSeconds,
                         });
@@ -11415,6 +11457,7 @@ namespace rock
                         g_rockConfig.rockGrabForceFadeInTime,
                         g_rockConfig.rockGrabTauMin,
                         &_bodyBoneColliders,
+                        _currentPreFrikSchedulerSequence,
                         makeGrabReleaseContext(hand, isLeft));
                     if (heldRef && !hand.isHolding()) {
                         releaseObject(heldRef, claimOwnerForHand(isLeft));
@@ -11731,7 +11774,10 @@ namespace rock
                     "hand-disabled" :
                     "touch-grab-active");
         } else {
-            _rightHand.updateGrabVisualReturn(frame.right.rawHandWorld, frame.deltaSeconds);
+            _rightHand.updateGrabVisualReturn(
+                frame.right.rawHandWorld,
+                frame.deltaSeconds,
+                _currentPreFrikSchedulerSequence);
         }
         if (_leftHand.isHolding() ||
             _touchGrabRuntime.isHandActive(true)) {
@@ -11748,7 +11794,10 @@ namespace rock
                     "hand-disabled" :
                     "touch-grab-active");
         } else {
-            _leftHand.updateGrabVisualReturn(frame.left.rawHandWorld, frame.deltaSeconds);
+            _leftHand.updateGrabVisualReturn(
+                frame.left.rawHandWorld,
+                frame.deltaSeconds,
+                _currentPreFrikSchedulerSequence);
         }
     }
 

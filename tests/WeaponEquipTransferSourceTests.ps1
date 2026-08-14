@@ -149,8 +149,11 @@ Require-Text 'src/physics-interaction/weapon/EquippedWeaponTransitionCoordinator
     'Menu, compatibility, and visual-authority mutation blocks must still advance the hard bridge presentation lease.'
 
 Require-Text 'src/physics-interaction/weapon/EquipVisualBridge.cpp' `
-    'clearModel\("presentation-ended"[\s\S]{0,700}native-handoff-republish-failed[\s\S]{0,700}applyExternalHandWorldTransform' `
+    'clearModel\("presentation-ended"[\s\S]{0,700}native-handoff-republish-failed[\s\S]{0,900}publishHandWorldHandoff[\s\S]*EquipVisualBridge::publishHandWorldHandoff[\s\S]{0,900}applyExternalHandWorldTransform' `
     'Visual handoff must release the phantom while keeping the authored finger and hand-transform payload alive until the equipped owner acquires it or the absolute lease expires.'
+Require-Text 'src/physics-interaction/weapon/EquipVisualBridge.cpp' `
+    'void EquipVisualBridge::clearModel[\s\S]{0,500}_preFrikHandWorldAnchor\.get\(\)\s*==\s*model[\s\S]{0,500}_preFrikHandWorldAnchor\.reset\(\)[\s\S]{0,1000}_model\.reset\(\)' `
+    'The pre-FRIK anchor lease must release the loose phantom before clearModel drops its primary reference.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'const bool nativeWeaponAnimationActive\s*=[\s\S]*?currentNativeAnimationAuthorityFlagsV1\(\)[\s\S]*?GUN_STATE::kReloading[\s\S]*?\.nativeWeaponAnimationActive' `

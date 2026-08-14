@@ -447,6 +447,7 @@ namespace rock
         HandBoneCache _handBoneCache;
         HandFrameResolver _handFrameResolver;
         std::array<bool, 2> _persistentFrikHandInputIsolationActive{};
+        std::array<std::uint64_t, 2> _persistentFrikHandInputIsolationSequence{};
         std::uint64_t _currentPreFrikSchedulerSequence = 0;
 
         Hand _rightHand{ false };

@@ -719,7 +719,6 @@ namespace rock::grab_held_response
         bool hasTangentialVelocity = false;
         Vec3 handLocalVelocityHavok{};
         Vec3 objectLocalVelocityHavok{};
-        Vec3 playerVelocityHavok{};
         Vec3 tangentialVelocityHavok{};
         float objectVelocityBlend = 0.35f;
         float tangentialVelocityScale = 1.0f;
@@ -755,7 +754,7 @@ namespace rock::grab_held_response
 
         localVelocity = clampMagnitude(localVelocity, input.maxVelocityHavok);
         const float multiplier = safePositive(input.throwMultiplier, 1.0f);
-        return clampMagnitude(add(input.playerVelocityHavok, scale(localVelocity, multiplier)), input.maxVelocityHavok);
+        return clampMagnitude(scale(localVelocity, multiplier), input.maxVelocityHavok);
     }
 
     template <class Vec3>

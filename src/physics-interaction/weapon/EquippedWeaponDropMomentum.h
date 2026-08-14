@@ -21,9 +21,9 @@ namespace rock::equipped_weapon_drop_momentum
     inline constexpr std::size_t kHandMotionHistoryCapacity = 8;
 
     /*
-     * Ring buffer of player-space-compensated hand motion samples in Havok
-     * units. Mirrors the held-object throw history: player-space warps must
-     * reset the history instead of pushing a warped sample.
+     * Ring buffer of world-space hand motion samples in Havok units. Mirrors
+     * the held-object throw history and carries only measured hand motion;
+     * player locomotion is never added to a release.
      */
     template <class Vec3>
     struct HandMotionHistory
@@ -125,7 +125,6 @@ namespace rock::equipped_weapon_drop_momentum
     template <class Vec3>
     [[nodiscard]] inline ReleaseVelocity<Vec3> composeReleaseVelocity(
         const HandMotionHistory<Vec3>& history,
-        const Vec3& playerVelocityHavok,
         const ReleaseVelocitySettings& settings)
     {
         ReleaseVelocity<Vec3> release{};
@@ -156,7 +155,6 @@ namespace rock::equipped_weapon_drop_momentum
             .controllerDerivedEnabled = settings.controllerDerivedEnabled,
             .hasHandLocalVelocity = true,
             .handLocalVelocityHavok = held_object_physics_math::maxMagnitudeVelocity(orderedLinear, validCount),
-            .playerVelocityHavok = playerVelocityHavok,
             .throwMultiplier = settings.throwMultiplier,
             .maxVelocityHavok = settings.maxLinearVelocityHavok,
         });

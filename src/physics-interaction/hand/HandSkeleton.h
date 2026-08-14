@@ -477,15 +477,16 @@ namespace rock
             state.persistentWorldAuthorityPublishedLastResolve =
                 persistentWorldAuthorityPublished;
 
-            if (!hasRootFlattenedHand ||
-                !sourceSkeleton ||
-                !sourceBoneTree ||
-                !collision_isolated_hand_frame_math::isUsableTransform(
-                    rootFlattenedHandWorld)) {
+            if (!sourceSkeleton || !sourceBoneTree) {
                 return {};
             }
 
             if (!persistentWorldAuthorityPublished) {
+                if (!hasRootFlattenedHand ||
+                    !collision_isolated_hand_frame_math::isUsableTransform(
+                        rootFlattenedHandWorld)) {
+                    return {};
+                }
                 if (persistentAuthorityFell) {
                     state.candidateDriverToHandLocal = {};
                     state.coherentCandidateSamples = 0;

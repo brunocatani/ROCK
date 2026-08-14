@@ -22,7 +22,6 @@
 #include "physics-interaction/grab/GrabPinchPocket.h"
 #include "physics-interaction/grab/GrabThreePhase.h"
 #include "physics-interaction/grab/GrabHeldObject.h"
-#include "physics-interaction/grab/GrabLocomotionJag.h"
 #include "physics-interaction/grab/MeshGrab.h"
 #include "physics-interaction/object/MechanicalConnectedBodySet.h"
 #include "physics-interaction/object/CarInteractionPolicy.h"
@@ -33,12 +32,12 @@
 #include "physics-interaction/object/SkinnedBodyResolver.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
+#include "physics-interaction/visual/PreFrikHandAuthorityPolicy.h"
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/hand/HandVisual.h"
 #include "physics-interaction/core/PhysicsHooks.h"
 #include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
-#include "physics-interaction/native/CharacterControllerRuntime.h"
 #include "physics-interaction/native/PhysicsShapeCast.h"
 #include "physics-interaction/native/PhysicsRecursiveWrappers.h"
 #include "physics-interaction/native/PhysicsUtils.h"
@@ -4195,18 +4194,18 @@ namespace rock
             ROCK_LOG_INFO(Hand, "{} ROCK GRAB NODE INFO END", handName);
         }
 
-        struct HeldMotionCompensationResult
+        struct HeldObjectMotionSample
         {
             RE::NiPoint3 primaryLocalLinearVelocity{};
             bool hasPrimaryVelocity = false;
         };
 
-        HeldMotionCompensationResult applyHeldMotionCompensation(RE::hknpWorld* world,
+        HeldObjectMotionSample sampleHeldObjectMotion(RE::hknpWorld* world,
             RE::hknpBodyId primaryBodyId,
             const std::vector<std::uint32_t>& heldBodyIds,
             bool includeConnectedBodies = true)
         {
-            HeldMotionCompensationResult result{};
+            HeldObjectMotionSample result{};
             if (!world) {
                 return result;
             }
@@ -4780,7 +4779,10 @@ namespace rock
             _grabVisualReturn.start.translate.z);
     }
 
-    void Hand::updateGrabVisualReturn(const RE::NiTransform& trackedHandWorld, float deltaTime)
+    void Hand::updateGrabVisualReturn(
+        const RE::NiTransform& trackedHandWorld,
+        float deltaTime,
+        const std::uint64_t sourceSchedulerSequence)
     {
         if (!_grabVisualReturn.active) {
             return;
@@ -4825,6 +4827,17 @@ namespace rock
             return;
         }
 
+        _preFrikGrabReturnAuthority.rawHandToTargetLocal =
+            prefrik_hand_authority_policy::captureDriverToTargetLocal(
+                trackedHandWorld,
+                result.transform);
+        _preFrikGrabReturnAuthority.sourceSchedulerSequence =
+            sourceSchedulerSequence;
+        _preFrikGrabReturnAuthority.valid =
+            sourceSchedulerSequence != 0 &&
+            prefrik_hand_authority_policy::isUsableTransform(
+                _preFrikGrabReturnAuthority.rawHandToTargetLocal);
+
         if (!result.reachedTarget) {
             return;
         }
@@ -4832,6 +4845,7 @@ namespace rock
         const float completedDuration = _grabVisualReturn.durationSeconds;
         clearGrabReturnHandWorldTransform(_isLeft);
         _grabVisualReturn.clear();
+        _preFrikGrabReturnAuthority.clear();
         ROCK_LOG_DEBUG(Hand, "{} hand visual return completed duration={:.3f}s", handName(), completedDuration);
     }
 
@@ -4840,8 +4854,88 @@ namespace rock
         const bool wasActive = _grabVisualReturn.active;
         clearGrabReturnHandWorldTransform(_isLeft);
         _grabVisualReturn.clear();
+        _preFrikGrabReturnAuthority.clear();
         if (wasActive && logCancellation) {
             ROCK_LOG_DEBUG(Hand, "{} hand visual return cancelled reason={}", handName(), reason ? reason : "unknown");
+        }
+    }
+
+    void Hand::refreshGrabVisualAuthorityBeforeFrik(
+        const std::uint64_t schedulerSequence,
+        const bool rawHandValid,
+        const RE::NiTransform& rawHandWorld)
+    {
+        const auto physicalHand = handFromBool(_isLeft);
+        const bool grabTagPublished =
+            frik_visual_authority::hasPublishedExternalHandWorldTransform(
+                GRAB_EXTERNAL_HAND_TAG,
+                physicalHand);
+        if (!grabTagPublished) {
+            _preFrikGrabVisualAuthority.clear();
+        } else {
+            const bool sourceOwned =
+                _preFrikGrabVisualAuthority.valid &&
+                prefrik_hand_authority_policy::isImmediateSuccessor(
+                    _preFrikGrabVisualAuthority.sourceSchedulerSequence,
+                    schedulerSequence) &&
+                isHolding() &&
+                _savedObjectState.bodyId.value ==
+                    _preFrikGrabVisualAuthority.heldBodyId &&
+                _activeConstraint.isValid() &&
+                _activeConstraint.constraintId ==
+                    _preFrikGrabVisualAuthority.constraintId &&
+                _preFrikGrabVisualAuthority.heldNode != nullptr;
+            const RE::NiTransform heldNodeWorld = sourceOwned ?
+                _preFrikGrabVisualAuthority.heldNode->world :
+                RE::NiTransform{};
+            const RE::NiTransform refreshedHandWorld = sourceOwned ?
+                prefrik_hand_authority_policy::reconstructTargetWorld(
+                    heldNodeWorld,
+                    _preFrikGrabVisualAuthority.heldNodeToHandLocal) :
+                RE::NiTransform{};
+            if (!sourceOwned ||
+                !prefrik_hand_authority_policy::isUsableTransform(
+                    heldNodeWorld) ||
+                !prefrik_hand_authority_policy::isUsableTransform(
+                    refreshedHandWorld) ||
+                !applyGrabExternalHandWorldTransform(
+                    _isLeft,
+                    refreshedHandWorld)) {
+                clearGrabExternalHandWorldTransform(_isLeft);
+                _preFrikGrabVisualAuthority.clear();
+            }
+        }
+
+        const bool returnTagPublished =
+            frik_visual_authority::hasPublishedExternalHandWorldTransform(
+                GRAB_RETURN_HAND_TAG,
+                physicalHand);
+        if (!returnTagPublished) {
+            _preFrikGrabReturnAuthority.clear();
+            return;
+        }
+
+        const bool returnSourceOwned =
+            _preFrikGrabReturnAuthority.valid &&
+            _grabVisualReturn.active &&
+            rawHandValid &&
+            prefrik_hand_authority_policy::isImmediateSuccessor(
+                _preFrikGrabReturnAuthority.sourceSchedulerSequence,
+                schedulerSequence) &&
+            prefrik_hand_authority_policy::isUsableTransform(rawHandWorld);
+        const RE::NiTransform refreshedReturnWorld = returnSourceOwned ?
+            prefrik_hand_authority_policy::reconstructTargetWorld(
+                rawHandWorld,
+                _preFrikGrabReturnAuthority.rawHandToTargetLocal) :
+            RE::NiTransform{};
+        if (!returnSourceOwned ||
+            !prefrik_hand_authority_policy::isUsableTransform(
+                refreshedReturnWorld) ||
+            !applyGrabReturnHandWorldTransform(
+                _isLeft,
+                refreshedReturnWorld)) {
+            clearGrabReturnHandWorldTransform(_isLeft);
+            _preFrikGrabReturnAuthority.clear();
         }
     }
 
@@ -5290,24 +5384,6 @@ namespace rock
         _grabAuthorityProxyLogCounter = 0;
         _grabAuthorityProxyAfterSolveLogCounter = 0;
         _ragdollAngularProbePreSolve = {};
-        /*
-         * Jag-correction state resets with nothing to undo on the object: the
-         * correction only ever displaced the body by the room's own per-frame
-         * jag and never touched velocity, so release, throw momentum, and
-         * collision response need no unwinding here.
-         */
-        _grabJagPreviousAnchorGameUnits = {};
-        _grabJagLastCorrectionGameUnits = {};
-        _grabJagActorAnchorGameUnits = {};
-        _grabJagControllerAnchorGameUnits = {};
-        _grabJagActorAnchorValid = false;
-        _grabJagControllerAnchorValid = false;
-        _grabJagLastQueuedSequence = 0;
-        _grabJagAnchorReadFailures = 0;
-        _grabJagClampCount = 0;
-        _grabJagImplausibleCount = 0;
-        _grabJagPreviousAnchorValid = false;
-        _grabJagLastApplied = false;
         _grabSmoothCommandedTranslation = {};
         _grabSmoothCommandedInitialized = false;
         _grabAuthorityProxyReleasePending.store(false, std::memory_order_release);
@@ -11443,18 +11519,18 @@ namespace rock
 
     void Hand::recordHeldObjectVelocitySample(RE::hknpWorld* world)
     {
-        const auto compensationResult = applyHeldMotionCompensation(
+        const auto objectMotion = sampleHeldObjectMotion(
             world,
             _savedObjectState.bodyId,
             _heldBodyIds,
             _heldDriveDecision.includeConnectedLinearVelocity);
-        if (compensationResult.hasPrimaryVelocity) {
-            _heldLocalLinearVelocityHistory[_heldLocalLinearVelocityHistoryNext] = compensationResult.primaryLocalLinearVelocity;
+        if (objectMotion.hasPrimaryVelocity) {
+            _heldLocalLinearVelocityHistory[_heldLocalLinearVelocityHistoryNext] = objectMotion.primaryLocalLinearVelocity;
             _heldLocalLinearVelocityHistoryNext = (_heldLocalLinearVelocityHistoryNext + 1) % _heldLocalLinearVelocityHistory.size();
             if (_heldLocalLinearVelocityHistoryCount < _heldLocalLinearVelocityHistory.size()) {
                 ++_heldLocalLinearVelocityHistoryCount;
             }
-            _lastHeldObjectLocalLinearVelocityHavok = compensationResult.primaryLocalLinearVelocity;
+            _lastHeldObjectLocalLinearVelocityHavok = objectMotion.primaryLocalLinearVelocity;
             _hasLastHeldObjectLocalLinearVelocityHavok = true;
         }
     }
@@ -11510,6 +11586,7 @@ namespace rock
         float forceFadeInTime,
         float tauMin,
         const BodyBoneColliderSet* bodyBoneColliders,
+        const std::uint64_t sourceSchedulerSequence,
         const GrabReleaseContext& releaseContext)
     {
         if (!isHolding() || !world)
@@ -11847,6 +11924,28 @@ namespace rock
                 if (applyGrabExternalHandWorldTransform(_isLeft, _grabVisualHandTransform)) {
                     _lastPublishedGrabVisualHandTransform = _grabVisualHandTransform;
                     _hasLastPublishedGrabVisualHandTransform = true;
+                    if (_grabFrame.heldNode &&
+                        sourceSchedulerSequence != 0 &&
+                        prefrik_hand_authority_policy::isUsableTransform(
+                            heldVisualNodeWorld)) {
+                        _preFrikGrabVisualAuthority.heldNode.reset(
+                            _grabFrame.heldNode);
+                        _preFrikGrabVisualAuthority.heldNodeToHandLocal =
+                            prefrik_hand_authority_policy::captureDriverToTargetLocal(
+                                heldVisualNodeWorld,
+                                _grabVisualHandTransform);
+                        _preFrikGrabVisualAuthority.sourceSchedulerSequence =
+                            sourceSchedulerSequence;
+                        _preFrikGrabVisualAuthority.heldBodyId =
+                            _savedObjectState.bodyId.value;
+                        _preFrikGrabVisualAuthority.constraintId =
+                            _activeConstraint.constraintId;
+                        _preFrikGrabVisualAuthority.valid =
+                            prefrik_hand_authority_policy::isUsableTransform(
+                                _preFrikGrabVisualAuthority.heldNodeToHandLocal);
+                    } else {
+                        _preFrikGrabVisualAuthority.clear();
+                    }
                     clearGrabVisualReturn("active-grab-authority-acquired", false);
                 }
 
@@ -12639,222 +12738,6 @@ namespace rock
         }
     }
 
-    /*
-     * Locomotion transport: keep the held body's velocity carrying the live
-     * room velocity so the constraint motors only solve hand-relative residual
-     * motion (HIGGS SimulatePlayerSpace parity, velocity-add form).
-     *
-     * Delta form (vRoom_now - vRoom_last) is algebraically identical to
-     * HIGGS's subtract-last-add-new bookkeeping: a collision that consumes the
-     * body's velocity is respected (the delta stays ~0, we never fight the
-     * wall), and stopping removes the standing contribution exactly. The
-     * contribution is REAL world-space velocity -- an object carried by a
-     * running player genuinely moves at room speed -- so release keeps it
-     * (throws inherit locomotion, which is physical). Single-owner grabs
-     * (transfer, never co-hold) mean the two hands can never transport the
-     * same body twice.
-     */
-    void Hand::applyHeldLocomotionJagCorrectionLocked(RE::hknpWorld* world,
-        bool roomVelocityOk,
-        const RE::NiPoint3& roomVelocityGameUnitsPerSecond,
-        float stepDeltaSeconds)
-    {
-        constexpr std::uint32_t kReadFailureTripCount = 30;
-        constexpr std::uint32_t kNoisyLogInterval = 90;
-        /*
-         * The controller anchor sits at the character's physics origin while
-         * data.location is the actor origin; they differ by the capsule/center
-         * offset and never by more than this. A wrong member offset, or a
-         * missed Havok->game conversion (a factor of ~70), lands far outside.
-         */
-        constexpr float kMaxAnchorToActorGameUnits = 250.0f;
-
-        const auto applyPositionDeltaToHeldBodies = [&](const RE::NiPoint3& deltaGameUnits) -> bool {
-            const std::uint32_t primaryBodyId = _savedObjectState.bodyId.value;
-            if (primaryBodyId == INVALID_BODY_ID) {
-                return false;
-            }
-            auto* primaryBody = havok_runtime::getBody(world, RE::hknpBodyId{ primaryBodyId });
-            if (!primaryBody || !body_frame::hasUsableMotionIndex(primaryBody->motionIndex)) {
-                return false;
-            }
-
-            // Motion-slot dedup: two body ids sharing one motion must not be
-            // displaced twice. Connected bodies ride along so the object's own
-            // constraints don't turn the correction into internal forces.
-            std::array<std::uint32_t, MAX_HELD_BODIES + 1> movedMotionSlots{};
-            std::size_t movedMotionSlotCount = 0;
-
-            const auto moveBody = [&](std::uint32_t bodyId, std::uint32_t motionIndex) -> bool {
-                for (std::size_t slot = 0; slot < movedMotionSlotCount; ++slot) {
-                    if (movedMotionSlots[slot] == motionIndex) {
-                        return true;
-                    }
-                }
-                if (movedMotionSlotCount >= movedMotionSlots.size()) {
-                    return true;
-                }
-                /*
-                 * Read-modify-write in GAME units on both sides: the body-array
-                 * read scales havok->game and setBodyTransformDeferred scales
-                 * game->havok. The rotation makes the same round trip through
-                 * hknpBodyColumnsToNiStoredAxes / niStoredAxesToHknpBodyColumns,
-                 * which are plain entry copies -- bit-exact, so a position-only
-                 * correction cannot leak orientation drift into the held body.
-                 */
-                RE::NiTransform live{};
-                if (!havok_runtime::tryGetBodyWorldTransform(world, RE::hknpBodyId{ bodyId }, live)) {
-                    return false;
-                }
-                live.translate.x += deltaGameUnits.x;
-                live.translate.y += deltaGameUnits.y;
-                live.translate.z += deltaGameUnits.z;
-                if (!havok_runtime::setBodyTransformDeferred(world, bodyId, live)) {
-                    return false;
-                }
-                movedMotionSlots[movedMotionSlotCount++] = motionIndex;
-                return true;
-            };
-
-            if (!moveBody(primaryBodyId, primaryBody->motionIndex)) {
-                return false;
-            }
-            const int connectedCount = _heldBodyIdsCount.load(std::memory_order_acquire);
-            for (int i = 0; i < connectedCount && i < MAX_HELD_BODIES; ++i) {
-                const std::uint32_t bodyId = _heldBodyIdsSnapshot[i];
-                if (bodyId == INVALID_BODY_ID || bodyId == primaryBodyId) {
-                    continue;
-                }
-                auto* body = havok_runtime::getBody(world, RE::hknpBodyId{ bodyId });
-                if (!body || !body_frame::hasUsableMotionIndex(body->motionIndex)) {
-                    continue;
-                }
-                (void)moveBody(bodyId, body->motionIndex);
-            }
-            return true;
-        };
-
-        // Every skip drops the previous anchor so the next frame differences
-        // against where the room actually is instead of bridging the gap.
-        const auto invalidate = [&]() {
-            _grabJagPreviousAnchorValid = false;
-            _grabJagLastApplied = false;
-            _grabJagLastCorrectionGameUnits = {};
-        };
-
-        if (!g_rockConfig.rockGrabLocomotionJagCorrection) {
-            invalidate();
-            _grabJagAnchorReadFailures = 0;
-            return;
-        }
-
-        /*
-         * Once per queued game-frame sample, never per substep: the deferred
-         * transform write is read-modify-write against the live body, so a
-         * second application before the engine consumed the first would re-read
-         * the stale transform and drop the earlier correction. Pairing the
-         * whole-STEP delta with an anchor differenced over that same interval
-         * keeps the two terms consistent when substepCount > 1.
-         */
-        if (_grabAuthorityProxyQueuedSequence == _grabJagLastQueuedSequence) {
-            return;
-        }
-        _grabJagLastQueuedSequence = _grabAuthorityProxyQueuedSequence;
-
-        /*
-         * BOTH anchor candidates are sampled every flush regardless of which
-         * one drives the correction, and both are published to the probe. The
-         * first session showed the controller anchor delivering only 6-15% of
-         * the measured artifact -- consistent with it living inside the physics
-         * step, so its delta and v_room*dt share a clock and cancel. Which
-         * anchor actually carries the camera's per-frame staircase is settled
-         * by comparing the logged deltas against the logged camera, not by
-         * argument; sampling both means one session answers it even if the
-         * active selection is the wrong one.
-         */
-        RE::NiPoint3 actorAnchor{};
-        RE::NiPoint3 controllerAnchor{};
-        _grabJagActorAnchorValid = character_controller_runtime::tryGetPlayerActorPositionGameUnits(actorAnchor);
-        _grabJagControllerAnchorValid =
-            character_controller_runtime::tryGetPlayerRoomAnchorPositionGameUnits(controllerAnchor);
-        _grabJagActorAnchorGameUnits = actorAnchor;
-        _grabJagControllerAnchorGameUnits = controllerAnchor;
-
-        const bool useController = g_rockConfig.rockGrabLocomotionJagAnchor == 1;
-        const RE::NiPoint3 anchor = useController ? controllerAnchor : actorAnchor;
-        if (!(useController ? _grabJagControllerAnchorValid : _grabJagActorAnchorValid)) {
-            if (++_grabJagAnchorReadFailures % kReadFailureTripCount == 0) {
-                ROCK_LOG_WARN(Hand,
-                    "{} hand LOCOMOTION JAG skipped: room anchor {} unreadable for {} frames",
-                    handName(),
-                    useController ? "controller" : "actor",
-                    _grabJagAnchorReadFailures);
-            }
-            invalidate();
-            return;
-        }
-        _grabJagAnchorReadFailures = 0;
-
-        /*
-         * Plausibility gate on the RE-derived anchor. The member offsets came
-         * out of bhkCharacterController::GetPositionImpl's own disassembly, but
-         * a wrong member or a missed unit conversion must degrade into a logged
-         * skip, never a garbage displacement of the held object.
-         */
-        if (useController && _grabJagActorAnchorValid) {
-            const RE::NiPoint3& actor = actorAnchor;
-            const RE::NiPoint3 offset{ anchor.x - actor.x, anchor.y - actor.y, anchor.z - actor.z };
-            if (!std::isfinite(offset.x) || !std::isfinite(offset.y) || !std::isfinite(offset.z) ||
-                lengthSquared(offset) > kMaxAnchorToActorGameUnits * kMaxAnchorToActorGameUnits) {
-                if (++_grabJagImplausibleCount % kNoisyLogInterval == 1) {
-                    ROCK_LOG_WARN(Hand,
-                        "{} hand LOCOMOTION JAG skipped: room anchor ({:.1f},{:.1f},{:.1f}) implausible vs actor ({:.1f},{:.1f},{:.1f}) offset {:.1f} gu (count {})",
-                        handName(),
-                        anchor.x, anchor.y, anchor.z,
-                        actor.x, actor.y, actor.z,
-                        vectorMagnitude(offset),
-                        _grabJagImplausibleCount);
-                }
-                invalidate();
-                return;
-            }
-        }
-
-        grab_locomotion_jag::JagInput input{};
-        input.anchorGameUnits = anchor;
-        input.previousAnchorGameUnits = _grabJagPreviousAnchorGameUnits;
-        input.previousAnchorValid = _grabJagPreviousAnchorValid;
-        input.roomVelocityGameUnitsPerSecond = roomVelocityGameUnitsPerSecond;
-        input.roomVelocityValid = roomVelocityOk;
-        input.substepDeltaSeconds = stepDeltaSeconds;
-        input.gain = g_rockConfig.rockGrabLocomotionJagGain;
-        input.maxCorrectionGameUnits = g_rockConfig.rockGrabLocomotionJagMaxCorrectionGameUnits;
-
-        const auto correction = grab_locomotion_jag::evaluate(input);
-
-        _grabJagPreviousAnchorGameUnits = anchor;
-        _grabJagPreviousAnchorValid = true;
-        _grabJagLastCorrectionGameUnits = correction.deltaGameUnits;
-        _grabJagLastApplied = correction.apply;
-
-        if (!correction.apply) {
-            return;
-        }
-        if (correction.clamped && ++_grabJagClampCount % kNoisyLogInterval == 1) {
-            // A backstop that engages is a bug signal, never a normal path.
-            ROCK_LOG_WARN(Hand,
-                "{} hand LOCOMOTION JAG CLAMPED to {:.2f} gu (count {}): the correction exceeded its cap -- the cap is not the fix",
-                handName(),
-                g_rockConfig.rockGrabLocomotionJagMaxCorrectionGameUnits,
-                _grabJagClampCount);
-        }
-        if (!applyPositionDeltaToHeldBodies(correction.deltaGameUnits)) {
-            // Held body unreadable this step (release imminent). Nothing to
-            // unwind: no velocity was touched and no state accumulated.
-            _grabJagLastApplied = false;
-        }
-    }
-
     void Hand::flushPendingCustomGrabAuthority(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
     {
         GrabAuthorityProxyPendingTarget pending{};
@@ -12885,7 +12768,6 @@ namespace rock
         std::uint64_t flushSequence = 0;
         grab_authority_source_clock::ResampleAction resampleAction = grab_authority_source_clock::ResampleAction::Hold;
         std::uint32_t resampleRebaseCount = 0;
-        bool roomFeedForwardApplied = false;
         GrabAngularAuthority angularAuthority = GrabAngularAuthority::HknpRagdollMotorAtom;
         {
             std::scoped_lock lock(_grabAuthorityProxyMutex);
@@ -12939,32 +12821,6 @@ namespace rock
             pending.proxyWorld.translate = _grabAuthoritySourceClock.evaluate(timing.substepIndex, timing.substepCount, resampleAction);
             resampleRebaseCount = _grabAuthoritySourceClock.rebaseCount;
             /*
-             * Room-velocity feed-forward: the room origin is a physics-clock
-             * signal but the target was sampled on the game clock one frame
-             * earlier, so the resampled position replays room motion one step
-             * late. Close the lag with the LIVE character-controller velocity
-             * -- the smoothest signal in the chain (2026-07-13 telemetry:
-             * std 2.89 vs 13.69 gu/s for game-clock room sampling) -- times a
-             * CONSTANT lead. The lead must never be the varying substep dt:
-             * that puts vCC*(dt_n - dt_prev) into consecutive target
-             * displacements, which measured as +-55 gu/s velocity spikes on
-             * every dt transition (the noise the motors then low-passed).
-             * Applied to the same flush-local copy as the resample so every
-             * consumer stays consistent; fail-closed on read failure or
-             * implausible speed; identically zero when standing.
-             */
-            RE::NiPoint3 liveLocomotionVelocity{};
-            const bool liveLocomotionVelocityOk =
-                (g_rockConfig.rockGrabRoomVelocityFeedForward || g_rockConfig.rockGrabLocomotionJagCorrection) &&
-                character_controller_runtime::tryGetPlayerLocomotionVelocityRawGameUnits(liveLocomotionVelocity);
-            if (g_rockConfig.rockGrabRoomVelocityFeedForward && liveLocomotionVelocityOk) {
-                pending.proxyWorld.translate = grab_authority_source_clock::applyRoomVelocityFeedForward(
-                    pending.proxyWorld.translate,
-                    liveLocomotionVelocity,
-                    grab_authority_source_clock::kFeedForwardLeadSeconds,
-                    roomFeedForwardApplied);
-            }
-            /*
              * Bounded velocity smoother (opt-in). The phase lock hands the
              * motors a commanded velocity of (game-frame delta / substep dt),
              * which quantizes on the 11/11/12 ms substep cycle -- its own
@@ -12988,19 +12844,6 @@ namespace rock
                 _grabSmoothCommandedInitialized = true;
                 pending.proxyWorld.translate = _grabSmoothCommandedTranslation;
             }
-            /*
-             * Locomotion JAG correction. The feed-forward above phase-aligns
-             * the commanded TARGET, which the 2026-07-25 camera-relative
-             * decomposition showed is already steady in the frame the eye lives
-             * in (tgt-cam 0.031 gu at sprint, lower than standing). What the
-             * eye actually sees is the motors reproducing only HALF of the
-             * world's per-frame room jag (obj-tgt carries 96-101% of the
-             * perceived jitter). This delivers the dropped half as position.
-             * Whole-STEP delta, not the substep delta: the anchor is
-             * differenced once per queued sample and the two must pair.
-             */
-            applyHeldLocomotionJagCorrectionLocked(
-                world, liveLocomotionVelocityOk, liveLocomotionVelocity, timing.simulatedDeltaSeconds);
             float linearVelocityHavok[4]{};
             float angularVelocityHavok[4]{};
             float nativeLinearVelocityIgnored[4]{};
@@ -13567,7 +13410,7 @@ namespace rock
             std::uint32_t filterInfo = 0;
             const bool filterReadOk = havok_runtime::tryReadFilterInfo(world, proxyBodyId, filterInfo);
             ROCK_LOG_DEBUG(Hand,
-                "{} PROXY GRAB AUTHORITY: seq={}/{} diag=bodyFrameConstraint+queuedTarget+generatedKeyframedProxy proxyBody={} constraint={} substep={}/{} dt={:.6f} resample={} rebases={} ffwd={} targetSrc={} target=({:.1f},{:.1f},{:.1f}) desiredBody=({:.1f},{:.1f},{:.1f}) angularAuthority={} angularRef={} solverAngular=ragdollAtom angularBudget={:.3f} pivotB=({:.2f},{:.2f},{:.2f}) err={:.2f}gu rotErr={:.2f}deg proxyDrive=driveToKeyFrame palmRef={} palmSrc={} palmMotion={} proxyVelSource={} proxyVel={:.3f}hk proxyAngVel={:.3f}rad/s longLever={:.1f}gu proxyRead={} proxySrc={} proxyMotion={} proxyErr={:.3f}gu/{:.2f}deg forceBudget={:.2f} colliding={} filterRead={} filter=0x{:08X} noContact={}",
+                "{} PROXY GRAB AUTHORITY: seq={}/{} diag=bodyFrameConstraint+queuedTarget+generatedKeyframedProxy proxyBody={} constraint={} substep={}/{} dt={:.6f} resample={} rebases={} targetSrc={} target=({:.1f},{:.1f},{:.1f}) desiredBody=({:.1f},{:.1f},{:.1f}) angularAuthority={} angularRef={} solverAngular=ragdollAtom angularBudget={:.3f} pivotB=({:.2f},{:.2f},{:.2f}) err={:.2f}gu rotErr={:.2f}deg proxyDrive=driveToKeyFrame palmRef={} palmSrc={} palmMotion={} proxyVelSource={} proxyVel={:.3f}hk proxyAngVel={:.3f}rad/s longLever={:.1f}gu proxyRead={} proxySrc={} proxyMotion={} proxyErr={:.3f}gu/{:.2f}deg forceBudget={:.2f} colliding={} filterRead={} filter=0x{:08X} noContact={}",
                 handName(),
                 flushSequence,
                 queuedSequence,
@@ -13578,7 +13421,6 @@ namespace rock
                 havok_physics_timing::driveDeltaSeconds(timing),
                 grab_authority_source_clock::resampleActionName(resampleAction),
                 resampleRebaseCount,
-                roomFeedForwardApplied ? "on" : "off",
                 pending.proxyFrameSource ? pending.proxyFrameSource : "unknown",
                 pending.proxyWorld.translate.x,
                 pending.proxyWorld.translate.y,
@@ -13631,12 +13473,6 @@ namespace rock
         out.proxyBodyId = _grabAuthorityProxy.getBodyId();
         out.objectBodyId = _savedObjectState.bodyId;
         out.flushSequence = _grabAuthorityProxyFlushSequence;
-        out.jagCorrectionGameUnits =
-            _grabJagLastApplied ? vectorMagnitude(_grabJagLastCorrectionGameUnits) : -1.0f;
-        out.jagActorAnchorGameUnits = _grabJagActorAnchorGameUnits;
-        out.jagControllerAnchorGameUnits = _grabJagControllerAnchorGameUnits;
-        out.jagActorAnchorValid = _grabJagActorAnchorValid;
-        out.jagControllerAnchorValid = _grabJagControllerAnchorValid;
         return true;
     }
 
@@ -14615,6 +14451,7 @@ namespace rock
         beginGrabVisualReturn();
         (void)frik_visual_authority::clearHandPose("ROCK_Grab", handFromBool(_isLeft));
         clearGrabExternalHandWorldTransform(_isLeft);
+        _preFrikGrabVisualAuthority.clear();
         clearSelectedCloseFingerPose();
         _savedObjectState.clear();
         _activeGrabLifecycle.clear();

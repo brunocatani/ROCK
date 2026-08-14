@@ -2381,6 +2381,7 @@ namespace rock
         const WeaponInteractionContact& rightWeaponContact,
         const EquippedWeaponGripFrameInput& frameInput,
         float dt,
+        const std::uint64_t sourceSchedulerSequence,
         std::uint64_t currentWeaponGenerationKey,
         std::uint64_t currentEquippedWeaponOwnershipKey,
         const WeaponCollision& weaponCollision,
@@ -2393,6 +2394,7 @@ namespace rock
         _handlingSettings = handlingSettings;
         _currentHandDriverFrames[0] = frameInput.leftHandDriverFrame;
         _currentHandDriverFrames[1] = frameInput.rightHandDriverFrame;
+        _currentSourceSchedulerSequence = sourceSchedulerSequence;
         _gunstockFramePresentation = {};
         observeGunstockWeaponEligibility(
             weaponNode,
@@ -2765,6 +2767,8 @@ namespace rock
         _weaponCollisionHandAuthorityLive = {};
         _weaponCollisionHandAuthorityGenerationKey = {};
         _preFrikWeaponHandAuthority = {};
+        _preFrikRetainedHandAuthorities = {};
+        _currentSourceSchedulerSequence = 0;
         _weaponCollisionHandPresentationFromPreviousFrame = {};
         _weaponCollisionBaselineHandWorldValid = {};
         resetGunstockAlignment("reset");
@@ -3466,6 +3470,9 @@ namespace rock
                 state.start,
                 RETURN_HAND_VISUAL_PRIORITY)) {
             state.clear();
+            clearPreFrikRetainedHandAuthority(
+                RetainedHandAuthorityKind::Return,
+                isLeft);
             (void)frik_visual_authority::clearExternalHandWorldTransform(RETURN_HAND_TAG, handFromBool(isLeft));
             ROCK_LOG_WARN(Weapon, "TwoHandedGrip: hand return start failed hand={}", isLeft ? "left" : "right");
             return;
@@ -3537,11 +3544,18 @@ namespace rock
                 clearHandVisualReturn(isLeft, "publish-failed", true);
                 continue;
             }
+            recordPreFrikRetainedHandAuthority(
+                RetainedHandAuthorityKind::Return,
+                isLeft,
+                result.transform);
 
             if (result.reachedTarget) {
                 const float completedDuration = state.durationSeconds;
                 (void)frik_visual_authority::clearExternalHandWorldTransform(RETURN_HAND_TAG, handFromBool(isLeft));
                 state.clear();
+                clearPreFrikRetainedHandAuthority(
+                    RetainedHandAuthorityKind::Return,
+                    isLeft);
                 _hasLastPublishedHandWorld[index] = false;
                 ROCK_LOG_DEBUG(Weapon,
                     "TwoHandedGrip: hand return completed hand={} duration={:.3f}s",
@@ -3558,6 +3572,9 @@ namespace rock
         const bool wasActive = state.active;
         (void)frik_visual_authority::clearExternalHandWorldTransform(RETURN_HAND_TAG, handFromBool(isLeft));
         state.clear();
+        clearPreFrikRetainedHandAuthority(
+            RetainedHandAuthorityKind::Return,
+            isLeft);
         _hasLastPublishedHandWorld[index] = false;
         if (wasActive && logCancellation) {
             ROCK_LOG_DEBUG(Weapon,
@@ -7266,6 +7283,16 @@ namespace rock
             return false;
         }
 
+        if (role == scope_safe_hand_frame_math::HandAuthorityRole::PrimaryGrip) {
+            clearPreFrikRetainedHandAuthority(
+                RetainedHandAuthorityKind::PrimaryGrip,
+                isLeft);
+        } else if (role == scope_safe_hand_frame_math::HandAuthorityRole::SupportGrip) {
+            clearPreFrikRetainedHandAuthority(
+                RetainedHandAuthorityKind::SupportGrip,
+                isLeft);
+        }
+
         const auto roleBit = scope_safe_hand_frame_math::roleMask(role);
         _scopeDeferredHandAuthorityClears[isLeft ? 0u : 1u] &=
             static_cast<scope_safe_hand_frame_math::HandAuthorityRoleMask>(~roleBit);
@@ -8133,6 +8160,9 @@ namespace rock
             (void)frik_visual_authority::clearExternalHandWorldTransform(
                 GUNSTOCK_ALIGNMENT_TAG,
                 handFromBool(isLeft));
+            clearPreFrikRetainedHandAuthority(
+                RetainedHandAuthorityKind::GunstockAlignment,
+                isLeft);
             _gunstockDedicatedHandAuthorityActive[index] = false;
         }
         _gunstockHandAuthorityActive = {};
@@ -9516,6 +9546,15 @@ namespace rock
                 _gunstockDedicatedHandAuthorityActive[index] = true;
             }
 
+            recordPreFrikRetainedHandAuthority(
+                out.reusedGripRole ?
+                    (firingRole ?
+                        RetainedHandAuthorityKind::PrimaryGrip :
+                        RetainedHandAuthorityKind::SupportGrip) :
+                    RetainedHandAuthorityKind::GunstockAlignment,
+                isLeft,
+                requestedWorld);
+
             if (out.reusedGripRole) {
                 // Keep the role's logical target coherent with the weapon.
                 // hFRIK applies this request synchronously, then its recoil
@@ -9541,11 +9580,20 @@ namespace rock
                         applied.recoilWorldDelta,
                         applied.originalWorld);
             }
-            (void)frik_visual_authority::applyExternalHandWorldTransform(
+            const bool restored =
+                frik_visual_authority::applyExternalHandWorldTransform(
                 applied.tag,
                 handFromBool(applied.isLeft),
                 restoreTarget,
                 GRIP_HAND_POSE_PRIORITY);
+            if (restored && applied.reusedGripRole) {
+                recordPreFrikRetainedHandAuthority(
+                    applied.isLeft == _firingHandIsLeft ?
+                        RetainedHandAuthorityKind::PrimaryGrip :
+                        RetainedHandAuthorityKind::SupportGrip,
+                    applied.isLeft,
+                    restoreTarget);
+            }
             const std::size_t index = applied.isLeft ? 0u : 1u;
             if (applied.reusedGripRole) {
                 recordPublishedHandWorld(
@@ -10158,6 +10206,137 @@ namespace rock
         }
     }
 
+    void TwoHandedGrip::recordPreFrikRetainedHandAuthority(
+        const RetainedHandAuthorityKind kind,
+        const bool isLeft,
+        const RE::NiTransform& targetWorld)
+    {
+        const std::size_t handIndex = isLeft ? 0u : 1u;
+        const std::size_t kindIndex = static_cast<std::size_t>(kind);
+        auto& source =
+            _preFrikRetainedHandAuthorities[handIndex][kindIndex];
+        source = {};
+
+        const auto& driver = _currentHandDriverFrames[handIndex];
+        const bool generationRequired =
+            kind != RetainedHandAuthorityKind::Return;
+        if (!driver.valid ||
+            _currentSourceSchedulerSequence == 0 ||
+            (generationRequired && _activeWeaponGenerationKey == 0) ||
+            !prefrik_hand_authority_policy::isUsableTransform(driver.world) ||
+            !prefrik_hand_authority_policy::isUsableTransform(targetWorld)) {
+            return;
+        }
+
+        source.driverToHandLocal =
+            prefrik_hand_authority_policy::captureDriverToTargetLocal(
+                driver.world,
+                targetWorld);
+        source.weaponGenerationKey = generationRequired ?
+            _activeWeaponGenerationKey :
+            0;
+        source.sourceSchedulerSequence =
+            _currentSourceSchedulerSequence;
+        source.firingHandIsLeft = _firingHandIsLeft;
+        source.valid =
+            prefrik_hand_authority_policy::isUsableTransform(
+                source.driverToHandLocal);
+    }
+
+    void TwoHandedGrip::clearPreFrikRetainedHandAuthority(
+        const RetainedHandAuthorityKind kind,
+        const bool isLeft)
+    {
+        _preFrikRetainedHandAuthorities[isLeft ? 0u : 1u]
+            [static_cast<std::size_t>(kind)] = {};
+    }
+
+    void TwoHandedGrip::refreshRetainedHandVisualAuthoritiesBeforeFrik(
+        const EquippedWeaponScopeHandDriverFrame& leftHandDriver,
+        const EquippedWeaponScopeHandDriverFrame& rightHandDriver,
+        const std::uint64_t currentWeaponGenerationKey,
+        const bool firingHandIsLeft,
+        const std::uint64_t currentSchedulerSequence)
+    {
+        const std::array<EquippedWeaponScopeHandDriverFrame, 2> drivers{
+            leftHandDriver,
+            rightHandDriver,
+        };
+        for (std::size_t handIndex = 0; handIndex < 2; ++handIndex) {
+            const bool isLeft = handIndex == 0u;
+            for (std::size_t kindIndex = 0;
+                 kindIndex < kRetainedHandAuthorityKindCount;
+                 ++kindIndex) {
+                const auto kind =
+                    static_cast<RetainedHandAuthorityKind>(kindIndex);
+                const char* tag = nullptr;
+                int priority = GRIP_HAND_POSE_PRIORITY;
+                switch (kind) {
+                case RetainedHandAuthorityKind::PrimaryGrip:
+                    tag = PRIMARY_GRIP_TAG;
+                    break;
+                case RetainedHandAuthorityKind::SupportGrip:
+                    tag = SUPPORT_GRIP_TAG;
+                    break;
+                case RetainedHandAuthorityKind::GunstockAlignment:
+                    tag = GUNSTOCK_ALIGNMENT_TAG;
+                    break;
+                case RetainedHandAuthorityKind::Return:
+                    tag = RETURN_HAND_TAG;
+                    priority = RETURN_HAND_VISUAL_PRIORITY;
+                    break;
+                case RetainedHandAuthorityKind::Count:
+                    continue;
+                }
+
+                auto& source =
+                    _preFrikRetainedHandAuthorities[handIndex][kindIndex];
+                const auto hand = handFromBool(isLeft);
+                if (!frik_visual_authority::
+                        hasPublishedExternalHandWorldTransform(tag, hand)) {
+                    source = {};
+                    continue;
+                }
+
+                const bool generationRequired =
+                    kind != RetainedHandAuthorityKind::Return;
+                const auto& driver = drivers[handIndex];
+                const bool sourceCurrent =
+                    source.valid &&
+                    driver.valid &&
+                    prefrik_hand_authority_policy::isImmediateSuccessor(
+                        source.sourceSchedulerSequence,
+                        currentSchedulerSequence) &&
+                    (!generationRequired ||
+                        (currentWeaponGenerationKey != 0 &&
+                            source.weaponGenerationKey ==
+                                currentWeaponGenerationKey &&
+                            source.firingHandIsLeft == firingHandIsLeft)) &&
+                    prefrik_hand_authority_policy::isUsableTransform(
+                        driver.world) &&
+                    prefrik_hand_authority_policy::isUsableTransform(
+                        source.driverToHandLocal);
+                const RE::NiTransform refreshedHandWorld = sourceCurrent ?
+                    prefrik_hand_authority_policy::reconstructTargetWorld(
+                        driver.world,
+                        source.driverToHandLocal) :
+                    RE::NiTransform{};
+                if (!sourceCurrent ||
+                    !prefrik_hand_authority_policy::isUsableTransform(
+                        refreshedHandWorld) ||
+                    !frik_visual_authority::applyExternalHandWorldTransform(
+                        tag,
+                        hand,
+                        refreshedHandWorld,
+                        priority)) {
+                    (void)frik_visual_authority::
+                        clearExternalHandWorldTransform(tag, hand);
+                    source = {};
+                }
+            }
+        }
+    }
+
     void TwoHandedGrip::beginWeaponCollisionPresentationFrame(
         const std::uint64_t currentWeaponGenerationKey)
     {
@@ -10450,6 +10629,10 @@ namespace rock
         const bool applied = frik_visual_authority::applyExternalHandWorldTransform(
             PRIMARY_GRIP_TAG, handFromBool(_firingHandIsLeft), appliedFiringHandWorld, GRIP_HAND_POSE_PRIORITY);
         if (applied) {
+            recordPreFrikRetainedHandAuthority(
+                RetainedHandAuthorityKind::PrimaryGrip,
+                _firingHandIsLeft,
+                appliedFiringHandWorld);
             recordScopeHandAuthorityPublication(scope_safe_hand_frame_math::HandAuthorityRole::PrimaryGrip, _firingHandIsLeft);
             clearHandVisualReturn(_firingHandIsLeft, "firing-grip-authority-acquired", false);
             recordPublishedHandWorld(_firingHandIsLeft, appliedFiringHandWorld);
@@ -10492,6 +10675,10 @@ namespace rock
         const bool applied = frik_visual_authority::applyExternalHandWorldTransform(
             SUPPORT_GRIP_TAG, handFromBool(isLeft), appliedHandWorld, GRIP_HAND_POSE_PRIORITY);
         if (applied) {
+            recordPreFrikRetainedHandAuthority(
+                RetainedHandAuthorityKind::SupportGrip,
+                isLeft,
+                appliedHandWorld);
             recordScopeHandAuthorityPublication(scope_safe_hand_frame_math::HandAuthorityRole::SupportGrip, isLeft);
             clearHandVisualReturn(isLeft, "part-grip-authority-acquired", false);
             recordPublishedHandWorld(isLeft, appliedHandWorld);

@@ -71,24 +71,6 @@ namespace rock::grab_authority_source_clock
     // teleport, or proxy rebuild and must not become interpolated motion.
     constexpr float kMaxTranslationJumpGameUnits = 35.0f;
     constexpr float kMaxRotationJumpDegrees = 15.0f;
-    // Room-velocity feed-forward speed gates. Below the floor the player is
-    // standing (controller noise); above the cap the velocity is not
-    // locomotion (launch, script teleport, corrupted read) and must not be
-    // predicted into the target.
-    constexpr float kFeedForwardMinSpeedGameUnitsPerSecond = 1.0f;
-    constexpr float kFeedForwardMaxSpeedGameUnitsPerSecond = 2000.0f;
-    /*
-     * CONSTANT prediction lead. Predicting each substep's end with that
-     * substep's own quantized dt puts the dt-DIFFERENCE into consecutive
-     * target displacements (dTgt = vSrc*dt_n + vCC*(dt_n - dt_prev)), which
-     * reads as +-vCC*2ms velocity spikes on every 10/11/12ms transition --
-     * measured 2026-07-13: target speed 467 on dt-up vs 349 on dt-down at a
-     * 412 gu/s walk. A constant lead cancels out of the difference, so the
-     * commanded velocity stays exactly the source velocity; the cost is a
-     * sub-2ms constant phase error, invisible next to the removed noise.
-     */
-    constexpr float kFeedForwardLeadSeconds = 1.0f / 90.0f;
-
     // angle(a^T * b) via trace(a^T * b) = element-wise dot product; identical for
     // row-major and column-major storage because both operands share it.
     inline float rotationDeltaDegrees(const RE::NiMatrix3& a, const RE::NiMatrix3& b) noexcept
@@ -107,58 +89,6 @@ namespace rock::grab_authority_source_clock
     inline bool isFiniteVector(const RE::NiPoint3& value) noexcept
     {
         return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
-    }
-
-    /*
-     * Room-velocity feed-forward: one-substep prediction of the room-origin
-     * component of the grab target.
-     *
-     * The room origin advances on the physics clock (the engine integrates the
-     * player character controller inside the world step), but the grab target
-     * is sampled on the game clock one frame earlier. The resampler makes the
-     * commanded velocity smooth, yet the commanded POSITION still replays the
-     * sampled room trajectory one substep late; with quantized substep deltas
-     * the replay lag oscillates and the held object shimmers against the world
-     * in proportion to locomotion speed (2026-07-13 telemetry: ~0.7 gu at
-     * 400 gu/s).
-     *
-     * Adding liveCharControllerVelocity * leadSeconds to the resampled target
-     * closes the one-frame sampling lag of the room component. leadSeconds
-     * MUST be a constant (kFeedForwardLeadSeconds), never the varying substep
-     * dt -- see the constant's comment for the measured dt-difference noise a
-     * varying lead injects. This is NOT the removed compensation class: there
-     * is no position accumulator (the base is the resampled actual trajectory
-     * every substep, so error cannot build up), no commanded-vs-actual
-     * comparison, and no second behavior path -- standing still the velocity
-     * is zero and the result is byte-identical to the unpredicted target.
-     */
-    inline RE::NiPoint3 applyRoomVelocityFeedForward(const RE::NiPoint3& resampledTranslation,
-        const RE::NiPoint3& liveVelocityGameUnitsPerSecond,
-        float leadSeconds,
-        bool& outApplied) noexcept
-    {
-        outApplied = false;
-        if (!isFiniteVector(resampledTranslation)) {
-            return resampledTranslation;
-        }
-        if (!isFiniteVector(liveVelocityGameUnitsPerSecond) ||
-            !havok_physics_timing::isUsableDelta(leadSeconds)) {
-            return resampledTranslation;
-        }
-        const float speedSquared =
-            liveVelocityGameUnitsPerSecond.x * liveVelocityGameUnitsPerSecond.x +
-            liveVelocityGameUnitsPerSecond.y * liveVelocityGameUnitsPerSecond.y +
-            liveVelocityGameUnitsPerSecond.z * liveVelocityGameUnitsPerSecond.z;
-        if (!(speedSquared >= kFeedForwardMinSpeedGameUnitsPerSecond * kFeedForwardMinSpeedGameUnitsPerSecond) ||
-            speedSquared > kFeedForwardMaxSpeedGameUnitsPerSecond * kFeedForwardMaxSpeedGameUnitsPerSecond) {
-            return resampledTranslation;
-        }
-        outApplied = true;
-        return RE::NiPoint3{
-            resampledTranslation.x + liveVelocityGameUnitsPerSecond.x * leadSeconds,
-            resampledTranslation.y + liveVelocityGameUnitsPerSecond.y * leadSeconds,
-            resampledTranslation.z + liveVelocityGameUnitsPerSecond.z * leadSeconds,
-        };
     }
 
     /*

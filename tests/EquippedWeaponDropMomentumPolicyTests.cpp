@@ -59,17 +59,17 @@ int main()
         .maxAngularVelocityRadiansPerSecond = 10.0f,
     };
 
-    const auto emptyRelease = composeReleaseVelocity(history, Vec3{ 1.0f, 0.0f, 0.0f }, settings);
+    const auto emptyRelease = composeReleaseVelocity(history, settings);
     ok &= expectFalse("empty history has no release data", emptyRelease.hasData);
 
     history.push(Vec3{ 5.0f, 0.0f, 0.0f }, Vec3{ 0.0f, 2.0f, 0.0f });
-    const auto singleRelease = composeReleaseVelocity(history, Vec3{ 1.0f, 0.0f, 0.0f }, settings);
+    const auto singleRelease = composeReleaseVelocity(history, settings);
     ok &= expectTrue("single sample produces release data", singleRelease.hasData);
-    ok &= expectNear("player velocity plus multiplied hand velocity", singleRelease.linearVelocityHavok.x, 11.0f, 0.001f);
+    ok &= expectNear("multiplied hand velocity has no player addend", singleRelease.linearVelocityHavok.x, 10.0f, 0.001f);
     ok &= expectNear("angular velocity scaled", singleRelease.angularVelocityRadiansPerSecond.y, 1.0f, 0.001f);
 
     history.reset();
-    const auto resetRelease = composeReleaseVelocity(history, Vec3{}, settings);
+    const auto resetRelease = composeReleaseVelocity(history, settings);
     ok &= expectFalse("reset clears release data", resetRelease.hasData);
 
     // Ring overflow: capacity+2 pushes drop the oldest samples; an interior
@@ -88,14 +88,14 @@ int main()
         .angularVelocityScale = 1.0f,
         .maxAngularVelocityRadiansPerSecond = 10.0f,
     };
-    const auto smoothedRelease = composeReleaseVelocity(history, Vec3{}, plainSettings);
+    const auto smoothedRelease = composeReleaseVelocity(history, plainSettings);
     ok &= expectNear("interior window peak smooths with neighbors", smoothedRelease.linearVelocityHavok.x, 7.0f / 3.0f, 0.001f);
 
     // A release-frame peak (newest sample) is used exactly.
     history.reset();
     history.push(Vec3{ 2.0f, 0.0f, 0.0f }, Vec3{});
     history.push(Vec3{ 4.0f, 0.0f, 0.0f }, Vec3{});
-    const auto edgePeakRelease = composeReleaseVelocity(history, Vec3{}, plainSettings);
+    const auto edgePeakRelease = composeReleaseVelocity(history, plainSettings);
     ok &= expectNear("release-frame peak drives release exactly", edgePeakRelease.linearVelocityHavok.x, 4.0f, 0.001f);
 
     // Caps: hand velocity clamps to maxLinearVelocityHavok, angular clamps to
@@ -109,7 +109,7 @@ int main()
         .angularVelocityScale = 1.0f,
         .maxAngularVelocityRadiansPerSecond = 18.0f,
     };
-    const auto cappedRelease = composeReleaseVelocity(history, Vec3{}, cappedSettings);
+    const auto cappedRelease = composeReleaseVelocity(history, cappedSettings);
     ok &= expectNear("linear velocity clamps to cap", cappedRelease.linearVelocityHavok.x, 12.0f, 0.001f);
     ok &= expectNear("angular velocity clamps to cap", cappedRelease.angularVelocityRadiansPerSecond.z, 18.0f, 0.001f);
 
@@ -120,7 +120,7 @@ int main()
     longWeaponSettings.longObjectLeverGameUnits = 96.0f;
     longWeaponSettings.longObjectReferenceLeverGameUnits = 24.0f;
     longWeaponSettings.longObjectMinAngularScale = 0.35f;
-    const auto longWeaponRelease = composeReleaseVelocity(history, Vec3{}, longWeaponSettings);
+    const auto longWeaponRelease = composeReleaseVelocity(history, longWeaponSettings);
     ok &= expectNear("long weapon uses configured angular floor scale", longWeaponRelease.longObjectAngularScale, 0.35f, 0.001f);
     ok &= expectNear("long weapon angular cap follows held-object release policy", longWeaponRelease.angularVelocityCapRadiansPerSecond, 6.3f, 0.001f);
     ok &= expectNear("long weapon angular velocity is lever capped", longWeaponRelease.angularVelocityRadiansPerSecond.z, 6.3f, 0.001f);
@@ -169,9 +169,9 @@ int main()
         .angularVelocityScale = 1.0f,
         .maxAngularVelocityRadiansPerSecond = 10.0f,
     };
-    const auto disabledRelease = composeReleaseVelocity(history, Vec3{ 1.0f, 0.0f, 0.0f }, disabledSettings);
+    const auto disabledRelease = composeReleaseVelocity(history, disabledSettings);
     ok &= expectTrue("disabled controller-derived throw still reports data", disabledRelease.hasData);
-    ok &= expectNear("disabled controller-derived throw keeps player velocity", disabledRelease.linearVelocityHavok.x, 1.0f, 0.001f);
+    ok &= expectNear("disabled controller-derived throw has no player addend", disabledRelease.linearVelocityHavok.x, 0.0f, 0.001f);
     ok &= expectNear("disabled controller-derived throw drops angular momentum", disabledRelease.angularVelocityRadiansPerSecond.y, 0.0f, 0.001f);
 
     if (!ok) {

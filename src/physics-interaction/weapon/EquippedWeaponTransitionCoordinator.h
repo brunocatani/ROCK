@@ -70,6 +70,7 @@ namespace rock
             // this is set. Equip recovery must neither unhide nor reattach the
             // same graph during that authority window.
             bool nativeWeaponAnimationActive{ false };
+            std::uint64_t sourceSchedulerSequence{ 0 };
         };
 
         struct ExpectedIdentity
@@ -90,6 +91,11 @@ namespace rock
             const EquipVisualBridge::BeginInput& bridgeInput);
         void requestCurrentWeaponReconcile(Source source) noexcept;
         void update(const FrameInput& input);
+        void refreshHandVisualAuthorityBeforeFrik(
+            std::uint64_t schedulerSequence)
+        {
+            _bridge.refreshHandVisualAuthorityBeforeFrik(schedulerSequence);
+        }
         void shutdown();
         void abandonSceneGraph();
         [[nodiscard]] PublicSnapshot getPublicSnapshot() const noexcept;

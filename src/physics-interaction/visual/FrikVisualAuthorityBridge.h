@@ -575,6 +575,13 @@ namespace rock::frik_visual_authority
         return detail::hasTrackedHandWorldPublication(hand);
     }
 
+    [[nodiscard]] inline bool hasPublishedExternalHandWorldTransform(const char* tag, Hand hand)
+    {
+        std::string_view tagView;
+        return detail::makeCacheableTagView(tag, tagView) &&
+               detail::findTrackedHandWorldPublication(tagView, hand) != nullptr;
+    }
+
     [[nodiscard]] inline bool setHandPoseCustomLocalTransformsWithPriority(
         const char* tag,
         Hand hand,

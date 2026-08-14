@@ -37,6 +37,12 @@ $interaction = 'src/physics-interaction/core/PhysicsInteraction.cpp'
 $frame = 'src/physics-interaction/core/PhysicsInteractionFrame.inl'
 $frameContext = 'src/physics-interaction/core/PhysicsFrameContext.h'
 $handSkeleton = 'src/physics-interaction/hand/HandSkeleton.h'
+$handHeader = 'src/physics-interaction/hand/Hand.h'
+$hand = 'src/physics-interaction/hand/HandGrab.cpp'
+$visualBridge = 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h'
+$equipHeader = 'src/physics-interaction/weapon/EquipVisualBridge.h'
+$equip = 'src/physics-interaction/weapon/EquipVisualBridge.cpp'
+$transitionHeader = 'src/physics-interaction/weapon/EquippedWeaponTransitionCoordinator.h'
 $weaponHeader = 'src/physics-interaction/weapon/TwoHandedGrip.h'
 $weapon = 'src/physics-interaction/weapon/TwoHandedGrip.cpp'
 $dynamicHandHeader = 'src/physics-interaction/hand/DynamicHandCollision.h'
@@ -86,13 +92,51 @@ Require-Pattern $frame `
     'frame\.preFrikSchedulerSequence\s*=\s*_currentPreFrikSchedulerSequence' `
     'Frame construction must snapshot the current pre-FRIK scheduler generation.'
 Require-Pattern $interaction `
-    'refreshExternalHandWorldTransformsBeforeFrik[\s\S]{0,2600}tryReconstructCalibratedHand[\s\S]{0,1800}refreshContactVisualAuthorityBeforeFrik[\s\S]{0,1000}refreshWeaponCollisionHandAuthorityBeforeFrik' `
-    'The pre phase must reconstruct clean hand input, refresh contact authority, then refresh the higher-priority weapon authority.'
+    'refreshExternalHandWorldTransformsBeforeFrik[\s\S]*tryReconstructCalibratedHand[\s\S]*refreshGrabVisualAuthorityBeforeFrik[\s\S]*refreshHandVisualAuthorityBeforeFrik[\s\S]*refreshContactVisualAuthorityBeforeFrik[\s\S]*refreshRetainedHandVisualAuthoritiesBeforeFrik[\s\S]*refreshWeaponCollisionHandAuthorityBeforeFrik' `
+    'The pre phase must reconstruct clean hand input and refresh every retained hand-world provider before FRIK.'
+
+# Authority is latched once per scheduler generation; provider publications or
+# clears later in the same ROCK frame cannot flap the physics input source.
+Require-Pattern $interactionHeader `
+    '_persistentFrikHandInputIsolationActive[\s\S]*_persistentFrikHandInputIsolationSequence[\s\S]*_currentPreFrikSchedulerSequence' `
+    'PhysicsInteraction must retain the authority value and the scheduler generation that sampled it.'
+Require-Pattern $interaction `
+    '_persistentFrikHandInputIsolationSequence\[handIndex\][\s\S]{0,1200}hasPublishedExternalHandWorldTransform[\s\S]{0,1200}persistentWorldAuthorityPublished\s*=\s*_persistentFrikHandInputIsolationActive\[handIndex\]' `
+    'Hand input isolation must sample publication state only at a scheduler-generation edge.'
+Require-Pattern $visualBridge `
+    'hasPublishedExternalHandWorldTransform\(const char\* tag, Hand hand\)[\s\S]{0,300}findTrackedHandWorldPublication' `
+    'Pre-FRIK providers must query their exact tag so one owner cannot resurrect another owner''s cleared claim.'
 
 # Calibration cannot learn one presentation-contaminated frame.
 Require-Pattern $handSkeleton `
     'persistentAuthorityFell[\s\S]{0,500}coherentCandidateSamples\s*=\s*0[\s\S]*calibrationRelationsCoherent[\s\S]*kRequiredStableCalibrationSamples[\s\S]*tryReconstructCalibratedHand' `
     'Controller calibration must quarantine the falling edge, require stable samples, and expose root-free reconstruction.'
+Require-Pattern $handSkeleton `
+    'if\s*\(!sourceSkeleton\s*\|\|\s*!sourceBoneTree\)[\s\S]{0,220}if\s*\(!persistentWorldAuthorityPublished\)[\s\S]{0,220}!hasRootFlattenedHand[\s\S]*reconstructedHandWorld' `
+    'A committed persistent controller reconstruction must not require the deferred root-flattened hand to exist.'
+
+# Regular grabs follow the current held scene object, never player/controller
+# locomotion. Returns follow the clean current raw hand.
+Require-Pattern $handHeader `
+    'PreFrikGrabVisualAuthority[\s\S]*NiPointer<RE::NiAVObject>\s+heldNode[\s\S]*heldNodeToHandLocal[\s\S]*heldBodyId[\s\S]*constraintId[\s\S]*sourceSchedulerSequence' `
+    'Regular grab pre-FRIK state must own the held node and bind it to exact body, constraint, and scheduler identities.'
+Require-Pattern $hand `
+    'refreshGrabVisualAuthorityBeforeFrik[\s\S]*GRAB_EXTERNAL_HAND_TAG[\s\S]*isImmediateSuccessor[\s\S]*_savedObjectState\.bodyId[\s\S]*_activeConstraint\.constraintId[\s\S]*reconstructTargetWorld[\s\S]*GRAB_RETURN_HAND_TAG' `
+    'Regular grab pre-FRIK refresh must reconstruct from the held object and validate the current grab owner before handling return.'
+Require-Pattern $hand `
+    'applyGrabExternalHandWorldTransform[\s\S]{0,1800}_preFrikGrabVisualAuthority\.heldNode\.reset[\s\S]*captureDriverToTargetLocal[\s\S]*sourceSchedulerSequence' `
+    'A successful post grab publication must capture the held-node relation for the immediately succeeding pre-FRIK phase.'
+
+# Equip handoff follows whichever retained weapon graph is currently visible.
+Require-Pattern $equipHeader `
+    '_preFrikHandWorldAnchor[\s\S]*_preFrikAnchorToHandLocal[\s\S]*_preFrikSourceSchedulerSequence[\s\S]*_preFrikHandWorldAuthorityValid' `
+    'Equip handoff must own an anchor-local hand target and scheduler generation.'
+Require-Pattern $equip `
+    'publishHandWorldHandoff[\s\S]*captureDriverToTargetLocal[\s\S]*refreshHandVisualAuthorityBeforeFrik[\s\S]*isImmediateSuccessor[\s\S]*reconstructTargetWorld' `
+    'Equip handoff must capture post authority and reconstruct it from the current retained weapon graph before FRIK.'
+Require-Pattern $transitionHeader `
+    'refreshHandVisualAuthorityBeforeFrik[\s\S]{0,180}_bridge\.refreshHandVisualAuthorityBeforeFrik' `
+    'The transition coordinator must expose the equip bridge pre-FRIK provider to PhysicsInteraction.'
 
 # Weapon targets are reconstructed from current firing-wand motion and reject
 # stale scheduler, generation, or firing-role state.
@@ -105,6 +149,12 @@ Require-Pattern $weapon `
 Require-Pattern $weapon `
     'applyWeaponCollisionResolvedAuthority[\s\S]*captureDriverToTargetLocal[\s\S]*sourceSchedulerSequence[\s\S]*preFrikSource\.valid' `
     'Successful post-solve weapon publication must capture the next pre-FRIK source generation.'
+Require-Pattern $weaponHeader `
+    'RetainedHandAuthorityKind[\s\S]*PrimaryGrip[\s\S]*SupportGrip[\s\S]*GunstockAlignment[\s\S]*Return[\s\S]*PreFrikRetainedHandAuthority' `
+    'Every transportable retained weapon-hand role must have explicit pre-FRIK source state.'
+Require-Pattern $weapon `
+    'refreshRetainedHandVisualAuthoritiesBeforeFrik[\s\S]*hasPublishedExternalHandWorldTransform\(tag, hand\)[\s\S]*isImmediateSuccessor[\s\S]*source\.weaponGenerationKey[\s\S]*reconstructTargetWorld' `
+    'Retained weapon roles must validate exact tag, scheduler, generation, and firing role before reconstruction.'
 
 # Ordinary contact transport is scheduler-fresh and contact-normal safe, while
 # fixed-surface latches remain explicitly outside this provider.

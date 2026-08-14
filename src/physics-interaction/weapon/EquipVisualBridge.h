@@ -73,6 +73,7 @@ namespace rock
             // capture the pending primary-only grip start consumes.
             bool hasFiringHandWeaponLocal = false;
             RE::NiTransform firingHandWeaponLocal{};
+            std::uint64_t sourceSchedulerSequence = 0;
             float timeoutSeconds = 1.0f;
             float blendSeconds = 0.15f;
         };
@@ -83,6 +84,7 @@ namespace rock
             bool advanceLifetime = true;
             bool presentModel = true;
             const equipped_weapon_visual_state::Snapshot* nativeVisual = nullptr;
+            std::uint64_t sourceSchedulerSequence = 0;
         };
 
         EquipVisualBridge() = default;
@@ -132,12 +134,18 @@ namespace rock
         // acquired the same physical hand. The lower-priority bridge pose is
         // then removed without disturbing the equipped publisher's tag.
         void completeHandPoseHandoff(const char* reason);
+        void refreshHandVisualAuthorityBeforeFrik(
+            std::uint64_t schedulerSequence);
 
     private:
         // Attach the (already orphaned) model under the world root; false when
         // the model is still parented or the world root is unavailable.
         bool tryAttachToWorldRoot();
         bool publishHandPoseHandoff();
+        bool publishHandWorldHandoff(
+            RE::NiAVObject* anchor,
+            const RE::NiTransform& handWorld,
+            std::uint64_t sourceSchedulerSequence);
         void synchronizeNativeInstanceCull(
             const equipped_weapon_visual_state::Snapshot* nativeVisual,
             bool bridgePresented);
@@ -174,5 +182,9 @@ namespace rock
         bool _handPoseHandoffActive = false;
         bool _handPoseBlockEngaged = false;
         bool _active = false;
+        RE::NiPointer<RE::NiAVObject> _preFrikHandWorldAnchor;
+        RE::NiTransform _preFrikAnchorToHandLocal{};
+        std::uint64_t _preFrikSourceSchedulerSequence = 0;
+        bool _preFrikHandWorldAuthorityValid = false;
     };
 }

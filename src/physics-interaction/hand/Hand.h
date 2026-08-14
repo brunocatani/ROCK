@@ -90,17 +90,6 @@ namespace rock
         RE::hknpBodyId proxyBodyId{ INVALID_BODY_ID };
         RE::hknpBodyId objectBodyId{ INVALID_BODY_ID };
         std::uint64_t flushSequence = 0;
-        // Magnitude of the locomotion jag correction applied to the held body
-        // this step, game units; -1 when no correction was applied. This is the
-        // validation channel: it must be ~0 standing and ~0.4-0.65 gu at
-        // sprint, and must never sit at the clamp.
-        float jagCorrectionGameUnits = -1.0f;
-        // Both room-anchor candidates as sampled at the flush, so one session
-        // decides which one carries the camera's per-frame staircase.
-        RE::NiPoint3 jagActorAnchorGameUnits{};
-        RE::NiPoint3 jagControllerAnchorGameUnits{};
-        bool jagActorAnchorValid = false;
-        bool jagControllerAnchorValid = false;
     };
 
     struct GrabContactPatchDebugSnapshot
@@ -486,6 +475,7 @@ namespace rock
             float forceFadeInTime,
             float tauMin,
             const BodyBoneColliderSet* bodyBoneColliders,
+            std::uint64_t sourceSchedulerSequence,
             const GrabReleaseContext& releaseContext = {});
         void captureHeldReleaseMotion(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform, float deltaTime);
         void applyReleaseVelocitySnapshot(RE::hknpWorld* world, const GrabReleaseOutcome::VelocitySnapshot& snapshot) const;
@@ -494,7 +484,14 @@ namespace rock
             RE::hknpWorld* world,
             GrabReleaseCollisionRestoreMode collisionRestoreMode = GrabReleaseCollisionRestoreMode::Delayed,
             const GrabReleaseContext& releaseContext = {});
-        void updateGrabVisualReturn(const RE::NiTransform& trackedHandWorld, float deltaTime);
+        void updateGrabVisualReturn(
+            const RE::NiTransform& trackedHandWorld,
+            float deltaTime,
+            std::uint64_t sourceSchedulerSequence);
+        void refreshGrabVisualAuthorityBeforeFrik(
+            std::uint64_t schedulerSequence,
+            bool rawHandValid,
+            const RE::NiTransform& rawHandWorld);
         void cancelGrabVisualReturn(const char* reason);
         bool isGrabVisualReturnActive() const { return _grabVisualReturn.active; }
         void abandonHavokStateAfterWorldLoss();
@@ -714,10 +711,6 @@ namespace rock
         void clearGrabAuthorityProxyRuntimeLocked();
         void beginGrabVisualReturn();
         void clearGrabVisualReturn(const char* reason, bool logCancellation);
-        void applyHeldLocomotionJagCorrectionLocked(RE::hknpWorld* world,
-            bool roomVelocityOk,
-            const RE::NiPoint3& roomVelocityGameUnitsPerSecond,
-            float stepDeltaSeconds);
         bool tryGetGrabDriveObjectWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::NiTransform& outTransform) const;
         RE::NiPoint3 activeProxyConstraintPivotBLocalGame() const;
 
@@ -1024,33 +1017,6 @@ namespace rock
         RE::NiTransform _lastAppliedGrabAuthorityRawHandWorld{};
         bool _hasLastAppliedGrabAuthorityProxyWorld = false;
         /*
-         * Locomotion transport (HIGGS SimulatePlayerSpace parity): the standing
-         * room-velocity contribution currently carried by the held body set, in
-         * game units/s. Guarded by _grabAuthorityProxyMutex like the pending
-         * target: written only by the physics flush, reset with the proxy
-         * runtime. The contribution is REAL world-space velocity (the object
-         * genuinely travels with the player), so release deliberately keeps it.
-         */
-        /*
-         * Locomotion jag correction state. The previous anchor is the ONLY
-         * history kept, and it is invalidated on every skip, so nothing can
-         * accumulate or bridge a gap (see GrabLocomotionJag.h).
-         */
-        RE::NiPoint3 _grabJagPreviousAnchorGameUnits{};
-        RE::NiPoint3 _grabJagLastCorrectionGameUnits{};
-        // Both anchor candidates, sampled every flush for the probe regardless
-        // of which one is selected. Delete the loser once the data decides.
-        RE::NiPoint3 _grabJagActorAnchorGameUnits{};
-        RE::NiPoint3 _grabJagControllerAnchorGameUnits{};
-        bool _grabJagActorAnchorValid = false;
-        bool _grabJagControllerAnchorValid = false;
-        std::uint64_t _grabJagLastQueuedSequence = 0;
-        std::uint32_t _grabJagAnchorReadFailures = 0;
-        std::uint32_t _grabJagClampCount = 0;
-        std::uint32_t _grabJagImplausibleCount = 0;
-        bool _grabJagPreviousAnchorValid = false;
-        bool _grabJagLastApplied = false;
-        /*
          * Bounded velocity-smoother state (opt-in rockGrabSmoothVelocityDrive):
          * the persistent commanded target the predictor-corrector advances by
          * the smooth game-clock segment velocity and re-anchors toward the
@@ -1167,6 +1133,40 @@ namespace rock
         RE::NiTransform _lastPublishedGrabVisualHandTransform{};
         bool _hasLastPublishedGrabVisualHandTransform = false;
         hand_visual_lerp_math::VisualReturnTransition<RE::NiTransform> _grabVisualReturn{};
+        struct PreFrikGrabVisualAuthority
+        {
+            RE::NiPointer<RE::NiAVObject> heldNode;
+            RE::NiTransform heldNodeToHandLocal{};
+            std::uint64_t sourceSchedulerSequence = 0;
+            std::uint32_t heldBodyId = INVALID_BODY_ID;
+            std::uint32_t constraintId = INVALID_BODY_ID;
+            bool valid = false;
+
+            void clear()
+            {
+                heldNode.reset();
+                heldNodeToHandLocal = {};
+                sourceSchedulerSequence = 0;
+                heldBodyId = INVALID_BODY_ID;
+                constraintId = INVALID_BODY_ID;
+                valid = false;
+            }
+        };
+        struct PreFrikGrabReturnAuthority
+        {
+            RE::NiTransform rawHandToTargetLocal{};
+            std::uint64_t sourceSchedulerSequence = 0;
+            bool valid = false;
+
+            void clear()
+            {
+                rawHandToTargetLocal = {};
+                sourceSchedulerSequence = 0;
+                valid = false;
+            }
+        };
+        PreFrikGrabVisualAuthority _preFrikGrabVisualAuthority{};
+        PreFrikGrabReturnAuthority _preFrikGrabReturnAuthority{};
         RE::NiTransform _grabVisualHandLerpStartTransform{};
         float _grabVisualHandLerpElapsedSeconds = 0.0f;
         float _grabVisualHandLerpDurationSeconds = 0.0f;

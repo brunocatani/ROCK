@@ -269,68 +269,6 @@ int main()
         ok &= expectTrue("long run keeps a single initialization rebase", phaseLock.rebaseCount == 1);
     }
 
-    // Room-velocity feed-forward: constant-lead prediction of the room component.
-    {
-        using rock::grab_authority_source_clock::applyRoomVelocityFeedForward;
-        using rock::grab_authority_source_clock::kFeedForwardLeadSeconds;
-        const RE::NiPoint3 base{ 100.0f, -50.0f, 25.0f };
-
-        // Walking: target advances by exactly v * constant lead.
-        bool applied = false;
-        const RE::NiPoint3 walking =
-            applyRoomVelocityFeedForward(base, RE::NiPoint3{ 400.0f, 0.0f, 0.0f }, kFeedForwardLeadSeconds, applied);
-        ok &= expectTrue("walking feed-forward applies", applied);
-        ok &= expectNear("walking feed-forward x", walking.x, 100.0f + 400.0f * kFeedForwardLeadSeconds, 1e-4f);
-        ok &= expectNear("walking feed-forward y untouched", walking.y, -50.0f, 1e-6f);
-
-        // The constant lead cancels out of consecutive-substep target
-        // differences: two bases one source step apart, predicted with the
-        // SAME lead, differ by exactly the source displacement regardless of
-        // how the physics dt was quantized (no vCC*(dt_n - dt_prev) noise).
-        bool appliedA = false;
-        bool appliedB = false;
-        const RE::NiPoint3 stepA =
-            applyRoomVelocityFeedForward(RE::NiPoint3{ 0.0f, 0.0f, 0.0f }, RE::NiPoint3{ 400.0f, 0.0f, 0.0f }, kFeedForwardLeadSeconds, appliedA);
-        const RE::NiPoint3 stepB =
-            applyRoomVelocityFeedForward(RE::NiPoint3{ 4.4f, 0.0f, 0.0f }, RE::NiPoint3{ 400.0f, 0.0f, 0.0f }, kFeedForwardLeadSeconds, appliedB);
-        ok &= expectTrue("constant-lead pair applies", appliedA && appliedB);
-        ok &= expectNear("constant lead cancels in the difference", stepB.x - stepA.x, 4.4f, 1e-5f);
-
-        // Standing: sub-floor speed is controller noise and must not perturb the target.
-        applied = true;
-        const RE::NiPoint3 standing = applyRoomVelocityFeedForward(base, RE::NiPoint3{ 0.2f, 0.1f, 0.0f }, 0.011f, applied);
-        ok &= expectTrue("standing feed-forward is a no-op", !applied);
-        ok &= expectNear("standing target byte-identical", standing.x, base.x, 0.0f);
-
-        // Implausible speed (launch/teleport/corrupt read) fails closed.
-        applied = true;
-        const RE::NiPoint3 launched = applyRoomVelocityFeedForward(base, RE::NiPoint3{ 5000.0f, 0.0f, 0.0f }, 0.011f, applied);
-        ok &= expectTrue("over-cap speed fails closed", !applied);
-        ok &= expectNear("over-cap target unchanged", launched.x, base.x, 0.0f);
-
-        // Non-finite velocity fails closed.
-        applied = true;
-        const RE::NiPoint3 poisoned = applyRoomVelocityFeedForward(
-            base, RE::NiPoint3{ std::numeric_limits<float>::quiet_NaN(), 0.0f, 0.0f }, 0.011f, applied);
-        ok &= expectTrue("non-finite velocity fails closed", !applied);
-        ok &= expectNear("non-finite target unchanged", poisoned.x, base.x, 0.0f);
-
-        // Unusable physics delta fails closed.
-        applied = true;
-        const RE::NiPoint3 badDelta = applyRoomVelocityFeedForward(base, RE::NiPoint3{ 400.0f, 0.0f, 0.0f }, 0.0f, applied);
-        ok &= expectTrue("unusable delta fails closed", !applied);
-        ok &= expectNear("unusable delta target unchanged", badDelta.x, base.x, 0.0f);
-
-        // The prediction is per-substep and stateless: repeated application from
-        // the same base cannot accumulate (no compensation-class drift).
-        applied = false;
-        RE::NiPoint3 repeated = base;
-        for (int i = 0; i < 100; ++i) {
-            repeated = applyRoomVelocityFeedForward(base, RE::NiPoint3{ 400.0f, 0.0f, 0.0f }, 0.011f, applied);
-        }
-        ok &= expectNear("feed-forward is stateless (no accumulation)", repeated.x, 100.0f + 400.0f * 0.011f, 1e-4f);
-    }
-
     // Segment velocity: the smooth game-clock velocity of the current segment.
     {
         GameClockPhaseLock phaseLock;
