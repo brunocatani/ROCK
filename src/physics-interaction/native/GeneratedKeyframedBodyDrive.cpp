@@ -322,6 +322,7 @@ namespace rock
             state.stepsWithoutSource = 0;
             state.queuedSequence = 0;
             state.consumedSequence = 0;
+            state.sourceFrameIndex = 0;
             state.hasPendingTarget = false;
             state.hasPreviousTarget = false;
             state.pendingTeleport = false;
@@ -347,13 +348,15 @@ namespace rock
         state.secondsSinceSourceSample = 0.0f;
         state.queuedSequence = 1;
         state.consumedSequence = 1;
+        state.sourceFrameIndex = 0;
     }
 
     GeneratedKeyframedBodyDriveQueueResult queueGeneratedKeyframedBodyTarget(
         GeneratedKeyframedBodyDriveState& state,
         const RE::NiTransform& target,
         float sourceDeltaSeconds,
-        float teleportDistanceGameUnits)
+        float teleportDistanceGameUnits,
+        const std::uint64_t sourceFrameIndex)
     {
         std::scoped_lock lock(state.mutex);
         GeneratedKeyframedBodyDriveQueueResult result{};
@@ -389,6 +392,7 @@ namespace rock
         state.teleportDistanceGameUnits = teleportDistanceGameUnits;
         state.pendingTeleport = state.hasPreviousTarget && targetMovedFarEnoughForTeleport(state.previousTarget.translate, target.translate, teleportDistanceGameUnits);
         state.hasPendingTarget = true;
+        state.sourceFrameIndex = sourceFrameIndex;
         ++state.queuedSequence;
         result.queued = true;
         result.queuedSequence = state.queuedSequence;
@@ -499,6 +503,8 @@ namespace rock
 
         refreshGeneratedKeyframedBodySourceClockForDriveUnlocked(state, result.driveDeltaSeconds);
         result.sourceDeltaSeconds = state.sourceDeltaSeconds;
+        result.sourceSequence = state.queuedSequence;
+        result.sourceFrameIndex = state.sourceFrameIndex;
         result.sourceAgeSeconds = state.secondsSinceSourceSample;
         result.sourceStale = generated_keyframed_body_drive_math::sourceIsStale(state.secondsSinceSourceSample);
         result.stepsWithoutSource = state.stepsWithoutSource;

@@ -475,7 +475,8 @@ namespace rock
             _authorityDriveState,
             requestedAuthorityTarget,
             frame.deltaSeconds,
-            g_rockConfig.rockWeaponCollisionDynamicDivergenceTeleportGameUnits);
+            g_rockConfig.rockWeaponCollisionDynamicDivergenceTeleportGameUnits,
+            frame.gameFrameIndex);
         if (!queueResult.queued) {
             _rebuildRequestedAtomic.store(true, std::memory_order_release);
         }
@@ -611,6 +612,15 @@ namespace rock
         _debugSnapshot.otherLayer = snapshot.otherLayer;
         _debugSnapshot.contactRetentionSeconds = snapshot.contactRetentionSeconds;
         _debugSnapshot.solveSequence = snapshot.solveSequence;
+        _debugSnapshot.sourceGameFrameIndex = snapshot.sourceGameFrameIndex;
+        _debugSnapshot.sourceQueueSequence = snapshot.sourceQueueSequence;
+        _debugSnapshot.physicsRawDeltaSeconds = snapshot.physicsRawDeltaSeconds;
+        _debugSnapshot.physicsSubstepDeltaSeconds = snapshot.physicsSubstepDeltaSeconds;
+        _debugSnapshot.physicsRemainderDeltaSeconds = snapshot.physicsRemainderDeltaSeconds;
+        _debugSnapshot.physicsAccumulatedDeltaSeconds = snapshot.physicsAccumulatedDeltaSeconds;
+        _debugSnapshot.physicsSubstepProgress = snapshot.physicsSubstepProgress;
+        _debugSnapshot.physicsSubstepCount = snapshot.physicsSubstepCount;
+        _debugSnapshot.physicsSubstepIndex = snapshot.physicsSubstepIndex;
         _debugSnapshot.liveWeaponWorld = sampledLiveWeaponWorld;
         _debugSnapshot.resolvedWeaponWorld = resolvedWeaponWorld;
         _debugSnapshot.translationCorrectionGameUnits = result.translationCorrectionGameUnits;
@@ -1083,6 +1093,8 @@ namespace rock
             driveResult.driven &&
             driveResult.hasRequestedTargetGameTransform;
         _physicsRequestedTargetValid = driveResult.hasRequestedTargetGameTransform;
+        _physicsSourceGameFrameIndex = driveResult.sourceFrameIndex;
+        _physicsSourceQueueSequence = driveResult.sourceSequence;
         if (_physicsRequestedTargetValid) {
             _physicsRequestedAuthorityTarget = driveResult.requestedTargetGameTransform;
             _physicsRequestedTarget = dynamic_weapon_collision_policy::makeContactBodyTargetFromGripAuthority(
@@ -1212,6 +1224,15 @@ namespace rock
         snapshot.contactRetentionSeconds = _contactRetentionSeconds;
         snapshot.generationKey = _createdGenerationKey;
         snapshot.solveSequence = solveSequence;
+        snapshot.sourceGameFrameIndex = _physicsSourceGameFrameIndex;
+        snapshot.sourceQueueSequence = _physicsSourceQueueSequence;
+        snapshot.physicsRawDeltaSeconds = timing.rawDeltaSeconds;
+        snapshot.physicsSubstepDeltaSeconds = timing.substepDeltaSeconds;
+        snapshot.physicsRemainderDeltaSeconds = timing.remainderDeltaSeconds;
+        snapshot.physicsAccumulatedDeltaSeconds = timing.accumulatedDeltaSeconds;
+        snapshot.physicsSubstepProgress = timing.substepProgress;
+        snapshot.physicsSubstepCount = timing.substepCount;
+        snapshot.physicsSubstepIndex = timing.substepIndex;
         snapshot.weaponScale = _createdWeaponScale;
         snapshot.requestedProxyBodyWorld = _physicsRequestedTarget;
         snapshot.liveProxyBodyWorld = liveBodyWorld;
@@ -1487,6 +1508,8 @@ namespace rock
         _droveThisSubstep = false;
         _physicsRequestedTargetValid = false;
         _physicsDriveTeleported = false;
+        _physicsSourceGameFrameIndex = 0;
+        _physicsSourceQueueSequence = 0;
         _physicsRequestedAuthorityTarget = {};
         _physicsRequestedTarget = {};
         _physicsPreviousRequestedTarget = {};
@@ -1624,6 +1647,15 @@ namespace rock
         _snapshotContactRetentionSecondsAtomic.store(snapshot.contactRetentionSeconds, std::memory_order_relaxed);
         _snapshotGenerationKeyAtomic.store(snapshot.generationKey, std::memory_order_relaxed);
         _snapshotSolveSequenceAtomic.store(snapshot.solveSequence, std::memory_order_relaxed);
+        _snapshotSourceGameFrameIndexAtomic.store(snapshot.sourceGameFrameIndex, std::memory_order_relaxed);
+        _snapshotSourceQueueSequenceAtomic.store(snapshot.sourceQueueSequence, std::memory_order_relaxed);
+        _snapshotPhysicsRawDeltaSecondsAtomic.store(snapshot.physicsRawDeltaSeconds, std::memory_order_relaxed);
+        _snapshotPhysicsSubstepDeltaSecondsAtomic.store(snapshot.physicsSubstepDeltaSeconds, std::memory_order_relaxed);
+        _snapshotPhysicsRemainderDeltaSecondsAtomic.store(snapshot.physicsRemainderDeltaSeconds, std::memory_order_relaxed);
+        _snapshotPhysicsAccumulatedDeltaSecondsAtomic.store(snapshot.physicsAccumulatedDeltaSeconds, std::memory_order_relaxed);
+        _snapshotPhysicsSubstepProgressAtomic.store(snapshot.physicsSubstepProgress, std::memory_order_relaxed);
+        _snapshotPhysicsSubstepCountAtomic.store(snapshot.physicsSubstepCount, std::memory_order_relaxed);
+        _snapshotPhysicsSubstepIndexAtomic.store(snapshot.physicsSubstepIndex, std::memory_order_relaxed);
         _snapshotWeaponScaleAtomic.store(snapshot.weaponScale, std::memory_order_relaxed);
         storeAtomicTransform(_snapshotRequestedProxyBodyWorld, snapshot.requestedProxyBodyWorld);
         storeAtomicTransform(_snapshotLiveProxyBodyWorld, snapshot.liveProxyBodyWorld);
@@ -1654,6 +1686,15 @@ namespace rock
             candidate.contactRetentionSeconds = _snapshotContactRetentionSecondsAtomic.load(std::memory_order_relaxed);
             candidate.generationKey = _snapshotGenerationKeyAtomic.load(std::memory_order_relaxed);
             candidate.solveSequence = _snapshotSolveSequenceAtomic.load(std::memory_order_relaxed);
+            candidate.sourceGameFrameIndex = _snapshotSourceGameFrameIndexAtomic.load(std::memory_order_relaxed);
+            candidate.sourceQueueSequence = _snapshotSourceQueueSequenceAtomic.load(std::memory_order_relaxed);
+            candidate.physicsRawDeltaSeconds = _snapshotPhysicsRawDeltaSecondsAtomic.load(std::memory_order_relaxed);
+            candidate.physicsSubstepDeltaSeconds = _snapshotPhysicsSubstepDeltaSecondsAtomic.load(std::memory_order_relaxed);
+            candidate.physicsRemainderDeltaSeconds = _snapshotPhysicsRemainderDeltaSecondsAtomic.load(std::memory_order_relaxed);
+            candidate.physicsAccumulatedDeltaSeconds = _snapshotPhysicsAccumulatedDeltaSecondsAtomic.load(std::memory_order_relaxed);
+            candidate.physicsSubstepProgress = _snapshotPhysicsSubstepProgressAtomic.load(std::memory_order_relaxed);
+            candidate.physicsSubstepCount = _snapshotPhysicsSubstepCountAtomic.load(std::memory_order_relaxed);
+            candidate.physicsSubstepIndex = _snapshotPhysicsSubstepIndexAtomic.load(std::memory_order_relaxed);
             candidate.weaponScale = _snapshotWeaponScaleAtomic.load(std::memory_order_relaxed);
             candidate.requestedProxyBodyWorld = loadAtomicTransform(_snapshotRequestedProxyBodyWorld);
             candidate.liveProxyBodyWorld = loadAtomicTransform(_snapshotLiveProxyBodyWorld);

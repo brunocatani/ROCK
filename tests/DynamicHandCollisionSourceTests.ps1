@@ -326,7 +326,7 @@ Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
 ) 'Dynamic hand deviation must detect contact vs the commanded target and measure vs the requested target.'
 Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @(
     'void PhysicsInteraction::observeCustomGrabAuthorityAfterSolve\(',
-    '_dynamicHandCollision\.samplePostSolveDeviations\(world\);'
+    '_dynamicHandCollision\.samplePostSolveDeviations\([\s\S]*world,[\s\S]*completedSolveSequence,[\s\S]*timing\);'
 ) 'Dynamic hand post-solve sampling must run in the after-solve physics phase.'
 Reject-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
     'liveBodyGamePosition\.x - result\.targetGamePosition' `

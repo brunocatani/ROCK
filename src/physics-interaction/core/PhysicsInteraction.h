@@ -337,6 +337,9 @@ namespace rock
 
         void publishDebugBodyOverlay(const PhysicsFrameContext& frame);
         void logGrabOverlayPointProbe(const PhysicsFrameContext& frame);
+        void logColliderClockTrace(
+            const PhysicsFrameContext& frame,
+            const RE::NiNode* weaponNode);
 
         void clearLeftWeaponContact();
         void clearRightWeaponContact();
@@ -818,6 +821,12 @@ namespace rock
         bool _runtimeScaleLogged = false;
         std::atomic<std::uint64_t> _palmClockGameFrameIndex{ 0 };
         std::atomic<float> _palmClockGameDeltaSeconds{ 1.0f / 90.0f };
+        std::uint64_t _colliderClockLastLoggedFrame = 0;
+        bool _colliderClockHasLoggedFrame = false;
+        std::uint32_t _colliderClockSession = 0;
+        std::uint32_t _colliderClockFramesRemaining = 0;
+        bool _colliderClockPreviousPlayerMoving = false;
+        bool _colliderClockPreviousContactActive = false;
         struct GrabTransformTelemetryState
         {
             bool active = false;

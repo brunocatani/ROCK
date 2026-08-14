@@ -345,6 +345,7 @@ namespace rock
         std::uint32_t stepsWithoutSource = 0;
         std::uint64_t queuedSequence = 0;
         std::uint64_t consumedSequence = 0;
+        std::uint64_t sourceFrameIndex = 0;
         bool hasPendingTarget = false;
         bool hasPreviousTarget = false;
         bool pendingTeleport = false;
@@ -456,6 +457,8 @@ namespace rock
         float uncappedRequiredAngularVelocityRadians = 0.0f;
         float targetLimitAlpha = 1.0f;
         std::uint32_t stepsWithoutSource = 0;
+        std::uint64_t sourceSequence = 0;
+        std::uint64_t sourceFrameIndex = 0;
 
         [[nodiscard]] bool shouldRequestRebuild() const
         {
@@ -483,7 +486,8 @@ namespace rock
         GeneratedKeyframedBodyDriveState& state,
         const RE::NiTransform& target,
         float sourceDeltaSeconds,
-        float teleportDistanceGameUnits);
+        float teleportDistanceGameUnits,
+        std::uint64_t sourceFrameIndex = 0);
     GeneratedKeyframedBodyDriveSampledVelocity snapshotGeneratedKeyframedBodyDriveSampledVelocity(const GeneratedKeyframedBodyDriveState& state);
     bool placeGeneratedKeyframedBodyImmediately(BethesdaPhysicsBody& body, const RE::NiTransform& target);
     inline void markGeneratedKeyframedBodyDrivePlacedUnlocked(

@@ -6,6 +6,8 @@
 #include "RE/NetImmerse/NiPoint.h"
 #include "RE/NetImmerse/NiTransform.h"
 
+#include <cstdint>
+
 namespace rock
 {
     /*
@@ -33,8 +35,15 @@ namespace rock
         bool disabled = false;
     };
 
+    struct TrackedNodeFrame
+    {
+        RE::NiTransform world{};
+        bool valid = false;
+    };
+
     struct PhysicsFrameContext
     {
+        std::uint64_t gameFrameIndex = 0;
         RE::bhkWorld* bhkWorld = nullptr;
         RE::hknpWorld* hknpWorld = nullptr;
         float deltaSeconds = 1.0f / 90.0f;
@@ -44,6 +53,10 @@ namespace rock
         bool hasHmdFrame = false;
         RE::NiPoint3 hmdPositionWorld{};
         RE::NiPoint3 hmdForwardWorld{};
+        TrackedNodeFrame rightWand{};
+        TrackedNodeFrame leftWand{};
+        TrackedNodeFrame rightWeaponDriver{};
+        TrackedNodeFrame leftWeaponDriver{};
         HandFrameInput right{};
         HandFrameInput left{};
     };

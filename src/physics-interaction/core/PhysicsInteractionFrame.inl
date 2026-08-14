@@ -7,6 +7,7 @@ PhysicsFrameContext PhysicsInteraction::buildFrameContext(RE::bhkWorld* bhk, RE:
      * being added as scattered global reads throughout PhysicsInteraction::update().
      */
     PhysicsFrameContext frame{};
+    frame.gameFrameIndex = runtime_state::currentFrame().frameIndex;
     frame.bhkWorld = bhk;
     frame.hknpWorld = hknp;
     frame.deltaSeconds = (deltaSeconds > 0.0f && deltaSeconds <= 0.1f) ? deltaSeconds : (1.0f / 90.0f);
@@ -21,10 +22,24 @@ PhysicsFrameContext PhysicsInteraction::buildFrameContext(RE::bhkWorld* bhk, RE:
 
     if (auto* player = RE::PlayerCharacter::GetSingleton()) {
         (void)player;
-        if (auto* playerNodes = f4vr::getPlayerNodes(); playerNodes && playerNodes->HmdNode) {
-            frame.hmdPositionWorld = playerNodes->HmdNode->world.translate;
-            const RE::NiPoint3 rawHmdForwardWorld = playerNodes->HmdNode->world.rotate.Transpose() * RE::NiPoint3(0.0f, 1.0f, 0.0f);
-            frame.hasHmdFrame = selection_query_policy::tryNormalizeVectorForHmdCone(rawHmdForwardWorld, frame.hmdForwardWorld);
+        if (auto* playerNodes = f4vr::getPlayerNodes()) {
+            const auto captureTrackedNode = [](const RE::NiNode* node) {
+                TrackedNodeFrame sample{};
+                if (node && finiteNiTransform(node->world)) {
+                    sample.world = node->world;
+                    sample.valid = true;
+                }
+                return sample;
+            };
+            frame.rightWand = captureTrackedNode(playerNodes->primaryWandNode);
+            frame.leftWand = captureTrackedNode(playerNodes->SecondaryWandNode);
+            frame.rightWeaponDriver = captureTrackedNode(playerNodes->primaryWeaponOffsetNOde);
+            frame.leftWeaponDriver = captureTrackedNode(playerNodes->SecondaryMeleeWeaponOffsetNode2);
+            if (playerNodes->HmdNode) {
+                frame.hmdPositionWorld = playerNodes->HmdNode->world.translate;
+                const RE::NiPoint3 rawHmdForwardWorld = playerNodes->HmdNode->world.rotate.Transpose() * RE::NiPoint3(0.0f, 1.0f, 0.0f);
+                frame.hasHmdFrame = selection_query_policy::tryNormalizeVectorForHmdCone(rawHmdForwardWorld, frame.hmdForwardWorld);
+            }
         }
     }
 

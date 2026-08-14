@@ -372,6 +372,15 @@ namespace rock
         telemetry.targetVelocityZ.store(sample.targetVelocityWorldGameUnitsPerSecond.z, std::memory_order_relaxed);
         telemetry.approachSpeed.store(sample.approachSpeedGameUnitsPerSecond, std::memory_order_relaxed);
         telemetry.physicsDeltaSeconds.store(sample.physicsDeltaSeconds, std::memory_order_relaxed);
+        telemetry.physicsRawDeltaSeconds.store(sample.physicsRawDeltaSeconds, std::memory_order_relaxed);
+        telemetry.physicsRemainderDeltaSeconds.store(sample.physicsRemainderDeltaSeconds, std::memory_order_relaxed);
+        telemetry.physicsAccumulatedDeltaSeconds.store(sample.physicsAccumulatedDeltaSeconds, std::memory_order_relaxed);
+        telemetry.physicsSubstepProgress.store(sample.physicsSubstepProgress, std::memory_order_relaxed);
+        telemetry.sourceGameFrameIndex.store(sample.sourceGameFrameIndex, std::memory_order_relaxed);
+        telemetry.sourceQueueSequence.store(sample.sourceQueueSequence, std::memory_order_relaxed);
+        telemetry.solveSequence.store(sample.solveSequence, std::memory_order_relaxed);
+        telemetry.physicsSubstepCount.store(sample.physicsSubstepCount, std::memory_order_relaxed);
+        telemetry.physicsSubstepIndex.store(sample.physicsSubstepIndex, std::memory_order_relaxed);
         telemetry.valid.store(sample.valid, std::memory_order_relaxed);
         telemetry.targetVelocityValid.store(sample.targetVelocityValid, std::memory_order_relaxed);
         telemetry.contactActive.store(sample.contactActive, std::memory_order_relaxed);
@@ -415,6 +424,15 @@ namespace rock
             };
             sample.approachSpeedGameUnitsPerSecond = telemetry.approachSpeed.load(std::memory_order_relaxed);
             sample.physicsDeltaSeconds = telemetry.physicsDeltaSeconds.load(std::memory_order_relaxed);
+            sample.physicsRawDeltaSeconds = telemetry.physicsRawDeltaSeconds.load(std::memory_order_relaxed);
+            sample.physicsRemainderDeltaSeconds = telemetry.physicsRemainderDeltaSeconds.load(std::memory_order_relaxed);
+            sample.physicsAccumulatedDeltaSeconds = telemetry.physicsAccumulatedDeltaSeconds.load(std::memory_order_relaxed);
+            sample.physicsSubstepProgress = telemetry.physicsSubstepProgress.load(std::memory_order_relaxed);
+            sample.sourceGameFrameIndex = telemetry.sourceGameFrameIndex.load(std::memory_order_relaxed);
+            sample.sourceQueueSequence = telemetry.sourceQueueSequence.load(std::memory_order_relaxed);
+            sample.solveSequence = telemetry.solveSequence.load(std::memory_order_relaxed);
+            sample.physicsSubstepCount = telemetry.physicsSubstepCount.load(std::memory_order_relaxed);
+            sample.physicsSubstepIndex = telemetry.physicsSubstepIndex.load(std::memory_order_relaxed);
             sample.valid = telemetry.valid.load(std::memory_order_relaxed);
             sample.targetVelocityValid = telemetry.targetVelocityValid.load(std::memory_order_relaxed);
             sample.contactActive = telemetry.contactActive.load(std::memory_order_relaxed);
@@ -441,6 +459,8 @@ namespace rock
         slot.lastPostSolveContact = false;
         slot.droveTargetVelocityGameUnitsPerSecond = {};
         slot.drovePhysicsDeltaSeconds = 0.0f;
+        slot.droveSourceGameFrameIndex = 0;
+        slot.droveSourceQueueSequence = 0;
         slot.droveTargetVelocityValid = false;
         slot.droveRecoveryTeleport = false;
         publishPhysicsTelemetry(slot, {});
@@ -1914,7 +1934,8 @@ namespace rock
                     slot.driveState,
                     driveTarget,
                     frame.deltaSeconds,
-                    g_rockConfig.rockHandCollisionDynamicDivergenceTeleportGameUnits);
+                    g_rockConfig.rockHandCollisionDynamicDivergenceTeleportGameUnits,
+                    frame.gameFrameIndex);
                 twinTelemetry.bodyCreated = slot.created;
                 twinTelemetry.bodyId = slot.created ? slot.body.getBodyId().value : dynamic_hand_collision_telemetry::kInvalidBodyId;
 
@@ -1928,6 +1949,9 @@ namespace rock
                 }
 
                 twinTelemetry.physicsSampleSequence = physicsSampleSequence;
+                twinTelemetry.sourceGameFrameIndex = physicsSample.sourceGameFrameIndex;
+                twinTelemetry.sourceQueueSequence = physicsSample.sourceQueueSequence;
+                twinTelemetry.solveSequence = physicsSample.solveSequence;
                 twinTelemetry.physicsSampleValid = true;
                 twinTelemetry.targetVelocityValid = physicsSample.targetVelocityValid;
                 twinTelemetry.contactActive = physicsSample.contactActive;
@@ -1938,6 +1962,12 @@ namespace rock
                 twinTelemetry.targetVelocityWorldGameUnitsPerSecond = physicsSample.targetVelocityWorldGameUnitsPerSecond;
                 twinTelemetry.approachSpeedGameUnitsPerSecond = physicsSample.approachSpeedGameUnitsPerSecond;
                 twinTelemetry.physicsDeltaSeconds = physicsSample.physicsDeltaSeconds;
+                twinTelemetry.physicsRawDeltaSeconds = physicsSample.physicsRawDeltaSeconds;
+                twinTelemetry.physicsRemainderDeltaSeconds = physicsSample.physicsRemainderDeltaSeconds;
+                twinTelemetry.physicsAccumulatedDeltaSeconds = physicsSample.physicsAccumulatedDeltaSeconds;
+                twinTelemetry.physicsSubstepProgress = physicsSample.physicsSubstepProgress;
+                twinTelemetry.physicsSubstepCount = physicsSample.physicsSubstepCount;
+                twinTelemetry.physicsSubstepIndex = physicsSample.physicsSubstepIndex;
                 twinTelemetry.solverResidualWorldGame = subtractPoints(
                     twinTelemetry.liveBodyWorldGame,
                     twinTelemetry.commandedTargetWorldGame);
@@ -2327,6 +2357,8 @@ namespace rock
                         } :
                         RE::NiPoint3{};
                     slot.drovePhysicsDeltaSeconds = result.driveDeltaSeconds;
+                    slot.droveSourceGameFrameIndex = result.sourceFrameIndex;
+                    slot.droveSourceQueueSequence = result.sourceSequence;
                     slot.droveRecoveryTeleport = result.teleported;
                     slot.droveThisSubstep = true;
                 } else {
@@ -2362,7 +2394,10 @@ namespace rock
         }
     }
 
-    void DynamicHandCollisionRuntime::samplePostSolveDeviations(RE::hknpWorld* world)
+    void DynamicHandCollisionRuntime::samplePostSolveDeviations(
+        RE::hknpWorld* world,
+        const std::uint64_t solveSequence,
+        const havok_physics_timing::PhysicsTimingSample& timing)
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::DynamicHandCollisionPostSolve);
 
@@ -2443,6 +2478,15 @@ namespace rock
                         .targetVelocityWorldGameUnitsPerSecond = slot.droveTargetVelocityGameUnitsPerSecond,
                         .approachSpeedGameUnitsPerSecond = approachSpeedGameUnitsPerSecond,
                         .physicsDeltaSeconds = slot.drovePhysicsDeltaSeconds,
+                        .physicsRawDeltaSeconds = timing.rawDeltaSeconds,
+                        .physicsRemainderDeltaSeconds = timing.remainderDeltaSeconds,
+                        .physicsAccumulatedDeltaSeconds = timing.accumulatedDeltaSeconds,
+                        .physicsSubstepProgress = timing.substepProgress,
+                        .sourceGameFrameIndex = slot.droveSourceGameFrameIndex,
+                        .sourceQueueSequence = slot.droveSourceQueueSequence,
+                        .solveSequence = solveSequence,
+                        .physicsSubstepCount = timing.substepCount,
+                        .physicsSubstepIndex = timing.substepIndex,
                         .valid = true,
                         .targetVelocityValid = slot.droveTargetVelocityValid,
                         .contactActive = contact,

@@ -58,6 +58,10 @@ namespace rock::fo4vr
         RE::NiNode* LockPickParentNode;                     // + 0x0828
     };
     static_assert(sizeof(PlayerNodes) == 0x150);
+    static_assert(0x6E0 + offsetof(PlayerNodes, primaryWandNode) == 0x6F0);
+    static_assert(0x6E0 + offsetof(PlayerNodes, primaryWeaponOffsetNOde) == 0x718);
+    static_assert(0x6E0 + offsetof(PlayerNodes, SecondaryWandNode) == 0x768);
+    static_assert(0x6E0 + offsetof(PlayerNodes, SecondaryMeleeWeaponOffsetNode2) == 0x790);
 
     class BSFlattenedBoneTree : public RE::NiNode
     {

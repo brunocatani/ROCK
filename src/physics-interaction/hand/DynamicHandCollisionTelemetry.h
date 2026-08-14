@@ -156,6 +156,9 @@ namespace rock::dynamic_hand_collision_telemetry
         TwinRole role{ TwinRole::Palm };
         std::uint32_t bodyId{ kInvalidBodyId };
         std::uint64_t physicsSampleSequence = 0;
+        std::uint64_t sourceGameFrameIndex = 0;
+        std::uint64_t sourceQueueSequence = 0;
+        std::uint64_t solveSequence = 0;
 
         RE::NiTransform publishedTargetWorld{};
         RE::NiPoint3 requestedTargetWorldGame{};
@@ -177,6 +180,12 @@ namespace rock::dynamic_hand_collision_telemetry
         float handTargetResponseScale = 1.0f;
         float approachSpeedGameUnitsPerSecond = 0.0f;
         float physicsDeltaSeconds = 0.0f;
+        float physicsRawDeltaSeconds = 0.0f;
+        float physicsRemainderDeltaSeconds = 0.0f;
+        float physicsAccumulatedDeltaSeconds = 0.0f;
+        float physicsSubstepProgress = 0.0f;
+        std::uint32_t physicsSubstepCount = 0;
+        std::uint32_t physicsSubstepIndex = 0;
 
         bool bodyCreated = false;
         bool publishedTargetValid = false;

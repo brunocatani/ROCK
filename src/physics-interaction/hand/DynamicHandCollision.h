@@ -94,7 +94,10 @@ namespace rock
          * saturates at the dt-dependent limiter distance (sessions 3-5
          * milli-punch pulsing).
          */
-        void samplePostSolveDeviations(RE::hknpWorld* world);
+        void samplePostSolveDeviations(
+            RE::hknpWorld* world,
+            std::uint64_t solveSequence,
+            const havok_physics_timing::PhysicsTimingSample& timing);
         void retireAll(void* bhkWorld);
         void reset();
         // Main-thread snapshot/event access. Future provider adapters must copy
@@ -208,6 +211,15 @@ namespace rock
             RE::NiPoint3 targetVelocityWorldGameUnitsPerSecond{};
             float approachSpeedGameUnitsPerSecond = 0.0f;
             float physicsDeltaSeconds = 0.0f;
+            float physicsRawDeltaSeconds = 0.0f;
+            float physicsRemainderDeltaSeconds = 0.0f;
+            float physicsAccumulatedDeltaSeconds = 0.0f;
+            float physicsSubstepProgress = 0.0f;
+            std::uint64_t sourceGameFrameIndex = 0;
+            std::uint64_t sourceQueueSequence = 0;
+            std::uint64_t solveSequence = 0;
+            std::uint32_t physicsSubstepCount = 0;
+            std::uint32_t physicsSubstepIndex = 0;
             bool valid = false;
             bool targetVelocityValid = false;
             bool contactActive = false;
@@ -236,6 +248,15 @@ namespace rock
             std::atomic<float> targetVelocityZ{ 0.0f };
             std::atomic<float> approachSpeed{ 0.0f };
             std::atomic<float> physicsDeltaSeconds{ 0.0f };
+            std::atomic<float> physicsRawDeltaSeconds{ 0.0f };
+            std::atomic<float> physicsRemainderDeltaSeconds{ 0.0f };
+            std::atomic<float> physicsAccumulatedDeltaSeconds{ 0.0f };
+            std::atomic<float> physicsSubstepProgress{ 0.0f };
+            std::atomic<std::uint64_t> sourceGameFrameIndex{ 0 };
+            std::atomic<std::uint64_t> sourceQueueSequence{ 0 };
+            std::atomic<std::uint64_t> solveSequence{ 0 };
+            std::atomic<std::uint32_t> physicsSubstepCount{ 0 };
+            std::atomic<std::uint32_t> physicsSubstepIndex{ 0 };
             std::atomic<bool> valid{ false };
             std::atomic<bool> targetVelocityValid{ false };
             std::atomic<bool> contactActive{ false };
@@ -279,6 +300,8 @@ namespace rock
             bool lastPostSolveContact = false;
             RE::NiPoint3 droveTargetVelocityGameUnitsPerSecond{};
             float drovePhysicsDeltaSeconds = 0.0f;
+            std::uint64_t droveSourceGameFrameIndex = 0;
+            std::uint64_t droveSourceQueueSequence = 0;
             bool droveTargetVelocityValid = false;
             bool droveRecoveryTeleport = false;
             /*
