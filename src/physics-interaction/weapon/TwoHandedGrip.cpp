@@ -2758,7 +2758,9 @@ namespace rock
             WEAPON_COLLISION_HAND_TAG,
             frik_visual_authority::Hand::Right);
         _weaponCollisionHandAuthorityLive = {};
+        _weaponCollisionHandAuthorityGenerationKey = {};
         _weaponCollisionHandPresentationFromPreviousFrame = {};
+        _weaponCollisionBaselineHandWorldValid = {};
         resetGunstockAlignment("reset");
         _gunstockModeToggle = {};
         _gunstockWeaponEligibility = {};
@@ -3435,6 +3437,8 @@ namespace rock
         const std::size_t index = isLeft ? 0u : 1u;
         _lastPublishedHandWorld[index] = appliedWorld;
         _hasLastPublishedHandWorld[index] = true;
+        _weaponCollisionBaselineHandWorld[index] = appliedWorld;
+        _weaponCollisionBaselineHandWorldValid[index] = true;
     }
 
     void TwoHandedGrip::beginHandVisualReturn(const bool isLeft, const char* reason)
@@ -10076,6 +10080,7 @@ namespace rock
     {
         const std::size_t index = isLeft ? 0u : 1u;
         if (!_weaponCollisionHandAuthorityLive[index]) {
+            _weaponCollisionHandAuthorityGenerationKey[index] = 0;
             return true;
         }
         if (!frik_visual_authority::isAvailable() ||
@@ -10085,13 +10090,16 @@ namespace rock
             return false;
         }
         _weaponCollisionHandAuthorityLive[index] = false;
+        _weaponCollisionHandAuthorityGenerationKey[index] = 0;
         return true;
     }
 
-    void TwoHandedGrip::beginWeaponCollisionPresentationFrame()
+    void TwoHandedGrip::beginWeaponCollisionPresentationFrame(
+        const std::uint64_t currentWeaponGenerationKey)
     {
         _weaponCollisionHandPresentationFromPreviousFrame =
             _weaponCollisionHandAuthorityLive;
+        _weaponCollisionBaselineHandWorldValid = {};
 
         /*
          * FRIK V2 owns tagged transforms as persistent claims and consumes the
@@ -10099,7 +10107,30 @@ namespace rock
          * recreating this tag every ROCK frame opened a scheduler-dependent
          * window in which FRIK could select the lower-priority grip claim. Keep
          * the same owner registered and update its value after post-solve.
+         * A weapon-generation edge is different: FRIK already consumed the old
+         * claim for this frame, so preserve the previous-presentation witness
+         * but retire the claim before the replacement weapon can publish.
          */
+        bool generationClaimsCleared = true;
+        for (std::size_t index = 0; index < _weaponCollisionHandAuthorityLive.size(); ++index) {
+            if (!_weaponCollisionHandAuthorityLive[index] ||
+                (currentWeaponGenerationKey != 0 &&
+                    _weaponCollisionHandAuthorityGenerationKey[index] == currentWeaponGenerationKey)) {
+                continue;
+            }
+            generationClaimsCleared =
+                clearWeaponCollisionHandAuthority(index == 0u) &&
+                generationClaimsCleared;
+        }
+        if (!generationClaimsCleared) {
+            ROCK_LOG_SAMPLE_WARN(
+                Weapon,
+                1000,
+                "TwoHandedGrip: stale dynamic weapon collision hand authority clear failed generation={:016X} live(L/R)={}/{}",
+                currentWeaponGenerationKey,
+                _weaponCollisionHandAuthorityLive[0],
+                _weaponCollisionHandAuthorityLive[1]);
+        }
     }
 
     void TwoHandedGrip::finishWeaponCollisionPresentationFrame(
@@ -10181,29 +10212,37 @@ namespace rock
                 continue;
             }
             /*
-             * FRIK V2 consumes this persistent claim during its next skeleton
-             * frame, so its current root contains the previous collision
-             * result. Reusing that root would compound the correction. The
-             * scope-safe frame was reconstructed from the unaffected hand
-             * driver because the previous-presentation witness was set, so it
-             * is the collision-free physical input for this publication. The
-             * weapon basis is likewise the explicit intent captured before
-             * physics; weaponNode->world can already contain the previous
-             * deferred hand claim and must never be used as that basis.
+             * A locked firing/support pose was already published earlier in
+             * this ROCK frame. It is the exact collision-free hand baseline;
+             * replacing it with controller input at this higher priority makes
+             * the hand slide off the part and feeds equip-time rotation back
+             * through FRIK. Native passive carry has no ROCK hand publication,
+             * so it deliberately falls back to the scope-safe physical input.
+             * The weapon basis remains the explicit pre-physics intent because
+             * weaponNode->world can contain the previous deferred claim.
              */
-            RE::NiTransform physicalHandWorld{};
-            const bool physicalHandValid =
-                tryGetSolverHandTransform(
-                    pulse.isLeft,
-                    physicalHandWorld);
+            const std::size_t handIndex = pulse.isLeft ? 0u : 1u;
+            RE::NiTransform collisionFreeHandWorld{};
+            bool collisionFreeHandValid = false;
+            if (_weaponCollisionBaselineHandWorldValid[handIndex]) {
+                collisionFreeHandWorld =
+                    _weaponCollisionBaselineHandWorld[handIndex];
+                collisionFreeHandValid =
+                    isUsableHandAuthorityTransform(collisionFreeHandWorld);
+            } else {
+                collisionFreeHandValid =
+                    tryGetSolverHandTransform(
+                        pulse.isLeft,
+                        collisionFreeHandWorld) &&
+                    isUsableHandAuthorityTransform(collisionFreeHandWorld);
+            }
             pulse.targetWorld =
                 dynamic_weapon_collision_policy::reframeAttachedHand(
                     requestedWeaponWorld,
                     resolvedWeaponWorld,
-                    physicalHandWorld);
+                    collisionFreeHandWorld);
             pulse.targetValid =
-                physicalHandValid &&
-                isUsableHandAuthorityTransform(physicalHandWorld) &&
+                collisionFreeHandValid &&
                 isUsableHandAuthorityTransform(pulse.targetWorld);
             handTargetsReady = handTargetsReady && pulse.targetValid;
         }
@@ -10230,8 +10269,10 @@ namespace rock
                  */
                 pulse.retained = pulse.applied;
                 if (pulse.retained) {
-                    _weaponCollisionHandAuthorityLive[
-                        pulse.isLeft ? 0u : 1u] = true;
+                    const std::size_t handIndex = pulse.isLeft ? 0u : 1u;
+                    _weaponCollisionHandAuthorityLive[handIndex] = true;
+                    _weaponCollisionHandAuthorityGenerationKey[handIndex] =
+                        authorityGenerationKey;
                 }
                 handPulsesSucceeded =
                     handPulsesSucceeded && pulse.applied && pulse.retained;

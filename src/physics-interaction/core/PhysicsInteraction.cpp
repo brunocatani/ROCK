@@ -2105,8 +2105,6 @@ namespace rock
             return;
         }
 
-        _twoHandedGrip.beginWeaponCollisionPresentationFrame();
-
         // ROCK always binds raw controller identity physically: right is the
         // primary wand and left is the secondary wand. Weapon handedness is a
         // separate ROCK role and never remaps buttons/controllers.
@@ -2594,6 +2592,8 @@ namespace rock
 
         const std::uint64_t currentWeaponGenerationKey = _weaponCollision.getCurrentWeaponGenerationKey();
         const std::uint64_t currentEquippedWeaponOwnershipKey = _weaponCollision.getCurrentEquippedWeaponOwnershipKey();
+        _twoHandedGrip.beginWeaponCollisionPresentationFrame(
+            currentWeaponGenerationKey);
         const bool suppressDefaultNativeWeaponIntent =
             _twoHandedGrip.previousWeaponCollisionPresentationWasLive();
         _dynamicWeaponCollision.beginFrame(

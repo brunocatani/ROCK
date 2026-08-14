@@ -675,7 +675,7 @@ namespace rock
         // previous render interval. FRIK V2 claims remain registered while the
         // runtime is active; input selection uses this witness to avoid reading
         // the collision-corrected roots back as physical intent.
-        void beginWeaponCollisionPresentationFrame();
+        void beginWeaponCollisionPresentationFrame(std::uint64_t currentWeaponGenerationKey);
 
         // Releases persistent collision claims only when their owning runtime
         // is definitively inactive. A transient missing post-solve sample keeps
@@ -1677,9 +1677,15 @@ namespace rock
         std::array<ReturningHandVisualState, 2> _returningHandVisuals{};
         std::array<RE::NiTransform, 2> _lastPublishedHandWorld{};
         std::array<bool, 2> _hasLastPublishedHandWorld{};
+        // Exact hand targets published earlier in the current ROCK frame.
+        // Collision presentation layers its rigid weapon delta over these
+        // targets instead of replacing a locked grip with controller input.
+        std::array<RE::NiTransform, 2> _weaponCollisionBaselineHandWorld{};
+        std::array<bool, 2> _weaponCollisionBaselineHandWorldValid{};
         // Per physical hand (left index 0, right index 1). FRIK V2 consumes
         // these persistent claims during its regular skeleton update.
         std::array<bool, 2> _weaponCollisionHandAuthorityLive{};
+        std::array<std::uint64_t, 2> _weaponCollisionHandAuthorityGenerationKey{};
         // Captured at the frame boundary. Because ROCK runs after FRIK, this
         // identifies root/weapon poses that include collision presentation.
         std::array<bool, 2> _weaponCollisionHandPresentationFromPreviousFrame{};
