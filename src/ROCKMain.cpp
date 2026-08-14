@@ -2,6 +2,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <windows.h>
 
 #include "api/FRIKApiV2.h"
 #define ROCK_API_EXPORTS
@@ -20,6 +21,7 @@
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/native/HeldWeaponInstantTransition.h"
+#include "physics-interaction/native/MainLoopHookPolicy.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
@@ -347,6 +349,13 @@ namespace
 
     using GameLoopFunc = void (*)(std::uint64_t rcx);
     GameLoopFunc s_originalGameLoopFunc = nullptr;
+    GameLoopFunc s_frikOuterGameLoopFunc = nullptr;
+    std::uint64_t s_preFrikSchedulerSequence = 0;
+    bool s_preFrikOuterHookInstalled = false;
+    bool s_preFrikUnexpectedOwnerLogged = false;
+
+    void onGameFrameUpdateHook(std::uint64_t rcx);
+    void onPreFrikGameFrameUpdateHook(std::uint64_t rcx);
 
     using NativeScopeStateTransitionFunc = void (*)(RE::PlayerCharacter*, bool);
     NativeScopeStateTransitionFunc s_originalNativeScopeStateTransition = nullptr;
@@ -568,8 +577,134 @@ namespace
      * the generation-bound rigid camera/overlay frame here for the later mono
      * render, then let ROCK apply any final weapon authority in onFrameUpdate.
      */
+    [[nodiscard]] bool isAddressOwnedByModule(
+        const std::uintptr_t address,
+        const wchar_t* moduleName)
+    {
+        if (address == 0 || !moduleName) {
+            return false;
+        }
+        HMODULE addressModule = nullptr;
+        if (!GetModuleHandleExW(
+                GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                    GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                reinterpret_cast<LPCWSTR>(address),
+                &addressModule) ||
+            !addressModule) {
+            return false;
+        }
+        return addressModule == GetModuleHandleW(moduleName);
+    }
+
+    [[nodiscard]] bool tryHookFrikOuterGameLoop()
+    {
+        if (s_preFrikOuterHookInstalled) {
+            return true;
+        }
+
+        const auto callSiteAddress =
+            REL::Offset(rock::offsets::kHookSite_MainLoop).address();
+        std::array<std::uint8_t,
+            main_loop_hook_policy::kRelativeCallSize> callBytes{};
+        std::uintptr_t immediateTarget = 0;
+        if (!native_memory::guardedCopyFromMemory(
+                reinterpret_cast<const void*>(callSiteAddress),
+                callBytes.data(),
+                callBytes.size()) ||
+            !main_loop_hook_policy::decodeRelativeCallTarget(
+                callBytes.data(),
+                callSiteAddress,
+                immediateTarget)) {
+            if (!s_preFrikUnexpectedOwnerLogged) {
+                logger::critical(
+                    "ROCK: Pre-FRIK scheduler refused an unreadable or non-CALL main-loop site.");
+                s_preFrikUnexpectedOwnerLogged = true;
+            }
+            return false;
+        }
+
+        if (immediateTarget == reinterpret_cast<std::uintptr_t>(
+                                   &onPreFrikGameFrameUpdateHook)) {
+            s_preFrikOuterHookInstalled = true;
+            return true;
+        }
+
+        std::uintptr_t terminalTarget = immediateTarget;
+        std::array<std::uint8_t,
+            main_loop_hook_policy::kCommonLibAbsoluteJumpThunkSize>
+            thunkBytes{};
+        if (native_memory::guardedCopyFromMemory(
+                reinterpret_cast<const void*>(immediateTarget),
+                thunkBytes.data(),
+                thunkBytes.size()) &&
+            main_loop_hook_policy::isCommonLibAbsoluteJumpThunk(
+                thunkBytes.data())) {
+            if (!main_loop_hook_policy::decodeCommonLibAbsoluteJumpTarget(
+                    thunkBytes.data(),
+                    terminalTarget)) {
+                return false;
+            }
+        }
+
+        if (terminalTarget == reinterpret_cast<std::uintptr_t>(
+                                  &onGameFrameUpdateHook)) {
+            // FRIK has not wrapped ROCK's original game-loop hook yet.
+            return false;
+        }
+        if (terminalTarget == reinterpret_cast<std::uintptr_t>(
+                                  &onPreFrikGameFrameUpdateHook)) {
+            s_preFrikOuterHookInstalled = true;
+            return true;
+        }
+        if (!isAddressOwnedByModule(terminalTarget, L"FRIK.dll")) {
+            if (!s_preFrikUnexpectedOwnerLogged) {
+                logger::critical(
+                    "ROCK: Pre-FRIK scheduler refused main-loop owner 0x{:X}; terminal target is not FRIK.dll.",
+                    terminalTarget);
+                s_preFrikUnexpectedOwnerLogged = true;
+            }
+            return false;
+        }
+
+        auto& trampoline = F4SE::GetTrampoline();
+        const auto original = trampoline.write_call<5>(
+            callSiteAddress,
+            &onPreFrikGameFrameUpdateHook);
+        if (!original || original != immediateTarget) {
+            logger::critical(
+                "ROCK: Pre-FRIK scheduler failed to retain the exact FRIK outer chain target expected=0x{:X} actual=0x{:X}.",
+                immediateTarget,
+                original);
+            return false;
+        }
+        s_frikOuterGameLoopFunc = reinterpret_cast<GameLoopFunc>(original);
+        s_preFrikOuterHookInstalled = true;
+        logger::info(
+            "ROCK: Pre-FRIK hand-authority scheduler installed before FRIK.dll target 0x{:X}.",
+            terminalTarget);
+        return true;
+    }
+
+    void onPreFrikGameFrameUpdateHook(const std::uint64_t rcx)
+    {
+        ++s_preFrikSchedulerSequence;
+        if (s_preFrikSchedulerSequence == 0) {
+            s_preFrikSchedulerSequence = 1;
+        }
+        if (s_pluginLoaded && s_frikAvailable && g_rockConfig.rockEnabled &&
+            s_physicsInteraction) {
+            s_physicsInteraction->
+                refreshExternalHandWorldTransformsBeforeFrik(
+                    s_preFrikSchedulerSequence);
+        }
+        if (s_frikOuterGameLoopFunc) {
+            s_frikOuterGameLoopFunc(rcx);
+        }
+    }
+
     void onGameFrameUpdateHook(const std::uint64_t rcx)
     {
+        (void)tryHookFrikOuterGameLoop();
         if (s_originalGameLoopFunc) {
             s_originalGameLoopFunc(rcx);
         }
@@ -607,6 +742,29 @@ namespace
         REL::Relocation hookCallSite{ REL::Offset(rock::offsets::kHookSite_MainLoop) };
 
         logger::info("ROCK: Hooking main loop at (0x{:X})...", hookCallSite.address());
+
+        std::array<std::uint8_t,
+            main_loop_hook_policy::kRelativeCallSize> callBytes{};
+        std::uintptr_t displacedTarget = 0;
+        const auto expectedDisplacedTarget =
+            REL::Offset(
+                rock::offsets::kFunc_MainLoopDisplacedTarget).address();
+        if (!native_memory::guardedCopyFromMemory(
+                reinterpret_cast<const void*>(hookCallSite.address()),
+                callBytes.data(),
+                callBytes.size()) ||
+            !main_loop_hook_policy::decodeRelativeCallTarget(
+                callBytes.data(),
+                hookCallSite.address(),
+                displacedTarget) ||
+            displacedTarget != expectedDisplacedTarget) {
+            logger::critical(
+                "ROCK: Main-loop hook identity validation failed site=0x{:X} expectedTarget=0x{:X} actualTarget=0x{:X}.",
+                hookCallSite.address(),
+                expectedDisplacedTarget,
+                displacedTarget);
+            return false;
+        }
 
         auto& trampoline = F4SE::GetTrampoline();
         const auto original = trampoline.write_call<5>(hookCallSite.address(), &onGameFrameUpdateHook);
@@ -753,6 +911,8 @@ namespace
             s_messaging->RegisterListener(onFRIKMessage, frik::api::FRIKApiV2::FRIK_F4SE_MOD_NAME);
             logger::info("ROCK: Registered FRIK lifecycle event listener on '{}'.", frik::api::FRIKApiV2::FRIK_F4SE_MOD_NAME);
 
+            (void)tryHookFrikOuterGameLoop();
+
             logger::info("ROCK: Initialization complete. Waiting for skeleton...");
         }
 
@@ -812,13 +972,6 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Query(const F4SE::QueryInterface* a
         return false;
     }
 
-    const auto requiredRuntime = F4SE::RUNTIME_LATEST_VR;
-
-    if (a_f4se->RuntimeVersion() < requiredRuntime) {
-        logger::critical("ROCK: Unsupported runtime version {} (need >= {}).", a_f4se->RuntimeVersion().string(), requiredRuntime.string());
-        return false;
-    }
-
     logger::info("ROCK: F4SE v{} query passed. Plugin compatible.", a_f4se->F4SEVersion().string());
     return true;
 }
@@ -829,6 +982,13 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
 
     logger::info("ROCK: Init CommonLibF4 F4SE...");
     F4SE::Init(a_f4se, false);
+
+    if (!REL::Module::IsVR() ||
+        REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72) {
+        logger::critical(
+            "ROCK: Fallout4VR.exe 1.2.72 is required before installing runtime hooks.");
+        return false;
+    }
 
     logger::info("ROCK: Register F4SE messaging listener...");
     s_messaging = F4SE::GetMessagingInterface();

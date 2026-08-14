@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
+#include "physics-interaction/visual/PreFrikHandAuthorityPolicy.h"
 
 #include "RE/NetImmerse/NiTransform.h"
 #include "physics-interaction/TransformMath.h"
@@ -470,6 +471,12 @@ namespace rock
                 state.sourceBoneTree = sourceBoneTree;
             }
 
+            const bool persistentAuthorityFell =
+                state.persistentWorldAuthorityPublishedLastResolve &&
+                !persistentWorldAuthorityPublished;
+            state.persistentWorldAuthorityPublishedLastResolve =
+                persistentWorldAuthorityPublished;
+
             if (!hasRootFlattenedHand ||
                 !sourceSkeleton ||
                 !sourceBoneTree ||
@@ -479,7 +486,10 @@ namespace rock
             }
 
             if (!persistentWorldAuthorityPublished) {
-                if (hasDriverWorld &&
+                if (persistentAuthorityFell) {
+                    state.candidateDriverToHandLocal = {};
+                    state.coherentCandidateSamples = 0;
+                } else if (hasDriverWorld &&
                     collision_isolated_hand_frame_math::isUsableTransform(
                         driverWorld)) {
                     const RE::NiTransform driverToHandLocal =
@@ -490,8 +500,32 @@ namespace rock
                     if (collision_isolated_hand_frame_math::
                             relationWithinCalibrationRange(
                                 driverToHandLocal)) {
-                        state.driverToHandLocal = driverToHandLocal;
-                        state.hasDriverToHandLocal = true;
+                        if (state.coherentCandidateSamples != 0 &&
+                            prefrik_hand_authority_policy::
+                                calibrationRelationsCoherent(
+                                    state.candidateDriverToHandLocal,
+                                    driverToHandLocal)) {
+                            if (state.coherentCandidateSamples <
+                                prefrik_hand_authority_policy::
+                                    kRequiredStableCalibrationSamples) {
+                                ++state.coherentCandidateSamples;
+                            }
+                        } else {
+                            state.candidateDriverToHandLocal =
+                                driverToHandLocal;
+                            state.coherentCandidateSamples = 1;
+                        }
+
+                        if (state.coherentCandidateSamples >=
+                            prefrik_hand_authority_policy::
+                                kRequiredStableCalibrationSamples) {
+                            state.driverToHandLocal =
+                                state.candidateDriverToHandLocal;
+                            state.hasDriverToHandLocal = true;
+                        }
+                    } else {
+                        state.candidateDriverToHandLocal = {};
+                        state.coherentCandidateSamples = 0;
                     }
                 }
 
@@ -531,6 +565,37 @@ namespace rock
             };
         }
 
+        [[nodiscard]] bool tryReconstructCalibratedHand(
+            bool isLeft,
+            const void* sourceSkeleton,
+            const void* sourceBoneTree,
+            const RE::NiTransform& driverWorld,
+            RE::NiTransform& outHandWorld) const
+        {
+            outHandWorld = {};
+            const auto& state = _states[isLeft ? 0u : 1u];
+            if (!state.hasDriverToHandLocal ||
+                !sourceSkeleton ||
+                !sourceBoneTree ||
+                state.sourceSkeleton != sourceSkeleton ||
+                state.sourceBoneTree != sourceBoneTree ||
+                !collision_isolated_hand_frame_math::isUsableTransform(
+                    driverWorld)) {
+                return false;
+            }
+
+            const RE::NiTransform reconstructedHandWorld =
+                collision_isolated_hand_frame_math::reconstructHandWorld(
+                    driverWorld,
+                    state.driverToHandLocal);
+            if (!collision_isolated_hand_frame_math::isUsableTransform(
+                    reconstructedHandWorld)) {
+                return false;
+            }
+            outHandWorld = reconstructedHandWorld;
+            return true;
+        }
+
         void reset()
         {
             _states = {};
@@ -553,9 +618,12 @@ namespace rock
         struct DriverCalibration
         {
             RE::NiTransform driverToHandLocal{};
+            RE::NiTransform candidateDriverToHandLocal{};
             const void* sourceSkeleton = nullptr;
             const void* sourceBoneTree = nullptr;
+            std::uint32_t coherentCandidateSamples = 0;
             bool hasDriverToHandLocal = false;
+            bool persistentWorldAuthorityPublishedLastResolve = false;
         };
 
         std::array<DriverCalibration, 2> _states{};

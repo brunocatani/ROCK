@@ -80,6 +80,13 @@ namespace rock
             std::uint32_t dynamicWeaponBodyId,
             bool rightVisualReturnActive,
             bool leftVisualReturnActive);
+        void refreshContactVisualAuthorityBeforeFrik(
+            std::uint64_t currentSchedulerSequence,
+            bool rightRawHandValid,
+            const RE::NiTransform& rightRawHandWorld,
+            bool leftRawHandValid,
+            const RE::NiTransform& leftRawHandWorld,
+            float maximumRawMotionGameUnits);
         void flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         /*
          * Post-solve deviation sampling (physics step thread, after-solve
@@ -321,6 +328,16 @@ namespace rock
 
         struct HandSlots
         {
+            struct PreFrikContactAuthority
+            {
+                RE::NiTransform sourceRawHandWorld{};
+                RE::NiPoint3 appliedDeviationWorldGame{};
+                std::uint64_t sourceSchedulerSequence = 0;
+                std::uint64_t sourceGameFrameIndex = 0;
+                std::uint64_t solveSequence = 0;
+                bool valid = false;
+            };
+
             struct SurfaceFingerResponse
             {
                 std::array<RE::NiTransform,
@@ -377,6 +394,7 @@ namespace rock
             bool visualActive = false;
             RE::NiTransform lastPresentedHandWorld{};
             bool lastPresentedHandWorldValid = false;
+            PreFrikContactAuthority preFrikContactAuthority{};
             SurfaceLatch surfaceLatch{};
             SurfaceFingerResponse surfaceFingerResponse{};
             /*

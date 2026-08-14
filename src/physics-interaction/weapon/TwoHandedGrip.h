@@ -678,6 +678,13 @@ namespace rock
         // the collision-corrected roots back as physical intent.
         void beginWeaponCollisionPresentationFrame(std::uint64_t currentWeaponGenerationKey);
 
+        void refreshWeaponCollisionHandAuthorityBeforeFrik(
+            const RE::NiTransform& firingWandWorld,
+            bool firingWandValid,
+            std::uint64_t currentWeaponGenerationKey,
+            bool firingHandIsLeft,
+            std::uint64_t currentSchedulerSequence);
+
         // Releases persistent collision claims only when their owning runtime
         // is definitively inactive. A transient missing post-solve sample keeps
         // the last valid claim instead of switching FRIK owners for one frame.
@@ -695,7 +702,11 @@ namespace rock
             RE::NiNode* weaponNode,
             const RE::NiTransform& requestedWeaponWorld,
             const RE::NiTransform& resolvedWeaponWorld,
-            std::uint64_t authorityGenerationKey);
+            std::uint64_t authorityGenerationKey,
+            const RE::NiTransform& firingWandWorld,
+            bool firingWandValid,
+            bool firingHandIsLeft,
+            std::uint64_t sourceSchedulerSequence);
 
         bool isGripping() const { return _state == TwoHandedState::Gripping || _state == TwoHandedState::PartCarry; }
 
@@ -1698,6 +1709,16 @@ namespace rock
         // these persistent claims during its regular skeleton update.
         std::array<bool, 2> _weaponCollisionHandAuthorityLive{};
         std::array<std::uint64_t, 2> _weaponCollisionHandAuthorityGenerationKey{};
+        struct PreFrikWeaponHandAuthority
+        {
+            RE::NiTransform firingWandToHandLocal{};
+            std::uint64_t weaponGenerationKey = 0;
+            std::uint64_t sourceSchedulerSequence = 0;
+            bool firingHandIsLeft = false;
+            bool valid = false;
+        };
+        std::array<PreFrikWeaponHandAuthority, 2>
+            _preFrikWeaponHandAuthority{};
         // Captured at the frame boundary. Because ROCK runs after FRIK, this
         // identifies root/weapon poses that include collision presentation.
         std::array<bool, 2> _weaponCollisionHandPresentationFromPreviousFrame{};

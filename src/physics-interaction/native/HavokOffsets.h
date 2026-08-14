@@ -331,6 +331,8 @@ namespace rock::offsets
     constexpr std::uintptr_t kData_PlayerActorSingleton = 0x5A38518;
 
     constexpr std::uintptr_t kHookSite_MainLoop = 0xD8405E;
+    // Verified FO4VR 1.2.72 displaced CALL target at kHookSite_MainLoop.
+    constexpr std::uintptr_t kFunc_MainLoopDisplacedTarget = 0xD3C820;
 
     /*
      * FO4VR's recurring first-person node-chain alignment helper. Blind raw

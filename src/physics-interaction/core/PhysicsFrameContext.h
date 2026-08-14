@@ -44,6 +44,7 @@ namespace rock
     struct PhysicsFrameContext
     {
         std::uint64_t gameFrameIndex = 0;
+        std::uint64_t preFrikSchedulerSequence = 0;
         RE::bhkWorld* bhkWorld = nullptr;
         RE::hknpWorld* hknpWorld = nullptr;
         float deltaSeconds = 1.0f / 90.0f;

@@ -400,15 +400,32 @@ int main()
             skeleton,
             skeleton);
 
-        const auto cleanFrame = resolver.resolve(
-            false,
-            true,
-            cleanRootHandWorld,
-            skeleton,
-            skeleton,
-            false,
-            true,
-            driverWorld);
+        rock::HandFrame cleanFrame{};
+        for (std::uint32_t sample = 0;
+             sample < rock::prefrik_hand_authority_policy::
+                          kRequiredStableCalibrationSamples;
+             ++sample) {
+            cleanFrame = resolver.resolve(
+                false,
+                true,
+                cleanRootHandWorld,
+                skeleton,
+                skeleton,
+                false,
+                true,
+                driverWorld);
+            if (sample + 1 <
+                    rock::prefrik_hand_authority_policy::
+                        kRequiredStableCalibrationSamples &&
+                resolver.hasControllerReconstructionCalibration(
+                    false,
+                    skeleton,
+                    skeleton)) {
+                std::printf(
+                    "controller calibration committed before the stable sample threshold\n");
+                ok = false;
+            }
+        }
         if (!cleanFrame.valid) {
             std::printf("clean root hand frame was not valid\n");
             ok = false;
@@ -426,6 +443,18 @@ int main()
             false,
             reinterpret_cast<const void*>(0x5678),
             skeleton);
+
+        RE::NiTransform preFrikReconstructedHandWorld{};
+        ok &= resolver.tryReconstructCalibratedHand(
+            false,
+            skeleton,
+            skeleton,
+            driverWorld,
+            preFrikReconstructedHandWorld);
+        ok &= expectTransformNear(
+            "pre-FRIK reconstruction avoids the hand root",
+            preFrikReconstructedHandWorld,
+            cleanRootHandWorld);
 
         RE::NiTransform movedDriverWorld = driverWorld;
         movedDriverWorld.translate = RE::NiPoint3{ 106.0f, 8.0f, 4.0f };
@@ -467,6 +496,27 @@ int main()
             isolatedFingerWorld,
             expectedIsolatedFingerWorld);
 
+        (void)resolver.resolve(
+            false,
+            true,
+            contaminatedRootHandWorld,
+            skeleton,
+            skeleton,
+            false,
+            true,
+            movedDriverWorld);
+        RE::NiTransform afterAuthorityReleaseWorld{};
+        ok &= resolver.tryReconstructCalibratedHand(
+            false,
+            skeleton,
+            skeleton,
+            movedDriverWorld,
+            afterAuthorityReleaseWorld);
+        ok &= expectTransformNear(
+            "authority falling edge quarantines retained presentation",
+            afterAuthorityReleaseWorld,
+            expectedIsolatedHandWorld);
+
         resolver.reset();
         const auto uncalibratedPersistentFrame = resolver.resolve(
             false,
@@ -481,6 +531,71 @@ int main()
             std::printf("uncalibrated persistent frame did not fail closed\n");
             ok = false;
         }
+
+        /*
+         * One relation outlier must restart the candidate window instead of
+         * becoming the persistent controller calibration.
+         */
+        rock::HandFrameResolver outlierResolver;
+        for (std::uint32_t sample = 0;
+             sample + 1 < rock::prefrik_hand_authority_policy::
+                              kRequiredStableCalibrationSamples;
+             ++sample) {
+            (void)outlierResolver.resolve(
+                false,
+                true,
+                cleanRootHandWorld,
+                skeleton,
+                skeleton,
+                false,
+                true,
+                driverWorld);
+        }
+        RE::NiTransform outlierRootHandWorld = cleanRootHandWorld;
+        outlierRootHandWorld.translate.x += 5.0f;
+        (void)outlierResolver.resolve(
+            false,
+            true,
+            outlierRootHandWorld,
+            skeleton,
+            skeleton,
+            false,
+            true,
+            driverWorld);
+        for (std::uint32_t sample = 0;
+             sample + 1 < rock::prefrik_hand_authority_policy::
+                              kRequiredStableCalibrationSamples;
+             ++sample) {
+            (void)outlierResolver.resolve(
+                false,
+                true,
+                cleanRootHandWorld,
+                skeleton,
+                skeleton,
+                false,
+                true,
+                driverWorld);
+        }
+        if (outlierResolver.hasControllerReconstructionCalibration(
+                false,
+                skeleton,
+                skeleton)) {
+            std::printf("single calibration outlier did not restart the stable window\n");
+            ok = false;
+        }
+        (void)outlierResolver.resolve(
+            false,
+            true,
+            cleanRootHandWorld,
+            skeleton,
+            skeleton,
+            false,
+            true,
+            driverWorld);
+        ok &= outlierResolver.hasControllerReconstructionCalibration(
+            false,
+            skeleton,
+            skeleton);
 
         rock::collision_isolated_hand_frame_runtime::reset();
         rock::collision_isolated_hand_frame_runtime::publish(

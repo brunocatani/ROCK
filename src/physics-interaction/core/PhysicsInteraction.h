@@ -97,6 +97,9 @@ namespace rock
 
         void synchronizeNativeScopePresentationAfterFrikUpdate();
 
+        void refreshExternalHandWorldTransformsBeforeFrik(
+            std::uint64_t schedulerSequence);
+
         // Called after provider AfterRock callbacks. Only full native Weapon
         // animation authority can consume the frame-local gunstock correction.
         void finalizeGunstockPresentationAfterNativeAnimation();
@@ -444,6 +447,7 @@ namespace rock
         HandBoneCache _handBoneCache;
         HandFrameResolver _handFrameResolver;
         std::array<bool, 2> _persistentFrikHandInputIsolationActive{};
+        std::uint64_t _currentPreFrikSchedulerSequence = 0;
 
         Hand _rightHand{ false };
         Hand _leftHand{ true };

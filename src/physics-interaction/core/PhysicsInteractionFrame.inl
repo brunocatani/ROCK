@@ -8,6 +8,7 @@ PhysicsFrameContext PhysicsInteraction::buildFrameContext(RE::bhkWorld* bhk, RE:
      */
     PhysicsFrameContext frame{};
     frame.gameFrameIndex = runtime_state::currentFrame().frameIndex;
+    frame.preFrikSchedulerSequence = _currentPreFrikSchedulerSequence;
     frame.bhkWorld = bhk;
     frame.hknpWorld = hknp;
     frame.deltaSeconds = (deltaSeconds > 0.0f && deltaSeconds <= 0.1f) ? deltaSeconds : (1.0f / 90.0f);

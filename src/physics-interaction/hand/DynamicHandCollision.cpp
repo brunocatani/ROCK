@@ -17,6 +17,7 @@
 #include "physics-interaction/native/PhysicsUtils.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
+#include "physics-interaction/visual/PreFrikHandAuthorityPolicy.h"
 
 #include <algorithm>
 #include <cmath>
@@ -1069,6 +1070,7 @@ namespace rock
 
     void DynamicHandCollisionRuntime::clearVisual(HandSlots& handSlots, bool isLeft)
     {
+        handSlots.preFrikContactAuthority = {};
         handSlots.appliedDeviation = {};
         handSlots.teleportRecoverySecondsRemaining = 0.0f;
         if (!handSlots.visualActive) {
@@ -1076,6 +1078,62 @@ namespace rock
         }
         (void)frik_visual_authority::clearExternalHandWorldTransform(dynamicHandTag(isLeft), frik_visual_authority::handFromBool(isLeft));
         handSlots.visualActive = false;
+    }
+
+    void DynamicHandCollisionRuntime::refreshContactVisualAuthorityBeforeFrik(
+        const std::uint64_t currentSchedulerSequence,
+        const bool rightRawHandValid,
+        const RE::NiTransform& rightRawHandWorld,
+        const bool leftRawHandValid,
+        const RE::NiTransform& leftRawHandWorld,
+        const float maximumRawMotionGameUnits)
+    {
+        const auto refreshHand = [&](const bool isLeft,
+                                     const bool currentRawHandValid,
+                                     const RE::NiTransform& currentRawHandWorld) {
+            auto& handSlots = _hands[isLeft ? 1u : 0u];
+            if (handSlots.surfaceLatch.active) {
+                handSlots.preFrikContactAuthority = {};
+                return;
+            }
+
+            const auto source = handSlots.preFrikContactAuthority;
+            const bool sourceCurrent =
+                source.valid &&
+                handSlots.visualActive &&
+                currentRawHandValid &&
+                prefrik_hand_authority_policy::isImmediateSuccessor(
+                    source.sourceSchedulerSequence,
+                    currentSchedulerSequence);
+            if (!sourceCurrent) {
+                if (handSlots.visualActive || source.valid) {
+                    clearVisual(handSlots, isLeft);
+                }
+                return;
+            }
+
+            const auto transported =
+                prefrik_hand_authority_policy::transportContactTarget(
+                    source.sourceRawHandWorld,
+                    currentRawHandWorld,
+                    source.appliedDeviationWorldGame,
+                    maximumRawMotionGameUnits);
+            if (!transported.valid ||
+                !frik_visual_authority::applyExternalHandWorldTransform(
+                    dynamicHandTag(isLeft),
+                    frik_visual_authority::handFromBool(isLeft),
+                    transported.targetWorld,
+                    g_rockConfig.rockHandCollisionDynamicVisualPriority)) {
+                clearVisual(handSlots, isLeft);
+                return;
+            }
+
+            handSlots.lastPresentedHandWorld = transported.targetWorld;
+            handSlots.lastPresentedHandWorldValid = true;
+        };
+
+        refreshHand(false, rightRawHandValid, rightRawHandWorld);
+        refreshHand(true, leftRawHandValid, leftRawHandWorld);
     }
 
     void DynamicHandCollisionRuntime::clearSurfaceFingerResponse(
@@ -2064,6 +2122,7 @@ namespace rock
             handTelemetry.combinedContactDeviationGameUnits = pointLength(combined);
 
             if (handSlots.surfaceLatch.active) {
+                handSlots.preFrikContactAuthority = {};
                 if (latchAuthorityBlocked) {
                     endSurfaceLatch(isLeft);
                     updateHandHaptic(
@@ -2211,6 +2270,25 @@ namespace rock
                     target,
                     g_rockConfig.rockHandCollisionDynamicVisualPriority)) {
                 handSlots.visualActive = true;
+                auto& source = handSlots.preFrikContactAuthority;
+                source = {};
+                source.sourceRawHandWorld = handInput.rawHandWorld;
+                source.appliedDeviationWorldGame = applied;
+                source.sourceSchedulerSequence =
+                    frame.preFrikSchedulerSequence;
+                source.sourceGameFrameIndex = frame.gameFrameIndex;
+                for (const auto& twin : handTelemetry.twins) {
+                    if (twin.physicsSampleValid) {
+                        source.solveSequence =
+                            std::max(source.solveSequence, twin.solveSequence);
+                    }
+                }
+                source.valid =
+                    source.sourceSchedulerSequence != 0 &&
+                    prefrik_hand_authority_policy::isUsableTransform(
+                        source.sourceRawHandWorld) &&
+                    prefrik_hand_authority_policy::isFinitePoint(
+                        source.appliedDeviationWorldGame);
             } else {
                 ROCK_LOG_SAMPLE_WARN(Hand, 2000, "{} dynamic hand render-follow apply failed", isLeft ? "Left" : "Right");
                 clearVisual(handSlots, isLeft);

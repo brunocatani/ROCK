@@ -21,6 +21,7 @@
 #include "physics-interaction/weapon/WeaponCollision.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
+#include "physics-interaction/visual/PreFrikHandAuthorityPolicy.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 #include <algorithm>
@@ -2763,6 +2764,7 @@ namespace rock
             frik_visual_authority::Hand::Right);
         _weaponCollisionHandAuthorityLive = {};
         _weaponCollisionHandAuthorityGenerationKey = {};
+        _preFrikWeaponHandAuthority = {};
         _weaponCollisionHandPresentationFromPreviousFrame = {};
         _weaponCollisionBaselineHandWorldValid = {};
         resetGunstockAlignment("reset");
@@ -10091,6 +10093,7 @@ namespace rock
     bool TwoHandedGrip::clearWeaponCollisionHandAuthority(const bool isLeft)
     {
         const std::size_t index = isLeft ? 0u : 1u;
+        _preFrikWeaponHandAuthority[index] = {};
         if (!_weaponCollisionHandAuthorityLive[index]) {
             _weaponCollisionHandAuthorityGenerationKey[index] = 0;
             return true;
@@ -10104,6 +10107,55 @@ namespace rock
         _weaponCollisionHandAuthorityLive[index] = false;
         _weaponCollisionHandAuthorityGenerationKey[index] = 0;
         return true;
+    }
+
+    void TwoHandedGrip::refreshWeaponCollisionHandAuthorityBeforeFrik(
+        const RE::NiTransform& firingWandWorld,
+        const bool firingWandValid,
+        const std::uint64_t currentWeaponGenerationKey,
+        const bool firingHandIsLeft,
+        const std::uint64_t currentSchedulerSequence)
+    {
+        for (std::size_t index = 0;
+             index < _preFrikWeaponHandAuthority.size();
+             ++index) {
+            const bool isLeft = index == 0u;
+            const auto& source = _preFrikWeaponHandAuthority[index];
+            const bool sourceCurrent =
+                source.valid &&
+                _weaponCollisionHandAuthorityLive[index] &&
+                firingWandValid &&
+                currentWeaponGenerationKey != 0 &&
+                source.weaponGenerationKey == currentWeaponGenerationKey &&
+                source.firingHandIsLeft == firingHandIsLeft &&
+                prefrik_hand_authority_policy::isImmediateSuccessor(
+                    source.sourceSchedulerSequence,
+                    currentSchedulerSequence) &&
+                prefrik_hand_authority_policy::isUsableTransform(
+                    firingWandWorld) &&
+                prefrik_hand_authority_policy::isUsableTransform(
+                    source.firingWandToHandLocal);
+            if (!sourceCurrent) {
+                if (_weaponCollisionHandAuthorityLive[index] || source.valid) {
+                    (void)clearWeaponCollisionHandAuthority(isLeft);
+                }
+                continue;
+            }
+
+            const RE::NiTransform targetWorld =
+                prefrik_hand_authority_policy::reconstructTargetWorld(
+                    firingWandWorld,
+                    source.firingWandToHandLocal);
+            if (!prefrik_hand_authority_policy::isUsableTransform(
+                    targetWorld) ||
+                !frik_visual_authority::applyExternalHandWorldTransform(
+                    WEAPON_COLLISION_HAND_TAG,
+                    handFromBool(isLeft),
+                    targetWorld,
+                    WEAPON_COLLISION_HAND_PRIORITY)) {
+                (void)clearWeaponCollisionHandAuthority(isLeft);
+            }
+        }
     }
 
     void TwoHandedGrip::beginWeaponCollisionPresentationFrame(
@@ -10170,7 +10222,11 @@ namespace rock
         RE::NiNode* weaponNode,
         const RE::NiTransform& requestedWeaponWorld,
         const RE::NiTransform& resolvedWeaponWorld,
-        const std::uint64_t authorityGenerationKey)
+        const std::uint64_t authorityGenerationKey,
+        const RE::NiTransform& firingWandWorld,
+        const bool firingWandValid,
+        const bool firingHandIsLeft,
+        const std::uint64_t sourceSchedulerSequence)
     {
         if (!weaponNode ||
             !isFiniteTransform(weaponNode->world) ||
@@ -10296,6 +10352,28 @@ namespace rock
                     _weaponCollisionHandAuthorityLive[handIndex] = true;
                     _weaponCollisionHandAuthorityGenerationKey[handIndex] =
                         authorityGenerationKey;
+                    auto& preFrikSource =
+                        _preFrikWeaponHandAuthority[handIndex];
+                    preFrikSource = {};
+                    if (firingWandValid &&
+                        sourceSchedulerSequence != 0 &&
+                        authorityGenerationKey != 0 &&
+                        prefrik_hand_authority_policy::isUsableTransform(
+                            firingWandWorld)) {
+                        preFrikSource.firingWandToHandLocal =
+                            prefrik_hand_authority_policy::
+                                captureDriverToTargetLocal(
+                                    firingWandWorld,
+                                    pulse.targetWorld);
+                        preFrikSource.weaponGenerationKey =
+                            authorityGenerationKey;
+                        preFrikSource.sourceSchedulerSequence =
+                            sourceSchedulerSequence;
+                        preFrikSource.firingHandIsLeft = firingHandIsLeft;
+                        preFrikSource.valid =
+                            prefrik_hand_authority_policy::isUsableTransform(
+                                preFrikSource.firingWandToHandLocal);
+                    }
                 }
                 handPulsesSucceeded =
                     handPulsesSucceeded && pulse.applied && pulse.retained;

@@ -1747,6 +1747,70 @@ namespace rock
         return RE::NiTransform();
     }
 
+    void PhysicsInteraction::refreshExternalHandWorldTransformsBeforeFrik(
+        const std::uint64_t schedulerSequence)
+    {
+        _currentPreFrikSchedulerSequence = schedulerSequence;
+        if (!_initialized.load(std::memory_order_acquire)) {
+            return;
+        }
+
+        const auto captureWand = [](RE::NiNode* node,
+                                    RE::NiTransform& outWorld) {
+            outWorld = {};
+            if (!node || !finiteNiTransform(node->world)) {
+                return false;
+            }
+            outWorld = node->world;
+            return true;
+        };
+
+        RE::NiTransform rightWandWorld{};
+        RE::NiTransform leftWandWorld{};
+        const bool rightWandValid = captureWand(
+            f4vr::getRightHandNode(),
+            rightWandWorld);
+        const bool leftWandValid = captureWand(
+            f4vr::getLeftHandNode(),
+            leftWandWorld);
+
+        RE::NiTransform rightRawHandWorld{};
+        RE::NiTransform leftRawHandWorld{};
+        const bool rightRawHandValid =
+            rightWandValid &&
+            _handFrameResolver.tryReconstructCalibratedHand(
+                false,
+                _handBoneCache.getSkeleton(),
+                _handBoneCache.getBoneTree(),
+                rightWandWorld,
+                rightRawHandWorld);
+        const bool leftRawHandValid =
+            leftWandValid &&
+            _handFrameResolver.tryReconstructCalibratedHand(
+                true,
+                _handBoneCache.getSkeleton(),
+                _handBoneCache.getBoneTree(),
+                leftWandWorld,
+                leftRawHandWorld);
+
+        _dynamicHandCollision.refreshContactVisualAuthorityBeforeFrik(
+            schedulerSequence,
+            rightRawHandValid,
+            rightRawHandWorld,
+            leftRawHandValid,
+            leftRawHandWorld,
+            g_rockConfig.
+                rockHandCollisionDynamicDivergenceTeleportGameUnits);
+
+        const bool firingHandIsLeft = _twoHandedGrip.isFiringHandLeft();
+        _twoHandedGrip.refreshWeaponCollisionHandAuthorityBeforeFrik(
+            firingHandIsLeft ? leftWandWorld : rightWandWorld,
+            firingHandIsLeft ? leftWandValid : rightWandValid,
+            _weaponCollision.getCurrentWeaponGenerationKey(),
+            firingHandIsLeft,
+            schedulerSequence);
+    }
+
     void PhysicsInteraction::sampleHandTransformParity()
     {
         if (!g_rockConfig.rockDebugHandTransformParity) {
@@ -4033,11 +4097,18 @@ namespace rock
                     dynamicWeaponFrame.rotationCorrectionDegrees);
             }
             if (dynamicWeaponFrame.publishVisualAuthority) {
+                const auto& firingWand = firingHandIsLeft ?
+                    frame.leftWand :
+                    frame.rightWand;
                 const bool visualPublishSucceeded = _twoHandedGrip.applyWeaponCollisionResolvedAuthority(
                     weaponNode,
                     dynamicWeaponFrame.requestedWeaponWorld,
                     dynamicWeaponFrame.resolvedWeaponWorld,
-                    currentWeaponGenerationKey);
+                    currentWeaponGenerationKey,
+                    firingWand.world,
+                    firingWand.valid,
+                    firingHandIsLeft,
+                    frame.preFrikSchedulerSequence);
                 const float immediateTranslationError =
                     visualPublishSucceeded && weaponNode ?
                         dynamic_weapon_collision_policy::translationDeltaGameUnits(
@@ -6175,6 +6246,7 @@ namespace rock
         _heldMassMovementLogCounter = 0;
         _handBoneCache.reset();
         _handFrameResolver.reset();
+        _currentPreFrikSchedulerSequence = 0;
         collision_isolated_hand_frame_runtime::reset();
         _persistentFrikHandInputIsolationActive = {};
         _handCacheResolveLogCounter = 0;
