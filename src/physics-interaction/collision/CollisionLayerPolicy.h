@@ -625,7 +625,8 @@ namespace rock::collision_layer_policy
 
     inline constexpr std::uint64_t buildRockDynamicHandProxyExpectedMask(
         bool isLeft = false,
-        bool interactionsEnabled = false)
+        bool interactionsEnabled = false,
+        bool dynamicWeaponInteractionEnabled = true)
     {
         std::uint64_t mask = 0;
         for (std::uint32_t layer = 0; layer < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++layer) {
@@ -640,13 +641,17 @@ namespace rock::collision_layer_policy
                 mask,
                 isLeft ? ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY :
                          ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY);
-            mask = withLayer(mask, ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
+            if (dynamicWeaponInteractionEnabled) {
+                mask = withLayer(mask, ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
+            }
         }
         return mask;
     }
 
     inline constexpr std::uint64_t buildRockDynamicWeaponProxyExpectedMask(
-        bool interactionsEnabled = false)
+        bool interactionsEnabled = false,
+        bool rightHandInteractionEnabled = true,
+        bool leftHandInteractionEnabled = true)
     {
         std::uint64_t mask = 0;
         for (std::uint32_t layer = 0; layer < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++layer) {
@@ -655,8 +660,12 @@ namespace rock::collision_layer_policy
             }
         }
         if (interactionsEnabled) {
-            mask = withLayer(mask, ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY);
-            mask = withLayer(mask, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY);
+            if (rightHandInteractionEnabled) {
+                mask = withLayer(mask, ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY);
+            }
+            if (leftHandInteractionEnabled) {
+                mask = withLayer(mask, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY);
+            }
         }
         return mask;
     }
@@ -704,16 +713,24 @@ namespace rock::collision_layer_policy
 
     inline void applyRockDynamicHandProxyLayerPolicies(
         std::uint64_t* matrix,
-        bool interactionsEnabled = false)
+        bool interactionsEnabled = false,
+        bool rightHandWeaponInteractionEnabled = true,
+        bool leftHandWeaponInteractionEnabled = true)
     {
         applyLayerExpectedMask(
             matrix,
             ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY,
-            buildRockDynamicHandProxyExpectedMask(false, interactionsEnabled));
+            buildRockDynamicHandProxyExpectedMask(
+                false,
+                interactionsEnabled,
+                rightHandWeaponInteractionEnabled));
         applyLayerExpectedMask(
             matrix,
             ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY,
-            buildRockDynamicHandProxyExpectedMask(true, interactionsEnabled));
+            buildRockDynamicHandProxyExpectedMask(
+                true,
+                interactionsEnabled,
+                leftHandWeaponInteractionEnabled));
     }
 
     inline void applyRockDynamicHandProxyLayerPolicy(std::uint64_t* matrix)
@@ -723,12 +740,17 @@ namespace rock::collision_layer_policy
 
     inline void applyRockDynamicWeaponProxyLayerPolicy(
         std::uint64_t* matrix,
-        bool interactionsEnabled = false)
+        bool interactionsEnabled = false,
+        bool rightHandInteractionEnabled = true,
+        bool leftHandInteractionEnabled = true)
     {
         applyLayerExpectedMask(
             matrix,
             ROCK_LAYER_DYNAMIC_WEAPON_PROXY,
-            buildRockDynamicWeaponProxyExpectedMask(interactionsEnabled));
+            buildRockDynamicWeaponProxyExpectedMask(
+                interactionsEnabled,
+                rightHandInteractionEnabled,
+                leftHandInteractionEnabled));
     }
 
     inline void applyRockDynamicWorldCarLayerPolicies(std::uint64_t* matrix)
@@ -769,7 +791,9 @@ namespace rock::collision_layer_policy
         bool bodyStaticWorld,
         bool weaponBlocksProjectiles,
         bool weaponBlocksSpells,
-        bool dynamicHandInteractionsEnabled)
+        bool dynamicHandInteractionsEnabled,
+        bool dynamicWeaponRightHandInteractionEnabled = true,
+        bool dynamicWeaponLeftHandInteractionEnabled = true)
     {
         /*
          * Runtime registration uses one aggregate helper because layer 47 is an
@@ -785,10 +809,14 @@ namespace rock::collision_layer_policy
         applyRockBodyLayerPolicy(matrix, bodyStaticWorld);
         applyRockDynamicHandProxyLayerPolicies(
             matrix,
-            dynamicHandInteractionsEnabled);
+            dynamicHandInteractionsEnabled,
+            dynamicWeaponRightHandInteractionEnabled,
+            dynamicWeaponLeftHandInteractionEnabled);
         applyRockDynamicWeaponProxyLayerPolicy(
             matrix,
-            dynamicHandInteractionsEnabled);
+            dynamicHandInteractionsEnabled,
+            dynamicWeaponRightHandInteractionEnabled,
+            dynamicWeaponLeftHandInteractionEnabled);
         applyRockDynamicWorldCarLayerPolicies(matrix);
     }
 }

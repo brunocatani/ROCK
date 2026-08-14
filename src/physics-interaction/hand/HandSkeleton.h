@@ -536,6 +536,19 @@ namespace rock
             _states = {};
         }
 
+        [[nodiscard]] bool hasControllerReconstructionCalibration(
+            bool isLeft,
+            const void* sourceSkeleton,
+            const void* sourceBoneTree) const
+        {
+            const auto& state = _states[isLeft ? 0u : 1u];
+            return state.hasDriverToHandLocal &&
+                   sourceSkeleton &&
+                   sourceBoneTree &&
+                   state.sourceSkeleton == sourceSkeleton &&
+                   state.sourceBoneTree == sourceBoneTree;
+        }
+
     private:
         struct DriverCalibration
         {

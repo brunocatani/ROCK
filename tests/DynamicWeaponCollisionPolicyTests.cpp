@@ -214,6 +214,36 @@ int main()
         interactiveWeaponMask,
         rock::collision_layer_policy::ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY);
 
+    // Native carry owns the right hand. The left hand must remain able to
+    // push the weapon without the weapon colliding with its own firing hand.
+    constexpr auto nativeCarryWeaponMask =
+        rock::collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask(
+            true,
+            false,
+            true);
+    constexpr auto nativeCarryRightHandMask =
+        rock::collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
+            false,
+            true,
+            false);
+    constexpr auto nativeCarryLeftHandMask =
+        rock::collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
+            true,
+            true,
+            true);
+    ok &= !rock::collision_layer_policy::maskEnablesLayer(
+        nativeCarryWeaponMask,
+        rock::collision_layer_policy::ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY);
+    ok &= rock::collision_layer_policy::maskEnablesLayer(
+        nativeCarryWeaponMask,
+        rock::collision_layer_policy::ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY);
+    ok &= !rock::collision_layer_policy::maskEnablesLayer(
+        nativeCarryRightHandMask,
+        rock::collision_layer_policy::ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
+    ok &= rock::collision_layer_policy::maskEnablesLayer(
+        nativeCarryLeftHandMask,
+        rock::collision_layer_policy::ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
+
     const auto geometry = makeBoundingBoxGeometry(
         RE::NiPoint3{ -10.0f, -2.0f, -1.0f },
         RE::NiPoint3{ 30.0f, 4.0f, 3.0f });

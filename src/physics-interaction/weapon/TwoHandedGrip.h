@@ -14,6 +14,7 @@
 #include "physics-interaction/native/PhysicsUtils.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 #include "physics-interaction/weapon/EquippedWeaponHandlingSettings.h"
+#include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.h"
 #include "physics-interaction/weapon/GunstockAlignmentPolicy.h"
 #include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
@@ -725,6 +726,17 @@ namespace rock
         }
 
         bool isFiringGripOccupied() const { return _state == TwoHandedState::Gripping || _state == TwoHandedState::PrimaryOnly; }
+
+        dynamic_weapon_collision_policy::AttachedHandSelection
+        weaponCollisionAttachedHands() const
+        {
+            return dynamic_weapon_collision_policy::selectAttachedHands(
+                _state == TwoHandedState::PartCarry,
+                isFiringGripOccupied(),
+                _firingHandIsLeft,
+                partGrip(true).active,
+                partGrip(false).active);
+        }
 
         /*
          * True while the OPEN firing palm hovers inside the reattach radius

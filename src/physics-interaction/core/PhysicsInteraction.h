@@ -245,6 +245,7 @@ namespace rock
         bool physicsWritesAllowedForWorld(RE::hknpWorld* world) const;
 
         void registerCollisionLayer(RE::hknpWorld* world);
+        void synchronizeDynamicWeaponHandCollisionRoles(RE::hknpWorld* world);
 
         bool createHandCollisions(RE::hknpWorld* world, void* bhkWorld);
 
@@ -429,6 +430,10 @@ namespace rock
         std::uint64_t _expectedDynamicWeaponProxyLayerMask = 0;
         std::uint64_t _expectedDynamicWorldCarClutterLayerMask = 0;
         std::uint64_t _expectedDynamicWorldCarLargeClutterLayerMask = 0;
+        // Passive/native equipped carry starts in the right hand. Only the
+        // opposite, free hand may physically push the dynamic weapon proxy.
+        bool _dynamicWeaponRightHandInteractionEnabled = false;
+        bool _dynamicWeaponLeftHandInteractionEnabled = true;
         std::uint64_t _originalNativeCharacterControllerLayerMask = 0;
         std::uint64_t _expectedNativeCharacterControllerLayerMask = 0;
         bool _nativeCharacterControllerLayerPolicyCaptured = false;
@@ -536,6 +541,11 @@ namespace rock
         {
             bool active{ false };
             bool stashedByLeftHand{ false };
+            equipped_weapon_drop_policy::SourceHand retrievalHand{
+                equipped_weapon_drop_policy::SourceHand::None
+            };
+            float retrievalConfidence{ 0.0f };
+            equipped_weapon_drop_policy::ShoulderDrawState drawWait{};
             std::uint32_t weaponFormID{ 0 };
             std::uintptr_t weaponInstanceData{ 0 };
             std::uint32_t equipIndex{ 0 };

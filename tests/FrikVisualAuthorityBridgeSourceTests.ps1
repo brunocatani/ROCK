@@ -73,9 +73,12 @@ Require-Text 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h' `
 Require-Text 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h' `
     'g_trackedHandWorldPublications[\s\S]*rememberTrackedHandWorldPublication\(tag,\s*hand\)[\s\S]*invalidateTrackedHandWorldPublication\(tag,\s*hand\)[\s\S]*resetTrackedHandWorldPublications\(\)' `
     'Persistent FRIK V2 hand-world publications must be tracked per tag and cleared at lifecycle reset.'
+Require-Text 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h' `
+    'g_handWorldPublicationReady[\s\S]*applyExternalHandWorldTransform[\s\S]*!detail::g_handWorldPublicationReady\[handIndex\][\s\S]*setExternalHandWorldPublicationReady' `
+    'Persistent hand publication must fail closed until controller reconstruction is calibrated.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'getInteractionHandFrame[\s\S]*getLeftHandNode\(\)[\s\S]*getRightHandNode\(\)[\s\S]*hasPublishedExternalHandWorldTransform[\s\S]*_handFrameResolver\.resolve' `
-    'Shared collision and grab input must reconstruct published FRIK hands from the unaffected controller driver.'
+    'getInteractionHandFrame[\s\S]*getLeftHandNode\(\)[\s\S]*getRightHandNode\(\)[\s\S]*hasPublishedExternalHandWorldTransform[\s\S]*_handFrameResolver\.resolve[\s\S]*hasControllerReconstructionCalibration[\s\S]*setExternalHandWorldPublicationReady' `
+    'Shared collision and grab input must calibrate controller reconstruction before persistent FRIK publication.'
 Require-Text 'src/physics-interaction/core/PhysicsInteractionFrame.inl' `
     'getInteractionHandFrame\(isLeft\)[\s\S]*collision_isolated_hand_frame_runtime::publish' `
     'The coherent physics frame must publish its collision-isolated hand transform for finger consumers.'

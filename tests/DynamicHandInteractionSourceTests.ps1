@@ -53,11 +53,11 @@ Require-Pattern $layers `
     'ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY\s*=\s*[\s\S]*ROCK_LAYER_DYNAMIC_HAND_PROXY[\s\S]*ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY\s*=\s*52' `
     'Right and left dynamic twins must retain stable rows 48 and 52.'
 Require-Pattern $layers `
-    'buildRockDynamicHandProxyExpectedMask\([\s\S]*isLeft[\s\S]*interactionsEnabled[\s\S]*isLeft\s*\?\s*ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY\s*:[\s\S]*ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY[\s\S]*ROCK_LAYER_DYNAMIC_WEAPON_PROXY' `
-    'Each hand row must enable only the opposite hand and weapon interaction edges.'
+    'buildRockDynamicHandProxyExpectedMask\([\s\S]*isLeft[\s\S]*dynamicWeaponInteractionEnabled[\s\S]*isLeft\s*\?\s*ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY\s*:[\s\S]*ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY[\s\S]*dynamicWeaponInteractionEnabled[\s\S]*ROCK_LAYER_DYNAMIC_WEAPON_PROXY' `
+    'Each hand row must enable the opposite hand and independently gate its weapon edge.'
 Require-Pattern $layers `
-    'buildRockDynamicWeaponProxyExpectedMask\([\s\S]*interactionsEnabled[\s\S]*ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY[\s\S]*ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY' `
-    'The weapon row must symmetrically enable both hand rows.'
+    'buildRockDynamicWeaponProxyExpectedMask\([\s\S]*rightHandInteractionEnabled[\s\S]*ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY[\s\S]*leftHandInteractionEnabled[\s\S]*ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY' `
+    'The weapon row must symmetrically enable only free-hand rows.'
 Require-Pattern $handSource `
     'dynamicHandProxyFilterInfo\([\s\S]*bool isLeft[\s\S]*dynamicHandProxyLayerForHand\(isLeft\)' `
     'Dynamic twin creation and transition restoration must preserve the side-specific stable row.'

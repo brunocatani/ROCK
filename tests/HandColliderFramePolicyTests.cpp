@@ -395,6 +395,11 @@ int main()
         RE::NiTransform cleanRootHandWorld = identityTransform();
         cleanRootHandWorld.translate = RE::NiPoint3{ 110.0f, 12.0f, 5.0f };
 
+        ok &= !resolver.hasControllerReconstructionCalibration(
+            false,
+            skeleton,
+            skeleton);
+
         const auto cleanFrame = resolver.resolve(
             false,
             true,
@@ -413,6 +418,14 @@ int main()
                 cleanFrame.transform,
                 cleanRootHandWorld);
         }
+        ok &= resolver.hasControllerReconstructionCalibration(
+            false,
+            skeleton,
+            skeleton);
+        ok &= !resolver.hasControllerReconstructionCalibration(
+            false,
+            reinterpret_cast<const void*>(0x5678),
+            skeleton);
 
         RE::NiTransform movedDriverWorld = driverWorld;
         movedDriverWorld.translate = RE::NiPoint3{ 106.0f, 8.0f, 4.0f };

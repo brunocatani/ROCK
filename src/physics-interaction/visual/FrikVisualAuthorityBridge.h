@@ -71,6 +71,7 @@ namespace rock::frik_visual_authority
         inline std::array<TrackedHandWorldPublication, kTrackedHandWorldPublicationCount>
             g_trackedHandWorldPublications{};
         inline std::array<bool, 2> g_untrackedHandWorldPublicationOverflow{};
+        inline std::array<bool, 2> g_handWorldPublicationReady{};
 
         struct PresentedHandNodeCache
         {
@@ -195,6 +196,7 @@ namespace rock::frik_visual_authority
         {
             g_trackedHandWorldPublications = {};
             g_untrackedHandWorldPublicationOverflow = {};
+            g_handWorldPublicationReady = {};
         }
 
         [[nodiscard]] inline bool sameFingerPoseData(
@@ -524,6 +526,11 @@ namespace rock::frik_visual_authority
 
     [[nodiscard]] inline bool applyExternalHandWorldTransform(const char* tag, Hand hand, const RE::NiTransform& worldTarget, int priority)
     {
+        std::size_t handIndex = 0;
+        if (!detail::physicalHandIndex(hand, handIndex) ||
+            !detail::g_handWorldPublicationReady[handIndex]) {
+            return false;
+        }
         auto* frikApi = api();
         const bool published =
             frikApi &&
@@ -533,6 +540,21 @@ namespace rock::frik_visual_authority
             detail::rememberTrackedHandWorldPublication(tag, hand);
         }
         return published;
+    }
+
+    inline void setExternalHandWorldPublicationReady(Hand hand, bool ready)
+    {
+        std::size_t handIndex = 0;
+        if (detail::physicalHandIndex(hand, handIndex)) {
+            detail::g_handWorldPublicationReady[handIndex] = ready;
+        }
+    }
+
+    [[nodiscard]] inline bool isExternalHandWorldPublicationReady(Hand hand)
+    {
+        std::size_t handIndex = 0;
+        return detail::physicalHandIndex(hand, handIndex) &&
+               detail::g_handWorldPublicationReady[handIndex];
     }
 
     [[nodiscard]] inline bool clearExternalHandWorldTransform(const char* tag, Hand hand)

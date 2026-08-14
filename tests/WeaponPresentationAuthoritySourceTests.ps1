@@ -60,6 +60,9 @@ $gripSource = Get-Content -Raw -LiteralPath (
 Require-Text $authorityHeader `
     'makePresentationWorldDelta[\s\S]*newWeaponWorld[\s\S]*invertTransform\(oldWeaponWorld\)[\s\S]*applyPresentationWorldDelta[\s\S]*presentationWorldDelta[\s\S]*presentationWorld' `
     'Weapon authority math must preserve already-evaluated presentation worlds through one precomputed rigid root delta.'
+Require-Text $authorityHeader `
+    'preserveLiveWeaponWorldScale[\s\S]*result\s*=\s*requestedWeaponWorld[\s\S]*result\.scale\s*=\s*liveWeaponWorld\.scale' `
+    'Rigid weapon authority must preserve hFRIK''s live inherited world scale.'
 
 $descendantMove = Select-Boundary `
     $gripSource `
@@ -94,8 +97,8 @@ $publisher = Select-Boundary `
     'bool TwoHandedGrip::applyFiringHandLockedVisual(' `
     'weapon visual authority publisher'
 Require-Text $publisher `
-    'moveWeaponPresentationRigidly\(weaponNode,\s*solvedWeaponWorld\)' `
-    'The central weapon publisher must use the rigid presentation transaction.'
+    'preserveLiveWeaponWorldScale\([\s\S]*weaponNode->world[\s\S]*solvedWeaponWorld[\s\S]*_weaponVisualIntentObserver\([\s\S]*scaleStableSolvedWeaponWorld[\s\S]*moveWeaponPresentationRigidly\([\s\S]*scaleStableSolvedWeaponWorld' `
+    'The central weapon publisher must normalize inherited scale before both collision intent and the rigid presentation transaction.'
 Reject-Text $publisher `
     'updateTransformsDown\s*\(' `
     'The central weapon publisher must not retain a competing local-propagation path.'

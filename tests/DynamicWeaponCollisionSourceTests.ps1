@@ -81,14 +81,20 @@ Require-Pattern $layers `
     'ROCK_LAYER_DYNAMIC_WEAPON_PROXY\s*=\s*51' `
     'The dynamic weapon proxy must retain its dedicated layer-51 row.'
 Require-Pattern $layers `
-    'isDynamicWeaponProxyObstacleLayer\(std::uint32_t layer\)[\s\S]*isWorldSurfaceLayer\(layer\)[\s\S]*isDynamicWorldCarLayer\(layer\)[\s\S]*buildRockDynamicWeaponProxyExpectedMask\([\s\S]*interactionsEnabled[\s\S]*ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY[\s\S]*ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY' `
-    'The dynamic weapon proxy row must retain world/car obstacles and explicitly gate both dynamic hands.'
+    'isDynamicWeaponProxyObstacleLayer\(std::uint32_t layer\)[\s\S]*isWorldSurfaceLayer\(layer\)[\s\S]*isDynamicWorldCarLayer\(layer\)[\s\S]*buildRockDynamicWeaponProxyExpectedMask\([\s\S]*rightHandInteractionEnabled[\s\S]*ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY[\s\S]*leftHandInteractionEnabled[\s\S]*ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY' `
+    'The dynamic weapon proxy row must retain world/car obstacles and gate each dynamic hand independently.'
 Require-Pattern $layers `
     'buildRockDynamicWorldCarExpectedMask[\s\S]*withLayer\(mask, ROCK_LAYER_DYNAMIC_HAND_PROXY\)[\s\S]*withLayer\(mask, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY\)[\s\S]*withLayer\(mask, ROCK_LAYER_DYNAMIC_WEAPON_PROXY\)[\s\S]*withLayer\(mask, FO4_LAYER_CHARCONTROLLER\)' `
     'Tagged car rows must symmetrically admit both hands and the dynamic weapon without exposing generated gameplay colliders.'
 Require-Pattern $layers `
-    'applyRockGeneratedLayerPolicies[\s\S]*applyRockDynamicWeaponProxyLayerPolicy\([\s\S]*dynamicHandInteractionsEnabled' `
-    'Layer 51 must be registered with the other generated collision rows.'
+    'applyRockGeneratedLayerPolicies[\s\S]*applyRockDynamicWeaponProxyLayerPolicy\([\s\S]*dynamicWeaponRightHandInteractionEnabled[\s\S]*dynamicWeaponLeftHandInteractionEnabled' `
+    'Layer 51 must be registered with side-specific free-hand collision eligibility.'
+Require-Pattern 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'synchronizeDynamicWeaponHandCollisionRoles[\s\S]*weaponCollisionAttachedHands\(\)[\s\S]*!attachedHands\.right[\s\S]*!attachedHands\.left[\s\S]*registerCollisionLayer\(world\)' `
+    'Only hands not attached to the weapon may physically push its dynamic proxy.'
+Require-Pattern 'src/physics-interaction/weapon/TwoHandedGrip.h' `
+    'weaponCollisionAttachedHands\(\)[\s\S]*selectAttachedHands\([\s\S]*isFiringGripOccupied\(\)[\s\S]*partGrip\(true\)\.active[\s\S]*partGrip\(false\)\.active' `
+    'Collision filtering and resolved hand coupling must share one attachment-role policy.'
 
 # World contact remains exactly one dynamic body whose child instances follow
 # the shared layer-44 hull sources. A second tiny body is permitted only as the

@@ -2123,7 +2123,11 @@ namespace rock
             transform_math::composeTransforms(
                 physicalRightHandWorld,
                 weaponNode->local);
-        if (!isFiniteTransform(requestedWeaponWorld)) {
+        const RE::NiTransform scaleStableRequestedWeaponWorld =
+            weapon_visual_authority_math::preserveLiveWeaponWorldScale(
+                weaponNode->world,
+                requestedWeaponWorld);
+        if (!isFiniteTransform(scaleStableRequestedWeaponWorld)) {
             return;
         }
 
@@ -2138,7 +2142,7 @@ namespace rock
         _weaponVisualIntentObserver(
             _weaponVisualIntentObserverContext,
             weaponNode,
-            requestedWeaponWorld,
+            scaleStableRequestedWeaponWorld,
             currentWeaponGenerationKey);
     }
 
@@ -9991,16 +9995,22 @@ namespace rock
         const std::uint64_t authorityGenerationKey,
         const bool notifyVisualIntentObserver)
     {
-        if (!weaponNode) {
+        if (!weaponNode || !isFiniteTransform(weaponNode->world) ||
+            !isFiniteTransform(solvedWeaponWorld)) {
             return false;
         }
+
+        const RE::NiTransform scaleStableSolvedWeaponWorld =
+            weapon_visual_authority_math::preserveLiveWeaponWorldScale(
+                weaponNode->world,
+                solvedWeaponWorld);
 
         const std::uint64_t effectiveGenerationKey = authorityGenerationKey != 0 ? authorityGenerationKey : _activeWeaponGenerationKey;
         if (notifyVisualIntentObserver && _weaponVisualIntentObserver) {
             _weaponVisualIntentObserver(
                 _weaponVisualIntentObserverContext,
                 weaponNode,
-                solvedWeaponWorld,
+                scaleStableSolvedWeaponWorld,
                 effectiveGenerationKey);
         }
         const bool scopeAnchorMatchesAuthority =
@@ -10015,7 +10025,9 @@ namespace rock
             (void)captureNativeScopeOverlayCalibration(scopeCameraFollow.cameraWorldBefore, effectiveGenerationKey);
         }
 
-        if (!moveWeaponPresentationRigidly(weaponNode, solvedWeaponWorld)) {
+        if (!moveWeaponPresentationRigidly(
+                weaponNode,
+                scaleStableSolvedWeaponWorld)) {
             ROCK_LOG_SAMPLE_WARN(
                 Weapon,
                 2000,
@@ -10161,10 +10173,21 @@ namespace rock
         const std::uint64_t authorityGenerationKey)
     {
         if (!weaponNode ||
+            !isFiniteTransform(weaponNode->world) ||
             !isFiniteTransform(requestedWeaponWorld) ||
             !isFiniteTransform(resolvedWeaponWorld)) {
             return false;
         }
+
+
+        const RE::NiTransform scaleStableRequestedWeaponWorld =
+            weapon_visual_authority_math::preserveLiveWeaponWorldScale(
+                weaponNode->world,
+                requestedWeaponWorld);
+        const RE::NiTransform scaleStableResolvedWeaponWorld =
+            weapon_visual_authority_math::preserveLiveWeaponWorldScale(
+                weaponNode->world,
+                resolvedWeaponWorld);
 
         const auto attachedHands =
             dynamic_weapon_collision_policy::selectAttachedHands(
@@ -10238,8 +10261,8 @@ namespace rock
             }
             pulse.targetWorld =
                 dynamic_weapon_collision_policy::reframeAttachedHand(
-                    requestedWeaponWorld,
-                    resolvedWeaponWorld,
+                    scaleStableRequestedWeaponWorld,
+                    scaleStableResolvedWeaponWorld,
                     collisionFreeHandWorld);
             pulse.targetValid =
                 collisionFreeHandValid &&
@@ -10287,7 +10310,7 @@ namespace rock
          */
         const bool weaponPublished = applyWeaponVisualAuthority(
             weaponNode,
-            resolvedWeaponWorld,
+            scaleStableResolvedWeaponWorld,
             authorityGenerationKey,
             false);
         if (!weaponPublished || !handPulsesSucceeded) {

@@ -109,8 +109,20 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'serviceEquippedWeaponShoulderSheathRetrieval[\s\S]*?observedWeaponFormID\s*==\s*currentIdentity\.formID[\s\S]*?decision\.zone\s*==\s*_equippedWeaponShoulderSheath\.zone[\s\S]*?isRawButtonPhysicallyHeld[\s\S]*?selectShoulderRetrievalHand[\s\S]*?submitExactCurrent\(\s*currentIdentity\s*\)' `
     'Retrieval must require the same exact equipped identity, same stored shoulder, physical squeeze, and exact native draw.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'for\s*\(const bool isLeft\s*:\s*\{\s*false,\s*true\s*\}\)[\s\S]*?ambidextrousHandoffEnabled[\s\S]*?PendingEquippedWeaponPrimaryOnlyGripStart[\s\S]*?\.isLeft\s*=\s*retrieveWithLeftHand' `
-    'Retrieval must evaluate both physical hands and carry the selected hand into equipped-weapon ownership.'
+    'advanceShoulderDrawWait\([\s\S]*?ShoulderDrawAction::CommitRetrieval[\s\S]*?commitRetrieval\([\s\S]*?ShoulderDrawAction::RestartGesture[\s\S]*?restartRetrievalGesture\([\s\S]*?ShoulderDrawAction::SubmitDraw[\s\S]*?submitExactCurrent\([\s\S]*?nativeStateAcknowledgesShoulderDraw' `
+    'A shoulder draw submission must remain identity-bound and retryable until native state acknowledges it.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'beginShoulderDrawWait\([\s\S]{0,500}retaining transaction until native acknowledgement' `
+    'An unacknowledged first draw submission must preserve the shoulder transaction instead of committing retrieval.'
+Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'physical-hand-unsheath-committed' `
+    'Shoulder retrieval must not treat a void native draw submission as an acknowledgement.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'for\s*\(const bool isLeft\s*:\s*\{\s*false,\s*true\s*\}\)[\s\S]*?ambidextrousHandoffEnabled[\s\S]*?selectShoulderRetrievalHand' `
+    'Retrieval must evaluate both physical hands before selecting ownership.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'commitRetrieval[\s\S]*?PendingEquippedWeaponPrimaryOnlyGripStart[\s\S]*?\.isLeft\s*=\s*retrieveWithLeftHand' `
+    'Acknowledged retrieval must carry the selected hand into equipped-weapon ownership.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'pendingPrimaryStartMatchesCurrentWeapon[\s\S]*?tryBuildCurrentLeftFiringGripCapture[\s\S]*?beginPrimaryOnlyGrip' `
     'A left-hand unsheath must retain the canonical lazy fallback when no pre-sheath transfer frame is available.'

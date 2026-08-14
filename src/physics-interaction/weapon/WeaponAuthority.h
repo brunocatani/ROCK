@@ -159,6 +159,23 @@ namespace rock::weapon_visual_authority_math
     }
 
     template <class Transform>
+    [[nodiscard]] inline Transform preserveLiveWeaponWorldScale(
+        const Transform& liveWeaponWorld,
+        const Transform& requestedWeaponWorld)
+    {
+        /*
+         * ROCK owns only the equipped weapon's rigid presentation. hFRIK's
+         * skeleton hierarchy owns the inherited world scale. Feeding a
+         * controller-domain scale back into Weapon changes its local scale,
+         * invalidates dynamic-collision geometry, and makes the next hFRIK
+         * tree update restore a different scale again.
+         */
+        Transform result = requestedWeaponWorld;
+        result.scale = liveWeaponWorld.scale;
+        return result;
+    }
+
+    template <class Transform>
     [[nodiscard]] inline Transform makePresentationWorldDelta(
         const Transform& oldWeaponWorld,
         const Transform& newWeaponWorld)

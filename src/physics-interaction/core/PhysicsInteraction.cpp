@@ -1706,6 +1706,26 @@ namespace rock
             persistentWorldAuthorityPublished,
             driverNode != nullptr,
             driverNode ? driverNode->world : RE::NiTransform{});
+        const auto physicalHand =
+            frik_visual_authority::handFromBool(isLeft);
+        const bool handWorldPublicationReady =
+            _handFrameResolver.hasControllerReconstructionCalibration(
+                isLeft,
+                _handBoneCache.getSkeleton(),
+                _handBoneCache.getBoneTree()) &&
+            (!persistentWorldAuthorityPublished || frame.valid);
+        const bool handWorldPublicationReadinessChanged =
+            frik_visual_authority::isExternalHandWorldPublicationReady(
+                physicalHand) != handWorldPublicationReady;
+        frik_visual_authority::setExternalHandWorldPublicationReady(
+            physicalHand,
+            handWorldPublicationReady);
+        if (handWorldPublicationReadinessChanged) {
+            ROCK_LOG_INFO(Hand,
+                "{} persistent FRIK V2 hand publication {} after controller calibration",
+                isLeft ? "Left" : "Right",
+                handWorldPublicationReady ? "enabled" : "suspended");
+        }
         if (persistentWorldAuthorityPublished && !frame.valid) {
             ROCK_LOG_SAMPLE_WARN(Hand,
                 g_rockConfig.rockLogSampleMilliseconds,
@@ -1925,6 +1945,8 @@ namespace rock
         _lastPipboyWeaponSelectionSequence = 0;
         _equippedWeaponHandlingSettings = {};
         _fixedFiringHandIsLeft = false;
+        _dynamicWeaponRightHandInteractionEnabled = false;
+        _dynamicWeaponLeftHandInteractionEnabled = true;
         _equippedWeaponHandlingModeInitialized = false;
         _equippedWeaponHandlingModeReconcilePending = false;
         _fixedLeftCarry = {};
@@ -2402,14 +2424,18 @@ namespace rock
             const auto desiredDynamicRightHandProxyMask =
                 collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
                     false,
-                    g_rockConfig.rockHandDynamicInteractionsEnabled);
+                    g_rockConfig.rockHandDynamicInteractionsEnabled,
+                    _dynamicWeaponRightHandInteractionEnabled);
             const auto desiredDynamicLeftHandProxyMask =
                 collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
                     true,
-                    g_rockConfig.rockHandDynamicInteractionsEnabled);
+                    g_rockConfig.rockHandDynamicInteractionsEnabled,
+                    _dynamicWeaponLeftHandInteractionEnabled);
             const auto desiredDynamicWeaponProxyMask =
                 collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask(
-                    g_rockConfig.rockHandDynamicInteractionsEnabled);
+                    g_rockConfig.rockHandDynamicInteractionsEnabled,
+                    _dynamicWeaponRightHandInteractionEnabled,
+                    _dynamicWeaponLeftHandInteractionEnabled);
             const bool desiredNativeControllerPolicyEnabled = g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled;
             const bool nativeControllerPolicyModeChanged =
                 _nativeCharacterControllerLayerPolicyCaptured &&
@@ -3315,6 +3341,7 @@ namespace rock
                 supportAuthorityMode,
                 firingGripProximityAuthorityEnabled,
                 effectiveHandlingSettings);
+            synchronizeDynamicWeaponHandCollisionRoles(hknp);
             const bool gunstockNeutralSampleBlocked =
                 g_rockConfig.rockGunstockModeEnabled &&
                 (input_remap_runtime::isRawButtonPhysicallyHeld(
@@ -4772,19 +4799,180 @@ namespace rock
         auto* player = f4vr::getPlayer();
         const std::uint32_t nativeWeaponState =
             f4vr::getNativeWeaponState(player);
+        if (!held_weapon_equip_state_policy::isValidNativeWeaponState(
+                nativeWeaponState)) {
+            clearEquippedWeaponShoulderSheath(
+                "invalid-native-weapon-state");
+            return;
+        }
+
+        const auto commitRetrieval = [this, &currentIdentity](
+                                         const equipped_weapon_drop_policy::
+                                             SourceHand retrievalHand,
+                                         const float confidence,
+                                         const native_equipped_weapon_draw::
+                                             Result& drawResult) {
+            const bool retrieveWithLeftHand =
+                equipped_weapon_drop_policy::isLeft(retrievalHand);
+            const std::size_t handIndex =
+                retrieveWithLeftHand ? 1u : 0u;
+            _pendingEquippedWeaponPrimaryOnlyGripStart =
+                PendingEquippedWeaponPrimaryOnlyGripStart{
+                    .pending = true,
+                    .isLeft = retrieveWithLeftHand,
+                    .targetWeaponFormID = currentIdentity.formID,
+                    .targetWeaponInstanceData = currentIdentity.instanceData,
+                    .remainingSeconds = 10.0f,
+                    .committedTransfer = true,
+                    .hasFiringHandWeaponLocal = retrieveWithLeftHand &&
+                        _equippedWeaponShoulderSheath.
+                            hasLeftFiringGripTransfer,
+                    .firingHandWeaponLocal =
+                        _equippedWeaponShoulderSheath.
+                            leftFiringHandWeaponLocal,
+                    .hasFiringGripWeaponLocal = retrieveWithLeftHand &&
+                        _equippedWeaponShoulderSheath.
+                            hasLeftFiringGripTransfer,
+                    .firingGripWeaponLocal =
+                        _equippedWeaponShoulderSheath.
+                            leftFiringGripWeaponLocal,
+                };
+            _equippedWeaponUnsheathCommittedThisFrame[handIndex] = true;
+            if (g_rockConfig.rockShoulderStashHapticsEnabled) {
+                (void)_feedbackHaptics.queue(
+                    retrieveWithLeftHand ?
+                        feedback_haptics::FeedbackHand::Left :
+                        feedback_haptics::FeedbackHand::Right,
+                    g_rockConfig.
+                        rockShoulderStashCommitHapticDurationSeconds,
+                    g_rockConfig.
+                        rockShoulderStashCommitHapticIntensity);
+            }
+            ROCK_LOG_INFO(
+                Weapon,
+                "Equipped weapon shoulder unsheath acknowledged formID={:08X} hand={} zone={} confidence={:.2f} requests={} state={}({})->{}({}) result={}",
+                currentIdentity.formID,
+                equipped_weapon_drop_policy::sourceHandName(retrievalHand),
+                body_zone::bodyZoneName(
+                    _equippedWeaponShoulderSheath.zone),
+                confidence,
+                _equippedWeaponShoulderSheath.drawWait.requestCount,
+                drawResult.stateBefore,
+                held_weapon_equip_state_policy::nativeWeaponStateName(
+                    drawResult.stateBefore),
+                drawResult.stateAfter,
+                held_weapon_equip_state_policy::nativeWeaponStateName(
+                    drawResult.stateAfter),
+                native_equipped_weapon_draw::submitResultName(
+                    drawResult.result));
+            clearEquippedWeaponShoulderSheath(
+                "physical-hand-unsheath-acknowledged");
+        };
+
+        const auto restartRetrievalGesture = [this, &currentIdentity](
+                                                 const char* reason) {
+            ROCK_LOG_SAMPLE_WARN(
+                Weapon,
+                g_rockConfig.rockLogSampleMilliseconds,
+                "Equipped weapon shoulder unsheath unacknowledged formID={:08X} hand={} requests={} elapsed={:.3f}s reason={}; preserving shoulder stash for another gesture",
+                currentIdentity.formID,
+                equipped_weapon_drop_policy::sourceHandName(
+                    _equippedWeaponShoulderSheath.retrievalHand),
+                _equippedWeaponShoulderSheath.drawWait.requestCount,
+                _equippedWeaponShoulderSheath.drawWait.elapsedSeconds,
+                reason ? reason : "unknown");
+            _equippedWeaponShoulderSheath.retrievalHand =
+                equipped_weapon_drop_policy::SourceHand::None;
+            _equippedWeaponShoulderSheath.retrievalConfidence = 0.0f;
+            _equippedWeaponShoulderSheath.drawWait = {};
+            _equippedWeaponSheathRetrievalStates = {};
+        };
+
+        if (menuInputActive) {
+            _equippedWeaponSheathRetrievalStates = {};
+            return;
+        }
+
+        if (_equippedWeaponShoulderSheath.retrievalHand !=
+            equipped_weapon_drop_policy::SourceHand::None) {
+            const auto action =
+                equipped_weapon_drop_policy::advanceShoulderDrawWait(
+                    _equippedWeaponShoulderSheath.drawWait,
+                    nativeWeaponState,
+                    frame.deltaSeconds);
+            if (action == equipped_weapon_drop_policy::
+                              ShoulderDrawAction::CommitRetrieval) {
+                native_equipped_weapon_draw::Result acknowledged{};
+                acknowledged.stateBefore = nativeWeaponState;
+                acknowledged.stateAfter = nativeWeaponState;
+                acknowledged.result = native_equipped_weapon_draw::
+                    SubmitResult::AlreadyDrawingOrDrawn;
+                commitRetrieval(
+                    _equippedWeaponShoulderSheath.retrievalHand,
+                    _equippedWeaponShoulderSheath.retrievalConfidence,
+                    acknowledged);
+                return;
+            }
+            if (action == equipped_weapon_drop_policy::
+                              ShoulderDrawAction::RestartGesture) {
+                restartRetrievalGesture("native-draw-timeout");
+                return;
+            }
+            if (action == equipped_weapon_drop_policy::
+                              ShoulderDrawAction::SubmitDraw) {
+                const auto drawResult =
+                    native_equipped_weapon_draw::submitExactCurrent(
+                        currentIdentity);
+                const bool drawAccepted =
+                    drawResult.result == native_equipped_weapon_draw::
+                                             SubmitResult::Submitted ||
+                    drawResult.result == native_equipped_weapon_draw::
+                                             SubmitResult::
+                                                 AlreadyDrawingOrDrawn;
+                if (!drawAccepted) {
+                    restartRetrievalGesture(
+                        native_equipped_weapon_draw::submitResultName(
+                            drawResult.result));
+                    return;
+                }
+                if (drawResult.result == native_equipped_weapon_draw::
+                                             SubmitResult::
+                                                 AlreadyDrawingOrDrawn ||
+                    equipped_weapon_drop_policy::
+                        nativeStateAcknowledgesShoulderDraw(
+                            drawResult.stateAfter)) {
+                    commitRetrieval(
+                        _equippedWeaponShoulderSheath.retrievalHand,
+                        _equippedWeaponShoulderSheath.
+                            retrievalConfidence,
+                        drawResult);
+                    return;
+                }
+                ROCK_LOG_SAMPLE_INFO(
+                    Weapon,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "Equipped weapon shoulder unsheath awaiting native acknowledgement formID={:08X} hand={} requests={} elapsed={:.3f}s state={}({})->{}({})",
+                    currentIdentity.formID,
+                    equipped_weapon_drop_policy::sourceHandName(
+                        _equippedWeaponShoulderSheath.retrievalHand),
+                    _equippedWeaponShoulderSheath.drawWait.requestCount,
+                    _equippedWeaponShoulderSheath.drawWait.elapsedSeconds,
+                    drawResult.stateBefore,
+                    held_weapon_equip_state_policy::nativeWeaponStateName(
+                        drawResult.stateBefore),
+                    drawResult.stateAfter,
+                    held_weapon_equip_state_policy::nativeWeaponStateName(
+                        drawResult.stateAfter));
+            }
+            return;
+        }
+
         const bool nativePresentationRetrievable =
             held_weapon_equip_state_policy::
                 isShoulderStashedPresentationState(nativeWeaponState);
         if (!nativePresentationRetrievable) {
             clearEquippedWeaponShoulderSheath(
-                held_weapon_equip_state_policy::isValidNativeWeaponState(
-                    nativeWeaponState) ?
-                    "native-weapon-no-longer-sheathed" :
-                    "invalid-native-weapon-state");
-            return;
-        }
-        if (menuInputActive) {
-            _equippedWeaponSheathRetrievalStates = {};
+                "native-weapon-no-longer-sheathed");
             return;
         }
 
@@ -4942,39 +5130,27 @@ namespace rock
             return;
         }
 
-        _pendingEquippedWeaponPrimaryOnlyGripStart =
-            PendingEquippedWeaponPrimaryOnlyGripStart{
-                .pending = true,
-                .isLeft = retrieveWithLeftHand,
-                .targetWeaponFormID = currentIdentity.formID,
-                .targetWeaponInstanceData = currentIdentity.instanceData,
-                .remainingSeconds = 10.0f,
-                .committedTransfer = true,
-                .hasFiringHandWeaponLocal = retrieveWithLeftHand &&
-                    _equippedWeaponShoulderSheath.
-                        hasLeftFiringGripTransfer,
-                .firingHandWeaponLocal =
-                    _equippedWeaponShoulderSheath.
-                        leftFiringHandWeaponLocal,
-                .hasFiringGripWeaponLocal = retrieveWithLeftHand &&
-                    _equippedWeaponShoulderSheath.
-                        hasLeftFiringGripTransfer,
-                .firingGripWeaponLocal =
-                    _equippedWeaponShoulderSheath.
-                        leftFiringGripWeaponLocal,
-            };
-        _equippedWeaponUnsheathCommittedThisFrame[handIndex] = true;
-        if (g_rockConfig.rockShoulderStashHapticsEnabled) {
-            (void)_feedbackHaptics.queue(
-                retrieveWithLeftHand ?
-                    feedback_haptics::FeedbackHand::Left :
-                    feedback_haptics::FeedbackHand::Right,
-                g_rockConfig.rockShoulderStashCommitHapticDurationSeconds,
-                g_rockConfig.rockShoulderStashCommitHapticIntensity);
+        if (drawResult.result == native_equipped_weapon_draw::SubmitResult::
+                                     AlreadyDrawingOrDrawn ||
+            equipped_weapon_drop_policy::nativeStateAcknowledgesShoulderDraw(
+                drawResult.stateAfter)) {
+            commitRetrieval(
+                retrievalHand,
+                decisions[handIndex].confidence,
+                drawResult);
+            return;
         }
+
+        _equippedWeaponShoulderSheath.retrievalHand = retrievalHand;
+        _equippedWeaponShoulderSheath.retrievalConfidence =
+            decisions[handIndex].confidence;
+        equipped_weapon_drop_policy::beginShoulderDrawWait(
+            _equippedWeaponShoulderSheath.drawWait);
+        shoulder_stash::resetRuntime(
+            _equippedWeaponSheathRetrievalStates[handIndex]);
         ROCK_LOG_INFO(
             Weapon,
-            "Equipped weapon shoulder unsheathed formID={:08X} hand={} zone={} confidence={:.2f} state={}({})->{}({}) result={}",
+            "Equipped weapon shoulder unsheath submitted formID={:08X} hand={} zone={} confidence={:.2f} state={}({})->{}({}); retaining transaction until native acknowledgement",
             currentIdentity.formID,
             equipped_weapon_drop_policy::sourceHandName(retrievalHand),
             body_zone::bodyZoneName(
@@ -4985,11 +5161,7 @@ namespace rock
                 drawResult.stateBefore),
             drawResult.stateAfter,
             held_weapon_equip_state_policy::nativeWeaponStateName(
-                drawResult.stateAfter),
-            native_equipped_weapon_draw::submitResultName(
-                drawResult.result));
-        clearEquippedWeaponShoulderSheath(
-            "physical-hand-unsheath-committed");
+                drawResult.stateAfter));
     }
 
     void PhysicsInteraction::serviceFixedWeaponHand(
@@ -6055,6 +6227,35 @@ namespace rock
         dispatchGrabEvent(eventData);
     }
 
+    void PhysicsInteraction::synchronizeDynamicWeaponHandCollisionRoles(
+        RE::hknpWorld* world)
+    {
+        const auto attachedHands =
+            _twoHandedGrip.weaponCollisionAttachedHands();
+        const bool rightHandInteractionEnabled =
+            !attachedHands.right;
+        const bool leftHandInteractionEnabled =
+            !attachedHands.left;
+        if (_dynamicWeaponRightHandInteractionEnabled ==
+                rightHandInteractionEnabled &&
+            _dynamicWeaponLeftHandInteractionEnabled ==
+                leftHandInteractionEnabled) {
+            return;
+        }
+
+        _dynamicWeaponRightHandInteractionEnabled =
+            rightHandInteractionEnabled;
+        _dynamicWeaponLeftHandInteractionEnabled =
+            leftHandInteractionEnabled;
+
+        ROCK_LOG_DEBUG(Weapon,
+            "Dynamic weapon hand collision roles changed: right={} left={}",
+            rightHandInteractionEnabled ? "free" : "attached",
+            leftHandInteractionEnabled ? "free" : "attached");
+        _collisionLayerRegistered = false;
+        registerCollisionLayer(world);
+    }
+
     void PhysicsInteraction::registerCollisionLayer(RE::hknpWorld* world)
     {
         if (!world) {
@@ -6093,7 +6294,9 @@ namespace rock
             g_rockConfig.rockBodyBoneCollisionStaticWorldEnabled,
             g_rockConfig.rockWeaponCollisionBlocksProjectiles,
             g_rockConfig.rockWeaponCollisionBlocksSpells,
-            g_rockConfig.rockHandDynamicInteractionsEnabled);
+            g_rockConfig.rockHandDynamicInteractionsEnabled,
+            _dynamicWeaponRightHandInteractionEnabled,
+            _dynamicWeaponLeftHandInteractionEnabled);
         collision_layer_policy::applyNativeCharacterControllerObjectSuppressionPolicy(
             matrix,
             g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled,
@@ -6115,14 +6318,18 @@ namespace rock
         _expectedDynamicHandProxyLayerMask =
             collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
                 false,
-                g_rockConfig.rockHandDynamicInteractionsEnabled);
+                g_rockConfig.rockHandDynamicInteractionsEnabled,
+                _dynamicWeaponRightHandInteractionEnabled);
         _expectedDynamicLeftHandProxyLayerMask =
             collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
                 true,
-                g_rockConfig.rockHandDynamicInteractionsEnabled);
+                g_rockConfig.rockHandDynamicInteractionsEnabled,
+                _dynamicWeaponLeftHandInteractionEnabled);
         _expectedDynamicWeaponProxyLayerMask =
             collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask(
-                g_rockConfig.rockHandDynamicInteractionsEnabled);
+                g_rockConfig.rockHandDynamicInteractionsEnabled,
+                _dynamicWeaponRightHandInteractionEnabled,
+                _dynamicWeaponLeftHandInteractionEnabled);
         _expectedDynamicWorldCarClutterLayerMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER];
         _expectedDynamicWorldCarLargeClutterLayerMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER];
         _expectedNativeCharacterControllerLayerMask =
@@ -6231,10 +6438,12 @@ namespace rock
             nativeControllerObjectStatus);
         ROCK_LOG_INFO(
             Config,
-            "Registered dynamic weapon proxy layer={} worldOnlyMask=0x{:016X}",
+            "Registered dynamic weapon proxy layer={} mask=0x{:016X} hands(right={},left={})",
             collision_layer_policy::ROCK_LAYER_DYNAMIC_WEAPON_PROXY,
             collision_layer_policy::matrixAddressableMask(
-                _expectedDynamicWeaponProxyLayerMask));
+                _expectedDynamicWeaponProxyLayerMask),
+            _dynamicWeaponRightHandInteractionEnabled ? "free" : "attached",
+            _dynamicWeaponLeftHandInteractionEnabled ? "free" : "attached");
     }
 
     bool PhysicsInteraction::createHandCollisions(RE::hknpWorld* world, void* bhkWorld)

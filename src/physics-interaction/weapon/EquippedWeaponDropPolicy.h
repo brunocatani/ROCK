@@ -1,5 +1,8 @@
 #pragma once
 
+#include "physics-interaction/weapon/HeldWeaponEquipStatePolicy.h"
+
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 
@@ -158,6 +161,80 @@ namespace rock::equipped_weapon_drop_policy
         // A same-frame tie is rare but must remain deterministic. Favor the
         // hand that physically placed the weapon instead of a fixed side.
         return stashedByLeftHand ? SourceHand::Left : SourceHand::Right;
+    }
+
+    inline constexpr float kShoulderDrawRetryIntervalSeconds = 0.10f;
+    inline constexpr float kShoulderDrawAcknowledgementDeadlineSeconds = 1.00f;
+
+    enum class ShoulderDrawAction : std::uint8_t
+    {
+        Wait = 0,
+        SubmitDraw,
+        CommitRetrieval,
+        RestartGesture,
+    };
+
+    struct ShoulderDrawState
+    {
+        float elapsedSeconds{ 0.0f };
+        float nextRequestAtSeconds{ 0.0f };
+        std::uint32_t requestCount{ 0 };
+    };
+
+    inline constexpr void beginShoulderDrawWait(
+        ShoulderDrawState& state) noexcept
+    {
+        state = ShoulderDrawState{
+            .nextRequestAtSeconds = kShoulderDrawRetryIntervalSeconds,
+            .requestCount = 1,
+        };
+    }
+
+    [[nodiscard]] inline constexpr bool nativeStateAcknowledgesShoulderDraw(
+        const std::uint32_t nativeState) noexcept
+    {
+        using NativeWeaponState =
+            held_weapon_equip_state_policy::NativeWeaponState;
+        switch (static_cast<NativeWeaponState>(nativeState)) {
+        case NativeWeaponState::WantToDraw:
+        case NativeWeaponState::Drawing:
+        case NativeWeaponState::Drawn:
+            return true;
+        default:
+            return false;
+        }
+    }
+
+    [[nodiscard]] inline ShoulderDrawAction advanceShoulderDrawWait(
+        ShoulderDrawState& state,
+        const std::uint32_t nativeState,
+        const float deltaSeconds) noexcept
+    {
+        if (!held_weapon_equip_state_policy::isValidNativeWeaponState(
+                nativeState)) {
+            return ShoulderDrawAction::RestartGesture;
+        }
+        if (nativeStateAcknowledgesShoulderDraw(nativeState)) {
+            return ShoulderDrawAction::CommitRetrieval;
+        }
+
+        const float elapsed =
+            std::isfinite(deltaSeconds) && deltaSeconds > 0.0f ?
+            std::clamp(deltaSeconds, 0.0f, 0.1f) :
+            0.0f;
+        state.elapsedSeconds += elapsed;
+        if (state.elapsedSeconds >=
+            kShoulderDrawAcknowledgementDeadlineSeconds) {
+            return ShoulderDrawAction::RestartGesture;
+        }
+        if (state.elapsedSeconds < state.nextRequestAtSeconds) {
+            return ShoulderDrawAction::Wait;
+        }
+
+        state.nextRequestAtSeconds =
+            state.elapsedSeconds + kShoulderDrawRetryIntervalSeconds;
+        ++state.requestCount;
+        return ShoulderDrawAction::SubmitDraw;
     }
 
     struct PhysicalDropCommitInput

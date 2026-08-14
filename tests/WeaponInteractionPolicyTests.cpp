@@ -1630,6 +1630,39 @@ int main()
     }
 
     {
+        TestTransform liveWeaponWorld =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        liveWeaponWorld.translate = { 4.0f, 5.0f, 6.0f };
+        liveWeaponWorld.scale = 0.865f;
+
+        TestTransform controllerDomainTarget =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        controllerDomainTarget.translate = { 40.0f, 50.0f, 60.0f };
+        controllerDomainTarget.rotate = makeAxisAngleRotation(
+            TestVector3{ 0.0f, 0.0f, 1.0f },
+            32.0f);
+        controllerDomainTarget.scale = 1.0f;
+
+        const TestTransform scaleStableTarget =
+            rock::weapon_visual_authority_math::
+                preserveLiveWeaponWorldScale(
+                    liveWeaponWorld,
+                    controllerDomainTarget);
+        ok &= expectNear(
+            "weapon rigid authority preserves hFRIK inherited world scale",
+            scaleStableTarget.scale,
+            liveWeaponWorld.scale);
+        ok &= expectNear(
+            "weapon scale normalization preserves requested translation",
+            scaleStableTarget.translate.x,
+            controllerDomainTarget.translate.x);
+        ok &= expectNear(
+            "weapon scale normalization preserves requested rotation",
+            scaleStableTarget.rotate.entry[0][0],
+            controllerDomainTarget.rotate.entry[0][0]);
+    }
+
+    {
         TestTransform oldWeaponWorld =
             rock::transform_math::makeIdentityTransform<TestTransform>();
         oldWeaponWorld.translate = { 8.0f, -3.0f, 4.0f };
@@ -2919,6 +2952,52 @@ int main()
             ShoulderRetrievalCandidate{},
             false),
         SourceHand::None);
+    ShoulderDrawState shoulderDrawWait{};
+    beginShoulderDrawWait(shoulderDrawWait);
+    ok &= expectEqual(
+        "shoulder draw starts with exactly one submitted request",
+        shoulderDrawWait.requestCount,
+        std::uint32_t{ 1 });
+    ok &= expectEqual(
+        "unacknowledged shoulder draw waits before retry",
+        advanceShoulderDrawWait(
+            shoulderDrawWait,
+            static_cast<std::uint32_t>(
+                rock::held_weapon_equip_state_policy::NativeWeaponState::
+                    Sheathed),
+            0.05f),
+        ShoulderDrawAction::Wait);
+    ok &= expectEqual(
+        "unacknowledged shoulder draw retries on a bounded cadence",
+        advanceShoulderDrawWait(
+            shoulderDrawWait,
+            static_cast<std::uint32_t>(
+                rock::held_weapon_equip_state_policy::NativeWeaponState::
+                    Sheathed),
+            0.05f),
+        ShoulderDrawAction::SubmitDraw);
+    ok &= expectEqual(
+        "want-to-draw acknowledges shoulder retrieval",
+        advanceShoulderDrawWait(
+            shoulderDrawWait,
+            static_cast<std::uint32_t>(
+                rock::held_weapon_equip_state_policy::NativeWeaponState::
+                    WantToDraw),
+            0.01f),
+        ShoulderDrawAction::CommitRetrieval);
+    ShoulderDrawState exhaustedShoulderDraw{};
+    beginShoulderDrawWait(exhaustedShoulderDraw);
+    exhaustedShoulderDraw.elapsedSeconds =
+        kShoulderDrawAcknowledgementDeadlineSeconds - 0.01f;
+    ok &= expectEqual(
+        "unacknowledged shoulder draw returns to a retryable gesture",
+        advanceShoulderDrawWait(
+            exhaustedShoulderDraw,
+            static_cast<std::uint32_t>(
+                rock::held_weapon_equip_state_policy::NativeWeaponState::
+                    Sheathed),
+            0.02f),
+        ShoulderDrawAction::RestartGesture);
     ok &= expectTrue("successful physical drop commits collider retirement",
         physicalDropCommitted(PhysicalDropCommitInput{ .dropSucceeded = true }));
     ok &= expectTrue("unresolved dropped reference still commits collider retirement",
