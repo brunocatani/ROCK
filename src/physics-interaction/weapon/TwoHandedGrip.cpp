@@ -10092,13 +10092,30 @@ namespace rock
     {
         _weaponCollisionHandPresentationFromPreviousFrame =
             _weaponCollisionHandAuthorityLive;
+
+        /*
+         * FRIK V2 owns tagged transforms as persistent claims and consumes the
+         * winning claim in its next regular skeleton update. Clearing and then
+         * recreating this tag every ROCK frame opened a scheduler-dependent
+         * window in which FRIK could select the lower-priority grip claim. Keep
+         * the same owner registered and update its value after post-solve.
+         */
+    }
+
+    void TwoHandedGrip::finishWeaponCollisionPresentationFrame(
+        const bool runtimeActive)
+    {
+        if (runtimeActive) {
+            return;
+        }
+
         const bool leftCleared = clearWeaponCollisionHandAuthority(true);
         const bool rightCleared = clearWeaponCollisionHandAuthority(false);
         if (!leftCleared || !rightCleared) {
             ROCK_LOG_SAMPLE_WARN(
                 Weapon,
                 1000,
-                "TwoHandedGrip: previous-frame dynamic weapon collision hand authority clear failed left={} right={} live(L/R)={}/{}",
+                "TwoHandedGrip: inactive dynamic weapon collision hand authority clear failed left={} right={} live(L/R)={}/{}",
                 leftCleared ? "ok" : "failed",
                 rightCleared ? "ok" : "failed",
                 _weaponCollisionHandAuthorityLive[0],
@@ -10147,6 +10164,15 @@ namespace rock
             },
         };
 
+        bool detachedHandsCleared = true;
+        for (const auto& pulse : pulses) {
+            if (!pulse.requested) {
+                detachedHandsCleared =
+                    clearWeaponCollisionHandAuthority(pulse.isLeft) &&
+                    detachedHandsCleared;
+            }
+        }
+
         const bool anyHandRequested = attachedHands.left || attachedHands.right;
         bool handTargetsReady =
             !anyHandRequested || frik_visual_authority::isAvailable();
@@ -10155,17 +10181,15 @@ namespace rock
                 continue;
             }
             /*
-             * FRIK V2 consumes this claim during its next skeleton frame. Its
-             * current root therefore still contains the previous collision
-             * claim even though beginWeaponCollisionPresentationFrame cleared
-             * the tag from the API table. Reusing that root would compound the
-             * new weapon correction onto the previous one. The scope-safe
-             * frame was already reconstructed from the unaffected hand driver
-             * when the previous-presentation witness was set, so it is the
-             * collision-free physical input for this publication. The weapon
-             * basis is likewise the explicit intent captured before physics;
-             * weaponNode->world can already contain the previous deferred
-             * hand claim and must never be used as the requested basis.
+             * FRIK V2 consumes this persistent claim during its next skeleton
+             * frame, so its current root contains the previous collision
+             * result. Reusing that root would compound the correction. The
+             * scope-safe frame was reconstructed from the unaffected hand
+             * driver because the previous-presentation witness was set, so it
+             * is the collision-free physical input for this publication. The
+             * weapon basis is likewise the explicit intent captured before
+             * physics; weaponNode->world can already contain the previous
+             * deferred hand claim and must never be used as that basis.
              */
             RE::NiTransform physicalHandWorld{};
             const bool physicalHandValid =
@@ -10184,7 +10208,7 @@ namespace rock
             handTargetsReady = handTargetsReady && pulse.targetValid;
         }
 
-        bool handPulsesSucceeded = handTargetsReady;
+        bool handPulsesSucceeded = handTargetsReady && detachedHandsCleared;
         if (handTargetsReady) {
             for (auto& pulse : pulses) {
                 if (!pulse.requested) {
@@ -10198,14 +10222,11 @@ namespace rock
                         pulse.targetWorld,
                         WEAPON_COLLISION_HAND_PRIORITY);
                 /*
-                 * Retain the high-priority result through FRIK's next skeleton
-                 * solve. Clearing it here would hand that solve back to the
-                 * live priority-100 firing and support targets, erasing the
-                 * collision correction. The next PhysicsInteraction frame
-                 * clears this tag, then uses the retained witness to reconstruct
-                 * physical intent from the unaffected hand driver. FRIK's
-                 * current root contains the previous collision authority and
-                 * therefore cannot be sampled for the next target.
+                 * Update the same high-priority owner in place. Clearing it at
+                 * either frame boundary would let FRIK's regular solve select
+                 * the live priority-100 firing/support owner for one scheduling
+                 * interval. Physical intent remains reconstructed from the
+                 * unaffected hand driver while this claim is live.
                  */
                 pulse.retained = pulse.applied;
                 if (pulse.retained) {
@@ -10214,14 +10235,6 @@ namespace rock
                 }
                 handPulsesSucceeded =
                     handPulsesSucceeded && pulse.applied && pulse.retained;
-            }
-        } else {
-            for (const auto& pulse : pulses) {
-                if (pulse.requested) {
-                    handPulsesSucceeded =
-                        clearWeaponCollisionHandAuthority(pulse.isLeft) &&
-                        handPulsesSucceeded;
-                }
             }
         }
 

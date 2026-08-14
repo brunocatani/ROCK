@@ -18,6 +18,12 @@ namespace rock::dynamic_weapon_collision_policy
     inline constexpr float kProcessedManifoldContactRetentionSeconds = 0.35f;
     inline constexpr float kFallbackContactRetentionDeltaSeconds = 1.0f / 90.0f;
 
+    struct FreeSpaceDivergenceRecovery
+    {
+        float dwellSeconds{ 0.0f };
+        bool recover{ false };
+    };
+
     inline constexpr bool hasSolvedProcessedManifoldContact(
         const std::int32_t pointCount)
     {
@@ -46,6 +52,48 @@ namespace rock::dynamic_weapon_collision_policy
             std::clamp(deltaSeconds, 0.0f, 0.1f) :
             kFallbackContactRetentionDeltaSeconds;
         return (std::max)(0.0f, retainedSeconds - elapsedSeconds);
+    }
+
+    inline FreeSpaceDivergenceRecovery advanceFreeSpaceDivergenceRecovery(
+        const float currentDwellSeconds,
+        const bool contactActive,
+        const bool authorityTeleported,
+        const float translationGapGameUnits,
+        const float divergenceThresholdGameUnits,
+        const float requiredDwellSeconds,
+        const float deltaSeconds)
+    {
+        if (authorityTeleported) {
+            return FreeSpaceDivergenceRecovery{
+                .recover = true,
+            };
+        }
+
+        const bool divergent =
+            !contactActive &&
+            std::isfinite(translationGapGameUnits) &&
+            std::isfinite(divergenceThresholdGameUnits) &&
+            divergenceThresholdGameUnits > 0.0f &&
+            translationGapGameUnits > divergenceThresholdGameUnits;
+        if (!divergent) {
+            return {};
+        }
+
+        const float retainedDwell = std::isfinite(currentDwellSeconds) ?
+            (std::max)(0.0f, currentDwellSeconds) :
+            0.0f;
+        const float elapsedSeconds =
+            std::isfinite(deltaSeconds) && deltaSeconds > 0.000001f ?
+            std::clamp(deltaSeconds, 0.0f, 0.1f) :
+            kFallbackContactRetentionDeltaSeconds;
+        const float dwellSeconds = retainedDwell + elapsedSeconds;
+        const float requiredDwell = std::isfinite(requiredDwellSeconds) ?
+            (std::max)(0.0f, requiredDwellSeconds) :
+            0.0f;
+        return FreeSpaceDivergenceRecovery{
+            .dwellSeconds = dwellSeconds,
+            .recover = dwellSeconds >= requiredDwell,
+        };
     }
 
     inline float sanitizeWeaponMass(float weaponWeightGame)

@@ -3781,6 +3781,8 @@ namespace rock
                         dynamicWeaponFrame.rotationCorrectionDegrees);
                 }
             }
+            _twoHandedGrip.finishWeaponCollisionPresentationFrame(
+                dynamicWeaponFrame.proxyActive);
             if (weaponNode) {
                 performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::WeaponCollisionTransforms);
                 _weaponCollision.updateBodiesFromCurrentSourceTransforms(

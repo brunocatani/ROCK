@@ -95,6 +95,59 @@ int main()
             1.0f / 90.0f),
         0.0f);
 
+    auto divergenceRecovery = advanceFreeSpaceDivergenceRecovery(
+        0.0f,
+        false,
+        false,
+        100.0f,
+        80.0f,
+        0.2f,
+        0.1f);
+    ok &= !divergenceRecovery.recover;
+    ok &= expectNear(
+        "free-space divergence starts dwell",
+        divergenceRecovery.dwellSeconds,
+        0.1f);
+    divergenceRecovery = advanceFreeSpaceDivergenceRecovery(
+        divergenceRecovery.dwellSeconds,
+        false,
+        false,
+        100.0f,
+        80.0f,
+        0.2f,
+        0.2f);
+    ok &= divergenceRecovery.recover;
+    ok &= expectNear(
+        "free-space divergence reaches recovery dwell",
+        divergenceRecovery.dwellSeconds,
+        0.2f);
+    divergenceRecovery = advanceFreeSpaceDivergenceRecovery(
+        0.2f,
+        true,
+        false,
+        100.0f,
+        80.0f,
+        0.3f,
+        0.1f);
+    ok &= !divergenceRecovery.recover;
+    ok &= expectNear(
+        "active contact cancels divergence recovery",
+        divergenceRecovery.dwellSeconds,
+        0.0f);
+    divergenceRecovery = advanceFreeSpaceDivergenceRecovery(
+        0.0f,
+        false,
+        true,
+        0.0f,
+        80.0f,
+        0.3f,
+        0.1f);
+    ok &= divergenceRecovery.recover;
+    ok &= expectNear(
+        "authority teleport immediately recovers contact body",
+        divergenceRecovery.dwellSeconds,
+        0.0f);
+
     constexpr auto dynamicWeaponMask = rock::collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask();
     for (std::uint32_t layer = 0; layer < rock::collision_layer_policy::FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++layer) {
         const bool enabled = rock::collision_layer_policy::maskEnablesLayer(dynamicWeaponMask, layer);

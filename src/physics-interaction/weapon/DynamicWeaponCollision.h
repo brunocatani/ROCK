@@ -256,6 +256,7 @@ namespace rock
         RE::NiTransform _physicsRequestedTarget{};
         RE::NiTransform _physicsPreviousRequestedTarget{};
         bool _physicsPreviousRequestedTargetValid{ false };
+        float _divergenceDwellSeconds{ 0.0f };
         std::uint64_t _consumedContactSequence{ 0 };
         float _contactRetentionSeconds{ 0.0f };
         std::uint64_t _contactEpisode{ 0 };

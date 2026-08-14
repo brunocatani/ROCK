@@ -183,8 +183,9 @@ Require-Order $interaction @(
     '_twoHandedGrip\.applyGunstockAlignment\(',
     '_dynamicWeaponCollision\.finishFrame\(',
     'applyWeaponCollisionResolvedAuthority\(',
+    'finishWeaponCollisionPresentationFrame\(',
     '_weaponCollision\.updateBodiesFromCurrentSourceTransforms\('
-) 'Previous-frame collision hand presentation must be witnessed and cleared before dynamic intent capture, with post-solve resolution remaining before layer-44 hull transforms.'
+) 'Persistent collision hand presentation must be witnessed before isolated intent capture and released only after its runtime becomes inactive.'
 Require-Pattern $runtimePolicy `
     'selectAttachedHands\([\s\S]*partCarry[\s\S]*firingGripOccupied[\s\S]*leftPartGripActive[\s\S]*rightPartGripActive[\s\S]*firingHandIsActuallyLeft' `
     'Collision hand coupling must select the native/manual firing hand and active part-grip hands without moving a free hand.'
@@ -193,6 +194,9 @@ Require-Pattern $runtimePolicy `
     'Attached IK hands must preserve their exact pre-collision weapon-local relation under the resolved weapon pose.'
 Require-Order $weaponAuthority @(
     'void TwoHandedGrip::beginWeaponCollisionPresentationFrame\(',
+    '_weaponCollisionHandPresentationFromPreviousFrame\s*=',
+    'void TwoHandedGrip::finishWeaponCollisionPresentationFrame\(',
+    'if \(runtimeActive\)',
     'clearWeaponCollisionHandAuthority\(true\)',
     'clearWeaponCollisionHandAuthority\(false\)',
     'applyWeaponCollisionResolvedAuthority\(',
@@ -202,7 +206,13 @@ Require-Order $weaponAuthority @(
     'applyExternalHandWorldTransform\(',
     '_weaponCollisionHandAuthorityLive',
     'applyWeaponVisualAuthority\('
-) 'Collision correction must clear the prior claim before intent, derive attached hands from collision-isolated physical input, retain them through the next FRIK solve, and publish the exact weapon pose last.'
+) 'Collision correction must retain one persistent FRIK owner, clear only inactive or detached hands, derive targets from isolated physical input, and publish the exact weapon pose last.'
+Reject-Pattern $weaponAuthority `
+    'void TwoHandedGrip::beginWeaponCollisionPresentationFrame\(\)[\s\S]{0,700}clearWeaponCollisionHandAuthority' `
+    'FRIK V2 collision claims must not be cleared and recreated at every frame boundary.'
+Require-Pattern $interaction `
+    'finishWeaponCollisionPresentationFrame\([\r\n\s]*dynamicWeaponFrame\.proxyActive\)' `
+    'The persistent collision claim must be released when the dynamic weapon runtime definitively becomes inactive.'
 Require-Pattern $weaponAuthority `
     'applyWeaponCollisionResolvedAuthority\([\s\S]*const RE::NiTransform& requestedWeaponWorld[\s\S]*const RE::NiTransform& resolvedWeaponWorld[\s\S]*reframeAttachedHand\([\s\S]*requestedWeaponWorld[\s\S]*resolvedWeaponWorld' `
     'Deferred FRIK hand authority must reframe from the explicit collision-free weapon intent rather than the previously rendered scene node.'
@@ -213,7 +223,7 @@ Require-Pattern $interaction `
     'applyWeaponCollisionResolvedAuthority\([\s\S]{0,250}dynamicWeaponFrame\.requestedWeaponWorld[\s\S]{0,250}dynamicWeaponFrame\.resolvedWeaponWorld' `
     'The collision-free intent and physics-resolved pose must cross the presentation boundary together.'
 Require-Pattern $weaponAuthority `
-    'FRIK V2 consumes this claim during its next skeleton frame[\s\S]*current root therefore still contains the previous collision[\s\S]*claim[\s\S]*scope-safe[\s\S]*frame was already reconstructed from the unaffected hand driver[\s\S]*collision-free physical input' `
+    'FRIK V2 consumes this persistent claim during its next skeleton[\s\S]*current root contains the previous collision[\s\S]*scope-safe frame was reconstructed from the unaffected hand[\s\S]*collision-free physical input' `
     'The source must document why deferred FRIK V2 claims require driver-reconstructed input isolation.'
 Reject-Pattern $weaponAuthority `
     'bool TwoHandedGrip::applyWeaponCollisionResolvedAuthority\([\s\S]*?tryGetRootFlattenedHandBoneTransform\([\s\S]*?bool TwoHandedGrip::applyFiringHandLockedVisual' `
@@ -223,13 +233,13 @@ Reject-Pattern $weaponAuthority `
     'Post-solve collision publication must not clear its hand tag in the same method; FRIK V2 must retain it for the next skeleton solve.'
 Require-Pattern $weaponAuthority `
     'WEAPON_COLLISION_HAND_PRIORITY\s*=\s*110[\s\S]*GRIP_HAND_POSE_PRIORITY\s*=\s*100|GRIP_HAND_POSE_PRIORITY\s*=\s*100[\s\S]*WEAPON_COLLISION_HAND_PRIORITY\s*=\s*110' `
-    'The collision hand authority must outrank normal grip targets only through the final presentation interval.'
+    'The persistent collision hand authority must outrank normal grip targets only while its runtime is active.'
 Require-Pattern $weaponAuthority `
     'void TwoHandedGrip::reset\(\)[\s\S]{0,600}WEAPON_COLLISION_HAND_TAG[\s\S]{0,500}Hand::Left[\s\S]{0,500}WEAPON_COLLISION_HAND_TAG[\s\S]{0,500}Hand::Right[\s\S]{0,300}_weaponCollisionHandAuthorityLive\s*=\s*\{\}[\s\S]{0,200}_weaponCollisionHandPresentationFromPreviousFrame\s*=\s*\{\}' `
     'Lifecycle reset must defensively clear collision hand authority and its previous-presentation witness.'
 Require-Pattern $weaponAuthority `
     '_weaponCollisionHandPresentationFromPreviousFrame\s*=\s*[\r\n\s]*_weaponCollisionHandAuthorityLive' `
-    'The presentation boundary must capture the retained collision-hand witness before clearing its tags.'
+    'The presentation boundary must capture the retained collision-hand witness without clearing its persistent tags.'
 Require-Pattern $weaponAuthority `
     'resolveCollisionIsolatedMode\([\s\S]*_weaponCollisionHandPresentationFromPreviousFrame\[handIndex\][\s\S]*_scopeDriverFrameAuthorityActive' `
     'A retained collision hand must force physical-driver reconstruction instead of feeding the collision-corrected root back into the solver.'
@@ -276,11 +286,14 @@ Require-Pattern $runtimeSource `
     '_processedManifoldCallbackSequenceAtomic\.fetch_add\(1[\s\S]*hasSolvedProcessedManifoldContact\([\s\S]*manifoldPointCount\)[\s\S]*_contactSequenceAtomic\.fetch_add\(1' `
     'Point-free and terminal processed-manifold records must remain diagnostic and never refresh the contact witness.'
 Require-Pattern $runtimeSource `
-    '_rawPointCallbackSequenceAtomic\.fetch_add\(1[\s\S]*isDynamicWeaponProxyObstacleLayer\(otherLayer\)[\s\S]*_contactWorldAtomic\.store[\s\S]*_contactSequenceAtomic\.fetch_add\(1' `
-    'Solver-only dynamic-hand contacts must remain diagnostic and never overwrite the raw-callback presentation witness.'
+    '_rawPointCallbackSequenceAtomic\.fetch_add\(1[\s\S]*_contactWorldAtomic\.store[\s\S]*_contactSequenceAtomic\.fetch_add\(1' `
+    'Positive raw world and dynamic-hand contacts must refresh the shared interaction witness.'
 Require-Pattern $runtimeSource `
-    '_processedManifoldCallbackSequenceAtomic\.fetch_add\(1[\s\S]*hasSolvedProcessedManifoldContact\([\s\S]*isDynamicWeaponProxyObstacleLayer\(otherLayer\)[\s\S]*_contactWorldAtomic\.store[\s\S]*_contactSequenceAtomic\.fetch_add\(1' `
-    'Solver-only dynamic-hand manifolds must never overwrite a world/car presentation witness.'
+    '_processedManifoldCallbackSequenceAtomic\.fetch_add\(1[\s\S]*hasSolvedProcessedManifoldContact\([\s\S]*_contactWorldAtomic\.store[\s\S]*_contactSequenceAtomic\.fetch_add\(1' `
+    'Positive processed world and dynamic-hand manifolds must refresh the shared interaction witness.'
+Reject-Pattern $runtimeSource `
+    'hasSolvedProcessedManifoldContact\([\s\S]{0,300}isDynamicWeaponProxyObstacleLayer\(otherLayer\)[\s\S]{0,300}_contactWorldAtomic\.store' `
+    'A positive dynamic-hand manifold must not be discarded before weapon presentation admission.'
 Require-Pattern $runtimePolicy `
     'kProcessedManifoldContactRetentionSeconds\s*=\s*0\.35f[\s\S]*advanceProcessedManifoldContactRetention\([\s\S]*teleported[\s\S]*positivePointWitness[\s\S]*retainedSeconds\s*-\s*elapsedSeconds' `
     'Positive manifold authority must use a solver-rate-independent, teleport-safe retention window.'
@@ -292,7 +305,7 @@ Reject-Pattern $runtimeSource `
     'Dynamic weapon contact authority must not expire through a solver-rate-dependent tick count.'
 Require-Pattern $runtimeSource `
     'snapshotIdentityCurrent\s*&&[\s\S]{0,100}!snapshot\.teleported' `
-    'Every current non-teleport post-solve sample must be eligible to own weapon presentation.'
+    'Every current non-teleport post-solve sample must be eligible to retain weapon presentation ownership.'
 Require-Pattern $runtimeSource `
     'correctionFinite[\s\S]*std::isfinite\(result\.translationCorrectionGameUnits\)[\s\S]*std::isfinite\(result\.rotationCorrectionDegrees\)' `
     'Physics-resolved visual correction must reject only corrupt non-finite deltas.'
@@ -331,6 +344,12 @@ Reject-Pattern $runtimeSource `
 Require-Pattern $runtimeSource `
     'samplePostSolve\([\s\S]*tryResolveLiveBodyWorldTransform\(world,\s*_body\.getBodyId\(\)' `
     'Post-solve publication must sample the solver-owned compound contact body.'
+Require-Pattern $runtimePolicy `
+    'advanceFreeSpaceDivergenceRecovery\([\s\S]*!contactActive[\s\S]*translationGapGameUnits\s*>\s*divergenceThresholdGameUnits[\s\S]*dwellSeconds\s*>=\s*requiredDwell' `
+    'Runaway body recovery must require bounded free-space divergence dwell and remain disabled during retained contact.'
+Require-Pattern $runtimeSource `
+    'advanceFreeSpaceDivergenceRecovery\([\s\S]*_contactRetentionSeconds\s*>\s*0\.0f[\s\S]*rockWeaponCollisionDynamicDivergenceTeleportGameUnits[\s\S]*rockWeaponCollisionDynamicDivergenceTeleportDwellSeconds[\s\S]*placeGeneratedKeyframedBodyImmediately\([\s\S]*_body,[\s\S]*_physicsRequestedTarget[\s\S]*_physicsDriveTeleported\s*=\s*driveResult\.teleported\s*\|\|\s*contactBodyRecovered' `
+    'The contact body must recover only from sustained free-space runaway, then invalidate the recovered presentation sample.'
 Require-Order $interaction @(
     '_completedPhysicsSolveSequence\.fetch_add\(',
     '_dynamicWeaponCollision\.samplePostSolve\(',
@@ -389,14 +408,11 @@ Require-Pattern $runtimeSource `
     'signedTranslationStepTowardContactError\([\s\S]*_physicsPreviousRequestedTarget[\s\S]*_physicsRequestedTarget[\s\S]*liveBodyWorld[\s\S]*DWC motor trace:[\s\S]*intentStep=[\s\S]*signedPress=[\s\S]*contactError=[\s\S]*authority\(read/error\)=[\s\S]*tau=[\s\S]*recovery=[\s\S]*force=' `
     'Sustained-contact diagnostics must distinguish continued press from retreat and expose authority tracking plus live motor state.'
 Require-Pattern $runtimeSource `
-    '_debugSnapshot\.contactActive\s*=\s*snapshot\.contactActive[\s\S]*const bool correctionVisible\s*=[\s\S]*result\.translationCorrectionGameUnits\s*>=[\s\S]*result\.rotationCorrectionDegrees\s*>=[\s\S]*result\.publishVisualAuthority\s*=\s*true[\s\S]*result\.resolvedWeaponWorld\s*=\s*correctionVisible\s*\?[\s\S]*resolvedWeaponWorld\s*:[\s\S]*_frameRequestedWeaponWorld' `
-    'Every current post-solve sample must retain presentation authority while the deadband selects resolved collider motion or collision-free intent.'
+    '_debugSnapshot\.contactActive\s*=\s*snapshot\.contactActive[\s\S]*const bool correctionVisible\s*=[\s\S]*const bool publishResolvedContact\s*=[\r\n\s]*snapshot\.contactActive\s*&&\s*correctionVisible[\s\S]*result\.publishVisualAuthority\s*=\s*true[\s\S]*result\.resolvedWeaponWorld\s*=\s*publishResolvedContact\s*\?[\s\S]*resolvedWeaponWorld\s*:[\s\S]*_frameRequestedWeaponWorld' `
+    'Every current sample must retain the same presentation owner while positive contact selects collider motion and free space selects collision-free intent.'
 Require-Pattern $runtimeSource `
-    'FRIK V2 consumes tagged hand transforms during its next skeleton[\s\S]*continuous presentation owner[\s\S]*must never release the owner or freeze a displaced[\s\S]*collider' `
-    'The source must document why deferred FRIK consumption requires continuous weapon presentation ownership.'
-Reject-Pattern $runtimeSource `
-    'correctionVisible\s*=\s*[\r\n\s]*snapshot\.contactActive\s*&&|"contact-witness-gate"' `
-    'Transient callback contact must not gate continuous collider-to-weapon presentation.'
+    'FRIK V2 consumes tagged hand transforms during its next skeleton[\s\S]*persistent presentation owner[\s\S]*soft-motor residual[\s\S]*same tag[\s\S]*former clear/re-add owner switch' `
+    'The source must document why persistent FRIK ownership and contact-selected pose data are separate invariants.'
 Require-Pattern $weaponAuthority `
     'case TwoHandedState::Touching:[\s\S]*_touchFrames\s*>\s*TOUCH_TIMEOUT_FRAMES[\s\S]*TwoHandedGrip: touch contact timed out[\s\S]*_state\s*=\s*TwoHandedState::Inactive' `
     'Support-touch churn must retain an edge-only timeout diagnostic that exposes the lost acquisition witness.'

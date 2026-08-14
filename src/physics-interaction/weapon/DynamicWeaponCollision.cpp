@@ -636,22 +636,24 @@ namespace rock
                 result.rotationCorrectionDegrees >= g_rockConfig.rockWeaponCollisionDynamicRenderMinRotationDegrees);
         /*
          * FRIK V2 consumes tagged hand transforms during its next skeleton
-         * frame. Releasing this publication whenever the collider is out of
-         * contact (or merely inside the render deadband) switches the attached
-         * hand and weapon between delayed FRIK output and physics output. Keep
-         * one continuous presentation owner for every current post-solve
-         * sample. The configured deadband may suppress a microscopic collider
-         * delta, but it must never release the owner or freeze a displaced
-         * collider while hand/world contact continues to move it.
+         * frame. Keep one persistent presentation owner for every current
+         * post-solve sample, but expose the compliant body's displacement only
+         * while a positive-point world/hand manifold is retained. In free
+         * space the body naturally has a soft-motor residual; publishing that
+         * residual makes locomotion look like weapon wobble. Publishing the
+         * collision-free intent through the same tag avoids both that residual
+         * and the former clear/re-add owner switch.
          */
+        const bool publishResolvedContact =
+            snapshot.contactActive && correctionVisible;
         result.publishVisualAuthority = true;
-        result.resolvedWeaponWorld = correctionVisible ?
+        result.resolvedWeaponWorld = publishResolvedContact ?
             resolvedWeaponWorld :
             _frameRequestedWeaponWorld;
-        _debugSnapshot.visualCorrectionActive = correctionVisible;
+        _debugSnapshot.visualCorrectionActive = publishResolvedContact;
         logPipelineStage(
-            correctionVisible ?
-                "publish-resolved" :
+            publishResolvedContact ?
+                "publish-contact" :
                 "publish-intent");
         return result;
     }
@@ -1088,8 +1090,64 @@ namespace rock
                 _createdCenterWeaponLocal,
                 _createdWeaponScale);
         }
-        _physicsDriveTeleported = driveResult.teleported;
-        if (driveResult.teleported) {
+
+        bool contactBodyRecovered = false;
+        if (_physicsRequestedTargetValid) {
+            RE::NiTransform liveContactBodyWorld{};
+            const bool liveContactBodyReadable =
+                havok_runtime::tryResolveLiveBodyWorldTransform(
+                    world,
+                    _body.getBodyId(),
+                    liveContactBodyWorld) &&
+                dynamic_weapon_collision_policy::isFiniteTransform(
+                    liveContactBodyWorld);
+            const float translationGapGameUnits = liveContactBodyReadable ?
+                dynamic_weapon_collision_policy::translationDeltaGameUnits(
+                    liveContactBodyWorld,
+                    _physicsRequestedTarget) :
+                0.0f;
+            const auto recovery =
+                dynamic_weapon_collision_policy::advanceFreeSpaceDivergenceRecovery(
+                    _divergenceDwellSeconds,
+                    _contactRetentionSeconds > 0.0f,
+                    driveResult.teleported,
+                    translationGapGameUnits,
+                    g_rockConfig.rockWeaponCollisionDynamicDivergenceTeleportGameUnits,
+                    g_rockConfig.rockWeaponCollisionDynamicDivergenceTeleportDwellSeconds,
+                    driveResult.driveDeltaSeconds);
+            _divergenceDwellSeconds = recovery.dwellSeconds;
+            if (recovery.recover) {
+                if (!placeGeneratedKeyframedBodyImmediately(
+                        _body,
+                        _physicsRequestedTarget)) {
+                    _rebuildRequestedAtomic.store(true, std::memory_order_release);
+                    _droveThisSubstep = false;
+                    clearPublishedPhysicsSnapshot();
+                    ROCK_LOG_SAMPLE_WARN(
+                        Weapon,
+                        1000,
+                        "Dynamic weapon free-space divergence recovery failed: body={} gap={:.2f}gu dwell={:.3f}s",
+                        _body.getBodyId().value,
+                        translationGapGameUnits,
+                        _divergenceDwellSeconds);
+                    return;
+                }
+                contactBodyRecovered = true;
+                _divergenceDwellSeconds = 0.0f;
+                ROCK_LOG_SAMPLE_WARN(
+                    Weapon,
+                    1000,
+                    "Dynamic weapon free-space divergence recovered: body={} gap={:.2f}gu authorityTeleport={}",
+                    _body.getBodyId().value,
+                    translationGapGameUnits,
+                    driveResult.teleported);
+            }
+        } else {
+            _divergenceDwellSeconds = 0.0f;
+        }
+
+        _physicsDriveTeleported = driveResult.teleported || contactBodyRecovered;
+        if (_physicsDriveTeleported) {
             _contactRetentionSeconds = 0.0f;
         }
     }
@@ -1126,7 +1184,7 @@ namespace rock
             newMatchingContact =
                 contactWorld == reinterpret_cast<std::uintptr_t>(world) &&
                 contactProxy == _body.getBodyId().value &&
-                collision_layer_policy::isDynamicWeaponProxyObstacleLayer(otherLayer);
+                collision_layer_policy::isDynamicWeaponProxySolverObstacleLayer(otherLayer);
         }
         const bool contactWasActive = _contactRetentionSeconds > 0.0f;
         const bool contactEpisodeStarted =
@@ -1330,12 +1388,6 @@ namespace rock
             _rawContactProxyWasBodyAAtomic.store(proxyWasBodyA, std::memory_order_relaxed);
             _rawContactWitnessSequenceAtomic.fetch_add(1, std::memory_order_release);
         }
-        // Dynamic-hand proxy contacts remain part of the Havok solve and the
-        // callback diagnostics, but they must not replace a world/car witness
-        // used to publish collision-resolved weapon presentation.
-        if (!collision_layer_policy::isDynamicWeaponProxyObstacleLayer(otherLayer)) {
-            return;
-        }
         _contactWorldAtomic.store(reinterpret_cast<std::uintptr_t>(world), std::memory_order_relaxed);
         _contactProxyBodyIdAtomic.store(proxyBodyId, std::memory_order_relaxed);
         _contactOtherBodyIdAtomic.store(otherBodyId, std::memory_order_relaxed);
@@ -1362,9 +1414,6 @@ namespace rock
         _processedManifoldCallbackSequenceAtomic.fetch_add(1, std::memory_order_release);
         if (!dynamic_weapon_collision_policy::hasSolvedProcessedManifoldContact(
                 manifoldPointCount)) {
-            return;
-        }
-        if (!collision_layer_policy::isDynamicWeaponProxyObstacleLayer(otherLayer)) {
             return;
         }
         _contactWorldAtomic.store(reinterpret_cast<std::uintptr_t>(world), std::memory_order_relaxed);
@@ -1442,6 +1491,7 @@ namespace rock
         _physicsRequestedTarget = {};
         _physicsPreviousRequestedTarget = {};
         _physicsPreviousRequestedTargetValid = false;
+        _divergenceDwellSeconds = 0.0f;
         _contactRetentionSeconds = 0.0f;
         _consumedContactSequence = 0;
         _contactEpisode = 0;

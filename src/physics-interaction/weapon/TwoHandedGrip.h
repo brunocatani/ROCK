@@ -672,10 +672,15 @@ namespace rock
         }
 
         // Captures which hands retained collision presentation through the
-        // previous render interval, then releases those tags. FRIK has already
-        // updated the current skeleton, so input selection uses that witness to
-        // avoid reading the collision-corrected roots back as physical intent.
+        // previous render interval. FRIK V2 claims remain registered while the
+        // runtime is active; input selection uses this witness to avoid reading
+        // the collision-corrected roots back as physical intent.
         void beginWeaponCollisionPresentationFrame();
+
+        // Releases persistent collision claims only when their owning runtime
+        // is definitively inactive. A transient missing post-solve sample keeps
+        // the last valid claim instead of switching FRIK owners for one frame.
+        void finishWeaponCollisionPresentationFrame(bool runtimeActive);
 
         bool previousWeaponCollisionPresentationWasLive() const
         {
@@ -1672,12 +1677,11 @@ namespace rock
         std::array<ReturningHandVisualState, 2> _returningHandVisuals{};
         std::array<RE::NiTransform, 2> _lastPublishedHandWorld{};
         std::array<bool, 2> _hasLastPublishedHandWorld{};
-        // Per physical hand (left index 0, right index 1). A collision target
-        // survives only through the render interval that follows post-solve.
+        // Per physical hand (left index 0, right index 1). FRIK V2 consumes
+        // these persistent claims during its regular skeleton update.
         std::array<bool, 2> _weaponCollisionHandAuthorityLive{};
-        // Captured before those tags are cleared. Because ROCK runs after FRIK,
-        // this identifies current root/weapon poses that already include the
-        // previous render interval's collision presentation.
+        // Captured at the frame boundary. Because ROCK runs after FRIK, this
+        // identifies root/weapon poses that include collision presentation.
         std::array<bool, 2> _weaponCollisionHandPresentationFromPreviousFrame{};
         ReturningWeaponVisualState _returningWeaponVisual{};
         RE::NiTransform _lastRenderedWeaponWorld{};
