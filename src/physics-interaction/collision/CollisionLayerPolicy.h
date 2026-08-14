@@ -381,27 +381,6 @@ namespace rock::collision_layer_policy
         return (currentMask & managedBits) == (expectedMask & managedBits);
     }
 
-    inline constexpr std::uint64_t dynamicWorldCarManagedLayerBits()
-    {
-        return rockBodyManagedLayerBits();
-    }
-
-    inline constexpr bool dynamicWorldCarManagedLayerMaskMatches(
-        std::uint64_t currentMask,
-        std::uint64_t expectedMask)
-    {
-        /*
-         * The dedicated car rows inherit native CLUTTER actor relationships
-         * when ROCK registers them. FO4VR subsequently restores the native
-         * actor rows and may remove the symmetric BIPED/DEADBIP/BIPED_NO_CC
-         * bits from these extended rows. Those native-owned actor pairs are
-         * not part of dynamic hand/weapon car interaction and must not make
-         * the watchdog rewrite the entire matrix every polling interval.
-         */
-        const auto managedBits = dynamicWorldCarManagedLayerBits();
-        return (currentMask & managedBits) == (expectedMask & managedBits);
-    }
-
     inline constexpr std::uint64_t withoutLayer(std::uint64_t mask, std::uint32_t layer) { return mask & ~layerBitOrZero(layer); }
 
     inline constexpr std::uint64_t withLayer(std::uint64_t mask, std::uint32_t layer) { return mask | layerBitOrZero(layer); }

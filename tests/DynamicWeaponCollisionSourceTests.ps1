@@ -198,9 +198,6 @@ Require-Pattern $runtimePolicy `
 Require-Pattern $runtimePolicy `
     'reframeAttachedHand\([\s\S]*invertTransform\(requestedWeaponWorld\)[\s\S]*requestedHandWorld[\s\S]*resolvedWeaponWorld[\s\S]*handWeaponLocal' `
     'Attached IK hands must preserve their exact pre-collision weapon-local relation under the resolved weapon pose.'
-Require-Pattern $runtimePolicy `
-    'reconstructPresentedWeaponFromDeferredHand\([\s\S]*presentedHandWorld[\s\S]*invertTransform\(publishedHandWeaponLocal\)' `
-    'The rendered weapon must be reconstructable from hFRIK''s consumed hand claim without reading that hand back into physics intent.'
 Require-Order $weaponAuthority @(
     'void TwoHandedGrip::beginWeaponCollisionPresentationFrame\(',
     '_weaponCollisionHandPresentationFromPreviousFrame\s*=',
@@ -219,10 +216,7 @@ Require-Order $weaponAuthority @(
     '_weaponCollisionHandAuthorityLive',
     '_weaponCollisionHandAuthorityGenerationKey',
     'applyWeaponVisualAuthority\('
-) 'Collision correction must retain one generation-bound FRIK owner, layer over same-frame isolated grip targets, and publish a hand-synchronized weapon presentation.'
-Require-Pattern $weaponAuthority `
-    'setHandWorldTransform is a retained request[\s\S]*_weaponCollisionDeferredHandClaims[\s\S]*getHandWorldTransform\([\s\S]*reconstructPresentedWeaponFromDeferredHand\([\s\S]*applyExternalHandWorldTransform\([\s\S]*DeferredWeaponCollisionHandClaim[\s\S]*applyWeaponVisualAuthority\([\s\S]*presentedWeaponWorld' `
-    'ROCK must render against the hand relation hFRIK consumed this frame while retaining the newly published relation for the next frame.'
+) 'Collision correction must retain one generation-bound FRIK owner, layer over same-frame locked grip targets with isolated physical fallback, and publish the exact weapon pose last.'
 Require-Pattern $weaponAuthority `
     'void TwoHandedGrip::beginWeaponCollisionPresentationFrame\([\s\S]{0,250}currentWeaponGenerationKey[\s\S]{0,1200}_weaponCollisionHandAuthorityLive\[index\][\s\S]{0,300}_weaponCollisionHandAuthorityGenerationKey\[index\]\s*==\s*currentWeaponGenerationKey[\s\S]{0,300}clearWeaponCollisionHandAuthority' `
     'FRIK V2 collision claims must remain registered within one weapon generation and retire only at a generation edge.'
@@ -254,11 +248,8 @@ Require-Pattern $weaponAuthority `
     'WEAPON_COLLISION_HAND_PRIORITY\s*=\s*110[\s\S]*GRIP_HAND_POSE_PRIORITY\s*=\s*100|GRIP_HAND_POSE_PRIORITY\s*=\s*100[\s\S]*WEAPON_COLLISION_HAND_PRIORITY\s*=\s*110' `
     'The persistent collision hand authority must outrank normal grip targets only while its runtime is active.'
 Require-Pattern $weaponAuthority `
-    'void TwoHandedGrip::reset\(\)[\s\S]{0,600}WEAPON_COLLISION_HAND_TAG[\s\S]{0,500}Hand::Left[\s\S]{0,500}WEAPON_COLLISION_HAND_TAG[\s\S]{0,500}Hand::Right[\s\S]{0,300}_weaponCollisionHandAuthorityLive\s*=\s*\{\}[\s\S]{0,200}_weaponCollisionHandAuthorityGenerationKey\s*=\s*\{\}[\s\S]{0,200}_weaponCollisionDeferredHandClaims\s*=\s*\{\}[\s\S]{0,200}_weaponCollisionHandPresentationFromPreviousFrame\s*=\s*\{\}[\s\S]{0,200}_weaponCollisionBaselineHandWorldValid\s*=\s*\{\}' `
-    'Lifecycle reset must defensively clear collision hand authority, deferred relations, frame baselines, and the previous-presentation witness.'
-Require-Pattern $interaction `
-    'dynamicWorldCarClutterMaskDrifted[\s\S]*dynamicWorldCarManagedLayerMaskMatches[\s\S]*dynamicWorldCarLargeClutterMaskDrifted[\s\S]*dynamicWorldCarManagedLayerMaskMatches' `
-    'Native actor-row restoration on extended car rows must not churn the whole collision matrix watchdog.'
+    'void TwoHandedGrip::reset\(\)[\s\S]{0,600}WEAPON_COLLISION_HAND_TAG[\s\S]{0,500}Hand::Left[\s\S]{0,500}WEAPON_COLLISION_HAND_TAG[\s\S]{0,500}Hand::Right[\s\S]{0,300}_weaponCollisionHandAuthorityLive\s*=\s*\{\}[\s\S]{0,200}_weaponCollisionHandAuthorityGenerationKey\s*=\s*\{\}[\s\S]{0,200}_weaponCollisionHandPresentationFromPreviousFrame\s*=\s*\{\}[\s\S]{0,200}_weaponCollisionBaselineHandWorldValid\s*=\s*\{\}' `
+    'Lifecycle reset must defensively clear collision hand authority, generation ownership, frame baselines, and the previous-presentation witness.'
 Require-Pattern $weaponAuthority `
     '_weaponCollisionHandPresentationFromPreviousFrame\s*=\s*[\r\n\s]*_weaponCollisionHandAuthorityLive' `
     'The presentation boundary must capture the retained collision-hand witness without clearing its persistent tags.'

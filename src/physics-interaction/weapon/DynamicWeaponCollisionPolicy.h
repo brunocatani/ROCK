@@ -411,15 +411,6 @@ namespace rock::dynamic_weapon_collision_policy
             handWeaponLocal);
     }
 
-    inline RE::NiTransform reconstructPresentedWeaponFromDeferredHand(
-        const RE::NiTransform& presentedHandWorld,
-        const RE::NiTransform& publishedHandWeaponLocal)
-    {
-        return transform_math::composeTransforms(
-            presentedHandWorld,
-            transform_math::invertTransform(publishedHandWeaponLocal));
-    }
-
     inline float translationDeltaGameUnits(const RE::NiTransform& lhs, const RE::NiTransform& rhs)
     {
         const float x = lhs.translate.x - rhs.translate.x;

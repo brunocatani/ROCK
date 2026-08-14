@@ -1698,17 +1698,6 @@ namespace rock
         // these persistent claims during its regular skeleton update.
         std::array<bool, 2> _weaponCollisionHandAuthorityLive{};
         std::array<std::uint64_t, 2> _weaponCollisionHandAuthorityGenerationKey{};
-        struct DeferredWeaponCollisionHandClaim
-        {
-            RE::NiTransform handWeaponLocal{};
-            std::uint64_t weaponGenerationKey{ 0 };
-            bool valid{ false };
-        };
-        // Relation published to hFRIK on the preceding ROCK frame. hFRIK has
-        // consumed this claim by the current skeleton frame, so it is the only
-        // valid relation for reconstructing the weapon rendered with that hand.
-        std::array<DeferredWeaponCollisionHandClaim, 2>
-            _weaponCollisionDeferredHandClaims{};
         // Captured at the frame boundary. Because ROCK runs after FRIK, this
         // identifies root/weapon poses that include collision presentation.
         std::array<bool, 2> _weaponCollisionHandPresentationFromPreviousFrame{};

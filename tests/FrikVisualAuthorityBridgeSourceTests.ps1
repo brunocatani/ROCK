@@ -70,9 +70,6 @@ Require-Text 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h' `
 Require-Text 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h' `
     'PresentedHandNodeCache[\s\S]*getHandWorldTransform\(Hand hand\)[\s\S]*isSkeletonReadyHint\(\)[\s\S]*getFirstPersonSkeleton\(\)[\s\S]*findNode\(skeleton,\s*"RArm_Hand"\)[\s\S]*findNode\(skeleton,\s*"LArm_Hand"\)[\s\S]*handNode->world' `
     'ROCK must read final presented hands directly from the game first-person scene nodes.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'setHandWorldTransform is a retained request[\s\S]*getHandWorldTransform\([\s\S]*reconstructPresentedWeaponFromDeferredHand\([\s\S]*applyExternalHandWorldTransform\([\s\S]*applyWeaponVisualAuthority\([\s\S]*presentedWeaponWorld' `
-    'Deferred FRIK hand targets must synchronize the visible weapon with the already-consumed hand rather than masquerade as synchronous writes.'
 Require-Text 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h' `
     'g_trackedHandWorldPublications[\s\S]*rememberTrackedHandWorldPublication\(tag,\s*hand\)[\s\S]*invalidateTrackedHandWorldPublication\(tag,\s*hand\)[\s\S]*resetTrackedHandWorldPublications\(\)' `
     'Persistent FRIK V2 hand-world publications must be tracked per tag and cleared at lifecycle reset.'
@@ -107,9 +104,6 @@ Require-ExternalText 'hFRIK/src/skeleton/HandPose.cpp' `
 Require-ExternalText 'hFRIK/src/api/FRIKApiV2.cpp' `
     'mirrorFingerLocalTransforms[\s\S]*sourceHand\s*!=\s*FRIKApiV2::Hand::Left[\s\S]*sourceHand\s*!=\s*FRIKApiV2::Hand::Right[\s\S]*core::mirrorFingerLocalTransforms' `
     'hFRIK API V2 must expose the bidirectional anatomy-aware mirror table entry.'
-Require-ExternalText 'hFRIK/src/api/FRIKApiV2.h' `
-    'consumed by FRIK''s arm solve on its next skeleton frame[\s\S]*setHandWorldTransform' `
-    'ROCK''s presentation boundary depends on hFRIK documenting hand-world publication as a next-skeleton-frame request.'
 Reject-ExternalText 'hFRIK/src/api/FRIKApiV2.cpp' `
     'FRIKAPI_BlockPrimaryHandWeaponPose|FRIKAPI_MirrorPrimaryWeaponFingerLocalTransforms' `
     'hFRIK must not retain duplicate direct-export paths for API V2 table behavior or legacy mirroring.'

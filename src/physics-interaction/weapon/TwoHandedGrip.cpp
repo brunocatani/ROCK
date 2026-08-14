@@ -2763,7 +2763,6 @@ namespace rock
             frik_visual_authority::Hand::Right);
         _weaponCollisionHandAuthorityLive = {};
         _weaponCollisionHandAuthorityGenerationKey = {};
-        _weaponCollisionDeferredHandClaims = {};
         _weaponCollisionHandPresentationFromPreviousFrame = {};
         _weaponCollisionBaselineHandWorldValid = {};
         resetGunstockAlignment("reset");
@@ -10094,7 +10093,6 @@ namespace rock
         const std::size_t index = isLeft ? 0u : 1u;
         if (!_weaponCollisionHandAuthorityLive[index]) {
             _weaponCollisionHandAuthorityGenerationKey[index] = 0;
-            _weaponCollisionDeferredHandClaims[index] = {};
             return true;
         }
         if (!frik_visual_authority::isAvailable() ||
@@ -10105,7 +10103,6 @@ namespace rock
         }
         _weaponCollisionHandAuthorityLive[index] = false;
         _weaponCollisionHandAuthorityGenerationKey[index] = 0;
-        _weaponCollisionDeferredHandClaims[index] = {};
         return true;
     }
 
@@ -10273,75 +10270,6 @@ namespace rock
             handTargetsReady = handTargetsReady && pulse.targetValid;
         }
 
-        /*
-         * setHandWorldTransform is a retained request, not an immediate scene
-         * write. hFRIK consumes the value published on ROCK frame N during
-         * the next skeleton frame, before ROCK frame N+1. Reconstruct the
-         * visible weapon from that already-presented hand and the exact local
-         * relation published with it. Moving the weapon directly to frame
-         * N+1's newly resolved target would pair it with frame N's hand and is
-         * the locomotion-dependent hand/weapon separation reported in runtime.
-         *
-         * This presented hand is read only for rendering. Collision-free hand
-         * intent above remains isolated from FRIK output, so no IK pose is fed
-         * back into physics or into the next retained claim.
-         */
-        RE::NiTransform presentedWeaponWorld = scaleStableResolvedWeaponWorld;
-        bool presentedWeaponReconstructed = false;
-        bool presentationAnchorIsLeft = false;
-        const auto tryReconstructPresentedWeapon =
-            [this, authorityGenerationKey, &pulses](
-                const bool isLeft,
-                RE::NiTransform& outWeaponWorld) {
-                const std::size_t index = isLeft ? 0u : 1u;
-                const auto& claim =
-                    _weaponCollisionDeferredHandClaims[index];
-                if (!pulses[index].requested ||
-                    !_weaponCollisionHandPresentationFromPreviousFrame[index] ||
-                    !claim.valid ||
-                    claim.weaponGenerationKey != authorityGenerationKey ||
-                    !isUsableHandAuthorityTransform(claim.handWeaponLocal)) {
-                    return false;
-                }
-
-                const RE::NiTransform presentedHandWorld =
-                    frik_visual_authority::getHandWorldTransform(
-                        handFromBool(isLeft));
-                if (!isUsableHandAuthorityTransform(presentedHandWorld)) {
-                    return false;
-                }
-                outWeaponWorld = dynamic_weapon_collision_policy::
-                    reconstructPresentedWeaponFromDeferredHand(
-                        presentedHandWorld,
-                        claim.handWeaponLocal);
-                return isFiniteTransform(outWeaponWorld);
-            };
-
-        const bool preferredAnchorIsLeft =
-            _state == TwoHandedState::PartCarry ?
-                _partCarryPivotIsLeft :
-                _firingHandIsLeft;
-        presentedWeaponReconstructed = tryReconstructPresentedWeapon(
-            preferredAnchorIsLeft,
-            presentedWeaponWorld);
-        presentationAnchorIsLeft = preferredAnchorIsLeft;
-        if (!presentedWeaponReconstructed) {
-            presentedWeaponReconstructed = tryReconstructPresentedWeapon(
-                !preferredAnchorIsLeft,
-                presentedWeaponWorld);
-            presentationAnchorIsLeft = !preferredAnchorIsLeft;
-        }
-        if (presentedWeaponReconstructed) {
-            presentedWeaponWorld =
-                weapon_visual_authority_math::preserveLiveWeaponWorldScale(
-                    weaponNode->world,
-                    presentedWeaponWorld);
-            if (!isFiniteTransform(presentedWeaponWorld)) {
-                presentedWeaponWorld = scaleStableResolvedWeaponWorld;
-                presentedWeaponReconstructed = false;
-            }
-        }
-
         bool handPulsesSucceeded = handTargetsReady && detachedHandsCleared;
         if (handTargetsReady) {
             for (auto& pulse : pulses) {
@@ -10368,46 +10296,23 @@ namespace rock
                     _weaponCollisionHandAuthorityLive[handIndex] = true;
                     _weaponCollisionHandAuthorityGenerationKey[handIndex] =
                         authorityGenerationKey;
-                    const RE::NiTransform handWeaponLocal =
-                        transform_math::composeTransforms(
-                            transform_math::invertTransform(
-                                scaleStableResolvedWeaponWorld),
-                            pulse.targetWorld);
-                    if (isUsableHandAuthorityTransform(handWeaponLocal)) {
-                        _weaponCollisionDeferredHandClaims[handIndex] =
-                            DeferredWeaponCollisionHandClaim{
-                                .handWeaponLocal = handWeaponLocal,
-                                .weaponGenerationKey = authorityGenerationKey,
-                                .valid = true,
-                            };
-                    }
                 }
                 handPulsesSucceeded =
                     handPulsesSucceeded && pulse.applied && pulse.retained;
             }
         }
 
-        // Publish the weapon after updating retained hand requests, but use the
-        // already-consumed presentation relation reconstructed above. The new
-        // hand values become authoritative together on hFRIK's next frame.
+        /*
+         * A firing-hand pulse can propagate through the weapon's native parent
+         * chain. Publish the solver-authoritative weapon last so the final
+         * rendered weapon pose is exact while both hands keep the rigid
+         * pre-collision weapon-local relationship captured above.
+         */
         const bool weaponPublished = applyWeaponVisualAuthority(
             weaponNode,
-            presentedWeaponWorld,
+            scaleStableResolvedWeaponWorld,
             authorityGenerationKey,
             false);
-        if (presentedWeaponReconstructed) {
-            ROCK_LOG_SAMPLE_DEBUG(
-                Weapon,
-                2000,
-                "TwoHandedGrip: synchronized deferred weapon presentation anchor={} resolvedLag=({:.3f}gu,{:.2f}deg)",
-                presentationAnchorIsLeft ? "left" : "right",
-                dynamic_weapon_collision_policy::translationDeltaGameUnits(
-                    presentedWeaponWorld,
-                    scaleStableResolvedWeaponWorld),
-                dynamic_weapon_collision_policy::rotationDeltaDegrees(
-                    presentedWeaponWorld,
-                    scaleStableResolvedWeaponWorld));
-        }
         if (!weaponPublished || !handPulsesSucceeded) {
             ROCK_LOG_SAMPLE_WARN(
                 Weapon,

@@ -2483,13 +2483,9 @@ namespace rock
                 const bool dynamicWeaponProxyMaskDrifted = _expectedDynamicWeaponProxyLayerMask != 0 &&
                     !collision_layer_policy::matrixLayerMaskMatches(currentDynamicWeaponProxyMask, _expectedDynamicWeaponProxyLayerMask);
                 const bool dynamicWorldCarClutterMaskDrifted = _expectedDynamicWorldCarClutterLayerMask != 0 &&
-                    !collision_layer_policy::dynamicWorldCarManagedLayerMaskMatches(
-                        currentDynamicWorldCarClutterMask,
-                        _expectedDynamicWorldCarClutterLayerMask);
+                    !collision_layer_policy::matrixLayerMaskMatches(currentDynamicWorldCarClutterMask, _expectedDynamicWorldCarClutterLayerMask);
                 const bool dynamicWorldCarLargeClutterMaskDrifted = _expectedDynamicWorldCarLargeClutterLayerMask != 0 &&
-                    !collision_layer_policy::dynamicWorldCarManagedLayerMaskMatches(
-                        currentDynamicWorldCarLargeClutterMask,
-                        _expectedDynamicWorldCarLargeClutterLayerMask);
+                    !collision_layer_policy::matrixLayerMaskMatches(currentDynamicWorldCarLargeClutterMask, _expectedDynamicWorldCarLargeClutterLayerMask);
                 const bool actorToolPairsDrifted =
                     _expectedHandLayerMask != 0 && _expectedWeaponLayerMask != 0 &&
                     !collision_layer_policy::rockToolActorPairsMatch(matrix, _expectedHandLayerMask, _expectedWeaponLayerMask);
