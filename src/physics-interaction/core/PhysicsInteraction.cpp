@@ -7542,7 +7542,7 @@ namespace rock
          */
         if (timing.substepCount > 0 &&
             timing.substepIndex + 1 >= timing.substepCount) {
-            debug::CaptureAppliedGeneratedBodyTransformsFromPhysicsStep(world);
+            debug::CaptureSolvedBodyTransformsFromPhysicsStep(world);
         }
         const auto gameFrameIndex = _palmClockGameFrameIndex.load(std::memory_order_acquire);
         const auto gameDeltaSeconds = _palmClockGameDeltaSeconds.load(std::memory_order_acquire);

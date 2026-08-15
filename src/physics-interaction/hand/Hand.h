@@ -75,8 +75,6 @@ namespace rock
         RE::NiTransform palmAuthorityBaseWorld{};
         RE::NiTransform proxyTargetWorld{};
         RE::NiPoint3 localOffsetGameUnits{};
-        body_frame::BodyFrameSource palmSource{ body_frame::BodyFrameSource::Fallback };
-        std::uint32_t palmMotionIndex{ body_frame::kFreeMotionIndex };
     };
 
     // The LAST APPLIED grab-authority state (what the most recent physics flush
@@ -385,7 +383,7 @@ namespace rock
         bool tryGetHeldObjectGrabPivotWorld(RE::hknpWorld* world, RE::NiPoint3& outPivotWorld) const;
         bool getGrabPivotDebugSnapshot(RE::hknpWorld* world, GrabPivotDebugSnapshot& out) const;
         bool getGrabPocketNormalDebugSnapshot(RE::hknpWorld* world, GrabPocketNormalDebugSnapshot& out) const;
-        bool getGrabAuthorityProxyDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabAuthorityProxyDebugSnapshot& out) const;
+        bool getGrabAuthorityProxyDebugSnapshot(GrabAuthorityProxyDebugSnapshot& out) const;
         // Non-const: takes _grabAuthorityProxyMutex to snapshot the applied pair.
         bool tryGetGrabOverlayPointProbeSample(RE::hknpWorld* world, GrabOverlayPointProbeSample& out);
         bool getGrabContactPatchDebugSnapshot(RE::hknpWorld* world, GrabContactPatchDebugSnapshot& out) const;

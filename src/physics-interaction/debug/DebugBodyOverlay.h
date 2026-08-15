@@ -385,11 +385,10 @@ namespace rock::debug
     bool IsInstalled();
     void PublishFrame(const BodyOverlayFrame& frame);
     // Called only from ROCK's registered native post-solve callback after the
-    // final substep has consumed every generated collider drive. Publishes the
-    // real solved ROCK body matrices for the matching immutable game-frame
-    // snapshot without allocating or exposing live Havok state to the OpenVR
-    // compositor hook.
-    void CaptureAppliedGeneratedBodyTransformsFromPhysicsStep(RE::hknpWorld* world) noexcept;
+    // final substep has consumed every body drive. Captures every body-backed
+    // collider and axis in its requested BODY or MOTION frame, then atomically
+    // promotes the matching immutable overlay for OpenVR admission.
+    void CaptureSolvedBodyTransformsFromPhysicsStep(RE::hknpWorld* world) noexcept;
     void ClearFrame();
     void ClearShapeCache();
     // Stops and joins the owned CPU shape worker without uninstalling the
