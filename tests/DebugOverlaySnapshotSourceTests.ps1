@@ -77,6 +77,10 @@ Require-Pattern 's_publishedFrame\.store\([\s\S]*std::memory_order_release\)' `
     'Frame publication must use release ordering.'
 Require-Pattern 'buildPublishedFrame[\s\S]*extractBody\(source\.world' `
     'Live Havok body state must be resolved while building the game-thread publication.'
+Require-Pattern 'static_assert\(offsetof\(RE::hknpBody, bodyId\)\s*==\s*0x60\)[\s\S]*static_assert\(offsetof\(RE::hknpBody, deactivationIslandId\)\s*==\s*0x6C\)' `
+    'The build must keep FO4VR body identity at +0x60 distinct from the deactivation-island field at +0x6C.'
+Require-Pattern 'extractBody[\s\S]*body->bodyId\.value\s*!=\s*bodyId\.value[\s\S]*return false;[\s\S]*out\.bodyId\s*=\s*body->bodyId\.value' `
+    'Body extraction must validate and publish the embedded hknpBodyId instead of treating another body field as identity.'
 Require-Pattern 'buildPublishedFrame[\s\S]*captureBodyWorldAabb\(source\.world' `
     'The publication must capture the real body AABB before crossing into the compositor thread.'
 Require-Pattern 'world->GetBodyAabb\(bodyId,\s*&raw\)' `
@@ -109,6 +113,8 @@ Reject-Pattern 'kBodyAabb16|kAabbDecompressOffset|kAabbDecompressScale' `
     'ROCK must not import the standalone visualizer raw AABB offsets.'
 Reject-Pattern 'reinterpret_cast<const\s+std::int16_t\s*\*>' `
     'Compressed hknp body AABB components are unsigned; the signed standalone decoder is forbidden.'
+Reject-Pattern 'kBodyIdOffset\s*=\s*0x6C' `
+    'The deactivation-island field at body+0x6C must never be reused as a body ID.'
 
 $drawMatch = [regex]::Match(
     $text,

@@ -39,6 +39,7 @@
 #include "RockConfig.h"
 
 #include "RE/Bethesda/BSGraphics.h"
+#include "RE/Havok/hknpBody.h"
 #include "RE/Havok/hknpShape.h"
 #include "RE/Havok/hknpWorld.h"
 
@@ -56,16 +57,15 @@ namespace rock::debug
         constexpr std::uintptr_t kBodyArrayOffset = 0x20;
         constexpr std::uintptr_t kHighWaterMarkOffset = 0x70;
         constexpr std::uintptr_t kMotionArrayOffset = 0xE0;
-        constexpr std::uintptr_t kBodyStride = 0x90;
+        constexpr std::uintptr_t kBodyStride = sizeof(RE::hknpBody);
         constexpr std::uintptr_t kMotionStride = 0x80;
-        constexpr std::uintptr_t kBodyFlagsOffset = 0x40;
-        constexpr std::uintptr_t kBodyFilterOffset = 0x44;
-        constexpr std::uintptr_t kBodyShapeOffset = 0x48;
-        constexpr std::uintptr_t kBodyMotionIndexOffset = 0x68;
-        constexpr std::uintptr_t kBodyIdOffset = 0x6C;
-        constexpr std::uintptr_t kBodyMotionPropertiesOffset = 0x72;
         constexpr std::uintptr_t kMotionPositionOffset = 0x00;
         constexpr std::uintptr_t kMotionOrientationOffset = 0x10;
+        static_assert(sizeof(RE::hknpBody) == 0x90);
+        static_assert(offsetof(RE::hknpBody, shape) == 0x48);
+        static_assert(offsetof(RE::hknpBody, bodyId) == 0x60);
+        static_assert(offsetof(RE::hknpBody, motionIndex) == 0x68);
+        static_assert(offsetof(RE::hknpBody, deactivationIslandId) == 0x6C);
         // Concrete scaled/compound layouts are absent from CommonLibF4VR.
         // These FO4VR offsets were independently verified in the constructors,
         // alloc/copy helpers, key-mask code, and shape consumers recorded in
@@ -151,13 +151,9 @@ namespace rock::debug
 
         struct BodyRenderInfo
         {
-            std::uintptr_t bodyAddress = 0;
             std::uintptr_t shapeAddress = 0;
             std::uint32_t bodyId = kInvalidBodyId;
             std::uint32_t motionIndex = kFreeMotionIndex;
-            std::uint32_t flags = 0;
-            std::uint32_t filterInfo = 0;
-            std::uint16_t motionPropertiesId = 0;
             DirectX::XMMATRIX worldMatrix = DirectX::XMMatrixIdentity();
         };
 
@@ -747,23 +743,24 @@ namespace rock::debug
             }
 
             const auto bodyAddress = bodyArray + static_cast<std::uintptr_t>(bodyId.value) * kBodyStride;
-            const auto motionIndex = *reinterpret_cast<std::uint32_t*>(bodyAddress + kBodyMotionIndexOffset);
+            const auto* body = reinterpret_cast<const RE::hknpBody*>(bodyAddress);
+            if (body->bodyId.value != bodyId.value) {
+                return false;
+            }
+
+            const auto motionIndex = body->motionIndex;
             if (motionIndex == kFreeMotionIndex) {
                 return false;
             }
 
-            const auto shapeAddress = *reinterpret_cast<std::uintptr_t*>(bodyAddress + kBodyShapeOffset);
+            const auto shapeAddress = reinterpret_cast<std::uintptr_t>(body->shape);
             if (!shapeAddress) {
                 return false;
             }
 
-            out.bodyAddress = bodyAddress;
             out.shapeAddress = shapeAddress;
-            out.bodyId = *reinterpret_cast<std::uint32_t*>(bodyAddress + kBodyIdOffset);
+            out.bodyId = body->bodyId.value;
             out.motionIndex = motionIndex;
-            out.flags = *reinterpret_cast<std::uint32_t*>(bodyAddress + kBodyFlagsOffset);
-            out.filterInfo = *reinterpret_cast<std::uint32_t*>(bodyAddress + kBodyFilterOffset);
-            out.motionPropertiesId = *reinterpret_cast<std::uint16_t*>(bodyAddress + kBodyMotionPropertiesOffset);
 
             if (frameSource == BodyOverlayFrameSource::BodyArrayTransform) {
                 const auto* transform = reinterpret_cast<const float*>(bodyAddress);
