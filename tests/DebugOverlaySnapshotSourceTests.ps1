@@ -62,8 +62,11 @@ Require-Pattern 'captureOverlayRenderSettings[\s\S]*g_rockConfig' `
 Require-Pattern 'std::shared_ptr<const GpuShape>\s+shapeOwner' `
     'A render lookup must retain immutable GPU buffers across concurrent cache invalidation.'
 
-if ($interactionText -notmatch '_dynamicHandCollision\.flushPendingPhysicsDrive\(world, timing\);[\s\S]{0,900}debug::CaptureAppliedGeneratedBodyTransformsFromPhysicsStep\(world\);') {
-    $failures.Add('Applied collider matrices must publish only after every generated-body pre-collide drive flushes.')
+if ($interactionText -notmatch '_dynamicHandCollision\.samplePostSolveDeviations\([\s\S]{0,1800}timing\.substepIndex\s*\+\s*1\s*>=\s*timing\.substepCount[\s\S]{0,500}debug::CaptureAppliedGeneratedBodyTransformsFromPhysicsStep\(world\);') {
+    $failures.Add('Applied collider matrices must publish after the final generated-body solve, never from an intermediate substep.')
+}
+if ($interactionText -match '_dynamicHandCollision\.flushPendingPhysicsDrive\(world, timing\);[\s\S]{0,900}debug::CaptureAppliedGeneratedBodyTransformsFromPhysicsStep\(world\);') {
+    $failures.Add('Pre-collide must not publish the previous solved generated-body matrices as current.')
 }
 if ([string]::IsNullOrWhiteSpace($captureFunction) -or
     $captureFunction -match 's_publishedFrame\.(load|exchange)') {

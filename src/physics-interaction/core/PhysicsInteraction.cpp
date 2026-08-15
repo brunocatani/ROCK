@@ -7482,11 +7482,6 @@ namespace rock
         _weaponCollision.flushPendingPhysicsDrive(world, timing);
         _dynamicWeaponCollision.flushPendingPhysicsDrive(world, timing);
         _dynamicHandCollision.flushPendingPhysicsDrive(world, timing);
-        // The game-thread overlay snapshot deliberately freezes shapes and
-        // diagnostics without crossing live Havok state into OpenVR. Refresh
-        // only generated-body matrices here, after this substep has consumed
-        // the current skeleton/weapon targets and before collision detection.
-        debug::CaptureAppliedGeneratedBodyTransformsFromPhysicsStep(world);
         const auto gameFrameIndex = _palmClockGameFrameIndex.load(std::memory_order_acquire);
         const auto gameDeltaSeconds = _palmClockGameDeltaSeconds.load(std::memory_order_acquire);
         logPalmClockSampleForHand("physics-after-collider-drive", _rightHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
@@ -7528,6 +7523,19 @@ namespace rock
             world,
             completedSolveSequence,
             timing);
+        /*
+         * driveToKeyFrame programs velocity for the substep that follows the
+         * pre-collide callback; it does not make that callback's body matrix a
+         * solved pose. Capture only after the final solve, when every generated
+         * body has actually consumed the current game-frame target. Publishing
+         * from pre-collide exposed the previous solved transform as if it were
+         * current and created an exact one-physics-step presentation delay.
+         * Intermediate substeps are intentionally not admitted to Submit.
+         */
+        if (timing.substepCount > 0 &&
+            timing.substepIndex + 1 >= timing.substepCount) {
+            debug::CaptureAppliedGeneratedBodyTransformsFromPhysicsStep(world);
+        }
         const auto gameFrameIndex = _palmClockGameFrameIndex.load(std::memory_order_acquire);
         const auto gameDeltaSeconds = _palmClockGameDeltaSeconds.load(std::memory_order_acquire);
         logPalmClockSampleForHand("physics-after-solve", _rightHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
