@@ -75,6 +75,8 @@ namespace rock
         RE::NiTransform palmAuthorityBaseWorld{};
         RE::NiTransform proxyTargetWorld{};
         RE::NiPoint3 localOffsetGameUnits{};
+        body_frame::BodyFrameSource palmSource{ body_frame::BodyFrameSource::Fallback };
+        std::uint32_t palmMotionIndex{ body_frame::kFreeMotionIndex };
     };
 
     // The LAST APPLIED grab-authority state (what the most recent physics flush
@@ -383,7 +385,7 @@ namespace rock
         bool tryGetHeldObjectGrabPivotWorld(RE::hknpWorld* world, RE::NiPoint3& outPivotWorld) const;
         bool getGrabPivotDebugSnapshot(RE::hknpWorld* world, GrabPivotDebugSnapshot& out) const;
         bool getGrabPocketNormalDebugSnapshot(RE::hknpWorld* world, GrabPocketNormalDebugSnapshot& out) const;
-        bool getGrabAuthorityProxyDebugSnapshot(GrabAuthorityProxyDebugSnapshot& out) const;
+        bool getGrabAuthorityProxyDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabAuthorityProxyDebugSnapshot& out) const;
         // Non-const: takes _grabAuthorityProxyMutex to snapshot the applied pair.
         bool tryGetGrabOverlayPointProbeSample(RE::hknpWorld* world, GrabOverlayPointProbeSample& out);
         bool getGrabContactPatchDebugSnapshot(RE::hknpWorld* world, GrabContactPatchDebugSnapshot& out) const;
@@ -691,6 +693,7 @@ namespace rock
             float authorityForceScale,
             bool heldBodyColliding,
             const grab_motion_controller::HeldAuthorityState& heldAuthority);
+        struct GrabAuthorityProxyPendingTarget;
         void queueProxyGrabAuthorityTarget(const RE::NiTransform& proxyWorldTransform,
             const RE::NiTransform& rawHandWorldTransform,
             const char* proxyFrameSource,
@@ -701,6 +704,10 @@ namespace rock
             float grabRotationErrorDegrees,
             float authorityForceScale,
             bool heldBodyColliding);
+        bool applyHeldFrameDiscontinuityCorrectionLocked(
+            RE::hknpWorld* world,
+            const GrabAuthorityProxyPendingTarget& pending,
+            const havok_physics_timing::PhysicsTimingSample& timing);
         void destroyGrabAuthorityProxy(RE::bhkWorld* bhkWorld);
         void abandonGrabAuthorityProxy();
         void clearGrabAuthorityProxyRuntime();
@@ -996,6 +1003,7 @@ namespace rock
         {
             RE::NiTransform proxyWorld{};
             RE::NiTransform rawHandWorld{};
+            RE::NiPoint3 playerSpaceDeltaGameUnits{};
             const char* proxyFrameSource = "unknown";
             float deltaTime = 0.0f;
             float forceFadeInTime = 0.0f;
@@ -1004,6 +1012,7 @@ namespace rock
             float grabRotationErrorDegrees = 0.0f;
             float authorityForceScale = 1.0f;
             bool heldBodyColliding = false;
+            bool playerSpaceDeltaValid = false;
             bool valid = false;
         };
         GrabAuthorityProxyPendingTarget _grabAuthorityPendingTarget{};
@@ -1091,6 +1100,9 @@ namespace rock
         GeneratedKeyframedBodyDriveState _grabAuthorityProxyDriveState{};
         std::uint64_t _grabAuthorityProxyQueuedSequence = 0;
         std::uint64_t _grabAuthorityProxyFlushSequence = 0;
+        std::uint64_t _grabFrameCorrectionLastQueuedSequence = 0;
+        std::uint32_t _grabFrameCorrectionClampCount = 0;
+        std::uint32_t _grabFrameCorrectionFailureCount = 0;
         std::uint64_t _grabAuthorityProxyFailedFlushes = 0;
         float _grabAuthorityProxyLastFlushDeltaSeconds = 0.0f;
         int _grabAuthorityProxyLogCounter = 0;

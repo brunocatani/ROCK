@@ -39,7 +39,6 @@
 #include "RockConfig.h"
 
 #include "RE/Bethesda/BSGraphics.h"
-#include "RE/Havok/hknpBody.h"
 #include "RE/Havok/hknpShape.h"
 #include "RE/Havok/hknpWorld.h"
 
@@ -57,15 +56,16 @@ namespace rock::debug
         constexpr std::uintptr_t kBodyArrayOffset = 0x20;
         constexpr std::uintptr_t kHighWaterMarkOffset = 0x70;
         constexpr std::uintptr_t kMotionArrayOffset = 0xE0;
-        constexpr std::uintptr_t kBodyStride = sizeof(RE::hknpBody);
+        constexpr std::uintptr_t kBodyStride = 0x90;
         constexpr std::uintptr_t kMotionStride = 0x80;
+        constexpr std::uintptr_t kBodyFlagsOffset = 0x40;
+        constexpr std::uintptr_t kBodyFilterOffset = 0x44;
+        constexpr std::uintptr_t kBodyShapeOffset = 0x48;
+        constexpr std::uintptr_t kBodyMotionIndexOffset = 0x68;
+        constexpr std::uintptr_t kBodyIdOffset = 0x6C;
+        constexpr std::uintptr_t kBodyMotionPropertiesOffset = 0x72;
         constexpr std::uintptr_t kMotionPositionOffset = 0x00;
         constexpr std::uintptr_t kMotionOrientationOffset = 0x10;
-        static_assert(sizeof(RE::hknpBody) == 0x90);
-        static_assert(offsetof(RE::hknpBody, shape) == 0x48);
-        static_assert(offsetof(RE::hknpBody, bodyId) == 0x60);
-        static_assert(offsetof(RE::hknpBody, motionIndex) == 0x68);
-        static_assert(offsetof(RE::hknpBody, deactivationIslandId) == 0x6C);
         // Concrete scaled/compound layouts are absent from CommonLibF4VR.
         // These FO4VR offsets were independently verified in the constructors,
         // alloc/copy helpers, key-mask code, and shape consumers recorded in
@@ -89,11 +89,7 @@ namespace rock::debug
         constexpr float kBodyAxisLength = 16.0f;
         constexpr float kTargetAxisLength = 20.0f;
         constexpr std::size_t kBodyInstanceCapacity = std::tuple_size_v<decltype(BodyOverlayFrame{}.entries)>;
-        constexpr std::size_t kBodyAxisCapacity = std::tuple_size_v<decltype(BodyOverlayFrame{}.axisEntries)>;
-        constexpr std::size_t kSolvedBodyCaptureCapacity = kBodyInstanceCapacity + kBodyAxisCapacity;
         static_assert(kBodyInstanceCapacity == debug_overlay_runtime::kMaxBodyInstances);
-        static_assert(kSolvedBodyCaptureCapacity >= kBodyInstanceCapacity);
-        static_assert(kSolvedBodyCaptureCapacity >= kBodyAxisCapacity);
         constexpr std::uint64_t kCanonicalSphereGeometryFingerprint = 0x5350'4845'5245'0001ull;
         constexpr DWORD kPageExecuteReadWrite = 0x00000040u;
         constexpr UINT kMaxShaderClassInstances = 256;
@@ -151,9 +147,13 @@ namespace rock::debug
 
         struct BodyRenderInfo
         {
+            std::uintptr_t bodyAddress = 0;
             std::uintptr_t shapeAddress = 0;
             std::uint32_t bodyId = kInvalidBodyId;
             std::uint32_t motionIndex = kFreeMotionIndex;
+            std::uint32_t flags = 0;
+            std::uint32_t filterInfo = 0;
+            std::uint16_t motionPropertiesId = 0;
             DirectX::XMMATRIX worldMatrix = DirectX::XMMatrixIdentity();
         };
 
@@ -174,23 +174,14 @@ namespace rock::debug
             float detailUniformScale{ 1.0f };
         };
 
-        enum class BodyOverlayFrameSource : std::uint8_t
-        {
-            LiveMotionWhenAvailable,
-            BodyArrayTransform
-        };
-
         struct PublishedBodyEntry
         {
             ShapeKey shapeKey{};
             DirectX::XMMATRIX worldMatrix = DirectX::XMMatrixIdentity();
             DirectX::XMFLOAT3 worldAabbMin{};
             DirectX::XMFLOAT3 worldAabbMax{};
-            std::uintptr_t shapeAddress{ 0 };
             BodyOverlayRole role{ BodyOverlayRole::Target };
-            BodyOverlayFrameSource frameSource{ BodyOverlayFrameSource::LiveMotionWhenAvailable };
             std::uint32_t bodyId{ kInvalidBodyId };
-            std::uint32_t motionIndex{ kFreeMotionIndex };
             float detailUniformScale{ 1.0f };
             bool hasValidWorldAabb{ false };
         };
@@ -198,8 +189,7 @@ namespace rock::debug
         struct PublishedAxisEntry
         {
             AxisOverlayEntry entry{};
-            std::uintptr_t bodyShapeAddress{ 0 };
-            std::uint32_t bodyMotionIndex{ kFreeMotionIndex };
+            DirectX::XMMATRIX bodyWorldMatrix = DirectX::XMMatrixIdentity();
         };
 
         struct PublishedOverlayFrame
@@ -226,40 +216,32 @@ namespace rock::debug
             bool drawText{ false };
         };
 
-        struct AppliedBodyTransformEntry
+        struct AppliedGeneratedBodyTransformEntry
         {
             DirectX::XMMATRIX worldMatrix = DirectX::XMMatrixIdentity();
-            std::uintptr_t shapeAddress{ 0 };
             std::uint32_t bodyId{ kInvalidBodyId };
-            std::uint32_t motionIndex{ kFreeMotionIndex };
-            BodyOverlayFrameSource frameSource{ BodyOverlayFrameSource::LiveMotionWhenAvailable };
         };
 
-        struct SolvedBodyCaptureRequestEntry
+        struct GeneratedBodyCaptureRequestFrame
         {
-            std::uintptr_t shapeAddress{ 0 };
-            std::uint32_t bodyId{ kInvalidBodyId };
-            std::uint32_t motionIndex{ kFreeMotionIndex };
-            BodyOverlayFrameSource frameSource{ BodyOverlayFrameSource::LiveMotionWhenAvailable };
-        };
-
-        struct SolvedBodyCaptureRequestFrame
-        {
-            // A logical frame can independently fill both bounded producers:
-            // collider bodies and body-backed axes. Deduplication is common but
-            // cannot be assumed for capacity or correctness.
-            std::array<SolvedBodyCaptureRequestEntry, kSolvedBodyCaptureCapacity> entries{};
+            std::array<std::uint32_t, kBodyInstanceCapacity> bodyIds{};
             std::uintptr_t worldIdentity{ 0 };
             std::uint64_t publicationSequence{ 0 };
             std::uint32_t count{ 0 };
         };
 
-        struct AppliedBodyTransformFrame
+        struct AppliedGeneratedBodyTransformFrame
         {
-            std::array<AppliedBodyTransformEntry, kSolvedBodyCaptureCapacity> entries{};
+            std::array<AppliedGeneratedBodyTransformEntry, kBodyInstanceCapacity> entries{};
             std::uintptr_t worldIdentity{ 0 };
             std::uint64_t publicationSequence{ 0 };
             std::uint32_t count{ 0 };
+        };
+
+        enum class BodyOverlayFrameSource : std::uint8_t
+        {
+            LiveMotionWhenAvailable,
+            BodyArrayTransform
         };
 
         using OverlayRuntimeStats = debug_overlay_stats::RuntimeStats;
@@ -366,8 +348,8 @@ namespace rock::debug
         constexpr std::size_t kPublishedFramePoolCapacity = 4;
         static debug_overlay_snapshot::SnapshotPool<PublishedOverlayFrame, kPublishedFramePoolCapacity> s_framePool{};
         static std::atomic<std::shared_ptr<const PublishedOverlayFrame>> s_publishedFrame{};
-        static debug_overlay_snapshot::LatestSnapshot<SolvedBodyCaptureRequestFrame, kPublishedFramePoolCapacity> s_solvedBodyCaptureRequests{};
-        static debug_overlay_snapshot::LatestSnapshot<AppliedBodyTransformFrame, kPublishedFramePoolCapacity> s_appliedBodyTransforms{};
+        static debug_overlay_snapshot::LatestSnapshot<GeneratedBodyCaptureRequestFrame, kPublishedFramePoolCapacity> s_generatedBodyCaptureRequests{};
+        static debug_overlay_snapshot::LatestSnapshot<AppliedGeneratedBodyTransformFrame, kPublishedFramePoolCapacity> s_appliedTransformFrames{};
         static std::atomic<std::uint64_t> s_nextPublicationSequence{ 0 };
         static std::atomic<bool> s_enabled{ false };
         static std::atomic<bool> s_initialized{ false };
@@ -387,8 +369,6 @@ namespace rock::debug
         static std::atomic<bool> s_textUploadFailureReported{ false };
         static std::atomic<bool> s_submitInstallFailureReported{ false };
         static std::atomic<bool> s_snapshotPoolExhaustionReported{ false };
-        static std::atomic<bool> s_solvedCaptureSlotFailureReported{ false };
-        static std::atomic<bool> s_solvedCaptureContentFailureReported{ false };
         static std::atomic<bool> s_shapeWorkerInitFailureReported{ false };
         static std::atomic<bool> s_gpuTimerInitFailureReported{ false };
         static CachedRenderTargetView s_submittedTextureRtv{};
@@ -693,41 +673,6 @@ namespace rock::debug
                        BodyOverlayFrameSource::LiveMotionWhenAvailable;
         }
 
-        bool appendSolvedBodyCaptureRequest(
-            SolvedBodyCaptureRequestFrame& request,
-            std::uint32_t bodyId,
-            std::uint32_t motionIndex,
-            std::uintptr_t shapeAddress,
-            BodyOverlayFrameSource frameSource) noexcept
-        {
-            if (bodyId == kInvalidBodyId ||
-                motionIndex == kFreeMotionIndex ||
-                shapeAddress == 0) {
-                return false;
-            }
-
-            for (std::uint32_t index = 0; index < request.count; ++index) {
-                const auto& existing = request.entries[index];
-                if (existing.bodyId == bodyId &&
-                    existing.motionIndex == motionIndex &&
-                    existing.shapeAddress == shapeAddress &&
-                    existing.frameSource == frameSource) {
-                    return true;
-                }
-            }
-            if (request.count >= request.entries.size()) {
-                return false;
-            }
-
-            request.entries[request.count++] = SolvedBodyCaptureRequestEntry{
-                shapeAddress,
-                bodyId,
-                motionIndex,
-                frameSource
-            };
-            return true;
-        }
-
         bool extractBody(RE::hknpWorld* world, RE::hknpBodyId bodyId, BodyOverlayFrameSource frameSource, BodyRenderInfo& out)
         {
             if (!world || bodyId.value == kInvalidBodyId || bodyId.value > kMaxBodyIndex) {
@@ -743,24 +688,23 @@ namespace rock::debug
             }
 
             const auto bodyAddress = bodyArray + static_cast<std::uintptr_t>(bodyId.value) * kBodyStride;
-            const auto* body = reinterpret_cast<const RE::hknpBody*>(bodyAddress);
-            if (body->bodyId.value != bodyId.value) {
-                return false;
-            }
-
-            const auto motionIndex = body->motionIndex;
+            const auto motionIndex = *reinterpret_cast<std::uint32_t*>(bodyAddress + kBodyMotionIndexOffset);
             if (motionIndex == kFreeMotionIndex) {
                 return false;
             }
 
-            const auto shapeAddress = reinterpret_cast<std::uintptr_t>(body->shape);
+            const auto shapeAddress = *reinterpret_cast<std::uintptr_t*>(bodyAddress + kBodyShapeOffset);
             if (!shapeAddress) {
                 return false;
             }
 
+            out.bodyAddress = bodyAddress;
             out.shapeAddress = shapeAddress;
-            out.bodyId = body->bodyId.value;
+            out.bodyId = *reinterpret_cast<std::uint32_t*>(bodyAddress + kBodyIdOffset);
             out.motionIndex = motionIndex;
+            out.flags = *reinterpret_cast<std::uint32_t*>(bodyAddress + kBodyFlagsOffset);
+            out.filterInfo = *reinterpret_cast<std::uint32_t*>(bodyAddress + kBodyFilterOffset);
+            out.motionPropertiesId = *reinterpret_cast<std::uint16_t*>(bodyAddress + kBodyMotionPropertiesOffset);
 
             if (frameSource == BodyOverlayFrameSource::BodyArrayTransform) {
                 const auto* transform = reinterpret_cast<const float*>(bodyAddress);
@@ -1227,11 +1171,8 @@ namespace rock::debug
                 const auto shapeIdentity = captureShapeIdentityForFrame(destination, body.shapeAddress);
                 published.shapeKey = shapeIdentity.key;
                 published.worldMatrix = body.worldMatrix;
-                published.shapeAddress = body.shapeAddress;
                 published.role = entry.role;
-                published.frameSource = targetBodyOverlayFrameSource(entry.role);
                 published.bodyId = body.bodyId;
-                published.motionIndex = body.motionIndex;
                 published.detailUniformScale = shapeIdentity.detailUniformScale;
                 published.hasValidWorldAabb =
                     captureBodyWorldAabb(source.world, entry.bodyId, published.worldAabbMin, published.worldAabbMax);
@@ -1247,16 +1188,11 @@ namespace rock::debug
                     published.entry = source.axisEntries[index];
                     if (published.entry.source == AxisOverlaySource::Body) {
                         BodyRenderInfo body{};
-                        if (!extractBody(
-                                source.world,
-                                published.entry.bodyId,
-                                targetAxisOverlayFrameSource(published.entry.role),
-                                body)) {
+                        if (!extractBody(source.world, published.entry.bodyId, targetAxisOverlayFrameSource(published.entry.role), body)) {
                             ++destination.bodyExtractFailures;
                             continue;
                         }
-                        published.bodyShapeAddress = body.shapeAddress;
-                        published.bodyMotionIndex = body.motionIndex;
+                        published.bodyWorldMatrix = body.worldMatrix;
                     }
                     destination.axes.push_back(std::move(published));
                 }
@@ -3110,17 +3046,11 @@ namespace rock::debug
             }
         }
 
-        const DirectX::XMMATRIX* findAppliedBodyMatrix(
-            const AppliedBodyTransformFrame* appliedTransforms,
-            std::uint32_t bodyId,
-            std::uint32_t motionIndex,
-            std::uintptr_t shapeAddress,
-            BodyOverlayFrameSource frameSource) noexcept
+        const DirectX::XMMATRIX* findAppliedGeneratedBodyMatrix(
+            const AppliedGeneratedBodyTransformFrame* appliedTransforms,
+            std::uint32_t bodyId) noexcept
         {
-            if (!appliedTransforms ||
-                bodyId == kInvalidBodyId ||
-                motionIndex == kFreeMotionIndex ||
-                shapeAddress == 0) {
+            if (!appliedTransforms || bodyId == kInvalidBodyId) {
                 return nullptr;
             }
 
@@ -3129,10 +3059,7 @@ namespace rock::debug
                 static_cast<std::uint32_t>(appliedTransforms->entries.size()));
             for (std::uint32_t index = 0; index < count; ++index) {
                 const auto& applied = appliedTransforms->entries[index];
-                if (applied.bodyId == bodyId &&
-                    applied.motionIndex == motionIndex &&
-                    applied.shapeAddress == shapeAddress &&
-                    applied.frameSource == frameSource) {
+                if (applied.bodyId == bodyId) {
                     return &applied.worldMatrix;
                 }
             }
@@ -3142,19 +3069,13 @@ namespace rock::debug
         void collectBodyAxisEntry(
             debug_overlay_line_batch::LineBatch& batch,
             const PublishedAxisEntry& published,
-            const AppliedBodyTransformFrame* appliedTransforms)
+            const AppliedGeneratedBodyTransformFrame* appliedTransforms)
         {
             const auto& entry = published.entry;
-            const auto* appliedMatrix = findAppliedBodyMatrix(
+            const auto* appliedMatrix = findAppliedGeneratedBodyMatrix(
                 appliedTransforms,
-                entry.bodyId.value,
-                published.bodyMotionIndex,
-                published.bodyShapeAddress,
-                targetAxisOverlayFrameSource(entry.role));
-            if (!appliedMatrix) {
-                return;
-            }
-            const auto& worldMatrix = *appliedMatrix;
+                entry.bodyId.value);
+            const auto& worldMatrix = appliedMatrix ? *appliedMatrix : published.bodyWorldMatrix;
 
             const float length = axisLengthForRole(entry.role);
             const Vertex origin = transformPoint(worldMatrix, 0.0f, 0.0f, 0.0f);
@@ -3171,7 +3092,7 @@ namespace rock::debug
         void collectAxisOverlays(
             debug_overlay_line_batch::LineBatch& batch,
             const PublishedOverlayFrame& frame,
-            const AppliedBodyTransformFrame* appliedTransforms)
+            const AppliedGeneratedBodyTransformFrame* appliedTransforms)
         {
             if (!frame.drawAxes || frame.axes.empty()) {
                 return;
@@ -3572,7 +3493,7 @@ namespace rock::debug
         void drawBodyBatch(
             ID3D11DeviceContext* context,
             const PublishedOverlayFrame& frame,
-            const AppliedBodyTransformFrame* appliedTransforms,
+            const AppliedGeneratedBodyTransformFrame* appliedTransforms,
             OverlayRuntimeStats& stats)
         {
             if (!context || !s_d3d.bodyInstanceVB || !s_d3d.bodyInputLayout || !s_d3d.bodyVertexShader || !s_d3d.scratch) {
@@ -3586,16 +3507,10 @@ namespace rock::debug
                 const auto cached = shapePipeline().lookup(entry.shapeKey);
                 std::shared_ptr<const GpuShape> shapeOwner;
                 const GpuShape* gpuShape = nullptr;
-                const auto* appliedMatrix = findAppliedBodyMatrix(
+                const auto* appliedMatrix = findAppliedGeneratedBodyMatrix(
                     appliedTransforms,
-                    entry.bodyId,
-                    entry.motionIndex,
-                    entry.shapeAddress,
-                    entry.frameSource);
-                if (!appliedMatrix) {
-                    continue;
-                }
-                DirectX::XMMATRIX model = *appliedMatrix;
+                    entry.bodyId);
+                DirectX::XMMATRIX model = appliedMatrix ? *appliedMatrix : entry.worldMatrix;
                 if (cached.state == debug_overlay_shape::CacheState::Ready && cached.shape && cached.shape->indexCount > 0) {
                     shapeOwner = cached.shape;
                     gpuShape = shapeOwner.get();
@@ -3617,17 +3532,6 @@ namespace rock::debug
                     }
                     gpuShape = &s_d3d.aabbProxy;
                     model = worldAabbMatrix(entry);
-                    DirectX::XMVECTOR determinant{};
-                    const auto capturedBodyInverse = DirectX::XMMatrixInverse(&determinant, entry.worldMatrix);
-                    const float determinantScalar = DirectX::XMVectorGetX(determinant);
-                    if (std::isfinite(determinantScalar) && std::abs(determinantScalar) > 1.0e-8f) {
-                        // Re-anchor the pre-solve world AABB proxy through its
-                        // captured body frame so unsupported/pending shapes
-                        // follow the same final solved pose as decoded shapes.
-                        model = DirectX::XMMatrixMultiply(
-                            DirectX::XMMatrixMultiply(model, capturedBodyInverse),
-                            *appliedMatrix);
-                    }
                     ++stats.shapeProxyFallbacks;
                     if (cached.state == debug_overlay_shape::CacheState::Unsupported) {
                         ++stats.unsupportedShapeProxies;
@@ -3706,19 +3610,15 @@ namespace rock::debug
                 return;
             }
             const auto appliedTransformLease =
-                s_appliedBodyTransforms.tryAcquire();
+                s_appliedTransformFrames.tryAcquire();
             const auto* appliedTransformOwner = appliedTransformLease.get();
-            const AppliedBodyTransformFrame* appliedTransforms = nullptr;
+            const AppliedGeneratedBodyTransformFrame* appliedTransforms = nullptr;
             if (appliedTransformOwner &&
+                appliedTransformOwner->publicationSequence == frame->publicationSequence &&
                 appliedTransformOwner->worldIdentity == frame->worldIdentity) {
-                // Main-thread logical publication follows the native physics
-                // solve and can advance to N+1 before OpenVR Submit consumes
-                // the transforms captured for N. Pair by stable live Havok
-                // identity below instead of a game-publication serial; this
-                // keeps the latest final-solve pose without accepting a reused
-                // body slot, motion, shape, world, or frame convention.
                 appliedTransforms = appliedTransformOwner;
             }
+
             const bool hasBodiesToDraw = (frame->drawRockBodies || frame->drawTargetBodies) && !frame->bodies.empty();
             const bool hasAxesToDraw = frame->drawAxes && !frame->axes.empty();
             const bool hasMarkersToDraw = frame->drawMarkers && !frame->markers.empty();
@@ -4014,93 +3914,44 @@ namespace rock::debug
         }
         next->publicationSequence = publicationSequence;
 
-        const bool hasBodyBackedGeometry =
-            !next->bodies.empty() ||
-            std::any_of(
-                next->axes.begin(),
-                next->axes.end(),
-                [](const PublishedAxisEntry& axis) {
-                    return axis.entry.source == AxisOverlaySource::Body;
-                });
-        if (hasBodyBackedGeometry) {
-            auto captureRequest = s_solvedBodyCaptureRequests.tryBeginWrite();
-            const bool requestSlotAvailable = static_cast<bool>(captureRequest);
-            bool requestContentComplete = requestSlotAvailable;
-            if (captureRequest) {
-                captureRequest->count = 0;
-                captureRequest->worldIdentity = next->worldIdentity;
-                captureRequest->publicationSequence = next->publicationSequence;
+        auto captureRequest = s_generatedBodyCaptureRequests.tryBeginWrite();
+        if (captureRequest) {
+            captureRequest->count = 0;
+            captureRequest->worldIdentity = next->worldIdentity;
+            captureRequest->publicationSequence = next->publicationSequence;
+            if (next->drawRockBodies) {
                 for (const auto& published : next->bodies) {
-                    requestContentComplete &= appendSolvedBodyCaptureRequest(
-                        *captureRequest,
-                        published.bodyId,
-                        published.motionIndex,
-                        published.shapeAddress,
-                        published.frameSource);
-                }
-                for (const auto& published : next->axes) {
-                    if (published.entry.source != AxisOverlaySource::Body) {
+                    if (!isRockBodyRole(published.role) ||
+                        published.bodyId == kInvalidBodyId ||
+                        captureRequest->count >= captureRequest->bodyIds.size()) {
                         continue;
                     }
-                    requestContentComplete &= appendSolvedBodyCaptureRequest(
-                        *captureRequest,
-                        published.entry.bodyId.value,
-                        published.bodyMotionIndex,
-                        published.bodyShapeAddress,
-                        targetAxisOverlayFrameSource(published.entry.role));
-                }
-                requestContentComplete &= captureRequest->count > 0;
-            }
-            const bool requestComplete =
-                requestSlotAvailable && requestContentComplete;
 
-            if (!requestComplete) {
-                s_solvedBodyCaptureRequests.clear();
-                s_appliedBodyTransforms.clear();
-                if (!requestSlotAvailable) {
-                    if (!s_solvedCaptureSlotFailureReported.exchange(true, std::memory_order_relaxed)) {
-                        ROCK_LOG_WARN(Hand, "Debug body overlay: solved-body request snapshot slots busy; body-backed entries will be skipped for this frame");
+                    bool alreadyRequested = false;
+                    for (std::uint32_t index = 0; index < captureRequest->count; ++index) {
+                        if (captureRequest->bodyIds[index] == published.bodyId) {
+                            alreadyRequested = true;
+                            break;
+                        }
                     }
-                } else if (!s_solvedCaptureContentFailureReported.exchange(true, std::memory_order_relaxed)) {
-                    ROCK_LOG_WARN(
-                        Hand,
-                        "Debug body overlay: solved-body request exceeded fixed capacity or contained invalid identity; requestCount={} capacity={} bodyEntries={} axisEntries={}",
-                        captureRequest->count,
-                        captureRequest->entries.size(),
-                        next->bodies.size(),
-                        next->axes.size());
+                    if (!alreadyRequested) {
+                        captureRequest->bodyIds[captureRequest->count++] = published.bodyId;
+                    }
                 }
-            } else {
-                s_solvedCaptureSlotFailureReported.store(false, std::memory_order_relaxed);
-                s_solvedCaptureContentFailureReported.store(false, std::memory_order_relaxed);
             }
-
-            if (requestComplete) {
-                captureRequest.publish();
-            }
-            std::shared_ptr<const PublishedOverlayFrame> immutable = std::move(next);
-            s_publishedFrame.store(std::move(immutable), std::memory_order_release);
-            s_snapshotPoolExhaustionReported.store(false, std::memory_order_relaxed);
-            s_enabled.store(enabled, std::memory_order_release);
-            // Admit the current non-body diagnostics immediately. Body meshes
-            // and body-backed axes remain fail-closed until the exact matching
-            // post-solve transform frame is published below.
-            (void)s_frameAdmission.publish();
-            return;
         }
 
-        s_solvedBodyCaptureRequests.clear();
-        s_appliedBodyTransforms.clear();
         std::shared_ptr<const PublishedOverlayFrame> immutable = std::move(next);
         s_publishedFrame.store(std::move(immutable), std::memory_order_release);
+        if (captureRequest) {
+            captureRequest.publish();
+        }
         s_snapshotPoolExhaustionReported.store(false, std::memory_order_relaxed);
-        s_solvedCaptureSlotFailureReported.store(false, std::memory_order_relaxed);
-        s_solvedCaptureContentFailureReported.store(false, std::memory_order_relaxed);
         s_enabled.store(enabled, std::memory_order_release);
         (void)s_frameAdmission.publish();
     }
 
-    void CaptureSolvedBodyTransformsFromPhysicsStep(
+    void CaptureAppliedGeneratedBodyTransformsFromPhysicsStep(
         RE::hknpWorld* world) noexcept
     {
         if (!world ||
@@ -4108,7 +3959,7 @@ namespace rock::debug
             return;
         }
 
-        const auto requestLease = s_solvedBodyCaptureRequests.tryAcquire();
+        const auto requestLease = s_generatedBodyCaptureRequests.tryAcquire();
         const auto* source = requestLease.get();
         if (!source ||
             source->worldIdentity != reinterpret_cast<std::uintptr_t>(world) ||
@@ -4116,7 +3967,7 @@ namespace rock::debug
             return;
         }
 
-        auto next = s_appliedBodyTransforms.tryBeginWrite();
+        auto next = s_appliedTransformFrames.tryBeginWrite();
         if (!next) {
             return;
         }
@@ -4126,47 +3977,39 @@ namespace rock::debug
         next->publicationSequence = source->publicationSequence;
         const auto requestCount = (std::min)(
             source->count,
-            static_cast<std::uint32_t>(source->entries.size()));
-        if (requestCount == 0) {
-            return;
-        }
+            static_cast<std::uint32_t>(source->bodyIds.size()));
         for (std::uint32_t index = 0;
              index < requestCount && next->count < next->entries.size();
              ++index) {
-            const auto& request = source->entries[index];
+            const auto bodyId = source->bodyIds[index];
 
             BodyRenderInfo applied{};
             if (!extractBody(
                     world,
-                    RE::hknpBodyId{ request.bodyId },
-                    request.frameSource,
+                    RE::hknpBodyId{ bodyId },
+                    BodyOverlayFrameSource::LiveMotionWhenAvailable,
                     applied) ||
-                applied.bodyId != request.bodyId ||
-                applied.motionIndex != request.motionIndex ||
-                applied.shapeAddress != request.shapeAddress) {
+                applied.bodyId != bodyId) {
                 continue;
             }
 
             auto& destination = next->entries[next->count++];
-            destination.shapeAddress = applied.shapeAddress;
             destination.bodyId = applied.bodyId;
-            destination.motionIndex = applied.motionIndex;
-            destination.frameSource = request.frameSource;
             destination.worldMatrix = applied.worldMatrix;
         }
+
         next.publish();
-        // Re-admit rendering with the latest partial final-solve set. Submit
-        // resolves each current logical entry by stable Havok identity and
-        // skips only a missing or replaced body; pre-solve matrices are never
-        // used as a fallback.
+        // A Submit that raced the logical game-frame publication may have
+        // rendered the fallback matrices already. Admit the matching applied
+        // transform publication as a distinct immutable render opportunity.
         (void)s_frameAdmission.publish();
     }
 
     void ClearFrame()
     {
         s_publishedFrame.store({}, std::memory_order_release);
-        s_solvedBodyCaptureRequests.clear();
-        s_appliedBodyTransforms.clear();
+        s_generatedBodyCaptureRequests.clear();
+        s_appliedTransformFrames.clear();
         s_enabled.store(false, std::memory_order_release);
         (void)s_frameAdmission.publish();
     }

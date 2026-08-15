@@ -1687,29 +1687,31 @@ namespace rock
         return true;
     }
 
-    bool Hand::getGrabAuthorityProxyDebugSnapshot(GrabAuthorityProxyDebugSnapshot& out) const
+    bool Hand::getGrabAuthorityProxyDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabAuthorityProxyDebugSnapshot& out) const
     {
         /*
          * Offset tuning needs the proxy-local seat point before a grab creates
-         * the real no-contact proxy body. Present it from the current queued
-         * palm target: that is the same sampled frame the generated collider
-         * will consume in the upcoming solve, not the previous solved body.
+         * the real no-contact proxy body. This marker intentionally follows the
+         * generated palm authority frame used by active proxy readback.
          */
         out = {};
+        (void)rawHandWorld;
 
-        RE::NiTransform palmAnchorTarget{};
-        if (!tryGetPalmAnchorTarget(palmAnchorTarget) ||
-            !std::isfinite(palmAnchorTarget.translate.x) ||
-            !std::isfinite(palmAnchorTarget.translate.y) ||
-            !std::isfinite(palmAnchorTarget.translate.z)) {
+        LivePalmAnchorReference palmReference{};
+        if (!tryResolveLivePalmAnchorReference(world, palmReference) ||
+            !std::isfinite(palmReference.world.translate.x) ||
+            !std::isfinite(palmReference.world.translate.y) ||
+            !std::isfinite(palmReference.world.translate.z)) {
             return false;
         }
 
         const RE::NiTransform palmAuthorityBaseWorld =
-            hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmAnchorTarget);
+            hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
         out.palmAuthorityBaseWorld = palmAuthorityBaseWorld;
         out.proxyTargetWorld = applyGrabAuthorityProxyLocalOffsetToFrame(palmAuthorityBaseWorld, _isLeft);
         out.localOffsetGameUnits = computeGrabAuthorityProxyOffsetLocalGame(_isLeft);
+        out.palmSource = palmReference.source;
+        out.palmMotionIndex = palmReference.motionIndex;
         return true;
     }
 

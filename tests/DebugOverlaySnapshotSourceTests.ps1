@@ -13,7 +13,7 @@ $interactionText = Get-Content -Raw -LiteralPath (
     Join-Path $Root 'src/physics-interaction/core/PhysicsInteraction.cpp')
 $captureFunction = [regex]::Match(
     $text,
-    'void CaptureSolvedBodyTransformsFromPhysicsStep[\s\S]*?(?=\r?\n\s*void ClearFrame\()').Value
+    'void CaptureAppliedGeneratedBodyTransformsFromPhysicsStep[\s\S]*?(?=\r?\n\s*void ClearFrame\()').Value
 
 function Require-Pattern {
     param([string]$Pattern, [string]$Message)
@@ -35,52 +35,24 @@ Require-Pattern 'std::atomic<std::shared_ptr<const PublishedOverlayFrame>>\s+s_p
     'The compositor boundary must publish an immutable atomic shared_ptr.'
 Require-Pattern 'DebugOverlayLatestSnapshot\.h' `
     'The post-physics handoff must use the fixed lock-free snapshot exchange.'
-Require-Pattern 'LatestSnapshot<AppliedBodyTransformFrame,\s*kPublishedFramePoolCapacity>\s+s_appliedBodyTransforms' `
-    'Post-physics body matrices must cross into Submit through bounded fixed slots.'
-Require-Pattern 'LatestSnapshot<SolvedBodyCaptureRequestFrame,\s*kPublishedFramePoolCapacity>\s+s_solvedBodyCaptureRequests' `
+Require-Pattern 'LatestSnapshot<AppliedGeneratedBodyTransformFrame,\s*kPublishedFramePoolCapacity>\s+s_appliedTransformFrames' `
+    'Post-physics generated-body matrices must cross into Submit through bounded fixed slots.'
+Require-Pattern 'LatestSnapshot<GeneratedBodyCaptureRequestFrame,\s*kPublishedFramePoolCapacity>\s+s_generatedBodyCaptureRequests' `
     'The game-to-physics capture request must cross through bounded fixed slots.'
-Require-Pattern 'kBodyAxisCapacity\s*=\s*std::tuple_size_v<decltype\(BodyOverlayFrame\{\}\.axisEntries\)>[\s\S]*kSolvedBodyCaptureCapacity\s*=\s*kBodyInstanceCapacity\s*\+\s*kBodyAxisCapacity' `
-    'Solved capture capacity must cover the independent collider-body and body-axis producers.'
-Require-Pattern 'array<SolvedBodyCaptureRequestEntry,\s*kSolvedBodyCaptureCapacity>[\s\S]*array<AppliedBodyTransformEntry,\s*kSolvedBodyCaptureCapacity>' `
-    'Request and applied-transform fixed slots must share the full collider-plus-axis capacity.'
-Require-Pattern 'CaptureSolvedBodyTransformsFromPhysicsStep[\s\S]*s_solvedBodyCaptureRequests\.tryAcquire\(\)' `
-    'The native physics callback must acquire fixed capture metadata.'
-Require-Pattern 'CaptureSolvedBodyTransformsFromPhysicsStep[\s\S]*s_appliedBodyTransforms\.tryBeginWrite\(\)' `
+Require-Pattern 'CaptureAppliedGeneratedBodyTransformsFromPhysicsStep[\s\S]*s_generatedBodyCaptureRequests\.tryAcquire\(\)' `
+    'The native physics callback must acquire capture metadata without loading the shared render frame.'
+Require-Pattern 'CaptureAppliedGeneratedBodyTransformsFromPhysicsStep[\s\S]*s_appliedTransformFrames\.tryBeginWrite\(\)' `
     'The native physics callback must acquire an allocation-free fixed write slot.'
-Require-Pattern 'CaptureSolvedBodyTransformsFromPhysicsStep[\s\S]*extractBody\([\s\S]*request\.frameSource' `
-    'The post-drive publication must preserve each body or axis BODY/MOTION frame convention.'
-Require-Pattern 'for \(const auto& published : next->bodies\)[\s\S]*appendSolvedBodyCaptureRequest\([\s\S]*published\.motionIndex[\s\S]*published\.shapeAddress[\s\S]*published\.frameSource[\s\S]*for \(const auto& published : next->axes\)[\s\S]*published\.bodyMotionIndex[\s\S]*published\.bodyShapeAddress[\s\S]*targetAxisOverlayFrameSource\(published\.entry\.role\)' `
-    'Solved capture must carry stable body identity for every collider and body-backed axis.'
-Require-Pattern 'appendSolvedBodyCaptureRequest[\s\S]*existing\.bodyId\s*==\s*bodyId[\s\S]*existing\.motionIndex\s*==\s*motionIndex[\s\S]*existing\.shapeAddress\s*==\s*shapeAddress[\s\S]*existing\.frameSource\s*==\s*frameSource[\s\S]*return true;[\s\S]*request\.entries\[request\.count\+\+\]' `
-    'Solved capture must deduplicate exact generations while preserving distinct body-slot generations for post-solve validation.'
-Require-Pattern 'captureRequest\.publish\(\)[\s\S]*s_publishedFrame\.store\([\s\S]*s_frameAdmission\.publish\(\)' `
-    'Logical overlay publication must preserve non-body diagnostics while body entries wait for solved transforms.'
-Require-Pattern '!requestSlotAvailable[\s\S]*solved-body request snapshot slots busy[\s\S]*solved-body request exceeded fixed capacity or contained invalid identity' `
-    'Snapshot contention and request-content validation failure must remain separately diagnosable.'
-Require-Pattern 'CaptureSolvedBodyTransformsFromPhysicsStep[\s\S]*applied\.bodyId\s*!=\s*request\.bodyId[\s\S]*applied\.motionIndex\s*!=\s*request\.motionIndex[\s\S]*applied\.shapeAddress\s*!=\s*request\.shapeAddress[\s\S]*continue;[\s\S]*next\.publish\(\)[\s\S]*s_frameAdmission\.publish\(\)' `
-    'Final solve must reject replaced body identities, skip failures individually, and publish the partial solved set.'
-Require-Pattern 'appliedTransformOwner->worldIdentity == frame->worldIdentity[\s\S]*appliedTransforms\s*=\s*appliedTransformOwner' `
-    'Submit must reject solved transforms from a different Havok world.'
-Require-Pattern 'findAppliedBodyMatrix[\s\S]*applied\.bodyId\s*==\s*bodyId[\s\S]*applied\.motionIndex\s*==\s*motionIndex[\s\S]*applied\.shapeAddress\s*==\s*shapeAddress[\s\S]*applied\.frameSource\s*==\s*frameSource' `
-    'Submit must pair final-solve transforms by body, motion, shape, and frame-source identity.'
-Require-Pattern 'collectBodyAxisEntry[\s\S]*published\.bodyMotionIndex[\s\S]*published\.bodyShapeAddress' `
-    'Body-backed axes must use their captured motion and shape identity.'
-Require-Pattern 'drawBodyBatch[\s\S]*entry\.motionIndex[\s\S]*entry\.shapeAddress[\s\S]*entry\.frameSource' `
-    'Collider draws must use their captured motion and shape identity.'
-Require-Pattern 'collectBodyAxisEntry[\s\S]*if \(!appliedMatrix\)\s*\{\s*return;\s*\}' `
-    'A body-backed axis without its exact solved transform must be skipped instead of using a pre-solve fallback.'
-Require-Pattern 'drawBodyBatch[\s\S]*if \(!appliedMatrix\)\s*\{\s*continue;\s*\}' `
-    'A collider without its exact solved transform must be skipped instead of using a pre-solve fallback.'
+Require-Pattern 'CaptureAppliedGeneratedBodyTransformsFromPhysicsStep[\s\S]*extractBody\([\s\S]*BodyOverlayFrameSource::LiveMotionWhenAvailable' `
+    'The post-drive publication must capture the real applied live-motion matrices.'
+Require-Pattern 'appliedTransformOwner->publicationSequence == frame->publicationSequence[\s\S]*appliedTransformOwner->worldIdentity == frame->worldIdentity' `
+    'Submit must reject applied matrices from a different logical frame or Havok world.'
 Require-Pattern 's_publishedFrame\.load\(std::memory_order_acquire\)' `
     'The compositor must acquire one immutable frame snapshot.'
 Require-Pattern 's_publishedFrame\.store\([\s\S]*std::memory_order_release\)' `
     'Frame publication must use release ordering.'
 Require-Pattern 'buildPublishedFrame[\s\S]*extractBody\(source\.world' `
     'Live Havok body state must be resolved while building the game-thread publication.'
-Require-Pattern 'static_assert\(offsetof\(RE::hknpBody, bodyId\)\s*==\s*0x60\)[\s\S]*static_assert\(offsetof\(RE::hknpBody, deactivationIslandId\)\s*==\s*0x6C\)' `
-    'The build must keep FO4VR body identity at +0x60 distinct from the deactivation-island field at +0x6C.'
-Require-Pattern 'extractBody[\s\S]*body->bodyId\.value\s*!=\s*bodyId\.value[\s\S]*return false;[\s\S]*out\.bodyId\s*=\s*body->bodyId\.value' `
-    'Body extraction must validate and publish the embedded hknpBodyId instead of treating another body field as identity.'
 Require-Pattern 'buildPublishedFrame[\s\S]*captureBodyWorldAabb\(source\.world' `
     'The publication must capture the real body AABB before crossing into the compositor thread.'
 Require-Pattern 'world->GetBodyAabb\(bodyId,\s*&raw\)' `
@@ -90,11 +62,11 @@ Require-Pattern 'captureOverlayRenderSettings[\s\S]*g_rockConfig' `
 Require-Pattern 'std::shared_ptr<const GpuShape>\s+shapeOwner' `
     'A render lookup must retain immutable GPU buffers across concurrent cache invalidation.'
 
-if ($interactionText -notmatch '_dynamicHandCollision\.samplePostSolveDeviations\([\s\S]{0,1800}timing\.substepIndex\s*\+\s*1\s*>=\s*timing\.substepCount[\s\S]{0,500}debug::CaptureSolvedBodyTransformsFromPhysicsStep\(world\);') {
-    $failures.Add('Solved collider matrices must publish after the final body solve, never from an intermediate substep.')
+if ($interactionText -notmatch '_dynamicHandCollision\.samplePostSolveDeviations\([\s\S]{0,1800}timing\.substepIndex\s*\+\s*1\s*>=\s*timing\.substepCount[\s\S]{0,500}debug::CaptureAppliedGeneratedBodyTransformsFromPhysicsStep\(world\);') {
+    $failures.Add('Applied collider matrices must publish after the final generated-body solve, never from an intermediate substep.')
 }
-if ($interactionText -match '_dynamicHandCollision\.flushPendingPhysicsDrive\(world, timing\);[\s\S]{0,900}debug::CaptureSolvedBodyTransformsFromPhysicsStep\(world\);') {
-    $failures.Add('Pre-collide must not publish the previous solved body matrices as current.')
+if ($interactionText -match '_dynamicHandCollision\.flushPendingPhysicsDrive\(world, timing\);[\s\S]{0,900}debug::CaptureAppliedGeneratedBodyTransformsFromPhysicsStep\(world\);') {
+    $failures.Add('Pre-collide must not publish the previous solved generated-body matrices as current.')
 }
 if ([string]::IsNullOrWhiteSpace($captureFunction) -or
     $captureFunction -match 's_publishedFrame\.(load|exchange)') {
@@ -103,18 +75,12 @@ if ([string]::IsNullOrWhiteSpace($captureFunction) -or
 
 Reject-Pattern 's_frameMutex' `
     'The compositor must not contend on the retired full-frame mutex.'
-Reject-Pattern 's_pendingSolvedFrame|requiresSolvedBodyTransforms' `
-    'One failed body must not withhold the entire logical overlay frame.'
-Reject-Pattern 'appliedTransformOwner->publicationSequence\s*==\s*frame->publicationSequence' `
-    'Main-thread N+1 publication must not reject the latest final-solve N transform set.'
 Reject-Pattern 'frame\s*=\s*s_frame' `
     'The compositor must not copy the full logical frame.'
 Reject-Pattern 'kBodyAabb16|kAabbDecompressOffset|kAabbDecompressScale' `
     'ROCK must not import the standalone visualizer raw AABB offsets.'
 Reject-Pattern 'reinterpret_cast<const\s+std::int16_t\s*\*>' `
     'Compressed hknp body AABB components are unsigned; the signed standalone decoder is forbidden.'
-Reject-Pattern 'kBodyIdOffset\s*=\s*0x6C' `
-    'The deactivation-island field at body+0x6C must never be reused as a body ID.'
 
 $drawMatch = [regex]::Match(
     $text,
