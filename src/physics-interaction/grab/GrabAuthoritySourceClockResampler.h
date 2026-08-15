@@ -91,69 +91,6 @@ namespace rock::grab_authority_source_clock
         return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
     }
 
-    /*
-     * Bounded predictor-corrector for the commanded target (opt-in).
-     *
-     * The game-clock phase lock puts the target POSITION exactly on the newest
-     * game sample every frame, but the VELOCITY it hands the motors is the
-     * game-frame position delta divided by the physics substep dt -- which
-     * quantizes on the engine's 11/11/12 ms substep cycle. That was the lock's
-     * own documented, accepted tradeoff ("commanded velocity absorbs the
-     * substep-dt quantization; the motors low-pass it"). Cross-session
-     * OVERLAY_POINT data (2026-07-14, all resample=lock sessions) showed the
-     * motors do NOT low-pass it at speed: the held object's ALONG-track motion
-     * carried the quantization as a +ahead-on-short / -behind-on-long-frame
-     * drift growing to +-0.6-1.0 gu at a run (cross-track stayed flat) -- the
-     * measured stick-locomotion stutter.
-     *
-     * This advances a persistent commanded target by the SMOOTH game-clock
-     * segment velocity each substep (constant velocity => no dt quantization),
-     * then corrects a fraction `correctorGain` of the way back to the
-     * phase-locked sample so the POSITION cannot drift off the game path the
-     * way the removed resampler did. It is NOT that resampler: there is no
-     * physics-clock trajectory playback of the sampled path and no unbounded
-     * accumulator -- every substep re-anchors toward the live lock.
-     *   correctorGain == 1 -> returns the locked target exactly (raw phase lock)
-     *   correctorGain in (0,1) -> smoother velocity, bounded constant position lag
-     * Fails closed to the raw locked target on first use, non-finite state,
-     * unusable dt, or any discontinuity (teleport / rebase / snap) so jumps are
-     * never smeared into interpolated motion.
-     */
-    inline RE::NiPoint3 applyBoundedVelocitySmoothing(const RE::NiPoint3& commandedTranslation,
-        const RE::NiPoint3& lockedTarget,
-        const RE::NiPoint3& segmentVelocityGameUnitsPerSecond,
-        float substepDeltaSeconds,
-        float correctorGain,
-        bool commandedInitialized) noexcept
-    {
-        if (!commandedInitialized || !isFiniteVector(commandedTranslation)) {
-            return lockedTarget;
-        }
-        if (!isFiniteVector(lockedTarget)) {
-            return commandedTranslation;
-        }
-        const float dx = lockedTarget.x - commandedTranslation.x;
-        const float dy = lockedTarget.y - commandedTranslation.y;
-        const float dz = lockedTarget.z - commandedTranslation.z;
-        if (dx * dx + dy * dy + dz * dz > kMaxTranslationJumpGameUnits * kMaxTranslationJumpGameUnits) {
-            // Discontinuity: snap onto the locked sample, never smear.
-            return lockedTarget;
-        }
-        if (!isFiniteVector(segmentVelocityGameUnitsPerSecond) ||
-            !havok_physics_timing::isUsableDelta(substepDeltaSeconds)) {
-            return lockedTarget;
-        }
-        const float gain = correctorGain < 0.0f ? 0.0f : (correctorGain > 1.0f ? 1.0f : correctorGain);
-        const float px = commandedTranslation.x + segmentVelocityGameUnitsPerSecond.x * substepDeltaSeconds;
-        const float py = commandedTranslation.y + segmentVelocityGameUnitsPerSecond.y * substepDeltaSeconds;
-        const float pz = commandedTranslation.z + segmentVelocityGameUnitsPerSecond.z * substepDeltaSeconds;
-        return RE::NiPoint3{
-            px + (lockedTarget.x - px) * gain,
-            py + (lockedTarget.y - py) * gain,
-            pz + (lockedTarget.z - pz) * gain,
-        };
-    }
-
     struct GameClockPhaseLock
     {
         bool initialized = false;
@@ -166,10 +103,6 @@ namespace rock::grab_authority_source_clock
         // sample) can only hold at this fraction, never step backward along
         // the segment; a fresh sample resets it to 0.
         float playedFraction = 1.0f;
-        // Game-clock interval of the current segment (previous->current sample),
-        // used only to derive the smooth game-clock segment velocity for the
-        // opt-in bounded velocity smoother. Not part of the phase-lock playback.
-        float segmentSourceDeltaSeconds = 0.0f;
         std::uint32_t rebaseCount = 0;
         std::uint32_t duplicateSourceCount = 0;
         std::uint32_t invalidSourceCount = 0;
@@ -234,25 +167,6 @@ namespace rock::grab_authority_source_clock
             currentTranslation = translation;
             currentRotation = rotation;
             playedFraction = 0.0f;
-            segmentSourceDeltaSeconds = sourceDeltaSeconds;
-        }
-
-        // Smooth game-clock velocity of the current segment (game units/second):
-        // (current - previous) sample displacement over the game-frame interval.
-        // Zero across a rebase (previous == current) or before a real segment,
-        // so a teleport never predicts forward. Used only by the opt-in bounded
-        // velocity smoother; independent of the per-substep phase-lock playback.
-        RE::NiPoint3 segmentVelocity() const noexcept
-        {
-            if (!initialized || !havok_physics_timing::isUsableDelta(segmentSourceDeltaSeconds)) {
-                return RE::NiPoint3{};
-            }
-            const float inverseDelta = 1.0f / segmentSourceDeltaSeconds;
-            return RE::NiPoint3{
-                (currentTranslation.x - previousTranslation.x) * inverseDelta,
-                (currentTranslation.y - previousTranslation.y) * inverseDelta,
-                (currentTranslation.z - previousTranslation.z) * inverseDelta,
-            };
         }
 
         // Command the segment point for physics substep (substepIndex + 1) /

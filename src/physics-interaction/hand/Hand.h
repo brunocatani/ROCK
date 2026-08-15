@@ -1016,15 +1016,6 @@ namespace rock
         RE::NiTransform _lastAppliedGrabAuthorityProxyWorld{};
         RE::NiTransform _lastAppliedGrabAuthorityRawHandWorld{};
         bool _hasLastAppliedGrabAuthorityProxyWorld = false;
-        /*
-         * Bounded velocity-smoother state (opt-in rockGrabSmoothVelocityDrive):
-         * the persistent commanded target the predictor-corrector advances by
-         * the smooth game-clock segment velocity and re-anchors toward the
-         * phase-locked sample. Guarded by _grabAuthorityProxyMutex; written only
-         * by the physics flush, reset with the proxy runtime.
-         */
-        RE::NiPoint3 _grabSmoothCommandedTranslation{};
-        bool _grabSmoothCommandedInitialized = false;
         struct RagdollAngularProbePreSolve
         {
             RE::hknpBodyId objectBodyId{ INVALID_BODY_ID };

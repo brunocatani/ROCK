@@ -404,15 +404,6 @@ namespace rock
         float rockGrabPhysicsRateForceScaleExponent = 0.5f;
         float rockGrabPhysicsRateMinForceScale = 0.75f;
         float rockGrabPhysicsRateMaxForceScale = 1.35f;
-        // Opt-in bounded predictor-corrector on the commanded grab target:
-        // smooths the commanded VELOCITY (removing the phase lock's accepted
-        // substep-dt quantization -- the measured stick-locomotion along-track
-        // stutter) while soft-correcting the POSITION back to the game-clock
-        // sample. Gain 1.0 == raw phase lock (no smoothing); lower gain ==
-        // smoother velocity, larger constant (invisible) position lag.
-        bool rockGrabSmoothVelocityDrive = false;
-        float rockGrabSmoothVelocityCorrectorGain = 0.2f;
-
         float rockGrabForceFadeInTime = 0.1f;
         RE::NiPoint3 rockRightGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.0f, 0.0f, 0.0f);
         RE::NiPoint3 rockLeftGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.0f, 0.0f, 0.0f);
