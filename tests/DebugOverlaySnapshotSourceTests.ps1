@@ -39,6 +39,10 @@ Require-Pattern 'LatestSnapshot<AppliedBodyTransformFrame,\s*kPublishedFramePool
     'Post-physics body matrices must cross into Submit through bounded fixed slots.'
 Require-Pattern 'LatestSnapshot<SolvedBodyCaptureRequestFrame,\s*kPublishedFramePoolCapacity>\s+s_solvedBodyCaptureRequests' `
     'The game-to-physics capture request must cross through bounded fixed slots.'
+Require-Pattern 'kBodyAxisCapacity\s*=\s*std::tuple_size_v<decltype\(BodyOverlayFrame\{\}\.axisEntries\)>[\s\S]*kSolvedBodyCaptureCapacity\s*=\s*kBodyInstanceCapacity\s*\+\s*kBodyAxisCapacity' `
+    'Solved capture capacity must cover the independent collider-body and body-axis producers.'
+Require-Pattern 'array<SolvedBodyCaptureRequestEntry,\s*kSolvedBodyCaptureCapacity>[\s\S]*array<AppliedBodyTransformEntry,\s*kSolvedBodyCaptureCapacity>' `
+    'Request and applied-transform fixed slots must share the full collider-plus-axis capacity.'
 Require-Pattern 'CaptureSolvedBodyTransformsFromPhysicsStep[\s\S]*s_solvedBodyCaptureRequests\.tryAcquire\(\)' `
     'The native physics callback must acquire fixed capture metadata.'
 Require-Pattern 'CaptureSolvedBodyTransformsFromPhysicsStep[\s\S]*s_appliedBodyTransforms\.tryBeginWrite\(\)' `
@@ -49,6 +53,8 @@ Require-Pattern 'for \(const auto& published : next->bodies\)[\s\S]*appendSolved
     'Solved capture must carry stable body identity for every collider and body-backed axis.'
 Require-Pattern 'captureRequest\.publish\(\)[\s\S]*s_publishedFrame\.store\([\s\S]*s_frameAdmission\.publish\(\)' `
     'Logical overlay publication must preserve non-body diagnostics while body entries wait for solved transforms.'
+Require-Pattern '!requestSlotAvailable[\s\S]*solved-body request snapshot slots busy[\s\S]*solved-body request exceeded fixed capacity or contained conflicting identity' `
+    'Snapshot contention and request-content overflow must remain separately diagnosable.'
 Require-Pattern 'CaptureSolvedBodyTransformsFromPhysicsStep[\s\S]*applied\.bodyId\s*!=\s*request\.bodyId[\s\S]*applied\.motionIndex\s*!=\s*request\.motionIndex[\s\S]*applied\.shapeAddress\s*!=\s*request\.shapeAddress[\s\S]*continue;[\s\S]*next\.publish\(\)[\s\S]*s_frameAdmission\.publish\(\)' `
     'Final solve must reject replaced body identities, skip failures individually, and publish the partial solved set.'
 Require-Pattern 'appliedTransformOwner->worldIdentity == frame->worldIdentity[\s\S]*appliedTransforms\s*=\s*appliedTransformOwner' `

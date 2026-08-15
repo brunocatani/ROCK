@@ -89,7 +89,11 @@ namespace rock::debug
         constexpr float kBodyAxisLength = 16.0f;
         constexpr float kTargetAxisLength = 20.0f;
         constexpr std::size_t kBodyInstanceCapacity = std::tuple_size_v<decltype(BodyOverlayFrame{}.entries)>;
+        constexpr std::size_t kBodyAxisCapacity = std::tuple_size_v<decltype(BodyOverlayFrame{}.axisEntries)>;
+        constexpr std::size_t kSolvedBodyCaptureCapacity = kBodyInstanceCapacity + kBodyAxisCapacity;
         static_assert(kBodyInstanceCapacity == debug_overlay_runtime::kMaxBodyInstances);
+        static_assert(kSolvedBodyCaptureCapacity >= kBodyInstanceCapacity);
+        static_assert(kSolvedBodyCaptureCapacity >= kBodyAxisCapacity);
         constexpr std::uint64_t kCanonicalSphereGeometryFingerprint = 0x5350'4845'5245'0001ull;
         constexpr DWORD kPageExecuteReadWrite = 0x00000040u;
         constexpr UINT kMaxShaderClassInstances = 256;
@@ -245,7 +249,10 @@ namespace rock::debug
 
         struct SolvedBodyCaptureRequestFrame
         {
-            std::array<SolvedBodyCaptureRequestEntry, kBodyInstanceCapacity> entries{};
+            // A logical frame can independently fill both bounded producers:
+            // collider bodies and body-backed axes. Deduplication is common but
+            // cannot be assumed for capacity or correctness.
+            std::array<SolvedBodyCaptureRequestEntry, kSolvedBodyCaptureCapacity> entries{};
             std::uintptr_t worldIdentity{ 0 };
             std::uint64_t publicationSequence{ 0 };
             std::uint32_t count{ 0 };
@@ -253,7 +260,7 @@ namespace rock::debug
 
         struct AppliedBodyTransformFrame
         {
-            std::array<AppliedBodyTransformEntry, kBodyInstanceCapacity> entries{};
+            std::array<AppliedBodyTransformEntry, kSolvedBodyCaptureCapacity> entries{};
             std::uintptr_t worldIdentity{ 0 };
             std::uint64_t publicationSequence{ 0 };
             std::uint32_t count{ 0 };
@@ -384,7 +391,8 @@ namespace rock::debug
         static std::atomic<bool> s_textUploadFailureReported{ false };
         static std::atomic<bool> s_submitInstallFailureReported{ false };
         static std::atomic<bool> s_snapshotPoolExhaustionReported{ false };
-        static std::atomic<bool> s_solvedCaptureRequestFailureReported{ false };
+        static std::atomic<bool> s_solvedCaptureSlotFailureReported{ false };
+        static std::atomic<bool> s_solvedCaptureContentFailureReported{ false };
         static std::atomic<bool> s_shapeWorkerInitFailureReported{ false };
         static std::atomic<bool> s_gpuTimerInitFailureReported{ false };
         static CachedRenderTargetView s_submittedTextureRtv{};
@@ -4017,13 +4025,14 @@ namespace rock::debug
                 });
         if (hasBodyBackedGeometry) {
             auto captureRequest = s_solvedBodyCaptureRequests.tryBeginWrite();
-            bool requestComplete = static_cast<bool>(captureRequest);
+            const bool requestSlotAvailable = static_cast<bool>(captureRequest);
+            bool requestContentComplete = requestSlotAvailable;
             if (captureRequest) {
                 captureRequest->count = 0;
                 captureRequest->worldIdentity = next->worldIdentity;
                 captureRequest->publicationSequence = next->publicationSequence;
                 for (const auto& published : next->bodies) {
-                    requestComplete &= appendSolvedBodyCaptureRequest(
+                    requestContentComplete &= appendSolvedBodyCaptureRequest(
                         *captureRequest,
                         published.bodyId,
                         published.motionIndex,
@@ -4034,24 +4043,37 @@ namespace rock::debug
                     if (published.entry.source != AxisOverlaySource::Body) {
                         continue;
                     }
-                    requestComplete &= appendSolvedBodyCaptureRequest(
+                    requestContentComplete &= appendSolvedBodyCaptureRequest(
                         *captureRequest,
                         published.entry.bodyId.value,
                         published.bodyMotionIndex,
                         published.bodyShapeAddress,
                         targetAxisOverlayFrameSource(published.entry.role));
                 }
-                requestComplete &= captureRequest->count > 0;
+                requestContentComplete &= captureRequest->count > 0;
             }
+            const bool requestComplete =
+                requestSlotAvailable && requestContentComplete;
 
             if (!requestComplete) {
                 s_solvedBodyCaptureRequests.clear();
                 s_appliedBodyTransforms.clear();
-                if (!s_solvedCaptureRequestFailureReported.exchange(true, std::memory_order_relaxed)) {
-                    ROCK_LOG_WARN(Hand, "Debug body overlay: solved-body request unavailable or over capacity; body-backed entries will be skipped for this frame");
+                if (!requestSlotAvailable) {
+                    if (!s_solvedCaptureSlotFailureReported.exchange(true, std::memory_order_relaxed)) {
+                        ROCK_LOG_WARN(Hand, "Debug body overlay: solved-body request snapshot slots busy; body-backed entries will be skipped for this frame");
+                    }
+                } else if (!s_solvedCaptureContentFailureReported.exchange(true, std::memory_order_relaxed)) {
+                    ROCK_LOG_WARN(
+                        Hand,
+                        "Debug body overlay: solved-body request exceeded fixed capacity or contained conflicting identity; requestCount={} capacity={} bodyEntries={} axisEntries={}",
+                        captureRequest->count,
+                        captureRequest->entries.size(),
+                        next->bodies.size(),
+                        next->axes.size());
                 }
             } else {
-                s_solvedCaptureRequestFailureReported.store(false, std::memory_order_relaxed);
+                s_solvedCaptureSlotFailureReported.store(false, std::memory_order_relaxed);
+                s_solvedCaptureContentFailureReported.store(false, std::memory_order_relaxed);
             }
 
             if (requestComplete) {
@@ -4073,7 +4095,8 @@ namespace rock::debug
         std::shared_ptr<const PublishedOverlayFrame> immutable = std::move(next);
         s_publishedFrame.store(std::move(immutable), std::memory_order_release);
         s_snapshotPoolExhaustionReported.store(false, std::memory_order_relaxed);
-        s_solvedCaptureRequestFailureReported.store(false, std::memory_order_relaxed);
+        s_solvedCaptureSlotFailureReported.store(false, std::memory_order_relaxed);
+        s_solvedCaptureContentFailureReported.store(false, std::memory_order_relaxed);
         s_enabled.store(enabled, std::memory_order_release);
         (void)s_frameAdmission.publish();
     }
