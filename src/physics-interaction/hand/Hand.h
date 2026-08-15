@@ -693,6 +693,7 @@ namespace rock
             float authorityForceScale,
             bool heldBodyColliding,
             const grab_motion_controller::HeldAuthorityState& heldAuthority);
+        struct GrabAuthorityProxyPendingTarget;
         void queueProxyGrabAuthorityTarget(const RE::NiTransform& proxyWorldTransform,
             const RE::NiTransform& rawHandWorldTransform,
             const char* proxyFrameSource,
@@ -703,6 +704,10 @@ namespace rock
             float grabRotationErrorDegrees,
             float authorityForceScale,
             bool heldBodyColliding);
+        bool applyHeldFrameDiscontinuityCorrectionLocked(
+            RE::hknpWorld* world,
+            const GrabAuthorityProxyPendingTarget& pending,
+            const havok_physics_timing::PhysicsTimingSample& timing);
         void destroyGrabAuthorityProxy(RE::bhkWorld* bhkWorld);
         void abandonGrabAuthorityProxy();
         void clearGrabAuthorityProxyRuntime();
@@ -998,6 +1003,7 @@ namespace rock
         {
             RE::NiTransform proxyWorld{};
             RE::NiTransform rawHandWorld{};
+            RE::NiPoint3 playerSpaceDeltaGameUnits{};
             const char* proxyFrameSource = "unknown";
             float deltaTime = 0.0f;
             float forceFadeInTime = 0.0f;
@@ -1006,6 +1012,7 @@ namespace rock
             float grabRotationErrorDegrees = 0.0f;
             float authorityForceScale = 1.0f;
             bool heldBodyColliding = false;
+            bool playerSpaceDeltaValid = false;
             bool valid = false;
         };
         GrabAuthorityProxyPendingTarget _grabAuthorityPendingTarget{};
@@ -1093,6 +1100,9 @@ namespace rock
         GeneratedKeyframedBodyDriveState _grabAuthorityProxyDriveState{};
         std::uint64_t _grabAuthorityProxyQueuedSequence = 0;
         std::uint64_t _grabAuthorityProxyFlushSequence = 0;
+        std::uint64_t _grabFrameCorrectionLastQueuedSequence = 0;
+        std::uint32_t _grabFrameCorrectionClampCount = 0;
+        std::uint32_t _grabFrameCorrectionFailureCount = 0;
         std::uint64_t _grabAuthorityProxyFailedFlushes = 0;
         float _grabAuthorityProxyLastFlushDeltaSeconds = 0.0f;
         int _grabAuthorityProxyLogCounter = 0;
