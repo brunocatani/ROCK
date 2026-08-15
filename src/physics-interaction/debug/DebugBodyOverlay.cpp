@@ -213,7 +213,6 @@ namespace rock::debug
             std::uint32_t bodyExtractFailures{ 0 };
             std::uint32_t shapeCaptures{ 0 };
             std::uint32_t shapeCaptureDeferrals{ 0 };
-            bool requiresSolvedBodyTransforms{ false };
             bool drawRockBodies{ false };
             bool drawTargetBodies{ false };
             bool drawAxes{ false };
@@ -356,7 +355,6 @@ namespace rock::debug
         constexpr std::size_t kPublishedFramePoolCapacity = 4;
         static debug_overlay_snapshot::SnapshotPool<PublishedOverlayFrame, kPublishedFramePoolCapacity> s_framePool{};
         static std::atomic<std::shared_ptr<const PublishedOverlayFrame>> s_publishedFrame{};
-        static std::atomic<std::shared_ptr<const PublishedOverlayFrame>> s_pendingSolvedFrame{};
         static debug_overlay_snapshot::LatestSnapshot<SolvedBodyCaptureRequestFrame, kPublishedFramePoolCapacity> s_solvedBodyCaptureRequests{};
         static debug_overlay_snapshot::LatestSnapshot<AppliedBodyTransformFrame, kPublishedFramePoolCapacity> s_appliedBodyTransforms{};
         static std::atomic<std::uint64_t> s_nextPublicationSequence{ 0 };
@@ -378,7 +376,7 @@ namespace rock::debug
         static std::atomic<bool> s_textUploadFailureReported{ false };
         static std::atomic<bool> s_submitInstallFailureReported{ false };
         static std::atomic<bool> s_snapshotPoolExhaustionReported{ false };
-        static std::atomic<bool> s_solvedFrameDeferralReported{ false };
+        static std::atomic<bool> s_solvedCaptureRequestFailureReported{ false };
         static std::atomic<bool> s_shapeWorkerInitFailureReported{ false };
         static std::atomic<bool> s_gpuTimerInitFailureReported{ false };
         static CachedRenderTargetView s_submittedTextureRtv{};
@@ -1085,7 +1083,6 @@ namespace rock::debug
             frame.bodyExtractFailures = 0;
             frame.shapeCaptures = 0;
             frame.shapeCaptureDeferrals = 0;
-            frame.requiresSolvedBodyTransforms = false;
             frame.drawRockBodies = false;
             frame.drawTargetBodies = false;
             frame.drawAxes = false;
@@ -3668,13 +3665,6 @@ namespace rock::debug
                 appliedTransformOwner->worldIdentity == frame->worldIdentity) {
                 appliedTransforms = appliedTransformOwner;
             }
-            if (frame->requiresSolvedBodyTransforms && !appliedTransforms) {
-                // A body-backed frame is renderable only as the exact immutable
-                // pair promoted by the final physics substep. Never fall back
-                // to matrices frozen before Havok consumed this frame's drive.
-                return;
-            }
-
             const bool hasBodiesToDraw = (frame->drawRockBodies || frame->drawTargetBodies) && !frame->bodies.empty();
             const bool hasAxesToDraw = frame->drawAxes && !frame->axes.empty();
             const bool hasMarkersToDraw = frame->drawMarkers && !frame->markers.empty();
@@ -4004,31 +3994,34 @@ namespace rock::debug
             }
 
             if (!requestComplete) {
-                s_pendingSolvedFrame.store({}, std::memory_order_release);
                 s_solvedBodyCaptureRequests.clear();
-                if (!s_solvedFrameDeferralReported.exchange(true, std::memory_order_relaxed)) {
-                    ROCK_LOG_WARN(Hand, "Debug body overlay: solved-body request unavailable or over capacity; retaining the last safe publication");
+                if (!s_solvedCaptureRequestFailureReported.exchange(true, std::memory_order_relaxed)) {
+                    ROCK_LOG_WARN(Hand, "Debug body overlay: solved-body request unavailable or over capacity; body-backed entries will be skipped for this frame");
                 }
-                return;
+            } else {
+                s_solvedCaptureRequestFailureReported.store(false, std::memory_order_relaxed);
             }
 
-            next->requiresSolvedBodyTransforms = true;
-            std::shared_ptr<const PublishedOverlayFrame> pending = std::move(next);
-            s_pendingSolvedFrame.store(std::move(pending), std::memory_order_release);
-            captureRequest.publish();
+            if (requestComplete) {
+                captureRequest.publish();
+            }
+            std::shared_ptr<const PublishedOverlayFrame> immutable = std::move(next);
+            s_publishedFrame.store(std::move(immutable), std::memory_order_release);
             s_snapshotPoolExhaustionReported.store(false, std::memory_order_relaxed);
-            s_solvedFrameDeferralReported.store(false, std::memory_order_relaxed);
             s_enabled.store(enabled, std::memory_order_release);
+            // Admit the current non-body diagnostics immediately. Body meshes
+            // and body-backed axes remain fail-closed until the exact matching
+            // post-solve transform frame is published below.
+            (void)s_frameAdmission.publish();
             return;
         }
 
-        s_pendingSolvedFrame.store({}, std::memory_order_release);
         s_solvedBodyCaptureRequests.clear();
         s_appliedBodyTransforms.clear();
         std::shared_ptr<const PublishedOverlayFrame> immutable = std::move(next);
         s_publishedFrame.store(std::move(immutable), std::memory_order_release);
         s_snapshotPoolExhaustionReported.store(false, std::memory_order_relaxed);
-        s_solvedFrameDeferralReported.store(false, std::memory_order_relaxed);
+        s_solvedCaptureRequestFailureReported.store(false, std::memory_order_relaxed);
         s_enabled.store(enabled, std::memory_order_release);
         (void)s_frameAdmission.publish();
     }
@@ -4043,13 +4036,9 @@ namespace rock::debug
 
         const auto requestLease = s_solvedBodyCaptureRequests.tryAcquire();
         const auto* source = requestLease.get();
-        const auto pending = s_pendingSolvedFrame.load(std::memory_order_acquire);
         if (!source ||
-            !pending ||
             source->worldIdentity != reinterpret_cast<std::uintptr_t>(world) ||
-            source->worldIdentity != pending->worldIdentity ||
-            source->publicationSequence == 0 ||
-            source->publicationSequence != pending->publicationSequence) {
+            source->publicationSequence == 0) {
             return;
         }
 
@@ -4079,7 +4068,7 @@ namespace rock::debug
                     request.frameSource,
                     applied) ||
                 applied.bodyId != request.bodyId) {
-                return;
+                continue;
             }
 
             auto& destination = next->entries[next->count++];
@@ -4087,33 +4076,16 @@ namespace rock::debug
             destination.frameSource = request.frameSource;
             destination.worldMatrix = applied.worldMatrix;
         }
-        if (next->count != requestCount) {
-            return;
-        }
-
         next.publish();
-
-        auto expectedPending = pending;
-        if (!s_pendingSolvedFrame.compare_exchange_strong(
-                expectedPending,
-                {},
-                std::memory_order_acq_rel,
-                std::memory_order_acquire)) {
-            return;
-        }
-
-        // Publish the immutable logical frame only after its exact solved-body
-        // transform frame exists. The compositor can never observe this frame
-        // under an older admission serial or fall back to pre-solve matrices.
-        s_publishedFrame.store(pending, std::memory_order_release);
-        s_solvedFrameDeferralReported.store(false, std::memory_order_relaxed);
+        // Re-admit the logical frame with the matching partial solved set. The
+        // renderer resolves each body by ID and frame source and skips only a
+        // missing entry; pre-solve matrices are never used as a fallback.
         (void)s_frameAdmission.publish();
     }
 
     void ClearFrame()
     {
         s_publishedFrame.store({}, std::memory_order_release);
-        s_pendingSolvedFrame.store({}, std::memory_order_release);
         s_solvedBodyCaptureRequests.clear();
         s_appliedBodyTransforms.clear();
         s_enabled.store(false, std::memory_order_release);

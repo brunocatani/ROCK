@@ -385,9 +385,10 @@ namespace rock::debug
     bool IsInstalled();
     void PublishFrame(const BodyOverlayFrame& frame);
     // Called only from ROCK's registered native post-solve callback after the
-    // final substep has consumed every body drive. Captures every body-backed
-    // collider and axis in its requested BODY or MOTION frame, then atomically
-    // promotes the matching immutable overlay for OpenVR admission.
+    // final substep has consumed every body drive. Captures each available
+    // body-backed collider and axis in its requested BODY or MOTION frame, then
+    // re-admits the logical frame. Missing bodies are skipped individually;
+    // the compositor never receives a pre-solve transform fallback.
     void CaptureSolvedBodyTransformsFromPhysicsStep(RE::hknpWorld* world) noexcept;
     void ClearFrame();
     void ClearShapeCache();

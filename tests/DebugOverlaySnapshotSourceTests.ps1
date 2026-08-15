@@ -33,8 +33,6 @@ Require-Pattern 'DebugOverlaySnapshotPool\.h' `
     'Overlay publication must use the bounded, tested immutable-snapshot pool.'
 Require-Pattern 'std::atomic<std::shared_ptr<const PublishedOverlayFrame>>\s+s_publishedFrame' `
     'The compositor boundary must publish an immutable atomic shared_ptr.'
-Require-Pattern 'std::atomic<std::shared_ptr<const PublishedOverlayFrame>>\s+s_pendingSolvedFrame' `
-    'A body-backed logical frame must remain private until final-solve promotion.'
 Require-Pattern 'DebugOverlayLatestSnapshot\.h' `
     'The post-physics handoff must use the fixed lock-free snapshot exchange.'
 Require-Pattern 'LatestSnapshot<AppliedBodyTransformFrame,\s*kPublishedFramePoolCapacity>\s+s_appliedBodyTransforms' `
@@ -49,14 +47,16 @@ Require-Pattern 'CaptureSolvedBodyTransformsFromPhysicsStep[\s\S]*extractBody\([
     'The post-drive publication must preserve each body or axis BODY/MOTION frame convention.'
 Require-Pattern 'for \(const auto& published : next->bodies\)[\s\S]*appendSolvedBodyCaptureRequest\([\s\S]*published\.frameSource[\s\S]*for \(const auto& published : next->axes\)[\s\S]*AxisOverlaySource::Body[\s\S]*targetAxisOverlayFrameSource\(published\.entry\.role\)' `
     'Solved capture must cover every drawn collider and every body-backed axis.'
-Require-Pattern 's_pendingSolvedFrame\.store\([\s\S]*captureRequest\.publish\(\)[\s\S]*return;[\s\S]*s_publishedFrame\.store' `
-    'A body-backed frame must remain pending while only body-free frames publish immediately.'
-Require-Pattern 'next\.publish\(\)[\s\S]*s_pendingSolvedFrame\.compare_exchange_strong\([\s\S]*s_publishedFrame\.store\(pending[\s\S]*s_frameAdmission\.publish\(\)' `
-    'Final solve must publish transforms, claim the exact pending frame, then admit the immutable pair.'
+Require-Pattern 'captureRequest\.publish\(\)[\s\S]*s_publishedFrame\.store\([\s\S]*s_frameAdmission\.publish\(\)' `
+    'Logical overlay publication must preserve non-body diagnostics while body entries wait for solved transforms.'
+Require-Pattern 'CaptureSolvedBodyTransformsFromPhysicsStep[\s\S]*applied\.bodyId\s*!=\s*request\.bodyId\)[\s\S]*continue;[\s\S]*next\.publish\(\)[\s\S]*s_frameAdmission\.publish\(\)' `
+    'Final solve must skip a failed body individually and re-admit the matching partial solved set.'
 Require-Pattern 'appliedTransformOwner->publicationSequence == frame->publicationSequence[\s\S]*appliedTransformOwner->worldIdentity == frame->worldIdentity' `
     'Submit must reject applied matrices from a different logical frame or Havok world.'
-Require-Pattern 'frame->requiresSolvedBodyTransforms\s*&&\s*!appliedTransforms[\s\S]*return;' `
-    'Submit must fail closed rather than draw pre-solve fallbacks for body-backed frames.'
+Require-Pattern 'collectBodyAxisEntry[\s\S]*if \(!appliedMatrix\)\s*\{\s*return;\s*\}' `
+    'A body-backed axis without its exact solved transform must be skipped instead of using a pre-solve fallback.'
+Require-Pattern 'drawBodyBatch[\s\S]*if \(!appliedMatrix\)\s*\{\s*continue;\s*\}' `
+    'A collider without its exact solved transform must be skipped instead of using a pre-solve fallback.'
 Require-Pattern 's_publishedFrame\.load\(std::memory_order_acquire\)' `
     'The compositor must acquire one immutable frame snapshot.'
 Require-Pattern 's_publishedFrame\.store\([\s\S]*std::memory_order_release\)' `
@@ -85,6 +85,8 @@ if ([string]::IsNullOrWhiteSpace($captureFunction) -or
 
 Reject-Pattern 's_frameMutex' `
     'The compositor must not contend on the retired full-frame mutex.'
+Reject-Pattern 's_pendingSolvedFrame|requiresSolvedBodyTransforms' `
+    'One failed body must not withhold the entire logical overlay frame.'
 Reject-Pattern 'frame\s*=\s*s_frame' `
     'The compositor must not copy the full logical frame.'
 Reject-Pattern 'kBodyAabb16|kAabbDecompressOffset|kAabbDecompressScale' `
