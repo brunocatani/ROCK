@@ -387,8 +387,10 @@ namespace rock::debug
     // Called only from ROCK's registered native post-solve callback after the
     // final substep has consumed every body drive. Captures each available
     // body-backed collider and axis in its requested BODY or MOTION frame, then
-    // re-admits the logical frame. Missing bodies are skipped individually;
-    // the compositor never receives a pre-solve transform fallback.
+    // re-admits rendering. Submit pairs that latest solved pose to the current
+    // logical entry by world/body/motion/shape identity because main-thread
+    // publication may advance before Submit. Missing or replaced bodies are
+    // skipped individually; no pre-solve transform is used as a fallback.
     void CaptureSolvedBodyTransformsFromPhysicsStep(RE::hknpWorld* world) noexcept;
     void ClearFrame();
     void ClearShapeCache();

@@ -45,14 +45,20 @@ Require-Pattern 'CaptureSolvedBodyTransformsFromPhysicsStep[\s\S]*s_appliedBodyT
     'The native physics callback must acquire an allocation-free fixed write slot.'
 Require-Pattern 'CaptureSolvedBodyTransformsFromPhysicsStep[\s\S]*extractBody\([\s\S]*request\.frameSource' `
     'The post-drive publication must preserve each body or axis BODY/MOTION frame convention.'
-Require-Pattern 'for \(const auto& published : next->bodies\)[\s\S]*appendSolvedBodyCaptureRequest\([\s\S]*published\.frameSource[\s\S]*for \(const auto& published : next->axes\)[\s\S]*AxisOverlaySource::Body[\s\S]*targetAxisOverlayFrameSource\(published\.entry\.role\)' `
-    'Solved capture must cover every drawn collider and every body-backed axis.'
+Require-Pattern 'for \(const auto& published : next->bodies\)[\s\S]*appendSolvedBodyCaptureRequest\([\s\S]*published\.motionIndex[\s\S]*published\.shapeAddress[\s\S]*published\.frameSource[\s\S]*for \(const auto& published : next->axes\)[\s\S]*published\.bodyMotionIndex[\s\S]*published\.bodyShapeAddress[\s\S]*targetAxisOverlayFrameSource\(published\.entry\.role\)' `
+    'Solved capture must carry stable body identity for every collider and body-backed axis.'
 Require-Pattern 'captureRequest\.publish\(\)[\s\S]*s_publishedFrame\.store\([\s\S]*s_frameAdmission\.publish\(\)' `
     'Logical overlay publication must preserve non-body diagnostics while body entries wait for solved transforms.'
-Require-Pattern 'CaptureSolvedBodyTransformsFromPhysicsStep[\s\S]*applied\.bodyId\s*!=\s*request\.bodyId\)[\s\S]*continue;[\s\S]*next\.publish\(\)[\s\S]*s_frameAdmission\.publish\(\)' `
-    'Final solve must skip a failed body individually and re-admit the matching partial solved set.'
-Require-Pattern 'appliedTransformOwner->publicationSequence == frame->publicationSequence[\s\S]*appliedTransformOwner->worldIdentity == frame->worldIdentity' `
-    'Submit must reject applied matrices from a different logical frame or Havok world.'
+Require-Pattern 'CaptureSolvedBodyTransformsFromPhysicsStep[\s\S]*applied\.bodyId\s*!=\s*request\.bodyId[\s\S]*applied\.motionIndex\s*!=\s*request\.motionIndex[\s\S]*applied\.shapeAddress\s*!=\s*request\.shapeAddress[\s\S]*continue;[\s\S]*next\.publish\(\)[\s\S]*s_frameAdmission\.publish\(\)' `
+    'Final solve must reject replaced body identities, skip failures individually, and publish the partial solved set.'
+Require-Pattern 'appliedTransformOwner->worldIdentity == frame->worldIdentity[\s\S]*appliedTransforms\s*=\s*appliedTransformOwner' `
+    'Submit must reject solved transforms from a different Havok world.'
+Require-Pattern 'findAppliedBodyMatrix[\s\S]*applied\.bodyId\s*==\s*bodyId[\s\S]*applied\.motionIndex\s*==\s*motionIndex[\s\S]*applied\.shapeAddress\s*==\s*shapeAddress[\s\S]*applied\.frameSource\s*==\s*frameSource' `
+    'Submit must pair final-solve transforms by body, motion, shape, and frame-source identity.'
+Require-Pattern 'collectBodyAxisEntry[\s\S]*published\.bodyMotionIndex[\s\S]*published\.bodyShapeAddress' `
+    'Body-backed axes must use their captured motion and shape identity.'
+Require-Pattern 'drawBodyBatch[\s\S]*entry\.motionIndex[\s\S]*entry\.shapeAddress[\s\S]*entry\.frameSource' `
+    'Collider draws must use their captured motion and shape identity.'
 Require-Pattern 'collectBodyAxisEntry[\s\S]*if \(!appliedMatrix\)\s*\{\s*return;\s*\}' `
     'A body-backed axis without its exact solved transform must be skipped instead of using a pre-solve fallback.'
 Require-Pattern 'drawBodyBatch[\s\S]*if \(!appliedMatrix\)\s*\{\s*continue;\s*\}' `
@@ -87,6 +93,8 @@ Reject-Pattern 's_frameMutex' `
     'The compositor must not contend on the retired full-frame mutex.'
 Reject-Pattern 's_pendingSolvedFrame|requiresSolvedBodyTransforms' `
     'One failed body must not withhold the entire logical overlay frame.'
+Reject-Pattern 'appliedTransformOwner->publicationSequence\s*==\s*frame->publicationSequence' `
+    'Main-thread N+1 publication must not reject the latest final-solve N transform set.'
 Reject-Pattern 'frame\s*=\s*s_frame' `
     'The compositor must not copy the full logical frame.'
 Reject-Pattern 'kBodyAabb16|kAabbDecompressOffset|kAabbDecompressScale' `
