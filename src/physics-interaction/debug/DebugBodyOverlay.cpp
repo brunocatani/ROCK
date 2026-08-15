@@ -712,9 +712,11 @@ namespace rock::debug
 
             for (std::uint32_t index = 0; index < request.count; ++index) {
                 const auto& existing = request.entries[index];
-                if (existing.bodyId == bodyId && existing.frameSource == frameSource) {
-                    return existing.motionIndex == motionIndex &&
-                           existing.shapeAddress == shapeAddress;
+                if (existing.bodyId == bodyId &&
+                    existing.motionIndex == motionIndex &&
+                    existing.shapeAddress == shapeAddress &&
+                    existing.frameSource == frameSource) {
+                    return true;
                 }
             }
             if (request.count >= request.entries.size()) {
@@ -4065,7 +4067,7 @@ namespace rock::debug
                 } else if (!s_solvedCaptureContentFailureReported.exchange(true, std::memory_order_relaxed)) {
                     ROCK_LOG_WARN(
                         Hand,
-                        "Debug body overlay: solved-body request exceeded fixed capacity or contained conflicting identity; requestCount={} capacity={} bodyEntries={} axisEntries={}",
+                        "Debug body overlay: solved-body request exceeded fixed capacity or contained invalid identity; requestCount={} capacity={} bodyEntries={} axisEntries={}",
                         captureRequest->count,
                         captureRequest->entries.size(),
                         next->bodies.size(),
