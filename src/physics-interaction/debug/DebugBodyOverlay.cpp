@@ -595,11 +595,40 @@ namespace rock::debug
             return DirectX::XMMatrixRotationQuaternion(DirectX::XMVectorSet(quaternion[0], quaternion[1], quaternion[2], quaternion[3]));
         }
 
-        DirectX::XMMATRIX motionToWorldMatrix(const float* position, const float* orientation)
+        DirectX::XMMATRIX motionToShapeWorldMatrix(
+            const float* position,
+            const float* orientation,
+            const float* bodyTransform)
         {
             const DirectX::XMMATRIX rotation = quaternionToMatrix(orientation);
+
+            /*
+             * hknp MOTION position is center-of-mass world, not BODY/shape
+             * origin. FO4VR 1.2.72's hard-keyframe helper at 0x14153A6A0
+             * reads the BODY-local center of mass from the W lanes at
+             * +0x0C/+0x1C/+0x2C, rotates it by the target orientation, and
+             * adds it to a BODY-origin target before comparing with MOTION.
+             * Apply the exact inverse here. Drawing MOTION position directly
+             * put every generated collider and body-backed axis tripod at COM,
+             * so rotated/asymmetric shapes visibly wandered away from their
+             * solved Havok frame.
+             */
+            const DirectX::XMVECTOR localCenterOfMass = DirectX::XMVectorSet(
+                bodyTransform[3],
+                bodyTransform[7],
+                bodyTransform[11],
+                0.0f);
+            const DirectX::XMVECTOR centerOfMassOffsetWorld =
+                DirectX::XMVector3TransformNormal(localCenterOfMass, rotation);
+            DirectX::XMFLOAT3 centerOfMassOffset{};
+            DirectX::XMStoreFloat3(
+                &centerOfMassOffset,
+                centerOfMassOffsetWorld);
             const DirectX::XMMATRIX translation =
-                DirectX::XMMatrixTranslation(position[0] * havokToGameScale(), position[1] * havokToGameScale(), position[2] * havokToGameScale());
+                DirectX::XMMatrixTranslation(
+                    (position[0] - centerOfMassOffset.x) * havokToGameScale(),
+                    (position[1] - centerOfMassOffset.y) * havokToGameScale(),
+                    (position[2] - centerOfMassOffset.z) * havokToGameScale());
             return DirectX::XMMatrixMultiply(rotation, translation);
         }
 
@@ -684,7 +713,11 @@ namespace rock::debug
                 const auto motionAddress = motionArray + static_cast<std::uintptr_t>(motionIndex) * kMotionStride;
                 const auto* position = reinterpret_cast<const float*>(motionAddress + kMotionPositionOffset);
                 const auto* orientation = reinterpret_cast<const float*>(motionAddress + kMotionOrientationOffset);
-                out.worldMatrix = motionToWorldMatrix(position, orientation);
+                const auto* bodyTransform = reinterpret_cast<const float*>(bodyAddress);
+                out.worldMatrix = motionToShapeWorldMatrix(
+                    position,
+                    orientation,
+                    bodyTransform);
             } else {
                 const auto* transform = reinterpret_cast<const float*>(bodyAddress);
                 out.worldMatrix = bodyToWorldMatrix(transform);
