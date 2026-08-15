@@ -40,8 +40,8 @@ Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
     'frame\.gameFrameIndex[\s\S]*slot\.droveSourceGameFrameIndex = result\.sourceFrameIndex[\s\S]*sourceGameFrameIndex = slot\.droveSourceGameFrameIndex[\s\S]*solveSequence = solveSequence' `
     'Hand post-solve telemetry must correlate the consumed game source with the solve generation.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'kTraceFramesPerEpisode = 360[\s\S]*rockDebugDrawDynamicWeaponColliders[\s\S]*_colliderClockHasLoggedFrame = false[\s\S]*_colliderClockFramesRemaining[\s\S]*COLLIDER_CLOCK begin' `
-    'Collider clock logging must remain explicitly debug-gated and bounded per episode.'
+    'kTraceFramesPerEpisode = 360[\s\S]*colliderClockDebugActive[\s\S]*rockDebugShowColliders[\s\S]*rockDebugDrawHandColliders[\s\S]*rockDebugDrawHandBoneColliders[\s\S]*rockDebugDrawDynamicHandColliders[\s\S]*rockDebugDrawWeaponColliders[\s\S]*rockDebugDrawDynamicWeaponColliders[\s\S]*_colliderClockHasLoggedFrame = false[\s\S]*_colliderClockFramesRemaining[\s\S]*COLLIDER_CLOCK begin' `
+    'Collider clock logging must cover hand/body and weapon collider overlays while remaining debug-gated and bounded per episode.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'COLLIDER_CLOCK frame[\s\S]*COLLIDER_CLOCK weapon[\s\S]*COLLIDER_CLOCK hand' `
     'The trace must emit correlated game-frame, weapon, and hand records.'
