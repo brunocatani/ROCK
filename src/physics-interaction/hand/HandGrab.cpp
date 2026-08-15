@@ -15,7 +15,6 @@
 #include "physics-interaction/grab/GrabCore.h"
 #include "physics-interaction/grab/SavedGrabOffsetStore.h"
 #include "physics-interaction/grab/GrabFinger.h"
-#include "physics-interaction/grab/GrabFrameDiscontinuityCorrection.h"
 #include "physics-interaction/grab/GrabMassPolicy.h"
 #include "physics-interaction/grab/GrabMotionController.h"
 #include "physics-interaction/grab/GrabNodeInfoMath.h"
@@ -5380,9 +5379,6 @@ namespace rock
         clearGeneratedKeyframedBodyDriveState(_grabAuthorityProxyDriveState);
         _grabAuthorityProxyQueuedSequence = 0;
         _grabAuthorityProxyFlushSequence = 0;
-        _grabFrameCorrectionLastQueuedSequence = 0;
-        _grabFrameCorrectionClampCount = 0;
-        _grabFrameCorrectionFailureCount = 0;
         _grabAuthorityProxyFailedFlushes = 0;
         _grabAuthorityProxyLastFlushDeltaSeconds = 0.0f;
         _grabAuthorityProxyLogCounter = 0;
@@ -6958,12 +6954,8 @@ namespace rock
             return;
         }
 
-        const auto& playerSpace = runtime_state::currentFrame().playerSpace;
-
         _grabAuthorityPendingTarget.proxyWorld = proxyWorldTransform;
         _grabAuthorityPendingTarget.rawHandWorld = rawHandWorldTransform;
-        _grabAuthorityPendingTarget.playerSpaceDeltaGameUnits =
-            playerSpace.deltaGameUnits;
         _grabAuthorityPendingTarget.proxyFrameSource = proxyFrameSource ? proxyFrameSource : "unknown";
         _grabAuthorityPendingTarget.deltaTime = deltaTime;
         _grabAuthorityPendingTarget.forceFadeInTime = forceFadeInTime;
@@ -6975,163 +6967,8 @@ namespace rock
             0.05f,
             1.0f);
         _grabAuthorityPendingTarget.heldBodyColliding = heldBodyColliding;
-        _grabAuthorityPendingTarget.playerSpaceDeltaValid =
-            playerSpace.valid;
         _grabAuthorityPendingTarget.valid = true;
         ++_grabAuthorityProxyQueuedSequence;
-    }
-
-    bool Hand::applyHeldFrameDiscontinuityCorrectionLocked(
-        RE::hknpWorld* world,
-        const GrabAuthorityProxyPendingTarget& pending,
-        const havok_physics_timing::PhysicsTimingSample& timing)
-    {
-        if (!world ||
-            _grabAuthorityProxyQueuedSequence ==
-                _grabFrameCorrectionLastQueuedSequence) {
-            return false;
-        }
-
-        // Consume exactly once per queued game-frame sample, including rejected
-        // samples. A later substep must never apply the same body translation a
-        // second time.
-        _grabFrameCorrectionLastQueuedSequence =
-            _grabAuthorityProxyQueuedSequence;
-        const auto correction = grab_frame_discontinuity::evaluate(
-            grab_frame_discontinuity::Input<RE::NiPoint3>{
-                .playerDeltaGameUnits =
-                    pending.playerSpaceDeltaGameUnits,
-                .sourceDeltaSeconds = pending.deltaTime,
-                .physicsDeltaSeconds = timing.simulatedDeltaSeconds,
-                .authorityScale = pending.authorityForceScale,
-                .playerDeltaValid = pending.playerSpaceDeltaValid,
-                .heldBodyColliding = pending.heldBodyColliding,
-            });
-        if (!correction.apply) {
-            return false;
-        }
-
-        struct BodyMove
-        {
-            std::uint32_t bodyId = INVALID_BODY_ID;
-            std::uint32_t motionIndex = body_frame::kFreeMotionIndex;
-            RE::NiTransform world{};
-        };
-        std::array<BodyMove, MAX_HELD_BODIES + 1> moves{};
-        std::size_t moveCount = 0;
-
-        const auto gatherBody = [&](const std::uint32_t bodyId,
-                                    const bool required) {
-            if (bodyId == INVALID_BODY_ID) {
-                return !required;
-            }
-            const RE::hknpBodyId hknpBodyId{ bodyId };
-            const auto* body = havok_runtime::getBody(world, hknpBodyId);
-            if (!body ||
-                !body_frame::hasUsableMotionIndex(body->motionIndex)) {
-                return !required;
-            }
-            for (std::size_t i = 0; i < moveCount; ++i) {
-                if (moves[i].motionIndex == body->motionIndex) {
-                    return true;
-                }
-            }
-            if (moveCount >= moves.size()) {
-                return false;
-            }
-
-            RE::NiTransform liveWorld{};
-            if (!tryGetGrabAuthorityBodyWorldTransform(
-                    world,
-                    hknpBodyId,
-                    liveWorld)) {
-                return !required;
-            }
-            moves[moveCount++] = BodyMove{
-                .bodyId = bodyId,
-                .motionIndex = body->motionIndex,
-                .world = liveWorld,
-            };
-            return true;
-        };
-
-        if (!gatherBody(_savedObjectState.bodyId.value, true)) {
-            ++_grabFrameCorrectionFailureCount;
-            ROCK_LOG_SAMPLE_WARN(
-                Hand,
-                1000,
-                "{} HELD FRAME CORRECTION skipped: primary body unreadable body={} failures={}",
-                handName(),
-                _savedObjectState.bodyId.value,
-                _grabFrameCorrectionFailureCount);
-            return false;
-        }
-
-        if (_heldDriveDecision.includeConnectedLinearVelocity) {
-            const int heldBodyCount = (std::min)(
-                _heldBodyIdsCount.load(std::memory_order_acquire),
-                MAX_HELD_BODIES);
-            for (int i = 0; i < heldBodyCount; ++i) {
-                if (!gatherBody(_heldBodyIdsSnapshot[i], false)) {
-                    ++_grabFrameCorrectionFailureCount;
-                    ROCK_LOG_SAMPLE_WARN(
-                        Hand,
-                        1000,
-                        "{} HELD FRAME CORRECTION skipped: body-set snapshot exceeded fixed correction capacity failures={}",
-                        handName(),
-                        _grabFrameCorrectionFailureCount);
-                    return false;
-                }
-            }
-        }
-
-        for (std::size_t i = 0; i < moveCount; ++i) {
-            auto correctedWorld = moves[i].world;
-            correctedWorld.translate.x += correction.deltaGameUnits.x;
-            correctedWorld.translate.y += correction.deltaGameUnits.y;
-            correctedWorld.translate.z += correction.deltaGameUnits.z;
-            if (!havok_runtime::setBodyTransformDeferred(
-                    world,
-                    moves[i].bodyId,
-                    correctedWorld)) {
-                ++_grabFrameCorrectionFailureCount;
-                ROCK_LOG_SAMPLE_WARN(
-                    Hand,
-                    1000,
-                    "{} HELD FRAME CORRECTION write failed body={} motion={} index={}/{} failures={}",
-                    handName(),
-                    moves[i].bodyId,
-                    moves[i].motionIndex,
-                    i + 1,
-                    moveCount,
-                    _grabFrameCorrectionFailureCount);
-                return false;
-            }
-        }
-
-        if (correction.clamped) {
-            ++_grabFrameCorrectionClampCount;
-        }
-        ROCK_LOG_SAMPLE_DEBUG(
-            Hand,
-            500,
-            "{} HELD FRAME CORRECTION: applied={:.3f}gu delta=({:.3f},{:.3f},{:.3f}) playerDelta=({:.3f},{:.3f},{:.3f}) sourceDt={:.6f} physicsDt={:.6f} bodies={} authority={:.2f} clamped={} clamps={} reason={}",
-            handName(),
-            correction.magnitudeGameUnits,
-            correction.deltaGameUnits.x,
-            correction.deltaGameUnits.y,
-            correction.deltaGameUnits.z,
-            pending.playerSpaceDeltaGameUnits.x,
-            pending.playerSpaceDeltaGameUnits.y,
-            pending.playerSpaceDeltaGameUnits.z,
-            pending.deltaTime,
-            timing.simulatedDeltaSeconds,
-            moveCount,
-            pending.authorityForceScale,
-            correction.clamped ? "yes" : "no",
-            _grabFrameCorrectionClampCount,
-            correction.reason);
-        return true;
     }
 
     bool Hand::promoteHeldObjectToConstraintDrive(RE::bhkWorld* bhkWorld,
@@ -12981,10 +12818,6 @@ namespace rock
             // sample. Rotation deliberately stays on the sampled path.
             pending.proxyWorld.translate = _grabAuthoritySourceClock.evaluate(timing.substepIndex, timing.substepCount, resampleAction);
             resampleRebaseCount = _grabAuthoritySourceClock.rebaseCount;
-            (void)applyHeldFrameDiscontinuityCorrectionLocked(
-                world,
-                pending,
-                timing);
             float linearVelocityHavok[4]{};
             float angularVelocityHavok[4]{};
             float nativeLinearVelocityIgnored[4]{};

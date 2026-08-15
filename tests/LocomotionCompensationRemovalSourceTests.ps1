@@ -25,25 +25,6 @@ function Reject-Text {
     }
 }
 
-function Require-Text {
-    param(
-        [string]$RelativePath,
-        [string]$Pattern,
-        [string]$Message
-    )
-
-    $path = Join-Path $Root $RelativePath
-    if (-not (Test-Path -LiteralPath $path)) {
-        $failures.Add("$RelativePath`: $Message")
-        return
-    }
-
-    $text = Get-Content -Raw -LiteralPath $path
-    if ($text -notmatch $Pattern) {
-        $failures.Add("$RelativePath`: $Message")
-    }
-}
-
 function Reject-File {
     param(
         [string]$RelativePath,
@@ -56,10 +37,9 @@ function Reject-File {
     }
 }
 
-# The failed velocity/feed-forward/player-warp systems were removed, not
-# disabled. The surviving clock contracts are the exact proxy phase lock and a
-# bounded, once-per-source-sample BODY discontinuity correction. None of the
-# removed systems may return as dormant alternative behavior paths.
+# The failed stick-locomotion compensation systems were removed, not disabled.
+# The grab-authority source-clock resampler is the one clock-boundary fix; none
+# of these may return as dormant alternative behavior paths.
 
 Reject-File 'src/physics-interaction/grab/GrabLocomotionAuthorityBridge.h' `
     'The locomotion-authority bridge was removed; do not reintroduce it.'
@@ -83,7 +63,6 @@ $sourceFiles = @(
     'src/physics-interaction/hand/Hand.h',
     'src/physics-interaction/hand/HandGrab.cpp',
     'src/physics-interaction/grab/GrabHeldObject.h',
-    'src/physics-interaction/grab/GrabFrameDiscontinuityCorrection.h',
     'src/physics-interaction/grab/GrabAuthoritySourceClockResampler.h',
     'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp',
     'src/physics-interaction/native/CharacterControllerRuntime.h',
@@ -121,19 +100,6 @@ foreach ($ini in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
 
 Reject-Text 'CMakeLists.txt' 'GrabLocomotionJagPolicyTests' `
     'The removed jag policy target must not remain in the normal test graph.'
-
-Require-Text 'src/physics-interaction/grab/GrabFrameDiscontinuityCorrection.h' `
-    '1\.0f\s*-\s*input\.physicsDeltaSeconds\s*/\s*input\.sourceDeltaSeconds[\s\S]*kMaximumCorrectionGameUnits' `
-    'The replacement must remain a bounded source-delta versus physics-delta position correction.'
-Require-Text 'src/physics-interaction/hand/Hand.h' `
-    'GrabAuthorityProxyPendingTarget[\s\S]*playerSpaceDeltaGameUnits[\s\S]*playerSpaceDeltaValid[\s\S]*_grabFrameCorrectionLastQueuedSequence' `
-    'The queued game-frame player delta and once-per-sequence correction ownership must remain explicit.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
-    '_grabAuthorityProxyQueuedSequence\s*==[\s\S]*_grabFrameCorrectionLastQueuedSequence[\s\S]*_grabFrameCorrectionLastQueuedSequence\s*=[\s\S]*grab_frame_discontinuity::evaluate[\s\S]*setBodyTransformDeferred' `
-    'Held-body correction must consume each queued source sample once and write only a bounded live BODY position delta.'
-Reject-Text 'src/physics-interaction/grab/GrabFrameDiscontinuityCorrection.h' `
-    'bGrabSmoothVelocityDrive|fGrabSmoothVelocityCorrectorGain|applyLinearVelocityDelta|setVelocity' `
-    'The frame-discontinuity correction must never restore the removed velocity smoother or write velocity.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'LocomotionCompensationRemovalSourceTests failed:' -ForegroundColor Red
