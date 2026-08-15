@@ -317,6 +317,23 @@ namespace rock
                     requestedTarget;
             return limited;
         }
+
+        inline bool shouldLimitGeneratedDriveTarget(
+            bool dynamicVelocity,
+            bool immediatePlacement,
+            bool hasLiveBodyTransform)
+        {
+            /*
+             * A native keyframed body must receive the exact requested target.
+             * FO4VR's collision-object drive computes the required velocity and
+             * enforces the motion properties itself. Limiting the destination
+             * first makes the body chase an artificial intermediate pose.
+             *
+             * Dynamic velocity drive bypasses that native keyframe guard and
+             * therefore retains ROCK's explicit velocity-limited target.
+             */
+            return dynamicVelocity && !immediatePlacement && hasLiveBodyTransform;
+        }
     }
 
     /*
@@ -557,7 +574,7 @@ namespace rock
         const havok_physics_timing::PhysicsTimingSample& timing,
         const char* ownerName,
         std::uint32_t bodyIndex,
-        float maxLinearVelocityHavok = 0.0f,
-        float maxAngularVelocityRadians = 0.0f,
+        float maxDynamicLinearVelocityHavok = 0.0f,
+        float maxDynamicAngularVelocityRadians = 0.0f,
         const GeneratedBodyDriveMode& mode = {});
 }

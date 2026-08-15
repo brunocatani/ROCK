@@ -12851,9 +12851,7 @@ namespace rock
                     _grabAuthorityProxyDriveState,
                     timing,
                     "grab-authority-proxy",
-                    0,
-                    g_rockConfig.rockHandBoneColliderMaxLinearVelocity,
-                    g_rockConfig.rockHandBoneColliderMaxAngularVelocity);
+                    0);
                 proxyDriveOk = proxyDriveResult.driven;
             }
             if (proxyDriveOk) {

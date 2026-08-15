@@ -1070,9 +1070,7 @@ namespace rock
             _authorityDriveState,
             timing,
             "DynamicWeaponGripAuthority",
-            0,
-            g_rockConfig.rockWeaponCollisionDynamicMaxLinearVelocityHavok,
-            g_rockConfig.rockWeaponCollisionDynamicMaxAngularVelocityRadians);
+            0);
         if (driveResult.shouldRequestRebuild()) {
             _rebuildRequestedAtomic.store(true, std::memory_order_release);
             _droveThisSubstep = false;

@@ -488,8 +488,8 @@ namespace rock
         const havok_physics_timing::PhysicsTimingSample& timing,
         const char* ownerName,
         std::uint32_t bodyIndex,
-        float maxLinearVelocityHavok,
-        float maxAngularVelocityRadians,
+        float maxDynamicLinearVelocityHavok,
+        float maxDynamicAngularVelocityRadians,
         const GeneratedBodyDriveMode& mode)
     {
         GeneratedKeyframedBodyDriveResult result{};
@@ -567,14 +567,17 @@ namespace rock
         result.angularLimitExceeded = false;
         result.targetLimitAlpha = 1.0f;
 
-        if (!immediatePlacement && result.hasLiveBodyTransform) {
+        if (generated_keyframed_body_drive_math::shouldLimitGeneratedDriveTarget(
+                mode.dynamicVelocity,
+                immediatePlacement,
+                result.hasLiveBodyTransform)) {
             const auto limitedTarget = generated_keyframed_body_drive_math::limitGeneratedDriveTarget(
                 liveTransform,
                 requestedTarget,
                 result.driveDeltaSeconds,
                 gameToHavokScale(),
-                maxLinearVelocityHavok,
-                maxAngularVelocityRadians);
+                maxDynamicLinearVelocityHavok,
+                maxDynamicAngularVelocityRadians);
             result.linearLimitExceeded = limitedTarget.limit.linearLimitExceeded;
             result.angularLimitExceeded = limitedTarget.limit.angularLimitExceeded;
             result.targetLimitAlpha = limitedTarget.limit.alpha;

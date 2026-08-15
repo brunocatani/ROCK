@@ -78,6 +78,19 @@ int main()
     constexpr float gameToHavokScale = 0.1f;
     constexpr float driveDeltaSeconds = 0.1f;
 
+    ok &= expectFalse(
+        "keyframed drive bypasses target limiter",
+        shouldLimitGeneratedDriveTarget(false, false, true));
+    ok &= expectTrue(
+        "dynamic drive retains target limiter",
+        shouldLimitGeneratedDriveTarget(true, false, true));
+    ok &= expectFalse(
+        "immediate dynamic placement bypasses target limiter",
+        shouldLimitGeneratedDriveTarget(true, true, true));
+    ok &= expectFalse(
+        "missing live dynamic body bypasses target limiter",
+        shouldLimitGeneratedDriveTarget(true, false, false));
+
     {
         RE::NiTransform from = identityTransform();
         RE::NiTransform requested = identityTransform();

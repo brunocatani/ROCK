@@ -193,8 +193,6 @@ namespace rock
         rockWeaponCollisionDynamicBoxEnabled = true;
         rockWeaponCollisionDynamicBoxPaddingGameUnits = 0.5f;
         rockWeaponCollisionDynamicInverseInertiaMultiplier = kDefaultWeaponCollisionDynamicInverseInertiaMultiplier;
-        rockWeaponCollisionDynamicMaxLinearVelocityHavok = 15.0f;
-        rockWeaponCollisionDynamicMaxAngularVelocityRadians = 35.0f;
         rockWeaponCollisionDynamicDivergenceTeleportGameUnits = 80.0f;
         rockWeaponCollisionDynamicDivergenceTeleportDwellSeconds = 0.3f;
         rockWeaponCollisionDynamicRenderMinTranslationGameUnits = 0.05f;
@@ -205,8 +203,6 @@ namespace rock
         rockWeaponCollisionPointDedupGrid = 0.002f;
         rockWeaponCollisionSupportFitTargetPoints = kDefaultWeaponCollisionSupportFitTargetPoints;
         rockWeaponCollisionSupportFitMaxErrorGameUnits = kDefaultWeaponCollisionSupportFitMaxErrorGameUnits;
-        rockWeaponCollisionMaxLinearVelocity = 50.0f;
-        rockWeaponCollisionMaxAngularVelocity = 100.0f;
         rockWeaponSizeClassPistolMaxWeight = 6.0f;
         rockWeaponSizeClassRifleMaxWeight = 20.0f;
         rockWeaponInteractionTouchRadius = 2.0f;
@@ -400,9 +396,6 @@ namespace rock
         rockHandPalmColliderDimensionScaleOverrides = "";
         rockHandBoneCollidersRequirePalmAnchor = true;
         rockHandBoneCollidersRequireAllFingerBones = true;
-        rockHandBoneColliderMaxLinearVelocity = 200.0f;
-        rockHandBoneColliderMaxAngularVelocity = 500.0f;
-
         rockNearDetectionRange = 25.0f;
         rockFarDetectionRange = 350.0f;
         rockNearCastRadiusGameUnits = kDefaultNearCastRadiusGameUnits;
@@ -882,20 +875,6 @@ namespace rock
             kDefaultWeaponCollisionDynamicInverseInertiaMultiplier,
             0.25f,
             4.0f);
-        rockWeaponCollisionDynamicMaxLinearVelocityHavok = readClampedFloat(ini,
-            SECTION,
-            "fWeaponCollisionDynamicMaxLinearVelocityHavok",
-            rockWeaponCollisionDynamicMaxLinearVelocityHavok,
-            15.0f,
-            0.0f,
-            200.0f);
-        rockWeaponCollisionDynamicMaxAngularVelocityRadians = readClampedFloat(ini,
-            SECTION,
-            "fWeaponCollisionDynamicMaxAngularVelocityRadians",
-            rockWeaponCollisionDynamicMaxAngularVelocityRadians,
-            35.0f,
-            0.0f,
-            500.0f);
         rockWeaponCollisionDynamicDivergenceTeleportGameUnits = readClampedFloat(ini,
             SECTION,
             "fWeaponCollisionDynamicDivergenceTeleportGameUnits",
@@ -964,10 +943,6 @@ namespace rock
                 kDefaultWeaponCollisionSupportFitMaxErrorGameUnits);
             rockWeaponCollisionSupportFitMaxErrorGameUnits = kDefaultWeaponCollisionSupportFitMaxErrorGameUnits;
         }
-        rockWeaponCollisionMaxLinearVelocity =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponCollisionMaxLinearVelocity", rockWeaponCollisionMaxLinearVelocity));
-        rockWeaponCollisionMaxAngularVelocity =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponCollisionMaxAngularVelocity", rockWeaponCollisionMaxAngularVelocity));
         rockWeaponSizeClassPistolMaxWeight = readClampedFloat(ini,
             SECTION,
             "fWeaponSizeClassPistolMaxWeight",
@@ -1661,17 +1636,6 @@ namespace rock
             ini.GetValue(SECTION, "sHandPalmColliderDimensionScaleOverrides", rockHandPalmColliderDimensionScaleOverrides.c_str());
         rockHandBoneCollidersRequirePalmAnchor = ini.GetBoolValue(SECTION, "bHandBoneCollidersRequirePalmAnchor", rockHandBoneCollidersRequirePalmAnchor);
         rockHandBoneCollidersRequireAllFingerBones = ini.GetBoolValue(SECTION, "bHandBoneCollidersRequireAllFingerBones", rockHandBoneCollidersRequireAllFingerBones);
-        rockHandBoneColliderMaxLinearVelocity =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fHandBoneColliderMaxLinearVelocity", rockHandBoneColliderMaxLinearVelocity));
-        rockHandBoneColliderMaxAngularVelocity =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fHandBoneColliderMaxAngularVelocity", rockHandBoneColliderMaxAngularVelocity));
-        if (!std::isfinite(rockHandBoneColliderMaxLinearVelocity) || rockHandBoneColliderMaxLinearVelocity <= 0.0f) {
-            rockHandBoneColliderMaxLinearVelocity = 200.0f;
-        }
-        if (!std::isfinite(rockHandBoneColliderMaxAngularVelocity) || rockHandBoneColliderMaxAngularVelocity <= 0.0f) {
-            rockHandBoneColliderMaxAngularVelocity = 500.0f;
-        }
-
         rockNearDetectionRange = static_cast<float>(ini.GetDoubleValue(SECTION, "fNearDetectionRange", rockNearDetectionRange));
         rockFarDetectionRange = static_cast<float>(ini.GetDoubleValue(SECTION, "fFarDetectionRange", rockFarDetectionRange));
         rockNearCastRadiusGameUnits = readClampedFloat(ini,

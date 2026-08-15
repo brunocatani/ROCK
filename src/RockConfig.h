@@ -121,8 +121,6 @@ namespace rock
         bool rockWeaponCollisionDynamicBoxEnabled = true;
         float rockWeaponCollisionDynamicBoxPaddingGameUnits = 0.5f;
         float rockWeaponCollisionDynamicInverseInertiaMultiplier = 1.2f;
-        float rockWeaponCollisionDynamicMaxLinearVelocityHavok = 15.0f;
-        float rockWeaponCollisionDynamicMaxAngularVelocityRadians = 35.0f;
         float rockWeaponCollisionDynamicDivergenceTeleportGameUnits = 80.0f;
         float rockWeaponCollisionDynamicDivergenceTeleportDwellSeconds = 0.3f;
         float rockWeaponCollisionDynamicRenderMinTranslationGameUnits = 0.05f;
@@ -133,8 +131,6 @@ namespace rock
         float rockWeaponCollisionPointDedupGrid = 0.002f;
         int rockWeaponCollisionSupportFitTargetPoints = 96;
         float rockWeaponCollisionSupportFitMaxErrorGameUnits = 0.5f;
-        float rockWeaponCollisionMaxLinearVelocity = 50.0f;
-        float rockWeaponCollisionMaxAngularVelocity = 100.0f;
         float rockWeaponSizeClassPistolMaxWeight = 6.0f;
         float rockWeaponSizeClassRifleMaxWeight = 20.0f;
         float rockWeaponInteractionTouchRadius = 2.0f;
@@ -346,9 +342,6 @@ namespace rock
         std::string rockHandPalmColliderDimensionScaleOverrides = "";
         bool rockHandBoneCollidersRequirePalmAnchor = true;
         bool rockHandBoneCollidersRequireAllFingerBones = true;
-        float rockHandBoneColliderMaxLinearVelocity = 200.0f;
-        float rockHandBoneColliderMaxAngularVelocity = 500.0f;
-
         float rockNearDetectionRange = 25.0f;
         float rockFarDetectionRange = 350.0f;
         float rockNearCastRadiusGameUnits = 3.5f;

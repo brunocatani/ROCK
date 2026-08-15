@@ -24,6 +24,8 @@ function Require-Text {
 Require-Text 'src/physics-interaction/native/GeneratedKeyframedBodyDrive.h' 'bodyCollisionObjectMismatch' 'Generated body drive results must expose stale body/collision-object ownership failures.'
 Require-Text 'src/physics-interaction/native/GeneratedKeyframedBodyDrive.h' 'shouldRequestRebuild\(\)[\s\S]*bodyCollisionObjectMismatch' 'Generated collider owners must rebuild when a live body no longer points back to the wrapper collision object.'
 Require-Text 'src/physics-interaction/native/GeneratedKeyframedBodyDrive.cpp' 'liveBody = world \? havok_runtime::getBody\(world, body\.getBodyId\(\)\) : nullptr[\s\S]*getCollisionObjectFromBody\(liveBody\)[\s\S]*bodyCollisionObjectMismatch = true[\s\S]*return result;[\s\S]*driveToKeyFrame' 'Generated body drive must fail closed on body/collision-object mismatch before calling the native keyframe drive.'
+Require-Text 'src/physics-interaction/native/GeneratedKeyframedBodyDrive.cpp' 'shouldLimitGeneratedDriveTarget\([\s\S]*mode\.dynamicVelocity,[\s\S]*immediatePlacement,[\s\S]*result\.hasLiveBodyTransform\)[\s\S]*limitGeneratedDriveTarget' 'Only dynamic velocity bodies may spatially limit requested targets before the native drive.'
+Require-Text 'src/physics-interaction/native/GeneratedKeyframedBodyDrive.h' 'return dynamicVelocity && !immediatePlacement && hasLiveBodyTransform;' 'Keyframed and immediate-placement bodies must bypass ROCK target limiting.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'ownerMismatch=\{\}' 'Proxy grab release logs must distinguish collision-object ownership mismatches from missing bodies.'
 
 if ($failures.Count -gt 0) {

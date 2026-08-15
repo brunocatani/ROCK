@@ -1031,9 +1031,7 @@ namespace rock
                 _palmAnchorDriveState,
                 timing,
                 "hand-palm-anchor",
-                0,
-                g_rockConfig.rockHandBoneColliderMaxLinearVelocity,
-                g_rockConfig.rockHandBoneColliderMaxAngularVelocity),
+                0),
             "hand-palm-anchor",
             0);
 
@@ -1049,9 +1047,7 @@ namespace rock
                     instance.driveState,
                     timing,
                     "hand-bone-collider",
-                    bodyIndex,
-                    g_rockConfig.rockHandBoneColliderMaxLinearVelocity,
-                    g_rockConfig.rockHandBoneColliderMaxAngularVelocity),
+                    bodyIndex),
                 "hand-bone-collider",
                 bodyIndex);
         }
