@@ -104,6 +104,12 @@ namespace rock
         // animation authority can consume the frame-local gunstock correction.
         void finalizeGunstockPresentationAfterNativeAnimation();
 
+        // Called after the provider Complete phase. This is the last
+        // ROCK-owned game-thread point before returning to the native loop, so
+        // immutable debug geometry is frozen only after all frame-local body
+        // and presentation mutations have committed.
+        void publishDebugOverlayAfterFrameCallbacks();
+
         [[nodiscard]] bool tryGetManualScopeDirectTransitionTarget(
             std::uint64_t& outWeaponGenerationKey,
             std::uint32_t& outNativeOverlayIndex) const;
@@ -479,6 +485,13 @@ namespace rock
 
         mutable std::mutex _ownedObjectsMutex;
         std::unordered_map<std::uint32_t, std::uint32_t> _ownedObjects;
+
+        struct PendingDebugOverlayFrame
+        {
+            PhysicsFrameContext context{};
+            bool valid{ false };
+        };
+        PendingDebugOverlayFrame _pendingDebugOverlayFrame{};
 
         RE::bhkWorld* _cachedBhkWorld = nullptr;
         RE::hknpWorld* _cachedHknpWorld = nullptr;

@@ -2470,6 +2470,10 @@ namespace rock
         _equippedWeaponSheathCommittedThisFrame = {};
         _equippedWeaponUnsheathCommittedThisFrame = {};
         const auto& runtime = runtime_state::currentFrame();
+        // A publication is valid only when this invocation reaches the single
+        // completed-frame handoff below. Early returns must never let the main
+        // loop freeze a previous frame's Havok state again.
+        _pendingDebugOverlayFrame = {};
         const auto retireDynamicWeaponForInterruptedFrame = [this]() {
             if (!_initialized.load(std::memory_order_acquire)) {
                 return;
@@ -4270,8 +4274,6 @@ namespace rock
         }
         updateFeedbackHaptics(frame.deltaSeconds);
 
-        publishDebugBodyOverlay(frame);
-
         resolveContacts(frame);
 
         bool wasTouchingR = _rightHand.isTouching();
@@ -4312,6 +4314,42 @@ namespace rock
         // Publish callback ownership only after every main-thread collider
         // mutation and target update for this frame has committed.
         _generatedBodyStepDrive.registerForNextStep(bhk, hknp);
+
+        // Defer immutable overlay construction until the outer frame hook has
+        // also completed native-animation finalization and every provider
+        // animation phase. The context is consumed once in that same hook.
+        _pendingDebugOverlayFrame = PendingDebugOverlayFrame{
+            .context = frame,
+            .valid = true,
+        };
+    }
+
+    void PhysicsInteraction::publishDebugOverlayAfterFrameCallbacks()
+    {
+        if (!_pendingDebugOverlayFrame.valid) {
+            return;
+        }
+
+        const auto frame = _pendingDebugOverlayFrame.context;
+        _pendingDebugOverlayFrame = {};
+
+        if (!_initialized.load(std::memory_order_acquire) ||
+            !frame.worldReady || !frame.bhkWorld || !frame.hknpWorld ||
+            frame.gameFrameIndex != runtime_state::currentFrame().frameIndex ||
+            frame.bhkWorld != _cachedBhkWorld ||
+            frame.hknpWorld != _cachedHknpWorld) {
+            debug::ClearFrame();
+            return;
+        }
+
+        auto* currentBhk = getPlayerBhkWorld();
+        auto* currentHknp = currentBhk ? getHknpWorld(currentBhk) : nullptr;
+        if (currentBhk != frame.bhkWorld || currentHknp != frame.hknpWorld) {
+            debug::ClearFrame();
+            return;
+        }
+
+        publishDebugBodyOverlay(frame);
     }
 
     void PhysicsInteraction::updateAuthoredPrimaryFiringGrip()
@@ -6142,6 +6180,7 @@ namespace rock
 
     void PhysicsInteraction::shutdown(::rock::provider::RockProviderLifecycleReason reason)
     {
+        _pendingDebugOverlayFrame = {};
         weapon_transition_animation_acceleration::cancel("physics-shutdown");
         debug::ShutdownShapePipeline();
         equipped_weapon_handling_runtime::reset();
