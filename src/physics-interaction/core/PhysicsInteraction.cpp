@@ -7482,6 +7482,11 @@ namespace rock
         _weaponCollision.flushPendingPhysicsDrive(world, timing);
         _dynamicWeaponCollision.flushPendingPhysicsDrive(world, timing);
         _dynamicHandCollision.flushPendingPhysicsDrive(world, timing);
+        // The game-thread overlay snapshot deliberately freezes shapes and
+        // diagnostics without crossing live Havok state into OpenVR. Refresh
+        // only generated-body matrices here, after this substep has consumed
+        // the current skeleton/weapon targets and before collision detection.
+        debug::CaptureAppliedGeneratedBodyTransformsFromPhysicsStep(world);
         const auto gameFrameIndex = _palmClockGameFrameIndex.load(std::memory_order_acquire);
         const auto gameDeltaSeconds = _palmClockGameDeltaSeconds.load(std::memory_order_acquire);
         logPalmClockSampleForHand("physics-after-collider-drive", _rightHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);

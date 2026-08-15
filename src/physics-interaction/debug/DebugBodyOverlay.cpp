@@ -23,6 +23,7 @@
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/debug/DebugOverlayFrameAdmission.h"
 #include "physics-interaction/debug/DebugOverlayGpuTimer.h"
+#include "physics-interaction/debug/DebugOverlayLatestSnapshot.h"
 #include "physics-interaction/debug/DebugOverlayLineBatch.h"
 #include "physics-interaction/debug/DebugOverlayPolicy.h"
 #include "physics-interaction/debug/DebugOverlayRuntimeSettings.h"
@@ -202,6 +203,7 @@ namespace rock::debug
             std::vector<CapturedShapeIdentity> capturedShapeIdentities;
             OverlayRenderSettings settings{};
             std::uintptr_t worldIdentity{ 0 };
+            std::uint64_t publicationSequence{ 0 };
             std::uint32_t bodyExtractFailures{ 0 };
             std::uint32_t shapeCaptures{ 0 };
             std::uint32_t shapeCaptureDeferrals{ 0 };
@@ -212,6 +214,28 @@ namespace rock::debug
             bool drawSkeleton{ false };
             bool drawColoredLines{ false };
             bool drawText{ false };
+        };
+
+        struct AppliedGeneratedBodyTransformEntry
+        {
+            DirectX::XMMATRIX worldMatrix = DirectX::XMMatrixIdentity();
+            std::uint32_t bodyId{ kInvalidBodyId };
+        };
+
+        struct GeneratedBodyCaptureRequestFrame
+        {
+            std::array<std::uint32_t, kBodyInstanceCapacity> bodyIds{};
+            std::uintptr_t worldIdentity{ 0 };
+            std::uint64_t publicationSequence{ 0 };
+            std::uint32_t count{ 0 };
+        };
+
+        struct AppliedGeneratedBodyTransformFrame
+        {
+            std::array<AppliedGeneratedBodyTransformEntry, kBodyInstanceCapacity> entries{};
+            std::uintptr_t worldIdentity{ 0 };
+            std::uint64_t publicationSequence{ 0 };
+            std::uint32_t count{ 0 };
         };
 
         enum class BodyOverlayFrameSource : std::uint8_t
@@ -324,6 +348,9 @@ namespace rock::debug
         constexpr std::size_t kPublishedFramePoolCapacity = 4;
         static debug_overlay_snapshot::SnapshotPool<PublishedOverlayFrame, kPublishedFramePoolCapacity> s_framePool{};
         static std::atomic<std::shared_ptr<const PublishedOverlayFrame>> s_publishedFrame{};
+        static debug_overlay_snapshot::LatestSnapshot<GeneratedBodyCaptureRequestFrame, kPublishedFramePoolCapacity> s_generatedBodyCaptureRequests{};
+        static debug_overlay_snapshot::LatestSnapshot<AppliedGeneratedBodyTransformFrame, kPublishedFramePoolCapacity> s_appliedTransformFrames{};
+        static std::atomic<std::uint64_t> s_nextPublicationSequence{ 0 };
         static std::atomic<bool> s_enabled{ false };
         static std::atomic<bool> s_initialized{ false };
         static std::atomic<bool> s_submitHookInstalled{ false };
@@ -985,6 +1012,7 @@ namespace rock::debug
             frame.capturedShapeIdentities.clear();
             frame.settings = {};
             frame.worldIdentity = 0;
+            frame.publicationSequence = 0;
             frame.bodyExtractFailures = 0;
             frame.shapeCaptures = 0;
             frame.shapeCaptureDeferrals = 0;
@@ -2985,15 +3013,42 @@ namespace rock::debug
             }
         }
 
-        void collectBodyAxisEntry(debug_overlay_line_batch::LineBatch& batch, const PublishedAxisEntry& published)
+        const DirectX::XMMATRIX* findAppliedGeneratedBodyMatrix(
+            const AppliedGeneratedBodyTransformFrame* appliedTransforms,
+            std::uint32_t bodyId) noexcept
+        {
+            if (!appliedTransforms || bodyId == kInvalidBodyId) {
+                return nullptr;
+            }
+
+            const auto count = (std::min)(
+                appliedTransforms->count,
+                static_cast<std::uint32_t>(appliedTransforms->entries.size()));
+            for (std::uint32_t index = 0; index < count; ++index) {
+                const auto& applied = appliedTransforms->entries[index];
+                if (applied.bodyId == bodyId) {
+                    return &applied.worldMatrix;
+                }
+            }
+            return nullptr;
+        }
+
+        void collectBodyAxisEntry(
+            debug_overlay_line_batch::LineBatch& batch,
+            const PublishedAxisEntry& published,
+            const AppliedGeneratedBodyTransformFrame* appliedTransforms)
         {
             const auto& entry = published.entry;
+            const auto* appliedMatrix = findAppliedGeneratedBodyMatrix(
+                appliedTransforms,
+                entry.bodyId.value);
+            const auto& worldMatrix = appliedMatrix ? *appliedMatrix : published.bodyWorldMatrix;
 
             const float length = axisLengthForRole(entry.role);
-            const Vertex origin = transformPoint(published.bodyWorldMatrix, 0.0f, 0.0f, 0.0f);
-            appendAxisTripod(batch, origin, transformPoint(published.bodyWorldMatrix, length, 0.0f, 0.0f),
-                transformPoint(published.bodyWorldMatrix, 0.0f, length, 0.0f),
-                transformPoint(published.bodyWorldMatrix, 0.0f, 0.0f, length), entry.role);
+            const Vertex origin = transformPoint(worldMatrix, 0.0f, 0.0f, 0.0f);
+            appendAxisTripod(batch, origin, transformPoint(worldMatrix, length, 0.0f, 0.0f),
+                transformPoint(worldMatrix, 0.0f, length, 0.0f),
+                transformPoint(worldMatrix, 0.0f, 0.0f, length), entry.role);
 
             if (entry.drawTranslationLine) {
                 const float color[4] = { 1.0f, 0.86f, 0.05f, axisAlphaForRole(entry.role) };
@@ -3001,7 +3056,10 @@ namespace rock::debug
             }
         }
 
-        void collectAxisOverlays(debug_overlay_line_batch::LineBatch& batch, const PublishedOverlayFrame& frame)
+        void collectAxisOverlays(
+            debug_overlay_line_batch::LineBatch& batch,
+            const PublishedOverlayFrame& frame,
+            const AppliedGeneratedBodyTransformFrame* appliedTransforms)
         {
             if (!frame.drawAxes || frame.axes.empty()) {
                 return;
@@ -3009,7 +3067,7 @@ namespace rock::debug
 
             for (const auto& published : frame.axes) {
                 if (published.entry.source == AxisOverlaySource::Body) {
-                    collectBodyAxisEntry(batch, published);
+                    collectBodyAxisEntry(batch, published, appliedTransforms);
                 } else {
                     collectTransformAxisEntry(batch, published.entry);
                 }
@@ -3399,7 +3457,11 @@ namespace rock::debug
             ++stats.textDrawCalls;
         }
 
-        void drawBodyBatch(ID3D11DeviceContext* context, const PublishedOverlayFrame& frame, OverlayRuntimeStats& stats)
+        void drawBodyBatch(
+            ID3D11DeviceContext* context,
+            const PublishedOverlayFrame& frame,
+            const AppliedGeneratedBodyTransformFrame* appliedTransforms,
+            OverlayRuntimeStats& stats)
         {
             if (!context || !s_d3d.bodyInstanceVB || !s_d3d.bodyInputLayout || !s_d3d.bodyVertexShader || !s_d3d.scratch) {
                 return;
@@ -3412,7 +3474,10 @@ namespace rock::debug
                 const auto cached = shapePipeline().lookup(entry.shapeKey);
                 std::shared_ptr<const GpuShape> shapeOwner;
                 const GpuShape* gpuShape = nullptr;
-                DirectX::XMMATRIX model = entry.worldMatrix;
+                const auto* appliedMatrix = findAppliedGeneratedBodyMatrix(
+                    appliedTransforms,
+                    entry.bodyId);
+                DirectX::XMMATRIX model = appliedMatrix ? *appliedMatrix : entry.worldMatrix;
                 if (cached.state == debug_overlay_shape::CacheState::Ready && cached.shape && cached.shape->indexCount > 0) {
                     shapeOwner = cached.shape;
                     gpuShape = shapeOwner.get();
@@ -3511,6 +3576,15 @@ namespace rock::debug
             if (!frame) {
                 return;
             }
+            const auto appliedTransformLease =
+                s_appliedTransformFrames.tryAcquire();
+            const auto* appliedTransformOwner = appliedTransformLease.get();
+            const AppliedGeneratedBodyTransformFrame* appliedTransforms = nullptr;
+            if (appliedTransformOwner &&
+                appliedTransformOwner->publicationSequence == frame->publicationSequence &&
+                appliedTransformOwner->worldIdentity == frame->worldIdentity) {
+                appliedTransforms = appliedTransformOwner;
+            }
 
             const bool hasBodiesToDraw = (frame->drawRockBodies || frame->drawTargetBodies) && !frame->bodies.empty();
             const bool hasAxesToDraw = frame->drawAxes && !frame->axes.empty();
@@ -3563,7 +3637,7 @@ namespace rock::debug
             {
                 [[maybe_unused]] auto gpuTimerScope = s_d3d.gpuTimer.begin(context);
                 if (hasBodiesToDraw) {
-                    drawBodyBatch(context, *frame, stats);
+                    drawBodyBatch(context, *frame, appliedTransforms, stats);
                 }
 
                 auto& lineBatch = s_d3d.scratch->lines;
@@ -3572,7 +3646,7 @@ namespace rock::debug
                 // provider API. Admit them first so an enabled addon view is
                 // not silently starved by unrelated high-cardinality probes.
                 collectColoredLineOverlays(lineBatch, *frame);
-                collectAxisOverlays(lineBatch, *frame);
+                collectAxisOverlays(lineBatch, *frame, appliedTransforms);
                 collectMarkerOverlays(lineBatch, *frame);
                 collectSkeletonOverlays(lineBatch, *frame);
                 drawLineBatch(context, lineBatch, stats);
@@ -3799,16 +3873,110 @@ namespace rock::debug
         }
 
         const bool enabled = buildPublishedFrame(frame, *next);
+        auto publicationSequence =
+            s_nextPublicationSequence.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (publicationSequence == 0) {
+            publicationSequence =
+                s_nextPublicationSequence.fetch_add(1, std::memory_order_relaxed) + 1;
+        }
+        next->publicationSequence = publicationSequence;
+
+        auto captureRequest = s_generatedBodyCaptureRequests.tryBeginWrite();
+        if (captureRequest) {
+            captureRequest->count = 0;
+            captureRequest->worldIdentity = next->worldIdentity;
+            captureRequest->publicationSequence = next->publicationSequence;
+            if (next->drawRockBodies) {
+                for (const auto& published : next->bodies) {
+                    if (!isRockBodyRole(published.role) ||
+                        published.bodyId == kInvalidBodyId ||
+                        captureRequest->count >= captureRequest->bodyIds.size()) {
+                        continue;
+                    }
+
+                    bool alreadyRequested = false;
+                    for (std::uint32_t index = 0; index < captureRequest->count; ++index) {
+                        if (captureRequest->bodyIds[index] == published.bodyId) {
+                            alreadyRequested = true;
+                            break;
+                        }
+                    }
+                    if (!alreadyRequested) {
+                        captureRequest->bodyIds[captureRequest->count++] = published.bodyId;
+                    }
+                }
+            }
+        }
+
         std::shared_ptr<const PublishedOverlayFrame> immutable = std::move(next);
         s_publishedFrame.store(std::move(immutable), std::memory_order_release);
+        if (captureRequest) {
+            captureRequest.publish();
+        }
         s_snapshotPoolExhaustionReported.store(false, std::memory_order_relaxed);
         s_enabled.store(enabled, std::memory_order_release);
+        (void)s_frameAdmission.publish();
+    }
+
+    void CaptureAppliedGeneratedBodyTransformsFromPhysicsStep(
+        RE::hknpWorld* world) noexcept
+    {
+        if (!world ||
+            !s_enabled.load(std::memory_order_acquire)) {
+            return;
+        }
+
+        const auto requestLease = s_generatedBodyCaptureRequests.tryAcquire();
+        const auto* source = requestLease.get();
+        if (!source ||
+            source->worldIdentity != reinterpret_cast<std::uintptr_t>(world) ||
+            source->publicationSequence == 0) {
+            return;
+        }
+
+        auto next = s_appliedTransformFrames.tryBeginWrite();
+        if (!next) {
+            return;
+        }
+
+        next->count = 0;
+        next->worldIdentity = source->worldIdentity;
+        next->publicationSequence = source->publicationSequence;
+        const auto requestCount = (std::min)(
+            source->count,
+            static_cast<std::uint32_t>(source->bodyIds.size()));
+        for (std::uint32_t index = 0;
+             index < requestCount && next->count < next->entries.size();
+             ++index) {
+            const auto bodyId = source->bodyIds[index];
+
+            BodyRenderInfo applied{};
+            if (!extractBody(
+                    world,
+                    RE::hknpBodyId{ bodyId },
+                    BodyOverlayFrameSource::LiveMotionWhenAvailable,
+                    applied) ||
+                applied.bodyId != bodyId) {
+                continue;
+            }
+
+            auto& destination = next->entries[next->count++];
+            destination.bodyId = applied.bodyId;
+            destination.worldMatrix = applied.worldMatrix;
+        }
+
+        next.publish();
+        // A Submit that raced the logical game-frame publication may have
+        // rendered the fallback matrices already. Admit the matching applied
+        // transform publication as a distinct immutable render opportunity.
         (void)s_frameAdmission.publish();
     }
 
     void ClearFrame()
     {
         s_publishedFrame.store({}, std::memory_order_release);
+        s_generatedBodyCaptureRequests.clear();
+        s_appliedTransformFrames.clear();
         s_enabled.store(false, std::memory_order_release);
         (void)s_frameAdmission.publish();
     }

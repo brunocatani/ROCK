@@ -384,6 +384,11 @@ namespace rock::debug
     void Install();
     bool IsInstalled();
     void PublishFrame(const BodyOverlayFrame& frame);
+    // Called only from ROCK's registered native pre-collide callback, after all
+    // generated collider drives have flushed. Publishes the real applied ROCK
+    // body matrices for the matching immutable game-frame snapshot without
+    // allocating or exposing live Havok state to the OpenVR compositor hook.
+    void CaptureAppliedGeneratedBodyTransformsFromPhysicsStep(RE::hknpWorld* world) noexcept;
     void ClearFrame();
     void ClearShapeCache();
     // Stops and joins the owned CPU shape worker without uninstalling the

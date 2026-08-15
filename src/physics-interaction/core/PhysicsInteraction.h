@@ -104,10 +104,10 @@ namespace rock
         // animation authority can consume the frame-local gunstock correction.
         void finalizeGunstockPresentationAfterNativeAnimation();
 
-        // Called after the provider Complete phase. This is the last
-        // ROCK-owned game-thread point before returning to the native loop, so
-        // immutable debug geometry is frozen only after all frame-local body
-        // and presentation mutations have committed.
+        // Called after the provider Complete phase. This freezes immutable
+        // logical debug geometry after all game-thread mutations. Generated
+        // Havok body matrices are paired with it only after the native
+        // pre-collide drive consumes this frame's queued targets.
         void publishDebugOverlayAfterFrameCallbacks();
 
         [[nodiscard]] bool tryGetManualScopeDirectTransitionTarget(
