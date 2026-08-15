@@ -42,6 +42,18 @@ int main()
     const Vec3 left{ -1.0f, 0.0f, 0.0f };
     const Vec3 down{ 0.0f, 0.0f, -1.0f };
 
+    const auto coneBoundary = resolveConeBoundaryDimensions(16.0f);
+    assert(coneBoundary.valid);
+    assert(near(coneBoundary.axialGameUnits, 11.313708f));
+    assert(near(coneBoundary.rimRadiusGameUnits, 11.313708f));
+    assert(near(std::sqrt(
+                    coneBoundary.axialGameUnits *
+                        coneBoundary.axialGameUnits +
+                    coneBoundary.rimRadiusGameUnits *
+                        coneBoundary.rimRadiusGameUnits),
+        16.0f));
+    assert(!resolveConeBoundaryDimensions(0.0f).valid);
+
     auto result = evaluateDirectionGate(DirectionGateInput{
         .weaponFamily = WeaponFamily::OneHandGun,
         .authoredSeatWorld = origin,
@@ -76,6 +88,33 @@ int main()
     assert(result.spatialPass);
     assert(result.selectedCone == AllowedCone::Down);
     assert(near(result.downDot, 1.0f));
+
+    // Regression: fresh hunting-rifle approaches at 12.955 and 14.605 game
+    // units passed every other authored gate but were rejected by the reused
+    // 12-unit mesh-probe radius. The authored activation reach is independent.
+    result = evaluateDirectionGate(DirectionGateInput{
+        .weaponFamily = WeaponFamily::TwoHandGun,
+        .authoredSeatWorld = origin,
+        .liveProbeWorld = Vec3{ 0.0f, 0.0f, -14.605f },
+        .leftAxisWorld = left,
+        .downAxisWorld = down,
+        .radialCapGameUnits = 16.0f,
+    });
+    assert(result.radialPass);
+    assert(result.directionPass);
+    assert(result.spatialPass);
+
+    result = evaluateDirectionGate(DirectionGateInput{
+        .weaponFamily = WeaponFamily::TwoHandGun,
+        .authoredSeatWorld = origin,
+        .liveProbeWorld = Vec3{ 0.0f, 0.0f, -16.001f },
+        .leftAxisWorld = left,
+        .downAxisWorld = down,
+        .radialCapGameUnits = 16.0f,
+    });
+    assert(!result.radialPass);
+    assert(result.directionPass);
+    assert(!result.spatialPass);
 
     constexpr float diagonal = 0.70710678118654752440f;
     result = evaluateDirectionGate(DirectionGateInput{

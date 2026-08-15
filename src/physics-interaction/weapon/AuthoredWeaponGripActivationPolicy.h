@@ -123,6 +123,46 @@ namespace rock::authored_weapon_grip_activation_policy
         bool spatialPass{ false };
     };
 
+    struct ConeBoundaryDimensions
+    {
+        float axialGameUnits{ 0.0f };
+        float rimRadiusGameUnits{ 0.0f };
+        bool valid{ false };
+    };
+
+    /*
+     * The enforced direction gate is a cone clipped by a sphere centered on
+     * the authored seat. The debug wire must end where the conical side meets
+     * that sphere; using the radial cap as both axial length and rim radius
+     * would draw a boundary sqrt(2) times farther away for the 45-degree cone.
+     */
+    [[nodiscard]] inline ConeBoundaryDimensions resolveConeBoundaryDimensions(
+        const float radialCapGameUnits)
+    {
+        if (!std::isfinite(radialCapGameUnits) ||
+            radialCapGameUnits <= 0.0f) {
+            return {};
+        }
+        const float rimFactorSquared =
+            1.0f -
+            kActivationConeMinimumDot * kActivationConeMinimumDot;
+        if (!std::isfinite(rimFactorSquared) ||
+            rimFactorSquared < 0.0f) {
+            return {};
+        }
+        const float rimFactor = std::sqrt(rimFactorSquared);
+        const float axialGameUnits =
+            radialCapGameUnits * kActivationConeMinimumDot;
+        const float rimRadiusGameUnits =
+            radialCapGameUnits * rimFactor;
+        return {
+            .axialGameUnits = axialGameUnits,
+            .rimRadiusGameUnits = rimRadiusGameUnits,
+            .valid = std::isfinite(axialGameUnits) &&
+                     std::isfinite(rimRadiusGameUnits),
+        };
+    }
+
     [[nodiscard]] inline DirectionGateResult evaluateDirectionGate(
         const DirectionGateInput& input)
     {

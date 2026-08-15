@@ -3084,7 +3084,7 @@ namespace rock
         snapshot.touchRadiusGameUnits =
             g_rockConfig.rockWeaponInteractionTouchRadius;
         snapshot.radialCapGameUnits =
-            g_rockConfig.rockWeaponInteractionProbeRadius;
+            g_rockConfig.rockWeaponAuthoredGripActivationRadius;
         snapshot.weaponGenerationKey = candidate.weaponGenerationKey;
         snapshot.captureSequence = candidate.captureSequence;
         snapshot.supportHandIsLeft = supportHandIsLeft;

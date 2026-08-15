@@ -2646,18 +2646,21 @@ namespace rock
                     snapshot.frameAgreementErrorGameUnits);
 
                 if (drawAuthoredGripActivationZones) {
-                    const float axisLength = (std::min)(
-                        snapshot.radialCapGameUnits,
-                        12.0f);
-                    if (snapshot.canonicalAxesValid && axisLength > 0.0f) {
+                    const auto coneBoundary =
+                        authored_weapon_grip_activation_policy::
+                            resolveConeBoundaryDimensions(
+                                snapshot.radialCapGameUnits);
+                    const float radialCap = snapshot.radialCapGameUnits;
+                    if (snapshot.canonicalAxesValid &&
+                        coneBoundary.valid && radialCap > 0.0f) {
                         const auto axisEnd = [&](const RE::NiPoint3& axis) {
                             return RE::NiPoint3{
                                 snapshot.authoredPalmSeatWorld.x +
-                                    axis.x * axisLength,
+                                    axis.x * radialCap,
                                 snapshot.authoredPalmSeatWorld.y +
-                                    axis.y * axisLength,
+                                    axis.y * radialCap,
                                 snapshot.authoredPalmSeatWorld.z +
-                                    axis.z * axisLength,
+                                    axis.z * radialCap,
                             };
                         };
                         addMarkerLine(
@@ -2686,19 +2689,21 @@ namespace rock
                                     static_cast<float>(segment) *
                                     2.0f * std::numbers::pi_v<float> /
                                     static_cast<float>(SegmentCount);
-                                const float radialA = std::cos(angle) * axisLength;
-                                const float radialB = std::sin(angle) * axisLength;
+                                const float radialA = std::cos(angle) *
+                                    coneBoundary.rimRadiusGameUnits;
+                                const float radialB = std::sin(angle) *
+                                    coneBoundary.rimRadiusGameUnits;
                                 rim[segment] = RE::NiPoint3{
                                     snapshot.authoredPalmSeatWorld.x +
-                                        axis.x * axisLength +
+                                        axis.x * coneBoundary.axialGameUnits +
                                         tangentA.x * radialA +
                                         tangentB.x * radialB,
                                     snapshot.authoredPalmSeatWorld.y +
-                                        axis.y * axisLength +
+                                        axis.y * coneBoundary.axialGameUnits +
                                         tangentA.y * radialA +
                                         tangentB.y * radialB,
                                     snapshot.authoredPalmSeatWorld.z +
-                                        axis.z * axisLength +
+                                        axis.z * coneBoundary.axialGameUnits +
                                         tangentA.z * radialA +
                                         tangentB.z * radialB,
                                 };
