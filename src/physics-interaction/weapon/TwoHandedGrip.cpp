@@ -1822,7 +1822,10 @@ namespace rock
         }
 
         const float frameDeltaSeconds = std::isfinite(dt) && dt > 0.0f ? (std::min)(dt, 0.1f) : (1.0f / 90.0f);
-        const auto refreshHand = [this, weaponNode, driverFrameAuthorityStoppedThisFrame, frameDeltaSeconds](bool isLeft, const EquippedWeaponScopeHandDriverFrame& driverFrame) {
+        const auto refreshHand = [this, weaponNode, driverFrameAuthorityStoppedThisFrame, frameDeltaSeconds](
+                                     bool isLeft,
+                                     const EquippedWeaponScopeHandDriverFrame& driverFrame,
+                                     const EquippedWeaponScopeHandDriverFrame& physicalHandFrame) {
             const std::size_t handIndex = isLeft ? 0u : 1u;
             ScopeSafeHandFrameState& state = _scopeSafeHandFrames[handIndex];
             state.currentHandWorldValid = false;
@@ -1834,6 +1837,27 @@ namespace rock
                         handFromBool(isLeft)) ||
                 collision_isolated_hand_frame_runtime::
                     hadPersistentWorldAuthorityAtFrameInput(isLeft);
+            const bool physicalHandValid =
+                physicalHandFrame.valid &&
+                isUsableHandAuthorityTransform(physicalHandFrame.world);
+
+            // Outside scope/gunstock presentation, the physical controller
+            // reconstruction is already the complete collision-isolated hand
+            // input. Never reconstruct it through hFRIK's weapon-offset node:
+            // firearm animation changes on that node are presentation state,
+            // not controller motion, and otherwise feed a native rifle angle
+            // back into ROCK's authored weapon solve.
+            if (!_scopeDriverFrameAuthorityActive &&
+                persistentRockHandWorldPublished &&
+                physicalHandValid) {
+                state.rootRebaseActive = false;
+                state.consecutiveDriverMissFrames = 0;
+                state.currentHandWorld = physicalHandFrame.world;
+                state.currentHandWorldValid = true;
+                state.lastHandWorld = physicalHandFrame.world;
+                state.hasLastHandWorld = true;
+                return;
+            }
             const bool rootHandValid =
                 !_scopeDriverFrameAuthorityActive &&
                 !persistentRockHandWorldPublished &&
@@ -1958,8 +1982,14 @@ namespace rock
             }
         };
 
-        refreshHand(true, frameInput.leftHandDriverFrame);
-        refreshHand(false, frameInput.rightHandDriverFrame);
+        refreshHand(
+            true,
+            frameInput.leftScopeHandDriverFrame,
+            frameInput.leftHandDriverFrame);
+        refreshHand(
+            false,
+            frameInput.rightScopeHandDriverFrame,
+            frameInput.rightHandDriverFrame);
 
         if (g_rockConfig.rockGunstockModeEnabled &&
             _gunstockWeaponEligibility.eligible &&
@@ -2036,9 +2066,9 @@ namespace rock
             };
 
             const HandTrace leftTrace =
-                captureHandTrace(true, frameInput.leftHandDriverFrame);
+                captureHandTrace(true, frameInput.leftScopeHandDriverFrame);
             const HandTrace rightTrace =
-                captureHandTrace(false, frameInput.rightHandDriverFrame);
+                captureHandTrace(false, frameInput.rightScopeHandDriverFrame);
             RE::NiPoint3 weaponWorldPosition{};
             const bool weaponWorldValid = weaponNode &&
                                           isFiniteTransform(weaponNode->world);

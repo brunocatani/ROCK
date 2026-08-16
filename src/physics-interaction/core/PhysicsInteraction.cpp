@@ -1835,25 +1835,15 @@ namespace rock
             g_rockConfig.
                 rockHandCollisionDynamicDivergenceTeleportGameUnits);
 
-        const auto captureWeaponHandDriver = [](RE::NiNode* node) {
-            EquippedWeaponScopeHandDriverFrame result{};
-            if (node && finiteNiTransform(node->world)) {
-                result.valid = true;
-                result.world = node->world;
-            }
-            return result;
-        };
-        auto* playerNodes = f4vr::getPlayerNodes();
+        // Deferred FRIK hand requests must be transported by the physical
+        // controller-derived hand, not by weapon-offset nodes. Hunting/combat
+        // rifle firing animations rotate those weapon nodes toward their
+        // native angled pose; feeding that rotation back here makes ROCK's
+        // authored weapon alignment latch to the native angle.
         const EquippedWeaponScopeHandDriverFrame leftWeaponHandDriver =
-            captureWeaponHandDriver(
-                playerNodes ?
-                    playerNodes->SecondaryMeleeWeaponOffsetNode2 :
-                    nullptr);
+            { leftRawHandValid, leftRawHandWorld };
         const EquippedWeaponScopeHandDriverFrame rightWeaponHandDriver =
-            captureWeaponHandDriver(
-                playerNodes ?
-                    playerNodes->primaryWeaponOffsetNOde :
-                    nullptr);
+            { rightRawHandValid, rightRawHandWorld };
 
         const bool firingHandIsLeft = _twoHandedGrip.isFiringHandLeft();
         _twoHandedGrip.setNativeReloadHandAuthorityActive(
@@ -3665,8 +3655,16 @@ namespace rock
                     playerNodes->SecondaryMeleeWeaponOffsetNode2 :
                     playerNodes->primaryWeaponOffsetNOde;
             };
-            const EquippedWeaponScopeHandDriverFrame leftHandDriverFrame = captureScopeHandDriverFrame(scopeHandDriverNode(true));
-            const EquippedWeaponScopeHandDriverFrame rightHandDriverFrame = captureScopeHandDriverFrame(scopeHandDriverNode(false));
+            const EquippedWeaponScopeHandDriverFrame leftHandDriverFrame{
+                !frame.left.disabled && finiteNiTransform(frame.left.rawHandWorld),
+                frame.left.rawHandWorld,
+            };
+            const EquippedWeaponScopeHandDriverFrame rightHandDriverFrame{
+                !frame.right.disabled && finiteNiTransform(frame.right.rawHandWorld),
+                frame.right.rawHandWorld,
+            };
+            const EquippedWeaponScopeHandDriverFrame leftScopeHandDriverFrame = captureScopeHandDriverFrame(scopeHandDriverNode(true));
+            const EquippedWeaponScopeHandDriverFrame rightScopeHandDriverFrame = captureScopeHandDriverFrame(scopeHandDriverNode(false));
             bool nativeScopeRequestActive = false;
             const bool nativeScopeRequestStateValid =
                 tryReadNativeScopeRequestState(nativeScopeRequestActive);
@@ -3713,6 +3711,8 @@ namespace rock
                     frame.menuBlocked || frame.reloadBoundaryActive,
                 .leftHandDriverFrame = leftHandDriverFrame,
                 .rightHandDriverFrame = rightHandDriverFrame,
+                .leftScopeHandDriverFrame = leftScopeHandDriverFrame,
+                .rightScopeHandDriverFrame = rightScopeHandDriverFrame,
                 .primaryGripInput = primaryGripInput,
             };
             auto effectiveHandlingSettings = _equippedWeaponHandlingSettings;
@@ -4416,6 +4416,22 @@ namespace rock
             equippedGenerationMatchesForm ? currentEquippedWeaponInstanceData(equippedWeapon) : nullptr,
             equippedGenerationMatchesForm ? _weaponCollision.getCurrentEquippedWeaponInstanceContentKey() : 0);
 
+        const bool rockFiringHandIsLeft =
+            _twoHandedGrip.isFiringHandLeft();
+        RE::NiTransform controllerHandWorld{};
+        RE::NiNode* const controllerWand = rockFiringHandIsLeft ?
+            f4vr::getLeftHandNode() :
+            f4vr::getRightHandNode();
+        const bool controllerHandWorldValid =
+            controllerWand &&
+            finiteNiTransform(controllerWand->world) &&
+            _handFrameResolver.tryReconstructCalibratedHand(
+                rockFiringHandIsLeft,
+                _handBoneCache.getSkeleton(),
+                _handBoneCache.getBoneTree(),
+                controllerWand->world,
+                controllerHandWorld);
+
         _authoredPrimaryFiringGrip.update(AuthoredPrimaryFiringGripFrameInput{
             .weaponNode = weaponNode,
             .weapon = equippedWeapon,
@@ -4423,6 +4439,8 @@ namespace rock
             .weaponGenerationKey = weaponGenerationKey,
             .weaponInstanceContentKey = equippedGenerationMatchesForm ? _weaponCollision.getCurrentEquippedWeaponInstanceContentKey() : 0,
             .weaponInstanceContentKnown = equippedGenerationMatchesForm,
+            .controllerHandWorld = controllerHandWorld,
+            .controllerHandWorldValid = controllerHandWorldValid,
             .runtimeInitialized = _initialized.load(std::memory_order_acquire),
             .visualAuthorityAvailable = runtime.visualAuthorityAvailable,
             .localSkeletonReady = runtime.localSkeletonReady,
@@ -4440,7 +4458,7 @@ namespace rock
                 _twoHandedGrip.blocksAuthoredPrimaryGripWeaponAlignment(),
             .weaponVisualReturnActive = _twoHandedGrip.isWeaponVisualReturnActive(),
             .primaryHandHoldingObject = rightHandHoldingObject,
-            .rockFiringHandIsLeft = _twoHandedGrip.isFiringHandLeft(),
+            .rockFiringHandIsLeft = rockFiringHandIsLeft,
             .inPowerArmor = f4vr::isInPowerArmor(),
         }, _twoHandedGrip);
 

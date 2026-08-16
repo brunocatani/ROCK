@@ -92,8 +92,14 @@ namespace rock
         bool nativeReloadHandAuthorityActive{ false };
         // Hard presentation boundary for menus and native reload authority.
         bool gunstockPresentationBlocked{ false };
+        // Collision-isolated physical hand frames reconstructed from the raw
+        // controller wands. Normal aim, support solving, and deferred FRIK
+        // hand transport must never consume weapon-animation offset nodes.
         EquippedWeaponScopeHandDriverFrame leftHandDriverFrame{};
         EquippedWeaponScopeHandDriverFrame rightHandDriverFrame{};
+        // hFRIK weapon-offset drivers remain a scope/gunstock-only input.
+        EquippedWeaponScopeHandDriverFrame leftScopeHandDriverFrame{};
+        EquippedWeaponScopeHandDriverFrame rightScopeHandDriverFrame{};
         // Grab state of the CURRENT firing hand (debounced release), read by
         // the caller from whichever physical hand isFiringHandLeft() reports.
         EquippedWeaponPrimaryGripInput primaryGripInput{};
@@ -1637,8 +1643,9 @@ namespace rock
         bool _hasLeftNaturalBoneInDampedDriver{ false };
 
         std::array<ScopeSafeHandFrameState, 2> _scopeSafeHandFrames{};
-        // Frame-scoped hFRIK/controller drivers captured by
-        // PhysicsInteraction before ROCK publishes any hand visuals.
+        // Frame-scoped, controller-reconstructed physical hand drivers
+        // captured before ROCK publishes any hand visuals. Weapon animation
+        // nodes are deliberately excluded from this normal authority path.
         std::array<EquippedWeaponScopeHandDriverFrame, 2>
             _currentHandDriverFrames{};
         std::uint64_t _currentSourceSchedulerSequence = 0;

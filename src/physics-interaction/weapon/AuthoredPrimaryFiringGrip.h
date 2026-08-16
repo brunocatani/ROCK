@@ -23,6 +23,8 @@ namespace rock
         std::uint64_t weaponGenerationKey{ 0 };
         std::uint64_t weaponInstanceContentKey{ 0 };
         bool weaponInstanceContentKnown{ false };
+        RE::NiTransform controllerHandWorld{};
+        bool controllerHandWorldValid{ false };
         bool runtimeInitialized{ false };
         bool visualAuthorityAvailable{ false };
         bool localSkeletonReady{ false };
@@ -39,12 +41,13 @@ namespace rock
     };
 
     // ROCK derives one generation-bound, modeler-authored primary grip and
-    // inverts it onto hFRIK's live primary hand. The paired support relation
-    // is captured while Bethesda's native right-primary topology is intact,
-    // then republished as a frame-scoped candidate. A fully validated stable
-    // snapshot bridges transient firing-animation capture gaps only while all
-    // weapon/canonical identity witnesses match. Only acquisition can latch
-    // it, so unrestricted dynamic grabs remain intact.
+    // inverts it onto the controller-reconstructed physical hand. The paired
+    // support relation is captured while Bethesda's native right-primary
+    // topology is intact, then republished as a frame-scoped candidate. A
+    // fully validated stable snapshot bridges transient firing-animation
+    // capture gaps only while all weapon/canonical identity witnesses match.
+    // Only acquisition can latch it, so unrestricted dynamic grabs remain
+    // intact.
     class AuthoredPrimaryFiringGripRuntime
     {
     public:
