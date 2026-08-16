@@ -56,8 +56,8 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'onCustomGrab
     'PhysicsInteraction must flush custom grab authority after character movement and before solve.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'onCustomGrabAuthorityAfterSolve' `
     'PhysicsInteraction must keep the production custom grab authority after-solve callback.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' '_rightHand\.flushPendingCustomGrabAuthority\(world,\s*timing,\s*_grabFrameWallDeltaSecondsPrev,\s*_grabFrameWallDeltaSeconds\)[\s\S]*_leftHand\.flushPendingCustomGrabAuthority\(world,\s*timing,\s*_grabFrameWallDeltaSecondsPrev,\s*_grabFrameWallDeltaSeconds\)' `
-    'Both hands must flush at the pre-solve boundary with the shared same-phase wall-clock frame-duration ratio (no consumption-side root read -- none advances during physics).'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' '_rightHand\.flushPendingCustomGrabAuthority\(world,\s*timing,\s*_grabFrameEngineDeltaSecondsPrev,\s*_grabFrameEngineDeltaSeconds\)[\s\S]*_leftHand\.flushPendingCustomGrabAuthority\(world,\s*timing,\s*_grabFrameEngineDeltaSecondsPrev,\s*_grabFrameEngineDeltaSeconds\)' `
+    'Both hands must flush at the pre-solve boundary with the shared engine frame-duration ratio (no consumption-side root read -- none advances during physics).'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' '_rightHand\.observeCustomGrabAuthorityAfterSolve\(world,\s*timing\)' `
     'Right-hand custom grab authority must still observe solver response after solve.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' '_leftHand\.observeCustomGrabAuthorityAfterSolve\(world,\s*timing\)' `

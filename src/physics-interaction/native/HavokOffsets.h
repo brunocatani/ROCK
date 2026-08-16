@@ -200,6 +200,15 @@ namespace rock::offsets
 
     constexpr std::uintptr_t kData_BhkWorldSubstepCount = 0x65A3D8C;
 
+    // Engine frame-delta seconds global (continuous, NOT the ms-quantized
+    // bhkWorld delta above). Established local source: SCISSORS reads the same
+    // global (RagdollAccess.h kNativeFrameDeltaSecondsOffset) for native
+    // movement timing. The game-side player mover advances by speed x this
+    // continuous dt (validated 2026-08-16 by the offline predictor comparison
+    // on the tire captures), so it is the correct numerator/denominator source
+    // for the grab root-motion feed-forward ratio.
+    constexpr std::uintptr_t kData_NativeFrameDeltaSeconds = 0x5BBC050;
+
     constexpr std::uintptr_t kData_BethesdaAllocatorPool = 0x392E400;
 
     constexpr std::uintptr_t kData_BethesdaAllocatorState = 0x392E880;

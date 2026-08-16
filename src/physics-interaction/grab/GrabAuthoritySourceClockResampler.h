@@ -163,14 +163,14 @@ namespace rock::grab_authority_source_clock
      *
      * lastAppliedRootStep is the game's own per-frame roomNode-world delta as
      * measured by the runtime-state player-space tracker at the producer that
-     * queued the sample. BOTH frame durations must come from ONE continuous
-     * clock sampled at ONE fixed per-frame phase (PhysicsInteraction's
-     * pre-collide wall-clock series): the engine's mover advances the player
-     * by speed x continuous frame dt, and the 2026-08-16 offline predictor
-     * comparison showed a same-phase wall/wall ratio tracks the applied step
-     * ~3x better than any ratio involving the ms-quantized bhkWorld delta
-     * (which made the first feed-forward build no better than no ratio at
-     * all). With matched clocks the dominant stutter term -- speed x frame-dt
+     * queued the sample. BOTH frame durations come from the engine's own
+     * continuous frame-delta global (PhysicsInteraction's per-update series):
+     * the mover advances the player by speed x that continuous dt. The
+     * 2026-08-16 offline predictor comparison ruled out the alternatives --
+     * the ms-quantized bhkWorld delta made the ratio no better than none, and
+     * a wall clock sampled at the physics phase carried 9.9-15.5 ms of phase
+     * noise on a steady 11.1 ms frame and visibly over/under-shot. With the
+     * engine's dt on both sides the dominant stutter term -- speed x frame-dt
      * jitter -- cancels, leaving real speed change only. Stateless and
      * deterministic per sample, so multi-substep re-flushes of one pending
      * target recompute the identical shift. Fails closed to a zero shift on

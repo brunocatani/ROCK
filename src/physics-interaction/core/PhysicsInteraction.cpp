@@ -7897,17 +7897,11 @@ namespace rock
         }
 
         if (timing.substepIndex == 0) {
-            // Same-phase wall-clock frame-duration series for the feed-forward
-            // dt ratio (see the member comment). Maintained unconditionally so
-            // a fresh grab immediately has a valid previous-frame duration.
-            const auto now = std::chrono::steady_clock::now();
-            if (_grabFrameWallTimeValid) {
-                _grabFrameWallDeltaSecondsPrev = _grabFrameWallDeltaSeconds;
-                _grabFrameWallDeltaSeconds =
-                    std::chrono::duration<float>(now - _grabFrameWallTimePrev).count();
-            }
-            _grabFrameWallTimePrev = now;
-            _grabFrameWallTimeValid = true;
+            // Engine frame-duration series for the feed-forward dt ratio (see
+            // the member comment). Maintained unconditionally so a fresh grab
+            // immediately has a valid previous-frame duration.
+            _grabFrameEngineDeltaSecondsPrev = _grabFrameEngineDeltaSeconds;
+            _grabFrameEngineDeltaSeconds = havok_physics_timing::sampleNativeFrameDeltaSeconds();
         }
 
         // Phase-bracket probe point A: first pre-collide substep, before any
@@ -7954,12 +7948,12 @@ namespace rock
          * still at the previous frame's value throughout the entire physics
          * update -- FO4VR applies joystick locomotion post-physics in game
          * code. Each hand's flush therefore predicts the pending frame's root
-         * step from the sample's producer step scaled by the same-phase
-         * wall-clock frame-duration ratio (root-motion feed-forward; see
+         * step from the sample's producer step scaled by the engine
+         * frame-duration ratio (root-motion feed-forward; see
          * GrabAuthoritySourceClockResampler.h).
          */
-        _rightHand.flushPendingCustomGrabAuthority(world, timing, _grabFrameWallDeltaSecondsPrev, _grabFrameWallDeltaSeconds);
-        _leftHand.flushPendingCustomGrabAuthority(world, timing, _grabFrameWallDeltaSecondsPrev, _grabFrameWallDeltaSeconds);
+        _rightHand.flushPendingCustomGrabAuthority(world, timing, _grabFrameEngineDeltaSecondsPrev, _grabFrameEngineDeltaSeconds);
+        _leftHand.flushPendingCustomGrabAuthority(world, timing, _grabFrameEngineDeltaSecondsPrev, _grabFrameEngineDeltaSeconds);
     }
 
     void PhysicsInteraction::observeCustomGrabAuthorityAfterSolve(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
