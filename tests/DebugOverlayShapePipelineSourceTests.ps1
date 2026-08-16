@@ -98,6 +98,19 @@ if (-not $draw.Success) {
         'The compositor must not capture, fingerprint, or build CPU shape geometry.'
 }
 
+# ROCK animated compounds (dynamic hand/weapon) rewrite child slot transforms
+# every physics substep; tessellating them bakes those transforms into a mesh
+# keyed by a fingerprint of the same transforms, so an animated compound can
+# never hold a stable Ready cache entry and degrades to permanent giant
+# AABB proxy boxes. Their children must publish as separate entries with the
+# live slot transform composed at draw time.
+Require-In $overlay 'captureCompoundChildSlotsSeh[\s\S]*captureCompoundChildSlotsUnsafe[\s\S]*EXCEPTION_EXECUTE_HANDLER' `
+    'Animated-compound child slot capture must fail closed on invalid engine memory.'
+Require-In $overlay 'rockRole && \(shapeIdentity\.shapeType == 7 \|\| shapeIdentity\.shapeType == 8\)[\s\S]*captureCompoundChildSlotsSeh[\s\S]*hasChildLocalMatrix = true[\s\S]*requestShapeBuildForFrame\(destination, published\.shapeKey, child\.shapeAddress\)' `
+    'ROCK compound bodies must expand into per-child entries with stable child shape keys instead of tessellating the mutable compound.'
+Require-In $overlay 'entry\.hasChildLocalMatrix[\s\S]*XMMatrixMultiply\(entry\.childLocalMatrix, model\)' `
+    'Expanded compound children must compose the live slot transform onto the (possibly applied) body frame at draw time.'
+
 if ($failures.Count -gt 0) {
     Write-Host 'DebugOverlayShapePipelineSourceTests failed:' -ForegroundColor Red
     foreach ($failure in $failures) {
