@@ -30,6 +30,7 @@ namespace rock::pipboy_pause_gesture_policy
         bool pressed{ false };
         bool held{ false };
         bool released{ false };
+        bool suppressGesture{ false };
         bool pipboyDispatchAllowed{ true };
         float heldSeconds{ 0.0f };
         float holdSeconds{ kDefaultHoldSeconds };
@@ -62,6 +63,19 @@ namespace rock::pipboy_pause_gesture_policy
             reset(state);
             decision.state = state.state;
             decision.reason = "disabled";
+            return decision;
+        }
+
+        if (input.suppressGesture) {
+            decision.consume = true;
+            if (input.released || !input.held) {
+                reset(state);
+                decision.reason = "suppressed-release";
+            } else {
+                state.state = State::BlockedUntilRelease;
+                decision.reason = "suppressed-held";
+            }
+            decision.state = state.state;
             return decision;
         }
 
@@ -137,7 +151,13 @@ namespace rock::pipboy_pause_gesture_policy
 
         case State::BlockedUntilRelease:
             decision.consume = true;
-            if (input.released || !input.held) {
+            if (input.pressed) {
+                // A newly observed press proves that a release hidden by an
+                // OpenVR mask or menu transition already occurred. Rearm the
+                // new physical gesture instead of carrying stale ownership.
+                state.state = State::Pending;
+                decision.reason = "fresh-press-rearm";
+            } else if (input.released || !input.held) {
                 reset(state);
                 decision.reason = "blocked-release";
             } else {

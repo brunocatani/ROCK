@@ -234,6 +234,7 @@ namespace rock::input_remap_runtime
         std::atomic<bool> s_missingVRSystemLogged{ false };
         std::atomic<bool> s_missingUILogged{ false };
         std::array<std::atomic<bool>, 2> s_providerOpenVrGameInputSuppressed{};
+        std::atomic<std::uint8_t> s_configuratorChordBlockedHands{ 0 };
         void** s_vrSystemVTable = nullptr;
         GetControllerState_t s_originalGetControllerState = nullptr;
         GetControllerStateWithPose_t s_originalGetControllerStateWithPose = nullptr;
@@ -545,10 +546,12 @@ namespace rock::input_remap_runtime
             return false;
         }
 
-        [[nodiscard]] bool shouldBypassProviderOpenVrGameInputSuppression(const void* callerAddress)
+        [[nodiscard]] bool shouldBypassOpenVrGameInputMutation(const void* callerAddress)
         {
             /*
-             * The configurator consumes raw controller input through ROCK while its lease masks game-facing state.
+             * The configurator consumes raw controller input through ROCK while
+             * its provider lease or ROCK's pre-open chord reservation masks
+             * game-facing state.
              * Some helper paths call through framework/static-library frames before reaching OpenVR, so the immediate
              * return address is not always enough to identify the configurator as the consumer.
              *
@@ -577,6 +580,75 @@ namespace rock::input_remap_runtime
         }
 
         [[nodiscard]] bool isInputBlockingMenuActive();
+
+        [[nodiscard]] bool isConfiguratorChordHandReserved(input_remap_policy::Hand hand)
+        {
+            return input_remap_policy::isConfiguratorChordHandReserved(
+                s_configuratorChordBlockedHands.load(std::memory_order_acquire),
+                hand);
+        }
+
+        void updateConfiguratorChordReservation(
+            input_remap_policy::Hand sampledHand,
+            bool sampledHandJustPressed,
+            bool eligible)
+        {
+            const auto chordButtonMask =
+                input_remap_policy::buttonMask(
+                    input_remap_policy::kOpenVrConfiguratorChordButtonId);
+            const auto& leftTracker =
+                s_controllers[controllerIndex(input_remap_policy::Hand::Left)];
+            const auto& rightTracker =
+                s_controllers[controllerIndex(input_remap_policy::Hand::Right)];
+            const bool leftHeld =
+                leftTracker.valid.load(std::memory_order_acquire) &&
+                (leftTracker.rawPressed.load(std::memory_order_acquire) &
+                    chordButtonMask) != 0;
+            const bool rightHeld =
+                rightTracker.valid.load(std::memory_order_acquire) &&
+                (rightTracker.rawPressed.load(std::memory_order_acquire) &
+                    chordButtonMask) != 0;
+
+            std::uint8_t blockedHands =
+                s_configuratorChordBlockedHands.load(std::memory_order_acquire);
+            input_remap_policy::ConfiguratorChordReservationDecision decision{};
+            do {
+                decision =
+                    input_remap_policy::evaluateConfiguratorChordReservation(
+                        input_remap_policy::ConfiguratorChordReservationInput{
+                            .blockedHands = blockedHands,
+                            .sampledHand = sampledHand,
+                            .eligible = eligible,
+                            .leftHeld = leftHeld,
+                            .rightHeld = rightHeld,
+                            .sampledHandJustPressed =
+                                sampledHandJustPressed,
+                        });
+            } while (!s_configuratorChordBlockedHands.compare_exchange_weak(
+                blockedHands,
+                decision.blockedHands,
+                std::memory_order_acq_rel,
+                std::memory_order_acquire));
+
+            if (decision.chordBegan) {
+                ROCK_LOG_DEBUG(Input,
+                    "Reserved physical B+Y chord for ROCK Configurator until both standalone buttons rearm");
+            }
+        }
+
+        void clearConfiguratorChordButtonForGame(
+            vr::VRControllerState_t* state,
+            std::uint32_t stateSize)
+        {
+            if (!state || stateSize < sizeof(vr::VRControllerState_t)) {
+                return;
+            }
+
+            const auto mask = input_remap_policy::buttonMask(
+                input_remap_policy::kOpenVrConfiguratorChordButtonId);
+            state->ulButtonPressed &= ~mask;
+            state->ulButtonTouched &= ~mask;
+        }
 
         /*
          * Left-hand fire: while the LEFT hand occupies the equipped weapon's
@@ -774,6 +846,16 @@ namespace rock::input_remap_runtime
             }
 
             const bool inputBlockingMenuActive = isInputBlockingMenuActive();
+            const auto configuratorChordButtonMask =
+                input_remap_policy::buttonMask(
+                    input_remap_policy::kOpenVrConfiguratorChordButtonId);
+            updateConfiguratorChordReservation(
+                hand,
+                (rawTransition.pressedEdges & configuratorChordButtonMask) != 0,
+                g_rockConfig.rockEnabled &&
+                    g_rockConfig.rockInputRemapEnabled &&
+                    s_gameplayInputAllowed.load(std::memory_order_acquire) &&
+                    !inputBlockingMenuActive);
             if (inputBlockingMenuActive) {
                 tracker.rearmPressedMask.fetch_or(rawPressed, std::memory_order_acq_rel);
                 /*
@@ -798,6 +880,50 @@ namespace rock::input_remap_runtime
             }
         }
 
+        void applyGameFacingControllerState(
+            vr::TrackedDeviceIndex_t controllerDeviceIndex,
+            vr::VRControllerState_t* controllerState,
+            std::uint32_t controllerStateSize,
+            const void* callerAddress)
+        {
+            input_remap_policy::Hand hand{};
+            if (!resolveControllerHand(controllerDeviceIndex, hand)) {
+                return;
+            }
+
+            const bool providerSuppressed =
+                isProviderOpenVrGameInputSuppressed(hand);
+            const bool configuratorChordReserved =
+                isConfiguratorChordHandReserved(hand);
+            const bool leftHandFireRemap =
+                shouldRemapLeftHandFireTriggerForGame();
+            if (!providerSuppressed && !configuratorChordReserved &&
+                !leftHandFireRemap) {
+                return;
+            }
+            if (shouldBypassOpenVrGameInputMutation(callerAddress)) {
+                return;
+            }
+
+            if (providerSuppressed) {
+                clearOpenVrControllerStateForGame(
+                    controllerState,
+                    controllerStateSize);
+                return;
+            }
+            if (configuratorChordReserved) {
+                clearConfiguratorChordButtonForGame(
+                    controllerState,
+                    controllerStateSize);
+            }
+            if (leftHandFireRemap) {
+                applyLeftHandFireTriggerRemapForGame(
+                    hand,
+                    controllerState,
+                    controllerStateSize);
+            }
+        }
+
         bool hookedGetControllerState(
             vr::IVRSystem* system, vr::TrackedDeviceIndex_t controllerDeviceIndex, vr::VRControllerState_t* controllerState, std::uint32_t controllerStateSize)
         {
@@ -805,18 +931,11 @@ namespace rock::input_remap_runtime
             const bool result = s_originalGetControllerState ? s_originalGetControllerState(system, controllerDeviceIndex, controllerState, controllerStateSize) : false;
             if (result) {
                 captureControllerState(controllerDeviceIndex, controllerState, controllerStateSize);
-                input_remap_policy::Hand hand{};
-                if (resolveControllerHand(controllerDeviceIndex, hand)) {
-                    if (isProviderOpenVrGameInputSuppressed(hand) &&
-                        !shouldBypassProviderOpenVrGameInputSuppression(callerAddress)) {
-                        clearOpenVrControllerStateForGame(controllerState, controllerStateSize);
-                        return result;
-                    }
-                    if (shouldRemapLeftHandFireTriggerForGame() &&
-                        !shouldBypassProviderOpenVrGameInputSuppression(callerAddress)) {
-                        applyLeftHandFireTriggerRemapForGame(hand, controllerState, controllerStateSize);
-                    }
-                }
+                applyGameFacingControllerState(
+                    controllerDeviceIndex,
+                    controllerState,
+                    controllerStateSize,
+                    callerAddress);
             }
             return result;
         }
@@ -834,18 +953,11 @@ namespace rock::input_remap_runtime
                                     false;
             if (result) {
                 captureControllerState(controllerDeviceIndex, controllerState, controllerStateSize);
-                input_remap_policy::Hand hand{};
-                if (resolveControllerHand(controllerDeviceIndex, hand)) {
-                    if (isProviderOpenVrGameInputSuppressed(hand) &&
-                        !shouldBypassProviderOpenVrGameInputSuppression(callerAddress)) {
-                        clearOpenVrControllerStateForGame(controllerState, controllerStateSize);
-                        return result;
-                    }
-                    if (shouldRemapLeftHandFireTriggerForGame() &&
-                        !shouldBypassProviderOpenVrGameInputSuppression(callerAddress)) {
-                        applyLeftHandFireTriggerRemapForGame(hand, controllerState, controllerStateSize);
-                    }
-                }
+                applyGameFacingControllerState(
+                    controllerDeviceIndex,
+                    controllerState,
+                    controllerStateSize,
+                    callerAddress);
             }
             return result;
         }
@@ -865,7 +977,7 @@ namespace rock::input_remap_runtime
             if (shouldRemapLeftHandFireTriggerForGame() &&
                 !isCallerModule(callerAddress, L"ROCK.dll") &&
                 !isCallerModule(callerAddress, L"FRIK.dll") &&
-                !shouldBypassProviderOpenVrGameInputSuppression(callerAddress)) {
+                !shouldBypassOpenVrGameInputMutation(callerAddress)) {
                 input_remap_policy::Hand hand{};
                 if (resolveControllerHand(controllerDeviceIndex, hand) && hand == input_remap_policy::Hand::Right) {
                     const auto leftIndex = system ?
@@ -1693,6 +1805,8 @@ namespace rock::input_remap_runtime
                 currentProviderHandInputSuppressionFlagsAtDispatch();
             const bool suppressAll =
                 isAnyProviderOpenVrGameInputSuppressed() ||
+                isConfiguratorChordHandReserved(
+                    input_remap_policy::Hand::Right) ||
                 provider::hasHandInputSuppressionFlagV1(
                     flags,
                     provider::RockProviderHandInputSuppressionFlagV1::
@@ -1755,6 +1869,9 @@ namespace rock::input_remap_runtime
             const bool gameplayInputAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire);
             const bool menuInputActive = isInputBlockingMenuActive();
             const bool providerSuppressed = isAnyProviderOpenVrGameInputSuppressedAtDispatch();
+            const bool configuratorChordReserved =
+                isConfiguratorChordHandReserved(
+                    input_remap_policy::Hand::Left);
             const auto decision = pipboy_pause_gesture_policy::update(s_pipboyPauseGestureState,
                 pipboy_pause_gesture_policy::Input{
                     .enabled = g_rockConfig.rockInputRemapEnabled,
@@ -1762,6 +1879,7 @@ namespace rock::input_remap_runtime
                     .pressed = button->QJustPressed(),
                     .held = button->QPressed(),
                     .released = !button->QPressed(),
+                    .suppressGesture = configuratorChordReserved,
                     .pipboyDispatchAllowed = !providerSuppressed,
                     .heldSeconds = button->QHeldDownSecs(),
                     .holdSeconds = g_rockConfig.rockPipboyPauseHoldSeconds,
@@ -1790,6 +1908,10 @@ namespace rock::input_remap_runtime
                 ROCK_LOG_SAMPLE_DEBUG(Input,
                     g_rockConfig.rockLogSampleMilliseconds,
                     "Suppressed Pause-button Pip-Boy tap while provider OpenVR game-input suppression is active");
+            } else if (configuratorChordReserved) {
+                ROCK_LOG_SAMPLE_DEBUG(Input,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "Suppressed Pause-button phase while the Configurator B+Y chord is reserved");
             }
 
             markInputEventStopped(inputEvent);
@@ -2379,6 +2501,13 @@ namespace rock::input_remap_runtime
         auto input = makeNativeActionSuppressionInput(g_rockConfig.rockSuppressPipboyGameInputWhileHolding, true);
         input.pipboyHandEngaged = isPipboyHandEngaged();
         return input_remap_policy::shouldSuppressNativePipboyAction(input);
+    }
+
+    bool isConfiguratorChordInputReserved(bool isLeft)
+    {
+        return isConfiguratorChordHandReserved(
+            isLeft ? input_remap_policy::Hand::Left :
+                     input_remap_policy::Hand::Right);
     }
 
     bool isPipboyMenuOpen()

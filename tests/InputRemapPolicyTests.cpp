@@ -64,6 +64,87 @@ int main()
     ok &= expectTrue("normal grab button id is accepted", isAllowedGrabButtonId(2));
     ok &= expectFalse("SteamVR trigger button id is reserved and rejected for grab", isAllowedGrabButtonId(kOpenVrSteamVrTriggerButtonId));
     ok &= expectTrue("grenade quick draw owns OpenVR button 1", buttonMask(kOpenVrGrenadeQuickDrawButtonId) == (std::uint64_t{ 1 } << 1));
+    ok &= expectTrue("Configurator B+Y chord shares the physical application-menu button ID",
+        kOpenVrConfiguratorChordButtonId == kOpenVrGrenadeQuickDrawButtonId);
+
+    std::uint8_t configuratorChordBlockedHands = 0;
+    auto configuratorChordDecision = evaluateConfiguratorChordReservation(
+        ConfiguratorChordReservationInput{
+            .blockedHands = configuratorChordBlockedHands,
+            .sampledHand = Hand::Left,
+            .eligible = true,
+            .leftHeld = true,
+            .sampledHandJustPressed = true,
+        });
+    ok &= expectFalse("standalone Y press does not reserve the Configurator chord",
+        configuratorChordDecision.blockedHands != 0);
+    configuratorChordDecision = evaluateConfiguratorChordReservation(
+        ConfiguratorChordReservationInput{
+            .blockedHands = configuratorChordDecision.blockedHands,
+            .sampledHand = Hand::Right,
+            .eligible = true,
+            .leftHeld = true,
+            .rightHeld = true,
+            .sampledHandJustPressed = true,
+        });
+    configuratorChordBlockedHands = configuratorChordDecision.blockedHands;
+    ok &= expectTrue("simultaneous B+Y begins Configurator chord ownership",
+        configuratorChordDecision.chordBegan &&
+            configuratorChordBlockedHands == kConfiguratorChordBothHandsMask);
+    configuratorChordDecision = evaluateConfiguratorChordReservation(
+        ConfiguratorChordReservationInput{
+            .blockedHands = configuratorChordBlockedHands,
+            .sampledHand = Hand::Left,
+            .eligible = true,
+            .rightHeld = true,
+        });
+    configuratorChordBlockedHands = configuratorChordDecision.blockedHands;
+    ok &= expectTrue("releasing Y keeps both chord actions blocked",
+        configuratorChordBlockedHands == kConfiguratorChordBothHandsMask);
+    configuratorChordDecision = evaluateConfiguratorChordReservation(
+        ConfiguratorChordReservationInput{
+            .blockedHands = configuratorChordBlockedHands,
+            .sampledHand = Hand::Right,
+            .eligible = true,
+        });
+    configuratorChordBlockedHands = configuratorChordDecision.blockedHands;
+    ok &= expectTrue("releasing B keeps both chord release phases blocked",
+        configuratorChordBlockedHands == kConfiguratorChordBothHandsMask);
+    configuratorChordDecision = evaluateConfiguratorChordReservation(
+        ConfiguratorChordReservationInput{
+            .blockedHands = configuratorChordBlockedHands,
+            .sampledHand = Hand::Right,
+            .eligible = true,
+            .rightHeld = true,
+            .sampledHandJustPressed = true,
+        });
+    configuratorChordBlockedHands = configuratorChordDecision.blockedHands;
+    ok &= expectTrue("fresh standalone B press rearms only B",
+        configuratorChordDecision.sampledHandRearmed &&
+            !isConfiguratorChordHandReserved(configuratorChordBlockedHands, Hand::Right) &&
+            isConfiguratorChordHandReserved(configuratorChordBlockedHands, Hand::Left));
+    configuratorChordDecision = evaluateConfiguratorChordReservation(
+        ConfiguratorChordReservationInput{
+            .blockedHands = configuratorChordBlockedHands,
+            .sampledHand = Hand::Left,
+            .eligible = true,
+            .leftHeld = true,
+            .sampledHandJustPressed = true,
+        });
+    ok &= expectTrue("fresh standalone Y press rearms Y",
+        configuratorChordDecision.sampledHandRearmed &&
+            configuratorChordDecision.blockedHands == 0);
+    configuratorChordDecision = evaluateConfiguratorChordReservation(
+        ConfiguratorChordReservationInput{
+            .sampledHand = Hand::Right,
+            .eligible = false,
+            .leftHeld = true,
+            .rightHeld = true,
+            .sampledHandJustPressed = true,
+        });
+    ok &= expectFalse("B+Y is not reserved while Configurator input is ineligible",
+        configuratorChordDecision.chordBegan ||
+            configuratorChordDecision.blockedHands != 0);
 
     settings.grabButtonId = kOpenVrSteamVrTriggerButtonId;
     const auto triggerGrabDecision = evaluate(Input{
@@ -555,6 +636,32 @@ int main()
     pipboyGestureInput.heldSeconds = 0.35f;
     pipboyGestureDecision = pipboyGesture::update(pipboyGestureState, pipboyGestureInput);
     ok &= expectTrue("provider Pip-Boy suppression preserves the existing native Pause escape hold", pipboyGestureDecision.dispatchPause);
+    pipboyGestureInput.held = false;
+    pipboyGestureInput.released = true;
+    (void)pipboyGesture::update(pipboyGestureState, pipboyGestureInput);
+
+    pipboyGestureInput = pipboyGesture::Input{
+        .enabled = true,
+        .eligible = true,
+        .pressed = true,
+        .held = true,
+    };
+    (void)pipboyGesture::update(pipboyGestureState, pipboyGestureInput);
+    pipboyGestureInput.pressed = false;
+    pipboyGestureInput.suppressGesture = true;
+    pipboyGestureDecision = pipboyGesture::update(pipboyGestureState, pipboyGestureInput);
+    ok &= expectTrue("Configurator chord takes complete ownership of a pending Y gesture",
+        pipboyGestureDecision.consume &&
+            !pipboyGestureDecision.dispatchPipboy &&
+            !pipboyGestureDecision.dispatchPause);
+    ok &= expectPipboyGestureState("Configurator chord blocks Y until its transaction rearms",
+        pipboyGestureDecision.state, pipboyGesture::State::BlockedUntilRelease);
+    pipboyGestureInput.suppressGesture = false;
+    pipboyGestureInput.pressed = true;
+    pipboyGestureDecision = pipboyGesture::update(pipboyGestureState, pipboyGestureInput);
+    ok &= expectPipboyGestureState("fresh Y press rearms after a masked chord release",
+        pipboyGestureDecision.state, pipboyGesture::State::Pending);
+    pipboyGestureInput.pressed = false;
     pipboyGestureInput.held = false;
     pipboyGestureInput.released = true;
     (void)pipboyGesture::update(pipboyGestureState, pipboyGestureInput);

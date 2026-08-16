@@ -116,6 +116,23 @@ namespace rock::input_remap_policy
         std::uint64_t releasedEdges{ 0 };
     };
 
+    struct ConfiguratorChordReservationInput
+    {
+        std::uint8_t blockedHands{ 0 };
+        Hand sampledHand{ Hand::Right };
+        bool eligible{ false };
+        bool leftHeld{ false };
+        bool rightHeld{ false };
+        bool sampledHandJustPressed{ false };
+    };
+
+    struct ConfiguratorChordReservationDecision
+    {
+        std::uint8_t blockedHands{ 0 };
+        bool chordBegan{ false };
+        bool sampledHandRearmed{ false };
+    };
+
     [[nodiscard]] constexpr bool isValidButtonId(int buttonId)
     {
         return buttonId >= 0 && buttonId < 64;
@@ -141,12 +158,59 @@ namespace rock::input_remap_policy
     inline constexpr int kOpenVrAcceptButtonId = 7;
 
     /*
-     * OpenVR k_EButton_ApplicationMenu: physical right B on the supported
-     * controller layouts. ROCK owns this button for grenade quick draw while
-     * the main feature is enabled; the native VATS/V.A.N.S. phases are
-     * suppressed separately at their verified game helper.
+     * OpenVR k_EButton_ApplicationMenu is physical Y on the left controller
+     * and physical B on the right controller. Controller identity separates
+     * the two despite their shared button ID. ROCK reserves their simultaneous
+     * hold for the Configurator while preserving each standalone gesture.
+     * Right B also remains the grenade quick-draw button.
      */
-    inline constexpr int kOpenVrGrenadeQuickDrawButtonId = 1;
+    inline constexpr int kOpenVrApplicationMenuButtonId = 1;
+    inline constexpr int kOpenVrConfiguratorChordButtonId = kOpenVrApplicationMenuButtonId;
+    inline constexpr int kOpenVrGrenadeQuickDrawButtonId = kOpenVrApplicationMenuButtonId;
+    inline constexpr std::uint8_t kConfiguratorChordLeftHandMask = 1u << 0;
+    inline constexpr std::uint8_t kConfiguratorChordRightHandMask = 1u << 1;
+    inline constexpr std::uint8_t kConfiguratorChordBothHandsMask =
+        kConfiguratorChordLeftHandMask | kConfiguratorChordRightHandMask;
+
+    [[nodiscard]] constexpr std::uint8_t configuratorChordHandMask(Hand hand)
+    {
+        return hand == Hand::Left ?
+                   kConfiguratorChordLeftHandMask :
+                   kConfiguratorChordRightHandMask;
+    }
+
+    [[nodiscard]] constexpr bool isConfiguratorChordHandReserved(std::uint8_t blockedHands, Hand hand)
+    {
+        return (blockedHands & configuratorChordHandMask(hand)) != 0;
+    }
+
+    /*
+     * B+Y ownership is latched per physical hand. The latch deliberately
+     * survives both releases so game-generated release events cannot replay a
+     * standalone action after the chord. A hand rearms only on its next fresh
+     * press while the peer button is up; if the peer is still held, the press
+     * renews the chord instead.
+     */
+    [[nodiscard]] constexpr ConfiguratorChordReservationDecision evaluateConfiguratorChordReservation(
+        const ConfiguratorChordReservationInput& input)
+    {
+        ConfiguratorChordReservationDecision decision{
+            .blockedHands = static_cast<std::uint8_t>(input.blockedHands & kConfiguratorChordBothHandsMask),
+        };
+
+        if (input.eligible && input.leftHeld && input.rightHeld) {
+            decision.chordBegan = decision.blockedHands != kConfiguratorChordBothHandsMask;
+            decision.blockedHands = kConfiguratorChordBothHandsMask;
+            return decision;
+        }
+
+        const auto sampledHandMask = configuratorChordHandMask(input.sampledHand);
+        if (input.sampledHandJustPressed && (input.sampledHand == Hand::Left ? !input.rightHeld : !input.leftHeld)) {
+            decision.sampledHandRearmed = (decision.blockedHands & sampledHandMask) != 0;
+            decision.blockedHands = static_cast<std::uint8_t>(decision.blockedHands & ~sampledHandMask);
+        }
+        return decision;
+    }
 
     [[nodiscard]] constexpr bool isAllowedGrabButtonId(int buttonId)
     {

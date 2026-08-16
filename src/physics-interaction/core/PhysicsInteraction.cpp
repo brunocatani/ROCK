@@ -8196,7 +8196,9 @@ namespace rock
         const auto buttonState = input_remap_runtime::consumeRawButtonState(
             false,
             input_remap_policy::kOpenVrGrenadeQuickDrawButtonId);
-        if (!g_rockConfig.rockEnabled || !buttonState.available || !buttonState.pressed) {
+        if (!g_rockConfig.rockEnabled || !buttonState.available ||
+            !buttonState.pressed ||
+            input_remap_runtime::isConfiguratorChordInputReserved(false)) {
             return;
         }
 

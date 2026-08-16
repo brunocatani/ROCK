@@ -68,6 +68,10 @@ namespace rock::input_remap_runtime
     bool isMenuInputActive();
     bool shouldSuppressNativeTriggerAction(const RE::InputEvent* event);
     bool isNativePipboyInputSuppressionActive();
+    // True from the first simultaneous physical B+Y sample and latched after
+    // this hand's release. The next standalone press rearms that hand before
+    // its action is evaluated; raw provider input remains visible throughout.
+    bool isConfiguratorChordInputReserved(bool isLeft);
     bool isPipboyMenuOpen();
 
     // Consumes the menu-generation-bound trigger evidence for one Pip-Boy
