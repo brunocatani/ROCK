@@ -1239,9 +1239,22 @@ namespace rock
                         CollisionFallback;
             }
             DynamicHandCollisionRuntime::SurfaceLatchFailure latchFailure{};
+            const dynamic_hand_surface_contact_state::ContactSource
+                latchSource{
+                    .valid = contact.valid,
+                    .isLeft = contact.isLeft,
+                    .slot = contact.role ==
+                                hand_collider_semantics::
+                                    HandColliderRole::PalmAnchor ?
+                        0u :
+                        static_cast<std::size_t>(contact.finger) + 1u,
+                    .role = contact.role,
+                    .finger = contact.finger,
+                    .segment = contact.segment,
+                    .bodyId = contact.handBodyId,
+                };
             if (!_dynamicHandCollision->beginSurfaceLatch(
-                    isLeft,
-                    contact.handBodyId,
+                    latchSource,
                     active.bodyId,
                     world,
                     meshPresentationAvailable ?

@@ -49,33 +49,62 @@ int main()
     std::array<std::array<policy::SegmentContact, policy::kSegmentCount>,
         policy::kFingerCount>
         contacts{};
+    std::array<std::int8_t, policy::kFingerCount> directions{};
     contacts[1][2] = {
         .blockedDepthGameUnits = 0.4f,
         .closingProbeTravelGameUnits = 0.2f,
         .openingProbeTravelGameUnits = -0.1f,
         .active = true,
     };
-    const auto helpful = policy::solve(baseline, contacts, {}, {});
+
+    // No commanded direction means no response, even with helpful contact.
+    const auto uncommanded = policy::solve(baseline, contacts, {}, {});
+    assert(nearlyEqual(uncommanded.targetOpenValues[1], 0.9f));
+    assert(uncommanded.directions[1] == 0);
+    assert(uncommanded.helpfulSegmentMask == 0);
+    assert(!uncommanded.anyHelpfulContact);
+
+    directions[1] = -1;
+    const auto helpful = policy::solve(baseline, contacts, directions, {});
     assert(nearlyEqual(helpful.targetOpenValues[1], 0.7f));
     assert(nearlyEqual(helpful.targetOpenValues[0], 1.0f));
     assert(helpful.directions[1] == -1);
     assert(helpful.helpfulSegmentMask == (1u << 5));
     assert(helpful.anyHelpfulContact);
 
+    // A commanded direction whose probe travel moves INTO the surface must
+    // not deflect the finger.
     contacts[1][2].closingProbeTravelGameUnits = -0.2f;
     contacts[1][2].openingProbeTravelGameUnits = 0.0f;
-    const auto movesIntoSurface = policy::solve(baseline, contacts, {}, {});
+    const auto movesIntoSurface = policy::solve(
+        baseline,
+        contacts,
+        directions,
+        {});
     assert(nearlyEqual(movesIntoSurface.targetOpenValues[1], 0.9f));
     assert(movesIntoSurface.helpfulSegmentMask == 0);
     assert(!movesIntoSurface.anyHelpfulContact);
 
+    // The solver never flips to the other direction on its own: opening
+    // travel would help here, but the command stays closed and unhelpful.
     contacts[1][2].openingProbeTravelGameUnits = 0.2f;
     contacts[1][2].blockedDepthGameUnits = 0.1f;
-    const auto palmSideOpening = policy::solve(baseline, contacts, {}, {});
+    const auto noSelfFlip = policy::solve(baseline, contacts, directions, {});
+    assert(noSelfFlip.directions[1] == 0);
+    assert(noSelfFlip.helpfulSegmentMask == 0);
+
+    directions[1] = 1;
+    const auto palmSideOpening = policy::solve(
+        baseline,
+        contacts,
+        directions,
+        {});
     assert(nearlyEqual(palmSideOpening.targetOpenValues[1], 0.95f));
     assert(palmSideOpening.directions[1] == 1);
     assert(palmSideOpening.helpfulSegmentMask == (1u << 5));
 
+    directions = {};
+    directions[2] = -1;
     contacts = {};
     contacts[2][0] = {
         .blockedDepthGameUnits = 0.2f,
@@ -87,11 +116,13 @@ int main()
         .closingProbeTravelGameUnits = 0.2f,
         .active = true,
     };
-    const auto multiSegment = policy::solve(baseline, contacts, {}, {});
+    const auto multiSegment = policy::solve(baseline, contacts, directions, {});
     assert(nearlyEqual(multiSegment.targetOpenValues[2], 0.6f));
     assert((multiSegment.helpfulSegmentMask & (1u << 6)) != 0);
     assert((multiSegment.helpfulSegmentMask & (1u << 7)) != 0);
 
+    directions = {};
+    directions[3] = -1;
     contacts = {};
     contacts[3][0] = {
         .blockedDepthGameUnits = 10.0f,
@@ -101,71 +132,37 @@ int main()
     const auto clamped = policy::solve(
         baseline,
         contacts,
-        {},
+        directions,
         policy::Config{ .maximumDeflectionOpenUnits = 0.25f });
     assert(nearlyEqual(clamped.targetOpenValues[3], 0.45f));
 
     baseline[4] = 0.0f;
+    directions = {};
+    directions[4] = -1;
     contacts = {};
     contacts[4][2] = {
         .blockedDepthGameUnits = 0.2f,
         .closingProbeTravelGameUnits = 0.2f,
         .active = true,
     };
-    const auto alreadyClosed = policy::solve(baseline, contacts, {}, {});
+    const auto alreadyClosed = policy::solve(baseline, contacts, directions, {});
     assert(nearlyEqual(alreadyClosed.targetOpenValues[4], 0.0f));
     assert(alreadyClosed.helpfulSegmentMask == 0);
     assert(!alreadyClosed.anyHelpfulContact);
 
     baseline[0] = 1.0f;
+    directions = {};
+    directions[0] = 1;
     contacts = {};
     contacts[0][2] = {
         .blockedDepthGameUnits = 0.2f,
         .openingProbeTravelGameUnits = 0.2f,
         .active = true,
     };
-    const auto alreadyOpen = policy::solve(baseline, contacts, {}, {});
+    const auto alreadyOpen = policy::solve(baseline, contacts, directions, {});
     assert(nearlyEqual(alreadyOpen.targetOpenValues[0], 1.0f));
     assert(alreadyOpen.directions[0] == 0);
     assert(alreadyOpen.helpfulSegmentMask == 0);
-
-    baseline[4] = 0.5f;
-    contacts = {};
-    contacts[4][0] = {
-        .blockedDepthGameUnits = 0.1f,
-        .closingProbeTravelGameUnits = 0.2f,
-        .openingProbeTravelGameUnits = 0.2f,
-        .active = true,
-    };
-    std::array<std::int8_t, policy::kFingerCount> previousDirections{};
-    previousDirections[4] = 1;
-    const auto stableDirection = policy::solve(
-        baseline,
-        contacts,
-        previousDirections,
-        {});
-    assert(stableDirection.directions[4] == 1);
-    assert(nearlyEqual(stableDirection.targetOpenValues[4], 0.55f));
-
-    baseline[0] = 0.5f;
-    contacts = {};
-    contacts[0][0] = {
-        .blockedDepthGameUnits = 0.1f,
-        .closingProbeTravelGameUnits = 0.2f,
-        .openingProbeTravelGameUnits = -0.1f,
-        .active = true,
-    };
-    contacts[0][1] = {
-        .blockedDepthGameUnits = 0.4f,
-        .closingProbeTravelGameUnits = -0.1f,
-        .openingProbeTravelGameUnits = 0.4f,
-        .active = true,
-    };
-    const auto coherentFinger = policy::solve(baseline, contacts, {}, {});
-    assert(coherentFinger.directions[0] == 1);
-    assert(nearlyEqual(coherentFinger.targetOpenValues[0], 0.5882353f));
-    assert((coherentFinger.helpfulSegmentMask & 0x02u) != 0);
-    assert((coherentFinger.helpfulSegmentMask & 0x01u) == 0);
 
     const std::array<float, policy::kFingerCount> current{
         1.0f, 1.0f, 1.0f, 1.0f, 1.0f

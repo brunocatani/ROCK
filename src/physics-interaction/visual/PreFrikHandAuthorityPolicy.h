@@ -201,4 +201,69 @@ namespace rock::prefrik_hand_authority_policy
         result.valid = isUsableTransform(result.targetWorld);
         return result;
     }
+
+    /*
+     * Preserve the compound body's complete rigid correction across the
+     * scheduler boundary. Translation keeps the existing contact-safe inward
+     * motion rejection; orientation is reconstructed from the solved-hand
+     * relation captured against the source raw hand.
+     */
+    [[nodiscard]] inline ContactTransportResult transportRigidContactTarget(
+        const RE::NiTransform& sourceRawHandWorld,
+        const RE::NiTransform& sourceSolvedHandWorld,
+        const RE::NiTransform& currentRawHandWorld,
+        float maximumRawMotionGameUnits) noexcept
+    {
+        if (!isUsableTransform(sourceSolvedHandWorld)) {
+            return {};
+        }
+        const RE::NiPoint3 appliedDeviation{
+            sourceSolvedHandWorld.translate.x -
+                sourceRawHandWorld.translate.x,
+            sourceSolvedHandWorld.translate.y -
+                sourceRawHandWorld.translate.y,
+            sourceSolvedHandWorld.translate.z -
+                sourceRawHandWorld.translate.z,
+        };
+        const float deviationLengthSquared =
+            appliedDeviation.x * appliedDeviation.x +
+            appliedDeviation.y * appliedDeviation.y +
+            appliedDeviation.z * appliedDeviation.z;
+        ContactTransportResult result{};
+        if (std::isfinite(deviationLengthSquared) &&
+            deviationLengthSquared <= 0.000001f) {
+            const float rawMotion = translationDeltaGameUnits(
+                sourceRawHandWorld,
+                currentRawHandWorld);
+            if (!std::isfinite(rawMotion) ||
+                rawMotion > maximumRawMotionGameUnits) {
+                return {};
+            }
+            result.targetWorld = currentRawHandWorld;
+            result.valid = true;
+        } else {
+            result = transportContactTarget(
+                sourceRawHandWorld,
+                currentRawHandWorld,
+                appliedDeviation,
+                maximumRawMotionGameUnits);
+        }
+        if (!result.valid) {
+            return result;
+        }
+
+        const RE::NiTransform rawToSolved = captureDriverToTargetLocal(
+            sourceRawHandWorld,
+            sourceSolvedHandWorld);
+        RE::NiTransform rigidTarget = reconstructTargetWorld(
+            currentRawHandWorld,
+            rawToSolved);
+        rigidTarget.translate = result.targetWorld.translate;
+        rigidTarget.scale = currentRawHandWorld.scale;
+        if (!isUsableTransform(rigidTarget)) {
+            return {};
+        }
+        result.targetWorld = rigidTarget;
+        return result;
+    }
 }

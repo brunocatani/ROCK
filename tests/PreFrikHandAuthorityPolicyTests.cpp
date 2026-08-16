@@ -118,6 +118,54 @@ int main()
             outwardDeviation,
             40.0f).valid);
 
+    RE::NiTransform solvedRigid = sourceRaw;
+    solvedRigid.translate = outwardDeviation;
+    solvedRigid.rotate.entry[0][0] = 0.0f;
+    solvedRigid.rotate.entry[0][1] = 1.0f;
+    solvedRigid.rotate.entry[1][0] = -1.0f;
+    solvedRigid.rotate.entry[1][1] = 0.0f;
+    const auto rigidTransport = transportRigidContactTarget(
+        sourceRaw,
+        solvedRigid,
+        tangentRaw,
+        40.0f);
+    ok &= expectTrue("rigid contact transport valid", rigidTransport.valid);
+    ok &= expectNear(
+        "rigid contact keeps rotation 00",
+        rigidTransport.targetWorld.rotate.entry[0][0],
+        0.0f);
+    ok &= expectNear(
+        "rigid contact keeps rotation 01",
+        rigidTransport.targetWorld.rotate.entry[0][1],
+        1.0f);
+    ok &= expectNear(
+        "rigid contact keeps blocked x",
+        rigidTransport.targetWorld.translate.x,
+        2.0f);
+    ok &= expectNear(
+        "rigid contact follows tangent y",
+        rigidTransport.targetWorld.translate.y,
+        3.0f);
+
+    RE::NiTransform pureRotation = solvedRigid;
+    pureRotation.translate = sourceRaw.translate;
+    const auto pureRotationTransport = transportRigidContactTarget(
+        sourceRaw,
+        pureRotation,
+        tangentRaw,
+        40.0f);
+    ok &= expectTrue(
+        "pure rotation contact transport valid",
+        pureRotationTransport.valid);
+    ok &= expectNear(
+        "pure rotation follows raw translation",
+        pureRotationTransport.targetWorld.translate.y,
+        3.0f);
+    ok &= expectNear(
+        "pure rotation survives transport",
+        pureRotationTransport.targetWorld.rotate.entry[1][0],
+        -1.0f);
+
     std::uint8_t callBytes[rock::main_loop_hook_policy::kRelativeCallSize]{};
     callBytes[0] = rock::main_loop_hook_policy::kRelativeCallOpcode;
     constexpr std::uintptr_t callAddress = 0x1000;

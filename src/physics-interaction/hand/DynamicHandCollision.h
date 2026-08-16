@@ -8,6 +8,7 @@
 #include "physics-interaction/hand/SurfaceFingerCollisionPolicy.h"
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
+#include "physics-interaction/native/HavokCompoundShapeBuilder.h"
 #include "physics-interaction/native/HavokPhysicsTiming.h"
 #include "physics-interaction/native/HavokPairCollisionFilter.h"
 #include "physics-interaction/native/PhysicsCallbackQuiescenceGate.h"
@@ -19,6 +20,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <mutex>
 
 namespace RE
 {
@@ -34,24 +36,26 @@ namespace rock
     struct HandFrameInput;
 
     /*
-     * Dynamic world collision uses DYNAMIC twins of the palm anchor, all 15
-     * finger-segment colliders, and one merged ForeArm1->Hand proxy per side.
-     * They chase their published role frames with engine hard-keyframe
-     * velocities every physics substep, on the world-only extended layer.
-     * Static world clips their velocity inside the solver
-     * (true multi-plane contact); the rendered FRIK hand follows the COMBINED
-     * position deviation (sequential projection over palm/forearm deviations,
-     * with unresolved fingertip contacts retaining the legacy rigid fallback).
-     * Finger-segment residuals independently drive bounded anatomical flexion
-     * or extension, choosing the direction that best moves all contacted
-     * phalanxes toward their solver-safe positions. During ordinary tracking
-     * authority is strictly one-directional
-     * (wand/skeleton targets -> twins -> render): twin targets come from the
-     * same HandBoneColliderSet/BodyBoneColliderSet role-frame publications the
-     * keyframed colliders are driven with. A fixed-surface latch captures one
-     * solved-pose readback, then drives both twins and rendering from immutable
-     * target-local relationships so no render-to-physics feedback loop exists.
-     * The twins are not ordinary gameplay contact evidence and collide only
+     * Dynamic world collision uses one animated 17-child compound per side:
+     * palm, all 15 finger segments, and merged ForeArm1->Hand. The compound is
+     * rooted on the exact palm role frame published by HandBoneColliderSet and
+     * the existing generated-collider drive moves the dynamic body directly,
+     * so Havok resolves every child contact against one coherent mass, inertia,
+     * translation, and orientation without a second authority frame.
+     * Processed-manifold shape keys recover exact child semantics. The body
+     * carries explicit envelope mass properties (weapon-compound contract).
+     * The rendered FRIK hand follows the compound body's full post-solve
+     * rigid transform; WORLD-surface finger contacts additionally drive
+     * bounded anatomical flexion/extension whose direction is classified in
+     * the palm frame (palm-face touch spreads, fingertip push curls,
+     * cross-palm leaves the pose). During ordinary tracking authority is
+     * strictly one-directional (wand/skeleton targets -> compound -> render):
+     * animated children come from the same HandBoneColliderSet and
+     * BodyBoneColliderSet role frames as the keyframed semantic colliders. A
+     * fixed-surface latch captures one solved compound pose, then drives both
+     * compound children and rendering from immutable target-local
+     * relationships so no render-to-physics feedback loop exists. The
+     * compound is not ordinary gameplay contact evidence and collides only
      * with static world-surface layers plus the dedicated rows used by
      * explicitly identified car bodies. Palm/fingertip callbacks publish into
      * a separate bounded channel consumed exclusively by provider-registered
@@ -89,17 +93,10 @@ namespace rock
             float maximumRawMotionGameUnits);
         void flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         /*
-         * Post-solve deviation sampling (physics step thread, after-solve
-         * phase). Two-stage measurement against the SAME substep's targets:
-         * the residual vs the COMMANDED (velocity-limited) target detects
-         * contact — an unobstructed hard-keyframe drive lands exactly on it,
-         * so tracking motion (hand, locomotion, room scale) produces exactly
-         * zero — and only in contact is the render deviation published,
-         * measured vs the REQUESTED (pre-limit) target so it equals the true
-         * blocked depth. Sampling pre-collide leaks one substep of tracking
-         * lag (sessions 1-2 twitch/drag); rendering the commanded residual
-         * saturates at the dt-dependent limiter distance (sessions 3-5
-         * milli-punch pulsing).
+         * Post-solve sampling runs after the constraint and contact solver.
+         * Key-2 processed manifolds provide the exact contacting child mask;
+         * this phase reads the one live compound transform and reconstructs
+         * requested/commanded/live transforms for every animated child.
          */
         void samplePostSolveDeviations(
             RE::hknpWorld* world,
@@ -129,6 +126,7 @@ namespace rock
 
         [[nodiscard]] bool tryClassifyDynamicBodyContactSourceAtomic(
             std::uint32_t bodyId,
+            std::uint32_t shapeKey,
             DynamicBodyContactSource& outSource) const noexcept;
         void recordDynamicBodyContactCallback(
             const DynamicBodyContactSource& source,
@@ -137,6 +135,7 @@ namespace rock
 
         [[nodiscard]] bool tryClassifySurfaceContactSourceAtomic(
             std::uint32_t bodyId,
+            std::uint32_t shapeKey,
             dynamic_hand_surface_contact_state::ContactSource& outSource) const noexcept;
         void recordSurfaceContactCallback(
             const dynamic_hand_surface_contact_state::ContactSource& source,
@@ -147,7 +146,11 @@ namespace rock
             const dynamic_hand_surface_contact_state::ContactSource& source,
             std::uint32_t otherBodyId,
             bool otherLayerRead,
-            std::uint32_t otherLayer) noexcept;
+            std::uint32_t otherLayer,
+            const hand_semantic_contact_state::SemanticContactVector*
+                contactPointGame = nullptr,
+            const hand_semantic_contact_state::SemanticContactVector*
+                contactNormalGame = nullptr) noexcept;
         [[nodiscard]] hand_semantic_contact_state::SemanticContactCollection collectFreshSurfaceContacts(
             bool isLeft,
             std::uint32_t maximumAgeFrames) const noexcept;
@@ -176,12 +179,11 @@ namespace rock
 
         /*
          * Fixed-surface ownership does not constrain or mutate the target.
-         * Instead the hand and all live dynamic twins retain their transforms
+         * Instead the hand and all live compound children retain their transforms
          * relative to that target until TouchGrabRuntime ends the latch.
          */
         [[nodiscard]] bool beginSurfaceLatch(
-            bool isLeft,
-            std::uint32_t sourceBodyId,
+            const dynamic_hand_surface_contact_state::ContactSource& source,
             std::uint32_t targetBodyId,
             RE::hknpWorld* world,
             const SurfaceLatchPresentation* presentation = nullptr,
@@ -202,16 +204,27 @@ namespace rock
          */
         [[nodiscard]] RE::hknpBodyId proxyBodyIdForDebug(bool isLeft, std::size_t bodyIndex) const
         {
-            if (bodyIndex >= kBodiesPerHand) {
+            // A compound body is published once; its overlay recursively
+            // renders every animated child.
+            if (bodyIndex != 0) {
                 return RE::hknpBodyId{ 0x7FFF'FFFF };
             }
-            const auto& slot = _hands[isLeft ? 1u : 0u].bodies[bodyIndex];
+            const auto& slot = _hands[isLeft ? 1u : 0u].bodies[0];
             return slot.created ? slot.body.getBodyId() : RE::hknpBodyId{ 0x7FFF'FFFF };
         }
 
     private:
         struct PhysicsTelemetrySample
         {
+            /*
+             * Per-child world transforms in the SCENE row-axes convention
+             * (already converted from the collider column convention), so the
+             * main thread can compose them directly with the raw hand and
+             * publish rigid corrections to FRIK.
+             */
+            RE::NiTransform requestedTargetWorld{};
+            RE::NiTransform commandedTargetWorld{};
+            RE::NiTransform liveBodyWorld{};
             RE::NiPoint3 requestedTargetWorldGame{};
             RE::NiPoint3 commandedTargetWorldGame{};
             RE::NiPoint3 liveBodyWorldGame{};
@@ -230,7 +243,20 @@ namespace rock
             bool valid = false;
             bool targetVelocityValid = false;
             bool contactActive = false;
+            /*
+             * Contact against world-surface/car layers only. Finger flexion
+             * consumes this instead of contactActive so touching the other
+             * hand or the equipped weapon never curls or spreads fingers.
+             */
+            bool worldContactActive = false;
             bool recoveryTeleport = false;
+        };
+
+        struct AtomicTransform
+        {
+            std::array<std::atomic<float>, 9> rotation{};
+            std::array<std::atomic<float>, 3> translation{};
+            std::atomic<float> scale{ 1.0f };
         };
 
         /*
@@ -241,6 +267,9 @@ namespace rock
         struct AtomicPhysicsTelemetry
         {
             std::atomic<std::uint64_t> sequence{ 0 };
+            AtomicTransform requestedTargetWorld{};
+            AtomicTransform commandedTargetWorld{};
+            AtomicTransform liveBodyWorld{};
             std::atomic<float> requestedX{ 0.0f };
             std::atomic<float> requestedY{ 0.0f };
             std::atomic<float> requestedZ{ 0.0f };
@@ -267,6 +296,7 @@ namespace rock
             std::atomic<bool> valid{ false };
             std::atomic<bool> targetVelocityValid{ false };
             std::atomic<bool> contactActive{ false };
+            std::atomic<bool> worldContactActive{ false };
             std::atomic<bool> recoveryTeleport{ false };
         };
 
@@ -295,6 +325,8 @@ namespace rock
              * in-and-out "milli-punch" pulsing of in-game sessions 3-5.
              */
             bool droveThisSubstep = false;
+            RE::NiTransform commandedTargetWorld{};
+            RE::NiTransform requestedTargetWorld{};
             RE::NiPoint3 commandedTargetGame{};
             RE::NiPoint3 requestedTargetGame{};
             // Physics-thread copy of the last post-solve CONTACT deviation
@@ -331,6 +363,7 @@ namespace rock
             struct PreFrikContactAuthority
             {
                 RE::NiTransform sourceRawHandWorld{};
+                RE::NiTransform sourceSolvedHandWorld{};
                 RE::NiPoint3 appliedDeviationWorldGame{};
                 std::uint64_t sourceSchedulerSequence = 0;
                 std::uint64_t sourceGameFrameIndex = 0;
@@ -390,6 +423,17 @@ namespace rock
             };
 
             std::array<ProxySlot, kBodiesPerHand> bodies{};
+            havok_compound_shape_builder::DynamicCompoundShape compoundShape{};
+            std::mutex compoundPoseMutex{};
+            std::array<havok_compound_shape_builder::ChildTransform,
+                kBodiesPerHand> pendingCompoundChildTransforms{};
+            std::array<RE::NiTransform, kBodiesPerHand>
+                childInContactBodyGame{};
+            std::array<RE::NiTransform, kBodiesPerHand>
+                consumedChildInContactBodyGame{};
+            std::uint64_t queuedCompoundPoseSequence = 0;
+            std::uint64_t consumedCompoundPoseSequence = 0;
+            std::uint64_t compoundGeometryGeneration = 0;
             RE::NiPoint3 appliedDeviation{};
             bool visualActive = false;
             RE::NiTransform lastPresentedHandWorld{};
@@ -410,6 +454,11 @@ namespace rock
             std::atomic<std::uint32_t> contactEntryMaskAtomic{ 0 };
             std::atomic<std::uint32_t> pendingOtherHandContactMaskAtomic{ 0 };
             std::atomic<std::uint32_t> pendingWeaponContactMaskAtomic{ 0 };
+            std::atomic<std::uint32_t> pendingSolverContactMaskAtomic{ 0 };
+            std::atomic<std::uint32_t> pendingWorldContactMaskAtomic{ 0 };
+            std::uint32_t retainedSolverContactMask = 0;
+            std::uint32_t retainedWorldContactMask = 0;
+            float solverContactRetentionSeconds = 0.0f;
             std::uint32_t otherHandContactMask{ 0 };
             std::uint32_t weaponContactMask{ 0 };
             std::uint8_t otherHandContactGraceFrames{ 0 };
@@ -417,14 +466,20 @@ namespace rock
             dynamic_hand_collision_feedback::ContactPulseState hapticState{};
         };
 
-        bool ensureSlotCreated(ProxySlot& slot,
+        bool ensureHandCreated(HandSlots& handSlots,
             bool isLeft,
-            std::size_t bodyIndex,
             const PhysicsFrameContext& frame,
             const Hand& hand,
             const BodyBoneColliderSet& bodyBoneColliders,
-            const dynamic_hand_twin::TwinSlotFrame& twinFrame,
+            const std::array<const dynamic_hand_twin::TwinSlotFrame*,
+                kBodiesPerHand>& twinFrames,
+            const RE::NiTransform& compoundRootTarget,
+            const std::array<RE::NiTransform, kBodiesPerHand>& driveTargets,
             std::uint64_t geometryGeneration);
+        [[nodiscard]] bool queueCompoundPose(
+            HandSlots& handSlots,
+            const RE::NiTransform& compoundRootTarget,
+            const std::array<RE::NiTransform, kBodiesPerHand>& driveTargets);
         void retireSlot(ProxySlot& slot, void* bhkWorld);
         void retireHand(HandSlots& handSlots, void* bhkWorld, bool isLeft);
         void clearVisual(HandSlots& handSlots, bool isLeft);
@@ -449,6 +504,8 @@ namespace rock
         static void publishPhysicsTelemetry(ProxySlot& slot, const PhysicsTelemetrySample& sample);
         [[nodiscard]] static bool readPhysicsTelemetry(const ProxySlot& slot, PhysicsTelemetrySample& outSample, std::uint64_t& outSequence);
         static void clearPhysicsContactState(ProxySlot& slot);
+        static void storeAtomicTransform(AtomicTransform& target, const RE::NiTransform& value);
+        [[nodiscard]] static RE::NiTransform loadAtomicTransform(const AtomicTransform& source);
         void updateHandHaptic(
             HandSlots& handSlots,
             dynamic_hand_collision_telemetry::HandSample& handTelemetry,

@@ -37,7 +37,7 @@ Require-Text 'src/physics-interaction/weapon/DynamicWeaponCollision.cpp' `
     '_physicsSourceGameFrameIndex = 0;[\s\S]*_physicsSourceQueueSequence = 0;[\s\S]*clearGeneratedKeyframedBodyDriveState\(_authorityDriveState\);' `
     'Weapon proxy retirement must clear both retained and queued source generations.'
 Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'frame\.gameFrameIndex[\s\S]*slot\.droveSourceGameFrameIndex = result\.sourceFrameIndex[\s\S]*sourceGameFrameIndex = slot\.droveSourceGameFrameIndex[\s\S]*solveSequence = solveSequence' `
+    'frame\.gameFrameIndex[\s\S]*slot\.droveSourceGameFrameIndex = result\.sourceFrameIndex[\s\S]*sourceGameFrameIndex = owner\.droveSourceGameFrameIndex[\s\S]*solveSequence = solveSequence' `
     'Hand post-solve telemetry must correlate the consumed game source with the solve generation.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'kTraceFramesPerEpisode = 360[\s\S]*colliderClockDebugActive[\s\S]*rockDebugShowColliders[\s\S]*rockDebugDrawHandColliders[\s\S]*rockDebugDrawHandBoneColliders[\s\S]*rockDebugDrawDynamicHandColliders[\s\S]*rockDebugDrawWeaponColliders[\s\S]*rockDebugDrawDynamicWeaponColliders[\s\S]*_colliderClockHasLoggedFrame = false[\s\S]*_colliderClockFramesRemaining[\s\S]*COLLIDER_CLOCK begin' `

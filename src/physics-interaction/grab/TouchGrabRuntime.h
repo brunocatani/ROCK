@@ -28,7 +28,7 @@ namespace rock
      * state machine. Provider targets retain first authority; the optional
      * built-in surface policy supplies only a FixedAnchor wildcard fallback.
      * Mechanisms receive one stock limited joint plus finite hand attachment,
-     * while FixedAnchor latches the rendered hand and dynamic hand twins
+     * while FixedAnchor latches the rendered hand and dynamic hand compound
      * relative to the touched target without changing that target. This keeps
      * ordinary static/keyframed selection rejection unchanged.
      */

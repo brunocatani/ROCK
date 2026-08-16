@@ -192,6 +192,9 @@ namespace rock::dynamic_hand_collision_telemetry
         bool physicsSampleValid = false;
         bool targetVelocityValid = false;
         bool contactActive = false;
+        // World-surface/car contact only; excludes other-hand and equipped
+        // weapon evidence. The finger flexion response consumes this flag.
+        bool worldContactActive = false;
         bool recoveryTeleport = false;
     };
 

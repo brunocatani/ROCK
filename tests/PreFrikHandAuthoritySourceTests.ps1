@@ -159,11 +159,11 @@ Require-Pattern $weapon `
 # Ordinary contact transport is scheduler-fresh and contact-normal safe, while
 # fixed-surface latches remain explicitly outside this provider.
 Require-Pattern $dynamicHandHeader `
-    'PreFrikContactAuthority[\s\S]*sourceRawHandWorld[\s\S]*appliedDeviationWorldGame[\s\S]*sourceSchedulerSequence[\s\S]*sourceGameFrameIndex[\s\S]*solveSequence' `
-    'DHC pre-FRIK state must retain the source raw hand, applied correction, and diagnostic generations.'
+    'PreFrikContactAuthority[\s\S]*sourceRawHandWorld[\s\S]*sourceSolvedHandWorld[\s\S]*appliedDeviationWorldGame[\s\S]*sourceSchedulerSequence[\s\S]*sourceGameFrameIndex[\s\S]*solveSequence' `
+    'DHC pre-FRIK state must retain the raw and rigid solved hand transforms plus diagnostic generations.'
 Require-Pattern $dynamicHand `
-    'refreshContactVisualAuthorityBeforeFrik[\s\S]*surfaceLatch\.active[\s\S]*preFrikContactAuthority\s*=\s*\{\}[\s\S]*isImmediateSuccessor[\s\S]*transportContactTarget[\s\S]*dynamicHandTag' `
-    'DHC must skip fixed-surface latches and transport only an immediately preceding ordinary contact target.'
+    'refreshContactVisualAuthorityBeforeFrik[\s\S]*surfaceLatch\.active[\s\S]*preFrikContactAuthority\s*=\s*\{\}[\s\S]*isImmediateSuccessor[\s\S]*transportRigidContactTarget[\s\S]*dynamicHandTag' `
+    'DHC must skip fixed-surface latches and transport only an immediately preceding rigid contact target.'
 Require-Pattern $dynamicHand `
     'applyExternalHandWorldTransform\([\s\S]{0,300}dynamicHandTag[\s\S]{0,1000}source\.sourceRawHandWorld\s*=\s*handInput\.rawHandWorld[\s\S]*source\.sourceSchedulerSequence\s*=[\s\S]*frame\.preFrikSchedulerSequence' `
     'Successful post contact publication must capture its clean raw source and scheduler generation.'

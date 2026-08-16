@@ -181,14 +181,16 @@ namespace rock
         float rockNativeScopeOverlayRollDegrees = 0.0f;
 
         /*
-         * Canonical free-hand world collision: dynamic palm/finger proxy
-         * bodies are solver-clipped by static world surfaces and drive the
-         * rendered hand through one-way visual authority.
+         * Canonical free-hand world collision: one animated compound per hand
+         * is solver-clipped by world surfaces and drives the rendered hand
+         * through one-way visual authority.
          */
         bool rockHandCollisionDynamicDrive = true;
         bool rockHandDynamicInteractionsEnabled = true;
         float rockHandCollisionDynamicMaxLinearVelocityHavok = 15.0f;
         float rockHandCollisionDynamicContactPressMaxVelocityHavok = 1.0f;
+        float rockHandCollisionDynamicCompoundMass = 2.0f;
+        float rockHandCollisionDynamicInverseInertiaMultiplier = 1.0f;
         float rockHandCollisionDynamicDivergenceTeleportGameUnits = 40.0f;
         float rockHandCollisionDynamicDivergenceTeleportDwellSeconds = 0.3f;
         float rockHandCollisionDynamicTeleportRecoverySeconds = 0.25f;
@@ -207,7 +209,6 @@ namespace rock
         float rockHandCollisionSurfaceFingerResponseGain = 1.0f;
         float rockHandCollisionSurfaceFingerMaximumDeflectionOpenUnits = 0.85f;
         float rockHandCollisionSurfaceFingerMinimumHelpfulTravelGameUnits = 0.01f;
-        float rockHandCollisionSurfaceFingerDirectionSwitchHysteresisFraction = 0.10f;
         float rockHandCollisionSurfaceFingerSmoothingSpeed = 30.0f;
         float rockHandCollisionSurfaceFingerReleaseDelaySeconds = 0.12f;
 

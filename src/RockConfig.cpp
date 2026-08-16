@@ -243,6 +243,8 @@ namespace rock
         rockHandDynamicInteractionsEnabled = true;
         rockHandCollisionDynamicMaxLinearVelocityHavok = 15.0f;
         rockHandCollisionDynamicContactPressMaxVelocityHavok = 1.0f;
+        rockHandCollisionDynamicCompoundMass = 2.0f;
+        rockHandCollisionDynamicInverseInertiaMultiplier = 1.0f;
         rockHandCollisionDynamicDivergenceTeleportGameUnits = 40.0f;
         rockHandCollisionDynamicDivergenceTeleportDwellSeconds = 0.3f;
         rockHandCollisionDynamicTeleportRecoverySeconds = 0.25f;
@@ -261,7 +263,6 @@ namespace rock
         rockHandCollisionSurfaceFingerResponseGain = 1.0f;
         rockHandCollisionSurfaceFingerMaximumDeflectionOpenUnits = 0.85f;
         rockHandCollisionSurfaceFingerMinimumHelpfulTravelGameUnits = 0.01f;
-        rockHandCollisionSurfaceFingerDirectionSwitchHysteresisFraction = 0.10f;
         rockHandCollisionSurfaceFingerSmoothingSpeed = 30.0f;
         rockHandCollisionSurfaceFingerReleaseDelaySeconds = 0.12f;
 
@@ -1195,6 +1196,20 @@ namespace rock
             1.0f,
             0.0f,
             50.0f);
+        rockHandCollisionDynamicCompoundMass = readClampedFloat(ini,
+            SECTION,
+            "fHandCollisionDynamicCompoundMass",
+            rockHandCollisionDynamicCompoundMass,
+            2.0f,
+            0.1f,
+            50.0f);
+        rockHandCollisionDynamicInverseInertiaMultiplier = readClampedFloat(ini,
+            SECTION,
+            "fHandCollisionDynamicInverseInertiaMultiplier",
+            rockHandCollisionDynamicInverseInertiaMultiplier,
+            1.0f,
+            0.05f,
+            10.0f);
         rockHandCollisionDynamicDivergenceTeleportGameUnits = readClampedFloat(ini,
             SECTION,
             "fHandCollisionDynamicDivergenceTeleportGameUnits",
@@ -1308,13 +1323,6 @@ namespace rock
             0.01f,
             0.0001f,
             1.0f);
-        rockHandCollisionSurfaceFingerDirectionSwitchHysteresisFraction = readClampedFloat(ini,
-            SECTION,
-            "fHandCollisionSurfaceFingerDirectionSwitchHysteresisFraction",
-            rockHandCollisionSurfaceFingerDirectionSwitchHysteresisFraction,
-            0.10f,
-            0.0f,
-            0.5f);
         rockHandCollisionSurfaceFingerSmoothingSpeed = readClampedFloat(ini,
             SECTION,
             "fHandCollisionSurfaceFingerSmoothingSpeed",

@@ -131,7 +131,7 @@ Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'twinFrameForSlot\(handTwins, forearmTwins, isLeft, bodyIndex\)'
 ) 'Dynamic collision must consume the body-collider forearm frame publication.'
 Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'bodyBoneColliders\.buildDynamicForearmTwinShape\(twinFrame\)' `
+    'bodyBoneColliders\.buildDynamicForearmTwinShape\(frameForChild\)' `
     'Dynamic forearm twins must use the body-collider shared hull builder.'
 Reject-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
     'dimensionsDrifted|twinFrame\.length - slot\.createdLength|twinFrame\.radius - slot\.createdRadius|twinFrame\.convexRadius - slot\.createdConvexRadius' `
@@ -155,7 +155,7 @@ Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
 Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'if \(_transitionCollisionSuppressed \|\|',
     'slot\.createdGeometryGeneration == geometryGeneration',
-    'retireSlot\(slot, frame\.bhkWorld\);'
+    'retireHand\(handSlots, frame\.bhkWorld, isLeft\);'
 ) 'Queued geometry rebuilds must coalesce behind animation suspension and commit only after stable resume.'
 Require-Text 'src/physics-interaction/hand/DynamicHandCollisionTelemetry.h' `
     'kForearmSlot\s*=\s*kFirstForearmSlot[\s\S]*Forearm,[\s\S]*return "FARM"' `
@@ -169,6 +169,65 @@ Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @(
     '_bodyBoneColliders,'
 ) 'Body forearm frames must publish before dynamic hand collision consumes them in the same game frame.'
 
+# One animated dynamic compound owns the 17 semantic children. Child IDs are
+# decoded from key-2 shape keys; no callback may guess a child from the shared
+# body ID or from key-3's unrelated +0x10 payload.
+Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
+    'const RE::NiTransform compoundRootTarget =\s*driveTargets\[kPalmSlot\]' `
+    'The compound root target must be the exact published palm collider frame.'
+Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
+    'std::array<havok_compound_shape_builder::CompoundChild',
+    'const auto compoundRootInverse',
+    'colliderFrameToSceneFrame\(compoundRootTarget\)',
+    'composeTransforms\(\s*compoundRootInverse,\s*colliderFrameToSceneFrame\(driveTargets\[child\]\)',
+    'handSlots\.compoundShape\.create\(compoundChildren\)',
+    'slot\.body\.create\(',
+    'handSlots\.compoundShape\.get\(\)',
+    'applyHandCompoundEnvelopeMassProperties\(',
+    'placeGeneratedKeyframedBodyImmediately\(\s*slot\.body,\s*compoundRootTarget'
+) 'Each hand compound must use the published keyframed palm collider target as its only root frame, express child frames in the scene convention, and apply explicit envelope mass properties.'
+Reject-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
+    'authorityProxy|authorityConstraint|createGrabConstraint|GrabAuthorityProxy' `
+    'Dynamic hand compounds must not introduce a weapon-style proxy, constraint, or alternate authority frame.'
+# Collider frames author axes as columns; scene NiTransforms author them as
+# rows. Composing a physics delta with the scene hand without converting both
+# sampled transforms transposes (= inverts) the rotation delta: the exact
+# reversed-hand-rotation failure of the reverted first compound attempt.
+Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
+    'colliderFrameToSceneFrame[\s\S]*transposeRotation' `
+    'The collider-to-scene frame conversion must exist and transpose the stored rotation.'
+Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
+    'const RE::NiTransform requestedSceneWorld =\s*colliderFrameToSceneFrame\(owner\.requestedTargetWorld\)',
+    'const RE::NiTransform commandedSceneWorld =\s*colliderFrameToSceneFrame\(owner\.commandedTargetWorld\)',
+    'const RE::NiTransform liveCompoundSceneWorld =\s*colliderFrameToSceneFrame\(liveCompoundWorld\)',
+    'composeTransforms\(\s*requestedSceneWorld',
+    'composeTransforms\(\s*commandedSceneWorld',
+    'composeTransforms\(\s*liveCompoundSceneWorld'
+) 'Post-solve child reconstruction must convert every body-level transform to the scene convention before composing child frames.'
+Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
+    'sceneFrameToColliderFrame\(\s*handSlots\.surfaceLatch\.lastProxyWorld\[bodyIndex\]\)',
+    'sceneFrameToColliderFrame\(\s*transform_math::composeTransforms\(\s*handInput\.rawHandWorld'
+) 'Latch and finger-intent drive targets must convert back to the collider convention before queueing.'
+Require-OrderedText 'src/RockConfig.cpp' @(
+    'fHandCollisionDynamicCompoundMass',
+    'fHandCollisionDynamicInverseInertiaMultiplier'
+) 'The hand compound mass and inverse-inertia controls must load through the ROCK INI path.'
+Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
+    'queuedCompoundPoseSequence',
+    'compoundShape\.updateTransforms\(',
+    'consumedChildInContactBodyGame',
+    'driveGeneratedKeyframedBody\(\s*world,\s*slot\.body'
+) 'Animated child transforms must commit on the physics thread before directly driving the compound body.'
+Require-Text 'src/physics-interaction/native/HavokCompoundShapeBuilder.cpp' `
+    'tryResolveChildIndex[\s\S]*decodeTopLevelCompoundInstanceId[\s\S]*_instanceIds' `
+    'Compound contacts must resolve high-bit native instance IDs through constructor-returned stable IDs.'
+Require-Text 'src/physics-interaction/core/PhysicsInteractionContacts.inl' `
+    'shapeKeyA\s*=[\s\S]{0,120}data \+ 0x10[\s\S]{0,180}shapeKeyB\s*=[\s\S]{0,120}data \+ 0x14' `
+    'The verified key-2 record must read both compound participant shape keys at +0x10/+0x14.'
+Reject-Text 'src/physics-interaction/core/PhysicsInteractionContacts.inl' `
+    'void PhysicsInteraction::handleContactEvent\([\s\S]*tryClassifyDynamicBodyContactSourceAtomic\(' `
+    'Key-3 impulse records must never be used to infer compound child semantics.'
+
 # Finger residuals must be evaluated against immutable pre-correction intent.
 # Only helpful anatomical motion may replace the established tip pushback;
 # base/middle probes must never multiply the rigid whole-hand correction.
@@ -179,28 +238,30 @@ Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'candidate\.active = true'
 ) 'Surface finger response must capture stable hand-local intent and calibrated opening/closing travel on contact entry.'
 Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
-    'closingProbeTravelGameUnits',
-    'openingProbeTravelGameUnits',
-    'surface_finger_collision_policy::solve\(',
-    'response\.lastDirections'
-) 'Every contact must evaluate both anatomical directions against the solver-safe displacement.'
+    'worldContactActive',
+    'fingerDeviationSum',
+    'classifySurfaceFingerDirection\(',
+    'surface_finger_collision_policy::solve\('
+) 'Finger flexion must consume world-only contact evidence and command its direction from the palm-frame touch classification.'
+Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
+    'classifySurfaceFingerDirection[\s\S]*touchLocal\.y < 0\.0f[\s\S]*std::int8_t\{ 1 \}[\s\S]*touchLocal\.x > 0\.0f[\s\S]*std::int8_t\{ -1 \}' `
+    'Palm-face (-Y) touches must open fingers, fingertip (+X) pushes must curl them, and every other direction must leave the pose unchanged.'
 Require-Text 'src/physics-interaction/hand/SurfaceFingerCollisionPolicy.h' `
-    'baselineCost[\s\S]*evaluateDirection[\s\S]*closing\.valid && opening\.valid[\s\S]*directionSwitchHysteresisFraction[\s\S]*selected->direction' `
-    'Conflicting phalanx contacts must choose one coherent per-finger direction with switch hysteresis.'
+    'forcedDirections\[finger\] == 0[\s\S]*continue;[\s\S]*evaluateDirection\(' `
+    'The flexion solver must only compute deflection along the commanded anatomical direction, never pick one itself.'
 Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'handSlots\.surfaceFingerResponse\.intentFramesInHand',
     'composeTransforms\(\s*handInput\.rawHandWorld',
-    'queueGeneratedKeyframedBodyTarget\('
-) 'Contacted finger twins must chase immutable intent composed with the raw tracked hand, not corrected presentation.'
+    'driveTargets\[bodyIndex\] = driveTarget',
+    'queueCompoundPose\('
+) 'Animated finger children must chase immutable intent composed with the raw tracked hand, not corrected presentation.'
 Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'updateSurfaceFingerResponse\(',
-    'isFingerTipSlot\(',
-    'rigidPrimary \|\| unresolvedLegacyTip',
-    'combineTwinDeviations\('
-) 'Helpful curl must replace only its fingertip rigid fallback before whole-hand deviation combination.'
-Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'const bool rigidPrimary = bodyIndex == kPalmSlot \|\|[\s\S]{0,180}bodyIndex >= kFirstForearmSlot' `
-    'Palm and forearm must remain the only unconditional rigid-hand collision channels.'
+    'surfaceFingerResponse\.intentFramesInHand',
+    'driveTargets\[bodyIndex\] = driveTarget',
+    'queueCompoundPose\(',
+    'resolvedHandWorld\.translate'
+) 'Helpful anatomical response must animate compound children while the one rigid body remains whole-hand authority.'
 Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
     'setHandPoseCustomWithPriority\([\s\S]{0,400}rockHandCollisionDynamicVisualPriority' `
     'Surface finger response must use the existing priority-arbitrated FRIK pose authority.'
@@ -213,17 +274,18 @@ Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
     'clearSurfaceFingerResponse\(_hands\[0\], false\)[\s\S]*clearSurfaceFingerResponse\(_hands\[1\], true\)' `
     'World/menu shutdown must deterministically release both surface finger pose claims.'
 
-# Render-follow pipeline: combine per-body deviations, apply normal contact
-# exactly, and reserve smoothing for explicit teleport recovery only.
+# Render-follow pipeline: apply the compound body's coherent SE(3) readback and
+# reserve translation smoothing for explicit teleport recovery only.
 Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'sanitizeHandTargetResponseScale\(twinFrame->handTargetResponseScale\)',
     'handTargetCorrectionWorldGame',
-    'combineTwinDeviations\(',
+    'resolvedHandWorld = transform_math::composeTransforms\(',
     'float smoothingSpeed = 0\.0f',
     'teleportRecoverySecondsRemaining > 0\.0f',
     'smoothAppliedDeviation\(',
+    'target = resolvedHandWorld',
     'applyExternalHandWorldTransform\('
-) 'Dynamic hand render-follow must map forearm leverage, combine contacts, and smooth only teleport recovery before publication.'
+) 'Dynamic hand render-follow must retain child leverage, publish coherent rigid readback, and smooth only teleport recovery translation.'
 Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
     'dynamicInteractionFingerContact[\s\S]{0,500}dynamicInteractionFingerContact\s*\?[\s\S]{0,80}0\.0f[\s\S]{0,120}rockHandCollisionSurfaceFingerSmoothingSpeed' `
     'Hand/hand and hand/weapon finger contacts must publish their collision pose without presentation lag.'
@@ -308,22 +370,27 @@ foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini
         'fHandCollisionDynamicHapticMinApproachSpeedGameUnitsPerSecond' `
         "$configPath must document the dynamic hand haptic speed units."
     Reject-Text $configPath `
-        'SoftContact|ContactTargetIdentity' `
-        "$configPath must not retain legacy soft-contact or target-identity keys."
+        'SoftContact|ContactTargetIdentity|fHandCollisionDynamicConstraint' `
+        "$configPath must not retain superseded soft-contact, target-identity, or constraint-drive keys."
+    Require-Text $configPath `
+        'fHandCollisionDynamicContactPressMaxVelocityHavok' `
+        "$configPath must retain the established dynamic-collider contact press cap."
 }
+Require-Text 'src/RockConfig.cpp' `
+    'fHandCollisionDynamicContactPressMaxVelocityHavok' `
+    'Dynamic collider press-cap tuning must load through the ROCK configuration boundary.'
 
-# Deviation is a two-stage POST-SOLVE measurement against the same substep's
-# targets: the residual vs the COMMANDED (velocity-limited) target detects
-# contact, and only in contact is the render deviation published, measured vs
-# the REQUESTED (pre-limit) target. Pre-collide sampling leaks tracking lag;
-# rendering the commanded residual saturates at the dt-dependent limiter
-# distance (framerate-modulated milli-punch pulsing).
+# Contact identity comes from the verified key-2 manifold shape keys, while
+# post-solve readback measures each animated child through the one compound
+# body's coherent rigid transform.
 Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'void DynamicHandCollisionRuntime::samplePostSolveDeviations\(',
     'tryResolveLiveBodyWorldTransform\(',
-    'commandedTargetGame',
-    'requestedTargetGame'
-) 'Dynamic hand deviation must detect contact vs the commanded target and measure vs the requested target.'
+    'pendingSolverContactMaskAtomic\.exchange\(',
+    'requestedChildWorld',
+    'liveChildWorld',
+    'contactMask'
+) 'Dynamic hand deviation must use manifold child identity and coherent post-solve compound transforms.'
 Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @(
     'void PhysicsInteraction::observeCustomGrabAuthorityAfterSolve\(',
     '_dynamicHandCollision\.samplePostSolveDeviations\([\s\S]*world,[\s\S]*completedSolveSequence,[\s\S]*timing\);'
@@ -345,21 +412,22 @@ Require-OrderedText 'src/physics-interaction/native/GeneratedKeyframedBodyDrive.
     'target = requestedTarget;'
 ) 'Dynamic drive divergence teleport must measure against and place at the requested target.'
 
-# Contact press cap: an established contact must lean, not slam. The drive
-# clamps only the velocity component along the press direction, after the
-# hard-keyframe computation; the caller feeds the direction from the last
-# post-solve deviation.
-Require-OrderedText 'src/physics-interaction/native/GeneratedKeyframedBodyDrive.cpp' @(
-    'kFunc_ComputeHardKeyFrame',
-    'hasContactPressDirection',
-    'contactPressMaxVelocityHavok',
-    'setVelocity\('
-) 'Dynamic drive must clamp the contact press velocity after the hard-keyframe computation.'
+# Preserve the proven dynamic-collider movement contract: target the exact
+# published palm collider frame, then hard-keyframe the dynamic compound body
+# itself so the solver clips one coherent body. Compound grouping is the only
+# behavior borrowed from the weapon path.
+Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
+    'const RE::NiTransform compoundRootTarget =\s*driveTargets\[kPalmSlot\]',
+    'queueGeneratedKeyframedBodyTarget\(\s*compoundOwner\.driveState,\s*compoundRootTarget',
+    'GeneratedBodyDriveMode mode\{',
+    '\.dynamicVelocity = true',
+    'driveGeneratedKeyframedBody\(\s*world,\s*slot\.body'
+) 'Dynamic hand tracking must directly drive the palm-rooted dynamic compound through the established collider path.'
 Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'lastPostSolveDeviationValid',
-    'mode\.hasContactPressDirection = true;',
+    'mode\.hasContactPressDirection = true',
     'driveGeneratedKeyframedBody\('
-) 'Dynamic hand flush must arm the press cap from the last post-solve deviation.'
+) 'The compound drive must retain the established contact press cap.'
 
 # The twins get their own visualization flag, independent of the keyframed
 # collider debug draws.
@@ -460,17 +528,16 @@ Require-Text 'src/physics-interaction/hand/DynamicHandSurfaceContactState.h' `
     'collectFresh[\s\S]*atomic_flag writer[\s\S]*sequence' `
     'Dynamic surface contact publication must be bounded and non-blocking on the physics callback.'
 Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'for \(std::size_t slot = 0; slot < kBodiesPerHand; \+\+slot\)[\s\S]{0,180}isSurfaceGrabSourceSlot\(slot\)' `
+    'tryResolveChildIndex\(shapeKey\)[\s\S]{0,260}isSurfaceGrabSourceSlot\(\*childIndex\)' `
     'Only dynamic palm and fingertip twins may seed fixed-surface grabs.'
 Require-OrderedText 'src/physics-interaction/core/PhysicsInteractionContacts.inl' @(
     'tryClassifySurfaceContactSourceAtomic\(',
-    'isDynamicHandProxySurfaceLayer\(',
-    'recordSurfaceContactCallback\(',
+    'recordSurfaceManifoldProcessedCallback\(',
     '_generatedBodyContactRegistry\.tryClassify\('
-) 'Dynamic surface evidence must publish before the ordinary generated-body prefilter discards proxy pairs.'
+) 'Key-2 dynamic surface evidence must publish before the ordinary key-3 generated-body prefilter.'
 Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'kRaiseManifoldProcessedEvents\s*=\s*0x40u[\s\S]*isSurfaceGrabSourceSlot\([\s\S]*enableBodyFlags\([\s\S]{0,350}kRaiseManifoldProcessedEvents[\s\S]{0,200}kRebuildBodyCollisionState[\s\S]*flaggedBody\.body->flags\s*&\s*kRaiseManifoldProcessedEvents' `
-    'Palm and fingertip twins must opt into the verified key-2 processed-manifold event path without flagging forearms.'
+    'kRaiseManifoldProcessedEvents\s*=\s*0x40u[\s\S]*enableBodyFlags\([\s\S]{0,350}kRaiseManifoldProcessedEvents[\s\S]{0,200}kRebuildBodyCollisionState[\s\S]*flaggedBody\.body->flags\s*&\s*kRaiseManifoldProcessedEvents' `
+    'The compound body must opt into the verified key-2 processed-manifold event path for child shape keys.'
 Require-OrderedText 'src/physics-interaction/core/PhysicsInteractionContacts.inl' @(
     'handleManifoldProcessedEvent\(',
     'tryClassifySurfaceContactSourceAtomic\(',
@@ -478,8 +545,8 @@ Require-OrderedText 'src/physics-interaction/core/PhysicsInteractionContacts.inl
     'recordObstacleManifoldProcessedCallback\('
 ) 'Processed manifolds must publish dynamic-hand surface evidence while preserving the dynamic-weapon route.'
 Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'recordSurfaceManifoldProcessedCallback\([\s\S]*isDynamicHandProxySurfaceLayer\(otherLayer\)[\s\S]*_surfaceContacts\.record\(source, otherBodyId, nullptr, nullptr\)' `
-    'Processed hand manifolds must validate the surface layer before publishing point-free latch evidence.'
+    'recordSurfaceManifoldProcessedCallback\([\s\S]*isDynamicHandProxySurfaceLayer\(otherLayer\)[\s\S]*_surfaceContacts\.record\([\s\S]*contactPointGame[\s\S]*contactNormalGame' `
+    'Processed hand manifolds must validate the surface layer and publish their verified point/normal payload.'
 Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
     'surfaceCallbacks\(impulse/manifold/eligible/published\)' `
     'The rate-limited dynamic-hand trace must distinguish callback, layer, and publication failures.'
@@ -510,7 +577,7 @@ foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini
 }
 foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
     Require-Text $configPath `
-        'bHandCollisionSurfaceFingerResponseEnabled\s*=\s*true[\s\S]*fHandCollisionSurfaceFingerProbeDeltaOpenUnits[\s\S]*fHandCollisionSurfaceFingerResponseGain[\s\S]*fHandCollisionSurfaceFingerMaximumDeflectionOpenUnits[\s\S]*fHandCollisionSurfaceFingerMinimumHelpfulTravelGameUnits[\s\S]*fHandCollisionSurfaceFingerDirectionSwitchHysteresisFraction[\s\S]*fHandCollisionSurfaceFingerSmoothingSpeed[\s\S]*fHandCollisionSurfaceFingerReleaseDelaySeconds' `
+        'bHandCollisionSurfaceFingerResponseEnabled\s*=\s*true[\s\S]*fHandCollisionSurfaceFingerProbeDeltaOpenUnits[\s\S]*fHandCollisionSurfaceFingerResponseGain[\s\S]*fHandCollisionSurfaceFingerMaximumDeflectionOpenUnits[\s\S]*fHandCollisionSurfaceFingerMinimumHelpfulTravelGameUnits[\s\S]*fHandCollisionSurfaceFingerSmoothingSpeed[\s\S]*fHandCollisionSurfaceFingerReleaseDelaySeconds' `
         "$configPath must ship the globally enabled, bounded experimental surface finger response."
 }
 Require-Text 'src/RockConfig.h' `
@@ -524,7 +591,6 @@ Require-OrderedText 'src/RockConfig.cpp' @(
     'fHandCollisionSurfaceFingerResponseGain',
     'fHandCollisionSurfaceFingerMaximumDeflectionOpenUnits',
     'fHandCollisionSurfaceFingerMinimumHelpfulTravelGameUnits',
-    'fHandCollisionSurfaceFingerDirectionSwitchHysteresisFraction',
     'fHandCollisionSurfaceFingerSmoothingSpeed',
     'fHandCollisionSurfaceFingerReleaseDelaySeconds'
 ) 'Every bounded surface finger control must load through the ROCK INI path.'

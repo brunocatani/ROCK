@@ -28,8 +28,8 @@ namespace rock::dynamic_hand_surface_contact_state
     };
 
     /*
-     * Dynamic hand twins intentionally remain outside Hand's ordinary semantic
-     * contact set. This bounded publication is the only bridge from their
+     * Dynamic hand compound children intentionally remain outside Hand's
+     * ordinary semantic contact set. This bounded publication is the only bridge from their
      * physics callbacks to provider-scoped fixed-surface grabbing.
      *
      * Physics callbacks are the producers and the main game frame is the

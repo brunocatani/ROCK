@@ -27,7 +27,6 @@ namespace rock::surface_finger_collision_policy
         float responseGain = 1.0f;
         float maximumDeflectionOpenUnits = 0.85f;
         float minimumHelpfulProbeTravelGameUnits = 0.01f;
-        float directionSwitchHysteresisFraction = 0.10f;
     };
 
     struct SolveResult
@@ -62,19 +61,22 @@ namespace rock::surface_finger_collision_policy
                 config.minimumHelpfulProbeTravelGameUnits : 0.01f,
             0.0001f,
             1.0f);
-        config.directionSwitchHysteresisFraction = std::clamp(
-            std::isfinite(config.directionSwitchHysteresisFraction) ?
-                config.directionSwitchHysteresisFraction : 0.10f,
-            0.0f,
-            0.5f);
         return config;
     }
 
+    /*
+     * forcedDirections carries the anatomical direction chosen from the
+     * contact geometry in the palm frame (-1 curl, +1 open/spread, 0 leave
+     * the finger at its captured pose). The solver no longer picks a
+     * direction itself: it only computes the bounded least-squares
+     * deflection along the commanded direction, so a palm-face touch can
+     * never curl fingers and a fingertip push can never spread them.
+     */
     [[nodiscard]] inline SolveResult solve(
         const std::array<float, kFingerCount>& baselineOpenValues,
         const std::array<std::array<SegmentContact, kSegmentCount>,
             kFingerCount>& contacts,
-        const std::array<std::int8_t, kFingerCount>& previousDirections,
+        const std::array<std::int8_t, kFingerCount>& forcedDirections,
         Config config) noexcept
     {
         config = sanitize(config);
@@ -239,43 +241,15 @@ namespace rock::surface_finger_collision_policy
                 return candidate;
             };
 
-            const auto closing = evaluateDirection(-1);
-            const auto opening = evaluateDirection(1);
-            const DirectionCandidate* selected = nullptr;
-            if (closing.valid && opening.valid) {
-                const DirectionCandidate* previous =
-                    previousDirections[finger] < 0 ? &closing :
-                    previousDirections[finger] > 0 ? &opening : nullptr;
-                const DirectionCandidate* alternative = previous == &closing ?
-                    &opening :
-                    &closing;
-                if (previous) {
-                    const float switchMargin =
-                        baselineCost *
-                        config.directionSwitchHysteresisFraction;
-                    selected = alternative->residualCost + switchMargin <
-                                       previous->residualCost ?
-                        alternative :
-                        previous;
-                } else {
-                    constexpr float kCostTieEpsilon = 1.0e-6f;
-                    if (opening.residualCost + kCostTieEpsilon <
-                        closing.residualCost) {
-                        selected = &opening;
-                    } else if (closing.residualCost + kCostTieEpsilon <
-                               opening.residualCost) {
-                        selected = &closing;
-                    } else {
-                        selected = opening.deflection < closing.deflection ?
-                            &opening :
-                            &closing;
-                    }
-                }
-            } else if (closing.valid) {
-                selected = &closing;
-            } else if (opening.valid) {
-                selected = &opening;
+            if (forcedDirections[finger] == 0) {
+                continue;
             }
+            const auto forced = evaluateDirection(
+                forcedDirections[finger] < 0 ? std::int8_t{ -1 } :
+                                               std::int8_t{ 1 });
+            const DirectionCandidate* selected = forced.valid ?
+                &forced :
+                nullptr;
 
             if (selected) {
                 result.targetOpenValues[finger] = std::clamp(
