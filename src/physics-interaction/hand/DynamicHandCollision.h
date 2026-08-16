@@ -46,9 +46,14 @@ namespace rock
      * carries explicit envelope mass properties (weapon-compound contract).
      * The rendered FRIK hand follows the compound body's full post-solve
      * rigid transform; WORLD-surface finger contacts additionally drive
-     * bounded anatomical flexion/extension whose direction is classified in
-     * the palm frame (palm-face touch spreads, fingertip push curls,
-     * cross-palm leaves the pose). During ordinary tracking authority is
+     * incremental anatomical flexion/extension whose direction is classified
+     * in the palm frame (palm-face touch spreads, fingertip push curls,
+     * cross-palm leaves the pose). The flexion is physical, not cosmetic:
+     * the compound's finger children always chase the live role frames, so
+     * the published pose curls the rendered skeleton, the role frames follow
+     * it, and the colliders curl and slide along the surface — stepping each
+     * blocked frame until the contact resolves or the anatomical stop (full
+     * fist / fully spread) is reached. During ordinary tracking authority is
      * strictly one-directional (wand/skeleton targets -> compound -> render):
      * animated children come from the same HandBoneColliderSet and
      * BodyBoneColliderSet role frames as the keyframed semantic colliders. A
@@ -371,20 +376,15 @@ namespace rock
                 bool valid = false;
             };
 
+            /*
+             * The response owns no cached collider intent frames: the
+             * compound children always chase the live published role frames,
+             * so the physical colliders curl and slide with the rendered
+             * pose while this state incrementally walks the finger open
+             * values under sustained world contact.
+             */
             struct SurfaceFingerResponse
             {
-                std::array<RE::NiTransform,
-                    hand_collider_semantics::kHandFingerRoleCount>
-                    intentFramesInHand{};
-                std::array<RE::NiPoint3,
-                    hand_collider_semantics::kHandFingerRoleCount>
-                    closingProbeTravelInHand{};
-                std::array<RE::NiPoint3,
-                    hand_collider_semantics::kHandFingerRoleCount>
-                    openingProbeTravelInHand{};
-                std::array<bool,
-                    hand_collider_semantics::kHandFingerRoleCount>
-                    intentValid{};
                 std::array<float, hand_collider_semantics::kHandFingerCount>
                     baselineOpenValues{ 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
                 std::array<float, hand_collider_semantics::kHandFingerCount>

@@ -164,6 +164,51 @@ int main()
     assert(alreadyOpen.directions[0] == 0);
     assert(alreadyOpen.helpfulSegmentMask == 0);
 
+    /*
+     * Incremental physical curl contract: the runtime re-baselines the solve
+     * on the current open values each frame, so persistent blocked contact
+     * must accumulate through repeated solve+advance iterations all the way
+     * to the anatomical stop (a full fist), and stop stepping there.
+     */
+    {
+        std::array<float, policy::kFingerCount> curlCurrent{
+            1.0f, 1.0f, 1.0f, 1.0f, 1.0f
+        };
+        std::array<std::int8_t, policy::kFingerCount> curlDirections{};
+        curlDirections[1] = -1;
+        std::array<std::array<policy::SegmentContact, policy::kSegmentCount>,
+            policy::kFingerCount>
+            curlContacts{};
+        curlContacts[1][2] = {
+            .blockedDepthGameUnits = 5.0f,
+            .closingProbeTravelGameUnits = 0.2f,
+            .active = true,
+        };
+        const policy::Config curlConfig{ .maximumDeflectionOpenUnits = 0.3f };
+        for (int frame = 0; frame < 240; ++frame) {
+            const auto step = policy::solve(
+                curlCurrent,
+                curlContacts,
+                curlDirections,
+                curlConfig);
+            curlCurrent = policy::advanceOpenValues(
+                curlCurrent,
+                step.targetOpenValues,
+                30.0f,
+                1.0f / 90.0f);
+        }
+        assert(curlCurrent[1] < 0.01f);
+        assert(nearlyEqual(curlCurrent[0], 1.0f));
+        const auto parked = policy::solve(
+            curlCurrent,
+            curlContacts,
+            curlDirections,
+            curlConfig);
+        // At the stop the anatomical capacity is exhausted; the solve must
+        // not report progress it cannot make.
+        assert(parked.targetOpenValues[1] <= curlCurrent[1] + 0.0001f);
+    }
+
     const std::array<float, policy::kFingerCount> current{
         1.0f, 1.0f, 1.0f, 1.0f, 1.0f
     };

@@ -204,10 +204,9 @@ Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'composeTransforms\(\s*commandedSceneWorld',
     'composeTransforms\(\s*liveCompoundSceneWorld'
 ) 'Post-solve child reconstruction must convert every body-level transform to the scene convention before composing child frames.'
-Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
-    'sceneFrameToColliderFrame\(\s*handSlots\.surfaceLatch\.lastProxyWorld\[bodyIndex\]\)',
-    'sceneFrameToColliderFrame\(\s*transform_math::composeTransforms\(\s*handInput\.rawHandWorld'
-) 'Latch and finger-intent drive targets must convert back to the collider convention before queueing.'
+Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
+    'sceneFrameToColliderFrame\(\s*handSlots\.surfaceLatch\.lastProxyWorld\[bodyIndex\]\)' `
+    'Latch drive targets must convert back to the collider convention before queueing.'
 Require-OrderedText 'src/RockConfig.cpp' @(
     'fHandCollisionDynamicCompoundMass',
     'fHandCollisionDynamicInverseInertiaMultiplier'
@@ -228,15 +227,27 @@ Reject-Text 'src/physics-interaction/core/PhysicsInteractionContacts.inl' `
     'void PhysicsInteraction::handleContactEvent\([\s\S]*tryClassifyDynamicBodyContactSourceAtomic\(' `
     'Key-3 impulse records must never be used to infer compound child semantics.'
 
-# Finger residuals must be evaluated against immutable pre-correction intent.
-# Only helpful anatomical motion may replace the established tip pushback;
-# base/middle probes must never multiply the rigid whole-hand correction.
+# The flexion is physical: compound finger children always chase the LIVE
+# published role frames so the colliders curl and slide with the rendered
+# pose. No frozen capture-time collider intent may exist anywhere — that is
+# exactly what welded the rigid compound into walls while the rendered
+# fingers curled away from it.
+Reject-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
+    'intentFramesInHand|closingProbeTravelInHand|openingProbeTravelInHand|intentValid' `
+    'Surface finger response must not cache frozen collider intent frames or capture-time probe travel; colliders follow the live pose.'
+Reject-Text 'src/physics-interaction/hand/DynamicHandCollision.h' `
+    'intentFramesInHand|closingProbeTravelInHand|openingProbeTravelInHand|intentValid' `
+    'The surface finger response state must not own cached collider intent frames.'
+# Probes are remeasured around the CURRENT pose and the solve re-baselines on
+# the current open values every frame, so sustained blocked contact keeps
+# stepping the curl toward the anatomical stop instead of deflecting around a
+# stale captured baseline.
 Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
-    'candidate\.intentFramesInHand\[linearIndex\]',
-    'candidate\.closingProbeTravelInHand\[linearIndex\]',
-    'candidate\.openingProbeTravelInHand\[linearIndex\]',
-    'candidate\.active = true'
-) 'Surface finger response must capture stable hand-local intent and calibrated opening/closing travel on contact entry.'
+    'bool computeSurfaceFingerProbeTravel\(',
+    'probesValid = computeSurfaceFingerProbeTravel\(',
+    'response\.currentOpenValues,',
+    'surface_finger_collision_policy::solve\(\s*response\.currentOpenValues,'
+) 'Finger probes must be remeasured around the current pose and the solve must re-baseline on the current open values (incremental physical curl).'
 Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'worldContactActive',
     'fingerDeviationSum',
@@ -250,18 +261,11 @@ Require-Text 'src/physics-interaction/hand/SurfaceFingerCollisionPolicy.h' `
     'forcedDirections\[finger\] == 0[\s\S]*continue;[\s\S]*evaluateDirection\(' `
     'The flexion solver must only compute deflection along the commanded anatomical direction, never pick one itself.'
 Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
-    'handSlots\.surfaceFingerResponse\.intentFramesInHand',
-    'composeTransforms\(\s*handInput\.rawHandWorld',
-    'driveTargets\[bodyIndex\] = driveTarget',
-    'queueCompoundPose\('
-) 'Animated finger children must chase immutable intent composed with the raw tracked hand, not corrected presentation.'
-Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
-    'updateSurfaceFingerResponse\(',
-    'surfaceFingerResponse\.intentFramesInHand',
+    'twinFrame->target;',
     'driveTargets\[bodyIndex\] = driveTarget',
     'queueCompoundPose\(',
     'resolvedHandWorld\.translate'
-) 'Helpful anatomical response must animate compound children while the one rigid body remains whole-hand authority.'
+) 'Finger children must chase the live published role frames while the one rigid body remains whole-hand authority.'
 Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
     'setHandPoseCustomWithPriority\([\s\S]{0,400}rockHandCollisionDynamicVisualPriority' `
     'Surface finger response must use the existing priority-arbitrated FRIK pose authority.'
@@ -328,6 +332,15 @@ Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
 Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
     'updateHandHaptic\(' `
     'Dynamic hand contact entry must be consumed by the main-frame haptic policy.'
+# Manifold contact fires before any penetration deviation exists, so a
+# grazing/resting touch reports ~zero approach speed. Latching the haptic
+# entry there consumes the episode and the later real press stays silent.
+Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
+    'const float entryGateSpeed',
+    'maxEntryApproachSpeed >= entryGateSpeed',
+    'contactEntrySequenceAtomic\.fetch_add',
+    'handSlots\.physicsContactActive = true;'
+) 'The haptic contact entry must not latch until the approach speed can actually fire a pulse.'
 Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @(
     '_dynamicHandCollision\.updateFrame\(',
     '_dynamicHandCollision\.consumeHapticEvents\(\)',

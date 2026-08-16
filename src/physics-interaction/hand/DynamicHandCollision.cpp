@@ -484,6 +484,113 @@ namespace rock
         }
 
         /*
+         * World-space closing/opening probe travel measured around the
+         * CURRENT flexion pose. The surface response re-baselines on the
+         * live open values every frame so sustained blocked contact keeps
+         * walking the fingers toward a fist (or fully spread); the probes
+         * must be measured around that same pose or the travel directions
+         * go stale as the hand curls away from the capture pose. Near the
+         * anatomical stops the clamped probe collapses to zero travel,
+         * which the policy reads as "not helpful" — the curl parks there
+         * without any special-casing.
+         */
+        bool computeSurfaceFingerProbeTravel(
+            const bool isLeft,
+            const RE::NiTransform& rawHandWorld,
+            const dynamic_hand_twin::TwinTargets& handTwins,
+            const std::array<float,
+                hand_collider_semantics::kHandFingerCount>& openValues,
+            const float probeDeltaOpenUnits,
+            std::array<RE::NiPoint3,
+                hand_collider_semantics::kHandFingerRoleCount>&
+                outClosingTravelWorld,
+            std::array<RE::NiPoint3,
+                hand_collider_semantics::kHandFingerRoleCount>&
+                outOpeningTravelWorld)
+        {
+            auto closingOpenValues = openValues;
+            auto openingOpenValues = openValues;
+            for (std::size_t finger = 0;
+                 finger < hand_collider_semantics::kHandFingerCount;
+                 ++finger) {
+                closingOpenValues[finger] = std::max(
+                    0.0f,
+                    closingOpenValues[finger] - probeDeltaOpenUnits);
+                openingOpenValues[finger] = std::min(
+                    1.0f,
+                    openingOpenValues[finger] + probeDeltaOpenUnits);
+            }
+
+            frik_visual_authority::FingerLocalTransformOverride currentLocals{};
+            frik_visual_authority::FingerLocalTransformOverride closingLocals{};
+            frik_visual_authority::FingerLocalTransformOverride openingLocals{};
+            const auto hand = frik_visual_authority::handFromBool(isLeft);
+            if (!frik_visual_authority::getHandPoseLocalTransformsForPose(
+                    hand,
+                    frik_visual_authority::makeHandPoseDataFromJointValues(
+                        grab_finger_pose_math::expandFingerCurlsToJointValues(
+                            openValues)),
+                    &currentLocals) ||
+                !frik_visual_authority::getHandPoseLocalTransformsForPose(
+                    hand,
+                    frik_visual_authority::makeHandPoseDataFromJointValues(
+                        grab_finger_pose_math::expandFingerCurlsToJointValues(
+                            closingOpenValues)),
+                    &closingLocals) ||
+                !frik_visual_authority::getHandPoseLocalTransformsForPose(
+                    hand,
+                    frik_visual_authority::makeHandPoseDataFromJointValues(
+                        grab_finger_pose_math::expandFingerCurlsToJointValues(
+                            openingOpenValues)),
+                    &openingLocals)) {
+                return false;
+            }
+
+            std::array<RE::NiPoint3,
+                hand_collider_semantics::kHandFingerRoleCount>
+                currentCenters{};
+            std::array<RE::NiPoint3,
+                hand_collider_semantics::kHandFingerRoleCount>
+                closingCenters{};
+            std::array<RE::NiPoint3,
+                hand_collider_semantics::kHandFingerRoleCount>
+                openingCenters{};
+            if (!buildPoseFingerSegmentCenters(
+                    rawHandWorld,
+                    handTwins,
+                    currentLocals,
+                    currentCenters) ||
+                !buildPoseFingerSegmentCenters(
+                    rawHandWorld,
+                    handTwins,
+                    closingLocals,
+                    closingCenters) ||
+                !buildPoseFingerSegmentCenters(
+                    rawHandWorld,
+                    handTwins,
+                    openingLocals,
+                    openingCenters)) {
+                return false;
+            }
+
+            for (std::size_t linearIndex = 0;
+                 linearIndex < hand_collider_semantics::kHandFingerRoleCount;
+                 ++linearIndex) {
+                outClosingTravelWorld[linearIndex] = subtractPoints(
+                    closingCenters[linearIndex],
+                    currentCenters[linearIndex]);
+                outOpeningTravelWorld[linearIndex] = subtractPoints(
+                    openingCenters[linearIndex],
+                    currentCenters[linearIndex]);
+                if (!isFinitePoint(outClosingTravelWorld[linearIndex]) ||
+                    !isFinitePoint(outOpeningTravelWorld[linearIndex])) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        /*
          * Contact-noise smoothing for the rendered hand: the solver resolves a
          * driven-into-surface compound slightly differently each substep, and the
          * raw deviation twitch is visible while the hand rests still. The
@@ -1616,136 +1723,23 @@ namespace rock
             }
         }
 
-        const auto policyConfig =
-            surface_finger_collision_policy::sanitize(
-                surface_finger_collision_policy::Config{
-                    .probeDeltaOpenUnits =
-                        g_rockConfig.
-                            rockHandCollisionSurfaceFingerProbeDeltaOpenUnits,
-                    .responseGain =
-                        g_rockConfig.rockHandCollisionSurfaceFingerResponseGain,
-                    .maximumDeflectionOpenUnits =
-                        g_rockConfig.
-                            rockHandCollisionSurfaceFingerMaximumDeflectionOpenUnits,
-                    .minimumHelpfulProbeTravelGameUnits =
-                        g_rockConfig.
-                            rockHandCollisionSurfaceFingerMinimumHelpfulTravelGameUnits,
-                });
-        auto closingProbeOpenValues = candidate.baselineOpenValues;
-        auto openingProbeOpenValues = candidate.baselineOpenValues;
-        for (std::size_t finger = 0;
-             finger < hand_collider_semantics::kHandFingerCount;
-             ++finger) {
-            closingProbeOpenValues[finger] = std::max(
-                0.0f,
-                closingProbeOpenValues[finger] -
-                    policyConfig.probeDeltaOpenUnits);
-            openingProbeOpenValues[finger] = std::min(
-                1.0f,
-                openingProbeOpenValues[finger] +
-                    policyConfig.probeDeltaOpenUnits);
-        }
-
-        const auto baselineJointValues =
-            grab_finger_pose_math::expandFingerCurlsToJointValues(
-                candidate.baselineOpenValues);
-        const auto closingProbeJointValues =
-            grab_finger_pose_math::expandFingerCurlsToJointValues(
-                closingProbeOpenValues);
-        const auto openingProbeJointValues =
-            grab_finger_pose_math::expandFingerCurlsToJointValues(
-                openingProbeOpenValues);
-        frik_visual_authority::FingerLocalTransformOverride baselineLocals{};
-        frik_visual_authority::FingerLocalTransformOverride
-            closingProbeLocals{};
-        frik_visual_authority::FingerLocalTransformOverride
-            openingProbeLocals{};
-        const auto hand = frik_visual_authority::handFromBool(isLeft);
-        if (!frik_visual_authority::getHandPoseLocalTransformsForPose(
-                hand,
-                frik_visual_authority::makeHandPoseDataFromJointValues(
-                    baselineJointValues),
-                &baselineLocals) ||
-            !frik_visual_authority::getHandPoseLocalTransformsForPose(
-                hand,
-                frik_visual_authority::makeHandPoseDataFromJointValues(
-                    closingProbeJointValues),
-                &closingProbeLocals) ||
-            !frik_visual_authority::getHandPoseLocalTransformsForPose(
-                hand,
-                frik_visual_authority::makeHandPoseDataFromJointValues(
-                    openingProbeJointValues),
-                &openingProbeLocals)) {
-            return false;
-        }
-
-        std::array<RE::NiPoint3,
-            hand_collider_semantics::kHandFingerRoleCount>
-            baselineCenters{};
-        std::array<RE::NiPoint3,
-            hand_collider_semantics::kHandFingerRoleCount>
-            closingProbeCenters{};
-        std::array<RE::NiPoint3,
-            hand_collider_semantics::kHandFingerRoleCount>
-            openingProbeCenters{};
-        if (!buildPoseFingerSegmentCenters(
-                rawHandWorld,
-                handTwins,
-                baselineLocals,
-                baselineCenters) ||
-            !buildPoseFingerSegmentCenters(
-                rawHandWorld,
-                handTwins,
-                closingProbeLocals,
-                closingProbeCenters) ||
-            !buildPoseFingerSegmentCenters(
-                rawHandWorld,
-                handTwins,
-                openingProbeLocals,
-                openingProbeCenters)) {
-            return false;
-        }
-
-        const RE::NiTransform inverseHand =
-            transform_math::invertTransform(rawHandWorld);
+        /*
+         * The compound children keep chasing the LIVE published role frames
+         * while the response runs, so no collider intent frames are cached
+         * here. The capture only needs every finger twin to be publishing —
+         * both the per-frame probe pass and the physical curl depend on
+         * live role frames existing for the whole hand.
+         */
         for (std::size_t finger = 0;
              finger < hand_collider_semantics::kHandFingerCount;
              ++finger) {
             for (std::size_t segment = 0;
                  segment < hand_collider_semantics::kHandFingerSegmentCount;
                  ++segment) {
-                const std::size_t linearIndex =
-                    finger * hand_collider_semantics::kHandFingerSegmentCount +
-                    segment;
                 const auto& twin = handTwins.fingers[finger][segment];
                 if (!twin.valid || !isFiniteTransform(twin.target)) {
                     return false;
                 }
-                // Captured against the scene raw hand, so the relation stays
-                // exact while the hand keeps moving during the response.
-                candidate.intentFramesInHand[linearIndex] =
-                    transform_math::composeTransforms(
-                        inverseHand,
-                        colliderFrameToSceneFrame(twin.target));
-                candidate.closingProbeTravelInHand[linearIndex] =
-                    transform_math::worldVectorToLocal(
-                        rawHandWorld,
-                        closingProbeCenters[linearIndex] -
-                            baselineCenters[linearIndex]);
-                candidate.openingProbeTravelInHand[linearIndex] =
-                    transform_math::worldVectorToLocal(
-                        rawHandWorld,
-                        openingProbeCenters[linearIndex] -
-                            baselineCenters[linearIndex]);
-                if (!isFiniteTransform(
-                        candidate.intentFramesInHand[linearIndex]) ||
-                    !isFinitePoint(
-                        candidate.closingProbeTravelInHand[linearIndex]) ||
-                    !isFinitePoint(
-                        candidate.openingProbeTravelInHand[linearIndex])) {
-                    return false;
-                }
-                candidate.intentValid[linearIndex] = true;
             }
         }
 
@@ -1811,6 +1805,21 @@ namespace rock
         }
 
         auto& response = handSlots.surfaceFingerResponse;
+        const auto policyConfig =
+            surface_finger_collision_policy::sanitize(
+                surface_finger_collision_policy::Config{
+                    .probeDeltaOpenUnits =
+                        g_rockConfig.
+                            rockHandCollisionSurfaceFingerProbeDeltaOpenUnits,
+                    .responseGain =
+                        g_rockConfig.rockHandCollisionSurfaceFingerResponseGain,
+                    .maximumDeflectionOpenUnits =
+                        g_rockConfig.
+                            rockHandCollisionSurfaceFingerMaximumDeflectionOpenUnits,
+                    .minimumHelpfulProbeTravelGameUnits =
+                        g_rockConfig.
+                            rockHandCollisionSurfaceFingerMinimumHelpfulTravelGameUnits,
+                });
         std::array<std::array<
                        surface_finger_collision_policy::SegmentContact,
                        surface_finger_collision_policy::kSegmentCount>,
@@ -1824,7 +1833,39 @@ namespace rock
         const RE::NiTransform palmSceneFrame = palmFrameValid ?
             colliderFrameToSceneFrame(handTwins.palm.target) :
             rawHandWorld;
-        if (!freezeCurrentPose) {
+        /*
+         * The probes are remeasured around the CURRENT pose every frame
+         * because the solve below re-baselines on the current open values:
+         * each frame of blocked contact walks the pose one bounded step
+         * further, so the colliders — which chase the live role frames of
+         * that same pose — physically curl and slide along the surface
+         * until the contact resolves or the anatomical stop is reached.
+         */
+        std::array<RE::NiPoint3,
+            hand_collider_semantics::kHandFingerRoleCount>
+            closingProbeTravelWorld{};
+        std::array<RE::NiPoint3,
+            hand_collider_semantics::kHandFingerRoleCount>
+            openingProbeTravelWorld{};
+        bool probesValid = false;
+        if (!freezeCurrentPose && anyFingerContact) {
+            probesValid = computeSurfaceFingerProbeTravel(
+                isLeft,
+                rawHandWorld,
+                handTwins,
+                response.currentOpenValues,
+                policyConfig.probeDeltaOpenUnits,
+                closingProbeTravelWorld,
+                openingProbeTravelWorld);
+            if (!probesValid) {
+                ROCK_LOG_SAMPLE_WARN(
+                    Hand,
+                    2000,
+                    "{} surface finger probe travel unavailable this frame",
+                    isLeft ? "Left" : "Right");
+            }
+        }
+        if (!freezeCurrentPose && probesValid) {
             for (std::size_t finger = 0;
                  finger < hand_collider_semantics::kHandFingerCount;
                  ++finger) {
@@ -1855,25 +1896,17 @@ namespace rock
                         finger *
                             hand_collider_semantics::kHandFingerSegmentCount +
                         segment;
-                    const RE::NiPoint3 closingProbeTravelWorld =
-                        transform_math::localVectorToWorld(
-                            rawHandWorld,
-                            response.closingProbeTravelInHand[linearIndex]);
-                    const RE::NiPoint3 openingProbeTravelWorld =
-                        transform_math::localVectorToWorld(
-                            rawHandWorld,
-                            response.openingProbeTravelInHand[linearIndex]);
                     contacts[finger][segment] =
                         surface_finger_collision_policy::SegmentContact{
                             .blockedDepthGameUnits =
                                 twin.contactDeviationGameUnits,
                             .closingProbeTravelGameUnits =
                                 dotPoints(
-                                    closingProbeTravelWorld,
+                                    closingProbeTravelWorld[linearIndex],
                                     safeDirection),
                             .openingProbeTravelGameUnits =
                                 dotPoints(
-                                    openingProbeTravelWorld,
+                                    openingProbeTravelWorld[linearIndex],
                                     safeDirection),
                             .active = true,
                         };
@@ -1884,27 +1917,23 @@ namespace rock
             }
         }
 
+        /*
+         * Re-baselined on currentOpenValues: the bounded deflection is a
+         * per-frame STEP, not a total offset, so sustained blocked contact
+         * accumulates all the way to a fist (or fully spread) and the
+         * smoothing speed below sets the physical curl rate. Losing contact
+         * flips the target back toward the captured baseline, which rides
+         * the fingers along the surface instead of parking them.
+         */
         const auto solve = freezeCurrentPose ?
             surface_finger_collision_policy::SolveResult{
                 .targetOpenValues = response.currentOpenValues,
             } :
             surface_finger_collision_policy::solve(
-                response.baselineOpenValues,
+                response.currentOpenValues,
                 contacts,
                 forcedDirections,
-                surface_finger_collision_policy::Config{
-                    .probeDeltaOpenUnits =
-                        g_rockConfig.
-                            rockHandCollisionSurfaceFingerProbeDeltaOpenUnits,
-                    .responseGain =
-                        g_rockConfig.rockHandCollisionSurfaceFingerResponseGain,
-                    .maximumDeflectionOpenUnits =
-                        g_rockConfig.
-                            rockHandCollisionSurfaceFingerMaximumDeflectionOpenUnits,
-                    .minimumHelpfulProbeTravelGameUnits =
-                        g_rockConfig.
-                            rockHandCollisionSurfaceFingerMinimumHelpfulTravelGameUnits,
-                });
+                policyConfig);
         const auto previousDirections = response.lastDirections;
         if (!freezeCurrentPose) {
             response.lastDirections = solve.directions;
@@ -2362,33 +2391,22 @@ namespace rock
                 twinTelemetry.convexRadiusGameUnits = twinFrame->convexRadius;
                 twinTelemetry.handTargetResponseScale =
                     dynamic_hand_collision_kinematics::sanitizeHandTargetResponseScale(twinFrame->handTargetResponseScale);
-                // Latch proxy worlds and finger intent frames live in the
-                // scene convention; queued drive targets must stay in the
-                // collider column convention like the published role frames.
-                RE::NiTransform driveTarget =
+                /*
+                 * Latch proxy worlds live in the scene convention; queued
+                 * drive targets must stay in the collider column convention
+                 * like the published role frames. Finger children always
+                 * chase the LIVE role frames — the published flexion pose
+                 * curls the rendered skeleton, the role frames follow those
+                 * bones, and the compound children follow the role frames,
+                 * so the physical colliders curl and slide with the hand
+                 * instead of staying welded at a frozen capture pose.
+                 */
+                const RE::NiTransform driveTarget =
                     handSlots.surfaceLatch.active &&
                         handSlots.surfaceLatch.proxyRelationshipValid[bodyIndex] ?
                     sceneFrameToColliderFrame(
                         handSlots.surfaceLatch.lastProxyWorld[bodyIndex]) :
                     twinFrame->target;
-                if (!handSlots.surfaceLatch.active &&
-                    handSlots.surfaceFingerResponse.active &&
-                    dynamic_hand_collision_telemetry::isFingerSlot(bodyIndex)) {
-                    const std::size_t linearIndex =
-                        bodyIndex -
-                        dynamic_hand_collision_telemetry::kFirstFingerSlot;
-                    if (linearIndex <
-                            handSlots.surfaceFingerResponse.intentFramesInHand
-                                .size() &&
-                        handSlots.surfaceFingerResponse
-                            .intentValid[linearIndex]) {
-                        driveTarget = sceneFrameToColliderFrame(
-                            transform_math::composeTransforms(
-                                handInput.rawHandWorld,
-                                handSlots.surfaceFingerResponse
-                                    .intentFramesInHand[linearIndex]));
-                    }
-                }
                 twinTelemetry.publishedTargetValid =
                     isFiniteTransform(driveTarget);
                 twinTelemetry.publishedTargetWorld = driveTarget;
@@ -3153,13 +3171,31 @@ namespace rock
             owner.lastPostSolveDeviationValid = contactMask != 0;
             owner.lastPostSolveContact = contactMask != 0;
 
+            /*
+             * Manifold contact fires the substep surfaces first touch,
+             * BEFORE any penetration deviation exists, so a grazing or
+             * resting touch reports ~zero approach speed. Latching the
+             * haptic entry there consumes the episode and the later real
+             * press stays silent. The entry therefore waits until the
+             * approach speed can actually fire a pulse — restoring the old
+             * residual-detection feel where contact only counted once the
+             * hand was genuinely pressing in.
+             */
             const bool anyContact = contactMask != 0;
-            if (anyContact && !handSlots.physicsContactActive) {
+            const float entryGateSpeed = std::max(
+                0.0f,
+                g_rockConfig.
+                    rockHandCollisionDynamicHapticMinApproachSpeedGameUnitsPerSecond);
+            if (anyContact && !handSlots.physicsContactActive &&
+                maxEntryApproachSpeed >= entryGateSpeed &&
+                maxEntryApproachSpeed > 0.0f) {
                 handSlots.contactEntryApproachSpeedAtomic.store(maxEntryApproachSpeed, std::memory_order_relaxed);
                 handSlots.contactEntryMaskAtomic.store(contactMask, std::memory_order_relaxed);
                 handSlots.contactEntrySequenceAtomic.fetch_add(1, std::memory_order_release);
+                handSlots.physicsContactActive = true;
+            } else if (!anyContact) {
+                handSlots.physicsContactActive = false;
             }
-            handSlots.physicsContactActive = anyContact;
         }
     }
 }
