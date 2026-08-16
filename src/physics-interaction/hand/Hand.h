@@ -1159,6 +1159,15 @@ namespace rock
         // Held render-clock anchor blend (0 = raw-hand anchor, 1 = physics-body
         // anchor); see hand_visual_lerp_math::heldAnchorBodyBlendTarget.
         float _grabHeldAnchorBodyBlend = 0.0f;
+        // ANCHOR_CLOCK probe state (diagnostic only): last node world ROCK
+        // wrote for the held object, and the producer-time raw-hand/room
+        // sample, so the pre-FRIK and physics stages can report whether the
+        // engine re-synced the node and whether the root moved after producer.
+        RE::NiTransform _grabProbeLastAnchorWrite{};
+        bool _hasGrabProbeLastAnchorWrite = false;
+        RE::NiPoint3 _grabProbeProducerHandPos{};
+        RE::NiPoint3 _grabProbeProducerRoomPos{};
+        bool _hasGrabProbeProducerSample = false;
         RE::NiTransform _lastPublishedGrabVisualHandTransform{};
         bool _hasLastPublishedGrabVisualHandTransform = false;
         hand_visual_lerp_math::VisualReturnTransition<RE::NiTransform> _grabVisualReturn{};

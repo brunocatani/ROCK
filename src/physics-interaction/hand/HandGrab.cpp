@@ -4728,6 +4728,32 @@ namespace rock
             return true;
         }
 
+        /*
+         * ANCHOR_CLOCK probe (diagnostic, 2026-08-16 grab locomotion stutter):
+         * one shared player-root sample lets the physics-flush, producer, and
+         * pre-FRIK stages be compared per frame to locate where the stick
+         * locomotion/turn step lands relative to ROCK's writes, and whether
+         * the engine re-syncs the held node from the body after ROCK owns it.
+         */
+        struct AnchorClockRoomSample
+        {
+            RE::NiPoint3 position{};
+            float yawDegrees = 0.0f;
+            bool valid = false;
+        };
+
+        AnchorClockRoomSample sampleAnchorClockRoom()
+        {
+            AnchorClockRoomSample sample{};
+            if (const auto* playerNodes = f4vr::getPlayerNodes(); playerNodes && playerNodes->roomnode) {
+                const auto& world = playerNodes->roomnode->world;
+                sample.position = world.translate;
+                sample.yawDegrees = std::atan2(world.rotate.entry[1][0], world.rotate.entry[0][0]) * 57.295779513f;
+                sample.valid = true;
+            }
+            return sample;
+        }
+
         void logRuntimeScaleIfChanged(bool isLeft, const char* handName, const RE::NiTransform& handWorldTransform, const RE::NiAVObject* collidableNode)
         {
             struct RuntimeScaleLogState
@@ -4906,6 +4932,43 @@ namespace rock
                     heldNodeWorld,
                     _preFrikGrabVisualAuthority.heldNodeToHandLocal) :
                 RE::NiTransform{};
+            if (sourceOwned) {
+                // ANCHOR_CLOCK probe: this stage republishes the FRIK hand
+                // from heldNode->world. heldVsLastWrite detects an engine
+                // body-sync stomp between the producer write and FRIK;
+                // rawVsProducer/roomVsProducer detect a root/skeleton refresh
+                // between producer and FRIK within the same frame.
+                const auto anchorProbeRoom = sampleAnchorClockRoom();
+                const float anchorProbeHeldVsLastWrite = _hasGrabProbeLastAnchorWrite ?
+                    pointDistanceGameUnits(heldNodeWorld.translate, _grabProbeLastAnchorWrite.translate) :
+                    -1.0f;
+                const float anchorProbeRawVsProducer = (rawHandValid && _hasGrabProbeProducerSample) ?
+                    pointDistanceGameUnits(rawHandWorld.translate, _grabProbeProducerHandPos) :
+                    -1.0f;
+                const float anchorProbeRoomVsProducer = (anchorProbeRoom.valid && _hasGrabProbeProducerSample) ?
+                    pointDistanceGameUnits(anchorProbeRoom.position, _grabProbeProducerRoomPos) :
+                    -1.0f;
+                ROCK_LOG_INFO(Hand,
+                    "{} ANCHOR_CLOCK stage=preFrik seq={} room=({:.2f},{:.2f},{:.2f}) roomYaw={:.3f} rawHand=({:.2f},{:.2f},{:.2f}) rawVsProducer={:.3f}gu roomVsProducer={:.3f}gu heldNode=({:.2f},{:.2f},{:.2f}) heldVsLastWrite={:.3f}gu repubHand=({:.2f},{:.2f},{:.2f})",
+                    handName(),
+                    schedulerSequence,
+                    anchorProbeRoom.position.x,
+                    anchorProbeRoom.position.y,
+                    anchorProbeRoom.position.z,
+                    anchorProbeRoom.yawDegrees,
+                    rawHandWorld.translate.x,
+                    rawHandWorld.translate.y,
+                    rawHandWorld.translate.z,
+                    anchorProbeRawVsProducer,
+                    anchorProbeRoomVsProducer,
+                    heldNodeWorld.translate.x,
+                    heldNodeWorld.translate.y,
+                    heldNodeWorld.translate.z,
+                    anchorProbeHeldVsLastWrite,
+                    refreshedHandWorld.translate.x,
+                    refreshedHandWorld.translate.y,
+                    refreshedHandWorld.translate.z);
+            }
             if (!sourceOwned ||
                 !prefrik_hand_authority_policy::isUsableTransform(
                     heldNodeWorld) ||
@@ -11898,6 +11961,14 @@ namespace rock
                 }
             }
 
+            // ANCHOR_CLOCK probe: the held node's pose at producer entry,
+            // before ROCK writes it this frame. Compared against last frame's
+            // anchor write (did the engine stomp it?) and the live body pose
+            // (what did it get stomped TO?).
+            const bool anchorProbeHeldNodeOk = _grabFrame.heldNode != nullptr;
+            const RE::NiTransform anchorProbeHeldEntryWorld =
+                anchorProbeHeldNodeOk ? _grabFrame.heldNode->world : RE::NiTransform{};
+
             /*
              * Render-clock candidate: the object rendered rigidly from the raw
              * interaction hand through the frozen grab relation. The raw hand
@@ -11957,6 +12028,45 @@ namespace rock
                 _grabHeldAnchorBodyBlend = 1.0f;
             }
 
+            {
+                const auto anchorProbeRoom = sampleAnchorClockRoom();
+                const float anchorProbeEntryVsLastWrite =
+                    (_hasGrabProbeLastAnchorWrite && anchorProbeHeldNodeOk) ?
+                    pointDistanceGameUnits(anchorProbeHeldEntryWorld.translate, _grabProbeLastAnchorWrite.translate) :
+                    -1.0f;
+                const float anchorProbeEntryVsBody =
+                    (hasBodyDerivedNodeWorld && anchorProbeHeldNodeOk) ?
+                    pointDistanceGameUnits(anchorProbeHeldEntryWorld.translate, bodyDerivedNodeWorld.translate) :
+                    -1.0f;
+                ROCK_LOG_INFO(Hand,
+                    "{} ANCHOR_CLOCK stage=producer seq={} room=({:.2f},{:.2f},{:.2f}) roomYaw={:.3f} rawHand=({:.2f},{:.2f},{:.2f}) heldEntry=({:.2f},{:.2f},{:.2f}) entryVsLastWrite={:.3f}gu entryVsBody={:.3f}gu body=({:.2f},{:.2f},{:.2f}) anchor=({:.2f},{:.2f},{:.2f}) blend={:.2f} engaged={}",
+                    handName(),
+                    sourceSchedulerSequence,
+                    anchorProbeRoom.position.x,
+                    anchorProbeRoom.position.y,
+                    anchorProbeRoom.position.z,
+                    anchorProbeRoom.yawDegrees,
+                    handWorldTransform.translate.x,
+                    handWorldTransform.translate.y,
+                    handWorldTransform.translate.z,
+                    anchorProbeHeldEntryWorld.translate.x,
+                    anchorProbeHeldEntryWorld.translate.y,
+                    anchorProbeHeldEntryWorld.translate.z,
+                    anchorProbeEntryVsLastWrite,
+                    anchorProbeEntryVsBody,
+                    bodyDerivedNodeWorld.translate.x,
+                    bodyDerivedNodeWorld.translate.y,
+                    bodyDerivedNodeWorld.translate.z,
+                    heldVisualNodeWorld.translate.x,
+                    heldVisualNodeWorld.translate.y,
+                    heldVisualNodeWorld.translate.z,
+                    _grabHeldAnchorBodyBlend,
+                    renderClockAnchorEngaged ? "yes" : "no");
+                _grabProbeProducerHandPos = handWorldTransform.translate;
+                _grabProbeProducerRoomPos = anchorProbeRoom.position;
+                _hasGrabProbeProducerSample = anchorProbeRoom.valid;
+            }
+
             if (hasHeldVisualNodeWorld) {
                 /*
                  * ROCK visual hand update:
@@ -11982,6 +12092,8 @@ namespace rock
                         _grabVisualReturn.lastApplied :
                         handWorldTransform;
                     _grabHeldAnchorBodyBlend = 1.0f;
+                    _hasGrabProbeLastAnchorWrite = false;
+                    _hasGrabProbeProducerSample = false;
                     _grabVisualHandTransform = acquisitionStart;
                     _grabVisualHandLerpStartTransform = acquisitionStart;
                     _grabVisualHandLerpElapsedSeconds = 0.0f;
@@ -12068,6 +12180,10 @@ namespace rock
                         visualHandLerpAlpha >= 1.0f &&
                         _grabFrame.heldNode) {
                         applyHeldVisualNodeWorldTransform(_grabFrame.heldNode, heldVisualNodeWorld);
+                        _grabProbeLastAnchorWrite = heldVisualNodeWorld;
+                        _hasGrabProbeLastAnchorWrite = true;
+                    } else {
+                        _hasGrabProbeLastAnchorWrite = false;
                     }
                     if (_grabFrame.heldNode &&
                         sourceSchedulerSequence != 0 &&
@@ -12891,6 +13007,33 @@ namespace rock
         const grab_authority_source_clock::ControllerRootFrameSample& consumptionControllerRoot,
         float controllerHavokToGameScale)
     {
+        // ANCHOR_CLOCK probe: room/heldNode state as seen from the physics
+        // clock (first substep only). Read-only diagnostic reads of
+        // game-thread node state; ordering vs producer/preFrik stages comes
+        // from log emission order.
+        if (timing.substepIndex == 0 && isHoldingAtomic()) {
+            const auto anchorProbeRoom = sampleAnchorClockRoom();
+            auto* anchorProbeHeldNode = _grabFrame.heldNode;
+            const RE::NiPoint3 anchorProbeHeldPos =
+                anchorProbeHeldNode ? anchorProbeHeldNode->world.translate : RE::NiPoint3{};
+            const float anchorProbeHeldVsLastWrite =
+                (anchorProbeHeldNode && _hasGrabProbeLastAnchorWrite) ?
+                pointDistanceGameUnits(anchorProbeHeldPos, _grabProbeLastAnchorWrite.translate) :
+                -1.0f;
+            ROCK_LOG_INFO(Hand,
+                "{} ANCHOR_CLOCK stage=physics phase={} room=({:.2f},{:.2f},{:.2f}) roomYaw={:.3f} heldNode=({:.2f},{:.2f},{:.2f}) heldVsLastWrite={:.3f}gu",
+                handName(),
+                static_cast<int>(timing.phase),
+                anchorProbeRoom.position.x,
+                anchorProbeRoom.position.y,
+                anchorProbeRoom.position.z,
+                anchorProbeRoom.yawDegrees,
+                anchorProbeHeldPos.x,
+                anchorProbeHeldPos.y,
+                anchorProbeHeldPos.z,
+                anchorProbeHeldVsLastWrite);
+        }
+
         GrabAuthorityProxyPendingTarget pending{};
         RE::NiTransform queuedRawHandWorld{};
         RE::NiTransform previousProxyWorld{};
