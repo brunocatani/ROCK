@@ -796,6 +796,22 @@ int main()
                 requested,
                 applied);
 
+        TestTransform cleanWeapon =
+            rock::transform_math::makeIdentityTransform<TestTransform>();
+        cleanWeapon.rotate = makeAxisAngleRotation(
+            rock::weaponSolverNormalize(
+                TestVector3{ 0.4f, 0.1f, 0.8f }),
+            -23.0f);
+        cleanWeapon.translate = { 6.0f, -2.0f, 9.0f };
+        ok &= expectTransformNear(
+            "left-firing final weapon presentation inherits measured hand recoil",
+            rock::transform_math::composeTransforms(
+                derivedDelta,
+                cleanWeapon),
+            rock::transform_math::composeTransforms(
+                recoilDelta,
+                cleanWeapon));
+
         TestTransform desired =
             rock::transform_math::makeIdentityTransform<TestTransform>();
         desired.rotate = makeAxisAngleRotation(

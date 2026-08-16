@@ -1121,7 +1121,7 @@ namespace rock
         frik::api::FRIKApiV2::RecoilResponse* const outResponse,
         void* const userData) noexcept
     {
-        const auto* const self = static_cast<const TwoHandedGrip*>(userData);
+        auto* const self = static_cast<TwoHandedGrip*>(userData);
         if (!self ||
             !sample ||
             sample->structSize < sizeof(frik::api::FRIKApiV2::RecoilSample) ||
@@ -1131,7 +1131,9 @@ namespace rock
 
         if (!self->_weaponNodeOwnershipBlockEngaged ||
             !self->_firingHandIsLeft ||
-            !self->isManualOwnershipActive()) {
+            !self->isManualOwnershipActive() ||
+            !self->_activeWeaponNode ||
+            self->_activeWeaponGenerationKey == 0) {
             return false;
         }
 
@@ -1141,6 +1143,31 @@ namespace rock
             frik::api::FRIKApiV2::RecoilHandMask::Primary);
         outResponse->delivery = frik::api::FRIKApiV2::RecoilDelivery::Direct;
         outResponse->controlledKickLocal = sample->nativeKickLocal;
+
+        const RE::NiTransform identity =
+            transform_math::makeIdentityTransform<RE::NiTransform>();
+        if (!areTransformsNearlyEqual(
+                sample->nativeKickLocal,
+                identity,
+                0.00001f)) {
+            // FRIK invokes this callback synchronously on its game update
+            // thread. Publish only a value ticket here; scene-node mutation
+            // remains in ROCK's later presentation phase as required by the
+            // API contract. Neutral frames issue no ticket, so normal IK
+            // residuals can never become weapon motion.
+            ++self->_leftFiringRecoilAcceptedSequence;
+            if (self->_leftFiringRecoilAcceptedSequence == 0) {
+                self->_leftFiringRecoilAcceptedSequence = 1;
+            }
+            self->_leftFiringRecoilAcceptedGenerationKey =
+                self->_activeWeaponGenerationKey;
+        } else {
+            // A neutral callback is a newer FRIK frame than any unconsumed
+            // kick ticket. Retire that ticket so it cannot be replayed after
+            // a transient presentation skip.
+            self->_leftFiringRecoilConsumedSequence =
+                self->_leftFiringRecoilAcceptedSequence;
+        }
         return true;
     }
 
@@ -2778,6 +2805,7 @@ namespace rock
         _weaponCollisionBaselineHandWorldValid = {};
         _nativeReloadHandAuthorityActive = false;
         _nativeReloadSupportHandIsLeft = true;
+        clearLeftFiringRecoilPresentationState();
         resetGunstockAlignment("reset");
         _gunstockModeToggle = {};
         _gunstockWeaponEligibility = {};
@@ -3459,6 +3487,36 @@ namespace rock
         _hasLastPublishedHandWorld[index] = true;
         _weaponCollisionBaselineHandWorld[index] = appliedWorld;
         _weaponCollisionBaselineHandWorldValid[index] = true;
+        if (isLeft) {
+            rememberLeftFiringRecoilReference(appliedWorld);
+        }
+    }
+
+    void TwoHandedGrip::rememberLeftFiringRecoilReference(
+        const RE::NiTransform& handWorld)
+    {
+        if (!_firingHandIsLeft ||
+            !_weaponNodeOwnershipBlockEngaged ||
+            !isManualOwnershipActive() ||
+            _activeWeaponGenerationKey == 0 ||
+            !isUsableHandAuthorityTransform(handWorld)) {
+            return;
+        }
+
+        _leftFiringRecoilReferenceHandWorld = handWorld;
+        _leftFiringRecoilReferenceGenerationKey =
+            _activeWeaponGenerationKey;
+        _hasLeftFiringRecoilReference = true;
+    }
+
+    void TwoHandedGrip::clearLeftFiringRecoilPresentationState()
+    {
+        _leftFiringRecoilReferenceHandWorld = {};
+        _leftFiringRecoilReferenceGenerationKey = 0;
+        _leftFiringRecoilAcceptedGenerationKey = 0;
+        _leftFiringRecoilAcceptedSequence = 0;
+        _leftFiringRecoilConsumedSequence = 0;
+        _hasLeftFiringRecoilReference = false;
     }
 
     void TwoHandedGrip::beginHandVisualReturn(const bool isLeft, const char* reason)
@@ -6392,6 +6450,7 @@ namespace rock
             transitionToInactive(false);
             return false;
         }
+        rememberLeftFiringRecoilReference(firingHandTransform);
 
         const RE::NiTransform solvedWeaponWorld =
             transform_math::composeTransforms(firingHandTransform, transform_math::invertTransform(_primaryHandWeaponLocal));
@@ -10491,6 +10550,67 @@ namespace rock
         }
     }
 
+    bool TwoHandedGrip::applyLeftFiringWeaponRecoilPresentation(
+        RE::NiNode* weaponNode,
+        const std::uint64_t currentWeaponGenerationKey)
+    {
+        const std::uint64_t acceptedSequence =
+            _leftFiringRecoilAcceptedSequence;
+        if (acceptedSequence == 0 ||
+            acceptedSequence == _leftFiringRecoilConsumedSequence) {
+            return false;
+        }
+
+        // Consume first so a failed/stale sample can never kick a later weapon.
+        _leftFiringRecoilConsumedSequence = acceptedSequence;
+        if (!weaponNode ||
+            weaponNode != _activeWeaponNode ||
+            currentWeaponGenerationKey == 0 ||
+            currentWeaponGenerationKey != _activeWeaponGenerationKey ||
+            currentWeaponGenerationKey !=
+                _leftFiringRecoilAcceptedGenerationKey ||
+            !_firingHandIsLeft ||
+            !_weaponNodeOwnershipBlockEngaged ||
+            !isManualOwnershipActive() ||
+            !_hasLeftFiringRecoilReference ||
+            _leftFiringRecoilReferenceGenerationKey !=
+                currentWeaponGenerationKey ||
+            !isFiniteTransform(weaponNode->world)) {
+            return false;
+        }
+
+        RE::NiTransform presentedLeftHandWorld{};
+        if (!tryGetRootFlattenedHandBoneTransform(
+                true,
+                presentedLeftHandWorld)) {
+            return false;
+        }
+
+        const RE::NiTransform recoilWorldDelta =
+            gunstock_alignment_policy::deriveAppliedWorldDelta(
+                _leftFiringRecoilReferenceHandWorld,
+                presentedLeftHandWorld);
+        if (!isUsableHandAuthorityTransform(recoilWorldDelta)) {
+            return false;
+        }
+
+        const RE::NiTransform recoiledWeaponWorld =
+            transform_math::composeTransforms(
+                recoilWorldDelta,
+                weaponNode->world);
+        if (!isFiniteTransform(recoiledWeaponWorld)) {
+            return false;
+        }
+
+        // This is a terminal presentation overlay, not new collision intent.
+        // The collision bodies and muzzle sample the resulting weapon below.
+        return applyWeaponVisualAuthority(
+            weaponNode,
+            recoiledWeaponWorld,
+            currentWeaponGenerationKey,
+            false);
+    }
+
     bool TwoHandedGrip::applyWeaponCollisionResolvedAuthority(
         RE::NiNode* weaponNode,
         const RE::NiTransform& requestedWeaponWorld,
@@ -11697,6 +11817,7 @@ namespace rock
 
     void TwoHandedGrip::releaseFiringHandWeaponNodeOwnership(RE::NiNode* weaponNode)
     {
+        clearLeftFiringRecoilPresentationState();
         if (_weaponNodeReparentedToLeftHand) {
             RE::NiNode* node = weaponNode ? weaponNode : _activeWeaponNode;
             RE::NiNode* rightHand = resolveFirstPersonHandNode(false);

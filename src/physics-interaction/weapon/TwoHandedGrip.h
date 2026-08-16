@@ -704,6 +704,13 @@ namespace rock
         // per-hand grip/native authority and must not retain this owner.
         void finishWeaponCollisionPresentationFrame(bool presentationActive);
 
+        // Reapplies the controlled left-hand recoil as the final weapon-only
+        // presentation layer. Call after grip/gunstock/collision writers and
+        // before collision bodies and muzzle consumers sample the weapon.
+        bool applyLeftFiringWeaponRecoilPresentation(
+            RE::NiNode* weaponNode,
+            std::uint64_t currentWeaponGenerationKey);
+
         bool previousWeaponCollisionPresentationWasLive() const
         {
             return _weaponCollisionHandPresentationFromPreviousFrame[0] ||
@@ -1464,6 +1471,8 @@ namespace rock
             bool primaryHand,
             LockedHandVisualLerpState& visualState);
         void recordPublishedHandWorld(bool isLeft, const RE::NiTransform& appliedWorld);
+        void rememberLeftFiringRecoilReference(const RE::NiTransform& handWorld);
+        void clearLeftFiringRecoilPresentationState();
         void beginHandVisualReturn(bool isLeft, const char* reason);
         void updateHandVisualReturns(float dt);
         void clearHandVisualReturn(bool isLeft, const char* reason, bool logCancellation);
@@ -1528,6 +1537,12 @@ namespace rock
         bool _weaponNodeOwnershipBlockEngaged{ false };
         bool _weaponNodeReparentedToLeftHand{ false };
         bool _recoilControllerRegistered{ false };
+        RE::NiTransform _leftFiringRecoilReferenceHandWorld{};
+        std::uint64_t _leftFiringRecoilReferenceGenerationKey{ 0 };
+        std::uint64_t _leftFiringRecoilAcceptedGenerationKey{ 0 };
+        std::uint64_t _leftFiringRecoilAcceptedSequence{ 0 };
+        std::uint64_t _leftFiringRecoilConsumedSequence{ 0 };
+        bool _hasLeftFiringRecoilReference{ false };
 
         enum class RightFiringCanonicalSource : std::uint8_t
         {

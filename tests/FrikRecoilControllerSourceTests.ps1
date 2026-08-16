@@ -87,6 +87,21 @@ Require-Text $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
 Require-Text $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     '_weaponNodeOwnershipBlockEngaged[\s\S]*_firingHandIsLeft[\s\S]*isManualOwnershipActive\(\)[\s\S]*RecoilHandMask::Primary[\s\S]*RecoilDelivery::Direct[\s\S]*nativeKickLocal' `
     'ROCK may consume recoil only for its active physical-left firing carry and must preserve the validated native kick directly.'
+Require-Text $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'controlWeaponHandRecoil[\s\S]*areTransformsNearlyEqual\([\s\S]*sample->nativeKickLocal[\s\S]*_leftFiringRecoilAcceptedSequence[\s\S]*_leftFiringRecoilAcceptedGenerationKey\s*=\s*self->_activeWeaponGenerationKey[\s\S]*else\s*\{[\s\S]*_leftFiringRecoilConsumedSequence\s*=\s*self->_leftFiringRecoilAcceptedSequence' `
+    'A non-neutral accepted FRIK recoil frame must issue a generation-bound, one-shot ROCK presentation ticket, while the next neutral frame retires any skipped ticket instead of replaying stale recoil.'
+Require-Text $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'solveLeftFiringWeaponCarry[\s\S]*rememberLeftFiringRecoilReference\(firingHandTransform\)' `
+    'The left-carry solve must preserve its clean firing-hand target as the initial recoil reference.'
+Require-Text $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'recordPublishedHandWorld[\s\S]{0,900}rememberLeftFiringRecoilReference\(appliedWorld\)' `
+    'Late grip, gunstock, or collision hand publications must replace the initial recoil reference with their clean logical target.'
+Require-Text $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
+    'applyLeftFiringWeaponRecoilPresentation[\s\S]*_leftFiringRecoilConsumedSequence\s*=\s*acceptedSequence[\s\S]*_leftFiringRecoilAcceptedGenerationKey[\s\S]*tryGetRootFlattenedHandBoneTransform[\s\S]*deriveAppliedWorldDelta[\s\S]*composeTransforms\(\s*recoilWorldDelta,\s*weaponNode->world\)[\s\S]*applyWeaponVisualAuthority\([\s\S]*false\)' `
+    'ROCK must consume each accepted recoil once and apply the measured hand recoil delta as a final generation-safe weapon presentation overlay.'
+Require-Text $Root 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'finishWeaponCollisionPresentationFrame[\s\S]{0,500}applyLeftFiringWeaponRecoilPresentation[\s\S]{0,700}updateBodiesFromCurrentSourceTransforms[\s\S]{0,700}applyFinalWeaponMuzzleAuthority' `
+    'Left-firing weapon recoil must run after all weapon writers and before collision-body and muzzle consumers.'
 Require-Text $Root 'src/ROCKMain.cpp' `
     'registerWeaponHandRecoilController\s*!=\s*nullptr[\s\S]*unregisterWeaponHandRecoilController\s*!=\s*nullptr' `
     'ROCK startup must fail closed when the matching API V2 recoil-controller table is absent.'

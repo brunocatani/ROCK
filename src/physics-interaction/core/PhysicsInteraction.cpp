@@ -4210,6 +4210,9 @@ namespace rock
             }
             _twoHandedGrip.finishWeaponCollisionPresentationFrame(
                 dynamicWeaponFrame.publishVisualAuthority);
+            (void)_twoHandedGrip.applyLeftFiringWeaponRecoilPresentation(
+                weaponNode,
+                currentWeaponGenerationKey);
             if (weaponNode) {
                 performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::WeaponCollisionTransforms);
                 _weaponCollision.updateBodiesFromCurrentSourceTransforms(
