@@ -109,10 +109,11 @@ namespace rock::runtime_state
             return true;
         }
 
-        [[nodiscard]] PlayerSpaceFrame readPlayerSpaceBasis()
+        [[nodiscard]] PlayerSpaceFrame samplePlayerSpace()
         {
             PlayerSpaceFrame frame{};
             if (!hasPlayer()) {
+                s_playerSpaceTracker = {};
                 return frame;
             }
 
@@ -124,16 +125,6 @@ namespace rock::runtime_state
                 frame.valid = true;
                 frame.source = "worldRoot";
                 frame.world = worldRoot->world;
-            }
-            return frame;
-        }
-
-        [[nodiscard]] PlayerSpaceFrame samplePlayerSpace()
-        {
-            PlayerSpaceFrame frame = readPlayerSpaceBasis();
-            if (!hasPlayer()) {
-                s_playerSpaceTracker = {};
-                return frame;
             }
 
             const auto decision = runtime_state_policy::updatePlayerSpaceTracker(
@@ -232,16 +223,6 @@ namespace rock::runtime_state
     const RuntimeFrameSnapshot& currentFrame()
     {
         return s_snapshot;
-    }
-
-    PlayerSpaceFrame samplePlayerSpaceLive()
-    {
-        // Live node read without touching the per-frame tracker: moving and
-        // deltaGameUnits stay unset. Callable only from code running
-        // synchronously on the game/frame thread (including the physics step
-        // listeners, which bhkWorld::Update invokes on the calling thread);
-        // the scene graph is not safe to read from other threads.
-        return readPlayerSpaceBasis();
     }
 
     bool isLocalSkeletonReady()

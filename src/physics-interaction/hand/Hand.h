@@ -122,13 +122,12 @@ namespace rock
         RE::NiTransform queuedRawHandWorld{};
         RE::NiTransform appliedProxyTargetWorld{};
         RE::NiTransform appliedRawHandWorld{};
-        RE::NiPoint3 consumptionFrameShiftGame{};
-        grab_authority_source_clock::ConsumptionFrameRebaseStatus consumptionFrameRebaseStatus =
-            grab_authority_source_clock::ConsumptionFrameRebaseStatus::Unavailable;
-        RE::NiPoint3 sourcePlayerBasisGame{};
-        RE::NiPoint3 consumptionPlayerBasisGame{};
-        const char* sourcePlayerBasisSource = "none";
-        const char* consumptionPlayerBasisSource = "none";
+        RE::NiPoint3 feedForwardShiftGame{};
+        grab_authority_source_clock::RootMotionFeedForwardStatus feedForwardStatus =
+            grab_authority_source_clock::RootMotionFeedForwardStatus::Unavailable;
+        RE::NiPoint3 sourceRootStepGame{};
+        float sourceStepDeltaSeconds = 0.0f;
+        bool sourceMoving = false;
         GrabLocomotionRootProbe sourceRootProbe{};
         GrabLocomotionRootProbe consumptionRootProbe{};
         RE::hknpBodyId proxyBodyId{ INVALID_BODY_ID };
@@ -694,8 +693,7 @@ namespace rock
         void flushPendingCollisionPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         void flushPendingCustomGrabAuthority(
             RE::hknpWorld* world,
-            const havok_physics_timing::PhysicsTimingSample& timing,
-            const grab_authority_source_clock::PlayerBasisFrameSample& consumptionPlayerBasis);
+            const havok_physics_timing::PhysicsTimingSample& timing);
         void observeCustomGrabAuthorityAfterSolve(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         bool beginStashCandidate();
         bool cancelStashCandidate();
@@ -1053,7 +1051,15 @@ namespace rock
             RE::NiTransform rawHandWorld{};
             const char* proxyFrameSource = "unknown";
             std::uint64_t sourceGameFrameIndex = 0;
-            grab_authority_source_clock::PlayerBasisFrameSample sourcePlayerBasis{};
+            // The game-side player-root step applied during the producer's
+            // frame (runtime-state player-space tracker) and that frame's
+            // duration: the inputs to the consumption root-motion
+            // feed-forward. Locomotion is applied post-physics, so the
+            // consuming physics update can only predict its own frame's step
+            // from these.
+            RE::NiPoint3 sourceRootStepGame{};
+            float sourceStepDeltaSeconds = 0.0f;
+            bool sourceMoving = false;
             GrabLocomotionRootProbe sourceRootProbe{};
             float deltaTime = 0.0f;
             float forceFadeInTime = 0.0f;
@@ -1066,19 +1072,19 @@ namespace rock
         };
         GrabAuthorityProxyPendingTarget _grabAuthorityPendingTarget{};
         // Phase-locks the raw per-substep proxy target onto the game-clock wand
-        // path, then re-expresses it in the current game frame's player basis
-        // (roomNode world) read live at the consumption boundary. Both states
-        // are guarded by _grabAuthorityProxyMutex like the pending target.
+        // path; the consumption flush then adds the root-motion feed-forward
+        // shift (see GrabAuthoritySourceClockResampler.h). State is guarded by
+        // _grabAuthorityProxyMutex like the pending target.
         grab_authority_source_clock::GameClockPhaseLock _grabAuthoritySourceClock{};
-        grab_authority_source_clock::ConsumptionFrameRebase _grabAuthorityConsumptionFrameRebase{};
         RE::NiTransform _lastAppliedGrabAuthorityQueuedRawHandWorld{};
         RE::NiTransform _lastAppliedGrabAuthorityProxyWorld{};
         RE::NiTransform _lastAppliedGrabAuthorityRawHandWorld{};
-        RE::NiPoint3 _lastAppliedGrabAuthorityConsumptionFrameShiftGame{};
-        grab_authority_source_clock::ConsumptionFrameRebaseStatus _lastAppliedGrabAuthorityConsumptionFrameRebaseStatus =
-            grab_authority_source_clock::ConsumptionFrameRebaseStatus::Unavailable;
-        grab_authority_source_clock::PlayerBasisFrameSample _lastAppliedGrabAuthoritySourcePlayerBasis{};
-        grab_authority_source_clock::PlayerBasisFrameSample _lastAppliedGrabAuthorityConsumptionPlayerBasis{};
+        RE::NiPoint3 _lastAppliedGrabAuthorityFeedForwardShiftGame{};
+        grab_authority_source_clock::RootMotionFeedForwardStatus _lastAppliedGrabAuthorityFeedForwardStatus =
+            grab_authority_source_clock::RootMotionFeedForwardStatus::Unavailable;
+        RE::NiPoint3 _lastAppliedGrabAuthoritySourceRootStepGame{};
+        float _lastAppliedGrabAuthoritySourceStepDeltaSeconds = 0.0f;
+        bool _lastAppliedGrabAuthoritySourceMoving = false;
         GrabLocomotionRootProbe _lastAppliedGrabAuthoritySourceRootProbe{};
         GrabLocomotionRootProbe _lastAppliedGrabAuthorityConsumptionRootProbe{};
         std::uint64_t _lastAppliedGrabAuthoritySourceGameFrameIndex = 0;
