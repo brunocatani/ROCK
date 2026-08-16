@@ -2484,6 +2484,47 @@ namespace rock
                     pwnL.x, pwnL.y, pwnL.z,
                     actor.x, actor.y, actor.z,
                     ctrl.x, ctrl.y, ctrl.z);
+
+                // Phase bracket: where inside/after the physics update does the
+                // player root actually advance? A = first pre-collide substep,
+                // B = ROCK +0x30, C = final post-solve, now = this game-frame
+                // telemetry read (post-physics producer time). The window whose
+                // shift matches the player's per-frame displacement is where
+                // locomotion is applied.
+                const auto probeNow = sampleGrabLocomotionRootProbe();
+                const auto& probeA = _grabPhaseProbePreCollide;
+                const auto& probeB = _grabPhaseProbeAfterBetween;
+                const auto& probeC = _grabPhaseProbePostSolve;
+                const auto shiftMag = [](const RE::NiPoint3& now, const RE::NiPoint3& src) {
+                    const float dx = now.x - src.x;
+                    const float dy = now.y - src.y;
+                    const float dz = now.z - src.z;
+                    return std::sqrt(dx * dx + dy * dy + dz * dz);
+                };
+                ROCK_LOG_INFO(
+                    Hand,
+                    "GRAB_LOCOMOTION phaseprobe session={} frame={} side={} valid(A/B/C/now)=0x{:02X}/0x{:02X}/0x{:02X}/0x{:02X} "
+                    "ctrl(AtoB/BtoC/CtoNow)=({:.3f}/{:.3f}/{:.3f}) actor(AtoB/BtoC/CtoNow)=({:.3f}/{:.3f}/{:.3f}) "
+                    "pwnW(AtoB/BtoC/CtoNow)=({:.3f}/{:.3f}/{:.3f}) roomW(AtoB/BtoC/CtoNow)=({:.3f}/{:.3f}/{:.3f})",
+                    _colliderClockSession,
+                    frame.gameFrameIndex,
+                    isLeft ? "L" : "R",
+                    probeA.validMask,
+                    probeB.validMask,
+                    probeC.validMask,
+                    probeNow.validMask,
+                    shiftMag(probeB.controllerGame, probeA.controllerGame),
+                    shiftMag(probeC.controllerGame, probeB.controllerGame),
+                    shiftMag(probeNow.controllerGame, probeC.controllerGame),
+                    shiftMag(probeB.actorGame, probeA.actorGame),
+                    shiftMag(probeC.actorGame, probeB.actorGame),
+                    shiftMag(probeNow.actorGame, probeC.actorGame),
+                    shiftMag(probeB.playerWorldNodeWorldGame, probeA.playerWorldNodeWorldGame),
+                    shiftMag(probeC.playerWorldNodeWorldGame, probeB.playerWorldNodeWorldGame),
+                    shiftMag(probeNow.playerWorldNodeWorldGame, probeC.playerWorldNodeWorldGame),
+                    shiftMag(probeB.roomWorldGame, probeA.roomWorldGame),
+                    shiftMag(probeC.roomWorldGame, probeB.roomWorldGame),
+                    shiftMag(probeNow.roomWorldGame, probeC.roomWorldGame));
             }
 
             ROCK_LOG_INFO(
@@ -7857,6 +7898,12 @@ namespace rock
             return;
         }
 
+        // Phase-bracket probe point A: first pre-collide substep, before any
+        // listener graph of this update has run.
+        if (timing.substepIndex == 0 && (_rightHand.isHoldingAtomic() || _leftHand.isHoldingAtomic())) {
+            _grabPhaseProbePreCollide = sampleGrabLocomotionRootProbe();
+        }
+
         _rightHand.flushPendingCollisionPhysicsDrive(world, timing);
         _leftHand.flushPendingCollisionPhysicsDrive(world, timing);
         _bodyBoneColliders.flushPendingPhysicsDrive(world, timing);
@@ -7877,6 +7924,11 @@ namespace rock
         if (!_rightHand.isHoldingAtomic() && !_leftHand.isHoldingAtomic()) {
             return;
         }
+
+        // Phase-bracket probe point B: the +0x30 finish slot of ROCK's own
+        // listener (measured 2026-08-16: identical to the producer-time roots,
+        // i.e. no player movement has been applied yet at this point).
+        _grabPhaseProbeAfterBetween = sampleGrabLocomotionRootProbe();
 
         const auto gameFrameIndex = _palmClockGameFrameIndex.load(std::memory_order_acquire);
         const auto gameDeltaSeconds = _palmClockGameDeltaSeconds.load(std::memory_order_acquire);
@@ -7919,6 +7971,12 @@ namespace rock
     {
         if (!world || !_initialized.load(std::memory_order_acquire) || !physicsWritesAllowedForWorld(world)) {
             return;
+        }
+
+        // Phase-bracket probe point C: post-solve. Overwritten per substep so
+        // the value the game-frame telemetry reads is the final substep's.
+        if (_rightHand.isHoldingAtomic() || _leftHand.isHoldingAtomic()) {
+            _grabPhaseProbePostSolve = sampleGrabLocomotionRootProbe();
         }
 
         const auto completedSolveSequence =

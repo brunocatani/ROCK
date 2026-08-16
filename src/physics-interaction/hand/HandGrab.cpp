@@ -97,40 +97,6 @@ namespace rock
             return makePlayerBasisSample(runtime_state::currentFrame().playerSpace);
         }
 
-        // Diagnostic root-domain sweep (see GrabLocomotionRootProbe in Hand.h).
-        // Called on the frame thread both from the game-frame queue and from
-        // inside the synchronous physics step listener; every read is a plain
-        // node/actor/controller sample with no mutation.
-        GrabLocomotionRootProbe sampleGrabLocomotionRootProbe() noexcept
-        {
-            GrabLocomotionRootProbe probe{};
-            if (auto* playerNodes = f4vr::getPlayerNodes()) {
-                if (playerNodes->roomnode) {
-                    probe.roomLocalGame = playerNodes->roomnode->local.translate;
-                    probe.validMask |= GrabLocomotionRootProbe::kRoomLocalValid;
-                }
-                if (playerNodes->playerworldnode) {
-                    probe.playerWorldNodeWorldGame = playerNodes->playerworldnode->world.translate;
-                    probe.playerWorldNodeLocalGame = playerNodes->playerworldnode->local.translate;
-                    probe.validMask |= GrabLocomotionRootProbe::kPlayerWorldNodeWorldValid |
-                                       GrabLocomotionRootProbe::kPlayerWorldNodeLocalValid;
-                }
-            }
-            if (character_controller_runtime::tryGetPlayerActorPositionGameUnits(probe.actorGame)) {
-                probe.validMask |= GrabLocomotionRootProbe::kActorValid;
-            }
-            const auto controller = character_controller_runtime::samplePlayerCharacterControllerPositionHavok();
-            if (controller.valid) {
-                const float havokToGame = physics_scale::havokToGame();
-                probe.controllerGame = RE::NiPoint3{
-                    controller.positionHavok.x * havokToGame,
-                    controller.positionHavok.y * havokToGame,
-                    controller.positionHavok.z * havokToGame,
-                };
-                probe.validMask |= GrabLocomotionRootProbe::kControllerValid;
-            }
-            return probe;
-        }
 
         std::uint64_t nextGrabTimelineTraceId() noexcept
         {
@@ -7023,6 +6989,39 @@ namespace rock
         _activeConstraint.currentTau = output.linearTau;
         _activeConstraint.currentMaxForce = output.linearMaxForce;
         _activeConstraint.targetMaxForce = output.linearMaxForce;
+    }
+
+    GrabLocomotionRootProbe sampleGrabLocomotionRootProbe() noexcept
+    {
+        GrabLocomotionRootProbe probe{};
+        if (auto* playerNodes = f4vr::getPlayerNodes()) {
+            if (playerNodes->roomnode) {
+                probe.roomLocalGame = playerNodes->roomnode->local.translate;
+                probe.roomWorldGame = playerNodes->roomnode->world.translate;
+                probe.validMask |= GrabLocomotionRootProbe::kRoomLocalValid |
+                                   GrabLocomotionRootProbe::kRoomWorldValid;
+            }
+            if (playerNodes->playerworldnode) {
+                probe.playerWorldNodeWorldGame = playerNodes->playerworldnode->world.translate;
+                probe.playerWorldNodeLocalGame = playerNodes->playerworldnode->local.translate;
+                probe.validMask |= GrabLocomotionRootProbe::kPlayerWorldNodeWorldValid |
+                                   GrabLocomotionRootProbe::kPlayerWorldNodeLocalValid;
+            }
+        }
+        if (character_controller_runtime::tryGetPlayerActorPositionGameUnits(probe.actorGame)) {
+            probe.validMask |= GrabLocomotionRootProbe::kActorValid;
+        }
+        const auto controller = character_controller_runtime::samplePlayerCharacterControllerPositionHavok();
+        if (controller.valid) {
+            const float havokToGame = physics_scale::havokToGame();
+            probe.controllerGame = RE::NiPoint3{
+                controller.positionHavok.x * havokToGame,
+                controller.positionHavok.y * havokToGame,
+                controller.positionHavok.z * havokToGame,
+            };
+            probe.validMask |= GrabLocomotionRootProbe::kControllerValid;
+        }
+        return probe;
     }
 
     void Hand::queueProxyGrabAuthorityTarget(const RE::NiTransform& proxyWorldTransform,

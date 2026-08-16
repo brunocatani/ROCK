@@ -97,14 +97,21 @@ namespace rock
         static constexpr std::uint8_t kPlayerWorldNodeLocalValid = 0x04;
         static constexpr std::uint8_t kActorValid = 0x08;
         static constexpr std::uint8_t kControllerValid = 0x10;
+        static constexpr std::uint8_t kRoomWorldValid = 0x20;
 
         RE::NiPoint3 roomLocalGame{};
+        RE::NiPoint3 roomWorldGame{};
         RE::NiPoint3 playerWorldNodeWorldGame{};
         RE::NiPoint3 playerWorldNodeLocalGame{};
         RE::NiPoint3 actorGame{};
         RE::NiPoint3 controllerGame{};
         std::uint8_t validMask = 0;
     };
+
+    // Frame-thread-only sweep of the candidate player-root domains (see the
+    // struct comment above). Safe from the game-frame producer and from inside
+    // the synchronous physics step-listener callbacks.
+    [[nodiscard]] GrabLocomotionRootProbe sampleGrabLocomotionRootProbe() noexcept;
 
     // The LAST APPLIED grab-authority state (what the most recent physics flush
     // actually drove toward), not a live recompute like the proxy debug snapshot
