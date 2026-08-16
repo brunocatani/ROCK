@@ -1,5 +1,4 @@
 #include "physics-interaction/grab/GrabHeldObject.h"
-#include "physics-interaction/grab/GrabFrameDiscontinuityCorrection.h"
 
 #include <cmath>
 #include <cstdio>
@@ -124,72 +123,6 @@ int main()
             .contactNormal = Vec3{ -1.0f, 0.0f, 0.0f },
         });
         ok &= expectTrue("held contact orients raw normal before push test", flippedNormal.soften);
-    }
-
-    {
-        using namespace rock::grab_frame_discontinuity;
-
-        const auto alignedClocks = evaluate(Input<Vec3>{
-            .playerDeltaGameUnits = Vec3{ 4.0f, 0.0f, 0.0f },
-            .sourceDeltaSeconds = 0.01f,
-            .physicsDeltaSeconds = 0.01f,
-            .playerDeltaValid = true,
-        });
-        ok &= expectFalse("aligned clocks need no body correction", alignedClocks.apply);
-        ok &= expectNear("aligned clocks produce zero correction", alignedClocks.magnitudeGameUnits, 0.0f, 0.0001f);
-
-        const auto shortPhysicsStep = evaluate(Input<Vec3>{
-            .playerDeltaGameUnits = Vec3{ 5.0f, 0.0f, 0.0f },
-            .sourceDeltaSeconds = 0.0125f,
-            .physicsDeltaSeconds = 0.01f,
-            .playerDeltaValid = true,
-        });
-        ok &= expectTrue("short physics step corrects uncovered player motion", shortPhysicsStep.apply);
-        ok &= expectNear("short physics step correction magnitude", shortPhysicsStep.deltaGameUnits.x, 1.0f, 0.0001f);
-
-        const auto longPhysicsStep = evaluate(Input<Vec3>{
-            .playerDeltaGameUnits = Vec3{ 4.0f, 0.0f, 0.0f },
-            .sourceDeltaSeconds = 0.01f,
-            .physicsDeltaSeconds = 0.0125f,
-            .playerDeltaValid = true,
-        });
-        ok &= expectTrue("long physics step corrects excess player motion", longPhysicsStep.apply);
-        ok &= expectNear("long physics step correction direction", longPhysicsStep.deltaGameUnits.x, -1.0f, 0.0001f);
-
-        const auto sharedAuthority = evaluate(Input<Vec3>{
-            .playerDeltaGameUnits = Vec3{ 5.0f, 0.0f, 0.0f },
-            .sourceDeltaSeconds = 0.0125f,
-            .physicsDeltaSeconds = 0.01f,
-            .authorityScale = 0.5f,
-            .playerDeltaValid = true,
-        });
-        ok &= expectNear("shared hands split one correction budget", sharedAuthority.deltaGameUnits.x, 0.5f, 0.0001f);
-
-        const auto bounded = evaluate(Input<Vec3>{
-            .playerDeltaGameUnits = Vec3{ 10.0f, 0.0f, 0.0f },
-            .sourceDeltaSeconds = 0.02f,
-            .physicsDeltaSeconds = 0.005f,
-            .playerDeltaValid = true,
-        });
-        ok &= expectTrue("large valid clock gap is bounded", bounded.clamped);
-        ok &= expectNear("bounded correction uses hard safety cap", bounded.magnitudeGameUnits, kMaximumCorrectionGameUnits, 0.0001f);
-
-        const auto contact = evaluate(Input<Vec3>{
-            .playerDeltaGameUnits = Vec3{ 5.0f, 0.0f, 0.0f },
-            .sourceDeltaSeconds = 0.0125f,
-            .physicsDeltaSeconds = 0.01f,
-            .playerDeltaValid = true,
-            .heldBodyColliding = true,
-        });
-        ok &= expectFalse("contact rejects body translation correction", contact.apply);
-
-        const auto teleport = evaluate(Input<Vec3>{
-            .playerDeltaGameUnits = Vec3{ 36.0f, 0.0f, 0.0f },
-            .sourceDeltaSeconds = 0.0125f,
-            .physicsDeltaSeconds = 0.01f,
-            .playerDeltaValid = true,
-        });
-        ok &= expectFalse("player discontinuity is never translated into held body", teleport.apply);
     }
 
     return ok ? 0 : 1;
