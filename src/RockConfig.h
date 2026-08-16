@@ -516,6 +516,14 @@ namespace rock
         RE::NiPoint3 rockGrabPinchDetectionDirectionHandspace = RE::NiPoint3(1.0f, 0.0f, 0.0f);
         float rockGrabPinchDetectionAxisBlend = 0.65f;
         bool rockGrabHandLerpEnabled = true;
+        // While held and free of world contact, anchor the VISIBLE hand+object
+        // pair to the render-clock raw hand instead of the physics body. The
+        // physics body runs one clock/basis behind the render skeleton during
+        // stick locomotion, and publishing body-derived hand transforms into
+        // FRIK injected that disagreement into the holding arm's bones/IK/mesh
+        // as a per-frame buzz (2026-08-16 user observation + code audit).
+        // Runtime-toggleable for A/B perception comparison.
+        bool rockGrabHeldRenderClockAnchor = true;
         float rockGrabHandLerpTimeMin = 0.10f;
         float rockGrabHandLerpTimeMax = 0.20f;
         float rockGrabHandLerpMinDistance = 7.0f;

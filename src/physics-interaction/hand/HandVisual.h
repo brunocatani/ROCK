@@ -360,6 +360,65 @@ namespace rock::hand_visual_lerp_math
         return transform_math::composeTransforms(heldObjectWorld, transform_math::invertTransform(frozenObjectHandSpace));
     }
 
+    // Exact inverse of buildHeldObjectRelativeHandWorld: where the held object
+    // sits when rendered rigidly from the visible hand through the frozen grab
+    // relation. compose(hand, rel) then compose(result, invert(rel)) round-trips
+    // to the same hand, so anchoring the pair to the render-clock raw hand
+    // publishes that raw hand bit-exactly while the object follows it rigidly.
+    template <class Transform>
+    inline Transform buildHandRelativeHeldObjectWorld(const Transform& visualHandWorld, const Transform& frozenObjectHandSpace)
+    {
+        return transform_math::composeTransforms(visualHandWorld, frozenObjectHandSpace);
+    }
+
+    /*
+     * Held render-clock anchor blend. 0 renders the hand+object pair from the
+     * render-clock raw hand (free carry: zero relative motion against the
+     * skeleton by construction); 1 renders it from the physics body (world
+     * contact: the wall must visibly stop the object). The physics body runs
+     * one clock/basis behind the render skeleton during stick locomotion, so
+     * every unit of body weight re-admits that disagreement into the visible
+     * arm -- keep the body anchor only while contact genuinely needs it.
+     */
+    inline constexpr float kHeldAnchorBlendStartDeviationGameUnits = 1.5f;
+    inline constexpr float kHeldAnchorBlendFullDeviationGameUnits = 6.0f;
+    inline constexpr float kHeldAnchorBlendRatePerSecond = 6.0f;
+
+    inline float heldAnchorBodyBlendTarget(bool bodyColliding, float bodyToHandAnchorDeviationGameUnits)
+    {
+        if (bodyColliding) {
+            return 1.0f;
+        }
+        if (!std::isfinite(bodyToHandAnchorDeviationGameUnits) ||
+            bodyToHandAnchorDeviationGameUnits <= kHeldAnchorBlendStartDeviationGameUnits) {
+            return 0.0f;
+        }
+        constexpr float span = kHeldAnchorBlendFullDeviationGameUnits - kHeldAnchorBlendStartDeviationGameUnits;
+        const float alpha = (bodyToHandAnchorDeviationGameUnits - kHeldAnchorBlendStartDeviationGameUnits) / span;
+        return alpha >= 1.0f ? 1.0f : alpha;
+    }
+
+    // Rate-limited blend advance so anchor handoffs never pop; anomalies fail
+    // toward the body anchor (today's behavior).
+    inline float advanceHeldAnchorBodyBlend(float current, float target, float deltaTime)
+    {
+        if (!std::isfinite(current)) {
+            current = 1.0f;
+        }
+        if (!std::isfinite(target)) {
+            target = 1.0f;
+        }
+        const float step = kHeldAnchorBlendRatePerSecond * (std::isfinite(deltaTime) && deltaTime > 0.0f ? deltaTime : 0.0f);
+        const float delta = target - current;
+        if (delta > step) {
+            return current + step;
+        }
+        if (delta < -step) {
+            return current - step;
+        }
+        return target;
+    }
+
     inline bool shouldSmoothHeldObjectRelativeHand(bool lerpEnabled, bool touchHeldPhase, bool acquisitionVisual)
     {
         return lerpEnabled && acquisitionVisual && !touchHeldPhase;

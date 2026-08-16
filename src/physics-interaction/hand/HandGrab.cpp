@@ -11618,6 +11618,34 @@ namespace rock
             snapshot.overrideAngularVelocity);
     }
 
+    namespace
+    {
+        /*
+         * ROCK owns the held object's rendered node while the render-clock
+         * anchor is engaged. The engine's post-physics body-to-node sync runs
+         * earlier in the frame; this later game-thread write is what the
+         * renderer consumes, and the engine re-syncs from the body again next
+         * frame, so releasing ownership is automatic. Writing local relative
+         * to the live parent keeps the scene graph consistent; updateDown
+         * propagates to children.
+         */
+        bool applyHeldVisualNodeWorldTransform(RE::NiAVObject* node, const RE::NiTransform& desiredWorld)
+        {
+            if (!node) {
+                return false;
+            }
+            if (auto* parent = node->parent) {
+                node->local = transform_math::composeTransforms(
+                    transform_math::invertTransform(parent->world),
+                    desiredWorld);
+            } else {
+                node->local = desiredWorld;
+            }
+            f4vr::updateTransformsDown(node, true);
+            return true;
+        }
+    }
+
     void Hand::updateHeldObject(RE::hknpWorld* world,
         const RE::NiTransform& handWorldTransform,
         float deltaTime,
@@ -11852,17 +11880,81 @@ namespace rock
             });
         if (_grabFrame.hasTelemetryCapture &&
             visualPublishDecision.apply) {
-            RE::NiTransform heldVisualNodeWorld{};
-            bool hasHeldVisualNodeWorld = false;
-            if (_grabFrame.heldNode) {
-                heldVisualNodeWorld = _grabFrame.heldNode->world;
-                hasHeldVisualNodeWorld = true;
-            } else {
+            /*
+             * Physics-clock candidate. Always derived from the live BODY, not
+             * heldNode->world: once ROCK owns the node below, the node carries
+             * the anchored pose and is no longer physics truth.
+             */
+            RE::NiTransform bodyDerivedNodeWorld{};
+            bool hasBodyDerivedNodeWorld = false;
+            {
                 RE::NiTransform grabBodyWorld{};
                 if (tryGetGrabAuthorityBodyWorldTransform(world, _savedObjectState.bodyId, grabBodyWorld)) {
-                    heldVisualNodeWorld = deriveNodeWorldFromBodyWorld(grabBodyWorld, _grabFrame.bodyLocal);
-                    hasHeldVisualNodeWorld = true;
+                    bodyDerivedNodeWorld = deriveNodeWorldFromBodyWorld(grabBodyWorld, _grabFrame.bodyLocal);
+                    hasBodyDerivedNodeWorld = true;
+                } else if (_grabFrame.heldNode) {
+                    bodyDerivedNodeWorld = _grabFrame.heldNode->world;
+                    hasBodyDerivedNodeWorld = true;
                 }
+            }
+
+            /*
+             * Render-clock candidate: the object rendered rigidly from the raw
+             * interaction hand through the frozen grab relation. The raw hand
+             * shares the skeleton's clock, so this candidate has zero relative
+             * motion against the skeleton by construction. The physics body
+             * runs one clock/basis behind the render skeleton during stick
+             * locomotion (2026-08-16 captures), and publishing body-derived
+             * hand transforms into FRIK injected that disagreement into the
+             * holding arm's bones/IK/mesh as a per-frame buzz -- the defect
+             * this anchor removes. Contact hands authority back to the body
+             * candidate through a rate-limited blend so walls still visibly
+             * stop the object.
+             */
+            RE::NiTransform handDerivedNodeWorld{};
+            bool hasHandDerivedNodeWorld = false;
+            if (g_rockConfig.rockGrabHeldRenderClockAnchor &&
+                hasBodyDerivedNodeWorld &&
+                isUsableGrabVisualTransform(handWorldTransform) &&
+                isUsableGrabVisualTransform(_grabFrame.rawHandSpace)) {
+                handDerivedNodeWorld = hand_visual_lerp_math::buildHandRelativeHeldObjectWorld(
+                    handWorldTransform,
+                    _grabFrame.rawHandSpace);
+                handDerivedNodeWorld.scale = bodyDerivedNodeWorld.scale;
+                hasHandDerivedNodeWorld = isUsableGrabVisualTransform(handDerivedNodeWorld);
+            }
+
+            RE::NiTransform heldVisualNodeWorld = bodyDerivedNodeWorld;
+            bool hasHeldVisualNodeWorld = hasBodyDerivedNodeWorld;
+            bool renderClockAnchorEngaged = false;
+            if (hasHandDerivedNodeWorld) {
+                const float bodyToHandAnchorDeviationGameUnits =
+                    pointDistanceGameUnits(bodyDerivedNodeWorld.translate, handDerivedNodeWorld.translate);
+                // Acquisition stays body-anchored: the hand travels to the
+                // object, the object must not travel to the hand. The anchor
+                // takes over only after the grab settles into TouchHeld.
+                const bool acquisitionSettled =
+                    _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld;
+                const float anchorBlendTarget = acquisitionSettled ?
+                    hand_visual_lerp_math::heldAnchorBodyBlendTarget(
+                        heldBodyColliding,
+                        bodyToHandAnchorDeviationGameUnits) :
+                    1.0f;
+                _grabHeldAnchorBodyBlend = hand_visual_lerp_math::advanceHeldAnchorBodyBlend(
+                    _grabHeldAnchorBodyBlend,
+                    anchorBlendTarget,
+                    deltaTime);
+                heldVisualNodeWorld = hand_visual_lerp_math::interpolateTransform(
+                    handDerivedNodeWorld,
+                    bodyDerivedNodeWorld,
+                    _grabHeldAnchorBodyBlend);
+                renderClockAnchorEngaged = isUsableGrabVisualTransform(heldVisualNodeWorld);
+                if (!renderClockAnchorEngaged) {
+                    heldVisualNodeWorld = bodyDerivedNodeWorld;
+                }
+            } else {
+                // Fail closed onto the physics-body anchor (pre-anchor behavior).
+                _grabHeldAnchorBodyBlend = 1.0f;
             }
 
             if (hasHeldVisualNodeWorld) {
@@ -11889,6 +11981,7 @@ namespace rock
                         _grabVisualReturn.active && isUsableGrabVisualTransform(_grabVisualReturn.lastApplied) ?
                         _grabVisualReturn.lastApplied :
                         handWorldTransform;
+                    _grabHeldAnchorBodyBlend = 1.0f;
                     _grabVisualHandTransform = acquisitionStart;
                     _grabVisualHandLerpStartTransform = acquisitionStart;
                     _grabVisualHandLerpElapsedSeconds = 0.0f;
@@ -11962,6 +12055,20 @@ namespace rock
                 if (applyGrabExternalHandWorldTransform(_isLeft, _grabVisualHandTransform)) {
                     _lastPublishedGrabVisualHandTransform = _grabVisualHandTransform;
                     _hasLastPublishedGrabVisualHandTransform = true;
+                    /*
+                     * Render-clock node ownership: with the acquisition lerp
+                     * complete, the published hand equals
+                     * buildHeldObjectRelativeHandWorld(anchor, relation), so
+                     * writing the anchor keeps the rendered hand+object pair
+                     * exactly rigid. During acquisition (alpha < 1) the node
+                     * stays on the engine's body sync so the hand travels to
+                     * the object, never the reverse.
+                     */
+                    if (renderClockAnchorEngaged &&
+                        visualHandLerpAlpha >= 1.0f &&
+                        _grabFrame.heldNode) {
+                        applyHeldVisualNodeWorldTransform(_grabFrame.heldNode, heldVisualNodeWorld);
+                    }
                     if (_grabFrame.heldNode &&
                         sourceSchedulerSequence != 0 &&
                         prefrik_hand_authority_policy::isUsableTransform(
@@ -11989,12 +12096,14 @@ namespace rock
 
                 ROCK_LOG_SAMPLE_DEBUG(Hand,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "{} GRAB VISUAL HAND: relation=heldRelative phase={} visualOnly=yes authority={} shape={} follow={} scale={:.2f} lerpAlpha={:.2f} lerpDuration={:.3f}s target=({:.1f},{:.1f},{:.1f}) applied=({:.1f},{:.1f},{:.1f}) live=({:.1f},{:.1f},{:.1f}) deviation={:.2f}gu avgDeviation={:.2f}gu normalAuthority=false",
+                    "{} GRAB VISUAL HAND: relation=heldRelative phase={} visualOnly=yes authority={} shape={} follow={} anchor={}/bodyBlend={:.2f} scale={:.2f} lerpAlpha={:.2f} lerpDuration={:.3f}s target=({:.1f},{:.1f},{:.1f}) applied=({:.1f},{:.1f},{:.1f}) live=({:.1f},{:.1f},{:.1f}) deviation={:.2f}gu avgDeviation={:.2f}gu normalAuthority=false",
                     handName(),
                     grab_three_phase::phaseName(_grabAcquisitionPhase),
                     visualPublishDecision.reason,
                     grab_motion_controller::contactSupportShapeName(heldAngularAuthority.contactSupportShape),
                     smoothVisualHand ? "smoothedAcquisition" : "immediateHeldObject",
+                    renderClockAnchorEngaged ? "renderClock" : "body",
+                    _grabHeldAnchorBodyBlend,
                     heldAngularAuthority.authorityScale,
                     visualHandLerpAlpha,
                     _grabVisualHandLerpDurationSeconds,

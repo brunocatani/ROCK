@@ -565,6 +565,7 @@ namespace rock
             grab_pinch_pocket_policy::kDefaultDetectionDirectionHandspaceZ);
         rockGrabPinchDetectionAxisBlend = grab_pinch_pocket_policy::kDefaultDetectionAxisBlend;
         rockGrabHandLerpEnabled = true;
+        rockGrabHeldRenderClockAnchor = true;
         rockGrabHandLerpTimeMin = 0.10f;
         rockGrabHandLerpTimeMax = 0.20f;
         rockGrabHandLerpMinDistance = 7.0f;
@@ -2243,6 +2244,7 @@ namespace rock
             rockGrabPinchDetectionAxisBlend = sanitizedPinchDetectionConfig.detectionAxisBlend;
         }
         rockGrabHandLerpEnabled = ini.GetBoolValue(SECTION, "bGrabHandLerpEnabled", rockGrabHandLerpEnabled);
+        rockGrabHeldRenderClockAnchor = ini.GetBoolValue(SECTION, "bGrabHeldRenderClockAnchor", rockGrabHeldRenderClockAnchor);
         rockGrabHandLerpTimeMin = readClampedFloat(ini,
             SECTION,
             "fGrabHandLerpTimeMin",

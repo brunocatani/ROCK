@@ -1156,6 +1156,9 @@ namespace rock
         std::size_t _grabDeviationHistoryNext = 0;
         RE::NiTransform _grabVisualHandTransform{};
         bool _hasGrabVisualHandTransform = false;
+        // Held render-clock anchor blend (0 = raw-hand anchor, 1 = physics-body
+        // anchor); see hand_visual_lerp_math::heldAnchorBodyBlendTarget.
+        float _grabHeldAnchorBodyBlend = 0.0f;
         RE::NiTransform _lastPublishedGrabVisualHandTransform{};
         bool _hasLastPublishedGrabVisualHandTransform = false;
         hand_visual_lerp_math::VisualReturnTransition<RE::NiTransform> _grabVisualReturn{};
