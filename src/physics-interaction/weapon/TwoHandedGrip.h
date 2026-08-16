@@ -710,10 +710,11 @@ namespace rock
         // per-hand grip/native authority and must not retain this owner.
         void finishWeaponCollisionPresentationFrame(bool presentationActive);
 
-        // Reapplies the controlled left-hand recoil as the final weapon-only
-        // presentation layer. Call after grip/gunstock/collision writers and
-        // before collision bodies and muzzle consumers sample the weapon.
-        bool applyLeftFiringWeaponRecoilPresentation(
+        // Reapplies controlled recoil for ROCK's current firing hand as the
+        // final weapon-only presentation layer. Call after grip/gunstock/
+        // collision writers and before collision bodies and muzzle consumers
+        // sample the weapon.
+        bool applyFiringWeaponRecoilPresentation(
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey);
 
@@ -1477,8 +1478,10 @@ namespace rock
             bool primaryHand,
             LockedHandVisualLerpState& visualState);
         void recordPublishedHandWorld(bool isLeft, const RE::NiTransform& appliedWorld);
-        void rememberLeftFiringRecoilReference(const RE::NiTransform& handWorld);
-        void clearLeftFiringRecoilPresentationState();
+        [[nodiscard]] bool hasControlledFiringRecoilAuthority(bool isLeft) const;
+        void rememberFiringRecoilReference(bool isLeft, const RE::NiTransform& handWorld);
+        void clearFiringRecoilPresentationState();
+        void clearFiringRecoilPresentationState(bool isLeft);
         void beginHandVisualReturn(bool isLeft, const char* reason);
         void updateHandVisualReturns(float dt);
         void clearHandVisualReturn(bool isLeft, const char* reason, bool logCancellation);
@@ -1543,12 +1546,13 @@ namespace rock
         bool _weaponNodeOwnershipBlockEngaged{ false };
         bool _weaponNodeReparentedToLeftHand{ false };
         bool _recoilControllerRegistered{ false };
-        RE::NiTransform _leftFiringRecoilReferenceHandWorld{};
-        std::uint64_t _leftFiringRecoilReferenceGenerationKey{ 0 };
-        std::uint64_t _leftFiringRecoilAcceptedGenerationKey{ 0 };
-        std::uint64_t _leftFiringRecoilAcceptedSequence{ 0 };
-        std::uint64_t _leftFiringRecoilConsumedSequence{ 0 };
-        bool _hasLeftFiringRecoilReference{ false };
+        std::array<RE::NiTransform, 2> _firingRecoilReferenceHandWorld{};
+        std::array<std::uint64_t, 2> _firingRecoilReferenceGenerationKey{};
+        std::uint64_t _firingRecoilAcceptedGenerationKey{ 0 };
+        std::uint64_t _firingRecoilAcceptedSequence{ 0 };
+        std::uint64_t _firingRecoilConsumedSequence{ 0 };
+        std::array<bool, 2> _hasFiringRecoilReference{};
+        bool _firingRecoilAcceptedHandIsLeft{ false };
 
         enum class RightFiringCanonicalSource : std::uint8_t
         {

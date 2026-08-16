@@ -83,6 +83,10 @@ Require-Pattern $gripPath $grip `
     '_currentHandDriverFrames\[0\]\s*=\s*frameInput\.leftHandDriverFrame[\s\S]*_currentHandDriverFrames\[1\]\s*=\s*frameInput\.rightHandDriverFrame[\s\S]*tryResolveDynamicSupportDriverTargets' `
     'Normal two-hand solving and retained-target capture must share the controller-isolated physical inputs.'
 
+Require-Pattern $authoredPath $authored `
+    'shouldRetainAuthoredFiringFingerPoseWhileWeaponTransformYields\([\s\S]*eligibility\)[\s\S]*if \(!input\.rockFiringHandIsLeft && !retainFingerPose\)[\s\S]*clearAuthoredPrimaryFiringGripFingerPose\(\)[\s\S]*weapon-transform-authority-yield' `
+    'Two-hand transform authority must not clear the independent authored right-hand finger lease.'
+
 if ($failures.Count -gt 0) {
     Write-Host 'Authored weapon-pose authority source boundary failed:'
     foreach ($failure in $failures) {

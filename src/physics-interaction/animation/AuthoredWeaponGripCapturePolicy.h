@@ -91,6 +91,26 @@ namespace rock::authored_weapon_grip_capture_policy
     }
 
     /*
+     * Full two-hand authority supersedes the authored weapon transform, but
+     * it consumes the same identity-bound authored firing-hand canonical.
+     * Keep that canonical's finger lease continuous while every independent
+     * pose prerequisite remains valid. This prevents a per-frame clear/set
+     * cycle without allowing the authored transform writer back in.
+     */
+    [[nodiscard]] constexpr bool
+        shouldRetainAuthoredFiringFingerPoseWhileWeaponTransformYields(
+            const AuthoredPrimaryFiringGripEligibility& input)
+    {
+        if (!input.conflictingWeaponTransformAuthorityActive) {
+            return false;
+        }
+
+        auto fingerEligibility = input;
+        fingerEligibility.conflictingWeaponTransformAuthorityActive = false;
+        return shouldApplyAuthoredPrimaryFiringGrip(fingerEligibility);
+    }
+
+    /*
      * A ROCK object grab owns the occupied physical hand's fingers. The
      * equipped weapon may keep its independent transform/carry authority,
      * but its persistent authored firing pose must not compete with the

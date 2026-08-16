@@ -434,10 +434,17 @@ namespace rock
             .rockFiringHandIsLeft = input.rockFiringHandIsLeft,
         };
         if (!authored_weapon_grip_capture_policy::shouldApplyAuthoredPrimaryFiringGrip(eligibility)) {
-            if (!input.rockFiringHandIsLeft) {
+            const bool retainFingerPose =
+                authored_weapon_grip_capture_policy::
+                    shouldRetainAuthoredFiringFingerPoseWhileWeaponTransformYields(
+                        eligibility);
+            if (!input.rockFiringHandIsLeft && !retainFingerPose) {
                 weaponAuthority.clearAuthoredPrimaryFiringGripFingerPose();
             }
-            endSession("frame-ineligible");
+            endSession(
+                retainFingerPose ?
+                    "weapon-transform-authority-yield" :
+                    "frame-ineligible");
             return;
         }
 

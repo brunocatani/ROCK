@@ -4210,7 +4210,7 @@ namespace rock
             }
             _twoHandedGrip.finishWeaponCollisionPresentationFrame(
                 dynamicWeaponFrame.publishVisualAuthority);
-            (void)_twoHandedGrip.applyLeftFiringWeaponRecoilPresentation(
+            (void)_twoHandedGrip.applyFiringWeaponRecoilPresentation(
                 weaponNode,
                 currentWeaponGenerationKey);
             if (weaponNode) {

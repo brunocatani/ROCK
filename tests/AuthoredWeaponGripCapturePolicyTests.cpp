@@ -87,6 +87,30 @@ int main()
     }());
     static_assert([=] {
         auto input = eligible;
+        input.conflictingWeaponTransformAuthorityActive = true;
+        return shouldRetainAuthoredFiringFingerPoseWhileWeaponTransformYields(input);
+    }());
+    static_assert(!shouldRetainAuthoredFiringFingerPoseWhileWeaponTransformYields(eligible));
+    static_assert([=] {
+        auto input = eligible;
+        input.conflictingWeaponTransformAuthorityActive = true;
+        input.nativeReloadAuthorityActive = true;
+        return !shouldRetainAuthoredFiringFingerPoseWhileWeaponTransformYields(input);
+    }());
+    static_assert([=] {
+        auto input = eligible;
+        input.conflictingWeaponTransformAuthorityActive = true;
+        input.primaryHandHoldingObject = true;
+        return !shouldRetainAuthoredFiringFingerPoseWhileWeaponTransformYields(input);
+    }());
+    static_assert([=] {
+        auto input = eligible;
+        input.conflictingWeaponTransformAuthorityActive = true;
+        input.rockFiringHandIsLeft = true;
+        return !shouldRetainAuthoredFiringFingerPoseWhileWeaponTransformYields(input);
+    }());
+    static_assert([=] {
+        auto input = eligible;
         input.weaponVisualReturnActive = true;
         return !shouldApplyAuthoredPrimaryFiringGrip(input);
     }());
