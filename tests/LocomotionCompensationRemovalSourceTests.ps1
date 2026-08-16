@@ -123,27 +123,18 @@ Reject-Text 'src/physics-interaction/hand/Hand.h' `
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' `
     'GrabFrameDiscontinuityCorrection|grab_frame_discontinuity|applyHeldFrameDiscontinuityCorrectionLocked|HELD FRAME CORRECTION' `
     'Grab authority must not translate live held bodies from mismatched wall and physics clocks.'
-# Root-motion feed-forward: the 2026-08-16 phase-bracket captures proved FO4VR
-# applies joystick locomotion AFTER the physics update in game code, so no
-# measured rebase at any flush boundary can remove the one-frame basis lag. The
-# ONLY sanctioned prediction is the player ROOT step (the engine's own tracker
-# delta) scaled by the exact frame-dt ratio, bounded and fail-closed. The
-# general no-feed-forward rule for hand/wand motion remains in force.
 Require-Text 'src/physics-interaction/grab/GrabAuthoritySourceClockResampler.h' `
-    'evaluateRootMotionFeedForward[\s\S]*kMinFeedForwardDtRatio[\s\S]*kMaxFeedForwardDtRatio[\s\S]*kMaxTranslationJumpGameUnits' `
-    'The source-clock owner must retain the bounded, fail-closed root-motion feed-forward.'
-Reject-Text 'src/physics-interaction/grab/GrabAuthoritySourceClockResampler.h' `
-    'ConsumptionFrameRebase|positionHavok|controllerIdentity|controllerVtable|physicsScaleRevision|havokToGameScale' `
-    'The measured consumption-frame rebase is dead by measurement (no root domain advances during physics) and must not return; nor may the physics character-controller domain.'
+    'struct ConsumptionFrameRebase[\s\S]*consumptionRootHavok[\s\S]*sourceRootHavok[\s\S]*controllerIdentity[\s\S]*physicsScaleRevision[\s\S]*kMaxTranslationJumpGameUnits' `
+    'The source-clock owner must retain the measured, identity-safe, bounded consumption-frame root rebase.'
 Require-Text 'src/physics-interaction/native/CharacterControllerRuntime.cpp' `
     'GetPositionImpl\(positionHavok, false\)' `
-    'The verified live character-controller position accessor must be retained (Ghidra-audited native surface).'
+    'The root rebase must read the live character-controller position without actor-position or velocity substitutes.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
-    'sourceRootStepGame = sourceFrame\.playerSpace\.deltaGameUnits[\s\S]*evaluateRootMotionFeedForward\([\s\S]*pending\.proxyWorld\.translate\.x \+= rootFeedForward\.shiftGame\.x' `
-    'The queued producer root step must feed-forward only the hidden proxy target at consumption.'
+    'sourceControllerRoot = samplePlayerControllerRootFrame\(\)[\s\S]*_grabAuthorityConsumptionFrameRebase\.evaluate[\s\S]*pending\.proxyWorld\.translate\.x \+= consumptionFrameRebase\.shiftGame\.x' `
+    'The queued source root must rebase only the hidden proxy target at consumption.'
 Reject-Text 'src/physics-interaction/grab/GrabAuthoritySourceClockResampler.h' `
-    'cachedLinearVelocity|outVelocity|predictionLead|handVelocity|wandVelocity' `
-    'Hand/wand velocity prediction and feed-forward state must never return; only the bounded player-root step feed-forward is sanctioned.'
+    'cachedLinearVelocity|outVelocity|predictionLead|feedForward|FeedForward' `
+    'The exact consumption-frame root rebase must never regain velocity prediction or feed-forward state.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'LocomotionCompensationRemovalSourceTests failed:' -ForegroundColor Red

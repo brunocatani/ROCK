@@ -93,11 +93,6 @@ namespace rock::havok_physics_timing
 
     PhysicsTimingSample sampleCurrentTiming();
 
-    // Continuous engine frame-delta seconds (the dt the game-side player
-    // mover consumes), or 0 when unreadable/implausible. Distinct from the
-    // ms-quantized bhkWorld deltas in the timing sample above.
-    float sampleNativeFrameDeltaSeconds();
-
     inline float driveDeltaSeconds(const PhysicsTimingSample& timing)
     {
         /*

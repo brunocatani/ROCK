@@ -31,12 +31,4 @@ namespace rock::havok_physics_timing
             readUintGlobal(offsets::kData_BhkWorldSubstepCount, 1));
     }
 
-    float sampleNativeFrameDeltaSeconds()
-    {
-        // Continuous engine frame dt (see kData_NativeFrameDeltaSeconds).
-        // Returns 0 when unreadable or implausible so callers fail closed.
-        const float value = readFloatGlobal(offsets::kData_NativeFrameDeltaSeconds, 0.0f);
-        return isUsableDelta(value) ? value : 0.0f;
-    }
-
 }

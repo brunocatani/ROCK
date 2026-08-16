@@ -20,25 +20,11 @@
  *
  * Contract: the raw phase-lock output on the LAST physics substep of every
  * frame lands EXACTLY on the newest queued game-frame sample (segment fraction
- * (index+1)/count reaches 1). RootMotionFeedForward then adds the player-root
- * displacement that the game will apply AFTER this physics update: the
- * 2026-08-16 phase-bracket captures proved FO4VR applies joystick locomotion
- * post-physics in game code (pre-collide, ROCK's +0x30, and post-solve all
- * see ZERO movement in every root domain -- roomNode world/local,
- * playerWorldNode, actor, and the bhkCharProxyController root, which never
- * moves at all during stick locomotion -- while post-solve-to-producer
- * carries the full step). The current frame's displacement therefore exists
- * NOWHERE during physics, so no measured rebase at any flush boundary can
- * remove the one-frame basis lag (appliedRaw(t) == raw(t-1) bit-exact over
- * 359 locomotion frames; downstream target->proxy error 0.003 gu). The only
- * consumption-side correction is the engine's own last applied root step,
- * scaled by the exact frame-dt ratio: the dt-jitter component of the stutter
- * (dominant; corr 0.80-0.85 with speed x |d(dt)|) cancels exactly, leaving
- * only true acceleration (~0.07-0.11 gu at steady walk/sprint). This is
- * deliberately restricted to the PLAYER ROOT step measured by the game's own
- * tracker -- the general no-feed-forward rule for hand/wand motion remains:
- * hand velocity is noisy, root locomotion is not.
- * The commanded velocity absorbs the
+ * (index+1)/count reaches 1). ConsumptionFrameRebase then re-expresses that
+ * point in the live character-root frame measured after controller movement;
+ * at rest this is zero, while stick locomotion removes the source-frame age.
+ * Intra-frame substeps interpolate both the raw sample and its associated
+ * source root. The commanded velocity absorbs the
  * substep-dt quantization (~+-10%); the constraint motors low-pass velocity
  * noise (measured 2026-07-13 against the far larger v1 feed-forward spikes),
  * and no session ever correlated commanded-velocity smoothness with what the
@@ -108,121 +94,213 @@ namespace rock::grab_authority_source_clock
         return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
     }
 
-    enum class RootMotionFeedForwardStatus : std::uint8_t
+    struct ControllerRootFrameSample
+    {
+        RE::NiPoint3 positionHavok{};
+        std::uintptr_t controllerIdentity = 0;
+        std::uintptr_t controllerVtable = 0;
+        std::uint32_t physicsScaleRevision = 0;
+        bool valid = false;
+    };
+
+    enum class ConsumptionFrameRebaseStatus : std::uint8_t
     {
         Unavailable,
-        // Player not in locomotion (tracker moving=false or negligible step):
-        // no shift, room-scale hand motion is never touched.
-        Idle,
+        Stationary,
         Applied,
         InvalidSample,
-        // Source or physics delta unusable, or their ratio outside the sane
-        // band (frame hitch): fail closed for this frame.
-        DtOutOfRange,
-        // Step or resulting shift beyond the teleport bound: fail closed.
+        ControllerChanged,
+        ScaleChanged,
         Discontinuity,
     };
 
-    constexpr const char* rootMotionFeedForwardStatusName(RootMotionFeedForwardStatus status) noexcept
+    constexpr const char* consumptionFrameRebaseStatusName(ConsumptionFrameRebaseStatus status) noexcept
     {
         switch (status) {
-        case RootMotionFeedForwardStatus::Unavailable:
+        case ConsumptionFrameRebaseStatus::Unavailable:
             return "unavailable";
-        case RootMotionFeedForwardStatus::Idle:
-            return "idle";
-        case RootMotionFeedForwardStatus::Applied:
+        case ConsumptionFrameRebaseStatus::Stationary:
+            return "stationary";
+        case ConsumptionFrameRebaseStatus::Applied:
             return "applied";
-        case RootMotionFeedForwardStatus::InvalidSample:
+        case ConsumptionFrameRebaseStatus::InvalidSample:
             return "invalid-sample";
-        case RootMotionFeedForwardStatus::DtOutOfRange:
-            return "dt-out-of-range";
-        case RootMotionFeedForwardStatus::Discontinuity:
+        case ConsumptionFrameRebaseStatus::ControllerChanged:
+            return "controller-changed";
+        case ConsumptionFrameRebaseStatus::ScaleChanged:
+            return "scale-changed";
+        case ConsumptionFrameRebaseStatus::Discontinuity:
             return "discontinuity";
         }
         return "unknown";
     }
 
-    struct RootMotionFeedForwardResult
+    struct ConsumptionFrameRebaseResult
     {
         RE::NiPoint3 shiftGame{};
-        RootMotionFeedForwardStatus status = RootMotionFeedForwardStatus::Unavailable;
+        RE::NiPoint3 currentEndpointShiftGame{};
+        ConsumptionFrameRebaseStatus status = ConsumptionFrameRebaseStatus::Unavailable;
         bool valid = false;
     };
 
-    // The engine applies at most one root step per game frame; a ratio far
-    // outside unity means a hitch or timing anomaly, not locomotion.
-    constexpr float kMinFeedForwardDtRatio = 0.25f;
-    constexpr float kMaxFeedForwardDtRatio = 4.0f;
-    // Below this the "step" is tracker noise at rest, not locomotion.
-    constexpr float kMinFeedForwardStepGameUnits = 0.001f;
-
     /*
-     * Predict the player-root displacement the game will apply after this
-     * physics update:
-     *   shift = lastAppliedRootStep x (currentFrameDt / previousFrameDt).
+     * Re-express a queued world-space hand sample in the character controller's
+     * frame at the exact physics boundary that consumes it.
      *
-     * lastAppliedRootStep is the game's own per-frame roomNode-world delta as
-     * measured by the runtime-state player-space tracker at the producer that
-     * queued the sample. BOTH frame durations come from the engine's own
-     * continuous frame-delta global (PhysicsInteraction's per-update series):
-     * the mover advances the player by speed x that continuous dt. The
-     * 2026-08-16 offline predictor comparison ruled out the alternatives --
-     * the ms-quantized bhkWorld delta made the ratio no better than none, and
-     * a wall clock sampled at the physics phase carried 9.9-15.5 ms of phase
-     * noise on a steady 11.1 ms frame and visibly over/under-shot. With the
-     * engine's dt on both sides the dominant stutter term -- speed x frame-dt
-     * jitter -- cancels, leaving real speed change only. Stateless and
-     * deterministic per sample, so multi-substep re-flushes of one pending
-     * target recompute the identical shift. Fails closed to a zero shift on
-     * any anomaly; a zero shift is precisely the pre-fix behavior.
+     * This is deliberately position-only measurement, not velocity prediction:
+     * source and consumption positions come from the same live controller. The
+     * raw hand/proxy sample already contains the controller root at source time,
+     * so adding (consumptionRoot - sourceRoot) removes only the common root-frame
+     * age. Room-scale hand motion remains untouched because it does not move the
+     * character controller. For multi-substep source interpolation, both source
+     * endpoint roots are retained and interpolated with the same fraction as the
+     * target, while the consumption root is refreshed after every character move.
      */
-    inline RootMotionFeedForwardResult evaluateRootMotionFeedForward(
-        const RE::NiPoint3& sourceRootStepGame,
-        bool sourceMoving,
-        float previousFrameDeltaSeconds,
-        float currentFrameDeltaSeconds) noexcept
+    struct ConsumptionFrameRebase
     {
-        if (!isFiniteVector(sourceRootStepGame) ||
-            !havok_physics_timing::isUsableDelta(previousFrameDeltaSeconds) ||
-            !havok_physics_timing::isUsableDelta(currentFrameDeltaSeconds)) {
-            return RootMotionFeedForwardResult{ .status = RootMotionFeedForwardStatus::InvalidSample };
+        bool initialized = false;
+        RE::NiPoint3 previousSourceRootHavok{};
+        RE::NiPoint3 currentSourceRootHavok{};
+        std::uintptr_t controllerIdentity = 0;
+        std::uint32_t physicsScaleRevision = 0;
+        std::uint64_t lastSourceSequence = 0;
+        std::uint64_t blockedSourceSequence = 0;
+        ConsumptionFrameRebaseStatus blockedStatus = ConsumptionFrameRebaseStatus::Unavailable;
+        std::uint32_t appliedCount = 0;
+        std::uint32_t rejectedCount = 0;
+
+        void reset() noexcept
+        {
+            *this = ConsumptionFrameRebase{};
         }
 
-        const float stepSquared =
-            sourceRootStepGame.x * sourceRootStepGame.x +
-            sourceRootStepGame.y * sourceRootStepGame.y +
-            sourceRootStepGame.z * sourceRootStepGame.z;
-        if (!sourceMoving || stepSquared < kMinFeedForwardStepGameUnits * kMinFeedForwardStepGameUnits) {
-            return RootMotionFeedForwardResult{ .status = RootMotionFeedForwardStatus::Idle, .valid = true };
-        }
-        if (stepSquared > kMaxTranslationJumpGameUnits * kMaxTranslationJumpGameUnits) {
-            return RootMotionFeedForwardResult{ .status = RootMotionFeedForwardStatus::Discontinuity };
+        static float vectorLength(const RE::NiPoint3& value) noexcept
+        {
+            const float lengthSquared = value.x * value.x + value.y * value.y + value.z * value.z;
+            return std::isfinite(lengthSquared) && lengthSquared >= 0.0f ?
+                       std::sqrt(lengthSquared) :
+                       (std::numeric_limits<float>::infinity)();
         }
 
-        const float ratio = currentFrameDeltaSeconds / previousFrameDeltaSeconds;
-        if (!std::isfinite(ratio) || ratio < kMinFeedForwardDtRatio || ratio > kMaxFeedForwardDtRatio) {
-            return RootMotionFeedForwardResult{ .status = RootMotionFeedForwardStatus::DtOutOfRange };
+        static RE::NiPoint3 rootDeltaGame(
+            const RE::NiPoint3& consumptionRootHavok,
+            const RE::NiPoint3& sourceRootHavok,
+            float havokToGameScale) noexcept
+        {
+            return RE::NiPoint3{
+                (consumptionRootHavok.x - sourceRootHavok.x) * havokToGameScale,
+                (consumptionRootHavok.y - sourceRootHavok.y) * havokToGameScale,
+                (consumptionRootHavok.z - sourceRootHavok.z) * havokToGameScale,
+            };
         }
 
-        RootMotionFeedForwardResult result{};
-        result.shiftGame = RE::NiPoint3{
-            sourceRootStepGame.x * ratio,
-            sourceRootStepGame.y * ratio,
-            sourceRootStepGame.z * ratio,
-        };
-        const float shiftSquared =
-            result.shiftGame.x * result.shiftGame.x +
-            result.shiftGame.y * result.shiftGame.y +
-            result.shiftGame.z * result.shiftGame.z;
-        if (!isFiniteVector(result.shiftGame) ||
-            shiftSquared > kMaxTranslationJumpGameUnits * kMaxTranslationJumpGameUnits) {
-            return RootMotionFeedForwardResult{ .status = RootMotionFeedForwardStatus::Discontinuity };
+        void adoptSource(const ControllerRootFrameSample& source, std::uint64_t sourceSequence) noexcept
+        {
+            previousSourceRootHavok = source.positionHavok;
+            currentSourceRootHavok = source.positionHavok;
+            controllerIdentity = source.controllerIdentity;
+            physicsScaleRevision = source.physicsScaleRevision;
+            lastSourceSequence = sourceSequence;
+            initialized = true;
         }
-        result.status = RootMotionFeedForwardStatus::Applied;
-        result.valid = true;
-        return result;
-    }
 
+        ConsumptionFrameRebaseResult reject(
+            ConsumptionFrameRebaseStatus status,
+            const ControllerRootFrameSample* source,
+            std::uint64_t sourceSequence) noexcept
+        {
+            ++rejectedCount;
+            blockedSourceSequence = sourceSequence;
+            blockedStatus = status;
+            if (source && source->valid && source->controllerIdentity != 0 && sourceSequence != 0) {
+                adoptSource(*source, sourceSequence);
+            } else {
+                initialized = false;
+                lastSourceSequence = sourceSequence;
+            }
+            return ConsumptionFrameRebaseResult{ .status = status };
+        }
+
+        ConsumptionFrameRebaseResult evaluate(
+            const ControllerRootFrameSample& source,
+            const ControllerRootFrameSample& consumption,
+            float havokToGameScale,
+            std::uint64_t sourceSequence,
+            float segmentFraction) noexcept
+        {
+            if (sourceSequence != 0 && sourceSequence == blockedSourceSequence) {
+                return ConsumptionFrameRebaseResult{ .status = blockedStatus };
+            }
+
+            if (!source.valid || !consumption.valid || sourceSequence == 0 ||
+                source.controllerIdentity == 0 || consumption.controllerIdentity == 0 ||
+                !isFiniteVector(source.positionHavok) || !isFiniteVector(consumption.positionHavok) ||
+                !std::isfinite(segmentFraction)) {
+                return reject(ConsumptionFrameRebaseStatus::InvalidSample, &source, sourceSequence);
+            }
+            if (source.controllerIdentity != consumption.controllerIdentity) {
+                return reject(ConsumptionFrameRebaseStatus::ControllerChanged, &source, sourceSequence);
+            }
+            if (source.physicsScaleRevision != consumption.physicsScaleRevision ||
+                !std::isfinite(havokToGameScale) || havokToGameScale <= 0.0f || havokToGameScale >= 10'000.0f) {
+                return reject(ConsumptionFrameRebaseStatus::ScaleChanged, &source, sourceSequence);
+            }
+
+            if (!initialized) {
+                adoptSource(source, sourceSequence);
+            } else {
+                if (controllerIdentity != source.controllerIdentity) {
+                    return reject(ConsumptionFrameRebaseStatus::ControllerChanged, &source, sourceSequence);
+                }
+                if (physicsScaleRevision != source.physicsScaleRevision) {
+                    return reject(ConsumptionFrameRebaseStatus::ScaleChanged, &source, sourceSequence);
+                }
+
+                if (sourceSequence != lastSourceSequence) {
+                    const RE::NiPoint3 sourceStepGame = rootDeltaGame(source.positionHavok, currentSourceRootHavok, havokToGameScale);
+                    if (sourceSequence < lastSourceSequence ||
+                        vectorLength(sourceStepGame) > kMaxTranslationJumpGameUnits) {
+                        return reject(ConsumptionFrameRebaseStatus::Discontinuity, &source, sourceSequence);
+                    }
+                    previousSourceRootHavok = currentSourceRootHavok;
+                    currentSourceRootHavok = source.positionHavok;
+                    lastSourceSequence = sourceSequence;
+                } else {
+                    const RE::NiPoint3 duplicateSourceDeltaGame =
+                        rootDeltaGame(source.positionHavok, currentSourceRootHavok, havokToGameScale);
+                    if (vectorLength(duplicateSourceDeltaGame) > 0.001f) {
+                        return reject(ConsumptionFrameRebaseStatus::Discontinuity, &source, sourceSequence);
+                    }
+                }
+            }
+
+            const float fraction = segmentFraction < 0.0f ? 0.0f : (segmentFraction > 1.0f ? 1.0f : segmentFraction);
+            const RE::NiPoint3 previousShiftGame =
+                rootDeltaGame(consumption.positionHavok, previousSourceRootHavok, havokToGameScale);
+            const RE::NiPoint3 currentShiftGame =
+                rootDeltaGame(consumption.positionHavok, currentSourceRootHavok, havokToGameScale);
+            const RE::NiPoint3 shiftGame{
+                previousShiftGame.x + (currentShiftGame.x - previousShiftGame.x) * fraction,
+                previousShiftGame.y + (currentShiftGame.y - previousShiftGame.y) * fraction,
+                previousShiftGame.z + (currentShiftGame.z - previousShiftGame.z) * fraction,
+            };
+            if (!isFiniteVector(shiftGame) ||
+                vectorLength(currentShiftGame) > kMaxTranslationJumpGameUnits ||
+                vectorLength(shiftGame) > kMaxTranslationJumpGameUnits) {
+                return reject(ConsumptionFrameRebaseStatus::Discontinuity, &source, sourceSequence);
+            }
+
+            ConsumptionFrameRebaseResult result{};
+            result.shiftGame = shiftGame;
+            result.currentEndpointShiftGame = currentShiftGame;
+            result.status = vectorLength(shiftGame) <= 0.0001f ?
+                                ConsumptionFrameRebaseStatus::Stationary :
+                                ConsumptionFrameRebaseStatus::Applied;
+            result.valid = true;
+            ++appliedCount;
+            return result;
+        }
+    };
 
     struct GameClockPhaseLock
     {

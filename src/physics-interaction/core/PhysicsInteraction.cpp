@@ -2370,7 +2370,7 @@ namespace rock
 
             ROCK_LOG_INFO(
                 Hand,
-                "GRAB_LOCOMOTION drive session={} frame={} side={} valid(applied/sample/proxy/body)={}/{}/{}/{} form=0x{:08X} bodies(proxy/held)={}/{} source(frame/age/queue/pending/flush/after)={}/{}/{}/{}/{}/{} flushPhysics(valid/raw/sub/rem/accum/index/count/progress)={}/({:.6f}/{:.6f}/{:.6f}/{:.6f}/{}/{}/{:.3f}) afterPhysics(valid/raw/sub/rem/accum/index/count/progress)={}/({:.6f}/{:.6f}/{:.6f}/{:.6f}/{}/{}/{:.3f}) feedForward(status/shift/srcStep/moving/frameDtPrev/frameDtNow)={}/({:.3f},{:.3f},{:.3f})/({:.3f},{:.3f},{:.3f})/{}/{:.6f}/{:.6f} raw=({:.3f},{:.3f},{:.3f}) queuedRaw=({:.3f},{:.3f},{:.3f}) appliedRaw=({:.3f},{:.3f},{:.3f}) target=({:.3f},{:.3f},{:.3f}) proxy=({:.3f},{:.3f},{:.3f}) desiredBody=({:.3f},{:.3f},{:.3f}) body=({:.3f},{:.3f},{:.3f}) gaps(rawToQueued/queuedToApplied/rawToApplied/targetToProxy/desiredToBody)=({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg) steps(raw/target/proxy/body)=({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)",
+                "GRAB_LOCOMOTION drive session={} frame={} side={} valid(applied/sample/proxy/body)={}/{}/{}/{} form=0x{:08X} bodies(proxy/held)={}/{} source(frame/age/queue/pending/flush/after)={}/{}/{}/{}/{}/{} flushPhysics(valid/raw/sub/rem/accum/index/count/progress)={}/({:.6f}/{:.6f}/{:.6f}/{:.6f}/{}/{}/{:.3f}) afterPhysics(valid/raw/sub/rem/accum/index/count/progress)={}/({:.6f}/{:.6f}/{:.6f}/{:.6f}/{}/{}/{:.3f}) consumptionRebase(status/shift/controller/vtable/scaleRev)={}/({:.3f},{:.3f},{:.3f})/{:016X}:{:016X}/{:016X}:{:016X}/{}:{} raw=({:.3f},{:.3f},{:.3f}) queuedRaw=({:.3f},{:.3f},{:.3f}) appliedRaw=({:.3f},{:.3f},{:.3f}) target=({:.3f},{:.3f},{:.3f}) proxy=({:.3f},{:.3f},{:.3f}) desiredBody=({:.3f},{:.3f},{:.3f}) body=({:.3f},{:.3f},{:.3f}) gaps(rawToQueued/queuedToApplied/rawToApplied/targetToProxy/desiredToBody)=({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg) steps(raw/target/proxy/body)=({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)",
                 _colliderClockSession,
                 frame.gameFrameIndex,
                 isLeft ? "L" : "R",
@@ -2403,16 +2403,16 @@ namespace rock
                 applied.afterSolveTiming.substepIndex,
                 applied.afterSolveTiming.substepCount,
                 applied.afterSolveTiming.substepProgress,
-                grab_authority_source_clock::rootMotionFeedForwardStatusName(applied.feedForwardStatus),
-                applied.feedForwardShiftGame.x,
-                applied.feedForwardShiftGame.y,
-                applied.feedForwardShiftGame.z,
-                applied.sourceRootStepGame.x,
-                applied.sourceRootStepGame.y,
-                applied.sourceRootStepGame.z,
-                applied.sourceMoving,
-                applied.feedForwardPreviousFrameDeltaSeconds,
-                applied.feedForwardCurrentFrameDeltaSeconds,
+                grab_authority_source_clock::consumptionFrameRebaseStatusName(applied.consumptionFrameRebaseStatus),
+                applied.consumptionFrameShiftGame.x,
+                applied.consumptionFrameShiftGame.y,
+                applied.consumptionFrameShiftGame.z,
+                applied.sourceControllerIdentity,
+                applied.consumptionControllerIdentity,
+                applied.sourceControllerVtable,
+                applied.consumptionControllerVtable,
+                applied.sourcePhysicsScaleRevision,
+                applied.consumptionPhysicsScaleRevision,
                 handInput.rawHandWorld.translate.x,
                 handInput.rawHandWorld.translate.y,
                 handInput.rawHandWorld.translate.z,
@@ -2452,78 +2452,6 @@ namespace rock
                 proxyStep.rotationDegrees,
                 bodyStep.position,
                 bodyStep.rotationDegrees);
-
-            // Root-domain discriminator: per-domain queue-to-consumption shifts
-            // for the last flush. The correct rebase domain tracks the player's
-            // per-frame displacement during stick locomotion and stays ~zero at
-            // rest; roomW is the roomNode WORLD basis (measured stale at the
-            // physics boundary on 2026-08-16).
-            {
-                const auto domainShift = [](const RE::NiPoint3& now, const RE::NiPoint3& src) {
-                    return RE::NiPoint3{ now.x - src.x, now.y - src.y, now.z - src.z };
-                };
-                const auto roomW = domainShift(applied.consumptionRootProbe.roomWorldGame, applied.sourceRootProbe.roomWorldGame);
-                const auto roomL = domainShift(applied.consumptionRootProbe.roomLocalGame, applied.sourceRootProbe.roomLocalGame);
-                const auto pwnW = domainShift(applied.consumptionRootProbe.playerWorldNodeWorldGame, applied.sourceRootProbe.playerWorldNodeWorldGame);
-                const auto pwnL = domainShift(applied.consumptionRootProbe.playerWorldNodeLocalGame, applied.sourceRootProbe.playerWorldNodeLocalGame);
-                const auto actor = domainShift(applied.consumptionRootProbe.actorGame, applied.sourceRootProbe.actorGame);
-                const auto ctrl = domainShift(applied.consumptionRootProbe.controllerGame, applied.sourceRootProbe.controllerGame);
-                ROCK_LOG_INFO(
-                    Hand,
-                    "GRAB_LOCOMOTION rootprobe session={} frame={} side={} valid(src/now)=0x{:02X}/0x{:02X} shift(roomW/roomL/pwnW/pwnL/actor/ctrl)=({:.3f},{:.3f},{:.3f})/({:.3f},{:.3f},{:.3f})/({:.3f},{:.3f},{:.3f})/({:.3f},{:.3f},{:.3f})/({:.3f},{:.3f},{:.3f})/({:.3f},{:.3f},{:.3f})",
-                    _colliderClockSession,
-                    frame.gameFrameIndex,
-                    isLeft ? "L" : "R",
-                    applied.sourceRootProbe.validMask,
-                    applied.consumptionRootProbe.validMask,
-                    roomW.x, roomW.y, roomW.z,
-                    roomL.x, roomL.y, roomL.z,
-                    pwnW.x, pwnW.y, pwnW.z,
-                    pwnL.x, pwnL.y, pwnL.z,
-                    actor.x, actor.y, actor.z,
-                    ctrl.x, ctrl.y, ctrl.z);
-
-                // Phase bracket: where inside/after the physics update does the
-                // player root actually advance? A = first pre-collide substep,
-                // B = ROCK +0x30, C = final post-solve, now = this game-frame
-                // telemetry read (post-physics producer time). The window whose
-                // shift matches the player's per-frame displacement is where
-                // locomotion is applied.
-                const auto probeNow = sampleGrabLocomotionRootProbe();
-                const auto& probeA = _grabPhaseProbePreCollide;
-                const auto& probeB = _grabPhaseProbeAfterBetween;
-                const auto& probeC = _grabPhaseProbePostSolve;
-                const auto shiftMag = [](const RE::NiPoint3& now, const RE::NiPoint3& src) {
-                    const float dx = now.x - src.x;
-                    const float dy = now.y - src.y;
-                    const float dz = now.z - src.z;
-                    return std::sqrt(dx * dx + dy * dy + dz * dz);
-                };
-                ROCK_LOG_INFO(
-                    Hand,
-                    "GRAB_LOCOMOTION phaseprobe session={} frame={} side={} valid(A/B/C/now)=0x{:02X}/0x{:02X}/0x{:02X}/0x{:02X} "
-                    "ctrl(AtoB/BtoC/CtoNow)=({:.3f}/{:.3f}/{:.3f}) actor(AtoB/BtoC/CtoNow)=({:.3f}/{:.3f}/{:.3f}) "
-                    "pwnW(AtoB/BtoC/CtoNow)=({:.3f}/{:.3f}/{:.3f}) roomW(AtoB/BtoC/CtoNow)=({:.3f}/{:.3f}/{:.3f})",
-                    _colliderClockSession,
-                    frame.gameFrameIndex,
-                    isLeft ? "L" : "R",
-                    probeA.validMask,
-                    probeB.validMask,
-                    probeC.validMask,
-                    probeNow.validMask,
-                    shiftMag(probeB.controllerGame, probeA.controllerGame),
-                    shiftMag(probeC.controllerGame, probeB.controllerGame),
-                    shiftMag(probeNow.controllerGame, probeC.controllerGame),
-                    shiftMag(probeB.actorGame, probeA.actorGame),
-                    shiftMag(probeC.actorGame, probeB.actorGame),
-                    shiftMag(probeNow.actorGame, probeC.actorGame),
-                    shiftMag(probeB.playerWorldNodeWorldGame, probeA.playerWorldNodeWorldGame),
-                    shiftMag(probeC.playerWorldNodeWorldGame, probeB.playerWorldNodeWorldGame),
-                    shiftMag(probeNow.playerWorldNodeWorldGame, probeC.playerWorldNodeWorldGame),
-                    shiftMag(probeB.roomWorldGame, probeA.roomWorldGame),
-                    shiftMag(probeC.roomWorldGame, probeB.roomWorldGame),
-                    shiftMag(probeNow.roomWorldGame, probeC.roomWorldGame));
-            }
 
             ROCK_LOG_INFO(
                 Hand,
@@ -7896,20 +7824,6 @@ namespace rock
             return;
         }
 
-        if (timing.substepIndex == 0) {
-            // Engine frame-duration series for the feed-forward dt ratio (see
-            // the member comment). Maintained unconditionally so a fresh grab
-            // immediately has a valid previous-frame duration.
-            _grabFrameEngineDeltaSecondsPrev = _grabFrameEngineDeltaSeconds;
-            _grabFrameEngineDeltaSeconds = havok_physics_timing::sampleNativeFrameDeltaSeconds();
-        }
-
-        // Phase-bracket probe point A: first pre-collide substep, before any
-        // listener graph of this update has run.
-        if (timing.substepIndex == 0 && (_rightHand.isHoldingAtomic() || _leftHand.isHoldingAtomic())) {
-            _grabPhaseProbePreCollide = sampleGrabLocomotionRootProbe();
-        }
-
         _rightHand.flushPendingCollisionPhysicsDrive(world, timing);
         _leftHand.flushPendingCollisionPhysicsDrive(world, timing);
         _bodyBoneColliders.flushPendingPhysicsDrive(world, timing);
@@ -7931,41 +7845,33 @@ namespace rock
             return;
         }
 
-        // Phase-bracket probe point B: the +0x30 finish slot of ROCK's own
-        // listener (measured 2026-08-16: identical to the producer-time roots,
-        // i.e. no player movement has been applied yet at this point).
-        _grabPhaseProbeAfterBetween = sampleGrabLocomotionRootProbe();
-
         const auto gameFrameIndex = _palmClockGameFrameIndex.load(std::memory_order_acquire);
         const auto gameDeltaSeconds = _palmClockGameDeltaSeconds.load(std::memory_order_acquire);
         logPalmClockSampleForHand("physics-after-character-move-before-grab-flush", _rightHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
         logPalmClockSampleForHand("physics-after-character-move-before-grab-flush", _leftHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
 
-        /*
-         * No consumption-side root measurement feeds the flush: the 2026-08-16
-         * phase-bracket captures proved every player-root representation
-         * (roomNode world/local, playerWorldNode, actor, controller root) is
-         * still at the previous frame's value throughout the entire physics
-         * update -- FO4VR applies joystick locomotion post-physics in game
-         * code. Each hand's flush therefore predicts the pending frame's root
-         * step from the sample's producer step scaled by the engine
-         * frame-duration ratio (root-motion feed-forward; see
-         * GrabAuthoritySourceClockResampler.h).
-         */
-        _rightHand.flushPendingCustomGrabAuthority(world, timing, _grabFrameEngineDeltaSecondsPrev, _grabFrameEngineDeltaSeconds);
-        _leftHand.flushPendingCustomGrabAuthority(world, timing, _grabFrameEngineDeltaSecondsPrev, _grabFrameEngineDeltaSeconds);
+        // bhkWorld executes every listener's between-collide-and-solve graph
+        // before invoking the +0x30 finish slot that owns this callback. The
+        // character-manager movement task has therefore updated the live root,
+        // while hknp solve has not started. One read is shared by both hands so
+        // two-hand grabs receive an identical consumption-frame measurement.
+        const auto controller = character_controller_runtime::samplePlayerCharacterControllerPositionHavok();
+        const auto scale = physics_scale::current();
+        const grab_authority_source_clock::ControllerRootFrameSample consumptionControllerRoot{
+            .positionHavok = controller.positionHavok,
+            .controllerIdentity = controller.controllerIdentity,
+            .controllerVtable = controller.controllerVtable,
+            .physicsScaleRevision = scale.revision,
+            .valid = controller.valid,
+        };
+        _rightHand.flushPendingCustomGrabAuthority(world, timing, consumptionControllerRoot, scale.havokToGame);
+        _leftHand.flushPendingCustomGrabAuthority(world, timing, consumptionControllerRoot, scale.havokToGame);
     }
 
     void PhysicsInteraction::observeCustomGrabAuthorityAfterSolve(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
     {
         if (!world || !_initialized.load(std::memory_order_acquire) || !physicsWritesAllowedForWorld(world)) {
             return;
-        }
-
-        // Phase-bracket probe point C: post-solve. Overwritten per substep so
-        // the value the game-frame telemetry reads is the final substep's.
-        if (_rightHand.isHoldingAtomic() || _leftHand.isHoldingAtomic()) {
-            _grabPhaseProbePostSolve = sampleGrabLocomotionRootProbe();
         }
 
         const auto completedSolveSequence =

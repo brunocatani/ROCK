@@ -10,8 +10,9 @@ namespace
 {
     using rock::grab_authority_source_clock::GameClockPhaseLock;
     using rock::grab_authority_source_clock::ResampleAction;
-    using rock::grab_authority_source_clock::RootMotionFeedForwardStatus;
-    using rock::grab_authority_source_clock::evaluateRootMotionFeedForward;
+    using rock::grab_authority_source_clock::ConsumptionFrameRebase;
+    using rock::grab_authority_source_clock::ConsumptionFrameRebaseStatus;
+    using rock::grab_authority_source_clock::ControllerRootFrameSample;
 
     constexpr float kPi = 3.14159265358979323846f;
 
@@ -56,6 +57,22 @@ namespace
         return matrix;
     }
 
+    ControllerRootFrameSample controllerRoot(
+        float x,
+        float y = 0.0f,
+        float z = 0.0f,
+        std::uintptr_t identity = 0x1000,
+        std::uint32_t scaleRevision = 7,
+        bool valid = true)
+    {
+        return ControllerRootFrameSample{
+            .positionHavok = RE::NiPoint3{ x, y, z },
+            .controllerIdentity = identity,
+            .controllerVtable = 0x140000000,
+            .physicsScaleRevision = scaleRevision,
+            .valid = valid,
+        };
+    }
 }
 
 int main()
@@ -272,66 +289,92 @@ int main()
         ok &= expectTrue("long run keeps a single initialization rebase", phaseLock.rebaseCount == 1);
     }
 
-    // Root-motion feed-forward: FO4VR applies joystick locomotion AFTER the
-    // physics update (2026-08-16 phase-bracket captures), so the flush
-    // predicts its frame's root step as lastAppliedStep x (physicsDt/sourceDt).
-    // At rest (tracker moving=false) the shift is exactly zero and cannot
-    // alter room-scale hand motion.
+    // Consumption-frame rebasing is a measured root-position delta. At rest it
+    // is exactly zero and cannot alter room-scale hand motion.
     {
-        const auto result = evaluateRootMotionFeedForward(RE::NiPoint3{ 0.021f, 0.008f, 0.001f }, false, 0.0111f, 0.0111f);
-        ok &= expectTrue("rest sample is valid", result.valid);
-        ok &= expectTrue("rest sample reports idle", result.status == RootMotionFeedForwardStatus::Idle);
-        ok &= expectNear("rest sample adds no x shift", result.shiftGame.x, 0.0f, 0.0f);
-        ok &= expectNear("rest sample adds no y shift", result.shiftGame.y, 0.0f, 0.0f);
+        ConsumptionFrameRebase rebase;
+        const auto source = controllerRoot(10.0f, -2.0f, 1.0f);
+        const auto result = rebase.evaluate(source, source, 70.0f, 1, 1.0f);
+        ok &= expectTrue("stationary root sample is valid", result.valid);
+        ok &= expectTrue("stationary root reports stationary", result.status == ConsumptionFrameRebaseStatus::Stationary);
+        ok &= expectNear("stationary root leaves x untouched", result.shiftGame.x, 0.0f, 0.0f);
+        ok &= expectNear("stationary root leaves y untouched", result.shiftGame.y, 0.0f, 0.0f);
+        ok &= expectNear("stationary root leaves z untouched", result.shiftGame.z, 0.0f, 0.0f);
 
         const RE::NiPoint3 roomScaleHandMotion{ 18.0f, -7.0f, 3.0f };
         ok &= expectNear("room-scale hand x is not synthesized", roomScaleHandMotion.x + result.shiftGame.x, roomScaleHandMotion.x, 0.0f);
+        ok &= expectNear("room-scale hand y is not synthesized", roomScaleHandMotion.y + result.shiftGame.y, roomScaleHandMotion.y, 0.0f);
     }
 
-    // Equal frame durations reproduce the last applied step exactly -- the two
-    // measured tire-run locomotion steps pass through unchanged.
+    // The two measured tire-run locomotion steps are recovered exactly. No
+    // delta-time, refresh-rate, or velocity estimate participates in the math.
     for (const float measuredStepGame : { 1.845f, 3.427f }) {
-        const auto result = evaluateRootMotionFeedForward(RE::NiPoint3{ measuredStepGame, 0.0f, 0.0f }, true, 0.0111f, 0.0111f);
-        ok &= expectTrue("steady locomotion shift is valid", result.valid);
-        ok &= expectTrue("steady locomotion shift is applied", result.status == RootMotionFeedForwardStatus::Applied);
-        ok &= expectNear("steady locomotion shift equals the step", result.shiftGame.x, measuredStepGame, 1e-5f);
+        ConsumptionFrameRebase rebase;
+        const auto source = controllerRoot(100.0f);
+        const auto consumption = controllerRoot(100.0f + measuredStepGame / 70.0f);
+        const auto result = rebase.evaluate(source, consumption, 70.0f, 1, 1.0f);
+        ok &= expectTrue("measured locomotion root shift is valid", result.valid);
+        ok &= expectTrue("measured locomotion root shift is applied", result.status == ConsumptionFrameRebaseStatus::Applied);
+        ok &= expectNear("measured locomotion root shift is exact", result.shiftGame.x, measuredStepGame, 2e-4f);
     }
 
-    // The dominant stutter term was speed x frame-dt jitter: the dt ratio
-    // cancels it exactly. A 3.427 gu step over 10.6 ms consumed by a 12.2 ms
-    // physics frame predicts the proportionally longer step.
+    // Multi-substep interpolation uses the source root associated with each raw
+    // target endpoint. Re-flushing the same source sequence refreshes only the
+    // live consumption root, and the frame-end result remains exact.
     {
-        const auto result = evaluateRootMotionFeedForward(RE::NiPoint3{ 3.427f, 0.0f, 0.0f }, true, 0.0106f, 0.0122f);
-        ok &= expectTrue("dt-scaled shift is applied", result.valid && result.status == RootMotionFeedForwardStatus::Applied);
-        ok &= expectNear("dt-scaled shift is exact", result.shiftGame.x, 3.427f * 0.0122f / 0.0106f, 1e-4f);
+        ConsumptionFrameRebase rebase;
+        auto result = rebase.evaluate(controllerRoot(0.0f), controllerRoot(0.02f), 70.0f, 1, 1.0f);
+        ok &= expectNear("first source uses its exact current root delta", result.shiftGame.x, 1.4f, 1e-5f);
+
+        result = rebase.evaluate(controllerRoot(0.02f), controllerRoot(0.04f), 70.0f, 2, 0.5f);
+        ok &= expectNear("half substep rebases the matching source-root midpoint", result.shiftGame.x, 2.1f, 1e-5f);
+
+        result = rebase.evaluate(controllerRoot(0.02f), controllerRoot(0.06f), 70.0f, 2, 1.0f);
+        ok &= expectNear("duplicate substep refresh reaches exact current endpoint", result.shiftGame.x, 2.8f, 1e-5f);
+        ok &= expectNear("duplicate substep reports the exact endpoint shift", result.currentEndpointShiftGame.x, 2.8f, 1e-5f);
     }
 
-    // Anomalies fail closed with a zero shift (the pre-fix behavior).
+    // Controller identity, scale generation, finite samples, and discontinuity
+    // bounds fail closed with no target translation.
     {
+        ConsumptionFrameRebase rebase;
+        auto result = rebase.evaluate(controllerRoot(0.0f, 0.0f, 0.0f, 0x1000), controllerRoot(0.01f, 0.0f, 0.0f, 0x2000), 70.0f, 1, 1.0f);
+        ok &= expectTrue("controller identity mismatch is rejected", !result.valid && result.status == ConsumptionFrameRebaseStatus::ControllerChanged);
+        ok &= expectNear("controller identity mismatch adds no shift", result.shiftGame.x, 0.0f, 0.0f);
+    }
+    {
+        ConsumptionFrameRebase rebase;
+        auto result = rebase.evaluate(controllerRoot(0.0f, 0.0f, 0.0f, 0x1000, 7, false), controllerRoot(0.01f), 70.0f, 1, 1.0f);
+        ok &= expectTrue("invalid source sample is rejected", !result.valid && result.status == ConsumptionFrameRebaseStatus::InvalidSample);
+    }
+    {
+        ConsumptionFrameRebase rebase;
         const auto nan = std::numeric_limits<float>::quiet_NaN();
-        auto result = evaluateRootMotionFeedForward(RE::NiPoint3{ nan, 0.0f, 0.0f }, true, 0.0111f, 0.0111f);
-        ok &= expectTrue("non-finite step is rejected", !result.valid && result.status == RootMotionFeedForwardStatus::InvalidSample);
+        auto result = rebase.evaluate(controllerRoot(0.0f), controllerRoot(nan), 70.0f, 1, 1.0f);
+        ok &= expectTrue("non-finite consumption sample is rejected", !result.valid && result.status == ConsumptionFrameRebaseStatus::InvalidSample);
+    }
+    {
+        ConsumptionFrameRebase rebase;
+        auto result = rebase.evaluate(controllerRoot(0.0f, 0.0f, 0.0f, 0x1000, 7), controllerRoot(0.01f, 0.0f, 0.0f, 0x1000, 8), 70.0f, 1, 1.0f);
+        ok &= expectTrue("scale revision mismatch is rejected", !result.valid && result.status == ConsumptionFrameRebaseStatus::ScaleChanged);
+    }
+    {
+        ConsumptionFrameRebase rebase;
+        auto result = rebase.evaluate(controllerRoot(0.0f), controllerRoot(0.01f), 0.0f, 1, 1.0f);
+        ok &= expectTrue("invalid conversion scale is rejected", !result.valid && result.status == ConsumptionFrameRebaseStatus::ScaleChanged);
+    }
+    {
+        ConsumptionFrameRebase rebase;
+        auto result = rebase.evaluate(controllerRoot(0.0f), controllerRoot(0.6f), 70.0f, 1, 1.0f);
+        ok &= expectTrue("greater-than-35gu consumption jump is rejected", !result.valid && result.status == ConsumptionFrameRebaseStatus::Discontinuity);
+        ok &= expectNear("discontinuity adds no shift", result.shiftGame.x, 0.0f, 0.0f);
 
-        result = evaluateRootMotionFeedForward(RE::NiPoint3{ 1.8f, 0.0f, 0.0f }, true, 0.0f, 0.0111f);
-        ok &= expectTrue("unusable source delta is rejected", !result.valid && result.status == RootMotionFeedForwardStatus::InvalidSample);
+        result = rebase.evaluate(controllerRoot(0.0f), controllerRoot(0.01f), 70.0f, 1, 1.0f);
+        ok &= expectTrue("rejected source sequence stays fail-closed", !result.valid && result.status == ConsumptionFrameRebaseStatus::Discontinuity);
 
-        result = evaluateRootMotionFeedForward(RE::NiPoint3{ 1.8f, 0.0f, 0.0f }, true, 0.0111f, nan);
-        ok &= expectTrue("unusable physics delta is rejected", !result.valid && result.status == RootMotionFeedForwardStatus::InvalidSample);
-
-        result = evaluateRootMotionFeedForward(RE::NiPoint3{ 1.8f, 0.0f, 0.0f }, true, 0.011f, 0.06f);
-        ok &= expectTrue("hitch-scale dt ratio is rejected", !result.valid && result.status == RootMotionFeedForwardStatus::DtOutOfRange);
-        ok &= expectNear("hitch-scale dt ratio adds no shift", result.shiftGame.x, 0.0f, 0.0f);
-
-        result = evaluateRootMotionFeedForward(RE::NiPoint3{ 42.0f, 0.0f, 0.0f }, true, 0.0111f, 0.0111f);
-        ok &= expectTrue("teleport-scale step is rejected", !result.valid && result.status == RootMotionFeedForwardStatus::Discontinuity);
-        ok &= expectNear("teleport-scale step adds no shift", result.shiftGame.x, 0.0f, 0.0f);
-
-        result = evaluateRootMotionFeedForward(RE::NiPoint3{ 12.0f, 0.0f, 0.0f }, true, 0.011f, 0.04f);
-        ok &= expectTrue("shift beyond the teleport bound is rejected",
-            !result.valid && result.status == RootMotionFeedForwardStatus::Discontinuity);
-
-        result = evaluateRootMotionFeedForward(RE::NiPoint3{ 0.0005f, 0.0f, 0.0f }, true, 0.0111f, 0.0111f);
-        ok &= expectTrue("sub-floor step reports idle", result.valid && result.status == RootMotionFeedForwardStatus::Idle);
+        result = rebase.evaluate(controllerRoot(0.01f), controllerRoot(0.02f), 70.0f, 2, 1.0f);
+        ok &= expectTrue("next coherent source sequence recovers", result.valid && result.status == ConsumptionFrameRebaseStatus::Applied);
+        ok &= expectNear("recovered source sequence uses only measured delta", result.shiftGame.x, 0.7f, 1e-5f);
     }
 
     return ok ? 0 : 1;

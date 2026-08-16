@@ -80,39 +80,6 @@ namespace rock
         std::uint32_t palmMotionIndex{ body_frame::kFreeMotionIndex };
     };
 
-    // Diagnostic-only sweep of every candidate player-root domain, captured
-    // once when a grab target is queued (game-frame producer) and once live at
-    // the physics consumption flush. The 2026-08-16 tire capture proved the
-    // roomNode WORLD transform seen at the +0x30 flush is still the previous
-    // frame's value (rebase shift measured 0.000 while rawToApplied stayed a
-    // full player step), so the current frame's locomotion displacement must
-    // be found in one of these domains instead. The GRAB_LOCOMOTION drive
-    // line logs the per-domain queue-to-consumption shifts; the correct rebase
-    // domain is the one whose shift tracks the player's per-frame displacement
-    // during stick locomotion and stays zero at rest.
-    struct GrabLocomotionRootProbe
-    {
-        static constexpr std::uint8_t kRoomLocalValid = 0x01;
-        static constexpr std::uint8_t kPlayerWorldNodeWorldValid = 0x02;
-        static constexpr std::uint8_t kPlayerWorldNodeLocalValid = 0x04;
-        static constexpr std::uint8_t kActorValid = 0x08;
-        static constexpr std::uint8_t kControllerValid = 0x10;
-        static constexpr std::uint8_t kRoomWorldValid = 0x20;
-
-        RE::NiPoint3 roomLocalGame{};
-        RE::NiPoint3 roomWorldGame{};
-        RE::NiPoint3 playerWorldNodeWorldGame{};
-        RE::NiPoint3 playerWorldNodeLocalGame{};
-        RE::NiPoint3 actorGame{};
-        RE::NiPoint3 controllerGame{};
-        std::uint8_t validMask = 0;
-    };
-
-    // Frame-thread-only sweep of the candidate player-root domains (see the
-    // struct comment above). Safe from the game-frame producer and from inside
-    // the synchronous physics step-listener callbacks.
-    [[nodiscard]] GrabLocomotionRootProbe sampleGrabLocomotionRootProbe() noexcept;
-
     // The LAST APPLIED grab-authority state (what the most recent physics flush
     // actually drove toward), not a live recompute like the proxy debug snapshot
     // above. The OVERLAY-POINT stutter probe differences this against the current
@@ -122,15 +89,15 @@ namespace rock
         RE::NiTransform queuedRawHandWorld{};
         RE::NiTransform appliedProxyTargetWorld{};
         RE::NiTransform appliedRawHandWorld{};
-        RE::NiPoint3 feedForwardShiftGame{};
-        grab_authority_source_clock::RootMotionFeedForwardStatus feedForwardStatus =
-            grab_authority_source_clock::RootMotionFeedForwardStatus::Unavailable;
-        RE::NiPoint3 sourceRootStepGame{};
-        float feedForwardPreviousFrameDeltaSeconds = 0.0f;
-        float feedForwardCurrentFrameDeltaSeconds = 0.0f;
-        bool sourceMoving = false;
-        GrabLocomotionRootProbe sourceRootProbe{};
-        GrabLocomotionRootProbe consumptionRootProbe{};
+        RE::NiPoint3 consumptionFrameShiftGame{};
+        grab_authority_source_clock::ConsumptionFrameRebaseStatus consumptionFrameRebaseStatus =
+            grab_authority_source_clock::ConsumptionFrameRebaseStatus::Unavailable;
+        std::uintptr_t sourceControllerIdentity = 0;
+        std::uintptr_t consumptionControllerIdentity = 0;
+        std::uintptr_t sourceControllerVtable = 0;
+        std::uintptr_t consumptionControllerVtable = 0;
+        std::uint32_t sourcePhysicsScaleRevision = 0;
+        std::uint32_t consumptionPhysicsScaleRevision = 0;
         RE::hknpBodyId proxyBodyId{ INVALID_BODY_ID };
         RE::hknpBodyId objectBodyId{ INVALID_BODY_ID };
         std::uint64_t sourceGameFrameIndex = 0;
@@ -695,8 +662,8 @@ namespace rock
         void flushPendingCustomGrabAuthority(
             RE::hknpWorld* world,
             const havok_physics_timing::PhysicsTimingSample& timing,
-            float previousFrameDeltaSeconds,
-            float currentFrameDeltaSeconds);
+            const grab_authority_source_clock::ControllerRootFrameSample& consumptionControllerRoot,
+            float controllerHavokToGameScale);
         void observeCustomGrabAuthorityAfterSolve(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         bool beginStashCandidate();
         bool cancelStashCandidate();
@@ -1054,16 +1021,7 @@ namespace rock
             RE::NiTransform rawHandWorld{};
             const char* proxyFrameSource = "unknown";
             std::uint64_t sourceGameFrameIndex = 0;
-            // The game-side player-root step applied during the producer's
-            // frame (runtime-state player-space tracker) and its moving flag:
-            // the sample-side inputs to the consumption root-motion
-            // feed-forward. Locomotion is applied post-physics, so the
-            // consuming physics update can only predict its own frame's step
-            // from these plus the same-phase frame-duration ratio owned by
-            // PhysicsInteraction.
-            RE::NiPoint3 sourceRootStepGame{};
-            bool sourceMoving = false;
-            GrabLocomotionRootProbe sourceRootProbe{};
+            grab_authority_source_clock::ControllerRootFrameSample sourceControllerRoot{};
             float deltaTime = 0.0f;
             float forceFadeInTime = 0.0f;
             float tauMin = 0.0f;
@@ -1075,22 +1033,19 @@ namespace rock
         };
         GrabAuthorityProxyPendingTarget _grabAuthorityPendingTarget{};
         // Phase-locks the raw per-substep proxy target onto the game-clock wand
-        // path; the consumption flush then adds the root-motion feed-forward
-        // shift (see GrabAuthoritySourceClockResampler.h). State is guarded by
-        // _grabAuthorityProxyMutex like the pending target.
+        // path, then re-expresses it in the measured post-character-movement
+        // root frame. Both states are guarded by _grabAuthorityProxyMutex like
+        // the pending target.
         grab_authority_source_clock::GameClockPhaseLock _grabAuthoritySourceClock{};
+        grab_authority_source_clock::ConsumptionFrameRebase _grabAuthorityConsumptionFrameRebase{};
         RE::NiTransform _lastAppliedGrabAuthorityQueuedRawHandWorld{};
         RE::NiTransform _lastAppliedGrabAuthorityProxyWorld{};
         RE::NiTransform _lastAppliedGrabAuthorityRawHandWorld{};
-        RE::NiPoint3 _lastAppliedGrabAuthorityFeedForwardShiftGame{};
-        grab_authority_source_clock::RootMotionFeedForwardStatus _lastAppliedGrabAuthorityFeedForwardStatus =
-            grab_authority_source_clock::RootMotionFeedForwardStatus::Unavailable;
-        RE::NiPoint3 _lastAppliedGrabAuthoritySourceRootStepGame{};
-        float _lastAppliedGrabAuthorityFeedForwardPreviousFrameDeltaSeconds = 0.0f;
-        float _lastAppliedGrabAuthorityFeedForwardCurrentFrameDeltaSeconds = 0.0f;
-        bool _lastAppliedGrabAuthoritySourceMoving = false;
-        GrabLocomotionRootProbe _lastAppliedGrabAuthoritySourceRootProbe{};
-        GrabLocomotionRootProbe _lastAppliedGrabAuthorityConsumptionRootProbe{};
+        RE::NiPoint3 _lastAppliedGrabAuthorityConsumptionFrameShiftGame{};
+        grab_authority_source_clock::ConsumptionFrameRebaseStatus _lastAppliedGrabAuthorityConsumptionFrameRebaseStatus =
+            grab_authority_source_clock::ConsumptionFrameRebaseStatus::Unavailable;
+        grab_authority_source_clock::ControllerRootFrameSample _lastAppliedGrabAuthoritySourceControllerRoot{};
+        grab_authority_source_clock::ControllerRootFrameSample _lastAppliedGrabAuthorityConsumptionControllerRoot{};
         std::uint64_t _lastAppliedGrabAuthoritySourceGameFrameIndex = 0;
         std::uint64_t _lastAppliedGrabAuthoritySourceQueueSequence = 0;
         havok_physics_timing::PhysicsTimingSample _grabAuthorityProxyLastFlushTiming{};

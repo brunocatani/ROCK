@@ -4,6 +4,7 @@
 #include "physics-interaction/native/HavokOffsets.h"
 
 #include "physics-interaction/native/BodyCollisionControl.h"
+#include "physics-interaction/native/CharacterControllerRuntime.h"
 #include "physics-interaction/grab/GrabCore.h"
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
 #include "physics-interaction/debug/DebugMath.h"
@@ -37,7 +38,6 @@
 #include "physics-interaction/hand/HandVisual.h"
 #include "physics-interaction/core/PhysicsHooks.h"
 #include "physics-interaction/core/RockRuntimeState.h"
-#include "physics-interaction/native/CharacterControllerRuntime.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
 #include "physics-interaction/native/PhysicsShapeCast.h"
 #include "physics-interaction/native/PhysicsRecursiveWrappers.h"
@@ -75,7 +75,17 @@ namespace rock
         static_assert(kGrabCollisionSuppressionArmBodyCountPerHand == kBodyBoneGrabSuppressionArmBodyCountPerSide,
             "Normal grab arm-collider suppression capacity must match the body collider arm-chain query.");
 
-
+        grab_authority_source_clock::ControllerRootFrameSample samplePlayerControllerRootFrame() noexcept
+        {
+            const auto controller = character_controller_runtime::samplePlayerCharacterControllerPositionHavok();
+            return grab_authority_source_clock::ControllerRootFrameSample{
+                .positionHavok = controller.positionHavok,
+                .controllerIdentity = controller.controllerIdentity,
+                .controllerVtable = controller.controllerVtable,
+                .physicsScaleRevision = physics_scale::revision(),
+                .valid = controller.valid,
+            };
+        }
 
         std::uint64_t nextGrabTimelineTraceId() noexcept
         {
@@ -5377,18 +5387,15 @@ namespace rock
         _grabAuthorityProxyFrameValid = false;
         _grabAuthorityPendingTarget = {};
         _grabAuthoritySourceClock.reset();
+        _grabAuthorityConsumptionFrameRebase.reset();
         _lastAppliedGrabAuthorityQueuedRawHandWorld = {};
         _lastAppliedGrabAuthorityProxyWorld = {};
         _lastAppliedGrabAuthorityRawHandWorld = {};
-        _lastAppliedGrabAuthorityFeedForwardShiftGame = {};
-        _lastAppliedGrabAuthorityFeedForwardStatus =
-            grab_authority_source_clock::RootMotionFeedForwardStatus::Unavailable;
-        _lastAppliedGrabAuthoritySourceRootStepGame = {};
-        _lastAppliedGrabAuthorityFeedForwardPreviousFrameDeltaSeconds = 0.0f;
-        _lastAppliedGrabAuthorityFeedForwardCurrentFrameDeltaSeconds = 0.0f;
-        _lastAppliedGrabAuthoritySourceMoving = false;
-        _lastAppliedGrabAuthoritySourceRootProbe = {};
-        _lastAppliedGrabAuthorityConsumptionRootProbe = {};
+        _lastAppliedGrabAuthorityConsumptionFrameShiftGame = {};
+        _lastAppliedGrabAuthorityConsumptionFrameRebaseStatus =
+            grab_authority_source_clock::ConsumptionFrameRebaseStatus::Unavailable;
+        _lastAppliedGrabAuthoritySourceControllerRoot = {};
+        _lastAppliedGrabAuthorityConsumptionControllerRoot = {};
         _lastAppliedGrabAuthoritySourceGameFrameIndex = 0;
         _lastAppliedGrabAuthoritySourceQueueSequence = 0;
         _grabAuthorityProxyLastFlushTiming = {};
@@ -6572,7 +6579,7 @@ namespace rock
                 traceTransformBTranslationGame.z);
         }
 
-        const auto& grabStartFrame = runtime_state::currentFrame();
+        const auto grabStartControllerRoot = samplePlayerControllerRootFrame();
         {
             std::scoped_lock lock(_grabAuthorityProxyMutex);
             _grabAuthorityProxyBhkWorld = bhkWorld;
@@ -6586,10 +6593,8 @@ namespace rock
                 .proxyWorld = proxyWorldTransform,
                 .rawHandWorld = rawHandWorldTransform,
                 .proxyFrameSource = "grabStartLivePalmAnchor",
-                .sourceGameFrameIndex = grabStartFrame.frameIndex,
-                .sourceRootStepGame = grabStartFrame.playerSpace.deltaGameUnits,
-                .sourceMoving = grabStartFrame.playerSpace.moving,
-                .sourceRootProbe = sampleGrabLocomotionRootProbe(),
+                .sourceGameFrameIndex = runtime_state::currentFrame().frameIndex,
+                .sourceControllerRoot = grabStartControllerRoot,
                 .deltaTime = 1.0f / 90.0f,
                 .forceFadeInTime = g_rockConfig.rockGrabForceFadeInTime,
                 .tauMin = g_rockConfig.rockGrabTauMin,
@@ -6602,19 +6607,16 @@ namespace rock
             _lastAppliedGrabAuthorityQueuedRawHandWorld = rawHandWorldTransform;
             _lastAppliedGrabAuthorityProxyWorld = proxyWorldTransform;
             _lastAppliedGrabAuthorityRawHandWorld = rawHandWorldTransform;
-            _lastAppliedGrabAuthorityFeedForwardShiftGame = {};
-            _lastAppliedGrabAuthorityFeedForwardStatus =
-                grab_authority_source_clock::RootMotionFeedForwardStatus::Unavailable;
-            _lastAppliedGrabAuthoritySourceRootStepGame = grabStartFrame.playerSpace.deltaGameUnits;
-            _lastAppliedGrabAuthorityFeedForwardPreviousFrameDeltaSeconds = 0.0f;
-            _lastAppliedGrabAuthorityFeedForwardCurrentFrameDeltaSeconds = 0.0f;
-            _lastAppliedGrabAuthoritySourceMoving = grabStartFrame.playerSpace.moving;
-            _lastAppliedGrabAuthoritySourceRootProbe = {};
-            _lastAppliedGrabAuthorityConsumptionRootProbe = {};
-            _lastAppliedGrabAuthoritySourceGameFrameIndex = grabStartFrame.frameIndex;
+            _lastAppliedGrabAuthorityConsumptionFrameShiftGame = {};
+            _lastAppliedGrabAuthorityConsumptionFrameRebaseStatus =
+                grab_authority_source_clock::ConsumptionFrameRebaseStatus::Unavailable;
+            _lastAppliedGrabAuthoritySourceControllerRoot = grabStartControllerRoot;
+            _lastAppliedGrabAuthorityConsumptionControllerRoot = {};
+            _lastAppliedGrabAuthoritySourceGameFrameIndex = runtime_state::currentFrame().frameIndex;
             _lastAppliedGrabAuthoritySourceQueueSequence = 1;
             _hasLastAppliedGrabAuthorityProxyWorld = true;
             _grabAuthoritySourceClock.reset();
+            _grabAuthorityConsumptionFrameRebase.reset();
             _grabAuthorityProxyQueuedSequence = 1;
             _grabAuthorityProxyFlushSequence = 0;
             _grabAuthorityProxyFailedFlushes = 0;
@@ -6973,39 +6975,6 @@ namespace rock
         _activeConstraint.targetMaxForce = output.linearMaxForce;
     }
 
-    GrabLocomotionRootProbe sampleGrabLocomotionRootProbe() noexcept
-    {
-        GrabLocomotionRootProbe probe{};
-        if (auto* playerNodes = f4vr::getPlayerNodes()) {
-            if (playerNodes->roomnode) {
-                probe.roomLocalGame = playerNodes->roomnode->local.translate;
-                probe.roomWorldGame = playerNodes->roomnode->world.translate;
-                probe.validMask |= GrabLocomotionRootProbe::kRoomLocalValid |
-                                   GrabLocomotionRootProbe::kRoomWorldValid;
-            }
-            if (playerNodes->playerworldnode) {
-                probe.playerWorldNodeWorldGame = playerNodes->playerworldnode->world.translate;
-                probe.playerWorldNodeLocalGame = playerNodes->playerworldnode->local.translate;
-                probe.validMask |= GrabLocomotionRootProbe::kPlayerWorldNodeWorldValid |
-                                   GrabLocomotionRootProbe::kPlayerWorldNodeLocalValid;
-            }
-        }
-        if (character_controller_runtime::tryGetPlayerActorPositionGameUnits(probe.actorGame)) {
-            probe.validMask |= GrabLocomotionRootProbe::kActorValid;
-        }
-        const auto controller = character_controller_runtime::samplePlayerCharacterControllerPositionHavok();
-        if (controller.valid) {
-            const float havokToGame = physics_scale::havokToGame();
-            probe.controllerGame = RE::NiPoint3{
-                controller.positionHavok.x * havokToGame,
-                controller.positionHavok.y * havokToGame,
-                controller.positionHavok.z * havokToGame,
-            };
-            probe.validMask |= GrabLocomotionRootProbe::kControllerValid;
-        }
-        return probe;
-    }
-
     void Hand::queueProxyGrabAuthorityTarget(const RE::NiTransform& proxyWorldTransform,
         const RE::NiTransform& rawHandWorldTransform,
         const char* proxyFrameSource,
@@ -7017,7 +6986,7 @@ namespace rock
         float authorityForceScale,
         bool heldBodyColliding)
     {
-        const auto& sourceFrame = runtime_state::currentFrame();
+        const auto sourceControllerRoot = samplePlayerControllerRootFrame();
         std::scoped_lock lock(_grabAuthorityProxyMutex);
         if (!_grabAuthorityProxy.isValid()) {
             return;
@@ -7026,10 +6995,8 @@ namespace rock
         _grabAuthorityPendingTarget.proxyWorld = proxyWorldTransform;
         _grabAuthorityPendingTarget.rawHandWorld = rawHandWorldTransform;
         _grabAuthorityPendingTarget.proxyFrameSource = proxyFrameSource ? proxyFrameSource : "unknown";
-        _grabAuthorityPendingTarget.sourceGameFrameIndex = sourceFrame.frameIndex;
-        _grabAuthorityPendingTarget.sourceRootStepGame = sourceFrame.playerSpace.deltaGameUnits;
-        _grabAuthorityPendingTarget.sourceMoving = sourceFrame.playerSpace.moving;
-        _grabAuthorityPendingTarget.sourceRootProbe = sampleGrabLocomotionRootProbe();
+        _grabAuthorityPendingTarget.sourceGameFrameIndex = runtime_state::currentFrame().frameIndex;
+        _grabAuthorityPendingTarget.sourceControllerRoot = sourceControllerRoot;
         _grabAuthorityPendingTarget.deltaTime = deltaTime;
         _grabAuthorityPendingTarget.forceFadeInTime = forceFadeInTime;
         _grabAuthorityPendingTarget.tauMin = tauMin;
@@ -12812,8 +12779,8 @@ namespace rock
     void Hand::flushPendingCustomGrabAuthority(
         RE::hknpWorld* world,
         const havok_physics_timing::PhysicsTimingSample& timing,
-        float previousFrameDeltaSeconds,
-        float currentFrameDeltaSeconds)
+        const grab_authority_source_clock::ControllerRootFrameSample& consumptionControllerRoot,
+        float controllerHavokToGameScale)
     {
         GrabAuthorityProxyPendingTarget pending{};
         RE::NiTransform queuedRawHandWorld{};
@@ -12843,7 +12810,7 @@ namespace rock
         std::uint64_t queuedSequence = 0;
         std::uint64_t flushSequence = 0;
         grab_authority_source_clock::ResampleAction resampleAction = grab_authority_source_clock::ResampleAction::Hold;
-        grab_authority_source_clock::RootMotionFeedForwardResult rootFeedForward{};
+        grab_authority_source_clock::ConsumptionFrameRebaseResult consumptionFrameRebase{};
         std::uint32_t resampleRebaseCount = 0;
         GrabAngularAuthority angularAuthority = GrabAngularAuthority::HknpRagdollMotorAtom;
         {
@@ -12859,10 +12826,6 @@ namespace rock
 
             pending = _grabAuthorityPendingTarget;
             queuedRawHandWorld = pending.rawHandWorld;
-            // Diagnostic root-domain sweep: live counterpart of the probe
-            // captured with the queued sample. Same frame thread; the step
-            // listener runs synchronously inside bhkWorld::Update.
-            const GrabLocomotionRootProbe consumptionRootProbe = sampleGrabLocomotionRootProbe();
             // Accept the game-frame sample exactly once; the queued-sequence
             // identity keeps multi-substep re-flushes of the same pending
             // target from advancing the source segment. The drive target is
@@ -12889,19 +12852,14 @@ namespace rock
             angularAuthority = _activeConstraint.angularAuthority;
 
             const float driveDelta = havok_physics_timing::driveDeltaSeconds(timing);
-            // Game-clock phase lock: the frame's last substep lands EXACTLY on
-            // the queued game-frame sample and intra-frame substeps stay on
-            // its sampled path -- the 2026-07-13 OVERLAY_POINT probe proved
-            // physics-clock playback put v x (clock mismatch) between the held
-            // object and everything else the eye tracks.
-            // The root-motion feed-forward then adds the player displacement
-            // the game will apply AFTER this physics update: the 2026-08-16
-            // phase-bracket captures proved joystick locomotion is applied
-            // post-physics in game code, so the queued pose is one root step
-            // behind the basis this frame will render in, and no root
-            // representation carries that step during physics. The shift is
-            // the engine's own last applied step scaled by the exact dt ratio
-            // (see GrabAuthoritySourceClockResampler.h).
+            // Game-clock phase lock: before the measured root rebase below, the
+            // frame's last substep lands EXACTLY on the queued game-frame sample
+            // and intra-frame substeps stay on its sampled path -- the
+            // 2026-07-13 OVERLAY_POINT probe proved physics-clock playback put
+            // v x (clock mismatch) between the held object and everything else
+            // the eye tracks. Intra-frame substeps interpolate along the
+            // sample segment. The consumption-frame rebase removes only the
+            // common character-root displacement that occurred after sampling.
             // Local copy only: every downstream use in this
             // flush -- keyframe drive, constraint target, motors, readback
             // diagnostics, last-applied tracking -- sees the locked target
@@ -12909,23 +12867,23 @@ namespace rock
             // sample. Rotation deliberately stays on the sampled path.
             pending.proxyWorld.translate = _grabAuthoritySourceClock.evaluate(timing.substepIndex, timing.substepCount, resampleAction);
             resampleRebaseCount = _grabAuthoritySourceClock.rebaseCount;
-            rootFeedForward = grab_authority_source_clock::evaluateRootMotionFeedForward(
-                pending.sourceRootStepGame,
-                pending.sourceMoving,
-                previousFrameDeltaSeconds,
-                currentFrameDeltaSeconds);
-            if (rootFeedForward.valid) {
-                // One basis correction per frame: the game applies the root
-                // step once per frame after physics, so the shift is constant
-                // across substeps. rawHandWorld receives the same shift so the
-                // applied-pose telemetry stays truthful against the fresh raw
-                // hand of the frame being rendered.
-                pending.proxyWorld.translate.x += rootFeedForward.shiftGame.x;
-                pending.proxyWorld.translate.y += rootFeedForward.shiftGame.y;
-                pending.proxyWorld.translate.z += rootFeedForward.shiftGame.z;
-                pending.rawHandWorld.translate.x += rootFeedForward.shiftGame.x;
-                pending.rawHandWorld.translate.y += rootFeedForward.shiftGame.y;
-                pending.rawHandWorld.translate.z += rootFeedForward.shiftGame.z;
+            consumptionFrameRebase = _grabAuthorityConsumptionFrameRebase.evaluate(
+                pending.sourceControllerRoot,
+                consumptionControllerRoot,
+                controllerHavokToGameScale,
+                _grabAuthorityProxyQueuedSequence,
+                _grabAuthoritySourceClock.playedFraction);
+            if (consumptionFrameRebase.valid) {
+                // The proxy target may be an intra-frame interpolation between
+                // two source samples, so it receives the matching interpolated
+                // root shift. rawHandWorld is the newest endpoint and receives
+                // that endpoint's exact measured shift for truthful telemetry.
+                pending.proxyWorld.translate.x += consumptionFrameRebase.shiftGame.x;
+                pending.proxyWorld.translate.y += consumptionFrameRebase.shiftGame.y;
+                pending.proxyWorld.translate.z += consumptionFrameRebase.shiftGame.z;
+                pending.rawHandWorld.translate.x += consumptionFrameRebase.currentEndpointShiftGame.x;
+                pending.rawHandWorld.translate.y += consumptionFrameRebase.currentEndpointShiftGame.y;
+                pending.rawHandWorld.translate.z += consumptionFrameRebase.currentEndpointShiftGame.z;
             }
             float linearVelocityHavok[4]{};
             float angularVelocityHavok[4]{};
@@ -13430,14 +13388,10 @@ namespace rock
                     _lastAppliedGrabAuthorityQueuedRawHandWorld = queuedRawHandWorld;
                     _lastAppliedGrabAuthorityProxyWorld = pending.proxyWorld;
                     _lastAppliedGrabAuthorityRawHandWorld = pending.rawHandWorld;
-                    _lastAppliedGrabAuthorityFeedForwardShiftGame = rootFeedForward.shiftGame;
-                    _lastAppliedGrabAuthorityFeedForwardStatus = rootFeedForward.status;
-                    _lastAppliedGrabAuthoritySourceRootStepGame = pending.sourceRootStepGame;
-                    _lastAppliedGrabAuthorityFeedForwardPreviousFrameDeltaSeconds = previousFrameDeltaSeconds;
-                    _lastAppliedGrabAuthorityFeedForwardCurrentFrameDeltaSeconds = currentFrameDeltaSeconds;
-                    _lastAppliedGrabAuthoritySourceMoving = pending.sourceMoving;
-                    _lastAppliedGrabAuthoritySourceRootProbe = pending.sourceRootProbe;
-                    _lastAppliedGrabAuthorityConsumptionRootProbe = consumptionRootProbe;
+                    _lastAppliedGrabAuthorityConsumptionFrameShiftGame = consumptionFrameRebase.shiftGame;
+                    _lastAppliedGrabAuthorityConsumptionFrameRebaseStatus = consumptionFrameRebase.status;
+                    _lastAppliedGrabAuthoritySourceControllerRoot = pending.sourceControllerRoot;
+                    _lastAppliedGrabAuthorityConsumptionControllerRoot = consumptionControllerRoot;
                     _lastAppliedGrabAuthoritySourceGameFrameIndex = pending.sourceGameFrameIndex;
                     _lastAppliedGrabAuthoritySourceQueueSequence = _grabAuthorityProxyQueuedSequence;
                     _grabAuthorityProxyLastFlushTiming = timing;
@@ -13451,7 +13405,8 @@ namespace rock
                         !proxyReadbackBetweenOk ||
                         !angularDriveOk ||
                         resampleAction == grab_authority_source_clock::ResampleAction::Rebase ||
-                        !rootFeedForward.valid ||
+                        (!consumptionFrameRebase.valid &&
+                            consumptionFrameRebase.status != grab_authority_source_clock::ConsumptionFrameRebaseStatus::Stationary) ||
                         proxyReadbackBetweenPositionErrorGameUnits > 1.0f ||
                         proxyReadbackBetweenRotationErrorDegrees > 1.0f) {
                         _grabAuthorityProxyLogCounter = 0;
@@ -13504,7 +13459,7 @@ namespace rock
             std::uint32_t filterInfo = 0;
             const bool filterReadOk = havok_runtime::tryReadFilterInfo(world, proxyBodyId, filterInfo);
             ROCK_LOG_DEBUG(Hand,
-                "{} PROXY GRAB AUTHORITY: seq={}/{} diag=bodyFrameConstraint+queuedTarget+generatedKeyframedProxy proxyBody={} constraint={} substep={}/{} dt={:.6f} resample={} rebases={} feedForward={} shift=({:.3f},{:.3f},{:.3f}) srcStep=({:.3f},{:.3f},{:.3f}) srcMoving={} frameDt(prev/now)={:.6f}/{:.6f} targetSrc={} target=({:.1f},{:.1f},{:.1f}) desiredBody=({:.1f},{:.1f},{:.1f}) angularAuthority={} angularRef={} solverAngular=ragdollAtom angularBudget={:.3f} pivotB=({:.2f},{:.2f},{:.2f}) err={:.2f}gu rotErr={:.2f}deg proxyDrive=driveToKeyFrame palmRef={} palmSrc={} palmMotion={} proxyVelSource={} proxyVel={:.3f}hk proxyAngVel={:.3f}rad/s longLever={:.1f}gu proxyRead={} proxySrc={} proxyMotion={} proxyErr={:.3f}gu/{:.2f}deg forceBudget={:.2f} colliding={} filterRead={} filter=0x{:08X} noContact={}",
+                "{} PROXY GRAB AUTHORITY: seq={}/{} diag=bodyFrameConstraint+queuedTarget+generatedKeyframedProxy proxyBody={} constraint={} substep={}/{} dt={:.6f} resample={} rebases={} consumptionRebase={} shift=({:.3f},{:.3f},{:.3f}) controller(src/now)={:016X}/{:016X} vtable(src/now)={:016X}/{:016X} scaleRev(src/now)={}/{} targetSrc={} target=({:.1f},{:.1f},{:.1f}) desiredBody=({:.1f},{:.1f},{:.1f}) angularAuthority={} angularRef={} solverAngular=ragdollAtom angularBudget={:.3f} pivotB=({:.2f},{:.2f},{:.2f}) err={:.2f}gu rotErr={:.2f}deg proxyDrive=driveToKeyFrame palmRef={} palmSrc={} palmMotion={} proxyVelSource={} proxyVel={:.3f}hk proxyAngVel={:.3f}rad/s longLever={:.1f}gu proxyRead={} proxySrc={} proxyMotion={} proxyErr={:.3f}gu/{:.2f}deg forceBudget={:.2f} colliding={} filterRead={} filter=0x{:08X} noContact={}",
                 handName(),
                 flushSequence,
                 queuedSequence,
@@ -13515,16 +13470,16 @@ namespace rock
                 havok_physics_timing::driveDeltaSeconds(timing),
                 grab_authority_source_clock::resampleActionName(resampleAction),
                 resampleRebaseCount,
-                grab_authority_source_clock::rootMotionFeedForwardStatusName(rootFeedForward.status),
-                rootFeedForward.shiftGame.x,
-                rootFeedForward.shiftGame.y,
-                rootFeedForward.shiftGame.z,
-                pending.sourceRootStepGame.x,
-                pending.sourceRootStepGame.y,
-                pending.sourceRootStepGame.z,
-                pending.sourceMoving ? "yes" : "no",
-                previousFrameDeltaSeconds,
-                currentFrameDeltaSeconds,
+                grab_authority_source_clock::consumptionFrameRebaseStatusName(consumptionFrameRebase.status),
+                consumptionFrameRebase.shiftGame.x,
+                consumptionFrameRebase.shiftGame.y,
+                consumptionFrameRebase.shiftGame.z,
+                pending.sourceControllerRoot.controllerIdentity,
+                consumptionControllerRoot.controllerIdentity,
+                pending.sourceControllerRoot.controllerVtable,
+                consumptionControllerRoot.controllerVtable,
+                pending.sourceControllerRoot.physicsScaleRevision,
+                consumptionControllerRoot.physicsScaleRevision,
                 pending.proxyFrameSource ? pending.proxyFrameSource : "unknown",
                 pending.proxyWorld.translate.x,
                 pending.proxyWorld.translate.y,
@@ -13575,14 +13530,14 @@ namespace rock
         out.queuedRawHandWorld = _lastAppliedGrabAuthorityQueuedRawHandWorld;
         out.appliedProxyTargetWorld = _lastAppliedGrabAuthorityProxyWorld;
         out.appliedRawHandWorld = _lastAppliedGrabAuthorityRawHandWorld;
-        out.feedForwardShiftGame = _lastAppliedGrabAuthorityFeedForwardShiftGame;
-        out.feedForwardStatus = _lastAppliedGrabAuthorityFeedForwardStatus;
-        out.sourceRootStepGame = _lastAppliedGrabAuthoritySourceRootStepGame;
-        out.feedForwardPreviousFrameDeltaSeconds = _lastAppliedGrabAuthorityFeedForwardPreviousFrameDeltaSeconds;
-        out.feedForwardCurrentFrameDeltaSeconds = _lastAppliedGrabAuthorityFeedForwardCurrentFrameDeltaSeconds;
-        out.sourceMoving = _lastAppliedGrabAuthoritySourceMoving;
-        out.sourceRootProbe = _lastAppliedGrabAuthoritySourceRootProbe;
-        out.consumptionRootProbe = _lastAppliedGrabAuthorityConsumptionRootProbe;
+        out.consumptionFrameShiftGame = _lastAppliedGrabAuthorityConsumptionFrameShiftGame;
+        out.consumptionFrameRebaseStatus = _lastAppliedGrabAuthorityConsumptionFrameRebaseStatus;
+        out.sourceControllerIdentity = _lastAppliedGrabAuthoritySourceControllerRoot.controllerIdentity;
+        out.consumptionControllerIdentity = _lastAppliedGrabAuthorityConsumptionControllerRoot.controllerIdentity;
+        out.sourceControllerVtable = _lastAppliedGrabAuthoritySourceControllerRoot.controllerVtable;
+        out.consumptionControllerVtable = _lastAppliedGrabAuthorityConsumptionControllerRoot.controllerVtable;
+        out.sourcePhysicsScaleRevision = _lastAppliedGrabAuthoritySourceControllerRoot.physicsScaleRevision;
+        out.consumptionPhysicsScaleRevision = _lastAppliedGrabAuthorityConsumptionControllerRoot.physicsScaleRevision;
         out.proxyBodyId = _grabAuthorityProxy.getBodyId();
         out.objectBodyId = _savedObjectState.bodyId;
         out.sourceGameFrameIndex = _lastAppliedGrabAuthoritySourceGameFrameIndex;

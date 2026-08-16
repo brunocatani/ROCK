@@ -474,28 +474,6 @@ namespace rock
         // read across threads.
         std::atomic<std::uint64_t> _completedPhysicsSolveSequence{ 0 };
 
-        // Diagnostic phase bracket for the grab locomotion stutter (see
-        // GrabLocomotionRootProbe): the same root sweep sampled at three points
-        // of one physics update. All three are written and read on the frame
-        // thread only (physics step listeners run synchronously inside
-        // bhkWorld::Update; the telemetry reader runs in the game-frame
-        // update after physics).
-        GrabLocomotionRootProbe _grabPhaseProbePreCollide{};
-        GrabLocomotionRootProbe _grabPhaseProbeAfterBetween{};
-        GrabLocomotionRootProbe _grabPhaseProbePostSolve{};
-
-        // Engine frame-duration series for the grab root-motion feed-forward
-        // dt ratio, read from the native continuous frame-delta global once
-        // per physics update at the first pre-collide substep. The game-side
-        // mover advances the player by speed x this continuous dt (offline
-        // predictor comparison 2026-08-16); a wall-clock series measured at
-        // the physics phase was too phase-noisy (9.9-15.5 ms swings on a
-        // steady 11.1 ms frame, 15:55 capture) and over/under-shot the
-        // prediction visibly. Zero means unreadable; the feed-forward gates
-        // fail closed on it. Frame-thread only.
-        float _grabFrameEngineDeltaSeconds = 0.0f;
-        float _grabFrameEngineDeltaSecondsPrev = 0.0f;
-
         TwoHandedGrip _twoHandedGrip;
         EquippedWeaponHandlingSettings _equippedWeaponHandlingSettings{};
         bool _fixedFiringHandIsLeft{ false };
