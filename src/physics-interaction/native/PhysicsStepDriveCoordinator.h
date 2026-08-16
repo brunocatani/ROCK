@@ -27,7 +27,7 @@ namespace rock
         void setDriveCallbacks(
             DriveCallback wholePreStepCallback,
             DriveCallback substepPreCollideCallback,
-            DriveCallback betweenCollideAndSolveCallback,
+            DriveCallback afterBetweenCollideAndSolveCallback,
             DriveCallback substepPostSolveCallback,
             void* userData);
         void registerForNextStep(void* bhkWorld, RE::hknpWorld* hknpWorld);
@@ -39,7 +39,7 @@ namespace rock
         std::uint64_t stepSequence() const { return _stepSequence; }
         void onBeforeWholePhysicsUpdate();
         void onBeforeAnyPhysicsStep(float substepProgress, float substepDeltaSeconds);
-        void onBetweenCollideAndSolve(float substepProgress, float substepDeltaSeconds);
+        void onAfterBetweenCollideAndSolve();
         void onAfterAnyPhysicsStep(float substepProgress, float substepDeltaSeconds);
 
     private:
@@ -47,7 +47,7 @@ namespace rock
 
         DriveCallback _wholePreStepCallback = nullptr;
         DriveCallback _substepPreCollideCallback = nullptr;
-        DriveCallback _betweenCollideAndSolveCallback = nullptr;
+        DriveCallback _afterBetweenCollideAndSolveCallback = nullptr;
         DriveCallback _substepPostSolveCallback = nullptr;
         void* _userData = nullptr;
         RE::hknpWorld* _registeredWorld = nullptr;

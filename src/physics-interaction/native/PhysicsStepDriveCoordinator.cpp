@@ -18,7 +18,7 @@ namespace rock
         void (*beforeAny)(PhysicsStepDriveCoordinator::NativeStepListener*, std::uint32_t, void*, float, float);
         void (*afterBeforeAny)();
         void (*betweenCollideAndSolve)(PhysicsStepDriveCoordinator::NativeStepListener*, std::uint32_t, void*, std::uint32_t, float, float);
-        void (*afterBetweenCollideAndSolve)();
+        void (*afterBetweenCollideAndSolve)(PhysicsStepDriveCoordinator::NativeStepListener*);
         void (*afterAny)(PhysicsStepDriveCoordinator::NativeStepListener*, std::uint32_t, void*, float, float);
         void (*afterAfterAny)();
         void (*afterWhole)(PhysicsStepDriveCoordinator::NativeStepListener*, std::uint32_t, void*);
@@ -50,6 +50,7 @@ namespace rock
         static_assert(offsetof(PhysicsStepDriveCoordinatorNativeStepListenerVTable, beforeWhole) == 0x08);
         static_assert(offsetof(PhysicsStepDriveCoordinatorNativeStepListenerVTable, beforeAny) == 0x18);
         static_assert(offsetof(PhysicsStepDriveCoordinatorNativeStepListenerVTable, betweenCollideAndSolve) == 0x28);
+        static_assert(offsetof(PhysicsStepDriveCoordinatorNativeStepListenerVTable, afterBetweenCollideAndSolve) == 0x30);
         static_assert(offsetof(PhysicsStepDriveCoordinatorNativeStepListenerVTable, afterAny) == 0x38);
         static_assert(offsetof(PhysicsStepDriveCoordinatorNativeStepListenerVTable, afterWhole) == 0x48);
 
@@ -80,19 +81,25 @@ namespace rock
             }
         }
 
-        void betweenCollideAndSolve(
-            PhysicsStepDriveCoordinator::NativeStepListener* listener,
+        void betweenCollideAndSolveNoop(
+            PhysicsStepDriveCoordinator::NativeStepListener*,
             std::uint32_t,
             void*,
             std::uint32_t,
-            float substepProgress,
-            float substepDeltaSeconds)
+            float,
+            float)
+        {}
+
+        void afterBetweenCollideAndSolve(PhysicsStepDriveCoordinator::NativeStepListener* listener)
         {
+            // FO4VR executes the combined between-step task graph (including
+            // bhkCharRigidBodyManager movement) before invoking this +0x30
+            // finish slot, and does not enter hknp solve until it returns.
             if (!listener || !listener->callbackState || !listener->callbackState->wholeUpdateLease) {
                 return;
             }
             if (auto* owner = listener->owner.load(std::memory_order_acquire)) {
-                owner->onBetweenCollideAndSolve(substepProgress, substepDeltaSeconds);
+                owner->onAfterBetweenCollideAndSolve();
             }
         }
 
@@ -119,8 +126,8 @@ namespace rock
             &noop,
             &beforeAny,
             &noop,
-            &betweenCollideAndSolve,
-            &noop,
+            &betweenCollideAndSolveNoop,
+            &afterBetweenCollideAndSolve,
             &afterAny,
             &noop,
             &afterWhole,
@@ -152,14 +159,14 @@ namespace rock
     void PhysicsStepDriveCoordinator::setDriveCallbacks(
         DriveCallback wholePreStepCallback,
         DriveCallback substepPreCollideCallback,
-        DriveCallback betweenCollideAndSolveCallback,
+        DriveCallback afterBetweenCollideAndSolveCallback,
         DriveCallback substepPostSolveCallback,
         void* userData)
     {
         auto mutation = callbackGate().pauseForMutation();
         _wholePreStepCallback = wholePreStepCallback;
         _substepPreCollideCallback = substepPreCollideCallback;
-        _betweenCollideAndSolveCallback = betweenCollideAndSolveCallback;
+        _afterBetweenCollideAndSolveCallback = afterBetweenCollideAndSolveCallback;
         _substepPostSolveCallback = substepPostSolveCallback;
         _userData = userData;
     }
@@ -226,7 +233,7 @@ namespace rock
 
     void PhysicsStepDriveCoordinator::onBeforeAnyPhysicsStep(float substepProgress, float substepDeltaSeconds)
     {
-        if (!_substepPreCollideCallback || !_registeredWorld) {
+        if (!_registeredWorld) {
             return;
         }
 
@@ -234,22 +241,22 @@ namespace rock
             havok_physics_timing::makeSubstepTimingSample(_lastTimingSample, substepProgress, substepDeltaSeconds, _currentSubstepIndex);
         _lastSubstepTimingSample = timing;
         ++_currentSubstepIndex;
-        _substepPreCollideCallback(_userData, _registeredWorld, timing);
+        if (_substepPreCollideCallback) {
+            _substepPreCollideCallback(_userData, _registeredWorld, timing);
+        }
     }
 
-    void PhysicsStepDriveCoordinator::onBetweenCollideAndSolve(float substepProgress, float substepDeltaSeconds)
+    void PhysicsStepDriveCoordinator::onAfterBetweenCollideAndSolve()
     {
-        if (!_betweenCollideAndSolveCallback || !_registeredWorld) {
+        if (!_afterBetweenCollideAndSolveCallback || !_registeredWorld || !_lastSubstepTimingSample.valid) {
             return;
         }
 
-        if (!_lastSubstepTimingSample.valid) {
-            _lastSubstepTimingSample = havok_physics_timing::makeSubstepTimingSample(_lastTimingSample, substepProgress, substepDeltaSeconds, _currentSubstepIndex);
-        }
-
         const auto timing =
-            havok_physics_timing::makeSubstepPhaseTimingSample(_lastSubstepTimingSample, havok_physics_timing::PhysicsStepPhase::BetweenCollideAndSolve);
-        _betweenCollideAndSolveCallback(_userData, _registeredWorld, timing);
+            havok_physics_timing::makeSubstepPhaseTimingSample(
+                _lastSubstepTimingSample,
+                havok_physics_timing::PhysicsStepPhase::BetweenCollideAndSolveFinish);
+        _afterBetweenCollideAndSolveCallback(_userData, _registeredWorld, timing);
     }
 
     void PhysicsStepDriveCoordinator::onAfterAnyPhysicsStep(float substepProgress, float substepDeltaSeconds)

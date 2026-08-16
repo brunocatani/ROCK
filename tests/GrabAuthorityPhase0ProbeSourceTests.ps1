@@ -52,18 +52,20 @@ Reject-Path 'src/physics-interaction/native/GrabAuthorityPhase0Probe.h' `
 Reject-Path 'src/physics-interaction/native/GrabAuthorityPhase0Probe.cpp' `
     'Phase 0 diagnostic probe implementation should be removed now that proxy grab authority is production.'
 
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'onCustomGrabAuthorityBetweenStep' `
-    'PhysicsInteraction must keep the production custom grab authority between-collide-and-solve callback.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'onCustomGrabAuthorityAfterCharacterMovement' `
+    'PhysicsInteraction must flush custom grab authority after character movement and before solve.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'onCustomGrabAuthorityAfterSolve' `
     'PhysicsInteraction must keep the production custom grab authority after-solve callback.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' '_rightHand\.flushPendingCustomGrabAuthority\(world,\s*timing\)' `
-    'Right-hand custom grab authority must still flush at the between-collide-and-solve boundary.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' '_leftHand\.flushPendingCustomGrabAuthority\(world,\s*timing\)' `
-    'Left-hand custom grab authority must still flush at the between-collide-and-solve boundary.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'samplePlayerCharacterControllerPositionHavok\(\)[\s\S]*_rightHand\.flushPendingCustomGrabAuthority\(world,\s*timing,\s*consumptionControllerRoot,\s*scale\.havokToGame\)[\s\S]*_leftHand\.flushPendingCustomGrabAuthority\(world,\s*timing,\s*consumptionControllerRoot,\s*scale\.havokToGame\)' `
+    'Both hands must share one post-character-movement controller sample at the pre-solve flush.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' '_rightHand\.observeCustomGrabAuthorityAfterSolve\(world,\s*timing\)' `
     'Right-hand custom grab authority must still observe solver response after solve.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' '_leftHand\.observeCustomGrabAuthorityAfterSolve\(world,\s*timing\)' `
     'Left-hand custom grab authority must still observe solver response after solve.'
+Require-Text 'src/physics-interaction/native/PhysicsStepDriveCoordinator.cpp' 'betweenCollideAndSolve\) == 0x28[\s\S]*afterBetweenCollideAndSolve\) == 0x30[\s\S]*betweenCollideAndSolveNoop[\s\S]*afterBetweenCollideAndSolve[\s\S]*onAfterBetweenCollideAndSolve' `
+    'The +0x28 graph-builder slot must remain a no-op and +0x30 finish must own the pre-solve grab flush.'
+Require-Text 'src/physics-interaction/native/PhysicsStepDriveCoordinator.cpp' 'BetweenCollideAndSolveFinish' `
+    'The callback timing sample must identify the verified post-graph, pre-solve finish boundary.'
 
 Reject-Text 'src/physics-interaction/core/PhysicsInteraction.h' 'GrabAuthorityPhase0|grab_authority_phase0|Phase0' `
     'PhysicsInteraction header must not retain Phase 0 probe declarations, includes, or members.'

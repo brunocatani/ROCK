@@ -675,8 +675,8 @@ namespace rock
                 return "whole-pre";
             case havok_physics_timing::PhysicsStepPhase::SubstepPreCollide:
                 return "substep-pre-collide";
-            case havok_physics_timing::PhysicsStepPhase::BetweenCollideAndSolve:
-                return "between-collide-solve";
+            case havok_physics_timing::PhysicsStepPhase::BetweenCollideAndSolveFinish:
+                return "between-finish-before-solve";
             case havok_physics_timing::PhysicsStepPhase::SubstepPostSolve:
                 return "substep-post-solve";
             }
@@ -1258,7 +1258,7 @@ namespace rock
         _generatedBodyStepDrive.setDriveCallbacks(
             nullptr,
             &PhysicsInteraction::onGeneratedColliderPhysicsSubstep,
-            &PhysicsInteraction::onCustomGrabAuthorityBetweenStep,
+            &PhysicsInteraction::onCustomGrabAuthorityAfterCharacterMovement,
             &PhysicsInteraction::onCustomGrabAuthorityAfterSolve,
             this);
         auto* generatedBodyCallbackGate = &_generatedBodyStepDrive.callbackGate();
@@ -2322,6 +2322,16 @@ namespace rock
                     handInput.rawHandWorld,
                     applied.appliedRawHandWorld) :
                 TransformDelta{ -1.0f, -1.0f };
+            const TransformDelta rawToQueued = appliedValid ?
+                measureTransformDelta(
+                    handInput.rawHandWorld,
+                    applied.queuedRawHandWorld) :
+                TransformDelta{ -1.0f, -1.0f };
+            const TransformDelta queuedToApplied = appliedValid ?
+                measureTransformDelta(
+                    applied.queuedRawHandWorld,
+                    applied.appliedRawHandWorld) :
+                TransformDelta{ -1.0f, -1.0f };
             const TransformDelta targetToProxy =
                 appliedValid && sampleValid && sample.hasProxyReadback ?
                 measureTransformDelta(
@@ -2360,7 +2370,7 @@ namespace rock
 
             ROCK_LOG_INFO(
                 Hand,
-                "GRAB_LOCOMOTION drive session={} frame={} side={} valid(applied/sample/proxy/body)={}/{}/{}/{} form=0x{:08X} bodies(proxy/held)={}/{} source(frame/age/queue/pending/flush/after)={}/{}/{}/{}/{}/{} flushPhysics(valid/raw/sub/rem/accum/index/count/progress)={}/({:.6f}/{:.6f}/{:.6f}/{:.6f}/{}/{}/{:.3f}) afterPhysics(valid/raw/sub/rem/accum/index/count/progress)={}/({:.6f}/{:.6f}/{:.6f}/{:.6f}/{}/{}/{:.3f}) raw=({:.3f},{:.3f},{:.3f}) appliedRaw=({:.3f},{:.3f},{:.3f}) target=({:.3f},{:.3f},{:.3f}) proxy=({:.3f},{:.3f},{:.3f}) desiredBody=({:.3f},{:.3f},{:.3f}) body=({:.3f},{:.3f},{:.3f}) gaps(rawToApplied/targetToProxy/desiredToBody)=({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg) steps(raw/target/proxy/body)=({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)",
+                "GRAB_LOCOMOTION drive session={} frame={} side={} valid(applied/sample/proxy/body)={}/{}/{}/{} form=0x{:08X} bodies(proxy/held)={}/{} source(frame/age/queue/pending/flush/after)={}/{}/{}/{}/{}/{} flushPhysics(valid/raw/sub/rem/accum/index/count/progress)={}/({:.6f}/{:.6f}/{:.6f}/{:.6f}/{}/{}/{:.3f}) afterPhysics(valid/raw/sub/rem/accum/index/count/progress)={}/({:.6f}/{:.6f}/{:.6f}/{:.6f}/{}/{}/{:.3f}) consumptionRebase(status/shift/controller/vtable/scaleRev)={}/({:.3f},{:.3f},{:.3f})/{:016X}:{:016X}/{:016X}:{:016X}/{}:{} raw=({:.3f},{:.3f},{:.3f}) queuedRaw=({:.3f},{:.3f},{:.3f}) appliedRaw=({:.3f},{:.3f},{:.3f}) target=({:.3f},{:.3f},{:.3f}) proxy=({:.3f},{:.3f},{:.3f}) desiredBody=({:.3f},{:.3f},{:.3f}) body=({:.3f},{:.3f},{:.3f}) gaps(rawToQueued/queuedToApplied/rawToApplied/targetToProxy/desiredToBody)=({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg) steps(raw/target/proxy/body)=({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)",
                 _colliderClockSession,
                 frame.gameFrameIndex,
                 isLeft ? "L" : "R",
@@ -2393,9 +2403,22 @@ namespace rock
                 applied.afterSolveTiming.substepIndex,
                 applied.afterSolveTiming.substepCount,
                 applied.afterSolveTiming.substepProgress,
+                grab_authority_source_clock::consumptionFrameRebaseStatusName(applied.consumptionFrameRebaseStatus),
+                applied.consumptionFrameShiftGame.x,
+                applied.consumptionFrameShiftGame.y,
+                applied.consumptionFrameShiftGame.z,
+                applied.sourceControllerIdentity,
+                applied.consumptionControllerIdentity,
+                applied.sourceControllerVtable,
+                applied.consumptionControllerVtable,
+                applied.sourcePhysicsScaleRevision,
+                applied.consumptionPhysicsScaleRevision,
                 handInput.rawHandWorld.translate.x,
                 handInput.rawHandWorld.translate.y,
                 handInput.rawHandWorld.translate.z,
+                applied.queuedRawHandWorld.translate.x,
+                applied.queuedRawHandWorld.translate.y,
+                applied.queuedRawHandWorld.translate.z,
                 applied.appliedRawHandWorld.translate.x,
                 applied.appliedRawHandWorld.translate.y,
                 applied.appliedRawHandWorld.translate.z,
@@ -2411,6 +2434,10 @@ namespace rock
                 sample.heldBodyWorld.translate.x,
                 sample.heldBodyWorld.translate.y,
                 sample.heldBodyWorld.translate.z,
+                rawToQueued.position,
+                rawToQueued.rotationDegrees,
+                queuedToApplied.position,
+                queuedToApplied.rotationDegrees,
                 rawToApplied.position,
                 rawToApplied.rotationDegrees,
                 targetToProxy.position,
@@ -7769,14 +7796,14 @@ namespace rock
         self->driveGeneratedCollidersFromPhysicsSubstep(world, timing);
     }
 
-    void PhysicsInteraction::onCustomGrabAuthorityBetweenStep(void* userData, RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
+    void PhysicsInteraction::onCustomGrabAuthorityAfterCharacterMovement(void* userData, RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
     {
         auto* self = static_cast<PhysicsInteraction*>(userData);
         if (!self) {
             return;
         }
 
-        self->driveCustomGrabAuthorityFromBetweenStep(world, timing);
+        self->driveCustomGrabAuthorityAfterCharacterMovement(world, timing);
     }
 
     void PhysicsInteraction::onCustomGrabAuthorityAfterSolve(void* userData, RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
@@ -7809,18 +7836,36 @@ namespace rock
         logPalmClockSampleForHand("physics-after-collider-drive", _leftHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
     }
 
-    void PhysicsInteraction::driveCustomGrabAuthorityFromBetweenStep(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
+    void PhysicsInteraction::driveCustomGrabAuthorityAfterCharacterMovement(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
     {
         if (!world || !_initialized.load(std::memory_order_acquire) || !physicsWritesAllowedForWorld(world)) {
+            return;
+        }
+        if (!_rightHand.isHoldingAtomic() && !_leftHand.isHoldingAtomic()) {
             return;
         }
 
         const auto gameFrameIndex = _palmClockGameFrameIndex.load(std::memory_order_acquire);
         const auto gameDeltaSeconds = _palmClockGameDeltaSeconds.load(std::memory_order_acquire);
-        logPalmClockSampleForHand("physics-between-before-grab-flush", _rightHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
-        logPalmClockSampleForHand("physics-between-before-grab-flush", _leftHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
-        _rightHand.flushPendingCustomGrabAuthority(world, timing);
-        _leftHand.flushPendingCustomGrabAuthority(world, timing);
+        logPalmClockSampleForHand("physics-after-character-move-before-grab-flush", _rightHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
+        logPalmClockSampleForHand("physics-after-character-move-before-grab-flush", _leftHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
+
+        // bhkWorld executes every listener's between-collide-and-solve graph
+        // before invoking the +0x30 finish slot that owns this callback. The
+        // character-manager movement task has therefore updated the live root,
+        // while hknp solve has not started. One read is shared by both hands so
+        // two-hand grabs receive an identical consumption-frame measurement.
+        const auto controller = character_controller_runtime::samplePlayerCharacterControllerPositionHavok();
+        const auto scale = physics_scale::current();
+        const grab_authority_source_clock::ControllerRootFrameSample consumptionControllerRoot{
+            .positionHavok = controller.positionHavok,
+            .controllerIdentity = controller.controllerIdentity,
+            .controllerVtable = controller.controllerVtable,
+            .physicsScaleRevision = scale.revision,
+            .valid = controller.valid,
+        };
+        _rightHand.flushPendingCustomGrabAuthority(world, timing, consumptionControllerRoot, scale.havokToGame);
+        _leftHand.flushPendingCustomGrabAuthority(world, timing, consumptionControllerRoot, scale.havokToGame);
     }
 
     void PhysicsInteraction::observeCustomGrabAuthorityAfterSolve(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)

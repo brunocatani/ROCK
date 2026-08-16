@@ -25,6 +25,20 @@ function Reject-Text {
     }
 }
 
+function Require-Text {
+    param(
+        [string]$RelativePath,
+        [string]$Pattern,
+        [string]$Message
+    )
+
+    $path = Join-Path $Root $RelativePath
+    $text = Get-Content -Raw -LiteralPath $path
+    if ($text -notmatch $Pattern) {
+        $failures.Add("$RelativePath`: $Message")
+    }
+}
+
 function Reject-File {
     param(
         [string]$RelativePath,
@@ -38,8 +52,9 @@ function Reject-File {
 }
 
 # The failed stick-locomotion compensation systems were removed, not disabled.
-# The grab-authority source-clock resampler is the one clock-boundary fix; none
-# of these may return as dormant alternative behavior paths.
+# The grab-authority source-clock owner now includes the exact, measured
+# source-root to consumption-root rebase. It does not predict velocity, move a
+# held body, or create a parallel authority path; none of those may return.
 
 Reject-File 'src/physics-interaction/grab/GrabLocomotionAuthorityBridge.h' `
     'The locomotion-authority bridge was removed; do not reintroduce it.'
@@ -108,6 +123,18 @@ Reject-Text 'src/physics-interaction/hand/Hand.h' `
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' `
     'GrabFrameDiscontinuityCorrection|grab_frame_discontinuity|applyHeldFrameDiscontinuityCorrectionLocked|HELD FRAME CORRECTION' `
     'Grab authority must not translate live held bodies from mismatched wall and physics clocks.'
+Require-Text 'src/physics-interaction/grab/GrabAuthoritySourceClockResampler.h' `
+    'struct ConsumptionFrameRebase[\s\S]*consumptionRootHavok[\s\S]*sourceRootHavok[\s\S]*controllerIdentity[\s\S]*physicsScaleRevision[\s\S]*kMaxTranslationJumpGameUnits' `
+    'The source-clock owner must retain the measured, identity-safe, bounded consumption-frame root rebase.'
+Require-Text 'src/physics-interaction/native/CharacterControllerRuntime.cpp' `
+    'GetPositionImpl\(positionHavok, false\)' `
+    'The root rebase must read the live character-controller position without actor-position or velocity substitutes.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
+    'sourceControllerRoot = samplePlayerControllerRootFrame\(\)[\s\S]*_grabAuthorityConsumptionFrameRebase\.evaluate[\s\S]*pending\.proxyWorld\.translate\.x \+= consumptionFrameRebase\.shiftGame\.x' `
+    'The queued source root must rebase only the hidden proxy target at consumption.'
+Reject-Text 'src/physics-interaction/grab/GrabAuthoritySourceClockResampler.h' `
+    'cachedLinearVelocity|outVelocity|predictionLead|feedForward|FeedForward' `
+    'The exact consumption-frame root rebase must never regain velocity prediction or feed-forward state.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'LocomotionCompensationRemovalSourceTests failed:' -ForegroundColor Red

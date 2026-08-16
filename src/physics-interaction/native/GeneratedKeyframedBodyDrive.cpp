@@ -183,6 +183,10 @@ namespace rock
                 return "whole-pre";
             case havok_physics_timing::PhysicsStepPhase::SubstepPreCollide:
                 return "substep-pre-collide";
+            case havok_physics_timing::PhysicsStepPhase::BetweenCollideAndSolveFinish:
+                return "between-finish-before-solve";
+            case havok_physics_timing::PhysicsStepPhase::SubstepPostSolve:
+                return "substep-post-solve";
             default:
                 return "unknown";
             }

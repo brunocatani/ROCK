@@ -60,6 +60,9 @@ Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'GRAB_LOCOMOTION drive[\s\S]*source\(frame/age/queue/pending/flush/after\)[\s\S]*steps\(raw/target/proxy/body\)[\s\S]*GRAB_LOCOMOTION visual[\s\S]*gaps\(bodyDerivedToNode/heldHandToFrik/rawToHeldHand\)[\s\S]*steps\(node/heldHand/frik\)' `
     'Grab locomotion rows must localize both cadence stair-steps and the body-to-scene-to-FRIK presentation boundary.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'consumptionRebase\(status/shift/controller/vtable/scaleRev\)[\s\S]*queuedRaw[\s\S]*gaps\(rawToQueued/queuedToApplied/rawToApplied/targetToProxy/desiredToBody\)' `
+    'Grab locomotion rows must distinguish the one-frame queued sample from its measured consumption-frame rebase.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'ColliderClockDiagnosticsSourceTests failed:' -ForegroundColor Red

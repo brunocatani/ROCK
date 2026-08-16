@@ -19,7 +19,7 @@ namespace rock::havok_physics_timing
     {
         WholePreStep,
         SubstepPreCollide,
-        BetweenCollideAndSolve,
+        BetweenCollideAndSolveFinish,
         SubstepPostSolve,
     };
 
@@ -103,7 +103,7 @@ namespace rock::havok_physics_timing
          * scaled to the same hknp substep that will immediately consume it.
          */
         if ((timing.phase == PhysicsStepPhase::SubstepPreCollide ||
-                timing.phase == PhysicsStepPhase::BetweenCollideAndSolve ||
+                timing.phase == PhysicsStepPhase::BetweenCollideAndSolveFinish ||
                 timing.phase == PhysicsStepPhase::SubstepPostSolve) &&
             isUsableDelta(timing.substepDeltaSeconds)) {
             return timing.substepDeltaSeconds;

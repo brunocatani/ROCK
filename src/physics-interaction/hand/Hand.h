@@ -86,8 +86,18 @@ namespace rock
     // raw wand and live body readbacks at the frame's point of visibility.
     struct GrabOverlayPointProbeSample
     {
+        RE::NiTransform queuedRawHandWorld{};
         RE::NiTransform appliedProxyTargetWorld{};
         RE::NiTransform appliedRawHandWorld{};
+        RE::NiPoint3 consumptionFrameShiftGame{};
+        grab_authority_source_clock::ConsumptionFrameRebaseStatus consumptionFrameRebaseStatus =
+            grab_authority_source_clock::ConsumptionFrameRebaseStatus::Unavailable;
+        std::uintptr_t sourceControllerIdentity = 0;
+        std::uintptr_t consumptionControllerIdentity = 0;
+        std::uintptr_t sourceControllerVtable = 0;
+        std::uintptr_t consumptionControllerVtable = 0;
+        std::uint32_t sourcePhysicsScaleRevision = 0;
+        std::uint32_t consumptionPhysicsScaleRevision = 0;
         RE::hknpBodyId proxyBodyId{ INVALID_BODY_ID };
         RE::hknpBodyId objectBodyId{ INVALID_BODY_ID };
         std::uint64_t sourceGameFrameIndex = 0;
@@ -649,7 +659,11 @@ namespace rock
             float deltaTime);
 
         void flushPendingCollisionPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
-        void flushPendingCustomGrabAuthority(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
+        void flushPendingCustomGrabAuthority(
+            RE::hknpWorld* world,
+            const havok_physics_timing::PhysicsTimingSample& timing,
+            const grab_authority_source_clock::ControllerRootFrameSample& consumptionControllerRoot,
+            float controllerHavokToGameScale);
         void observeCustomGrabAuthorityAfterSolve(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         bool beginStashCandidate();
         bool cancelStashCandidate();
@@ -1007,6 +1021,7 @@ namespace rock
             RE::NiTransform rawHandWorld{};
             const char* proxyFrameSource = "unknown";
             std::uint64_t sourceGameFrameIndex = 0;
+            grab_authority_source_clock::ControllerRootFrameSample sourceControllerRoot{};
             float deltaTime = 0.0f;
             float forceFadeInTime = 0.0f;
             float tauMin = 0.0f;
@@ -1017,12 +1032,20 @@ namespace rock
             bool valid = false;
         };
         GrabAuthorityProxyPendingTarget _grabAuthorityPendingTarget{};
-        // Phase-locks the per-substep proxy target onto the game-clock wand
-        // path (frame-end substep = exact queued sample); guarded by
-        // _grabAuthorityProxyMutex like the pending target.
+        // Phase-locks the raw per-substep proxy target onto the game-clock wand
+        // path, then re-expresses it in the measured post-character-movement
+        // root frame. Both states are guarded by _grabAuthorityProxyMutex like
+        // the pending target.
         grab_authority_source_clock::GameClockPhaseLock _grabAuthoritySourceClock{};
+        grab_authority_source_clock::ConsumptionFrameRebase _grabAuthorityConsumptionFrameRebase{};
+        RE::NiTransform _lastAppliedGrabAuthorityQueuedRawHandWorld{};
         RE::NiTransform _lastAppliedGrabAuthorityProxyWorld{};
         RE::NiTransform _lastAppliedGrabAuthorityRawHandWorld{};
+        RE::NiPoint3 _lastAppliedGrabAuthorityConsumptionFrameShiftGame{};
+        grab_authority_source_clock::ConsumptionFrameRebaseStatus _lastAppliedGrabAuthorityConsumptionFrameRebaseStatus =
+            grab_authority_source_clock::ConsumptionFrameRebaseStatus::Unavailable;
+        grab_authority_source_clock::ControllerRootFrameSample _lastAppliedGrabAuthoritySourceControllerRoot{};
+        grab_authority_source_clock::ControllerRootFrameSample _lastAppliedGrabAuthorityConsumptionControllerRoot{};
         std::uint64_t _lastAppliedGrabAuthoritySourceGameFrameIndex = 0;
         std::uint64_t _lastAppliedGrabAuthoritySourceQueueSequence = 0;
         havok_physics_timing::PhysicsTimingSample _grabAuthorityProxyLastFlushTiming{};

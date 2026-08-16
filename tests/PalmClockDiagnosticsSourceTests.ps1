@@ -33,7 +33,7 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'game-after-h
     'Palm clock diagnostics must sample after the game-frame hand collider queue.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'game-before-held-update' `
     'Palm clock diagnostics must sample immediately before held-object update.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'physics-after-collider-drive[\s\S]*physics-between-before-grab-flush[\s\S]*physics-after-solve' `
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'physics-after-collider-drive[\s\S]*physics-after-character-move-before-grab-flush[\s\S]*physics-after-solve' `
     'Palm clock diagnostics must sample the Havok collider, grab-authority, and post-solve phases.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'rockDebugGrabTimelineTrace[\s\S]*rockDebugGrabFrameLogging[\s\S]*rockDebugVerboseLogging' `
     'Palm clock diagnostics must remain behind existing explicit debug logging gates.'
