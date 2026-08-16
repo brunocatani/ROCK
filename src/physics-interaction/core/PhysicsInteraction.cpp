@@ -1971,6 +1971,8 @@ namespace rock
             _colliderClockFramesRemaining = 0;
             _colliderClockPreviousPlayerMoving = false;
             _colliderClockPreviousContactActive = false;
+            _colliderClockPreviousGrabActive = false;
+            _grabLocomotionClockStates = {};
             return;
         }
 
@@ -1987,17 +1989,21 @@ namespace rock
             playerMoving && !_colliderClockPreviousPlayerMoving;
         const bool contactStarted =
             contactActive && !_colliderClockPreviousContactActive;
+        const bool grabActive = _rightHand.isHolding() || _leftHand.isHolding();
+        const bool grabStarted = grabActive && !_colliderClockPreviousGrabActive;
         _colliderClockPreviousPlayerMoving = playerMoving;
         _colliderClockPreviousContactActive = contactActive;
+        _colliderClockPreviousGrabActive = grabActive;
 
-        if (movementStarted || contactStarted) {
+        if (movementStarted || contactStarted || grabStarted) {
             ++_colliderClockSession;
             _colliderClockFramesRemaining = kTraceFramesPerEpisode;
+            const char* trigger = movementStarted ? "movement" : (contactStarted ? "contact" : "grab");
             ROCK_LOG_INFO(
                 Physics,
                 "COLLIDER_CLOCK begin session={} trigger={} budgetFrames={} gameFrame={}",
                 _colliderClockSession,
-                movementStarted ? "movement" : "contact",
+                trigger,
                 kTraceFramesPerEpisode,
                 frame.gameFrameIndex);
         }
@@ -2031,6 +2037,46 @@ namespace rock
         const bool leftExternal =
             frik_visual_authority::hasPublishedExternalHandWorldTransform(
                 frik_visual_authority::Hand::Left);
+        const auto rightController =
+            vrcf::VRControllers.getPollSnapshot(vrcf::Hand::Right);
+        const auto leftController =
+            vrcf::VRControllers.getPollSnapshot(vrcf::Hand::Left);
+
+        ROCK_LOG_INFO(
+            Input,
+            "COLLIDER_CLOCK input session={} frame={} controllerR(valid/packet/previous/changed/buttons)={}/{}/{}/{}/0x{:016X} controllerL(valid/packet/previous/changed/buttons)={}/{}/{}/{}/0x{:016X} axesR[0..4]=({:.3f},{:.3f})/({:.3f},{:.3f})/({:.3f},{:.3f})/({:.3f},{:.3f})/({:.3f},{:.3f}) axesL[0..4]=({:.3f},{:.3f})/({:.3f},{:.3f})/({:.3f},{:.3f})/({:.3f},{:.3f})/({:.3f},{:.3f})",
+            _colliderClockSession,
+            frame.gameFrameIndex,
+            rightController.valid,
+            rightController.packetNumber,
+            rightController.previousPacketNumber,
+            rightController.packetChanged,
+            rightController.buttonsPressed,
+            leftController.valid,
+            leftController.packetNumber,
+            leftController.previousPacketNumber,
+            leftController.packetChanged,
+            leftController.buttonsPressed,
+            rightController.axisX[0],
+            rightController.axisY[0],
+            rightController.axisX[1],
+            rightController.axisY[1],
+            rightController.axisX[2],
+            rightController.axisY[2],
+            rightController.axisX[3],
+            rightController.axisY[3],
+            rightController.axisX[4],
+            rightController.axisY[4],
+            leftController.axisX[0],
+            leftController.axisY[0],
+            leftController.axisX[1],
+            leftController.axisY[1],
+            leftController.axisX[2],
+            leftController.axisY[2],
+            leftController.axisX[3],
+            leftController.axisY[3],
+            leftController.axisX[4],
+            leftController.axisY[4]);
 
         ROCK_LOG_INFO(
             Physics,
@@ -2203,6 +2249,238 @@ namespace rock
         };
         logHand(false);
         logHand(true);
+
+        const auto logGrab = [&](const bool isLeft) {
+            const std::size_t handIndex = isLeft ? 1u : 0u;
+            Hand& heldHand = isLeft ? _leftHand : _rightHand;
+            const auto& handInput = isLeft ? frame.left : frame.right;
+            const auto& frik = isLeft ? leftFrik : rightFrik;
+            auto& previous = _grabLocomotionClockStates[handIndex];
+            if (!frame.hknpWorld || handInput.disabled || !heldHand.isHolding()) {
+                previous = {};
+                return;
+            }
+
+            GrabOverlayPointProbeSample applied{};
+            const bool appliedValid =
+                heldHand.tryGetGrabOverlayPointProbeSample(frame.hknpWorld, applied);
+            grab_transform_telemetry::RuntimeSample sample{};
+            const bool sampleValid = heldHand.getGrabTransformTelemetrySnapshot(
+                frame.hknpWorld,
+                handInput.rawHandWorld,
+                sample);
+            const bool consecutive =
+                previous.active &&
+                previous.session == _colliderClockSession &&
+                frame.gameFrameIndex == previous.frame + 1;
+            const auto stepDelta = [&](const bool currentValid,
+                                       const bool previousValid,
+                                       const RE::NiTransform& current,
+                                       const RE::NiTransform& prior) {
+                return consecutive && currentValid && previousValid ?
+                    measureTransformDelta(prior, current) :
+                    TransformDelta{ -1.0f, -1.0f };
+            };
+
+            const TransformDelta rawStep =
+                consecutive ?
+                measureTransformDelta(previous.rawHandWorld, handInput.rawHandWorld) :
+                TransformDelta{ -1.0f, -1.0f };
+            const TransformDelta targetStep = stepDelta(
+                appliedValid,
+                previous.hasAppliedProxyTarget,
+                applied.appliedProxyTargetWorld,
+                previous.appliedProxyTargetWorld);
+            const TransformDelta proxyStep = stepDelta(
+                sampleValid && sample.hasProxyReadback,
+                previous.hasProxyReadback,
+                sample.proxyReadbackWorld,
+                previous.proxyReadbackWorld);
+            const TransformDelta bodyStep = stepDelta(
+                sampleValid && sample.hasHeldBodyWorld,
+                previous.hasHeldBody,
+                sample.heldBodyWorld,
+                previous.heldBodyWorld);
+            const TransformDelta nodeStep = stepDelta(
+                sampleValid && sample.hasHeldNodeWorld,
+                previous.hasHeldNode,
+                sample.heldNodeWorld,
+                previous.heldNodeWorld);
+            const TransformDelta visualStep = stepDelta(
+                sampleValid && sample.hasHeldRelativeHandTarget,
+                previous.hasHeldRelativeHandTarget,
+                sample.heldRelativeHandTargetWorld,
+                previous.heldRelativeHandTargetWorld);
+            const TransformDelta frikStep = stepDelta(
+                frik.valid,
+                previous.hasFrikHand,
+                frik.world,
+                previous.frikHandWorld);
+
+            const TransformDelta rawToApplied = appliedValid ?
+                measureTransformDelta(
+                    handInput.rawHandWorld,
+                    applied.appliedRawHandWorld) :
+                TransformDelta{ -1.0f, -1.0f };
+            const TransformDelta targetToProxy =
+                appliedValid && sampleValid && sample.hasProxyReadback ?
+                measureTransformDelta(
+                    applied.appliedProxyTargetWorld,
+                    sample.proxyReadbackWorld) :
+                TransformDelta{ -1.0f, -1.0f };
+            const TransformDelta desiredToBody =
+                sampleValid && sample.hasGrabStartFrames && sample.hasHeldBodyWorld ?
+                measureTransformDelta(
+                    sample.currentRawDesiredBodyWorld,
+                    sample.heldBodyWorld) :
+                TransformDelta{ -1.0f, -1.0f };
+            const TransformDelta bodyDerivedToNode =
+                sampleValid && sample.hasHeldBodyDerivedNodeWorld && sample.hasHeldNodeWorld ?
+                measureTransformDelta(
+                    sample.heldBodyDerivedNodeWorld,
+                    sample.heldNodeWorld) :
+                TransformDelta{ -1.0f, -1.0f };
+            const TransformDelta visualToFrik =
+                sampleValid && sample.hasHeldRelativeHandTarget && frik.valid ?
+                measureTransformDelta(
+                    sample.heldRelativeHandTargetWorld,
+                    frik.world) :
+                TransformDelta{ -1.0f, -1.0f };
+            const TransformDelta rawToVisual =
+                sampleValid && sample.hasHeldRelativeHandTarget ?
+                measureTransformDelta(
+                    handInput.rawHandWorld,
+                    sample.heldRelativeHandTargetWorld) :
+                TransformDelta{ -1.0f, -1.0f };
+            const std::uint64_t sourceAgeFrames =
+                appliedValid && applied.sourceGameFrameIndex != 0 &&
+                    frame.gameFrameIndex >= applied.sourceGameFrameIndex ?
+                frame.gameFrameIndex - applied.sourceGameFrameIndex :
+                0;
+
+            ROCK_LOG_INFO(
+                Hand,
+                "GRAB_LOCOMOTION drive session={} frame={} side={} valid(applied/sample/proxy/body)={}/{}/{}/{} form=0x{:08X} bodies(proxy/held)={}/{} source(frame/age/queue/pending/flush/after)={}/{}/{}/{}/{}/{} flushPhysics(valid/raw/sub/rem/accum/index/count/progress)={}/({:.6f}/{:.6f}/{:.6f}/{:.6f}/{}/{}/{:.3f}) afterPhysics(valid/raw/sub/rem/accum/index/count/progress)={}/({:.6f}/{:.6f}/{:.6f}/{:.6f}/{}/{}/{:.3f}) raw=({:.3f},{:.3f},{:.3f}) appliedRaw=({:.3f},{:.3f},{:.3f}) target=({:.3f},{:.3f},{:.3f}) proxy=({:.3f},{:.3f},{:.3f}) desiredBody=({:.3f},{:.3f},{:.3f}) body=({:.3f},{:.3f},{:.3f}) gaps(rawToApplied/targetToProxy/desiredToBody)=({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg) steps(raw/target/proxy/body)=({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)",
+                _colliderClockSession,
+                frame.gameFrameIndex,
+                isLeft ? "L" : "R",
+                appliedValid,
+                sampleValid,
+                sample.hasProxyReadback,
+                sample.hasHeldBodyWorld,
+                sample.heldFormId,
+                applied.proxyBodyId.value,
+                applied.objectBodyId.value,
+                applied.sourceGameFrameIndex,
+                sourceAgeFrames,
+                applied.sourceQueueSequence,
+                applied.pendingQueueSequence,
+                applied.flushSequence,
+                applied.afterSolveSequence,
+                applied.flushTiming.valid,
+                applied.flushTiming.rawDeltaSeconds,
+                applied.flushTiming.substepDeltaSeconds,
+                applied.flushTiming.remainderDeltaSeconds,
+                applied.flushTiming.accumulatedDeltaSeconds,
+                applied.flushTiming.substepIndex,
+                applied.flushTiming.substepCount,
+                applied.flushTiming.substepProgress,
+                applied.afterSolveTiming.valid,
+                applied.afterSolveTiming.rawDeltaSeconds,
+                applied.afterSolveTiming.substepDeltaSeconds,
+                applied.afterSolveTiming.remainderDeltaSeconds,
+                applied.afterSolveTiming.accumulatedDeltaSeconds,
+                applied.afterSolveTiming.substepIndex,
+                applied.afterSolveTiming.substepCount,
+                applied.afterSolveTiming.substepProgress,
+                handInput.rawHandWorld.translate.x,
+                handInput.rawHandWorld.translate.y,
+                handInput.rawHandWorld.translate.z,
+                applied.appliedRawHandWorld.translate.x,
+                applied.appliedRawHandWorld.translate.y,
+                applied.appliedRawHandWorld.translate.z,
+                applied.appliedProxyTargetWorld.translate.x,
+                applied.appliedProxyTargetWorld.translate.y,
+                applied.appliedProxyTargetWorld.translate.z,
+                sample.proxyReadbackWorld.translate.x,
+                sample.proxyReadbackWorld.translate.y,
+                sample.proxyReadbackWorld.translate.z,
+                sample.currentRawDesiredBodyWorld.translate.x,
+                sample.currentRawDesiredBodyWorld.translate.y,
+                sample.currentRawDesiredBodyWorld.translate.z,
+                sample.heldBodyWorld.translate.x,
+                sample.heldBodyWorld.translate.y,
+                sample.heldBodyWorld.translate.z,
+                rawToApplied.position,
+                rawToApplied.rotationDegrees,
+                targetToProxy.position,
+                targetToProxy.rotationDegrees,
+                desiredToBody.position,
+                desiredToBody.rotationDegrees,
+                rawStep.position,
+                rawStep.rotationDegrees,
+                targetStep.position,
+                targetStep.rotationDegrees,
+                proxyStep.position,
+                proxyStep.rotationDegrees,
+                bodyStep.position,
+                bodyStep.rotationDegrees);
+
+            ROCK_LOG_INFO(
+                Hand,
+                "GRAB_LOCOMOTION visual session={} frame={} side={} valid(bodyDerived/node/heldHand/frik)={}/{}/{}/{} bodyDerived=({:.3f},{:.3f},{:.3f}) node=({:.3f},{:.3f},{:.3f}) heldHand=({:.3f},{:.3f},{:.3f}) frik=({:.3f},{:.3f},{:.3f}) gaps(bodyDerivedToNode/heldHandToFrik/rawToHeldHand)=({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg) steps(node/heldHand/frik)=({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)",
+                _colliderClockSession,
+                frame.gameFrameIndex,
+                isLeft ? "L" : "R",
+                sample.hasHeldBodyDerivedNodeWorld,
+                sample.hasHeldNodeWorld,
+                sample.hasHeldRelativeHandTarget,
+                frik.valid,
+                sample.heldBodyDerivedNodeWorld.translate.x,
+                sample.heldBodyDerivedNodeWorld.translate.y,
+                sample.heldBodyDerivedNodeWorld.translate.z,
+                sample.heldNodeWorld.translate.x,
+                sample.heldNodeWorld.translate.y,
+                sample.heldNodeWorld.translate.z,
+                sample.heldRelativeHandTargetWorld.translate.x,
+                sample.heldRelativeHandTargetWorld.translate.y,
+                sample.heldRelativeHandTargetWorld.translate.z,
+                frik.world.translate.x,
+                frik.world.translate.y,
+                frik.world.translate.z,
+                bodyDerivedToNode.position,
+                bodyDerivedToNode.rotationDegrees,
+                visualToFrik.position,
+                visualToFrik.rotationDegrees,
+                rawToVisual.position,
+                rawToVisual.rotationDegrees,
+                nodeStep.position,
+                nodeStep.rotationDegrees,
+                visualStep.position,
+                visualStep.rotationDegrees,
+                frikStep.position,
+                frikStep.rotationDegrees);
+
+            previous.rawHandWorld = handInput.rawHandWorld;
+            previous.appliedProxyTargetWorld = applied.appliedProxyTargetWorld;
+            previous.proxyReadbackWorld = sample.proxyReadbackWorld;
+            previous.heldBodyWorld = sample.heldBodyWorld;
+            previous.heldNodeWorld = sample.heldNodeWorld;
+            previous.heldRelativeHandTargetWorld = sample.heldRelativeHandTargetWorld;
+            previous.frikHandWorld = frik.world;
+            previous.session = _colliderClockSession;
+            previous.frame = frame.gameFrameIndex;
+            previous.active = true;
+            previous.hasAppliedProxyTarget = appliedValid;
+            previous.hasProxyReadback = sampleValid && sample.hasProxyReadback;
+            previous.hasHeldBody = sampleValid && sample.hasHeldBodyWorld;
+            previous.hasHeldNode = sampleValid && sample.hasHeldNodeWorld;
+            previous.hasHeldRelativeHandTarget =
+                sampleValid && sample.hasHeldRelativeHandTarget;
+            previous.hasFrikHand = frik.valid;
+        };
+        logGrab(false);
+        logGrab(true);
 
         if (_colliderClockFramesRemaining == 0) {
             ROCK_LOG_INFO(

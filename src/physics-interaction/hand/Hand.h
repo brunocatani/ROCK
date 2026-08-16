@@ -1,6 +1,7 @@
 #pragma once
 
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
+#include "physics-interaction/native/HavokPhysicsTiming.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 #include "physics-interaction/grab/GrabCore.h"
@@ -89,7 +90,13 @@ namespace rock
         RE::NiTransform appliedRawHandWorld{};
         RE::hknpBodyId proxyBodyId{ INVALID_BODY_ID };
         RE::hknpBodyId objectBodyId{ INVALID_BODY_ID };
+        std::uint64_t sourceGameFrameIndex = 0;
+        std::uint64_t sourceQueueSequence = 0;
+        std::uint64_t pendingQueueSequence = 0;
         std::uint64_t flushSequence = 0;
+        std::uint64_t afterSolveSequence = 0;
+        havok_physics_timing::PhysicsTimingSample flushTiming{};
+        havok_physics_timing::PhysicsTimingSample afterSolveTiming{};
     };
 
     struct GrabContactPatchDebugSnapshot
@@ -999,6 +1006,7 @@ namespace rock
             RE::NiTransform proxyWorld{};
             RE::NiTransform rawHandWorld{};
             const char* proxyFrameSource = "unknown";
+            std::uint64_t sourceGameFrameIndex = 0;
             float deltaTime = 0.0f;
             float forceFadeInTime = 0.0f;
             float tauMin = 0.0f;
@@ -1015,6 +1023,10 @@ namespace rock
         grab_authority_source_clock::GameClockPhaseLock _grabAuthoritySourceClock{};
         RE::NiTransform _lastAppliedGrabAuthorityProxyWorld{};
         RE::NiTransform _lastAppliedGrabAuthorityRawHandWorld{};
+        std::uint64_t _lastAppliedGrabAuthoritySourceGameFrameIndex = 0;
+        std::uint64_t _lastAppliedGrabAuthoritySourceQueueSequence = 0;
+        havok_physics_timing::PhysicsTimingSample _grabAuthorityProxyLastFlushTiming{};
+        havok_physics_timing::PhysicsTimingSample _grabAuthorityProxyLastAfterSolveTiming{};
         bool _hasLastAppliedGrabAuthorityProxyWorld = false;
         struct RagdollAngularProbePreSolve
         {

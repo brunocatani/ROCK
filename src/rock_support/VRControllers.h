@@ -21,12 +21,24 @@ namespace rock::vr_input
     class VRControllersManager
     {
     public:
+        struct PollSnapshot
+        {
+            std::array<float, 5> axisX{};
+            std::array<float, 5> axisY{};
+            std::uint64_t buttonsPressed = 0;
+            std::uint32_t packetNumber = 0;
+            std::uint32_t previousPacketNumber = 0;
+            bool valid = false;
+            bool packetChanged = false;
+        };
+
         void update(bool isLeftHanded) noexcept;
         void reset() noexcept;
 
         [[nodiscard]] bool isPressed(Hand hand, int buttonId) noexcept;
         [[nodiscard]] bool isPressHeldDown(Hand hand, int buttonId, float minimumHoldSeconds = 0.0f) const noexcept;
         [[nodiscard]] bool isReleased(Hand hand, int buttonId, float maximumHoldSeconds = 99.0f) noexcept;
+        [[nodiscard]] PollSnapshot getPollSnapshot(Hand hand) const noexcept;
 
         void triggerHaptic(Hand hand, float durationSeconds = 0.1f, float intensity = 0.3f) noexcept;
 

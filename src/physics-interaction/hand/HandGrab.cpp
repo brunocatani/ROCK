@@ -5375,6 +5375,11 @@ namespace rock
         _grabAuthorityPendingTarget = {};
         _grabAuthoritySourceClock.reset();
         _lastAppliedGrabAuthorityProxyWorld = {};
+        _lastAppliedGrabAuthorityRawHandWorld = {};
+        _lastAppliedGrabAuthoritySourceGameFrameIndex = 0;
+        _lastAppliedGrabAuthoritySourceQueueSequence = 0;
+        _grabAuthorityProxyLastFlushTiming = {};
+        _grabAuthorityProxyLastAfterSolveTiming = {};
         _hasLastAppliedGrabAuthorityProxyWorld = false;
         clearGeneratedKeyframedBodyDriveState(_grabAuthorityProxyDriveState);
         _grabAuthorityProxyQueuedSequence = 0;
@@ -6567,6 +6572,7 @@ namespace rock
                 .proxyWorld = proxyWorldTransform,
                 .rawHandWorld = rawHandWorldTransform,
                 .proxyFrameSource = "grabStartLivePalmAnchor",
+                .sourceGameFrameIndex = runtime_state::currentFrame().frameIndex,
                 .deltaTime = 1.0f / 90.0f,
                 .forceFadeInTime = g_rockConfig.rockGrabForceFadeInTime,
                 .tauMin = g_rockConfig.rockGrabTauMin,
@@ -6578,6 +6584,8 @@ namespace rock
             };
             _lastAppliedGrabAuthorityProxyWorld = proxyWorldTransform;
             _lastAppliedGrabAuthorityRawHandWorld = rawHandWorldTransform;
+            _lastAppliedGrabAuthoritySourceGameFrameIndex = runtime_state::currentFrame().frameIndex;
+            _lastAppliedGrabAuthoritySourceQueueSequence = 1;
             _hasLastAppliedGrabAuthorityProxyWorld = true;
             _grabAuthoritySourceClock.reset();
             _grabAuthorityProxyQueuedSequence = 1;
@@ -6957,6 +6965,7 @@ namespace rock
         _grabAuthorityPendingTarget.proxyWorld = proxyWorldTransform;
         _grabAuthorityPendingTarget.rawHandWorld = rawHandWorldTransform;
         _grabAuthorityPendingTarget.proxyFrameSource = proxyFrameSource ? proxyFrameSource : "unknown";
+        _grabAuthorityPendingTarget.sourceGameFrameIndex = runtime_state::currentFrame().frameIndex;
         _grabAuthorityPendingTarget.deltaTime = deltaTime;
         _grabAuthorityPendingTarget.forceFadeInTime = forceFadeInTime;
         _grabAuthorityPendingTarget.tauMin = tauMin;
@@ -13320,6 +13329,9 @@ namespace rock
 
                     _lastAppliedGrabAuthorityProxyWorld = pending.proxyWorld;
                     _lastAppliedGrabAuthorityRawHandWorld = pending.rawHandWorld;
+                    _lastAppliedGrabAuthoritySourceGameFrameIndex = pending.sourceGameFrameIndex;
+                    _lastAppliedGrabAuthoritySourceQueueSequence = _grabAuthorityProxyQueuedSequence;
+                    _grabAuthorityProxyLastFlushTiming = timing;
                     _hasLastAppliedGrabAuthorityProxyWorld = true;
                     _grabAuthorityProxyLastFlushDeltaSeconds = driveDelta;
                     ++_grabAuthorityProxyFlushSequence;
@@ -13444,7 +13456,13 @@ namespace rock
         out.appliedRawHandWorld = _lastAppliedGrabAuthorityRawHandWorld;
         out.proxyBodyId = _grabAuthorityProxy.getBodyId();
         out.objectBodyId = _savedObjectState.bodyId;
+        out.sourceGameFrameIndex = _lastAppliedGrabAuthoritySourceGameFrameIndex;
+        out.sourceQueueSequence = _lastAppliedGrabAuthoritySourceQueueSequence;
+        out.pendingQueueSequence = _grabAuthorityProxyQueuedSequence;
         out.flushSequence = _grabAuthorityProxyFlushSequence;
+        out.afterSolveSequence = _grabAuthorityProxyAfterSolveLogCounter;
+        out.flushTiming = _grabAuthorityProxyLastFlushTiming;
+        out.afterSolveTiming = _grabAuthorityProxyLastAfterSolveTiming;
         return true;
     }
 
@@ -13489,6 +13507,7 @@ namespace rock
             queuedSequence = _grabAuthorityProxyQueuedSequence;
             flushSequence = _grabAuthorityProxyFlushSequence;
             afterSolveSequence = ++_grabAuthorityProxyAfterSolveLogCounter;
+            _grabAuthorityProxyLastAfterSolveTiming = timing;
             constraintId = _activeConstraint.isValid() ? _activeConstraint.constraintId : 0x7FFF'FFFFu;
             angularAuthority = _activeConstraint.angularAuthority;
             ragdollAngularProbePreSolve = _ragdollAngularProbePreSolve;

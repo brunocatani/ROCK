@@ -845,6 +845,27 @@ namespace rock
         std::uint32_t _colliderClockFramesRemaining = 0;
         bool _colliderClockPreviousPlayerMoving = false;
         bool _colliderClockPreviousContactActive = false;
+        bool _colliderClockPreviousGrabActive = false;
+        struct GrabLocomotionClockState
+        {
+            RE::NiTransform rawHandWorld{};
+            RE::NiTransform appliedProxyTargetWorld{};
+            RE::NiTransform proxyReadbackWorld{};
+            RE::NiTransform heldBodyWorld{};
+            RE::NiTransform heldNodeWorld{};
+            RE::NiTransform heldRelativeHandTargetWorld{};
+            RE::NiTransform frikHandWorld{};
+            std::uint32_t session = 0;
+            std::uint64_t frame = 0;
+            bool active = false;
+            bool hasAppliedProxyTarget = false;
+            bool hasProxyReadback = false;
+            bool hasHeldBody = false;
+            bool hasHeldNode = false;
+            bool hasHeldRelativeHandTarget = false;
+            bool hasFrikHand = false;
+        };
+        std::array<GrabLocomotionClockState, 2> _grabLocomotionClockStates{};
         struct GrabTransformTelemetryState
         {
             bool active = false;

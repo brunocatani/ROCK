@@ -40,17 +40,26 @@ Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
     'frame\.gameFrameIndex[\s\S]*slot\.droveSourceGameFrameIndex = result\.sourceFrameIndex[\s\S]*sourceGameFrameIndex = owner\.droveSourceGameFrameIndex[\s\S]*solveSequence = solveSequence' `
     'Hand post-solve telemetry must correlate the consumed game source with the solve generation.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'kTraceFramesPerEpisode = 360[\s\S]*colliderClockDebugActive[\s\S]*rockDebugShowColliders[\s\S]*rockDebugDrawHandColliders[\s\S]*rockDebugDrawHandBoneColliders[\s\S]*rockDebugDrawDynamicHandColliders[\s\S]*rockDebugDrawWeaponColliders[\s\S]*rockDebugDrawDynamicWeaponColliders[\s\S]*_colliderClockHasLoggedFrame = false[\s\S]*_colliderClockFramesRemaining[\s\S]*COLLIDER_CLOCK begin' `
+    'kTraceFramesPerEpisode = 360[\s\S]*colliderClockDebugActive[\s\S]*rockDebugShowColliders[\s\S]*rockDebugDrawHandColliders[\s\S]*rockDebugDrawHandBoneColliders[\s\S]*rockDebugDrawDynamicHandColliders[\s\S]*rockDebugDrawWeaponColliders[\s\S]*rockDebugDrawDynamicWeaponColliders[\s\S]*_colliderClockHasLoggedFrame = false[\s\S]*_colliderClockFramesRemaining[\s\S]*grabStarted[\s\S]*COLLIDER_CLOCK begin' `
     'Collider clock logging must cover hand/body and weapon collider overlays while remaining debug-gated and bounded per episode.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'COLLIDER_CLOCK frame[\s\S]*COLLIDER_CLOCK weapon[\s\S]*COLLIDER_CLOCK hand' `
-    'The trace must emit correlated game-frame, weapon, and hand records.'
+    'COLLIDER_CLOCK input[\s\S]*COLLIDER_CLOCK frame[\s\S]*COLLIDER_CLOCK weapon[\s\S]*COLLIDER_CLOCK hand[\s\S]*GRAB_LOCOMOTION drive[\s\S]*GRAB_LOCOMOTION visual' `
+    'The trace must emit correlated controller, game-frame, collider, held-object, and visual-hand records.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'source\(frame/age/queue/solve\)[\s\S]*physics\(raw/sub/rem/accum/index/count/progress\)' `
     'Weapon trace rows must expose both producer generations and native physics cadence.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'source\(frame/age/queue/solve/seqlock\)[\s\S]*rawToWand/wandToDriver/rawToFrik/requestedToLive' `
     'Hand trace rows must expose producer, publication, and solved-body mismatch deltas.'
+Require-Text 'src/rock_support/VRControllers.cpp' `
+    'getPollSnapshot[\s\S]*current\.unPacketNum[\s\S]*previous\.unPacketNum[\s\S]*packetChanged[\s\S]*current\.rAxis' `
+    'The controller trace must retain OpenVR packet identity and every polled analog axis.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
+    'sourceGameFrameIndex = runtime_state::currentFrame\(\)\.frameIndex[\s\S]*_lastAppliedGrabAuthoritySourceGameFrameIndex = pending\.sourceGameFrameIndex[\s\S]*_grabAuthorityProxyLastFlushTiming = timing[\s\S]*_grabAuthorityProxyLastAfterSolveTiming = timing' `
+    'Grab authority telemetry must carry the queued game frame through flush and retain both solve-phase timing samples.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'GRAB_LOCOMOTION drive[\s\S]*source\(frame/age/queue/pending/flush/after\)[\s\S]*steps\(raw/target/proxy/body\)[\s\S]*GRAB_LOCOMOTION visual[\s\S]*gaps\(bodyDerivedToNode/heldHandToFrik/rawToHeldHand\)[\s\S]*steps\(node/heldHand/frik\)' `
+    'Grab locomotion rows must localize both cadence stair-steps and the body-to-scene-to-FRIK presentation boundary.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'ColliderClockDiagnosticsSourceTests failed:' -ForegroundColor Red

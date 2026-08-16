@@ -78,6 +78,22 @@ namespace rock::vr_input
             std::clamp(intensity, 0.0f, 1.0f));
     }
 
+    VRControllersManager::PollSnapshot VRControllersManager::getPollSnapshot(const Hand hand) const noexcept
+    {
+        const auto& state = stateFor(resolveHand(hand));
+        PollSnapshot snapshot{};
+        snapshot.valid = state.valid;
+        snapshot.packetNumber = state.current.unPacketNum;
+        snapshot.previousPacketNumber = state.previous.unPacketNum;
+        snapshot.packetChanged = state.valid && state.current.unPacketNum != state.previous.unPacketNum;
+        snapshot.buttonsPressed = state.current.ulButtonPressed;
+        for (std::size_t axisIndex = 0; axisIndex < snapshot.axisX.size(); ++axisIndex) {
+            snapshot.axisX[axisIndex] = state.current.rAxis[axisIndex].x;
+            snapshot.axisY[axisIndex] = state.current.rAxis[axisIndex].y;
+        }
+        return snapshot;
+    }
+
     void VRControllersManager::ControllerState::update(
         const vr::TrackedDeviceIndex_t newIndex,
         const float now) noexcept
