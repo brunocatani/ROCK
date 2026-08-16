@@ -37,6 +37,7 @@
 #include "physics-interaction/hand/HandVisual.h"
 #include "physics-interaction/core/PhysicsHooks.h"
 #include "physics-interaction/core/RockRuntimeState.h"
+#include "physics-interaction/native/CharacterControllerRuntime.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
 #include "physics-interaction/native/PhysicsShapeCast.h"
 #include "physics-interaction/native/PhysicsRecursiveWrappers.h"
@@ -94,6 +95,41 @@ namespace rock
         grab_authority_source_clock::PlayerBasisFrameSample sampleSourcePlayerBasisFrame() noexcept
         {
             return makePlayerBasisSample(runtime_state::currentFrame().playerSpace);
+        }
+
+        // Diagnostic root-domain sweep (see GrabLocomotionRootProbe in Hand.h).
+        // Called on the frame thread both from the game-frame queue and from
+        // inside the synchronous physics step listener; every read is a plain
+        // node/actor/controller sample with no mutation.
+        GrabLocomotionRootProbe sampleGrabLocomotionRootProbe() noexcept
+        {
+            GrabLocomotionRootProbe probe{};
+            if (auto* playerNodes = f4vr::getPlayerNodes()) {
+                if (playerNodes->roomnode) {
+                    probe.roomLocalGame = playerNodes->roomnode->local.translate;
+                    probe.validMask |= GrabLocomotionRootProbe::kRoomLocalValid;
+                }
+                if (playerNodes->playerworldnode) {
+                    probe.playerWorldNodeWorldGame = playerNodes->playerworldnode->world.translate;
+                    probe.playerWorldNodeLocalGame = playerNodes->playerworldnode->local.translate;
+                    probe.validMask |= GrabLocomotionRootProbe::kPlayerWorldNodeWorldValid |
+                                       GrabLocomotionRootProbe::kPlayerWorldNodeLocalValid;
+                }
+            }
+            if (character_controller_runtime::tryGetPlayerActorPositionGameUnits(probe.actorGame)) {
+                probe.validMask |= GrabLocomotionRootProbe::kActorValid;
+            }
+            const auto controller = character_controller_runtime::samplePlayerCharacterControllerPositionHavok();
+            if (controller.valid) {
+                const float havokToGame = physics_scale::havokToGame();
+                probe.controllerGame = RE::NiPoint3{
+                    controller.positionHavok.x * havokToGame,
+                    controller.positionHavok.y * havokToGame,
+                    controller.positionHavok.z * havokToGame,
+                };
+                probe.validMask |= GrabLocomotionRootProbe::kControllerValid;
+            }
+            return probe;
         }
 
         std::uint64_t nextGrabTimelineTraceId() noexcept
@@ -5405,6 +5441,8 @@ namespace rock
             grab_authority_source_clock::ConsumptionFrameRebaseStatus::Unavailable;
         _lastAppliedGrabAuthoritySourcePlayerBasis = {};
         _lastAppliedGrabAuthorityConsumptionPlayerBasis = {};
+        _lastAppliedGrabAuthoritySourceRootProbe = {};
+        _lastAppliedGrabAuthorityConsumptionRootProbe = {};
         _lastAppliedGrabAuthoritySourceGameFrameIndex = 0;
         _lastAppliedGrabAuthoritySourceQueueSequence = 0;
         _grabAuthorityProxyLastFlushTiming = {};
@@ -6604,6 +6642,7 @@ namespace rock
                 .proxyFrameSource = "grabStartLivePalmAnchor",
                 .sourceGameFrameIndex = runtime_state::currentFrame().frameIndex,
                 .sourcePlayerBasis = grabStartPlayerBasis,
+                .sourceRootProbe = sampleGrabLocomotionRootProbe(),
                 .deltaTime = 1.0f / 90.0f,
                 .forceFadeInTime = g_rockConfig.rockGrabForceFadeInTime,
                 .tauMin = g_rockConfig.rockGrabTauMin,
@@ -6621,6 +6660,8 @@ namespace rock
                 grab_authority_source_clock::ConsumptionFrameRebaseStatus::Unavailable;
             _lastAppliedGrabAuthoritySourcePlayerBasis = grabStartPlayerBasis;
             _lastAppliedGrabAuthorityConsumptionPlayerBasis = {};
+            _lastAppliedGrabAuthoritySourceRootProbe = {};
+            _lastAppliedGrabAuthorityConsumptionRootProbe = {};
             _lastAppliedGrabAuthoritySourceGameFrameIndex = runtime_state::currentFrame().frameIndex;
             _lastAppliedGrabAuthoritySourceQueueSequence = 1;
             _hasLastAppliedGrabAuthorityProxyWorld = true;
@@ -7006,6 +7047,7 @@ namespace rock
         _grabAuthorityPendingTarget.proxyFrameSource = proxyFrameSource ? proxyFrameSource : "unknown";
         _grabAuthorityPendingTarget.sourceGameFrameIndex = runtime_state::currentFrame().frameIndex;
         _grabAuthorityPendingTarget.sourcePlayerBasis = sourcePlayerBasis;
+        _grabAuthorityPendingTarget.sourceRootProbe = sampleGrabLocomotionRootProbe();
         _grabAuthorityPendingTarget.deltaTime = deltaTime;
         _grabAuthorityPendingTarget.forceFadeInTime = forceFadeInTime;
         _grabAuthorityPendingTarget.tauMin = tauMin;
@@ -12834,6 +12876,10 @@ namespace rock
 
             pending = _grabAuthorityPendingTarget;
             queuedRawHandWorld = pending.rawHandWorld;
+            // Diagnostic root-domain sweep: live counterpart of the probe
+            // captured with the queued sample. Same frame thread; the step
+            // listener runs synchronously inside bhkWorld::Update.
+            const GrabLocomotionRootProbe consumptionRootProbe = sampleGrabLocomotionRootProbe();
             // Accept the game-frame sample exactly once; the queued-sequence
             // identity keeps multi-substep re-flushes of the same pending
             // target from advancing the source segment. The drive target is
@@ -13403,6 +13449,8 @@ namespace rock
                     _lastAppliedGrabAuthorityConsumptionFrameRebaseStatus = consumptionFrameRebase.status;
                     _lastAppliedGrabAuthoritySourcePlayerBasis = pending.sourcePlayerBasis;
                     _lastAppliedGrabAuthorityConsumptionPlayerBasis = consumptionPlayerBasis;
+                    _lastAppliedGrabAuthoritySourceRootProbe = pending.sourceRootProbe;
+                    _lastAppliedGrabAuthorityConsumptionRootProbe = consumptionRootProbe;
                     _lastAppliedGrabAuthoritySourceGameFrameIndex = pending.sourceGameFrameIndex;
                     _lastAppliedGrabAuthoritySourceQueueSequence = _grabAuthorityProxyQueuedSequence;
                     _grabAuthorityProxyLastFlushTiming = timing;
@@ -13549,6 +13597,8 @@ namespace rock
         out.consumptionPlayerBasisGame = _lastAppliedGrabAuthorityConsumptionPlayerBasis.positionGame;
         out.sourcePlayerBasisSource = _lastAppliedGrabAuthoritySourcePlayerBasis.source;
         out.consumptionPlayerBasisSource = _lastAppliedGrabAuthorityConsumptionPlayerBasis.source;
+        out.sourceRootProbe = _lastAppliedGrabAuthoritySourceRootProbe;
+        out.consumptionRootProbe = _lastAppliedGrabAuthorityConsumptionRootProbe;
         out.proxyBodyId = _grabAuthorityProxy.getBodyId();
         out.objectBodyId = _savedObjectState.bodyId;
         out.sourceGameFrameIndex = _lastAppliedGrabAuthoritySourceGameFrameIndex;

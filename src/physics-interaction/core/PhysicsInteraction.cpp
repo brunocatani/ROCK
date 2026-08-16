@@ -2455,6 +2455,37 @@ namespace rock
                 bodyStep.position,
                 bodyStep.rotationDegrees);
 
+            // Root-domain discriminator: per-domain queue-to-consumption shifts
+            // for the last flush. The correct rebase domain tracks the player's
+            // per-frame displacement during stick locomotion and stays ~zero at
+            // rest; roomW is the roomNode WORLD basis (measured stale at the
+            // physics boundary on 2026-08-16).
+            {
+                const auto domainShift = [](const RE::NiPoint3& now, const RE::NiPoint3& src) {
+                    return RE::NiPoint3{ now.x - src.x, now.y - src.y, now.z - src.z };
+                };
+                const auto roomW = domainShift(applied.consumptionPlayerBasisGame, applied.sourcePlayerBasisGame);
+                const auto roomL = domainShift(applied.consumptionRootProbe.roomLocalGame, applied.sourceRootProbe.roomLocalGame);
+                const auto pwnW = domainShift(applied.consumptionRootProbe.playerWorldNodeWorldGame, applied.sourceRootProbe.playerWorldNodeWorldGame);
+                const auto pwnL = domainShift(applied.consumptionRootProbe.playerWorldNodeLocalGame, applied.sourceRootProbe.playerWorldNodeLocalGame);
+                const auto actor = domainShift(applied.consumptionRootProbe.actorGame, applied.sourceRootProbe.actorGame);
+                const auto ctrl = domainShift(applied.consumptionRootProbe.controllerGame, applied.sourceRootProbe.controllerGame);
+                ROCK_LOG_INFO(
+                    Hand,
+                    "GRAB_LOCOMOTION rootprobe session={} frame={} side={} valid(src/now)=0x{:02X}/0x{:02X} shift(roomW/roomL/pwnW/pwnL/actor/ctrl)=({:.3f},{:.3f},{:.3f})/({:.3f},{:.3f},{:.3f})/({:.3f},{:.3f},{:.3f})/({:.3f},{:.3f},{:.3f})/({:.3f},{:.3f},{:.3f})/({:.3f},{:.3f},{:.3f})",
+                    _colliderClockSession,
+                    frame.gameFrameIndex,
+                    isLeft ? "L" : "R",
+                    applied.sourceRootProbe.validMask,
+                    applied.consumptionRootProbe.validMask,
+                    roomW.x, roomW.y, roomW.z,
+                    roomL.x, roomL.y, roomL.z,
+                    pwnW.x, pwnW.y, pwnW.z,
+                    pwnL.x, pwnL.y, pwnL.z,
+                    actor.x, actor.y, actor.z,
+                    ctrl.x, ctrl.y, ctrl.z);
+            }
+
             ROCK_LOG_INFO(
                 Hand,
                 "GRAB_LOCOMOTION visual session={} frame={} side={} valid(bodyDerived/node/heldHand/frik)={}/{}/{}/{} bodyDerived=({:.3f},{:.3f},{:.3f}) node=({:.3f},{:.3f},{:.3f}) heldHand=({:.3f},{:.3f},{:.3f}) frik=({:.3f},{:.3f},{:.3f}) gaps(bodyDerivedToNode/heldHandToFrik/rawToHeldHand)=({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg) steps(node/heldHand/frik)=({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)",
