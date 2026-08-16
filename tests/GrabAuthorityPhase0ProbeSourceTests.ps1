@@ -56,8 +56,8 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'onCustomGrab
     'PhysicsInteraction must flush custom grab authority after character movement and before solve.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'onCustomGrabAuthorityAfterSolve' `
     'PhysicsInteraction must keep the production custom grab authority after-solve callback.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'samplePlayerCharacterControllerPositionHavok\(\)[\s\S]*_rightHand\.flushPendingCustomGrabAuthority\(world,\s*timing,\s*consumptionControllerRoot,\s*scale\.havokToGame\)[\s\S]*_leftHand\.flushPendingCustomGrabAuthority\(world,\s*timing,\s*consumptionControllerRoot,\s*scale\.havokToGame\)' `
-    'Both hands must share one post-character-movement controller sample at the pre-solve flush.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'samplePlayerSpaceLive\(\)[\s\S]*_rightHand\.flushPendingCustomGrabAuthority\(world,\s*timing,\s*consumptionPlayerBasis\)[\s\S]*_leftHand\.flushPendingCustomGrabAuthority\(world,\s*timing,\s*consumptionPlayerBasis\)' `
+    'Both hands must share one live player-basis sample at the pre-solve flush.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' '_rightHand\.observeCustomGrabAuthorityAfterSolve\(world,\s*timing\)' `
     'Right-hand custom grab authority must still observe solver response after solve.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' '_leftHand\.observeCustomGrabAuthorityAfterSolve\(world,\s*timing\)' `

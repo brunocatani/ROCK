@@ -21,10 +21,23 @@
  * Contract: the raw phase-lock output on the LAST physics substep of every
  * frame lands EXACTLY on the newest queued game-frame sample (segment fraction
  * (index+1)/count reaches 1). ConsumptionFrameRebase then re-expresses that
- * point in the live character-root frame measured after controller movement;
- * at rest this is zero, while stick locomotion removes the source-frame age.
+ * point in the CURRENT game frame's player basis (roomNode world), measured
+ * live at the consumption boundary. The queued sample was produced against the
+ * previous game frame's player basis (the producer runs after that frame's
+ * physics), so during stick locomotion the basis advance between source and
+ * consumption equals exactly the one-game-frame displacement that the
+ * 2026-08-15 GRAB_LOCOMOTION tire trace measured as the visible stutter
+ * (appliedRaw(t) == raw(t-1) bit-exact over 359 locomotion frames; downstream
+ * target->proxy error 0.003 gu). At rest and in room-scale motion the basis
+ * does not move and the shift is zero. The earlier character-controller-root
+ * rebase measured a different interval: FO4VR synchronizes the controller from
+ * the actor position BEFORE the producer samples the hand (PlayerCharacter
+ * vfunc 203), and the player's bhkCharProxyController task runs in
+ * BeforeWholePhysicsUpdate, so queue-time and consumption-time controller
+ * roots agree and that shift legitimately evaluated to ~zero while the pose
+ * stayed one basis old (Ghidra audit 2026-08-16).
  * Intra-frame substeps interpolate both the raw sample and its associated
- * source root. The commanded velocity absorbs the
+ * source basis. The commanded velocity absorbs the
  * substep-dt quantization (~+-10%); the constraint motors low-pass velocity
  * noise (measured 2026-07-13 against the far larger v1 feed-forward spikes),
  * and no session ever correlated commanded-velocity smoothness with what the
@@ -94,23 +107,31 @@ namespace rock::grab_authority_source_clock
         return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
     }
 
-    struct ControllerRootFrameSample
+    // Game-side player basis (roomNode world, game units) captured either with
+    // a queued hand sample (source) or live at the physics consumption
+    // boundary. The raw hand pose is produced against exactly this basis --
+    // the 2026-08-15 tire trace measured raw-minus-playerWorld stable to
+    // 0.006 gu per frame at every locomotion speed -- which is what makes it,
+    // and not the physics character-controller root, the valid rebase domain.
+    struct PlayerBasisFrameSample
     {
-        RE::NiPoint3 positionHavok{};
-        std::uintptr_t controllerIdentity = 0;
-        std::uintptr_t controllerVtable = 0;
-        std::uint32_t physicsScaleRevision = 0;
+        RE::NiPoint3 positionGame{};
+        RE::NiMatrix3 rotation{};
+        const char* source = "none";
         bool valid = false;
     };
 
     enum class ConsumptionFrameRebaseStatus : std::uint8_t
     {
         Unavailable,
-        Stationary,
+        // Source and consumption basis coincide. This means the player basis
+        // did not advance between the two samples -- NOT that the player was
+        // stationary in any broader sense.
+        Aligned,
         Applied,
         InvalidSample,
-        ControllerChanged,
-        ScaleChanged,
+        BasisSourceChanged,
+        BasisRotated,
         Discontinuity,
     };
 
@@ -119,16 +140,16 @@ namespace rock::grab_authority_source_clock
         switch (status) {
         case ConsumptionFrameRebaseStatus::Unavailable:
             return "unavailable";
-        case ConsumptionFrameRebaseStatus::Stationary:
-            return "stationary";
+        case ConsumptionFrameRebaseStatus::Aligned:
+            return "aligned";
         case ConsumptionFrameRebaseStatus::Applied:
             return "applied";
         case ConsumptionFrameRebaseStatus::InvalidSample:
             return "invalid-sample";
-        case ConsumptionFrameRebaseStatus::ControllerChanged:
-            return "controller-changed";
-        case ConsumptionFrameRebaseStatus::ScaleChanged:
-            return "scale-changed";
+        case ConsumptionFrameRebaseStatus::BasisSourceChanged:
+            return "basis-source-changed";
+        case ConsumptionFrameRebaseStatus::BasisRotated:
+            return "basis-rotated";
         case ConsumptionFrameRebaseStatus::Discontinuity:
             return "discontinuity";
         }
@@ -144,25 +165,30 @@ namespace rock::grab_authority_source_clock
     };
 
     /*
-     * Re-express a queued world-space hand sample in the character controller's
-     * frame at the exact physics boundary that consumes it.
+     * Re-express a queued world-space hand sample in the game-frame player
+     * basis (roomNode world) current at the exact physics boundary that
+     * consumes it.
      *
      * This is deliberately position-only measurement, not velocity prediction:
-     * source and consumption positions come from the same live controller. The
-     * raw hand/proxy sample already contains the controller root at source time,
-     * so adding (consumptionRoot - sourceRoot) removes only the common root-frame
-     * age. Room-scale hand motion remains untouched because it does not move the
-     * character controller. For multi-substep source interpolation, both source
-     * endpoint roots are retained and interpolated with the same fraction as the
-     * target, while the consumption root is refreshed after every character move.
+     * the source basis travels with the queued sample and the consumption
+     * basis is read live from the same node inside the physics listener (the
+     * game writes roomNode before entering the physics world update, so the
+     * live value is the current frame's basis while the queued sample still
+     * carries the previous frame's). Adding (consumptionBasis - sourceBasis)
+     * removes only the common basis age. Room-scale hand motion remains
+     * untouched because it does not move the room basis. For multi-substep
+     * source interpolation, both source endpoint bases are retained and
+     * interpolated with the same fraction as the target. Basis rotation (snap
+     * or smooth turn beyond the jump gate) rejects the translation shift; the
+     * source clock's own discontinuity gate snaps the sample instead.
      */
     struct ConsumptionFrameRebase
     {
         bool initialized = false;
-        RE::NiPoint3 previousSourceRootHavok{};
-        RE::NiPoint3 currentSourceRootHavok{};
-        std::uintptr_t controllerIdentity = 0;
-        std::uint32_t physicsScaleRevision = 0;
+        RE::NiPoint3 previousSourceBasisGame{};
+        RE::NiPoint3 currentSourceBasisGame{};
+        RE::NiMatrix3 currentSourceRotation{};
+        const char* basisSource = "none";
         std::uint64_t lastSourceSequence = 0;
         std::uint64_t blockedSourceSequence = 0;
         ConsumptionFrameRebaseStatus blockedStatus = ConsumptionFrameRebaseStatus::Unavailable;
@@ -182,37 +208,49 @@ namespace rock::grab_authority_source_clock
                        (std::numeric_limits<float>::infinity)();
         }
 
-        static RE::NiPoint3 rootDeltaGame(
-            const RE::NiPoint3& consumptionRootHavok,
-            const RE::NiPoint3& sourceRootHavok,
-            float havokToGameScale) noexcept
+        static RE::NiPoint3 basisDeltaGame(
+            const RE::NiPoint3& consumptionBasisGame,
+            const RE::NiPoint3& sourceBasisGame) noexcept
         {
             return RE::NiPoint3{
-                (consumptionRootHavok.x - sourceRootHavok.x) * havokToGameScale,
-                (consumptionRootHavok.y - sourceRootHavok.y) * havokToGameScale,
-                (consumptionRootHavok.z - sourceRootHavok.z) * havokToGameScale,
+                consumptionBasisGame.x - sourceBasisGame.x,
+                consumptionBasisGame.y - sourceBasisGame.y,
+                consumptionBasisGame.z - sourceBasisGame.z,
             };
         }
 
-        void adoptSource(const ControllerRootFrameSample& source, std::uint64_t sourceSequence) noexcept
+        static bool sameBasisSource(const char* a, const char* b) noexcept
         {
-            previousSourceRootHavok = source.positionHavok;
-            currentSourceRootHavok = source.positionHavok;
-            controllerIdentity = source.controllerIdentity;
-            physicsScaleRevision = source.physicsScaleRevision;
+            if (a == b) {
+                return true;
+            }
+            if (!a || !b) {
+                return false;
+            }
+            for (; *a != '\0' && *a == *b; ++a, ++b) {
+            }
+            return *a == *b;
+        }
+
+        void adoptSource(const PlayerBasisFrameSample& source, std::uint64_t sourceSequence) noexcept
+        {
+            previousSourceBasisGame = source.positionGame;
+            currentSourceBasisGame = source.positionGame;
+            currentSourceRotation = source.rotation;
+            basisSource = source.source;
             lastSourceSequence = sourceSequence;
             initialized = true;
         }
 
         ConsumptionFrameRebaseResult reject(
             ConsumptionFrameRebaseStatus status,
-            const ControllerRootFrameSample* source,
+            const PlayerBasisFrameSample* source,
             std::uint64_t sourceSequence) noexcept
         {
             ++rejectedCount;
             blockedSourceSequence = sourceSequence;
             blockedStatus = status;
-            if (source && source->valid && source->controllerIdentity != 0 && sourceSequence != 0) {
+            if (source && source->valid && sourceSequence != 0 && isFiniteVector(source->positionGame)) {
                 adoptSource(*source, sourceSequence);
             } else {
                 initialized = false;
@@ -222,9 +260,8 @@ namespace rock::grab_authority_source_clock
         }
 
         ConsumptionFrameRebaseResult evaluate(
-            const ControllerRootFrameSample& source,
-            const ControllerRootFrameSample& consumption,
-            float havokToGameScale,
+            const PlayerBasisFrameSample& source,
+            const PlayerBasisFrameSample& consumption,
             std::uint64_t sourceSequence,
             float segmentFraction) noexcept
         {
@@ -233,41 +270,40 @@ namespace rock::grab_authority_source_clock
             }
 
             if (!source.valid || !consumption.valid || sourceSequence == 0 ||
-                source.controllerIdentity == 0 || consumption.controllerIdentity == 0 ||
-                !isFiniteVector(source.positionHavok) || !isFiniteVector(consumption.positionHavok) ||
+                !isFiniteVector(source.positionGame) || !isFiniteVector(consumption.positionGame) ||
                 !std::isfinite(segmentFraction)) {
                 return reject(ConsumptionFrameRebaseStatus::InvalidSample, &source, sourceSequence);
             }
-            if (source.controllerIdentity != consumption.controllerIdentity) {
-                return reject(ConsumptionFrameRebaseStatus::ControllerChanged, &source, sourceSequence);
+            if (!sameBasisSource(source.source, consumption.source)) {
+                return reject(ConsumptionFrameRebaseStatus::BasisSourceChanged, &source, sourceSequence);
             }
-            if (source.physicsScaleRevision != consumption.physicsScaleRevision ||
-                !std::isfinite(havokToGameScale) || havokToGameScale <= 0.0f || havokToGameScale >= 10'000.0f) {
-                return reject(ConsumptionFrameRebaseStatus::ScaleChanged, &source, sourceSequence);
+            // A materially rotated basis (snap turn, or a fast smooth turn
+            // hitting the jump gate) invalidates a pure-translation shift; the
+            // source clock's discontinuity gate snaps the sample instead.
+            if (rotationDeltaDegrees(source.rotation, consumption.rotation) > kMaxRotationJumpDegrees) {
+                return reject(ConsumptionFrameRebaseStatus::BasisRotated, &source, sourceSequence);
             }
 
             if (!initialized) {
                 adoptSource(source, sourceSequence);
             } else {
-                if (controllerIdentity != source.controllerIdentity) {
-                    return reject(ConsumptionFrameRebaseStatus::ControllerChanged, &source, sourceSequence);
-                }
-                if (physicsScaleRevision != source.physicsScaleRevision) {
-                    return reject(ConsumptionFrameRebaseStatus::ScaleChanged, &source, sourceSequence);
+                if (!sameBasisSource(basisSource, source.source)) {
+                    return reject(ConsumptionFrameRebaseStatus::BasisSourceChanged, &source, sourceSequence);
                 }
 
                 if (sourceSequence != lastSourceSequence) {
-                    const RE::NiPoint3 sourceStepGame = rootDeltaGame(source.positionHavok, currentSourceRootHavok, havokToGameScale);
+                    const RE::NiPoint3 sourceStepGame = basisDeltaGame(source.positionGame, currentSourceBasisGame);
                     if (sourceSequence < lastSourceSequence ||
                         vectorLength(sourceStepGame) > kMaxTranslationJumpGameUnits) {
                         return reject(ConsumptionFrameRebaseStatus::Discontinuity, &source, sourceSequence);
                     }
-                    previousSourceRootHavok = currentSourceRootHavok;
-                    currentSourceRootHavok = source.positionHavok;
+                    previousSourceBasisGame = currentSourceBasisGame;
+                    currentSourceBasisGame = source.positionGame;
+                    currentSourceRotation = source.rotation;
                     lastSourceSequence = sourceSequence;
                 } else {
                     const RE::NiPoint3 duplicateSourceDeltaGame =
-                        rootDeltaGame(source.positionHavok, currentSourceRootHavok, havokToGameScale);
+                        basisDeltaGame(source.positionGame, currentSourceBasisGame);
                     if (vectorLength(duplicateSourceDeltaGame) > 0.001f) {
                         return reject(ConsumptionFrameRebaseStatus::Discontinuity, &source, sourceSequence);
                     }
@@ -276,9 +312,9 @@ namespace rock::grab_authority_source_clock
 
             const float fraction = segmentFraction < 0.0f ? 0.0f : (segmentFraction > 1.0f ? 1.0f : segmentFraction);
             const RE::NiPoint3 previousShiftGame =
-                rootDeltaGame(consumption.positionHavok, previousSourceRootHavok, havokToGameScale);
+                basisDeltaGame(consumption.positionGame, previousSourceBasisGame);
             const RE::NiPoint3 currentShiftGame =
-                rootDeltaGame(consumption.positionHavok, currentSourceRootHavok, havokToGameScale);
+                basisDeltaGame(consumption.positionGame, currentSourceBasisGame);
             const RE::NiPoint3 shiftGame{
                 previousShiftGame.x + (currentShiftGame.x - previousShiftGame.x) * fraction,
                 previousShiftGame.y + (currentShiftGame.y - previousShiftGame.y) * fraction,
@@ -294,7 +330,7 @@ namespace rock::grab_authority_source_clock
             result.shiftGame = shiftGame;
             result.currentEndpointShiftGame = currentShiftGame;
             result.status = vectorLength(shiftGame) <= 0.0001f ?
-                                ConsumptionFrameRebaseStatus::Stationary :
+                                ConsumptionFrameRebaseStatus::Aligned :
                                 ConsumptionFrameRebaseStatus::Applied;
             result.valid = true;
             ++appliedCount;

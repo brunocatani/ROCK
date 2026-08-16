@@ -92,9 +92,16 @@ namespace rock
 
         void afterBetweenCollideAndSolve(PhysicsStepDriveCoordinator::NativeStepListener* listener)
         {
-            // FO4VR executes the combined between-step task graph (including
-            // bhkCharRigidBodyManager movement) before invoking this +0x30
-            // finish slot, and does not enter hknp solve until it returns.
+            // Verified native ordering (Ghidra audit 2026-08-16, bhkWorld
+            // step loop 0x141DF7A03..0x141DF7A45): bhkWorld runs EACH
+            // listener's +0x28, executes that listener's own generated graph,
+            // then calls its +0x30 -- there is no combined all-listener graph
+            // before this slot. ROCK registers before the character managers,
+            // so this callback precedes bhkCharRigidBodyManager's movement
+            // task. The normal PLAYER is a bhkCharProxyController whose real
+            // work runs earlier in BeforeWholePhysicsUpdate (its listener
+            // slots are no-ops), so player movement for this step is complete
+            // here, and hknp solve has not started.
             if (!listener || !listener->callbackState || !listener->callbackState->wholeUpdateLease) {
                 return;
             }

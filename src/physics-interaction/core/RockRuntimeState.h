@@ -49,6 +49,9 @@ namespace rock::runtime_state
     void updateFrame(const RuntimeFrameInput& input);
 
     [[nodiscard]] const RuntimeFrameSnapshot& currentFrame();
+    // Live roomNode/worldRoot basis read (no tracker update, no moving/delta
+    // fields). Game/frame-thread only; see the definition for the constraint.
+    [[nodiscard]] PlayerSpaceFrame samplePlayerSpaceLive();
     [[nodiscard]] bool isLocalSkeletonReady();
     [[nodiscard]] bool isPhysicsMenuBlocked();
     [[nodiscard]] bool isCompatibilityConfigBlocked();

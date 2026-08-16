@@ -2370,7 +2370,7 @@ namespace rock
 
             ROCK_LOG_INFO(
                 Hand,
-                "GRAB_LOCOMOTION drive session={} frame={} side={} valid(applied/sample/proxy/body)={}/{}/{}/{} form=0x{:08X} bodies(proxy/held)={}/{} source(frame/age/queue/pending/flush/after)={}/{}/{}/{}/{}/{} flushPhysics(valid/raw/sub/rem/accum/index/count/progress)={}/({:.6f}/{:.6f}/{:.6f}/{:.6f}/{}/{}/{:.3f}) afterPhysics(valid/raw/sub/rem/accum/index/count/progress)={}/({:.6f}/{:.6f}/{:.6f}/{:.6f}/{}/{}/{:.3f}) consumptionRebase(status/shift/controller/vtable/scaleRev)={}/({:.3f},{:.3f},{:.3f})/{:016X}:{:016X}/{:016X}:{:016X}/{}:{} raw=({:.3f},{:.3f},{:.3f}) queuedRaw=({:.3f},{:.3f},{:.3f}) appliedRaw=({:.3f},{:.3f},{:.3f}) target=({:.3f},{:.3f},{:.3f}) proxy=({:.3f},{:.3f},{:.3f}) desiredBody=({:.3f},{:.3f},{:.3f}) body=({:.3f},{:.3f},{:.3f}) gaps(rawToQueued/queuedToApplied/rawToApplied/targetToProxy/desiredToBody)=({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg) steps(raw/target/proxy/body)=({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)",
+                "GRAB_LOCOMOTION drive session={} frame={} side={} valid(applied/sample/proxy/body)={}/{}/{}/{} form=0x{:08X} bodies(proxy/held)={}/{} source(frame/age/queue/pending/flush/after)={}/{}/{}/{}/{}/{} flushPhysics(valid/raw/sub/rem/accum/index/count/progress)={}/({:.6f}/{:.6f}/{:.6f}/{:.6f}/{}/{}/{:.3f}) afterPhysics(valid/raw/sub/rem/accum/index/count/progress)={}/({:.6f}/{:.6f}/{:.6f}/{:.6f}/{}/{}/{:.3f}) consumptionRebase(status/shift/basisSrc/basisPos)={}/({:.3f},{:.3f},{:.3f})/{}:{}/({:.3f},{:.3f},{:.3f}):({:.3f},{:.3f},{:.3f}) raw=({:.3f},{:.3f},{:.3f}) queuedRaw=({:.3f},{:.3f},{:.3f}) appliedRaw=({:.3f},{:.3f},{:.3f}) target=({:.3f},{:.3f},{:.3f}) proxy=({:.3f},{:.3f},{:.3f}) desiredBody=({:.3f},{:.3f},{:.3f}) body=({:.3f},{:.3f},{:.3f}) gaps(rawToQueued/queuedToApplied/rawToApplied/targetToProxy/desiredToBody)=({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg) steps(raw/target/proxy/body)=({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)",
                 _colliderClockSession,
                 frame.gameFrameIndex,
                 isLeft ? "L" : "R",
@@ -2407,12 +2407,14 @@ namespace rock
                 applied.consumptionFrameShiftGame.x,
                 applied.consumptionFrameShiftGame.y,
                 applied.consumptionFrameShiftGame.z,
-                applied.sourceControllerIdentity,
-                applied.consumptionControllerIdentity,
-                applied.sourceControllerVtable,
-                applied.consumptionControllerVtable,
-                applied.sourcePhysicsScaleRevision,
-                applied.consumptionPhysicsScaleRevision,
+                applied.sourcePlayerBasisSource,
+                applied.consumptionPlayerBasisSource,
+                applied.sourcePlayerBasisGame.x,
+                applied.sourcePlayerBasisGame.y,
+                applied.sourcePlayerBasisGame.z,
+                applied.consumptionPlayerBasisGame.x,
+                applied.consumptionPlayerBasisGame.y,
+                applied.consumptionPlayerBasisGame.z,
                 handInput.rawHandWorld.translate.x,
                 handInput.rawHandWorld.translate.y,
                 handInput.rawHandWorld.translate.z,
@@ -7850,22 +7852,36 @@ namespace rock
         logPalmClockSampleForHand("physics-after-character-move-before-grab-flush", _rightHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
         logPalmClockSampleForHand("physics-after-character-move-before-grab-flush", _leftHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
 
-        // bhkWorld executes every listener's between-collide-and-solve graph
-        // before invoking the +0x30 finish slot that owns this callback. The
-        // character-manager movement task has therefore updated the live root,
-        // while hknp solve has not started. One read is shared by both hands so
-        // two-hand grabs receive an identical consumption-frame measurement.
-        const auto controller = character_controller_runtime::samplePlayerCharacterControllerPositionHavok();
-        const auto scale = physics_scale::current();
-        const grab_authority_source_clock::ControllerRootFrameSample consumptionControllerRoot{
-            .positionHavok = controller.positionHavok,
-            .controllerIdentity = controller.controllerIdentity,
-            .controllerVtable = controller.controllerVtable,
-            .physicsScaleRevision = scale.revision,
-            .valid = controller.valid,
-        };
-        _rightHand.flushPendingCustomGrabAuthority(world, timing, consumptionControllerRoot, scale.havokToGame);
-        _leftHand.flushPendingCustomGrabAuthority(world, timing, consumptionControllerRoot, scale.havokToGame);
+        /*
+         * Consumption basis for the queued grab targets. Verified native frame
+         * order (Ghidra audit 2026-08-16): the game updates the player, syncs
+         * the character controller from the actor (PlayerCharacter vfunc 203),
+         * and writes roomNode/playerWorldNode BEFORE entering the physics
+         * world update, so this live roomNode read inside the step listener is
+         * the CURRENT frame's basis while the queued sample still carries the
+         * previous frame's -- their delta is exactly the one-game-frame
+         * locomotion displacement the grab target is missing. The earlier
+         * character-controller-root read here measured nothing: the controller
+         * is already synchronized before the producer samples, the player's
+         * bhkCharProxyController task runs in BeforeWholePhysicsUpdate (its
+         * +0x28/+0x30 slots are no-ops), and bhkWorld runs each listener's
+         * +0x28/graph/+0x30 individually in registration order -- ROCK's own
+         * +0x30 does NOT follow a combined all-controller graph. The listener
+         * runs synchronously on the frame thread inside bhkWorld::Update, so
+         * the scene-graph read is safe. One read is shared by both hands so
+         * two-hand grabs receive an identical consumption-frame measurement.
+         */
+        const auto consumptionPlayerBasis = [] {
+            const auto space = runtime_state::samplePlayerSpaceLive();
+            return grab_authority_source_clock::PlayerBasisFrameSample{
+                .positionGame = space.world.translate,
+                .rotation = space.world.rotate,
+                .source = space.source,
+                .valid = space.valid,
+            };
+        }();
+        _rightHand.flushPendingCustomGrabAuthority(world, timing, consumptionPlayerBasis);
+        _leftHand.flushPendingCustomGrabAuthority(world, timing, consumptionPlayerBasis);
     }
 
     void PhysicsInteraction::observeCustomGrabAuthorityAfterSolve(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
