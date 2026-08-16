@@ -96,12 +96,8 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'The shared kGun and fire-node observations must feed support solving only after the collision form boundary matches; final alignment remains ahead of collision and final muzzle/debug synchronization.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'gunstockPresentationBlocked\s*=\s*frame\.menuBlocked[\s\S]*gunstockNeutralSampleBlocked\s*=[\s\S]*isRawButtonPhysicallyHeld\([\s\S]*kOpenVrSteamVrTriggerButtonId\)[\s\S]*\|\|\s*frame\.reloadBoundaryActive[\s\S]*prepareGunstockAlignmentDebugSnapshot\([\s\S]*gunstockNeutralSampleBlocked,\s*frame\.menuBlocked\)[\s\S]*applyGunstockAlignment\([\s\S]*gunstockNeutralSampleBlocked,\s*frame\.menuBlocked\)' `
-    'Trigger and arms/hands animation authority must block only neutral calibration while the final latched presentation yields only at hard menu authority.'
-
-Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'gunstock(?:Alignment|Presentation)Blocked\s*=\s*frame\.reloadBoundaryActive|gunstockNeutralSampleBlocked,\s*frame\.reloadBoundaryActive' `
-    'Arms/hands animation authority must never suppress an already-latched gunstock presentation.'
+    'gunstockPresentationBlocked\s*=[\r\n\s]*frame\.menuBlocked\s*\|\|\s*frame\.reloadBoundaryActive[\s\S]*gunstockNeutralSampleBlocked\s*=[\s\S]*isRawButtonPhysicallyHeld\([\s\S]*kOpenVrSteamVrTriggerButtonId\)[\s\S]*\|\|\s*frame\.reloadBoundaryActive[\s\S]*const bool gunstockPresentationBlocked\s*=[\r\n\s]*frame\.menuBlocked\s*\|\|\s*frame\.reloadBoundaryActive[\s\S]*prepareGunstockAlignmentDebugSnapshot\([\s\S]*gunstockNeutralSampleBlocked,\s*gunstockPresentationBlocked\)[\s\S]*applyGunstockAlignment\([\s\S]*gunstockNeutralSampleBlocked,\s*gunstockPresentationBlocked\)' `
+    'Trigger input must block neutral calibration, while menu or native reload authority must yield the complete latched gunstock hand presentation.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'tryResolveGunstockPhysicalFiringFrame[\s\S]*SecondaryMeleeWeaponOffsetNode2[\s\S]*primaryWeaponOffsetNOde[\s\S]*_leftNaturalBoneInDampedDriver[\s\S]*_rightNaturalBoneInDampedDriver[\s\S]*localWristForward\s*\{\s*1\.0f,\s*0\.0f,\s*0\.0f\s*\}[\s\S]*applyGunstockAlignment\([\s\S]*tryCaptureHandLocalBore\([\s\S]*tryResolveGunstockPrimaryGroupCorrection[\s\S]*rotateRigidlyAroundPivot[\s\S]*applyWeaponVisualAuthority' `

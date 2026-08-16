@@ -26,6 +26,7 @@ namespace rock::fo4vr_actor_state_policy
     inline constexpr std::uint32_t kWeaponStateValueMask = 0x7;
     inline constexpr std::uint32_t kGunStateShift = 15;
     inline constexpr std::uint32_t kGunStateValueMask = 0xF;
+    inline constexpr std::uint32_t kReloadingGunState = 4;
     inline constexpr std::uint32_t kInvalidWeaponState = 0xFFFFFFFFu;
     inline constexpr std::uint32_t kInvalidGunState = 0xFFFFFFFFu;
 
@@ -48,5 +49,11 @@ namespace rock::fo4vr_actor_state_policy
     {
         // Native states 3..5 are Drawn, WantToSheathe, and Sheathing.
         return weaponState >= 3 && weaponState <= 5;
+    }
+
+    [[nodiscard]] inline constexpr bool isNativeReloading(
+        const std::uint32_t gunState) noexcept
+    {
+        return gunState == kReloadingGunState;
     }
 }

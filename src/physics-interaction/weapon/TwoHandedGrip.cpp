@@ -2395,6 +2395,8 @@ namespace rock
         _currentHandDriverFrames[0] = frameInput.leftHandDriverFrame;
         _currentHandDriverFrames[1] = frameInput.rightHandDriverFrame;
         _currentSourceSchedulerSequence = sourceSchedulerSequence;
+        setNativeReloadHandAuthorityActive(
+            frameInput.nativeReloadHandAuthorityActive);
         _gunstockFramePresentation = {};
         observeGunstockWeaponEligibility(
             weaponNode,
@@ -2531,7 +2533,9 @@ namespace rock
             currentWeaponGenerationKey,
             weaponCollision,
             false);
-        const bool supportTouchingSupport = decision.kind == WeaponInteractionKind::SupportGrip;
+        const bool supportTouchingSupport =
+            !_nativeReloadHandAuthorityActive &&
+            decision.kind == WeaponInteractionKind::SupportGrip;
         RE::NiNode* interactionWeaponNode = sourceRootNodeOrFallback(decision.interactionRoot, weaponNode);
         const bool supportGripHeld = supportHandIsLeft ? stableFrameInput.leftGripHeld : stableFrameInput.rightGripHeld;
         const bool supportHandHoldingObject = supportHandIsLeft ? stableFrameInput.leftHandHoldingObject : stableFrameInput.rightHandHoldingObject;
@@ -2599,7 +2603,8 @@ namespace rock
                 // mid-hold).
                 ROCK_LOG_INFO(Weapon, "TwoHandedGrip: releasing support grip to recapture under newly matched provider weapon-part target");
                 transitionToInactive(ownsWeaponTransform());
-            } else if (!supportRuntimeState.supportGripAllowed) {
+            } else if (!supportRuntimeState.supportGripAllowed &&
+                       !_nativeReloadHandAuthorityActive) {
                 ROCK_LOG_INFO(Weapon, "TwoHandedGrip: clearing authority because offhand reservation disabled support grip");
                 transitionToInactive(false);
             } else if (!weapon_two_handed_grip_math::shouldContinueSupportGrip(supportGripHeld, supportHandHoldingObject)) {
@@ -2771,6 +2776,8 @@ namespace rock
         _currentSourceSchedulerSequence = 0;
         _weaponCollisionHandPresentationFromPreviousFrame = {};
         _weaponCollisionBaselineHandWorldValid = {};
+        _nativeReloadHandAuthorityActive = false;
+        _nativeReloadSupportHandIsLeft = true;
         resetGunstockAlignment("reset");
         _gunstockModeToggle = {};
         _gunstockWeaponEligibility = {};
@@ -3428,6 +3435,9 @@ namespace rock
 
     bool TwoHandedGrip::hasVisualAuthorityForHand(const bool isLeft) const
     {
+        if (isNativeReloadSupportHand(isLeft)) {
+            return false;
+        }
         if (_gunstockHandAuthorityActive[isLeft ? 0u : 1u] ||
             _gunstockDedicatedHandAuthorityActive[isLeft ? 0u : 1u] ||
             isHandVisualReturnActive(isLeft) ||
@@ -10157,22 +10167,103 @@ namespace rock
         return true;
     }
 
+    void TwoHandedGrip::suspendNativeReloadSupportHandAuthority(
+        const bool isLeft)
+    {
+        const std::size_t index = isLeft ? 0u : 1u;
+        (void)frik_visual_authority::clearHandPose(
+            SUPPORT_GRIP_TAG,
+            handFromBool(isLeft));
+        (void)frik_visual_authority::clearHandPose(
+            PRIMARY_GRIP_TAG,
+            handFromBool(isLeft));
+        clearPreFrikRetainedHandAuthority(
+            RetainedHandAuthorityKind::SupportGrip,
+            isLeft);
+        (void)clearHandAuthorityRoleNow(
+            scope_safe_hand_frame_math::HandAuthorityRole::SupportGrip,
+            isLeft);
+        (void)clearHandAuthorityRoleNow(
+            scope_safe_hand_frame_math::HandAuthorityRole::PrimaryGrip,
+            isLeft);
+        (void)clearHandAuthorityRoleNow(
+            scope_safe_hand_frame_math::HandAuthorityRole::PrimaryDetach,
+            isLeft);
+        (void)clearWeaponCollisionHandAuthority(isLeft);
+        clearHandVisualReturn(isLeft, "native-reload-authority", false);
+        _weaponCollisionBaselineHandWorldValid[index] = false;
+        _weaponCollisionHandPresentationFromPreviousFrame[index] = false;
+        _hasLastPublishedHandWorld[index] = false;
+
+        // Gunstock publishes both participating hands as one rigid group.
+        // Yield the complete group so it cannot immediately reacquire the
+        // support hand after the role-specific clears above.
+        clearGunstockDedicatedHandAuthority();
+    }
+
+    void TwoHandedGrip::setNativeReloadHandAuthorityActive(
+        const bool active)
+    {
+        const bool supportHandIsLeft = !_firingHandIsLeft;
+        const bool supportRoleChanged =
+            _nativeReloadHandAuthorityActive &&
+            _nativeReloadSupportHandIsLeft != supportHandIsLeft;
+
+        if (!active) {
+            if (_nativeReloadHandAuthorityActive) {
+                ROCK_LOG_INFO(
+                    Weapon,
+                    "TwoHandedGrip: native reload released support-hand FRIK authority hand={}",
+                    _nativeReloadSupportHandIsLeft ? "left" : "right");
+            }
+            _nativeReloadHandAuthorityActive = false;
+            _nativeReloadSupportHandIsLeft = supportHandIsLeft;
+            return;
+        }
+
+        if (_nativeReloadHandAuthorityActive && !supportRoleChanged) {
+            return;
+        }
+
+        if (supportRoleChanged) {
+            suspendNativeReloadSupportHandAuthority(
+                _nativeReloadSupportHandIsLeft);
+        }
+        _nativeReloadHandAuthorityActive = true;
+        _nativeReloadSupportHandIsLeft = supportHandIsLeft;
+        suspendNativeReloadSupportHandAuthority(supportHandIsLeft);
+        ROCK_LOG_INFO(
+            Weapon,
+            "TwoHandedGrip: native reload suspended support-hand FRIK authority hand={} logicalGripRetained={}",
+            supportHandIsLeft ? "left" : "right",
+            partGrip(supportHandIsLeft).active ? "yes" : "no");
+    }
+
     void TwoHandedGrip::refreshWeaponCollisionHandAuthorityBeforeFrik(
-        const RE::NiTransform& firingWandWorld,
-        const bool firingWandValid,
+        const EquippedWeaponScopeHandDriverFrame& leftHandDriver,
+        const EquippedWeaponScopeHandDriverFrame& rightHandDriver,
         const std::uint64_t currentWeaponGenerationKey,
         const bool firingHandIsLeft,
         const std::uint64_t currentSchedulerSequence)
     {
+        const std::array<EquippedWeaponScopeHandDriverFrame, 2> drivers{
+            leftHandDriver,
+            rightHandDriver,
+        };
         for (std::size_t index = 0;
              index < _preFrikWeaponHandAuthority.size();
              ++index) {
             const bool isLeft = index == 0u;
+            if (isNativeReloadSupportHand(isLeft)) {
+                (void)clearWeaponCollisionHandAuthority(isLeft);
+                continue;
+            }
             const auto& source = _preFrikWeaponHandAuthority[index];
+            const auto& driver = drivers[index];
             const bool sourceCurrent =
                 source.valid &&
                 _weaponCollisionHandAuthorityLive[index] &&
-                firingWandValid &&
+                driver.valid &&
                 currentWeaponGenerationKey != 0 &&
                 source.weaponGenerationKey == currentWeaponGenerationKey &&
                 source.firingHandIsLeft == firingHandIsLeft &&
@@ -10180,9 +10271,9 @@ namespace rock
                     source.sourceSchedulerSequence,
                     currentSchedulerSequence) &&
                 prefrik_hand_authority_policy::isUsableTransform(
-                    firingWandWorld) &&
+                    driver.world) &&
                 prefrik_hand_authority_policy::isUsableTransform(
-                    source.firingWandToHandLocal);
+                    source.driverToHandLocal);
             if (!sourceCurrent) {
                 if (_weaponCollisionHandAuthorityLive[index] || source.valid) {
                     (void)clearWeaponCollisionHandAuthority(isLeft);
@@ -10192,8 +10283,8 @@ namespace rock
 
             const RE::NiTransform targetWorld =
                 prefrik_hand_authority_policy::reconstructTargetWorld(
-                    firingWandWorld,
-                    source.firingWandToHandLocal);
+                    driver.world,
+                    source.driverToHandLocal);
             if (!prefrik_hand_authority_policy::isUsableTransform(
                     targetWorld) ||
                 !frik_visual_authority::applyExternalHandWorldTransform(
@@ -10264,6 +10355,9 @@ namespace rock
         };
         for (std::size_t handIndex = 0; handIndex < 2; ++handIndex) {
             const bool isLeft = handIndex == 0u;
+            if (isNativeReloadSupportHand(isLeft)) {
+                continue;
+            }
             for (std::size_t kindIndex = 0;
                  kindIndex < kRetainedHandAuthorityKindCount;
                  ++kindIndex) {
@@ -10377,9 +10471,9 @@ namespace rock
     }
 
     void TwoHandedGrip::finishWeaponCollisionPresentationFrame(
-        const bool runtimeActive)
+        const bool presentationActive)
     {
-        if (runtimeActive) {
+        if (presentationActive) {
             return;
         }
 
@@ -10389,7 +10483,7 @@ namespace rock
             ROCK_LOG_SAMPLE_WARN(
                 Weapon,
                 1000,
-                "TwoHandedGrip: inactive dynamic weapon collision hand authority clear failed left={} right={} live(L/R)={}/{}",
+                "TwoHandedGrip: inactive dynamic weapon contact presentation hand authority clear failed left={} right={} live(L/R)={}/{}",
                 leftCleared ? "ok" : "failed",
                 rightCleared ? "ok" : "failed",
                 _weaponCollisionHandAuthorityLive[0],
@@ -10401,11 +10495,7 @@ namespace rock
         RE::NiNode* weaponNode,
         const RE::NiTransform& requestedWeaponWorld,
         const RE::NiTransform& resolvedWeaponWorld,
-        const std::uint64_t authorityGenerationKey,
-        const RE::NiTransform& firingWandWorld,
-        const bool firingWandValid,
-        const bool firingHandIsLeft,
-        const std::uint64_t sourceSchedulerSequence)
+        const std::uint64_t authorityGenerationKey)
     {
         if (!weaponNode ||
             !isFiniteTransform(weaponNode->world) ||
@@ -10424,14 +10514,7 @@ namespace rock
                 weaponNode->world,
                 resolvedWeaponWorld);
 
-        const auto attachedHands =
-            dynamic_weapon_collision_policy::selectAttachedHands(
-                _state == TwoHandedState::PartCarry,
-                _state == TwoHandedState::Gripping ||
-                    _state == TwoHandedState::PrimaryOnly,
-                _firingHandIsLeft,
-                partGrip(true).active,
-                partGrip(false).active);
+        const auto attachedHands = weaponCollisionAttachedHands();
 
         struct CollisionHandPulse
         {
@@ -10522,8 +10605,8 @@ namespace rock
                  * Update the same high-priority owner in place. Clearing it at
                  * either frame boundary would let FRIK's regular solve select
                  * the live priority-100 firing/support owner for one scheduling
-                 * interval. Physical intent remains reconstructed from the
-                 * unaffected hand driver while this claim is live.
+                 * interval. Each physical hand remains reconstructed from its
+                 * own unaffected driver while this claim is live.
                  */
                 pulse.retained = pulse.applied;
                 if (pulse.retained) {
@@ -10534,24 +10617,26 @@ namespace rock
                     auto& preFrikSource =
                         _preFrikWeaponHandAuthority[handIndex];
                     preFrikSource = {};
-                    if (firingWandValid &&
-                        sourceSchedulerSequence != 0 &&
+                    const auto& driver =
+                        _currentHandDriverFrames[handIndex];
+                    if (driver.valid &&
+                        _currentSourceSchedulerSequence != 0 &&
                         authorityGenerationKey != 0 &&
                         prefrik_hand_authority_policy::isUsableTransform(
-                            firingWandWorld)) {
-                        preFrikSource.firingWandToHandLocal =
+                            driver.world)) {
+                        preFrikSource.driverToHandLocal =
                             prefrik_hand_authority_policy::
                                 captureDriverToTargetLocal(
-                                    firingWandWorld,
+                                    driver.world,
                                     pulse.targetWorld);
                         preFrikSource.weaponGenerationKey =
                             authorityGenerationKey;
                         preFrikSource.sourceSchedulerSequence =
-                            sourceSchedulerSequence;
-                        preFrikSource.firingHandIsLeft = firingHandIsLeft;
+                            _currentSourceSchedulerSequence;
+                        preFrikSource.firingHandIsLeft = _firingHandIsLeft;
                         preFrikSource.valid =
                             prefrik_hand_authority_policy::isUsableTransform(
-                                preFrikSource.firingWandToHandLocal);
+                                preFrikSource.driverToHandLocal);
                     }
                 }
                 handPulsesSucceeded =
@@ -10645,6 +10730,9 @@ namespace rock
         WeaponPartGrip& grip = partGrip(isLeft);
         if (!weaponNode || !grip.active || !grip.hasHandWeaponLocal) {
             return false;
+        }
+        if (isNativeReloadSupportHand(isLeft)) {
+            return true;
         }
         if (!scope_safe_hand_frame_math::shouldPublishLockedHandVisualAuthority(_scopeMenuOpenThisFrame)) {
             return true;
@@ -10747,7 +10835,8 @@ namespace rock
 
     void TwoHandedGrip::publishGripHandPoses(bool isLeft)
     {
-        if (!frik_visual_authority::isAvailable()) {
+        if (isNativeReloadSupportHand(isLeft) ||
+            !frik_visual_authority::isAvailable()) {
             return;
         }
 

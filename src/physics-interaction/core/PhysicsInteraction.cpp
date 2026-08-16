@@ -106,6 +106,7 @@
 #include "ROCKMain.h"
 #include "RockConfig.h"
 #include "RockUtils.h"
+#include "rock_support/Fo4VrActorStatePolicy.h"
 #include "rock_support/Fo4VrRuntime.h"
 #include "rock_support/VRControllers.h"
 #include <windows.h>
@@ -133,6 +134,19 @@ namespace rock
 
         std::atomic<bool> s_weaponCollisionWorkbenchExitMenuSinkRegistered{ false };
         std::atomic<bool> s_weaponCollisionWorkbenchExitMenuSinkMissingUILogged{ false };
+
+        [[nodiscard]] bool nativeReloadHandAuthorityActive()
+        {
+            const auto animationAuthorityFlags =
+                provider::currentNativeAnimationAuthorityFlagsV1();
+            const bool providerOwnsArmsOrHands =
+                (animationAuthorityFlags &
+                    (authored_weapon_grip_capture_policy::kArms |
+                        authored_weapon_grip_capture_policy::kHands)) != 0;
+            return providerOwnsArmsOrHands ||
+                   fo4vr_actor_state_policy::isNativeReloading(
+                       f4vr::getNativeGunState(f4vr::getPlayer()));
+        }
 
         [[nodiscard]] bool isWeaponCollisionWorkbenchExitMenu(const RE::BSFixedString& menuName)
         {
@@ -1842,6 +1856,8 @@ namespace rock
                     nullptr);
 
         const bool firingHandIsLeft = _twoHandedGrip.isFiringHandLeft();
+        _twoHandedGrip.setNativeReloadHandAuthorityActive(
+            nativeReloadHandAuthorityActive());
         _twoHandedGrip.refreshRetainedHandVisualAuthoritiesBeforeFrik(
             leftWeaponHandDriver,
             rightWeaponHandDriver,
@@ -1849,8 +1865,8 @@ namespace rock
             firingHandIsLeft,
             schedulerSequence);
         _twoHandedGrip.refreshWeaponCollisionHandAuthorityBeforeFrik(
-            firingHandIsLeft ? leftWandWorld : rightWandWorld,
-            firingHandIsLeft ? leftWandValid : rightWandValid,
+            leftWeaponHandDriver,
+            rightWeaponHandDriver,
             _weaponCollision.getCurrentWeaponGenerationKey(),
             firingHandIsLeft,
             schedulerSequence);
@@ -3691,7 +3707,10 @@ namespace rock
                 .manualScopeActivationRequested = manualScopeActivationRequested,
                 .nativeScopeRequestStateValid = nativeScopeRequestStateValid,
                 .nativeScopeRequestActive = nativeScopeRequestActive,
-                .gunstockPresentationBlocked = frame.menuBlocked,
+                .nativeReloadHandAuthorityActive =
+                    frame.reloadBoundaryActive,
+                .gunstockPresentationBlocked =
+                    frame.menuBlocked || frame.reloadBoundaryActive,
                 .leftHandDriverFrame = leftHandDriverFrame,
                 .rightHandDriverFrame = rightHandDriverFrame,
                 .primaryGripInput = primaryGripInput,
@@ -3728,6 +3747,8 @@ namespace rock
                      input_remap_policy::
                          kOpenVrSteamVrTriggerButtonId) ||
                     frame.reloadBoundaryActive);
+            const bool gunstockPresentationBlocked =
+                frame.menuBlocked || frame.reloadBoundaryActive;
             _twoHandedGrip.prepareGunstockAlignmentDebugSnapshot(
                 weaponNode,
                 gunstockProjectileNode,
@@ -3735,13 +3756,13 @@ namespace rock
                     getCurrentObservedEquippedWeaponFormID(),
                 currentWeaponGenerationKey,
                 gunstockNeutralSampleBlocked,
-                frame.menuBlocked);
+                gunstockPresentationBlocked);
             (void)_twoHandedGrip.applyGunstockAlignment(
                 weaponNode,
                 gunstockProjectileNode,
                 currentWeaponGenerationKey,
                 gunstockNeutralSampleBlocked,
-                frame.menuBlocked);
+                gunstockPresentationBlocked);
             reconcileEquippedWeaponHandAssignmentAfterGrip();
             if (_twoHandedGrip.hasVisualAuthorityForHand(false)) {
                 _rightHand.cancelGrabVisualReturn("equipped-weapon-visual-authority");
@@ -4157,18 +4178,11 @@ namespace rock
                     dynamicWeaponFrame.rotationCorrectionDegrees);
             }
             if (dynamicWeaponFrame.publishVisualAuthority) {
-                const auto& firingWand = firingHandIsLeft ?
-                    frame.leftWand :
-                    frame.rightWand;
                 const bool visualPublishSucceeded = _twoHandedGrip.applyWeaponCollisionResolvedAuthority(
                     weaponNode,
                     dynamicWeaponFrame.requestedWeaponWorld,
                     dynamicWeaponFrame.resolvedWeaponWorld,
-                    currentWeaponGenerationKey,
-                    firingWand.world,
-                    firingWand.valid,
-                    firingHandIsLeft,
-                    frame.preFrikSchedulerSequence);
+                    currentWeaponGenerationKey);
                 const float immediateTranslationError =
                     visualPublishSucceeded && weaponNode ?
                         dynamic_weapon_collision_policy::translationDeltaGameUnits(
@@ -4195,7 +4209,7 @@ namespace rock
                 }
             }
             _twoHandedGrip.finishWeaponCollisionPresentationFrame(
-                dynamicWeaponFrame.proxyActive);
+                dynamicWeaponFrame.publishVisualAuthority);
             if (weaponNode) {
                 performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::WeaponCollisionTransforms);
                 _weaponCollision.updateBodiesFromCurrentSourceTransforms(

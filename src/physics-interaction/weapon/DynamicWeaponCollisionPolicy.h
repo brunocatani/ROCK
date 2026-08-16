@@ -132,12 +132,30 @@ namespace rock::dynamic_weapon_collision_policy
         bool right{ false };
     };
 
+    struct VisualAuthorityDecision
+    {
+        bool publish{ false };
+        bool useResolvedWeaponWorld{ false };
+    };
+
+    [[nodiscard]] inline constexpr VisualAuthorityDecision
+        decideVisualAuthority(
+            const bool contactActive,
+            const bool correctionVisible) noexcept
+    {
+        return VisualAuthorityDecision{
+            .publish = contactActive,
+            .useResolvedWeaponWorld = contactActive && correctionVisible,
+        };
+    }
+
     inline AttachedHandSelection selectAttachedHands(
         const bool partCarry,
         const bool firingGripOccupied,
         const bool firingHandIsLeft,
         const bool leftPartGripActive,
-        const bool rightPartGripActive)
+        const bool rightPartGripActive,
+        const bool supportHandPresentationAllowed = true)
     {
         AttachedHandSelection result{
             .left = leftPartGripActive,
@@ -152,6 +170,13 @@ namespace rock::dynamic_weapon_collision_policy
                 // Passive/native equipped carry is always captured from the
                 // physical right firing hand in ROCK's current topology.
                 result.right = true;
+            }
+        }
+        if (!supportHandPresentationAllowed) {
+            if (firingHandIsLeft) {
+                result.right = false;
+            } else {
+                result.left = false;
             }
         }
         return result;

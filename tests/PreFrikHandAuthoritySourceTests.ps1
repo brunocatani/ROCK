@@ -138,17 +138,17 @@ Require-Pattern $transitionHeader `
     'refreshHandVisualAuthorityBeforeFrik[\s\S]{0,180}_bridge\.refreshHandVisualAuthorityBeforeFrik' `
     'The transition coordinator must expose the equip bridge pre-FRIK provider to PhysicsInteraction.'
 
-# Weapon targets are reconstructed from current firing-wand motion and reject
-# stale scheduler, generation, or firing-role state.
+# Weapon targets are reconstructed from each physical hand's current FRIK
+# driver and reject stale scheduler, generation, or firing-role state.
 Require-Pattern $weaponHeader `
-    'PreFrikWeaponHandAuthority[\s\S]*firingWandToHandLocal[\s\S]*weaponGenerationKey[\s\S]*sourceSchedulerSequence[\s\S]*firingHandIsLeft' `
-    'Weapon pre-FRIK state must retain its wand-local target and every identity generation.'
+    'PreFrikWeaponHandAuthority[\s\S]*driverToHandLocal[\s\S]*weaponGenerationKey[\s\S]*sourceSchedulerSequence[\s\S]*firingHandIsLeft' `
+    'Weapon pre-FRIK state must retain its physical-driver-local target and every identity generation.'
 Require-Pattern $weapon `
-    'refreshWeaponCollisionHandAuthorityBeforeFrik[\s\S]*source\.weaponGenerationKey\s*==\s*currentWeaponGenerationKey[\s\S]*source\.firingHandIsLeft\s*==\s*firingHandIsLeft[\s\S]*isImmediateSuccessor[\s\S]*reconstructTargetWorld[\s\S]*WEAPON_COLLISION_HAND_TAG' `
-    'Weapon hand authority must fail closed on stale identity and reconstruct through the current firing wand before FRIK.'
+    'refreshWeaponCollisionHandAuthorityBeforeFrik[\s\S]*drivers\s*\{[\s\S]*leftHandDriver[\s\S]*rightHandDriver[\s\S]*source\.weaponGenerationKey\s*==\s*currentWeaponGenerationKey[\s\S]*source\.firingHandIsLeft\s*==\s*firingHandIsLeft[\s\S]*isImmediateSuccessor[\s\S]*reconstructTargetWorld\([\s\S]*driver\.world,[\s\S]*source\.driverToHandLocal[\s\S]*WEAPON_COLLISION_HAND_TAG' `
+    'Weapon hand authority must fail closed on stale identity and reconstruct each hand through its own current FRIK driver.'
 Require-Pattern $weapon `
-    'applyWeaponCollisionResolvedAuthority[\s\S]*captureDriverToTargetLocal[\s\S]*sourceSchedulerSequence[\s\S]*preFrikSource\.valid' `
-    'Successful post-solve weapon publication must capture the next pre-FRIK source generation.'
+    'applyWeaponCollisionResolvedAuthority[\s\S]*_currentHandDriverFrames\[handIndex\][\s\S]*captureDriverToTargetLocal\([\s\S]*driver\.world,[\s\S]*pulse\.targetWorld[\s\S]*_currentSourceSchedulerSequence[\s\S]*preFrikSource\.valid' `
+    'Successful post-solve weapon publication must capture each target against its physical driver for the next pre-FRIK generation.'
 Require-Pattern $weaponHeader `
     'RetainedHandAuthorityKind[\s\S]*PrimaryGrip[\s\S]*SupportGrip[\s\S]*GunstockAlignment[\s\S]*Return[\s\S]*PreFrikRetainedHandAuthority' `
     'Every transportable retained weapon-hand role must have explicit pre-FRIK source state.'

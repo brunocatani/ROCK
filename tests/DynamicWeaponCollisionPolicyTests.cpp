@@ -357,6 +357,26 @@ int main()
     ok &= partCarryBoth.left && partCarryBoth.right;
     const auto partCarryLeftOnly = selectAttachedHands(true, false, true, true, false);
     ok &= partCarryLeftOnly.left && !partCarryLeftOnly.right;
+    const auto rightReloadingTwoHand =
+        selectAttachedHands(false, true, false, true, false, false);
+    ok &= !rightReloadingTwoHand.left && rightReloadingTwoHand.right;
+    const auto leftReloadingTwoHand =
+        selectAttachedHands(false, true, true, false, true, false);
+    ok &= leftReloadingTwoHand.left && !leftReloadingTwoHand.right;
+
+    constexpr auto freeSpacePresentation =
+        decideVisualAuthority(false, true);
+    static_assert(!freeSpacePresentation.publish);
+    static_assert(!freeSpacePresentation.useResolvedWeaponWorld);
+    constexpr auto retainedContactWithoutVisibleCorrection =
+        decideVisualAuthority(true, false);
+    static_assert(retainedContactWithoutVisibleCorrection.publish);
+    static_assert(
+        !retainedContactWithoutVisibleCorrection.useResolvedWeaponWorld);
+    constexpr auto visibleContactPresentation =
+        decideVisualAuthority(true, true);
+    static_assert(visibleContactPresentation.publish);
+    static_assert(visibleContactPresentation.useResolvedWeaponWorld);
 
     RE::NiTransform requestedWeapon = rock::transform_math::makeIdentityTransform<RE::NiTransform>();
     requestedWeapon.translate = RE::NiPoint3{ 10.0f, 20.0f, 30.0f };

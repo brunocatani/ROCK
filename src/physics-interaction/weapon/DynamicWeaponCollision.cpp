@@ -646,25 +646,30 @@ namespace rock
                 result.rotationCorrectionDegrees >= g_rockConfig.rockWeaponCollisionDynamicRenderMinRotationDegrees);
         /*
          * FRIK V2 consumes tagged hand transforms during its next skeleton
-         * frame. Keep one persistent presentation owner for every current
-         * post-solve sample, but expose the compliant body's displacement only
-         * while a positive-point world/hand manifold is retained. In free
-         * space the body naturally has a soft-motor residual; publishing that
-         * residual makes locomotion look like weapon wobble. Publishing the
-         * collision-free intent through the same tag avoids both that residual
-         * and the former clear/re-add owner switch.
+         * frame. The contact body owns presentation only while ROCK retains a
+         * positive-point world/hand manifold. In free space the body naturally
+         * has a soft-motor residual; retaining its higher-priority hand claim
+         * also transports the support hand from the firing-hand driver. Both
+         * appear as offhand wobble. Retained contact keeps one continuous owner
+         * even below the visible-correction threshold; free space yields to the
+         * normal per-hand grip/native authority.
          */
-        const bool publishResolvedContact =
-            snapshot.contactActive && correctionVisible;
-        result.publishVisualAuthority = true;
-        result.resolvedWeaponWorld = publishResolvedContact ?
+        const auto visualDecision =
+            dynamic_weapon_collision_policy::decideVisualAuthority(
+                snapshot.contactActive,
+                correctionVisible);
+        result.publishVisualAuthority = visualDecision.publish;
+        result.resolvedWeaponWorld = visualDecision.useResolvedWeaponWorld ?
             resolvedWeaponWorld :
             _frameRequestedWeaponWorld;
-        _debugSnapshot.visualCorrectionActive = publishResolvedContact;
+        _debugSnapshot.visualCorrectionActive =
+            visualDecision.useResolvedWeaponWorld;
         logPipelineStage(
-            publishResolvedContact ?
+            visualDecision.useResolvedWeaponWorld ?
                 "publish-contact" :
-                "publish-intent");
+                (visualDecision.publish ?
+                        "publish-retained-contact" :
+                        "free-space-yield"));
         return result;
     }
 

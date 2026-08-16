@@ -28,6 +28,8 @@ int main()
         kGunStateShift == 15);
     ok &= expect("the verified gun-state field must remain four bits wide",
         kGunStateValueMask == 0xF);
+    ok &= expect("the verified native reload state must remain four",
+        kReloadingGunState == 4);
 
     for (std::uint32_t state = 0; state <= 7; ++state) {
         constexpr std::uint32_t unrelatedBits = 0xA5A5A5A5u;
@@ -53,6 +55,13 @@ int main()
     }
     ok &= expect("native Reloading storage must decode as gun state four",
         decodeGunState(4u << kGunStateShift) == 4);
+    ok &= expect("native gun state four must report reload authority",
+        isNativeReloading(4));
+    ok &= expect("non-reload and invalid gun states must fail closed",
+        !isNativeReloading(0) &&
+            !isNativeReloading(3) &&
+            !isNativeReloading(5) &&
+            !isNativeReloading(kInvalidGunState));
 
     ok &= expect("Sheathed must not report weapon magic drawn",
         !isWeaponMagicDrawn(0));
