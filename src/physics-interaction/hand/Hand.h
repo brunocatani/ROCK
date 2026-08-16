@@ -126,7 +126,8 @@ namespace rock
         grab_authority_source_clock::RootMotionFeedForwardStatus feedForwardStatus =
             grab_authority_source_clock::RootMotionFeedForwardStatus::Unavailable;
         RE::NiPoint3 sourceRootStepGame{};
-        float sourceStepDeltaSeconds = 0.0f;
+        float feedForwardPreviousFrameDeltaSeconds = 0.0f;
+        float feedForwardCurrentFrameDeltaSeconds = 0.0f;
         bool sourceMoving = false;
         GrabLocomotionRootProbe sourceRootProbe{};
         GrabLocomotionRootProbe consumptionRootProbe{};
@@ -693,7 +694,9 @@ namespace rock
         void flushPendingCollisionPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         void flushPendingCustomGrabAuthority(
             RE::hknpWorld* world,
-            const havok_physics_timing::PhysicsTimingSample& timing);
+            const havok_physics_timing::PhysicsTimingSample& timing,
+            float previousFrameDeltaSeconds,
+            float currentFrameDeltaSeconds);
         void observeCustomGrabAuthorityAfterSolve(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         bool beginStashCandidate();
         bool cancelStashCandidate();
@@ -1052,13 +1055,13 @@ namespace rock
             const char* proxyFrameSource = "unknown";
             std::uint64_t sourceGameFrameIndex = 0;
             // The game-side player-root step applied during the producer's
-            // frame (runtime-state player-space tracker) and that frame's
-            // duration: the inputs to the consumption root-motion
+            // frame (runtime-state player-space tracker) and its moving flag:
+            // the sample-side inputs to the consumption root-motion
             // feed-forward. Locomotion is applied post-physics, so the
             // consuming physics update can only predict its own frame's step
-            // from these.
+            // from these plus the same-phase frame-duration ratio owned by
+            // PhysicsInteraction.
             RE::NiPoint3 sourceRootStepGame{};
-            float sourceStepDeltaSeconds = 0.0f;
             bool sourceMoving = false;
             GrabLocomotionRootProbe sourceRootProbe{};
             float deltaTime = 0.0f;
@@ -1083,7 +1086,8 @@ namespace rock
         grab_authority_source_clock::RootMotionFeedForwardStatus _lastAppliedGrabAuthorityFeedForwardStatus =
             grab_authority_source_clock::RootMotionFeedForwardStatus::Unavailable;
         RE::NiPoint3 _lastAppliedGrabAuthoritySourceRootStepGame{};
-        float _lastAppliedGrabAuthoritySourceStepDeltaSeconds = 0.0f;
+        float _lastAppliedGrabAuthorityFeedForwardPreviousFrameDeltaSeconds = 0.0f;
+        float _lastAppliedGrabAuthorityFeedForwardCurrentFrameDeltaSeconds = 0.0f;
         bool _lastAppliedGrabAuthoritySourceMoving = false;
         GrabLocomotionRootProbe _lastAppliedGrabAuthoritySourceRootProbe{};
         GrabLocomotionRootProbe _lastAppliedGrabAuthorityConsumptionRootProbe{};

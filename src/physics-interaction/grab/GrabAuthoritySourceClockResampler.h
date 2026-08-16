@@ -158,14 +158,20 @@ namespace rock::grab_authority_source_clock
 
     /*
      * Predict the player-root displacement the game will apply after this
-     * physics update: shift = lastAppliedRootStep x (physicsDt / sourceDt).
+     * physics update:
+     *   shift = lastAppliedRootStep x (currentFrameDt / previousFrameDt).
      *
      * lastAppliedRootStep is the game's own per-frame roomNode-world delta as
      * measured by the runtime-state player-space tracker at the producer that
-     * queued the sample; sourceDt is that frame's duration; physicsDt is the
-     * full raw delta of the physics update consuming the sample. The dominant
-     * stutter term (speed x frame-dt jitter) cancels exactly because the dt
-     * ratio is exact; only real acceleration remains. Stateless and
+     * queued the sample. BOTH frame durations must come from ONE continuous
+     * clock sampled at ONE fixed per-frame phase (PhysicsInteraction's
+     * pre-collide wall-clock series): the engine's mover advances the player
+     * by speed x continuous frame dt, and the 2026-08-16 offline predictor
+     * comparison showed a same-phase wall/wall ratio tracks the applied step
+     * ~3x better than any ratio involving the ms-quantized bhkWorld delta
+     * (which made the first feed-forward build no better than no ratio at
+     * all). With matched clocks the dominant stutter term -- speed x frame-dt
+     * jitter -- cancels, leaving real speed change only. Stateless and
      * deterministic per sample, so multi-substep re-flushes of one pending
      * target recompute the identical shift. Fails closed to a zero shift on
      * any anomaly; a zero shift is precisely the pre-fix behavior.
@@ -173,12 +179,12 @@ namespace rock::grab_authority_source_clock
     inline RootMotionFeedForwardResult evaluateRootMotionFeedForward(
         const RE::NiPoint3& sourceRootStepGame,
         bool sourceMoving,
-        float sourceDeltaSeconds,
-        float physicsDeltaSeconds) noexcept
+        float previousFrameDeltaSeconds,
+        float currentFrameDeltaSeconds) noexcept
     {
         if (!isFiniteVector(sourceRootStepGame) ||
-            !havok_physics_timing::isUsableDelta(sourceDeltaSeconds) ||
-            !havok_physics_timing::isUsableDelta(physicsDeltaSeconds)) {
+            !havok_physics_timing::isUsableDelta(previousFrameDeltaSeconds) ||
+            !havok_physics_timing::isUsableDelta(currentFrameDeltaSeconds)) {
             return RootMotionFeedForwardResult{ .status = RootMotionFeedForwardStatus::InvalidSample };
         }
 
@@ -193,7 +199,7 @@ namespace rock::grab_authority_source_clock
             return RootMotionFeedForwardResult{ .status = RootMotionFeedForwardStatus::Discontinuity };
         }
 
-        const float ratio = physicsDeltaSeconds / sourceDeltaSeconds;
+        const float ratio = currentFrameDeltaSeconds / previousFrameDeltaSeconds;
         if (!std::isfinite(ratio) || ratio < kMinFeedForwardDtRatio || ratio > kMaxFeedForwardDtRatio) {
             return RootMotionFeedForwardResult{ .status = RootMotionFeedForwardStatus::DtOutOfRange };
         }

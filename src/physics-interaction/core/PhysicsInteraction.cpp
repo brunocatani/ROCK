@@ -2370,7 +2370,7 @@ namespace rock
 
             ROCK_LOG_INFO(
                 Hand,
-                "GRAB_LOCOMOTION drive session={} frame={} side={} valid(applied/sample/proxy/body)={}/{}/{}/{} form=0x{:08X} bodies(proxy/held)={}/{} source(frame/age/queue/pending/flush/after)={}/{}/{}/{}/{}/{} flushPhysics(valid/raw/sub/rem/accum/index/count/progress)={}/({:.6f}/{:.6f}/{:.6f}/{:.6f}/{}/{}/{:.3f}) afterPhysics(valid/raw/sub/rem/accum/index/count/progress)={}/({:.6f}/{:.6f}/{:.6f}/{:.6f}/{}/{}/{:.3f}) feedForward(status/shift/srcStep/moving/srcDt)={}/({:.3f},{:.3f},{:.3f})/({:.3f},{:.3f},{:.3f})/{}/{:.6f} raw=({:.3f},{:.3f},{:.3f}) queuedRaw=({:.3f},{:.3f},{:.3f}) appliedRaw=({:.3f},{:.3f},{:.3f}) target=({:.3f},{:.3f},{:.3f}) proxy=({:.3f},{:.3f},{:.3f}) desiredBody=({:.3f},{:.3f},{:.3f}) body=({:.3f},{:.3f},{:.3f}) gaps(rawToQueued/queuedToApplied/rawToApplied/targetToProxy/desiredToBody)=({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg) steps(raw/target/proxy/body)=({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)",
+                "GRAB_LOCOMOTION drive session={} frame={} side={} valid(applied/sample/proxy/body)={}/{}/{}/{} form=0x{:08X} bodies(proxy/held)={}/{} source(frame/age/queue/pending/flush/after)={}/{}/{}/{}/{}/{} flushPhysics(valid/raw/sub/rem/accum/index/count/progress)={}/({:.6f}/{:.6f}/{:.6f}/{:.6f}/{}/{}/{:.3f}) afterPhysics(valid/raw/sub/rem/accum/index/count/progress)={}/({:.6f}/{:.6f}/{:.6f}/{:.6f}/{}/{}/{:.3f}) feedForward(status/shift/srcStep/moving/frameDtPrev/frameDtNow)={}/({:.3f},{:.3f},{:.3f})/({:.3f},{:.3f},{:.3f})/{}/{:.6f}/{:.6f} raw=({:.3f},{:.3f},{:.3f}) queuedRaw=({:.3f},{:.3f},{:.3f}) appliedRaw=({:.3f},{:.3f},{:.3f}) target=({:.3f},{:.3f},{:.3f}) proxy=({:.3f},{:.3f},{:.3f}) desiredBody=({:.3f},{:.3f},{:.3f}) body=({:.3f},{:.3f},{:.3f}) gaps(rawToQueued/queuedToApplied/rawToApplied/targetToProxy/desiredToBody)=({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg) steps(raw/target/proxy/body)=({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)/({:.3f}gu,{:.3f}deg)",
                 _colliderClockSession,
                 frame.gameFrameIndex,
                 isLeft ? "L" : "R",
@@ -2411,7 +2411,8 @@ namespace rock
                 applied.sourceRootStepGame.y,
                 applied.sourceRootStepGame.z,
                 applied.sourceMoving,
-                applied.sourceStepDeltaSeconds,
+                applied.feedForwardPreviousFrameDeltaSeconds,
+                applied.feedForwardCurrentFrameDeltaSeconds,
                 handInput.rawHandWorld.translate.x,
                 handInput.rawHandWorld.translate.y,
                 handInput.rawHandWorld.translate.z,
@@ -7895,6 +7896,20 @@ namespace rock
             return;
         }
 
+        if (timing.substepIndex == 0) {
+            // Same-phase wall-clock frame-duration series for the feed-forward
+            // dt ratio (see the member comment). Maintained unconditionally so
+            // a fresh grab immediately has a valid previous-frame duration.
+            const auto now = std::chrono::steady_clock::now();
+            if (_grabFrameWallTimeValid) {
+                _grabFrameWallDeltaSecondsPrev = _grabFrameWallDeltaSeconds;
+                _grabFrameWallDeltaSeconds =
+                    std::chrono::duration<float>(now - _grabFrameWallTimePrev).count();
+            }
+            _grabFrameWallTimePrev = now;
+            _grabFrameWallTimeValid = true;
+        }
+
         // Phase-bracket probe point A: first pre-collide substep, before any
         // listener graph of this update has run.
         if (timing.substepIndex == 0 && (_rightHand.isHoldingAtomic() || _leftHand.isHoldingAtomic())) {
@@ -7939,11 +7954,12 @@ namespace rock
          * still at the previous frame's value throughout the entire physics
          * update -- FO4VR applies joystick locomotion post-physics in game
          * code. Each hand's flush therefore predicts the pending frame's root
-         * step from the sample's own producer-side data (root-motion
-         * feed-forward; see GrabAuthoritySourceClockResampler.h).
+         * step from the sample's producer step scaled by the same-phase
+         * wall-clock frame-duration ratio (root-motion feed-forward; see
+         * GrabAuthoritySourceClockResampler.h).
          */
-        _rightHand.flushPendingCustomGrabAuthority(world, timing);
-        _leftHand.flushPendingCustomGrabAuthority(world, timing);
+        _rightHand.flushPendingCustomGrabAuthority(world, timing, _grabFrameWallDeltaSecondsPrev, _grabFrameWallDeltaSeconds);
+        _leftHand.flushPendingCustomGrabAuthority(world, timing, _grabFrameWallDeltaSecondsPrev, _grabFrameWallDeltaSeconds);
     }
 
     void PhysicsInteraction::observeCustomGrabAuthorityAfterSolve(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)

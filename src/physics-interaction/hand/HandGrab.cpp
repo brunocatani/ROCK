@@ -5384,7 +5384,8 @@ namespace rock
         _lastAppliedGrabAuthorityFeedForwardStatus =
             grab_authority_source_clock::RootMotionFeedForwardStatus::Unavailable;
         _lastAppliedGrabAuthoritySourceRootStepGame = {};
-        _lastAppliedGrabAuthoritySourceStepDeltaSeconds = 0.0f;
+        _lastAppliedGrabAuthorityFeedForwardPreviousFrameDeltaSeconds = 0.0f;
+        _lastAppliedGrabAuthorityFeedForwardCurrentFrameDeltaSeconds = 0.0f;
         _lastAppliedGrabAuthoritySourceMoving = false;
         _lastAppliedGrabAuthoritySourceRootProbe = {};
         _lastAppliedGrabAuthorityConsumptionRootProbe = {};
@@ -6587,7 +6588,6 @@ namespace rock
                 .proxyFrameSource = "grabStartLivePalmAnchor",
                 .sourceGameFrameIndex = grabStartFrame.frameIndex,
                 .sourceRootStepGame = grabStartFrame.playerSpace.deltaGameUnits,
-                .sourceStepDeltaSeconds = grabStartFrame.deltaSeconds,
                 .sourceMoving = grabStartFrame.playerSpace.moving,
                 .sourceRootProbe = sampleGrabLocomotionRootProbe(),
                 .deltaTime = 1.0f / 90.0f,
@@ -6606,7 +6606,8 @@ namespace rock
             _lastAppliedGrabAuthorityFeedForwardStatus =
                 grab_authority_source_clock::RootMotionFeedForwardStatus::Unavailable;
             _lastAppliedGrabAuthoritySourceRootStepGame = grabStartFrame.playerSpace.deltaGameUnits;
-            _lastAppliedGrabAuthoritySourceStepDeltaSeconds = grabStartFrame.deltaSeconds;
+            _lastAppliedGrabAuthorityFeedForwardPreviousFrameDeltaSeconds = 0.0f;
+            _lastAppliedGrabAuthorityFeedForwardCurrentFrameDeltaSeconds = 0.0f;
             _lastAppliedGrabAuthoritySourceMoving = grabStartFrame.playerSpace.moving;
             _lastAppliedGrabAuthoritySourceRootProbe = {};
             _lastAppliedGrabAuthorityConsumptionRootProbe = {};
@@ -7027,7 +7028,6 @@ namespace rock
         _grabAuthorityPendingTarget.proxyFrameSource = proxyFrameSource ? proxyFrameSource : "unknown";
         _grabAuthorityPendingTarget.sourceGameFrameIndex = sourceFrame.frameIndex;
         _grabAuthorityPendingTarget.sourceRootStepGame = sourceFrame.playerSpace.deltaGameUnits;
-        _grabAuthorityPendingTarget.sourceStepDeltaSeconds = sourceFrame.deltaSeconds;
         _grabAuthorityPendingTarget.sourceMoving = sourceFrame.playerSpace.moving;
         _grabAuthorityPendingTarget.sourceRootProbe = sampleGrabLocomotionRootProbe();
         _grabAuthorityPendingTarget.deltaTime = deltaTime;
@@ -12811,7 +12811,9 @@ namespace rock
 
     void Hand::flushPendingCustomGrabAuthority(
         RE::hknpWorld* world,
-        const havok_physics_timing::PhysicsTimingSample& timing)
+        const havok_physics_timing::PhysicsTimingSample& timing,
+        float previousFrameDeltaSeconds,
+        float currentFrameDeltaSeconds)
     {
         GrabAuthorityProxyPendingTarget pending{};
         RE::NiTransform queuedRawHandWorld{};
@@ -12910,8 +12912,8 @@ namespace rock
             rootFeedForward = grab_authority_source_clock::evaluateRootMotionFeedForward(
                 pending.sourceRootStepGame,
                 pending.sourceMoving,
-                pending.sourceStepDeltaSeconds,
-                timing.rawDeltaSeconds);
+                previousFrameDeltaSeconds,
+                currentFrameDeltaSeconds);
             if (rootFeedForward.valid) {
                 // One basis correction per frame: the game applies the root
                 // step once per frame after physics, so the shift is constant
@@ -13431,7 +13433,8 @@ namespace rock
                     _lastAppliedGrabAuthorityFeedForwardShiftGame = rootFeedForward.shiftGame;
                     _lastAppliedGrabAuthorityFeedForwardStatus = rootFeedForward.status;
                     _lastAppliedGrabAuthoritySourceRootStepGame = pending.sourceRootStepGame;
-                    _lastAppliedGrabAuthoritySourceStepDeltaSeconds = pending.sourceStepDeltaSeconds;
+                    _lastAppliedGrabAuthorityFeedForwardPreviousFrameDeltaSeconds = previousFrameDeltaSeconds;
+                    _lastAppliedGrabAuthorityFeedForwardCurrentFrameDeltaSeconds = currentFrameDeltaSeconds;
                     _lastAppliedGrabAuthoritySourceMoving = pending.sourceMoving;
                     _lastAppliedGrabAuthoritySourceRootProbe = pending.sourceRootProbe;
                     _lastAppliedGrabAuthorityConsumptionRootProbe = consumptionRootProbe;
@@ -13501,7 +13504,7 @@ namespace rock
             std::uint32_t filterInfo = 0;
             const bool filterReadOk = havok_runtime::tryReadFilterInfo(world, proxyBodyId, filterInfo);
             ROCK_LOG_DEBUG(Hand,
-                "{} PROXY GRAB AUTHORITY: seq={}/{} diag=bodyFrameConstraint+queuedTarget+generatedKeyframedProxy proxyBody={} constraint={} substep={}/{} dt={:.6f} resample={} rebases={} feedForward={} shift=({:.3f},{:.3f},{:.3f}) srcStep=({:.3f},{:.3f},{:.3f}) srcMoving={} dt(src/phys)={:.6f}/{:.6f} targetSrc={} target=({:.1f},{:.1f},{:.1f}) desiredBody=({:.1f},{:.1f},{:.1f}) angularAuthority={} angularRef={} solverAngular=ragdollAtom angularBudget={:.3f} pivotB=({:.2f},{:.2f},{:.2f}) err={:.2f}gu rotErr={:.2f}deg proxyDrive=driveToKeyFrame palmRef={} palmSrc={} palmMotion={} proxyVelSource={} proxyVel={:.3f}hk proxyAngVel={:.3f}rad/s longLever={:.1f}gu proxyRead={} proxySrc={} proxyMotion={} proxyErr={:.3f}gu/{:.2f}deg forceBudget={:.2f} colliding={} filterRead={} filter=0x{:08X} noContact={}",
+                "{} PROXY GRAB AUTHORITY: seq={}/{} diag=bodyFrameConstraint+queuedTarget+generatedKeyframedProxy proxyBody={} constraint={} substep={}/{} dt={:.6f} resample={} rebases={} feedForward={} shift=({:.3f},{:.3f},{:.3f}) srcStep=({:.3f},{:.3f},{:.3f}) srcMoving={} frameDt(prev/now)={:.6f}/{:.6f} targetSrc={} target=({:.1f},{:.1f},{:.1f}) desiredBody=({:.1f},{:.1f},{:.1f}) angularAuthority={} angularRef={} solverAngular=ragdollAtom angularBudget={:.3f} pivotB=({:.2f},{:.2f},{:.2f}) err={:.2f}gu rotErr={:.2f}deg proxyDrive=driveToKeyFrame palmRef={} palmSrc={} palmMotion={} proxyVelSource={} proxyVel={:.3f}hk proxyAngVel={:.3f}rad/s longLever={:.1f}gu proxyRead={} proxySrc={} proxyMotion={} proxyErr={:.3f}gu/{:.2f}deg forceBudget={:.2f} colliding={} filterRead={} filter=0x{:08X} noContact={}",
                 handName(),
                 flushSequence,
                 queuedSequence,
@@ -13520,8 +13523,8 @@ namespace rock
                 pending.sourceRootStepGame.y,
                 pending.sourceRootStepGame.z,
                 pending.sourceMoving ? "yes" : "no",
-                pending.sourceStepDeltaSeconds,
-                timing.rawDeltaSeconds,
+                previousFrameDeltaSeconds,
+                currentFrameDeltaSeconds,
                 pending.proxyFrameSource ? pending.proxyFrameSource : "unknown",
                 pending.proxyWorld.translate.x,
                 pending.proxyWorld.translate.y,
@@ -13575,7 +13578,8 @@ namespace rock
         out.feedForwardShiftGame = _lastAppliedGrabAuthorityFeedForwardShiftGame;
         out.feedForwardStatus = _lastAppliedGrabAuthorityFeedForwardStatus;
         out.sourceRootStepGame = _lastAppliedGrabAuthoritySourceRootStepGame;
-        out.sourceStepDeltaSeconds = _lastAppliedGrabAuthoritySourceStepDeltaSeconds;
+        out.feedForwardPreviousFrameDeltaSeconds = _lastAppliedGrabAuthorityFeedForwardPreviousFrameDeltaSeconds;
+        out.feedForwardCurrentFrameDeltaSeconds = _lastAppliedGrabAuthorityFeedForwardCurrentFrameDeltaSeconds;
         out.sourceMoving = _lastAppliedGrabAuthoritySourceMoving;
         out.sourceRootProbe = _lastAppliedGrabAuthoritySourceRootProbe;
         out.consumptionRootProbe = _lastAppliedGrabAuthorityConsumptionRootProbe;

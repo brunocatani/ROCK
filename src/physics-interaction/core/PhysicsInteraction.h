@@ -2,6 +2,7 @@
 
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -483,6 +484,19 @@ namespace rock
         GrabLocomotionRootProbe _grabPhaseProbePreCollide{};
         GrabLocomotionRootProbe _grabPhaseProbeAfterBetween{};
         GrabLocomotionRootProbe _grabPhaseProbePostSolve{};
+
+        // Same-phase wall-clock frame-duration series for the grab root-motion
+        // feed-forward dt ratio, measured once per physics update at the first
+        // pre-collide substep. The engine's game-side mover advances the
+        // player by speed x CONTINUOUS frame dt (validated offline 2026-08-16:
+        // a wall/wall dt ratio predicts the applied step ~3x better than any
+        // ratio involving the ms-quantized bhkWorld delta), so both ratio
+        // terms must come from one continuous clock at one fixed phase.
+        // Frame-thread only.
+        std::chrono::steady_clock::time_point _grabFrameWallTimePrev{};
+        float _grabFrameWallDeltaSeconds = 0.0f;
+        float _grabFrameWallDeltaSecondsPrev = 0.0f;
+        bool _grabFrameWallTimeValid = false;
 
         TwoHandedGrip _twoHandedGrip;
         EquippedWeaponHandlingSettings _equippedWeaponHandlingSettings{};
