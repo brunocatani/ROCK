@@ -18,6 +18,7 @@
 #include "physics-interaction/grab/SavedGrabOffsetStore.h"
 #include "physics-interaction/input/DebugControllerRuntime.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
+#include "monitor/GrabClockMonitor.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/native/HeldWeaponInstantTransition.h"
@@ -909,6 +910,7 @@ namespace
             logger::info("ROCK: Config loaded (rockEnabled={}).", g_rockConfig.rockEnabled);
             rock::input_remap_runtime::installInputRemapHooks();
             rock::debug::Install();
+            rock::monitor::initialize();
 
             s_frikAvailable = true;
 
@@ -941,6 +943,8 @@ namespace
                 g_rockConfig.reload();
                 logger::info("ROCK: Config reloaded for new session.");
             }
+
+            rock::monitor::onGameSessionReady();
         }
     }
 }

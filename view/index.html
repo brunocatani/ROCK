@@ -1,0 +1,499 @@
+<meta charset="utf-8" />
+<title>ROCK Monitor</title>
+<style>
+  * { box-sizing: border-box; }
+
+  html, body {
+    width: 1400px;
+    height: 1120px;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background: transparent;
+    font-family: "Consolas", "Courier New", monospace;
+  }
+
+  /*
+   * Fixed 1400x1120 canvas that never resizes (world-panel pixel size is set once
+   * in C++, must match kPanelWidthPixels/kPanelHeightPixels in GrabClockMonitor.cpp).
+   * Absolute positioning throughout: Ultralight's flex shrink-to-fit chains are
+   * unreliable (see ROCK Prober's shell comment); no intrinsic sizing negotiation.
+   */
+  .shell {
+    position: relative;
+    width: 1400px;
+    height: 1120px;
+    padding: 12px;
+    background: rgba(4, 10, 16, 0.90);
+    border: 1px solid rgba(64, 200, 255, 0.55);
+    box-shadow: 0 0 24px rgba(0, 0, 0, 0.6), inset 0 0 40px rgba(64, 200, 255, 0.05);
+    color: #bfe9ff;
+  }
+
+  .header {
+    position: absolute;
+    top: 12px; left: 16px; right: 16px; height: 54px;
+    border-bottom: 1px solid rgba(64, 200, 255, 0.35);
+    font-size: 20px;
+  }
+  .title {
+    position: absolute; top: 2px; left: 0;
+    font-size: 24px; font-weight: 700; letter-spacing: 0.10em;
+    color: #40c8ff; text-transform: uppercase;
+  }
+  .header-stats {
+    position: absolute; top: 6px; right: 0;
+    font-size: 18px; color: #8fd3f0; text-align: right;
+  }
+  .badges { position: absolute; top: 30px; left: 0; font-size: 16px; color: #8fd3f0; }
+  .badge {
+    display: inline-block; margin-right: 14px; padding: 1px 8px;
+    border: 1px solid rgba(64,200,255,0.4);
+  }
+  .badge.on  { color: #59ff9c; border-color: rgba(89,255,156,0.6); }
+  .badge.off { color: #5c7a8a; }
+  .badge.warn { color: #ffb454; border-color: rgba(255,180,84,0.6); }
+
+  .charts {
+    position: absolute;
+    top: 74px; left: 16px; width: 930px; bottom: 12px;
+  }
+  .row { position: absolute; left: 0; right: 0; }
+  .row-label {
+    position: absolute; top: 0; left: 0; right: 0; height: 22px;
+    font-size: 16px; color: #bfe9ff; white-space: nowrap;
+  }
+  .row-label .src { color: #5c8aa0; font-size: 13px; }
+  .row-label .val { position: absolute; right: 118px; color: #eaf7ff; }
+  .row-label .chip {
+    position: absolute; right: 0; width: 108px; text-align: center;
+    font-size: 14px; padding: 0 4px;
+    border: 1px solid rgba(64,200,255,0.25);
+  }
+  .chip.g { color: #59ff9c; }
+  .chip.a { color: #ffb454; }
+  .chip.r { color: #ff5964; font-weight: 700; }
+  .chip.na { color: #4a6472; }
+  .row canvas { position: absolute; top: 24px; left: 0; }
+
+  .side {
+    position: absolute;
+    top: 74px; left: 962px; right: 16px; bottom: 12px;
+    border-left: 1px solid rgba(64, 200, 255, 0.25);
+    padding-left: 12px;
+    font-size: 14px;
+  }
+  .side h3 {
+    margin: 8px 0 4px 0; font-size: 15px; letter-spacing: 0.08em;
+    color: #40c8ff; text-transform: uppercase;
+  }
+  .kv { line-height: 1.42; white-space: pre; color: #9fc9de; }
+  .kv b { color: #eaf7ff; font-weight: 400; }
+  .legend { line-height: 1.35; color: #6f95a8; font-size: 12.5px; }
+  .legend b { color: #9fc9de; font-weight: 400; }
+</style>
+
+<div class="shell">
+  <div class="header">
+    <div class="title">ROCK Grab Clock Monitor</div>
+    <div class="header-stats" id="stats">waiting for data…</div>
+    <div class="badges" id="badges"></div>
+  </div>
+  <div class="charts" id="charts"></div>
+  <div class="side">
+    <h3>Stage Sources (live)</h3>
+    <div class="kv" id="sources">-</div>
+    <h3>Legend</h3>
+    <div class="legend" id="legend"></div>
+  </div>
+</div>
+
+<script>
+  'use strict';
+
+  /*
+   * Shared-timeline dashboard. Every chart row renders the same last-N-frames
+   * window, so a spike in one row lines up vertically with the locomotion /
+   * turn shading in every other row. Shading is the correlation tool: stick
+   * locomotion tints the background blue, stick turning tints it orange.
+   */
+  var HISTORY = 300;      // frames kept & drawn
+  var BUZZ_WIN = 40;      // frames for the buzz-ratio chip
+  var CHART_W = 930;
+  var CHART_H = 60;       // canvas height per row
+  var ROW_H = 92;
+
+  // Per-frame derived channel history (parallel arrays of length <= HISTORY).
+  var frames = [];        // raw payloads (for sources panel + derivations)
+  var moveShade = [];     // room speed per frame (gu/frame)
+  var turnShade = [];     // |room yaw rate| per frame (deg/frame)
+
+  var ROWS = [
+    { id: 'roomSpeed', name: 'ROOM SPEED', unit: 'gu/f', src: 'engine roomnode @ producer', color: '#40c8ff', kind: 'delta' },
+    { id: 'roomYawRate', name: 'ROOM YAW RATE', unit: 'deg/f', src: 'engine roomnode @ producer', color: '#40c8ff', kind: 'signed' },
+    { id: 'handSpeed', name: 'RAW HAND R SPEED', unit: 'gu/f', src: 'ROCK producer hand sample', color: '#59ff9c', kind: 'delta' },
+    { id: 'handRoomSlip', name: 'HAND-IN-ROOM SLIP R', unit: 'gu/f', src: 'hand delta minus room-predicted delta', color: '#59ff9c', kind: 'delta' },
+    { id: 'weaponSlip', name: 'WEAPON vs HAND SLIP', unit: 'gu/f', src: 'weapon node vs raw hand R (works unheld)', color: '#ffd23e', kind: 'delta' },
+    { id: 'heldSlip', name: 'HELD vs HAND SLIP', unit: 'gu/f', src: 'heldNode vs raw hand (producer feed, holding hand)', color: '#ff5964', kind: 'delta' },
+    { id: 'stomp', name: 'ENGINE STOMP eLW', unit: 'gu', src: 'heldNode entry vs ROCK last write (producer feed)', color: '#ff5964', kind: 'abs' },
+    { id: 'bodyVsAnchor', name: 'BODY vs ANCHOR', unit: 'gu', src: 'physics body pose vs visual anchor (producer feed)', color: '#c792ea', kind: 'abs' },
+    { id: 'preFrikRefresh', name: 'PREFRIK REFRESH raw/room', unit: 'gu', src: 'raw+room moved between producer and FRIK (preFrik feed)', color: '#ffb454', kind: 'abs', second: { color: '#40c8ff' } }
+  ];
+
+  var series = {};   // id -> array of numbers (or null when unavailable)
+  var series2 = {};  // second trace for dual rows
+  ROWS.forEach(function (r) { series[r.id] = []; if (r.second) { series2[r.id] = []; } });
+
+  // --- DOM scaffold -------------------------------------------------------
+  var chartsEl = document.getElementById('charts');
+  var rowEls = {};
+  ROWS.forEach(function (r, i) {
+    var div = document.createElement('div');
+    div.className = 'row';
+    div.style.top = (i * ROW_H) + 'px';
+    div.style.height = ROW_H + 'px';
+    div.innerHTML =
+      '<div class="row-label">' + r.name +
+      ' <span class="src">' + r.src + '</span>' +
+      '<span class="val" id="val-' + r.id + '">-</span>' +
+      '<span class="chip na" id="chip-' + r.id + '">-</span></div>' +
+      '<canvas id="cv-' + r.id + '" width="' + CHART_W + '" height="' + CHART_H + '"></canvas>';
+    chartsEl.appendChild(div);
+    rowEls[r.id] = {
+      canvas: div.querySelector('canvas'),
+      val: div.querySelector('#val-' + r.id),
+      chip: div.querySelector('#chip-' + r.id)
+    };
+  });
+
+  document.getElementById('legend').innerHTML =
+    '<b>Shading:</b> blue band = stick locomotion, orange band = stick turning.<br/>' +
+    '<b>BUZZ chip:</b> path length &divide; net travel over ' + BUZZ_WIN + ' frames.<br/>' +
+    '&nbsp;&nbsp;~1 smooth &middot; &gt;1.5 wobble &middot; &gt;3 per-frame buzz.<br/>' +
+    '<b>HAND-IN-ROOM SLIP:</b> 0 while stick-moving means the hand rides the<br/>' +
+    '&nbsp;&nbsp;room motion on the same clock; spikes = hand on a lagging clock.<br/>' +
+    '<b>HELD SLIP:</b> the buzz itself &mdash; the object moving relative to the hand.<br/>' +
+    '<b>STOMP eLW:</b> &gt;0 means the engine rewrote the held node after ROCK\'s<br/>' +
+    '&nbsp;&nbsp;anchor write (anchor silently undone).<br/>' +
+    '<b>BODY vs ANCHOR:</b> disagreement between the physics clock and the<br/>' +
+    '&nbsp;&nbsp;render clock for the held object.<br/>' +
+    '<b>PREFRIK REFRESH:</b> raw hand (orange) / room (blue) moved between<br/>' +
+    '&nbsp;&nbsp;ROCK\'s producer update and FRIK in the same frame.';
+
+  // --- helpers ------------------------------------------------------------
+  function wrapDeg(a) { while (a > 180) { a -= 360; } while (a < -180) { a += 360; } return a; }
+  function dist3(a, b) {
+    var dx = a[0] - b[0], dy = a[1] - b[1], dz = a[2] - b[2];
+    return Math.sqrt(dx * dx + dy * dy + dz * dz);
+  }
+  function sub3(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
+  function len3(a) { return Math.sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]); }
+
+  function fmt(v, digits) {
+    if (v === null || v === undefined || !isFinite(v)) { return '-'; }
+    return v.toFixed(digits === undefined ? 3 : digits);
+  }
+
+  // Buzz ratio over the last BUZZ_WIN per-frame delta VECTORS of a position
+  // channel: total path length divided by net displacement. Smooth travel
+  // scores ~1; a per-frame alternation scores far above 1.
+  function buzzRatioFromDeltas(deltas) {
+    var path = 0, net = [0, 0, 0], count = 0;
+    for (var i = 0; i < deltas.length; i++) {
+      var d = deltas[i];
+      if (!d) { continue; }
+      path += len3(d);
+      net[0] += d[0]; net[1] += d[1]; net[2] += d[2];
+      count++;
+    }
+    if (count < 8 || path < 0.02) { return null; }  // too little motion to judge
+    var netLen = len3(net);
+    return path / Math.max(netLen, 0.001);
+  }
+
+  function chipForRatio(el, ratio) {
+    if (ratio === null) { el.textContent = 'quiet'; el.className = 'chip na'; return; }
+    var txt = 'buzz ' + ratio.toFixed(1) + 'x';
+    el.textContent = txt;
+    el.className = 'chip ' + (ratio < 1.5 ? 'g' : (ratio < 3 ? 'a' : 'r'));
+  }
+
+  function chipForLevel(el, mean, warnAt, badAt) {
+    if (mean === null) { el.textContent = '-'; el.className = 'chip na'; return; }
+    el.textContent = mean.toFixed(3);
+    el.className = 'chip ' + (mean < warnAt ? 'g' : (mean < badAt ? 'a' : 'r'));
+  }
+
+  // --- per-frame channel derivation --------------------------------------
+  var prev = null;
+  var heldDeltas = { deltas: [] };   // vector deltas of (held-hand) for buzz chip
+  var weapDeltas = { deltas: [] };
+  var handRoomDeltas = { deltas: [] };
+
+  function pushCapped(arr, v) { arr.push(v); if (arr.length > HISTORY) { arr.shift(); } }
+  function pushDelta(store, v) { store.deltas.push(v); if (store.deltas.length > BUZZ_WIN) { store.deltas.shift(); } }
+
+  function activeGrab(d) {
+    // The holding hand is the one whose producer feed advanced this frame.
+    var pr = prev;
+    var advR = d.gR && d.gR.pro.n > 0 && (!pr || !pr.gR || d.gR.pro.n !== pr.gR.pro.n);
+    var advL = d.gL && d.gL.pro.n > 0 && (!pr || !pr.gL || d.gL.pro.n !== pr.gL.pro.n);
+    if (advR) { return { hand: 'R', g: d.gR }; }
+    if (advL) { return { hand: 'L', g: d.gL }; }
+    return null;
+  }
+
+  function derive(d) {
+    var pr = prev;
+
+    // Room motion.
+    var roomSpeed = null, yawRate = null;
+    if (d.room && pr && pr.room) {
+      roomSpeed = dist3(d.room, pr.room);
+      yawRate = wrapDeg(d.yaw - pr.yaw);
+    }
+    pushCapped(series.roomSpeed, roomSpeed);
+    pushCapped(series.roomYawRate, yawRate);
+    pushCapped(moveShade, roomSpeed === null ? 0 : roomSpeed);
+    pushCapped(turnShade, yawRate === null ? 0 : Math.abs(yawRate));
+
+    // Raw hand speed.
+    var handSpeed = (d.hR && pr && pr.hR) ? dist3(d.hR, pr.hR) : null;
+    pushCapped(series.handSpeed, handSpeed);
+
+    // Hand-in-room slip: rotate last hand's room-relative offset by the room
+    // yaw delta, translate by the room delta, compare with the actual hand.
+    var slip = null;
+    if (d.hR && d.room && pr && pr.hR && pr.room && yawRate !== null) {
+      var a = yawRate * Math.PI / 180;
+      var ca = Math.cos(a), sa = Math.sin(a);
+      var relX = pr.hR[0] - pr.room[0], relY = pr.hR[1] - pr.room[1], relZ = pr.hR[2] - pr.room[2];
+      var predX = d.room[0] + relX * ca - relY * sa;
+      var predY = d.room[1] + relX * sa + relY * ca;
+      var predZ = d.room[2] + relZ;
+      var sv = [d.hR[0] - predX, d.hR[1] - predY, d.hR[2] - predZ];
+      slip = len3(sv);
+      pushDelta(handRoomDeltas, sv);
+    } else {
+      pushDelta(handRoomDeltas, null);
+    }
+    pushCapped(series.handRoomSlip, slip);
+
+    // Weapon vs hand slip: per-frame change of the weapon-minus-hand vector.
+    var wslip = null;
+    if (d.weap && d.hR && pr && pr.weap && pr.hR) {
+      var relNow = sub3(d.weap, d.hR);
+      var relPrev = sub3(pr.weap, pr.hR);
+      var wv = sub3(relNow, relPrev);
+      wslip = len3(wv);
+      pushDelta(weapDeltas, wv);
+    } else {
+      pushDelta(weapDeltas, null);
+    }
+    pushCapped(series.weaponSlip, wslip);
+
+    // Held-object channels from the grab feed (holding hand only).
+    var act = activeGrab(d);
+    var held = null, stomp = null, bodyAnchor = null, preRaw = null, preRoom = null;
+    if (act) {
+      var g = act.g;
+      var prevG = pr ? (act.hand === 'R' ? pr.gR : pr.gL) : null;
+      if (prevG && prevG.pro.n > 0 && g.pro.ev && prevG.pro.ev) {
+        var relN = sub3(g.pro.entry, g.pro.raw);
+        var relP = sub3(prevG.pro.entry, prevG.pro.raw);
+        var hv = sub3(relN, relP);
+        held = len3(hv);
+        pushDelta(heldDeltas, hv);
+      } else {
+        pushDelta(heldDeltas, null);
+      }
+      stomp = g.pro.eLW >= 0 ? g.pro.eLW : null;
+      if (g.pro.bv) { bodyAnchor = dist3(g.pro.body, g.pro.anch); }
+      preRaw = g.pre.rP >= 0 ? g.pre.rP : null;
+      preRoom = g.pre.roomP >= 0 ? g.pre.roomP : null;
+    } else {
+      pushDelta(heldDeltas, null);
+    }
+    pushCapped(series.heldSlip, held);
+    pushCapped(series.stomp, stomp);
+    pushCapped(series.bodyVsAnchor, bodyAnchor);
+    pushCapped(series.preFrikRefresh, preRaw);
+    pushCapped(series2.preFrikRefresh, preRoom);
+
+    pushCapped(frames, d);
+    prev = d;
+    return act;
+  }
+
+  // --- rendering ----------------------------------------------------------
+  function percentileScale(values, second) {
+    var mags = [];
+    function collect(list) {
+      if (!list) { return; }
+      for (var i = 0; i < list.length; i++) {
+        var v = list[i];
+        if (v !== null && isFinite(v)) { mags.push(Math.abs(v)); }
+      }
+    }
+    collect(values); collect(second);
+    if (!mags.length) { return 0.1; }
+    mags.sort(function (a, b) { return a - b; });
+    var p = mags[Math.min(mags.length - 1, Math.floor(mags.length * 0.95))];
+    return Math.max(p * 1.15, 0.02);
+  }
+
+  function drawRow(row) {
+    var el = rowEls[row.id];
+    var ctx = el.canvas.getContext('2d');
+    var vals = series[row.id];
+    var vals2 = row.second ? series2[row.id] : null;
+    ctx.clearRect(0, 0, CHART_W, CHART_H);
+
+    // Shading bands: draw per-frame columns tinted by locomotion / turning.
+    var n = vals.length;
+    var xStep = CHART_W / HISTORY;
+    var x0 = CHART_W - n * xStep;
+    for (var i = 0; i < n; i++) {
+      var mv = moveShade[i] || 0;
+      var tv = turnShade[i] || 0;
+      if (tv > 0.05) {
+        ctx.fillStyle = 'rgba(255, 150, 40, ' + Math.min(0.28, 0.06 + tv * 0.10) + ')';
+        ctx.fillRect(x0 + i * xStep, 0, xStep + 0.5, CHART_H);
+      } else if (mv > 0.05) {
+        ctx.fillStyle = 'rgba(40, 130, 255, ' + Math.min(0.22, 0.05 + mv * 0.02) + ')';
+        ctx.fillRect(x0 + i * xStep, 0, xStep + 0.5, CHART_H);
+      }
+    }
+
+    var scale = percentileScale(vals, vals2);
+    var signed = row.kind === 'signed';
+    var baseY = signed ? CHART_H / 2 : CHART_H - 2;
+    // Baseline.
+    ctx.strokeStyle = 'rgba(120,170,200,0.25)';
+    ctx.beginPath(); ctx.moveTo(0, baseY); ctx.lineTo(CHART_W, baseY); ctx.stroke();
+
+    function trace(list, color) {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      var started = false;
+      for (var i = 0; i < list.length; i++) {
+        var v = list[i];
+        var x = x0 + i * xStep;
+        if (v === null || !isFinite(v)) { started = false; continue; }
+        var h = (v / scale) * (signed ? CHART_H / 2 - 2 : CHART_H - 4);
+        var y = baseY - Math.max(Math.min(h, CHART_H), -CHART_H);
+        if (!started) { ctx.moveTo(x, y); started = true; } else { ctx.lineTo(x, y); }
+      }
+      ctx.stroke();
+    }
+    trace(vals, row.color);
+    if (vals2) { trace(vals2, row.second.color); }
+
+    // Scale annotation.
+    ctx.fillStyle = 'rgba(140,190,215,0.7)';
+    ctx.font = '11px Consolas';
+    ctx.fillText(scale.toFixed(2), CHART_W - 40, 11);
+
+    // Current value = median of last 5 valid samples (steadier to read).
+    var recent = [];
+    for (var i = vals.length - 1; i >= 0 && recent.length < 5; i--) {
+      if (vals[i] !== null && isFinite(vals[i])) { recent.push(vals[i]); }
+    }
+    recent.sort(function (a, b) { return a - b; });
+    var current = recent.length ? recent[Math.floor(recent.length / 2)] : null;
+    el.val.textContent = current === null ? '-' : (fmt(current) + ' ' + row.unit);
+  }
+
+  function updateChips() {
+    chipForRatio(rowEls.handRoomSlip.chip, buzzRatioFromDeltas(handRoomDeltas.deltas));
+    chipForRatio(rowEls.weaponSlip.chip, buzzRatioFromDeltas(weapDeltas.deltas));
+    chipForRatio(rowEls.heldSlip.chip, buzzRatioFromDeltas(heldDeltas.deltas));
+
+    function meanTail(list, w) {
+      var s = 0, c = 0;
+      for (var i = list.length - 1; i >= 0 && c < w; i--) {
+        if (list[i] !== null && isFinite(list[i])) { s += list[i]; c++; }
+      }
+      return c ? s / c : null;
+    }
+    chipForLevel(rowEls.roomSpeed.chip, meanTail(series.roomSpeed, BUZZ_WIN), 0.05, 5);
+    chipForLevel(rowEls.roomYawRate.chip, meanTail(series.roomYawRate.map(function (v) { return v === null ? null : Math.abs(v); }), BUZZ_WIN), 0.05, 10);
+    chipForLevel(rowEls.handSpeed.chip, meanTail(series.handSpeed, BUZZ_WIN), 0.5, 10);
+    chipForLevel(rowEls.stomp.chip, meanTail(series.stomp, BUZZ_WIN), 0.01, 0.1);
+    chipForLevel(rowEls.bodyVsAnchor.chip, meanTail(series.bodyVsAnchor, BUZZ_WIN), 0.05, 1);
+    chipForLevel(rowEls.preFrikRefresh.chip, meanTail(series.preFrikRefresh, BUZZ_WIN), 0.01, 0.1);
+  }
+
+  function updateHeader(d, act) {
+    var fps = d.dt > 0 ? (1 / d.dt) : 0;
+    document.getElementById('stats').textContent =
+      'frame ' + d.f + '  ·  ' + fps.toFixed(0) + ' fps (' + (d.dt * 1000).toFixed(1) + ' ms)';
+
+    var b = '';
+    b += '<span class="badge ' + (d.ready ? 'on' : 'off') + '">' + (d.ready ? 'READY' : 'BLOCKED') + '</span>';
+    b += '<span class="badge ' + (act ? 'on' : 'off') + '">HOLDING' + (act ? ' ' + act.hand : '') + '</span>';
+    if (act) {
+      var eng = act.g.pro.eng === 1;
+      b += '<span class="badge ' + (eng ? 'on' : 'warn') + '">ANCHOR ' + (eng ? 'renderClock' : 'body') +
+           ' · blend ' + act.g.pro.blend.toFixed(2) + '</span>';
+      b += '<span class="badge ' + (act.g.pro.nw === 1 ? 'on' : 'warn') + '">NODE WRITE ' + (act.g.pro.nw === 1 ? 'yes' : 'no') + '</span>';
+    }
+    var feedLive = (d.gR && d.gR.pro.n > 0) || (d.gL && d.gL.pro.n > 0);
+    b += '<span class="badge ' + (feedLive ? 'on' : 'off') + '">FEED ' + (feedLive ? 'live' : 'no data yet') + '</span>';
+    document.getElementById('badges').innerHTML = b;
+  }
+
+  function v3txt(a) {
+    if (!a) { return '-'; }
+    return a[0].toFixed(1) + ',' + a[1].toFixed(1) + ',' + a[2].toFixed(1);
+  }
+
+  function updateSources(d, act) {
+    var g = act ? act.g : (d.gR && d.gR.pro.n > 0 ? d.gR : d.gL);
+    var lines = '';
+    lines += 'MONITOR @producer end (this panel)\n';
+    lines += '  room <b>' + v3txt(d.room) + '</b> yaw <b>' + (d.yaw !== undefined ? d.yaw.toFixed(2) : '-') + '</b>\n';
+    lines += '  handR <b>' + v3txt(d.hR) + '</b>\n';
+    lines += '  weap <b>' + v3txt(d.weap) + '</b>\n\n';
+    if (g && g.phy.n > 0) {
+      lines += 'PHYSICS FLUSH (+0x30, physics thread) #' + g.phy.n + '\n';
+      lines += '  room <b>' + v3txt(g.phy.room) + '</b> yaw <b>' + g.phy.yaw.toFixed(2) + '</b>\n';
+      lines += '  held <b>' + v3txt(g.phy.held) + '</b> dWrite <b>' + fmt(g.phy.dW) + '</b>\n\n';
+    } else {
+      lines += 'PHYSICS FLUSH: no samples yet\n\n';
+    }
+    if (g && g.pro.n > 0) {
+      lines += 'PRODUCER (updateHeldObject) #' + g.pro.n + '\n';
+      lines += '  room <b>' + v3txt(g.pro.room) + '</b> yaw <b>' + g.pro.yaw.toFixed(2) + '</b>\n';
+      lines += '  raw hand <b>' + v3txt(g.pro.raw) + '</b>\n';
+      lines += '  held entry <b>' + v3txt(g.pro.entry) + '</b>\n';
+      lines += '  entryVsLastWrite <b>' + fmt(g.pro.eLW) + '</b> entryVsBody <b>' + fmt(g.pro.eB) + '</b>\n';
+      lines += '  body <b>' + v3txt(g.pro.body) + '</b>\n';
+      lines += '  anchor <b>' + v3txt(g.pro.anch) + '</b> blend <b>' + g.pro.blend.toFixed(2) + '</b>\n\n';
+    } else {
+      lines += 'PRODUCER: not holding\n\n';
+    }
+    if (g && g.pre.n > 0) {
+      lines += 'PRE-FRIK (republish) #' + g.pre.n + '\n';
+      lines += '  rawVsProducer <b>' + fmt(g.pre.rP) + '</b> roomVsProducer <b>' + fmt(g.pre.roomP) + '</b>\n';
+      lines += '  held <b>' + v3txt(g.pre.held) + '</b> dWrite <b>' + fmt(g.pre.dW) + '</b>\n';
+      lines += '  republished hand <b>' + v3txt(g.pre.rep) + '</b>\n';
+    } else {
+      lines += 'PRE-FRIK: no republish this session\n';
+    }
+    document.getElementById('sources').innerHTML = lines;
+  }
+
+  window.rockMonitorUpdate = function rockMonitorUpdate(payload) {
+    var d;
+    try { d = JSON.parse(payload); } catch (e) { return; }
+    if (!d || d.ready !== 1) { return; }
+
+    var act = derive(d);
+    for (var i = 0; i < ROWS.length; i++) { drawRow(ROWS[i]); }
+    updateChips();
+    updateHeader(d, act);
+    updateSources(d, act);
+  };
+</script>

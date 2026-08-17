@@ -1,4 +1,3 @@
-#define ROCK_API_EXPORTS
 #include "physics-interaction/debug/GrabClockDebugFeed.h"
 
 #include <mutex>
@@ -67,32 +66,12 @@ namespace rock::debug
         feed.mutex.unlock();
     }
 
-    namespace
+    void copyGrabClockDebug(const bool isLeft, RockGrabClockDebugHandV1& out) noexcept
     {
-        [[nodiscard]] bool copyGrabClockDebug(
-            const std::uint32_t isLeft,
-            RockGrabClockDebugHandV1* out)
-        {
-            if (!out ||
-                out->structSize != sizeof(RockGrabClockDebugHandV1) ||
-                out->version != ROCK_GRAB_CLOCK_DEBUG_VERSION ||
-                isLeft > 1) {
-                return false;
-            }
-
-            auto& feed = feedFor(isLeft != 0);
-            std::scoped_lock lock(feed.mutex);
-            out->physics = feed.physics;
-            out->producer = feed.producer;
-            out->preFrik = feed.preFrik;
-            return true;
-        }
+        auto& feed = feedFor(isLeft);
+        std::scoped_lock lock(feed.mutex);
+        out.physics = feed.physics;
+        out.producer = feed.producer;
+        out.preFrik = feed.preFrik;
     }
-}
-
-extern "C" __declspec(dllexport) bool __cdecl ROCKAPI_CopyGrabClockDebugV1(
-    const std::uint32_t isLeft,
-    rock::debug::RockGrabClockDebugHandV1* out)
-{
-    return rock::debug::copyGrabClockDebug(isLeft, out);
 }

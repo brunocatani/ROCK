@@ -230,6 +230,8 @@ if(POST_BUILD_COPY_PLUGIN)
         COMMAND ${CMAKE_COMMAND} -E copy_directory "${ROOT_DIR}/data/mod" "${copy_path}"
         COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:${PROJECT_NAME}> ${copy_path}/F4SE/Plugins/
         COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_PDB_FILE:${PROJECT_NAME}> ${copy_path}/F4SE/Plugins/
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${copy_path}/PrismaUI_F4/views/ROCK-Monitor/"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory "${ROOT_DIR}/view" "${copy_path}/PrismaUI_F4/views/ROCK-Monitor/"
       )
     endforeach()
   else()

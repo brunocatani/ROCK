@@ -24,6 +24,7 @@
 #include "physics-interaction/weapon/WeaponPartGripReportPolicy.h"
 #include "physics-interaction/weapon/WeaponPartRuntime.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
+#include "monitor/GrabClockMonitor.h"
 #include "rock_support/Fo4VrRuntime.h"
 #include "RockConfig.h"
 
@@ -5638,6 +5639,12 @@ namespace rock::provider
                 }
             }
         }
+
+        // Embedded grab-clock monitor panel consumes the same fully built
+        // snapshot as external consumers, but in-process with direct access
+        // to ROCK internals (game thread, every producer frame including
+        // menu/config-blocked ones so the panel can hide itself).
+        rock::monitor::onProviderFrame(snapshot);
     }
 
     void dispatchAnimationPhaseCallbacksV1(
