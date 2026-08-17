@@ -1175,18 +1175,37 @@ namespace rock
         {
             RE::NiPointer<RE::NiAVObject> heldNode;
             RE::NiTransform heldNodeToHandLocal{};
+            /*
+             * Fresh-clock pair transport: the engine applies stick
+             * locomotion/turn mid-frame, after the producer wrote the held
+             * pair from the pre-move hand. These locals are captured against
+             * the producer's raw hand so the pre-FRIK refresh can carry the
+             * rigid hand+object pair onto the freshly reconstructed hand,
+             * keeping the pair on the same clock as the rendered camera.
+             * Only meaningful while renderClockNodeOwned (the producer wrote
+             * the node this frame); during acquisition the node stays on the
+             * engine's body sync and the held-node-derived republish applies.
+             */
+            RE::NiTransform sourceRawHandWorld{};
+            RE::NiTransform rawHandToHeldLocal{};
+            RE::NiTransform rawHandToHandLocal{};
             std::uint64_t sourceSchedulerSequence = 0;
             std::uint32_t heldBodyId = INVALID_BODY_ID;
             std::uint32_t constraintId = INVALID_BODY_ID;
+            bool renderClockNodeOwned = false;
             bool valid = false;
 
             void clear()
             {
                 heldNode.reset();
                 heldNodeToHandLocal = {};
+                sourceRawHandWorld = {};
+                rawHandToHeldLocal = {};
+                rawHandToHandLocal = {};
                 sourceSchedulerSequence = 0;
                 heldBodyId = INVALID_BODY_ID;
                 constraintId = INVALID_BODY_ID;
+                renderClockNodeOwned = false;
                 valid = false;
             }
         };

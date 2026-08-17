@@ -68,6 +68,8 @@ namespace rock::debug
         float heldNodePos[3]{};
         float heldVsLastWriteGu{ -1.0f };
         float republishedHandPos[3]{};
+        std::uint32_t freshPairApplied{ 0 };      // fresh-clock pair transport ran
+        float intraFrameHandMotionGu{ -1.0f };    // raw hand producer->preFrik delta
     };
 
     struct RockGrabClockDebugHandV1

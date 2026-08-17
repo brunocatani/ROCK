@@ -4907,6 +4907,22 @@ namespace rock
         }
     }
 
+    namespace
+    {
+        // Defined later in this file next to the producer's node write; both
+        // sites must share the exact same scene-graph write mechanism.
+        bool applyHeldVisualNodeWorldTransform(RE::NiAVObject* node, const RE::NiTransform& desiredWorld);
+
+        /*
+         * Upper bound for the raw hand's producer->preFrik intra-frame delta
+         * eligible for fresh-clock pair transport. Sprint locomotion measures
+         * a few gu per frame at reprojected frame rates; anything near this
+         * cap indicates a teleport, recenter, or corrupted reconstruction,
+         * where the transport must fail closed to the held-node republish.
+         */
+        constexpr float kMaxPreFrikGrabPairTransportGameUnits = 64.0f;
+    }
+
     void Hand::refreshGrabVisualAuthorityBeforeFrik(
         const std::uint64_t schedulerSequence,
         const bool rawHandValid,
@@ -4940,24 +4956,81 @@ namespace rock
                     heldNodeWorld,
                     _preFrikGrabVisualAuthority.heldNodeToHandLocal) :
                 RE::NiTransform{};
+
+            // ANCHOR_CLOCK probe entry state: sampled before any pre-FRIK
+            // write so heldVsLastWrite stays a true engine-stomp meter
+            // against the producer's write, and rawVsProducer/roomVsProducer
+            // measure the engine's mid-frame root/skeleton refresh.
+            const auto anchorProbeRoom = sampleAnchorClockRoom();
+            const float anchorProbeHeldVsLastWrite = (sourceOwned && _hasGrabProbeLastAnchorWrite) ?
+                pointDistanceGameUnits(heldNodeWorld.translate, _grabProbeLastAnchorWrite.translate) :
+                -1.0f;
+            const float anchorProbeRawVsProducer = (rawHandValid && _hasGrabProbeProducerSample) ?
+                pointDistanceGameUnits(rawHandWorld.translate, _grabProbeProducerHandPos) :
+                -1.0f;
+            const float anchorProbeRoomVsProducer = (anchorProbeRoom.valid && _hasGrabProbeProducerSample) ?
+                pointDistanceGameUnits(anchorProbeRoom.position, _grabProbeProducerRoomPos) :
+                -1.0f;
+
+            /*
+             * Fresh-clock pair transport (2026-08-17 stick-locomotion buzz):
+             * the engine applies stick locomotion/turn mid-frame, AFTER the
+             * producer wrote the held pair from the pre-move hand (measured:
+             * raw/room move >1gu between producer and pre-FRIK only under
+             * stick input). Republishing the FRIK hand from the stale held
+             * node anchored the rendered pair one locomotion step behind the
+             * camera, with per-frame variation showing as the high-frequency
+             * held-object buzz. While ROCK owns the rendered node this frame,
+             * carry the rigid hand+object pair onto the freshly reconstructed
+             * raw hand instead, so pair and camera render on the same clock.
+             * Fails closed to the held-node republish when the fresh hand is
+             * missing or the intra-frame delta is implausible (teleport /
+             * recenter guard).
+             */
+            bool freshPairApplied = false;
+            float intraFrameHandMotionGameUnits = -1.0f;
+            RE::NiTransform publishedHandWorld = refreshedHandWorld;
+            if (sourceOwned &&
+                _preFrikGrabVisualAuthority.renderClockNodeOwned &&
+                rawHandValid &&
+                prefrik_hand_authority_policy::isUsableTransform(rawHandWorld)) {
+                intraFrameHandMotionGameUnits =
+                    prefrik_hand_authority_policy::translationDeltaGameUnits(
+                        rawHandWorld,
+                        _preFrikGrabVisualAuthority.sourceRawHandWorld);
+                if (intraFrameHandMotionGameUnits <=
+                        kMaxPreFrikGrabPairTransportGameUnits) {
+                    const RE::NiTransform freshHeldWorld =
+                        prefrik_hand_authority_policy::reconstructTargetWorld(
+                            rawHandWorld,
+                            _preFrikGrabVisualAuthority.rawHandToHeldLocal);
+                    const RE::NiTransform freshHandWorld =
+                        prefrik_hand_authority_policy::reconstructTargetWorld(
+                            rawHandWorld,
+                            _preFrikGrabVisualAuthority.rawHandToHandLocal);
+                    if (prefrik_hand_authority_policy::isUsableTransform(
+                            freshHeldWorld) &&
+                        prefrik_hand_authority_policy::isUsableTransform(
+                            freshHandWorld) &&
+                        applyGrabExternalHandWorldTransform(
+                            _isLeft,
+                            freshHandWorld)) {
+                        applyHeldVisualNodeWorldTransform(
+                            _preFrikGrabVisualAuthority.heldNode.get(),
+                            freshHeldWorld);
+                        _grabProbeLastAnchorWrite = freshHeldWorld;
+                        _hasGrabProbeLastAnchorWrite = true;
+                        _lastPublishedGrabVisualHandTransform = freshHandWorld;
+                        _hasLastPublishedGrabVisualHandTransform = true;
+                        publishedHandWorld = freshHandWorld;
+                        freshPairApplied = true;
+                    }
+                }
+            }
+
             if (sourceOwned) {
-                // ANCHOR_CLOCK probe: this stage republishes the FRIK hand
-                // from heldNode->world. heldVsLastWrite detects an engine
-                // body-sync stomp between the producer write and FRIK;
-                // rawVsProducer/roomVsProducer detect a root/skeleton refresh
-                // between producer and FRIK within the same frame.
-                const auto anchorProbeRoom = sampleAnchorClockRoom();
-                const float anchorProbeHeldVsLastWrite = _hasGrabProbeLastAnchorWrite ?
-                    pointDistanceGameUnits(heldNodeWorld.translate, _grabProbeLastAnchorWrite.translate) :
-                    -1.0f;
-                const float anchorProbeRawVsProducer = (rawHandValid && _hasGrabProbeProducerSample) ?
-                    pointDistanceGameUnits(rawHandWorld.translate, _grabProbeProducerHandPos) :
-                    -1.0f;
-                const float anchorProbeRoomVsProducer = (anchorProbeRoom.valid && _hasGrabProbeProducerSample) ?
-                    pointDistanceGameUnits(anchorProbeRoom.position, _grabProbeProducerRoomPos) :
-                    -1.0f;
                 ROCK_LOG_INFO(Hand,
-                    "{} ANCHOR_CLOCK stage=preFrik seq={} room=({:.2f},{:.2f},{:.2f}) roomYaw={:.3f} rawHand=({:.2f},{:.2f},{:.2f}) rawVsProducer={:.3f}gu roomVsProducer={:.3f}gu heldNode=({:.2f},{:.2f},{:.2f}) heldVsLastWrite={:.3f}gu repubHand=({:.2f},{:.2f},{:.2f})",
+                    "{} ANCHOR_CLOCK stage=preFrik seq={} room=({:.2f},{:.2f},{:.2f}) roomYaw={:.3f} rawHand=({:.2f},{:.2f},{:.2f}) rawVsProducer={:.3f}gu roomVsProducer={:.3f}gu heldNode=({:.2f},{:.2f},{:.2f}) heldVsLastWrite={:.3f}gu repubHand=({:.2f},{:.2f},{:.2f}) freshPair={} intraMotion={:.3f}gu",
                     handName(),
                     schedulerSequence,
                     anchorProbeRoom.position.x,
@@ -4973,9 +5046,11 @@ namespace rock
                     heldNodeWorld.translate.y,
                     heldNodeWorld.translate.z,
                     anchorProbeHeldVsLastWrite,
-                    refreshedHandWorld.translate.x,
-                    refreshedHandWorld.translate.y,
-                    refreshedHandWorld.translate.z);
+                    publishedHandWorld.translate.x,
+                    publishedHandWorld.translate.y,
+                    publishedHandWorld.translate.z,
+                    freshPairApplied ? "yes" : "no",
+                    intraFrameHandMotionGameUnits);
 
                 rock::debug::RockGrabClockStagePreFrikV1 grabClockPreFrikSample{};
                 grabClockPreFrikSample.schedulerSequence = schedulerSequence;
@@ -4988,17 +5063,20 @@ namespace rock
                 grabClockPreFrikSample.roomVsProducerGu = anchorProbeRoomVsProducer;
                 assignGrabClockFeedVec(grabClockPreFrikSample.heldNodePos, heldNodeWorld.translate);
                 grabClockPreFrikSample.heldVsLastWriteGu = anchorProbeHeldVsLastWrite;
-                assignGrabClockFeedVec(grabClockPreFrikSample.republishedHandPos, refreshedHandWorld.translate);
+                assignGrabClockFeedVec(grabClockPreFrikSample.republishedHandPos, publishedHandWorld.translate);
+                grabClockPreFrikSample.freshPairApplied = freshPairApplied ? 1u : 0u;
+                grabClockPreFrikSample.intraFrameHandMotionGu = intraFrameHandMotionGameUnits;
                 rock::debug::publishGrabClockPreFrikStage(_isLeft, grabClockPreFrikSample);
             }
-            if (!sourceOwned ||
-                !prefrik_hand_authority_policy::isUsableTransform(
-                    heldNodeWorld) ||
-                !prefrik_hand_authority_policy::isUsableTransform(
-                    refreshedHandWorld) ||
-                !applyGrabExternalHandWorldTransform(
-                    _isLeft,
-                    refreshedHandWorld)) {
+            if (!freshPairApplied &&
+                (!sourceOwned ||
+                    !prefrik_hand_authority_policy::isUsableTransform(
+                        heldNodeWorld) ||
+                    !prefrik_hand_authority_policy::isUsableTransform(
+                        refreshedHandWorld) ||
+                    !applyGrabExternalHandWorldTransform(
+                        _isLeft,
+                        refreshedHandWorld))) {
                 clearGrabExternalHandWorldTransform(_isLeft);
                 _preFrikGrabVisualAuthority.clear();
             }
@@ -12215,6 +12293,7 @@ namespace rock
                      * stays on the engine's body sync so the hand travels to
                      * the object, never the reverse.
                      */
+                    bool renderClockNodeWritten = false;
                     if (renderClockAnchorEngaged &&
                         visualHandLerpAlpha >= 1.0f &&
                         _grabFrame.heldNode) {
@@ -12222,6 +12301,7 @@ namespace rock
                         _grabProbeLastAnchorWrite = heldVisualNodeWorld;
                         _hasGrabProbeLastAnchorWrite = true;
                         grabClockProducerSample.nodeWriteApplied = 1;
+                        renderClockNodeWritten = true;
                     } else {
                         _hasGrabProbeLastAnchorWrite = false;
                     }
@@ -12236,6 +12316,24 @@ namespace rock
                             prefrik_hand_authority_policy::captureDriverToTargetLocal(
                                 heldVisualNodeWorld,
                                 _grabVisualHandTransform);
+                        _preFrikGrabVisualAuthority.sourceRawHandWorld =
+                            handWorldTransform;
+                        _preFrikGrabVisualAuthority.rawHandToHeldLocal =
+                            prefrik_hand_authority_policy::captureDriverToTargetLocal(
+                                handWorldTransform,
+                                heldVisualNodeWorld);
+                        _preFrikGrabVisualAuthority.rawHandToHandLocal =
+                            prefrik_hand_authority_policy::captureDriverToTargetLocal(
+                                handWorldTransform,
+                                _grabVisualHandTransform);
+                        _preFrikGrabVisualAuthority.renderClockNodeOwned =
+                            renderClockNodeWritten &&
+                            prefrik_hand_authority_policy::isUsableTransform(
+                                handWorldTransform) &&
+                            prefrik_hand_authority_policy::isUsableTransform(
+                                _preFrikGrabVisualAuthority.rawHandToHeldLocal) &&
+                            prefrik_hand_authority_policy::isUsableTransform(
+                                _preFrikGrabVisualAuthority.rawHandToHandLocal);
                         _preFrikGrabVisualAuthority.sourceSchedulerSequence =
                             sourceSchedulerSequence;
                         _preFrikGrabVisualAuthority.heldBodyId =

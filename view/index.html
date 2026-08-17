@@ -493,6 +493,8 @@
       b += '<span class="badge ' + (eng ? 'on' : 'warn') + '">ANCHOR ' + (eng ? 'renderClock' : 'body') +
            ' · blend ' + act.g.pro.blend.toFixed(2) + '</span>';
       b += '<span class="badge ' + (act.g.pro.nw === 1 ? 'on' : 'warn') + '">NODE WRITE ' + (act.g.pro.nw === 1 ? 'yes' : 'no') + '</span>';
+      var fp = act.g.pre && act.g.pre.n > 0 ? act.g.pre.fp === 1 : false;
+      b += '<span class="badge ' + (fp ? 'on' : 'warn') + '">PAIR TRANSPORT ' + (fp ? 'fresh' : 'stale') + '</span>';
     }
     var feedLive = (d.gR && d.gR.pro.n > 0) || (d.gL && d.gL.pro.n > 0);
     b += '<span class="badge ' + (feedLive ? 'on' : 'off') + '">FEED ' + (feedLive ? 'live' : 'no data yet') + '</span>';
@@ -534,6 +536,7 @@
       lines += '  rawVsProducer <b>' + fmt(g.pre.rP) + '</b> roomVsProducer <b>' + fmt(g.pre.roomP) + '</b>\n';
       lines += '  held <b>' + v3txt(g.pre.held) + '</b> dWrite <b>' + fmt(g.pre.dW) + '</b>\n';
       lines += '  republished hand <b>' + v3txt(g.pre.rep) + '</b>\n';
+      lines += '  freshPair <b>' + (g.pre.fp === 1 ? 'yes' : 'no') + '</b> intraMotion <b>' + fmt(g.pre.im) + 'gu</b>\n';
     } else {
       lines += 'PRE-FRIK: no republish this session\n';
     }

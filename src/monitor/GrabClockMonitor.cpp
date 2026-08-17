@@ -713,6 +713,8 @@ namespace rock::monitor
                     { "held", vec3Json(pre.heldNodePos) },
                     { "dW", roundTo(pre.heldVsLastWriteGu, 1000.0) },
                     { "rep", vec3Json(pre.republishedHandPos) },
+                    { "fp", pre.freshPairApplied },
+                    { "im", roundTo(pre.intraFrameHandMotionGu, 1000.0) },
                 } },
             };
         }
