@@ -524,6 +524,16 @@ namespace rock
         // as a per-frame buzz (2026-08-16 user observation + code audit).
         // Runtime-toggleable for A/B perception comparison.
         bool rockGrabHeldRenderClockAnchor = true;
+        // Render-consumption DIAGNOSTIC probe (2026-08-17 grab clock
+        // investigation; remove once the renderer's transform source is
+        // identified). Non-zero offsets the held node's producer write by
+        // +Z and the pre-FRIK fresh-clock write by -Z (node only; the
+        // published FRIK hand is untouched). The rendered object's visible
+        // offset identifies which write the renderer consumes: raised =
+        // producer write, lowered = pre-FRIK write, level-but-buzzing =
+        // the engine's mid-frame body sync (render copy taken between the
+        // two, or a direct body read). 0 disables.
+        float rockGrabRenderClockProbeOffsetGameUnits = 0.0f;
         float rockGrabHandLerpTimeMin = 0.10f;
         float rockGrabHandLerpTimeMax = 0.20f;
         float rockGrabHandLerpMinDistance = 7.0f;

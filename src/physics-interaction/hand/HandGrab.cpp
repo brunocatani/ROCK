@@ -5015,10 +5015,18 @@ namespace rock
                         applyGrabExternalHandWorldTransform(
                             _isLeft,
                             freshHandWorld)) {
+                        // Render-consumption probe counterpart: -Z here vs
+                        // +Z at the producer write (node only, diagnostic).
+                        RE::NiTransform preFrikNodeWritePose = freshHeldWorld;
+                        const float renderProbeOffset =
+                            g_rockConfig.rockGrabRenderClockProbeOffsetGameUnits;
+                        if (renderProbeOffset != 0.0f) {
+                            preFrikNodeWritePose.translate.z -= renderProbeOffset;
+                        }
                         applyHeldVisualNodeWorldTransform(
                             _preFrikGrabVisualAuthority.heldNode.get(),
-                            freshHeldWorld);
-                        _grabProbeLastAnchorWrite = freshHeldWorld;
+                            preFrikNodeWritePose);
+                        _grabProbeLastAnchorWrite = preFrikNodeWritePose;
                         _hasGrabProbeLastAnchorWrite = true;
                         _lastPublishedGrabVisualHandTransform = freshHandWorld;
                         _hasLastPublishedGrabVisualHandTransform = true;
@@ -12297,8 +12305,24 @@ namespace rock
                     if (renderClockAnchorEngaged &&
                         visualHandLerpAlpha >= 1.0f &&
                         _grabFrame.heldNode) {
-                        applyHeldVisualNodeWorldTransform(_grabFrame.heldNode, heldVisualNodeWorld);
-                        _grabProbeLastAnchorWrite = heldVisualNodeWorld;
+                        // Render-consumption probe: +Z here, -Z at pre-FRIK.
+                        // The rendered object's visible offset identifies
+                        // which node write the renderer consumes (see
+                        // rockGrabRenderClockProbeOffsetGameUnits).
+                        RE::NiTransform producerNodeWritePose = heldVisualNodeWorld;
+                        const float renderProbeOffset =
+                            g_rockConfig.rockGrabRenderClockProbeOffsetGameUnits;
+                        if (renderProbeOffset != 0.0f) {
+                            producerNodeWritePose.translate.z += renderProbeOffset;
+                            ROCK_LOG_SAMPLE_WARN(Hand,
+                                1000,
+                                "{} RENDER_PROBE active: producer node write +{:.1f}gu Z, preFrik write -{:.1f}gu Z (diagnostic, object only)",
+                                handName(),
+                                renderProbeOffset,
+                                renderProbeOffset);
+                        }
+                        applyHeldVisualNodeWorldTransform(_grabFrame.heldNode, producerNodeWritePose);
+                        _grabProbeLastAnchorWrite = producerNodeWritePose;
                         _hasGrabProbeLastAnchorWrite = true;
                         grabClockProducerSample.nodeWriteApplied = 1;
                         renderClockNodeWritten = true;
