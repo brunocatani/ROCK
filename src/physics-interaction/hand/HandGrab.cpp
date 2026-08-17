@@ -8,6 +8,7 @@
 #include "physics-interaction/grab/GrabCore.h"
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
 #include "physics-interaction/debug/DebugMath.h"
+#include "physics-interaction/debug/GrabClockDebugFeed.h"
 #include "physics-interaction/grenade/LooseGrenadeRuntime.h"
 #include "physics-interaction/grab/GrabAuthorityProxy.h"
 #include "physics-interaction/grab/GrabConstraint.h"
@@ -4754,6 +4755,13 @@ namespace rock
             return sample;
         }
 
+        void assignGrabClockFeedVec(float (&out)[3], const RE::NiPoint3& in)
+        {
+            out[0] = in.x;
+            out[1] = in.y;
+            out[2] = in.z;
+        }
+
         void logRuntimeScaleIfChanged(bool isLeft, const char* handName, const RE::NiTransform& handWorldTransform, const RE::NiAVObject* collidableNode)
         {
             struct RuntimeScaleLogState
@@ -4968,6 +4976,20 @@ namespace rock
                     refreshedHandWorld.translate.x,
                     refreshedHandWorld.translate.y,
                     refreshedHandWorld.translate.z);
+
+                rock::debug::RockGrabClockStagePreFrikV1 grabClockPreFrikSample{};
+                grabClockPreFrikSample.schedulerSequence = schedulerSequence;
+                assignGrabClockFeedVec(grabClockPreFrikSample.roomPos, anchorProbeRoom.position);
+                grabClockPreFrikSample.roomYawDegrees = anchorProbeRoom.yawDegrees;
+                grabClockPreFrikSample.roomValid = anchorProbeRoom.valid ? 1u : 0u;
+                assignGrabClockFeedVec(grabClockPreFrikSample.rawHandPos, rawHandWorld.translate);
+                grabClockPreFrikSample.rawHandValid = rawHandValid ? 1u : 0u;
+                grabClockPreFrikSample.rawVsProducerGu = anchorProbeRawVsProducer;
+                grabClockPreFrikSample.roomVsProducerGu = anchorProbeRoomVsProducer;
+                assignGrabClockFeedVec(grabClockPreFrikSample.heldNodePos, heldNodeWorld.translate);
+                grabClockPreFrikSample.heldVsLastWriteGu = anchorProbeHeldVsLastWrite;
+                assignGrabClockFeedVec(grabClockPreFrikSample.republishedHandPos, refreshedHandWorld.translate);
+                rock::debug::publishGrabClockPreFrikStage(_isLeft, grabClockPreFrikSample);
             }
             if (!sourceOwned ||
                 !prefrik_hand_authority_policy::isUsableTransform(
@@ -12028,6 +12050,7 @@ namespace rock
                 _grabHeldAnchorBodyBlend = 1.0f;
             }
 
+            rock::debug::RockGrabClockStageProducerV1 grabClockProducerSample{};
             {
                 const auto anchorProbeRoom = sampleAnchorClockRoom();
                 const float anchorProbeEntryVsLastWrite =
@@ -12038,6 +12061,22 @@ namespace rock
                     (hasBodyDerivedNodeWorld && anchorProbeHeldNodeOk) ?
                     pointDistanceGameUnits(anchorProbeHeldEntryWorld.translate, bodyDerivedNodeWorld.translate) :
                     -1.0f;
+
+                grabClockProducerSample.schedulerSequence = sourceSchedulerSequence;
+                grabClockProducerSample.deltaSeconds = deltaTime;
+                assignGrabClockFeedVec(grabClockProducerSample.roomPos, anchorProbeRoom.position);
+                grabClockProducerSample.roomYawDegrees = anchorProbeRoom.yawDegrees;
+                grabClockProducerSample.roomValid = anchorProbeRoom.valid ? 1u : 0u;
+                assignGrabClockFeedVec(grabClockProducerSample.rawHandPos, handWorldTransform.translate);
+                assignGrabClockFeedVec(grabClockProducerSample.heldEntryPos, anchorProbeHeldEntryWorld.translate);
+                grabClockProducerSample.heldEntryValid = anchorProbeHeldNodeOk ? 1u : 0u;
+                grabClockProducerSample.entryVsLastWriteGu = anchorProbeEntryVsLastWrite;
+                grabClockProducerSample.entryVsBodyGu = anchorProbeEntryVsBody;
+                assignGrabClockFeedVec(grabClockProducerSample.bodyPos, bodyDerivedNodeWorld.translate);
+                grabClockProducerSample.bodyValid = hasBodyDerivedNodeWorld ? 1u : 0u;
+                assignGrabClockFeedVec(grabClockProducerSample.anchorPos, heldVisualNodeWorld.translate);
+                grabClockProducerSample.bodyBlend = _grabHeldAnchorBodyBlend;
+                grabClockProducerSample.anchorEngaged = renderClockAnchorEngaged ? 1u : 0u;
                 ROCK_LOG_INFO(Hand,
                     "{} ANCHOR_CLOCK stage=producer seq={} room=({:.2f},{:.2f},{:.2f}) roomYaw={:.3f} rawHand=({:.2f},{:.2f},{:.2f}) heldEntry=({:.2f},{:.2f},{:.2f}) entryVsLastWrite={:.3f}gu entryVsBody={:.3f}gu body=({:.2f},{:.2f},{:.2f}) anchor=({:.2f},{:.2f},{:.2f}) blend={:.2f} engaged={}",
                     handName(),
@@ -12182,9 +12221,11 @@ namespace rock
                         applyHeldVisualNodeWorldTransform(_grabFrame.heldNode, heldVisualNodeWorld);
                         _grabProbeLastAnchorWrite = heldVisualNodeWorld;
                         _hasGrabProbeLastAnchorWrite = true;
+                        grabClockProducerSample.nodeWriteApplied = 1;
                     } else {
                         _hasGrabProbeLastAnchorWrite = false;
                     }
+                    rock::debug::publishGrabClockProducerStage(_isLeft, grabClockProducerSample);
                     if (_grabFrame.heldNode &&
                         sourceSchedulerSequence != 0 &&
                         prefrik_hand_authority_policy::isUsableTransform(
@@ -13032,6 +13073,15 @@ namespace rock
                 anchorProbeHeldPos.y,
                 anchorProbeHeldPos.z,
                 anchorProbeHeldVsLastWrite);
+
+            rock::debug::RockGrabClockStagePhysicsV1 grabClockPhysicsSample{};
+            assignGrabClockFeedVec(grabClockPhysicsSample.roomPos, anchorProbeRoom.position);
+            grabClockPhysicsSample.roomYawDegrees = anchorProbeRoom.yawDegrees;
+            grabClockPhysicsSample.roomValid = anchorProbeRoom.valid ? 1u : 0u;
+            assignGrabClockFeedVec(grabClockPhysicsSample.heldNodePos, anchorProbeHeldPos);
+            grabClockPhysicsSample.heldNodeValid = anchorProbeHeldNode ? 1u : 0u;
+            grabClockPhysicsSample.heldVsLastWriteGu = anchorProbeHeldVsLastWrite;
+            rock::debug::publishGrabClockPhysicsStage(_isLeft, grabClockPhysicsSample);
         }
 
         GrabAuthorityProxyPendingTarget pending{};
