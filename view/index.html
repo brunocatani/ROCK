@@ -120,8 +120,8 @@
   var HISTORY = 300;      // frames kept & drawn
   var BUZZ_WIN = 40;      // frames for the buzz-ratio chip
   var CHART_W = 930;
-  var CHART_H = 60;       // canvas height per row
-  var ROW_H = 92;
+  var CHART_H = 56;       // canvas height per row
+  var ROW_H = 84;
 
   // Per-frame derived channel history (parallel arrays of length <= HISTORY).
   var frames = [];        // raw payloads (for sources panel + derivations)
@@ -133,8 +133,11 @@
     { id: 'roomYawRate', name: 'ROOM YAW RATE', unit: 'deg/f', src: 'engine roomnode @ producer', color: '#40c8ff', kind: 'signed' },
     { id: 'handSpeed', name: 'RAW HAND R SPEED', unit: 'gu/f', src: 'ROCK producer hand sample', color: '#59ff9c', kind: 'delta' },
     { id: 'handRoomSlip', name: 'HAND-IN-ROOM SLIP R', unit: 'gu/f', src: 'hand delta minus room-predicted delta', color: '#59ff9c', kind: 'delta' },
+    { id: 'handLagRatio', name: 'HAND LAG RATIO', unit: 'x', src: 'slip / room-predicted hand step - pinned at 1.0 = hand room clock one frame behind', color: '#59ff9c', kind: 'ratio' },
     { id: 'weaponSlip', name: 'WEAPON vs HAND SLIP', unit: 'gu/f', src: 'weapon node vs raw hand R (works unheld)', color: '#ffd23e', kind: 'delta' },
+    { id: 'weaponLagRatio', name: 'WEAPON LAG RATIO', unit: 'x', src: 'weapon slip / hand step - pinned at 1.0 = weapon one frame behind hand', color: '#ffd23e', kind: 'ratio' },
     { id: 'heldSlip', name: 'HELD vs HAND SLIP', unit: 'gu/f', src: 'heldNode vs raw hand (producer feed, holding hand)', color: '#ff5964', kind: 'delta' },
+    { id: 'heldLagRatio', name: 'HELD LAG RATIO', unit: 'x', src: 'held slip / hand step - pinned at 1.0 = held object one frame behind hand', color: '#ff5964', kind: 'ratio' },
     { id: 'stomp', name: 'ENGINE STOMP eLW', unit: 'gu', src: 'heldNode entry vs ROCK last write (producer feed)', color: '#ff5964', kind: 'abs' },
     { id: 'bodyVsAnchor', name: 'BODY vs ANCHOR', unit: 'gu', src: 'physics body pose vs visual anchor (producer feed)', color: '#c792ea', kind: 'abs' },
     { id: 'preFrikRefresh', name: 'PREFRIK REFRESH raw/room', unit: 'gu', src: 'raw+room moved between producer and FRIK (preFrik feed)', color: '#ffb454', kind: 'abs', second: { color: '#40c8ff' } }
@@ -172,6 +175,11 @@
     '&nbsp;&nbsp;~1 smooth &middot; &gt;1.5 wobble &middot; &gt;3 per-frame buzz.<br/>' +
     '<b>HAND-IN-ROOM SLIP:</b> 0 while stick-moving means the hand rides the<br/>' +
     '&nbsp;&nbsp;room motion on the same clock; spikes = hand on a lagging clock.<br/>' +
+    '<b>LAG RATIO rows:</b> slip &divide; expected per-frame step, fixed 0&ndash;2x scale.<br/>' +
+    '&nbsp;&nbsp;Trace pinned on the red 1-frame line at EVERY stick speed =<br/>' +
+    '&nbsp;&nbsp;exactly one frame behind (clock offset). Near 0 = same clock.<br/>' +
+    '&nbsp;&nbsp;Wandering = speed-scaled noise, not a clock offset. Rows go<br/>' +
+    '&nbsp;&nbsp;quiet when there is too little motion to judge.<br/>' +
     '<b>HELD SLIP:</b> the buzz itself &mdash; the object moving relative to the hand.<br/>' +
     '<b>STOMP eLW:</b> &gt;0 means the engine rewrote the held node after ROCK\'s<br/>' +
     '&nbsp;&nbsp;anchor write (anchor silently undone).<br/>' +
@@ -263,7 +271,10 @@
 
     // Hand-in-room slip: rotate last hand's room-relative offset by the room
     // yaw delta, translate by the room delta, compare with the actual hand.
-    var slip = null;
+    // Lag ratio: slip divided by how far room motion alone should have carried
+    // the hand this frame (translation + yaw arc at the hand's radius). A room
+    // clock exactly one frame stale scores ~1.0 at ANY stick speed.
+    var slip = null, handLag = null;
     if (d.hR && d.room && pr && pr.hR && pr.room && yawRate !== null) {
       var a = yawRate * Math.PI / 180;
       var ca = Math.cos(a), sa = Math.sin(a);
@@ -274,27 +285,35 @@
       var sv = [d.hR[0] - predX, d.hR[1] - predY, d.hR[2] - predZ];
       slip = len3(sv);
       pushDelta(handRoomDeltas, sv);
+      var predStep = dist3([predX, predY, predZ], pr.hR);
+      if (predStep > 0.04) { handLag = slip / predStep; }
     } else {
       pushDelta(handRoomDeltas, null);
     }
     pushCapped(series.handRoomSlip, slip);
+    pushCapped(series.handLagRatio, handLag);
 
     // Weapon vs hand slip: per-frame change of the weapon-minus-hand vector.
-    var wslip = null;
+    // An attachment riding one frame behind the hand slips by exactly the
+    // hand's own step, so slip / handStep pins at ~1.0 for a one-frame lag.
+    var wslip = null, weapLag = null;
     if (d.weap && d.hR && pr && pr.weap && pr.hR) {
       var relNow = sub3(d.weap, d.hR);
       var relPrev = sub3(pr.weap, pr.hR);
       var wv = sub3(relNow, relPrev);
       wslip = len3(wv);
       pushDelta(weapDeltas, wv);
+      var handStep = dist3(d.hR, pr.hR);
+      if (handStep > 0.04) { weapLag = wslip / handStep; }
     } else {
       pushDelta(weapDeltas, null);
     }
     pushCapped(series.weaponSlip, wslip);
+    pushCapped(series.weaponLagRatio, weapLag);
 
     // Held-object channels from the grab feed (holding hand only).
     var act = activeGrab(d);
-    var held = null, stomp = null, bodyAnchor = null, preRaw = null, preRoom = null;
+    var held = null, heldLag = null, stomp = null, bodyAnchor = null, preRaw = null, preRoom = null;
     if (act) {
       var g = act.g;
       var prevG = pr ? (act.hand === 'R' ? pr.gR : pr.gL) : null;
@@ -304,6 +323,8 @@
         var hv = sub3(relN, relP);
         held = len3(hv);
         pushDelta(heldDeltas, hv);
+        var rawStep = dist3(g.pro.raw, prevG.pro.raw);
+        if (rawStep > 0.04) { heldLag = held / rawStep; }
       } else {
         pushDelta(heldDeltas, null);
       }
@@ -315,6 +336,7 @@
       pushDelta(heldDeltas, null);
     }
     pushCapped(series.heldSlip, held);
+    pushCapped(series.heldLagRatio, heldLag);
     pushCapped(series.stomp, stomp);
     pushCapped(series.bodyVsAnchor, bodyAnchor);
     pushCapped(series.preFrikRefresh, preRaw);
@@ -365,12 +387,23 @@
       }
     }
 
-    var scale = percentileScale(vals, vals2);
+    // Ratio rows use a FIXED 0..2x scale so "pinned at the 1-frame line" is
+    // directly comparable across stick speeds; autoscaling would hide that.
+    var scale = row.kind === 'ratio' ? 2 : percentileScale(vals, vals2);
     var signed = row.kind === 'signed';
     var baseY = signed ? CHART_H / 2 : CHART_H - 2;
     // Baseline.
     ctx.strokeStyle = 'rgba(120,170,200,0.25)';
     ctx.beginPath(); ctx.moveTo(0, baseY); ctx.lineTo(CHART_W, baseY); ctx.stroke();
+
+    if (row.kind === 'ratio') {
+      var oneY = baseY - (1 / scale) * (CHART_H - 4);
+      ctx.strokeStyle = 'rgba(255,89,100,0.55)';
+      ctx.beginPath(); ctx.moveTo(0, oneY); ctx.lineTo(CHART_W, oneY); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,89,100,0.8)';
+      ctx.font = '11px Consolas';
+      ctx.fillText('1 frame', 4, oneY - 3);
+    }
 
     function trace(list, color) {
       ctx.strokeStyle = color;
@@ -405,10 +438,32 @@
     el.val.textContent = current === null ? '-' : (fmt(current) + ' ' + row.unit);
   }
 
+  function medianTail(list, w) {
+    var tail = [];
+    for (var i = list.length - 1; i >= 0 && tail.length < w; i--) {
+      if (list[i] !== null && isFinite(list[i])) { tail.push(list[i]); }
+    }
+    if (tail.length < 8) { return null; }   // too few active frames to judge
+    tail.sort(function (a, b) { return a - b; });
+    return tail[Math.floor(tail.length / 2)];
+  }
+
+  // Lag verdict from the median ratio over the chip window: red "~1 frame" is
+  // the clock-offset smoking gun, green "in-sync" clears that channel.
+  function chipForLag(el, med) {
+    if (med === null) { el.textContent = 'quiet'; el.className = 'chip na'; return; }
+    if (med < 0.3) { el.textContent = 'in-sync'; el.className = 'chip g'; return; }
+    if (med > 0.75 && med < 1.3) { el.textContent = '~1 frame'; el.className = 'chip r'; return; }
+    el.textContent = med.toFixed(2) + 'x'; el.className = 'chip a';
+  }
+
   function updateChips() {
     chipForRatio(rowEls.handRoomSlip.chip, buzzRatioFromDeltas(handRoomDeltas.deltas));
     chipForRatio(rowEls.weaponSlip.chip, buzzRatioFromDeltas(weapDeltas.deltas));
     chipForRatio(rowEls.heldSlip.chip, buzzRatioFromDeltas(heldDeltas.deltas));
+    chipForLag(rowEls.handLagRatio.chip, medianTail(series.handLagRatio, BUZZ_WIN));
+    chipForLag(rowEls.weaponLagRatio.chip, medianTail(series.weaponLagRatio, BUZZ_WIN));
+    chipForLag(rowEls.heldLagRatio.chip, medianTail(series.heldLagRatio, BUZZ_WIN));
 
     function meanTail(list, w) {
       var s = 0, c = 0;
