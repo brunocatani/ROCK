@@ -24,6 +24,7 @@
 #include "physics-interaction/native/HeldWeaponInstantTransition.h"
 #include "physics-interaction/native/MainLoopHookPolicy.h"
 #include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/SceneWriterProbe.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/PipboyEquipRuntime.h"
@@ -1012,6 +1013,11 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
     logger::info("ROCK: Install held weapon instant-transition capability...");
     if (!rock::held_weapon_instant_transition::install()) {
         logger::warn("ROCK: Held trigger/grip-zone equip disabled because the exact native transition contract is unavailable.");
+    }
+
+    logger::info("ROCK: Install physics-to-scene writer probe...");
+    if (!rock::scene_writer_probe::install()) {
+        logger::warn("ROCK: Scene-writer probe unavailable; held-object scene-sync diagnostics disabled for this session.");
     }
 
     logger::info("ROCK: Install scoped weapon transition animation acceleration...");

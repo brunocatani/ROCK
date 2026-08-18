@@ -1,6 +1,7 @@
 #include "physics-interaction/hand/Hand.h"
 
 #include "physics-interaction/hand/HeldBodyRenderPose.h"
+#include "physics-interaction/native/SceneWriterProbe.h"
 
 #include <algorithm>
 #include <cmath>
@@ -340,6 +341,10 @@ namespace rock
     {
         _selectionBeam.abandonSceneGraph();
         held_body_render_pose::clearWithoutRestore(_isLeft);
+        // The probe slot holds raw world/collision-object pointers; drop them
+        // before the stale hknp world can be dereferenced by the hook.
+        scene_writer_probe::clearHeldTarget(_isLeft);
+        _sceneWriterProbeRegisteredTraceId = 0;
 
         /*
          * World-loss teardown cannot safely restore old body flags, filters, or

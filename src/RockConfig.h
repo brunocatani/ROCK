@@ -524,13 +524,13 @@ namespace rock
         // as a per-frame buzz (2026-08-16 user observation + code audit).
         // Runtime-toggleable for A/B perception comparison.
         bool rockGrabHeldRenderClockAnchor = true;
-        // Held-body render-pose masquerade: at the final physics substep's
-        // post-solve, write the render-clock anchor into the held BODY via
-        // the engine's immediate setBodyTransform (renderer consumes the
-        // body path, proven by the 2026-08-17 render probe), then restore
-        // the solver pose before the next collide. Solver never sees the
-        // anchor; renderer always does. Runtime-toggleable for A/B.
-        bool rockGrabHeldRenderBodyPose = true;
+        // Held-body render-pose masquerade (PARKED, default off): the
+        // 2026-08-18 physics-to-scene sync dossier proved setBodyTransform
+        // is not physics-neutral (motion/spatial/activation/signal side
+        // effects) and the masquerade produced no visual change. Kept only
+        // as a runtime-toggleable experiment lever until the scene-writer
+        // interception replaces it; one visual authority path at a time.
+        bool rockGrabHeldRenderBodyPose = false;
         // Render-consumption DIAGNOSTIC probe (2026-08-17 grab clock
         // investigation; remove once the renderer's transform source is
         // identified). Non-zero offsets the held node's producer write by
@@ -541,6 +541,13 @@ namespace rock
         // the engine's mid-frame body sync (render copy taken between the
         // two, or a direct body read). 0 disables.
         float rockGrabRenderClockProbeOffsetGameUnits = 0.0f;
+        // Scene-writer liveness probe (2026-08-18 dossier): non-zero adds a
+        // +Z display-only offset to the held object's transform at the
+        // engine's physics-to-scene writer (RVA 0x1E06B00), via a stack-local
+        // copy of the writer input. Solver, motion record, and every other
+        // object are untouched. Mesh moves => interception boundary
+        // confirmed. 0 disables the substitution (capture stays on).
+        float rockGrabSceneWriterProbeOffsetZGameUnits = 0.0f;
         float rockGrabHandLerpTimeMin = 0.10f;
         float rockGrabHandLerpTimeMax = 0.20f;
         float rockGrabHandLerpMinDistance = 7.0f;

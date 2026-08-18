@@ -1165,6 +1165,10 @@ namespace rock
         // engine re-synced the node and whether the root moved after producer.
         RE::NiTransform _grabProbeLastAnchorWrite{};
         bool _hasGrabProbeLastAnchorWrite = false;
+        // Scene-writer probe registration is keyed to the grab trace id so
+        // the held ref's collision-object subtree is walked once per grab,
+        // not per frame (see SceneWriterProbe.h).
+        std::uint64_t _sceneWriterProbeRegisteredTraceId = 0;
         RE::NiPoint3 _grabProbeProducerHandPos{};
         RE::NiPoint3 _grabProbeProducerRoomPos{};
         bool _hasGrabProbeProducerSample = false;

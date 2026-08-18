@@ -1,0 +1,403 @@
+#include "physics-interaction/native/SceneWriterProbe.h"
+
+#include "RockConfig.h"
+#include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/native/EntryTrampolineHook.h"
+#include "physics-interaction/native/HavokOffsets.h"
+
+#include "RE/NetImmerse/NiAVObject.h"
+#include "RE/NetImmerse/NiCollisionObject.h"
+#include "REL/Relocation.h"
+
+#include <array>
+#include <atomic>
+#include <cmath>
+#include <cstring>
+#include <intrin.h>
+#include <windows.h>
+
+namespace rock::scene_writer_probe
+{
+    namespace
+    {
+        /*
+         * Raw-disassembly-verified entry of the physics-transform -> NiAVObject
+         * writer at RVA 0x1E06B00 (see the 2026-08-18 dossier). All five
+         * instructions are position independent, so the 19-byte prefix is both
+         * the live-byte verification signature and the relocated trampoline
+         * head.
+         */
+        constexpr std::array<std::uint8_t, 19> kExpectedWriterPrefix{
+            0x4C, 0x8B, 0xDC,                          // mov r11, rsp
+            0x49, 0x89, 0x5B, 0x10,                    // mov [r11+0x10], rbx
+            0x49, 0x89, 0x6B, 0x18,                    // mov [r11+0x18], rbp
+            0x57,                                      // push rdi
+            0x48, 0x81, 0xEC, 0x30, 0x01, 0x00, 0x00,  // sub rsp, 0x130
+        };
+
+        // Writer input layout (verified): 3x4-float rotation rows at
+        // +0x00..+0x2C, translation at +0x30/+0x34/+0x38. 15 floats consumed.
+        constexpr std::size_t kWriterInputFloats = 15;
+        constexpr std::size_t kTranslateXIndex = 12;
+        constexpr std::size_t kTranslateZIndex = 14;
+
+        using SceneWriterFn = void(__fastcall*)(void* collisionObject, float* transform);
+
+        std::atomic<SceneWriterFn> s_original{ nullptr };
+        std::atomic<bool> s_installed{ false };
+        std::atomic<bool> s_installAttempted{ false };
+
+        std::atomic<std::uint64_t> s_totalWriterCalls{ 0 };
+        std::atomic<std::uint64_t> s_matchedCalls{ 0 };
+        std::atomic<std::uint64_t> s_mainCallsiteCalls{ 0 };
+        std::atomic<std::uint64_t> s_proxyCallsiteCalls{ 0 };
+        std::atomic<std::uint64_t> s_otherCallsiteCalls{ 0 };
+        std::atomic<std::uint64_t> s_offsetAppliedCalls{ 0 };
+        std::atomic<std::uint64_t> s_callbackFlagCalls{ 0 };
+        std::atomic<std::uint64_t> s_localFlagCalls{ 0 };
+
+        /*
+         * Seqlock-style per-hand slot: the game thread publishes with
+         * generation odd->write->even; the hook takes one stable snapshot or
+         * skips. A missed match during the two-store window only delays the
+         * next capture by one writer call; it can never tear a pointer read.
+         */
+        struct alignas(64) HandSlot
+        {
+            std::atomic<std::uint32_t> generation{ 0 };
+            const RE::NiCollisionObject* collisionObjects[kMaxTrackedCollisionObjects] = {};
+            std::uint32_t collisionObjectCount = 0;
+            RE::hknpWorld* world = nullptr;
+            std::uint32_t bodyId = 0x7FFF'FFFF;
+            float havokToGame = 0.0f;
+            std::uint64_t traceId = 0;
+            std::atomic<std::uint64_t> lastFullLogTraceId{ 0 };
+        };
+
+        HandSlot s_slots[2];
+
+        struct SlotSnapshot
+        {
+            const RE::NiCollisionObject* collisionObjects[kMaxTrackedCollisionObjects] = {};
+            std::uint32_t collisionObjectCount = 0;
+            RE::hknpWorld* world = nullptr;
+            std::uint32_t bodyId = 0x7FFF'FFFF;
+            float havokToGame = 0.0f;
+            std::uint64_t traceId = 0;
+        };
+
+        bool tryReadSlot(HandSlot& slot, SlotSnapshot& out)
+        {
+            const std::uint32_t before = slot.generation.load(std::memory_order_acquire);
+            if ((before & 1u) != 0) {
+                return false;
+            }
+            out.collisionObjectCount = slot.collisionObjectCount;
+            if (out.collisionObjectCount > kMaxTrackedCollisionObjects) {
+                return false;
+            }
+            for (std::uint32_t i = 0; i < out.collisionObjectCount; ++i) {
+                out.collisionObjects[i] = slot.collisionObjects[i];
+            }
+            out.world = slot.world;
+            out.bodyId = slot.bodyId;
+            out.havokToGame = slot.havokToGame;
+            out.traceId = slot.traceId;
+            std::atomic_thread_fence(std::memory_order_acquire);
+            return slot.generation.load(std::memory_order_acquire) == before;
+        }
+
+        bool snapshotMatches(const SlotSnapshot& snapshot, const void* collisionObject)
+        {
+            for (std::uint32_t i = 0; i < snapshot.collisionObjectCount; ++i) {
+                if (snapshot.collisionObjects[i] == collisionObject) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        struct MotionSample
+        {
+            float centerHavok[3] = { 0.0f, 0.0f, 0.0f };
+            bool valid = false;
+        };
+
+        /*
+         * Verified layout walk (dossier + hknpBody.h): bodies at
+         * [world+0x20] stride 0x90, motion index at body+0x68, motions at
+         * [world+0xE0] stride 0x80, current center at motion+0x00. Every hop
+         * is plausibility gated and fails closed to an invalid sample.
+         */
+        MotionSample readMotionCenter(RE::hknpWorld* world, std::uint32_t bodyId)
+        {
+            MotionSample sample{};
+            if (!world || bodyId == 0x7FFF'FFFF) {
+                return sample;
+            }
+            const auto worldBase = reinterpret_cast<std::uintptr_t>(world);
+            const auto bodyArray = *reinterpret_cast<std::uintptr_t*>(worldBase + 0x20);
+            const auto motionArray = *reinterpret_cast<std::uintptr_t*>(worldBase + 0xE0);
+            if (bodyArray == 0 || motionArray == 0 || bodyId > 0x000F'FFFF) {
+                return sample;
+            }
+            const auto body = bodyArray + static_cast<std::uintptr_t>(bodyId) * 0x90;
+            const auto storedBodyId = *reinterpret_cast<std::uint32_t*>(body + 0x60);
+            if ((storedBodyId & 0x7FFF'FFFF) != bodyId) {
+                return sample;
+            }
+            const auto motionId = *reinterpret_cast<std::uint32_t*>(body + 0x68);
+            if (motionId == 0 || motionId > 0x000F'FFFF) {
+                return sample;
+            }
+            const auto motion = motionArray + static_cast<std::uintptr_t>(motionId) * 0x80;
+            const float* center = reinterpret_cast<const float*>(motion + 0x00);
+            if (!std::isfinite(center[0]) || !std::isfinite(center[1]) || !std::isfinite(center[2])) {
+                return sample;
+            }
+            sample.centerHavok[0] = center[0];
+            sample.centerHavok[1] = center[1];
+            sample.centerHavok[2] = center[2];
+            sample.valid = true;
+            return sample;
+        }
+
+        void __fastcall onSceneTransformWriter(void* collisionObject, float* transform)
+        {
+            const auto original = s_original.load(std::memory_order_relaxed);
+            if (!original) {
+                return;
+            }
+            s_totalWriterCalls.fetch_add(1, std::memory_order_relaxed);
+
+            SlotSnapshot snapshot{};
+            int matchedHand = -1;
+            for (int hand = 0; hand < 2 && matchedHand < 0; ++hand) {
+                if (s_slots[hand].collisionObjectCount == 0 &&
+                    (s_slots[hand].generation.load(std::memory_order_relaxed) & 1u) == 0) {
+                    continue;
+                }
+                SlotSnapshot candidate{};
+                if (tryReadSlot(s_slots[hand], candidate) && snapshotMatches(candidate, collisionObject)) {
+                    snapshot = candidate;
+                    matchedHand = hand;
+                }
+            }
+
+            if (matchedHand < 0 || !collisionObject || !transform) {
+                original(collisionObject, transform);
+                return;
+            }
+
+            s_matchedCalls.fetch_add(1, std::memory_order_relaxed);
+
+            const auto returnAddress = reinterpret_cast<std::uintptr_t>(_ReturnAddress());
+            const auto moduleBase = REL::Module::get().base();
+            const std::uintptr_t returnRva = returnAddress >= moduleBase ? returnAddress - moduleBase : 0;
+            const char* callsite = "other";
+            if (returnRva == offsets::kRet_SceneWriterMainCallsite) {
+                callsite = "main";
+                s_mainCallsiteCalls.fetch_add(1, std::memory_order_relaxed);
+            } else if (returnRva == offsets::kRet_SceneWriterProxyCallsite) {
+                callsite = "proxy";
+                s_proxyCallsiteCalls.fetch_add(1, std::memory_order_relaxed);
+            } else {
+                s_otherCallsiteCalls.fetch_add(1, std::memory_order_relaxed);
+            }
+
+            const auto collisionBase = reinterpret_cast<std::uintptr_t>(collisionObject);
+            const auto vptr = *reinterpret_cast<std::uintptr_t*>(collisionBase);
+            const std::uint8_t collisionFlags = *reinterpret_cast<const std::uint8_t*>(collisionBase + 0x18);
+            if ((collisionFlags & 0x04) != 0) {
+                s_callbackFlagCalls.fetch_add(1, std::memory_order_relaxed);
+            }
+            if ((collisionFlags & 0x08) != 0) {
+                s_localFlagCalls.fetch_add(1, std::memory_order_relaxed);
+            }
+
+            auto* sceneObject = static_cast<const RE::NiCollisionObject*>(collisionObject)->sceneObject;
+            float nodeBefore[3] = { 0.0f, 0.0f, 0.0f };
+            if (sceneObject) {
+                nodeBefore[0] = sceneObject->world.translate.x;
+                nodeBefore[1] = sceneObject->world.translate.y;
+                nodeBefore[2] = sceneObject->world.translate.z;
+            }
+            const MotionSample motion = readMotionCenter(snapshot.world, snapshot.bodyId);
+
+            float inputTranslate[3] = {
+                transform[kTranslateXIndex],
+                transform[kTranslateXIndex + 1],
+                transform[kTranslateZIndex],
+            };
+
+            const float offsetZ = g_rockConfig.rockGrabSceneWriterProbeOffsetZGameUnits;
+            const bool applyOffset = std::isfinite(offsetZ) && offsetZ != 0.0f;
+            if (applyOffset) {
+                alignas(16) float substituted[16];
+                std::memcpy(substituted, transform, sizeof(float) * kWriterInputFloats);
+                substituted[15] = 0.0f;
+                substituted[kTranslateZIndex] += offsetZ;
+                s_offsetAppliedCalls.fetch_add(1, std::memory_order_relaxed);
+                original(collisionObject, substituted);
+            } else {
+                original(collisionObject, transform);
+            }
+
+            float nodeAfter[3] = { 0.0f, 0.0f, 0.0f };
+            if (sceneObject) {
+                nodeAfter[0] = sceneObject->world.translate.x;
+                nodeAfter[1] = sceneObject->world.translate.y;
+                nodeAfter[2] = sceneObject->world.translate.z;
+            }
+
+            /*
+             * One unconditional full snapshot per grab (trace id), then the
+             * shared sample interval. The hook thread is unknown, so only the
+             * bounded formatter below runs here; no allocation, no locks.
+             */
+            auto& slot = s_slots[matchedHand];
+            const std::uint64_t lastLogged = slot.lastFullLogTraceId.load(std::memory_order_relaxed);
+            const bool firstForGrab = snapshot.traceId != 0 && lastLogged != snapshot.traceId;
+            if (firstForGrab) {
+                slot.lastFullLogTraceId.store(snapshot.traceId, std::memory_order_relaxed);
+            }
+            const float havokToGame = snapshot.havokToGame;
+            const float motionGameX = motion.valid ? motion.centerHavok[0] * havokToGame : -1.0f;
+            const float motionGameY = motion.valid ? motion.centerHavok[1] * havokToGame : -1.0f;
+            const float motionGameZ = motion.valid ? motion.centerHavok[2] * havokToGame : -1.0f;
+            if (firstForGrab) {
+                ROCK_LOG_INFO(Hand,
+                    "SCENE_WRITER first-hit hand={} site={} retRva=0x{:X} vptr=0x{:X} flags=0x{:02X} body={} in=({:.2f},{:.2f},{:.2f}) nodeBefore=({:.2f},{:.2f},{:.2f}) nodeAfter=({:.2f},{:.2f},{:.2f}) motionGame=({:.2f},{:.2f},{:.2f}) offZ={:.1f} thread={}",
+                    matchedHand == 0 ? "R" : "L",
+                    callsite,
+                    returnRva,
+                    vptr - moduleBase,
+                    collisionFlags,
+                    snapshot.bodyId,
+                    inputTranslate[0], inputTranslate[1], inputTranslate[2],
+                    nodeBefore[0], nodeBefore[1], nodeBefore[2],
+                    nodeAfter[0], nodeAfter[1], nodeAfter[2],
+                    motionGameX, motionGameY, motionGameZ,
+                    applyOffset ? offsetZ : 0.0f,
+                    ::GetCurrentThreadId());
+            } else {
+                ROCK_LOG_SAMPLE_INFO(Hand,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "SCENE_WRITER hit hand={} site={} flags=0x{:02X} in=({:.2f},{:.2f},{:.2f}) nodeAfter=({:.2f},{:.2f},{:.2f}) motionGame=({:.2f},{:.2f},{:.2f}) inVsMotion={:.3f} offZ={:.1f} matched={} main={} proxy={} other={} thread={}",
+                    matchedHand == 0 ? "R" : "L",
+                    callsite,
+                    collisionFlags,
+                    inputTranslate[0], inputTranslate[1], inputTranslate[2],
+                    nodeAfter[0], nodeAfter[1], nodeAfter[2],
+                    motionGameX, motionGameY, motionGameZ,
+                    motion.valid ? std::sqrt(
+                        (inputTranslate[0] - motionGameX) * (inputTranslate[0] - motionGameX) +
+                        (inputTranslate[1] - motionGameY) * (inputTranslate[1] - motionGameY) +
+                        (inputTranslate[2] - motionGameZ) * (inputTranslate[2] - motionGameZ)) : -1.0f,
+                    applyOffset ? offsetZ : 0.0f,
+                    s_matchedCalls.load(std::memory_order_relaxed),
+                    s_mainCallsiteCalls.load(std::memory_order_relaxed),
+                    s_proxyCallsiteCalls.load(std::memory_order_relaxed),
+                    s_otherCallsiteCalls.load(std::memory_order_relaxed),
+                    ::GetCurrentThreadId());
+            }
+        }
+    }
+
+    bool install()
+    {
+        if (s_installed.load(std::memory_order_acquire)) {
+            return true;
+        }
+        if (s_installAttempted.exchange(true, std::memory_order_acq_rel)) {
+            return s_installed.load(std::memory_order_acquire);
+        }
+
+        void* original = nullptr;
+        const bool installed = entry_trampoline_hook::install(
+            "physics-to-scene transform writer probe",
+            offsets::kFunc_SceneTransformWriter,
+            kExpectedWriterPrefix.data(),
+            kExpectedWriterPrefix.size(),
+            reinterpret_cast<void*>(&onSceneTransformWriter),
+            original);
+        if (!installed || !original) {
+            ROCK_LOG_ERROR(Init,
+                "Scene-writer probe unavailable: entry prefix mismatch or trampoline failure at RVA 0x{:X}; engine untouched",
+                static_cast<std::uint64_t>(offsets::kFunc_SceneTransformWriter));
+            return false;
+        }
+        s_original.store(reinterpret_cast<SceneWriterFn>(original), std::memory_order_release);
+        s_installed.store(true, std::memory_order_release);
+        ROCK_LOG_INFO(Init,
+            "Scene-writer probe installed at RVA 0x{:X} (main callsite 0x{:X}, proxy callsite 0x{:X})",
+            static_cast<std::uint64_t>(offsets::kFunc_SceneTransformWriter),
+            static_cast<std::uint64_t>(offsets::kRet_SceneWriterMainCallsite),
+            static_cast<std::uint64_t>(offsets::kRet_SceneWriterProxyCallsite));
+        return true;
+    }
+
+    bool isInstalled()
+    {
+        return s_installed.load(std::memory_order_acquire);
+    }
+
+    void registerHeldTarget(bool isLeft, const HeldTargetRegistration& registration)
+    {
+        if (!s_installed.load(std::memory_order_acquire)) {
+            return;
+        }
+        auto& slot = s_slots[isLeft ? 1 : 0];
+        const std::uint32_t count =
+            registration.collisionObjectCount > kMaxTrackedCollisionObjects ?
+                static_cast<std::uint32_t>(kMaxTrackedCollisionObjects) :
+                registration.collisionObjectCount;
+        slot.generation.fetch_add(1, std::memory_order_acq_rel);
+        for (std::uint32_t i = 0; i < kMaxTrackedCollisionObjects; ++i) {
+            slot.collisionObjects[i] = i < count ? registration.collisionObjects[i] : nullptr;
+        }
+        slot.collisionObjectCount = count;
+        slot.world = registration.world;
+        slot.bodyId = registration.bodyId;
+        slot.havokToGame = registration.havokToGame;
+        slot.traceId = registration.traceId;
+        slot.generation.fetch_add(1, std::memory_order_release);
+        ROCK_LOG_INFO(Hand,
+            "SCENE_WRITER target registered hand={} collisionObjects={} body={} traceId={}",
+            isLeft ? "L" : "R",
+            count,
+            registration.bodyId,
+            registration.traceId);
+    }
+
+    void clearHeldTarget(bool isLeft)
+    {
+        auto& slot = s_slots[isLeft ? 1 : 0];
+        if (slot.collisionObjectCount == 0 && slot.traceId == 0) {
+            return;
+        }
+        slot.generation.fetch_add(1, std::memory_order_acq_rel);
+        for (auto& pointer : slot.collisionObjects) {
+            pointer = nullptr;
+        }
+        slot.collisionObjectCount = 0;
+        slot.world = nullptr;
+        slot.bodyId = 0x7FFF'FFFF;
+        slot.havokToGame = 0.0f;
+        slot.traceId = 0;
+        slot.generation.fetch_add(1, std::memory_order_release);
+    }
+
+    void copyStatus(Status& out)
+    {
+        out.matchedCalls = s_matchedCalls.load(std::memory_order_relaxed);
+        out.mainCallsiteCalls = s_mainCallsiteCalls.load(std::memory_order_relaxed);
+        out.proxyCallsiteCalls = s_proxyCallsiteCalls.load(std::memory_order_relaxed);
+        out.otherCallsiteCalls = s_otherCallsiteCalls.load(std::memory_order_relaxed);
+        out.offsetAppliedCalls = s_offsetAppliedCalls.load(std::memory_order_relaxed);
+        out.callbackFlagCalls = s_callbackFlagCalls.load(std::memory_order_relaxed);
+        out.localFlagCalls = s_localFlagCalls.load(std::memory_order_relaxed);
+        out.totalWriterCalls = s_totalWriterCalls.load(std::memory_order_relaxed);
+        out.installed = s_installed.load(std::memory_order_acquire);
+    }
+}

@@ -10,6 +10,7 @@
 #include "physics-interaction/debug/DebugMath.h"
 #include "physics-interaction/debug/GrabClockDebugFeed.h"
 #include "physics-interaction/hand/HeldBodyRenderPose.h"
+#include "physics-interaction/native/SceneWriterProbe.h"
 #include "physics-interaction/grenade/LooseGrenadeRuntime.h"
 #include "physics-interaction/grab/GrabAuthorityProxy.h"
 #include "physics-interaction/grab/GrabConstraint.h"
@@ -11863,6 +11864,64 @@ namespace rock
             suppressBodyCollisionForHeldLooseWeapon(world, bodyBoneColliders);
         }
 
+        /*
+         * Scene-writer probe registration, once per grab trace: collect the
+         * held ref's collision objects so the engine scene-writer hook
+         * (SceneWriterProbe.h) can gate on exact pointers. Registered here,
+         * not at commit, so every grab path (touch, force, pull-catch, loose
+         * weapon) funnels through one site. Bounded walk; game thread only.
+         */
+        if (scene_writer_probe::isInstalled() && _sceneWriterProbeRegisteredTraceId != _grabFrame.traceId) {
+            scene_writer_probe::HeldTargetRegistration probeRegistration{};
+            auto appendProbeCollisionObject = [&probeRegistration](const RE::NiCollisionObject* collisionObject) {
+                if (!collisionObject ||
+                    probeRegistration.collisionObjectCount >= scene_writer_probe::kMaxTrackedCollisionObjects) {
+                    return;
+                }
+                for (std::uint32_t i = 0; i < probeRegistration.collisionObjectCount; ++i) {
+                    if (probeRegistration.collisionObjects[i] == collisionObject) {
+                        return;
+                    }
+                }
+                probeRegistration.collisionObjects[probeRegistration.collisionObjectCount++] = collisionObject;
+            };
+            if (_grabFrame.heldNode) {
+                appendProbeCollisionObject(_grabFrame.heldNode->collisionObject.get());
+            }
+            struct ProbeWalkEntry
+            {
+                RE::NiAVObject* node = nullptr;
+                int depth = 0;
+            };
+            std::array<ProbeWalkEntry, 24> pendingProbeNodes{};
+            std::size_t pendingProbeNodeCount = 0;
+            if (auto* heldRoot3D = _savedObjectState.refr ? _savedObjectState.refr->Get3D() : nullptr) {
+                pendingProbeNodes[pendingProbeNodeCount++] = { heldRoot3D, 0 };
+            }
+            while (pendingProbeNodeCount > 0 &&
+                   probeRegistration.collisionObjectCount < scene_writer_probe::kMaxTrackedCollisionObjects) {
+                const ProbeWalkEntry entry = pendingProbeNodes[--pendingProbeNodeCount];
+                if (!entry.node || entry.depth > 8) {
+                    continue;
+                }
+                appendProbeCollisionObject(entry.node->collisionObject.get());
+                if (auto* entryNode = entry.node->IsNode()) {
+                    auto& entryChildren = entryNode->GetRuntimeData().children;
+                    for (auto i = decltype(entryChildren.size()){ 0 };
+                         i < entryChildren.size() && pendingProbeNodeCount < pendingProbeNodes.size();
+                         ++i) {
+                        pendingProbeNodes[pendingProbeNodeCount++] = { entryChildren[i].get(), entry.depth + 1 };
+                    }
+                }
+            }
+            probeRegistration.world = world;
+            probeRegistration.bodyId = _savedObjectState.bodyId.value;
+            probeRegistration.havokToGame = physics_scale::havokToGame();
+            probeRegistration.traceId = _grabFrame.traceId;
+            scene_writer_probe::registerHeldTarget(_isLeft, probeRegistration);
+            _sceneWriterProbeRegisteredTraceId = _grabFrame.traceId;
+        }
+
         _grabStartTime += held_object_physics_math::finitePositiveOrZero(deltaTime);
 
         const HeldHandMotionSample handMotion = recordHeldControllerMotionSample(handWorldTransform, deltaTime);
@@ -14664,6 +14723,8 @@ namespace rock
          * by the masquerade delta.
          */
         held_body_render_pose::clearWithoutRestore(_isLeft);
+        scene_writer_probe::clearHeldTarget(_isLeft);
+        _sceneWriterProbeRegisteredTraceId = 0;
 
         if (grabTimelineTraceEnabled()) {
             ROCK_LOG_INFO(Hand,

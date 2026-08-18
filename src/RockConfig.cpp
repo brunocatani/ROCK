@@ -566,8 +566,9 @@ namespace rock
         rockGrabPinchDetectionAxisBlend = grab_pinch_pocket_policy::kDefaultDetectionAxisBlend;
         rockGrabHandLerpEnabled = true;
         rockGrabHeldRenderClockAnchor = true;
-        rockGrabHeldRenderBodyPose = true;
+        rockGrabHeldRenderBodyPose = false;
         rockGrabRenderClockProbeOffsetGameUnits = 0.0f;
+        rockGrabSceneWriterProbeOffsetZGameUnits = 0.0f;
         rockGrabHandLerpTimeMin = 0.10f;
         rockGrabHandLerpTimeMax = 0.20f;
         rockGrabHandLerpMinDistance = 7.0f;
@@ -2252,6 +2253,13 @@ namespace rock
             SECTION,
             "fGrabRenderClockProbeOffsetGameUnits",
             rockGrabRenderClockProbeOffsetGameUnits,
+            0.0f,
+            -50.0f,
+            50.0f);
+        rockGrabSceneWriterProbeOffsetZGameUnits = readClampedFloat(ini,
+            SECTION,
+            "fGrabSceneWriterProbeOffsetZGameUnits",
+            rockGrabSceneWriterProbeOffsetZGameUnits,
             0.0f,
             -50.0f,
             50.0f);

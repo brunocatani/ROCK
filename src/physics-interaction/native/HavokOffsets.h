@@ -130,6 +130,19 @@ namespace rock::offsets
 
     constexpr std::uintptr_t kFunc_ShapeInstance_SetScale = 0x16E1910;
 
+    /*
+     * Physics-to-scene transform writer (2026-08-18 dossier, raw-disassembly
+     * verified): bhkNPCollisionObject(Proxy)::UpdateWorldData converts the
+     * motion-predicted Havok pose to game space and calls this writer, which
+     * stores NiAVObject local/world and may notify the TESObjectREFR
+     * transform-change callback. Exactly two direct callers exist; the two
+     * kRet_* values are the return RVAs after those calls (main/unlinked at
+     * 0x1E09B56, proxy at 0x1E0A580).
+     */
+    constexpr std::uintptr_t kFunc_SceneTransformWriter = 0x1E06B00;
+    constexpr std::uintptr_t kRet_SceneWriterMainCallsite = 0x1E09B5B;
+    constexpr std::uintptr_t kRet_SceneWriterProxyCallsite = 0x1E0A585;
+
     constexpr std::uintptr_t kFunc_CollisionObject_SetMotionType = 0x1E07300;
 
     constexpr std::uintptr_t kFunc_CollisionObject_Ctor = 0x1E07710;
