@@ -1,5 +1,7 @@
 #include "physics-interaction/hand/Hand.h"
 
+#include "physics-interaction/hand/HeldBodyRenderPose.h"
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -337,6 +339,7 @@ namespace rock
     void Hand::abandonHavokStateAfterWorldLoss()
     {
         _selectionBeam.abandonSceneGraph();
+        held_body_render_pose::clearWithoutRestore(_isLeft);
 
         /*
          * World-loss teardown cannot safely restore old body flags, filters, or

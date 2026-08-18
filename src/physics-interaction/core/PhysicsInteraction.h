@@ -285,6 +285,7 @@ namespace rock
         static void onGeneratedColliderPhysicsSubstep(void* userData, RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         static void onCustomGrabAuthorityAfterCharacterMovement(void* userData, RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         static void onCustomGrabAuthorityAfterSolve(void* userData, RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
+        static void onHeldBodyRenderPoseBeforeWholeStep(void* userData, RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
 
         void updateSelection(const PhysicsFrameContext& frame);
         void prepareDynamicWorldCarCollisionForGrab(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, RE::TESObjectREFR* ref);

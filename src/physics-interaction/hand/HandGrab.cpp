@@ -9,6 +9,7 @@
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
 #include "physics-interaction/debug/DebugMath.h"
 #include "physics-interaction/debug/GrabClockDebugFeed.h"
+#include "physics-interaction/hand/HeldBodyRenderPose.h"
 #include "physics-interaction/grenade/LooseGrenadeRuntime.h"
 #include "physics-interaction/grab/GrabAuthorityProxy.h"
 #include "physics-interaction/grab/GrabConstraint.h"
@@ -12060,7 +12061,16 @@ namespace rock
             bool hasBodyDerivedNodeWorld = false;
             {
                 RE::NiTransform grabBodyWorld{};
-                if (tryGetGrabAuthorityBodyWorldTransform(world, _savedObjectState.bodyId, grabBodyWorld)) {
+                // While the render-pose masquerade holds the body slot, the
+                // slot carries the anchor; physics truth is the saved solver
+                // pose the masquerade preserved.
+                if (held_body_render_pose::tryGetSolverPoseOverride(
+                        _savedObjectState.bodyId.value,
+                        physics_scale::havokToGame(),
+                        grabBodyWorld)) {
+                    bodyDerivedNodeWorld = deriveNodeWorldFromBodyWorld(grabBodyWorld, _grabFrame.bodyLocal);
+                    hasBodyDerivedNodeWorld = true;
+                } else if (tryGetGrabAuthorityBodyWorldTransform(world, _savedObjectState.bodyId, grabBodyWorld)) {
                     bodyDerivedNodeWorld = deriveNodeWorldFromBodyWorld(grabBodyWorld, _grabFrame.bodyLocal);
                     hasBodyDerivedNodeWorld = true;
                 } else if (_grabFrame.heldNode) {
@@ -12328,6 +12338,22 @@ namespace rock
                         renderClockNodeWritten = true;
                     } else {
                         _hasGrabProbeLastAnchorWrite = false;
+                    }
+                    // Held-body render-pose masquerade target: while ROCK
+                    // owns the rendered node, the final-substep post-solve
+                    // callback writes this anchor into the BODY (the pose
+                    // the renderer actually consumes) and restores the
+                    // solver pose before the next collide.
+                    if (renderClockNodeWritten &&
+                        g_rockConfig.rockGrabHeldRenderBodyPose &&
+                        _savedObjectState.bodyId.value != INVALID_BODY_ID) {
+                        held_body_render_pose::publishTarget(
+                            _isLeft,
+                            _savedObjectState.bodyId.value,
+                            heldVisualNodeWorld,
+                            physics_scale::gameToHavok());
+                    } else {
+                        held_body_render_pose::invalidateTarget(_isLeft);
                     }
                     rock::debug::publishGrabClockProducerStage(_isLeft, grabClockProducerSample);
                     if (_grabFrame.heldNode &&
@@ -13203,6 +13229,17 @@ namespace rock
             assignGrabClockFeedVec(grabClockPhysicsSample.heldNodePos, anchorProbeHeldPos);
             grabClockPhysicsSample.heldNodeValid = anchorProbeHeldNode ? 1u : 0u;
             grabClockPhysicsSample.heldVsLastWriteGu = anchorProbeHeldVsLastWrite;
+            {
+                held_body_render_pose::MasqueradeStatus masqueradeStatus{};
+                held_body_render_pose::copyStatus(masqueradeStatus);
+                grabClockPhysicsSample.masqActiveNow = masqueradeStatus.activeNow;
+                grabClockPhysicsSample.masqApplied = masqueradeStatus.appliedSteps;
+                grabClockPhysicsSample.masqRestored = masqueradeStatus.restoredSteps;
+                grabClockPhysicsSample.masqMismatch = masqueradeStatus.restoreMismatch;
+                grabClockPhysicsSample.masqSkipped = masqueradeStatus.skippedContended +
+                                                     masqueradeStatus.skippedInvalidBody +
+                                                     masqueradeStatus.skippedImplausible;
+            }
             rock::debug::publishGrabClockPhysicsStage(_isLeft, grabClockPhysicsSample);
         }
 
@@ -14619,6 +14656,14 @@ namespace rock
         outcome.retainedRef = _savedObjectState.retainedRef;
         outcome.refr = outcome.retainedRef.get();
         outcome.formID = outcome.refr ? outcome.refr->GetFormID() : 0;
+
+        /*
+         * Drop the render-pose masquerade WITHOUT restoring: the body sits at
+         * the last rendered anchor pose, which is where the player saw the
+         * object; restoring the solver pose here would snap the release back
+         * by the masquerade delta.
+         */
+        held_body_render_pose::clearWithoutRestore(_isLeft);
 
         if (grabTimelineTraceEnabled()) {
             ROCK_LOG_INFO(Hand,

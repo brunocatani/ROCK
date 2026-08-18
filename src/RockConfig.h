@@ -524,6 +524,13 @@ namespace rock
         // as a per-frame buzz (2026-08-16 user observation + code audit).
         // Runtime-toggleable for A/B perception comparison.
         bool rockGrabHeldRenderClockAnchor = true;
+        // Held-body render-pose masquerade: at the final physics substep's
+        // post-solve, write the render-clock anchor into the held BODY via
+        // the engine's immediate setBodyTransform (renderer consumes the
+        // body path, proven by the 2026-08-17 render probe), then restore
+        // the solver pose before the next collide. Solver never sees the
+        // anchor; renderer always does. Runtime-toggleable for A/B.
+        bool rockGrabHeldRenderBodyPose = true;
         // Render-consumption DIAGNOSTIC probe (2026-08-17 grab clock
         // investigation; remove once the renderer's transform source is
         // identified). Non-zero offsets the held node's producer write by

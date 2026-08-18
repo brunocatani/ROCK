@@ -680,6 +680,11 @@ namespace rock::monitor
                     { "held", vec3Json(phy.heldNodePos) },
                     { "hv", phy.heldNodeValid },
                     { "dW", roundTo(phy.heldVsLastWriteGu, 1000.0) },
+                    { "mAct", phy.masqActiveNow },
+                    { "mApp", phy.masqApplied },
+                    { "mRes", phy.masqRestored },
+                    { "mMis", phy.masqMismatch },
+                    { "mSkp", phy.masqSkipped },
                 } },
                 { "pro", {
                     { "n", pro.writeCount },

@@ -566,6 +566,7 @@ namespace rock
         rockGrabPinchDetectionAxisBlend = grab_pinch_pocket_policy::kDefaultDetectionAxisBlend;
         rockGrabHandLerpEnabled = true;
         rockGrabHeldRenderClockAnchor = true;
+        rockGrabHeldRenderBodyPose = true;
         rockGrabRenderClockProbeOffsetGameUnits = 0.0f;
         rockGrabHandLerpTimeMin = 0.10f;
         rockGrabHandLerpTimeMax = 0.20f;
@@ -2246,6 +2247,7 @@ namespace rock
         }
         rockGrabHandLerpEnabled = ini.GetBoolValue(SECTION, "bGrabHandLerpEnabled", rockGrabHandLerpEnabled);
         rockGrabHeldRenderClockAnchor = ini.GetBoolValue(SECTION, "bGrabHeldRenderClockAnchor", rockGrabHeldRenderClockAnchor);
+        rockGrabHeldRenderBodyPose = ini.GetBoolValue(SECTION, "bGrabHeldRenderBodyPose", rockGrabHeldRenderBodyPose);
         rockGrabRenderClockProbeOffsetGameUnits = readClampedFloat(ini,
             SECTION,
             "fGrabRenderClockProbeOffsetGameUnits",

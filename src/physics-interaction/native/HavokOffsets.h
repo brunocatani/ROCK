@@ -180,6 +180,19 @@ namespace rock::offsets
 
     constexpr std::uintptr_t kFunc_HknpWorld_SetBodyMotion = 0x153BAE0;
 
+    /*
+     * hknpWorld::setBodyTransform (immediate) — blind-verified 2026-08-17.
+     * (world, bodyId, const hkTransform* [4 aligned columns, XYZ lanes
+     * consumed, body W lanes preserved], activationBehavior). Tolerance
+     * no-op check; quaternion derived+normalized; propagates into motion
+     * center/orientation, spatial cell, and the attached-body chain;
+     * dispatches world+0x538 body-change listeners; velocities untouched.
+     * Named by the engine's own API-command printer (opcode 6
+     * "setBodyTransform Id=") and reached by the deferred facade 0x1DF55F0.
+     * Caller invariants: world-write execution context, valid live body id.
+     */
+    constexpr std::uintptr_t kFunc_HknpWorld_SetBodyTransform = 0x15395E0;
+
     constexpr std::uintptr_t kFunc_HknpWorld_SetBodyMaterial = 0x153AFC0;
 
     constexpr std::uintptr_t kFunc_BhkWorld_SetMotionRecursive = 0x1DF95B0;

@@ -24,6 +24,7 @@
 
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/native/BodyCollisionControl.h"
+#include "physics-interaction/hand/HeldBodyRenderPose.h"
 #include "physics-interaction/actor/ActorEquipmentGrab.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
 #include "physics-interaction/api/InteractionCommandQueue.h"
@@ -1256,7 +1257,7 @@ namespace rock
         _skeletonGenerationAtomic.store(_lifecycleState.skeletonGeneration, std::memory_order_release);
         _providerGenerationAtomic.store(_lifecycleState.providerGeneration, std::memory_order_release);
         _generatedBodyStepDrive.setDriveCallbacks(
-            nullptr,
+            &PhysicsInteraction::onHeldBodyRenderPoseBeforeWholeStep,
             &PhysicsInteraction::onGeneratedColliderPhysicsSubstep,
             &PhysicsInteraction::onCustomGrabAuthorityAfterCharacterMovement,
             &PhysicsInteraction::onCustomGrabAuthorityAfterSolve,
@@ -7816,6 +7817,21 @@ namespace rock
         self->observeCustomGrabAuthorityAfterSolve(world, timing);
     }
 
+    void PhysicsInteraction::onHeldBodyRenderPoseBeforeWholeStep(void* userData, RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample&)
+    {
+        /*
+         * Restore must run before any collide even when a reset is in flight:
+         * an unrestored masquerade would feed the anchor pose into the solve.
+         * The module itself validates the body and fails closed, so only the
+         * world pointer is gated here.
+         */
+        auto* self = static_cast<PhysicsInteraction*>(userData);
+        if (!self || !world) {
+            return;
+        }
+        held_body_render_pose::restoreBeforeWholeStep(world);
+    }
+
     void PhysicsInteraction::driveGeneratedCollidersFromPhysicsSubstep(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GeneratedColliderPhysicsFlush);
@@ -7913,6 +7929,12 @@ namespace rock
         // been rebuilt by this step. Runs here so all deferred collider teardown
         // shares the same post-solve grace cadence as weapon bodies and constraints.
         BethesdaPhysicsBody::serviceRetiredDeferredPayloads();
+
+        // LAST post-solve action: every observer above must sample the true
+        // solver pose before the held body is masqueraded to the render-clock
+        // anchor for the remainder of the frame (module gates on the final
+        // substep; the solver pose is restored in the before-whole callback).
+        held_body_render_pose::applyAtFinalSubstepPostSolve(world, timing);
     }
 
     void PhysicsInteraction::updateSelection(const PhysicsFrameContext& frame)

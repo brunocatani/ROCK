@@ -25,6 +25,14 @@ namespace rock::debug
         float heldNodePos[3]{};
         std::uint32_t heldNodeValid{ 0 };
         float heldVsLastWriteGu{ -1.0f };
+        // Held-body render-pose masquerade counters (global, both hands):
+        // activeNow bitmask (1=right, 2=left), lifetime applied/restored
+        // steps, and lifetime failure counts (mismatched restores + skips).
+        std::uint32_t masqActiveNow{ 0 };
+        std::uint32_t masqApplied{ 0 };
+        std::uint32_t masqRestored{ 0 };
+        std::uint32_t masqMismatch{ 0 };
+        std::uint32_t masqSkipped{ 0 };
     };
 
     // Sampled on the game thread inside Hand::updateHeldObject (producer),
