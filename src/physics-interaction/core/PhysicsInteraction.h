@@ -254,6 +254,7 @@ namespace rock
         bool physicsWritesAllowedForWorld(RE::hknpWorld* world) const;
 
         void registerCollisionLayer(RE::hknpWorld* world);
+        [[nodiscard]] static bool dynamicProxyNpcBodyCollisionEnabled();
         void synchronizeDynamicWeaponHandCollisionRoles(RE::hknpWorld* world);
 
         bool createHandCollisions(RE::hknpWorld* world, void* bhkWorld);

@@ -623,10 +623,30 @@ namespace rock::collision_layer_policy
         applyLayerExpectedMask(matrix, ROCK_LAYER_BODY, buildRockBodyExpectedMask(includeStaticWorld));
     }
 
+    /*
+     * NPC body-contact experiment: the dynamic hand/weapon proxies may collide
+     * with actor bone bodies (BIPED/DEADBIP/BIPED_NO_CC) so hands and held
+     * weapons stop on NPC skeletons. The player is excluded per body, never per
+     * layer: every player biped-family body carries the bit-14 no-collide lease
+     * from updateNativePlayerCollisionSuppression, so callers must only enable
+     * this while the native character-controller contact filter (which owns
+     * that suppression scan) is enabled. The BIPED/BIPED_NO_CC matrix rows are
+     * SCISSORS-owned while its global collision policy runs, so the drift
+     * watchdog tolerates external biped-bit edits on the proxy rows
+     * (bodyManagedLayerMaskMatches) instead of fighting over them.
+     */
+    inline constexpr std::uint64_t dynamicProxyNpcBodyLayerBits()
+    {
+        return layerBitOrZero(FO4_LAYER_BIPED) |
+               layerBitOrZero(FO4_LAYER_DEADBIP) |
+               layerBitOrZero(FO4_LAYER_BIPED_NO_CC);
+    }
+
     inline constexpr std::uint64_t buildRockDynamicHandProxyExpectedMask(
         bool isLeft = false,
         bool interactionsEnabled = false,
-        bool dynamicWeaponInteractionEnabled = true)
+        bool dynamicWeaponInteractionEnabled = true,
+        bool npcBodyCollisionEnabled = false)
     {
         std::uint64_t mask = 0;
         for (std::uint32_t layer = 0; layer < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++layer) {
@@ -645,13 +665,17 @@ namespace rock::collision_layer_policy
                 mask = withLayer(mask, ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
             }
         }
+        if (npcBodyCollisionEnabled) {
+            mask |= dynamicProxyNpcBodyLayerBits();
+        }
         return mask;
     }
 
     inline constexpr std::uint64_t buildRockDynamicWeaponProxyExpectedMask(
         bool interactionsEnabled = false,
         bool rightHandInteractionEnabled = true,
-        bool leftHandInteractionEnabled = true)
+        bool leftHandInteractionEnabled = true,
+        bool npcBodyCollisionEnabled = false)
     {
         std::uint64_t mask = 0;
         for (std::uint32_t layer = 0; layer < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++layer) {
@@ -666,6 +690,9 @@ namespace rock::collision_layer_policy
             if (leftHandInteractionEnabled) {
                 mask = withLayer(mask, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY);
             }
+        }
+        if (npcBodyCollisionEnabled) {
+            mask |= dynamicProxyNpcBodyLayerBits();
         }
         return mask;
     }
@@ -715,7 +742,8 @@ namespace rock::collision_layer_policy
         std::uint64_t* matrix,
         bool interactionsEnabled = false,
         bool rightHandWeaponInteractionEnabled = true,
-        bool leftHandWeaponInteractionEnabled = true)
+        bool leftHandWeaponInteractionEnabled = true,
+        bool npcBodyCollisionEnabled = false)
     {
         applyLayerExpectedMask(
             matrix,
@@ -723,14 +751,16 @@ namespace rock::collision_layer_policy
             buildRockDynamicHandProxyExpectedMask(
                 false,
                 interactionsEnabled,
-                rightHandWeaponInteractionEnabled));
+                rightHandWeaponInteractionEnabled,
+                npcBodyCollisionEnabled));
         applyLayerExpectedMask(
             matrix,
             ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY,
             buildRockDynamicHandProxyExpectedMask(
                 true,
                 interactionsEnabled,
-                leftHandWeaponInteractionEnabled));
+                leftHandWeaponInteractionEnabled,
+                npcBodyCollisionEnabled));
     }
 
     inline void applyRockDynamicHandProxyLayerPolicy(std::uint64_t* matrix)
@@ -742,7 +772,8 @@ namespace rock::collision_layer_policy
         std::uint64_t* matrix,
         bool interactionsEnabled = false,
         bool rightHandInteractionEnabled = true,
-        bool leftHandInteractionEnabled = true)
+        bool leftHandInteractionEnabled = true,
+        bool npcBodyCollisionEnabled = false)
     {
         applyLayerExpectedMask(
             matrix,
@@ -750,7 +781,8 @@ namespace rock::collision_layer_policy
             buildRockDynamicWeaponProxyExpectedMask(
                 interactionsEnabled,
                 rightHandInteractionEnabled,
-                leftHandInteractionEnabled));
+                leftHandInteractionEnabled,
+                npcBodyCollisionEnabled));
     }
 
     inline void applyRockDynamicWorldCarLayerPolicies(std::uint64_t* matrix)
@@ -793,7 +825,8 @@ namespace rock::collision_layer_policy
         bool weaponBlocksSpells,
         bool dynamicHandInteractionsEnabled,
         bool dynamicWeaponRightHandInteractionEnabled = true,
-        bool dynamicWeaponLeftHandInteractionEnabled = true)
+        bool dynamicWeaponLeftHandInteractionEnabled = true,
+        bool dynamicProxyNpcBodyCollisionEnabled = false)
     {
         /*
          * Runtime registration uses one aggregate helper because layer 47 is an
@@ -811,12 +844,14 @@ namespace rock::collision_layer_policy
             matrix,
             dynamicHandInteractionsEnabled,
             dynamicWeaponRightHandInteractionEnabled,
-            dynamicWeaponLeftHandInteractionEnabled);
+            dynamicWeaponLeftHandInteractionEnabled,
+            dynamicProxyNpcBodyCollisionEnabled);
         applyRockDynamicWeaponProxyLayerPolicy(
             matrix,
             dynamicHandInteractionsEnabled,
             dynamicWeaponRightHandInteractionEnabled,
-            dynamicWeaponLeftHandInteractionEnabled);
+            dynamicWeaponLeftHandInteractionEnabled,
+            dynamicProxyNpcBodyCollisionEnabled);
         applyRockDynamicWorldCarLayerPolicies(matrix);
     }
 }

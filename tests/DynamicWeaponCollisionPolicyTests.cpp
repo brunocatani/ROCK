@@ -244,6 +244,48 @@ int main()
         nativeCarryLeftHandMask,
         rock::collision_layer_policy::ROCK_LAYER_DYNAMIC_WEAPON_PROXY);
 
+    // NPC body-contact experiment: the biped family (BIPED/DEADBIP/BIPED_NO_CC)
+    // joins the proxy rows only under the explicit flag; every default-built
+    // mask must stay actor-free so the feature cannot leak in unconfigured.
+    constexpr std::uint32_t bipedFamilyLayers[] = {
+        rock::collision_layer_policy::FO4_LAYER_BIPED,
+        rock::collision_layer_policy::FO4_LAYER_DEADBIP,
+        rock::collision_layer_policy::FO4_LAYER_BIPED_NO_CC,
+    };
+    constexpr auto npcRightHandMask =
+        rock::collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
+            false,
+            true,
+            true,
+            true);
+    constexpr auto npcLeftHandMask =
+        rock::collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
+            true,
+            true,
+            true,
+            true);
+    constexpr auto npcWeaponMask =
+        rock::collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask(
+            true,
+            true,
+            true,
+            true);
+    for (const auto bipedLayer : bipedFamilyLayers) {
+        ok &= rock::collision_layer_policy::maskEnablesLayer(npcRightHandMask, bipedLayer);
+        ok &= rock::collision_layer_policy::maskEnablesLayer(npcLeftHandMask, bipedLayer);
+        ok &= rock::collision_layer_policy::maskEnablesLayer(npcWeaponMask, bipedLayer);
+        ok &= !rock::collision_layer_policy::maskEnablesLayer(dynamicWeaponMask, bipedLayer);
+        ok &= !rock::collision_layer_policy::maskEnablesLayer(rightHandMask, bipedLayer);
+        ok &= !rock::collision_layer_policy::maskEnablesLayer(leftHandMask, bipedLayer);
+        ok &= !rock::collision_layer_policy::maskEnablesLayer(nativeCarryWeaponMask, bipedLayer);
+        // The biped bits must never classify as world support/obstacle surface;
+        // NPC skeletons are contacts to stop on, not surfaces to anchor to.
+        ok &= !rock::collision_layer_policy::isDynamicHandProxySurfaceLayer(bipedLayer);
+        ok &= !rock::collision_layer_policy::isDynamicWeaponProxyObstacleLayer(bipedLayer);
+    }
+    ok &= (rock::collision_layer_policy::dynamicProxyNpcBodyLayerBits() &
+              rock::collision_layer_policy::rockBodyManagedLayerBits()) == 0;
+
     const auto geometry = makeBoundingBoxGeometry(
         RE::NiPoint3{ -10.0f, -2.0f, -1.0f },
         RE::NiPoint3{ 30.0f, 4.0f, 3.0f });

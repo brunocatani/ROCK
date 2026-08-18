@@ -187,6 +187,14 @@ namespace rock
          */
         bool rockHandCollisionDynamicDrive = true;
         bool rockHandDynamicInteractionsEnabled = true;
+        /*
+         * Interim melee feel until SCISSORS ships precision melee: dynamic
+         * hand/weapon proxies collide with NPC bone bodies (biped family).
+         * Compiled default stays false (fail closed without the INI key); the
+         * shipped INI enables it. Runtime-gated on the native controller
+         * contact filter, which owns the player-body suppression leases.
+         */
+        bool rockDynamicColliderNpcBodyCollisionEnabled = false;
         float rockHandCollisionDynamicMaxLinearVelocityHavok = 15.0f;
         float rockHandCollisionDynamicContactPressMaxVelocityHavok = 1.0f;
         float rockHandCollisionDynamicCompoundMass = 2.0f;

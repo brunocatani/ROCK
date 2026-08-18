@@ -241,6 +241,7 @@ namespace rock
 
         rockHandCollisionDynamicDrive = true;
         rockHandDynamicInteractionsEnabled = true;
+        rockDynamicColliderNpcBodyCollisionEnabled = false;
         rockHandCollisionDynamicMaxLinearVelocityHavok = 15.0f;
         rockHandCollisionDynamicContactPressMaxVelocityHavok = 1.0f;
         rockHandCollisionDynamicCompoundMass = 2.0f;
@@ -1186,6 +1187,10 @@ namespace rock
             SECTION,
             "bHandDynamicInteractionsEnabled",
             rockHandDynamicInteractionsEnabled);
+        rockDynamicColliderNpcBodyCollisionEnabled = ini.GetBoolValue(
+            SECTION,
+            "bDynamicCollidersNpcBodyCollisionEnabled",
+            rockDynamicColliderNpcBodyCollisionEnabled);
         rockHandCollisionDynamicMaxLinearVelocityHavok = readClampedFloat(ini,
             SECTION,
             "fHandCollisionDynamicMaxLinearVelocityHavok",

@@ -3111,21 +3111,25 @@ namespace rock
                 g_rockConfig.rockWeaponCollisionBlocksSpells,
                 g_rockConfig.rockHandCollisionStaticWorldEnabled);
             const auto desiredBodyMask = collision_layer_policy::buildRockBodyExpectedMask(g_rockConfig.rockBodyBoneCollisionStaticWorldEnabled);
+            const bool desiredDynamicProxyNpcBodyCollision = dynamicProxyNpcBodyCollisionEnabled();
             const auto desiredDynamicRightHandProxyMask =
                 collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
                     false,
                     g_rockConfig.rockHandDynamicInteractionsEnabled,
-                    _dynamicWeaponRightHandInteractionEnabled);
+                    _dynamicWeaponRightHandInteractionEnabled,
+                    desiredDynamicProxyNpcBodyCollision);
             const auto desiredDynamicLeftHandProxyMask =
                 collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
                     true,
                     g_rockConfig.rockHandDynamicInteractionsEnabled,
-                    _dynamicWeaponLeftHandInteractionEnabled);
+                    _dynamicWeaponLeftHandInteractionEnabled,
+                    desiredDynamicProxyNpcBodyCollision);
             const auto desiredDynamicWeaponProxyMask =
                 collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask(
                     g_rockConfig.rockHandDynamicInteractionsEnabled,
                     _dynamicWeaponRightHandInteractionEnabled,
-                    _dynamicWeaponLeftHandInteractionEnabled);
+                    _dynamicWeaponLeftHandInteractionEnabled,
+                    desiredDynamicProxyNpcBodyCollision);
             const bool desiredNativeControllerPolicyEnabled = g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled;
             const bool nativeControllerPolicyModeChanged =
                 _nativeCharacterControllerLayerPolicyCaptured &&
@@ -3163,15 +3167,21 @@ namespace rock
                 const bool weaponMaskDrifted = _expectedWeaponLayerMask != 0 && !collision_layer_policy::matrixLayerMaskMatches(currentWeaponMask, _expectedWeaponLayerMask);
                 const bool reloadMaskDrifted = _expectedReloadLayerMask != 0 && !collision_layer_policy::matrixLayerMaskMatches(currentReloadMask, _expectedReloadLayerMask);
                 const bool bodyMaskDrifted = _expectedBodyLayerMask != 0 && !collision_layer_policy::bodyManagedLayerMaskMatches(currentBodyMask, _expectedBodyLayerMask);
+                /*
+                 * Proxy rows use the biped-tolerant compare: the BIPED /
+                 * BIPED_NO_CC rows are SCISSORS-owned while its global
+                 * collision policy runs, and fighting over those bits would
+                 * churn the whole matrix (see dynamicProxyNpcBodyLayerBits).
+                 */
                 const bool dynamicHandProxyMaskDrifted = _expectedDynamicHandProxyLayerMask != 0 &&
-                    !collision_layer_policy::matrixLayerMaskMatches(currentDynamicHandProxyMask, _expectedDynamicHandProxyLayerMask);
+                    !collision_layer_policy::bodyManagedLayerMaskMatches(currentDynamicHandProxyMask, _expectedDynamicHandProxyLayerMask);
                 const bool dynamicLeftHandProxyMaskDrifted =
                     _expectedDynamicLeftHandProxyLayerMask != 0 &&
-                    !collision_layer_policy::matrixLayerMaskMatches(
+                    !collision_layer_policy::bodyManagedLayerMaskMatches(
                         currentDynamicLeftHandProxyMask,
                         _expectedDynamicLeftHandProxyLayerMask);
                 const bool dynamicWeaponProxyMaskDrifted = _expectedDynamicWeaponProxyLayerMask != 0 &&
-                    !collision_layer_policy::matrixLayerMaskMatches(currentDynamicWeaponProxyMask, _expectedDynamicWeaponProxyLayerMask);
+                    !collision_layer_policy::bodyManagedLayerMaskMatches(currentDynamicWeaponProxyMask, _expectedDynamicWeaponProxyLayerMask);
                 const bool dynamicWorldCarClutterMaskDrifted = _expectedDynamicWorldCarClutterLayerMask != 0 &&
                     !collision_layer_policy::matrixLayerMaskMatches(currentDynamicWorldCarClutterMask, _expectedDynamicWorldCarClutterLayerMask);
                 const bool dynamicWorldCarLargeClutterMaskDrifted = _expectedDynamicWorldCarLargeClutterLayerMask != 0 &&
@@ -7013,6 +7023,20 @@ namespace rock
         registerCollisionLayer(world);
     }
 
+    bool PhysicsInteraction::dynamicProxyNpcBodyCollisionEnabled()
+    {
+        /*
+         * Fail closed: NPC body contact is only safe while the native
+         * character-controller contact filter is on, because that toggle owns
+         * the bit-14 suppression leases that exclude the player's own
+         * biped-family bodies from the dynamic proxies. Without those leases
+         * the driven proxies would collide with the player's own skeleton
+         * (self-propulsion feedback).
+         */
+        return g_rockConfig.rockDynamicColliderNpcBodyCollisionEnabled &&
+               g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled;
+    }
+
     void PhysicsInteraction::registerCollisionLayer(RE::hknpWorld* world)
     {
         if (!world) {
@@ -7044,6 +7068,11 @@ namespace rock
             _nativeCharacterControllerLayerPolicyCaptured = true;
         }
 
+        const bool npcBodyCollisionEnabled = dynamicProxyNpcBodyCollisionEnabled();
+        if (g_rockConfig.rockDynamicColliderNpcBodyCollisionEnabled && !npcBodyCollisionEnabled) {
+            ROCK_LOG_WARN(Config,
+                "Dynamic proxy NPC body collision requested but disabled: native character-controller contact filter is off, so player biped suppression leases are inactive");
+        }
         collision_layer_policy::applyRockGeneratedLayerPolicies(
             matrix,
             g_rockConfig.rockHandCollisionStaticWorldEnabled,
@@ -7053,7 +7082,8 @@ namespace rock
             g_rockConfig.rockWeaponCollisionBlocksSpells,
             g_rockConfig.rockHandDynamicInteractionsEnabled,
             _dynamicWeaponRightHandInteractionEnabled,
-            _dynamicWeaponLeftHandInteractionEnabled);
+            _dynamicWeaponLeftHandInteractionEnabled,
+            npcBodyCollisionEnabled);
         collision_layer_policy::applyNativeCharacterControllerObjectSuppressionPolicy(
             matrix,
             g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled,
@@ -7076,17 +7106,26 @@ namespace rock
             collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
                 false,
                 g_rockConfig.rockHandDynamicInteractionsEnabled,
-                _dynamicWeaponRightHandInteractionEnabled);
+                _dynamicWeaponRightHandInteractionEnabled,
+                npcBodyCollisionEnabled);
         _expectedDynamicLeftHandProxyLayerMask =
             collision_layer_policy::buildRockDynamicHandProxyExpectedMask(
                 true,
                 g_rockConfig.rockHandDynamicInteractionsEnabled,
-                _dynamicWeaponLeftHandInteractionEnabled);
+                _dynamicWeaponLeftHandInteractionEnabled,
+                npcBodyCollisionEnabled);
         _expectedDynamicWeaponProxyLayerMask =
             collision_layer_policy::buildRockDynamicWeaponProxyExpectedMask(
                 g_rockConfig.rockHandDynamicInteractionsEnabled,
                 _dynamicWeaponRightHandInteractionEnabled,
-                _dynamicWeaponLeftHandInteractionEnabled);
+                _dynamicWeaponLeftHandInteractionEnabled,
+                npcBodyCollisionEnabled);
+        ROCK_LOG_INFO(Config,
+            "Dynamic proxy NPC body collision {}: rightHand=0x{:016X} leftHand=0x{:016X} weapon=0x{:016X}",
+            npcBodyCollisionEnabled ? "ENABLED (biped family 8/32/33 paired)" : "disabled",
+            matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_HAND_PROXY],
+            matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY],
+            matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WEAPON_PROXY]);
         _expectedDynamicWorldCarClutterLayerMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_CLUTTER];
         _expectedDynamicWorldCarLargeClutterLayerMask = matrix[collision_layer_policy::ROCK_LAYER_DYNAMIC_WORLD_CAR_LARGE_CLUTTER];
         _expectedNativeCharacterControllerLayerMask =
