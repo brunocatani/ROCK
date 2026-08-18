@@ -234,6 +234,7 @@
 
   // --- per-frame channel derivation --------------------------------------
   var prev = null;
+  var lastMasqApplied = 0;   // BODY MASQ badge: liveness = counter advancing
   var heldDeltas = { deltas: [] };   // vector deltas of (held-hand) for buzz chip
   var weapDeltas = { deltas: [] };
   var handRoomDeltas = { deltas: [] };
@@ -495,8 +496,13 @@
       b += '<span class="badge ' + (act.g.pro.nw === 1 ? 'on' : 'warn') + '">NODE WRITE ' + (act.g.pro.nw === 1 ? 'yes' : 'no') + '</span>';
       var fp = act.g.pre && act.g.pre.n > 0 ? act.g.pre.fp === 1 : false;
       b += '<span class="badge ' + (fp ? 'on' : 'warn') + '">PAIR TRANSPORT ' + (fp ? 'fresh' : 'stale') + '</span>';
-      var mq = act.g.phy && act.g.phy.n > 0 ? act.g.phy.mAct : 0;
-      b += '<span class="badge ' + (mq ? 'on' : 'warn') + '">BODY MASQ ' + (mq ? 'live' : 'off') + '</span>';
+      // The physics flush samples mid-step, between the masquerade restore
+      // and re-apply, so activeNow is false there by design. Liveness is the
+      // applied counter advancing across frames.
+      var mApp = act.g.phy && act.g.phy.n > 0 ? act.g.phy.mApp : 0;
+      var mqLive = mApp > lastMasqApplied;
+      if (mApp !== lastMasqApplied) { lastMasqApplied = mApp; }
+      b += '<span class="badge ' + (mqLive ? 'on' : 'warn') + '">BODY MASQ ' + (mqLive ? 'live' : 'off') + '</span>';
     }
     var feedLive = (d.gR && d.gR.pro.n > 0) || (d.gL && d.gL.pro.n > 0);
     b += '<span class="badge ' + (feedLive ? 'on' : 'off') + '">FEED ' + (feedLive ? 'live' : 'no data yet') + '</span>';
@@ -519,9 +525,9 @@
       lines += 'PHYSICS FLUSH (+0x30, physics thread) #' + g.phy.n + '\n';
       lines += '  room <b>' + v3txt(g.phy.room) + '</b> yaw <b>' + g.phy.yaw.toFixed(2) + '</b>\n';
       lines += '  held <b>' + v3txt(g.phy.held) + '</b> dWrite <b>' + fmt(g.phy.dW) + '</b>\n';
-      lines += '  MASQ active <b>' + (g.phy.mAct ? ((g.phy.mAct & 1 ? 'R' : '') + (g.phy.mAct & 2 ? 'L' : '')) : 'no') +
-               '</b> applied <b>' + g.phy.mApp + '</b> restored <b>' + g.phy.mRes +
-               '</b> mismatch <b>' + g.phy.mMis + '</b> skipped <b>' + g.phy.mSkp + '</b>\n\n';
+      lines += '  MASQ applied <b>' + g.phy.mApp + '</b> restored <b>' + g.phy.mRes +
+               '</b> mismatch <b>' + g.phy.mMis + '</b> skipped <b>' + g.phy.mSkp +
+               '</b> (flush samples mid-step; live = applied climbing)\n\n';
     } else {
       lines += 'PHYSICS FLUSH: no samples yet\n\n';
     }
