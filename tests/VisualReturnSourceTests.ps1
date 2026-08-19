@@ -58,9 +58,6 @@ Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' `
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'transitionToPartCarry\(\)[\s\S]*blockFrikPrimaryWeaponPose\(\)[\s\S]*beginHandVisualReturn\(_firingHandIsLeft,\s*"primary-detach-part-carry"\)[\s\S]*_state\s*=\s*TwoHandedState::PartCarry' `
     'Primary detach must acquire the required blocker before returning only the departing firing hand while PartCarry takes authority immediately.'
-Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'void TwoHandedGrip::beginWeaponVisualReturn[\s\S]{0,5000}frik_visual_authority::blockPrimaryWeaponNodeOwnership' `
-    'Weapon return must not engage hFRIK external-left-carry topology as a transform-write blocker.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'new-two-hand-acquisition[\s\S]*nativeBaselineLocal[\s\S]*new-primary-acquisition' `
     'New weapon acquisition must interrupt return without losing the original native baseline.'

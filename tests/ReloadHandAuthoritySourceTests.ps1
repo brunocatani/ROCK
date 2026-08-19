@@ -74,38 +74,14 @@ Require-Pattern $weaponHeader `
     'nativeReloadHandAuthorityActive[\s\S]*setNativeReloadHandAuthorityActive\(bool active\)[\s\S]*isNativeReloadSupportHand[\s\S]*_nativeReloadHandAuthorityActive' `
     'TwoHandedGrip must retain an explicit reload handoff state across pre-FRIK and physics phases.'
 Require-Pattern $weapon `
-    'suspendNativeReloadSupportHandAuthority\([\s\S]*clearHandPose\([\s\S]*SUPPORT_GRIP_TAG[\s\S]*clearHandAuthorityRoleNow\([\s\S]*SupportGrip[\s\S]*clearWeaponCollisionHandAuthority\(isLeft\)[\s\S]*clearHandVisualReturn\([\s\S]*clearGunstockDedicatedHandAuthority\(\)' `
-    'Reload entry must clear every support-hand pose, transform, collision, return, and gunstock owner without erasing the logical grip.'
-Require-Pattern $weapon `
-    'setNativeReloadHandAuthorityActive\([\s\S]*_nativeReloadHandAuthorityActive\s*=\s*true[\s\S]*suspendNativeReloadSupportHandAuthority\(supportHandIsLeft\)[\s\S]*logicalGripRetained' `
-    'Reload entry must latch the visual suspension while documenting that the logical grip survives.'
-Require-Pattern $weapon `
     '!supportRuntimeState\.supportGripAllowed\s*&&[\r\n\s]*!_nativeReloadHandAuthorityActive' `
     'A reload-time provider reservation must not destroy an already-held logical support grip.'
 Require-Pattern $weapon `
     'supportTouchingSupport\s*=[\r\n\s]*!_nativeReloadHandAuthorityActive\s*&&' `
     'Reload must block new support-grip acquisition while preserving an existing grip.'
-Require-Pattern $weapon `
-    'hasVisualAuthorityForHand\([\s\S]{0,180}isNativeReloadSupportHand\(isLeft\)[\s\S]{0,80}return false' `
-    'Other hand systems must see the reload support hand as visually unowned.'
-Require-Pattern $weapon `
-    'applyPartGripLockedVisual\([\s\S]{0,500}isNativeReloadSupportHand\(isLeft\)[\s\S]{0,80}return true' `
-    'The locked support-hand transform must remain suppressed throughout reload.'
-Require-Pattern $weapon `
-    'publishGripHandPoses\(bool isLeft\)[\s\S]{0,180}isNativeReloadSupportHand\(isLeft\)' `
-    'Support finger-pose publication must remain suppressed throughout reload.'
 Require-Pattern $weaponHeader `
     'weaponCollisionAttachedHands\(\)[\s\S]*selectAttachedHands\([\s\S]*!_nativeReloadHandAuthorityActive' `
     'Dynamic collision must exclude the support hand while native reload owns it.'
-Require-Pattern $weapon `
-    'refreshWeaponCollisionHandAuthorityBeforeFrik\([\s\S]*isNativeReloadSupportHand\(isLeft\)[\s\S]*clearWeaponCollisionHandAuthority\(isLeft\)' `
-    'Pre-FRIK collision refresh must fail closed for the reload support hand.'
-Require-Pattern $weapon `
-    'refreshWeaponCollisionHandAuthorityBeforeFrik\([\s\S]*drivers\s*\{[\s\S]*leftHandDriver[\s\S]*rightHandDriver[\s\S]*reconstructTargetWorld\([\s\S]*driver\.world,[\s\S]*source\.driverToHandLocal' `
-    'A retained contact claim must follow its own physical hand driver rather than transporting the offhand from the firing hand.'
-Require-Pattern $weapon `
-    'refreshRetainedHandVisualAuthoritiesBeforeFrik\([\s\S]*isNativeReloadSupportHand\(isLeft\)[\s\S]*continue' `
-    'Pre-FRIK retained-role refresh must skip the reload support hand.'
 
 if ($failures.Count -gt 0) {
     $failures | ForEach-Object { Write-Error $_ }

@@ -301,8 +301,6 @@ namespace rock
         // Drop the drive first. The proxy body and its constraint are the only things
         // that could still move the object after this frame returns.
         destroyGrabAuthorityProxy(unwind.bhkWorld);
-        // Fail closed on the visual side: no grab means no external hand offset.
-        clearGrabExternalHandWorldTransform(_isLeft);
         // The peer hand owns the saved state when this hand only joined its hold.
         if (!unwind.joiningPeerHeldObject) {
             restoreGrabbedInertia(unwind.world, _savedObjectState);
@@ -368,30 +366,12 @@ namespace rock
                 }
             }
         }
-        /*
-         * Some setup failures stage a saved object state before ROCK owns a live grab
-         * constraint. Clear it here so a rejected grab cannot look held or block a
-         * later reset cleanup.
-         */
-        _savedObjectState.clear();
-
         // Both suppression sets no-op when this attempt never armed them.
         restoreHandCollisionAfterGrab(unwind.world);
         restoreBodyCollisionAfterHeldLooseWeapon(unwind.world);
 
-        // Forget the attempt. Every field below is written only by acquisition or by
-        // the held tick, so clearing them cannot disturb an unrelated subsystem.
-        _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
-        _grabObjectGripAtGrab = {};
-        _heldObjectIsLooseWeapon = false;
-        _grabFrame.clear();
-        _heldBodyIds.clear();
-        _heldDriveDecision = {};
-        _heldBodyIdsCount.store(0, std::memory_order_release);
-        _grabFingerPosePublished = false;
-        // "ROCK_Grab" belongs to the grab finger pose alone, so this cannot drop a pose
-        // that another system published.
-        (void)frik_visual_authority::clearHandPose("ROCK_Grab", handFromBool(_isLeft));
+        // Clear every staged grab field after the unwind has consumed its snapshots.
+        clearAllGrabRuntimeState();
     }
 
     bool Hand::prepareGrabBodySet(hand_grab_detail::GrabAcquisitionContext& context)
@@ -717,9 +697,6 @@ namespace rock
                 _handBody.isValid() ? _handBody.getBodyId().value : INVALID_BODY_ID,
                 proxyFrameSourceAtGrab,
                 sel.refr ? sel.refr->GetFormID() : 0);
-            _grabFrame.clear();
-            _heldBodyIds.clear();
-            _heldBodyIdsCount.store(0, std::memory_order_release);
             return abortGrab();
         }
         /*

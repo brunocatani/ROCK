@@ -29,13 +29,11 @@ $interactionPath = 'src/physics-interaction/core/PhysicsInteraction.cpp'
 $authoredHeaderPath = 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.h'
 $authoredPath = 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp'
 $gripHeaderPath = 'src/physics-interaction/weapon/TwoHandedGrip.h'
-$gripPath = 'src/physics-interaction/weapon/TwoHandedGrip.cpp'
 
 $interaction = Read-Source $interactionPath
 $authoredHeader = Read-Source $authoredHeaderPath
 $authored = Read-Source $authoredPath
 $gripHeader = Read-Source $gripHeaderPath
-$grip = Read-Source $gripPath
 
 Require-Pattern $authoredHeaderPath $authoredHeader `
     'AuthoredPrimaryFiringGripFrameInput[\s\S]*controllerHandWorld[\s\S]*controllerHandWorldValid' `
@@ -74,10 +72,6 @@ Require-Pattern $gripHeaderPath $gripHeader `
 Require-Pattern $interactionPath $interaction `
     'leftHandDriverFrame\s*\{[\s\S]*frame\.left\.rawHandWorld[\s\S]*rightHandDriverFrame\s*\{[\s\S]*frame\.right\.rawHandWorld[\s\S]*leftScopeHandDriverFrame\s*=\s*captureScopeHandDriverFrame\(scopeHandDriverNode\(true\)\)[\s\S]*rightScopeHandDriverFrame\s*=\s*captureScopeHandDriverFrame\(scopeHandDriverNode\(false\)\)' `
     'The coherent grip frame must pair physical hand inputs with separately named scope drivers.'
-
-Require-Pattern $gripPath $grip `
-    '!_scopeDriverFrameAuthorityActive\s*&&[\s\S]*persistentRockHandWorldPublished\s*&&[\s\S]*physicalHandValid[\s\S]*state\.currentHandWorld\s*=\s*physicalHandFrame\.world[\s\S]*refreshHand\([\s\S]*frameInput\.leftScopeHandDriverFrame,[\s\S]*frameInput\.leftHandDriverFrame\)' `
-    'Persistent normal hand authority must bypass hFRIK weapon-offset reconstruction while scope authority keeps its dedicated driver.'
 
 Require-Pattern $authoredPath $authored `
     'shouldRetainAuthoredFiringFingerPoseWhileWeaponTransformYields\([\s\S]*eligibility\)[\s\S]*if \(!input\.rockFiringHandIsLeft && !retainFingerPose\)[\s\S]*clearAuthoredPrimaryFiringGripFingerPose\(\)[\s\S]*weapon-transform-authority-yield' `

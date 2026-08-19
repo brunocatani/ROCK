@@ -161,6 +161,82 @@ namespace rock
          */
     }
 
+    void Hand::clearAllGrabRuntimeState()
+    {
+        // "ROCK_Grab" belongs only to the grab finger pose.
+        (void)frik_visual_authority::clearHandPose("ROCK_Grab", handFromBool(_isLeft));
+        clearGrabExternalHandWorldTransform(_isLeft);
+        _preFrikGrabVisualAuthority.clear();
+        clearSelectedCloseFingerPose();
+        _savedObjectState.clear();
+        _activeGrabLifecycle.clear();
+        _activeConstraint.clear();
+        clearGrabAuthorityProxyRuntime();
+        _heldBodyIds.clear();
+        _heldBodyIdsCount.store(0, std::memory_order_release);
+        _grabFrame.clear();
+        _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
+        _grabObjectGripAtGrab = {};
+        _heldDriveDecision = {};
+        _heldObjectIsLooseWeapon = false;
+        _grabFingerPosePublished = false;
+        _grabConvergeStableInsidePocketFrames = 0;
+        _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
+        _grabDeviationExceededSeconds = 0.0f;
+        _grabDeviationHistory = {};
+        _grabDeviationHistoryCount = 0;
+        _grabDeviationHistoryNext = 0;
+        _grabVisualHandTransform = {};
+        _hasGrabVisualHandTransform = false;
+        _lastPublishedGrabVisualHandTransform = {};
+        _hasLastPublishedGrabVisualHandTransform = false;
+        _grabVisualHandLerpStartTransform = {};
+        _grabVisualHandLerpElapsedSeconds = 0.0f;
+        _grabVisualHandLerpDurationSeconds = 0.0f;
+        _grabVisualDeviationExceededSeconds = 0.0f;
+        _grabVisualDeviationHistory = {};
+        _grabVisualDeviationHistoryCount = 0;
+        _grabVisualDeviationHistoryNext = 0;
+        _grabFingerProbeStart = {};
+        _grabFingerProbeEnd = {};
+        _hasGrabFingerProbeDebug = false;
+        _grabFingerSweepDebugCapture = {};
+        _grabFingerSweepDebugObjectWorld = {};
+        _hasGrabFingerSweepDebug = false;
+        _grabFingerPadProbeStart = {};
+        _grabFingerPadProbeEnd = {};
+        _grabFingerPadProbeHit = {};
+        _grabFingerPadProbeHitValid = {};
+        _hasGrabFingerPadProbeDebug = false;
+        _grabFingerSurfaceTarget = {};
+        _grabFingerSurfaceTargetValid = {};
+        _hasGrabFingerSurfaceTargetDebug = false;
+        _grabFingerJointPose = {};
+        _grabFingerLocalTransforms = {};
+        _grabFingerLocalTransformMask = 0;
+        _grabFingerPose = {};
+        _grabFingerTriangleIndex.clear();
+        _hasGrabFingerJointPose = false;
+        _hasGrabFingerLocalTransforms = false;
+        _hasGrabFingerPose = false;
+        _heldLocalLinearVelocityHistory = {};
+        _heldLocalLinearVelocityHistoryCount = 0;
+        _heldLocalLinearVelocityHistoryNext = 0;
+        _heldLocalHandVelocityHistory = {};
+        _heldHandAngularVelocityHistory = {};
+        _heldHandVelocityHistoryCount = 0;
+        _heldHandVelocityHistoryNext = 0;
+        _lastHeldObjectLocalLinearVelocityHavok = {};
+        _hasLastHeldObjectLocalLinearVelocityHavok = false;
+        _previousHeldRawHandWorld = {};
+        _previousHeldHandPositionHavok = {};
+        _lastHeldHandPositionHavok = {};
+        _hasPreviousHeldRawHandWorld = false;
+        _hasLastHeldHandPositionHavok = false;
+        _currentSelection.clear();
+        clearGrabAcquisitionCache("grab-runtime-cleared");
+    }
+
     GrabReleaseOutcome Hand::releaseGrabbedObject(
         RE::hknpWorld* world,
         GrabReleaseCollisionRestoreMode collisionRestoreMode,
@@ -492,6 +568,7 @@ namespace rock
         }
 
         {
+            // Guard both proxy-owned handles during final constraint teardown.
             std::scoped_lock lock(_grabAuthorityProxyMutex);
             if (_activeConstraint.isValid()) {
                 destroyGrabConstraint(world, _activeConstraint);
@@ -515,76 +592,7 @@ namespace rock
         }
 
         beginGrabVisualReturn();
-        (void)frik_visual_authority::clearHandPose("ROCK_Grab", handFromBool(_isLeft));
-        clearGrabExternalHandWorldTransform(_isLeft);
-        _preFrikGrabVisualAuthority.clear();
-        clearSelectedCloseFingerPose();
-        _savedObjectState.clear();
-        _activeGrabLifecycle.clear();
-        _activeConstraint.clear();
-        clearGrabAuthorityProxyRuntime();
-        _heldBodyIds.clear();
-        _grabFrame.clear();
-        _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
-        _grabObjectGripAtGrab = {};
-        _heldDriveDecision = {};
-        _heldObjectIsLooseWeapon = false;
-        _grabFingerPosePublished = false;
-        _grabConvergeStableInsidePocketFrames = 0;
-        _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
-        _grabDeviationExceededSeconds = 0.0f;
-        _grabDeviationHistory = {};
-        _grabDeviationHistoryCount = 0;
-        _grabDeviationHistoryNext = 0;
-        _grabVisualHandTransform = {};
-        _hasGrabVisualHandTransform = false;
-        _lastPublishedGrabVisualHandTransform = {};
-        _hasLastPublishedGrabVisualHandTransform = false;
-        _grabVisualHandLerpStartTransform = {};
-        _grabVisualHandLerpElapsedSeconds = 0.0f;
-        _grabVisualHandLerpDurationSeconds = 0.0f;
-        _grabVisualDeviationExceededSeconds = 0.0f;
-        _grabVisualDeviationHistory = {};
-        _grabVisualDeviationHistoryCount = 0;
-        _grabVisualDeviationHistoryNext = 0;
-        _grabFingerProbeStart = {};
-        _grabFingerProbeEnd = {};
-        _hasGrabFingerProbeDebug = false;
-        _grabFingerSweepDebugCapture = {};
-        _grabFingerSweepDebugObjectWorld = {};
-        _hasGrabFingerSweepDebug = false;
-        _grabFingerPadProbeStart = {};
-        _grabFingerPadProbeEnd = {};
-        _grabFingerPadProbeHit = {};
-        _grabFingerPadProbeHitValid = {};
-        _hasGrabFingerPadProbeDebug = false;
-        _grabFingerSurfaceTarget = {};
-        _grabFingerSurfaceTargetValid = {};
-        _hasGrabFingerSurfaceTargetDebug = false;
-        _grabFingerJointPose = {};
-        _grabFingerLocalTransforms = {};
-        _grabFingerLocalTransformMask = 0;
-        _grabFingerPose = {};
-        _grabFingerTriangleIndex.clear();
-        _hasGrabFingerJointPose = false;
-        _hasGrabFingerLocalTransforms = false;
-        _hasGrabFingerPose = false;
-        _heldLocalLinearVelocityHistory = {};
-        _heldLocalLinearVelocityHistoryCount = 0;
-        _heldLocalLinearVelocityHistoryNext = 0;
-        _heldLocalHandVelocityHistory = {};
-        _heldHandAngularVelocityHistory = {};
-        _heldHandVelocityHistoryCount = 0;
-        _heldHandVelocityHistoryNext = 0;
-        _lastHeldObjectLocalLinearVelocityHavok = {};
-        _hasLastHeldObjectLocalLinearVelocityHavok = false;
-        _previousHeldRawHandWorld = {};
-        _previousHeldHandPositionHavok = {};
-        _lastHeldHandPositionHavok = {};
-        _hasPreviousHeldRawHandWorld = false;
-        _hasLastHeldHandPositionHavok = false;
-        _currentSelection.clear();
-        clearGrabAcquisitionCache("release-cleared-selection");
+        clearAllGrabRuntimeState();
         HandInteractionEvent releaseEvent = HandInteractionEvent::ReleaseRequested;
         if (releaseContext.disposition == GrabReleaseDisposition::TransferToInventory && _state == HandState::StashCandidate) {
             releaseEvent = HandInteractionEvent::CommitStash;

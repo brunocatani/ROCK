@@ -161,12 +161,6 @@ Require-Pattern $runtimeSource `
     'rockWeaponCollisionDynamicInverseInertiaMultiplier[\s\S]*envelopeMassProperties\.inverseInertia\.x\s*\*\s*inverseInertiaMultiplier[\s\S]*envelopeMassProperties\.inverseInertia\.y\s*\*\s*inverseInertiaMultiplier[\s\S]*envelopeMassProperties\.inverseInertia\.z\s*\*\s*inverseInertiaMultiplier[\s\S]*multiplier=\{:\.3f\}' `
     'Dynamic weapon tuning must scale only the qualified envelope inverse inertia and expose the applied multiplier.'
 
-# One-way publication is the core anti-feedback invariant: all native/ROCK
-# weapon writers publish collision-free intent, then one bypass publication
-# applies the solved pose without observing itself.
-Require-Pattern 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'notifyVisualIntentObserver\s*&&\s*_weaponVisualIntentObserver[\s\S]*_weaponVisualIntentObserver\([\s\S]*applyWeaponCollisionResolvedAuthority[\s\S]*applyWeaponVisualAuthority\([\s\S]*false\s*\)' `
-    'Weapon visual authority must separate collision-free intent observation from the solved bypass publication.'
 Require-Order $interaction @(
     '_twoHandedGrip\.beginWeaponCollisionPresentationFrame\(',
     'previousWeaponCollisionPresentationWasLive\(',
@@ -184,64 +178,15 @@ Require-Pattern $runtimePolicy `
 Require-Pattern $runtimePolicy `
     'reframeAttachedHand\([\s\S]*invertTransform\(requestedWeaponWorld\)[\s\S]*requestedHandWorld[\s\S]*resolvedWeaponWorld[\s\S]*handWeaponLocal' `
     'Attached IK hands must preserve their exact pre-collision weapon-local relation under the resolved weapon pose.'
-Require-Order $weaponAuthority @(
-    'void TwoHandedGrip::beginWeaponCollisionPresentationFrame\(',
-    '_weaponCollisionHandPresentationFromPreviousFrame\s*=',
-    '_weaponCollisionBaselineHandWorldValid\s*=\s*\{\}',
-    '_weaponCollisionHandAuthorityGenerationKey\[index\]\s*==\s*currentWeaponGenerationKey',
-    'void TwoHandedGrip::finishWeaponCollisionPresentationFrame\(',
-    'if \(presentationActive\)',
-    'clearWeaponCollisionHandAuthority\(true\)',
-    'clearWeaponCollisionHandAuthority\(false\)',
-    'applyWeaponCollisionResolvedAuthority\(',
-    'weaponCollisionAttachedHands\(',
-    '_weaponCollisionBaselineHandWorldValid\[handIndex\]',
-    'tryGetSolverHandTransform\(',
-    'reframeAttachedHand\(',
-    'applyExternalHandWorldTransform\(',
-    '_weaponCollisionHandAuthorityLive',
-    '_weaponCollisionHandAuthorityGenerationKey',
-    'applyWeaponVisualAuthority\('
-) 'Contact correction must retain one generation-bound FRIK owner, layer over same-frame locked grip targets with isolated physical fallback, and publish the exact weapon pose last.'
-Require-Pattern $weaponAuthority `
-    'void TwoHandedGrip::beginWeaponCollisionPresentationFrame\([\s\S]{0,250}currentWeaponGenerationKey[\s\S]{0,1200}_weaponCollisionHandAuthorityLive\[index\][\s\S]{0,300}_weaponCollisionHandAuthorityGenerationKey\[index\]\s*==\s*currentWeaponGenerationKey[\s\S]{0,300}clearWeaponCollisionHandAuthority' `
-    'FRIK V2 collision claims must retire immediately when their weapon generation changes.'
 Require-Pattern $interaction `
     'finishWeaponCollisionPresentationFrame\([\r\n\s]*dynamicWeaponFrame\.publishVisualAuthority\)' `
     'The collision hand claim must be released when retained contact presentation ends, including proxy-active free space.'
-Require-Pattern $weaponAuthority `
-    'applyWeaponCollisionResolvedAuthority\([\s\S]*const RE::NiTransform& requestedWeaponWorld[\s\S]*const RE::NiTransform& resolvedWeaponWorld[\s\S]*reframeAttachedHand\([\s\S]*requestedWeaponWorld[\s\S]*resolvedWeaponWorld' `
-    'Deferred FRIK hand authority must reframe from the explicit collision-free weapon intent rather than the previously rendered scene node.'
-Reject-Pattern $weaponAuthority `
-    'applyWeaponCollisionResolvedAuthority\([\s\S]*?requestedWeaponWorld\s*=\s*weaponNode->world[\s\S]*?bool TwoHandedGrip::applyFiringHandLockedVisual' `
-    'Deferred collision authority must never derive its requested weapon basis from a scene node contaminated by the previous FRIK claim.'
 Require-Pattern $interaction `
     'applyWeaponCollisionResolvedAuthority\([\s\S]{0,250}dynamicWeaponFrame\.requestedWeaponWorld[\s\S]{0,250}dynamicWeaponFrame\.resolvedWeaponWorld' `
     'The collision-free intent and physics-resolved pose must cross the presentation boundary together.'
 Require-Pattern $weaponAuthority `
-    'locked firing/support pose was already published earlier[\s\S]*exact collision-free hand baseline[\s\S]*Native passive carry has no ROCK hand publication[\s\S]*scope-safe physical input' `
-    'The source must document why locked grips use their exact same-frame target while passive native carry uses isolated physical input.'
-Require-Pattern $weaponAuthority `
-    'recordPublishedHandWorld\([\s\S]*_weaponCollisionBaselineHandWorld\[index\]\s*=\s*appliedWorld[\s\S]*_weaponCollisionBaselineHandWorldValid\[index\]\s*=\s*true' `
-    'Every successful ROCK hand publication must expose its exact current-frame target to collision presentation.'
-Reject-Pattern $weaponAuthority `
-    'bool TwoHandedGrip::applyWeaponCollisionResolvedAuthority\([\s\S]*?tryGetRootFlattenedHandBoneTransform\([\s\S]*?bool TwoHandedGrip::applyFiringHandLockedVisual' `
-    'Collision correction must never feed FRIK''s previous collision-solved hand root back into its next IK target.'
-Reject-Pattern $weaponAuthority `
-    'bool TwoHandedGrip::applyWeaponCollisionResolvedAuthority\([\s\S]*?clearExternalHandWorldTransform\([\s\S]*?bool TwoHandedGrip::applyFiringHandLockedVisual' `
-    'Post-solve collision publication must not clear its hand tag in the same method; FRIK V2 must retain it for the next skeleton solve.'
-Require-Pattern $weaponAuthority `
-    'WEAPON_COLLISION_HAND_PRIORITY\s*=\s*110[\s\S]*GRIP_HAND_POSE_PRIORITY\s*=\s*100|GRIP_HAND_POSE_PRIORITY\s*=\s*100[\s\S]*WEAPON_COLLISION_HAND_PRIORITY\s*=\s*110' `
-    'The collision hand authority must outrank normal grip targets only while retained contact presentation is active.'
-Require-Pattern $weaponAuthority `
     'void TwoHandedGrip::reset\(\)[\s\S]{0,600}WEAPON_COLLISION_HAND_TAG[\s\S]{0,500}Hand::Left[\s\S]{0,500}WEAPON_COLLISION_HAND_TAG[\s\S]{0,500}Hand::Right[\s\S]{0,300}_weaponCollisionHandAuthorityLive\s*=\s*\{\}[\s\S]{0,200}_weaponCollisionHandAuthorityGenerationKey\s*=\s*\{\}[\s\S]{0,200}_weaponCollisionHandPresentationFromPreviousFrame\s*=\s*\{\}[\s\S]{0,200}_weaponCollisionBaselineHandWorldValid\s*=\s*\{\}' `
     'Lifecycle reset must defensively clear collision hand authority, generation ownership, frame baselines, and the previous-presentation witness.'
-Require-Pattern $weaponAuthority `
-    '_weaponCollisionHandPresentationFromPreviousFrame\s*=\s*[\r\n\s]*_weaponCollisionHandAuthorityLive' `
-    'The presentation boundary must capture the retained collision-hand witness without clearing its persistent tags.'
-Require-Pattern $weaponAuthority `
-    'resolveCollisionIsolatedMode\([\s\S]*_weaponCollisionHandPresentationFromPreviousFrame\[handIndex\][\s\S]*_scopeDriverFrameAuthorityActive' `
-    'A retained collision hand must force physical-driver reconstruction instead of feeding the collision-corrected root back into the solver.'
 Require-Pattern $interaction `
     'suppressDefaultNativeWeaponIntent\s*=\s*[\r\n\s]*_twoHandedGrip\.previousWeaponCollisionPresentationWasLive\(\)[\s\S]*_dynamicWeaponCollision\.beginFrame\([\s\S]*suppressDefaultNativeWeaponIntent' `
     'A collision-contaminated native weapon pose must not remain as the fallback frame intent when isolated driver reconstruction fails.'

@@ -730,6 +730,7 @@ namespace rock
             ActiveGrabBodySetPrep& outPrep);
 
         void abortGrabAcquisition(const GrabAcquisitionUnwind& unwind);
+        void clearAllGrabRuntimeState();
         bool abortGrabAcquisition(hand_grab_detail::GrabAcquisitionContext& context);
         bool prepareGrabBodySet(hand_grab_detail::GrabAcquisitionContext& context);
         bool resolveGrabCaptureFrames(hand_grab_detail::GrabAcquisitionContext& context);

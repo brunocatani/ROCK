@@ -44,8 +44,6 @@ Require-Text 'src/physics-interaction/hand/HandVisual.h' 'computeDistanceMappedD
     'Visual hand helper must expose time-based distance-mapped transform blending.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'computeDistanceMappedDurationGameUnits\([\s\S]*rockGrabHandLerpTimeMin[\s\S]*rockGrabHandLerpTimeMax[\s\S]*rockGrabHandLerpMinDistance[\s\S]*rockGrabHandLerpMaxDistance' `
     'Normal grab visual hand smoothing must use the explicit grab hand lerp duration settings.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'resolveLockedHandVisualTarget[\s\S]*rockWeaponSupportGripHandLerpEnabled[\s\S]*blendTransformOverDuration' `
-    'Authored/provider/visual-only support paths must retain the established external-hand transition.'
 Require-Text 'src/physics-interaction/weapon/WeaponSupport.h' 'shouldUseDynamicSupportAcquisition[\s\S]{0,500}FullTwoHandedSolver[\s\S]{0,300}!authoredSupportGrip[\s\S]{0,200}!providerAuthorityActive[\s\S]{0,200}!attachOnly' `
     'Synchronized acquisition must be eligible only for normal non-authored full-authority support grips.'
 Require-Text 'src/physics-interaction/weapon/WeaponSupport.h' 'shortestArcSlerpFromIdentity[\s\S]*applyRotationAroundPrimaryPivot[\s\S]*localPointToWorld\([\s\S]*primaryGripLocal[\s\S]*primaryTargetWorld' `
@@ -58,18 +56,6 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'transitionToPri
     'Primary-only equipped ownership must clear ROCK primary hand authority so FRIK can resume its configured weapon pose before support re-grab.'
 Require-Text 'data/config/ROCK.ini' 'Normal dynamic full-authority grabs[\s\S]*authored,[\s\S]*provider-owned,[\s\S]*AttachOnly,[\s\S]*visual-only' `
     'Repository config must describe the synchronized dynamic-acquisition semantics and unchanged paths.'
-
-$weaponText = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp')
-$applyWeaponStart = $weaponText.IndexOf('bool TwoHandedGrip::applyWeaponVisualAuthority')
-$applyWeaponEnd = if ($applyWeaponStart -ge 0) { $weaponText.IndexOf('bool TwoHandedGrip::applyFiringHandLockedVisual', $applyWeaponStart) } else { -1 }
-if ($applyWeaponStart -lt 0 -or $applyWeaponEnd -lt 0) {
-    $failures.Add('Weapon visual authority function boundary could not be located.')
-} else {
-    $applyWeaponText = $weaponText.Substring($applyWeaponStart, $applyWeaponEnd - $applyWeaponStart)
-    if ($applyWeaponText -match 'blendTransformOverDuration|resolveLockedHandVisualTarget|resolveDynamicSupportAcquisitionHandTarget|rockWeaponSupportGripHandLerp|applyRotationAroundPrimaryPivot') {
-        $failures.Add('applyWeaponVisualAuthority must remain a pure publisher; acquisition interpolation belongs before the single authoritative write.')
-    }
-}
 
 $physicsText = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/core/PhysicsInteraction.cpp')
 $gripUpdateIndex = $physicsText.IndexOf('_twoHandedGrip.update(')

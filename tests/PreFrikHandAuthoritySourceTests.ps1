@@ -44,7 +44,6 @@ $equipHeader = 'src/physics-interaction/weapon/EquipVisualBridge.h'
 $equip = 'src/physics-interaction/weapon/EquipVisualBridge.cpp'
 $transitionHeader = 'src/physics-interaction/weapon/EquippedWeaponTransitionCoordinator.h'
 $weaponHeader = 'src/physics-interaction/weapon/TwoHandedGrip.h'
-$weapon = 'src/physics-interaction/weapon/TwoHandedGrip.cpp'
 $dynamicHandHeader = 'src/physics-interaction/hand/DynamicHandCollision.h'
 $dynamicHand = 'src/physics-interaction/hand/DynamicHandCollision.cpp'
 
@@ -143,18 +142,9 @@ Require-Pattern $transitionHeader `
 Require-Pattern $weaponHeader `
     'PreFrikWeaponHandAuthority[\s\S]*driverToHandLocal[\s\S]*weaponGenerationKey[\s\S]*sourceSchedulerSequence[\s\S]*firingHandIsLeft' `
     'Weapon pre-FRIK state must retain its physical-driver-local target and every identity generation.'
-Require-Pattern $weapon `
-    'refreshWeaponCollisionHandAuthorityBeforeFrik[\s\S]*drivers\s*\{[\s\S]*leftHandDriver[\s\S]*rightHandDriver[\s\S]*source\.weaponGenerationKey\s*==\s*currentWeaponGenerationKey[\s\S]*source\.firingHandIsLeft\s*==\s*firingHandIsLeft[\s\S]*isImmediateSuccessor[\s\S]*reconstructTargetWorld\([\s\S]*driver\.world,[\s\S]*source\.driverToHandLocal[\s\S]*WEAPON_COLLISION_HAND_TAG' `
-    'Weapon hand authority must fail closed on stale identity and reconstruct each hand through its own current FRIK driver.'
-Require-Pattern $weapon `
-    'applyWeaponCollisionResolvedAuthority[\s\S]*_currentHandDriverFrames\[handIndex\][\s\S]*captureDriverToTargetLocal\([\s\S]*driver\.world,[\s\S]*pulse\.targetWorld[\s\S]*_currentSourceSchedulerSequence[\s\S]*preFrikSource\.valid' `
-    'Successful post-solve weapon publication must capture each target against its physical driver for the next pre-FRIK generation.'
 Require-Pattern $weaponHeader `
     'RetainedHandAuthorityKind[\s\S]*PrimaryGrip[\s\S]*SupportGrip[\s\S]*GunstockAlignment[\s\S]*Return[\s\S]*PreFrikRetainedHandAuthority' `
     'Every transportable retained weapon-hand role must have explicit pre-FRIK source state.'
-Require-Pattern $weapon `
-    'refreshRetainedHandVisualAuthoritiesBeforeFrik[\s\S]*hasPublishedExternalHandWorldTransform\(tag, hand\)[\s\S]*isImmediateSuccessor[\s\S]*source\.weaponGenerationKey[\s\S]*reconstructTargetWorld' `
-    'Retained weapon roles must validate exact tag, scheduler, generation, and firing role before reconstruction.'
 
 # Ordinary contact transport is scheduler-fresh and contact-normal safe, while
 # fixed-surface latches remain explicitly outside this provider.

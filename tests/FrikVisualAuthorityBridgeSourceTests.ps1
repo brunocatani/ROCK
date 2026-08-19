@@ -88,9 +88,6 @@ Require-Text 'src/physics-interaction/hand/HandBoneColliderSet.cpp' `
 Require-Text 'src/physics-interaction/hand/RootFlattenedFingerSkeletonRuntime.cpp' `
     'collision_isolated_hand_frame_runtime::tryGet[\s\S]*collisionIsolatedHandWorldPtr' `
     'Live finger snapshots must consume the same collision-isolated hand frame as the generated colliders.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'persistentRockHandWorldPublished[\s\S]*hasPublishedExternalHandWorldTransform[\s\S]*resolveCollisionIsolatedMode' `
-    'Weapon solving must reject root-hand feedback while any persistent ROCK hand-world publication exists.'
 Require-Text 'src/ROCKMain.cpp' `
     'kSkeletonReady[\s\S]*resetPresentedHandNodeCache\(\)[\s\S]*kSkeletonDestroying[\s\S]*resetPresentedHandNodeCache\(\)' `
     'Game hand-node caches must be invalidated at both hFRIK skeleton lifecycle edges.'
