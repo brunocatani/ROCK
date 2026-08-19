@@ -1521,7 +1521,8 @@ namespace rock
 
         // Reused one-shot solve storage. It owns no engine pointers and keeps
         // bounded vector/BVH capacity across re-grabs without polluting the
-        // per-frame WeaponPartGrip state.
+        // per-frame WeaponPartGrip state. Keep its definition with this class's
+        // constructor and destructor so unique_ptr always sees the complete type.
         std::unique_ptr<FingerPoseSolveScratch> _fingerPoseSolveScratch;
 
         weapon_support_authority_policy::WeaponSupportAuthorityMode _authorityMode{

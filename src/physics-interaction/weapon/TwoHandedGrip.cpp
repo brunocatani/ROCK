@@ -1,4 +1,5 @@
 #include "physics-interaction/weapon/TwoHandedGrip.h"
+#include "physics-interaction/weapon/TwoHandedGripInternal.h"
 
 #include "api/ROCKProviderApiInternal.h"
 #include "physics-interaction/actor/ActorEquipmentGrab.h"
@@ -37,6 +38,12 @@
 
 namespace rock
 {
+    using two_handed_grip_detail::kSupportGripFingerLaneCount;
+    using two_handed_grip_detail::kSupportGripFingerLaneReferenceCapacity;
+    using two_handed_grip_detail::kSupportGripGlobalRankingIndex;
+    using two_handed_grip_detail::RankedSupportGripTriangle;
+    using two_handed_grip_detail::SupportGripFingerReferenceSet;
+
     namespace
     {
         constexpr const char* PRIMARY_GRIP_TAG = "ROCK_WeaponPrimaryGrip";
@@ -524,13 +531,6 @@ namespace rock
                    std::isfinite(out.frameAgreementErrorGameUnits);
         }
 
-        struct RankedSupportGripTriangle
-        {
-            float distanceSquared = 0.0f;
-            std::uint64_t deterministicOrdinal = 0;
-            TriangleData weaponLocalTriangle{};
-        };
-
         bool rankedSupportGripTriangleLess(const RankedSupportGripTriangle& lhs, const RankedSupportGripTriangle& rhs)
         {
             if (lhs.distanceSquared == rhs.distanceSquared) {
@@ -539,29 +539,6 @@ namespace rock
             }
             return lhs.distanceSquared < rhs.distanceSquared;
         }
-
-        inline constexpr std::size_t
-            kSupportGripFingerLaneCount = 5;
-        inline constexpr std::size_t
-            kSupportGripFingerLaneReferenceCapacity = 10;
-        inline constexpr std::size_t
-            kSupportGripGlobalRankingIndex =
-                kSupportGripFingerLaneCount;
-
-        struct SupportGripFingerReferenceSet
-        {
-            RE::NiPoint3 seatPointWorld{};
-            std::array<
-                std::array<
-                    RE::NiPoint3,
-                    kSupportGripFingerLaneReferenceCapacity>,
-                kSupportGripFingerLaneCount>
-                lanePointsWorld{};
-            std::array<std::size_t,
-                kSupportGripFingerLaneCount>
-                lanePointCounts{};
-            bool seatPointValid{ false };
-        };
 
         struct TransformedSupportGripTriangleView
         {
