@@ -80,8 +80,27 @@ namespace rock::scene_writer_probe
         Producer = 1,
         PreFrik = 2,
     };
+    /*
+     * Controller-root sample taken when the anchor was computed. The hook
+     * samples the live root again at write time and adds (current - source)
+     * to the anchor translation. This removes the engine's mid-frame
+     * locomotion step from the anchor (the 12:56 session proved the writer
+     * consumes the producer-stage anchor, which is one room step stale).
+     * Room-scale hand motion does not move the root, so it is untouched.
+     */
+    struct AnchorRootSample
+    {
+        float positionHavok[3] = { 0.0f, 0.0f, 0.0f };
+        std::uintptr_t controllerIdentity = 0;
+        float havokToGame = 0.0f;
+        bool valid = false;
+    };
     // Game thread only. Publish the held BODY anchor in game space.
-    void publishHeldAnchor(bool isLeft, const RE::NiTransform& bodyAnchorWorldGame, AnchorStage stage);
+    void publishHeldAnchor(
+        bool isLeft,
+        const RE::NiTransform& bodyAnchorWorldGame,
+        AnchorStage stage,
+        const AnchorRootSample& sourceRoot);
     // Game thread only. The hook falls back to the untouched solver pose.
     void invalidateHeldAnchor(bool isLeft);
 
@@ -99,6 +118,8 @@ namespace rock::scene_writer_probe
         std::uint64_t syncProducerStageCalls = 0;
         std::uint64_t syncPreFrikStageCalls = 0;
         std::uint64_t syncDivergenceSkips = 0;
+        std::uint64_t syncRebasedCalls = 0;
+        std::uint64_t syncRebaseSkips = 0;
         bool installed = false;
     };
     void copyStatus(Status& out);

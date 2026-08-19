@@ -2,6 +2,7 @@
 
 #include "RockConfig.h"
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/native/CharacterControllerRuntime.h"
 #include "physics-interaction/native/EntryTrampolineHook.h"
 #include "physics-interaction/native/HavokOffsets.h"
 
@@ -59,6 +60,8 @@ namespace rock::scene_writer_probe
         std::atomic<std::uint64_t> s_syncProducerStageCalls{ 0 };
         std::atomic<std::uint64_t> s_syncPreFrikStageCalls{ 0 };
         std::atomic<std::uint64_t> s_syncDivergenceSkips{ 0 };
+        std::atomic<std::uint64_t> s_syncRebasedCalls{ 0 };
+        std::atomic<std::uint64_t> s_syncRebaseSkips{ 0 };
 
         /*
          * Seqlock-style per-hand slot: the game thread publishes with
@@ -90,6 +93,7 @@ namespace rock::scene_writer_probe
             std::atomic<std::uint32_t> generation{ 0 };
             float rotationRows[12] = {};
             float translate[3] = {};
+            AnchorRootSample sourceRoot{};
             std::uint8_t stage = 0;
             bool valid = false;
         };
@@ -100,6 +104,7 @@ namespace rock::scene_writer_probe
         {
             float rotationRows[12] = {};
             float translate[3] = {};
+            AnchorRootSample sourceRoot{};
             std::uint8_t stage = 0;
         };
 
@@ -113,10 +118,14 @@ namespace rock::scene_writer_probe
             out.translate[0] = slot.translate[0];
             out.translate[1] = slot.translate[1];
             out.translate[2] = slot.translate[2];
+            out.sourceRoot = slot.sourceRoot;
             out.stage = slot.stage;
             std::atomic_thread_fence(std::memory_order_acquire);
             return slot.generation.load(std::memory_order_acquire) == before;
         }
+
+        // A one-frame root step above this is a teleport/recenter, not motion.
+        constexpr float kMaxAnchorRootShiftGameUnits = 35.0f;
 
         struct SlotSnapshot
         {
@@ -281,11 +290,47 @@ namespace rock::scene_writer_probe
              * exactly one visual authority per call.
              */
             float syncGapGameUnits = -1.0f;
+            float syncRootShiftGameUnits = -1.0f;
             std::uint8_t syncStage = 0;
             bool syncApplied = false;
             if (g_rockConfig.rockGrabHeldScenePoseSync) {
                 AnchorSnapshot anchor{};
                 if (tryReadAnchor(s_anchorSlots[matchedHand], anchor)) {
+                    /*
+                     * Write-time root rebase: the writer consumes the
+                     * producer-stage anchor before ROCK's pre-FRIK refresh
+                     * runs, so the anchor is one mid-frame locomotion step
+                     * stale. Sample the live controller root (SEH-guarded,
+                     * fail-closed) and carry the anchor by the measured step.
+                     * Identity/plausibility gates fail closed to the
+                     * unshifted anchor; the divergence gate below still owns
+                     * the final decision.
+                     */
+                    if (anchor.sourceRoot.valid && anchor.sourceRoot.havokToGame > 0.0f) {
+                        const auto liveRoot =
+                            character_controller_runtime::samplePlayerCharacterControllerPositionHavok();
+                        if (liveRoot.valid &&
+                            liveRoot.controllerIdentity == anchor.sourceRoot.controllerIdentity) {
+                            const float shiftX =
+                                (liveRoot.positionHavok.x - anchor.sourceRoot.positionHavok[0]) * anchor.sourceRoot.havokToGame;
+                            const float shiftY =
+                                (liveRoot.positionHavok.y - anchor.sourceRoot.positionHavok[1]) * anchor.sourceRoot.havokToGame;
+                            const float shiftZ =
+                                (liveRoot.positionHavok.z - anchor.sourceRoot.positionHavok[2]) * anchor.sourceRoot.havokToGame;
+                            const float shiftLength = std::sqrt(shiftX * shiftX + shiftY * shiftY + shiftZ * shiftZ);
+                            if (std::isfinite(shiftLength) && shiftLength <= kMaxAnchorRootShiftGameUnits) {
+                                anchor.translate[0] += shiftX;
+                                anchor.translate[1] += shiftY;
+                                anchor.translate[2] += shiftZ;
+                                syncRootShiftGameUnits = shiftLength;
+                                s_syncRebasedCalls.fetch_add(1, std::memory_order_relaxed);
+                            } else {
+                                s_syncRebaseSkips.fetch_add(1, std::memory_order_relaxed);
+                            }
+                        } else {
+                            s_syncRebaseSkips.fetch_add(1, std::memory_order_relaxed);
+                        }
+                    }
                     const float deltaX = anchor.translate[0] - transform[kTranslateXIndex];
                     const float deltaY = anchor.translate[1] - transform[kTranslateXIndex + 1];
                     const float deltaZ = anchor.translate[2] - transform[kTranslateZIndex];
@@ -375,7 +420,7 @@ namespace rock::scene_writer_probe
             } else {
                 ROCK_LOG_SAMPLE_INFO(Hand,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "SCENE_WRITER hit hand={} site={} flags=0x{:02X} in=({:.2f},{:.2f},{:.2f}) nodeAfter=({:.2f},{:.2f},{:.2f}) motionGame=({:.2f},{:.2f},{:.2f}) inVsMotion={:.3f} sync={} stage={} gap={:.3f} syncApplied={} prodStage={} preFrikStage={} divergeSkips={} offZ={:.1f} matched={} thread={}",
+                    "SCENE_WRITER hit hand={} site={} flags=0x{:02X} in=({:.2f},{:.2f},{:.2f}) nodeAfter=({:.2f},{:.2f},{:.2f}) motionGame=({:.2f},{:.2f},{:.2f}) inVsMotion={:.3f} sync={} stage={} gap={:.3f} rootShift={:.3f} syncApplied={} prodStage={} preFrikStage={} divergeSkips={} rebased={} rebaseSkips={} offZ={:.1f} matched={} thread={}",
                     matchedHand == 0 ? "R" : "L",
                     callsite,
                     collisionFlags,
@@ -389,10 +434,13 @@ namespace rock::scene_writer_probe
                     syncApplied ? "yes" : "no",
                     syncStage,
                     syncGapGameUnits,
+                    syncRootShiftGameUnits,
                     s_syncAppliedCalls.load(std::memory_order_relaxed),
                     s_syncProducerStageCalls.load(std::memory_order_relaxed),
                     s_syncPreFrikStageCalls.load(std::memory_order_relaxed),
                     s_syncDivergenceSkips.load(std::memory_order_relaxed),
+                    s_syncRebasedCalls.load(std::memory_order_relaxed),
+                    s_syncRebaseSkips.load(std::memory_order_relaxed),
                     applyOffset ? offsetZ : 0.0f,
                     s_matchedCalls.load(std::memory_order_relaxed),
                     ::GetCurrentThreadId());
@@ -485,7 +533,11 @@ namespace rock::scene_writer_probe
         slot.generation.fetch_add(1, std::memory_order_release);
     }
 
-    void publishHeldAnchor(bool isLeft, const RE::NiTransform& bodyAnchorWorldGame, AnchorStage stage)
+    void publishHeldAnchor(
+        bool isLeft,
+        const RE::NiTransform& bodyAnchorWorldGame,
+        AnchorStage stage,
+        const AnchorRootSample& sourceRoot)
     {
         if (!s_installed.load(std::memory_order_acquire)) {
             return;
@@ -497,6 +549,7 @@ namespace rock::scene_writer_probe
         slot.translate[0] = bodyAnchorWorldGame.translate.x;
         slot.translate[1] = bodyAnchorWorldGame.translate.y;
         slot.translate[2] = bodyAnchorWorldGame.translate.z;
+        slot.sourceRoot = sourceRoot;
         slot.stage = static_cast<std::uint8_t>(stage);
         slot.valid = true;
         slot.generation.fetch_add(1, std::memory_order_release);
@@ -528,6 +581,8 @@ namespace rock::scene_writer_probe
         out.syncProducerStageCalls = s_syncProducerStageCalls.load(std::memory_order_relaxed);
         out.syncPreFrikStageCalls = s_syncPreFrikStageCalls.load(std::memory_order_relaxed);
         out.syncDivergenceSkips = s_syncDivergenceSkips.load(std::memory_order_relaxed);
+        out.syncRebasedCalls = s_syncRebasedCalls.load(std::memory_order_relaxed);
+        out.syncRebaseSkips = s_syncRebaseSkips.load(std::memory_order_relaxed);
         out.installed = s_installed.load(std::memory_order_acquire);
     }
 }

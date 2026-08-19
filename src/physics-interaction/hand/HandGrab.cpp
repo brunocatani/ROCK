@@ -5045,10 +5045,19 @@ namespace rock
                                     freshHeldWorld,
                                     _preFrikGrabVisualAuthority.heldNodeToBodyAnchorLocal);
                             if (prefrik_hand_authority_policy::isUsableTransform(freshBodyAnchorWorld)) {
+                                const auto preFrikSourceRoot = samplePlayerControllerRootFrame();
+                                scene_writer_probe::AnchorRootSample preFrikRootSample{};
+                                preFrikRootSample.positionHavok[0] = preFrikSourceRoot.positionHavok.x;
+                                preFrikRootSample.positionHavok[1] = preFrikSourceRoot.positionHavok.y;
+                                preFrikRootSample.positionHavok[2] = preFrikSourceRoot.positionHavok.z;
+                                preFrikRootSample.controllerIdentity = preFrikSourceRoot.controllerIdentity;
+                                preFrikRootSample.havokToGame = physics_scale::havokToGame();
+                                preFrikRootSample.valid = preFrikSourceRoot.valid;
                                 scene_writer_probe::publishHeldAnchor(
                                     _isLeft,
                                     freshBodyAnchorWorld,
-                                    scene_writer_probe::AnchorStage::PreFrik);
+                                    scene_writer_probe::AnchorStage::PreFrik,
+                                    preFrikRootSample);
                             }
                         }
                     }
@@ -12450,10 +12459,19 @@ namespace rock
                                 heldVisualNodeWorld,
                                 heldNodeToBodyAnchorLocal);
                         if (prefrik_hand_authority_policy::isUsableTransform(bodyAnchorWorld)) {
+                            const auto anchorSourceRoot = samplePlayerControllerRootFrame();
+                            scene_writer_probe::AnchorRootSample anchorRootSample{};
+                            anchorRootSample.positionHavok[0] = anchorSourceRoot.positionHavok.x;
+                            anchorRootSample.positionHavok[1] = anchorSourceRoot.positionHavok.y;
+                            anchorRootSample.positionHavok[2] = anchorSourceRoot.positionHavok.z;
+                            anchorRootSample.controllerIdentity = anchorSourceRoot.controllerIdentity;
+                            anchorRootSample.havokToGame = physics_scale::havokToGame();
+                            anchorRootSample.valid = anchorSourceRoot.valid;
                             scene_writer_probe::publishHeldAnchor(
                                 _isLeft,
                                 bodyAnchorWorld,
-                                scene_writer_probe::AnchorStage::Producer);
+                                scene_writer_probe::AnchorStage::Producer,
+                                anchorRootSample);
                             _preFrikGrabVisualAuthority.heldNodeToBodyAnchorLocal = heldNodeToBodyAnchorLocal;
                             _preFrikGrabVisualAuthority.hasHeldNodeToBodyAnchorLocal = true;
                         } else {
