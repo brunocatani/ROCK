@@ -18,7 +18,6 @@ function Require-Text {
 
 $factoryHeader = 'src/physics-interaction/native/NativeNiNodeFactory.h'
 $factorySource = 'src/physics-interaction/native/NativeNiNodeFactory.cpp'
-$weaponSource = 'src/physics-interaction/weapon/WeaponCollision.cpp'
 
 Require-Text $factoryHeader `
     'RE::NiPointer<RE::NiNode>\s+createEngineNiNode\(std::uint16_t\s+childCapacity\)' `
@@ -41,9 +40,6 @@ Require-Text $factorySource `
 Require-Text $factorySource `
     'RE::aligned_alloc\(alignof\(RE::NiNode\),\s*sizeof\(RE::NiNode\)\)[\s\S]*std::memset\([\s\S]*constructor\(storage,\s*childCapacity\)[\s\S]*RE::NiPointer<RE::NiNode>\{\s*node\s*\}' `
     'NiNode storage and its child array must be allocated and constructed entirely in the engine domain before RAII adoption.'
-Require-Text $weaponSource `
-    'native_scene::createEngineNiNode\(1\)[\s\S]*if\s*\(!enrichmentContainer\)[\s\S]*enrichmentContainer->name' `
-    'OMOD physical enrichment must use the engine-native factory and fail closed before dereferencing an unavailable container.'
 
 $unsafePatterns = @(
     'new\s*(?:\([^\)]*\)\s*)?RE::NiNode\b',

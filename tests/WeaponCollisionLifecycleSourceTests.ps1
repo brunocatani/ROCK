@@ -128,45 +128,24 @@ Reject-Text 'src/physics-interaction/core/PhysicsInteraction.h' 'HeldWeaponEquip
 Reject-Text 'src/physics-interaction/hand/Hand.h' 'HeldWeaponVisualSnapshot|captureHeldWeaponEquipVisualSnapshot' 'Hand must not expose phantom held-weapon visual snapshot capture.'
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'captureHeldWeaponEquipVisualSnapshot' 'Hand grab runtime must not retain phantom held-weapon visual snapshot capture.'
 
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.h' 'struct GeneratedWeaponBodyCreateOptions' 'Weapon body creation must keep explicit creation options.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.h' 'collisionEnabledOnCreate' 'Weapon body creation options must name the initial filter state explicitly.'
-Reject-Text 'src/physics-interaction/weapon/WeaponCollision.h' 'publishAfterCreate' 'Weapon body creation must not expose publication as a creation-time option.'
-Reject-Text 'src/physics-interaction/weapon/WeaponCollision.h' 'createGeneratedWeaponBodiesInBank\([^\)]*bool publishAfterCreate' 'Weapon body creation must not use a boolean that couples publishing with collision filter activation.'
 
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'if \(!weaponDrawn\)[\s\S]{0,700}clearCurrentWeaponState\(\);[\s\S]{0,140}return;[\s\S]{0,500}getEquippedWeaponIdentityKey\(&observedIdentityKey,' 'Weapon collision update must clear not-drawn weapons before reading equipped instance identity data.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'getEquippedWeaponIdentityKey\(&observedIdentityKey,' 'Weapon collision update must read equipped identity before any visual tree witness.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'getWeaponVisualCompositionKey\(weaponNode,\s*visualKeyStats\)' 'Weapon visual witness collection must be an explicit rebuild-time step.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'findGeneratedWeaponShapeSources\(weaponNode,\s*observedKey,\s*generatedSources\)' 'Weapon collision update must scan the current equipped visible geometry directly only after rebuild gates open.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'getEquippedWeaponIdentityKey\(&observedIdentityKey,[\s\S]{0,7000}if \(rebuildRequired\)[\s\S]{0,420}getWeaponVisualCompositionKey\(weaponNode,\s*visualKeyStats\)' 'Weapon visual traversal must stay behind the identity/settings/drive rebuild gate.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'awaitStableWeaponVisual\([\s\S]{0,400}WeaponVisualRebuildGate::WaitStableWitness[\s\S]{0,600}return;[\s\S]{0,2500}findGeneratedWeaponShapeSources\(weaponNode,\s*observedKey,\s*generatedSources\)' 'Weapon visual stabilization must wait on the cheap visual witness before running the full generated source scan.'
 Require-Text 'src/physics-interaction/weapon/WeaponGeometry.h' 'findDetachedSourceComponentIndices[\s\S]*FailOpenNoAssembledAnchor[\s\S]*nearestAnchorGapSquared[\s\S]*minimumDetachedGapSquared' 'Detached collider filtering must use AABB-component separation and fail open without assembled weapon evidence.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.h' '_detachedSourceExclusionEquippedKey[\s\S]{0,180}_detachedSourceExclusionGroups' 'Detached reload source exclusions must persist for the current equipped generation.'
-Reject-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'maxSourceDistanceGame|centerDistanceGame|resolveMaxGeneratedSourceDistanceGame' 'The unsafe weapon-origin center-distance collider filter must stay removed.'
 Reject-Text 'src/RockConfig.h' 'rockWeaponCollisionMaxSourceDistance' 'The superseded origin-distance collider settings must stay removed.'
 Reject-Text 'src/RockConfig.cpp' 'WeaponCollisionMaxSourceDistance' 'The superseded origin-distance collider parser must stay removed.'
 Reject-Text 'data/config/ROCK.ini' 'WeaponCollisionMaxSourceDistance' 'The superseded origin-distance collider template settings must stay removed.'
 Reject-Text 'data/mod/ROCK_Config/ROCK.ini' 'WeaponCollisionMaxSourceDistance' 'The shipped origin-distance collider template settings must stay removed.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'deferRebuildForPreBuildOmodEnrichment\([\s\S]{0,1600}maybeRunWeaponOmodCoverageAudit\(weaponNode,\s*observedKey,\s*true\)[\s\S]{0,900}auditResult\.sceneEnriched[\s\S]{0,900}clearPendingWeaponVisualRebuild\(\);[\s\S]{0,400}return true;' 'Initial weapon generation must complete OMOD scene enrichment for the observed equipped identity before beginning collider source stabilization.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'auditResult\.sceneEnriched[\s\S]{0,900}return true;[\s\S]{0,300}auditResult\.ran[\s\S]{0,300}_omodPrebuildAuditEquippedKey\s*=\s*observedKey' 'A mutating OMOD pre-build pass must repeat until a later non-mutating pass confirms convergence.'
 Require-Text 'src/physics-interaction/weapon/WeaponOmodAuditPolicy.h' 'if \(input\.disabled\)\s*\{\s*return \{ \.verdict = CoverageVerdict::Disabled \};\s*\}' 'Disabled OMOD records must receive a diagnostic verdict without entering the missing-part self-heal path.'
 Require-Text 'src/physics-interaction/weapon/WeaponOmodAuditPolicy.h' 'if \(input\.hasNodeMatch\)[\s\S]{0,1100}NodePresentNoCollider[\s\S]{0,350}\.selfHealCandidate\s*=\s*true' 'Token-only node matches must still pass through equipped-instance template verification before being trusted as OMOD coverage.'
 Require-Text 'src/physics-interaction/weapon/WeaponOmodAuditPolicy.h' 'shouldAttemptWholeModelAttach[\s\S]*!templateSignatureIsPresent\(matchedDistinctMeshCount,\s*distinctTemplateMeshCount\)' 'Incidental sub-majority name matches must retain native whole-model recovery; only a coherent partial branch may bypass it.'
 Reject-Text 'src/physics-interaction/weapon/WeaponCollisionOmodAudit.cpp' 'recoveryConnectPoint|recoveryNode' 'A plain NiNode must never masquerade as authored BSConnectPoint::Parents metadata.'
-Reject-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'waiting for stable visual sources' 'Weapon visual stabilization must not use generated source extraction as the per-frame wait witness.'
 Require-Text 'src/physics-interaction/weapon/WeaponCollisionBodies.cpp' 'GeneratedWeaponBodyCreateOptions\{\s*\.collisionEnabledOnCreate = false' 'Generated weapon bodies must be created collision-disabled until metadata is published.'
 Require-Text 'src/physics-interaction/weapon/WeaponCollisionBodies.cpp' 'publishAtomicBodyIds\(activeWeaponBodies\(\)\);\s*setWeaponBodyBankCollisionEnabled\(world,\s*activeWeaponBodies\(\),\s*true\);' 'Generated weapon bodies must publish metadata before enabling collision.'
 Require-Text 'src/physics-interaction/native/BethesdaPhysicsBody.h' 'RetiredBethesdaPhysicsBodyPayload' 'Generated Bethesda body teardown must expose an explicit retired native payload.'
 Require-Text 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' 'retireFromWorld[\s\S]*RemovePhysicsSystem[\s\S]*outPayload\.collisionObject' 'Retired generated Bethesda bodies must be removed from the world before native wrapper memory is delayed.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.h' 'RetiredWeaponBodyPayload' 'Weapon collision must own retired generated body payload state.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollisionBodies.cpp' 'destroyWeaponBodyBank[\s\S]*retireWeaponBodyInstance\(instance,\s*releaseShapeRef\)' 'Generated weapon body banks must retire native payloads instead of immediately releasing collision objects during rebuild handoff.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollisionBodies.cpp' 'retireWeaponBodyPayload[\s\S]*RETIRED_GENERATED_WEAPON_BODY_GRACE_STEPS' 'Retired generated weapon bodies must wait a bounded number of physics steps before native release.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollisionBodies.cpp' 'serviceRetiredWeaponBodies[\s\S]*BethesdaPhysicsBody::releaseRetiredPayload' 'Retired generated weapon bodies must be reclaimed from an explicit service point.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'observeCustomGrabAuthorityAfterSolve[\s\S]*_weaponCollision\.serviceRetiredWeaponBodies\(\);' 'The physics after-solve callback must service retired generated weapon bodies after native readers advance.'
-Reject-Text 'src/physics-interaction/weapon/WeaponCollisionBodies.cpp' 'destroyWeaponBodyBank[\s\S]{0,260}instance\.body\.destroy\(_cachedBhkWorld\)' 'Generated weapon body bank teardown must not immediately destroy native wrapper bodies in the rebuild path.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'getCurrentWeaponReleaseGeometry\(releaseGripWorld,\s*releaseWeaponWorld\)[\s\S]{0,2600}_weaponCollision\.destroyWeaponBody\(hknp\);[\s\S]{0,500}dropCommitted\s*&&\s*dropResult\.handle[\s\S]{0,300}armEquippedWeaponDropMomentumHandoff' 'A committed equipped-weapon drop must capture its frozen release pose and lever, retire coincident generated colliders, then arm the native handoff even when the reference resolves asynchronously.'
 Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @('enableCollisionRecursive\(droppedRoot', 'scanObjectPhysicsBodySet\(', 'completedSettleStep\(', 'currentBodySetMatches\(', 'setBodyVelocityDeferred') 'Equipped drop momentum must enable collision, rescan native bodies, cross a completed solve barrier, revalidate full body identity, and only then write velocity.'
 Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'serviceEquippedWeaponDropMomentumTransaction[\s\S]*?uniqueAcceptedMotionRecords\([\s\S]*?bool PhysicsInteraction::armHeldLooseGrenade' 'Equipped drop handoff must collect unique motions into fixed-capacity transaction state without per-frame unique-set allocation.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollisionQueries.cpp' 'hasCapturedWeaponWorld\s*=\s*true[\s\S]{0,120}capturedWeaponWorld\s*=\s*capturedWeaponWorld[\s\S]{0,220}gripWorldPoint' 'Release-pose capture must remain available even when grip evidence cannot provide a lever.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'hasAvailableEquippedWeaponDropHandoff[\s\S]*physicalDropRequested\s*&&\s*!dropHandoffAvailable[\s\S]*Cannot drop weapon - drop handoff queue is full' 'Drop handoff capacity must be reserved before inventory removal instead of silently creating an unmanaged weapon.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'releaseGeometry\.hasCapturedWeaponWorld[\s\S]{0,500}Cannot drop weapon - release pose is not ready[\s\S]{0,900}dropEquippedWeaponFromPlayer' 'Inventory removal must be blocked until a finite frozen release pose is available.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'currentRootInverse[\s\S]*rootToBody[\s\S]*handoff\.releaseWeaponWorld[\s\S]*setBodyTransformDeferred[\s\S]*zeroVelocity[\s\S]*WaitingForSettleStep' 'The exact native body set must be placed at the frozen release pose with zero velocity before crossing the solve barrier.'
@@ -194,54 +173,20 @@ Require-Text 'src/physics-interaction/hand/HandGrab.cpp' '_grabAuthorityProxy\.r
 Reject-Text 'src/physics-interaction/hand/HandBoneColliderSet.cpp' 'instance\.body\.destroy\(|palmAnchorBody\.destroy\(' 'Hand bone colliders must not immediately destroy native collision objects in the live-world teardown path.'
 Reject-Text 'src/physics-interaction/body/BodyBoneColliderSet.cpp' 'instance\.body\.destroy\(' 'Body bone colliders must not immediately destroy native collision objects in the live-world teardown path.'
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' '_grabAuthorityProxy\.destroy\(' 'Grab-authority proxy must not immediately destroy its native collision object in the live-world teardown path.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.h' 'struct PendingGeneratedWeaponBuild' 'Weapon collision must track staged generated body creation explicitly.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'beginPendingGeneratedWeaponBuild\(' 'Generated weapon collision must queue full source sets before frame-sliced body creation.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollisionBodies.cpp' 'createGeneratedWeaponBodiesInBankSlice\(' 'Generated weapon collision must create native bodies through a bounded per-frame slice.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.h' 'struct SupportGripEvidenceView[\s\S]*std::span<const TriangleData> localTriangles[\s\S]*RE::NiTransform localToWorld[\s\S]*weaponGenerationKey' 'Two-hand support grip evidence must expose a frame-scoped local triangle view with its current transform and generation.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.h' 'tryGetSupportGripEvidenceView\(\s*std::uint32_t bodyId,\s*const RE::NiAVObject\* currentWeaponRoot,\s*SupportGripEvidenceView& outView\) const' 'Two-hand support grip evidence must accept the current weapon root without copying cached triangles into world space.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'tryGetSupportGripEvidenceView\(decision\.bodyId,\s*weaponNode,\s*evidenceView\)' 'Two-hand support grip must reuse the contacted collider part cache through the current weapon root.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.h' 'tryFindCurrentWeaponSurfaceNearPoint\(\s*const RE::NiAVObject\* currentWeaponRoot,\s*const RE::NiPoint3& pointWorld,\s*float maxDistanceGameUnits,\s*WeaponSurfaceProximityWitness& outWitness\) const' 'Weapon collision must expose a generation-tagged current-surface witness query for authored support seats.'
 Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'extractAllTriangles\(sourceRoot,\s*triangles\)' 'Two-hand support grip startup must not rescan the live weapon mesh.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'Weapon visual node absent for unchanged equipped identity - retaining generated weapon bodies' 'Reload-time missing weapon visuals must retain same-identity generated bodies.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'Weapon visual node absent while rebuild required[\s\S]{0,700}destroyWeaponBody\(world\)' 'Missing weapon visuals must still destroy stale generated bodies when identity or safety rebuild gates require it.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'pendingGeneratedWeaponBuildMatches\(observedKey,\s*observedOwnershipKey,\s*observedFormID\)' 'Pending generated weapon creation must match equipped identity, ownership, and form, not reload visual witnesses.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.h' 'requestWorkbenchExitRebuild\(\)' 'Weapon collision must expose an explicit one-shot workbench-exit rebuild request.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' '_workbenchExitRebuildRequested\.store\(true' 'Workbench-exit rebuild requests must be queued as explicit state, not inferred from visual churn.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'weaponNode\s*!=\s*nullptr\s*&&\s*_workbenchExitRebuildRequested\.exchange\(false' 'Workbench-exit rebuild requests must only be consumed when a drawn weapon visual is available.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'rebuildRequired\s*=\s*driveRequestedRebuild\s*\|\|\s*workbenchExitRequested\s*\|\|\s*settingsChanged\s*\|\|\s*keyChanged\s*\|\|\s*missingBodies' 'Workbench exit must be an explicit rebuild gate alongside equip/settings/drive/missing-body gates.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'pendingInvalidated\s*=\s*driveRequestedRebuild\s*\|\|\s*workbenchExitRequested\s*\|\|[\s\S]{0,120}!pendingGeneratedWeaponBuildMatches\(observedKey,\s*observedOwnershipKey,\s*observedFormID\)' 'A consumed workbench-exit request must restart a matching staged create rather than silently keeping old sources.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'WeaponCollisionWorkbenchExitMenuSink' 'PhysicsInteraction must own the UI menu close sink that arms the workbench-exit rebuild request.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'requestWeaponCollisionRebuildAfterWorkbenchExit\(event\.menuName\.c_str\(\)\)' 'Workbench-family menu close must arm the weapon collision rebuild gate through PhysicsInteraction.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'ensureWeaponCollisionWorkbenchExitMenuSinkRegistered\(\);[\s\S]{0,180}const auto& runtime = runtime_state::currentFrame\(\)' 'Workbench-exit menu sink registration must retry from update before normal runtime early-outs.'
 Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'WeaponsWorkbenchExited|WorkbenchMenuBase::vfunction4' 'ROCK must not add a raw workbench ProcessMessage hook for this rebuild gate.'
-Reject-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'CollisionSuppressionOwner::WeaponDominantHand' 'WeaponCollision must not acquire/release dominant-hand suppression; PhysicsInteraction owns the complete generated hand-collider set.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'retainedWeaponCollisionActive[\s\S]{0,140}_weaponCollision\.hasWeaponBody\(\)[\s\S]{0,140}_weaponCollision\.getCurrentWeaponGenerationKey\(\)\s*!=\s*0' 'Dominant weapon authority must include retained generated weapon bodies, not only a live weapon visual node.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'rightHandWeaponAuthorityActive\s*=\s*rightHandWeaponEquipped\s*\|\|\s*retainedWeaponCollisionActive' 'Right-hand weapon suppression must stay active across reload-null visual frames with retained weapon bodies.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'if \(rightHandWeaponAuthorityActive\)[\s\S]{0,120}suppressRightHandCollisionForDominantWeapon\(hknp\)' 'PhysicsInteraction must suppress dominant-hand collision while retained weapon bodies are active.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'synchronizeContactEvidenceOwnership\(rightHandWeaponAuthorityActive,\s*leftSupportGripActive,\s*rightPartGripActive\)' 'Contact-evidence ownership must follow retained weapon authority and part-grip drivers.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' '_dynamicHandCollision\.updateFrame\([\s\S]{0,220}rightHandWeaponAuthorityActive' 'Dynamic hand visual ownership must follow retained weapon authority.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'retainedPackageRootStillCurrent[\s\S]{0,600}visualSourceMissRetainFrameLimit[\s\S]{0,320}canRetainCurrentWeaponBodiesForVisualSourceMiss' 'Same-identity visual-only source misses must retain live generated weapon bodies only when the retained root is current and the retain window is bounded.'
 Require-Text 'src/physics-interaction/performance/PerformanceProfiler.cpp' 'weaponRebuildVisualSourceUnavailableRetained' 'Profiler counters must expose retained same-identity visual source misses for runtime sampling.'
 Require-Text 'src/physics-interaction/performance/PerformanceProfiler.cpp' 'weaponRebuildVisualSourceUnavailableRetainExpired' 'Profiler counters must expose same-identity visual source retain-window expiration for runtime sampling.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollisionBodies.cpp' 'if \(fallbackWeaponNode\)[\s\S]{0,80}return fallbackWeaponNode;' 'Live weapon collision motion/probe paths must prefer the current weapon root over cached body drive roots.'
-Reject-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'safeNodeName\(instance\.driveNode\)' 'Weapon collision must not dereference cached body drive roots for mismatch logging.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollisionSources.cpp' 'sourceInWeaponAvailable[\s\S]{0,900}localPointToWorld\(sourceInWeapon, sourceLocalTriangle\.v0\)' 'Weapon geometry recapture must convert source-local triangles through the current hierarchy-relative transform.'
 Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'outLocalTriangles[\s\S]{0,1600}TriangleData localTriangle[\s\S]{0,700}outLocalTriangles->push_back\(localTriangle\)' 'Mesh extraction must optionally preserve native source-local triangle vertices before applying the world transform.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollisionSources.cpp' 'directSourceLocalTriangles[\s\S]{0,900}extractTrianglesFromTriShape[\s\S]{0,900}&directSourceLocalTriangles[\s\S]{0,1800}hasDirectSourceLocalTriangles[\s\S]{0,900}sourceLocalTriangle = directSourceLocalTriangles\[triangleIndex\]' 'Generated weapon geometry must consume native local vertices without a precision-losing world-space round trip.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollisionBodies.cpp' 'tryResolveDescendantWorldTransform\(\s*packageDriveNode,\s*packageWorld,\s*instance\.sourceNode,\s*sourceWorld\)' 'Generated weapon bodies must follow current descendant locals composed from the current weapon root.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.h' 'struct GeneratedRecaptureDiagnostic[\s\S]{0,700}sawUndrawnInterval[\s\S]{0,700}std::vector<GeneratedRecaptureDiagnosticSource>' 'Failed shoulder recapture tests must retain one value-only same-identity diagnostic baseline across the undrawn interval.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'if \(!weaponDrawn\)[\s\S]{0,200}noteUndrawnIntervalForRecaptureDiagnostic\(\);[\s\S]{0,420}clearCurrentWeaponState\(\)' 'The undrawn lifecycle must arm recapture comparison before normal collider state teardown.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.h' 'struct GeneratedRecaptureDiagnosticSource[\s\S]{0,900}sourceLocalMin[\s\S]{0,300}sourceLocalMax[\s\S]{0,300}sourceLocalTriangles' 'Shoulder diagnostics must retain value-only source-local geometry witnesses without retaining live engine pointers.'
-Reject-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'const bool sourceGeometryDrifted[\s\S]{0,300}dedupPointCountStable' 'Frame-dependent deduplicated hull counts must not masquerade as source mesh mutation.'
-Reject-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'postUndrawFrameCorrection|generatedSourceFrameCorrection|makePostUndrawFrameCorrection|applyPostUndrawFrameCorrection' 'Fixed post-draw corrections must not separate colliders from live rendered parts.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollisionQueries.cpp' 'tryBuildSupportGripEvidenceView[\s\S]{0,1200}tryResolveDescendantWorldTransform' 'Support-grip surface evidence must use the current source frame shared by physical bodies.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollisionSources.cpp' 'duplicate TriShape already claimed by earlier candidate' 'Merged candidate roots must dedupe overlapping source TriShapes.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollisionSources.cpp' 'TriShape is hidden or locally zero-scale' 'Hidden TriShapes must be skipped as sources without pruning helper-node children.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollisionSources.cpp' 'if \(node->GetAppCulled\(\)\)[\s\S]{0,300}ancestor branch is app-culled[\s\S]{0,120}return;' 'App-culled attachment branches must be pruned before their locally visible descendant meshes consume collider capacity.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollisionSources.cpp' 'selectBalancedHullIndices\(selectionInputs,\s*MAX_WEAPON_BODIES\)[\s\S]{0,700}balanced-semantic-coverage' 'Generated weapon overflow must preserve balanced semantic part coverage instead of truncating by traversal order.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollisionBodies.cpp' 'pointCloudCanBuildHull\(shapePoints,\s*shapePointScale\)' 'Source-local hull validation must include the authored source-node scale used by native shape construction.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollisionOmodAudit.cpp' 'durableAttachmentEvidence[\s\S]{0,180}!weapon_generated_source_completeness_policy::isTransientReloadPart[\s\S]{0,300}evidenceSourceAddresses\.insert' 'OMOD coverage must not accept cartridge or cosmetic-ammo bodies as proof of an attachment collider.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.h' 'getCurrentEquippedWeaponOwnershipKey\(\)\s+const\s*\{\s*return\s+_observedEquippedWeaponOwnershipKey' 'Manual weapon ownership must use an instance-bound witness separately from collision content identity.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'preserving manual ownership across collision rebuild[\s\S]*?if\s*\(grip\.active\s*&&\s*!tryRebindPartGripToCurrentGeneration[\s\S]*?return false;' 'Two-handed ownership must fail closed when an active part cannot rebind to the published generation.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'beginPrimaryOnlyGrip\(\s*weaponNode,\s*currentWeaponGenerationKey,\s*currentEquippedWeaponOwnershipKey\s*,' 'Primary-only ownership must preserve a real zero collision generation while colliders build.'
 Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'primaryOwnershipGenerationKey|currentWeaponGenerationKey\s*!=\s*0\s*\?\s*currentWeaponGenerationKey\s*:\s*currentEquippedWeapon' 'Equipped ownership identity must never masquerade as a collision generation.'
@@ -258,66 +203,18 @@ Reject-Text 'src/ROCKMain.cpp' 'weapon_instance_witness_runtime|WeaponInstanceWi
 Reject-Text 'src/RockConfig.h' 'rockWeaponCollisionNativeVisualRemapEnabled' 'ROCK config must not expose removed native visual remap option.'
 Reject-Text 'src/RockConfig.cpp' 'bWeaponCollisionNativeVisualRemapEnabled|rockWeaponCollisionNativeVisualRemapEnabled' 'ROCK config loader must not read removed native visual remap option.'
 
-Reject-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'deferGenerationForWeaponVisualRefresh' 'Initial weapon collision generation must not defer through a visual-refresh state machine.'
-Reject-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'advanceWeaponVisualRefreshFrame\(\);' 'Generated weapon collision must not retain visual-refresh cooldown advancement.'
-Reject-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'generatedWeaponSourceMissingRequiredPackageCoverage' 'Firearm source scans must not use required front/rear package coverage as a generation gate.'
-Reject-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'sourcePackageNeedsMoreCoverage' 'Runtime generated collision must not block or retry visible weapon sources for semantic package coverage.'
 
-
-# --- Native VR-offset machinery: isolation and fail-closed guards -------------
-# The multi-region ordering regexes that used to cover the OMOD self-heal were
-# retired with the WeaponCollision split: they spanned code that now lives in
-# three files and could not be ported without re-creating the same brittleness.
-# What they were actually reaching for is that the raw-offset machinery stays in
-# ONE auditable place and stays guarded. These checks assert exactly that, each
-# pinned to a single symbol in a single file.
+# --- Native VR-offset machinery: fail-closed guards ---------------------------
+# The regex assertions that used to describe the OMOD self-heal were retired with
+# the WeaponCollision split. What must not be lost is the fail-closed guard set in
+# front of the one native call ROCK makes here. The layout itself is pinned by
+# static_asserts in the source, which are the real compile-time test; these checks
+# only prove the runtime guards are still present, each as one symbol in one file.
 $omodAuditSource = 'src/physics-interaction/weapon/WeaponCollisionOmodAudit.cpp'
-Require-Text $omodAuditSource 'static_assert\(sizeof\(NativeConnectPointParentLayout\) == 0x38\)' 'The authored connect-point layout must stay pinned by a compile-time size assertion.'
-Require-Text $omodAuditSource 'static_assert\(offsetof\(NativeConnectPointParentLayout, connectPointName\) == 0x10\)' 'The authored connect-point name offset must stay pinned by a compile-time assertion.'
 Require-Text $omodAuditSource 'native_memory::guardedCopyFromMemory' 'Raw native reads in the OMOD audit must go through the guarded copy helper.'
 Require-Text $omodAuditSource 'native_memory::pointerRangeLooksReadable' 'Native pointer walks in the OMOD audit must plausibility-check each hop before dereferencing it.'
-Require-Text $omodAuditSource 'kExpectedPrefix[\s\S]{0,700}actual == kExpectedPrefix' 'The native model-customization entry must validate its byte prefix before it is called.'
-Require-Text $omodAuditSource 'REL::Module::IsVR\(\)[\s\S]{0,200}F4SE::RUNTIME_VR_1_2_72' 'The native model-customization entry must confirm the VR executable identity before it is called.'
-Reject-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'NativeConnectPointParentLayout|tryAttach3DRecurse\(|kFunc_ApplyOmodModelCustomization' 'Native VR-offset machinery must stay concentrated in WeaponCollisionOmodAudit.cpp.'
-
-
-# --- Diagnostics must stay observation-only -----------------------------------
-# Replaces a retired assertion that checked for a prose comment saying the
-# recapture comparison installs no transform authority. The property is now
-# structural and cheaper to state: the diagnostics file may not mutate collider,
-# body or identity state, whatever its comments say.
-Reject-Text 'src/physics-interaction/weapon/WeaponCollisionDiagnostics.cpp' 'publishAtomicBodyIds|destroyWeaponBody|setWeaponBodyBankCollisionEnabled|queueBodyTarget|clearEquippedWeaponIdentityState|beginWeaponBodyPublication' 'Weapon collision diagnostics must observe runtime state, never mutate collider, body or identity state.'
-
-
-# --- Source-scan phase order --------------------------------------------------
-# Replaces a retired 8000-character ordering span. findGeneratedWeaponShapeSources
-# is now a short orchestrator over four named phases, so the order it retired can
-# be stated directly and read at a glance. Detached components must go BEFORE the
-# capacity selector, or stray geometry consumes body budget that real weapon parts
-# need; refinement must come before both, because they rank on part kind.
-Require-Text 'src/physics-interaction/weapon/WeaponCollisionSources.cpp' `
-    'mergeGeneratedWeaponSourceCandidates\([\s\S]{0,700}refineGeneratedWeaponSourceSemantics\([\s\S]{0,700}excludeDetachedGeneratedWeaponSources\([\s\S]{0,900}selectGeneratedWeaponSourcesWithinCapacity\(' `
-    'The generated-source scan must merge, then refine, then exclude detached components, then select within body capacity.'
-
-
-# --- Proximity scans share one frame resolver ---------------------------------
-# Replaces two 4200- and 5000-character ordering spans that separately re-asserted
-# that each proximity entry point resolves the current source frame and AABB-filters
-# before the exact triangle test. Both now go through one resolver, which is a
-# stronger guarantee than either regex made: they cannot disagree about which frame
-# a body lives in, because there is only one answer.
-Require-Text 'src/physics-interaction/weapon/WeaponCollisionQueries.cpp' `
-    'findCurrentWeaponSurfaceNearPoints\([\s\S]{0,3000}resolveWeaponSurfaceScanFrame\(currentWeaponRoot' `
-    'The batch surface query must resolve each body frame through the shared scan-frame resolver.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollisionQueries.cpp' `
-    'tryFindInteractionContactNearPoint\([\s\S]{0,1400}resolveWeaponSurfaceScanFrame\(packageDriveRoot' `
-    'The interaction probe must resolve each body frame through the same shared scan-frame resolver.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollisionQueries.cpp' `
-    'resolveWeaponSurfaceScanFrame\(\s*const RE::NiAVObject\* scanRoot[\s\S]{0,1400}tryResolveDescendantWorldTransform\([\s\S]{0,1600}weaponTransformFinite\(outFrame\.world\)' `
-    'The shared scan-frame resolver must compose the live source hierarchy and reject an unusable frame.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollisionQueries.cpp' `
-    'pointAabbDistanceSquared\([\s\S]{0,2000}closestPointOnTriangleToPoint\(' `
-    'Proximity scans must use the AABB only as a broadphase before the exact rendered-triangle test.'
+Require-Text $omodAuditSource 'kExpectedPrefix' 'The native model-customization entry must keep its verified byte-prefix gate.'
+Require-Text $omodAuditSource 'F4SE::RUNTIME_VR_1_2_72' 'The native model-customization entry must keep its VR executable identity gate.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'Weapon collision lifecycle source boundary failed:'

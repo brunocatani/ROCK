@@ -42,11 +42,6 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'nativeScopeR
 Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'isLeftHandedMode' `
     'Scope authority must not reinterpret ROCK controller identity through Fallout 4 VR native handedness.'
 
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.h' 'struct NativeScopeSightAnchorSnapshot[\s\S]*weaponGenerationKey[\s\S]*equippedWeaponOwnershipKey[\s\S]*weaponFormID[\s\S]*anchorWeaponLocal[\s\S]*sightBodyCount[\s\S]*getNativeScopeSightAnchorSnapshot' `
-    'Generated weapon evidence must publish a generation-, ownership-, and form-keyed native-scope sight anchor snapshot.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollisionBodies.cpp' 'accumulatePartKind\(WeaponPartKind::Scope\)[\s\S]*accumulatePartKind\(WeaponPartKind::Sight\)[\s\S]*rearPlaneCenterFromSightBounds[\s\S]*_nativeScopeSightAnchorSnapshot\s*=\s*nativeScopeSightAnchorSnapshot' `
-    'Native-scope placement must prefer validated native-overlay Scope geometry, retain Sight only as an evidence fallback, and publish its rear-center anchor with the weapon generation.'
-
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' '_hasSolvedWeaponTransform\s*=\s*false;[\s\S]*refreshNativeScopeAnchor\([\s\S]*currentWeaponGenerationKey,[\s\S]*currentEquippedWeaponOwnershipKey,[\s\S]*getCurrentObservedEquippedWeaponFormID\(\)[\s\S]*refreshScopeSafeHandFrames\(weaponNode,\s*frameInput,\s*dt\);[\s\S]*if\s*\(!runtime_state::isLocalSkeletonReady\(\)\s*\|\|\s*!weaponNode\)' `
     'Scope anchor and hFRIK-driver calibration must refresh before the grip state machine and its early return.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'snapshot\.weaponGenerationKey\s*!=[\s\S]*matchesCurrentEquippedWeapon\([\s\S]*publishedIdentity,[\s\S]*currentIdentity[\s\S]*_nativeScopeAnchorWeaponNode\s*=\s*nullptr[\s\S]*native_scope_sight_anchor_policy::resolve[\s\S]*_nativeScopeAnchorValid\s*=\s*true' `

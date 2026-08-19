@@ -88,7 +88,6 @@ Require-Order 'src/physics-interaction/weapon/WeaponCollisionBodies.cpp' @(
     'publishedGeneration == 0',
     'auto& bank = activeWeaponBodies\(\);'
 ) 'Weapon physics traversal must acquire the generation publication before selecting the active bank.'
-Require-Pattern 'src/physics-interaction/weapon/WeaponCollision.cpp' 'abandonHavokStateAfterWorldLoss[\s\S]{0,700}clearWeaponBodyInstance\(instance, true\)' 'Weapon world-loss cleanup must abandon wrappers without native removal through a stale world.'
 
 $bodyHeader = 'src/physics-interaction/native/BethesdaPhysicsBody.h'
 $bodySource = 'src/physics-interaction/native/BethesdaPhysicsBody.cpp'

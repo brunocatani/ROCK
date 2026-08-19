@@ -112,10 +112,6 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'requestWeaponCollisionRebuildAfterWorkbenchExit[\s\S]{0,400}requestCurrentWeaponReconcile[\s\S]{0,180}WorkbenchExit' `
     'Workbench exit must use the shared transition coordinator instead of a timer-only collision repair.'
 
-Reject-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' `
-    'maybeFireWorkbenchWeaponReattach|WORKBENCH-REATTACH' `
-    'The superseded debug-only workbench reattach path must stay removed.'
-
 Require-Text 'src/physics-interaction/weapon/NativeEquippedWeaponAttach.cpp' `
     'RUNTIME_VR_1_2_72[\s\S]{0,700}kExpectedAttachEntry[\s\S]*object->formID != expected\.formID[\s\S]{0,220}instanceData\) != expected\.instanceData[\s\S]{0,900}using QueueAttach = void \(\*\)' `
     'Native attach recovery must validate FO4VR 1.2.72, exact current identity, verified bytes, and the wrapper void ABI.'

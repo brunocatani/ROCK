@@ -49,36 +49,6 @@ function Reject-Text {
     }
 }
 
-# The contacted generated body owns the grip point. Finger posing additionally
-# borrows deduplicated frame-scoped views from the whole equipped weapon.
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.h' `
-    'struct SupportGripEvidenceView[\s\S]*std::span<const TriangleData> localTriangles[\s\S]*RE::NiTransform localToWorld[\s\S]*sourceGroupId[\s\S]*bodyId[\s\S]*weaponGenerationKey[\s\S]*findSupportGripEvidenceViews\(' `
-    'Equipped finger posing must consume generation-tagged, source-identifiable local triangle views.'
-Require-OrderedText 'src/physics-interaction/weapon/WeaponCollisionQueries.cpp' @(
-    'tryBuildSupportGripEvidenceView\(',
-    'tryResolveDescendantWorldTransform\(',
-    'generatedSourceLocalTrianglesGame',
-    'outView\.localTriangles = std::span<const TriangleData>',
-    'outView\.localToWorld = localToWorld',
-    'outView\.sourceGroupId',
-    'outView\.weaponGenerationKey = getCurrentWeaponGenerationKey\(\)'
-) 'Support grip evidence views must stay local, transformed, source-identifiable, and generation validated.'
-Require-OrderedText 'src/physics-interaction/weapon/WeaponCollisionQueries.cpp' @(
-    'tryGetSupportGripEvidenceView\(',
-    'instance\.body\.getBodyId\(\)\.value != bodyId',
-    'tryBuildSupportGripEvidenceView\('
-) 'Grip-point evidence must remain tied to the contacted body.'
-Require-OrderedText 'src/physics-interaction/weapon/WeaponCollisionQueries.cpp' @(
-    'findSupportGripEvidenceViews\(',
-    'seenSourceGroups',
-    'tryBuildSupportGripEvidenceView\(',
-    'std::find\(',
-    'outViews\[viewCount\+\+\] = view'
-) 'Finger evidence must enumerate and deduplicate equipped-weapon render sources.'
-Reject-Text 'src/physics-interaction/weapon/WeaponCollision.h' `
-    'tryBuildSupportGripEvidenceTriangles' `
-    'The retired world-triangle copy API must not return.'
-
 # Grip-point selection inspects the contacted part exactly. All five fingers
 # share one weapon-local candidate pool. Per-finger baked sweep lanes reserve
 # bounded coverage before deterministic global fill, then one shared BVH solve

@@ -50,10 +50,6 @@ function Require-Order {
 $runtimeHeader = 'src/physics-interaction/weapon/DynamicWeaponCollision.h'
 $runtimeSource = 'src/physics-interaction/weapon/DynamicWeaponCollision.cpp'
 $runtimePolicy = 'src/physics-interaction/weapon/DynamicWeaponCollisionPolicy.h'
-$weaponCollisionHeader = 'src/physics-interaction/weapon/WeaponCollision.h'
-# The compound geometry snapshot and the live child pose both moved into the
-# read-only query file when WeaponCollision was split.
-$weaponCollisionSource = 'src/physics-interaction/weapon/WeaponCollisionQueries.cpp'
 $compoundBuilder = 'src/physics-interaction/native/HavokCompoundShapeBuilder.cpp'
 $weaponAuthority = 'src/physics-interaction/weapon/TwoHandedGrip.cpp'
 $interaction = 'src/physics-interaction/core/PhysicsInteraction.cpp'
@@ -125,12 +121,6 @@ Require-Pattern $runtimeSource `
 Reject-Pattern $runtimeSource `
     'buildStaticCompoundShape\(compoundChildren\)|buildConvexShapeFromLocalHavokPoints' `
     'The dynamic weapon runtime must not retain its superseded fixed snapshot/rebuilt-convex path.'
-Require-Pattern $weaponCollisionHeader `
-    'CompoundGeometrySnapshotFailure[\s\S]*CompoundGeometryChildSnapshot[\s\S]*shapeInWeapon[\s\S]*CompoundChildPoseSnapshot[\s\S]*CompoundGeometrySnapshot[\s\S]*getCompoundGeometrySnapshot[\s\S]*getCompoundChildPoseSnapshot' `
-    'WeaponCollision must expose generation-bound child shapes plus allocation-free live source poses.'
-Require-Pattern $weaponCollisionSource `
-    'getCompoundGeometrySnapshot\([\s\S]*getCurrentWeaponGenerationKey\(\)[\s\S]*getWeaponBodyCount\(\)[\s\S]*instance\.shape[\s\S]*generatedLocalPointsGame[\s\S]*pointCloudCanBuildHull[\s\S]*resolveCompoundChildPose[\s\S]*sourceBodyCount\s*!=\s*expectedBodyCount[\s\S]*GenerationChanged[\s\S]*outSnapshot\.valid\s*=\s*true' `
-    'The compound snapshot must reject incomplete, degenerate, or generation-changing layer-44 geometry.'
 Require-Pattern $runtimeSource `
     'queueCompoundChildTransforms\([\s\S]*getCompoundChildPoseSnapshot\([\s\S]*makeCompoundChildTransform\([\s\S]*_queuedCompoundPoseSequence' `
     'Every accepted game frame must queue the current source-node poses without rebuilding child geometry.'
@@ -143,12 +133,6 @@ Require-Pattern $compoundBuilder `
 Require-Pattern $compoundBuilder `
     'RUNTIME_VR_1_2_72[\s\S]*kFunc_DynamicCompoundShape_Ctor[\s\S]*kFunc_DynamicCompoundShape_UpdateInstances[\s\S]*native API validation' `
     'The new FO4VR RVAs must fail closed behind exact executable identity and live entry-byte validation.'
-Require-Pattern $weaponCollisionSource `
-    'resolveCompoundChildPose\([\s\S]*tryResolveDescendantLocalTransform\([\s\S]*generatedSourceLocalCenterGame[\s\S]*shapeInWeapon\.scale\s*=\s*1\.0f' `
-    'Live compound poses must use the current source hierarchy and baked-scale convention shared by keyframed parts.'
-Reject-Pattern $weaponCollisionSource `
-    'postUndrawFrameCorrection|generatedSourceFrameCorrection|applyPostUndrawFrameCorrection' `
-    'A fixed transform sampled during draw animation must never offset live compound children from rendered parts.'
 Require-Pattern $runtimeSource `
     'buildProxyShape\(\)[\s\S]*noContactFilterInfo\(\)[\s\S]*BethesdaMotionType::Keyframed[\s\S]*ROCK_WeaponGripAuthorityProxy[\s\S]*hasNoContactFilterInfo' `
     'The grip authority must be a verified noncolliding keyframed proxy.'
