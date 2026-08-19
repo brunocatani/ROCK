@@ -700,6 +700,31 @@ namespace rock
             bool consumedPullPrepLifecycle = false;
         };
 
+        struct ActiveGrabBodySetPrep
+        {
+            // The first scan records the state that a failed prep must restore.
+            object_physics_body_set::ObjectPhysicsBodySet beforePrepBodySet;
+            // The second scan records the bodies that can join the active drive.
+            object_physics_body_set::ObjectPhysicsBodySet preparedBodySet;
+            held_object_drive_policy::HeldBodySetDriveDecision driveDecision{};
+            std::uint32_t seedBodyId = object_physics_body_set::INVALID_BODY_ID;
+            bool beforePrepScanCacheHit = false;
+            bool preparedScanCacheHit = false;
+            bool preparedBodySetPostPrepComplete = false;
+            bool motionConverted = true;
+            bool collisionEnabled = true;
+        };
+
+        void prepareActiveGrabBodySet(RE::bhkWorld* bhkWorld,
+            RE::hknpWorld* world,
+            const SelectedObject& selection,
+            RE::NiAVObject* rootNode,
+            bool skipActivePrep,
+            bool captureBeforePrep,
+            bool trackPreparedBodies,
+            active_grab_body_lifecycle::BodyLifecycleSnapshot& lifecycle,
+            ActiveGrabBodySetPrep& outPrep);
+
         void abortGrabAcquisition(const GrabAcquisitionUnwind& unwind);
 
         /*
