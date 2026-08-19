@@ -20,6 +20,9 @@
 #include "physics-interaction/weapon/WeaponSemantics.h"
 #include "physics-interaction/weapon/WeaponTypePolicy.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
+#include "physics-interaction/weapon/WeaponCollisionInternal.h"
+#include "physics-interaction/weapon/WeaponEmitterScan.h"
+#include "physics-interaction/weapon/WeaponSceneGraphWalk.h"
 #include "physics-interaction/TransformMath.h"
 
 #include <intrin.h>
@@ -54,10 +57,16 @@
 
 namespace rock
 {
+    /*
+     * The shared WeaponCollision helpers live in a named detail namespace so they
+     * cannot collide with the same-named local helpers other physics-interaction
+     * TUs define. They are used unqualified throughout this file, exactly as they
+     * were when they sat in the anonymous namespace below.
+     */
+    using namespace weapon_collision_detail;
+
     namespace
     {
-        constexpr std::size_t MAX_CONVEX_HULL_POINTS = 0xFC;
-        constexpr float MIN_HULL_DIAGONAL_GAME_UNITS = 0.5f;
         constexpr std::size_t GENERATED_WEAPON_BODY_CREATION_BATCH = 8;
         constexpr float GENERATED_RECAPTURE_WEAPON_CENTER_DRIFT_GAME = 0.25f;
         constexpr float GENERATED_RECAPTURE_SOURCE_CENTER_DRIFT_GAME = 0.10f;
@@ -66,38 +75,6 @@ namespace rock
         constexpr float GENERATED_SOURCE_DETACHED_COMPONENT_MIN_GAP_GAME = 24.0f;
         constexpr std::size_t MAX_CACHED_DETACHED_SOURCE_GROUPS =
             weapon_collision_geometry_math::kMaxDetachedComponentAnalysisSources;
-
-        struct QuantizedPointKey
-        {
-            std::int64_t x = 0;
-            std::int64_t y = 0;
-            std::int64_t z = 0;
-
-            bool operator==(const QuantizedPointKey& rhs) const noexcept { return x == rhs.x && y == rhs.y && z == rhs.z; }
-        };
-
-        struct QuantizedPointKeyHash
-        {
-            std::size_t operator()(const QuantizedPointKey& key) const noexcept
-            {
-                const auto hx = std::hash<std::int64_t>{}(key.x);
-                const auto hy = std::hash<std::int64_t>{}(key.y);
-                const auto hz = std::hash<std::int64_t>{}(key.z);
-                return hx ^ (hy + 0x9e3779b97f4a7c15ull + (hx << 6) + (hx >> 2)) ^ (hz + 0x9e3779b97f4a7c15ull + (hy << 6) + (hy >> 2));
-            }
-        };
-
-        struct WeaponMeshRootCandidate
-        {
-            RE::NiAVObject* root = nullptr;
-            const char* label = "";
-        };
-
-        struct PointCloudBounds
-        {
-            RE::NiPoint3 min{};
-            RE::NiPoint3 max{};
-        };
 
         enum GeneratedHullCoverageClass : int
         {
@@ -132,24 +109,6 @@ namespace rock
             std::size_t supportFitValidationDirections{ 0 };
         };
 
-        struct WeaponAnimNodeMatch
-        {
-            RE::NiAVObject* node{ nullptr };
-            std::string path;
-            std::uint32_t depth{ 0 };
-        };
-
-        struct WeaponAnimNodeSubtreeStats
-        {
-            std::uint32_t nodeCount{ 0 };
-            std::uint32_t niNodeCount{ 0 };
-            std::uint32_t triShapeCount{ 0 };
-            std::uint32_t visibleTriShapeCount{ 0 };
-            std::uint32_t hiddenFlagCount{ 0 };
-            std::uint32_t appCulledCount{ 0 };
-            std::uint32_t maxDepth{ 0 };
-        };
-
         struct WeaponAnimNodeDumpRoot
         {
             const char* label{ "" };
@@ -161,39 +120,6 @@ namespace rock
             const char* label{ "" };
             f4vr::BSFlattenedBoneTree* tree{ nullptr };
         };
-
-        struct WeaponAnimFlattenedBoneMatch
-        {
-            int index{ -1 };
-            int parentIndex{ -1 };
-            short childPosition{ -1 };
-            RE::NiNode* refNode{ nullptr };
-            std::string name;
-        };
-
-        constexpr std::array<const char*, 11> WEAPON_ANIM_NODE_DUMP_TARGETS{
-            "Weapon",
-            "WeaponLeft",
-            "ProjectileNode",
-            "AnimObjectR1",
-            "AnimObjectR2",
-            "AnimObjectR3",
-            "AnimObjectL1",
-            "AnimObjectL2",
-            "AnimObjectL3",
-            "AnimObjectA",
-            "AnimObjectB",
-        };
-
-        constexpr int WEAPON_ANIM_NODE_DUMP_MAX_DEPTH = 32;
-        constexpr std::size_t WEAPON_ANIM_NODE_DUMP_MAX_MATCHES_PER_NAME = 32;
-        constexpr std::size_t WEAPON_ANIM_NODE_DUMP_MAX_VISITED_NODES = 4096;
-        constexpr std::size_t WEAPON_ANIM_NODE_DUMP_MAX_CHILD_NAMES = 16;
-        constexpr std::size_t WEAPON_ANIM_NODE_DUMP_MAX_SUBTREE_NODES = 4096;
-        constexpr int WEAPON_ANIM_NODE_DUMP_MAX_FLATTENED_TRANSFORMS = 768;
-
-        bool weaponVisualNodeVisible(const RE::NiAVObject* node);
-        const char* safeNodeName(const RE::NiAVObject* node);
 
         const char* generatedWeaponPartKindName(WeaponPartKind kind)
         {
@@ -260,207 +186,6 @@ namespace rock
             default:
                 return "Invalid";
             }
-        }
-
-        bool weaponAnimNodeNameMatches(const RE::NiAVObject* node, const char* targetName)
-        {
-            if (!node || !targetName) {
-                return false;
-            }
-            return _stricmp(targetName, node->name.c_str()) == 0;
-        }
-
-        void collectWeaponAnimNodeMatchesRecursive(
-            RE::NiAVObject* node,
-            const char* targetName,
-            std::string path,
-            std::uint32_t depth,
-            std::size_t& visited,
-            std::vector<WeaponAnimNodeMatch>& outMatches)
-        {
-            if (!node || visited >= WEAPON_ANIM_NODE_DUMP_MAX_VISITED_NODES || depth > WEAPON_ANIM_NODE_DUMP_MAX_DEPTH ||
-                outMatches.size() >= WEAPON_ANIM_NODE_DUMP_MAX_MATCHES_PER_NAME) {
-                return;
-            }
-
-            ++visited;
-            const char* nodeName = node->name.c_str();
-            if (!nodeName || nodeName[0] == '\0') {
-                nodeName = "(unnamed)";
-            }
-            if (path.empty()) {
-                path = nodeName;
-            } else {
-                path += "/";
-                path += nodeName;
-            }
-
-            if (weaponAnimNodeNameMatches(node, targetName)) {
-                outMatches.push_back(WeaponAnimNodeMatch{
-                    .node = node,
-                    .path = path,
-                    .depth = depth,
-                });
-            }
-
-            auto* niNode = node->IsNode();
-            if (!niNode) {
-                return;
-            }
-
-            const auto& children = niNode->children;
-            for (auto i = decltype(children.size()){ 0 }; i < children.size(); ++i) {
-                if (auto* child = children[i].get()) {
-                    collectWeaponAnimNodeMatchesRecursive(child, targetName, path, depth + 1, visited, outMatches);
-                }
-            }
-        }
-
-        std::vector<WeaponAnimNodeMatch> collectWeaponAnimNodeMatches(RE::NiAVObject* root, const char* targetName)
-        {
-            std::vector<WeaponAnimNodeMatch> matches;
-            std::size_t visited = 0;
-            collectWeaponAnimNodeMatchesRecursive(root, targetName, {}, 0, visited, matches);
-            return matches;
-        }
-
-        void accumulateWeaponAnimNodeSubtreeStats(
-            RE::NiAVObject* node,
-            WeaponAnimNodeSubtreeStats& stats,
-            std::uint32_t depth,
-            std::size_t& visited)
-        {
-            if (!node || visited >= WEAPON_ANIM_NODE_DUMP_MAX_SUBTREE_NODES) {
-                return;
-            }
-
-            ++visited;
-            ++stats.nodeCount;
-            stats.maxDepth = (std::max)(stats.maxDepth, depth);
-            if ((node->flags.flags & 1) != 0) {
-                ++stats.hiddenFlagCount;
-            }
-            if (node->GetAppCulled()) {
-                ++stats.appCulledCount;
-            }
-
-            if (node->IsTriShape()) {
-                ++stats.triShapeCount;
-                if (weaponVisualNodeVisible(node)) {
-                    ++stats.visibleTriShapeCount;
-                }
-                return;
-            }
-
-            auto* niNode = node->IsNode();
-            if (!niNode) {
-                return;
-            }
-
-            ++stats.niNodeCount;
-            const auto& children = niNode->children;
-            for (auto i = decltype(children.size()){ 0 }; i < children.size(); ++i) {
-                if (auto* child = children[i].get()) {
-                    accumulateWeaponAnimNodeSubtreeStats(child, stats, depth + 1, visited);
-                }
-            }
-        }
-
-        WeaponAnimNodeSubtreeStats summarizeWeaponAnimNodeSubtree(RE::NiAVObject* node)
-        {
-            WeaponAnimNodeSubtreeStats stats{};
-            std::size_t visited = 0;
-            accumulateWeaponAnimNodeSubtreeStats(node, stats, 0, visited);
-            return stats;
-        }
-
-        std::string weaponAnimNodeImmediateChildNames(RE::NiAVObject* node)
-        {
-            auto* niNode = node ? node->IsNode() : nullptr;
-            if (!niNode) {
-                return "";
-            }
-
-            std::string result;
-            const auto& children = niNode->children;
-            std::size_t appended = 0;
-            for (auto i = decltype(children.size()){ 0 }; i < children.size() && appended < WEAPON_ANIM_NODE_DUMP_MAX_CHILD_NAMES; ++i) {
-                const auto* child = children[i].get();
-                if (!child) {
-                    continue;
-                }
-                if (!result.empty()) {
-                    result += "|";
-                }
-                const char* childName = child->name.c_str();
-                result += childName && childName[0] != '\0' ? childName : "(unnamed)";
-                ++appended;
-            }
-            if (children.size() > appended) {
-                result += "|+";
-                result += std::to_string(children.size() - appended);
-                result += " more";
-            }
-            return result;
-        }
-
-        bool weaponAnimFlattenedTreeValid(const f4vr::BSFlattenedBoneTree* tree)
-        {
-            return tree && tree->transforms && tree->numTransforms > 0 && tree->numTransforms <= WEAPON_ANIM_NODE_DUMP_MAX_FLATTENED_TRANSFORMS;
-        }
-
-        const char* weaponAnimFlattenedTransformName(const f4vr::BSFlattenedBoneTree::BoneTransforms& transform)
-        {
-            const char* name = transform.name.c_str();
-            return name && name[0] != '\0' ? name : "(unnamed)";
-        }
-
-        bool weaponAnimFlattenedTransformNameMatches(const f4vr::BSFlattenedBoneTree::BoneTransforms& transform, const char* targetName)
-        {
-            if (!targetName) {
-                return false;
-            }
-
-            const char* name = transform.name.c_str();
-            return name && _stricmp(targetName, name) == 0;
-        }
-
-        std::vector<WeaponAnimFlattenedBoneMatch> collectWeaponAnimFlattenedBoneMatches(
-            f4vr::BSFlattenedBoneTree* tree,
-            const char* targetName)
-        {
-            std::vector<WeaponAnimFlattenedBoneMatch> matches;
-            if (!weaponAnimFlattenedTreeValid(tree)) {
-                return matches;
-            }
-
-            for (int index = 0; index < tree->numTransforms &&
-                                matches.size() < WEAPON_ANIM_NODE_DUMP_MAX_MATCHES_PER_NAME;
-                 ++index) {
-                const auto& transform = tree->transforms[index];
-                if (!weaponAnimFlattenedTransformNameMatches(transform, targetName)) {
-                    continue;
-                }
-
-                matches.push_back(WeaponAnimFlattenedBoneMatch{
-                    .index = index,
-                    .parentIndex = transform.parPos,
-                    .childPosition = transform.childPos,
-                    .refNode = transform.refNode,
-                    .name = weaponAnimFlattenedTransformName(transform),
-                });
-            }
-
-            return matches;
-        }
-
-        const char* weaponAnimFlattenedParentName(const f4vr::BSFlattenedBoneTree* tree, int parentIndex)
-        {
-            if (!weaponAnimFlattenedTreeValid(tree) || parentIndex < 0 || parentIndex >= tree->numTransforms) {
-                return "(none)";
-            }
-
-            return weaponAnimFlattenedTransformName(tree->transforms[parentIndex]);
         }
 
         void logWeaponAnimNodeMapRoot(const WeaponAnimNodeDumpRoot& dumpRoot)
@@ -650,93 +375,6 @@ namespace rock
             return result;
         }
 
-        QuantizedPointKey quantizePoint(const RE::NiPoint3& point, float grid)
-        {
-            const float safeGrid = (std::max)(grid, 0.0001f);
-            return QuantizedPointKey{ static_cast<std::int64_t>(std::llround(point.x / safeGrid)), static_cast<std::int64_t>(std::llround(point.y / safeGrid)),
-                static_cast<std::int64_t>(std::llround(point.z / safeGrid)) };
-        }
-
-        void mixWeaponVisualKey(std::uint64_t& key, std::uint64_t value)
-        {
-            weapon_visual_composition_policy::mixValue(key, value);
-        }
-
-        void mixWeaponVisualString(std::uint64_t& key, const char* value)
-        {
-            if (!value) {
-                return;
-            }
-            weapon_visual_composition_policy::mixString(key, value);
-        }
-
-        std::vector<RE::NiPoint3> dedupePointCloud(const std::vector<RE::NiPoint3>& points, float grid)
-        {
-            std::vector<RE::NiPoint3> unique;
-            unique.reserve(points.size());
-            std::unordered_set<QuantizedPointKey, QuantizedPointKeyHash> seen;
-            seen.reserve(points.size());
-
-            for (const auto& point : points) {
-                if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) {
-                    continue;
-                }
-
-                const auto key = quantizePoint(point, grid);
-                if (seen.insert(key).second) {
-                    unique.push_back(point);
-                }
-            }
-
-            return unique;
-        }
-
-        float pointCloudDiagonalSquared(const std::vector<RE::NiPoint3>& points)
-        {
-            if (points.empty()) {
-                return 0.0f;
-            }
-
-            RE::NiPoint3 minPoint = points.front();
-            RE::NiPoint3 maxPoint = points.front();
-            for (const auto& point : points) {
-                minPoint = weapon_collision_geometry_math::pointMin(minPoint, point);
-                maxPoint = weapon_collision_geometry_math::pointMax(maxPoint, point);
-            }
-
-            const float dx = maxPoint.x - minPoint.x;
-            const float dy = maxPoint.y - minPoint.y;
-            const float dz = maxPoint.z - minPoint.z;
-            return dx * dx + dy * dy + dz * dz;
-        }
-
-        bool pointCloudCanBuildHull(const std::vector<RE::NiPoint3>& points, float sourceScale = 1.0f)
-        {
-            return points.size() >= 4 && weapon_collision_geometry_math::scaledHullDiagonalCanBuild(
-                                             pointCloudDiagonalSquared(points), sourceScale, MIN_HULL_DIAGONAL_GAME_UNITS);
-        }
-
-        PointCloudBounds pointCloudBounds(const std::vector<RE::NiPoint3>& points)
-        {
-            PointCloudBounds bounds{};
-            if (points.empty()) {
-                return bounds;
-            }
-
-            bounds.min = points.front();
-            bounds.max = points.front();
-            for (const auto& point : points) {
-                bounds.min = weapon_collision_geometry_math::pointMin(bounds.min, point);
-                bounds.max = weapon_collision_geometry_math::pointMax(bounds.max, point);
-            }
-            return bounds;
-        }
-
-        std::array<float, 3> pointToArray(const RE::NiPoint3& point)
-        {
-            return { point.x, point.y, point.z };
-        }
-
         void mixFormPointer(std::uint64_t& key, const RE::TESForm* form)
         {
             weapon_visual_composition_policy::mixValue(key, reinterpret_cast<std::uintptr_t>(form));
@@ -849,195 +487,6 @@ namespace rock
             return witness;
         }
 
-        const RE::BGSObjectInstanceExtra* findEquippedWeaponObjectInstanceExtra(
-            const RE::PlayerCharacter* player,
-            const RE::TESForm* weaponForm,
-            const RE::TBO_InstanceData* instanceData)
-        {
-            if (!player || !weaponForm) {
-                return nullptr;
-            }
-
-            auto scanBiped = [&](const RE::BipedAnim* biped) -> const RE::BGSObjectInstanceExtra* {
-                if (!biped) {
-                    return nullptr;
-                }
-                for (std::uint32_t slotIndex = 0;
-                     slotIndex < static_cast<std::uint32_t>(std::to_underlying(RE::BIPED_OBJECT::kTotal));
-                     ++slotIndex) {
-                    const auto& slot = biped->object[slotIndex];
-                    if (slot.parent.object != weaponForm) {
-                        continue;
-                    }
-                    if (instanceData && slot.parent.instanceData && slot.parent.instanceData.get() != instanceData) {
-                        continue;
-                    }
-                    if (slot.modExtra) {
-                        return slot.modExtra;
-                    }
-                }
-                return nullptr;
-            };
-
-            if (const auto* firstPersonExtra = scanBiped(player->firstPersonBipedAnim.get())) {
-                return firstPersonExtra;
-            }
-            return scanBiped(player->biped.get());
-        }
-
-        // Prefix companion to weapon_effect_geometry_policy::containsAsciiInsensitive,
-        // sharing its foldAscii so path and name matching cannot diverge in what
-        // counts as "the same letter".
-        [[nodiscard]] bool startsWithAsciiInsensitive(std::string_view value, std::string_view prefix)
-        {
-            return value.size() >= prefix.size() &&
-                weapon_effect_geometry_policy::equalsAsciiInsensitive(value.substr(0, prefix.size()), prefix);
-        }
-
-        RE::NiPointer<RE::NiNode> loadOmodModelTemplate(
-            const std::string& modelPath,
-            const std::uint8_t modelDemandFlags)
-        {
-            if (modelPath.empty()) {
-                return nullptr;
-            }
-
-            std::string resourcePath;
-            if (startsWithAsciiInsensitive(modelPath, "Data\\") || startsWithAsciiInsensitive(modelPath, "Data/")) {
-                resourcePath = modelPath;
-            } else if (startsWithAsciiInsensitive(modelPath, "Meshes\\") || startsWithAsciiInsensitive(modelPath, "Meshes/")) {
-                resourcePath = "Data/" + modelPath;
-            } else {
-                resourcePath = "Data/Meshes/" + modelPath;
-            }
-
-            std::uint64_t loadFlags[2]{ 0, modelDemandFlags };
-            std::uint64_t loadedRoot = 0;
-            const int result = f4vr::loadNif(
-                reinterpret_cast<std::uint64_t>(resourcePath.c_str()),
-                reinterpret_cast<std::uint64_t>(&loadedRoot),
-                reinterpret_cast<std::uint64_t>(&loadFlags));
-            if (result != 0 || loadedRoot == 0) {
-                return nullptr;
-            }
-
-            RE::NiPointer<RE::NiNode> root;
-            root.reset(reinterpret_cast<RE::NiNode*>(loadedRoot));
-            return root;
-        }
-
-        /*
-         * BSModelDB's ordinary OMOD demand uses flag 0x2D and may return only
-         * the currently selected controller branch. Loading through the same
-         * native entry with 0xED preserves the complete model hierarchy. This
-         * is required to see durable housings which are absent from the active
-         * branch (the SR-25 magazine shell is the concrete witness).
-         */
-        RE::NiPointer<RE::NiNode> loadCompleteOmodModelTemplate(const std::string& modelPath)
-        {
-            return loadOmodModelTemplate(modelPath, 0xED);
-        }
-
-        /*
-         * Fallout4VR.exe 1.2.72 uses BSModelDB flag 0x20 in the geometry-query
-         * path at 0x1402824B0. Unlike an ordinary attachment demand, this path
-         * does not run the 0x08 model postprocessor which can consume display
-         * geometry owned by a bhkNPCollisionObject. It is used only as a
-         * read/clone template after the guarded receiver-specific comparison
-         * below; native attachment continues to use the engine's own 0x2D
-         * path.
-         */
-        RE::NiPointer<RE::NiNode> loadGeometryInspectionOmodModelTemplate(const std::string& modelPath)
-        {
-            return loadOmodModelTemplate(modelPath, 0x20);
-        }
-
-        /*
-         * Scene-scan bounds.
-         *
-         * Two different kinds of number live here and they must not be confused:
-         *  - a DEPTH cap is a SAFETY net. Weapon and OMOD template hierarchies are
-         *    shallow, so exceeding one means a corrupt or cyclic parent chain; the
-         *    walk stops instead of recursing forever.
-         *  - a VISIT cap is a BUDGET. It bounds what one scan may cost on a
-         *    pathological modded mesh. Hitting it is a normal outcome that some
-         *    callers report, not evidence of corruption.
-         */
-        // One-shot scans of authored OMOD/NIF templates: small, shallow, and off
-        // the per-frame path.
-        constexpr int kTemplateScanMaxDepth = 16;
-        constexpr std::size_t kTemplateScanMaxVisitedNodes = 512;
-        // ROCK's own enrichment containers sit under the ASSEMBLED weapon, which is
-        // deeper than a bare template, and the sweep has to reach every one of them
-        // or stale geometry survives.
-        constexpr int kEnrichmentContainerScanMaxDepth = 24;
-        // The template fingerprint is a name list; past this many names it cannot
-        // become more distinctive, only more expensive.
-        constexpr std::size_t kOmodTemplateSignatureMaxMeshNames = 96;
-
-        // What a bounded walk does after visiting one node.
-        enum class TreeWalkAction : std::uint8_t
-        {
-            Descend,      // keep going into this node's children
-            SkipChildren, // this node answered for its whole subtree
-            Stop,         // the walk is finished; unwind everything
-        };
-
-        // Live state of one bounded walk. `visited` is carried in the state so a
-        // single budget can span several roots in the same scan.
-        struct BoundedTreeWalkState
-        {
-            std::size_t visited{ 0 };
-            bool stopped{ false };   // a visitor ended the walk on purpose
-            bool truncated{ false }; // a bound cut the walk short
-        };
-
-        /*
-         * Depth-first bounded walk over an NiAVObject hierarchy - the shared shape
-         * behind this file's scene scans. The visitor is called as
-         * visitor(node, depth) and returns a TreeWalkAction.
-         *
-         * A caller that must not report a clean "not found" should check
-         * state.truncated afterwards and fail closed.
-         */
-        template <class Visitor>
-        void boundedTreeWalk(
-            RE::NiAVObject* node,
-            const int depthCap,
-            const std::size_t visitCap,
-            BoundedTreeWalkState& state,
-            Visitor& visitor,
-            const int depth = 0)
-        {
-            if (!node || state.stopped) {
-                return;
-            }
-            if (depth > depthCap || state.visited >= visitCap) {
-                state.truncated = true;
-                return;
-            }
-            ++state.visited;
-
-            switch (visitor(node, depth)) {
-            case TreeWalkAction::Stop:
-                state.stopped = true;
-                return;
-            case TreeWalkAction::SkipChildren:
-                return;
-            case TreeWalkAction::Descend:
-                break;
-            }
-
-            auto* niNode = node->IsNode();
-            if (!niNode) {
-                return;
-            }
-            const auto& children = niNode->children;
-            for (auto i = decltype(children.size()){ 0 }; i < children.size() && !state.stopped; ++i) {
-                boundedTreeWalk(children[i].get(), depthCap, visitCap, state, visitor, depth + 1);
-            }
-        }
-
         // Name-only scan for the structural markers that prove a magnified optic.
         // Stops as soon as the evidence is conclusive: nothing later can change it.
         void collectManualScopeStructuralMarkers(
@@ -1063,85 +512,6 @@ namespace rock
             bool overlayValid{ false };
             std::uint32_t overlayIndex{ 0 };
         };
-
-        /*
-         * The one place that walks the equipped weapon's installed-OMOD list.
-         *
-         * Every caller needs the same two resolutions per entry - the Mod form
-         * behind the object id, and the attach-point keyword behind that Mod - and
-         * both can fail independently: an index entry can name a form from a plugin
-         * that is no longer loaded, and a Mod can carry an attach-point keyword
-         * index the keyword table does not have. `omod` and `attachPointKeyword`
-         * are therefore passed possibly-null and each caller decides what that
-         * means for it.
-         *
-         * The visitor receives (modIndex, omod, attachPointKeyword) and is called
-         * once per entry, in install order.
-         */
-        template <class Visitor>
-        void visitEquippedOmodIndexData(const RE::BGSObjectInstanceExtra* extra, Visitor&& visitor)
-        {
-            if (!extra || !extra->values) {
-                return;
-            }
-            for (const auto& modIndex : extra->GetIndexData()) {
-                auto* omod = RE::TESForm::GetFormByID<RE::BGSMod::Attachment::Mod>(modIndex.objectID);
-                const RE::BGSKeyword* attachPointKeyword = omod ?
-                    RE::BGSKeyword::GetTypedKeywordByIndex(
-                        RE::KeywordType::kAttachPoint,
-                        omod->attachPoint.keywordIndex) :
-                    nullptr;
-                visitor(modIndex, omod, attachPointKeyword);
-            }
-        }
-
-        std::unordered_map<std::uint32_t, std::uint32_t> readEquippedOmodsByAttachPointFormId(
-            WeaponCollision::WeaponCompositionSnapshot* outComposition = nullptr)
-        {
-            std::unordered_map<std::uint32_t, std::uint32_t> result;
-            if (outComposition) {
-                *outComposition = {};
-            }
-            auto* player = f4vr::getPlayer();
-            auto* equipData = f4vr::getEquippedWeaponItem();
-            auto* weaponForm = equipData ? equipData->item.object : nullptr;
-            auto* instanceData = equipData ? equipData->item.instanceData.get() : nullptr;
-            const RE::BGSObjectInstanceExtra* objectInstanceExtra =
-                weaponForm ? findEquippedWeaponObjectInstanceExtra(player, weaponForm, instanceData) : nullptr;
-            if (!objectInstanceExtra || !objectInstanceExtra->values) {
-                return result;
-            }
-
-            result.reserve(objectInstanceExtra->GetIndexData().size());
-            // stableIndex is the install-order position and is what downstream
-            // consumers key on, so it advances for every entry - including the
-            // disabled and unresolvable ones the map itself skips.
-            std::uint32_t stableIndex = 0;
-            visitEquippedOmodIndexData(objectInstanceExtra,
-                [&](const auto& modIndex, auto* omod, const RE::BGSKeyword* attachPointKeyword) {
-                    if (!modIndex.disabled && attachPointKeyword && omod) {
-                        result.emplace(attachPointKeyword->formID, omod->formID);
-                    }
-                    if (outComposition &&
-                        outComposition->entryCount <
-                            outComposition->entries.size()) {
-                        auto& entry = outComposition->entries[
-                            outComposition->entryCount++];
-                        // An unresolvable Mod still gets an entry, carrying the raw
-                        // object id, so the snapshot shows the real install list.
-                        entry.omodFormId = omod ? omod->formID : modIndex.objectID;
-                        entry.attachPointFormId =
-                            attachPointKeyword ? attachPointKeyword->formID : 0;
-                        entry.stableIndex = stableIndex;
-                        entry.flags = modIndex.disabled ? (1u << 1) : (1u << 0);
-                        if (attachPointKeyword) {
-                            entry.flags |= 1u << 2;
-                        }
-                    }
-                    ++stableIndex;
-                });
-            return result;
-        }
 
         [[nodiscard]] bool attachmentModHasNativeScopeOverlayTarget(std::uint32_t omodFormId)
         {
@@ -1625,198 +995,6 @@ namespace rock
             }
         }
 
-        /*
-         * The single source of truth for WHICH roots ROCK scans for weapon mesh
-         * geometry. Weapon mesh collision has to be rooted on the visual weapon
-         * tree, not the native collision attachment tree, so several possible
-         * visual roots are offered here; every candidate must still prove itself
-         * by producing visible triangles before it is used for body creation.
-         *
-         * Allocation-free on purpose - this runs from per-frame scan paths.
-         */
-        template <class Visitor>
-        void visitGeneratedWeaponMeshRootCandidates(RE::NiAVObject* updateWeaponNode, Visitor&& visitor)
-        {
-            std::array<WeaponMeshRootCandidate, 4> candidates{};
-            std::size_t count = 0;
-            const auto addUnique = [&](RE::NiAVObject* root, const char* label) {
-                if (!root) {
-                    return;
-                }
-                for (std::size_t i = 0; i < count; ++i) {
-                    if (candidates[i].root == root) {
-                        return;
-                    }
-                }
-                if (count < candidates.size()) {
-                    candidates[count++] = WeaponMeshRootCandidate{ root, label };
-                }
-            };
-
-            addUnique(f4vr::getWeaponNode(), "firstPersonSkeleton:Weapon");
-            if (auto* playerNodes = f4vr::getPlayerNodes()) {
-                addUnique(playerNodes->primaryWeapontoWeaponNode, "PlayerNodes.primaryWeapontoWeaponNode");
-                addUnique(playerNodes->primaryWeaponOffsetNOde, "PlayerNodes.primaryWeaponOffsetNode");
-            }
-            addUnique(updateWeaponNode, "updateWeaponNode");
-
-            for (std::size_t i = 0; i < count; ++i) {
-                visitor(candidates[i]);
-            }
-        }
-
-        // Materialized form of the visitor above, for the callers that have to keep
-        // the candidate list alive past the scan. The order and the identity of the
-        // candidates come from the visitor - never add a root here.
-        std::vector<WeaponMeshRootCandidate> makeGeneratedWeaponMeshRootCandidates(RE::NiAVObject* updateWeaponNode)
-        {
-            std::vector<WeaponMeshRootCandidate> candidates;
-            candidates.reserve(4);
-            visitGeneratedWeaponMeshRootCandidates(updateWeaponNode, [&](const WeaponMeshRootCandidate& candidate) {
-                candidates.push_back(candidate);
-            });
-            return candidates;
-        }
-
-        std::uint64_t makeWeaponEmitterRootSetKey(RE::NiAVObject* updateWeaponNode)
-        {
-            std::uint64_t key = weapon_visual_composition_policy::kWeaponVisualCompositionOffset;
-            visitGeneratedWeaponMeshRootCandidates(updateWeaponNode, [&](const WeaponMeshRootCandidate& candidate) {
-                mixWeaponVisualKey(key, reinterpret_cast<std::uintptr_t>(candidate.root));
-            });
-            return key;
-        }
-
-        /*
-         * sourceScale re-bakes a source NiNode's own NiTransform::scale into
-         * the point cloud before Havok conversion. It must be 1.0 for points
-         * already expressed in a frame with no scale divided out (e.g.
-         * weapon-root-local localPointsGame under a scale=1.0 weapon root);
-         * pass the captured GeneratedHullSource::sourceNodeScale for points
-         * expressed in a source node's own local space
-         * (sourceLocalPointsGame), since Havok never re-applies NiNode scale
-         * to a built shape at runtime.
-         */
-        std::vector<RE::NiPoint3> makeCenteredHavokPointCloud(const std::vector<RE::NiPoint3>& localPointsGame, const RE::NiPoint3& localCenterGame, float sourceScale = 1.0f)
-        {
-            std::vector<RE::NiPoint3> result;
-            result.reserve(localPointsGame.size());
-            const float scaledHavokScale = sourceScale * gameToHavokScale();
-            for (const auto& point : localPointsGame) {
-                result.emplace_back((point.x - localCenterGame.x) * scaledHavokScale, (point.y - localCenterGame.y) * scaledHavokScale,
-                    (point.z - localCenterGame.z) * scaledHavokScale);
-            }
-            return result;
-        }
-
-        const char* safeNodeName(const RE::NiAVObject* node)
-        {
-            if (!node) {
-                return "(null)";
-            }
-            const char* name = node->name.c_str();
-            return name ? name : "(null)";
-        }
-
-        [[nodiscard]] bool niObjectRttiChainContains(const RE::NiObject* object, const char* typeName)
-        {
-            const RE::NiRTTI* rtti = object && typeName ? object->GetRTTI() : nullptr;
-            for (int depth = 0; rtti && depth < 16; ++depth, rtti = rtti->GetBaseRTTI()) {
-                const char* rttiName = rtti->GetName();
-                if (rttiName && std::strcmp(rttiName, typeName) == 0) {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        [[nodiscard]] bool generatedWeaponShapeHasEffectShaderProperty(const RE::BSTriShape* triShape)
-        {
-            if (!triShape) {
-                return false;
-            }
-            for (const auto& property : triShape->GetRuntimeData().properties) {
-                if (niObjectRttiChainContains(property.get(), "BSEffectShaderProperty")) {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        [[nodiscard]] bool generatedWeaponShapeHasBillboardAncestor(const RE::NiAVObject* node)
-        {
-            // Parent links are frame-scoped engine references; nothing from this walk is retained.
-            for (auto* ancestor = node ? node->parent : nullptr; ancestor; ancestor = ancestor->parent) {
-                if (niObjectRttiChainContains(ancestor, "NiBillboardNode")) {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        [[nodiscard]] weapon_effect_geometry_policy::ExclusionReason classifyGeneratedWeaponEffectGeometry(
-            const RE::BSTriShape* triShape)
-        {
-            return weapon_effect_geometry_policy::classify({
-                .hasEffectShaderProperty = generatedWeaponShapeHasEffectShaderProperty(triShape),
-                .hasBillboardAncestor = generatedWeaponShapeHasBillboardAncestor(triShape),
-                .geometryName = safeNodeName(triShape),
-            });
-        }
-
-        bool weaponVisualNodeVisible(const RE::NiAVObject* node)
-        {
-            if (!node) {
-                return false;
-            }
-            return (node->flags.flags & 1) == 0 && !node->GetAppCulled() && node->local.scale != 0.0f;
-        }
-
-        /*
-         * Per-node visibility misses renders hidden by an ANCESTOR: a culled,
-         * hidden or zero-scale parent (hand bone, skeleton root) hides the whole
-         * weapon while every weapon node still reports visible=yes. This walk is
-         * the one place that climbs the parent chain looking for that offender.
-         */
-        struct WeaponVisibilityWalk
-        {
-            // First node on the chain the renderer would treat as hidden, or null.
-            const RE::NiAVObject* firstHidden{ nullptr };
-            // The climb hit maxSteps before reaching the top. A weapon/skeleton
-            // chain is shallow, so this means a cycle or a corrupt parent chain -
-            // callers must treat it as "not provably visible", never as "clean".
-            bool boundExhausted{ false };
-        };
-
-        [[nodiscard]] WeaponVisibilityWalk walkWeaponVisibilityChain(const RE::NiAVObject* node, int maxSteps)
-        {
-            WeaponVisibilityWalk result{};
-            const RE::NiAVObject* cursor = node;
-            for (int step = 0;; ++step) {
-                // Budget first, so a chain that is exactly maxSteps long still
-                // reports exhaustion rather than silently passing.
-                if (step >= maxSteps) {
-                    result.boundExhausted = true;
-                    return result;
-                }
-                if (!cursor) {
-                    return result;
-                }
-                if (!weaponVisualNodeVisible(cursor)) {
-                    result.firstHidden = cursor;
-                    return result;
-                }
-                cursor = cursor->parent;
-            }
-        }
-
-        // Budget for the per-frame emitter scan: deep enough for any real weapon
-        // under the first-person skeleton, cheap enough to run per emitter.
-        constexpr int kWeaponEmitterVisibilityAncestorSteps = 32;
-        // The OMOD audit is a diagnostic that has to name the true offender, so it
-        // climbs further; the bound exists only to stop a corrupt parent chain.
-        constexpr int kOmodAuditVisibilityAncestorSteps = 256;
-
         std::uintptr_t readRendererChildPointer(void* rendererData, std::ptrdiff_t rendererChildOffset)
         {
             if (!rendererData) {
@@ -2009,40 +1187,6 @@ namespace rock
             return result;
         }
 
-        // Every point that reaches a Havok body, a bounds test or a hash has to be
-        // finite first; a single NaN poisons a whole hull or a whole key.
-        [[nodiscard]] bool pointFinite(const RE::NiPoint3& point) noexcept
-        {
-            return std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z);
-        }
-
-        /*
-         * The finiteness gate for every weapon-space transform in this file.
-         *
-         * Scale participates on purpose: consumers either compose the transform
-         * (rotation and scale multiply through) or invert it to bring a world point
-         * into node space, and a zero or near-zero scale makes the inverse explode
-         * into infinities that then look like valid geometry. Rejecting it here is
-         * the fail-closed choice - a caller that cannot resolve a transform skips
-         * the frame, which is always safer than driving a body from garbage.
-         */
-        [[nodiscard]] bool weaponTransformFinite(const RE::NiTransform& transform) noexcept
-        {
-            if (!std::isfinite(transform.translate.x) || !std::isfinite(transform.translate.y) ||
-                !std::isfinite(transform.translate.z) || !std::isfinite(transform.scale) ||
-                std::abs(transform.scale) <= 0.0001f) {
-                return false;
-            }
-            for (int row = 0; row < 3; ++row) {
-                for (int column = 0; column < 3; ++column) {
-                    if (!std::isfinite(transform.rotate.entry[row][column])) {
-                        return false;
-                    }
-                }
-            }
-            return true;
-        }
-
         // Min/max corner pair -> the (center, half-extent) form the snapshot API
         // publishes. Kept in one place so the two snapshot builders cannot drift.
         struct AabbCenterExtents
@@ -2065,75 +1209,6 @@ namespace rock
                     (maxPoint.z - minPoint.z) * 0.5f,
                 },
             };
-        }
-
-        constexpr std::size_t kMaximumWeaponLocalHierarchyDepth = 64;
-
-        [[nodiscard]] bool tryResolveDescendantLocalTransform(
-            const RE::NiAVObject* ancestor,
-            const RE::NiAVObject* descendant,
-            RE::NiTransform& outDescendantLocal)
-        {
-            /*
-             * Descendant world transforms can belong to a different scene-graph
-             * propagation epoch than the current weapon root. Compose the
-             * bounded parent path so callers receive one coherent local frame.
-             * Shoulder draw can also leave that coherent frame in presentation
-             * space; post-undraw callers remove that separately with a validated
-             * source-frame correction.
-             */
-            outDescendantLocal = transform_math::makeIdentityTransform<RE::NiTransform>();
-            if (!ancestor || !descendant) {
-                return false;
-            }
-
-            std::array<const RE::NiAVObject*, kMaximumWeaponLocalHierarchyDepth> reversePath{};
-            std::size_t pathLength = 0;
-            auto* cursor = descendant;
-            while (cursor && cursor != ancestor) {
-                if (pathLength >= reversePath.size() || !weaponTransformFinite(cursor->local)) {
-                    outDescendantLocal = {};
-                    return false;
-                }
-                reversePath[pathLength++] = cursor;
-                cursor = cursor->parent;
-            }
-            if (cursor != ancestor) {
-                outDescendantLocal = {};
-                return false;
-            }
-
-            while (pathLength != 0) {
-                outDescendantLocal = transform_math::composeTransforms(
-                    outDescendantLocal,
-                    reversePath[--pathLength]->local);
-            }
-            if (!weaponTransformFinite(outDescendantLocal)) {
-                outDescendantLocal = {};
-                return false;
-            }
-            return true;
-        }
-
-        [[nodiscard]] bool tryResolveDescendantWorldTransform(
-            const RE::NiAVObject* ancestor,
-            const RE::NiTransform& ancestorWorld,
-            const RE::NiAVObject* descendant,
-            RE::NiTransform& outDescendantWorld)
-        {
-            RE::NiTransform descendantLocal{};
-            if (!weaponTransformFinite(ancestorWorld) ||
-                !tryResolveDescendantLocalTransform(ancestor, descendant, descendantLocal)) {
-                outDescendantWorld = {};
-                return false;
-            }
-
-            outDescendantWorld = transform_math::composeTransforms(ancestorWorld, descendantLocal);
-            if (!weaponTransformFinite(outDescendantWorld)) {
-                outDescendantWorld = {};
-                return false;
-            }
-            return true;
         }
 
         bool updateWeaponEmitterTransform(
@@ -2349,6 +1424,12 @@ namespace rock
             }
         }
 
+    }
+
+    // The emitter scan's only cross-file entry point (WeaponEmitterScan.h), so it
+    // needs external linkage; everything else about emitters stays file-local.
+    namespace weapon_collision_detail
+    {
         [[nodiscard]] WeaponEmitterSnapshot collectWeaponEmitterSnapshot(
             RE::NiAVObject* weaponNode,
             const std::unordered_map<std::uint32_t, std::uint32_t>& omodByAttachPointFormId,
@@ -2379,7 +1460,10 @@ namespace rock
             });
             return snapshot;
         }
+    }
 
+    namespace
+    {
         void refreshWeaponEmittersRecursive(
             RE::NiAVObject* node,
             RE::NiAVObject* weaponRoot,
@@ -2414,22 +1498,6 @@ namespace rock
             }
         }
 
-    }
-
-    static void shapeRemoveRef(const RE::hknpShape* shape)
-    {
-        if (!shape)
-            return;
-        auto* refCountDword = reinterpret_cast<volatile long*>(const_cast<char*>(reinterpret_cast<const char*>(shape)) + 0x08);
-        for (;;) {
-            long oldVal = *refCountDword;
-            std::uint16_t rc = static_cast<std::uint16_t>(oldVal & 0xFFFF);
-            if (rc == 0xFFFF || rc == 0)
-                return;
-            long newVal = (oldVal & static_cast<long>(0xFFFF0000u)) | static_cast<long>(static_cast<std::uint16_t>(rc - 1));
-            if (_InterlockedCompareExchange(refCountDword, newVal, oldVal) == oldVal)
-                return;
-        }
     }
 
     std::uint32_t generatedWeaponCollisionFilterInfo(bool collisionEnabled)
