@@ -47,8 +47,10 @@ namespace RE
     class hknpWorld;
     class NiAVObject;
     class NiCollisionObject;
+    class NiNode;
     class TESAmmo;
     class TESObjectREFR;
+    class TESObjectWEAP;
 }
 
 namespace rock
@@ -227,6 +229,67 @@ namespace rock
     private:
         struct EquippedWeaponDropMomentumHandoff;
 
+        struct EquippedWeaponFrame
+        {
+            // Identity stays fixed for the full equipped-weapon frame.
+            RE::NiNode* weaponNode = nullptr;
+            std::uint64_t generationKey = 0;
+            std::uint64_t ownershipKey = 0;
+
+            // Contact evidence flows into grip selection.
+            WeaponInteractionContact leftContact{};
+            WeaponInteractionContact rightContact{};
+            weapon_debug_notification_policy::WeaponContactSource
+                leftContactSource =
+                    weapon_debug_notification_policy::WeaponContactSource::None;
+
+            // Native identity controls stash and hand routing.
+            RE::TESObjectWEAP* observedWeapon = nullptr;
+            std::uint32_t observedFormId = 0;
+            std::uintptr_t observedInstanceData = 0;
+            bool shoulderStashActive = false;
+            bool menuInputActive = false;
+            bool pendingPrimaryStartMatches = false;
+            bool firingHandIsLeft = false;
+            bool supportHandIsLeft = true;
+
+            // Collision owners can change after the grip solve.
+            bool rightHandWeaponEquipped = false;
+            bool retainedWeaponCollisionActive = false;
+            bool rightHandWeaponAuthorityActive = false;
+            bool rightHandWeaponAuthorityActiveBeforeGrip = false;
+            bool leftSupportGripActive = false;
+            bool rightPartGripActive = false;
+
+            // Provider drives must stay excluded from the final body update.
+            std::array<
+                const RE::NiAVObject*,
+                ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1>
+                drivenSourceNodes{};
+            std::size_t drivenSourceNodeCount = 0;
+            RE::NiAVObject* gunstockProjectileNode = nullptr;
+        };
+
+        struct GrabInputFrame
+        {
+            // The frame owns all world and hand transforms for this pass.
+            const PhysicsFrameContext* frame = nullptr;
+            FarSelectionHmdConeGate farHmdConeGate{};
+
+            // Generation values bind delayed work to the live runtime.
+            std::uint32_t worldGeneration = 0;
+            std::uint32_t skeletonGeneration = 0;
+            std::uint32_t providerGeneration = 0;
+            std::uint32_t collisionGeneration = 0;
+
+            // Input policy is sampled once before either hand runs.
+            int grabButton = 0;
+            bool rightHandWeaponEquipped = false;
+            bool ambidextrousHandoffAvailable = false;
+            bool primaryDetachEnabled = false;
+            bool gripZoneSettleEquipEnabled = false;
+        };
+
         bool validateCriticalOffsets() const;
 
         bool refreshHandBoneCache();
@@ -242,6 +305,17 @@ namespace rock
         static RE::hknpWorld* getHknpWorld(RE::bhkWorld* bhk);
 
         PhysicsFrameContext buildFrameContext(RE::bhkWorld* bhk, RE::hknpWorld* hknp, float deltaSeconds);
+
+        void serviceCollisionLayerDrift(RE::hknpWorld* world);
+        void serviceWeaponContactAcquisition(
+            const PhysicsFrameContext& frame,
+            EquippedWeaponFrame& weaponFrame);
+        void serviceEquippedWeaponGripFrame(
+            const PhysicsFrameContext& frame,
+            EquippedWeaponFrame& weaponFrame);
+        void finishDynamicWeaponFrame(
+            const PhysicsFrameContext& frame,
+            EquippedWeaponFrame& weaponFrame);
 
         bool generatedBodiesExistForConfig() const;
         bool generatedBodiesMatchLifecycle(RE::bhkWorld* bhk, RE::hknpWorld* hknp) const;
@@ -294,6 +368,10 @@ namespace rock
         GrabSharedObjectContext makeGrabSharedObjectContext(const Hand& hand, bool isLeft) const;
 
         void updateGrabInput(const PhysicsFrameContext& frame);
+        void processGrabInputHand(
+            Hand& hand,
+            bool isLeft,
+            const GrabInputFrame& input);
         void processProviderInteractionCommands(const PhysicsFrameContext& frame);
         std::uint32_t forceGrabHandBlockerMask(const Hand& hand, bool isLeft, bool handDisabled, bool includePendingCommit) const;
         bool canHandAcceptForceGrab(const Hand& hand, bool isLeft, bool handDisabled) const;
