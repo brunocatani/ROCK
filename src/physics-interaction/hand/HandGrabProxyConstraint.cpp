@@ -883,4 +883,12 @@ namespace rock
             reason ? reason : "peer-joined-held-object");
         return false;
     }
+
+    RE::NiPoint3 Hand::activeProxyConstraintPivotBLocalGame() const
+    {
+        if (_grabAuthorityProxyFrameValid) {
+            return _grabAuthorityPivotBConstraintLocalGame;
+        }
+        return _grabFrame.pivotBConstraintLocalGame;
+    }
 }
