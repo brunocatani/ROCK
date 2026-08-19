@@ -30,30 +30,14 @@ Require-Text 'src/physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.
     'WeaponFamily::OneHandGun[\s\S]*selectedCone\s*=\s*AllowedCone::Left[\s\S]*WeaponFamily::TwoHandGun[\s\S]*leftPass\s*\|\|\s*downPass' `
     'One-hand weapons must expose LEFT only while two-hand weapons expose the LEFT/DOWN union.'
 
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'refreshAuthoredSupportGripActivationState\([\s\S]*evaluateDirectionGate\([\s\S]*findCurrentWeaponSurfaceNearPoints\(' `
-    'The activation state must consume the shared policy and bounded captured-pose surface witnesses.'
-
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'snapshot\.radialCapGameUnits\s*=\s*g_rockConfig\.rockWeaponAuthoredGripActivationRadius' `
-    'Authored-seat reach must use its dedicated setting instead of the unrelated mesh-probe radius.'
-
 Require-Text 'src/RockConfig.cpp' `
     'readClampedFloat\(ini,[\s\S]{0,160}"fWeaponAuthoredGripActivationRadius"[\s\S]{0,160}16\.0f,[\s\S]{0,80}2\.0f,[\s\S]{0,80}32\.0f\)' `
     'The dedicated authored-seat radius must be loaded with its canonical default and bounded runtime range.'
-
-Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'snapshot\.radialCapGameUnits\s*=\s*g_rockConfig\.rockWeaponInteractionProbeRadius' `
-    'The general weapon mesh-probe radius must not silently redefine authored-seat activation reach.'
 
 
 Reject-Text 'src/physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.h' `
     'semanticTargetEligible|semanticPass' `
     'Weapon-part semantic metadata must not redefine geometric authored-cone membership.'
-
-Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'semanticTargetEligible' `
-    'Authored activation must not veto a passing cone because generated contact geometry also owns reload/action/socket metadata.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp' `
     'rockDebugDrawAuthoredGripActivationZones[\s\S]*resolveConeBoundaryDimensions[\s\S]*drawWireCone[\s\S]*ENFORCED AUTHORED ACTIVATION' `

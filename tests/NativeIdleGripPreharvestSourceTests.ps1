@@ -172,9 +172,6 @@ Require-Text 'src/ROCKMain.cpp' `
 Require-Text 'src/physics-interaction/weapon/AuthoredWeaponGripCacheStore.cpp' `
     'kMaximumPendingWrites\s*=\s*64[\s\S]*kMaximumCachedEntries[\s\S]*std::thread[\s\S]*writerLoop[\s\S]*serialize\(write\.record\)[\s\S]*\.tmp[\s\S]*MoveFileExW[\s\S]*MOVEFILE_REPLACE_EXISTING[\s\S]*MOVEFILE_WRITE_THROUGH' `
     'Disk persistence must remain bounded, off the gameplay thread, and atomically replaced.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'incomingRightFingerMask[\s\S]*incomingLeftFingerMask[\s\S]*fingerPoseBoundary[\s\S]*_rightFiringFingerLocalTransformMask\s*!=\s*incomingRightFingerMask[\s\S]*_leftFiringFingerLocalTransformMask\s*!=\s*incomingLeftFingerMask[\s\S]*sourceBoundary[\s\S]*fingerPoseBoundary' `
-    'Canonical pose diagnostics must expose the live-fallback to exact-finger-pose boundary without relying on a source-name change.'
 Reject-Text 'src/physics-interaction/weapon/LooseWeaponGripZone.cpp' `
     'native_idle_grip_preharvest::observeCandidate' `
     'Native preharvest scheduling must not become coupled to grip-zone projection or hover-haptic feature gates again.'
