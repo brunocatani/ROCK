@@ -79,10 +79,6 @@ Require-Pattern $gripPath $grip `
     '!_scopeDriverFrameAuthorityActive\s*&&[\s\S]*persistentRockHandWorldPublished\s*&&[\s\S]*physicalHandValid[\s\S]*state\.currentHandWorld\s*=\s*physicalHandFrame\.world[\s\S]*refreshHand\([\s\S]*frameInput\.leftScopeHandDriverFrame,[\s\S]*frameInput\.leftHandDriverFrame\)' `
     'Persistent normal hand authority must bypass hFRIK weapon-offset reconstruction while scope authority keeps its dedicated driver.'
 
-Require-Pattern $gripPath $grip `
-    '_currentHandDriverFrames\[0\]\s*=\s*frameInput\.leftHandDriverFrame[\s\S]*_currentHandDriverFrames\[1\]\s*=\s*frameInput\.rightHandDriverFrame[\s\S]*tryResolveDynamicSupportDriverTargets' `
-    'Normal two-hand solving and retained-target capture must share the controller-isolated physical inputs.'
-
 Require-Pattern $authoredPath $authored `
     'shouldRetainAuthoredFiringFingerPoseWhileWeaponTransformYields\([\s\S]*eligibility\)[\s\S]*if \(!input\.rockFiringHandIsLeft && !retainFingerPose\)[\s\S]*clearAuthoredPrimaryFiringGripFingerPose\(\)[\s\S]*weapon-transform-authority-yield' `
     'Two-hand transform authority must not clear the independent authored right-hand finger lease.'

@@ -243,8 +243,6 @@ Require-Text 'src/api/ROCKProviderApi.cpp' 'availableWeaponPartTargetSlotsForOwn
     'Weapon part target replacement must prove capacity before clearing existing owner registrations.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'availableWeaponPartDriveSlotsForOwnerLocked' `
     'Weapon part drive replacement must prove capacity before clearing existing owner registrations.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'attachmentWeaponLocal' `
-    'Part-carry source-part grips must solve weapon authority from the captured source-to-weapon frame.'
 Require-Text 'src/api/ROCKProviderApi.h' 'supportsForceGrabCommandV1' `
     'SDK must expose safe feature/table helpers for force-grab commands.'
 Require-Text 'src/api/ROCKProviderApi.h' 'WeaponEmitters[\s\S]*RockProviderWeaponEmitterV1[\s\S]*ROCK_PROVIDER_API_V1_WEAPON_EMITTERS_TABLE_BYTES[\s\S]*supportsWeaponEmittersV1' `

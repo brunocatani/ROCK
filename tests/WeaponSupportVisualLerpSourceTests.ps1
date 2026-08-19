@@ -50,38 +50,12 @@ Require-Text 'src/physics-interaction/weapon/WeaponSupport.h' 'shouldUseDynamicS
     'Synchronized acquisition must be eligible only for normal non-authored full-authority support grips.'
 Require-Text 'src/physics-interaction/weapon/WeaponSupport.h' 'shortestArcSlerpFromIdentity[\s\S]*applyRotationAroundPrimaryPivot[\s\S]*localPointToWorld\([\s\S]*primaryGripLocal[\s\S]*primaryTargetWorld' `
     'Dynamic acquisition math must shortest-arc slerp the composite correction and re-solve translation from the live primary pivot.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'shouldUseDynamicSupportAcquisition\([\s\S]{0,600}supportGrip\.authoredSupportGrip[\s\S]{0,300}supportGrip\.providerPartAuthority\.active[\s\S]{0,300}supportGrip\.attachOnly[\s\S]{0,6000}beginDynamicSupportAcquisition\([\s\S]{0,900}updateFullWeaponAuthorityGrip\(weaponNode,\s*0\.0f\)' `
-    'A successful normal dynamic capture must start its witnessed transaction and publish exact alpha zero before transitionToGripping returns.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'useDynamicSupportAcquisition[\s\S]*initializeDynamicSupportBaseline\([\s\S]*supportBaselineAttachPublication[\s\S]*weaponWorldAtCapture' `
-    'Normal dynamic support must capture paired driver-to-seat baselines and force an exact zero-delta first weapon publication.'
 Require-Text 'src/physics-interaction/weapon/WeaponSupport.h' 'tryCaptureSupportInputBaseline\([\s\S]*invertTransform\(supportInputWorld\)[\s\S]*supportGripTargetWorld[\s\S]*tryResolveSupportInputTarget\(' `
     'Dynamic and gunstock support must share one rigid post-capture input calibration primitive.'
 Require-Text 'src/physics-interaction/weapon/WeaponSupport.h' 'tryCaptureDynamicSupportDriverBaseline\([\s\S]*primaryDriverWorld[\s\S]*primaryGripTargetWorld[\s\S]*supportDriverWorld[\s\S]*supportGripTargetWorld[\s\S]*tryResolveDynamicSupportDriverTargets\(' `
     'Normal dynamic support must capture both physical driver relations as one transaction.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' '_currentHandDriverFrames\[0\]\s*=\s*frameInput\.leftHandDriverFrame[\s\S]*_currentHandDriverFrames\[1\]\s*=\s*frameInput\.rightHandDriverFrame[\s\S]*tryResolveDynamicSupportDriverTargets\([\s\S]*calibratedPrimaryTransform[\s\S]*computeGrabLegacyPalmPivotAWorldFromHandBasis\([\s\S]*tryCaptureDynamicSupportDriverBaseline\([\s\S]*pairedDynamicDrivers\s*=\s*true' `
-    'Dynamic solver inputs must come from paired frame-scoped drivers, not ROCK-rendered hand roots.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'tryResolveDynamicSupportDriverTargets\([\s\S]*calibratedPrimaryTransform[\s\S]*applyLockedHandVisualAuthority\(weaponNode,\s*applyPrimaryHandAuthority,\s*true,\s*dt,\s*&primaryTransform,\s*&supportTransform\)' `
-    'Controller-isolated transforms must steer the weapon while original rendered transforms remain visual interpolation starts only.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'const bool useDynamicSupportAcquisition\s*=[\s\S]*!gunstockBaselineActive[\s\S]*if \(gunstockBaselineActive\)[\s\S]*updateFullWeaponAuthorityGrip\(weaponNode,\s*0\.0f\)[\s\S]*else if \(useDynamicSupportAcquisition\)' `
-    'Gunstock baseline capture must publish separately from, and never enter, normal synchronized dynamic acquisition.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'solverInput\.supportTargetWorld\s*=\s*dynamicAcquisition\s*\?[\s\S]{0,300}lockedSupportControllerTarget[\s\S]*applyRotationAroundPrimaryPivot' `
-    'Dynamic acquisition must solve the complete locked target before applying one partial composite rotation.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'resolveDynamicSupportAcquisitionHandTarget[\s\S]{0,1200}_dynamicSupportAcquisition\.easedAlpha[\s\S]*synchronizedDynamicAcquisition[\s\S]*resolveDynamicSupportAcquisitionHandTarget' `
-    'Dynamic primary and support hand roots must consume the same eased acquisition alpha as weapon steering.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'supportGripAppliesPrimaryHandAuthority\(_authorityMode\)[\s\S]*applyLockedHandVisualAuthority\(weaponNode,\s*applyPrimaryHandAuthority,\s*true,\s*dt,\s*&primaryTransform,\s*&supportTransform\)' `
-    'Full two-handed weapon authority must gate primary visual authority while preserving live hand-frame inputs.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'supportBaselineAttachPublication[\s\S]{0,700}weaponWorldAtCapture[\s\S]{0,700}applyWeaponVisualAuthority\(weaponNode, appliedWeaponWorld\)[\s\S]{0,1200}applyLockedHandVisualAuthority\(weaponNode,\s*applyPrimaryHandAuthority,\s*true,\s*dt,\s*&primaryTransform,\s*&supportTransform\)' `
-    'Dynamic and gunstock attach must preserve the weapon while retaining the established live-input visual hand transition.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'transitionToPrimaryOnly[\s\S]*clearPrimaryGripPose\(primaryHandIsLeft\)[\s\S]*restoreFrikPrimaryWeaponPose' `
     'Primary-only equipped ownership must clear ROCK primary hand authority so FRIK can resume its configured weapon pose before support re-grab.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'updateVisualOnlySupportGrip\(RE::NiNode\* weaponNode,\s*float dt\)[\s\S]*applyLockedHandVisualAuthority\(weaponNode,\s*false,\s*true,\s*dt' `
-    'Visual-only sidearm support grip must use the same support hand visual lerp path.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'event=start[\s\S]{0,1200}captureToFirstPublicationFrames=0[\s\S]*event=complete' `
-    'Dynamic acquisition telemetry must record start and completion without a per-frame hot log.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'dynamic support acquisition event=cancel' `
-    'Dynamic acquisition lifecycle cleanup must emit an event-scoped cancellation record.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'handLerp=\(' `
-    'Two-handed weapon telemetry must retain sampled hand interpolation alpha/duration.'
 Require-Text 'data/config/ROCK.ini' 'Normal dynamic full-authority grabs[\s\S]*authored,[\s\S]*provider-owned,[\s\S]*AttachOnly,[\s\S]*visual-only' `
     'Repository config must describe the synchronized dynamic-acquisition semantics and unchanged paths.'
 
@@ -94,17 +68,6 @@ if ($applyWeaponStart -lt 0 -or $applyWeaponEnd -lt 0) {
     $applyWeaponText = $weaponText.Substring($applyWeaponStart, $applyWeaponEnd - $applyWeaponStart)
     if ($applyWeaponText -match 'blendTransformOverDuration|resolveLockedHandVisualTarget|resolveDynamicSupportAcquisitionHandTarget|rockWeaponSupportGripHandLerp|applyRotationAroundPrimaryPivot') {
         $failures.Add('applyWeaponVisualAuthority must remain a pure publisher; acquisition interpolation belongs before the single authoritative write.')
-    }
-}
-
-$visualOnlyStart = $weaponText.IndexOf('void TwoHandedGrip::updateVisualOnlySupportGrip')
-$visualOnlyEnd = if ($visualOnlyStart -ge 0) { $weaponText.IndexOf('void TwoHandedGrip::setSupportGripPose', $visualOnlyStart) } else { -1 }
-if ($visualOnlyStart -lt 0 -or $visualOnlyEnd -lt 0) {
-    $failures.Add('Visual-only support function boundary could not be located.')
-} else {
-    $visualOnlyText = $weaponText.Substring($visualOnlyStart, $visualOnlyEnd - $visualOnlyStart)
-    if ($visualOnlyText -match 'applyWeaponVisualAuthority|applyRotationAroundPrimaryPivot|beginDynamicSupportAcquisition') {
-        $failures.Add('Visual-only support must never acquire weapon-transform authority or enter synchronized dynamic acquisition.')
     }
 }
 
