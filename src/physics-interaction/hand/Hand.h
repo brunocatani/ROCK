@@ -49,6 +49,7 @@ namespace rock
     namespace hand_grab_detail
     {
         struct GrabAcquisitionContext;
+        struct GrabSeatCaptureDump;
     }
 
     constexpr std::uint32_t ROCK_HAND_LAYER = 43;
@@ -739,6 +740,15 @@ namespace rock
         bool resolveGrabPivotAuthority(hand_grab_detail::GrabAcquisitionContext& context);
         bool evaluateGrabContactEvidence(hand_grab_detail::GrabAcquisitionContext& context);
         bool captureCanonicalGrabFrame(hand_grab_detail::GrabAcquisitionContext& context);
+        // The three gated dumps of the seat capture. They only read; they are
+        // members because they format _grabFrame and handName(). Keeping them
+        // out of captureCanonicalGrabFrame keeps its flow readable.
+        void logGrabSeatTimelineTrace(const hand_grab_detail::GrabAcquisitionContext& context,
+            const hand_grab_detail::GrabSeatCaptureDump& seat) const;
+        void logGrabSeatFreezeFrame(const hand_grab_detail::GrabAcquisitionContext& context,
+            const hand_grab_detail::GrabSeatCaptureDump& seat) const;
+        void logGrabSeatCaptureDiagnostics(const hand_grab_detail::GrabAcquisitionContext& context,
+            const hand_grab_detail::GrabSeatCaptureDump& seat) const;
         bool commitGrabDrive(hand_grab_detail::GrabAcquisitionContext& context);
         void publishGrabFingerPose(hand_grab_detail::GrabAcquisitionContext& context);
 

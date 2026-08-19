@@ -150,6 +150,10 @@ namespace rock
         _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
 
         {
+            // ---- Stage 1: capture frames -------------------------------------
+            // Read every frame the seat solve compares against, once, before
+            // anything moves. An unreadable body frame aborts here rather than
+            // seating against a frame the constraint cannot reproduce.
             const RE::NiPoint3 palmPos = computeGrabLegacyPalmPivotAWorldFromHandBasis(handWorldTransform, _isLeft);
             RE::NiTransform grabBodyWorldAtGrab{};
             if (!tryGetGrabAuthorityBodyWorldTransform(world, objectBodyId, grabBodyWorldAtGrab)) {
@@ -237,6 +241,10 @@ namespace rock
             bool looseWeaponPrimaryAttachApplied = false;
             bool looseWeaponPrimaryAttachSourceVisible = false;
             const char* looseWeaponPrimaryAttachReason = "notEvaluated";
+            // ---- Stage 2: classify and seat ----------------------------------
+            // Build the pocket and the grip area, decide accept or reject, then
+            // solve the seat pose inside the accepted branch. Rejection is a
+            // normal outcome here, not an error.
             const auto oppositionContacts = hand_semantic_contact_state::selectThumbOppositionContacts(semanticContacts);
             auto resolvedAuthorityPivotSourceForFreeze = grab_authority_frame_math::GrabAuthorityPivotSource::None;
             const char* resolvedAuthorityPivotReasonForFreeze = "notResolved";
@@ -1288,6 +1296,10 @@ namespace rock
                 }
             }
 
+            // ---- Stage 3: freeze ---------------------------------------------
+            // The seat is decided. Lock the authority frame and populate
+            // _grabFrame from it. Every _grabFrame field is written once, here,
+            // with its final value.
             logGrabNodeInfo(handName(),
                 _isLeft,
                 collidableNode,
@@ -1632,6 +1644,10 @@ namespace rock
                     freezeSelectedPivotRelationDelta,
                     freezePivotBRelationDelta);
             }
+            // ---- Stage 4: reset the hold's starting state ---------------------
+            // The hold begins with no motion history and no published visual
+            // transform. Stale history here reads as hand motion on frame one
+            // and throws the object on acquisition.
             clearGrabExternalHandWorldTransform(_isLeft);
             _grabVisualHandTransform = handWorldTransform;
             _hasGrabVisualHandTransform = false;
