@@ -140,7 +140,6 @@ Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'findGenerated
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'getEquippedWeaponIdentityKey\(&observedIdentityKey,[\s\S]{0,7000}if \(rebuildRequired\)[\s\S]{0,420}getWeaponVisualCompositionKey\(weaponNode,\s*visualKeyStats\)' 'Weapon visual traversal must stay behind the identity/settings/drive rebuild gate.'
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'stable visual witness[\s\S]{0,1800}return;[\s\S]{0,1800}findGeneratedWeaponShapeSources\(weaponNode,\s*observedKey,\s*generatedSources\)' 'Weapon visual stabilization must wait on the cheap visual witness before running the full generated source scan.'
 Require-Text 'src/physics-interaction/weapon/WeaponGeometry.h' 'findDetachedSourceComponentIndices[\s\S]*FailOpenNoAssembledAnchor[\s\S]*nearestAnchorGapSquared[\s\S]*minimumDetachedGapSquared' 'Detached collider filtering must use AABB-component separation and fail open without assembled weapon evidence.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'findDetachedSourceComponentIndices\([\s\S]{0,8000}if \(outSources\.size\(\) > MAX_WEAPON_BODIES\)' 'Detached source components must be removed before the generated-body capacity selector.'
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.h' '_detachedSourceExclusionEquippedKey[\s\S]{0,180}_detachedSourceExclusionGroups' 'Detached reload source exclusions must persist for the current equipped generation.'
 Reject-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'maxSourceDistanceGame|centerDistanceGame|resolveMaxGeneratedSourceDistanceGame' 'The unsafe weapon-origin center-distance collider filter must stay removed.'
 Reject-Text 'src/RockConfig.h' 'rockWeaponCollisionMaxSourceDistance' 'The superseded origin-distance collider settings must stay removed.'
@@ -226,9 +225,9 @@ Require-Text 'src/physics-interaction/performance/PerformanceProfiler.cpp' 'weap
 Require-Text 'src/physics-interaction/performance/PerformanceProfiler.cpp' 'weaponRebuildVisualSourceUnavailableRetainExpired' 'Profiler counters must expose same-identity visual source retain-window expiration for runtime sampling.'
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'if \(fallbackWeaponNode\)[\s\S]{0,80}return fallbackWeaponNode;' 'Live weapon collision motion/probe paths must prefer the current weapon root over cached body drive roots.'
 Reject-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'safeNodeName\(instance\.driveNode\)' 'Weapon collision must not dereference cached body drive roots for mismatch logging.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'sourceInWeaponAvailable[\s\S]{0,900}localPointToWorld\(sourceInWeapon, sourceLocalTriangle\.v0\)' 'Weapon geometry recapture must convert source-local triangles through the current hierarchy-relative transform.'
+Require-Text 'src/physics-interaction/weapon/WeaponCollisionSources.cpp' 'sourceInWeaponAvailable[\s\S]{0,900}localPointToWorld\(sourceInWeapon, sourceLocalTriangle\.v0\)' 'Weapon geometry recapture must convert source-local triangles through the current hierarchy-relative transform.'
 Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'outLocalTriangles[\s\S]{0,1600}TriangleData localTriangle[\s\S]{0,700}outLocalTriangles->push_back\(localTriangle\)' 'Mesh extraction must optionally preserve native source-local triangle vertices before applying the world transform.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'directSourceLocalTriangles[\s\S]{0,900}extractTrianglesFromTriShape[\s\S]{0,900}&directSourceLocalTriangles[\s\S]{0,1800}hasDirectSourceLocalTriangles[\s\S]{0,900}sourceLocalTriangle = directSourceLocalTriangles\[triangleIndex\]' 'Generated weapon geometry must consume native local vertices without a precision-losing world-space round trip.'
+Require-Text 'src/physics-interaction/weapon/WeaponCollisionSources.cpp' 'directSourceLocalTriangles[\s\S]{0,900}extractTrianglesFromTriShape[\s\S]{0,900}&directSourceLocalTriangles[\s\S]{0,1800}hasDirectSourceLocalTriangles[\s\S]{0,900}sourceLocalTriangle = directSourceLocalTriangles\[triangleIndex\]' 'Generated weapon geometry must consume native local vertices without a precision-losing world-space round trip.'
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'tryResolveDescendantWorldTransform\(\s*packageDriveNode,\s*packageWorld,\s*instance\.sourceNode,\s*sourceWorld\)' 'Generated weapon bodies must follow current descendant locals composed from the current weapon root.'
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.h' 'struct GeneratedRecaptureDiagnostic[\s\S]{0,700}sawUndrawnInterval[\s\S]{0,700}std::vector<GeneratedRecaptureDiagnosticSource>' 'Failed shoulder recapture tests must retain one value-only same-identity diagnostic baseline across the undrawn interval.'
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'if \(!weaponDrawn\)[\s\S]{0,200}noteUndrawnIntervalForRecaptureDiagnostic\(\);[\s\S]{0,420}clearCurrentWeaponState\(\)' 'The undrawn lifecycle must arm recapture comparison before normal collider state teardown.'
@@ -238,12 +237,10 @@ Reject-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'postUndrawFram
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'tryBuildSupportGripEvidenceView[\s\S]{0,1200}tryResolveDescendantWorldTransform' 'Support-grip surface evidence must use the current source frame shared by physical bodies.'
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'findCurrentWeaponSurfaceNearPoints[\s\S]{0,4200}tryResolveDescendantWorldTransform' 'Weapon surface queries must use current source frames shared by physical bodies.'
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'tryFindInteractionContactNearPoint[\s\S]{0,5000}pointAabbDistanceSquared[\s\S]{0,1800}closestPointOnTriangleToPoint[\s\S]{0,1800}minimumSurfaceDistanceSquaredLocal' 'Weapon-part probes must use AABBs only as broadphase and rank exact rendered triangle surfaces.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'Generated weapon collision is now geometry-first' 'Generated weapon source extraction must document the visible-geometry-first source scan.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'candidate roots are[\s\S]{0,120}discovery witnesses' 'Generated weapon source extraction must treat candidate roots as merged witnesses, not competing winners.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'duplicate TriShape already claimed by earlier candidate' 'Merged candidate roots must dedupe overlapping source TriShapes.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'TriShape is hidden or locally zero-scale' 'Hidden TriShapes must be skipped as sources without pruning helper-node children.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'if \(node->GetAppCulled\(\)\)[\s\S]{0,300}ancestor branch is app-culled[\s\S]{0,120}return;' 'App-culled attachment branches must be pruned before their locally visible descendant meshes consume collider capacity.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'selectBalancedHullIndices\(selectionInputs,\s*MAX_WEAPON_BODIES\)[\s\S]{0,700}balanced-semantic-coverage' 'Generated weapon overflow must preserve balanced semantic part coverage instead of truncating by traversal order.'
+Require-Text 'src/physics-interaction/weapon/WeaponCollisionSources.cpp' 'duplicate TriShape already claimed by earlier candidate' 'Merged candidate roots must dedupe overlapping source TriShapes.'
+Require-Text 'src/physics-interaction/weapon/WeaponCollisionSources.cpp' 'TriShape is hidden or locally zero-scale' 'Hidden TriShapes must be skipped as sources without pruning helper-node children.'
+Require-Text 'src/physics-interaction/weapon/WeaponCollisionSources.cpp' 'if \(node->GetAppCulled\(\)\)[\s\S]{0,300}ancestor branch is app-culled[\s\S]{0,120}return;' 'App-culled attachment branches must be pruned before their locally visible descendant meshes consume collider capacity.'
+Require-Text 'src/physics-interaction/weapon/WeaponCollisionSources.cpp' 'selectBalancedHullIndices\(selectionInputs,\s*MAX_WEAPON_BODIES\)[\s\S]{0,700}balanced-semantic-coverage' 'Generated weapon overflow must preserve balanced semantic part coverage instead of truncating by traversal order.'
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'pointCloudCanBuildHull\(shapePoints,\s*shapePointScale\)' 'Source-local hull validation must include the authored source-node scale used by native shape construction.'
 Require-Text 'src/physics-interaction/weapon/WeaponCollisionOmodAudit.cpp' 'durableAttachmentEvidence[\s\S]{0,180}!weapon_generated_source_completeness_policy::isTransientReloadPart[\s\S]{0,300}evidenceSourceAddresses\.insert' 'OMOD coverage must not accept cartridge or cosmetic-ammo bodies as proof of an attachment collider.'
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.h' 'getCurrentEquippedWeaponOwnershipKey\(\)\s+const\s*\{\s*return\s+_observedEquippedWeaponOwnershipKey' 'Manual weapon ownership must use an instance-bound witness separately from collision content identity.'
@@ -292,6 +289,17 @@ Reject-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'NativeConnectP
 # structural and cheaper to state: the diagnostics file may not mutate collider,
 # body or identity state, whatever its comments say.
 Reject-Text 'src/physics-interaction/weapon/WeaponCollisionDiagnostics.cpp' 'publishAtomicBodyIds|destroyWeaponBody|setWeaponBodyBankCollisionEnabled|queueBodyTarget|clearEquippedWeaponIdentityState|beginWeaponBodyPublication' 'Weapon collision diagnostics must observe runtime state, never mutate collider, body or identity state.'
+
+
+# --- Source-scan phase order --------------------------------------------------
+# Replaces a retired 8000-character ordering span. findGeneratedWeaponShapeSources
+# is now a short orchestrator over four named phases, so the order it retired can
+# be stated directly and read at a glance. Detached components must go BEFORE the
+# capacity selector, or stray geometry consumes body budget that real weapon parts
+# need; refinement must come before both, because they rank on part kind.
+Require-Text 'src/physics-interaction/weapon/WeaponCollisionSources.cpp' `
+    'mergeGeneratedWeaponSourceCandidates\([\s\S]{0,700}refineGeneratedWeaponSourceSemantics\([\s\S]{0,700}excludeDetachedGeneratedWeaponSources\([\s\S]{0,900}selectGeneratedWeaponSourcesWithinCapacity\(' `
+    'The generated-source scan must merge, then refine, then exclude detached components, then select within body capacity.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'Weapon collision lifecycle source boundary failed:'

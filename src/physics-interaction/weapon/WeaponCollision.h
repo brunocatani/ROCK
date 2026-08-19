@@ -586,6 +586,38 @@ namespace rock
             std::uint64_t auditedEquippedKey,
             bool forceBeforeInitialBuild = false);
 
+        /*
+         * What the candidate-merge pass produced. Carried to the later scan phases
+         * so their logging can report on the whole scan without re-deriving it.
+         */
+        struct GeneratedSourceScanStats
+        {
+            RE::NiAVObject* packageDriveRoot{ nullptr };
+            float weaponRootScale{ 1.0f };
+            std::size_t candidateCount{ 0 };
+            std::size_t acceptedCandidateCount{ 0 };
+            std::size_t claimedShapeCount{ 0 };
+            std::uint32_t visitedShapes{ 0 };
+            std::uint32_t extractedTriangles{ 0 };
+            std::uint32_t culledForEffectGeometry{ 0 };
+        };
+
+        // The four phases of the source scan; see WeaponCollisionSources.cpp.
+        bool mergeGeneratedWeaponSourceCandidates(
+            RE::NiAVObject* weaponNode,
+            std::uint64_t equippedWeaponKey,
+            std::vector<GeneratedHullSource>& outSources,
+            GeneratedSourceScanStats& outStats);
+        void refineGeneratedWeaponSourceSemantics(
+            RE::NiAVObject* weaponNode,
+            std::uint64_t equippedWeaponKey,
+            std::vector<GeneratedHullSource>& sources) const;
+        void excludeDetachedGeneratedWeaponSources(
+            std::uint64_t equippedWeaponKey,
+            std::vector<GeneratedHullSource>& sources);
+        void selectGeneratedWeaponSourcesWithinCapacity(
+            const GeneratedSourceScanStats& stats,
+            std::vector<GeneratedHullSource>& sources);
         std::size_t findGeneratedWeaponShapeSources(
             RE::NiAVObject* weaponNode,
             std::uint64_t equippedWeaponKey,
