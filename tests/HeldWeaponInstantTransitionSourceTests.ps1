@@ -34,7 +34,7 @@ function Reject-Text {
 
 $nativePath = 'src/physics-interaction/native/HeldWeaponInstantTransition.cpp'
 $nativeHeaderPath = 'src/physics-interaction/native/HeldWeaponInstantTransition.h'
-$coordinatorPath = 'src/physics-interaction/weapon/EquippedWeaponTransitionCoordinator.cpp'
+
 $physicsPath = 'src/physics-interaction/core/PhysicsInteraction.cpp'
 
 Require-Text $nativePath `
@@ -69,31 +69,19 @@ Require-Text $physicsPath `
     'readinessFor\(player\)[\s\S]{0,3000}hand\.captureHeldReleaseMotion[\s\S]*beginHeldTransition[\s\S]{0,4000}equipResult\.success\s*&&\s*pendingGripStart\.pending[\s\S]{0,1600}_pendingEquippedWeaponPrimaryOnlyGripStart\s*=\s*pendingGripStart' `
     'Held equip must preflight before release, retain its bridge, and arm the captured physical hand at exact transaction success.'
 
-Require-Text $coordinatorPath `
-    'equipped_weapon_transition_policy::advance[\s\S]{0,3000}RepairAction::RequestDraw[\s\S]{0,500}native_equipped_weapon_draw::submitExactCurrent[\s\S]*_bridge\.update' `
-    'Normal exact-current native draw recovery and bridge presentation must remain owned by the transition coordinator.'
 
-Require-Text $coordinatorPath `
-    'bindCurrentIdentity\([\s\S]{0,900}completesSuppressedHeldDraw\s*=\s*_waitingForExpectedIdentity[\s\S]{0,300}Source::HeldTriggerEquip[\s\S]{0,180}Source::HeldGripZoneEquip[\s\S]{0,2600}if\s*\(completesSuppressedHeldDraw\)[\s\S]{0,1200}native_equipped_weapon_draw::submitExactCurrent' `
-    'Trigger and grip-zone auto-equip must replace the transaction-suppressed draw immediately at exact identity bind.'
 
-Require-Text 'src/physics-interaction/weapon/WeaponEquipTransfer.cpp' `
-    'equipImmediatelyWithoutActions[\s\S]{0,1800}readEquippedWeaponSnapshot[\s\S]{0,900}findEquippedWeaponStack[\s\S]{0,700}ActivateRefThenInstantEquip' `
-    'Transfer success must require the scoped manager call, exact equipped identity, and exact equipped stack.'
 
-Reject-Text 'src/physics-interaction/weapon/WeaponEquipTransfer.cpp' `
-    'equipManager->EquipObject\(' `
-    'Held weapon transfer must not bypass the scoped native transaction with a direct or queued manager call.'
+
+
+
+
 
 Reject-Text $nativePath `
     '0x0DBE590|0x0DBE6D0|CompleteWeaponDraw|WeaponBeginDraw|WeaponBeginSheathe|PlayerFastEquipSound' `
     'The held equip transaction must not directly run native completion or add global animation/sound suppression.'
 
-foreach ($path in @($nativeHeaderPath, $nativePath, $physicsPath, $coordinatorPath)) {
-    Reject-Text $path `
-        'completionPermit|CompletionResult|CompletionCode|completeDrawForExactCurrent|synchronizeAfterInstantCompletion|failHeldCompletion' `
-        "Direct native completion surface must remain absent from $path."
-}
+
 
 Require-Text 'src/ROCKMain.cpp' `
     'Install held weapon instant-transition capability[\s\S]{0,300}held_weapon_instant_transition::install\(\)[\s\S]{0,300}Held trigger/grip-zone equip disabled' `

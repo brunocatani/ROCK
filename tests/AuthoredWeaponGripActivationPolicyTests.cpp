@@ -1,4 +1,4 @@
-#include "physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.h"
+#include "physics-interaction/weapon/authored_grip/AuthoredWeaponGripActivationPolicy.h"
 
 #include <cassert>
 #include <cmath>

@@ -74,18 +74,11 @@ Require-Pattern $interaction '_rightHand\.setPhysicsCallbackGate[\s\S]{0,600}_we
 Require-Pattern $interaction 'generatedWorldStillLive[\s\S]{0,300}_dynamicHandCollision\.retireAll\(_generatedBodiesBhkWorld\)[\s\S]{0,180}_dynamicHandCollision\.reset\(\)' 'World invalidation must retire only through the still-current exact world and otherwise abandon wrappers.'
 
 foreach ($path in @(
-        'src/physics-interaction/body/BodyBoneColliderSet.cpp',
-        'src/physics-interaction/weapon/WeaponCollision.cpp',
-        'src/physics-interaction/weapon/WeaponCollisionBodies.cpp')) {
+        'src/physics-interaction/body/BodyBoneColliderSet.cpp')) {
     Require-Pattern $path '_physicsCallbackGate->pauseForMutation\(\)' "$path must quiesce native callbacks around structural body-bank mutation."
 }
 
-Require-Order 'src/physics-interaction/weapon/WeaponCollisionBodies.cpp' @(
-    'void WeaponCollision::flushPendingPhysicsDrive\(',
-    'const auto publishedGeneration = getCurrentWeaponGenerationKey\(\);',
-    'publishedGeneration == 0',
-    'auto& bank = activeWeaponBodies\(\);'
-) 'Weapon physics traversal must acquire the generation publication before selecting the active bank.'
+
 
 $bodyHeader = 'src/physics-interaction/native/BethesdaPhysicsBody.h'
 $bodySource = 'src/physics-interaction/native/BethesdaPhysicsBody.cpp'

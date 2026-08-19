@@ -7,8 +7,8 @@
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/grab/saved/FrikWeaponOffsetCache.h"
 #include "physics-interaction/hand/skeleton/HandFrame.h"
-#include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
-#include "physics-interaction/weapon/TwoHandedGrip.h"
+#include "physics-interaction/weapon/authored_grip/AuthoredWeaponGripLibrary.h"
+#include "physics-interaction/weapon/two_handed/TwoHandedGrip.h"
 #include "physics-interaction/weapon/WeaponGripAuthorityPolicy.h"
 
 #include "RE/Bethesda/TESBoundObjects.h"

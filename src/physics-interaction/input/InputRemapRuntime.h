@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-#include "physics-interaction/weapon/PipboyEquipPolicy.h"
+#include "physics-interaction/weapon/equip/PipboyEquipPolicy.h"
 
 namespace RE
 {

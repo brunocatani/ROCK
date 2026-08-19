@@ -1,4 +1,4 @@
-#include "physics-interaction/weapon/WeaponTransitionAnimationAccelerationPolicy.h"
+#include "physics-interaction/weapon/equip/WeaponTransitionAnimationAccelerationPolicy.h"
 
 #include <cstdio>
 

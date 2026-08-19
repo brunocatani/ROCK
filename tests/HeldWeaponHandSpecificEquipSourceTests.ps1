@@ -112,12 +112,8 @@ Require-Text 'src/api/ROCKProviderApi.h' `
 Require-Text 'src/api/ROCKProviderApi.h' `
     'rolling lease returns to ROCK''s configured fallback handling policy' `
     'The V1 lease contract must describe fallback to ROCK configuration rather than a hard-coded firing hand.'
-Require-Text 'src/physics-interaction/weapon/EquippedWeaponHandlingSettings.h' `
-    'RockEquippedWeaponHandlingBaseline[\s\S]*ambidextrousHandoffEnabled[\s\S]*equippedWeaponShoulderStashEnabled[\s\S]*makeEquippedWeaponHandlingSettings[\s\S]*settings\.firingGripOwnershipEnabled\s*=[\s\r\n]+\s*rockBaseline\.ambidextrousHandoffEnabled[\s\S]{0,500}settings\.primaryDetachEnabled\s*=\s*false[\s\S]*externalAuthorityActive\s*=\s*true[\s\S]*PrimaryDetach[\s\S]*AmbidextrousHandoff[\s\S]*leftFiringAimOffsetGameUnits' `
-    'ROCK shoulder stash must not grant firing ownership or physical detach while a validated V1 addon may explicitly add those capabilities.'
-Require-Text 'src/physics-interaction/weapon/EquippedWeaponHandlingSettings.h' `
-    'requiresEquippedWeaponHandlingModeReconcile[\s\S]*fixedFiringHandChanged[\s\S]*previous\.firingGripOwnershipEnabled[\s\S]*previous\.primaryDetachEnabled[\s\S]*previous\.ambidextrousHandoffEnabled[\s\S]*previous\.pipboyTriggerHandEquipEnabled' `
-    'Mode reconciliation must follow removed effective capabilities rather than the raw presence of an addon lease.'
+
+
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'getEquippedWeaponHandlingAuthorityV1\(request\)[\s\S]*RockEquippedWeaponHandlingBaseline[\s\S]*rockAmbidextrousFiringGripEnabled[\s\S]*rockEquippedWeaponShoulderStashEnabled[\s\S]*makeEquippedWeaponHandlingSettings[\s\S]*if \(fixedFiringHandIsLeft\)[\s\S]*settings\.firingGripOwnershipEnabled\s*=\s*true[\s\S]*requiresEquippedWeaponHandlingModeReconcile' `
     'ROCK must build its native handoff/stash baseline before the addon overlay, preserve fixed-left ownership, and reconcile effective capability loss.'

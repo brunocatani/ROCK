@@ -20,7 +20,7 @@
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/visual/PreFrikHandAuthorityPolicy.h"
-#include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
+#include "physics-interaction/weapon/collision/DynamicWeaponCollisionPolicy.h"
 
 #include <algorithm>
 #include <cmath>

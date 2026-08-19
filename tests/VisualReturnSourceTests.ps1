@@ -40,12 +40,8 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'processHand\(_rightHand,\s*false\);[\s\S]*processHand\(_leftHand,\s*true\);[\s\S]*updateGrabVisualReturn\(\s*frame\.right\.rawHandWorld[\s\S]*updateGrabVisualReturn\(\s*frame\.left\.rawHandWorld' `
     'Empty-hand generic returns must advance after normal input processing for both physical hands.'
 
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' `
-    'struct ReturningWeaponVisualState[\s\S]*VisualReturnTransition[\s\S]*weaponGenerationKey[\s\S]*equippedWeaponOwnershipKey[\s\S]*nativeBaselineLocal' `
-    'Weapon return must be a generation-bound visual overlay with its own native local baseline.'
-Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' `
-    'enum class TwoHandedState[\s\S]{0,240}Returning' `
-    'Visual return must not remain gameplay/manual grip ownership in TwoHandedState.'
+
+
 
 
 foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {

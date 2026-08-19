@@ -1,4 +1,4 @@
-#include "physics-interaction/weapon/AuthoredWeaponGripAuthorityPolicy.h"
+#include "physics-interaction/weapon/authored_grip/AuthoredWeaponGripAuthorityPolicy.h"
 
 int main()
 {

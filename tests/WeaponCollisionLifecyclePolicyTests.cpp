@@ -2,11 +2,11 @@
 #include <cstdio>
 
 #include "physics-interaction/weapon/WeaponAuthority.h"
-#include "physics-interaction/weapon/WeaponEffectGeometryPolicy.h"
-#include "physics-interaction/weapon/WeaponEmitterPolicy.h"
-#include "physics-interaction/weapon/ManualScopeTargetPolicy.h"
-#include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
-#include "physics-interaction/weapon/WeaponOmodAuditPolicy.h"
+#include "physics-interaction/weapon/collision/WeaponEffectGeometryPolicy.h"
+#include "physics-interaction/weapon/collision/WeaponEmitterPolicy.h"
+#include "physics-interaction/weapon/native_anim/ManualScopeTargetPolicy.h"
+#include "physics-interaction/weapon/native_anim/NativeScopeSightAnchorPolicy.h"
+#include "physics-interaction/weapon/collision/WeaponOmodAuditPolicy.h"
 
 namespace
 {

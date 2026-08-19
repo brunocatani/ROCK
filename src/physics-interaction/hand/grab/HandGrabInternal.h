@@ -44,7 +44,7 @@
 #include "physics-interaction/object/MechanicalConnectedBodySet.h"
 #include "physics-interaction/object/CarInteractionPolicy.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
-#include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
+#include "physics-interaction/weapon/authored_grip/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/LooseWeaponGripZone.h"
 #include "physics-interaction/weapon/WeaponTypePolicy.h"
 #include "physics-interaction/object/SkinnedBodyResolver.h"

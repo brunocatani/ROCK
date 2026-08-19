@@ -1,4 +1,4 @@
-#include "physics-interaction/weapon/WeaponInventoryStackSelectionPolicy.h"
+#include "physics-interaction/weapon/equip/WeaponInventoryStackSelectionPolicy.h"
 
 #include <cstdio>
 

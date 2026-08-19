@@ -29,7 +29,7 @@
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/LooseWeaponGripZone.h"
-#include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
+#include "physics-interaction/weapon/native_anim/NativeScopeSightAnchorPolicy.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
 

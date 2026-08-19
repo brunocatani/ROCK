@@ -1,4 +1,4 @@
-#include "physics-interaction/weapon/AuthoredWeaponGripCacheFormat.h"
+#include "physics-interaction/weapon/authored_grip/AuthoredWeaponGripCacheFormat.h"
 
 #include <iostream>
 #include <string>

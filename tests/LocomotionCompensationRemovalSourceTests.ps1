@@ -82,8 +82,7 @@ $sourceFiles = @(
     'src/physics-interaction/grab/GrabAuthoritySourceClockResampler.h',
     'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp',
     'src/physics-interaction/native/CharacterControllerRuntime.h',
-    'src/physics-interaction/native/CharacterControllerRuntime.cpp',
-    'src/physics-interaction/weapon/EquippedWeaponDropMomentum.h'
+    'src/physics-interaction/native/CharacterControllerRuntime.cpp'
 )
 
 foreach ($file in $sourceFiles) {

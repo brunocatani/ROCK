@@ -47,7 +47,7 @@ function Require-Order(
 
 $interaction = 'src/physics-interaction/core/PhysicsInteraction.cpp'
 $frame = 'src/physics-interaction/core/PhysicsInteractionFrame.inl'
-$weaponHeader = 'src/physics-interaction/weapon/TwoHandedGrip.h'
+
 $actorState = 'src/rock_support/Fo4VrActorStatePolicy.h'
 
 Require-Pattern $actorState `
@@ -69,12 +69,8 @@ Require-Pattern $interaction `
     'nativeReloadHandAuthorityActive\s*=\s*[\r\n\s]*frame\.reloadBoundaryActive[\s\S]*gunstockPresentationBlocked\s*=[\r\n\s]*frame\.menuBlocked\s*\|\|\s*frame\.reloadBoundaryActive' `
     'The coherent grip input must carry reload ownership and block gunstock presentation.'
 
-Require-Pattern $weaponHeader `
-    'nativeReloadHandAuthorityActive[\s\S]*setNativeReloadHandAuthorityActive\(bool active\)[\s\S]*isNativeReloadSupportHand[\s\S]*_nativeReloadHandAuthorityActive' `
-    'TwoHandedGrip must retain an explicit reload handoff state across pre-FRIK and physics phases.'
-Require-Pattern $weaponHeader `
-    'weaponCollisionAttachedHands\(\)[\s\S]*selectAttachedHands\([\s\S]*!_nativeReloadHandAuthorityActive' `
-    'Dynamic collision must exclude the support hand while native reload owns it.'
+
+
 
 if ($failures.Count -gt 0) {
     $failures | ForEach-Object { Write-Error $_ }

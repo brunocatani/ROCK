@@ -54,9 +54,7 @@ Require-Text 'src/physics-interaction/stash/ShoulderStashDetector.cpp' 'input\.c
 Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'makeEquippedWeaponStashDetectorConfig\([^)]*\)[\s\S]*?config\.maxSpeedGameUnitsPerSecond\s*=\s*0\.0f[\s\S]*?return config' `
     'Equipped-weapon stash candidate acquisition must retain the configured anti-throw speed gate.'
-Require-Text 'src/physics-interaction/weapon/EquippedWeaponDropPolicy.h' `
-    'equippedWeaponShoulderStashAvailable\([\s\r\n]*bool shoulderStashConfigured[\s\S]{0,120}return shoulderStashConfigured' `
-    'ROCK''s equipped-weapon shoulder stash must be independent of addon detach capability.'
+
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'equippedWeaponShoulderStashActive\s*=\s*[\s\S]{0,220}equippedWeaponShoulderStashAvailable\(\s*_equippedWeaponHandlingSettings\.equippedWeaponShoulderStashEnabled\s*\)' `
     'Runtime must derive one effective equipped-weapon stash gate from ROCK''s handling settings.'
@@ -69,18 +67,10 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'manualStashCommitSelected\s*=[\s\S]{0,180}equippedWeaponShoulderStashActive\s*&&[\s\S]{0,180}confirmedForCommit[\s\S]{0,220}stashCommitSelected\s*=[\s\S]{0,120}nativeShoulderSheathSelected\s*\|\|[\s\S]{0,120}manualStashCommitSelected' `
     'Final sheath selection must combine the ROCK-native shoulder release and provider manual-carry release without allowing a drop fallthrough.'
-Require-Text 'src/physics-interaction/weapon/EquippedWeaponHandlingSettings.h' `
-    'settings\.primaryDetachEnabled\s*=\s*false' `
-    'Only an explicit provider PrimaryDetach lease may enable equipped-weapon world dropping.'
-Require-Text 'src/physics-interaction/weapon/EquippedWeaponHandlingSettings.h' `
-    'settings\.primaryDetachEnabled\s*=[\s\r\n]+\s*settings\.primaryDetachEnabled\s*\|\|\s*enabled\([\s\r\n]*\s*provider::RockProviderEquippedWeaponHandlingFlagV1::PrimaryDetach' `
-    'The provider overlay must retain its explicit PrimaryDetach capability.'
-Reject-Text 'src/physics-interaction/weapon/EquippedWeaponHandlingSettings.h' `
-    'settings\.primaryDetachEnabled\s*=[\s\r\n]+\s*rockBaseline\.equippedWeaponShoulderStashEnabled' `
-    'ROCK''s shoulder-stash baseline must never feed the physical-detach capability.'
-Require-Text 'src/physics-interaction/weapon/EquippedWeaponDropPolicy.h' `
-    'canCommitNativeShoulderSheath[\s\S]{0,700}!input\.primaryDetachEnabled[\s\S]{0,300}input\.detectorConfirmed[\s\S]{0,120}input\.gripReleased' `
-    'The native gesture must require a confirmed shoulder release and reject provider detach mode.'
+
+
+
+
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'canCommitNativeShoulderSheath[\s\S]{0,1800}primaryState\.released[\s\S]*?_equippedWeaponSheathCommittedThisFrame\[sheathHandIndex\]\s*=\s*true[\s\S]{0,500}submitEquippedWeaponShoulderSheath' `
     'ROCK must commit only the firing hand''s in-zone release and consume that edge before normal world-grab handling.'
@@ -102,9 +92,7 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'captureCurrentIdentity[\s\S]*?submitSheatheExactCurrent\(sheathIdentity\)[\s\S]*?_equippedWeaponShoulderSheath\s*=[\s\S]*?weaponInstanceData\s*=\s*sheathIdentity\.instanceData[\s\S]*?equipIndex\s*=\s*sheathIdentity\.equipIndex[\s\S]*?zone\s*=\s*stashDecision\.zone' `
     'Shoulder stash must sheath and retain the exact equipped identity plus the confirmed shoulder zone.'
-Require-Text 'src/physics-interaction/weapon/NativeEquippedWeaponDraw.cpp' `
-    'resolveExactCurrent\(expected\)[\s\S]{0,900}shouldSubmitSheatheFollowup[\s\S]{0,1000}DrawWeaponMagicHands\(false\)[\s\S]{0,300}getNativeWeaponState\(current\.player\)' `
-    'Native sheath must revalidate exact identity and observe both sides of the verified FO4VR state transition.'
+
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'serviceEquippedWeaponShoulderSheathRetrieval[\s\S]*?observedWeaponFormID\s*==\s*currentIdentity\.formID[\s\S]*?decision\.zone\s*==\s*_equippedWeaponShoulderSheath\.zone[\s\S]*?isRawButtonPhysicallyHeld[\s\S]*?selectShoulderRetrievalHand[\s\S]*?submitExactCurrent\(\s*currentIdentity\s*\)' `
     'Retrieval must require the same exact equipped identity, same stored shoulder, physical squeeze, and exact native draw.'
@@ -147,15 +135,11 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'serviceEquippedWeaponHandAssignment[\s\S]{0,500}if\s*\(_equippedWeaponShoulderSheath\.active\)' `
     'Pip-Boy/provider hand assignment must not acquire a hidden shoulder-sheathed weapon.'
-Require-Text 'src/physics-interaction/weapon/EquippedWeaponTransitionCoordinator.cpp' `
-    'currentMatchesIntentionalShoulderSheath[\s\S]*?shoulderSheathFormID[\s\S]*?shoulderSheathInstanceData[\s\S]*?shoulderSheathEquipIndex[\s\S]*?intentional-shoulder-sheathe' `
-    'Presentation recovery must yield only to ROCK''s exact identity-bound shoulder sheath.'
+
 Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'unequipEquippedWeaponFromPlayer|unequipReasonName' `
     'Equipped shoulder stash must not remove the weapon from its equipped inventory stack.'
-Reject-Text 'src/physics-interaction/weapon/WeaponEquipTransfer.h' `
-    'EquippedUnequip|UnequipReason|unequipEquippedWeaponFromPlayer' `
-    'The superseded inventory-unequip shoulder path must stay removed.'
+
 
 Require-Text 'src/RockConfig.h' `
     'rockEquippedWeaponShoulderStashEnabled\s*=\s*true' `

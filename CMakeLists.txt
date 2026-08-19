@@ -671,7 +671,7 @@ if(BUILD_ROCK_TESTS)
 
   add_executable(ROCKAuthoredWeaponGripCacheFormatTests
     "${ROOT_DIR}/tests/AuthoredWeaponGripCacheFormatTests.cpp"
-    "${SOURCE_DIR}/physics-interaction/weapon/AuthoredWeaponGripCacheFormat.cpp"
+    "${SOURCE_DIR}/physics-interaction/weapon/authored_grip/AuthoredWeaponGripCacheFormat.cpp"
   )
   target_compile_features(ROCKAuthoredWeaponGripCacheFormatTests PRIVATE cxx_std_23)
   target_include_directories(ROCKAuthoredWeaponGripCacheFormatTests PRIVATE ${SOURCE_DIR})

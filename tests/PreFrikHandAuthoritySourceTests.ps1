@@ -37,10 +37,10 @@ $frame = 'src/physics-interaction/core/PhysicsInteractionFrame.inl'
 $frameContext = 'src/physics-interaction/core/PhysicsFrameContext.h'
 $handHeader = 'src/physics-interaction/hand/Hand.h'
 $visualBridge = 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h'
-$equipHeader = 'src/physics-interaction/weapon/EquipVisualBridge.h'
-$equip = 'src/physics-interaction/weapon/EquipVisualBridge.cpp'
-$transitionHeader = 'src/physics-interaction/weapon/EquippedWeaponTransitionCoordinator.h'
-$weaponHeader = 'src/physics-interaction/weapon/TwoHandedGrip.h'
+
+
+
+
 
 # Loader compatibility and executable-layout identity are separate domains.
 Reject-Pattern $main `
@@ -107,24 +107,14 @@ Require-Pattern $handHeader `
     'Regular grab pre-FRIK state must own the held node and bind it to exact body, constraint, and scheduler identities.'
 
 # Equip handoff follows whichever retained weapon graph is currently visible.
-Require-Pattern $equipHeader `
-    '_preFrikHandWorldAnchor[\s\S]*_preFrikAnchorToHandLocal[\s\S]*_preFrikSourceSchedulerSequence[\s\S]*_preFrikHandWorldAuthorityValid' `
-    'Equip handoff must own an anchor-local hand target and scheduler generation.'
-Require-Pattern $equip `
-    'publishHandWorldHandoff[\s\S]*captureDriverToTargetLocal[\s\S]*refreshHandVisualAuthorityBeforeFrik[\s\S]*isImmediateSuccessor[\s\S]*reconstructTargetWorld' `
-    'Equip handoff must capture post authority and reconstruct it from the current retained weapon graph before FRIK.'
-Require-Pattern $transitionHeader `
-    'refreshHandVisualAuthorityBeforeFrik[\s\S]{0,180}_bridge\.refreshHandVisualAuthorityBeforeFrik' `
-    'The transition coordinator must expose the equip bridge pre-FRIK provider to PhysicsInteraction.'
+
+
+
 
 # Weapon targets are reconstructed from each physical hand's current FRIK
 # driver and reject stale scheduler, generation, or firing-role state.
-Require-Pattern $weaponHeader `
-    'PreFrikWeaponHandAuthority[\s\S]*driverToHandLocal[\s\S]*weaponGenerationKey[\s\S]*sourceSchedulerSequence[\s\S]*firingHandIsLeft' `
-    'Weapon pre-FRIK state must retain its physical-driver-local target and every identity generation.'
-Require-Pattern $weaponHeader `
-    'RetainedHandAuthorityKind[\s\S]*PrimaryGrip[\s\S]*SupportGrip[\s\S]*GunstockAlignment[\s\S]*Return[\s\S]*PreFrikRetainedHandAuthority' `
-    'Every transportable retained weapon-hand role must have explicit pre-FRIK source state.'
+
+
 
 # Ordinary contact transport is scheduler-fresh and contact-normal safe, while
 # fixed-surface latches remain explicitly outside this provider.

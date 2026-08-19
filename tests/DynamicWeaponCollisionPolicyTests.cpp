@@ -1,4 +1,4 @@
-#include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
+#include "physics-interaction/weapon/collision/DynamicWeaponCollisionPolicy.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 
 #include <cmath>

@@ -1,5 +1,5 @@
-#include "physics-interaction/weapon/EquippedWeaponTransitionPolicy.h"
-#include "physics-interaction/weapon/EquipVisualBridgePolicy.h"
+#include "physics-interaction/weapon/equip/EquippedWeaponTransitionPolicy.h"
+#include "physics-interaction/weapon/equip/EquipVisualBridgePolicy.h"
 
 #include <cstdio>
 

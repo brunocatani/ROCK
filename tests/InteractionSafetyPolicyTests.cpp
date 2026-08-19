@@ -1,7 +1,7 @@
 #include "physics-interaction/api/InteractionCommandPolicy.h"
 #include "physics-interaction/core/ForceGrabPolicy.h"
 #include "physics-interaction/weapon/BareFistGuardPolicy.h"
-#include "physics-interaction/weapon/HeldWeaponEquipStatePolicy.h"
+#include "physics-interaction/weapon/equip/HeldWeaponEquipStatePolicy.h"
 
 #include <cstdio>
 

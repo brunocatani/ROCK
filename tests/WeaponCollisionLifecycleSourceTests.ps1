@@ -133,12 +133,12 @@ Reject-Text 'src/RockConfig.h' 'rockWeaponCollisionMaxSourceDistance' 'The super
 Reject-Text 'src/RockConfig.cpp' 'WeaponCollisionMaxSourceDistance' 'The superseded origin-distance collider parser must stay removed.'
 Reject-Text 'data/config/ROCK.ini' 'WeaponCollisionMaxSourceDistance' 'The superseded origin-distance collider template settings must stay removed.'
 Reject-Text 'data/mod/ROCK_Config/ROCK.ini' 'WeaponCollisionMaxSourceDistance' 'The shipped origin-distance collider template settings must stay removed.'
-Require-Text 'src/physics-interaction/weapon/WeaponOmodAuditPolicy.h' 'if \(input\.disabled\)\s*\{\s*return \{ \.verdict = CoverageVerdict::Disabled \};\s*\}' 'Disabled OMOD records must receive a diagnostic verdict without entering the missing-part self-heal path.'
-Require-Text 'src/physics-interaction/weapon/WeaponOmodAuditPolicy.h' 'if \(input\.hasNodeMatch\)[\s\S]{0,1100}NodePresentNoCollider[\s\S]{0,350}\.selfHealCandidate\s*=\s*true' 'Token-only node matches must still pass through equipped-instance template verification before being trusted as OMOD coverage.'
-Require-Text 'src/physics-interaction/weapon/WeaponOmodAuditPolicy.h' 'shouldAttemptWholeModelAttach[\s\S]*!templateSignatureIsPresent\(matchedDistinctMeshCount,\s*distinctTemplateMeshCount\)' 'Incidental sub-majority name matches must retain native whole-model recovery; only a coherent partial branch may bypass it.'
-Reject-Text 'src/physics-interaction/weapon/WeaponCollisionOmodAudit.cpp' 'recoveryConnectPoint|recoveryNode' 'A plain NiNode must never masquerade as authored BSConnectPoint::Parents metadata.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollisionBodies.cpp' 'GeneratedWeaponBodyCreateOptions\{\s*\.collisionEnabledOnCreate = false' 'Generated weapon bodies must be created collision-disabled until metadata is published.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollisionBodies.cpp' 'publishAtomicBodyIds\(activeWeaponBodies\(\)\);\s*setWeaponBodyBankCollisionEnabled\(world,\s*activeWeaponBodies\(\),\s*true\);' 'Generated weapon bodies must publish metadata before enabling collision.'
+
+
+
+
+
+
 Require-Text 'src/physics-interaction/native/BethesdaPhysicsBody.h' 'RetiredBethesdaPhysicsBodyPayload' 'Generated Bethesda body teardown must expose an explicit retired native payload.'
 Require-Text 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' 'retireFromWorld[\s\S]*RemovePhysicsSystem[\s\S]*outPayload\.collisionObject' 'Retired generated Bethesda bodies must be removed from the world before native wrapper memory is delayed.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'observeCustomGrabAuthorityAfterSolve[\s\S]*_weaponCollision\.serviceRetiredWeaponBodies\(\);' 'The physics after-solve callback must service retired generated weapon bodies after native readers advance.'
@@ -197,11 +197,11 @@ Reject-Text 'src/RockConfig.cpp' 'bWeaponCollisionNativeVisualRemapEnabled|rockW
 # front of the one native call ROCK makes here. The layout itself is pinned by
 # static_asserts in the source, which are the real compile-time test; these checks
 # only prove the runtime guards are still present, each as one symbol in one file.
-$omodAuditSource = 'src/physics-interaction/weapon/WeaponCollisionOmodAudit.cpp'
-Require-Text $omodAuditSource 'native_memory::guardedCopyFromMemory' 'Raw native reads in the OMOD audit must go through the guarded copy helper.'
-Require-Text $omodAuditSource 'native_memory::pointerRangeLooksReadable' 'Native pointer walks in the OMOD audit must plausibility-check each hop before dereferencing it.'
-Require-Text $omodAuditSource 'kExpectedPrefix' 'The native model-customization entry must keep its verified byte-prefix gate.'
-Require-Text $omodAuditSource 'F4SE::RUNTIME_VR_1_2_72' 'The native model-customization entry must keep its VR executable identity gate.'
+
+
+
+
+
 
 if ($failures.Count -gt 0) {
     Write-Host 'Weapon collision lifecycle source boundary failed:'

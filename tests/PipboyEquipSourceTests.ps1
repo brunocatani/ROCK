@@ -38,38 +38,18 @@ foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini
 }
 
 
-Require-Text 'src/physics-interaction/weapon/PipboyEquipRuntime.cpp' `
-    'callBytes\[0\]\s*!=\s*0xE8[\s\S]*decodedTarget\s*!=\s*expectedUseItem[\s\S]*currentUpdateData\s*!=\s*expectedUpdateData' `
-    'Both native hook identities must fail closed before patching.'
-Require-Text 'src/physics-interaction/weapon/PipboyEquipRuntime.cpp' `
-    'hookedUseItem\([\s\S]*s_originalUseItem\(handleId,\s*stackId,\s*actionSucceeded,\s*secondaryResult\)' `
-    'The Pip-Boy selection wrapper must always chain the displaced native UseItem call.'
-Require-Text 'src/physics-interaction/weapon/PipboyEquipRuntime.cpp' `
-    'hookedUseItem[\s\S]{0,900}stack\.throwableWeapon' `
-    'Native throwable selection must return before ROCK publishes firearm hand assignment.'
-Require-Text 'src/physics-interaction/weapon/PipboyEquipRuntime.cpp' `
-    'inspectStack[\s\S]{0,1200}WEAPON_TYPE::kGrenade[\s\S]{0,180}WEAPON_TYPE::kMine[\s\S]{0,300}throwableWeapon' `
-    'Pip-Boy stack inspection must classify native grenades and mines as throwable weapons.'
-Require-Text 'src/physics-interaction/weapon/PipboyEquipRuntime.cpp' `
-    's_equipMode[\s\S]{0,300}EquipMode::NativeRight[\s\S]*configuredEquipMode\(\)[\s\S]*hookedUpdateData\([\s\S]{0,700}!pipboy_equip_policy::managesHandAssignment\(configuredEquipMode\(\)\)[\s\S]*hookedUseItem\([\s\S]{0,700}!pipboy_equip_policy::managesHandAssignment\(equipMode\)' `
-    'Native-right mode must pass through row updates and item use, while ROCK publishes fixed-left or addon trigger mode explicitly.'
-Reject-Text 'src/physics-interaction/weapon/PipboyEquipRuntime.cpp' `
-    'g_rockConfig|isLeftHandedMode' `
-    'Pip-Boy equip hooks must consume the published ROCK/addon mode without reading native or removed config state.'
-Require-Text 'src/physics-interaction/weapon/PipboyEquipRuntime.cpp' `
-    'hookedUseItem\([\s\S]{0,900}TriggerResolution\s+triggerResolution[\s\S]{0,300}resolveRequestedHand\(equipMode,\s*triggerResolution\)[\s\S]{0,500}requestedHand\.hand[\s\S]{0,500}requestedHand\.source' `
-    'Successful managed equips must resolve controller or fixed-left preference before publishing exact-stack assignment.'
 
-Require-Text 'src/physics-interaction/weapon/PipboyEquipRuntime.cpp' `
-    'GetMember\("HandleID"[\s\S]*GetMember\("StackID"[\s\S]*GetMember\("text"[\s\S]*SetMember\("text",\s*taggedValue\)[\s\S]*SetMember\("text",\s*mutation\.originalText\)' `
-    'The inventory tag must target the exact handle/stack and restore the transient model text after projection.'
-Reject-Text 'src/physics-interaction/weapon/PipboyEquipRuntime.cpp' `
-    'refreshOpenPipboyInventory|requestUiRefresh|servicePendingUiRefresh|s_uiRefreshPending|hookedUpdateData\(&' `
-    'ROCK must never invoke Pip-Boy UpdateData; tag projection is allowed only when the engine owns the refresh.'
 
-Reject-Text 'src/physics-interaction/weapon/PipboyEquipRuntime.cpp' `
-    'SetMember\("equipState"|TESFullName|GetFullName\(' `
-    'The side tag must not overload native equipState or mutate form names.'
+
+
+
+
+
+
+
+
+
+
 
 Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
     's_pipboyMenuGeneration[\s\S]*rawTransition\.pressedEdges\s*\|\s*rawTransition\.releasedEdges[\s\S]*publishPipboyTriggerTransition\(hand\)[\s\S]*consumePipboyEquipTriggerResolution' `

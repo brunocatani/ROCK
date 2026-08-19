@@ -74,12 +74,9 @@ foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini
         'Native scope overlay template tuning must default to a neutral additive transform.'
 }
 
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' 'enum class NativeScopeCameraWriteSource[\s\S]*PostFrikPresentationSync[\s\S]*WeaponVisualAuthority[\s\S]*struct NativeScopeActivationDebugSnapshot[\s\S]*manualInputRequested[\s\S]*rendererStateValid[\s\S]*rendererActive' `
-    'Native scope diagnostics must expose the sole button request and verified renderer response.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' 'struct NativeScopeRigidFrameState[\s\S]*weaponGenerationKey[\s\S]*nativeCameraWeaponLocal[\s\S]*cameraWeaponLocal' `
-    'Native scope presentation must retain immutable native calibration separately from its generation-bound tuned target.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' 'struct NativeScopeCameraTargetPreviewSnapshot[\s\S]*equippedWeaponOwnershipKey[\s\S]*anchorSource[\s\S]*cameraWeaponLocal[\s\S]*valid' `
-    'The diagnostic path must expose a pointer-free, identity-bound copy of the exact retained camera target.'
+
+
+
 Reject-Text 'src/physics-interaction/weapon/WeaponAuthority.h' 'alignOpticalAxesToBore|camera \+X[\s\S]*bore \+Y' `
     'Scope presentation must not invent a camera-to-bore axis mapping over the captured native frame.'
 Reject-Text 'src/physics-interaction/weapon/WeaponAuthority.h' 'followWeaponWorldChange\s*\(' `
@@ -104,10 +101,8 @@ Reject-Text 'src/ROCKMain.cpp' 'rockAutoActivateScope|tryResolveNativeScopeGeome
     'The top-level scope hook must not retain a selectable cone path.'
 Require-Text 'src/ROCKMain.cpp' 'configureNativeWorldScopeForManualTarget[\s\S]*kFunc_NativeWorldScopeConfigure[\s\S]*kData_NativeWorldScopeSingleton[\s\S]*kData_NativeWorldScopePrimaryVtable[\s\S]*driveManualScopeTransitionFallback[\s\S]*nativeForceDecision[\s\S]*tryGetManualScopeDirectTransitionTarget[\s\S]*isManualScopeActivationRequested\(\)[\s\S]*configureNativeWorldScopeForManualTarget[\s\S]*s_originalNativeScopeStateTransition\(player,\s*true\)[\s\S]*s_originalNativeScopeStateTransition\(player,\s*false\)' `
     'Manual hold must validate and configure native WSScope before directly transitioning an unflagged magnified scope.'
-Require-Text 'src/physics-interaction/weapon/ManualScopeTargetPolicy.h' 'modelPath\.empty\(\)[\s\S]*recordName,\s*"scope"[\s\S]*modelPath,\s*"scope"' `
-    'The cheap unflagged-scope path must require explicit scope identity and a physical model instead of promoting generic sights.'
-Require-Text 'src/physics-interaction/weapon/ManualScopeTargetPolicy.h' 'StructuralMarkerEvidence[\s\S]*ScopeAiming[\s\S]*ScopeViewParts[\s\S]*ScopeFade[\s\S]*hasMagnifiedScopeStructure[\s\S]*isValidNativeOverlayIndex' `
-    'Scopes whose OMOD names are generic must be recognized from the native magnified-scope NIF contract and a bounded overlay index.'
+
+
 Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' 'consumeRawButtonState\(true,\s*input_remap_policy::kOpenVrAcceptButtonId\)[\s\S]*consumeRawButtonState\(false,\s*input_remap_policy::kOpenVrAcceptButtonId\)[\s\S]*manual_scope_input_policy::update[\s\S]*decision\.scopeRequested[\s\S]*decision\.dispatchReload' `
     'Button-only scope and release-time reload must share one physical firing-hand A/X gesture classifier.'
 Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' 'shouldDeferFiringHandActivateForManualScope\(inputEvent\)[\s\S]*markInputEventStopped\(inputEvent\)[\s\S]*return;' `

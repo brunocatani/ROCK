@@ -27,9 +27,9 @@
 #include "physics-interaction/native/SceneWriterProbe.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
-#include "physics-interaction/weapon/PipboyEquipRuntime.h"
-#include "physics-interaction/weapon/AuthoredWeaponGripCacheStore.h"
-#include "physics-interaction/weapon/WeaponTransitionAnimationAcceleration.h"
+#include "physics-interaction/weapon/equip/PipboyEquipRuntime.h"
+#include "physics-interaction/weapon/authored_grip/AuthoredWeaponGripCacheStore.h"
+#include "physics-interaction/weapon/equip/WeaponTransitionAnimationAcceleration.h"
 
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/TESForms.h"

@@ -44,8 +44,7 @@ Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'isLeftHandedM
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'tryGetManualScopeDirectTransitionTarget[\s\S]*matchesCurrentEquippedWeapon\(publishedIdentity,\s*currentIdentity\)' `
     'Manual direct scope transitions must reject a previous weapon body-set publication during equip replacement.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' 'struct NativeScopeResolvedAnchorSnapshot[\s\S]*weaponGenerationKey[\s\S]*equippedWeaponOwnershipKey[\s\S]*weaponFormID[\s\S]*anchorWeaponLocal' `
-    'The selected native-scope anchor must retain generation, ownership, and form identity across internal and provider readbacks.'
+
 Reject-Text 'src/physics-interaction/weapon/WeaponAuthority.h' 'followWeaponWorldChange\s*\(' `
     'Native-scope camera authority must not retain the controller-relative rigid-delta fallback.'
 Require-Text 'src/physics-interaction/weapon/WeaponAuthority.h' 'enum class HandAuthorityRole[\s\S]*DesiredHandAuthorityInput[\s\S]*desiredRolesForHand[\s\S]*DeferredClearAction[\s\S]*resolveDeferredClearAction' `

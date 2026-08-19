@@ -1,4 +1,4 @@
-#include "physics-interaction/weapon/EquippedWeaponDropMomentum.h"
+#include "physics-interaction/weapon/equip/EquippedWeaponDropMomentum.h"
 
 #include <cmath>
 #include <cstdio>

@@ -1,4 +1,4 @@
-#include "physics-interaction/weapon/NativeIdleGripPreharvestPolicy.h"
+#include "physics-interaction/weapon/native_anim/NativeIdleGripPreharvestPolicy.h"
 
 #include <array>
 

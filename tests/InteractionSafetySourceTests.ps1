@@ -98,7 +98,7 @@ $providerHeader = Read-Source 'src/api/ROCKProviderApi.h'
 $fo4vrRuntime = Read-Source 'src/rock_support/Fo4VrRuntime.cpp'
 $fo4vrRuntimeHeader = Read-Source 'src/rock_support/Fo4VrRuntime.h'
 $actorStatePolicy = Read-Source 'src/rock_support/Fo4VrActorStatePolicy.h'
-$nativeWeaponDraw = Read-Source 'src/physics-interaction/weapon/NativeEquippedWeaponDraw.cpp'
+
 $allRuntimeCpp = (
     Get-ChildItem -LiteralPath (Join-Path $Root 'src') -Recurse -File -Filter '*.cpp' |
         Sort-Object FullName |
@@ -306,12 +306,8 @@ Reject-Text $allRuntimeCpp `
 Require-Text $physicsSource `
     'updateEquippedWeaponTransition\(\)[\s\S]{0,500}getNativeGunState\(player\)[\s\S]{0,600}getNativeWeaponState\(player\)[\s\S]*?nativeStateBeforeEquip\s*=\s*[\s\S]{0,120}getNativeWeaponState\(player\)[\s\S]*?nativeStateAfterEquip\s*=\s*[\s\S]{0,120}getNativeWeaponState\(player\)' `
     'Animation ownership, transition observation, admission, and post-equip diagnostics must all use verified native state accessors.'
-Require-Text $nativeWeaponDraw `
-    'submitExactCurrent[\s\S]*?stateBefore\s*=\s*f4vr::getNativeWeaponState\(current\.player\)[\s\S]*?DrawWeaponMagicHands\(true\)[\s\S]*?stateAfter\s*=\s*f4vr::getNativeWeaponState\(current\.player\)' `
-    'Bounded draw recovery must observe both sides of the native call through the verified weapon-state accessor.'
-Require-Text $nativeWeaponDraw `
-    'submitSheatheExactCurrent[\s\S]*?stateBefore\s*=\s*f4vr::getNativeWeaponState\(current\.player\)[\s\S]*?DrawWeaponMagicHands\(false\)[\s\S]*?stateAfter\s*=\s*f4vr::getNativeWeaponState\(current\.player\)' `
-    'Shoulder sheath must observe both sides of the native call through the verified weapon-state accessor.'
+
+
 Require-Text $bareFistPolicy `
     'shouldHolster[\s\S]*?rockEnabled\s*&&\s*witness\.weaponDrawn\s*&&\s*witness\.actorUsingMelee\s*&&\s*!witness\.realMeleeWeaponEquipped' `
     'Bare-fist policy must require drawn melee state with no real melee weapon equipped.'

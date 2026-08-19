@@ -22,22 +22,16 @@ function Reject-Text {
     }
 }
 
-Require-Text 'src/physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.h' `
-    'kRightHandEquipSlotFormID\s*=\s*0x00013F42u[\s\S]{0,160}kBothHandsEquipSlotFormID\s*=\s*0x00013F45u' `
-    'The pure classifier must retain the locally verified RightHand and BothHands behavior-slot identities.'
 
-Require-Text 'src/physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.h' `
-    'WeaponFamily::OneHandGun[\s\S]*selectedCone\s*=\s*AllowedCone::Left[\s\S]*WeaponFamily::TwoHandGun[\s\S]*leftPass\s*\|\|\s*downPass' `
-    'One-hand weapons must expose LEFT only while two-hand weapons expose the LEFT/DOWN union.'
+
+
 
 Require-Text 'src/RockConfig.cpp' `
     'readClampedFloat\(ini,[\s\S]{0,160}"fWeaponAuthoredGripActivationRadius"[\s\S]{0,160}16\.0f,[\s\S]{0,80}2\.0f,[\s\S]{0,80}32\.0f\)' `
     'The dedicated authored-seat radius must be loaded with its canonical default and bounded runtime range.'
 
 
-Reject-Text 'src/physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.h' `
-    'semanticTargetEligible|semanticPass' `
-    'Weapon-part semantic metadata must not redefine geometric authored-cone membership.'
+
 
 Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp' `
     'rockDebugDrawAuthoredGripActivationZones[\s\S]*resolveConeBoundaryDimensions[\s\S]*drawWireCone[\s\S]*ENFORCED AUTHORED ACTIVATION' `

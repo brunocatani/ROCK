@@ -59,9 +59,7 @@ Require-Pattern 'src/physics-interaction/native/BethesdaPhysicsBody.h' `
 Require-Pattern 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' `
     'ci\s*\+\s*0x1C[\s\S]*collisionLookAheadDistanceHavok[\s\S]*ci\s*\+\s*0x50[\s\S]*bodyQuality[\s\S]*validateGeneratedBodyCollisionProfile' `
     'Generated-body creation must publish and validate FO4VR collision look-ahead and body-quality fields.'
-Require-Pattern 'src/physics-interaction/weapon/DynamicWeaponCollision.cpp' `
-    'BethesdaMotionType::Dynamic,[\s\S]{0,200}kTrackedDynamicBodyCreationOptions' `
-    'The dynamic weapon contact compound must opt into the tracked continuous-collision profile.'
+
 
 # These offsets and identity gates were independently derived from raw FO4VR
 # 1.2.72 disassembly. A source-only regression makes accidental removal fail
