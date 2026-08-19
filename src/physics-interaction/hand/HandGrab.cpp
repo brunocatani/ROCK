@@ -5045,14 +5045,13 @@ namespace rock
                                     freshHeldWorld,
                                     _preFrikGrabVisualAuthority.heldNodeToBodyAnchorLocal);
                             if (prefrik_hand_authority_policy::isUsableTransform(freshBodyAnchorWorld)) {
-                                const auto preFrikSourceRoot = samplePlayerControllerRootFrame();
+                                const auto preFrikSourceRoom = sampleAnchorClockRoom();
                                 scene_writer_probe::AnchorRootSample preFrikRootSample{};
-                                preFrikRootSample.positionHavok[0] = preFrikSourceRoot.positionHavok.x;
-                                preFrikRootSample.positionHavok[1] = preFrikSourceRoot.positionHavok.y;
-                                preFrikRootSample.positionHavok[2] = preFrikSourceRoot.positionHavok.z;
-                                preFrikRootSample.controllerIdentity = preFrikSourceRoot.controllerIdentity;
-                                preFrikRootSample.havokToGame = physics_scale::havokToGame();
-                                preFrikRootSample.valid = preFrikSourceRoot.valid;
+                                preFrikRootSample.roomPositionGame[0] = preFrikSourceRoom.position.x;
+                                preFrikRootSample.roomPositionGame[1] = preFrikSourceRoom.position.y;
+                                preFrikRootSample.roomPositionGame[2] = preFrikSourceRoom.position.z;
+                                preFrikRootSample.roomYawRadians = preFrikSourceRoom.yawDegrees * 0.01745329252f;
+                                preFrikRootSample.roomValid = preFrikSourceRoom.valid;
                                 scene_writer_probe::publishHeldAnchor(
                                     _isLeft,
                                     freshBodyAnchorWorld,
@@ -11941,6 +11940,9 @@ namespace rock
                 }
             }
             probeRegistration.world = world;
+            if (const auto* playerNodes = f4vr::getPlayerNodes(); playerNodes && playerNodes->roomnode) {
+                probeRegistration.roomNode = playerNodes->roomnode;
+            }
             probeRegistration.bodyId = _savedObjectState.bodyId.value;
             probeRegistration.havokToGame = physics_scale::havokToGame();
             probeRegistration.traceId = _grabFrame.traceId;
@@ -12459,14 +12461,13 @@ namespace rock
                                 heldVisualNodeWorld,
                                 heldNodeToBodyAnchorLocal);
                         if (prefrik_hand_authority_policy::isUsableTransform(bodyAnchorWorld)) {
-                            const auto anchorSourceRoot = samplePlayerControllerRootFrame();
+                            const auto anchorSourceRoom = sampleAnchorClockRoom();
                             scene_writer_probe::AnchorRootSample anchorRootSample{};
-                            anchorRootSample.positionHavok[0] = anchorSourceRoot.positionHavok.x;
-                            anchorRootSample.positionHavok[1] = anchorSourceRoot.positionHavok.y;
-                            anchorRootSample.positionHavok[2] = anchorSourceRoot.positionHavok.z;
-                            anchorRootSample.controllerIdentity = anchorSourceRoot.controllerIdentity;
-                            anchorRootSample.havokToGame = physics_scale::havokToGame();
-                            anchorRootSample.valid = anchorSourceRoot.valid;
+                            anchorRootSample.roomPositionGame[0] = anchorSourceRoom.position.x;
+                            anchorRootSample.roomPositionGame[1] = anchorSourceRoom.position.y;
+                            anchorRootSample.roomPositionGame[2] = anchorSourceRoom.position.z;
+                            anchorRootSample.roomYawRadians = anchorSourceRoom.yawDegrees * 0.01745329252f;
+                            anchorRootSample.roomValid = anchorSourceRoom.valid;
                             scene_writer_probe::publishHeldAnchor(
                                 _isLeft,
                                 bodyAnchorWorld,

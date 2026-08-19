@@ -2,7 +2,6 @@
 
 #include "RockConfig.h"
 #include "physics-interaction/PhysicsLog.h"
-#include "physics-interaction/native/CharacterControllerRuntime.h"
 #include "physics-interaction/native/EntryTrampolineHook.h"
 #include "physics-interaction/native/HavokOffsets.h"
 
@@ -75,6 +74,7 @@ namespace rock::scene_writer_probe
             const RE::NiCollisionObject* collisionObjects[kMaxTrackedCollisionObjects] = {};
             std::uint32_t collisionObjectCount = 0;
             RE::hknpWorld* world = nullptr;
+            const RE::NiAVObject* roomNode = nullptr;
             std::uint32_t bodyId = 0x7FFF'FFFF;
             float havokToGame = 0.0f;
             std::uint64_t traceId = 0;
@@ -132,6 +132,7 @@ namespace rock::scene_writer_probe
             const RE::NiCollisionObject* collisionObjects[kMaxTrackedCollisionObjects] = {};
             std::uint32_t collisionObjectCount = 0;
             RE::hknpWorld* world = nullptr;
+            const RE::NiAVObject* roomNode = nullptr;
             std::uint32_t bodyId = 0x7FFF'FFFF;
             float havokToGame = 0.0f;
             std::uint64_t traceId = 0;
@@ -151,6 +152,7 @@ namespace rock::scene_writer_probe
                 out.collisionObjects[i] = slot.collisionObjects[i];
             }
             out.world = slot.world;
+            out.roomNode = slot.roomNode;
             out.bodyId = slot.bodyId;
             out.havokToGame = slot.havokToGame;
             out.traceId = slot.traceId;
@@ -306,22 +308,66 @@ namespace rock::scene_writer_probe
                      * unshifted anchor; the divergence gate below still owns
                      * the final decision.
                      */
-                    if (anchor.sourceRoot.valid && anchor.sourceRoot.havokToGame > 0.0f) {
-                        const auto liveRoot =
-                            character_controller_runtime::samplePlayerCharacterControllerPositionHavok();
-                        if (liveRoot.valid &&
-                            liveRoot.controllerIdentity == anchor.sourceRoot.controllerIdentity) {
-                            const float shiftX =
-                                (liveRoot.positionHavok.x - anchor.sourceRoot.positionHavok[0]) * anchor.sourceRoot.havokToGame;
-                            const float shiftY =
-                                (liveRoot.positionHavok.y - anchor.sourceRoot.positionHavok[1]) * anchor.sourceRoot.havokToGame;
-                            const float shiftZ =
-                                (liveRoot.positionHavok.z - anchor.sourceRoot.positionHavok[2]) * anchor.sourceRoot.havokToGame;
-                            const float shiftLength = std::sqrt(shiftX * shiftX + shiftY * shiftY + shiftZ * shiftZ);
+                    /*
+                     * Primary rebase: live ROOM node vs the anchor's source
+                     * room frame. Stick locomotion moves the room node, and
+                     * the camera inherits it; the character controller was
+                     * measured unmoved at draw time (rootShift=0, 13:01
+                     * session), so it stays telemetry-only below. Rigid 2D
+                     * room delta: rotate about the source room origin by the
+                     * yaw delta, then carry by the room translation. Snap
+                     * turns and teleports are gated out; the divergence gate
+                     * below still owns the final decision.
+                     */
+                    if (anchor.sourceRoot.roomValid && snapshot.roomNode) {
+                        const auto& liveRoomWorld = snapshot.roomNode->world;
+                        const float liveRoomX = liveRoomWorld.translate.x;
+                        const float liveRoomY = liveRoomWorld.translate.y;
+                        const float liveRoomZ = liveRoomWorld.translate.z;
+                        const float liveYaw =
+                            std::atan2(liveRoomWorld.rotate.entry[1][0], liveRoomWorld.rotate.entry[0][0]);
+                        float yawDelta = liveYaw - anchor.sourceRoot.roomYawRadians;
+                        while (yawDelta > 3.14159265f) {
+                            yawDelta -= 6.2831853f;
+                        }
+                        while (yawDelta < -3.14159265f) {
+                            yawDelta += 6.2831853f;
+                        }
+                        const bool liveRoomFinite =
+                            std::isfinite(liveRoomX) && std::isfinite(liveRoomY) &&
+                            std::isfinite(liveRoomZ) && std::isfinite(yawDelta);
+                        constexpr float kMaxYawDeltaRadians = 0.35f;
+                        if (liveRoomFinite && std::fabs(yawDelta) <= kMaxYawDeltaRadians) {
+                            const float cosDelta = std::cos(yawDelta);
+                            const float sinDelta = std::sin(yawDelta);
+                            const float relX = anchor.translate[0] - anchor.sourceRoot.roomPositionGame[0];
+                            const float relY = anchor.translate[1] - anchor.sourceRoot.roomPositionGame[1];
+                            const float relZ = anchor.translate[2] - anchor.sourceRoot.roomPositionGame[2];
+                            const float newX = liveRoomX + cosDelta * relX - sinDelta * relY;
+                            const float newY = liveRoomY + sinDelta * relX + cosDelta * relY;
+                            const float newZ = liveRoomZ + relZ;
+                            const float shiftX = newX - anchor.translate[0];
+                            const float shiftY = newY - anchor.translate[1];
+                            const float shiftZ = newZ - anchor.translate[2];
+                            const float shiftLength =
+                                std::sqrt(shiftX * shiftX + shiftY * shiftY + shiftZ * shiftZ);
                             if (std::isfinite(shiftLength) && shiftLength <= kMaxAnchorRootShiftGameUnits) {
-                                anchor.translate[0] += shiftX;
-                                anchor.translate[1] += shiftY;
-                                anchor.translate[2] += shiftZ;
+                                anchor.translate[0] = newX;
+                                anchor.translate[1] = newY;
+                                anchor.translate[2] = newZ;
+                                if (std::fabs(yawDelta) > 0.0001f) {
+                                    // Rotate each stored rotation row's XY by
+                                    // the yaw delta. Walk has yawDelta ~0;
+                                    // turn correctness is verified visually
+                                    // (a wrong convention shows as the held
+                                    // object counter-rotating on smooth turn).
+                                    for (int row = 0; row < 3; ++row) {
+                                        const float rowX = anchor.rotationRows[row * 4];
+                                        const float rowY = anchor.rotationRows[row * 4 + 1];
+                                        anchor.rotationRows[row * 4] = cosDelta * rowX - sinDelta * rowY;
+                                        anchor.rotationRows[row * 4 + 1] = sinDelta * rowX + cosDelta * rowY;
+                                    }
+                                }
                                 syncRootShiftGameUnits = shiftLength;
                                 s_syncRebasedCalls.fetch_add(1, std::memory_order_relaxed);
                             } else {
@@ -420,7 +466,7 @@ namespace rock::scene_writer_probe
             } else {
                 ROCK_LOG_SAMPLE_INFO(Hand,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "SCENE_WRITER hit hand={} site={} flags=0x{:02X} in=({:.2f},{:.2f},{:.2f}) nodeAfter=({:.2f},{:.2f},{:.2f}) motionGame=({:.2f},{:.2f},{:.2f}) inVsMotion={:.3f} sync={} stage={} gap={:.3f} rootShift={:.3f} syncApplied={} prodStage={} preFrikStage={} divergeSkips={} rebased={} rebaseSkips={} offZ={:.1f} matched={} thread={}",
+                    "SCENE_WRITER hit hand={} site={} flags=0x{:02X} in=({:.2f},{:.2f},{:.2f}) nodeAfter=({:.2f},{:.2f},{:.2f}) motionGame=({:.2f},{:.2f},{:.2f}) inVsMotion={:.3f} sync={} stage={} gap={:.3f} roomShift={:.3f} syncApplied={} prodStage={} preFrikStage={} divergeSkips={} rebased={} rebaseSkips={} offZ={:.1f} matched={} thread={}",
                     matchedHand == 0 ? "R" : "L",
                     callsite,
                     collisionFlags,
@@ -502,6 +548,7 @@ namespace rock::scene_writer_probe
         }
         slot.collisionObjectCount = count;
         slot.world = registration.world;
+        slot.roomNode = registration.roomNode;
         slot.bodyId = registration.bodyId;
         slot.havokToGame = registration.havokToGame;
         slot.traceId = registration.traceId;
@@ -527,6 +574,7 @@ namespace rock::scene_writer_probe
         }
         slot.collisionObjectCount = 0;
         slot.world = nullptr;
+        slot.roomNode = nullptr;
         slot.bodyId = 0x7FFF'FFFF;
         slot.havokToGame = 0.0f;
         slot.traceId = 0;

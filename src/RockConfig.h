@@ -563,7 +563,7 @@ namespace rock
         // substitution stops above the solver threshold (blocked objects
         // must render physically). Physics is never touched.
         bool rockGrabHeldScenePoseSync = true;
-        float rockGrabScenePoseSyncFullAnchorGapGameUnits = 4.0f;
+        float rockGrabScenePoseSyncFullAnchorGapGameUnits = 8.0f;
         float rockGrabScenePoseSyncSolverGapGameUnits = 15.0f;
         float rockGrabHandLerpTimeMin = 0.10f;
         float rockGrabHandLerpTimeMax = 0.20f;

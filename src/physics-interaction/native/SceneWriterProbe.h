@@ -47,6 +47,9 @@ namespace rock::scene_writer_probe
         const RE::NiCollisionObject* collisionObjects[kMaxTrackedCollisionObjects] = {};
         std::uint32_t collisionObjectCount = 0;
         RE::hknpWorld* world = nullptr;
+        // The player room node. The hook reads its live world transform to
+        // measure the mid-frame locomotion step at draw time.
+        const RE::NiAVObject* roomNode = nullptr;
         std::uint32_t bodyId = 0x7FFF'FFFF;
         float havokToGame = 0.0f;
         std::uint64_t traceId = 0;
@@ -94,6 +97,18 @@ namespace rock::scene_writer_probe
         std::uintptr_t controllerIdentity = 0;
         float havokToGame = 0.0f;
         bool valid = false;
+        /*
+         * Room-node frame at anchor computation. FO4VR stick locomotion moves
+         * the ROOM node mid-frame (measured 2026-08-19: roomVsProducer ~2.6gu
+         * per frame while the character controller was still unmoved at draw
+         * time). The hook reads the live room node and applies the rigid 2D
+         * room delta - rotate about the room origin by the yaw delta, then
+         * translate - so the anchor follows the same frame the camera
+         * inherits. Walk is the pure-translation case; turn adds the yaw arc.
+         */
+        float roomPositionGame[3] = { 0.0f, 0.0f, 0.0f };
+        float roomYawRadians = 0.0f;
+        bool roomValid = false;
     };
     // Game thread only. Publish the held BODY anchor in game space.
     void publishHeldAnchor(

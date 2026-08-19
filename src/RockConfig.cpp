@@ -571,7 +571,7 @@ namespace rock
         rockGrabRenderClockProbeOffsetGameUnits = 0.0f;
         rockGrabSceneWriterProbeOffsetZGameUnits = 0.0f;
         rockGrabHeldScenePoseSync = true;
-        rockGrabScenePoseSyncFullAnchorGapGameUnits = 4.0f;
+        rockGrabScenePoseSyncFullAnchorGapGameUnits = 8.0f;
         rockGrabScenePoseSyncSolverGapGameUnits = 15.0f;
         rockGrabHandLerpTimeMin = 0.10f;
         rockGrabHandLerpTimeMax = 0.20f;
