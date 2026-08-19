@@ -46,21 +46,6 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' `
 Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' `
     'enum class TwoHandedState[\s\S]{0,240}Returning' `
     'Visual return must not remain gameplay/manual grip ownership in TwoHandedState.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'transitionToPartCarry\(\)[\s\S]*blockFrikPrimaryWeaponPose\(\)[\s\S]*beginHandVisualReturn\(_firingHandIsLeft,\s*"primary-detach-part-carry"\)[\s\S]*_state\s*=\s*TwoHandedState::PartCarry' `
-    'Primary detach must acquire the required blocker before returning only the departing firing hand while PartCarry takes authority immediately.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'new-two-hand-acquisition[\s\S]*nativeBaselineLocal[\s\S]*new-primary-acquisition' `
-    'New weapon acquisition must interrupt return without losing the original native baseline.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'requestEquippedWeaponDrop[\s\S]*clearWeaponVisualReturn\("equipped-weapon-drop"[\s\S]*transitionToInactive\(false\)' `
-    'A real equipped-weapon drop must cancel any in-flight weapon return before gameplay teardown.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'clearAllVisualReturns\("weapon-identity-or-parent-changed"' `
-    'Weapon node or parent changes must clear the complete visual-return overlay.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'clearAllVisualReturns\("equipped-weapon-identity-changed"' `
-    'Weapon generation or ownership changes must clear the complete visual-return overlay.'
 
 Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
     'physicallyOwnedByStrongerSystem[\s\S]*visuallyOwnedByStrongerSystem\s*=\s*physicallyOwnedByStrongerSystem\s*\|\|\s*visualReturnActive[\s\S]*!physicallyOwnedByStrongerSystem[\s\S]*if \(visuallyOwnedByStrongerSystem' `

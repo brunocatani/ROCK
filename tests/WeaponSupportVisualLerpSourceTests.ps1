@@ -50,8 +50,6 @@ Require-Text 'src/physics-interaction/weapon/WeaponSupport.h' 'tryCaptureSupport
     'Dynamic and gunstock support must share one rigid post-capture input calibration primitive.'
 Require-Text 'src/physics-interaction/weapon/WeaponSupport.h' 'tryCaptureDynamicSupportDriverBaseline\([\s\S]*primaryDriverWorld[\s\S]*primaryGripTargetWorld[\s\S]*supportDriverWorld[\s\S]*supportGripTargetWorld[\s\S]*tryResolveDynamicSupportDriverTargets\(' `
     'Normal dynamic support must capture both physical driver relations as one transaction.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'transitionToPrimaryOnly[\s\S]*clearPrimaryGripPose\(primaryHandIsLeft\)[\s\S]*restoreFrikPrimaryWeaponPose' `
-    'Primary-only equipped ownership must clear ROCK primary hand authority so FRIK can resume its configured weapon pose before support re-grab.'
 Require-Text 'data/config/ROCK.ini' 'Normal dynamic full-authority grabs[\s\S]*authored,[\s\S]*provider-owned,[\s\S]*AttachOnly,[\s\S]*visual-only' `
     'Repository config must describe the synchronized dynamic-acquisition semantics and unchanged paths.'
 

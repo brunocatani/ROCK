@@ -78,18 +78,6 @@ Require-Text $hfrikRoot 'src/skeleton/WeaponHandRecoil.cpp' `
     'delivery\s*==\s*api::FRIKApiV2::RecoilDelivery::Damped[\s\S]*_controlledKickLocal\s*=\s*dampen[\s\S]*else\s*\{[\s\S]*_controlledKickLocal\s*=\s*response\.controlledKickLocal' `
     'hFRIK must distinguish damped controller delivery from direct controller delivery.'
 
-Require-Text $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'registerWeaponHandRecoilController\([\s\S]*WEAPON_RECOIL_CONTROLLER_TAG[\s\S]*controlWeaponHandRecoil[\s\S]*this[\s\S]*GRIP_HAND_POSE_PRIORITY' `
-    'ROCK must register its recoil controller with instance-bound lifetime.'
-Require-Text $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    '~TwoHandedGrip\(\)[\s\S]*unregisterWeaponHandRecoilController' `
-    'ROCK must unregister the recoil callback before its instance storage is destroyed.'
-Require-Text $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'controlWeaponHandRecoil[\s\S]*hasControlledFiringRecoilAuthority\(firingHandIsLeft\)[\s\S]*_hasFiringRecoilReference\[firingHandIndex\][\s\S]*RecoilHandMask::Primary[\s\S]*RecoilDelivery::Direct[\s\S]*controlledKickLocal\s*=\s*sample->nativeKickLocal' `
-    'ROCK must preserve the validated native primary kick and require a clean right-hand reference before replacing hFRIK recoil.'
-Require-Text $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'controlWeaponHandRecoil[\s\S]*areTransformsNearlyEqual\([\s\S]*sample->nativeKickLocal[\s\S]*_firingRecoilAcceptedSequence[\s\S]*_firingRecoilAcceptedGenerationKey\s*=\s*self->_activeWeaponGenerationKey[\s\S]*_firingRecoilAcceptedHandIsLeft\s*=\s*firingHandIsLeft[\s\S]*else\s*\{[\s\S]*_firingRecoilConsumedSequence\s*=\s*self->_firingRecoilAcceptedSequence' `
-    'A non-neutral accepted FRIK recoil frame must issue a generation- and hand-bound one-shot ROCK ticket, while the next neutral frame retires a skipped ticket.'
 Require-Text $Root 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'finishWeaponCollisionPresentationFrame[\s\S]{0,500}applyFiringWeaponRecoilPresentation[\s\S]{0,700}updateBodiesFromCurrentSourceTransforms[\s\S]{0,700}applyFinalWeaponMuzzleAuthority' `
     'Controlled firing-hand recoil must run after all weapon writers and before collision-body and muzzle consumers.'

@@ -1096,6 +1096,7 @@ namespace rock
                                 _grabObjectGripAtGrab.valid = true;
 
                                 {
+                                    // Guard the live proxy pivots during seated promotion.
                                     std::scoped_lock lock(_grabAuthorityProxyMutex);
                                     if (_grabAuthorityProxyFrameValid) {
                                         _grabAuthorityPivotAProxyLocalGame = frozenSeatAuthorityFrame.pivotAHandBodyLocalGame;
@@ -1308,6 +1309,7 @@ namespace rock
             std::uint64_t driveFailedFlushes = 0;
             float driveLastFlushDeltaSeconds = 0.0f;
             {
+                // Guard the proxy sequence counters during the log snapshot.
                 std::scoped_lock lock(_grabAuthorityProxyMutex);
                 driveQueuedTargets = _grabAuthorityProxyQueuedSequence;
                 driveFlushedTargets = _grabAuthorityProxyFlushSequence;

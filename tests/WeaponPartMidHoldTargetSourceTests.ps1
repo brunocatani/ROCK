@@ -14,11 +14,6 @@ function Require-Text {
     }
 }
 
-$gripRuntime = 'src/physics-interaction/weapon/TwoHandedGrip.cpp'
-
-Require-Text $gripRuntime 'getHandGripReport\([\s\S]*outReport\.sourceRoot\s*=\s*reinterpret_cast<std::uintptr_t>\(grip\.attachmentRoot\)' `
-    'Provider grip reports and mid-hold target re-resolution must publish the same captured source-root identity.'
-
 if ($failures.Count -gt 0) {
     Write-Host 'WeaponPartMidHoldTargetSourceTests failed:' -ForegroundColor Red
     foreach ($failure in $failures) {

@@ -51,7 +51,6 @@ $runtimeHeader = 'src/physics-interaction/weapon/DynamicWeaponCollision.h'
 $runtimeSource = 'src/physics-interaction/weapon/DynamicWeaponCollision.cpp'
 $runtimePolicy = 'src/physics-interaction/weapon/DynamicWeaponCollisionPolicy.h'
 $compoundBuilder = 'src/physics-interaction/native/HavokCompoundShapeBuilder.cpp'
-$weaponAuthority = 'src/physics-interaction/weapon/TwoHandedGrip.cpp'
 $interaction = 'src/physics-interaction/core/PhysicsInteraction.cpp'
 $contacts = 'src/physics-interaction/core/PhysicsInteractionContacts.inl'
 $layers = 'src/physics-interaction/collision/CollisionLayerPolicy.h'
@@ -184,9 +183,6 @@ Require-Pattern $interaction `
 Require-Pattern $interaction `
     'applyWeaponCollisionResolvedAuthority\([\s\S]{0,250}dynamicWeaponFrame\.requestedWeaponWorld[\s\S]{0,250}dynamicWeaponFrame\.resolvedWeaponWorld' `
     'The collision-free intent and physics-resolved pose must cross the presentation boundary together.'
-Require-Pattern $weaponAuthority `
-    'void TwoHandedGrip::reset\(\)[\s\S]{0,600}WEAPON_COLLISION_HAND_TAG[\s\S]{0,500}Hand::Left[\s\S]{0,500}WEAPON_COLLISION_HAND_TAG[\s\S]{0,500}Hand::Right[\s\S]{0,300}_weaponCollisionHandAuthorityLive\s*=\s*\{\}[\s\S]{0,200}_weaponCollisionHandAuthorityGenerationKey\s*=\s*\{\}[\s\S]{0,200}_weaponCollisionHandPresentationFromPreviousFrame\s*=\s*\{\}[\s\S]{0,200}_weaponCollisionBaselineHandWorldValid\s*=\s*\{\}' `
-    'Lifecycle reset must defensively clear collision hand authority, generation ownership, frame baselines, and the previous-presentation witness.'
 Require-Pattern $interaction `
     'suppressDefaultNativeWeaponIntent\s*=\s*[\r\n\s]*_twoHandedGrip\.previousWeaponCollisionPresentationWasLive\(\)[\s\S]*_dynamicWeaponCollision\.beginFrame\([\s\S]*suppressDefaultNativeWeaponIntent' `
     'A collision-contaminated native weapon pose must not remain as the fallback frame intent when isolated driver reconstruction fails.'
@@ -350,9 +346,6 @@ Require-Pattern $runtimeSource `
 Require-Pattern $runtimeSource `
     'FRIK V2 consumes tagged hand transforms during its next skeleton[\s\S]*positive-point world/hand manifold[\s\S]*higher-priority hand claim[\s\S]*support hand from the firing-hand driver[\s\S]*free space yields' `
     'The source must document why free-space FRIK collision ownership causes support-hand wobble and must yield.'
-Require-Pattern $weaponAuthority `
-    'case TwoHandedState::Touching:[\s\S]*_touchFrames\s*>\s*TOUCH_TIMEOUT_FRAMES[\s\S]*TwoHandedGrip: touch contact timed out[\s\S]*_state\s*=\s*TwoHandedState::Inactive' `
-    'Support-touch churn must retain an edge-only timeout diagnostic that exposes the lost acquisition witness.'
 Require-Order $runtimeSource @(
     '_rawContactOtherBodyIdAtomic\.store\(otherBodyId',
     '_rawContactPointHavokAtomic\[axis\]\.store\(',

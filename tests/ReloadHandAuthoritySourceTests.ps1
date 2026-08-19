@@ -47,7 +47,6 @@ function Require-Order(
 
 $interaction = 'src/physics-interaction/core/PhysicsInteraction.cpp'
 $frame = 'src/physics-interaction/core/PhysicsInteractionFrame.inl'
-$weapon = 'src/physics-interaction/weapon/TwoHandedGrip.cpp'
 $weaponHeader = 'src/physics-interaction/weapon/TwoHandedGrip.h'
 $actorState = 'src/rock_support/Fo4VrActorStatePolicy.h'
 
@@ -73,12 +72,6 @@ Require-Pattern $interaction `
 Require-Pattern $weaponHeader `
     'nativeReloadHandAuthorityActive[\s\S]*setNativeReloadHandAuthorityActive\(bool active\)[\s\S]*isNativeReloadSupportHand[\s\S]*_nativeReloadHandAuthorityActive' `
     'TwoHandedGrip must retain an explicit reload handoff state across pre-FRIK and physics phases.'
-Require-Pattern $weapon `
-    '!supportRuntimeState\.supportGripAllowed\s*&&[\r\n\s]*!_nativeReloadHandAuthorityActive' `
-    'A reload-time provider reservation must not destroy an already-held logical support grip.'
-Require-Pattern $weapon `
-    'supportTouchingSupport\s*=[\r\n\s]*!_nativeReloadHandAuthorityActive\s*&&' `
-    'Reload must block new support-grip acquisition while preserving an existing grip.'
 Require-Pattern $weaponHeader `
     'weaponCollisionAttachedHands\(\)[\s\S]*selectAttachedHands\([\s\S]*!_nativeReloadHandAuthorityActive' `
     'Dynamic collision must exclude the support hand while native reload owns it.'

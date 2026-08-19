@@ -1,96 +1,25 @@
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 #include "physics-interaction/weapon/TwoHandedGripInternal.h"
 
-#include "api/ROCKProviderApiInternal.h"
-#include "physics-interaction/actor/ActorEquipmentGrab.h"
-#include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
-#include "physics-interaction/hand/HandSkeleton.h"
-#include "physics-interaction/hand/HandVisual.h"
-#include "physics-interaction/grab/GrabFinger.h"
-#include "physics-interaction/grab/GrabPinchPocket.h"
-#include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
-#include "RockConfig.h"
-#include "RockUtils.h"
 #include "physics-interaction/TransformMath.h"
-#include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
-#include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"
-#include "physics-interaction/weapon/EquippedWeaponHandlingRuntime.h"
-#include "physics-interaction/weapon/NativeScopeSightAnchorPolicy.h"
-#include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/WeaponCollision.h"
-#include "physics-interaction/weapon/WeaponGeometry.h"
-#include "physics-interaction/weapon/WeaponSupport.h"
-#include "physics-interaction/visual/PreFrikHandAuthorityPolicy.h"
-#include "rock_support/Fo4VrRuntime.h"
+#include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 
-#include <algorithm>
-#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <limits>
-#include <span>
-#include <string_view>
-#include <vector>
+#include <memory>
 
 namespace rock
 {
-    using two_handed_grip_detail::applyNativeScopeCameraWorldTarget;
-    using two_handed_grip_detail::arePointsNearlyEqual;
     using two_handed_grip_detail::areTransformsNearlyEqual;
-    using two_handed_grip_detail::AuthoredSupportPalmSeatProximity;
-    using two_handed_grip_detail::AUTHORED_PRIMARY_POSE_BLOCK_TAG;
-    using two_handed_grip_detail::buildFullHandLocalTransformsForMeshPose;
-    using two_handed_grip_detail::buildProviderPartTargetQuery;
-    using two_handed_grip_detail::captureNativeScopeCameraFollow;
-    using two_handed_grip_detail::captureScopeHandAuthorityCleanupVisuals;
-    using two_handed_grip_detail::configuredGunstockFineTune;
-    using two_handed_grip_detail::currentWeaponOppositionPocketConfig;
-    using two_handed_grip_detail::DYNAMIC_SUPPORT_MINIMUM_SMOOTHED_ROTATION_RADIANS;
-    using two_handed_grip_detail::evaluateAuthoredSupportGripDirectionGate;
     using two_handed_grip_detail::GRIP_HAND_POSE_PRIORITY;
-    using two_handed_grip_detail::GUNSTOCK_ALIGNMENT_TAG;
     using two_handed_grip_detail::isFiniteTransform;
-    using two_handed_grip_detail::isInvertibleTransform;
     using two_handed_grip_detail::isUsableHandAuthorityTransform;
-    using two_handed_grip_detail::kSupportGripFingerLaneCount;
-    using two_handed_grip_detail::kSupportGripFingerLaneReferenceCapacity;
-    using two_handed_grip_detail::kSupportGripGlobalRankingIndex;
-    using two_handed_grip_detail::leftFiringInfrastructureAvailable;
-    using two_handed_grip_detail::lerpPoint;
-    using two_handed_grip_detail::makeNativeScopeCameraDebugSnapshot;
-    using two_handed_grip_detail::moveWeaponPresentationRigidly;
-    using two_handed_grip_detail::NativeScopeCameraFollowCapture;
-    using two_handed_grip_detail::NativeScopeCameraFollowResult;
-    using two_handed_grip_detail::orthonormalizeStoredRotation;
-    using two_handed_grip_detail::PRIMARY_DETACH_TAG;
-    using two_handed_grip_detail::PRIMARY_GRIP_TAG;
-    using two_handed_grip_detail::RankedSupportGripTriangle;
-    using two_handed_grip_detail::resolveAuthoredSupportPalmSeatProximity;
-    using two_handed_grip_detail::resolveAuthoredSupportPalmSeatProximityFromPoints;
-    using two_handed_grip_detail::restoreScopeHandAuthorityCleanupVisuals;
-    using two_handed_grip_detail::restoreWeaponRootPreservingPresentedDescendants;
-    using two_handed_grip_detail::RETURN_HAND_TAG;
-    using two_handed_grip_detail::RETURN_HAND_VISUAL_PRIORITY;
-    using two_handed_grip_detail::rootFlattenedTwoHandedReader;
-    using two_handed_grip_detail::SCOPE_DRIVER_MISS_GRACE_FRAMES;
-    using two_handed_grip_detail::SCOPE_ROOT_REBASE_DURATION_SECONDS;
-    using two_handed_grip_detail::SCOPE_TRANSITION_TRACE_FRAMES;
-    using two_handed_grip_detail::ScopeHandAuthorityCleanupVisualSnapshot;
-    using two_handed_grip_detail::selectNearestSupportGripFingerTriangles;
-    using two_handed_grip_detail::SUPPORT_GRIP_TAG;
-    using two_handed_grip_detail::SUPPORT_NORMAL_TWIST_FACTOR;
-    using two_handed_grip_detail::SupportGripFingerReferenceSet;
-    using two_handed_grip_detail::tryGetRootFlattenedHandBoneTransform;
-    using two_handed_grip_detail::tryResolveWeaponRootLocal;
-    using two_handed_grip_detail::WEAPON_COLLISION_HAND_PRIORITY;
     using two_handed_grip_detail::WEAPON_COLLISION_HAND_TAG;
-    using two_handed_grip_detail::WEAPON_NODE_OWNERSHIP_TAG;
-    using two_handed_grip_detail::WEAPON_OPPOSITION_MAX_FINGER_GAP_GAME_UNITS;
-    using two_handed_grip_detail::WEAPON_OPPOSITION_SEGMENT_PROBE_RADIUS_GAME_UNITS;
     using two_handed_grip_detail::WEAPON_RECOIL_CONTROLLER_TAG;
 
     namespace
