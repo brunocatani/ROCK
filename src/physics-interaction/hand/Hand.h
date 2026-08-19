@@ -46,6 +46,10 @@
 namespace rock
 {
     class BodyBoneColliderSet;
+    namespace hand_grab_detail
+    {
+        struct GrabAcquisitionContext;
+    }
 
     constexpr std::uint32_t ROCK_HAND_LAYER = 43;
 
@@ -726,6 +730,16 @@ namespace rock
             ActiveGrabBodySetPrep& outPrep);
 
         void abortGrabAcquisition(const GrabAcquisitionUnwind& unwind);
+        bool abortGrabAcquisition(hand_grab_detail::GrabAcquisitionContext& context);
+        bool prepareGrabBodySet(hand_grab_detail::GrabAcquisitionContext& context);
+        bool resolveGrabCaptureFrames(hand_grab_detail::GrabAcquisitionContext& context);
+        bool extractGrabMesh(hand_grab_detail::GrabAcquisitionContext& context);
+        bool resolvePrimaryGrabBody(hand_grab_detail::GrabAcquisitionContext& context);
+        bool resolveGrabPivotAuthority(hand_grab_detail::GrabAcquisitionContext& context);
+        bool evaluateGrabContactEvidence(hand_grab_detail::GrabAcquisitionContext& context);
+        bool captureCanonicalGrabFrame(hand_grab_detail::GrabAcquisitionContext& context);
+        bool commitGrabDrive(hand_grab_detail::GrabAcquisitionContext& context);
+        void publishGrabFingerPose(hand_grab_detail::GrabAcquisitionContext& context);
 
         /*
          * The held node world, rebuilt from a body world. A grab stores the node as a

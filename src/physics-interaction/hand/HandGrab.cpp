@@ -4920,6 +4920,131 @@ namespace rock
         }
     }
 
+    namespace hand_grab_detail
+    {
+        struct GrabAcquisitionContext
+        {
+            // Phase inputs stay valid for this synchronous acquisition call.
+            RE::hknpWorld* world = nullptr;
+            RE::bhkWorld* bhkWorld = nullptr;
+            SelectedObject selection{};
+            const GrabSharedObjectContext* sharedContext = nullptr;
+            const BodyBoneColliderSet* bodyBoneColliders = nullptr;
+            RE::NiAVObject* rootNode = nullptr;
+            active_grab_body_lifecycle::BodyLifecycleSnapshot activeLifecycle{};
+
+            // Drive tuning is fixed for the full acquisition.
+            RE::NiTransform handWorldTransform{};
+            float tau = 0.0f;
+            float damping = 0.0f;
+            float maxForce = 0.0f;
+            float proportionalRecovery = 0.0f;
+            float constantRecovery = 0.0f;
+
+            // Body-set ownership controls failure unwind and final commit.
+            RE::hknpBodyId objectBodyId{};
+            std::uint16_t selectedOriginalMotionPropsId = 1;
+            bool joiningPeerHeldObject = false;
+            bool grabbedFromPullCatch = false;
+            bool consumedPullPrepLifecycle = false;
+            bool looseWeaponGrab = false;
+            bool handPocketOnlyGrab = false;
+            std::string objectName{ "(unnamed)" };
+            const char* motionType = "UNKNOWN";
+            std::uint64_t grabTraceId = 0;
+            std::uint32_t bodySetSeedBodyId = object_physics_body_set::INVALID_BODY_ID;
+            object_physics_body_set::ObjectPhysicsBodySet beforePrepBodySet;
+            object_physics_body_set::ObjectPhysicsBodySet preparedBodySet;
+            bool beforePrepScanCacheHit = false;
+            bool preparedScanCacheHit = false;
+            bool preparedBodySetPostPrepComplete = false;
+            bool motionConverted = true;
+            bool collisionEnabled = true;
+
+            // Capture frames define the palm and object authority spaces.
+            RE::NiTransform handBodyWorldAtGrab{};
+            RE::NiTransform proxyFrameWorldAtGrab{};
+            const char* proxyFrameSourceAtGrab = "unresolved";
+            bool hasPalmProxyFrameAtGrab = false;
+            RE::NiPoint3 grabAuthorityPivotAWorld{};
+            RE::NiPoint3 palmPocketPivotAWorld{};
+            float palmPocketToProxyDeltaGameUnits = 0.0f;
+            GrabPalmBasisDelta grabPalmBasisDelta{};
+            RE::NiPoint3 grabPivotAForPrimaryChoice{};
+            RE::NiTransform proxyAuthorityFrameWorldAtGrab{};
+            RE::NiAVObject* collidableNode = nullptr;
+            RE::NiAVObject* meshSourceNode = nullptr;
+            RE::NiTransform objectWorldTransform{};
+
+            // Mesh capture owns geometry and the initial surface evidence.
+            RE::NiPoint3 grabGripPoint{};
+            float selectionToMeshDistanceGameUnits = 0.0f;
+            bool meshGrabFound = false;
+            MeshExtractionStats meshStats{};
+            std::vector<TriangleData> grabMeshTriangles;
+            std::vector<TriangleData> grabFingerPoseMeshTriangles;
+            std::vector<GrabSurfaceTriangleData> grabSurfaceTriangles;
+            std::vector<GrabLocalTriangle> grabLocalMeshTriangles;
+            std::vector<GrabLocalTriangle> grabFingerPoseLocalMeshTriangles;
+            GrabSurfaceHit grabSurfaceHit{};
+            RuntimeGrabContactPatch contactPatchRuntime{};
+            RuntimeMultiFingerGripContact multiFingerGripRuntime{};
+            RE::NiPoint3 palmSeatPointWorld{};
+            RE::NiPoint3 fingerEvidencePointWorld{};
+            GrabSurfaceHit palmSeatSurfaceHit{};
+            GrabSurfaceHit fingerEvidenceSurfaceHit{};
+            bool contactPatchEvidenceAvailable = false;
+            bool multiFingerGripUsed = false;
+            bool palmSeatPointValid = false;
+            bool fingerEvidencePointValid = false;
+            bool activeGrabPointUsesMultiFingerEvidence = false;
+            const char* contactPatchPivotAuthorityReason = "notEvaluated";
+            const char* pivotAuthoritySource = "notEvaluated";
+            bool pivotAuthorityNormalTrusted = false;
+            bool pivotAuthorityPositionOnly = false;
+            float pivotAuthorityPositionConfidence = 0.0f;
+            float pivotAuthorityPocketDistanceGameUnits = std::numeric_limits<float>::max();
+            float pivotAuthoritySelectionDeltaGameUnits = std::numeric_limits<float>::max();
+            float pivotAuthorityLongLeverGameUnits = 0.0f;
+            RE::NiAVObject* surfaceOwnerNode = nullptr;
+            RE::NiAVObject* authoredGrabNode = nullptr;
+            bool meshContactOnly = false;
+            bool hasMeshSurfaceContact = false;
+            const char* grabPointMode = "none";
+            const char* grabFallbackReason = "none";
+            const char* palmSeatPointMode = "none";
+            const char* palmSeatFallbackReason = "none";
+            const char* fingerEvidencePointMode = "none";
+            const char* fingerEvidenceFallbackReason = "none";
+
+            // Body resolution binds the selected surface to one drive scope.
+            grab_contact_evidence_policy::GrabContactQualityMode grabContactQualityMode =
+                grab_contact_evidence_policy::GrabContactQualityMode::LegacyPermissive;
+            grab_contact_source_policy::GrabContactSourcePolicy contactSourcePolicy{};
+            bool multiFingerEvidenceEnabled = false;
+            bool hybridFingerProbeEvidenceEnabled = false;
+            object_physics_body_set::PrimaryBodyChoice primaryChoice{};
+            bool surfaceOwnerMatchesResolvedBody = true;
+            mechanical_connected_body_set::MechanicalScope mechanicalScope{};
+            bool relaxedArticulatedAuthority = false;
+            bool visualMeshPivotAvailable = false;
+            bool canonicalPivotAvailable = false;
+            RE::NiPoint3 canonicalPivotPointWorld{};
+            RE::NiPoint3 canonicalPivotNormalWorld{};
+            const char* canonicalPivotMode = "none";
+
+            // Contact evidence supplies the canonical capture inputs.
+            hand_semantic_contact_state::SemanticContactCollection semanticContacts{};
+            grab_three_phase::GrabPocketFrame acquisitionPocket{};
+            GrabSurfaceHit palmPocketSurfaceHit{};
+            bool palmPocketMeshAvailable = false;
+            RuntimePinchPocketCandidate pinchPocketCandidate{};
+
+            // Final capture results feed the drive and finger-pose publish.
+            ResolvedGrabOffsetSource resolvedGrabOffsetSource{};
+        };
+    }
+
     void Hand::beginGrabVisualReturn()
     {
         if (!g_rockConfig.rockGrabHandReturnEnabled ||
@@ -8022,22 +8147,21 @@ namespace rock
         return false;
     }
 
-    bool Hand::grabSelectedObject(RE::hknpWorld* world,
-        const RE::NiTransform& handWorldTransform,
-        float tau,
-        float damping,
-        float maxForce,
-        float proportionalRecovery,
-        float constantRecovery,
-        const BodyBoneColliderSet* bodyBoneColliders,
-        const GrabSharedObjectContext& sharedContext)
+    bool Hand::prepareGrabBodySet(hand_grab_detail::GrabAcquisitionContext& context)
     {
+        if (!context.world || !context.sharedContext) {
+            return false;
+        }
+
+        auto* world = context.world;
+        const auto& sharedContext = *context.sharedContext;
+
         if (!hasSelection() || !world)
             return false;
         if (!hasCollisionBody())
             return false;
 
-        const auto& sel = _currentSelection;
+        const auto& sel = context.selection;
         const auto selectedRef = sel.retainedRef;
         if (!selectedRef || selectedRef.get() != sel.refr || sel.bodyId.value == 0x7FFF'FFFF)
             return false;
@@ -8205,40 +8329,132 @@ namespace rock
             !joiningPeerHeldObject,
             activeLifecycle,
             bodySetPrep);
-        const auto& beforePrepBodySet = bodySetPrep.beforePrepBodySet;
-        const auto& preparedBodySet = bodySetPrep.preparedBodySet;
         const bool beforePrepScanCacheHit = bodySetPrep.beforePrepScanCacheHit;
         const bool preparedScanCacheHit = bodySetPrep.preparedScanCacheHit;
         const bool preparedBodySetPostPrepComplete = bodySetPrep.preparedBodySetPostPrepComplete;
         const bool motionConverted = bodySetPrep.motionConverted;
         const bool collisionEnabled = bodySetPrep.collisionEnabled;
 
-        /*
-         * Every failure exit below routes through this. It snapshots the live
-         * acquisition locals at the moment of the failure - objectBodyId is still
-         * re-resolved during primary-body selection - and gives them to the one
-         * teardown. It returns false so a rejecting site reads "return abortGrab();"
-         * and cannot apply half of the unwind.
-         */
-        auto abortGrab = [&]() -> bool {
-            abortGrabAcquisition(GrabAcquisitionUnwind{
-                .world = world,
-                .bhkWorld = bhkWorld,
-                .rootNode = rootNode,
-                .lifecycle = &activeLifecycle,
-                .objectBodyId = objectBodyId,
-                .targetKind = sel.targetKind,
-                .originalMotionPropsId = selectedOriginalMotionPropsId,
-                .joiningPeerHeldObject = joiningPeerHeldObject,
-                .consumedPullPrepLifecycle = consumedPullPrepLifecycle,
-            });
-            return false;
+        context.bhkWorld = bhkWorld;
+        context.rootNode = rootNode;
+        context.activeLifecycle = std::move(activeLifecycle);
+        context.objectBodyId = objectBodyId;
+        context.selectedOriginalMotionPropsId = selectedOriginalMotionPropsId;
+        context.joiningPeerHeldObject = joiningPeerHeldObject;
+        context.grabbedFromPullCatch = grabbedFromPullCatch;
+        context.consumedPullPrepLifecycle = consumedPullPrepLifecycle;
+        context.looseWeaponGrab = looseWeaponGrab;
+        context.handPocketOnlyGrab = handPocketOnlyGrab;
+        context.objectName = std::move(objName);
+        context.motionType = motionTypeStr;
+        context.grabTraceId = grabTraceId;
+        context.bodySetSeedBodyId = bodySetPrep.seedBodyId;
+        context.beforePrepBodySet = std::move(bodySetPrep.beforePrepBodySet);
+        context.preparedBodySet = std::move(bodySetPrep.preparedBodySet);
+        context.beforePrepScanCacheHit = beforePrepScanCacheHit;
+        context.preparedScanCacheHit = preparedScanCacheHit;
+        context.preparedBodySetPostPrepComplete = preparedBodySetPostPrepComplete;
+        context.motionConverted = motionConverted;
+        context.collisionEnabled = collisionEnabled;
+        context.resolvedGrabOffsetSource = resolvedGrabOffsetSource;
+        return true;
+    }
+
+    bool Hand::abortGrabAcquisition(hand_grab_detail::GrabAcquisitionContext& context)
+    {
+        abortGrabAcquisition(GrabAcquisitionUnwind{
+            .world = context.world,
+            .bhkWorld = context.bhkWorld,
+            .rootNode = context.rootNode,
+            .lifecycle = &context.activeLifecycle,
+            .objectBodyId = context.objectBodyId,
+            .targetKind = context.selection.targetKind,
+            .originalMotionPropsId = context.selectedOriginalMotionPropsId,
+            .joiningPeerHeldObject = context.joiningPeerHeldObject,
+            .consumedPullPrepLifecycle = context.consumedPullPrepLifecycle,
+        });
+        return false;
+    }
+
+
+    bool Hand::resolveGrabCaptureFrames(hand_grab_detail::GrabAcquisitionContext& context)
+    {
+        auto* world = context.world;
+        const auto& sel = context.selection;
+        const auto& handWorldTransform = context.handWorldTransform;
+        const auto objectBodyId = context.objectBodyId;
+        auto* rootNode = context.rootNode;
+        const auto& objName = context.objectName;
+        const auto& beforePrepBodySet = context.beforePrepBodySet;
+        const auto& preparedBodySet = context.preparedBodySet;
+        const bool beforePrepScanCacheHit = context.beforePrepScanCacheHit;
+        const bool preparedScanCacheHit = context.preparedScanCacheHit;
+        const bool preparedBodySetPostPrepComplete = context.preparedBodySetPostPrepComplete;
+        const bool motionConverted = context.motionConverted;
+        const bool collisionEnabled = context.collisionEnabled;
+        const bool joiningPeerHeldObject = context.joiningPeerHeldObject;
+        const auto grabTraceId = context.grabTraceId;
+        auto& activeLifecycle = context.activeLifecycle;
+        auto& handBodyWorldAtGrab = context.handBodyWorldAtGrab;
+        auto& proxyFrameWorldAtGrab = context.proxyFrameWorldAtGrab;
+        auto& proxyFrameSourceAtGrab = context.proxyFrameSourceAtGrab;
+        auto& hasPalmProxyFrameAtGrab = context.hasPalmProxyFrameAtGrab;
+        auto& grabAuthorityPivotAWorld = context.grabAuthorityPivotAWorld;
+        auto& palmPocketPivotAWorld = context.palmPocketPivotAWorld;
+        auto& palmPocketToProxyDeltaGameUnits = context.palmPocketToProxyDeltaGameUnits;
+        auto& grabPalmBasisDelta = context.grabPalmBasisDelta;
+        auto& grabPivotAForPrimaryChoice = context.grabPivotAForPrimaryChoice;
+        auto& proxyAuthorityFrameWorldAtGrab = context.proxyAuthorityFrameWorldAtGrab;
+        auto*& collidableNode = context.collidableNode;
+        auto*& meshSourceNode = context.meshSourceNode;
+        auto& objectWorldTransform = context.objectWorldTransform;
+        auto& grabGripPoint = context.grabGripPoint;
+        auto& selectionToMeshDistanceGameUnits = context.selectionToMeshDistanceGameUnits;
+        auto& meshGrabFound = context.meshGrabFound;
+        auto& meshStats = context.meshStats;
+        auto& grabMeshTriangles = context.grabMeshTriangles;
+        auto& grabFingerPoseMeshTriangles = context.grabFingerPoseMeshTriangles;
+        auto& grabSurfaceTriangles = context.grabSurfaceTriangles;
+        auto& grabLocalMeshTriangles = context.grabLocalMeshTriangles;
+        auto& grabFingerPoseLocalMeshTriangles = context.grabFingerPoseLocalMeshTriangles;
+        auto& grabSurfaceHit = context.grabSurfaceHit;
+        auto& contactPatchRuntime = context.contactPatchRuntime;
+        auto& multiFingerGripRuntime = context.multiFingerGripRuntime;
+        auto& palmSeatPointWorld = context.palmSeatPointWorld;
+        auto& fingerEvidencePointWorld = context.fingerEvidencePointWorld;
+        auto& palmSeatSurfaceHit = context.palmSeatSurfaceHit;
+        auto& fingerEvidenceSurfaceHit = context.fingerEvidenceSurfaceHit;
+        auto& contactPatchEvidenceAvailable = context.contactPatchEvidenceAvailable;
+        auto& multiFingerGripUsed = context.multiFingerGripUsed;
+        auto& palmSeatPointValid = context.palmSeatPointValid;
+        auto& fingerEvidencePointValid = context.fingerEvidencePointValid;
+        auto& activeGrabPointUsesMultiFingerEvidence = context.activeGrabPointUsesMultiFingerEvidence;
+        auto& contactPatchPivotAuthorityReason = context.contactPatchPivotAuthorityReason;
+        auto& pivotAuthoritySource = context.pivotAuthoritySource;
+        auto& pivotAuthorityNormalTrusted = context.pivotAuthorityNormalTrusted;
+        auto& pivotAuthorityPositionOnly = context.pivotAuthorityPositionOnly;
+        auto& pivotAuthorityPositionConfidence = context.pivotAuthorityPositionConfidence;
+        auto& pivotAuthorityPocketDistanceGameUnits = context.pivotAuthorityPocketDistanceGameUnits;
+        auto& pivotAuthoritySelectionDeltaGameUnits = context.pivotAuthoritySelectionDeltaGameUnits;
+        auto& pivotAuthorityLongLeverGameUnits = context.pivotAuthorityLongLeverGameUnits;
+        auto*& surfaceOwnerNode = context.surfaceOwnerNode;
+        auto*& authoredGrabNode = context.authoredGrabNode;
+        auto& meshContactOnly = context.meshContactOnly;
+        auto& grabPointMode = context.grabPointMode;
+        auto& grabFallbackReason = context.grabFallbackReason;
+        auto& palmSeatPointMode = context.palmSeatPointMode;
+        auto& palmSeatFallbackReason = context.palmSeatFallbackReason;
+        auto& fingerEvidencePointMode = context.fingerEvidencePointMode;
+        auto& fingerEvidenceFallbackReason = context.fingerEvidenceFallbackReason;
+
+        auto abortGrab = [&]() {
+            return abortGrabAcquisition(context);
         };
 
-        const RE::NiTransform handBodyWorldAtGrab = getLiveBodyWorldTransform(world, _handBody.getBodyId());
-        RE::NiTransform proxyFrameWorldAtGrab = handBodyWorldAtGrab;
-        const char* proxyFrameSourceAtGrab = "unresolved";
-        const bool hasPalmProxyFrameAtGrab =
+        handBodyWorldAtGrab = getLiveBodyWorldTransform(world, _handBody.getBodyId());
+        proxyFrameWorldAtGrab = handBodyWorldAtGrab;
+        proxyFrameSourceAtGrab = "unresolved";
+        hasPalmProxyFrameAtGrab =
             resolveGrabAuthorityProxyFrame(
                 world,
                 handWorldTransform,
@@ -8264,12 +8480,12 @@ namespace rock
          * configured seat offset in generated/proxy local space. The generated
          * collision body path and hidden proxy seat now agree at startup.
          */
-        const RE::NiPoint3 grabAuthorityPivotAWorld = proxyFrameWorldAtGrab.translate;
-        const RE::NiPoint3 palmPocketPivotAWorld = proxyFrameWorldAtGrab.translate;
-        const float palmPocketToProxyDeltaGameUnits = pointDistanceGameUnits(grabAuthorityPivotAWorld, palmPocketPivotAWorld);
-        const GrabPalmBasisDelta grabPalmBasisDelta = computeGrabPalmBasisDelta(handWorldTransform, proxyFrameWorldAtGrab);
-        const RE::NiPoint3 grabPivotAForPrimaryChoice = palmPocketPivotAWorld;
-        const RE::NiTransform proxyAuthorityFrameWorldAtGrab =
+        grabAuthorityPivotAWorld = proxyFrameWorldAtGrab.translate;
+        palmPocketPivotAWorld = proxyFrameWorldAtGrab.translate;
+        palmPocketToProxyDeltaGameUnits = pointDistanceGameUnits(grabAuthorityPivotAWorld, palmPocketPivotAWorld);
+        grabPalmBasisDelta = computeGrabPalmBasisDelta(handWorldTransform, proxyFrameWorldAtGrab);
+        grabPivotAForPrimaryChoice = palmPocketPivotAWorld;
+        proxyAuthorityFrameWorldAtGrab =
             makeGeneratedProxyAuthorityRelationFrame(proxyFrameWorldAtGrab);
 
         if (grabPalmBasisDelta.rotationDegrees > kGrabFrameMismatchRawProxyRotationWarnDegrees) {
@@ -8308,7 +8524,7 @@ namespace rock
             preparedBodySet.records.size(),
             preparedBodySet.acceptedCount(),
             preparedBodySet.rejectedCount(),
-            bodySetPrep.seedBodyId,
+            context.bodySetSeedBodyId,
             preparedBodySet.diagnostics.seedBodiesAdded,
             beforePrepScanCacheHit ? "cache" : "direct",
             preparedScanCacheHit ? "cache" : "direct",
@@ -8342,67 +8558,50 @@ namespace rock
             grabPalmBasisDelta.rawDeterminant,
             grabPalmBasisDelta.proxyDeterminant);
 
-        auto* collidableNode = sel.hitNode ? sel.hitNode : rootNode;
-        auto* meshSourceNode = sel.visualNode ? sel.visualNode : rootNode;
+        collidableNode = sel.hitNode ? sel.hitNode : rootNode;
+        meshSourceNode = sel.visualNode ? sel.visualNode : rootNode;
         if (!meshSourceNode) {
             meshSourceNode = collidableNode;
         }
-        RE::NiTransform objectWorldTransform;
 
-        RE::NiPoint3 grabGripPoint = sel.hasHitPoint ? sel.hitPointWorld : grabPivotAForPrimaryChoice;
-        float selectionToMeshDistanceGameUnits = 0.0f;
-        bool meshGrabFound = false;
-        MeshExtractionStats meshStats;
-        std::vector<TriangleData> grabMeshTriangles;
-        std::vector<TriangleData> grabFingerPoseMeshTriangles;
-        std::vector<GrabSurfaceTriangleData> grabSurfaceTriangles;
-        std::vector<GrabLocalTriangle> grabLocalMeshTriangles;
-        std::vector<GrabLocalTriangle> grabFingerPoseLocalMeshTriangles;
-        GrabSurfaceHit grabSurfaceHit{};
-        RuntimeGrabContactPatch contactPatchRuntime{};
-        RuntimeMultiFingerGripContact multiFingerGripRuntime{};
-        RE::NiPoint3 palmSeatPointWorld{};
-        RE::NiPoint3 fingerEvidencePointWorld{};
-        GrabSurfaceHit palmSeatSurfaceHit{};
-        GrabSurfaceHit fingerEvidenceSurfaceHit{};
-        bool contactPatchEvidenceAvailable = false;
-        bool multiFingerGripUsed = false;
-        bool palmSeatPointValid = false;
-        bool fingerEvidencePointValid = false;
-        bool activeGrabPointUsesMultiFingerEvidence = false;
-        const char* contactPatchPivotAuthorityReason = "notEvaluated";
-        const char* pivotAuthoritySource = "notEvaluated";
-        bool pivotAuthorityNormalTrusted = false;
-        bool pivotAuthorityPositionOnly = false;
-        float pivotAuthorityPositionConfidence = 0.0f;
-        float pivotAuthorityPocketDistanceGameUnits = std::numeric_limits<float>::max();
-        float pivotAuthoritySelectionDeltaGameUnits = std::numeric_limits<float>::max();
-        float pivotAuthorityLongLeverGameUnits = 0.0f;
-        RE::NiAVObject* surfaceOwnerNode = nullptr;
-        RE::NiAVObject* authoredGrabNode = nullptr;
-        const bool meshContactOnly = g_rockConfig.rockGrabMeshContactOnly;
-        const char* grabPointMode = sel.hasHitPoint ? "selectionHitPointFallback" : "noContactPointPending";
-        const char* grabFallbackReason = meshSourceNode ? "noTriangles" : "noMeshSourceNode";
-        const char* palmSeatPointMode = grabPointMode;
-        const char* palmSeatFallbackReason = grabFallbackReason;
-        const char* fingerEvidencePointMode = "none";
-        const char* fingerEvidenceFallbackReason = "none";
-        auto failHandPocketOnlyGrab = [&]() {
-            ROCK_LOG_WARN(Hand,
-                "{} hand GRAB failed: hand-pocket-only target requires pinch or palm-pocket support authority for '{}' formID={:08X}; targetKind={} meshNode='{}' ownerNode='{}' rootNode='{}' shapes={} totalTris={} reason={}",
-                handName(),
-                objName,
-                sel.refr->GetFormID(),
-                grab_target::name(sel.targetKind),
-                nodeDebugName(meshSourceNode),
-                nodeDebugName(collidableNode),
-                nodeDebugName(rootNode),
-                meshStats.visitedShapes,
-                meshStats.totalTriangles(),
-                grabFallbackReason);
-            return abortGrab();
-        };
-
+        grabGripPoint = sel.hasHitPoint ? sel.hitPointWorld : grabPivotAForPrimaryChoice;
+        selectionToMeshDistanceGameUnits = 0.0f;
+        meshGrabFound = false;
+        meshStats = {};
+        grabMeshTriangles.clear();
+        grabFingerPoseMeshTriangles.clear();
+        grabSurfaceTriangles.clear();
+        grabLocalMeshTriangles.clear();
+        grabFingerPoseLocalMeshTriangles.clear();
+        grabSurfaceHit = {};
+        contactPatchRuntime = {};
+        multiFingerGripRuntime = {};
+        palmSeatPointWorld = {};
+        fingerEvidencePointWorld = {};
+        palmSeatSurfaceHit = {};
+        fingerEvidenceSurfaceHit = {};
+        contactPatchEvidenceAvailable = false;
+        multiFingerGripUsed = false;
+        palmSeatPointValid = false;
+        fingerEvidencePointValid = false;
+        activeGrabPointUsesMultiFingerEvidence = false;
+        contactPatchPivotAuthorityReason = "notEvaluated";
+        pivotAuthoritySource = "notEvaluated";
+        pivotAuthorityNormalTrusted = false;
+        pivotAuthorityPositionOnly = false;
+        pivotAuthorityPositionConfidence = 0.0f;
+        pivotAuthorityPocketDistanceGameUnits = std::numeric_limits<float>::max();
+        pivotAuthoritySelectionDeltaGameUnits = std::numeric_limits<float>::max();
+        pivotAuthorityLongLeverGameUnits = 0.0f;
+        surfaceOwnerNode = nullptr;
+        authoredGrabNode = nullptr;
+        meshContactOnly = g_rockConfig.rockGrabMeshContactOnly;
+        grabPointMode = sel.hasHitPoint ? "selectionHitPointFallback" : "noContactPointPending";
+        grabFallbackReason = meshSourceNode ? "noTriangles" : "noMeshSourceNode";
+        palmSeatPointMode = grabPointMode;
+        palmSeatFallbackReason = grabFallbackReason;
+        fingerEvidencePointMode = "none";
+        fingerEvidenceFallbackReason = "none";
         const auto logGrabCaptureRefresh = [&](const GrabCaptureTransformRefreshResult& refresh) {
             if (!grabTimelineTraceEnabled()) {
                 return;
@@ -8452,6 +8651,35 @@ namespace rock
                 nodeDebugName(collidableNode));
             return abortGrab();
         }
+
+
+        return true;
+    }
+
+    bool Hand::extractGrabMesh(hand_grab_detail::GrabAcquisitionContext& context)
+    {
+        auto* world = context.world;
+        const auto& sel = context.selection;
+        const auto objectBodyId = context.objectBodyId;
+        const bool handPocketOnlyGrab = context.handPocketOnlyGrab;
+        auto* rootNode = context.rootNode;
+        const auto& proxyAuthorityFrameWorldAtGrab = context.proxyAuthorityFrameWorldAtGrab;
+        const auto& palmPocketPivotAWorld = context.palmPocketPivotAWorld;
+        auto*& collidableNode = context.collidableNode;
+        auto*& meshSourceNode = context.meshSourceNode;
+        auto& grabGripPoint = context.grabGripPoint;
+        auto& selectionToMeshDistanceGameUnits = context.selectionToMeshDistanceGameUnits;
+        auto& meshGrabFound = context.meshGrabFound;
+        auto& meshStats = context.meshStats;
+        auto& grabMeshTriangles = context.grabMeshTriangles;
+        auto& grabSurfaceTriangles = context.grabSurfaceTriangles;
+        auto& grabSurfaceHit = context.grabSurfaceHit;
+        auto*& surfaceOwnerNode = context.surfaceOwnerNode;
+        auto*& authoredGrabNode = context.authoredGrabNode;
+        auto& meshContactOnly = context.meshContactOnly;
+        auto& hasMeshSurfaceContact = context.hasMeshSurfaceContact;
+        auto& grabPointMode = context.grabPointMode;
+        auto& grabFallbackReason = context.grabFallbackReason;
 
         /*
          * hknp selection identifies the object/body. In mesh-authoritative mode
@@ -8808,22 +9036,93 @@ namespace rock
                 meshStats.dynamicSkinnedSkipped, meshStats.emptyShapes, meshStats.blacklistedShapes, grabGripPoint.x, grabGripPoint.y, grabGripPoint.z);
         }
 
-        const bool hasMeshSurfaceContact =
+        hasMeshSurfaceContact =
             meshGrabFound && grabSurfaceHit.valid && grabSurfaceHit.sourceKind != GrabSurfaceSourceKind::CollisionQuery;
-        const auto contactSourcePolicy = grab_contact_source_policy::evaluateGrabContactSourcePolicy(
+
+        return true;
+    }
+
+    bool Hand::resolvePrimaryGrabBody(hand_grab_detail::GrabAcquisitionContext& context)
+    {
+        auto* world = context.world;
+        const auto& sel = context.selection;
+        const auto selectedRef = sel.retainedRef;
+        const bool handPocketOnlyGrab = context.handPocketOnlyGrab;
+        auto* rootNode = context.rootNode;
+        const auto& objName = context.objectName;
+        const auto selectedOriginalMotionPropsId = context.selectedOriginalMotionPropsId;
+        const auto grabTraceId = context.grabTraceId;
+        auto& activeLifecycle = context.activeLifecycle;
+        const auto& beforePrepBodySet = context.beforePrepBodySet;
+        const auto& preparedBodySet = context.preparedBodySet;
+        auto& objectBodyId = context.objectBodyId;
+        const auto& grabPivotAForPrimaryChoice = context.grabPivotAForPrimaryChoice;
+        auto*& collidableNode = context.collidableNode;
+        auto* meshSourceNode = context.meshSourceNode;
+        auto& objectWorldTransform = context.objectWorldTransform;
+        auto& grabGripPoint = context.grabGripPoint;
+        const bool meshGrabFound = context.meshGrabFound;
+        const auto& meshStats = context.meshStats;
+        auto& grabMeshTriangles = context.grabMeshTriangles;
+        auto& grabLocalMeshTriangles = context.grabLocalMeshTriangles;
+        auto& grabSurfaceHit = context.grabSurfaceHit;
+        auto* surfaceOwnerNode = context.surfaceOwnerNode;
+        auto* authoredGrabNode = context.authoredGrabNode;
+        const bool meshContactOnly = context.meshContactOnly;
+        const bool hasMeshSurfaceContact = context.hasMeshSurfaceContact;
+        const auto grabPointMode = context.grabPointMode;
+        auto& grabContactQualityMode = context.grabContactQualityMode;
+        auto& contactSourcePolicy = context.contactSourcePolicy;
+        auto& multiFingerEvidenceEnabled = context.multiFingerEvidenceEnabled;
+        auto& hybridFingerProbeEvidenceEnabled = context.hybridFingerProbeEvidenceEnabled;
+        auto& primaryChoice = context.primaryChoice;
+        auto& surfaceOwnerMatchesResolvedBody = context.surfaceOwnerMatchesResolvedBody;
+        auto& mechanicalScope = context.mechanicalScope;
+        auto& relaxedArticulatedAuthority = context.relaxedArticulatedAuthority;
+        auto& visualMeshPivotAvailable = context.visualMeshPivotAvailable;
+        auto& canonicalPivotAvailable = context.canonicalPivotAvailable;
+        auto& canonicalPivotPointWorld = context.canonicalPivotPointWorld;
+        auto& canonicalPivotNormalWorld = context.canonicalPivotNormalWorld;
+        auto& canonicalPivotMode = context.canonicalPivotMode;
+
+        auto abortGrab = [&]() {
+            return abortGrabAcquisition(context);
+        };
+        const auto logGrabCaptureRefresh = [&](const GrabCaptureTransformRefreshResult& refresh) {
+            if (!grabTimelineTraceEnabled()) {
+                return;
+            }
+            for (std::uint32_t i = 0; i < refresh.count; ++i) {
+                const auto& sample = refresh.samples[i];
+                ROCK_LOG_INFO(Hand,
+                    "{} GRAB_TRACE stage=capture_refresh trace={} hand={} role={} node='{}'({:p}) validBefore={} validAfter={} posDelta={:.4f}gu rotDelta={:.3f}deg",
+                    handName(),
+                    grabTraceId,
+                    _isLeft ? "left" : "right",
+                    sample.role,
+                    nodeDebugName(sample.node),
+                    static_cast<const void*>(sample.node),
+                    sample.validBefore ? "yes" : "no",
+                    sample.validAfter ? "yes" : "no",
+                    sample.positionDeltaGameUnits,
+                    sample.rotationDeltaDegrees);
+            }
+        };
+
+        contactSourcePolicy = grab_contact_source_policy::evaluateGrabContactSourcePolicy(
             meshContactOnly,
             g_rockConfig.rockGrabRequireMeshContact,
             hasMeshSurfaceContact,
             authoredGrabNode != nullptr);
-        const auto grabContactQualityMode = grab_contact_evidence_policy::sanitizeQualityMode(g_rockConfig.rockGrabContactQualityMode);
-        const bool multiFingerEvidenceEnabled =
+        grabContactQualityMode = grab_contact_evidence_policy::sanitizeQualityMode(g_rockConfig.rockGrabContactQualityMode);
+        multiFingerEvidenceEnabled =
             g_rockConfig.rockGrabMultiFingerContactValidationEnabled &&
             grabContactQualityMode != grab_contact_evidence_policy::GrabContactQualityMode::LegacyPermissive &&
             !authoredGrabNode &&
             !handPocketOnlyGrab &&
             meshContactOnly &&
             g_rockConfig.rockGrabRequireMeshContact;
-        const bool hybridFingerProbeEvidenceEnabled =
+        hybridFingerProbeEvidenceEnabled =
             multiFingerEvidenceEnabled &&
             grabContactQualityMode == grab_contact_evidence_policy::GrabContactQualityMode::HybridEvidence;
         if (contactSourcePolicy.failWithoutMesh && !handPocketOnlyGrab) {
@@ -8859,7 +9158,7 @@ namespace rock
             .surfaceIsSkinned = grabSurfaceHit.valid && grabSurfaceHit.sourceKind == GrabSurfaceSourceKind::Skinned,
             .hasSkinInfluences = grabSurfaceHit.valid && grabSurfaceHit.hasSkinInfluences,
         });
-        const object_physics_body_set::PrimaryBodyChoice primaryChoice{
+        primaryChoice = object_physics_body_set::PrimaryBodyChoice{
             .bodyId = skinnedBodyResolution.bodyId,
             .reason = skinnedBodyResolution.source == skinned_body_resolver::ResolutionSource::WeightedSkinOwner ||
                     skinnedBodyResolution.source == skinned_body_resolver::ResolutionSource::TriangleOwner ||
@@ -8871,7 +9170,7 @@ namespace rock
                                 object_physics_body_set::PrimaryBodyChoiceReason::NearestAcceptedFallback :
                                 object_physics_body_set::PrimaryBodyChoiceReason::NoAcceptedBody)),
         };
-        bool surfaceOwnerMatchesResolvedBody = true;
+        surfaceOwnerMatchesResolvedBody = true;
         if (grabSurfaceHit.valid) {
             const bool handPocketPositionOnlySkinnedSurface =
                 handPocketOnlyGrab && grabSurfaceHit.sourceKind == GrabSurfaceSourceKind::Skinned && !grabSurfaceHit.hasSkinInfluences;
@@ -8934,13 +9233,13 @@ namespace rock
             return abortGrab();
         }
 
-        const auto mechanicalScope = mechanical_connected_body_set::buildFromPreparedBodySet(
+        mechanicalScope = mechanical_connected_body_set::buildFromPreparedBodySet(
             beforePrepBodySet,
             preparedBodySet,
             primaryChoice.bodyId,
             sel.targetKind,
             activeLifecycle.hasIncompleteNativeScan());
-        const bool relaxedArticulatedAuthority =
+        relaxedArticulatedAuthority =
             mechanicalScope.strictPocketAuthorityRelaxed && primaryChoice.bodyId != object_physics_body_set::INVALID_BODY_ID;
         ROCK_LOG_DEBUG(Hand,
             "{} hand MECHANICAL SCOPE: targetKind={} kind={} reason={} primaryBody={} bodies={} accepted={} motions={} fixedRejects={} incomplete={} driveMode={} linearScope={} angularScope={} massScope={}",
@@ -8990,11 +9289,11 @@ namespace rock
          */
         const bool collisionFallbackPivotAllowed =
             !meshContactOnly && meshGrabFound && grabSurfaceHit.valid && grabSurfaceHit.sourceKind == GrabSurfaceSourceKind::CollisionQuery;
-        const bool visualMeshPivotAvailable = authoredGrabNode != nullptr || hasMeshSurfaceContact;
-        const bool canonicalPivotAvailable = visualMeshPivotAvailable || collisionFallbackPivotAllowed;
-        RE::NiPoint3 canonicalPivotPointWorld = grabGripPoint;
-        RE::NiPoint3 canonicalPivotNormalWorld = grabSurfaceHit.valid ? grabSurfaceHit.normal : RE::NiPoint3{};
-        const char* canonicalPivotMode = grabPointMode;
+        visualMeshPivotAvailable = authoredGrabNode != nullptr || hasMeshSurfaceContact;
+        canonicalPivotAvailable = visualMeshPivotAvailable || collisionFallbackPivotAllowed;
+        canonicalPivotPointWorld = grabGripPoint;
+        canonicalPivotNormalWorld = grabSurfaceHit.valid ? grabSurfaceHit.normal : RE::NiPoint3{};
+        canonicalPivotMode = grabPointMode;
 
         objectBodyId = RE::hknpBodyId{ primaryChoice.bodyId };
         auto* preparedBody = havok_runtime::getBody(world, objectBodyId);
@@ -9046,18 +9345,72 @@ namespace rock
             grabLocalMeshTriangles = cacheTrianglesInLocalSpace(grabMeshTriangles, objectWorldTransform);
         }
 
-        const auto semanticContacts = collectFreshSemanticContactsForBody(
+
+        return true;
+    }
+
+    bool Hand::resolveGrabPivotAuthority(hand_grab_detail::GrabAcquisitionContext& context)
+    {
+        auto* world = context.world;
+        const auto& sel = context.selection;
+        const auto& objName = context.objectName;
+        const bool handPocketOnlyGrab = context.handPocketOnlyGrab;
+        auto* rootNode = context.rootNode;
+        auto* collidableNode = context.collidableNode;
+        auto* meshSourceNode = context.meshSourceNode;
+        auto& objectBodyId = context.objectBodyId;
+        const auto& preparedBodySet = context.preparedBodySet;
+        const auto& proxyAuthorityFrameWorldAtGrab = context.proxyAuthorityFrameWorldAtGrab;
+        const auto& palmPocketPivotAWorld = context.palmPocketPivotAWorld;
+        auto& objectWorldTransform = context.objectWorldTransform;
+        auto& grabGripPoint = context.grabGripPoint;
+        auto& selectionToMeshDistanceGameUnits = context.selectionToMeshDistanceGameUnits;
+        auto& meshGrabFound = context.meshGrabFound;
+        auto& grabSurfaceTriangles = context.grabSurfaceTriangles;
+        auto& grabLocalMeshTriangles = context.grabLocalMeshTriangles;
+        auto& grabSurfaceHit = context.grabSurfaceHit;
+        auto& contactPatchRuntime = context.contactPatchRuntime;
+        auto& contactPatchEvidenceAvailable = context.contactPatchEvidenceAvailable;
+        auto*& surfaceOwnerNode = context.surfaceOwnerNode;
+        const auto authoredGrabNode = context.authoredGrabNode;
+        const bool visualMeshPivotAvailable = context.visualMeshPivotAvailable;
+        const auto& contactSourcePolicy = context.contactSourcePolicy;
+        auto& surfaceOwnerMatchesResolvedBody = context.surfaceOwnerMatchesResolvedBody;
+        auto& grabPointMode = context.grabPointMode;
+        auto& grabFallbackReason = context.grabFallbackReason;
+        auto& contactPatchPivotAuthorityReason = context.contactPatchPivotAuthorityReason;
+        auto& pivotAuthoritySource = context.pivotAuthoritySource;
+        auto& pivotAuthorityNormalTrusted = context.pivotAuthorityNormalTrusted;
+        auto& pivotAuthorityPositionOnly = context.pivotAuthorityPositionOnly;
+        auto& pivotAuthorityPositionConfidence = context.pivotAuthorityPositionConfidence;
+        auto& pivotAuthorityPocketDistanceGameUnits = context.pivotAuthorityPocketDistanceGameUnits;
+        auto& pivotAuthoritySelectionDeltaGameUnits = context.pivotAuthoritySelectionDeltaGameUnits;
+        auto& pivotAuthorityLongLeverGameUnits = context.pivotAuthorityLongLeverGameUnits;
+        const bool canonicalPivotAvailable = context.canonicalPivotAvailable;
+        auto& canonicalPivotPointWorld = context.canonicalPivotPointWorld;
+        auto& canonicalPivotNormalWorld = context.canonicalPivotNormalWorld;
+        const auto canonicalPivotMode = context.canonicalPivotMode;
+        auto& semanticContacts = context.semanticContacts;
+        auto& acquisitionPocket = context.acquisitionPocket;
+        auto& palmPocketSurfaceHit = context.palmPocketSurfaceHit;
+        auto& palmPocketMeshAvailable = context.palmPocketMeshAvailable;
+
+        auto abortGrab = [&]() {
+            return abortGrabAcquisition(context);
+        };
+
+        semanticContacts = collectFreshSemanticContactsForBody(
             objectBodyId.value,
             static_cast<std::uint32_t>(g_rockConfig.rockGrabOppositionContactMaxAgeFrames));
         const RE::NiPoint3 acquisitionGrabPivotAWorld = palmPocketPivotAWorld;
-        const auto acquisitionPocket = grab_three_phase::buildGrabPocketFrameWithPalmCenter(
+        acquisitionPocket = grab_three_phase::buildGrabPocketFrameWithPalmCenter(
             proxyAuthorityFrameWorldAtGrab,
             _isLeft,
             acquisitionGrabPivotAWorld,
             g_rockConfig.rockGrabPocketDepthGameUnits,
             g_rockConfig.rockGrabPocketRadiusGameUnits);
-        GrabSurfaceHit palmPocketSurfaceHit{};
-        bool palmPocketMeshAvailable = false;
+        palmPocketSurfaceHit = {};
+        palmPocketMeshAvailable = false;
         if (!authoredGrabNode && acquisitionPocket.valid && !grabSurfaceTriangles.empty()) {
             const float palmPocketSnapDistance = (std::max)(
                 g_rockConfig.rockGrabPocketRadiusGameUnits,
@@ -9361,7 +9714,87 @@ namespace rock
             return abortGrab();
         }
 
-        const RuntimePinchPocketCandidate pinchPocketCandidate = buildRuntimePinchPocketCandidate(
+
+        return true;
+    }
+
+    bool Hand::evaluateGrabContactEvidence(hand_grab_detail::GrabAcquisitionContext& context)
+    {
+        auto* world = context.world;
+        const auto& sel = context.selection;
+        const auto& handWorldTransform = context.handWorldTransform;
+        const bool handPocketOnlyGrab = context.handPocketOnlyGrab;
+        const bool grabbedFromPullCatch = context.grabbedFromPullCatch;
+        const bool looseWeaponGrab = context.looseWeaponGrab;
+        const auto objectBodyId = context.objectBodyId;
+        auto* rootNode = context.rootNode;
+        const auto& objName = context.objectName;
+        const auto& palmPocketPivotAWorld = context.palmPocketPivotAWorld;
+        const auto& preparedBodySet = context.preparedBodySet;
+        auto* collidableNode = context.collidableNode;
+        auto* meshSourceNode = context.meshSourceNode;
+        const auto& objectWorldTransform = context.objectWorldTransform;
+        auto& grabGripPoint = context.grabGripPoint;
+        auto& selectionToMeshDistanceGameUnits = context.selectionToMeshDistanceGameUnits;
+        auto& meshGrabFound = context.meshGrabFound;
+        const auto& meshStats = context.meshStats;
+        const auto& grabSurfaceTriangles = context.grabSurfaceTriangles;
+        const auto& grabLocalMeshTriangles = context.grabLocalMeshTriangles;
+        auto& grabSurfaceHit = context.grabSurfaceHit;
+        auto& contactPatchRuntime = context.contactPatchRuntime;
+        auto& multiFingerGripRuntime = context.multiFingerGripRuntime;
+        auto& palmSeatPointWorld = context.palmSeatPointWorld;
+        auto& fingerEvidencePointWorld = context.fingerEvidencePointWorld;
+        auto& palmSeatSurfaceHit = context.palmSeatSurfaceHit;
+        auto& fingerEvidenceSurfaceHit = context.fingerEvidenceSurfaceHit;
+        auto& contactPatchEvidenceAvailable = context.contactPatchEvidenceAvailable;
+        auto& multiFingerGripUsed = context.multiFingerGripUsed;
+        auto& palmSeatPointValid = context.palmSeatPointValid;
+        auto& fingerEvidencePointValid = context.fingerEvidencePointValid;
+        auto& activeGrabPointUsesMultiFingerEvidence = context.activeGrabPointUsesMultiFingerEvidence;
+        auto& contactPatchPivotAuthorityReason = context.contactPatchPivotAuthorityReason;
+        auto& pivotAuthoritySource = context.pivotAuthoritySource;
+        auto& pivotAuthorityNormalTrusted = context.pivotAuthorityNormalTrusted;
+        auto& pivotAuthorityPositionOnly = context.pivotAuthorityPositionOnly;
+        auto& pivotAuthorityPositionConfidence = context.pivotAuthorityPositionConfidence;
+        auto& pivotAuthorityPocketDistanceGameUnits = context.pivotAuthorityPocketDistanceGameUnits;
+        auto& pivotAuthoritySelectionDeltaGameUnits = context.pivotAuthoritySelectionDeltaGameUnits;
+        const auto authoredGrabNode = context.authoredGrabNode;
+        const bool relaxedArticulatedAuthority = context.relaxedArticulatedAuthority;
+        const bool canonicalPivotAvailable = context.canonicalPivotAvailable;
+        const bool visualMeshPivotAvailable = context.visualMeshPivotAvailable;
+        auto& grabPointMode = context.grabPointMode;
+        auto& grabFallbackReason = context.grabFallbackReason;
+        auto& palmSeatPointMode = context.palmSeatPointMode;
+        auto& palmSeatFallbackReason = context.palmSeatFallbackReason;
+        auto& fingerEvidencePointMode = context.fingerEvidencePointMode;
+        auto& fingerEvidenceFallbackReason = context.fingerEvidenceFallbackReason;
+        const auto grabContactQualityMode = context.grabContactQualityMode;
+        const bool multiFingerEvidenceEnabled = context.multiFingerEvidenceEnabled;
+        const bool hybridFingerProbeEvidenceEnabled = context.hybridFingerProbeEvidenceEnabled;
+        const auto& semanticContacts = context.semanticContacts;
+        auto& pinchPocketCandidate = context.pinchPocketCandidate;
+
+        auto abortGrab = [&]() {
+            return abortGrabAcquisition(context);
+        };
+        auto failHandPocketOnlyGrab = [&]() {
+            ROCK_LOG_WARN(Hand,
+                "{} hand GRAB failed: hand-pocket-only target requires pinch or palm-pocket support authority for '{}' formID={:08X}; targetKind={} meshNode='{}' ownerNode='{}' rootNode='{}' shapes={} totalTris={} reason={}",
+                handName(),
+                objName,
+                sel.refr->GetFormID(),
+                grab_target::name(sel.targetKind),
+                nodeDebugName(meshSourceNode),
+                nodeDebugName(collidableNode),
+                nodeDebugName(rootNode),
+                meshStats.visitedShapes,
+                meshStats.totalTriangles(),
+                grabFallbackReason);
+            return abortGrab();
+        };
+
+        pinchPocketCandidate = buildRuntimePinchPocketCandidate(
             sel,
             preparedBodySet,
             objectBodyId.value,
@@ -9621,6 +10054,91 @@ namespace rock
             fingerEvidencePointWorld.x,
             fingerEvidencePointWorld.y,
             fingerEvidencePointWorld.z);
+
+
+        return true;
+    }
+
+    bool Hand::captureCanonicalGrabFrame(hand_grab_detail::GrabAcquisitionContext& context)
+    {
+        auto* world = context.world;
+        const auto& sel = context.selection;
+        const auto& sharedContext = *context.sharedContext;
+        const bool joiningPeerHeldObject = context.joiningPeerHeldObject;
+        const bool looseWeaponGrab = context.looseWeaponGrab;
+        const bool grabbedFromPullCatch = context.grabbedFromPullCatch;
+        auto& objectBodyId = context.objectBodyId;
+        auto* rootNode = context.rootNode;
+        const auto& objName = context.objectName;
+        const auto motionTypeStr = context.motionType;
+        const auto grabTraceId = context.grabTraceId;
+        const auto& preparedBodySet = context.preparedBodySet;
+        const auto& handWorldTransform = context.handWorldTransform;
+        const auto& handBodyWorldAtGrab = context.handBodyWorldAtGrab;
+        const auto& proxyFrameWorldAtGrab = context.proxyFrameWorldAtGrab;
+        const auto proxyFrameSourceAtGrab = context.proxyFrameSourceAtGrab;
+        const bool hasPalmProxyFrameAtGrab = context.hasPalmProxyFrameAtGrab;
+        const auto& proxyAuthorityFrameWorldAtGrab = context.proxyAuthorityFrameWorldAtGrab;
+        const auto& palmPocketPivotAWorld = context.palmPocketPivotAWorld;
+        auto*& collidableNode = context.collidableNode;
+        auto* meshSourceNode = context.meshSourceNode;
+        auto& objectWorldTransform = context.objectWorldTransform;
+        auto& grabGripPoint = context.grabGripPoint;
+        auto& selectionToMeshDistanceGameUnits = context.selectionToMeshDistanceGameUnits;
+        const auto& grabMeshTriangles = context.grabMeshTriangles;
+        auto& grabFingerPoseMeshTriangles = context.grabFingerPoseMeshTriangles;
+        const auto& grabSurfaceTriangles = context.grabSurfaceTriangles;
+        auto& grabLocalMeshTriangles = context.grabLocalMeshTriangles;
+        auto& grabFingerPoseLocalMeshTriangles = context.grabFingerPoseLocalMeshTriangles;
+        auto& grabSurfaceHit = context.grabSurfaceHit;
+        auto& contactPatchRuntime = context.contactPatchRuntime;
+        auto& multiFingerGripRuntime = context.multiFingerGripRuntime;
+        const auto& fingerEvidencePointWorld = context.fingerEvidencePointWorld;
+        auto& contactPatchEvidenceAvailable = context.contactPatchEvidenceAvailable;
+        auto& multiFingerGripUsed = context.multiFingerGripUsed;
+        const auto fingerEvidencePointValid = context.fingerEvidencePointValid;
+        auto& pivotAuthoritySource = context.pivotAuthoritySource;
+        auto& pivotAuthorityNormalTrusted = context.pivotAuthorityNormalTrusted;
+        auto& pivotAuthorityPositionOnly = context.pivotAuthorityPositionOnly;
+        auto& pivotAuthorityPositionConfidence = context.pivotAuthorityPositionConfidence;
+        auto& pivotAuthorityPocketDistanceGameUnits = context.pivotAuthorityPocketDistanceGameUnits;
+        auto& pivotAuthoritySelectionDeltaGameUnits = context.pivotAuthoritySelectionDeltaGameUnits;
+        auto& pivotAuthorityLongLeverGameUnits = context.pivotAuthorityLongLeverGameUnits;
+        const auto& mechanicalScope = context.mechanicalScope;
+        const auto& primaryChoice = context.primaryChoice;
+        const auto authoredGrabNode = context.authoredGrabNode;
+        const auto& canonicalPivotNormalWorld = context.canonicalPivotNormalWorld;
+        const auto& semanticContacts = context.semanticContacts;
+        const auto& palmPocketSurfaceHit = context.palmPocketSurfaceHit;
+        const bool palmPocketMeshAvailable = context.palmPocketMeshAvailable;
+        const auto& pinchPocketCandidate = context.pinchPocketCandidate;
+        auto& grabPointMode = context.grabPointMode;
+        auto& grabFallbackReason = context.grabFallbackReason;
+        auto& resolvedGrabOffsetSource = context.resolvedGrabOffsetSource;
+
+        auto abortGrab = [&]() {
+            return abortGrabAcquisition(context);
+        };
+        const auto logGrabCaptureRefresh = [&](const GrabCaptureTransformRefreshResult& refresh) {
+            if (!grabTimelineTraceEnabled()) {
+                return;
+            }
+            for (std::uint32_t i = 0; i < refresh.count; ++i) {
+                const auto& sample = refresh.samples[i];
+                ROCK_LOG_INFO(Hand,
+                    "{} GRAB_TRACE stage=capture_refresh trace={} hand={} role={} node='{}'({:p}) validBefore={} validAfter={} posDelta={:.4f}gu rotDelta={:.3f}deg",
+                    handName(),
+                    grabTraceId,
+                    _isLeft ? "left" : "right",
+                    sample.role,
+                    nodeDebugName(sample.node),
+                    static_cast<const void*>(sample.node),
+                    sample.validBefore ? "yes" : "no",
+                    sample.validAfter ? "yes" : "no",
+                    sample.positionDeltaGameUnits,
+                    sample.rotationDeltaDegrees);
+            }
+        };
 
         logRuntimeScaleIfChanged(_isLeft, handName(), handWorldTransform, collidableNode);
 
@@ -11355,6 +11873,53 @@ namespace rock
             }
         }
 
+
+        return true;
+    }
+
+    bool Hand::commitGrabDrive(hand_grab_detail::GrabAcquisitionContext& context)
+    {
+        if (!context.world || !context.bhkWorld || !context.selection.isValid() || !context.sharedContext) {
+            return false;
+        }
+
+        auto* world = context.world;
+        auto* bhkWorld = context.bhkWorld;
+        const auto& sel = context.selection;
+        const auto& sharedContext = *context.sharedContext;
+        const auto* bodyBoneColliders = context.bodyBoneColliders;
+        auto* rootNode = context.rootNode;
+        auto& activeLifecycle = context.activeLifecycle;
+        const auto& handWorldTransform = context.handWorldTransform;
+        const float tau = context.tau;
+        const float damping = context.damping;
+        const float maxForce = context.maxForce;
+        const float proportionalRecovery = context.proportionalRecovery;
+        const float constantRecovery = context.constantRecovery;
+        const auto objectBodyId = context.objectBodyId;
+        const bool joiningPeerHeldObject = context.joiningPeerHeldObject;
+        const bool looseWeaponGrab = context.looseWeaponGrab;
+        const auto& proxyFrameWorldAtGrab = context.proxyFrameWorldAtGrab;
+        const auto& grabGripPoint = context.grabGripPoint;
+        const bool meshGrabFound = context.meshGrabFound;
+        const char* grabPointMode = context.grabPointMode;
+        const char* grabFallbackReason = context.grabFallbackReason;
+
+        auto abortGrab = [&]() -> bool {
+            abortGrabAcquisition(GrabAcquisitionUnwind{
+                .world = world,
+                .bhkWorld = bhkWorld,
+                .rootNode = rootNode,
+                .lifecycle = &activeLifecycle,
+                .objectBodyId = objectBodyId,
+                .targetKind = sel.targetKind,
+                .originalMotionPropsId = context.selectedOriginalMotionPropsId,
+                .joiningPeerHeldObject = joiningPeerHeldObject,
+                .consumedPullPrepLifecycle = context.consumedPullPrepLifecycle,
+            });
+            return false;
+        };
+
         {
             const RE::hkVector4f zeroVel{ 0.0f, 0.0f, 0.0f, 0.0f };
             havok_runtime::setBodyVelocityDeferred(world, objectBodyId.value, zeroVel, zeroVel);
@@ -11579,6 +12144,23 @@ namespace rock
             _nearbyGrabDamping.clear();
         }
 
+        return true;
+    }
+
+
+    void Hand::publishGrabFingerPose(hand_grab_detail::GrabAcquisitionContext& context)
+    {
+        if (!context.world || !context.selection.isValid()) {
+            return;
+        }
+
+        auto* world = context.world;
+        const auto& sel = context.selection;
+        const auto& handWorldTransform = context.handWorldTransform;
+        const auto& objectWorldTransform = context.objectWorldTransform;
+        const auto& resolvedGrabOffsetSource = context.resolvedGrabOffsetSource;
+        const auto& grabFingerPoseMeshTriangles = context.grabFingerPoseMeshTriangles;
+
         stopSelectionHighlight();
         clearSelectedCloseFingerPose();
         _grabFingerPose = {};
@@ -11742,11 +12324,64 @@ namespace rock
             }
         }
 
+
+    }
+
+
+    bool Hand::grabSelectedObject(RE::hknpWorld* world,
+        const RE::NiTransform& handWorldTransform,
+        float tau,
+        float damping,
+        float maxForce,
+        float proportionalRecovery,
+        float constantRecovery,
+        const BodyBoneColliderSet* bodyBoneColliders,
+        const GrabSharedObjectContext& sharedContext)
+    {
+        hand_grab_detail::GrabAcquisitionContext context{
+            .world = world,
+            .selection = _currentSelection,
+            .sharedContext = &sharedContext,
+            .bodyBoneColliders = bodyBoneColliders,
+            .handWorldTransform = handWorldTransform,
+            .tau = tau,
+            .damping = damping,
+            .maxForce = maxForce,
+            .proportionalRecovery = proportionalRecovery,
+            .constantRecovery = constantRecovery,
+        };
+        if (!prepareGrabBodySet(context)) {
+            return false;
+        }
+
+        if (!resolveGrabCaptureFrames(context)) {
+            return false;
+        }
+        if (!extractGrabMesh(context)) {
+            return false;
+        }
+        if (!resolvePrimaryGrabBody(context)) {
+            return false;
+        }
+        if (!resolveGrabPivotAuthority(context)) {
+            return false;
+        }
+        if (!evaluateGrabContactEvidence(context)) {
+            return false;
+        }
+        if (!captureCanonicalGrabFrame(context)) {
+            return false;
+        }
+        if (!commitGrabDrive(context)) {
+            return false;
+        }
+
+        publishGrabFingerPose(context);
         applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::GrabCommitSucceeded });
         clearPullRuntimeState();
-        clearPullCatchIntent(grabbedFromPullCatch ? "pullCatchGrabbed" : "grabbed");
+        clearPullCatchIntent(context.grabbedFromPullCatch ? "pullCatchGrabbed" : "grabbed");
 
-        ROCK_LOG_INFO(Hand, "{} hand grab success -> HeldInit: bodyId={}", handName(), objectBodyId.value);
+        ROCK_LOG_INFO(Hand, "{} hand grab success -> HeldInit: bodyId={}", handName(), context.objectBodyId.value);
         return true;
     }
 
