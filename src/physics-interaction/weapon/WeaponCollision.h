@@ -665,6 +665,8 @@ namespace rock
 
         void clearEquippedWeaponIdentityState(ClearScope scope, RE::hknpWorld* world);
         void clearGeneratedSourceCache();
+        // Arms the post-undraw recapture comparison; see WeaponCollisionDiagnostics.cpp.
+        void noteUndrawnIntervalForRecaptureDiagnostic();
         void recordGeneratedRecaptureDiagnostic(
             std::uint64_t equippedKey,
             std::uint64_t identityKey,

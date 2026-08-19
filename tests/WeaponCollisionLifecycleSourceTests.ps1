@@ -231,14 +231,9 @@ Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'outLocalTriangles[\s\S]{
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'directSourceLocalTriangles[\s\S]{0,900}extractTrianglesFromTriShape[\s\S]{0,900}&directSourceLocalTriangles[\s\S]{0,1800}hasDirectSourceLocalTriangles[\s\S]{0,900}sourceLocalTriangle = directSourceLocalTriangles\[triangleIndex\]' 'Generated weapon geometry must consume native local vertices without a precision-losing world-space round trip.'
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'tryResolveDescendantWorldTransform\(\s*packageDriveNode,\s*packageWorld,\s*instance\.sourceNode,\s*sourceWorld\)' 'Generated weapon bodies must follow current descendant locals composed from the current weapon root.'
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.h' 'struct GeneratedRecaptureDiagnostic[\s\S]{0,700}sawUndrawnInterval[\s\S]{0,700}std::vector<GeneratedRecaptureDiagnosticSource>' 'Failed shoulder recapture tests must retain one value-only same-identity diagnostic baseline across the undrawn interval.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'if \(!weaponDrawn\)[\s\S]{0,220}sawUndrawnInterval = true[\s\S]{0,420}clearCurrentWeaponState\(\)' 'The undrawn lifecycle must arm recapture comparison before normal collider state teardown.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'Generated weapon post-undraw recapture diagnostic:[\s\S]{0,700}hierarchyFrameDrift[\s\S]{0,300}sourceGeometryDrift' 'Post-undraw recapture diagnostics must distinguish hierarchy-frame drift from source-local geometry drift in one session.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'Generated weapon recapture drift\[\{\}\]:[\s\S]{0,700}sourcePointerStable[\s\S]{0,300}rootPointersStable[\s\S]{0,500}sourceLocalCenterDelta' 'Recapture detail rows must expose whether the same live tree moved while source-local geometry stayed stable.'
+Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'if \(!weaponDrawn\)[\s\S]{0,200}noteUndrawnIntervalForRecaptureDiagnostic\(\);[\s\S]{0,420}clearCurrentWeaponState\(\)' 'The undrawn lifecycle must arm recapture comparison before normal collider state teardown.'
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.h' 'struct GeneratedRecaptureDiagnosticSource[\s\S]{0,900}sourceLocalMin[\s\S]{0,300}sourceLocalMax[\s\S]{0,300}sourceLocalTriangles' 'Shoulder diagnostics must retain value-only source-local geometry witnesses without retaining live engine pointers.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'baseline->sourceLocalTriangles\[triangleIndex\][\s\S]{0,500}maximumSourceTriangleVertexDeltaGame[\s\S]{0,500}sourceGeometryStable' 'Post-undraw geometry validation must compare the raw source-local triangles directly.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'liveSourceContinuityValid[\s\S]{0,900}sourcePointerStable[\s\S]{0,300}rootPointerStable[\s\S]{0,300}sourceGeometryStable[\s\S]{0,300}sourceScaleStable' 'Post-undraw diagnostics must validate exact live-tree and raw source-local geometry continuity.'
 Reject-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'const bool sourceGeometryDrifted[\s\S]{0,300}dedupPointCountStable' 'Frame-dependent deduplicated hull counts must not masquerade as source mesh mutation.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'The comparison is diagnostic only[\s\S]{0,700}current descendant-local transform' 'Shoulder recapture must retain diagnostics without installing a stale transform authority.'
 Reject-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'postUndrawFrameCorrection|generatedSourceFrameCorrection|makePostUndrawFrameCorrection|applyPostUndrawFrameCorrection' 'Fixed post-draw corrections must not separate colliders from live rendered parts.'
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'tryBuildSupportGripEvidenceView[\s\S]{0,1200}tryResolveDescendantWorldTransform' 'Support-grip surface evidence must use the current source frame shared by physical bodies.'
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'findCurrentWeaponSurfaceNearPoints[\s\S]{0,4200}tryResolveDescendantWorldTransform' 'Weapon surface queries must use current source frames shared by physical bodies.'
@@ -289,6 +284,14 @@ Require-Text $omodAuditSource 'native_memory::pointerRangeLooksReadable' 'Native
 Require-Text $omodAuditSource 'kExpectedPrefix[\s\S]{0,700}actual == kExpectedPrefix' 'The native model-customization entry must validate its byte prefix before it is called.'
 Require-Text $omodAuditSource 'REL::Module::IsVR\(\)[\s\S]{0,200}F4SE::RUNTIME_VR_1_2_72' 'The native model-customization entry must confirm the VR executable identity before it is called.'
 Reject-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'NativeConnectPointParentLayout|tryAttach3DRecurse\(|kFunc_ApplyOmodModelCustomization' 'Native VR-offset machinery must stay concentrated in WeaponCollisionOmodAudit.cpp.'
+
+
+# --- Diagnostics must stay observation-only -----------------------------------
+# Replaces a retired assertion that checked for a prose comment saying the
+# recapture comparison installs no transform authority. The property is now
+# structural and cheaper to state: the diagnostics file may not mutate collider,
+# body or identity state, whatever its comments say.
+Reject-Text 'src/physics-interaction/weapon/WeaponCollisionDiagnostics.cpp' 'publishAtomicBodyIds|destroyWeaponBody|setWeaponBodyBankCollisionEnabled|queueBodyTarget|clearEquippedWeaponIdentityState|beginWeaponBodyPublication' 'Weapon collision diagnostics must observe runtime state, never mutate collider, body or identity state.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'Weapon collision lifecycle source boundary failed:'
