@@ -19,10 +19,17 @@
 
 namespace rock::two_handed_grip_detail
 {
+    inline constexpr float kDegreesToRadians =
+        0.01745329251994329577f;
+    inline constexpr float kRadiansToDegrees =
+        57.295779513082320876f;
     inline constexpr std::size_t kSupportGripFingerLaneCount = 5;
     inline constexpr std::size_t kSupportGripFingerLaneReferenceCapacity = 10;
     inline constexpr std::size_t kSupportGripGlobalRankingIndex =
         kSupportGripFingerLaneCount;
+
+    // Reject a hand frame that cannot belong to its current VR driver.
+    inline constexpr float kMaximumBoneToDriverDistanceGameUnits = 30.0f;
 
     // A stable ordinal makes equal-distance triangle selection deterministic.
     struct RankedSupportGripTriangle

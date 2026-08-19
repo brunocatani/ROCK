@@ -1140,6 +1140,12 @@ namespace rock
             bool valid{ false };
         };
 
+        struct CanonicalFiringHoldSelection
+        {
+            RE::NiTransform handWeaponLocal{};
+            const char* source{ "live-capture" };
+        };
+
         WeaponPartGrip& partGrip(bool isLeft) { return _partGrips[isLeft ? 0u : 1u]; }
         const WeaponPartGrip& partGrip(bool isLeft) const { return _partGrips[isLeft ? 0u : 1u]; }
 
@@ -1154,6 +1160,7 @@ namespace rock
             bool firingGripProximityAuthorityEnabled,
             std::uint64_t currentEquippedWeaponOwnershipKey,
             const WeaponProviderPartAuthority& providerPartAuthority);
+        void clearActiveGripState();
         void transitionToInactive(bool publishRestoredWeaponTransform);
 
         void updateGripping(RE::NiNode* weaponNode, float dt);
@@ -1178,6 +1185,15 @@ namespace rock
             std::uint64_t currentEquippedWeaponOwnershipKey,
             const WeaponInteractionRuntimeState& leftRuntimeState,
             const WeaponInteractionRuntimeState& rightRuntimeState);
+
+        bool tryRecaptureProviderPartGrip(
+            bool isLeft,
+            bool otherGripCarries,
+            RE::NiNode* weaponNode,
+            const WeaponInteractionContact& contact,
+            const WeaponInteractionRuntimeState& runtimeState,
+            const WeaponCollision& weaponCollision,
+            const char* handRole);
 
         bool solvePartCarryWeaponAuthority(RE::NiNode* weaponNode, float dt);
 
@@ -1290,7 +1306,20 @@ namespace rock
             const RE::NiTransform& handTransform,
             bool handIsLeft) const;
 
+        bool tryComputePalmToFiringGripDistance(
+            RE::NiNode* weaponNode,
+            const RE::NiTransform& handTransform,
+            bool handIsLeft,
+            float& outDistance) const;
+
         bool tryComputePalmToGripDistanceForHand(RE::NiNode* weaponNode, bool handIsLeft, float& outDistance) const;
+
+        CanonicalFiringHoldSelection selectCanonicalFiringHold(
+            bool handIsLeft,
+            RE::NiNode* weaponNode,
+            const RE::NiTransform& liveHandWorld,
+            const RE::NiTransform* preferredAuthoredCanonical = nullptr,
+            const char* preferredAuthoredSource = nullptr) const;
 
         /*
          * Firing-hand role transition. Clears role-tagged FRIK publications of
@@ -1341,6 +1370,10 @@ namespace rock
         void clearSupportGripPose(bool isLeft);
 
         void clearPrimaryDetachVisualAuthority(bool isLeft);
+
+        void deferOrClearHandAuthorityRole(
+            scope_safe_hand_frame_math::HandAuthorityRole role,
+            bool isLeft);
 
         void deferScopeHandAuthorityClear(scope_safe_hand_frame_math::HandAuthorityRole role, bool isLeft);
 
@@ -1495,6 +1528,7 @@ namespace rock
         void clearAllVisualReturns(const char* reason, bool logCancellation, bool restoreBlockers);
         void clearNativeScopeOverlayAuthority(bool restoreNativeLocal);
         void clearNativeScopeRigidFrame();
+        void clearNativeScopeAnchorState();
         bool rebuildNativeScopeRigidFrameTarget();
         bool captureNativeScopeRigidFrame(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, RE::NiNode* scopeCamera, const RE::NiTransform& nativeCameraWorld);
         bool captureNativeScopeOverlayCalibration(const RE::NiTransform& nativeCameraWorld, std::uint64_t currentWeaponGenerationKey);
