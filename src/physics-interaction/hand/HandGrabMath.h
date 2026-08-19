@@ -1,11 +1,14 @@
 #pragma once
 
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/PhysicsBodyFrame.h"
 #include "physics-interaction/grab/GrabCore.h"
+#include "physics-interaction/grab/GrabConstraintMath.h"
 #include "physics-interaction/grab/GrabHeldObject.h"
 #include "physics-interaction/grab/GrabThreePhase.h"
 #include "physics-interaction/grab/MeshGrab.h"
 #include "physics-interaction/hand/HandColliderTypes.h"
+#include "physics-interaction/native/HavokOffsets.h"
 
 #include <algorithm>
 #include <cmath>
@@ -405,6 +408,154 @@ namespace rock::hand_grab_detail
     {
         return selectNearestTriangles(sourceTriangles, centerWorld, maxTriangles,
             [](const TriangleData& element) -> const TriangleData& { return element; });
+    }
+    inline RE::NiTransform reconstructBodyWorldFromProxyInBody(const RE::NiTransform& proxyWorld,
+        const RE::NiMatrix3& proxyInBodyRotation,
+        const RE::NiPoint3& transformBLocalGame,
+        const RE::NiPoint3& pivotAProxyLocalGame)
+    {
+        RE::NiTransform proxyInBody = makeIdentityTransform();
+        proxyInBody.rotate = proxyInBodyRotation;
+        const RE::NiPoint3 rotatedPivotA = transform_math::localVectorToWorld(proxyInBody, pivotAProxyLocalGame);
+        proxyInBody.translate = transformBLocalGame - rotatedPivotA;
+        const RE::NiTransform bodyInProxy = transform_math::invertTransform(proxyInBody);
+        return grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyWorld, bodyInProxy);
+    }
+
+    inline RE::NiTransform reconstructSolverEffectiveBodyWorld(const RE::NiTransform& proxyWorld,
+        const RE::NiMatrix3& transformARotation,
+        const RE::NiMatrix3& transformBRotation,
+        const RE::NiMatrix3& targetBRcaRotation,
+        const RE::NiPoint3& transformBLocalGame,
+        const RE::NiPoint3& anchorAWorld,
+        float bodyScale)
+    {
+        const RE::NiMatrix3 constraintAWorldRotation =
+            transform_math::composeTransforms(proxyWorld, rotationOnlyTransform(transformARotation)).rotate;
+        const RE::NiMatrix3 desiredConstraintBWorldRotation =
+            transform_math::composeTransforms(
+                rotationOnlyTransform(constraintAWorldRotation),
+                rotationOnlyTransform(transform_math::transposeRotation(targetBRcaRotation)))
+                .rotate;
+        const RE::NiMatrix3 desiredBodyRotation =
+            transform_math::composeTransforms(
+                rotationOnlyTransform(desiredConstraintBWorldRotation),
+                rotationOnlyTransform(transform_math::transposeRotation(transformBRotation)))
+                .rotate;
+
+        RE::NiTransform result = makeIdentityTransform();
+        result.rotate = desiredBodyRotation;
+        result.scale = std::isfinite(bodyScale) && bodyScale > 0.0f ? bodyScale : 1.0f;
+        result.translate = anchorAWorld - transform_math::localVectorToWorld(result, transformBLocalGame);
+        return result;
+    }
+
+    struct GrabConstraintAtomDiagnostics
+    {
+        RE::NiMatrix3 transformAColumns{};
+        RE::NiMatrix3 transformBColumns{};
+        RE::NiMatrix3 targetRows{};
+        RE::NiMatrix3 targetColumns{};
+        RE::NiPoint3 transformBTranslationGame{};
+        bool ragdollMotorEnabled = false;
+    };
+
+    inline GrabConstraintAtomDiagnostics decodeGrabConstraintAtoms(
+        const float* transformARotation,
+        const float* transformBRotation,
+        const float* transformBTranslation,
+        const float* targetBRca,
+        bool ragdollMotorEnabled)
+    {
+        GrabConstraintAtomDiagnostics result{};
+        result.transformAColumns = transformARotation ? matrixFromHkColumns(transformARotation) : makeIdentityTransform().rotate;
+        result.transformBColumns = matrixFromHkColumns(transformBRotation);
+        result.targetRows = matrixFromHkRows(targetBRca);
+        result.targetColumns = matrixFromHkColumns(targetBRca);
+        result.transformBTranslationGame = RE::NiPoint3{
+            transformBTranslation[0] * havokToGameScale(),
+            transformBTranslation[1] * havokToGameScale(),
+            transformBTranslation[2] * havokToGameScale(),
+        };
+        result.ragdollMotorEnabled = ragdollMotorEnabled;
+        return result;
+    }
+
+    inline GrabConstraintAtomDiagnostics decodeGrabConstraintAtoms(const void* data)
+    {
+        const auto* constraintData = static_cast<const char*>(data);
+        return decodeGrabConstraintAtoms(
+            reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_A_COL0),
+            reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_COL0),
+            reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_POS),
+            reinterpret_cast<const float*>(constraintData + ATOM_RAGDOLL_MOT + RAGDOLL_MOTOR_TARGET_BRCA),
+            *(constraintData + ATOM_RAGDOLL_MOT + 0x02) != 0);
+    }
+
+    struct GrabConstraintRelationDiagnostics
+    {
+        RE::NiTransform proxyInBodyBeforeTargetWrite{};
+        RE::NiPoint3 relationTransformBLocalGame{};
+        RE::NiTransform relationInverseBodyWorld{};
+        RE::NiTransform atomRowsBodyWorld{};
+        float targetToHiggsRelationDegrees = 0.0f;
+        float transformBFrozenDeltaDegrees = 0.0f;
+        float transformBRelationDeltaGameUnits = 0.0f;
+    };
+
+    inline GrabConstraintRelationDiagnostics buildGrabConstraintRelationDiagnostics(
+        const GrabConstraintAtomDiagnostics& atoms,
+        const RE::NiTransform& proxyWorld,
+        const RE::NiTransform& desiredBodyInProxy,
+        const RE::NiPoint3& pivotAProxyLocalGame)
+    {
+        GrabConstraintRelationDiagnostics result{};
+        result.proxyInBodyBeforeTargetWrite =
+            grab_constraint_math::proxyInBodyFromBodyInProxy(desiredBodyInProxy);
+        result.relationTransformBLocalGame =
+            grab_constraint_math::computeHiggsTransformBTranslationGameFromProxyInBody(
+                result.proxyInBodyBeforeTargetWrite,
+                pivotAProxyLocalGame);
+        result.relationInverseBodyWorld = reconstructBodyWorldFromProxyInBody(
+            proxyWorld,
+            result.proxyInBodyBeforeTargetWrite.rotate,
+            result.relationTransformBLocalGame,
+            pivotAProxyLocalGame);
+        result.atomRowsBodyWorld = reconstructBodyWorldFromProxyInBody(
+            proxyWorld,
+            atoms.targetRows,
+            atoms.transformBTranslationGame,
+            pivotAProxyLocalGame);
+
+        const RE::NiTransform desiredBodyToProxy = invertTransform(desiredBodyInProxy);
+        result.targetToHiggsRelationDegrees =
+            rotationDeltaDegrees(atoms.targetRows, result.proxyInBodyBeforeTargetWrite.rotate);
+        result.transformBFrozenDeltaDegrees =
+            rotationDeltaDegrees(atoms.transformBColumns, desiredBodyToProxy.rotate);
+        result.transformBRelationDeltaGameUnits =
+            pointDistanceGameUnits(atoms.transformBTranslationGame, result.relationTransformBLocalGame);
+        return result;
+    }
+    inline RE::NiPoint3 rotationCorrectionAxisWorld(const RE::NiMatrix3& current, const RE::NiMatrix3& target)
+    {
+        return normalizeOrZero(angularVelocityFromRotationDelta(current, target, 1.0f));
+    }
+
+    inline float vectorMagnitude(const RE::NiPoint3& value)
+    {
+        return std::sqrt(value.x * value.x + value.y * value.y + value.z * value.z);
+    }
+
+    inline bool tryGetGrabAuthorityBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::NiTransform& outTransform)
+    {
+        /*
+         * Dynamic grab object-side state is measured from the hknp BODY slot.
+         * The hand side is ROCK's hidden no-contact proxy. The held object's
+         * contact pivot and visual node relation stay in BODY space; MOTION is
+         * COM/weight/diagnostic data only and never grip authority.
+         */
+        outTransform = makeIdentityTransform();
+        return tryGetBodyArrayWorldTransform(world, bodyId, outTransform);
     }
     
     
