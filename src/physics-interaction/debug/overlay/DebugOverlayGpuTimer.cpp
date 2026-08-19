@@ -1,4 +1,4 @@
-#include "physics-interaction/debug/DebugOverlayGpuTimer.h"
+#include "physics-interaction/debug/overlay/DebugOverlayGpuTimer.h"
 
 namespace rock::debug_overlay_gpu_timer
 {

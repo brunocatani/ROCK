@@ -1,4 +1,4 @@
-#include "physics-interaction/debug/DebugOverlayShapePipeline.h"
+#include "physics-interaction/debug/overlay/DebugOverlayShapePipeline.h"
 
 #include <algorithm>
 #include <atomic>

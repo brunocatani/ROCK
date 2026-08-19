@@ -27,7 +27,7 @@
 
 #include "physics-interaction/hand/HandSelection.h"
 #include "physics-interaction/hand/SelectionBeamPolicy.h"
-#include "physics-interaction/debug/DebugOverlayRuntimeSettings.h"
+#include "physics-interaction/debug/overlay/DebugOverlayRuntimeSettings.h"
 #include "physics-interaction/input/PipboyPauseGesturePolicy.h"
 #include "physics-interaction/native/HavokTimingFixPolicy.h"
 #include "physics-interaction/weapon/WeaponSemantics.h"

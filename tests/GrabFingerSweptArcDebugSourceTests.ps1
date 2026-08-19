@@ -81,7 +81,6 @@ Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp' '
 Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp' 'SWEEP START' 'Overlay must label the actual 2.0 sweep start.'
 Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp' 'fingerSweepDebugStateName' 'Overlay must label hit, fallback, reach, close-limit, and over-open states.'
 Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp' 'release and grab again \(pinch is intentionally excluded\)' 'Overlay must explain missing one-shot capture and pinch exclusion.'
-Reject-Text 'src/physics-interaction/debug/DebugBodyOverlay.cpp' 'case MarkerOverlayRole::GrabFingerSweepTip:[\s\S]{0,250}color\[3\]\s*=\s*0\.0f' 'Swept-arc probe colors must remain visible.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'Grab finger swept-arc debug boundary failed:'

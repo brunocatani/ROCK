@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "physics-interaction/debug/DebugOverlayPolicy.h"
+#include "physics-interaction/debug/overlay/DebugOverlayPolicy.h"
 
 namespace rock::debug_overlay_runtime
 {

@@ -7,8 +7,8 @@
 #include <d3d11.h>
 #include <wrl/client.h>
 
-#include "physics-interaction/debug/DebugOverlayRuntimeSettings.h"
-#include "physics-interaction/debug/DebugOverlayShapeGeometry.h"
+#include "physics-interaction/debug/overlay/DebugOverlayRuntimeSettings.h"
+#include "physics-interaction/debug/overlay/DebugOverlayShapeGeometry.h"
 
 namespace rock::debug_overlay_shape
 {

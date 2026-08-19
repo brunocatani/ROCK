@@ -1,5 +1,5 @@
-#include "physics-interaction/debug/DebugOverlayFrameAdmission.h"
-#include "physics-interaction/debug/DebugOverlayLatestSnapshot.h"
+#include "physics-interaction/debug/overlay/DebugOverlayFrameAdmission.h"
+#include "physics-interaction/debug/overlay/DebugOverlayLatestSnapshot.h"
 
 #include <iostream>
 #include <utility>

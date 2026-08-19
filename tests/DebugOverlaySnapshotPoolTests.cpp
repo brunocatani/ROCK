@@ -1,7 +1,7 @@
 #include <cassert>
 #include <memory>
 
-#include "physics-interaction/debug/DebugOverlaySnapshotPool.h"
+#include "physics-interaction/debug/overlay/DebugOverlaySnapshotPool.h"
 
 namespace
 {

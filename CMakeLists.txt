@@ -912,7 +912,7 @@ if(BUILD_ROCK_TESTS)
 
   add_executable(ROCKDebugOverlayShapeGeometryTests
     "${ROOT_DIR}/tests/DebugOverlayShapeGeometryTests.cpp"
-    "${SOURCE_DIR}/physics-interaction/debug/DebugOverlayShapeGeometry.cpp"
+    "${SOURCE_DIR}/physics-interaction/debug/overlay/DebugOverlayShapeGeometry.cpp"
   )
   target_compile_features(ROCKDebugOverlayShapeGeometryTests PRIVATE cxx_std_23)
   target_include_directories(ROCKDebugOverlayShapeGeometryTests PRIVATE ${SOURCE_DIR})
@@ -920,8 +920,8 @@ if(BUILD_ROCK_TESTS)
 
   add_executable(ROCKDebugOverlayShapePipelineTests
     "${ROOT_DIR}/tests/DebugOverlayShapePipelineTests.cpp"
-    "${SOURCE_DIR}/physics-interaction/debug/DebugOverlayShapeGeometry.cpp"
-    "${SOURCE_DIR}/physics-interaction/debug/DebugOverlayShapePipeline.cpp"
+    "${SOURCE_DIR}/physics-interaction/debug/overlay/DebugOverlayShapeGeometry.cpp"
+    "${SOURCE_DIR}/physics-interaction/debug/overlay/DebugOverlayShapePipeline.cpp"
   )
   target_compile_features(ROCKDebugOverlayShapePipelineTests PRIVATE cxx_std_23)
   target_include_directories(ROCKDebugOverlayShapePipelineTests PRIVATE ${SOURCE_DIR})

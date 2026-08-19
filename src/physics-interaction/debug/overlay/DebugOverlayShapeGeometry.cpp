@@ -1,11 +1,11 @@
-#include "physics-interaction/debug/DebugOverlayShapeGeometry.h"
+#include "physics-interaction/debug/overlay/DebugOverlayShapeGeometry.h"
 
 #include <algorithm>
 #include <cmath>
 #include <limits>
 #include <utility>
 
-#include "physics-interaction/debug/DebugConvexHullMesh.h"
+#include "physics-interaction/debug/overlay/DebugConvexHullMesh.h"
 
 namespace rock::debug_overlay_shape
 {

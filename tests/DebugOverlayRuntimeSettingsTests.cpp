@@ -1,6 +1,6 @@
 #include <iostream>
 
-#include "physics-interaction/debug/DebugOverlayRuntimeSettings.h"
+#include "physics-interaction/debug/overlay/DebugOverlayRuntimeSettings.h"
 
 namespace
 {

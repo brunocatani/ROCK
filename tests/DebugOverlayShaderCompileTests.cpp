@@ -1,4 +1,4 @@
-#include "physics-interaction/debug/DebugOverlayShaders.h"
+#include "physics-interaction/debug/overlay/DebugOverlayShaders.h"
 
 #include <cstddef>
 #include <iostream>

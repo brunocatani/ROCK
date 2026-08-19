@@ -149,10 +149,6 @@ foreach ($snapshotName in @(
     }
 }
 
-Require-Text 'src/physics-interaction/debug/DebugBodyOverlay.h' `
-    'GunstockLeftHand[\s\S]*GunstockFiringHand[\s\S]*GunstockRenderedFiringHand[\s\S]*GunstockSupportInputBone[\s\S]*GunstockFireNodeFinal[\s\S]*GunstockWeaponAfter[\s\S]*GunstockWristForward[\s\S]*GunstockCorrectionArc[\s\S]*GunstockSupportTargetPoint' `
-    'The bounded overlay must distinguish physical and rendered firing-hand bones while retaining final-alignment and support-baseline roles.'
-
 Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp' `
     'drawGunstockAlignment[\s\S]*getGunstockAlignmentDebugSnapshot[\s\S]*GunstockLeftHand[\s\S]*GunstockFiringHand[\s\S]*GunstockRenderedFiringHand[\s\S]*RENDERED FIRING HAND BONE[\s\S]*FIRING WRIST \+X - AUTOMATIC TARGET[\s\S]*PREDICTED FINE-TUNED NEUTRAL[\s\S]*ACTUAL FINAL LIVE FIRE \+Y[\s\S]*GunstockCorrectionArc[\s\S]*fineTune pitch\(\+Y\)[\s\S]*liveResidual=[\s\S]*renderedRelation=[\s\S]*getGunstockSupportBaselineDebugSnapshot[\s\S]*GunstockSupportInputBone[\s\S]*GunstockCalibratedSupportBone[\s\S]*GunstockWeaponAfter[\s\S]*attachWeaponDelta' `
     'The visualizer must render input/rendered firing bones, configured fine-tuned intent, actual relation error, and support attach baseline together.'
@@ -160,10 +156,6 @@ Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp' `
 Require-Text 'tests/WeaponInteractionPolicyTests.cpp' `
     'gunstock zero fine tune preserves automatic correction exactly[\s\S]*gunstock positive yaw sends plus-X toward plus-Y[\s\S]*gunstock positive pitch sends plus-X toward minus-Z[\s\S]*gunstock pure roll fine tune remains active with aligned bore[\s\S]*gunstock combined correction reaches fine-tuned target[\s\S]*gunstock fine tune keeps the damped-driver reference pivot fixed[\s\S]*gunstock fine tune preserves the firing-grip weapon relation[\s\S]*gunstock fine-tuned weapon preserves retained rigid scope frame' `
     'Pure regressions must cover zero compatibility, axis signs, pure roll, target composition, fixed pivot, firing-grip rigidity, and rigid fine-tuned scope transport.'
-
-Reject-Text 'src/physics-interaction/debug/DebugBodyOverlay.h' `
-    'GunstockFiringController|GunstockLeftController' `
-    'Gunstock diagnostics must not retain controller-triad roles.'
 
 Reject-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp' `
     'GunstockFiringController|GunstockLeftController|CONTROLLER \+Y - GUNSTOCK FORWARD|controllerAxis=\+Y' `

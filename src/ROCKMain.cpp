@@ -13,7 +13,7 @@
 #include "physics-interaction/core/PhysicsHooks.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/core/RockRuntimeState.h"
-#include "physics-interaction/debug/DebugBodyOverlay.h"
+#include "physics-interaction/debug/overlay/DebugBodyOverlay.h"
 #include "physics-interaction/grab/FrikWeaponOffsetCache.h"
 #include "physics-interaction/grab/SavedGrabOffsetStore.h"
 #include "physics-interaction/input/DebugControllerRuntime.h"

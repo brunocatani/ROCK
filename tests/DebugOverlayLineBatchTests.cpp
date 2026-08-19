@@ -2,7 +2,7 @@
 #include <iostream>
 #include <limits>
 
-#include "physics-interaction/debug/DebugOverlayLineBatch.h"
+#include "physics-interaction/debug/overlay/DebugOverlayLineBatch.h"
 
 namespace
 {

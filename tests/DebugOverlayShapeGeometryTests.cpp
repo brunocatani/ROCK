@@ -3,7 +3,7 @@
 #include <memory>
 #include <utility>
 
-#include "physics-interaction/debug/DebugOverlayShapeGeometry.h"
+#include "physics-interaction/debug/overlay/DebugOverlayShapeGeometry.h"
 
 namespace
 {

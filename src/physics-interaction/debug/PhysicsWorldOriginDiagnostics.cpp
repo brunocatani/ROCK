@@ -6,7 +6,7 @@
 #include <limits>
 #include <utility>
 
-#include "physics-interaction/debug/DebugBodyOverlay.h"
+#include "physics-interaction/debug/overlay/DebugBodyOverlay.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/PhysicsUtils.h"
 
