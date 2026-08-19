@@ -166,7 +166,7 @@ Reject-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'destroyWeaponB
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'getCurrentWeaponReleaseGeometry\(releaseGripWorld,\s*releaseWeaponWorld\)[\s\S]{0,2600}_weaponCollision\.destroyWeaponBody\(hknp\);[\s\S]{0,500}dropCommitted\s*&&\s*dropResult\.handle[\s\S]{0,300}armEquippedWeaponDropMomentumHandoff' 'A committed equipped-weapon drop must capture its frozen release pose and lever, retire coincident generated colliders, then arm the native handoff even when the reference resolves asynchronously.'
 Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @('enableCollisionRecursive\(droppedRoot', 'scanObjectPhysicsBodySet\(', 'completedSettleStep\(', 'currentBodySetMatches\(', 'setBodyVelocityDeferred') 'Equipped drop momentum must enable collision, rescan native bodies, cross a completed solve barrier, revalidate full body identity, and only then write velocity.'
 Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'serviceEquippedWeaponDropMomentumTransaction[\s\S]*?uniqueAcceptedMotionRecords\([\s\S]*?bool PhysicsInteraction::armHeldLooseGrenade' 'Equipped drop handoff must collect unique motions into fixed-capacity transaction state without per-frame unique-set allocation.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'hasCapturedWeaponWorld\s*=\s*true[\s\S]{0,120}capturedWeaponWorld\s*=\s*capturedWeaponWorld[\s\S]{0,220}gripWorldPoint' 'Release-pose capture must remain available even when grip evidence cannot provide a lever.'
+Require-Text 'src/physics-interaction/weapon/WeaponCollisionQueries.cpp' 'hasCapturedWeaponWorld\s*=\s*true[\s\S]{0,120}capturedWeaponWorld\s*=\s*capturedWeaponWorld[\s\S]{0,220}gripWorldPoint' 'Release-pose capture must remain available even when grip evidence cannot provide a lever.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'hasAvailableEquippedWeaponDropHandoff[\s\S]*physicalDropRequested\s*&&\s*!dropHandoffAvailable[\s\S]*Cannot drop weapon - drop handoff queue is full' 'Drop handoff capacity must be reserved before inventory removal instead of silently creating an unmanaged weapon.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'releaseGeometry\.hasCapturedWeaponWorld[\s\S]{0,500}Cannot drop weapon - release pose is not ready[\s\S]{0,900}dropEquippedWeaponFromPlayer' 'Inventory removal must be blocked until a finite frozen release pose is available.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'currentRootInverse[\s\S]*rootToBody[\s\S]*handoff\.releaseWeaponWorld[\s\S]*setBodyTransformDeferred[\s\S]*zeroVelocity[\s\S]*WaitingForSettleStep' 'The exact native body set must be placed at the frozen release pose with zero velocity before crossing the solve barrier.'
@@ -234,9 +234,7 @@ Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'if \(!weaponD
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.h' 'struct GeneratedRecaptureDiagnosticSource[\s\S]{0,900}sourceLocalMin[\s\S]{0,300}sourceLocalMax[\s\S]{0,300}sourceLocalTriangles' 'Shoulder diagnostics must retain value-only source-local geometry witnesses without retaining live engine pointers.'
 Reject-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'const bool sourceGeometryDrifted[\s\S]{0,300}dedupPointCountStable' 'Frame-dependent deduplicated hull counts must not masquerade as source mesh mutation.'
 Reject-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'postUndrawFrameCorrection|generatedSourceFrameCorrection|makePostUndrawFrameCorrection|applyPostUndrawFrameCorrection' 'Fixed post-draw corrections must not separate colliders from live rendered parts.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'tryBuildSupportGripEvidenceView[\s\S]{0,1200}tryResolveDescendantWorldTransform' 'Support-grip surface evidence must use the current source frame shared by physical bodies.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'findCurrentWeaponSurfaceNearPoints[\s\S]{0,4200}tryResolveDescendantWorldTransform' 'Weapon surface queries must use current source frames shared by physical bodies.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'tryFindInteractionContactNearPoint[\s\S]{0,5000}pointAabbDistanceSquared[\s\S]{0,1800}closestPointOnTriangleToPoint[\s\S]{0,1800}minimumSurfaceDistanceSquaredLocal' 'Weapon-part probes must use AABBs only as broadphase and rank exact rendered triangle surfaces.'
+Require-Text 'src/physics-interaction/weapon/WeaponCollisionQueries.cpp' 'tryBuildSupportGripEvidenceView[\s\S]{0,1200}tryResolveDescendantWorldTransform' 'Support-grip surface evidence must use the current source frame shared by physical bodies.'
 Require-Text 'src/physics-interaction/weapon/WeaponCollisionSources.cpp' 'duplicate TriShape already claimed by earlier candidate' 'Merged candidate roots must dedupe overlapping source TriShapes.'
 Require-Text 'src/physics-interaction/weapon/WeaponCollisionSources.cpp' 'TriShape is hidden or locally zero-scale' 'Hidden TriShapes must be skipped as sources without pruning helper-node children.'
 Require-Text 'src/physics-interaction/weapon/WeaponCollisionSources.cpp' 'if \(node->GetAppCulled\(\)\)[\s\S]{0,300}ancestor branch is app-culled[\s\S]{0,120}return;' 'App-culled attachment branches must be pruned before their locally visible descendant meshes consume collider capacity.'
@@ -300,6 +298,26 @@ Reject-Text 'src/physics-interaction/weapon/WeaponCollisionDiagnostics.cpp' 'pub
 Require-Text 'src/physics-interaction/weapon/WeaponCollisionSources.cpp' `
     'mergeGeneratedWeaponSourceCandidates\([\s\S]{0,700}refineGeneratedWeaponSourceSemantics\([\s\S]{0,700}excludeDetachedGeneratedWeaponSources\([\s\S]{0,900}selectGeneratedWeaponSourcesWithinCapacity\(' `
     'The generated-source scan must merge, then refine, then exclude detached components, then select within body capacity.'
+
+
+# --- Proximity scans share one frame resolver ---------------------------------
+# Replaces two 4200- and 5000-character ordering spans that separately re-asserted
+# that each proximity entry point resolves the current source frame and AABB-filters
+# before the exact triangle test. Both now go through one resolver, which is a
+# stronger guarantee than either regex made: they cannot disagree about which frame
+# a body lives in, because there is only one answer.
+Require-Text 'src/physics-interaction/weapon/WeaponCollisionQueries.cpp' `
+    'findCurrentWeaponSurfaceNearPoints\([\s\S]{0,3000}resolveWeaponSurfaceScanFrame\(currentWeaponRoot' `
+    'The batch surface query must resolve each body frame through the shared scan-frame resolver.'
+Require-Text 'src/physics-interaction/weapon/WeaponCollisionQueries.cpp' `
+    'tryFindInteractionContactNearPoint\([\s\S]{0,1400}resolveWeaponSurfaceScanFrame\(packageDriveRoot' `
+    'The interaction probe must resolve each body frame through the same shared scan-frame resolver.'
+Require-Text 'src/physics-interaction/weapon/WeaponCollisionQueries.cpp' `
+    'resolveWeaponSurfaceScanFrame\(\s*const RE::NiAVObject\* scanRoot[\s\S]{0,1400}tryResolveDescendantWorldTransform\([\s\S]{0,1600}weaponTransformFinite\(outFrame\.world\)' `
+    'The shared scan-frame resolver must compose the live source hierarchy and reject an unusable frame.'
+Require-Text 'src/physics-interaction/weapon/WeaponCollisionQueries.cpp' `
+    'pointAabbDistanceSquared\([\s\S]{0,2000}closestPointOnTriangleToPoint\(' `
+    'Proximity scans must use the AABB only as a broadphase before the exact rendered-triangle test.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'Weapon collision lifecycle source boundary failed:'

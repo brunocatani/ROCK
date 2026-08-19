@@ -51,7 +51,9 @@ $runtimeHeader = 'src/physics-interaction/weapon/DynamicWeaponCollision.h'
 $runtimeSource = 'src/physics-interaction/weapon/DynamicWeaponCollision.cpp'
 $runtimePolicy = 'src/physics-interaction/weapon/DynamicWeaponCollisionPolicy.h'
 $weaponCollisionHeader = 'src/physics-interaction/weapon/WeaponCollision.h'
-$weaponCollisionSource = 'src/physics-interaction/weapon/WeaponCollision.cpp'
+# The compound geometry snapshot and the live child pose both moved into the
+# read-only query file when WeaponCollision was split.
+$weaponCollisionSource = 'src/physics-interaction/weapon/WeaponCollisionQueries.cpp'
 $compoundBuilder = 'src/physics-interaction/native/HavokCompoundShapeBuilder.cpp'
 $weaponAuthority = 'src/physics-interaction/weapon/TwoHandedGrip.cpp'
 $interaction = 'src/physics-interaction/core/PhysicsInteraction.cpp'

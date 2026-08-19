@@ -54,7 +54,7 @@ function Reject-Text {
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.h' `
     'struct SupportGripEvidenceView[\s\S]*std::span<const TriangleData> localTriangles[\s\S]*RE::NiTransform localToWorld[\s\S]*sourceGroupId[\s\S]*bodyId[\s\S]*weaponGenerationKey[\s\S]*findSupportGripEvidenceViews\(' `
     'Equipped finger posing must consume generation-tagged, source-identifiable local triangle views.'
-Require-OrderedText 'src/physics-interaction/weapon/WeaponCollision.cpp' @(
+Require-OrderedText 'src/physics-interaction/weapon/WeaponCollisionQueries.cpp' @(
     'tryBuildSupportGripEvidenceView\(',
     'tryResolveDescendantWorldTransform\(',
     'generatedSourceLocalTrianglesGame',
@@ -63,12 +63,12 @@ Require-OrderedText 'src/physics-interaction/weapon/WeaponCollision.cpp' @(
     'outView\.sourceGroupId',
     'outView\.weaponGenerationKey = getCurrentWeaponGenerationKey\(\)'
 ) 'Support grip evidence views must stay local, transformed, source-identifiable, and generation validated.'
-Require-OrderedText 'src/physics-interaction/weapon/WeaponCollision.cpp' @(
+Require-OrderedText 'src/physics-interaction/weapon/WeaponCollisionQueries.cpp' @(
     'tryGetSupportGripEvidenceView\(',
     'instance\.body\.getBodyId\(\)\.value != bodyId',
     'tryBuildSupportGripEvidenceView\('
 ) 'Grip-point evidence must remain tied to the contacted body.'
-Require-OrderedText 'src/physics-interaction/weapon/WeaponCollision.cpp' @(
+Require-OrderedText 'src/physics-interaction/weapon/WeaponCollisionQueries.cpp' @(
     'findSupportGripEvidenceViews\(',
     'seenSourceGroups',
     'tryBuildSupportGripEvidenceView\(',
