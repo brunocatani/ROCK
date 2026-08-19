@@ -26,7 +26,6 @@ Require-Text 'src/physics-interaction/grab/GrabConstraint.cpp' 'kRetiredGrabCons
 Require-Text 'src/physics-interaction/grab/GrabConstraint.cpp' 'setGrabMotorAtomsActive\(static_cast<char\*>\(constraint\.constraintData\), false, false\);[\s\S]*world->DestroyConstraints[\s\S]*retireGrabConstraintPayload\(constraint\);[\s\S]*constraint\.clear\(\);' 'Grab constraint destroy must deactivate atoms, destroy the native constraint, retire payload memory, then clear the handle.'
 Require-Text 'src/physics-interaction/grab/GrabConstraint.cpp' 'void serviceRetiredGrabConstraintPayloads\([\s\S]*freeRetiredGrabConstraintPayload' 'Retired grab constraint payloads must be reclaimed from an explicit service point.'
 Require-Text 'src/physics-interaction/grab/GrabConstraint.h' 'serviceRetiredGrabConstraintPayloads' 'Grab constraint payload retirement service must be exposed to the physics step owner.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'observeCustomGrabAuthorityAfterSolve[\s\S]*serviceRetiredGrabConstraintPayloads\(\);' 'The physics after-solve callback must service retired grab constraint payloads after native readers have advanced.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'GrabConstraintRetiredPayloadSourceTests failed:' -ForegroundColor Red

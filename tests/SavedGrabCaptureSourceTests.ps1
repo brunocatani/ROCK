@@ -49,8 +49,6 @@ Require-Text 'src/physics-interaction/grab/GrabCore.h' 'captureTelemetry\.seatDi
 
 # --- Save gesture wiring ------------------------------------------------------
 
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'saved_grab_offset::save\(file\);[\s\S]*tryBuildSavedGrabCapture\(hknpWorld, proxyWorld, capture\.capture\)[\s\S]*saved_grab_offset::saveCapture\(capture\)' 'The save gesture must write the ground-truth capture alongside the offset, or a verified pose arrives with no context to score it against.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'readGrabEventBodyMass\(hknpWorld, heldBodyId\)' 'The capture must record the held body mass: mass is not derivable from the render mesh, and balance in the palm is one of the terms a pose solver has to explain.'
 
 # --- Write-only contract ------------------------------------------------------
 

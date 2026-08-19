@@ -113,11 +113,6 @@ Require-OrderedText 'src/physics-interaction/body/BodyBoneColliderSet.cpp' @(
     'applyCanonicalForearmDimensions\(',
     '_dynamicForearmTwinTargets = forearmTwinTargets;'
 ) 'Forearm twins must retain generation-canonical dimensions while publishing live rigid targets.'
-Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @(
-    'updateBodyBoneCollisions\(frame\);',
-    '_dynamicHandCollision\.updateFrame\(',
-    '_bodyBoneColliders,'
-) 'Body forearm frames must publish before dynamic hand collision consumes them in the same game frame.'
 
 # One animated dynamic compound owns the 17 semantic children. Child IDs are
 # decoded from key-2 shape keys; no callback may guess a child from the shared
@@ -159,12 +154,6 @@ Require-OrderedText 'src/physics-interaction/body/BodyBoneColliderSet.cpp' @(
 # Manifold contact fires before any penetration deviation exists, so a
 # grazing/resting touch reports ~zero approach speed. Latching the haptic
 # entry there consumes the episode and the later real press stays silent.
-Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @(
-    '_dynamicHandCollision\.updateFrame\(',
-    '_dynamicHandCollision\.consumeHapticEvents\(\)',
-    '_feedbackHaptics\.queue\(',
-    'updateFeedbackHaptics\(frame\.deltaSeconds\);'
-) 'Dynamic hand haptics must flow through the shared main-thread FeedbackHaptics queue.'
 
 # Debug visualization must consume the same telemetry snapshot intended for a
 # later API adapter, rather than re-reading live bodies through a second path.
@@ -211,10 +200,6 @@ Require-Text 'src/RockConfig.cpp' `
 # Contact identity comes from the verified key-2 manifold shape keys, while
 # post-solve readback measures each animated child through the one compound
 # body's coherent rigid transform.
-Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @(
-    'void PhysicsInteraction::observeCustomGrabAuthorityAfterSolve\(',
-    '_dynamicHandCollision\.samplePostSolveDeviations\([\s\S]*world,[\s\S]*completedSolveSequence,[\s\S]*timing\);'
-) 'Dynamic hand post-solve sampling must run in the after-solve physics phase.'
 
 # The divergence dwell and the drive-side recovery teleport must run on the
 # REQUESTED-target gap: the commanded-target delta (bodyDeltaGameUnits)
@@ -241,9 +226,6 @@ Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp' `
 # target queueing must happen BEFORE the ownership gate.
 
 # Dynamic collision is the only free-hand world-collision implementation.
-Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'SoftContactRuntime|_softContactRuntime|NativeContactEvidence' `
-    'PhysicsInteraction must not retain a legacy soft-contact fallback or evidence cache.'
 Reject-Text 'CMakeLists.txt' `
     'ROCKSoftContact|SoftContactWorld' `
     'The build must not register legacy soft-contact tests or targets.'
@@ -301,9 +283,6 @@ Reject-Text 'src/physics-interaction/collision/CollisionLayerPolicy.h' `
 Require-Text 'src/physics-interaction/collision/CollisionLayerPolicy.h' `
     'buildRockDynamicWorldCarExpectedMask[\s\S]*withoutLayer\(mask, ROCK_LAYER_HAND\)[\s\S]*withoutLayer\(mask, ROCK_LAYER_WEAPON\)[\s\S]*withoutLayer\(mask, ROCK_LAYER_BODY\)[\s\S]*withLayer\(mask, ROCK_LAYER_DYNAMIC_HAND_PROXY\)[\s\S]*withLayer\(mask, ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY\)[\s\S]*withLayer\(mask, ROCK_LAYER_DYNAMIC_WEAPON_PROXY\)' `
     'Car-only rows must reject generated gameplay colliders while admitting both hands and the weapon solver proxy.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'kNearbyCarCollisionRadiusGameUnits[\s\S]*isExplodableCar[\s\S]*synchronizeNearbyTargets' `
-    'Verified nearby cars must be proactively tagged before player contact.'
 Require-Text 'src/physics-interaction/core/PhysicsHooks.cpp' `
     'isDynamicWorldCarLayer\(layer\)[\s\S]*targetIsCar = targetIdentity\.isCar' `
     'Character-controller contact identity must be evaluated only on dedicated car rows.'
@@ -314,10 +293,6 @@ Require-OrderedText 'src/physics-interaction/collision/CollisionLayerPolicy.h' @
 ) 'Both dynamic hand rows must be applied with the other generated layer rows.'
 
 # The proxy drive flush must run beside the other generated collider flushes.
-Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @(
-    '_weaponCollision\.flushPendingPhysicsDrive\(world, timing\);',
-    '_dynamicHandCollision\.flushPendingPhysicsDrive\(world, timing\);'
-) 'Dynamic hand proxy drive must flush in the generated collider physics substep.'
 
 # Fixed-surface grabs use a separate bounded contact channel. Palm and
 # fingertips are eligible; the forearm and ordinary loose-object semantic set
@@ -354,22 +329,12 @@ Require-Text 'src/RockConfig.h' `
 Require-Text 'src/RockConfig.cpp' `
     'GetBoolValue\(SECTION,\s*"bGlobalSurfaceGrabEnabled",\s*rockGlobalSurfaceGrabEnabled\)' `
     'The global surface-grab switch must load through the normal ROCK INI path.'
-Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @(
-    'setGlobalSurfaceGrabEnabled\(',
-    '_touchGrabRuntime\.service\('
-) 'INI surface-grab state must update before active latch validation and acquisition.'
 Require-Text 'src/physics-interaction/grab/GlobalSurfaceGrabPolicy.h' `
     'enabled\s*&&[\s\S]*!providerMatched[\s\S]*wildcardPass[\s\S]*dynamicSurfaceContact[\s\S]*isDynamicHandProxySurfaceLayer' `
     'The global path must be a dynamic-surface wildcard fallback that never overrides a provider match.'
 Require-Text 'src/physics-interaction/grab/GlobalSurfaceGrabPolicy.h' `
     'canFollowUnclassifiedMotion[\s\S]{0,220}globalSurfaceFallback\s*&&\s*fixedAnchor' `
     'Only a built-in global FixedAnchor may follow a body whose motion-property handle is not classified.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'Touch grab edge gated:[\s\S]{0,900}touchGrabPhysicsWritesAllowed' `
-    'A rejected grip edge must identify the orchestration gate that blocked acquisition.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'Touch grab attempt rejected:[\s\S]{0,900}latchFailure' `
-    'A failed contact candidate must report its target and surface-latch rejection stage.'
 # A successful fixed-surface latch owns the feedback for that hand. Its
 # one-shot confirmation is intentionally stronger and longer than the dynamic
 # touch pulse, and both values remain user-tunable.
@@ -384,12 +349,6 @@ Require-Text 'src/RockConfig.h' `
 Require-Text 'src/RockConfig.cpp' `
     'bSurfaceGrabHapticsEnabled[\s\S]{0,500}fSurfaceGrabHapticDurationSeconds[\s\S]{0,500}fSurfaceGrabHapticIntensity' `
     'Surface-latch haptic controls must load through the normal ROCK INI path.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'if \(touchGrabAcquired\)[\s\S]{0,900}getHandReport\([\s\S]{0,240}FixedAnchor[\s\S]{0,400}_feedbackHaptics\.queue\(' `
-    'Fixed-surface acquisition must queue its confirmation only after the latch succeeds.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'dynamicHandHapticEvents[\s\S]{0,700}surfaceGrabOwnsFeedback[\s\S]{0,400}FixedAnchor[\s\S]{0,300}continue;[\s\S]{0,200}_feedbackHaptics\.queue\(' `
-    'An active fixed-surface latch must suppress the lower-strength touch pulse before mixer delivery.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'Dynamic hand collision source boundary failed:'

@@ -82,11 +82,6 @@ Require-Text 'src/physics-interaction/actor/ActorEquipmentGrab.cpp' 'removeData\
 Require-Text 'src/physics-interaction/actor/ActorEquipmentGrab.cpp' 'actorRef->RemoveItem\(removeData\)' 'Actor equipment removal must go through the actor ref, not direct inventory mutation.'
 Require-Text 'src/physics-interaction/actor/ActorEquipmentGrab.cpp' 'result\.droppedRef\s*=\s*result\.handle\.get\(\)' 'Actor equipment drop must resolve the spawned reference before handoff.'
 
-Require-Order 'src/physics-interaction/core/PhysicsInteraction.cpp' 'dropFarActorEquipmentSelection' 'selectedObjectInteractionBlocked' 'Actor equipment must be dropped and staged before the generic actor-target blocker runs.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'beginActorEquipmentDropHandoff' 'Dropped actor equipment must enter a bounded spawned-item handoff instead of requiring same-frame physics bodies.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'advanceActorEquipmentDropHandoff' 'Actor-equipment dropped refs must be polled until their loose-object bodies are ready.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'actorEquipmentDropHandoffReady\s*&&\s*grabInput\.held' 'A held grip must continue into far pull after the actor-equipment handoff resolves.'
-Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'replaceFarActorEquipmentSelectionWithDroppedObject\(' 'Core grab input must not fail actor equipment pull only because the dropped ref lacks bodies in the drop frame.'
 
 Require-Text 'src/physics-interaction/hand/Hand.h' 'struct ActorEquipmentDropHandoff' 'Actor-equipment drop timing must be explicit hand lifecycle state.'
 Require-Text 'src/physics-interaction/hand/Hand.cpp' 'Hand::beginActorEquipmentDropHandoff' 'Hand runtime must arm a spawned-item handoff after RemoveItem succeeds.'

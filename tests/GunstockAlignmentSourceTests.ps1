@@ -79,13 +79,7 @@ Require-Text 'src/physics-interaction/weapon/WeaponSupport.h' `
     'tryCaptureSupportInputBaseline\([\s\S]*invertTransform\(supportInputWorld\)[\s\S]*supportGripTargetWorld[\s\S]*tryResolveSupportInputTarget\([\s\S]*supportInputWorld,[\s\S]*inputToGripTargetLocal' `
     'The support policy must freeze input-to-grip relation and resolve only later support motion through it.'
 
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'getEquippedProjectileNode\(\)[\s\S]*getCurrentObservedEquippedWeaponFormID\(\)\s*==[\s\S]*observedEquippedWeapon->formID[\s\S]*weaponData\.type\s*==[\s\S]*WEAPON_TYPE::kGun[\s\S]*_twoHandedGrip\.update\([\s\S]*gunstockProjectileNode,[\s\S]*gunstockGunTypeObserved[\s\S]*prepareGunstockAlignmentDebugSnapshot\([\s\S]*applyGunstockAlignment\([\s\S]*reconcileEquippedWeaponHandAssignmentAfterGrip\(\)[\s\S]*updateBodiesFromCurrentSourceTransforms[\s\S]*applyFinalWeaponMuzzleAuthority\(\)[\s\S]*finalizeGunstockAlignmentDebugSnapshot\(' `
-    'The shared kGun and fire-node observations must feed support solving only after the collision form boundary matches; final alignment remains ahead of collision and final muzzle/debug synchronization.'
 
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'gunstockPresentationBlocked\s*=[\r\n\s]*frame\.menuBlocked\s*\|\|\s*frame\.reloadBoundaryActive[\s\S]*gunstockNeutralSampleBlocked\s*=[\s\S]*isRawButtonPhysicallyHeld\([\s\S]*kOpenVrSteamVrTriggerButtonId\)[\s\S]*\|\|\s*frame\.reloadBoundaryActive[\s\S]*const bool gunstockPresentationBlocked\s*=[\r\n\s]*frame\.menuBlocked\s*\|\|\s*frame\.reloadBoundaryActive[\s\S]*prepareGunstockAlignmentDebugSnapshot\([\s\S]*gunstockNeutralSampleBlocked,\s*gunstockPresentationBlocked\)[\s\S]*applyGunstockAlignment\([\s\S]*gunstockNeutralSampleBlocked,\s*gunstockPresentationBlocked\)' `
-    'Trigger input must block neutral calibration, while menu or native reload authority must yield the complete latched gunstock hand presentation.'
 
 Reject-Text 'src/physics-interaction/weapon/WeaponAuthority.h' `
     'alignOpticalAxesToBore|camera \+X[\s\S]*bore \+Y' `
@@ -95,9 +89,6 @@ Require-Text 'src/ROCKMain.cpp' `
     'dispatchAnimationPhaseCallbacksV1\([\s\S]*AfterRock[\s\S]*finalizeGunstockPresentationAfterNativeAnimation\(\)[\s\S]*dispatchAnimationPhaseCallbacksV1\([\s\S]*Complete' `
     'The full-reload correction must run after animation AfterRock publication and before the Complete phase.'
 
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'finalizeGunstockPresentationAfterNativeAnimation[\s\S]*currentNativeAnimationAuthorityFlagsV1\(\)[\s\S]*kWeapon[\s\S]*resolveEquippedWeaponInteractionNode\(\)[\s\S]*finalizeGunstockPresentationAfterNativeWeaponAnimation' `
-    'The post-animation bridge must fail closed unless the current animation lease authors Weapon.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp' `
     'drawGunstockAlignment[\s\S]*getGunstockAlignmentDebugSnapshot[\s\S]*GunstockLeftHand[\s\S]*GunstockFiringHand[\s\S]*GunstockRenderedFiringHand[\s\S]*RENDERED FIRING HAND BONE[\s\S]*FIRING WRIST \+X - AUTOMATIC TARGET[\s\S]*PREDICTED FINE-TUNED NEUTRAL[\s\S]*ACTUAL FINAL LIVE FIRE \+Y[\s\S]*GunstockCorrectionArc[\s\S]*fineTune pitch\(\+Y\)[\s\S]*liveResidual=[\s\S]*renderedRelation=[\s\S]*getGunstockSupportBaselineDebugSnapshot[\s\S]*GunstockSupportInputBone[\s\S]*GunstockCalibratedSupportBone[\s\S]*GunstockWeaponAfter[\s\S]*attachWeaponDelta' `

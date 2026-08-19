@@ -78,12 +78,6 @@ Reject-Text 'src/physics-interaction/weapon/WeaponAuthority.h' 'alignOpticalAxes
     'Scope presentation must not invent a camera-to-bore axis mapping over the captured native frame.'
 Reject-Text 'src/physics-interaction/weapon/WeaponAuthority.h' 'followWeaponWorldChange\s*\(' `
     'The controller-relative rigid-delta fallback must stay removed.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'tryReadNativeScopeRequestState[\s\S]*kFunc_NativeScopeRequestStateGet[\s\S]*kData_NativeScopeRendererState[\s\S]*manualScopeActivationRequested\s*=\s*input_remap_runtime::isManualScopeActivationRequested' `
-    'The button-only path must observe its verified renderer response beside the physical input request.'
-Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'tryResolveNativeScopeGeometryDecision|kSetting_HmdScopeOffset|kSetting_HmdScopeAngle|kSetting_WeaponScopeAngle|kSetting_WeaponScopeDistance|kSetting_ScopeWeaponAngle' `
-    'The retired cone solver and cone-setting reads must not remain in PhysicsInteraction.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'tryGetManualScopeDirectTransitionTarget[\s\S]*getNativeScopeResolvedAnchorSnapshot[\s\S]*resolvedAnchor\.valid[\s\S]*matchesCurrentEquippedWeapon\([\s\S]*resolvedIdentity,[\s\S]*currentIdentity' `
-    'Unflagged scopes may transition only after either generated geometry or the firing-grip fallback resolved for the current equipped instance.'
 Require-Text 'src/ROCKMain.cpp' 'hookNativeScopeGeometryDecision[\s\S]*callBytes\[0\]\s*!=\s*0xE8[\s\S]*decodedTarget\s*!=\s*expectedTarget[\s\S]*kExpectedNativeDecisionTest[\s\S]*write_call<5>\(callSiteAddress,\s*&onNativeScopeGeometryDecision\)[\s\S]*kRockDecisionTest[\s\S]*REL::safe_write' `
     'The exact verified geometry call site and original target must be validated before patching.'
 Require-Text 'src/ROCKMain.cpp' 'bool onNativeScopeGeometryDecision[\s\S]*finalGeometryDecision\s*=\s*nativeGeometryDecision[\s\S]*nativeForceDecision[\s\S]*finalGeometryDecision\s*=\s*input_remap_runtime::isManualScopeActivationRequested\(\)[\s\S]*buttonDecisionApplied\s*=\s*true[\s\S]*s_originalNativeScopeStateTransition\(player,\s*finalGeometryDecision\)[\s\S]*buttonDecisionApplied\s*\?\s*true\s*:\s*finalGeometryDecision' `

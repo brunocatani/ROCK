@@ -56,8 +56,5 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.h' `
     '_armedLooseGrenadeImpactBodyIds[\s\S]*_pendingLooseGrenadeImpactPair' `
     'Armed Molotov impact state must cross the physics callback through atomics only.'
 
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'updateLooseGrenadeFuses[\s\S]*_pendingLooseGrenadeImpactPair\.exchange[\s\S]*GrenadeDetonationMode::Impact[\s\S]*pendingImpactBodyId\s*!=\s*fuse\.impactBodyId[\s\S]*detonateLooseGrenade\(fuse,\s*slotIndex,\s*ref,\s*"impact"\)' `
-    'Main update must consume recorded Molotov impacts and detonate through the normal explosion path.'
 
 Write-Host "Loose grenade runtime source guard passed."

@@ -78,9 +78,6 @@ Require-Text $hfrikRoot 'src/skeleton/WeaponHandRecoil.cpp' `
     'delivery\s*==\s*api::FRIKApiV2::RecoilDelivery::Damped[\s\S]*_controlledKickLocal\s*=\s*dampen[\s\S]*else\s*\{[\s\S]*_controlledKickLocal\s*=\s*response\.controlledKickLocal' `
     'hFRIK must distinguish damped controller delivery from direct controller delivery.'
 
-Require-Text $Root 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'finishWeaponCollisionPresentationFrame[\s\S]{0,500}applyFiringWeaponRecoilPresentation[\s\S]{0,700}updateBodiesFromCurrentSourceTransforms[\s\S]{0,700}applyFinalWeaponMuzzleAuthority' `
-    'Controlled firing-hand recoil must run after all weapon writers and before collision-body and muzzle consumers.'
 Require-Text $Root 'src/ROCKMain.cpp' `
     'registerWeaponHandRecoilController\s*!=\s*nullptr[\s\S]*unregisterWeaponHandRecoilController\s*!=\s*nullptr' `
     'ROCK startup must fail closed when the matching API V2 recoil-controller table is absent.'

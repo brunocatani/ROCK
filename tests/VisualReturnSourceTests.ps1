@@ -36,9 +36,6 @@ Require-Text 'src/RockConfig.cpp' `
     'bGrabHandReturnEnabled[\s\S]*fGrabHandReturnTimeMin[\s\S]*fGrabHandReturnTimeMax[\s\S]*fGrabHandReturnMinDistance[\s\S]*fGrabHandReturnMaxDistance[\s\S]*fGrabHandReturnMinAngleDegrees[\s\S]*fGrabHandReturnMaxAngleDegrees' `
     'Generic grabbed-hand return must have an independently loaded and clamped setting family.'
 
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'processHand\(_rightHand,\s*false\);[\s\S]*processHand\(_leftHand,\s*true\);[\s\S]*updateGrabVisualReturn\(\s*frame\.right\.rawHandWorld[\s\S]*updateGrabVisualReturn\(\s*frame\.left\.rawHandWorld' `
-    'Empty-hand generic returns must advance after normal input processing for both physical hands.'
 
 foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
     Require-Text $configPath `

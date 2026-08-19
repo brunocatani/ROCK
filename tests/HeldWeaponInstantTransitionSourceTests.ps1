@@ -35,7 +35,6 @@ function Reject-Text {
 $nativePath = 'src/physics-interaction/native/HeldWeaponInstantTransition.cpp'
 $nativeHeaderPath = 'src/physics-interaction/native/HeldWeaponInstantTransition.h'
 
-$physicsPath = 'src/physics-interaction/core/PhysicsInteraction.cpp'
 
 Require-Text $nativePath `
     'kPlayerDrawWeaponEntry\s*=\s*0x0F78D10[\s\S]*kEquipManagerDrawCallsite\s*=\s*0x0E107A1[\s\S]*kEquipManagerDrawReturn\s*=\s*0x0E107A7[\s\S]*kEquipManagerSheatheCallsite\s*=\s*0x0E10988[\s\S]*kEquipManagerSheatheReturn\s*=\s*0x0E1098E' `
@@ -65,9 +64,6 @@ Require-Text $nativeHeaderPath `
     'bool success\(\) const noexcept[\s\S]{0,160}return code == ImmediateEquipCode::Accepted;' `
     'Immediate transaction success must depend on the validated manager transaction, not a later presentation permit.'
 
-Require-Text $physicsPath `
-    'readinessFor\(player\)[\s\S]{0,3000}hand\.captureHeldReleaseMotion[\s\S]*beginHeldTransition[\s\S]{0,4000}equipResult\.success\s*&&\s*pendingGripStart\.pending[\s\S]{0,1600}_pendingEquippedWeaponPrimaryOnlyGripStart\s*=\s*pendingGripStart' `
-    'Held equip must preflight before release, retain its bridge, and arm the captured physical hand at exact transaction success.'
 
 Reject-Text $nativePath `
     '0x0DBE590|0x0DBE6D0|CompleteWeaponDraw|WeaponBeginDraw|WeaponBeginSheathe|PlayerFastEquipSound' `

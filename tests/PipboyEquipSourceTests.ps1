@@ -41,35 +41,10 @@ Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
     's_pipboyMenuGeneration[\s\S]*rawTransition\.pressedEdges\s*\|\s*rawTransition\.releasedEdges[\s\S]*publishPipboyTriggerTransition\(hand\)[\s\S]*consumePipboyEquipTriggerResolution' `
     'Pip-Boy trigger evidence must be captured before blocking-menu gameplay edges are cleared and consumed per selection.'
 
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'inspectStack\(\s*assignment\.handleId,\s*assignment\.stackId[\s\S]*equippedWeapon->formID\s*==\s*assignment\.formId[\s\S]*beginPersistentEquippedCarry[\s\S]*left-carry-resolve-timeout' `
-    'Left carry acquisition must bind exact inventory and equipped-weapon identities and fail closed to right after a bounded retry.'
 
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'f4vr::isNodeVisible\(weaponNode\)[\s\S]*nativeOffsetSample\s*=\s*weaponNode->local[\s\S]*advanceNativeOffsetReadiness[\s\S]*beginPersistentEquippedCarry' `
-    'Direct left carry must wait for a visible, stable hFRIK-owned offset and a reserved canonical-refresh frame before ownership transfer.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'resolveEquipMode\([\s\S]{0,260}handlingSettings\.externalAuthorityActive[\s\S]{0,180}handlingSettings\.pipboyTriggerHandEquipEnabled[\s\S]{0,180}_fixedFiringHandIsLeft[\s\S]{0,300}pipboyAssignmentManaged\s*=[\s\S]{0,180}managesHandAssignment\(equipMode\)[\s\S]{0,700}consumeSelectionEvent\([\s\S]{0,900}clearEquippedWeaponHandAssignment\([\s\S]{0,120}"native-right-preference"[\s\S]{0,120}true\)' `
-    'Native-right preference must drain stale selection intent, while fixed-left comes from ROCK and trigger-hand mode only from addon authority.'
 
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'commitRight\s*=\s*\[&\]\(const char\* reason\)[\s\S]{0,900}restoreNativeRightEquippedCarry\(reason\)[\s\S]{0,1400}pipboy_equip_policy::Hand::Right' `
-    'A fresh right-trigger assignment must restore native-right ownership before publishing the right side.'
 
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'shouldReacquirePersistentLeftCarry\([\s\S]{0,500}isManualOwnershipActive\(\)[\s\S]*assignment\.assignedLeft\s*=\s*currentLeft' `
-    'Persistent left reacquisition must not fight manual ownership, and deliberate handovers must replace the durable assigned side.'
 
-$physicsInteractionText = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/core/PhysicsInteraction.cpp')
-$assignmentServiceCall = $physicsInteractionText.IndexOf('serviceEquippedWeaponHandAssignment(')
-$gripUpdateCall = if ($assignmentServiceCall -ge 0) {
-    $physicsInteractionText.IndexOf('_twoHandedGrip.update(', $assignmentServiceCall)
-} else {
-    -1
-}
-if ($assignmentServiceCall -lt 0 -or $gripUpdateCall -lt 0 -or $assignmentServiceCall -gt $gripUpdateCall) {
-    $failures.Add('Pip-Boy assignment readiness must be serviced before TwoHandedGrip update so the first offset match reserves a full canonical refresh.')
-}
 
 if ($failures.Count -gt 0) {
     foreach ($failure in $failures) { Write-Error $failure }

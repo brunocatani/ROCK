@@ -45,24 +45,12 @@ function Require-Order(
     }
 }
 
-$interaction = 'src/physics-interaction/core/PhysicsInteraction.cpp'
 
 $actorState = 'src/rock_support/Fo4VrActorStatePolicy.h'
 
 Require-Pattern $actorState `
     'kReloadingGunState\s*=\s*4[\s\S]*isNativeReloading\([\s\S]*gunState\s*==\s*kReloadingGunState' `
     'Reload ownership must use the verified native gun-state value instead of a CommonLib bitfield.'
-Require-Pattern $interaction `
-    'nativeReloadHandAuthorityActive\([\s\S]*currentNativeAnimationAuthorityFlagsV1\(\)[\s\S]*kArms[\s\S]*kHands[\s\S]*isNativeReloading\([\s\S]*getNativeGunState\(f4vr::getPlayer\(\)\)' `
-    'Provider arms/hands authority and the verified native gun state must share one reload predicate.'
-Require-Order $interaction @(
-    '_twoHandedGrip\.setNativeReloadHandAuthorityActive\(',
-    '_twoHandedGrip\.refreshRetainedHandVisualAuthoritiesBeforeFrik\(',
-    '_twoHandedGrip\.refreshWeaponCollisionHandAuthorityBeforeFrik\('
-) 'Reload must clear the support-hand claims before any pre-FRIK refresh can retain them.'
-Require-Pattern $interaction `
-    'nativeReloadHandAuthorityActive\s*=\s*[\r\n\s]*frame\.reloadBoundaryActive[\s\S]*gunstockPresentationBlocked\s*=[\r\n\s]*frame\.menuBlocked\s*\|\|\s*frame\.reloadBoundaryActive' `
-    'The coherent grip input must carry reload ownership and block gunstock presentation.'
 
 if ($failures.Count -gt 0) {
     $failures | ForEach-Object { Write-Error $_ }

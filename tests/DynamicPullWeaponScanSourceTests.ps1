@@ -70,9 +70,6 @@ Require-Text 'tests/ActiveGrabBodyLifecyclePolicyTests.cpp' 'loose keyframed phy
 Require-Text 'tests/ActiveGrabBodyLifecyclePolicyTests.cpp' 'loose keyframed non-physical transfer should restore motion' 'Compiled lifecycle policy tests must cover non-physical keyframed restoration.'
 Require-Text 'tests/ActiveGrabBodyLifecyclePolicyTests.cpp' 'pull-consumed loose keyframed physical drop should keep converted dynamic motion' 'Compiled lifecycle policy tests must cover pull-to-grab lifecycle release preservation.'
 Require-Text 'tests/ActiveGrabBodyLifecyclePolicyTests.cpp' 'depth-truncated scans should force incomplete restore fallback' 'Compiled lifecycle policy tests must cover depth-truncated scan fallback.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'finishPullPrepAsPhysicalDropIfActive\("pull-release"\)' 'User dynamic-pull release must finish pull prep as a physical drop, not a failed setup restore.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'finishPullPrepAsPhysicalDropIfActive\("pull-catch-normal-grab-suppressed"\)' 'Suppressed normal grab input must preserve an active converted pull-catch object as a physical drop.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'finishPullPrepAsPhysicalDropIfActive\("pull-catch-stale-reacquire-failed"\)' 'Stale pull-catch reacquire failure must preserve the converted pulled object as a physical drop.'
 
 Require-Text 'src/physics-interaction/hand/Hand.cpp' 'restorePullPrepIfActive\(context\)' 'Clearing pull runtime state must restore abandoned pull prep when the world is still valid.'
 

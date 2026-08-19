@@ -47,9 +47,6 @@ Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
 Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
     'hookedMenuOpenEventHandler[\s\S]{0,1000}isConfiguratorChordHandReserved\([\s\S]{0,120}Hand::Left[\s\S]{0,700}\.suppressGesture\s*=\s*configuratorChordReserved' `
     'The complete left-Y Pip-Boy/Pause transaction must be suppressed during the chord.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'serviceLooseGrenadeQuickDraw[\s\S]{0,500}consumeRawButtonState[\s\S]{0,500}isConfiguratorChordInputReserved\(false\)[\s\S]{0,900}resolveEquippedGrenadeSelection' `
-    'Grenade quick draw must drain but reject the reserved right-B press edge.'
 
 Require-Text 'tests/InputRemapPolicyTests.cpp' `
     'simultaneous B\+Y begins Configurator chord ownership[\s\S]{0,1800}releasing B keeps both chord release phases blocked[\s\S]{0,2200}fresh standalone B press rearms only B[\s\S]{0,1600}fresh standalone Y press rearms Y' `

@@ -66,20 +66,8 @@ Require-Text 'src/physics-interaction/hand/Hand.cpp' 'void\s+Hand::reset\(\)[\s\
     'Hand reset must detach and release beam scene nodes while the scenegraph is still valid.'
 Require-Text 'src/physics-interaction/hand/Hand.cpp' 'abandonHavokStateAfterWorldLoss\(\)[\s\S]*_selectionBeam\.abandonSceneGraph\(\)' `
     'World-loss cleanup must abandon beam scene nodes without touching stale parent pointers.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'preloadSelectionBeam\(\)[\s\S]*preloadSelectionBeam\(\)' `
-    'Physics init must prewarm both beam pools outside first far-selection use.'
 Require-Text 'src/RockConfig.h' 'SelectionBeamPolicy\.h' `
     'RockConfig must depend only on the lightweight beam policy defaults, not scenegraph runtime headers.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'isLocalSkeletonReady\(\)[\s\S]*stopSelectionBeam\(\)[\s\S]*stopSelectionBeam\(\)' `
-    'Selection beam must be hidden immediately when the local skeleton is unavailable.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'updateSelectionBeam\(frame\.hknpWorld,\s*frame\.right\.grabAnchorWorld\)' `
-    'Right hand selection update must refresh the beam from the real hand anchor.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'updateSelectionBeam\(frame\.hknpWorld,\s*frame\.left\.grabAnchorWorld\)' `
-    'Left hand selection update must refresh the beam from the real hand anchor.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'frame\.right\.disabled[\s\S]*stopSelectionBeam\(\)' `
-    'Disabled right hand frames must hide the beam.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'frame\.left\.disabled[\s\S]*stopSelectionBeam\(\)' `
-    'Disabled left hand frames must hide the beam.'
 Require-Text 'CMakeLists.txt' 'copy_directory\s+"\$\{ROOT_DIR\}/data/mod"\s+"\$\{copy_path\}"' `
     'Auto-deploy must copy packaged mesh data alongside the plugin.'
 

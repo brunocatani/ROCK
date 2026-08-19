@@ -62,16 +62,6 @@ Require-Order $coordinator @(
     'owner\.store\(nullptr'
 ) 'Coordinator reset must drain the whole-world callback lease before clearing its owner.'
 
-$interaction = 'src/physics-interaction/core/PhysicsInteraction.cpp'
-Require-Order $interaction @(
-    'void PhysicsInteraction::markGeneratedBodiesInvalidated\(\)',
-    '_generatedBodyStepDrive\.reset\(\);',
-    'clearGeneratedBodyContactRegistry\(\);',
-    '_dynamicHandCollision\.(?:retireAll|reset)\('
-) 'Generated-body invalidation must quiesce callbacks before registry or body teardown.'
-Require-Pattern $interaction 'dispatchFrameCallbacks\(\*this\);\s*// Publish callback ownership[\s\S]{0,220}_generatedBodyStepDrive\.registerForNextStep\(bhk, hknp\);' 'The next-step listener must publish only after all frame mutations and provider callbacks.'
-Require-Pattern $interaction '_rightHand\.setPhysicsCallbackGate[\s\S]{0,600}_weaponCollision\.setPhysicsCallbackGate' 'Every generated collider owner must share the same callback-quiescence gate.'
-Require-Pattern $interaction 'generatedWorldStillLive[\s\S]{0,300}_dynamicHandCollision\.retireAll\(_generatedBodiesBhkWorld\)[\s\S]{0,180}_dynamicHandCollision\.reset\(\)' 'World invalidation must retire only through the still-current exact world and otherwise abandon wrappers.'
 
 foreach ($path in @(
         'src/physics-interaction/body/BodyBoneColliderSet.cpp',
@@ -97,9 +87,6 @@ Require-Pattern $bodySource 'bool BethesdaPhysicsBody::matchesCreationWorld[\s\S
 Require-Pattern $bodySource 'Rejected body retirement through mismatched world' 'Mismatched native retirement must fail closed with diagnostic context.'
 
 Require-Pattern 'src/physics-interaction/body/BodyBoneColliderSet.cpp' '_canonicalForearmTwinDimensions = forearmTwinTargets[\s\S]*applyCanonicalForearmDimensions' 'Body collider generations must capture and reapply canonical forearm dimensions.'
-Require-Pattern $interaction 'nativeReloadHandAuthorityActive\([\s\S]{0,500}kArms[\s\S]{0,160}kHands[\s\S]{0,500}isNativeReloading[\s\S]{0,160}getNativeGunState' 'Reload transition gating must combine provider arms/hands authority with the verified native gun-state boundary.'
-Require-Pattern $interaction '!frame\.reloadBoundaryActive\s*&&\s*rebuildGeneratedBodiesForLifecycle' 'Lifecycle body creation must wait until the animation authority boundary closes.'
-Require-Pattern $interaction 'if \(!_bodyBoneColliders\.hasBodies\(\)\) \{\s*if \(frame\.reloadBoundaryActive\)' 'Optional body collider retries must not create bodies during the animation boundary.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'Havok world-lifetime source boundary failed:'

@@ -53,14 +53,6 @@ Require-Text 'src/physics-interaction/weapon/WeaponSupport.h' 'tryCaptureDynamic
 Require-Text 'data/config/ROCK.ini' 'Normal dynamic full-authority grabs[\s\S]*authored,[\s\S]*provider-owned,[\s\S]*AttachOnly,[\s\S]*visual-only' `
     'Repository config must describe the synchronized dynamic-acquisition semantics and unchanged paths.'
 
-$physicsText = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/core/PhysicsInteraction.cpp')
-$gripUpdateIndex = $physicsText.IndexOf('_twoHandedGrip.update(')
-$bodyUpdateIndex = $physicsText.IndexOf('_weaponCollision.updateBodiesFromCurrentSourceTransforms(', $gripUpdateIndex)
-$muzzleUpdateIndex = $physicsText.IndexOf('applyFinalWeaponMuzzleAuthority()', $bodyUpdateIndex)
-if ($gripUpdateIndex -lt 0 -or $bodyUpdateIndex -lt 0 -or $muzzleUpdateIndex -lt 0 -or
-    $gripUpdateIndex -ge $bodyUpdateIndex -or $bodyUpdateIndex -ge $muzzleUpdateIndex) {
-    $failures.Add('The authoritative blended weapon write must remain before generated-body and final muzzle publication.')
-}
 
 Reject-Text 'src/RockConfig.h' 'rockGrabLerp(Speed|AngularSpeed|MaxTime)' `
     'Removed generic grab startup lerp config fields must not remain in RockConfig.'

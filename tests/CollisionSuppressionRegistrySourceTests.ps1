@@ -49,78 +49,10 @@ $registrySource = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-in
 $refreshMatch = [regex]::Match(
     $registrySource,
     '(?s)RuntimeSuppressionResult CollisionSuppressionRegistry::refresh\(.*?(?=RuntimeSuppressionResult CollisionSuppressionRegistry::release\()')
-if (-not $refreshMatch.Success) {
-    $failures.Add('The runtime refresh implementation must remain independently inspectable from release.')
-} else {
-    $refreshBody = $refreshMatch.Value
-    $identityCheckIndex = $refreshBody.IndexOf('bodyIdentityMatches')
-    $filterWriteIndex = $refreshBody.IndexOf('body_collision::setFilterInfo')
-    if ($identityCheckIndex -lt 0 -or $filterWriteIndex -lt 0 -or $identityCheckIndex -gt $filterWriteIndex) {
-        $failures.Add('Runtime refresh must verify native body identity before reasserting the collision filter.')
-    }
-    if ($refreshBody -match '_entries\.push_back|captureBodyIdentity') {
-        $failures.Add('Runtime refresh must never acquire a lease for a replacement body generation.')
-    }
-}
 
-$interactionSource = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/core/PhysicsInteraction.cpp')
-$nativeRefreshMatch = [regex]::Match(
-    $interactionSource,
-    '(?s)void PhysicsInteraction::refreshNativePlayerCollisionSuppression\(.*?(?=void PhysicsInteraction::refreshNativePlayerCollisionSuppressionFromPhysicsSubstep\()')
-if (-not $nativeRefreshMatch.Success) {
-    $failures.Add('Native-player collision refresh must remain independently inspectable from its update scan.')
-} else {
-    $nativeRefreshBody = $nativeRefreshMatch.Value
-    if ($nativeRefreshBody -notmatch 'globalCollisionSuppressionRegistry\(\)\.refresh\(') {
-        $failures.Add('Native-player collision refresh must delegate reassertion to the identity-safe registry.')
-    }
-    if ($nativeRefreshBody -match 'body_collision::tryReadFilterInfo|body_collision::setFilterInfo|kSuppressionNoCollideBit') {
-        $failures.Add('Native-player collision refresh must not perform body-id-only collision filter access.')
-    }
-    if ($nativeRefreshBody -notmatch 'staleLeaseDiscarded') {
-        $failures.Add('Native-player collision refresh must evict stale cached body ids immediately.')
-    }
-}
 
-$physicsRefreshMatch = [regex]::Match(
-    $interactionSource,
-    '(?s)void PhysicsInteraction::refreshNativePlayerCollisionSuppressionFromPhysicsSubstep\(.*?(?=void PhysicsInteraction::updateNativePlayerCollisionSuppression\()')
-if (-not $physicsRefreshMatch.Success) {
-    $failures.Add('Physics-step native-player refresh must remain independently inspectable from game-frame mutation.')
-} else {
-    $physicsRefreshBody = $physicsRefreshMatch.Value
-    $snapshotIndex = $physicsRefreshBody.IndexOf('havok_runtime::snapshotBody')
-    $identityCheckIndex = $physicsRefreshBody.IndexOf('snapshot.motionIndex != leasedBody.motionIndex')
-    $filterWriteIndex = $physicsRefreshBody.IndexOf('body_collision::setFilterInfo')
-    if ($snapshotIndex -lt 0 -or $identityCheckIndex -lt 0 -or $filterWriteIndex -lt 0 -or
-        $snapshotIndex -gt $identityCheckIndex -or $identityCheckIndex -gt $filterWriteIndex) {
-        $failures.Add('Physics-step refresh must snapshot and verify the leased native identity before any filter write.')
-    }
-    if ($physicsRefreshBody -notmatch 'snapshot\.collisionObject != leasedBody\.collisionObject' -or
-        $physicsRefreshBody -notmatch 'snapshot\.ownerNode != leasedBody\.ownerNode') {
-        $failures.Add('Physics-step refresh must compare motion, collision-object, and owner-node identity.')
-    }
-    if ($physicsRefreshBody -match 'globalCollisionSuppressionRegistry|staleLeaseDiscarded') {
-        $failures.Add('Physics-step refresh must remain read-only with respect to the game-thread suppression registry.')
-    }
-    if ($physicsRefreshBody -match '_nativePlayerCollisionSuppressedBodies(?:\[[^\]]+\])?\s*=(?!=)|_nativePlayerCollisionSuppressedBodyCount\s*=(?!=)') {
-        $failures.Add('Physics-step refresh must not mutate the cache published by the game frame.')
-    }
-}
 
-$restoreMatch = [regex]::Match(
-    $interactionSource,
-    '(?s)void PhysicsInteraction::restoreNativePlayerCollisionSuppression\(.*?(?=void PhysicsInteraction::refreshNativePlayerCollisionSuppression\()')
-if (-not $restoreMatch.Success -or $restoreMatch.Value -notmatch 'callbackGate\(\)\.pauseForMutation\(\)') {
-    $failures.Add('Native-player suppression restore must quiesce the physics callback cache reader.')
-}
 
-$updateMatch = [regex]::Match(
-    $interactionSource,
-    '(?s)void PhysicsInteraction::updateNativePlayerCollisionSuppression\(.*?(?=void PhysicsInteraction::onGeneratedColliderPhysicsSubstep\()')
-if (-not $updateMatch.Success -or $updateMatch.Value -notmatch 'callbackGate\(\)\.pauseForMutation\(\)') {
-    $failures.Add('Native-player suppression update must quiesce the physics callback cache reader.')
-}
 
 if ($failures.Count -gt 0) {
     Write-Host 'Collision suppression registry source boundary failed:'

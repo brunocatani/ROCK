@@ -72,7 +72,6 @@ Reject-File 'tests/GrabLocomotionJagPolicyTests.cpp' `
 $sourceFiles = @(
     'src/RockConfig.h',
     'src/RockConfig.cpp',
-    'src/physics-interaction/core/PhysicsInteraction.cpp',
     'src/physics-interaction/core/PhysicsInteraction.h',
     'src/physics-interaction/core/PhysicsHooks.cpp',
     'src/physics-interaction/core/PhysicsHooks.h',

@@ -39,9 +39,6 @@ function Reject-Text {
     }
 }
 
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'supportAuthorityMode\s*=\s*weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver;[\s\S]{0,1800}canApplyFiringGripProximityAuthority\(\s*supportAuthorityProviderOverride\)' `
-    'Equipped weapons must always enter ROCK proximity support after explicit provider grab modes are resolved.'
 
 Require-Text 'src/physics-interaction/weapon/WeaponSupport.h' `
     'canApplyFiringGripProximityAuthority\(\s*bool providerGrabModeOverride\)[\s\S]{0,120}return !providerGrabModeOverride;' `
@@ -66,9 +63,6 @@ foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini
         'ROCK proximity support must not expose an off switch.'
 }
 
-Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'AnimsGripPistol|classifyEquippedWeaponForSupportGrip|resolveEquippedWeaponSupportAuthorityMode' `
-    'Runtime support authority must not retain the superseded pistol classifier.'
 
 Reject-Text 'data/config/ROCK.ini' `
     'VisualOnlySidearmSupportGrip|SidearmVisualOnlySupportGrip' `

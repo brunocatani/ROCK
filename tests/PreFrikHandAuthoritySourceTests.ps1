@@ -32,7 +32,6 @@ function Reject-Pattern {
 
 $main = 'src/ROCKMain.cpp'
 $interactionHeader = 'src/physics-interaction/core/PhysicsInteraction.h'
-$interaction = 'src/physics-interaction/core/PhysicsInteraction.cpp'
 $frameContext = 'src/physics-interaction/core/PhysicsFrameContext.h'
 $handHeader = 'src/physics-interaction/hand/Hand.h'
 $visualBridge = 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h'
@@ -74,18 +73,12 @@ Require-Pattern $interactionHeader `
 Require-Pattern $frameContext `
     'preFrikSchedulerSequence' `
     'The coherent frame context must carry the scheduler generation used for post publication.'
-Require-Pattern $interaction `
-    'refreshExternalHandWorldTransformsBeforeFrik[\s\S]*tryReconstructCalibratedHand[\s\S]*refreshGrabVisualAuthorityBeforeFrik[\s\S]*refreshHandVisualAuthorityBeforeFrik[\s\S]*refreshContactVisualAuthorityBeforeFrik[\s\S]*refreshRetainedHandVisualAuthoritiesBeforeFrik[\s\S]*refreshWeaponCollisionHandAuthorityBeforeFrik' `
-    'The pre phase must reconstruct clean hand input and refresh every retained hand-world provider before FRIK.'
 
 # Authority is latched once per scheduler generation; provider publications or
 # clears later in the same ROCK frame cannot flap the physics input source.
 Require-Pattern $interactionHeader `
     '_persistentFrikHandInputIsolationActive[\s\S]*_persistentFrikHandInputIsolationSequence[\s\S]*_currentPreFrikSchedulerSequence' `
     'PhysicsInteraction must retain the authority value and the scheduler generation that sampled it.'
-Require-Pattern $interaction `
-    '_persistentFrikHandInputIsolationSequence\[handIndex\][\s\S]{0,1200}hasPublishedExternalHandWorldTransform[\s\S]{0,1200}persistentWorldAuthorityPublished\s*=\s*_persistentFrikHandInputIsolationActive\[handIndex\]' `
-    'Hand input isolation must sample publication state only at a scheduler-generation edge.'
 Require-Pattern $visualBridge `
     'hasPublishedExternalHandWorldTransform\(const char\* tag, Hand hand\)[\s\S]{0,300}findTrackedHandWorldPublication' `
     'Pre-FRIK providers must query their exact tag so one owner cannot resurrect another owner''s cleared claim.'

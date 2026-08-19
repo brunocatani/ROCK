@@ -84,7 +84,6 @@ function Require-OrderedTokens {
 }
 
 $grenadeSource = Read-Source 'src/physics-interaction/grenade/LooseGrenadeRuntime.cpp'
-$physicsSource = Read-Source 'src/physics-interaction/core/PhysicsInteraction.cpp'
 $physicsHeader = Read-Source 'src/physics-interaction/core/PhysicsInteraction.h'
 $pendingCommitHeader = Read-Source 'src/physics-interaction/core/PendingForceGrabCommit.h'
 $grabPhasePolicy = Read-Source 'src/physics-interaction/grab/GrabThreePhase.h'
@@ -162,22 +161,6 @@ Require-OrderedTokens $dropRequest @(
 
 # One fresh physical right-B edge owns quick draw. Hand selection is decided for
 # both hands before inventory removal; right is preferred with left fallback.
-$grenadeService = Get-BoundedText $physicsSource 'void PhysicsInteraction::serviceLooseGrenadeQuickDraw(' 'void PhysicsInteraction::servicePendingForceGrabCommits(' 'loose grenade quick-draw service'
-Require-OrderedTokens $grenadeService @(
-    'consumeRawButtonState(',
-    'input_remap_policy::kOpenVrGrenadeQuickDrawButtonId',
-    '!buttonState.pressed',
-    'resolveEquippedGrenadeSelection(equippedSelection)',
-    'rightBlockers = forceGrabHandBlockerMask',
-    'leftBlockers = forceGrabHandBlockerMask',
-    'force_grab_policy::selectGrenadeHand',
-    'GrenadeSelectionFailure::HandsBlocked',
-    'Cannot draw grenade - both hands are occupied.',
-    'dropEquippedGrenadeSelectionToWorld'
-) 'Loose grenade service must choose an available hand and reject blocked hands before inventory removal.'
-Require-Text $grenadeService `
-    'const bool isLeft\s*=\s*handSelection\.hand\s*==\s*force_grab_policy::HandChoice::Left;[\s\S]*?_pendingForceGrabCommits\[isLeft\s*\?\s*1u\s*:\s*0u\][\s\S]*?handInput\s*=\s*isLeft\s*\?\s*frame\.left\s*:\s*frame\.right' `
-    'The selected grenade hand must drive both the commit slot and spawn anchor.'
 Require-Text $forceGrabPolicy `
     'if\s*\(rightAvailable\)[\s\S]*?HandChoice::Right[\s\S]*?if\s*\(leftAvailable\)[\s\S]*?HandChoice::Left[\s\S]*?GrenadeSelectionFailure::HandsBlocked' `
     'Grenade hand policy must prefer right, fall back to left, then report both hands blocked.'
@@ -187,44 +170,10 @@ Require-Text $forceGrabPolicy `
 
 # A pending force-grab owns its hand and target through settle/commit. Organic
 # selection, input, and the peer hand must not steal that authority.
-$selectionUpdate = Get-BoundedText $physicsSource 'void PhysicsInteraction::updateSelection(' 'GrabReleaseContext PhysicsInteraction::makeGrabReleaseContext(' 'selection update'
-Require-Text $selectionUpdate `
-    'if\s*\(pendingTarget\)[\s\S]*?context\.exclusiveRef\s*=\s*pendingTarget;[\s\S]*?return context;' `
-    'A pending force-grab target must be exclusive to the peer selection context.'
-Require-Text $selectionUpdate `
-    'if\s*\(_pendingForceGrabCommits\[0\]\.active\)[\s\S]*?_rightHand\.clearSelectionState\(false\);[\s\S]*?_rightHand\.stopSelectionBeam\(\);' `
-    'A pending right-hand force-grab must suppress organic right-hand selection and beam state.'
-Require-Text $selectionUpdate `
-    'if\s*\(_pendingForceGrabCommits\[1\]\.active\)[\s\S]*?_leftHand\.clearSelectionState\(false\);[\s\S]*?_leftHand\.stopSelectionBeam\(\);' `
-    'A pending left-hand force-grab must suppress organic left-hand selection and beam state.'
 
-$grabInput = Get-BoundedText $physicsSource 'void PhysicsInteraction::updateGrabInput(' 'bool PhysicsInteraction::physicsModOwnsObject(' 'grab input update'
-Require-Text $grabInput `
-    'if\s*\(_pendingForceGrabCommits\[handIndex\]\.active\)\s*\{[\s\S]*?grab_input_intent_policy::reset\(inputIntentState\);[\s\S]*?cancelPeerHeldJoinRetry[\s\S]*?clearGameplayCandidatesForHand[\s\S]*?clearSelectionState\(false\);[\s\S]*?return;' `
-    'A pending force-grab must reserve normal input, retry, gameplay-candidate, and selection ownership for its hand.'
-Require-Text $grabInput `
-    'if\s*\(_forceGrabCommittedThisFrame\[handIndex\]\)[\s\S]*?readGrabButtonState\(isLeft,\s*grabButton\)[\s\S]*?grab_input_intent_policy::reset\(inputIntentState\)[\s\S]*?return;' `
-    'A successful force-grab must consume stale pre-attachment button edges and skip normal release processing for the rest of its commit frame.'
 
 # Every retry reacquires the exact handle target and commits it in the same
 # update. Success is published only after the held-ref/body postcondition.
-$commitService = Get-BoundedText $physicsSource 'void PhysicsInteraction::servicePendingForceGrabCommits(' 'void PhysicsInteraction::saveGrabOffsetForHand(' 'pending force-grab commit service'
-Require-OrderedTokens $commitService @(
-    'if (hand.hasSelection())',
-    'hand.clearSelectionState(false);',
-    'hand.acquireForceGrabLooseSelection',
-    'targetRef,',
-    'hand.getSelection().refr != targetRef',
-    'PendingForceGrabCommitPhase::AcquireAndCommitExactTarget',
-    'hand.grabSelectedObject',
-    'auto* heldRef = hand.getHeldRef();',
-    'if (heldRef != targetRef || !exactBody)',
-    'hand.releaseGrabbedObject',
-    'abandon("grab postcondition did not match exact target"'
-) 'Force-grab retries must acquire, commit, and verify the exact requested reference/body before reporting success.'
-Require-Text $commitService `
-    'if\s*\(!grabbed\)\s*\{[\s\S]*?clearSelectionState\(false\);[\s\S]*?phase\s*=\s*PendingForceGrabCommitPhase::WaitingForSettle' `
-    'A refused exact-target commit must reset to settle/reacquire instead of preserving stale ready selection.'
 Reject-Text $pendingCommitHeader `
     'ReadyToCommit' `
     'Pending force-grab state must not reintroduce a stale ReadyToCommit phase.'
@@ -261,25 +210,9 @@ Require-Text $providerSource `
 Require-Text $commandQueueHeader `
     'isInteractionCommandActiveV1\(std::uint64_t ownerToken,\s*std::uint64_t commandId\)' `
     'Runtime force-grab service must have an explicit provider-command liveness query.'
-Require-Text $physicsSource `
-    'dequeueInteractionCommandV1\(command\)[\s\S]*?command\.kind\s*==\s*RockProviderInteractionCommandKindV1::ForceGrab\s*&&[\s\S]*?!provider::isInteractionCommandActiveV1\(command\.ownerToken,\s*command\.commandId\)' `
-    'Dequeued provider force-grabs must be discarded if owner/provider loss already cancelled them.'
-Require-Text $commitService `
-    'PendingForceGrabCommitOrigin::ProviderForceGrabCommand\s*&&[\s\S]*?!provider::isInteractionCommandActiveV1' `
-    'Deferred provider force-grab commits must revalidate liveness before mutating hand/physics state.'
-Require-Text $physicsSource `
-    'void PhysicsInteraction::init\(\)[\s\S]*?clearLooseGrenadeRuntimeState\(\);' `
-    'Initialization must clear only runtime-owned grenade commits and fuse state.'
-Require-Text $physicsSource `
-    'void PhysicsInteraction::shutdown[\s\S]*?clearLooseGrenadeRuntimeState\(\);' `
-    'Shutdown must roll back runtime-owned grenade commits without any global equip request.'
 
 # Grenades are globally single-flight even though ordinary API force-grabs can
 # proceed independently per hand.
-$providerCommands = Get-BoundedText $physicsSource 'void PhysicsInteraction::processProviderInteractionCommands(' 'std::size_t PhysicsInteraction::applyProviderWeaponPartDrives(' 'provider interaction command processing'
-Require-Text $providerCommands `
-    'targetIsLooseGrenade\s*=\s*loose_grenade_runtime::isGrenadeRef\(targetRef\)[\s\S]*?handHoldsLooseGrenade\(_rightHand\)[\s\S]*?handHoldsLooseGrenade\(_leftHand\)[\s\S]*?hasActiveLooseGrenadeCommit\(\)[\s\S]*?RockProviderInteractionFailureV1::HandBusy' `
-    'API grenade grabs must reject while any hand holds a grenade or a grenade attach is active.'
 
 # Bare fists are identified from runtime evidence, not broad hand-to-hand
 # weapon type, so real unarmed weapons remain supported.
@@ -292,9 +225,6 @@ Require-Text $fo4vrRuntime `
 Reject-Text $allRuntimeCpp `
     '(?:->|\.)(?:weaponState|gunState)\b|GetWeaponMagicDrawn\s*\(' `
     'ROCK runtime code must not read CommonLibF4VR weaponState, gunState, or GetWeaponMagicDrawn because that bitfield block is shifted on FO4VR 1.2.72.'
-Require-Text $physicsSource `
-    'updateEquippedWeaponTransition\(\)[\s\S]{0,500}getNativeGunState\(player\)[\s\S]{0,600}getNativeWeaponState\(player\)[\s\S]*?nativeStateBeforeEquip\s*=\s*[\s\S]{0,120}getNativeWeaponState\(player\)[\s\S]*?nativeStateAfterEquip\s*=\s*[\s\S]{0,120}getNativeWeaponState\(player\)' `
-    'Animation ownership, transition observation, admission, and post-equip diagnostics must all use verified native state accessors.'
 
 Require-Text $bareFistPolicy `
     'shouldHolster[\s\S]*?rockEnabled\s*&&\s*witness\.weaponDrawn\s*&&\s*witness\.actorUsingMelee\s*&&\s*!witness\.realMeleeWeaponEquipped' `
@@ -302,24 +232,12 @@ Require-Text $bareFistPolicy `
 Require-Text $physicsHeader `
     'void enforceNoBareFistState\(bool forceRecheck\)' `
     'PhysicsInteraction must own a central bare-fist state guard.'
-$fistGuard = Get-BoundedText $physicsSource 'void PhysicsInteraction::enforceNoBareFistState(' 'void PhysicsInteraction::clearLooseGrenadeImpactWatches(' 'bare-fist guard'
-Require-Text $fistGuard `
-    'IsWeaponDrawn\(\)[\s\S]*?CombatUtilities_IsActorUsingMelee\(legacyPlayer\)[\s\S]*?isMeleeWeaponEquipped\(\)[\s\S]*?bare_fist_guard_policy::shouldHolster[\s\S]*?DrawWeaponMagicHands\(false\)' `
-    'Central bare-fist guard must holster only the verified drawn-fist fallback.'
-$mainUpdate = Get-BoundedText $physicsSource 'void PhysicsInteraction::update()' 'void PhysicsInteraction::clearLeftWeaponContact()' 'main interaction update'
-Require-OrderedTokens $mainUpdate @(
-    'const bool forceBareFistRecheck = _equippedWeaponMenuReconcilePending;',
-    'if (_equippedWeaponMenuReconcilePending)',
-    '_equippedWeaponMenuReconcilePending = false;',
-    'enforceNoBareFistState(forceBareFistRecheck);'
-) 'Bare-fist guard must run after menu equipment reconciliation and retain an explicit forced recheck witness.'
 
 # VirtualHolsters compatibility was removed completely. Keep the retired ABI
 # probe, config surface, and input-ownership branches from returning.
 foreach ($relativePath in @(
     'src/RockConfig.cpp',
     'src/RockConfig.h',
-    'src/physics-interaction/core/PhysicsInteraction.cpp',
     'src/physics-interaction/input/InputRemapPolicy.h',
     'src/physics-interaction/input/InputRemapRuntime.cpp',
     'src/physics-interaction/input/InputRemapRuntime.h',

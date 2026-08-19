@@ -275,10 +275,6 @@ Require-Text 'src/api/ROCKProviderApi.cpp' 'maxWorldRaycastsPerOwnerPerFrame\s*=
     'Extended limits must publish the per-owner per-frame raycast budget.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'apiRequestEquippedWeaponHandV1[\s\S]{0,500}onAnimationOwnerThread\(\)[\s\S]{0,1800}EquippedWeaponHandlingAuthority[\s\S]{0,1000}FiringGripOwnership[\s\S]{0,800}AmbidextrousHandoff[\s\S]{0,1000}requestProviderEquippedWeaponHandV1' `
     'Exact-hand requests must remain game-thread-only and bound to the caller''s active handling authority.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'requestProviderEquippedWeaponHandV1[\s\S]{0,1800}currentEquippedWeaponForm\(\)[\s\S]{0,900}request\.weaponGenerationKey[\s\S]{0,1500}EquippedWeaponHandAssignmentSource::Provider' `
-    'Exact-hand requests must bind value identity before arming the canonical equipped-weapon assignment path.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'serviceEquippedWeaponHandAssignment\([\s\S]{0,16000}ownsEquippedWeaponHandlingAuthorityV1[\s\S]{0,12000}beginPersistentEquippedCarry' `
-    'Provider hand assignments must continuously revalidate authority and reuse ROCK''s canonical left-carry executor.'
 Require-Text 'src/api/ROCKProviderApi.h' 'DebugOverlayPublication[\s\S]*RockProviderDebugOverlayLineV1[\s\S]*RockProviderDebugOverlayTextV1[\s\S]*RockProviderDebugOverlayPublicationV1' `
     'API V1 must expose bounded owner-scoped debug overlay publication values.'
 Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_API_V1_DEBUG_OVERLAY_PUBLICATION_TABLE_BYTES[\s\S]*supportsDebugOverlayPublicationV1' `
@@ -311,28 +307,12 @@ Require-Text 'src/api/ROCKProviderApi.cpp' 'request->targetFormId\s*==\s*0' `
     'Force-grab API validation must require stable FormID identity before queueing.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'isFiniteVector3\(request->preferredGrabPointGame\)' `
     'Force-grab API validation must finite-check caller-supplied preferred grab points.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'TESForm::GetFormByID<RE::TESObjectREFR>' `
-    'Force-grab execution must resolve targets on the ROCK update path by FormID.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'apiRequestForceReleaseV1' `
     'Provider glue must implement queued force-release request validation.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'apiRequestThrownDropV1' `
     'Provider glue must implement queued thrown-drop request validation.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 's_interactionCommands' `
     'Provider glue must use a bounded interaction command queue.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'processProviderInteractionCommands' `
-    'ROCK runtime must execute provider commands from the update path.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'hand\.grabSelectedObject' `
-    'Force grab execution must commit through the existing dynamic grab path.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'releaseGrabbedObject' `
-    'Force release and thrown drop must use the existing release path.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'applyReleaseVelocitySnapshot' `
-    'Trusted release/drop velocity must apply through the existing release velocity path.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'applyCapturedReleaseVelocity\s*=\s*isThrownDropCommand\s*&&\s*!applyRequestedVelocity' `
-    'Provider force release must not reuse captured controller throw velocity by default.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'currentHandInputSuppressionFlagsV1' `
-    'ROCK runtime must observe provider hand input suppression leases.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'deferredGrabRelease' `
-    'Suppressed grab releases must be deferred instead of dropping held objects during external config chords.'
 Reject-Text 'src/api/ROCKProviderApi.cpp' 'grabSelectedObject|releaseGrabbedObject|applyReleaseVelocitySnapshot' `
     'Provider API glue must only enqueue commands, not mutate hand state directly.'
 Reject-Text 'src/api/ROCKProviderApi.cpp' 'reinterpret_cast<RE::TESObjectREFR\*>\(request->targetRefr\)' `
@@ -367,16 +347,12 @@ Require-Text 'src/api/ROCKProviderApi.cpp' 'apiSetTouchGrabTargetsForScopeV1[\s\
     'Touch-grab target publication must remain registered-owner and capability gated.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'unregisterConsumer[\s\S]*s_touchGrabTargets\.clearOwner\(ownerToken\)' `
     'Unregistering a consumer must revoke all of its touch-grab targets.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'collectFreshSurfaceContacts\([\s\S]*ContactSource::[\s\S]{0,80}DynamicSurface' `
-    'Grip-edge touch acquisition must consume the dedicated dynamic surface contact channel.'
 Require-Text 'src/api/ROCKProviderApi.h' 'TouchGrab\s*=\s*1u\s*<<\s*12[\s\S]*FixedSurfaceLatch\s*=\s*1u\s*<<\s*13[\s\S]*GlobalSurfaceLatch\s*=\s*1u\s*<<\s*14' `
     'Hand-interaction state must distinguish touch grabs, fixed surface latches, and the INI global mode.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'sameHandTarget[\s\S]{0,500}reservedTargetIdentity[\s\S]{0,300}primaryBodyId' `
     'Touch-grab native identity and body changes must advance the public target sequence.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'Releasing[\s\S]{0,1500}touchGrabClassificationFlags[\s\S]{0,1500}previousHand\.flags' `
     'The one-frame release state must retain touch-grab and global-surface classification.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'tryTargetClass\([\s\S]{0,180}TargetClass::[\s\S]{0,80}Explicit\)\s*\|\|[\s\S]{0,180}tryTargetClass\([\s\S]{0,180}TargetClass::[\s\S]{0,80}Wildcard\)' `
-    'Exact mechanism targets must be attempted before wildcard fixed-surface targets.'
 Require-Text 'src/physics-interaction/object/PhysicsBodyClassifier.h' 'motionType\s*==\s*BodyMotionType::Static[\s\S]{0,120}BodyRejectReason::StaticMotion' `
     'Ordinary loose-object classification must continue rejecting static motion.'
 

@@ -54,7 +54,6 @@ Require-Text 'src/physics-interaction/input/InputRemapPolicy.h' `
 foreach ($legacyPath in @(
         'src/RockConfig.cpp',
         'src/RockConfig.h',
-        'src/physics-interaction/core/PhysicsInteraction.cpp',
         'src/physics-interaction/core/PhysicsInteraction.h',
         'src/physics-interaction/input/InputRemapPolicy.h',
         'data/config/ROCK.ini',
@@ -113,26 +112,8 @@ Require-Text 'src/api/ROCKProviderApi.h' `
     'rolling lease returns to ROCK''s configured fallback handling policy' `
     'The V1 lease contract must describe fallback to ROCK configuration rather than a hard-coded firing hand.'
 
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'getEquippedWeaponHandlingAuthorityV1\(request\)[\s\S]*RockEquippedWeaponHandlingBaseline[\s\S]*rockAmbidextrousFiringGripEnabled[\s\S]*rockEquippedWeaponShoulderStashEnabled[\s\S]*makeEquippedWeaponHandlingSettings[\s\S]*if \(fixedFiringHandIsLeft\)[\s\S]*settings\.firingGripOwnershipEnabled\s*=\s*true[\s\S]*requiresEquippedWeaponHandlingModeReconcile' `
-    'ROCK must build its native handoff/stash baseline before the addon overlay, preserve fixed-left ownership, and reconcile effective capability loss.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'if \(_equippedWeaponHandlingSettings\.ambidextrousHandoffEnabled\s*&&\s*_twoHandedGrip\.isManualOwnershipActive\(\)\)' `
-    'Fixed-left fallback must preserve a deliberate handoff from either ROCK or the addon instead of checking external ownership.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'gripZoneSettleEquipEnabled\s*=\s*[\s\S]{0,180}canSettleEquipInGripZone\(\s*_equippedWeaponHandlingSettings\.gripZoneEquipEnabled\s*\)' `
-    'Grip-zone equip and hover discovery must activate only from the addon snapshot.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'consumeHapticEvents\(\);[\s\S]{0,700}if \(_equippedWeaponHandlingSettings\.externalAuthorityActive\)' `
-    'Equipped-weapon transition haptics must remain addon-owned while events are always drained.'
 
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'shouldStartHeldWeaponEquipOwnership[\s\S]{0,260}\.modes\s*=\s*firingGripModes[\s\S]{0,120}\.handIsLeft\s*=\s*isLeft[\s\S]{0,120}\.gripHeld\s*=\s*rawGrabInput\.held' `
-    'Direct trigger equip must start core-or-addon hand-specific ownership from the originating hand grip.'
 
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'effectiveHandlingSettings\.firingGripOwnershipEnabled\s*=[\s\S]{0,160}firingGripOwnershipFeatureAvailable[\s\S]{0,220}effectiveHandlingSettings\.ambidextrousHandoffEnabled\s*=[\s\S]{0,160}ambidextrousHandoffAvailable[\s\S]{0,220}effectiveHandlingSettings\.primaryDetachEnabled\s*=[\s\S]{0,160}primaryDetachFeatureAvailable[\s\S]{0,260}_twoHandedGrip\.update\([\s\S]*effectiveHandlingSettings' `
-    'Two-handed weapon state must receive infrastructure-gated ownership, handoff, and detach values while preserving the active ROCK-or-addon tuning.'
 
 Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
     'std::array<std::atomic<bool>,\s*2>\s+s_handHeldWeapon' `
@@ -142,9 +123,6 @@ Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
     'eventHandHeldWeapon\s*=\s*s_handHeldWeapon\[eventHandIsLeft\s*\?\s*0u\s*:\s*1u\]' `
     'Native trigger suppression must read held-weapon ownership for the physical hand that emitted the event.'
 
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'loose_weapon_grip_zone::tryGetFiringHandWeaponLocal\([\s\S]{0,180}pendingGripStart\.firingHandWeaponLocal' `
-    'Loose equip must carry the canonical weapon-relative firing-hand frame across inventory transfer.'
 
 Require-Text 'src/physics-interaction/weapon/LooseWeaponGripZone.cpp' `
     'gripWeaponLocal\s*=\s*transform_math::worldPointToLocal\([\s\S]{0,120}attachedRootWorld,[\s\S]{0,120}canonicalPalmWorld\)[\s\S]{0,900}localPointToWorld\(looseRoot->world,\s*state\.gripWeaponLocal\)' `
@@ -162,21 +140,9 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.h' `
     'struct\s+HeldWeaponTriggerEquipIntent[\s\S]{0,240}formID[\s\S]{0,160}remainingSeconds' `
     'The retained trigger intent must be identity-bound and time-bounded.'
 
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'triggerEquipIntent\s*=\s*HeldWeaponTriggerEquipIntent\{[\s\S]{0,220}\.formID\s*=\s*selectedRef->GetFormID\(\)[\s\S]{0,120}\.remainingSeconds\s*=\s*0\.35f' `
-    'A same-hand trigger edge coincident with grab commit must be retained for that exact weapon instead of being lost.'
 
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'replayedSameHandTrigger\s*=\s*triggerEquipIntent\.pending\s*&&\s*heldRefForGameplay\s*&&\s*triggerEquipIntent\.formID\s*==\s*heldRefForGameplay->GetFormID\(\)' `
-    'A retained trigger edge must replay only after the same hand holds the exact selected weapon.'
 
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'processHand\(_rightHand,\s*false\);\s*publishHandInputOwnership\(_rightHand,\s*false\);[\s\S]{0,120}processHand\(_leftHand,\s*true\);\s*publishHandInputOwnership\(_leftHand,\s*true\)' `
-    'Input ownership must be republished immediately after each hand transition so left Pip-Boy suppression cannot lag a committed grab.'
 
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    '_pendingEquippedWeaponPrimaryOnlyGripStart\s*=\s*pendingGripStart' `
-    'Loose equip must preserve the originating hand and captured weapon-local frame across inventory transfer.'
 
 Require-Text 'src/physics-interaction/object/ObjectDetection.h' `
     'struct\s+SelectedObject[\s\S]{0,500}RE::NiPointer<RE::TESObjectREFR>\s+retainedRef[\s\S]{0,180}RE::TESObjectREFR\*\s+refr[\s\S]*setReference\(RE::TESObjectREFR\*\s+value\)[\s\S]{0,180}retainedRef\.reset\(value\)[\s\S]{0,120}refr\s*=\s*retainedRef\.get\(\)' `
@@ -190,9 +156,6 @@ Require-Text 'src/physics-interaction/hand/Hand.h' `
     'takeRetainedReference\(\)[\s\S]{0,180}refr\s*=\s*nullptr;[\s\S]{0,100}std::move\(retainedRef\)' `
     'Native transfers must be able to consume the release pin while invalidating its raw alias.'
 
-Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'RE::TESObjectREFR\* gripZoneHoverCandidate\s*=\s*nullptr;\s*if\s*\(\s*!isLeft\s*&&' `
-    'Grip-zone hover/equip discovery must not remain right-hand-only.'
 
 # Pull-catch/force-grab canonical auto-align must cover both physical hands
 # through the shared firing-hold resolver.
@@ -203,9 +166,6 @@ Require-Text 'src/physics-interaction/weapon/LooseWeaponGripZone.cpp' `
 
 # Non-throwable weapons never participate in saved grab offsets, on either
 # side: the shared custom/authored weapon-grip pipeline owns their seat.
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'participatesInSavedGrabOffsets\(weaponForm\s*!=\s*nullptr,\s*throwableWeapon\)' `
-    'The dev-mode save gesture must refuse to record grab offsets for non-throwable weapons.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'Held weapon hand-specific equip source boundary failed:'

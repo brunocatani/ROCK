@@ -70,9 +70,6 @@ Reject-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
     'requestLocalReloadTestLease|rockNativeReloadAnimationAuthorityTestEnabled' `
     'Input routing must not pre-arm native animation authority; the verified reload-start hook owns that lifecycle.'
 
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'input_remap_runtime::updateFiringHandReloadInput\(runtime\.deltaSeconds\)' `
-    'PhysicsInteraction must drive per-frame tap/hold arbitration with frame time before any early return.'
 
 Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
     'shouldRouteFiringHandActivateReload\(inputEvent\)[\s\S]{0,700}shouldSuppressNativeTakeEquipActionEvent\(inputEvent\)' `

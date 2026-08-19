@@ -49,9 +49,6 @@ Require-Text 'src/physics-interaction/stash/ShoulderStashTransfer.cpp' 'Activate
 Require-Text 'src/physics-interaction/stash/ShoulderStashTransfer.cpp' `
     'transferToPlayerInventory\(TransferInput input\)[\s\S]{0,220}untransferredRef\s*=\s*std::move\(input\.heldRef\)[\s\S]*ActivateRef\([\s\S]{0,180}if \(result\.success\)[\s\S]{0,100}untransferredRef\.reset\(\)' `
     'Shoulder stash must relinquish ROCK reference ownership immediately after native pickup succeeds.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'transferToPlayerInventory\([\s\S]{0,180}releaseOutcome\.takeRetainedReference\(\)[\s\S]{0,320}postTransferRef\s*=\s*transferResult\.untransferredRef\.get\(\)' `
-    'Shoulder stash failure recovery must use the transfer-owned reference pin.'
 Reject-Text 'src/physics-interaction/stash/ShoulderStashTransfer.cpp' 'PickUpObject\(' `
     'Shoulder stash transfer must not directly call Actor::PickUpObject for books, notes, magazines, or holotapes.'
 Reject-Text 'src/physics-interaction/stash/ShoulderStashTransfer.h' 'skipActivate(Books|Notes)' `

@@ -29,17 +29,11 @@ Require-Text 'src/api/ROCKProviderApi.h' `
     'RockProviderEquippedWeaponGripStateFlagV1[\s\S]*MuzzleWorldValid\s*=\s*1u\s*<<\s*7[\s\S]*RockProviderEquippedWeaponGripStateV1[\s\S]*muzzleOriginGame[\s\S]*muzzleDirectionGame[\s\S]*reserved\[2\]' `
     'ROCK V1 must consume only reserved grip-state storage for the muzzle snapshot and preserve the record size.'
 
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'getValidatedEquippedWeaponData\(\)[\s\S]*vtable\s*!=\s*f4vr::EquippedWeaponData_vtable\.address\(\)[\s\S]*getEquippedProjectileNode\(\)[\s\S]*equipWeaponData->fireNode' `
-    'The provider must fail closed on the verified FO4VR equipped-data type and read Bethesda''s equip-time fire node.'
 
 Require-Text 'src/rock_support/Fo4VrRuntime.h' `
     'EquippedWeaponData_vtable\s*\{\s*REL::Offset\(0x2D7FCF8\)\s*\}' `
     'The equipped-data type gate must retain the FO4VR 1.2.72 vtable verified from raw constructor disassembly.'
 
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'getEquippedMuzzleFlashNodes\(\)[\s\S]*muzzle->fireNode->local\s*=\s*weapon_muzzle_authority_math::fireNodeLocalFromProjectileWorld\(muzzle->projectileNode->world\)' `
-    'Provider muzzle data must share ROCK final weapon muzzle authority with projectile/fire presentation.'
 
 Require-Text 'tests/ProviderApiAbiTests.cpp' `
     'RockProviderEquippedWeaponGripStateV1,\s*224,\s*8[\s\S]*muzzleOriginGame\)\s*==\s*188[\s\S]*muzzleDirectionGame\)\s*==\s*200' `

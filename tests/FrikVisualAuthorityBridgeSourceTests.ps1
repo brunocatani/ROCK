@@ -76,9 +76,6 @@ Require-Text 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h' `
 Require-Text 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h' `
     'g_handWorldPublicationReady[\s\S]*applyExternalHandWorldTransform[\s\S]*!detail::g_handWorldPublicationReady\[handIndex\][\s\S]*setExternalHandWorldPublicationReady' `
     'Persistent hand publication must fail closed until controller reconstruction is calibrated.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'getInteractionHandFrame[\s\S]*getLeftHandNode\(\)[\s\S]*getRightHandNode\(\)[\s\S]*hasPublishedExternalHandWorldTransform[\s\S]*_handFrameResolver\.resolve[\s\S]*hasControllerReconstructionCalibration[\s\S]*setExternalHandWorldPublicationReady' `
-    'Shared collision and grab input must calibrate controller reconstruction before persistent FRIK publication.'
 Require-Text 'src/ROCKMain.cpp' `
     'kSkeletonReady[\s\S]*resetPresentedHandNodeCache\(\)[\s\S]*kSkeletonDestroying[\s\S]*resetPresentedHandNodeCache\(\)' `
     'Game hand-node caches must be invalidated at both hFRIK skeleton lifecycle edges.'

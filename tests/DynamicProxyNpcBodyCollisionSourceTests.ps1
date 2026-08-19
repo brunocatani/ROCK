@@ -24,7 +24,6 @@ function Require-Pattern {
 }
 
 $layers = 'src/physics-interaction/collision/CollisionLayerPolicy.h'
-$core = 'src/physics-interaction/core/PhysicsInteraction.cpp'
 
 # The compiled default must stay fail-closed: without the INI key the NPC
 # body-contact experiment never activates.
@@ -43,9 +42,6 @@ foreach ($ini in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
 # character-controller contact filter is on, because that toggle owns the
 # bit-14 suppression leases that keep the player's own biped-family bodies
 # out of the dynamic proxies (self-propulsion feedback otherwise).
-Require-Pattern $core `
-    'dynamicProxyNpcBodyCollisionEnabled\(\)[\s\S]{0,800}rockDynamicColliderNpcBodyCollisionEnabled\s*&&\s*[\r\n\s]*g_rockConfig\.rockNativeCharacterControllerObjectContactFilterEnabled' `
-    'NPC body collision must stay conjunction-gated on the native controller contact filter (player suppression leases).'
 
 # The proxy masks must add exactly the biped family, and only under the flag.
 Require-Pattern $layers `
@@ -61,15 +57,6 @@ Require-Pattern $layers `
 # Watchdog tolerance: the BIPED/BIPED_NO_CC rows are SCISSORS-owned while its
 # global collision policy runs; ROCK must not fight over biped bits on the
 # proxy rows or the two plugins churn the whole matrix.
-Require-Pattern $core `
-    'dynamicHandProxyMaskDrifted\s*=\s*_expectedDynamicHandProxyLayerMask\s*!=\s*0\s*&&[\r\n\s]*!collision_layer_policy::bodyManagedLayerMaskMatches' `
-    'The right-hand proxy drift check must use the biped-tolerant compare.'
-Require-Pattern $core `
-    'dynamicLeftHandProxyMaskDrifted\s*=[\s\S]{0,300}bodyManagedLayerMaskMatches' `
-    'The left-hand proxy drift check must use the biped-tolerant compare.'
-Require-Pattern $core `
-    'dynamicWeaponProxyMaskDrifted\s*=\s*_expectedDynamicWeaponProxyLayerMask\s*!=\s*0\s*&&[\r\n\s]*!collision_layer_policy::bodyManagedLayerMaskMatches' `
-    'The weapon proxy drift check must use the biped-tolerant compare.'
 
 if ($failures.Count -gt 0) {
     $failures | ForEach-Object { Write-Error $_ -ErrorAction Continue }

@@ -63,6 +63,7 @@ namespace rock
             std::array<NativeSlot, kMaxRetainedNativeSlots> retainedSlots{};
             std::size_t retainedSlotCount = 0;
 
+            // Runs on the main thread.
             [[nodiscard]] bool hasRetainedNativeSlot(RE::hknpWorld* requestedWorld, void* requestedSignal)
             {
                 if (!requestedWorld || !requestedSignal) {
@@ -79,6 +80,7 @@ namespace rock
                 return false;
             }
 
+            // Runs on the main thread.
             bool rememberRetainedNativeSlot(RE::hknpWorld* subscribedWorld, void* subscribedSignal, std::uint32_t epoch)
             {
                 if (!subscribedWorld || !subscribedSignal) {
@@ -107,9 +109,11 @@ namespace rock
             }
         };
 
+        // Physics callbacks compare these userData tokens by address. Their addresses must stay stable.
         ContactEventSubscriptionBridge s_contactEventBridge;
         ContactEventSubscriptionBridge s_manifoldProcessedEventBridge;
 
+        // Runs on the main thread.
         [[nodiscard]] const char* pushAssistSkipReasonName(
             push_assist::PushAssistSkipReason reason)
         {
@@ -165,6 +169,7 @@ namespace rock
             applyDynamicPushAssist("Weapon", bhk, hknp, weaponSourceBody, weaponContactBody, true);
         }
 
+        // Runs on the main thread.
         auto readBodyMass = [](RE::hknpWorld* world, std::uint32_t bodyId) {
             if (!world || bodyId == 0xFFFFFFFF || bodyId == object_physics_body_set::INVALID_BODY_ID) {
                 return 0.0f;
@@ -182,6 +187,7 @@ namespace rock
             return grab_mass_policy::massFromInverseMass(unpackBfloat16(packedInvMass));
         };
 
+        // Runs on the main thread.
         auto readBodySpeedGameUnits = [](RE::hknpWorld* world, std::uint32_t bodyId) {
             if (!world || bodyId == 0xFFFFFFFF || bodyId == object_physics_body_set::INVALID_BODY_ID) {
                 return 0.0f;
@@ -199,6 +205,7 @@ namespace rock
             return std::isfinite(speedHavok) ? speedHavok * havokToGameScale() : 0.0f;
         };
 
+        // Runs on the main thread.
         auto processHeldImpact = [&](Hand& hand,
                                      bool isLeft,
                                      std::atomic<std::uint64_t>& pairAtomic) {
@@ -444,6 +451,7 @@ namespace rock
          */
         constexpr auto kManifoldProcessedEventType = static_cast<RE::hknpEventType::Enum>(2);
 
+        // Runs on the main thread.
         auto subscribeBridge = [&](const RE::hknpEventType::Enum eventType,
                                    ContactEventSubscriptionBridge& bridge,
                                    std::atomic<RE::hknpWorld*>& localWorld,
@@ -541,6 +549,7 @@ namespace rock
 
     void PhysicsInteraction::unsubscribeContactEvents(RE::hknpWorld* liveWorld)
     {
+        // Runs on the main thread.
         auto deactivateBridge = [&](ContactEventSubscriptionBridge& bridge,
                                     std::atomic<RE::hknpWorld*>& localWorldAtomic,
                                     std::atomic<void*>& localSignalAtomic,
@@ -877,6 +886,7 @@ namespace rock
         havok_runtime::ContactSignalPointResult rawContactPoint{};
         bool rawContactPointEvaluated = false;
         bool hasRawContactPoint = false;
+        // Runs on the physics step thread.
         auto ensureRawContactPoint = [&]() {
             if (!rawContactPointEvaluated) {
                 hasRawContactPoint = havok_runtime::tryExtractContactSignalPoint(world, contactEventData, rawContactPoint);
@@ -956,6 +966,7 @@ namespace rock
         (void)bodyAClassified;
         (void)bodyBClassified;
 
+        // Runs on the physics step thread.
         auto classifyHandBody = [](const Classification& classification) {
             HandContactSource source{};
             if (!classification.valid ||
@@ -983,6 +994,7 @@ namespace rock
             return source;
         };
 
+        // Runs on the physics step thread.
         auto classifyWeaponBody = [](const Classification& classification) {
             WeaponContactSource source{};
             if (!classification.valid || classification.kind != GeneratedBodyKind::Weapon) {
@@ -1009,6 +1021,7 @@ namespace rock
             return source;
         };
 
+        // Runs on the physics step thread.
         auto classifyBodyCollider = [](const Classification& classification) {
             BodyBoneColliderMetadata metadata{};
             if (!classification.valid || classification.kind != GeneratedBodyKind::Body) {
@@ -1052,6 +1065,7 @@ namespace rock
         const bool bodyAIsRockSource = bodyAIsRight || bodyAIsLeft || bodyAIsRightHeld || bodyAIsLeftHeld || bodyAIsWeapon || bodyAIsBody;
         const bool bodyBIsRockSource = bodyBIsRight || bodyBIsLeft || bodyBIsRightHeld || bodyBIsLeftHeld || bodyBIsWeapon || bodyBIsBody;
 
+        // Runs on the physics step thread.
         auto looseGrenadeImpactBodyIsWatched = [&](std::uint32_t bodyId) {
             if (isInvalidGrabBodyId(bodyId)) {
                 return false;
@@ -1064,7 +1078,9 @@ namespace rock
             return false;
         };
 
+        // Runs on the physics step thread.
         auto recordLooseGrenadeImpactIfArmed = [&]() {
+            // Runs on the physics step thread.
             auto tryRecord = [&](std::uint32_t watchedBodyId,
                                  std::uint32_t otherBodyId,
                                  bool watchedIsHeld,
@@ -1106,6 +1122,7 @@ namespace rock
             return;
         }
 
+        // Runs on the physics step thread.
         auto readBodyFilterInfo = [world](std::uint32_t bodyId) {
             std::uint32_t filterInfo = 0;
             if (world && havok_runtime::tryReadFilterInfo(world, RE::hknpBodyId{ bodyId }, filterInfo)) {
@@ -1114,6 +1131,7 @@ namespace rock
             return contact_pipeline_policy::kUnknownLayer;
         };
 
+        // Runs on the physics step thread.
         auto filterInfoToLayer = [](std::uint32_t filterInfo) {
             return filterInfo == contact_pipeline_policy::kUnknownLayer ? contact_pipeline_policy::kUnknownLayer : (filterInfo & 0x7Fu);
         };
@@ -1123,6 +1141,7 @@ namespace rock
         const std::uint32_t bodyALayer = filterInfoToLayer(bodyAFilterInfo);
         const std::uint32_t bodyBLayer = filterInfoToLayer(bodyBFilterInfo);
 
+        // Runs on the physics step thread.
         auto makeEndpoint = [&](std::uint32_t bodyId, std::uint32_t layer, bool isRightHand, bool isLeftHand, bool isWeapon, bool isRightHeld, bool isLeftHeld, bool isBody, bool isExternal) {
             using contact_pipeline_policy::ContactEndpoint;
             using contact_pipeline_policy::ContactEndpointKind;
@@ -1154,6 +1173,7 @@ namespace rock
         const auto endpointB = makeEndpoint(bodyIdB, bodyBLayer, bodyBIsRight, bodyBIsLeft, bodyBIsWeapon, bodyBIsRightHeld, bodyBIsLeftHeld, bodyBIsBody, bodyBIsExternal);
         const auto contactRoute = contact_pipeline_policy::classifyContact(endpointA, endpointB);
 
+        // Runs on the physics step thread.
         auto handSourceFor = [&](std::uint32_t bodyId) -> const HandContactSource* {
             if (bodyARight.valid && bodyARight.metadata.bodyId == bodyId) {
                 return &bodyARight;
@@ -1170,6 +1190,7 @@ namespace rock
             return nullptr;
         };
 
+        // Runs on the physics step thread.
         auto bodySourceFor = [&](std::uint32_t bodyId) -> const BodyBoneColliderMetadata* {
             if (bodyABodyMetadata.valid && bodyABodyMetadata.bodyId == bodyId) {
                 return &bodyABodyMetadata;
@@ -1180,6 +1201,7 @@ namespace rock
             return nullptr;
         };
 
+        // Runs on the physics step thread.
         auto weaponSourceFor = [&](std::uint32_t bodyId) -> const WeaponContactSource* {
             if (bodyAWeapon.valid && bodyAWeapon.contact.bodyId == bodyId) {
                 return &bodyAWeapon;
@@ -1190,6 +1212,7 @@ namespace rock
             return nullptr;
         };
 
+        // Runs on the physics step thread.
         auto fillSourceVelocity = [&](std::uint32_t sourceBodyId,
                                       ::rock::provider::RockProviderExternalSourceKind sourceKind,
                                       const HandColliderBodyMetadata* handMetadata,
@@ -1224,6 +1247,7 @@ namespace rock
             return havok_runtime::isFinite3(contact.sourceVelocityHavok);
         };
 
+        // Runs on the physics step thread.
         auto tryFillAggregateContactPoint = [world](std::uint32_t sourceBodyId,
                                                     std::uint32_t externalBodyId,
                                                     ::rock::provider::RockProviderExternalContactV1& contact) {
@@ -1272,6 +1296,7 @@ namespace rock
             return true;
         };
 
+        // Runs on the physics step thread.
         auto publishExternalContact = [&](std::uint32_t sourceBodyId,
                                           std::uint32_t externalBodyId,
                                           ::rock::provider::RockProviderExternalSourceKind sourceKind,
@@ -1343,6 +1368,7 @@ namespace rock
                 _providerGenerationAtomic.load(std::memory_order_acquire));
         };
 
+        // Runs on the physics step thread.
         auto recordBodyContactEvidence = [&]() {
             if (!contactRoute.recordBodyContact || !contact_pipeline_policy::isBody(contactRoute.source.kind)) {
                 return;
@@ -1385,6 +1411,7 @@ namespace rock
             _bodyContactRuntime.record(record);
         };
 
+        // Runs on the physics step thread.
         auto notifyHeldExternalContact = [&](Hand& hand,
                                              std::atomic<std::uint64_t>& impactPair,
                                              bool bodyAIsHeld,
@@ -1479,6 +1506,7 @@ namespace rock
             return;
         }
 
+        // Runs on the physics step thread.
         auto routeSourceHandContactEvidenceSuppressed = [&]() {
             if (contact_pipeline_policy::isRightHand(contactRoute.source.kind)) {
                 return isHandContactEvidenceSuppressed(false);
@@ -1515,6 +1543,7 @@ namespace rock
             _lastContactBodyWeapon.store(contactRoute.targetBodyId, std::memory_order_release);
         }
 
+        // Runs on the physics step thread.
         auto publishWeaponContactFromPhysics = [&](bool isLeft, const WeaponInteractionContact& weaponContact, std::uint32_t bodyId) {
             auto& partKind = isLeft ? _leftWeaponContactPartKind : _rightWeaponContactPartKind;
             auto& reloadRole = isLeft ? _leftWeaponContactReloadRole : _rightWeaponContactReloadRole;
