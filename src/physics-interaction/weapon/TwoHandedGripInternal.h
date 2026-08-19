@@ -24,6 +24,11 @@
 #include <string_view>
 #include <vector>
 
+namespace rock::provider
+{
+    struct RockProviderWeaponPartTargetQueryV1;
+}
+
 namespace rock::two_handed_grip_detail
 {
     inline constexpr const char* PRIMARY_GRIP_TAG =
@@ -142,6 +147,17 @@ namespace rock::two_handed_grip_detail
     [[nodiscard]] RE::NiMatrix3 orthonormalizeStoredRotation(
         const RE::NiMatrix3& rotation);
     [[nodiscard]] bool leftFiringInfrastructureAvailable();
+    [[nodiscard]] provider::RockProviderWeaponPartTargetQueryV1
+        buildProviderPartTargetQuery(
+            std::uint64_t weaponGenerationKey,
+            std::uint32_t bodyId,
+            std::uint32_t partKind,
+            std::uint32_t reloadRole,
+            std::uint32_t supportRole,
+            std::uint32_t socketRole,
+            std::uint32_t actionRole,
+            std::uintptr_t sourceRoot,
+            std::span<const char> sourceName);
 
     [[nodiscard]] RE::NiPoint3 lerpPoint(
         const RE::NiPoint3& from,
@@ -238,4 +254,23 @@ namespace rock::two_handed_grip_detail
         const DirectSkeletonBoneSnapshot* capturedFingerSnapshot,
         std::array<RE::NiTransform, 15>& outLocalTransforms,
         std::uint16_t& outMask);
+}
+
+namespace rock
+{
+    // Capture owns this bounded scratch across re-grabs to avoid hot-path churn.
+    struct TwoHandedGrip::FingerPoseSolveScratch
+    {
+        struct HandScratch
+        {
+            std::array<std::vector<two_handed_grip_detail::RankedSupportGripTriangle>,
+                two_handed_grip_detail::kSupportGripFingerLaneCount + 1>
+                rankings;
+            std::vector<TriangleData> localTriangles;
+            std::vector<TriangleData> worldTriangles;
+            grab_finger_pose_runtime::FingerPoseTriangleSpatialIndex spatialIndex;
+        };
+
+        std::array<HandScratch, 2> hands{};
+    };
 }

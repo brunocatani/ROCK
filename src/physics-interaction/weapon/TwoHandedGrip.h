@@ -964,6 +964,7 @@ namespace rock
 
     private:
         struct FingerPoseSolveScratch;
+        struct PartGripCapturePhases;
 
         static bool FRIK_CALL controlWeaponHandRecoil(
             const frik::api::FRIKApiV2::RecoilSample* sample,

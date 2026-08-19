@@ -1,5 +1,6 @@
 #include "physics-interaction/weapon/TwoHandedGripInternal.h"
 
+#include "api/ROCKProviderApiInternal.h"
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
 #include "RockConfig.h"
@@ -8,6 +9,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <limits>
 
 namespace rock::two_handed_grip_detail
@@ -92,6 +94,35 @@ namespace rock::two_handed_grip_detail
         // Both blockers are one contract. A partial block lets FRIK fight ROCK.
         return frik_visual_authority::canBlockPrimaryHandWeaponPose() &&
                frik_visual_authority::canBlockPrimaryWeaponNodeOwnership();
+    }
+
+    provider::RockProviderWeaponPartTargetQueryV1
+        buildProviderPartTargetQuery(
+            const std::uint64_t weaponGenerationKey,
+            const std::uint32_t bodyId,
+            const std::uint32_t partKind,
+            const std::uint32_t reloadRole,
+            const std::uint32_t supportRole,
+            const std::uint32_t socketRole,
+            const std::uint32_t actionRole,
+            const std::uintptr_t sourceRoot,
+            const std::span<const char> sourceName)
+    {
+        provider::RockProviderWeaponPartTargetQueryV1 query{};
+        query.weaponGenerationKey = weaponGenerationKey;
+        query.bodyId = bodyId;
+        query.partKind = partKind;
+        query.reloadRole = reloadRole;
+        query.supportRole = supportRole;
+        query.socketRole = socketRole;
+        query.actionRole = actionRole;
+        query.sourceRoot = sourceRoot;
+        const std::size_t copyLength = (std::min)(
+            sourceName.size(),
+            sizeof(query.sourceName) - 1);
+        std::memcpy(query.sourceName, sourceName.data(), copyLength);
+        query.sourceName[copyLength] = '\0';
+        return query;
     }
 
     RE::NiPoint3 lerpPoint(

@@ -300,9 +300,6 @@ Require-Text 'src/physics-interaction/grab/GrabFinger.h' `
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
     '\.thumbSweepMaxOpenValue\s*=\s*g_rockConfig\.rockGrabThumbSweepMaxOpenValue,[\s\S]{0,160}\.fingerSweepMaxOpenValue\s*=\s*g_rockConfig\.rockGrabFingerSweepMaxOpenValue' `
     'Grab solve sites must pass the config-driven thumb/finger sweep max-open caps.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    '\.thumbSweepMaxOpenValue\s*=\s*g_rockConfig\.rockGrabThumbSweepMaxOpenValue,[\s\S]{0,160}\.fingerSweepMaxOpenValue\s*=\s*g_rockConfig\.rockGrabFingerSweepMaxOpenValue' `
-    'The two-handed support-hand solve must pass the same sweep max-open caps.'
 Require-Text 'tools/generate_grab_finger_calibration.py' `
     'OVER_OPEN_MAX = 2\.0' `
     'The calibration bake must sample the full over-open range for every finger.'

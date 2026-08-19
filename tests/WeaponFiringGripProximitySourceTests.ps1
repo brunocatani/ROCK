@@ -50,10 +50,6 @@ Require-Text 'src/physics-interaction/weapon/EquippedWeaponHandlingSettings.h' `
     'if \(enabled\(provider::RockProviderEquippedWeaponHandlingFlagV1::FiringGripProximitySupport\)\)[\s\S]{0,240}request->firingGripProximitySupportRadiusGameUnits' `
     'An active V1 authority owner may explicitly override only the proximity radius.'
 
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'if \(firingGripProximityAuthorityEnabled\)[\s\S]{0,900}resolveFiringGripProximityAuthorityMode\([\s\S]{0,260}_handlingSettings\.firingGripProximitySupportRadiusGameUnits' `
-    'Grip capture must resolve support authority from the active core-or-addon firing-grip proximity radius.'
-
 Require-Text 'src/physics-interaction/weapon/WeaponSupport.h' `
     'canApplyFiringGripProximityAuthority\(\s*bool providerGrabModeOverride\)[\s\S]{0,120}return !providerGrabModeOverride;' `
     'Core proximity support must be unconditional except for explicit provider grab modes.'

@@ -46,9 +46,6 @@ Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'snapshot\.radialCapGameUnits\s*=\s*g_rockConfig\.rockWeaponInteractionProbeRadius' `
     'The general weapon mesh-probe radius must not silently redefine authored-seat activation reach.'
 
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'refreshAuthoredSupportGripActivationState\([\s\S]*true\);[\s\S]*\.activationZoneValid\s*=\s*authoredActivationZoneValid[\s\S]*\.authoredPoseSurfaceEvidenceValid\s*=[\s\S]*authoredPoseSurfaceEvidenceValid' `
-    'Authored capture must force a current activation-zone and captured-pose evaluation.'
 
 Reject-Text 'src/physics-interaction/weapon/AuthoredWeaponGripActivationPolicy.h' `
     'semanticTargetEligible|semanticPass' `

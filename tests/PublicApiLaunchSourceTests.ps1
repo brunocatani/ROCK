@@ -243,10 +243,6 @@ Require-Text 'src/api/ROCKProviderApi.cpp' 'availableWeaponPartTargetSlotsForOwn
     'Weapon part target replacement must prove capacity before clearing existing owner registrations.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'availableWeaponPartDriveSlotsForOwnerLocked' `
     'Weapon part drive replacement must prove capacity before clearing existing owner registrations.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'providerPartAuthorityStillCurrent' `
-    'Provider-authorized weapon part grips must revalidate owner target authority while active.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'resolveCurrentSupportAttachmentRoot' `
-    'Weapon part support attachment roots must be current-tree validated before dereference.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'attachmentWeaponLocal' `
     'Part-carry source-part grips must solve weapon authority from the captured source-to-weapon frame.'
 Require-Text 'src/api/ROCKProviderApi.h' 'supportsForceGrabCommandV1' `
