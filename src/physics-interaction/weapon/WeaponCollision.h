@@ -398,6 +398,21 @@ namespace rock
             std::uint32_t publicationIndex{ INVALID_BODY_ID };
         };
 
+        /*
+         * The frame one generated body is proximity-tested in, resolved once per
+         * body per scan. The pointers alias the WeaponBodyInstance the frame was
+         * resolved from, so a frame is only valid for that loop iteration.
+         */
+        struct WeaponSurfaceScanFrame
+        {
+            RE::NiTransform world{};
+            const std::vector<TriangleData>* localTriangles{ nullptr };
+            const RE::NiPoint3* boundsMin{ nullptr };
+            const RE::NiPoint3* boundsMax{ nullptr };
+            float absoluteScale{ 0.0f };
+            bool useSourceFrame{ false };
+        };
+
         struct RetiredWeaponBodyPayload
         {
             RetiredBethesdaPhysicsBodyPayload bodyPayload{};
@@ -503,6 +518,13 @@ namespace rock
             const WeaponBodyInstance& instance,
             const RE::NiAVObject* packageDriveNode,
             CompoundChildPoseSnapshot& outPose);
+        // Shared by both triangle-exact proximity entry points; private because it
+        // names WeaponBodyInstance and WeaponSurfaceScanFrame.
+        static bool resolveWeaponSurfaceScanFrame(
+            const RE::NiAVObject* scanRoot,
+            const WeaponBodyInstance& instance,
+            WeaponSurfaceScanFrame& outFrame);
+
         static weapon_generated_source_completeness_policy::GeneratedSourceCompleteness summarizeGeneratedSources(const std::vector<GeneratedHullSource>& sources);
         std::size_t createGeneratedWeaponBodiesInBankSlice(
             RE::hknpWorld* world,
@@ -520,6 +542,31 @@ namespace rock
         void resetWeaponBodySetGeneration();
         void publishWeaponBodySetGeneration(const weapon_generated_source_completeness_policy::GeneratedSourceCompleteness& sourceCompleteness);
         void publishAtomicBodyIds(WeaponBodyBank& bank);
+        /*
+         * Runs `reader` under the publication seqlock and reports whether the read
+         * was consistent. `reader` must be re-runnable and must re-initialize
+         * everything it writes: a torn attempt is retried, so partial state from
+         * the previous attempt must not survive into the next one. Bounded to four
+         * attempts so a consumer thread can never spin against the physics thread.
+         */
+        template <class Reader>
+        bool readUnderSeqlock(Reader&& reader) const
+        {
+            for (int attempt = 0; attempt < 4; ++attempt) {
+                const std::uint64_t startVersion = _weaponBodyPublicationVersion.load(std::memory_order_acquire);
+                if ((startVersion & 1u) != 0) {
+                    // A publication is in flight - do not even look at the arrays.
+                    continue;
+                }
+                reader();
+                const std::uint64_t endVersion = _weaponBodyPublicationVersion.load(std::memory_order_acquire);
+                if (startVersion == endVersion && (endVersion & 1u) == 0) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         void beginWeaponBodyPublication();
         void endWeaponBodyPublication();
         std::vector<WeaponCollisionProfileEvidenceDescriptor> buildProfileEvidenceSnapshot(
@@ -557,6 +604,66 @@ namespace rock
         void handleGeneratedBodyDriveResult(const GeneratedKeyframedBodyDriveResult& result, const char* ownerName, std::uint32_t bodyIndex);
         void clearGeneratedSourceCompletenessTracking();
         void clearPendingWeaponVisualRebuild();
+
+        /*
+         * How much of the "which weapon are we built for" state one clear must
+         * drop. The scopes are listed from the smallest reset to the largest;
+         * clearEquippedWeaponIdentityState() reads them in that order. Each value
+         * documents WHY its subset stops where it does - the seven original clear
+         * sites disagreed about this, and the disagreement was invisible because
+         * each one open-coded its own member list.
+         */
+        enum class ClearScope : std::uint8_t
+        {
+            /*
+             * A staged build produced no bodies, or could not be queued. Only the
+             * cached identity goes: the caller has already released the pending
+             * slot itself, and the extracted source cache is kept on purpose so
+             * the retry does not have to re-walk the weapon mesh.
+             */
+            StagedBuildFailure,
+            /*
+             * The weapon is still equipped but this frame produced no usable
+             * visual sources. The source cache and the pending slot go too, since
+             * both describe geometry that is now known to be wrong, and the
+             * visual-miss retention counter restarts.
+             */
+            VisualSourceMiss,
+            /*
+             * There is no current weapon any more (undrawn, feature disabled, or
+             * the Havok world was swapped). Everything that describes the equipped
+             * weapon goes, including the observed keys, the OMOD pre-build audit
+             * marker, the settings cache, the rebuild request bits and the emitter
+             * snapshot.
+             */
+            CurrentWeapon,
+            /*
+             * Physics scale changed under a still-equipped weapon. Same as
+             * CurrentWeapon except the emitter snapshot and the workbench-exit
+             * rebuild request survive: the weapon itself did not change, so its
+             * emitters are still valid and a queued workbench rebuild is still
+             * wanted after the rescale.
+             */
+            ScaleInvalidation,
+            /*
+             * Subsystem start. Adds the state that deliberately outlives a weapon
+             * swap - detached-source exclusions, the body-set epoch, the anim-node
+             * dump budget, the recapture diagnostic and the replacement-bank flag.
+             * It abandons the pending staged build instead of destroying its
+             * target bank, because at start there is no live bank behind it. It
+             * also leaves the emitter snapshot and the visual-miss retention
+             * counter alone; both look accidental and are preserved as-is.
+             */
+            LifecycleInit,
+            /*
+             * Subsystem stop. LifecycleInit plus the emitter snapshot, and the
+             * pending slot's target bank is destroyed rather than abandoned. Like
+             * LifecycleInit it leaves the visual-miss retention counter alone.
+             */
+            LifecycleShutdown,
+        };
+
+        void clearEquippedWeaponIdentityState(ClearScope scope, RE::hknpWorld* world);
         void clearGeneratedSourceCache();
         void recordGeneratedRecaptureDiagnostic(
             std::uint64_t equippedKey,
@@ -660,6 +767,16 @@ namespace rock
         std::array<std::atomic<std::uint32_t>, MAX_WEAPON_BODIES> _weaponBodySampledVelocityValidAtomic;
         std::atomic<std::uint32_t> _weaponBodyCountAtomic{ 0 };
         std::atomic<std::uint64_t> _weaponBodySetKeyAtomic{ 0 };
+        /*
+         * Seqlock over every _weapon*Atomic array and every mutex-guarded evidence
+         * snapshot below. The physics thread makes this version ODD for the whole
+         * duration of a publication and EVEN again when the published set is
+         * consistent; readers on other threads accept a read only if the version
+         * was even before and identical after. Written by
+         * begin/endWeaponBodyPublication and re-opened mid-frame by
+         * updateBodiesFromCurrentSourceTransforms; read only through
+         * readUnderSeqlock().
+         */
         std::atomic<std::uint64_t> _weaponBodyPublicationVersion{ 0 };
         mutable std::mutex _weaponEvidenceSnapshotMutex;
         std::vector<WeaponCollisionProfileEvidenceDescriptor> _profileEvidenceSnapshot;
