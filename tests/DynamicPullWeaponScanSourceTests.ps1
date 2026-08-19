@@ -33,7 +33,6 @@ function Reject-Text {
     }
 }
 
-
 Require-Text 'src/physics-interaction/object/ObjectPhysicsBodySet.h' 'seedBodyId' 'Object-body scans must carry the selected hit body as an explicit seed.'
 Require-Text 'src/physics-interaction/object/ObjectPhysicsBodySet.h' 'requireSameResolvedRef' 'Active object scans must be able to reject bodies that resolve to a different ref.'
 Require-Text 'src/physics-interaction/object/ObjectPhysicsBodySet.h' 'refResolutionKnown' 'Body records must distinguish verified native ownership from unresolved ownership fallback.'

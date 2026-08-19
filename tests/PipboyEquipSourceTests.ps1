@@ -37,20 +37,6 @@ foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini
     }
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
     's_pipboyMenuGeneration[\s\S]*rawTransition\.pressedEdges\s*\|\s*rawTransition\.releasedEdges[\s\S]*publishPipboyTriggerTransition\(hand\)[\s\S]*consumePipboyEquipTriggerResolution' `
     'Pip-Boy trigger evidence must be captured before blocking-menu gameplay edges are cleared and consumed per selection.'

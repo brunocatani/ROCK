@@ -38,10 +38,6 @@ $frameContext = 'src/physics-interaction/core/PhysicsFrameContext.h'
 $handHeader = 'src/physics-interaction/hand/Hand.h'
 $visualBridge = 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h'
 
-
-
-
-
 # Loader compatibility and executable-layout identity are separate domains.
 Reject-Pattern $main `
     'RuntimeVersion\s*\(\s*\)[\s\S]{0,160}(RUNTIME_LATEST_VR|RUNTIME_VR_1_2_72)|(RUNTIME_LATEST_VR|RUNTIME_VR_1_2_72)[\s\S]{0,160}RuntimeVersion\s*\(' `
@@ -108,13 +104,8 @@ Require-Pattern $handHeader `
 
 # Equip handoff follows whichever retained weapon graph is currently visible.
 
-
-
-
 # Weapon targets are reconstructed from each physical hand's current FRIK
 # driver and reject stale scheduler, generation, or firing-role state.
-
-
 
 # Ordinary contact transport is scheduler-fresh and contact-normal safe, while
 # fixed-surface latches remain explicitly outside this provider.

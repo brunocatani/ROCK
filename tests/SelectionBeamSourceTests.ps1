@@ -83,7 +83,6 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'frame\.left\
 Require-Text 'CMakeLists.txt' 'copy_directory\s+"\$\{ROOT_DIR\}/data/mod"\s+"\$\{copy_path\}"' `
     'Auto-deploy must copy packaged mesh data alongside the plugin.'
 
-
 if ($failures.Count -gt 0) {
     Write-Host 'SelectionBeamSourceTests failed:' -ForegroundColor Red
     foreach ($failure in $failures) {

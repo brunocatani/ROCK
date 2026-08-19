@@ -74,9 +74,6 @@ foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini
         'Native scope overlay template tuning must default to a neutral additive transform.'
 }
 
-
-
-
 Reject-Text 'src/physics-interaction/weapon/WeaponAuthority.h' 'alignOpticalAxesToBore|camera \+X[\s\S]*bore \+Y' `
     'Scope presentation must not invent a camera-to-bore axis mapping over the captured native frame.'
 Reject-Text 'src/physics-interaction/weapon/WeaponAuthority.h' 'followWeaponWorldChange\s*\(' `
@@ -101,7 +98,6 @@ Reject-Text 'src/ROCKMain.cpp' 'rockAutoActivateScope|tryResolveNativeScopeGeome
     'The top-level scope hook must not retain a selectable cone path.'
 Require-Text 'src/ROCKMain.cpp' 'configureNativeWorldScopeForManualTarget[\s\S]*kFunc_NativeWorldScopeConfigure[\s\S]*kData_NativeWorldScopeSingleton[\s\S]*kData_NativeWorldScopePrimaryVtable[\s\S]*driveManualScopeTransitionFallback[\s\S]*nativeForceDecision[\s\S]*tryGetManualScopeDirectTransitionTarget[\s\S]*isManualScopeActivationRequested\(\)[\s\S]*configureNativeWorldScopeForManualTarget[\s\S]*s_originalNativeScopeStateTransition\(player,\s*true\)[\s\S]*s_originalNativeScopeStateTransition\(player,\s*false\)' `
     'Manual hold must validate and configure native WSScope before directly transitioning an unflagged magnified scope.'
-
 
 Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' 'consumeRawButtonState\(true,\s*input_remap_policy::kOpenVrAcceptButtonId\)[\s\S]*consumeRawButtonState\(false,\s*input_remap_policy::kOpenVrAcceptButtonId\)[\s\S]*manual_scope_input_policy::update[\s\S]*decision\.scopeRequested[\s\S]*decision\.dispatchReload' `
     'Button-only scope and release-time reload must share one physical firing-hand A/X gesture classifier.'

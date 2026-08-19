@@ -60,7 +60,6 @@ Require-Pattern 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' `
     'ci\s*\+\s*0x1C[\s\S]*collisionLookAheadDistanceHavok[\s\S]*ci\s*\+\s*0x50[\s\S]*bodyQuality[\s\S]*validateGeneratedBodyCollisionProfile' `
     'Generated-body creation must publish and validate FO4VR collision look-ahead and body-quality fields.'
 
-
 # These offsets and identity gates were independently derived from raw FO4VR
 # 1.2.72 disassembly. A source-only regression makes accidental removal fail
 # the normal test configure/build path.

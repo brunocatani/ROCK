@@ -75,12 +75,6 @@ foreach ($iniPath in @(
         'Both shipped INIs must describe and expose the combined disabled-by-default visualizer.'
 }
 
-
-
-
-
-
-
 Require-Text 'src/physics-interaction/weapon/WeaponSupport.h' `
     'tryCaptureSupportInputBaseline\([\s\S]*invertTransform\(supportInputWorld\)[\s\S]*supportGripTargetWorld[\s\S]*tryResolveSupportInputTarget\([\s\S]*supportInputWorld,[\s\S]*inputToGripTargetLocal' `
     'The support policy must freeze input-to-grip relation and resolve only later support motion through it.'
@@ -97,10 +91,6 @@ Reject-Text 'src/physics-interaction/weapon/WeaponAuthority.h' `
     'alignOpticalAxesToBore|camera \+X[\s\S]*bore \+Y' `
     'Gunstock scopes must not replace the captured native camera calibration with an unverified axis mapping.'
 
-
-
-
-
 Require-Text 'src/ROCKMain.cpp' `
     'dispatchAnimationPhaseCallbacksV1\([\s\S]*AfterRock[\s\S]*finalizeGunstockPresentationAfterNativeAnimation\(\)[\s\S]*dispatchAnimationPhaseCallbacksV1\([\s\S]*Complete' `
     'The full-reload correction must run after animation AfterRock publication and before the Complete phase.'
@@ -108,16 +98,6 @@ Require-Text 'src/ROCKMain.cpp' `
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'finalizeGunstockPresentationAfterNativeAnimation[\s\S]*currentNativeAnimationAuthorityFlagsV1\(\)[\s\S]*kWeapon[\s\S]*resolveEquippedWeaponInteractionNode\(\)[\s\S]*finalizeGunstockPresentationAfterNativeWeaponAnimation' `
     'The post-animation bridge must fail closed unless the current animation lease authors Weapon.'
-
-
-
-
-
-
-
-
-
-
 
 Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp' `
     'drawGunstockAlignment[\s\S]*getGunstockAlignmentDebugSnapshot[\s\S]*GunstockLeftHand[\s\S]*GunstockFiringHand[\s\S]*GunstockRenderedFiringHand[\s\S]*RENDERED FIRING HAND BONE[\s\S]*FIRING WRIST \+X - AUTOMATIC TARGET[\s\S]*PREDICTED FINE-TUNED NEUTRAL[\s\S]*ACTUAL FINAL LIVE FIRE \+Y[\s\S]*GunstockCorrectionArc[\s\S]*fineTune pitch\(\+Y\)[\s\S]*liveResidual=[\s\S]*renderedRelation=[\s\S]*getGunstockSupportBaselineDebugSnapshot[\s\S]*GunstockSupportInputBone[\s\S]*GunstockCalibratedSupportBone[\s\S]*GunstockWeaponAfter[\s\S]*attachWeaponDelta' `

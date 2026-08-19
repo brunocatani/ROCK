@@ -47,9 +47,6 @@ function Require-Order {
     }
 }
 
-
-
-
 $interaction = 'src/physics-interaction/core/PhysicsInteraction.cpp'
 $contacts = 'src/physics-interaction/core/PhysicsInteractionContacts.inl'
 $layers = 'src/physics-interaction/collision/CollisionLayerPolicy.h'
@@ -89,28 +86,9 @@ Require-Pattern 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'synchronizeDynamicWeaponHandCollisionRoles[\s\S]*weaponCollisionAttachedHands\(\)[\s\S]*!attachedHands\.right[\s\S]*!attachedHands\.left[\s\S]*registerCollisionLayer\(world\)' `
     'Only hands not attached to the weapon may physically push its dynamic proxy.'
 
-
 # World contact remains exactly one dynamic body whose child instances follow
 # the shared layer-44 hull sources. A second tiny body is permitted only as the
 # noncolliding keyframed constraint authority.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 Require-Order $interaction @(
     '_twoHandedGrip\.beginWeaponCollisionPresentationFrame\(',
@@ -123,7 +101,6 @@ Require-Order $interaction @(
     'finishWeaponCollisionPresentationFrame\(',
     '_weaponCollision\.updateBodiesFromCurrentSourceTransforms\('
 ) 'Collision hand presentation must be witnessed before isolated intent capture and released after retained contact presentation ends.'
-
 
 Require-Pattern $interaction `
     'finishWeaponCollisionPresentationFrame\([\r\n\s]*dynamicWeaponFrame\.publishVisualAuthority\)' `
@@ -159,17 +136,6 @@ Require-Order $contacts @(
     'recordObstacleManifoldProcessedCallback\('
 ) 'Processed-manifold admission must retain the verified point count and validate the exact proxy/obstacle pair.'
 
-
-
-
-
-
-
-
-
-
-
-
 # The proxy participates in the same callback-clock drive and deterministic
 # live/stale-world cleanup contract as the existing generated bodies.
 Require-Order $interaction @(
@@ -178,28 +144,17 @@ Require-Order $interaction @(
     '_dynamicHandCollision\.flushPendingPhysicsDrive\(world, timing\);'
 ) 'The dynamic weapon body must drive inside the generated pre-solve callback.'
 
-
-
-
 foreach ($path in @('src/RockConfig.h', 'src/RockConfig.cpp', 'data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
     Reject-Pattern $path `
         'WeaponCollisionDynamicContactPressMaxVelocityHavok' `
         "$path must not retain the unused direct-velocity weapon contact cap after the constraint architecture replacement."
 }
 
-
-
-
 Require-Order $interaction @(
     '_completedPhysicsSolveSequence\.fetch_add\(',
     '_dynamicWeaponCollision\.samplePostSolve\(',
     '_dynamicHandCollision\.samplePostSolveDeviations\('
 ) 'The dynamic weapon correction snapshot must be sampled on the post-solve callback clock.'
-
-
-
-
-
 
 # FO4VR 0x1417A3A90 is initializeAsKeyFramed. It zeros motion-cinfo inverse
 # mass, so it must never contaminate the shared velocity-driven body wrapper.
@@ -220,13 +175,6 @@ Reject-Pattern 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' `
 # The dormant overlay flag is now the primary in-game shape/contact diagnostic.
 # A surviving runtime mismatch must distinguish callback admission, snapshot
 # admission, and immediate visual-authority readback without hot-path log spam.
-
-
-
-
-
-
-
 
 Require-Pattern $interaction `
     'contactEpisodeStarted[\s\S]*resolveBodyToRef\([\s\S]*tryFindCurrentWeaponSurfaceNearPoint\([\s\S]*tryGetWeaponContactDebugInfo\([\s\S]*DWC contact witness:[\s\S]*DWC contact transforms:' `

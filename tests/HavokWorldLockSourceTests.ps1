@@ -57,10 +57,6 @@ function Require-OrderedText {
 # call (crash family: castShape AV at [shape+0x14], 2026-07-12/13). See
 # Docs/ROCK/lessons/2026-07-13-hknp-world-query-lock-discipline.md.
 
-
-
-
-
 # All world shape casts must route through the locked wrapper. A direct
 # world->CastShape call anywhere else bypasses the lock and reintroduces the
 # crash class.

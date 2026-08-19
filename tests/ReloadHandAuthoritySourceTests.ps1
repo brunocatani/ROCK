@@ -69,9 +69,6 @@ Require-Pattern $interaction `
     'nativeReloadHandAuthorityActive\s*=\s*[\r\n\s]*frame\.reloadBoundaryActive[\s\S]*gunstockPresentationBlocked\s*=[\r\n\s]*frame\.menuBlocked\s*\|\|\s*frame\.reloadBoundaryActive' `
     'The coherent grip input must carry reload ownership and block gunstock presentation.'
 
-
-
-
 if ($failures.Count -gt 0) {
     $failures | ForEach-Object { Write-Error $_ }
     exit 1

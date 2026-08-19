@@ -31,7 +31,6 @@ Require-Text 'src/physics-interaction/native/GeneratedKeyframedBodyDrive.cpp' `
     'state\.sourceFrameIndex = sourceFrameIndex;[\s\S]*\+\+state\.queuedSequence[\s\S]*result\.sourceSequence = state\.queuedSequence;[\s\S]*result\.sourceFrameIndex = state\.sourceFrameIndex;' `
     'Source frame identity must travel under the same mutex as the consumed generated-body target.'
 
-
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'kTraceFramesPerEpisode = 360[\s\S]*colliderClockDebugActive[\s\S]*rockDebugShowColliders[\s\S]*rockDebugDrawHandColliders[\s\S]*rockDebugDrawHandBoneColliders[\s\S]*rockDebugDrawDynamicHandColliders[\s\S]*rockDebugDrawWeaponColliders[\s\S]*rockDebugDrawDynamicWeaponColliders[\s\S]*_colliderClockHasLoggedFrame = false[\s\S]*_colliderClockFramesRemaining[\s\S]*grabStarted[\s\S]*COLLIDER_CLOCK begin' `
     'Collider clock logging must cover hand/body and weapon collider overlays while remaining debug-gated and bounded per episode.'

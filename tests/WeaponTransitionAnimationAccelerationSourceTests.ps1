@@ -22,25 +22,8 @@ function Reject-Text {
     }
 }
 
-
-
-
-
 $physics = 'src/physics-interaction/core/PhysicsInteraction.cpp'
 $main = 'src/ROCKMain.cpp'
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 Require-Text $physics `
     'updateEquippedWeaponTransition\(\)[\s\S]{0,1000}weapon_transition_animation_acceleration::service[\s\S]{0,900}runtimeAllowed[\s\S]{0,500}localMenuBlocking[\s\S]{0,500}compatibilityConfigBlocking' `
@@ -48,7 +31,6 @@ Require-Text $physics `
 Require-Text $main `
     'held_weapon_instant_transition::install\(\)[\s\S]{0,700}weapon_transition_animation_acceleration::install\(\)' `
     'The clip acceleration capability must install after the held-equip action interceptor.'
-
 
 if ($failures.Count -gt 0) {
     $failures | ForEach-Object { Write-Error $_ }

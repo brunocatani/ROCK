@@ -127,17 +127,19 @@ Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'HeldWeaponEqu
 Reject-Text 'src/physics-interaction/core/PhysicsInteraction.h' 'HeldWeaponEquipVisualHandoff' 'PhysicsInteraction must not own phantom visual handoff state.'
 Reject-Text 'src/physics-interaction/hand/Hand.h' 'HeldWeaponVisualSnapshot|captureHeldWeaponEquipVisualSnapshot' 'Hand must not expose phantom held-weapon visual snapshot capture.'
 
-
 Require-Text 'src/physics-interaction/weapon/WeaponGeometry.h' 'findDetachedSourceComponentIndices[\s\S]*FailOpenNoAssembledAnchor[\s\S]*nearestAnchorGapSquared[\s\S]*minimumDetachedGapSquared' 'Detached collider filtering must use AABB-component separation and fail open without assembled weapon evidence.'
 Reject-Text 'src/RockConfig.h' 'rockWeaponCollisionMaxSourceDistance' 'The superseded origin-distance collider settings must stay removed.'
 Reject-Text 'src/RockConfig.cpp' 'WeaponCollisionMaxSourceDistance' 'The superseded origin-distance collider parser must stay removed.'
 Reject-Text 'data/config/ROCK.ini' 'WeaponCollisionMaxSourceDistance' 'The superseded origin-distance collider template settings must stay removed.'
 Reject-Text 'data/mod/ROCK_Config/ROCK.ini' 'WeaponCollisionMaxSourceDistance' 'The shipped origin-distance collider template settings must stay removed.'
 
-
-
-
-
+# --- Publication before collision -------------------------------------------
+# A generated weapon body that collides before its metadata is published makes
+# the physics thread misread the contact owner. Both halves stay one literal
+# pattern in one file.
+$bodiesSource = 'src/physics-interaction/weapon/collision/WeaponCollisionBodies.cpp'
+Require-Text $bodiesSource 'GeneratedWeaponBodyCreateOptions\{\s*\.collisionEnabledOnCreate = false' 'Generated weapon bodies must be created collision-disabled until metadata is published.'
+Require-Text $bodiesSource 'publishAtomicBodyIds\(activeWeaponBodies\(\)\);\s*setWeaponBodyBankCollisionEnabled\(world,\s*activeWeaponBodies\(\),\s*true\);' 'Generated weapon bodies must publish metadata before enabling collision.'
 
 Require-Text 'src/physics-interaction/native/BethesdaPhysicsBody.h' 'RetiredBethesdaPhysicsBodyPayload' 'Generated Bethesda body teardown must expose an explicit retired native payload.'
 Require-Text 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' 'retireFromWorld[\s\S]*RemovePhysicsSystem[\s\S]*outPayload\.collisionObject' 'Retired generated Bethesda bodies must be removed from the world before native wrapper memory is delayed.'
@@ -190,18 +192,18 @@ Reject-Text 'src/ROCKMain.cpp' 'weapon_instance_witness_runtime|WeaponInstanceWi
 Reject-Text 'src/RockConfig.h' 'rockWeaponCollisionNativeVisualRemapEnabled' 'ROCK config must not expose removed native visual remap option.'
 Reject-Text 'src/RockConfig.cpp' 'bWeaponCollisionNativeVisualRemapEnabled|rockWeaponCollisionNativeVisualRemapEnabled' 'ROCK config loader must not read removed native visual remap option.'
 
-
 # --- Native VR-offset machinery: fail-closed guards ---------------------------
 # The regex assertions that used to describe the OMOD self-heal were retired with
 # the WeaponCollision split. What must not be lost is the fail-closed guard set in
 # front of the one native call ROCK makes here. The layout itself is pinned by
 # static_asserts in the source, which are the real compile-time test; these checks
 # only prove the runtime guards are still present, each as one symbol in one file.
-
-
-
-
-
+$omodAuditSource = 'src/physics-interaction/weapon/collision/WeaponCollisionOmodAudit.cpp'
+Require-Text $omodAuditSource 'native_memory::guardedCopyFromMemory' 'Raw native reads in the OMOD audit must go through the guarded copy helper.'
+Require-Text $omodAuditSource 'native_memory::pointerRangeLooksReadable' 'Native pointer walks in the OMOD audit must plausibility-check each hop before dereferencing it.'
+Require-Text $omodAuditSource 'kExpectedPrefix' 'The native model-customization entry must keep its verified byte-prefix gate.'
+Require-Text $omodAuditSource 'F4SE::RUNTIME_VR_1_2_72' 'The native model-customization entry must keep its VR executable identity gate.'
+Reject-Text $omodAuditSource 'recoveryConnectPoint|recoveryNode' 'A plain NiNode must never masquerade as authored BSConnectPoint::Parents metadata.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'Weapon collision lifecycle source boundary failed:'

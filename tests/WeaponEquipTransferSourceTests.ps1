@@ -44,10 +44,6 @@ function Reject-Text {
     }
 }
 
-
-
-
-
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'observedEquipped=\{:08X\}' `
     'Auto-equip logging must include the observed equipped form for mismatch diagnosis.'
@@ -55,26 +51,6 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
 Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'DrawWeaponMagicHands\s*\(\s*true' `
     'Held equip must not submit an uncoordinated native draw from the transfer callsite.'
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'equipResult\.success[\s\S]{0,500}_equippedWeaponTransition\.beginHeldTransition[\s\S]{0,500}requestedInstanceData' `
@@ -88,36 +64,13 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'requestWeaponCollisionRebuildAfterWorkbenchExit[\s\S]{0,400}requestCurrentWeaponReconcile[\s\S]{0,180}WorkbenchExit' `
     'Workbench exit must use the shared transition coordinator instead of a timer-only collision repair.'
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'const bool nativeWeaponAnimationActive\s*=[\s\S]*?currentNativeAnimationAuthorityFlagsV1\(\)[\s\S]*?GUN_STATE::kReloading[\s\S]*?\.nativeWeaponAnimationActive' `
     'Equip recovery must yield during provider-owned and base-game reload presentation windows.'
 
-
-
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'const auto previousNativeInstanceNode\s*=[\s\S]{0,400}equipped_weapon_visual_state::observe[\s\S]*\.previousNativeInstanceNode\s*=[\s\S]{0,180}previousNativeInstanceNode' `
     'Held equip must carry the pre-request native scene witness into exact-instance reconciliation.'
-
-
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'pendingPrimaryStartMatchesCurrentWeapon[\s\S]{0,500}matchesExpectedIdentity[\s\S]{0,400}targetWeaponInstanceData[\s\S]*remainingSeconds\s*=\s*10\.0f' `
@@ -130,10 +83,6 @@ Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'canBeginEquip\(nativeStateBeforeEquip\)[\s\S]{0,900}shouldRearmTrigger\(nativeStateBeforeEquip,\s*triggeredByInput\)[\s\S]*hand\.captureHeldReleaseMotion' `
     'A native weapon transition must defer before physical release and preserve the same-hand trigger request.'
-
-
-
-
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'releaseGrabbedObject[\s\S]{0,320}transferHeldWeaponToPlayerAndEquip[\s\S]{0,180}releaseOutcome\.takeRetainedReference\(\)[\s\S]*postEquipRef\s*=\s*equipResult\.untransferredRef\.get\(\)' `

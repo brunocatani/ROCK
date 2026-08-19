@@ -54,8 +54,6 @@ Require-Text 'src/RockConfig.h' 'rockDebugGrabAfterSolveAnomalySampling' `
 Require-Text 'src/RockConfig.cpp' 'bDebugGrabAfterSolveAnomalySampling' `
     'RockConfig must read the separate after-solve anomaly sampling gate.'
 
-
-
 if ($failures.Count -gt 0) {
     Write-Host 'Grab authority performance source boundary failed:'
     foreach ($failure in $failures) {

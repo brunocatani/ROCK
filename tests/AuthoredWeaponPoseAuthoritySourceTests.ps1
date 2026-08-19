@@ -27,23 +27,11 @@ function Reject-Pattern {
 
 $interactionPath = 'src/physics-interaction/core/PhysicsInteraction.cpp'
 
-
-
-
 $interaction = Read-Source $interactionPath
-
-
-
-
-
 
 Require-Pattern $interactionPath $interaction `
     'updateAuthoredPrimaryFiringGrip\(\)[\s\S]*controllerWand\s*=\s*rockFiringHandIsLeft\s*\?[\s\S]*getLeftHandNode\(\)[\s\S]*getRightHandNode\(\)[\s\S]*tryReconstructCalibratedHand\([\s\S]*controllerWand->world,[\s\S]*controllerHandWorld\)[\s\S]*\.controllerHandWorld\s*=\s*controllerHandWorld[\s\S]*\.controllerHandWorldValid\s*=\s*controllerHandWorldValid' `
     'The authored primary solve must reconstruct its physical firing hand from the raw controller wand.'
-
-
-
-
 
 $preFrikMatch = [regex]::Match(
     $interaction,
@@ -59,13 +47,9 @@ if (-not $preFrikMatch.Success) {
         'Weapon animation and recoil nodes must not transport retained hand targets.'
 }
 
-
-
 Require-Pattern $interactionPath $interaction `
     'leftHandDriverFrame\s*\{[\s\S]*frame\.left\.rawHandWorld[\s\S]*rightHandDriverFrame\s*\{[\s\S]*frame\.right\.rawHandWorld[\s\S]*leftScopeHandDriverFrame\s*=\s*captureScopeHandDriverFrame\(scopeHandDriverNode\(true\)\)[\s\S]*rightScopeHandDriverFrame\s*=\s*captureScopeHandDriverFrame\(scopeHandDriverNode\(false\)\)' `
     'The coherent grip frame must pair physical hand inputs with separately named scope drivers.'
-
-
 
 if ($failures.Count -gt 0) {
     Write-Host 'Authored weapon-pose authority source boundary failed:'

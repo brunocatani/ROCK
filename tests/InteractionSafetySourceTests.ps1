@@ -307,7 +307,6 @@ Require-Text $physicsSource `
     'updateEquippedWeaponTransition\(\)[\s\S]{0,500}getNativeGunState\(player\)[\s\S]{0,600}getNativeWeaponState\(player\)[\s\S]*?nativeStateBeforeEquip\s*=\s*[\s\S]{0,120}getNativeWeaponState\(player\)[\s\S]*?nativeStateAfterEquip\s*=\s*[\s\S]{0,120}getNativeWeaponState\(player\)' `
     'Animation ownership, transition observation, admission, and post-equip diagnostics must all use verified native state accessors.'
 
-
 Require-Text $bareFistPolicy `
     'shouldHolster[\s\S]*?rockEnabled\s*&&\s*witness\.weaponDrawn\s*&&\s*witness\.actorUsingMelee\s*&&\s*!witness\.realMeleeWeaponEquipped' `
     'Bare-fist policy must require drawn melee state with no real melee weapon equipped.'

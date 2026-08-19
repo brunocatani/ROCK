@@ -43,9 +43,6 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'supportAuthorityMode\s*=\s*weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver;[\s\S]{0,1800}canApplyFiringGripProximityAuthority\(\s*supportAuthorityProviderOverride\)' `
     'Equipped weapons must always enter ROCK proximity support after explicit provider grab modes are resolved.'
 
-
-
-
 Require-Text 'src/physics-interaction/weapon/WeaponSupport.h' `
     'canApplyFiringGripProximityAuthority\(\s*bool providerGrabModeOverride\)[\s\S]{0,120}return !providerGrabModeOverride;' `
     'Core proximity support must be unconditional except for explicit provider grab modes.'
@@ -53,8 +50,6 @@ Require-Text 'src/physics-interaction/weapon/WeaponSupport.h' `
 Require-Text 'src/physics-interaction/weapon/WeaponSupport.h' `
     'canPromoteSupportGripToFiringGrip\([\s\S]{0,120}bool supportGripActive,[\s\S]{0,80}bool attachOnly\)[\s\S]{0,700}return supportGripActive && !attachOnly;' `
     'Handoff eligibility must depend on an active non-AttachOnly grip, not its authored or dynamic pose source.'
-
-
 
 Require-Text 'src/api/ROCKProviderApi.h' `
     'core VisualOnlySupport behavior itself remains always enabled[\s\S]*FiringGripProximitySupport[\s\S]*firingGripProximitySupportRadiusGameUnits' `

@@ -56,13 +56,11 @@ Require-Text 'src/physics-interaction/core/PhysicsInteractionProvider.inl' 'quer
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'leftHandHoldingObject\s*=\s*_leftHand\.isHolding\(\)[\s\S]*rightHandHoldingObject\s*=\s*_rightHand\.isHolding\(\)[\s\S]*setGrabbedObjectHandPoseOwnership\(\s*leftHandHoldingObject,\s*rightHandHoldingObject\s*\)[\s\S]*_authoredPrimaryFiringGrip\.update' 'The authored-grip phase must publish current per-physical-hand ROCK grab ownership before an equipped firing pose can be selected.'
 Require-Text 'src/physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h' 'AuthoredSupportGripCandidateInput[\s\S]*interactionAcquisitionValid[\s\S]*activationZoneValid[\s\S]*authoredPoseSurfaceEvidenceValid[\s\S]*shouldUseAuthoredSupportGrip\([\s\S]*input\.activationZoneValid[\s\S]*input\.authoredPoseSurfaceEvidenceValid' 'Authored support selection must require the enforced activation zone and distributed current-weapon pose evidence.'
 
-
 Require-Text 'src/physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h' 'shouldReuseStableAuthoredSupportGrip[\s\S]*currentWeaponOwnershipKey[\s\S]*snapshotWeaponOwnershipKey[\s\S]*currentWeaponGenerationKey[\s\S]*snapshotWeaponGenerationKey[\s\S]*currentPrimaryGripCaptureSequence[\s\S]*snapshotPrimaryGripCaptureSequence[\s\S]*snapshotSupportGripCaptureSequence[\s\S]*kCompleteAuthoredSupportFingerLocalTransformMask' 'Stable authored support reuse must remain guarded by complete weapon, generation, canonical, support-capture, and finger-pose identity.'
 
 Reject-Text 'src/RockConfig.h' 'rockNativeReloadAnimationAuthorityTestEnabled|rockNativeReloadAnimationPartialAuthorityTestEnabled' 'Reload validation configuration must not remain in ROCK.'
 Reject-Text 'src/RockConfig.h' 'rockAuthoredPrimaryFiringGripTestEnabled' 'The production authored primary/equipped-grip path must not retain an experimental config switch.'
 Reject-Text 'data/config/ROCK.ini' 'bAuthoredPrimaryFiringGripTestEnabled' 'Users must not be able to disable the production authored primary/equipped-grip path.'
-
 
 if ($failures.Count -gt 0) {
     Write-Host 'AuthoredWeaponGripCaptureSourceTests failed:' -ForegroundColor Red

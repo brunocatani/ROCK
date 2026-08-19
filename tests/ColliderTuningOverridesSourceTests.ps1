@@ -32,7 +32,6 @@ Require-Text 'src/physics-interaction/body/BodyBoneColliderSet.cpp' 'bodyRadiusS
 Require-Text 'src/physics-interaction/body/BodyBoneColliderSet.cpp' 'mixBodyColliderSignatureString\(signature,\s*g_rockConfig\.rockBodyBoneColliderRadiusScaleOverrides\)' 'Body collider rebuild signature must include radius override changes.'
 Require-Text 'src/physics-interaction/body/BodyBoneColliderSet.cpp' 'StartBone|bonePairOverrideKeyMatches' 'Body radius overrides must support bone-pair identity, not only broad role scales.'
 
-
 if ($failures.Count -gt 0) {
     Write-Host 'ColliderTuningOverridesSourceTests failed:' -ForegroundColor Red
     foreach ($failure in $failures) {

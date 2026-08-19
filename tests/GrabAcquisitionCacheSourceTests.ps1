@@ -74,7 +74,6 @@ Require-Text 'src/physics-interaction/performance/PerformanceProfiler.h' 'GrabNe
 Require-Text 'src/physics-interaction/performance/PerformanceProfiler.h' 'GrabAcquisitionCacheHit' 'Profiler must count grab acquisition cache hits.'
 Require-Text 'src/physics-interaction/performance/PerformanceProfiler.h' 'GrabAcquisitionCacheMiss' 'Profiler must count grab acquisition cache misses.'
 
-
 if ($failures.Count -gt 0) {
     Write-Host 'Grab acquisition cache source boundary failed:'
     foreach ($failure in $failures) {

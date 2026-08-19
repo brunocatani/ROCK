@@ -113,7 +113,6 @@ Require-Text 'src/api/ROCKProviderApi.h' `
     'rolling lease returns to ROCK''s configured fallback handling policy' `
     'The V1 lease contract must describe fallback to ROCK configuration rather than a hard-coded firing hand.'
 
-
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'getEquippedWeaponHandlingAuthorityV1\(request\)[\s\S]*RockEquippedWeaponHandlingBaseline[\s\S]*rockAmbidextrousFiringGripEnabled[\s\S]*rockEquippedWeaponShoulderStashEnabled[\s\S]*makeEquippedWeaponHandlingSettings[\s\S]*if \(fixedFiringHandIsLeft\)[\s\S]*settings\.firingGripOwnershipEnabled\s*=\s*true[\s\S]*requiresEquippedWeaponHandlingModeReconcile' `
     'ROCK must build its native handoff/stash baseline before the addon overlay, preserve fixed-left ownership, and reconcile effective capability loss.'
@@ -187,7 +186,6 @@ Require-Text 'src/physics-interaction/grab/GrabConstraint.h' `
     'struct\s+SavedObjectState[\s\S]*RE::NiPointer<RE::TESObjectREFR>\s+retainedRef[\s\S]{0,180}RE::TESObjectREFR\*\s+refr[\s\S]*setReference\(const\s+RE::NiPointer<RE::TESObjectREFR>&\s+value\)' `
     'An active grab must retain its world reference instead of relying on the visual model or a raw pointer.'
 
-
 Require-Text 'src/physics-interaction/hand/Hand.h' `
     'takeRetainedReference\(\)[\s\S]{0,180}refr\s*=\s*nullptr;[\s\S]{0,100}std::move\(retainedRef\)' `
     'Native transfers must be able to consume the release pin while invalidating its raw alias.'
@@ -198,7 +196,6 @@ Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
 
 # Pull-catch/force-grab canonical auto-align must cover both physical hands
 # through the shared firing-hold resolver.
-
 
 Require-Text 'src/physics-interaction/weapon/LooseWeaponGripZone.cpp' `
     'tryResolveLooseWeaponFiringHandHold\([\s\S]{0,700}tryResolveGripWorld\(isLeft,\s*weaponRef,\s*scratch,\s*&testedHandWorld\)' `

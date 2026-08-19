@@ -22,16 +22,9 @@ function Reject-Text {
     }
 }
 
-
-
-
-
 Require-Text 'src/RockConfig.cpp' `
     'readClampedFloat\(ini,[\s\S]{0,160}"fWeaponAuthoredGripActivationRadius"[\s\S]{0,160}16\.0f,[\s\S]{0,80}2\.0f,[\s\S]{0,80}32\.0f\)' `
     'The dedicated authored-seat radius must be loaded with its canonical default and bounded runtime range.'
-
-
-
 
 Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp' `
     'rockDebugDrawAuthoredGripActivationZones[\s\S]*resolveConeBoundaryDimensions[\s\S]*drawWireCone[\s\S]*ENFORCED AUTHORED ACTIVATION' `

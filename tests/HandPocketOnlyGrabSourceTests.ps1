@@ -41,7 +41,6 @@ Require-Text 'src/physics-interaction/object/ObjectDetection.cpp' 'dead-actor-bo
 Require-Text 'src/physics-interaction/object/ObjectDetection.cpp' 'if \(isFarSelection && !grab_target::canUseFarSelection\(classification\.kind\)\)' `
     'Far selection must reject hand-pocket-only targets before highlighting or pull.'
 
-
 if ($failures.Count -gt 0) {
     Write-Host 'Hand pocket only grab source boundary failed:'
     foreach ($failure in $failures) {

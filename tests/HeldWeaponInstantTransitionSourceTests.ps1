@@ -69,19 +69,9 @@ Require-Text $physicsPath `
     'readinessFor\(player\)[\s\S]{0,3000}hand\.captureHeldReleaseMotion[\s\S]*beginHeldTransition[\s\S]{0,4000}equipResult\.success\s*&&\s*pendingGripStart\.pending[\s\S]{0,1600}_pendingEquippedWeaponPrimaryOnlyGripStart\s*=\s*pendingGripStart' `
     'Held equip must preflight before release, retain its bridge, and arm the captured physical hand at exact transaction success.'
 
-
-
-
-
-
-
-
-
 Reject-Text $nativePath `
     '0x0DBE590|0x0DBE6D0|CompleteWeaponDraw|WeaponBeginDraw|WeaponBeginSheathe|PlayerFastEquipSound' `
     'The held equip transaction must not directly run native completion or add global animation/sound suppression.'
-
-
 
 Require-Text 'src/ROCKMain.cpp' `
     'Install held weapon instant-transition capability[\s\S]{0,300}held_weapon_instant_transition::install\(\)[\s\S]{0,300}Held trigger/grip-zone equip disabled' `

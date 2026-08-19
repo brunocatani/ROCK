@@ -68,9 +68,6 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'manualStashCommitSelected\s*=[\s\S]{0,180}equippedWeaponShoulderStashActive\s*&&[\s\S]{0,180}confirmedForCommit[\s\S]{0,220}stashCommitSelected\s*=[\s\S]{0,120}nativeShoulderSheathSelected\s*\|\|[\s\S]{0,120}manualStashCommitSelected' `
     'Final sheath selection must combine the ROCK-native shoulder release and provider manual-carry release without allowing a drop fallthrough.'
 
-
-
-
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'canCommitNativeShoulderSheath[\s\S]{0,1800}primaryState\.released[\s\S]*?_equippedWeaponSheathCommittedThisFrame\[sheathHandIndex\]\s*=\s*true[\s\S]{0,500}submitEquippedWeaponShoulderSheath' `
     'ROCK must commit only the firing hand''s in-zone release and consume that edge before normal world-grab handling.'
@@ -139,7 +136,6 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
 Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'unequipEquippedWeaponFromPlayer|unequipReasonName' `
     'Equipped shoulder stash must not remove the weapon from its equipped inventory stack.'
-
 
 Require-Text 'src/RockConfig.h' `
     'rockEquippedWeaponShoulderStashEnabled\s*=\s*true' `
