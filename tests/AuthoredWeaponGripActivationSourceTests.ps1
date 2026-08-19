@@ -22,7 +22,7 @@ function Reject-Text {
     }
 }
 
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' `
+Require-Text 'src/physics-interaction/weapon/WeaponCollisionIdentity.cpp' `
     'baseEquipSlot\s*=\s*weapon->GetEquipSlot\(nullptr\)[\s\S]{0,260}effectiveEquipSlot\s*=\s*weapon->GetEquipSlot\(instanceData\)' `
     'Authored-grip family diagnostics must read both base and effective BGSEquipType behavior slots.'
 

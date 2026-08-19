@@ -304,6 +304,14 @@ namespace rock::weapon_collision_detail
     std::unordered_map<std::uint32_t, std::uint32_t> readEquippedOmodsByAttachPointFormId(
         WeaponCollision::WeaponCompositionSnapshot* outComposition = nullptr);
 
+    /*
+     * Does this attachment mod drive the native scope overlay? Defined in
+     * WeaponCollisionIdentity.cpp - it is an equipped-OMOD record question - but the
+     * generated-source scan needs it as well, to keep overlay-driving OMODs out of
+     * the physical part classification.
+     */
+    [[nodiscard]] bool attachmentModHasNativeScopeOverlayTarget(std::uint32_t omodFormId);
+
     // Prefix companion to weapon_effect_geometry_policy::containsAsciiInsensitive.
     [[nodiscard]] bool startsWithAsciiInsensitive(std::string_view value, std::string_view prefix);
 

@@ -706,6 +706,11 @@ namespace rock
             std::uint32_t* outFormID = nullptr,
             std::uint64_t* outInstanceContentKey = nullptr) const;
         std::uint64_t getWeaponVisualCompositionKey(RE::NiAVObject* weaponNode, WeaponVisualKeyStats& stats) const;
+        // Fills the scope-overlay fields of a sight anchor snapshot from the
+        // equipped OMOD set; see WeaponCollisionIdentity.cpp.
+        static void applyEquippedManualScopeTarget(
+            RE::NiAVObject* packageDriveNode,
+            NativeScopeSightAnchorSnapshot& outSnapshot);
 
         void maybeDumpWeaponAnimNodeDiagnostics(RE::NiAVObject* updateWeaponNode, std::uint64_t observedKey);
 

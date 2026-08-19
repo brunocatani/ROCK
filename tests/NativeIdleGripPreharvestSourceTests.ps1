@@ -157,12 +157,22 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'weaponGenerationKey[\s\S]*equippedGenerationMatchesForm[\s\S]*getCurrentObservedEquippedWeaponFormID\(\)\s*==\s*equippedWeapon->formID[\s\S]*native_idle_grip_preharvest::observeEquippedWeapon\([\s\S]*equippedWeapon[\s\S]*weaponNode[\s\S]*currentEquippedWeaponInstanceData\(equippedWeapon\)[\s\S]*_authoredPrimaryFiringGrip\.update' `
     'A stable directly equipped weapon must enter preharvest before authored pose lookup, without pairing the new form with a stale scene generation.'
+# The former single assertion spanned update() and getEquippedWeaponIdentityKey,
+# which the WeaponCollision split put in two files. Split into the two halves that
+# each stand alone in one file; the pairing itself is now structural, because one
+# call returns the identity key and the form ID together.
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' `
-    'observedFormID[\s\S]*getEquippedWeaponIdentityKey\([\s\S]*&observedFormID[\s\S]*_observedEquippedWeaponFormID\s*=\s*observedFormID[\s\S]*outFormID[\s\S]*\*outFormID\s*=\s*identity\.formID' `
-    'The collision observer must publish the form ID paired with its stable generation witness.'
+    'getEquippedWeaponIdentityKey\([\s\S]{0,200}&observedFormID[\s\S]{0,900}_observedEquippedWeaponFormID\s*=\s*observedFormID' `
+    'The collision observer must publish the observed form ID it read alongside the equipped identity key.'
+Require-Text 'src/physics-interaction/weapon/WeaponCollisionIdentity.cpp' `
+    '\*outFormID\s*=\s*identity\.formID' `
+    'The equipped identity read must hand back the form ID from the same identity snapshot.'
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' `
-    'observedInstanceContentKey[\s\S]*getEquippedWeaponIdentityKey\([\s\S]*&observedInstanceContentKey[\s\S]*_observedEquippedWeaponInstanceContentKey\s*=\s*observedInstanceContentKey[\s\S]*outInstanceContentKey[\s\S]*\*outInstanceContentKey\s*=\s*identity\.instanceContentKey' `
-    'The collision observer must expose the already-computed deterministic object-instance content witness to authored grip consumers.'
+    'getEquippedWeaponIdentityKey\([\s\S]{0,300}&observedInstanceContentKey[\s\S]{0,900}_observedEquippedWeaponInstanceContentKey\s*=\s*observedInstanceContentKey' `
+    'The collision observer must publish the object-instance content witness it read alongside the equipped identity key.'
+Require-Text 'src/physics-interaction/weapon/WeaponCollisionIdentity.cpp' `
+    '\*outInstanceContentKey\s*=\s*identity\.instanceContentKey' `
+    'The equipped identity read must hand back the deterministic object-instance content witness from the same identity snapshot.'
 Require-Text $source `
     'guardedSampleTracks\([\s\S]*timeSeconds[\s\S]*sample\(animation,\s*timeSeconds[\s\S]*guardedSampleTracks\(sampleTracks,\s*animation,\s*0\.0f[\s\S]*kPersistenceSampleFractions[\s\S]*persistenceSampleTimeSeconds[\s\S]*stableForPersistence' `
     'Persistence qualification must retain the verified bounded time sampler while selecting time zero as the runtime pose.'
