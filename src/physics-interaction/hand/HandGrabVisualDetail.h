@@ -5,8 +5,27 @@
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "rock_support/Fo4VrRuntime.h"
 
+#include <cmath>
+
 namespace rock::hand_grab_detail
 {
+    inline bool isUsableGrabVisualTransform(const RE::NiTransform& transform)
+    {
+        if (!std::isfinite(transform.translate.x) || !std::isfinite(transform.translate.y) ||
+            !std::isfinite(transform.translate.z) || !std::isfinite(transform.scale) ||
+            std::abs(transform.scale) <= 0.0001f) {
+            return false;
+        }
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                if (!std::isfinite(transform.rotate.entry[row][column])) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
     inline constexpr const char* kGrabExternalHandTag = "ROCK_GrabVisual";
     inline constexpr int kGrabExternalHandPriority = 90;
     inline constexpr const char* kGrabReturnHandTag = "ROCK_GrabReturn";
