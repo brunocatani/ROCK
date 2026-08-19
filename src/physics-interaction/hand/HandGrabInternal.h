@@ -85,16 +85,14 @@
 
 namespace rock
 {
-    namespace
+    namespace hand_grab_detail
     {
-        using namespace hand_grab_detail;
-
         static_assert(kGrabCollisionSuppressionArmBodyCountPerHand == kBodyBoneGrabSuppressionArmBodyCountPerSide,
             "Normal grab arm-collider suppression capacity must match the body collider arm-chain query.");
 
 
 
-        active_grab_body_lifecycle::BodyReleaseIntent releaseIntentFromDisposition(GrabReleaseDisposition disposition) noexcept
+        inline active_grab_body_lifecycle::BodyReleaseIntent releaseIntentFromDisposition(GrabReleaseDisposition disposition) noexcept
         {
             using active_grab_body_lifecycle::BodyReleaseIntent;
             switch (disposition) {
@@ -112,7 +110,7 @@ namespace rock
 
 
 
-        RE::NiPoint3 resolveSupportFrameAxisWorld(const RE::NiPoint3& normalWorld,
+        inline RE::NiPoint3 resolveSupportFrameAxisWorld(const RE::NiPoint3& normalWorld,
             const RE::NiPoint3& modelAxisWorld,
             const RE::NiPoint3& pinchAxisWorld,
             const RE::NiPoint3& acrossPalmAxisWorld,
@@ -142,14 +140,14 @@ namespace rock
 
 
 
-        RE::NiPoint3 rotationAxisProxyLocal(const RE::NiMatrix3& proxyWorldRotation, const RE::NiPoint3& axisWorld)
+        inline RE::NiPoint3 rotationAxisProxyLocal(const RE::NiMatrix3& proxyWorldRotation, const RE::NiPoint3& axisWorld)
         {
             RE::NiTransform proxyWorld = transform_math::makeIdentityTransform<RE::NiTransform>();
             proxyWorld.rotate = proxyWorldRotation;
             return normalizeOrZero(hand_bone_collider_geometry_math::generatedColliderWorldVectorToLocal(proxyWorld, axisWorld));
         }
 
-        bool computeHardKeyframeVelocityForTarget(
+        inline bool computeHardKeyframeVelocityForTarget(
             RE::hknpWorld* world,
             RE::hknpBodyId bodyId,
             const RE::NiTransform& targetWorld,
@@ -202,7 +200,7 @@ namespace rock
 
 
 
-        const char* primaryBodyChoiceReasonName(object_physics_body_set::PrimaryBodyChoiceReason reason)
+        inline const char* primaryBodyChoiceReasonName(object_physics_body_set::PrimaryBodyChoiceReason reason)
         {
             using object_physics_body_set::PrimaryBodyChoiceReason;
             switch (reason) {
@@ -223,7 +221,7 @@ namespace rock
 
 
 
-        RE::NiPoint3 clampAngularVelocityVector(const RE::NiPoint3& value, float maxRadiansPerSecond)
+        inline RE::NiPoint3 clampAngularVelocityVector(const RE::NiPoint3& value, float maxRadiansPerSecond)
         {
             if (!std::isfinite(maxRadiansPerSecond) || maxRadiansPerSecond <= 0.0f) {
                 return RE::NiPoint3{};
@@ -241,7 +239,7 @@ namespace rock
             return RE::NiPoint3{ value.x * scale, value.y * scale, value.z * scale };
         }
 
-        grab_motion_controller::ContactSupportShape classifyContactSupportShapeFromGrabFrame(const CanonicalGrabFrame& frame)
+        inline grab_motion_controller::ContactSupportShape classifyContactSupportShapeFromGrabFrame(const CanonicalGrabFrame& frame)
         {
             if (frame.hasGripSupportModel) {
                 switch (frame.gripSupportKind) {
@@ -375,7 +373,7 @@ namespace rock
             return fallback;
         }
 
-        grab_motion_controller::AngularAuthorityInput makeAngularAuthorityInput(const CanonicalGrabFrame& frame)
+        inline grab_motion_controller::AngularAuthorityInput makeAngularAuthorityInput(const CanonicalGrabFrame& frame)
         {
             return grab_motion_controller::AngularAuthorityInput{
                 .enabled = g_rockConfig.rockGrabPivotQualityAngularScalingEnabled,
@@ -397,7 +395,7 @@ namespace rock
             };
         }
 
-        grab_motion_controller::HeldAuthorityState evaluateRuntimeHeldAuthority(
+        inline grab_motion_controller::HeldAuthorityState evaluateRuntimeHeldAuthority(
             const CanonicalGrabFrame& frame,
             bool heldBodyContactSoftening)
         {
@@ -408,7 +406,7 @@ namespace rock
         }
 
 
-        std::uint32_t bodySetRejectCount(
+        inline std::uint32_t bodySetRejectCount(
             const object_physics_body_set::ObjectPhysicsBodySet& bodySet,
             physics_body_classifier::BodyRejectReason reason)
         {
@@ -421,7 +419,7 @@ namespace rock
 
 
 
-        held_object_drive_policy::HeldBodySetDriveDecision classifyHeldBodySetDrive(
+        inline held_object_drive_policy::HeldBodySetDriveDecision classifyHeldBodySetDrive(
             const object_physics_body_set::ObjectPhysicsBodySet& beforePrepBodySet,
             const object_physics_body_set::ObjectPhysicsBodySet& preparedBodySet,
             bool incompleteNativeScan)
@@ -440,7 +438,7 @@ namespace rock
         }
 
         template <std::size_t N>
-        float recordDeviationAverage(std::array<float, N>& history, std::size_t& count, std::size_t& next, float sample)
+        inline float recordDeviationAverage(std::array<float, N>& history, std::size_t& count, std::size_t& next, float sample)
         {
             if constexpr (N == 0) {
                 return std::isfinite(sample) ? sample : 0.0f;
@@ -462,12 +460,12 @@ namespace rock
 
 
 
-        bool sharedContextMatchesSelection(const GrabSharedObjectContext& sharedContext, const SelectedObject& selection)
+        inline bool sharedContextMatchesSelection(const GrabSharedObjectContext& sharedContext, const SelectedObject& selection)
         {
             return sharedContext.hasPeerState() && selection.refr && sharedContext.peerSavedObjectState->refr == selection.refr;
         }
 
-        bool isLooseWeaponGrabTarget(const SelectedObject& selection)
+        inline bool isLooseWeaponGrabTarget(const SelectedObject& selection)
         {
             if (!selection.refr || !grab_target::canUseRockActiveGrab(selection.targetKind)) {
                 return false;
@@ -477,7 +475,7 @@ namespace rock
             return selectedBase && selectedBase->Is(RE::ENUM_FORM_ID::kWEAP);
         }
 
-        bool isFiniteNiTransform(const RE::NiTransform& value)
+        inline bool isFiniteNiTransform(const RE::NiTransform& value)
         {
             bool rotationFinite = true;
             for (std::uint32_t row = 0; row < 3; ++row) {
@@ -499,18 +497,18 @@ namespace rock
 
         // True when node is root itself or sits anywhere under it in the scene graph.
 
-        const RE::TESObjectWEAP* looseWeaponFormFromRef(RE::TESObjectREFR* refr)
+        inline const RE::TESObjectWEAP* looseWeaponFormFromRef(RE::TESObjectREFR* refr)
         {
             auto* selectedBase = refr ? refr->GetObjectReference() : nullptr;
             return selectedBase ? selectedBase->As<RE::TESObjectWEAP>() : nullptr;
         }
 
-        const RE::TESObjectWEAP* selectedLooseWeaponForm(const SelectedObject& selection)
+        inline const RE::TESObjectWEAP* selectedLooseWeaponForm(const SelectedObject& selection)
         {
             return looseWeaponFormFromRef(selection.refr);
         }
 
-        bool isThrowableLooseWeapon(const RE::TESObjectWEAP* weapon)
+        inline bool isThrowableLooseWeapon(const RE::TESObjectWEAP* weapon)
         {
             if (!weapon) {
                 return false;
@@ -524,14 +522,14 @@ namespace rock
                    weapon->weaponData.type == RE::WEAPON_TYPE::kMine;
         }
 
-        frik_visual_authority::HandPoseKind looseWeaponPrimaryAttachPoseKind(const RE::TESObjectWEAP* weapon)
+        inline frik_visual_authority::HandPoseKind looseWeaponPrimaryAttachPoseKind(const RE::TESObjectWEAP* weapon)
         {
             return weapon && weapon_type_policy::isMelee(weapon->weaponData.type.get()) ?
                        frik_visual_authority::HandPoseKind::HoldingMelee :
                        frik_visual_authority::HandPoseKind::HoldingGun;
         }
 
-        bool publishLooseWeaponPrimaryAttachHandPose(bool isLeft, RE::TESObjectREFR* refr)
+        inline bool publishLooseWeaponPrimaryAttachHandPose(bool isLeft, RE::TESObjectREFR* refr)
         {
             const auto* weapon = looseWeaponFormFromRef(refr);
             auto* weaponRoot = refr ? refr->Get3D() : nullptr;
@@ -577,7 +575,7 @@ namespace rock
 
 
         constexpr const char* kHeldObjectDriveName = "proxyConstraint";
-        void copyPeerInertiaSnapshot(SavedObjectState& target, const SavedObjectState& peer)
+        inline void copyPeerInertiaSnapshot(SavedObjectState& target, const SavedObjectState& peer)
         {
             target.savedPackedInertia[0] = peer.savedPackedInertia[0];
             target.savedPackedInertia[1] = peer.savedPackedInertia[1];
@@ -588,7 +586,7 @@ namespace rock
         }
 
 
-        GrabSurfaceHit makeCollisionQueryGrabSurfaceHit(const SelectedObject& selection, RE::NiAVObject* fallbackOwnerNode)
+        inline GrabSurfaceHit makeCollisionQueryGrabSurfaceHit(const SelectedObject& selection, RE::NiAVObject* fallbackOwnerNode)
         {
             GrabSurfaceHit result{};
             if (!selection.hasHitPoint || !selection.hasHitNormal) {
@@ -671,7 +669,7 @@ namespace rock
 
     }
 
-    namespace
+    namespace hand_grab_detail
     {
         struct GrabCaptureTransformRefreshSample
         {
@@ -690,7 +688,7 @@ namespace rock
             bool ok = true;
         };
 
-        bool grabCaptureRefreshAlreadyVisited(const GrabCaptureTransformRefreshResult& result, const RE::NiAVObject* node)
+        inline bool grabCaptureRefreshAlreadyVisited(const GrabCaptureTransformRefreshResult& result, const RE::NiAVObject* node)
         {
             for (std::uint32_t i = 0; i < result.count; ++i) {
                 if (result.samples[i].node == node) {
@@ -700,7 +698,7 @@ namespace rock
             return false;
         }
 
-        void refreshGrabCaptureNodeTransform(GrabCaptureTransformRefreshResult& result, const char* role, RE::NiAVObject* node)
+        inline void refreshGrabCaptureNodeTransform(GrabCaptureTransformRefreshResult& result, const char* role, RE::NiAVObject* node)
         {
             if (!node || result.count >= result.samples.size() || grabCaptureRefreshAlreadyVisited(result, node)) {
                 return;
@@ -723,7 +721,7 @@ namespace rock
             result.ok = result.ok && sample.validAfter;
         }
 
-        GrabCaptureTransformRefreshResult refreshGrabCaptureTransforms(
+        inline GrabCaptureTransformRefreshResult refreshGrabCaptureTransforms(
             RE::NiAVObject* rootNode,
             RE::NiAVObject* meshSourceNode,
             RE::NiAVObject* collidableNode)
@@ -753,7 +751,7 @@ namespace rock
          * storage must outlive the returned reference - the callers keep it in the frame
          * that consumes the result.
          */
-        const std::vector<GrabSurfaceTriangleData>& limitGrabSurfaceTrianglesNear(
+        inline const std::vector<GrabSurfaceTriangleData>& limitGrabSurfaceTrianglesNear(
             const std::vector<GrabSurfaceTriangleData>& sourceTriangles,
             const RE::NiPoint3& centerWorld,
             std::vector<GrabSurfaceTriangleData>& storage,
@@ -776,7 +774,7 @@ namespace rock
             return storage;
         }
 
-        RE::NiAVObject* findNamedNodeRecursive(RE::NiAVObject* root, std::string_view name, int maxDepth = 12)
+        inline RE::NiAVObject* findNamedNodeRecursive(RE::NiAVObject* root, std::string_view name, int maxDepth = 12)
         {
             if (!root || name.empty() || maxDepth < 0) {
                 return nullptr;
@@ -801,7 +799,7 @@ namespace rock
             return nullptr;
         }
 
-        RE::NiAVObject* findAuthoredGrabNodeRecursive(RE::NiAVObject* root,
+        inline RE::NiAVObject* findAuthoredGrabNodeRecursive(RE::NiAVObject* root,
             std::string_view name,
             bool isLeft,
             bool rejectOppositeHandAnchor,
@@ -826,7 +824,7 @@ namespace rock
             return found;
         }
 
-        RE::NiTransform getLiveBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId)
+        inline RE::NiTransform getLiveBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId)
         {
             RE::NiTransform result = makeIdentityTransform();
             tryResolveLiveBodyWorldTransform(world, bodyId, result);
@@ -834,14 +832,14 @@ namespace rock
         }
 
 
-        RE::NiTransform getGrabAuthorityBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId)
+        inline RE::NiTransform getGrabAuthorityBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId)
         {
             RE::NiTransform result = makeIdentityTransform();
             tryGetGrabAuthorityBodyWorldTransform(world, bodyId, result);
             return result;
         }
 
-        RE::NiTransform computeRuntimeBodyLocalTransform(const RE::NiTransform& nodeWorld, const RE::NiTransform& bodyWorld)
+        inline RE::NiTransform computeRuntimeBodyLocalTransform(const RE::NiTransform& nodeWorld, const RE::NiTransform& bodyWorld)
         {
             return multiplyTransforms(invertTransform(nodeWorld), bodyWorld);
         }
