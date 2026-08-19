@@ -10,6 +10,17 @@
 
 namespace rock::hand_grab_detail
 {
+    [[nodiscard]] const char* bodyMotionTypeName(physics_body_classifier::BodyMotionType motionType);
+    [[nodiscard]] const object_physics_body_set::ObjectPhysicsBodyRecord* diagnosticRejectedBodyRecord(
+        const object_physics_body_set::ObjectPhysicsBodySet& bodySet,
+        std::uint32_t preferredBodyId);
+    bool restoreIncompleteActivePrepRoot(
+        RE::NiAVObject* rootNode,
+        std::uint16_t originalMotionPropertiesId,
+        const char* handName,
+        const char* context);
+    void nativeVRGrabDrop(void* playerCharacter, int handIndex);
+
     struct HeldBodyActivationSummary
     {
         std::uint32_t bodyCount = 0;

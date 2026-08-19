@@ -1,4 +1,5 @@
 #include "physics-interaction/hand/HandGrabBodySetRuntime.h"
+#include "physics-interaction/hand/HandGrabTrace.h"
 
 #include "physics-interaction/grab/GrabMassPolicy.h"
 #include "physics-interaction/grab/GrabMotionController.h"
@@ -512,15 +513,83 @@ namespace rock::hand_grab_detail
         if (!world || bodyId == INVALID_BODY_ID) {
             return held_object_contact_policy::HeldContactOtherMotion::Unknown;
         }
-    
+
         auto* motion = havok_runtime::getBodyMotion(world, RE::hknpBodyId{ bodyId });
         if (!motion) {
             return held_object_contact_policy::HeldContactOtherMotion::Unknown;
         }
-    
+
         const float mass = readBodyMass(world, RE::hknpBodyId{ bodyId });
         return mass > 0.0f ?
             held_object_contact_policy::HeldContactOtherMotion::Dynamic :
             held_object_contact_policy::HeldContactOtherMotion::FixedOrStatic;
+    }
+    const char* bodyMotionTypeName(physics_body_classifier::BodyMotionType motionType)
+    {
+        using physics_body_classifier::BodyMotionType;
+        switch (motionType) {
+        case BodyMotionType::Static:
+            return "Static";
+        case BodyMotionType::Dynamic:
+            return "Dynamic";
+        case BodyMotionType::Keyframed:
+            return "Keyframed";
+        case BodyMotionType::Other:
+            return "Other";
+        case BodyMotionType::Unknown:
+        default:
+            return "Unknown";
+        }
+    }
+    
+    const object_physics_body_set::ObjectPhysicsBodyRecord* diagnosticRejectedBodyRecord(
+        const object_physics_body_set::ObjectPhysicsBodySet& bodySet,
+        std::uint32_t preferredBodyId)
+    {
+        if (const auto* preferred = bodySet.findRecord(preferredBodyId); preferred && !preferred->accepted) {
+            return preferred;
+        }
+        for (const auto& record : bodySet.records) {
+            if (!record.accepted) {
+                return &record;
+            }
+        }
+        return nullptr;
+    }
+    
+    bool restoreIncompleteActivePrepRoot(
+        RE::NiAVObject* rootNode,
+        std::uint16_t originalMotionPropsId,
+        const char* handName,
+        const char* context)
+    {
+        /*
+         * Late-discovered bodies have already been touched by recursive
+         * active prep, but their original per-body state was not captured.
+         * Individual restore would manufacture state. When a scan is known
+         * incomplete, restore the object root with the selected body's
+         * original motion preset so the whole Fallout-owned system returns
+         * to one coherent motion mode.
+         */
+        if (!rootNode) {
+            return false;
+        }
+    
+        const auto motionType = physics_body_classifier::motionTypeFromMotionPropertiesId(originalMotionPropsId);
+        const bool restored = physics_recursive_wrappers::setMotionRecursive(
+            rootNode,
+            motionPresetFromMotionType(motionType, originalMotionPropsId),
+            true,
+            true,
+            false);
+    
+        ROCK_LOG_WARN(Hand,
+            "{} hand {}: recursive root restore after incomplete object scan root='{}' motionProps={} result={}",
+            handName ? handName : "?",
+            context ? context : "incomplete-scan",
+            nodeDebugName(rootNode),
+            originalMotionPropsId,
+            restored ? "ok" : "failed");
+        return restored;
     }
 }
