@@ -1,5 +1,15 @@
 #include "physics-interaction/hand/grab/HandGrabTrace.h"
 
+/*
+ * rock::hand_grab_detail tracing: the grab timeline trace id, its gating, and
+ * the shared log formatters.
+ *
+ * This file owns the only mutable file-level grab state - the trace id counter,
+ * and the per-hand scale cache in logRuntimeScaleIfChanged. Every logger here is
+ * gated or rate-limited. Grab logging runs inside per-frame paths, so an ungated
+ * log line here is a hot-path defect.
+ */
+
 #include "RockConfig.h"
 #include "physics-interaction/grab/GrabNodeInfoMath.h"
 #include "physics-interaction/native/CharacterControllerRuntime.h"

@@ -1,5 +1,14 @@
 #include "physics-interaction/hand/grab/HandGrabFingerPose.h"
 
+/*
+ * rock::hand_grab_detail finger pose: builds and publishes the ROCK_Grab hand
+ * pose, and stores into the grab frame the grip evidence the pose came from.
+ *
+ * The "ROCK_Grab" FRIK tag belongs only to this system. It is published at
+ * acquisition commit and refreshed during held update, and it is cleared on
+ * every teardown path. See abortGrabAcquisition and clearAllGrabRuntimeState.
+ */
+
 #include "physics-interaction/hand/grab/HandGrabMath.h"
 #include "physics-interaction/grab/GrabFinger.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"

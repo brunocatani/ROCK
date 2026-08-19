@@ -1,5 +1,14 @@
 #include "physics-interaction/hand/Hand.h"
 
+/*
+ * Read-only debug snapshot readers for the overlay and the logs. Nothing here
+ * changes grab state, and nothing here may become load-bearing for gameplay.
+ *
+ * These run on the game thread while the physics thread can be flushing, so the
+ * proxy-owned reads take _grabAuthorityProxyMutex. Every getter fails CLOSED: an
+ * unavailable snapshot returns false rather than stale values.
+ */
+
 #include "physics-interaction/hand/grab/HandGrabBodySetRuntime.h"
 #include "physics-interaction/hand/grab/HandGrabFingerPose.h"
 #include "physics-interaction/hand/grab/HandGrabMath.h"

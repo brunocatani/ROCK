@@ -1,4 +1,23 @@
 #include "physics-interaction/weapon/two_handed/TwoHandedGrip.h"
+
+/*
+ * PART GRIP CAPTURE: turning a hand near a weapon part into a committed grip.
+ *
+ * capturePartGrip at the bottom of this file is only the sequence. The work
+ * lives in PartGripCapturePhases just above it, one method per acquisition
+ * stage, called in this order: authored-support latch, dynamic mesh seat,
+ * root-flattened finger references, evidence gather and frozen-mesh finger
+ * solve, opposition pocket and pose selection, local-transform override,
+ * publish.
+ *
+ * ORDERING COUPLING: the capture calls refreshAuthoredSupportGripActivationState
+ * in TwoHandedGripAuthoredGrip.cpp mid-capture with requirePoseEvidence = true,
+ * then reads the snapshot that call produced. The two files are tightly ordered
+ * on purpose. The authored TU carries the matching note.
+ *
+ * The finger solve borrows the FingerPoseSolveScratch owned by the core TU, so a
+ * re-grab does not reallocate its ranking vectors on the hot path.
+ */
 #include "physics-interaction/weapon/two_handed/TwoHandedGripInternal.h"
 
 #include "api/ROCKProviderApiInternal.h"

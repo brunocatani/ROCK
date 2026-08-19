@@ -1,5 +1,17 @@
 #include "physics-interaction/weapon/two_handed/TwoHandedGripInternal.h"
 
+/*
+ * Out-of-line bodies for rock::two_handed_grip_detail. The header holds the
+ * shared vocabulary every TwoHandedGrip TU depends on - FRIK tag strings and
+ * priorities, transform predicates, the rigid weapon-presentation move family,
+ * the native scope camera helpers, the support-grip ranking types, and the
+ * FingerPoseSolveScratch definition. This file holds the bodies too large to be
+ * header-inline.
+ *
+ * Nothing here may read TwoHandedGrip state. These are pure helpers, so any TU
+ * can call them in any order.
+ */
+
 #include "api/ROCKProviderApiInternal.h"
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"

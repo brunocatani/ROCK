@@ -1,5 +1,17 @@
 #include "physics-interaction/weapon/collision/WeaponCollisionInternal.h"
 
+/*
+ * Out-of-line bodies for rock::weapon_collision_detail. The header holds the
+ * cross-region helpers every WeaponCollision TU depends on - safeNodeName, the
+ * bounded descendant-transform composition, the node and RTTI predicates, the
+ * point-cloud utilities, and the OMOD reading helpers. This file holds the
+ * bodies too large to be header-inline.
+ *
+ * Nothing here may read WeaponCollision state or name its private nested types.
+ * A helper that needs either must be a member instead; see the note in
+ * WeaponCollision.h.
+ */
+
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/native/havok/HavokOffsets.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"

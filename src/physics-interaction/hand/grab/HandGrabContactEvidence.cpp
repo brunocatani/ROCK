@@ -1,5 +1,18 @@
 #include "physics-interaction/hand/grab/HandGrabContactEvidence.h"
 
+/*
+ * rock::hand_grab_detail contact evidence: the three runtime structures that say
+ * WHAT the hand actually touches, built from native contact points and from mesh
+ * triangles.
+ *
+ *   RuntimeGrabContactPatch       - the general contact patch
+ *   RuntimeMultiFingerGripContact - multi-finger opposition evidence
+ *   RuntimePinchPocketCandidate   - the thumb-to-finger pinch pocket
+ *
+ * These are evidence, not decisions. Acquisition reads them in
+ * evaluateGrabContactEvidence and decides accept or reject there.
+ */
+
 #include "physics-interaction/hand/grab/HandGrabMath.h"
 #include "physics-interaction/grab/GrabFinger.h"
 #include "physics-interaction/grab/GrabThreePhase.h"

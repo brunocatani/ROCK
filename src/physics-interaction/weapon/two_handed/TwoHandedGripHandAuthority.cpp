@@ -1,4 +1,23 @@
 #include "physics-interaction/weapon/two_handed/TwoHandedGrip.h"
+
+/*
+ * HAND and WEAPON visual authority: the single publication chokepoint between
+ * ROCK's solved transforms and what FRIK renders.
+ *
+ * applyWeaponVisualAuthority is that chokepoint. Recoil references, hand and
+ * weapon visual returns, collision hand authority, native reload suspension,
+ * pre-FRIK reconstruction and the locked firing-hand visual all funnel through
+ * this file, so that exactly one system owns each FRIK tag at a time.
+ *
+ * ORDERING COUPLING: hasVisualAuthorityForHand reads
+ * _gunstockHandAuthorityActive, which TwoHandedGripGunstock.cpp owns. Gunstock
+ * alignment must therefore run before authority is queried for the frame. The
+ * gunstock TU carries the matching note.
+ *
+ * The native scope camera capture and apply helpers this file calls live in
+ * TwoHandedGripInternal.h, not in the scope TU, so that this file can call them
+ * without a cross-TU cycle.
+ */
 #include "physics-interaction/weapon/two_handed/TwoHandedGripInternal.h"
 
 #include "physics-interaction/hand/skeleton/HandFrame.h"

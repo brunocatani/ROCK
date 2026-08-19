@@ -1,5 +1,21 @@
 #include "physics-interaction/hand/Hand.h"
 
+/*
+ * The grab authority PROXY and its Havok constraint: creation, retargeting,
+ * motor updates and teardown. This file owns most of the raw constraint-atom
+ * writes and six of the thirteen _grabAuthorityProxyMutex sites.
+ *
+ * Locking contract: the *Locked suffix means the caller ALREADY holds
+ * _grabAuthorityProxyMutex. Those functions must never take it again - the mutex
+ * is not recursive - and the public wrappers beside them are the only place the
+ * lock is taken. HandGrabRelease.cpp calls destroyGrabAuthorityProxyLocked from
+ * inside its own lock scope. That is deliberate.
+ *
+ * updateProxyConstraintGrabDriveTarget is called from the PHYSICS thread by
+ * HandGrabAuthorityFlush.cpp, not only from the game thread. Everything it
+ * touches must be safe for that.
+ */
+
 #include "physics-interaction/hand/grab/HandGrabBodySetRuntime.h"
 #include "physics-interaction/hand/grab/HandGrabMath.h"
 #include "physics-interaction/hand/grab/HandGrabTrace.h"

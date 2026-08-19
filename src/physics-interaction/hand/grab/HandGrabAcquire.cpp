@@ -1,4 +1,28 @@
 #include "physics-interaction/hand/Hand.h"
+
+/*
+ * Grab ACQUISITION: everything between "the hand asked to grab" and "the hold is
+ * live". Read this file top-down and you read one acquisition in the order it
+ * happens. grabSelectedObject sits at the BOTTOM and is only the table of
+ * contents that calls the phases above it, in sequence.
+ *
+ * The phases, in run order:
+ *   prepareGrabBodySet          - guards, native body-set scan, lifecycle capture
+ *   resolveGrabCaptureFrames    - palm proxy frame, basis delta, capture refresh
+ *   extractGrabMesh             - triangles, authored node, surface-hit fallbacks
+ *   resolvePrimaryGrabBody      - contact-source policy, skinned resolution
+ *   resolveGrabPivotAuthority   - candidate assessment, mesh-backed resolve
+ *   evaluateGrabContactEvidence - pinch pocket, multi-finger grip, accept/reject
+ *   captureCanonicalGrabFrame   - the seat solve and the _grabFrame population
+ *   commitGrabDrive             - suppression, inertia, constraint, leases
+ *   publishGrabFingerPose       - loose-weapon attach or mesh finger pose
+ *
+ * EVERY failure exit goes through abortGrabAcquisition, which runs the COMPLETE
+ * teardown superset. Do not add a bare "return false": a partial unwind leaves a
+ * prepared body set, a suppressed collision lease, or a stale visual-authority
+ * hand offset behind. abortGrabAcquisition shares clearAllGrabRuntimeState with
+ * HandGrabRelease.cpp, so acquisition teardown and release teardown cannot drift.
+ */
 #include "physics-interaction/hand/grab/HandGrabInternal.h"
 #include "physics-interaction/hand/grab/HandGrabMath.h"
 #include "physics-interaction/hand/grab/HandGrabTrace.h"
@@ -85,7 +109,6 @@
 namespace rock
 {
     using namespace hand_grab_detail;
-
 
 
     namespace hand_grab_detail

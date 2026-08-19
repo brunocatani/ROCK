@@ -1,5 +1,16 @@
 #include "physics-interaction/hand/Hand.h"
 
+/*
+ * Collision suppression around a grab: hand against grabbed object while held,
+ * and body against held loose weapon for weapons carried across the player body.
+ *
+ * Every suppress has exactly one restore, and both restore paths tolerate a call
+ * when nothing was suppressed (hand_collision_suppression_math::hasActive gates
+ * them). That is what lets abortGrabAcquisition run the complete teardown from
+ * any failure exit. The delayed-restore path exists so a released object cannot
+ * immediately re-collide with the hand that threw it.
+ */
+
 #include "physics-interaction/body/BodyBoneColliderSet.h"
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
 #include "physics-interaction/native/BodyCollisionControl.h"

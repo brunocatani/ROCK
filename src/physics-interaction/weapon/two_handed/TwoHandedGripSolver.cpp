@@ -1,4 +1,16 @@
 #include "physics-interaction/weapon/two_handed/TwoHandedGrip.h"
+
+/*
+ * The two-handed SOLVER: given both hands' frames, where the weapon goes.
+ *
+ * Covers the dynamic support acquisition lifecycle, the full weapon-authority
+ * grip solve, the part-carry update and solve, the visual-only support grip, and
+ * the support-input baselines that anchor all of them.
+ *
+ * Both solver entry points build their inputs through the same builder, so a new
+ * input field reaches both paths or neither. A solve that reads a stale baseline
+ * makes the weapon slide under a stationary hand.
+ */
 #include "physics-interaction/weapon/two_handed/TwoHandedGripInternal.h"
 
 #include "api/ROCKProviderApiInternal.h"

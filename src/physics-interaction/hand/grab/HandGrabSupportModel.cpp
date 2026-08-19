@@ -1,5 +1,15 @@
 #include "physics-interaction/hand/grab/HandGrabSupportModel.h"
 
+/*
+ * rock::hand_grab_detail support model: how the hand SUPPORTS the object once
+ * contact evidence exists. Covers the sampled support points, the active point
+ * mode, and the PCA long-axis estimate the seat solve aligns against.
+ *
+ * computeGrabMeshLongAxis is the PCA entry point. Its result feeds seat-time
+ * self-alignment in HandGrabAcquire.cpp, so its shape-class thresholds and that
+ * consumer must stay in agreement.
+ */
+
 #include "physics-interaction/hand/grab/HandGrabMath.h"
 #include "physics-interaction/grab/GrabThreePhase.h"
 #include "physics-interaction/TransformMath.h"

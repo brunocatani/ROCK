@@ -1,4 +1,25 @@
 #include "physics-interaction/hand/Hand.h"
+
+/*
+ * PHYSICS-THREAD stages of the grab authority proxy. Both functions here run on
+ * the Havok thread, not the game thread, and they are deliberately in ONE file:
+ *
+ *   flushPendingCustomGrabAuthority      - before the solver step; drives the
+ *                                          proxy toward the queued target
+ *   observeCustomGrabAuthorityAfterSolve - after the step; reads back what the
+ *                                          solver actually did
+ *
+ * Splitting the pair would hide that they are two halves of one substep protocol
+ * sharing the queued, flush and after-solve sequence counters.
+ *
+ * The ANCHOR_CLOCK and OVERLAY_POINT comments here are load-bearing probe
+ * history, not narration. They record which clock a sample was taken on, and why
+ * a physics-clock playback was rejected. Keep them with the statements they
+ * justify.
+ *
+ * _grabAuthorityProxyMutex is taken three times here, each time only to snapshot
+ * proxy state into locals. Never hold it across the solver call.
+ */
 #include "physics-interaction/hand/grab/HandGrabInternal.h"
 #include "physics-interaction/hand/grab/HandGrabMath.h"
 #include "physics-interaction/hand/grab/HandGrabTrace.h"
@@ -84,7 +105,6 @@
 namespace rock
 {
     using namespace hand_grab_detail;
-
 
 
     void Hand::flushPendingCustomGrabAuthority(

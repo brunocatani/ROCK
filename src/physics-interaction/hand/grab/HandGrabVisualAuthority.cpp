@@ -1,5 +1,19 @@
 #include "physics-interaction/hand/Hand.h"
 
+/*
+ * The VISUAL half of a grab: the hand the player sees, as distinct from the
+ * physics hand body that drives the object.
+ *
+ * Two jobs live here. The visual RETURN state machine blends the rendered hand
+ * back to its skeleton pose after a release. refreshGrabVisualAuthorityBeforeFrik
+ * runs in the pre-FRIK window each frame and republishes the held pair before
+ * FRIK's own solve overwrites it.
+ *
+ * That pre-FRIK publish and the held-update publish in HandGrabHeldUpdate.cpp
+ * MUST write the scene graph the same way. Both call the single inline
+ * applyHeldVisualNodeWorldTransform in HandGrabVisualDetail.h for that reason.
+ */
+
 #include "physics-interaction/hand/grab/HandGrabMath.h"
 #include "physics-interaction/hand/grab/HandGrabTrace.h"
 #include "physics-interaction/hand/grab/HandGrabVisualDetail.h"

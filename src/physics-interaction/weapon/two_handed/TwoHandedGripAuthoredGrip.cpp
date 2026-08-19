@@ -1,4 +1,28 @@
 #include "physics-interaction/weapon/two_handed/TwoHandedGrip.h"
+
+/*
+ * AUTHORED grips: hand-authored grip poses from the grip library, as opposed to
+ * grips captured dynamically from mesh evidence.
+ *
+ * Two families live here. The authored SUPPORT grip covers the activation gate,
+ * the candidate store and the right-hand mirror. The authored PRIMARY FIRING
+ * grip covers canonical capture and finger-pose publication.
+ *
+ * ORDERING COUPLINGS, documented at both ends:
+ *   - refreshAuthoredSupportGripActivationState calls
+ *     tryResolveGunstockPrimaryGroupCorrection in TwoHandedGripGunstock.cpp, so
+ *     activation sees the corrected primary group, not the raw one.
+ *   - _authoredSupportGripDebugSnapshot is written HERE and again from
+ *     applyGunstockAlignment and the post-animation finalize in
+ *     TwoHandedGripGunstock.cpp. The reframe-after-gunstock-correction order is
+ *     intentional: the gunstock correction moves the frame the snapshot
+ *     describes.
+ *   - capturePartGrip in TwoHandedGripPartGripCapture.cpp calls
+ *     refreshAuthoredSupportGripActivationState MID-CAPTURE with
+ *     requirePoseEvidence = true, then reads the snapshot it just produced.
+ *     Capture and this file are tightly ordered. Do not defer work out of
+ *     refreshAuthoredSupportGripActivationState to a later frame.
+ */
 #include "physics-interaction/weapon/two_handed/TwoHandedGripInternal.h"
 
 #include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"

@@ -1,4 +1,18 @@
 #include "physics-interaction/hand/Hand.h"
+
+/*
+ * RELEASE: the end of a hold. Order in this file is the order it runs. Capture
+ * the release motion, apply the velocity snapshot, clear all runtime state, then
+ * the releaseGrabbedObject entry point that sequences them.
+ *
+ * clearAllGrabRuntimeState is shared with abortGrabAcquisition in
+ * HandGrabAcquire.cpp on purpose. It clears about forty members spread across
+ * every grab TU, and a second copy would drift as soon as either path gained a
+ * member. Add new grab state to that function, not to its callers.
+ *
+ * The final teardown takes _grabAuthorityProxyMutex once and destroys the
+ * constraint and the proxy together, so no frame can see one without the other.
+ */
 #include "physics-interaction/hand/grab/HandGrabInternal.h"
 #include "physics-interaction/hand/grab/HandGrabMath.h"
 #include "physics-interaction/hand/grab/HandGrabTrace.h"
@@ -84,23 +98,6 @@
 namespace rock
 {
     using namespace hand_grab_detail;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
     void Hand::captureHeldReleaseMotion(

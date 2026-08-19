@@ -94,7 +94,6 @@ namespace rock
             "Normal grab arm-collider suppression capacity must match the body collider arm-chain query.");
 
 
-
         inline active_grab_body_lifecycle::BodyReleaseIntent releaseIntentFromDisposition(GrabReleaseDisposition disposition) noexcept
         {
             using active_grab_body_lifecycle::BodyReleaseIntent;
@@ -110,7 +109,6 @@ namespace rock
             }
             return BodyReleaseIntent::NonPhysicalTransfer;
         }
-
 
 
         inline RE::NiPoint3 resolveSupportFrameAxisWorld(const RE::NiPoint3& normalWorld,
@@ -139,8 +137,6 @@ namespace rock
 
             return stablePerpendicularAxis(normal);
         }
-
-
 
 
         inline RE::NiPoint3 rotationAxisProxyLocal(const RE::NiMatrix3& proxyWorldRotation, const RE::NiPoint3& axisWorld)
@@ -202,7 +198,6 @@ namespace rock
         }
 
 
-
         inline const char* primaryBodyChoiceReasonName(object_physics_body_set::PrimaryBodyChoiceReason reason)
         {
             using object_physics_body_set::PrimaryBodyChoiceReason;
@@ -220,8 +215,6 @@ namespace rock
                 return "none";
             }
         }
-
-
 
 
         inline RE::NiPoint3 clampAngularVelocityVector(const RE::NiPoint3& value, float maxRadiansPerSecond)
@@ -421,7 +414,6 @@ namespace rock
         }
 
 
-
         inline held_object_drive_policy::HeldBodySetDriveDecision classifyHeldBodySetDrive(
             const object_physics_body_set::ObjectPhysicsBodySet& beforePrepBodySet,
             const object_physics_body_set::ObjectPhysicsBodySet& preparedBodySet,
@@ -462,7 +454,6 @@ namespace rock
         }
 
 
-
         inline bool sharedContextMatchesSelection(const GrabSharedObjectContext& sharedContext, const SelectedObject& selection)
         {
             return sharedContext.hasPeerState() && selection.refr && sharedContext.peerSavedObjectState->refr == selection.refr;
@@ -495,7 +486,6 @@ namespace rock
         }
 
         // ---- Transform primitives. Everything below composes these. ----
-
 
 
         // True when node is root itself or sits anywhere under it in the scene graph.
@@ -642,34 +632,6 @@ namespace rock
         }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     }
 
     namespace hand_grab_detail
@@ -735,17 +697,6 @@ namespace rock
             refreshGrabCaptureNodeTransform(result, "collidable", collidableNode);
             return result;
         }
-
-
-
-
-
-
-
-
-
-
-
 
 
         /*
@@ -854,22 +805,6 @@ namespace rock
         constexpr float kGrabFrameMismatchGripErrorWarnGameUnits = 5.0f;
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
         /*
          * Seat depth stop: the frozen authority frame seats pivot B exactly onto
          * pivot A, so any mesh that extends past the grip point toward the palm
@@ -924,9 +859,6 @@ namespace rock
          * itself is the fixed point: worldPointToLocal(rotated, pivotWorld)
          * equals worldPointToLocal(original, pivotWorld).
          */
-
-
-
 
 
         /*

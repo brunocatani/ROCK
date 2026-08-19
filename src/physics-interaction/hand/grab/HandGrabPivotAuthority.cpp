@@ -1,5 +1,17 @@
 #include "physics-interaction/hand/grab/HandGrabPivotAuthority.h"
 
+/*
+ * rock::hand_grab_detail pivot authority: which point on the object the grab
+ * pivots about, and how much that choice is trusted.
+ *
+ * BOTH acquisition (resolveGrabPivotAuthority) and the held tick (seated
+ * reacquire) consume this file, which is why the entry points take small input
+ * structs instead of long parameter lists. The source enum and its predicates
+ * (shouldReacquireAtSeat, canYieldToPalmPocket, ...) are the shared vocabulary
+ * both callers reason with. Put new policy in the predicates, not in the
+ * callers.
+ */
+
 #include "physics-interaction/hand/grab/HandGrabMath.h"
 #include "physics-interaction/grab/GrabFinger.h"
 #include "physics-interaction/grab/GrabThreePhase.h"

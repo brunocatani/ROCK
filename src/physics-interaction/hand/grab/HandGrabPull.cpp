@@ -1,5 +1,19 @@
 #include "physics-interaction/hand/Hand.h"
 
+/*
+ * Dynamic PULL: the flight phase that brings a distant object to the hand before
+ * a grab can seat. Lifecycle order in this file is prep, start, update, then
+ * either catch (acquisition takes over) or restore.
+ *
+ * Pull prep and grab acquisition share the same body-set scan and active-prep
+ * sequence, so an abandoned pull must restore exactly what it changed.
+ * restorePullPrepIfActive and finishPullPrepAsPhysicalDropIfActive are the two
+ * exits, and both are safe to call when no prep is active.
+ *
+ * nativeVRGrabDrop is a native FO4VR entry point. Its RVA lives in
+ * native/havok/HavokOffsets.h, not inline here.
+ */
+
 #include "physics-interaction/hand/grab/HandGrabBodySetRuntime.h"
 #include "physics-interaction/hand/grab/HandGrabMath.h"
 #include "physics-interaction/hand/grab/HandGrabPivotAuthority.h"

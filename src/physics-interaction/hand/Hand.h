@@ -801,9 +801,15 @@ namespace rock
             float grabRotationErrorDegrees,
             float authorityForceScale,
             bool heldBodyColliding);
+        // These three take _grabAuthorityProxyMutex themselves.
         void destroyGrabAuthorityProxy(RE::bhkWorld* bhkWorld);
         void abandonGrabAuthorityProxy();
         void clearGrabAuthorityProxyRuntime();
+        // PRECONDITION for the *Locked forms: the caller ALREADY holds
+        // _grabAuthorityProxyMutex. The mutex is not recursive, so these must
+        // never take it. They exist so a caller that needs the proxy and another
+        // proxy-owned handle to change together can do both under one lock - see
+        // the release teardown in HandGrabRelease.cpp.
         void destroyGrabAuthorityProxyLocked(RE::bhkWorld* bhkWorld);
         void abandonGrabAuthorityProxyLocked();
         void clearGrabAuthorityProxyRuntimeLocked();

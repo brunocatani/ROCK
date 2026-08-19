@@ -1,4 +1,23 @@
 #include "physics-interaction/weapon/two_handed/TwoHandedGrip.h"
+
+/*
+ * The CORE of TwoHandedGrip: the state machine and the public surface. Every
+ * other TwoHandedGrip*.cpp implements one region of the same class. This file
+ * owns the orchestration they hang off.
+ *
+ * update() is the per-frame entry point. It dispatches by state - Inactive,
+ * Touching, Gripping, PartCarry, PrimaryOnly - to the region that does the real
+ * work. transitionToInactive() is the fail-closed path used from about twenty
+ * sites in every sibling TU, so every sibling depends on this file by design.
+ *
+ * transitionToInactive() and reset() share clearActiveGripState(). The split is
+ * deliberate: transitionToInactive ends one GRIP, reset ends the whole
+ * presentation SESSION. NOTES_03 records the field-by-field boundary.
+ *
+ * The constructor and destructor stay here with the FingerPoseSolveScratch
+ * unique_ptr member. The complete scratch type comes from
+ * TwoHandedGripInternal.h, which every TU in this folder includes.
+ */
 #include "physics-interaction/weapon/two_handed/TwoHandedGripInternal.h"
 
 #include "physics-interaction/core/RockRuntimeState.h"

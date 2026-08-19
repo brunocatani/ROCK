@@ -1,4 +1,14 @@
 #include "physics-interaction/hand/grab/HandGrabBodySetRuntime.h"
+
+/*
+ * rock::hand_grab_detail body-set runtime: the helpers that turn "these native
+ * body ids" into an activated, lease-owned, mass-summarised held body set, and
+ * that hand it back on release.
+ *
+ * Ownership rule: every flag lease acquired here has a matching release, and the
+ * lease owner token is the Hand instance address. A body whose lease cannot be
+ * acquired is dropped from the set rather than driven unleased.
+ */
 #include "physics-interaction/hand/grab/HandGrabTrace.h"
 
 #include "physics-interaction/grab/GrabMassPolicy.h"

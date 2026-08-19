@@ -1,5 +1,14 @@
 #include "physics-interaction/hand/grab/HandGrabOffsetSources.h"
 
+/*
+ * rock::hand_grab_detail offset sources: decides WHERE a grab attaches when the
+ * answer does not come from live mesh evidence. Covers saved per-object offsets,
+ * loose-weapon primary attach frames, and the FRIK weapon offset cache.
+ *
+ * Resolution is ordered and fails closed. An unreadable or non-finite stored
+ * offset is skipped, never applied in part.
+ */
+
 #include "physics-interaction/hand/grab/HandGrabMath.h"
 #include "physics-interaction/weapon/LooseWeaponGripZone.h"
 

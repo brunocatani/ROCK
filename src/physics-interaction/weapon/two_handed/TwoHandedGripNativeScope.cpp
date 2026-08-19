@@ -1,4 +1,23 @@
 #include "physics-interaction/weapon/two_handed/TwoHandedGrip.h"
+
+/*
+ * NATIVE SCOPE support: keeping weapon and hands coherent while the engine's own
+ * scope camera is active.
+ *
+ * Covers the rigid scope frame, overlay calibration, sight-anchor resolution,
+ * scope-safe hand frames, the collision-isolated right-hand intent, and the
+ * deferred hand-authority role machinery.
+ *
+ * ORDERING COUPLING: refreshScopeSafeHandFrames calls
+ * tryResolveGunstockPhysicalFiringFrame and reads _gunstockWeaponEligibility,
+ * both owned by TwoHandedGripGunstock.cpp. Scope frames are only valid after
+ * gunstock eligibility has been observed this frame. The gunstock TU carries the
+ * matching note.
+ *
+ * Role clears are DEFERRED, not immediate, while a scope-menu frame is in
+ * flight. Clearing a FRIK role mid-menu-frame drops the weapon presentation for
+ * one frame. deferOrClearHandAuthorityRole is that decision, in one place.
+ */
 #include "physics-interaction/weapon/two_handed/TwoHandedGripInternal.h"
 
 #include "api/ROCKProviderApiInternal.h"

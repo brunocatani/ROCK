@@ -1,5 +1,22 @@
 #include "physics-interaction/hand/grab/HandGrabInternal.h"
 
+/*
+ * The per-frame HELD tick: what happens on every frame between a committed grab
+ * and its release. Runs on the game thread.
+ *
+ * updateHeldObject reads in flow order: guards and damping, then the drive
+ * target and its deviation, then the visual publish, then convergence and the
+ * promotion to constraint drive.
+ *
+ * Two boundaries to respect here:
+ *   - The visual publish uses applyHeldVisualNodeWorldTransform from
+ *     HandGrabVisualDetail.h. That single inline definition is shared with the
+ *     pre-FRIK refresh on purpose. Both must write the scene graph identically.
+ *   - The seated-reacquire block calls into HandGrabPivotAuthority, then takes
+ *     _grabAuthorityProxyMutex to move the live pivots. Keep that write inside
+ *     the lock and keep the surrounding logging outside it.
+ */
+
 namespace rock
 {
     using namespace hand_grab_detail;
@@ -8,8 +25,6 @@ namespace rock
     {
         return deriveNodeWorldFromBodyWorld(bodyWorld, _grabFrame.bodyLocal);
     }
-
-
 
 
     Hand::HeldHandMotionSample Hand::recordHeldControllerMotionSample(

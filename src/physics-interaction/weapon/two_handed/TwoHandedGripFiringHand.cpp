@@ -1,4 +1,22 @@
 #include "physics-interaction/weapon/two_handed/TwoHandedGrip.h"
+
+/*
+ * The FIRING hand: which hand holds the weapon, and everything that changes when
+ * that answer changes.
+ *
+ * Covers left-firing entry and capture, the PrimaryOnly carry path, firing-grip
+ * reattach after lost contact, the right-hand canonical store, the natural
+ * bone-in-wand frames, and weapon-node ownership and reparenting.
+ *
+ * The mirror math builds a left-hand pose from a right-hand capture, and the
+ * reverse, by conjugating through the driver frame. The shared conjugation is
+ * one helper, but the two wrappers keep their own position anchors on purpose.
+ * Right-support anchors a reflected palm in WEAPON space. Left-firing anchors
+ * the firing grip in HAND space and applies user trim. Do not merge the anchors.
+ *
+ * setFiringHand and the support-to-firing promotion are the only places the
+ * firing hand changes. Route new transitions through them.
+ */
 #include "physics-interaction/weapon/two_handed/TwoHandedGripInternal.h"
 
 #include "physics-interaction/actor/ActorEquipmentGrab.h"

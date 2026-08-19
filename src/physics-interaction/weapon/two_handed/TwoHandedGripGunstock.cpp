@@ -1,4 +1,31 @@
 #include "physics-interaction/weapon/two_handed/TwoHandedGrip.h"
+
+/*
+ * GUNSTOCK mode: shouldering a two-handed weapon so the sight line follows the
+ * head instead of the hands.
+ *
+ * Flow order in this file is eligibility, mode reconcile, baselines, correction,
+ * publication, then the post-animation finalize.
+ *
+ * ORDERING COUPLINGS, documented at both ends:
+ *   - refreshScopeSafeHandFrames in TwoHandedGripNativeScope.cpp calls
+ *     tryResolveGunstockPhysicalFiringFrame here and reads
+ *     _gunstockWeaponEligibility. Scope work therefore runs AFTER gunstock
+ *     eligibility is observed for the frame.
+ *   - refreshAuthoredSupportGripActivationState in
+ *     TwoHandedGripAuthoredGrip.cpp calls
+ *     tryResolveGunstockPrimaryGroupCorrection here.
+ *   - applyGunstockAlignment and
+ *     finalizeGunstockPresentationAfterNativeWeaponAnimation both write
+ *     _authoredSupportGripDebugSnapshot, which the authored TU also writes. The
+ *     gunstock write runs later and reframes it deliberately.
+ *   - hasVisualAuthorityForHand in TwoHandedGripHandAuthority.cpp reads
+ *     _gunstockHandAuthorityActive, which only this file sets.
+ *
+ * applyGunstockAlignment publishes hand and weapon rigidly, and rolls the whole
+ * publication back on failure. Keep the rollback next to the publication it
+ * unwinds. A rollback that drifts away from its publication stops matching it.
+ */
 #include "physics-interaction/weapon/two_handed/TwoHandedGripInternal.h"
 
 #include "api/ROCKProviderApiInternal.h"
