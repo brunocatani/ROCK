@@ -570,6 +570,9 @@ namespace rock
         rockGrabHeldRenderBodyPose = false;
         rockGrabRenderClockProbeOffsetGameUnits = 0.0f;
         rockGrabSceneWriterProbeOffsetZGameUnits = 0.0f;
+        rockGrabHeldScenePoseSync = true;
+        rockGrabScenePoseSyncFullAnchorGapGameUnits = 4.0f;
+        rockGrabScenePoseSyncSolverGapGameUnits = 15.0f;
         rockGrabHandLerpTimeMin = 0.10f;
         rockGrabHandLerpTimeMax = 0.20f;
         rockGrabHandLerpMinDistance = 7.0f;
@@ -2268,6 +2271,21 @@ namespace rock
             0.0f,
             -50.0f,
             50.0f);
+        rockGrabHeldScenePoseSync = ini.GetBoolValue(SECTION, "bGrabHeldScenePoseSync", rockGrabHeldScenePoseSync);
+        rockGrabScenePoseSyncFullAnchorGapGameUnits = readClampedFloat(ini,
+            SECTION,
+            "fGrabScenePoseSyncFullAnchorGapGameUnits",
+            rockGrabScenePoseSyncFullAnchorGapGameUnits,
+            4.0f,
+            0.0f,
+            100.0f);
+        rockGrabScenePoseSyncSolverGapGameUnits = readClampedFloat(ini,
+            SECTION,
+            "fGrabScenePoseSyncSolverGapGameUnits",
+            rockGrabScenePoseSyncSolverGapGameUnits,
+            15.0f,
+            0.0f,
+            200.0f);
         rockGrabHandLerpTimeMin = readClampedFloat(ini,
             SECTION,
             "fGrabHandLerpTimeMin",

@@ -30,6 +30,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "RE/NetImmerse/NiTransform.h"
+
 namespace RE
 {
     class hknpWorld;
@@ -57,8 +59,31 @@ namespace rock::scene_writer_probe
 
     // Game thread only. Overwrites the hand's slot for the current grab.
     void registerHeldTarget(bool isLeft, const HeldTargetRegistration& registration);
-    // Game thread only. Safe to call when nothing is registered.
+    // Game thread only. Safe to call when nothing is registered. Also drops
+    // the published anchor.
     void clearHeldTarget(bool isLeft);
+
+    /*
+     * Held-object render-pose sync (Contract A per the 2026-08-18 dossier and
+     * the confirmed liveness probe): the hook substitutes the newest published
+     * BODY-space anchor for the solver pose in the writer input, so the drawn
+     * object and the rendered hand share one clock. The solver, motion record,
+     * and every other object stay untouched. Divergence guard: at
+     * anchor-vs-solver gaps above the full-anchor threshold the translation
+     * blends back toward the solver pose, and above the solver threshold the
+     * substitution is skipped entirely (object blocked by geometry must render
+     * physically). Stage tells the log which clock the writer consumed.
+     */
+    enum class AnchorStage : std::uint8_t
+    {
+        None = 0,
+        Producer = 1,
+        PreFrik = 2,
+    };
+    // Game thread only. Publish the held BODY anchor in game space.
+    void publishHeldAnchor(bool isLeft, const RE::NiTransform& bodyAnchorWorldGame, AnchorStage stage);
+    // Game thread only. The hook falls back to the untouched solver pose.
+    void invalidateHeldAnchor(bool isLeft);
 
     struct Status
     {
@@ -70,6 +95,10 @@ namespace rock::scene_writer_probe
         std::uint64_t callbackFlagCalls = 0;
         std::uint64_t localFlagCalls = 0;
         std::uint64_t totalWriterCalls = 0;
+        std::uint64_t syncAppliedCalls = 0;
+        std::uint64_t syncProducerStageCalls = 0;
+        std::uint64_t syncPreFrikStageCalls = 0;
+        std::uint64_t syncDivergenceSkips = 0;
         bool installed = false;
     };
     void copyStatus(Status& out);

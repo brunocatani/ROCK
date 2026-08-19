@@ -1193,10 +1193,15 @@ namespace rock
             RE::NiTransform sourceRawHandWorld{};
             RE::NiTransform rawHandToHeldLocal{};
             RE::NiTransform rawHandToHandLocal{};
+            // Rigid held-node -> BODY-anchor local, captured at the producer.
+            // The pre-FRIK refresh composes it with the freshly reconstructed
+            // held node to publish the fresh-clock scene-writer anchor.
+            RE::NiTransform heldNodeToBodyAnchorLocal{};
             std::uint64_t sourceSchedulerSequence = 0;
             std::uint32_t heldBodyId = INVALID_BODY_ID;
             std::uint32_t constraintId = INVALID_BODY_ID;
             bool renderClockNodeOwned = false;
+            bool hasHeldNodeToBodyAnchorLocal = false;
             bool valid = false;
 
             void clear()
@@ -1206,10 +1211,12 @@ namespace rock
                 sourceRawHandWorld = {};
                 rawHandToHeldLocal = {};
                 rawHandToHandLocal = {};
+                heldNodeToBodyAnchorLocal = {};
                 sourceSchedulerSequence = 0;
                 heldBodyId = INVALID_BODY_ID;
                 constraintId = INVALID_BODY_ID;
                 renderClockNodeOwned = false;
+                hasHeldNodeToBodyAnchorLocal = false;
                 valid = false;
             }
         };

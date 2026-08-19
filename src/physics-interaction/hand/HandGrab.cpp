@@ -5034,6 +5034,23 @@ namespace rock
                         _hasLastPublishedGrabVisualHandTransform = true;
                         publishedHandWorld = freshHandWorld;
                         freshPairApplied = true;
+                        // Fresh-clock scene-writer anchor: same reconstructed
+                        // node, carried through the producer's rigid
+                        // node->body relation. This is the anchor the drawn
+                        // object shares with the rendered hand.
+                        if (g_rockConfig.rockGrabHeldScenePoseSync &&
+                            _preFrikGrabVisualAuthority.hasHeldNodeToBodyAnchorLocal) {
+                            const RE::NiTransform freshBodyAnchorWorld =
+                                prefrik_hand_authority_policy::reconstructTargetWorld(
+                                    freshHeldWorld,
+                                    _preFrikGrabVisualAuthority.heldNodeToBodyAnchorLocal);
+                            if (prefrik_hand_authority_policy::isUsableTransform(freshBodyAnchorWorld)) {
+                                scene_writer_probe::publishHeldAnchor(
+                                    _isLeft,
+                                    freshBodyAnchorWorld,
+                                    scene_writer_probe::AnchorStage::PreFrik);
+                            }
+                        }
                     }
                 }
             }
@@ -12413,6 +12430,37 @@ namespace rock
                             physics_scale::gameToHavok());
                     } else {
                         held_body_render_pose::invalidateTarget(_isLeft);
+                    }
+                    /*
+                     * Scene-writer render-pose sync anchor (producer clock).
+                     * The writer input is the BODY pose, so the published
+                     * anchor is the held visual pose carried through the
+                     * rigid node->body relation of this frame's authority.
+                     * The pre-FRIK refresh republishes the same anchor from
+                     * the fresh-clock reconstructed node.
+                     */
+                    _preFrikGrabVisualAuthority.hasHeldNodeToBodyAnchorLocal = false;
+                    if (renderClockNodeWritten && g_rockConfig.rockGrabHeldScenePoseSync) {
+                        const RE::NiTransform heldNodeToBodyAnchorLocal =
+                            prefrik_hand_authority_policy::captureDriverToTargetLocal(
+                                desiredObjectWorld,
+                                desiredBodyWorld);
+                        const RE::NiTransform bodyAnchorWorld =
+                            prefrik_hand_authority_policy::reconstructTargetWorld(
+                                heldVisualNodeWorld,
+                                heldNodeToBodyAnchorLocal);
+                        if (prefrik_hand_authority_policy::isUsableTransform(bodyAnchorWorld)) {
+                            scene_writer_probe::publishHeldAnchor(
+                                _isLeft,
+                                bodyAnchorWorld,
+                                scene_writer_probe::AnchorStage::Producer);
+                            _preFrikGrabVisualAuthority.heldNodeToBodyAnchorLocal = heldNodeToBodyAnchorLocal;
+                            _preFrikGrabVisualAuthority.hasHeldNodeToBodyAnchorLocal = true;
+                        } else {
+                            scene_writer_probe::invalidateHeldAnchor(_isLeft);
+                        }
+                    } else {
+                        scene_writer_probe::invalidateHeldAnchor(_isLeft);
                     }
                     rock::debug::publishGrabClockProducerStage(_isLeft, grabClockProducerSample);
                     if (_grabFrame.heldNode &&

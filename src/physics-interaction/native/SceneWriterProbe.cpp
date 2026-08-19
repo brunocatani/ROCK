@@ -55,6 +55,10 @@ namespace rock::scene_writer_probe
         std::atomic<std::uint64_t> s_offsetAppliedCalls{ 0 };
         std::atomic<std::uint64_t> s_callbackFlagCalls{ 0 };
         std::atomic<std::uint64_t> s_localFlagCalls{ 0 };
+        std::atomic<std::uint64_t> s_syncAppliedCalls{ 0 };
+        std::atomic<std::uint64_t> s_syncProducerStageCalls{ 0 };
+        std::atomic<std::uint64_t> s_syncPreFrikStageCalls{ 0 };
+        std::atomic<std::uint64_t> s_syncDivergenceSkips{ 0 };
 
         /*
          * Seqlock-style per-hand slot: the game thread publishes with
@@ -75,6 +79,44 @@ namespace rock::scene_writer_probe
         };
 
         HandSlot s_slots[2];
+
+        /*
+         * The anchor gets its own seqlock so the twice-per-frame game-thread
+         * publish never invalidates the rarely-written registration slot.
+         * Layout matches the writer input: 3 rows of 4 floats, then translate.
+         */
+        struct alignas(64) AnchorSlot
+        {
+            std::atomic<std::uint32_t> generation{ 0 };
+            float rotationRows[12] = {};
+            float translate[3] = {};
+            std::uint8_t stage = 0;
+            bool valid = false;
+        };
+
+        AnchorSlot s_anchorSlots[2];
+
+        struct AnchorSnapshot
+        {
+            float rotationRows[12] = {};
+            float translate[3] = {};
+            std::uint8_t stage = 0;
+        };
+
+        bool tryReadAnchor(AnchorSlot& slot, AnchorSnapshot& out)
+        {
+            const std::uint32_t before = slot.generation.load(std::memory_order_acquire);
+            if ((before & 1u) != 0 || !slot.valid) {
+                return false;
+            }
+            std::memcpy(out.rotationRows, slot.rotationRows, sizeof(out.rotationRows));
+            out.translate[0] = slot.translate[0];
+            out.translate[1] = slot.translate[1];
+            out.translate[2] = slot.translate[2];
+            out.stage = slot.stage;
+            std::atomic_thread_fence(std::memory_order_acquire);
+            return slot.generation.load(std::memory_order_acquire) == before;
+        }
 
         struct SlotSnapshot
         {
@@ -230,8 +272,55 @@ namespace rock::scene_writer_probe
                 transform[kTranslateZIndex],
             };
 
+            /*
+             * Contract A render-pose sync: full anchor pose below the full-gap
+             * threshold, translation blended toward the solver up to the
+             * solver-gap threshold (rotation stays on the anchor while any
+             * blend applies), untouched solver pose beyond it. The diagnostic
+             * offset only runs when the sync did not substitute, so there is
+             * exactly one visual authority per call.
+             */
+            float syncGapGameUnits = -1.0f;
+            std::uint8_t syncStage = 0;
+            bool syncApplied = false;
+            if (g_rockConfig.rockGrabHeldScenePoseSync) {
+                AnchorSnapshot anchor{};
+                if (tryReadAnchor(s_anchorSlots[matchedHand], anchor)) {
+                    const float deltaX = anchor.translate[0] - transform[kTranslateXIndex];
+                    const float deltaY = anchor.translate[1] - transform[kTranslateXIndex + 1];
+                    const float deltaZ = anchor.translate[2] - transform[kTranslateZIndex];
+                    syncGapGameUnits = std::sqrt(deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ);
+                    const float fullGapConfig = g_rockConfig.rockGrabScenePoseSyncFullAnchorGapGameUnits;
+                    const float solverGapConfig = g_rockConfig.rockGrabScenePoseSyncSolverGapGameUnits;
+                    const float fullGap = std::isfinite(fullGapConfig) && fullGapConfig >= 0.0f ? fullGapConfig : 4.0f;
+                    const float solverGap =
+                        std::isfinite(solverGapConfig) && solverGapConfig > fullGap ? solverGapConfig : fullGap + 11.0f;
+                    if (std::isfinite(syncGapGameUnits) && syncGapGameUnits < solverGap) {
+                        const float blend =
+                            syncGapGameUnits <= fullGap ? 0.0f : (syncGapGameUnits - fullGap) / (solverGap - fullGap);
+                        alignas(16) float substituted[16];
+                        std::memcpy(substituted, anchor.rotationRows, sizeof(anchor.rotationRows));
+                        substituted[12] = anchor.translate[0] + (transform[12] - anchor.translate[0]) * blend;
+                        substituted[13] = anchor.translate[1] + (transform[13] - anchor.translate[1]) * blend;
+                        substituted[14] = anchor.translate[2] + (transform[14] - anchor.translate[2]) * blend;
+                        substituted[15] = 0.0f;
+                        original(collisionObject, substituted);
+                        syncApplied = true;
+                        syncStage = anchor.stage;
+                        s_syncAppliedCalls.fetch_add(1, std::memory_order_relaxed);
+                        if (anchor.stage == static_cast<std::uint8_t>(AnchorStage::PreFrik)) {
+                            s_syncPreFrikStageCalls.fetch_add(1, std::memory_order_relaxed);
+                        } else {
+                            s_syncProducerStageCalls.fetch_add(1, std::memory_order_relaxed);
+                        }
+                    } else {
+                        s_syncDivergenceSkips.fetch_add(1, std::memory_order_relaxed);
+                    }
+                }
+            }
+
             const float offsetZ = g_rockConfig.rockGrabSceneWriterProbeOffsetZGameUnits;
-            const bool applyOffset = std::isfinite(offsetZ) && offsetZ != 0.0f;
+            const bool applyOffset = !syncApplied && std::isfinite(offsetZ) && offsetZ != 0.0f;
             if (applyOffset) {
                 alignas(16) float substituted[16];
                 std::memcpy(substituted, transform, sizeof(float) * kWriterInputFloats);
@@ -239,7 +328,7 @@ namespace rock::scene_writer_probe
                 substituted[kTranslateZIndex] += offsetZ;
                 s_offsetAppliedCalls.fetch_add(1, std::memory_order_relaxed);
                 original(collisionObject, substituted);
-            } else {
+            } else if (!syncApplied) {
                 original(collisionObject, transform);
             }
 
@@ -267,7 +356,7 @@ namespace rock::scene_writer_probe
             const float motionGameZ = motion.valid ? motion.centerHavok[2] * havokToGame : -1.0f;
             if (firstForGrab) {
                 ROCK_LOG_INFO(Hand,
-                    "SCENE_WRITER first-hit hand={} site={} retRva=0x{:X} vptr=0x{:X} flags=0x{:02X} body={} in=({:.2f},{:.2f},{:.2f}) nodeBefore=({:.2f},{:.2f},{:.2f}) nodeAfter=({:.2f},{:.2f},{:.2f}) motionGame=({:.2f},{:.2f},{:.2f}) offZ={:.1f} thread={}",
+                    "SCENE_WRITER first-hit hand={} site={} retRva=0x{:X} vptr=0x{:X} flags=0x{:02X} body={} in=({:.2f},{:.2f},{:.2f}) nodeBefore=({:.2f},{:.2f},{:.2f}) nodeAfter=({:.2f},{:.2f},{:.2f}) motionGame=({:.2f},{:.2f},{:.2f}) sync={} stage={} gap={:.3f} offZ={:.1f} thread={}",
                     matchedHand == 0 ? "R" : "L",
                     callsite,
                     returnRva,
@@ -278,12 +367,15 @@ namespace rock::scene_writer_probe
                     nodeBefore[0], nodeBefore[1], nodeBefore[2],
                     nodeAfter[0], nodeAfter[1], nodeAfter[2],
                     motionGameX, motionGameY, motionGameZ,
+                    syncApplied ? "yes" : "no",
+                    syncStage,
+                    syncGapGameUnits,
                     applyOffset ? offsetZ : 0.0f,
                     ::GetCurrentThreadId());
             } else {
                 ROCK_LOG_SAMPLE_INFO(Hand,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "SCENE_WRITER hit hand={} site={} flags=0x{:02X} in=({:.2f},{:.2f},{:.2f}) nodeAfter=({:.2f},{:.2f},{:.2f}) motionGame=({:.2f},{:.2f},{:.2f}) inVsMotion={:.3f} offZ={:.1f} matched={} main={} proxy={} other={} thread={}",
+                    "SCENE_WRITER hit hand={} site={} flags=0x{:02X} in=({:.2f},{:.2f},{:.2f}) nodeAfter=({:.2f},{:.2f},{:.2f}) motionGame=({:.2f},{:.2f},{:.2f}) inVsMotion={:.3f} sync={} stage={} gap={:.3f} syncApplied={} prodStage={} preFrikStage={} divergeSkips={} offZ={:.1f} matched={} thread={}",
                     matchedHand == 0 ? "R" : "L",
                     callsite,
                     collisionFlags,
@@ -294,11 +386,15 @@ namespace rock::scene_writer_probe
                         (inputTranslate[0] - motionGameX) * (inputTranslate[0] - motionGameX) +
                         (inputTranslate[1] - motionGameY) * (inputTranslate[1] - motionGameY) +
                         (inputTranslate[2] - motionGameZ) * (inputTranslate[2] - motionGameZ)) : -1.0f,
+                    syncApplied ? "yes" : "no",
+                    syncStage,
+                    syncGapGameUnits,
+                    s_syncAppliedCalls.load(std::memory_order_relaxed),
+                    s_syncProducerStageCalls.load(std::memory_order_relaxed),
+                    s_syncPreFrikStageCalls.load(std::memory_order_relaxed),
+                    s_syncDivergenceSkips.load(std::memory_order_relaxed),
                     applyOffset ? offsetZ : 0.0f,
                     s_matchedCalls.load(std::memory_order_relaxed),
-                    s_mainCallsiteCalls.load(std::memory_order_relaxed),
-                    s_proxyCallsiteCalls.load(std::memory_order_relaxed),
-                    s_otherCallsiteCalls.load(std::memory_order_relaxed),
                     ::GetCurrentThreadId());
             }
         }
@@ -372,6 +468,7 @@ namespace rock::scene_writer_probe
 
     void clearHeldTarget(bool isLeft)
     {
+        invalidateHeldAnchor(isLeft);
         auto& slot = s_slots[isLeft ? 1 : 0];
         if (slot.collisionObjectCount == 0 && slot.traceId == 0) {
             return;
@@ -388,6 +485,35 @@ namespace rock::scene_writer_probe
         slot.generation.fetch_add(1, std::memory_order_release);
     }
 
+    void publishHeldAnchor(bool isLeft, const RE::NiTransform& bodyAnchorWorldGame, AnchorStage stage)
+    {
+        if (!s_installed.load(std::memory_order_acquire)) {
+            return;
+        }
+        static_assert(sizeof(bodyAnchorWorldGame.rotate) == sizeof(float) * 12);
+        auto& slot = s_anchorSlots[isLeft ? 1 : 0];
+        slot.generation.fetch_add(1, std::memory_order_acq_rel);
+        std::memcpy(slot.rotationRows, &bodyAnchorWorldGame.rotate, sizeof(slot.rotationRows));
+        slot.translate[0] = bodyAnchorWorldGame.translate.x;
+        slot.translate[1] = bodyAnchorWorldGame.translate.y;
+        slot.translate[2] = bodyAnchorWorldGame.translate.z;
+        slot.stage = static_cast<std::uint8_t>(stage);
+        slot.valid = true;
+        slot.generation.fetch_add(1, std::memory_order_release);
+    }
+
+    void invalidateHeldAnchor(bool isLeft)
+    {
+        auto& slot = s_anchorSlots[isLeft ? 1 : 0];
+        if (!slot.valid) {
+            return;
+        }
+        slot.generation.fetch_add(1, std::memory_order_acq_rel);
+        slot.valid = false;
+        slot.stage = static_cast<std::uint8_t>(AnchorStage::None);
+        slot.generation.fetch_add(1, std::memory_order_release);
+    }
+
     void copyStatus(Status& out)
     {
         out.matchedCalls = s_matchedCalls.load(std::memory_order_relaxed);
@@ -398,6 +524,10 @@ namespace rock::scene_writer_probe
         out.callbackFlagCalls = s_callbackFlagCalls.load(std::memory_order_relaxed);
         out.localFlagCalls = s_localFlagCalls.load(std::memory_order_relaxed);
         out.totalWriterCalls = s_totalWriterCalls.load(std::memory_order_relaxed);
+        out.syncAppliedCalls = s_syncAppliedCalls.load(std::memory_order_relaxed);
+        out.syncProducerStageCalls = s_syncProducerStageCalls.load(std::memory_order_relaxed);
+        out.syncPreFrikStageCalls = s_syncPreFrikStageCalls.load(std::memory_order_relaxed);
+        out.syncDivergenceSkips = s_syncDivergenceSkips.load(std::memory_order_relaxed);
         out.installed = s_installed.load(std::memory_order_acquire);
     }
 }

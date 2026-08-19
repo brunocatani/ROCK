@@ -556,6 +556,15 @@ namespace rock
         // object are untouched. Mesh moves => interception boundary
         // confirmed. 0 disables the substitution (capture stays on).
         float rockGrabSceneWriterProbeOffsetZGameUnits = 0.0f;
+        // Held-object render-pose sync at the engine scene writer (Contract
+        // A, 2026-08-19): the drawn pose becomes ROCK's fresh-clock anchor
+        // while the anchor-vs-solver gap is small; the translation blends
+        // back to the solver pose between the two gap thresholds and the
+        // substitution stops above the solver threshold (blocked objects
+        // must render physically). Physics is never touched.
+        bool rockGrabHeldScenePoseSync = true;
+        float rockGrabScenePoseSyncFullAnchorGapGameUnits = 4.0f;
+        float rockGrabScenePoseSyncSolverGapGameUnits = 15.0f;
         float rockGrabHandLerpTimeMin = 0.10f;
         float rockGrabHandLerpTimeMax = 0.20f;
         float rockGrabHandLerpMinDistance = 7.0f;
