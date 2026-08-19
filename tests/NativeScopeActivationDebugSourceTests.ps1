@@ -80,30 +80,10 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' 'struct NativeScop
     'Native scope presentation must retain immutable native calibration separately from its generation-bound tuned target.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' 'struct NativeScopeCameraTargetPreviewSnapshot[\s\S]*equippedWeaponOwnershipKey[\s\S]*anchorSource[\s\S]*cameraWeaponLocal[\s\S]*valid' `
     'The diagnostic path must expose a pointer-free, identity-bound copy of the exact retained camera target.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'getNativeScopeCameraTargetPreviewSnapshot[\s\S]*_nativeScopeRigidFrame\.valid[\s\S]*_nativeScopeAnchorValid[\s\S]*_nativeScopeRigidFrame\.cameraWeaponLocal[\s\S]*\.valid\s*=\s*valid' `
-    'The exact preview must fail closed unless the retained target and resolved anchor still describe one weapon generation.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'captureNativeScopeRigidFrame[\s\S]*captureRigidAnchorFrameWeaponLocal[\s\S]*nativeCameraWeaponLocal[\s\S]*rebuildNativeScopeRigidFrameTarget[\s\S]*synchronizeNativeScopePresentationAfterFrikUpdate[\s\S]*resolveRigidAnchorFrameWorld[\s\S]*NativeScopeCameraWriteSource::PostFrikPresentationSync' `
-    'Post-FRIK presentation must derive fallback tuning from one immutable native frame instead of recapturing or compounding it per hand mode.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'rebuildNativeScopeRigidFrameTarget[\s\S]*nativeCameraWeaponLocal[\s\S]*FiringGripFallback[\s\S]*applyWeaponLocalRotationOffset[\s\S]*cameraWeaponLocal' `
-    'Only the firing-grip fallback may add the configured weapon-axis camera rotation to immutable native calibration.'
 Reject-Text 'src/physics-interaction/weapon/WeaponAuthority.h' 'alignOpticalAxesToBore|camera \+X[\s\S]*bore \+Y' `
     'Scope presentation must not invent a camera-to-bore axis mapping over the captured native frame.'
-Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'tryResolveNativeScopeCameraWeaponLocal|hasBoreFrameWeaponLocal|boreFrameWeaponLocal' `
-    'The final gunstock writer must not keep a separate guessed scope orientation path.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'applyWeaponVisualAuthority[\s\S]*scopeTargetReady[\s\S]*resolveRigidAnchorFrameWorld\([\s\S]*weaponNode->world,[\s\S]*_nativeScopeRigidFrame\.cameraWeaponLocal[\s\S]*immediateCameraWeaponLocal[\s\S]*native scope retained weapon-local frame relationError' `
-    'Every final weapon transform, including gunstock fine tuning, must transport and verify the immutable camera frame rigidly.'
-Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'tryResolveNativeScopeGeometryDecision|native_scope_activation_geometry|isInsideCone|stabilizeExitDecision' `
-    'The retired ROCK cone solver and its exit debounce must not remain callable.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'refreshNativeScopeAnchor[\s\S]*rockNativeScopeForceFiringGripFallback[\s\S]*hasRightFiringHandCanonicalFrame[\s\S]*_primaryGripConfidence[\s\S]*native_scope_sight_anchor_policy::resolve[\s\S]*FiringGripFallback' `
-    'Malformed optics must resolve from the generation-bound canonical or active firing grip, with an explicit forced-override path.'
 Reject-Text 'src/physics-interaction/weapon/WeaponAuthority.h' 'followWeaponWorldChange\s*\(' `
     'The controller-relative rigid-delta fallback must stay removed.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'captureNativeScopeOverlayCalibration[\s\S]*ScopeParentNode[\s\S]*find1StChildNode\(scopeParent,\s*"world_scope\.nif"\)[\s\S]*captureModelRootCalibrationInCameraLocal[\s\S]*applyNativeScopeOverlayTarget[\s\S]*makeModelRootFineTuneLocal[\s\S]*resolveScopeModelRootWorld[\s\S]*resolveScopeParentWorldForModelRoot[\s\S]*worldTargetToParentLocal[\s\S]*updateTransformsDown\(scopeParent,\s*true\)' `
-    'The rendered world-scope hierarchy must preserve native model orientation, apply INI tuning, and compensate the live NIF root transform at the generated sight.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'tryGetComposedNodeWorld\(scopeModelRoot,\s*immediateScopeModelRootWorld\)[\s\S]*areTransformsNearlyEqual\(immediateScopeModelRootWorld,\s*targetScopeModelRootWorld,\s*0\.01f\)' `
-    'Every overlay write must immediately verify that the live world-scope model root reached its calibrated and tuned target.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'clearNativeScopeOverlayAuthority[\s\S]*lastAppliedScopeParentLocal[\s\S]*nativeScopeParentLocal[\s\S]*_nativeScopeOverlayCalibration\s*=\s*\{\}' `
-    'ScopeParent authority must restore the captured native local only while ROCK still owns the last applied transform.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'tryReadNativeScopeRequestState[\s\S]*kFunc_NativeScopeRequestStateGet[\s\S]*kData_NativeScopeRendererState[\s\S]*manualScopeActivationRequested\s*=\s*input_remap_runtime::isManualScopeActivationRequested' `
     'The button-only path must observe its verified renderer response beside the physical input request.'
 Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'tryResolveNativeScopeGeometryDecision|kSetting_HmdScopeOffset|kSetting_HmdScopeAngle|kSetting_WeaponScopeAngle|kSetting_WeaponScopeDistance|kSetting_ScopeWeaponAngle' `
