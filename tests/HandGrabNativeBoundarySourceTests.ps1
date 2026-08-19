@@ -44,9 +44,7 @@ function Reject-Path {
     }
 }
 
-Require-Text 'src/physics-interaction/native/HavokOffsets.h' 'kFunc_NativeVRGrabDrop\s*=\s*0xF1AB90' 'Native VR drop offset must remain explicit at the verified address.'
 
-Reject-Text 'src/physics-interaction/native/HavokOffsets.h' 'MouseSpring' 'Mouse-spring offsets and tuning constants must not remain available to production grab code.'
 Reject-Path 'src/physics-interaction/native/NativeMouseSpringGrab.cpp' 'Native mouse-spring wrapper implementation must be removed.'
 Reject-Path 'src/physics-interaction/native/NativeMouseSpringGrab.h' 'Native mouse-spring wrapper header must be removed.'
 

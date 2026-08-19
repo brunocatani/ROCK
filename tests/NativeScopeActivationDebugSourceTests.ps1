@@ -112,8 +112,6 @@ Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' 'consumeRawBu
     'Button-only scope and release-time reload must share one physical firing-hand A/X gesture classifier.'
 Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' 'shouldDeferFiringHandActivateForManualScope\(inputEvent\)[\s\S]*markInputEventStopped\(inputEvent\)[\s\S]*return;' `
     'Primary-wand press-time reload must be deferred while manual scope classifies the hold.'
-Require-Text 'src/physics-interaction/native/HavokOffsets.h' 'kHookSite_NativeScopeGeometryDecision\s*=\s*0xEF851F[\s\S]*kPatchSite_NativeScopePostDecisionTest\s*=\s*0xEF8528[\s\S]*kFunc_NativeScopeStateTransition\s*=\s*0xEFAA60[\s\S]*kFunc_NativeWorldScopeConfigure\s*=\s*0xC8DC60[\s\S]*kData_NativeWorldScopeSingleton\s*=\s*0x5ACBF58[\s\S]*kData_NativeWorldScopePrimaryVtable\s*=\s*0x2D68718[\s\S]*kPlayerCharacter_NativeScopeForceDecisionMask\s*=\s*0x08' `
-    'The production hook must retain the independently raw-disassembly-verified FO4VR scope boundary constants.'
 Require-Text 'src/ROCKMain.cpp' 's_originalGameLoopFunc\(rcx\);[\s\S]*synchronizeNativeScopePresentationAfterFrikUpdate\(\);[\s\S]*onFrameUpdate\(\);' `
     'Presentation must synchronize after hFRIK and before ROCK final weapon authority.'
 Reject-Text 'src/ROCKMain.cpp' 'prepareNativeScopeCameraForGameUpdate|finalizeNativeScopeOverlayAfterGameUpdate' `

@@ -1,8 +1,8 @@
-#include "physics-interaction/native/HavokRuntime.h"
+#include "physics-interaction/native/havok/HavokRuntime.h"
 
-#include "physics-interaction/native/HavokOffsets.h"
-#include "physics-interaction/native/NativeMemory.h"
-#include "physics-interaction/native/PhysicsScale.h"
+#include "physics-interaction/native/havok/HavokOffsets.h"
+#include "physics-interaction/native/hooks/NativeMemory.h"
+#include "physics-interaction/native/query/PhysicsScale.h"
 #include "physics-interaction/TransformMath.h"
 
 #include "F4SE/Impl/PCH.h"

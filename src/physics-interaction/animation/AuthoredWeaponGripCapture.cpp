@@ -2,8 +2,8 @@
 
 #include "api/ROCKProviderApiInternal.h"
 #include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
-#include "physics-interaction/native/EntryTrampolineHook.h"
-#include "physics-interaction/native/HavokOffsets.h"
+#include "physics-interaction/native/hooks/EntryTrampolineHook.h"
+#include "physics-interaction/native/havok/HavokOffsets.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
 #include "rock_support/Fo4VrRuntime.h"

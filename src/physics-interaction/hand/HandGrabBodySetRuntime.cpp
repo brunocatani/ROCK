@@ -4,7 +4,7 @@
 #include "physics-interaction/grab/GrabMassPolicy.h"
 #include "physics-interaction/grab/GrabMotionController.h"
 #include "physics-interaction/native/BodyCollisionControl.h"
-#include "physics-interaction/native/HavokOffsets.h"
+#include "physics-interaction/native/havok/HavokOffsets.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
 #include "RockConfig.h"
 

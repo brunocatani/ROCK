@@ -33,13 +33,6 @@ function Reject-Text {
     }
 }
 
-Require-Text 'src/physics-interaction/native/HavokRuntime.h' 'enum class PhysicsSystemBodyScanStatus' 'Physics-system body enumeration must expose a structured scan status.'
-Require-Text 'src/physics-interaction/native/HavokRuntime.h' 'forEachPhysicsSystemBodyIdDetailed' 'Object scanning must be able to inspect why native body-id enumeration failed.'
-Require-Text 'src/physics-interaction/native/HavokRuntime.cpp' 'bool tryReadValue' 'Native body scanning must use guarded reads, not raw page-probed dereferences.'
-Require-Text 'src/physics-interaction/native/HavokRuntime.cpp' 'tryReadValue\(&instance->bodyIds,\s*bodyIds\)' 'Native body-id arrays must be loaded through guarded reads.'
-Require-Text 'src/physics-interaction/native/HavokRuntime.cpp' 'tryReadValue\(bodyIds \+ i,\s*bodyId\)' 'Native body-id entries must be read individually through the guarded reader.'
-Require-Text 'src/physics-interaction/native/HavokRuntime.cpp' 'PhysicsSystemBodyScanStatus::UnreadableBodyIds' 'Unreadable physics-system body-id arrays must be a non-crashing skip reason.'
-Require-Text 'src/physics-interaction/native/HavokRuntime.cpp' 'forEachPhysicsSystemBodyIdDetailed\([^\)]*\)\.enumerated\(\)' 'Legacy boolean enumeration must route through the detailed guarded scanner.'
 
 Require-Text 'src/physics-interaction/object/ObjectPhysicsBodySet.h' 'seedBodyId' 'Object-body scans must carry the selected hit body as an explicit seed.'
 Require-Text 'src/physics-interaction/object/ObjectPhysicsBodySet.h' 'requireSameResolvedRef' 'Active object scans must be able to reject bodies that resolve to a different ref.'

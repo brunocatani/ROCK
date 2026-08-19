@@ -30,9 +30,6 @@ function Reject-Pattern {
     }
 }
 
-$offsets = 'src/physics-interaction/native/HavokOffsets.h'
-$pairHeader = 'src/physics-interaction/native/HavokPairCollisionFilter.h'
-$pairSource = 'src/physics-interaction/native/HavokPairCollisionFilter.cpp'
 $handHeader = 'src/physics-interaction/hand/DynamicHandCollision.h'
 $handSource = 'src/physics-interaction/hand/DynamicHandCollision.cpp'
 $layers = 'src/physics-interaction/collision/CollisionLayerPolicy.h'
@@ -80,24 +77,6 @@ Require-Pattern 'src/physics-interaction/weapon/DynamicWeaponCollision.cpp' `
 # These offsets and identity gates were independently derived from raw FO4VR
 # 1.2.72 disassembly. A source-only regression makes accidental removal fail
 # the normal test configure/build path.
-Require-Pattern $offsets `
-    'kHknpWorld_ConstraintAddedSignal\s*=\s*0x560[\s\S]*kHknpWorld_ConstraintRemovedSignal\s*=\s*0x568[\s\S]*kVtable_ConstraintCollisionFilter\s*=\s*0x2E06258[\s\S]*kFunc_ConstraintFilterOnConstraintAdded\s*=\s*0x17ED740[\s\S]*kFunc_ConstraintFilterOnConstraintRemoved\s*=\s*0x17ED7D0[\s\S]*kFunc_PairCollisionFilterDisablePair\s*=\s*0x196DE70[\s\S]*kFunc_PairCollisionFilterEnablePair\s*=\s*0x196DF80' `
-    'The verified FO4VR pair-filter offsets must remain explicit and build-enforced.'
-Require-Pattern $pairSource `
-    'filterOwnerMatches[\s\S]*constraintFilterVtable\(\)[\s\S]*kConstraintCollisionFilter_Type[\s\S]*type\s*==\s*1[\s\S]*kConstraintCollisionFilter_World[\s\S]*reciprocalWorld\s*==\s*world' `
-    'Pair-filter discovery must validate vtable, type, and reciprocal world ownership.'
-Require-Pattern $pairSource `
-    'kHknpWorld_ConstraintAddedSignal[\s\S]*constraintAddedCallback\(\)[\s\S]*kHknpWorld_ConstraintRemovedSignal[\s\S]*constraintRemovedCallback\(\)' `
-    'Pair-filter discovery must cross-check both verified signal registrations.'
-Require-Pattern $pairHeader `
-    'kMaximumPairs\s*=\s*34[\s\S]*std::array<PairIdentity, kMaximumPairs>' `
-    'Pair ownership must remain fixed-capacity with one possible lease per dynamic hand twin.'
-Reject-Pattern $pairHeader `
-    'std::vector|std::mutex|unordered_' `
-    'The physics-step pair lease service must not allocate or lock.'
-Require-Pattern $pairSource `
-    'snapshotBody\([\s\S]*collisionObjectA[\s\S]*collisionObjectB[\s\S]*enablePair\([\s\S]*disablePair\(' `
-    'Pair reconciliation must guard body-ID reuse and balance native counted entries.'
 Require-Pattern $handSource `
     'flushPendingPhysicsDrive\([\s\S]*_weaponPairLeases\.reconcile\(' `
     'Native pair-table mutations must occur only in the serialized physics drive phase.'

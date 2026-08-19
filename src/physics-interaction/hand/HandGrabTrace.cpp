@@ -3,7 +3,7 @@
 #include "RockConfig.h"
 #include "physics-interaction/grab/GrabNodeInfoMath.h"
 #include "physics-interaction/native/CharacterControllerRuntime.h"
-#include "physics-interaction/native/PhysicsScale.h"
+#include "physics-interaction/native/query/PhysicsScale.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 #include <algorithm>

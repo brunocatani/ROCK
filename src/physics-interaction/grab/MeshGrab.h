@@ -2,7 +2,7 @@
 
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/grab/GrabNodeNamePolicy.h"
-#include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/hooks/NativeMemory.h"
 #include "RE/Fallout.h"
 
 #include <algorithm>

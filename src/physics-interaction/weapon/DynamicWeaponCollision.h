@@ -2,7 +2,7 @@
 
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
-#include "physics-interaction/native/HavokCompoundShapeBuilder.h"
+#include "physics-interaction/native/havok/HavokCompoundShapeBuilder.h"
 #include "physics-interaction/grab/GrabConstraint.h"
 #include "physics-interaction/weapon/WeaponCollision.h"
 

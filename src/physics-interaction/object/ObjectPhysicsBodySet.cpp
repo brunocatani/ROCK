@@ -6,10 +6,10 @@
 #include <unordered_map>
 #include <utility>
 
-#include "physics-interaction/native/HavokRuntime.h"
+#include "physics-interaction/native/havok/HavokRuntime.h"
 #include "physics-interaction/object/ObjectDetection.h"
 #include "physics-interaction/PhysicsLog.h"
-#include "physics-interaction/native/PhysicsUtils.h"
+#include "physics-interaction/native/query/PhysicsUtils.h"
 #include "RockConfig.h"
 
 #include "RE/Bethesda/BSHavok.h"

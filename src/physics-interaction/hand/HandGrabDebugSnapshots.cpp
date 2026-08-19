@@ -7,7 +7,7 @@
 #include "physics-interaction/hand/HeldBodyRenderPose.h"
 #include "physics-interaction/debug/DebugMath.h"
 #include "physics-interaction/grab/GrabConstraint.h"
-#include "physics-interaction/native/HavokOffsets.h"
+#include "physics-interaction/native/havok/HavokOffsets.h"
 #include "physics-interaction/native/SceneWriterProbe.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
 #include "physics-interaction/TransformMath.h"

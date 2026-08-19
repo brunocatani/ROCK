@@ -8,9 +8,9 @@
 #include "physics-interaction/hand/SurfaceFingerCollisionPolicy.h"
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
-#include "physics-interaction/native/HavokCompoundShapeBuilder.h"
-#include "physics-interaction/native/HavokPhysicsTiming.h"
-#include "physics-interaction/native/HavokPairCollisionFilter.h"
+#include "physics-interaction/native/havok/HavokCompoundShapeBuilder.h"
+#include "physics-interaction/native/havok/HavokPhysicsTiming.h"
+#include "physics-interaction/native/havok/HavokPairCollisionFilter.h"
 #include "physics-interaction/native/PhysicsCallbackQuiescenceGate.h"
 
 #include "RE/Havok/hknpShape.h"

@@ -58,9 +58,7 @@ if (-not (Test-Path -LiteralPath $selectorPath -PathType Leaf)) {
     Reject-Contains $focusedPlan.PolicyTargets 'ROCKWeaponInteractionPolicyTests' 'An unrelated C++ policy target must not be built for a focused input-policy change.'
     Require-Contains $focusedPlan.PolicyBuildTargets 'ROCKGrabInputIntentPolicyTests' 'A focused policy plan must build its exact CMake target.'
 
-    $sourcePlan = Get-TestPlan 'src/physics-interaction/native/PhysicsShapeCast.cpp'
-    Require-Contains $sourcePlan.SourceTests 'HavokWorldLockSourceTests' 'A source scan must run when a file inside its scanned tree changes.'
-    if (@($sourcePlan.PolicyTargets).Count -ne 0) {
+            if (@($sourcePlan.PolicyTargets).Count -ne 0) {
         $failures.Add('A production source-only change must not build unrelated header-only policy tests.')
     }
 

@@ -1,6 +1,6 @@
-#include "physics-interaction/native/HavokConvexShapeBuilder.h"
+#include "physics-interaction/native/havok/HavokConvexShapeBuilder.h"
 
-#include "physics-interaction/native/HavokOffsets.h"
+#include "physics-interaction/native/havok/HavokOffsets.h"
 #include "physics-interaction/PhysicsLog.h"
 
 #include <algorithm>

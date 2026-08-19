@@ -1,6 +1,6 @@
 #include "physics-interaction/core/PhysicsHooks.h"
 
-#include "physics-interaction/native/HavokOffsets.h"
+#include "physics-interaction/native/havok/HavokOffsets.h"
 #include "physics-interaction/grab/GrabHeldObject.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/NativeMeleeSuppressionPolicy.h"
@@ -10,8 +10,8 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/BodyCollisionControl.h"
 #include "physics-interaction/native/CharacterControllerRuntime.h"
-#include "physics-interaction/native/HavokRuntime.h"
-#include "physics-interaction/native/HavokTimingFixPolicy.h"
+#include "physics-interaction/native/havok/HavokRuntime.h"
+#include "physics-interaction/native/havok/HavokTimingFixPolicy.h"
 #include "physics-interaction/native/NativeGrabHapticSuppressionPolicy.h"
 #include "rock_support/Fo4VrRuntime.h"
 

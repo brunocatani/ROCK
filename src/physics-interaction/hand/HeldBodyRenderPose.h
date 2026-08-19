@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-#include "physics-interaction/native/HavokPhysicsTiming.h"
+#include "physics-interaction/native/havok/HavokPhysicsTiming.h"
 
 #include "RE/Havok/hknpWorld.h"
 #include "RE/NetImmerse/NiTransform.h"

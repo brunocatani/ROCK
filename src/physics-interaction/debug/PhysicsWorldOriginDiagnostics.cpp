@@ -8,7 +8,7 @@
 
 #include "physics-interaction/debug/overlay/DebugBodyOverlay.h"
 #include "physics-interaction/PhysicsLog.h"
-#include "physics-interaction/native/PhysicsUtils.h"
+#include "physics-interaction/native/query/PhysicsUtils.h"
 
 #include "RE/Bethesda/TESObjectREFRs.h"
 #include "RE/Havok/hknpBody.h"

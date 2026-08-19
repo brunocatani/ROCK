@@ -1,7 +1,7 @@
 #include "physics-interaction/weapon/WeaponCollisionInternal.h"
 
 #include "physics-interaction/TransformMath.h"
-#include "physics-interaction/native/HavokOffsets.h"
+#include "physics-interaction/native/havok/HavokOffsets.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"
 
 #include <intrin.h>

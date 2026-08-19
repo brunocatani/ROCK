@@ -29,7 +29,7 @@
 #include "physics-interaction/hand/SelectionBeamPolicy.h"
 #include "physics-interaction/debug/overlay/DebugOverlayRuntimeSettings.h"
 #include "physics-interaction/input/PipboyPauseGesturePolicy.h"
-#include "physics-interaction/native/HavokTimingFixPolicy.h"
+#include "physics-interaction/native/havok/HavokTimingFixPolicy.h"
 #include "physics-interaction/weapon/WeaponSemantics.h"
 
 namespace rock

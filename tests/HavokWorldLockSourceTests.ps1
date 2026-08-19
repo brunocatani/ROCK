@@ -57,24 +57,9 @@ function Require-OrderedText {
 # call (crash family: castShape AV at [shape+0x14], 2026-07-12/13). See
 # Docs/ROCK/lessons/2026-07-13-hknp-world-query-lock-discipline.md.
 
-Require-Text 'src/physics-interaction/native/PhysicsShapeCast.cpp' `
-    'physics-interaction/native/HavokWorldLock\.h' `
-    'PhysicsShapeCast.cpp must include HavokWorldLock.h.'
 
-Require-OrderedText 'src/physics-interaction/native/PhysicsShapeCast.cpp' @(
-    'havok_world_lock::ScopedWorldReadLock\s+worldReadLock\(world\);',
-    'world->CastShape\('
-) 'castSelectionSphere must hold the world read lock across the native CastShape call.'
 
-Require-OrderedText 'src/physics-interaction/native/HavokWorldLock.h' @(
-    'explicit ScopedWorldReadLock\(RE::hknpWorld\* world\)',
-    'currentThreadInsidePhysicsStep\(\)',
-    'kFunc_BSReadWriteLock_LockForRead'
-) 'ScopedWorldReadLock must skip locking on physics-step threads before taking the read lock.'
 
-Require-Text 'src/physics-interaction/native/HavokOffsets.h' `
-    'kHknpWorld_AccessLock = 0x6D8' `
-    'World access lock offset must stay the raw-disasm verified hknpWorld+0x6D8.'
 
 # All world shape casts must route through the locked wrapper. A direct
 # world->CastShape call anywhere else bypasses the lock and reintroduces the

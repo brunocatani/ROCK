@@ -1,7 +1,7 @@
 #pragma once
 
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
-#include "physics-interaction/native/HavokPhysicsTiming.h"
+#include "physics-interaction/native/havok/HavokPhysicsTiming.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 #include "physics-interaction/grab/GrabCore.h"
@@ -22,7 +22,7 @@
 #include "physics-interaction/object/ObjectDetection.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
 #include "physics-interaction/PhysicsLog.h"
-#include "physics-interaction/native/PhysicsUtils.h"
+#include "physics-interaction/native/query/PhysicsUtils.h"
 #include "RockConfig.h"
 #include "physics-interaction/hand/HandSelection.h"
 #include "rock_support/Fo4VrRuntime.h"

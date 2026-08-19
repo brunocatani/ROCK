@@ -2,8 +2,8 @@
 
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
-#include "physics-interaction/native/HavokOffsets.h"
-#include "physics-interaction/native/HavokRuntime.h"
+#include "physics-interaction/native/havok/HavokOffsets.h"
+#include "physics-interaction/native/havok/HavokRuntime.h"
 
 #include "RE/Havok/hknpBody.h"
 #include "REL/Relocation.h"

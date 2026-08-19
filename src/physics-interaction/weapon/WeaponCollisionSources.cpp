@@ -31,7 +31,7 @@
 #include "RockConfig.h"
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/grab/MeshGrab.h"
-#include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/hooks/NativeMemory.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/actor/ActorEquipmentGrab.h"
 #include "physics-interaction/weapon/WeaponAccessoryPartKindPolicy.h"

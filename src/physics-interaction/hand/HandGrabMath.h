@@ -8,7 +8,7 @@
 #include "physics-interaction/grab/GrabThreePhase.h"
 #include "physics-interaction/grab/MeshGrab.h"
 #include "physics-interaction/hand/HandColliderTypes.h"
-#include "physics-interaction/native/HavokOffsets.h"
+#include "physics-interaction/native/havok/HavokOffsets.h"
 
 #include <algorithm>
 #include <cmath>

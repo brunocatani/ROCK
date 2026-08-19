@@ -8,7 +8,7 @@
  * paths that could reintroduce world-direction-dependent rotation.
  */
 
-#include "physics-interaction/native/HavokPhysicsTiming.h"
+#include "physics-interaction/native/havok/HavokPhysicsTiming.h"
 
 #include "RE/NetImmerse/NiTransform.h"
 

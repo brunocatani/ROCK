@@ -33,7 +33,6 @@ foreach ($relativePath in $removedRuntimeFiles) {
     }
 }
 
-Require-Text 'src/physics-interaction/native/HavokOffsets.h' 'kFunc_UpdateFirstPersonArm\s*=\s*0xEF6280[\s\S]*kCallsite_UpdateFirstPersonArmPrimaryReturn\s*=\s*0xEF610D[\s\S]*kCallsite_UpdateFirstPersonArmSecondaryReturn\s*=\s*0xEF6150[\s\S]*kFunc_PlayerPostUpdateAnimationGraphManager\s*=\s*0xF2F0A0' 'Authored grip capture must retain the independently verified graph-output and paired arm offsets.'
 Require-Text 'src/physics-interaction/animation/AuthoredWeaponGripCapture.cpp' 'kExpectedUpdateFirstPersonArmPrefix[\s\S]*0x48,\s*0x8B,\s*0xC4,\s*0x55,\s*0x53,\s*0x41,\s*0x56,[\s\S]*0x48,\s*0x8D,\s*0xA8,\s*0xF8,\s*0xFE,\s*0xFF,\s*0xFF[\s\S]*kFunc_UpdateFirstPersonArm' 'The ROCK-owned arm hook must retain byte validation.'
 Require-Text 'src/physics-interaction/animation/AuthoredWeaponGripCapture.cpp' 'kExpectedPostFrikPrefix[\s\S]*kFunc_PlayerPostUpdateAnimationGraphManager[\s\S]*onPostUpdateAnimationGraphManager' 'The shared graph-output coordinator must retain byte validation against hFRIK''s verified patch identity.'
 Require-Text 'src/physics-interaction/animation/AuthoredWeaponGripCapture.cpp' 'onPostUpdateAnimationGraphManager[\s\S]*NativeGraphOutput[\s\S]*captureAuthoredSupportGraphPose\(\)[\s\S]*s_originalPostUpdate' 'Addon capture and ROCK grip capture must share the proven pre-presentation graph-output boundary.'

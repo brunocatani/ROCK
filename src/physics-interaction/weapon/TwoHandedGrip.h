@@ -11,7 +11,7 @@
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/hand/HandVisual.h"
 #include "physics-interaction/PhysicsLog.h"
-#include "physics-interaction/native/PhysicsUtils.h"
+#include "physics-interaction/native/query/PhysicsUtils.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 #include "physics-interaction/weapon/EquippedWeaponHandlingSettings.h"
 #include "physics-interaction/weapon/DynamicWeaponCollisionPolicy.h"

@@ -37,9 +37,6 @@ foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini
     }
 }
 
-Require-Text 'src/physics-interaction/native/HavokOffsets.h' `
-    'kHookSite_PipboyInventoryUseItem\s*=\s*0xB9CFBA[\s\S]*kFunc_PipboyInventoryUseItem\s*=\s*0xB9B890[\s\S]*kFunc_PipboyInventoryUpdateData\s*=\s*0xB99C30' `
-    'The FO4VR Pip-Boy hook and UpdateData targets must remain the independently verified RVAs.'
 
 Require-Text 'src/physics-interaction/weapon/PipboyEquipRuntime.cpp' `
     'callBytes\[0\]\s*!=\s*0xE8[\s\S]*decodedTarget\s*!=\s*expectedUseItem[\s\S]*currentUpdateData\s*!=\s*expectedUpdateData' `

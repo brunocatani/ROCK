@@ -1,9 +1,9 @@
 #include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
 
-#include "physics-interaction/native/HavokOffsets.h"
-#include "physics-interaction/native/HavokRuntime.h"
+#include "physics-interaction/native/havok/HavokOffsets.h"
+#include "physics-interaction/native/havok/HavokRuntime.h"
 #include "physics-interaction/PhysicsLog.h"
-#include "physics-interaction/native/PhysicsUtils.h"
+#include "physics-interaction/native/query/PhysicsUtils.h"
 #include "RockConfig.h"
 
 #include <algorithm>

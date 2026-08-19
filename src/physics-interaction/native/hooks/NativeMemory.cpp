@@ -1,4 +1,4 @@
-#include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/hooks/NativeMemory.h"
 
 #include <algorithm>
 #include <cstdint>

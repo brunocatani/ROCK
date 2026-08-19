@@ -1,7 +1,7 @@
 #include "physics-interaction/stash/ShoulderStashDetector.h"
 
 #include "physics-interaction/TransformMath.h"
-#include "physics-interaction/native/PhysicsUtils.h"
+#include "physics-interaction/native/query/PhysicsUtils.h"
 
 #include <algorithm>
 #include <array>

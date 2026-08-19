@@ -3,8 +3,8 @@
 #include "physics-interaction/hand/HandGrabMath.h"
 #include "physics-interaction/grab/GrabFinger.h"
 #include "physics-interaction/grab/GrabThreePhase.h"
-#include "physics-interaction/native/PhysicsShapeCast.h"
-#include "physics-interaction/native/PhysicsUtils.h"
+#include "physics-interaction/native/query/PhysicsShapeCast.h"
+#include "physics-interaction/native/query/PhysicsUtils.h"
 #include "physics-interaction/TransformMath.h"
 #include "RockConfig.h"
 

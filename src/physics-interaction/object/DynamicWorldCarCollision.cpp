@@ -4,7 +4,7 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/native/BodyCollisionControl.h"
-#include "physics-interaction/native/HavokRuntime.h"
+#include "physics-interaction/native/havok/HavokRuntime.h"
 #include "physics-interaction/object/ObjectDetection.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
 #include "rock_support/Fo4VrRuntime.h"

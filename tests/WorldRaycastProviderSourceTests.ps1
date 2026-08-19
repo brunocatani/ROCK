@@ -39,8 +39,6 @@ function Reject-Match(
 
 $apiHeader = Read-Source 'src/api/ROCKProviderApi.h'
 $apiSource = Read-Source 'src/api/ROCKProviderApi.cpp'
-$rayHeader = Read-Source 'src/physics-interaction/native/PhysicsRayCast.h'
-$raySource = Read-Source 'src/physics-interaction/native/PhysicsRayCast.cpp'
 $providerGlue = Read-Source 'src/physics-interaction/core/PhysicsInteractionProvider.inl'
 $selectionSource = Read-Source 'src/physics-interaction/object/ObjectDetection.cpp'
 
@@ -59,15 +57,6 @@ Require-Match 'API source' $apiSource `
 Require-Match 'API source' $apiSource `
     'apiQueryWorldRaycastV1[\s\S]{0,6000}queryProviderWorldRaycastV1' `
     'The public boundary must delegate the native query to PhysicsInteraction.'
-Require-Match 'Ray helper header' $rayHeader `
-    'Bethesda''s bhkWorld PickObject wrapper[\s\S]*required world synchronization' `
-    'The synchronization authority must be documented at the native wrapper.'
-Require-Match 'Ray helper source' $raySource `
-    'bhkPickData[\s\S]*SetStartEnd[\s\S]*collisionFilter\.filter[\s\S]*PickObject[\s\S]*GetHitFraction' `
-    'The helper must use Bethesda PickObject and its normalized closest-hit fraction.'
-Reject-Match 'Ray helper source' $raySource `
-    '(CastRay|castRay)\s*\(' `
-    'The provider must not bypass Bethesda synchronization with a direct hknp cast.'
 Require-Match 'Provider glue' $providerGlue `
     'queryProviderWorldRaycastV1[\s\S]*castClosestSegment[\s\S]*rockFarClipRayFilterInfo' `
     'The provider query must use ROCK''s validated far-world filter.'

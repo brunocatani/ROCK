@@ -1,8 +1,8 @@
 #include "physics-interaction/native/HeldWeaponInstantTransition.h"
 
 #include "physics-interaction/PhysicsLog.h"
-#include "physics-interaction/native/EntryTrampolineHook.h"
-#include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/hooks/EntryTrampolineHook.h"
+#include "physics-interaction/native/hooks/NativeMemory.h"
 
 #include "RE/Bethesda/PlayerCharacter.h"
 

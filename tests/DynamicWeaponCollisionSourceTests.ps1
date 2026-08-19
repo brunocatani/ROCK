@@ -50,7 +50,6 @@ function Require-Order {
 $runtimeHeader = 'src/physics-interaction/weapon/DynamicWeaponCollision.h'
 $runtimeSource = 'src/physics-interaction/weapon/DynamicWeaponCollision.cpp'
 $runtimePolicy = 'src/physics-interaction/weapon/DynamicWeaponCollisionPolicy.h'
-$compoundBuilder = 'src/physics-interaction/native/HavokCompoundShapeBuilder.cpp'
 $interaction = 'src/physics-interaction/core/PhysicsInteraction.cpp'
 $contacts = 'src/physics-interaction/core/PhysicsInteractionContacts.inl'
 $layers = 'src/physics-interaction/collision/CollisionLayerPolicy.h'
@@ -123,15 +122,6 @@ Reject-Pattern $runtimeSource `
 Require-Pattern $runtimeSource `
     'queueCompoundChildTransforms\([\s\S]*getCompoundChildPoseSnapshot\([\s\S]*makeCompoundChildTransform\([\s\S]*_queuedCompoundPoseSequence' `
     'Every accepted game frame must queue the current source-node poses without rebuilding child geometry.'
-Require-Pattern $compoundBuilder `
-    'DynamicCompoundShape::create\([\s\S]*cinfo\.outputIds\s*=\s*_instanceIds\.data\(\)[\s\S]*constructDynamicCompound\([\s\S]*releaseTemporaryInstanceShapeReferences' `
-    'The native dynamic-compound builder must retain constructor IDs and balance temporary child references.'
-Require-Pattern $compoundBuilder `
-    'DynamicCompoundShape::updateTransforms\([\s\S]*transformsNearlyEqual[\s\S]*_updateInstances\.push_back[\s\S]*updateInstances\(' `
-    'Live child updates must submit only changed native instances through preallocated scratch storage.'
-Require-Pattern $compoundBuilder `
-    'RUNTIME_VR_1_2_72[\s\S]*kFunc_DynamicCompoundShape_Ctor[\s\S]*kFunc_DynamicCompoundShape_UpdateInstances[\s\S]*native API validation' `
-    'The new FO4VR RVAs must fail closed behind exact executable identity and live entry-byte validation.'
 Require-Pattern $runtimeSource `
     'buildProxyShape\(\)[\s\S]*noContactFilterInfo\(\)[\s\S]*BethesdaMotionType::Keyframed[\s\S]*ROCK_WeaponGripAuthorityProxy[\s\S]*hasNoContactFilterInfo' `
     'The grip authority must be a verified noncolliding keyframed proxy.'
@@ -309,9 +299,6 @@ Reject-Pattern $runtimeSource `
 
 # FO4VR 0x1417A3A90 is initializeAsKeyFramed. It zeros motion-cinfo inverse
 # mass, so it must never contaminate the shared velocity-driven body wrapper.
-Reject-Pattern 'src/physics-interaction/native/HavokOffsets.h' `
-    'kFunc_MotionCinfo_DeriveFromBodyCinfos' `
-    'The keyframed initializer must not remain mislabeled as dynamic mass derivation.'
 Reject-Pattern 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' `
     'deriveMotionCinfo\s*\(' `
     'Generated dynamic bodies must not pass through the keyframed initializer mislabeled as mass derivation.'

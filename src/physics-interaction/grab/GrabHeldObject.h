@@ -342,7 +342,7 @@ namespace rock::held_object_contact_policy
 
 // ---- HeldObjectPhysicsMath.h ----
 
-#include "physics-interaction/native/PhysicsScale.h"
+#include "physics-interaction/native/query/PhysicsScale.h"
 
 #include <algorithm>
 #include <array>

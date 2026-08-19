@@ -1,7 +1,7 @@
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
 
 #include "physics-interaction/native/BodyCollisionControl.h"
-#include "physics-interaction/native/HavokRuntime.h"
+#include "physics-interaction/native/havok/HavokRuntime.h"
 #include "physics-interaction/PhysicsLog.h"
 
 namespace rock::collision_suppression_registry

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "physics-interaction/PhysicsLog.h"
-#include "physics-interaction/native/PhysicsUtils.h"
+#include "physics-interaction/native/query/PhysicsUtils.h"
 #include "physics-interaction/object/GrabTargetKind.h"
 
 #include "RE/Havok/hknpBodyId.h"

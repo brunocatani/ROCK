@@ -1,7 +1,7 @@
-#include "physics-interaction/native/HavokMaterialRegistry.h"
+#include "physics-interaction/native/havok/HavokMaterialRegistry.h"
 
 #include "physics-interaction/PhysicsLog.h"
-#include "physics-interaction/native/HavokOffsets.h"
+#include "physics-interaction/native/havok/HavokOffsets.h"
 
 #include <cstdint>
 #include <cstring>

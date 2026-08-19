@@ -1,4 +1,4 @@
-#include "physics-interaction/native/MainLoopHookPolicy.h"
+#include "physics-interaction/native/hooks/MainLoopHookPolicy.h"
 #include "physics-interaction/visual/PreFrikHandAuthorityPolicy.h"
 
 #include "RE/NetImmerse/NiTransform.h"

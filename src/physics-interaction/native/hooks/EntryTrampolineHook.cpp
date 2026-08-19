@@ -1,4 +1,4 @@
-#include "physics-interaction/native/EntryTrampolineHook.h"
+#include "physics-interaction/native/hooks/EntryTrampolineHook.h"
 
 #include "physics-interaction/PhysicsLog.h"
 

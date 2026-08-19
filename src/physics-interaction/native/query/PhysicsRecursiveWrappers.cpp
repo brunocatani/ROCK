@@ -1,7 +1,7 @@
-#include "physics-interaction/native/PhysicsRecursiveWrappers.h"
+#include "physics-interaction/native/query/PhysicsRecursiveWrappers.h"
 
-#include "physics-interaction/native/HavokRuntime.h"
-#include "physics-interaction/native/HavokOffsets.h"
+#include "physics-interaction/native/havok/HavokRuntime.h"
+#include "physics-interaction/native/havok/HavokOffsets.h"
 #include "physics-interaction/PhysicsLog.h"
 
 #include "RE/NetImmerse/NiAVObject.h"

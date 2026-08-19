@@ -1,8 +1,8 @@
 #pragma once
 
-#include "physics-interaction/native/HavokRuntime.h"
+#include "physics-interaction/native/havok/HavokRuntime.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
-#include "physics-interaction/native/PhysicsScale.h"
+#include "physics-interaction/native/query/PhysicsScale.h"
 #include "physics-interaction/TransformMath.h"
 
 #include "RE/Havok/hkVector4.h"

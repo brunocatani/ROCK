@@ -26,8 +26,8 @@
 
 #include "RockConfig.h"
 #include "physics-interaction/TransformMath.h"
-#include "physics-interaction/native/HavokOffsets.h"
-#include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/havok/HavokOffsets.h"
+#include "physics-interaction/native/hooks/NativeMemory.h"
 #include "physics-interaction/native/NativeNiNodeFactory.h"
 #include "physics-interaction/weapon/WeaponOmodAuditPolicy.h"
 #include "physics-interaction/weapon/WeaponPartRecordIdentityPolicy.h"

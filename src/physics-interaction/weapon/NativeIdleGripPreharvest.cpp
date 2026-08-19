@@ -3,7 +3,7 @@
 #include "RockConfig.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
-#include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/hooks/NativeMemory.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripCacheFormat.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripCacheStore.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"

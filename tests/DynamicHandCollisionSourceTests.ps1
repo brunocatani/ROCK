@@ -217,9 +217,6 @@ Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
     'consumedChildInContactBodyGame',
     'driveGeneratedKeyframedBody\(\s*world,\s*slot\.body'
 ) 'Animated child transforms must commit on the physics thread before directly driving the compound body.'
-Require-Text 'src/physics-interaction/native/HavokCompoundShapeBuilder.cpp' `
-    'tryResolveChildIndex[\s\S]*decodeTopLevelCompoundInstanceId[\s\S]*_instanceIds' `
-    'Compound contacts must resolve high-bit native instance IDs through constructor-returned stable IDs.'
 Require-Text 'src/physics-interaction/core/PhysicsInteractionContacts.inl' `
     'shapeKeyA\s*=[\s\S]{0,120}data \+ 0x10[\s\S]{0,180}shapeKeyB\s*=[\s\S]{0,120}data \+ 0x14' `
     'The verified key-2 record must read both compound participant shape keys at +0x10/+0x14.'

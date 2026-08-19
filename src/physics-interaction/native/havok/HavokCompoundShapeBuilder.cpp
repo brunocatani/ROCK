@@ -1,9 +1,9 @@
-#include "physics-interaction/native/HavokCompoundShapeBuilder.h"
+#include "physics-interaction/native/havok/HavokCompoundShapeBuilder.h"
 
-#include "physics-interaction/native/HavokOffsets.h"
-#include "physics-interaction/native/HavokRefCount.h"
-#include "physics-interaction/native/HavokRuntime.h"
-#include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/havok/HavokOffsets.h"
+#include "physics-interaction/native/havok/HavokRefCount.h"
+#include "physics-interaction/native/havok/HavokRuntime.h"
+#include "physics-interaction/native/hooks/NativeMemory.h"
 #include "physics-interaction/PhysicsLog.h"
 
 #include <REL/Relocation.h>

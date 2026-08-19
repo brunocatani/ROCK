@@ -3,7 +3,7 @@
 #include "physics-interaction/hand/Hand.h"
 
 #include "physics-interaction/grab/GrabHeldObject.h"
-#include "physics-interaction/native/PhysicsRecursiveWrappers.h"
+#include "physics-interaction/native/query/PhysicsRecursiveWrappers.h"
 
 #include <cstdint>
 #include <vector>

@@ -1,8 +1,8 @@
-#include "physics-interaction/native/HavokPairCollisionFilter.h"
+#include "physics-interaction/native/havok/HavokPairCollisionFilter.h"
 
-#include "physics-interaction/native/HavokOffsets.h"
-#include "physics-interaction/native/HavokRuntime.h"
-#include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/havok/HavokOffsets.h"
+#include "physics-interaction/native/havok/HavokRuntime.h"
+#include "physics-interaction/native/hooks/NativeMemory.h"
 
 #include "REL/Relocation.h"
 #include "RE/Havok/hknpWorld.h"

@@ -1,8 +1,8 @@
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 
-#include "physics-interaction/native/HavokRefCount.h"
-#include "physics-interaction/native/HavokOffsets.h"
-#include "physics-interaction/native/HavokRuntime.h"
+#include "physics-interaction/native/havok/HavokRefCount.h"
+#include "physics-interaction/native/havok/HavokOffsets.h"
+#include "physics-interaction/native/havok/HavokRuntime.h"
 #include "physics-interaction/PhysicsLog.h"
 
 #include "RE/Havok/hknpBody.h"

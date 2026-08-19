@@ -1,4 +1,4 @@
-#include "physics-interaction/native/PhysicsRayCast.h"
+#include "physics-interaction/native/query/PhysicsRayCast.h"
 
 #include "RE/Bethesda/BSHavok.h"
 #include "RE/Bethesda/bhkPickData.h"

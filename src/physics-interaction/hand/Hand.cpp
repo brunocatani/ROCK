@@ -10,7 +10,7 @@
 #include <utility>
 
 #include "physics-interaction/hand/HandLifecycle.h"
-#include "physics-interaction/native/HavokRuntime.h"
+#include "physics-interaction/native/havok/HavokRuntime.h"
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/hand/HandSkeleton.h"
 #include "physics-interaction/PhysicsBodyFrame.h"

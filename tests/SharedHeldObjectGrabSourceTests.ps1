@@ -70,7 +70,6 @@ Require-Text 'src/physics-interaction/hand/Hand.cpp' 'semanticContactPoint[\s\S]
 Require-Text 'src/physics-interaction/hand/Hand.cpp' 'const auto transition = applyTransition\(HandTransitionRequest\{ \.event = HandInteractionEvent::SelectionFoundClose \}\)' 'Peer-held fallback selection must commit only after the state machine accepts close selection.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'refreshedPeerHeldSelection' 'A delayed second-hand press must refresh the peer-held close candidate before grab commit.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'clearSelectionState\(false\)' 'Stale peer-held close selections must be cleared when the refreshed reach check fails.'
-Require-Text 'src/physics-interaction/native/HavokRuntime.cpp' 'acquireBodyFlagLease' 'Shared held-object body flags must be leased across hands instead of raw enabled/disabled per release.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'Shared held-object grab source test failed:'

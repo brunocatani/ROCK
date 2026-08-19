@@ -1,9 +1,9 @@
-#include "physics-interaction/native/PhysicsShapeCast.h"
+#include "physics-interaction/native/query/PhysicsShapeCast.h"
 
-#include "physics-interaction/native/HavokOffsets.h"
-#include "physics-interaction/native/HavokWorldLock.h"
+#include "physics-interaction/native/havok/HavokOffsets.h"
+#include "physics-interaction/native/havok/HavokWorldLock.h"
 #include "physics-interaction/PhysicsLog.h"
-#include "physics-interaction/native/PhysicsUtils.h"
+#include "physics-interaction/native/query/PhysicsUtils.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 
 #include "RE/Bethesda/bhkCharacterController.h"

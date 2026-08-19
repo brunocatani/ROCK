@@ -1,6 +1,6 @@
 #include "physics-interaction/native/BodyCollisionControl.h"
 
-#include "physics-interaction/native/HavokRuntime.h"
+#include "physics-interaction/native/havok/HavokRuntime.h"
 
 namespace rock::body_collision
 {

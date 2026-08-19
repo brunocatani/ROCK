@@ -1,7 +1,7 @@
 #include "physics-interaction/native/NativeNiNodeFactory.h"
 
-#include "physics-interaction/native/HavokOffsets.h"
-#include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/havok/HavokOffsets.h"
+#include "physics-interaction/native/hooks/NativeMemory.h"
 #include "physics-interaction/PhysicsLog.h"
 
 #include <array>

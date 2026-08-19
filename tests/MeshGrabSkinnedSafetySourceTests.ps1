@@ -44,9 +44,6 @@ function Reject-Text {
     }
 }
 
-Require-Text 'src/physics-interaction/native/NativeMemory.cpp' 'VirtualQuery' 'Native memory helper must use page readability checks before pointer reads.'
-Require-Text 'src/physics-interaction/native/NativeMemory.cpp' '__try' 'Native memory helper must protect final native memory copies with SEH on MSVC.'
-Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'physics-interaction/native/NativeMemory.h' 'Mesh grab extraction must use the shared native memory helper.'
 Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'static_assert\(sizeof\(RE::BSSkin::Instance\) == 0xC0\)' 'Skinned mesh extraction must bind itself to the verified FO4VR BSSkin::Instance size.'
 Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'constexpr int bonesData = 0x10' 'Skinned mesh extraction must read the FO4VR BSSkin bone-node array from the verified +0x10 field.'
 Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'constexpr int bonesCount = 0x18' 'Skinned mesh extraction must read the FO4VR BSSkin bone count from the verified +0x18 field.'

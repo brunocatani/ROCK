@@ -20,7 +20,7 @@
 #include <d3dcompiler.h>
 #include <wrl/client.h>
 
-#include "physics-interaction/native/HavokOffsets.h"
+#include "physics-interaction/native/havok/HavokOffsets.h"
 #include "physics-interaction/debug/overlay/DebugOverlayFrameAdmission.h"
 #include "physics-interaction/debug/overlay/DebugOverlayGpuTimer.h"
 #include "physics-interaction/debug/overlay/DebugOverlayLatestSnapshot.h"
@@ -34,7 +34,7 @@
 #include "physics-interaction/debug/overlay/DebugOverlayStats.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
 #include "physics-interaction/PhysicsLog.h"
-#include "physics-interaction/native/PhysicsUtils.h"
+#include "physics-interaction/native/query/PhysicsUtils.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "RockConfig.h"
 

@@ -83,7 +83,6 @@ $sourceFiles = @(
     'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp',
     'src/physics-interaction/native/CharacterControllerRuntime.h',
     'src/physics-interaction/native/CharacterControllerRuntime.cpp',
-    'src/physics-interaction/native/HavokOffsets.h',
     'src/physics-interaction/weapon/EquippedWeaponDropMomentum.h'
 )
 

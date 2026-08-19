@@ -1,11 +1,11 @@
 #include "physics-interaction/grab/NearbyGrabDamping.h"
 
-#include "physics-interaction/native/HavokOffsets.h"
-#include "physics-interaction/native/HavokRuntime.h"
-#include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/havok/HavokOffsets.h"
+#include "physics-interaction/native/havok/HavokRuntime.h"
+#include "physics-interaction/native/hooks/NativeMemory.h"
 #include "physics-interaction/object/ObjectDetection.h"
 #include "physics-interaction/PhysicsLog.h"
-#include "physics-interaction/native/PhysicsShapeCast.h"
+#include "physics-interaction/native/query/PhysicsShapeCast.h"
 
 #include "RE/Havok/hknpAllHitsCollector.h"
 #include "RE/Havok/hknpBodyCinfo.h"

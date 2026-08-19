@@ -3,11 +3,11 @@
 #include "physics-interaction/hand/Hand.h"
 #include "physics-interaction/debug/DebugMath.h"
 #include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
-#include "physics-interaction/native/HavokConvexShapeBuilder.h"
-#include "physics-interaction/native/HavokMaterialRegistry.h"
-#include "physics-interaction/native/HavokRefCount.h"
+#include "physics-interaction/native/havok/HavokConvexShapeBuilder.h"
+#include "physics-interaction/native/havok/HavokMaterialRegistry.h"
+#include "physics-interaction/native/havok/HavokRefCount.h"
 #include "physics-interaction/PhysicsLog.h"
-#include "physics-interaction/native/PhysicsUtils.h"
+#include "physics-interaction/native/query/PhysicsUtils.h"
 #include "RockConfig.h"
 
 #include <algorithm>

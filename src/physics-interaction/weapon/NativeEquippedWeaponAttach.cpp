@@ -1,7 +1,7 @@
 #include "physics-interaction/weapon/NativeEquippedWeaponAttach.h"
 
-#include "physics-interaction/native/HavokOffsets.h"
-#include "physics-interaction/native/NativeMemory.h"
+#include "physics-interaction/native/havok/HavokOffsets.h"
+#include "physics-interaction/native/hooks/NativeMemory.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 #include "RE/Bethesda/Actor.h"

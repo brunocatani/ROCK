@@ -7,7 +7,7 @@
 #include "physics-interaction/hand/HandGrabTrace.h"
 #include "physics-interaction/grab/GrabMotionController.h"
 #include "physics-interaction/grab/GrabThreePhase.h"
-#include "physics-interaction/native/PhysicsRecursiveWrappers.h"
+#include "physics-interaction/native/query/PhysicsRecursiveWrappers.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/TransformMath.h"

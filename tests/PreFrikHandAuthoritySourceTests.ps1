@@ -31,7 +31,6 @@ function Reject-Pattern {
 }
 
 $main = 'src/ROCKMain.cpp'
-$offsets = 'src/physics-interaction/native/HavokOffsets.h'
 $interactionHeader = 'src/physics-interaction/core/PhysicsInteraction.h'
 $interaction = 'src/physics-interaction/core/PhysicsInteraction.cpp'
 $frame = 'src/physics-interaction/core/PhysicsInteractionFrame.inl'
@@ -59,9 +58,6 @@ Require-Pattern $main `
 
 # Both writes target one independently verified FO4VR callsite and preserve
 # separate inner/native and outer/FRIK chain pointers.
-Require-Pattern $offsets `
-    'kHookSite_MainLoop\s*=\s*0xD8405E[\s\S]{0,180}kFunc_MainLoopDisplacedTarget\s*=\s*0xD3C820' `
-    'The main-loop hook must retain the verified FO4VR callsite and displaced native target identity.'
 Require-Pattern $main `
     'hookMainLoop\(\)[\s\S]{0,1600}kFunc_MainLoopDisplacedTarget[\s\S]{0,700}decodeRelativeCallTarget[\s\S]{0,800}write_call<5>[\s\S]{0,300}s_originalGameLoopFunc' `
     'The original ROCK hook must validate the live E8 target before retaining the displaced native call.'

@@ -2,8 +2,8 @@
 
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
-#include "physics-interaction/native/HavokPhysicsTiming.h"
-#include "physics-interaction/native/PhysicsScale.h"
+#include "physics-interaction/native/havok/HavokPhysicsTiming.h"
+#include "physics-interaction/native/query/PhysicsScale.h"
 #include "physics-interaction/TransformMath.h"
 
 #include "RE/NetImmerse/NiPoint.h"

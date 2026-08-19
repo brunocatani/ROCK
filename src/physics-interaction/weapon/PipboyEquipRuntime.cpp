@@ -1,7 +1,7 @@
 #include "physics-interaction/weapon/PipboyEquipRuntime.h"
 
 #include "physics-interaction/input/InputRemapRuntime.h"
-#include "physics-interaction/native/HavokOffsets.h"
+#include "physics-interaction/native/havok/HavokOffsets.h"
 #include "physics-interaction/PhysicsLog.h"
 
 #include "RE/Bethesda/BGSInventoryInterface.h"
