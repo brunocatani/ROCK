@@ -20,6 +20,19 @@ namespace rock::hand_grab_detail
         const char* handName,
         const char* context);
     void nativeVRGrabDrop(void* playerCharacter, int handIndex);
+    [[nodiscard]] float looseWeaponMultiplier(bool looseWeaponGrab, float multiplier);
+    [[nodiscard]] float scaleDriveValue(float value, float multiplier);
+    [[nodiscard]] float sharedGrabAuthorityForceScale(bool peerHandStillHolding);
+    [[nodiscard]] GrabConstraintMotorTuning buildProxyConstraintMotorTuning(
+        float tau,
+        float damping,
+        float maxForce,
+        float authorityForceScale,
+        float proportionalRecovery,
+        float constantRecovery,
+        bool looseWeaponGrab,
+        float mass,
+        float forceToMassRatio);
 
     struct HeldBodyActivationSummary
     {

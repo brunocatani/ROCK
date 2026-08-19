@@ -38,12 +38,12 @@ namespace rock::hand_grab_detail
             g_rockConfig.rockGrabEffectiveMotorMassFloorEnabled,
             g_rockConfig.rockGrabEffectiveMotorMassFloor);
     }
-    
+
     std::uintptr_t heldBodyFlagLeaseOwner(const Hand* hand)
     {
         return reinterpret_cast<std::uintptr_t>(hand) ^ 0x524F434B48454C44ull;
     }
-    
+
     HeldBodyActivationSummary activateHeldObjectBodySet(
         RE::hknpWorld* world,
         std::uint32_t primaryBodyId,
@@ -53,7 +53,7 @@ namespace rock::hand_grab_detail
         if (!world) {
             return summary;
         }
-    
+
         const auto bodyIds = held_object_body_set_policy::makePrimaryFirstUniqueBodyList(primaryBodyId, heldBodyIds);
         summary.bodyCount = static_cast<std::uint32_t>(bodyIds.size());
         for (const auto bodyId : bodyIds) {
@@ -65,7 +65,7 @@ namespace rock::hand_grab_detail
         }
         return summary;
     }
-    
+
     HeldBodyFlagLeaseSummary acquireHeldObjectBodyFlagLeases(
         RE::hknpWorld* world,
         std::uint32_t primaryBodyId,
@@ -85,7 +85,7 @@ namespace rock::hand_grab_detail
         if (!world || ownerToken == 0) {
             return summary;
         }
-    
+
         const auto bodyIds = held_object_body_set_policy::makePrimaryFirstUniqueBodyList(primaryBodyId, heldBodyIds);
         summary.bodyCount = static_cast<std::uint32_t>(bodyIds.size());
         for (const auto bodyId : bodyIds) {
@@ -591,5 +591,76 @@ namespace rock::hand_grab_detail
             originalMotionPropsId,
             restored ? "ok" : "failed");
         return restored;
+    }
+    float looseWeaponMultiplier(bool looseWeaponGrab, float multiplier)
+    {
+        return looseWeaponGrab ? (std::isfinite(multiplier) ? multiplier : 1.0f) : 1.0f;
+    }
+    
+    float scaleDriveValue(float value, float multiplier)
+    {
+        return (std::isfinite(value) ? value : 0.0f) * (std::isfinite(multiplier) ? multiplier : 1.0f);
+    }
+    
+    float sharedGrabAuthorityForceScale(bool peerHandStillHolding)
+    {
+        /*
+         * Two ROCK proxy constraints on one loose object must share the
+         * finite force budget instead of each hand receiving a full HIGGS-
+         * style mass-capped motor. The selected grip points remain
+         * independent; only the total per-object authority is budgeted.
+         */
+        return peerHandStillHolding ? 0.5f : 1.0f;
+    }
+    
+    GrabConstraintMotorTuning buildProxyConstraintMotorTuning(
+        float tau,
+        float damping,
+        float maxForce,
+        float authorityForceScale,
+        float proportionalRecovery,
+        float constantRecovery,
+        bool looseWeaponGrab,
+        float mass,
+        float forceToMassRatio)
+    {
+        const float linearTauMultiplier =
+            looseWeaponMultiplier(looseWeaponGrab, g_rockConfig.rockGrabLooseWeaponSharedConstraintLinearTauMultiplier);
+        const float angularTauMultiplier =
+            looseWeaponMultiplier(looseWeaponGrab, g_rockConfig.rockGrabLooseWeaponSharedConstraintAngularTauMultiplier);
+        const float linearDampingMultiplier =
+            looseWeaponMultiplier(looseWeaponGrab, g_rockConfig.rockGrabLooseWeaponSharedConstraintLinearDampingMultiplier);
+        const float angularDampingMultiplier =
+            looseWeaponMultiplier(looseWeaponGrab, g_rockConfig.rockGrabLooseWeaponSharedConstraintAngularDampingMultiplier);
+        const float maxForceMultiplier =
+            looseWeaponMultiplier(looseWeaponGrab, g_rockConfig.rockGrabLooseWeaponSharedConstraintMaxForceMultiplier);
+        const float angularForceMultiplier =
+            looseWeaponMultiplier(looseWeaponGrab, g_rockConfig.rockGrabLooseWeaponSharedConstraintAngularForceMultiplier);
+        const float linearRecoveryMultiplier =
+            looseWeaponMultiplier(looseWeaponGrab, g_rockConfig.rockGrabLooseWeaponSharedConstraintLinearRecoveryMultiplier);
+        const float angularRecoveryMultiplier =
+            looseWeaponMultiplier(looseWeaponGrab, g_rockConfig.rockGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier);
+    
+        const float linearBudget = (std::max)(0.0f, scaleDriveValue(maxForce, maxForceMultiplier));
+        const float sanitizedAuthorityForceScale =
+            std::clamp(std::isfinite(authorityForceScale) && authorityForceScale > 0.0f ? authorityForceScale : 1.0f, 0.05f, 1.0f);
+        const float linearMaxForce =
+            grab_motion_controller::capForceByMass(linearBudget, mass, forceToMassRatio) * sanitizedAuthorityForceScale;
+        const float angularMaxForce = linearMaxForce * angularForceMultiplier;
+    
+        return GrabConstraintMotorTuning{
+            .linearTau = scaleDriveValue(tau, linearTauMultiplier),
+            .linearDamping = scaleDriveValue(damping, linearDampingMultiplier),
+            .linearProportionalRecovery = scaleDriveValue(proportionalRecovery, linearRecoveryMultiplier),
+            .linearConstantRecovery = scaleDriveValue(constantRecovery, linearRecoveryMultiplier),
+            .linearMaxForce = linearMaxForce,
+            .angularTau = scaleDriveValue(g_rockConfig.rockGrabAngularTau, angularTauMultiplier),
+            .angularDamping = scaleDriveValue(g_rockConfig.rockGrabAngularDamping, angularDampingMultiplier),
+            .angularProportionalRecovery =
+                scaleDriveValue(g_rockConfig.rockGrabAngularProportionalRecovery, angularRecoveryMultiplier),
+            .angularConstantRecovery =
+                scaleDriveValue(g_rockConfig.rockGrabAngularConstantRecovery, angularRecoveryMultiplier),
+            .angularMaxForce = angularMaxForce,
+        };
     }
 }
