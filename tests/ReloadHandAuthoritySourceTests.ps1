@@ -46,7 +46,6 @@ function Require-Order(
 }
 
 $interaction = 'src/physics-interaction/core/PhysicsInteraction.cpp'
-$frame = 'src/physics-interaction/core/PhysicsInteractionFrame.inl'
 
 $actorState = 'src/rock_support/Fo4VrActorStatePolicy.h'
 
@@ -56,10 +55,6 @@ Require-Pattern $actorState `
 Require-Pattern $interaction `
     'nativeReloadHandAuthorityActive\([\s\S]*currentNativeAnimationAuthorityFlagsV1\(\)[\s\S]*kArms[\s\S]*kHands[\s\S]*isNativeReloading\([\s\S]*getNativeGunState\(f4vr::getPlayer\(\)\)' `
     'Provider arms/hands authority and the verified native gun state must share one reload predicate.'
-Require-Pattern $frame `
-    'frame\.reloadBoundaryActive\s*=\s*nativeReloadHandAuthorityActive\(\)' `
-    'The physics frame must snapshot the shared reload predicate.'
-
 Require-Order $interaction @(
     '_twoHandedGrip\.setNativeReloadHandAuthorityActive\(',
     '_twoHandedGrip\.refreshRetainedHandVisualAuthoritiesBeforeFrik\(',

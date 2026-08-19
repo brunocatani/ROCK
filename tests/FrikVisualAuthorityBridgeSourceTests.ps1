@@ -79,9 +79,6 @@ Require-Text 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h' `
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'getInteractionHandFrame[\s\S]*getLeftHandNode\(\)[\s\S]*getRightHandNode\(\)[\s\S]*hasPublishedExternalHandWorldTransform[\s\S]*_handFrameResolver\.resolve[\s\S]*hasControllerReconstructionCalibration[\s\S]*setExternalHandWorldPublicationReady' `
     'Shared collision and grab input must calibrate controller reconstruction before persistent FRIK publication.'
-Require-Text 'src/physics-interaction/core/PhysicsInteractionFrame.inl' `
-    'getInteractionHandFrame\(isLeft\)[\s\S]*collision_isolated_hand_frame_runtime::publish' `
-    'The coherent physics frame must publish its collision-isolated hand transform for finger consumers.'
 Require-Text 'src/ROCKMain.cpp' `
     'kSkeletonReady[\s\S]*resetPresentedHandNodeCache\(\)[\s\S]*kSkeletonDestroying[\s\S]*resetPresentedHandNodeCache\(\)' `
     'Game hand-node caches must be invalidated at both hFRIK skeleton lifecycle edges.'

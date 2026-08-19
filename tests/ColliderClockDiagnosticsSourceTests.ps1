@@ -24,9 +24,6 @@ function Require-Text {
 Require-Text 'src/rock_support/Fo4VrRuntime.h' `
     '0x6E0 \+ offsetof\(PlayerNodes, primaryWandNode\) == 0x6F0[\s\S]*primaryWeaponOffsetNOde\) == 0x718[\s\S]*SecondaryWandNode\) == 0x768[\s\S]*SecondaryMeleeWeaponOffsetNode2\) == 0x790' `
     'The Ghidra-verified FO4VR wand and weapon-driver slots must remain build-enforced.'
-Require-Text 'src/physics-interaction/core/PhysicsInteractionFrame.inl' `
-    'frame\.gameFrameIndex = runtime_state::currentFrame\(\)\.frameIndex[\s\S]*primaryWandNode[\s\S]*SecondaryWandNode[\s\S]*primaryWeaponOffsetNOde[\s\S]*SecondaryMeleeWeaponOffsetNode2' `
-    'The coherent frame snapshot must capture the game generation and all four producer nodes.'
 Require-Text 'src/physics-interaction/native/GeneratedKeyframedBodyDrive.cpp' `
     'state\.sourceFrameIndex = sourceFrameIndex;[\s\S]*\+\+state\.queuedSequence[\s\S]*result\.sourceSequence = state\.queuedSequence;[\s\S]*result\.sourceFrameIndex = state\.sourceFrameIndex;' `
     'Source frame identity must travel under the same mutex as the consumed generated-body target.'

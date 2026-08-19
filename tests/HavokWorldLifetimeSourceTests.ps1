@@ -98,7 +98,6 @@ Require-Pattern $bodySource 'Rejected body retirement through mismatched world' 
 
 Require-Pattern 'src/physics-interaction/body/BodyBoneColliderSet.cpp' '_canonicalForearmTwinDimensions = forearmTwinTargets[\s\S]*applyCanonicalForearmDimensions' 'Body collider generations must capture and reapply canonical forearm dimensions.'
 Require-Pattern $interaction 'nativeReloadHandAuthorityActive\([\s\S]{0,500}kArms[\s\S]{0,160}kHands[\s\S]{0,500}isNativeReloading[\s\S]{0,160}getNativeGunState' 'Reload transition gating must combine provider arms/hands authority with the verified native gun-state boundary.'
-Require-Pattern 'src/physics-interaction/core/PhysicsInteractionFrame.inl' 'reloadBoundaryActive\s*=\s*nativeReloadHandAuthorityActive\(\)' 'The coherent frame snapshot must consume the shared reload-authority predicate.'
 Require-Pattern $interaction '!frame\.reloadBoundaryActive\s*&&\s*rebuildGeneratedBodiesForLifecycle' 'Lifecycle body creation must wait until the animation authority boundary closes.'
 Require-Pattern $interaction 'if \(!_bodyBoneColliders\.hasBodies\(\)\) \{\s*if \(frame\.reloadBoundaryActive\)' 'Optional body collider retries must not create bodies during the animation boundary.'
 

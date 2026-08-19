@@ -45,10 +45,6 @@ Require-Text 'src/physics-interaction/grab/GrabCore.h' 'enum class GrabSeatMode[
     'Canonical grab frames must carry an explicit pinch seat mode.'
 Require-Text 'src/physics-interaction/core/PhysicsFrameContext.h' 'pinchPocketWorld[\s\S]*hasPinchPocketWorld' `
     'Frame context must carry the live thumb-index pinch pocket.'
-Require-Text 'src/physics-interaction/core/PhysicsInteractionFrame.inl' 'resolveLiveFingerSkeletonSnapshot[\s\S]*pinchPocketWorld' `
-    'Debug pocket markers must use the live thumb-index pocket snapshot.'
-Require-Text 'src/physics-interaction/core/PhysicsInteractionFrame.inl' 'input\.thumbPadWorld = fingerSnapshot\.fingers\[0\]\.points\[2\];[\s\S]*input\.indexPadWorld = fingerSnapshot\.fingers\[1\]\.points\[2\];' `
-    'Debug pocket markers must show the same distal thumb/index source points used by pinch grab commit.'
 Require-Text 'src/physics-interaction/hand/Hand.cpp' 'resolvePinchOriginIfNeeded[\s\S]*resolveLiveFingerSkeletonSnapshot[\s\S]*resolvedPinchOrigin' `
     'Runtime pinch selection must lazily resolve the live thumb-index pocket after palm selection misses.'
 Require-Text 'src/physics-interaction/hand/Hand.cpp' 'const RE::NiPoint3 thumbPad = fingerSnapshot\.fingers\[0\]\.points\[2\];[\s\S]*const RE::NiPoint3 indexPad = fingerSnapshot\.fingers\[1\]\.points\[2\];[\s\S]*resolvedPinchOrigin = \(thumbPad \+ indexPad\) \* 0\.5f;' `

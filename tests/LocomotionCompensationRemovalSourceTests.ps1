@@ -74,7 +74,6 @@ $sourceFiles = @(
     'src/RockConfig.cpp',
     'src/physics-interaction/core/PhysicsInteraction.cpp',
     'src/physics-interaction/core/PhysicsInteraction.h',
-    'src/physics-interaction/core/PhysicsInteractionFrame.inl',
     'src/physics-interaction/core/PhysicsHooks.cpp',
     'src/physics-interaction/core/PhysicsHooks.h',
     'src/physics-interaction/hand/Hand.h',

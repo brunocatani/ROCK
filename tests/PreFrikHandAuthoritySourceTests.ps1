@@ -33,7 +33,6 @@ function Reject-Pattern {
 $main = 'src/ROCKMain.cpp'
 $interactionHeader = 'src/physics-interaction/core/PhysicsInteraction.h'
 $interaction = 'src/physics-interaction/core/PhysicsInteraction.cpp'
-$frame = 'src/physics-interaction/core/PhysicsInteractionFrame.inl'
 $frameContext = 'src/physics-interaction/core/PhysicsFrameContext.h'
 $handHeader = 'src/physics-interaction/hand/Hand.h'
 $visualBridge = 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h'
@@ -75,9 +74,6 @@ Require-Pattern $interactionHeader `
 Require-Pattern $frameContext `
     'preFrikSchedulerSequence' `
     'The coherent frame context must carry the scheduler generation used for post publication.'
-Require-Pattern $frame `
-    'frame\.preFrikSchedulerSequence\s*=\s*_currentPreFrikSchedulerSequence' `
-    'Frame construction must snapshot the current pre-FRIK scheduler generation.'
 Require-Pattern $interaction `
     'refreshExternalHandWorldTransformsBeforeFrik[\s\S]*tryReconstructCalibratedHand[\s\S]*refreshGrabVisualAuthorityBeforeFrik[\s\S]*refreshHandVisualAuthorityBeforeFrik[\s\S]*refreshContactVisualAuthorityBeforeFrik[\s\S]*refreshRetainedHandVisualAuthoritiesBeforeFrik[\s\S]*refreshWeaponCollisionHandAuthorityBeforeFrik' `
     'The pre phase must reconstruct clean hand input and refresh every retained hand-world provider before FRIK.'

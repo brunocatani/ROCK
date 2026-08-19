@@ -132,4 +132,7 @@ namespace rock::physics_interaction_detail
     [[nodiscard]] RE::NiAVObject* getEquippedProjectileNode();
     [[nodiscard]] RE::EquippedWeaponData* getValidatedEquippedWeaponData();
     [[nodiscard]] RE::NiNode* resolveEquippedWeaponInteractionNode();
+
+    bool ensureWeaponCollisionWorkbenchExitMenuSinkRegistered();
+    void clearEquippedWeaponFiringGripInputState();
 }
