@@ -352,8 +352,10 @@ namespace rock
             const PhysicsFrameContext& frame,
             const RE::NiNode* weaponNode);
 
-        void clearLeftWeaponContact();
-        void clearRightWeaponContact();
+        void clearWeaponContact(bool isLeft);
+        void publishWeaponInteractionContact(
+            bool isLeft,
+            WeaponInteractionContact& contact);
 
         void refreshEquippedWeaponHandlingSettings();
         void reconcileEquippedWeaponHandlingMode();
@@ -404,6 +406,16 @@ namespace rock
         void updateEquippedWeaponPostDropCollisionSuppression(RE::hknpWorld* world, float deltaSeconds);
 
         void clearEquippedWeaponPostDropCollisionSuppressionState();
+
+        void restoreAllHandCollisionLeases(RE::hknpWorld* world);
+
+        void clearAllHandCollisionSuppressionState();
+
+        void releaseHeldObjectsForTeardown(
+            RE::hknpWorld* world,
+            GrabReleaseCollisionRestoreMode restoreMode);
+
+        void yieldFrameAndDispatch(bool resetWeaponGrip);
 
         void subscribeContactEvents(RE::hknpWorld* world);
         void unsubscribeContactEvents(RE::hknpWorld* liveWorld);

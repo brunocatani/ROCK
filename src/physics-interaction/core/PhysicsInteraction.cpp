@@ -133,6 +133,185 @@ namespace rock
         };
         constexpr float kNearbyCarCollisionRadiusGameUnits = 4096.0f;
 
+        struct HandCollisionLeaseTarget
+        {
+            std::uint32_t bodyId = 0;
+            const char* context = nullptr;
+        };
+
+        struct HandCollisionLeaseProfile
+        {
+            collision_suppression_registry::CollisionSuppressionOwner owner{};
+            const char* logTag = nullptr;
+            const char* handName = nullptr;
+            const char* restoreContext = nullptr;
+        };
+
+        template <std::size_t Capacity>
+        void appendHandCollisionLeaseTarget(
+            std::array<HandCollisionLeaseTarget, Capacity>& targets,
+            std::size_t& targetCount,
+            std::uint32_t bodyId,
+            const char* context)
+        {
+            if (targetCount >= targets.size()) {
+                return;
+            }
+            targets[targetCount++] = HandCollisionLeaseTarget{
+                .bodyId = bodyId,
+                .context = context,
+            };
+        }
+
+        template <std::size_t Capacity>
+        void appendCurrentHandCollisionLeaseTargets(
+            const Hand& hand,
+            std::array<HandCollisionLeaseTarget, Capacity>& targets,
+            std::size_t& targetCount,
+            const char* colliderContext,
+            const char* anchorContext)
+        {
+            const std::uint32_t colliderCount = hand.getHandColliderBodyCount();
+            if (colliderCount > 0) {
+                for (std::uint32_t i = 0; i < colliderCount; ++i) {
+                    appendHandCollisionLeaseTarget(
+                        targets,
+                        targetCount,
+                        hand.getHandColliderBodyIdAtomic(i),
+                        colliderContext);
+                }
+                return;
+            }
+
+            appendHandCollisionLeaseTarget(
+                targets,
+                targetCount,
+                hand.getCollisionBodyId().value,
+                anchorContext);
+        }
+
+        template <std::size_t Capacity>
+        void suppressHandCollisionLeases(
+            RE::hknpWorld* world,
+            hand_collision_suppression_math::SuppressionSet<Capacity>& suppressionSet,
+            std::span<const HandCollisionLeaseTarget> targets,
+            const HandCollisionLeaseProfile& profile,
+            std::uint32_t invalidBodyId)
+        {
+            for (const auto& target : targets) {
+                if (target.bodyId == invalidBodyId) {
+                    continue;
+                }
+
+                std::uint32_t currentFilter = 0;
+                if (!body_collision::tryReadFilterInfo(
+                        world,
+                        RE::hknpBodyId{ target.bodyId },
+                        currentFilter)) {
+                    continue;
+                }
+
+                const auto suppression =
+                    hand_collision_suppression_math::beginSuppression(
+                        suppressionSet,
+                        target.bodyId,
+                        currentFilter);
+                if (!suppression.stored) {
+                    ROCK_LOG_WARN(Weapon,
+                        "{}: {} hand suppression set full; bodyId={} context={} left active",
+                        profile.logTag,
+                        profile.handName,
+                        target.bodyId,
+                        target.context ? target.context : "unknown");
+                    continue;
+                }
+
+                const auto registryResult =
+                    collision_suppression_registry::
+                        globalCollisionSuppressionRegistry()
+                            .acquire(
+                                world,
+                                target.bodyId,
+                                profile.owner,
+                                target.context);
+                if (!registryResult.valid ||
+                    (!registryResult.firstLeaseForBody &&
+                        !registryResult.filterChanged)) {
+                    continue;
+                }
+
+                ROCK_LOG_DEBUG(Weapon,
+                    "{}: {} hand collision lease acquired bodyId={} context={} filter=0x{:08X}->0x{:08X} wasDisabledBefore={} leases={}",
+                    profile.logTag,
+                    profile.handName,
+                    target.bodyId,
+                    target.context ? target.context : "unknown",
+                    registryResult.filterBefore,
+                    registryResult.filterAfter,
+                    registryResult.wasNoCollideBeforeSuppression ? "yes" : "no",
+                    registryResult.activeLeaseCount);
+            }
+        }
+
+        template <std::size_t Capacity>
+        bool restoreHandCollisionLeases(
+            RE::hknpWorld* world,
+            hand_collision_suppression_math::SuppressionSet<Capacity>& suppressionSet,
+            const HandCollisionLeaseProfile& profile,
+            std::uint32_t invalidBodyId)
+        {
+            if (!hand_collision_suppression_math::hasActive(suppressionSet)) {
+                return true;
+            }
+            if (!world) {
+                ROCK_LOG_WARN(Weapon,
+                    "{}: cannot restore {} hand collision yet (world=null); preserving suppression leases",
+                    profile.logTag,
+                    profile.handName);
+                return false;
+            }
+
+            bool restoreDeferred = false;
+            for (const auto& entry : suppressionSet.entries) {
+                if (!entry.active || entry.bodyId == invalidBodyId) {
+                    continue;
+                }
+
+                const auto releaseResult =
+                    collision_suppression_registry::
+                        globalCollisionSuppressionRegistry()
+                            .release(
+                                world,
+                                entry.bodyId,
+                                profile.owner,
+                                profile.restoreContext);
+                if (releaseResult.readFailed) {
+                    restoreDeferred = true;
+                    continue;
+                }
+
+                ROCK_LOG_DEBUG(Weapon,
+                    "{}: {} hand collision lease released bodyId={} filter=0x{:08X}->0x{:08X} restoreDisabled={} fullyReleased={}",
+                    profile.logTag,
+                    profile.handName,
+                    entry.bodyId,
+                    releaseResult.filterBefore,
+                    releaseResult.filterAfter,
+                    releaseResult.wasNoCollideBeforeSuppression ? "yes" : "no",
+                    releaseResult.bodyFullyReleased ? "yes" : "no");
+            }
+            if (restoreDeferred) {
+                ROCK_LOG_WARN(Weapon,
+                    "{}: {} hand collision restore deferred; suppression leases preserved",
+                    profile.logTag,
+                    profile.handName);
+                return false;
+            }
+
+            hand_collision_suppression_math::clear(suppressionSet);
+            return true;
+        }
+
         std::atomic<bool> s_weaponCollisionWorkbenchExitMenuSinkRegistered{ false };
         std::atomic<bool> s_weaponCollisionWorkbenchExitMenuSinkMissingUILogged{ false };
 
@@ -289,21 +468,32 @@ namespace rock
             return config;
         }
 
-        shoulder_stash::Probe makeShoulderStashObjectProbe(RE::hknpWorld* world, const Hand& hand, const HandFrameInput& handInput)
+        template <class Probe>
+        Probe makeHeldObjectProbe(
+            RE::hknpWorld* world,
+            const Hand& hand,
+            const HandFrameInput& handInput)
         {
-            shoulder_stash::Probe probe{};
+            Probe probe{};
             if (hand.tryGetHeldObjectGrabPivotWorld(world, probe.pointGame)) {
                 return probe;
             }
 
+            // Use the body frame when the live grab pivot is unavailable.
             const auto& savedState = hand.getSavedObjectState();
             RE::NiTransform heldBodyWorld{};
             if (savedState.isValid() && world && tryGetBodyWorldTransform(world, savedState.bodyId, heldBodyWorld)) {
                 probe.pointGame = heldBodyWorld.translate;
             } else {
+                // Fail closed to the hand anchor for incomplete body state.
                 probe.pointGame = handInput.grabAnchorWorld;
             }
             return probe;
+        }
+
+        shoulder_stash::Probe makeShoulderStashObjectProbe(RE::hknpWorld* world, const Hand& hand, const HandFrameInput& handInput)
+        {
+            return makeHeldObjectProbe<shoulder_stash::Probe>(world, hand, handInput);
         }
 
         shoulder_stash::Probe makeShoulderStashHmdProbe(const HandFrameInput& handInput)
@@ -311,6 +501,29 @@ namespace rock
             shoulder_stash::Probe probe{};
             probe.pointGame = handInput.rawHandWorld.translate;
             return probe;
+        }
+
+        bool shouldEmitShoulderStashCandidatePulse(
+            const shoulder_stash::Decision& decision,
+            shoulder_stash::RuntimeState& state,
+            float elapsedSeconds)
+        {
+            const bool pulseDue =
+                elapsedSeconds >= state.nextCandidatePulseTimeSeconds;
+            if (!decision.enteredCandidate &&
+                !decision.changedCandidate &&
+                !pulseDue) {
+                return false;
+            }
+
+            // Reserve the next pulse before the caller emits feedback.
+            state.nextCandidatePulseTimeSeconds =
+                elapsedSeconds +
+                (std::max)(
+                    0.02f,
+                    g_rockConfig.
+                        rockShoulderStashCandidateHapticIntervalSeconds);
+            return true;
         }
 
         mouth_consume::DetectorConfig makeMouthConsumeDetectorConfig()
@@ -328,19 +541,7 @@ namespace rock
 
         mouth_consume::Probe makeMouthConsumeObjectProbe(RE::hknpWorld* world, const Hand& hand, const HandFrameInput& handInput)
         {
-            mouth_consume::Probe probe{};
-            if (hand.tryGetHeldObjectGrabPivotWorld(world, probe.pointGame)) {
-                return probe;
-            }
-
-            const auto& savedState = hand.getSavedObjectState();
-            RE::NiTransform heldBodyWorld{};
-            if (savedState.isValid() && world && tryGetBodyWorldTransform(world, savedState.bodyId, heldBodyWorld)) {
-                probe.pointGame = heldBodyWorld.translate;
-            } else {
-                probe.pointGame = handInput.grabAnchorWorld;
-            }
-            return probe;
+            return makeHeldObjectProbe<mouth_consume::Probe>(world, hand, handInput);
         }
 
         mouth_consume::Probe makeMouthConsumeHandProbe(const HandFrameInput& handInput)
@@ -576,51 +777,78 @@ namespace rock
             bool syntheticPressed{ false };
         };
 
-        GrabButtonState readGrabButtonState(bool isLeft, int buttonId)
+        enum class GrabButtonReadMode
+        {
+            ConsumeAll,
+            PeekHeld,
+            PeekPressed,
+        };
+
+        GrabButtonState readGrabButtonStateImpl(
+            bool isLeft,
+            int buttonId,
+            GrabButtonReadMode mode)
         {
             if (!input_remap_policy::isAllowedGrabButtonId(buttonId)) {
                 return {};
             }
 
-            const auto rawState = input_remap_runtime::consumeRawButtonState(isLeft, buttonId);
+            // Only the full-frame reader consumes remapped edge state.
+            const auto rawState = mode == GrabButtonReadMode::ConsumeAll ?
+                input_remap_runtime::consumeRawButtonState(isLeft, buttonId) :
+                input_remap_runtime::peekRawButtonState(isLeft, buttonId);
             if (rawState.available) {
-                return GrabButtonState{ .held = rawState.held, .pressed = rawState.pressed, .released = rawState.released };
+                return GrabButtonState{
+                    .held = rawState.held,
+                    .pressed = rawState.pressed,
+                    .released = rawState.released,
+                };
             }
 
             const auto vrHand = isLeft ? vrcf::Hand::Left : vrcf::Hand::Right;
-            return GrabButtonState{
-                .held = vrcf::VRControllers.isPressHeldDown(vrHand, buttonId),
-                .pressed = vrcf::VRControllers.isPressed(vrHand, buttonId),
-                .released = vrcf::VRControllers.isReleased(vrHand, buttonId),
-            };
+            switch (mode) {
+            case GrabButtonReadMode::PeekHeld:
+                return GrabButtonState{
+                    .held = vrcf::VRControllers.isPressHeldDown(vrHand, buttonId),
+                };
+            case GrabButtonReadMode::PeekPressed:
+                return GrabButtonState{
+                    .pressed = vrcf::VRControllers.isPressed(vrHand, buttonId),
+                };
+            case GrabButtonReadMode::ConsumeAll:
+            default:
+                return GrabButtonState{
+                    .held = vrcf::VRControllers.isPressHeldDown(vrHand, buttonId),
+                    .pressed = vrcf::VRControllers.isPressed(vrHand, buttonId),
+                    .released = vrcf::VRControllers.isReleased(vrHand, buttonId),
+                };
+            }
+        }
+
+        GrabButtonState readGrabButtonState(bool isLeft, int buttonId)
+        {
+            return readGrabButtonStateImpl(
+                isLeft,
+                buttonId,
+                GrabButtonReadMode::ConsumeAll);
         }
 
         bool readGrabButtonHeld(bool isLeft, int buttonId)
         {
-            if (!input_remap_policy::isAllowedGrabButtonId(buttonId)) {
-                return false;
-            }
-
-            const auto rawState = input_remap_runtime::peekRawButtonState(isLeft, buttonId);
-            if (rawState.available) {
-                return rawState.held;
-            }
-
-            return vrcf::VRControllers.isPressHeldDown(isLeft ? vrcf::Hand::Left : vrcf::Hand::Right, buttonId);
+            return readGrabButtonStateImpl(
+                isLeft,
+                buttonId,
+                GrabButtonReadMode::PeekHeld)
+                .held;
         }
 
         bool readGrabButtonPressedEdge(bool isLeft, int buttonId)
         {
-            if (!input_remap_policy::isAllowedGrabButtonId(buttonId)) {
-                return false;
-            }
-
-            const auto rawState = input_remap_runtime::peekRawButtonState(isLeft, buttonId);
-            if (rawState.available) {
-                return rawState.pressed;
-            }
-
-            return vrcf::VRControllers.isPressed(isLeft ? vrcf::Hand::Left : vrcf::Hand::Right, buttonId);
+            return readGrabButtonStateImpl(
+                isLeft,
+                buttonId,
+                GrabButtonReadMode::PeekPressed)
+                .pressed;
         }
 
         bool readHeldWeaponEquipTriggerPressedEdge(bool isLeft)
@@ -929,6 +1157,40 @@ namespace rock
                 }
             }
             return true;
+        }
+
+        template <class NativeOffsetState>
+        bool sampleNativeOffsetReadiness(
+            NativeOffsetState& state,
+            const RE::NiTransform& liveOffset)
+        {
+            const bool liveOffsetFinite = finiteNiTransform(liveOffset);
+            bool liveOffsetMatches =
+                state.nativeOffsetSampleValid &&
+                liveOffsetFinite &&
+                approximatelySameWeaponLocalOffset(
+                    liveOffset,
+                    state.nativeOffsetSample);
+            if (liveOffsetFinite && !liveOffsetMatches) {
+                // Rebase to the live native authority until it stays stable.
+                state.nativeOffsetSample = liveOffset;
+                state.nativeOffsetSampleValid = true;
+                state.matchingNativeOffsetFrames = 0;
+                liveOffsetMatches = true;
+            }
+
+            return pipboy_equip_policy::advanceNativeOffsetReadiness(
+                state.nativeOffsetSampleValid,
+                liveOffsetMatches,
+                state.matchingNativeOffsetFrames);
+        }
+
+        template <std::size_t Capacity>
+        void copyDriveSourceName(
+            std::array<char, Capacity>& destination,
+            const char* source)
+        {
+            std::memcpy(destination.data(), source, destination.size());
         }
 
         std::string_view providerFixedStringView(const char* value, std::size_t capacity)
@@ -2866,37 +3128,16 @@ namespace rock
                 if (bhkMenu) {
                     auto* hknpMenu = getHknpWorld(bhkMenu);
                     if (hknpMenu) {
-                        restoreRightHandCollisionAfterDominantWeapon(hknpMenu);
-                        restoreHandCollisionAfterWeaponSupport(hknpMenu, true);
-                        restoreHandCollisionAfterWeaponSupport(hknpMenu, false);
-                        restoreHandCollisionAfterEquippedWeaponDrop(hknpMenu, false);
-                        restoreHandCollisionAfterEquippedWeaponDrop(hknpMenu, true);
-                        if (_rightHand.isHolding()) {
-                            auto* r = _rightHand.getHeldRef();
-                            _rightHand.releaseGrabbedObject(hknpMenu, GrabReleaseCollisionRestoreMode::Delayed, makeGrabReleaseContext(_rightHand, false));
-                            if (r)
-                                releaseObject(r, PhysicsObjectClaimOwner::RightHand);
-                        }
-                        if (_leftHand.isHolding()) {
-                            auto* r = _leftHand.getHeldRef();
-                            _leftHand.releaseGrabbedObject(hknpMenu, GrabReleaseCollisionRestoreMode::Delayed, makeGrabReleaseContext(_leftHand, true));
-                            if (r)
-                                releaseObject(r, PhysicsObjectClaimOwner::LeftHand);
-                        }
+                        restoreAllHandCollisionLeases(hknpMenu);
+                        releaseHeldObjectsForTeardown(
+                            hknpMenu,
+                            GrabReleaseCollisionRestoreMode::Delayed);
                     }
                 } else {
-                    _rightDominantWeaponCollisionSuppressed.store(false, std::memory_order_release);
-                    _leftWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
-                    _rightWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
-                    hand_collision_suppression_math::clear(_rightDominantWeaponCollisionSuppression);
-                    hand_collision_suppression_math::clear(_leftWeaponSupportCollisionSuppression);
-                    hand_collision_suppression_math::clear(_rightWeaponSupportCollisionSuppression);
-                    clearEquippedWeaponPostDropCollisionSuppressionState();
+                    clearAllHandCollisionSuppressionState();
                 }
             }
             debug::ClearFrame();
-            clearEquippedWeaponFiringGripInputState();
-            _pendingEquippedWeaponPrimaryOnlyGripStart = {};
             auto* snapshotBhk = getPlayerBhkWorld();
             auto* snapshotHknp = snapshotBhk ? getHknpWorld(snapshotBhk) : nullptr;
             if (snapshotBhk && snapshotHknp) {
@@ -2906,10 +3147,7 @@ namespace rock
             }
             observeLifecycleFrame(snapshotBhk, snapshotHknp, ::rock::provider::RockProviderLifecycleReason::MenuBlocked);
             restoreHeldMassMovementSlowdown("menu-blocked");
-            _shoulderStashStates = {};
-            _mouthConsumeStates = {};
-            _feedbackHaptics.reset();
-            ::rock::provider::dispatchFrameCallbacks(*this);
+            yieldFrameAndDispatch(false);
             return;
         }
 
@@ -2954,15 +3192,9 @@ namespace rock
             _dynamicWorldCarCollision.abandon();
             _cachedHknpWorld = nullptr;
             observeLifecycleFrame(bhk, nullptr, ::rock::provider::RockProviderLifecycleReason::WorldUnavailable);
-            _twoHandedGrip.reset();
-            _pendingEquippedWeaponPrimaryOnlyGripStart = {};
-            clearEquippedWeaponFiringGripInputState();
             debug::ClearFrame();
             restoreHeldMassMovementSlowdown("world-unavailable");
-            _shoulderStashStates = {};
-            _mouthConsumeStates = {};
-            _feedbackHaptics.reset();
-            ::rock::provider::dispatchFrameCallbacks(*this);
+            yieldFrameAndDispatch(true);
             return;
         }
         _cachedHknpWorld = hknp;
@@ -2975,43 +3207,22 @@ namespace rock
              * were authored with the previous conversion, so active interactions
              * must yield before generated bodies are destroyed and rebuilt.
              */
-            auto releaseHeldForScaleChange = [&](Hand& hand, bool isLeft) {
-                if (!hand.isHolding()) {
-                    return;
-                }
-
-                auto* heldRef = hand.getHeldRef();
-                hand.releaseGrabbedObject(hknp, GrabReleaseCollisionRestoreMode::Immediate, makeGrabReleaseContext(hand, isLeft));
-                if (heldRef) {
-                    releaseObject(heldRef, claimOwnerForHand(isLeft));
-                }
-            };
-            releaseHeldForScaleChange(_rightHand, false);
-            releaseHeldForScaleChange(_leftHand, true);
-
-            restoreRightHandCollisionAfterDominantWeapon(hknp);
-            restoreHandCollisionAfterWeaponSupport(hknp, true);
-            restoreHandCollisionAfterWeaponSupport(hknp, false);
-            restoreHandCollisionAfterEquippedWeaponDrop(hknp, false);
-            restoreHandCollisionAfterEquippedWeaponDrop(hknp, true);
+            releaseHeldObjectsForTeardown(
+                hknp,
+                GrabReleaseCollisionRestoreMode::Immediate);
+            restoreAllHandCollisionLeases(hknp);
             _twoHandedGrip.reset();
             _pendingEquippedWeaponPrimaryOnlyGripStart = {};
             clearEquippedWeaponFiringGripInputState();
             _bodyContactRuntime.reset();
-            clearLeftWeaponContact();
-            clearRightWeaponContact();
+            clearWeaponContact(true);
+            clearWeaponContact(false);
 
             destroyHandCollisions(bhk);
             destroyBodyBoneCollisions(bhk);
             _weaponCollision.invalidateForScaleChange(hknp);
             markGeneratedBodiesInvalidated();
-            hand_collision_suppression_math::clear(_rightDominantWeaponCollisionSuppression);
-            hand_collision_suppression_math::clear(_leftWeaponSupportCollisionSuppression);
-            hand_collision_suppression_math::clear(_rightWeaponSupportCollisionSuppression);
-            _rightDominantWeaponCollisionSuppressed.store(false, std::memory_order_release);
-            _leftWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
-            _rightWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
-            clearEquippedWeaponPostDropCollisionSuppressionState();
+            clearAllHandCollisionSuppressionState();
             restoreNativePlayerCollisionSuppression(hknp, "scale-change");
             _nativePlayerCollisionSuppressionRefreshFrames = 0;
             collision_suppression_registry::globalCollisionSuppressionRegistry().clear();
@@ -3042,13 +3253,7 @@ namespace rock
                     _providerGenerationAtomic.load(std::memory_order_acquire),
                     _stableFrameCountAtomic.load(std::memory_order_acquire));
                 debug::ClearFrame();
-                _twoHandedGrip.reset();
-                _pendingEquippedWeaponPrimaryOnlyGripStart = {};
-                clearEquippedWeaponFiringGripInputState();
-                _shoulderStashStates = {};
-                _mouthConsumeStates = {};
-                _feedbackHaptics.reset();
-                ::rock::provider::dispatchFrameCallbacks(*this);
+                yieldFrameAndDispatch(true);
                 return;
             }
         }
@@ -3064,13 +3269,7 @@ namespace rock
                 _providerGenerationAtomic.load(std::memory_order_acquire),
                 _stableFrameCountAtomic.load(std::memory_order_acquire));
             debug::ClearFrame();
-            _twoHandedGrip.reset();
-            _pendingEquippedWeaponPrimaryOnlyGripStart = {};
-            clearEquippedWeaponFiringGripInputState();
-            _shoulderStashStates = {};
-            _mouthConsumeStates = {};
-            _feedbackHaptics.reset();
-            ::rock::provider::dispatchFrameCallbacks(*this);
+            yieldFrameAndDispatch(true);
             return;
         }
 
@@ -3352,34 +3551,6 @@ namespace rock
             WeaponInteractionContact rightWeaponContact{};
             auto leftWeaponContactSource = weapon_debug_notification_policy::WeaponContactSource::None;
 
-            auto publishWeaponInteractionContact = [&](bool isLeft, WeaponInteractionContact& contact) {
-                auto& partKind = isLeft ? _leftWeaponContactPartKind : _rightWeaponContactPartKind;
-                auto& reloadRole = isLeft ? _leftWeaponContactReloadRole : _rightWeaponContactReloadRole;
-                auto& supportRole = isLeft ? _leftWeaponContactSupportRole : _rightWeaponContactSupportRole;
-                auto& socketRole = isLeft ? _leftWeaponContactSocketRole : _rightWeaponContactSocketRole;
-                auto& actionRole = isLeft ? _leftWeaponContactActionRole : _rightWeaponContactActionRole;
-                auto& gripPose = isLeft ? _leftWeaponContactGripPose : _rightWeaponContactGripPose;
-                auto& sequence = isLeft ? _leftWeaponContactSequence : _rightWeaponContactSequence;
-                auto& missedFrames = isLeft ? _leftWeaponContactMissedFrames : _rightWeaponContactMissedFrames;
-
-                partKind.store(static_cast<std::uint32_t>(contact.partKind), std::memory_order_release);
-                reloadRole.store(static_cast<std::uint32_t>(contact.reloadRole), std::memory_order_release);
-                supportRole.store(static_cast<std::uint32_t>(contact.supportGripRole), std::memory_order_release);
-                socketRole.store(static_cast<std::uint32_t>(contact.socketRole), std::memory_order_release);
-                actionRole.store(static_cast<std::uint32_t>(contact.actionRole), std::memory_order_release);
-                gripPose.store(static_cast<std::uint32_t>(contact.fallbackGripPose), std::memory_order_release);
-                contact.sequence = sequence.fetch_add(1, std::memory_order_acq_rel) + 1;
-                missedFrames.store(0, std::memory_order_release);
-            };
-
-            auto clearWeaponContactForHand = [&](bool isLeft) {
-                if (isLeft) {
-                    clearLeftWeaponContact();
-                } else {
-                    clearRightWeaponContact();
-                }
-            };
-
             auto consumeWeaponContactForHand = [&](bool isLeft, const HandFrameInput& handInput, bool probeAllowed, WeaponInteractionContact& outContact) {
                 auto& bodyIdAtomic = isLeft ? _leftWeaponContactBodyId : _rightWeaponContactBodyId;
                 auto& missedFrames = isLeft ? _leftWeaponContactMissedFrames : _rightWeaponContactMissedFrames;
@@ -3425,13 +3596,13 @@ namespace rock
                     } else {
                         const auto missed = missedFrames.fetch_add(1, std::memory_order_acq_rel) + 1;
                         if (missed > WEAPON_CONTACT_TIMEOUT_FRAMES) {
-                            clearWeaponContactForHand(isLeft);
+                            clearWeaponContact(isLeft);
                         }
                     }
                 } else {
                     const auto missed = missedFrames.fetch_add(1, std::memory_order_acq_rel) + 1;
                     if (missed > WEAPON_CONTACT_TIMEOUT_FRAMES) {
-                        clearWeaponContactForHand(isLeft);
+                        clearWeaponContact(isLeft);
                     }
                 }
 
@@ -3935,9 +4106,12 @@ namespace rock
                         }
                     }
 
-                    if (stashDecision.candidate && g_rockConfig.rockShoulderStashHapticsEnabled) {
-                        const bool pulseDue = _dynamicPushElapsedSeconds >= stashState.nextCandidatePulseTimeSeconds;
-                        if (stashDecision.enteredCandidate || stashDecision.changedCandidate || pulseDue) {
+                    if (stashDecision.candidate &&
+                        g_rockConfig.rockShoulderStashHapticsEnabled &&
+                        shouldEmitShoulderStashCandidatePulse(
+                            stashDecision,
+                            stashState,
+                            _dynamicPushElapsedSeconds)) {
                             (void)_feedbackHaptics.queue(
                                 stashHandIsLeft ? feedback_haptics::FeedbackHand::Left : feedback_haptics::FeedbackHand::Right,
                                 g_rockConfig.rockShoulderStashCandidateHapticDurationSeconds,
@@ -3947,9 +4121,6 @@ namespace rock
                                         .baseIntensity = g_rockConfig.rockShoulderStashCandidateHapticBaseIntensity,
                                         .maxIntensity = g_rockConfig.rockShoulderStashCandidateHapticIntensity,
                                     }));
-                            stashState.nextCandidatePulseTimeSeconds =
-                                _dynamicPushElapsedSeconds + (std::max)(0.02f, g_rockConfig.rockShoulderStashCandidateHapticIntervalSeconds);
-                        }
                     }
                 }
             }
@@ -4792,30 +4963,93 @@ namespace rock
         }
     }
 
-    void PhysicsInteraction::clearLeftWeaponContact()
+    void PhysicsInteraction::clearWeaponContact(bool isLeft)
     {
-        _leftWeaponContactBodyId.store(INVALID_CONTACT_BODY_ID, std::memory_order_release);
-        _leftWeaponContactPartKind.store(static_cast<std::uint32_t>(WeaponPartKind::Other), std::memory_order_release);
-        _leftWeaponContactReloadRole.store(static_cast<std::uint32_t>(WeaponReloadRole::None), std::memory_order_release);
-        _leftWeaponContactSupportRole.store(static_cast<std::uint32_t>(WeaponSupportGripRole::None), std::memory_order_release);
-        _leftWeaponContactSocketRole.store(static_cast<std::uint32_t>(WeaponSocketRole::None), std::memory_order_release);
-        _leftWeaponContactActionRole.store(static_cast<std::uint32_t>(WeaponActionRole::None), std::memory_order_release);
-        _leftWeaponContactGripPose.store(static_cast<std::uint32_t>(WeaponGripPoseId::None), std::memory_order_release);
-        _leftWeaponContactMissedFrames.store(WEAPON_CONTACT_TIMEOUT_FRAMES + 1, std::memory_order_release);
-        _weaponInteractionAcquisitionStates[0] = {};
+        auto& bodyId = isLeft ?
+            _leftWeaponContactBodyId : _rightWeaponContactBodyId;
+        auto& partKind = isLeft ?
+            _leftWeaponContactPartKind : _rightWeaponContactPartKind;
+        auto& reloadRole = isLeft ?
+            _leftWeaponContactReloadRole : _rightWeaponContactReloadRole;
+        auto& supportRole = isLeft ?
+            _leftWeaponContactSupportRole : _rightWeaponContactSupportRole;
+        auto& socketRole = isLeft ?
+            _leftWeaponContactSocketRole : _rightWeaponContactSocketRole;
+        auto& actionRole = isLeft ?
+            _leftWeaponContactActionRole : _rightWeaponContactActionRole;
+        auto& gripPose = isLeft ?
+            _leftWeaponContactGripPose : _rightWeaponContactGripPose;
+        auto& missedFrames = isLeft ?
+            _leftWeaponContactMissedFrames : _rightWeaponContactMissedFrames;
+
+        // Publish the invalid body first so readers stop using this bank.
+        bodyId.store(INVALID_CONTACT_BODY_ID, std::memory_order_release);
+        partKind.store(
+            static_cast<std::uint32_t>(WeaponPartKind::Other),
+            std::memory_order_release);
+        reloadRole.store(
+            static_cast<std::uint32_t>(WeaponReloadRole::None),
+            std::memory_order_release);
+        supportRole.store(
+            static_cast<std::uint32_t>(WeaponSupportGripRole::None),
+            std::memory_order_release);
+        socketRole.store(
+            static_cast<std::uint32_t>(WeaponSocketRole::None),
+            std::memory_order_release);
+        actionRole.store(
+            static_cast<std::uint32_t>(WeaponActionRole::None),
+            std::memory_order_release);
+        gripPose.store(
+            static_cast<std::uint32_t>(WeaponGripPoseId::None),
+            std::memory_order_release);
+        missedFrames.store(
+            WEAPON_CONTACT_TIMEOUT_FRAMES + 1,
+            std::memory_order_release);
+        _weaponInteractionAcquisitionStates[isLeft ? 0u : 1u] = {};
     }
 
-    void PhysicsInteraction::clearRightWeaponContact()
+    void PhysicsInteraction::publishWeaponInteractionContact(
+        bool isLeft,
+        WeaponInteractionContact& contact)
     {
-        _rightWeaponContactBodyId.store(INVALID_CONTACT_BODY_ID, std::memory_order_release);
-        _rightWeaponContactPartKind.store(static_cast<std::uint32_t>(WeaponPartKind::Other), std::memory_order_release);
-        _rightWeaponContactReloadRole.store(static_cast<std::uint32_t>(WeaponReloadRole::None), std::memory_order_release);
-        _rightWeaponContactSupportRole.store(static_cast<std::uint32_t>(WeaponSupportGripRole::None), std::memory_order_release);
-        _rightWeaponContactSocketRole.store(static_cast<std::uint32_t>(WeaponSocketRole::None), std::memory_order_release);
-        _rightWeaponContactActionRole.store(static_cast<std::uint32_t>(WeaponActionRole::None), std::memory_order_release);
-        _rightWeaponContactGripPose.store(static_cast<std::uint32_t>(WeaponGripPoseId::None), std::memory_order_release);
-        _rightWeaponContactMissedFrames.store(WEAPON_CONTACT_TIMEOUT_FRAMES + 1, std::memory_order_release);
-        _weaponInteractionAcquisitionStates[1] = {};
+        auto& partKind = isLeft ?
+            _leftWeaponContactPartKind : _rightWeaponContactPartKind;
+        auto& reloadRole = isLeft ?
+            _leftWeaponContactReloadRole : _rightWeaponContactReloadRole;
+        auto& supportRole = isLeft ?
+            _leftWeaponContactSupportRole : _rightWeaponContactSupportRole;
+        auto& socketRole = isLeft ?
+            _leftWeaponContactSocketRole : _rightWeaponContactSocketRole;
+        auto& actionRole = isLeft ?
+            _leftWeaponContactActionRole : _rightWeaponContactActionRole;
+        auto& gripPose = isLeft ?
+            _leftWeaponContactGripPose : _rightWeaponContactGripPose;
+        auto& sequence = isLeft ?
+            _leftWeaponContactSequence : _rightWeaponContactSequence;
+        auto& missedFrames = isLeft ?
+            _leftWeaponContactMissedFrames : _rightWeaponContactMissedFrames;
+
+        partKind.store(
+            static_cast<std::uint32_t>(contact.partKind),
+            std::memory_order_release);
+        reloadRole.store(
+            static_cast<std::uint32_t>(contact.reloadRole),
+            std::memory_order_release);
+        supportRole.store(
+            static_cast<std::uint32_t>(contact.supportGripRole),
+            std::memory_order_release);
+        socketRole.store(
+            static_cast<std::uint32_t>(contact.socketRole),
+            std::memory_order_release);
+        actionRole.store(
+            static_cast<std::uint32_t>(contact.actionRole),
+            std::memory_order_release);
+        gripPose.store(
+            static_cast<std::uint32_t>(contact.fallbackGripPose),
+            std::memory_order_release);
+        contact.sequence =
+            sequence.fetch_add(1, std::memory_order_acq_rel) + 1;
+        missedFrames.store(0, std::memory_order_release);
     }
 
     bool PhysicsInteraction::isHandContactEvidenceSuppressed(bool isLeft) const
@@ -4863,107 +5097,53 @@ namespace rock
 
     void PhysicsInteraction::suppressRightHandCollisionForDominantWeapon(RE::hknpWorld* world)
     {
-        /*
-         * The equipped gun already owns the dominant-hand pose and weapon aim.
-         * Letting the generated right-hand bodies keep colliding while that
-         * authority is active creates a second physical owner: stale hand
-         * contacts can push props or feed semantic touch. ROCK treats owned
-         * tool states as collision-filter ownership, so it uses the shared
-         * suppression lease here instead of a visual-only gate.
-         */
+        // The equipped weapon is the physical owner of the right hand.
         _rightDominantWeaponCollisionSuppressed.store(true, std::memory_order_release);
-
         if (!world || !_rightHand.hasCollisionBody()) {
             return;
         }
 
-        auto suppressBody = [&](std::uint32_t bodyId) {
-            if (bodyId == INVALID_CONTACT_BODY_ID) {
-                return;
-            }
-
-            std::uint32_t currentFilter = 0;
-            if (!body_collision::tryReadFilterInfo(world, RE::hknpBodyId{ bodyId }, currentFilter)) {
-                return;
-            }
-
-            const auto suppression = hand_collision_suppression_math::beginSuppression(_rightDominantWeaponCollisionSuppression, bodyId, currentFilter);
-            if (!suppression.stored) {
-                ROCK_LOG_WARN(Weapon, "DominantWeapon: right hand suppression set full; bodyId={} left active", bodyId);
-                return;
-            }
-
-            const auto registryResult = collision_suppression_registry::globalCollisionSuppressionRegistry().acquire(
-                world,
-                bodyId,
-                collision_suppression_registry::CollisionSuppressionOwner::WeaponDominantHand,
-                "dominant-weapon-hand");
-
-            if (registryResult.valid && (registryResult.firstLeaseForBody || registryResult.filterChanged)) {
-                ROCK_LOG_DEBUG(Weapon,
-                    "DominantWeapon: right hand collision lease acquired bodyId={} filter=0x{:08X}->0x{:08X} wasDisabledBefore={} leases={}",
-                    bodyId,
-                    registryResult.filterBefore,
-                    registryResult.filterAfter,
-                    registryResult.wasNoCollideBeforeSuppression ? "yes" : "no",
-                    registryResult.activeLeaseCount);
-            }
-        };
-
-        const std::uint32_t colliderCount = _rightHand.getHandColliderBodyCount();
-        if (colliderCount > 0) {
-            for (std::uint32_t i = 0; i < colliderCount; ++i) {
-                suppressBody(_rightHand.getHandColliderBodyIdAtomic(i));
-            }
-        } else {
-            suppressBody(_rightHand.getCollisionBodyId().value);
-        }
+        std::array<
+            HandCollisionLeaseTarget,
+            hand_collider_semantics::kHandColliderBodyCountPerHand>
+            targets{};
+        std::size_t targetCount = 0;
+        appendCurrentHandCollisionLeaseTargets(
+            _rightHand,
+            targets,
+            targetCount,
+            "dominant-weapon-hand",
+            "dominant-weapon-hand");
+        suppressHandCollisionLeases(
+            world,
+            _rightDominantWeaponCollisionSuppression,
+            std::span(targets.data(), targetCount),
+            HandCollisionLeaseProfile{
+                .owner = collision_suppression_registry::
+                    CollisionSuppressionOwner::WeaponDominantHand,
+                .logTag = "DominantWeapon",
+                .handName = "right",
+                .restoreContext = "dominant-weapon-hand",
+            },
+            INVALID_CONTACT_BODY_ID);
     }
 
     void PhysicsInteraction::restoreRightHandCollisionAfterDominantWeapon(RE::hknpWorld* world)
     {
-        if (!hand_collision_suppression_math::hasActive(_rightDominantWeaponCollisionSuppression)) {
+        const bool restored = restoreHandCollisionLeases(
+            world,
+            _rightDominantWeaponCollisionSuppression,
+            HandCollisionLeaseProfile{
+                .owner = collision_suppression_registry::
+                    CollisionSuppressionOwner::WeaponDominantHand,
+                .logTag = "DominantWeapon",
+                .handName = "right",
+                .restoreContext = "dominant-weapon-hand",
+            },
+            INVALID_CONTACT_BODY_ID);
+        if (restored) {
             _rightDominantWeaponCollisionSuppressed.store(false, std::memory_order_release);
-            return;
         }
-
-        if (!world) {
-            ROCK_LOG_WARN(Weapon, "DominantWeapon: cannot restore right hand collision yet (world=null); preserving suppression leases");
-            return;
-        }
-
-        bool restoreDeferred = false;
-        for (const auto& entry : _rightDominantWeaponCollisionSuppression.entries) {
-            if (!entry.active || entry.bodyId == INVALID_CONTACT_BODY_ID) {
-                continue;
-            }
-
-            const auto releaseResult = collision_suppression_registry::globalCollisionSuppressionRegistry().release(
-                world,
-                entry.bodyId,
-                collision_suppression_registry::CollisionSuppressionOwner::WeaponDominantHand,
-                "dominant-weapon-hand");
-            if (releaseResult.readFailed) {
-                restoreDeferred = true;
-                continue;
-            }
-
-            ROCK_LOG_DEBUG(Weapon,
-                "DominantWeapon: right hand collision lease released bodyId={} filter=0x{:08X}->0x{:08X} restoreDisabled={} fullyReleased={}",
-                entry.bodyId,
-                releaseResult.filterBefore,
-                releaseResult.filterAfter,
-                releaseResult.wasNoCollideBeforeSuppression ? "yes" : "no",
-                releaseResult.bodyFullyReleased ? "yes" : "no");
-        }
-
-        if (restoreDeferred) {
-            ROCK_LOG_WARN(Weapon, "DominantWeapon: right hand collision restore deferred; suppression leases preserved");
-            return;
-        }
-
-        hand_collision_suppression_math::clear(_rightDominantWeaponCollisionSuppression);
-        _rightDominantWeaponCollisionSuppressed.store(false, std::memory_order_release);
     }
 
     void PhysicsInteraction::suppressHandCollisionForWeaponSupport(RE::hknpWorld* world, bool isLeft)
@@ -5021,97 +5201,49 @@ namespace rock
             return;
         }
 
-        auto suppressBody = [&](std::uint32_t bodyId) {
-            if (bodyId == INVALID_CONTACT_BODY_ID) {
-                return;
-            }
-
-            std::uint32_t currentFilter = 0;
-            if (!body_collision::tryReadFilterInfo(world, RE::hknpBodyId{ bodyId }, currentFilter)) {
-                return;
-            }
-
-            const auto suppression = hand_collision_suppression_math::beginSuppression(suppressionSet, bodyId, currentFilter);
-            if (!suppression.stored) {
-                ROCK_LOG_WARN(Weapon, "TwoHandedGrip: {} hand support suppression set full; bodyId={} left active", isLeft ? "left" : "right", bodyId);
-                return;
-            }
-
-            const auto registryResult = collision_suppression_registry::globalCollisionSuppressionRegistry().acquire(
-                world,
-                bodyId,
-                collision_suppression_registry::CollisionSuppressionOwner::WeaponSupportHand,
-                "weapon-support-hand");
-
-            if (registryResult.valid && (registryResult.firstLeaseForBody || registryResult.filterChanged)) {
-                ROCK_LOG_DEBUG(Weapon,
-                    "TwoHandedGrip: {} hand collision lease acquired bodyId={} filter=0x{:08X}->0x{:08X} wasDisabledBefore={} leases={}",
-                    isLeft ? "left" : "right",
-                    bodyId,
-                    registryResult.filterBefore,
-                    registryResult.filterAfter,
-                    registryResult.wasNoCollideBeforeSuppression ? "yes" : "no",
-                    registryResult.activeLeaseCount);
-            }
-        };
-
-        const std::uint32_t colliderCount = hand.getHandColliderBodyCount();
-        if (colliderCount > 0) {
-            for (std::uint32_t i = 0; i < colliderCount; ++i) {
-                suppressBody(hand.getHandColliderBodyIdAtomic(i));
-            }
-        } else {
-            suppressBody(hand.getCollisionBodyId().value);
-        }
+        std::array<
+            HandCollisionLeaseTarget,
+            hand_collider_semantics::kHandColliderBodyCountPerHand>
+            targets{};
+        std::size_t targetCount = 0;
+        appendCurrentHandCollisionLeaseTargets(
+            hand,
+            targets,
+            targetCount,
+            "weapon-support-hand",
+            "weapon-support-hand");
+        suppressHandCollisionLeases(
+            world,
+            suppressionSet,
+            std::span(targets.data(), targetCount),
+            HandCollisionLeaseProfile{
+                .owner = collision_suppression_registry::
+                    CollisionSuppressionOwner::WeaponSupportHand,
+                .logTag = "TwoHandedGrip",
+                .handName = isLeft ? "left" : "right",
+                .restoreContext = "weapon-support-hand",
+            },
+            INVALID_CONTACT_BODY_ID);
     }
 
     void PhysicsInteraction::restoreHandCollisionAfterWeaponSupport(RE::hknpWorld* world, bool isLeft)
     {
         auto& suppressionSet = isLeft ? _leftWeaponSupportCollisionSuppression : _rightWeaponSupportCollisionSuppression;
         auto& suppressedFlag = isLeft ? _leftWeaponSupportCollisionSuppressed : _rightWeaponSupportCollisionSuppressed;
-        if (!hand_collision_suppression_math::hasActive(suppressionSet)) {
+        const bool restored = restoreHandCollisionLeases(
+            world,
+            suppressionSet,
+            HandCollisionLeaseProfile{
+                .owner = collision_suppression_registry::
+                    CollisionSuppressionOwner::WeaponSupportHand,
+                .logTag = "TwoHandedGrip",
+                .handName = isLeft ? "left" : "right",
+                .restoreContext = "weapon-support-hand",
+            },
+            INVALID_CONTACT_BODY_ID);
+        if (restored) {
             suppressedFlag.store(false, std::memory_order_release);
-            return;
         }
-
-        if (!world) {
-            ROCK_LOG_WARN(Weapon, "TwoHandedGrip: cannot restore {} hand support collision yet (world=null); preserving suppression leases", isLeft ? "left" : "right");
-            return;
-        }
-
-        bool restoreDeferred = false;
-        for (const auto& entry : suppressionSet.entries) {
-            if (!entry.active || entry.bodyId == INVALID_CONTACT_BODY_ID) {
-                continue;
-            }
-
-            const auto releaseResult = collision_suppression_registry::globalCollisionSuppressionRegistry().release(
-                world,
-                entry.bodyId,
-                collision_suppression_registry::CollisionSuppressionOwner::WeaponSupportHand,
-                "weapon-support-hand");
-            if (releaseResult.readFailed) {
-                restoreDeferred = true;
-                continue;
-            }
-
-            ROCK_LOG_DEBUG(Weapon,
-                "TwoHandedGrip: {} hand collision lease released bodyId={} filter=0x{:08X}->0x{:08X} restoreDisabled={} fullyReleased={}",
-                isLeft ? "left" : "right",
-                entry.bodyId,
-                releaseResult.filterBefore,
-                releaseResult.filterAfter,
-                releaseResult.wasNoCollideBeforeSuppression ? "yes" : "no",
-                releaseResult.bodyFullyReleased ? "yes" : "no");
-        }
-
-        if (restoreDeferred) {
-            ROCK_LOG_WARN(Weapon, "TwoHandedGrip: {} hand support collision restore deferred; suppression leases preserved", isLeft ? "left" : "right");
-            return;
-        }
-
-        hand_collision_suppression_math::clear(suppressionSet);
-        suppressedFlag.store(false, std::memory_order_release);
     }
 
     void PhysicsInteraction::suppressHandCollisionAfterEquippedWeaponDrop(
@@ -5134,59 +5266,39 @@ namespace rock
             return;
         }
 
-        auto suppressBody = [&](std::uint32_t bodyId, const char* context) {
-            if (bodyId == INVALID_CONTACT_BODY_ID) {
-                return;
-            }
-
-            std::uint32_t currentFilter = 0;
-            if (!body_collision::tryReadFilterInfo(world, RE::hknpBodyId{ bodyId }, currentFilter)) {
-                return;
-            }
-
-            const auto suppression = hand_collision_suppression_math::beginSuppression(suppressionSet, bodyId, currentFilter);
-            if (!suppression.stored) {
-                ROCK_LOG_WARN(Weapon,
-                    "EquippedWeaponDrop: {} hand post-drop suppression set full; bodyId={} context={} left active",
-                    equipped_weapon_drop_policy::sourceHandName(sourceHand),
-                    bodyId,
-                    context ? context : "unknown");
-                return;
-            }
-
-            const auto registryResult = collision_suppression_registry::globalCollisionSuppressionRegistry().acquire(
-                world,
-                bodyId,
-                collision_suppression_registry::CollisionSuppressionOwner::EquippedWeaponDropHand,
-                context);
-
-            if (registryResult.valid && (registryResult.firstLeaseForBody || registryResult.filterChanged)) {
-                ROCK_LOG_DEBUG(Weapon,
-                    "EquippedWeaponDrop: {} hand post-drop collision lease acquired bodyId={} context={} filter=0x{:08X}->0x{:08X} wasDisabledBefore={} leases={}",
-                    equipped_weapon_drop_policy::sourceHandName(sourceHand),
-                    bodyId,
-                    context ? context : "unknown",
-                    registryResult.filterBefore,
-                    registryResult.filterAfter,
-                    registryResult.wasNoCollideBeforeSuppression ? "yes" : "no",
-                    registryResult.activeLeaseCount);
-            }
-        };
-
-        const std::uint32_t colliderCount = hand.getHandColliderBodyCount();
-        if (colliderCount > 0) {
-            for (std::uint32_t i = 0; i < colliderCount; ++i) {
-                suppressBody(hand.getHandColliderBodyIdAtomic(i), "equipped-weapon-drop-hand-suite");
-            }
-        } else {
-            suppressBody(hand.getCollisionBodyId().value, "equipped-weapon-drop-hand-anchor");
-        }
+        std::array<
+            HandCollisionLeaseTarget,
+            kGrabCollisionSuppressionBodyCountPerHand>
+            targets{};
+        std::size_t targetCount = 0;
+        appendCurrentHandCollisionLeaseTargets(
+            hand,
+            targets,
+            targetCount,
+            "equipped-weapon-drop-hand-suite",
+            "equipped-weapon-drop-hand-anchor");
 
         std::array<std::uint32_t, kGrabCollisionSuppressionArmBodyCountPerHand> armBodyIds{};
         const auto armBodyCount = _bodyBoneColliders.copyGrabSuppressionArmBodyIdsAtomic(isLeft, armBodyIds.data(), armBodyIds.size());
         for (std::uint32_t i = 0; i < armBodyCount && i < armBodyIds.size(); ++i) {
-            suppressBody(armBodyIds[i], "equipped-weapon-drop-arm-chain");
+            appendHandCollisionLeaseTarget(
+                targets,
+                targetCount,
+                armBodyIds[i],
+                "equipped-weapon-drop-arm-chain");
         }
+        suppressHandCollisionLeases(
+            world,
+            suppressionSet,
+            std::span(targets.data(), targetCount),
+            HandCollisionLeaseProfile{
+                .owner = collision_suppression_registry::
+                    CollisionSuppressionOwner::EquippedWeaponDropHand,
+                .logTag = "EquippedWeaponDrop",
+                .handName = equipped_weapon_drop_policy::sourceHandName(sourceHand),
+                .restoreContext = "equipped-weapon-drop-hand",
+            },
+            INVALID_CONTACT_BODY_ID);
 
         const bool hasSuppression = hand_collision_suppression_math::hasActive(suppressionSet);
         suppressed.store(hasSuppression, std::memory_order_release);
@@ -5215,55 +5327,21 @@ namespace rock
         auto& suppressed = isLeft ? _leftEquippedWeaponDropCollisionSuppressed : _rightEquippedWeaponDropCollisionSuppressed;
         auto& delayedRestore = isLeft ? _leftEquippedWeaponDropDelayedRestore : _rightEquippedWeaponDropDelayedRestore;
 
-        if (!hand_collision_suppression_math::hasActive(suppressionSet)) {
+        const bool restored = restoreHandCollisionLeases(
+            world,
+            suppressionSet,
+            HandCollisionLeaseProfile{
+                .owner = collision_suppression_registry::
+                    CollisionSuppressionOwner::EquippedWeaponDropHand,
+                .logTag = "EquippedWeaponDrop",
+                .handName = isLeft ? "left" : "right",
+                .restoreContext = "equipped-weapon-drop-hand",
+            },
+            INVALID_CONTACT_BODY_ID);
+        if (restored) {
             hand_collision_suppression_math::clear(delayedRestore);
             suppressed.store(false, std::memory_order_release);
-            return;
         }
-
-        if (!world) {
-            ROCK_LOG_WARN(Weapon,
-                "EquippedWeaponDrop: cannot restore {} hand post-drop collision yet (world=null); preserving suppression leases",
-                isLeft ? "left" : "right");
-            return;
-        }
-
-        bool restoreDeferred = false;
-        for (const auto& entry : suppressionSet.entries) {
-            if (!entry.active || entry.bodyId == INVALID_CONTACT_BODY_ID) {
-                continue;
-            }
-
-            const auto releaseResult = collision_suppression_registry::globalCollisionSuppressionRegistry().release(
-                world,
-                entry.bodyId,
-                collision_suppression_registry::CollisionSuppressionOwner::EquippedWeaponDropHand,
-                "equipped-weapon-drop-hand");
-            if (releaseResult.readFailed) {
-                restoreDeferred = true;
-                continue;
-            }
-
-            ROCK_LOG_DEBUG(Weapon,
-                "EquippedWeaponDrop: {} hand post-drop collision lease released bodyId={} filter=0x{:08X}->0x{:08X} restoreDisabled={} fullyReleased={}",
-                isLeft ? "left" : "right",
-                entry.bodyId,
-                releaseResult.filterBefore,
-                releaseResult.filterAfter,
-                releaseResult.wasNoCollideBeforeSuppression ? "yes" : "no",
-                releaseResult.bodyFullyReleased ? "yes" : "no");
-        }
-
-        if (restoreDeferred) {
-            ROCK_LOG_WARN(Weapon,
-                "EquippedWeaponDrop: {} hand post-drop collision restore deferred; suppression leases preserved",
-                isLeft ? "left" : "right");
-            return;
-        }
-
-        hand_collision_suppression_math::clear(suppressionSet);
-        hand_collision_suppression_math::clear(delayedRestore);
-        suppressed.store(false, std::memory_order_release);
     }
 
     void PhysicsInteraction::updateEquippedWeaponPostDropCollisionSuppression(RE::hknpWorld* world, float deltaSeconds)
@@ -5298,6 +5376,75 @@ namespace rock
         hand_collision_suppression_math::clear(_leftEquippedWeaponDropDelayedRestore);
         _rightEquippedWeaponDropCollisionSuppressed.store(false, std::memory_order_release);
         _leftEquippedWeaponDropCollisionSuppressed.store(false, std::memory_order_release);
+    }
+
+    void PhysicsInteraction::restoreAllHandCollisionLeases(RE::hknpWorld* world)
+    {
+        // Restore every lease family before a frame or lifecycle boundary.
+        restoreRightHandCollisionAfterDominantWeapon(world);
+        restoreHandCollisionAfterWeaponSupport(world, true);
+        restoreHandCollisionAfterWeaponSupport(world, false);
+        restoreHandCollisionAfterEquippedWeaponDrop(world, false);
+        restoreHandCollisionAfterEquippedWeaponDrop(world, true);
+    }
+
+    void PhysicsInteraction::clearAllHandCollisionSuppressionState()
+    {
+        hand_collision_suppression_math::clear(
+            _rightDominantWeaponCollisionSuppression);
+        hand_collision_suppression_math::clear(
+            _leftWeaponSupportCollisionSuppression);
+        hand_collision_suppression_math::clear(
+            _rightWeaponSupportCollisionSuppression);
+        _rightDominantWeaponCollisionSuppressed.store(
+            false,
+            std::memory_order_release);
+        _leftWeaponSupportCollisionSuppressed.store(
+            false,
+            std::memory_order_release);
+        _rightWeaponSupportCollisionSuppressed.store(
+            false,
+            std::memory_order_release);
+        clearEquippedWeaponPostDropCollisionSuppressionState();
+    }
+
+    void PhysicsInteraction::releaseHeldObjectsForTeardown(
+        RE::hknpWorld* world,
+        GrabReleaseCollisionRestoreMode restoreMode)
+    {
+        const auto releaseHand = [&](Hand& hand, bool isLeft) {
+            if (!hand.isHolding()) {
+                return;
+            }
+
+            // Save the ref before the hand clears its held state.
+            auto* heldRef = hand.getHeldRef();
+            hand.releaseGrabbedObject(
+                world,
+                restoreMode,
+                makeGrabReleaseContext(hand, isLeft));
+            if (heldRef) {
+                releaseObject(heldRef, claimOwnerForHand(isLeft));
+            }
+        };
+
+        releaseHand(_rightHand, false);
+        releaseHand(_leftHand, true);
+    }
+
+    void PhysicsInteraction::yieldFrameAndDispatch(bool resetWeaponGrip)
+    {
+        if (resetWeaponGrip) {
+            _twoHandedGrip.reset();
+        }
+        _pendingEquippedWeaponPrimaryOnlyGripStart = {};
+        clearEquippedWeaponFiringGripInputState();
+        _shoulderStashStates = {};
+        _mouthConsumeStates = {};
+        _feedbackHaptics.reset();
+
+        // Provider callbacks still receive every yielded game frame.
+        ::rock::provider::dispatchFrameCallbacks(*this);
     }
 
     void PhysicsInteraction::refreshEquippedWeaponHandlingSettings()
@@ -5820,11 +5967,11 @@ namespace rock
                 };
 
             if (decision.candidate && sameShoulderZone &&
-                g_rockConfig.rockShoulderStashHapticsEnabled) {
-                const bool pulseDue = _dynamicPushElapsedSeconds >=
-                    detectorState.nextCandidatePulseTimeSeconds;
-                if (decision.enteredCandidate ||
-                    decision.changedCandidate || pulseDue) {
+                g_rockConfig.rockShoulderStashHapticsEnabled &&
+                shouldEmitShoulderStashCandidatePulse(
+                    decision,
+                    detectorState,
+                    _dynamicPushElapsedSeconds)) {
                     (void)_feedbackHaptics.queue(
                         isLeft ? feedback_haptics::FeedbackHand::Left :
                                  feedback_haptics::FeedbackHand::Right,
@@ -5841,12 +5988,6 @@ namespace rock
                                         .maxIntensity = g_rockConfig.
                                             rockShoulderStashCandidateHapticIntensity,
                                     }));
-                    detectorState.nextCandidatePulseTimeSeconds =
-                        _dynamicPushElapsedSeconds +
-                        (std::max)(0.02f,
-                            g_rockConfig.
-                                rockShoulderStashCandidateHapticIntervalSeconds);
-                }
             }
         }
 
@@ -5996,23 +6137,8 @@ namespace rock
             };
         }
 
-        const bool liveOffsetFinite = finiteNiTransform(weaponNode->local);
-        bool liveOffsetMatches =
-            state.nativeOffsetSampleValid && liveOffsetFinite &&
-            approximatelySameWeaponLocalOffset(
-                weaponNode->local,
-                state.nativeOffsetSample);
-        if (liveOffsetFinite && !liveOffsetMatches) {
-            state.nativeOffsetSample = weaponNode->local;
-            state.nativeOffsetSampleValid = true;
-            state.matchingNativeOffsetFrames = 0;
-            liveOffsetMatches = true;
-        }
         const bool nativeOffsetReady =
-            pipboy_equip_policy::advanceNativeOffsetReadiness(
-                state.nativeOffsetSampleValid,
-                liveOffsetMatches,
-                state.matchingNativeOffsetFrames);
+            sampleNativeOffsetReadiness(state, weaponNode->local);
         if (nativeOffsetReady &&
             _twoHandedGrip.beginPersistentEquippedCarry(
                 weaponNode,
@@ -6413,27 +6539,11 @@ namespace rock
                 assignment.matchingNativeOffsetFrames = 0;
             }
 
-            const bool liveOffsetFinite = finiteNiTransform(weaponNode->local);
-            bool liveOffsetMatches =
-                assignment.nativeOffsetSampleValid &&
-                liveOffsetFinite &&
-                approximatelySameWeaponLocalOffset(weaponNode->local, assignment.nativeOffsetSample);
-            if (liveOffsetFinite && !liveOffsetMatches) {
-                // hFRIK owns the native-right offset, including custom,
-                // no-custom, melee, PA, and in-session configuration values.
-                // Rebase until that live authority remains stable instead of
-                // duplicating or overriding its placement rules in ROCK.
-                assignment.nativeOffsetSample = weaponNode->local;
-                assignment.nativeOffsetSampleValid = true;
-                assignment.matchingNativeOffsetFrames = 0;
-                liveOffsetMatches = true;
-            }
-
             const auto previousMatchingFrames = assignment.matchingNativeOffsetFrames;
-            nativeOffsetReady = pipboy_equip_policy::advanceNativeOffsetReadiness(
-                assignment.nativeOffsetSampleValid,
-                liveOffsetMatches,
-                assignment.matchingNativeOffsetFrames);
+            // hFRIK owns the live native-right offset in every weapon mode.
+            nativeOffsetReady = sampleNativeOffsetReadiness(
+                assignment,
+                weaponNode->local);
             if (!assignment.nativeOffsetReadinessLogged &&
                 previousMatchingFrames == 0 && assignment.matchingNativeOffsetFrames == 1) {
                 assignment.nativeOffsetReadinessLogged = true;
@@ -6587,23 +6697,10 @@ namespace rock
                     std::memory_order_acquire));
             unsubscribeContactEvents(hknp);
             restoreNativePlayerCollisionSuppression(hknp, "shutdown");
-            restoreRightHandCollisionAfterDominantWeapon(hknp);
-            restoreHandCollisionAfterWeaponSupport(hknp, true);
-            restoreHandCollisionAfterWeaponSupport(hknp, false);
-            restoreHandCollisionAfterEquippedWeaponDrop(hknp, false);
-            restoreHandCollisionAfterEquippedWeaponDrop(hknp, true);
-            if (_rightHand.isHolding()) {
-                auto* r = _rightHand.getHeldRef();
-                _rightHand.releaseGrabbedObject(hknp, GrabReleaseCollisionRestoreMode::Immediate, makeGrabReleaseContext(_rightHand, false));
-                if (r)
-                    releaseObject(r, PhysicsObjectClaimOwner::RightHand);
-            }
-            if (_leftHand.isHolding()) {
-                auto* r = _leftHand.getHeldRef();
-                _leftHand.releaseGrabbedObject(hknp, GrabReleaseCollisionRestoreMode::Immediate, makeGrabReleaseContext(_leftHand, true));
-                if (r)
-                    releaseObject(r, PhysicsObjectClaimOwner::LeftHand);
-            }
+            restoreAllHandCollisionLeases(hknp);
+            releaseHeldObjectsForTeardown(
+                hknp,
+                GrabReleaseCollisionRestoreMode::Immediate);
             _dynamicWeaponCollision.retireAll(_cachedBhkWorld);
             _weaponCollision.destroyWeaponBody(hknp);
             destroyBodyBoneCollisions(_cachedBhkWorld);
@@ -6621,13 +6718,7 @@ namespace rock
             _weaponCollision.abandonHavokStateAfterWorldLoss();
             _equippedWeaponTransition.abandonSceneGraph();
             _bodyBoneColliders.reset();
-            _rightDominantWeaponCollisionSuppressed.store(false, std::memory_order_release);
-            _leftWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
-            _rightWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
-            hand_collision_suppression_math::clear(_rightDominantWeaponCollisionSuppression);
-            hand_collision_suppression_math::clear(_leftWeaponSupportCollisionSuppression);
-            hand_collision_suppression_math::clear(_rightWeaponSupportCollisionSuppression);
-            clearEquippedWeaponPostDropCollisionSuppressionState();
+            clearAllHandCollisionSuppressionState();
             _nativePlayerCollisionSuppressedBodies = {};
             _nativePlayerCollisionSuppressedBodyCount = 0;
             _nativePlayerCollisionSuppressionRefreshFrames = 0;
@@ -6656,8 +6747,8 @@ namespace rock
         clearNativeMeleePhysicalSwingLeases();
         collision_suppression_registry::globalCollisionSuppressionRegistry().clear();
         ::rock::provider::clearExternalBodiesForProviderLoss();
-        clearLeftWeaponContact();
-        clearRightWeaponContact();
+        clearWeaponContact(true);
+        clearWeaponContact(false);
         releaseAllObjects();
         _rightHand.reset();
         _leftHand.reset();
@@ -6717,13 +6808,9 @@ namespace rock
         _lastHeldImpactPairLeft.store(INVALID_HELD_IMPACT_PAIR, std::memory_order_release);
         _handContactActivity.reset();
         _bodyContactRuntime.reset();
-        hand_collision_suppression_math::clear(_rightDominantWeaponCollisionSuppression);
-        hand_collision_suppression_math::clear(_leftWeaponSupportCollisionSuppression);
-        hand_collision_suppression_math::clear(_rightWeaponSupportCollisionSuppression);
-        _rightDominantWeaponCollisionSuppressed.store(false, std::memory_order_release);
-        _leftWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
-        _rightWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
-        clearEquippedWeaponPostDropCollisionSuppressionState();
+        // This repeats the stale-world clear above. Keep the lifecycle reset
+        // idempotent until runtime testing proves that the first clear can go.
+        clearAllHandCollisionSuppressionState();
         _nativePlayerCollisionSuppressedBodies = {};
         _nativePlayerCollisionSuppressedBodyCount = 0;
         _nativePlayerCollisionSuppressionRefreshFrames = 0;
@@ -8961,14 +9048,24 @@ namespace rock
             }
             handoff = {};
         };
+        const auto endIfPublicationStalled = [&](const char* reason) {
+            if (!publicationStalled()) {
+                return false;
+            }
+            endHandoff(reason, true);
+            return true;
+        };
 
         const auto droppedRefPtr = handoff.handle.get();
         auto* droppedRef = droppedRefPtr.get();
         if (!droppedRef) {
             if (handoff.referenceResolvedOnce) {
                 endHandoff("reference-unloaded", false);
-            } else if (!handoff.handle || publicationStalled()) {
+            } else if (!handoff.handle) {
                 endHandoff("reference-publication-stalled", true);
+            } else {
+                (void)endIfPublicationStalled(
+                    "reference-publication-stalled");
             }
             return;
         }
@@ -8993,8 +9090,9 @@ namespace rock
         if (!scanWorld || !droppedRoot) {
             if (handoff.threeDResolvedOnce) {
                 endHandoff("physics-3d-unloaded", false);
-            } else if (publicationStalled()) {
-                endHandoff("physics-3d-publication-stalled", true);
+            } else {
+                (void)endIfPublicationStalled(
+                    "physics-3d-publication-stalled");
             }
             return;
         }
@@ -9013,9 +9111,7 @@ namespace rock
             const bool collisionPrepared =
                 physics_recursive_wrappers::enableCollisionRecursive(droppedRoot, true, true, true);
             if (!collisionPrepared) {
-                if (publicationStalled()) {
-                    endHandoff("collision-enable-stalled", true);
-                }
+                (void)endIfPublicationStalled("collision-enable-stalled");
                 return;
             }
         }
@@ -9049,9 +9145,8 @@ namespace rock
                 bodySet.diagnostics.scanFailures,
                 bodySet.diagnostics.invalidPhysicsSystems,
                 bodySet.diagnostics.depthLimitSkips);
-            if (publicationStalled()) {
-                endHandoff("exact-reference-scan-stalled", true);
-            }
+            (void)endIfPublicationStalled(
+                "exact-reference-scan-stalled");
             return;
         }
 
@@ -9092,15 +9187,13 @@ namespace rock
                 "Equipped weapon drop native body set exceeds fixed transaction capacity: dropped={:08X} capacity={}",
                 handoff.droppedFormId,
                 acceptedRecords.size());
-            if (publicationStalled()) {
-                endHandoff("native-body-capacity-stalled", true);
-            }
+            (void)endIfPublicationStalled(
+                "native-body-capacity-stalled");
             return;
         }
         if (acceptedRecordCount == 0 || uniqueMotionRecordCount == 0) {
-            if (publicationStalled()) {
-                endHandoff("native-body-publication-stalled", true);
-            }
+            (void)endIfPublicationStalled(
+                "native-body-publication-stalled");
             return;
         }
 
@@ -9184,9 +9277,8 @@ namespace rock
                 equipped_weapon_drop_momentum::BodyIdentityKey identity{};
                 if (!acceptedRecords[i] ||
                     !tryBuildBodyIdentity(*acceptedRecords[i], identity)) {
-                    if (publicationStalled()) {
-                        endHandoff("native-identity-read-stalled", true);
-                    }
+                    (void)endIfPublicationStalled(
+                        "native-identity-read-stalled");
                     return;
                 }
                 capturedIdentities[i] = EquippedWeaponDropBodySnapshot{
@@ -9198,9 +9290,8 @@ namespace rock
             const auto currentRootInverse =
                 transform_math::invertTransform(droppedRoot->world);
             if (!finiteNiTransform(currentRootInverse)) {
-                if (publicationStalled()) {
-                    endHandoff("native-root-inverse-stalled", true);
-                }
+                (void)endIfPublicationStalled(
+                    "native-root-inverse-stalled");
                 return;
             }
             std::array<std::uint32_t, kEquippedWeaponDropBodySnapshotCapacity>
@@ -9220,9 +9311,8 @@ namespace rock
                         RE::hknpBodyId{ record->bodyId },
                         currentBodyWorld) ||
                     !finiteNiTransform(currentBodyWorld)) {
-                    if (publicationStalled()) {
-                        endHandoff("native-body-transform-read-stalled", true);
-                    }
+                    (void)endIfPublicationStalled(
+                        "native-body-transform-read-stalled");
                     return;
                 }
                 const auto rootToBody = transform_math::composeTransforms(
@@ -9233,9 +9323,8 @@ namespace rock
                     rootToBody);
                 if (!finiteNiTransform(rootToBody) ||
                     !finiteNiTransform(targetBodyWorld)) {
-                    if (publicationStalled()) {
-                        endHandoff("native-release-target-stalled", true);
-                    }
+                    (void)endIfPublicationStalled(
+                        "native-release-target-stalled");
                     return;
                 }
                 motionBodyIds[motionIndex] = record->bodyId;
@@ -9292,9 +9381,8 @@ namespace rock
                         handoff.droppedFormId,
                         queuedMotions,
                         uniqueMotionRecordCount);
-                    if (publicationStalled()) {
-                        endHandoff("native-release-placement-write-stalled", true);
-                    }
+                    (void)endIfPublicationStalled(
+                        "native-release-placement-write-stalled");
                     return;
                 }
                 ++queuedMotions;
@@ -9408,9 +9496,8 @@ namespace rock
                 velocityWrites,
                 completedMotions,
                 uniqueMotionRecordCount);
-            if (publicationStalled()) {
-                endHandoff("final-momentum-write-stalled", true);
-            }
+            (void)endIfPublicationStalled(
+                "final-momentum-write-stalled");
             return;
         }
 
@@ -10121,10 +10208,9 @@ namespace rock
                     state.bodyId = result.bodyId;
                     state.groupId = result.groupId;
                     state.priority = result.priority;
-                    std::memcpy(
-                        state.sourceName.data(),
-                        result.sourceName,
-                        state.sourceName.size());
+                    copyDriveSourceName(
+                        state.sourceName,
+                        result.sourceName);
                     return true;
                 }
             }
@@ -10136,10 +10222,9 @@ namespace rock
                     state.bodyId = result.bodyId;
                     state.groupId = result.groupId;
                     state.priority = result.priority;
-                    std::memcpy(
-                        state.sourceName.data(),
-                        result.sourceName,
-                        state.sourceName.size());
+                    copyDriveSourceName(
+                        state.sourceName,
+                        result.sourceName);
                     state.activeThisFrame = true;
                     return true;
                 }
@@ -11800,16 +11885,16 @@ namespace rock
                         hand.beginStashCandidate();
                     }
                     if (hand.getState() == HandState::StashCandidate) {
-                        const bool pulseDue = _dynamicPushElapsedSeconds >= shoulderStashState.nextCandidatePulseTimeSeconds;
-                        if (stashDecision.enteredCandidate || stashDecision.changedCandidate || pulseDue) {
+                        if (shouldEmitShoulderStashCandidatePulse(
+                                stashDecision,
+                                shoulderStashState,
+                                _dynamicPushElapsedSeconds)) {
                             dispatchShoulderStashEvent(
                                 GrabEventType::StashCandidate,
                                 heldRefForGameplay,
                                 heldRefForGameplay ? heldRefForGameplay->GetFormID() : 0,
                                 hand.getSavedObjectState().bodyId.value,
                                 stashDecision);
-                            shoulderStashState.nextCandidatePulseTimeSeconds =
-                                _dynamicPushElapsedSeconds + (std::max)(0.02f, g_rockConfig.rockShoulderStashCandidateHapticIntervalSeconds);
                         }
                     }
                 } else {
