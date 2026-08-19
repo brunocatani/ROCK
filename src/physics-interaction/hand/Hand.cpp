@@ -11,10 +11,10 @@
 
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/native/havok/HavokRuntime.h"
-#include "physics-interaction/hand/HandFrame.h"
-#include "physics-interaction/hand/HandSkeleton.h"
+#include "physics-interaction/hand/skeleton/HandFrame.h"
+#include "physics-interaction/hand/skeleton/HandSkeleton.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
-#include "physics-interaction/hand/HandSelection.h"
+#include "physics-interaction/hand/selection/HandSelection.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/TransformMath.h"

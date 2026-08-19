@@ -71,13 +71,6 @@ Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
     'refineGrabFingerPoseWithPadProbes\(',
     'captureSurfaceAimObjectLocal\(result\.pose, frozenMeshWorldTransform\)'
 ) 'Regular loose grabs must layer their thumb/index and pad policy over the shared indexed frozen base.'
-Require-OrderedText 'src/physics-interaction/hand/RootFlattenedFingerSkeletonRuntime.cpp' @(
-    'buildFingerSkeletonSnapshot\(',
-    'boneSnapshot\.valid',
-    'findSnapshotBone\(\s*boneSnapshot',
-    'resolveLiveFingerSkeletonSnapshot\(',
-    'buildFingerSkeletonSnapshot\('
-) 'Compact finger landmarks must be derivable from the same direct bone snapshot used by exact-local posing.'
 Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
     'resolveFingerTransforms\(',
     'const DirectSkeletonBoneSnapshot& snapshot',

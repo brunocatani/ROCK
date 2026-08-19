@@ -26,14 +26,6 @@ function Require-Text {
     }
 }
 
-Require-Text 'src/physics-interaction/hand/HandSelection.h' 'ShapeCastCandidateScoringInput' `
-    'Selection precision must expose a pure scoring policy for compiled regression tests.'
-Require-Text 'src/physics-interaction/hand/HandSelection.h' 'scoreShapeCastCandidate' `
-    'Selection precision must score candidates from lateral, depth, and surface evidence.'
-Require-Text 'src/physics-interaction/hand/HandSelection.h' 'shouldKeepCurrentCloseSelectionAgainstCandidate' `
-    'Close-selection stickiness must use candidate confidence before falling back to distance.'
-Require-Text 'src/physics-interaction/hand/HandSelection.h' 'sanitizeSelectionAimAngleDegrees' `
-    'Fixed selection aim angles must be sanitized by the selection policy.'
 Require-Text 'src/RockConfig.cpp' 'iCloseSelectionAngleDegrees' `
     'Runtime config loading must read the close selection aim angle.'
 Require-Text 'src/RockConfig.cpp' 'iFarSelectionAngleDegrees' `

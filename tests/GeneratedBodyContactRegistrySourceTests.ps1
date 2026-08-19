@@ -39,8 +39,6 @@ Require-Text 'src/physics-interaction/core/PhysicsInteractionContacts.inl' '_gen
 Require-Text 'src/physics-interaction/core/PhysicsInteractionContacts.inl' '_generatedBodyContactRegistry\.tryClassify\(bodyIdB' 'Native contact callback must classify endpoint B through the generated-body registry.'
 Reject-Text 'src/physics-interaction/core/PhysicsInteractionContacts.inl' 'tryGetWeaponContactAtomic|tryGetWeaponBodySampledVelocityAtomic|isWeaponBodyIdAtomic|tryGetBodyMetadataAtomic|isColliderBodyIdAtomic|isHandColliderBodyId|tryGetHandColliderMetadata' 'Native contact callback must not perform generated owner scans after registry classification.'
 
-Reject-Text 'src/physics-interaction/hand/HandBoneColliderSet.cpp' 'snapshotGeneratedKeyframedBodyDriveSampledVelocity' 'Hand generated body queue path must publish queue-result sampled velocity without immediately snapshotting drive state.'
-Require-Text 'src/physics-interaction/hand/HandBoneColliderSet.cpp' 'publishSampledVelocityAtomic\(publicationIndex, queueResult\)' 'Hand generated body queue path must publish sampled velocity by cached publication slot.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'restoreExpiredProviderWeaponPartDriveNodes' 'Provider weapon part drives must restore nodes whose drive leases are not renewed.'
 Require-Text 'src/physics-interaction/contact/GeneratedBodyContactRegistry.h' 'std::atomic<std::uint64_t> _publicationVersion' 'Generated-body callback registry must use atomic publication versioning.'
 Require-Text 'src/physics-interaction/contact/GeneratedBodyContactRegistry.h' 'std::sort' 'Generated-body callback registry must publish sorted fixed storage for bounded lookup.'

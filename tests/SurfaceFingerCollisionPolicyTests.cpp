@@ -1,5 +1,5 @@
-#include "physics-interaction/hand/DynamicHandCollisionTelemetry.h"
-#include "physics-interaction/hand/SurfaceFingerCollisionPolicy.h"
+#include "physics-interaction/hand/collision/DynamicHandCollisionTelemetry.h"
+#include "physics-interaction/hand/collision/SurfaceFingerCollisionPolicy.h"
 
 #ifdef NDEBUG
 #    undef NDEBUG

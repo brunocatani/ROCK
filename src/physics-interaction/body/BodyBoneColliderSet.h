@@ -1,9 +1,9 @@
 #pragma once
 
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
-#include "physics-interaction/hand/DynamicHandTwinTargets.h"
-#include "physics-interaction/hand/HandColliderTypes.h"
-#include "physics-interaction/hand/HandSkeleton.h"
+#include "physics-interaction/hand/collision/DynamicHandTwinTargets.h"
+#include "physics-interaction/hand/collision/HandColliderTypes.h"
+#include "physics-interaction/hand/skeleton/HandSkeleton.h"
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
 #include "physics-interaction/native/havok/HavokPhysicsTiming.h"

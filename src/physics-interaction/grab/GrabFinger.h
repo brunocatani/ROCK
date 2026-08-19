@@ -1348,9 +1348,9 @@ namespace rock::grab_finger_pose_math
 
 // ---- GrabFingerPoseRuntime.h ----
 
-#include "physics-interaction/hand/HandSkeleton.h"
+#include "physics-interaction/hand/skeleton/HandSkeleton.h"
 #include "physics-interaction/grab/MeshGrab.h"
-#include "physics-interaction/hand/HandFrame.h"
+#include "physics-interaction/hand/skeleton/HandFrame.h"
 
 #include "RE/NetImmerse/NiTransform.h"
 
@@ -3607,7 +3607,7 @@ namespace rock::grab_finger_local_transform_math
  * colliders; FRIK remains only the pose publication API here.
  */
 
-#include "physics-interaction/hand/HandSkeleton.h"
+#include "physics-interaction/hand/skeleton/HandSkeleton.h"
 #include "physics-interaction/hand/HandVisual.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"

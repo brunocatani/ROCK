@@ -1,4 +1,4 @@
-#include "physics-interaction/hand/DynamicHandCollisionTransitionPolicy.h"
+#include "physics-interaction/hand/collision/DynamicHandCollisionTransitionPolicy.h"
 
 #include <cassert>
 

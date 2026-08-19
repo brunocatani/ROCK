@@ -12,7 +12,7 @@
 #include "RE/NetImmerse/NiPoint.h"
 #include "RE/NetImmerse/NiTransform.h"
 #include "physics-interaction/TransformMath.h"
-#include "physics-interaction/hand/HandFrame.h"
+#include "physics-interaction/hand/skeleton/HandFrame.h"
 
 #include <algorithm>
 #include <cmath>

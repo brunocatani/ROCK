@@ -1,7 +1,7 @@
 #pragma once
 
 #include "physics-interaction/TransformMath.h"
-#include "physics-interaction/hand/HandColliderTypes.h"
+#include "physics-interaction/hand/collision/HandColliderTypes.h"
 
 #include <algorithm>
 #include <cmath>

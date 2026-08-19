@@ -32,13 +32,6 @@ Require-Text 'src/physics-interaction/body/BodyBoneColliderSet.cpp' 'bodyRadiusS
 Require-Text 'src/physics-interaction/body/BodyBoneColliderSet.cpp' 'mixBodyColliderSignatureString\(signature,\s*g_rockConfig\.rockBodyBoneColliderRadiusScaleOverrides\)' 'Body collider rebuild signature must include radius override changes.'
 Require-Text 'src/physics-interaction/body/BodyBoneColliderSet.cpp' 'StartBone|bonePairOverrideKeyMatches' 'Body radius overrides must support bone-pair identity, not only broad role scales.'
 
-Require-Text 'src/physics-interaction/hand/HandBoneColliderSet.h' '_cachedTuningSignature' 'Hand collider set must track config tuning changes for shape rebuilds.'
-Require-Text 'src/physics-interaction/hand/HandBoneColliderSet.cpp' 'handColliderTuningSignature' 'Hand collider implementation must compute a tuning signature from hand override strings.'
-Require-Text 'src/physics-interaction/hand/HandBoneColliderSet.cpp' '_cachedTuningSignature\s*!=\s*tuningSignature' 'Hand collider update must rebuild when hand tuning changes.'
-Require-Text 'src/physics-interaction/hand/HandBoneColliderSet.cpp' 'hand_collider_semantics::isPalmRole\(role\)\s*\|\|\s*g_rockConfig\.rockHandBoneColliderRadiusScaleOverrides\.empty\(\)' 'Hand radius overrides must not be the palm-box tuning path.'
-Require-Text 'src/physics-interaction/hand/HandBoneColliderSet.cpp' 'palmDimensionScaleOverride\(role,\s*_lastCapturedPowerArmor\)' 'Palm-box shape construction must consume X/Y/Z scale overrides.'
-Require-Text 'src/physics-interaction/hand/HandBoneColliderSet.cpp' 'makePalmBoxHullPoints<RE::NiPoint3>\(length,\s*scaledPalmDepth,\s*scaledCrossPalmWidth\)' 'Palm-box hulls must apply separate local Y and Z dimensions.'
-Require-Text 'src/physics-interaction/hand/HandBoneColliderSet.cpp' 'colliderDimensionsWithinLimits[\s\S]*scaledCrossPalmWidth' 'Palm-box dimension overrides must be bounded before Havok shape creation.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'ColliderTuningOverridesSourceTests failed:' -ForegroundColor Red

@@ -1,6 +1,6 @@
 #include "physics-interaction/grab/GrabCore.h"
-#include "physics-interaction/hand/HandColliderTypes.h"
-#include "physics-interaction/hand/HandFrame.h"
+#include "physics-interaction/hand/collision/HandColliderTypes.h"
+#include "physics-interaction/hand/skeleton/HandFrame.h"
 
 #include "RE/NetImmerse/NiMatrix3.h"
 

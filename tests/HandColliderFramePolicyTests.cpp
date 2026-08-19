@@ -1,9 +1,9 @@
-#include "physics-interaction/hand/HandColliderTypes.h"
-#include "physics-interaction/hand/HandFrame.h"
+#include "physics-interaction/hand/collision/HandColliderTypes.h"
+#include "physics-interaction/hand/skeleton/HandFrame.h"
 #ifdef MEM_RELEASE
 #undef MEM_RELEASE
 #endif
-#include "physics-interaction/hand/HandSkeleton.h"
+#include "physics-interaction/hand/skeleton/HandSkeleton.h"
 #include "physics-interaction/TransformMath.h"
 
 #include "RE/NetImmerse/NiMatrix3.h"

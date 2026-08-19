@@ -1,7 +1,7 @@
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 #include "physics-interaction/weapon/TwoHandedGripInternal.h"
 
-#include "physics-interaction/hand/HandFrame.h"
+#include "physics-interaction/hand/skeleton/HandFrame.h"
 #include "physics-interaction/hand/HandVisual.h"
 #include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/TransformMath.h"

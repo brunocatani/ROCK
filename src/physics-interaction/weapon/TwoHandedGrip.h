@@ -8,7 +8,7 @@
 
 #include "api/FRIKApiV2.h"
 #include "physics-interaction/grab/MeshGrab.h"
-#include "physics-interaction/hand/HandFrame.h"
+#include "physics-interaction/hand/skeleton/HandFrame.h"
 #include "physics-interaction/hand/HandVisual.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/query/PhysicsUtils.h"

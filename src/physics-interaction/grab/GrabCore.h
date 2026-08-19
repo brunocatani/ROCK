@@ -935,7 +935,7 @@ namespace rock
  */
 
 #include "physics-interaction/TransformMath.h"
-#include "physics-interaction/hand/HandColliderTypes.h"
+#include "physics-interaction/hand/collision/HandColliderTypes.h"
 
 #include <span>
 #include <utility>

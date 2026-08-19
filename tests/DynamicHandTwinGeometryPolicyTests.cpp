@@ -1,4 +1,4 @@
-#include "physics-interaction/hand/DynamicHandTwinTargets.h"
+#include "physics-interaction/hand/collision/DynamicHandTwinTargets.h"
 
 #include <cassert>
 

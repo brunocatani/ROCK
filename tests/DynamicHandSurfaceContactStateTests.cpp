@@ -1,5 +1,5 @@
 #include "physics-interaction/grab/GlobalSurfaceGrabPolicy.h"
-#include "physics-interaction/hand/DynamicHandSurfaceContactState.h"
+#include "physics-interaction/hand/collision/DynamicHandSurfaceContactState.h"
 
 #include <limits>
 #ifdef NDEBUG

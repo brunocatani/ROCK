@@ -4,7 +4,7 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/query/PhysicsUtils.h"
 #include "physics-interaction/actor/ActorEquipmentGrab.h"
-#include "physics-interaction/hand/HandSelection.h"
+#include "physics-interaction/hand/selection/HandSelection.h"
 #include "physics-interaction/object/GrabTargetKind.h"
 
 #include "RE/Bethesda/BSHavok.h"

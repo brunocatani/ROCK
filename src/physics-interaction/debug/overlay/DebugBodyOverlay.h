@@ -6,7 +6,7 @@
 #include "api/ROCKProviderApi.h"
 #include "physics-interaction/weapon/WeaponTypes.h"
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
-#include "physics-interaction/hand/HandColliderTypes.h"
+#include "physics-interaction/hand/collision/HandColliderTypes.h"
 
 #include "RE/Havok/hknpBodyId.h"
 #include "RE/NetImmerse/NiPoint.h"

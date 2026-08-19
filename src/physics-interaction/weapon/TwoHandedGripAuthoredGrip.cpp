@@ -3,7 +3,7 @@
 
 #include "physics-interaction/animation/AuthoredWeaponGripCapturePolicy.h"
 #include "physics-interaction/grab/GrabFinger.h"
-#include "physics-interaction/hand/HandSkeleton.h"
+#include "physics-interaction/hand/skeleton/HandSkeleton.h"
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/weapon/AuthoredWeaponGripLibrary.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"

@@ -1,4 +1,4 @@
-#include "physics-interaction/hand/HandSelection.h"
+#include "physics-interaction/hand/selection/HandSelection.h"
 
 #include <cstdio>
 #include <limits>

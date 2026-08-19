@@ -1,5 +1,5 @@
-#include "physics-interaction/hand/DynamicHandCollisionFeedbackPolicy.h"
-#include "physics-interaction/hand/DynamicHandCollisionKinematics.h"
+#include "physics-interaction/hand/collision/DynamicHandCollisionFeedbackPolicy.h"
+#include "physics-interaction/hand/collision/DynamicHandCollisionKinematics.h"
 
 #include <cstdio>
 

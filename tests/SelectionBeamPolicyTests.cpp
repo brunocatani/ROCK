@@ -1,4 +1,4 @@
-#include "physics-interaction/hand/SelectionBeamPolicy.h"
+#include "physics-interaction/hand/selection/SelectionBeamPolicy.h"
 
 #include <cmath>
 #include <cstdio>

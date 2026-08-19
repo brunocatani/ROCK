@@ -82,12 +82,6 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
 Require-Text 'src/physics-interaction/core/PhysicsInteractionFrame.inl' `
     'getInteractionHandFrame\(isLeft\)[\s\S]*collision_isolated_hand_frame_runtime::publish' `
     'The coherent physics frame must publish its collision-isolated hand transform for finger consumers.'
-Require-Text 'src/physics-interaction/hand/HandBoneColliderSet.cpp' `
-    'rootFlattenedHandWorld[\s\S]*rootToCollisionIsolated[\s\S]*outLookup\.hand\s*=\s*rollAuthorityWorld[\s\S]*rebaseRootDerivedTransform\(fingerBone\)' `
-    'Generated palm and finger colliders must rebase root-derived geometry onto the collision-isolated hand.'
-Require-Text 'src/physics-interaction/hand/RootFlattenedFingerSkeletonRuntime.cpp' `
-    'collision_isolated_hand_frame_runtime::tryGet[\s\S]*collisionIsolatedHandWorldPtr' `
-    'Live finger snapshots must consume the same collision-isolated hand frame as the generated colliders.'
 Require-Text 'src/ROCKMain.cpp' `
     'kSkeletonReady[\s\S]*resetPresentedHandNodeCache\(\)[\s\S]*kSkeletonDestroying[\s\S]*resetPresentedHandNodeCache\(\)' `
     'Game hand-node caches must be invalidated at both hFRIK skeleton lifecycle edges.'

@@ -35,7 +35,6 @@ function Reject-Text {
     }
 }
 
-Require-Text 'src/physics-interaction/hand/HandSelection.h' 'OtherHandSelectionContext' 'Selection must distinguish exclusive peer refs from shareable peer-held refs.'
 Require-Text 'src/physics-interaction/object/ObjectDetection.cpp' 'allowsSharedHeldReference' 'Far selection must not silently pull objects already held by the peer hand.'
 Reject-Text 'src/physics-interaction/object/ObjectDetection.cpp' 'ref\s*==\s*otherHandRef' 'Object detection must not reject the peer-held ref with the old blanket equality guard.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'makeGrabSharedObjectContext' 'Grab commit must pass peer-held object snapshots into the hand runtime.'

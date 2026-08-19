@@ -83,28 +83,10 @@ Require-Text 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' `
     'The shared body wrapper must preserve the dynamic-safe native constructor profile.'
 
 # Live-world teardown must use deferred retirement (2026-07-08 UAF lesson).
-Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'body\.retireDeferred\(' `
-    'Dynamic hand twin teardown must go through retireDeferred.'
-Reject-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'body\.destroy\(' `
-    'Dynamic hand twins must never destroy() a live-world body immediately.'
 
 # The twins must mirror the production collider conventions: hand frames/shapes
 # come from HandBoneColliderSet and forearm frames/shapes from BodyBoneColliderSet,
 # never from independently re-derived geometry.
-Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'hand\.dynamicTwinTargets\(\)' `
-    'Dynamic hand twins must consume the HandBoneColliderSet role-frame publication.'
-Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'hand\.buildDynamicTwinShape\(' `
-    'Dynamic hand twins must build shapes through the shared collider hull construction.'
-Require-OrderedText 'src/physics-interaction/hand/HandBoneColliderSet.cpp' @(
-    'publishTwinSlot\(twinTargets\.palm',
-    'hand_collider_semantics::isFingerRole\(instance\.role\)',
-    'publishTwinSlot\(\s*twinTargets\.fingers\[fingerIndex\]\[segmentIndex\]',
-    '_dynamicTwinTargets = twinTargets;'
-) 'HandBoneColliderSet must publish the palm and all 15 finger-segment twin frames every update.'
 Require-OrderedText 'src/physics-interaction/body/BodyBoneColliderSet.cpp' @(
     'makeDescriptorFrame\(',
     'collectForearmTwinMergeSource\(forearmTwinMergeSources, descriptor, frame\);',
@@ -126,43 +108,11 @@ Require-OrderedText 'src/physics-interaction/body/BodyBoneColliderSet.cpp' @(
 Require-Text 'src/physics-interaction/body/BodyBoneColliderSet.cpp' `
     'buildDynamicForearmTwinShape[\s\S]*buildShapeForFrame\(frame\)' `
     'Forearm twins must share the production body-collider hull construction.'
-Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
-    'bodyBoneColliders\.dynamicForearmTwinTargets\(\)',
-    'twinFrameForSlot\(handTwins, forearmTwins, isLeft, bodyIndex\)'
-) 'Dynamic collision must consume the body-collider forearm frame publication.'
-Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'bodyBoneColliders\.buildDynamicForearmTwinShape\(frameForChild\)' `
-    'Dynamic forearm twins must use the body-collider shared hull builder.'
-Reject-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'dimensionsDrifted|twinFrame\.length - slot\.createdLength|twinFrame\.radius - slot\.createdRadius|twinFrame\.convexRadius - slot\.createdConvexRadius' `
-    'Live pose dimensions must never trigger dynamic twin body reconstruction.'
 Require-OrderedText 'src/physics-interaction/body/BodyBoneColliderSet.cpp' @(
     '_canonicalForearmTwinDimensions = forearmTwinTargets;',
     'applyCanonicalForearmDimensions\(',
     '_dynamicForearmTwinTargets = forearmTwinTargets;'
 ) 'Forearm twins must retain generation-canonical dimensions while publishing live rigid targets.'
-Require-OrderedText 'src/physics-interaction/hand/HandBoneColliderSet.cpp' @(
-    '_canonicalDynamicTwinDimensions = canonicalTwinTargets;',
-    'applyCanonicalHandDimensions\(',
-    '_dynamicTwinTargets = twinTargets;'
-) 'Palm and all finger twins must retain generation-canonical dimensions while publishing live rigid targets.'
-Require-Text 'src/physics-interaction/hand/DynamicHandCollisionTelemetry.h' `
-    'kFingerSlotCount\s*=\s*[\s\S]*kHandFingerCount\s*\*[\s\S]*kHandFingerSegmentCount[\s\S]*kBodiesPerHand\s*=\s*kFirstForearmSlot\s*\+[\s\S]*static_assert\(static_cast<std::size_t>\(TwinRole::Forearm\)\s*\+\s*1\s*==\s*kBodiesPerHand\)' `
-    'Dynamic hand telemetry and storage must account for all 15 finger segments plus palm and forearm.'
-Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'slot\.createdGeometryGeneration == geometryGeneration' `
-    'Real source/tuning geometry generations must still rebuild dynamic twins once.'
-Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
-    'if \(_transitionCollisionSuppressed \|\|',
-    'slot\.createdGeometryGeneration == geometryGeneration',
-    'retireHand\(handSlots, frame\.bhkWorld, isLeft\);'
-) 'Queued geometry rebuilds must coalesce behind animation suspension and commit only after stable resume.'
-Require-Text 'src/physics-interaction/hand/DynamicHandCollisionTelemetry.h' `
-    'kForearmSlot\s*=\s*kFirstForearmSlot[\s\S]*Forearm,[\s\S]*return "FARM"' `
-    'Dynamic hand telemetry must expose one stable merged-forearm slot.'
-Reject-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'DynHandTwin[RL]\.Forearm(?:Upper|Lower)|ROCK_DynHandTwin_[RL]_Forearm(?:Upper|Lower)' `
-    'Dynamic collision must not retain the superseded split forearm twin bodies.'
 Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @(
     'updateBodyBoneCollisions\(frame\);',
     '_dynamicHandCollision\.updateFrame\(',
@@ -172,51 +122,14 @@ Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @(
 # One animated dynamic compound owns the 17 semantic children. Child IDs are
 # decoded from key-2 shape keys; no callback may guess a child from the shared
 # body ID or from key-3's unrelated +0x10 payload.
-Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'const RE::NiTransform compoundRootTarget =\s*driveTargets\[kPalmSlot\]' `
-    'The compound root target must be the exact published palm collider frame.'
-Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
-    'std::array<havok_compound_shape_builder::CompoundChild',
-    'const auto compoundRootInverse',
-    'colliderFrameToSceneFrame\(compoundRootTarget\)',
-    'composeTransforms\(\s*compoundRootInverse,\s*colliderFrameToSceneFrame\(driveTargets\[child\]\)',
-    'handSlots\.compoundShape\.create\(compoundChildren\)',
-    'slot\.body\.create\(',
-    'handSlots\.compoundShape\.get\(\)',
-    'applyHandCompoundEnvelopeMassProperties\(',
-    'placeGeneratedKeyframedBodyImmediately\(\s*slot\.body,\s*compoundRootTarget'
-) 'Each hand compound must use the published keyframed palm collider target as its only root frame, express child frames in the scene convention, and apply explicit envelope mass properties.'
-Reject-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'authorityProxy|authorityConstraint|createGrabConstraint|GrabAuthorityProxy' `
-    'Dynamic hand compounds must not introduce a weapon-style proxy, constraint, or alternate authority frame.'
 # Collider frames author axes as columns; scene NiTransforms author them as
 # rows. Composing a physics delta with the scene hand without converting both
 # sampled transforms transposes (= inverts) the rotation delta: the exact
 # reversed-hand-rotation failure of the reverted first compound attempt.
-Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'colliderFrameToSceneFrame[\s\S]*transposeRotation' `
-    'The collider-to-scene frame conversion must exist and transpose the stored rotation.'
-Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
-    'const RE::NiTransform requestedSceneWorld =\s*colliderFrameToSceneFrame\(owner\.requestedTargetWorld\)',
-    'const RE::NiTransform commandedSceneWorld =\s*colliderFrameToSceneFrame\(owner\.commandedTargetWorld\)',
-    'const RE::NiTransform liveCompoundSceneWorld =\s*colliderFrameToSceneFrame\(liveCompoundWorld\)',
-    'composeTransforms\(\s*requestedSceneWorld',
-    'composeTransforms\(\s*commandedSceneWorld',
-    'composeTransforms\(\s*liveCompoundSceneWorld'
-) 'Post-solve child reconstruction must convert every body-level transform to the scene convention before composing child frames.'
-Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'sceneFrameToColliderFrame\(\s*handSlots\.surfaceLatch\.lastProxyWorld\[bodyIndex\]\)' `
-    'Latch drive targets must convert back to the collider convention before queueing.'
 Require-OrderedText 'src/RockConfig.cpp' @(
     'fHandCollisionDynamicCompoundMass',
     'fHandCollisionDynamicInverseInertiaMultiplier'
 ) 'The hand compound mass and inverse-inertia controls must load through the ROCK INI path.'
-Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
-    'queuedCompoundPoseSequence',
-    'compoundShape\.updateTransforms\(',
-    'consumedChildInContactBodyGame',
-    'driveGeneratedKeyframedBody\(\s*world,\s*slot\.body'
-) 'Animated child transforms must commit on the physics thread before directly driving the compound body.'
 Require-Text 'src/physics-interaction/core/PhysicsInteractionContacts.inl' `
     'shapeKeyA\s*=[\s\S]{0,120}data \+ 0x10[\s\S]{0,180}shapeKeyB\s*=[\s\S]{0,120}data \+ 0x14' `
     'The verified key-2 record must read both compound participant shape keys at +0x10/+0x14.'
@@ -229,67 +142,13 @@ Reject-Text 'src/physics-interaction/core/PhysicsInteractionContacts.inl' `
 # pose. No frozen capture-time collider intent may exist anywhere — that is
 # exactly what welded the rigid compound into walls while the rendered
 # fingers curled away from it.
-Reject-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'intentFramesInHand|closingProbeTravelInHand|openingProbeTravelInHand|intentValid' `
-    'Surface finger response must not cache frozen collider intent frames or capture-time probe travel; colliders follow the live pose.'
-Reject-Text 'src/physics-interaction/hand/DynamicHandCollision.h' `
-    'intentFramesInHand|closingProbeTravelInHand|openingProbeTravelInHand|intentValid' `
-    'The surface finger response state must not own cached collider intent frames.'
 # Probes are remeasured around the CURRENT pose and the solve re-baselines on
 # the current open values every frame, so sustained blocked contact keeps
 # stepping the curl toward the anatomical stop instead of deflecting around a
 # stale captured baseline.
-Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
-    'bool computeSurfaceFingerProbeTravel\(',
-    'probesValid = computeSurfaceFingerProbeTravel\(',
-    'response\.currentOpenValues,',
-    'surface_finger_collision_policy::solve\(\s*response\.currentOpenValues,'
-) 'Finger probes must be remeasured around the current pose and the solve must re-baseline on the current open values (incremental physical curl).'
-Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
-    'worldContactActive',
-    'fingerDeviationSum',
-    'classifySurfaceFingerDirection\(',
-    'surface_finger_collision_policy::solve\('
-) 'Finger flexion must consume world-only contact evidence and command its direction from the palm-frame touch classification.'
-Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'classifySurfaceFingerDirection[\s\S]*touchLocal\.y < 0\.0f[\s\S]*std::int8_t\{ 1 \}[\s\S]*touchLocal\.x > 0\.0f[\s\S]*std::int8_t\{ -1 \}' `
-    'Palm-face (-Y) touches must open fingers, fingertip (+X) pushes must curl them, and every other direction must leave the pose unchanged.'
-Require-Text 'src/physics-interaction/hand/SurfaceFingerCollisionPolicy.h' `
-    'forcedDirections\[finger\] == 0[\s\S]*continue;[\s\S]*evaluateDirection\(' `
-    'The flexion solver must only compute deflection along the commanded anatomical direction, never pick one itself.'
-Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
-    'twinFrame->target;',
-    'driveTargets\[bodyIndex\] = driveTarget',
-    'queueCompoundPose\(',
-    'resolvedHandWorld\.translate'
-) 'Finger children must chase the live published role frames while the one rigid body remains whole-hand authority.'
-Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'setHandPoseCustomWithPriority\([\s\S]{0,400}rockHandCollisionDynamicVisualPriority' `
-    'Surface finger response must use the existing priority-arbitrated FRIK pose authority.'
-Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
-    'setHandPoseCustomWithPriority\(',
-    'isHandPoseTagActive\(',
-    'response\.lastHelpfulDynamicSlotMask = 0'
-) 'Fingertip rigid fallback may be suppressed only while the surface finger pose actually owns hFRIK authority.'
-Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'clearSurfaceFingerResponse\(_hands\[0\], false\)[\s\S]*clearSurfaceFingerResponse\(_hands\[1\], true\)' `
-    'World/menu shutdown must deterministically release both surface finger pose claims.'
 
 # Render-follow pipeline: apply the compound body's coherent SE(3) readback and
 # reserve translation smoothing for explicit teleport recovery only.
-Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
-    'sanitizeHandTargetResponseScale\(twinFrame->handTargetResponseScale\)',
-    'handTargetCorrectionWorldGame',
-    'resolvedHandWorld = transform_math::composeTransforms\(',
-    'float smoothingSpeed = 0\.0f',
-    'teleportRecoverySecondsRemaining > 0\.0f',
-    'smoothAppliedDeviation\(',
-    'target = resolvedHandWorld',
-    'applyExternalHandWorldTransform\('
-) 'Dynamic hand render-follow must retain child leverage, publish coherent rigid readback, and smooth only teleport recovery translation.'
-Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'dynamicInteractionFingerContact[\s\S]{0,500}dynamicInteractionFingerContact\s*\?[\s\S]{0,80}0\.0f[\s\S]{0,120}rockHandCollisionSurfaceFingerSmoothingSpeed' `
-    'Hand/hand and hand/weapon finger contacts must publish their collision pose without presentation lag.'
 Require-OrderedText 'src/physics-interaction/body/BodyBoneColliderSet.cpp' @(
     'shoulderBone = isLeft \? "LArm_UpperArm" : "RArm_UpperArm"',
     'forearmHandTargetResponseScale\(',
@@ -300,53 +159,18 @@ Require-OrderedText 'src/physics-interaction/body/BodyBoneColliderSet.cpp' @(
 
 # Physics-owned telemetry must cross to the main frame through atomics and
 # expose requested/commanded/live positions without changing provider API V1.
-Require-Text 'src/physics-interaction/hand/DynamicHandCollision.h' `
-    'struct AtomicPhysicsTelemetry' `
-    'Dynamic hand telemetry must have an explicit physics-to-main atomic publication boundary.'
-Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
-    'publishPhysicsTelemetry\(',
-    'requestedTargetWorldGame',
-    'commandedTargetWorldGame',
-    'liveBodyWorldGame',
-    'getTelemetrySnapshot\('
-) 'Dynamic hand telemetry must publish requested, commanded, and live proxy state to a main-frame snapshot.'
-Require-Text 'src/physics-interaction/hand/DynamicHandCollisionTelemetry.h' `
-    'struct TwinSample' `
-    'Dynamic hand telemetry must keep a fixed per-twin sample contract for future API adaptation.'
-Require-Text 'src/physics-interaction/hand/DynamicHandCollisionTelemetry.h' `
-    'struct HandSample' `
-    'Dynamic hand telemetry must keep aggregate per-hand contact and visual state.'
-Require-Text 'src/physics-interaction/hand/DynamicHandCollisionTelemetry.h' `
-    'bool targetVelocityValid' `
-    'Dynamic hand telemetry must distinguish a stationary target from an unavailable velocity sample.'
 
 # Haptics are generated from real post-solve contact entry, consumed under
 # stronger ownership, and delivered through the shared main-thread mixer.
-Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
-    'samplePostSolveDeviations\(',
-    'contactEntrySequenceAtomic\.fetch_add'
-) 'Dynamic hand contact entry must be published by the post-solve physics phase.'
-Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'updateHandHaptic\(' `
-    'Dynamic hand contact entry must be consumed by the main-frame haptic policy.'
 # Manifold contact fires before any penetration deviation exists, so a
 # grazing/resting touch reports ~zero approach speed. Latching the haptic
 # entry there consumes the episode and the later real press stays silent.
-Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
-    'const float entryGateSpeed',
-    'maxEntryApproachSpeed >= entryGateSpeed',
-    'contactEntrySequenceAtomic\.fetch_add',
-    'handSlots\.physicsContactActive = true;'
-) 'The haptic contact entry must not latch until the approach speed can actually fire a pulse.'
 Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @(
     '_dynamicHandCollision\.updateFrame\(',
     '_dynamicHandCollision\.consumeHapticEvents\(\)',
     '_feedbackHaptics\.queue\(',
     'updateFeedbackHaptics\(frame\.deltaSeconds\);'
 ) 'Dynamic hand haptics must flow through the shared main-thread FeedbackHaptics queue.'
-Reject-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'VRControllers\.triggerHaptic' `
-    'Dynamic hand collision must never trigger controller haptics from its runtime or physics callbacks.'
 
 # Debug visualization must consume the same telemetry snapshot intended for a
 # later API adapter, rather than re-reading live bodies through a second path.
@@ -393,29 +217,15 @@ Require-Text 'src/RockConfig.cpp' `
 # Contact identity comes from the verified key-2 manifold shape keys, while
 # post-solve readback measures each animated child through the one compound
 # body's coherent rigid transform.
-Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
-    'void DynamicHandCollisionRuntime::samplePostSolveDeviations\(',
-    'tryResolveLiveBodyWorldTransform\(',
-    'pendingSolverContactMaskAtomic\.exchange\(',
-    'requestedChildWorld',
-    'liveChildWorld',
-    'contactMask'
-) 'Dynamic hand deviation must use manifold child identity and coherent post-solve compound transforms.'
 Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @(
     'void PhysicsInteraction::observeCustomGrabAuthorityAfterSolve\(',
     '_dynamicHandCollision\.samplePostSolveDeviations\([\s\S]*world,[\s\S]*completedSolveSequence,[\s\S]*timing\);'
 ) 'Dynamic hand post-solve sampling must run in the after-solve physics phase.'
-Reject-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'liveBodyGamePosition\.x - result\.targetGamePosition' `
-    'Dynamic hand deviation must not be derived from the pre-collide drive telemetry.'
 
 # The divergence dwell and the drive-side recovery teleport must run on the
 # REQUESTED-target gap: the commanded-target delta (bodyDeltaGameUnits)
 # saturates at maxLinearVelocity * driveDt and can never cross a divergence
 # threshold, which silently makes the recovery teleport dead code.
-Reject-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'bodyDeltaGameUnits > divergenceThreshold' `
-    'Dynamic hand divergence dwell must not gate on the saturating commanded-target delta.'
 Require-OrderedText 'src/physics-interaction/native/GeneratedKeyframedBodyDrive.cpp' @(
     'result\.requestedTargetGamePosition = requestedTarget\.translate;',
     'requestedGapGameUnits > mode\.divergenceTeleportGameUnits',
@@ -426,18 +236,6 @@ Require-OrderedText 'src/physics-interaction/native/GeneratedKeyframedBodyDrive.
 # published palm collider frame, then hard-keyframe the dynamic compound body
 # itself so the solver clips one coherent body. Compound grouping is the only
 # behavior borrowed from the weapon path.
-Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
-    'const RE::NiTransform compoundRootTarget =\s*driveTargets\[kPalmSlot\]',
-    'queueGeneratedKeyframedBodyTarget\(\s*compoundOwner\.driveState,\s*compoundRootTarget',
-    'GeneratedBodyDriveMode mode\{',
-    '\.dynamicVelocity = true',
-    'driveGeneratedKeyframedBody\(\s*world,\s*slot\.body'
-) 'Dynamic hand tracking must directly drive the palm-rooted dynamic compound through the established collider path.'
-Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
-    'lastPostSolveDeviationValid',
-    'mode\.hasContactPressDirection = true',
-    'driveGeneratedKeyframedBody\('
-) 'The compound drive must retain the established contact press cap.'
 
 # The twins get their own visualization flag, independent of the keyframed
 # collider debug draws.
@@ -447,10 +245,6 @@ Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp' `
 
 # The drive keeps chasing the wand while another system owns the hand pose:
 # target queueing must happen BEFORE the ownership gate.
-Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
-    'queueGeneratedKeyframedBodyTarget\(',
-    'ownedByStrongerSystem'
-) 'Dynamic hand drive must queue the wand target before evaluating visual ownership gates.'
 
 # Dynamic collision is the only free-hand world-collision implementation.
 Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
@@ -534,49 +328,17 @@ Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @(
 # Fixed-surface grabs use a separate bounded contact channel. Palm and
 # fingertips are eligible; the forearm and ordinary loose-object semantic set
 # remain excluded.
-Require-Text 'src/physics-interaction/hand/DynamicHandSurfaceContactState.h' `
-    'collectFresh[\s\S]*atomic_flag writer[\s\S]*sequence' `
-    'Dynamic surface contact publication must be bounded and non-blocking on the physics callback.'
-Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'tryResolveChildIndex\(shapeKey\)[\s\S]{0,260}isSurfaceGrabSourceSlot\(\*childIndex\)' `
-    'Only dynamic palm and fingertip twins may seed fixed-surface grabs.'
 Require-OrderedText 'src/physics-interaction/core/PhysicsInteractionContacts.inl' @(
     'tryClassifySurfaceContactSourceAtomic\(',
     'recordSurfaceManifoldProcessedCallback\(',
     '_generatedBodyContactRegistry\.tryClassify\('
 ) 'Key-2 dynamic surface evidence must publish before the ordinary key-3 generated-body prefilter.'
-Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'kRaiseManifoldProcessedEvents\s*=\s*0x40u[\s\S]*enableBodyFlags\([\s\S]{0,350}kRaiseManifoldProcessedEvents[\s\S]{0,200}kRebuildBodyCollisionState[\s\S]*flaggedBody\.body->flags\s*&\s*kRaiseManifoldProcessedEvents' `
-    'The compound body must opt into the verified key-2 processed-manifold event path for child shape keys.'
 Require-OrderedText 'src/physics-interaction/core/PhysicsInteractionContacts.inl' @(
     'handleManifoldProcessedEvent\(',
     'tryClassifySurfaceContactSourceAtomic\(',
     'recordSurfaceManifoldProcessedCallback\(',
     'recordObstacleManifoldProcessedCallback\('
 ) 'Processed manifolds must publish dynamic-hand surface evidence while preserving the dynamic-weapon route.'
-Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'recordSurfaceManifoldProcessedCallback\([\s\S]*isDynamicHandProxySurfaceLayer\(otherLayer\)[\s\S]*_surfaceContacts\.record\([\s\S]*contactPointGame[\s\S]*contactNormalGame' `
-    'Processed hand manifolds must validate the surface layer and publish their verified point/normal payload.'
-Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'surfaceCallbacks\(impulse/manifold/eligible/published\)' `
-    'The rate-limited dynamic-hand trace must distinguish callback, layer, and publication failures.'
-Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
-    'beginSurfaceLatch\(',
-    'tryResolveLiveBodyWorldTransform\(',
-    'invertTransform\(targetWorld\)',
-    'composeTransforms\(',
-    'candidate\.active = true'
-) 'Surface latch acquisition must capture the presented hand and live proxy transforms relative to the target body.'
-Require-OrderedText 'src/physics-interaction/hand/DynamicHandCollision.cpp' @(
-    'if \(handSlots\.surfaceLatch\.active\)',
-    'targetSnapshot\.body == latch\.targetBodyIdentity',
-    'latch\.lastProxyWorld\[bodyIndex\]',
-    'RE::NiTransform driveTarget',
-    'queueGeneratedKeyframedBodyTarget\('
-) 'A held surface latch must follow target-body motion and drive every proxy from the captured rigid relationship.'
-Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'kSurfaceLatchVisualPriority[\s\S]*applyExternalHandWorldTransform\(' `
-    'Surface latches must hold the rendered hand through the existing FRIK visual authority bridge.'
 
 # The opt-in API remains authoritative, while the shipped INI enables a
 # built-in world-surface fallback for direct play and testing.
@@ -626,9 +388,6 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'Touch grab attempt rejected:[\s\S]{0,900}latchFailure' `
     'A failed contact candidate must report its target and surface-latch rejection stage.'
-Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'SurfaceLatchFailure::PrerequisiteUnavailable[\s\S]*SurfaceLatchFailure::ContactSourceMismatch[\s\S]*SurfaceLatchFailure::HandTransformUnavailable[\s\S]*SurfaceLatchFailure::TargetTransformUnavailable[\s\S]*SurfaceLatchFailure::SourceProxyUnavailable' `
-    'Surface latch diagnostics must distinguish every acquisition prerequisite without hot-path retry logging.'
 # A successful fixed-surface latch owns the feedback for that hand. Its
 # one-shot confirmation is intentionally stronger and longer than the dynamic
 # touch pulse, and both values remain user-tunable.

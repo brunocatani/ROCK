@@ -9,7 +9,7 @@
  * INTERNAL. Never include this file from a public include tree.
  */
 
-#include "physics-interaction/hand/HandSkeleton.h"
+#include "physics-interaction/hand/skeleton/HandSkeleton.h"
 #include "physics-interaction/grab/GrabFinger.h"
 #include "physics-interaction/grab/GrabPinchPocket.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"

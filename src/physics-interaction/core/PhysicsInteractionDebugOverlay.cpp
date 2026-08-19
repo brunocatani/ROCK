@@ -24,7 +24,7 @@
 #include "physics-interaction/grab/GrabPinchPocket.h"
 #include "physics-interaction/grab/GrabTelemetry.h"
 #include "physics-interaction/grab/GrabThreePhase.h"
-#include "physics-interaction/hand/HandFrame.h"
+#include "physics-interaction/hand/skeleton/HandFrame.h"
 #include "physics-interaction/native/query/PhysicsUtils.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"

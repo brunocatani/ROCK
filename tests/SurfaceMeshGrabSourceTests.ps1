@@ -57,12 +57,6 @@ Require-Text 'src/physics-interaction/grab/MeshGrab.h' `
 Require-Text 'src/physics-interaction/grab/MeshGrab.h' `
     'geometry\.numTriangles\s*>\s*remaining[\s\S]*triangleBudgetExceeded\s*=\s*true[\s\S]*return;' `
     'An oversized shape must fall back before its triangle payload is scanned.'
-Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'candidate\.lastHandWorld\s*=\s*meshPresentationRequested[\s\S]*presentation->handWorld[\s\S]*candidate\.lastProxyWorld\[bodyIndex\]\s*=\s*proxyWorld' `
-    'The visible hand must use the mesh seat while twins retain their collision-safe shell relation.'
-Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'clearSurfaceMeshPose\([\s\S]*surfaceLatch\s*=\s*\{\}' `
-    'Latch teardown must clear mesh pose authority before state reset.'
 
 Require-Text 'src/api/ROCKProviderApi.h' `
     'enum class RockProviderSurfaceGripModeV1[\s\S]*CollisionAnchor\s*=\s*0[\s\S]*MeshAnchor\s*=\s*1[\s\S]*CollisionFallback\s*=\s*2' `

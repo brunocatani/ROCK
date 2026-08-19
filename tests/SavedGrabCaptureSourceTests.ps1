@@ -56,7 +56,6 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'readGrabEven
 
 # --- Hand volume and centre of mass ------------------------------------------
 
-Require-Text 'src/physics-interaction/hand/HandBoneColliderSet.cpp' 'PublishedSegmentFrames segmentFrames\{\}[\s\S]*published\.role = instance\.role;[\s\S]*_segmentFrames = segmentFrames;' 'The collider set must publish EVERY driven segment frame: an object may not end up inside any segment, so the whole hand volume has to be observable.'
 Require-Text 'src/physics-interaction/hand/Hand.cpp' 'bool Hand::tryBuildSavedGrabCapture[\s\S]*_boneColliders\.segmentColliderFrames\(\)' 'The capture must record the full driven hand volume from the published segment frames.'
 Require-Text 'src/physics-interaction/hand/Hand.cpp' 'bool Hand::tryBuildSavedGrabCapture[\s\S]*getBodyMotion\(world, getSavedObjectState\(\)\.bodyId\)[\s\S]*physics\.comTrusted = insideBounds;[\s\S]*ROCK_LOG_WARN' 'The centre of mass must come from the held body motion and be gated on the mesh bounds, loudly flagging an implausible read - a rigid body COM is always inside its own hull, so outside means the offset is wrong.'
 

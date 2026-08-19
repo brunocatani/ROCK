@@ -2,7 +2,7 @@
 
 #include "RockConfig.h"
 #include "physics-interaction/TransformMath.h"
-#include "physics-interaction/hand/HandSkeleton.h"
+#include "physics-interaction/hand/skeleton/HandSkeleton.h"
 
 #include "RE/NetImmerse/NiPoint.h"
 #include "RE/NetImmerse/NiTransform.h"

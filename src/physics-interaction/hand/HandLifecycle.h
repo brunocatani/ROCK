@@ -57,7 +57,7 @@ namespace rock
 
 // ---- HandSemanticContactState.h ----
 
-#include "physics-interaction/hand/HandColliderTypes.h"
+#include "physics-interaction/hand/collision/HandColliderTypes.h"
 
 #include <algorithm>
 #include <array>

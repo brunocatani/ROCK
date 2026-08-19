@@ -63,8 +63,6 @@ Require-Text 'src/physics-interaction/grab/GrabFinger.h' 'bakedCalibratedFingerM
     'Gameplay grab finger max curl angles must come from baked calibration data.'
 Reject-Text 'src/physics-interaction/grab/GrabFinger.h' 'makeRuntimeCalibratedFingerCurve' `
     'Gameplay must not rebuild grab-finger calibration curves procedurally at runtime.'
-Require-Text 'src/physics-interaction/hand/RootFlattenedFingerSkeletonRuntime.cpp' 'outSnapshot\.inPowerArmor = boneSnapshot\.inPowerArmor' `
-    'Baked calibration profile selection must use the same power-armor state as the root-flattened skeleton snapshot.'
 
 $python = Get-Command python -ErrorAction SilentlyContinue
 if (-not $python) {

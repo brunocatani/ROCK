@@ -25,8 +25,8 @@
 #undef ROCK_DEFINED_MAX_PATH_FOR_FILEWATCH
 #endif
 
-#include "physics-interaction/hand/HandSelection.h"
-#include "physics-interaction/hand/SelectionBeamPolicy.h"
+#include "physics-interaction/hand/selection/HandSelection.h"
+#include "physics-interaction/hand/selection/SelectionBeamPolicy.h"
 #include "physics-interaction/debug/overlay/DebugOverlayRuntimeSettings.h"
 #include "physics-interaction/input/PipboyPauseGesturePolicy.h"
 #include "physics-interaction/native/havok/HavokTimingFixPolicy.h"

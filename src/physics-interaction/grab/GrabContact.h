@@ -1574,7 +1574,7 @@ namespace rock::grab_support_model_math
  * to a fingertip or palm axis.
  */
 
-#include "physics-interaction/hand/HandColliderTypes.h"
+#include "physics-interaction/hand/collision/HandColliderTypes.h"
 #include "physics-interaction/TransformMath.h"
 
 #include <algorithm>

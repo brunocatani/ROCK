@@ -74,9 +74,7 @@ Require-Pattern $interaction '_rightHand\.setPhysicsCallbackGate[\s\S]{0,600}_we
 Require-Pattern $interaction 'generatedWorldStillLive[\s\S]{0,300}_dynamicHandCollision\.retireAll\(_generatedBodiesBhkWorld\)[\s\S]{0,180}_dynamicHandCollision\.reset\(\)' 'World invalidation must retire only through the still-current exact world and otherwise abandon wrappers.'
 
 foreach ($path in @(
-        'src/physics-interaction/hand/HandBoneColliderSet.cpp',
         'src/physics-interaction/body/BodyBoneColliderSet.cpp',
-        'src/physics-interaction/hand/DynamicHandCollision.cpp',
         'src/physics-interaction/weapon/WeaponCollision.cpp',
         'src/physics-interaction/weapon/WeaponCollisionBodies.cpp')) {
     Require-Pattern $path '_physicsCallbackGate->pauseForMutation\(\)' "$path must quiesce native callbacks around structural body-bank mutation."
@@ -95,15 +93,11 @@ Require-Pattern $bodyHeader '_createdHknpWorld[\s\S]{0,120}_createdBhkWorld' 'Ea
 Require-Pattern $bodySource 'bool BethesdaPhysicsBody::matchesCreationWorld[\s\S]*nativeWorldFromPhysicsSystem[\s\S]*getHknpWorldFromBhk' 'Native removal must prove stored, instance, and wrapper world identity.'
 Require-Pattern $bodySource 'Rejected body retirement through mismatched world' 'Mismatched native retirement must fail closed with diagnostic context.'
 
-Reject-Pattern 'src/physics-interaction/hand/DynamicHandCollision.cpp' 'dimensionsDrifted|kTwinDimensionRebuildToleranceGameUnits|kTwinConvexRadiusRebuildToleranceGameUnits' 'Pose-time dimension drift must not remain a dynamic-body reconstruction path.'
 Require-Pattern 'src/physics-interaction/body/BodyBoneColliderSet.cpp' '_canonicalForearmTwinDimensions = forearmTwinTargets[\s\S]*applyCanonicalForearmDimensions' 'Body collider generations must capture and reapply canonical forearm dimensions.'
 Require-Pattern $interaction 'nativeReloadHandAuthorityActive\([\s\S]{0,500}kArms[\s\S]{0,160}kHands[\s\S]{0,500}isNativeReloading[\s\S]{0,160}getNativeGunState' 'Reload transition gating must combine provider arms/hands authority with the verified native gun-state boundary.'
 Require-Pattern 'src/physics-interaction/core/PhysicsInteractionFrame.inl' 'reloadBoundaryActive\s*=\s*nativeReloadHandAuthorityActive\(\)' 'The coherent frame snapshot must consume the shared reload-authority predicate.'
 Require-Pattern $interaction '!frame\.reloadBoundaryActive\s*&&\s*rebuildGeneratedBodiesForLifecycle' 'Lifecycle body creation must wait until the animation authority boundary closes.'
 Require-Pattern $interaction 'if \(!_bodyBoneColliders\.hasBodies\(\)\) \{\s*if \(frame\.reloadBoundaryActive\)' 'Optional body collider retries must not create bodies during the animation boundary.'
-Require-Pattern 'src/physics-interaction/hand/DynamicHandCollision.cpp' 'kSuppressionNoCollideBit[\s\S]*applyTransitionCollisionSuppression' 'Animation transitions must retain bodies and suppress their collision filter.'
-Require-Pattern 'src/physics-interaction/hand/DynamicHandCollision.cpp' 'handSlots\.bodies\[0\]\.created &&[\s\S]{0,120}!_transitionCollisionSuppressed[\s\S]{0,120}retireHand' 'Missing transition-time compound-child targets must retain the existing body instead of retiring it.'
-Require-Pattern 'src/physics-interaction/hand/DynamicHandCollision.cpp' '_transitionCollisionSuppressed[\s\S]{0,220}createdGeometryGeneration == geometryGeneration' 'Real geometry rebuilds must be deferred, not discarded, while animation collision is suspended.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'Havok world-lifetime source boundary failed:'

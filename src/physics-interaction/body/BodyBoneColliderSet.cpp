@@ -3,7 +3,7 @@
 #include "RockConfig.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
-#include "physics-interaction/hand/DynamicHandCollisionKinematics.h"
+#include "physics-interaction/hand/collision/DynamicHandCollisionKinematics.h"
 #include "physics-interaction/hand/Hand.h"
 #include "physics-interaction/native/havok/HavokConvexShapeBuilder.h"
 #include "physics-interaction/native/havok/HavokMaterialRegistry.h"

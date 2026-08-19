@@ -3,7 +3,7 @@
 #include "RockConfig.h"
 #include "physics-interaction/core/RockRuntimeStatePolicy.h"
 #include "physics-interaction/debug/SkeletonBoneDebugMath.h"
-#include "physics-interaction/hand/HandSkeleton.h"
+#include "physics-interaction/hand/skeleton/HandSkeleton.h"
 
 #include <chrono>
 #include <string_view>

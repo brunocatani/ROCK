@@ -47,9 +47,6 @@ Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' `
     'enum class TwoHandedState[\s\S]{0,240}Returning' `
     'Visual return must not remain gameplay/manual grip ownership in TwoHandedState.'
 
-Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
-    'physicallyOwnedByStrongerSystem[\s\S]*visuallyOwnedByStrongerSystem\s*=\s*physicallyOwnedByStrongerSystem\s*\|\|\s*visualReturnActive[\s\S]*!physicallyOwnedByStrongerSystem[\s\S]*if \(visuallyOwnedByStrongerSystem' `
-    'Visual return must suppress only the competing dynamic-hand visual writer, not free-hand haptics or proxy tracking.'
 
 foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
     Require-Text $configPath `

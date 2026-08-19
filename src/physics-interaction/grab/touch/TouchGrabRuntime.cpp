@@ -8,7 +8,7 @@
 #include "physics-interaction/grab/GrabFinger.h"
 #include "physics-interaction/grab/SurfaceMeshGrabPolicy.h"
 #include "physics-interaction/grab/touch/TouchGrabMath.h"
-#include "physics-interaction/hand/DynamicHandCollision.h"
+#include "physics-interaction/hand/collision/DynamicHandCollision.h"
 #include "physics-interaction/native/havok/HavokMaterialRegistry.h"
 #include "physics-interaction/native/havok/HavokOffsets.h"
 #include "physics-interaction/native/havok/HavokRefCount.h"

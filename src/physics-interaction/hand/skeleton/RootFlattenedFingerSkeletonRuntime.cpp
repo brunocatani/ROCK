@@ -1,0 +1,149 @@
+#include "physics-interaction/hand/skeleton/HandSkeleton.h"
+
+/*
+ * Runtime lookup is intentionally kept outside the header so pure math tests
+ * can validate finger-chain conventions without depending on live FO4VR scene
+ * objects. Production code resolves the same root flattened bone tree used by
+ * generated hand colliders and returns a compact world-space snapshot to the
+ * pose solver and debug overlay.
+ */
+
+#include "physics-interaction/debug/DebugMath.h"
+
+#include <string_view>
+
+namespace rock::root_flattened_finger_skeleton_runtime
+{
+    namespace
+    {
+        DirectSkeletonBoneReader& rootFlattenedFingerReader()
+        {
+            static DirectSkeletonBoneReader reader;
+            return reader;
+        }
+
+        const DirectSkeletonBoneEntry* findSnapshotBone(const DirectSkeletonBoneSnapshot& snapshot, std::string_view name)
+        {
+            for (const auto& bone : snapshot.bones) {
+                if (bone.name == name) {
+                    return &bone;
+                }
+            }
+            return nullptr;
+        }
+    }
+
+    bool buildFingerSkeletonSnapshot(
+        const DirectSkeletonBoneSnapshot& boneSnapshot,
+        bool isLeft,
+        Snapshot& outSnapshot,
+        std::string* outMissingBoneName,
+        const RE::NiTransform* collisionIsolatedHandWorld)
+    {
+        outSnapshot = Snapshot{};
+        if (outMissingBoneName) {
+            outMissingBoneName->clear();
+        }
+        if (!boneSnapshot.valid) {
+            if (outMissingBoneName) {
+                *outMissingBoneName = "rootFlattenedBoneTree";
+            }
+            return false;
+        }
+
+        const auto* handNode = findSnapshotBone(
+            boneSnapshot,
+            isLeft ? "LArm_Hand" : "RArm_Hand");
+        if (!handNode) {
+            if (outMissingBoneName) {
+                *outMissingBoneName = isLeft ? "LArm_Hand" : "RArm_Hand";
+            }
+            return false;
+        }
+
+        const bool rebaseToCollisionIsolatedHand =
+            collisionIsolatedHandWorld &&
+            collision_isolated_hand_frame_math::isUsableTransform(
+                handNode->world) &&
+            collision_isolated_hand_frame_math::isUsableTransform(
+                *collisionIsolatedHandWorld);
+        RE::NiTransform rootToCollisionIsolated{};
+        if (rebaseToCollisionIsolatedHand) {
+            rootToCollisionIsolated = transform_math::composeTransforms(
+                *collisionIsolatedHandWorld,
+                transform_math::invertTransform(handNode->world));
+        }
+        const RE::NiTransform& palmAuthorityWorld =
+            rebaseToCollisionIsolatedHand ?
+            *collisionIsolatedHandWorld :
+            handNode->world;
+
+        outSnapshot.inPowerArmor = boneSnapshot.inPowerArmor;
+        outSnapshot.palmNormalWorld = normalizedOrFallback(
+            debug_axis_math::rotateNiLocalToWorld(
+                palmAuthorityWorld.rotate,
+                RE::NiPoint3(0.0f, 0.0f, -1.0f)),
+            RE::NiPoint3(0.0f, 0.0f, -1.0f));
+        outSnapshot.palmNormalValid = true;
+
+        for (std::size_t finger = 0; finger < outSnapshot.fingers.size(); ++finger) {
+            auto& chain = outSnapshot.fingers[finger];
+            for (std::size_t segment = 0; segment < chain.points.size(); ++segment) {
+                const char* name = fingerBoneName(isLeft, finger, segment);
+                const auto* node = name ?
+                    findSnapshotBone(boneSnapshot, name) :
+                    nullptr;
+                if (!node) {
+                    if (outMissingBoneName) {
+                        *outMissingBoneName = name ? name : "invalidFingerBone";
+                    }
+                    outSnapshot = Snapshot{};
+                    return false;
+                }
+                if (rebaseToCollisionIsolatedHand) {
+                    chain.points[segment] =
+                        transform_math::composeTransforms(
+                            rootToCollisionIsolated,
+                            node->world)
+                            .translate;
+                } else {
+                    chain.points[segment] = node->world.translate;
+                }
+            }
+            chain.valid = true;
+        }
+
+        outSnapshot.valid = true;
+        return true;
+    }
+
+    bool resolveLiveFingerSkeletonSnapshot(bool isLeft, Snapshot& outSnapshot, std::string* outMissingBoneName)
+    {
+        DirectSkeletonBoneSnapshot boneSnapshot{};
+        if (!rootFlattenedFingerReader().capture(
+                skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
+                skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
+                boneSnapshot)) {
+            outSnapshot = Snapshot{};
+            if (outMissingBoneName) {
+                *outMissingBoneName = "rootFlattenedBoneTree";
+            }
+            return false;
+        }
+        RE::NiTransform collisionIsolatedHandWorld{};
+        const RE::NiTransform* collisionIsolatedHandWorldPtr =
+            collision_isolated_hand_frame_runtime::tryGet(
+                isLeft,
+                boneSnapshot.skeleton,
+                boneSnapshot.boneTree,
+                collisionIsolatedHandWorld) ?
+            &collisionIsolatedHandWorld :
+            nullptr;
+        return buildFingerSkeletonSnapshot(
+            boneSnapshot,
+            isLeft,
+            outSnapshot,
+            outMissingBoneName,
+            collisionIsolatedHandWorldPtr);
+    }
+}

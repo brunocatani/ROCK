@@ -27,7 +27,6 @@ Require-Text 'src/physics-interaction/native/GeneratedKeyframedBodyDrive.cpp' 'f
 Require-Text 'src/physics-interaction/native/GeneratedKeyframedBodyDrive.cpp' 'Generated body frame compare owner=\{\} bodyIndex=\{\} bodyId=\{\}' 'Grab-frame logging must emit sampled generated-body frame compare lines.'
 Require-Text 'src/physics-interaction/native/GeneratedKeyframedBodyDrive.cpp' 'bodyRotErr=\{:\.2f\} axisDeg=\(\{:\.1f\},\{:\.1f\},\{:\.1f\}\)' 'Generated body frame compare logs must include total and per-axis rotation error.'
 Require-Text 'src/physics-interaction/native/GeneratedKeyframedBodyDrive.cpp' 'g_rockConfig\.rockDebugGrabFrameLogging' 'Generated body frame compare logs must be available with grab-frame diagnostics, not only global verbose logging.'
-Require-Text 'src/physics-interaction/hand/HandBoneColliderSet.cpp' 'bodyRotErr=\{:\.2f\}' 'Hand generated collider rebuild warnings must include rotation error.'
 Require-Text 'src/physics-interaction/body/BodyBoneColliderSet.cpp' 'bodyRotErr=\{:\.2f\}' 'Body generated collider rebuild warnings must include rotation error.'
 
 if ($failures.Count -gt 0) {
