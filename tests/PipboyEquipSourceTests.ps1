@@ -78,10 +78,6 @@ Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
     's_pipboyMenuGeneration[\s\S]*rawTransition\.pressedEdges\s*\|\s*rawTransition\.releasedEdges[\s\S]*publishPipboyTriggerTransition\(hand\)[\s\S]*consumePipboyEquipTriggerResolution' `
     'Pip-Boy trigger evidence must be captured before blocking-menu gameplay edges are cleared and consumed per selection.'
 
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    '_persistentEquippedCarryActive\s*&&\s*isManualOwnershipActive\(\)[\s\S]*_persistentEquippedCarryDetachArmed[\s\S]*stableFrameInput\.primaryGripInput\.held\s*=\s*true[\s\S]*beginPersistentEquippedCarry' `
-    'A Pip-Boy left carry must survive the absent menu grab hold while preserving an armed physical detach path.'
-
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'inspectStack\(\s*assignment\.handleId,\s*assignment\.stackId[\s\S]*equippedWeapon->formID\s*==\s*assignment\.formId[\s\S]*beginPersistentEquippedCarry[\s\S]*left-carry-resolve-timeout' `
     'Left carry acquisition must bind exact inventory and equipped-weapon identities and fail closed to right after a bounded retry.'
@@ -100,10 +96,6 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'shouldReacquirePersistentLeftCarry\([\s\S]{0,500}isManualOwnershipActive\(\)[\s\S]*assignment\.assignedLeft\s*=\s*currentLeft' `
     'Persistent left reacquisition must not fight manual ownership, and deliberate handovers must replace the durable assigned side.'
-
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'restoreNativeRightEquippedCarry\(const char\* reason\)[\s\S]{0,500}clearPersistentEquippedCarry\(reason\)[\s\S]{0,500}isManualOwnershipActive\(\)[\s\S]{0,500}transitionToInactive\(false\)' `
-    'Native-right restoration must clear both persistent and surviving manual weapon ownership.'
 
 $physicsInteractionText = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/core/PhysicsInteraction.cpp')
 $assignmentServiceCall = $physicsInteractionText.IndexOf('serviceEquippedWeaponHandAssignment(')

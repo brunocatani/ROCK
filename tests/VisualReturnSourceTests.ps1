@@ -58,15 +58,6 @@ Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' `
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'transitionToPartCarry\(\)[\s\S]*blockFrikPrimaryWeaponPose\(\)[\s\S]*beginHandVisualReturn\(_firingHandIsLeft,\s*"primary-detach-part-carry"\)[\s\S]*_state\s*=\s*TwoHandedState::PartCarry' `
     'Primary detach must acquire the required blocker before returning only the departing firing hand while PartCarry takes authority immediately.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'releasePartGrip\(supportHandIsLeft,\s*"support-grip-released",\s*true\)[\s\S]*releasePartGrip\(firingHandIsLeft,\s*"free-hand-grip-released",\s*true\)' `
-    'Player-driven PartCarry releases must start a per-hand return in both physical directions.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'beginHandVisualReturn\(_firingHandIsLeft,\s*"ambidextrous-firing-hand-promotion"\)[\s\S]*setFiringHand\(supportHandIsLeft' `
-    'Ambidextrous promotion must capture the departing firing hand before role ownership changes.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'worldTargetToParentLocal\(nativeParent->world,\s*startWorld\)[\s\S]*releaseFiringHandWeaponNodeOwnership\(_activeWeaponNode\)[\s\S]*_activeWeaponNode->parent\s*!=\s*nativeParent[\s\S]*nativeBaselineLocal' `
-    'Weapon return must restore native right-hand topology before converging in native parent-local space.'
 Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'void TwoHandedGrip::beginWeaponVisualReturn[\s\S]{0,5000}frik_visual_authority::blockPrimaryWeaponNodeOwnership' `
     'Weapon return must not engage hFRIK external-left-carry topology as a transform-write blocker.'

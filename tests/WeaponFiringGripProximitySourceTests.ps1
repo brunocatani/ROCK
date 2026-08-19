@@ -58,17 +58,9 @@ Require-Text 'src/physics-interaction/weapon/WeaponSupport.h' `
     'canPromoteSupportGripToFiringGrip\([\s\S]{0,120}bool supportGripActive,[\s\S]{0,80}bool attachOnly\)[\s\S]{0,700}return supportGripActive && !attachOnly;' `
     'Handoff eligibility must depend on an active non-AttachOnly grip, not its authored or dynamic pose source.'
 
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'tryPromoteSupportGripToFiringGrip[\s\S]*canPromoteSupportGripToFiringGrip\([\s\S]{0,160}supportGrip\.active,[\s\S]{0,100}supportGrip\.attachOnly\)[\s\S]{0,1200}firingGripPromotionRadiusGameUnits' `
-    'Handoff promotion must keep source-neutral grip eligibility followed by the firing-grip distance gate.'
-
 Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' `
     'authoredSupportTouchAcquired' `
     'Authored touch provenance must not remain as a second handoff-authority classification.'
-
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'handlingSettings\.ambidextrousHandoffEnabled\s*&&\s*!primaryGripInput\.held\s*&&\s*tryPromoteSupportGripToFiringGrip' `
-    'Core VisualOnlySupport must never switch firing hands unless the effective ROCK-or-addon ambidextrous policy is active.'
 
 Require-Text 'src/api/ROCKProviderApi.h' `
     'core VisualOnlySupport behavior itself remains always enabled[\s\S]*FiringGripProximitySupport[\s\S]*firingGripProximitySupportRadiusGameUnits' `

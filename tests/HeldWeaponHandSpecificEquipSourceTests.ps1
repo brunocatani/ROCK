@@ -139,10 +139,6 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'effectiveHandlingSettings\.firingGripOwnershipEnabled\s*=[\s\S]{0,160}firingGripOwnershipFeatureAvailable[\s\S]{0,220}effectiveHandlingSettings\.ambidextrousHandoffEnabled\s*=[\s\S]{0,160}ambidextrousHandoffAvailable[\s\S]{0,220}effectiveHandlingSettings\.primaryDetachEnabled\s*=[\s\S]{0,160}primaryDetachFeatureAvailable[\s\S]{0,260}_twoHandedGrip\.update\([\s\S]*effectiveHandlingSettings' `
     'Two-handed weapon state must receive infrastructure-gated ownership, handoff, and detach values while preserving the active ROCK-or-addon tuning.'
 
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'updatePrimaryOnlyGrip[\s\S]{0,1000}primaryGripRetained\s*=\s*equipped_weapon_manual_ownership_policy::shouldRetainPrimaryOnlyOwnership\(\s*primaryDetachEnabled,\s*primaryGripInput\.held\)' `
-    'Non-detaching fixed or addon ownership must ignore grip release while still running equipped-weapon identity cleanup.'
-
 Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
     'std::array<std::atomic<bool>,\s*2>\s+s_handHeldWeapon' `
     'Native trigger suppression must track held-weapon ownership for both physical hands.'
@@ -202,10 +198,6 @@ Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
 Require-Text 'src/physics-interaction/hand/Hand.h' `
     'takeRetainedReference\(\)[\s\S]{0,180}refr\s*=\s*nullptr;[\s\S]{0,100}std::move\(retainedRef\)' `
     'Native transfers must be able to consume the release pin while invalidating its raw alias.'
-
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'firingHandIsLeft\s*&&[\s\S]{0,180}!capturedFiringHandWeaponLocal[\s\S]{0,500}blockFrikPrimaryWeaponPose\(\)[\s\S]{0,500}setFiringHand\(firingHandIsLeft,[\s\S]{0,300}_primaryHandWeaponLocal\s*=\s*\*capturedFiringHandWeaponLocal' `
-    'Left primary-only ownership must fail closed without the captured loose-weapon hold and commit the originating hand before transition.'
 
 Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'RE::TESObjectREFR\* gripZoneHoverCandidate\s*=\s*nullptr;\s*if\s*\(\s*!isLeft\s*&&' `

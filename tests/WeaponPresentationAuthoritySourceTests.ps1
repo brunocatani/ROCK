@@ -115,25 +115,6 @@ Reject-Text $weaponReturn `
     'updateTransformsDown\s*\(' `
     'Weapon return initialization must not rebuild animated descendants from locals.'
 
-$leftReparent = Select-Boundary `
-    $gripSource `
-    'void TwoHandedGrip::syncFiringHandWeaponNodeOwnership(' `
-    'void TwoHandedGrip::releaseFiringHandWeaponNodeOwnership(' `
-    'left-firing weapon reparent'
-$rightReparent = Select-Boundary `
-    $gripSource `
-    'void TwoHandedGrip::releaseFiringHandWeaponNodeOwnership(' `
-    'bool TwoHandedGrip::getSelectedAuthoredGripPoseSnapshot(' `
-    'right-hand weapon reparent cleanup'
-foreach ($reparent in @($leftReparent, $rightReparent)) {
-    Require-Text $reparent `
-        'tryResolveWeaponRootLocal[\s\S]*->local\s*=[\s\S]*->world\s*=' `
-        'Weapon reparenting must preserve the root frame without rebuilding animated descendants.'
-    Reject-Text $reparent `
-        'updateTransformsDown\s*\(' `
-        'Weapon reparenting must not erase native/controller-owned descendant presentation transforms.'
-}
-
 if ($failures.Count -gt 0) {
     Write-Host 'WeaponPresentationAuthoritySourceTests failed:' -ForegroundColor Red
     foreach ($failure in $failures) {

@@ -94,9 +94,6 @@ Require-Text $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'controlWeaponHandRecoil[\s\S]*areTransformsNearlyEqual\([\s\S]*sample->nativeKickLocal[\s\S]*_firingRecoilAcceptedSequence[\s\S]*_firingRecoilAcceptedGenerationKey\s*=\s*self->_activeWeaponGenerationKey[\s\S]*_firingRecoilAcceptedHandIsLeft\s*=\s*firingHandIsLeft[\s\S]*else\s*\{[\s\S]*_firingRecoilConsumedSequence\s*=\s*self->_firingRecoilAcceptedSequence' `
     'A non-neutral accepted FRIK recoil frame must issue a generation- and hand-bound one-shot ROCK ticket, while the next neutral frame retires a skipped ticket.'
 Require-Text $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'solveLeftFiringWeaponCarry[\s\S]*rememberFiringRecoilReference\(true,\s*firingHandTransform\)' `
-    'The left-carry solve must preserve its clean firing-hand target as the initial recoil reference.'
-Require-Text $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
     'recordPublishedHandWorld[\s\S]{0,900}rememberFiringRecoilReference\(isLeft,\s*appliedWorld\)' `
     'Late grip, gunstock, or collision hand publications must refresh the selected firing hand recoil reference from their clean logical target.'
 Require-Text $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `

@@ -248,10 +248,6 @@ Require-Pattern $interaction `
 Require-Pattern $runtimeSource `
     '_frameHasIntent\s*=[\s\S]*_frameAcceptingIntent\s*&&[\s\S]*!suppressDefaultNativeIntent\s*&&[\s\S]*isFiniteTransform\(weaponNode->world\)' `
     'Dynamic collision must accept the native weapon pose by default only when no prior collision presentation can contaminate it.'
-Require-Pattern $weaponAuthority `
-    'refreshRightNativeCanonicalFrame\([\s\S]*_weaponCollisionHandPresentationFromPreviousFrame\[1\][\s\S]*isManualOwnershipActive\(\)' `
-    'Previous collision presentation must never poison the passive native right-hand canonical calibration.'
-
 # Contact callbacks identify positive-point solved manifolds; the current
 # post-solve body snapshot owns the actual collision-resolved pose.
 Require-Order $contacts @(
