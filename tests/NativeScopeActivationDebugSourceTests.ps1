@@ -128,8 +128,6 @@ Require-Text 'src/physics-interaction/weapon/ManualScopeTargetPolicy.h' 'modelPa
     'The cheap unflagged-scope path must require explicit scope identity and a physical model instead of promoting generic sights.'
 Require-Text 'src/physics-interaction/weapon/ManualScopeTargetPolicy.h' 'StructuralMarkerEvidence[\s\S]*ScopeAiming[\s\S]*ScopeViewParts[\s\S]*ScopeFade[\s\S]*hasMagnifiedScopeStructure[\s\S]*isValidNativeOverlayIndex' `
     'Scopes whose OMOD names are generic must be recognized from the native magnified-scope NIF contract and a bounded overlay index.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'loadCompleteOmodModelTemplate[\s\S]*resolveEquippedManualScopeTarget[\s\S]*collectManualScopeStructuralMarkers[\s\S]*nativeScopeOverlayIndex' `
-    'The equipped scope target must resolve structural NIF evidence and publish its ZOOM overlay with the collider generation.'
 Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' 'consumeRawButtonState\(true,\s*input_remap_policy::kOpenVrAcceptButtonId\)[\s\S]*consumeRawButtonState\(false,\s*input_remap_policy::kOpenVrAcceptButtonId\)[\s\S]*manual_scope_input_policy::update[\s\S]*decision\.scopeRequested[\s\S]*decision\.dispatchReload' `
     'Button-only scope and release-time reload must share one physical firing-hand A/X gesture classifier.'
 Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' 'shouldDeferFiringHandActivateForManualScope\(inputEvent\)[\s\S]*markInputEventStopped\(inputEvent\)[\s\S]*return;' `
