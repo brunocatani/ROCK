@@ -218,78 +218,6 @@ namespace rock
 
 
 
-        struct ContactEventCallbackInfo
-        {
-            void* fn = nullptr;
-            std::uint64_t ctx = 0;
-        };
-
-        struct ContactEventSubscriptionBridge
-        {
-            struct NativeSlot
-            {
-                RE::hknpWorld* world = nullptr;
-                void* signal = nullptr;
-                std::uint32_t epoch = 0;
-            };
-
-            static constexpr std::size_t kMaxRetainedNativeSlots = 64;
-
-            std::atomic<PhysicsInteraction*> instance{ nullptr };
-            std::atomic<RE::hknpWorld*> world{ nullptr };
-            std::atomic<void*> signal{ nullptr };
-            std::atomic<std::uint32_t> subscriptionEpoch{ 0 };
-            std::mutex retainedSlotMutex;
-            std::array<NativeSlot, kMaxRetainedNativeSlots> retainedSlots{};
-            std::size_t retainedSlotCount = 0;
-
-            [[nodiscard]] bool hasRetainedNativeSlot(RE::hknpWorld* requestedWorld, void* requestedSignal)
-            {
-                if (!requestedWorld || !requestedSignal) {
-                    return false;
-                }
-
-                std::scoped_lock lock(retainedSlotMutex);
-                for (std::size_t i = 0; i < retainedSlotCount; ++i) {
-                    const auto& slot = retainedSlots[i];
-                    if (slot.world == requestedWorld && slot.signal == requestedSignal) {
-                        return true;
-                    }
-                }
-                return false;
-            }
-
-            bool rememberRetainedNativeSlot(RE::hknpWorld* subscribedWorld, void* subscribedSignal, std::uint32_t epoch)
-            {
-                if (!subscribedWorld || !subscribedSignal) {
-                    return false;
-                }
-
-                std::scoped_lock lock(retainedSlotMutex);
-                for (std::size_t i = 0; i < retainedSlotCount; ++i) {
-                    auto& slot = retainedSlots[i];
-                    if (slot.world == subscribedWorld && slot.signal == subscribedSignal) {
-                        slot.epoch = epoch;
-                        return true;
-                    }
-                }
-
-                if (retainedSlotCount >= retainedSlots.size()) {
-                    return false;
-                }
-
-                retainedSlots[retainedSlotCount++] = NativeSlot{
-                    .world = subscribedWorld,
-                    .signal = subscribedSignal,
-                    .epoch = epoch,
-                };
-                return true;
-            }
-        };
-
-        ContactEventSubscriptionBridge s_contactEventBridge;
-        ContactEventSubscriptionBridge s_manifoldProcessedEventBridge;
-
 
 
         bool approximatelySameWeaponLocalOffset(
@@ -403,23 +331,6 @@ namespace rock
 
             const char* name = node->name.c_str();
             return name ? name : "";
-        }
-
-        const char* pushAssistSkipReasonName(push_assist::PushAssistSkipReason reason)
-        {
-            switch (reason) {
-            case push_assist::PushAssistSkipReason::None:
-                return "none";
-            case push_assist::PushAssistSkipReason::Disabled:
-                return "disabled";
-            case push_assist::PushAssistSkipReason::Cooldown:
-                return "cooldown";
-            case push_assist::PushAssistSkipReason::BelowMinSpeed:
-                return "below-min-speed";
-            case push_assist::PushAssistSkipReason::InvalidImpulse:
-                return "invalid-impulse";
-            }
-            return "unknown";
         }
 
         WeaponInteractionDebugInfo makeWeaponInteractionDebugInfo(
@@ -6675,5 +6586,4 @@ namespace rock
         }
     }
 
-#include "physics-interaction/core/PhysicsInteractionContacts.inl"
 }

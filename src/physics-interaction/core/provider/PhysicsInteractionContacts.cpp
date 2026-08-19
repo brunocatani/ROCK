@@ -1,6 +1,138 @@
-/*
- * Contact routing is kept as a separate core fragment because it bridges the native hknp contact signal, hand semantic state, weapon contacts, and push assist. Keeping it in the PhysicsInteraction translation unit preserves the existing anonymous-namespace helpers while making the frame loop readable.
- */
+#include "physics-interaction/core/PhysicsInteraction.h"
+#include "physics-interaction/core/PhysicsInteractionInternal.h"
+
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <cmath>
+#include <cstdint>
+#include <mutex>
+#include <string>
+#include <string_view>
+
+#include "RockConfig.h"
+#include "api/ROCKProviderApiInternal.h"
+#include "physics-interaction/collision/CollisionLayerPolicy.h"
+#include "physics-interaction/collision/ContactPipelinePolicy.h"
+#include "physics-interaction/collision/ContactSignalSubscriptionPolicy.h"
+#include "physics-interaction/collision/PushAssist.h"
+#include "physics-interaction/grab/GrabMassPolicy.h"
+#include "physics-interaction/native/BodyCollisionControl.h"
+#include "physics-interaction/native/havok/HavokOffsets.h"
+#include "physics-interaction/native/havok/HavokRuntime.h"
+#include "physics-interaction/native/query/PhysicsRecursiveWrappers.h"
+#include "physics-interaction/native/query/PhysicsScale.h"
+#include "physics-interaction/native/query/PhysicsUtils.h"
+#include "physics-interaction/object/ObjectPhysicsBodySet.h"
+#include "physics-interaction/performance/PerformanceProfiler.h"
+#include "rock_support/Fo4VrRuntime.h"
+
+#include "RE/Bethesda/FormComponents.h"
+#include "RE/Bethesda/TESObjectREFRs.h"
+#include "RE/Havok/hknpMotion.h"
+#include "RE/Havok/hknpWorld.h"
+
+namespace rock
+{
+    using namespace physics_interaction_detail;
+
+    namespace
+    {
+        struct ContactEventCallbackInfo
+        {
+            void* fn = nullptr;
+            std::uint64_t ctx = 0;
+        };
+
+        struct ContactEventSubscriptionBridge
+        {
+            struct NativeSlot
+            {
+                RE::hknpWorld* world = nullptr;
+                void* signal = nullptr;
+                std::uint32_t epoch = 0;
+            };
+
+            static constexpr std::size_t kMaxRetainedNativeSlots = 64;
+
+            std::atomic<PhysicsInteraction*> instance{ nullptr };
+            std::atomic<RE::hknpWorld*> world{ nullptr };
+            std::atomic<void*> signal{ nullptr };
+            std::atomic<std::uint32_t> subscriptionEpoch{ 0 };
+            std::mutex retainedSlotMutex;
+            std::array<NativeSlot, kMaxRetainedNativeSlots> retainedSlots{};
+            std::size_t retainedSlotCount = 0;
+
+            [[nodiscard]] bool hasRetainedNativeSlot(RE::hknpWorld* requestedWorld, void* requestedSignal)
+            {
+                if (!requestedWorld || !requestedSignal) {
+                    return false;
+                }
+
+                std::scoped_lock lock(retainedSlotMutex);
+                for (std::size_t i = 0; i < retainedSlotCount; ++i) {
+                    const auto& slot = retainedSlots[i];
+                    if (slot.world == requestedWorld && slot.signal == requestedSignal) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            bool rememberRetainedNativeSlot(RE::hknpWorld* subscribedWorld, void* subscribedSignal, std::uint32_t epoch)
+            {
+                if (!subscribedWorld || !subscribedSignal) {
+                    return false;
+                }
+
+                std::scoped_lock lock(retainedSlotMutex);
+                for (std::size_t i = 0; i < retainedSlotCount; ++i) {
+                    auto& slot = retainedSlots[i];
+                    if (slot.world == subscribedWorld && slot.signal == subscribedSignal) {
+                        slot.epoch = epoch;
+                        return true;
+                    }
+                }
+
+                if (retainedSlotCount >= retainedSlots.size()) {
+                    return false;
+                }
+
+                retainedSlots[retainedSlotCount++] = NativeSlot{
+                    .world = subscribedWorld,
+                    .signal = subscribedSignal,
+                    .epoch = epoch,
+                };
+                return true;
+            }
+        };
+
+        ContactEventSubscriptionBridge s_contactEventBridge;
+        ContactEventSubscriptionBridge s_manifoldProcessedEventBridge;
+
+        [[nodiscard]] const char* pushAssistSkipReasonName(
+            push_assist::PushAssistSkipReason reason)
+        {
+            switch (reason) {
+            case push_assist::PushAssistSkipReason::None:
+                return "none";
+            case push_assist::PushAssistSkipReason::Disabled:
+                return "disabled";
+            case push_assist::PushAssistSkipReason::Cooldown:
+                return "cooldown";
+            case push_assist::PushAssistSkipReason::BelowMinSpeed:
+                return "below-min-speed";
+            case push_assist::PushAssistSkipReason::InvalidImpulse:
+                return "invalid-impulse";
+            }
+            return "unknown";
+        }
+
+    }
+
+// This translation unit owns native hknp signals and main-thread contact consumption.
+    // Runs on the main thread.
+
     void PhysicsInteraction::resolveContacts(const PhysicsFrameContext& frame)
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::ContactResolve);
@@ -89,6 +221,8 @@
         processHeldImpact(_rightHand, false, _lastHeldImpactPairRight);
         processHeldImpact(_leftHand, true, _lastHeldImpactPairLeft);
     }
+    // Runs on the main thread.
+
     void PhysicsInteraction::applyDynamicPushAssist(const char* sourceName,
         RE::bhkWorld* bhk,
         RE::hknpWorld* hknp,
@@ -259,6 +393,9 @@
         }
     }
 
+    // Runs on the main thread.
+
+
     void PhysicsInteraction::resolveAndLogContact(const char* handName, RE::bhkWorld* bhk, RE::hknpWorld* hknp, RE::hknpBodyId bodyId)
     {
         if (!bhk || !hknp)
@@ -287,6 +424,9 @@
             ROCK_LOG_DEBUG(Hand, "{} hand touched body={} layer={} (unresolved)", handName, bodyId.value, layer);
         }
     }
+
+    // Runs on the main thread.
+
 
     void PhysicsInteraction::subscribeContactEvents(RE::hknpWorld* world)
     {
@@ -396,6 +536,9 @@
             "manifold-processed");
     }
 
+    // Runs on the main thread.
+
+
     void PhysicsInteraction::unsubscribeContactEvents(RE::hknpWorld* liveWorld)
     {
         auto deactivateBridge = [&](ContactEventSubscriptionBridge& bridge,
@@ -458,11 +601,17 @@
             "manifold-processed");
     }
 
+    // Runs on the physics step thread.
+
+
     void PhysicsInteraction::onContactCallback(void* userData, void** worldPtrHolder, void* contactEventData)
     {
         performance_profiler::addEventCount(performance_profiler::Scope::NativeContactCallback);
         onContactCallbackSeh(userData, worldPtrHolder, contactEventData);
     }
+
+    // Runs on the physics step thread.
+
 
     void PhysicsInteraction::onContactCallbackSeh(void* userData, void** worldPtrHolder, void* contactEventData)
     {
@@ -472,6 +621,9 @@
             onContactCallbackException();
         }
     }
+
+    // Runs on the physics step thread.
+
 
     void PhysicsInteraction::onContactCallbackUnsafe(void* userData, void** worldPtrHolder, void* contactEventData)
     {
@@ -513,6 +665,9 @@
         }
     }
 
+    // Runs on the physics step thread.
+
+
     void PhysicsInteraction::onContactCallbackException()
     {
         static int sehLogCounter = 0;
@@ -524,6 +679,9 @@
         }
         s_hooksEnabled.store(false, std::memory_order_release);
     }
+
+    // Runs on the physics step thread.
+
 
     void PhysicsInteraction::handleManifoldProcessedEvent(RE::hknpWorld* world, void* eventData)
     {
@@ -692,6 +850,9 @@
                 manifoldPointCount);
         }
     }
+
+    // Runs on the physics step thread.
+
 
     void PhysicsInteraction::handleContactEvent(RE::hknpWorld* world, void* contactEventData)
     {
@@ -1463,3 +1624,4 @@
                 contact_pipeline_policy::routeName(contactRoute.route));
         }
     }
+}

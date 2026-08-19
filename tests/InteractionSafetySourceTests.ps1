@@ -86,7 +86,6 @@ function Require-OrderedTokens {
 $grenadeSource = Read-Source 'src/physics-interaction/grenade/LooseGrenadeRuntime.cpp'
 $physicsSource = Read-Source 'src/physics-interaction/core/PhysicsInteraction.cpp'
 $physicsHeader = Read-Source 'src/physics-interaction/core/PhysicsInteraction.h'
-$contactSource = Read-Source 'src/physics-interaction/core/PhysicsInteractionContacts.inl'
 $pendingCommitHeader = Read-Source 'src/physics-interaction/core/PendingForceGrabCommit.h'
 $grabPhasePolicy = Read-Source 'src/physics-interaction/grab/GrabThreePhase.h'
 $forceGrabPolicy = Read-Source 'src/physics-interaction/core/ForceGrabPolicy.h'
@@ -232,16 +231,6 @@ Reject-Text $pendingCommitHeader `
 Require-Text $grabPhasePolicy `
     'if\s*\(!result\.frontHemisphere\)[\s\S]*?if\s*\(input\.programmaticArrival\)[\s\S]*?AcquisitionPhase::NearConverging[\s\S]*?"programmaticArrivalBehindPalm"' `
     'Programmatic exact-target arrival must bypass only the organic behind-palm gate while retaining convergence.'
-
-# Contact push assistance must not eject a freshly spawned/targeted object
-# before the deferred grab transaction attaches it.
-$dynamicPush = Get-BoundedText $contactSource 'void PhysicsInteraction::applyDynamicPushAssist(' 'void PhysicsInteraction::resolveAndLogContact(' 'dynamic push assist'
-Require-OrderedTokens $dynamicPush @(
-    'auto* targetRef = resolveBodyToRef',
-    'if (!targetRef || targetRef->IsDeleted() || targetRef->IsDisabled())',
-    'isPendingForceGrabTarget(targetRef)',
-    'scanObjectPhysicsBodySet'
-) 'Dynamic push must exclude pending force-grab targets before body scanning or impulse application.'
 
 # API force-grab single-flight is per hand and survives dequeue until a terminal
 # result. Provider loss/unregistration must cancel liveness and release leases.

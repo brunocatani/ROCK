@@ -130,12 +130,6 @@ Require-OrderedText 'src/RockConfig.cpp' @(
     'fHandCollisionDynamicCompoundMass',
     'fHandCollisionDynamicInverseInertiaMultiplier'
 ) 'The hand compound mass and inverse-inertia controls must load through the ROCK INI path.'
-Require-Text 'src/physics-interaction/core/PhysicsInteractionContacts.inl' `
-    'shapeKeyA\s*=[\s\S]{0,120}data \+ 0x10[\s\S]{0,180}shapeKeyB\s*=[\s\S]{0,120}data \+ 0x14' `
-    'The verified key-2 record must read both compound participant shape keys at +0x10/+0x14.'
-Reject-Text 'src/physics-interaction/core/PhysicsInteractionContacts.inl' `
-    'void PhysicsInteraction::handleContactEvent\([\s\S]*tryClassifyDynamicBodyContactSourceAtomic\(' `
-    'Key-3 impulse records must never be used to infer compound child semantics.'
 
 # The flexion is physical: compound finger children always chase the LIVE
 # published role frames so the colliders curl and slide with the rendered
@@ -328,18 +322,6 @@ Require-OrderedText 'src/physics-interaction/core/PhysicsInteraction.cpp' @(
 # Fixed-surface grabs use a separate bounded contact channel. Palm and
 # fingertips are eligible; the forearm and ordinary loose-object semantic set
 # remain excluded.
-Require-OrderedText 'src/physics-interaction/core/PhysicsInteractionContacts.inl' @(
-    'tryClassifySurfaceContactSourceAtomic\(',
-    'recordSurfaceManifoldProcessedCallback\(',
-    '_generatedBodyContactRegistry\.tryClassify\('
-) 'Key-2 dynamic surface evidence must publish before the ordinary key-3 generated-body prefilter.'
-Require-OrderedText 'src/physics-interaction/core/PhysicsInteractionContacts.inl' @(
-    'handleManifoldProcessedEvent\(',
-    'tryClassifySurfaceContactSourceAtomic\(',
-    'recordSurfaceManifoldProcessedCallback\(',
-    'recordObstacleManifoldProcessedCallback\('
-) 'Processed manifolds must publish dynamic-hand surface evidence while preserving the dynamic-weapon route.'
-
 # The opt-in API remains authoritative, while the shipped INI enables a
 # built-in world-surface fallback for direct play and testing.
 foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {

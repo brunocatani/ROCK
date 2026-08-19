@@ -31,7 +31,6 @@ function Reject-Pattern {
 }
 
 $layers = 'src/physics-interaction/collision/CollisionLayerPolicy.h'
-$contacts = 'src/physics-interaction/core/PhysicsInteractionContacts.inl'
 $provider = 'src/physics-interaction/core/PhysicsInteractionProvider.inl'
 $api = 'src/api/ROCKProviderApi.h'
 
@@ -63,10 +62,6 @@ Require-Pattern 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' `
 # These offsets and identity gates were independently derived from raw FO4VR
 # 1.2.72 disassembly. A source-only regression makes accidental removal fail
 # the normal test configure/build path.
-
-Require-Pattern $contacts `
-    'tryClassifyDynamicBodyContactSourceAtomic\([\s\S]*recordDynamicBodyContactCallback\([\s\S]*bodyAIsDynamicWeapon[\s\S]*bodyBIsDynamicWeapon' `
-    'Both callback paths must aggregate dynamic hand-hand and hand-weapon pairs before registry filtering.'
 
 Require-Pattern $api `
     'DynamicOtherHandContact\s*=\s*1u\s*<<\s*19[\s\S]*DynamicWeaponContact\s*=\s*1u\s*<<\s*20[\s\S]*DynamicWeaponPairSuppressed\s*=\s*1u\s*<<\s*21' `

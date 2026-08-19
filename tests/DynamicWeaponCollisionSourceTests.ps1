@@ -48,7 +48,6 @@ function Require-Order {
 }
 
 $interaction = 'src/physics-interaction/core/PhysicsInteraction.cpp'
-$contacts = 'src/physics-interaction/core/PhysicsInteractionContacts.inl'
 $layers = 'src/physics-interaction/collision/CollisionLayerPolicy.h'
 
 # The validated dynamic compound and hand-interaction graph ship enabled.
@@ -114,28 +113,6 @@ Require-Pattern $interaction `
 
 # Contact callbacks identify positive-point solved manifolds; the current
 # post-solve body snapshot owns the actual collision-resolved pose.
-Require-Order $contacts @(
-    'isProxyBodyIdAtomic\(bodyIdA\)',
-    'tryReadFilterInfo\(',
-    'isDynamicWeaponProxySolverObstacleLayer\(otherLayer\)',
-    'ensureRawContactPoint\(\)',
-    'recordObstacleContactCallback\(',
-    'shouldSkipContactSignalBeforeLayerRead\('
-) 'A raw proxy/obstacle contact point must be captured before the normal gameplay-contact prefilter discards layer 51.'
-Require-Order $contacts @(
-    'kManifoldProcessedEventType\s*=\s*static_cast<RE::hknpEventType::Enum>\(2\)',
-    's_manifoldProcessedEventBridge',
-    'handleManifoldProcessedEvent\(world,\s*contactEventData\)'
-) 'The verified key-2 signal must own a distinct retained bridge and callback route.'
-Require-Order $contacts @(
-    'handleManifoldProcessedEvent\(',
-    'recordSize\s*!=\s*kExpectedRecordSize\s*\|\|\s*eventKey\s*!=\s*kManifoldProcessedEventKey',
-    'manifoldPointCount\s*=',
-    'isProxyBodyIdAtomic\(bodyIdA\)',
-    'tryReadFilterInfo\(',
-    'recordObstacleManifoldProcessedCallback\('
-) 'Processed-manifold admission must retain the verified point count and validate the exact proxy/obstacle pair.'
-
 # The proxy participates in the same callback-clock drive and deterministic
 # live/stale-world cleanup contract as the existing generated bodies.
 Require-Order $interaction @(

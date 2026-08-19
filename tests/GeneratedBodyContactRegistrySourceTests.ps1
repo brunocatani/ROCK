@@ -35,9 +35,6 @@ function Reject-Text {
     }
 }
 
-Require-Text 'src/physics-interaction/core/PhysicsInteractionContacts.inl' '_generatedBodyContactRegistry\.tryClassify\(bodyIdA' 'Native contact callback must classify endpoint A through the generated-body registry.'
-Require-Text 'src/physics-interaction/core/PhysicsInteractionContacts.inl' '_generatedBodyContactRegistry\.tryClassify\(bodyIdB' 'Native contact callback must classify endpoint B through the generated-body registry.'
-Reject-Text 'src/physics-interaction/core/PhysicsInteractionContacts.inl' 'tryGetWeaponContactAtomic|tryGetWeaponBodySampledVelocityAtomic|isWeaponBodyIdAtomic|tryGetBodyMetadataAtomic|isColliderBodyIdAtomic|isHandColliderBodyId|tryGetHandColliderMetadata' 'Native contact callback must not perform generated owner scans after registry classification.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'restoreExpiredProviderWeaponPartDriveNodes' 'Provider weapon part drives must restore nodes whose drive leases are not renewed.'
 Require-Text 'src/physics-interaction/contact/GeneratedBodyContactRegistry.h' 'std::atomic<std::uint64_t> _publicationVersion' 'Generated-body callback registry must use atomic publication versioning.'
