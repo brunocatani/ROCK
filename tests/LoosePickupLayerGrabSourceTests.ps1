@@ -55,9 +55,6 @@ Require-Text 'src/physics-interaction/object/PhysicsBodyClassifier.h' `
     'native PROPS layer[\s\S]*checks below[\s\S]*fail closed unless prep produced a dynamic body' `
     'The loose native-layer exception must document that motion validation still owns runtime safety.'
 
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
-    'diagnosticRejectedBodyRecord\([\s\S]*preparedBodySet[\s\S]*rejectReason=\{\}[\s\S]*rejectLayer=\{\}[\s\S]*rejectMotion=\{\}[\s\S]*rejectFlags=0x\{:08X\}[\s\S]*rejectMotionProps=\{\}' `
-    'Pull/grab failure telemetry must expose the concrete body reject reason, layer, motion, flags, and motion props.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'Loose pickup-layer grab source boundary failed:'

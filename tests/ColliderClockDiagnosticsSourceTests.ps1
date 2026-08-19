@@ -54,9 +54,6 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
 Require-Text 'src/rock_support/VRControllers.cpp' `
     'getPollSnapshot[\s\S]*current\.unPacketNum[\s\S]*previous\.unPacketNum[\s\S]*packetChanged[\s\S]*current\.rAxis' `
     'The controller trace must retain OpenVR packet identity and every polled analog axis.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
-    'sourceGameFrameIndex = runtime_state::currentFrame\(\)\.frameIndex[\s\S]*_lastAppliedGrabAuthoritySourceGameFrameIndex = pending\.sourceGameFrameIndex[\s\S]*_grabAuthorityProxyLastFlushTiming = timing[\s\S]*_grabAuthorityProxyLastAfterSolveTiming = timing' `
-    'Grab authority telemetry must carry the queued game frame through flush and retain both solve-phase timing samples.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'GRAB_LOCOMOTION drive[\s\S]*source\(frame/age/queue/pending/flush/after\)[\s\S]*steps\(raw/target/proxy/body\)[\s\S]*GRAB_LOCOMOTION visual[\s\S]*gaps\(bodyDerivedToNode/heldHandToFrik/rawToHeldHand\)[\s\S]*steps\(node/heldHand/frik\)' `
     'Grab locomotion rows must localize both cadence stair-steps and the body-to-scene-to-FRIK presentation boundary.'

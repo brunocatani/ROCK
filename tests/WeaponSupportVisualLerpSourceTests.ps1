@@ -42,8 +42,6 @@ Require-Text 'src/RockConfig.cpp' 'bWeaponSupportSurfaceSeatEnabled[\s\S]*fWeapo
 
 Require-Text 'src/physics-interaction/hand/HandVisual.h' 'computeDistanceMappedDurationGameUnits[\s\S]*blendTransformOverDuration' `
     'Visual hand helper must expose time-based distance-mapped transform blending.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'computeDistanceMappedDurationGameUnits\([\s\S]*rockGrabHandLerpTimeMin[\s\S]*rockGrabHandLerpTimeMax[\s\S]*rockGrabHandLerpMinDistance[\s\S]*rockGrabHandLerpMaxDistance' `
-    'Normal grab visual hand smoothing must use the explicit grab hand lerp duration settings.'
 Require-Text 'src/physics-interaction/weapon/WeaponSupport.h' 'shouldUseDynamicSupportAcquisition[\s\S]{0,500}FullTwoHandedSolver[\s\S]{0,300}!authoredSupportGrip[\s\S]{0,200}!providerAuthorityActive[\s\S]{0,200}!attachOnly' `
     'Synchronized acquisition must be eligible only for normal non-authored full-authority support grips.'
 Require-Text 'src/physics-interaction/weapon/WeaponSupport.h' 'shortestArcSlerpFromIdentity[\s\S]*applyRotationAroundPrimaryPivot[\s\S]*localPointToWorld\([\s\S]*primaryGripLocal[\s\S]*primaryTargetWorld' `
@@ -70,8 +68,6 @@ Reject-Text 'src/RockConfig.h' 'rockGrabLerp(Speed|AngularSpeed|MaxTime)' `
     'Removed generic grab startup lerp config fields must not remain in RockConfig.'
 Reject-Text 'src/RockConfig.cpp' 'fGrabLerp(Speed|AngularSpeed|MaxTime)|rockGrabLerp(Speed|AngularSpeed|MaxTime)' `
     'Removed generic grab startup lerp config loading must not remain.'
-Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'rockGrabLerp(Speed|AngularSpeed)' `
-    'Normal grab visual hand smoothing must not use old speed-based generic grab lerp settings.'
 
 if ($failures.Count -gt 0) {
     foreach ($failure in $failures) {

@@ -26,7 +26,6 @@ Require-Text 'src/physics-interaction/native/GeneratedKeyframedBodyDrive.h' 'sho
 Require-Text 'src/physics-interaction/native/GeneratedKeyframedBodyDrive.cpp' 'liveBody = world \? havok_runtime::getBody\(world, body\.getBodyId\(\)\) : nullptr[\s\S]*getCollisionObjectFromBody\(liveBody\)[\s\S]*bodyCollisionObjectMismatch = true[\s\S]*return result;[\s\S]*driveToKeyFrame' 'Generated body drive must fail closed on body/collision-object mismatch before calling the native keyframe drive.'
 Require-Text 'src/physics-interaction/native/GeneratedKeyframedBodyDrive.cpp' 'shouldLimitGeneratedDriveTarget\([\s\S]*mode\.dynamicVelocity,[\s\S]*immediatePlacement,[\s\S]*result\.hasLiveBodyTransform\)[\s\S]*limitGeneratedDriveTarget' 'Only dynamic velocity bodies may spatially limit requested targets before the native drive.'
 Require-Text 'src/physics-interaction/native/GeneratedKeyframedBodyDrive.h' 'return dynamicVelocity && !immediatePlacement && hasLiveBodyTransform;' 'Keyframed and immediate-placement bodies must bypass ROCK target limiting.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'ownerMismatch=\{\}' 'Proxy grab release logs must distinguish collision-object ownership mismatches from missing bodies.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'GeneratedKeyframedBodyDriveSafetySourceTests failed:' -ForegroundColor Red

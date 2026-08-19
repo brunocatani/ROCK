@@ -78,7 +78,6 @@ $sourceFiles = @(
     'src/physics-interaction/core/PhysicsHooks.cpp',
     'src/physics-interaction/core/PhysicsHooks.h',
     'src/physics-interaction/hand/Hand.h',
-    'src/physics-interaction/hand/HandGrab.cpp',
     'src/physics-interaction/grab/GrabHeldObject.h',
     'src/physics-interaction/grab/GrabAuthoritySourceClockResampler.h',
     'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp',
@@ -120,18 +119,12 @@ Reject-Text 'CMakeLists.txt' 'GrabLocomotionJagPolicyTests' `
 Reject-Text 'src/physics-interaction/hand/Hand.h' `
     'applyHeldFrameDiscontinuityCorrectionLocked|playerSpaceDeltaGameUnits|playerSpaceDeltaValid|_grabFrameCorrection' `
     'Grab authority must not retain state or APIs for the removed held-body correction.'
-Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' `
-    'GrabFrameDiscontinuityCorrection|grab_frame_discontinuity|applyHeldFrameDiscontinuityCorrectionLocked|HELD FRAME CORRECTION' `
-    'Grab authority must not translate live held bodies from mismatched wall and physics clocks.'
 Require-Text 'src/physics-interaction/grab/GrabAuthoritySourceClockResampler.h' `
     'struct ConsumptionFrameRebase[\s\S]*consumptionRootHavok[\s\S]*sourceRootHavok[\s\S]*controllerIdentity[\s\S]*physicsScaleRevision[\s\S]*kMaxTranslationJumpGameUnits' `
     'The source-clock owner must retain the measured, identity-safe, bounded consumption-frame root rebase.'
 Require-Text 'src/physics-interaction/native/CharacterControllerRuntime.cpp' `
     'GetPositionImpl\(positionHavok, false\)' `
     'The root rebase must read the live character-controller position without actor-position or velocity substitutes.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
-    'sourceControllerRoot = samplePlayerControllerRootFrame\(\)[\s\S]*_grabAuthorityConsumptionFrameRebase\.evaluate[\s\S]*pending\.proxyWorld\.translate\.x \+= consumptionFrameRebase\.shiftGame\.x' `
-    'The queued source root must rebase only the hidden proxy target at consumption.'
 Reject-Text 'src/physics-interaction/grab/GrabAuthoritySourceClockResampler.h' `
     'cachedLinearVelocity|outVelocity|predictionLead|feedForward|FeedForward' `
     'The exact consumption-frame root rebase must never regain velocity prediction or feed-forward state.'

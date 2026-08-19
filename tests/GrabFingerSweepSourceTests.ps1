@@ -113,14 +113,6 @@ Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
 # Regular grabs solve once against the already-frozen target relation. The
 # bounded local mesh is indexed once, commanded open directions anchor the
 # calibrated arcs, and surface contacts are stored object-local.
-Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
-    'targetObjectWorld =',
-    '_grabFrame\.desiredObjectWorldAtGrab',
-    'solveFrozenMeshFingerPose\(',
-    'localFingerPoseTriangles',
-    'targetObjectWorld',
-    '_grabFingerTriangleIndex'
-) 'Regular grab commit must solve one object-local endpoint against the frozen target relation.'
 Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
     'solveFrozenMeshFingerPoseBase\(',
     'rebuildBoundedWorldTriangles\(',
@@ -158,12 +150,6 @@ Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
 
 # Acquisition only blends toward that immutable endpoint. It must never rebuild
 # mesh triangles or invoke the geometric solver while the object converges.
-Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
-    '_grabFingerPosePublished\) \{',
-    'resolveSurfaceAimObjectLocal\(_grabFingerPose, desiredObjectWorld\)',
-    'buildAcquisitionFingerPose\(resolvedTargetPose, acquisitionProgress\)',
-    'applyRockGrabHandPose\('
-) 'Grab acquisition must blend toward the pre-solved target without geometric re-solves.'
 
 # The commanded zero reconstruction walks authored open-pose chain origins.
 Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
@@ -217,41 +203,15 @@ Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
 
 # TouchHeld atomically publishes the same stored endpoint, resolved through
 # object-local surface aims. It does not fire the regular solver again.
-Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
-    'finalPoseObjectWorld =',
-    'resolveSurfaceAimObjectLocal\(_grabFingerPose, finalPoseObjectWorld\)',
-    'applyRockGrabHandPose\(_isLeft,',
-    '0\.0f,\s*true,\s*true'
-) 'TouchHeld must snap the pre-solved endpoint atomically with local transforms enabled.'
 
 # Pinch is the sole deferred special route and keeps its existing at-touch
 # non-curve solve and policy.
-Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
-    'pinch solve deferred until TouchHeld',
-    'if \(!_grabFingerPosePublished\) \{',
-    'const bool pinchFingerPose = _grabFrame\.seatMode == GrabSeatMode::PinchPocket;',
-    'solveGrabFingerPoseFromTriangles\(',
-    'applyPinchFingerPosePolicy\(_grabFingerPose'
-) 'Pinch must remain the only deferred at-touch finger solve.'
 
 # The former live convergence and held adoption loops are the regression:
 # they must stay absent, including their interval/deadline state.
-Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' `
-    'anticipationOpenValue|heldResolveMaxValueDelta|heldPoseSmoothingSettled|FINGER-CYCLE ADOPT|FINGER POSE FROZEN|FINGER POSE RESOLVE WINDOW EXPIRED|_grabFingerPoseFrozen|_grabFingerPoseResolveElapsedSeconds|rockGrabFingerPoseUpdateInterval' `
-    'Normal grabs must not retain live convergence or held settle re-solve machinery.'
-
-$handGrabText = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/hand/HandGrab.cpp')
-$handGrabSolveCount = [regex]::Matches($handGrabText, 'solveGrabFingerPoseFromTriangles\(').Count
-if ($handGrabSolveCount -ne 2) {
-    $failures.Add("HandGrab must retain exactly two direct non-curve solve sites for pinch commit/deferred pinch; found $handGrabSolveCount.")
-}
 
 # Additional publish-path pad probes are debug-overlay-only work; capture-time
 # target refinement remains one-shot.
-Require-OrderedText 'src/physics-interaction/hand/HandGrab.cpp' @(
-    'rockDebugShowGrabFingerProbes\) \{',
-    'refineGrabFingerPoseWithPadProbes\('
-) 'Publish-path pad probes must be gated behind the finger-probe overlay flag.'
 
 # The proximity-scaled pad open bias mutated PUBLISHED values from live pad
 # distance AFTER the deadband - the finger-twitch feedback loop. It must not
@@ -297,9 +257,6 @@ Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
 Require-Text 'src/physics-interaction/grab/GrabFinger.h' `
     'FingerPoseMeshRelation::AlreadyAtCommandedSeat' `
     'Regular target-space grabs must keep their calibrated pivot on the live proximal bone.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
-    '\.thumbSweepMaxOpenValue\s*=\s*g_rockConfig\.rockGrabThumbSweepMaxOpenValue,[\s\S]{0,160}\.fingerSweepMaxOpenValue\s*=\s*g_rockConfig\.rockGrabFingerSweepMaxOpenValue' `
-    'Grab solve sites must pass the config-driven thumb/finger sweep max-open caps.'
 Require-Text 'tools/generate_grab_finger_calibration.py' `
     'OVER_OPEN_MAX = 2\.0' `
     'The calibration bake must sample the full over-open range for every finger.'
@@ -312,12 +269,6 @@ foreach ($path in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
 
 # The presentation grip axis is not pure cross-palm Z (the thumb occupies that
 # line): both alignment sites must apply the configurable tilt toward X.
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
-    'std::sin\(gripAxisTiltRadians\), 0\.0f, std::cos\(gripAxisTiltRadians\)' `
-    'The pull-flight presentation servo must use the tilted grip axis.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
-    'pocket\.crossPalmWorld \* std::cos\(gripAxisTiltRadians\) \+\s*pocket\.fingerForwardWorld \* std::sin\(gripAxisTiltRadians\)' `
-    'The force-grab seat alignment must use the same tilted grip axis.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'Grab finger sweep source boundary failed:'

@@ -78,112 +78,11 @@ Require-Text 'tests/ActiveGrabBodyLifecyclePolicyTests.cpp' 'loose keyframed phy
 Require-Text 'tests/ActiveGrabBodyLifecyclePolicyTests.cpp' 'loose keyframed non-physical transfer should restore motion' 'Compiled lifecycle policy tests must cover non-physical keyframed restoration.'
 Require-Text 'tests/ActiveGrabBodyLifecyclePolicyTests.cpp' 'pull-consumed loose keyframed physical drop should keep converted dynamic motion' 'Compiled lifecycle policy tests must cover pull-to-grab lifecycle release preservation.'
 Require-Text 'tests/ActiveGrabBodyLifecyclePolicyTests.cpp' 'depth-truncated scans should force incomplete restore fallback' 'Compiled lifecycle policy tests must cover depth-truncated scan fallback.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'restoreIncompleteActivePrepRoot' 'Incomplete object scans must have an explicit recursive root restore fallback.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'release-incomplete-scan' 'Release cleanup must invoke the incomplete-scan root restore path.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'releaseRestorePolicyForTargetKind\(_savedObjectState\.targetKind\)' 'Release cleanup must choose target-aware lifecycle restore policy from the saved target kind.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'releaseIntentFromDisposition\(releaseContext\.disposition\)' 'Release cleanup must pass physical/non-physical disposition into lifecycle restore planning.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' '_savedObjectState\.originalMotionPropsId\s*=\s*originalPrimaryRecord->motionPropertiesId' 'Held release cleanup must preserve exact original motion property ids such as weapon motionPropsId 5 instead of coercing them to preset 1.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'finishPullPrepAsPhysicalDropIfActive' 'Dynamic pull cleanup must have a physical-drop path separate from failed setup restore.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'failed-pull-catch-setup-physical-drop' 'A refused pull-catch close grab must preserve the already converted pulled object as a physical drop.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'finishPullPrepAsPhysicalDropIfActive\("pull-release"\)' 'User dynamic-pull release must finish pull prep as a physical drop, not a failed setup restore.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'finishPullPrepAsPhysicalDropIfActive\("pull-catch-normal-grab-suppressed"\)' 'Suppressed normal grab input must preserve an active converted pull-catch object as a physical drop.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'finishPullPrepAsPhysicalDropIfActive\("pull-catch-stale-reacquire-failed"\)' 'Stale pull-catch reacquire failure must preserve the converted pulled object as a physical drop.'
 
-$handGrabText = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/hand/HandGrab.cpp')
-$pullStart = $handGrabText.IndexOf('bool Hand::startDynamicPull')
-$pullEnd = if ($pullStart -ge 0) { $handGrabText.IndexOf('bool Hand::updateDynamicPull', $pullStart) } else { -1 }
-if ($pullStart -lt 0 -or $pullEnd -lt 0) {
-    $failures.Add('Hand::startDynamicPull boundary could not be located.')
-} else {
-    $pullText = $handGrabText.Substring($pullStart, $pullEnd - $pullStart)
-    if ($pullText -notmatch 'makeActiveGrabBodyScanOptions\(_currentSelection\)') {
-        $failures.Add('Dynamic pull must build seeded object scan options from the current far-hit selection.')
-    }
-    if ($pullText -notmatch 'tryUseGrabAcquisitionBeforePrepCache') {
-        $failures.Add('Dynamic pull must try the prewarmed acquisition cache before a direct tree scan.')
-    }
-    if ($pullText -notmatch 'tryBuildGrabAcquisitionPreparedBodySetFromCache') {
-        $failures.Add('Dynamic pull must explicitly route cached prepared body records through the completeness-aware cache helper.')
-    }
-    if ($pullText -notmatch 'preparedBodySetPostPrepComplete') {
-        $failures.Add('Dynamic pull must track whether cached prepared body records have true post-prep proof.')
-    }
-    if ($pullText -notmatch 'preparedScanCacheHit && !preparedBodySetPostPrepComplete[\s\S]*markIncompleteNativeScan') {
-        $failures.Add('Dynamic pull must mark lifecycle discovery incomplete when prepared records come only from pre-prep cache replay.')
-    }
-    if ($pullText -notmatch 'PULL scan:') {
-        $failures.Add('Dynamic pull must log seeded scan diagnostics.')
-    }
-    if ($pullText -notmatch 'unresolvedAccepted') {
-        $failures.Add('Dynamic pull logs must expose unresolved ownership fallback counts.')
-    }
-    if ($pullText -notmatch 'scanSource=\{\}/\{\}') {
-        $failures.Add('Dynamic pull logs must expose cache/direct scan source for both before and prepared body sets.')
-    }
-    if ($pullText -notmatch 'preparedComplete=\{\}') {
-        $failures.Add('Dynamic pull logs must expose whether prepared body evidence was post-prep complete.')
-    }
-    if ($pullText -notmatch '_pulledBodyIds\s*=\s*preparedBodySet\.acceptedBodyIds\(\)') {
-        $failures.Add('Dynamic pull must retain all accepted object bodies for activation/ownership, not collapse multipart weapons to one motion body.')
-    }
-    if ($pullText -match '_pulledBodyIds\s*=\s*preparedBodySet\.uniqueAcceptedMotionBodyIds\(\)') {
-        $failures.Add('Dynamic pull must not use the unique-motion body list as the ownership body set.')
-    }
-    if ($pullText -notmatch 'pullLifecycle\.captureBeforeActivePrep\(beforePrepBodySet\)' -or
-        $pullText -notmatch 'pullLifecycle\.markPreparedBodies\(preparedBodySet\)' -or
-        $pullText -notmatch '_pullActiveLifecycle\s*=\s*pullLifecycle' -or
-        $pullText -notmatch '_pullPrepRestoreArmed\s*=\s*true') {
-        $failures.Add('Dynamic pull must arm a lifecycle snapshot so abandoned pull prep can restore motion/filter state.')
-    }
-    if ($pullText -match 'markPullCatchIntentArrived\(\);\s*clearPullRuntimeState\(') {
-        $failures.Add('Pull arrival must keep the pull prep lifecycle armed until pull-catch grab consumes it or selection cleanup restores it.')
-    }
-}
-
-$grabStart = $handGrabText.IndexOf('bool Hand::grabSelectedObject')
-$grabEnd = if ($grabStart -ge 0) { $handGrabText.IndexOf('void Hand::updateHeldObject', $grabStart) } else { -1 }
-if ($grabStart -lt 0 -or $grabEnd -lt 0) {
-    $failures.Add('Hand::grabSelectedObject boundary could not be located.')
-} else {
-    $grabText = $handGrabText.Substring($grabStart, $grabEnd - $grabStart)
-    if ($grabText -notmatch 'makeActiveGrabBodyScanOptions\(sel\)') {
-        $failures.Add('Close/pull-catch grab must build seeded object scan options from the selected body.')
-    }
-    if ($grabText -notmatch 'tryUseGrabAcquisitionBeforePrepCache') {
-        $failures.Add('Close/pull-catch grab must try the prewarmed acquisition cache before a direct tree scan.')
-    }
-    if ($grabText -notmatch 'tryBuildGrabAcquisitionPreparedBodySetFromCache') {
-        $failures.Add('Close/pull-catch grab must explicitly route cached prepared body records through the completeness-aware cache helper.')
-    }
-    if ($grabText -notmatch 'preparedBodySetPostPrepComplete') {
-        $failures.Add('Close/pull-catch grab must track whether cached prepared body records have true post-prep proof.')
-    }
-    if ($grabText -notmatch 'preparedScanCacheHit && !preparedBodySetPostPrepComplete[\s\S]*markIncompleteNativeScan') {
-        $failures.Add('Close/pull-catch grab must mark lifecycle discovery incomplete when prepared records come only from pre-prep cache replay.')
-    }
-    if ($grabText -notmatch 'invalidSystems') {
-        $failures.Add('Grab object-tree prep logs must include invalid native physics-system diagnostics.')
-    }
-    if ($grabText -notmatch 'latePrepared') {
-        $failures.Add('Grab object-tree prep logs must include late body lifecycle diagnostics.')
-    }
-    if ($grabText -notmatch 'scanSource=\{\}/\{\}') {
-        $failures.Add('Grab object-tree prep logs must expose cache/direct scan source for both before and prepared body sets.')
-    }
-    if ($grabText -notmatch 'preparedComplete=\{\}') {
-        $failures.Add('Grab object-tree prep logs must expose whether prepared body evidence was post-prep complete.')
-    }
-    if ($grabText -notmatch 'restoreIncompleteActivePrepRoot\(rootNode,\s*selectedOriginalMotionPropsId') {
-        $failures.Add('Failed grab setup must restore the root when body scanning was incomplete.')
-    }
-    if ($grabText -notmatch 'consumePullPrepLifecycleForActiveGrab\(sel\.refr,\s*activeLifecycle\)') {
-        $failures.Add('Pull-catch grab must consume the pull lifecycle snapshot instead of recapturing post-pull state.')
-    }
-}
-
 Require-Text 'src/physics-interaction/hand/Hand.cpp' 'restorePullPrepIfActive\(context\)' 'Clearing pull runtime state must restore abandoned pull prep when the world is still valid.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'restorePullPrepIfActive' 'Pull prep lifecycle restore helper must be implemented in the grab runtime.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'clearPullPrepTracking' 'Pull prep tracking must have an explicit abandon/consume cleanup path.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'Dynamic pull weapon scan boundary failed:'

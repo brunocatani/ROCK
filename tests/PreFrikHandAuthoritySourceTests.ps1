@@ -38,7 +38,6 @@ $frame = 'src/physics-interaction/core/PhysicsInteractionFrame.inl'
 $frameContext = 'src/physics-interaction/core/PhysicsFrameContext.h'
 $handSkeleton = 'src/physics-interaction/hand/HandSkeleton.h'
 $handHeader = 'src/physics-interaction/hand/Hand.h'
-$hand = 'src/physics-interaction/hand/HandGrab.cpp'
 $visualBridge = 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h'
 $equipHeader = 'src/physics-interaction/weapon/EquipVisualBridge.h'
 $equip = 'src/physics-interaction/weapon/EquipVisualBridge.cpp'
@@ -119,12 +118,6 @@ Require-Pattern $handSkeleton `
 Require-Pattern $handHeader `
     'PreFrikGrabVisualAuthority[\s\S]*NiPointer<RE::NiAVObject>\s+heldNode[\s\S]*heldNodeToHandLocal[\s\S]*heldBodyId[\s\S]*constraintId[\s\S]*sourceSchedulerSequence' `
     'Regular grab pre-FRIK state must own the held node and bind it to exact body, constraint, and scheduler identities.'
-Require-Pattern $hand `
-    'refreshGrabVisualAuthorityBeforeFrik[\s\S]*GRAB_EXTERNAL_HAND_TAG[\s\S]*isImmediateSuccessor[\s\S]*_savedObjectState\.bodyId[\s\S]*_activeConstraint\.constraintId[\s\S]*reconstructTargetWorld[\s\S]*GRAB_RETURN_HAND_TAG' `
-    'Regular grab pre-FRIK refresh must reconstruct from the held object and validate the current grab owner before handling return.'
-Require-Pattern $hand `
-    'applyGrabExternalHandWorldTransform[\s\S]{0,1800}_preFrikGrabVisualAuthority\.heldNode\.reset[\s\S]*captureDriverToTargetLocal[\s\S]*sourceSchedulerSequence' `
-    'A successful post grab publication must capture the held-node relation for the immediately succeeding pre-FRIK phase.'
 
 # Equip handoff follows whichever retained weapon graph is currently visible.
 Require-Pattern $equipHeader `

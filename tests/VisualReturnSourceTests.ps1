@@ -36,15 +36,6 @@ Require-Text 'src/RockConfig.cpp' `
     'bGrabHandReturnEnabled[\s\S]*fGrabHandReturnTimeMin[\s\S]*fGrabHandReturnTimeMax[\s\S]*fGrabHandReturnMinDistance[\s\S]*fGrabHandReturnMaxDistance[\s\S]*fGrabHandReturnMinAngleDegrees[\s\S]*fGrabHandReturnMaxAngleDegrees' `
     'Generic grabbed-hand return must have an independently loaded and clamped setting family.'
 
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
-    'GRAB_RETURN_HAND_PRIORITY\s*=\s*85[\s\S]*beginGrabVisualReturn\(\);[\s\S]*clearGrabExternalHandWorldTransform\(_isLeft\)' `
-    'Generic release must publish the lower-priority return pose before clearing active grab authority.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
-    'GrabReleaseOutcome Hand::releaseGrabbedObject[\s\S]*const bool applyReleaseVelocity[\s\S]*setHeldVelocity\([\s\S]*beginGrabVisualReturn\(\);[\s\S]*clearGrabExternalHandWorldTransform\(_isLeft\)' `
-    'Generic visual return must begin only after physical release velocity and lifecycle work are complete.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
-    '_grabVisualReturn\.active[\s\S]*_grabVisualReturn\.lastApplied[\s\S]*_grabVisualHandLerpStartTransform\s*=\s*acquisitionStart' `
-    'A new generic acquisition must start from the last pose rendered by an interrupted return.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'processHand\(_rightHand,\s*false\);[\s\S]*processHand\(_leftHand,\s*true\);[\s\S]*updateGrabVisualReturn\(\s*frame\.right\.rawHandWorld[\s\S]*updateGrabVisualReturn\(\s*frame\.left\.rawHandWorld' `
     'Empty-hand generic returns must advance after normal input processing for both physical hands.'

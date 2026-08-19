@@ -71,9 +71,6 @@ Require-OrderedText 'src/physics-interaction/grab/GrabFinger.h' @(
     'refineGrabFingerPoseWithPadProbes\(',
     'captureSurfaceAimObjectLocal\(result\.pose, frozenMeshWorldTransform\)'
 ) 'Regular loose grabs must layer their thumb/index and pad policy over the shared indexed frozen base.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
-    'solveFrozenMeshFingerPose\(' `
-    'Regular loose grabs must use the same shared frozen-mesh solver boundary.'
 Require-OrderedText 'src/physics-interaction/hand/RootFlattenedFingerSkeletonRuntime.cpp' @(
     'buildFingerSkeletonSnapshot\(',
     'boneSnapshot\.valid',

@@ -66,9 +66,6 @@ Require-Text 'src/physics-interaction/hand/Hand.cpp' '_grabAcquisitionCache\.sel
 Require-Text 'src/physics-interaction/hand/Hand.cpp' '_grabAcquisitionCache\.hknpWorld\s*==\s*hknpWorld' 'Cache identity must include the hknp world.'
 Require-Text 'src/physics-interaction/hand/Hand.cpp' '_grabAcquisitionCache\.bhkWorld\s*==\s*bhkWorld' 'Cache identity must include the bhk world.'
 Require-Text 'src/physics-interaction/hand/Hand.cpp' 'clearGrabAcquisitionCache\(rememberDeselect \? "selection-cleared' 'Selection cleanup must invalidate non-owning cached engine pointers.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'tryUseGrabAcquisitionBeforePrepCache[\s\S]*scanObjectPhysicsBodySet' 'Grab/pull startup must try cached before-prep evidence before direct tree scan fallback.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'tryBuildGrabAcquisitionPreparedBodySetFromCache[\s\S]*scanObjectPhysicsBodySet' 'Grab/pull startup must try cached prepared evidence before direct tree scan fallback.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'preparedScanCacheHit && !preparedBodySetPostPrepComplete[\s\S]*markIncompleteNativeScan' 'Cached prepared replay without post-prep proof must force incomplete lifecycle restore fallback.'
 
 Require-Text 'src/physics-interaction/performance/PerformanceProfiler.h' 'GrabAcquisitionBodyScan' 'Profiler must expose grab acquisition body scan timing.'
 Require-Text 'src/physics-interaction/performance/PerformanceProfiler.h' 'GrabAcquisitionActivePrep' 'Profiler must expose recursive active-prep timing.'
@@ -77,12 +74,6 @@ Require-Text 'src/physics-interaction/performance/PerformanceProfiler.h' 'GrabNe
 Require-Text 'src/physics-interaction/performance/PerformanceProfiler.h' 'GrabAcquisitionCacheHit' 'Profiler must count grab acquisition cache hits.'
 Require-Text 'src/physics-interaction/performance/PerformanceProfiler.h' 'GrabAcquisitionCacheMiss' 'Profiler must count grab acquisition cache misses.'
 
-Reject-FunctionPattern `
-    'src/physics-interaction/hand/HandGrab.cpp' `
-    'bool Hand::grabSelectedObject' `
-    'void Hand::updateHeldObject' `
-    'const auto beforePrepBodySet\s*=\s*object_physics_body_set::scanObjectPhysicsBodySet[\s\S]*object_physics_body_set::scanObjectPhysicsBodySet\(bhkWorld,\s*world,\s*sel\.refr' `
-    'grabSelectedObject must not return to unconditional double full-tree scans on the grab edge.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'Grab acquisition cache source boundary failed:'

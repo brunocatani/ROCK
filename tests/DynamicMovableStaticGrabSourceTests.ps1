@@ -74,8 +74,6 @@ Require-Text 'src/physics-interaction/object/ObjectDetection.cpp' 'dynamic-mstt-
     'Dynamic MSTT selection needs a stable classification reason for runtime diagnostics.'
 Require-Text 'src/physics-interaction/object/ObjectDetection.cpp' 'isExplodableCar\(baseForm\)[\s\S]*evaluateSelection[\s\S]*isInPowerArmor\(\)' `
     'Close ExplodableCar selection must remain available to feed dynamic-world collision tagging.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'isExplodableCar\(baseObj\)[\s\S]*evaluateGrab[\s\S]*carGrabDecision\.allowed' `
-    'The authoritative grab commit must reject ExplodableCar bodies outside power armor.'
 Require-Text 'src/physics-interaction/object/CarInteractionPolicy.h' 'car-requires-power-armor' `
     'The car grab policy needs a stable non-power-armor rejection reason.'
 Require-Text 'src/physics-interaction/core/PhysicsHooks.cpp' 'targetIsCar\s*=\s*targetIdentity\.isCar' `

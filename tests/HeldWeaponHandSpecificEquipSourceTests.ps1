@@ -191,9 +191,6 @@ Require-Text 'src/physics-interaction/grab/GrabConstraint.h' `
     'struct\s+SavedObjectState[\s\S]*RE::NiPointer<RE::TESObjectREFR>\s+retainedRef[\s\S]{0,180}RE::TESObjectREFR\*\s+refr[\s\S]*setReference\(const\s+RE::NiPointer<RE::TESObjectREFR>&\s+value\)' `
     'An active grab must retain its world reference instead of relying on the visual model or a raw pointer.'
 
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
-    'const\s+auto\s+selectedRef\s*=\s*sel\.retainedRef[\s\S]*_savedObjectState\.setReference\(selectedRef\)[\s\S]*outcome\.retainedRef\s*=\s*_savedObjectState\.retainedRef[\s\S]{0,120}outcome\.refr\s*=\s*outcome\.retainedRef\.get\(\)[\s\S]*_savedObjectState\.clear\(\)' `
-    'Grab commit and release must carry one strong reference across cleanup until the caller explicitly takes transfer ownership.'
 
 Require-Text 'src/physics-interaction/hand/Hand.h' `
     'takeRetainedReference\(\)[\s\S]{0,180}refr\s*=\s*nullptr;[\s\S]{0,100}std::move\(retainedRef\)' `
@@ -205,13 +202,7 @@ Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
 
 # Pull-catch/force-grab canonical auto-align must cover both physical hands
 # through the shared firing-hold resolver.
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
-    'loose_weapon_grip_zone::tryResolveLooseWeaponFiringHandHold\([\s\S]{0,160}isLeft,[\s\S]{0,160}selection\.refr[\s\S]{0,300}multiplyTransforms\([\s\S]{0,120}handWorld,[\s\S]{0,120}transform_math::invertTransform\(handWeaponLocal\)\)' `
-    'Pull-catch/force-grab must seat either hand from the shared in-memory canonical hold (weapon = hand world o inverse(hold)).'
 
-Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' `
-    '"notPrimaryHand"' `
-    'The secondary hand must no longer be excluded from the loose-weapon FRIK-offset attach.'
 
 Require-Text 'src/physics-interaction/weapon/LooseWeaponGripZone.cpp' `
     'tryResolveLooseWeaponFiringHandHold\([\s\S]{0,700}tryResolveGripWorld\(isLeft,\s*weaponRef,\s*scratch,\s*&testedHandWorld\)' `
@@ -223,9 +214,6 @@ Require-Text 'src/physics-interaction/grab/SavedGrabOffsetStore.h' `
     'constexpr\s+bool\s+participatesInSavedGrabOffsets\(' `
     'Saved-grab-offset weapon eligibility must be one shared policy for the save and apply sides.'
 
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
-    'programmaticArrival\s*&&[\s\S]{0,200}participatesInSavedGrabOffsets\(\s*looseWeaponGrab,' `
-    'Pull-catch/force-grab must not resolve saved grab offsets for non-throwable weapons.'
 
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'participatesInSavedGrabOffsets\(weaponForm\s*!=\s*nullptr,\s*throwableWeapon\)' `

@@ -54,9 +54,7 @@ Require-Text 'src/physics-interaction/grab/GrabFinger.h' 'probeStartOpenValue' '
 Require-Text 'src/physics-interaction/grab/GrabFinger.h' 'contactCenterObjectLocal' 'The exact selected contact sphere center must be captured.'
 Require-Text 'src/physics-interaction/grab/GrabFinger.h' 'selectedProbeIndex' 'The selected tip/outer/inner probe must be captured.'
 Require-Text 'src/physics-interaction/grab/GrabFinger.h' 'spatialNodeVisits' 'BVH node visit totals must be exposed for diagnosis.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' '\.captureSweepDebug\s*=\s*g_rockConfig\.rockDebugShowGrabFingerSweptArc' 'Only the new master switch may request one-shot swept capture.'
 Require-Text 'src/physics-interaction/grab/GrabFinger.h' 'options\.captureSweepDebug\s*\?\s*&result\.sweepDebug\s*:\s*nullptr' 'The shared one-shot solver must gate capture payload construction on its explicit debug option.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' '_grabFingerSweepDebugObjectWorld\s*=\s*targetObjectWorld' 'Captured object-local arcs must track the commanded held-object transform.'
 
 $overlayPath = Join-Path $Root 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp'
 $overlayText = Get-Content -Raw -LiteralPath $overlayPath

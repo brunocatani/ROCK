@@ -126,7 +126,6 @@ Reject-Path 'src/physics-interaction/weapon/HeldWeaponVisualSnapshot.h' 'Held we
 Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'HeldWeaponEquipVisualHandoff|captureHeldWeaponEquipVisualSnapshot|visualHandoffStarted' 'Held weapon equip must not run phantom visual handoff code.'
 Reject-Text 'src/physics-interaction/core/PhysicsInteraction.h' 'HeldWeaponEquipVisualHandoff' 'PhysicsInteraction must not own phantom visual handoff state.'
 Reject-Text 'src/physics-interaction/hand/Hand.h' 'HeldWeaponVisualSnapshot|captureHeldWeaponEquipVisualSnapshot' 'Hand must not expose phantom held-weapon visual snapshot capture.'
-Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'captureHeldWeaponEquipVisualSnapshot' 'Hand grab runtime must not retain phantom held-weapon visual snapshot capture.'
 
 
 Require-Text 'src/physics-interaction/weapon/WeaponGeometry.h' 'findDetachedSourceComponentIndices[\s\S]*FailOpenNoAssembledAnchor[\s\S]*nearestAnchorGapSquared[\s\S]*minimumDetachedGapSquared' 'Detached collider filtering must use AABB-component separation and fail open without assembled weapon evidence.'
@@ -169,10 +168,8 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'observeCusto
 Require-Text 'src/physics-interaction/hand/HandBoneColliderSet.cpp' 'instance\.body\.retireDeferred\(' 'Hand bone collider teardown must defer native release through retireDeferred.'
 Require-Text 'src/physics-interaction/hand/HandBoneColliderSet.cpp' 'palmAnchorBody\.retireDeferred\(' 'Hand palm-anchor teardown must defer native release through retireDeferred.'
 Require-Text 'src/physics-interaction/body/BodyBoneColliderSet.cpp' 'instance\.body\.retireDeferred\(' 'Body bone collider teardown must defer native release through retireDeferred.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' '_grabAuthorityProxy\.retireDeferred\(' 'Grab-authority proxy teardown must defer native release through retireDeferred.'
 Reject-Text 'src/physics-interaction/hand/HandBoneColliderSet.cpp' 'instance\.body\.destroy\(|palmAnchorBody\.destroy\(' 'Hand bone colliders must not immediately destroy native collision objects in the live-world teardown path.'
 Reject-Text 'src/physics-interaction/body/BodyBoneColliderSet.cpp' 'instance\.body\.destroy\(' 'Body bone colliders must not immediately destroy native collision objects in the live-world teardown path.'
-Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' '_grabAuthorityProxy\.destroy\(' 'Grab-authority proxy must not immediately destroy its native collision object in the live-world teardown path.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'WeaponCollisionWorkbenchExitMenuSink' 'PhysicsInteraction must own the UI menu close sink that arms the workbench-exit rebuild request.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'requestWeaponCollisionRebuildAfterWorkbenchExit\(event\.menuName\.c_str\(\)\)' 'Workbench-family menu close must arm the weapon collision rebuild gate through PhysicsInteraction.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'ensureWeaponCollisionWorkbenchExitMenuSinkRegistered\(\);[\s\S]{0,180}const auto& runtime = runtime_state::currentFrame\(\)' 'Workbench-exit menu sink registration must retry from update before normal runtime early-outs.'

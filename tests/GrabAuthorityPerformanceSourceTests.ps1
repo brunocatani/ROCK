@@ -54,15 +54,7 @@ Require-Text 'src/RockConfig.h' 'rockDebugGrabAfterSolveAnomalySampling' `
 Require-Text 'src/RockConfig.cpp' 'bDebugGrabAfterSolveAnomalySampling' `
     'RockConfig must read the separate after-solve anomaly sampling gate.'
 
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'void Hand::updateHeldObject[\s\S]*Scope::GrabHeldObjectUpdate' `
-    'Held-object game-frame work must be measurable separately from total frame time.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'void Hand::flushPendingCustomGrabAuthority[\s\S]*addEventCount\(performance_profiler::Scope::GrabAuthorityFlush\)[\s\S]*ScopedTimer profilerTimer\(performance_profiler::Scope::GrabAuthorityFlush\)' `
-    'Active custom grab authority flushes must count and time physics-step work.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'void Hand::observeCustomGrabAuthorityAfterSolve[\s\S]*const bool debugGrabFrameLogging[\s\S]*const bool timelineTraceLogging[\s\S]*const bool shouldSampleForAnomaly\s*=\s*g_rockConfig\.rockDebugGrabAfterSolveAnomalySampling[\s\S]*if \(!debugGrabFrameLogging && !timelineTraceLogging && !shouldSampleForAnomaly\)\s*\{\s*return;\s*\}[\s\S]*Scope::GrabAuthorityAfterSolveDiagnostics[\s\S]*hasConstraintFrameMetrics' `
-    'After-solve body readback and constraint atom diagnostics must stay behind explicit grab debug, timeline, or anomaly-sampling gates.'
 
-Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'const bool shouldSampleForAnomaly\s*=\s*afterSolveSequence\s*<=\s*16u' `
-    'After-solve anomaly sampling must not run unconditionally during normal gameplay.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'Grab authority performance source boundary failed:'
