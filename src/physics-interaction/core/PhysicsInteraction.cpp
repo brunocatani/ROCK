@@ -799,7 +799,6 @@ namespace rock
             ::rock::provider::RockProviderLifecycleFlag::PhysicsWriteAllowed);
     }
 
-#include "physics-interaction/core/PhysicsInteractionProvider.inl"
     bool PhysicsInteraction::validateCriticalOffsets() const
     {
         REL::Relocation hookSite{ REL::Offset(offsets::kHookSite_MainLoop) };

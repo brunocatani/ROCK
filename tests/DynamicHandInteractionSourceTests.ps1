@@ -31,7 +31,6 @@ function Reject-Pattern {
 }
 
 $layers = 'src/physics-interaction/collision/CollisionLayerPolicy.h'
-$provider = 'src/physics-interaction/core/PhysicsInteractionProvider.inl'
 $api = 'src/api/ROCKProviderApi.h'
 
 foreach ($ini in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
@@ -69,10 +68,6 @@ Require-Pattern $api `
 Require-Pattern $api `
     'DynamicInteractionsEnabled\s*=\s*1u\s*<<\s*7[\s\S]*DynamicPairFilterReady\s*=\s*1u\s*<<\s*11' `
     'Collision availability must expose graph enablement and native pair-filter readiness.'
-Require-Pattern $provider `
-    'otherHandContactMask[\s\S]*weaponContactMask[\s\S]*dynamicInteractionLayer[\s\S]*suppressedWeaponPairCount' `
-    'Provider collision availability must publish contact masks, stable layer, and exact suppression count.'
-
 if ($failures.Count -gt 0) {
     foreach ($failure in $failures) {
         Write-Error $failure

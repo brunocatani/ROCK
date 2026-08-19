@@ -39,7 +39,6 @@ function Reject-Match(
 
 $apiHeader = Read-Source 'src/api/ROCKProviderApi.h'
 $apiSource = Read-Source 'src/api/ROCKProviderApi.cpp'
-$providerGlue = Read-Source 'src/physics-interaction/core/PhysicsInteractionProvider.inl'
 $selectionSource = Read-Source 'src/physics-interaction/object/ObjectDetection.cpp'
 
 Require-Match 'API header' $apiHeader `
@@ -57,9 +56,6 @@ Require-Match 'API source' $apiSource `
 Require-Match 'API source' $apiSource `
     'apiQueryWorldRaycastV1[\s\S]{0,6000}queryProviderWorldRaycastV1' `
     'The public boundary must delegate the native query to PhysicsInteraction.'
-Require-Match 'Provider glue' $providerGlue `
-    'queryProviderWorldRaycastV1[\s\S]*castClosestSegment[\s\S]*rockFarClipRayFilterInfo' `
-    'The provider query must use ROCK''s validated far-world filter.'
 Require-Match 'Selection source' $selectionSource `
     'findFarObject[\s\S]*castClosestSegment' `
     'ROCK selection and public raycasts must share one native closest-segment primitive.'

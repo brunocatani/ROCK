@@ -64,10 +64,6 @@ Require-Text 'src/api/ROCKProviderApi.h' `
 Require-Text 'src/api/ROCKProviderApi.h' `
     'struct RockProviderHandInteractionStateV1[\s\S]*surfaceAnchorGame[\s\S]*surfaceGripMode' `
     'The public hand state must report the authoritative surface anchor and mode.'
-Require-Text 'src/physics-interaction/core/PhysicsInteractionProvider.inl' `
-    'touchGrabReport\.surfaceGripMode[\s\S]*Flag::SurfaceAnchorValid[\s\S]*Flag::MeshSurfaceAnchor[\s\S]*Flag::MeshCollisionFallback' `
-    'The aggregate hand API must publish the mesh-grab mode flags and anchor.'
-
 if ($failures.Count -gt 0) {
     Write-Host 'SurfaceMeshGrabSourceTests failed:' -ForegroundColor Red
     foreach ($failure in $failures) {

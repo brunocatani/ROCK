@@ -1,3 +1,32 @@
+#include "physics-interaction/core/PhysicsInteraction.h"
+#include "physics-interaction/core/PhysicsInteractionInternal.h"
+#include "physics-interaction/core/PhysicsInteractionTransformValidation.h"
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstdio>
+#include <cstring>
+#include <span>
+#include <string>
+
+#include "RockConfig.h"
+#include "api/ProviderColliderVisualizationRuntime.h"
+#include "api/ProviderDebugOverlayRuntime.h"
+#include "api/ROCKProviderApiInternal.h"
+#include "physics-interaction/collision/ContactPipelinePolicy.h"
+#include "physics-interaction/core/RockRuntimeState.h"
+#include "physics-interaction/debug/overlay/DebugBodyOverlay.h"
+#include "physics-interaction/native/query/PhysicsRayCast.h"
+#include "physics-interaction/native/query/PhysicsScale.h"
+#include "physics-interaction/native/query/PhysicsUtils.h"
+#include "physics-interaction/weapon/WeaponInteraction.h"
+#include "rock_support/Fo4VrRuntime.h"
+
+namespace rock
+{
+    using namespace physics_interaction_detail;
+
 /*
  * Provider snapshot and query glue is split from lifecycle/update orchestration because it exposes ROCK state to external consumers without owning physics behavior. It stays in this translation unit to preserve helper visibility and public API behavior.
  */
@@ -1618,3 +1647,4 @@
             _providerGenerationAtomic.load(std::memory_order_acquire);
         return true;
     }
+}

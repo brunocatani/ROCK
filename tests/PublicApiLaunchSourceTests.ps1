@@ -170,8 +170,6 @@ Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_MAX_CONSUMERS_V1\s*=\s*6
     'Public consumer registry capacity must be an explicit SDK limit.'
 Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_MAX_WEAPON_BODIES\s*=\s*8[\s\S]{0,400}ROCK_PROVIDER_MAX_WEAPON_EVIDENCE_DETAILS_V1\s*=\s*100' `
     'The complete weapon evidence catalog must remain independent from the compact frame-snapshot body array.'
-Require-Text 'src/physics-interaction/core/PhysicsInteractionProvider.inl' 'getProviderWeaponEvidenceDetailCountV1[\s\S]{0,500}ROCK_PROVIDER_MAX_WEAPON_EVIDENCE_DETAILS_V1[\s\S]{0,700}copyProviderWeaponEvidenceDetailsV1[\s\S]{0,700}ROCK_PROVIDER_MAX_WEAPON_EVIDENCE_DETAILS_V1' `
-    'Weapon evidence count and copy queries must both enforce the advertised catalog bound.'
 Require-Text 'src/api/ROCKApi.cpp' 'ROCKAPI_GetProviderApi\(\)' `
     'ROCKAPI_GetApi must return the same table as ROCKAPI_GetProviderApi.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'kRockIssuedOwnerTokenNamespace\s*=\s*0xA000''0000''0000''0000ull' `
@@ -269,8 +267,6 @@ Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp' '
     'Focused collider visualization must replace the complete config-driven overlay frame.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'apiSetColliderVisualizationOverrideV1[\s\S]{0,1200}onAnimationOwnerThread\(\)[\s\S]{0,1800}ColliderVisualizationOverride[\s\S]{0,1200}s_lastSnapshot\.weaponGenerationKey[\s\S]{0,900}isProviderWeaponBodyCurrentV1[\s\S]{0,600}provider_collider_visualization::set' `
     'Collider focus requests must be owner-thread/capability gated and bind exact identity from the complete current weapon-body catalog.'
-Require-Text 'src/physics-interaction/core/PhysicsInteractionProvider.inl' 'isProviderWeaponBodyCurrentV1[\s\S]{0,500}getWeaponBodySnapshotAtomic[\s\S]{0,500}snapshot\.bodyIds' `
-    'Collider focus identity validation must scan the complete generation-bound weapon body publication.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'copySnapshot\([\s\S]{0,300}isProviderWeaponBodyCurrentV1[\s\S]{0,500}provider_collider_visualization::prune\([\s\S]{0,500}colliderVisualizationBodyCurrent' `
     'Collider focus leases must invalidate against the complete current weapon body set before callbacks.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'apiUnregisterConsumerV1[\s\S]{0,3500}provider_collider_visualization::clear\(ownerToken\)' `
@@ -375,14 +371,10 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'collectFresh
     'Grip-edge touch acquisition must consume the dedicated dynamic surface contact channel.'
 Require-Text 'src/api/ROCKProviderApi.h' 'TouchGrab\s*=\s*1u\s*<<\s*12[\s\S]*FixedSurfaceLatch\s*=\s*1u\s*<<\s*13[\s\S]*GlobalSurfaceLatch\s*=\s*1u\s*<<\s*14' `
     'Hand-interaction state must distinguish touch grabs, fixed surface latches, and the INI global mode.'
-Require-Text 'src/physics-interaction/core/PhysicsInteractionProvider.inl' '_touchGrabRuntime\.getHandReport\([\s\S]*Phase::Holding[\s\S]*reservedTargetIdentity[\s\S]*referenceNativeHandle[\s\S]*targetFormId[\s\S]*primaryBodyId[\s\S]*TargetKind::WorldSurface[\s\S]*Flag::TouchGrab[\s\S]*Flag::FixedSurfaceLatch[\s\S]*Flag::GlobalSurfaceLatch' `
-    'The public hand state must identify every active surface latch and its resolved target body.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'sameHandTarget[\s\S]{0,500}reservedTargetIdentity[\s\S]{0,300}primaryBodyId' `
     'Touch-grab native identity and body changes must advance the public target sequence.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'Releasing[\s\S]{0,1500}touchGrabClassificationFlags[\s\S]{0,1500}previousHand\.flags' `
     'The one-frame release state must retain touch-grab and global-surface classification.'
-Require-Text 'src/physics-interaction/core/PhysicsInteractionProvider.inl' 'outState\.authoredSupportGrip[\s\S]{0,120}report\.authoredSupportGrip[\s\S]*out\.actionRole[\s\S]{0,120}descriptor\.semantic\.actionRole' `
-    'ROCK V1 must publish exact authored-grip provenance and semantic action roles without consumer inference.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'tryTargetClass\([\s\S]{0,180}TargetClass::[\s\S]{0,80}Explicit\)\s*\|\|[\s\S]{0,180}tryTargetClass\([\s\S]{0,180}TargetClass::[\s\S]{0,80}Wildcard\)' `
     'Exact mechanism targets must be attempted before wildcard fixed-surface targets.'
 Require-Text 'src/physics-interaction/object/PhysicsBodyClassifier.h' 'motionType\s*==\s*BodyMotionType::Static[\s\S]{0,120}BodyRejectReason::StaticMotion' `

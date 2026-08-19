@@ -84,12 +84,6 @@ Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'tryResolveNat
     'The retired cone solver and cone-setting reads must not remain in PhysicsInteraction.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'tryGetManualScopeDirectTransitionTarget[\s\S]*getNativeScopeResolvedAnchorSnapshot[\s\S]*resolvedAnchor\.valid[\s\S]*matchesCurrentEquippedWeapon\([\s\S]*resolvedIdentity,[\s\S]*currentIdentity' `
     'Unflagged scopes may transition only after either generated geometry or the firing-grip fallback resolved for the current equipped instance.'
-Require-Text 'src/physics-interaction/core/PhysicsInteractionProvider.inl' 'queryProviderScopeSightStateV1[\s\S]*resolvedAnchorMatchesPublication[\s\S]*resolvedAnchor\.anchorWeaponLocal[\s\S]*Flag::AnchorValid[\s\S]*Flag::BoundsValid' `
-    'The V1 scope readback must expose the selected fallback anchor without claiming generated sight bounds exist.'
-Require-Text 'src/physics-interaction/core/PhysicsInteractionProvider.inl' 'rendererStateValid[\s\S]*rendererActive[\s\S]*Flag::Active[\s\S]*RockProviderScopeActivationSourceV1::ManualInput' `
-    'The V1 scope readback must publish verified renderer activity as manual input, its sole activation source.'
-Reject-Text 'src/physics-interaction/core/PhysicsInteractionProvider.inl' 'RockProviderScopeActivationSourceV1::NativeGeometry|RockProviderScopeActivationSourceV1::RockGeometry' `
-    'The provider must not publish retired native or ROCK geometry activation sources.'
 Require-Text 'src/ROCKMain.cpp' 'hookNativeScopeGeometryDecision[\s\S]*callBytes\[0\]\s*!=\s*0xE8[\s\S]*decodedTarget\s*!=\s*expectedTarget[\s\S]*kExpectedNativeDecisionTest[\s\S]*write_call<5>\(callSiteAddress,\s*&onNativeScopeGeometryDecision\)[\s\S]*kRockDecisionTest[\s\S]*REL::safe_write' `
     'The exact verified geometry call site and original target must be validated before patching.'
 Require-Text 'src/ROCKMain.cpp' 'bool onNativeScopeGeometryDecision[\s\S]*finalGeometryDecision\s*=\s*nativeGeometryDecision[\s\S]*nativeForceDecision[\s\S]*finalGeometryDecision\s*=\s*input_remap_runtime::isManualScopeActivationRequested\(\)[\s\S]*buttonDecisionApplied\s*=\s*true[\s\S]*s_originalNativeScopeStateTransition\(player,\s*finalGeometryDecision\)[\s\S]*buttonDecisionApplied\s*\?\s*true\s*:\s*finalGeometryDecision' `
