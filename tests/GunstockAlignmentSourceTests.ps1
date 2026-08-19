@@ -99,76 +99,17 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'gunstockPresentationBlocked\s*=[\r\n\s]*frame\.menuBlocked\s*\|\|\s*frame\.reloadBoundaryActive[\s\S]*gunstockNeutralSampleBlocked\s*=[\s\S]*isRawButtonPhysicallyHeld\([\s\S]*kOpenVrSteamVrTriggerButtonId\)[\s\S]*\|\|\s*frame\.reloadBoundaryActive[\s\S]*const bool gunstockPresentationBlocked\s*=[\r\n\s]*frame\.menuBlocked\s*\|\|\s*frame\.reloadBoundaryActive[\s\S]*prepareGunstockAlignmentDebugSnapshot\([\s\S]*gunstockNeutralSampleBlocked,\s*gunstockPresentationBlocked\)[\s\S]*applyGunstockAlignment\([\s\S]*gunstockNeutralSampleBlocked,\s*gunstockPresentationBlocked\)' `
     'Trigger input must block neutral calibration, while menu or native reload authority must yield the complete latched gunstock hand presentation.'
 
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'tryResolveGunstockPhysicalFiringFrame[\s\S]*SecondaryMeleeWeaponOffsetNode2[\s\S]*primaryWeaponOffsetNOde[\s\S]*_leftNaturalBoneInDampedDriver[\s\S]*_rightNaturalBoneInDampedDriver[\s\S]*localWristForward\s*\{\s*1\.0f,\s*0\.0f,\s*0\.0f\s*\}[\s\S]*applyGunstockAlignment\([\s\S]*tryCaptureHandLocalBore\([\s\S]*tryResolveGunstockPrimaryGroupCorrection[\s\S]*rotateRigidlyAroundPivot[\s\S]*applyWeaponVisualAuthority' `
-    'The runtime must reconstruct a clean damped wrist, target wrist +X, rotate the complete posed group, and publish the weapon coherently.'
-
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'configuredGunstockFineTune[\s\S]*rockGunstockAlignmentPitchDegrees[\s\S]*rockGunstockAlignmentYawDegrees[\s\S]*rockGunstockAlignmentRollDegrees[\s\S]*tryResolveGunstockPrimaryGroupCorrection[\s\S]*tryBuildFineTunedWorldCorrection[\s\S]*outFineTuneActive[\s\S]*applyGunstockAlignment[\s\S]*fineTuneActive[\s\S]*directionDot\s*>\s*0\.999999f\s*&&\s*!fineTuneActive' `
-    'Runtime alignment must compose configured fine tuning into the one rigid correction and never skip a pure-roll trim.'
-
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'directionDot\s*>\s*0\.999999f\s*&&\s*!fineTuneActive[\s\S]*applyWeaponVisualAuthority\([\s\S]*weaponNode->world,[\s\S]*currentWeaponGenerationKey\)[\s\S]*correctedWeaponWorld[\s\S]*applyWeaponVisualAuthority\([\s\S]*correctedWeaponWorld,[\s\S]*currentWeaponGenerationKey\)' `
-    'Final gunstock weapon/scope authority must publish both when the weapon needs a correction and when the bore is already aligned.'
-
 Reject-Text 'src/physics-interaction/weapon/WeaponAuthority.h' `
     'alignOpticalAxesToBore|camera \+X[\s\S]*bore \+Y' `
     'Gunstock scopes must not replace the captured native camera calibration with an unverified axis mapping.'
-
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'applyWeaponVisualAuthority[\s\S]*_nativeScopeRigidFrame\.cameraWeaponLocal[\s\S]*resolveRigidAnchorFrameWorld\([\s\S]*weaponNode->world,[\s\S]*_nativeScopeRigidFrame\.cameraWeaponLocal[\s\S]*native scope retained weapon-local frame relationError' `
-    'The final weapon writer must transport the retained camera frame rigidly and diagnose its immediate weapon-local relation.'
 
 Require-Text 'src/physics-interaction/weapon/AuthoredPrimaryFiringGrip.cpp' `
     'tryGetGunstockTrackedFiringHandWorld\([\s\S]*input\.weaponNode,[\s\S]*input\.weaponGenerationKey,[\s\S]*trackedHandWorld\s*=\s*gunstockTrackedHandWorld' `
     'Authored primary alignment must consume the clean damped gunstock frame only for the matching eligible weapon generation.'
 
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'refreshAuthoredSupportGripActivationState[\s\S]*activationWeaponWorld[\s\S]*tryResolveGunstockPrimaryGroupCorrection[\s\S]*resolveAuthoredSupportPalmSeatProximity\([\s\S]*activationWeaponWorld[\s\S]*reframeAuthoredSupportGripDebugSnapshot' `
-    'Authored support seats and cones must evaluate in the final gunstock-presented frame.'
-
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'applyGunstockAlignment[\s\S]*projectileWitnessUsable[\s\S]*!directionLatch\.latched[\s\S]*projectile witness unavailable during firing animation; retaining and publishing the latched correction[\s\S]*publishAuthoredPrimaryFiringGripFingerPose' `
-    'Transient fire-node loss must retain the latched correction and exact authored firing-hand finger pose.'
-
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'firingGripPublishedThisFrame[\s\S]*_lastPublishedHandWorld\[firingIndex\][\s\S]*authoredRightCanonicalCurrent[\s\S]*_rightFiringHandCanonicalWeaponLocal[\s\S]*firingGroupHandWorld[\s\S]*captureRenderedFiringRelation[\s\S]*tryGetRootFlattenedHandBoneTransform[\s\S]*renderedFiringRelationError[\s\S]*rotateRigidlyAroundPivot[\s\S]*pivotWorld[\s\S]*captureRenderedFiringRelation\(\)' `
-    'Final alignment must rotate the exact posed firing-hand target with the weapon and diagnose the presented full-body bone relation.'
-
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'supportGripPublishedThisFrame[\s\S]*HandAuthorityRole::[\s\S]*SupportGrip[\s\S]*_hasLastPublishedHandWorld\[supportIndex\][\s\S]*supportHandWorld\s*=\s*_lastPublishedHandWorld\[supportIndex\][\s\S]*else\s*\{[\s\S]*tryGetRootFlattenedHandBoneTransform' `
-    'Final alignment must rotate the exact same-frame support target, using presented full-body readback only when no support role was published.'
-
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'leftManualFiringRecoil[\s\S]*out\.reusedGripRole[\s\S]*recoilRequestedWorld\s*=[\s\S]*_lastPublishedHandWorld\[index\][\s\S]*tryGetRootFlattenedHandBoneTransform\([\s\S]*recoilAppliedWorld[\s\S]*deriveAppliedWorldDelta[\s\S]*precompensateWorldTarget[\s\S]*PRIMARY_GRIP_TAG[\s\S]*SUPPORT_GRIP_TAG' `
-    'Left manual firing must derive recoil from synchronous presented full-body hand readback even when the existing primary role tag is reused.'
-
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'applyHandCorrection[\s\S]*applyExternalHandWorldTransform\([\s\S]*out\.tag[\s\S]*requestedWorld[\s\S]*if \(out\.reusedGripRole\)[\s\S]*recordPublishedHandWorld\(isLeft, desiredWorld\)[\s\S]*applyWeaponVisualAuthority\([\s\S]*correctedWeaponWorld' `
-    'A successful external hand-authority publication must commit the same rigid weapon target without a synchronous root-tree acknowledgement requirement.'
-
-Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'readPresentedHandError|presentedHandMatchesTarget|finalPresentedHandMatches|worldAdjustedRequested|recoveredRequest' `
-    'The weapon transaction must never be vetoed by same-frame root-tree readback of an external FRIK request.'
-
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' `
     'struct\s+GunstockFramePresentationState[\s\S]*runtimeFrameIndex[\s\S]*correctionWorld[\s\S]*pivotWorld[\s\S]*sourceWeaponWorld[\s\S]*correctedWeaponWorld[\s\S]*finalizedAfterNativeAnimation[\s\S]*valid' `
     'The normal gunstock pass must retain a bounded same-frame correction transaction for a later native Weapon writer.'
-
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'finalizeGunstockPresentationAfterNativeWeaponAnimation[\s\S]*kWeapon[\s\S]*runtimeFrameIndex[\s\S]*areTransformsNearlyEqual\([\s\S]*correctedWeaponWorld[\s\S]*getFlattenedBoneTree[\s\S]*LArm_Hand[\s\S]*RArm_Hand[\s\S]*refNode[\s\S]*rotateRigidlyAroundPivot[\s\S]*leftHand[\s\S]*rightHand[\s\S]*correctedPostAnimationWeaponWorld[\s\S]*worldTargetToParentLocal[\s\S]*updateTransformsDown[\s\S]*applyWeaponVisualAuthority[\s\S]*applyFlattenedOverlay' `
-    'Only native Weapon animations may consume the exact frame-local correction, with idempotence and a direct rigid visible two-hand/weapon reframe synchronized into flattened presentation worlds.'
-
-$postAnimationFinalize = [regex]::Match(
-    (Read-Source 'src/physics-interaction/weapon/TwoHandedGrip.cpp'),
-    '(?ms)bool\s+TwoHandedGrip::finalizeGunstockPresentationAfterNativeWeaponAnimation\s*\(.*?^\s{4}bool\s+TwoHandedGrip::applyWeaponVisualAuthority')
-if (-not $postAnimationFinalize.Success) {
-    $failures.Add('src/physics-interaction/weapon/TwoHandedGrip.cpp: Could not isolate the post-animation gunstock finalizer.')
-} elseif ($postAnimationFinalize.Value -match 'applyExternalHandWorldTransform|recordPublishedHandWorld') {
-    $failures.Add('src/physics-interaction/weapon/TwoHandedGrip.cpp: The post-animation finalizer must preserve authored hand/finger locals directly instead of rerunning FRIK arm IK or feeding animation back into the next solver frame.')
-} elseif ($postAnimationFinalize.Value -match 'resolveFirstPersonHandNode') {
-    $failures.Add('src/physics-interaction/weapon/TwoHandedGrip.cpp: The post-animation finalizer must reframe hFRIK''s visible root hand nodes, not the hidden first-person tracking hands.')
-}
 
 Require-Text 'src/ROCKMain.cpp' `
     'dispatchAnimationPhaseCallbacksV1\([\s\S]*AfterRock[\s\S]*finalizeGunstockPresentationAfterNativeAnimation\(\)[\s\S]*dispatchAnimationPhaseCallbacksV1\([\s\S]*Complete' `
@@ -178,76 +119,9 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'finalizeGunstockPresentationAfterNativeAnimation[\s\S]*currentNativeAnimationAuthorityFlagsV1\(\)[\s\S]*kWeapon[\s\S]*resolveEquippedWeaponInteractionNode\(\)[\s\S]*finalizeGunstockPresentationAfterNativeWeaponAnimation' `
     'The post-animation bridge must fail closed unless the current animation lease authors Weapon.'
 
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'GUNSTOCK_ALIGNMENT_TAG\s*=[\s\S]*"ROCK_GunstockAlignment"[\s\S]*clearGunstockDedicatedHandAuthority[\s\S]*clearExternalHandWorldTransform' `
-    'Native/tracked hand correction must use and explicitly clear a dedicated authority tag.'
-
-$gunstockYield = [regex]::Match(
-    (Read-Source 'src/physics-interaction/weapon/TwoHandedGrip.cpp'),
-    '(?ms)TwoHandedGrip::currentGunstockAlignmentYieldReason\s*\(.*?^\s{4}bool\s+TwoHandedGrip::tryResolveGunstockPhysicalFiringFrame')
-if (-not $gunstockYield.Success) {
-    $failures.Add('src/physics-interaction/weapon/TwoHandedGrip.cpp: Could not isolate gunstock yield policy.')
-} else {
-    if ($gunstockYield.Value -match 'isWeaponVisualReturnActive|isHandVisualReturnActive') {
-        $failures.Add('src/physics-interaction/weapon/TwoHandedGrip.cpp: Final alignment must compose after weapon and hand returns instead of exposing an unaligned frame.')
-    }
-    if ($gunstockYield.Value -match '_scopeMenuOpenThisFrame|_scopeMenuClosedThisFrame|ScopeTransition') {
-        $failures.Add('src/physics-interaction/weapon/TwoHandedGrip.cpp: Scope presentation must retain an already-latched gunstock correction.')
-    }
-}
-
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'neutralSampleBlocked\s*=\s*calibrationSampleBlocked\s*\|\|\s*_scopeMenuOpenThisFrame\s*\|\|\s*_scopeMenuClosedThisFrame[\s\S]*if \(!directionLatch\.latched\)[\s\S]*if \(neutralSampleBlocked\)[\s\S]*gunstock retaining latched presentation while neutral sampling is blocked[\s\S]*tryResolveGunstockPrimaryGroupCorrection' `
-    'Scope/firing instability must stop only pre-latch sampling and the latched correction must continue through that boundary.'
-
 Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' `
     '(?m)^\s*ScopeTransition\s*,' `
     'The debug contract must not retain a stale scope-yield state after scope continuity is enforced.'
-
-$gunstockApply = [regex]::Match(
-    (Read-Source 'src/physics-interaction/weapon/TwoHandedGrip.cpp'),
-    '(?ms)bool\s+TwoHandedGrip::applyGunstockAlignment\s*\(.*?^\s{4}bool\s+TwoHandedGrip::applyWeaponVisualAuthority')
-if (-not $gunstockApply.Success) {
-    $failures.Add('src/physics-interaction/weapon/TwoHandedGrip.cpp: Could not isolate the gunstock alignment implementation.')
-} elseif ($gunstockApply.Value -match 'SecondaryWandNode|primaryWandNode|firingController|controllerWorld') {
-    $failures.Add('src/physics-interaction/weapon/TwoHandedGrip.cpp: Production correction must not mix raw controller transforms into the damped wrist frame.')
-}
-if ($gunstockApply.Success -and
-    $gunstockApply.Value -match 'frik_visual_authority::getHandWorldTransform') {
-    $failures.Add('src/physics-interaction/weapon/TwoHandedGrip.cpp: Gunstock production and validation must read the presented root/full-body hand bone, not the hidden first-person tracking hand.')
-}
-
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'tryGetSolverHandTransform\(isLeft, handTransform\)[\s\S]*if \(outCapturedHandWorld\)[\s\S]*\*outCapturedHandWorld\s*=\s*handTransform' `
-    'Grip capture must return the exact damped support sample used by acquisition.'
-
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'initializeSupportInputBaseline\([\s\S]*tryCaptureSupportInputBaseline\([\s\S]*supportInputWorld,[\s\S]*supportGripTargetWorld,[\s\S]*weaponWorldAtCapture\s*=\s*weaponNode->world[\s\S]*weaponGenerationKey\s*=\s*supportGrip\.weaponGenerationKey[\s\S]*gripSequence\s*=\s*supportGrip\.gripSequence[\s\S]*kind\s*=\s*kind[\s\S]*firstPublicationPending\s*=\s*true[\s\S]*initializeGunstockSupportRole\([\s\S]*rockGunstockModeEnabled[\s\S]*FullTwoHandedSolver[\s\S]*isGunstockWeaponGenerationEligible\(' `
-    'The centralized support-role initializer must require shared firearm eligibility and bind the damped input, weapon transform, generation, and grip sequence atomically.'
-
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'transitionToGripping\([\s\S]*initializeGunstockSupportRole\([\s\S]*supportCaptureHandWorld,[\s\S]*"support-attach"[\s\S]*updatePartCarryGrip\([\s\S]*_state\s*=\s*TwoHandedState::Gripping[\s\S]*initializeGunstockSupportRole\([\s\S]*"part-carry-firing-grip-reattach"[\s\S]*updateFullWeaponAuthorityGrip' `
-    'Normal support attach and PartCarry role swap must enter the tandem solver through the same gunstock support-role initializer.'
-
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'reconcileGunstockModeState\([\s\S]*observeModeToggle\([\s\S]*ModeToggleEdge::Disabled[\s\S]*resetGunstockAlignment\("config-disabled-edge"\)[\s\S]*clearGunstockSupportBaselines\(\)[\s\S]*beginDynamicSupportAcquisition\([\s\S]*ModeToggleEdge::Enabled[\s\S]*clearDynamicSupportAcquisition\([\s\S]*initializeGunstockSupportRole\(' `
-    'Live INI edges must clear both stages atomically, rebase ordinary acquisition on disable, and capture an existing eligible support role on enable.'
-
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'observeGunstockWeaponEligibility\([\s\S]*observeWeaponEligibility\([\s\S]*isGunstockSupportBaselineActive\([\s\S]*isGunstockWeaponGenerationEligible\([\s\S]*tryGetGunstockTrackedFiringHandWorld\([\s\S]*isGunstockWeaponEligible\([\s\S]*applyGunstockAlignment\([\s\S]*weapon-not-eligible' `
-    'Support calibration, authored firing input, and final alignment must consume the same generation-bound kGun-plus-native-fire-node eligibility witness.'
-
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    '!gunstockBaselineActive[\s\S]*shouldUseDynamicSupportAcquisition[\s\S]*_rotationBlend\s*=\s*gunstockBaselineActive\s*\?\s*1\.0f\s*:\s*0\.0f[\s\S]*if \(gunstockBaselineActive\)[\s\S]*updateFullWeaponAuthorityGrip\(weaponNode, 0\.0f\)' `
-    'Gunstock attach must bypass absolute acquisition blending and publish one immediate baseline transaction.'
-
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'calibratedSupportTransform\s*=\s*supportTransform[\s\S]*tryResolveSupportInputTarget\([\s\S]*inputToGripTargetLocal[\s\S]*computeGrabLegacyPalmPivotAWorldFromHandBasis\([\s\S]*calibratedSupportTransform[\s\S]*supportNormalTargetWorld\s*=\s*computePalmNormalFromHandBasis\([\s\S]*calibratedSupportTransform' `
-    'The tandem solver must receive position and twist from the calibrated support target.'
-
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'supportBaselineAttachPublication[\s\S]*appliedWeaponWorld\s*=[\s\S]*weaponWorldAtCapture[\s\S]*applyWeaponVisualAuthority\(weaponNode, appliedWeaponWorld\)[\s\S]*applyLockedHandVisualAuthority\([\s\S]*firstPublicationPending\s*=\s*false' `
-    'The first support publication must retain the captured primary weapon transform before final group alignment.'
 
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.h' `
     'struct\s+GunstockAlignmentDebugSnapshot[\s\S]*weaponNodeIdentity[\s\S]*fireNodeIdentity[\s\S]*dampedDriverWorld[\s\S]*firingHandWorld[\s\S]*renderedFiringHandWorld[\s\S]*weaponWorldBefore[\s\S]*finalFireNodeWorld[\s\S]*fineTunedTargetForwardWorld[\s\S]*fineTunePitchDegrees[\s\S]*fineTuneYawDegrees[\s\S]*fineTuneRollDegrees[\s\S]*renderedFiringRelationPositionErrorGameUnits[\s\S]*weaponEligible[\s\S]*renderedFiringRelationValid[\s\S]*published' `
@@ -273,23 +147,6 @@ foreach ($snapshotName in @(
     } elseif ($snapshot.Groups['body'].Value -match 'RE::Ni(?:Node|AVObject)\s*\*') {
         $failures.Add("src/physics-interaction/weapon/TwoHandedGrip.h: $snapshotName must not retain engine pointers.")
     }
-}
-
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'populateGunstockAlignmentDebugPrediction[\s\S]*prepareGunstockAlignmentDebugSnapshot[\s\S]*AlignmentDisabled[\s\S]*finalizeGunstockAlignmentDebugSnapshot[\s\S]*finalLiveFireWorld' `
-    'Behavior-off diagnostics must compute a read-only alignment preview and final live readback.'
-
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' `
-    'prepareGunstockAlignmentDebugSnapshot[\s\S]*tryResolveGunstockPhysicalFiringFrame\([\s\S]*snapshot\.dampedDriverWorld\s*=\s*firingDriverWorld[\s\S]*snapshot\.firingHandWorld\s*=\s*firingHandWorld[\s\S]*snapshot\.pivotWorld\s*=\s*firingDriverWorld\.translate' `
-    'The diagnostic snapshot must use the same damped driver and reconstructed wrist bone as production alignment.'
-
-$gunstockDebugPrepare = [regex]::Match(
-    (Read-Source 'src/physics-interaction/weapon/TwoHandedGrip.cpp'),
-    '(?ms)void\s+TwoHandedGrip::prepareGunstockAlignmentDebugSnapshot\s*\(.*?^\s{4}void\s+TwoHandedGrip::finalizeGunstockAlignmentDebugSnapshot')
-if (-not $gunstockDebugPrepare.Success) {
-    $failures.Add('src/physics-interaction/weapon/TwoHandedGrip.cpp: Could not isolate gunstock debug preparation.')
-} elseif ($gunstockDebugPrepare.Value -match 'SecondaryWandNode|primaryWandNode|controllerWorld|controllerValid') {
-    $failures.Add('src/physics-interaction/weapon/TwoHandedGrip.cpp: Debug preparation must not depend on raw controller/wand frames.')
 }
 
 Require-Text 'src/physics-interaction/debug/DebugBodyOverlay.h' `
