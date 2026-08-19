@@ -1,58 +1,49 @@
 #include "physics-interaction/weapon/WeaponCollision.h"
 
-#include "physics-interaction/actor/ActorEquipmentGrab.h"
-#include "physics-interaction/native/BodyCollisionControl.h"
-#include "physics-interaction/collision/CollisionSuppressionRegistry.h"
-#include "physics-interaction/native/HavokConvexShapeBuilder.h"
-#include "physics-interaction/native/HavokOffsets.h"
-#include "physics-interaction/native/NativeNiNodeFactory.h"
-#include "physics-interaction/native/NativeMemory.h"
-#include "physics-interaction/grab/MeshGrab.h"
+/*
+ * WeaponCollision's lifecycle and its per-frame decision.
+ *
+ * This file answers one question every frame: does the current body set still
+ * describe the weapon in the player's hands, and if not, what should happen about
+ * it? Everything it decides is carried out elsewhere - geometry extraction in
+ * WeaponCollisionSources.cpp, body creation and publication in
+ * WeaponCollisionBodies.cpp, identity in WeaponCollisionIdentity.cpp.
+ *
+ * update() reads as the frame reads:
+ *   guard      - feature off, no world, world swapped, weapon undrawn
+ *   observe    - read the equipped identity and record it
+ *   gate       - decide whether a rebuild is due, and why
+ *   phase 1    - let the OMOD self-heal finish assembling the weapon
+ *   phase 2    - wait for the visual tree to present a stable witness
+ *   phase 3    - acquire sources, from cache or a fresh scan, with a bounded retain
+ *                window for the case where they briefly vanish
+ *   phase 4    - queue the staged build
+ *   audit      - the periodic OMOD coverage audit
+ *
+ * The retain window is the subtle part: a live weapon can report no extractable
+ * geometry for a few frames while its identity and package root are unchanged.
+ * Destroying the body set on that frame makes the weapon lose collision for a
+ * visible moment, so the current bodies are kept for a bounded number of frames
+ * instead - bounded, because a real weapon swap must not be retained through.
+ */
+
+#include "physics-interaction/weapon/WeaponCollisionInternal.h"
+
 #include "RockConfig.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
-#include "physics-interaction/weapon/WeaponGeometry.h"
-#include "physics-interaction/weapon/ManualScopeTargetPolicy.h"
-#include "physics-interaction/weapon/WeaponAccessoryPartKindPolicy.h"
-#include "physics-interaction/weapon/WeaponEffectGeometryPolicy.h"
-#include "physics-interaction/weapon/WeaponEmitterPolicy.h"
-#include "physics-interaction/weapon/WeaponOmodAuditPolicy.h"
-#include "physics-interaction/weapon/WeaponPartRecordIdentityPolicy.h"
-#include "physics-interaction/weapon/WeaponSemantics.h"
-#include "physics-interaction/weapon/WeaponTypePolicy.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
-#include "physics-interaction/weapon/WeaponCollisionInternal.h"
-#include "physics-interaction/weapon/WeaponEmitterScan.h"
-#include "physics-interaction/weapon/WeaponSceneGraphWalk.h"
-#include "physics-interaction/TransformMath.h"
+#include "physics-interaction/weapon/WeaponGeometry.h"
+#include "physics-interaction/weapon/WeaponSemantics.h"
 
-#include <intrin.h>
-
-#include "RE/Bethesda/BGSMod.h"
-#include "RE/Bethesda/FormComponents.h"
-#include "RE/Bethesda/BSExtraData.h"
-#include "RE/Bethesda/MagicItems.h"
-#include "RE/Bethesda/TESBoundObjects.h"
-#include "RE/Bethesda/TESForms.h"
-#include "RE/Havok/hkReferencedObject.h"
-#include "RE/Havok/hknpCapsuleShape.h"
-#include "RE/Havok/hknpMotion.h"
+#include "RE/NetImmerse/NiNode.h"
 
 #include "rock_support/Fo4VrRuntime.h"
 
 #include <algorithm>
-#include <array>
-#include <bit>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <limits>
-#include <unordered_map>
-#include <unordered_set>
 #include <string>
-#include <string_view>
 #include <vector>
 
 namespace rock
@@ -374,6 +365,152 @@ namespace rock
     }
 
 
+    /*
+     * Rebuild phase 1: give the OMOD self-heal a chance to finish assembling the
+     * weapon before ROCK captures geometry from it.
+     *
+     * Returns true when the caller must defer the rebuild by one frame. That happens
+     * only when the audit actually MUTATED the scene: the native attach rewrites the
+     * assembled tree, so the engine needs a frame to settle transforms before the
+     * visual witness and the collider builder can trust what they see.
+     *
+     * Only a NON-mutating pass is cached as "already audited for this weapon". A
+     * successful attachment deliberately leaves the marker unset, so the next frame
+     * runs another pre-build pass - batches larger than the per-audit cap need
+     * several passes to converge, and caching after the first would strand the rest.
+     */
+    bool WeaponCollision::deferRebuildForPreBuildOmodEnrichment(
+        RE::NiAVObject* weaponNode,
+        std::uint64_t observedKey,
+        bool generationDrivenRebuild)
+    {
+        const bool omodPrebuildAuditCurrent =
+            _omodPrebuildAuditEquippedKey == observedKey && _omodPrebuildAuditRoot == weaponNode;
+        if (!generationDrivenRebuild || omodPrebuildAuditCurrent ||
+            !g_rockConfig.rockDebugWeaponOmodCoverageAudit || !g_rockConfig.rockDebugWeaponOmodSelfHeal) {
+            return false;
+        }
+
+        const auto auditResult = maybeRunWeaponOmodCoverageAudit(weaponNode, observedKey, true);
+        if (auditResult.sceneEnriched) {
+            // The visual settle counter restarts: the tree it was counting is gone.
+            clearPendingWeaponVisualRebuild();
+            ROCK_LOG_INFO(Weapon,
+                "Generated weapon collision pre-build OMOD enrichment completed key={:016X}; deferring source capture one frame",
+                observedKey);
+            return true;
+        }
+        if (auditResult.ran) {
+            _omodPrebuildAuditEquippedKey = observedKey;
+            _omodPrebuildAuditRoot = weaponNode;
+        }
+        return false;
+    }
+
+    /*
+     * Rebuild phase 2: wait until the weapon's visual tree is actually presentable
+     * before capturing geometry from it.
+     *
+     * A weapon-mod swap can expose an app-culled Weapon root while its child
+     * TriShapes still report as locally visible. Rebuilding the body set from that
+     * frame locks in an incomplete hull inventory, so the current bodies are kept
+     * until the tree has presented a stable, visible witness for the configured
+     * number of frames.
+     *
+     * The two waits are NOT the same and the caller must treat them differently:
+     *  - WaitVisibleRoot: the root is not presentable at all. Skip the rebuild but
+     *    let the periodic OMOD audit still run, because a weapon that is invisible
+     *    because its geometry was never attached is exactly what that audit repairs.
+     *  - WaitStableWitness: the witness is present and being counted. Nothing else
+     *    should run this frame; the count is the only thing that must advance.
+     *
+     * Stabilization is deliberately cheap - it compares the visual witness only.
+     * Mesh extraction and Havok shape creation happen once, after the wait.
+     */
+    WeaponCollision::WeaponVisualRebuildGate WeaponCollision::awaitStableWeaponVisual(
+        RE::NiAVObject* weaponNode,
+        std::uint64_t observedKey,
+        std::uint64_t observedVisualKey,
+        const WeaponVisualKeyStats& visualKeyStats,
+        bool generationDrivenRebuild)
+    {
+    const int requiredStableFrames = (std::max)(0, g_rockConfig.rockWeaponCollisionVisualStabilizationFrames);
+    const bool stabilizeVisualRebuild = generationDrivenRebuild && requiredStableFrames > 0;
+
+    if (stabilizeVisualRebuild && !weaponVisualNodeVisible(weaponNode)) {
+        const bool newInvisibleDeferred =
+            _pendingWeaponVisualRebuildKey != observedKey ||
+            _pendingWeaponVisualWitnessKey != observedVisualKey ||
+            _pendingWeaponVisualVisibleTriShapeCount != 0 ||
+            _pendingWeaponVisualStableFrames != 0;
+        /*
+         * Weapon mod swaps can expose a transient app-culled Weapon root
+         * while child TriShapes still look locally visible. Replacing the
+         * active body set from that frame can lock in an incomplete hull
+         * inventory, so keep the current bodies until the visual tree has
+         * presented a stable, visible witness.
+         */
+        _pendingWeaponVisualRebuildKey = observedKey;
+        _pendingWeaponVisualWitnessKey = observedVisualKey;
+        _pendingWeaponVisualVisibleTriShapeCount = 0;
+        _pendingWeaponVisualStableFrames = 0;
+        if (newInvisibleDeferred) {
+            performance_profiler::addCounter(performance_profiler::Counter::WeaponRebuildVisualRootDeferred);
+        }
+        ROCK_LOG_SAMPLE_INFO(Weapon,
+            g_rockConfig.rockLogSampleMilliseconds,
+            "Generated weapon collision rebuild deferred: visual root not ready cachedKey={:016X} observedKey={:016X} root='{}' flags=0x{:X} appCulled={} visibleTriShapes={} visualNodes={} invisibleNodes={} requiredStableFrames={}",
+            _cachedWeaponKey,
+            observedKey,
+            safeNodeName(weaponNode),
+            static_cast<std::uint32_t>(weaponNode->flags.flags),
+            weaponNode->GetAppCulled() ? "yes" : "no",
+            visualKeyStats.visibleTriShapeCount,
+            visualKeyStats.nodeCount,
+            visualKeyStats.invisibleNodeCount,
+            requiredStableFrames);
+            return WeaponVisualRebuildGate::WaitVisibleRoot;
+        }
+
+        if (stabilizeVisualRebuild) {
+        /*
+         * Stabilization is a cheap visual-witness wait. Full mesh
+         * extraction and Havok shape creation happen once after the
+         * visible tree has stayed stable for the configured frames.
+         */
+        const bool samePendingVisual =
+            _pendingWeaponVisualRebuildKey == observedKey &&
+            _pendingWeaponVisualWitnessKey == observedVisualKey &&
+            _pendingWeaponVisualVisibleTriShapeCount == visualKeyStats.visibleTriShapeCount;
+
+        _pendingWeaponVisualRebuildKey = observedKey;
+        _pendingWeaponVisualWitnessKey = observedVisualKey;
+        _pendingWeaponVisualVisibleTriShapeCount = visualKeyStats.visibleTriShapeCount;
+        _pendingWeaponVisualStableFrames = samePendingVisual ? _pendingWeaponVisualStableFrames + 1 : 1;
+
+        if (_pendingWeaponVisualStableFrames < requiredStableFrames) {
+            if (!samePendingVisual) {
+                performance_profiler::addCounter(performance_profiler::Counter::WeaponRebuildVisualStableWait);
+            }
+            ROCK_LOG_SAMPLE_INFO(Weapon,
+                g_rockConfig.rockLogSampleMilliseconds,
+                "Generated weapon collision rebuild waiting for stable visual witness cachedKey={:016X} observedKey={:016X} stableFrames={}/{} visualKey={:016X} visualRoots={} visibleTriShapes={} visualNodes={} invisibleNodes={}",
+                _cachedWeaponKey,
+                observedKey,
+                _pendingWeaponVisualStableFrames,
+                requiredStableFrames,
+                observedVisualKey,
+                visualKeyStats.rootCount,
+                visualKeyStats.visibleTriShapeCount,
+                visualKeyStats.nodeCount,
+                visualKeyStats.invisibleNodeCount);
+            return WeaponVisualRebuildGate::WaitStableWitness;
+}
+        }
+
+        return WeaponVisualRebuildGate::Proceed;
+    }
+
     void WeaponCollision::update(RE::hknpWorld* world, RE::NiAVObject* weaponNode, float dt, bool weaponDrawn)
     {
         (void)dt;
@@ -546,103 +683,27 @@ namespace rock
             const std::uint64_t observedVisualKey = getWeaponVisualCompositionKey(weaponNode, visualKeyStats);
             const bool visualKeyChanged = observedVisualKey != 0 && observedVisualKey != _cachedWeaponVisualKey;
             const bool generationDrivenRebuild = keyChanged || missingBodies;
-            const bool omodPrebuildAuditCurrent =
-                _omodPrebuildAuditEquippedKey == observedKey && _omodPrebuildAuditRoot == weaponNode;
-            if (generationDrivenRebuild && !omodPrebuildAuditCurrent &&
-                g_rockConfig.rockDebugWeaponOmodCoverageAudit && g_rockConfig.rockDebugWeaponOmodSelfHeal) {
-                const auto auditResult = maybeRunWeaponOmodCoverageAudit(weaponNode, observedKey, true);
-                if (auditResult.sceneEnriched) {
-                    /*
-                     * TryAttach3DRecurse mutates the assembled tree. Let the
-                     * engine settle transforms once, then run the unchanged
-                     * full visual witness and collider builder.
-                     */
-                    clearPendingWeaponVisualRebuild();
-                    ROCK_LOG_INFO(Weapon,
-                        "Generated weapon collision pre-build OMOD enrichment completed key={:016X}; deferring source capture one frame",
-                        observedKey);
-                    return;
-                }
-                if (auditResult.ran) {
-                    // Cache only a non-mutating pass. A successful attachment
-                    // must be followed by another pre-build pass so batches
-                    // larger than the per-audit cap fully converge.
-                    _omodPrebuildAuditEquippedKey = observedKey;
-                    _omodPrebuildAuditRoot = weaponNode;
-                }
+            // Phase 1 - let the OMOD self-heal finish putting the weapon together
+            // before any geometry is captured from it.
+            if (deferRebuildForPreBuildOmodEnrichment(weaponNode, observedKey, generationDrivenRebuild)) {
+                return;
             }
-            const int requiredStableFrames = (std::max)(0, g_rockConfig.rockWeaponCollisionVisualStabilizationFrames);
-            const bool stabilizeVisualRebuild = generationDrivenRebuild && requiredStableFrames > 0;
+            // Phase 2 - do not capture geometry from a weapon whose visual tree is
+            // still settling.
+            const auto visualGate = awaitStableWeaponVisual(
+                weaponNode, observedKey, observedVisualKey, visualKeyStats, generationDrivenRebuild);
+            if (visualGate == WeaponVisualRebuildGate::WaitStableWitness) {
+                return;
+            }
+            // WaitVisibleRoot deliberately falls past the rebuild to the periodic
+            // OMOD audit at the end of update(): an invisible weapon is often
+            // invisible because geometry was never attached, and that audit is what
+            // repairs it.
+            if (visualGate == WeaponVisualRebuildGate::Proceed) {
 
-            if (stabilizeVisualRebuild && !weaponVisualNodeVisible(weaponNode)) {
-                const bool newInvisibleDeferred =
-                    _pendingWeaponVisualRebuildKey != observedKey ||
-                    _pendingWeaponVisualWitnessKey != observedVisualKey ||
-                    _pendingWeaponVisualVisibleTriShapeCount != 0 ||
-                    _pendingWeaponVisualStableFrames != 0;
-                /*
-                 * Weapon mod swaps can expose a transient app-culled Weapon root
-                 * while child TriShapes still look locally visible. Replacing the
-                 * active body set from that frame can lock in an incomplete hull
-                 * inventory, so keep the current bodies until the visual tree has
-                 * presented a stable, visible witness.
-                 */
-                _pendingWeaponVisualRebuildKey = observedKey;
-                _pendingWeaponVisualWitnessKey = observedVisualKey;
-                _pendingWeaponVisualVisibleTriShapeCount = 0;
-                _pendingWeaponVisualStableFrames = 0;
-                if (newInvisibleDeferred) {
-                    performance_profiler::addCounter(performance_profiler::Counter::WeaponRebuildVisualRootDeferred);
-                }
-                ROCK_LOG_SAMPLE_INFO(Weapon,
-                    g_rockConfig.rockLogSampleMilliseconds,
-                    "Generated weapon collision rebuild deferred: visual root not ready cachedKey={:016X} observedKey={:016X} root='{}' flags=0x{:X} appCulled={} visibleTriShapes={} visualNodes={} invisibleNodes={} requiredStableFrames={}",
-                    _cachedWeaponKey,
-                    observedKey,
-                    safeNodeName(weaponNode),
-                    static_cast<std::uint32_t>(weaponNode->flags.flags),
-                    weaponNode->GetAppCulled() ? "yes" : "no",
-                    visualKeyStats.visibleTriShapeCount,
-                    visualKeyStats.nodeCount,
-                    visualKeyStats.invisibleNodeCount,
-                    requiredStableFrames);
-            } else {
-                if (stabilizeVisualRebuild) {
-                    /*
-                     * Stabilization is a cheap visual-witness wait. Full mesh
-                     * extraction and Havok shape creation happen once after the
-                     * visible tree has stayed stable for the configured frames.
-                     */
-                    const bool samePendingVisual =
-                        _pendingWeaponVisualRebuildKey == observedKey &&
-                        _pendingWeaponVisualWitnessKey == observedVisualKey &&
-                        _pendingWeaponVisualVisibleTriShapeCount == visualKeyStats.visibleTriShapeCount;
-
-                    _pendingWeaponVisualRebuildKey = observedKey;
-                    _pendingWeaponVisualWitnessKey = observedVisualKey;
-                    _pendingWeaponVisualVisibleTriShapeCount = visualKeyStats.visibleTriShapeCount;
-                    _pendingWeaponVisualStableFrames = samePendingVisual ? _pendingWeaponVisualStableFrames + 1 : 1;
-
-                    if (_pendingWeaponVisualStableFrames < requiredStableFrames) {
-                        if (!samePendingVisual) {
-                            performance_profiler::addCounter(performance_profiler::Counter::WeaponRebuildVisualStableWait);
-                        }
-                        ROCK_LOG_SAMPLE_INFO(Weapon,
-                            g_rockConfig.rockLogSampleMilliseconds,
-                            "Generated weapon collision rebuild waiting for stable visual witness cachedKey={:016X} observedKey={:016X} stableFrames={}/{} visualKey={:016X} visualRoots={} visibleTriShapes={} visualNodes={} invisibleNodes={}",
-                            _cachedWeaponKey,
-                            observedKey,
-                            _pendingWeaponVisualStableFrames,
-                            requiredStableFrames,
-                            observedVisualKey,
-                            visualKeyStats.rootCount,
-                            visualKeyStats.visibleTriShapeCount,
-                            visualKeyStats.nodeCount,
-                            visualKeyStats.invisibleNodeCount);
-                        return;
-                        }
-                }
-
+                // Phase 3 - acquire the geometry. The cache is keyed on both the
+                // equipped identity and the visual key, so a weapon whose 3D changed
+                // without an equip change still rescans.
                 std::vector<GeneratedHullSource> generatedSources;
                 weapon_generated_source_completeness_policy::GeneratedSourceCompleteness generatedSummary{};
                 std::size_t generatedCount = 0;
@@ -702,7 +763,11 @@ namespace rock
                         retainedPackageRootStillCurrent &&
                         !settingsChanged &&
                         !driveRequestedRebuild;
-                    const int visualSourceMissRetainFrameLimit = (std::max)(1, requiredStableFrames);
+                    // The retain window matches the visual stabilization window: both
+                    // answer "how long may the visible tree be inconsistent before
+                    // ROCK stops trusting the current body set".
+                    const int visualSourceMissRetainFrameLimit =
+                        (std::max)(1, g_rockConfig.rockWeaponCollisionVisualStabilizationFrames);
                     if (retainCandidate &&
                         canRetainCurrentWeaponBodiesForVisualSourceMiss(observedIdentityKey, weaponNode, visualSourceMissRetainFrameLimit)) {
                         performance_profiler::addCounter(performance_profiler::Counter::WeaponRebuildVisualSourceUnavailableRetained);
@@ -751,8 +816,12 @@ namespace rock
                     return;
                 }
 
+                // Usable sources arrived, so the retain window closes.
                 resetVisualSourceUnavailableRetention();
 
+                // Phase 4 - queue the staged build. A replacement build fills the
+                // INACTIVE bank, so the live one keeps serving until the new set is
+                // complete and published.
                 const bool replacingExisting = hasWeaponBody();
                 auto& targetBank = replacingExisting ? inactiveWeaponBodies() : activeWeaponBodies();
                 destroyWeaponBodyBank(targetBank, true);
@@ -808,6 +877,8 @@ namespace rock
             }
         }
 
+        // The periodic coverage audit. Reached when no rebuild was due, and also
+        // deliberately when phase 2 reported WaitVisibleRoot.
         maybeRunWeaponOmodCoverageAudit(weaponNode, observedKey);
     }
 }

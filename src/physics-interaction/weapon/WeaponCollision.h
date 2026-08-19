@@ -634,6 +634,30 @@ namespace rock
         RE::NiTransform makeGeneratedBodyWorldTransform(const RE::NiTransform& weaponRootTransform, const RE::NiPoint3& localCenterGame) const;
         bool weaponCollisionSettingsChanged() const;
         void handleGeneratedBodyDriveResult(const GeneratedKeyframedBodyDriveResult& result, const char* ownerName, std::uint32_t bodyIndex);
+        /*
+         * Rebuild phase 2 verdict. The two waits differ in what the caller may still
+         * do this frame - see awaitStableWeaponVisual in WeaponCollision.cpp.
+         */
+        enum class WeaponVisualRebuildGate : std::uint8_t
+        {
+            Proceed,           // the visual tree is stable; capture geometry
+            WaitVisibleRoot,   // root not presentable; skip the rebuild, keep auditing
+            WaitStableWitness, // witness is settling; do nothing else this frame
+        };
+
+        WeaponVisualRebuildGate awaitStableWeaponVisual(
+            RE::NiAVObject* weaponNode,
+            std::uint64_t observedKey,
+            std::uint64_t observedVisualKey,
+            const WeaponVisualKeyStats& visualKeyStats,
+            bool generationDrivenRebuild);
+
+        // Rebuild phase 1; see WeaponCollision.cpp. True means "defer one frame".
+        bool deferRebuildForPreBuildOmodEnrichment(
+            RE::NiAVObject* weaponNode,
+            std::uint64_t observedKey,
+            bool generationDrivenRebuild);
+
         void clearGeneratedSourceCompletenessTracking();
         void clearPendingWeaponVisualRebuild();
 
