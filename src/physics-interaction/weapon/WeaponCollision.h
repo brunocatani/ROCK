@@ -345,7 +345,6 @@ namespace rock
             std::vector<TriangleData> localTrianglesGame;
             std::vector<RE::NiPoint3> sourceLocalPointsGame;
             std::vector<TriangleData> sourceLocalTrianglesGame;
-            std::vector<std::vector<RE::NiPoint3>> childLocalPointCloudsGame;
             RE::NiPoint3 localCenterGame{};
             RE::NiPoint3 sourceLocalCenterGame{};
             RE::NiPoint3 localMinGame{};
@@ -505,11 +504,6 @@ namespace rock
             const RE::NiAVObject* packageDriveNode,
             CompoundChildPoseSnapshot& outPose);
         static weapon_generated_source_completeness_policy::GeneratedSourceCompleteness summarizeGeneratedSources(const std::vector<GeneratedHullSource>& sources);
-        std::size_t createGeneratedWeaponBodiesInBank(
-            RE::hknpWorld* world,
-            const std::vector<GeneratedHullSource>& sources,
-            WeaponBodyBank& bank,
-            const GeneratedWeaponBodyCreateOptions& options);
         std::size_t createGeneratedWeaponBodiesInBankSlice(
             RE::hknpWorld* world,
             const std::vector<GeneratedHullSource>& sources,
@@ -526,7 +520,6 @@ namespace rock
         void resetWeaponBodySetGeneration();
         void publishWeaponBodySetGeneration(const weapon_generated_source_completeness_policy::GeneratedSourceCompleteness& sourceCompleteness);
         void publishAtomicBodyIds(WeaponBodyBank& bank);
-        void unpublishAtomicBodyIds();
         void beginWeaponBodyPublication();
         void endWeaponBodyPublication();
         std::vector<WeaponCollisionProfileEvidenceDescriptor> buildProfileEvidenceSnapshot(
@@ -697,7 +690,6 @@ namespace rock
          * and legitimately re-opens healing.
          */
         std::unordered_set<std::uint64_t> _omodSelfHealAttempted;
-        int _posLogCounter{ 0 };
 
         float _cachedConvexRadius{ -1.0f };
         float _cachedPointDedupGrid{ -1.0f };

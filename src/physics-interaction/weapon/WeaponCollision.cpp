@@ -3,7 +3,6 @@
 #include "physics-interaction/actor/ActorEquipmentGrab.h"
 #include "physics-interaction/native/BodyCollisionControl.h"
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
-#include "physics-interaction/native/HavokCompoundShapeBuilder.h"
 #include "physics-interaction/native/HavokConvexShapeBuilder.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/NativeNiNodeFactory.h"
@@ -59,7 +58,6 @@ namespace rock
     {
         constexpr std::size_t MAX_CONVEX_HULL_POINTS = 0xFC;
         constexpr float MIN_HULL_DIAGONAL_GAME_UNITS = 0.5f;
-        constexpr std::size_t MAX_GENERATED_CHILD_CONVEXES_PER_SOURCE = 16;
         constexpr std::size_t GENERATED_WEAPON_BODY_CREATION_BATCH = 8;
         constexpr float GENERATED_RECAPTURE_WEAPON_CENTER_DRIFT_GAME = 0.25f;
         constexpr float GENERATED_RECAPTURE_SOURCE_CENTER_DRIFT_GAME = 0.10f;
@@ -642,28 +640,6 @@ namespace rock
             return result.empty() ? std::string("none") : result;
         }
 
-        float matrixDeterminant(const RE::NiMatrix3& matrix)
-        {
-            return matrix.entry[0][0] * (matrix.entry[1][1] * matrix.entry[2][2] - matrix.entry[1][2] * matrix.entry[2][1]) -
-                matrix.entry[0][1] * (matrix.entry[1][0] * matrix.entry[2][2] - matrix.entry[1][2] * matrix.entry[2][0]) +
-                matrix.entry[0][2] * (matrix.entry[1][0] * matrix.entry[2][1] - matrix.entry[1][1] * matrix.entry[2][0]);
-        }
-
-        float bodyBasisDeterminant(const float* bodyFloats)
-        {
-            const float x0 = bodyFloats[0];
-            const float x1 = bodyFloats[1];
-            const float x2 = bodyFloats[2];
-            const float y0 = bodyFloats[4];
-            const float y1 = bodyFloats[5];
-            const float y2 = bodyFloats[6];
-            const float z0 = bodyFloats[8];
-            const float z1 = bodyFloats[9];
-            const float z2 = bodyFloats[10];
-
-            return x0 * (y1 * z2 - y2 * z1) - y0 * (x1 * z2 - x2 * z1) + z0 * (x1 * y2 - x2 * y1);
-        }
-
         RE::NiTransform makeIdentityTransform()
         {
             RE::NiTransform result{};
@@ -738,70 +714,6 @@ namespace rock
         {
             return points.size() >= 4 && weapon_collision_geometry_math::scaledHullDiagonalCanBuild(
                                              pointCloudDiagonalSquared(points), sourceScale, MIN_HULL_DIAGONAL_GAME_UNITS);
-        }
-
-        bool compressGeneratedChildClustersForBudget(
-            std::vector<std::vector<RE::NiPoint3>>& clusters,
-            const std::vector<RE::NiPoint3>& sourcePoints,
-            std::string_view sourceName,
-            int depth)
-        {
-            /*
-             * Dense modded meshes should not explode into unbounded compound
-             * children. The source itself is still kept and generated; only its
-             * internal child representation is reduced geometrically when it
-             * exceeds the per-source budget.
-             */
-            if (clusters.size() <= MAX_GENERATED_CHILD_CONVEXES_PER_SOURCE || !pointCloudCanBuildHull(sourcePoints)) {
-                return false;
-            }
-
-            const auto targetPoints = static_cast<std::size_t>((std::max)(4, g_rockConfig.rockWeaponCollisionSupportFitTargetPoints));
-            const auto fit = weapon_collision_geometry_math::fitConvexSupportPointCloud(
-                sourcePoints,
-                targetPoints,
-                MAX_CONVEX_HULL_POINTS,
-                g_rockConfig.rockWeaponCollisionSupportFitMaxErrorGameUnits);
-            if (fit.accepted && pointCloudCanBuildHull(fit.points)) {
-                const std::size_t previousCount = clusters.size();
-                clusters.clear();
-                clusters.push_back(fit.points);
-                ROCK_LOG_DEBUG(Weapon,
-                    "{}generated source '{}' compressed dense child hulls with support fit children={}->{} rawPoints={} fittedPoints={} maxError={:.3f}",
-                    std::string(depth * 2, ' '),
-                    sourceName,
-                    previousCount,
-                    clusters.size(),
-                    fit.inputPointCount,
-                    fit.selectedPointCount,
-                    fit.maxSupportError);
-                return true;
-            }
-
-            auto fallback = weapon_collision_geometry_math::limitPointCloud(sourcePoints, MAX_CONVEX_HULL_POINTS);
-            if (pointCloudCanBuildHull(fallback)) {
-                const std::size_t previousCount = clusters.size();
-                clusters.clear();
-                clusters.push_back(std::move(fallback));
-                ROCK_LOG_WARN(Weapon,
-                    "{}generated source '{}' exceeded child hull budget and used limited single-hull fallback children={}->{} rawPoints={} targetPoints={} maxError={:.3f}",
-                    std::string(depth * 2, ' '),
-                    sourceName,
-                    previousCount,
-                    clusters.size(),
-                    sourcePoints.size(),
-                    targetPoints,
-                    fit.maxSupportError);
-                return true;
-            }
-
-            ROCK_LOG_WARN(Weapon,
-                "{}generated source '{}' exceeded child hull budget but could not build compressed fallback children={} rawPoints={}",
-                std::string(depth * 2, ' '),
-                sourceName,
-                clusters.size(),
-                sourcePoints.size());
-            return false;
         }
 
         PointCloudBounds pointCloudBounds(const std::vector<RE::NiPoint3>& points)
@@ -2456,14 +2368,12 @@ namespace rock
             weapon_visual_composition_policy::mixValue(signature, static_cast<std::uint32_t>(source.semantic.supportGripRole));
             weapon_visual_composition_policy::mixValue(signature, static_cast<std::uint32_t>(source.semantic.socketRole));
             weapon_visual_composition_policy::mixValue(signature, static_cast<std::uint32_t>(source.semantic.actionRole));
-            weapon_visual_composition_policy::mixValue(signature, source.childLocalPointCloudsGame.size());
             mixQuantizedPoint(geometryHash, source.localCenterGame, kGeometryHashQuantizationScale);
             mixQuantizedPoint(geometryHash, source.localMinGame, kGeometryHashQuantizationScale);
             mixQuantizedPoint(geometryHash, source.localMaxGame, kGeometryHashQuantizationScale);
             summary.boundsExtentScore += extentScoreForBounds(source.localMinGame, source.localMaxGame);
 
             summary.pointCount += source.localPointsGame.size();
-            summary.childClusterCount += source.childLocalPointCloudsGame.size();
             summary.semanticPartMask |= partMask(source.semantic.partKind);
             const bool transientReloadSource = isTransientReloadPart(source.semantic.partKind);
             if (transientReloadSource) {
@@ -2471,7 +2381,6 @@ namespace rock
             } else {
                 hasDurableGeometry = true;
                 ++summary.durableSourceCount;
-                summary.durableChildClusterCount += source.childLocalPointCloudsGame.size();
                 summary.durablePointCount += source.localPointsGame.size();
                 summary.durableBoundsExtentScore += extentScoreForBounds(source.localMinGame, source.localMaxGame);
                 weapon_visual_composition_policy::mixString(durableGeometryHash, source.sourceName);
@@ -2479,7 +2388,6 @@ namespace rock
                 weapon_visual_composition_policy::mixValue(durableGeometryHash, reinterpret_cast<std::uintptr_t>(source.sourceRoot));
                 weapon_visual_composition_policy::mixValue(durableGeometryHash, source.sourceGroupId);
                 weapon_visual_composition_policy::mixValue(durableGeometryHash, static_cast<std::uint32_t>(source.semantic.partKind));
-                weapon_visual_composition_policy::mixValue(durableGeometryHash, source.childLocalPointCloudsGame.size());
                 mixQuantizedPoint(durableGeometryHash, source.localCenterGame, kGeometryHashQuantizationScale);
                 mixQuantizedPoint(durableGeometryHash, source.localMinGame, kGeometryHashQuantizationScale);
                 mixQuantizedPoint(durableGeometryHash, source.localMaxGame, kGeometryHashQuantizationScale);
@@ -2499,31 +2407,6 @@ namespace rock
                 mixQuantizedPoint(geometryHash, source.localPointsGame.back(), kGeometryHashQuantizationScale);
                 if (!transientReloadSource) {
                     mixQuantizedPoint(durableGeometryHash, source.localPointsGame.back(), kGeometryHashQuantizationScale);
-                }
-            }
-            for (const auto& child : source.childLocalPointCloudsGame) {
-                weapon_visual_composition_policy::mixValue(geometryHash, child.size());
-                const auto childBounds = pointCloudBounds(child);
-                mixQuantizedPoint(geometryHash, childBounds.min, kGeometryHashQuantizationScale);
-                mixQuantizedPoint(geometryHash, childBounds.max, kGeometryHashQuantizationScale);
-                summary.boundsExtentScore += extentScoreForBounds(childBounds.min, childBounds.max);
-                if (!transientReloadSource) {
-                    weapon_visual_composition_policy::mixValue(durableGeometryHash, child.size());
-                    mixQuantizedPoint(durableGeometryHash, childBounds.min, kGeometryHashQuantizationScale);
-                    mixQuantizedPoint(durableGeometryHash, childBounds.max, kGeometryHashQuantizationScale);
-                    summary.durableBoundsExtentScore += extentScoreForBounds(childBounds.min, childBounds.max);
-                }
-                for (std::size_t i = 0; i < child.size(); i += kGeometryPointSampleStride) {
-                    mixQuantizedPoint(geometryHash, child[i], kGeometryHashQuantizationScale);
-                    if (!transientReloadSource) {
-                        mixQuantizedPoint(durableGeometryHash, child[i], kGeometryHashQuantizationScale);
-                    }
-                }
-                if (!child.empty()) {
-                    mixQuantizedPoint(geometryHash, child.back(), kGeometryHashQuantizationScale);
-                    if (!transientReloadSource) {
-                        mixQuantizedPoint(durableGeometryHash, child.back(), kGeometryHashQuantizationScale);
-                    }
                 }
             }
         }
@@ -5607,10 +5490,6 @@ namespace rock
             return 0;
         }
 
-        auto generatedSourceConvexCount = [](const GeneratedHullSource& source) {
-            return source.childLocalPointCloudsGame.empty() ? std::size_t{ 1 } : source.childLocalPointCloudsGame.size();
-        };
-
         auto generatedSourceSemanticMask = [](const std::vector<GeneratedHullSource>& sources) {
             std::uint32_t mask = 0;
             for (const auto& source : sources) {
@@ -5619,26 +5498,16 @@ namespace rock
             return mask;
         };
 
-        auto totalGeneratedConvexCount = [&](const std::vector<GeneratedHullSource>& sources) {
-            std::size_t count = 0;
-            for (const auto& source : sources) {
-                count += generatedSourceConvexCount(source);
-            }
-            return count;
-        };
-
         auto logGeneratedSourceInventory = [&](const char* reason, const std::vector<GeneratedHullSource>& sources) {
             const auto semanticMask = generatedSourceSemanticMask(sources);
-            const auto convexCount = totalGeneratedConvexCount(sources);
             ROCK_LOG_SAMPLE_DEBUG(Weapon,
                 g_rockConfig.rockLogSampleMilliseconds,
-                "Generated weapon mesh source inventory: reason={} label='mergedCandidates' root='{}' candidates={} acceptedCandidates={} sources={} convexes={} maxConvexes={} semanticMask=0x{:08X} parts='{}'",
+                "Generated weapon mesh source inventory: reason={} label='mergedCandidates' root='{}' candidates={} acceptedCandidates={} sources={} maxConvexes={} semanticMask=0x{:08X} parts='{}'",
                 reason,
                 safeNodeName(packageDriveRoot),
                 candidates.size(),
                 acceptedCandidateCount,
                 sources.size(),
-                convexCount,
                 MAX_WEAPON_BODIES,
                 semanticMask,
                 generatedWeaponSemanticMaskNames(semanticMask));
@@ -5647,7 +5516,7 @@ namespace rock
                 const auto& source = sources[i];
                 ROCK_LOG_SAMPLE_DEBUG(Weapon,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "Generated weapon mesh source inventory[{}]: source='{}' driveRoot='{}' sourceRoot='{}' part={} partKind={} points={} children={} convexes={} group={:x} boundsMin=({:.2f},{:.2f},{:.2f}) boundsMax=({:.2f},{:.2f},{:.2f})",
+                    "Generated weapon mesh source inventory[{}]: source='{}' driveRoot='{}' sourceRoot='{}' part={} partKind={} points={} group={:x} boundsMin=({:.2f},{:.2f},{:.2f}) boundsMax=({:.2f},{:.2f},{:.2f})",
                     i,
                     source.sourceName,
                     safeNodeName(source.driveRoot),
@@ -5655,8 +5524,6 @@ namespace rock
                     generatedWeaponPartKindName(source.semantic.partKind),
                     static_cast<int>(source.semantic.partKind),
                     source.localPointsGame.size(),
-                    source.childLocalPointCloudsGame.size(),
-                    generatedSourceConvexCount(source),
                     source.sourceGroupId,
                     source.localMinGame.x,
                     source.localMinGame.y,
@@ -6051,19 +5918,6 @@ namespace rock
                std::abs(g_rockConfig.rockWeaponCollisionSupportFitMaxErrorGameUnits - _cachedSupportFitMaxErrorGameUnits) > 0.00001f;
     }
 
-    std::size_t WeaponCollision::createGeneratedWeaponBodiesInBank(RE::hknpWorld* world,
-        const std::vector<GeneratedHullSource>& sources,
-        WeaponBodyBank& bank,
-        const GeneratedWeaponBodyCreateOptions& options)
-    {
-        std::size_t nextSourceIndex = 0;
-        const auto createdCount = createGeneratedWeaponBodiesInBankSlice(world, sources, bank, options, nextSourceIndex, MAX_WEAPON_BODIES);
-        if (createdCount > 0) {
-            ROCK_LOG_INFO(Weapon, "Generated weapon mesh collision created {}/{} hull bodies", createdCount, sources.size());
-        }
-        return createdCount;
-    }
-
     std::size_t WeaponCollision::createGeneratedWeaponBodiesInBankSlice(RE::hknpWorld* world,
         const std::vector<GeneratedHullSource>& sources,
         WeaponBodyBank& bank,
@@ -6086,59 +5940,20 @@ namespace rock
         std::size_t createdThisFrame = 0;
         std::size_t attemptedThisFrame = 0;
         const std::uint32_t filterInfo = generatedWeaponCollisionFilterInfo(options.collisionEnabledOnCreate);
+        // One source, one convex hull. There is no compound path: nothing ever
+        // populates a per-source child cluster list, so every generated source bakes
+        // into exactly one hull built from its own point cloud.
         auto buildSourceShape = [&](const GeneratedHullSource& source) -> RE::hknpShape* {
-            if (source.childLocalPointCloudsGame.size() <= 1) {
-                const bool useSourceLocal = !source.sourceLocalPointsGame.empty();
-                const auto& sourcePoints = useSourceLocal ? source.sourceLocalPointsGame : source.localPointsGame;
-                const auto& sourceCenter = useSourceLocal ? source.sourceLocalCenterGame : source.localCenterGame;
-                const float sourceScale = useSourceLocal ? source.sourceNodeScale : 1.0f;
-                auto centeredHavokPoints = makeCenteredHavokPointCloud(sourcePoints, sourceCenter, sourceScale);
-                return havok_convex_shape_builder::buildConvexShapeFromLocalHavokPoints(centeredHavokPoints, g_rockConfig.rockWeaponCollisionConvexRadius);
-            }
-
-            std::vector<RE::hknpShape*> childShapes;
-            std::vector<havok_compound_shape_builder::CompoundChild> children;
-            childShapes.reserve(source.childLocalPointCloudsGame.size());
-            children.reserve(source.childLocalPointCloudsGame.size());
-
-            for (const auto& childLocalPointsGame : source.childLocalPointCloudsGame) {
-                if (!pointCloudCanBuildHull(childLocalPointsGame)) {
-                    continue;
-                }
-
-                const auto childCenterGame = weapon_collision_geometry_math::pointCenter(childLocalPointsGame);
-                auto centeredChildHavokPoints = makeCenteredHavokPointCloud(childLocalPointsGame, childCenterGame);
-                auto* childShape =
-                    havok_convex_shape_builder::buildConvexShapeFromLocalHavokPoints(centeredChildHavokPoints, g_rockConfig.rockWeaponCollisionConvexRadius);
-                if (!childShape) {
-                    ROCK_LOG_WARN(Weapon, "Generated weapon compound source '{}' failed child convex build", source.sourceName);
-                    continue;
-                }
-
-                childShapes.push_back(childShape);
-
-                havok_compound_shape_builder::CompoundChild child{};
-                child.shape = childShape;
-                child.transform.translation.x = (childCenterGame.x - source.localCenterGame.x) * gameToHavokScale();
-                child.transform.translation.y = (childCenterGame.y - source.localCenterGame.y) * gameToHavokScale();
-                child.transform.translation.z = (childCenterGame.z - source.localCenterGame.z) * gameToHavokScale();
-                child.transform.translation.w = 1.0f;
-                children.push_back(child);
-            }
-
-            RE::hknpShape* compoundShape = nullptr;
-            if (children.size() > 1) {
-                compoundShape = havok_compound_shape_builder::buildStaticCompoundShape(children);
-            } else if (children.size() == 1) {
-                compoundShape = const_cast<RE::hknpShape*>(children.front().shape);
-                childShapes.clear();
-            }
-
-            for (auto* childShape : childShapes) {
-                shapeRemoveRef(childShape);
-            }
-
-            return compoundShape;
+            // Prefer the source-node-local cloud when extraction produced one - it is
+            // centered on the source node itself, so the body can drive that node
+            // directly instead of being rebased through the weapon root every frame.
+            const bool useSourceLocal = !source.sourceLocalPointsGame.empty();
+            const auto& sourcePoints = useSourceLocal ? source.sourceLocalPointsGame : source.localPointsGame;
+            const auto& sourceCenter = useSourceLocal ? source.sourceLocalCenterGame : source.localCenterGame;
+            // Bake NiNode scale in now: Havok never re-applies node scale to a built shape.
+            const float sourceScale = useSourceLocal ? source.sourceNodeScale : 1.0f;
+            auto centeredHavokPoints = makeCenteredHavokPointCloud(sourcePoints, sourceCenter, sourceScale);
+            return havok_convex_shape_builder::buildConvexShapeFromLocalHavokPoints(centeredHavokPoints, g_rockConfig.rockWeaponCollisionConvexRadius);
         };
 
         while (nextSourceIndex < sources.size() && createdCount < MAX_WEAPON_BODIES && attemptedThisFrame < maxSourceAttemptsThisFrame) {
@@ -6230,10 +6045,10 @@ namespace rock
             initializeGeneratedKeyframedBodyDriveState(instance.driveState, initialTransform);
 
             ROCK_LOG_DEBUG(Weapon,
-                "Generated weapon mesh collision body created: meshIndex={} bodyId={} source='{}' driveRoot='{}' sourceRoot='{}' partKind={} supportRole={} reloadRole={} points={} children={} center=({:.2f},{:.2f},{:.2f}) layer=44",
+                "Generated weapon mesh collision body created: meshIndex={} bodyId={} source='{}' driveRoot='{}' sourceRoot='{}' partKind={} supportRole={} reloadRole={} points={} center=({:.2f},{:.2f},{:.2f}) layer=44",
                 createdCount, instance.body.getBodyId().value, source.sourceName, safeNodeName(source.driveRoot), safeNodeName(source.sourceRoot), static_cast<int>(source.semantic.partKind),
                 static_cast<int>(source.semantic.supportGripRole), static_cast<int>(source.semantic.reloadRole), source.localPointsGame.size(),
-                source.childLocalPointCloudsGame.size(), source.localCenterGame.x, source.localCenterGame.y, source.localCenterGame.z);
+                source.localCenterGame.x, source.localCenterGame.y, source.localCenterGame.z);
             ++createdCount;
             ++createdThisFrame;
         }
@@ -6482,11 +6297,6 @@ namespace rock
             _weaponCompositionSnapshot = {};
         }
         endWeaponBodyPublication();
-    }
-
-    void WeaponCollision::unpublishAtomicBodyIds()
-    {
-        clearAtomicBodyIds();
     }
 
     void WeaponCollision::publishAtomicBodyIds(WeaponBodyBank& bank)
