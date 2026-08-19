@@ -673,6 +673,43 @@ namespace rock
     private:
         HandTransitionResult applyTransition(const HandTransitionRequest& request);
 
+        /*
+         * Everything the grab teardown must read. A grab attempt fills one of these
+         * while it stages body-set and drive state, then gives it to
+         * abortGrabAcquisition at every failure exit. One context keeps the exits
+         * identical: an acquisition that fails early and one that fails after the
+         * drive commit unwind through the same code.
+         */
+        struct GrabAcquisitionUnwind
+        {
+            // Live physics world. Null means "clear ROCK state only, write no native fields".
+            RE::hknpWorld* world = nullptr;
+            // Owner-cell world. Needed to retire the authority proxy body.
+            RE::bhkWorld* bhkWorld = nullptr;
+            // Selected ref 3D root, for the incomplete-scan root motion restore.
+            RE::NiAVObject* rootNode = nullptr;
+            // Non-owning. Points at the lifecycle snapshot in the caller's frame.
+            active_grab_body_lifecycle::BodyLifecycleSnapshot* lifecycle = nullptr;
+            RE::hknpBodyId objectBodyId{};
+            // Picks the release-restore policy when a pull-prep lifecycle was consumed.
+            grab_target::Kind targetKind = grab_target::Kind::LooseObject;
+            std::uint16_t originalMotionPropsId = 1;
+            // The peer hand owns the body lifecycle, so this hand must not restore it.
+            bool joiningPeerHeldObject = false;
+            // Pull prep was taken over by this attempt, so its unwind is a physical drop.
+            bool consumedPullPrepLifecycle = false;
+        };
+
+        void abortGrabAcquisition(const GrabAcquisitionUnwind& unwind);
+
+        /*
+         * The held node world, rebuilt from a body world. A grab stores the node as a
+         * body-local offset in _grabFrame.bodyLocal, so every consumer that has a body
+         * world and wants the node world goes through here. One accessor keeps the
+         * offset convention in one place now that the callers live in several files.
+         */
+        RE::NiTransform heldNodeWorldFromBodyWorld(const RE::NiTransform& bodyWorld) const;
+
         bool createProxyConstraintGrabDrive(RE::bhkWorld* bhkWorld,
             RE::hknpWorld* world,
             RE::hknpBodyId objectBodyId,

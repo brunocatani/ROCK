@@ -781,9 +781,35 @@ namespace rock
                    value.scale > 0.0001f;
         }
 
-        bool nodeIsOrDescendsFrom(const RE::NiAVObject* root, const RE::NiAVObject* node);
-        RE::NiTransform multiplyTransforms(const RE::NiTransform& parent, const RE::NiTransform& child);
-        RE::NiTransform deriveNodeWorldFromBodyWorld(const RE::NiTransform& bodyWorld, const RE::NiTransform& bodyLocalTransform);
+        // ---- Transform primitives. Everything below composes these. ----
+
+        RE::NiTransform invertTransform(const RE::NiTransform& transform) { return transform_math::invertTransform(transform); }
+
+        RE::NiTransform multiplyTransforms(const RE::NiTransform& parent, const RE::NiTransform& child) { return transform_math::composeTransforms(parent, child); }
+
+        /*
+         * A grab stores the held node as a body-local offset, so the node world comes
+         * back by undoing that offset against the live body world.
+         */
+        RE::NiTransform deriveNodeWorldFromBodyWorld(const RE::NiTransform& bodyWorld, const RE::NiTransform& bodyLocalTransform)
+        {
+            return multiplyTransforms(bodyWorld, invertTransform(bodyLocalTransform));
+        }
+
+        // True when node is root itself or sits anywhere under it in the scene graph.
+        bool nodeIsOrDescendsFrom(const RE::NiAVObject* root, const RE::NiAVObject* node)
+        {
+            if (!root || !node) {
+                return false;
+            }
+
+            for (auto* current = node; current; current = current->parent) {
+                if (current == root) {
+                    return true;
+                }
+            }
+            return false;
+        }
 
         const RE::TESObjectWEAP* looseWeaponFormFromRef(RE::TESObjectREFR* refr)
         {
@@ -1139,20 +1165,6 @@ namespace rock
 
             frame.valid = true;
             return frame;
-        }
-
-        bool nodeIsOrDescendsFrom(const RE::NiAVObject* root, const RE::NiAVObject* node)
-        {
-            if (!root || !node) {
-                return false;
-            }
-
-            for (auto* current = node; current; current = current->parent) {
-                if (current == root) {
-                    return true;
-                }
-            }
-            return false;
         }
 
         bool acceptsSelectedMultibodyOwnerlessVisualMesh(const SelectedObject& selection,
@@ -2984,15 +2996,6 @@ namespace rock
             return restored;
         }
 
-        RE::NiTransform invertTransform(const RE::NiTransform& transform) { return transform_math::invertTransform(transform); }
-
-        RE::NiTransform multiplyTransforms(const RE::NiTransform& parent, const RE::NiTransform& child) { return transform_math::composeTransforms(parent, child); }
-
-        RE::NiTransform deriveNodeWorldFromBodyWorld(const RE::NiTransform& bodyWorld, const RE::NiTransform& bodyLocalTransform)
-        {
-            return multiplyTransforms(bodyWorld, invertTransform(bodyLocalTransform));
-        }
-
         std::vector<GrabLocalTriangle> cacheTrianglesInLocalSpace(const std::vector<TriangleData>& worldTriangles, const RE::NiTransform& nodeWorld)
         {
             std::vector<GrabLocalTriangle> localTriangles;
@@ -3035,11 +3038,20 @@ namespace rock
             return lhs.distanceSquared < rhs.distanceSquared;
         }
 
-        std::vector<GrabSurfaceTriangleData> selectNearestGrabSurfaceTriangles(
-            const std::vector<GrabSurfaceTriangleData>& sourceTriangles,
+        /*
+         * Nearest-N triangle selection. Big meshes make the contact scan expensive, so
+         * the callers keep only the triangles closest to the point they work around.
+         * triangleOf maps a stored element to the geometry to measure: the surface path
+         * carries per-triangle data around its triangle, the finger-pose path does not.
+         */
+        template <typename TriangleElement, typename TriangleOf>
+        std::vector<TriangleElement> selectNearestTriangles(
+            const std::vector<TriangleElement>& sourceTriangles,
             const RE::NiPoint3& centerWorld,
-            std::size_t maxTriangles)
+            std::size_t maxTriangles,
+            TriangleOf triangleOf)
         {
+            // Fail open: an unusable center or an already-small set is passed through.
             if (sourceTriangles.size() <= maxTriangles || maxTriangles == 0 || !grab_three_phase::isFinite(centerWorld)) {
                 return sourceTriangles;
             }
@@ -3048,16 +3060,18 @@ namespace rock
             rankedTriangles.reserve(sourceTriangles.size());
             for (std::size_t i = 0; i < sourceTriangles.size(); ++i) {
                 rankedTriangles.push_back(RankedGrabTriangle{
-                    triangleDistanceSquaredToPoint(sourceTriangles[i].triangle, centerWorld),
+                    triangleDistanceSquaredToPoint(triangleOf(sourceTriangles[i]), centerWorld),
                     i,
                 });
             }
 
+            // nth_element puts the nearest maxTriangles first; the sort after it only
+            // orders that prefix, so the cost stays linear in the discarded tail.
             const auto selectedEnd = rankedTriangles.begin() + maxTriangles;
             std::nth_element(rankedTriangles.begin(), selectedEnd, rankedTriangles.end(), rankedGrabTriangleLess);
             std::sort(rankedTriangles.begin(), selectedEnd, rankedGrabTriangleLess);
 
-            std::vector<GrabSurfaceTriangleData> selectedTriangles;
+            std::vector<TriangleElement> selectedTriangles;
             selectedTriangles.reserve(maxTriangles);
             for (auto it = rankedTriangles.begin(); it != selectedEnd; ++it) {
                 selectedTriangles.push_back(sourceTriangles[it->index]);
@@ -3065,34 +3079,51 @@ namespace rock
             return selectedTriangles;
         }
 
+        std::vector<GrabSurfaceTriangleData> selectNearestGrabSurfaceTriangles(
+            const std::vector<GrabSurfaceTriangleData>& sourceTriangles,
+            const RE::NiPoint3& centerWorld,
+            std::size_t maxTriangles)
+        {
+            return selectNearestTriangles(sourceTriangles, centerWorld, maxTriangles,
+                [](const GrabSurfaceTriangleData& element) -> const TriangleData& { return element.triangle; });
+        }
+
         std::vector<TriangleData> selectNearestGrabFingerPoseTriangles(
             const std::vector<TriangleData>& sourceTriangles,
             const RE::NiPoint3& centerWorld,
             std::size_t maxTriangles)
         {
-            if (sourceTriangles.size() <= maxTriangles || maxTriangles == 0 || !grab_three_phase::isFinite(centerWorld)) {
+            return selectNearestTriangles(sourceTriangles, centerWorld, maxTriangles,
+                [](const TriangleData& element) -> const TriangleData& { return element; });
+        }
+
+        /*
+         * Cap the surface triangles handed to a contact builder. Returns the set to use:
+         * the original when it already fits, otherwise storage filled with the nearest N.
+         * storage must outlive the returned reference - the callers keep it in the frame
+         * that consumes the result.
+         */
+        const std::vector<GrabSurfaceTriangleData>& limitGrabSurfaceTrianglesNear(
+            const std::vector<GrabSurfaceTriangleData>& sourceTriangles,
+            const RE::NiPoint3& centerWorld,
+            std::vector<GrabSurfaceTriangleData>& storage,
+            const char* handNameText,
+            const char* useLabel)
+        {
+            if (sourceTriangles.size() <= kMaxGrabRuntimeSurfaceContactTriangles) {
                 return sourceTriangles;
             }
-
-            std::vector<RankedGrabTriangle> rankedTriangles;
-            rankedTriangles.reserve(sourceTriangles.size());
-            for (std::size_t i = 0; i < sourceTriangles.size(); ++i) {
-                rankedTriangles.push_back(RankedGrabTriangle{
-                    triangleDistanceSquaredToPoint(sourceTriangles[i], centerWorld),
-                    i,
-                });
-            }
-
-            const auto selectedEnd = rankedTriangles.begin() + maxTriangles;
-            std::nth_element(rankedTriangles.begin(), selectedEnd, rankedTriangles.end(), rankedGrabTriangleLess);
-            std::sort(rankedTriangles.begin(), selectedEnd, rankedGrabTriangleLess);
-
-            std::vector<TriangleData> selectedTriangles;
-            selectedTriangles.reserve(maxTriangles);
-            for (auto it = rankedTriangles.begin(); it != selectedEnd; ++it) {
-                selectedTriangles.push_back(sourceTriangles[it->index]);
-            }
-            return selectedTriangles;
+            storage = selectNearestGrabSurfaceTriangles(sourceTriangles, centerWorld, kMaxGrabRuntimeSurfaceContactTriangles);
+            ROCK_LOG_DEBUG(Hand,
+                "{} hand MESH CONTACT TRIANGLES: use={} sourceTris={} localTris={} center=({:.1f},{:.1f},{:.1f})",
+                handNameText,
+                useLabel,
+                sourceTriangles.size(),
+                storage.size(),
+                centerWorld.x,
+                centerWorld.y,
+                centerWorld.z);
+            return storage;
         }
 
         RE::NiAVObject* findNamedNodeRecursive(RE::NiAVObject* root, std::string_view name, int maxDepth = 12)
@@ -5713,7 +5744,7 @@ namespace rock
         if (!tryGetGrabAuthorityBodyWorldTransform(world, _savedObjectState.bodyId, grabBodyWorld)) {
             return false;
         }
-        const RE::NiTransform currentNodeWorld = deriveNodeWorldFromBodyWorld(grabBodyWorld, _grabFrame.bodyLocal);
+        const RE::NiTransform currentNodeWorld = heldNodeWorldFromBodyWorld(grabBodyWorld);
         out.contactPointWorld = gripEvidencePointWorld(_grabFrame, currentNodeWorld);
 
         const RE::NiPoint3 normalWorld = gripEvidenceNormalWorld(_grabFrame, currentNodeWorld);
@@ -5761,7 +5792,7 @@ namespace rock
         }
 
         out.pivotWorld = transform_math::localPointToWorld(liveBodyWorld, activeProxyConstraintPivotBLocalGame());
-        const RE::NiTransform currentNodeWorld = deriveNodeWorldFromBodyWorld(liveBodyWorld, _grabFrame.bodyLocal);
+        const RE::NiTransform currentNodeWorld = heldNodeWorldFromBodyWorld(liveBodyWorld);
 
         RE::NiPoint3 normalWorld = _grabFrame.hasSupportFrameNormal ?
             normalizeOrZero(transform_math::localVectorToWorld(liveBodyWorld, _grabFrame.supportFrameNormalBodyLocal)) :
@@ -6105,7 +6136,7 @@ namespace rock
             out.hasTorqueAxis = true;
         }
 
-        const RE::NiTransform currentNodeWorld = deriveNodeWorldFromBodyWorld(liveBodyWorld, _grabFrame.bodyLocal);
+        const RE::NiTransform currentNodeWorld = heldNodeWorldFromBodyWorld(liveBodyWorld);
         /*
          * Active pivot-B markers answer a different question than mesh evidence:
          * mesh points show what ROCK selected visually, while this converts the
@@ -6322,7 +6353,7 @@ namespace rock
 
         if (heldBodyFrame.valid || out.hasHeldNativeBodyWorld) {
             const RE::NiTransform& bodyLocalAuthorityFrame = out.hasHeldNativeBodyWorld ? out.heldNativeBodyWorld : out.heldBodyWorld;
-            out.heldBodyDerivedNodeWorld = deriveNodeWorldFromBodyWorld(bodyLocalAuthorityFrame, _grabFrame.bodyLocal);
+            out.heldBodyDerivedNodeWorld = heldNodeWorldFromBodyWorld(bodyLocalAuthorityFrame);
             out.heldBodyDerivedNodeBasis = grab_transform_telemetry::makeOrientationBasis(out.heldBodyDerivedNodeWorld);
             out.hasHeldBodyDerivedNodeWorld = true;
         }
@@ -6393,7 +6424,7 @@ namespace rock
                     grab_transform_telemetry::measureTransformDelta(out.heldBodyWorld, out.currentRawDesiredBodyWorld);
             }
             out.bodyTargetNodeErr = grab_transform_telemetry::measureTransformDelta(
-                deriveNodeWorldFromBodyWorld(out.currentRawDesiredBodyWorld, _grabFrame.bodyLocal),
+                heldNodeWorldFromBodyWorld(out.currentRawDesiredBodyWorld),
                 out.currentRawDesiredObjectWorld);
         }
         if (out.hasHeldNodeWorld) {
@@ -7258,6 +7289,121 @@ namespace rock
         return false;
     }
 
+    /*
+     * One teardown for every failed grab attempt.
+     *
+     * Acquisition stages state in layers: body-set prep, then the canonical grab frame
+     * and the three-phase state, then collision suppression and the constraint drive.
+     * A failure can happen in any layer. This unwinds all of them in reverse order.
+     * Each layer guards itself against "nothing was staged", so an exit that fails in
+     * the first layer pays only for the guard checks.
+     *
+     * Ordering is load-bearing in one place: the inertia restore must read
+     * _savedObjectState before the lifecycle restore clears it.
+     */
+    void Hand::abortGrabAcquisition(const GrabAcquisitionUnwind& unwind)
+    {
+        // Drop the drive first. The proxy body and its constraint are the only things
+        // that could still move the object after this frame returns.
+        destroyGrabAuthorityProxy(unwind.bhkWorld);
+        // Fail closed on the visual side: no grab means no external hand offset.
+        clearGrabExternalHandWorldTransform(_isLeft);
+        // The peer hand owns the saved state when this hand only joined its hold.
+        if (!unwind.joiningPeerHeldObject) {
+            restoreGrabbedInertia(unwind.world, _savedObjectState);
+        }
+
+        // Give the body set its original motion back. The peer keeps ownership of the
+        // lifecycle when this hand joined an object the peer already holds.
+        if (!unwind.joiningPeerHeldObject && unwind.lifecycle) {
+            auto& activeLifecycle = *unwind.lifecycle;
+            if (unwind.consumedPullPrepLifecycle) {
+                /*
+                 * This attempt took the pull prep over, so the object has no other
+                 * owner left. Unwind it as a physical drop, not as a plain failure.
+                 */
+                const auto releaseRestorePolicy =
+                    active_grab_body_lifecycle::releaseRestorePolicyForTargetKind(unwind.targetKind);
+                const auto releasePlan = activeLifecycle.restorePlanForRelease(
+                    releaseRestorePolicy,
+                    unwind.targetKind,
+                    active_grab_body_lifecycle::BodyReleaseIntent::PhysicalDrop);
+                restoreActiveGrabLifecycle(unwind.world,
+                    activeLifecycle,
+                    releasePlan,
+                    unwind.objectBodyId.value,
+                    handName(),
+                    "failed-pull-catch-setup-physical-drop");
+                if (activeLifecycle.hasIncompleteNativeScan()) {
+                    // A converted loose object keeps its new motion, so a recursive root
+                    // restore would undo the conversion the drop still needs.
+                    if (active_grab_body_lifecycle::shouldSkipIncompleteScanRootRestore(releasePlan, unwind.originalMotionPropsId)) {
+                        ROCK_LOG_DEBUG(Hand,
+                            "{} hand failed pull-catch setup: skipped recursive root restore for converted loose-object physical drop root='{}' motionProps={} preservedMotion={}",
+                            handName(),
+                            nodeDebugName(unwind.rootNode),
+                            unwind.originalMotionPropsId,
+                            releasePlan.preservedConvertedMotionCount);
+                    } else {
+                        restoreIncompleteActivePrepRoot(unwind.rootNode, unwind.originalMotionPropsId, handName(), "failed-pull-catch-setup-incomplete-scan");
+                    }
+                }
+                // A dropped object must fall, so wake the whole set back up.
+                if (unwind.world && unwind.objectBodyId.value != INVALID_BODY_ID) {
+                    const auto releaseActivation = activateHeldObjectBodySet(unwind.world, unwind.objectBodyId.value, _pulledBodyIds);
+                    if (releaseActivation.failedActivationCount > 0) {
+                        ROCK_LOG_WARN(Hand,
+                            "{} hand failed pull-catch setup activation incomplete: primaryBody={} bodies={} activated={} failed={}",
+                            handName(),
+                            unwind.objectBodyId.value,
+                            releaseActivation.bodyCount,
+                            releaseActivation.activatedCount,
+                            releaseActivation.failedActivationCount);
+                    }
+                }
+            } else {
+                restoreActiveGrabLifecycle(unwind.world,
+                    activeLifecycle,
+                    activeLifecycle.restorePlanForFailure(),
+                    unwind.objectBodyId.value,
+                    handName(),
+                    "failed-setup");
+                if (activeLifecycle.hasIncompleteNativeScan()) {
+                    restoreIncompleteActivePrepRoot(unwind.rootNode, unwind.originalMotionPropsId, handName(), "failed-setup-incomplete-scan");
+                }
+            }
+        }
+        /*
+         * Some setup failures stage a saved object state before ROCK owns a live grab
+         * constraint. Clear it here so a rejected grab cannot look held or block a
+         * later reset cleanup.
+         */
+        _savedObjectState.clear();
+
+        // Both suppression sets no-op when this attempt never armed them.
+        restoreHandCollisionAfterGrab(unwind.world);
+        restoreBodyCollisionAfterHeldLooseWeapon(unwind.world);
+
+        // Forget the attempt. Every field below is written only by acquisition or by
+        // the held tick, so clearing them cannot disturb an unrelated subsystem.
+        _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
+        _grabObjectGripAtGrab = {};
+        _heldObjectIsLooseWeapon = false;
+        _grabFrame.clear();
+        _heldBodyIds.clear();
+        _heldDriveDecision = {};
+        _heldBodyIdsCount.store(0, std::memory_order_release);
+        _grabFingerPosePublished = false;
+        // "ROCK_Grab" belongs to the grab finger pose alone, so this cannot drop a pose
+        // that another system published.
+        (void)frik_visual_authority::clearHandPose("ROCK_Grab", handFromBool(_isLeft));
+    }
+
+    RE::NiTransform Hand::heldNodeWorldFromBodyWorld(const RE::NiTransform& bodyWorld) const
+    {
+        return deriveNodeWorldFromBodyWorld(bodyWorld, _grabFrame.bodyLocal);
+    }
+
     bool Hand::startDynamicPull(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform)
     {
         /*
@@ -8007,64 +8153,26 @@ namespace rock
             activeLifecycle = *sharedContext.peerActiveGrabLifecycle;
         }
 
-        auto restoreFailedGrabPrep = [&]() {
-            if (!joiningPeerHeldObject) {
-                if (consumedPullPrepLifecycle) {
-                    const auto releaseRestorePolicy =
-                        active_grab_body_lifecycle::releaseRestorePolicyForTargetKind(sel.targetKind);
-                    const auto releasePlan = activeLifecycle.restorePlanForRelease(
-                        releaseRestorePolicy,
-                        sel.targetKind,
-                        active_grab_body_lifecycle::BodyReleaseIntent::PhysicalDrop);
-                    restoreActiveGrabLifecycle(world,
-                        activeLifecycle,
-                        releasePlan,
-                        objectBodyId.value,
-                        handName(),
-                        "failed-pull-catch-setup-physical-drop");
-                    if (activeLifecycle.hasIncompleteNativeScan()) {
-                        if (active_grab_body_lifecycle::shouldSkipIncompleteScanRootRestore(releasePlan, selectedOriginalMotionPropsId)) {
-                            ROCK_LOG_DEBUG(Hand,
-                                "{} hand failed pull-catch setup: skipped recursive root restore for converted loose-object physical drop root='{}' motionProps={} preservedMotion={}",
-                                handName(),
-                                nodeDebugName(rootNode),
-                                selectedOriginalMotionPropsId,
-                                releasePlan.preservedConvertedMotionCount);
-                        } else {
-                            restoreIncompleteActivePrepRoot(rootNode, selectedOriginalMotionPropsId, handName(), "failed-pull-catch-setup-incomplete-scan");
-                        }
-                    }
-                    if (world && objectBodyId.value != INVALID_BODY_ID) {
-                        const auto releaseActivation = activateHeldObjectBodySet(world, objectBodyId.value, _pulledBodyIds);
-                        if (releaseActivation.failedActivationCount > 0) {
-                            ROCK_LOG_WARN(Hand,
-                                "{} hand failed pull-catch setup activation incomplete: primaryBody={} bodies={} activated={} failed={}",
-                                handName(),
-                                objectBodyId.value,
-                                releaseActivation.bodyCount,
-                                releaseActivation.activatedCount,
-                                releaseActivation.failedActivationCount);
-                        }
-                    }
-                } else {
-                    restoreActiveGrabLifecycle(world,
-                        activeLifecycle,
-                        activeLifecycle.restorePlanForFailure(),
-                        objectBodyId.value,
-                        handName(),
-                        "failed-setup");
-                    if (activeLifecycle.hasIncompleteNativeScan()) {
-                        restoreIncompleteActivePrepRoot(rootNode, selectedOriginalMotionPropsId, handName(), "failed-setup-incomplete-scan");
-                    }
-                }
-            }
-            /*
-             * Some setup failures occur after body resolution has staged a saved
-             * object state but before ROCK owns a live grab constraint. Clear it
-             * here so a rejected strict-authority grab cannot look held or block
-             * later reset cleanup.
-             */
-            _savedObjectState.clear();
+        /*
+         * Every failure exit below routes through this. It snapshots the live
+         * acquisition locals at the moment of the failure - objectBodyId is still
+         * re-resolved during primary-body selection - and gives them to the one
+         * teardown. It returns false so a rejecting site reads "return abortGrab();"
+         * and cannot apply half of the unwind.
+         */
+        auto abortGrab = [&]() -> bool {
+            abortGrabAcquisition(GrabAcquisitionUnwind{
+                .world = world,
+                .bhkWorld = bhkWorld,
+                .rootNode = rootNode,
+                .lifecycle = &activeLifecycle,
+                .objectBodyId = objectBodyId,
+                .targetKind = sel.targetKind,
+                .originalMotionPropsId = selectedOriginalMotionPropsId,
+                .joiningPeerHeldObject = joiningPeerHeldObject,
+                .consumedPullPrepLifecycle = consumedPullPrepLifecycle,
+            });
+            return false;
         };
 
         const RE::NiTransform handBodyWorldAtGrab = getLiveBodyWorldTransform(world, _handBody.getBodyId());
@@ -8089,9 +8197,7 @@ namespace rock
             _grabFrame.clear();
             _heldBodyIds.clear();
             _heldBodyIdsCount.store(0, std::memory_order_release);
-            restoreFailedGrabPrep();
-            clearGrabExternalHandWorldTransform(_isLeft);
-            return false;
+            return abortGrab();
         }
         /*
          * Live proxy motion and close-grab pocket acquisition both resolve the
@@ -8234,9 +8340,7 @@ namespace rock
                 meshStats.visitedShapes,
                 meshStats.totalTriangles(),
                 grabFallbackReason);
-            restoreFailedGrabPrep();
-            clearGrabExternalHandWorldTransform(_isLeft);
-            return false;
+            return abortGrab();
         };
 
         const auto logGrabCaptureRefresh = [&](const GrabCaptureTransformRefreshResult& refresh) {
@@ -8271,9 +8375,7 @@ namespace rock
                 nodeDebugName(rootNode),
                 nodeDebugName(meshSourceNode),
                 nodeDebugName(collidableNode));
-            restoreFailedGrabPrep();
-            clearGrabExternalHandWorldTransform(_isLeft);
-            return false;
+            return abortGrab();
         }
 
         if (collidableNode) {
@@ -8288,9 +8390,7 @@ namespace rock
                 objName,
                 sel.refr ? sel.refr->GetFormID() : 0,
                 nodeDebugName(collidableNode));
-            restoreFailedGrabPrep();
-            clearGrabExternalHandWorldTransform(_isLeft);
-            return false;
+            return abortGrab();
         }
 
         /*
@@ -8676,9 +8776,7 @@ namespace rock
                 meshStats.visitedShapes,
                 meshStats.totalTriangles(),
                 contactSourcePolicy.reason);
-            restoreFailedGrabPrep();
-            clearGrabExternalHandWorldTransform(_isLeft);
-            return false;
+            return abortGrab();
         }
 
         const RE::NiPoint3 primaryChoiceTarget = meshGrabFound ? grabGripPoint : (sel.hasHitPoint ? sel.hitPointWorld : grabPivotAForPrimaryChoice);
@@ -8770,9 +8868,7 @@ namespace rock
                 rejectedBody ? rejectedBody->motionPropertiesId : 0,
                 activeLifecycle.latePreparedBodyCount(),
                 activeLifecycle.hasIncompleteNativeScan() ? "yes" : "no");
-            restoreFailedGrabPrep();
-            clearGrabExternalHandWorldTransform(_isLeft);
-            return false;
+            return abortGrab();
         }
 
         const auto mechanicalScope = mechanical_connected_body_set::buildFromPreparedBodySet(
@@ -8819,9 +8915,7 @@ namespace rock
                 primaryChoiceTarget.x,
                 primaryChoiceTarget.y,
                 primaryChoiceTarget.z);
-            restoreFailedGrabPrep();
-            clearGrabExternalHandWorldTransform(_isLeft);
-            return false;
+            return abortGrab();
         }
 
         /*
@@ -8843,9 +8937,7 @@ namespace rock
         auto* preparedBody = havok_runtime::getBody(world, objectBodyId);
         if (!preparedBody) {
             ROCK_LOG_ERROR(Hand, "{} grabSelectedObject: prepared primary body {} is not readable after object prep", handName(), objectBodyId.value);
-            restoreFailedGrabPrep();
-            clearGrabExternalHandWorldTransform(_isLeft);
-            return false;
+            return abortGrab();
         }
         _savedObjectState.bodyId = objectBodyId;
         _savedObjectState.setReference(selectedRef);
@@ -8871,9 +8963,7 @@ namespace rock
                         objName,
                         sel.refr ? sel.refr->GetFormID() : 0,
                         nodeDebugName(resolvedOwnerNode));
-                    restoreFailedGrabPrep();
-                    clearGrabExternalHandWorldTransform(_isLeft);
-                    return false;
+                    return abortGrab();
                 }
                 collidableNode = resolvedOwnerNode;
                 objectWorldTransform = collidableNode->world;
@@ -8884,9 +8974,7 @@ namespace rock
                         objName,
                         sel.refr ? sel.refr->GetFormID() : 0,
                         nodeDebugName(collidableNode));
-                    restoreFailedGrabPrep();
-                    clearGrabExternalHandWorldTransform(_isLeft);
-                    return false;
+                    return abortGrab();
                 }
             }
         }
@@ -8954,22 +9042,9 @@ namespace rock
             std::vector<GrabSurfaceTriangleData> contactPatchSurfaceTriangles;
             const RE::NiPoint3 contactPatchTriangleCenter =
                 acquisitionPocket.valid ? acquisitionPocket.palmCenterWorld : canonicalPivotPointWorld;
-            const std::vector<GrabSurfaceTriangleData>* contactPatchTriangleSource = &grabSurfaceTriangles;
-            if (grabSurfaceTriangles.size() > kMaxGrabRuntimeSurfaceContactTriangles) {
-                contactPatchSurfaceTriangles = selectNearestGrabSurfaceTriangles(
-                    grabSurfaceTriangles,
-                    contactPatchTriangleCenter,
-                    kMaxGrabRuntimeSurfaceContactTriangles);
-                contactPatchTriangleSource = &contactPatchSurfaceTriangles;
-                ROCK_LOG_DEBUG(Hand,
-                    "{} hand MESH CONTACT TRIANGLES: use=contactPatch sourceTris={} localTris={} center=({:.1f},{:.1f},{:.1f})",
-                    handName(),
-                    grabSurfaceTriangles.size(),
-                    contactPatchSurfaceTriangles.size(),
-                    contactPatchTriangleCenter.x,
-                    contactPatchTriangleCenter.y,
-                    contactPatchTriangleCenter.z);
-            }
+            // The patch builder works around the palm center, so cap to that.
+            const auto& contactPatchTriangleSource = limitGrabSurfaceTrianglesNear(
+                grabSurfaceTriangles, contactPatchTriangleCenter, contactPatchSurfaceTriangles, handName(), "contactPatch");
             contactPatchRuntime = buildRuntimeGrabContactPatch(world,
                 preparedBodySet,
                 objectBodyId.value,
@@ -8981,7 +9056,7 @@ namespace rock
                 palmTangentWorld,
                 palmBitangentWorld,
                 contactPatchObjectLeverEstimateGameUnits,
-                *contactPatchTriangleSource);
+                contactPatchTriangleSource);
 
             const bool contactPatchAcceptedForPivot = grab_contact_source_policy::shouldAcceptContactPatchPivot(
                 contactSourcePolicy,
@@ -9220,9 +9295,7 @@ namespace rock
                 nodeDebugName(meshSourceNode),
                 nodeDebugName(collidableNode),
                 nodeDebugName(rootNode));
-            restoreFailedGrabPrep();
-            clearGrabExternalHandWorldTransform(_isLeft);
-            return false;
+            return abortGrab();
         }
 
         const RuntimePinchPocketCandidate pinchPocketCandidate = buildRuntimePinchPocketCandidate(
@@ -9278,9 +9351,7 @@ namespace rock
                 handName(),
                 pinchPocketCandidate.decision.reason,
                 sel.refr ? sel.refr->GetFormID() : 0);
-            restoreFailedGrabPrep();
-            clearGrabExternalHandWorldTransform(_isLeft);
-            return false;
+            return abortGrab();
         }
         if (handPocketOnlyGrab &&
             !pinchPocketCandidate.valid &&
@@ -9297,28 +9368,15 @@ namespace rock
 
         if (!pinchPocketCandidate.valid && multiFingerEvidenceEnabled) {
             std::vector<GrabSurfaceTriangleData> multiFingerSurfaceTriangles;
-            const std::vector<GrabSurfaceTriangleData>* multiFingerTriangleSource = &grabSurfaceTriangles;
-            if (grabSurfaceTriangles.size() > kMaxGrabRuntimeSurfaceContactTriangles) {
-                multiFingerSurfaceTriangles = selectNearestGrabSurfaceTriangles(
-                    grabSurfaceTriangles,
-                    grabGripPoint,
-                    kMaxGrabRuntimeSurfaceContactTriangles);
-                multiFingerTriangleSource = &multiFingerSurfaceTriangles;
-                ROCK_LOG_DEBUG(Hand,
-                    "{} hand MESH CONTACT TRIANGLES: use=multiFinger sourceTris={} localTris={} center=({:.1f},{:.1f},{:.1f})",
-                    handName(),
-                    grabSurfaceTriangles.size(),
-                    multiFingerSurfaceTriangles.size(),
-                    grabGripPoint.x,
-                    grabGripPoint.y,
-                    grabGripPoint.z);
-            }
+            // The grip builder works around the grip point, so cap to that instead.
+            const auto& multiFingerTriangleSource = limitGrabSurfaceTrianglesNear(
+                grabSurfaceTriangles, grabGripPoint, multiFingerSurfaceTriangles, handName(), "multiFinger");
             multiFingerGripRuntime = buildRuntimeMultiFingerGripContact(world,
                 preparedBodySet,
                 objectBodyId.value,
                 objectWorldTransform,
                 semanticContacts,
-                *multiFingerTriangleSource,
+                multiFingerTriangleSource,
                 this,
                 hybridFingerProbeEvidenceEnabled);
             if (multiFingerGripRuntime.gripSet.valid) {
@@ -9461,10 +9519,7 @@ namespace rock
                 multiFingerGripRuntime.rejectedDistanceCount,
                 contactEvidenceDecision.reason,
                 sel.isFarSelection ? "yes" : "no");
-            restoreFailedGrabPrep();
-            clearGrabExternalHandWorldTransform(_isLeft);
-            _savedObjectState.clear();
-            return false;
+            return abortGrab();
         }
 
         grabSurfaceHit = palmSeatSurfaceHit;
@@ -9553,12 +9608,7 @@ namespace rock
                     handName(),
                     objectBodyId.value,
                     sel.refr ? sel.refr->GetFormID() : 0);
-                _grabFrame.clear();
-                _heldBodyIds.clear();
-                _heldDriveDecision = {};
-                _heldBodyIdsCount.store(0, std::memory_order_release);
-                restoreFailedGrabPrep();
-                return false;
+                return abortGrab();
             }
             RE::NiTransform motionBodyWorldAtGrab{};
             body_frame::BodyFrameSource motionBodySourceAtGrab = body_frame::BodyFrameSource::Fallback;
@@ -9597,9 +9647,7 @@ namespace rock
                         objName,
                         sel.refr ? sel.refr->GetFormID() : 0,
                         nodeDebugName(ownerNodeAtGrab));
-                    restoreFailedGrabPrep();
-                    clearGrabExternalHandWorldTransform(_isLeft);
-                    return false;
+                    return abortGrab();
                 }
             }
             _grabFrame.heldNode = collidableNode;
@@ -9950,18 +9998,7 @@ namespace rock
                                 grab_support_model_math::gripSupportKindName(gripSupportRuntime.model.kind),
                                 gripSupportRuntime.model.reason ? gripSupportRuntime.model.reason : "none",
                                 pinchPocketCandidate.decision.reason ? pinchPocketCandidate.decision.reason : "none");
-                            _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
-                            _grabObjectGripAtGrab = {};
-                            _heldObjectIsLooseWeapon = false;
-                            _grabFrame.clear();
-                            _heldBodyIds.clear();
-                            _heldDriveDecision = {};
-                            _heldBodyIdsCount.store(0, std::memory_order_release);
-                            _grabFingerPosePublished = false;
-                            (void)frik_visual_authority::clearHandPose("ROCK_Grab", handFromBool(_isLeft));
-                            clearGrabExternalHandWorldTransform(_isLeft);
-                            restoreFailedGrabPrep();
-                            return false;
+                            return abortGrab();
                         }
                         if (g_rockConfig.rockDebugGrabFrameLogging) {
                             for (const auto& candidate : authorityCandidates) {
@@ -10721,17 +10758,6 @@ namespace rock
                         looseWeaponPrimaryAttachReason,
                         looseWeaponPrimaryAttachSourceVisible ? "yes" : "no");
                 } else {
-                    _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
-                    _grabObjectGripAtGrab = {};
-                    _heldObjectIsLooseWeapon = false;
-                    _grabFrame.clear();
-                    _heldBodyIds.clear();
-                    _heldDriveDecision = {};
-                    _heldBodyIdsCount.store(0, std::memory_order_release);
-                    _grabFingerPosePublished = false;
-                    (void)frik_visual_authority::clearHandPose("ROCK_Grab", handFromBool(_isLeft));
-                    clearGrabExternalHandWorldTransform(_isLeft);
-                    restoreFailedGrabPrep();
                     ROCK_LOG_WARN(Hand,
                         "{} THREE-PHASE GRAB ABORT: pocketValid={} gripValid={} accepted={} reason={} dist={:.2f}gu stableTouch={}",
                         handName(),
@@ -10741,7 +10767,7 @@ namespace rock
                         phaseDecision.reason,
                         gripToPocketDistance,
                         hasStablePocketTouchContact ? "yes" : "no");
-                    return false;
+                    return abortGrab();
                 }
             }
 
@@ -10787,18 +10813,7 @@ namespace rock
                     grabPivotAWorld.z,
                     grabPointMode,
                     objectBodyId.value);
-                _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
-                _grabObjectGripAtGrab = {};
-                _heldObjectIsLooseWeapon = false;
-                _grabFrame.clear();
-                _heldBodyIds.clear();
-                _heldDriveDecision = {};
-                _heldBodyIdsCount.store(0, std::memory_order_release);
-                _grabFingerPosePublished = false;
-                (void)frik_visual_authority::clearHandPose("ROCK_Grab", handFromBool(_isLeft));
-                clearGrabExternalHandWorldTransform(_isLeft);
-                restoreFailedGrabPrep();
-                return false;
+                return abortGrab();
             }
             applyFrozenGrabAuthorityFrameToGrabFrame(_grabFrame, frozenAuthorityFrame);
             desiredObjectWorld = frozenAuthorityFrame.desiredObjectWorld;
@@ -11430,19 +11445,7 @@ namespace rock
         const bool driveCreated = _activeConstraint.isValid() && _grabAuthorityProxy.isValid();
         if (!driveCreated) {
             ROCK_LOG_ERROR(Hand, "{} hand GRAB FAILED: proxy-constraint dynamic grab creation failed", handName());
-            destroyGrabAuthorityProxy(bhkWorld);
-            clearGrabExternalHandWorldTransform(_isLeft);
-            if (!joiningPeerHeldObject) {
-                restoreGrabbedInertia(world, _savedObjectState);
-            }
-            restoreFailedGrabPrep();
-            restoreHandCollisionAfterGrab(world);
-            restoreBodyCollisionAfterHeldLooseWeapon(world);
-            _savedObjectState.clear();
-            _heldBodyIds.clear();
-            _heldDriveDecision = {};
-            _heldObjectIsLooseWeapon = false;
-            return false;
+            return abortGrab();
         }
 
         _heldObjectIsLooseWeapon = looseWeaponGrab;
@@ -12155,10 +12158,10 @@ namespace rock
                         _savedObjectState.bodyId.value,
                         physics_scale::havokToGame(),
                         grabBodyWorld)) {
-                    bodyDerivedNodeWorld = deriveNodeWorldFromBodyWorld(grabBodyWorld, _grabFrame.bodyLocal);
+                    bodyDerivedNodeWorld = heldNodeWorldFromBodyWorld(grabBodyWorld);
                     hasBodyDerivedNodeWorld = true;
                 } else if (tryGetGrabAuthorityBodyWorldTransform(world, _savedObjectState.bodyId, grabBodyWorld)) {
-                    bodyDerivedNodeWorld = deriveNodeWorldFromBodyWorld(grabBodyWorld, _grabFrame.bodyLocal);
+                    bodyDerivedNodeWorld = heldNodeWorldFromBodyWorld(grabBodyWorld);
                     hasBodyDerivedNodeWorld = true;
                 } else if (_grabFrame.heldNode) {
                     bodyDerivedNodeWorld = _grabFrame.heldNode->world;
@@ -12671,7 +12674,7 @@ namespace rock
                     timeoutReacquireReason = "missingProxyLocalPalmPocketPivot";
                     seatedRetargetRejectedKeepFrozen = true;
                 } else {
-                    const RE::NiTransform currentNodeWorld = deriveNodeWorldFromBodyWorld(grabBodyWorld, _grabFrame.bodyLocal);
+                    const RE::NiTransform currentNodeWorld = heldNodeWorldFromBodyWorld(grabBodyWorld);
                     const RE::NiTransform authorityFrame =
                         makeGeneratedProxyAuthorityRelationFrame(proxyAuthorityWorld);
                     const float seatedEnvelope =
@@ -12789,7 +12792,7 @@ namespace rock
                             const RE::NiTransform desiredBodyWorldAtSeat =
                                 grab_frame_math::shiftObjectToAlignGripWithPocket(grabBodyWorld, seatPivotAWorld, promotedPointWorld);
                             const RE::NiTransform desiredObjectWorldAtSeat =
-                                deriveNodeWorldFromBodyWorld(desiredBodyWorldAtSeat, _grabFrame.bodyLocal);
+                                heldNodeWorldFromBodyWorld(desiredBodyWorldAtSeat);
                             const RE::NiTransform proxyAuthorityFrameWorld =
                                 makeGeneratedProxyAuthorityRelationFrame(proxyAuthorityWorld);
                             const auto frozenSeatAuthorityFrame = grab_authority_frame_math::freezeGrabAuthorityFrame<RE::NiTransform>(
@@ -13005,7 +13008,7 @@ namespace rock
 
                 if (!_grabFrame.syntheticLooseWeaponPrimaryAttach && g_rockConfig.rockGrabMeshFingerPoseEnabled && _hasGrabFingerPose) {
                     if (!_grabFingerPosePublished) {
-                        const RE::NiTransform currentNodeWorld = deriveNodeWorldFromBodyWorld(grabBodyWorld, _grabFrame.bodyLocal);
+                        const RE::NiTransform currentNodeWorld = heldNodeWorldFromBodyWorld(grabBodyWorld);
                         if (!_grabFrame.fingerPoseAimValid && _grabFrame.pivotAuthorityNormalTrusted) {
                             _grabFrame.fingerPoseAimValid = true;
                             _grabFrame.fingerPoseAimReason = "touchHeldNormalTrusted";
@@ -14940,7 +14943,7 @@ namespace rock
                     RE::NiPoint3 releaseContactNormalWorld{};
                     if (_grabFrame.pivotAuthorityNormalTrusted && hasReleaseBodyWorld) {
                         const RE::NiTransform releaseNodeWorld =
-                            _grabFrame.heldNode ? _grabFrame.heldNode->world : deriveNodeWorldFromBodyWorld(releaseBodyWorld, _grabFrame.bodyLocal);
+                            _grabFrame.heldNode ? _grabFrame.heldNode->world : heldNodeWorldFromBodyWorld(releaseBodyWorld);
                         releaseContactNormalWorld = gripEvidenceNormalWorld(_grabFrame, releaseNodeWorld);
                     }
                     releaseAngularVelocity = grab_motion_controller::scaleAngularVelocityByHeldAuthorityAxes(
