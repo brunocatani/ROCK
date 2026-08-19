@@ -29,7 +29,7 @@ Require-Text 'src/physics-interaction/native/GeneratedKeyframedBodyDrive.cpp' 'b
 Require-Text 'src/physics-interaction/native/GeneratedKeyframedBodyDrive.cpp' 'g_rockConfig\.rockDebugGrabFrameLogging' 'Generated body frame compare logs must be available with grab-frame diagnostics, not only global verbose logging.'
 Require-Text 'src/physics-interaction/hand/HandBoneColliderSet.cpp' 'bodyRotErr=\{:\.2f\}' 'Hand generated collider rebuild warnings must include rotation error.'
 Require-Text 'src/physics-interaction/body/BodyBoneColliderSet.cpp' 'bodyRotErr=\{:\.2f\}' 'Body generated collider rebuild warnings must include rotation error.'
-Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'bodyRotErr=\{:\.2f\}' 'Weapon generated collider rebuild warnings must include rotation error.'
+Require-Text 'src/physics-interaction/weapon/WeaponCollisionBodies.cpp' 'bodyRotErr=\{:\.2f\}' 'Weapon generated collider rebuild warnings must include rotation error.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'GeneratedKeyframedBodyDriveTelemetrySourceTests failed:' -ForegroundColor Red

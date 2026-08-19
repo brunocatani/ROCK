@@ -173,6 +173,14 @@ namespace rock::weapon_collision_detail
         }
     }
 
+    /*
+     * How many generated hulls one frame may turn into Havok bodies. Creation is
+     * sliced because building a whole weapon's worth of hulls in one frame stalls
+     * VR; the staged builder in WeaponCollisionBodies.cpp spends this budget and
+     * update() reports against it.
+     */
+    constexpr std::size_t GENERATED_WEAPON_BODY_CREATION_BATCH = 8;
+
     // ---- node identity and visibility ----
 
     // Never returns null: a missing node and a missing name both read as "(null)",

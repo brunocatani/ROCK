@@ -77,11 +77,12 @@ foreach ($path in @(
         'src/physics-interaction/hand/HandBoneColliderSet.cpp',
         'src/physics-interaction/body/BodyBoneColliderSet.cpp',
         'src/physics-interaction/hand/DynamicHandCollision.cpp',
-        'src/physics-interaction/weapon/WeaponCollision.cpp')) {
+        'src/physics-interaction/weapon/WeaponCollision.cpp',
+        'src/physics-interaction/weapon/WeaponCollisionBodies.cpp')) {
     Require-Pattern $path '_physicsCallbackGate->pauseForMutation\(\)' "$path must quiesce native callbacks around structural body-bank mutation."
 }
 
-Require-Order 'src/physics-interaction/weapon/WeaponCollision.cpp' @(
+Require-Order 'src/physics-interaction/weapon/WeaponCollisionBodies.cpp' @(
     'void WeaponCollision::flushPendingPhysicsDrive\(',
     'const auto publishedGeneration = getCurrentWeaponGenerationKey\(\);',
     'publishedGeneration == 0',
