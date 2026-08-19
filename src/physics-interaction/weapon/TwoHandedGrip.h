@@ -1544,7 +1544,19 @@ namespace rock
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey);
         void traceNativeScopeTransitionFinalState(RE::NiNode* weaponNode);
-        bool tryGetSolverHandTransform(bool isLeft, RE::NiTransform& outTransform) const;
+        [[nodiscard]] bool tryGetSolverHandTransform(
+            bool isLeft,
+            RE::NiTransform& outTransform) const
+        {
+            const ScopeSafeHandFrameState& state =
+                _scopeSafeHandFrames[isLeft ? 0u : 1u];
+            if (!state.currentHandWorldValid) {
+                outTransform = {};
+                return false;
+            }
+            outTransform = state.currentHandWorld;
+            return true;
+        }
         RE::NiTransform resolveLockedHandVisualTarget(
             const RE::NiTransform& targetWorld,
             const RE::NiTransform* liveHandWorld,
