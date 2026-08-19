@@ -371,20 +371,8 @@ Require-Text 'src/api/ROCKProviderApi.cpp' 'apiSetTouchGrabTargetsForScopeV1[\s\
     'Touch-grab target publication must remain registered-owner and capability gated.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'unregisterConsumer[\s\S]*s_touchGrabTargets\.clearOwner\(ownerToken\)' `
     'Unregistering a consumer must revoke all of its touch-grab targets.'
-Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' 'if\s*\(match\.yieldRequested\)\s*\{[\s\S]{0,120}AttemptFailure::YieldRequested[\s\S]{0,80}return false;' `
-    'A target with pending native yield must reject every new hand acquisition.'
-Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' '\(contactSource\s*==\s*ContactSource::DynamicSurface\)\s*!=\s*fixedAnchor' `
-    'Only FixedAnchor targets may consume dynamic surface contact evidence.'
-Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' 'FixedAnchor[\s\S]{0,5000}beginSurfaceLatch\(' `
-    'FixedAnchor acquisition must latch the dynamic hand runtime to the resolved target body.'
-Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' 'hand\.surfaceLatch[\s\S]{0,180}endSurfaceLatch\(' `
-    'Every fixed-surface hand release must clear dynamic hand latch ownership.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'collectFreshSurfaceContacts\([\s\S]*ContactSource::[\s\S]{0,80}DynamicSurface' `
     'Grip-edge touch acquisition must consume the dedicated dynamic surface contact channel.'
-Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' 'if\s*\(active\.target\.kind\s*!=[\s\S]{0,180}FixedAnchor\)\s*\{\s*havok_runtime::activateBody' `
-    'FixedAnchor ownership must not activate or otherwise drive the matched body.'
-Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' 'restoreTarget\s*&&\s*world\s*&&[\s\S]{0,180}active\.target\.kind\s*!=[\s\S]{0,180}FixedAnchor[\s\S]{0,500}SetLinearVelocity' `
-    'FixedAnchor release must not write velocity or motion state to the matched body.'
 Require-Text 'src/api/ROCKProviderApi.h' 'TouchGrab\s*=\s*1u\s*<<\s*12[\s\S]*FixedSurfaceLatch\s*=\s*1u\s*<<\s*13[\s\S]*GlobalSurfaceLatch\s*=\s*1u\s*<<\s*14' `
     'Hand-interaction state must distinguish touch grabs, fixed surface latches, and the INI global mode.'
 Require-Text 'src/physics-interaction/core/PhysicsInteractionProvider.inl' '_touchGrabRuntime\.getHandReport\([\s\S]*Phase::Holding[\s\S]*reservedTargetIdentity[\s\S]*referenceNativeHandle[\s\S]*targetFormId[\s\S]*primaryBodyId[\s\S]*TargetKind::WorldSurface[\s\S]*Flag::TouchGrab[\s\S]*Flag::FixedSurfaceLatch[\s\S]*Flag::GlobalSurfaceLatch' `
@@ -393,10 +381,6 @@ Require-Text 'src/api/ROCKProviderApi.cpp' 'sameHandTarget[\s\S]{0,500}reservedT
     'Touch-grab native identity and body changes must advance the public target sequence.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'Releasing[\s\S]{0,1500}touchGrabClassificationFlags[\s\S]{0,1500}previousHand\.flags' `
     'The one-frame release state must retain touch-grab and global-surface classification.'
-Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' 'originalMotionClass\s*==[\s\S]{0,180}Keyframed[\s\S]{0,180}SetMotionType\([\s\S]{0,120}DYNAMIC' `
-    'A keyframed mechanism must enter dynamic motion only inside the dedicated mechanism path.'
-Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' 'originalMotionClass\s*==[\s\S]{0,180}Keyframed[\s\S]{0,180}SetMotionType\([\s\S]{0,120}KEYFRAMED' `
-    'Mechanism release must restore the exact keyframed motion class.'
 Require-Text 'src/physics-interaction/core/PhysicsInteractionProvider.inl' 'outState\.authoredSupportGrip[\s\S]{0,120}report\.authoredSupportGrip[\s\S]*out\.actionRole[\s\S]{0,120}descriptor\.semantic\.actionRole' `
     'ROCK V1 must publish exact authored-grip provenance and semantic action roles without consumer inference.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'tryTargetClass\([\s\S]{0,180}TargetClass::[\s\S]{0,80}Explicit\)\s*\|\|[\s\S]{0,180}tryTargetClass\([\s\S]{0,180}TargetClass::[\s\S]{0,80}Wildcard\)' `

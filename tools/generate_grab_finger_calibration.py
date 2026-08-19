@@ -30,7 +30,7 @@ GENERATOR_VERSION = 4
 # over-open rows carry NEGATIVE angles and every [0, 1] row is unchanged
 # in meaning.
 OVER_OPEN_MAX = 2.0
-OUTPUT_RELATIVE = pathlib.Path("src/physics-interaction/grab/GeneratedGrabFingerCalibration.h")
+OUTPUT_RELATIVE = pathlib.Path("src/physics-interaction/grab/generated/GeneratedGrabFingerCalibration.h")
 THUMB_LANES = (
     {
         "name": "Wrap",

@@ -14,7 +14,7 @@
 #include <limits>
 #include <vector>
 
-#include "physics-interaction/grab/GeneratedGrabFingerCalibration.h"
+#include "physics-interaction/grab/generated/GeneratedGrabFingerCalibration.h"
 
 namespace rock::grab_finger_pose_math
 {

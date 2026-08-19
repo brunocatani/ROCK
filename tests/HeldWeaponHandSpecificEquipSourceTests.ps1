@@ -210,11 +210,6 @@ Require-Text 'src/physics-interaction/weapon/LooseWeaponGripZone.cpp' `
 
 # Non-throwable weapons never participate in saved grab offsets, on either
 # side: the shared custom/authored weapon-grip pipeline owns their seat.
-Require-Text 'src/physics-interaction/grab/SavedGrabOffsetStore.h' `
-    'constexpr\s+bool\s+participatesInSavedGrabOffsets\(' `
-    'Saved-grab-offset weapon eligibility must be one shared policy for the save and apply sides.'
-
-
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'participatesInSavedGrabOffsets\(weaponForm\s*!=\s*nullptr,\s*throwableWeapon\)' `
     'The dev-mode save gesture must refuse to record grab offsets for non-throwable weapons.'

@@ -1,7 +1,7 @@
 #include "physics-interaction/weapon/AuthoredWeaponGripCacheStore.h"
 
 #include "physics-interaction/PhysicsLog.h"
-#include "physics-interaction/grab/SavedGrabOffsetStore.h"
+#include "physics-interaction/grab/saved/SavedGrabOffsetStore.h"
 #include "rock_support/ResourceUtils.h"
 
 #include <Windows.h>

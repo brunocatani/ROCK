@@ -1,4 +1,4 @@
-#include "physics-interaction/grab/TouchGrabMath.h"
+#include "physics-interaction/grab/touch/TouchGrabMath.h"
 
 #include <cmath>
 #ifdef NDEBUG

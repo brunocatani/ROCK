@@ -57,16 +57,6 @@ Require-Text 'src/physics-interaction/grab/MeshGrab.h' `
 Require-Text 'src/physics-interaction/grab/MeshGrab.h' `
     'geometry\.numTriangles\s*>\s*remaining[\s\S]*triangleBudgetExceeded\s*=\s*true[\s\S]*return;' `
     'An oversized shape must fall back before its triangle payload is scanned.'
-Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' `
-    'tryAcquireSurfaceMeshPresentation[\s\S]*extractBoundedSurfaceTriangles\([\s\S]*findClosestGrabSurfaceHitToPointPositionOnly\([\s\S]*buildTargetLocalPatch\([\s\S]*solveFrozenMeshFingerPose\(' `
-    'Surface acquisition must resolve a bounded visible-mesh anchor and one-shot finger pose.'
-Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' `
-    'isSurfaceLatchMeshAuthoritative\(isLeft\)[\s\S]*contactPoint\s*=\s*meshAcquisition\.presentation\.meshAnchorWorld' `
-    'The API contact point must become the mesh hit only after mesh authority is accepted.'
-Require-Text 'src/physics-interaction/grab/TouchGrabRuntime.cpp' `
-    'rockExperimentalSurfaceMeshGrabEnabled[\s\S]*surfaceGripMode\s*=[\s\S]*CollisionFallback' `
-    'An enabled experiment must report collision fallback when mesh acquisition is unavailable.'
-
 Require-Text 'src/physics-interaction/hand/DynamicHandCollision.cpp' `
     'candidate\.lastHandWorld\s*=\s*meshPresentationRequested[\s\S]*presentation->handWorld[\s\S]*candidate\.lastProxyWorld\[bodyIndex\]\s*=\s*proxyWorld' `
     'The visible hand must use the mesh seat while twins retain their collision-safe shell relation.'

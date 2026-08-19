@@ -3,8 +3,8 @@
 #include <cstdint>
 #include <string>
 
-#include "physics-interaction/grab/SavedGrabCaptureFormat.h"
-#include "physics-interaction/grab/SavedGrabOffsetFormat.h"
+#include "physics-interaction/grab/saved/SavedGrabCaptureFormat.h"
+#include "physics-interaction/grab/saved/SavedGrabOffsetFormat.h"
 
 /*
  * Disk side of the saved-grab-offset feature: file naming, runtime-formId

@@ -1,6 +1,6 @@
-#include "physics-interaction/grab/SavedGrabOffsetStore.h"
+#include "physics-interaction/grab/saved/SavedGrabOffsetStore.h"
 
-#include "physics-interaction/grab/SavedGrabCaptureFormat.h"
+#include "physics-interaction/grab/saved/SavedGrabCaptureFormat.h"
 #include "physics-interaction/PhysicsLog.h"
 
 #include "rock_support/ResourceUtils.h"

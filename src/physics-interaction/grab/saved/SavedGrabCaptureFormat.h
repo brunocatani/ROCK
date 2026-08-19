@@ -1,6 +1,6 @@
 #pragma once
 
-#include "physics-interaction/grab/SavedGrabOffsetFormat.h"
+#include "physics-interaction/grab/saved/SavedGrabOffsetFormat.h"
 
 #include <array>
 #include <cstdint>

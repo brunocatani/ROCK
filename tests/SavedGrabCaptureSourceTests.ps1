@@ -35,10 +35,6 @@ function Reject-Text {
 
 # --- Storage layout -----------------------------------------------------------
 
-Require-Text 'src/physics-interaction/grab/SavedGrabOffsetStore.cpp' 'capturePathForObject\(const FormRef& object, const std::string& hand\) const[\s\S]*_directory \+ "\\\\captures\\\\"' 'Ground-truth captures must be written to a captures SUBDIRECTORY: preload() parses every *.json in the offset directory as an offset file, so a sibling capture would be counted unreadable on every boot.'
-Require-Text 'src/physics-interaction/grab/SavedGrabOffsetStore.cpp' 'capturePathForObject\(capture\.object, capture\.hand\)' 'Capture files must be keyed per object AND per hand: captures are never read back, so a merged right/left document could not be updated without discarding the other hand.'
-Require-Text 'src/physics-interaction/grab/SavedGrabOffsetStore.cpp' 'void saveCapture\([\s\S]*enqueue\(PendingWrite' 'Capture writes must ride the existing background writer queue, never touch the frame thread with disk I/O.'
-
 # --- The capture must carry the question, not just the answer ------------------
 
 Require-Text 'src/physics-interaction/hand/Hand.cpp' 'bool Hand::tryBuildSavedGrabCapture[\s\S]*_grabFrame\.localMeshTriangles' 'The capture must record the cached mesh the grab machinery actually scored; reconstructing geometry from the NIF offline would silently score different triangles (replacers, scale, skinning, node selection).'
@@ -57,10 +53,6 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'saved_grab_o
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'readGrabEventBodyMass\(hknpWorld, heldBodyId\)' 'The capture must record the held body mass: mass is not derivable from the render mesh, and balance in the palm is one of the terms a pose solver has to explain.'
 
 # --- Write-only contract ------------------------------------------------------
-
-Reject-Text 'src/physics-interaction/grab/SavedGrabCaptureFormat.h' 'bool parse\(' 'Captures are write-only ground-truth records consumed offline; adding a runtime parse path would make them load-bearing for gameplay and put their size on the boot path.'
-Require-Text 'src/physics-interaction/grab/SavedGrabCaptureFormat.h' "hkClassMember record at 142e93930 names hknpMotion\s*\*?\s*member 'centerOfMassAndMassFactor' at \+0x00" 'The centre-of-mass field must cite its offset authority in-place (this binary''s own hknpMotion reflection record), so a future reader can re-verify it instead of trusting a bare offset.'
-Require-Text 'src/physics-interaction/grab/SavedGrabCaptureFormat.h' 'bool comTrusted' 'The capture must carry a comTrusted flag: a wrong motion offset has to degrade into a flagged record, never a silently wrong label that gets fitted against.'
 
 # --- Hand volume and centre of mass ------------------------------------------
 

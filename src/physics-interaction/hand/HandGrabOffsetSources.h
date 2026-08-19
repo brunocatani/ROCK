@@ -2,7 +2,7 @@
 
 #include "physics-interaction/hand/Hand.h"
 #include "physics-interaction/grab/GrabFinger.h"
-#include "physics-interaction/grab/SavedGrabOffsetStore.h"
+#include "physics-interaction/grab/saved/SavedGrabOffsetStore.h"
 
 #include <cstdint>
 

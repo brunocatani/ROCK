@@ -1,4 +1,4 @@
-#include "physics-interaction/grab/SavedGrabCaptureFormat.h"
+#include "physics-interaction/grab/saved/SavedGrabCaptureFormat.h"
 
 #include <nlohmann/json.hpp>
 

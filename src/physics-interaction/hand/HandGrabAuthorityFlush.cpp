@@ -27,7 +27,7 @@
 #include "physics-interaction/grab/GrabConstraintMath.h"
 #include "physics-interaction/grab/GrabContact.h"
 #include "physics-interaction/grab/GrabCore.h"
-#include "physics-interaction/grab/SavedGrabOffsetStore.h"
+#include "physics-interaction/grab/saved/SavedGrabOffsetStore.h"
 #include "physics-interaction/grab/GrabFinger.h"
 #include "physics-interaction/grab/GrabMassPolicy.h"
 #include "physics-interaction/grab/GrabMotionController.h"

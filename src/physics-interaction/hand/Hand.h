@@ -12,7 +12,7 @@
 #include "physics-interaction/grab/GrabConstraint.h"
 #include "physics-interaction/grab/GrabHeldObject.h"
 #include "physics-interaction/grab/GrabMotionController.h"
-#include "physics-interaction/grab/SavedGrabCaptureFormat.h"
+#include "physics-interaction/grab/saved/SavedGrabCaptureFormat.h"
 #include "physics-interaction/hand/HandBoneColliderSet.h"
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/hand/HandInteractionStateMachine.h"

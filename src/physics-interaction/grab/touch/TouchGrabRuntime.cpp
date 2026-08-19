@@ -1,4 +1,4 @@
-#include "physics-interaction/grab/TouchGrabRuntime.h"
+#include "physics-interaction/grab/touch/TouchGrabRuntime.h"
 
 #include "RockConfig.h"
 #include "physics-interaction/PhysicsLog.h"
@@ -7,7 +7,7 @@
 #include "physics-interaction/grab/GrabAuthorityProxy.h"
 #include "physics-interaction/grab/GrabFinger.h"
 #include "physics-interaction/grab/SurfaceMeshGrabPolicy.h"
-#include "physics-interaction/grab/TouchGrabMath.h"
+#include "physics-interaction/grab/touch/TouchGrabMath.h"
 #include "physics-interaction/hand/DynamicHandCollision.h"
 #include "physics-interaction/native/HavokMaterialRegistry.h"
 #include "physics-interaction/native/HavokOffsets.h"
