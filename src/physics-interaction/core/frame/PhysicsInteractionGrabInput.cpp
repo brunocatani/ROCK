@@ -1383,7 +1383,7 @@ namespace rock
         RE::TESObjectREFR* gripZoneHoverCandidate = nullptr;
         if (_equippedWeaponHandlingSettings.gripZoneHoverHapticsEnabled &&
             gripZoneSettleEquipEnabled &&
-            g_rockConfig.rockInputRemapEnabled &&
+            g_rockConfig.rockEnabled &&
             !hand.isHolding() &&
             hand.hasSelection() &&
             !input_remap_runtime::isMenuInputActive()) {
@@ -1420,7 +1420,7 @@ namespace rock
                     isLeft,
                     _equippedWeaponHandlingSettings.gripZoneEquipSettleSeconds);
             const bool heldWeaponEquipRequested = input_remap_policy::shouldRequestHeldWeaponEquip(input_remap_policy::HeldWeaponEquipInput{
-                .remapEnabled = g_rockConfig.rockInputRemapEnabled,
+                .remapEnabled = g_rockConfig.rockEnabled,
                 .gameplayInputAllowed = true,
                 .menuInputActive = input_remap_runtime::isMenuInputActive(),
                 .heldWeaponAtFrameStart = heldWeaponAtFrameStart,

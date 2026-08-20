@@ -51,8 +51,14 @@ Require-Text 'src/physics-interaction/weapon/collision/WeaponCollisionOmodAudit.
     'OMOD self-heal must be mandatory while detailed OMOD logging remains gated.'
 Require-Text 'src/physics-interaction/weapon/collision/WeaponCollision.cpp' 'if \(!generationDrivenRebuild \|\| omodPrebuildAuditCurrent\)' `
     'Pre-build OMOD enrichment must not depend on a user config switch.'
+Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' 'kMandatoryNativeInputSuppression\s*=\s*true[\s\S]*input_remap_policy::Settings\{[\s\S]{0,500}\.enabled\s*=\s*g_rockConfig\.rockEnabled[\s\S]{0,500}\.suppressRightGrabGameInput\s*=\s*kMandatoryNativeInputSuppression[\s\S]{0,500}\.suppressRightTriggerGameInput\s*=\s*kMandatoryNativeInputSuppression[\s\S]{0,500}\.suppressNativeMeleeThrowGameInput\s*=\s*kMandatoryNativeInputSuppression' `
+    'Core ROCK input ownership must not depend on user suppression switches.'
+Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' 'pipboy_pause_gesture_policy::Input\{[\s\S]{0,300}\.enabled\s*=\s*g_rockConfig\.rockEnabled' `
+    'The Y-button Pip-Boy/Pause route must follow only the ROCK core gate.'
+Require-Text 'data/config/ROCK.ini' '(?ms)^\[Input\].*?^bSuppressTakeEquipGameInputWhileHolding\s*=\s*true\s*$' `
+    'Take/equip suppression while holding must remain user-configurable.'
 
-$obsolete = 'bDebugDrawGrabProxySemanticAxesOnly|bShoulderStashSkipActivateBooks|bShoulderStashSkipActivateNotes|bWeaponCollisionNativeVisualRemapEnabled|bDebugGrabFingerPoseLogging|bDebugWorkbenchWeaponReattach|bWeaponOmodSelfHealEnabled|rockExperimentalWeaponOmodSelfHealEnabled'
+$obsolete = 'bDebugDrawGrabProxySemanticAxesOnly|bShoulderStashSkipActivateBooks|bShoulderStashSkipActivateNotes|bWeaponCollisionNativeVisualRemapEnabled|bDebugGrabFingerPoseLogging|bDebugWorkbenchWeaponReattach|bWeaponOmodSelfHealEnabled|rockExperimentalWeaponOmodSelfHealEnabled|bInputRemapEnabled|rockInputRemapEnabled|bSuppressRightGrabGameInput|rockSuppressRightGrabGameInput|bSuppressNativeReadyWeaponAutoReady|rockSuppressNativeReadyWeaponAutoReady|bSuppressNativeMeleeThrowGameInput|rockSuppressNativeMeleeThrowGameInput'
 Reject-Text 'data/config/ROCK.ini' $obsolete 'The canonical INI must not contain obsolete settings.'
 Reject-Text 'src/RockConfig.h' $obsolete 'RockConfig must not expose obsolete settings.'
 Reject-Text 'src/RockConfig.cpp' $obsolete 'RockConfig must not load obsolete settings.'
