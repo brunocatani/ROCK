@@ -14,6 +14,8 @@
 
 namespace rock::provider::detail
 {
+    inline constexpr std::uint32_t kProviderInvalidBodyId = 0x7FFF'FFFFu;
+
     struct CallbackSlot
     {
         std::uint64_t token{ 0 };

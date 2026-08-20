@@ -5,8 +5,6 @@
 
 namespace rock::provider::detail
 {
-    inline constexpr std::uint32_t kProviderInvalidBodyId = 0x7FFF'FFFFu;
-
     [[nodiscard]] bool hasValidWeaponPartMatcher(
         std::uint32_t flags,
         std::uint32_t bodyId,
