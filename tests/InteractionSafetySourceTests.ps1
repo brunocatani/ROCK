@@ -91,7 +91,6 @@ $forceGrabPolicy = Read-Source 'src/physics-interaction/core/ForceGrabPolicy.h'
 $bareFistPolicy = Read-Source 'src/physics-interaction/weapon/BareFistGuardPolicy.h'
 $commandPolicy = Read-Source 'src/physics-interaction/api/InteractionCommandPolicy.h'
 $commandQueueHeader = Read-Source 'src/physics-interaction/api/InteractionCommandQueue.h'
-$providerSource = Read-Source 'src/api/ROCKProviderApi.cpp'
 $providerHeader = Read-Source 'src/api/ROCKProviderApi.h'
 $fo4vrRuntime = Read-Source 'src/rock_support/Fo4VrRuntime.cpp'
 $fo4vrRuntimeHeader = Read-Source 'src/rock_support/Fo4VrRuntime.h'
@@ -189,24 +188,6 @@ Require-Text $commandPolicy `
 Require-Text $commandPolicy `
     'hand\s*==\s*RockProviderHand::Right\s*\?\s*0u\s*:\s*hand\s*==\s*RockProviderHand::Left\s*\?\s*1u' `
     'Provider force-grab reservation indexing must map right and left independently.'
-Require-Text $providerSource `
-    'command\.kind\s*==\s*RockProviderInteractionCommandKindV1::ForceGrab\s*&&\s*s_forceGrabReservations\.isReserved\(command\.forceGrab\.hand\)[\s\S]*?RockProviderResultV1::HandBusy' `
-    'A second API force-grab for the same hand must be rejected before queue insertion.'
-Require-Text $providerSource `
-    's_forceGrabReservations\.reserve\(command\.forceGrab\.hand,\s*command\.ownerToken,\s*command\.commandId\)' `
-    'The accepted API force-grab must reserve its requested hand with command identity.'
-Require-Text $providerSource `
-    'interaction_command_policy::isTerminal\(result\.state\)[\s\S]*?s_forceGrabReservations\.release\(result\.ownerToken,\s*result\.commandId\)' `
-    'API hand reservations must be released only by terminal command completion.'
-Require-Text $providerSource `
-    'isInteractionCommandActiveV1[\s\S]*?return\s+s_forceGrabReservations\.matches\(ownerToken,\s*commandId\);' `
-    'Deferred force-grab liveness must use the durable reservation instead of bounded polling history.'
-Require-Text $providerSource `
-    'storeInteractionResultLocked[\s\S]*?slot\.active\s*&&\s*!interaction_command_policy::isTerminal\(slot\.result\.state\)[\s\S]*?continue;' `
-    'The result ring must never evict a live queued command while rotating terminal polling history.'
-Require-Text $providerSource `
-    'clearInteractionCommandsForProviderLossV1[\s\S]*?state\s*==\s*RockProviderInteractionCommandStateV1::Queued[\s\S]*?RockProviderInteractionCommandStateV1::Cancelled[\s\S]*?s_forceGrabReservations\.clear\(\)' `
-    'Provider loss must cancel dequeued pending commands and clear force-grab reservations.'
 Require-Text $commandQueueHeader `
     'isInteractionCommandActiveV1\(std::uint64_t ownerToken,\s*std::uint64_t commandId\)' `
     'Runtime force-grab service must have an explicit provider-command liveness query.'

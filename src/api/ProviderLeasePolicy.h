@@ -1,5 +1,8 @@
 #pragma once
 
+#include "api/ROCKProviderApi.h"
+
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 
@@ -43,5 +46,39 @@ namespace rock::provider_lease_policy
         return remaining > maximumResult ?
             maximumResult :
             static_cast<std::uint32_t>(remaining);
+    }
+
+    template <class IsActive, class GenerationChanged, class ExpiresAfter,
+              class Revoke>
+    [[nodiscard]] bool pruneExpiredSlots(
+        const std::size_t slotCount,
+        const std::uint64_t frameIndex,
+        IsActive&& isActive,
+        GenerationChanged&& generationChanged,
+        ExpiresAfter&& expiresAfter,
+        Revoke&& revoke)
+    {
+        bool changed = false;
+        for (std::size_t index = 0; index < slotCount; ++index) {
+            if (!isActive(index)) {
+                continue;
+            }
+
+            const bool staleGeneration = generationChanged(index);
+            if (!staleGeneration && provider_lease_policy::isActive(
+                    frameIndex,
+                    expiresAfter(index))) {
+                continue;
+            }
+
+            const auto reason = staleGeneration ?
+                rock::provider::RockProviderSuppressionInvalidationReasonV1::
+                    GenerationChanged :
+                rock::provider::RockProviderSuppressionInvalidationReasonV1::
+                    Expired;
+            revoke(index, reason);
+            changed = true;
+        }
+        return changed;
     }
 }

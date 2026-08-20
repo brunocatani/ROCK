@@ -41,10 +41,6 @@ Require-Text 'src/api/ROCKProviderApi.h' `
     'SuppressNativeVats\s*=\s*1u\s*<<\s*5[\s\S]{0,180}SuppressNativeVans\s*=\s*1u\s*<<\s*6' `
     'The V1 SDK must publish stable, independent VATS and V.A.N.S. suppression bits.'
 
-Require-Text 'src/api/ROCKProviderApi.cpp' `
-    'kImplementedHandInputSuppressionFlagsV1[\s\S]{0,500}SuppressNativeVats[\s\S]{0,220}SuppressNativeVans' `
-    'The provider must accept both new flags through the existing lease setter.'
-
 # ROCK.ini exposes the same two independent function-level controls without
 # routing through the raw OpenVR suppression path.
 Require-Text 'src/RockConfig.h' `

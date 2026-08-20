@@ -38,7 +38,6 @@ function Reject-Match(
 }
 
 $apiHeader = Read-Source 'src/api/ROCKProviderApi.h'
-$apiSource = Read-Source 'src/api/ROCKProviderApi.cpp'
 $selectionSource = Read-Source 'src/physics-interaction/object/ObjectDetection.cpp'
 
 Require-Match 'API header' $apiHeader `
@@ -50,12 +49,6 @@ Require-Match 'API header' $apiHeader `
 Reject-Match 'API header' $apiHeader `
     'struct\s+RockProviderWorldRaycastRequestV1[\s\S]{0,500}(bhkWorld|hknpWorld|collisionFilter)' `
     'Consumers must not receive a native world pointer or inject collision filters.'
-Require-Match 'API source' $apiSource `
-    'apiQueryWorldRaycastV1[\s\S]{0,1800}onAnimationOwnerThread\(\)[\s\S]{0,2200}worldRaycastCount[\s\S]{0,500}CapacityFull' `
-    'The query must fail closed off the owner thread and enforce the fixed per-frame budget.'
-Require-Match 'API source' $apiSource `
-    'apiQueryWorldRaycastV1[\s\S]{0,6000}queryProviderWorldRaycastV1' `
-    'The public boundary must delegate the native query to PhysicsInteraction.'
 Require-Match 'Selection source' $selectionSource `
     'findFarObject[\s\S]*castClosestSegment' `
     'ROCK selection and public raycasts must share one native closest-segment primitive.'

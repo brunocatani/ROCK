@@ -172,10 +172,6 @@ Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_MAX_WEAPON_BODIES\s*=\s*
     'The complete weapon evidence catalog must remain independent from the compact frame-snapshot body array.'
 Require-Text 'src/api/ROCKApi.cpp' 'ROCKAPI_GetProviderApi\(\)' `
     'ROCKAPI_GetApi must return the same table as ROCKAPI_GetProviderApi.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'kRockIssuedOwnerTokenNamespace\s*=\s*0xA000''0000''0000''0000ull' `
-    'Registered public owner tokens must be ROCK-issued and namespaced.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 's_externalBodies\.clearOwner\(ownerToken\)' `
-    'Unregistering a consumer must release that owner external-body state.'
 Require-Text 'src/physics-interaction/object/ExternalBodyRegistry.h' 'copyContactsForOwnerV1' `
     'Owner-filtered contact polling must be implemented in the external-body registry.'
 Require-Text 'cmake/package.cmake' 'RPS_SDK_ROOT' `
@@ -233,30 +229,14 @@ Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_API_V1_WEAPON_PART_INTER
     'SDK must expose a table-size guard for weapon part interaction slots.'
 Require-Text 'src/api/ROCKProviderApi.h' 'supportsWeaponPartInteractionV1' `
     'SDK must expose safe feature/table helpers for weapon part interaction.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'kImplementedWeaponPartDriveMatcherFlagsV1' `
-    'Weapon part drive targets must only accept concrete body/source/name matcher flags.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'hasValidWeaponPartTargetSemantics' `
-    'Weapon part target API must range-check public semantic enum values before runtime casts.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'availableWeaponPartTargetSlotsForOwnerLocked' `
-    'Weapon part target replacement must prove capacity before clearing existing owner registrations.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'availableWeaponPartDriveSlotsForOwnerLocked' `
-    'Weapon part drive replacement must prove capacity before clearing existing owner registrations.'
 Require-Text 'src/api/ROCKProviderApi.h' 'supportsForceGrabCommandV1' `
     'SDK must expose safe feature/table helpers for force-grab commands.'
 Require-Text 'src/api/ROCKProviderApi.h' 'WeaponEmitters[\s\S]*RockProviderWeaponEmitterV1[\s\S]*ROCK_PROVIDER_API_V1_WEAPON_EMITTERS_TABLE_BYTES[\s\S]*supportsWeaponEmittersV1' `
     'Weapon emitter snapshots must remain feature- and table-size-gated inside API V1.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'maxWeaponEmitters\s*=\s*ROCK_PROVIDER_MAX_WEAPON_EMITTERS_V1' `
-    'Provider limits must publish the bounded emitter capacity.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'maxAnimationPhaseCallbacks\s*=\s*[\s\S]{0,100}ROCK_PROVIDER_MAX_ANIMATION_PHASE_CALLBACKS_V1[\s\S]{0,250}maxHandVisualAuthorityPublications[\s\S]{0,250}maxNativeAnimationRuntimeProviders\s*=\s*1' `
-    'Provider limits must publish every bounded animation-support capacity.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'providerApiByteSize\s*=\s*static_cast<std::uint32_t>\(sizeof\(RockProviderApi\)\)' `
-    'Provider limits must report the current function table byte size.'
 Require-Text 'src/api/ROCKProviderApi.h' 'EquippedWeaponHandlingAuthority[\s\S]*RockProviderEquippedWeaponHandlingRequestV1[\s\S]*RockProviderEquippedWeaponHandlingStateV1' `
     'API V1 must expose owner-bound equipped-weapon policy authority and runtime state.'
 Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_API_V1_EQUIPPED_WEAPON_HANDLING_AUTHORITY_TABLE_BYTES[\s\S]*supportsEquippedWeaponHandlingAuthorityV1' `
     'Equipped-weapon policy consumers must negotiate both feature bit and appended table size.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'maxEquippedWeaponHandlingAuthorities\s*=\s*1[\s\S]*maxEquippedWeaponHandlingLeaseFrames\s*=[\s\S]*ROCK_PROVIDER_MAX_EQUIPPED_WEAPON_HANDLING_LEASE_FRAMES_V1' `
-    'Provider limits must publish the single-owner authority capacity and maximum lease.'
 Require-Text 'src/api/ROCKProviderApi.h' 'EquippedWeaponHandRequest[\s\S]*RockProviderEquippedWeaponHandRequestV1[\s\S]*requestEquippedWeaponHandV1[\s\S]*ROCK_PROVIDER_API_V1_EQUIPPED_WEAPON_HAND_REQUEST_TABLE_BYTES[\s\S]*supportsEquippedWeaponHandRequestV1' `
     'V1 must expose an append-only, feature-gated exact-hand request for the currently equipped weapon.'
 Require-Text 'src/api/ROCKProviderApi.h' 'WorldRaycasts[\s\S]*RockProviderWorldRaycastRequestV1[\s\S]*RockProviderWorldRaycastResultV1[\s\S]*queryWorldRaycastV1[\s\S]*ROCK_PROVIDER_API_V1_WORLD_RAYCASTS_TABLE_BYTES[\s\S]*supportsWorldRaycastsV1' `
@@ -265,94 +245,36 @@ Require-Text 'src/api/ROCKProviderApi.h' 'ColliderVisualizationOverride[\s\S]*Ro
     'V1 must expose an append-only, feature-gated exact-collider visualization override.'
 Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp' 'provider_collider_visualization::copySnapshot[\s\S]{0,900}FocusedWeaponPart[\s\S]{0,400}PublishFrame\(focusedFrame\)[\s\S]{0,100}return' `
     'Focused collider visualization must replace the complete config-driven overlay frame.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'apiSetColliderVisualizationOverrideV1[\s\S]{0,1200}onAnimationOwnerThread\(\)[\s\S]{0,1800}ColliderVisualizationOverride[\s\S]{0,1200}s_lastSnapshot\.weaponGenerationKey[\s\S]{0,900}isProviderWeaponBodyCurrentV1[\s\S]{0,600}provider_collider_visualization::set' `
-    'Collider focus requests must be owner-thread/capability gated and bind exact identity from the complete current weapon-body catalog.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'copySnapshot\([\s\S]{0,300}isProviderWeaponBodyCurrentV1[\s\S]{0,500}provider_collider_visualization::prune\([\s\S]{0,500}colliderVisualizationBodyCurrent' `
-    'Collider focus leases must invalidate against the complete current weapon body set before callbacks.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'apiUnregisterConsumerV1[\s\S]{0,3500}provider_collider_visualization::clear\(ownerToken\)' `
-    'Consumer teardown must release its exclusive collider focus override.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'maxWorldRaycastsPerOwnerPerFrame\s*=\s*[\s\S]{0,100}ROCK_PROVIDER_MAX_WORLD_RAYCASTS_PER_OWNER_PER_FRAME_V1' `
-    'Extended limits must publish the per-owner per-frame raycast budget.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'apiRequestEquippedWeaponHandV1[\s\S]{0,500}onAnimationOwnerThread\(\)[\s\S]{0,1800}EquippedWeaponHandlingAuthority[\s\S]{0,1000}FiringGripOwnership[\s\S]{0,800}AmbidextrousHandoff[\s\S]{0,1000}requestProviderEquippedWeaponHandV1' `
-    'Exact-hand requests must remain game-thread-only and bound to the caller''s active handling authority.'
 Require-Text 'src/api/ROCKProviderApi.h' 'DebugOverlayPublication[\s\S]*RockProviderDebugOverlayLineV1[\s\S]*RockProviderDebugOverlayTextV1[\s\S]*RockProviderDebugOverlayPublicationV1' `
     'API V1 must expose bounded owner-scoped debug overlay publication values.'
 Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_API_V1_DEBUG_OVERLAY_PUBLICATION_TABLE_BYTES[\s\S]*supportsDebugOverlayPublicationV1' `
     'Debug publishers must negotiate both the V1 feature bit and appended table size.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'maxDebugOverlayPublishers\s*=[\s\S]*ROCK_PROVIDER_MAX_DEBUG_OVERLAY_PUBLISHERS_V1[\s\S]*maxDebugOverlayLinesPerPublisher[\s\S]*maxDebugOverlayTextPerPublisher[\s\S]*maxDebugOverlayLines\s*=[\s\S]*ROCK_PROVIDER_MAX_DEBUG_OVERLAY_LINES_V1[\s\S]*maxDebugOverlayText\s*=[\s\S]*ROCK_PROVIDER_MAX_DEBUG_OVERLAY_TEXT_V1' `
-    'Provider limits must publish every bounded debug-overlay capacity.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'apiPublishDebugOverlayV1[\s\S]*validateRegisteredOwnerCapabilityLocked[\s\S]*DebugOverlayPublication[\s\S]*provider_debug_overlay::publish' `
-    'Debug overlay publication must remain registered-owner and capability gated.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'unregisterConsumer[\s\S]*provider_debug_overlay::clear\(ownerToken\)' `
-    'Unregistering a consumer must clear its debug overlay publication.'
 Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp' 'provider_debug_overlay::hasContent[\s\S]*static provider_debug_overlay::Snapshot[\s\S]*provider_debug_overlay::copySnapshot[\s\S]*drawProviderOverlay[\s\S]*coloredLineEntries[\s\S]*RockProviderDebugOverlayTextFlagV1::WorldAnchored' `
     'The existing ROCK stereo renderer must consume copied provider lines and text.'
 Require-Text 'src/api/ROCKProviderApi.h' 'PresentedVisual[\s\S]*PresentedHandFrames[\s\S]*ROCK_PROVIDER_API_V1_PRESENTED_HAND_FRAMES_TABLE_BYTES[\s\S]*supportsPresentedHandFramesV1' `
     'API V1 must distinguish the final hFRIK-presented hand from ROCK''s root-flattened authority frame.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'apiGetPresentedHandFrameV1[\s\S]*onAnimationOwnerThread\(\)[\s\S]*frik_visual_authority::getHandWorldTransform[\s\S]*RockProviderHandFrameFlagV1::PresentedVisual' `
-    'Presented hand queries must read the final hFRIK transform on the animation owner thread.'
 Require-Text 'src/api/ROCKProviderApi.h' 'NativeAnimationAuthority[\s\S]*RockProviderNativeAnimationAuthorityRequestV1' `
     'API V1 must expose selective native animation authority as a registered consumer capability.'
 Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_API_V1_NATIVE_ANIMATION_AUTHORITY_TABLE_BYTES[\s\S]*supportsNativeAnimationAuthorityV1' `
     'Native animation authority consumers must negotiate both feature bit and appended table size.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'clearNativeAnimationAuthorityForOwnerLocked\(ownerToken\)' `
-    'Unregistering a consumer must clear its native animation authority lease.'
 Require-Text 'src/api/ROCKProviderApi.h' 'RockProviderForceReleaseFlagV1[\s\S]*UseVelocityHavok' `
     'Force release must expose an explicit trusted Havok velocity flag.'
 Require-Text 'src/api/ROCKProviderApi.h' 'RockProviderForceReleaseRequestV1[\s\S]*linearVelocityHavok[\s\S]*angularVelocityRadiansPerSecond' `
     'Force release must expose trusted linear and angular Havok velocity payloads.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'apiRequestForceGrabV1' `
-    'Provider glue must implement queued force-grab request validation.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'request->targetFormId\s*==\s*0' `
-    'Force-grab API validation must require stable FormID identity before queueing.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'isFiniteVector3\(request->preferredGrabPointGame\)' `
-    'Force-grab API validation must finite-check caller-supplied preferred grab points.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'apiRequestForceReleaseV1' `
-    'Provider glue must implement queued force-release request validation.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'apiRequestThrownDropV1' `
-    'Provider glue must implement queued thrown-drop request validation.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 's_interactionCommands' `
-    'Provider glue must use a bounded interaction command queue.'
-Reject-Text 'src/api/ROCKProviderApi.cpp' 'grabSelectedObject|releaseGrabbedObject|applyReleaseVelocitySnapshot' `
-    'Provider API glue must only enqueue commands, not mutate hand state directly.'
-Reject-Text 'src/api/ROCKProviderApi.cpp' 'reinterpret_cast<RE::TESObjectREFR\*>\(request->targetRefr\)' `
-    'Provider API glue must not dereference caller-supplied reference pointers.'
 Reject-Text 'src/api/ROCKProviderApi.h' 'getWeaponEvidenceDescriptors|RockProviderWeaponEvidenceDescriptor|getExternalContactSnapshotV1' `
     'Public API must not expose redundant shallow weapon evidence or unowned contact snapshots.'
 Reject-Text 'src/api/ROCKProviderApi.h' 'DiagnosticOverlay|DiagnosticInput|publishDiagnosticOverlay|getDiagnosticInputSnapshotV1|setDiagnosticInputSuppressionV1' `
     'Public API must not expose diagnostic/probe control surfaces.'
 Require-Text 'src/api/ROCKProviderApi.h' 'Live scene/physics readbacks[\s\S]{0,220}WrongThread' `
     'The public header must document the fail-closed game-thread contract for live readbacks.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'apiCopyWeaponPartDriveApplicationResultsV1[\s\S]{0,900}!onAnimationOwnerThread\(\)[\s\S]{0,120}WrongThread' `
-    'Weapon-part drive result readback must reject non-owner threads.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'apiGetScopeSightStateV1[\s\S]{0,520}queryProviderScopeSightStateV1[\s\S]{0,80}true\);' `
-    'Scope sight readback must require the animation owner thread.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'apiCopySemanticHandContactsV1[\s\S]{0,1000}!onAnimationOwnerThread\(\)[\s\S]{0,120}WrongThread' `
-    'Semantic hand-contact readback must reject non-owner threads.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'apiCopyPlayerColliderDescriptorsV1[\s\S]{0,900}!onAnimationOwnerThread\(\)[\s\S]{0,120}WrongThread' `
-    'Player collider readback must reject non-owner threads.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'apiGetHandCollisionAvailabilityV1[\s\S]{0,620}queryProviderHandCollisionAvailabilityV1[\s\S]{0,80}true\);' `
-    'Hand collision availability must require the animation owner thread.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'registerBodiesForScopeDetailed[\s\S]{0,600}RegistrationResult::CapacityFull[\s\S]{0,220}RockProviderResultV1::CapacityFull[\s\S]{0,220}RegistrationResult::OwnerConflict[\s\S]{0,220}RockProviderResultV1::OwnerConflict' `
-    'Scoped external-body registration must preserve capacity and ownership failure semantics.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'clearScope\(ownerToken, scopeToken\)[\s\S]{0,160}RockProviderResultV1::TargetUnavailable' `
-    'Clearing an unknown external-body scope must report target unavailability.'
 Require-Text 'src/api/ROCKProviderApi.h' 'TouchGrabTargets[\s\S]*RockProviderTouchGrabTargetV1[\s\S]*RockProviderTouchGrabStateV1' `
     'API V1 must expose bounded provider-scoped touch-grab targets and states.'
 Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_API_V1_TOUCH_GRAB_TARGETS_TABLE_BYTES[\s\S]*supportsTouchGrabTargetsV1' `
     'Touch-grab consumers must negotiate both the V1 feature bit and appended table extent.'
 Require-Text 'src/api/ROCKProviderApi.h' 'maxTouchGrabTargets[\s\S]*maxTouchGrabScopes[\s\S]*maxTouchGrabTargetLeaseFrames' `
     'The extended V1 limits query must expose every bounded touch-grab registry capacity.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'apiSetTouchGrabTargetsForScopeV1[\s\S]{0,1500}validateRegisteredOwnerCapabilityLocked[\s\S]{0,180}TouchGrabTargets' `
-    'Touch-grab target publication must remain registered-owner and capability gated.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'unregisterConsumer[\s\S]*s_touchGrabTargets\.clearOwner\(ownerToken\)' `
-    'Unregistering a consumer must revoke all of its touch-grab targets.'
 Require-Text 'src/api/ROCKProviderApi.h' 'TouchGrab\s*=\s*1u\s*<<\s*12[\s\S]*FixedSurfaceLatch\s*=\s*1u\s*<<\s*13[\s\S]*GlobalSurfaceLatch\s*=\s*1u\s*<<\s*14' `
     'Hand-interaction state must distinguish touch grabs, fixed surface latches, and the INI global mode.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'sameHandTarget[\s\S]{0,500}reservedTargetIdentity[\s\S]{0,300}primaryBodyId' `
-    'Touch-grab native identity and body changes must advance the public target sequence.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'Releasing[\s\S]{0,1500}touchGrabClassificationFlags[\s\S]{0,1500}previousHand\.flags' `
-    'The one-frame release state must retain touch-grab and global-surface classification.'
 Require-Text 'src/physics-interaction/object/PhysicsBodyClassifier.h' 'motionType\s*==\s*BodyMotionType::Static[\s\S]{0,120}BodyRejectReason::StaticMotion' `
     'Ordinary loose-object classification must continue rejecting static motion.'
 

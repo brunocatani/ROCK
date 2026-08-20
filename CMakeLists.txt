@@ -910,6 +910,28 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKProviderLeasePolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKProviderLeasePolicyTests)
 
+  add_executable(ROCKProviderFrameDiffTests
+    "${ROOT_DIR}/tests/ProviderFrameDiffTests.cpp"
+    "${SOURCE_DIR}/api/detail/ProviderFrameDiff.cpp"
+  )
+  target_compile_features(ROCKProviderFrameDiffTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKProviderFrameDiffTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKProviderFrameDiffTests)
+
+  add_executable(ROCKProviderLeasePruneTests
+    "${ROOT_DIR}/tests/ProviderLeasePruneTests.cpp"
+  )
+  target_compile_features(ROCKProviderLeasePruneTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKProviderLeasePruneTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKProviderLeasePruneTests)
+
+  add_executable(ROCKProviderEntryValidationTests
+    "${ROOT_DIR}/tests/ProviderEntryValidationTests.cpp"
+  )
+  target_compile_features(ROCKProviderEntryValidationTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKProviderEntryValidationTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKProviderEntryValidationTests)
+
   add_executable(ROCKDebugOverlayShapeGeometryTests
     "${ROOT_DIR}/tests/DebugOverlayShapeGeometryTests.cpp"
     "${SOURCE_DIR}/physics-interaction/debug/overlay/DebugOverlayShapeGeometry.cpp"
@@ -950,6 +972,9 @@ if(BUILD_ROCK_TESTS)
     ROCKTouchGrabMathTests
     ROCKDynamicHandSurfaceContactStateTests
     ROCKProviderLeasePolicyTests
+    ROCKProviderFrameDiffTests
+    ROCKProviderLeasePruneTests
+    ROCKProviderEntryValidationTests
     ROCKDebugOverlayShapeGeometryTests
     ROCKDebugOverlayShapePipelineTests
     ROCKDebugOverlayRuntimeSettingsTests
