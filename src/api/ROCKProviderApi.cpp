@@ -8,6 +8,7 @@
 #include "api/detail/ProviderApiState.h"
 #include "api/detail/ProviderFeatureBits.h"
 #include "api/detail/ProviderFrameDiff.h"
+#include "api/detail/ProviderTransformMath.h"
 
 #include <array>
 #include <atomic>
@@ -449,16 +450,6 @@ namespace rock::provider::detail
         return true;
     }
 
-    std::size_t boundedStringLength(const char* value, std::size_t capacity)
-    {
-        for (std::size_t i = 0; i < capacity; ++i) {
-            if (value[i] == '\0') {
-                return i;
-            }
-        }
-        return capacity;
-    }
-
     template <std::size_t Capacity>
     void addUniqueOwner(
         std::array<std::uint64_t, Capacity>& owners,
@@ -505,46 +496,6 @@ namespace rock::provider::detail
         return slot && hasConsumerCapabilityV1(slot->grantedCapabilities, capability);
     }
 
-    [[nodiscard]] bool finiteProviderTransform(
-        const RockProviderTransform& transform,
-        const float minimumScale = 0.000001f)
-    {
-        for (const float value : transform.rotate) {
-            if (!std::isfinite(value)) {
-                return false;
-            }
-        }
-        return std::isfinite(transform.translate[0]) &&
-               std::isfinite(transform.translate[1]) &&
-               std::isfinite(transform.translate[2]) &&
-               std::isfinite(transform.scale) &&
-               std::abs(transform.scale) > minimumScale;
-    }
-
-    [[nodiscard]] bool finiteProviderPoint(
-        const RockProviderPoint3& point)
-    {
-        return std::isfinite(point.x) &&
-               std::isfinite(point.y) &&
-               std::isfinite(point.z);
-    }
-
-    [[nodiscard]] RE::NiTransform toNiTransform(const RockProviderTransform& source)
-    {
-        RE::NiTransform target{};
-        for (int row = 0; row < 3; ++row) {
-            for (int column = 0; column < 3; ++column) {
-                target.rotate.entry[row][column] = source.rotate[row * 3 + column];
-            }
-        }
-        target.translate = RE::NiPoint3(
-            source.translate[0],
-            source.translate[1],
-            source.translate[2]);
-        target.scale = source.scale;
-        return target;
-    }
-
     [[nodiscard]] RockProviderTransform toProviderTransform(
         const RE::NiTransform& source)
     {
@@ -560,14 +511,6 @@ namespace rock::provider::detail
         target.translate[2] = source.translate.z;
         target.scale = source.scale;
         return target;
-    }
-
-    [[nodiscard]] constexpr frik_visual_authority::Hand toVisualHand(
-        const RockProviderHand hand)
-    {
-        return hand == RockProviderHand::Left ?
-            frik_visual_authority::Hand::Left :
-            frik_visual_authority::Hand::Right;
     }
 
     bool ROCK_PROVIDER_CALL apiGetPresentedHandFrameV1(
