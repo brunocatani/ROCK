@@ -307,6 +307,21 @@ namespace rock
         PhysicsFrameContext buildFrameContext(RE::bhkWorld* bhk, RE::hknpWorld* hknp, float deltaSeconds);
 
         void serviceCollisionLayerDrift(RE::hknpWorld* world);
+
+        // Frame entry gate. False means this frame stops; the gate has already
+        // run the teardown its rejection path needs.
+        [[nodiscard]] bool tryBeginFrame(PhysicsFrameContext& frame);
+
+        // The phases of one frame, in the order update() calls them.
+        // Each takes the frame context by reference and must stay allocation
+        // free and log free on the accepted path: this is per-frame code.
+        void serviceFrameEntryReconcile(
+            const PhysicsFrameContext& frame,
+            EquippedWeaponFrame& weaponFrame);
+        void updateFrameColliders(const PhysicsFrameContext& frame);
+        void beginEquippedWeaponFrame(
+            const PhysicsFrameContext& frame,
+            EquippedWeaponFrame& weaponFrame);
         void serviceWeaponContactAcquisition(
             const PhysicsFrameContext& frame,
             EquippedWeaponFrame& weaponFrame);
@@ -316,6 +331,15 @@ namespace rock
         void finishDynamicWeaponFrame(
             const PhysicsFrameContext& frame,
             EquippedWeaponFrame& weaponFrame);
+        void updateInteractionFrame(
+            const PhysicsFrameContext& frame,
+            const EquippedWeaponFrame& weaponFrame);
+        void completeFrame(const PhysicsFrameContext& frame);
+
+        // Shared by the frame-interrupt guards in update(). It retires the
+        // dynamic weapon bodies, or abandons their Havok state when the world
+        // has already gone.
+        void retireDynamicWeaponForInterruptedFrame();
 
         bool generatedBodiesExistForConfig() const;
         bool generatedBodiesMatchLifecycle(RE::bhkWorld* bhk, RE::hknpWorld* hknp) const;
