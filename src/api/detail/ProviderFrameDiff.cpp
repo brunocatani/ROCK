@@ -18,6 +18,8 @@ namespace rock::provider::detail
     [[nodiscard]] std::uint64_t advanceSequence(
         const std::uint64_t sequence) noexcept
     {
+        // Saturate instead of wrapping. A wrap would look like "no change"
+        // to a consumer that compares sequences for equality.
         return sequence == UINT64_MAX ? UINT64_MAX : sequence + 1;
     }
 
@@ -25,6 +27,8 @@ namespace rock::provider::detail
         const RockProviderHandInteractionStateV1& left,
         const RockProviderHandInteractionStateV1& right) noexcept
     {
+        // Compare only the live prefix. The array tail is padding and keeps
+        // stale ids, so a full-array compare would report false changes.
         if (left.heldBodyCount != right.heldBodyCount) {
             return false;
         }
@@ -48,6 +52,9 @@ namespace rock::provider::detail
                sameHeldBodies(left, right);
     }
 
+    // One definition of "this hand is gripping", used by both the grip and the
+    // release sequence. Holding counts even with no grip flag: a plain held
+    // object is still a grip the consumer must be able to see end.
     [[nodiscard]] bool handGripActive(
         const RockProviderHandInteractionStateV1& state) noexcept
     {
@@ -111,6 +118,9 @@ namespace rock::provider::detail
         const RockProviderHandInteractionStateV1& previous,
         const bool hasPrevious)
     {
+        // First frame for this hand. Start every sequence at a value the
+        // consumer can diff against next frame, without pretending a change
+        // happened: an empty target and an idle grip both stay at 0.
         if (!hasPrevious) {
             current.stateSequence = 1;
             current.targetSequence =
@@ -128,12 +138,17 @@ namespace rock::provider::detail
         current.targetSequence = sameHandTarget(current, previous) ?
             previous.targetSequence :
             advanceSequence(previous.targetSequence);
+        // A grip advances when it starts, and also when it changes to a
+        // different grip without releasing first, such as a hand moving
+        // straight from a part grip to a firing grip.
         const bool wasGripActive = handGripActive(previous);
         const bool gripActive = handGripActive(current);
         current.gripSequence = gripActive &&
                 (!wasGripActive || !sameHandGrip(current, previous)) ?
             advanceSequence(previous.gripSequence) :
             previous.gripSequence;
+        // Release fires only on the active-to-idle edge, so a consumer can
+        // count releases without tracking the previous frame itself.
         current.releaseSequence = wasGripActive && !gripActive ?
             advanceSequence(previous.releaseSequence) :
             previous.releaseSequence;

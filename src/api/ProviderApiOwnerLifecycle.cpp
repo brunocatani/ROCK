@@ -64,6 +64,8 @@ namespace rock::provider::detail
             return RockProviderResultV1::InvalidArgument;
         }
 
+        // The two callers differ only in these reason codes and in whether the
+        // consumer slot is cleared. Everything after that is one shared path.
         const auto invalidationReason =
             revokeReason == RevokeReason::CallbackFault ?
                 RockProviderSuppressionInvalidationReasonV1::CallbackFault :
@@ -83,6 +85,9 @@ namespace rock::provider::detail
                 s_nativeAnimationAuthorityMutex,
                 s_equippedWeaponHandlingAuthorityMutex);
 
+            // Unregister runs first and can still fail. Nothing above this
+            // point has changed state, so an unknown token leaves the owner's
+            // registries untouched.
             if (alsoUnregister) {
                 auto* consumer = findConsumerSlotLocked(ownerToken);
                 if (!consumer) {
@@ -103,6 +108,10 @@ namespace rock::provider::detail
             clearNativeAnimationAuthorityForOwnerLocked(ownerToken);
             clearEquippedWeaponHandlingAuthorityForOwnerLocked(ownerToken);
         }
+        // The families below take one lock each, in this fixed order. They are
+        // outside the composite lock because each registry is self-contained and
+        // nothing here reads a second family. Keep the order: it is the same one
+        // clearExternalBodiesForProviderLoss uses further down.
         {
             std::scoped_lock lock(s_externalBodyMutex);
             s_externalBodies.clearOwner(ownerToken);
@@ -129,6 +138,8 @@ namespace rock::provider::detail
             std::scoped_lock lock(s_animationPhaseCallbackMutex);
             clearAnimationPhaseCallbacksForOwnerLocked(ownerToken);
         }
+        // These last four take their own locks internally, so they must stay
+        // outside every scope above.
         (void)clearHandVisualAuthorityForOwner(
             ownerToken,
             RockProviderHand::None,
@@ -136,6 +147,8 @@ namespace rock::provider::detail
         clearNativeAnimationRuntimePublicationForOwner(ownerToken);
         provider_debug_overlay::clear(ownerToken);
         provider_collider_visualization::clear(ownerToken);
+        // A fault revocation is involuntary, so the owner is told. A voluntary
+        // unregister is not: the consumer already knows it asked to leave.
         if (revokeReason == RevokeReason::CallbackFault) {
             publishAuthorityLostEvent(
                 ownerToken,

@@ -128,6 +128,8 @@ namespace rock
 {
     using namespace physics_interaction_detail;
 
+    // Selection runs before grab input every frame. Grab input reads what this
+    // pass selected, so the order is a real dependency, not a preference.
     void PhysicsInteraction::updateSelection(const PhysicsFrameContext& frame)
     {
         if (!runtime_state::isLocalSkeletonReady()) {
@@ -216,6 +218,9 @@ namespace rock
         }
     }
 
+    // Release and shared-object contexts are built in one place so that the
+    // grab-input path and the force-grab path in PhysicsInteractionForceGrab.cpp
+    // cannot drift into two different ideas of what a release means.
     GrabReleaseContext PhysicsInteraction::makeGrabReleaseContext(const Hand& hand, bool isLeft) const
     {
         const Hand& peer = isLeft ? _rightHand : _leftHand;
@@ -246,6 +251,8 @@ namespace rock
 
     void PhysicsInteraction::updateGrabInput(const PhysicsFrameContext& frame)
     {
+        // Reset per-frame first. Any early return below must still leave this
+        // frame's force-grab record empty, not last frame's.
         _forceGrabCommittedThisFrame = {};
 
         auto clearShoulderStashForHand = [&](Hand& hand, bool isLeft) {
@@ -263,6 +270,10 @@ namespace rock
             clearMouthConsumeForHand(hand, isLeft);
         };
 
+        // No skeleton means no hands, so nothing may stay latched. Fail closed:
+        // drop every touch grab, cancel visual returns, fail queued provider
+        // commands, and clear the input mirrors. A missed clear here leaves the
+        // game reading a held weapon that no longer exists.
         if (!runtime_state::isLocalSkeletonReady()) {
             _touchGrabRuntime.releaseAll(
                 frame.bhkWorld,
@@ -424,6 +435,10 @@ namespace rock
         }
     }
 
+    // One hand, one frame. Both hands run the same sequence, so a behavior
+    // change made here applies to both by construction. It takes the frame's
+    // GrabInputFrame by const reference: the per-hand pass must not change what
+    // the other hand already read.
     void PhysicsInteraction::processGrabInputHand(
         Hand& hand,
         bool isLeft,

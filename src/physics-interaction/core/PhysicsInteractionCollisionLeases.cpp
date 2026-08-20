@@ -117,7 +117,10 @@ namespace rock
                         suppressionSet,
                         target.bodyId,
                         currentFilter);
-                if (!suppression.stored) {
+                    // The set is full, so this body keeps its collision. Do NOT
+                // acquire a registry lease here: a lease with no stored filter
+                // could never be restored.
+            if (!suppression.stored) {
                     ROCK_LOG_WARN(Weapon,
                         "{}: {} hand suppression set full; bodyId={} context={} left active",
                         profile.logTag,
@@ -161,9 +164,14 @@ namespace rock
             const HandCollisionLeaseProfile& profile,
             std::uint32_t invalidBodyId)
         {
+            // Nothing suppressed means nothing to restore. Report success so a
+            // caller does not retry forever.
             if (!hand_collision_suppression_math::hasActive(suppressionSet)) {
                 return true;
             }
+            // Without a world the filter cannot be written back. Keep the leases
+            // and report failure so the caller retries once a world returns.
+            // Dropping them here would leak permanent no-collide bodies.
             if (!world) {
                 ROCK_LOG_WARN(Weapon,
                     "{}: cannot restore {} hand collision yet (world=null); preserving suppression leases",
@@ -186,6 +194,8 @@ namespace rock
                                 entry.bodyId,
                                 profile.owner,
                                 profile.restoreContext);
+                    // The body is gone or unreadable. Leave the lease in place
+                    // and let a later frame settle it.
                 if (releaseResult.readFailed) {
                     restoreDeferred = true;
                     continue;
@@ -498,6 +508,8 @@ namespace rock
         _leftEquippedWeaponDropCollisionSuppressed.store(false, std::memory_order_release);
     }
 
+    // The single restore entry point. Every teardown and frame-interrupt path
+    // routes here so no family can be forgotten.
     void PhysicsInteraction::restoreAllHandCollisionLeases(RE::hknpWorld* world)
     {
         // Restore every lease family before a frame or lifecycle boundary.
@@ -508,6 +520,8 @@ namespace rock
         restoreHandCollisionAfterEquippedWeaponDrop(world, true);
     }
 
+    // Teardown path only. It forgets the leases without touching Havok, for use
+    // when the world has already gone and a restore is impossible.
     void PhysicsInteraction::clearAllHandCollisionSuppressionState()
     {
         hand_collision_suppression_math::clear(
