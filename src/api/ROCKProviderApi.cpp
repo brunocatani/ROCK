@@ -4,6 +4,8 @@
 #include "api/ProviderDebugOverlayRuntime.h"
 #include "api/ProviderLeasePolicy.h"
 #include "api/TouchGrabRegistry.h"
+#include "api/detail/ProviderApiEntryPoints.h"
+#include "api/detail/ProviderApiState.h"
 
 #include <array>
 #include <atomic>
@@ -32,7 +34,7 @@
 #undef DrawText
 #endif
 
-namespace
+namespace rock::provider::detail
 {
     using namespace rock::provider;
     using namespace rock;
@@ -117,61 +119,6 @@ namespace
     static_assert(static_cast<std::uint32_t>(RockProviderWeaponActionRoleV1::Cylinder) == static_cast<std::uint32_t>(WeaponActionRole::Cylinder));
     static_assert(static_cast<std::uint32_t>(RockProviderWeaponActionRoleV1::Lever) == static_cast<std::uint32_t>(WeaponActionRole::Lever));
     static_assert(static_cast<std::uint32_t>(RockProviderWeaponActionRoleV1::Latch) == static_cast<std::uint32_t>(WeaponActionRole::Latch));
-
-    struct CallbackSlot
-    {
-        std::uint64_t token{ 0 };
-        std::uint64_t ownerToken{ 0 };
-        RockProviderFrameCallback callback{ nullptr };
-        void* userData{ nullptr };
-    };
-
-    std::atomic<PhysicsInteraction*> s_physicsInteraction{ nullptr };
-    std::atomic<std::uint64_t> s_nextFrameIndex{ 1 };
-    std::atomic<std::uint64_t> s_nextCallbackToken{ 1 };
-    std::mutex s_callbackMutex;
-    std::array<CallbackSlot, 16> s_callbacks{};
-
-    std::mutex s_snapshotMutex;
-    RockProviderFrameSnapshot s_lastSnapshot{};
-    bool s_hasSnapshot{ false };
-    std::atomic<bool> s_generationStateAvailable{ false };
-    std::atomic<std::uint32_t> s_currentWorldGeneration{ 0 };
-    std::atomic<std::uint32_t> s_currentSkeletonGeneration{ 0 };
-    std::atomic<std::uint32_t> s_currentProviderGeneration{ 0 };
-    // Published together with the frame snapshot; indexed [right, left].
-    std::array<RockProviderWeaponPartGripStateV1, 2> s_lastPartGripStates{};
-    std::array<RockProviderHandInteractionStateV1, 2> s_lastHandInteractionStates{};
-    RockProviderEquippedWeaponStateV1 s_lastEquippedWeaponState{};
-
-    std::mutex s_externalBodyMutex;
-    ExternalBodyRegistry s_externalBodies{};
-    std::mutex s_touchGrabMutex;
-    TouchGrabRegistry s_touchGrabTargets{};
-
-    struct OffhandReservationSlot
-    {
-        std::uint64_t ownerToken{ 0 };
-        RockProviderOffhandReservation reservation{
-            RockProviderOffhandReservation::Normal
-        };
-        std::uint64_t expiresAfterFrame{ 0 };
-        std::uint32_t worldGeneration{ 0 };
-        std::uint32_t skeletonGeneration{ 0 };
-        std::uint32_t providerGeneration{ 0 };
-    };
-
-    std::mutex s_offhandReservationMutex;
-    OffhandReservationSlot s_offhandReservationSlot{};
-    std::atomic<std::uint64_t> s_offhandReservationOwner{ 0 };
-    std::atomic<std::uint64_t> s_offhandReservationExpiry{ 0 };
-    std::atomic<std::uint32_t> s_offhandReservation{
-        static_cast<std::uint32_t>(RockProviderOffhandReservation::Normal)
-    };
-
-    // ROCK's runtime firing hand (left-hand fire); published each frame by
-    // PhysicsInteraction so primary/offhand resolution tracks who fires.
-    std::atomic<bool> s_equippedWeaponFiringHandIsLeft{ false };
 
     constexpr std::uint64_t kRockIssuedOwnerTokenNamespace = 0xA000'0000'0000'0000ull;
     constexpr std::uint64_t kRockIssuedOwnerTokenSequenceMask = 0x0FFF'FFFF'FFFF'FFFFull;
@@ -301,167 +248,6 @@ namespace
         static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchSourceRoot) |
         static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchSourceName);
     constexpr std::uint32_t kProviderInvalidBodyId = 0x7FFF'FFFFu;
-
-    struct ConsumerSlot
-    {
-        std::uint64_t token{ 0 };
-        std::uint32_t grantedCapabilities{ 0 };
-        std::uint32_t providerGeneration{ 0 };
-        std::uint64_t worldRaycastFrameIndex{ 0 };
-        std::uint32_t worldRaycastCount{ 0 };
-        char modName[64]{};
-    };
-
-    std::mutex s_consumerMutex;
-    std::array<ConsumerSlot, ROCK_PROVIDER_MAX_CONSUMERS_V1> s_consumers{};
-    std::atomic<std::uint64_t> s_nextConsumerTokenSequence{ 1 };
-
-    struct InteractionCommandSlot
-    {
-        bool active{ false };
-        QueuedInteractionCommandV1 command{};
-    };
-
-    struct InteractionCommandResultSlot
-    {
-        bool active{ false };
-        RockProviderInteractionCommandResultV1 result{};
-    };
-
-    std::mutex s_interactionCommandMutex;
-    std::array<InteractionCommandSlot, ROCK_PROVIDER_MAX_INTERACTION_COMMANDS_V1> s_interactionCommands{};
-    std::array<InteractionCommandResultSlot, ROCK_PROVIDER_MAX_COMPLETED_INTERACTION_COMMANDS_V1> s_interactionResults{};
-    static_assert(
-        ROCK_PROVIDER_MAX_COMPLETED_INTERACTION_COMMANDS_V1 >= ROCK_PROVIDER_MAX_INTERACTION_COMMANDS_V1 + 3,
-        "Result history must retain the full queue, both deferred force-grab slots, and one dequeued command.");
-    std::size_t s_nextInteractionResultSlot{ 0 };
-    std::atomic<std::uint64_t> s_nextInteractionCommandId{ 1 };
-    interaction_command_policy::ForceGrabReservations s_forceGrabReservations{};
-
-    std::mutex s_providerEventMutex;
-    std::array<RockProviderEventV1, ROCK_PROVIDER_MAX_PROVIDER_EVENTS_V1>
-        s_providerEvents{};
-    std::uint32_t s_providerEventCount{ 0 };
-    std::uint32_t s_providerEventHead{ 0 };
-    std::uint64_t s_nextProviderEventSequence{ 1 };
-    std::uint64_t s_overwrittenProviderEventCount{ 0 };
-
-    struct HandInputSuppressionSlot
-    {
-        bool active{ false };
-        std::uint64_t ownerToken{ 0 };
-        RockProviderHand hand{ RockProviderHand::None };
-        std::uint32_t flags{ 0 };
-        std::uint64_t expiresAfterFrame{ 0 };
-        std::uint32_t worldGeneration{ 0 };
-        std::uint32_t skeletonGeneration{ 0 };
-        std::uint32_t providerGeneration{ 0 };
-        RockProviderSuppressionInvalidationReasonV1 lastInvalidationReason{
-            RockProviderSuppressionInvalidationReasonV1::None
-        };
-        std::uint64_t lastInvalidatedFrame{ 0 };
-    };
-
-    std::mutex s_handInputSuppressionMutex;
-    std::array<HandInputSuppressionSlot, ROCK_PROVIDER_MAX_HAND_INPUT_SUPPRESSIONS_V1> s_handInputSuppressions{};
-
-    struct NativeAnimationAuthoritySlot
-    {
-        bool active{ false };
-        std::uint64_t ownerToken{ 0 };
-        std::uint32_t flags{ 0 };
-        std::uint64_t expiresAtFrame{ 0 };
-        std::uint32_t worldGeneration{ 0 };
-        std::uint32_t skeletonGeneration{ 0 };
-        std::uint32_t providerGeneration{ 0 };
-    };
-
-    std::mutex s_nativeAnimationAuthorityMutex;
-    std::array<NativeAnimationAuthoritySlot, ROCK_PROVIDER_MAX_CONSUMERS_V1> s_nativeAnimationAuthoritySlots{};
-    std::atomic<std::uint32_t> s_nativeAnimationAuthorityFlags{ 0 };
-    std::atomic<std::uint32_t> s_nativeAnimationAuthorityOwnerCount{ 0 };
-
-    struct AnimationPhaseCallbackSlot
-    {
-        std::uint64_t token{ 0 };
-        std::uint64_t ownerToken{ 0 };
-        RockProviderAnimationPhaseCallbackV1 callback{ nullptr };
-        void* userData{ nullptr };
-    };
-
-    std::mutex s_animationPhaseCallbackMutex;
-    std::array<AnimationPhaseCallbackSlot, ROCK_PROVIDER_MAX_ANIMATION_PHASE_CALLBACKS_V1>
-        s_animationPhaseCallbacks{};
-    std::atomic<std::uint64_t> s_nextAnimationPhaseCallbackToken{ 1 };
-    std::atomic<std::uint64_t> s_nextAnimationPhaseFrameIndex{ 1 };
-    std::atomic<std::uint64_t> s_activeAnimationPhaseFrameIndex{ 0 };
-    std::atomic<std::uint32_t> s_animationOwnerThreadId{ 0 };
-    std::atomic<bool> s_animationThreadMismatchLogged{ false };
-
-    struct HandVisualAuthoritySlot
-    {
-        std::uint64_t ownerToken{ 0 };
-        RockProviderHand hand{ RockProviderHand::None };
-        std::uint32_t publishedFlags{ 0 };
-        std::uint64_t expiresAfterFrame{ 0 };
-        std::uint32_t worldGeneration{ 0 };
-        std::uint32_t skeletonGeneration{ 0 };
-        std::uint32_t providerGeneration{ 0 };
-        char tag[64]{};
-    };
-
-    std::mutex s_handVisualAuthorityMutex;
-    std::array<HandVisualAuthoritySlot, ROCK_PROVIDER_MAX_CONSUMERS_V1 * 2>
-        s_handVisualAuthoritySlots{};
-
-    std::mutex s_nativeAnimationRuntimePublicationMutex;
-    std::uint64_t s_nativeAnimationRuntimeProviderOwner{ 0 };
-    RockProviderNativeAnimationRuntimePublicationV1
-        s_nativeAnimationRuntimePublication{};
-    bool s_hasNativeAnimationRuntimePublication{ false };
-    std::uint64_t s_nativeAnimationRuntimeExpiresAfterFrame{ 0 };
-
-    struct EquippedWeaponHandlingAuthoritySlot
-    {
-        bool active{ false };
-        std::uint64_t ownerToken{ 0 };
-        std::uint64_t expiresAfterFrame{ 0 };
-        RockProviderEquippedWeaponHandlingRequestV1 request{};
-    };
-
-    std::mutex s_equippedWeaponHandlingAuthorityMutex;
-    EquippedWeaponHandlingAuthoritySlot s_equippedWeaponHandlingAuthority{};
-
-    struct WeaponPartTargetSlot
-    {
-        bool active{ false };
-        std::uint64_t ownerToken{ 0 };
-        RockProviderWeaponPartTargetV1 target{};
-    };
-
-    struct WeaponPartDriveSlot
-    {
-        bool active{ false };
-        std::uint64_t ownerToken{ 0 };
-        std::uint64_t expiresAfterFrame{ 0 };
-        RockProviderWeaponPartDriveTargetV1 target{};
-    };
-
-    std::mutex s_weaponPartMutex;
-    std::array<WeaponPartTargetSlot, ROCK_PROVIDER_MAX_WEAPON_PART_TARGETS_V1> s_weaponPartTargets{};
-    std::array<WeaponPartDriveSlot, ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1> s_weaponPartDrives{};
-
-    RockProviderResultV1 validateRegisteredOwnerCapabilityLocked(
-        std::uint64_t ownerToken,
-        RockProviderConsumerCapabilityV1 capability);
-    [[nodiscard]] bool generationGuardsStale(
-        std::uint32_t worldGeneration,
-        std::uint32_t skeletonGeneration,
-        std::uint32_t providerGeneration);
-    void publishAuthorityLostEvent(
-        std::uint64_t ownerToken,
-        RockProviderAuthorityKindV1 authorityKind,
-        std::uint32_t reason);
 
     std::uint32_t ROCK_PROVIDER_CALL apiGetVersion() { return ROCK_PROVIDER_API_VERSION; }
 
@@ -690,129 +476,10 @@ namespace
             static_cast<std::uint32_t>(GetCurrentThreadId());
     }
 
-    enum class EntryThreadPolicy
-    {
-        AnyThread,
-        AnimationOwner,
-    };
-
-    struct EntryValidationChecks
-    {
-        bool threadValid{ true };
-        bool argumentPresent{ true };
-        bool sizeValid{ true };
-        bool versionValid{ true };
-        bool semanticValid{ true };
-    };
-
-    [[nodiscard]] constexpr RockProviderResultV1 validateEntryOrder(
-        const EntryValidationChecks& checks)
-    {
-        // Thread ownership is the first gate for every owner-thread entry.
-        if (!checks.threadValid) {
-            return RockProviderResultV1::WrongThread;
-        }
-        if (!checks.argumentPresent) {
-            return RockProviderResultV1::InvalidArgument;
-        }
-        if (!checks.sizeValid) {
-            return RockProviderResultV1::InvalidSize;
-        }
-        if (!checks.versionValid) {
-            return RockProviderResultV1::UnsupportedVersion;
-        }
-        if (!checks.semanticValid) {
-            return RockProviderResultV1::InvalidArgument;
-        }
-        return RockProviderResultV1::Ok;
-    }
-
     [[nodiscard]] bool entryThreadValid(const EntryThreadPolicy policy)
     {
         return policy == EntryThreadPolicy::AnyThread ||
                onAnimationOwnerThread();
-    }
-
-    template <class Entry, class SemanticValidator>
-    [[nodiscard]] RockProviderResultV1 validateEntry(
-        const Entry* entry,
-        const EntryThreadPolicy threadPolicy,
-        SemanticValidator&& semanticValidator)
-    {
-        if (!entryThreadValid(threadPolicy)) {
-            return RockProviderResultV1::WrongThread;
-        }
-        if (!entry) {
-            return RockProviderResultV1::InvalidArgument;
-        }
-
-        const auto structuralResult = validateEntryOrder(EntryValidationChecks{
-            .sizeValid = entry->size == sizeof(Entry),
-            .versionValid = entry->version != 0 &&
-                            entry->version <= ROCK_PROVIDER_API_VERSION,
-        });
-        if (structuralResult != RockProviderResultV1::Ok) {
-            return structuralResult;
-        }
-        return semanticValidator(*entry) ?
-            RockProviderResultV1::Ok :
-            RockProviderResultV1::InvalidArgument;
-    }
-
-    template <class Entry>
-    [[nodiscard]] RockProviderResultV1 validateEntry(
-        const Entry* entry,
-        const EntryThreadPolicy threadPolicy = EntryThreadPolicy::AnyThread)
-    {
-        return validateEntry(
-            entry,
-            threadPolicy,
-            [](const Entry&) { return true; });
-    }
-
-    [[nodiscard]] RockProviderResultV1 validateOwnerEntry(
-        const std::uint64_t ownerToken,
-        const EntryThreadPolicy threadPolicy = EntryThreadPolicy::AnyThread)
-    {
-        return validateEntryOrder(EntryValidationChecks{
-            .threadValid = entryThreadValid(threadPolicy),
-            .semanticValid = ownerToken != 0,
-        });
-    }
-
-    template <class Output>
-    [[nodiscard]] RockProviderResultV1 validateOutputEntry(
-        const std::uint64_t ownerToken,
-        const Output* output,
-        const EntryThreadPolicy threadPolicy = EntryThreadPolicy::AnyThread)
-    {
-        if (!entryThreadValid(threadPolicy)) {
-            return RockProviderResultV1::WrongThread;
-        }
-        if (!output) {
-            return RockProviderResultV1::InvalidArgument;
-        }
-        return validateEntryOrder(EntryValidationChecks{
-            .sizeValid = output->size >= sizeof(Output),
-            .semanticValid = ownerToken != 0,
-        });
-    }
-
-    template <class Value>
-    [[nodiscard]] RockProviderResultV1 validateArrayEntry(
-        const std::uint64_t ownerToken,
-        const Value* values,
-        const std::uint32_t maxValues,
-        const std::uint32_t* outValueCount,
-        const EntryThreadPolicy threadPolicy = EntryThreadPolicy::AnyThread,
-        const bool semanticValid = true)
-    {
-        return validateEntryOrder(EntryValidationChecks{
-            .threadValid = entryThreadValid(threadPolicy),
-            .argumentPresent = outValueCount != nullptr &&
-                               (maxValues == 0 || values != nullptr),
-            .semanticValid = ownerToken != 0 && semanticValid,
-        });
     }
 
     bool ROCK_PROVIDER_CALL apiGetFrameSnapshot(RockProviderFrameSnapshot* outSnapshot)
@@ -1235,38 +902,6 @@ namespace
             s_equippedWeaponHandlingAuthority.ownerToken == ownerToken) {
             s_equippedWeaponHandlingAuthority = {};
         }
-    }
-
-    template <class IsActive, class GenerationChanged, class ExpiresAfter,
-              class Revoke>
-    [[nodiscard]] bool pruneExpiredSlots(
-        const std::size_t slotCount,
-        const std::uint64_t frameIndex,
-        IsActive&& isActive,
-        GenerationChanged&& generationChanged,
-        ExpiresAfter&& expiresAfter,
-        Revoke&& revoke)
-    {
-        bool changed = false;
-        for (std::size_t index = 0; index < slotCount; ++index) {
-            if (!isActive(index)) {
-                continue;
-            }
-
-            const bool staleGeneration = generationChanged(index);
-            if (!staleGeneration && provider_lease_policy::isActive(
-                    frameIndex,
-                    expiresAfter(index))) {
-                continue;
-            }
-
-            const auto reason = staleGeneration ?
-                RockProviderSuppressionInvalidationReasonV1::GenerationChanged :
-                RockProviderSuppressionInvalidationReasonV1::Expired;
-            revoke(index, reason);
-            changed = true;
-        }
-        return changed;
     }
 
     void pruneExpiredEquippedWeaponHandlingAuthorityLocked(
@@ -2020,12 +1655,6 @@ namespace
         }
         s_forceGrabReservations.clearOwner(ownerToken);
     }
-
-    enum class RevokeReason
-    {
-        CallbackFault,
-        OwnerUnregistered,
-    };
 
     [[nodiscard]] RockProviderResultV1 revokeOwner(
         const std::uint64_t ownerToken,
@@ -5360,6 +4989,8 @@ namespace
 
 namespace rock::provider
 {
+    using namespace detail;
+
     ROCK_PROVIDER_API const RockProviderApi* ROCK_PROVIDER_CALL ROCKAPI_GetProviderApi()
     {
         return &ROCK_PROVIDER_API_FUNCTION_TABLE;
