@@ -224,28 +224,6 @@ namespace rock::provider::detail
         return RockProviderResultV1::TargetUnavailable;
     }
 
-    bool invokeAnimationPhaseCallbackSafely(
-        RockProviderAnimationPhaseCallbackV1 callback,
-        const RockProviderAnimationPhaseContextV1* context,
-        void* userData)
-    {
-        if (!callback) {
-            return true;
-        }
-
-#if defined(_MSC_VER)
-        __try {
-            callback(context, userData);
-            return true;
-        } __except (EXCEPTION_EXECUTE_HANDLER) {
-            return false;
-        }
-#else
-        callback(context, userData);
-        return true;
-#endif
-    }
-
     [[nodiscard]] bool claimOrValidateAnimationOwnerThread()
     {
         const auto currentThread =
@@ -476,22 +454,6 @@ namespace rock::provider::detail
         std::memcpy(outFrame, &frame, copySize);
         outFrame->size = static_cast<std::uint32_t>(copySize);
         return true;
-    }
-
-    [[nodiscard]] HandVisualAuthoritySlot* findHandVisualAuthoritySlotLocked(
-        const std::uint64_t ownerToken,
-        const RockProviderHand hand)
-    {
-        HandVisualAuthoritySlot* available = nullptr;
-        for (auto& slot : s_handVisualAuthoritySlots) {
-            if (slot.ownerToken == ownerToken && slot.hand == hand) {
-                return &slot;
-            }
-            if (slot.ownerToken == 0 && !available) {
-                available = &slot;
-            }
-        }
-        return available;
     }
 
     std::uint32_t currentProviderGenerationForRegistration()
