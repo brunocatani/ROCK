@@ -27,6 +27,7 @@
 #include "physics-interaction/native/query/PhysicsUtils.h"
 #include "physics-interaction/object/CarInteractionPolicy.h"
 #include "physics-interaction/weapon/BareFistGuardPolicy.h"
+#include "physics-interaction/weapon/equip/HeldWeaponEquipStatePolicy.h"
 #include "rock_support/Fo4VrRuntime.h"
 
 namespace rock
@@ -165,12 +166,19 @@ namespace rock
         const auto state = hand.getState();
         const bool openInteractionState =
             state == HandState::Idle || state == HandState::SelectedClose || state == HandState::SelectedFar;
-        // Equip data remains authoritative while menus temporarily hide or
-        // detach the weapon's 3D node.
+        // Equip identity remains authoritative while menus temporarily hide or
+        // detach the weapon's 3D node. Native presentation state separates a
+        // fully sheathed weapon from one that still reserves its firing hand.
         const bool equippedWeaponPresent = currentEquippedWeaponFormId() != 0;
+        const std::uint32_t nativeWeaponState =
+            f4vr::getNativeWeaponState(f4vr::getPlayer());
+        const bool equippedWeaponReservesFiringHand =
+            equippedWeaponPresent &&
+            held_weapon_equip_state_policy::weaponStateReservesFiringHand(
+                nativeWeaponState);
         const bool equippedWeaponOccupiesHand = force_grab_policy::equippedWeaponOccupiesHand(
             isLeft,
-            equippedWeaponPresent,
+            equippedWeaponReservesFiringHand,
             _twoHandedGrip.isPartCarryActive(),
             _twoHandedGrip.isFiringHandLeft(),
             _twoHandedGrip.isHandPartGripping(isLeft));

@@ -63,20 +63,22 @@ namespace rock::force_grab_policy
 
     /*
      * Part grips are physical occupancy regardless of role. The firing hand is
-     * otherwise occupied while an equipped weapon is present, except during
-     * part-carry after that firing grip has detached. Keeping this role-driven
-     * makes grenade hand choice mirror correctly when left-hand weapon support
-     * becomes authoritative.
+     * otherwise occupied while native weapon presentation reserves it, except
+     * during part-carry after that firing grip has detached. Inventory equip
+     * identity alone is not occupancy because a fully sheathed weapon remains
+     * equipped for exact-instance retrieval. Keeping this role-driven makes
+     * grenade hand choice mirror correctly when left-hand weapon support becomes
+     * authoritative.
      */
     [[nodiscard]] inline constexpr bool equippedWeaponOccupiesHand(
         bool handIsLeft,
-        bool equippedWeaponPresent,
+        bool equippedWeaponReservesFiringHand,
         bool partCarryActive,
         bool firingHandIsLeft,
         bool partGripActiveForHand) noexcept
     {
         return partGripActiveForHand ||
-               (equippedWeaponPresent && !partCarryActive && handIsLeft == firingHandIsLeft);
+               (equippedWeaponReservesFiringHand && !partCarryActive && handIsLeft == firingHandIsLeft);
     }
 
     enum class GrenadeSelectionFailure : std::uint8_t

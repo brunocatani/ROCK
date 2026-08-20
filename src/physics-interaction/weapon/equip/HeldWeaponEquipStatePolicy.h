@@ -61,6 +61,20 @@ namespace rock::held_weapon_equip_state_policy
     }
 
     /*
+     * Inventory equip identity and physical hand reservation are separate.
+     * A fully sheathed weapon stays equipped so ROCK can retrieve the same
+     * instance, but it no longer reserves the firing hand. Every transition
+     * and every invalid state remains fail-closed until native presentation
+     * reaches the stable sheathed state.
+     */
+    [[nodiscard]] inline constexpr bool weaponStateReservesFiringHand(
+        const std::uint32_t nativeState) noexcept
+    {
+        return nativeState !=
+               static_cast<std::uint32_t>(NativeWeaponState::Sheathed);
+    }
+
+    /*
      * FO4VR PlayerCharacter::DrawWeaponMagicHands(true) returns immediately
      * only for Drawing/Drawn. Sheathed, WantToSheathe, and Sheathing are
      * valid submissions; the latter two reverse an in-progress holster. The

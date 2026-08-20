@@ -83,6 +83,7 @@ int main()
     ok &= expectTrue("part grip always occupies hand", equippedWeaponOccupiesHand(false, true, true, false, true));
     ok &= expectTrue("future left firing hand occupied", equippedWeaponOccupiesHand(true, true, false, true, false));
     ok &= expectFalse("future right offhand remains free", equippedWeaponOccupiesHand(false, true, false, true, false));
+    ok &= expectFalse("sheathed weapon releases firing hand", equippedWeaponOccupiesHand(false, false, false, false, false));
 
     using rock::bare_fist_guard_policy::Witness;
     using rock::bare_fist_guard_policy::shouldHolster;
@@ -120,6 +121,7 @@ int main()
     using rock::held_weapon_equip_state_policy::shouldRearmTrigger;
     using rock::held_weapon_equip_state_policy::shouldSubmitDrawFollowup;
     using rock::held_weapon_equip_state_policy::shouldSubmitSheatheFollowup;
+    using rock::held_weapon_equip_state_policy::weaponStateReservesFiringHand;
     ok &= expectEqual("sheathed state permits equip", classifyForEquip(0), EquipReadiness::Stable);
     ok &= expectEqual("drawn state permits replacement equip", classifyForEquip(3), EquipReadiness::Stable);
     ok &= expectEqual("want-draw state defers equip", classifyForEquip(1), EquipReadiness::Transitioning);
@@ -153,6 +155,13 @@ int main()
     ok &= expectFalse("unknown presentation is not shoulder retrievable", isShoulderStashedPresentationState(6));
     ok &= expectTrue("last known native weapon state is valid", isValidNativeWeaponState(5));
     ok &= expectFalse("state outside the FO4VR weapon enum is invalid", isValidNativeWeaponState(6));
+    ok &= expectFalse("sheathed weapon releases firing hand reservation", weaponStateReservesFiringHand(0));
+    ok &= expectTrue("want-draw weapon reserves firing hand", weaponStateReservesFiringHand(1));
+    ok &= expectTrue("drawing weapon reserves firing hand", weaponStateReservesFiringHand(2));
+    ok &= expectTrue("drawn weapon reserves firing hand", weaponStateReservesFiringHand(3));
+    ok &= expectTrue("want-sheathe weapon reserves firing hand", weaponStateReservesFiringHand(4));
+    ok &= expectTrue("sheathing weapon reserves firing hand", weaponStateReservesFiringHand(5));
+    ok &= expectTrue("invalid weapon state reserves firing hand", weaponStateReservesFiringHand(6));
 
     ForceGrabReservations reservations;
     ok &= expectFalse("invalid API hand cannot reserve", reservations.reserve(RockProviderHand::None, 11, 100));

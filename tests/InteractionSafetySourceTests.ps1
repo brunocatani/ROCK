@@ -89,6 +89,7 @@ $pendingCommitHeader = Read-Source 'src/physics-interaction/core/PendingForceGra
 $grabPhasePolicy = Read-Source 'src/physics-interaction/grab/GrabThreePhase.h'
 $forceGrabPolicy = Read-Source 'src/physics-interaction/core/ForceGrabPolicy.h'
 $bareFistPolicy = Read-Source 'src/physics-interaction/weapon/BareFistGuardPolicy.h'
+$heldWeaponEquipStatePolicy = Read-Source 'src/physics-interaction/weapon/equip/HeldWeaponEquipStatePolicy.h'
 $commandPolicy = Read-Source 'src/physics-interaction/api/InteractionCommandPolicy.h'
 $commandQueueHeader = Read-Source 'src/physics-interaction/api/InteractionCommandQueue.h'
 $providerHeader = Read-Source 'src/api/ROCKProviderApi.h'
@@ -164,8 +165,11 @@ Require-Text $forceGrabPolicy `
     'if\s*\(rightAvailable\)[\s\S]*?HandChoice::Right[\s\S]*?if\s*\(leftAvailable\)[\s\S]*?HandChoice::Left[\s\S]*?GrenadeSelectionFailure::HandsBlocked' `
     'Grenade hand policy must prefer right, fall back to left, then report both hands blocked.'
 Require-Text $forceGrabPolicy `
-    'partGripActiveForHand\s*\|\|[\s\S]*?equippedWeaponPresent\s*&&\s*!partCarryActive\s*&&\s*handIsLeft\s*==\s*firingHandIsLeft' `
-    'Equipped-weapon hand occupancy must be role-driven for future left-hand weapon support.'
+    'partGripActiveForHand\s*\|\|[\s\S]*?equippedWeaponReservesFiringHand\s*&&\s*!partCarryActive\s*&&\s*handIsLeft\s*==\s*firingHandIsLeft' `
+    'Equipped-weapon hand occupancy must be presentation-aware and role-driven for future left-hand weapon support.'
+Require-Text $heldWeaponEquipStatePolicy `
+    'weaponStateReservesFiringHand[\s\S]*?nativeState\s*!=\s*static_cast<std::uint32_t>\([\s\S]*?NativeWeaponState::Sheathed' `
+    'Only the stable native sheathed state may release the equipped weapon firing-hand reservation.'
 
 # A pending force-grab owns its hand and target through settle/commit. Organic
 # selection, input, and the peer hand must not steal that authority.
