@@ -63,6 +63,11 @@ Reject-Text 'data/config/ROCK.dev.ini' $obsolete 'The canonical INI must not con
 Reject-Text 'src/RockConfig.h' $obsolete 'RockConfig must not expose obsolete settings.'
 Reject-Text 'src/RockConfig.cpp' $obsolete 'RockConfig must not load obsolete settings.'
 
+$internalOnly = 'bWeaponCollisionEnabled|bHandCollisionDynamicDrive|bHandDynamicInteractionsEnabled|bHandCollisionDynamicHapticsEnabled|bBodyBoneCollidersEnabled|bNativeCharacterControllerObjectContactFilterEnabled|bFarSelectionHmdConeEnabled|iGrabButtonID|bGrabHapticsEnabled|bSurfaceGrabHapticsEnabled|bHeldImpactHapticsEnabled|bShoulderStashHapticsEnabled|bMouthConsumeHapticsEnabled'
+Reject-Text 'data/config/ROCK.ini' $internalOnly 'The shipped INI must not expose mandatory production behavior.'
+Reject-Text 'data/config/ROCK.dev.ini' $internalOnly 'The developer reference must not expose mandatory production behavior.'
+Reject-Text 'src/RockConfig.cpp' ('"(?:' + $internalOnly + ')"') 'RockConfig must not parse mandatory production behavior from INI.'
+
 if ($failures.Count -gt 0) {
     Write-Host 'DebugConfigNormalizationSourceTests failed:' -ForegroundColor Red
     foreach ($failure in $failures) {

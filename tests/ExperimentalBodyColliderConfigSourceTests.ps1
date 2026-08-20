@@ -46,11 +46,11 @@ Require-Text 'src/RockConfig.cpp' `
     'constexpr auto EXPERIMENTAL_SECTION\s*=\s*"Experimental"' `
     'Body collider experiment switches must have a dedicated INI section.'
 Require-Text 'src/RockConfig.cpp' `
-    'GetBoolValue\(EXPERIMENTAL_SECTION,\s*"bBodyBoneCollidersEnabled"[\s\S]*GetBoolValue\(EXPERIMENTAL_SECTION,\s*"bBodyBoneLegAndFootCollidersEnabled"' `
-    'Both body collider experiment switches must load exclusively from [Experimental].'
+    'GetBoolValue\(EXPERIMENTAL_SECTION,\s*"bBodyBoneLegAndFootCollidersEnabled"' `
+    'The optional leg and foot collider switch must load from [Experimental].'
 Reject-Text 'src/RockConfig.cpp' `
-    'GetBoolValue\(SECTION,\s*"bBodyBoneCollidersEnabled"|GetBoolValue\(SECTION,\s*"bBodyBoneLegAndFootCollidersEnabled"' `
-    'Body collider experiment switches must not retain a hidden [PhysicsInteraction] compatibility path.'
+    '"bBodyBoneCollidersEnabled"|GetBoolValue\(SECTION,\s*"bBodyBoneLegAndFootCollidersEnabled"' `
+    'Mandatory body colliders must not be configurable and the leg/foot switch must not retain a hidden compatibility path.'
 
 Require-Text 'src/physics-interaction/body/BodyBoneColliderSet.cpp' `
     'role\s*==\s*BoneColliderRole::LegSegment\s*\|\|\s*role\s*==\s*BoneColliderRole::FootSegment[\s\S]*rockBodyBoneLegAndFootCollidersEnabled' `
@@ -71,8 +71,8 @@ foreach ($configPath in @('data/config/ROCK.dev.ini')) {
     }
 
     $experimentalBody = $experimentalMatch.Groups['body'].Value
-    if ($experimentalBody -notmatch '(?m)^bBodyBoneCollidersEnabled\s*=\s*true\s*$') {
-        $failures.Add("$configPath`: Full-body switch must be present under [Experimental].")
+    if ($experimentalBody -match '(?m)^bBodyBoneCollidersEnabled\s*=') {
+        $failures.Add("$configPath`: Mandatory full-body colliders must not expose a switch.")
     }
     if ($experimentalBody -notmatch '(?m)^bBodyBoneLegAndFootCollidersEnabled\s*=\s*false\s*$') {
         $failures.Add("$configPath`: Leg and foot switch must be present under [Experimental] and default off.")

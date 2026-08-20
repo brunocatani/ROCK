@@ -18,7 +18,6 @@
 #include "physics-interaction/grab/GrabPinchPocket.h"
 #include "physics-interaction/grab/GrabThreePhase.h"
 #include "physics-interaction/hand/HandLifecycle.h"
-#include "physics-interaction/input/InputRemapPolicy.h"
 #include "physics-interaction/grab/NearbyGrabDamping.h"
 #include "physics-interaction/debug/DebugConfigPolicy.h"
 #include "physics-interaction/PhysicsLog.h"
@@ -1058,7 +1057,6 @@ namespace rock
             0.0f,
             -15.0f,
             15.0f);
-        rockWeaponCollisionEnabled = ini.GetBoolValue(SECTION, "bWeaponCollisionEnabled", rockWeaponCollisionEnabled);
         rockWeaponCollisionBlocksProjectiles = ini.GetBoolValue(SECTION, "bWeaponCollisionBlocksProjectiles", rockWeaponCollisionBlocksProjectiles);
         rockWeaponCollisionBlocksSpells = ini.GetBoolValue(SECTION, "bWeaponCollisionBlocksSpells", rockWeaponCollisionBlocksSpells);
         rockWeaponCollisionStaticWorldEnabled = ini.GetBoolValue(SECTION, "bWeaponCollisionStaticWorldEnabled", rockWeaponCollisionStaticWorldEnabled);
@@ -1378,11 +1376,6 @@ namespace rock
             -180.0f,
             180.0f);
 
-        rockHandCollisionDynamicDrive = ini.GetBoolValue(SECTION, "bHandCollisionDynamicDrive", rockHandCollisionDynamicDrive);
-        rockHandDynamicInteractionsEnabled = ini.GetBoolValue(
-            SECTION,
-            "bHandDynamicInteractionsEnabled",
-            rockHandDynamicInteractionsEnabled);
         rockDynamicColliderNpcBodyCollisionEnabled = ini.GetBoolValue(
             SECTION,
             "bDynamicCollidersNpcBodyCollisionEnabled",
@@ -1452,8 +1445,6 @@ namespace rock
             240.0f);
         rockHandCollisionDynamicVisualPriority = static_cast<int>(ini.GetLongValue(SECTION, "iHandCollisionDynamicVisualPriority", rockHandCollisionDynamicVisualPriority));
         rockHandCollisionDynamicVisualPriority = std::clamp(rockHandCollisionDynamicVisualPriority, 0, 99);
-        rockHandCollisionDynamicHapticsEnabled =
-            ini.GetBoolValue(SECTION, "bHandCollisionDynamicHapticsEnabled", rockHandCollisionDynamicHapticsEnabled);
         rockHandCollisionDynamicHapticDurationSeconds = readClampedFloat(ini,
             SECTION,
             "fHandCollisionDynamicHapticDurationSeconds",
@@ -1548,8 +1539,6 @@ namespace rock
         rockNativeMeleeSuppressWeaponSwing = ini.GetBoolValue(SECTION, "bNativeMeleeSuppressWeaponSwing", rockNativeMeleeSuppressWeaponSwing);
         rockNativeMeleeSuppressHitFrame = ini.GetBoolValue(SECTION, "bNativeMeleeSuppressHitFrame", rockNativeMeleeSuppressHitFrame);
         rockNativeMeleeDebugLogging = ini.GetBoolValue(DEBUG_LOGGING_SECTION, "bNativeMelee", rockNativeMeleeDebugLogging);
-        rockNativeCharacterControllerObjectContactFilterEnabled = ini.GetBoolValue(
-            SECTION, "bNativeCharacterControllerObjectContactFilterEnabled", rockNativeCharacterControllerObjectContactFilterEnabled);
 
         rockHighlightEnabled = ini.GetBoolValue(SECTION, "bHighlightEnabled", rockHighlightEnabled);
         rockHighlightIntensityMode = readHighlightIntensityMode(ini, SECTION, "iHighlightIntensityMode", rockHighlightIntensityMode);
@@ -1796,7 +1785,6 @@ namespace rock
             ROCK_LOG_WARN(Config, "Invalid iHandColliderRuntimeMode={} - using BoneDerivedHands", rockHandColliderRuntimeMode);
             rockHandColliderRuntimeMode = 1;
         }
-        rockBodyBoneCollidersEnabled = ini.GetBoolValue(EXPERIMENTAL_SECTION, "bBodyBoneCollidersEnabled", rockBodyBoneCollidersEnabled);
         rockBodyBoneLegAndFootCollidersEnabled =
             ini.GetBoolValue(EXPERIMENTAL_SECTION, "bBodyBoneLegAndFootCollidersEnabled", rockBodyBoneLegAndFootCollidersEnabled);
         rockBodyBoneCollisionStaticWorldEnabled = ini.GetBoolValue(SECTION, "bBodyBoneCollisionStaticWorldEnabled", rockBodyBoneCollisionStaticWorldEnabled);
@@ -1896,7 +1884,6 @@ namespace rock
             readSelectionAimAngleDegrees(ini, SECTION, "iCloseSelectionAngleDegrees", rockCloseSelectionAngleDegrees);
         rockFarSelectionAngleDegrees =
             readSelectionAimAngleDegrees(ini, SECTION, "iFarSelectionAngleDegrees", rockFarSelectionAngleDegrees);
-        rockFarSelectionHmdConeEnabled = ini.GetBoolValue(SECTION, "bFarSelectionHmdConeEnabled", rockFarSelectionHmdConeEnabled);
         rockFarSelectionHmdConeHalfAngleDegrees =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fFarSelectionHmdConeHalfAngleDegrees", rockFarSelectionHmdConeHalfAngleDegrees));
         rockFarSelectionBlockedReferenceFormIds =
@@ -2181,11 +2168,6 @@ namespace rock
 
         rockGrabMaxDeviation = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMaxDeviation", rockGrabMaxDeviation));
         rockGrabMaxDeviationTime = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMaxDeviationTime", rockGrabMaxDeviationTime));
-        rockGrabButtonID = static_cast<int>(ini.GetLongValue(SECTION, "iGrabButtonID", rockGrabButtonID));
-        if (!input_remap_policy::isAllowedGrabButtonId(rockGrabButtonID)) {
-            ROCK_LOG_WARN(Config, "iGrabButtonID must be 0..63 and cannot be SteamVR trigger button {}; using 2", input_remap_policy::kOpenVrSteamVrTriggerButtonId);
-            rockGrabButtonID = 2;
-        }
         rockThrowVelocityMultiplier = static_cast<float>(ini.GetDoubleValue(SECTION, "fThrowVelocityMultiplier", rockThrowVelocityMultiplier));
         rockGrabControllerDerivedThrowVelocityEnabled =
             ini.GetBoolValue(SECTION, "bGrabControllerDerivedThrowVelocityEnabled", rockGrabControllerDerivedThrowVelocityEnabled);
@@ -2802,7 +2784,6 @@ namespace rock
         readClampedFloat("fMouthConsumeMinDwellSeconds", rockMouthConsumeMinDwellSeconds, 0.08f, 0.0f, 1.0f);
         readClampedFloat("fMouthConsumeMaxSpeedGameUnitsPerSecond", rockMouthConsumeMaxSpeedGameUnitsPerSecond, 120.0f, 0.0f, 1000.0f);
 
-        rockGrabHapticsEnabled = ini.GetBoolValue(SECTION, "bGrabHapticsEnabled", rockGrabHapticsEnabled);
         readClampedFloat("fGrabHapticDurationSeconds", rockGrabHapticDurationSeconds, 0.055f, 0.0f, 0.2f);
         readClampedFloat("fGrabHapticBaseIntensity", rockGrabHapticBaseIntensity, 0.12f, 0.0f, 1.0f);
         readClampedFloat("fGrabHapticMaxIntensity", rockGrabHapticMaxIntensity, 0.80f, rockGrabHapticBaseIntensity, 1.0f);
@@ -2813,11 +2794,8 @@ namespace rock
         readClampedFloat("fSelectionLockHapticIntensity", rockSelectionLockHapticIntensity, 0.15f, 0.0f, 1.0f);
         readClampedFloat("fSelectionLockReleaseHapticIntensity", rockSelectionLockReleaseHapticIntensity, 0.10f, 0.0f, 1.0f);
         readClampedFloat("fSelectionLockReleaseHapticDurationSeconds", rockSelectionLockReleaseHapticDurationSeconds, 0.02f, 0.0f, 0.2f);
-        rockSurfaceGrabHapticsEnabled =
-            ini.GetBoolValue(SECTION, "bSurfaceGrabHapticsEnabled", rockSurfaceGrabHapticsEnabled);
         readClampedFloat("fSurfaceGrabHapticDurationSeconds", rockSurfaceGrabHapticDurationSeconds, 0.075f, 0.0f, 0.2f);
         readClampedFloat("fSurfaceGrabHapticIntensity", rockSurfaceGrabHapticIntensity, 0.85f, 0.0f, 1.0f);
-        rockHeldImpactHapticsEnabled = ini.GetBoolValue(SECTION, "bHeldImpactHapticsEnabled", rockHeldImpactHapticsEnabled);
         readClampedFloat("fHeldImpactHapticDurationSeconds", rockHeldImpactHapticDurationSeconds, 0.035f, 0.0f, 0.2f);
         readClampedFloat("fHeldImpactHapticBaseIntensity", rockHeldImpactHapticBaseIntensity, 0.12f, 0.0f, 1.0f);
         readClampedFloat("fHeldImpactHapticMaxIntensity", rockHeldImpactHapticMaxIntensity, 0.85f, rockHeldImpactHapticBaseIntensity, 1.0f);
@@ -2827,8 +2805,6 @@ namespace rock
         readClampedFloat("fHeldImpactHapticMinSpeedGameUnits", rockHeldImpactHapticMinSpeedGameUnits, 8.0f, 0.0f, 1000.0f);
         readClampedFloat("fHeldImpactHapticCooldownSeconds", rockHeldImpactHapticCooldownSeconds, 0.12f, 0.0f, 1.0f);
         readClampedFloat("fHeldImpactHapticDampedMultiplier", rockHeldImpactHapticDampedMultiplier, 0.55f, 0.0f, 1.0f);
-        rockShoulderStashHapticsEnabled =
-            ini.GetBoolValue(SECTION, "bShoulderStashHapticsEnabled", rockShoulderStashHapticsEnabled);
         readClampedFloat(
             "fShoulderStashCandidateHapticDurationSeconds", rockShoulderStashCandidateHapticDurationSeconds, 0.075f, 0.0f, 0.2f);
         readClampedFloat(
@@ -2842,7 +2818,6 @@ namespace rock
         readClampedFloat(
             "fShoulderStashCommitHapticDurationSeconds", rockShoulderStashCommitHapticDurationSeconds, 0.12f, 0.0f, 0.2f);
         readClampedFloat("fShoulderStashCommitHapticIntensity", rockShoulderStashCommitHapticIntensity, 0.85f, 0.0f, 1.0f);
-        rockMouthConsumeHapticsEnabled = ini.GetBoolValue(SECTION, "bMouthConsumeHapticsEnabled", rockMouthConsumeHapticsEnabled);
         readClampedFloat(
             "fMouthConsumeCandidateHapticDurationSeconds", rockMouthConsumeCandidateHapticDurationSeconds, 0.050f, 0.0f, 0.2f);
         readClampedFloat(

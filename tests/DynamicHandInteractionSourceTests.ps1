@@ -34,13 +34,16 @@ $layers = 'src/physics-interaction/collision/CollisionLayerPolicy.h'
 $api = 'src/api/ROCKProviderApi.h'
 
 foreach ($ini in @('data/config/ROCK.dev.ini')) {
-    Require-Pattern $ini `
-        '(?m)^bHandDynamicInteractionsEnabled\s*=\s*true\s*$' `
-        "$ini must ship the experimental dynamic interaction graph enabled."
+    Reject-Pattern $ini `
+        'bHandDynamicInteractionsEnabled' `
+        "$ini must not expose mandatory dynamic interactions."
 }
 Require-Pattern 'src/RockConfig.h' `
     'rockHandDynamicInteractionsEnabled\s*=\s*true' `
     'The compiled dynamic interaction graph default must remain enabled.'
+Reject-Pattern 'src/RockConfig.cpp' `
+    '"bHandDynamicInteractionsEnabled"' `
+    'Mandatory dynamic interactions must not load from INI.'
 
 Require-Pattern $layers `
     'ROCK_LAYER_DYNAMIC_RIGHT_HAND_PROXY\s*=\s*[\s\S]*ROCK_LAYER_DYNAMIC_HAND_PROXY[\s\S]*ROCK_LAYER_DYNAMIC_LEFT_HAND_PROXY\s*=\s*52' `

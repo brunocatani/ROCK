@@ -175,14 +175,11 @@ Require-Text 'src/physics-interaction/performance/PerformanceProfiler.h' `
     'DynamicHandCollisionPostSolve' `
     'Dynamic hand post-solve sampling must have a dedicated profiler scope.'
 
-# Every shipped config enables the canonical runtime and carries its haptics.
+# The developer reference carries tuning but cannot disable the canonical runtime or its haptics.
 foreach ($configPath in @('data/config/ROCK.dev.ini')) {
-    Require-Text $configPath `
-        'bHandCollisionDynamicDrive\s*=\s*true' `
-        "$configPath must enable canonical dynamic world collision by default."
-    Require-Text $configPath `
-        'bHandCollisionDynamicHapticsEnabled\s*=\s*true' `
-        "$configPath must ship the dynamic hand haptic enable key."
+    Reject-Text $configPath `
+        'bHandCollisionDynamicDrive|bHandCollisionDynamicHapticsEnabled' `
+        "$configPath must not expose mandatory dynamic collision or haptics."
     Require-Text $configPath `
         'fHandCollisionDynamicHapticMinApproachSpeedGameUnitsPerSecond' `
         "$configPath must document the dynamic hand haptic speed units."
@@ -340,15 +337,18 @@ Require-Text 'src/physics-interaction/grab/GlobalSurfaceGrabPolicy.h' `
 # touch pulse, and both values remain user-tunable.
 foreach ($configPath in @('data/config/ROCK.dev.ini')) {
     Require-Text $configPath `
-        'bSurfaceGrabHapticsEnabled\s*=\s*true[\s\S]*fSurfaceGrabHapticDurationSeconds\s*=\s*0\.075[\s\S]*fSurfaceGrabHapticIntensity\s*=\s*0\.85' `
-        "$configPath must ship the distinct surface-latch confirmation pulse."
+        'fSurfaceGrabHapticDurationSeconds\s*=\s*0\.075[\s\S]*fSurfaceGrabHapticIntensity\s*=\s*0\.85' `
+        "$configPath must retain distinct surface-latch haptic tuning."
+    Reject-Text $configPath `
+        'bSurfaceGrabHapticsEnabled' `
+        "$configPath must not expose mandatory surface-grab haptics."
 }
 Require-Text 'src/RockConfig.h' `
     'rockSurfaceGrabHapticsEnabled\s*=\s*true[\s\S]{0,180}rockSurfaceGrabHapticDurationSeconds\s*=\s*0\.075f[\s\S]{0,180}rockSurfaceGrabHapticIntensity\s*=\s*0\.85f' `
     'The compiled surface-latch pulse must remain stronger and longer than the touch maximum.'
-Require-Text 'src/RockConfig.cpp' `
-    'bSurfaceGrabHapticsEnabled[\s\S]{0,500}fSurfaceGrabHapticDurationSeconds[\s\S]{0,500}fSurfaceGrabHapticIntensity' `
-    'Surface-latch haptic controls must load through the normal ROCK INI path.'
+Reject-Text 'src/RockConfig.cpp' `
+    '"bSurfaceGrabHapticsEnabled"' `
+    'Mandatory surface-latch haptics must not load from INI.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'Dynamic hand collision source boundary failed:'
