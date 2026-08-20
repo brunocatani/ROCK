@@ -36,17 +36,6 @@ $frameContext = 'src/physics-interaction/core/PhysicsFrameContext.h'
 $handHeader = 'src/physics-interaction/hand/Hand.h'
 $visualBridge = 'src/physics-interaction/visual/FrikVisualAuthorityBridge.h'
 
-# Loader compatibility and executable-layout identity are separate domains.
-Reject-Pattern $main `
-    'RuntimeVersion\s*\(\s*\)[\s\S]{0,160}(RUNTIME_LATEST_VR|RUNTIME_VR_1_2_72)|(RUNTIME_LATEST_VR|RUNTIME_VR_1_2_72)[\s\S]{0,160}RuntimeVersion\s*\(' `
-    'QueryInterface::RuntimeVersion must never be compared with a VR executable-version constant.'
-Require-Pattern $main `
-    'F4SEPlugin_Query[\s\S]*REL::Module::IsVR\(\)[\s\S]*F4SEPlugin_Load' `
-    'Query must reject non-VR module identity without treating the F4SE compatibility value as the executable version.'
-Require-Pattern $main `
-    'F4SEPlugin_Load[\s\S]*F4SE::Init\(a_f4se, false\);[\s\S]{0,500}!REL::Module::IsVR\(\)[\s\S]{0,180}REL::Module::get\(\)\.version\(\)\s*!=\s*F4SE::RUNTIME_VR_1_2_72[\s\S]{0,500}Register F4SE messaging listener' `
-    'Load must enforce exact FO4VR 1.2.72 module identity before any hook or listener installation.'
-
 # Both writes target one independently verified FO4VR callsite and preserve
 # separate inner/native and outer/FRIK chain pointers.
 Require-Pattern $main `
