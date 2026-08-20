@@ -386,8 +386,7 @@ namespace rock
     {
         const bool omodPrebuildAuditCurrent =
             _omodPrebuildAuditEquippedKey == observedKey && _omodPrebuildAuditRoot == weaponNode;
-        if (!generationDrivenRebuild || omodPrebuildAuditCurrent ||
-            !g_rockConfig.rockDebugWeaponOmodCoverageAudit || !g_rockConfig.rockExperimentalWeaponOmodSelfHealEnabled) {
+        if (!generationDrivenRebuild || omodPrebuildAuditCurrent) {
             return false;
         }
 

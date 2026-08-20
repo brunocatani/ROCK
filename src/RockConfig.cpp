@@ -529,7 +529,6 @@ namespace rock
         rockDebugWeaponOmodDumpEnabled = true;
         rockDebugWeaponOmodCoverageAudit = true;
         rockDebugWeaponOmodCoverageAuditIntervalFrames = 450;
-        rockExperimentalWeaponOmodSelfHealEnabled = true;
         rockDebugHandTransformParity = false;
         rockDebugWorldObjectOriginDiagnostics = false;
         rockDebugWorldObjectOriginLogIntervalFrames = 120;
@@ -1732,8 +1731,6 @@ namespace rock
         if (rockDebugWeaponOmodCoverageAuditIntervalFrames < 30) {
             rockDebugWeaponOmodCoverageAuditIntervalFrames = 30;
         }
-        rockExperimentalWeaponOmodSelfHealEnabled =
-            ini.GetBoolValue(EXPERIMENTAL_SECTION, "bWeaponOmodSelfHealEnabled", rockExperimentalWeaponOmodSelfHealEnabled);
         rockDebugHandTransformParity = ini.GetBoolValue(DEBUG_LOGGING_SECTION, "bHandTransformParity", rockDebugHandTransformParity);
         rockDebugWorldObjectOriginDiagnostics =
             ini.GetBoolValue(DEBUG_OVERLAY_SECTION, "bWorldObjectOriginDiagnostics", rockDebugWorldObjectOriginDiagnostics);
@@ -2943,8 +2940,7 @@ namespace rock
         rockDebugDynamicWeaponLogging = rockDebugLoggingEnabled && rockDebugDynamicWeaponLogging;
         rockDebugDumpWeaponAnimNodes = rockDebugLoggingEnabled && rockDebugDumpWeaponAnimNodes;
         rockDebugWeaponOmodDumpEnabled = rockDebugLoggingEnabled && rockDebugWeaponOmodDumpEnabled;
-        rockDebugWeaponOmodCoverageAudit =
-            (rockDebugLoggingEnabled && rockDebugWeaponOmodCoverageAudit) || rockExperimentalWeaponOmodSelfHealEnabled;
+        rockDebugWeaponOmodCoverageAudit = rockDebugLoggingEnabled && rockDebugWeaponOmodCoverageAudit;
         rockDebugHandTransformParity = rockDebugLoggingEnabled && rockDebugHandTransformParity;
         rockDebugLogSkeletonBones = rockDebugLoggingEnabled && rockDebugLogSkeletonBones;
         rockDebugLogSkeletonBoneTruncation = rockDebugLoggingEnabled && rockDebugLogSkeletonBoneTruncation;

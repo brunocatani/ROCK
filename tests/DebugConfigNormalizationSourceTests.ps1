@@ -47,8 +47,12 @@ Require-Text 'src/RockConfig.cpp' 'readClampedFloat\(ini,\s*DEBUG_OVERLAY_SECTIO
     'Visual clock probes must load from the debug overlay section.'
 Require-Text 'src/RockConfig.cpp' 'if \(!rockDebugOverlayEnabled\) \{\s*rockGrabRenderClockProbeOffsetGameUnits = 0\.0f;\s*rockGrabSceneWriterProbeOffsetZGameUnits = 0\.0f;' `
     'The overlay master must neutralize visual clock probes.'
+Require-Text 'src/physics-interaction/weapon/collision/WeaponCollisionOmodAudit.cpp' 'kMandatoryOmodSelfHealIntervalFrames\s*=\s*450[\s\S]*ROCK_OMOD_DIAGNOSTIC_INFO[\s\S]*if \(selfHealCandidates\.empty\(\)\)' `
+    'OMOD self-heal must be mandatory while detailed OMOD logging remains gated.'
+Require-Text 'src/physics-interaction/weapon/collision/WeaponCollision.cpp' 'if \(!generationDrivenRebuild \|\| omodPrebuildAuditCurrent\)' `
+    'Pre-build OMOD enrichment must not depend on a user config switch.'
 
-$obsolete = 'bDebugDrawGrabProxySemanticAxesOnly|bShoulderStashSkipActivateBooks|bShoulderStashSkipActivateNotes|bWeaponCollisionNativeVisualRemapEnabled|bDebugGrabFingerPoseLogging|bDebugWorkbenchWeaponReattach'
+$obsolete = 'bDebugDrawGrabProxySemanticAxesOnly|bShoulderStashSkipActivateBooks|bShoulderStashSkipActivateNotes|bWeaponCollisionNativeVisualRemapEnabled|bDebugGrabFingerPoseLogging|bDebugWorkbenchWeaponReattach|bWeaponOmodSelfHealEnabled|rockExperimentalWeaponOmodSelfHealEnabled'
 Reject-Text 'data/config/ROCK.ini' $obsolete 'The canonical INI must not contain obsolete settings.'
 Reject-Text 'src/RockConfig.h' $obsolete 'RockConfig must not expose obsolete settings.'
 Reject-Text 'src/RockConfig.cpp' $obsolete 'RockConfig must not load obsolete settings.'
