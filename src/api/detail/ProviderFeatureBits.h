@@ -70,4 +70,3 @@ namespace rock::provider::detail
         static_cast<std::uint32_t>(RockProviderFeatureBit2V1::NativeVatsVansInputSuppression) |
         static_cast<std::uint32_t>(RockProviderFeatureBit2V1::WorldRaycasts);
 }
-
