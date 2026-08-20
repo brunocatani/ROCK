@@ -90,16 +90,18 @@ file(GLOB_RECURSE sources CONFIGURE_DEPENDS "${SOURCE_DIR}/*.cpp")
 file(GLOB_RECURSE inls    CONFIGURE_DEPENDS "${SOURCE_DIR}/*.inl")
 source_group(TREE ${ROOT_DIR} FILES ${headers} ${sources} ${inls})
 
-list(APPEND resource_files
-  "${ROOT_DIR}/data/config/${NAME}.ini"
-)
+set(shipped_config_file "${ROOT_DIR}/data/config/${NAME}.ini")
+set(developer_config_reference "${ROOT_DIR}/data/config/${NAME}.dev.ini")
+list(APPEND resource_files "${shipped_config_file}")
 source_group("Resource Files" FILES ${resource_files})
+source_group("Developer Reference Files" FILES "${developer_config_reference}")
 
 add_library(${PROJECT_NAME} SHARED
   ${headers}
   ${sources}
   ${inls}
   ${resource_files}
+  ${developer_config_reference}
   ${BUILD_DIR}/include/Version.h
   ${BUILD_DIR}/version.rc
   ${BUILD_DIR}/resources.rc

@@ -80,7 +80,7 @@ Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' `
 Require-Text 'src/RockConfig.cpp' `
     'sanitizedHoldSeconds\([\s\S]{0,180}fPipboyPauseHoldSeconds' `
     'Configured hold duration must be sanitized before runtime use.'
-Require-Text 'data/config/ROCK.ini' `
+Require-Text 'data/config/ROCK.dev.ini' `
     '(?m)^fPipboyPauseHoldSeconds\s*=\s*0\.35\s*$' `
     'Developer config must ship the 0.35-second hold default.'
 Require-Text 'tests/InputRemapPolicyTests.cpp' `

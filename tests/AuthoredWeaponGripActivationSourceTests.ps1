@@ -34,7 +34,7 @@ Reject-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.cpp' `
     'snapshot\.radialCapGameUnits,\s*12\.0f|axis\.x\s*\*\s*axisLength\s*\+[\s\S]{0,180}tangentA\.x\s*\*\s*radialA' `
     'The debug wire cone must not draw the old sqrt(2)-oversized boundary or clamp the configured reach back to 12 units.'
 
-foreach ($configPath in @('data/config/ROCK.ini')) {
+foreach ($configPath in @('data/config/ROCK.dev.ini')) {
     Require-Text $configPath `
         'fWeaponAuthoredGripActivationRadius\s*=\s*16\.0' `
         'The authored-grip activation radius must have the same bounded default in both canonical configuration copies.'

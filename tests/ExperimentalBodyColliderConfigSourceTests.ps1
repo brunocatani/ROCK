@@ -62,7 +62,7 @@ Require-Text 'src/physics-interaction/body/BodyBoneColliderSet.cpp' `
     'bodyColliderTuningSignature[\s\S]*rockBodyBoneLegAndFootCollidersEnabled' `
     'A live leg/foot config change must invalidate the body collider set for rebuild.'
 
-foreach ($configPath in @('data/config/ROCK.ini')) {
+foreach ($configPath in @('data/config/ROCK.dev.ini')) {
     $text = Get-Content -Raw -LiteralPath (Join-Path $Root $configPath)
     $experimentalMatch = [regex]::Match($text, '(?ms)^\[Experimental\]\s*(?<body>.*?)(?=^\[[^\]]+\])')
     if (!$experimentalMatch.Success) {

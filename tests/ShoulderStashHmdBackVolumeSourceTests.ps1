@@ -68,7 +68,7 @@ Require-Text 'src/RockConfig.h' `
 Require-Text 'src/RockConfig.cpp' `
     'GetBoolValue\(\s*SECTION,\s*"bEquippedWeaponShoulderStashEnabled"' `
     'RockConfig must load equipped-weapon shoulder stash from [PhysicsInteraction].'
-Require-Text 'data/config/ROCK.ini' `
+Require-Text 'data/config/ROCK.dev.ini' `
     '(?m)^bEquippedWeaponShoulderStashEnabled\s*=\s*true\s*$' `
     'The reference INI must expose ROCK''s standalone equipped-weapon sheath switch.'
 Require-Text 'src/RockConfig.h' `

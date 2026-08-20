@@ -56,7 +56,7 @@ foreach ($legacyPath in @(
         'src/RockConfig.h',
         'src/physics-interaction/core/PhysicsInteraction.h',
         'src/physics-interaction/input/InputRemapPolicy.h',
-        'data/config/ROCK.ini')) {
+        'data/config/ROCK.dev.ini')) {
     Reject-Text $legacyPath `
         'GrabbedWeaponAutoEquip|HeldWeaponAutoEquip|legacyAutoEquip|autoEquipEnabled|autoEquipSettled|autoEquipState|settled-auto-held-weapon-equip' `
         'The superseded position-blind loose-weapon auto-equip path must remain deleted.'
@@ -75,7 +75,7 @@ Require-Text 'src/RockConfig.cpp' `
     'AMBIDEXTROUS_FIRING_SECTION\s*=\s*"AmbidextrousFiring"[\s\S]*GetBoolValue\(\s*AMBIDEXTROUS_FIRING_SECTION,\s*"bAmbidextrousFiringGripEnabled"[\s\S]*"fFiringGripPromotionRadius"[\s\S]*"fLeftFiringAimOffsetZGameUnits"' `
     'ROCK must load its standalone handoff switch and tuning only from [AmbidextrousFiring].'
 
-foreach ($configPath in @('data/config/ROCK.ini')) {
+foreach ($configPath in @('data/config/ROCK.dev.ini')) {
     $configText = Read-Source $configPath
     $realisticSection = Read-IniSection $configPath 'RealisticWeapons'
     $realisticAssignments = [regex]::Matches($realisticSection, '(?m)^[A-Za-z]\w*\s*=')

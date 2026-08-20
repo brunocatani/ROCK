@@ -37,7 +37,7 @@ Require-Text 'src/RockConfig.cpp' `
     'Generic grabbed-hand return must have an independently loaded and clamped setting family.'
 
 
-foreach ($configPath in @('data/config/ROCK.ini')) {
+foreach ($configPath in @('data/config/ROCK.dev.ini')) {
     Require-Text $configPath `
         'bWeaponVisualReturnEnabled\s*=\s*true[\s\S]*fWeaponVisualReturnMaxAngleDegrees[\s\S]*bGrabHandReturnEnabled\s*=\s*true[\s\S]*fGrabHandReturnMaxAngleDegrees' `
         "$configPath must publish both visual-return setting families."

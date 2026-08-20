@@ -176,7 +176,7 @@ Require-Text 'src/physics-interaction/performance/PerformanceProfiler.h' `
     'Dynamic hand post-solve sampling must have a dedicated profiler scope.'
 
 # Every shipped config enables the canonical runtime and carries its haptics.
-foreach ($configPath in @('data/config/ROCK.ini')) {
+foreach ($configPath in @('data/config/ROCK.dev.ini')) {
     Require-Text $configPath `
         'bHandCollisionDynamicDrive\s*=\s*true' `
         "$configPath must enable canonical dynamic world collision by default."
@@ -299,12 +299,12 @@ Require-OrderedText 'src/physics-interaction/collision/CollisionLayerPolicy.h' @
 # remain excluded.
 # The opt-in API remains authoritative, while the shipped INI enables a
 # built-in world-surface fallback for direct play and testing.
-foreach ($configPath in @('data/config/ROCK.ini')) {
+foreach ($configPath in @('data/config/ROCK.dev.ini')) {
     Require-Text $configPath `
         'bGlobalSurfaceGrabEnabled\s*=\s*true' `
         "$configPath must globally enable fixed-surface grabs."
 }
-foreach ($configPath in @('data/config/ROCK.ini')) {
+foreach ($configPath in @('data/config/ROCK.dev.ini')) {
     Require-Text $configPath `
         'bHandCollisionSurfaceFingerResponseEnabled\s*=\s*true[\s\S]*fHandCollisionSurfaceFingerProbeDeltaOpenUnits[\s\S]*fHandCollisionSurfaceFingerResponseGain[\s\S]*fHandCollisionSurfaceFingerMaximumDeflectionOpenUnits[\s\S]*fHandCollisionSurfaceFingerMinimumHelpfulTravelGameUnits[\s\S]*fHandCollisionSurfaceFingerSmoothingSpeed[\s\S]*fHandCollisionSurfaceFingerReleaseDelaySeconds' `
         "$configPath must ship the globally enabled, bounded experimental surface finger response."
@@ -338,7 +338,7 @@ Require-Text 'src/physics-interaction/grab/GlobalSurfaceGrabPolicy.h' `
 # A successful fixed-surface latch owns the feedback for that hand. Its
 # one-shot confirmation is intentionally stronger and longer than the dynamic
 # touch pulse, and both values remain user-tunable.
-foreach ($configPath in @('data/config/ROCK.ini')) {
+foreach ($configPath in @('data/config/ROCK.dev.ini')) {
     Require-Text $configPath `
         'bSurfaceGrabHapticsEnabled\s*=\s*true[\s\S]*fSurfaceGrabHapticDurationSeconds\s*=\s*0\.075[\s\S]*fSurfaceGrabHapticIntensity\s*=\s*0\.85' `
         "$configPath must ship the distinct surface-latch confirmation pulse."

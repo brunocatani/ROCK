@@ -32,7 +32,7 @@ Require-Pattern 'src/RockConfig.h' `
     'The compiled NPC body-collision default must remain false (fail closed without the INI key).'
 
 # The shipped interim-melee config enables the experiment for release users.
-foreach ($ini in @('data/config/ROCK.ini')) {
+foreach ($ini in @('data/config/ROCK.dev.ini')) {
     Require-Pattern $ini `
         '(?m)^bDynamicCollidersNpcBodyCollisionEnabled\s*=\s*true\s*$' `
         "$ini must ship the interim NPC body-collision melee experiment enabled."

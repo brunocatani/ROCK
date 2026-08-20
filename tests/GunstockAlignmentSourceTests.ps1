@@ -45,11 +45,11 @@ Require-Text 'src/RockConfig.cpp' `
     'The historical production key must load both gunstock stages without changing the external INI contract.'
 
 Require-Text 'src/RockConfig.h' `
-    'rockGunstockAlignmentPitchDegrees\s*=\s*0\.0f[\s\S]*rockGunstockAlignmentYawDegrees\s*=\s*0\.0f[\s\S]*rockGunstockAlignmentRollDegrees\s*=\s*0\.0f' `
-    'Gunstock fine tuning must remain zero-default so existing alignment is unchanged.'
+    'rockGunstockAlignmentPitchDegrees\s*=\s*-10\.0f[\s\S]*rockGunstockAlignmentYawDegrees\s*=\s*0\.0f[\s\S]*rockGunstockAlignmentRollDegrees\s*=\s*0\.0f' `
+    'Gunstock fine tuning must preserve the production calibration.'
 
 Require-Text 'src/RockConfig.cpp' `
-    'rockGunstockAlignmentPitchDegrees\s*=\s*0\.0f[\s\S]*rockGunstockAlignmentYawDegrees\s*=\s*0\.0f[\s\S]*rockGunstockAlignmentRollDegrees\s*=\s*0\.0f[\s\S]*"fAlignmentPitchDegrees"[\s\S]*-180\.0f,[\s\S]*180\.0f[\s\S]*"fAlignmentYawDegrees"[\s\S]*-180\.0f,[\s\S]*180\.0f[\s\S]*"fAlignmentRollDegrees"[\s\S]*-180\.0f,[\s\S]*180\.0f' `
+    'rockGunstockAlignmentPitchDegrees\s*=\s*-10\.0f[\s\S]*rockGunstockAlignmentYawDegrees\s*=\s*0\.0f[\s\S]*rockGunstockAlignmentRollDegrees\s*=\s*0\.0f[\s\S]*"fAlignmentPitchDegrees"[\s\S]*-180\.0f,[\s\S]*180\.0f[\s\S]*"fAlignmentYawDegrees"[\s\S]*-180\.0f,[\s\S]*180\.0f[\s\S]*"fAlignmentRollDegrees"[\s\S]*-180\.0f,[\s\S]*180\.0f' `
     'All three gunstock fine-tune axes must load as finite clamped degree values.'
 
 Require-Text 'src/RockConfig.h' `
@@ -61,14 +61,14 @@ Require-Text 'src/RockConfig.cpp' `
     'The normalized diagnostic key must load the combined alignment visualizer.'
 
 foreach ($iniPath in @(
-    'data/config/ROCK.ini'
+    'data/config/ROCK.dev.ini'
 )) {
     Require-Text $iniPath `
         '\[Gunstock\][\s\S]*two independent stages[\s\S]*neutral fire-node[\s\S]*firing-wrist \+X[\s\S]*bAlignBarrelToControllerForward\s*=\s*false' `
         'Both shipped INIs must describe and expose the disabled-by-default support baseline and final wrist alignment.'
     Require-Text $iniPath `
-        '\[Gunstock\][\s\S]*same damped-driver pivot[\s\S]*yaw about bone \+Z[\s\S]*pitch about bone \+Y[\s\S]*roll about aligned \+X[\s\S]*fAlignmentPitchDegrees\s*=\s*0\.0[\s\S]*fAlignmentYawDegrees\s*=\s*0\.0[\s\S]*fAlignmentRollDegrees\s*=\s*0\.0' `
-        'Both shipped INIs must document and expose zero-default wrist-space fine tuning.'
+        '\[Gunstock\][\s\S]*same damped-driver pivot[\s\S]*yaw about bone \+Z[\s\S]*pitch about bone \+Y[\s\S]*roll about aligned \+X[\s\S]*fAlignmentPitchDegrees\s*=\s*-10\.0[\s\S]*fAlignmentYawDegrees\s*=\s*0\.0[\s\S]*fAlignmentRollDegrees\s*=\s*0\.0' `
+        'The developer INI must document and preserve production wrist-space fine tuning.'
     Require-Text $iniPath `
         '\[DebugOverlay\][\s\S]*firing/support bone triads[\s\S]*support attach-baseline[\s\S]*bDrawGunstockAlignment\s*=\s*false' `
         'The canonical INI must describe and expose the combined disabled-by-default visualizer.'

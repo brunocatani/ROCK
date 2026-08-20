@@ -90,8 +90,8 @@ namespace
     constexpr float kDefaultNearCastRadiusGameUnits = 3.5f;
     constexpr float kDefaultNearCastDistanceGameUnits = 7.0f;
     const RE::NiPoint3 kDefaultPalmNormalHandspace{ 0.0f, 1.0f, 0.0f };
-    constexpr int kDefaultHighlightIntensityMode = 3;
-    constexpr const char* kDefaultHighlightColor = "orange";
+    constexpr int kDefaultHighlightIntensityMode = 1;
+    constexpr const char* kDefaultHighlightColor = "blue";
 
     class TrackedIni final
     {
@@ -336,13 +336,13 @@ namespace rock
         rockLogLevel = logging_policy::DefaultLogLevel;
         rockLogPattern = logging_policy::DefaultLogPattern;
         rockLogSampleMilliseconds = logging_policy::DefaultLogSampleMilliseconds;
-        rockDebugEnabled = true;
+        rockDebugEnabled = false;
         rockDebugOverlayEnabled = true;
         rockDebugLoggingEnabled = true;
         rockDebugControllerEnabled = false;
         rockDebugMonitorEnabled = false;
-        rockDebugProviderOverlayEnabled = true;
-        rockDebugProviderColliderFocusEnabled = true;
+        rockDebugProviderOverlayEnabled = false;
+        rockDebugProviderColliderFocusEnabled = false;
         rockDebugColliderClockLogging = false;
         rockDebugDynamicWeaponLogging = false;
         rockPerformanceProfilerEnabled = false;
@@ -357,7 +357,7 @@ namespace rock
 
         rockLeftHandedMode = false;
         rockGunstockModeEnabled = false;
-        rockGunstockAlignmentPitchDegrees = 0.0f;
+        rockGunstockAlignmentPitchDegrees = -10.0f;
         rockGunstockAlignmentYawDegrees = 0.0f;
         rockGunstockAlignmentRollDegrees = 0.0f;
         rockAmbidextrousFiringGripEnabled = true;
@@ -384,12 +384,12 @@ namespace rock
         rockWeaponCollisionPointDedupGrid = 0.002f;
         rockWeaponCollisionSupportFitTargetPoints = kDefaultWeaponCollisionSupportFitTargetPoints;
         rockWeaponCollisionSupportFitMaxErrorGameUnits = kDefaultWeaponCollisionSupportFitMaxErrorGameUnits;
-        rockWeaponSizeClassPistolMaxWeight = 6.0f;
+        rockWeaponSizeClassPistolMaxWeight = 7.0f;
         rockWeaponSizeClassRifleMaxWeight = 20.0f;
         rockWeaponInteractionTouchRadius = 2.0f;
         rockWeaponInteractionProbeRadius = 12.0f;
         rockWeaponAuthoredGripActivationRadius = 16.0f;
-        rockFiringGripProximitySupportRadius = 6.0f;
+        rockFiringGripProximitySupportRadius = 8.0f;
         rockRealisticGrenadeFuseSeconds = 5.0f;
         rockWeaponSupportGripHandLerpEnabled = true;
         rockWeaponSupportGripHandLerpTimeMin = 0.12f;
@@ -409,12 +409,12 @@ namespace rock
         rockNativeScopeForceFiringGripFallback = false;
         rockNativeScopeFiringGripFallbackOffsetXGameUnits = 0.0f;
         rockNativeScopeFiringGripFallbackOffsetYGameUnits = 0.0f;
-        rockNativeScopeFiringGripFallbackOffsetZGameUnits = 0.0f;
+        rockNativeScopeFiringGripFallbackOffsetZGameUnits = 10.0f;
         rockNativeScopeFiringGripFallbackPitchDegrees = 0.0f;
         rockNativeScopeFiringGripFallbackYawDegrees = 0.0f;
         rockNativeScopeFiringGripFallbackRollDegrees = 0.0f;
         rockNativeScopeOverlayOffsetXGameUnits = 0.0f;
-        rockNativeScopeOverlayOffsetYGameUnits = 0.0f;
+        rockNativeScopeOverlayOffsetYGameUnits = 10.0f;
         rockNativeScopeOverlayOffsetZGameUnits = 0.0f;
         rockNativeScopeOverlayPitchDegrees = 0.0f;
         rockNativeScopeOverlayYawDegrees = 0.0f;
@@ -463,7 +463,7 @@ namespace rock
         rockSelectionBeamCurveLiftGameUnits = selection_beam_policy::kDefaultCurveLiftGameUnits;
         rockSelectionBeamAlpha = selection_beam_policy::kDefaultAlpha;
 
-        rockDebugShowColliders = true;
+        rockDebugShowColliders = false;
         rockDebugShowTargetColliders = false;
         rockDebugShowHandAxes = false;
         rockDebugShowGrabPivots = false;
@@ -491,7 +491,7 @@ namespace rock
         rockDebugDrawNativeScopeActivation = false;
         rockDebugDrawAuthoredGripActivationZones = false;
         rockDebugDrawGunstockAlignment = false;
-        rockDebugDrawDynamicWeaponColliders = true;
+        rockDebugDrawDynamicWeaponColliders = false;
         rockDebugDumpWeaponAnimNodes = false;
         rockDebugMaxWeaponBodiesDrawn = 100;
         rockDebugWeaponAnimNodeDumpIntervalFrames = 120;
@@ -522,8 +522,8 @@ namespace rock
         rockDebugGrabTransformTelemetryTextMode = 0;
         rockDebugShowGrabNotifications = false;
         rockDebugShowWeaponNotifications = false;
-        rockDebugWeaponOmodDumpEnabled = true;
-        rockDebugWeaponOmodCoverageAudit = true;
+        rockDebugWeaponOmodDumpEnabled = false;
+        rockDebugWeaponOmodCoverageAudit = false;
         rockDebugWeaponOmodCoverageAuditIntervalFrames = 450;
         rockDebugHandTransformParity = false;
         rockDebugWorldObjectOriginDiagnostics = false;
@@ -531,7 +531,7 @@ namespace rock
         rockDebugWorldObjectOriginMismatchWarnGameUnits = 5.0f;
         rockDebugCustomCalibrationOffset = false;
         rockDebugShowRootFlattenedFingerSkeletonMarkers = false;
-        rockDebugShowSkeletonBoneVisualizer = true;
+        rockDebugShowSkeletonBoneVisualizer = false;
         rockDebugDrawSkeletonBoneAxes = false;
         rockDebugLogSkeletonBones = false;
         rockDebugSkeletonBoneMode = 1;
@@ -632,8 +632,8 @@ namespace rock
         rockGrabPhysicsRateMinForceScale = kDefaultGrabPhysicsRateMinForceScale;
         rockGrabPhysicsRateMaxForceScale = kDefaultGrabPhysicsRateMaxForceScale;
         rockGrabForceFadeInTime = 0.1f;
-        rockRightGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.0f, -2.0f, 0.0f);
-        rockLeftGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.0f, -2.0f, 0.0f);
+        rockRightGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.5f, -1.0f, 0.0f);
+        rockLeftGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.5f, -1.0f, 0.0f);
         rockRightCustomOGAOffsetGameUnits = RE::NiPoint3(0.0f, -2.0f, 0.0f);
         rockLeftCustomOGAOffsetGameUnits = RE::NiPoint3(0.0f, -2.0f, 0.0f);
         rockGrabLooseWeaponSharedConstraintLinearTauMultiplier = kDefaultGrabLooseWeaponSharedConstraintLinearTauMultiplier;
@@ -809,7 +809,7 @@ namespace rock
         rockPullPresentationMinElongationRatio = 2.0f;
         rockPullPresentationAngularGainPerSecond = 6.0f;
         rockPullPresentationMaxAngularSpeedRadiansPerSecond = 8.0f;
-        rockPullPresentationGripAxisTiltDegrees = 10.0f;
+        rockPullPresentationGripAxisTiltDegrees = 0.0f;
 
         rockRightGrabLegacyPalmPivotAHandspace = RE::NiPoint3(6.0f, -2.0f, 0.2f);
         rockLeftGrabLegacyPalmPivotAHandspace = RE::NiPoint3(6.0f, -2.0f, -0.2f);
@@ -1149,7 +1149,7 @@ namespace rock
             SECTION,
             "fWeaponSizeClassPistolMaxWeight",
             rockWeaponSizeClassPistolMaxWeight,
-            6.0f,
+            7.0f,
             0.0f,
             200.0f);
         rockWeaponSizeClassRifleMaxWeight = readClampedFloat(ini,
@@ -1164,7 +1164,7 @@ namespace rock
                 "Invalid weapon size class weight thresholds: fWeaponSizeClassPistolMaxWeight={:.2f} >= fWeaponSizeClassRifleMaxWeight={:.2f} - using defaults",
                 rockWeaponSizeClassPistolMaxWeight,
                 rockWeaponSizeClassRifleMaxWeight);
-            rockWeaponSizeClassPistolMaxWeight = 6.0f;
+            rockWeaponSizeClassPistolMaxWeight = 7.0f;
             rockWeaponSizeClassRifleMaxWeight = 20.0f;
         }
         rockWeaponInteractionTouchRadius = readClampedFloat(ini,
@@ -1186,7 +1186,7 @@ namespace rock
             SECTION,
             "fFiringGripProximitySupportRadius",
             rockFiringGripProximitySupportRadius,
-            6.0f,
+            8.0f,
             0.25f,
             30.0f);
         rockRealisticGrenadeFuseSeconds = readClampedFloat(ini,
@@ -1311,7 +1311,7 @@ namespace rock
             NATIVE_SCOPES_SECTION,
             "fNativeScopeFiringGripFallbackOffsetZGameUnits",
             rockNativeScopeFiringGripFallbackOffsetZGameUnits,
-            0.0f,
+            10.0f,
             -100.0f,
             100.0f);
         rockNativeScopeFiringGripFallbackPitchDegrees = readClampedFloat(ini,
@@ -1346,7 +1346,7 @@ namespace rock
             NATIVE_SCOPES_SECTION,
             "fNativeScopeOverlayOffsetYGameUnits",
             rockNativeScopeOverlayOffsetYGameUnits,
-            0.0f,
+            10.0f,
             -100.0f,
             100.0f);
         rockNativeScopeOverlayOffsetZGameUnits = readClampedFloat(ini,
@@ -2737,8 +2737,8 @@ namespace rock
             ini.GetDoubleValue(SECTION, "fPullPresentationGripAxisTiltDegrees", rockPullPresentationGripAxisTiltDegrees));
         if (!std::isfinite(rockPullPresentationGripAxisTiltDegrees) || rockPullPresentationGripAxisTiltDegrees < -45.0f ||
             rockPullPresentationGripAxisTiltDegrees > 45.0f) {
-            ROCK_LOG_WARN(Config, "Invalid fPullPresentationGripAxisTiltDegrees={} -- using 10.0", rockPullPresentationGripAxisTiltDegrees);
-            rockPullPresentationGripAxisTiltDegrees = 10.0f;
+            ROCK_LOG_WARN(Config, "Invalid fPullPresentationGripAxisTiltDegrees={} -- using 0.0", rockPullPresentationGripAxisTiltDegrees);
+            rockPullPresentationGripAxisTiltDegrees = 0.0f;
         }
 
         readOptionalVec3("fRightGrabLegacyPalmPivotAHandspaceX", "fRightGrabLegacyPalmPivotAHandspaceY", "fRightGrabLegacyPalmPivotAHandspaceZ", rockRightGrabLegacyPalmPivotAHandspace);

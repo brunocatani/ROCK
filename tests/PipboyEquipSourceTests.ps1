@@ -25,7 +25,7 @@ Require-Text 'src/RockConfig.cpp' `
     'WEAPON_HANDEDNESS_SECTION\s*=\s*"WeaponHandedness"[\s\S]*GetBoolValue\(\s*WEAPON_HANDEDNESS_SECTION,\s*"bLeftHandedMode"' `
     'The fixed ROCK-exclusive hand preference must load only from [WeaponHandedness].'
 
-foreach ($configPath in @('data/config/ROCK.ini')) {
+foreach ($configPath in @('data/config/ROCK.dev.ini')) {
     $configText = Get-Content -Raw -LiteralPath (Join-Path $Root $configPath)
     $handednessMatch = [regex]::Match($configText, '(?ms)^\[WeaponHandedness\]\s*(?<body>.*?)(?=^\[[^\]]+\])')
     if (!$handednessMatch.Success -or

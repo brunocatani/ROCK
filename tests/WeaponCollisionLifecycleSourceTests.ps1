@@ -129,7 +129,7 @@ Reject-Text 'src/physics-interaction/hand/Hand.h' 'HeldWeaponVisualSnapshot|capt
 Require-Text 'src/physics-interaction/weapon/WeaponGeometry.h' 'findDetachedSourceComponentIndices[\s\S]*FailOpenNoAssembledAnchor[\s\S]*nearestAnchorGapSquared[\s\S]*minimumDetachedGapSquared' 'Detached collider filtering must use AABB-component separation and fail open without assembled weapon evidence.'
 Reject-Text 'src/RockConfig.h' 'rockWeaponCollisionMaxSourceDistance' 'The superseded origin-distance collider settings must stay removed.'
 Reject-Text 'src/RockConfig.cpp' 'WeaponCollisionMaxSourceDistance' 'The superseded origin-distance collider parser must stay removed.'
-Reject-Text 'data/config/ROCK.ini' 'WeaponCollisionMaxSourceDistance' 'The superseded origin-distance collider template settings must stay removed.'
+Reject-Text 'data/config/ROCK.dev.ini' 'WeaponCollisionMaxSourceDistance' 'The superseded origin-distance collider template settings must stay removed.'
 
 # --- Publication before collision -------------------------------------------
 # A generated weapon body that collides before its metadata is published makes

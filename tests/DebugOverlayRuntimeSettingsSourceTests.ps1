@@ -8,7 +8,7 @@ $ErrorActionPreference = 'Stop'
 $failures = [System.Collections.Generic.List[string]]::new()
 $configHeader = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/RockConfig.h')
 $configSource = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/RockConfig.cpp')
-$repoIni = Get-Content -Raw -LiteralPath (Join-Path $Root 'data/config/ROCK.ini')
+$repoIni = Get-Content -Raw -LiteralPath (Join-Path $Root 'data/config/ROCK.dev.ini')
 
 function Require-In {
     param([string]$Text, [string]$Pattern, [string]$Message)

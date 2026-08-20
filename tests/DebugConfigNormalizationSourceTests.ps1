@@ -31,8 +31,8 @@ Require-Text 'CMakeLists.txt' 'data/config/ROCK\.ini"\s+"\$\{copy_path\}/ROCK_Co
     'Local deployment must copy the canonical ROCK.ini.'
 Require-Text 'cmake/package.cmake' 'data/config/ROCK\.ini"\s+DESTINATION\s+"\$\{PACKAGE_STAGE_DIR\}/ROCK_Config' `
     'Release packaging must copy the canonical ROCK.ini.'
-Require-Text 'data/config/ROCK.ini' '(?ms)^\[Debug\].*?^bEnabled\s*=\s*true\s*$.*?^bControllerEnabled\s*=\s*false\s*$.*?^bMonitorEnabled\s*=\s*false\s*$' `
-    'The canonical debug hierarchy must preserve the production gates.'
+Require-Text 'data/config/ROCK.dev.ini' '(?ms)^\[Debug\].*?^bEnabled\s*=\s*false\s*$.*?^bControllerEnabled\s*=\s*false\s*$.*?^bMonitorEnabled\s*=\s*false\s*$' `
+    'The developer catalog must preserve fail-closed debug defaults.'
 Require-Text 'src/RockConfig.cpp' 'resolveEffectiveDebugSettings[\s\S]*colliderOverlayEnabled[\s\S]*rockDebugShowTargetColliders[\s\S]*rockDebugDrawDynamicHandColliders[\s\S]*rockDebugDrawDynamicWeaponColliders[\s\S]*rockDebugProviderColliderFocusEnabled' `
     'Every collider child must resolve through the collider master.'
 Require-Text 'src/physics-interaction/core/PhysicsInteractionDiagnostics.cpp' 'colliderClockDebugActive\s*=\s*g_rockConfig\.rockDebugColliderClockLogging' `
@@ -55,11 +55,11 @@ Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' 'kMandatoryNa
     'Core ROCK input ownership must not depend on user suppression switches.'
 Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' 'pipboy_pause_gesture_policy::Input\{[\s\S]{0,300}\.enabled\s*=\s*g_rockConfig\.rockEnabled' `
     'The Y-button Pip-Boy/Pause route must follow only the ROCK core gate.'
-Require-Text 'data/config/ROCK.ini' '(?ms)^\[Input\].*?^bSuppressTakeEquipGameInputWhileHolding\s*=\s*true\s*$' `
+Require-Text 'data/config/ROCK.dev.ini' '(?ms)^\[Input\].*?^bSuppressTakeEquipGameInputWhileHolding\s*=\s*true\s*$' `
     'Take/equip suppression while holding must remain user-configurable.'
 
 $obsolete = 'bDebugDrawGrabProxySemanticAxesOnly|bShoulderStashSkipActivateBooks|bShoulderStashSkipActivateNotes|bWeaponCollisionNativeVisualRemapEnabled|bDebugGrabFingerPoseLogging|bDebugWorkbenchWeaponReattach|bWeaponOmodSelfHealEnabled|rockExperimentalWeaponOmodSelfHealEnabled|bInputRemapEnabled|rockInputRemapEnabled|bSuppressRightGrabGameInput|rockSuppressRightGrabGameInput|bSuppressNativeReadyWeaponAutoReady|rockSuppressNativeReadyWeaponAutoReady|bSuppressNativeMeleeThrowGameInput|rockSuppressNativeMeleeThrowGameInput'
-Reject-Text 'data/config/ROCK.ini' $obsolete 'The canonical INI must not contain obsolete settings.'
+Reject-Text 'data/config/ROCK.dev.ini' $obsolete 'The canonical INI must not contain obsolete settings.'
 Reject-Text 'src/RockConfig.h' $obsolete 'RockConfig must not expose obsolete settings.'
 Reject-Text 'src/RockConfig.cpp' $obsolete 'RockConfig must not load obsolete settings.'
 

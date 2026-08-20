@@ -54,7 +54,7 @@ $layers = 'src/physics-interaction/collision/CollisionLayerPolicy.h'
 Require-Pattern 'src/RockConfig.h' `
     'rockWeaponCollisionDynamicBoxEnabled\s*=\s*true' `
     'Dynamic weapon collision must default enabled in compiled configuration.'
-foreach ($ini in @('data/config/ROCK.ini')) {
+foreach ($ini in @('data/config/ROCK.dev.ini')) {
     Require-Pattern $ini `
         '(?m)^bWeaponCollisionDynamicBoxEnabled\s*=\s*true\s*$' `
         "$ini must ship dynamic weapon collision enabled."
@@ -92,7 +92,7 @@ Require-Pattern $layers `
 # The proxy participates in the same callback-clock drive and deterministic
 # live/stale-world cleanup contract as the existing generated bodies.
 
-foreach ($path in @('src/RockConfig.h', 'src/RockConfig.cpp', 'data/config/ROCK.ini')) {
+foreach ($path in @('src/RockConfig.h', 'src/RockConfig.cpp', 'data/config/ROCK.dev.ini')) {
     Reject-Pattern $path `
         'WeaponCollisionDynamicContactPressMaxVelocityHavok' `
         "$path must not retain the unused direct-velocity weapon contact cap after the constraint architecture replacement."

@@ -33,7 +33,7 @@ function Reject-Pattern {
 $layers = 'src/physics-interaction/collision/CollisionLayerPolicy.h'
 $api = 'src/api/ROCKProviderApi.h'
 
-foreach ($ini in @('data/config/ROCK.ini')) {
+foreach ($ini in @('data/config/ROCK.dev.ini')) {
     Require-Pattern $ini `
         '(?m)^bHandDynamicInteractionsEnabled\s*=\s*true\s*$' `
         "$ini must ship the experimental dynamic interaction graph enabled."
