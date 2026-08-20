@@ -23,5 +23,4 @@ namespace rock::provider::detail
     void clearNativeAnimationAuthorityForOwnerLocked(
         std::uint64_t ownerToken,
         bool publishAggregate = true);
-    void clearOwnerStateAfterCallbackFault(std::uint64_t ownerToken);
 }

@@ -5,6 +5,7 @@
 #include "api/detail/ProviderApiState.h"
 #include "api/detail/ProviderAuthorityLeases.h"
 #include "api/detail/ProviderFrameDiff.h"
+#include "api/detail/ProviderOwnerLifecycle.h"
 #include "api/detail/ProviderWeaponParts.h"
 
 #include "api/ProviderColliderVisualizationRuntime.h"

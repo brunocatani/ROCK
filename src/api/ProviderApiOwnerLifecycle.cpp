@@ -1,46 +1,20 @@
 #define ROCK_API_EXPORTS
+// Build the DLL side of the public provider ABI.
 #include "ROCKProviderApiInternal.h"
 #include "api/ProviderColliderVisualizationRuntime.h"
 #include "api/ProviderDebugOverlayRuntime.h"
-#include "api/ProviderLeasePolicy.h"
 #include "api/TouchGrabRegistry.h"
 #include "api/detail/ProviderApiEntryPoints.h"
-#include "api/detail/ProviderApiState.h"
 #include "api/detail/ProviderAnimationAuthority.h"
+#include "api/detail/ProviderApiState.h"
 #include "api/detail/ProviderAuthorityLeases.h"
-#include "api/detail/ProviderApiCore.h"
-#include "api/detail/ProviderCommandMarshal.h"
-#include "api/detail/ProviderFrameDiff.h"
 #include "api/detail/ProviderInteractionCommands.h"
-#include "api/detail/ProviderTransformMath.h"
-#include "api/detail/ProviderWeaponPartValidation.h"
+#include "api/detail/ProviderOwnerLifecycle.h"
 #include "api/detail/ProviderWeaponParts.h"
 
 #include <array>
 #include <atomic>
-#include <algorithm>
-#include <cstdio>
-#include <cmath>
-#include <cstring>
 #include <mutex>
-#include <string_view>
-
-#include "physics-interaction/object/ExternalBodyRegistry.h"
-#include "physics-interaction/api/InteractionCommandQueue.h"
-#include "physics-interaction/api/InteractionCommandPolicy.h"
-#include "physics-interaction/core/PhysicsInteraction.h"
-#include "physics-interaction/core/RockRuntimeState.h"
-#include "physics-interaction/input/InputRemapPolicy.h"
-#include "physics-interaction/input/InputRemapRuntime.h"
-#include "physics-interaction/weapon/parts/WeaponPartRuntime.h"
-#include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
-#include "monitor/GrabClockMonitor.h"
-#include "rock_support/Fo4VrRuntime.h"
-#include "RockConfig.h"
-
-#ifdef DrawText
-#undef DrawText
-#endif
 
 namespace rock::provider::detail
 {

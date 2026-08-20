@@ -1,6 +1,7 @@
 #define ROCK_API_EXPORTS
 // Build the DLL side of the public provider ABI.
 #include "api/detail/ProviderAnimationAuthority.h"
+#include "api/detail/ProviderOwnerLifecycle.h"
 
 #include "api/detail/ProviderApiCore.h"
 #include "api/detail/ProviderApiEntryPoints.h"
