@@ -47,6 +47,20 @@ namespace rock::shoulder_stash
         bool hasVelocity = false;
     };
 
+    struct HmdBackFrame
+    {
+        RE::NiPoint3 originWorld{};
+        RE::NiPoint3 rightWorld{};
+        RE::NiPoint3 forwardWorld{};
+    };
+
+    enum class ProbeMotionFrame : std::uint8_t
+    {
+        None = 0,
+        World,
+        HmdBackLocal,
+    };
+
     struct RuntimeState
     {
         bool candidate = false;
@@ -64,8 +78,8 @@ namespace rock::shoulder_stash
         bool hasSustainedPointGame = false;
         float dwellSeconds = 0.0f;
         float nextCandidatePulseTimeSeconds = 0.0f;
-        RE::NiPoint3 lastProbePointGame{};
-        bool hasLastProbePoint = false;
+        RE::NiPoint3 lastKinematicProbePointGame{};
+        ProbeMotionFrame lastKinematicProbeFrame = ProbeMotionFrame::None;
     };
 
     struct Decision
@@ -257,6 +271,79 @@ namespace rock::shoulder_stash
             return fallback;
         }
         return mul(value, 1.0f / len);
+    }
+
+    /*
+     * A body/back volume follows HMD yaw and translation, not head pitch.
+     * Projecting forward onto the horizontal plane gives the detector one
+     * orthonormal frame: X is right, Y is forward, and Z is world up. A
+     * near-vertical HMD direction has no reliable yaw and fails closed.
+     */
+    [[nodiscard]] inline bool tryBuildHmdBackFrame(
+        const RE::NiPoint3& hmdPositionWorld,
+        const RE::NiPoint3& hmdForwardWorld,
+        HmdBackFrame& outFrame) noexcept
+    {
+        outFrame = {};
+        if (!finitePoint(hmdPositionWorld) || !finitePoint(hmdForwardWorld)) {
+            return false;
+        }
+
+        const RE::NiPoint3 planarForward{ hmdForwardWorld.x, hmdForwardWorld.y, 0.0f };
+        const float planarLength = length(planarForward);
+        if (planarLength <= 0.00001f) {
+            return false;
+        }
+
+        const RE::NiPoint3 forward = mul(planarForward, 1.0f / planarLength);
+        const RE::NiPoint3 worldUp{ 0.0f, 0.0f, 1.0f };
+        const RE::NiPoint3 right = normalizeOr(cross(forward, worldUp), RE::NiPoint3{});
+        if (lengthSquared(right) <= 0.000001f || !finitePoint(right)) {
+            return false;
+        }
+
+        outFrame.originWorld = hmdPositionWorld;
+        outFrame.rightWorld = right;
+        outFrame.forwardWorld = forward;
+        return true;
+    }
+
+    [[nodiscard]] inline RE::NiPoint3 worldPointToHmdBackLocal(
+        const HmdBackFrame& frame,
+        const RE::NiPoint3& pointWorld) noexcept
+    {
+        const RE::NiPoint3 relative = sub(pointWorld, frame.originWorld);
+        return RE::NiPoint3{
+            dot(relative, frame.rightWorld),
+            dot(relative, frame.forwardWorld),
+            relative.z,
+        };
+    }
+
+    [[nodiscard]] inline RE::NiPoint3 hmdBackLocalPointToWorld(
+        const HmdBackFrame& frame,
+        const RE::NiPoint3& pointLocal) noexcept
+    {
+        const RE::NiPoint3 worldUp{ 0.0f, 0.0f, 1.0f };
+        return add(
+            add(
+                add(frame.originWorld, mul(frame.rightWorld, pointLocal.x)),
+                mul(frame.forwardWorld, pointLocal.y)),
+            mul(worldUp, pointLocal.z));
+    }
+
+    [[nodiscard]] inline float pointMotionSpeed(
+        const RE::NiPoint3& currentPointGame,
+        const RE::NiPoint3& previousPointGame,
+        bool hasPreviousPoint,
+        float deltaSeconds) noexcept
+    {
+        if (!hasPreviousPoint || !finitePoint(currentPointGame) ||
+            !finitePoint(previousPointGame) || !std::isfinite(deltaSeconds) ||
+            deltaSeconds <= 0.000001f) {
+            return 0.0f;
+        }
+        return length(sub(currentPointGame, previousPointGame)) / deltaSeconds;
     }
 
     [[nodiscard]] inline float pointSegmentDistance(

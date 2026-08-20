@@ -12,9 +12,6 @@ namespace rock::shoulder_stash
 {
     namespace
     {
-        const RE::NiPoint3 kWorldUp{ 0.0f, 0.0f, 1.0f };
-        const RE::NiPoint3 kWorldForward{ 0.0f, 1.0f, 0.0f };
-
         struct Candidate
         {
             bool valid = false;
@@ -340,39 +337,32 @@ namespace rock::shoulder_stash
 
         [[nodiscard]] Candidate findHmdBackVolumeCandidate(
             const DetectorInput& input,
-            const RuntimeState& runtime)
+            const RuntimeState& runtime,
+            const HmdBackFrame& hmdBackFrame)
         {
             Candidate best{};
-            if (!input.config.useHmdBackVolume || !input.hasHmdFrame || !finitePoint(input.hmdPositionWorld) || !finitePoint(input.hmdForwardWorld)) {
-                return best;
-            }
-
             const Probe& hmdProbe = hmdKinematicProbe(input);
             if (!finitePoint(hmdProbe.pointGame)) {
                 return best;
             }
 
-            const RE::NiPoint3 forward = normalizeOr(input.hmdForwardWorld, kWorldForward);
-            RE::NiPoint3 right = normalizeOr(cross(forward, kWorldUp), RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
-            if (lengthSquared(right) <= 0.000001f) {
-                right = RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
-            }
-
-            const float hmdForwardOffset = dot(sub(hmdProbe.pointGame, input.hmdPositionWorld), forward);
-            if (!hmdBackBehindGateAllows(hmdForwardOffset, input.config.hmdBackMinBehindGameUnits)) {
+            const RE::NiPoint3 hmdProbeLocal =
+                worldPointToHmdBackLocal(hmdBackFrame, hmdProbe.pointGame);
+            if (!finitePoint(hmdProbeLocal) ||
+                !hmdBackBehindGateAllows(
+                    hmdProbeLocal.y,
+                    input.config.hmdBackMinBehindGameUnits)) {
                 return best;
             }
 
             auto considerHmdBackSide = [&](bool leftSide) {
                 const auto offset = leftSide ? input.config.hmdBackLeftOffsetGameUnits : input.config.hmdBackRightOffsetGameUnits;
-                const auto center =
-                    add(add(add(input.hmdPositionWorld, mul(right, offset.x)), mul(forward, offset.y)), mul(kWorldUp, offset.z));
                 const float radius = (std::max)(input.config.hmdBackRadiusGameUnits, 0.1f);
                 const body_zone::BodyZoneKind zone = leftSide ? body_zone::BodyZoneKind::LeftShoulder : body_zone::BodyZoneKind::RightShoulder;
                 const bool continuing = runtime.candidate && runtime.zone == zone && runtime.source == EvidenceSource::HmdBackVolume;
                 const float padding = continuing ? input.config.hmdBackExitPaddingGameUnits : input.config.hmdBackEnterPaddingGameUnits;
                 const float threshold = radius + (std::max)(0.0f, padding);
-                const float distance = length(sub(hmdProbe.pointGame, center));
+                const float distance = length(sub(hmdProbeLocal, offset));
                 if (!std::isfinite(distance) || distance > threshold) {
                     return;
                 }
@@ -382,7 +372,8 @@ namespace rock::shoulder_stash
                 candidate.zone = zone;
                 candidate.source = EvidenceSource::HmdBackVolume;
                 candidate.shoulderBodyId = kInvalidBodyId;
-                candidate.nearestPointGame = center;
+                candidate.nearestPointGame =
+                    hmdBackLocalPointToWorld(hmdBackFrame, offset);
                 candidate.distanceGameUnits = distance;
                 candidate.radiusGameUnits = radius;
                 candidate.confidence = candidateConfidence(distance, radius, threshold, isSameSideShoulder(input.isLeftHand, zone));
@@ -394,16 +385,28 @@ namespace rock::shoulder_stash
             return best;
         }
 
-        [[nodiscard]] float resolvedProbeSpeed(const DetectorInput& input, const RuntimeState& runtime) noexcept
+        [[nodiscard]] float resolvedProbeSpeed(
+            const DetectorInput& input,
+            const RuntimeState& runtime,
+            bool hmdAuthorityAvailable,
+            const HmdBackFrame& hmdBackFrame) noexcept
         {
             const Probe& probe = hmdKinematicProbe(input);
-            if (probe.hasVelocity) {
+            if (!hmdAuthorityAvailable && probe.hasVelocity) {
                 return probeSpeed(probe);
             }
-            if (!runtime.hasLastProbePoint || input.deltaSeconds <= 0.000001f) {
-                return 0.0f;
-            }
-            return length(sub(probe.pointGame, runtime.lastProbePointGame)) / input.deltaSeconds;
+
+            const ProbeMotionFrame motionFrame = hmdAuthorityAvailable ?
+                ProbeMotionFrame::HmdBackLocal :
+                ProbeMotionFrame::World;
+            const RE::NiPoint3 point = hmdAuthorityAvailable ?
+                worldPointToHmdBackLocal(hmdBackFrame, probe.pointGame) :
+                probe.pointGame;
+            return pointMotionSpeed(
+                point,
+                runtime.lastKinematicProbePointGame,
+                runtime.lastKinematicProbeFrame == motionFrame,
+                input.deltaSeconds);
         }
     }
 
@@ -415,13 +418,35 @@ namespace rock::shoulder_stash
     Decision evaluate(const DetectorInput& input, RuntimeState& runtime)
     {
         Decision decision{};
-        const float speed = resolvedProbeSpeed(input, runtime);
+        HmdBackFrame hmdBackFrame{};
+        const bool hmdAuthorityAvailable =
+            input.config.useHmdBackVolume && input.hasHmdProbe &&
+            finitePoint(input.hmdProbe.pointGame) && input.hasHmdFrame &&
+            tryBuildHmdBackFrame(
+                input.hmdPositionWorld,
+                input.hmdForwardWorld,
+                hmdBackFrame);
+        const float speed = resolvedProbeSpeed(
+            input,
+            runtime,
+            hmdAuthorityAvailable,
+            hmdBackFrame);
         decision.speedGameUnitsPerSecond = speed;
 
         auto updateProbeHistory = [&]() {
             const Probe& probe = hmdKinematicProbe(input);
-            runtime.lastProbePointGame = probe.pointGame;
-            runtime.hasLastProbePoint = finitePoint(probe.pointGame);
+            if (!finitePoint(probe.pointGame)) {
+                runtime.lastKinematicProbePointGame = {};
+                runtime.lastKinematicProbeFrame = ProbeMotionFrame::None;
+                return;
+            }
+
+            runtime.lastKinematicProbePointGame = hmdAuthorityAvailable ?
+                worldPointToHmdBackLocal(hmdBackFrame, probe.pointGame) :
+                probe.pointGame;
+            runtime.lastKinematicProbeFrame = hmdAuthorityAvailable ?
+                ProbeMotionFrame::HmdBackLocal :
+                ProbeMotionFrame::World;
         };
 
         if (!input.config.enabled || !finitePoint(input.probe.pointGame)) {
@@ -442,25 +467,38 @@ namespace rock::shoulder_stash
             return decision;
         }
 
-        Candidate best = findHmdBackVolumeCandidate(input, runtime);
-        const BodyCandidateSearchResult bodySearch = findBodyColliderCandidate(input, runtime);
-        Candidate bodyBackup = bodySearch.candidate;
-        const Candidate contact = findContactCandidate(input);
-        if (contact.valid) {
-            captureSustainedContactAnchor(input, contact, runtime);
-            if (bodyBackup.valid && bodyBackup.zone == contact.zone) {
-                bodyBackup.source = EvidenceSource::BodyZoneColliderAndContact;
-                bodyBackup.heldBodyId = contact.heldBodyId;
-                bodyBackup.confidence = (std::max)(bodyBackup.confidence, contact.confidence);
-                bodyBackup.nearestPointGame = contact.nearestPointGame;
-                bodyBackup.distanceGameUnits = (std::min)(bodyBackup.distanceGameUnits, contact.distanceGameUnits);
-            } else {
-                considerCandidate(bodyBackup, contact);
-            }
+        Candidate best{};
+        if (hmdAuthorityAvailable) {
+            /*
+             * A valid HMD frame is the sole shoulder-stash authority. Body
+             * evidence here would create a second pocket that equipped-weapon
+             * sheath/retrieval does not share.
+             */
+            clearSustainedContact(runtime);
+            best = findHmdBackVolumeCandidate(input, runtime, hmdBackFrame);
         } else {
-            considerCandidate(bodyBackup, findSustainedContactCandidate(input, runtime));
-        }
-        if (!best.valid) {
+            const BodyCandidateSearchResult bodySearch =
+                findBodyColliderCandidate(input, runtime);
+            Candidate bodyBackup = bodySearch.candidate;
+            const Candidate contact = findContactCandidate(input);
+            if (contact.valid) {
+                captureSustainedContactAnchor(input, contact, runtime);
+                if (bodyBackup.valid && bodyBackup.zone == contact.zone) {
+                    bodyBackup.source = EvidenceSource::BodyZoneColliderAndContact;
+                    bodyBackup.heldBodyId = contact.heldBodyId;
+                    bodyBackup.confidence =
+                        (std::max)(bodyBackup.confidence, contact.confidence);
+                    bodyBackup.nearestPointGame = contact.nearestPointGame;
+                    bodyBackup.distanceGameUnits =
+                        (std::min)(bodyBackup.distanceGameUnits, contact.distanceGameUnits);
+                } else {
+                    considerCandidate(bodyBackup, contact);
+                }
+            } else {
+                considerCandidate(
+                    bodyBackup,
+                    findSustainedContactCandidate(input, runtime));
+            }
             best = bodyBackup;
         }
 
