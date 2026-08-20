@@ -1,6 +1,8 @@
 #include "monitor/GrabClockMonitor.h"
 
 #include "monitor/GrabClockMonitorConfig.h"
+
+#include "RockConfig.h"
 #include "monitor/PrismaUI_F4_API.h"
 #include "monitor/PrismaUI_F4VR_API.h"
 
@@ -896,6 +898,10 @@ namespace rock::monitor
 
     void initialize()
     {
+        if (!g_rockConfig.rockDebugMonitorEnabled) {
+            return;
+        }
+
         if (s_initialized.exchange(true, std::memory_order_acq_rel)) {
             onGameSessionReady();
             return;
@@ -950,6 +956,9 @@ namespace rock::monitor
 
     void onProviderFrame(const RockProviderFrameSnapshot& snapshot)
     {
+        if (!s_initialized.load(std::memory_order_acquire) && g_rockConfig.rockDebugMonitorEnabled) {
+            initialize();
+        }
         if (!s_prisma || !s_prismaVR || s_view == 0) {
             return;
         }
@@ -958,7 +967,8 @@ namespace rock::monitor
         // so a hot reload cannot combine an old enable state with a new transform.
         const auto configSnapshot = s_config ? s_config->snapshot() : nullptr;
         const bool configuredEnabled =
-            configSnapshot ? configSnapshot->enabled : kDefaultMonitorSettings.enabled;
+            g_rockConfig.rockDebugMonitorEnabled &&
+            (configSnapshot ? configSnapshot->enabled : kDefaultMonitorSettings.enabled);
         const int configuredEnabledStatus = configuredEnabled ? 1 : 0;
         const int previousConfiguredEnabledStatus =
             s_lastConfiguredEnabledStatus.exchange(configuredEnabledStatus, std::memory_order_acq_rel);

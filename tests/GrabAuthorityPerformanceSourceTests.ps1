@@ -51,7 +51,7 @@ Require-Text 'src/physics-interaction/performance/PerformanceProfiler.cpp' 'grab
 
 Require-Text 'src/RockConfig.h' 'rockDebugGrabAfterSolveAnomalySampling' `
     'After-solve anomaly sampling must have a separate explicit debug gate.'
-Require-Text 'src/RockConfig.cpp' 'bDebugGrabAfterSolveAnomalySampling' `
+Require-Text 'src/RockConfig.cpp' 'bGrabAfterSolveAnomalySampling' `
     'RockConfig must read the separate after-solve anomaly sampling gate.'
 
 if ($failures.Count -gt 0) {

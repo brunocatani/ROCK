@@ -316,7 +316,8 @@ namespace rock
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::DebugOverlayPublish);
 
         provider_collider_visualization::Snapshot colliderFocus{};
-        if (provider_collider_visualization::copySnapshot(colliderFocus)) {
+        if (g_rockConfig.rockDebugProviderColliderFocusEnabled &&
+            provider_collider_visualization::copySnapshot(colliderFocus)) {
             debug::Install();
             debug::BodyOverlayFrame focusedFrame{};
             focusedFrame.world = context.hknpWorld;
@@ -334,7 +335,7 @@ namespace rock
 
         auto* hknp = context.hknpWorld;
         provider_debug_overlay::Snapshot* providerOverlay = nullptr;
-        if (provider_debug_overlay::hasContent()) {
+        if (g_rockConfig.rockDebugProviderOverlayEnabled && provider_debug_overlay::hasContent()) {
             // Lazily keep the aggregate buffer off the per-frame game stack.
             // This aggregate scratch remains on ROCK's update-owner thread;
             // copySnapshot synchronizes against publication and teardown.
@@ -387,7 +388,7 @@ namespace rock
         const bool drawNativeScopeActivation = g_rockConfig.rockDebugDrawNativeScopeActivation;
         const bool drawWorldOriginDiagnostics = g_rockConfig.rockDebugWorldObjectOriginDiagnostics;
         const bool drawCustomCalibrationOffset = g_rockConfig.rockDebugCustomCalibrationOffset;
-        if (drawWorldOriginDiagnostics && !s_worldOriginDiagnosticsEnabledLogged) {
+        if (drawWorldOriginDiagnostics && g_rockConfig.rockDebugLoggingEnabled && !s_worldOriginDiagnosticsEnabledLogged) {
             ROCK_LOG_INFO(Hand,
                 "World object origin diagnostics enabled: intervalFrames={} warnThresholdGameUnits={:.2f} visualSourceOrder=bodyOwnerNode>hitNode>visualNode>referenceRoot",
                 g_rockConfig.rockDebugWorldObjectOriginLogIntervalFrames,
@@ -599,10 +600,12 @@ namespace rock
                     return;
                 }
 
-                origin_diagnostics::logSampleIfNeeded(hand.handName(),
-                    held,
-                    sample,
-                    static_cast<std::uint32_t>((std::max)(g_rockConfig.rockDebugWorldObjectOriginLogIntervalFrames, 1)));
+                if (g_rockConfig.rockDebugLoggingEnabled) {
+                    origin_diagnostics::logSampleIfNeeded(hand.handName(),
+                        held,
+                        sample,
+                        static_cast<std::uint32_t>((std::max)(g_rockConfig.rockDebugWorldObjectOriginLogIntervalFrames, 1)));
+                }
                 origin_diagnostics::publishMarkers(frame, sample);
             };
 
@@ -3293,7 +3296,8 @@ namespace rock
                 ++telemetryState.logFrameCounter;
                 const std::uint64_t logInterval =
                     static_cast<std::uint64_t>((std::max)(1, g_rockConfig.rockDebugGrabTransformTelemetryLogIntervalFrames));
-                if (telemetryState.frame == 1 || telemetryState.logFrameCounter >= logInterval) {
+                if (g_rockConfig.rockDebugLoggingEnabled &&
+                    (telemetryState.frame == 1 || telemetryState.logFrameCounter >= logInterval)) {
                     telemetryState.logFrameCounter = 0;
                     const auto prefix = grab_transform_telemetry::formatStampPrefix(stamp, isLeft, telemetryState.frame == 1 ? "start" : "held");
                     const char* phaseLabel = telemetryState.frame == 1 ? "START" : "HELD";

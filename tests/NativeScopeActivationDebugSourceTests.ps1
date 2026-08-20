@@ -41,7 +41,7 @@ function Reject-Text {
 
 Require-Text 'src/RockConfig.h' 'rockDebugDrawNativeScopeActivation\s*=\s*false' `
     'Native-scope visualization must have a dedicated opt-in runtime gate.'
-Require-Text 'src/RockConfig.cpp' 'rockDebugDrawNativeScopeActivation\s*=\s*false[\s\S]*bDebugDrawNativeScopeActivation' `
+Require-Text 'src/RockConfig.cpp' 'rockDebugDrawNativeScopeActivation\s*=\s*false[\s\S]*bDrawNativeScopeActivation' `
     'The diagnostic gate must reset fail-closed and load from ROCK.ini.'
 Require-Text 'src/RockConfig.h' 'sole native-scope activation[\s\S]*rockManualScopeHoldSeconds\s*=\s*0\.30f' `
     'The firing-hand hold must be the sole native-scope activation contract.'
@@ -55,15 +55,13 @@ Require-Text 'src/RockConfig.h' 'rockNativeScopeForceFiringGripFallback\s*=\s*fa
     'Missing-optic fallback must expose one force switch and a neutral six-degree-of-freedom Weapon-local firing-grip frame.'
 Require-Text 'src/RockConfig.cpp' 'bNativeScopeForceFiringGripFallback[\s\S]*fNativeScopeFiringGripFallbackOffsetXGameUnits[\s\S]*fNativeScopeFiringGripFallbackOffsetYGameUnits[\s\S]*fNativeScopeFiringGripFallbackOffsetZGameUnits[\s\S]*fNativeScopeFiringGripFallbackPitchDegrees[\s\S]*fNativeScopeFiringGripFallbackYawDegrees[\s\S]*fNativeScopeFiringGripFallbackRollDegrees' `
     'Firing-grip fallback position and rotation controls must load from the NativeScopes section.'
-Require-Text 'data/config/ROCK.ini' 'bDebugDrawNativeScopeActivation\s*=\s*false' `
+Require-Text 'data/config/ROCK.ini' 'bDrawNativeScopeActivation\s*=\s*false' `
     'The development config template must keep the native-scope diagnostic disabled by default.'
-Require-Text 'data/mod/ROCK_Config/ROCK.ini' 'bDebugDrawNativeScopeActivation\s*=\s*false' `
-    'The packaged config template must keep the native-scope diagnostic disabled by default.'
 Require-Text 'src/RockConfig.h' 'rockNativeScopeOverlayOffsetXGameUnits[\s\S]*rockNativeScopeOverlayOffsetYGameUnits[\s\S]*rockNativeScopeOverlayOffsetZGameUnits[\s\S]*rockNativeScopeOverlayPitchDegrees[\s\S]*rockNativeScopeOverlayYawDegrees[\s\S]*rockNativeScopeOverlayRollDegrees' `
     'Native scope overlay placement must expose three model-local position and three rotation tuning values.'
 Require-Text 'src/RockConfig.cpp' 'NATIVE_SCOPES_SECTION\s*=\s*"NativeScopes"[\s\S]*fNativeScopeOverlayOffsetXGameUnits[\s\S]*fNativeScopeOverlayOffsetYGameUnits[\s\S]*fNativeScopeOverlayOffsetZGameUnits[\s\S]*fNativeScopeOverlayPitchDegrees[\s\S]*fNativeScopeOverlayYawDegrees[\s\S]*fNativeScopeOverlayRollDegrees' `
     'Native scope overlay tuning must load from its independent NativeScopes INI section.'
-foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
+foreach ($configPath in @('data/config/ROCK.ini')) {
     Require-Text $configPath '\[NativeScopes\][\s\S]*fManualScopeHoldSeconds\s*=\s*0\.30' `
         'Native scope templates must expose the sole A/X hold threshold.'
     Reject-Text $configPath 'bAutoActivateScope' `

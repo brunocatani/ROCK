@@ -51,7 +51,7 @@ Require-Text 'src/RockConfig.cpp' `
     'rockSuppressNativeVats\s*=\s*ini\.GetBoolValue\(SECTION,\s*"bSuppressNativeVats",\s*rockSuppressNativeVats\);[\s\S]{0,300}rockSuppressNativeVans\s*=\s*ini\.GetBoolValue\(SECTION,\s*"bSuppressNativeVans",\s*rockSuppressNativeVans\);' `
     'RockConfig must load both local native-action suppression controls.'
 
-foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
+foreach ($configPath in @('data/config/ROCK.ini')) {
     Require-Text $configPath `
         'bSuppressNativeVats\s*=\s*false[\s\S]{0,500}bSuppressNativeVans\s*=\s*false' `
         'Shipped ROCK.ini must expose both native-action controls with safe defaults.'

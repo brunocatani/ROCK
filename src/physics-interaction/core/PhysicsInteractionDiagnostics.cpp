@@ -148,14 +148,7 @@ namespace rock
     {
         constexpr std::uint32_t kTraceFramesPerEpisode = 360;
 
-        const bool colliderClockDebugActive =
-            g_rockConfig.rockDebugShowColliders ||
-            g_rockConfig.rockDebugShowTargetColliders ||
-            g_rockConfig.rockDebugDrawHandColliders ||
-            g_rockConfig.rockDebugDrawHandBoneColliders ||
-            g_rockConfig.rockDebugDrawDynamicHandColliders ||
-            g_rockConfig.rockDebugDrawWeaponColliders ||
-            g_rockConfig.rockDebugDrawDynamicWeaponColliders;
+        const bool colliderClockDebugActive = g_rockConfig.rockDebugColliderClockLogging;
         if (!colliderClockDebugActive) {
             _colliderClockLastLoggedFrame = 0;
             _colliderClockHasLoggedFrame = false;

@@ -203,7 +203,7 @@ namespace rock::debug_controller_runtime
 
         void persistColliderState(const char* key, bool value)
         {
-            if (!g_rockConfig.persistPhysicsBool(key, value)) {
+            if (!g_rockConfig.persistDebugOverlayBool(key, value)) {
                 ROCK_LOG_WARN(Input, "Debug controller failed to persist {}={}", key, value);
             }
         }
@@ -216,11 +216,11 @@ namespace rock::debug_controller_runtime
             g_rockConfig.rockDebugDrawHandBoneColliders = enabled;
             if (enabled) {
                 g_rockConfig.rockDebugShowColliders = true;
-                persistColliderState("bDebugShowColliders", true);
+                persistColliderState("bShowColliders", true);
             }
 
-            persistColliderState("bDebugDrawHandColliders", enabled);
-            persistColliderState("bDebugDrawHandBoneColliders", enabled);
+            persistColliderState("bDrawHandColliders", enabled);
+            persistColliderState("bDrawHandBoneColliders", enabled);
             notify(std::format("hand collider visualizers {}", enabled ? "ON" : "OFF"));
         }
 
@@ -231,10 +231,10 @@ namespace rock::debug_controller_runtime
             g_rockConfig.rockDebugDrawWeaponColliders = enabled;
             if (enabled) {
                 g_rockConfig.rockDebugShowColliders = true;
-                persistColliderState("bDebugShowColliders", true);
+                persistColliderState("bShowColliders", true);
             }
 
-            persistColliderState("bDebugDrawWeaponColliders", enabled);
+            persistColliderState("bDrawWeaponColliders", enabled);
             notify(std::format("weapon collider visualizers {}", enabled ? "ON" : "OFF"));
         }
 
@@ -342,6 +342,17 @@ namespace rock::debug_controller_runtime
 
     void update(bool gameplayInputAllowed, float deltaSeconds)
     {
+        if (!g_rockConfig.rockDebugControllerEnabled) {
+            if (s_state.pivotTuningActive) {
+                s_state.pivotTuningActive = false;
+                persistDirtyPivots();
+                restoreTuningVisualState();
+            }
+            s_state.hadPreviousButtons = false;
+            s_state.previousButtons = 0;
+            return;
+        }
+
         const float dt = sanitizeDeltaSeconds(deltaSeconds);
         const auto sample = pollController();
         const auto edges = debug_controller_policy::evaluateButtonEdges(s_state.hadPreviousButtons, s_state.previousButtons, sample.connected, sample.buttons);

@@ -12,7 +12,7 @@ namespace rock::monitor
         // with the identity localOrientation below; the full tuned pose
         // (rotY=90, rotZ=6, flips X/Y) ships in the default INI template and
         // is derived properly on load.
-        bool enabled{ true };
+        bool enabled{ false };
         float positionX{ 7.75f };
         float positionY{ 9.0f };
         float positionZ{ -16.5f };

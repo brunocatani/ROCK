@@ -57,12 +57,11 @@ Require-Text 'src/RockConfig.h' `
     'Gunstock diagnostics must remain independently opt-in.'
 
 Require-Text 'src/RockConfig.cpp' `
-    'rockDebugDrawGunstockAlignment\s*=\s*false[\s\S]*"bDebugDrawGunstockAlignment",\s*rockDebugDrawGunstockAlignment' `
-    'The historical diagnostic key must load the combined alignment visualizer.'
+    'rockDebugDrawGunstockAlignment\s*=\s*false[\s\S]*"bDrawGunstockAlignment",\s*rockDebugDrawGunstockAlignment' `
+    'The normalized diagnostic key must load the combined alignment visualizer.'
 
 foreach ($iniPath in @(
-    'data/config/ROCK.ini',
-    'data/mod/ROCK_Config/ROCK.ini'
+    'data/config/ROCK.ini'
 )) {
     Require-Text $iniPath `
         '\[Gunstock\][\s\S]*two independent stages[\s\S]*neutral fire-node[\s\S]*firing-wrist \+X[\s\S]*bAlignBarrelToControllerForward\s*=\s*false' `
@@ -71,8 +70,8 @@ foreach ($iniPath in @(
         '\[Gunstock\][\s\S]*same damped-driver pivot[\s\S]*yaw about bone \+Z[\s\S]*pitch about bone \+Y[\s\S]*roll about aligned \+X[\s\S]*fAlignmentPitchDegrees\s*=\s*0\.0[\s\S]*fAlignmentYawDegrees\s*=\s*0\.0[\s\S]*fAlignmentRollDegrees\s*=\s*0\.0' `
         'Both shipped INIs must document and expose zero-default wrist-space fine tuning.'
     Require-Text $iniPath `
-        '\[PhysicsInteraction\][\s\S]*firing/support bone triads[\s\S]*support attach-baseline[\s\S]*bDebugDrawGunstockAlignment\s*=\s*false' `
-        'Both shipped INIs must describe and expose the combined disabled-by-default visualizer.'
+        '\[DebugOverlay\][\s\S]*firing/support bone triads[\s\S]*support attach-baseline[\s\S]*bDrawGunstockAlignment\s*=\s*false' `
+        'The canonical INI must describe and expose the combined disabled-by-default visualizer.'
 }
 
 Require-Text 'src/physics-interaction/weapon/WeaponSupport.h' `

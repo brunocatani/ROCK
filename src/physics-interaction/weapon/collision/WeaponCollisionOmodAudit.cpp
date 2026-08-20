@@ -1487,7 +1487,7 @@ namespace rock
             std::unordered_set<std::uint64_t>& selfHealAttempted)
         {
             OmodSelfHealOutcome outcome{};
-            if (!g_rockConfig.rockDebugWeaponOmodSelfHeal || selfHealCandidates.empty()) {
+            if (!g_rockConfig.rockExperimentalWeaponOmodSelfHealEnabled || selfHealCandidates.empty()) {
                 return outcome;
             }
             RE::NiNode* healTargetNode = nullptr;
@@ -1986,7 +1986,7 @@ namespace rock
             ROCK_LOG_INFO(Weapon, "OMOD-AUDIT run={} no object instance extra available", runIndex);
         }
 
-        if (g_rockConfig.rockDebugWeaponOmodSelfHeal) {
+        if (g_rockConfig.rockExperimentalWeaponOmodSelfHealEnabled) {
             std::unordered_set<std::uint32_t> activeOmodFormIds;
             activeOmodFormIds.reserve(records.size());
             for (const auto& record : records) {
@@ -2335,7 +2335,7 @@ namespace rock
         }
 
         /*
-         * Self-heal (bDebugWeaponOmodSelfHeal): reattach missing OMOD models
+         * Self-heal (Experimental.bWeaponOmodSelfHealEnabled): reattach missing OMOD models
          * with the engine's own primitive. Ghidra-verified (raw disasm +
          * decompiler + address database, refreshed 2026-07-20):
          *   bool BGSMod::Attachment::Mod::TryAttach3DRecurse(

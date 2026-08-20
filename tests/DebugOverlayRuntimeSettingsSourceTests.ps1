@@ -9,7 +9,6 @@ $failures = [System.Collections.Generic.List[string]]::new()
 $configHeader = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/RockConfig.h')
 $configSource = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/RockConfig.cpp')
 $repoIni = Get-Content -Raw -LiteralPath (Join-Path $Root 'data/config/ROCK.ini')
-$modIni = Get-Content -Raw -LiteralPath (Join-Path $Root 'data/mod/ROCK_Config/ROCK.ini')
 
 function Require-In {
     param([string]$Text, [string]$Pattern, [string]$Message)
@@ -26,24 +25,23 @@ function Reject-In {
 }
 
 $keys = @(
-    'iDebugMaxShapeCapturesPerFrame',
-    'iDebugMaxConvexSupportVertices',
-    'iDebugMaxCompoundChildren',
-    'iDebugMaxCompoundDepth',
-    'iDebugMaxShapeQueuedJobs',
-    'iDebugMaxShapeCompletedJobs',
-    'iDebugMaxShapeUploadsPerFrame',
-    'iDebugMaxShapeCacheEntries',
-    'iDebugMaxShapeCacheBytes',
-    'iDebugMaxBodyInstances',
-    'iDebugMaxLineVertices',
-    'iDebugMaxTextVertices'
+    'iMaxShapeCapturesPerFrame',
+    'iMaxConvexSupportVertices',
+    'iMaxCompoundChildren',
+    'iMaxCompoundDepth',
+    'iMaxShapeQueuedJobs',
+    'iMaxShapeCompletedJobs',
+    'iMaxShapeUploadsPerFrame',
+    'iMaxShapeCacheEntries',
+    'iMaxShapeCacheBytes',
+    'iMaxBodyInstances',
+    'iMaxLineVertices',
+    'iMaxTextVertices'
 )
 
 foreach ($key in $keys) {
     Require-In $configSource ([regex]::Escape($key)) "RockConfig does not load $key."
     Require-In $repoIni "(?m)^$([regex]::Escape($key))\s*=" "Repository config is missing $key."
-    Require-In $modIni "(?m)^$([regex]::Escape($key))\s*=" "Packaged config is missing $key."
 }
 
 Require-In $configHeader 'DebugOverlayRuntimeSettings\.h' `
@@ -51,7 +49,7 @@ Require-In $configHeader 'DebugOverlayRuntimeSettings\.h' `
 Require-In $configSource 'RequestedLimits[\s\S]*sanitize\(requestedOverlayLimits\)' `
     'INI values must be sanitized through the shared bounded settings contract.'
 
-$all = $configHeader + $configSource + $repoIni + $modIni
+$all = $configHeader + $configSource + $repoIni
 Reject-In $all 'iDebugMaxShapeGenerationsPerFrame|rockDebugMaxShapeGenerationsPerFrame|makeOverlaySettingsKey|clampShapeGenerationsPerFrame' `
     'Stale generation naming/settings helpers must not survive the capture-budget migration.'
 

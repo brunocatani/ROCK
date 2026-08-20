@@ -517,7 +517,7 @@ namespace rock
 
         ContactDiagnosticSnapshot contactDiagnostic{};
         const bool contactDiagnosticCurrent =
-            g_rockConfig.rockDebugDrawDynamicWeaponColliders &&
+            (g_rockConfig.rockDebugDrawDynamicWeaponColliders || g_rockConfig.rockDebugDynamicWeaponLogging) &&
             readContactDiagnosticSnapshot(contactDiagnostic) &&
             contactDiagnostic.valid &&
             contactDiagnostic.world == reinterpret_cast<std::uintptr_t>(frame.hknpWorld) &&
@@ -548,7 +548,7 @@ namespace rock
         }
 
         const auto logPipelineStage = [&](const char* stage) {
-            if (!g_rockConfig.rockDebugDrawDynamicWeaponColliders) {
+            if (!g_rockConfig.rockDebugDynamicWeaponLogging) {
                 return;
             }
             ROCK_LOG_SAMPLE_INFO(
@@ -1056,7 +1056,7 @@ namespace rock
                     return;
                 }
                 _consumedCompoundPoseSequence = _queuedCompoundPoseSequence;
-                if (updateResult.changedChildCount > 0 && g_rockConfig.rockDebugDrawDynamicWeaponColliders) {
+                if (updateResult.changedChildCount > 0 && g_rockConfig.rockDebugDynamicWeaponLogging) {
                     ROCK_LOG_SAMPLE_INFO(
                         Weapon,
                         500,
@@ -1242,7 +1242,7 @@ namespace rock
         publishPhysicsSnapshot(snapshot);
 
         if (contactEpisodeStarted &&
-            g_rockConfig.rockDebugDrawDynamicWeaponColliders) {
+            (g_rockConfig.rockDebugDrawDynamicWeaponColliders || g_rockConfig.rockDebugDynamicWeaponLogging)) {
             ContactDiagnosticSnapshot diagnostic{};
             diagnostic.valid = true;
             diagnostic.world = reinterpret_cast<std::uintptr_t>(world);
@@ -1304,7 +1304,7 @@ namespace rock
             publishContactDiagnosticSnapshot(diagnostic);
         }
 
-        if (g_rockConfig.rockDebugDrawDynamicWeaponColliders) {
+        if (g_rockConfig.rockDebugDrawDynamicWeaponColliders || g_rockConfig.rockDebugDynamicWeaponLogging) {
             const float requestedStepTranslation = _physicsPreviousRequestedTargetValid ?
                 dynamic_weapon_collision_policy::translationDeltaGameUnits(
                     _physicsPreviousRequestedTarget,
@@ -1400,7 +1400,7 @@ namespace rock
             return;
         }
         _rawPointCallbackSequenceAtomic.fetch_add(1, std::memory_order_release);
-        if (g_rockConfig.rockDebugDrawDynamicWeaponColliders) {
+        if (g_rockConfig.rockDebugDrawDynamicWeaponColliders || g_rockConfig.rockDebugDynamicWeaponLogging) {
             _rawContactOtherBodyIdAtomic.store(otherBodyId, std::memory_order_relaxed);
             _rawContactPointCountAtomic.store(rawContactPoint->pointCount, std::memory_order_relaxed);
             _rawContactPointIndexAtomic.store(rawContactPoint->selectedPointIndex, std::memory_order_relaxed);

@@ -54,7 +54,7 @@ Require-Text 'src/api/ROCKProviderApi.h' `
 Require-Text 'src/RockConfig.cpp' `
     'fFiringGripProximitySupportRadius[\s\S]{0,180}0\.25f,[\s\S]{0,40}30\.0f' `
     'ROCK must load and bound its core firing-grip proximity radius.'
-foreach ($configPath in @('data/config/ROCK.ini', 'data/mod/ROCK_Config/ROCK.ini')) {
+foreach ($configPath in @('data/config/ROCK.ini')) {
     Require-Text $configPath `
         'fFiringGripProximitySupportRadius\s*=\s*6\.0' `
         'ROCK config must publish the core firing-grip proximity radius.'

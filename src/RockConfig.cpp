@@ -5,10 +5,13 @@
 #include <ShlObj.h>
 #include <SimpleIni.h>
 #include <algorithm>
+#include <cctype>
+#include <cstring>
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <thread>
+#include <unordered_set>
 
 #include "rock_support/ResourceUtils.h"
 #include "physics-interaction/grab/GrabNodeNamePolicy.h"
@@ -17,6 +20,7 @@
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/input/InputRemapPolicy.h"
 #include "physics-interaction/grab/NearbyGrabDamping.h"
+#include "physics-interaction/debug/DebugConfigPolicy.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/RockLoggingPolicy.h"
 #include "resources.h"
@@ -25,7 +29,20 @@ namespace
 {
 
     constexpr auto SECTION = "PhysicsInteraction";
+    constexpr auto CONFIG_SECTION = "Config";
+    constexpr int kCurrentConfigSchemaVersion = 1;
+    constexpr auto CORE_SECTION = "Core";
+    constexpr auto INPUT_SECTION = "Input";
+    constexpr auto HAND_FRAME_SECTION = "HandFrame";
+    constexpr auto WEAPON_COLLISION_SECTION = "WeaponCollision";
+    constexpr auto WEAPON_HANDLING_SECTION = "WeaponHandling";
+    constexpr auto DYNAMIC_HAND_COLLISION_SECTION = "DynamicHandCollision";
+    constexpr auto NATIVE_SUPPRESSION_SECTION = "NativeSuppression";
+    constexpr auto SELECTION_FEEDBACK_SECTION = "SelectionFeedback";
     constexpr auto DEBUG_SECTION = "Debug";
+    constexpr auto DEBUG_OVERLAY_SECTION = "DebugOverlay";
+    constexpr auto DEBUG_LOGGING_SECTION = "DebugLogging";
+    constexpr auto DEBUG_SKELETON_SECTION = "DebugSkeleton";
     constexpr auto REALISTIC_WEAPONS_SECTION = "RealisticWeapons";
     constexpr auto WEAPON_HANDEDNESS_SECTION = "WeaponHandedness";
     constexpr auto GUNSTOCK_SECTION = "Gunstock";
@@ -76,6 +93,161 @@ namespace
     constexpr int kDefaultHighlightIntensityMode = 3;
     constexpr const char* kDefaultHighlightColor = "orange";
 
+    class TrackedIni final
+    {
+    public:
+        explicit TrackedIni(CSimpleIniA& ini) : _ini(ini) {}
+
+        const char* GetValue(const char* section, const char* key, const char* fallback = nullptr, bool* hasMultiple = nullptr)
+        {
+            const char* readSection = chooseReadSection(section, key);
+            return _ini.GetValue(readSection, key, fallback, hasMultiple);
+        }
+
+        long GetLongValue(const char* section, const char* key, long fallback = 0, bool* hasMultiple = nullptr)
+        {
+            const char* readSection = chooseReadSection(section, key);
+            return _ini.GetLongValue(readSection, key, fallback, hasMultiple);
+        }
+
+        double GetDoubleValue(const char* section, const char* key, double fallback = 0.0, bool* hasMultiple = nullptr)
+        {
+            const char* readSection = chooseReadSection(section, key);
+            return _ini.GetDoubleValue(readSection, key, fallback, hasMultiple);
+        }
+
+        bool GetBoolValue(const char* section, const char* key, bool fallback = false, bool* hasMultiple = nullptr)
+        {
+            const char* readSection = chooseReadSection(section, key);
+            return _ini.GetBoolValue(readSection, key, fallback, hasMultiple);
+        }
+
+        void warnUnknownKeys() const
+        {
+            constexpr std::size_t kMaximumDetailedWarnings = 32;
+            std::size_t unknownCount = 0;
+            CSimpleIniA::TNamesDepend sections;
+            _ini.GetAllSections(sections);
+            for (const auto& section : sections) {
+                CSimpleIniA::TNamesDepend keys;
+                if (!_ini.GetAllKeys(section.pItem, keys)) {
+                    continue;
+                }
+                for (const auto& key : keys) {
+                    if (!_recognized.contains(normalizedIdentity(section.pItem, key.pItem))) {
+                        if (unknownCount < kMaximumDetailedWarnings) {
+                            ROCK_LOG_WARN(Config, "Unknown ROCK.ini setting [{}] {}; ignored", section.pItem, key.pItem);
+                        }
+                        ++unknownCount;
+                    }
+                }
+            }
+            if (unknownCount > kMaximumDetailedWarnings) {
+                ROCK_LOG_WARN(Config,
+                    "ROCK.ini contains {} additional unknown settings; all were ignored",
+                    unknownCount - kMaximumDetailedWarnings);
+            }
+            if (!_legacyPhysicsInteractionKeys.empty()) {
+                ROCK_LOG_WARN(Config,
+                    "ROCK.ini uses {} legacy [PhysicsInteraction] settings that now have dedicated sections; values remain active for schema 1",
+                    _legacyPhysicsInteractionKeys.size());
+            }
+        }
+
+    private:
+        [[nodiscard]] static std::string normalizedIdentity(const char* section, const char* key)
+        {
+            std::string identity;
+            if (section) {
+                identity.append(section);
+            }
+            identity.push_back('\x1f');
+            if (key) {
+                identity.append(key);
+            }
+            std::transform(identity.begin(), identity.end(), identity.begin(), [](const unsigned char character) {
+                return static_cast<char>(std::tolower(character));
+            });
+            return identity;
+        }
+
+        void record(const char* section, const char* key)
+        {
+            _recognized.insert(normalizedIdentity(section, key));
+        }
+
+        [[nodiscard]] static bool startsWith(const std::string_view value, const std::string_view prefix)
+        {
+            return value.starts_with(prefix);
+        }
+
+        [[nodiscard]] static const char* canonicalSection(const char* requestedSection, const char* key)
+        {
+            if (!requestedSection || std::strcmp(requestedSection, SECTION) != 0 || !key) {
+                return requestedSection;
+            }
+
+            const std::string_view name(key);
+            if (name == "bEnabled" || startsWith(name, "bHavokTimingFix") || startsWith(name, "fHavokTimingFix") || startsWith(name, "iHavokTimingFix")) {
+                return CORE_SECTION;
+            }
+            if (startsWith(name, "bInputRemap") || startsWith(name, "bSuppress") || startsWith(name, "fPipboyPause") ||
+                startsWith(name, "sSuppressTake") || startsWith(name, "bGrabInputIntent") || startsWith(name, "fGrabInputLeeway") ||
+                startsWith(name, "fGrabInputForce")) {
+                return INPUT_SECTION;
+            }
+            if (startsWith(name, "fPalmNormal") || startsWith(name, "fPointingVector") || startsWith(name, "bReversePalm") ||
+                startsWith(name, "bReverseFar") || startsWith(name, "fRightGrabLegacyPalm") || startsWith(name, "fLeftGrabLegacyPalm") ||
+                startsWith(name, "fRightGrabAuthorityProxy") || startsWith(name, "fLeftGrabAuthorityProxy") ||
+                startsWith(name, "fRightCustomOGA") || startsWith(name, "fLeftCustomOGA")) {
+                return HAND_FRAME_SECTION;
+            }
+            if (startsWith(name, "bWeaponCollision") || startsWith(name, "fWeaponCollision") || startsWith(name, "iWeaponCollision") ||
+                startsWith(name, "fWeaponSizeClass")) {
+                return WEAPON_COLLISION_SECTION;
+            }
+            if (startsWith(name, "fWeaponInteraction") || startsWith(name, "fWeaponAuthoredGrip") || startsWith(name, "fFiringGripProximity") ||
+                startsWith(name, "bWeaponSupport") || startsWith(name, "fWeaponSupport") || startsWith(name, "bWeaponVisualReturn") ||
+                startsWith(name, "fWeaponVisualReturn")) {
+                return WEAPON_HANDLING_SECTION;
+            }
+            if (startsWith(name, "bHandCollisionDynamic") || startsWith(name, "fHandCollisionDynamic") || startsWith(name, "iHandCollisionDynamic") ||
+                startsWith(name, "bHandDynamicInteractions") || startsWith(name, "bDynamicCollidersNpc") ||
+                startsWith(name, "bHandCollisionSurface") || startsWith(name, "fHandCollisionSurface")) {
+                return DYNAMIC_HAND_COLLISION_SECTION;
+            }
+            if (startsWith(name, "bNativeMelee") || startsWith(name, "bNativeCharacterController")) {
+                return NATIVE_SUPPRESSION_SECTION;
+            }
+            if (startsWith(name, "bHighlight") || startsWith(name, "iHighlight") || startsWith(name, "sHighlight") ||
+                startsWith(name, "bSelectionBeam") || startsWith(name, "fSelectionBeam")) {
+                return SELECTION_FEEDBACK_SECTION;
+            }
+            return requestedSection;
+        }
+
+        const char* chooseReadSection(const char* requestedSection, const char* key)
+        {
+            const char* preferredSection = canonicalSection(requestedSection, key);
+            record(preferredSection, key);
+            if (preferredSection == requestedSection || _ini.GetValue(preferredSection, key, nullptr)) {
+                return preferredSection;
+            }
+            if (_ini.GetValue(requestedSection, key, nullptr)) {
+                // Schema 1 compatibility only. Remove this fallback when the
+                // runtime and canonical template advance to schema 2.
+                record(requestedSection, key);
+                _legacyPhysicsInteractionKeys.insert(normalizedIdentity(requestedSection, key));
+                return requestedSection;
+            }
+            return preferredSection;
+        }
+
+        CSimpleIniA& _ini;
+        std::unordered_set<std::string> _recognized;
+        std::unordered_set<std::string> _legacyPhysicsInteractionKeys;
+    };
+
     std::string resolveIniPath()
     {
         char documents[MAX_PATH];
@@ -87,7 +259,8 @@ namespace
         return R"(Data\F4SE\Plugins\ROCK.ini)";
     }
 
-    float readClampedFloat(CSimpleIniA& ini, const char* section, const char* key, float currentValue, float fallback, float minValue, float maxValue)
+    template <class Ini>
+    float readClampedFloat(Ini& ini, const char* section, const char* key, float currentValue, float fallback, float minValue, float maxValue)
     {
         float value = static_cast<float>(ini.GetDoubleValue(section, key, currentValue));
         if (!std::isfinite(value)) {
@@ -97,7 +270,8 @@ namespace
         return std::clamp(value, minValue, maxValue);
     }
 
-    int readSelectionAimAngleDegrees(CSimpleIniA& ini, const char* section, const char* key, int currentValue)
+    template <class Ini>
+    int readSelectionAimAngleDegrees(Ini& ini, const char* section, const char* key, int currentValue)
     {
         const int configuredValue = static_cast<int>(ini.GetLongValue(section, key, currentValue));
         const int sanitizedValue = rock::selection_query_policy::sanitizeSelectionAimAngleDegrees(configuredValue);
@@ -107,7 +281,8 @@ namespace
         return sanitizedValue;
     }
 
-    int readHighlightIntensityMode(CSimpleIniA& ini, const char* section, const char* key, int currentValue)
+    template <class Ini>
+    int readHighlightIntensityMode(Ini& ini, const char* section, const char* key, int currentValue)
     {
         const int configuredValue = static_cast<int>(ini.GetLongValue(section, key, currentValue));
         if (configuredValue >= 1 && configuredValue <= 4) {
@@ -118,7 +293,8 @@ namespace
         return kDefaultHighlightIntensityMode;
     }
 
-    std::string readHighlightColor(CSimpleIniA& ini, const char* section, const char* key, const std::string& currentValue)
+    template <class Ini>
+    std::string readHighlightColor(Ini& ini, const char* section, const char* key, const std::string& currentValue)
     {
         std::string configuredValue = ini.GetValue(section, key, currentValue.c_str());
         for (auto& ch : configuredValue) {
@@ -160,10 +336,19 @@ namespace rock
         rockGrabInputLeewaySeconds = 0.12f;
         rockGrabInputForceSeconds = 0.08f;
 
-        rockDeveloperModeEnabled = false;
+        rockSavedGrabOffsetRecordingEnabled = false;
         rockLogLevel = logging_policy::DefaultLogLevel;
         rockLogPattern = logging_policy::DefaultLogPattern;
         rockLogSampleMilliseconds = logging_policy::DefaultLogSampleMilliseconds;
+        rockDebugEnabled = true;
+        rockDebugOverlayEnabled = true;
+        rockDebugLoggingEnabled = true;
+        rockDebugControllerEnabled = false;
+        rockDebugMonitorEnabled = false;
+        rockDebugProviderOverlayEnabled = true;
+        rockDebugProviderColliderFocusEnabled = true;
+        rockDebugColliderClockLogging = false;
+        rockDebugDynamicWeaponLogging = false;
         rockPerformanceProfilerEnabled = false;
         rockPerformanceProfilerLogIntervalFrames = 300;
         rockPerformanceProfilerWarmupFrames = 120;
@@ -267,10 +452,10 @@ namespace rock
         rockHandCollisionSurfaceFingerSmoothingSpeed = 30.0f;
         rockHandCollisionSurfaceFingerReleaseDelaySeconds = 0.12f;
 
-        rockNativeMeleeSuppressionEnabled = true;
-        rockNativeMeleeFullSuppression = true;
-        rockNativeMeleeSuppressWeaponSwing = true;
-        rockNativeMeleeSuppressHitFrame = true;
+        rockNativeMeleeSuppressionEnabled = false;
+        rockNativeMeleeFullSuppression = false;
+        rockNativeMeleeSuppressWeaponSwing = false;
+        rockNativeMeleeSuppressHitFrame = false;
         rockNativeMeleeDebugLogging = false;
         rockNativeCharacterControllerObjectContactFilterEnabled = true;
 
@@ -282,7 +467,7 @@ namespace rock
         rockSelectionBeamCurveLiftGameUnits = selection_beam_policy::kDefaultCurveLiftGameUnits;
         rockSelectionBeamAlpha = selection_beam_policy::kDefaultAlpha;
 
-        rockDebugShowColliders = false;
+        rockDebugShowColliders = true;
         rockDebugShowTargetColliders = false;
         rockDebugShowHandAxes = false;
         rockDebugShowGrabPivots = false;
@@ -296,8 +481,8 @@ namespace rock
         rockDebugDrawGrabPockets = false;
         rockDebugShowGrabFingerProbes = false;
         rockDebugShowGrabFingerSweptArc = false;
-        rockDebugShowGrabFingerSweptArcText = true;
-        rockDebugShowGrabFingerSweptArcLiveSkeleton = true;
+        rockDebugShowGrabFingerSweptArcText = false;
+        rockDebugShowGrabFingerSweptArcLiveSkeleton = false;
         rockDebugShowPalmVectors = false;
         rockDebugDrawHandColliders = false;
         rockDebugDrawHandBoneColliders = false;
@@ -310,7 +495,7 @@ namespace rock
         rockDebugDrawNativeScopeActivation = false;
         rockDebugDrawAuthoredGripActivationZones = false;
         rockDebugDrawGunstockAlignment = false;
-        rockDebugDrawDynamicWeaponColliders = false;
+        rockDebugDrawDynamicWeaponColliders = true;
         rockDebugDumpWeaponAnimNodes = false;
         rockDebugMaxWeaponBodiesDrawn = 100;
         rockDebugWeaponAnimNodeDumpIntervalFrames = 120;
@@ -331,7 +516,6 @@ namespace rock
         rockDebugGrabFrameLogging = false;
         rockDebugVideoSyncMarker = false;
         rockDebugVideoSyncMarkerSize = 4.0f;
-        rockDebugGrabFingerPoseLogging = false;
         rockDebugGrabTimelineTrace = false;
         rockDebugGrabAfterSolveAnomalySampling = false;
         rockDebugGrabTransformTelemetry = false;
@@ -342,18 +526,17 @@ namespace rock
         rockDebugGrabTransformTelemetryTextMode = 0;
         rockDebugShowGrabNotifications = false;
         rockDebugShowWeaponNotifications = false;
-        rockDebugWeaponOmodDumpEnabled = false;
-        rockDebugWeaponOmodCoverageAudit = false;
+        rockDebugWeaponOmodDumpEnabled = true;
+        rockDebugWeaponOmodCoverageAudit = true;
         rockDebugWeaponOmodCoverageAuditIntervalFrames = 450;
-        rockDebugWeaponOmodSelfHeal = false;
-        rockDebugWorkbenchWeaponReattach = false;
+        rockExperimentalWeaponOmodSelfHealEnabled = true;
         rockDebugHandTransformParity = false;
         rockDebugWorldObjectOriginDiagnostics = false;
         rockDebugWorldObjectOriginLogIntervalFrames = 120;
         rockDebugWorldObjectOriginMismatchWarnGameUnits = 5.0f;
         rockDebugCustomCalibrationOffset = false;
         rockDebugShowRootFlattenedFingerSkeletonMarkers = false;
-        rockDebugShowSkeletonBoneVisualizer = false;
+        rockDebugShowSkeletonBoneVisualizer = true;
         rockDebugDrawSkeletonBoneAxes = false;
         rockDebugLogSkeletonBones = false;
         rockDebugSkeletonBoneMode = 1;
@@ -390,7 +573,7 @@ namespace rock
         rockBodyBoneColliderRadiusScaleOverrides = "";
         rockHandCollisionStaticWorldEnabled = true;
         rockGlobalSurfaceGrabEnabled = true;
-        rockExperimentalSurfaceMeshGrabEnabled = false;
+        rockExperimentalSurfaceMeshGrabEnabled = true;
         rockExperimentalSurfaceMeshGrabMaxProjectionDistanceGameUnits = 48.0f;
         rockExperimentalSurfaceMeshGrabMaxTriangles = 20000;
         rockExperimentalSurfaceMeshGrabMaxPatchTriangles = 2048;
@@ -677,8 +860,18 @@ namespace rock
 
     }
 
-    void RockConfig::readValuesFromIni(CSimpleIniA& ini)
+    void RockConfig::readValuesFromIni(CSimpleIniA& rawIni)
     {
+        TrackedIni ini(rawIni);
+        const int schemaVersion = static_cast<int>(ini.GetLongValue(CONFIG_SECTION, "iSchemaVersion", 0));
+        if (schemaVersion == 0) {
+            ROCK_LOG_WARN(Config, "ROCK.ini has no schema version; legacy section compatibility remains active for schema 1");
+        } else if (schemaVersion != kCurrentConfigSchemaVersion) {
+            ROCK_LOG_WARN(Config,
+                "ROCK.ini schema {} does not match runtime schema {}; recognized settings will be loaded and unknown settings ignored",
+                schemaVersion,
+                kCurrentConfigSchemaVersion);
+        }
         auto readVec3 = [&](const char* keyX, const char* keyY, const char* keyZ, RE::NiPoint3& value) {
             value.x = static_cast<float>(ini.GetDoubleValue(SECTION, keyX, value.x));
             value.y = static_cast<float>(ini.GetDoubleValue(SECTION, keyY, value.y));
@@ -726,7 +919,8 @@ namespace rock
 
             return selection_query_policy::sanitizeFilterInfo(static_cast<std::uint32_t>(std::strtoul(hexStr, nullptr, 16)), fallback);
         };
-        rockDeveloperModeEnabled = ini.GetBoolValue(DEBUG_SECTION, "bDeveloperModeEnabled", rockDeveloperModeEnabled);
+        rockSavedGrabOffsetRecordingEnabled =
+            ini.GetBoolValue(DEBUG_SECTION, "bSavedGrabOffsetRecordingEnabled", rockSavedGrabOffsetRecordingEnabled);
         rockLogLevel = logging_policy::clampLogLevel(static_cast<int>(ini.GetLongValue(DEBUG_SECTION, "iLogLevel", rockLogLevel)));
         rockLogPattern = ini.GetValue(DEBUG_SECTION, "sLogPattern", rockLogPattern.c_str());
         if (rockLogPattern.empty()) {
@@ -734,6 +928,14 @@ namespace rock
         }
         rockLogSampleMilliseconds =
             logging_policy::sanitizeSampleMilliseconds(static_cast<int>(ini.GetLongValue(DEBUG_SECTION, "iLogSampleMilliseconds", rockLogSampleMilliseconds)));
+        rockDebugEnabled = ini.GetBoolValue(DEBUG_SECTION, "bEnabled", rockDebugEnabled);
+        rockDebugOverlayEnabled = ini.GetBoolValue(DEBUG_SECTION, "bOverlayEnabled", rockDebugOverlayEnabled);
+        rockDebugLoggingEnabled = ini.GetBoolValue(DEBUG_SECTION, "bLoggingEnabled", rockDebugLoggingEnabled);
+        rockDebugControllerEnabled = ini.GetBoolValue(DEBUG_SECTION, "bControllerEnabled", rockDebugControllerEnabled);
+        rockDebugMonitorEnabled = ini.GetBoolValue(DEBUG_SECTION, "bMonitorEnabled", rockDebugMonitorEnabled);
+        rockDebugProviderOverlayEnabled = ini.GetBoolValue(DEBUG_SECTION, "bProviderOverlayEnabled", rockDebugProviderOverlayEnabled);
+        rockDebugProviderColliderFocusEnabled =
+            ini.GetBoolValue(DEBUG_SECTION, "bProviderColliderFocusEnabled", rockDebugProviderColliderFocusEnabled);
         rockPerformanceProfilerEnabled = ini.GetBoolValue(DEBUG_SECTION, "bPerformanceProfilerEnabled", rockPerformanceProfilerEnabled);
         rockPerformanceProfilerLogIntervalFrames =
             std::clamp(static_cast<int>(ini.GetLongValue(DEBUG_SECTION, "iPerformanceProfilerLogIntervalFrames", rockPerformanceProfilerLogIntervalFrames)), 30, 54000);
@@ -1354,7 +1556,7 @@ namespace rock
         rockNativeMeleeFullSuppression = ini.GetBoolValue(SECTION, "bNativeMeleeFullSuppression", rockNativeMeleeFullSuppression);
         rockNativeMeleeSuppressWeaponSwing = ini.GetBoolValue(SECTION, "bNativeMeleeSuppressWeaponSwing", rockNativeMeleeSuppressWeaponSwing);
         rockNativeMeleeSuppressHitFrame = ini.GetBoolValue(SECTION, "bNativeMeleeSuppressHitFrame", rockNativeMeleeSuppressHitFrame);
-        rockNativeMeleeDebugLogging = ini.GetBoolValue(SECTION, "bNativeMeleeDebugLogging", rockNativeMeleeDebugLogging);
+        rockNativeMeleeDebugLogging = ini.GetBoolValue(DEBUG_LOGGING_SECTION, "bNativeMelee", rockNativeMeleeDebugLogging);
         rockNativeCharacterControllerObjectContactFilterEnabled = ini.GetBoolValue(
             SECTION, "bNativeCharacterControllerObjectContactFilterEnabled", rockNativeCharacterControllerObjectContactFilterEnabled);
 
@@ -1384,69 +1586,86 @@ namespace rock
             0.05f,
             1.0f);
 
-        rockDebugShowColliders = ini.GetBoolValue(SECTION, "bDebugShowColliders", rockDebugShowColliders);
-        rockDebugShowTargetColliders = ini.GetBoolValue(SECTION, "bDebugShowTargetColliders", rockDebugShowTargetColliders);
-        rockDebugShowHandAxes = ini.GetBoolValue(SECTION, "bDebugShowHandAxes", rockDebugShowHandAxes);
-        rockDebugShowGrabPivots = ini.GetBoolValue(SECTION, "bDebugShowGrabPivots", rockDebugShowGrabPivots);
-        rockDebugShowGrabPocketNormal = ini.GetBoolValue(SECTION, "bDebugShowGrabPocketNormal", rockDebugShowGrabPocketNormal);
-        rockDebugDrawGrabContactPatch = ini.GetBoolValue(SECTION, "bDebugDrawGrabContactPatch", rockDebugDrawGrabContactPatch);
-        rockDebugDrawGrabForceTorque = ini.GetBoolValue(SECTION, "bDebugDrawGrabForceTorque", rockDebugDrawGrabForceTorque);
-        rockDebugDrawGrabForceTorqueText = ini.GetBoolValue(SECTION, "bDebugDrawGrabForceTorqueText", rockDebugDrawGrabForceTorqueText);
+        rockDebugShowColliders = ini.GetBoolValue(DEBUG_OVERLAY_SECTION, "bShowColliders", rockDebugShowColliders);
+        rockDebugShowTargetColliders = ini.GetBoolValue(DEBUG_OVERLAY_SECTION, "bShowTargetColliders", rockDebugShowTargetColliders);
+        rockDebugShowHandAxes = ini.GetBoolValue(DEBUG_OVERLAY_SECTION, "bShowHandAxes", rockDebugShowHandAxes);
+        rockDebugShowGrabPivots = ini.GetBoolValue(DEBUG_OVERLAY_SECTION, "bShowGrabPivots", rockDebugShowGrabPivots);
+        rockDebugShowGrabPocketNormal = ini.GetBoolValue(DEBUG_OVERLAY_SECTION, "bShowGrabPocketNormal", rockDebugShowGrabPocketNormal);
+        rockDebugDrawGrabContactPatch = ini.GetBoolValue(DEBUG_OVERLAY_SECTION, "bDrawGrabContactPatch", rockDebugDrawGrabContactPatch);
+        rockDebugDrawGrabForceTorque = ini.GetBoolValue(DEBUG_OVERLAY_SECTION, "bDrawGrabForceTorque", rockDebugDrawGrabForceTorque);
+        rockDebugDrawGrabForceTorqueText = ini.GetBoolValue(DEBUG_OVERLAY_SECTION, "bDrawGrabForceTorqueText", rockDebugDrawGrabForceTorqueText);
         rockDebugDrawGrabPivotSourceCollider =
-            ini.GetBoolValue(SECTION, "bDebugDrawGrabPivotSourceCollider", rockDebugDrawGrabPivotSourceCollider);
+            ini.GetBoolValue(DEBUG_OVERLAY_SECTION, "bDrawGrabPivotSourceCollider", rockDebugDrawGrabPivotSourceCollider);
         rockDebugDrawGrabPivotSourceEvidence =
-            ini.GetBoolValue(SECTION, "bDebugDrawGrabPivotSourceEvidence", rockDebugDrawGrabPivotSourceEvidence);
-        rockDebugDrawGrabSupportFrame = ini.GetBoolValue(SECTION, "bDebugDrawGrabSupportFrame", rockDebugDrawGrabSupportFrame);
-        rockDebugDrawGrabPockets = ini.GetBoolValue(SECTION, "bDebugDrawGrabPockets", rockDebugDrawGrabPockets);
-        rockDebugShowGrabFingerProbes = ini.GetBoolValue(SECTION, "bDebugShowGrabFingerProbes", rockDebugShowGrabFingerProbes);
-        rockDebugShowGrabFingerSweptArc = ini.GetBoolValue(SECTION, "bDebugShowGrabFingerSweptArc", rockDebugShowGrabFingerSweptArc);
-        rockDebugShowGrabFingerSweptArcText = ini.GetBoolValue(SECTION, "bDebugShowGrabFingerSweptArcText", rockDebugShowGrabFingerSweptArcText);
-        rockDebugShowGrabFingerSweptArcLiveSkeleton = ini.GetBoolValue(SECTION, "bDebugShowGrabFingerSweptArcLiveSkeleton", rockDebugShowGrabFingerSweptArcLiveSkeleton);
-        rockDebugShowPalmVectors = ini.GetBoolValue(SECTION, "bDebugShowPalmVectors", rockDebugShowPalmVectors);
-        rockDebugDrawHandColliders = ini.GetBoolValue(SECTION, "bDebugDrawHandColliders", rockDebugDrawHandColliders);
-        rockDebugDrawHandBoneColliders = ini.GetBoolValue(SECTION, "bDebugDrawHandBoneColliders", rockDebugDrawHandBoneColliders);
-        rockDebugDrawDynamicHandColliders = ini.GetBoolValue(SECTION, "bDebugDrawDynamicHandColliders", rockDebugDrawDynamicHandColliders);
-        rockDebugDrawHandBoneContacts = ini.GetBoolValue(SECTION, "bDebugDrawHandBoneContacts", rockDebugDrawHandBoneContacts);
-        rockDebugDrawGrabAuthorityProxy = ini.GetBoolValue(SECTION, "bDebugDrawGrabAuthorityProxy", rockDebugDrawGrabAuthorityProxy);
-        rockDebugMaxHandBoneBodiesDrawn = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxHandBoneBodiesDrawn", rockDebugMaxHandBoneBodiesDrawn));
+            ini.GetBoolValue(DEBUG_OVERLAY_SECTION, "bDrawGrabPivotSourceEvidence", rockDebugDrawGrabPivotSourceEvidence);
+        rockDebugDrawGrabSupportFrame = ini.GetBoolValue(DEBUG_OVERLAY_SECTION, "bDrawGrabSupportFrame", rockDebugDrawGrabSupportFrame);
+        rockDebugDrawGrabPockets = ini.GetBoolValue(DEBUG_OVERLAY_SECTION, "bDrawGrabPockets", rockDebugDrawGrabPockets);
+        rockDebugShowGrabFingerProbes = ini.GetBoolValue(DEBUG_OVERLAY_SECTION, "bShowGrabFingerProbes", rockDebugShowGrabFingerProbes);
+        rockDebugShowGrabFingerSweptArc = ini.GetBoolValue(DEBUG_OVERLAY_SECTION, "bShowGrabFingerSweptArc", rockDebugShowGrabFingerSweptArc);
+        rockDebugShowGrabFingerSweptArcText = ini.GetBoolValue(DEBUG_OVERLAY_SECTION, "bShowGrabFingerSweptArcText", rockDebugShowGrabFingerSweptArcText);
+        rockDebugShowGrabFingerSweptArcLiveSkeleton =
+            ini.GetBoolValue(DEBUG_OVERLAY_SECTION, "bShowGrabFingerSweptArcLiveSkeleton", rockDebugShowGrabFingerSweptArcLiveSkeleton);
+        rockDebugShowPalmVectors = ini.GetBoolValue(DEBUG_OVERLAY_SECTION, "bShowPalmVectors", rockDebugShowPalmVectors);
+        rockDebugDrawHandColliders = ini.GetBoolValue(DEBUG_OVERLAY_SECTION, "bDrawHandColliders", rockDebugDrawHandColliders);
+        rockDebugDrawHandBoneColliders = ini.GetBoolValue(DEBUG_OVERLAY_SECTION, "bDrawHandBoneColliders", rockDebugDrawHandBoneColliders);
+        rockDebugDrawDynamicHandColliders = ini.GetBoolValue(DEBUG_OVERLAY_SECTION, "bDrawDynamicHandColliders", rockDebugDrawDynamicHandColliders);
+        rockDebugDrawHandBoneContacts = ini.GetBoolValue(DEBUG_OVERLAY_SECTION, "bDrawHandBoneContacts", rockDebugDrawHandBoneContacts);
+        rockDebugDrawGrabAuthorityProxy = ini.GetBoolValue(DEBUG_OVERLAY_SECTION, "bDrawGrabAuthorityProxy", rockDebugDrawGrabAuthorityProxy);
+        rockDebugMaxHandBoneBodiesDrawn =
+            static_cast<int>(ini.GetLongValue(DEBUG_OVERLAY_SECTION, "iMaxHandBoneBodiesDrawn", rockDebugMaxHandBoneBodiesDrawn));
         if (rockDebugMaxHandBoneBodiesDrawn < 0) {
             rockDebugMaxHandBoneBodiesDrawn = 0;
         } else if (rockDebugMaxHandBoneBodiesDrawn > 48) {
             rockDebugMaxHandBoneBodiesDrawn = 48;
         }
-        rockDebugMaxBodyBoneBodiesDrawn = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxBodyBoneBodiesDrawn", rockDebugMaxBodyBoneBodiesDrawn));
+        rockDebugMaxBodyBoneBodiesDrawn =
+            static_cast<int>(ini.GetLongValue(DEBUG_OVERLAY_SECTION, "iMaxBodyBoneBodiesDrawn", rockDebugMaxBodyBoneBodiesDrawn));
         if (rockDebugMaxBodyBoneBodiesDrawn < 0) {
             rockDebugMaxBodyBoneBodiesDrawn = 0;
         } else if (rockDebugMaxBodyBoneBodiesDrawn > 64) {
             rockDebugMaxBodyBoneBodiesDrawn = 64;
         }
-        rockDebugDrawWeaponColliders = ini.GetBoolValue(SECTION, "bDebugDrawWeaponColliders", rockDebugDrawWeaponColliders);
+        rockDebugDrawWeaponColliders = ini.GetBoolValue(DEBUG_OVERLAY_SECTION, "bDrawWeaponColliders", rockDebugDrawWeaponColliders);
         rockDebugDrawNativeScopeActivation =
-            ini.GetBoolValue(SECTION, "bDebugDrawNativeScopeActivation", rockDebugDrawNativeScopeActivation);
+            ini.GetBoolValue(DEBUG_OVERLAY_SECTION, "bDrawNativeScopeActivation", rockDebugDrawNativeScopeActivation);
         rockDebugDrawAuthoredGripActivationZones =
-            ini.GetBoolValue(SECTION, "bDebugDrawAuthoredGripActivationZones", rockDebugDrawAuthoredGripActivationZones);
+            ini.GetBoolValue(DEBUG_OVERLAY_SECTION, "bDrawAuthoredGripActivationZones", rockDebugDrawAuthoredGripActivationZones);
         rockDebugDrawGunstockAlignment =
-            ini.GetBoolValue(SECTION, "bDebugDrawGunstockAlignment", rockDebugDrawGunstockAlignment);
-        rockDebugDrawDynamicWeaponColliders = ini.GetBoolValue(SECTION, "bDebugDrawDynamicWeaponColliders", rockDebugDrawDynamicWeaponColliders);
-        rockDebugDumpWeaponAnimNodes = ini.GetBoolValue(SECTION, "bDebugDumpWeaponAnimNodes", rockDebugDumpWeaponAnimNodes);
-        rockDebugMaxWeaponBodiesDrawn = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxWeaponBodiesDrawn", rockDebugMaxWeaponBodiesDrawn));
+            ini.GetBoolValue(DEBUG_OVERLAY_SECTION, "bDrawGunstockAlignment", rockDebugDrawGunstockAlignment);
+        rockDebugDrawDynamicWeaponColliders =
+            ini.GetBoolValue(DEBUG_OVERLAY_SECTION, "bDrawDynamicWeaponColliders", rockDebugDrawDynamicWeaponColliders);
+        rockDebugMaxWeaponBodiesDrawn =
+            static_cast<int>(ini.GetLongValue(DEBUG_OVERLAY_SECTION, "iMaxWeaponBodiesDrawn", rockDebugMaxWeaponBodiesDrawn));
+
+        rockDebugDumpWeaponAnimNodes = ini.GetBoolValue(DEBUG_LOGGING_SECTION, "bDumpWeaponAnimNodes", rockDebugDumpWeaponAnimNodes);
         rockDebugWeaponAnimNodeDumpIntervalFrames =
-            static_cast<int>(ini.GetLongValue(SECTION, "iDebugWeaponAnimNodeDumpIntervalFrames", rockDebugWeaponAnimNodeDumpIntervalFrames));
+            static_cast<int>(ini.GetLongValue(DEBUG_LOGGING_SECTION, "iWeaponAnimNodeDumpIntervalFrames", rockDebugWeaponAnimNodeDumpIntervalFrames));
         if (rockDebugWeaponAnimNodeDumpIntervalFrames < 1) {
             rockDebugWeaponAnimNodeDumpIntervalFrames = 1;
         }
-        rockDebugMaxShapeCapturesPerFrame = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxShapeCapturesPerFrame", rockDebugMaxShapeCapturesPerFrame));
-        rockDebugMaxConvexSupportVertices = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxConvexSupportVertices", rockDebugMaxConvexSupportVertices));
-        rockDebugMaxCompoundChildren = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxCompoundChildren", rockDebugMaxCompoundChildren));
-        rockDebugMaxCompoundDepth = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxCompoundDepth", rockDebugMaxCompoundDepth));
-        rockDebugMaxShapeQueuedJobs = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxShapeQueuedJobs", rockDebugMaxShapeQueuedJobs));
-        rockDebugMaxShapeCompletedJobs = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxShapeCompletedJobs", rockDebugMaxShapeCompletedJobs));
-        rockDebugMaxShapeUploadsPerFrame = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxShapeUploadsPerFrame", rockDebugMaxShapeUploadsPerFrame));
-        rockDebugMaxShapeCacheEntries = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxShapeCacheEntries", rockDebugMaxShapeCacheEntries));
-        rockDebugMaxShapeCacheBytes = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxShapeCacheBytes", rockDebugMaxShapeCacheBytes));
-        rockDebugMaxBodyInstances = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxBodyInstances", rockDebugMaxBodyInstances));
-        rockDebugMaxLineVertices = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxLineVertices", rockDebugMaxLineVertices));
-        rockDebugMaxTextVertices = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxTextVertices", rockDebugMaxTextVertices));
+        rockDebugMaxShapeCapturesPerFrame =
+            static_cast<int>(ini.GetLongValue(DEBUG_OVERLAY_SECTION, "iMaxShapeCapturesPerFrame", rockDebugMaxShapeCapturesPerFrame));
+        rockDebugMaxConvexSupportVertices =
+            static_cast<int>(ini.GetLongValue(DEBUG_OVERLAY_SECTION, "iMaxConvexSupportVertices", rockDebugMaxConvexSupportVertices));
+        rockDebugMaxCompoundChildren =
+            static_cast<int>(ini.GetLongValue(DEBUG_OVERLAY_SECTION, "iMaxCompoundChildren", rockDebugMaxCompoundChildren));
+        rockDebugMaxCompoundDepth = static_cast<int>(ini.GetLongValue(DEBUG_OVERLAY_SECTION, "iMaxCompoundDepth", rockDebugMaxCompoundDepth));
+        rockDebugMaxShapeQueuedJobs =
+            static_cast<int>(ini.GetLongValue(DEBUG_OVERLAY_SECTION, "iMaxShapeQueuedJobs", rockDebugMaxShapeQueuedJobs));
+        rockDebugMaxShapeCompletedJobs =
+            static_cast<int>(ini.GetLongValue(DEBUG_OVERLAY_SECTION, "iMaxShapeCompletedJobs", rockDebugMaxShapeCompletedJobs));
+        rockDebugMaxShapeUploadsPerFrame =
+            static_cast<int>(ini.GetLongValue(DEBUG_OVERLAY_SECTION, "iMaxShapeUploadsPerFrame", rockDebugMaxShapeUploadsPerFrame));
+        rockDebugMaxShapeCacheEntries =
+            static_cast<int>(ini.GetLongValue(DEBUG_OVERLAY_SECTION, "iMaxShapeCacheEntries", rockDebugMaxShapeCacheEntries));
+        rockDebugMaxShapeCacheBytes =
+            static_cast<int>(ini.GetLongValue(DEBUG_OVERLAY_SECTION, "iMaxShapeCacheBytes", rockDebugMaxShapeCacheBytes));
+        rockDebugMaxBodyInstances =
+            static_cast<int>(ini.GetLongValue(DEBUG_OVERLAY_SECTION, "iMaxBodyInstances", rockDebugMaxBodyInstances));
+        rockDebugMaxLineVertices =
+            static_cast<int>(ini.GetLongValue(DEBUG_OVERLAY_SECTION, "iMaxLineVertices", rockDebugMaxLineVertices));
+        rockDebugMaxTextVertices =
+            static_cast<int>(ini.GetLongValue(DEBUG_OVERLAY_SECTION, "iMaxTextVertices", rockDebugMaxTextVertices));
         debug_overlay_runtime::RequestedLimits requestedOverlayLimits{};
         requestedOverlayLimits.maxShapeCapturesPerFrame = rockDebugMaxShapeCapturesPerFrame;
         requestedOverlayLimits.maxConvexSupportVertices = rockDebugMaxConvexSupportVertices;
@@ -1473,101 +1692,112 @@ namespace rock
         rockDebugMaxBodyInstances = static_cast<int>(overlayLimits.maxBodyInstances);
         rockDebugMaxLineVertices = static_cast<int>(overlayLimits.maxLineVertices);
         rockDebugMaxTextVertices = static_cast<int>(overlayLimits.maxTextVertices);
-        rockDebugUseBoundsForHeavyConvex = ini.GetBoolValue(SECTION, "bDebugUseBoundsForHeavyConvex", rockDebugUseBoundsForHeavyConvex);
-        rockDebugVerboseLogging = ini.GetBoolValue(SECTION, "bDebugVerboseLogging", rockDebugVerboseLogging);
-        rockDebugGrabFrameLogging = ini.GetBoolValue(SECTION, "bDebugGrabFrameLogging", rockDebugGrabFrameLogging);
-        rockDebugVideoSyncMarker = ini.GetBoolValue(SECTION, "bDebugVideoSyncMarker", rockDebugVideoSyncMarker);
-        rockDebugVideoSyncMarkerSize = static_cast<float>(ini.GetDoubleValue(SECTION, "fDebugVideoSyncMarkerSize", rockDebugVideoSyncMarkerSize));
-        rockDebugGrabFingerPoseLogging = ini.GetBoolValue(SECTION, "bDebugGrabFingerPoseLogging", rockDebugGrabFingerPoseLogging);
-        rockDebugGrabTimelineTrace = ini.GetBoolValue(SECTION, "bDebugGrabTimelineTrace", rockDebugGrabTimelineTrace);
+        rockDebugUseBoundsForHeavyConvex =
+            ini.GetBoolValue(DEBUG_OVERLAY_SECTION, "bUseBoundsForHeavyConvex", rockDebugUseBoundsForHeavyConvex);
+        rockDebugVideoSyncMarker = ini.GetBoolValue(DEBUG_OVERLAY_SECTION, "bVideoSyncMarker", rockDebugVideoSyncMarker);
+        rockDebugVideoSyncMarkerSize =
+            static_cast<float>(ini.GetDoubleValue(DEBUG_OVERLAY_SECTION, "fVideoSyncMarkerSize", rockDebugVideoSyncMarkerSize));
+
+        rockDebugVerboseLogging = ini.GetBoolValue(DEBUG_LOGGING_SECTION, "bVerbose", rockDebugVerboseLogging);
+        rockDebugGrabFrameLogging = ini.GetBoolValue(DEBUG_LOGGING_SECTION, "bGrabFrame", rockDebugGrabFrameLogging);
+        rockDebugColliderClockLogging = ini.GetBoolValue(DEBUG_LOGGING_SECTION, "bColliderClock", rockDebugColliderClockLogging);
+        rockDebugDynamicWeaponLogging = ini.GetBoolValue(DEBUG_LOGGING_SECTION, "bDynamicWeapon", rockDebugDynamicWeaponLogging);
+        rockDebugGrabTimelineTrace = ini.GetBoolValue(DEBUG_LOGGING_SECTION, "bGrabTimeline", rockDebugGrabTimelineTrace);
         rockDebugGrabAfterSolveAnomalySampling =
-            ini.GetBoolValue(SECTION, "bDebugGrabAfterSolveAnomalySampling", rockDebugGrabAfterSolveAnomalySampling);
+            ini.GetBoolValue(DEBUG_LOGGING_SECTION, "bGrabAfterSolveAnomalySampling", rockDebugGrabAfterSolveAnomalySampling);
         rockDebugGrabTimelineTraceIntervalFrames =
-            static_cast<int>(ini.GetLongValue(SECTION, "iDebugGrabTimelineTraceIntervalFrames", rockDebugGrabTimelineTraceIntervalFrames));
+            static_cast<int>(ini.GetLongValue(DEBUG_LOGGING_SECTION, "iGrabTimelineIntervalFrames", rockDebugGrabTimelineTraceIntervalFrames));
         if (rockDebugGrabTimelineTraceIntervalFrames < 1) {
             rockDebugGrabTimelineTraceIntervalFrames = 1;
         }
-        rockDebugGrabTransformTelemetry = ini.GetBoolValue(SECTION, "bDebugGrabTransformTelemetry", rockDebugGrabTransformTelemetry);
-        rockDebugGrabTransformTelemetryText = ini.GetBoolValue(SECTION, "bDebugGrabTransformTelemetryText", rockDebugGrabTransformTelemetryText);
-        rockDebugGrabTransformTelemetryAxes = ini.GetBoolValue(SECTION, "bDebugGrabTransformTelemetryAxes", rockDebugGrabTransformTelemetryAxes);
+        rockDebugGrabTransformTelemetry = ini.GetBoolValue(DEBUG_OVERLAY_SECTION, "bGrabTransformTelemetry", rockDebugGrabTransformTelemetry);
+        rockDebugGrabTransformTelemetryText = ini.GetBoolValue(DEBUG_OVERLAY_SECTION, "bGrabTransformTelemetryText", rockDebugGrabTransformTelemetryText);
+        rockDebugGrabTransformTelemetryAxes = ini.GetBoolValue(DEBUG_OVERLAY_SECTION, "bGrabTransformTelemetryAxes", rockDebugGrabTransformTelemetryAxes);
         rockDebugGrabTransformTelemetryLogIntervalFrames =
-            static_cast<int>(ini.GetLongValue(SECTION, "iDebugGrabTransformTelemetryLogIntervalFrames", rockDebugGrabTransformTelemetryLogIntervalFrames));
+            static_cast<int>(ini.GetLongValue(DEBUG_LOGGING_SECTION, "iGrabTransformTelemetryIntervalFrames", rockDebugGrabTransformTelemetryLogIntervalFrames));
         if (rockDebugGrabTransformTelemetryLogIntervalFrames < 1) {
             rockDebugGrabTransformTelemetryLogIntervalFrames = 1;
         }
         rockDebugGrabTransformTelemetryTextMode =
-            static_cast<int>(ini.GetLongValue(SECTION, "iDebugGrabTransformTelemetryTextMode", rockDebugGrabTransformTelemetryTextMode));
+            static_cast<int>(ini.GetLongValue(DEBUG_OVERLAY_SECTION, "iGrabTransformTelemetryTextMode", rockDebugGrabTransformTelemetryTextMode));
         if (rockDebugGrabTransformTelemetryTextMode < 0 || rockDebugGrabTransformTelemetryTextMode > 1) {
             rockDebugGrabTransformTelemetryTextMode = 0;
         }
-        rockDebugShowGrabNotifications = ini.GetBoolValue(SECTION, "bDebugShowGrabNotifications", rockDebugShowGrabNotifications);
-        rockDebugShowWeaponNotifications = ini.GetBoolValue(SECTION, "bDebugShowWeaponNotifications", rockDebugShowWeaponNotifications);
-        rockDebugWeaponOmodDumpEnabled = ini.GetBoolValue(SECTION, "bDebugWeaponOmodDump", rockDebugWeaponOmodDumpEnabled);
-        rockDebugWeaponOmodCoverageAudit = ini.GetBoolValue(SECTION, "bDebugWeaponOmodCoverageAudit", rockDebugWeaponOmodCoverageAudit);
+        rockDebugShowGrabNotifications = ini.GetBoolValue(DEBUG_OVERLAY_SECTION, "bShowGrabNotifications", rockDebugShowGrabNotifications);
+        rockDebugShowWeaponNotifications = ini.GetBoolValue(DEBUG_OVERLAY_SECTION, "bShowWeaponNotifications", rockDebugShowWeaponNotifications);
+        rockDebugWeaponOmodDumpEnabled = ini.GetBoolValue(DEBUG_LOGGING_SECTION, "bWeaponOmodDump", rockDebugWeaponOmodDumpEnabled);
+        rockDebugWeaponOmodCoverageAudit = ini.GetBoolValue(DEBUG_LOGGING_SECTION, "bWeaponOmodCoverageAudit", rockDebugWeaponOmodCoverageAudit);
         rockDebugWeaponOmodCoverageAuditIntervalFrames = static_cast<int>(
-            ini.GetLongValue(SECTION, "iDebugWeaponOmodCoverageAuditIntervalFrames", rockDebugWeaponOmodCoverageAuditIntervalFrames));
+            ini.GetLongValue(DEBUG_LOGGING_SECTION, "iWeaponOmodCoverageAuditIntervalFrames", rockDebugWeaponOmodCoverageAuditIntervalFrames));
         if (rockDebugWeaponOmodCoverageAuditIntervalFrames < 30) {
             rockDebugWeaponOmodCoverageAuditIntervalFrames = 30;
         }
-        rockDebugWeaponOmodSelfHeal = ini.GetBoolValue(SECTION, "bDebugWeaponOmodSelfHeal", rockDebugWeaponOmodSelfHeal);
-        rockDebugWorkbenchWeaponReattach = ini.GetBoolValue(SECTION, "bDebugWorkbenchWeaponReattach", rockDebugWorkbenchWeaponReattach);
-        rockDebugHandTransformParity = ini.GetBoolValue(SECTION, "bDebugHandTransformParity", rockDebugHandTransformParity);
+        rockExperimentalWeaponOmodSelfHealEnabled =
+            ini.GetBoolValue(EXPERIMENTAL_SECTION, "bWeaponOmodSelfHealEnabled", rockExperimentalWeaponOmodSelfHealEnabled);
+        rockDebugHandTransformParity = ini.GetBoolValue(DEBUG_LOGGING_SECTION, "bHandTransformParity", rockDebugHandTransformParity);
         rockDebugWorldObjectOriginDiagnostics =
-            ini.GetBoolValue(SECTION, "bDebugWorldObjectOriginDiagnostics", rockDebugWorldObjectOriginDiagnostics);
+            ini.GetBoolValue(DEBUG_OVERLAY_SECTION, "bWorldObjectOriginDiagnostics", rockDebugWorldObjectOriginDiagnostics);
         rockDebugWorldObjectOriginLogIntervalFrames =
-            static_cast<int>(ini.GetLongValue(SECTION, "iDebugWorldObjectOriginLogIntervalFrames", rockDebugWorldObjectOriginLogIntervalFrames));
+            static_cast<int>(ini.GetLongValue(DEBUG_LOGGING_SECTION, "iWorldObjectOriginIntervalFrames", rockDebugWorldObjectOriginLogIntervalFrames));
         if (rockDebugWorldObjectOriginLogIntervalFrames < 1) {
             rockDebugWorldObjectOriginLogIntervalFrames = 1;
         }
         rockDebugWorldObjectOriginMismatchWarnGameUnits = static_cast<float>(
-            ini.GetDoubleValue(SECTION, "fDebugWorldObjectOriginMismatchWarnGameUnits", rockDebugWorldObjectOriginMismatchWarnGameUnits));
+            ini.GetDoubleValue(DEBUG_LOGGING_SECTION, "fWorldObjectOriginMismatchWarnGameUnits", rockDebugWorldObjectOriginMismatchWarnGameUnits));
         if (!std::isfinite(rockDebugWorldObjectOriginMismatchWarnGameUnits) || rockDebugWorldObjectOriginMismatchWarnGameUnits < 0.0f) {
             rockDebugWorldObjectOriginMismatchWarnGameUnits = 0.0f;
         }
-        rockDebugCustomCalibrationOffset = ini.GetBoolValue(SECTION, "customcalibrationoffset", rockDebugCustomCalibrationOffset);
+        rockDebugCustomCalibrationOffset =
+            ini.GetBoolValue(DEBUG_OVERLAY_SECTION, "bDrawCustomCalibrationOffset", rockDebugCustomCalibrationOffset);
         rockDebugShowRootFlattenedFingerSkeletonMarkers =
-            ini.GetBoolValue(SECTION, "bDebugShowRootFlattenedFingerSkeletonMarkers", rockDebugShowRootFlattenedFingerSkeletonMarkers);
-        rockDebugShowSkeletonBoneVisualizer = ini.GetBoolValue(SECTION, "bDebugShowSkeletonBoneVisualizer", rockDebugShowSkeletonBoneVisualizer);
-        rockDebugSkeletonBoneMode = static_cast<int>(ini.GetLongValue(SECTION, "iDebugSkeletonBoneMode", rockDebugSkeletonBoneMode));
+            ini.GetBoolValue(DEBUG_SKELETON_SECTION, "bShowRootFlattenedFingerMarkers", rockDebugShowRootFlattenedFingerSkeletonMarkers);
+        rockDebugShowSkeletonBoneVisualizer =
+            ini.GetBoolValue(DEBUG_SKELETON_SECTION, "bShowBoneVisualizer", rockDebugShowSkeletonBoneVisualizer);
+        rockDebugSkeletonBoneMode = static_cast<int>(ini.GetLongValue(DEBUG_SKELETON_SECTION, "iBoneMode", rockDebugSkeletonBoneMode));
         if (rockDebugSkeletonBoneMode < 0 || rockDebugSkeletonBoneMode > 3) {
             rockDebugSkeletonBoneMode = 1;
         }
-        rockDebugSkeletonBoneSource = static_cast<int>(ini.GetLongValue(SECTION, "iDebugSkeletonBoneSource", rockDebugSkeletonBoneSource));
+        rockDebugSkeletonBoneSource = static_cast<int>(ini.GetLongValue(DEBUG_SKELETON_SECTION, "iBoneSource", rockDebugSkeletonBoneSource));
         if (rockDebugSkeletonBoneSource != 1 && rockDebugSkeletonBoneSource != 2) {
             rockDebugSkeletonBoneSource = 1;
         }
-        rockDebugDrawSkeletonBoneAxes = ini.GetBoolValue(SECTION, "bDebugDrawSkeletonBoneAxes", rockDebugDrawSkeletonBoneAxes);
-        rockDebugLogSkeletonBones = ini.GetBoolValue(SECTION, "bDebugLogSkeletonBones", rockDebugLogSkeletonBones);
-        rockDebugLogSkeletonBoneTruncation = ini.GetBoolValue(SECTION, "bDebugLogSkeletonBoneTruncation", rockDebugLogSkeletonBoneTruncation);
-        rockDebugSkeletonBoneLogFilter = ini.GetValue(SECTION, "sDebugSkeletonBoneLogFilter", rockDebugSkeletonBoneLogFilter.c_str());
-        rockDebugSkeletonAxisBoneFilter = ini.GetValue(SECTION, "sDebugSkeletonAxisBoneFilter", rockDebugSkeletonAxisBoneFilter.c_str());
+        rockDebugDrawSkeletonBoneAxes = ini.GetBoolValue(DEBUG_SKELETON_SECTION, "bDrawBoneAxes", rockDebugDrawSkeletonBoneAxes);
+        rockDebugLogSkeletonBones = ini.GetBoolValue(DEBUG_SKELETON_SECTION, "bLogBones", rockDebugLogSkeletonBones);
+        rockDebugLogSkeletonBoneTruncation =
+            ini.GetBoolValue(DEBUG_SKELETON_SECTION, "bLogBoneTruncation", rockDebugLogSkeletonBoneTruncation);
+        rockDebugSkeletonBoneLogFilter = ini.GetValue(DEBUG_SKELETON_SECTION, "sBoneLogFilter", rockDebugSkeletonBoneLogFilter.c_str());
+        rockDebugSkeletonAxisBoneFilter = ini.GetValue(DEBUG_SKELETON_SECTION, "sAxisBoneFilter", rockDebugSkeletonAxisBoneFilter.c_str());
         rockDebugSkeletonBoneLogIntervalFrames =
-            static_cast<int>(ini.GetLongValue(SECTION, "iDebugSkeletonBoneLogIntervalFrames", rockDebugSkeletonBoneLogIntervalFrames));
+            static_cast<int>(ini.GetLongValue(DEBUG_SKELETON_SECTION, "iBoneLogIntervalFrames", rockDebugSkeletonBoneLogIntervalFrames));
         if (rockDebugSkeletonBoneLogIntervalFrames < 1) {
             rockDebugSkeletonBoneLogIntervalFrames = 1;
         }
-        rockDebugMaxSkeletonBonesDrawn = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxSkeletonBonesDrawn", rockDebugMaxSkeletonBonesDrawn));
+        rockDebugMaxSkeletonBonesDrawn =
+            static_cast<int>(ini.GetLongValue(DEBUG_SKELETON_SECTION, "iMaxBonesDrawn", rockDebugMaxSkeletonBonesDrawn));
         if (rockDebugMaxSkeletonBonesDrawn < 0) {
             rockDebugMaxSkeletonBonesDrawn = 0;
         } else if (rockDebugMaxSkeletonBonesDrawn > 768) {
             rockDebugMaxSkeletonBonesDrawn = 768;
         }
-        rockDebugMaxSkeletonBoneAxesDrawn = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxSkeletonBoneAxesDrawn", rockDebugMaxSkeletonBoneAxesDrawn));
+        rockDebugMaxSkeletonBoneAxesDrawn =
+            static_cast<int>(ini.GetLongValue(DEBUG_SKELETON_SECTION, "iMaxBoneAxesDrawn", rockDebugMaxSkeletonBoneAxesDrawn));
         if (rockDebugMaxSkeletonBoneAxesDrawn < 0) {
             rockDebugMaxSkeletonBoneAxesDrawn = 0;
         } else if (rockDebugMaxSkeletonBoneAxesDrawn > 768) {
             rockDebugMaxSkeletonBoneAxesDrawn = 768;
         }
         rockDebugRootFlattenedFingerSkeletonMarkerSize =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fDebugRootFlattenedFingerSkeletonMarkerSize", rockDebugRootFlattenedFingerSkeletonMarkerSize));
+            static_cast<float>(ini.GetDoubleValue(DEBUG_SKELETON_SECTION, "fRootFlattenedFingerMarkerSize", rockDebugRootFlattenedFingerSkeletonMarkerSize));
         if (rockDebugRootFlattenedFingerSkeletonMarkerSize < 0.1f) {
             rockDebugRootFlattenedFingerSkeletonMarkerSize = 0.1f;
         }
-        rockDebugSkeletonBonePointSize = static_cast<float>(ini.GetDoubleValue(SECTION, "fDebugSkeletonBonePointSize", rockDebugSkeletonBonePointSize));
+        rockDebugSkeletonBonePointSize =
+            static_cast<float>(ini.GetDoubleValue(DEBUG_SKELETON_SECTION, "fBonePointSize", rockDebugSkeletonBonePointSize));
         if (rockDebugSkeletonBonePointSize < 0.1f) {
             rockDebugSkeletonBonePointSize = 0.1f;
         }
-        rockDebugSkeletonBoneAxisLength = static_cast<float>(ini.GetDoubleValue(SECTION, "fDebugSkeletonBoneAxisLength", rockDebugSkeletonBoneAxisLength));
+        rockDebugSkeletonBoneAxisLength =
+            static_cast<float>(ini.GetDoubleValue(DEBUG_SKELETON_SECTION, "fBoneAxisLength", rockDebugSkeletonBoneAxisLength));
         if (rockDebugSkeletonBoneAxisLength < 0.1f) {
             rockDebugSkeletonBoneAxisLength = 0.1f;
         }
@@ -2258,14 +2488,14 @@ namespace rock
         rockGrabHeldRenderClockAnchor = ini.GetBoolValue(SECTION, "bGrabHeldRenderClockAnchor", rockGrabHeldRenderClockAnchor);
         rockGrabHeldRenderBodyPose = ini.GetBoolValue(SECTION, "bGrabHeldRenderBodyPose", rockGrabHeldRenderBodyPose);
         rockGrabRenderClockProbeOffsetGameUnits = readClampedFloat(ini,
-            SECTION,
+            DEBUG_OVERLAY_SECTION,
             "fGrabRenderClockProbeOffsetGameUnits",
             rockGrabRenderClockProbeOffsetGameUnits,
             0.0f,
             -50.0f,
             50.0f);
         rockGrabSceneWriterProbeOffsetZGameUnits = readClampedFloat(ini,
-            SECTION,
+            DEBUG_OVERLAY_SECTION,
             "fGrabSceneWriterProbeOffsetZGameUnits",
             rockGrabSceneWriterProbeOffsetZGameUnits,
             0.0f,
@@ -2637,6 +2867,87 @@ namespace rock
         readClampedFloat("fMouthConsumeCommitHapticDurationSeconds", rockMouthConsumeCommitHapticDurationSeconds, 0.12f, 0.0f, 0.2f);
         readClampedFloat("fMouthConsumeCommitHapticIntensity", rockMouthConsumeCommitHapticIntensity, 0.85f, 0.0f, 1.0f);
 
+        resolveEffectiveDebugSettings();
+        ini.warnUnknownKeys();
+    }
+
+    void RockConfig::resolveEffectiveDebugSettings()
+    {
+        using debug_config_policy::childEnabled;
+        using debug_config_policy::subsystemEnabled;
+
+        rockDebugOverlayEnabled = subsystemEnabled(rockDebugEnabled, rockDebugOverlayEnabled);
+        rockDebugLoggingEnabled = subsystemEnabled(rockDebugEnabled, rockDebugLoggingEnabled);
+        rockDebugControllerEnabled = subsystemEnabled(rockDebugEnabled, rockDebugControllerEnabled);
+        rockDebugMonitorEnabled = subsystemEnabled(rockDebugEnabled, rockDebugMonitorEnabled);
+        rockPerformanceProfilerEnabled = subsystemEnabled(rockDebugEnabled, rockPerformanceProfilerEnabled);
+        rockPerformanceProfilerOverlayText =
+            rockPerformanceProfilerEnabled && rockDebugOverlayEnabled && rockPerformanceProfilerOverlayText;
+        rockDebugProviderOverlayEnabled = rockDebugOverlayEnabled && rockDebugProviderOverlayEnabled;
+
+        rockDebugShowColliders = childEnabled(rockDebugOverlayEnabled, rockDebugShowColliders);
+        const bool colliderOverlayEnabled = rockDebugShowColliders;
+        rockDebugShowTargetColliders = colliderOverlayEnabled && rockDebugShowTargetColliders;
+        rockDebugDrawHandColliders = colliderOverlayEnabled && rockDebugDrawHandColliders;
+        rockDebugDrawHandBoneColliders = colliderOverlayEnabled && rockDebugDrawHandBoneColliders;
+        rockDebugDrawDynamicHandColliders = colliderOverlayEnabled && rockDebugDrawDynamicHandColliders;
+        rockDebugDrawWeaponColliders = colliderOverlayEnabled && rockDebugDrawWeaponColliders;
+        rockDebugDrawDynamicWeaponColliders = colliderOverlayEnabled && rockDebugDrawDynamicWeaponColliders;
+        rockDebugDrawGrabAuthorityProxy = colliderOverlayEnabled && rockDebugDrawGrabAuthorityProxy;
+        rockDebugDrawGrabPivotSourceCollider = colliderOverlayEnabled && rockDebugDrawGrabPivotSourceCollider;
+        rockDebugProviderColliderFocusEnabled = colliderOverlayEnabled && rockDebugProviderColliderFocusEnabled;
+
+        rockDebugShowHandAxes = rockDebugOverlayEnabled && rockDebugShowHandAxes;
+        rockDebugShowGrabPivots = rockDebugOverlayEnabled && rockDebugShowGrabPivots;
+        rockDebugShowGrabPocketNormal = rockDebugOverlayEnabled && rockDebugShowGrabPocketNormal;
+        rockDebugDrawGrabContactPatch = rockDebugOverlayEnabled && rockDebugDrawGrabContactPatch;
+        rockDebugDrawGrabForceTorque = rockDebugOverlayEnabled && rockDebugDrawGrabForceTorque;
+        rockDebugDrawGrabForceTorqueText = rockDebugDrawGrabForceTorque && rockDebugDrawGrabForceTorqueText;
+        rockDebugDrawGrabPivotSourceEvidence = rockDebugDrawGrabForceTorque && rockDebugDrawGrabPivotSourceEvidence;
+        rockDebugDrawGrabPivotSourceCollider = rockDebugDrawGrabForceTorque && rockDebugDrawGrabPivotSourceCollider;
+        rockDebugDrawGrabSupportFrame = rockDebugOverlayEnabled && rockDebugDrawGrabSupportFrame;
+        rockDebugDrawGrabPockets = rockDebugOverlayEnabled && rockDebugDrawGrabPockets;
+        rockDebugShowGrabFingerProbes = rockDebugOverlayEnabled && rockDebugShowGrabFingerProbes;
+        rockDebugShowGrabFingerSweptArc = rockDebugOverlayEnabled && rockDebugShowGrabFingerSweptArc;
+        rockDebugShowGrabFingerSweptArcText = rockDebugShowGrabFingerSweptArc && rockDebugShowGrabFingerSweptArcText;
+        rockDebugShowGrabFingerSweptArcLiveSkeleton =
+            rockDebugShowGrabFingerSweptArc && rockDebugShowGrabFingerSweptArcLiveSkeleton;
+        rockDebugShowPalmVectors = rockDebugOverlayEnabled && rockDebugShowPalmVectors;
+        rockDebugDrawHandBoneContacts = rockDebugOverlayEnabled && rockDebugDrawHandBoneContacts;
+        rockDebugDrawNativeScopeActivation = rockDebugOverlayEnabled && rockDebugDrawNativeScopeActivation;
+        rockDebugDrawAuthoredGripActivationZones = rockDebugOverlayEnabled && rockDebugDrawAuthoredGripActivationZones;
+        rockDebugDrawGunstockAlignment = rockDebugOverlayEnabled && rockDebugDrawGunstockAlignment;
+        rockDebugVideoSyncMarker = rockDebugOverlayEnabled && rockDebugVideoSyncMarker;
+        rockDebugGrabTransformTelemetry = rockDebugOverlayEnabled && rockDebugGrabTransformTelemetry;
+        rockDebugGrabTransformTelemetryText = rockDebugGrabTransformTelemetry && rockDebugGrabTransformTelemetryText;
+        rockDebugGrabTransformTelemetryAxes = rockDebugGrabTransformTelemetry && rockDebugGrabTransformTelemetryAxes;
+        rockDebugShowGrabNotifications = rockDebugEnabled && rockDebugShowGrabNotifications;
+        rockDebugShowWeaponNotifications = rockDebugEnabled && rockDebugShowWeaponNotifications;
+        rockDebugWorldObjectOriginDiagnostics = rockDebugOverlayEnabled && rockDebugWorldObjectOriginDiagnostics;
+        rockDebugCustomCalibrationOffset = rockDebugOverlayEnabled && rockDebugCustomCalibrationOffset;
+        if (!rockDebugOverlayEnabled) {
+            rockGrabRenderClockProbeOffsetGameUnits = 0.0f;
+            rockGrabSceneWriterProbeOffsetZGameUnits = 0.0f;
+        }
+        rockDebugShowRootFlattenedFingerSkeletonMarkers =
+            rockDebugOverlayEnabled && rockDebugShowRootFlattenedFingerSkeletonMarkers;
+        rockDebugShowSkeletonBoneVisualizer = rockDebugOverlayEnabled && rockDebugShowSkeletonBoneVisualizer;
+        rockDebugDrawSkeletonBoneAxes = rockDebugShowSkeletonBoneVisualizer && rockDebugDrawSkeletonBoneAxes;
+
+        rockNativeMeleeDebugLogging = rockDebugLoggingEnabled && rockNativeMeleeDebugLogging;
+        rockDebugVerboseLogging = rockDebugLoggingEnabled && rockDebugVerboseLogging;
+        rockDebugGrabFrameLogging = rockDebugLoggingEnabled && rockDebugGrabFrameLogging;
+        rockDebugGrabTimelineTrace = rockDebugLoggingEnabled && rockDebugGrabTimelineTrace;
+        rockDebugGrabAfterSolveAnomalySampling = rockDebugLoggingEnabled && rockDebugGrabAfterSolveAnomalySampling;
+        rockDebugColliderClockLogging = rockDebugLoggingEnabled && rockDebugColliderClockLogging;
+        rockDebugDynamicWeaponLogging = rockDebugLoggingEnabled && rockDebugDynamicWeaponLogging;
+        rockDebugDumpWeaponAnimNodes = rockDebugLoggingEnabled && rockDebugDumpWeaponAnimNodes;
+        rockDebugWeaponOmodDumpEnabled = rockDebugLoggingEnabled && rockDebugWeaponOmodDumpEnabled;
+        rockDebugWeaponOmodCoverageAudit =
+            (rockDebugLoggingEnabled && rockDebugWeaponOmodCoverageAudit) || rockExperimentalWeaponOmodSelfHealEnabled;
+        rockDebugHandTransformParity = rockDebugLoggingEnabled && rockDebugHandTransformParity;
+        rockDebugLogSkeletonBones = rockDebugLoggingEnabled && rockDebugLogSkeletonBones;
+        rockDebugLogSkeletonBoneTruncation = rockDebugLoggingEnabled && rockDebugLogSkeletonBoneTruncation;
     }
 
     void RockConfig::load()
@@ -2730,7 +3041,17 @@ namespace rock
 
     bool RockConfig::persistPhysicsBool(const char* key, bool value)
     {
-        if (!key || !key[0]) {
+        return persistBool(SECTION, key, value);
+    }
+
+    bool RockConfig::persistDebugOverlayBool(const char* key, bool value)
+    {
+        return persistBool(DEBUG_OVERLAY_SECTION, key, value);
+    }
+
+    bool RockConfig::persistBool(const char* section, const char* key, bool value)
+    {
+        if (!section || !section[0] || !key || !key[0]) {
             return false;
         }
 
@@ -2743,7 +3064,7 @@ namespace rock
             return false;
         }
 
-        const SI_Error setRc = ini.SetBoolValue(SECTION, key, value, nullptr, true);
+        const SI_Error setRc = ini.SetBoolValue(section, key, value, nullptr, true);
         if (setRc < 0) {
             ROCK_LOG_WARN(Config, "Cannot persist ROCK.ini bool '{}': set failed with code {}", key, static_cast<int>(setRc));
             return false;
@@ -2767,9 +3088,9 @@ namespace rock
         const char* keyY = isLeft ? "fLeftGrabLegacyPalmPivotAHandspaceY" : "fRightGrabLegacyPalmPivotAHandspaceY";
         const char* keyZ = isLeft ? "fLeftGrabLegacyPalmPivotAHandspaceZ" : "fRightGrabLegacyPalmPivotAHandspaceZ";
         bool ok = true;
-        ok &= ini.SetDoubleValue(SECTION, keyX, value.x, nullptr, true) >= 0;
-        ok &= ini.SetDoubleValue(SECTION, keyY, value.y, nullptr, true) >= 0;
-        ok &= ini.SetDoubleValue(SECTION, keyZ, value.z, nullptr, true) >= 0;
+        ok &= ini.SetDoubleValue(HAND_FRAME_SECTION, keyX, value.x, nullptr, true) >= 0;
+        ok &= ini.SetDoubleValue(HAND_FRAME_SECTION, keyY, value.y, nullptr, true) >= 0;
+        ok &= ini.SetDoubleValue(HAND_FRAME_SECTION, keyZ, value.z, nullptr, true) >= 0;
         if (!ok) {
             ROCK_LOG_WARN(Config, "Cannot persist ROCK.ini {} legacy palm pivot A: set failed", isLeft ? "left" : "right");
             return false;

@@ -228,6 +228,8 @@ if(POST_BUILD_COPY_PLUGIN)
         COMMAND ${CMAKE_COMMAND} -E rm -rf "${copy_path}/Scripts/ROCK"
         COMMAND ${CMAKE_COMMAND} -E rm -rf "${copy_path}/Meshes/ROCK"
         COMMAND ${CMAKE_COMMAND} -E copy_directory "${ROOT_DIR}/data/mod" "${copy_path}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${copy_path}/ROCK_Config"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${ROOT_DIR}/data/config/ROCK.ini" "${copy_path}/ROCK_Config/ROCK.ini"
         COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:${PROJECT_NAME}> ${copy_path}/F4SE/Plugins/
         COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_PDB_FILE:${PROJECT_NAME}> ${copy_path}/F4SE/Plugins/
         COMMAND ${CMAKE_COMMAND} -E make_directory "${copy_path}/PrismaUI_F4/views/ROCK-Monitor/"
@@ -817,6 +819,13 @@ if(BUILD_ROCK_TESTS)
   endforeach()
   add_custom_target(ROCKPolicyTestBinaries DEPENDS ${ROCK_COMMONLIB_TEST_TARGETS})
 
+  add_executable(ROCKDebugConfigPolicyTests
+    "${ROOT_DIR}/tests/DebugConfigPolicyTests.cpp"
+  )
+  target_compile_features(ROCKDebugConfigPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKDebugConfigPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKDebugConfigPolicyTests)
+
   add_executable(ROCKDebugOverlayFrameAdmissionTests
     "${ROOT_DIR}/tests/DebugOverlayFrameAdmissionTests.cpp"
   )
@@ -961,6 +970,7 @@ if(BUILD_ROCK_TESTS)
   add_dependencies(
     ROCKPolicyTestBinaries
     ROCKSDKExamplePlugins
+    ROCKDebugConfigPolicyTests
     ROCKDebugOverlayFrameAdmissionTests
     ROCKDebugOverlayLineBatchTests
     ROCKProviderDebugOverlayRuntimeTests

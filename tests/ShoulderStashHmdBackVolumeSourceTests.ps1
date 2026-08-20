@@ -47,8 +47,14 @@ Require-Text 'src/physics-interaction/stash/ShoulderStashDetector.h' 'hmdBackExi
     'Detector fallback should use narrow HMD-specific exit padding.'
 Require-Text 'src/physics-interaction/stash/ShoulderStashDetector.h' 'hmdBackMinBehindGameUnits\s*=\s*4\.0f' `
     'Detector fallback should require the hand behind the HMD for HMD stash.'
-Require-Text 'src/physics-interaction/stash/ShoulderStashDetector.cpp' 'hmdBackBehindGateAllows\(\s*hmdForwardOffset,\s*input\.config\.hmdBackMinBehindGameUnits\s*\)' `
-    'HMD stash detector must reject forward-side probes before sphere scoring.'
+Require-Text 'src/physics-interaction/stash/ShoulderStashDetector.cpp' 'hmdBackBehindGateAllows\(\s*hmdProbeLocal\.y,\s*input\.config\.hmdBackMinBehindGameUnits\s*\)' `
+    'HMD stash detector must apply its behind gate in the yaw-only HMD-local frame.'
+Require-Text 'src/physics-interaction/stash/ShoulderStashMath.h' 'planarForward\{\s*hmdForwardWorld\.x,\s*hmdForwardWorld\.y,\s*0\.0f\s*\}' `
+    'HMD stash geometry must remove head pitch before building the back frame.'
+Require-Text 'src/physics-interaction/stash/ShoulderStashDetector.cpp' 'ProbeMotionFrame::HmdBackLocal' `
+    'HMD stash speed must use HMD-local hand motion so locomotion cancels.'
+Require-Text 'src/physics-interaction/stash/ShoulderStashDetector.cpp' 'if \(hmdAuthorityAvailable\)[\s\S]{0,500}findHmdBackVolumeCandidate[\s\S]{0,500}else' `
+    'Valid HMD authority must exclude the body-zone fallback pocket.'
 Require-Text 'src/physics-interaction/stash/ShoulderStashDetector.cpp' 'input\.config\.hmdBackExitPaddingGameUnits\s*:\s*input\.config\.hmdBackEnterPaddingGameUnits' `
     'HMD stash detector should use HMD-specific padding rather than body-zone padding.'
 
@@ -65,9 +71,6 @@ Require-Text 'src/RockConfig.cpp' `
 Require-Text 'data/config/ROCK.ini' `
     '(?m)^bEquippedWeaponShoulderStashEnabled\s*=\s*true\s*$' `
     'The reference INI must expose ROCK''s standalone equipped-weapon sheath switch.'
-Require-Text 'data/mod/ROCK_Config/ROCK.ini' `
-    '(?m)^bEquippedWeaponShoulderStashEnabled\s*=\s*true\s*$' `
-    'The packaged INI must expose ROCK''s standalone equipped-weapon sheath switch.'
 Require-Text 'src/RockConfig.h' `
     'rockShoulderStashHmdBackRightOffsetGameUnits\s*=\s*RE::NiPoint3\(14\.0f,\s*-18\.0f,\s*-6\.85f\)' `
     'RockConfig header default should match the behind-shoulder HMD right volume.'

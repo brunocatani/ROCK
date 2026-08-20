@@ -1497,7 +1497,7 @@ namespace rock::input_remap_runtime
          */
         [[nodiscard]] bool handleSavedGrabOffsetRequestEvent(const RE::InputEvent* event)
         {
-            if (!g_rockConfig.rockDeveloperModeEnabled || !isActivateReloadEvent(event)) {
+            if (!g_rockConfig.rockSavedGrabOffsetRecordingEnabled || !isActivateReloadEvent(event)) {
                 return false;
             }
 

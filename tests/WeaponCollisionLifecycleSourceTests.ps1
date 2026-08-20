@@ -130,7 +130,6 @@ Require-Text 'src/physics-interaction/weapon/WeaponGeometry.h' 'findDetachedSour
 Reject-Text 'src/RockConfig.h' 'rockWeaponCollisionMaxSourceDistance' 'The superseded origin-distance collider settings must stay removed.'
 Reject-Text 'src/RockConfig.cpp' 'WeaponCollisionMaxSourceDistance' 'The superseded origin-distance collider parser must stay removed.'
 Reject-Text 'data/config/ROCK.ini' 'WeaponCollisionMaxSourceDistance' 'The superseded origin-distance collider template settings must stay removed.'
-Reject-Text 'data/mod/ROCK_Config/ROCK.ini' 'WeaponCollisionMaxSourceDistance' 'The shipped origin-distance collider template settings must stay removed.'
 
 # --- Publication before collision -------------------------------------------
 # A generated weapon body that collides before its metadata is published makes

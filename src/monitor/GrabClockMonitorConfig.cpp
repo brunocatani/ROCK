@@ -67,7 +67,7 @@ namespace rock::monitor
             "; Position uses right-hand-local game units: +X finger-forward, +Y lateral, +Z up.\n"
             "; Rotation is panel-local in degrees and is applied X, then Y, then Z.\n"
             "[PanelPose]\n"
-            "bEnabled = true\n"
+            "bEnabled = false\n"
             "fPositionX = 7.75\n"
             "fPositionY = 9.0\n"
             "fPositionZ = -16.5\n"

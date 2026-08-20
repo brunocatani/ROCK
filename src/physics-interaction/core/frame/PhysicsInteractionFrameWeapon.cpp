@@ -1402,7 +1402,7 @@ namespace rock
                 currentWeaponGenerationKey,
                 _weaponCollision);
         if (dynamicWeaponFrame.contactEpisodeStarted &&
-            g_rockConfig.rockDebugDrawDynamicWeaponColliders) {
+            g_rockConfig.rockDebugDynamicWeaponLogging) {
             auto* otherRef = resolveBodyToRef(
                 frame.bhkWorld,
                 frame.hknpWorld,
@@ -1501,7 +1501,7 @@ namespace rock
                         weaponNode->world,
                         dynamicWeaponFrame.resolvedWeaponWorld) :
                     -1.0f;
-            if (g_rockConfig.rockDebugDrawDynamicWeaponColliders) {
+            if (g_rockConfig.rockDebugDynamicWeaponLogging) {
                 ROCK_LOG_SAMPLE_INFO(
                     Weapon,
                     500,

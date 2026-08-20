@@ -54,6 +54,7 @@ namespace rock
         void suppressNextFileWatchReload() { _ignoreNextIniFileChange.store(true); }
 
         [[nodiscard]] bool persistPhysicsBool(const char* key, bool value);
+        [[nodiscard]] bool persistDebugOverlayBool(const char* key, bool value);
         [[nodiscard]] bool persistGrabLegacyPalmPivotAHandspace(bool isLeft, const RE::NiPoint3& value);
 
         bool rockEnabled = true;
@@ -67,8 +68,8 @@ namespace rock
         bool rockSuppressNativeReadyWeaponAutoReady = true;
         bool rockSuppressNativeMeleeThrowGameInput = true;
         // Function-level controls; raw OpenVR button state remains untouched.
-        bool rockSuppressNativeVats = false;
-        bool rockSuppressNativeVans = false;
+        bool rockSuppressNativeVats = true;
+        bool rockSuppressNativeVans = true;
         bool rockSuppressPipboyGameInputWhileHolding = true;
         float rockPipboyPauseHoldSeconds = pipboy_pause_gesture_policy::kDefaultHoldSeconds;
         bool rockSuppressTakeEquipGameInputWhileHolding = true;
@@ -78,11 +79,23 @@ namespace rock
         float rockGrabInputLeewaySeconds = 0.12f;
         float rockGrabInputForceSeconds = 0.08f;
 
-        bool rockDeveloperModeEnabled = false;
+        bool rockSavedGrabOffsetRecordingEnabled = false;
 
         int rockLogLevel = 2;
         std::string rockLogPattern = "%Y-%m-%d %H:%M:%S.%e [%l] %v";
         int rockLogSampleMilliseconds = 2000;
+        // Requested debug hierarchy. readValuesFromIni() resolves these into
+        // effective child values after every load/reload, so no runtime path can
+        // bypass a disabled parent by reading a raw child flag.
+        bool rockDebugEnabled = true;
+        bool rockDebugOverlayEnabled = true;
+        bool rockDebugLoggingEnabled = true;
+        bool rockDebugControllerEnabled = false;
+        bool rockDebugMonitorEnabled = false;
+        bool rockDebugProviderOverlayEnabled = true;
+        bool rockDebugProviderColliderFocusEnabled = true;
+        bool rockDebugColliderClockLogging = false;
+        bool rockDebugDynamicWeaponLogging = false;
         bool rockPerformanceProfilerEnabled = false;
         int rockPerformanceProfilerLogIntervalFrames = 300;
         int rockPerformanceProfilerWarmupFrames = 120;
@@ -220,10 +233,10 @@ namespace rock
         float rockHandCollisionSurfaceFingerSmoothingSpeed = 30.0f;
         float rockHandCollisionSurfaceFingerReleaseDelaySeconds = 0.12f;
 
-        bool rockNativeMeleeSuppressionEnabled = true;
-        bool rockNativeMeleeFullSuppression = true;
-        bool rockNativeMeleeSuppressWeaponSwing = true;
-        bool rockNativeMeleeSuppressHitFrame = true;
+        bool rockNativeMeleeSuppressionEnabled = false;
+        bool rockNativeMeleeFullSuppression = false;
+        bool rockNativeMeleeSuppressWeaponSwing = false;
+        bool rockNativeMeleeSuppressHitFrame = false;
         bool rockNativeMeleeDebugLogging = false;
         bool rockNativeCharacterControllerObjectContactFilterEnabled = true;
 
@@ -235,7 +248,7 @@ namespace rock
         float rockSelectionBeamCurveLiftGameUnits = selection_beam_policy::kDefaultCurveLiftGameUnits;
         float rockSelectionBeamAlpha = selection_beam_policy::kDefaultAlpha;
 
-        bool rockDebugShowColliders = false;
+        bool rockDebugShowColliders = true;
         bool rockDebugShowTargetColliders = false;
         bool rockDebugShowHandAxes = false;
         bool rockDebugShowGrabPivots = false;
@@ -249,8 +262,8 @@ namespace rock
         bool rockDebugDrawGrabPockets = false;
         bool rockDebugShowGrabFingerProbes = false;
         bool rockDebugShowGrabFingerSweptArc = false;
-        bool rockDebugShowGrabFingerSweptArcText = true;
-        bool rockDebugShowGrabFingerSweptArcLiveSkeleton = true;
+        bool rockDebugShowGrabFingerSweptArcText = false;
+        bool rockDebugShowGrabFingerSweptArcLiveSkeleton = false;
         bool rockDebugShowPalmVectors = false;
         bool rockDebugDrawHandColliders = false;
         bool rockDebugDrawHandBoneColliders = false;
@@ -263,7 +276,7 @@ namespace rock
         bool rockDebugDrawNativeScopeActivation = false;
         bool rockDebugDrawAuthoredGripActivationZones = false;
         bool rockDebugDrawGunstockAlignment = false;
-        bool rockDebugDrawDynamicWeaponColliders = false;
+        bool rockDebugDrawDynamicWeaponColliders = true;
         bool rockDebugDumpWeaponAnimNodes = false;
         int rockDebugMaxWeaponBodiesDrawn = 100;
         int rockDebugWeaponAnimNodeDumpIntervalFrames = 120;
@@ -284,7 +297,6 @@ namespace rock
         bool rockDebugGrabFrameLogging = false;
         bool rockDebugVideoSyncMarker = false;
         float rockDebugVideoSyncMarkerSize = 4.0f;
-        bool rockDebugGrabFingerPoseLogging = false;
         bool rockDebugGrabTimelineTrace = false;
         bool rockDebugGrabAfterSolveAnomalySampling = false;
         bool rockDebugGrabTransformTelemetry = false;
@@ -295,18 +307,17 @@ namespace rock
         int rockDebugGrabTransformTelemetryTextMode = 0;
         bool rockDebugShowGrabNotifications = false;
         bool rockDebugShowWeaponNotifications = false;
-        bool rockDebugWeaponOmodDumpEnabled = false;
-        bool rockDebugWeaponOmodCoverageAudit = false;
+        bool rockDebugWeaponOmodDumpEnabled = true;
+        bool rockDebugWeaponOmodCoverageAudit = true;
         int rockDebugWeaponOmodCoverageAuditIntervalFrames = 450;
-        bool rockDebugWeaponOmodSelfHeal = false;
-        bool rockDebugWorkbenchWeaponReattach = false;
+        bool rockExperimentalWeaponOmodSelfHealEnabled = true;
         bool rockDebugHandTransformParity = false;
         bool rockDebugWorldObjectOriginDiagnostics = false;
         int rockDebugWorldObjectOriginLogIntervalFrames = 120;
         float rockDebugWorldObjectOriginMismatchWarnGameUnits = 5.0f;
         bool rockDebugCustomCalibrationOffset = false;
         bool rockDebugShowRootFlattenedFingerSkeletonMarkers = false;
-        bool rockDebugShowSkeletonBoneVisualizer = false;
+        bool rockDebugShowSkeletonBoneVisualizer = true;
         bool rockDebugDrawSkeletonBoneAxes = false;
         bool rockDebugLogSkeletonBones = false;
         int rockDebugSkeletonBoneMode = 1;
@@ -343,7 +354,7 @@ namespace rock
         std::string rockBodyBoneColliderRadiusScaleOverrides = "";
         bool rockHandCollisionStaticWorldEnabled = true;
         bool rockGlobalSurfaceGrabEnabled = true;
-        bool rockExperimentalSurfaceMeshGrabEnabled = false;
+        bool rockExperimentalSurfaceMeshGrabEnabled = true;
         float rockExperimentalSurfaceMeshGrabMaxProjectionDistanceGameUnits = 48.0f;
         int rockExperimentalSurfaceMeshGrabMaxTriangles = 20000;
         int rockExperimentalSurfaceMeshGrabMaxPatchTriangles = 2048;
@@ -674,7 +685,11 @@ namespace rock
 
         void readValuesFromIni(CSimpleIniA& ini);
 
+        void resolveEffectiveDebugSettings();
+
         [[nodiscard]] bool saveRuntimeIni(CSimpleIniA& ini, const char* reason);
+
+        [[nodiscard]] bool persistBool(const char* section, const char* key, bool value);
 
         void startFileWatch();
 
