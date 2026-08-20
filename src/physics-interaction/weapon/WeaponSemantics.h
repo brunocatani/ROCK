@@ -262,36 +262,3 @@ namespace rock
         return classifyWeaponPartKind(WeaponPartKind::Other);
     }
 }
-
-// ---- WeaponCollisionGroupingPolicy.h ----
-
-namespace rock::weapon_collision_grouping_policy
-{
-    /*
-     * Generated weapon collision is a geometry-first system. The INI value is
-     * kept as a compatibility key, but OptimizedTriShape is the only effective
-     * generation mode: each visible, extractable TriShape is deduped, reduced
-     * through support fitting, and split only when Havok hull limits require it.
-     * Semantic classifiers remain metadata for contacts/reload/debug evidence;
-     * they do not decide whether visible geometry gets collision.
-     */
-    enum class WeaponCollisionGroupingMode : std::uint8_t
-    {
-        OptimizedTriShape = 3
-    };
-
-    inline constexpr int kDefaultWeaponCollisionGroupingMode = static_cast<int>(WeaponCollisionGroupingMode::OptimizedTriShape);
-
-    inline constexpr WeaponCollisionGroupingMode sanitizeWeaponCollisionGroupingMode(int mode)
-    {
-        (void)mode;
-        return WeaponCollisionGroupingMode::OptimizedTriShape;
-    }
-
-    inline constexpr const char* weaponCollisionGroupingModeName(WeaponCollisionGroupingMode mode)
-    {
-        (void)mode;
-        return "OptimizedTriShape";
-    }
-
-}

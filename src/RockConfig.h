@@ -30,7 +30,6 @@
 #include "physics-interaction/debug/overlay/DebugOverlayRuntimeSettings.h"
 #include "physics-interaction/input/PipboyPauseGesturePolicy.h"
 #include "physics-interaction/native/havok/HavokTimingFixPolicy.h"
-#include "physics-interaction/weapon/WeaponSemantics.h"
 
 namespace rock
 {
@@ -65,7 +64,6 @@ namespace rock
         bool rockSuppressRightFavoritesGameInput = true;
         // Function-level controls; raw OpenVR button state remains untouched.
         bool rockSuppressNativeVats = true;
-        bool rockSuppressNativeVans = true;
         bool rockSuppressPipboyGameInputWhileHolding = true;
         float rockPipboyPauseHoldSeconds = pipboy_pause_gesture_policy::kDefaultHoldSeconds;
         bool rockSuppressTakeEquipGameInputWhileHolding = true;
@@ -134,7 +132,6 @@ namespace rock
         float rockWeaponCollisionDynamicDivergenceTeleportDwellSeconds = 0.3f;
         float rockWeaponCollisionDynamicRenderMinTranslationGameUnits = 0.05f;
         float rockWeaponCollisionDynamicRenderMinRotationDegrees = 0.25f;
-        int rockWeaponCollisionGroupingMode = weapon_collision_grouping_policy::kDefaultWeaponCollisionGroupingMode;
         int rockWeaponCollisionVisualStabilizationFrames = 8;
         float rockWeaponCollisionConvexRadius = 0.01f;
         float rockWeaponCollisionPointDedupGrid = 0.002f;
@@ -502,7 +499,6 @@ namespace rock
         float rockGrabSeatPenetrationBackstopFootprintRadiusGameUnits = 6.0f;
         float rockGrabSeatDepthSkinGameUnits = 0.5f;
         float rockGrabGripInsetGameUnits = 2.0f;
-        float rockGrabGripMaxInsetGameUnits = 6.0f;
         float rockGrabConvergeMaxTimeSeconds = 0.35f;
         int rockGrabConvergeStableFrames = 3;
         float rockGrabConvergeMaxSeparatingSpeedGameUnitsPerSecond = 40.0f;
@@ -582,7 +578,6 @@ namespace rock
         float rockGrabHandReturnMaxAngleDegrees = 90.0f;
         bool rockGrabMeshFingerPoseEnabled = true;
         bool rockGrabMeshJointPoseEnabled = true;
-        int rockGrabFingerPoseUpdateInterval = 3;
         float rockGrabFingerMinValue = 0.2f;
         float rockGrabFingerPoseSmoothingSpeed = 14.0f;
         bool rockGrabMeshLocalTransformPoseEnabled = true;
@@ -594,7 +589,6 @@ namespace rock
         float rockGrabFingerSweepContactRadiusGameUnits = 1.0f;
         float rockGrabFingerSweepMaxOpenValue = 2.0f;
         float rockGrabThumbSweepMaxOpenValue = 2.0f;
-        float rockGrabFingerPoseResolveWindowSeconds = 2.0f;
         float rockGrabThumbOppositionStrength = 1.0f;
         float rockGrabThumbAlternateCurveStrength = 0.65f;
         bool rockGrabThumbSurfaceSafetyEnabled = true;

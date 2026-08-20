@@ -1831,14 +1831,7 @@ namespace rock::input_remap_runtime
                                 provider::
                                     RockProviderHandInputSuppressionFlagV1::
                                         SuppressNativeVats),
-                        .suppressVans =
-                            grenadeQuickDrawOwnsButton ||
-                            g_rockConfig.rockSuppressNativeVans ||
-                            provider::hasHandInputSuppressionFlagV1(
-                                flags,
-                                provider::
-                                    RockProviderHandInputSuppressionFlagV1::
-                                        SuppressNativeVans),
+                        .suppressVans = true,
                         .suppressAll = suppressAll,
                     });
 

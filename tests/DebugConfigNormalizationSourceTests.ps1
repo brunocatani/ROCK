@@ -63,10 +63,22 @@ Reject-Text 'data/config/ROCK.dev.ini' $obsolete 'The canonical INI must not con
 Reject-Text 'src/RockConfig.h' $obsolete 'RockConfig must not expose obsolete settings.'
 Reject-Text 'src/RockConfig.cpp' $obsolete 'RockConfig must not load obsolete settings.'
 
-$internalOnly = 'bWeaponCollisionEnabled|bHandCollisionDynamicDrive|bHandDynamicInteractionsEnabled|bHandCollisionDynamicHapticsEnabled|bBodyBoneCollidersEnabled|bNativeCharacterControllerObjectContactFilterEnabled|bFarSelectionHmdConeEnabled|iGrabButtonID|bGrabHapticsEnabled|bSurfaceGrabHapticsEnabled|bHeldImpactHapticsEnabled|bShoulderStashHapticsEnabled|bMouthConsumeHapticsEnabled'
+$internalOnly = 'bWeaponCollisionEnabled|bHandCollisionDynamicDrive|bHandDynamicInteractionsEnabled|bHandCollisionDynamicHapticsEnabled|bBodyBoneCollidersEnabled|bNativeCharacterControllerObjectContactFilterEnabled|bFarSelectionHmdConeEnabled|iGrabButtonID|bGrabHapticsEnabled|bSurfaceGrabHapticsEnabled|bHeldImpactHapticsEnabled|bShoulderStashHapticsEnabled|bMouthConsumeHapticsEnabled|bSuppressNativeVans'
 Reject-Text 'data/config/ROCK.ini' $internalOnly 'The shipped INI must not expose mandatory production behavior.'
 Reject-Text 'data/config/ROCK.dev.ini' $internalOnly 'The developer reference must not expose mandatory production behavior.'
 Reject-Text 'src/RockConfig.cpp' ('"(?:' + $internalOnly + ')"') 'RockConfig must not parse mandatory production behavior from INI.'
+
+$deadOptions = 'fGrabGripMaxInsetGameUnits|iGrabFingerPoseUpdateInterval|fGrabFingerPoseResolveWindowSeconds|fRightCustomOGAOffset[XYZ]GameUnits|fLeftCustomOGAOffset[XYZ]GameUnits|iWeaponCollisionGroupingMode'
+Reject-Text 'data/config/ROCK.ini' $deadOptions 'The shipped INI must not expose dead settings.'
+Reject-Text 'data/config/ROCK.dev.ini' $deadOptions 'The developer reference must not expose dead settings.'
+Reject-Text 'src/RockConfig.h' $deadOptions 'RockConfig must not retain dead setting storage.'
+Reject-Text 'src/RockConfig.cpp' $deadOptions 'RockConfig must not parse dead settings.'
+
+$obsoleteGroupingMode = 'rockWeaponCollisionGroupingMode|WeaponCollisionGroupingMode|weapon_collision_grouping_policy'
+Reject-Text 'src/RockConfig.h' $obsoleteGroupingMode 'RockConfig must not retain a selectable weapon collision generation mode.'
+Reject-Text 'src/RockConfig.cpp' $obsoleteGroupingMode 'RockConfig must not normalize a selectable weapon collision generation mode.'
+Reject-Text 'src/physics-interaction/weapon/WeaponSemantics.h' $obsoleteGroupingMode 'Weapon semantics must not retain obsolete grouping-mode policy.'
+Reject-Text 'src/physics-interaction/weapon/collision/WeaponCollisionSources.cpp' $obsoleteGroupingMode 'Weapon collision generation must use the sole per-TriShape path directly.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'DebugConfigNormalizationSourceTests failed:' -ForegroundColor Red

@@ -355,7 +355,6 @@ namespace rock
         std::uint32_t totalVisitedShapes = 0;
         std::uint32_t totalExtractedTriangles = 0;
         std::uint32_t totalCulledForEffectGeometry = 0;
-        const auto groupingMode = weapon_collision_grouping_policy::sanitizeWeaponCollisionGroupingMode(g_rockConfig.rockWeaponCollisionGroupingMode);
         for (const auto& candidate : candidates) {
             std::vector<GeneratedHullSource> candidateSources;
             std::unordered_set<std::uintptr_t> candidateExtractedSourceGroups;
@@ -377,12 +376,11 @@ namespace rock
             totalCulledForEffectGeometry += culledForEffectGeometry;
 
             ROCK_LOG_DEBUG(Weapon,
-                "Generated weapon mesh candidate: label='{}' root='{}' addr={:x} packageRoot='{}' grouping={} acceptedShapes={} visitedShapes={} triangles={} hulls={} effectShapesCulled={}",
+                "Generated weapon mesh candidate: label='{}' root='{}' addr={:x} packageRoot='{}' acceptedShapes={} visitedShapes={} triangles={} hulls={} effectShapesCulled={}",
                 candidate.label,
                 safeNodeName(candidate.root),
                 reinterpret_cast<std::uintptr_t>(candidate.root),
                 safeNodeName(packageDriveRoot),
-                weapon_collision_grouping_policy::weaponCollisionGroupingModeName(groupingMode),
                 candidateExtractedSourceGroups.size(),
                 visitedShapes,
                 extractedTriangles,
