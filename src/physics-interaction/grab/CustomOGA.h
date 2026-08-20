@@ -1,6 +1,5 @@
 #pragma once
 
-#include "RockConfig.h"
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/hand/skeleton/HandSkeleton.h"
 
@@ -104,16 +103,10 @@ namespace rock::custom_oga
         return transform_math::composeTransforms(handWorld, handLocalTransform);
     }
 
-    inline RE::NiPoint3 computeOffsetLocalGame(bool isLeft)
-    {
-        return isLeft ? g_rockConfig.rockLeftCustomOGAOffsetGameUnits : g_rockConfig.rockRightCustomOGAOffsetGameUnits;
-    }
-
     inline bool build(
         const RE::NiTransform& handWorld,
         const RE::NiTransform& rollAuthorityWorld,
         const std::array<RE::NiPoint3, 5>& fingerBasesWorld,
-        const RE::NiPoint3& localOffsetGameUnits,
         Frame& outFrame)
     {
         outFrame = {};
@@ -151,9 +144,6 @@ namespace rock::custom_oga
         outFrame.world.translate = add(palmPlaneCenterWorld, mul(palmDepthAxisWorld, palmOriginDepthOffset));
         outFrame.world.rotate = rollAuthorityWorld.rotate;
         outFrame.world.scale = 1.0f;
-        if (finitePoint(localOffsetGameUnits)) {
-            outFrame.world.translate = add(outFrame.world.translate, transform_math::localVectorToWorld(outFrame.world, localOffsetGameUnits));
-        }
         outFrame.handLocalTransform = transform_math::composeTransforms(transform_math::invertTransform(handWorld), outFrame.world);
         const RE::NiPoint3 xAxisWorld = normalizeOr(transform_math::rotateLocalVectorToWorld(outFrame.world.rotate, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }), kFallbackX);
         const RE::NiPoint3 yAxisWorld = normalizeOr(transform_math::rotateLocalVectorToWorld(outFrame.world.rotate, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }), kFallbackY);
@@ -191,6 +181,6 @@ namespace rock::custom_oga
             fingerBasesWorld[finger] = snapshot.fingers[finger].points[0];
         }
 
-        return build(handWorld, rollAuthorityWorld, fingerBasesWorld, computeOffsetLocalGame(isLeft), outFrame);
+        return build(handWorld, rollAuthorityWorld, fingerBasesWorld, outFrame);
     }
 }

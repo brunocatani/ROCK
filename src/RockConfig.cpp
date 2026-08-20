@@ -197,8 +197,7 @@ namespace
             }
             if (startsWith(name, "fPalmNormal") || startsWith(name, "fPointingVector") || startsWith(name, "bReversePalm") ||
                 startsWith(name, "bReverseFar") || startsWith(name, "fRightGrabLegacyPalm") || startsWith(name, "fLeftGrabLegacyPalm") ||
-                startsWith(name, "fRightGrabAuthorityProxy") || startsWith(name, "fLeftGrabAuthorityProxy") ||
-                startsWith(name, "fRightCustomOGA") || startsWith(name, "fLeftCustomOGA")) {
+                startsWith(name, "fRightGrabAuthorityProxy") || startsWith(name, "fLeftGrabAuthorityProxy")) {
                 return HAND_FRAME_SECTION;
             }
             if (startsWith(name, "bWeaponCollision") || startsWith(name, "fWeaponCollision") || startsWith(name, "iWeaponCollision") ||
@@ -633,8 +632,6 @@ namespace rock
         rockGrabForceFadeInTime = 0.1f;
         rockRightGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.5f, -1.0f, 0.0f);
         rockLeftGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.5f, -1.0f, 0.0f);
-        rockRightCustomOGAOffsetGameUnits = RE::NiPoint3(0.0f, -2.0f, 0.0f);
-        rockLeftCustomOGAOffsetGameUnits = RE::NiPoint3(0.0f, -2.0f, 0.0f);
         rockGrabLooseWeaponSharedConstraintLinearTauMultiplier = kDefaultGrabLooseWeaponSharedConstraintLinearTauMultiplier;
         rockGrabLooseWeaponSharedConstraintAngularTauMultiplier = kDefaultGrabLooseWeaponSharedConstraintAngularTauMultiplier;
         rockGrabLooseWeaponSharedConstraintCollisionTauMultiplier = kDefaultGrabLooseWeaponSharedConstraintCollisionTauMultiplier;
@@ -2021,18 +2018,6 @@ namespace rock
             static_cast<float>(ini.GetDoubleValue(SECTION, "fLeftGrabAuthorityProxyOffsetYGameUnits", rockLeftGrabAuthorityProxyOffsetGameUnits.y));
         rockLeftGrabAuthorityProxyOffsetGameUnits.z =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fLeftGrabAuthorityProxyOffsetZGameUnits", rockLeftGrabAuthorityProxyOffsetGameUnits.z));
-        rockRightCustomOGAOffsetGameUnits.x =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fRightCustomOGAOffsetXGameUnits", rockRightCustomOGAOffsetGameUnits.x));
-        rockRightCustomOGAOffsetGameUnits.y =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fRightCustomOGAOffsetYGameUnits", rockRightCustomOGAOffsetGameUnits.y));
-        rockRightCustomOGAOffsetGameUnits.z =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fRightCustomOGAOffsetZGameUnits", rockRightCustomOGAOffsetGameUnits.z));
-        rockLeftCustomOGAOffsetGameUnits.x =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fLeftCustomOGAOffsetXGameUnits", rockLeftCustomOGAOffsetGameUnits.x));
-        rockLeftCustomOGAOffsetGameUnits.y =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fLeftCustomOGAOffsetYGameUnits", rockLeftCustomOGAOffsetGameUnits.y));
-        rockLeftCustomOGAOffsetGameUnits.z =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fLeftCustomOGAOffsetZGameUnits", rockLeftCustomOGAOffsetGameUnits.z));
         rockGrabLooseWeaponSharedConstraintLinearTauMultiplier = readClampedFloat(ini,
             SECTION,
             "fGrabLooseWeaponSharedConstraintLinearTauMultiplier",
