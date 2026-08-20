@@ -451,6 +451,23 @@ namespace rock
         const RE::NiTransform liveWeaponWorld = input.weaponNode->world;
         RE::NiTransform trackedHandWorld = input.controllerHandWorld;
         bool trackedHandWorldValid = input.controllerHandWorldValid;
+        const char* trackedHandSource = "controller-acquisition";
+        if (weaponAuthority.
+                hasPublishedAuthoredPrimaryFiringGripFingerPose(
+                    input.rockFiringHandIsLeft) &&
+            input.presentedHandWorldValid &&
+            finiteTransform(input.presentedHandWorld)) {
+            /*
+             * The blocker was consumed by FRIK before this update, so the
+             * presented wrist is free of FRIK's native per-weapon rotation.
+             * Aligning the native child weapon to that rendered parent keeps
+             * the grip exact without restoring the animation feedback that the
+             * controller-only acquisition frame removed.
+             */
+            trackedHandWorld = input.presentedHandWorld;
+            trackedHandWorldValid = true;
+            trackedHandSource = "presented-pose-blocked";
+        }
         RE::NiTransform gunstockTrackedHandWorld{};
         if (weaponAuthority.tryGetGunstockTrackedFiringHandWorld(
                 input.weaponNode,
@@ -458,6 +475,7 @@ namespace rock
                 gunstockTrackedHandWorld)) {
             trackedHandWorld = gunstockTrackedHandWorld;
             trackedHandWorldValid = true;
+            trackedHandSource = "gunstock-tracked";
         }
         if (!trackedHandWorldValid ||
             !finiteTransform(liveWeaponWorld) ||
@@ -570,7 +588,7 @@ namespace rock
             ROCK_LOG_INFO(Animation,
                 "Authored primary firing grip weapon alignment active weaponKey=0x{:X} generation=0x{:X} capture={} source={} exactFingerPose={} handMismatch={:.3f}gu "
                 "weaponCorrection={:.3f}gu originalWeaponT=({:.3f},{:.3f},{:.3f}) alignedWeaponT=({:.3f},{:.3f},{:.3f}) alignedLocalT=({:.3f},{:.3f},{:.3f}) authority=weapon-only "
-                "primaryHand=controller-driven physicalLeftSource=mirrored-authored-canonical",
+                "primaryHand={} physicalLeftSource=mirrored-authored-canonical",
                 currentWeaponKey,
                 input.weaponGenerationKey,
                 resolvedCaptureSequence, harvestedRelationAvailable ? "native-idle-preharvest" : "live-equipped-fallback",
@@ -585,7 +603,8 @@ namespace rock
                 input.weaponNode->world.translate.z,
                 input.weaponNode->local.translate.x,
                 input.weaponNode->local.translate.y,
-                input.weaponNode->local.translate.z);
+                input.weaponNode->local.translate.z,
+                trackedHandSource);
             _sessionLogged = true;
         }
     }

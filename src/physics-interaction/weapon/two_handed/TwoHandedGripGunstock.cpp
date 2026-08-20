@@ -1506,6 +1506,7 @@ namespace rock
         {
             const char* tag{ nullptr };
             RE::NiTransform originalWorld{};
+            RE::NiTransform requestedWorld{};
             RE::NiTransform recoilWorldDelta{};
             bool isLeft{ false };
             bool reusedGripRole{ false };
@@ -1646,6 +1647,7 @@ namespace rock
                 }
                 return false;
             }
+            out.requestedWorld = requestedWorld;
 
             if (!out.reusedGripRole) {
                 _gunstockDedicatedHandAuthorityActive[index] = true;
@@ -1662,10 +1664,11 @@ namespace rock
 
             if (out.reusedGripRole) {
                 // Keep the role's logical target coherent with the weapon.
-                // hFRIK applies this request synchronously, then its recoil
-                // and hand-pose stages may move the presented wrist away from
-                // the requested root. Publication success, rather than exact
-                // root-tree equality, is the authority contract here.
+                // The bridge accepts this request now, and FRIK consumes it on
+                // the next skeleton update. Its recoil and hand-pose stages
+                // can then move the presented wrist away from the requested
+                // root. Publication success, rather than exact root-tree
+                // equality, is the authority contract here.
                 recordPublishedHandWorld(isLeft, desiredWorld);
             }
             _gunstockHandAuthorityActive[index] = true;
@@ -1742,6 +1745,23 @@ namespace rock
                 weaponNode,
                 correctedWeaponWorld,
                 currentWeaponGenerationKey)) {
+            restoreHandCorrection(supportCorrection);
+            restoreHandCorrection(firingCorrection);
+            clearGunstockDedicatedHandAuthority();
+            return false;
+        }
+        const bool firingParentRebased =
+            rebaseWeaponLocalForDeferredParentHandTarget(
+                weaponNode,
+                firingCorrection.isLeft,
+                firingCorrection.requestedWorld);
+        const bool supportParentRebased =
+            !supportHandParticipates ||
+            rebaseWeaponLocalForDeferredParentHandTarget(
+                weaponNode,
+                supportCorrection.isLeft,
+                supportCorrection.requestedWorld);
+        if (!firingParentRebased || !supportParentRebased) {
             restoreHandCorrection(supportCorrection);
             restoreHandCorrection(firingCorrection);
             clearGunstockDedicatedHandAuthority();

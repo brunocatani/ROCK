@@ -1398,6 +1398,11 @@ namespace rock
             std::uint64_t authorityGenerationKey = 0,
             bool notifyVisualIntentObserver = true);
 
+        bool rebaseWeaponLocalForDeferredParentHandTarget(
+            RE::NiNode* weaponNode,
+            bool isLeft,
+            const RE::NiTransform& deferredHandWorld);
+
         void clearGunstockDedicatedHandAuthority();
         void observeGunstockWeaponEligibility(
             RE::NiNode* weaponNode,

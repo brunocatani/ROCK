@@ -25,6 +25,8 @@ namespace rock
         bool weaponInstanceContentKnown{ false };
         RE::NiTransform controllerHandWorld{};
         bool controllerHandWorldValid{ false };
+        RE::NiTransform presentedHandWorld{};
+        bool presentedHandWorldValid{ false };
         bool runtimeInitialized{ false };
         bool visualAuthorityAvailable{ false };
         bool localSkeletonReady{ false };
@@ -41,10 +43,12 @@ namespace rock
     };
 
     // ROCK derives one generation-bound, modeler-authored primary grip and
-    // inverts it onto the controller-reconstructed physical hand. The paired
-    // support relation is captured while Bethesda's native right-primary
-    // topology is intact, then republished as a frame-scoped candidate. A
-    // fully validated stable snapshot bridges transient firing-animation
+    // inverts it onto the rendered hand after ROCK's primary-pose blocker has
+    // taken effect. Controller reconstruction is the acquisition fallback.
+    // The paired support relation is captured while Bethesda's native
+    // right-primary topology is intact, then republished as a frame-scoped
+    // candidate. A fully validated stable snapshot bridges transient
+    // firing-animation
     // capture gaps only while all weapon/canonical identity witnesses match.
     // Only acquisition can latch it, so unrestricted dynamic grabs remain
     // intact.

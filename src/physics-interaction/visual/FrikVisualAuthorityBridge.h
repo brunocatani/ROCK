@@ -701,13 +701,14 @@ namespace rock::frik_visual_authority
         detail::resetTrackedHandWorldPublications();
     }
 
-    [[nodiscard]] inline RE::NiTransform getHandWorldTransform(Hand hand)
+    [[nodiscard]] inline bool tryGetHandWorldTransform(
+        Hand hand,
+        RE::NiTransform& outWorld)
     {
-        RE::NiTransform identity{};
-        identity.MakeIdentity();
+        outWorld = {};
         if (!isSkeletonReadyHint()) {
             resetPresentedHandNodeCache();
-            return identity;
+            return false;
         }
 
         bool isLeft = false;
@@ -721,21 +722,21 @@ namespace rock::frik_visual_authority
         case Hand::Offhand: {
             const auto* leftHandedMode = f4vr::getIniSetting("bLeftHandedMode:VR");
             if (!leftHandedMode) {
-                return identity;
+                return false;
             }
             const bool primaryIsLeft = leftHandedMode->GetBinary();
             isLeft = hand == Hand::Primary ? primaryIsLeft : !primaryIsLeft;
             break;
         }
         default:
-            return identity;
+            return false;
         }
 
         auto* const skeleton = f4vr::getFirstPersonSkeleton();
         auto& cache = detail::g_presentedHandNodeCache;
         if (!skeleton) {
             resetPresentedHandNodeCache();
-            return identity;
+            return false;
         }
         if (cache.skeleton != skeleton) {
             cache = {};
@@ -749,6 +750,22 @@ namespace rock::frik_visual_authority
         }
 
         const auto* const handNode = isLeft ? cache.leftHand : cache.rightHand;
-        return handNode ? handNode->world : identity;
+        if (!handNode) {
+            return false;
+        }
+
+        outWorld = handNode->world;
+        return true;
+    }
+
+    [[nodiscard]] inline RE::NiTransform getHandWorldTransform(Hand hand)
+    {
+        RE::NiTransform world{};
+        if (tryGetHandWorldTransform(hand, world)) {
+            return world;
+        }
+
+        world.MakeIdentity();
+        return world;
     }
 }

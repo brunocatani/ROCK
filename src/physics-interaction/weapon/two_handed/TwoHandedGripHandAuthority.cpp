@@ -617,6 +617,40 @@ namespace rock
         return true;
     }
 
+    bool TwoHandedGrip::rebaseWeaponLocalForDeferredParentHandTarget(
+        RE::NiNode* weaponNode,
+        const bool isLeft,
+        const RE::NiTransform& deferredHandWorld)
+    {
+        if (!weaponNode || !isFiniteTransform(weaponNode->world) ||
+            !isUsableHandAuthorityTransform(deferredHandWorld)) {
+            return false;
+        }
+
+        auto* const handNode = resolveFirstPersonHandNode(isLeft);
+        if (!handNode || weaponNode->parent != handNode) {
+            return true;
+        }
+
+        const RE::NiTransform deferredParentLocal =
+            weapon_visual_authority_math::worldTargetToParentLocal(
+                deferredHandWorld,
+                weaponNode->world);
+        if (!isFiniteTransform(deferredParentLocal)) {
+            return false;
+        }
+
+        /*
+         * FRIK V2 consumes the hand target on its next skeleton frame. The
+         * equipped weapon is normally a child of RArm_Hand, so a local derived
+         * from the hand's current world makes that later parent update carry
+         * the weapon a second time. Store the local against the deferred parent
+         * frame while retaining the already-solved weapon world for this frame.
+         */
+        weaponNode->local = deferredParentLocal;
+        return true;
+    }
+
     bool TwoHandedGrip::clearWeaponCollisionHandAuthority(const bool isLeft)
     {
         const std::size_t index = isLeft ? 0u : 1u;
@@ -1189,6 +1223,25 @@ namespace rock
             scaleStableResolvedWeaponWorld,
             authorityGenerationKey,
             false);
+        bool deferredParentRebased = weaponPublished;
+        if (weaponPublished) {
+            for (const auto& pulse : pulses) {
+                if (!pulse.requested || !pulse.applied) {
+                    continue;
+                }
+                const bool pulseParentRebased =
+                    rebaseWeaponLocalForDeferredParentHandTarget(
+                        weaponNode,
+                        pulse.isLeft,
+                        pulse.targetWorld);
+                if (!pulseParentRebased) {
+                    (void)clearWeaponCollisionHandAuthority(pulse.isLeft);
+                }
+                deferredParentRebased =
+                    deferredParentRebased && pulseParentRebased;
+            }
+        }
+        handPulsesSucceeded = handPulsesSucceeded && deferredParentRebased;
         if (!weaponPublished || !handPulsesSucceeded) {
             ROCK_LOG_SAMPLE_WARN(
                 Weapon,
@@ -1247,6 +1300,16 @@ namespace rock
         (void)publishAuthoredPrimaryFiringGripFingerPose(_firingHandIsLeft);
         const bool applied = frik_visual_authority::applyExternalHandWorldTransform(
             PRIMARY_GRIP_TAG, handFromBool(_firingHandIsLeft), appliedFiringHandWorld, GRIP_HAND_POSE_PRIORITY);
+        if (applied &&
+            !rebaseWeaponLocalForDeferredParentHandTarget(
+                weaponNode,
+                _firingHandIsLeft,
+                appliedFiringHandWorld)) {
+            (void)frik_visual_authority::clearExternalHandWorldTransform(
+                PRIMARY_GRIP_TAG,
+                handFromBool(_firingHandIsLeft));
+            return false;
+        }
         if (applied) {
             recordPreFrikRetainedHandAuthority(
                 RetainedHandAuthorityKind::PrimaryGrip,
@@ -1296,6 +1359,16 @@ namespace rock
                 grip.visualLerp);
         const bool applied = frik_visual_authority::applyExternalHandWorldTransform(
             SUPPORT_GRIP_TAG, handFromBool(isLeft), appliedHandWorld, GRIP_HAND_POSE_PRIORITY);
+        if (applied &&
+            !rebaseWeaponLocalForDeferredParentHandTarget(
+                weaponNode,
+                isLeft,
+                appliedHandWorld)) {
+            (void)frik_visual_authority::clearExternalHandWorldTransform(
+                SUPPORT_GRIP_TAG,
+                handFromBool(isLeft));
+            return false;
+        }
         if (applied) {
             recordPreFrikRetainedHandAuthority(
                 RetainedHandAuthorityKind::SupportGrip,
